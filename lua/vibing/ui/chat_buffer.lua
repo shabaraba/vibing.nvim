@@ -68,7 +68,7 @@ function ChatBuffer:_create_buffer()
     local project_root = vim.fn.getcwd()
     local default_path = project_root .. "/.vibing/chat/"
     vim.fn.mkdir(default_path, "p")
-    local filename = os.date("chat-%Y%m%d-%H%M%S.md")
+    local filename = os.date("chat_%Y%m%d_%H%M%S.md")
     self.file_path = default_path .. filename
     vim.api.nvim_buf_set_name(self.buf, self.file_path)
   end
@@ -602,6 +602,42 @@ end
 ---@return number?
 function ChatBuffer:get_buffer()
   return self.buf
+end
+
+---最初のメッセージからファイル名を更新
+---@param message string
+function ChatBuffer:update_filename_from_message(message)
+  if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
+    return
+  end
+
+  -- 既にファイル名が意味のある名前になっている場合はスキップ
+  if self.file_path and not self.file_path:match("chat_%d+_%d+") then
+    return
+  end
+
+  local filename_util = require("vibing.utils.filename")
+  local base_filename = filename_util.generate_from_message(message)
+
+  -- 新しいファイルパスを生成
+  local project_root = vim.fn.getcwd()
+  local chat_dir = project_root .. "/.vibing/chat/"
+  vim.fn.mkdir(chat_dir, "p")
+
+  local new_filename = base_filename .. ".md"
+  local new_file_path = chat_dir .. new_filename
+
+  -- ファイル名が重複する場合は連番を追加
+  local counter = 1
+  while vim.fn.filereadable(new_file_path) == 1 do
+    new_filename = base_filename .. "_" .. counter .. ".md"
+    new_file_path = chat_dir .. new_filename
+    counter = counter + 1
+  end
+
+  -- バッファ名を更新
+  self.file_path = new_file_path
+  vim.api.nvim_buf_set_name(self.buf, new_file_path)
 end
 
 return ChatBuffer
