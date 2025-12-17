@@ -26,6 +26,9 @@ function M.setup(opts)
 
   M.adapter = adapter_module:new(M.config)
 
+  -- チャットコマンド初期化
+  require("vibing.chat").setup()
+
   -- コマンド登録
   M._register_commands()
 end

@@ -86,3 +86,14 @@ When reopening a saved chat (`:VibingOpenChat` or `:e`), the session resumes via
 | `:VibingInline [action]` | Run inline action on selection (fix/feat/explain/refactor/test) |
 | `:VibingCancel` | Cancel current request |
 | `:VibingOpenChat <file>` | Open saved chat file |
+
+## Slash Commands (in Chat)
+
+Slash commands can be used within the chat buffer for quick actions:
+
+| Command | Description |
+|---------|-------------|
+| `/context <file>` | Add file to context |
+| `/clear` | Clear context |
+| `/save` | Save current chat |
+| `/summarize` | Summarize conversation |

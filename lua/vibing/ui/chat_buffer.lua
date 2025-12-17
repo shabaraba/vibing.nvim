@@ -357,6 +357,18 @@ function ChatBuffer:send_message()
     return
   end
 
+  -- スラッシュコマンドかチェック
+  local commands = require("vibing.chat.commands")
+  if commands.is_command(message) then
+    local handled = commands.execute(message, self)
+    if handled then
+      -- コマンドが処理されたので、ユーザー入力部分をクリア
+      self:add_user_section()
+      return
+    end
+  end
+
+  -- 通常のメッセージ送信
   require("vibing.actions.chat").send(self, message)
 end
 
