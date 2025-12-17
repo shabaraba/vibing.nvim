@@ -8,14 +8,14 @@
 ---@return boolean 保存に成功した場合true、バッファ無効や書き込みエラーの場合false
 return function(_, chat_buffer)
   if not chat_buffer or not chat_buffer.buf then
-    vim.notify("[vibing] No chat buffer to save", vim.log.levels.ERROR)
+    notify.error("No chat buffer to save")
     return false
   end
 
   -- バッファを保存
   local buf = chat_buffer.buf
   if not vim.api.nvim_buf_is_valid(buf) then
-    vim.notify("[vibing] Chat buffer is not valid", vim.log.levels.ERROR)
+    notify.error("Chat buffer is not valid")
     return false
   end
 
@@ -25,14 +25,11 @@ return function(_, chat_buffer)
   end)
 
   if not ok then
-    vim.notify(
-      string.format("[vibing] Failed to save: %s", err),
-      vim.log.levels.ERROR
-    )
+    notify.error(string.format("Failed to save: %s", err))
     return false
   end
 
-  vim.notify("[vibing] Chat saved", vim.log.levels.INFO)
+  notify.info("Chat saved")
 
   return true
 end

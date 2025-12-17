@@ -1,4 +1,5 @@
 local Config = require("vibing.config")
+local notify = require("vibing.utils.notify")
 
 ---@class Vibing
 ---vibing.nvimプラグインのメインモジュール
@@ -24,10 +25,7 @@ function M.setup(opts)
   local adapter_name = M.config.adapter
   local ok, adapter_module = pcall(require, "vibing.adapters." .. adapter_name)
   if not ok then
-    vim.notify(
-      string.format("[vibing.nvim] Adapter '%s' not found", adapter_name),
-      vim.log.levels.ERROR
-    )
+    notify.error(string.format("Adapter '%s' not found", adapter_name))
     return
   end
 
@@ -114,7 +112,7 @@ function M._register_commands()
   vim.api.nvim_create_user_command("VibingRemote", function(opts)
     local remote = require("vibing.remote")
     if not remote.is_available() then
-      vim.notify("[vibing] Remote control not available. Start nvim with --listen or set socket_path", vim.log.levels.ERROR)
+      notify.error("Remote control not available. Start nvim with --listen or set socket_path")
       return
     end
     remote.execute(opts.args)
@@ -127,7 +125,7 @@ function M._register_commands()
       print(string.format("[vibing] Remote Status - Mode: %s, Buffer: %s, Line: %d, Col: %d",
         status.mode, status.bufname, status.line, status.col))
     else
-      vim.notify("[vibing] Remote control not available", vim.log.levels.ERROR)
+      notify.error("Remote control not available")
     end
   end, { desc = "Get remote Neovim status" })
 
@@ -143,17 +141,17 @@ function M._register_commands()
       -- 引数なし：現在のチャットバッファをマイグレーション
       local chat = require("vibing.actions.chat")
       if not chat.chat_buffer or not chat.chat_buffer.file_path then
-        vim.notify("[vibing] No active chat buffer to migrate", vim.log.levels.WARN)
+        notify.warn("No active chat buffer to migrate")
         return
       end
 
       local success, err = Migrator.migrate_current_buffer(chat.chat_buffer)
       if success then
-        vim.notify("[vibing] Chat migrated successfully", vim.log.levels.INFO)
+        notify.info("Chat migrated successfully")
         -- バッファを再読み込み
         vim.cmd("edit!")
       else
-        vim.notify("[vibing] Migration failed: " .. (err or "unknown error"), vim.log.levels.ERROR)
+        notify.error("Migration failed: " .. (err or "unknown error"))
       end
     elseif args == "--scan" then
       -- ディレクトリスキャン
@@ -161,14 +159,11 @@ function M._register_commands()
       local files = Migrator.scan_chat_directory(chat_dir)
 
       if #files == 0 then
-        vim.notify("[vibing] No old format files found", vim.log.levels.INFO)
+        notify.info("No old format files found")
         return
       end
 
-      vim.notify(
-        string.format("[vibing] Found %d file(s) to migrate. Migrating...", #files),
-        vim.log.levels.INFO
-      )
+      notify.info(string.format("Found %d file(s) to migrate. Migrating...", #files))
 
       local success_count = 0
       for _, file in ipairs(files) do
@@ -176,22 +171,19 @@ function M._register_commands()
         if success then
           success_count = success_count + 1
         else
-          vim.notify("[vibing] Failed to migrate " .. file .. ": " .. (err or ""), vim.log.levels.WARN)
+          notify.warn("Failed to migrate " .. file .. ": " .. (err or ""))
         end
       end
 
-      vim.notify(
-        string.format("[vibing] Migrated %d/%d files successfully", success_count, #files),
-        vim.log.levels.INFO
-      )
+      notify.info(string.format("Migrated %d/%d files successfully", success_count, #files))
     else
       -- ファイルパス指定
       local file_path = vim.fn.expand(args)
       local success, err = Migrator.migrate_file(file_path, true)
       if success then
-        vim.notify("[vibing] File migrated: " .. file_path, vim.log.levels.INFO)
+        notify.info("File migrated: " .. file_path)
       else
-        vim.notify("[vibing] Migration failed: " .. (err or "unknown error"), vim.log.levels.ERROR)
+        notify.error("Migration failed: " .. (err or "unknown error"))
       end
     end
   end, { nargs = "?", desc = "Migrate chat file to new format", complete = "file" })

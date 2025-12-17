@@ -102,7 +102,7 @@ function M.cancel()
   if adapter then
     local cancelled = adapter:cancel()
     if cancelled then
-      vim.notify("[vibing] Cancelled", vim.log.levels.INFO)
+      notify.info("Cancelled")
     end
   end
 end

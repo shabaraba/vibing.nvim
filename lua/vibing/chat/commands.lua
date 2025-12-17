@@ -73,20 +73,14 @@ function M.execute(message, chat_buffer)
 
   local command = M.commands[command_name]
   if not command then
-    vim.notify(
-      string.format("[vibing] Unknown command: /%s", command_name),
-      vim.log.levels.WARN
-    )
+    notify.warn(string.format("Unknown command: /%s", command_name))
     return true -- コマンドとして認識されたが存在しない
   end
 
   -- コマンドハンドラーを実行
   local success, result = pcall(command.handler, args, chat_buffer)
   if not success then
-    vim.notify(
-      string.format("[vibing] Command error: %s", result),
-      vim.log.levels.ERROR
-    )
+    notify.error(string.format("Command error: %s", result))
   end
 
   return true

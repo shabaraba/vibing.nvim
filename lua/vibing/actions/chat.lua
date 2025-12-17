@@ -1,6 +1,7 @@
 local Context = require("vibing.context")
 local ChatBuffer = require("vibing.ui.chat_buffer")
 local Formatter = require("vibing.context.formatter")
+local notify = require("vibing.utils.notify")
 
 ---@class Vibing.ChatAction
 local M = {}
@@ -57,9 +58,9 @@ function M.open_file(file_path)
   if M.chat_buffer:load_from_file(file_path) then
     M.chat_buffer:_create_window()
     M.chat_buffer:_setup_keymaps()
-    vim.notify("[vibing] Loaded chat: " .. file_path, vim.log.levels.INFO)
+    notify.info("Loaded chat: " .. file_path, "Chat")
   else
-    vim.notify("[vibing] Failed to load: " .. file_path, vim.log.levels.ERROR)
+    notify.error("Failed to load: " .. file_path, "Chat")
   end
 end
 
@@ -87,7 +88,7 @@ function M.attach_to_buffer(buf, file_path)
   -- キーマップを設定
   M.chat_buffer:_setup_keymaps()
 
-  vim.notify("[vibing] Chat session attached", vim.log.levels.INFO)
+  notify.info("Chat session attached", "Chat")
 end
 
 ---メッセージを送信
@@ -101,7 +102,7 @@ function M.send(chat_buffer, message)
   local config = vibing.get_config()
 
   if not adapter then
-    vim.notify("[vibing] No adapter configured", vim.log.levels.ERROR)
+    notify.error("No adapter configured", "Chat")
     return
   end
 

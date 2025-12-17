@@ -8,7 +8,7 @@
 ---@return boolean 要約リクエストを送信した場合true、バッファ無効や会話なしの場合false
 return function(_, chat_buffer)
   if not chat_buffer or not chat_buffer.buf or not vim.api.nvim_buf_is_valid(chat_buffer.buf) then
-    vim.notify("[vibing] No valid chat buffer", vim.log.levels.ERROR)
+    notify.error("No valid chat buffer")
     return false
   end
 
@@ -16,7 +16,7 @@ return function(_, chat_buffer)
   local conversation = chat_buffer:extract_conversation()
 
   if #conversation == 0 then
-    vim.notify("[vibing] No conversation to summarize", vim.log.levels.WARN)
+    notify.warn("No conversation to summarize")
     return false
   end
 
@@ -36,21 +36,18 @@ return function(_, chat_buffer)
   local adapter = vibing.get_adapter()
 
   if not adapter then
-    vim.notify("[vibing] No adapter configured", vim.log.levels.ERROR)
+    notify.error("No adapter configured")
     return false
   end
 
-  vim.notify("[vibing] Generating summary...", vim.log.levels.INFO)
+  notify.info("Generating summary...")
 
   -- 要約を非同期で取得
   adapter:stream(full_prompt, {}, function(chunk)
     -- チャンクを無視（ストリーミングは表示しない）
   end, function(response)
     if response.error then
-      vim.notify(
-        string.format("[vibing] Summarization failed: %s", response.error),
-        vim.log.levels.ERROR
-      )
+      notify.error(string.format("Summarization failed: %s", response.error))
       return
     end
 
@@ -83,7 +80,7 @@ return function(_, chat_buffer)
         vim.api.nvim_win_close(win, true)
       end, { buffer = buf, nowait = true })
 
-      vim.notify("[vibing] Summary generated (press 'q' to close)", vim.log.levels.INFO)
+      notify.info("Summary generated (press 'q' to close)")
     end
   end)
 

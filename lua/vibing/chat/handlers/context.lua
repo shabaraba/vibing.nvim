@@ -8,7 +8,7 @@
 ---@return boolean ファイル追加に成功した場合true、引数不足や読み込み不可の場合false
 return function(args, chat_buffer)
   if #args == 0 then
-    vim.notify("[vibing] Usage: /context <file_path>", vim.log.levels.WARN)
+    notify.warn("/context <file_path>", "Usage")
     return false
   end
 
@@ -19,10 +19,7 @@ return function(args, chat_buffer)
 
   -- ファイルが存在するかチェック
   if vim.fn.filereadable(expanded_path) ~= 1 then
-    vim.notify(
-      string.format("[vibing] File not readable: %s", expanded_path),
-      vim.log.levels.ERROR
-    )
+    notify.error(string.format("File not readable: %s", expanded_path))
     return false
   end
 

@@ -1,5 +1,6 @@
 local Context = require("vibing.context")
 local OutputBuffer = require("vibing.ui.output_buffer")
+local notify = require("vibing.utils.notify")
 
 ---@class Vibing.ActionConfig
 ---@field prompt string アクションの基本プロンプト
@@ -50,7 +51,7 @@ function M.execute(action_or_prompt)
   local adapter = vibing.get_adapter()
 
   if not adapter then
-    vim.notify("[vibing] No adapter configured", vim.log.levels.ERROR)
+    notify.error("No adapter configured", "Inline")
     return
   end
 
@@ -70,7 +71,7 @@ function M.execute(action_or_prompt)
   -- 選択範囲のコンテキストを取得
   local selection_context = Context.get_selection()
   if not selection_context then
-    vim.notify("[vibing] No selection", vim.log.levels.WARN)
+    notify.warn("No selection", "Inline")
     return
   end
 
@@ -134,7 +135,7 @@ end
 ---@param prompt string 実行するプロンプト（選択範囲のメンション含む）
 ---@param opts Vibing.AdapterOpts アダプターオプション（tools含む）
 function M._execute_direct(adapter, prompt, opts)
-  vim.notify("[vibing] Executing...", vim.log.levels.INFO)
+  notify.info("Executing...", "Inline")
 
   if adapter:supports("streaming") then
     opts.streaming = true
@@ -143,18 +144,18 @@ function M._execute_direct(adapter, prompt, opts)
     end, function(response)
       vim.schedule(function()
         if response.error then
-          vim.notify("[vibing] Error: " .. response.error, vim.log.levels.ERROR)
+          notify.error(response.error, "Inline")
         else
-          vim.notify("[vibing] Done", vim.log.levels.INFO)
+          notify.info("Done", "Inline")
         end
       end)
     end)
   else
     local response = adapter:execute(prompt, opts)
     if response.error then
-      vim.notify("[vibing] Error: " .. response.error, vim.log.levels.ERROR)
+      notify.error(response.error, "Inline")
     else
-      vim.notify("[vibing] Done", vim.log.levels.INFO)
+      notify.info("Done", "Inline")
     end
   end
 end
@@ -169,13 +170,13 @@ function M.custom(prompt, use_output)
   local adapter = vibing.get_adapter()
 
   if not adapter then
-    vim.notify("[vibing] No adapter configured", vim.log.levels.ERROR)
+    notify.error("No adapter configured", "Inline")
     return
   end
 
   local selection_context = Context.get_selection()
   if not selection_context then
-    vim.notify("[vibing] No selection", vim.log.levels.WARN)
+    notify.warn("No selection", "Inline")
     return
   end
 
