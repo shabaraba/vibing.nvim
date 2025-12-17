@@ -4,6 +4,11 @@
 ---@field chat Vibing.ChatConfig
 ---@field inline Vibing.InlineConfig
 ---@field keymaps Vibing.KeymapConfig
+---@field permissions Vibing.PermissionsConfig
+
+---@class Vibing.PermissionsConfig
+---@field allow string[]
+---@field deny string[]
 
 ---@class Vibing.ChatConfig
 ---@field window Vibing.WindowConfig
@@ -45,6 +50,18 @@ M.defaults = {
     send = "<CR>",
     cancel = "<C-c>",
     add_context = "<C-a>",
+  },
+  permissions = {
+    allow = {
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+    },
+    deny = {
+      "Bash",
+    },
   },
 }
 

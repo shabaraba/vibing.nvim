@@ -70,6 +70,35 @@ created_at: 2024-01-01T12:00:00
 
 When reopening a saved chat (`:VibingOpenChat` or `:e`), the session resumes via the stored `session_id`.
 
+### Permissions Configuration
+
+vibing.nvim allows fine-grained control over what tools Claude can use through the `permissions` configuration:
+
+```lua
+require("vibing").setup({
+  permissions = {
+    allow = {  -- Explicitly allowed tools
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+    },
+    deny = {  -- Explicitly denied tools
+      "Bash",  -- Deny shell command execution for security
+    },
+  },
+})
+```
+
+**Permission Logic:**
+- Deny list takes precedence over allow list
+- If allow list is specified, only those tools are permitted
+- If allow list is empty, all tools except denied ones are allowed
+- Denied tools will return an error message when Claude attempts to use them
+
+**Available Tools:** Read, Edit, Write, Bash, Glob, Grep, WebSearch, WebFetch
+
 ### Key Patterns
 
 **Adapter Pattern:** All AI backends implement the `Adapter` interface with `execute()`, `stream()`, `cancel()`, and feature detection via `supports()`.

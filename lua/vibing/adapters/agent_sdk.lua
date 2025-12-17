@@ -49,6 +49,20 @@ function AgentSDK:build_command(prompt, opts)
     table.insert(cmd, self._session_id)
   end
 
+  -- Add permissions
+  local vibing = require("vibing")
+  local config = vibing.get_config()
+  if config.permissions then
+    if config.permissions.allow and #config.permissions.allow > 0 then
+      table.insert(cmd, "--allow")
+      table.insert(cmd, table.concat(config.permissions.allow, ","))
+    end
+    if config.permissions.deny and #config.permissions.deny > 0 then
+      table.insert(cmd, "--deny")
+      table.insert(cmd, table.concat(config.permissions.deny, ","))
+    end
+  end
+
   table.insert(cmd, "--prompt")
   table.insert(cmd, prompt)
 

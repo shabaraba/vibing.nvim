@@ -11,6 +11,8 @@ let prompt = "";
 let cwd = process.cwd();
 const contextFiles = [];
 let sessionId = null;
+let allowedTools = [];
+let deniedTools = [];
 
 // Parse arguments
 for (let i = 0; i < args.length; i++) {
@@ -25,6 +27,12 @@ for (let i = 0; i < args.length; i++) {
     i++;
   } else if (args[i] === "--prompt" && args[i + 1]) {
     prompt = args[i + 1];
+    i++;
+  } else if (args[i] === "--allow" && args[i + 1]) {
+    allowedTools = args[i + 1].split(",");
+    i++;
+  } else if (args[i] === "--deny" && args[i + 1]) {
+    deniedTools = args[i + 1].split(",");
     i++;
   } else if (!args[i].startsWith("--")) {
     prompt = args[i];
@@ -72,9 +80,36 @@ let pendingToolUse = null;
 // Build query options
 const queryOptions = {
   allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep", "WebSearch", "WebFetch"],
-  permissionMode: "acceptEdits",
+  permissionMode: "default",
   includePartialMessages: true,
 };
+
+// Add canUseTool callback for permission control
+if (allowedTools.length > 0 || deniedTools.length > 0) {
+  queryOptions.canUseTool = async (toolName, input) => {
+    // Deny list takes precedence
+    if (deniedTools.includes(toolName)) {
+      return {
+        behavior: "deny",
+        message: `Tool ${toolName} is not allowed by configuration`,
+      };
+    }
+
+    // Allow list
+    if (allowedTools.length > 0 && !allowedTools.includes(toolName)) {
+      return {
+        behavior: "deny",
+        message: `Tool ${toolName} is not in the allowed list`,
+      };
+    }
+
+    // Allow by default if passed checks
+    return {
+      behavior: "allow",
+      updatedInput: input,
+    };
+  };
+}
 
 // Resume session if provided
 if (sessionId) {
