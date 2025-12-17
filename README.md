@@ -1,5 +1,9 @@
 # vibing.nvim
 
+[![CI](https://github.com/shabaraba/vibing.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/shabaraba/vibing.nvim/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Release](https://img.shields.io/github/v/release/shabaraba/vibing.nvim)](https://github.com/shabaraba/vibing.nvim/releases)
+
 A Neovim plugin that integrates Claude AI through the Agent SDK, providing intelligent chat and inline code actions directly within your editor.
 
 ## ✨ Features
