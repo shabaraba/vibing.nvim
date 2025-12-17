@@ -1,5 +1,4 @@
 local Context = require("vibing.context")
-local notify = require("vibing.utils.notify")
 
 ---@class Vibing.ChatBuffer
 ---@field buf number?
@@ -7,6 +6,8 @@ local notify = require("vibing.utils.notify")
 ---@field config Vibing.ChatConfig
 ---@field session_id string?
 ---@field file_path string?
+---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
+---@field _chunk_timer any チャンクフラッシュ用のタイマー
 local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
@@ -19,12 +20,12 @@ function ChatBuffer:new(config)
   instance.config = config
   instance.session_id = nil
   instance.file_path = nil
+  instance._chunk_buffer = ""
+  instance._chunk_timer = nil
   return instance
 end
 
 ---チャットウィンドウを開く
----既に開いている場合はそのウィンドウにフォーカスを移す
----バッファ作成、ウィンドウ表示、キーマップ設定、初期コンテンツ設定を実行
 function ChatBuffer:open()
   if self:is_open() then
     vim.api.nvim_set_current_win(self.win)
@@ -38,8 +39,6 @@ function ChatBuffer:open()
 end
 
 ---チャットウィンドウを閉じる
----ウィンドウが有効な場合のみクローズし、winフィールドをnilに設定
----バッファ自体は削除しないため、再度open()で同じ内容を表示可能
 function ChatBuffer:close()
   if self.win and vim.api.nvim_win_is_valid(self.win) then
     vim.api.nvim_win_close(self.win, true)
@@ -54,9 +53,6 @@ function ChatBuffer:is_open()
 end
 
 ---バッファを作成
----既存の有効なバッファがある場合は何もしない
----新規作成時は保存可能な通常バッファとしてMarkdown形式で作成
----ファイルパスが未設定の場合はタイムスタンプベースのファイル名を生成
 function ChatBuffer:_create_buffer()
   if self.buf and vim.api.nvim_buf_is_valid(self.buf) then
     return
@@ -82,9 +78,7 @@ function ChatBuffer:_create_buffer()
 end
 
 ---保存ディレクトリを取得
----設定のsave_location_typeに基づいて保存先ディレクトリを決定
----project: {cwd}/.vibing/chat/, user: {data}/vibing/chats/, custom: save_dirの値
----@return string directory_path 末尾にスラッシュを含むディレクトリパス
+---@return string directory_path
 function ChatBuffer:_get_save_directory()
   local location_type = self.config.save_location_type or "project"
 
@@ -110,9 +104,6 @@ function ChatBuffer:_get_save_directory()
 end
 
 ---ウィンドウを作成
----設定のwindow.positionに基づいて右/左/フロートでウィンドウを開く
----vsplitモードの場合はwindow.widthに基づいてサイズを調整
----フロートモードの場合は画面中央に配置
 function ChatBuffer:_create_window()
   local win_config = self.config.window
   local width = math.floor(vim.o.columns * win_config.width)
@@ -146,8 +137,6 @@ function ChatBuffer:_create_window()
 end
 
 ---キーマップを設定
----チャットバッファ専用のキーマップを登録
----send(CR): メッセージ送信、cancel(C-c): リクエストキャンセル、add_context(C-a): コンテキスト追加、q: ウィンドウを閉じる
 function ChatBuffer:_setup_keymaps()
   local vibing = require("vibing")
   local keymaps = vibing.get_config().keymaps
@@ -178,9 +167,6 @@ function ChatBuffer:_setup_keymaps()
 end
 
 ---初期コンテンツを設定
----YAMLフロントマター（session_id, created_at, mode, model, permissions）と
----初回のUserセクションを含むMarkdown形式のコンテンツを生成
----カーソルをユーザー入力エリア（## Userセクションの空行）に移動
 function ChatBuffer:_init_content()
   local vibing = require("vibing")
   local config = vibing.get_config()
@@ -235,9 +221,6 @@ function ChatBuffer:_init_content()
 end
 
 ---コンテキスト行を更新（ファイル末尾）
----バッファ末尾から逆順検索して既存の"Context:"行を見つけて更新
----見つからない場合は末尾に新規追加
----コンテキスト追加/クリア時に呼び出されて表示を同期
 function ChatBuffer:_update_context_line()
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
   local context_text = "Context: " .. Context.format_for_display()
@@ -525,13 +508,10 @@ function ChatBuffer:extract_user_message()
 end
 
 ---メッセージを送信
----最後の## Userセクションからメッセージを抽出
----スラッシュコマンド(/clear, /mode, /model等)の場合はコマンド実行
----通常メッセージの場合はactions.chatに送信処理を委譲
 function ChatBuffer:send_message()
   local message = self:extract_user_message()
   if not message then
-    notify.warn("No message to send")
+    vim.notify("[vibing] No message to send", vim.log.levels.WARN)
     return
   end
 
@@ -554,8 +534,6 @@ end
 local spinner_frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
 ---アシスタントの応答を追加開始
----バッファ末尾に## Assistantセクションを追加してスピナーを開始
----メッセージ送信後、ストリーミング応答を受信する前に呼び出される
 function ChatBuffer:start_response()
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
   local new_lines = {
@@ -568,9 +546,6 @@ function ChatBuffer:start_response()
 end
 
 ---スピナーを開始
----応答待機中のアニメーション表示を開始
----100msごとにスピナーフレームを更新
----最初のチャンク受信時に自動的に停止
 function ChatBuffer:start_spinner()
   if self._spinner_timer then
     return -- 既に動作中
@@ -610,8 +585,6 @@ function ChatBuffer:start_spinner()
 end
 
 ---スピナーを停止
----タイマーを停止してスピナー行をクリア
----最初のチャンク受信時や応答完了時に呼び出される
 function ChatBuffer:stop_spinner()
   if self._spinner_timer then
     self._spinner_timer:stop()
@@ -629,23 +602,17 @@ function ChatBuffer:stop_spinner()
   self._spinner_line = nil
 end
 
----ストリーミングチャンクを追加
----ストリーミング応答の各チャンクをバッファ末尾に追記
----改行を含むチャンクは複数行として処理
----最初のチャンク受信時はスピナーを自動停止
----@param chunk string 追加するテキストチャンク
-function ChatBuffer:append_chunk(chunk)
-  -- 最初のチャンクでスピナーを停止
-  if not self._first_chunk_received then
-    self._first_chunk_received = true
-    self:stop_spinner()
+---バッファリングされたチャンクをフラッシュしてバッファに書き込む
+function ChatBuffer:_flush_chunks()
+  if self._chunk_buffer == "" then
+    return
   end
 
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
   local last_line = lines[#lines] or ""
 
-  -- チャンクに改行が含まれる場合
-  local chunk_lines = vim.split(chunk, "\n", { plain = true })
+  -- バッファリングされた全チャンクを処理
+  local chunk_lines = vim.split(self._chunk_buffer, "\n", { plain = true })
   chunk_lines[1] = last_line .. chunk_lines[1]
 
   vim.api.nvim_buf_set_lines(self.buf, #lines - 1, #lines, false, chunk_lines)
@@ -655,13 +622,44 @@ function ChatBuffer:append_chunk(chunk)
     local new_lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
     vim.api.nvim_win_set_cursor(self.win, { #new_lines, 0 })
   end
+
+  -- バッファをクリア
+  self._chunk_buffer = ""
+end
+
+---ストリーミングチャンクを追加（バッファリング有効）
+---@param chunk string
+function ChatBuffer:append_chunk(chunk)
+  -- 最初のチャンクでスピナーを停止
+  if not self._first_chunk_received then
+    self._first_chunk_received = true
+    self:stop_spinner()
+  end
+
+  -- チャンクをバッファに蓄積
+  self._chunk_buffer = self._chunk_buffer .. chunk
+
+  -- 既存のタイマーがあればキャンセル
+  if self._chunk_timer then
+    vim.fn.timer_stop(self._chunk_timer)
+  end
+
+  -- 50ms後にフラッシュするタイマーを設定（複数チャンクをまとめて処理）
+  self._chunk_timer = vim.fn.timer_start(50, function()
+    self:_flush_chunks()
+    self._chunk_timer = nil
+  end)
 end
 
 ---新しいユーザー入力セクションを追加
----アシスタント応答完了後やスラッシュコマンド実行後に呼び出される
----バッファ末尾に## Userセクションを追加してカーソルを移動
----スピナーが残っていれば停止して状態をリセット
 function ChatBuffer:add_user_section()
+  -- 残っているチャンクをフラッシュ
+  if self._chunk_timer then
+    vim.fn.timer_stop(self._chunk_timer)
+    self._chunk_timer = nil
+  end
+  self:_flush_chunks()
+
   -- スピナーが残っていれば停止
   self:stop_spinner()
   self._first_chunk_received = false
@@ -680,17 +678,13 @@ function ChatBuffer:add_user_section()
   end
 end
 
----バッファ番号を取得
----@return number? バッファ番号、未作成の場合はnil
+---@return number?
 function ChatBuffer:get_buffer()
   return self.buf
 end
 
 ---最初のメッセージからファイル名を更新
----タイムスタンプベースのファイル名（chat_%Y%m%d_%H%M%S）から
----メッセージ内容ベースのファイル名（YYYYMMDD_topic）に更新
----既に意味のある名前になっている場合はスキップ
----@param message string 最初のユーザーメッセージ
+---@param message string
 function ChatBuffer:update_filename_from_message(message)
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return

@@ -1,23 +1,23 @@
 ---@class Vibing.OutputBuffer
----@field buf number? バッファ番号、未作成の場合はnil
----@field win number? ウィンドウ番号、未作成の場合はnil
+---@field buf number?
+---@field win number?
+---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
+---@field _chunk_timer any チャンクフラッシュ用のタイマー
 local OutputBuffer = {}
 OutputBuffer.__index = OutputBuffer
 
----新しいOutputBufferインスタンスを作成
----インライン操作（Explain, Fix, Feature等）の出力表示に使用
----@return Vibing.OutputBuffer 新しいインスタンス
+---@return Vibing.OutputBuffer
 function OutputBuffer:new()
   local instance = setmetatable({}, OutputBuffer)
   instance.buf = nil
   instance.win = nil
+  instance._chunk_buffer = ""
+  instance._chunk_timer = nil
   return instance
 end
 
 ---出力ウィンドウを開く
----フローティングウィンドウとして画面中央に表示
----バッファ作成、ウィンドウ表示、キーマップ設定を実行
----@param title string ウィンドウタイトル（例: "Explain Code", "Fix Code"）
+---@param title string
 function OutputBuffer:open(title)
   self:_create_buffer(title)
   self:_create_window()
@@ -25,8 +25,6 @@ function OutputBuffer:open(title)
 end
 
 ---ウィンドウを閉じる
----ウィンドウが有効な場合のみクローズし、winフィールドをnilに設定
----バッファ自体は削除しないため、再度open()で同じ内容を表示可能
 function OutputBuffer:close()
   if self.win and vim.api.nvim_win_is_valid(self.win) then
     vim.api.nvim_win_close(self.win, true)
@@ -35,16 +33,13 @@ function OutputBuffer:close()
 end
 
 ---ウィンドウが開いているか
----@return boolean ウィンドウが有効かつ開いている場合true
+---@return boolean
 function OutputBuffer:is_open()
   return self.win ~= nil and vim.api.nvim_win_is_valid(self.win)
 end
 
 ---バッファを作成
----読み取り専用のMarkdown形式バッファとして作成
----vibing://titleの形式でバッファ名を設定
----初期コンテンツとして"# title"と"Loading..."を表示
----@param title string バッファタイトル（バッファ名とヘッダーに使用）
+---@param title string
 function OutputBuffer:_create_buffer(title)
   self.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[self.buf].filetype = "markdown"
@@ -62,9 +57,6 @@ function OutputBuffer:_create_buffer(title)
 end
 
 ---フローティングウィンドウを作成
----画面サイズの60%の幅と高さで画面中央に配置
----rounded borderとVibing タイトルを設定
----word wrap有効でmarkdown表示に適した設定
 function OutputBuffer:_create_window()
   local width = math.floor(vim.o.columns * 0.6)
   local height = math.floor(vim.o.lines * 0.6)
@@ -88,8 +80,6 @@ function OutputBuffer:_create_window()
 end
 
 ---キーマップを設定
----出力バッファ専用のキーマップを登録
----q, Esc: ウィンドウを閉じる
 function OutputBuffer:_setup_keymaps()
   vim.keymap.set("n", "q", function()
     self:close()
@@ -101,9 +91,7 @@ function OutputBuffer:_setup_keymaps()
 end
 
 ---コンテンツを設定
----バッファの3行目以降（タイトル行と空行の後）を指定されたコンテンツで置き換え
----非ストリーミングモードでの一括出力に使用
----@param content string 設定するコンテンツ（改行で複数行に分割される）
+---@param content string
 function OutputBuffer:set_content(content)
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return
@@ -113,12 +101,32 @@ function OutputBuffer:set_content(content)
   vim.api.nvim_buf_set_lines(self.buf, 2, -1, false, lines)
 end
 
----ストリーミングチャンクを追加
----ストリーミング応答の各チャンクをバッファ末尾に追記
----改行を含むチャンクは複数行として処理
----最初のチャンク受信時は"Loading..."を削除
----@param chunk string 追加するテキストチャンク
----@param is_first boolean 最初のチャンクかどうか（trueの場合Loading...を削除）
+---バッファリングされたチャンクをフラッシュしてバッファに書き込む
+function OutputBuffer:_flush_chunks()
+  if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
+    return
+  end
+
+  if self._chunk_buffer == "" then
+    return
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+  local last_line = lines[#lines] or ""
+
+  -- バッファリングされた全チャンクを処理
+  local chunk_lines = vim.split(self._chunk_buffer, "\n", { plain = true })
+  chunk_lines[1] = last_line .. chunk_lines[1]
+
+  vim.api.nvim_buf_set_lines(self.buf, #lines - 1, #lines, false, chunk_lines)
+
+  -- バッファをクリア
+  self._chunk_buffer = ""
+end
+
+---ストリーミングチャンクを追加（バッファリング有効）
+---@param chunk string
+---@param is_first boolean
 function OutputBuffer:append_chunk(chunk, is_first)
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return
@@ -127,21 +135,26 @@ function OutputBuffer:append_chunk(chunk, is_first)
   if is_first then
     -- "Loading..."を削除
     vim.api.nvim_buf_set_lines(self.buf, 2, -1, false, { "" })
+    self._chunk_buffer = ""
   end
 
-  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
-  local last_line = lines[#lines] or ""
+  -- チャンクをバッファに蓄積
+  self._chunk_buffer = self._chunk_buffer .. chunk
 
-  local chunk_lines = vim.split(chunk, "\n", { plain = true })
-  chunk_lines[1] = last_line .. chunk_lines[1]
+  -- 既存のタイマーがあればキャンセル
+  if self._chunk_timer then
+    vim.fn.timer_stop(self._chunk_timer)
+  end
 
-  vim.api.nvim_buf_set_lines(self.buf, #lines - 1, #lines, false, chunk_lines)
+  -- 50ms後にフラッシュするタイマーを設定（複数チャンクをまとめて処理）
+  self._chunk_timer = vim.fn.timer_start(50, function()
+    self:_flush_chunks()
+    self._chunk_timer = nil
+  end)
 end
 
 ---エラーを表示
----バッファの3行目以降をエラーメッセージで置き換え
----Markdown bold形式（**Error:**）でエラーを強調表示
----@param error_msg string 表示するエラーメッセージ
+---@param error_msg string
 function OutputBuffer:show_error(error_msg)
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return
