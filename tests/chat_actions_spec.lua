@@ -241,36 +241,54 @@ describe("vibing.actions.chat", function()
   describe("send", function()
     it("should send message via adapter", function()
       local message_sent = false
-      mock_adapter.stream = function(prompt, opts, on_chunk, on_done)
-        message_sent = true
-        assert.equals("Hello", prompt)
-        vim.schedule(function()
-          on_chunk("Response")
-          on_done({ content = "Response" })
-        end)
-      end
-
       local response_started = false
       local chunk_appended = false
       local user_section_added = false
 
-      mock_chat_buffer.start_response = function()
+      -- Create test buffer with methods
+      local test_buffer = {}
+      for k, v in pairs(mock_chat_buffer) do
+        test_buffer[k] = v
+      end
+
+      test_buffer.start_response = function()
         response_started = true
       end
-      mock_chat_buffer.append_chunk = function(chunk)
+      test_buffer.append_chunk = function(chunk)
         chunk_appended = true
       end
-      mock_chat_buffer.add_user_section = function()
+      test_buffer.add_user_section = function()
         user_section_added = true
       end
 
-      ChatActions.send(mock_chat_buffer, "Hello")
+      -- Override stream in package
+      local original_adapter = package.loaded["vibing"].get_adapter()
+      package.loaded["vibing"].get_adapter = function()
+        return {
+          supports = function() return true end,
+          stream = function(prompt, opts, on_chunk, on_done)
+            message_sent = true
+            assert.equals("Hello", prompt)
+            vim.schedule(function()
+              on_chunk("Response")
+              on_done({ content = "Response" })
+            end)
+          end,
+          set_session_id = function() end,
+          get_session_id = function() return nil end,
+        }
+      end
+
+      ChatActions.send(test_buffer, "Hello")
 
       -- Wait for async operations
-      vim.wait(100, function() return user_section_added end)
+      vim.wait(200, function() return user_section_added end)
 
       assert.is_true(message_sent)
       assert.is_true(response_started)
+
+      -- Restore
+      package.loaded["vibing"].get_adapter = function() return original_adapter end
     end)
 
     it("should handle no adapter", function()
@@ -284,30 +302,52 @@ describe("vibing.actions.chat", function()
 
     it("should sync session ID from buffer to adapter", function()
       local session_set = false
-      mock_chat_buffer.get_session_id = function()
+
+      local test_buffer = {}
+      for k, v in pairs(mock_chat_buffer) do
+        test_buffer[k] = v
+      end
+      test_buffer.get_session_id = function()
         return "saved-session-456"
       end
-      mock_adapter.set_session_id = function(sid)
-        session_set = true
-        assert.equals("saved-session-456", sid)
+
+      package.loaded["vibing"].get_adapter = function()
+        return {
+          supports = function(f) return f == "session" or f == "streaming" end,
+          stream = function(prompt, opts, on_chunk, on_done)
+            vim.schedule(function()
+              on_done({ content = "Response" })
+            end)
+          end,
+          set_session_id = function(sid)
+            session_set = true
+            assert.equals("saved-session-456", sid)
+          end,
+          get_session_id = function() return "saved-session-456" end,
+        }
       end
 
-      ChatActions.send(mock_chat_buffer, "Resume")
+      ChatActions.send(test_buffer, "Resume")
 
       assert.is_true(session_set)
     end)
 
     it("should update filename for first message", function()
       local filename_updated = false
-      mock_chat_buffer.extract_conversation = function()
+
+      local test_buffer = {}
+      for k, v in pairs(mock_chat_buffer) do
+        test_buffer[k] = v
+      end
+      test_buffer.extract_conversation = function()
         return {} -- Empty conversation = first message
       end
-      mock_chat_buffer.update_filename_from_message = function(msg)
+      test_buffer.update_filename_from_message = function(msg)
         filename_updated = true
         assert.equals("First message", msg)
       end
 
-      ChatActions.send(mock_chat_buffer, "First message")
+      ChatActions.send(test_buffer, "First message")
 
       assert.is_true(filename_updated)
     end)
