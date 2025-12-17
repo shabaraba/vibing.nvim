@@ -67,13 +67,10 @@ function M.execute(action_name)
     return
   end
 
-  local contexts = { selection_context }
-  local prompt = action.prompt
+  -- プロンプトに@file:path:L10-L25形式のメンションを含める
+  local prompt = action.prompt .. "\n\n" .. selection_context
 
-  -- ツール制限がある場合
-  local opts = {
-    context = contexts,
-  }
+  local opts = {}
 
   if action.tools and #action.tools > 0 and adapter:supports("tools") then
     opts.tools = action.tools
@@ -169,14 +166,14 @@ function M.custom(prompt, use_output)
     return
   end
 
-  local opts = {
-    context = { selection_context },
-  }
+  -- プロンプトに@file:path:L10-L25形式のメンションを含める
+  local full_prompt = prompt .. "\n\n" .. selection_context
+  local opts = {}
 
   if use_output then
-    M._execute_with_output(adapter, prompt, opts, "Result")
+    M._execute_with_output(adapter, full_prompt, opts, "Result")
   else
-    M._execute_direct(adapter, prompt, opts)
+    M._execute_direct(adapter, full_prompt, opts)
   end
 end
 

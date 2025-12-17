@@ -20,7 +20,7 @@ function M.collect_buffers()
   return contexts
 end
 
----ビジュアル選択範囲から@file:path:L10-L25形式のコンテキストを作成
+---ビジュアル選択範囲から@file:path:L10-L25形式のメンションを作成
 ---@param buf number
 ---@param start_line number
 ---@param end_line number
