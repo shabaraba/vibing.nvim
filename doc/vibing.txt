@@ -1,0 +1,244 @@
+*vibing.txt*  Claude AI integration for Neovim
+
+==============================================================================
+CONTENTS                                                     *vibing-contents*
+
+    1. Introduction ............................ |vibing-introduction|
+    2. Requirements ............................ |vibing-requirements|
+    3. Installation ............................ |vibing-installation|
+    4. Configuration ........................... |vibing-configuration|
+    5. Commands ................................ |vibing-commands|
+    6. Chat Commands ........................... |vibing-chat-commands|
+    7. Inline Actions .......................... |vibing-inline-actions|
+    8. Mappings ................................ |vibing-mappings|
+    9. License ................................. |vibing-license|
+
+==============================================================================
+1. INTRODUCTION                                          *vibing-introduction*
+
+vibing.nvim is a Neovim plugin that integrates Claude AI through the Agent
+SDK, providing intelligent chat and inline code actions directly within your
+editor.
+
+Features:~
+  • Interactive chat window with Claude AI
+  • Quick inline code actions (fix, explain, refactor, test)
+  • Natural language instructions for code transformations
+  • Session persistence with context management
+  • Configurable permissions and execution modes
+  • Remote Neovim control via socket
+
+==============================================================================
+2. REQUIREMENTS                                          *vibing-requirements*
+
+• Neovim >= 0.8.0
+• Node.js >= 16.0.0
+• npm or yarn
+• Claude API access (via Agent SDK)
+
+==============================================================================
+3. INSTALLATION                                          *vibing-installation*
+
+Using lazy.nvim: >lua
+    {
+      "shabaraba/vibing.nvim",
+      build = "npm install",
+      config = function()
+        require("vibing").setup()
+      end,
+    }
+<
+
+Using packer.nvim: >lua
+    use {
+      "shabaraba/vibing.nvim",
+      run = "npm install",
+      config = function()
+        require("vibing").setup()
+      end,
+    }
+<
+
+==============================================================================
+4. CONFIGURATION                                        *vibing-configuration*
+
+Default configuration: >lua
+    require("vibing").setup({
+      adapter = "agent_sdk",  -- "agent_sdk" | "claude" | "claude_acp"
+      chat = {
+        window = {
+          position = "right",  -- "right" | "left" | "float"
+          width = 0.4,
+          border = "rounded",
+        },
+        auto_context = true,
+        save_location_type = "project",  -- "project" | "user" | "custom"
+        context_position = "append",  -- "prepend" | "append"
+      },
+      agent = {
+        default_mode = "code",  -- "code" | "plan" | "explore"
+        default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
+      },
+      permissions = {
+        allow = { "Read", "Edit", "Write", "Glob", "Grep" },
+        deny = { "Bash" },
+      },
+      keymaps = {
+        send = "<CR>",
+        cancel = "<C-c>",
+        add_context = "<C-a>",
+      },
+    })
+<
+
+Configuration options:~
+
+adapter                 Which backend to use for Claude AI
+chat.window.position    Where to open chat window
+chat.window.width       Chat window width (0.0-1.0 or absolute)
+chat.window.border      Window border style
+chat.auto_context       Automatically add open buffers to context
+chat.save_location_type Where to save chat files
+chat.context_position   Where to place context in prompt
+agent.default_mode      Default execution mode
+agent.default_model     Default AI model to use
+permissions.allow       Tools AI can use
+permissions.deny        Tools AI cannot use
+keymaps.send           Key to send message in chat
+keymaps.cancel         Key to cancel current request
+keymaps.add_context    Key to add file to context
+
+==============================================================================
+5. COMMANDS                                                  *vibing-commands*
+
+                                                              *:VibingChat*
+:VibingChat
+    Open the chat window.
+
+                                                           *:VibingContext*
+:VibingContext [path]
+    Add file to context. If no path provided, adds current buffer.
+
+                                                      *:VibingClearContext*
+:VibingClearContext
+    Clear all context files.
+
+                                                            *:VibingInline*
+:VibingInline [action|instruction]
+    Run predefined action or custom instruction on visual selection.
+    Actions: fix, feat, explain, refactor, test
+    Or use natural language: "Convert to TypeScript"
+
+                                                           *:VibingExplain*
+:VibingExplain
+    Explain selected code.
+
+                                                               *:VibingFix*
+:VibingFix
+    Fix issues in selected code.
+
+                                                           *:VibingFeature*
+:VibingFeature
+    Implement a feature in selected code.
+
+                                                          *:VibingRefactor*
+:VibingRefactor
+    Refactor selected code.
+
+                                                              *:VibingTest*
+:VibingTest
+    Generate tests for selected code.
+
+                                                            *:VibingCustom*
+:VibingCustom <instruction>
+    Execute custom natural language instruction on selected code.
+    Example: >
+    :'<,'>VibingCustom "Add error handling"
+<
+
+                                                            *:VibingCancel*
+:VibingCancel
+    Cancel the current AI request.
+
+                                                          *:VibingOpenChat*
+:VibingOpenChat <file>
+    Open a saved chat file.
+
+                                                            *:VibingRemote*
+:VibingRemote <command>
+    Execute command in remote Neovim instance (requires --listen).
+
+                                                      *:VibingRemoteStatus*
+:VibingRemoteStatus
+    Show remote Neovim status (mode, buffer, cursor position).
+
+                                                       *:VibingSendToChat*
+:VibingSendToChat
+    Send file from oil.nvim to chat (requires oil.nvim plugin).
+
+                                                           *:VibingMigrate*
+:VibingMigrate [--scan|<file>]
+    Migrate chat files to new format.
+    No args: migrate current chat buffer
+    --scan: scan and migrate all chat files
+    <file>: migrate specific file
+
+==============================================================================
+6. CHAT COMMANDS                                        *vibing-chat-commands*
+
+These commands are available within the chat buffer:
+
+/context <file>         Add file to context
+/clear                  Clear context
+/save                   Save current chat
+/summarize              Summarize conversation
+/mode <mode>            Set execution mode (auto/plan/code)
+/model <model>          Set AI model (opus/sonnet/haiku)
+
+==============================================================================
+7. INLINE ACTIONS                                      *vibing-inline-actions*
+
+Predefined actions:~
+>
+    :'<,'>VibingInline fix       " Fix code issues
+    :'<,'>VibingInline feat      " Implement feature
+    :'<,'>VibingInline explain   " Explain code
+    :'<,'>VibingInline refactor  " Refactor code
+    :'<,'>VibingInline test      " Generate tests
+<
+
+Natural language instructions:~
+>
+    :'<,'>VibingInline "Convert this to async/await"
+    :'<,'>VibingInline "Add comprehensive error handling"
+    :'<,'>VibingCustom "Optimize for performance"
+<
+
+==============================================================================
+8. MAPPINGS                                                  *vibing-mappings*
+
+Default keymaps in chat buffer:~
+
+<CR>        Send message
+<C-c>       Cancel current request
+<C-a>       Add current file to context
+
+You can customize these in setup(): >lua
+    require("vibing").setup({
+      keymaps = {
+        send = "<C-CR>",
+        cancel = "<Esc>",
+        add_context = "<C-f>",
+      },
+    })
+<
+
+==============================================================================
+9. LICENSE                                                    *vibing-license*
+
+MIT License
+
+Copyright (c) 2025 shabaraba
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
