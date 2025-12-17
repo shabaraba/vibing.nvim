@@ -159,6 +159,7 @@ require("vibing").setup({
 | `:VibingFeature` | Implement feature in selected code |
 | `:VibingRefactor` | Refactor selected code |
 | `:VibingTest` | Generate tests for selected code |
+| `:VibingCustom <instruction>` | Execute custom instruction on selected code |
 | `:VibingCancel` | Cancel current request |
 | `:VibingOpenChat <file>` | Open saved chat file |
 | `:VibingRemote <command>` | Execute command in remote Neovim instance (requires `--listen`) |

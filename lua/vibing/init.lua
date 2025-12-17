@@ -88,6 +88,10 @@ function M._register_commands()
     require("vibing.actions.inline").execute("test")
   end, { range = true, desc = "Generate tests for selected code" })
 
+  vim.api.nvim_create_user_command("VibingCustom", function(opts)
+    require("vibing.actions.inline").custom(opts.args, false)
+  end, { nargs = 1, range = true, desc = "Execute custom instruction on selected code" })
+
   vim.api.nvim_create_user_command("VibingCancel", function()
     if M.adapter then
       M.adapter:cancel()
