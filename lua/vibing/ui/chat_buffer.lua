@@ -229,6 +229,51 @@ function ChatBuffer:update_session_id(session_id)
   end
 end
 
+---フロントマターのフィールドを更新または追加
+---@param key string
+---@param value string
+---@param update_timestamp? boolean
+function ChatBuffer:update_frontmatter(key, value, update_timestamp)
+  if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
+    return
+  end
+
+  if update_timestamp == nil then
+    update_timestamp = true
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, 20, false)
+  local frontmatter_end = 0
+  local key_line = nil
+
+  for i, line in ipairs(lines) do
+    if i == 1 and line == "---" then
+      -- frontmatter開始
+    elseif line == "---" then
+      frontmatter_end = i
+      break
+    elseif line:match("^" .. key .. ":") then
+      key_line = i
+    end
+  end
+
+  if frontmatter_end == 0 then
+    return
+  end
+
+  local new_line = key .. ": " .. value
+
+  if key_line then
+    vim.api.nvim_buf_set_lines(self.buf, key_line - 1, key_line, false, { new_line })
+  else
+    vim.api.nvim_buf_set_lines(self.buf, frontmatter_end - 1, frontmatter_end - 1, false, { new_line })
+  end
+
+  if update_timestamp and key ~= "updated_at" then
+    self:update_frontmatter("updated_at", os.date("%Y-%m-%dT%H:%M:%S"), false)
+  end
+end
+
 ---保存されたチャットファイルを読み込む
 ---@param file_path string
 ---@return boolean success

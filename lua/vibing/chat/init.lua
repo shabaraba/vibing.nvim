@@ -29,6 +29,18 @@ function M.setup()
     handler = require("vibing.chat.handlers.summarize"),
     description = "Summarize conversation",
   })
+
+  commands.register({
+    name = "mode",
+    handler = require("vibing.chat.handlers.mode"),
+    description = "Set execution mode: /mode <auto|plan|code>",
+  })
+
+  commands.register({
+    name = "model",
+    handler = require("vibing.chat.handlers.model"),
+    description = "Set AI model: /model <opus|sonnet|haiku>",
+  })
 end
 
 return M

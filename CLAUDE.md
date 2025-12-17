@@ -97,3 +97,5 @@ Slash commands can be used within the chat buffer for quick actions:
 | `/clear` | Clear context |
 | `/save` | Save current chat |
 | `/summarize` | Summarize conversation |
+| `/mode <mode>` | Set execution mode (auto/plan/code) |
+| `/model <model>` | Set AI model (opus/sonnet/haiku) |
