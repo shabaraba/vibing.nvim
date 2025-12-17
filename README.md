@@ -6,6 +6,19 @@
 
 A Neovim plugin that integrates Claude AI through the Agent SDK, providing intelligent chat and inline code actions directly within your editor.
 
+## Table of Contents
+
+- [Features](#-features)
+- [Installation](#-installation)
+- [Usage](#-usage)
+- [Configuration Examples](#️-configuration-examples)
+- [Remote Control](#-remote-control)
+- [Chat File Format](#-chat-file-format)
+- [Architecture](#️-architecture)
+- [Contributing](#-contributing)
+- [License](#-license)
+- [Links](#-links)
+
 ## ✨ Features
 
 - **💬 Chat Interface** - Interactive chat window with Claude AI
