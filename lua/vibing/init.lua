@@ -117,6 +117,10 @@ function M._register_commands()
       vim.notify("[vibing] Remote control not available", vim.log.levels.ERROR)
     end
   end, { desc = "Get remote Neovim status" })
+
+  vim.api.nvim_create_user_command("VibingSendToChat", function()
+    require("vibing.integrations.oil").send_to_chat()
+  end, { desc = "Send file from oil.nvim to chat" })
 end
 
 ---@return Vibing.Adapter?

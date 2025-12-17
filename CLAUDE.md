@@ -163,6 +163,7 @@ require("vibing").setup({
 | `:VibingOpenChat <file>` | Open saved chat file |
 | `:VibingRemote <command>` | Execute command in remote Neovim instance (requires `--listen`) |
 | `:VibingRemoteStatus` | Show remote Neovim status (mode, buffer, cursor position) |
+| `:VibingSendToChat` | Send file from oil.nvim to chat (requires oil.nvim) |
 
 ## Slash Commands (in Chat)
 
