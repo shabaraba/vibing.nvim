@@ -34,6 +34,18 @@ function AgentSDK:build_command(prompt, opts)
   table.insert(cmd, "--cwd")
   table.insert(cmd, vim.fn.getcwd())
 
+  -- Add mode from config if available
+  if self._config.agent and self._config.agent.default_mode then
+    table.insert(cmd, "--mode")
+    table.insert(cmd, self._config.agent.default_mode)
+  end
+
+  -- Add model from config if available
+  if self._config.agent and self._config.agent.default_model then
+    table.insert(cmd, "--model")
+    table.insert(cmd, self._config.agent.default_model)
+  end
+
   -- Add context files
   for _, ctx in ipairs(opts.context or {}) do
     if ctx:match("^@file:") then

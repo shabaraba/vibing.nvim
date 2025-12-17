@@ -1,6 +1,7 @@
 ---@class Vibing.Config
 ---@field adapter string
 ---@field cli_path string
+---@field agent Vibing.AgentConfig
 ---@field chat Vibing.ChatConfig
 ---@field inline Vibing.InlineConfig
 ---@field keymaps Vibing.KeymapConfig
@@ -9,6 +10,10 @@
 ---@class Vibing.PermissionsConfig
 ---@field allow string[]
 ---@field deny string[]
+
+---@class Vibing.AgentConfig
+---@field default_mode "code"|"plan"|"explore"
+---@field default_model "sonnet"|"opus"|"haiku"
 
 ---@class Vibing.ChatConfig
 ---@field window Vibing.WindowConfig
@@ -34,6 +39,10 @@ local M = {}
 M.defaults = {
   adapter = "agent_sdk",  -- "agent_sdk" (recommended), "claude_acp", or "claude"
   cli_path = "claude",
+  agent = {
+    default_mode = "code",  -- "code" | "plan" | "explore"
+    default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
+  },
   chat = {
     window = {
       position = "right",

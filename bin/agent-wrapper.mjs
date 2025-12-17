@@ -13,6 +13,8 @@ const contextFiles = [];
 let sessionId = null;
 let allowedTools = [];
 let deniedTools = [];
+let mode = null;
+let model = null;
 
 // Parse arguments
 for (let i = 0; i < args.length; i++) {
@@ -24,6 +26,12 @@ for (let i = 0; i < args.length; i++) {
     i++;
   } else if (args[i] === "--session" && args[i + 1]) {
     sessionId = args[i + 1];
+    i++;
+  } else if (args[i] === "--mode" && args[i + 1]) {
+    mode = args[i + 1];
+    i++;
+  } else if (args[i] === "--model" && args[i + 1]) {
+    model = args[i + 1];
     i++;
   } else if (args[i] === "--prompt" && args[i + 1]) {
     prompt = args[i + 1];
@@ -84,6 +92,7 @@ const queryOptions = {
   includePartialMessages: true,
 };
 
+<<<<<<< HEAD
 // Add canUseTool callback for permission control
 if (allowedTools.length > 0 || deniedTools.length > 0) {
   // Normalize tool names to lowercase for case-insensitive comparison
@@ -115,6 +124,16 @@ if (allowedTools.length > 0 || deniedTools.length > 0) {
       updatedInput: input,
     };
   };
+=======
+// Add mode if provided
+if (mode) {
+  queryOptions.mode = mode;
+}
+
+// Add model if provided
+if (model) {
+  queryOptions.model = model;
+>>>>>>> 85102f8 (feat: add default mode and model configuration for Agent SDK)
 }
 
 // Resume session if provided
