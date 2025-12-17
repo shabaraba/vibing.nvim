@@ -11,7 +11,10 @@ CONTENTS                                                     *vibing-contents*
     6. Chat Commands ........................... |vibing-chat-commands|
     7. Inline Actions .......................... |vibing-inline-actions|
     8. Mappings ................................ |vibing-mappings|
-    9. License ................................. |vibing-license|
+    9. API ..................................... |vibing-api|
+   10. Adapters ................................ |vibing-adapters|
+   11. Troubleshooting ......................... |vibing-troubleshooting|
+   12. License ................................. |vibing-license|
 
 ==============================================================================
 1. INTRODUCTION                                          *vibing-introduction*
@@ -234,7 +237,141 @@ You can customize these in setup(): >lua
 <
 
 ==============================================================================
-9. LICENSE                                                    *vibing-license*
+9. API                                                              *vibing-api*
+
+For detailed API documentation, see: doc/api-reference.md
+
+Core functions:~
+
+require("vibing").setup({opts})                              *vibing.setup()*
+    Initialize the plugin
+    Parameters:~
+        {opts} Configuration table (optional)
+
+require("vibing").get_adapter()                        *vibing.get_adapter()*
+    Get current adapter instance
+    Returns:~
+        Adapter instance or nil
+
+require("vibing").get_config()                          *vibing.get_config()*
+    Get current configuration
+    Returns:~
+        Configuration table
+
+==============================================================================
+10. ADAPTERS                                                    *vibing-adapters*
+
+agent_sdk                                                      *vibing-agent_sdk*
+    Claude Agent SDK adapter (recommended)
+    Features:~
+        • Streaming responses
+        • Tool usage support
+        • Model selection
+        • Context management
+        • Session persistence
+
+    Requirements:~
+        • Node.js >= 18
+        • npm install (run automatically)
+
+    Configuration:~
+>lua
+        require("vibing").setup({
+          adapter = "agent_sdk",
+          agent = {
+            mode = "command",
+            model = "claude-sonnet-4-5",
+          },
+        })
+<
+
+claude                                                              *vibing-claude*
+    Official Claude CLI adapter
+    Features:~
+        • Streaming responses
+        • Tool usage support
+        • Model selection
+        • Context management
+
+    Requirements:~
+        • Claude Code CLI installed
+
+    Configuration:~
+>lua
+        require("vibing").setup({
+          adapter = "claude",
+          cli_path = "claude",
+        })
+<
+
+claude_acp                                                        *vibing-claude_acp*
+    Claude ACP (Agent Communication Protocol) adapter
+    Features:~
+        • Streaming responses
+        • Tool usage support
+        • Context management
+        • Session persistence
+
+    Requirements:~
+        • claude-code-acp installed
+
+    Configuration:~
+>lua
+        require("vibing").setup({
+          adapter = "claude_acp",
+        })
+<
+
+==============================================================================
+11. TROUBLESHOOTING                                      *vibing-troubleshooting*
+
+Chat not responding:~
+    1. Check Claude CLI installation: >
+        $ claude --version
+<
+    2. Verify API key is configured
+    3. Check network connection
+    4. View error messages: >
+        :messages
+<
+
+Adapter not found error:~
+    Error: Adapter 'agent_sdk' not found
+
+    Solution:~
+        • Ensure Node.js is installed (>= 18)
+        • Run npm install in plugin directory
+        • Try different adapter: >lua
+            require("vibing").setup({ adapter = "claude" })
+<
+
+Performance issues:~
+    • Disable auto_context if not needed
+    • Close unused buffers to reduce context
+    • Use smaller context when possible
+    • Consider using "command" mode instead of "agentic"
+
+Session persistence not working:~
+    • Check save location configuration
+    • Ensure directory exists and is writable
+    • Verify frontmatter format in chat file
+
+Enable debug logging:~
+>lua
+    vim.g.vibing_debug = true
+<
+
+Report issues:~
+    https://github.com/shabaraba/vibing.nvim/issues
+
+Include in bug reports:~
+    • Neovim version (`:version`)
+    • Plugin configuration
+    • Error messages (`:messages`)
+    • Steps to reproduce
+
+==============================================================================
+12. LICENSE                                                    *vibing-license*
 
 MIT License
 
