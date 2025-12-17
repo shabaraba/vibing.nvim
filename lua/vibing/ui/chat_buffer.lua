@@ -233,18 +233,28 @@ end
 ---@param key string
 ---@param value string
 ---@param update_timestamp? boolean
+---@return boolean success
 function ChatBuffer:update_frontmatter(key, value, update_timestamp)
+  if not key or key == "" then
+    return false
+  end
+
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
-    return
+    return false
   end
 
   if update_timestamp == nil then
     update_timestamp = true
   end
 
+  local function escape_pattern(str)
+    return str:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+  end
+
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, 20, false)
   local frontmatter_end = 0
   local key_line = nil
+  local escaped_key = escape_pattern(key)
 
   for i, line in ipairs(lines) do
     if i == 1 and line == "---" then
@@ -252,13 +262,13 @@ function ChatBuffer:update_frontmatter(key, value, update_timestamp)
     elseif line == "---" then
       frontmatter_end = i
       break
-    elseif line:match("^" .. key .. ":") then
+    elseif line:match("^" .. escaped_key .. ":") then
       key_line = i
     end
   end
 
   if frontmatter_end == 0 then
-    return
+    return false
   end
 
   local new_line = key .. ": " .. value
@@ -272,6 +282,8 @@ function ChatBuffer:update_frontmatter(key, value, update_timestamp)
   if update_timestamp and key ~= "updated_at" then
     self:update_frontmatter("updated_at", os.date("%Y-%m-%dT%H:%M:%S"), false)
   end
+
+  return true
 end
 
 ---保存されたチャットファイルを読み込む

@@ -27,13 +27,17 @@ return function(args, chat_buffer)
     return false
   end
 
-  if not chat_buffer or not chat_buffer.buf or not vim.api.nvim_buf_is_valid(chat_buffer.buf) then
-    vim.notify("[vibing] No valid chat buffer", vim.log.levels.ERROR)
+  if not chat_buffer then
+    vim.notify("[vibing] No chat buffer", vim.log.levels.ERROR)
     return false
   end
 
-  chat_buffer:update_frontmatter("mode", mode)
-  vim.notify("[vibing] Mode set to: " .. mode, vim.log.levels.INFO)
+  local success = chat_buffer:update_frontmatter("mode", mode)
+  if not success then
+    vim.notify("[vibing] Failed to update frontmatter", vim.log.levels.ERROR)
+    return false
+  end
 
+  vim.notify("[vibing] Mode set to: " .. mode, vim.log.levels.INFO)
   return true
 end
