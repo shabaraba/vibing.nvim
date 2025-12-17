@@ -1,14 +1,21 @@
 local Config = require("vibing.config")
 
 ---@class Vibing
----@field config Vibing.Config
----@field adapter Vibing.Adapter
+---vibing.nvimプラグインのメインモジュール
+---設定管理、アダプター初期化、コマンド登録を担当するエントリーポイント
+---@field config Vibing.Config プラグイン設定オブジェクト（setup()で初期化）
+---@field adapter Vibing.Adapter AIバックエンドアダプター（agent_sdk, claude, claude_acp等）
 local M = {}
 
+---現在使用中のアダプターインスタンス
+---setup()でconfig.adapterに基づいて初期化される
 ---@type Vibing.Adapter?
 M.adapter = nil
 
----@param opts? Vibing.Config
+---vibing.nvimプラグインを初期化
+---設定のマージ、アダプター初期化、チャットシステム初期化、リモート制御初期化、ユーザーコマンド登録を実行
+---アダプター読み込みに失敗した場合はエラー通知して初期化を中断
+---@param opts? Vibing.Config ユーザー設定オブジェクト（nilの場合はデフォルト設定のみ使用）
 function M.setup(opts)
   Config.setup(opts)
   M.config = Config.get()
@@ -39,7 +46,9 @@ function M.setup(opts)
   M._register_commands()
 end
 
----コマンドを登録
+---Neovimユーザーコマンドを登録
+---VibingChat, VibingContext, VibingInline, VibingExplain, VibingFix等の全コマンドを登録
+---チャット操作、コンテキスト管理、インラインアクション、リモート制御、マイグレーションを含む
 function M._register_commands()
   vim.api.nvim_create_user_command("VibingChat", function()
     require("vibing.actions.chat").open()
@@ -188,12 +197,18 @@ function M._register_commands()
   end, { nargs = "?", desc = "Migrate chat file to new format", complete = "file" })
 end
 
----@return Vibing.Adapter?
+---現在のアダプターインスタンスを取得
+---setup()で初期化されたアダプター（agent_sdk, claude, claude_acp等）を返す
+---setup()未実行の場合はnilを返す
+---@return Vibing.Adapter? アダプターインスタンス（初期化済みの場合）またはnil
 function M.get_adapter()
   return M.adapter
 end
 
----@return Vibing.Config
+---現在の設定を取得
+---setup()で初期化された設定を返す
+---setup()未実行の場合はデフォルト設定を返す
+---@return Vibing.Config 現在の設定オブジェクトまたはデフォルト設定
 function M.get_config()
   return M.config or Config.defaults
 end
