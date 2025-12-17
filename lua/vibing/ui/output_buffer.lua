@@ -1,6 +1,8 @@
 ---@class Vibing.OutputBuffer
 ---@field buf number?
 ---@field win number?
+---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
+---@field _chunk_timer any チャンクフラッシュ用のタイマー
 local OutputBuffer = {}
 OutputBuffer.__index = OutputBuffer
 
@@ -9,6 +11,8 @@ function OutputBuffer:new()
   local instance = setmetatable({}, OutputBuffer)
   instance.buf = nil
   instance.win = nil
+  instance._chunk_buffer = ""
+  instance._chunk_timer = nil
   return instance
 end
 
@@ -97,7 +101,30 @@ function OutputBuffer:set_content(content)
   vim.api.nvim_buf_set_lines(self.buf, 2, -1, false, lines)
 end
 
----ストリーミングチャンクを追加
+---バッファリングされたチャンクをフラッシュしてバッファに書き込む
+function OutputBuffer:_flush_chunks()
+  if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
+    return
+  end
+
+  if self._chunk_buffer == "" then
+    return
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+  local last_line = lines[#lines] or ""
+
+  -- バッファリングされた全チャンクを処理
+  local chunk_lines = vim.split(self._chunk_buffer, "\n", { plain = true })
+  chunk_lines[1] = last_line .. chunk_lines[1]
+
+  vim.api.nvim_buf_set_lines(self.buf, #lines - 1, #lines, false, chunk_lines)
+
+  -- バッファをクリア
+  self._chunk_buffer = ""
+end
+
+---ストリーミングチャンクを追加（バッファリング有効）
 ---@param chunk string
 ---@param is_first boolean
 function OutputBuffer:append_chunk(chunk, is_first)
@@ -108,15 +135,22 @@ function OutputBuffer:append_chunk(chunk, is_first)
   if is_first then
     -- "Loading..."を削除
     vim.api.nvim_buf_set_lines(self.buf, 2, -1, false, { "" })
+    self._chunk_buffer = ""
   end
 
-  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
-  local last_line = lines[#lines] or ""
+  -- チャンクをバッファに蓄積
+  self._chunk_buffer = self._chunk_buffer .. chunk
 
-  local chunk_lines = vim.split(chunk, "\n", { plain = true })
-  chunk_lines[1] = last_line .. chunk_lines[1]
+  -- 既存のタイマーがあればキャンセル
+  if self._chunk_timer then
+    vim.fn.timer_stop(self._chunk_timer)
+  end
 
-  vim.api.nvim_buf_set_lines(self.buf, #lines - 1, #lines, false, chunk_lines)
+  -- 50ms後にフラッシュするタイマーを設定（複数チャンクをまとめて処理）
+  self._chunk_timer = vim.fn.timer_start(50, function()
+    self:_flush_chunks()
+    self._chunk_timer = nil
+  end)
 end
 
 ---エラーを表示

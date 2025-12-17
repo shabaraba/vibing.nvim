@@ -1,6 +1,22 @@
 ---@class Vibing.Collector
 local M = {}
 
+-- cwdのキャッシュ（パフォーマンス最適化）
+local _cwd_cache = nil
+local _cwd_cache_time = 0
+
+---キャッシュされたcwdを取得（1秒間キャッシュ）
+---@return string
+local function get_cached_cwd()
+  local now = vim.loop.now()
+  if _cwd_cache and (now - _cwd_cache_time) < 1000 then
+    return _cwd_cache
+  end
+  _cwd_cache = vim.fn.getcwd()
+  _cwd_cache_time = now
+  return _cwd_cache
+end
+
 ---開いているバッファから@file:形式のコンテキストを収集
 ---@return string[]
 function M.collect_buffers()
@@ -80,11 +96,11 @@ function M._is_valid_buffer(buf)
   return true
 end
 
----絶対パスを相対パスに変換
+---絶対パスを相対パスに変換（cwdキャッシュ使用）
 ---@param path string
 ---@return string
 function M._to_relative_path(path)
-  local cwd = vim.fn.getcwd()
+  local cwd = get_cached_cwd()
   if path:sub(1, #cwd) == cwd then
     local relative = path:sub(#cwd + 2)
     return relative ~= "" and relative or path

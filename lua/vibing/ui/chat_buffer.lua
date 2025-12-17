@@ -6,6 +6,8 @@ local Context = require("vibing.context")
 ---@field config Vibing.ChatConfig
 ---@field session_id string?
 ---@field file_path string?
+---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
+---@field _chunk_timer any チャンクフラッシュ用のタイマー
 local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
@@ -18,6 +20,8 @@ function ChatBuffer:new(config)
   instance.config = config
   instance.session_id = nil
   instance.file_path = nil
+  instance._chunk_buffer = ""
+  instance._chunk_timer = nil
   return instance
 end
 
@@ -598,20 +602,17 @@ function ChatBuffer:stop_spinner()
   self._spinner_line = nil
 end
 
----ストリーミングチャンクを追加
----@param chunk string
-function ChatBuffer:append_chunk(chunk)
-  -- 最初のチャンクでスピナーを停止
-  if not self._first_chunk_received then
-    self._first_chunk_received = true
-    self:stop_spinner()
+---バッファリングされたチャンクをフラッシュしてバッファに書き込む
+function ChatBuffer:_flush_chunks()
+  if self._chunk_buffer == "" then
+    return
   end
 
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
   local last_line = lines[#lines] or ""
 
-  -- チャンクに改行が含まれる場合
-  local chunk_lines = vim.split(chunk, "\n", { plain = true })
+  -- バッファリングされた全チャンクを処理
+  local chunk_lines = vim.split(self._chunk_buffer, "\n", { plain = true })
   chunk_lines[1] = last_line .. chunk_lines[1]
 
   vim.api.nvim_buf_set_lines(self.buf, #lines - 1, #lines, false, chunk_lines)
@@ -621,10 +622,44 @@ function ChatBuffer:append_chunk(chunk)
     local new_lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
     vim.api.nvim_win_set_cursor(self.win, { #new_lines, 0 })
   end
+
+  -- バッファをクリア
+  self._chunk_buffer = ""
+end
+
+---ストリーミングチャンクを追加（バッファリング有効）
+---@param chunk string
+function ChatBuffer:append_chunk(chunk)
+  -- 最初のチャンクでスピナーを停止
+  if not self._first_chunk_received then
+    self._first_chunk_received = true
+    self:stop_spinner()
+  end
+
+  -- チャンクをバッファに蓄積
+  self._chunk_buffer = self._chunk_buffer .. chunk
+
+  -- 既存のタイマーがあればキャンセル
+  if self._chunk_timer then
+    vim.fn.timer_stop(self._chunk_timer)
+  end
+
+  -- 50ms後にフラッシュするタイマーを設定（複数チャンクをまとめて処理）
+  self._chunk_timer = vim.fn.timer_start(50, function()
+    self:_flush_chunks()
+    self._chunk_timer = nil
+  end)
 end
 
 ---新しいユーザー入力セクションを追加
 function ChatBuffer:add_user_section()
+  -- 残っているチャンクをフラッシュ
+  if self._chunk_timer then
+    vim.fn.timer_stop(self._chunk_timer)
+    self._chunk_timer = nil
+  end
+  self:_flush_chunks()
+
   -- スピナーが残っていれば停止
   self:stop_spinner()
   self._first_chunk_received = false
