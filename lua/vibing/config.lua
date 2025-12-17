@@ -25,6 +25,7 @@
 ---@field auto_context boolean
 ---@field save_location_type "project"|"user"|"custom"
 ---@field save_dir string
+---@field context_position "prepend"|"append"
 
 ---@class Vibing.WindowConfig
 ---@field position "right"|"left"|"float"
@@ -58,6 +59,7 @@ M.defaults = {
     auto_context = true,
     save_location_type = "project",  -- "project" | "user" | "custom"
     save_dir = vim.fn.stdpath("data") .. "/vibing/chats",  -- Used when save_location_type is "custom"
+    context_position = "append",  -- "prepend" | "append"
   },
   inline = {
     default_action = "fix",

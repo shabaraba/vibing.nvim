@@ -1,5 +1,6 @@
 local Context = require("vibing.context")
 local ChatBuffer = require("vibing.ui.chat_buffer")
+local Formatter = require("vibing.context.formatter")
 
 ---@class Vibing.ChatAction
 local M = {}
@@ -95,6 +96,13 @@ function M.send(chat_buffer, message)
   -- コンテキストを取得
   local contexts = Context.get_all(config.chat.auto_context)
 
+  -- プロンプトにコンテキストを統合
+  local formatted_prompt = Formatter.format_prompt(
+    message,
+    contexts,
+    config.chat.context_position
+  )
+
   -- セッションIDを同期（chat_buffer → adapter）
   if adapter:supports("session") then
     local saved_session = chat_buffer:get_session_id()
@@ -114,8 +122,7 @@ function M.send(chat_buffer, message)
 
   -- ストリーミング実行
   if adapter:supports("streaming") then
-    adapter:stream(message, {
-      context = contexts,
+    adapter:stream(formatted_prompt, {
       streaming = true,
     }, function(chunk)
       vim.schedule(function()
@@ -138,9 +145,7 @@ function M.send(chat_buffer, message)
     end)
   else
     -- 非ストリーミング
-    local response = adapter:execute(message, {
-      context = contexts,
-    })
+    local response = adapter:execute(formatted_prompt, {})
 
     if response.error then
       chat_buffer:append_chunk("**Error:** " .. response.error)

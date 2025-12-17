@@ -125,6 +125,67 @@ function M._register_commands()
   vim.api.nvim_create_user_command("VibingSendToChat", function()
     require("vibing.integrations.oil").send_to_chat()
   end, { desc = "Send file from oil.nvim to chat" })
+
+  vim.api.nvim_create_user_command("VibingMigrate", function(opts)
+    local Migrator = require("vibing.context.migrator")
+    local args = opts.args
+
+    if args == "" then
+      -- 引数なし：現在のチャットバッファをマイグレーション
+      local chat = require("vibing.actions.chat")
+      if not chat.chat_buffer or not chat.chat_buffer.file_path then
+        vim.notify("[vibing] No active chat buffer to migrate", vim.log.levels.WARN)
+        return
+      end
+
+      local success, err = Migrator.migrate_current_buffer(chat.chat_buffer)
+      if success then
+        vim.notify("[vibing] Chat migrated successfully", vim.log.levels.INFO)
+        -- バッファを再読み込み
+        vim.cmd("edit!")
+      else
+        vim.notify("[vibing] Migration failed: " .. (err or "unknown error"), vim.log.levels.ERROR)
+      end
+    elseif args == "--scan" then
+      -- ディレクトリスキャン
+      local chat_dir = vim.fn.getcwd() .. "/.vibing/chat"
+      local files = Migrator.scan_chat_directory(chat_dir)
+
+      if #files == 0 then
+        vim.notify("[vibing] No old format files found", vim.log.levels.INFO)
+        return
+      end
+
+      vim.notify(
+        string.format("[vibing] Found %d file(s) to migrate. Migrating...", #files),
+        vim.log.levels.INFO
+      )
+
+      local success_count = 0
+      for _, file in ipairs(files) do
+        local success, err = Migrator.migrate_file(file, true)
+        if success then
+          success_count = success_count + 1
+        else
+          vim.notify("[vibing] Failed to migrate " .. file .. ": " .. (err or ""), vim.log.levels.WARN)
+        end
+      end
+
+      vim.notify(
+        string.format("[vibing] Migrated %d/%d files successfully", success_count, #files),
+        vim.log.levels.INFO
+      )
+    else
+      -- ファイルパス指定
+      local file_path = vim.fn.expand(args)
+      local success, err = Migrator.migrate_file(file_path, true)
+      if success then
+        vim.notify("[vibing] File migrated: " .. file_path, vim.log.levels.INFO)
+      else
+        vim.notify("[vibing] Migration failed: " .. (err or "unknown error"), vim.log.levels.ERROR)
+      end
+    end
+  end, { nargs = "?", desc = "Migrate chat file to new format", complete = "file" })
 end
 
 ---@return Vibing.Adapter?

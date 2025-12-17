@@ -204,31 +204,50 @@ function ChatBuffer:_init_content()
   table.insert(lines, "")
   table.insert(lines, "# Vibing Chat")
   table.insert(lines, "")
-  table.insert(lines, "Context: " .. Context.format_for_display())
-  table.insert(lines, "")
   table.insert(lines, "---")
   table.insert(lines, "")
   table.insert(lines, "## User")
   table.insert(lines, "")
+  table.insert(lines, "")
+  table.insert(lines, "Context: " .. Context.format_for_display())
 
   vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
-  vim.api.nvim_win_set_cursor(self.win, { #lines, 0 })
+  -- "## User"の次の空行（ユーザー入力エリア）にカーソルを設定
+  vim.api.nvim_win_set_cursor(self.win, { #lines - 2, 0 })
 end
 
----コンテキスト行を更新
+---コンテキスト行を更新（ファイル末尾）
 function ChatBuffer:_update_context_line()
-  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, 10, false)
-  for i, line in ipairs(lines) do
-    if line:match("^Context:") then
-      vim.api.nvim_buf_set_lines(
-        self.buf,
-        i - 1,
-        i,
-        false,
-        { "Context: " .. Context.format_for_display() }
-      )
+  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+  local context_text = "Context: " .. Context.format_for_display()
+
+  -- 末尾から検索して既存のContext行を見つける
+  local context_line_pos = nil
+  for i = #lines, 1, -1 do
+    if lines[i]:match("^Context:") then
+      context_line_pos = i
       break
     end
+  end
+
+  if context_line_pos then
+    -- 既存のContext行を更新
+    vim.api.nvim_buf_set_lines(
+      self.buf,
+      context_line_pos - 1,
+      context_line_pos,
+      false,
+      { context_text }
+    )
+  else
+    -- 末尾に新規追加
+    vim.api.nvim_buf_set_lines(
+      self.buf,
+      #lines,
+      #lines,
+      false,
+      { "", context_text }
+    )
   end
 end
 
