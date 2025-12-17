@@ -1,14 +1,19 @@
 local Context = require("vibing.context")
 local ChatBuffer = require("vibing.ui.chat_buffer")
 local Formatter = require("vibing.context.formatter")
+local notify = require("vibing.utils.notify")
 
 ---@class Vibing.ChatAction
 local M = {}
 
+---現在アクティブなチャットバッファインスタンス
+---:VibingChatや:VibingOpenChatで作成される
 ---@type Vibing.ChatBuffer?
 M.chat_buffer = nil
 
 ---チャットを開く
+---既存のチャットバッファがない場合は新規作成
+---設定のchat.windowに基づいてウィンドウを表示
 function M.open()
   local vibing = require("vibing")
   local config = vibing.get_config()
@@ -21,6 +26,7 @@ function M.open()
 end
 
 ---チャットを閉じる
+---ウィンドウのみ閉じてバッファは保持（再度open()で再表示可能）
 function M.close()
   if M.chat_buffer then
     M.chat_buffer:close()
@@ -28,6 +34,7 @@ function M.close()
 end
 
 ---チャットをトグル
+---開いている場合は閉じ、閉じている場合は開く
 function M.toggle()
   if M.chat_buffer and M.chat_buffer:is_open() then
     M.close()
@@ -37,7 +44,9 @@ function M.toggle()
 end
 
 ---保存されたチャットファイルを開く
----@param file_path string
+---:VibingOpenChatコマンドで呼び出される
+---ファイルからコンテンツを読み込み、session_idを復元して会話を再開
+---@param file_path string 開くチャットファイルの絶対パス
 function M.open_file(file_path)
   local vibing = require("vibing")
   local config = vibing.get_config()
@@ -49,15 +58,17 @@ function M.open_file(file_path)
   if M.chat_buffer:load_from_file(file_path) then
     M.chat_buffer:_create_window()
     M.chat_buffer:_setup_keymaps()
-    vim.notify("[vibing] Loaded chat: " .. file_path, vim.log.levels.INFO)
+    notify.info("Loaded chat: " .. file_path, "Chat")
   else
-    vim.notify("[vibing] Failed to load: " .. file_path, vim.log.levels.ERROR)
+    notify.error("Failed to load: " .. file_path, "Chat")
   end
 end
 
 ---既存バッファにアタッチ（通常の:eで開いたチャットファイル用）
----@param buf number
----@param file_path string
+---BufReadPost autocmdから呼び出され、通常のバッファをチャットバッファとして機能させる
+---フロントマターからsession_idを読み込み、キーマップを設定
+---@param buf number バッファ番号
+---@param file_path string ファイルパス
 function M.attach_to_buffer(buf, file_path)
   local vibing = require("vibing")
   local config = vibing.get_config()
@@ -77,19 +88,21 @@ function M.attach_to_buffer(buf, file_path)
   -- キーマップを設定
   M.chat_buffer:_setup_keymaps()
 
-  vim.notify("[vibing] Chat session attached", vim.log.levels.INFO)
+  notify.info("Chat session attached", "Chat")
 end
 
 ---メッセージを送信
----@param chat_buffer Vibing.ChatBuffer
----@param message string
+---チャットバッファから呼び出され、アダプターを介してClaudeにメッセージを送信
+---コンテキスト統合、セッション継続、ストリーミング応答を処理
+---@param chat_buffer Vibing.ChatBuffer 送信元のチャットバッファ
+---@param message string ユーザーメッセージ（## Userセクションから抽出）
 function M.send(chat_buffer, message)
   local vibing = require("vibing")
   local adapter = vibing.get_adapter()
   local config = vibing.get_config()
 
   if not adapter then
-    vim.notify("[vibing] No adapter configured", vim.log.levels.ERROR)
+    notify.error("No adapter configured", "Chat")
     return
   end
 

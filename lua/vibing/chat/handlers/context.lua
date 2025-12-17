@@ -1,10 +1,14 @@
----/context command handler
----@param args string[]
----@param chat_buffer Vibing.ChatBuffer
----@return boolean success
+---/contextコマンドハンドラー
+---チャット内で/context <file_path>を実行した際に呼び出される
+---指定されたファイルパスを次回以降のプロンプトに含めるコンテキストとして追加
+---ファイルパス展開（~やシンボリックリンク解決）と存在チェックを実施
+---追加成功後、チャットバッファのコンテキスト表示行を更新
+---@param args string[] コマンド引数（args[1]がファイルパス）
+---@param chat_buffer Vibing.ChatBuffer コマンドを実行したチャットバッファ
+---@return boolean ファイル追加に成功した場合true、引数不足や読み込み不可の場合false
 return function(args, chat_buffer)
   if #args == 0 then
-    vim.notify("[vibing] Usage: /context <file_path>", vim.log.levels.WARN)
+    notify.warn("/context <file_path>", "Usage")
     return false
   end
 
@@ -15,10 +19,7 @@ return function(args, chat_buffer)
 
   -- ファイルが存在するかチェック
   if vim.fn.filereadable(expanded_path) ~= 1 then
-    vim.notify(
-      string.format("[vibing] File not readable: %s", expanded_path),
-      vim.log.levels.ERROR
-    )
+    notify.error(string.format("File not readable: %s", expanded_path))
     return false
   end
 

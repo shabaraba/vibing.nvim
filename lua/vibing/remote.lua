@@ -1,6 +1,7 @@
 ---Neovim remote control via --server socket
 ---@class Vibing.Remote
 local M = {}
+local notify = require("vibing.utils.notify")
 
 ---@type string?
 M.socket_path = nil
@@ -27,7 +28,7 @@ end
 ---@return boolean success
 function M.send(keys)
   if not M.is_available() then
-    vim.notify("[vibing] Remote control not available. Set socket_path or start nvim with --listen", vim.log.levels.ERROR)
+    notify.error("Remote control not available. Set socket_path or start nvim with --listen", "Remote")
     return false
   end
 
@@ -35,7 +36,7 @@ function M.send(keys)
   local result = vim.fn.system(cmd)
 
   if vim.v.shell_error ~= 0 then
-    vim.notify("[vibing] Remote send failed: " .. result, vim.log.levels.ERROR)
+    notify.error("Remote send failed: " .. result, "Remote")
     return false
   end
 
@@ -47,7 +48,7 @@ end
 ---@return string? result
 function M.expr(expr)
   if not M.is_available() then
-    vim.notify("[vibing] Remote control not available", vim.log.levels.ERROR)
+    notify.error("Remote control not available", "Remote")
     return nil
   end
 
@@ -55,7 +56,7 @@ function M.expr(expr)
   local result = vim.fn.system(cmd)
 
   if vim.v.shell_error ~= 0 then
-    vim.notify("[vibing] Remote expr failed: " .. result, vim.log.levels.ERROR)
+    notify.error("Remote expr failed: " .. result, "Remote")
     return nil
   end
 
