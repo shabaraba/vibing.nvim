@@ -29,6 +29,12 @@ function M.setup(opts)
   -- チャットコマンド初期化
   require("vibing.chat").setup()
 
+  -- リモートコントロールの初期化
+  if M.config.remote and M.config.remote.auto_detect then
+    local Remote = require("vibing.remote")
+    Remote.setup(M.config.remote.socket_path)
+  end
+
   -- コマンド登録
   M._register_commands()
 end
@@ -91,6 +97,26 @@ function M._register_commands()
   vim.api.nvim_create_user_command("VibingOpenChat", function(opts)
     require("vibing.actions.chat").open_file(opts.args)
   end, { nargs = 1, desc = "Open saved chat file", complete = "file" })
+
+  vim.api.nvim_create_user_command("VibingRemote", function(opts)
+    local remote = require("vibing.remote")
+    if not remote.is_available() then
+      vim.notify("[vibing] Remote control not available. Start nvim with --listen or set socket_path", vim.log.levels.ERROR)
+      return
+    end
+    remote.execute(opts.args)
+  end, { nargs = 1, desc = "Execute command in remote Neovim instance" })
+
+  vim.api.nvim_create_user_command("VibingRemoteStatus", function()
+    local remote = require("vibing.remote")
+    local status = remote.get_status()
+    if status then
+      print(string.format("[vibing] Remote Status - Mode: %s, Buffer: %s, Line: %d, Col: %d",
+        status.mode, status.bufname, status.line, status.col))
+    else
+      vim.notify("[vibing] Remote control not available", vim.log.levels.ERROR)
+    end
+  end, { desc = "Get remote Neovim status" })
 end
 
 ---@return Vibing.Adapter?

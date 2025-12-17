@@ -6,6 +6,7 @@
 ---@field inline Vibing.InlineConfig
 ---@field keymaps Vibing.KeymapConfig
 ---@field permissions Vibing.PermissionsConfig
+---@field remote Vibing.RemoteConfig
 
 ---@class Vibing.PermissionsConfig
 ---@field allow string[]
@@ -14,6 +15,10 @@
 ---@class Vibing.AgentConfig
 ---@field default_mode "code"|"plan"|"explore"
 ---@field default_model "sonnet"|"opus"|"haiku"
+
+---@class Vibing.RemoteConfig
+---@field socket_path string?
+---@field auto_detect boolean
 
 ---@class Vibing.ChatConfig
 ---@field window Vibing.WindowConfig
@@ -71,6 +76,10 @@ M.defaults = {
     deny = {
       "Bash",
     },
+  },
+  remote = {
+    socket_path = nil,  -- Auto-detect from NVIM env variable
+    auto_detect = true,
   },
 }
 

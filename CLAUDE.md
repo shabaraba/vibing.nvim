@@ -113,6 +113,8 @@ require("vibing").setup({
 
 **Context Format:** Files are referenced as `@file:relative/path.lua` or `@file:path:L10-L25` for selections.
 
+**Remote Control:** The `remote.lua` module provides socket-based communication with another Neovim instance. When Neovim is started with `--listen /tmp/nvim.sock`, the plugin can send commands, evaluate expressions, and retrieve buffer content from that instance. This enables AI-assisted editing of files in a separate Neovim session.
+
 ## Configuration
 
 Example configuration showing default mode and model settings:
@@ -159,6 +161,8 @@ require("vibing").setup({
 | `:VibingTest` | Generate tests for selected code |
 | `:VibingCancel` | Cancel current request |
 | `:VibingOpenChat <file>` | Open saved chat file |
+| `:VibingRemote <command>` | Execute command in remote Neovim instance (requires `--listen`) |
+| `:VibingRemoteStatus` | Show remote Neovim status (mode, buffer, cursor position) |
 
 ## Slash Commands (in Chat)
 
