@@ -1,4 +1,5 @@
 local Base = require("vibing.adapters.base")
+local notify = require("vibing.utils.notify")
 
 ---@class Vibing.ClaudeACPAdapter : Vibing.Adapter
 ---Claude ACPアダプター（Agent Communication Protocol）
@@ -120,12 +121,12 @@ end
 function ClaudeACP:handle_rpc_message(msg, on_chunk)
   -- Response to our request
   if msg.id and not msg.method then
-    vim.notify("[ACP] Response id=" .. msg.id, vim.log.levels.DEBUG)
+    notify.debug("Response id=" .. msg.id, "ACP")
     local callback = self._state.pending[msg.id]
     if callback then
       self._state.pending[msg.id] = nil
       if msg.error then
-        vim.notify("[ACP] Error: " .. vim.inspect(msg.error), vim.log.levels.ERROR)
+        notify.error(vim.inspect(msg.error), "ACP")
         callback(nil, msg.error)
       else
         callback(msg.result, nil)
@@ -139,11 +140,11 @@ function ClaudeACP:handle_rpc_message(msg, on_chunk)
     local update = msg.params.update
     if update then
       local update_type = update.sessionUpdate or "unknown"
-      vim.notify("[ACP] Update: " .. update_type, vim.log.levels.DEBUG)
+      notify.debug("Update: " .. update_type, "ACP")
       if update_type == "agent_message_chunk" then
         local content = update.content
         if content and content.type == "text" and content.text then
-          vim.notify("[ACP] Chunk: " .. content.text:sub(1, 50), vim.log.levels.INFO)
+          notify.info("Chunk: " .. content.text:sub(1, 50), "ACP")
           on_chunk(content.text)
         end
       end
@@ -181,7 +182,7 @@ function ClaudeACP:start(on_ready, on_chunk, on_done)
     stderr = function(err, data)
       if data then
         vim.schedule(function()
-          vim.notify("[vibing] ACP stderr: " .. data, vim.log.levels.DEBUG)
+          notify.debug("ACP stderr: " .. data)
         end)
       end
     end,

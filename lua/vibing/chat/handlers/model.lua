@@ -4,7 +4,7 @@
 ---@return boolean success
 return function(args, chat_buffer)
   if #args == 0 then
-    vim.notify("[vibing] Usage: /model <model>", vim.log.levels.WARN)
+    notify.warn("/model <model>", "Usage")
     return false
   end
 
@@ -28,13 +28,13 @@ return function(args, chat_buffer)
   end
 
   if not chat_buffer then
-    vim.notify("[vibing] No chat buffer", vim.log.levels.ERROR)
+    notify.error("No chat buffer")
     return false
   end
 
   local success = chat_buffer:update_frontmatter("model", model)
   if not success then
-    vim.notify("[vibing] Failed to update frontmatter", vim.log.levels.ERROR)
+    notify.error("Failed to update frontmatter")
     return false
   end
 

@@ -109,18 +109,12 @@ function M.setup(opts)
   if M.options.permissions then
     for _, tool in ipairs(M.options.permissions.allow or {}) do
       if not valid_tools[tool] then
-        vim.notify(
-          string.format("[vibing] Unknown tool '%s' in permissions.allow", tool),
-          vim.log.levels.WARN
-        )
+        notify.warn(string.format("Unknown tool '%s' in permissions.allow", tool))
       end
     end
     for _, tool in ipairs(M.options.permissions.deny or {}) do
       if not valid_tools[tool] then
-        vim.notify(
-          string.format("[vibing] Unknown tool '%s' in permissions.deny", tool),
-          vim.log.levels.WARN
-        )
+        notify.warn(string.format("Unknown tool '%s' in permissions.deny", tool))
       end
     end
   end

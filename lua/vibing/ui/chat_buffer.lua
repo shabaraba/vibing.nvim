@@ -1,4 +1,5 @@
 local Context = require("vibing.context")
+local notify = require("vibing.utils.notify")
 
 ---@class Vibing.ChatBuffer
 ---@field buf number?
@@ -507,7 +508,7 @@ end
 function ChatBuffer:send_message()
   local message = self:extract_user_message()
   if not message then
-    vim.notify("[vibing] No message to send", vim.log.levels.WARN)
+    notify.warn("No message to send")
     return
   end
 

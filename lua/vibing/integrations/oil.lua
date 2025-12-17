@@ -66,14 +66,14 @@ end
 ---ファイルパスをチャットに送信
 function M.send_to_chat()
   if not M.is_oil_buffer() then
-    vim.notify("[vibing] Not in an oil.nvim buffer", vim.log.levels.WARN)
+    notify.warn("Not in an oil.nvim buffer")
     return
   end
 
   local files = M.get_selected_files()
 
   if #files == 0 then
-    vim.notify("[vibing] No file selected (directories are not supported)", vim.log.levels.WARN)
+    notify.warn("No file selected (directories are not supported)")
     return
   end
 
@@ -86,7 +86,7 @@ function M.send_to_chat()
   -- カーソル位置を取得
   local buf = chat.chat_buffer:get_buffer()
   if not buf then
-    vim.notify("[vibing] Failed to get chat buffer", vim.log.levels.ERROR)
+    notify.error("Failed to get chat buffer")
     return
   end
 
@@ -123,10 +123,7 @@ function M.send_to_chat()
     pcall(vim.api.nvim_win_set_cursor, chat.chat_buffer.win, { insert_line, 0 })
   end
 
-  vim.notify(
-    string.format("[vibing] Added %d file(s) to chat", added_count),
-    vim.log.levels.INFO
-  )
+  notify.info(string.format("Added %d file(s) to chat", added_count))
 end
 
 return M
