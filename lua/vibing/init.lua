@@ -58,6 +58,27 @@ function M._register_commands()
     require("vibing.actions.inline").execute(opts.args)
   end, { nargs = "?", range = true, desc = "Run inline action" })
 
+  -- Individual inline action commands
+  vim.api.nvim_create_user_command("VibingExplain", function()
+    require("vibing.actions.inline").execute("explain")
+  end, { range = true, desc = "Explain selected code" })
+
+  vim.api.nvim_create_user_command("VibingFix", function()
+    require("vibing.actions.inline").execute("fix")
+  end, { range = true, desc = "Fix selected code issues" })
+
+  vim.api.nvim_create_user_command("VibingFeature", function()
+    require("vibing.actions.inline").execute("feat")
+  end, { range = true, desc = "Implement feature in selected code" })
+
+  vim.api.nvim_create_user_command("VibingRefactor", function()
+    require("vibing.actions.inline").execute("refactor")
+  end, { range = true, desc = "Refactor selected code" })
+
+  vim.api.nvim_create_user_command("VibingTest", function()
+    require("vibing.actions.inline").execute("test")
+  end, { range = true, desc = "Generate tests for selected code" })
+
   vim.api.nvim_create_user_command("VibingCancel", function()
     if M.adapter then
       M.adapter:cancel()
