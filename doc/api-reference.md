@@ -17,9 +17,11 @@
 プラグインを初期化します。
 
 **Parameters:**
+
 - `opts` (`Vibing.Config?`): 設定オプション（省略可）
 
 **Example:**
+
 ```lua
 require("vibing").setup({
   adapter = "agent_sdk",
@@ -40,9 +42,11 @@ require("vibing").setup({
 現在のアダプターを取得します。
 
 **Returns:**
+
 - `Vibing.Adapter?`: アダプターインスタンス（未初期化の場合はnil）
 
 **Example:**
+
 ```lua
 local adapter = require("vibing").get_adapter()
 if adapter then
@@ -55,9 +59,11 @@ end
 現在の設定を取得します。
 
 **Returns:**
+
 - `Vibing.Config`: 設定オブジェクト
 
 **Example:**
+
 ```lua
 local config = require("vibing").get_config()
 print(config.adapter)  -- "agent_sdk"
@@ -74,9 +80,11 @@ print(config.adapter)  -- "agent_sdk"
 アダプターインスタンスを生成します。
 
 **Parameters:**
+
 - `config` (`Vibing.Config`): プラグイン設定
 
 **Returns:**
+
 - `Vibing.Adapter`: 新しいアダプターインスタンス
 
 #### `Adapter:execute(prompt, opts)`
@@ -84,15 +92,18 @@ print(config.adapter)  -- "agent_sdk"
 プロンプトを実行して応答を取得します（非ストリーミング）。
 
 **Parameters:**
+
 - `prompt` (`string`): 送信するプロンプト
 - `opts` (`Vibing.AdapterOpts`): 実行オプション
 
 **Returns:**
+
 - `Vibing.Response`: 応答オブジェクト
   - `content` (`string`): 応答テキスト
   - `error` (`string?`): エラーメッセージ（成功時はnil）
 
 **Example:**
+
 ```lua
 local adapter = require("vibing").get_adapter()
 local response = adapter:execute("Explain Lua tables", {
@@ -110,12 +121,14 @@ end
 プロンプトを実行してストリーミング応答を受信します。
 
 **Parameters:**
+
 - `prompt` (`string`): 送信するプロンプト
 - `opts` (`Vibing.AdapterOpts`): 実行オプション
 - `on_chunk` (`fun(chunk: string)`): チャンク受信時のコールバック
 - `on_done` (`fun(response: Vibing.Response)`): 完了時のコールバック
 
 **Example:**
+
 ```lua
 local adapter = require("vibing").get_adapter()
 adapter:stream("Write hello world", {},
@@ -137,6 +150,7 @@ adapter:stream("Write hello world", {},
 実行中のプロンプトをキャンセルします。
 
 **Returns:**
+
 - `boolean`: キャンセル成功時true
 
 #### `Adapter:supports(feature)`
@@ -144,6 +158,7 @@ adapter:stream("Write hello world", {},
 アダプターが特定の機能をサポートしているかチェックします。
 
 **Parameters:**
+
 - `feature` (`string`): 機能名
   - `"streaming"`: ストリーミング対応
   - `"tools"`: ツール指定対応
@@ -151,9 +166,11 @@ adapter:stream("Write hello world", {},
   - `"context"`: コンテキスト渡し対応
 
 **Returns:**
+
 - `boolean`: サポートしている場合true
 
 **Example:**
+
 ```lua
 local adapter = require("vibing").get_adapter()
 if adapter:supports("streaming") then
@@ -170,6 +187,7 @@ end
 Claude Agent SDK を使用するアダプター（推奨）。
 
 **Configuration:**
+
 ```lua
 {
   adapter = "agent_sdk",
@@ -181,6 +199,7 @@ Claude Agent SDK を使用するアダプター（推奨）。
 ```
 
 **Features:**
+
 - ✅ Streaming
 - ✅ Tools
 - ✅ Model selection
@@ -192,6 +211,7 @@ Claude Agent SDK を使用するアダプター（推奨）。
 公式 `claude` CLI を使用するアダプター。
 
 **Configuration:**
+
 ```lua
 {
   adapter = "claude",
@@ -200,6 +220,7 @@ Claude Agent SDK を使用するアダプター（推奨）。
 ```
 
 **Features:**
+
 - ✅ Streaming
 - ✅ Tools
 - ✅ Model selection
@@ -211,6 +232,7 @@ Claude Agent SDK を使用するアダプター（推奨）。
 JSON-RPC プロトコルでclaude-code-acpと通信するアダプター。
 
 **Configuration:**
+
 ```lua
 {
   adapter = "claude_acp",
@@ -218,6 +240,7 @@ JSON-RPC プロトコルでclaude-code-acpと通信するアダプター。
 ```
 
 **Features:**
+
 - ✅ Streaming
 - ✅ Tools
 - ❌ Model selection
@@ -231,9 +254,11 @@ JSON-RPC プロトコルでclaude-code-acpと通信するアダプター。
 手動でコンテキストを追加します。
 
 **Parameters:**
+
 - `path` (`string?`): ファイルパス（省略時は現在のバッファ）
 
 **Example:**
+
 ```lua
 local Context = require("vibing.context")
 Context.add("lua/vibing/init.lua")
@@ -245,6 +270,7 @@ Context.add()  -- 現在のバッファを追加
 全てのコンテキストをクリアします。
 
 **Example:**
+
 ```lua
 require("vibing.context").clear()
 ```
@@ -254,9 +280,11 @@ require("vibing.context").clear()
 全コンテキストを取得します（自動 + 手動）。
 
 **Parameters:**
+
 - `auto_context` (`boolean`): 自動コンテキストを含めるか
 
 **Returns:**
+
 - `string[]`: コンテキスト配列（@file:path形式）
 
 ### `Context.get_selection()`
@@ -264,6 +292,7 @@ require("vibing.context").clear()
 ビジュアル選択範囲のコンテキストを取得します。
 
 **Returns:**
+
 - `string?`: コンテキスト（@file:path:L10-L25形式）
 
 ## Chat Buffer API
@@ -273,9 +302,11 @@ require("vibing.context").clear()
 チャットバッファインスタンスを生成します。
 
 **Parameters:**
+
 - `config` (`Vibing.ChatConfig`): チャット設定
 
 **Returns:**
+
 - `Vibing.ChatBuffer`: 新しいチャットバッファインスタンス
 
 ### `ChatBuffer:open()`
@@ -291,6 +322,7 @@ require("vibing.context").clear()
 チャットウィンドウが開いているかチェックします。
 
 **Returns:**
+
 - `boolean`: 開いている場合true
 
 ### `ChatBuffer:append_chunk(chunk)`
@@ -298,6 +330,7 @@ require("vibing.context").clear()
 ストリーミングチャンクを追加します。
 
 **Parameters:**
+
 - `chunk` (`string`): 追加するテキスト
 
 ### `ChatBuffer:start_spinner()`
@@ -313,6 +346,7 @@ require("vibing.context").clear()
 チャットをファイルに保存します。
 
 **Returns:**
+
 - `string?`: 保存したファイルパス（失敗時はnil）
 
 ## Output Buffer API
@@ -322,9 +356,11 @@ require("vibing.context").clear()
 出力バッファインスタンスを生成します。
 
 **Parameters:**
+
 - `title` (`string`): バッファタイトル
 
 **Returns:**
+
 - `Vibing.OutputBuffer`: 新しい出力バッファインスタンス
 
 ### `OutputBuffer:open()`
@@ -340,6 +376,7 @@ require("vibing.context").clear()
 出力ウィンドウが開いているかチェックします。
 
 **Returns:**
+
 - `boolean`: 開いている場合true
 
 ### `OutputBuffer:set_content(lines)`
@@ -347,6 +384,7 @@ require("vibing.context").clear()
 バッファの内容を設定します。
 
 **Parameters:**
+
 - `lines` (`string[]`): 設定する行の配列
 
 ### `OutputBuffer:append_chunk(chunk)`
@@ -354,6 +392,7 @@ require("vibing.context").clear()
 ストリーミングチャンクを追加します。
 
 **Parameters:**
+
 - `chunk` (`string`): 追加するテキスト
 
 ### `OutputBuffer:show_error(error_message)`
@@ -361,6 +400,7 @@ require("vibing.context").clear()
 エラーメッセージを表示します。
 
 **Parameters:**
+
 - `error_message` (`string`): エラーメッセージ
 
 ## Types

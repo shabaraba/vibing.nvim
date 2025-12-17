@@ -164,6 +164,7 @@ Luaでクイックソートを実装してください。
 3. Claudeが選択範囲の問題を修正します
 
 **例：**
+
 ```lua
 -- 選択してから :VibingInline fix
 function add(a b)  -- 引数にカンマがない
@@ -184,6 +185,7 @@ end
 - **test**: テストを生成
 
 **カスタムプロンプト：**
+
 ```vim
 :VibingInline "このコードを TypeScript に変換"
 ```
@@ -197,6 +199,7 @@ end
 ```
 
 現在のバッファを追加：
+
 ```vim
 :VibingContext
 ```
@@ -236,6 +239,7 @@ require("vibing").setup({
 ### Q: チャットが応答しない
 
 **A**: 以下を確認してください：
+
 1. Claude Code CLIがインストールされているか: `claude --version`
 2. APIキーが設定されているか
 3. ネットワーク接続が正常か
@@ -307,6 +311,7 @@ vim.g.vibing_debug = true
 https://github.com/your-username/vibing.nvim/issues
 
 **報告時に含めるべき情報：**
+
 - Neovimバージョン: `:version`
 - プラグイン設定
 - エラーメッセージ
