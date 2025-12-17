@@ -1,7 +1,11 @@
----/summarize command handler
----@param _ string[] args (unused)
----@param chat_buffer Vibing.ChatBuffer
----@return boolean success
+---/summarizeコマンドハンドラー
+---チャット内で/summarizeを実行した際に呼び出される
+---現在の会話履歴をClaudeに要約させ、フローティングウィンドウで表示
+---会話履歴は[role]: content形式でClaudeに送信され、要約プロンプトが追加される
+---要約結果はMarkdown形式で読み取り専用バッファに表示（qキーで閉じる）
+---@param _ string[] コマンド引数（このハンドラーでは未使用）
+---@param chat_buffer Vibing.ChatBuffer コマンドを実行したチャットバッファ
+---@return boolean 要約リクエストを送信した場合true、バッファ無効や会話なしの場合false
 return function(_, chat_buffer)
   if not chat_buffer or not chat_buffer.buf or not vim.api.nvim_buf_is_valid(chat_buffer.buf) then
     vim.notify("[vibing] No valid chat buffer", vim.log.levels.ERROR)

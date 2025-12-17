@@ -1,7 +1,11 @@
----/save command handler
----@param _ string[] args (unused)
----@param chat_buffer Vibing.ChatBuffer
----@return boolean success
+---/saveコマンドハンドラー
+---チャット内で/saveを実行した際に呼び出される
+---チャットバッファの内容をファイルに保存（YAMLフロントマター+Markdown本文）
+---バッファの有効性チェックとエラーハンドリングを実施
+---保存成功時には通知を表示
+---@param _ string[] コマンド引数（このハンドラーでは未使用）
+---@param chat_buffer Vibing.ChatBuffer コマンドを実行したチャットバッファ
+---@return boolean 保存に成功した場合true、バッファ無効や書き込みエラーの場合false
 return function(_, chat_buffer)
   if not chat_buffer or not chat_buffer.buf then
     vim.notify("[vibing] No chat buffer to save", vim.log.levels.ERROR)
