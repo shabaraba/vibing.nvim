@@ -65,6 +65,8 @@ Chat files are saved as Markdown with YAML frontmatter:
 vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
+mode: code  # auto, plan, or code (from config.agent.default_mode)
+model: sonnet  # sonnet, opus, or haiku (from config.agent.default_model)
 permissions_allow:
   - Read
   - Edit
@@ -74,7 +76,7 @@ permissions_deny:
 ---
 ```
 
-When reopening a saved chat (`:VibingOpenChat` or `:e`), the session resumes via the stored `session_id`. Configured permissions are recorded in frontmatter for transparency and auditability.
+When reopening a saved chat (`:VibingOpenChat` or `:e`), the session resumes via the stored `session_id`. The `mode` and `model` fields are automatically populated from `config.agent.default_mode` and `config.agent.default_model` on chat creation, and can be changed via `/mode` and `/model` slash commands. Configured permissions are recorded in frontmatter for transparency and auditability.
 
 ### Permissions Configuration
 
@@ -110,6 +112,37 @@ require("vibing").setup({
 **Adapter Pattern:** All AI backends implement the `Adapter` interface with `execute()`, `stream()`, `cancel()`, and feature detection via `supports()`.
 
 **Context Format:** Files are referenced as `@file:relative/path.lua` or `@file:path:L10-L25` for selections.
+
+## Configuration
+
+Example configuration showing default mode and model settings:
+
+```lua
+require("vibing").setup({
+  adapter = "agent_sdk",  -- Recommended
+  agent = {
+    default_mode = "code",    -- "auto" | "plan" | "code" | "explore"
+    default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
+  },
+  chat = {
+    window = {
+      position = "right",  -- "right" | "left" | "float"
+      width = 0.4,
+      border = "rounded",
+    },
+    auto_context = true,
+    save_dir = vim.fn.stdpath("data") .. "/vibing/chats",
+  },
+  inline = {
+    default_action = "fix",  -- "fix" | "feat" | "explain"
+  },
+  keymaps = {
+    send = "<CR>",
+    cancel = "<C-c>",
+    add_context = "<C-a>",
+  },
+})
+```
 
 ## User Commands
 

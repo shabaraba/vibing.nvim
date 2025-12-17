@@ -149,6 +149,16 @@ function ChatBuffer:_init_content()
     "created_at: " .. os.date("%Y-%m-%dT%H:%M:%S"),
   }
 
+  -- Add default mode and model from config
+  if config.agent then
+    if config.agent.default_mode then
+      table.insert(lines, "mode: " .. config.agent.default_mode)
+    end
+    if config.agent.default_model then
+      table.insert(lines, "model: " .. config.agent.default_model)
+    end
+  end
+
   -- Add permissions if configured
   if config.permissions then
     if config.permissions.allow and #config.permissions.allow > 0 then
