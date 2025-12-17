@@ -29,6 +29,7 @@
   "scripts": {
     "test": "node bin/agent-wrapper.mjs --prompt 'Say hello' --cwd $(pwd)",
     "test:wrapper": "node bin/agent-wrapper.mjs --prompt 'Test wrapper functionality' --cwd .",
+    "test:lua": "nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }\"",
     "check": "find lua -name '*.lua' -exec luac -p {} \\;",
     "check:lua": "luac -p lua/vibing/init.lua",
     "dev": "node bin/agent-wrapper.mjs --prompt",
