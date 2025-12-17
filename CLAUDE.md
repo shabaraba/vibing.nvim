@@ -153,7 +153,7 @@ require("vibing").setup({
 | `:VibingChat` | Open chat window |
 | `:VibingContext [path]` | Add file to context |
 | `:VibingClearContext` | Clear all context |
-| `:VibingInline [action]` | Run inline action on selection (fix/feat/explain/refactor/test) |
+| `:VibingInline [action|instruction]` | Run inline action or natural language instruction on selection (fix/feat/explain/refactor/test, or custom text) |
 | `:VibingExplain` | Explain selected code |
 | `:VibingFix` | Fix selected code issues |
 | `:VibingFeature` | Implement feature in selected code |
@@ -165,6 +165,24 @@ require("vibing").setup({
 | `:VibingRemote <command>` | Execute command in remote Neovim instance (requires `--listen`) |
 | `:VibingRemoteStatus` | Show remote Neovim status (mode, buffer, cursor position) |
 | `:VibingSendToChat` | Send file from oil.nvim to chat (requires oil.nvim) |
+
+### Inline Action Examples
+
+Predefined actions:
+```vim
+:'<,'>VibingInline fix       " Fix code issues
+:'<,'>VibingInline feat      " Implement feature
+:'<,'>VibingInline explain   " Explain code
+:'<,'>VibingInline refactor  " Refactor code
+:'<,'>VibingInline test      " Generate tests
+```
+
+Natural language instructions:
+```vim
+:'<,'>VibingInline "Convert this function to TypeScript"
+:'<,'>VibingInline "Add error handling with try-catch"
+:'<,'>VibingCustom "Optimize this loop for performance"
+```
 
 ## Slash Commands (in Chat)
 

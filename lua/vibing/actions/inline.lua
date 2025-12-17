@@ -34,8 +34,8 @@ M.actions = {
 }
 
 ---インラインアクションを実行
----@param action_name? string
-function M.execute(action_name)
+---@param action_or_prompt? string
+function M.execute(action_or_prompt)
   local vibing = require("vibing")
   local config = vibing.get_config()
   local adapter = vibing.get_adapter()
@@ -46,18 +46,16 @@ function M.execute(action_name)
   end
 
   -- アクション名を決定
-  action_name = action_name or config.inline.default_action
-  if action_name == "" then
-    action_name = config.inline.default_action
+  action_or_prompt = action_or_prompt or config.inline.default_action
+  if action_or_prompt == "" then
+    action_or_prompt = config.inline.default_action
   end
 
-  local action = M.actions[action_name]
+  local action = M.actions[action_or_prompt]
+
+  -- If not a predefined action, treat as custom natural language instruction
   if not action then
-    vim.notify(
-      string.format("[vibing] Unknown action: %s", action_name),
-      vim.log.levels.ERROR
-    )
-    return
+    return M.custom(action_or_prompt, false)
   end
 
   -- 選択範囲のコンテキストを取得
