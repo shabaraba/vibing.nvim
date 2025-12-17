@@ -1,0 +1,82 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for vibing.nvim
+title: '[Feature]: '
+labels: ['enhancement']
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please provide as much detail as possible.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Use Case
+      description: Describe the problem or use case this feature would solve
+      placeholder: I often need to... but there's no way to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe how you envision this feature working
+      placeholder: |
+        Add a new command :VibingSomething that...
+        Or add a config option that allows...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other solutions or workarounds have you considered?
+      placeholder: I tried using... but it doesn't work because...
+    validations:
+      required: false
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example Usage
+      description: Show how you would use this feature
+      placeholder: |
+        :VibingNewFeature "do something"
+        -- or in Lua:
+        require("vibing").new_feature({ option = "value" })
+      render: lua
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature to you?
+      options:
+        - Low - Nice to have
+        - Medium - Would improve workflow
+        - High - Critical for my use case
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other information, mockups, or references
+      placeholder: Links to similar features in other plugins, screenshots, etc.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Would you be willing to help implement this feature?
+      options:
+        - label: I'm willing to submit a PR for this feature
+          required: false

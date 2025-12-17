@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/shabaraba/vibing.nvim/blob/main/README.md
+    about: Read the README for usage instructions and configuration
+  - name: Help File
+    url: https://github.com/shabaraba/vibing.nvim/blob/main/doc/vibing.txt
+    about: Vim help documentation (:help vibing)
