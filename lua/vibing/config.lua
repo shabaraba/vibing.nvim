@@ -40,6 +40,8 @@
 ---@field cancel string
 ---@field add_context string
 
+local notify = require("vibing.utils.notify")
+
 local M = {}
 
 ---@type Vibing.Config
