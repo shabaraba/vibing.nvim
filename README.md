@@ -68,28 +68,29 @@ use {
 
 ### User Commands
 
-| Command | Description |
-|---------|-------------|
-| `:VibingChat` | Open chat window |
-| `:VibingContext [path]` | Add file to context |
-| `:VibingClearContext` | Clear all context |
-| `:VibingInline [action\|instruction]` | Run action or custom instruction on selection |
-| `:VibingExplain` | Explain selected code |
-| `:VibingFix` | Fix selected code issues |
-| `:VibingFeature` | Implement feature in selected code |
-| `:VibingRefactor` | Refactor selected code |
-| `:VibingTest` | Generate tests for selected code |
-| `:VibingCustom <instruction>` | Execute custom instruction on code |
-| `:VibingCancel` | Cancel current request |
-| `:VibingOpenChat <file>` | Open saved chat file |
-| `:VibingRemote <command>` | Execute command in remote Neovim (requires `--listen`) |
-| `:VibingRemoteStatus` | Show remote Neovim status |
-| `:VibingSendToChat` | Send file from oil.nvim to chat |
-| `:VibingMigrate` | Migrate chat files to new format |
+| Command                               | Description                                            |
+| ------------------------------------- | ------------------------------------------------------ |
+| `:VibingChat`                         | Open chat window                                       |
+| `:VibingContext [path]`               | Add file to context                                    |
+| `:VibingClearContext`                 | Clear all context                                      |
+| `:VibingInline [action\|instruction]` | Run action or custom instruction on selection          |
+| `:VibingExplain`                      | Explain selected code                                  |
+| `:VibingFix`                          | Fix selected code issues                               |
+| `:VibingFeature`                      | Implement feature in selected code                     |
+| `:VibingRefactor`                     | Refactor selected code                                 |
+| `:VibingTest`                         | Generate tests for selected code                       |
+| `:VibingCustom <instruction>`         | Execute custom instruction on code                     |
+| `:VibingCancel`                       | Cancel current request                                 |
+| `:VibingOpenChat <file>`              | Open saved chat file                                   |
+| `:VibingRemote <command>`             | Execute command in remote Neovim (requires `--listen`) |
+| `:VibingRemoteStatus`                 | Show remote Neovim status                              |
+| `:VibingSendToChat`                   | Send file from oil.nvim to chat                        |
+| `:VibingMigrate`                      | Migrate chat files to new format                       |
 
 ### Inline Actions
 
 **Predefined actions:**
+
 ```vim
 :'<,'>VibingInline fix       " Fix code issues
 :'<,'>VibingInline feat      " Implement feature
@@ -99,6 +100,7 @@ use {
 ```
 
 **Natural language instructions:**
+
 ```vim
 :'<,'>VibingInline "Convert this function to TypeScript"
 :'<,'>VibingInline "Add error handling with try-catch"
@@ -107,14 +109,14 @@ use {
 
 ### Slash Commands (in Chat)
 
-| Command | Description |
-|---------|-------------|
-| `/context <file>` | Add file to context |
-| `/clear` | Clear context |
-| `/save` | Save current chat |
-| `/summarize` | Summarize conversation |
-| `/mode <mode>` | Set execution mode (auto/plan/code) |
-| `/model <model>` | Set AI model (opus/sonnet/haiku) |
+| Command           | Description                         |
+| ----------------- | ----------------------------------- |
+| `/context <file>` | Add file to context                 |
+| `/clear`          | Clear context                       |
+| `/save`           | Save current chat                   |
+| `/summarize`      | Summarize conversation              |
+| `/mode <mode>`    | Set execution mode (auto/plan/code) |
+| `/model <model>`  | Set AI model (opus/sonnet/haiku)    |
 
 ## ⚙️ Configuration Examples
 
@@ -204,7 +206,6 @@ permissions_allow:
 permissions_deny:
   - Bash
 ---
-
 # Vibing Chat
 
 ## User
@@ -217,6 +218,7 @@ Hello, Claude!
 For detailed architecture documentation, see [CLAUDE.md](./CLAUDE.md).
 
 **Key Components:**
+
 - **Agent SDK Integration** - Node.js wrapper communicating via JSON Lines
 - **Adapter Pattern** - Pluggable backends (agent_sdk, claude, claude_acp)
 - **Context System** - Automatic and manual file context management

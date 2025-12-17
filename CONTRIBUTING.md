@@ -36,6 +36,7 @@ npm run validate
 4. **Test the plugin in Neovim**
 
 Add to your Neovim config:
+
 ```lua
 {
   dir = "~/path/to/vibing.nvim",
@@ -88,6 +89,7 @@ git commit -m "docs: update README examples"
 ```
 
 **Commit types:**
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation changes
@@ -116,6 +118,7 @@ Then create a PR on GitHub.
 - Avoid deep nesting (max 3-4 levels)
 
 **Example:**
+
 ```lua
 ---@param config Vibing.Config
 ---@return boolean success
@@ -147,6 +150,7 @@ end
 ### PR Description
 
 Include:
+
 - **What**: Brief description of changes
 - **Why**: Reason for the change
 - **How**: Implementation approach (if complex)
@@ -154,19 +158,24 @@ Include:
 - **Related Issues**: Link to related issues
 
 **Example:**
+
 ```markdown
 ## What
+
 Add support for custom slash commands
 
 ## Why
+
 Users requested ability to define their own chat commands
 
 ## How
+
 - Created command registry in chat/commands.lua
 - Added register() and execute() functions
 - Updated documentation
 
 ## Testing
+
 - Tested with custom /greet command
 - Verified existing commands still work
 - Ran npm run validate
@@ -238,6 +247,7 @@ Update documentation when:
 - Changing behavior
 
 Files to update:
+
 - `README.md` - User-facing documentation
 - `doc/vibing.txt` - Vim help file
 - `CLAUDE.md` - Architecture documentation (if needed)

@@ -29,6 +29,7 @@ Neovim (Lua) → vim.system() → Node.js wrapper → Claude Agent SDK
 ```
 
 The Node.js wrapper (`bin/agent-wrapper.mjs`) outputs streaming responses as JSON Lines:
+
 - `{"type": "session", "session_id": "..."}` - Session identifier for resumption
 - `{"type": "chunk", "text": "..."}` - Streamed text content
 - `{"type": "done"}` - Completion signal
@@ -37,36 +38,42 @@ The Node.js wrapper (`bin/agent-wrapper.mjs`) outputs streaming responses as JSO
 ### Module Structure
 
 **Core:**
+
 - `lua/vibing/init.lua` - Entry point, command registration
 - `lua/vibing/config.lua` - Configuration with type annotations
 
 **Adapters (pluggable backends):**
+
 - `adapters/base.lua` - Abstract adapter interface
 - `adapters/agent_sdk.lua` - Main adapter using Claude Agent SDK (recommended)
 - `adapters/claude.lua`, `adapters/claude_acp.lua` - Alternative backends
 
 **UI:**
+
 - `ui/chat_buffer.lua` - Chat window with Markdown rendering, session persistence
 - `ui/output_buffer.lua` - Read-only output for inline actions
 
 **Context System:**
+
 - `context/init.lua` - Context manager (manual + auto from open buffers)
 - `context/collector.lua` - Collects `@file:path` formatted contexts
 
 **Actions:**
+
 - `actions/chat.lua` - Chat session orchestration
 - `actions/inline.lua` - Quick actions (fix, feat, explain, refactor, test)
 
 ### Session Persistence
 
 Chat files are saved as Markdown with YAML frontmatter:
+
 ```yaml
 ---
 vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
-mode: code  # auto, plan, or code (from config.agent.default_mode)
-model: sonnet  # sonnet, opus, or haiku (from config.agent.default_model)
+mode: code # auto, plan, or code (from config.agent.default_mode)
+model: sonnet # sonnet, opus, or haiku (from config.agent.default_model)
 permissions_allow:
   - Read
   - Edit
@@ -100,6 +107,7 @@ require("vibing").setup({
 ```
 
 **Permission Logic:**
+
 - Deny list takes precedence over allow list
 - If allow list is specified, only those tools are permitted
 - If allow list is empty, all tools except denied ones are allowed
@@ -148,27 +156,28 @@ require("vibing").setup({
 
 ## User Commands
 
-| Command | Description |
-|---------|-------------|
-| `:VibingChat` | Open chat window |
-| `:VibingContext [path]` | Add file to context |
-| `:VibingClearContext` | Clear all context |
-| `:VibingInline [action|instruction]` | Run inline action or natural language instruction on selection (fix/feat/explain/refactor/test, or custom text) |
-| `:VibingExplain` | Explain selected code |
-| `:VibingFix` | Fix selected code issues |
-| `:VibingFeature` | Implement feature in selected code |
-| `:VibingRefactor` | Refactor selected code |
-| `:VibingTest` | Generate tests for selected code |
-| `:VibingCustom <instruction>` | Execute custom instruction on selected code |
-| `:VibingCancel` | Cancel current request |
-| `:VibingOpenChat <file>` | Open saved chat file |
-| `:VibingRemote <command>` | Execute command in remote Neovim instance (requires `--listen`) |
-| `:VibingRemoteStatus` | Show remote Neovim status (mode, buffer, cursor position) |
-| `:VibingSendToChat` | Send file from oil.nvim to chat (requires oil.nvim) |
+| Command                       | Description                                                     |
+| ----------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `:VibingChat`                 | Open chat window                                                |
+| `:VibingContext [path]`       | Add file to context                                             |
+| `:VibingClearContext`         | Clear all context                                               |
+| `:VibingInline [action        | instruction]`                                                   | Run inline action or natural language instruction on selection (fix/feat/explain/refactor/test, or custom text) |
+| `:VibingExplain`              | Explain selected code                                           |
+| `:VibingFix`                  | Fix selected code issues                                        |
+| `:VibingFeature`              | Implement feature in selected code                              |
+| `:VibingRefactor`             | Refactor selected code                                          |
+| `:VibingTest`                 | Generate tests for selected code                                |
+| `:VibingCustom <instruction>` | Execute custom instruction on selected code                     |
+| `:VibingCancel`               | Cancel current request                                          |
+| `:VibingOpenChat <file>`      | Open saved chat file                                            |
+| `:VibingRemote <command>`     | Execute command in remote Neovim instance (requires `--listen`) |
+| `:VibingRemoteStatus`         | Show remote Neovim status (mode, buffer, cursor position)       |
+| `:VibingSendToChat`           | Send file from oil.nvim to chat (requires oil.nvim)             |
 
 ### Inline Action Examples
 
 Predefined actions:
+
 ```vim
 :'<,'>VibingInline fix       " Fix code issues
 :'<,'>VibingInline feat      " Implement feature
@@ -178,6 +187,7 @@ Predefined actions:
 ```
 
 Natural language instructions:
+
 ```vim
 :'<,'>VibingInline "Convert this function to TypeScript"
 :'<,'>VibingInline "Add error handling with try-catch"
@@ -188,11 +198,11 @@ Natural language instructions:
 
 Slash commands can be used within the chat buffer for quick actions:
 
-| Command | Description |
-|---------|-------------|
-| `/context <file>` | Add file to context |
-| `/clear` | Clear context |
-| `/save` | Save current chat |
-| `/summarize` | Summarize conversation |
-| `/mode <mode>` | Set execution mode (auto/plan/code) |
-| `/model <model>` | Set AI model (opus/sonnet/haiku) |
+| Command           | Description                         |
+| ----------------- | ----------------------------------- |
+| `/context <file>` | Add file to context                 |
+| `/clear`          | Clear context                       |
+| `/save`           | Save current chat                   |
+| `/summarize`      | Summarize conversation              |
+| `/mode <mode>`    | Set execution mode (auto/plan/code) |
+| `/model <model>`  | Set AI model (opus/sonnet/haiku)    |

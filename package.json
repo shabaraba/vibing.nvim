@@ -12,9 +12,19 @@
     "check": "find lua -name '*.lua' -exec luac -p {} \\;",
     "check:lua": "luac -p lua/vibing/init.lua",
     "dev": "node bin/agent-wrapper.mjs --prompt",
-    "validate": "npm run check && echo 'All checks passed'"
+    "validate": "npm run check && echo 'All checks passed'",
+    "format": "prettier --write '**/*.{js,mjs,json,md,yml,yaml}'",
+    "format:check": "prettier --check '**/*.{js,mjs,json,md,yml,yaml}'",
+    "lint": "eslint '**/*.{js,mjs}'",
+    "lint:fix": "eslint --fix '**/*.{js,mjs}'",
+    "lint:md": "markdownlint '**/*.md' --ignore node_modules"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.70"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "eslint": "^9.17.0",
+    "markdownlint-cli": "^0.43.0"
   }
 }

@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Logs
+*.log
+
+# Data directories
+.vibing/
+
+# Git
+.git/
+
+# Editor
+.vscode/
+.idea/
+
+# Lock files
+package-lock.json
+
+# Lua files (handled by luac)
+*.lua
