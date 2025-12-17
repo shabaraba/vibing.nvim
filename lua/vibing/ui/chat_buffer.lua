@@ -64,13 +64,38 @@ function ChatBuffer:_create_buffer()
   if self.file_path then
     vim.api.nvim_buf_set_name(self.buf, self.file_path)
   else
-    -- 新規の場合はプロジェクトの.vibing/chat/に保存
-    local project_root = vim.fn.getcwd()
-    local default_path = project_root .. "/.vibing/chat/"
-    vim.fn.mkdir(default_path, "p")
-    local filename = os.date("chat_%Y%m%d_%H%M%S.md")
-    self.file_path = default_path .. filename
+    -- 新規の場合は設定に基づいて保存先を決定
+    local save_path = self:_get_save_directory()
+    vim.fn.mkdir(save_path, "p")
+    local filename = os.date("chat-%Y%m%d-%H%M%S.md")
+    self.file_path = save_path .. filename
     vim.api.nvim_buf_set_name(self.buf, self.file_path)
+  end
+end
+
+---保存ディレクトリを取得
+---@return string directory_path
+function ChatBuffer:_get_save_directory()
+  local location_type = self.config.save_location_type or "project"
+
+  if location_type == "project" then
+    -- プロジェクトローカル
+    local project_root = vim.fn.getcwd()
+    return project_root .. "/.vibing/chat/"
+  elseif location_type == "user" then
+    -- ユーザーグローバル
+    return vim.fn.stdpath("data") .. "/vibing/chats/"
+  elseif location_type == "custom" then
+    -- カスタムパス
+    local custom_path = self.config.save_dir
+    -- 末尾にスラッシュを追加（必要な場合）
+    if not custom_path:match("/$") then
+      custom_path = custom_path .. "/"
+    end
+    return custom_path
+  else
+    -- デフォルトはproject
+    return vim.fn.getcwd() .. "/.vibing/chat/"
   end
 end
 

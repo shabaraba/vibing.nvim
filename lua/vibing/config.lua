@@ -23,6 +23,7 @@
 ---@class Vibing.ChatConfig
 ---@field window Vibing.WindowConfig
 ---@field auto_context boolean
+---@field save_location_type "project"|"user"|"custom"
 ---@field save_dir string
 
 ---@class Vibing.WindowConfig
@@ -55,7 +56,8 @@ M.defaults = {
       border = "rounded",
     },
     auto_context = true,
-    save_dir = vim.fn.stdpath("data") .. "/vibing/chats",
+    save_location_type = "project",  -- "project" | "user" | "custom"
+    save_dir = vim.fn.stdpath("data") .. "/vibing/chats",  -- Used when save_location_type is "custom"
   },
   inline = {
     default_action = "fix",
@@ -121,7 +123,7 @@ function M.setup(opts)
     end
   end
 
-  vim.fn.mkdir(M.options.chat.save_dir, "p")
+  -- Directory creation is handled by chat_buffer.lua _get_save_directory()
 end
 
 ---@return Vibing.Config
