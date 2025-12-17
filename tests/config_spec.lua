@@ -34,7 +34,7 @@ describe("vibing.config", function()
     end)
   end)
 
-  describe("merge", function()
+  describe("setup", function()
     it("should merge user config with defaults", function()
       local user_config = {
         adapter = "claude",
@@ -45,44 +45,48 @@ describe("vibing.config", function()
         },
       }
 
-      local merged = config.merge(user_config)
+      config.setup(user_config)
+      local result = config.get()
 
       -- User values should override defaults
-      assert.equals("claude", merged.adapter)
-      assert.equals("left", merged.chat.window.position)
+      assert.equals("claude", result.adapter)
+      assert.equals("left", result.chat.window.position)
 
       -- Non-overridden defaults should remain
-      assert.is_not_nil(merged.agent)
-      assert.equals("code", merged.agent.default_mode)
+      assert.is_not_nil(result.agent)
+      assert.equals("code", result.agent.default_mode)
     end)
 
     it("should handle empty user config", function()
-      local merged = config.merge({})
-      assert.equals("agent_sdk", merged.adapter)
+      config.setup({})
+      local result = config.get()
+      assert.equals("agent_sdk", result.adapter)
     end)
 
     it("should handle nil user config", function()
-      local merged = config.merge(nil)
-      assert.equals("agent_sdk", merged.adapter)
+      config.setup(nil)
+      local result = config.get()
+      assert.equals("agent_sdk", result.adapter)
+    end)
+
+    it("should warn about invalid tools in permissions", function()
+      local user_config = {
+        permissions = {
+          allow = { "Read", "InvalidTool" },
+        },
+      }
+      -- Should not error, just warn
+      assert.has_no.errors(function()
+        config.setup(user_config)
+      end)
     end)
   end)
 
-  describe("validate", function()
-    it("should accept valid adapter", function()
-      local valid_config = {
-        adapter = "agent_sdk",
-      }
-      assert.has_no.errors(function()
-        config.validate(valid_config)
-      end)
-    end)
-
-    it("should reject invalid adapter", function()
-      local invalid_config = {
-        adapter = "invalid_adapter",
-      }
-      -- Note: Actual validation implementation may vary
-      -- This test demonstrates expected behavior
+  describe("get", function()
+    it("should return current config", function()
+      config.setup({ adapter = "test_adapter" })
+      local result = config.get()
+      assert.equals("test_adapter", result.adapter)
     end)
   end)
 end)

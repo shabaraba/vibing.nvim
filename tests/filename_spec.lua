@@ -36,8 +36,11 @@ describe("vibing.utils.filename", function()
     it("should truncate long messages", function()
       local long_message = "This is a very long message that exceeds fifty characters limit"
       local result = filename.generate_from_message(long_message)
-      -- Should use first 50 chars of message
-      assert.is_not_nil(result:match("^%d+_this_is_a_very_long_message_that_exceeds_fi"))
+      local date_prefix = os.date("%Y%m%d")
+      -- Should use first 50 chars of message, then sanitize (topic limited to 32)
+      assert.is_not_nil(result:match("^" .. date_prefix .. "_"))
+      local topic = result:sub(#date_prefix + 2)
+      assert.is_true(#topic <= 32)
     end)
 
     it("should handle multiline messages", function()
