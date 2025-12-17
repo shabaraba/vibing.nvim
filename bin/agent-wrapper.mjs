@@ -92,7 +92,6 @@ const queryOptions = {
   includePartialMessages: true,
 };
 
-<<<<<<< HEAD
 // Add canUseTool callback for permission control
 if (allowedTools.length > 0 || deniedTools.length > 0) {
   // Normalize tool names to lowercase for case-insensitive comparison
@@ -124,7 +123,8 @@ if (allowedTools.length > 0 || deniedTools.length > 0) {
       updatedInput: input,
     };
   };
-=======
+}
+
 // Add mode if provided
 if (mode) {
   queryOptions.mode = mode;
@@ -133,7 +133,6 @@ if (mode) {
 // Add model if provided
 if (model) {
   queryOptions.model = model;
->>>>>>> 85102f8 (feat: add default mode and model configuration for Agent SDK)
 }
 
 // Resume session if provided
