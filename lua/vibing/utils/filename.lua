@@ -1,4 +1,5 @@
----@class Vibing.FilenameUtils
+---Filename generation utilities
+---@class Vibing.Utils.Filename
 ---チャットファイルのファイル名生成ユーティリティ
 ---メッセージ内容から意味のあるファイル名を自動生成
 local M = {}
@@ -6,7 +7,7 @@ local M = {}
 ---テキストをファイル名として安全な文字列に変換
 ---小文字化、特殊文字削除、連続アンダースコア圧縮、長さ制限を実施
 ---@param text string 変換元のテキスト（通常は最初のユーザーメッセージ）
----@return string サニタイズ済みのファイル名用文字列（最大32文字）
+---@return string sanitized_text サニタイズ済みのファイル名用文字列（最大32文字）
 local function sanitize(text)
   -- 小文字に変換
   text = text:lower()
@@ -30,7 +31,7 @@ end
 ---形式: YYYYMMDD_トピック (例: 20240101_fix_authentication_bug)
 ---メッセージが空またはサニタイズ後に空文字列の場合はタイムスタンプのみ
 ---@param message string 最初のユーザーメッセージ
----@return string ファイル名（拡張子なし、例: "20240101_fix_bug"）
+---@return string filename YYYYMMDD_topic 形式のファイル名（拡張子なし）
 function M.generate_from_message(message)
   if not message or message == "" then
     return os.date("chat_%Y%m%d_%H%M%S")
@@ -57,7 +58,7 @@ end
 ---タイムスタンプベースのデフォルトファイル名を生成
 ---形式: chat_YYYYMMDD_HHMMSS (例: chat_20240101_153045)
 ---メッセージからファイル名を生成できない場合のフォールバック
----@return string タイムスタンプファイル名（拡張子なし）
+---@return string filename タイムスタンプ形式のファイル名（拡張子なし）
 function M.generate_default()
   return os.date("chat_%Y%m%d_%H%M%S")
 end

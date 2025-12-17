@@ -1,4 +1,5 @@
 local Collector = require("vibing.context.collector")
+local notify = require("vibing.utils.notify")
 
 ---@class Vibing.Context
 ---コンテキスト管理モジュール
@@ -22,7 +23,7 @@ function M.add(path)
     local buf = vim.api.nvim_get_current_buf()
     local name = vim.api.nvim_buf_get_name(buf)
     if name == "" then
-      vim.notify("[vibing] Current buffer has no file path", vim.log.levels.WARN)
+      notify.warn("Current buffer has no file path", "Context")
       return
     end
     context = Collector.file_to_context(name)
@@ -30,7 +31,7 @@ function M.add(path)
 
   if not vim.tbl_contains(M.manual_contexts, context) then
     table.insert(M.manual_contexts, context)
-    vim.notify(string.format("[vibing] Added context: %s", context), vim.log.levels.INFO)
+    notify.info(string.format("Added context: %s", context), "Context")
   end
 end
 
@@ -38,7 +39,7 @@ end
 ---自動コンテキスト（開いているバッファ）は設定に従い継続
 function M.clear()
   M.manual_contexts = {}
-  vim.notify("[vibing] Context cleared", vim.log.levels.INFO)
+  notify.info("Context cleared", "Context")
 end
 
 ---全コンテキストを取得（手動 + 自動）
