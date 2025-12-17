@@ -1,22 +1,32 @@
 ---@class Vibing.AdapterOpts
----@field context string[] Array of @file: formatted contexts
----@field tools string[]? Allowed tools
----@field model string? Model override
----@field streaming boolean? Enable streaming
+---Adapterの実行オプション
+---@file:path形式のコンテキスト、使用可能ツール、モデル指定、ストリーミング設定を含む
+---@field context string[] @file:path形式のコンテキスト配列（例: {"@file:init.lua", "@file:config.lua:L10-L25"}）
+---@field tools string[]? 許可するツールリスト（例: {"Edit", "Write", "Bash"}、nilの場合は全ツール許可）
+---@field model string? モデル上書き（省略時はconfigのデフォルトモデルを使用）
+---@field streaming boolean? ストリーミング応答を有効化（trueで逐次表示、falseで一括応答）
 
 ---@class Vibing.Response
----@field content string Response content
----@field error string? Error message if failed
+---Adapterからの応答オブジェクト
+---成功時はcontentに結果、失敗時はerrorにエラーメッセージが格納される
+---@field content string 応答コンテンツ（Claudeの返答テキスト）
+---@field error string? エラーメッセージ（実行失敗時のみ設定される）
 
 ---@class Vibing.Adapter
----@field name string Adapter name
----@field config Vibing.Config
----@field job_id number? Current job ID
+---AIバックエンドとの通信を抽象化するアダプター基底クラス
+---agent_sdk、claude、claude_acpなど複数のバックエンドを統一インターフェースで扱う
+---サブクラスはexecute(), stream(), build_command()を実装する必要がある
+---@field name string アダプター名（"agent_sdk", "claude", "claude_acp"等）
+---@field config Vibing.Config プラグイン設定オブジェクト（API key、モデル名等を含む）
+---@field job_id number? 現在実行中のジョブID（vim.fn.jobstart()の戻り値、未実行時はnil）
 local Adapter = {}
 Adapter.__index = Adapter
 
----@param config Vibing.Config
----@return Vibing.Adapter
+---Adapterインスタンスを生成
+---基底クラスのコンストラクタ（サブクラスでオーバーライドして使用）
+---metatableを設定し、name="base"、configを保存、job_idをnilで初期化
+---@param config Vibing.Config プラグイン設定オブジェクト
+---@return Vibing.Adapter 新しいAdapterインスタンス
 function Adapter:new(config)
   local instance = setmetatable({}, self)
   instance.name = "base"
@@ -25,29 +35,44 @@ function Adapter:new(config)
   return instance
 end
 
----@param prompt string
----@param opts Vibing.AdapterOpts
----@return Vibing.Response
+---プロンプトを実行して応答を取得（非ストリーミング）
+---サブクラスで実装必須のメソッド（基底クラスではエラーを投げる）
+---AIバックエンドにプロンプトとオプションを送信し、完全な応答を同期的に返す
+---ストリーミングが不要な場合や、完全な応答を待つ必要がある場合に使用
+---@param prompt string 送信するプロンプト（ユーザーメッセージまたはシステムプロンプト）
+---@param opts Vibing.AdapterOpts 実行オプション（コンテキスト、ツール、モデル等）
+---@return Vibing.Response 応答オブジェクト（成功時はcontentに結果、失敗時はerrorにエラーメッセージ）
 function Adapter:execute(prompt, opts)
   error("execute() must be implemented by subclass")
 end
 
----@param prompt string
----@param opts Vibing.AdapterOpts
----@param on_chunk fun(chunk: string)
----@param on_done fun(response: Vibing.Response)
+---プロンプトを実行してストリーミング応答を受信
+---サブクラスで実装必須のメソッド（基底クラスではエラーを投げる）
+---AIバックエンドにプロンプトとオプションを送信し、応答をチャンク単位で逐次受信
+---チャットUIでの逐次表示やリアルタイムフィードバックに使用
+---@param prompt string 送信するプロンプト（ユーザーメッセージまたはシステムプロンプト）
+---@param opts Vibing.AdapterOpts 実行オプション（コンテキスト、ツール、モデル等）
+---@param on_chunk fun(chunk: string) チャンク受信時のコールバック（テキスト断片を受け取る）
+---@param on_done fun(response: Vibing.Response) 完了時のコールバック（最終応答オブジェクトを受け取る）
 function Adapter:stream(prompt, opts, on_chunk, on_done)
   error("stream() must be implemented by subclass")
 end
 
----@param prompt string
----@param opts Vibing.AdapterOpts
----@return string[]
+---バックエンド実行用のコマンドライン配列を構築
+---サブクラスで実装必須のメソッド（基底クラスではエラーを投げる）
+---vim.fn.jobstart()に渡すコマンド配列を生成（例: {"node", "bin/agent-wrapper.mjs", "--prompt", "..."}）
+---プロンプト、コンテキスト、オプションをコマンドライン引数やJSON入力に変換
+---@param prompt string 送信するプロンプト
+---@param opts Vibing.AdapterOpts 実行オプション
+---@return string[] コマンドライン配列（vim.fn.jobstart()の第一引数に渡す形式）
 function Adapter:build_command(prompt, opts)
   error("build_command() must be implemented by subclass")
 end
 
----@return boolean
+---実行中のジョブをキャンセル
+---job_idが設定されている場合はvim.fn.jobstop()でジョブを停止
+---ストリーミング応答の中断や、長時間実行されるリクエストの強制終了に使用
+---@return boolean キャンセル成功時true、実行中ジョブなしの場合false
 function Adapter:cancel()
   if self.job_id then
     vim.fn.jobstop(self.job_id)
@@ -57,8 +82,12 @@ function Adapter:cancel()
   return false
 end
 
----@param feature string
----@return boolean
+---アダプターが特定の機能をサポートしているかチェック
+---サブクラスでオーバーライドして機能サポートを宣言（基底クラスは常にfalse）
+---"streaming", "session", "tools"等の機能名でサポート状況を問い合わせ
+---呼び出し側は機能サポート状況に応じて動作を切り替える（例: ストリーミング有無）
+---@param feature string 機能名（例: "streaming", "session", "tools", "cancel"）
+---@return boolean サポートしている場合true、サポートしていない場合false（基底クラスは常にfalse）
 function Adapter:supports(feature)
   return false
 end
