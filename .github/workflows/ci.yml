@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Lua
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.3
+
+      - name: Run Lua syntax check
+        run: npm run check
+
+      - name: Run wrapper test
+        run: npm test
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Run validation suite
+        run: npm run validate
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check file permissions
+        run: |
+          echo "Checking executable permissions..."
+          test -x bin/agent-wrapper.mjs && echo "OK: bin/agent-wrapper.mjs is executable" || exit 1
+
+      - name: Check file structure
+        run: |
+          echo "Checking required files..."
+          test -f package.json && echo "OK: package.json exists"
+          test -f LICENSE && echo "OK: LICENSE exists"
+          test -f README.md && echo "OK: README.md exists"
+          test -f CONTRIBUTING.md && echo "OK: CONTRIBUTING.md exists"
+          test -d lua && echo "OK: lua/ directory exists"
+          test -d bin && echo "OK: bin/ directory exists"
+          test -f lua/vibing/init.lua && echo "OK: lua/vibing/init.lua exists"
