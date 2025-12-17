@@ -23,8 +23,8 @@
     "@anthropic-ai/claude-agent-sdk": "^0.1.70"
   },
   "devDependencies": {
-    "prettier": "^3.4.2",
     "eslint": "^9.17.0",
-    "markdownlint-cli": "^0.43.0"
+    "markdownlint-cli": "^0.47.0",
+    "prettier": "^3.4.2"
   }
 }
