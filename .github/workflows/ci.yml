@@ -30,8 +30,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y lua5.3
 
+      - name: Setup Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Install plenary.nvim
+        run: |
+          mkdir -p ~/.local/share/nvim/site/pack/vendor/start
+          git clone --depth 1 https://github.com/nvim-lua/plenary.nvim \
+            ~/.local/share/nvim/site/pack/vendor/start/plenary.nvim
+
       - name: Run Lua syntax check
         run: npm run check
+
+      - name: Run Lua tests
+        run: npm run test:lua
 
       - name: Run wrapper test
         run: npm test
