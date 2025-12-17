@@ -1,10 +1,12 @@
 ---@class Vibing.OutputBuffer
----@field buf number?
----@field win number?
+---@field buf number? バッファ番号、未作成の場合はnil
+---@field win number? ウィンドウ番号、未作成の場合はnil
 local OutputBuffer = {}
 OutputBuffer.__index = OutputBuffer
 
----@return Vibing.OutputBuffer
+---新しいOutputBufferインスタンスを作成
+---インライン操作（Explain, Fix, Feature等）の出力表示に使用
+---@return Vibing.OutputBuffer 新しいインスタンス
 function OutputBuffer:new()
   local instance = setmetatable({}, OutputBuffer)
   instance.buf = nil
@@ -13,7 +15,9 @@ function OutputBuffer:new()
 end
 
 ---出力ウィンドウを開く
----@param title string
+---フローティングウィンドウとして画面中央に表示
+---バッファ作成、ウィンドウ表示、キーマップ設定を実行
+---@param title string ウィンドウタイトル（例: "Explain Code", "Fix Code"）
 function OutputBuffer:open(title)
   self:_create_buffer(title)
   self:_create_window()
@@ -21,6 +25,8 @@ function OutputBuffer:open(title)
 end
 
 ---ウィンドウを閉じる
+---ウィンドウが有効な場合のみクローズし、winフィールドをnilに設定
+---バッファ自体は削除しないため、再度open()で同じ内容を表示可能
 function OutputBuffer:close()
   if self.win and vim.api.nvim_win_is_valid(self.win) then
     vim.api.nvim_win_close(self.win, true)
@@ -29,13 +35,16 @@ function OutputBuffer:close()
 end
 
 ---ウィンドウが開いているか
----@return boolean
+---@return boolean ウィンドウが有効かつ開いている場合true
 function OutputBuffer:is_open()
   return self.win ~= nil and vim.api.nvim_win_is_valid(self.win)
 end
 
 ---バッファを作成
----@param title string
+---読み取り専用のMarkdown形式バッファとして作成
+---vibing://titleの形式でバッファ名を設定
+---初期コンテンツとして"# title"と"Loading..."を表示
+---@param title string バッファタイトル（バッファ名とヘッダーに使用）
 function OutputBuffer:_create_buffer(title)
   self.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[self.buf].filetype = "markdown"
@@ -53,6 +62,9 @@ function OutputBuffer:_create_buffer(title)
 end
 
 ---フローティングウィンドウを作成
+---画面サイズの60%の幅と高さで画面中央に配置
+---rounded borderとVibing タイトルを設定
+---word wrap有効でmarkdown表示に適した設定
 function OutputBuffer:_create_window()
   local width = math.floor(vim.o.columns * 0.6)
   local height = math.floor(vim.o.lines * 0.6)
@@ -76,6 +88,8 @@ function OutputBuffer:_create_window()
 end
 
 ---キーマップを設定
+---出力バッファ専用のキーマップを登録
+---q, Esc: ウィンドウを閉じる
 function OutputBuffer:_setup_keymaps()
   vim.keymap.set("n", "q", function()
     self:close()
@@ -87,7 +101,9 @@ function OutputBuffer:_setup_keymaps()
 end
 
 ---コンテンツを設定
----@param content string
+---バッファの3行目以降（タイトル行と空行の後）を指定されたコンテンツで置き換え
+---非ストリーミングモードでの一括出力に使用
+---@param content string 設定するコンテンツ（改行で複数行に分割される）
 function OutputBuffer:set_content(content)
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return
@@ -98,8 +114,11 @@ function OutputBuffer:set_content(content)
 end
 
 ---ストリーミングチャンクを追加
----@param chunk string
----@param is_first boolean
+---ストリーミング応答の各チャンクをバッファ末尾に追記
+---改行を含むチャンクは複数行として処理
+---最初のチャンク受信時は"Loading..."を削除
+---@param chunk string 追加するテキストチャンク
+---@param is_first boolean 最初のチャンクかどうか（trueの場合Loading...を削除）
 function OutputBuffer:append_chunk(chunk, is_first)
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return
@@ -120,7 +139,9 @@ function OutputBuffer:append_chunk(chunk, is_first)
 end
 
 ---エラーを表示
----@param error_msg string
+---バッファの3行目以降をエラーメッセージで置き換え
+---Markdown bold形式（**Error:**）でエラーを強調表示
+---@param error_msg string 表示するエラーメッセージ
 function OutputBuffer:show_error(error_msg)
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return
