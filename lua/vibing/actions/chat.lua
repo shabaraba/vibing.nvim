@@ -103,6 +103,12 @@ function M.send(chat_buffer, message)
     end
   end
 
+  -- 最初のメッセージの場合、ファイル名を更新
+  local conversation = chat_buffer:extract_conversation()
+  if #conversation == 0 then
+    chat_buffer:update_filename_from_message(message)
+  end
+
   -- 応答セクションを開始
   chat_buffer:start_response()
 
