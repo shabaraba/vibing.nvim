@@ -29,10 +29,10 @@ for (let i = 0; i < args.length; i++) {
     prompt = args[i + 1];
     i++;
   } else if (args[i] === "--allow" && args[i + 1]) {
-    allowedTools = args[i + 1].split(",");
+    allowedTools = args[i + 1].split(",").map(t => t.trim()).filter(t => t);
     i++;
   } else if (args[i] === "--deny" && args[i + 1]) {
-    deniedTools = args[i + 1].split(",");
+    deniedTools = args[i + 1].split(",").map(t => t.trim()).filter(t => t);
     i++;
   } else if (!args[i].startsWith("--")) {
     prompt = args[i];
@@ -86,9 +86,15 @@ const queryOptions = {
 
 // Add canUseTool callback for permission control
 if (allowedTools.length > 0 || deniedTools.length > 0) {
+  // Normalize tool names to lowercase for case-insensitive comparison
+  const normalizedAllow = allowedTools.map(t => t.toLowerCase());
+  const normalizedDeny = deniedTools.map(t => t.toLowerCase());
+
   queryOptions.canUseTool = async (toolName, input) => {
+    const normalizedToolName = toolName.toLowerCase();
+
     // Deny list takes precedence
-    if (deniedTools.includes(toolName)) {
+    if (normalizedDeny.includes(normalizedToolName)) {
       return {
         behavior: "deny",
         message: `Tool ${toolName} is not allowed by configuration`,
@@ -96,7 +102,7 @@ if (allowedTools.length > 0 || deniedTools.length > 0) {
     }
 
     // Allow list
-    if (allowedTools.length > 0 && !allowedTools.includes(toolName)) {
+    if (normalizedAllow.length > 0 && !normalizedAllow.includes(normalizedToolName)) {
       return {
         behavior: "deny",
         message: `Tool ${toolName} is not in the allowed list`,

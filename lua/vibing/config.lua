@@ -71,6 +71,38 @@ M.options = {}
 ---@param opts? Vibing.Config
 function M.setup(opts)
   M.options = vim.tbl_deep_extend("force", {}, M.defaults, opts or {})
+
+  -- Validate tool names in permissions
+  local valid_tools = {
+    Read = true,
+    Edit = true,
+    Write = true,
+    Bash = true,
+    Glob = true,
+    Grep = true,
+    WebSearch = true,
+    WebFetch = true,
+  }
+
+  if M.options.permissions then
+    for _, tool in ipairs(M.options.permissions.allow or {}) do
+      if not valid_tools[tool] then
+        vim.notify(
+          string.format("[vibing] Unknown tool '%s' in permissions.allow", tool),
+          vim.log.levels.WARN
+        )
+      end
+    end
+    for _, tool in ipairs(M.options.permissions.deny or {}) do
+      if not valid_tools[tool] then
+        vim.notify(
+          string.format("[vibing] Unknown tool '%s' in permissions.deny", tool),
+          vim.log.levels.WARN
+        )
+      end
+    end
+  end
+
   vim.fn.mkdir(M.options.chat.save_dir, "p")
 end
 
