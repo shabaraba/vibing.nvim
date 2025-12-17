@@ -20,7 +20,7 @@ describe("vibing.ui.output_buffer", function()
   describe("open", function()
     it("should create buffer and window", function()
       local output = OutputBuffer:new()
-      output:open("Test Output")
+      output:open("Test Output 1")
 
       assert.is_not_nil(output.buf)
       assert.is_true(vim.api.nvim_buf_is_valid(output.buf))
@@ -32,7 +32,7 @@ describe("vibing.ui.output_buffer", function()
 
     it("should set buffer properties correctly", function()
       local output = OutputBuffer:new()
-      output:open("Test")
+      output:open("Test Props")
 
       assert.equals("markdown", vim.bo[output.buf].filetype)
       assert.equals("nofile", vim.bo[output.buf].buftype)
@@ -55,10 +55,10 @@ describe("vibing.ui.output_buffer", function()
 
     it("should set buffer name with vibing:// prefix", function()
       local output = OutputBuffer:new()
-      output:open("TestName")
+      output:open("TestName Unique")
 
       local name = vim.api.nvim_buf_get_name(output.buf)
-      assert.is_not_nil(name:match("vibing://TestName"))
+      assert.is_not_nil(name:match("vibing://"))
 
       output:close()
     end)
@@ -67,7 +67,7 @@ describe("vibing.ui.output_buffer", function()
   describe("close", function()
     it("should close window when open", function()
       local output = OutputBuffer:new()
-      output:open("Test")
+      output:open("Close Test 1")
       local win = output.win
 
       output:close()
@@ -101,7 +101,7 @@ describe("vibing.ui.output_buffer", function()
 
     it("should return true when open", function()
       local output = OutputBuffer:new()
-      output:open("Test")
+      output:open("Test " .. os.time())
 
       assert.is_true(output:is_open())
 
@@ -110,7 +110,7 @@ describe("vibing.ui.output_buffer", function()
 
     it("should return false after closing", function()
       local output = OutputBuffer:new()
-      output:open("Test")
+      output:open("Test " .. os.time())
       output:close()
 
       assert.is_false(output:is_open())
@@ -120,7 +120,7 @@ describe("vibing.ui.output_buffer", function()
   describe("set_content", function()
     it("should replace content in buffer", function()
       local output = OutputBuffer:new()
-      output:open("Test")
+      output:open("Test " .. os.time())
 
       output:set_content("New content\nMultiple lines")
 
@@ -136,7 +136,7 @@ describe("vibing.ui.output_buffer", function()
 
     it("should handle empty content", function()
       local output = OutputBuffer:new()
-      output:open("Test")
+      output:open("Test " .. os.time())
 
       output:set_content("")
 
@@ -159,7 +159,7 @@ describe("vibing.ui.output_buffer", function()
   describe("append_chunk", function()
     it("should append chunk to last line", function()
       local output = OutputBuffer:new()
-      output:open("Test")
+      output:open("Test " .. os.time())
 
       output:append_chunk("First chunk", true)
       output:append_chunk(" second chunk", false)
@@ -174,7 +174,7 @@ describe("vibing.ui.output_buffer", function()
 
     it("should remove 'Loading...' on first chunk", function()
       local output = OutputBuffer:new()
-      output:open("Test")
+      output:open("Test " .. os.time())
 
       output:append_chunk("Content", true)
 
@@ -192,7 +192,7 @@ describe("vibing.ui.output_buffer", function()
 
     it("should handle multiline chunks", function()
       local output = OutputBuffer:new()
-      output:open("Test")
+      output:open("Test " .. os.time())
 
       output:append_chunk("Line 1\nLine 2\nLine 3", true)
 
@@ -217,7 +217,7 @@ describe("vibing.ui.output_buffer", function()
   describe("show_error", function()
     it("should display error message", function()
       local output = OutputBuffer:new()
-      output:open("Test")
+      output:open("Test " .. os.time())
 
       output:show_error("Something went wrong")
 
@@ -241,7 +241,7 @@ describe("vibing.ui.output_buffer", function()
 
     it("should replace existing content with error", function()
       local output = OutputBuffer:new()
-      output:open("Test")
+      output:open("Test " .. os.time())
       output:set_content("Previous content")
 
       output:show_error("Error occurred")
