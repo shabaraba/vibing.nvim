@@ -6,6 +6,14 @@
   "bin": {
     "vibing-agent": "./bin/agent-wrapper.mjs"
   },
+  "scripts": {
+    "test": "node bin/agent-wrapper.mjs --prompt 'Say hello' --cwd $(pwd)",
+    "test:wrapper": "node bin/agent-wrapper.mjs --prompt 'Test wrapper functionality' --cwd .",
+    "check": "find lua -name '*.lua' -exec luac -p {} \\;",
+    "check:lua": "luac -p lua/vibing/init.lua",
+    "dev": "node bin/agent-wrapper.mjs --prompt",
+    "validate": "npm run check && echo 'All checks passed'"
+  },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.70"
   }
