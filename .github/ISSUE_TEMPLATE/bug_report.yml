@@ -1,0 +1,109 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in vibing.nvim
+title: '[Bug]: '
+labels: ['bug']
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the information below to help us resolve the issue quickly.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the bug
+      placeholder: What happened? What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the behavior
+      placeholder: |
+        1. Run :VibingChat
+        2. Type message
+        3. Press <CR>
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+      placeholder: The chat should send the message and receive a response
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened
+      placeholder: Error message appeared in the buffer
+    validations:
+      required: true
+
+  - type: input
+    id: nvim-version
+    attributes:
+      label: Neovim Version
+      description: Output of `:version` or `nvim --version`
+      placeholder: 'NVIM v0.9.5'
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      description: Which OS are you using?
+      placeholder: 'macOS 14.0, Ubuntu 22.04, Windows 11'
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin Version
+      description: Version or commit hash of vibing.nvim
+      placeholder: 'v1.1.0 or commit hash'
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs
+      description: Any relevant error messages or logs
+      placeholder: Paste error messages here
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Your vibing.nvim configuration
+      placeholder: |
+        require("vibing").setup({
+          -- your config here
+        })
+      render: lua
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other information that might be helpful
+      placeholder: Screenshots, related issues, workarounds, etc.
+    validations:
+      required: false
