@@ -1,11 +1,31 @@
 {
   "name": "vibing-nvim",
   "version": "1.1.0",
+  "description": "Neovim plugin that integrates Claude AI through the Agent SDK",
+  "keywords": [
+    "neovim",
+    "nvim",
+    "plugin",
+    "claude",
+    "ai",
+    "agent-sdk",
+    "chat",
+    "code-assistant"
+  ],
   "private": true,
   "type": "module",
   "bin": {
     "vibing-agent": "./bin/agent-wrapper.mjs"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shabaraba/vibing.nvim.git"
+  },
+  "author": "shabaraba",
+  "bugs": {
+    "url": "https://github.com/shabaraba/vibing.nvim/issues"
+  },
+  "homepage": "https://github.com/shabaraba/vibing.nvim#readme",
   "scripts": {
     "test": "node bin/agent-wrapper.mjs --prompt 'Say hello' --cwd $(pwd)",
     "test:wrapper": "node bin/agent-wrapper.mjs --prompt 'Test wrapper functionality' --cwd .",
