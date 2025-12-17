@@ -89,7 +89,9 @@ When reopening a saved chat (`:VibingOpenChat` or `:e`), the session resumes via
 
 ## Slash Commands (in Chat)
 
-Slash commands can be used within the chat buffer for quick actions:
+Slash commands can be used within the chat buffer for quick actions.
+
+**Completion**: Type `/` and press `<C-x><C-o>` for omnifunc completion to see all available commands.
 
 | Command | Description |
 |---------|-------------|
