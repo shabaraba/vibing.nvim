@@ -1,8 +1,12 @@
 local Base = require("vibing.adapters.base")
 
 ---@class Vibing.ClaudeACPAdapter : Vibing.Adapter
----@field _handle table?
----@field _state { next_id: number, stdout_buffer: string, pending: table, session_id: string? }
+---Claude ACPアダプター（Agent Communication Protocol）
+---JSON-RPCプロトコルを使用してclaude-code-acpプロセスと通信
+---セッション管理、リソースブロック、ストリーミング応答をサポート
+---Base Adapterを継承し、永続的なセッションと双方向通信を実現
+---@field _handle table? vim.system()のプロセスハンドル
+---@field _state { next_id: number, stdout_buffer: string, pending: table, session_id: string? } 内部状態（RPC ID管理、バッファ、コールバック、セッションID）
 local ClaudeACP = setmetatable({}, { __index = Base })
 ClaudeACP.__index = ClaudeACP
 
@@ -14,8 +18,11 @@ local METHODS = {
   SESSION_UPDATE = "session/update",
 }
 
----@param config Vibing.Config
----@return Vibing.ClaudeACPAdapter
+---ClaudeACPAdapterインスタンスを生成
+---Base.new()を呼び出してベースインスタンスを作成し、name="claude_acp"を設定
+---_handle=nil、_state（next_id=1、空バッファ、空pending、セッションIDなし）で初期化
+---@param config Vibing.Config プラグイン設定オブジェクト
+---@return Vibing.ClaudeACPAdapter 新しいClaudeACPAdapterインスタンス
 function ClaudeACP:new(config)
   local instance = Base.new(self, config)
   setmetatable(instance, ClaudeACP)
@@ -30,15 +37,19 @@ function ClaudeACP:new(config)
   return instance
 end
 
----@return string[]
+---claude-code-acpコマンドライン配列を構築
+---固定で{"claude-code-acp"}を返す（オプションなし）
+---@return string[] コマンドライン配列（常に {"claude-code-acp"}）
 function ClaudeACP:build_command()
   return { "claude-code-acp" }
 end
 
----Send JSON-RPC message
----@param method string
----@param params table?
----@param callback fun(result: table?, error: table?)?
+---JSON-RPCリクエストメッセージを送信
+---JSON-RPC 2.0形式でID付きリクエストを送信し、コールバックをpendingに登録
+---応答受信時にhandle_rpc_message()からコールバックが呼び出される
+---@param method string JSON-RPCメソッド名（"initialize", "session/new", "session/prompt"等）
+---@param params table? メソッドパラメータ（省略可）
+---@param callback fun(result: table?, error: table?)? 応答受信時のコールバック（result またはerrorのいずれかが設定される）
 function ClaudeACP:send_rpc(method, params, callback)
   if not self._handle then return end
 
@@ -60,9 +71,11 @@ function ClaudeACP:send_rpc(method, params, callback)
   return id
 end
 
----Send notification (no response expected)
----@param method string
----@param params table?
+---JSON-RPC通知メッセージを送信（応答なし）
+---JSON-RPC 2.0形式でID なし通知を送信（応答を期待しない一方向メッセージ）
+---session/cancelなど、応答不要の操作に使用
+---@param method string JSON-RPCメソッド名（"session/cancel"等）
+---@param params table? メソッドパラメータ（省略可）
 function ClaudeACP:send_notification(method, params)
   if not self._handle then return end
 
@@ -75,9 +88,11 @@ function ClaudeACP:send_notification(method, params)
   self._handle:write(msg)
 end
 
----Handle stdout data with buffering
----@param data string
----@param on_chunk fun(chunk: string)
+---stdout データを行単位でバッファリングして処理
+---改行区切りでJSON-RPCメッセージを分割し、各行をJSON解析してhandle_rpc_message()に渡す
+---不完全な行はstdout_bufferに保持され、次回のデータ受信時に結合される
+---@param data string 受信した標準出力データ
+---@param on_chunk fun(chunk: string) agent_message_chunkイベント発生時に呼び出されるコールバック
 function ClaudeACP:handle_stdout(data, on_chunk)
   self._state.stdout_buffer = self._state.stdout_buffer .. data
 
@@ -97,9 +112,11 @@ function ClaudeACP:handle_stdout(data, on_chunk)
   end
 end
 
----Handle JSON-RPC message
----@param msg table
----@param on_chunk fun(chunk: string)
+---JSON-RPCメッセージを処理
+---応答（ID付き、methodなし）の場合はpendingコールバックを呼び出し
+---通知（methodあり）の場合はsession/updateイベントを処理してagent_message_chunkからテキストを抽出
+---@param msg table JSON解析済みのRPCメッセージ
+---@param on_chunk fun(chunk: string) agent_message_chunk受信時に呼び出されるコールバック
 function ClaudeACP:handle_rpc_message(msg, on_chunk)
   -- Response to our request
   if msg.id and not msg.method then
@@ -134,10 +151,13 @@ function ClaudeACP:handle_rpc_message(msg, on_chunk)
   end
 end
 
----Start ACP process and initialize session
----@param on_ready fun(success: boolean)
----@param on_chunk fun(chunk: string)
----@param on_done fun(response: Vibing.Response)
+---ACPプロセスを起動してセッションを初期化
+---vim.system()でclaude-code-acpを起動し、initializeとsession/newを順次実行
+---初期化成功時にon_ready(true)を呼び出し、session_idを_stateに保存
+---プロセス終了時にon_done()を呼び出す
+---@param on_ready fun(success: boolean) 初期化完了時のコールバック（成功/失敗を受け取る）
+---@param on_chunk fun(chunk: string) agent_message_chunk受信時のコールバック
+---@param on_done fun(response: Vibing.Response) プロセス終了時のコールバック
 function ClaudeACP:start(on_ready, on_chunk, on_done)
   if self._handle then
     on_ready(true)
@@ -204,9 +224,12 @@ function ClaudeACP:start(on_ready, on_chunk, on_done)
   end)
 end
 
----@param prompt string
----@param opts Vibing.AdapterOpts
----@return Vibing.Response
+---プロンプトを実行して応答を取得（非ストリーミング）
+---ACPはストリーミング専用のため、内部的にstream()を呼び出してブロッキング待機
+---vim.wait()で最大60秒間完了を待つ
+---@param prompt string 送信するプロンプト
+---@param opts Vibing.AdapterOpts 実行オプション（context等）
+---@return Vibing.Response 応答オブジェクト（成功時はcontentに結果、失敗時はerrorにエラーメッセージ）
 function ClaudeACP:execute(prompt, opts)
   -- ACP is streaming-only, use stream internally
   local result = { content = "" }
@@ -226,10 +249,14 @@ function ClaudeACP:execute(prompt, opts)
   return result
 end
 
----@param prompt string
----@param opts Vibing.AdapterOpts
----@param on_chunk fun(chunk: string)
----@param on_done fun(response: Vibing.Response)
+---プロンプトを実行してストリーミング応答を受信
+---既存セッション再利用または新規start()を呼び出し、session/promptでプロンプト送信
+---コンテキストファイル(@file:path)をresourceブロックとして追加、プロンプトをtextブロックとして追加
+---agent_message_chunkイベントでon_chunk()を呼び出し、完了時にon_done()を呼び出す
+---@param prompt string 送信するプロンプト
+---@param opts Vibing.AdapterOpts 実行オプション（context等）
+---@param on_chunk fun(chunk: string) チャンク受信時のコールバック（テキスト断片を受け取る）
+---@param on_done fun(response: Vibing.Response) 完了時のコールバック（最終応答オブジェクトを受け取る）
 function ClaudeACP:stream(prompt, opts, on_chunk, on_done)
   opts = opts or {}
   local output = {}
@@ -303,6 +330,9 @@ function ClaudeACP:stream(prompt, opts, on_chunk, on_done)
   end
 end
 
+---実行中のプロンプトをキャンセル
+---session/cancel通知をACPプロセスに送信（応答なし）
+---セッションIDが存在する場合のみ実行
 function ClaudeACP:cancel()
   if self._handle and self._state.session_id then
     self:send_notification(METHODS.SESSION_CANCEL, {
@@ -311,8 +341,11 @@ function ClaudeACP:cancel()
   end
 end
 
----@param feature string
----@return boolean
+---アダプターが特定の機能をサポートしているかチェック
+---ClaudeACPAdapterはstreaming, tools, contextをサポート（model_selectionは非サポート）
+---呼び出し側は機能サポート状況に応じて動作を切り替える
+---@param feature string 機能名（"streaming", "tools", "model_selection", "context"）
+---@return boolean サポートしている場合true、サポートしていない場合false
 function ClaudeACP:supports(feature)
   local features = {
     streaming = true,
