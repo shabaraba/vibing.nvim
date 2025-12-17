@@ -139,22 +139,43 @@ end
 
 ---初期コンテンツを設定
 function ChatBuffer:_init_content()
+  local vibing = require("vibing")
+  local config = vibing.get_config()
+
   local lines = {
     "---",
     "vibing.nvim: true",
     "session_id: ",
     "created_at: " .. os.date("%Y-%m-%dT%H:%M:%S"),
-    "---",
-    "",
-    "# Vibing Chat",
-    "",
-    "Context: " .. Context.format_for_display(),
-    "",
-    "---",
-    "",
-    "## User",
-    "",
   }
+
+  -- Add permissions if configured
+  if config.permissions then
+    if config.permissions.allow and #config.permissions.allow > 0 then
+      table.insert(lines, "permissions_allow:")
+      for _, tool in ipairs(config.permissions.allow) do
+        table.insert(lines, "  - " .. tool)
+      end
+    end
+    if config.permissions.deny and #config.permissions.deny > 0 then
+      table.insert(lines, "permissions_deny:")
+      for _, tool in ipairs(config.permissions.deny) do
+        table.insert(lines, "  - " .. tool)
+      end
+    end
+  end
+
+  table.insert(lines, "---")
+  table.insert(lines, "")
+  table.insert(lines, "# Vibing Chat")
+  table.insert(lines, "")
+  table.insert(lines, "Context: " .. Context.format_for_display())
+  table.insert(lines, "")
+  table.insert(lines, "---")
+  table.insert(lines, "")
+  table.insert(lines, "## User")
+  table.insert(lines, "")
+
   vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
   vim.api.nvim_win_set_cursor(self.win, { #lines, 0 })
 end
@@ -183,21 +204,43 @@ function ChatBuffer:parse_frontmatter()
     return {}
   end
 
-  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, 20, false)
+  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, 50, false)
   local frontmatter = {}
   local in_frontmatter = false
   local frontmatter_end = 0
+  local current_key = nil
+  local current_list = nil
 
   for i, line in ipairs(lines) do
     if i == 1 and line == "---" then
       in_frontmatter = true
     elseif in_frontmatter and line == "---" then
+      if current_key and current_list then
+        frontmatter[current_key] = current_list
+      end
       frontmatter_end = i
       break
     elseif in_frontmatter then
-      local key, value = line:match("^([%w_]+):%s*(.*)$")
-      if key then
-        frontmatter[key] = value
+      if line:match("^  %- ") and current_list then
+        local item = line:match("^  %- (.+)$")
+        if item then
+          table.insert(current_list, item)
+        end
+      else
+        if current_key and current_list then
+          frontmatter[current_key] = current_list
+        end
+        local key, value = line:match("^([%w_]+):%s*(.*)$")
+        if key then
+          if value == "" then
+            current_key = key
+            current_list = {}
+          else
+            frontmatter[key] = value
+            current_key = nil
+            current_list = nil
+          end
+        end
       end
     end
   end
@@ -227,6 +270,63 @@ function ChatBuffer:update_session_id(session_id)
       return
     end
   end
+end
+
+---フロントマターのフィールドを更新または追加
+---@param key string
+---@param value string
+---@param update_timestamp? boolean
+---@return boolean success
+function ChatBuffer:update_frontmatter(key, value, update_timestamp)
+  if not key or key == "" then
+    return false
+  end
+
+  if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
+    return false
+  end
+
+  if update_timestamp == nil then
+    update_timestamp = true
+  end
+
+  local function escape_pattern(str)
+    return str:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, 20, false)
+  local frontmatter_end = 0
+  local key_line = nil
+  local escaped_key = escape_pattern(key)
+
+  for i, line in ipairs(lines) do
+    if i == 1 and line == "---" then
+      -- frontmatter開始
+    elseif line == "---" then
+      frontmatter_end = i
+      break
+    elseif line:match("^" .. escaped_key .. ":") then
+      key_line = i
+    end
+  end
+
+  if frontmatter_end == 0 then
+    return false
+  end
+
+  local new_line = key .. ": " .. value
+
+  if key_line then
+    vim.api.nvim_buf_set_lines(self.buf, key_line - 1, key_line, false, { new_line })
+  else
+    vim.api.nvim_buf_set_lines(self.buf, frontmatter_end - 1, frontmatter_end - 1, false, { new_line })
+  end
+
+  if update_timestamp and key ~= "updated_at" then
+    self:update_frontmatter("updated_at", os.date("%Y-%m-%dT%H:%M:%S"), false)
+  end
+
+  return true
 end
 
 ---保存されたチャットファイルを読み込む

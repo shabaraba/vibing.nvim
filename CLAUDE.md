@@ -65,10 +65,16 @@ Chat files are saved as Markdown with YAML frontmatter:
 vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
+permissions_allow:
+  - Read
+  - Edit
+  - Write
+permissions_deny:
+  - Bash
 ---
 ```
 
-When reopening a saved chat (`:VibingOpenChat` or `:e`), the session resumes via the stored `session_id`.
+When reopening a saved chat (`:VibingOpenChat` or `:e`), the session resumes via the stored `session_id`. Configured permissions are recorded in frontmatter for transparency and auditability.
 
 ### Key Patterns
 
@@ -97,3 +103,5 @@ Slash commands can be used within the chat buffer for quick actions:
 | `/clear` | Clear context |
 | `/save` | Save current chat |
 | `/summarize` | Summarize conversation |
+| `/mode <mode>` | Set execution mode (auto/plan/code) |
+| `/model <model>` | Set AI model (opus/sonnet/haiku) |
