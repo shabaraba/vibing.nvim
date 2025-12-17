@@ -1,13 +1,19 @@
 local Collector = require("vibing.context.collector")
 
 ---@class Vibing.Context
----@field manual_contexts string[] 手動追加されたコンテキスト
+---コンテキスト管理モジュール
+---手動追加されたファイルと自動収集される開いているバッファを統合管理
+---@field manual_contexts string[] 手動で追加されたコンテキストファイルの配列（@file:path形式）
 local M = {}
 
+---手動で追加されたコンテキストファイルのリスト
+---@type string[]
 M.manual_contexts = {}
 
----手動でコンテキストを追加
----@param path? string ファイルパス（省略時は現在のバッファ）
+---ファイルをコンテキストに手動追加
+---pathが指定された場合はそのファイル、省略時は現在のバッファを追加
+---@file:path形式に変換して重複チェック後にmanual_contextsに追加
+---@param path? string ファイルパス（省略時は現在のバッファ、空文字列も現在のバッファとして扱う）
 function M.add(path)
   local context
   if path and path ~= "" then
@@ -28,15 +34,18 @@ function M.add(path)
   end
 end
 
----コンテキストをクリア
+---手動で追加されたコンテキストを全てクリア
+---自動コンテキスト（開いているバッファ）は設定に従い継続
 function M.clear()
   M.manual_contexts = {}
   vim.notify("[vibing] Context cleared", vim.log.levels.INFO)
 end
 
----全コンテキストを取得（自動 + 手動）
----@param auto_context boolean 自動コンテキストを含めるか
----@return string[]
+---全コンテキストを取得（手動 + 自動）
+---手動コンテキストを優先し、auto_contextがtrueの場合は開いているバッファも追加
+---重複は自動的に除外される
+---@param auto_context boolean 自動コンテキスト（開いているバッファ）を含めるか
+---@return string[] @file:path形式のコンテキスト配列
 function M.get_all(auto_context)
   local contexts = {}
 
@@ -58,8 +67,9 @@ function M.get_all(auto_context)
   return contexts
 end
 
----ビジュアル選択からコンテキストを取得
----@return string?
+---現在のビジュアル選択範囲からコンテキストを取得
+---インラインアクション（fix, explain等）で選択範囲を@file:path:L10-L25形式で取得
+---@return string? @file:path:L10-L25形式のコンテキスト（選択範囲なしの場合はnil）
 function M.get_selection()
   local buf = vim.api.nvim_get_current_buf()
   local start_pos = vim.fn.getpos("'<")
@@ -71,7 +81,9 @@ function M.get_selection()
 end
 
 ---コンテキストを表示用フォーマットで取得
----@return string
+---チャットバッファのコンテキスト表示行やステータス表示に使用
+---カンマ区切りの一覧を返す（コンテキストなしの場合は"No context"）
+---@return string カンマ区切りのコンテキスト一覧（例: "@file:foo.lua, @file:bar.lua"）
 function M.format_for_display()
   local contexts = M.get_all(true)
   if #contexts == 0 then

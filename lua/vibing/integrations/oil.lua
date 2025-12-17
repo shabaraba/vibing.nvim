@@ -1,14 +1,18 @@
 ---@class Vibing.OilIntegration
+---oil.nvim統合モジュール
+---ファイラーからチャットへのファイルメンション追加機能を提供
 local M = {}
 
----oil.nvimが利用可能かチェック
----@return boolean
+---oil.nvimプラグインが利用可能かチェック
+---pcallでrequire("oil")を試行し、読み込み成功時のみtrue
+---@return boolean oil.nvimがインストールされている場合true
 function M.is_available()
   return pcall(require, "oil")
 end
 
 ---現在のバッファがoil.nvimバッファかチェック
----@return boolean
+---oil.get_current_dir()がnilでない場合はoil.nvimバッファと判定
+---@return boolean oil.nvimバッファの場合true
 function M.is_oil_buffer()
   if not M.is_available() then
     return false
@@ -19,8 +23,10 @@ function M.is_oil_buffer()
   return current_dir ~= nil
 end
 
----カーソル位置のファイルパスを取得
----@return string? file_path
+---カーソル位置のエントリのファイルパスを取得
+---ディレクトリの場合はnilを返す（ファイルのみ対象）
+---現在のディレクトリパスとエントリ名を結合して絶対パスを生成
+---@return string? カーソル位置のファイルの絶対パス、ディレクトリまたはエントリなしの場合はnil
 function M.get_cursor_file()
   if not M.is_oil_buffer() then
     return nil
@@ -53,8 +59,10 @@ function M.get_cursor_file()
   return file_path
 end
 
----選択されたファイルパスを取得（カーソル位置のファイルのみ）
----@return string[] file_paths
+---選択されたファイルパスを取得
+---oil.nvimは複数選択をサポートしていないため、カーソル位置のファイルのみを配列で返す
+---将来的な複数選択対応のためのインターフェース
+---@return string[] カーソル位置のファイルの絶対パス配列（ファイルがない場合は空配列）
 function M.get_selected_files()
   local file = M.get_cursor_file()
   if file then
@@ -63,7 +71,10 @@ function M.get_selected_files()
   return {}
 end
 
----ファイルパスをチャットに送信
+---カーソル位置のファイルをチャットに@file:path形式で追加
+---チャットが開いていない場合は自動的に開く
+---相対パス変換と存在チェックを実施
+---挿入後にカーソルを挿入位置に移動
 function M.send_to_chat()
   if not M.is_oil_buffer() then
     vim.notify("[vibing] Not in an oil.nvim buffer", vim.log.levels.WARN)
