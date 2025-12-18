@@ -1,10 +1,10 @@
 ---@class Vibing.ChatInit
 ---チャットシステムの初期化モジュール
----組み込みチャットコマンド（/context, /clear, /save, /summarize, /mode, /model）を登録
+---組み込みチャットコマンド（/context, /clear, /save, /summarize, /mode, /model, /allow, /deny）を登録
 local M = {}
 
 ---チャットコマンドシステムを初期化
----プラグイン起動時に呼び出され、6つの組み込みコマンドをcommands.registerで登録
+---プラグイン起動時に呼び出され、組み込みコマンドをcommands.registerで登録
 ---各コマンドはchat/handlers/配下のハンドラー関数と紐付けられる
 ---登録後は/helpでコマンド一覧が表示可能になる
 function M.setup()
@@ -51,6 +51,18 @@ function M.setup()
     name = "help",
     handler = require("vibing.chat.handlers.help"),
     description = "Show available slash commands",
+  })
+
+  commands.register({
+    name = "allow",
+    handler = require("vibing.chat.handlers.allow"),
+    description = "Allow tool: /allow <tool> or /allow -<tool> to remove",
+  })
+
+  commands.register({
+    name = "deny",
+    handler = require("vibing.chat.handlers.deny"),
+    description = "Deny tool: /deny <tool> or /deny -<tool> to remove",
   })
 end
 

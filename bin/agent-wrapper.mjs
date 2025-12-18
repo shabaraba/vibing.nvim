@@ -110,7 +110,8 @@ if (contextFiles.length > 0 && !sessionId) {
 // Build session options
 const sessionOptions = {
   allowedTools: ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
-  permissionMode: 'default',
+  permissionMode: 'acceptEdits',
+  workingDirectory: cwd,
 };
 
 // Add canUseTool callback for permission control

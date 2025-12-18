@@ -425,6 +425,110 @@ function ChatBuffer:update_frontmatter(key, value, update_timestamp)
   return true
 end
 
+---フロントマターのリストフィールドを更新（追加/削除）
+---permissions_allow, permissions_deny等のリスト形式フィールド用
+---@param key string フィールド名（permissions_allow, permissions_deny等）
+---@param value string 追加/削除する値
+---@param action "add"|"remove" 操作種別
+---@return boolean success
+function ChatBuffer:update_frontmatter_list(key, value, action)
+  if not key or key == "" or not value or value == "" then
+    return false
+  end
+
+  if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
+    return false
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, 50, false)
+  local frontmatter_end = 0
+  local key_start = nil
+  local key_end = nil
+  local current_items = {}
+
+  -- frontmatter解析
+  local in_frontmatter = false
+  local in_target_list = false
+
+  for i, line in ipairs(lines) do
+    if i == 1 and line == "---" then
+      in_frontmatter = true
+    elseif in_frontmatter and line == "---" then
+      frontmatter_end = i
+      if in_target_list then
+        key_end = i - 1
+      end
+      break
+    elseif in_frontmatter then
+      if line:match("^" .. key .. ":") then
+        key_start = i
+        in_target_list = true
+      elseif in_target_list then
+        local item = line:match("^  %- (.+)$")
+        if item then
+          table.insert(current_items, item)
+        else
+          key_end = i - 1
+          in_target_list = false
+        end
+      end
+    end
+  end
+
+  if frontmatter_end == 0 then
+    return false
+  end
+
+  -- リストを更新
+  if action == "add" then
+    -- 既に存在する場合は追加しない
+    for _, item in ipairs(current_items) do
+      if item == value then
+        return true
+      end
+    end
+    table.insert(current_items, value)
+  elseif action == "remove" then
+    local new_items = {}
+    for _, item in ipairs(current_items) do
+      if item ~= value then
+        table.insert(new_items, item)
+      end
+    end
+    current_items = new_items
+  end
+
+  -- 新しいリスト行を生成
+  local new_lines = {}
+  if #current_items > 0 then
+    table.insert(new_lines, key .. ":")
+    for _, item in ipairs(current_items) do
+      table.insert(new_lines, "  - " .. item)
+    end
+  end
+
+  -- バッファを更新
+  if key_start then
+    -- 既存のキーを置換
+    local end_line = key_end or key_start
+    vim.api.nvim_buf_set_lines(self.buf, key_start - 1, end_line, false, new_lines)
+  elseif #current_items > 0 then
+    -- 新規キーを追加（frontmatter終了の直前）
+    vim.api.nvim_buf_set_lines(self.buf, frontmatter_end - 1, frontmatter_end - 1, false, new_lines)
+  end
+
+  self:update_frontmatter("updated_at", os.date("%Y-%m-%dT%H:%M:%S"), false)
+  return true
+end
+
+---フロントマターのリストフィールドを取得
+---@param key string フィールド名
+---@return string[] items
+function ChatBuffer:get_frontmatter_list(key)
+  local frontmatter = self:parse_frontmatter()
+  return frontmatter[key] or {}
+end
+
 ---保存されたチャットファイルを読み込む
 ---@param file_path string
 ---@return boolean success
