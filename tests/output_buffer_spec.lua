@@ -107,6 +107,9 @@ describe("vibing.ui.output_buffer", function()
       output:append_chunk("First chunk", true)
       output:append_chunk(" second", false)
 
+      -- タイマーベースのバッファリングを使用しているため、手動でフラッシュ
+      output:_flush_chunks()
+
       local lines = vim.api.nvim_buf_get_lines(output.buf, 0, -1, false)
       local has_content = false
       for _, line in ipairs(lines) do
