@@ -68,10 +68,6 @@ function ChatBuffer:_create_buffer()
   vim.bo[self.buf].modifiable = true
   vim.bo[self.buf].swapfile = false
 
-  -- スラッシュコマンド補完を設定
-  local completion = require("vibing.chat.completion")
-  completion.setup_buffer(self.buf)
-
   -- ファイルパスが設定されている場合はそれを使う
   if self.file_path then
     vim.api.nvim_buf_set_name(self.buf, self.file_path)

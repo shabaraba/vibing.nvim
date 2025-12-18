@@ -77,7 +77,14 @@ function M.execute(message, chat_buffer)
     return false
   end
 
+  -- 組み込みコマンドを確認
   local command = M.commands[command_name]
+
+  -- カスタムコマンドも確認
+  if not command then
+    command = M.custom_commands[command_name]
+  end
+
   if not command then
     notify.warn(string.format("Unknown command: /%s", command_name))
     return true -- コマンドとして認識されたが存在しない
