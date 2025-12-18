@@ -99,7 +99,7 @@ describe("vibing.chat.init", function()
       assert.is_not_nil(cmd.description:match("model"))
     end)
 
-    it("should have exactly 6 commands after setup", function()
+    it("should have exactly 7 commands after setup", function()
       ChatInit.setup()
 
       local count = 0
@@ -107,7 +107,7 @@ describe("vibing.chat.init", function()
         count = count + 1
       end
 
-      assert.equals(6, count)
+      assert.equals(7, count)
     end)
 
     it("should be idempotent (can be called multiple times)", function()
@@ -119,7 +119,7 @@ describe("vibing.chat.init", function()
         count = count + 1
       end
 
-      assert.equals(6, count)
+      assert.equals(7, count)
     end)
 
     it("should register commands with correct descriptions", function()
@@ -158,7 +158,7 @@ describe("vibing.chat.init", function()
 
       local list = Commands.list()
 
-      assert.equals(6, #list)
+      assert.equals(7, #list)
 
       -- Verify all command names are in the list
       local command_names = {}

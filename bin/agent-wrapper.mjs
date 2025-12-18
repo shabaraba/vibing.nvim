@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 /**
  * Claude Agent SDK wrapper for vibing.nvim
+ * Uses V2 API for proper session resumption
  * Outputs streaming text chunks to stdout as JSON lines
  */
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import {
+  unstable_v2_createSession,
+  unstable_v2_resumeSession,
+} from '@anthropic-ai/claude-agent-sdk';
 
 const args = process.argv.slice(2);
 let prompt = '';
@@ -64,6 +68,19 @@ process.chdir(cwd);
 // Build full prompt with context
 let fullPrompt = prompt;
 
+// Add session context for new sessions
+if (!sessionId) {
+  const sessionContext = `<session-info>
+This is a NEW conversation session. You have NO memory of any previous conversations with this user.
+IMPORTANT: If the user asks about "previous conversations" or "what we talked about before", you must honestly say you don't have that information because this is a new session.
+Do NOT infer or fabricate previous conversation content from project files, git status, or other context.
+Only reference actual messages within THIS current session.
+</session-info>
+
+`;
+  fullPrompt = sessionContext + prompt;
+}
+
 // Add context files (only for first message in session)
 if (contextFiles.length > 0 && !sessionId) {
   const fs = await import('fs');
@@ -77,37 +94,33 @@ if (contextFiles.length > 0 && !sessionId) {
     }
   }
   if (contextParts.length > 0) {
-    fullPrompt = `The following files are provided as context for reference:\n\n${contextParts.join('\n\n')}\n\n---\n\nUser request:\n${prompt}`;
+    // コンテキストファイルのみを追加（promptは既にfullPromptに含まれている）
+    fullPrompt =
+      fullPrompt +
+      `\n\nThe following files are provided as context for reference:\n\n${contextParts.join('\n\n')}`;
   }
 }
 
 // Output format: JSON lines for easy parsing
 // { "type": "chunk", "text": "..." }
-// { "type": "tool_use", "name": "...", "input": "..." }
-// { "type": "tool_result", "name": "...", "output": "..." }
+// { "type": "session", "session_id": "..." }
 // { "type": "done" }
 // { "type": "error", "message": "..." }
 
-let lastWasText = false;
-let pendingToolUse = null;
-
-// Build query options
-const queryOptions = {
+// Build session options
+const sessionOptions = {
   allowedTools: ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
   permissionMode: 'default',
-  includePartialMessages: true,
 };
 
 // Add canUseTool callback for permission control
 if (allowedTools.length > 0 || deniedTools.length > 0) {
-  // Normalize tool names to lowercase for case-insensitive comparison
   const normalizedAllow = allowedTools.map((t) => t.toLowerCase());
   const normalizedDeny = deniedTools.map((t) => t.toLowerCase());
 
-  queryOptions.canUseTool = async (toolName, input) => {
+  sessionOptions.canUseTool = async (toolName, input) => {
     const normalizedToolName = toolName.toLowerCase();
 
-    // Deny list takes precedence
     if (normalizedDeny.includes(normalizedToolName)) {
       return {
         behavior: 'deny',
@@ -115,7 +128,6 @@ if (allowedTools.length > 0 || deniedTools.length > 0) {
       };
     }
 
-    // Allow list
     if (normalizedAllow.length > 0 && !normalizedAllow.includes(normalizedToolName)) {
       return {
         behavior: 'deny',
@@ -123,7 +135,6 @@ if (allowedTools.length > 0 || deniedTools.length > 0) {
       };
     }
 
-    // Allow by default if passed checks
     return {
       behavior: 'allow',
       updatedInput: input,
@@ -133,90 +144,69 @@ if (allowedTools.length > 0 || deniedTools.length > 0) {
 
 // Add mode if provided
 if (mode) {
-  queryOptions.mode = mode;
+  sessionOptions.mode = mode;
 }
 
 // Add model if provided
 if (model) {
-  queryOptions.model = model;
+  sessionOptions.model = model;
 }
 
-// Resume session if provided
-if (sessionId) {
-  queryOptions.resume = sessionId;
-}
+let sessionIdEmitted = false;
 
 try {
-  for await (const message of query({
-    prompt: fullPrompt,
-    options: queryOptions,
-  })) {
-    // Capture session ID from init message
+  // Create or resume session using V2 API
+  const session = sessionId
+    ? unstable_v2_resumeSession(sessionId, sessionOptions)
+    : unstable_v2_createSession(sessionOptions);
+
+  // Send the prompt
+  await session.send(fullPrompt);
+
+  // Process the response stream (V2 API message format)
+  for await (const message of session.receive()) {
+    // Emit session ID once from init message
     if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
-      console.log(JSON.stringify({ type: 'session', session_id: message.session_id }));
+      if (!sessionIdEmitted) {
+        console.log(JSON.stringify({ type: 'session', session_id: message.session_id }));
+        sessionIdEmitted = true;
+      }
     }
 
-    if (message.type === 'stream_event' && message.event) {
-      const event = message.event;
-
-      // content_block_start can indicate tool_use
-      if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
-        if (lastWasText) {
-          console.log(JSON.stringify({ type: 'chunk', text: '\n\n' }));
-        }
-        pendingToolUse = {
-          name: event.content_block.name,
-          input: {},
-        };
-        lastWasText = false;
-      }
-
-      // content_block_delta contains incremental text or tool input
-      if (event.type === 'content_block_delta') {
-        if (event.delta?.type === 'text_delta') {
-          console.log(JSON.stringify({ type: 'chunk', text: event.delta.text }));
-          lastWasText = true;
-        } else if (event.delta?.type === 'input_json_delta' && pendingToolUse) {
-          // Accumulate tool input JSON
-          pendingToolUse.inputJson = (pendingToolUse.inputJson || '') + event.delta.partial_json;
-        }
-      }
-
-      // content_block_stop - output tool use info
-      if (event.type === 'content_block_stop' && pendingToolUse) {
-        try {
-          if (pendingToolUse.inputJson) {
-            pendingToolUse.input = JSON.parse(pendingToolUse.inputJson);
+    // Handle assistant messages (main text responses)
+    if (message.type === 'assistant' && message.message?.content) {
+      for (const block of message.message.content) {
+        if (block.type === 'text' && block.text) {
+          console.log(JSON.stringify({ type: 'chunk', text: block.text }));
+        } else if (block.type === 'tool_use') {
+          // Tool use indication
+          const toolName = block.name;
+          let inputSummary = '';
+          const toolInput = block.input || {};
+          if (toolInput.command) {
+            inputSummary =
+              toolInput.command.length > 50
+                ? toolInput.command.substring(0, 50) + '...'
+                : toolInput.command;
+          } else if (toolInput.file_path) {
+            inputSummary = toolInput.file_path;
+          } else if (toolInput.pattern) {
+            inputSummary = toolInput.pattern;
+          } else if (toolInput.query) {
+            inputSummary = toolInput.query;
           }
-        } catch {
-          // JSON parsing failed, use empty object
+          console.log(
+            JSON.stringify({
+              type: 'chunk',
+              text: `\n⏺ ${toolName}(${inputSummary})\n`,
+            })
+          );
         }
-
-        const toolName = pendingToolUse.name;
-        const toolInput = pendingToolUse.input;
-        let inputSummary = '';
-        if (toolInput.command) {
-          inputSummary =
-            toolInput.command.length > 50
-              ? toolInput.command.substring(0, 50) + '...'
-              : toolInput.command;
-        } else if (toolInput.file_path) {
-          inputSummary = toolInput.file_path;
-        } else if (toolInput.pattern) {
-          inputSummary = toolInput.pattern;
-        } else if (toolInput.query) {
-          inputSummary = toolInput.query;
-        }
-        console.log(
-          JSON.stringify({
-            type: 'chunk',
-            text: `⏺ ${toolName}(${inputSummary})\n`,
-          })
-        );
-        pendingToolUse = null;
       }
-    } else if (message.type === 'user' && message.message?.content) {
-      // Tool result comes as user message
+    }
+
+    // Handle tool results (user messages contain tool_result)
+    if (message.type === 'user' && message.message?.content) {
       for (const block of message.message.content) {
         if (block.type === 'tool_result' && block.content) {
           let resultText = '';
@@ -238,9 +228,9 @@ try {
         }
       }
     }
-    // Skip assistant message - we handle content via stream_event
   }
 
+  session.close();
   console.log(JSON.stringify({ type: 'done' }));
 } catch (error) {
   console.log(JSON.stringify({ type: 'error', message: error.message || String(error) }));

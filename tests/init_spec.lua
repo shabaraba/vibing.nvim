@@ -196,6 +196,8 @@ describe("vibing.init", function()
       -- Verify all expected commands are registered
       local expected = {
         "VibingChat",
+        "VibingToggleChat",
+        "VibingSlashCommands",
         "VibingContext",
         "VibingClearContext",
         "VibingInline",
@@ -210,6 +212,7 @@ describe("vibing.init", function()
         "VibingRemote",
         "VibingRemoteStatus",
         "VibingSendToChat",
+        "VibingReloadCommands",
         "VibingMigrate",
       }
 
@@ -411,7 +414,7 @@ describe("vibing.init", function()
       assert.is_true(config_setup_called)
       assert.is_true(chat_setup_called)
       assert.is_not_nil(Vibing.adapter)
-      assert.equals(16, commands_registered)
+      assert.equals(19, commands_registered)
     end)
   end)
 end)

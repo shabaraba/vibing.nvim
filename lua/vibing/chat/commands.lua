@@ -15,6 +15,10 @@ local M = {}
 ---@type table<string, Vibing.SlashCommand>
 M.commands = {}
 
+---登録済みカスタムコマンドのマップ（コマンド名 → SlashCommandオブジェクト）
+---@type table<string, Vibing.SlashCommand>
+M.custom_commands = {}
+
 ---新しいスラッシュコマンドを登録
 ---chat/init.luaから組み込みコマンドの登録に使用される
 ---同名のコマンドが既に存在する場合は上書き
@@ -66,17 +70,27 @@ end
 ---@param message string 実行するコマンド文字列（例: "/context foo.lua"）
 ---@param chat_buffer Vibing.ChatBuffer コマンドを実行するチャットバッファ
 ---@return boolean handled コマンドとして処理された場合true（成功/失敗問わず）、コマンド形式でない場合false
+---@return boolean is_custom カスタムコマンドの場合true、ビルトインの場合false
 function M.execute(message, chat_buffer)
   local command_name, args = M.parse(message)
 
   if not command_name then
-    return false
+    return false, false
   end
 
+  -- 組み込みコマンドを確認
   local command = M.commands[command_name]
+  local is_custom = false
+
+  -- カスタムコマンドも確認
+  if not command then
+    command = M.custom_commands[command_name]
+    is_custom = command ~= nil
+  end
+
   if not command then
     notify.warn(string.format("Unknown command: /%s", command_name))
-    return true -- コマンドとして認識されたが存在しない
+    return true, false -- コマンドとして認識されたが存在しない
   end
 
   -- コマンドハンドラーを実行
@@ -85,7 +99,7 @@ function M.execute(message, chat_buffer)
     notify.error(string.format("Command error: %s", result))
   end
 
-  return true
+  return true, is_custom
 end
 
 ---登録済みコマンドの一覧を取得
@@ -99,6 +113,86 @@ function M.list()
   end
   table.sort(list, function(a, b) return a.name < b.name end)
   return list
+end
+
+---カスタムコマンドを登録
+---Markdown内容をチャットバッファに挿入するハンドラーを自動生成
+---@param custom_cmd Vibing.CustomCommand カスタムコマンド情報
+function M.register_custom(custom_cmd)
+  M.custom_commands[custom_cmd.name] = {
+    name = custom_cmd.name,
+    handler = function(args, chat_buffer)
+      local message = custom_cmd.content
+
+      -- 全引数を結合
+      local all_args = table.concat(args, " ")
+
+      -- プレースホルダー置換
+      -- $ARGUMENTS と {{ARGUMENTS}} を全引数に置換
+      message = message:gsub("%$ARGUMENTS", all_args)
+      message = message:gsub("{{ARGUMENTS}}", all_args)
+
+      -- 個別引数の置換（例: {{1}}, {{2}}）
+      -- 関数形式を使用してargの特殊文字（%など）をエスケープ
+      for i, arg in ipairs(args) do
+        message = message:gsub("{{" .. i .. "}}", function() return arg end)
+      end
+
+      -- チャットバッファの確認
+      if not chat_buffer then
+        notify.error("No chat buffer")
+        return false
+      end
+
+      -- プロンプトが空でないか確認
+      if vim.trim(message) == "" then
+        notify.error(string.format("Custom command /%s produced empty prompt", custom_cmd.name))
+        return false
+      end
+
+      -- Agentに直接送信（バッファに展開しない）
+      -- Note: M.send()が最後にadd_user_section()を呼ぶため、ここでは呼ばない
+      vim.schedule(function()
+        require("vibing.actions.chat").send(chat_buffer, message)
+      end)
+
+      notify.info(string.format("Custom command executed: /%s", custom_cmd.name))
+      return true
+    end,
+    description = custom_cmd.description,
+    source = custom_cmd.source,
+  }
+end
+
+---全コマンドを取得（組み込み + カスタム）
+---補完やピッカーで使用
+---@return table<string, Vibing.SlashCommand> コマンド名をキーとするマップ
+function M.list_all()
+  local all = {}
+
+  -- 組み込みコマンド
+  for name, cmd in pairs(M.commands) do
+    all[name] = vim.tbl_extend("force", cmd, { source = "builtin" })
+  end
+
+  -- カスタムコマンド
+  for name, cmd in pairs(M.custom_commands) do
+    all[name] = cmd
+  end
+
+  return all
+end
+
+---コマンド引数の補完候補を取得
+---mode, modelコマンドの引数補完に使用
+---@param command_name string コマンド名
+---@return string[]? 補完候補（nilの場合は補完なし）
+function M.get_argument_completions(command_name)
+  local completions = {
+    mode = { "auto", "plan", "code", "explore" },
+    model = { "opus", "sonnet", "haiku" },
+  }
+  return completions[command_name]
 end
 
 return M

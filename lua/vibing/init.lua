@@ -34,6 +34,13 @@ function M.setup(opts)
   -- チャットコマンド初期化
   require("vibing.chat").setup()
 
+  -- カスタムコマンドのスキャンと登録
+  local custom_commands = require("vibing.chat.custom_commands")
+  local commands = require("vibing.chat.commands")
+  for _, custom_cmd in ipairs(custom_commands.get_all()) do
+    commands.register_custom(custom_cmd)
+  end
+
   -- リモートコントロールの初期化
   if M.config.remote and M.config.remote.auto_detect then
     local Remote = require("vibing.remote")
@@ -51,6 +58,19 @@ function M._register_commands()
   vim.api.nvim_create_user_command("VibingChat", function()
     require("vibing.actions.chat").open()
   end, { desc = "Open Vibing chat" })
+
+  vim.api.nvim_create_user_command("VibingToggleChat", function()
+    require("vibing.actions.chat").toggle()
+  end, { desc = "Toggle Vibing chat window" })
+
+  vim.api.nvim_create_user_command("VibingSlashCommands", function()
+    local chat = require("vibing.actions.chat")
+    if not chat.chat_buffer or not chat.chat_buffer:is_open() then
+      notify.warn("Please open a chat window first")
+      return
+    end
+    require("vibing.ui.command_picker").show(chat.chat_buffer)
+  end, { desc = "Show slash command picker" })
 
   vim.api.nvim_create_user_command("VibingContext", function(opts)
     require("vibing.context").add(opts.args)
@@ -132,6 +152,20 @@ function M._register_commands()
   vim.api.nvim_create_user_command("VibingSendToChat", function()
     require("vibing.integrations.oil").send_to_chat()
   end, { desc = "Send file from oil.nvim to chat" })
+
+  vim.api.nvim_create_user_command("VibingReloadCommands", function()
+    local custom_commands = require("vibing.chat.custom_commands")
+    local commands = require("vibing.chat.commands")
+
+    custom_commands.clear_cache()
+    commands.custom_commands = {}
+
+    for _, custom_cmd in ipairs(custom_commands.get_all()) do
+      commands.register_custom(custom_cmd)
+    end
+
+    notify.info("Custom commands reloaded")
+  end, { desc = "Reload custom slash commands" })
 
   vim.api.nvim_create_user_command("VibingMigrate", function(opts)
     local Migrator = require("vibing.context.migrator")

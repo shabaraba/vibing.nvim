@@ -63,7 +63,7 @@ function AgentSDK:build_command(prompt, opts)
     end
   end
 
-  -- Add session ID for resuming
+  -- Add session ID for resuming (V2 API handles this properly)
   if self._session_id then
     table.insert(cmd, "--session")
     table.insert(cmd, self._session_id)
