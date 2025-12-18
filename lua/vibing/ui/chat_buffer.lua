@@ -224,6 +224,9 @@ function ChatBuffer:_init_content()
 
   -- Add permissions if configured
   if config.permissions then
+    if config.permissions.mode then
+      table.insert(lines, "permission_mode: " .. config.permissions.mode)
+    end
     if config.permissions.allow and #config.permissions.allow > 0 then
       table.insert(lines, "permissions_allow:")
       for _, tool in ipairs(config.permissions.allow) do
