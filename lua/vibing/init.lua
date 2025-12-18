@@ -1,14 +1,22 @@
 local Config = require("vibing.config")
+local notify = require("vibing.utils.notify")
 
 ---@class Vibing
----@field config Vibing.Config
----@field adapter Vibing.Adapter
+---vibing.nvimプラグインのメインモジュール
+---設定管理、アダプター初期化、コマンド登録を担当するエントリーポイント
+---@field config Vibing.Config プラグイン設定オブジェクト（setup()で初期化）
+---@field adapter Vibing.Adapter AIバックエンドアダプター（agent_sdk, claude, claude_acp等）
 local M = {}
 
+---現在使用中のアダプターインスタンス
+---setup()でconfig.adapterに基づいて初期化される
 ---@type Vibing.Adapter?
 M.adapter = nil
 
----@param opts? Vibing.Config
+---vibing.nvimプラグインを初期化
+---設定のマージ、アダプター初期化、チャットシステム初期化、リモート制御初期化、ユーザーコマンド登録を実行
+---アダプター読み込みに失敗した場合はエラー通知して初期化を中断
+---@param opts? Vibing.Config ユーザー設定オブジェクト（nilの場合はデフォルト設定のみ使用）
 function M.setup(opts)
   Config.setup(opts)
   M.config = Config.get()
@@ -17,10 +25,7 @@ function M.setup(opts)
   local adapter_name = M.config.adapter
   local ok, adapter_module = pcall(require, "vibing.adapters." .. adapter_name)
   if not ok then
-    vim.notify(
-      string.format("[vibing.nvim] Adapter '%s' not found", adapter_name),
-      vim.log.levels.ERROR
-    )
+    notify.error(string.format("Adapter '%s' not found", adapter_name))
     return
   end
 
@@ -39,7 +44,9 @@ function M.setup(opts)
   M._register_commands()
 end
 
----コマンドを登録
+---Neovimユーザーコマンドを登録
+---VibingChat, VibingContext, VibingInline, VibingExplain, VibingFix等の全コマンドを登録
+---チャット操作、コンテキスト管理、インラインアクション、リモート制御、マイグレーションを含む
 function M._register_commands()
   vim.api.nvim_create_user_command("VibingChat", function()
     require("vibing.actions.chat").open()
@@ -105,7 +112,7 @@ function M._register_commands()
   vim.api.nvim_create_user_command("VibingRemote", function(opts)
     local remote = require("vibing.remote")
     if not remote.is_available() then
-      vim.notify("[vibing] Remote control not available. Start nvim with --listen or set socket_path", vim.log.levels.ERROR)
+      notify.error("Remote control not available. Start nvim with --listen or set socket_path")
       return
     end
     remote.execute(opts.args)
@@ -118,7 +125,7 @@ function M._register_commands()
       print(string.format("[vibing] Remote Status - Mode: %s, Buffer: %s, Line: %d, Col: %d",
         status.mode, status.bufname, status.line, status.col))
     else
-      vim.notify("[vibing] Remote control not available", vim.log.levels.ERROR)
+      notify.error("Remote control not available")
     end
   end, { desc = "Get remote Neovim status" })
 
@@ -134,17 +141,17 @@ function M._register_commands()
       -- 引数なし：現在のチャットバッファをマイグレーション
       local chat = require("vibing.actions.chat")
       if not chat.chat_buffer or not chat.chat_buffer.file_path then
-        vim.notify("[vibing] No active chat buffer to migrate", vim.log.levels.WARN)
+        notify.warn("No active chat buffer to migrate")
         return
       end
 
       local success, err = Migrator.migrate_current_buffer(chat.chat_buffer)
       if success then
-        vim.notify("[vibing] Chat migrated successfully", vim.log.levels.INFO)
+        notify.info("Chat migrated successfully")
         -- バッファを再読み込み
         vim.cmd("edit!")
       else
-        vim.notify("[vibing] Migration failed: " .. (err or "unknown error"), vim.log.levels.ERROR)
+        notify.error("Migration failed: " .. (err or "unknown error"))
       end
     elseif args == "--scan" then
       -- ディレクトリスキャン
@@ -152,14 +159,11 @@ function M._register_commands()
       local files = Migrator.scan_chat_directory(chat_dir)
 
       if #files == 0 then
-        vim.notify("[vibing] No old format files found", vim.log.levels.INFO)
+        notify.info("No old format files found")
         return
       end
 
-      vim.notify(
-        string.format("[vibing] Found %d file(s) to migrate. Migrating...", #files),
-        vim.log.levels.INFO
-      )
+      notify.info(string.format("Found %d file(s) to migrate. Migrating...", #files))
 
       local success_count = 0
       for _, file in ipairs(files) do
@@ -167,33 +171,36 @@ function M._register_commands()
         if success then
           success_count = success_count + 1
         else
-          vim.notify("[vibing] Failed to migrate " .. file .. ": " .. (err or ""), vim.log.levels.WARN)
+          notify.warn("Failed to migrate " .. file .. ": " .. (err or ""))
         end
       end
 
-      vim.notify(
-        string.format("[vibing] Migrated %d/%d files successfully", success_count, #files),
-        vim.log.levels.INFO
-      )
+      notify.info(string.format("Migrated %d/%d files successfully", success_count, #files))
     else
       -- ファイルパス指定
       local file_path = vim.fn.expand(args)
       local success, err = Migrator.migrate_file(file_path, true)
       if success then
-        vim.notify("[vibing] File migrated: " .. file_path, vim.log.levels.INFO)
+        notify.info("File migrated: " .. file_path)
       else
-        vim.notify("[vibing] Migration failed: " .. (err or "unknown error"), vim.log.levels.ERROR)
+        notify.error("Migration failed: " .. (err or "unknown error"))
       end
     end
   end, { nargs = "?", desc = "Migrate chat file to new format", complete = "file" })
 end
 
----@return Vibing.Adapter?
+---現在のアダプターインスタンスを取得
+---setup()で初期化されたアダプター（agent_sdk, claude, claude_acp等）を返す
+---setup()未実行の場合はnilを返す
+---@return Vibing.Adapter? アダプターインスタンス（初期化済みの場合）またはnil
 function M.get_adapter()
   return M.adapter
 end
 
----@return Vibing.Config
+---現在の設定を取得
+---setup()で初期化された設定を返す
+---setup()未実行の場合はデフォルト設定を返す
+---@return Vibing.Config 現在の設定オブジェクトまたはデフォルト設定
 function M.get_config()
   return M.config or Config.defaults
 end
