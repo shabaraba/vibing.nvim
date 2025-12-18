@@ -1,3 +1,5 @@
+local notify = require("vibing.utils.notify")
+
 ---/modelコマンドハンドラー
 ---チャット内で/model <model>を実行した際に呼び出される
 ---使用するClaudeモデルを設定（opus, sonnet, haiku）

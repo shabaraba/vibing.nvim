@@ -1,3 +1,5 @@
+local notify = require("vibing.utils.notify")
+
 ---/contextコマンドハンドラー
 ---チャット内で/context <file_path>を実行した際に呼び出される
 ---指定されたファイルパスを次回以降のプロンプトに含めるコンテキストとして追加

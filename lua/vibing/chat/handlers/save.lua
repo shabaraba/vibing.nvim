@@ -1,3 +1,5 @@
+local notify = require("vibing.utils.notify")
+
 ---/saveコマンドハンドラー
 ---チャット内で/saveを実行した際に呼び出される
 ---チャットバッファの内容をファイルに保存（YAMLフロントマター+Markdown本文）

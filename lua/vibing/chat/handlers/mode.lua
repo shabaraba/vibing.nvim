@@ -1,3 +1,5 @@
+local notify = require("vibing.utils.notify")
+
 ---/modeコマンドハンドラー
 ---チャット内で/mode <mode>を実行した際に呼び出される
 ---Agent SDKの実行モードを設定（auto, plan, code）
