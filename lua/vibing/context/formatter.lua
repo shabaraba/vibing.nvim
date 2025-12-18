@@ -2,10 +2,11 @@
 local M = {}
 
 ---プロンプトとコンテキストを統合
+---コンテキストが空の場合は元のプロンプトをそのまま返す
 ---@param prompt string ユーザーのプロンプト
----@param contexts string[] @file:形式のコンテキストリスト
----@param position "prepend"|"append" コンテキストの配置位置
----@return string formatted_prompt 統合されたプロンプト
+---@param contexts string[] @file:形式のコンテキストリスト（例: "@file:path.lua"）
+---@param position "prepend"|"append" コンテキストの配置位置（デフォルト: "prepend"）
+---@return string formatted_prompt 統合されたプロンプト（コンテキスト + プロンプト）
 function M.format_prompt(prompt, contexts, position)
   if not contexts or #contexts == 0 then
     return prompt
@@ -22,8 +23,10 @@ function M.format_prompt(prompt, contexts, position)
 end
 
 ---コンテキストセクションをフォーマット
----@param contexts string[] @file:形式のコンテキストリスト
----@return string formatted_section フォーマットされたコンテキストセクション
+---"# Context Files" ヘッダーに続いて各コンテキストを改行区切りで出力
+---コンテキストが空の場合は空文字列を返す
+---@param contexts string[] @file:形式のコンテキストリスト（例: "@file:path.lua"）
+---@return string formatted_section フォーマットされたコンテキストセクション（Markdown形式）
 function M.format_contexts_section(contexts)
   if not contexts or #contexts == 0 then
     return ""
@@ -37,8 +40,10 @@ function M.format_contexts_section(contexts)
 end
 
 ---コンテキストを表示用にフォーマット
----@param contexts string[] @file:形式のコンテキストリスト
----@return string display_string 表示用文字列
+---コンテキストをカンマ区切りで連結して返す
+---コンテキストが空の場合は "No context" を返す
+---@param contexts string[] @file:形式のコンテキストリスト（例: "@file:path.lua"）
+---@return string display_string カンマ区切りの表示用文字列、または "No context"
 function M.format_for_display(contexts)
   if not contexts or #contexts == 0 then
     return "No context"
