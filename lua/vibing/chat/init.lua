@@ -46,6 +46,12 @@ function M.setup()
     handler = require("vibing.chat.handlers.model"),
     description = "Set AI model: /model <opus|sonnet|haiku>",
   })
+
+  commands.register({
+    name = "help",
+    handler = require("vibing.chat.handlers.help"),
+    description = "Show available slash commands",
+  })
 end
 
 return M

@@ -15,6 +15,10 @@ local M = {}
 ---@type table<string, Vibing.SlashCommand>
 M.commands = {}
 
+---登録済みカスタムコマンドのマップ（コマンド名 → SlashCommandオブジェクト）
+---@type table<string, Vibing.SlashCommand>
+M.custom_commands = {}
+
 ---新しいスラッシュコマンドを登録
 ---chat/init.luaから組み込みコマンドの登録に使用される
 ---同名のコマンドが既に存在する場合は上書き
@@ -99,6 +103,76 @@ function M.list()
   end
   table.sort(list, function(a, b) return a.name < b.name end)
   return list
+end
+
+---カスタムコマンドを登録
+---Markdown内容をチャットバッファに挿入するハンドラーを自動生成
+---@param custom_cmd Vibing.CustomCommand カスタムコマンド情報
+function M.register_custom(custom_cmd)
+  M.custom_commands[custom_cmd.name] = {
+    name = custom_cmd.name,
+    handler = function(args, chat_buffer)
+      local message = custom_cmd.content
+
+      -- プレースホルダー置換（例: {{1}}, {{2}}）
+      for i, arg in ipairs(args) do
+        message = message:gsub("{{" .. i .. "}}", arg)
+      end
+
+      -- チャットバッファに挿入
+      if not chat_buffer then
+        notify.error("No chat buffer")
+        return false
+      end
+
+      local buf = chat_buffer.buf
+      if not buf or not vim.api.nvim_buf_is_valid(buf) then
+        notify.error("Invalid chat buffer")
+        return false
+      end
+
+      -- バッファの最後に挿入
+      local lines = vim.split(message, "\n")
+      local line_count = vim.api.nvim_buf_line_count(buf)
+      vim.api.nvim_buf_set_lines(buf, line_count - 1, line_count - 1, false, lines)
+
+      notify.info(string.format("Custom command executed: /%s", custom_cmd.name))
+      return true
+    end,
+    description = custom_cmd.description,
+    source = custom_cmd.source,
+  }
+end
+
+---全コマンドを取得（組み込み + カスタム）
+---補完やピッカーで使用
+---@return table<string, Vibing.SlashCommand> コマンド名をキーとするマップ
+function M.list_all()
+  local all = {}
+
+  -- 組み込みコマンド
+  for name, cmd in pairs(M.commands) do
+    all[name] = vim.tbl_extend("force", cmd, { source = "builtin" })
+  end
+
+  -- カスタムコマンド
+  for name, cmd in pairs(M.custom_commands) do
+    all[name] = cmd
+  end
+
+  return all
+end
+
+---コマンド引数の補完候補を取得
+---mode, modelコマンドの引数補完に使用
+---@param command_name string コマンド名
+---@return string[]? 補完候補（nilの場合は補完なし）
+function M.get_argument_completions(command_name)
+  local completions = {
+    mode = { "auto", "plan", "code", "explore" },
+    model = { "opus", "sonnet", "haiku" },
+  }
+  return completions[command_name]
 end
 
 return M

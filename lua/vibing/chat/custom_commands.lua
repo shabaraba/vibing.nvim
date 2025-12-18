@@ -1,0 +1,109 @@
+local notify = require("vibing.utils.notify")
+
+---@class Vibing.CustomCommand
+---@field name string コマンド名（ファイル名から生成、例："git-commit"）
+---@field description string コマンド説明（# タイトル行またはファイル名）
+---@field source "project"|"user" コマンドソース
+---@field file_path string Markdownファイルのフルパス
+---@field content string Markdownファイル全体の内容
+
+---@class Vibing.CustomCommands
+local M = {}
+
+---キャッシュ（nilの場合は未初期化）
+---@type Vibing.CustomCommand[]?
+M._cache = nil
+
+---Markdownファイルをパースしてコマンド情報を抽出
+---ファイル名からコマンド名を生成し、最初の#行を説明として使用
+---@param file_path string Markdownファイルのフルパス
+---@return {name: string, description: string, content: string}?
+function M._parse_markdown(file_path)
+  -- ファイルが読み取れるかチェック
+  if vim.fn.filereadable(file_path) ~= 1 then
+    return nil
+  end
+
+  -- ファイル読み込み
+  local ok, lines = pcall(vim.fn.readfile, file_path)
+  if not ok or not lines then
+    return nil
+  end
+
+  -- ファイル名からコマンド名を抽出（例: "git-commit.md" → "git-commit"）
+  local filename = vim.fn.fnamemodify(file_path, ":t")
+  local name = filename:gsub("%.md$", "")
+
+  -- 最初の# 行を説明として抽出
+  local description = name -- デフォルトはファイル名
+  for _, line in ipairs(lines) do
+    local match = line:match("^#%s+(.+)$")
+    if match then
+      description = match
+      break
+    end
+  end
+
+  -- Markdown全体の内容
+  local content = table.concat(lines, "\n")
+
+  return {
+    name = name,
+    description = description,
+    content = content,
+  }
+end
+
+---.claude/commands/*.md をスキャンしてカスタムコマンドを検出
+---project（カレントディレクトリ）とuser（ホームディレクトリ）の両方をスキャン
+---@return Vibing.CustomCommand[] 検出されたカスタムコマンドの配列
+function M.scan()
+  local commands = {}
+
+  -- スキャン対象パス
+  local paths = {
+    { dir = vim.fn.getcwd() .. "/.claude/commands/", source = "project" },
+    { dir = vim.fn.expand("~/.claude/commands/"), source = "user" },
+  }
+
+  for _, path_info in ipairs(paths) do
+    -- ディレクトリが存在するかチェック
+    if vim.fn.isdirectory(path_info.dir) == 1 then
+      -- *.md ファイルを検索
+      local files = vim.fn.glob(path_info.dir .. "*.md", false, true)
+      for _, file in ipairs(files) do
+        local success, parsed = pcall(M._parse_markdown, file)
+        if success and parsed then
+          table.insert(commands, {
+            name = parsed.name,
+            description = parsed.description,
+            source = path_info.source,
+            file_path = file,
+            content = parsed.content,
+          })
+        else
+          notify.warn(string.format("Failed to parse: %s", file))
+        end
+      end
+    end
+  end
+
+  return commands
+end
+
+---全カスタムコマンドを取得（キャッシュから、またはスキャン）
+---キャッシュがnil の場合は自動的にscan()を実行
+---@return Vibing.CustomCommand[]
+function M.get_all()
+  if not M._cache then
+    M._cache = M.scan()
+  end
+  return M._cache
+end
+
+---キャッシュをクリアして強制再スキャン
+function M.clear_cache()
+  M._cache = nil
+end
+
+return M

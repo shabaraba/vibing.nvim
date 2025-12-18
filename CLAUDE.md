@@ -159,6 +159,7 @@ require("vibing").setup({
 | Command                       | Description                                                     |
 | ----------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `:VibingChat`                 | Open chat window                                                |
+| `:VibingToggleChat`           | Toggle chat window (open/close)                                 |
 | `:VibingContext [path]`       | Add file to context                                             |
 | `:VibingClearContext`         | Clear all context                                               |
 | `:VibingInline [action        | instruction]`                                                   | Run inline action or natural language instruction on selection (fix/feat/explain/refactor/test, or custom text) |
@@ -204,5 +205,5 @@ Slash commands can be used within the chat buffer for quick actions:
 | `/clear`          | Clear context                       |
 | `/save`           | Save current chat                   |
 | `/summarize`      | Summarize conversation              |
-| `/mode <mode>`    | Set execution mode (auto/plan/code) |
+| `/mode <mode>`    | Set execution mode (auto/plan/code/explore) |
 | `/model <model>`  | Set AI model (opus/sonnet/haiku)    |

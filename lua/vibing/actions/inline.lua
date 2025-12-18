@@ -20,7 +20,7 @@ M.actions = {
     use_output_buffer = false,
   },
   feat = {
-    prompt = "Implement the following feature:",
+    prompt = "Implement the following feature by writing actual code. You MUST use Edit or Write tools to modify or create files. Do not just explain or provide suggestions - write the implementation directly into the files:",
     tools = { "Edit", "Write" },
     use_output_buffer = false,
   },
@@ -85,7 +85,7 @@ function M.execute(action_or_prompt)
   end
 
   if action.use_output_buffer then
-    M._execute_with_output(adapter, prompt, opts, action_name)
+    M._execute_with_output(adapter, prompt, opts, action_or_prompt)
   else
     M._execute_direct(adapter, prompt, opts)
   end
