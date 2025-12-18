@@ -26,10 +26,7 @@ return function(args, chat_buffer)
   end
 
   if not is_valid then
-    vim.notify(
-      "[vibing] Invalid model: " .. model .. " (valid: opus, sonnet, haiku)",
-      vim.log.levels.ERROR
-    )
+    notify.error(string.format("Invalid model: %s (valid: opus, sonnet, haiku)", model))
     return false
   end
 
@@ -44,6 +41,6 @@ return function(args, chat_buffer)
     return false
   end
 
-  vim.notify("[vibing] Model set to: " .. model, vim.log.levels.INFO)
+  notify.info(string.format("Model set to: %s", model))
   return true
 end
