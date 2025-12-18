@@ -228,9 +228,10 @@ describe("vibing.actions.chat", function()
 
       ChatActions.attach_to_buffer(buf, "/path/to/chat.md")
 
-      assert.is_not_nil(ChatActions.chat_buffer)
-      assert.equals(buf, ChatActions.chat_buffer.buf)
-      assert.equals("/path/to/chat.md", ChatActions.chat_buffer.file_path)
+      -- attach_to_buffer uses attached_buffers, not chat_buffer
+      assert.is_not_nil(ChatActions.attached_buffers[buf])
+      assert.equals(buf, ChatActions.attached_buffers[buf].buf)
+      assert.equals("/path/to/chat.md", ChatActions.attached_buffers[buf].file_path)
       assert.is_true(keymaps_setup)
 
       -- Cleanup
