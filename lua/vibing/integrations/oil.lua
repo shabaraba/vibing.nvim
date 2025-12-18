@@ -1,3 +1,5 @@
+local notify = require("vibing.utils.notify")
+
 ---@class Vibing.OilIntegration
 ---oil.nvim統合モジュール
 ---ファイラーからチャットへのファイルメンション追加機能を提供
