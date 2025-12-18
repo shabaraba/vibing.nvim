@@ -1,7 +1,12 @@
----Chat module initializer
+---@class Vibing.ChatInit
+---チャットシステムの初期化モジュール
+---組み込みチャットコマンド（/context, /clear, /save, /summarize, /mode, /model）を登録
 local M = {}
 
----Initialize chat commands
+---チャットコマンドシステムを初期化
+---プラグイン起動時に呼び出され、6つの組み込みコマンドをcommands.registerで登録
+---各コマンドはchat/handlers/配下のハンドラー関数と紐付けられる
+---登録後は/helpでコマンド一覧が表示可能になる
 function M.setup()
   local commands = require("vibing.chat.commands")
 
