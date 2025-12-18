@@ -169,6 +169,7 @@ function M.send(chat_buffer, message)
     model = frontmatter.model,
     permissions_allow = frontmatter.permissions_allow,
     permissions_deny = frontmatter.permissions_deny,
+    permission_mode = frontmatter.permission_mode,
   }
 
   -- ストリーミング実行

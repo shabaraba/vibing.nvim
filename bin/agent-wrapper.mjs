@@ -19,6 +19,7 @@ let allowedTools = [];
 let deniedTools = [];
 let mode = null;
 let model = null;
+let permissionMode = 'acceptEdits';
 
 // Parse arguments
 for (let i = 0; i < args.length; i++) {
@@ -51,6 +52,9 @@ for (let i = 0; i < args.length; i++) {
       .split(',')
       .map((t) => t.trim())
       .filter((t) => t);
+    i++;
+  } else if (args[i] === '--permission-mode' && args[i + 1]) {
+    permissionMode = args[i + 1];
     i++;
   } else if (!args[i].startsWith('--')) {
     prompt = args[i];
@@ -110,7 +114,7 @@ if (contextFiles.length > 0 && !sessionId) {
 // Build session options
 const sessionOptions = {
   allowedTools: ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
-  permissionMode: 'acceptEdits',
+  permissionMode: permissionMode,
   workingDirectory: cwd,
 };
 

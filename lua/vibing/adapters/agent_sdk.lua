@@ -100,6 +100,16 @@ function AgentSDK:build_command(prompt, opts)
     table.insert(cmd, table.concat(deny_tools, ","))
   end
 
+  -- Add permission mode: opts (frontmatter) > config default
+  local permission_mode = opts.permission_mode
+  if not permission_mode and config.permissions and config.permissions.mode then
+    permission_mode = config.permissions.mode
+  end
+  if permission_mode then
+    table.insert(cmd, "--permission-mode")
+    table.insert(cmd, permission_mode)
+  end
+
   table.insert(cmd, "--prompt")
   table.insert(cmd, prompt)
 

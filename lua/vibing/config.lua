@@ -14,6 +14,7 @@
 ---ツール権限設定
 ---Agent SDKに対してClaudeが使用可能なツールを制御（Read, Edit, Write, Bash等）
 ---allowで許可、denyで拒否し、セキュリティと機能のバランスを調整
+---@field mode "default"|"acceptEdits"|"bypassPermissions" 権限モード（"default": 毎回確認、"acceptEdits": 編集自動許可、"bypassPermissions": 全自動許可）
 ---@field allow string[] 許可するツールリスト（例: {"Read", "Edit", "Write"}）
 ---@field deny string[] 拒否するツールリスト（例: {"Bash"}、危険なツールを明示的に禁止）
 
@@ -89,6 +90,7 @@ M.defaults = {
     add_context = "<C-a>",
   },
   permissions = {
+    mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
     allow = {
       "Read",
       "Edit",

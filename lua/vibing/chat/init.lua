@@ -64,6 +64,12 @@ function M.setup()
     handler = require("vibing.chat.handlers.deny"),
     description = "Deny tool: /deny <tool> or /deny -<tool> to remove",
   })
+
+  commands.register({
+    name = "permission",
+    handler = require("vibing.chat.handlers.permission"),
+    description = "Set permission mode: /permission <default|acceptEdits|bypassPermissions>",
+  })
 end
 
 return M
