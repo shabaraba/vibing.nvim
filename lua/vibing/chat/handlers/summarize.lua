@@ -1,3 +1,5 @@
+local notify = require("vibing.utils.notify")
+
 ---/summarizeコマンドハンドラー
 ---チャット内で/summarizeを実行した際に呼び出される
 ---現在の会話履歴をClaudeに要約させ、フローティングウィンドウで表示
