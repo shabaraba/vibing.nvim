@@ -1,3 +1,5 @@
+local notify = require("vibing.utils.notify")
+
 ---/modeコマンドハンドラー
 ---チャット内で/mode <mode>を実行した際に呼び出される
 ---Agent SDKの実行モードを設定（auto, plan, code）
@@ -24,10 +26,7 @@ return function(args, chat_buffer)
   end
 
   if not is_valid then
-    vim.notify(
-      "[vibing] Invalid mode: " .. mode .. " (valid: auto, plan, code)",
-      vim.log.levels.ERROR
-    )
+    notify.error(string.format("Invalid mode: %s (valid: auto, plan, code)", mode))
     return false
   end
 
@@ -42,6 +41,6 @@ return function(args, chat_buffer)
     return false
   end
 
-  vim.notify("[vibing] Mode set to: " .. mode, vim.log.levels.INFO)
+  notify.info(string.format("Mode set to: %s", mode))
   return true
 end
