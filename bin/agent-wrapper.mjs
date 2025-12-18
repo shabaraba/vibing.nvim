@@ -94,9 +94,10 @@ if (contextFiles.length > 0 && !sessionId) {
     }
   }
   if (contextParts.length > 0) {
+    // コンテキストファイルのみを追加（promptは既にfullPromptに含まれている）
     fullPrompt =
       fullPrompt +
-      `\n\nThe following files are provided as context for reference:\n\n${contextParts.join('\n\n')}\n\n---\n\nUser request:\n${prompt}`;
+      `\n\nThe following files are provided as context for reference:\n\n${contextParts.join('\n\n')}`;
   }
 }
 

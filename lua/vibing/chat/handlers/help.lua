@@ -6,7 +6,7 @@ local commands = require("vibing.chat.commands")
 ---組み込みコマンド、プロジェクトカスタムコマンド、ユーザーカスタムコマンドを区別して表示
 ---@param args string[] コマンド引数（未使用）
 ---@param chat_buffer Vibing.ChatBuffer コマンドを実行したチャットバッファ
----@return boolean 常にtrueを返す
+---@return boolean 成功時はtrue、エラー時はfalse
 return function(args, chat_buffer)
   if not chat_buffer then
     notify.error("No chat buffer")
@@ -79,7 +79,7 @@ return function(args, chat_buffer)
 
   -- バッファの最後に挿入
   local line_count = vim.api.nvim_buf_line_count(buf)
-  vim.api.nvim_buf_set_lines(buf, line_count - 1, line_count - 1, false, lines)
+  vim.api.nvim_buf_set_lines(buf, line_count, line_count, false, lines)
 
   notify.info("Help displayed")
   return true

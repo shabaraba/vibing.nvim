@@ -133,8 +133,9 @@ function M.register_custom(custom_cmd)
       message = message:gsub("{{ARGUMENTS}}", all_args)
 
       -- 個別引数の置換（例: {{1}}, {{2}}）
+      -- 関数形式を使用してargの特殊文字（%など）をエスケープ
       for i, arg in ipairs(args) do
-        message = message:gsub("{{" .. i .. "}}", arg)
+        message = message:gsub("{{" .. i .. "}}", function() return arg end)
       end
 
       -- チャットバッファの確認
