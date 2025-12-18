@@ -8,6 +8,9 @@ package-lock.json.backup
 # vibing.nvim data
 .vibing/
 
+# Serena MCP memory
+.serena/
+
 # Vim/Neovim
 *.swp
 *.swo
