@@ -176,11 +176,20 @@ end
 ---@param argument string? コマンド引数（オプショナル）
 function M._insert_command(chat_buffer, command_name, argument)
   local buf = chat_buffer.buf
+  local win = chat_buffer.win
 
   if not vim.api.nvim_buf_is_valid(buf) then
     notify.error("Invalid buffer")
     return
   end
+
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    notify.error("Invalid window")
+    return
+  end
+
+  -- チャットウィンドウにフォーカス
+  vim.api.nvim_set_current_win(win)
 
   -- コマンド文字列を構築
   local command_text = "/" .. command_name
@@ -189,7 +198,7 @@ function M._insert_command(chat_buffer, command_name, argument)
   end
 
   -- カーソル位置に挿入
-  local cursor = vim.api.nvim_win_get_cursor(0)
+  local cursor = vim.api.nvim_win_get_cursor(win)
   local row = cursor[1] - 1  -- 0-based
   local col = cursor[2]
 
@@ -199,7 +208,10 @@ function M._insert_command(chat_buffer, command_name, argument)
   vim.api.nvim_buf_set_lines(buf, row, row + 1, false, { new_line })
 
   -- カーソルを挿入後の位置に移動
-  vim.api.nvim_win_set_cursor(0, { row + 1, col + #command_text })
+  vim.api.nvim_win_set_cursor(win, { row + 1, col + #command_text })
+
+  -- 確実にノーマルモードに戻す
+  vim.cmd("stopinsert")
 
   notify.info(string.format("Inserted: %s", command_text))
 end

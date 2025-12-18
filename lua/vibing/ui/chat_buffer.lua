@@ -64,7 +64,10 @@ function ChatBuffer:_create_buffer()
 
   self.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[self.buf].buftype = ""  -- 通常バッファ（保存可能）
-  vim.bo[self.buf].filetype = "markdown"
+  -- vibingチャット専用のfiletypeを使用（mkdnなどの干渉を防ぐ）
+  -- シンタックスハイライトはmarkdownを使用
+  vim.bo[self.buf].filetype = "vibing"
+  vim.bo[self.buf].syntax = "markdown"
   vim.bo[self.buf].modifiable = true
   vim.bo[self.buf].swapfile = false
 
@@ -75,7 +78,7 @@ function ChatBuffer:_create_buffer()
     -- 新規の場合は設定に基づいて保存先を決定
     local save_path = self:_get_save_directory()
     vim.fn.mkdir(save_path, "p")
-    local filename = os.date("chat-%Y%m%d-%H%M%S.md")
+    local filename = os.date("chat-%Y%m%d-%H%M%S.vibing")
     self.file_path = save_path .. filename
     vim.api.nvim_buf_set_name(self.buf, self.file_path)
   end
@@ -144,30 +147,57 @@ end
 function ChatBuffer:_setup_keymaps()
   local vibing = require("vibing")
   local keymaps = vibing.get_config().keymaps
+  local buf = self.buf
 
-  vim.keymap.set("n", keymaps.send, function()
-    self:send_message()
-  end, { buffer = self.buf, desc = "Send message" })
-
-  vim.keymap.set("n", keymaps.cancel, function()
-    local adapter = vibing.get_adapter()
-    if adapter then
-      adapter:cancel()
+  -- 他プラグイン（mkdnなど）の干渉を防ぐため遅延設定
+  local function set_keymaps()
+    if not vim.api.nvim_buf_is_valid(buf) then
+      return
     end
-  end, { buffer = self.buf, desc = "Cancel request" })
 
-  vim.keymap.set("n", keymaps.add_context, function()
-    vim.ui.input({ prompt = "Add context: ", completion = "file" }, function(path)
-      if path then
-        Context.add(path)
-        self:_update_context_line()
+    -- 既存のマッピングを削除してから設定
+    pcall(vim.keymap.del, "n", keymaps.send, { buffer = buf })
+
+    vim.keymap.set("n", keymaps.send, function()
+      self:send_message()
+    end, { buffer = buf, desc = "Send message" })
+
+    vim.keymap.set("n", keymaps.cancel, function()
+      local adapter = vibing.get_adapter()
+      if adapter then
+        adapter:cancel()
       end
-    end)
-  end, { buffer = self.buf, desc = "Add context" })
+    end, { buffer = buf, desc = "Cancel request" })
 
-  vim.keymap.set("n", "q", function()
-    self:close()
-  end, { buffer = self.buf, desc = "Close chat" })
+    vim.keymap.set("n", keymaps.add_context, function()
+      vim.ui.input({ prompt = "Add context: ", completion = "file" }, function(path)
+        if path then
+          Context.add(path)
+          self:_update_context_line()
+        end
+      end)
+    end, { buffer = buf, desc = "Add context" })
+
+    vim.keymap.set("n", "q", function()
+      self:close()
+    end, { buffer = buf, desc = "Close chat" })
+  end
+
+  -- 即座に設定
+  set_keymaps()
+
+  -- 遅延で再設定（他プラグインの後に上書き）
+  vim.defer_fn(set_keymaps, 100)
+
+  -- mkdnなどが様々なイベントで上書きする対策
+  local group = vim.api.nvim_create_augroup("vibing_chat_keymaps_" .. buf, { clear = true })
+  vim.api.nvim_create_autocmd({ "BufEnter", "InsertLeave", "TextChanged" }, {
+    group = group,
+    buffer = buf,
+    callback = function()
+      vim.defer_fn(set_keymaps, 10)
+    end,
+  })
 end
 
 ---初期コンテンツを設定
@@ -473,9 +503,9 @@ function ChatBuffer:extract_user_message()
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
   local last_user_line = nil
 
-  -- 最後の "## User" 行を見つける
+  -- 最後の "## User" 行を見つける（大文字小文字を区別しない）
   for i = #lines, 1, -1 do
-    if lines[i]:match("^## User") then
+    if lines[i]:lower():match("^## user") then
       last_user_line = i
       break
     end
@@ -522,10 +552,14 @@ function ChatBuffer:send_message()
   -- スラッシュコマンドかチェック
   local commands = require("vibing.chat.commands")
   if commands.is_command(message) then
-    local handled = commands.execute(message, self)
+    local handled, is_custom = commands.execute(message, self)
     if handled then
-      -- コマンドが処理されたので、ユーザー入力部分をクリア
-      self:add_user_section()
+      -- コマンドが処理された
+      -- カスタムコマンドはM.send()内でadd_user_section()を呼ぶため、ここでは呼ばない
+      -- ビルトインコマンドのみここでadd_user_section()を呼ぶ
+      if not is_custom then
+        self:add_user_section()
+      end
       return
     end
   end
@@ -711,13 +745,13 @@ function ChatBuffer:update_filename_from_message(message)
   local chat_dir = project_root .. "/.vibing/chat/"
   vim.fn.mkdir(chat_dir, "p")
 
-  local new_filename = base_filename .. ".md"
+  local new_filename = base_filename .. ".vibing"
   local new_file_path = chat_dir .. new_filename
 
   -- ファイル名が重複する場合は連番を追加
   local counter = 1
   while vim.fn.filereadable(new_file_path) == 1 do
-    new_filename = base_filename .. "_" .. counter .. ".md"
+    new_filename = base_filename .. "_" .. counter .. ".vibing"
     new_file_path = chat_dir .. new_filename
     counter = counter + 1
   end

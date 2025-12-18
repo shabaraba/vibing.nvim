@@ -70,24 +70,27 @@ end
 ---@param message string 実行するコマンド文字列（例: "/context foo.lua"）
 ---@param chat_buffer Vibing.ChatBuffer コマンドを実行するチャットバッファ
 ---@return boolean handled コマンドとして処理された場合true（成功/失敗問わず）、コマンド形式でない場合false
+---@return boolean is_custom カスタムコマンドの場合true、ビルトインの場合false
 function M.execute(message, chat_buffer)
   local command_name, args = M.parse(message)
 
   if not command_name then
-    return false
+    return false, false
   end
 
   -- 組み込みコマンドを確認
   local command = M.commands[command_name]
+  local is_custom = false
 
   -- カスタムコマンドも確認
   if not command then
     command = M.custom_commands[command_name]
+    is_custom = command ~= nil
   end
 
   if not command then
     notify.warn(string.format("Unknown command: /%s", command_name))
-    return true -- コマンドとして認識されたが存在しない
+    return true, false -- コマンドとして認識されたが存在しない
   end
 
   -- コマンドハンドラーを実行
@@ -96,7 +99,7 @@ function M.execute(message, chat_buffer)
     notify.error(string.format("Command error: %s", result))
   end
 
-  return true
+  return true, is_custom
 end
 
 ---登録済みコマンドの一覧を取得
@@ -134,22 +137,23 @@ function M.register_custom(custom_cmd)
         message = message:gsub("{{" .. i .. "}}", arg)
       end
 
-      -- チャットバッファに挿入
+      -- チャットバッファの確認
       if not chat_buffer then
         notify.error("No chat buffer")
         return false
       end
 
-      local buf = chat_buffer.buf
-      if not buf or not vim.api.nvim_buf_is_valid(buf) then
-        notify.error("Invalid chat buffer")
+      -- プロンプトが空でないか確認
+      if vim.trim(message) == "" then
+        notify.error(string.format("Custom command /%s produced empty prompt", custom_cmd.name))
         return false
       end
 
-      -- バッファの最後に挿入
-      local lines = vim.split(message, "\n")
-      local line_count = vim.api.nvim_buf_line_count(buf)
-      vim.api.nvim_buf_set_lines(buf, line_count - 1, line_count - 1, false, lines)
+      -- Agentに直接送信（バッファに展開しない）
+      -- Note: M.send()が最後にadd_user_section()を呼ぶため、ここでは呼ばない
+      vim.schedule(function()
+        require("vibing.actions.chat").send(chat_buffer, message)
+      end)
 
       notify.info(string.format("Custom command executed: /%s", custom_cmd.name))
       return true

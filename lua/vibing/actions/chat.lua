@@ -79,6 +79,10 @@ function M.attach_to_buffer(buf, file_path)
   M.chat_buffer.file_path = file_path
   M.chat_buffer.win = vim.api.nvim_get_current_win()
 
+  -- filetypeをvibingに変更（mkdnなどの干渉を防ぐ）
+  vim.bo[buf].filetype = "vibing"
+  vim.bo[buf].syntax = "markdown"
+
   -- フロントマターからsession_idを取得
   local frontmatter = M.chat_buffer:parse_frontmatter()
   if frontmatter.session_id and frontmatter.session_id ~= "" then
