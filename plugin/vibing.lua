@@ -51,3 +51,16 @@ vim.api.nvim_create_autocmd({ "BufReadPost", "BufEnter", "BufWinEnter" }, {
     try_attach(ev.buf)
   end,
 })
+
+-- バッファ削除時のクリーンアップ
+vim.api.nvim_create_autocmd("BufDelete", {
+  pattern = "*.vibing",
+  group = group,
+  callback = function(ev)
+    attached_bufs[ev.buf] = nil
+    local chat = require("vibing.actions.chat")
+    if chat.attached_buffers then
+      chat.attached_buffers[ev.buf] = nil
+    end
+  end,
+})

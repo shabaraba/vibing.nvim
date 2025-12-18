@@ -6,10 +6,31 @@ local notify = require("vibing.utils.notify")
 ---@class Vibing.ChatAction
 local M = {}
 
----現在アクティブなチャットバッファインスタンス
----:VibingChatや:VibingOpenChatで作成される
+---:VibingChatで作成されるメインチャットバッファ
 ---@type Vibing.ChatBuffer?
 M.chat_buffer = nil
+
+---:eで開いた.vibingファイルのアタッチ済みバッファ（バッファ番号 → ChatBuffer）
+---@type table<number, Vibing.ChatBuffer>
+M.attached_buffers = {}
+
+---現在のバッファに対応するChatBufferを取得
+---@return Vibing.ChatBuffer?
+function M.get_current_chat_buffer()
+  local current_buf = vim.api.nvim_get_current_buf()
+
+  -- アタッチ済みバッファをチェック
+  if M.attached_buffers[current_buf] then
+    return M.attached_buffers[current_buf]
+  end
+
+  -- メインチャットバッファをチェック
+  if M.chat_buffer and M.chat_buffer.buf == current_buf then
+    return M.chat_buffer
+  end
+
+  return nil
+end
 
 ---チャットを開く
 ---既存のチャットバッファがない場合は新規作成
@@ -73,26 +94,30 @@ function M.attach_to_buffer(buf, file_path)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
-  -- 新しいChatBufferインスタンスを作成し、既存バッファをアタッチ
-  M.chat_buffer = ChatBuffer:new(config.chat)
-  M.chat_buffer.buf = buf
-  M.chat_buffer.file_path = file_path
-  M.chat_buffer.win = vim.api.nvim_get_current_win()
+  -- 新しいChatBufferインスタンスを作成し、attached_buffersに登録
+  -- M.chat_bufferは上書きしない（VibingChatで新規作成可能にするため）
+  local chat_buf = ChatBuffer:new(config.chat)
+  chat_buf.buf = buf
+  chat_buf.file_path = file_path
+  chat_buf.win = vim.api.nvim_get_current_win()
 
   -- filetypeをvibingに変更（mkdnなどの干渉を防ぐ）
   vim.bo[buf].filetype = "vibing"
   vim.bo[buf].syntax = "markdown"
 
   -- フロントマターからsession_idを取得
-  local frontmatter = M.chat_buffer:parse_frontmatter()
-  if frontmatter.session_id and frontmatter.session_id ~= "" then
-    M.chat_buffer.session_id = frontmatter.session_id
+  local frontmatter = chat_buf:parse_frontmatter()
+  -- session_idが有効な文字列の場合のみ設定（空文字列と~はnullとして扱う）
+  local sid = frontmatter.session_id
+  if type(sid) == "string" and sid ~= "" and sid ~= "~" then
+    chat_buf.session_id = sid
   end
 
   -- キーマップを設定
-  M.chat_buffer:_setup_keymaps()
+  chat_buf:_setup_keymaps()
 
-  notify.info("Chat session attached", "Chat")
+  -- attached_buffersに登録
+  M.attached_buffers[buf] = chat_buf
 end
 
 ---メッセージを送信
@@ -127,7 +152,7 @@ function M.send(chat_buffer, message)
     adapter:set_session_id(saved_session)
   end
 
-  -- 最初のメッセージの場合、ファイル名を更新
+  -- 会話履歴を取得（SDK resume bug対策）
   local conversation = chat_buffer:extract_conversation()
   if #conversation == 0 then
     chat_buffer:update_filename_from_message(message)

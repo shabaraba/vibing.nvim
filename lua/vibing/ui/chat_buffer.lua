@@ -208,7 +208,7 @@ function ChatBuffer:_init_content()
   local lines = {
     "---",
     "vibing.nvim: true",
-    "session_id: ",
+    "session_id: ~",  -- YAMLのnull値
     "created_at: " .. os.date("%Y-%m-%dT%H:%M:%S"),
   }
 
@@ -324,10 +324,14 @@ function ChatBuffer:parse_frontmatter()
         end
         local key, value = line:match("^([%w_]+):%s*(.*)$")
         if key then
-          if value == "" then
+          -- 次の行がリスト項目かどうかを確認してからリストモードに入る
+          local next_line = lines[i + 1]
+          local is_list_start = value == "" and next_line and next_line:match("^  %- ")
+          if is_list_start then
             current_key = key
             current_list = {}
           else
+            -- 空の値はnilではなく空文字列として保存
             frontmatter[key] = value
             current_key = nil
             current_list = nil
@@ -436,8 +440,10 @@ function ChatBuffer:load_from_file(file_path)
   vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, content)
 
   local frontmatter = self:parse_frontmatter()
-  if frontmatter.session_id and frontmatter.session_id ~= "" then
-    self.session_id = frontmatter.session_id
+  -- session_idが有効な文字列の場合のみ設定（空文字列と~はnullとして扱う）
+  local sid = frontmatter.session_id
+  if type(sid) == "string" and sid ~= "" and sid ~= "~" then
+    self.session_id = sid
   end
 
   return true
