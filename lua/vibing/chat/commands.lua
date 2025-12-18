@@ -1,3 +1,5 @@
+local notify = require("vibing.utils.notify")
+
 ---@class Vibing.SlashCommand
 ---チャット内で使用可能なスラッシュコマンドの定義
 ---@field name string コマンド名（/の後に入力する文字列、例: "context", "clear"）
