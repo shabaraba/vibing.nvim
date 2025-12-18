@@ -1,13 +1,17 @@
 local Base = require("vibing.adapters.base")
 
 ---@class Vibing.AgentSDKAdapter : Vibing.Adapter
----@field _handle table?
----@field _plugin_root string
+---@field _handle table? vim.system()で起動したプロセスハンドル（実行中のみ）
+---@field _plugin_root string プラグインのルートディレクトリパス
+---@field _session_id string? 会話セッションID（セッション再開に使用）
 local AgentSDK = setmetatable({}, { __index = Base })
 AgentSDK.__index = AgentSDK
 
----@param config Vibing.Config
----@return Vibing.AgentSDKAdapter
+---新しいAgentSDKアダプターインスタンスを作成
+---Claude Agent SDKを使用してClaudeと通信する推奨アダプター
+---bin/agent-wrapper.mjsを介してNode.jsプロセスとして動作
+---@param config Vibing.Config プラグイン設定
+---@return Vibing.AgentSDKAdapter 新しいアダプターインスタンス
 function AgentSDK:new(config)
   local instance = Base.new(self, config)
   setmetatable(instance, AgentSDK)
@@ -19,15 +23,19 @@ function AgentSDK:new(config)
   return instance
 end
 
----Get the wrapper script path
----@return string
+---ラッパースクリプトのパスを取得
+---bin/agent-wrapper.mjsの絶対パスを返す
+---@return string ラッパースクリプトの絶対パス
 function AgentSDK:get_wrapper_path()
   return self._plugin_root .. "/bin/agent-wrapper.mjs"
 end
 
----@param prompt string
----@param opts Vibing.AdapterOpts
----@return string[]
+---コマンドライン引数を構築
+---Node.jsラッパースクリプトの実行コマンドを生成
+---mode, model, context, session, permissionsを設定から反映
+---@param prompt string ユーザープロンプト
+---@param opts Vibing.AdapterOpts コンテキストファイル等のオプション
+---@return string[] Node.js実行用のコマンドライン配列
 function AgentSDK:build_command(prompt, opts)
   local cmd = { "node", self:get_wrapper_path() }
 
@@ -81,9 +89,12 @@ function AgentSDK:build_command(prompt, opts)
   return cmd
 end
 
----@param prompt string
----@param opts Vibing.AdapterOpts
----@return Vibing.Response
+---プロンプトを同期実行（ブロッキング）
+---stream()を内部で呼び出し、完了まで最大2分間待機
+---通常はstream()の直接使用を推奨（UIがブロックされないため）
+---@param prompt string ユーザープロンプト
+---@param opts Vibing.AdapterOpts コンテキスト等のオプション
+---@return Vibing.Response 応答（content, error?）
 function AgentSDK:execute(prompt, opts)
   opts = opts or {}
   local result = { content = "" }
@@ -102,10 +113,13 @@ function AgentSDK:execute(prompt, opts)
   return result
 end
 
----@param prompt string
----@param opts Vibing.AdapterOpts
----@param on_chunk fun(chunk: string)
----@param on_done fun(response: Vibing.Response)
+---プロンプトをストリーミング実行（非ブロッキング）
+---Node.jsプロセスとしてagent-wrapper.mjsを起動し、JSON Lines形式で応答を受信
+---session_idを自動的に保存してセッション継続を実現
+---@param prompt string ユーザープロンプト
+---@param opts Vibing.AdapterOpts コンテキスト等のオプション
+---@param on_chunk fun(chunk: string) チャンク受信時のコールバック
+---@param on_done fun(response: Vibing.Response) 完了時のコールバック
 function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   opts = opts or {}
   local cmd = self:build_command(prompt, opts)
@@ -167,6 +181,9 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   end)
 end
 
+---実行中のリクエストをキャンセル
+---Node.jsプロセスをSIGKILL(9)で強制終了
+---ハンドルをクリアしてアダプターを再利用可能な状態にリセット
 function AgentSDK:cancel()
   if self._handle then
     self._handle:kill(9)
@@ -174,8 +191,11 @@ function AgentSDK:cancel()
   end
 end
 
----@param feature string
----@return boolean
+---機能サポート状況を取得
+---streaming, tools, context, sessionをサポート
+---model_selectionは非対応（設定のdefault_modelを使用）
+---@param feature string 機能名（streaming, tools, model_selection, context, session）
+---@return boolean サポートしている場合true
 function AgentSDK:supports(feature)
   local features = {
     streaming = true,
@@ -188,13 +208,17 @@ function AgentSDK:supports(feature)
 end
 
 ---セッションIDを設定
----@param session_id string?
+---保存されたチャットファイルを開く際に、フロントマターのsession_idを設定
+---次回のstream()呼び出し時に--session引数として渡される
+---@param session_id string? セッションID（nilの場合は新規セッション）
 function AgentSDK:set_session_id(session_id)
   self._session_id = session_id
 end
 
 ---セッションIDを取得
----@return string?
+---stream()実行時に自動的に保存されたsession_idを返す
+---チャットファイルのフロントマターに保存するために使用
+---@return string? セッションID（未実行の場合はnil）
 function AgentSDK:get_session_id()
   return self._session_id
 end
