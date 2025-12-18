@@ -26,6 +26,10 @@ end
 
 ---ウィンドウを閉じる
 function OutputBuffer:close()
+  if self._chunk_timer then
+    vim.fn.timer_stop(self._chunk_timer)
+    self._chunk_timer = nil
+  end
   if self.win and vim.api.nvim_win_is_valid(self.win) then
     vim.api.nvim_win_close(self.win, true)
   end

@@ -17,6 +17,15 @@ local function get_cached_cwd()
   return _cwd_cache
 end
 
+-- DirChangedイベントでキャッシュを無効化
+vim.api.nvim_create_autocmd("DirChanged", {
+  group = vim.api.nvim_create_augroup("VibingCwdCache", { clear = true }),
+  callback = function()
+    _cwd_cache = nil
+    _cwd_cache_time = 0
+  end,
+})
+
 ---開いているバッファから@file:形式のコンテキストを収集
 ---@return string[]
 function M.collect_buffers()
