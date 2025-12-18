@@ -121,7 +121,15 @@ function M.register_custom(custom_cmd)
     handler = function(args, chat_buffer)
       local message = custom_cmd.content
 
-      -- プレースホルダー置換（例: {{1}}, {{2}}）
+      -- 全引数を結合
+      local all_args = table.concat(args, " ")
+
+      -- プレースホルダー置換
+      -- $ARGUMENTS と {{ARGUMENTS}} を全引数に置換
+      message = message:gsub("%$ARGUMENTS", all_args)
+      message = message:gsub("{{ARGUMENTS}}", all_args)
+
+      -- 個別引数の置換（例: {{1}}, {{2}}）
       for i, arg in ipairs(args) do
         message = message:gsub("{{" .. i .. "}}", arg)
       end
