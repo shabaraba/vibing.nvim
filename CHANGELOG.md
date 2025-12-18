@@ -2,51 +2,46 @@
 
 ## [1.2.1](https://github.com/shabaraba/vibing.nvim/compare/v1.2.0...v1.2.1) (2025-12-18)
 
-
 ### Bug Fixes
 
-* address PR [#117](https://github.com/shabaraba/vibing.nvim/issues/117) review comments ([#119](https://github.com/shabaraba/vibing.nvim/issues/119)) ([482da11](https://github.com/shabaraba/vibing.nvim/commit/482da11f90e1cd6d5a42e1f9d06aba4e286f3487))
-* complete notify API migration in chat handlers ([#120](https://github.com/shabaraba/vibing.nvim/issues/120)) ([4ea29e5](https://github.com/shabaraba/vibing.nvim/commit/4ea29e56946e44a989e14bd98a783c9ed5097e42))
-
+- address PR [#117](https://github.com/shabaraba/vibing.nvim/issues/117) review comments ([#119](https://github.com/shabaraba/vibing.nvim/issues/119)) ([482da11](https://github.com/shabaraba/vibing.nvim/commit/482da11f90e1cd6d5a42e1f9d06aba4e286f3487))
+- complete notify API migration in chat handlers ([#120](https://github.com/shabaraba/vibing.nvim/issues/120)) ([4ea29e5](https://github.com/shabaraba/vibing.nvim/commit/4ea29e56946e44a989e14bd98a783c9ed5097e42))
 
 ### Performance Improvements
 
-* optimize buffer operations and file I/O ([#117](https://github.com/shabaraba/vibing.nvim/issues/117)) ([4138185](https://github.com/shabaraba/vibing.nvim/commit/41381859b152c58f9d48fd927f146f94b77e41d8))
-
+- optimize buffer operations and file I/O ([#117](https://github.com/shabaraba/vibing.nvim/issues/117)) ([4138185](https://github.com/shabaraba/vibing.nvim/commit/41381859b152c58f9d48fd927f146f94b77e41d8))
 
 ### Tests
 
-* add comprehensive test coverage for action commands ([#94](https://github.com/shabaraba/vibing.nvim/issues/94)) ([59c5b3c](https://github.com/shabaraba/vibing.nvim/commit/59c5b3cb1a3a421f19369d816a13f5f00672f83b))
-* add comprehensive test coverage for chat command handlers ([#86](https://github.com/shabaraba/vibing.nvim/issues/86)) ([15a8ff1](https://github.com/shabaraba/vibing.nvim/commit/15a8ff11e255f78c83ca49f41a7f1bce21e779c1))
-* add comprehensive test coverage for chat command parser ([#88](https://github.com/shabaraba/vibing.nvim/issues/88)) ([3cdd8f8](https://github.com/shabaraba/vibing.nvim/commit/3cdd8f811a82cc156bec8ab306ab9f512b4faf8d))
-* add comprehensive test coverage for chat initialization ([#92](https://github.com/shabaraba/vibing.nvim/issues/92)) ([e182032](https://github.com/shabaraba/vibing.nvim/commit/e182032e07129977f8f94c6fc5ae1cbb1eea5cb4))
-* add comprehensive test coverage for Claude API adapters ([#84](https://github.com/shabaraba/vibing.nvim/issues/84)) ([387fd37](https://github.com/shabaraba/vibing.nvim/commit/387fd371711b5ae25736c7c299ee832bdb82e8bc))
-* add comprehensive test coverage for context management module ([#82](https://github.com/shabaraba/vibing.nvim/issues/82)) ([4329b1d](https://github.com/shabaraba/vibing.nvim/commit/4329b1dee97622230a9a11d1732984963616cab8))
-* add comprehensive test coverage for context migrator ([#90](https://github.com/shabaraba/vibing.nvim/issues/90)) ([1e0ea3c](https://github.com/shabaraba/vibing.nvim/commit/1e0ea3c7fe634e0895fae2cf8f9d9ae9bc8d6e02))
-* add comprehensive test coverage for init module (plugin entry point) ([#100](https://github.com/shabaraba/vibing.nvim/issues/100)) ([6e471d0](https://github.com/shabaraba/vibing.nvim/commit/6e471d0c7d0223c1ce3d8027fa2bd6ad11bcdc08))
-* add comprehensive test coverage for inline actions module ([#80](https://github.com/shabaraba/vibing.nvim/issues/80)) ([01a1066](https://github.com/shabaraba/vibing.nvim/commit/01a10666e5ce93d3401e94f84da905aeb22583bf)), closes [#78](https://github.com/shabaraba/vibing.nvim/issues/78)
-* add comprehensive test coverage for oil.nvim integration ([#96](https://github.com/shabaraba/vibing.nvim/issues/96)) ([d665acc](https://github.com/shabaraba/vibing.nvim/commit/d665acc4bf5dd0032b38b58ae1c459f8f44764be))
-* add comprehensive test coverage for remote control module ([#98](https://github.com/shabaraba/vibing.nvim/issues/98)) ([96b816c](https://github.com/shabaraba/vibing.nvim/commit/96b816cc3ce99f2d56ea1c0ad258a415e43d4054))
-
+- add comprehensive test coverage for action commands ([#94](https://github.com/shabaraba/vibing.nvim/issues/94)) ([59c5b3c](https://github.com/shabaraba/vibing.nvim/commit/59c5b3cb1a3a421f19369d816a13f5f00672f83b))
+- add comprehensive test coverage for chat command handlers ([#86](https://github.com/shabaraba/vibing.nvim/issues/86)) ([15a8ff1](https://github.com/shabaraba/vibing.nvim/commit/15a8ff11e255f78c83ca49f41a7f1bce21e779c1))
+- add comprehensive test coverage for chat command parser ([#88](https://github.com/shabaraba/vibing.nvim/issues/88)) ([3cdd8f8](https://github.com/shabaraba/vibing.nvim/commit/3cdd8f811a82cc156bec8ab306ab9f512b4faf8d))
+- add comprehensive test coverage for chat initialization ([#92](https://github.com/shabaraba/vibing.nvim/issues/92)) ([e182032](https://github.com/shabaraba/vibing.nvim/commit/e182032e07129977f8f94c6fc5ae1cbb1eea5cb4))
+- add comprehensive test coverage for Claude API adapters ([#84](https://github.com/shabaraba/vibing.nvim/issues/84)) ([387fd37](https://github.com/shabaraba/vibing.nvim/commit/387fd371711b5ae25736c7c299ee832bdb82e8bc))
+- add comprehensive test coverage for context management module ([#82](https://github.com/shabaraba/vibing.nvim/issues/82)) ([4329b1d](https://github.com/shabaraba/vibing.nvim/commit/4329b1dee97622230a9a11d1732984963616cab8))
+- add comprehensive test coverage for context migrator ([#90](https://github.com/shabaraba/vibing.nvim/issues/90)) ([1e0ea3c](https://github.com/shabaraba/vibing.nvim/commit/1e0ea3c7fe634e0895fae2cf8f9d9ae9bc8d6e02))
+- add comprehensive test coverage for init module (plugin entry point) ([#100](https://github.com/shabaraba/vibing.nvim/issues/100)) ([6e471d0](https://github.com/shabaraba/vibing.nvim/commit/6e471d0c7d0223c1ce3d8027fa2bd6ad11bcdc08))
+- add comprehensive test coverage for inline actions module ([#80](https://github.com/shabaraba/vibing.nvim/issues/80)) ([01a1066](https://github.com/shabaraba/vibing.nvim/commit/01a10666e5ce93d3401e94f84da905aeb22583bf)), closes [#78](https://github.com/shabaraba/vibing.nvim/issues/78)
+- add comprehensive test coverage for oil.nvim integration ([#96](https://github.com/shabaraba/vibing.nvim/issues/96)) ([d665acc](https://github.com/shabaraba/vibing.nvim/commit/d665acc4bf5dd0032b38b58ae1c459f8f44764be))
+- add comprehensive test coverage for remote control module ([#98](https://github.com/shabaraba/vibing.nvim/issues/98)) ([96b816c](https://github.com/shabaraba/vibing.nvim/commit/96b816cc3ce99f2d56ea1c0ad258a415e43d4054))
 
 ### Code Refactoring
 
-* enhance type annotations in agent_sdk adapter (partial [#101](https://github.com/shabaraba/vibing.nvim/issues/101)) ([#107](https://github.com/shabaraba/vibing.nvim/issues/107)) ([b3c5370](https://github.com/shabaraba/vibing.nvim/commit/b3c53708a26f4da1d75ff3b09454783d8b4b7fd0))
-* enhance type annotations in UI modules (partial [#101](https://github.com/shabaraba/vibing.nvim/issues/101)) ([#106](https://github.com/shabaraba/vibing.nvim/issues/106)) ([d3b1bed](https://github.com/shabaraba/vibing.nvim/commit/d3b1bede3087627370cbb5ecf3c218f9cf78e142))
-* enhance type annotations in utils and context modules (partial [#101](https://github.com/shabaraba/vibing.nvim/issues/101)) ([#105](https://github.com/shabaraba/vibing.nvim/issues/105)) ([70b1643](https://github.com/shabaraba/vibing.nvim/commit/70b164346c4d0611327e0c9486a6dd5156b3ff56))
-* standardize error handling and messaging across all modules ([#115](https://github.com/shabaraba/vibing.nvim/issues/115)) ([cdbd18b](https://github.com/shabaraba/vibing.nvim/commit/cdbd18b78fecc0b4461d42335d08bcfd987e57c6))
-
+- enhance type annotations in agent_sdk adapter (partial [#101](https://github.com/shabaraba/vibing.nvim/issues/101)) ([#107](https://github.com/shabaraba/vibing.nvim/issues/107)) ([b3c5370](https://github.com/shabaraba/vibing.nvim/commit/b3c53708a26f4da1d75ff3b09454783d8b4b7fd0))
+- enhance type annotations in UI modules (partial [#101](https://github.com/shabaraba/vibing.nvim/issues/101)) ([#106](https://github.com/shabaraba/vibing.nvim/issues/106)) ([d3b1bed](https://github.com/shabaraba/vibing.nvim/commit/d3b1bede3087627370cbb5ecf3c218f9cf78e142))
+- enhance type annotations in utils and context modules (partial [#101](https://github.com/shabaraba/vibing.nvim/issues/101)) ([#105](https://github.com/shabaraba/vibing.nvim/issues/105)) ([70b1643](https://github.com/shabaraba/vibing.nvim/commit/70b164346c4d0611327e0c9486a6dd5156b3ff56))
+- standardize error handling and messaging across all modules ([#115](https://github.com/shabaraba/vibing.nvim/issues/115)) ([cdbd18b](https://github.com/shabaraba/vibing.nvim/commit/cdbd18b78fecc0b4461d42335d08bcfd987e57c6))
 
 ### Documentation
 
-* enhance type annotations in actions modules ([#108](https://github.com/shabaraba/vibing.nvim/issues/108)) ([127fb58](https://github.com/shabaraba/vibing.nvim/commit/127fb58d81fe84e904bad584e8118ad990f4e8d7))
-* enhance type annotations in adapters/base.lua and config.lua ([#111](https://github.com/shabaraba/vibing.nvim/issues/111)) ([522691c](https://github.com/shabaraba/vibing.nvim/commit/522691cef60e92e134a66818ccf3a61e0a10d25a))
-* enhance type annotations in chat system modules ([#109](https://github.com/shabaraba/vibing.nvim/issues/109)) ([1a9855a](https://github.com/shabaraba/vibing.nvim/commit/1a9855a7e1aebc4ff9cdd98cb2e285bcc2676fa2))
-* enhance type annotations in context modules (collector, formatter, migrator) ([#113](https://github.com/shabaraba/vibing.nvim/issues/113)) ([354ed0a](https://github.com/shabaraba/vibing.nvim/commit/354ed0a39d1c8ea014aa88b4696d7b97dfe9fccb))
-* enhance type annotations in init.lua ([#112](https://github.com/shabaraba/vibing.nvim/issues/112)) ([0084855](https://github.com/shabaraba/vibing.nvim/commit/00848556dadebc63b0a847e6d5355d3673371ac5))
-* enhance type annotations in remaining adapters (claude, claude_acp) ([#114](https://github.com/shabaraba/vibing.nvim/issues/114)) ([79d50f3](https://github.com/shabaraba/vibing.nvim/commit/79d50f365a89a8dc33ac26a4b8eb8bf4c5647904))
-* enhance type annotations in utils/context/integrations/remote modules ([#110](https://github.com/shabaraba/vibing.nvim/issues/110)) ([41374db](https://github.com/shabaraba/vibing.nvim/commit/41374db820bd0804ad5bb77af8cb14f9d666bd8b))
-* expand documentation with API reference and tutorials ([#116](https://github.com/shabaraba/vibing.nvim/issues/116)) ([17655e6](https://github.com/shabaraba/vibing.nvim/commit/17655e6ebddda1a4bdb1c4aa5b6593de8e07dd30))
+- enhance type annotations in actions modules ([#108](https://github.com/shabaraba/vibing.nvim/issues/108)) ([127fb58](https://github.com/shabaraba/vibing.nvim/commit/127fb58d81fe84e904bad584e8118ad990f4e8d7))
+- enhance type annotations in adapters/base.lua and config.lua ([#111](https://github.com/shabaraba/vibing.nvim/issues/111)) ([522691c](https://github.com/shabaraba/vibing.nvim/commit/522691cef60e92e134a66818ccf3a61e0a10d25a))
+- enhance type annotations in chat system modules ([#109](https://github.com/shabaraba/vibing.nvim/issues/109)) ([1a9855a](https://github.com/shabaraba/vibing.nvim/commit/1a9855a7e1aebc4ff9cdd98cb2e285bcc2676fa2))
+- enhance type annotations in context modules (collector, formatter, migrator) ([#113](https://github.com/shabaraba/vibing.nvim/issues/113)) ([354ed0a](https://github.com/shabaraba/vibing.nvim/commit/354ed0a39d1c8ea014aa88b4696d7b97dfe9fccb))
+- enhance type annotations in init.lua ([#112](https://github.com/shabaraba/vibing.nvim/issues/112)) ([0084855](https://github.com/shabaraba/vibing.nvim/commit/00848556dadebc63b0a847e6d5355d3673371ac5))
+- enhance type annotations in remaining adapters (claude, claude_acp) ([#114](https://github.com/shabaraba/vibing.nvim/issues/114)) ([79d50f3](https://github.com/shabaraba/vibing.nvim/commit/79d50f365a89a8dc33ac26a4b8eb8bf4c5647904))
+- enhance type annotations in utils/context/integrations/remote modules ([#110](https://github.com/shabaraba/vibing.nvim/issues/110)) ([41374db](https://github.com/shabaraba/vibing.nvim/commit/41374db820bd0804ad5bb77af8cb14f9d666bd8b))
+- expand documentation with API reference and tutorials ([#116](https://github.com/shabaraba/vibing.nvim/issues/116)) ([17655e6](https://github.com/shabaraba/vibing.nvim/commit/17655e6ebddda1a4bdb1c4aa5b6593de8e07dd30))
 
 ## [1.2.0](https://github.com/shabaraba/vibing.nvim/compare/v1.1.0...v1.2.0) (2025-12-17)
 
