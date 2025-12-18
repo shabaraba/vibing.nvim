@@ -1,3 +1,5 @@
+local notify = require("vibing.utils.notify")
+
 ---@class Vibing.Commands
 ---ユーザーコマンドから呼び出される関数群
 ---各関数はactions.chatやactions.inlineモジュールに処理を委譲
