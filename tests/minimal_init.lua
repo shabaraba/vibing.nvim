@@ -17,3 +17,12 @@ vim.opt.swapfile = false
 vim.opt.backup = false
 
 print("Test environment initialized")
+
+-- Ensure Neovim quits after tests complete
+-- Set up autocmd to quit after PlenaryBustedDirectory finishes
+vim.api.nvim_create_autocmd("User", {
+  pattern = "PlenaryTestFinished",
+  callback = function()
+    vim.cmd("qall!")
+  end,
+})
