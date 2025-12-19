@@ -21,7 +21,10 @@ function M.reload_files(file_paths)
               -- バッファに未保存の変更がある場合はスキップ
               return
             end
-            vim.cmd("edit!")
+            local ok, err = pcall(vim.cmd, "edit!")
+            if not ok then
+              vim.notify("Failed to reload buffer: " .. tostring(err), vim.log.levels.WARN)
+            end
           end)
         end
       end

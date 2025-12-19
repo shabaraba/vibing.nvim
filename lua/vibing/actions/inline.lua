@@ -146,8 +146,13 @@ function M._execute_direct(adapter, prompt, opts)
   local BufferReload = require("vibing.utils.buffer_reload")
 
   local progress = InlineProgress:new()
-  progress:show("Inline")
-  progress:update_status("Starting...")
+  local ok, err = pcall(function()
+    progress:show("Inline")
+    progress:update_status("Starting...")
+  end)
+  if not ok then
+    notify.warn("Progress UI unavailable: " .. tostring(err), "Inline")
+  end
 
   local response_text = {}
 

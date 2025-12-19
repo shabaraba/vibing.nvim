@@ -28,12 +28,17 @@ function InlineProgress:show(title)
     return
   end
 
+  -- Check for headless mode (no UI available)
+  local ui = vim.api.nvim_list_uis()[1]
+  if not ui then
+    return
+  end
+
   self.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[self.buf].bufhidden = "wipe"
 
   local width = 40
   local height = 3
-  local ui = vim.api.nvim_list_uis()[1]
   local row = ui.height - height - 3
   local col = ui.width - width - 2
 
