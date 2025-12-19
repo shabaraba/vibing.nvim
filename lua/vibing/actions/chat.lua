@@ -161,11 +161,20 @@ function M.send(chat_buffer, message)
   -- 応答セクションを開始
   chat_buffer:start_response()
 
+  -- frontmatterからmode/model/permissionsを取得してoptsに含める
+  local frontmatter = chat_buffer:parse_frontmatter()
+  local opts = {
+    streaming = true,
+    mode = frontmatter.mode,
+    model = frontmatter.model,
+    permissions_allow = frontmatter.permissions_allow,
+    permissions_deny = frontmatter.permissions_deny,
+    permission_mode = frontmatter.permission_mode,
+  }
+
   -- ストリーミング実行
   if adapter:supports("streaming") then
-    adapter:stream(formatted_prompt, {
-      streaming = true,
-    }, function(chunk)
+    adapter:stream(formatted_prompt, opts, function(chunk)
       vim.schedule(function()
         chat_buffer:append_chunk(chunk)
       end)
@@ -186,7 +195,7 @@ function M.send(chat_buffer, message)
     end)
   else
     -- 非ストリーミング
-    local response = adapter:execute(formatted_prompt, {})
+    local response = adapter:execute(formatted_prompt, opts)
 
     if response.error then
       chat_buffer:append_chunk("**Error:** " .. response.error)

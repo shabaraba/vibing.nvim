@@ -33,6 +33,7 @@ end
 ---コマンドライン引数を構築
 ---Node.jsラッパースクリプトの実行コマンドを生成
 ---mode, model, context, session, permissionsを設定から反映
+---opts内の値はfrontmatterから渡され、グローバル設定より優先される
 ---@param prompt string ユーザープロンプト
 ---@param opts Vibing.AdapterOpts コンテキストファイル等のオプション
 ---@return string[] Node.js実行用のコマンドライン配列
@@ -42,16 +43,24 @@ function AgentSDK:build_command(prompt, opts)
   table.insert(cmd, "--cwd")
   table.insert(cmd, vim.fn.getcwd())
 
-  -- Add mode from config if available
-  if self.config.agent and self.config.agent.default_mode then
+  -- Add mode: opts (frontmatter) > config default
+  local mode = opts.mode
+  if not mode and self.config.agent and self.config.agent.default_mode then
+    mode = self.config.agent.default_mode
+  end
+  if mode then
     table.insert(cmd, "--mode")
-    table.insert(cmd, self.config.agent.default_mode)
+    table.insert(cmd, mode)
   end
 
-  -- Add model from config if available
-  if self.config.agent and self.config.agent.default_model then
+  -- Add model: opts (frontmatter) > config default
+  local model = opts.model
+  if not model and self.config.agent and self.config.agent.default_model then
+    model = self.config.agent.default_model
+  end
+  if model then
     table.insert(cmd, "--model")
-    table.insert(cmd, self.config.agent.default_model)
+    table.insert(cmd, model)
   end
 
   -- Add context files
@@ -69,18 +78,36 @@ function AgentSDK:build_command(prompt, opts)
     table.insert(cmd, self._session_id)
   end
 
-  -- Add permissions
+  -- Add permissions: opts (frontmatter) > config default
   local vibing = require("vibing")
   local config = vibing.get_config()
-  if config.permissions then
-    if config.permissions.allow and #config.permissions.allow > 0 then
-      table.insert(cmd, "--allow")
-      table.insert(cmd, table.concat(config.permissions.allow, ","))
-    end
-    if config.permissions.deny and #config.permissions.deny > 0 then
-      table.insert(cmd, "--deny")
-      table.insert(cmd, table.concat(config.permissions.deny, ","))
-    end
+
+  local allow_tools = opts.permissions_allow
+  if not allow_tools and config.permissions and config.permissions.allow then
+    allow_tools = config.permissions.allow
+  end
+  if allow_tools and #allow_tools > 0 then
+    table.insert(cmd, "--allow")
+    table.insert(cmd, table.concat(allow_tools, ","))
+  end
+
+  local deny_tools = opts.permissions_deny
+  if not deny_tools and config.permissions and config.permissions.deny then
+    deny_tools = config.permissions.deny
+  end
+  if deny_tools and #deny_tools > 0 then
+    table.insert(cmd, "--deny")
+    table.insert(cmd, table.concat(deny_tools, ","))
+  end
+
+  -- Add permission mode: opts (frontmatter) > config default
+  local permission_mode = opts.permission_mode
+  if not permission_mode and config.permissions and config.permissions.mode then
+    permission_mode = config.permissions.mode
+  end
+  if permission_mode then
+    table.insert(cmd, "--permission-mode")
+    table.insert(cmd, permission_mode)
   end
 
   table.insert(cmd, "--prompt")

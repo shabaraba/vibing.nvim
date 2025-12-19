@@ -1,14 +1,11 @@
 #!/usr/bin/env node
 /**
  * Claude Agent SDK wrapper for vibing.nvim
- * Uses V2 API for proper session resumption
+ * Uses query API for full permission control support
  * Outputs streaming text chunks to stdout as JSON lines
  */
 
-import {
-  unstable_v2_createSession,
-  unstable_v2_resumeSession,
-} from '@anthropic-ai/claude-agent-sdk';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 
 const args = process.argv.slice(2);
 let prompt = '';
@@ -19,6 +16,7 @@ let allowedTools = [];
 let deniedTools = [];
 let mode = null;
 let model = null;
+let permissionMode = 'acceptEdits';
 
 // Parse arguments
 for (let i = 0; i < args.length; i++) {
@@ -52,6 +50,9 @@ for (let i = 0; i < args.length; i++) {
       .map((t) => t.trim())
       .filter((t) => t);
     i++;
+  } else if (args[i] === '--permission-mode' && args[i + 1]) {
+    permissionMode = args[i + 1];
+    i++;
   } else if (!args[i].startsWith('--')) {
     prompt = args[i];
   }
@@ -61,9 +62,6 @@ if (!prompt) {
   console.error('Usage: agent-wrapper.mjs --prompt <prompt> [--cwd <dir>] [--context <file>...]');
   process.exit(1);
 }
-
-// Change to working directory BEFORE reading context files
-process.chdir(cwd);
 
 // Build full prompt with context
 let fullPrompt = prompt;
@@ -94,7 +92,6 @@ if (contextFiles.length > 0 && !sessionId) {
     }
   }
   if (contextParts.length > 0) {
-    // コンテキストファイルのみを追加（promptは既にfullPromptに含まれている）
     fullPrompt =
       fullPrompt +
       `\n\nThe following files are provided as context for reference:\n\n${contextParts.join('\n\n')}`;
@@ -107,64 +104,80 @@ if (contextFiles.length > 0 && !sessionId) {
 // { "type": "done" }
 // { "type": "error", "message": "..." }
 
-// Build session options
-const sessionOptions = {
-  allowedTools: ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch'],
-  permissionMode: 'default',
+// Build query options
+const queryOptions = {
+  cwd: cwd,
+  permissionMode: permissionMode,
+  // Required when using bypassPermissions
+  allowDangerouslySkipPermissions: permissionMode === 'bypassPermissions',
 };
 
-// Add canUseTool callback for permission control
-if (allowedTools.length > 0 || deniedTools.length > 0) {
-  const normalizedAllow = allowedTools.map((t) => t.toLowerCase());
-  const normalizedDeny = deniedTools.map((t) => t.toLowerCase());
-
-  sessionOptions.canUseTool = async (toolName, input) => {
-    const normalizedToolName = toolName.toLowerCase();
-
-    if (normalizedDeny.includes(normalizedToolName)) {
-      return {
-        behavior: 'deny',
-        message: `Tool ${toolName} is not allowed by configuration`,
-      };
-    }
-
-    if (normalizedAllow.length > 0 && !normalizedAllow.includes(normalizedToolName)) {
-      return {
-        behavior: 'deny',
-        message: `Tool ${toolName} is not in the allowed list`,
-      };
-    }
-
-    return {
-      behavior: 'allow',
-      updatedInput: input,
-    };
-  };
+// Add allowed tools (auto-allowed without prompting)
+if (allowedTools.length > 0) {
+  queryOptions.allowedTools = allowedTools;
 }
 
-// Add mode if provided
+// Add disallowed tools
+if (deniedTools.length > 0) {
+  queryOptions.disallowedTools = deniedTools;
+}
+
+// Add custom canUseTool callback for additional control
+const normalizedAllow = allowedTools.map((t) => t.toLowerCase());
+const normalizedDeny = deniedTools.map((t) => t.toLowerCase());
+
+queryOptions.canUseTool = async (toolName, input) => {
+  const normalizedToolName = toolName.toLowerCase();
+
+  // Check deny list first
+  if (normalizedDeny.includes(normalizedToolName)) {
+    return {
+      behavior: 'deny',
+      message: `Tool ${toolName} is not allowed by configuration`,
+    };
+  }
+
+  // Check allow list (if specified)
+  if (normalizedAllow.length > 0 && !normalizedAllow.includes(normalizedToolName)) {
+    return {
+      behavior: 'deny',
+      message: `Tool ${toolName} is not in the allowed list`,
+    };
+  }
+
+  // Allow the tool
+  return {
+    behavior: 'allow',
+    updatedInput: input,
+  };
+};
+
+// Add mode if provided (code, plan, auto, etc.)
 if (mode) {
-  sessionOptions.mode = mode;
+  queryOptions.mode = mode;
 }
 
 // Add model if provided
 if (model) {
-  sessionOptions.model = model;
+  queryOptions.model = model;
+}
+
+// Add session resume if provided
+if (sessionId) {
+  queryOptions.resume = sessionId;
 }
 
 let sessionIdEmitted = false;
 
 try {
-  // Create or resume session using V2 API
-  const session = sessionId
-    ? unstable_v2_resumeSession(sessionId, sessionOptions)
-    : unstable_v2_createSession(sessionOptions);
+  // Create query with all options
+  const result = query({
+    prompt: fullPrompt,
+    options: queryOptions,
+  });
 
-  // Send the prompt
-  await session.send(fullPrompt);
-
-  // Process the response stream (V2 API message format)
-  for await (const message of session.receive()) {
+  // Process the response stream
+  for await (const message of result) {
     // Emit session ID once from init message
     if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
       if (!sessionIdEmitted) {
@@ -228,9 +241,13 @@ try {
         }
       }
     }
+
+    // Handle result message
+    if (message.type === 'result') {
+      // Result processing complete
+    }
   }
 
-  session.close();
   console.log(JSON.stringify({ type: 'done' }));
 } catch (error) {
   console.log(JSON.stringify({ type: 'error', message: error.message || String(error) }));

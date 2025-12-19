@@ -14,6 +14,7 @@
 ---ツール権限設定
 ---Agent SDKに対してClaudeが使用可能なツールを制御（Read, Edit, Write, Bash等）
 ---allowで許可、denyで拒否し、セキュリティと機能のバランスを調整
+---@field mode "default"|"acceptEdits"|"bypassPermissions" 権限モード（"default": 毎回確認、"acceptEdits": 編集自動許可、"bypassPermissions": 全自動許可）
 ---@field allow string[] 許可するツールリスト（例: {"Read", "Edit", "Write"}）
 ---@field deny string[] 拒否するツールリスト（例: {"Bash"}、危険なツールを明示的に禁止）
 
@@ -58,6 +59,7 @@
 ---@field add_context string コンテキスト追加キー（デフォルト: "<C-a>"）
 
 local notify = require("vibing.utils.notify")
+local tools_const = require("vibing.constants.tools")
 
 local M = {}
 
@@ -89,6 +91,7 @@ M.defaults = {
     add_context = "<C-a>",
   },
   permissions = {
+    mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
     allow = {
       "Read",
       "Edit",
@@ -116,26 +119,25 @@ M.options = {}
 function M.setup(opts)
   M.options = vim.tbl_deep_extend("force", {}, M.defaults, opts or {})
 
-  -- Validate tool names in permissions
-  local valid_tools = {
-    Read = true,
-    Edit = true,
-    Write = true,
-    Bash = true,
-    Glob = true,
-    Grep = true,
-    WebSearch = true,
-    WebFetch = true,
-  }
-
   if M.options.permissions then
+    -- Validate permission mode
+    local valid_modes = { default = true, acceptEdits = true, bypassPermissions = true }
+    local mode = M.options.permissions.mode
+    if mode and not valid_modes[mode] then
+      notify.warn(string.format(
+        "Invalid permissions.mode '%s'. Valid values: default, acceptEdits, bypassPermissions",
+        mode
+      ))
+    end
+
+    -- Validate tool names
     for _, tool in ipairs(M.options.permissions.allow or {}) do
-      if not valid_tools[tool] then
+      if not tools_const.VALID_TOOLS_MAP[tool] then
         notify.warn(string.format("Unknown tool '%s' in permissions.allow", tool))
       end
     end
     for _, tool in ipairs(M.options.permissions.deny or {}) do
-      if not valid_tools[tool] then
+      if not tools_const.VALID_TOOLS_MAP[tool] then
         notify.warn(string.format("Unknown tool '%s' in permissions.deny", tool))
       end
     end

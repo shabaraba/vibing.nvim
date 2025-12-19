@@ -199,11 +199,14 @@ Natural language instructions:
 
 Slash commands can be used within the chat buffer for quick actions:
 
-| Command           | Description                                 |
-| ----------------- | ------------------------------------------- |
-| `/context <file>` | Add file to context                         |
-| `/clear`          | Clear context                               |
-| `/save`           | Save current chat                           |
-| `/summarize`      | Summarize conversation                      |
-| `/mode <mode>`    | Set execution mode (auto/plan/code/explore) |
-| `/model <model>`  | Set AI model (opus/sonnet/haiku)            |
+| Command              | Description                                                 |
+| -------------------- | ----------------------------------------------------------- |
+| `/context <file>`    | Add file to context                                         |
+| `/clear`             | Clear context                                               |
+| `/save`              | Save current chat                                           |
+| `/summarize`         | Summarize conversation                                      |
+| `/mode <mode>`       | Set execution mode (auto/plan/code/explore)                 |
+| `/model <model>`     | Set AI model (opus/sonnet/haiku)                            |
+| `/allow [tool]`      | Add tool to allow list, or show list if no args             |
+| `/deny [tool]`       | Add tool to deny list, or show list if no args              |
+| `/permission [mode]` | Set permission mode (default/acceptEdits/bypassPermissions) |
