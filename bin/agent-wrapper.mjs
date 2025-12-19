@@ -208,6 +208,18 @@ try {
           } else if (toolInput.query) {
             inputSummary = toolInput.query;
           }
+
+          // Emit structured tool_use event for file-modifying operations
+          if ((toolName === 'Edit' || toolName === 'Write') && toolInput.file_path) {
+            console.log(
+              JSON.stringify({
+                type: 'tool_use',
+                tool: toolName,
+                file_path: toolInput.file_path,
+              })
+            );
+          }
+
           console.log(
             JSON.stringify({
               type: 'chunk',

@@ -32,6 +32,7 @@ The Node.js wrapper (`bin/agent-wrapper.mjs`) outputs streaming responses as JSO
 
 - `{"type": "session", "session_id": "..."}` - Session identifier for resumption
 - `{"type": "chunk", "text": "..."}` - Streamed text content
+- `{"type": "tool_use", "tool": "Edit", "file_path": "..."}` - File modification event
 - `{"type": "done"}` - Completion signal
 - `{"type": "error", "message": "..."}` - Error messages
 
@@ -52,6 +53,7 @@ The Node.js wrapper (`bin/agent-wrapper.mjs`) outputs streaming responses as JSO
 
 - `ui/chat_buffer.lua` - Chat window with Markdown rendering, session persistence
 - `ui/output_buffer.lua` - Read-only output for inline actions
+- `ui/inline_progress.lua` - Progress window for inline code modifications
 
 **Context System:**
 
@@ -156,24 +158,23 @@ require("vibing").setup({
 
 ## User Commands
 
-| Command                       | Description                                                     |
-| ----------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `:VibingChat`                 | Open chat window                                                |
-| `:VibingToggleChat`           | Toggle chat window (open/close)                                 |
-| `:VibingContext [path]`       | Add file to context                                             |
-| `:VibingClearContext`         | Clear all context                                               |
-| `:VibingInline [action        | instruction]`                                                   | Run inline action or natural language instruction on selection (fix/feat/explain/refactor/test, or custom text) |
-| `:VibingExplain`              | Explain selected code                                           |
-| `:VibingFix`                  | Fix selected code issues                                        |
-| `:VibingFeature`              | Implement feature in selected code                              |
-| `:VibingRefactor`             | Refactor selected code                                          |
-| `:VibingTest`                 | Generate tests for selected code                                |
-| `:VibingCustom <instruction>` | Execute custom instruction on selected code                     |
-| `:VibingCancel`               | Cancel current request                                          |
-| `:VibingOpenChat <file>`      | Open saved chat file                                            |
-| `:VibingRemote <command>`     | Execute command in remote Neovim instance (requires `--listen`) |
-| `:VibingRemoteStatus`         | Show remote Neovim status (mode, buffer, cursor position)       |
-| `:VibingSendToChat`           | Send file from oil.nvim to chat (requires oil.nvim)             |
+| Command                          | Description                                                     |
+| -------------------------------- | --------------------------------------------------------------- |
+| `:VibingChat`                    | Open chat window                                                |
+| `:VibingToggleChat`              | Toggle chat window (open/close)                                 |
+| `:VibingContext [path]`          | Add file to context                                             |
+| `:VibingClearContext`            | Clear all context                                               |
+| `:VibingInline [action\|prompt]` | Run inline action or natural language instruction on selection  |
+| `:VibingExplain [instruction]`   | Explain selected code (with optional additional instruction)    |
+| `:VibingFix [instruction]`       | Fix selected code issues (with optional additional instruction) |
+| `:VibingFeature [instruction]`   | Implement feature in selected code (with optional instruction)  |
+| `:VibingRefactor [instruction]`  | Refactor selected code (with optional additional instruction)   |
+| `:VibingTest [instruction]`      | Generate tests for selected code (with optional instruction)    |
+| `:VibingCancel`                  | Cancel current request                                          |
+| `:VibingOpenChat <file>`         | Open saved chat file                                            |
+| `:VibingRemote <command>`        | Execute command in remote Neovim instance (requires `--listen`) |
+| `:VibingRemoteStatus`            | Show remote Neovim status (mode, buffer, cursor position)       |
+| `:VibingSendToChat`              | Send file from oil.nvim to chat (requires oil.nvim)             |
 
 ### Inline Action Examples
 
@@ -187,12 +188,21 @@ Predefined actions:
 :'<,'>VibingInline test      " Generate tests
 ```
 
-Natural language instructions:
+With additional instructions:
+
+```vim
+:'<,'>VibingExplain 日本語で                    " Explain in Japanese
+:'<,'>VibingFix using async/await               " Fix with specific style
+:'<,'>VibingTest using Jest with mocks          " Generate tests with framework
+:'<,'>VibingRefactor to use functional style    " Refactor with specific approach
+```
+
+Natural language instructions (via VibingInline):
 
 ```vim
 :'<,'>VibingInline "Convert this function to TypeScript"
 :'<,'>VibingInline "Add error handling with try-catch"
-:'<,'>VibingCustom "Optimize this loop for performance"
+:'<,'>VibingInline "Optimize this loop for performance"
 ```
 
 ## Slash Commands (in Chat)

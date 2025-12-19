@@ -176,6 +176,11 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
               if msg.type == "session" and msg.session_id then
                 -- Store session ID for subsequent calls
                 self._session_id = msg.session_id
+              elseif msg.type == "tool_use" and msg.tool and msg.file_path then
+                -- Tool use event for file-modifying operations
+                if opts.on_tool_use then
+                  opts.on_tool_use(msg.tool, msg.file_path)
+                end
               elseif msg.type == "chunk" and msg.text then
                 table.insert(output, msg.text)
                 on_chunk(msg.text)
