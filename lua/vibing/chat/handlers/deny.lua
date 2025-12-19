@@ -1,15 +1,5 @@
 local notify = require("vibing.utils.notify")
-
-local VALID_TOOLS = { "Read", "Edit", "Write", "Bash", "Glob", "Grep", "WebSearch", "WebFetch" }
-
-local function is_valid_tool(tool)
-  for _, valid in ipairs(VALID_TOOLS) do
-    if tool:lower() == valid:lower() then
-      return valid
-    end
-  end
-  return nil
-end
+local tools = require("vibing.constants.tools")
 
 ---/denyコマンドハンドラー
 ---チャット内で/deny <tool>を実行した際に呼び出される
@@ -40,10 +30,10 @@ return function(args, chat_buffer)
   -- -で始まる場合は削除
   if tool:sub(1, 1) == "-" then
     local tool_name = tool:sub(2)
-    local valid_tool = is_valid_tool(tool_name)
+    local valid_tool = tools.validate_tool(tool_name)
     if not valid_tool then
       notify.error(string.format("Invalid tool: %s", tool_name))
-      notify.info("Valid tools: " .. table.concat(VALID_TOOLS, ", "))
+      notify.info("Valid tools: " .. table.concat(tools.VALID_TOOLS, ", "))
       return false
     end
 
@@ -57,10 +47,10 @@ return function(args, chat_buffer)
   end
 
   -- 通常は追加
-  local valid_tool = is_valid_tool(tool)
+  local valid_tool = tools.validate_tool(tool)
   if not valid_tool then
     notify.error(string.format("Invalid tool: %s", tool))
-    notify.info("Valid tools: " .. table.concat(VALID_TOOLS, ", "))
+    notify.info("Valid tools: " .. table.concat(tools.VALID_TOOLS, ", "))
     return false
   end
 

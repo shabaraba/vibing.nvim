@@ -152,6 +152,11 @@ queryOptions.canUseTool = async (toolName, input) => {
   };
 };
 
+// Add mode if provided (code, plan, auto, etc.)
+if (mode) {
+  queryOptions.mode = mode;
+}
+
 // Add model if provided
 if (model) {
   queryOptions.model = model;

@@ -1,6 +1,6 @@
 ---@class Vibing.ChatInit
 ---チャットシステムの初期化モジュール
----組み込みチャットコマンド（/context, /clear, /save, /summarize, /mode, /model, /allow, /deny）を登録
+---組み込みチャットコマンド（/context, /clear, /save, /summarize, /mode, /model, /allow, /deny, /permission）を登録
 local M = {}
 
 ---チャットコマンドシステムを初期化

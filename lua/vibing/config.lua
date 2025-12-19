@@ -59,6 +59,7 @@
 ---@field add_context string コンテキスト追加キー（デフォルト: "<C-a>"）
 
 local notify = require("vibing.utils.notify")
+local tools_const = require("vibing.constants.tools")
 
 local M = {}
 
@@ -118,26 +119,25 @@ M.options = {}
 function M.setup(opts)
   M.options = vim.tbl_deep_extend("force", {}, M.defaults, opts or {})
 
-  -- Validate tool names in permissions
-  local valid_tools = {
-    Read = true,
-    Edit = true,
-    Write = true,
-    Bash = true,
-    Glob = true,
-    Grep = true,
-    WebSearch = true,
-    WebFetch = true,
-  }
-
   if M.options.permissions then
+    -- Validate permission mode
+    local valid_modes = { default = true, acceptEdits = true, bypassPermissions = true }
+    local mode = M.options.permissions.mode
+    if mode and not valid_modes[mode] then
+      notify.warn(string.format(
+        "Invalid permissions.mode '%s'. Valid values: default, acceptEdits, bypassPermissions",
+        mode
+      ))
+    end
+
+    -- Validate tool names
     for _, tool in ipairs(M.options.permissions.allow or {}) do
-      if not valid_tools[tool] then
+      if not tools_const.VALID_TOOLS_MAP[tool] then
         notify.warn(string.format("Unknown tool '%s' in permissions.allow", tool))
       end
     end
     for _, tool in ipairs(M.options.permissions.deny or {}) do
-      if not valid_tools[tool] then
+      if not tools_const.VALID_TOOLS_MAP[tool] then
         notify.warn(string.format("Unknown tool '%s' in permissions.deny", tool))
       end
     end
