@@ -38,6 +38,7 @@ function M._show_native(chat_buffer)
       name = name,
       description = cmd.description,
       source = cmd.source or "builtin",
+      requires_args = cmd.requires_args or false,
     })
   end
 
@@ -55,7 +56,8 @@ function M._show_native(chat_buffer)
       elseif item.source == "user" then
         source_tag = "[user] "
       end
-      return string.format("%s/%s - %s", source_tag, item.name, item.description)
+      local args_indicator = item.requires_args and " <args>" or ""
+      return string.format("%s/%s%s - %s", source_tag, item.name, args_indicator, item.description)
     end,
   }, function(choice)
     if choice then
@@ -83,6 +85,7 @@ function M._show_telescope(chat_buffer)
       name = name,
       description = cmd.description,
       source = cmd.source or "builtin",
+      requires_args = cmd.requires_args or false,
     })
   end
 
@@ -95,7 +98,7 @@ function M._show_telescope(chat_buffer)
     separator = " ",
     items = {
       { width = 15 },  -- source
-      { width = 20 },  -- command name
+      { width = 25 },  -- command name (with args indicator)
       { remaining = true },  -- description
     },
   })
@@ -110,9 +113,14 @@ function M._show_telescope(chat_buffer)
       source_display = "[custom:user]"
     end
 
+    local command_display = "/" .. entry.name
+    if entry.requires_args then
+      command_display = command_display .. " <args>"
+    end
+
     return displayer({
       { source_display, "TelescopeResultsComment" },
-      { "/" .. entry.name, "TelescopeResultsIdentifier" },
+      { command_display, "TelescopeResultsIdentifier" },
       { entry.description, "TelescopeResultsString" },
     })
   end
@@ -130,6 +138,7 @@ function M._show_telescope(chat_buffer)
           name = entry.name,
           description = entry.description,
           source = entry.source,
+          requires_args = entry.requires_args,
         }
       end,
     }),
