@@ -136,8 +136,9 @@ local function execute_custom_command(custom_cmd, args, chat_buffer)
 
   -- プレースホルダー置換
   -- $ARGUMENTS と {{ARGUMENTS}} を全引数に置換
-  message = message:gsub("%$ARGUMENTS", all_args)
-  message = message:gsub("{{ARGUMENTS}}", all_args)
+  -- 関数形式を使用して%などの特殊文字をエスケープ
+  message = message:gsub("%$ARGUMENTS", function() return all_args end)
+  message = message:gsub("{{ARGUMENTS}}", function() return all_args end)
 
   -- 個別引数の置換（例: {{1}}, {{2}}）
   -- 関数形式を使用してargの特殊文字（%など）をエスケープ
