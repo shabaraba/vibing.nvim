@@ -8,6 +8,7 @@ describe("vibing.init", function()
   local mock_remote
   local original_notify
   local original_create_user_command
+  local original_filetype_add
 
   before_each(function()
     -- Clear loaded modules
@@ -25,12 +26,16 @@ describe("vibing.init", function()
     -- Save originals
     original_notify = vim.notify
     original_create_user_command = vim.api.nvim_create_user_command
+    original_filetype_add = vim.filetype.add
 
     -- Mock vim.notify
     vim.notify = function() end
 
     -- Mock vim.api.nvim_create_user_command
     vim.api.nvim_create_user_command = function() end
+
+    -- Mock vim.filetype.add
+    vim.filetype.add = function() end
 
     -- Mock config module
     mock_config = {
@@ -93,6 +98,7 @@ describe("vibing.init", function()
     -- Restore originals
     vim.notify = original_notify
     vim.api.nvim_create_user_command = original_create_user_command
+    vim.filetype.add = original_filetype_add
   end)
 
   describe("setup", function()
@@ -162,6 +168,23 @@ describe("vibing.init", function()
       Vibing.setup()
 
       assert.is_false(remote_setup_called)
+    end)
+
+    it("should register .vibing filetype", function()
+      package.loaded["vibing.adapters.agent_sdk"] = mock_adapter
+      local filetype_add_called = false
+      local filetype_config = nil
+      vim.filetype.add = function(config)
+        filetype_add_called = true
+        filetype_config = config
+      end
+
+      Vibing.setup()
+
+      assert.is_true(filetype_add_called)
+      assert.is_not_nil(filetype_config)
+      assert.is_not_nil(filetype_config.extension)
+      assert.equals("vibing", filetype_config.extension.vibing)
     end)
 
     it("should handle invalid adapter name", function()
