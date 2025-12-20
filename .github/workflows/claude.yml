@@ -52,4 +52,4 @@ jobs:
             - Include "fixes #<issue-number>" if there's a related issue
 
           # Allow file operations and git/gh commands for implementation tasks
-          allowed_tools: 'Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(npm:*)'
+          claude_args: '--allowed-tools "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(npm:*)"'
