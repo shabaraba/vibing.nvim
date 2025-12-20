@@ -110,6 +110,12 @@ function AgentSDK:build_command(prompt, opts)
     table.insert(cmd, permission_mode)
   end
 
+  -- Add permission rules: config.permissions.rules
+  if config.permissions and config.permissions.rules and #config.permissions.rules > 0 then
+    table.insert(cmd, "--rules")
+    table.insert(cmd, vim.json.encode(config.permissions.rules))
+  end
+
   table.insert(cmd, "--prompt")
   table.insert(cmd, prompt)
 

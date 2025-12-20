@@ -14,6 +14,7 @@ const contextFiles = [];
 let sessionId = null;
 let allowedTools = [];
 let deniedTools = [];
+let permissionRules = [];
 let mode = null;
 let model = null;
 let permissionMode = 'acceptEdits';
@@ -52,6 +53,14 @@ for (let i = 0; i < args.length; i++) {
     i++;
   } else if (args[i] === '--permission-mode' && args[i + 1]) {
     permissionMode = args[i + 1];
+    i++;
+  } else if (args[i] === '--rules' && args[i + 1]) {
+    try {
+      permissionRules = JSON.parse(args[i + 1]);
+    } catch (e) {
+      console.error('Failed to parse --rules JSON:', e.message);
+      process.exit(1);
+    }
     i++;
   } else if (!args[i].startsWith('--')) {
     prompt = args[i];
@@ -122,6 +131,83 @@ if (deniedTools.length > 0) {
   queryOptions.disallowedTools = deniedTools;
 }
 
+// Helper function: simple glob pattern matching (basic implementation)
+function matchGlob(pattern, str) {
+  // Convert glob pattern to regex
+  const regexPattern = pattern.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.');
+  const regex = new RegExp(`^${regexPattern}$`);
+  return regex.test(str);
+}
+
+// Helper function: check if rule matches tool and input
+function checkRule(rule, toolName, input) {
+  // Check if rule applies to this tool
+  if (!rule.tools || !rule.tools.includes(toolName)) {
+    return null; // Rule doesn't apply
+  }
+
+  // Check file path patterns
+  if (rule.paths && rule.paths.length > 0 && input.file_path) {
+    const pathMatches = rule.paths.some((pattern) => matchGlob(pattern, input.file_path));
+    if (pathMatches) {
+      return rule.action; // "allow" or "deny"
+    }
+    // If paths are specified but don't match, rule doesn't apply
+    return null;
+  }
+
+  // Check Bash command patterns
+  if (toolName === 'Bash' && input.command) {
+    // Check allowed commands list
+    if (rule.commands && rule.commands.length > 0) {
+      const commandParts = input.command.trim().split(/\s+/);
+      const baseCommand = commandParts[0];
+      const commandMatches = rule.commands.includes(baseCommand);
+      if (commandMatches) {
+        return rule.action;
+      }
+      // If commands are specified but don't match, rule doesn't apply
+      return null;
+    }
+
+    // Check denied patterns (regex)
+    if (rule.patterns && rule.patterns.length > 0) {
+      const patternMatches = rule.patterns.some((pattern) => {
+        try {
+          const regex = new RegExp(pattern);
+          return regex.test(input.command);
+        } catch {
+          return false;
+        }
+      });
+      if (patternMatches) {
+        return rule.action;
+      }
+    }
+  }
+
+  // Check URL/domain patterns
+  if (toolName === 'WebFetch' && input.url) {
+    if (rule.domains && rule.domains.length > 0) {
+      try {
+        const url = new URL(input.url);
+        const hostname = url.hostname;
+        const domainMatches = rule.domains.some((domain) => matchGlob(domain, hostname));
+        if (domainMatches) {
+          return rule.action;
+        }
+        return null;
+      } catch {
+        // Invalid URL, ignore rule
+        return null;
+      }
+    }
+  }
+
+  // Rule doesn't have applicable conditions
+  return null;
+}
+
 // Add custom canUseTool callback for additional control
 const normalizedAllow = allowedTools.map((t) => t.toLowerCase());
 const normalizedDeny = deniedTools.map((t) => t.toLowerCase());
@@ -143,6 +229,21 @@ queryOptions.canUseTool = async (toolName, input) => {
       behavior: 'deny',
       message: `Tool ${toolName} is not in the allowed list`,
     };
+  }
+
+  // Check granular permission rules
+  if (permissionRules && permissionRules.length > 0) {
+    for (const rule of permissionRules) {
+      const ruleResult = checkRule(rule, toolName, input);
+      if (ruleResult === 'deny') {
+        return {
+          behavior: 'deny',
+          message: rule.message || `Tool ${toolName} is denied by permission rule`,
+        };
+      }
+      // Note: "allow" from rule doesn't override deny list
+      // Rules are additional constraints, not overrides
+    }
   }
 
   // Allow the tool

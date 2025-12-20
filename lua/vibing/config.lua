@@ -10,6 +10,17 @@
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
 ---@field remote Vibing.RemoteConfig リモート制御設定（ソケットパス、自動検出）
 
+---@class Vibing.PermissionRule
+---粒度の細かい権限制御ルール
+---ツール入力パラメータに基づいて許可/拒否を制御
+---@field tools string[] 対象ツール名のリスト（例: {"Read", "Write"}）
+---@field paths string[]? ファイルパスのglobパターンリスト（例: {"src/**", "tests/**"}）
+---@field commands string[]? Bashコマンド名のリスト（例: {"npm", "yarn"}）
+---@field patterns string[]? Bashコマンドパターン（正規表現）のリスト（例: {"^rm -rf", "^sudo"}）
+---@field domains string[]? 許可/拒否するドメインリスト（例: {"github.com", "*.example.com"}）
+---@field action "allow"|"deny" ルールのアクション（"allow": 許可、"deny": 拒否）
+---@field message string? 拒否時のメッセージ（actionが"deny"の場合に表示）
+
 ---@class Vibing.PermissionsConfig
 ---ツール権限設定
 ---Agent SDKに対してClaudeが使用可能なツールを制御（Read, Edit, Write, Bash等）
@@ -17,6 +28,7 @@
 ---@field mode "default"|"acceptEdits"|"bypassPermissions" 権限モード（"default": 毎回確認、"acceptEdits": 編集自動許可、"bypassPermissions": 全自動許可）
 ---@field allow string[] 許可するツールリスト（例: {"Read", "Edit", "Write"}）
 ---@field deny string[] 拒否するツールリスト（例: {"Bash"}、危険なツールを明示的に禁止）
+---@field rules Vibing.PermissionRule[]? 粒度の細かい権限制御ルール（オプション）
 
 ---@class Vibing.AgentConfig
 ---Agent SDK設定
@@ -102,6 +114,7 @@ M.defaults = {
     deny = {
       "Bash",
     },
+    rules = {},  -- Granular permission rules (optional)
   },
   remote = {
     socket_path = nil,  -- Auto-detect from NVIM env variable

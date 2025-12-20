@@ -31,6 +31,8 @@ describe("vibing.config", function()
       assert.is_not_nil(config.defaults.permissions)
       assert.is_not_nil(config.defaults.permissions.allow)
       assert.is_table(config.defaults.permissions.allow)
+      assert.is_not_nil(config.defaults.permissions.rules)
+      assert.is_table(config.defaults.permissions.rules)
     end)
   end)
 
