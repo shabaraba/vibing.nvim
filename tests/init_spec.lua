@@ -206,7 +206,6 @@ describe("vibing.init", function()
         "VibingFeature",
         "VibingRefactor",
         "VibingTest",
-        "VibingCustom",
         "VibingCancel",
         "VibingOpenChat",
         "VibingRemote",
@@ -414,7 +413,7 @@ describe("vibing.init", function()
       assert.is_true(config_setup_called)
       assert.is_true(chat_setup_called)
       assert.is_not_nil(Vibing.adapter)
-      assert.equals(19, commands_registered)
+      assert.equals(18, commands_registered)
     end)
   end)
 end)
