@@ -70,6 +70,18 @@ function M.setup()
     handler = require("vibing.chat.handlers.permission"),
     description = "Set permission mode: /permission <default|acceptEdits|bypassPermissions>",
   })
+
+  commands.register({
+    name = "perm",
+    handler = require("vibing.chat.handlers.perm"),
+    description = "Open permission builder UI",
+  })
+
+  commands.register({
+    name = "permissions",
+    handler = require("vibing.chat.handlers.perm"),
+    description = "Open permission builder UI (alias for /perm)",
+  })
 end
 
 return M
