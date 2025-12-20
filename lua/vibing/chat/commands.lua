@@ -115,52 +115,89 @@ function M.list()
   return list
 end
 
+---コマンド内容が引数プレースホルダーを含むかチェック
+---@param content string コマンド内容
+---@return boolean プレースホルダーを含む場合true
+local function has_argument_placeholders(content)
+  return content:match("%$ARGUMENTS") ~= nil
+    or content:match("{{ARGUMENTS}}") ~= nil
+    or content:match("{{%d+}}") ~= nil
+end
+
+---カスタムコマンドを実行
+---@param custom_cmd Vibing.CustomCommand カスタムコマンド情報
+---@param args string[] コマンド引数
+---@param chat_buffer Vibing.ChatBuffer チャットバッファ
+local function execute_custom_command(custom_cmd, args, chat_buffer)
+  local message = custom_cmd.content
+
+  -- 全引数を結合
+  local all_args = table.concat(args, " ")
+
+  -- プレースホルダー置換
+  -- $ARGUMENTS と {{ARGUMENTS}} を全引数に置換
+  message = message:gsub("%$ARGUMENTS", all_args)
+  message = message:gsub("{{ARGUMENTS}}", all_args)
+
+  -- 個別引数の置換（例: {{1}}, {{2}}）
+  -- 関数形式を使用してargの特殊文字（%など）をエスケープ
+  for i, arg in ipairs(args) do
+    message = message:gsub("{{" .. i .. "}}", function() return arg end)
+  end
+
+  -- チャットバッファの確認
+  if not chat_buffer then
+    notify.error("No chat buffer")
+    return false
+  end
+
+  -- プロンプトが空でないか確認
+  if vim.trim(message) == "" then
+    notify.error(string.format("Custom command /%s produced empty prompt", custom_cmd.name))
+    return false
+  end
+
+  -- Agentに直接送信（バッファに展開しない）
+  -- Note: M.send()が最後にadd_user_section()を呼ぶため、ここでは呼ばない
+  vim.schedule(function()
+    require("vibing.actions.chat").send(chat_buffer, message)
+  end)
+
+  notify.info(string.format("Custom command executed: /%s", custom_cmd.name))
+  return true
+end
+
 ---カスタムコマンドを登録
 ---Markdown内容をチャットバッファに挿入するハンドラーを自動生成
+---引数が必要なコマンドで引数がない場合は入力プロンプトを表示
 ---@param custom_cmd Vibing.CustomCommand カスタムコマンド情報
 function M.register_custom(custom_cmd)
+  local requires_args = has_argument_placeholders(custom_cmd.content)
+
   M.custom_commands[custom_cmd.name] = {
     name = custom_cmd.name,
     handler = function(args, chat_buffer)
-      local message = custom_cmd.content
-
-      -- 全引数を結合
-      local all_args = table.concat(args, " ")
-
-      -- プレースホルダー置換
-      -- $ARGUMENTS と {{ARGUMENTS}} を全引数に置換
-      message = message:gsub("%$ARGUMENTS", all_args)
-      message = message:gsub("{{ARGUMENTS}}", all_args)
-
-      -- 個別引数の置換（例: {{1}}, {{2}}）
-      -- 関数形式を使用してargの特殊文字（%など）をエスケープ
-      for i, arg in ipairs(args) do
-        message = message:gsub("{{" .. i .. "}}", function() return arg end)
+      -- 引数が必要だが提供されていない場合、入力を促す
+      if requires_args and #args == 0 then
+        vim.ui.input({
+          prompt = string.format("/%s argument: ", custom_cmd.name),
+        }, function(input)
+          if input and vim.trim(input) ~= "" then
+            -- 入力を引数として使用
+            local input_args = vim.split(input, "%s+", { trimempty = true })
+            execute_custom_command(custom_cmd, input_args, chat_buffer)
+          else
+            notify.warn(string.format("/%s requires an argument", custom_cmd.name))
+          end
+        end)
+        return true
       end
 
-      -- チャットバッファの確認
-      if not chat_buffer then
-        notify.error("No chat buffer")
-        return false
-      end
-
-      -- プロンプトが空でないか確認
-      if vim.trim(message) == "" then
-        notify.error(string.format("Custom command /%s produced empty prompt", custom_cmd.name))
-        return false
-      end
-
-      -- Agentに直接送信（バッファに展開しない）
-      -- Note: M.send()が最後にadd_user_section()を呼ぶため、ここでは呼ばない
-      vim.schedule(function()
-        require("vibing.actions.chat").send(chat_buffer, message)
-      end)
-
-      notify.info(string.format("Custom command executed: /%s", custom_cmd.name))
-      return true
+      return execute_custom_command(custom_cmd, args, chat_buffer)
     end,
     description = custom_cmd.description,
     source = custom_cmd.source,
+    requires_args = requires_args,
   }
 end
 
