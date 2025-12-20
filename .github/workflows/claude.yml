@@ -33,26 +33,35 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Configure Git
+        run: |
+          git config --global user.name "Claude Code Bot"
+          git config --global user.email "claude-code-bot@anthropic.com"
+
       - name: Run Claude Code
         id: claude
-        # Pin to specific commit SHA for security
-        uses: anthropics/claude-code-action@7145c3e0510bcdbdd29f67cc4a8c1958f1acfa2f
-        env:
-          GH_TOKEN: ${{ github.token }}
+        uses: anthropics/claude-code-action@beta
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          prompt: |
-            IMPORTANT: All responses MUST be in Japanese.
-
-            When you complete an implementation task, create a pull request using `gh pr create` command.
-            Make sure to:
-            - Create a descriptive PR title in English using semantic commit format
-            - Write the PR body in Japanese with clear description of changes
-            - Include "fixes #<issue-number>" if there's a related issue
+          # Allow Claude to read CI results on PRs
+          additional_permissions: |
+            actions: read
 
           # Allow file operations and git/gh commands for implementation tasks
-          claude_args: '--allowed-tools "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(npm:*)"'
+          allowed_tools: 'Bash(npm install),Bash(npm run *),Bash(git add *),Bash(git commit *),Bash(git push *),Bash(gh *)'
 
           # Show full output for debugging
           show_full_output: true
+
+          # Custom instructions for Claude
+          custom_instructions: |
+            日本語で応答してください。
+            CLAUDE.mdファイルの指示に従ってください。
+
+            コード変更を完了したら、以下の手順でPRを作成してください：
+            - PRタイトルは英語でSemantic Commit Messages形式
+            - PR本文は日本語で詳細な説明
+            - 関連issueがあれば "fixes #<issue-number>" を含める
