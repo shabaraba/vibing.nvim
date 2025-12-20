@@ -1,6 +1,7 @@
 local Context = require("vibing.context")
 local OutputBuffer = require("vibing.ui.output_buffer")
 local notify = require("vibing.utils.notify")
+local Language = require("vibing.utils.language")
 
 ---@class Vibing.ActionConfig
 ---@field prompt string アクションの基本プロンプト
@@ -76,8 +77,11 @@ function M.execute(action_or_prompt, additional_instruction)
     return
   end
 
+  -- 言語設定を適用
+  local lang_code = Language.get_language_code(config.language, "inline")
+  local base_prompt = Language.add_language_instruction(action.prompt, lang_code)
+
   -- 追加指示がある場合はベースプロンプトに追加
-  local base_prompt = action.prompt
   if additional_instruction and additional_instruction ~= "" then
     base_prompt = base_prompt .. " " .. additional_instruction
   end
@@ -237,6 +241,7 @@ end
 ---@param use_output boolean 結果をフローティングウィンドウで表示するか（false: コード直接変更）
 function M.custom(prompt, use_output)
   local vibing = require("vibing")
+  local config = vibing.get_config()
   local adapter = vibing.get_adapter()
 
   if not adapter then
@@ -250,8 +255,16 @@ function M.custom(prompt, use_output)
     return
   end
 
+  -- 言語設定を適用（カスタムプロンプトの先頭に追加）
+  local lang_code = Language.get_language_code(config.language, "inline")
+  local final_prompt = prompt
+  if lang_code and lang_code ~= "" and lang_code ~= "en" then
+    local instruction = Language.get_language_instruction(lang_code)
+    final_prompt = "Respond" .. instruction .. ".\n\n" .. prompt
+  end
+
   -- プロンプトに@file:path:L10-L25形式のメンションを含める
-  local full_prompt = prompt .. "\n\n" .. selection_context
+  local full_prompt = final_prompt .. "\n\n" .. selection_context
   local opts = {}
 
   if use_output then

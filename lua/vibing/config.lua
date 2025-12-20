@@ -9,6 +9,7 @@
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
 ---@field remote Vibing.RemoteConfig リモート制御設定（ソケットパス、自動検出）
+---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
 
 ---@class Vibing.PermissionsConfig
 ---ツール権限設定
@@ -57,6 +58,13 @@
 ---@field send string メッセージ送信キー（デフォルト: "<CR>"）
 ---@field cancel string 実行キャンセルキー（デフォルト: "<C-c>"）
 ---@field add_context string コンテキスト追加キー（デフォルト: "<C-a>"）
+
+---@class Vibing.LanguageConfig
+---言語設定（詳細）
+---chat と inline で異なる言語を指定可能
+---@field default? string デフォルト言語（"ja", "en", "zh", "ko", "fr", "de", "es"等）
+---@field chat? string chatアクションでの言語（指定されていない場合はdefaultを使用）
+---@field inline? string inlineアクションでの言語（指定されていない場合はdefaultを使用）
 
 local notify = require("vibing.utils.notify")
 local tools_const = require("vibing.constants.tools")
@@ -107,6 +115,7 @@ M.defaults = {
     socket_path = nil,  -- Auto-detect from NVIM env variable
     auto_detect = true,
   },
+  language = nil,  -- No language specification by default (responds in English)
 }
 
 ---@type Vibing.Config
