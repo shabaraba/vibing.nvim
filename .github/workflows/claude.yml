@@ -6,7 +6,7 @@ on:
   pull_request_review_comment:
     types: [created]
   issues:
-    types: [opened, assigned]
+    types: [opened]
   pull_request_review:
     types: [submitted]
 
@@ -31,11 +31,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Run Claude Code
         id: claude
-        uses: anthropics/claude-code-action@v1
+        # Pin to specific commit SHA for security
+        uses: anthropics/claude-code-action@7145c3e0510bcdbdd29f67cc4a8c1958f1acfa2f
         env:
           GH_TOKEN: ${{ github.token }}
         with:
@@ -50,7 +51,4 @@ jobs:
             - Write the PR body in Japanese with clear description of changes
             - Include "fixes #<issue-number>" if there's a related issue
 
-          # Optional: Add claude_args to customize behavior and configuration
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
           claude_args: '--allowed-tools "Bash(git:*),Bash(gh pr:*),Bash(gh issue:*)"'
