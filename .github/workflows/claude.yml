@@ -53,3 +53,6 @@ jobs:
 
           # Allow file operations and git/gh commands for implementation tasks
           claude_args: '--allowed-tools "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(npm:*)"'
+
+          # Show full output for debugging
+          show_full_output: true
