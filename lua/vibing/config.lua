@@ -57,6 +57,8 @@
 ---@field send string メッセージ送信キー（デフォルト: "<CR>"）
 ---@field cancel string 実行キャンセルキー（デフォルト: "<C-c>"）
 ---@field add_context string コンテキスト追加キー（デフォルト: "<C-a>"）
+---@field open_diff string ファイルパス上でdiff表示キー（デフォルト: "gd"）
+---@field open_file string ファイルパス上でファイルを開くキー（デフォルト: "gf"）
 
 local notify = require("vibing.utils.notify")
 local tools_const = require("vibing.constants.tools")
@@ -89,6 +91,8 @@ M.defaults = {
     send = "<CR>",
     cancel = "<C-c>",
     add_context = "<C-a>",
+    open_diff = "gd",
+    open_file = "gf",
   },
   permissions = {
     mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"

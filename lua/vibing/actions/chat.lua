@@ -163,6 +163,11 @@ function M.send(chat_buffer, message)
 
   -- frontmatterからmode/model/permissionsを取得してoptsに含める
   local frontmatter = chat_buffer:parse_frontmatter()
+
+  -- 変更されたファイルを追跡
+  local modified_files = {}
+  local file_tools = { Edit = true, Write = true }
+
   local opts = {
     streaming = true,
     mode = frontmatter.mode,
@@ -170,6 +175,21 @@ function M.send(chat_buffer, message)
     permissions_allow = frontmatter.permissions_allow,
     permissions_deny = frontmatter.permissions_deny,
     permission_mode = frontmatter.permission_mode,
+    on_tool_use = function(tool, file_path)
+      if file_tools[tool] and file_path then
+        -- 重複を避けて追加
+        local already_exists = false
+        for _, path in ipairs(modified_files) do
+          if path == file_path then
+            already_exists = true
+            break
+          end
+        end
+        if not already_exists then
+          table.insert(modified_files, file_path)
+        end
+      end
+    end,
   }
 
   -- ストリーミング実行
@@ -183,6 +203,17 @@ function M.send(chat_buffer, message)
         if response.error then
           chat_buffer:append_chunk("\n\n**Error:** " .. response.error)
         end
+
+        -- 編集されたファイル一覧を表示
+        if #modified_files > 0 then
+          chat_buffer:append_chunk("\n\n## Modified Files\n\n")
+          for _, file_path in ipairs(modified_files) do
+            -- 相対パスに変換
+            local relative_path = vim.fn.fnamemodify(file_path, ":.")
+            chat_buffer:append_chunk(relative_path .. "\n")
+          end
+        end
+
         -- セッションIDを同期（adapter → chat_buffer）
         if adapter:supports("session") then
           local new_session = adapter:get_session_id()
@@ -202,6 +233,17 @@ function M.send(chat_buffer, message)
     else
       chat_buffer:append_chunk(response.content)
     end
+
+    -- 編集されたファイル一覧を表示
+    if #modified_files > 0 then
+      chat_buffer:append_chunk("\n\n## Modified Files\n\n")
+      for _, file_path in ipairs(modified_files) do
+        -- 相対パスに変換
+        local relative_path = vim.fn.fnamemodify(file_path, ":.")
+        chat_buffer:append_chunk(relative_path .. "\n")
+      end
+    end
+
     -- セッションIDを同期
     if adapter:supports("session") then
       local new_session = adapter:get_session_id()

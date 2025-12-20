@@ -178,6 +178,25 @@ function ChatBuffer:_setup_keymaps()
       end)
     end, { buffer = buf, desc = "Add context" })
 
+    -- ファイルパス上で diff を表示
+    vim.keymap.set("n", keymaps.open_diff, function()
+      local FilePath = require("vibing.utils.file_path")
+      local GitDiff = require("vibing.utils.git_diff")
+      local file_path = FilePath.is_cursor_on_file_path(buf)
+      if file_path then
+        GitDiff.show_diff(file_path)
+      end
+    end, { buffer = buf, desc = "Open diff for file under cursor" })
+
+    -- ファイルパス上でファイルを開く
+    vim.keymap.set("n", keymaps.open_file, function()
+      local FilePath = require("vibing.utils.file_path")
+      local file_path = FilePath.is_cursor_on_file_path(buf)
+      if file_path then
+        FilePath.open_file(file_path)
+      end
+    end, { buffer = buf, desc = "Open file under cursor" })
+
     vim.keymap.set("n", "q", function()
       self:close()
     end, { buffer = buf, desc = "Close chat" })
