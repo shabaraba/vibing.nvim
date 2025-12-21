@@ -298,26 +298,66 @@ function checkRule(rule, toolName, input) {
 }
 
 // Add custom canUseTool callback for additional control
-const normalizedAllow = allowedTools.map((t) => t.toLowerCase());
-const normalizedDeny = deniedTools.map((t) => t.toLowerCase());
+// Helper: Parse Bash pattern like "Bash(git:*)" -> { tool: "bash", pattern: "git" }
+function parseBashPattern(toolStr) {
+  const bashPatternMatch = toolStr.match(/^bash\(([^:]+):\*\)$/i);
+  if (bashPatternMatch) {
+    return { tool: 'bash', pattern: bashPatternMatch[1].toLowerCase() };
+  }
+  return { tool: toolStr.toLowerCase(), pattern: null };
+}
+
+// Helper: Check if tool matches permission string (including patterns)
+function matchesPermission(toolName, input, permissionStr) {
+  const parsed = parseBashPattern(permissionStr);
+
+  if (parsed.pattern) {
+    // Pattern-based Bash permission
+    if (toolName.toLowerCase() !== 'bash') {
+      return false;
+    }
+    if (!input.command) {
+      return false;
+    }
+    const commandParts = input.command.trim().split(/\s+/);
+    const baseCommand = commandParts[0].toLowerCase();
+    return (
+      baseCommand === parsed.pattern ||
+      (commandParts.length > 1 &&
+        commandParts[0].toLowerCase() + ' ' + commandParts[1].toLowerCase() === parsed.pattern)
+    );
+  } else {
+    // Simple tool name match
+    return toolName.toLowerCase() === parsed.tool;
+  }
+}
 
 queryOptions.canUseTool = async (toolName, input) => {
-  const normalizedToolName = toolName.toLowerCase();
-
-  // Check deny list first
-  if (normalizedDeny.includes(normalizedToolName)) {
-    return {
-      behavior: 'deny',
-      message: `Tool ${toolName} is not allowed by configuration`,
-    };
+  // Check deny list first (with pattern support)
+  for (const deniedTool of deniedTools) {
+    if (matchesPermission(toolName, input, deniedTool)) {
+      return {
+        behavior: 'deny',
+        message: `Tool ${toolName} is denied by configuration: ${deniedTool}`,
+      };
+    }
   }
 
-  // Check allow list (if specified)
-  if (normalizedAllow.length > 0 && !normalizedAllow.includes(normalizedToolName)) {
-    return {
-      behavior: 'deny',
-      message: `Tool ${toolName} is not in the allowed list`,
-    };
+  // Check allow list (if specified, with pattern support)
+  if (allowedTools.length > 0) {
+    let allowed = false;
+    for (const allowedTool of allowedTools) {
+      if (matchesPermission(toolName, input, allowedTool)) {
+        allowed = true;
+        break;
+      }
+    }
+    if (!allowed) {
+      return {
+        behavior: 'deny',
+        message: `Tool ${toolName} is not in the allowed list`,
+      };
+    }
   }
 
   // Check granular permission rules

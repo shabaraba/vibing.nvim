@@ -157,14 +157,28 @@ function M.setup(opts)
       ))
     end
 
+    -- Helper: Validate tool name or Bash pattern
+    local function is_valid_tool(tool_str)
+      -- Check for Bash pattern: Bash(command:*)
+      if tool_str:match("^Bash%([^:]+:%*%)$") then
+        return true
+      end
+      -- Check for MCP tool: mcp__server__tool
+      if tool_str:match("^mcp__") then
+        return true
+      end
+      -- Check built-in tools
+      return tools_const.VALID_TOOLS_MAP[tool_str] ~= nil
+    end
+
     -- Validate tool names
     for _, tool in ipairs(M.options.permissions.allow or {}) do
-      if not tools_const.VALID_TOOLS_MAP[tool] then
+      if not is_valid_tool(tool) then
         notify.warn(string.format("Unknown tool '%s' in permissions.allow", tool))
       end
     end
     for _, tool in ipairs(M.options.permissions.deny or {}) do
-      if not tools_const.VALID_TOOLS_MAP[tool] then
+      if not is_valid_tool(tool) then
         notify.warn(string.format("Unknown tool '%s' in permissions.deny", tool))
       end
     end
