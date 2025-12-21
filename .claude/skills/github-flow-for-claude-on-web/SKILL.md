@@ -148,7 +148,7 @@ When pushing to remote in Claude Code on the web:
 
 **Valid branch names:**
 
-```
+```text
 claude/fix-bug-abc123
 claude/add-feature-xyz789
 claude/create-pull-request-KITjd
@@ -156,7 +156,7 @@ claude/create-pull-request-KITjd
 
 **Invalid branch names:**
 
-```
+```text
 main                          # ❌ Doesn't start with claude/
 feature-branch                # ❌ Doesn't start with claude/
 claude/fix-bug                # ❌ Missing session ID
@@ -753,7 +753,7 @@ echo "=== All PRs created ==="
 
 **Symptom:**
 
-```
+```text
 error: RPC failed; HTTP 403 curl 22 The requested URL returned error: 403
 ```
 
@@ -778,7 +778,7 @@ git push -u origin "$NEW_BRANCH"
 
 **Symptom:**
 
-```
+```text
 send-pack: unexpected disconnect while reading sideband packet
 fatal: the remote end hung up unexpectedly
 ```
@@ -791,7 +791,7 @@ fatal: the remote end hung up unexpectedly
 
 **Symptom:**
 
-```
+```text
 error: RPC failed; HTTP 403
 Everything up-to-date
 ```
@@ -804,7 +804,7 @@ Everything up-to-date
 
 **Symptom:**
 
-```
+```text
 gh: command not found
 ```
 
