@@ -21,6 +21,13 @@ function M.setup(opts)
   Config.setup(opts)
   M.config = Config.get()
 
+  -- Register .vibing filetype
+  vim.filetype.add({
+    extension = {
+      vibing = "vibing",
+    },
+  })
+
   -- アダプターの初期化
   local adapter_name = M.config.adapter
   local ok, adapter_module = pcall(require, "vibing.adapters." .. adapter_name)
