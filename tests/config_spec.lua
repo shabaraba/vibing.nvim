@@ -18,7 +18,7 @@ describe("vibing.config", function()
     it("should have chat configuration", function()
       assert.is_not_nil(config.defaults.chat)
       assert.is_not_nil(config.defaults.chat.window)
-      assert.equals("right", config.defaults.chat.window.position)
+      assert.equals("current", config.defaults.chat.window.position)
     end)
 
     it("should have agent configuration", function()
