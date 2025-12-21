@@ -58,6 +58,48 @@ for (let i = 0; i < args.length; i++) {
   } else if (args[i] === '--rules' && args[i + 1]) {
     try {
       permissionRules = JSON.parse(args[i + 1]);
+
+      // Validate rule structure
+      if (!Array.isArray(permissionRules)) {
+        throw new Error('--rules must be an array of rule objects');
+      }
+
+      for (let j = 0; j < permissionRules.length; j++) {
+        const rule = permissionRules[j];
+        if (!rule || typeof rule !== 'object') {
+          throw new Error(`Rule at index ${j} must be an object`);
+        }
+
+        // Validate required fields
+        if (!Array.isArray(rule.tools) || rule.tools.length === 0) {
+          throw new Error(`Rule at index ${j} must have a non-empty 'tools' array`);
+        }
+
+        if (!rule.action || !['allow', 'deny'].includes(rule.action)) {
+          throw new Error(`Rule at index ${j} must have 'action' set to "allow" or "deny"`);
+        }
+
+        // Validate optional fields if present
+        if (rule.paths !== undefined && !Array.isArray(rule.paths)) {
+          throw new Error(`Rule at index ${j}: 'paths' must be an array if specified`);
+        }
+
+        if (rule.commands !== undefined && !Array.isArray(rule.commands)) {
+          throw new Error(`Rule at index ${j}: 'commands' must be an array if specified`);
+        }
+
+        if (rule.patterns !== undefined && !Array.isArray(rule.patterns)) {
+          throw new Error(`Rule at index ${j}: 'patterns' must be an array if specified`);
+        }
+
+        if (rule.domains !== undefined && !Array.isArray(rule.domains)) {
+          throw new Error(`Rule at index ${j}: 'domains' must be an array if specified`);
+        }
+
+        if (rule.message !== undefined && typeof rule.message !== 'string') {
+          throw new Error(`Rule at index ${j}: 'message' must be a string if specified`);
+        }
+      }
     } catch (e) {
       console.error('Failed to parse --rules JSON:', e.message);
       process.exit(1);
@@ -132,13 +174,47 @@ if (deniedTools.length > 0) {
   queryOptions.disallowedTools = deniedTools;
 }
 
+// Helper function: safe JSON stringify with error handling
+function safeJsonStringify(obj) {
+  try {
+    return JSON.stringify(obj);
+  } catch (error) {
+    // Fallback for circular references or other serialization errors
+    try {
+      return JSON.stringify({
+        type: 'error',
+        message: 'Failed to serialize output: ' + String(error),
+      });
+    } catch {
+      return '{"type":"error","message":"Critical serialization failure"}';
+    }
+  }
+}
+
 // Helper function: simple glob pattern matching (basic implementation)
 function matchGlob(pattern, str) {
-  // Escape all regex special chars except * and ?
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-  const regexPattern = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
-  const regex = new RegExp(`^${regexPattern}$`);
-  return regex.test(str);
+  // Validate input to prevent ReDoS
+  if (typeof pattern !== 'string' || typeof str !== 'string') {
+    return false;
+  }
+
+  // Limit pattern length to prevent ReDoS attacks
+  if (pattern.length > 1000) {
+    return false;
+  }
+
+  try {
+    // Escape all regex special chars except * and ?
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    // Replace glob wildcards with regex equivalents
+    // Use non-greedy matching to reduce ReDoS risk
+    const regexPattern = escaped.replace(/\*/g, '.*?').replace(/\?/g, '.');
+    const regex = new RegExp(`^${regexPattern}$`);
+    return regex.test(str);
+  } catch {
+    // Return false if regex compilation fails
+    return false;
+  }
 }
 
 // Helper function: check if rule matches tool and input
@@ -160,22 +236,25 @@ function checkRule(rule, toolName, input) {
 
   // Check Bash command patterns
   if (toolName === 'Bash' && input.command) {
-    // Check allowed commands list
+    const commandParts = input.command.trim().split(/\s+/);
+    const baseCommand = commandParts[0];
+
+    // Check allowed commands list (typically for allow rules)
     if (rule.commands && rule.commands.length > 0) {
-      const commandParts = input.command.trim().split(/\s+/);
-      const baseCommand = commandParts[0];
       const commandMatches = rule.commands.includes(baseCommand);
       if (commandMatches) {
         return rule.action;
       }
-      // If commands are specified but don't match, rule doesn't apply
-      return null;
     }
 
-    // Check denied patterns (regex)
+    // Check denied patterns (regex) - typically for deny rules
     if (rule.patterns && rule.patterns.length > 0) {
       const patternMatches = rule.patterns.some((pattern) => {
         try {
+          // Validate pattern to prevent ReDoS
+          if (typeof pattern !== 'string' || pattern.length > 500) {
+            return false;
+          }
           const regex = new RegExp(pattern);
           return regex.test(input.command);
         } catch {
@@ -185,6 +264,14 @@ function checkRule(rule, toolName, input) {
       if (patternMatches) {
         return rule.action;
       }
+    }
+
+    // If both commands and patterns are specified but neither match, rule doesn't apply
+    if (
+      (rule.commands && rule.commands.length > 0) ||
+      (rule.patterns && rule.patterns.length > 0)
+    ) {
+      return null;
     }
   }
 
@@ -284,7 +371,7 @@ try {
     // Emit session ID once from init message
     if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
       if (!sessionIdEmitted) {
-        console.log(JSON.stringify({ type: 'session', session_id: message.session_id }));
+        console.log(safeJsonStringify({ type: 'session', session_id: message.session_id }));
         sessionIdEmitted = true;
       }
     }
@@ -293,7 +380,7 @@ try {
     if (message.type === 'assistant' && message.message?.content) {
       for (const block of message.message.content) {
         if (block.type === 'text' && block.text) {
-          console.log(JSON.stringify({ type: 'chunk', text: block.text }));
+          console.log(safeJsonStringify({ type: 'chunk', text: block.text }));
         } else if (block.type === 'tool_use') {
           // Tool use indication
           const toolName = block.name;
@@ -315,7 +402,7 @@ try {
           // Emit structured tool_use event for file-modifying operations
           if ((toolName === 'Edit' || toolName === 'Write') && toolInput.file_path) {
             console.log(
-              JSON.stringify({
+              safeJsonStringify({
                 type: 'tool_use',
                 tool: toolName,
                 file_path: toolInput.file_path,
@@ -324,7 +411,7 @@ try {
           }
 
           console.log(
-            JSON.stringify({
+            safeJsonStringify({
               type: 'chunk',
               text: `\n⏺ ${toolName}(${inputSummary})\n`,
             })
@@ -347,7 +434,7 @@ try {
             resultText.length > 100 ? resultText.substring(0, 100) + '...' : resultText;
           if (preview) {
             console.log(
-              JSON.stringify({
+              safeJsonStringify({
                 type: 'chunk',
                 text: `  ⎿  ${preview.replace(/\n/g, '\n     ')}\n\n`,
               })
@@ -363,8 +450,8 @@ try {
     }
   }
 
-  console.log(JSON.stringify({ type: 'done' }));
+  console.log(safeJsonStringify({ type: 'done' }));
 } catch (error) {
-  console.log(JSON.stringify({ type: 'error', message: error.message || String(error) }));
+  console.log(safeJsonStringify({ type: 'error', message: error.message || String(error) }));
   process.exit(1);
 }
