@@ -267,7 +267,10 @@ function checkRule(rule, toolName, input) {
     }
 
     // If both commands and patterns are specified but neither match, rule doesn't apply
-    if ((rule.commands && rule.commands.length > 0) || (rule.patterns && rule.patterns.length > 0)) {
+    if (
+      (rule.commands && rule.commands.length > 0) ||
+      (rule.patterns && rule.patterns.length > 0)
+    ) {
       return null;
     }
   }

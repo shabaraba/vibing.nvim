@@ -9,6 +9,7 @@ This directory contains skills for Claude Code to provide specialized knowledge 
 **Location:** `.claude/skills/git-remote-workflow/SKILL.md`
 
 Comprehensive Git workflow for Claude Code on the web environment with:
+
 - **Branch Management:** Naming validation (`claude/*-<sessionId>` pattern), branch conversion
 - **Push Operations:** Automatic retry with exponential backoff, force push handling
 - **PR Creation:** GitHub API integration (no `gh` CLI dependency), multiple PR creation
@@ -21,6 +22,7 @@ Comprehensive Git workflow for Claude Code on the web environment with:
 **Allowed tools:** Bash, Read, Grep
 
 **Coverage:**
+
 - Git push with retry logic
 - Pull request creation via GitHub API
 - Branch naming compliance
@@ -35,20 +37,21 @@ Skills are directories containing a `SKILL.md` file with YAML frontmatter:
 ---
 name: skill-name
 description: What this skill does and when to use it
-allowed-tools: Bash, Read, Grep  # Optional
+allowed-tools: Bash, Read, Grep # Optional
 ---
-
 # Skill Instructions
 
 Clear, step-by-step guidance...
 ```
 
 **Key components:**
+
 - `name`: Lowercase, numbers, hyphens only (max 64 chars)
 - `description`: Brief description for Claude to discover when to use (max 1024 chars)
 - `allowed-tools`: Optional list of tools this skill can use without asking permission
 
 Skills are activated automatically by Claude based on:
+
 - Environment detection (`CLAUDE_CODE_REMOTE=true`)
 - User requests matching the description
 - Current task context
@@ -58,11 +61,13 @@ Skills are activated automatically by Claude based on:
 To create a new skill:
 
 1. Create a directory in `.claude/skills/`:
+
    ```bash
    mkdir -p .claude/skills/my-skill
    ```
 
 2. Create `SKILL.md` with YAML frontmatter:
+
    ```yaml
    ---
    name: my-skill
@@ -79,6 +84,7 @@ To create a new skill:
    ```
 
 3. Optionally add support files:
+
    ```text
    my-skill/
    ├── SKILL.md (required)
