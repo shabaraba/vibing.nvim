@@ -134,8 +134,9 @@ if (deniedTools.length > 0) {
 
 // Helper function: simple glob pattern matching (basic implementation)
 function matchGlob(pattern, str) {
-  // Convert glob pattern to regex
-  const regexPattern = pattern.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.');
+  // Escape all regex special chars except * and ?
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  const regexPattern = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
   const regex = new RegExp(`^${regexPattern}$`);
   return regex.test(str);
 }
