@@ -1,3 +1,9 @@
+---
+name: git-remote-workflow
+description: Comprehensive Git workflow for Claude Code on the web with branch naming (claude/*-sessionId), push retry logic, PR creation via GitHub API, and complete workflows. Use when pushing to remote, creating PRs, or handling Git operations in Claude Code web environment.
+allowed-tools: Bash, Read, Grep
+---
+
 # Git Workflow for Claude Code on the Web
 
 This skill provides comprehensive Git operations optimized for Claude Code on the web environment, including branch management, push operations, and pull request creation.

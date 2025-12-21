@@ -4,7 +4,9 @@ This directory contains skills for Claude Code to provide specialized knowledge 
 
 ## Available Skills
 
-### git-remote-workflow.md
+### git-remote-workflow
+
+**Location:** `.claude/skills/git-remote-workflow/SKILL.md`
 
 Comprehensive Git workflow for Claude Code on the web environment with:
 - **Branch Management:** Naming validation (`claude/*-<sessionId>` pattern), branch conversion
@@ -14,7 +16,9 @@ Comprehensive Git workflow for Claude Code on the web environment with:
 - **Troubleshooting:** Common issues and solutions
 - **Environment Detection:** Automatic detection of remote environment
 
-**When activated:** Automatically in Claude Code on the web (`CLAUDE_CODE_REMOTE=true`)
+**When activated:** Automatically when working with Git in Claude Code on the web (`CLAUDE_CODE_REMOTE=true`)
+
+**Allowed tools:** Bash, Read, Grep
 
 **Coverage:**
 - Git push with retry logic
@@ -23,50 +27,66 @@ Comprehensive Git workflow for Claude Code on the web environment with:
 - Multi-PR workflows
 - Error handling and debugging
 
-**Usage:** Reference this skill when performing Git operations in remote Claude Code sessions.
-
 ## How Skills Work
 
-Skills are markdown files that provide Claude Code with:
-1. Context-specific knowledge
-2. Code snippets and patterns
-3. Best practices and workflows
-4. Environment-specific constraints
+Skills are directories containing a `SKILL.md` file with YAML frontmatter:
 
-Skills are activated either:
-- Automatically based on environment detection
-- Manually by the user invoking them
-- By Claude Code when relevant to the current task
+```yaml
+---
+name: skill-name
+description: What this skill does and when to use it
+allowed-tools: Bash, Read, Grep  # Optional
+---
+
+# Skill Instructions
+
+Clear, step-by-step guidance...
+```
+
+**Key components:**
+- `name`: Lowercase, numbers, hyphens only (max 64 chars)
+- `description`: Brief description for Claude to discover when to use (max 1024 chars)
+- `allowed-tools`: Optional list of tools this skill can use without asking permission
+
+Skills are activated automatically by Claude based on:
+- Environment detection (`CLAUDE_CODE_REMOTE=true`)
+- User requests matching the description
+- Current task context
 
 ## Creating New Skills
 
 To create a new skill:
 
-1. Create a markdown file in `.claude/skills/`
-2. Include clear documentation with:
-   - When to use the skill
-   - Code examples
-   - Common issues and solutions
-   - Integration examples
+1. Create a directory in `.claude/skills/`:
+   ```bash
+   mkdir -p .claude/skills/my-skill
+   ```
 
-3. Update this README with the new skill
+2. Create `SKILL.md` with YAML frontmatter:
+   ```yaml
+   ---
+   name: my-skill
+   description: What it does and when to use it
+   ---
 
-Example structure:
+   # My Skill
 
-```markdown
-# Skill Name
+   ## Instructions
+   Step-by-step guidance for Claude
 
-Description of what this skill provides.
+   ## Examples
+   Concrete usage examples
+   ```
 
-## When to Use
+3. Optionally add support files:
+   ```
+   my-skill/
+   ├── SKILL.md (required)
+   ├── reference.md (optional)
+   └── scripts/
+       └── helper.py (optional)
+   ```
 
-Explain when this skill should be activated.
+4. Update this README with the new skill
 
-## Usage
-
-Provide code examples and patterns.
-
-## Common Issues
-
-List common problems and solutions.
-```
+For detailed guidance, see [Claude Code Skills Documentation](https://docs.claude.com/ja/docs/agents-and-tools/agent-skills).

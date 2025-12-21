@@ -240,7 +240,7 @@ When developing with Claude Code on the web, there are specific Git push constra
 
 ### Using the Git Workflow Skill
 
-A comprehensive skill is available at `.claude/skills/git-remote-workflow.md` that provides:
+A comprehensive skill is available at `.claude/skills/git-remote-workflow/SKILL.md` that provides:
 
 **Branch Management:**
 - Branch name validation and conversion
@@ -285,4 +285,4 @@ curl -X POST \
   -d '{"title":"My PR","head":"claude/branch-abc","base":"main","body":"Description"}'
 ```
 
-See `.claude/skills/git-remote-workflow.md` for complete documentation, workflows, and troubleshooting.
+See `.claude/skills/git-remote-workflow/SKILL.md` for complete documentation, workflows, and troubleshooting.
