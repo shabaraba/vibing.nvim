@@ -62,9 +62,13 @@ end
 ---VibingChat, VibingContext, VibingInline, VibingExplain, VibingFix等の全コマンドを登録
 ---チャット操作、コンテキスト管理、インラインアクション、リモート制御、マイグレーションを含む
 function M._register_commands()
-  vim.api.nvim_create_user_command("VibingChat", function()
-    require("vibing.actions.chat").open()
-  end, { desc = "Open Vibing chat" })
+  vim.api.nvim_create_user_command("VibingChat", function(opts)
+    if opts.args ~= "" then
+      require("vibing.actions.chat").open_file(opts.args)
+    else
+      require("vibing.actions.chat").open()
+    end
+  end, { nargs = "?", desc = "Open Vibing chat or chat file", complete = "file" })
 
   vim.api.nvim_create_user_command("VibingToggleChat", function()
     require("vibing.actions.chat").toggle()
@@ -128,10 +132,6 @@ function M._register_commands()
       M.adapter:cancel()
     end
   end, { desc = "Cancel current Vibing request" })
-
-  vim.api.nvim_create_user_command("VibingOpenChat", function(opts)
-    require("vibing.actions.chat").open_file(opts.args)
-  end, { nargs = 1, desc = "Open saved chat file", complete = "file" })
 
   vim.api.nvim_create_user_command("VibingRemote", function(opts)
     local remote = require("vibing.remote")

@@ -106,22 +106,23 @@ use {
 
 | Command                               | Description                                            |
 | ------------------------------------- | ------------------------------------------------------ |
-| `:VibingChat`                         | Open chat window                                       |
+| `:VibingChat [file]`                  | Open chat window or saved chat file                    |
+| `:VibingToggleChat`                   | Toggle chat window (open/close)                        |
+| `:VibingSlashCommands`                | Show slash command picker in chat                      |
 | `:VibingContext [path]`               | Add file to context                                    |
 | `:VibingClearContext`                 | Clear all context                                      |
 | `:VibingInline [action\|instruction]` | Run action or custom instruction on selection          |
-| `:VibingExplain`                      | Explain selected code                                  |
-| `:VibingFix`                          | Fix selected code issues                               |
-| `:VibingFeature`                      | Implement feature in selected code                     |
-| `:VibingRefactor`                     | Refactor selected code                                 |
-| `:VibingTest`                         | Generate tests for selected code                       |
-| `:VibingCustom <instruction>`         | Execute custom instruction on code                     |
+| `:VibingExplain [instruction]`        | Explain selected code (with optional instruction)      |
+| `:VibingFix [instruction]`            | Fix selected code issues (with optional instruction)   |
+| `:VibingFeature [instruction]`        | Implement feature in selected code (with instruction)  |
+| `:VibingRefactor [instruction]`       | Refactor selected code (with optional instruction)     |
+| `:VibingTest [instruction]`           | Generate tests for selected code (with instruction)    |
 | `:VibingCancel`                       | Cancel current request                                 |
-| `:VibingOpenChat <file>`              | Open saved chat file                                   |
 | `:VibingRemote <command>`             | Execute command in remote Neovim (requires `--listen`) |
 | `:VibingRemoteStatus`                 | Show remote Neovim status                              |
 | `:VibingSendToChat`                   | Send file from oil.nvim to chat                        |
-| `:VibingMigrate`                      | Migrate chat files to new format                       |
+| `:VibingReloadCommands`               | Reload custom slash commands                           |
+| `:VibingMigrate [file\|--scan]`       | Migrate chat files to new format                       |
 
 ### Inline Actions
 
@@ -140,7 +141,7 @@ use {
 ```vim
 :'<,'>VibingInline "Convert this function to TypeScript"
 :'<,'>VibingInline "Add error handling with try-catch"
-:'<,'>VibingCustom "Optimize this loop for performance"
+:'<,'>VibingInline "Optimize this loop for performance"
 ```
 
 ### Slash Commands (in Chat)

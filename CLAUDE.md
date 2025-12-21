@@ -266,8 +266,9 @@ require("vibing").setup({
 
 | Command                          | Description                                                     |
 | -------------------------------- | --------------------------------------------------------------- |
-| `:VibingChat`                    | Open chat window                                                |
+| `:VibingChat [file]`             | Open chat window or saved chat file                             |
 | `:VibingToggleChat`              | Toggle chat window (open/close)                                 |
+| `:VibingSlashCommands`           | Show slash command picker in chat                               |
 | `:VibingContext [path]`          | Add file to context                                             |
 | `:VibingClearContext`            | Clear all context                                               |
 | `:VibingInline [action\|prompt]` | Run inline action or natural language instruction on selection  |
@@ -277,10 +278,11 @@ require("vibing").setup({
 | `:VibingRefactor [instruction]`  | Refactor selected code (with optional additional instruction)   |
 | `:VibingTest [instruction]`      | Generate tests for selected code (with optional instruction)    |
 | `:VibingCancel`                  | Cancel current request                                          |
-| `:VibingOpenChat <file>`         | Open saved chat file                                            |
 | `:VibingRemote <command>`        | Execute command in remote Neovim instance (requires `--listen`) |
 | `:VibingRemoteStatus`            | Show remote Neovim status (mode, buffer, cursor position)       |
 | `:VibingSendToChat`              | Send file from oil.nvim to chat (requires oil.nvim)             |
+| `:VibingReloadCommands`          | Reload custom slash commands                                    |
+| `:VibingMigrate [file\|--scan]`  | Migrate chat files to new format                                |
 
 ### Inline Action Examples
 
