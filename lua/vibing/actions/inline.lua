@@ -255,13 +255,9 @@ function M.custom(prompt, use_output)
     return
   end
 
-  -- 言語設定を適用（カスタムプロンプトの先頭に追加）
+  -- 言語設定を適用
   local lang_code = Language.get_language_code(config.language, "inline")
-  local final_prompt = prompt
-  if lang_code and lang_code ~= "" and lang_code ~= "en" then
-    local instruction = Language.get_language_instruction(lang_code)
-    final_prompt = "Respond" .. instruction .. ".\n\n" .. prompt
-  end
+  local final_prompt = Language.add_language_instruction(prompt, lang_code)
 
   -- プロンプトに@file:path:L10-L25形式のメンションを含める
   local full_prompt = final_prompt .. "\n\n" .. selection_context

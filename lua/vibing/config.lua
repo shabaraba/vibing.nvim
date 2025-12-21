@@ -68,6 +68,7 @@
 
 local notify = require("vibing.utils.notify")
 local tools_const = require("vibing.constants.tools")
+local language_utils = require("vibing.utils.language")
 
 local M = {}
 
@@ -149,6 +150,28 @@ function M.setup(opts)
       if not tools_const.VALID_TOOLS_MAP[tool] then
         notify.warn(string.format("Unknown tool '%s' in permissions.deny", tool))
       end
+    end
+  end
+
+  -- Validate language configuration
+  if M.options.language then
+    local function validate_lang_code(code, field_name)
+      if code and code ~= "" and code ~= "en" and not language_utils.language_names[code] then
+        notify.warn(string.format(
+          "Unknown language code '%s' in %s. Supported codes: %s",
+          code,
+          field_name,
+          table.concat(vim.tbl_keys(language_utils.language_names), ", ")
+        ))
+      end
+    end
+
+    if type(M.options.language) == "string" then
+      validate_lang_code(M.options.language, "language")
+    elseif type(M.options.language) == "table" then
+      validate_lang_code(M.options.language.default, "language.default")
+      validate_lang_code(M.options.language.chat, "language.chat")
+      validate_lang_code(M.options.language.inline, "language.inline")
     end
   end
 
