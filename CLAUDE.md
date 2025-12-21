@@ -238,32 +238,51 @@ When developing with Claude Code on the web, there are specific Git push constra
 - Always use exponential backoff retry (2s, 4s, 8s, 16s)
 - Maximum 4 retry attempts recommended
 
-### Using the Git Push Skill
+### Using the Git Workflow Skill
 
-A skill is available at `.claude/skills/git-push-remote.md` that provides:
-- Branch name validation
+A comprehensive skill is available at `.claude/skills/git-remote-workflow.md` that provides:
+
+**Branch Management:**
+- Branch name validation and conversion
+- Pattern compliance checking (`claude/*-<sessionId>`)
+
+**Push Operations:**
 - Automatic retry with exponential backoff
-- Environment detection (`CLAUDE_CODE_REMOTE=true`)
-- Helper functions for push operations
+- Force push handling with safety checks
+
+**Pull Request Creation:**
+- GitHub API integration (no `gh` CLI required)
+- Multi-line PR descriptions with proper formatting
+- Multiple PR creation in one session
+- PR update capabilities
+
+**Complete Workflows:**
+- Feature development to PR creation
+- Review comment resolution
+- Multi-PR workflows
+
+**Environment Detection:**
+- Automatic detection of Claude Code on the web (`CLAUDE_CODE_REMOTE=true`)
+- Environment-specific logic application
 
 **Quick reference:**
 
 ```bash
-# Check if in Claude Code on the web
-if [ "$CLAUDE_CODE_REMOTE" = "true" ]; then
-  echo "Using remote environment constraints"
-fi
+# Create compliant branch
+git checkout -b "claude/my-feature-${CLAUDE_SESSION_ID:-9GOGf}"
 
-# Push with retry logic
+# Push with retry
 for i in 0 1 2 3; do
-  if [ $i -gt 0 ]; then
-    delay=$((2 ** i))
-    sleep $delay
-  fi
-  if git push -u origin "$(git branch --show-current)"; then
-    break
-  fi
+  [ $i -gt 0 ] && sleep $((2 ** i))
+  git push -u origin "$(git branch --show-current)" && break
 done
+
+# Create PR via GitHub API
+curl -X POST \
+  -H "Authorization: token $GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github.v3+json" \
+  "https://api.github.com/repos/owner/repo/pulls" \
+  -d '{"title":"My PR","head":"claude/branch-abc","base":"main","body":"Description"}'
 ```
 
-See `.claude/skills/git-push-remote.md` for complete documentation and helper functions.
+See `.claude/skills/git-remote-workflow.md` for complete documentation, workflows, and troubleshooting.
