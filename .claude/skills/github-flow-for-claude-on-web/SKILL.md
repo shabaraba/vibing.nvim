@@ -13,6 +13,7 @@ This skill provides comprehensive Git and GitHub operations optimized for Claude
 **NEVER use `gh` CLI in Claude Code on the web - it is not available.**
 
 All GitHub operations (PRs, issues, comments, reviews) MUST use the REST API via `curl`:
+
 - ✅ `curl -s https://api.github.com/repos/OWNER/REPO/pulls/123`
 - ❌ `gh pr view 123` (NOT AVAILABLE)
 
@@ -41,11 +42,13 @@ This skill is automatically activated when running in Claude Code on the web env
 ### Common GitHub API Endpoints
 
 #### Get PR Details
+
 ```bash
 curl -s https://api.github.com/repos/OWNER/REPO/pulls/PR_NUMBER
 ```
 
 #### Get PR Review Comments
+
 ```bash
 # Code review comments
 curl -s https://api.github.com/repos/OWNER/REPO/pulls/PR_NUMBER/comments
@@ -55,6 +58,7 @@ curl -s https://api.github.com/repos/OWNER/REPO/issues/PR_NUMBER/comments
 ```
 
 #### Get Repository Info
+
 ```bash
 # Auto-detect from git remote
 REMOTE_URL=$(git remote get-url origin)
@@ -66,6 +70,7 @@ curl -s "https://api.github.com/repos/$OWNER/$REPO"
 ```
 
 #### List Issues
+
 ```bash
 # All open issues
 curl -s https://api.github.com/repos/OWNER/REPO/issues
@@ -75,6 +80,7 @@ curl -s "https://api.github.com/repos/OWNER/REPO/issues?labels=bug"
 ```
 
 #### Get Issue Comments
+
 ```bash
 curl -s https://api.github.com/repos/OWNER/REPO/issues/ISSUE_NUMBER/comments
 ```
@@ -120,6 +126,7 @@ fi
 ```
 
 **Key Environment Variables:**
+
 - `CLAUDE_CODE_REMOTE` - Set to `"true"` in web environment
 - `CLAUDE_SESSION_ID` - Session identifier (may be available)
 - `GITHUB_TOKEN` - GitHub personal access token for API operations
@@ -131,6 +138,7 @@ fi
 ### Critical Constraints
 
 When pushing to remote in Claude Code on the web:
+
 - ✅ Branch names **MUST** start with `claude/`
 - ✅ Branch names **MUST** end with a matching session ID
 - ✅ Pattern: `claude/<feature-name>-<sessionId>`
@@ -139,6 +147,7 @@ When pushing to remote in Claude Code on the web:
 ### Examples
 
 **Valid branch names:**
+
 ```
 claude/fix-bug-abc123
 claude/add-feature-xyz789
@@ -146,6 +155,7 @@ claude/create-pull-request-KITjd
 ```
 
 **Invalid branch names:**
+
 ```
 main                          # ❌ Doesn't start with claude/
 feature-branch                # ❌ Doesn't start with claude/
@@ -742,6 +752,7 @@ echo "=== All PRs created ==="
 ### Issue 1: HTTP 403 on Push
 
 **Symptom:**
+
 ```
 error: RPC failed; HTTP 403 curl 22 The requested URL returned error: 403
 ```
@@ -749,6 +760,7 @@ error: RPC failed; HTTP 403 curl 22 The requested URL returned error: 403
 **Cause:** Branch name doesn't follow required pattern `claude/*-<sessionId>`
 
 **Solution:**
+
 ```bash
 # Check current branch
 CURRENT_BRANCH="$(git branch --show-current)"
@@ -765,6 +777,7 @@ git push -u origin "$NEW_BRANCH"
 ### Issue 2: Network Timeout/Transient Failures
 
 **Symptom:**
+
 ```
 send-pack: unexpected disconnect while reading sideband packet
 fatal: the remote end hung up unexpectedly
@@ -777,6 +790,7 @@ fatal: the remote end hung up unexpectedly
 ### Issue 3: "Everything up-to-date" but Push Fails
 
 **Symptom:**
+
 ```
 error: RPC failed; HTTP 403
 Everything up-to-date
@@ -789,6 +803,7 @@ Everything up-to-date
 ### Issue 4: Cannot Create PR - No gh Command
 
 **Symptom:**
+
 ```
 gh: command not found
 ```
@@ -802,11 +817,13 @@ gh: command not found
 **Symptom:** All 4 retry attempts fail
 
 **Possible Causes:**
+
 1. Branch name doesn't follow required pattern
 2. Network is down (rare)
 3. Repository permissions issue
 
 **Solution:**
+
 ```bash
 # 1. Verify branch name
 git branch --show-current
@@ -829,6 +846,7 @@ git push -u origin "claude/fresh-branch-${SESSION_ID}"
 **Symptom:** API returns error instead of PR URL
 
 **Debug:**
+
 ```bash
 # Create PR and capture full response
 RESPONSE=$(curl -s -X POST \
@@ -878,6 +896,7 @@ curl -X POST \
 ### Validation Checklist
 
 Before pushing:
+
 - [ ] Branch name starts with `claude/`
 - [ ] Branch name ends with session ID
 - [ ] Pattern matches: `^claude/.+-[a-zA-Z0-9]+$`
@@ -885,6 +904,7 @@ Before pushing:
 - [ ] Ready to retry up to 4 times if needed
 
 Before creating PR:
+
 - [ ] `GITHUB_TOKEN` is available
 - [ ] Branch is pushed to remote
 - [ ] Base branch name is correct
