@@ -45,11 +45,36 @@ jobs:
           prompt: |
             IMPORTANT: All responses MUST be in Japanese.
 
-            When you complete an implementation task, create a pull request using `gh pr create` command.
-            Make sure to:
-            - Create a descriptive PR title in English using semantic commit format
-            - Write the PR body in Japanese with clear description of changes
-            - Include "fixes #<issue-number>" if there's a related issue
+            REPOSITORY: ${{ github.repository }}
+            EVENT_TYPE: ${{ github.event_name }}
+            ISSUE_NUMBER: ${{ github.event.issue.number }}
+            PR_NUMBER: ${{ github.event.pull_request.number }}
+
+            ## FIRST STEP: Gather Context
+            Before starting any work, you MUST gather complete context by running the appropriate commands:
+
+            ### For Issue-related events (issues, issue_comment):
+            ```bash
+            gh issue view $ISSUE_NUMBER --comments
+            ```
+            This will show you the issue title, body, and ALL comments to understand the full context.
+
+            ### For PR-related events (pull_request_review_comment, pull_request_review):
+            ```bash
+            gh pr view $PR_NUMBER --comments
+            gh pr diff $PR_NUMBER
+            ```
+            This will show you the PR title, body, ALL comments, AND the code changes.
+
+            ## Task Instructions
+            After gathering the full context above:
+            1. Read and understand ALL comments and discussions
+            2. For PRs, review the code changes in the diff
+            3. Execute the requested task based on the complete context
+            4. When you complete an implementation task, create a pull request using `gh pr create` command
+               - Create a descriptive PR title in English using semantic commit format
+               - Write the PR body in Japanese with clear description of changes
+               - Include "fixes #<issue-number>" if there's a related issue
 
           # Allow file operations and git/gh commands for implementation tasks
           claude_args: '--allowed-tools "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(npm:*)"'
