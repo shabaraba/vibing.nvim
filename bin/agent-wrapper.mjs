@@ -6,6 +6,7 @@
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { URL } from 'url';
 
 const args = process.argv.slice(2);
 let prompt = '';
