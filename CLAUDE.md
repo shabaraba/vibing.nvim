@@ -220,3 +220,50 @@ Slash commands can be used within the chat buffer for quick actions:
 | `/allow [tool]`      | Add tool to allow list, or show list if no args             |
 | `/deny [tool]`       | Add tool to deny list, or show list if no args              |
 | `/permission [mode]` | Set permission mode (default/acceptEdits/bypassPermissions) |
+
+## Claude Code on the Web
+
+When developing with Claude Code on the web, there are specific Git push constraints that require special handling.
+
+### Git Push Requirements
+
+**Branch Naming:**
+- Branch names MUST start with `claude/`
+- Branch names MUST end with a matching session ID
+- Example: `claude/feature-name-abc123`
+- Pushing to non-compliant branches will fail with HTTP 403
+
+**Retry Logic:**
+- Network operations may experience transient failures
+- Always use exponential backoff retry (2s, 4s, 8s, 16s)
+- Maximum 4 retry attempts recommended
+
+### Using the Git Push Skill
+
+A skill is available at `.claude/skills/git-push-remote.md` that provides:
+- Branch name validation
+- Automatic retry with exponential backoff
+- Environment detection (`CLAUDE_CODE_REMOTE=true`)
+- Helper functions for push operations
+
+**Quick reference:**
+
+```bash
+# Check if in Claude Code on the web
+if [ "$CLAUDE_CODE_REMOTE" = "true" ]; then
+  echo "Using remote environment constraints"
+fi
+
+# Push with retry logic
+for i in 0 1 2 3; do
+  if [ $i -gt 0 ]; then
+    delay=$((2 ** i))
+    sleep $delay
+  fi
+  if git push -u origin "$(git branch --show-current)"; then
+    break
+  fi
+done
+```
+
+See `.claude/skills/git-push-remote.md` for complete documentation and helper functions.
