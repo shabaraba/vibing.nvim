@@ -22,7 +22,7 @@ For Neovim testing, load the plugin and run `:VibingChat`.
 
 ### Communication Flow
 
-```
+```text
 Neovim (Lua) → vim.system() → Node.js wrapper → Claude Agent SDK
                     ↑
             JSON Lines protocol
@@ -183,7 +183,7 @@ require("vibing").setup({
 
 Use the `/permissions` (or `/perm`) slash command in chat to interactively configure permissions:
 
-```
+```vim
 /permissions
 ```
 

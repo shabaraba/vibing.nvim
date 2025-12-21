@@ -284,8 +284,8 @@ Control Neovim instances via socket:
 nvim --listen /tmp/nvim.sock
 
 # In another Neovim instance
-:VibingRemote "edit ~/.config/nvim/init.lua"
-:VibingRemoteStatus
+:VibingControlNeovim                            " Show status
+:VibingControlNeovim edit ~/.config/nvim/init.lua
 ```
 
 ## 📝 Chat File Format

@@ -86,10 +86,13 @@ function M._register_commands()
   vim.api.nvim_create_user_command("VibingContext", function(opts)
     -- 引数なしの場合、oil.nvimバッファからファイルを追加
     if opts.args == "" then
-      local oil = require("vibing.integrations.oil")
-      if oil.is_oil_buffer() then
-        oil.send_to_chat()
-        return
+      local ok, oil = pcall(require, "vibing.integrations.oil")
+      if ok and oil.is_oil_buffer() then
+        local send_ok, err = pcall(oil.send_to_chat)
+        if send_ok then
+          return
+        end
+        -- エラーがあっても続行（通常のコンテキスト追加にフォールスルー）
       end
     end
 
@@ -145,9 +148,6 @@ function M._register_commands()
 
     vim.ui.select(action_labels, {
       prompt = "Select inline action:",
-      format_item = function(item)
-        return item
-      end,
     }, function(choice, idx)
       if not choice then
         return
