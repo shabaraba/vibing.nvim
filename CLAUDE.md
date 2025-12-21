@@ -214,7 +214,9 @@ The Permission Builder provides a user-friendly alternative to manually editing 
 
 **Language Support:** Configure AI response language globally or per-action (chat vs inline), supporting multi-language development workflows.
 
-**Remote Control:** The `remote.lua` module provides socket-based communication with another Neovim instance. When Neovim is started with `--listen /tmp/nvim.sock`, the plugin can send commands, evaluate expressions, and retrieve buffer content from that instance. This enables AI-assisted editing of files in a separate Neovim session.
+**Remote Control (Claude Skill):** The `remote.lua` module provides socket-based communication with another Neovim instance
+for testing and development. The `.claude/skills/neovim-remote-control/` skill exposes this API to Claude for E2E testing
+and natural language control (e.g., "open this file in the buffer"). See the skill documentation for usage with `--listen`.
 
 ## Configuration
 
@@ -274,7 +276,6 @@ require("vibing").setup({
 | `:VibingInline [action\|prompt]` | Run inline action or natural language instruction (Tab completion) |
 | `:VibingInlineAction`            | Interactive action picker with additional instruction prompt       |
 | `:VibingCancel`                  | Cancel current request                                             |
-| `:VibingControlNeovim [command]` | Control remote Neovim: show status or execute command (--listen)   |
 
 ### Inline Action Examples
 

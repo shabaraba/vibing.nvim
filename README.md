@@ -24,7 +24,6 @@ A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Ag
 - [Installation](#-installation)
 - [Usage](#-usage)
 - [Configuration Examples](#️-configuration-examples)
-- [Remote Control](#-remote-control)
 - [Chat File Format](#-chat-file-format)
 - [Architecture](#️-architecture)
 - [Contributing](#-contributing)
@@ -43,7 +42,6 @@ A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Ag
 - **🎯 Smart Context** - Automatic file context detection from open buffers and manual additions
 - **🌍 Multi-language Support** - Configure different languages for chat and inline actions
 - **📊 Diff Viewer** - Visual diff display for AI-edited files with `gd` keybinding
-- **🔌 Remote Control** - Control Neovim instances via `--listen` socket
 - **⚙️ Highly Configurable** - Flexible modes, models, permissions, and UI settings
 
 ## 📦 Installation
@@ -114,7 +112,6 @@ use {
 | `:VibingInline [action\|instruction]` | Run action or custom instruction on selection (supports Tab completion) |
 | `:VibingInlineAction`                 | Interactive action picker with prompt for additional instructions       |
 | `:VibingCancel`                       | Cancel current request                                                  |
-| `:VibingControlNeovim [command]`      | Control remote Neovim: show status or execute command (--listen)        |
 
 ### Inline Actions
 
@@ -273,19 +270,6 @@ require("vibing").setup({
   --   inline = "en",   -- Inline actions in English
   -- },
 })
-```
-
-## 🔌 Remote Control
-
-Control Neovim instances via socket:
-
-```bash
-# Start Neovim with remote control
-nvim --listen /tmp/nvim.sock
-
-# In another Neovim instance
-:VibingControlNeovim                            " Show status
-:VibingControlNeovim edit ~/.config/nvim/init.lua
 ```
 
 ## 📝 Chat File Format

@@ -179,28 +179,6 @@ function M._register_commands()
       M.adapter:cancel()
     end
   end, { desc = "Cancel current Vibing request" })
-
-  vim.api.nvim_create_user_command("VibingControlNeovim", function(opts)
-    local remote = require("vibing.remote")
-    if not remote.is_available() then
-      notify.error("Remote control not available. Start nvim with --listen or set socket_path")
-      return
-    end
-
-    -- 引数なし: ステータス表示
-    if opts.args == "" then
-      local status = remote.get_status()
-      if status then
-        print(string.format("[vibing] Remote Neovim - Mode: %s, Buffer: %s, Line: %d, Col: %d",
-          status.mode, status.bufname, status.line, status.col))
-      else
-        notify.error("Failed to get remote status")
-      end
-    else
-      -- 引数あり: コマンド実行
-      remote.execute(opts.args)
-    end
-  end, { nargs = "?", desc = "Control remote Neovim instance (show status or execute command)" })
 end
 
 ---現在のアダプターインスタンスを取得
