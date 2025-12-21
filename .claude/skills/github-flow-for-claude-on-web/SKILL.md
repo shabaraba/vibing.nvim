@@ -1,12 +1,20 @@
 ---
-name: git-remote-workflow
-description: Comprehensive Git workflow for Claude Code on the web with branch naming (claude/*-sessionId), push retry logic, PR creation via GitHub API, and complete workflows. Use when pushing to remote, creating PRs, or handling Git operations in Claude Code web environment.
+name: github-flow-for-claude-on-web
+description: Complete GitHub workflow for Claude Code on the web. ALL GitHub operations MUST use REST API (never gh CLI). Includes branch naming (claude/*-sessionId), push retry logic, PR/issue management via API, and complete workflows. Use for all GitHub interactions in Claude Code web environment.
 allowed-tools: Bash, Read, Grep
 ---
 
-# Git Workflow for Claude Code on the Web
+# GitHub Flow for Claude Code on the Web
 
-This skill provides comprehensive Git operations optimized for Claude Code on the web environment, including branch management, push operations, and pull request creation.
+This skill provides comprehensive Git and GitHub operations optimized for Claude Code on the web environment, including branch management, push operations, and GitHub REST API interactions.
+
+## ⚠️ CRITICAL: Always Use GitHub REST API
+
+**NEVER use `gh` CLI in Claude Code on the web - it is not available.**
+
+All GitHub operations (PRs, issues, comments, reviews) MUST use the REST API via `curl`:
+- ✅ `curl -s https://api.github.com/repos/OWNER/REPO/pulls/123`
+- ❌ `gh pr view 123` (NOT AVAILABLE)
 
 ## When to Use
 
@@ -14,12 +22,85 @@ This skill is automatically activated when running in Claude Code on the web env
 
 ## Table of Contents
 
-1. [Environment Detection](#environment-detection)
-2. [Branch Naming Requirements](#branch-naming-requirements)
-3. [Git Push Operations](#git-push-operations)
-4. [Pull Request Creation](#pull-request-creation)
-5. [Complete Workflows](#complete-workflows)
-6. [Troubleshooting](#troubleshooting)
+1. [GitHub API Operations](#github-api-operations)
+2. [Environment Detection](#environment-detection)
+3. [Branch Naming Requirements](#branch-naming-requirements)
+4. [Git Push Operations](#git-push-operations)
+5. [Pull Request Creation](#pull-request-creation)
+6. [Complete Workflows](#complete-workflows)
+7. [Troubleshooting](#troubleshooting)
+
+---
+
+## GitHub API Operations
+
+### Core Principle
+
+**ALL GitHub operations must use the REST API.** The `gh` CLI is not available in Claude Code on the web environment.
+
+### Common GitHub API Endpoints
+
+#### Get PR Details
+```bash
+curl -s https://api.github.com/repos/OWNER/REPO/pulls/PR_NUMBER
+```
+
+#### Get PR Review Comments
+```bash
+# Code review comments
+curl -s https://api.github.com/repos/OWNER/REPO/pulls/PR_NUMBER/comments
+
+# Issue comments (general discussion)
+curl -s https://api.github.com/repos/OWNER/REPO/issues/PR_NUMBER/comments
+```
+
+#### Get Repository Info
+```bash
+# Auto-detect from git remote
+REMOTE_URL=$(git remote get-url origin)
+REPO_FULL=$(echo "$REMOTE_URL" | sed -E 's#.*github\.com[:/]([^/]+/[^/]+)(\.git)?$#\1#')
+OWNER=$(echo "$REPO_FULL" | cut -d/ -f1)
+REPO=$(echo "$REPO_FULL" | cut -d/ -f2)
+
+curl -s "https://api.github.com/repos/$OWNER/$REPO"
+```
+
+#### List Issues
+```bash
+# All open issues
+curl -s https://api.github.com/repos/OWNER/REPO/issues
+
+# Filter by labels
+curl -s "https://api.github.com/repos/OWNER/REPO/issues?labels=bug"
+```
+
+#### Get Issue Comments
+```bash
+curl -s https://api.github.com/repos/OWNER/REPO/issues/ISSUE_NUMBER/comments
+```
+
+### Authentication
+
+```bash
+# Unauthenticated (rate limit: 60 requests/hour)
+curl -s https://api.github.com/repos/OWNER/REPO/pulls/123
+
+# Authenticated with token (rate limit: 5000 requests/hour)
+curl -s -H "Authorization: token $GITHUB_TOKEN" \
+  https://api.github.com/repos/OWNER/REPO/pulls/123
+```
+
+### Parsing JSON Responses
+
+```bash
+# With jq (if available)
+curl -s https://api.github.com/repos/OWNER/REPO/pulls/123 | \
+  jq '{title, state, author: .user.login}'
+
+# Without jq - use grep
+curl -s https://api.github.com/repos/OWNER/REPO/pulls/123 | \
+  grep -o '"title": *"[^"]*"' | cut -d'"' -f4
+```
 
 ---
 
@@ -155,18 +236,25 @@ smart_push() {
       sleep $delay
     fi
 
-    # Attempt push
-    if git push -u origin "$branch" 2>&1; then
+    # Attempt push (capture output once)
+    local output
+    output=$(git push -u origin "$branch" 2>&1)
+    local exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
       echo "✅ Push successful!"
       return 0
     fi
 
     # Check for 403 error (branch name issue)
-    if git push -u origin "$branch" 2>&1 | grep -q "403"; then
+    if echo "$output" | grep -q "403"; then
       echo "❌ HTTP 403 - Branch name validation failed"
       echo "   Ensure branch follows pattern: claude/*-<sessionId>"
       return 1
     fi
+
+    # Show error output for debugging
+    echo "$output"
   done
 
   echo "❌ Push failed after $max_attempts attempts"
