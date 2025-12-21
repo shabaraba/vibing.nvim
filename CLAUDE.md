@@ -274,7 +274,7 @@ require("vibing").setup({
 | `:VibingInline [action\|prompt]` | Run inline action or natural language instruction (Tab completion) |
 | `:VibingInlineAction`            | Interactive action picker with additional instruction prompt       |
 | `:VibingCancel`                  | Cancel current request                                             |
-| `:VibingControlNeovim [command]` | Control remote Neovim: show status or execute command (--listen)  |
+| `:VibingControlNeovim [command]` | Control remote Neovim: show status or execute command (--listen)   |
 
 ### Inline Action Examples
 

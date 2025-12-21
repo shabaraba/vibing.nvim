@@ -104,17 +104,17 @@ use {
 
 ### User Commands
 
-| Command                               | Description                                                       |
-| ------------------------------------- | ----------------------------------------------------------------- |
-| `:VibingChat [file]`                  | Open chat window or saved chat file                               |
-| `:VibingToggleChat`                   | Toggle chat window (open/close)                                   |
-| `:VibingSlashCommands`                | Show slash command picker in chat                                 |
-| `:VibingContext [path]`               | Add file to context (or from oil.nvim if no path)                 |
-| `:VibingClearContext`                 | Clear all context                                                 |
+| Command                               | Description                                                             |
+| ------------------------------------- | ----------------------------------------------------------------------- |
+| `:VibingChat [file]`                  | Open chat window or saved chat file                                     |
+| `:VibingToggleChat`                   | Toggle chat window (open/close)                                         |
+| `:VibingSlashCommands`                | Show slash command picker in chat                                       |
+| `:VibingContext [path]`               | Add file to context (or from oil.nvim if no path)                       |
+| `:VibingClearContext`                 | Clear all context                                                       |
 | `:VibingInline [action\|instruction]` | Run action or custom instruction on selection (supports Tab completion) |
-| `:VibingInlineAction`                 | Interactive action picker with prompt for additional instructions |
-| `:VibingCancel`                       | Cancel current request                                            |
-| `:VibingControlNeovim [command]`      | Control remote Neovim: show status or execute command (--listen) |
+| `:VibingInlineAction`                 | Interactive action picker with prompt for additional instructions       |
+| `:VibingCancel`                       | Cancel current request                                                  |
+| `:VibingControlNeovim [command]`      | Control remote Neovim: show status or execute command (--listen)        |
 
 ### Inline Actions
 
