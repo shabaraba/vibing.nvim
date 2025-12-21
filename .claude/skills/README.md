@@ -79,7 +79,7 @@ To create a new skill:
    ```
 
 3. Optionally add support files:
-   ```
+   ```text
    my-skill/
    ├── SKILL.md (required)
    ├── reference.md (optional)
