@@ -115,12 +115,20 @@ function ChatBuffer:_create_window()
   local win_config = self.config.window
   local width = math.floor(vim.o.columns * win_config.width)
 
-  if win_config.position == "right" then
+  if win_config.position == "current" then
+    -- 現在のウィンドウで新規バッファを開く（デフォルト）
+    self.win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(self.win, self.buf)
+  elseif win_config.position == "right" then
     vim.cmd("botright vsplit")
     vim.cmd("vertical resize " .. width)
+    self.win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(self.win, self.buf)
   elseif win_config.position == "left" then
     vim.cmd("topleft vsplit")
     vim.cmd("vertical resize " .. width)
+    self.win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(self.win, self.buf)
   else
     -- float
     local height = math.floor(vim.o.lines * 0.8)
@@ -136,11 +144,7 @@ function ChatBuffer:_create_window()
       style = "minimal",
       border = win_config.border,
     })
-    return
   end
-
-  self.win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(self.win, self.buf)
 end
 
 ---キーマップを設定

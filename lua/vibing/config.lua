@@ -96,7 +96,7 @@ M.defaults = {
   },
   chat = {
     window = {
-      position = "right",
+      position = "current",  -- "current" | "right" | "left" | "float"
       width = 0.4,
       border = "rounded",
     },
