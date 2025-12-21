@@ -1,10 +1,22 @@
+<div align="center">
+
+<img src=".github/assets/logo.png" alt="vibing.nvim logo" width="200"/>
+
 # vibing.nvim
+
+**Intelligent AI-Powered Code Assistant for Neovim**
 
 [![CI](https://github.com/shabaraba/vibing.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/shabaraba/vibing.nvim/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Release](https://img.shields.io/github/v/release/shabaraba/vibing.nvim)](https://github.com/shabaraba/vibing.nvim/releases)
 
-A Neovim plugin that integrates Claude AI through the Agent SDK, providing intelligent chat and inline code actions directly within your editor.
+A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Agent SDK, bringing intelligent chat conversations and context-aware inline code actions directly into your editor.
+
+[Features](#-features) • [Installation](#-installation) • [Usage](#-usage) • [Configuration](#️-configuration) • [Contributing](#-contributing)
+
+</div>
+
+---
 
 ## Table of Contents
 
@@ -21,14 +33,18 @@ A Neovim plugin that integrates Claude AI through the Agent SDK, providing intel
 
 ## ✨ Features
 
-- **💬 Chat Interface** - Interactive chat window with Claude AI
-- **⚡ Inline Actions** - Quick code fixes, explanations, refactoring, and more
+- **💬 Interactive Chat Interface** - Seamless chat window with Claude AI, opens in current buffer by default
+- **⚡ Inline Actions** - Quick code fixes, explanations, refactoring, and test generation
 - **📝 Natural Language Commands** - Use custom instructions for any code transformation
-- **🔧 Slash Commands** - In-chat commands for context management and settings
-- **💾 Session Persistence** - Save and resume chat sessions with full context
-- **🎯 Smart Context** - Automatic file context detection and manual additions
+- **🔧 Slash Commands** - In-chat commands for context management, permissions, and settings
+- **🛡️ Granular Permissions** - Fine-grained control over AI capabilities with allow/deny rules and patterns
+- **🎨 Permission Builder** - Interactive UI for configuring tool permissions via `/permissions` command
+- **💾 Session Persistence** - Save and resume chat sessions with full context and metadata
+- **🎯 Smart Context** - Automatic file context detection from open buffers and manual additions
+- **🌍 Multi-language Support** - Configure different languages for chat and inline actions
+- **📊 Diff Viewer** - Visual diff display for AI-edited files with `gd` keybinding
 - **🔌 Remote Control** - Control Neovim instances via `--listen` socket
-- **🎨 Configurable** - Flexible permissions, modes, and UI settings
+- **⚙️ Highly Configurable** - Flexible modes, models, permissions, and UI settings
 
 ## 📦 Installation
 
@@ -48,7 +64,7 @@ A Neovim plugin that integrates Claude AI through the Agent SDK, providing intel
       adapter = "agent_sdk",  -- "agent_sdk" | "claude" | "claude_acp"
       chat = {
         window = {
-          position = "right",  -- "right" | "left" | "float"
+          position = "current",  -- "current" | "right" | "left" | "float"
           width = 0.4,
           border = "rounded",
         },
@@ -61,9 +77,12 @@ A Neovim plugin that integrates Claude AI through the Agent SDK, providing intel
         default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
       },
       permissions = {
+        mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
         allow = { "Read", "Edit", "Write", "Glob", "Grep" },
         deny = { "Bash" },
+        rules = {},  -- Optional granular permission rules
       },
+      language = nil,  -- Optional: "ja" | "en" | { default = "ja", chat = "ja", inline = "en" }
     })
   end,
 }
@@ -126,14 +145,17 @@ use {
 
 ### Slash Commands (in Chat)
 
-| Command           | Description                         |
-| ----------------- | ----------------------------------- |
-| `/context <file>` | Add file to context                 |
-| `/clear`          | Clear context                       |
-| `/save`           | Save current chat                   |
-| `/summarize`      | Summarize conversation              |
-| `/mode <mode>`    | Set execution mode (auto/plan/code) |
-| `/model <model>`  | Set AI model (opus/sonnet/haiku)    |
+| Command                   | Description                                                      |
+| ------------------------- | ---------------------------------------------------------------- |
+| `/context <file>`         | Add file to context                                              |
+| `/clear`                  | Clear context                                                    |
+| `/save`                   | Save current chat                                                |
+| `/summarize`              | Summarize conversation                                           |
+| `/mode <mode>`            | Set execution mode (auto/plan/code/explore)                      |
+| `/model <model>`          | Set AI model (opus/sonnet/haiku)                                 |
+| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules |
+| `/allow [tool]`           | Add tool to allow list, or show current list if no args          |
+| `/deny [tool]`            | Add tool to deny list, or show current list if no args           |
 
 ## ⚙️ Configuration Examples
 
@@ -193,6 +215,60 @@ require("vibing").setup({
 })
 ```
 
+### Granular Permission Rules
+
+```lua
+require("vibing").setup({
+  permissions = {
+    mode = "default",  -- Ask for confirmation each time
+    rules = {
+      -- Allow reading specific paths
+      {
+        tools = { "Read" },
+        paths = { "src/**", "tests/**" },
+        action = "allow",
+      },
+      -- Deny writing to critical files
+      {
+        tools = { "Write", "Edit" },
+        paths = { ".env", "*.secret" },
+        action = "deny",
+        message = "Cannot modify sensitive files",
+      },
+      -- Allow specific npm commands only
+      {
+        tools = { "Bash" },
+        commands = { "npm", "yarn" },
+        action = "allow",
+      },
+      -- Deny dangerous bash patterns
+      {
+        tools = { "Bash" },
+        patterns = { "^rm -rf", "^sudo" },
+        action = "deny",
+        message = "Dangerous command blocked",
+      },
+    },
+  },
+})
+```
+
+### Multi-language Configuration
+
+```lua
+require("vibing").setup({
+  -- Simple: All responses in Japanese
+  language = "ja",
+
+  -- Advanced: Different languages for chat and inline
+  -- language = {
+  --   default = "ja",
+  --   chat = "ja",     -- Chat in Japanese
+  --   inline = "en",   -- Inline actions in English
+  -- },
+})
+```
+
 ## 🔌 Remote Control
 
 Control Neovim instances via socket:
@@ -208,27 +284,43 @@ nvim --listen /tmp/nvim.sock
 
 ## 📝 Chat File Format
 
-Chats are saved as Markdown with YAML frontmatter:
+Chats are saved as Markdown with YAML frontmatter for session resumption and configuration:
 
 ```yaml
 ---
 vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
-mode: code
-model: sonnet
+mode: code  # auto | plan | code | explore
+model: sonnet  # sonnet | opus | haiku
+permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions
 permissions_allow:
   - Read
   - Edit
+  - Write
+  - Glob
+  - Grep
 permissions_deny:
   - Bash
+language: ja  # Optional: default language for AI responses
 ---
 # Vibing Chat
 
 ## User
 
 Hello, Claude!
+
+## Assistant
+
+Hello! How can I help you today?
 ```
+
+**Key Features:**
+
+- **Session Resumption**: Automatically resumes conversation using `session_id`
+- **Configuration Tracking**: Records mode, model, and permissions for transparency
+- **Language Support**: Optional `language` field for consistent AI response language
+- **Auditability**: All permissions are visible in frontmatter
 
 ## 🏗️ Architecture
 
