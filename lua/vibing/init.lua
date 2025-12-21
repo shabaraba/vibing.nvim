@@ -112,29 +112,67 @@ function M._register_commands()
 
   vim.api.nvim_create_user_command("VibingInline", function(opts)
     require("vibing.actions.inline").execute(opts.args)
-  end, { nargs = "?", range = true, desc = "Run inline action" })
+  end, {
+    nargs = "?",
+    range = true,
+    desc = "Run inline action or custom instruction",
+    complete = function(ArgLead, CmdLine, CursorPos)
+      local actions = { "fix", "feat", "explain", "refactor", "test" }
+      local matches = {}
+      for _, action in ipairs(actions) do
+        if action:find("^" .. vim.pesc(ArgLead)) then
+          table.insert(matches, action)
+        end
+      end
+      return matches
+    end,
+  })
 
-  -- Individual inline action commands (with optional additional instructions)
-  vim.api.nvim_create_user_command("VibingExplain", function(opts)
-    require("vibing.actions.inline").execute("explain", opts.args)
-  end, { nargs = "?", range = true, desc = "Explain selected code" })
+  vim.api.nvim_create_user_command("VibingInlineAction", function()
+    -- アクション選択
+    local actions = {
+      { name = "fix", desc = "Fix code issues" },
+      { name = "feat", desc = "Implement feature" },
+      { name = "explain", desc = "Explain code" },
+      { name = "refactor", desc = "Refactor code" },
+      { name = "test", desc = "Generate tests" },
+    }
 
-  vim.api.nvim_create_user_command("VibingFix", function(opts)
-    require("vibing.actions.inline").execute("fix", opts.args)
-  end, { nargs = "?", range = true, desc = "Fix selected code issues" })
+    local action_labels = {}
+    for i, action in ipairs(actions) do
+      action_labels[i] = string.format("%s - %s", action.name, action.desc)
+    end
 
-  vim.api.nvim_create_user_command("VibingFeature", function(opts)
-    require("vibing.actions.inline").execute("feat", opts.args)
-  end, { nargs = "?", range = true, desc = "Implement feature in selected code" })
+    vim.ui.select(action_labels, {
+      prompt = "Select inline action:",
+      format_item = function(item)
+        return item
+      end,
+    }, function(choice, idx)
+      if not choice then
+        return
+      end
 
-  vim.api.nvim_create_user_command("VibingRefactor", function(opts)
-    require("vibing.actions.inline").execute("refactor", opts.args)
-  end, { nargs = "?", range = true, desc = "Refactor selected code" })
+      local selected_action = actions[idx].name
 
-  vim.api.nvim_create_user_command("VibingTest", function(opts)
-    require("vibing.actions.inline").execute("test", opts.args)
-  end, { nargs = "?", range = true, desc = "Generate tests for selected code" })
+      -- 追加指示の入力
+      vim.ui.input({
+        prompt = string.format("Additional instruction for '%s' (optional): ", selected_action),
+      }, function(instruction)
+        if instruction == nil then
+          -- キャンセルされた
+          return
+        end
 
+        -- VibingInlineに委譲
+        local action_arg = selected_action
+        if instruction and instruction ~= "" then
+          action_arg = action_arg .. " " .. instruction
+        end
+        require("vibing.actions.inline").execute(action_arg)
+      end)
+    end)
+  end, { range = true, desc = "Interactive inline action picker" })
 
   vim.api.nvim_create_user_command("VibingCancel", function()
     if M.adapter then

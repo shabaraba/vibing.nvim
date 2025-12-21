@@ -111,18 +111,23 @@ use {
 | `:VibingSlashCommands`                | Show slash command picker in chat                                 |
 | `:VibingContext [path]`               | Add file to context (or from oil.nvim if no path)                 |
 | `:VibingClearContext`                 | Clear all context                                                 |
-| `:VibingInline [action\|instruction]` | Run action or custom instruction on selection                     |
-| `:VibingExplain [instruction]`        | Explain selected code (with optional instruction)                 |
-| `:VibingFix [instruction]`            | Fix selected code issues (with optional instruction)              |
-| `:VibingFeature [instruction]`        | Implement feature in selected code (with instruction)             |
-| `:VibingRefactor [instruction]`       | Refactor selected code (with optional instruction)                |
-| `:VibingTest [instruction]`           | Generate tests for selected code (with instruction)               |
+| `:VibingInline [action\|instruction]` | Run action or custom instruction on selection (supports Tab completion) |
+| `:VibingInlineAction`                 | Interactive action picker with prompt for additional instructions |
 | `:VibingCancel`                       | Cancel current request                                            |
 | `:VibingControlNeovim [command]`      | Control remote Neovim: show status or execute command (--listen) |
 
 ### Inline Actions
 
-**Predefined actions:**
+**Interactive picker (recommended):**
+
+```vim
+:'<,'>VibingInlineAction
+" 1. Select action from menu (fix, feat, explain, refactor, test)
+" 2. Optionally add instructions (e.g., "using async/await")
+" 3. Press Enter to execute
+```
+
+**Direct command with Tab completion:**
 
 ```vim
 :'<,'>VibingInline fix       " Fix code issues
@@ -130,6 +135,10 @@ use {
 :'<,'>VibingInline explain   " Explain code
 :'<,'>VibingInline refactor  " Refactor code
 :'<,'>VibingInline test      " Generate tests
+
+" With additional instructions
+:'<,'>VibingInline fix using async/await
+:'<,'>VibingInline test with Jest mocks
 ```
 
 **Natural language instructions:**

@@ -271,18 +271,23 @@ require("vibing").setup({
 | `:VibingSlashCommands`           | Show slash command picker in chat                                  |
 | `:VibingContext [path]`          | Add file to context (or from oil.nvim if no path)                  |
 | `:VibingClearContext`            | Clear all context                                                  |
-| `:VibingInline [action\|prompt]` | Run inline action or natural language instruction on selection     |
-| `:VibingExplain [instruction]`   | Explain selected code (with optional additional instruction)       |
-| `:VibingFix [instruction]`       | Fix selected code issues (with optional additional instruction)    |
-| `:VibingFeature [instruction]`   | Implement feature in selected code (with optional instruction)     |
-| `:VibingRefactor [instruction]`  | Refactor selected code (with optional additional instruction)      |
-| `:VibingTest [instruction]`      | Generate tests for selected code (with optional instruction)       |
+| `:VibingInline [action\|prompt]` | Run inline action or natural language instruction (Tab completion) |
+| `:VibingInlineAction`            | Interactive action picker with additional instruction prompt       |
 | `:VibingCancel`                  | Cancel current request                                             |
 | `:VibingControlNeovim [command]` | Control remote Neovim: show status or execute command (--listen)  |
 
 ### Inline Action Examples
 
-Predefined actions:
+Interactive picker (recommended):
+
+```vim
+:'<,'>VibingInlineAction
+" 1. Select action from menu (fix, feat, explain, refactor, test)
+" 2. Optionally add instructions (e.g., "using async/await", "日本語で")
+" 3. Press Enter to execute
+```
+
+Predefined actions with Tab completion:
 
 ```vim
 :'<,'>VibingInline fix       " Fix code issues
@@ -290,18 +295,15 @@ Predefined actions:
 :'<,'>VibingInline explain   " Explain code
 :'<,'>VibingInline refactor  " Refactor code
 :'<,'>VibingInline test      " Generate tests
+
+" With additional instructions
+:'<,'>VibingInline explain 日本語で
+:'<,'>VibingInline fix using async/await
+:'<,'>VibingInline test using Jest with mocks
+:'<,'>VibingInline refactor to use functional style
 ```
 
-With additional instructions:
-
-```vim
-:'<,'>VibingExplain 日本語で                    " Explain in Japanese
-:'<,'>VibingFix using async/await               " Fix with specific style
-:'<,'>VibingTest using Jest with mocks          " Generate tests with framework
-:'<,'>VibingRefactor to use functional style    " Refactor with specific approach
-```
-
-Natural language instructions (via VibingInline):
+Natural language instructions:
 
 ```vim
 :'<,'>VibingInline "Convert this function to TypeScript"
