@@ -44,6 +44,7 @@ A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Ag
 - **🌍 Multi-language Support** - Configure different languages for chat and inline actions
 - **📊 Diff Viewer** - Visual diff display for AI-edited files with `gd` keybinding
 - **🔌 Remote Control** - Control Neovim instances via `--listen` socket
+- **🤖 Neovim Agent Tools** - Claude can directly control Neovim (read/write buffers, execute commands) via MCP integration
 - **⚙️ Highly Configurable** - Flexible modes, models, permissions, and UI settings
 
 ## 📦 Installation
@@ -281,6 +282,53 @@ nvim --listen /tmp/nvim.sock
 :VibingRemote "edit ~/.config/nvim/init.lua"
 :VibingRemoteStatus
 ```
+
+## 🤖 Neovim Agent Tools
+
+When Neovim is started with `--listen`, Claude can directly control your Neovim instance through MCP (Model Context Protocol) integration:
+
+### How It Works
+
+1. Start Neovim with socket: `nvim --listen /tmp/nvim.sock`
+2. The `$NVIM` environment variable is automatically set by Neovim
+3. Agent SDK detects `$NVIM` and loads the Neovim MCP server
+4. Claude gains access to Neovim control tools
+
+### Available Tools
+
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| `mcp__neovim__buf_get_lines` | Read buffer content | "What's in my current file?" |
+| `mcp__neovim__buf_set_lines` | Write to buffer | "Add a TODO comment at line 5" |
+| `mcp__neovim__command` | Execute Ex commands | "Save the current buffer" |
+| `mcp__neovim__get_status` | Get Neovim status | "What file am I editing?" |
+
+### Example Usage
+
+```vim
+" Start Neovim with listen socket
+" $ nvim --listen /tmp/nvim.sock
+
+:VibingChat
+" In chat: 'Add a comment at the top of this file explaining what it does'
+" Claude will use mcp__neovim__buf_set_lines to add the comment
+```
+
+### Permission Control
+
+Neovim tools respect the permission system:
+
+```lua
+require("vibing").setup({
+  permissions = {
+    -- Allow only read operations
+    allow = { "Read", "mcp__neovim__buf_get_lines", "mcp__neovim__get_status" },
+    deny = { "mcp__neovim__buf_set_lines", "mcp__neovim__command" },
+  },
+})
+```
+
+See `docs/neovim-integration-test.md` for detailed testing instructions.
 
 ## 📝 Chat File Format
 

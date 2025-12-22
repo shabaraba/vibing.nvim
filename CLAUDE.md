@@ -36,6 +36,32 @@ The Node.js wrapper (`bin/agent-wrapper.mjs`) outputs streaming responses as JSO
 - `{"type": "done"}` - Completion signal
 - `{"type": "error", "message": "..."}` - Error messages
 
+### Neovim Agent Tools (MCP Integration)
+
+When the Agent SDK detects the `$NVIM` environment variable (automatically set when Neovim starts with `--listen`), it loads an in-process MCP server (`bin/neovim-mcp-server.mjs`) that provides direct Neovim control tools:
+
+**Available Tools:**
+
+- `mcp__neovim__buf_get_lines` - Read buffer content (start, end line numbers)
+- `mcp__neovim__buf_set_lines` - Write buffer content (start, end, lines array)
+- `mcp__neovim__command` - Execute Ex command (save, navigate, etc.)
+- `mcp__neovim__get_status` - Get current mode, buffer, cursor position
+
+**How It Works:**
+
+1. Neovim started with `nvim --listen /tmp/nvim.sock` sets `$NVIM` environment variable
+2. Agent SDK wrapper detects `$NVIM` and creates Neovim MCP server
+3. Claude can now control the Neovim instance that spawned the agent
+4. Uses `neovim` npm package to communicate via socket
+
+**Use Cases:**
+
+- "Add a comment at line 10" → Uses `mcp__neovim__buf_set_lines`
+- "Save the current buffer" → Uses `mcp__neovim__command` with `:write`
+- "What file am I editing?" → Uses `mcp__neovim__get_status`
+
+See `docs/neovim-integration-test.md` for testing instructions.
+
 ### Module Structure
 
 **Core:**

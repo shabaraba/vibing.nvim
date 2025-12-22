@@ -7,6 +7,7 @@
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { URL } from 'url';
+import { createNeovimMcpServer } from './neovim-mcp-server.mjs';
 
 const args = process.argv.slice(2);
 let prompt = '';
@@ -395,6 +396,32 @@ if (model) {
 // Add session resume if provided
 if (sessionId) {
   queryOptions.resume = sessionId;
+}
+
+// Add Neovim MCP server if $NVIM socket is available
+const nvimSocket = process.env.NVIM;
+if (nvimSocket) {
+  try {
+    const nvimServer = createNeovimMcpServer(nvimSocket);
+    queryOptions.mcpServers = {
+      neovim: nvimServer,
+    };
+
+    // Add Neovim tools to allowed list (if allow list is being used)
+    if (queryOptions.allowedTools && queryOptions.allowedTools.length > 0) {
+      queryOptions.allowedTools.push(
+        'mcp__neovim__buf_get_lines',
+        'mcp__neovim__buf_set_lines',
+        'mcp__neovim__command',
+        'mcp__neovim__get_status'
+      );
+    }
+
+    // Log Neovim integration status
+    console.error(`Neovim integration enabled (socket: ${nvimSocket})`);
+  } catch (error) {
+    console.error(`Warning: Failed to initialize Neovim MCP server: ${error.message}`);
+  }
 }
 
 let sessionIdEmitted = false;
