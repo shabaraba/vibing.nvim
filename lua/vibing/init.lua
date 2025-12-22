@@ -114,7 +114,19 @@ function M._register_commands()
   end, { desc = "Clear Vibing context" })
 
   vim.api.nvim_create_user_command("VibingInline", function(opts)
-    require("vibing.actions.inline").execute(opts.args)
+    if opts.args == "" then
+      -- 引数なしの場合はリッチなピッカーUIを表示
+      local InlinePicker = require("vibing.ui.inline_picker")
+      InlinePicker.show(function(action, instruction)
+        local action_arg = action
+        if instruction and instruction ~= "" then
+          action_arg = action_arg .. " " .. instruction
+        end
+        require("vibing.actions.inline").execute(action_arg)
+      end)
+    else
+      require("vibing.actions.inline").execute(opts.args)
+    end
   end, {
     nargs = "?",
     range = true,
@@ -131,48 +143,17 @@ function M._register_commands()
     end,
   })
 
+  -- VibingInlineActionはVibingInlineへのエイリアス（後方互換性）
   vim.api.nvim_create_user_command("VibingInlineAction", function()
-    -- アクション選択
-    local actions = {
-      { name = "fix", desc = "Fix code issues" },
-      { name = "feat", desc = "Implement feature" },
-      { name = "explain", desc = "Explain code" },
-      { name = "refactor", desc = "Refactor code" },
-      { name = "test", desc = "Generate tests" },
-    }
-
-    local action_labels = {}
-    for i, action in ipairs(actions) do
-      action_labels[i] = string.format("%s - %s", action.name, action.desc)
-    end
-
-    vim.ui.select(action_labels, {
-      prompt = "Select inline action:",
-    }, function(choice, idx)
-      if not choice then
-        return
+    local InlinePicker = require("vibing.ui.inline_picker")
+    InlinePicker.show(function(action, instruction)
+      local action_arg = action
+      if instruction and instruction ~= "" then
+        action_arg = action_arg .. " " .. instruction
       end
-
-      local selected_action = actions[idx].name
-
-      -- 追加指示の入力
-      vim.ui.input({
-        prompt = string.format("Additional instruction for '%s' (optional): ", selected_action),
-      }, function(instruction)
-        if instruction == nil then
-          -- キャンセルされた
-          return
-        end
-
-        -- VibingInlineに委譲
-        local action_arg = selected_action
-        if instruction and instruction ~= "" then
-          action_arg = action_arg .. " " .. instruction
-        end
-        require("vibing.actions.inline").execute(action_arg)
-      end)
+      require("vibing.actions.inline").execute(action_arg)
     end)
-  end, { range = true, desc = "Interactive inline action picker" })
+  end, { range = true, desc = "Interactive inline action picker (alias of VibingInline)" })
 
   vim.api.nvim_create_user_command("VibingCancel", function()
     if M.adapter then

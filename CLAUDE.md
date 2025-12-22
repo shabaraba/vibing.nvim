@@ -266,29 +266,42 @@ require("vibing").setup({
 
 ## User Commands
 
-| Command                          | Description                                                        |
-| -------------------------------- | ------------------------------------------------------------------ |
-| `:VibingChat [file]`             | Open chat window or saved chat file                                |
-| `:VibingToggleChat`              | Toggle chat window (open/close)                                    |
-| `:VibingSlashCommands`           | Show slash command picker in chat                                  |
-| `:VibingContext [path]`          | Add file to context (or from oil.nvim if no path)                  |
-| `:VibingClearContext`            | Clear all context                                                  |
-| `:VibingInline [action\|prompt]` | Run inline action or natural language instruction (Tab completion) |
-| `:VibingInlineAction`            | Interactive action picker with additional instruction prompt       |
-| `:VibingCancel`                  | Cancel current request                                             |
+| Command                          | Description                                                                       |
+| -------------------------------- | --------------------------------------------------------------------------------- |
+| `:VibingChat [file]`             | Open chat window or saved chat file                                               |
+| `:VibingToggleChat`              | Toggle chat window (open/close)                                                   |
+| `:VibingSlashCommands`           | Show slash command picker in chat                                                 |
+| `:VibingContext [path]`          | Add file to context (or from oil.nvim if no path)                                 |
+| `:VibingClearContext`            | Clear all context                                                                 |
+| `:VibingInline [action\|prompt]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled. |
+| `:VibingInlineAction`            | Alias of `:VibingInline` (for backward compatibility)                             |
+| `:VibingCancel`                  | Cancel current request                                                            |
 
 ### Inline Action Examples
 
-Interactive picker (recommended):
+**Rich UI Picker (recommended):**
 
 ```vim
-:'<,'>VibingInlineAction
-" 1. Select action from menu (fix, feat, explain, refactor, test)
-" 2. Optionally add instructions (e.g., "using async/await", "日本語で")
-" 3. Press Enter to execute
+:'<,'>VibingInline
+" Opens a split-panel UI:
+" - Left: Action menu (fix, feat, explain, refactor, test)
+"   - Navigate: j/k or arrow keys
+"   - Move to input: Tab
+" - Right: Additional instruction input (optional)
+"   - Move to menu: Shift-Tab
+" - Execute: Enter (from either panel)
+" - Cancel: Esc or Ctrl-c
 ```
 
-Predefined actions with Tab completion:
+**Keybindings in Rich UI:**
+
+- `j`/`k` or `↓`/`↑` - Navigate action menu
+- `Tab` - Move from menu to input field
+- `Shift-Tab` - Move from input field to menu
+- `Enter` - Execute selected action
+- `Esc` or `Ctrl-c` - Cancel
+
+**Direct Execution (with arguments):**
 
 ```vim
 :'<,'>VibingInline fix       " Fix code issues
@@ -304,7 +317,7 @@ Predefined actions with Tab completion:
 :'<,'>VibingInline refactor to use functional style
 ```
 
-Natural language instructions:
+**Natural Language Instructions:**
 
 ```vim
 :'<,'>VibingInline "Convert this function to TypeScript"
