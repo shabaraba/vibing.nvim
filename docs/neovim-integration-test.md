@@ -40,6 +40,7 @@ node bin/agent-wrapper.mjs \
 ```
 
 Expected output should include:
+
 - `Neovim integration enabled (socket: /tmp/nvim-test.sock)` in stderr
 - JSON lines showing Claude's response
 - Status information from Neovim (mode, buffer, cursor position)
@@ -48,12 +49,12 @@ Expected output should include:
 
 The following tools are available when the Neovim MCP server is active:
 
-| Tool Name | Description | Parameters |
-|-----------|-------------|------------|
+| Tool Name                    | Description                   | Parameters                              |
+| ---------------------------- | ----------------------------- | --------------------------------------- |
 | `mcp__neovim__buf_get_lines` | Get lines from current buffer | `start` (default 0), `end` (default -1) |
-| `mcp__neovim__buf_set_lines` | Set lines in current buffer | `start`, `end`, `lines` (array) |
-| `mcp__neovim__command` | Execute Ex command | `command` (string, no leading colon) |
-| `mcp__neovim__get_status` | Get Neovim status | (no parameters) |
+| `mcp__neovim__buf_set_lines` | Set lines in current buffer   | `start`, `end`, `lines` (array)         |
+| `mcp__neovim__command`       | Execute Ex command            | `command` (string, no leading colon)    |
+| `mcp__neovim__get_status`    | Get Neovim status             | (no parameters)                         |
 
 ## Example Test Prompts
 
@@ -90,11 +91,13 @@ When you run `:VibingChat` from Neovim that was started with `--listen`, the `$N
 ### Example Usage in Chat
 
 1. Start Neovim with listen socket:
+
    ```bash
    nvim --listen /tmp/nvim.sock
    ```
 
 2. Open vibing.nvim chat:
+
    ```vim
    :VibingChat
    ```
@@ -111,6 +114,7 @@ Claude will use `mcp__neovim__get_status` to retrieve the information.
 ### "Neovim socket path is required" Error
 
 The agent wrapper couldn't find the `$NVIM` environment variable. Make sure:
+
 - Neovim is running with `--listen`
 - The `$NVIM` environment variable is set correctly
 - The socket file exists at the specified path
@@ -118,6 +122,7 @@ The agent wrapper couldn't find the `$NVIM` environment variable. Make sure:
 ### "Failed to connect to Neovim" Error
 
 The socket exists but connection failed. Check:
+
 - Neovim is still running
 - The socket path is correct
 - File permissions allow connection
@@ -125,6 +130,7 @@ The socket exists but connection failed. Check:
 ### Tools Not Available
 
 If Neovim tools aren't being used by Claude:
+
 - Check that permission mode allows the tools
 - If using `--allow` with a whitelist, make sure Neovim tools are included
 - Look for `Neovim integration enabled` message in stderr
@@ -150,6 +156,7 @@ node bin/agent-wrapper.mjs \
 ## Next Steps
 
 Once basic integration works:
+
 1. Test from within vibing.nvim chat sessions
 2. Verify session persistence with Neovim tools
 3. Test permission configurations

@@ -24,14 +24,40 @@ export function createNeovimMcpServer(socketPath) {
    * Get or create Neovim client connection
    */
   async function getNvimClient() {
-    if (!nvimClient) {
+    // Check if existing connection is still healthy
+    if (nvimClient) {
       try {
-        nvimClient = attach({ socket: socketPath });
+        await nvimClient.getApiInfo();
+        return nvimClient;
       } catch (error) {
-        throw new Error(`Failed to connect to Neovim at ${socketPath}: ${error.message}`);
+        console.error('Existing connection is stale, reconnecting...');
+        nvimClient = null;
       }
     }
-    return nvimClient;
+
+    // Create new connection
+    try {
+      nvimClient = attach({ socket: socketPath });
+      // Verify connection works
+      await nvimClient.getApiInfo();
+      return nvimClient;
+    } catch (error) {
+      throw new Error(`Failed to connect to Neovim at ${socketPath}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Close Neovim client connection
+   */
+  function cleanup() {
+    if (nvimClient) {
+      try {
+        nvimClient.quit();
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      nvimClient = null;
+    }
   }
 
   // Define tools using the tool() function
@@ -65,36 +91,102 @@ export function createNeovimMcpServer(socketPath) {
       lines: z.array(z.string()).describe('Lines to set'),
     },
     async (args) => {
-      const nvim = await getNvimClient();
-      const buffer = await nvim.buffer;
-      await buffer.setLines(args.lines, {
-        start: args.start,
-        end: args.end,
-        strictIndexing: false,
-      });
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Set ${args.lines.length} lines from ${args.start} to ${args.end}`,
-          },
-        ],
-      };
+      try {
+        const nvim = await getNvimClient();
+        const buffer = await nvim.buffer;
+        await buffer.setLines(args.lines, {
+          start: args.start,
+          end: args.end,
+          strictIndexing: false,
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Successfully set ${args.lines.length} lines from ${args.start} to ${args.end}`,
+            },
+          ],
+        };
+      } catch (error) {
+        throw new Error(`Failed to set buffer lines: ${error.message}`);
+      }
     }
   );
 
+  // Allowed Ex commands for security
+  const ALLOWED_COMMANDS = [
+    'write',
+    'w',
+    'quit',
+    'q',
+    'wq',
+    'wa',
+    'wqa',
+    'qa',
+    'edit',
+    'e',
+    'enew',
+    'new',
+    'vnew',
+    'buffer',
+    'b',
+    'bnext',
+    'bn',
+    'bprevious',
+    'bp',
+    'bfirst',
+    'blast',
+    'bdelete',
+    'bd',
+    'split',
+    'sp',
+    'vsplit',
+    'vs',
+    'close',
+    'tabnew',
+    'tabnext',
+    'tabprevious',
+    'tabclose',
+    'normal',
+    'set',
+    'setlocal',
+  ];
+
   const nvimCommand = tool(
     'command',
-    'Execute Ex command in Neovim',
+    'Execute Ex command in Neovim (restricted to safe commands)',
     {
       command: z.string().describe('Ex command to execute (without leading colon)'),
     },
     async (args) => {
-      const nvim = await getNvimClient();
-      await nvim.command(args.command);
-      return {
-        content: [{ type: 'text', text: `Executed: ${args.command}` }],
-      };
+      // Extract base command (first word)
+      const baseCmd = args.command.trim().split(/\s+/)[0];
+
+      // Block dangerous patterns
+      if (/^(!|source|py|py3|python|python3|lua|ruby|perl|mzscheme)/.test(baseCmd)) {
+        throw new Error(
+          `Command '${baseCmd}' is not allowed for security reasons. ` +
+            `Shell execution and script sourcing are prohibited.`
+        );
+      }
+
+      // Check if command is in allowed list
+      if (!ALLOWED_COMMANDS.includes(baseCmd)) {
+        throw new Error(
+          `Command '${baseCmd}' is not in the allowed list. ` +
+            `Allowed commands: ${ALLOWED_COMMANDS.join(', ')}`
+        );
+      }
+
+      try {
+        const nvim = await getNvimClient();
+        await nvim.command(args.command);
+        return {
+          content: [{ type: 'text', text: `Executed: ${args.command}` }],
+        };
+      } catch (error) {
+        throw new Error(`Failed to execute command '${args.command}': ${error.message}`);
+      }
     }
   );
 

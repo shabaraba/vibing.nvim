@@ -296,12 +296,12 @@ When Neovim is started with `--listen`, Claude can directly control your Neovim 
 
 ### Available Tools
 
-| Tool | Description | Use Case |
-|------|-------------|----------|
-| `mcp__neovim__buf_get_lines` | Read buffer content | "What's in my current file?" |
-| `mcp__neovim__buf_set_lines` | Write to buffer | "Add a TODO comment at line 5" |
-| `mcp__neovim__command` | Execute Ex commands | "Save the current buffer" |
-| `mcp__neovim__get_status` | Get Neovim status | "What file am I editing?" |
+| Tool                         | Description         | Use Case                       |
+| ---------------------------- | ------------------- | ------------------------------ |
+| `mcp__neovim__buf_get_lines` | Read buffer content | "What's in my current file?"   |
+| `mcp__neovim__buf_set_lines` | Write to buffer     | "Add a TODO comment at line 5" |
+| `mcp__neovim__command`       | Execute Ex commands | "Save the current buffer"      |
+| `mcp__neovim__get_status`    | Get Neovim status   | "What file am I editing?"      |
 
 ### Example Usage
 
