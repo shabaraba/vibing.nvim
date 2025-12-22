@@ -1,9 +1,19 @@
 -- Test runner script that exits after tests complete
 -- This ensures Neovim doesn't hang after tests finish
 
-vim.cmd("PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }")
+-- Override Plenary's on_exit callback to force quit
+local busted = require("plenary.busted")
+local original_run = busted.run
 
--- Schedule quit after a short delay to allow test output to flush
-vim.defer_fn(function()
-  vim.cmd("qa!")
-end, 100)
+busted.run = function(...)
+  local result = original_run(...)
+
+  -- Force quit after a short delay
+  vim.defer_fn(function()
+    os.exit(0)
+  end, 500)
+
+  return result
+end
+
+vim.cmd("PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }")
