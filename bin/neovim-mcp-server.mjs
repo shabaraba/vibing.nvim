@@ -29,7 +29,7 @@ export function createNeovimMcpServer(socketPath) {
       try {
         await nvimClient.getApiInfo();
         return nvimClient;
-      } catch (error) {
+      } catch {
         console.error('Existing connection is stale, reconnecting...');
         nvimClient = null;
       }
@@ -53,7 +53,7 @@ export function createNeovimMcpServer(socketPath) {
     if (nvimClient) {
       try {
         nvimClient.quit();
-      } catch (e) {
+      } catch {
         // Ignore cleanup errors
       }
       nvimClient = null;
@@ -221,9 +221,14 @@ export function createNeovimMcpServer(socketPath) {
   );
 
   // Create and return the MCP server
-  return createSdkMcpServer({
+  const server = createSdkMcpServer({
     name: 'neovim',
     version: '1.0.0',
     tools: [nvimBufGetLines, nvimBufSetLines, nvimCommand, nvimGetStatus],
   });
+
+  // Attach cleanup function for resource management
+  server.cleanup = cleanup;
+
+  return server;
 }
