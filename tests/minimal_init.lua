@@ -22,7 +22,4 @@ end
 vim.opt.swapfile = false
 vim.opt.backup = false
 
--- Set shorter timeout for test runner
-vim.g.plenary_timeout = 5000
-
 print("Test environment initialized")
