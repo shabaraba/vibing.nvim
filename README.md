@@ -180,6 +180,26 @@ use {
 require("vibing").setup()
 ```
 
+If you don't provide any configuration, the following **default permissions** will be applied:
+
+```lua
+permissions = {
+  mode = "acceptEdits",  -- Auto-accept file edits, ask for other tools
+  allow = {
+    "Read",    -- Read files
+    "Edit",    -- Edit files
+    "Write",   -- Write new files
+    "Glob",    -- Search files by pattern
+    "Grep",    -- Search file contents
+  },
+  deny = {
+    "Bash",    -- Block shell commands (security)
+  },
+}
+```
+
+These defaults are used as a **template** when creating new chat files. Each chat file's frontmatter contains its own permissions, which are used at runtime.
+
 ### Custom Configuration
 
 ```lua
