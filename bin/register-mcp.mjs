@@ -4,11 +4,11 @@
  * Called automatically by build.sh after successful build
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, renameSync, mkdtempSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -48,6 +48,8 @@ const existingConfig = config.mcpServers['vibing-nvim'];
 if (existingConfig && existingConfig.args && existingConfig.args[0] === MCP_SERVER_PATH) {
   console.log('[vibing.nvim] ✓ vibing-nvim MCP server already registered in ~/.claude.json');
   process.exit(0);
+} else if (existingConfig) {
+  console.log('[vibing.nvim] Updating vibing-nvim registration (path changed)...');
 }
 
 // Register vibing-nvim MCP server
@@ -59,13 +61,31 @@ config.mcpServers['vibing-nvim'] = {
   },
 };
 
-// Write updated config
+// Write updated config atomically (temp file → rename)
+let tempFile;
 try {
-  writeFileSync(CLAUDE_JSON_PATH, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  // Create temp directory and file
+  const tempDir = mkdtempSync(join(tmpdir(), 'vibing-'));
+  tempFile = join(tempDir, 'claude.json');
+
+  // Write to temp file
+  writeFileSync(tempFile, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+
+  // Atomic rename (prevents data loss on failure)
+  renameSync(tempFile, CLAUDE_JSON_PATH);
+
   console.log('[vibing.nvim] ✓ Registered vibing-nvim MCP server in ~/.claude.json');
   console.log(`[vibing.nvim]   Path: ${MCP_SERVER_PATH}`);
   console.log('[vibing.nvim]   Port: 9876');
 } catch (error) {
+  // Clean up temp file if exists
+  if (tempFile && existsSync(tempFile)) {
+    try {
+      unlinkSync(tempFile);
+    } catch (cleanupError) {
+      // Ignore cleanup errors
+    }
+  }
   console.error(`[vibing.nvim] Error: Failed to write ${CLAUDE_JSON_PATH}: ${error.message}`);
   process.exit(1);
 }

@@ -68,14 +68,20 @@ function M.build_mcp_server(callback)
                   else
                     notify.warn("MCP registration failed")
                   end
+                  -- Call callback after registration completes (success or failure)
+                  if callback then
+                    callback(exit_code == 0 and reg_exit_code == 0)
+                  end
                 end)
               end,
             })
+          else
+            -- No registration script, call callback immediately
+            if callback then
+              callback(true)
+            end
           end
         end)
-        if callback then
-          callback(true)
-        end
       else
         notify.error("Failed to build MCP server (exit code: " .. exit_code .. ")")
         if callback then

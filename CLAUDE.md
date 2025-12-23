@@ -43,9 +43,9 @@ vibing.nvim provides MCP server integration that enables Claude Code to interact
 Neovim instance without deadlocks. The architecture uses an async RPC server to avoid blocking
 issues.
 
-**IMPORTANT: User MCP Servers, Slash Commands, Skills, and Subagents**
+### User MCP Servers, Slash Commands, Skills, and Subagents
 
-vibing.nvim's Agent SDK wrapper (`bin/agent-wrapper.mjs`) automatically loads user and project
+**IMPORTANT:** vibing.nvim's Agent SDK wrapper (`bin/agent-wrapper.mjs`) automatically loads user and project
 settings via `settingSources: ['user', 'project']`. This means:
 
 - ✅ **User's custom MCP servers** from `~/.claude.json` are available

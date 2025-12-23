@@ -185,14 +185,20 @@ function M.build_async(callback)
                     else
                       print_build("Warning: MCP registration failed", "warn")
                     end
+                    -- Call callback after registration completes (success or failure)
+                    if callback then
+                      callback(exit_code == 0 and reg_exit_code == 0)
+                    end
                   end)
                 end,
               })
+            else
+              -- No registration script, call callback immediately
+              if callback then
+                callback(true)
+              end
             end
           end)
-          if callback then
-            callback(true)
-          end
         else
           vim.schedule(function()
             print_build("Build failed: dist/index.js not found", "error")
