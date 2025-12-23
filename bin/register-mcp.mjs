@@ -82,7 +82,7 @@ try {
   if (tempFile && existsSync(tempFile)) {
     try {
       unlinkSync(tempFile);
-    } catch (cleanupError) {
+    } catch {
       // Ignore cleanup errors
     }
   }
