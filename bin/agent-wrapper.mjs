@@ -408,6 +408,8 @@ if (sessionId) {
 }
 
 let sessionIdEmitted = false;
+let respondingEmitted = false;
+const processedToolUseIds = new Set(); // Track processed tool_use IDs to prevent duplicates
 
 try {
   // Create query with all options
@@ -423,6 +425,8 @@ try {
       if (!sessionIdEmitted) {
         console.log(safeJsonStringify({ type: 'session', session_id: message.session_id }));
         sessionIdEmitted = true;
+        // Emit thinking status after session initialization
+        console.log(safeJsonStringify({ type: 'status', state: 'thinking' }));
       }
     }
 
@@ -430,8 +434,20 @@ try {
     if (message.type === 'assistant' && message.message?.content) {
       for (const block of message.message.content) {
         if (block.type === 'text' && block.text) {
+          // Emit responding status before first text chunk
+          if (!respondingEmitted) {
+            console.log(safeJsonStringify({ type: 'status', state: 'responding' }));
+            respondingEmitted = true;
+          }
           console.log(safeJsonStringify({ type: 'chunk', text: block.text }));
         } else if (block.type === 'tool_use') {
+          // Check if this tool_use has already been processed
+          const toolUseId = block.id;
+          if (processedToolUseIds.has(toolUseId)) {
+            continue; // Skip duplicate tool_use
+          }
+          processedToolUseIds.add(toolUseId);
+
           // Tool use indication
           const toolName = block.name;
           let inputSummary = '';
@@ -449,7 +465,17 @@ try {
             inputSummary = toolInput.query;
           }
 
-          // Emit structured tool_use event for file-modifying operations
+          // Emit status message for ALL tools
+          console.log(
+            safeJsonStringify({
+              type: 'status',
+              state: 'tool_use',
+              tool: toolName,
+              input_summary: inputSummary,
+            })
+          );
+
+          // Emit structured tool_use event for file-modifying operations (backward compatibility)
           if ((toolName === 'Edit' || toolName === 'Write') && toolInput.file_path) {
             console.log(
               safeJsonStringify({

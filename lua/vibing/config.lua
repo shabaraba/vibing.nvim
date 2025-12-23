@@ -5,6 +5,7 @@
 ---@field chat Vibing.ChatConfig チャットウィンドウ設定（位置、サイズ、自動コンテキスト、保存先）
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
+---@field status Vibing.StatusConfig ステータス通知設定（Claude側のターン状態表示）
 ---@field remote Vibing.RemoteConfig リモート制御設定（ソケットパス、自動検出）
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
 ---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
@@ -81,6 +82,14 @@
 ---@field chat? string chatアクションでの言語（指定されていない場合はdefaultを使用）
 ---@field inline? string inlineアクションでの言語（指定されていない場合はdefaultを使用）
 
+---@class Vibing.StatusConfig
+---ステータス通知設定
+---Claudeのターン中（思考中、ツール実行中、応答中）の状態をvim.notifyで表示
+---重複するメッセージは自動的にスキップされ、変更があった時のみ通知
+---@field enable boolean ステータス通知を有効化（trueで状態表示、falseで無効）
+---@field show_tool_details boolean ツール詳細を表示（trueで"Running Edit(file.lua)"、falseで"Running Edit"）
+---@field auto_dismiss_timeout number 完了通知の自動消去タイムアウト（ミリ秒、0で自動消去なし）
+
 local notify = require("vibing.utils.notify")
 local tools_const = require("vibing.constants.tools")
 local language_utils = require("vibing.utils.language")
@@ -124,6 +133,11 @@ M.defaults = {
       "Bash",
     },
     rules = {},  -- Granular permission rules (optional)
+  },
+  status = {
+    enable = true,  -- Enable status notifications
+    show_tool_details = true,  -- Show tool input details
+    auto_dismiss_timeout = 2000,  -- Auto-dismiss done notification after 2s
   },
   remote = {
     socket_path = nil,  -- Auto-detect from NVIM env variable
