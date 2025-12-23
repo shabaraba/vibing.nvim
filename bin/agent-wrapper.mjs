@@ -162,16 +162,13 @@ const queryOptions = {
   permissionMode: permissionMode,
   // Required when using bypassPermissions
   allowDangerouslySkipPermissions: permissionMode === 'bypassPermissions',
-  // Add MCP server for Neovim integration
-  mcpServers: {
-    'vibing-nvim': {
-      command: 'node',
-      args: [new URL('../mcp-server/dist/index.js', import.meta.url).pathname],
-      env: {
-        VIBING_RPC_PORT: '9876',
-      },
-    },
-  },
+  // Load user and project settings (~/.claude.json and .claude/)
+  // This allows vibing.nvim to use:
+  // - User's custom MCP servers (including vibing-nvim MCP registered via ~/.claude.json)
+  // - Project slash commands (.claude/commands/)
+  // - Project skills (.claude/skills/)
+  // - User's global settings and subagents
+  settingSources: ['user', 'project'],
 };
 
 // Add allowed tools (auto-allowed without prompting)

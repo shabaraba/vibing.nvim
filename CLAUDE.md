@@ -43,6 +43,20 @@ vibing.nvim provides MCP server integration that enables Claude Code to interact
 Neovim instance without deadlocks. The architecture uses an async RPC server to avoid blocking
 issues.
 
+**IMPORTANT: User MCP Servers, Slash Commands, Skills, and Subagents**
+
+vibing.nvim's Agent SDK wrapper (`bin/agent-wrapper.mjs`) automatically loads user and project
+settings via `settingSources: ['user', 'project']`. This means:
+
+- ✅ **User's custom MCP servers** from `~/.claude.json` are available
+- ✅ **Project slash commands** from `.claude/commands/` work out of the box
+- ✅ **Project and user skills** from `.claude/skills/` can be invoked
+- ✅ **User's global settings and subagents** are inherited
+
+You can use ALL your existing Claude Code configuration and tools within vibing.nvim sessions
+without any additional configuration. The vibing-nvim MCP server is automatically registered as
+a user-level MCP server during the build process (`build.sh` or `:VibingBuildMcp`).
+
 **Architecture:**
 
 ```text
@@ -98,7 +112,8 @@ await use_mcp_tool('vibing-nvim', 'nvim_execute', { command: 'write' });
 return {
   {
     "yourusername/vibing.nvim",
-    -- Auto-build MCP server on install/update (choose one):
+    -- Auto-build MCP server on install/update
+    -- This automatically registers vibing-nvim MCP in ~/.claude.json
     build = "./build.sh",  -- Shell script (recommended)
     -- OR
     -- build = function() require("vibing.install").build() end,  -- Lua function
@@ -108,13 +123,16 @@ return {
           enabled = true,
           rpc_port = 9876,
           auto_setup = true,  -- Auto-build if not built
-          auto_configure_claude_json = true,  -- Auto-configure ~/.claude.json
+          auto_configure_claude_json = true,  -- Auto-configure ~/.claude.json (legacy)
         },
       })
     end,
   },
 }
 ```
+
+**NOTE:** The `build` script now automatically registers the vibing-nvim MCP server in
+`~/.claude.json`, so manual configuration is typically not needed.
 
 **Manual Configuration:**
 

@@ -102,6 +102,20 @@ function M.build()
   local dist_index = mcp_dir .. "/dist/index.js"
   if vim.fn.filereadable(dist_index) == 1 then
     print_build("✓ MCP server built successfully")
+
+    -- Register MCP server in ~/.claude.json
+    local register_script = plugin_root .. "/bin/register-mcp.mjs"
+    if vim.fn.filereadable(register_script) == 1 then
+      print_build("Registering MCP server in ~/.claude.json...")
+      local register_output = vim.fn.system("node " .. vim.fn.shellescape(register_script))
+      if vim.v.shell_error == 0 then
+        print_build("✓ MCP server registered")
+      else
+        print_build("Warning: MCP registration failed", "warn")
+        print_build(register_output, "warn")
+      end
+    end
+
     return true
   else
     print_build("Build failed: dist/index.js not found", "error")
@@ -158,6 +172,23 @@ function M.build_async(callback)
         if vim.fn.filereadable(dist_index) == 1 then
           vim.schedule(function()
             print_build("✓ MCP server built successfully")
+
+            -- Register MCP server in ~/.claude.json
+            local register_script = plugin_root .. "/bin/register-mcp.mjs"
+            if vim.fn.filereadable(register_script) == 1 then
+              print_build("Registering MCP server in ~/.claude.json...")
+              vim.fn.jobstart("node " .. vim.fn.shellescape(register_script), {
+                on_exit = function(_, reg_exit_code)
+                  vim.schedule(function()
+                    if reg_exit_code == 0 then
+                      print_build("✓ MCP server registered")
+                    else
+                      print_build("Warning: MCP registration failed", "warn")
+                    end
+                  end)
+                end,
+              })
+            end
           end)
           if callback then
             callback(true)
