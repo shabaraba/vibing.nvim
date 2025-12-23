@@ -1,12 +1,11 @@
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
----Agent SDK設定、チャットウィンドウ、キーマップ、ツール権限、リモート制御を統合管理
+---Agent SDK設定、チャットウィンドウ、キーマップ、ツール権限を統合管理
 ---@field agent Vibing.AgentConfig Agent SDK設定（モード、モデル）
 ---@field chat Vibing.ChatConfig チャットウィンドウ設定（位置、サイズ、自動コンテキスト、保存先）
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
 ---@field status Vibing.StatusConfig ステータス通知設定（Claude側のターン状態表示）
----@field remote Vibing.RemoteConfig リモート制御設定（ソケットパス、自動検出）
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
 ---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
 
@@ -35,12 +34,6 @@
 ---Claudeのモード（code/plan/explore）とモデル（sonnet/opus/haiku）を指定
 ---@field default_mode "code"|"plan"|"explore" デフォルトモード（"code": コード生成、"plan": 計画、"explore": 探索）
 ---@field default_model "sonnet"|"opus"|"haiku" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速）
-
----@class Vibing.RemoteConfig
----リモート制御設定
----nvim --listen で起動されたNeovimインスタンスを別ウィンドウから制御する設定
----@field socket_path string? ソケットパス（明示的に指定、nilの場合は$NVIM環境変数を使用）
----@field auto_detect boolean 環境変数からソケットパスを自動検出するか（trueで$NVIMから自動取得）
 
 ---@class Vibing.McpConfig
 ---MCP統合設定
@@ -138,10 +131,6 @@ M.defaults = {
     enable = true,  -- Enable status notifications
     show_tool_details = true,  -- Show tool input details
     auto_dismiss_timeout = 2000,  -- Auto-dismiss done notification after 2s
-  },
-  remote = {
-    socket_path = nil,  -- Auto-detect from NVIM env variable
-    auto_detect = true,
   },
   mcp = {
     enabled = false,  -- MCP integration disabled by default

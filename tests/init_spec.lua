@@ -5,7 +5,6 @@ describe("vibing.init", function()
   local mock_config
   local mock_adapter
   local mock_chat
-  local mock_remote
   local original_notify
   local original_create_user_command
   local original_filetype_add
@@ -16,12 +15,11 @@ describe("vibing.init", function()
     package.loaded["vibing.config"] = nil
     package.loaded["vibing.adapters.agent_sdk"] = nil
     package.loaded["vibing.chat"] = nil
-    package.loaded["vibing.remote"] = nil
     package.loaded["vibing.actions.chat"] = nil
     package.loaded["vibing.actions.inline"] = nil
     package.loaded["vibing.context"] = nil
     package.loaded["vibing.integrations.oil"] = nil
-    package.loaded["vibing.context.migrator"] = nil
+    package.loaded["vibing.utils.notify"] = nil
 
     -- Save originals
     original_notify = vim.notify
@@ -30,6 +28,13 @@ describe("vibing.init", function()
 
     -- Mock vim.notify
     vim.notify = function() end
+
+    -- Mock notify module
+    package.loaded["vibing.utils.notify"] = {
+      error = function() end,
+      warn = function() end,
+      info = function() end,
+    }
 
     -- Mock vim.api.nvim_create_user_command
     vim.api.nvim_create_user_command = function() end
@@ -41,11 +46,7 @@ describe("vibing.init", function()
     mock_config = {
       setup = function() end,
       get = function()
-        return {
-          remote = {
-            auto_detect = false,
-          },
-        }
+        return {}
       end,
       defaults = {
         agent = {
@@ -74,24 +75,6 @@ describe("vibing.init", function()
     }
     package.loaded["vibing.chat"] = mock_chat
     package.loaded["vibing.actions.chat"] = mock_chat
-
-    -- Mock remote module
-    mock_remote = {
-      setup = function() end,
-      is_available = function()
-        return true
-      end,
-      execute = function() end,
-      get_status = function()
-        return {
-          mode = "n",
-          bufname = "test.lua",
-          line = 1,
-          col = 1,
-        }
-      end,
-    }
-    package.loaded["vibing.remote"] = mock_remote
 
     Vibing = require("vibing.init")
   end)
@@ -135,42 +118,6 @@ describe("vibing.init", function()
       assert.is_true(chat_setup_called)
     end)
 
-    it("should initialize remote control when auto_detect is enabled", function()
-      package.loaded["vibing.adapters.agent_sdk"] = mock_adapter
-      mock_config.get = function()
-        return {
-          remote = {
-            auto_detect = true,
-            socket_path = "/tmp/nvim.socket",
-          },
-        }
-      end
-
-      local remote_setup_called = false
-      local remote_socket_path = nil
-      mock_remote.setup = function(path)
-        remote_setup_called = true
-        remote_socket_path = path
-      end
-
-      Vibing.setup()
-
-      assert.is_true(remote_setup_called)
-      assert.equals("/tmp/nvim.socket", remote_socket_path)
-    end)
-
-    it("should not initialize remote when auto_detect is disabled", function()
-      package.loaded["vibing.adapters.agent_sdk"] = mock_adapter
-      local remote_setup_called = false
-      mock_remote.setup = function()
-        remote_setup_called = true
-      end
-
-      Vibing.setup()
-
-      assert.is_false(remote_setup_called)
-    end)
-
     it("should register .vibing filetype", function()
       package.loaded["vibing.adapters.agent_sdk"] = mock_adapter
       local filetype_add_called = false
@@ -206,17 +153,8 @@ describe("vibing.init", function()
         "VibingContext",
         "VibingClearContext",
         "VibingInline",
-        "VibingInlineAction",
         "VibingCancel",
-        "VibingOpenChat",
-        "VibingRemote",
-        "VibingRemoteStatus",
-        "VibingSendToChat",
         "VibingReloadCommands",
-        "VibingMigrate",
-        "VibingBuildMcp",
-        "VibingSetupMcp",
-        "VibingConfigureClaude",
       }
 
       assert.equals(#expected, #registered_commands)
@@ -277,74 +215,6 @@ describe("vibing.init", function()
       callback()
 
       assert.is_true(cancel_called)
-    end)
-
-    it("VibingRemote should execute remote command", function()
-      local execute_called = false
-      local execute_cmd = nil
-      mock_remote.execute = function(cmd)
-        execute_called = true
-        execute_cmd = cmd
-      end
-
-      local callback
-      vim.api.nvim_create_user_command = function(name, cb)
-        if name == "VibingRemote" then
-          callback = cb
-        end
-      end
-
-      Vibing.setup()
-      callback({ args = "write" })
-
-      assert.is_true(execute_called)
-      assert.equals("write", execute_cmd)
-    end)
-
-    it("VibingRemoteStatus should get and print status", function()
-      local callback
-      vim.api.nvim_create_user_command = function(name, cb)
-        if name == "VibingRemoteStatus" then
-          callback = cb
-        end
-      end
-
-      Vibing.setup()
-      -- Should not error
-      callback()
-    end)
-
-    it("VibingMigrate should handle empty args (current buffer)", function()
-      local original_cmd = vim.cmd
-      vim.cmd = function() end
-
-      local migrator_called = false
-      local mock_migrator = {
-        migrate_current_buffer = function()
-          migrator_called = true
-          return true
-        end,
-      }
-      package.loaded["vibing.context.migrator"] = mock_migrator
-
-      mock_chat.chat_buffer = {
-        file_path = "/tmp/test.md",
-      }
-
-      local callback
-      vim.api.nvim_create_user_command = function(name, cb)
-        if name == "VibingMigrate" then
-          callback = cb
-        end
-      end
-
-      Vibing.setup()
-      callback({ args = "" })
-
-      assert.is_true(migrator_called)
-
-      -- Restore
-      vim.cmd = original_cmd
     end)
   end)
 
@@ -421,7 +291,7 @@ describe("vibing.init", function()
       assert.is_true(config_setup_called)
       assert.is_true(chat_setup_called)
       assert.is_not_nil(Vibing.adapter)
-      assert.equals(17, commands_registered)
+      assert.equals(8, commands_registered)
     end)
   end)
 end)

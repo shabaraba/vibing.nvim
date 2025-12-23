@@ -163,29 +163,6 @@ keymaps.add_context    Key to add file to context
 :VibingCancel
     Cancel the current AI request.
 
-                                                          *:VibingOpenChat*
-:VibingOpenChat <file>
-    Open a saved chat file.
-
-                                                            *:VibingRemote*
-:VibingRemote <command>
-    Execute command in remote Neovim instance (requires --listen).
-
-                                                      *:VibingRemoteStatus*
-:VibingRemoteStatus
-    Show remote Neovim status (mode, buffer, cursor position).
-
-                                                       *:VibingSendToChat*
-:VibingSendToChat
-    Send file from oil.nvim to chat (requires oil.nvim plugin).
-
-                                                           *:VibingMigrate*
-:VibingMigrate [--scan|<file>]
-    Migrate chat files to new format.
-    No args: migrate current chat buffer
-    --scan: scan and migrate all chat files
-    <file>: migrate specific file
-
 ==============================================================================
 6. CHAT COMMANDS                                        *vibing-chat-commands*
 
