@@ -105,28 +105,34 @@ use {
 
 ### User Commands
 
-| Command                               | Description                                            |
-| ------------------------------------- | ------------------------------------------------------ |
-| `:VibingChat`                         | Open chat window                                       |
-| `:VibingContext [path]`               | Add file to context                                    |
-| `:VibingClearContext`                 | Clear all context                                      |
-| `:VibingInline [action\|instruction]` | Run action or custom instruction on selection          |
-| `:VibingExplain`                      | Explain selected code                                  |
-| `:VibingFix`                          | Fix selected code issues                               |
-| `:VibingFeature`                      | Implement feature in selected code                     |
-| `:VibingRefactor`                     | Refactor selected code                                 |
-| `:VibingTest`                         | Generate tests for selected code                       |
-| `:VibingCustom <instruction>`         | Execute custom instruction on code                     |
-| `:VibingCancel`                       | Cancel current request                                 |
-| `:VibingOpenChat <file>`              | Open saved chat file                                   |
-| `:VibingRemote <command>`             | Execute command in remote Neovim (requires `--listen`) |
-| `:VibingRemoteStatus`                 | Show remote Neovim status                              |
-| `:VibingSendToChat`                   | Send file from oil.nvim to chat                        |
-| `:VibingMigrate`                      | Migrate chat files to new format                       |
+| Command                          | Description                                                                       |
+| -------------------------------- | --------------------------------------------------------------------------------- |
+| `:VibingChat [file]`             | Open chat window or saved chat file                                               |
+| `:VibingToggleChat`              | Toggle chat window (open/close)                                                   |
+| `:VibingSlashCommands`           | Show slash command picker in chat                                                 |
+| `:VibingContext [path]`          | Add file to context (or from oil.nvim if no path)                                 |
+| `:VibingClearContext`            | Clear all context                                                                 |
+| `:VibingInline [action\|prompt]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled. |
+| `:VibingInlineAction`            | Alias of `:VibingInline` (for backward compatibility)                             |
+| `:VibingCancel`                  | Cancel current request                                                            |
 
 ### Inline Actions
 
-**Predefined actions:**
+**Rich UI Picker (recommended):**
+
+```vim
+:'<,'>VibingInline
+" Opens a split-panel UI:
+" - Left: Action menu (fix, feat, explain, refactor, test)
+"   - Navigate: j/k or arrow keys
+"   - Move to input: Tab
+" - Right: Additional instruction input (optional)
+"   - Move to menu: Shift-Tab
+" - Execute: Enter (from either panel)
+" - Cancel: Esc or Ctrl-c
+```
+
+**Direct Execution (with arguments):**
 
 ```vim
 :'<,'>VibingInline fix       " Fix code issues
@@ -134,29 +140,34 @@ use {
 :'<,'>VibingInline explain   " Explain code
 :'<,'>VibingInline refactor  " Refactor code
 :'<,'>VibingInline test      " Generate tests
+
+" With additional instructions
+:'<,'>VibingInline explain 日本語で
+:'<,'>VibingInline fix using async/await
 ```
 
-**Natural language instructions:**
+**Natural Language Instructions:**
 
 ```vim
 :'<,'>VibingInline "Convert this function to TypeScript"
 :'<,'>VibingInline "Add error handling with try-catch"
-:'<,'>VibingCustom "Optimize this loop for performance"
+:'<,'>VibingInline "Optimize this loop for performance"
 ```
 
 ### Slash Commands (in Chat)
 
-| Command                   | Description                                                      |
-| ------------------------- | ---------------------------------------------------------------- |
-| `/context <file>`         | Add file to context                                              |
-| `/clear`                  | Clear context                                                    |
-| `/save`                   | Save current chat                                                |
-| `/summarize`              | Summarize conversation                                           |
-| `/mode <mode>`            | Set execution mode (auto/plan/code/explore)                      |
-| `/model <model>`          | Set AI model (opus/sonnet/haiku)                                 |
-| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules |
-| `/allow [tool]`           | Add tool to allow list, or show current list if no args          |
-| `/deny [tool]`            | Add tool to deny list, or show current list if no args           |
+| Command                   | Description                                                 |
+| ------------------------- | ----------------------------------------------------------- |
+| `/context <file>`         | Add file to context                                         |
+| `/clear`                  | Clear context                                               |
+| `/save`                   | Save current chat                                           |
+| `/summarize`              | Summarize conversation                                      |
+| `/mode <mode>`            | Set execution mode (auto/plan/code/explore)                 |
+| `/model <model>`          | Set AI model (opus/sonnet/haiku)                            |
+| `/permissions` or `/perm` | Interactive Permission Builder - configure tool permissions |
+| `/allow [tool]`           | Add tool to allow list, or show current list if no args     |
+| `/deny [tool]`            | Add tool to deny list, or show current list if no args      |
+| `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions) |
 
 ## ⚙️ Configuration Examples
 
@@ -270,65 +281,73 @@ require("vibing").setup({
 })
 ```
 
-## 🔌 Remote Control
+## 🤖 Neovim Agent Tools (MCP Integration)
 
-Control Neovim instances via socket:
-
-```bash
-# Start Neovim with remote control
-nvim --listen /tmp/nvim.sock
-
-# In another Neovim instance
-:VibingRemote "edit ~/.config/nvim/init.lua"
-:VibingRemoteStatus
-```
-
-## 🤖 Neovim Agent Tools
-
-When Neovim is started with `--listen`, Claude can directly control your Neovim instance through MCP (Model Context Protocol) integration:
+Claude can directly control Neovim through MCP (Model Context Protocol) integration. The plugin automatically starts an RPC server for seamless communication.
 
 ### How It Works
 
-1. Start Neovim with socket: `nvim --listen /tmp/nvim.sock`
-2. The `$NVIM` environment variable is automatically set by Neovim
-3. Agent SDK detects `$NVIM` and loads the Neovim MCP server
-4. Claude gains access to Neovim control tools
+1. **vibing.nvim** starts an internal RPC server on port 9876
+2. **Agent SDK** loads the MCP server (`mcp-server/dist/index.js`)
+3. **MCP server** connects to the RPC server to control Neovim
+4. Claude gains access to Neovim control tools (`mcp__vibing-nvim__*`)
+
+**Architecture:**
+
+```
+Agent SDK → MCP Server → RPC Server (port 9876) → Neovim API
+```
 
 ### Available Tools
 
-| Tool                         | Description         | Use Case                       |
-| ---------------------------- | ------------------- | ------------------------------ |
-| `mcp__neovim__buf_get_lines` | Read buffer content | "What's in my current file?"   |
-| `mcp__neovim__buf_set_lines` | Write to buffer     | "Add a TODO comment at line 5" |
-| `mcp__neovim__command`       | Execute Ex commands | "Save the current buffer"      |
-| `mcp__neovim__get_status`    | Get Neovim status   | "What file am I editing?"      |
+| Tool                                          | Description                  | Use Case                       |
+| --------------------------------------------- | ---------------------------- | ------------------------------ |
+| `mcp__vibing-nvim__nvim_get_buffer`           | Read buffer content          | "What's in my current file?"   |
+| `mcp__vibing-nvim__nvim_set_buffer`           | Write to buffer              | "Add a TODO comment at line 5" |
+| `mcp__vibing-nvim__nvim_execute`              | Execute Neovim Ex commands   | "Save the current buffer"      |
+| `mcp__vibing-nvim__nvim_get_info`             | Get current file information | "What file am I editing?"      |
+| `mcp__vibing-nvim__nvim_list_buffers`         | List all loaded buffers      | "Show me all open files"       |
+| `mcp__vibing-nvim__nvim_get_cursor`           | Get cursor position          | "Where is my cursor?"          |
+| `mcp__vibing-nvim__nvim_set_cursor`           | Set cursor position          | "Move cursor to line 10"       |
+| `mcp__vibing-nvim__nvim_get_visual_selection` | Get visual selection content | "What did I select?"           |
 
 ### Example Usage
 
 ```vim
-" Start Neovim with listen socket
-" $ nvim --listen /tmp/nvim.sock
-
 :VibingChat
+" In chat: 'Show me all open buffers'
+" Claude will use mcp__vibing-nvim__nvim_list_buffers
+
 " In chat: 'Add a comment at the top of this file explaining what it does'
-" Claude will use mcp__neovim__buf_set_lines to add the comment
+" Claude will use mcp__vibing-nvim__nvim_set_buffer to add the comment
 ```
 
 ### Permission Control
 
-Neovim tools respect the permission system:
+MCP tools are automatically added to the allow list. You can control access via permissions:
 
 ```lua
 require("vibing").setup({
   permissions = {
     -- Allow only read operations
-    allow = { "Read", "mcp__neovim__buf_get_lines", "mcp__neovim__get_status" },
-    deny = { "mcp__neovim__buf_set_lines", "mcp__neovim__command" },
+    allow = {
+      "Read",
+      "mcp__vibing-nvim__nvim_get_buffer",
+      "mcp__vibing-nvim__nvim_list_buffers",
+      "mcp__vibing-nvim__nvim_get_info",
+    },
+    -- Deny write operations
+    deny = {
+      "mcp__vibing-nvim__nvim_set_buffer",
+      "mcp__vibing-nvim__nvim_execute",
+    },
   },
 })
 ```
 
-See `docs/neovim-integration-test.md` for detailed testing instructions.
+### Automatic Setup
+
+The RPC server starts automatically when vibing.nvim is loaded. MCP server configuration is automatically added to `~/.claude.json` on first use.
 
 ## 📝 Chat File Format
 

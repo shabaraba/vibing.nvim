@@ -1,0 +1,25 @@
+{
+  "name": "@vibing/mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server for vibing.nvim Neovim integration",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "vibing-mcp-server": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

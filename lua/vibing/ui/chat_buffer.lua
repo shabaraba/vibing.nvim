@@ -798,7 +798,10 @@ function ChatBuffer:_flush_chunks()
   -- カーソルを最下部に移動
   if self:is_open() then
     local new_lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
-    vim.api.nvim_win_set_cursor(self.win, { #new_lines, 0 })
+    local line_count = #new_lines
+    if line_count > 0 then
+      vim.api.nvim_win_set_cursor(self.win, { line_count, 0 })
+    end
   end
 
   -- バッファをクリア

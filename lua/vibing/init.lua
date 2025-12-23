@@ -28,6 +28,27 @@ function M.setup(opts)
     },
   })
 
+  -- MCP統合の初期化
+  if M.config.mcp and M.config.mcp.enabled then
+    -- 自動セットアップ（初回のみ）
+    local mcp_setup = require("vibing.mcp.setup")
+    mcp_setup.auto_setup(M.config)
+
+    -- RPCサーバー起動
+    local rpc_server = require("vibing.rpc_server")
+    local port = rpc_server.start(M.config.mcp.rpc_port)
+    if port > 0 then
+      notify.info(string.format("MCP RPC server started on port %d", port))
+
+      -- 終了時にクリーンアップ
+      vim.api.nvim_create_autocmd("VimLeavePre", {
+        callback = function()
+          rpc_server.stop()
+        end,
+      })
+    end
+  end
+
   -- アダプターの初期化
   local adapter_name = M.config.adapter
   local ok, adapter_module = pcall(require, "vibing.adapters." .. adapter_name)
@@ -225,6 +246,22 @@ function M._register_commands()
       end
     end
   end, { nargs = "?", desc = "Migrate chat file to new format", complete = "file" })
+
+  -- MCP関連コマンド
+  vim.api.nvim_create_user_command("VibingBuildMcp", function()
+    local mcp_setup = require("vibing.mcp.setup")
+    mcp_setup.build_mcp_server()
+  end, { desc = "Build vibing.nvim MCP server" })
+
+  vim.api.nvim_create_user_command("VibingSetupMcp", function()
+    local mcp_setup = require("vibing.mcp.setup")
+    mcp_setup.setup_wizard(M.config)
+  end, { desc = "Interactive MCP setup wizard" })
+
+  vim.api.nvim_create_user_command("VibingConfigureClaude", function()
+    local mcp_setup = require("vibing.mcp.setup")
+    mcp_setup.setup_claude_json({ force = true, port = M.config.mcp.rpc_port })
+  end, { desc = "Configure ~/.claude.json for vibing.nvim" })
 end
 
 ---現在のアダプターインスタンスを取得

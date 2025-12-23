@@ -9,6 +9,7 @@
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
 ---@field remote Vibing.RemoteConfig リモート制御設定（ソケットパス、自動検出）
+---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
 ---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
 
 ---@class Vibing.PermissionRule
@@ -42,6 +43,14 @@
 ---nvim --listen で起動されたNeovimインスタンスを別ウィンドウから制御する設定
 ---@field socket_path string? ソケットパス（明示的に指定、nilの場合は$NVIM環境変数を使用）
 ---@field auto_detect boolean 環境変数からソケットパスを自動検出するか（trueで$NVIMから自動取得）
+
+---@class Vibing.McpConfig
+---MCP統合設定
+---Neovim RPC ServerとMCPサーバーの連携を制御
+---@field enabled boolean MCP統合の有効化（trueでRPCサーバーを起動）
+---@field rpc_port number RPCサーバーのポート番号（デフォルト: 9876）
+---@field auto_setup boolean プラグインインストール時に自動セットアップ（MCPビルド）を実行
+---@field auto_configure_claude_json boolean ~/.claude.jsonを自動的に設定（要auto_setup）
 
 ---@class Vibing.ChatConfig
 ---チャット機能設定
@@ -132,6 +141,12 @@ M.defaults = {
   remote = {
     socket_path = nil,  -- Auto-detect from NVIM env variable
     auto_detect = true,
+  },
+  mcp = {
+    enabled = false,  -- MCP integration disabled by default
+    rpc_port = 9876,  -- RPC server port
+    auto_setup = false,  -- Auto-build MCP server on plugin install
+    auto_configure_claude_json = false,  -- Auto-configure ~/.claude.json
   },
   language = nil,  -- No language specification by default (responds in English)
 }
