@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-vibing.nvim is a Neovim plugin that integrates Claude AI through the Agent SDK. It provides chat and inline code actions within Neovim.
+vibing.nvim is a Neovim plugin that integrates Claude AI through the Agent SDK.
+It provides chat and inline code actions within Neovim.
 
 ## Commands
 
@@ -38,11 +39,13 @@ The Node.js wrapper (`bin/agent-wrapper.mjs`) outputs streaming responses as JSO
 
 ### MCP Integration (Model Context Protocol)
 
-vibing.nvim provides MCP server integration that enables Claude Code to interact with a running Neovim instance without deadlocks. The architecture uses an async RPC server to avoid blocking issues.
+vibing.nvim provides MCP server integration that enables Claude Code to interact with a running
+Neovim instance without deadlocks. The architecture uses an async RPC server to avoid blocking
+issues.
 
 **Architecture:**
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │ Neovim Process                                           │
 │  ├─ RPC Server (lua/vibing/rpc_server.lua)              │
@@ -205,7 +208,12 @@ language: ja # Optional: default language for AI responses
 ---
 ```
 
-When reopening a saved chat (`:VibingOpenChat` or `:e`), the session resumes via the stored `session_id`. The `mode` and `model` fields are automatically populated from `config.agent.default_mode` and `config.agent.default_model` on chat creation, and can be changed via `/mode` and `/model` slash commands. Configured permissions are recorded in frontmatter for transparency and auditability. The optional `language` field ensures consistent AI response language across sessions.
+When reopening a saved chat (`:VibingOpenChat` or `:e`), the session resumes via the stored
+`session_id`. The `mode` and `model` fields are automatically populated from
+`config.agent.default_mode` and `config.agent.default_model` on chat creation, and can be changed
+via `/mode` and `/model` slash commands. Configured permissions are recorded in frontmatter for
+transparency and auditability. The optional `language` field ensures consistent AI response language
+across sessions.
 
 ### Permissions Configuration
 
@@ -309,13 +317,16 @@ This launches an interactive UI that guides you through:
 3. Optionally specifying Bash command patterns
 4. Automatically updating chat frontmatter
 
-The Permission Builder provides a user-friendly alternative to manually editing configuration or frontmatter.
+The Permission Builder provides a user-friendly alternative to manually editing configuration
+or frontmatter.
 
 ### Key Patterns
 
-**Adapter Pattern:** All AI backends implement the `Adapter` interface with `execute()`, `stream()`, `cancel()`, and feature detection via `supports()`.
+**Adapter Pattern:** All AI backends implement the `Adapter` interface with `execute()`, `stream()`,
+`cancel()`, and feature detection via `supports()`.
 
-**Context Format:** Files are referenced as `@file:relative/path.lua` or `@file:path:L10-L25` for selections.
+**Context Format:** Files are referenced as `@file:relative/path.lua` or `@file:path:L10-L25` for
+selections.
 
 **Permission System:** Three-layer permission control:
 
@@ -323,11 +334,14 @@ The Permission Builder provides a user-friendly alternative to manually editing 
 2. **Permission Modes** - Automation level (default/acceptEdits/bypassPermissions)
 3. **Granular Rules** - Path/command/pattern/domain-based fine-grained control
 
-**Interactive UI:** Permission Builder uses `vim.ui.select()` for picker-based configuration, automatically updating chat frontmatter without manual YAML editing.
+**Interactive UI:** Permission Builder uses `vim.ui.select()` for picker-based configuration,
+automatically updating chat frontmatter without manual YAML editing.
 
-**Diff Viewer:** When Claude edits files, use `gd` (go to diff) on file paths in chat to open a vertical split diff view showing changes before/after.
+**Diff Viewer:** When Claude edits files, use `gd` (go to diff) on file paths in chat to open a
+vertical split diff view showing changes before/after.
 
-**Language Support:** Configure AI response language globally or per-action (chat vs inline), supporting multi-language development workflows.
+**Language Support:** Configure AI response language globally or per-action (chat vs inline),
+supporting multi-language development workflows.
 
 **Remote Control (Claude Skill):** The `remote.lua` module provides socket-based communication with another Neovim instance
 for testing and development. The `.claude/skills/neovim-remote-control/` skill exposes this API to Claude for E2E testing

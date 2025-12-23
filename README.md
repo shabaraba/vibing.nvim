@@ -10,9 +10,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Release](https://img.shields.io/github/v/release/shabaraba/vibing.nvim)](https://github.com/shabaraba/vibing.nvim/releases)
 
-A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Agent SDK, bringing intelligent chat conversations and context-aware inline code actions directly into your editor.
+A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Agent SDK, bringing
+intelligent chat conversations and context-aware inline code actions directly into your editor.
 
-[Features](#-features) • [Installation](#-installation) • [Usage](#-usage) • [Configuration](#️-configuration) • [Contributing](#-contributing)
+[Features](#-features) • [Installation](#-installation) • [Usage](#-usage) •
+[Configuration](#️-configuration-examples) • [Contributing](#-contributing)
 
 </div>
 
@@ -198,7 +200,8 @@ permissions = {
 }
 ```
 
-These defaults are used as a **template** when creating new chat files. Each chat file's frontmatter contains its own permissions, which are used at runtime.
+These defaults are used as a **template** when creating new chat files. Each chat file's frontmatter
+contains its own permissions, which are used at runtime.
 
 ### Custom Configuration
 
@@ -360,7 +363,8 @@ chat = {
 
 ### Permissions
 
-Control what tools Claude can use. See [Permissions Configuration](#permissions-configuration) for detailed examples.
+Control what tools Claude can use. See [Granular Permission Rules](#granular-permission-rules) for
+detailed examples.
 
 ```lua
 permissions = {

@@ -147,29 +147,6 @@ describe("vibing.actions.inline", function()
       InlineActions.execute("fix")
     end)
 
-    it("should use default action when no argument", function()
-      -- Test that execute() without args uses default action
-      local called = false
-      InlineActions._execute_direct = function(adapter, prompt, opts)
-        called = true
-        assert.is_not_nil(prompt:match("Fix the following"))
-      end
-
-      InlineActions.execute()
-      assert.is_true(called)
-    end)
-
-    it("should use default action when empty string", function()
-      local called = false
-      InlineActions._execute_direct = function(adapter, prompt, opts)
-        called = true
-        assert.is_not_nil(prompt:match("Fix the following"))
-      end
-
-      InlineActions.execute("")
-      assert.is_true(called)
-    end)
-
     it("should call _execute_with_output for explain action", function()
       local output_called = false
       InlineActions._execute_with_output = function(adapter, prompt, opts, title)

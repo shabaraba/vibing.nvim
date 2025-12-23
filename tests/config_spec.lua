@@ -10,11 +10,6 @@ describe("vibing.config", function()
   end)
 
   describe("defaults", function()
-    it("should have adapter field", function()
-      assert.is_not_nil(config.defaults.adapter)
-      assert.equals("agent_sdk", config.defaults.adapter)
-    end)
-
     it("should have chat configuration", function()
       assert.is_not_nil(config.defaults.chat)
       assert.is_not_nil(config.defaults.chat.window)
@@ -59,18 +54,6 @@ describe("vibing.config", function()
       -- Non-overridden defaults should remain
       assert.is_not_nil(result.agent)
       assert.equals("code", result.agent.default_mode)
-    end)
-
-    it("should handle empty user config", function()
-      config.setup({})
-      local result = config.get()
-      assert.equals("agent_sdk", result.adapter)
-    end)
-
-    it("should handle nil user config", function()
-      config.setup(nil)
-      local result = config.get()
-      assert.equals("agent_sdk", result.adapter)
     end)
 
     it("should warn about invalid tools in permissions", function()

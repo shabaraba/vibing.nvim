@@ -47,7 +47,12 @@ describe("vibing.init", function()
           },
         }
       end,
-      defaults = {},
+      defaults = {
+        agent = {
+          default_mode = "code",
+          default_model = "sonnet",
+        },
+      },
     }
     package.loaded["vibing.config"] = mock_config
 
