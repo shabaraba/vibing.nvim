@@ -1,6 +1,9 @@
 import js from '@eslint/js';
 
 export default [
+  {
+    ignores: ['node_modules/**', '**/dist/**', '**/build/**', '.vibing/**'],
+  },
   js.configs.recommended,
   {
     files: ['**/*.{js,mjs}'],
@@ -21,8 +24,5 @@ export default [
       'prefer-const': 'error',
       'no-var': 'error',
     },
-  },
-  {
-    ignores: ['node_modules/**', 'dist/**', 'build/**', '.vibing/**'],
   },
 ];
