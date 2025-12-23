@@ -24,6 +24,7 @@ A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Ag
 - [Installation](#-installation)
 - [Usage](#-usage)
 - [Configuration Examples](#️-configuration-examples)
+- [Configuration Reference](#-configuration-reference)
 - [Chat File Format](#-chat-file-format)
 - [Architecture](#️-architecture)
 - [Contributing](#-contributing)
@@ -56,11 +57,10 @@ A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Ag
     -- Optional: for file browser integration
     "stevearc/oil.nvim",
   },
-  build = "npm install",
+  build = "./build.sh",  -- Builds MCP server for Neovim integration
   config = function()
     require("vibing").setup({
       -- Default configuration
-      adapter = "agent_sdk",  -- "agent_sdk" | "claude" | "claude_acp"
       chat = {
         window = {
           position = "current",  -- "current" | "right" | "left" | "float"
@@ -92,7 +92,7 @@ A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Ag
 ```lua
 use {
   "shabaraba/vibing.nvim",
-  run = "npm install",
+  run = "./build.sh",  -- Builds MCP server for Neovim integration
   config = function()
     require("vibing").setup()
   end,
@@ -304,72 +304,180 @@ require("vibing").setup({
 })
 ```
 
-## 📝 Chat File Format
+## 📚 Configuration Reference
 
-Chats are saved as Markdown with YAML frontmatter for session resumption and configuration:
+Complete reference of all configuration options:
 
-```yaml
----
-vibing.nvim: true
-session_id: <sdk-session-id>
-created_at: 2024-01-01T12:00:00
-mode: code  # auto | plan | code | explore
-model: sonnet  # sonnet | opus | haiku
-permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions
-permissions_allow:
-  - Read
-  - Edit
-  - Write
-  - Glob
-  - Grep
-permissions_deny:
-  - Bash
-language: ja  # Optional: default language for AI responses
----
-# Vibing Chat
+### Agent Settings
 
-## User
-
-Hello, Claude!
-
-## Assistant
-
-Hello! How can I help you today?
-```
-
-**Key Features:**
-
-" In chat: 'Add a comment at the top of this file explaining what it does'
-" Claude will use mcp**vibing-nvim**nvim_set_buffer to add the comment
-
-````
-
-### Permission Control
-
-MCP tools are automatically added to the allow list. You can control access via permissions:
+Controls Claude Agent SDK behavior:
 
 ```lua
-require("vibing").setup({
-  permissions = {
-    -- Allow only read operations
-    allow = {
-      "Read",
-      "mcp__vibing-nvim__nvim_get_buffer",
-      "mcp__vibing-nvim__nvim_list_buffers",
-      "mcp__vibing-nvim__nvim_get_info",
-    },
-    -- Deny write operations
-    deny = {
-      "mcp__vibing-nvim__nvim_set_buffer",
-      "mcp__vibing-nvim__nvim_execute",
-    },
+agent = {
+  default_mode = "code",    -- Default execution mode
+                            -- "code": Direct implementation
+                            -- "plan": Plan first, then implement
+                            -- "explore": Explore and analyze codebase
+
+  default_model = "sonnet", -- Default Claude model
+                            -- "sonnet": Balanced (recommended)
+                            -- "opus": Most capable
+                            -- "haiku": Fastest
+}
+```
+
+### Chat Settings
+
+Chat window and session configuration:
+
+```lua
+chat = {
+  window = {
+    position = "current",  -- Window position
+                          -- "current": Open in current window
+                          -- "right": Right vertical split
+                          -- "left": Left vertical split
+                          -- "float": Floating window
+
+    width = 0.4,          -- Window width (0-1: ratio, >1: absolute columns)
+    border = "rounded",   -- Border style: "rounded" | "single" | "double" | "none"
   },
-})
-````
 
-### Automatic Setup
+  auto_context = true,     -- Automatically add open buffers to context
 
-The RPC server starts automatically when vibing.nvim is loaded. MCP server configuration is automatically added to `~/.claude.json` on first use.
+  save_location_type = "project",  -- Chat file save location
+                                   -- "project": .vibing/chat/ in project root
+                                   -- "user": ~/.local/share/nvim/vibing/chats/
+                                   -- "custom": Use save_dir path
+
+  save_dir = "~/.local/share/nvim/vibing/chats",  -- Used when save_location_type="custom"
+
+  context_position = "append",  -- Where to add new context files
+                               -- "append": Add to end of context list
+                               -- "prepend": Add to beginning
+}
+```
+
+### Permissions
+
+Control what tools Claude can use. See [Permissions Configuration](#permissions-configuration) for detailed examples.
+
+```lua
+permissions = {
+  mode = "acceptEdits",  -- Permission mode
+                        -- "default": Ask for confirmation each time
+                        -- "acceptEdits": Auto-approve Edit/Write (recommended)
+                        -- "bypassPermissions": Auto-approve all (use with caution)
+
+  allow = {              -- Tools to allow (empty = allow all except denied)
+    "Read",              -- Read files
+    "Edit",              -- Edit existing files
+    "Write",             -- Create new files
+    "Glob",              -- Search files by pattern
+    "Grep",              -- Search file contents
+    -- "Bash",           -- Execute shell commands (security risk)
+    -- "WebSearch",      -- Search the web
+    -- "WebFetch",       -- Fetch web pages
+  },
+
+  deny = {               -- Tools to deny (takes precedence over allow)
+    "Bash",              -- Block shell commands by default
+  },
+
+  rules = {},            -- Advanced: Granular permission rules
+                        -- See Granular Permission Rules section
+}
+```
+
+### Keymaps
+
+Chat buffer key bindings:
+
+```lua
+keymaps = {
+  send = "<CR>",         -- Send message
+  cancel = "<C-c>",      -- Cancel current request
+  add_context = "<C-a>", -- Add file to context
+  open_diff = "gd",      -- Open diff viewer on file paths
+  open_file = "gf",      -- Open file on file paths
+}
+```
+
+### MCP (Model Context Protocol)
+
+Enable Claude to directly control Neovim:
+
+```lua
+mcp = {
+  enabled = false,               -- Enable MCP integration
+  rpc_port = 9876,              -- RPC server port
+  auto_setup = false,           -- Auto-build MCP server on plugin install
+  auto_configure_claude_json = false,  -- Auto-configure ~/.claude.json
+}
+```
+
+**What is `auto_configure_claude_json`?**
+
+When enabled, automatically adds vibing.nvim MCP server to `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "vibing-nvim": {
+      "command": "node",
+      "args": ["/path/to/vibing.nvim/mcp-server/dist/index.js"],
+      "env": { "VIBING_RPC_PORT": "9876" }
+    }
+  }
+}
+```
+
+This allows Claude Code CLI to control your Neovim instance (read/write buffers, execute commands).
+
+**Recommended for lazy.nvim:**
+
+```lua
+{
+  "shabaraba/vibing.nvim",
+  build = "./build.sh",
+  config = function()
+    require("vibing").setup({
+      mcp = {
+        enabled = true,
+        auto_setup = true,              -- Build on install
+        auto_configure_claude_json = true,  -- Auto-configure
+      },
+    })
+  end,
+}
+```
+
+### Language
+
+Configure AI response language:
+
+```lua
+-- Simple: All responses in one language
+language = "ja"  -- or "en", "fr", etc.
+
+-- Advanced: Different languages per context
+language = {
+  default = "ja",  -- Default language
+  chat = "ja",     -- Chat window responses
+  inline = "en",   -- Inline action responses
+}
+```
+
+### Remote Control
+
+For testing and development (advanced):
+
+```lua
+remote = {
+  socket_path = nil,   -- Auto-detect from NVIM env variable
+  auto_detect = true,  -- Enable remote control detection
+}
+```
 
 ## 📝 Chat File Format
 
@@ -406,10 +514,6 @@ Hello! How can I help you today?
 
 **Key Features:**
 
-- **Session Resumption**: Automatically resumes conversation using `session_id`
-- **Configuration Tracking**: Records mode, model, and permissions for transparency
-- **Language Support**: Optional `language` field for consistent AI response language
-- **Auditability**: All permissions are visible in frontmatter
 - **Session Resumption**: Automatically resumes conversation using `session_id`
 - **Configuration Tracking**: Records mode, model, and permissions for transparency
 - **Language Support**: Optional `language` field for consistent AI response language
@@ -422,7 +526,7 @@ For detailed architecture documentation, see [CLAUDE.md](./CLAUDE.md).
 **Key Components:**
 
 - **Agent SDK Integration** - Node.js wrapper communicating via JSON Lines
-- **Adapter Pattern** - Pluggable backends (agent_sdk, claude, claude_acp)
+- **Agent SDK Adapter** - Claude Agent SDK for AI interactions
 - **Context System** - Automatic and manual file context management
 - **Session Persistence** - Resume conversations with full history
 

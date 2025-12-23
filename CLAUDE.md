@@ -159,11 +159,10 @@ See `mcp-server/README.md` and `docs/lazy-setup-example.lua` for detailed setup 
 - `lua/vibing/init.lua` - Entry point, command registration
 - `lua/vibing/config.lua` - Configuration with type annotations
 
-**Adapters (pluggable backends):**
+**Adapter:**
 
 - `adapters/base.lua` - Abstract adapter interface
-- `adapters/agent_sdk.lua` - Main adapter using Claude Agent SDK (recommended)
-- `adapters/claude.lua`, `adapters/claude_acp.lua` - Alternative backends
+- `adapters/agent_sdk.lua` - Claude Agent SDK adapter (only supported backend)
 
 **UI:**
 
@@ -340,7 +339,6 @@ Example configuration showing all available settings:
 
 ```lua
 require("vibing").setup({
-  adapter = "agent_sdk",  -- Recommended: "agent_sdk" | "claude" | "claude_acp"
   agent = {
     default_mode = "code",    -- "code" | "plan" | "explore"
     default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
@@ -356,9 +354,6 @@ require("vibing").setup({
     save_dir = vim.fn.stdpath("data") .. "/vibing/chats",  -- Used when "custom"
     context_position = "append",  -- "prepend" | "append"
   },
-  inline = {
-    default_action = "fix",  -- "fix" | "feat" | "explain" | "refactor" | "test"
-  },
   keymaps = {
     send = "<CR>",
     cancel = "<C-c>",
@@ -372,11 +367,17 @@ require("vibing").setup({
     deny = { "Bash" },
     rules = {},  -- Optional granular rules
   },
-  language = nil,  -- Optional: "ja" | "en" | { default = "ja", chat = "ja", inline = "en" }
   remote = {
     socket_path = nil,  -- Auto-detect from NVIM env variable
     auto_detect = true,
   },
+  mcp = {
+    enabled = false,  -- MCP integration disabled by default
+    rpc_port = 9876,
+    auto_setup = false,
+    auto_configure_claude_json = false,
+  },
+  language = nil,  -- Optional: "ja" | "en" | { default = "ja", chat = "ja", inline = "en" }
 })
 ```
 

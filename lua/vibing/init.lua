@@ -49,15 +49,9 @@ function M.setup(opts)
     end
   end
 
-  -- アダプターの初期化
-  local adapter_name = M.config.adapter
-  local ok, adapter_module = pcall(require, "vibing.adapters." .. adapter_name)
-  if not ok then
-    notify.error(string.format("Adapter '%s' not found", adapter_name))
-    return
-  end
-
-  M.adapter = adapter_module:new(M.config)
+  -- アダプターの初期化（agent_sdk固定）
+  local AgentSDK = require("vibing.adapters.agent_sdk")
+  M.adapter = AgentSDK:new(M.config)
 
   -- チャットコマンド初期化
   require("vibing.chat").setup()

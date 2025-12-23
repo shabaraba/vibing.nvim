@@ -9,7 +9,6 @@ describe("vibing.adapters.base", function()
     Adapter = require("vibing.adapters.base")
 
     mock_config = {
-      adapter = "base",
       agent = {
         default_mode = "code",
         default_model = "sonnet",

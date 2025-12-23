@@ -42,15 +42,12 @@ describe("vibing.init", function()
       setup = function() end,
       get = function()
         return {
-          adapter = "agent_sdk",
           remote = {
             auto_detect = false,
           },
         }
       end,
-      defaults = {
-        adapter = "agent_sdk",
-      },
+      defaults = {},
     }
     package.loaded["vibing.config"] = mock_config
 
@@ -137,7 +134,6 @@ describe("vibing.init", function()
       package.loaded["vibing.adapters.agent_sdk"] = mock_adapter
       mock_config.get = function()
         return {
-          adapter = "agent_sdk",
           remote = {
             auto_detect = true,
             socket_path = "/tmp/nvim.socket",
@@ -187,25 +183,6 @@ describe("vibing.init", function()
       assert.equals("vibing", filetype_config.extension.vibing)
     end)
 
-    it("should handle invalid adapter name", function()
-      mock_config.get = function()
-        return {
-          adapter = "nonexistent",
-        }
-      end
-
-      local notify_called = false
-      vim.notify = function(msg, level)
-        notify_called = true
-        assert.is_not_nil(msg:match("not found"))
-        assert.equals(vim.log.levels.ERROR, level)
-      end
-
-      Vibing.setup()
-
-      assert.is_true(notify_called)
-      assert.is_nil(Vibing.adapter)
-    end)
 
     it("should register commands", function()
       package.loaded["vibing.adapters.agent_sdk"] = mock_adapter
@@ -388,13 +365,17 @@ describe("vibing.init", function()
     it("should return current config", function()
       package.loaded["vibing.adapters.agent_sdk"] = mock_adapter
       mock_config.get = function()
-        return { adapter = "test" }
+        return {
+          agent = {
+            default_mode = "plan"
+          }
+        }
       end
 
       Vibing.setup()
       local config = Vibing.get_config()
 
-      assert.equals("test", config.adapter)
+      assert.equals("plan", config.agent.default_mode)
     end)
 
     it("should return defaults when no config", function()
@@ -402,7 +383,7 @@ describe("vibing.init", function()
 
       local config = Vibing.get_config()
 
-      assert.equals("agent_sdk", config.adapter)
+      assert.equals("code", config.agent.default_mode)
     end)
   end)
 
@@ -430,7 +411,7 @@ describe("vibing.init", function()
         commands_registered = commands_registered + 1
       end
 
-      Vibing.setup({ adapter = "agent_sdk" })
+      Vibing.setup({})
 
       assert.is_true(config_setup_called)
       assert.is_true(chat_setup_called)

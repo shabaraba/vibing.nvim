@@ -57,10 +57,10 @@ function M.execute(action_or_prompt, additional_instruction)
     return
   end
 
-  -- アクション名を決定
-  action_or_prompt = action_or_prompt or config.inline.default_action
-  if action_or_prompt == "" then
-    action_or_prompt = config.inline.default_action
+  -- アクション名が未指定の場合はエラー（通常はピッカーから必ず渡される）
+  if not action_or_prompt or action_or_prompt == "" then
+    notify.error("No action or prompt specified", "Inline")
+    return
   end
 
   local action = M.actions[action_or_prompt]

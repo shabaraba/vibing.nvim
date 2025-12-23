@@ -20,7 +20,6 @@ describe("vibing.ui.chat_buffer", function()
     -- Mock vibing module
     original_vibing = package.loaded["vibing"]
     mock_config = {
-      adapter = "agent_sdk",
       agent = {
         default_mode = "code",
         default_model = "sonnet",

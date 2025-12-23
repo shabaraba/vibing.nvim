@@ -1,11 +1,8 @@
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
----アダプター選択、Agent SDK設定、チャットウィンドウ、インラインアクション、キーマップ、ツール権限、リモート制御を統合管理
----@field adapter string 使用するアダプター名（"agent_sdk" 推奨、"claude_acp"、"claude"）
----@field cli_path string Claudeコマンドラインパス（"claude"、カスタムパス可）
+---Agent SDK設定、チャットウィンドウ、キーマップ、ツール権限、リモート制御を統合管理
 ---@field agent Vibing.AgentConfig Agent SDK設定（モード、モデル）
 ---@field chat Vibing.ChatConfig チャットウィンドウ設定（位置、サイズ、自動コンテキスト、保存先）
----@field inline Vibing.InlineConfig インラインアクション設定（デフォルトアクション）
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
 ---@field remote Vibing.RemoteConfig リモート制御設定（ソケットパス、自動検出）
@@ -68,11 +65,6 @@
 ---@field width number ウィンドウ幅（0-1の小数で画面比率、1以上で絶対幅）
 ---@field border string 枠線スタイル（"rounded", "single", "double", "none"等）
 
----@class Vibing.InlineConfig
----インラインアクション設定
----ビジュアル選択に対する即座のアクションのデフォルト動作を指定
----@field default_action "fix"|"feat"|"explain" デフォルトアクション（"fix": 修正、"feat": 機能追加、"explain": 説明）
-
 ---@class Vibing.KeymapConfig
 ---キーマップ設定
 ---チャットバッファ内での操作キーを定義
@@ -97,8 +89,6 @@ local M = {}
 
 ---@type Vibing.Config
 M.defaults = {
-  adapter = "agent_sdk",  -- "agent_sdk" (recommended), "claude_acp", or "claude"
-  cli_path = "claude",
   agent = {
     default_mode = "code",  -- "code" | "plan" | "explore"
     default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
@@ -113,9 +103,6 @@ M.defaults = {
     save_location_type = "project",  -- "project" | "user" | "custom"
     save_dir = vim.fn.stdpath("data") .. "/vibing/chats",  -- Used when save_location_type is "custom"
     context_position = "append",  -- "prepend" | "append"
-  },
-  inline = {
-    default_action = "fix",
   },
   keymaps = {
     send = "<CR>",

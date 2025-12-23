@@ -13,7 +13,6 @@ describe("vibing.adapters.agent_sdk", function()
     AgentSDK = require("vibing.adapters.agent_sdk")
 
     mock_config = {
-      adapter = "agent_sdk",
       agent = {
         default_mode = "code",
         default_model = "sonnet",

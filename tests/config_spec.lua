@@ -43,7 +43,6 @@ describe("vibing.config", function()
   describe("setup", function()
     it("should merge user config with defaults", function()
       local user_config = {
-        adapter = "claude",
         chat = {
           window = {
             position = "left",
@@ -55,7 +54,6 @@ describe("vibing.config", function()
       local result = config.get()
 
       -- User values should override defaults
-      assert.equals("claude", result.adapter)
       assert.equals("left", result.chat.window.position)
 
       -- Non-overridden defaults should remain
@@ -90,9 +88,13 @@ describe("vibing.config", function()
 
   describe("get", function()
     it("should return current config", function()
-      config.setup({ adapter = "test_adapter" })
+      config.setup({
+        agent = {
+          default_mode = "plan"
+        }
+      })
       local result = config.get()
-      assert.equals("test_adapter", result.adapter)
+      assert.equals("plan", result.agent.default_mode)
     end)
   end)
 end)
