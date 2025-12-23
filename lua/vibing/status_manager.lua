@@ -256,6 +256,10 @@ function StatusManager:_show_float(title, message)
 
   -- Get editor dimensions
   local ui = vim.api.nvim_list_uis()[1]
+  if not ui then
+    -- No UI available (headless mode), skip floating window
+    return
+  end
   local editor_width = ui.width
   local editor_height = ui.height
 

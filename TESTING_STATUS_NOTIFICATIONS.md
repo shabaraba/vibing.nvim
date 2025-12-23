@@ -212,6 +212,7 @@ node --check bin/agent-wrapper.mjs
 2. **Spinner animation**: Braille spinner updates every 100ms for visual feedback
 3. **Auto-dismiss**: Only applies to "Done" state, not error state
 4. **Deduplication**: Same message won't trigger notification, preventing spam
+5. **Headless mode**: Floating window is skipped in headless environments (e.g., CI tests) since no UI is available
 
 ## Troubleshooting
 
