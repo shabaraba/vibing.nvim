@@ -6,6 +6,15 @@ describe("vibing.chat.commands", function()
   before_each(function()
     -- Clear loaded modules to ensure clean state
     package.loaded["vibing.chat.commands"] = nil
+    package.loaded["vibing.utils.notify"] = nil
+
+    -- Mock notify module
+    package.loaded["vibing.utils.notify"] = {
+      error = function() end,
+      warn = function() end,
+      info = function() end,
+    }
+
     Commands = require("vibing.chat.commands")
 
     -- Reset commands registry

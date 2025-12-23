@@ -123,7 +123,7 @@ return {
           enabled = true,
           rpc_port = 9876,
           auto_setup = true,  -- Auto-build if not built
-          auto_configure_claude_json = true,  -- Auto-configure ~/.claude.json (legacy)
+          auto_configure_claude_json = false,  -- Deprecated: build.sh now handles registration automatically
         },
       })
     end,

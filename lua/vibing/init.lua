@@ -63,19 +63,13 @@ function M.setup(opts)
     commands.register_custom(custom_cmd)
   end
 
-  -- リモートコントロールの初期化
-  if M.config.remote and M.config.remote.auto_detect then
-    local Remote = require("vibing.remote")
-    Remote.setup(M.config.remote.socket_path)
-  end
-
   -- コマンド登録
   M._register_commands()
 end
 
 ---Neovimユーザーコマンドを登録
----VibingChat, VibingContext, VibingInline, VibingExplain, VibingFix等の全コマンドを登録
----チャット操作、コンテキスト管理、インラインアクション、リモート制御、マイグレーションを含む
+---VibingChat, VibingContext, VibingInline等の全コマンドを登録
+---チャット操作、コンテキスト管理、インラインアクションを含む
 function M._register_commands()
   vim.api.nvim_create_user_command("VibingChat", function(opts)
     if opts.args ~= "" then
