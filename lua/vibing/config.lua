@@ -1,9 +1,15 @@
+---@class Vibing.PreviewConfig
+---プレビューUI設定
+---インラインアクションとチャットの両方で使用されるdiffプレビューUIを制御
+---@field enabled boolean プレビューUI有効化（trueでGit diffプレビュー表示、要Gitリポジトリ）
+
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
 ---Agent SDK設定、チャットウィンドウ、キーマップ、ツール権限を統合管理
 ---@field agent Vibing.AgentConfig Agent SDK設定（モード、モデル）
 ---@field chat Vibing.ChatConfig チャットウィンドウ設定（位置、サイズ、自動コンテキスト、保存先）
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
+---@field preview Vibing.PreviewConfig プレビューUI設定（diffプレビュー有効化）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
 ---@field status Vibing.StatusConfig ステータス通知設定（Claude側のターン状態表示）
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
@@ -113,8 +119,8 @@ M.defaults = {
     open_diff = "gd",
     open_file = "gf",
   },
-  inline = {
-    preview_enabled = false,  -- Enable diff preview UI for inline actions (requires Git)
+  preview = {
+    enabled = false,  -- Enable diff preview UI for inline and chat (requires Git)
   },
   permissions = {
     mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
