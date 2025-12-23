@@ -107,8 +107,12 @@ function AgentSDK:build_command(prompt, opts)
     table.insert(cmd, permission_mode)
   end
 
-  -- Note: Permission rules are not supported in frontmatter
-  -- If needed in the future, add support to chat_buffer.lua and here
+  -- Add permission rules: Use config only (not supported in frontmatter yet)
+  local rules = self.config.permissions and self.config.permissions.rules
+  if rules and #rules > 0 then
+    table.insert(cmd, "--rules")
+    table.insert(cmd, vim.json.encode(rules))
+  end
 
   table.insert(cmd, "--prompt")
   table.insert(cmd, prompt)
