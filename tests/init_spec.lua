@@ -224,11 +224,7 @@ describe("vibing.init", function()
         "VibingContext",
         "VibingClearContext",
         "VibingInline",
-        "VibingExplain",
-        "VibingFix",
-        "VibingFeature",
-        "VibingRefactor",
-        "VibingTest",
+        "VibingInlineAction",
         "VibingCancel",
         "VibingOpenChat",
         "VibingRemote",
@@ -236,6 +232,9 @@ describe("vibing.init", function()
         "VibingSendToChat",
         "VibingReloadCommands",
         "VibingMigrate",
+        "VibingBuildMcp",
+        "VibingSetupMcp",
+        "VibingConfigureClaude",
       }
 
       assert.equals(#expected, #registered_commands)
