@@ -82,8 +82,11 @@ function AgentSDK:build_command(prompt, opts)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
+  -- フロントマターで明示的に設定されているかチェック
+  local has_frontmatter_permissions = opts.permissions_allow ~= nil or opts.permissions_deny ~= nil
+
   local allow_tools = opts.permissions_allow
-  if not allow_tools and config.permissions and config.permissions.allow then
+  if allow_tools == nil and config.permissions and config.permissions.allow then
     allow_tools = config.permissions.allow
   end
   -- Add MCP tools for vibing.nvim integration
@@ -100,8 +103,13 @@ function AgentSDK:build_command(prompt, opts)
   end
 
   local deny_tools = opts.permissions_deny
-  if not deny_tools and config.permissions and config.permissions.deny then
-    deny_tools = config.permissions.deny
+  -- フロントマターでpermissionsが設定されている場合、denyがnilなら空リストとして扱う
+  if deny_tools == nil then
+    if has_frontmatter_permissions then
+      deny_tools = {}
+    elseif config.permissions and config.permissions.deny then
+      deny_tools = config.permissions.deny
+    end
   end
   if deny_tools and #deny_tools > 0 then
     table.insert(cmd, "--deny")

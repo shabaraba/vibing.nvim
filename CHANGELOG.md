@@ -2,51 +2,47 @@
 
 ## [1.3.0](https://github.com/shabaraba/vibing.nvim/compare/v1.2.1...v1.3.0) (2025-12-23)
 
-
 ### Features
 
-* add default language configuration for AI responses ([#142](https://github.com/shabaraba/vibing.nvim/issues/142)) ([8c3e4c2](https://github.com/shabaraba/vibing.nvim/commit/8c3e4c277dd57639d612d4354ccd631819f6cef0))
-* add filetype detection for .vibing extension ([#141](https://github.com/shabaraba/vibing.nvim/issues/141)) ([3a65290](https://github.com/shabaraba/vibing.nvim/commit/3a6529035f1bac9f7c863f535010e70308d5e868))
-* add granular permissions control with rules-based configuration ([#146](https://github.com/shabaraba/vibing.nvim/issues/146)) ([e5d1cb3](https://github.com/shabaraba/vibing.nvim/commit/e5d1cb3b51d699fe1cf71205248bfe705233dcb0))
-* add granular permissions control with rules-based configuration ([#156](https://github.com/shabaraba/vibing.nvim/issues/156)) ([7f3f804](https://github.com/shabaraba/vibing.nvim/commit/7f3f804ac857ea68952025bf14faa3730b25f8be))
-* add Neovim Agent Tools via MCP integration ([#166](https://github.com/shabaraba/vibing.nvim/issues/166)) ([cdae130](https://github.com/shabaraba/vibing.nvim/commit/cdae130a60ec66210b8d8133a4a102481667ba8c))
-* add slash command completion for vibing files ([#144](https://github.com/shabaraba/vibing.nvim/issues/144)) ([b2105ed](https://github.com/shabaraba/vibing.nvim/commit/b2105ed207caf1d1531ac80f412a0147d57552c0))
-* add slash command completion with custom command support ([051bd9e](https://github.com/shabaraba/vibing.nvim/commit/051bd9ee1ada8b76ecb7664ac951e1183ea12ee3))
-* add slash command completion with custom command support ([91e782b](https://github.com/shabaraba/vibing.nvim/commit/91e782b010316cfb84d84aa565916b308338b563))
-* change default chat window mode to current buffer ([#161](https://github.com/shabaraba/vibing.nvim/issues/161)) ([8203fee](https://github.com/shabaraba/vibing.nvim/commit/8203fee6b27f2a01e1cc87b90ff747634afc905e))
-* display edited files with diff viewer in chat ([#143](https://github.com/shabaraba/vibing.nvim/issues/143)) ([ba663bd](https://github.com/shabaraba/vibing.nvim/commit/ba663bdc3298e932a0d6bdfdd987f41dca70dc3c))
-* enhance inline actions with optional arguments and progress display ([#132](https://github.com/shabaraba/vibing.nvim/issues/132)) ([0139c0f](https://github.com/shabaraba/vibing.nvim/commit/0139c0f3453feebce4fc5b65b35c8a0646fa1957))
-* migrate to V2 Agent SDK API for proper session resumption ([11ab2c6](https://github.com/shabaraba/vibing.nvim/commit/11ab2c6810ee0f6d29c66f6371e37852257a23ae))
-* prompt for arguments when custom command requires them ([#134](https://github.com/shabaraba/vibing.nvim/issues/134)) ([ccaf0de](https://github.com/shabaraba/vibing.nvim/commit/ccaf0de7a823ab705ba5c0bb598b371eb6a62728))
-* support $ARGUMENTS and {{ARGUMENTS}} placeholders ([c186f59](https://github.com/shabaraba/vibing.nvim/commit/c186f59911b5f459efd89ea6eef90cb43e2a7a22))
-* unify permission builder with improved architecture ([#162](https://github.com/shabaraba/vibing.nvim/issues/162)) ([b4cec79](https://github.com/shabaraba/vibing.nvim/commit/b4cec7972e182ce6e7415a4c065897637fcc9794))
-* use .vibing extension and vibing filetype to prevent plugin conflicts ([9026d81](https://github.com/shabaraba/vibing.nvim/commit/9026d81b0a1d402ccf6ee8cd37c0f4e5a63c6a7d))
-
+- add default language configuration for AI responses ([#142](https://github.com/shabaraba/vibing.nvim/issues/142)) ([8c3e4c2](https://github.com/shabaraba/vibing.nvim/commit/8c3e4c277dd57639d612d4354ccd631819f6cef0))
+- add filetype detection for .vibing extension ([#141](https://github.com/shabaraba/vibing.nvim/issues/141)) ([3a65290](https://github.com/shabaraba/vibing.nvim/commit/3a6529035f1bac9f7c863f535010e70308d5e868))
+- add granular permissions control with rules-based configuration ([#146](https://github.com/shabaraba/vibing.nvim/issues/146)) ([e5d1cb3](https://github.com/shabaraba/vibing.nvim/commit/e5d1cb3b51d699fe1cf71205248bfe705233dcb0))
+- add granular permissions control with rules-based configuration ([#156](https://github.com/shabaraba/vibing.nvim/issues/156)) ([7f3f804](https://github.com/shabaraba/vibing.nvim/commit/7f3f804ac857ea68952025bf14faa3730b25f8be))
+- add Neovim Agent Tools via MCP integration ([#166](https://github.com/shabaraba/vibing.nvim/issues/166)) ([cdae130](https://github.com/shabaraba/vibing.nvim/commit/cdae130a60ec66210b8d8133a4a102481667ba8c))
+- add slash command completion for vibing files ([#144](https://github.com/shabaraba/vibing.nvim/issues/144)) ([b2105ed](https://github.com/shabaraba/vibing.nvim/commit/b2105ed207caf1d1531ac80f412a0147d57552c0))
+- add slash command completion with custom command support ([051bd9e](https://github.com/shabaraba/vibing.nvim/commit/051bd9ee1ada8b76ecb7664ac951e1183ea12ee3))
+- add slash command completion with custom command support ([91e782b](https://github.com/shabaraba/vibing.nvim/commit/91e782b010316cfb84d84aa565916b308338b563))
+- change default chat window mode to current buffer ([#161](https://github.com/shabaraba/vibing.nvim/issues/161)) ([8203fee](https://github.com/shabaraba/vibing.nvim/commit/8203fee6b27f2a01e1cc87b90ff747634afc905e))
+- display edited files with diff viewer in chat ([#143](https://github.com/shabaraba/vibing.nvim/issues/143)) ([ba663bd](https://github.com/shabaraba/vibing.nvim/commit/ba663bdc3298e932a0d6bdfdd987f41dca70dc3c))
+- enhance inline actions with optional arguments and progress display ([#132](https://github.com/shabaraba/vibing.nvim/issues/132)) ([0139c0f](https://github.com/shabaraba/vibing.nvim/commit/0139c0f3453feebce4fc5b65b35c8a0646fa1957))
+- migrate to V2 Agent SDK API for proper session resumption ([11ab2c6](https://github.com/shabaraba/vibing.nvim/commit/11ab2c6810ee0f6d29c66f6371e37852257a23ae))
+- prompt for arguments when custom command requires them ([#134](https://github.com/shabaraba/vibing.nvim/issues/134)) ([ccaf0de](https://github.com/shabaraba/vibing.nvim/commit/ccaf0de7a823ab705ba5c0bb598b371eb6a62728))
+- support $ARGUMENTS and {{ARGUMENTS}} placeholders ([c186f59](https://github.com/shabaraba/vibing.nvim/commit/c186f59911b5f459efd89ea6eef90cb43e2a7a22))
+- unify permission builder with improved architecture ([#162](https://github.com/shabaraba/vibing.nvim/issues/162)) ([b4cec79](https://github.com/shabaraba/vibing.nvim/commit/b4cec7972e182ce6e7415a4c065897637fcc9794))
+- use .vibing extension and vibing filetype to prevent plugin conflicts ([9026d81](https://github.com/shabaraba/vibing.nvim/commit/9026d81b0a1d402ccf6ee8cd37c0f4e5a63c6a7d))
 
 ### Bug Fixes
 
-* add context gathering to GitHub workflow ([#157](https://github.com/shabaraba/vibing.nvim/issues/157)) ([8877ec9](https://github.com/shabaraba/vibing.nvim/commit/8877ec9508645a3ada98b98bb0753022b33b541c))
-* add file operation tools for implementation tasks ([cdeb784](https://github.com/shabaraba/vibing.nvim/commit/cdeb784dd2b094e77d41b07ad200175415d529a3))
-* address PR review comments ([c7577af](https://github.com/shabaraba/vibing.nvim/commit/c7577af4c714615c45cba4144220b1f726e42999))
-* clear adapter session_id for new chats to prevent session sharing ([8d89445](https://github.com/shabaraba/vibing.nvim/commit/8d89445f81d7192f02d25db07a925abcbcb5f3e0))
-* consolidate and streamline user commands (18 → 9 commands) ([#163](https://github.com/shabaraba/vibing.nvim/issues/163)) ([#165](https://github.com/shabaraba/vibing.nvim/issues/165)) ([b43e34a](https://github.com/shabaraba/vibing.nvim/commit/b43e34a182492e62927d85dd61b02071ac5b1b98))
-* execute custom commands and remove omnifunc to avoid LSP conflicts ([2ae4456](https://github.com/shabaraba/vibing.nvim/commit/2ae445659d80f05be6a1abc2a6865fdb187b6464))
-* update inline_spec test for new feat prompt ([720e35a](https://github.com/shabaraba/vibing.nvim/commit/720e35aa31aa2deb26ad9b6e1f65b9d52713b923))
-* update test to use attached_buffers instead of chat_buffer ([ce79431](https://github.com/shabaraba/vibing.nvim/commit/ce794319aea605b8331dd5e31c427b8075b25fd1))
-* update tests and format for new commands ([7d9b6eb](https://github.com/shabaraba/vibing.nvim/commit/7d9b6eb43bc0c4a628afaa9e1c8843ed34f8cec9))
-* use claude_args instead of invalid allowed_tools param ([#138](https://github.com/shabaraba/vibing.nvim/issues/138)) ([5a6adf6](https://github.com/shabaraba/vibing.nvim/commit/5a6adf60e631f730b393dafe4d3672ca1d875c16))
-* use frontmatter values and add permission control ([#130](https://github.com/shabaraba/vibing.nvim/issues/130)) ([cbfecf0](https://github.com/shabaraba/vibing.nvim/commit/cbfecf03928bd148a7953386b207ba6846b32c9f))
-
+- add context gathering to GitHub workflow ([#157](https://github.com/shabaraba/vibing.nvim/issues/157)) ([8877ec9](https://github.com/shabaraba/vibing.nvim/commit/8877ec9508645a3ada98b98bb0753022b33b541c))
+- add file operation tools for implementation tasks ([cdeb784](https://github.com/shabaraba/vibing.nvim/commit/cdeb784dd2b094e77d41b07ad200175415d529a3))
+- address PR review comments ([c7577af](https://github.com/shabaraba/vibing.nvim/commit/c7577af4c714615c45cba4144220b1f726e42999))
+- clear adapter session_id for new chats to prevent session sharing ([8d89445](https://github.com/shabaraba/vibing.nvim/commit/8d89445f81d7192f02d25db07a925abcbcb5f3e0))
+- consolidate and streamline user commands (18 → 9 commands) ([#163](https://github.com/shabaraba/vibing.nvim/issues/163)) ([#165](https://github.com/shabaraba/vibing.nvim/issues/165)) ([b43e34a](https://github.com/shabaraba/vibing.nvim/commit/b43e34a182492e62927d85dd61b02071ac5b1b98))
+- execute custom commands and remove omnifunc to avoid LSP conflicts ([2ae4456](https://github.com/shabaraba/vibing.nvim/commit/2ae445659d80f05be6a1abc2a6865fdb187b6464))
+- update inline_spec test for new feat prompt ([720e35a](https://github.com/shabaraba/vibing.nvim/commit/720e35aa31aa2deb26ad9b6e1f65b9d52713b923))
+- update test to use attached_buffers instead of chat_buffer ([ce79431](https://github.com/shabaraba/vibing.nvim/commit/ce794319aea605b8331dd5e31c427b8075b25fd1))
+- update tests and format for new commands ([7d9b6eb](https://github.com/shabaraba/vibing.nvim/commit/7d9b6eb43bc0c4a628afaa9e1c8843ed34f8cec9))
+- use claude_args instead of invalid allowed_tools param ([#138](https://github.com/shabaraba/vibing.nvim/issues/138)) ([5a6adf6](https://github.com/shabaraba/vibing.nvim/commit/5a6adf60e631f730b393dafe4d3672ca1d875c16))
+- use frontmatter values and add permission control ([#130](https://github.com/shabaraba/vibing.nvim/issues/130)) ([cbfecf0](https://github.com/shabaraba/vibing.nvim/commit/cbfecf03928bd148a7953386b207ba6846b32c9f))
 
 ### Documentation
 
-* update README and CLAUDE.md with latest features ([#164](https://github.com/shabaraba/vibing.nvim/issues/164)) ([d66e3bc](https://github.com/shabaraba/vibing.nvim/commit/d66e3bc95fe0ecb974d7bab4487157dfe26a9bfc))
-
+- update README and CLAUDE.md with latest features ([#164](https://github.com/shabaraba/vibing.nvim/issues/164)) ([d66e3bc](https://github.com/shabaraba/vibing.nvim/commit/d66e3bc95fe0ecb974d7bab4487157dfe26a9bfc))
 
 ### Miscellaneous
 
-* cleanup gitignore and fix PR [#117](https://github.com/shabaraba/vibing.nvim/issues/117) review comments ([#121](https://github.com/shabaraba/vibing.nvim/issues/121)) ([a84f906](https://github.com/shabaraba/vibing.nvim/commit/a84f9068c394f4c589977b5cc3445b02d5c6a869))
-* enable full output in Claude Code GitHub Action ([#139](https://github.com/shabaraba/vibing.nvim/issues/139)) ([f944e2c](https://github.com/shabaraba/vibing.nvim/commit/f944e2c127c54e48a2f5dad980b1464f129ee498))
+- cleanup gitignore and fix PR [#117](https://github.com/shabaraba/vibing.nvim/issues/117) review comments ([#121](https://github.com/shabaraba/vibing.nvim/issues/121)) ([a84f906](https://github.com/shabaraba/vibing.nvim/commit/a84f9068c394f4c589977b5cc3445b02d5c6a869))
+- enable full output in Claude Code GitHub Action ([#139](https://github.com/shabaraba/vibing.nvim/issues/139)) ([f944e2c](https://github.com/shabaraba/vibing.nvim/commit/f944e2c127c54e48a2f5dad980b1464f129ee498))
 
 ## [1.2.1](https://github.com/shabaraba/vibing.nvim/compare/v1.2.0...v1.2.1) (2025-12-18)
 
