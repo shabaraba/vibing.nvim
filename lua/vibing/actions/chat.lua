@@ -164,12 +164,18 @@ function M.send(chat_buffer, message)
   -- frontmatterからmode/model/permissionsを取得してoptsに含める
   local frontmatter = chat_buffer:parse_frontmatter()
 
+  -- StatusManager作成
+  local StatusManager = require("vibing.status_manager")
+  local status_mgr = StatusManager:new(config.status)
+
   -- 変更されたファイルを追跡
   local modified_files = {}
   local file_tools = { Edit = true, Write = true }
 
   local opts = {
     streaming = true,
+    action_type = "chat",
+    status_manager = status_mgr,
     mode = frontmatter.mode,
     model = frontmatter.model,
     permissions_allow = frontmatter.permissions_allow,
@@ -201,7 +207,10 @@ function M.send(chat_buffer, message)
     end, function(response)
       vim.schedule(function()
         if response.error then
+          status_mgr:set_error(response.error)
           chat_buffer:append_chunk("\n\n**Error:** " .. response.error)
+        else
+          status_mgr:set_done(modified_files)
         end
 
         -- 編集されたファイル一覧を表示
@@ -229,8 +238,10 @@ function M.send(chat_buffer, message)
     local response = adapter:execute(formatted_prompt, opts)
 
     if response.error then
+      status_mgr:set_error(response.error)
       chat_buffer:append_chunk("**Error:** " .. response.error)
     else
+      status_mgr:set_done(modified_files)
       chat_buffer:append_chunk(response.content)
     end
 

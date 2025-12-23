@@ -716,64 +716,7 @@ function ChatBuffer:start_response()
     "",
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
-  self:start_spinner()
-end
-
----スピナーを開始
-function ChatBuffer:start_spinner()
-  if self._spinner_timer then
-    return -- 既に動作中
-  end
-
-  self._spinner_frame = 1
-  self._spinner_line = vim.api.nvim_buf_line_count(self.buf)
-  self._first_chunk_received = false
-
-  -- 初期スピナー表示
-  vim.api.nvim_buf_set_lines(
-    self.buf,
-    self._spinner_line - 1,
-    self._spinner_line,
-    false,
-    { spinner_frames[1] .. " Thinking..." }
-  )
-
-  -- タイマーでスピナーをアニメーション
-  self._spinner_timer = vim.uv.new_timer()
-  self._spinner_timer:start(0, 100, vim.schedule_wrap(function()
-    if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
-      self:stop_spinner()
-      return
-    end
-
-    if self._first_chunk_received then
-      self:stop_spinner()
-      return
-    end
-
-    self._spinner_frame = (self._spinner_frame % #spinner_frames) + 1
-    pcall(vim.api.nvim_buf_set_lines, self.buf, self._spinner_line - 1, self._spinner_line, false, {
-      spinner_frames[self._spinner_frame] .. " Thinking..."
-    })
-  end))
-end
-
----スピナーを停止
-function ChatBuffer:stop_spinner()
-  if self._spinner_timer then
-    self._spinner_timer:stop()
-    self._spinner_timer:close()
-    self._spinner_timer = nil
-  end
-
-  -- スピナー行をクリア
-  if self._spinner_line and self.buf and vim.api.nvim_buf_is_valid(self.buf) then
-    local current_line = vim.api.nvim_buf_get_lines(self.buf, self._spinner_line - 1, self._spinner_line, false)[1] or ""
-    if current_line:match("^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]") then
-      vim.api.nvim_buf_set_lines(self.buf, self._spinner_line - 1, self._spinner_line, false, { "" })
-    end
-  end
-  self._spinner_line = nil
+  -- StatusManagerがスピナー表示を担当するため、ここではスピナーを開始しない
 end
 
 ---バッファリングされたチャンクをフラッシュしてバッファに書き込む
@@ -811,12 +754,6 @@ end
 ---ストリーミングチャンクを追加（バッファリング有効）
 ---@param chunk string
 function ChatBuffer:append_chunk(chunk)
-  -- 最初のチャンクでスピナーを停止
-  if not self._first_chunk_received then
-    self._first_chunk_received = true
-    self:stop_spinner()
-  end
-
   -- チャンクをバッファに蓄積
   self._chunk_buffer = self._chunk_buffer .. chunk
 
@@ -840,10 +777,6 @@ function ChatBuffer:add_user_section()
     self._chunk_timer = nil
   end
   self:_flush_chunks()
-
-  -- スピナーが残っていれば停止
-  self:stop_spinner()
-  self._first_chunk_received = false
 
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
   local new_lines = {

@@ -177,13 +177,28 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
           if line ~= "" then
             local ok, msg = pcall(vim.json.decode, line)
             if ok then
-              if msg.type == "session" and msg.session_id then
+              if msg.type == "status" then
+                -- Status message for StatusManager integration
+                if opts.status_manager then
+                  if msg.state == "thinking" then
+                    opts.status_manager:set_thinking(opts.action_type or "chat")
+                  elseif msg.state == "tool_use" then
+                    opts.status_manager:set_tool_use(msg.tool, msg.input_summary)
+                  elseif msg.state == "responding" then
+                    opts.status_manager:set_responding()
+                  end
+                end
+              elseif msg.type == "session" and msg.session_id then
                 -- Store session ID for subsequent calls
                 self._session_id = msg.session_id
               elseif msg.type == "tool_use" and msg.tool and msg.file_path then
                 -- Tool use event for file-modifying operations
                 if opts.on_tool_use then
                   opts.on_tool_use(msg.tool, msg.file_path)
+                end
+                -- Also track in StatusManager
+                if opts.status_manager then
+                  opts.status_manager:add_modified_file(msg.file_path)
                 end
               elseif msg.type == "chunk" and msg.text then
                 table.insert(output, msg.text)

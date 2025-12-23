@@ -146,27 +146,19 @@ end
 ---@param prompt string 実行するプロンプト（選択範囲のメンション含む）
 ---@param opts Vibing.AdapterOpts アダプターオプション（tools含む）
 function M._execute_direct(adapter, prompt, opts)
-  local InlineProgress = require("vibing.ui.inline_progress")
   local BufferReload = require("vibing.utils.buffer_reload")
+  local vibing = require("vibing")
+  local config = vibing.get_config()
 
-  local progress = InlineProgress:new()
-  local ok, err = pcall(function()
-    progress:show("Inline")
-    progress:update_status("Starting...")
-  end)
-  if not ok then
-    notify.warn("Progress UI unavailable: " .. tostring(err), "Inline")
-  end
+  -- StatusManager作成
+  local StatusManager = require("vibing.status_manager")
+  local status_mgr = StatusManager:new(config.status)
 
   local response_text = {}
 
-  -- ツール使用時のコールバックを設定
-  opts.on_tool_use = function(tool, file_path)
-    vim.schedule(function()
-      progress:update_tool(tool, file_path)
-      progress:add_modified_file(file_path)
-    end)
-  end
+  -- opts に action_type と status_manager を追加
+  opts.action_type = "inline"
+  opts.status_manager = status_mgr
 
   if adapter:supports("streaming") then
     opts.streaming = true
@@ -174,12 +166,13 @@ function M._execute_direct(adapter, prompt, opts)
       table.insert(response_text, chunk)
     end, function(response)
       vim.schedule(function()
-        local modified_files = progress:get_modified_files()
-        progress:close()
+        local modified_files = status_mgr:get_modified_files()
 
         if response.error then
+          status_mgr:set_error(response.error)
           notify.error(response.error, "Inline")
         else
+          status_mgr:set_done(modified_files)
           -- 変更されたファイルをリロード
           BufferReload.reload_files(modified_files)
 
@@ -190,12 +183,13 @@ function M._execute_direct(adapter, prompt, opts)
     end)
   else
     local response = adapter:execute(prompt, opts)
-    local modified_files = progress:get_modified_files()
-    progress:close()
+    local modified_files = status_mgr:get_modified_files()
 
     if response.error then
+      status_mgr:set_error(response.error)
       notify.error(response.error, "Inline")
     else
+      status_mgr:set_done(modified_files)
       BufferReload.reload_files(modified_files)
       M._show_results(modified_files, response.content)
     end
