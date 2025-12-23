@@ -4,6 +4,30 @@ This directory contains skills for Claude Code to provide specialized knowledge 
 
 ## Available Skills
 
+### neovim-remote-control
+
+**Location:** `.claude/skills/neovim-remote-control/SKILL.md`
+
+Control remote Neovim instances via Unix socket for testing, development, and automation:
+
+- **Socket Detection:** Auto-detect from `$NVIM` environment variable
+- **Command Execution:** Send commands, evaluate expressions, get buffer state
+- **E2E Testing:** Automate Neovim operations for testing workflows
+- **Natural Language Control:** Respond to user requests like "open this file in Neovim"
+- **Troubleshooting:** Common socket and communication issues
+
+**When activated:** When user requests Neovim control or socket path is available
+
+**Allowed tools:** Bash, Read
+
+**Coverage:**
+
+- `nvim --server --remote-send` for sending commands
+- `nvim --server --remote-expr` for evaluating expressions
+- Buffer content retrieval and manipulation
+- Status checking (mode, buffer, cursor position)
+- E2E testing workflows
+
 ### git-remote-workflow
 
 **Location:** `.claude/skills/git-remote-workflow/SKILL.md`

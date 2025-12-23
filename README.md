@@ -24,7 +24,6 @@ A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Ag
 - [Installation](#-installation)
 - [Usage](#-usage)
 - [Configuration Examples](#️-configuration-examples)
-- [Remote Control](#-remote-control)
 - [Chat File Format](#-chat-file-format)
 - [Architecture](#️-architecture)
 - [Contributing](#-contributing)
@@ -43,7 +42,6 @@ A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Ag
 - **🎯 Smart Context** - Automatic file context detection from open buffers and manual additions
 - **🌍 Multi-language Support** - Configure different languages for chat and inline actions
 - **📊 Diff Viewer** - Visual diff display for AI-edited files with `gd` keybinding
-- **🔌 Remote Control** - Control Neovim instances via `--listen` socket
 - **🤖 Neovim Agent Tools** - Claude can directly control Neovim (read/write buffers, execute commands) via MCP integration
 - **⚙️ Highly Configurable** - Flexible modes, models, permissions, and UI settings
 
@@ -105,16 +103,16 @@ use {
 
 ### User Commands
 
-| Command                          | Description                                                                       |
-| -------------------------------- | --------------------------------------------------------------------------------- |
-| `:VibingChat [file]`             | Open chat window or saved chat file                                               |
-| `:VibingToggleChat`              | Toggle chat window (open/close)                                                   |
-| `:VibingSlashCommands`           | Show slash command picker in chat                                                 |
-| `:VibingContext [path]`          | Add file to context (or from oil.nvim if no path)                                 |
-| `:VibingClearContext`            | Clear all context                                                                 |
-| `:VibingInline [action\|prompt]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled. |
-| `:VibingInlineAction`            | Alias of `:VibingInline` (for backward compatibility)                             |
-| `:VibingCancel`                  | Cancel current request                                                            |
+| Command                               | Description                                                                       |
+| ------------------------------------- | --------------------------------------------------------------------------------- |
+| `:VibingChat [file]`                  | Open chat window or saved chat file                                               |
+| `:VibingToggleChat`                   | Toggle chat window (open/close)                                                   |
+| `:VibingSlashCommands`                | Show slash command picker in chat                                                 |
+| `:VibingContext [path]`               | Add file to context (or from oil.nvim if no path)                                 |
+| `:VibingClearContext`                 | Clear all context                                                                 |
+| `:VibingInline [action\|instruction]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled. |
+| `:VibingInlineAction`                 | Alias of `:VibingInline` (for backward compatibility)                             |
+| `:VibingCancel`                       | Cancel current request                                                            |
 
 ### Inline Actions
 
@@ -124,13 +122,19 @@ use {
 :'<,'>VibingInline
 " Opens a split-panel UI:
 " - Left: Action menu (fix, feat, explain, refactor, test)
-"   - Navigate: j/k or arrow keys
-"   - Move to input: Tab
+"   Navigate with j/k or arrow keys, Tab to move to input
 " - Right: Additional instruction input (optional)
-"   - Move to menu: Shift-Tab
-" - Execute: Enter (from either panel)
-" - Cancel: Esc or Ctrl-c
+"   Shift-Tab to move back to menu
+" - Enter to execute, Esc/Ctrl-c to cancel
 ```
+
+**Keybindings:**
+
+- `j`/`k` or `↓`/`↑` - Navigate action menu
+- `Tab` - Move from menu to input field
+- `Shift-Tab` - Move from input field to menu
+- `Enter` - Execute selected action
+- `Esc` or `Ctrl-c` - Cancel
 
 **Direct Execution (with arguments):**
 
@@ -142,8 +146,8 @@ use {
 :'<,'>VibingInline test      " Generate tests
 
 " With additional instructions
-:'<,'>VibingInline explain 日本語で
 :'<,'>VibingInline fix using async/await
+:'<,'>VibingInline test with Jest mocks
 ```
 
 **Natural Language Instructions:**
@@ -156,18 +160,17 @@ use {
 
 ### Slash Commands (in Chat)
 
-| Command                   | Description                                                 |
-| ------------------------- | ----------------------------------------------------------- |
-| `/context <file>`         | Add file to context                                         |
-| `/clear`                  | Clear context                                               |
-| `/save`                   | Save current chat                                           |
-| `/summarize`              | Summarize conversation                                      |
-| `/mode <mode>`            | Set execution mode (auto/plan/code/explore)                 |
-| `/model <model>`          | Set AI model (opus/sonnet/haiku)                            |
-| `/permissions` or `/perm` | Interactive Permission Builder - configure tool permissions |
-| `/allow [tool]`           | Add tool to allow list, or show current list if no args     |
-| `/deny [tool]`            | Add tool to deny list, or show current list if no args      |
-| `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions) |
+| Command                   | Description                                                      |
+| ------------------------- | ---------------------------------------------------------------- |
+| `/context <file>`         | Add file to context                                              |
+| `/clear`                  | Clear context                                                    |
+| `/save`                   | Save current chat                                                |
+| `/summarize`              | Summarize conversation                                           |
+| `/mode <mode>`            | Set execution mode (auto/plan/code/explore)                      |
+| `/model <model>`          | Set AI model (opus/sonnet/haiku)                                 |
+| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules |
+| `/allow [tool]`           | Add tool to allow list, or show current list if no args          |
+| `/deny [tool]`            | Add tool to deny list, or show current list if no args           |
 
 ## ⚙️ Configuration Examples
 
@@ -281,46 +284,45 @@ require("vibing").setup({
 })
 ```
 
-## 🤖 Neovim Agent Tools (MCP Integration)
+## 📝 Chat File Format
 
-Claude can directly control Neovim through MCP (Model Context Protocol) integration. The plugin automatically starts an RPC server for seamless communication.
+Chats are saved as Markdown with YAML frontmatter for session resumption and configuration:
 
-### How It Works
+```yaml
+---
+vibing.nvim: true
+session_id: <sdk-session-id>
+created_at: 2024-01-01T12:00:00
+mode: code  # auto | plan | code | explore
+model: sonnet  # sonnet | opus | haiku
+permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions
+permissions_allow:
+  - Read
+  - Edit
+  - Write
+  - Glob
+  - Grep
+permissions_deny:
+  - Bash
+language: ja  # Optional: default language for AI responses
+---
+# Vibing Chat
 
-1. **vibing.nvim** starts an internal RPC server on port 9876
-2. **Agent SDK** loads the MCP server (`mcp-server/dist/index.js`)
-3. **MCP server** connects to the RPC server to control Neovim
-4. Claude gains access to Neovim control tools (`mcp__vibing-nvim__*`)
+## User
 
-**Architecture:**
+Hello, Claude!
 
+## Assistant
+
+Hello! How can I help you today?
 ```
-Agent SDK → MCP Server → RPC Server (port 9876) → Neovim API
-```
 
-### Available Tools
-
-| Tool                                          | Description                  | Use Case                       |
-| --------------------------------------------- | ---------------------------- | ------------------------------ |
-| `mcp__vibing-nvim__nvim_get_buffer`           | Read buffer content          | "What's in my current file?"   |
-| `mcp__vibing-nvim__nvim_set_buffer`           | Write to buffer              | "Add a TODO comment at line 5" |
-| `mcp__vibing-nvim__nvim_execute`              | Execute Neovim Ex commands   | "Save the current buffer"      |
-| `mcp__vibing-nvim__nvim_get_info`             | Get current file information | "What file am I editing?"      |
-| `mcp__vibing-nvim__nvim_list_buffers`         | List all loaded buffers      | "Show me all open files"       |
-| `mcp__vibing-nvim__nvim_get_cursor`           | Get cursor position          | "Where is my cursor?"          |
-| `mcp__vibing-nvim__nvim_set_cursor`           | Set cursor position          | "Move cursor to line 10"       |
-| `mcp__vibing-nvim__nvim_get_visual_selection` | Get visual selection content | "What did I select?"           |
-
-### Example Usage
-
-```vim
-:VibingChat
-" In chat: 'Show me all open buffers'
-" Claude will use mcp__vibing-nvim__nvim_list_buffers
+**Key Features:**
 
 " In chat: 'Add a comment at the top of this file explaining what it does'
-" Claude will use mcp__vibing-nvim__nvim_set_buffer to add the comment
-```
+" Claude will use mcp**vibing-nvim**nvim_set_buffer to add the comment
+
+````
 
 ### Permission Control
 
@@ -343,7 +345,7 @@ require("vibing").setup({
     },
   },
 })
-```
+````
 
 ### Automatic Setup
 
@@ -384,6 +386,10 @@ Hello! How can I help you today?
 
 **Key Features:**
 
+- **Session Resumption**: Automatically resumes conversation using `session_id`
+- **Configuration Tracking**: Records mode, model, and permissions for transparency
+- **Language Support**: Optional `language` field for consistent AI response language
+- **Auditability**: All permissions are visible in frontmatter
 - **Session Resumption**: Automatically resumes conversation using `session_id`
 - **Configuration Tracking**: Records mode, model, and permissions for transparency
 - **Language Support**: Optional `language` field for consistent AI response language
