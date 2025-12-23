@@ -270,7 +270,7 @@ describe("vibing.init", function()
       end
 
       Vibing.setup()
-      callback()
+      callback({ args = "" })
 
       assert.is_true(chat_open_called)
     end)
@@ -435,7 +435,7 @@ describe("vibing.init", function()
       assert.is_true(config_setup_called)
       assert.is_true(chat_setup_called)
       assert.is_not_nil(Vibing.adapter)
-      assert.equals(18, commands_registered)
+      assert.equals(17, commands_registered)
     end)
   end)
 end)
