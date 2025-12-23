@@ -89,8 +89,8 @@ function M.execute(message, chat_buffer)
   end
 
   if not command then
-    notify.warn(string.format("Unknown command: /%s", command_name))
-    return true, false -- コマンドとして認識されたが存在しない
+    -- 未知のコマンドはAgent SDKにフォールバック（プラグインマーケットのコマンド用）
+    return false, false -- 処理されなかったのでAgent SDKに渡す
   end
 
   -- コマンドハンドラーを実行

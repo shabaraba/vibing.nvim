@@ -55,7 +55,7 @@ function M._parse_markdown(file_path)
 end
 
 ---.claude/commands/*.md をスキャンしてカスタムコマンドを検出
----project（カレントディレクトリ）とuser（ホームディレクトリ）の両方をスキャン
+---project（カレントディレクトリ）、user（ホームディレクトリ）、プラグインマーケットの全てをスキャン
 ---@return Vibing.CustomCommand[] 検出されたカスタムコマンドの配列
 function M.scan()
   local commands = {}
@@ -83,6 +83,31 @@ function M.scan()
           })
         else
           notify.warn(string.format("Failed to parse: %s", file))
+        end
+      end
+    end
+  end
+
+  -- プラグインマーケットのコマンドもスキャン
+  local plugin_marketplaces = vim.fn.expand("~/.claude/plugins/marketplaces/")
+  if vim.fn.isdirectory(plugin_marketplaces) == 1 then
+    -- 全マーケットプレイスをスキャン
+    local marketplaces = vim.fn.glob(plugin_marketplaces .. "*", false, true)
+    for _, marketplace in ipairs(marketplaces) do
+      if vim.fn.isdirectory(marketplace) == 1 then
+        -- 各プラグインのcommandsディレクトリをスキャン
+        local plugin_commands = vim.fn.glob(marketplace .. "/plugins/*/commands/*.md", false, true)
+        for _, file in ipairs(plugin_commands) do
+          local success, parsed = pcall(M._parse_markdown, file)
+          if success and parsed then
+            table.insert(commands, {
+              name = parsed.name,
+              description = parsed.description,
+              source = "plugin",
+              file_path = file,
+              content = parsed.content,
+            })
+          end
         end
       end
     end

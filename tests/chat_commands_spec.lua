@@ -158,9 +158,9 @@ describe("vibing.chat.commands", function()
       assert.equals(mock_chat_buffer, received_buffer)
     end)
 
-    it("should return true for unknown command", function()
+    it("should return false for unknown command (fallback to Agent SDK)", function()
       local result = Commands.execute("/unknown", mock_chat_buffer)
-      assert.is_true(result)
+      assert.is_false(result)
     end)
 
     it("should handle handler errors gracefully", function()
