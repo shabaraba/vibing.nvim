@@ -28,6 +28,27 @@ function M.setup(opts)
     },
   })
 
+  -- MCP統合の初期化
+  if M.config.mcp and M.config.mcp.enabled then
+    -- 自動セットアップ（初回のみ）
+    local mcp_setup = require("vibing.mcp.setup")
+    mcp_setup.auto_setup(M.config)
+
+    -- RPCサーバー起動
+    local rpc_server = require("vibing.rpc_server")
+    local port = rpc_server.start(M.config.mcp.rpc_port)
+    if port > 0 then
+      notify.info(string.format("MCP RPC server started on port %d", port))
+
+      -- 終了時にクリーンアップ
+      vim.api.nvim_create_autocmd("VimLeavePre", {
+        callback = function()
+          rpc_server.stop()
+        end,
+      })
+    end
+  end
+
   -- アダプターの初期化
   local adapter_name = M.config.adapter
   local ok, adapter_module = pcall(require, "vibing.adapters." .. adapter_name)
@@ -160,6 +181,119 @@ function M._register_commands()
       M.adapter:cancel()
     end
   end, { desc = "Cancel current Vibing request" })
+
+  vim.api.nvim_create_user_command("VibingOpenChat", function(opts)
+    require("vibing.actions.chat").open_file(opts.args)
+  end, { nargs = 1, desc = "Open saved chat file", complete = "file" })
+
+  vim.api.nvim_create_user_command("VibingRemote", function(opts)
+    local remote = require("vibing.remote")
+    if not remote.is_available() then
+      notify.error("Remote control not available. Start nvim with --listen or set socket_path")
+      return
+    end
+    remote.execute(opts.args)
+  end, { nargs = 1, desc = "Execute command in remote Neovim instance" })
+
+  vim.api.nvim_create_user_command("VibingRemoteStatus", function()
+    local remote = require("vibing.remote")
+    local status = remote.get_status()
+    if status then
+      print(string.format("[vibing] Remote Status - Mode: %s, Buffer: %s, Line: %d, Col: %d",
+        status.mode, status.bufname, status.line, status.col))
+    else
+      notify.error("Remote control not available")
+    end
+  end, { desc = "Get remote Neovim status" })
+
+  vim.api.nvim_create_user_command("VibingSendToChat", function()
+    require("vibing.integrations.oil").send_to_chat()
+  end, { desc = "Send file from oil.nvim to chat" })
+
+  vim.api.nvim_create_user_command("VibingReloadCommands", function()
+    local custom_commands = require("vibing.chat.custom_commands")
+    local commands = require("vibing.chat.commands")
+
+    custom_commands.clear_cache()
+    commands.custom_commands = {}
+
+    for _, custom_cmd in ipairs(custom_commands.get_all()) do
+      commands.register_custom(custom_cmd)
+    end
+
+    notify.info("Custom commands reloaded")
+  end, { desc = "Reload custom slash commands" })
+
+  vim.api.nvim_create_user_command("VibingMigrate", function(opts)
+    local Migrator = require("vibing.context.migrator")
+    local args = opts.args
+
+    if args == "" then
+      -- 引数なし：現在のチャットバッファをマイグレーション
+      local chat = require("vibing.actions.chat")
+      if not chat.chat_buffer or not chat.chat_buffer.file_path then
+        notify.warn("No active chat buffer to migrate")
+        return
+      end
+
+      local success, err = Migrator.migrate_current_buffer(chat.chat_buffer)
+      if success then
+        notify.info("Chat migrated successfully")
+        -- バッファを再読み込み
+        vim.cmd("edit!")
+      else
+        notify.error("Migration failed: " .. (err or "unknown error"))
+      end
+    elseif args == "--scan" then
+      -- ディレクトリスキャン
+      local chat_dir = vim.fn.getcwd() .. "/.vibing/chat"
+      local files = Migrator.scan_chat_directory(chat_dir)
+
+      if #files == 0 then
+        notify.info("No old format files found")
+        return
+      end
+
+      notify.info(string.format("Found %d file(s) to migrate. Migrating...", #files))
+
+      local success_count = 0
+      for _, file in ipairs(files) do
+        local success, err = Migrator.migrate_file(file, true)
+        if success then
+          success_count = success_count + 1
+        else
+          notify.warn("Failed to migrate " .. file .. ": " .. (err or ""))
+        end
+      end
+
+      notify.info(string.format("Migrated %d/%d files successfully", success_count, #files))
+    else
+      -- ファイルパス指定
+      local file_path = vim.fn.expand(args)
+      local success, err = Migrator.migrate_file(file_path, true)
+      if success then
+        notify.info("File migrated: " .. file_path)
+      else
+        notify.error("Migration failed: " .. (err or "unknown error"))
+      end
+    end
+  end, { nargs = "?", desc = "Migrate chat file to new format", complete = "file" })
+
+  -- MCP関連コマンド
+  vim.api.nvim_create_user_command("VibingBuildMcp", function()
+    local mcp_setup = require("vibing.mcp.setup")
+    mcp_setup.build_mcp_server()
+  end, { desc = "Build vibing.nvim MCP server" })
+
+  vim.api.nvim_create_user_command("VibingSetupMcp", function()
+    local mcp_setup = require("vibing.mcp.setup")
+    mcp_setup.setup_wizard(M.config)
+  end, { desc = "Interactive MCP setup wizard" })
+
+  vim.api.nvim_create_user_command("VibingConfigureClaude", function()
+    local mcp_setup = require("vibing.mcp.setup")
+    mcp_setup.setup_claude_json({ force = true, port = M.config.mcp.rpc_port })
+  end, { desc = "Configure ~/.claude.json for vibing.nvim" })
 end
 
 ---現在のアダプターインスタンスを取得

@@ -36,6 +36,122 @@ The Node.js wrapper (`bin/agent-wrapper.mjs`) outputs streaming responses as JSO
 - `{"type": "done"}` - Completion signal
 - `{"type": "error", "message": "..."}` - Error messages
 
+### MCP Integration (Model Context Protocol)
+
+vibing.nvim provides MCP server integration that enables Claude Code to interact with a running Neovim instance without deadlocks. The architecture uses an async RPC server to avoid blocking issues.
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Neovim Process                                           │
+│  ├─ RPC Server (lua/vibing/rpc_server.lua)              │
+│  │   └─ vim.loop async TCP server (port 9876)           │
+│  │       - Non-blocking I/O via libuv                    │
+│  │       - vim.schedule() for safe API calls             │
+│  │                                                        │
+│  └─ Claude Code (subprocess)                             │
+│       └─ MCP Server (mcp-server/)                        │
+│            └─ TCP client → Neovim RPC server             │
+│                 └─ JSON-RPC protocol                     │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Key Benefits:**
+
+- **No Deadlocks**: Neovim's RPC server uses async I/O (libuv), never blocks
+- **Safe API Access**: `vim.schedule()` ensures API calls run on main event loop
+- **Bidirectional**: MCP server can both read and write Neovim buffers
+
+**Available MCP Tools:**
+
+When using these tools from Claude Code, prefix them with `mcp__vibing-nvim__`:
+
+- `mcp__vibing-nvim__nvim_get_buffer` - Get current buffer content
+- `mcp__vibing-nvim__nvim_set_buffer` - Replace buffer content
+- `mcp__vibing-nvim__nvim_list_buffers` - List all loaded buffers
+- `mcp__vibing-nvim__nvim_get_info` - Get current file information
+- `mcp__vibing-nvim__nvim_get_cursor` - Get cursor position
+- `mcp__vibing-nvim__nvim_set_cursor` - Set cursor position
+- `mcp__vibing-nvim__nvim_get_visual_selection` - Get visual selection
+- `mcp__vibing-nvim__nvim_execute` - Execute Neovim commands
+
+**Example Usage:**
+
+```javascript
+// List all buffers
+const buffers = await use_mcp_tool('vibing-nvim', 'nvim_list_buffers', {});
+
+// Get current buffer content
+const content = await use_mcp_tool('vibing-nvim', 'nvim_get_buffer', {});
+
+// Execute command
+await use_mcp_tool('vibing-nvim', 'nvim_execute', { command: 'write' });
+```
+
+**Quick Setup (Lazy.nvim):**
+
+```lua
+return {
+  {
+    "yourusername/vibing.nvim",
+    -- Auto-build MCP server on install/update (choose one):
+    build = "./build.sh",  -- Shell script (recommended)
+    -- OR
+    -- build = function() require("vibing.install").build() end,  -- Lua function
+    config = function()
+      require("vibing").setup({
+        mcp = {
+          enabled = true,
+          rpc_port = 9876,
+          auto_setup = true,  -- Auto-build if not built
+          auto_configure_claude_json = true,  -- Auto-configure ~/.claude.json
+        },
+      })
+    end,
+  },
+}
+```
+
+**Manual Configuration:**
+
+Enable MCP integration in your vibing.nvim config:
+
+```lua
+require("vibing").setup({
+  mcp = {
+    enabled = true,
+    rpc_port = 9876,
+    auto_setup = false,
+    auto_configure_claude_json = false,
+  },
+})
+```
+
+Then run setup commands:
+
+- `:VibingBuildMcp` - Build MCP server
+- `:VibingSetupMcp` - Interactive setup wizard
+- `:VibingConfigureClaude` - Configure ~/.claude.json
+
+Or manually add to `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "vibing-nvim": {
+      "command": "node",
+      "args": ["/path/to/vibing.nvim/mcp-server/dist/index.js"],
+      "env": {
+        "VIBING_RPC_PORT": "9876"
+      }
+    }
+  }
+}
+```
+
+See `mcp-server/README.md` and `docs/lazy-setup-example.lua` for detailed setup instructions.
+
 ### Module Structure
 
 **Core:**

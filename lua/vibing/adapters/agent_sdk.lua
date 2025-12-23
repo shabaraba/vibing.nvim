@@ -86,7 +86,15 @@ function AgentSDK:build_command(prompt, opts)
   if not allow_tools and config.permissions and config.permissions.allow then
     allow_tools = config.permissions.allow
   end
-  if allow_tools and #allow_tools > 0 then
+  -- Add MCP tools for vibing.nvim integration
+  if allow_tools then
+    allow_tools = vim.deepcopy(allow_tools)
+  else
+    allow_tools = {}
+  end
+  table.insert(allow_tools, "mcp__vibing-nvim__*")
+
+  if #allow_tools > 0 then
     table.insert(cmd, "--allow")
     table.insert(cmd, table.concat(allow_tools, ","))
   end

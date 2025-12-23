@@ -162,6 +162,16 @@ const queryOptions = {
   permissionMode: permissionMode,
   // Required when using bypassPermissions
   allowDangerouslySkipPermissions: permissionMode === 'bypassPermissions',
+  // Add MCP server for Neovim integration
+  mcpServers: {
+    'vibing-nvim': {
+      command: 'node',
+      args: [new URL('../mcp-server/dist/index.js', import.meta.url).pathname],
+      env: {
+        VIBING_RPC_PORT: '9876',
+      },
+    },
+  },
 };
 
 // Add allowed tools (auto-allowed without prompting)

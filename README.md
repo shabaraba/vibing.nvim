@@ -42,6 +42,7 @@ A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Ag
 - **🎯 Smart Context** - Automatic file context detection from open buffers and manual additions
 - **🌍 Multi-language Support** - Configure different languages for chat and inline actions
 - **📊 Diff Viewer** - Visual diff display for AI-edited files with `gd` keybinding
+- **🤖 Neovim Agent Tools** - Claude can directly control Neovim (read/write buffers, execute commands) via MCP integration
 - **⚙️ Highly Configurable** - Flexible modes, models, permissions, and UI settings
 
 ## 📦 Installation
@@ -318,6 +319,77 @@ Hello! How can I help you today?
 
 **Key Features:**
 
+" In chat: 'Add a comment at the top of this file explaining what it does'
+" Claude will use mcp**vibing-nvim**nvim_set_buffer to add the comment
+
+````
+
+### Permission Control
+
+MCP tools are automatically added to the allow list. You can control access via permissions:
+
+```lua
+require("vibing").setup({
+  permissions = {
+    -- Allow only read operations
+    allow = {
+      "Read",
+      "mcp__vibing-nvim__nvim_get_buffer",
+      "mcp__vibing-nvim__nvim_list_buffers",
+      "mcp__vibing-nvim__nvim_get_info",
+    },
+    -- Deny write operations
+    deny = {
+      "mcp__vibing-nvim__nvim_set_buffer",
+      "mcp__vibing-nvim__nvim_execute",
+    },
+  },
+})
+````
+
+### Automatic Setup
+
+The RPC server starts automatically when vibing.nvim is loaded. MCP server configuration is automatically added to `~/.claude.json` on first use.
+
+## 📝 Chat File Format
+
+Chats are saved as Markdown with YAML frontmatter for session resumption and configuration:
+
+```yaml
+---
+vibing.nvim: true
+session_id: <sdk-session-id>
+created_at: 2024-01-01T12:00:00
+mode: code  # auto | plan | code | explore
+model: sonnet  # sonnet | opus | haiku
+permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions
+permissions_allow:
+  - Read
+  - Edit
+  - Write
+  - Glob
+  - Grep
+permissions_deny:
+  - Bash
+language: ja  # Optional: default language for AI responses
+---
+# Vibing Chat
+
+## User
+
+Hello, Claude!
+
+## Assistant
+
+Hello! How can I help you today?
+```
+
+**Key Features:**
+
+- **Session Resumption**: Automatically resumes conversation using `session_id`
+- **Configuration Tracking**: Records mode, model, and permissions for transparency
+- **Language Support**: Optional `language` field for consistent AI response language
+- **Auditability**: All permissions are visible in frontmatter
 - **Session Resumption**: Automatically resumes conversation using `session_id`
 - **Configuration Tracking**: Records mode, model, and permissions for transparency
 - **Language Support**: Optional `language` field for consistent AI response language
