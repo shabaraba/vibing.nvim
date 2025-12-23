@@ -99,7 +99,7 @@ function M.execute(action_or_prompt, additional_instruction)
     M._execute_with_output(adapter, prompt, opts, action_or_prompt)
   else
     -- Check if preview is enabled in config
-    if config.inline and config.inline.preview_enabled then
+    if config.preview and config.preview.enabled then
       M._execute_with_preview(adapter, prompt, opts, action_or_prompt, additional_instruction)
     else
       M._execute_direct(adapter, prompt, opts)
@@ -337,7 +337,7 @@ function M.custom(prompt, use_output)
     M._execute_with_output(adapter, full_prompt, opts, "Result")
   else
     -- Check if preview is enabled in config
-    if config.inline and config.inline.preview_enabled then
+    if config.preview and config.preview.enabled then
       M._execute_with_preview(adapter, full_prompt, opts, "custom", prompt)
     else
       M._execute_direct(adapter, full_prompt, opts)

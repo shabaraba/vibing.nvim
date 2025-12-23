@@ -84,8 +84,8 @@ intelligent chat conversations and context-aware inline code actions directly in
         deny = { "Bash" },
         rules = {},  -- Optional granular permission rules
       },
-      inline = {
-        preview_enabled = false,  -- Enable diff preview UI (requires Git)
+      preview = {
+        enabled = false,  -- Enable diff preview UI (requires Git)
       },
       language = nil,  -- Optional: "ja" | "en" | { default = "ja", chat = "ja", inline = "en" }
     })
@@ -166,7 +166,7 @@ use {
 
 ### Inline Preview UI
 
-When `inline.preview_enabled = true` is set in configuration, inline actions display a Telescope-style
+When `preview.enabled = true` is set in configuration, inline actions display a Telescope-style
 preview UI after execution (requires Git repository):
 
 **Layout:**
@@ -285,8 +285,8 @@ require("vibing").setup({
     allow = { "Read", "Edit", "Write", "Glob", "Grep", "WebSearch" },
     deny = {},  -- Allow all tools
   },
-  inline = {
-    preview_enabled = true,  -- Enable diff preview for inline actions
+  preview = {
+    enabled = true,  -- Enable diff preview UI
   },
   keymaps = {
     send = "<C-CR>",  -- Custom send key
@@ -472,16 +472,17 @@ keymaps = {
 }
 ```
 
-### Inline Settings
+### Preview Settings
 
-Configure inline action behavior:
+Configure diff preview UI for inline actions and chat:
 
 ```lua
-inline = {
-  preview_enabled = false,  -- Enable Telescope-style diff preview UI
-                           -- Requires Git repository
-                           -- Shows Accept/Reject UI after code modifications
-                           -- Uses git diff and git checkout for revert
+preview = {
+  enabled = false,  -- Enable Telescope-style diff preview UI
+                    -- Requires Git repository
+                    -- Shows Accept/Reject UI after code modifications
+                    -- Uses git diff and git checkout for revert
+                    -- Works in both inline actions and chat (gp key)
 }
 ```
 
