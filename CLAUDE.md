@@ -55,7 +55,7 @@ settings via `settingSources: ['user', 'project']`. This means:
 
 You can use ALL your existing Claude Code configuration and tools within vibing.nvim sessions
 without any additional configuration. The vibing-nvim MCP server is automatically registered as
-a user-level MCP server during the build process (`build.sh` or `:VibingBuildMcp`).
+a user-level MCP server during the build process (`build.sh`).
 
 **Architecture:**
 
@@ -149,13 +149,8 @@ require("vibing").setup({
 })
 ```
 
-Then run setup commands:
-
-- `:VibingBuildMcp` - Build MCP server
-- `:VibingSetupMcp` - Interactive setup wizard
-- `:VibingConfigureClaude` - Configure ~/.claude.json
-
-Or manually add to `~/.claude.json`:
+The `build` script automatically registers the vibing-nvim MCP server in `~/.claude.json`.
+If needed, you can manually add or verify the configuration in `~/.claude.json`:
 
 ```json
 {
@@ -226,7 +221,7 @@ language: ja # Optional: default language for AI responses
 ---
 ```
 
-When reopening a saved chat (`:VibingOpenChat` or `:e`), the session resumes via the stored
+When reopening a saved chat (`:VibingChat <file>` or `:e`), the session resumes via the stored
 `session_id`. The `mode` and `model` fields are automatically populated from
 `config.agent.default_mode` and `config.agent.default_model` on chat creation, and can be changed
 via `/mode` and `/model` slash commands. Configured permissions are recorded in frontmatter for
@@ -361,10 +356,6 @@ vertical split diff view showing changes before/after.
 **Language Support:** Configure AI response language globally or per-action (chat vs inline),
 supporting multi-language development workflows.
 
-**Remote Control (Claude Skill):** The `remote.lua` module provides socket-based communication with another Neovim instance
-for testing and development. The `.claude/skills/neovim-remote-control/` skill exposes this API to Claude for E2E testing
-and natural language control (e.g., "open this file in the buffer"). See the skill documentation for usage with `--listen`.
-
 ## Configuration
 
 Example configuration showing all available settings:
@@ -399,10 +390,6 @@ require("vibing").setup({
     deny = { "Bash" },
     rules = {},  -- Optional granular rules
   },
-  remote = {
-    socket_path = nil,  -- Auto-detect from NVIM env variable
-    auto_detect = true,
-  },
   mcp = {
     enabled = false,  -- MCP integration disabled by default
     rpc_port = 9876,
@@ -423,7 +410,6 @@ require("vibing").setup({
 | `:VibingContext [path]`          | Add file to context (or from oil.nvim if no path)                                 |
 | `:VibingClearContext`            | Clear all context                                                                 |
 | `:VibingInline [action\|prompt]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled. |
-| `:VibingInlineAction`            | Alias of `:VibingInline` (for backward compatibility)                             |
 | `:VibingCancel`                  | Cancel current request                                                            |
 
 ### Inline Action Examples

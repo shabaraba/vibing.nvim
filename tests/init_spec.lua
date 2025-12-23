@@ -206,17 +206,8 @@ describe("vibing.init", function()
         "VibingContext",
         "VibingClearContext",
         "VibingInline",
-        "VibingInlineAction",
         "VibingCancel",
-        "VibingOpenChat",
-        "VibingRemote",
-        "VibingRemoteStatus",
-        "VibingSendToChat",
         "VibingReloadCommands",
-        "VibingMigrate",
-        "VibingBuildMcp",
-        "VibingSetupMcp",
-        "VibingConfigureClaude",
       }
 
       assert.equals(#expected, #registered_commands)
@@ -277,74 +268,6 @@ describe("vibing.init", function()
       callback()
 
       assert.is_true(cancel_called)
-    end)
-
-    it("VibingRemote should execute remote command", function()
-      local execute_called = false
-      local execute_cmd = nil
-      mock_remote.execute = function(cmd)
-        execute_called = true
-        execute_cmd = cmd
-      end
-
-      local callback
-      vim.api.nvim_create_user_command = function(name, cb)
-        if name == "VibingRemote" then
-          callback = cb
-        end
-      end
-
-      Vibing.setup()
-      callback({ args = "write" })
-
-      assert.is_true(execute_called)
-      assert.equals("write", execute_cmd)
-    end)
-
-    it("VibingRemoteStatus should get and print status", function()
-      local callback
-      vim.api.nvim_create_user_command = function(name, cb)
-        if name == "VibingRemoteStatus" then
-          callback = cb
-        end
-      end
-
-      Vibing.setup()
-      -- Should not error
-      callback()
-    end)
-
-    it("VibingMigrate should handle empty args (current buffer)", function()
-      local original_cmd = vim.cmd
-      vim.cmd = function() end
-
-      local migrator_called = false
-      local mock_migrator = {
-        migrate_current_buffer = function()
-          migrator_called = true
-          return true
-        end,
-      }
-      package.loaded["vibing.context.migrator"] = mock_migrator
-
-      mock_chat.chat_buffer = {
-        file_path = "/tmp/test.md",
-      }
-
-      local callback
-      vim.api.nvim_create_user_command = function(name, cb)
-        if name == "VibingMigrate" then
-          callback = cb
-        end
-      end
-
-      Vibing.setup()
-      callback({ args = "" })
-
-      assert.is_true(migrator_called)
-
-      -- Restore
-      vim.cmd = original_cmd
     end)
   end)
 
