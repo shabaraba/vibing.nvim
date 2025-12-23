@@ -37,6 +37,7 @@ intelligent chat conversations and context-aware inline code actions directly in
 
 - **💬 Interactive Chat Interface** - Seamless chat window with Claude AI, opens in current buffer by default
 - **⚡ Inline Actions** - Quick code fixes, explanations, refactoring, and test generation
+- **📋 Inline Preview UI** - Telescope-style diff preview with Accept/Reject for inline actions (Git required)
 - **📝 Natural Language Commands** - Use custom instructions for any code transformation
 - **🔧 Slash Commands** - In-chat commands for context management, permissions, and settings
 - **🛡️ Granular Permissions** - Fine-grained control over AI capabilities with allow/deny rules and patterns
@@ -82,6 +83,9 @@ intelligent chat conversations and context-aware inline code actions directly in
         allow = { "Read", "Edit", "Write", "Glob", "Grep" },
         deny = { "Bash" },
         rules = {},  -- Optional granular permission rules
+      },
+      inline = {
+        preview_enabled = false,  -- Enable diff preview UI (requires Git)
       },
       language = nil,  -- Optional: "ja" | "en" | { default = "ja", chat = "ja", inline = "en" }
     })
@@ -160,6 +164,42 @@ use {
 :'<,'>VibingInline "Optimize this loop for performance"
 ```
 
+### Inline Preview UI
+
+When `inline.preview_enabled = true` is set in configuration, inline actions display a Telescope-style
+preview UI after execution (requires Git repository):
+
+**Layout:**
+
+```
+┌─────────────────────────────────────────────────────┐
+│ Action: [fix]  Instruction: [input...]              │
+├──────────────┬──────────────────────────────────────┤
+│ Files (3)    │ Diff Preview                         │
+│  ▶ src/a.lua │  @@ -10,5 +10,8 @@                   │
+│    src/b.lua │  -old line                           │
+│    tests/*.lua  +new line                           │
+├──────────────┴──────────────────────────────────────┤
+│ Response: Modified 3 files successfully             │
+└─────────────────────────────────────────────────────┘
+[a]ccept [r]eject [q]uit
+```
+
+**Keybindings:**
+
+- `j`/`k` - Navigate between modified files
+- `a` - Accept changes (keep modifications)
+- `r` - Reject changes (revert using `git checkout HEAD`)
+- `q`/`Esc` - Quit preview (keep changes)
+
+**Features:**
+
+- Responsive layout (horizontal ≥120 columns, vertical <120 columns)
+- Delta integration for enhanced diff highlighting (if available)
+- Navigate through multiple modified files
+- Accept/Reject individual or all changes
+- Git-based revert functionality
+
 ### Slash Commands (in Chat)
 
 | Command                   | Description                                                      |
@@ -173,6 +213,28 @@ use {
 | `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules |
 | `/allow [tool]`           | Add tool to allow list, or show current list if no args          |
 | `/deny [tool]`            | Add tool to deny list, or show current list if no args           |
+
+### Chat Keybindings
+
+In chat buffers, the following keybindings are available:
+
+| Key  | Description                                                                      |
+| ---- | -------------------------------------------------------------------------------- |
+| `gd` | Show diff for file under cursor (in Modified Files section)                      |
+| `gf` | Open file under cursor (in Modified Files section)                               |
+| `gp` | **Preview all modified files** - Opens Telescope-style preview UI (requires Git) |
+| `q`  | Close chat window                                                                |
+
+**Preview All Modified Files (`gp`):**
+
+When Claude modifies multiple files in a chat session, press `gp` anywhere in the chat buffer to open
+the inline preview UI showing all modified files at once. This provides the same Accept/Reject
+functionality as inline actions:
+
+- Navigate between files with `j`/`k`
+- Press `a` to accept all changes
+- Press `r` to reject and revert all changes (via `git checkout HEAD`)
+- Press `q` to quit preview
 
 ## ⚙️ Configuration Examples
 
@@ -222,6 +284,9 @@ require("vibing").setup({
   permissions = {
     allow = { "Read", "Edit", "Write", "Glob", "Grep", "WebSearch" },
     deny = {},  -- Allow all tools
+  },
+  inline = {
+    preview_enabled = true,  -- Enable diff preview for inline actions
   },
   keymaps = {
     send = "<C-CR>",  -- Custom send key
@@ -404,6 +469,19 @@ keymaps = {
   add_context = "<C-a>", -- Add file to context
   open_diff = "gd",      -- Open diff viewer on file paths
   open_file = "gf",      -- Open file on file paths
+}
+```
+
+### Inline Settings
+
+Configure inline action behavior:
+
+```lua
+inline = {
+  preview_enabled = false,  -- Enable Telescope-style diff preview UI
+                           -- Requires Git repository
+                           -- Shows Accept/Reject UI after code modifications
+                           -- Uses git diff and git checkout for revert
 }
 ```
 

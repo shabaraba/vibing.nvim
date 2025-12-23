@@ -98,7 +98,12 @@ function M.execute(action_or_prompt, additional_instruction)
   if action.use_output_buffer then
     M._execute_with_output(adapter, prompt, opts, action_or_prompt)
   else
-    M._execute_direct(adapter, prompt, opts)
+    -- Check if preview is enabled in config
+    if config.inline and config.inline.preview_enabled then
+      M._execute_with_preview(adapter, prompt, opts, action_or_prompt, additional_instruction)
+    else
+      M._execute_direct(adapter, prompt, opts)
+    end
   end
 end
 
@@ -196,6 +201,77 @@ function M._execute_direct(adapter, prompt, opts)
   end
 end
 
+---プレビュー付きで実行（コード変更）
+---アダプターに実行させてコードを変更し、完了後にプレビューUIを表示
+---Git管理下のプロジェクトでのみ動作し、未管理の場合は_execute_directにフォールバック
+---@param adapter Vibing.Adapter 使用するアダプター
+---@param prompt string 実行するプロンプト（選択範囲のメンション含む）
+---@param opts Vibing.AdapterOpts アダプターオプション（tools含む）
+---@param action string アクション名（fix, feat等）
+---@param instruction string|nil 追加指示
+function M._execute_with_preview(adapter, prompt, opts, action, instruction)
+  local Git = require("vibing.utils.git")
+
+  -- Git管理下かチェック
+  if not Git.is_git_repo() then
+    notify.warn("Preview requires Git repository. Falling back to direct execution.", "Inline")
+    return M._execute_direct(adapter, prompt, opts)
+  end
+
+  local BufferReload = require("vibing.utils.buffer_reload")
+  local vibing = require("vibing")
+  local config = vibing.get_config()
+
+  -- StatusManager作成
+  local StatusManager = require("vibing.status_manager")
+  local status_mgr = StatusManager:new(config.status)
+
+  local response_text = {}
+
+  -- opts に action_type と status_manager を追加
+  opts.action_type = "inline"
+  opts.status_manager = status_mgr
+
+  if adapter:supports("streaming") then
+    opts.streaming = true
+    adapter:stream(prompt, opts, function(chunk)
+      table.insert(response_text, chunk)
+    end, function(response)
+      vim.schedule(function()
+        local modified_files = status_mgr:get_modified_files()
+
+        if response.error then
+          status_mgr:set_error(response.error)
+          notify.error(response.error, "Inline")
+        else
+          status_mgr:set_done(modified_files)
+          -- 変更されたファイルをリロード
+          BufferReload.reload_files(modified_files)
+
+          -- プレビューUIを起動
+          local InlinePreview = require("vibing.ui.inline_preview")
+          InlinePreview.setup(action, instruction or "", modified_files, table.concat(response_text, ""))
+        end
+      end)
+    end)
+  else
+    local response = adapter:execute(prompt, opts)
+    local modified_files = status_mgr:get_modified_files()
+
+    if response.error then
+      status_mgr:set_error(response.error)
+      notify.error(response.error, "Inline")
+    else
+      status_mgr:set_done(modified_files)
+      BufferReload.reload_files(modified_files)
+
+      -- プレビューUIを起動
+      local InlinePreview = require("vibing.ui.inline_preview")
+      InlinePreview.setup(action, instruction or "", modified_files, response.content)
+    end
+  end
+end
+
 ---実行結果を表示
 ---変更されたファイル一覧とClaudeの応答をOutputBufferで表示
 ---@param modified_files string[] 変更されたファイルパスのリスト
@@ -260,7 +336,12 @@ function M.custom(prompt, use_output)
   if use_output then
     M._execute_with_output(adapter, full_prompt, opts, "Result")
   else
-    M._execute_direct(adapter, full_prompt, opts)
+    -- Check if preview is enabled in config
+    if config.inline and config.inline.preview_enabled then
+      M._execute_with_preview(adapter, full_prompt, opts, "custom", prompt)
+    else
+      M._execute_direct(adapter, full_prompt, opts)
+    end
   end
 end
 

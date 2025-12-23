@@ -221,6 +221,8 @@ function M.send(chat_buffer, message)
             local relative_path = vim.fn.fnamemodify(file_path, ":.")
             chat_buffer:append_chunk(relative_path .. "\n")
           end
+          -- プレビューUI用に保存
+          chat_buffer:set_last_modified_files(modified_files)
         end
 
         -- セッションIDを同期（adapter → chat_buffer）
@@ -253,6 +255,8 @@ function M.send(chat_buffer, message)
         local relative_path = vim.fn.fnamemodify(file_path, ":.")
         chat_buffer:append_chunk(relative_path .. "\n")
       end
+      -- プレビューUI用に保存
+      chat_buffer:set_last_modified_files(modified_files)
     end
 
     -- セッションIDを同期

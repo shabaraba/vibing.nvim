@@ -113,6 +113,9 @@ M.defaults = {
     open_diff = "gd",
     open_file = "gf",
   },
+  inline = {
+    preview_enabled = false,  -- Enable diff preview UI for inline actions (requires Git)
+  },
   permissions = {
     mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
     allow = {

@@ -8,6 +8,7 @@ local Context = require("vibing.context")
 ---@field file_path string?
 ---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
+---@field _last_modified_files string[]? 最後に変更されたファイル一覧（プレビューUI用）
 local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
@@ -22,6 +23,7 @@ function ChatBuffer:new(config)
   instance.file_path = nil
   instance._chunk_buffer = ""
   instance._chunk_timer = nil
+  instance._last_modified_files = nil
   return instance
 end
 
@@ -200,6 +202,19 @@ function ChatBuffer:_setup_keymaps()
         FilePath.open_file(file_path)
       end
     end, { buffer = buf, desc = "Open file under cursor" })
+
+    -- Modified Filesセクション内で全ファイルのプレビューUIを表示
+    vim.keymap.set("n", "gp", function()
+      local modified_files = self:get_last_modified_files()
+      if not modified_files or #modified_files == 0 then
+        vim.notify("No modified files to preview", vim.log.levels.WARN)
+        return
+      end
+
+      local InlinePreview = require("vibing.ui.inline_preview")
+      -- action="chat"として、instructionは空文字列、response_textも空文字列で起動
+      InlinePreview.setup("chat", "", modified_files, "")
+    end, { buffer = buf, desc = "Preview all modified files" })
 
     vim.keymap.set("n", "q", function()
       self:close()
@@ -831,6 +846,18 @@ function ChatBuffer:update_filename_from_message(message)
   -- バッファ名を更新
   self.file_path = new_file_path
   vim.api.nvim_buf_set_name(self.buf, new_file_path)
+end
+
+---最後に変更されたファイル一覧を設定（プレビューUI用）
+---@param modified_files string[] 変更されたファイルパスの配列
+function ChatBuffer:set_last_modified_files(modified_files)
+  self._last_modified_files = modified_files
+end
+
+---最後に変更されたファイル一覧を取得（プレビューUI用）
+---@return string[]? 変更されたファイル一覧（設定されていない場合はnil）
+function ChatBuffer:get_last_modified_files()
+  return self._last_modified_files
 end
 
 return ChatBuffer
