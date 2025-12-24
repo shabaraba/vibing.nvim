@@ -212,8 +212,8 @@ function ChatBuffer:_setup_keymaps()
       end
 
       local InlinePreview = require("vibing.ui.inline_preview")
-      -- action="chat"として、instructionは空文字列、response_textも空文字列で起動
-      InlinePreview.setup("chat", "", modified_files, "")
+      -- chatモードでプレビューUIを起動（response_textは空）
+      InlinePreview.setup("chat", modified_files, "")
     end, { buffer = buf, desc = "Preview all modified files" })
 
     vim.keymap.set("n", "q", function()

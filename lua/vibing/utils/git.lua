@@ -18,24 +18,58 @@ function M.get_diff(file_path)
   -- ファイルパスを正規化
   local normalized_path = vim.fn.fnamemodify(file_path, ":p")
 
-  -- deltaの利用可能性をチェック
-  local has_delta = vim.fn.executable("delta") == 1
+  -- deltaは一時的に無効化（カラーコードの問題を回避）
+  local has_delta = false
 
-  -- git diffコマンド実行
+  -- git diffコマンド実行（複数の方法を試す）
   local cmd
-  if has_delta then
-    cmd = string.format("git diff HEAD %s | delta", vim.fn.shellescape(normalized_path))
-  else
-    cmd = string.format("git diff HEAD %s", vim.fn.shellescape(normalized_path))
+  local result
+
+  -- 1. まずHEADとの差分を試す（既存ファイルの変更）
+  cmd = string.format("git diff --no-color HEAD -- %s", vim.fn.shellescape(normalized_path))
+
+  result = vim.fn.systemlist({ "sh", "-c", cmd })
+
+  -- 2. 結果が空の場合、ステージング済みの変更を試す（新規ファイル等）
+  if vim.v.shell_error == 0 and #result == 0 then
+    cmd = string.format("git diff --no-color --cached -- %s", vim.fn.shellescape(normalized_path))
+    result = vim.fn.systemlist({ "sh", "-c", cmd })
   end
 
-  local result = vim.fn.systemlist({ "sh", "-c", cmd })
+  -- 3. それでも空の場合、working treeとindexの差分を試す
+  if vim.v.shell_error == 0 and #result == 0 then
+    cmd = string.format("git diff --no-color -- %s", vim.fn.shellescape(normalized_path))
+    result = vim.fn.systemlist({ "sh", "-c", cmd })
+  end
 
   if vim.v.shell_error ~= 0 then
+    local lines = {
+      "Error: Could not retrieve diff for " .. file_path,
+      "Command: " .. cmd,
+      "Exit code: " .. tostring(vim.v.shell_error),
+      "Output:",
+    }
+    -- エラー出力を個別の行として追加
+    for _, line in ipairs(result) do
+      table.insert(lines, "  " .. line)
+    end
+    if #result == 0 then
+      table.insert(lines, "  (empty)")
+    end
+
     return {
-      lines = { "Error: Could not retrieve diff for " .. file_path },
+      lines = lines,
       has_delta = false,
       error = true,
+    }
+  end
+
+  -- 結果が空の場合はメッセージを表示
+  if #result == 0 then
+    return {
+      lines = { "No changes detected for " .. file_path },
+      has_delta = false,
+      error = false,
     }
   end
 

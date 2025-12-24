@@ -1,5 +1,7 @@
 -- vibing.nvim auto-detection for chat files
 
+---@diagnostic disable-next-line: undefined-global
+local vim = vim
 local attached_bufs = {}
 
 local function try_attach(buf)
