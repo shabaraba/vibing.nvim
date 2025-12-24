@@ -107,7 +107,7 @@ describe("vibing.actions.inline", function()
 
     it("should define feat action", function()
       assert.is_not_nil(InlineActions.actions.feat)
-      assert.equals("Implement the following feature by writing actual code. You MUST use Edit or Write tools to modify or create files. Do not just explain or provide suggestions - write the implementation directly into the files:", InlineActions.actions.feat.prompt)
+      assert.equals("Make the requested changes to the selected code by writing actual code. You MUST use Edit or Write tools to modify or create files. Do not just explain or provide suggestions - write the implementation directly into the files:", InlineActions.actions.feat.prompt)
       assert.is_false(InlineActions.actions.feat.use_output_buffer)
     end)
 
