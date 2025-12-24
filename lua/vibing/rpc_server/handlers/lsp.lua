@@ -170,9 +170,16 @@ function M.lsp_call_hierarchy_incoming(params)
     error("Missing line or col parameter")
   end
 
-  -- Check if LSP is attached
-  local clients = vim.lsp.get_clients({ bufnr = bufnr })
-  if #clients == 0 then
+  -- Check if LSP is attached (compatible with Neovim 0.8+)
+  local clients
+  if vim.lsp.get_clients then
+    -- Neovim 0.10+
+    clients = vim.lsp.get_clients({ bufnr = bufnr })
+  else
+    -- Neovim 0.8-0.9
+    clients = vim.lsp.buf_get_clients(bufnr)
+  end
+  if not clients or #clients == 0 then
     error(string.format("No LSP server attached to buffer %d. Make sure the file is loaded and LSP is initialized.", bufnr))
   end
 
@@ -221,9 +228,16 @@ function M.lsp_call_hierarchy_outgoing(params)
     error("Missing line or col parameter")
   end
 
-  -- Check if LSP is attached
-  local clients = vim.lsp.get_clients({ bufnr = bufnr })
-  if #clients == 0 then
+  -- Check if LSP is attached (compatible with Neovim 0.8+)
+  local clients
+  if vim.lsp.get_clients then
+    -- Neovim 0.10+
+    clients = vim.lsp.get_clients({ bufnr = bufnr })
+  else
+    -- Neovim 0.8-0.9
+    clients = vim.lsp.buf_get_clients(bufnr)
+  end
+  if not clients or #clients == 0 then
     error(string.format("No LSP server attached to buffer %d. Make sure the file is loaded and LSP is initialized.", bufnr))
   end
 
