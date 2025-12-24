@@ -33,3 +33,13 @@ export async function handleListBuffers(args: any) {
     content: [{ type: 'text', text: JSON.stringify(buffers, null, 2) }],
   };
 }
+
+export async function handleLoadBuffer(args: any) {
+  if (!args || !args.filepath) {
+    throw new Error('Missing required parameter: filepath');
+  }
+  const result = await callNeovim('load_buffer', { filepath: args.filepath });
+  return {
+    content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+  };
+}

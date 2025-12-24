@@ -10,6 +10,7 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_set_buffer: buffer.handleSetBuffer,
   nvim_get_info: buffer.handleGetInfo,
   nvim_list_buffers: buffer.handleListBuffers,
+  nvim_load_buffer: buffer.handleLoadBuffer,
 
   // Cursor operations
   nvim_get_cursor: cursor.handleGetCursor,
