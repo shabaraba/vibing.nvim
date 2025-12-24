@@ -306,7 +306,11 @@ function ChatBuffer:_init_content()
   table.insert(lines, "## User")
   table.insert(lines, "")
   table.insert(lines, "")
-  table.insert(lines, "Context: " .. Context.format_for_display())
+
+  -- Context行を追加（改行を含む場合は分割）
+  local context_text = "Context: " .. Context.format_for_display()
+  local context_lines = vim.split(context_text, "\n", { plain = true })
+  vim.list_extend(lines, context_lines)
 
   vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
   -- "## User"の次の空行（ユーザー入力エリア）にカーソルを設定
