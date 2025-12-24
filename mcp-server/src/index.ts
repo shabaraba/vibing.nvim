@@ -211,6 +211,83 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {},
         },
       },
+      {
+        name: 'nvim_list_windows',
+        description: 'List all windows with their properties',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
+        name: 'nvim_get_window_info',
+        description: 'Get detailed information for a specific window',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            winnr: {
+              type: 'number',
+              description: 'Window number (0 for current window)',
+            },
+          },
+        },
+      },
+      {
+        name: 'nvim_get_window_view',
+        description: 'Get window viewport information (visible line range, scroll position)',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            winnr: {
+              type: 'number',
+              description: 'Window number (0 for current window)',
+            },
+          },
+        },
+      },
+      {
+        name: 'nvim_list_tabpages',
+        description: 'List all tab pages with their windows',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
+        name: 'nvim_set_window_size',
+        description: 'Resize window width and/or height',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            winnr: {
+              type: 'number',
+              description: 'Window number (0 for current window)',
+            },
+            width: {
+              type: 'number',
+              description: 'Window width (optional)',
+            },
+            height: {
+              type: 'number',
+              description: 'Window height (optional)',
+            },
+          },
+        },
+      },
+      {
+        name: 'nvim_focus_window',
+        description: 'Move focus to a specific window',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            winnr: {
+              type: 'number',
+              description: 'Window number to focus',
+            },
+          },
+          required: ['winnr'],
+        },
+      },
     ],
   };
 });
@@ -327,6 +404,92 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: JSON.stringify(selection, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'nvim_list_windows': {
+        const windows = await callNeovim('list_windows');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(windows, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'nvim_get_window_info': {
+        const info = await callNeovim('get_window_info', { winnr: args?.winnr });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(info, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'nvim_get_window_view': {
+        const view = await callNeovim('get_window_view', { winnr: args?.winnr });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(view, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'nvim_list_tabpages': {
+        const tabs = await callNeovim('list_tabpages');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(tabs, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'nvim_set_window_size': {
+        if (args?.width !== undefined) {
+          await callNeovim('set_window_width', {
+            winnr: args.winnr,
+            width: args.width,
+          });
+        }
+        if (args?.height !== undefined) {
+          await callNeovim('set_window_height', {
+            winnr: args.winnr,
+            height: args.height,
+          });
+        }
+        return {
+          content: [
+            {
+              type: 'text',
+              text: 'Window size updated successfully',
+            },
+          ],
+        };
+      }
+
+      case 'nvim_focus_window': {
+        if (!args || args.winnr === undefined) {
+          throw new Error('Missing required parameter: winnr');
+        }
+        await callNeovim('focus_window', { winnr: args.winnr });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Focused window ${args.winnr}`,
             },
           ],
         };
