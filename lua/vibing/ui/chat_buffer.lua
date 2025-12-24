@@ -187,9 +187,26 @@ function ChatBuffer:_setup_keymaps()
     -- ファイルパス上で diff を表示
     vim.keymap.set("n", keymaps.open_diff, function()
       local FilePath = require("vibing.utils.file_path")
-      local GitDiff = require("vibing.utils.git_diff")
       local file_path = FilePath.is_cursor_on_file_path(buf)
       if file_path then
+        -- Modified Filesに含まれているかチェック
+        local modified_files = self:get_last_modified_files()
+        if modified_files and #modified_files > 0 then
+          -- パスを正規化して比較
+          local normalized_cursor = vim.fn.fnamemodify(file_path, ":p")
+          for _, mf in ipairs(modified_files) do
+            local normalized_mf = vim.fn.fnamemodify(mf, ":p")
+            if normalized_mf == normalized_cursor then
+              -- Modified Filesの一部なのでプレビューUIを開く
+              local InlinePreview = require("vibing.ui.inline_preview")
+              local saved_contents = self:get_last_saved_contents()
+              InlinePreview.setup("chat", modified_files, "", saved_contents, file_path)
+              return
+            end
+          end
+        end
+        -- 通常のdiffを表示
+        local GitDiff = require("vibing.utils.git_diff")
         GitDiff.show_diff(file_path)
       end
     end, { buffer = buf, desc = "Open diff for file under cursor" })
@@ -212,8 +229,9 @@ function ChatBuffer:_setup_keymaps()
       end
 
       local InlinePreview = require("vibing.ui.inline_preview")
-      -- chatモードでプレビューUIを起動（response_textは空）
-      InlinePreview.setup("chat", modified_files, "")
+      local saved_contents = self:get_last_saved_contents()
+      -- chatモードでプレビューUIを起動（response_textは空、保存内容を渡す）
+      InlinePreview.setup("chat", modified_files, "", saved_contents)
     end, { buffer = buf, desc = "Preview all modified files" })
 
     vim.keymap.set("n", "q", function()
@@ -850,14 +868,22 @@ end
 
 ---最後に変更されたファイル一覧を設定（プレビューUI用）
 ---@param modified_files string[] 変更されたファイルパスの配列
-function ChatBuffer:set_last_modified_files(modified_files)
+---@param saved_contents table<string, string[]>? Claude変更前のファイル内容（オプション）
+function ChatBuffer:set_last_modified_files(modified_files, saved_contents)
   self._last_modified_files = modified_files
+  self._last_saved_contents = saved_contents or {}
 end
 
 ---最後に変更されたファイル一覧を取得（プレビューUI用）
 ---@return string[]? 変更されたファイル一覧（設定されていない場合はnil）
 function ChatBuffer:get_last_modified_files()
   return self._last_modified_files
+end
+
+---最後に保存されたファイル内容を取得（プレビューUI用）
+---@return table<string, string[]> Claude変更前のファイル内容
+function ChatBuffer:get_last_saved_contents()
+  return self._last_saved_contents or {}
 end
 
 return ChatBuffer

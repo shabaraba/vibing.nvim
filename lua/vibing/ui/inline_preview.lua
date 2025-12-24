@@ -45,8 +45,9 @@ local state = {
 ---@param modified_files string[] 変更されたファイル一覧
 ---@param response_text string Agent SDKの応答テキスト（chatモードでは空文字列）
 ---@param saved_contents table<string, string[]>? Claude変更前のファイル内容（オプション）
+---@param initial_file string? 初期選択するファイルパス（オプション）
 ---@return boolean success 成功した場合true
-function M.setup(mode, modified_files, response_text, saved_contents)
+function M.setup(mode, modified_files, response_text, saved_contents, initial_file)
   -- Gitリポジトリチェック
   if not git.is_git_repo() then
     vim.notify(
@@ -66,8 +67,22 @@ function M.setup(mode, modified_files, response_text, saved_contents)
   local has_files = modified_files and #modified_files > 0
   local has_response = response_text and response_text ~= ""
 
+  -- 初期選択ファイルのインデックスを決定
+  local initial_idx = 1
+  if initial_file and has_files then
+    -- 相対パスと絶対パスの両方で照合
+    local normalized_initial = vim.fn.fnamemodify(initial_file, ":p")
+    for i, file in ipairs(modified_files) do
+      local normalized_file = vim.fn.fnamemodify(file, ":p")
+      if normalized_file == normalized_initial then
+        initial_idx = i
+        break
+      end
+    end
+  end
+
   -- ファイルがある場合のみインデックスを設定
-  state.selected_file_idx = has_files and 1 or 0
+  state.selected_file_idx = has_files and initial_idx or 0
 
   if mode == "inline" then
     -- Inline mode: ファイル変更またはレスポンスがあればプレビュー表示

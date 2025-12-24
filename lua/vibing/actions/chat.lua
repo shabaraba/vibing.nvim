@@ -164,6 +164,20 @@ function M.send(chat_buffer, message)
   -- frontmatterからmode/model/permissionsを取得してoptsに含める
   local frontmatter = chat_buffer:parse_frontmatter()
 
+  -- Claude実行前に開いているバッファの内容を保存
+  local saved_contents = {}
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(buf) then
+      local file_path = vim.api.nvim_buf_get_name(buf)
+      if file_path ~= "" and vim.fn.filereadable(file_path) == 1 then
+        -- 絶対パスに正規化
+        local normalized_path = vim.fn.fnamemodify(file_path, ":p")
+        local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+        saved_contents[normalized_path] = content
+      end
+    end
+  end
+
   -- StatusManager作成
   local StatusManager = require("vibing.status_manager")
   local status_mgr = StatusManager:new(config.status)
@@ -215,14 +229,18 @@ function M.send(chat_buffer, message)
 
         -- 編集されたファイル一覧を表示
         if #modified_files > 0 then
+          -- 変更されたファイルをリロード（inline機能と同様）
+          local BufferReload = require("vibing.utils.buffer_reload")
+          BufferReload.reload_files(modified_files)
+
           chat_buffer:append_chunk("\n\n## Modified Files\n\n")
           for _, file_path in ipairs(modified_files) do
             -- 相対パスに変換
             local relative_path = vim.fn.fnamemodify(file_path, ":.")
             chat_buffer:append_chunk(relative_path .. "\n")
           end
-          -- プレビューUI用に保存
-          chat_buffer:set_last_modified_files(modified_files)
+          -- プレビューUI用に保存（保存した内容も含める）
+          chat_buffer:set_last_modified_files(modified_files, saved_contents)
         end
 
         -- セッションIDを同期（adapter → chat_buffer）
@@ -249,14 +267,18 @@ function M.send(chat_buffer, message)
 
     -- 編集されたファイル一覧を表示
     if #modified_files > 0 then
+      -- 変更されたファイルをリロード（inline機能と同様）
+      local BufferReload = require("vibing.utils.buffer_reload")
+      BufferReload.reload_files(modified_files)
+
       chat_buffer:append_chunk("\n\n## Modified Files\n\n")
       for _, file_path in ipairs(modified_files) do
         -- 相対パスに変換
         local relative_path = vim.fn.fnamemodify(file_path, ":.")
         chat_buffer:append_chunk(relative_path .. "\n")
       end
-      -- プレビューUI用に保存
-      chat_buffer:set_last_modified_files(modified_files)
+      -- プレビューUI用に保存（保存内容も一緒に渡す）
+      chat_buffer:set_last_modified_files(modified_files, saved_contents)
     end
 
     -- セッションIDを同期
