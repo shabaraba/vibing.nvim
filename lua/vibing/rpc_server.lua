@@ -248,18 +248,26 @@ local function handle_request(client, request)
         if not winnr or not filepath then
           error("Missing winnr or filepath parameter")
         end
+        -- Validate filepath
+        if filepath == "" or filepath:match("^%s*$") then
+          error("Invalid filepath: empty or whitespace-only")
+        end
+        if filepath:match("\0") then
+          error("Invalid filepath: contains null character")
+        end
         if not vim.api.nvim_win_is_valid(winnr) then
           error("Invalid window number: " .. tostring(winnr))
         end
         local current = vim.api.nvim_get_current_win()
         vim.api.nvim_set_current_win(winnr)
         vim.cmd("edit " .. vim.fn.fnameescape(filepath))
+        local opened_bufnr = vim.api.nvim_get_current_buf()  -- Capture before restoring focus
         if winnr ~= current then
           vim.api.nvim_set_current_win(current)
         end
         return {
           success = true,
-          bufnr = vim.api.nvim_get_current_buf()
+          bufnr = opened_bufnr
         }
 
       else
