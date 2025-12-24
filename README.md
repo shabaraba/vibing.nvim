@@ -173,7 +173,7 @@ preview UI after execution (requires Git repository):
 
 Inline mode (3 panels):
 
-```
+```text
 ┌──────────────┬──────────────────────────────────────┐
 │ Files (3)    │ Diff Preview                         │
 │  > src/a.lua │  @@ -10,5 +10,8 @@                   │
@@ -186,7 +186,7 @@ Inline mode (3 panels):
 
 Chat mode (2 panels):
 
-```
+```text
 ┌──────────────┬──────────────────────────────────────┐
 │ Files (3)    │ Diff Preview                         │
 │  > src/a.lua │  @@ -10,5 +10,8 @@                   │
