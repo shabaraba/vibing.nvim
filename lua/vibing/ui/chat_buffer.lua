@@ -256,10 +256,7 @@ function ChatBuffer:_setup_keymaps()
   })
 end
 
--- Initialize the chat buffer with default frontmatter, headers, and an empty user input section.
--- Writes YAML-like frontmatter (session_id, created_at and optional agent/model and permissions),
--- adds the chat headers and a "## User" section, inserts the formatted Context (splitting on newlines),
--- and places the cursor at the user input area if the buffer window is open.
+---初期コンテンツを設定
 function ChatBuffer:_init_content()
   local vibing = require("vibing")
   local config = vibing.get_config()
@@ -325,9 +322,7 @@ function ChatBuffer:_init_content()
   end
 end
 
--- Update the buffer's "Context:" display at the end of the chat buffer.
--- Recomputes the context via Context.format_for_display(), splits it on newlines into one or more "Context:" lines,
--- and either replaces the last existing "Context:" block or appends a blank line followed by the new context lines at the buffer end.
+---コンテキスト行を更新（ファイル末尾）
 function ChatBuffer:_update_context_line()
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
   local context_text = "Context: " .. Context.format_for_display()

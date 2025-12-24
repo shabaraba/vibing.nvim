@@ -228,10 +228,7 @@ end
 
 ---フローティングウィンドウを表示または更新
 ---@param title string タイトル
--- Display a non-focusable floating notification in the bottom-right of the editor.
--- Creates or updates an internal scratch buffer and floating window to show the given title and multi-line message; in headless environments (no UI) the call is a no-op.
--- @param title string The notification title.
--- @param message string The notification message; may contain newlines to produce multiple lines.
+---@param message string メッセージ
 function StatusManager:_show_float(title, message)
   -- Check if window is still valid
   if self._float_win and not vim.api.nvim_win_is_valid(self._float_win) then

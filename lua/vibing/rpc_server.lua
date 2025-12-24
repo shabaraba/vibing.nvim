@@ -19,11 +19,7 @@ local current_port = nil
 
 ---Handle incoming JSON-RPC request
 ---@param client uv_tcp_t クライアントソケット
--- Process a newline-delimited JSON-RPC request string and send a JSON-RPC response to the client.
--- Schedules handler execution on the Neovim main loop, dispatches the request to the corresponding entry in `handlers`,
--- and writes either a `{ id = req.id, result = ... }` or `{ id = req.id, error = ... }` response (followed by a newline) to the client.
--- @param client uv_tcp_t|nil TCP client handle; if `nil` or closing, no response will be written.
--- @param request string JSON-RPC request as a single-line JSON string.
+---@param request string JSON-RPC リクエスト文字列
 local function handle_request(client, request)
   local ok, req = pcall(vim.json.decode, request)
   if not ok then

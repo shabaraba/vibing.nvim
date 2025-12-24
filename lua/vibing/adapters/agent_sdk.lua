@@ -36,10 +36,7 @@ end
 ---opts内の値はfrontmatterから渡され、グローバル設定より優先される
 ---@param prompt string ユーザープロンプト
 ---@param opts Vibing.AdapterOpts コンテキストファイル等のオプション
--- Build the Node.js command-line arguments to invoke the agent wrapper for the given prompt and options.
--- @param prompt The prompt text to provide to the agent.
--- @param opts Table of frontmatter and runtime options that may influence the command (e.g. mode, model, context entries like "@file:<path>", permissions_allow, permissions_deny, permission_mode).
--- @return string[] Array of command and arguments ready to be executed (first element is the Node executable followed by wrapper path and flags).
+---@return string[] Node.js実行用のコマンドライン配列
 function AgentSDK:build_command(prompt, opts)
   local cmd = { "node", self:get_wrapper_path() }
 
