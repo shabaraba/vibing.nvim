@@ -1,5 +1,6 @@
 local git = require("vibing.utils.git")
 local diff_util = require("vibing.utils.diff")
+local BufferReload = require("vibing.utils.buffer_reload")
 
 ---@class Vibing.InlinePreview
 ---インラインアクションとチャットのプレビューUI
@@ -13,6 +14,7 @@ local M = {}
 ---@field diffs table<string, table> { [filepath] = { lines, has_delta, error } }
 ---@field selected_file_idx number 現在選択中のファイルインデックス
 ---@field response_text string Agent SDKレスポンス（chatモードでは空）
+---@field active_panel "diff"|"response" 現在展開中のパネル（inlineモードのみ）
 ---@field win_files number? ファイルリストウィンドウ
 ---@field win_diff number? Diffプレビューウィンドウ
 ---@field win_response number? レスポンス表示ウィンドウ（inlineモードのみ）
@@ -27,6 +29,7 @@ local state = {
   diffs = {},
   selected_file_idx = 1,
   response_text = "",
+  active_panel = "diff",  -- デフォルトでDiffを展開
   win_files = nil,
   win_diff = nil,
   win_response = nil,
@@ -50,28 +53,43 @@ function M.setup(mode, modified_files, response_text)
     return false
   end
 
-  -- 変更ファイルチェック
-  if not modified_files or #modified_files == 0 then
-    vim.notify(
-      "No files were modified during this action. Nothing to preview.",
-      vim.log.levels.INFO
-    )
-    return false
-  end
-
   -- 状態初期化
   state.mode = mode
-  state.modified_files = modified_files
+  state.modified_files = modified_files or {}
   state.response_text = response_text or ""
-  state.selected_file_idx = 1
 
-  -- Diff取得
-  state.diffs = git.get_diffs(modified_files)
+  -- 変更ファイル＆レスポンスチェック
+  local has_files = modified_files and #modified_files > 0
+  local has_response = response_text and response_text ~= ""
 
-  -- DEBUG
-  vim.notify(string.format("[DEBUG] Retrieved diffs for %d files", vim.tbl_count(state.diffs)), vim.log.levels.INFO)
-  for file, diff_data in pairs(state.diffs) do
-    vim.notify(string.format("[DEBUG] %s: lines=%d, error=%s", file, #diff_data.lines, tostring(diff_data.error)), vim.log.levels.INFO)
+  -- ファイルがある場合のみインデックスを設定
+  state.selected_file_idx = has_files and 1 or 0
+
+  if mode == "inline" then
+    -- Inline mode: ファイル変更またはレスポンスがあればプレビュー表示
+    if not has_files and not has_response then
+      vim.notify(
+        "No files were modified and no response available. Nothing to preview.",
+        vim.log.levels.INFO
+      )
+      return false
+    end
+  else
+    -- Chat mode: ファイル変更が必須
+    if not has_files then
+      vim.notify(
+        "No files were modified during this action. Nothing to preview.",
+        vim.log.levels.INFO
+      )
+      return false
+    end
+  end
+
+  -- Diff取得（ファイルがある場合のみ）
+  if has_files then
+    state.diffs = git.get_diffs(modified_files)
+  else
+    state.diffs = {}
   end
 
   -- Diff取得結果チェック（全てエラーの場合は警告）
@@ -107,125 +125,78 @@ function M._create_layout()
   end
 end
 
----インライン用レイアウト（3パネル：Files, Diff, Response）
+---インライン用レイアウト（アコーディオン式：Files左、Diff/Response右縦並び）
 function M._create_inline_layout()
-  -- レスポンシブ判定（120列以上で横並び）
-  local is_wide = vim.o.columns >= 120
   local total_width = math.floor(vim.o.columns * 0.9)
   local total_height = math.floor(vim.o.lines * 0.9)
   local start_row = math.floor((vim.o.lines - total_height) / 2)
   local start_col = math.floor((vim.o.columns - total_width) / 2)
 
-  if is_wide then
-    -- 横並びレイアウト（3パネル：Files, Diff, Response）
-    local response_height = 2
-    local files_width = math.floor(total_width * 0.3)
-    local diff_width = total_width - files_width - 3 -- 3 for borders
-    local middle_height = total_height - response_height - 2 -- 2 for borders
+  -- アコーディオン式レイアウト：Files左、Diff/Response右縦並び
+  local files_width = math.floor(total_width * 0.25)  -- Files: 25%
+  local right_width = total_width - files_width - 3  -- 右側パネル: 75%
+  local collapsed_height = 1  -- 折りたたみ時の高さ（タイトル行のみ）
 
-    -- ファイルリストバッファ
-    state.buf_files = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_option(state.buf_files, "bufhidden", "wipe")
-    vim.api.nvim_buf_set_option(state.buf_files, "modifiable", false)
-
-    state.win_files = vim.api.nvim_open_win(state.buf_files, true, {
-      relative = "editor",
-      width = files_width,
-      height = middle_height,
-      row = start_row,
-      col = start_col,
-      style = "minimal",
-      border = "rounded",
-      title = " Files ",
-      title_pos = "center",
-    })
-
-    -- Diffプレビューバッファ
-    state.buf_diff = diff_util.create_diff_buffer({})
-    state.win_diff = vim.api.nvim_open_win(state.buf_diff, false, {
-      relative = "editor",
-      width = diff_width,
-      height = middle_height,
-      row = start_row,
-      col = start_col + files_width + 3,
-      style = "minimal",
-      border = "rounded",
-      title = " Diff Preview ",
-      title_pos = "center",
-    })
-
-    -- レスポンスバッファ
-    state.buf_response = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_option(state.buf_response, "bufhidden", "wipe")
-    vim.api.nvim_buf_set_option(state.buf_response, "modifiable", false)
-    vim.api.nvim_buf_set_option(state.buf_response, "filetype", "markdown")
-
-    state.win_response = vim.api.nvim_open_win(state.buf_response, false, {
-      relative = "editor",
-      width = total_width,
-      height = response_height,
-      row = start_row + total_height - response_height,
-      col = start_col,
-      style = "minimal",
-      border = "rounded",
-      title = " Response ",
-      title_pos = "center",
-    })
-  else
-    -- 縦並びレイアウト（120列未満、3パネル：Files, Diff, Response）
-    local files_height = 6
-    local response_height = 2
-    local diff_height = total_height - files_height - response_height - 4
-
-    -- ファイルリストバッファ
-    state.buf_files = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_option(state.buf_files, "bufhidden", "wipe")
-    vim.api.nvim_buf_set_option(state.buf_files, "modifiable", false)
-
-    state.win_files = vim.api.nvim_open_win(state.buf_files, true, {
-      relative = "editor",
-      width = total_width,
-      height = files_height,
-      row = start_row,
-      col = start_col,
-      style = "minimal",
-      border = "rounded",
-      title = " Files ",
-      title_pos = "center",
-    })
-
-    -- Diffプレビューバッファ
-    state.buf_diff = diff_util.create_diff_buffer({})
-    state.win_diff = vim.api.nvim_open_win(state.buf_diff, false, {
-      relative = "editor",
-      width = total_width,
-      height = diff_height,
-      row = start_row + files_height + 2,
-      col = start_col,
-      style = "minimal",
-      border = "rounded",
-      title = " Diff Preview ",
-      title_pos = "center",
-    })
-
-    -- レスポンスバッファ
-    state.buf_response = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_option(state.buf_response, "bufhidden", "wipe")
-    vim.api.nvim_buf_set_option(state.buf_response, "modifiable", false)
-    vim.api.nvim_buf_set_option(state.buf_response, "filetype", "markdown")
-
-    state.win_response = vim.api.nvim_open_win(state.buf_response, false, {
-      relative = "editor",
-      width = total_width,
-      height = response_height,
-      row = start_row + total_height - response_height,
-      col = start_col,
-      style = "minimal",
-      border = "rounded",
-      title = " Response ",
-      title_pos = "center",
-    })
+  -- active_panelに応じて高さを計算
+  local diff_height, response_height
+  if state.active_panel == "diff" then
+    diff_height = total_height - collapsed_height - 2  -- Diff展開、Response折りたたみ
+    response_height = collapsed_height
+  else  -- "response"
+    diff_height = collapsed_height  -- Diff折りたたみ、Response展開
+    response_height = total_height - collapsed_height - 2
   end
+
+  -- ファイルリストバッファ（左側、固定）
+  state.buf_files = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_option(state.buf_files, "bufhidden", "wipe")
+  vim.api.nvim_buf_set_option(state.buf_files, "modifiable", false)
+
+  state.win_files = vim.api.nvim_open_win(state.buf_files, true, {
+    relative = "editor",
+    width = files_width,
+    height = total_height,
+    row = start_row,
+    col = start_col,
+    style = "minimal",
+    border = "rounded",
+    title = " Files ",
+    title_pos = "center",
+  })
+
+  -- Diffプレビューバッファ（右上）
+  state.buf_diff = diff_util.create_diff_buffer({})
+  local diff_title = state.active_panel == "diff" and " ▼ Diff " or " ▶ Diff "
+  state.win_diff = vim.api.nvim_open_win(state.buf_diff, false, {
+    relative = "editor",
+    width = right_width,
+    height = diff_height,
+    row = start_row,
+    col = start_col + files_width + 3,
+    style = "minimal",
+    border = "rounded",
+    title = diff_title,
+    title_pos = "center",
+  })
+
+  -- レスポンスバッファ（右下）
+  state.buf_response = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_option(state.buf_response, "bufhidden", "wipe")
+  vim.api.nvim_buf_set_option(state.buf_response, "modifiable", false)
+  vim.api.nvim_buf_set_option(state.buf_response, "filetype", "markdown")
+
+  local response_title = state.active_panel == "response" and " ▼ Response " or " ▶ Response "
+  state.win_response = vim.api.nvim_open_win(state.buf_response, false, {
+    relative = "editor",
+    width = right_width,
+    height = response_height,
+    row = start_row + diff_height + 2,
+    col = start_col + files_width + 3,
+    style = "minimal",
+    border = "rounded",
+    title = response_title,
+    title_pos = "center",
+  })
 end
 
 ---チャット用レイアウト（2パネル：Files, Diff）
@@ -327,10 +298,25 @@ function M._render_files_panel()
 
   local lines = { string.format("Files (%d):", #state.modified_files), "" }
 
-  for i, file in ipairs(state.modified_files) do
-    local marker = (i == state.selected_file_idx) and "▶ " or "  "
-    table.insert(lines, marker .. file)
+  if #state.modified_files == 0 then
+    table.insert(lines, "No files modified")
+  else
+    for i, file in ipairs(state.modified_files) do
+      local marker = (i == state.selected_file_idx) and "▶ " or "  "
+      table.insert(lines, marker .. file)
+    end
   end
+
+  -- Add separator and help text
+  table.insert(lines, "")
+  table.insert(lines, string.rep("─", 40))
+  local help_start_idx = #lines  -- セパレーターの次の行のインデックス（0-indexed）
+  table.insert(lines, "<CR> Select")
+  table.insert(lines, "<Tab> Next")
+  table.insert(lines, "<S-Tab> Prev")
+  table.insert(lines, "a Accept")
+  table.insert(lines, "r Reject")
+  table.insert(lines, "q Quit")
 
   vim.api.nvim_buf_set_option(state.buf_files, "modifiable", true)
   vim.api.nvim_buf_set_lines(state.buf_files, 0, -1, false, lines)
@@ -342,11 +328,22 @@ function M._render_files_panel()
   if state.selected_file_idx > 0 and state.selected_file_idx <= #state.modified_files then
     vim.api.nvim_buf_add_highlight(state.buf_files, ns_id, "Visual", state.selected_file_idx + 1, 0, -1)
   end
+
+  -- Highlight help text
+  for i = help_start_idx, #lines - 1 do
+    vim.api.nvim_buf_add_highlight(state.buf_files, ns_id, "Comment", i, 0, -1)
+  end
 end
 
 ---Diffパネルを描画
 function M._render_diff_panel()
   if not state.buf_diff or not vim.api.nvim_buf_is_valid(state.buf_diff) then
+    return
+  end
+
+  -- Inline modeで折りたたまれている場合は最小限の表示
+  if state.mode == "inline" and state.active_panel ~= "diff" then
+    diff_util.update_diff_buffer(state.buf_diff, { "Press Tab to expand Diff panel" })
     return
   end
 
@@ -358,15 +355,10 @@ function M._render_diff_panel()
   local file = state.modified_files[state.selected_file_idx]
   local diff_data = state.diffs[file]
 
-  -- DEBUG
-  vim.notify(string.format("[DEBUG] Rendering diff for: %s", file), vim.log.levels.INFO)
   if not diff_data then
-    vim.notify("[DEBUG] diff_data is nil", vim.log.levels.WARN)
     diff_util.update_diff_buffer(state.buf_diff, { "Error: Diff not available for " .. file })
     return
   end
-
-  vim.notify(string.format("[DEBUG] diff_data.lines count: %d, error: %s", #diff_data.lines, tostring(diff_data.error)), vim.log.levels.INFO)
 
   if diff_data.error then
     diff_util.update_diff_buffer(state.buf_diff, diff_data.lines)
@@ -379,6 +371,14 @@ end
 ---レスポンスパネルを描画
 function M._render_response_panel()
   if not state.buf_response or not vim.api.nvim_buf_is_valid(state.buf_response) then
+    return
+  end
+
+  -- Inline modeで折りたたまれている場合は最小限の表示
+  if state.mode == "inline" and state.active_panel ~= "response" then
+    vim.api.nvim_buf_set_option(state.buf_response, "modifiable", true)
+    vim.api.nvim_buf_set_lines(state.buf_response, 0, -1, false, { "Press Tab to expand Response panel" })
+    vim.api.nvim_buf_set_option(state.buf_response, "modifiable", false)
     return
   end
 
@@ -436,44 +436,151 @@ function M._cycle_window(direction)
   end
 end
 
+---アコーディオンパネル切り替え（inline modeのみ）
+---Diff ⇄ Response を切り替え、展開/折りたたみを制御
+function M._switch_panel(target_panel)
+  if state.mode ~= "inline" then
+    return
+  end
+
+  -- 現在のウィンドウを取得
+  local current_win = vim.api.nvim_get_current_win()
+
+  -- すでに目的のパネルが展開されていて、かつそのパネルにフォーカスがある場合のみスキップ
+  local target_win = target_panel == "diff" and state.win_diff or state.win_response
+  if state.active_panel == target_panel and current_win == target_win then
+    return
+  end
+
+  -- active_panelを切り替え
+  state.active_panel = target_panel
+
+  -- レイアウト再計算
+  local total_width = math.floor(vim.o.columns * 0.9)
+  local total_height = math.floor(vim.o.lines * 0.9)
+  local start_row = math.floor((vim.o.lines - total_height) / 2)
+  local start_col = math.floor((vim.o.columns - total_width) / 2)
+  local files_width = math.floor(total_width * 0.25)
+  local collapsed_height = 1
+
+  local diff_height, response_height
+  if state.active_panel == "diff" then
+    diff_height = total_height - collapsed_height - 2
+    response_height = collapsed_height
+  else  -- "response"
+    diff_height = collapsed_height
+    response_height = total_height - collapsed_height - 2
+  end
+
+  -- Diffウィンドウの高さとタイトルを更新
+  if state.win_diff and vim.api.nvim_win_is_valid(state.win_diff) then
+    local diff_title = state.active_panel == "diff" and " ▼ Diff " or " ▶ Diff "
+    vim.api.nvim_win_set_config(state.win_diff, {
+      relative = "editor",
+      width = total_width - files_width - 3,
+      height = diff_height,
+      row = start_row,
+      col = start_col + files_width + 3,
+      style = "minimal",
+      border = "rounded",
+      title = diff_title,
+      title_pos = "center",
+    })
+  end
+
+  -- Responseウィンドウの高さとタイトルを更新
+  if state.win_response and vim.api.nvim_win_is_valid(state.win_response) then
+    local response_title = state.active_panel == "response" and " ▼ Response " or " ▶ Response "
+    vim.api.nvim_win_set_config(state.win_response, {
+      relative = "editor",
+      width = total_width - files_width - 3,
+      height = response_height,
+      row = start_row + diff_height + 2,
+      col = start_col + files_width + 3,
+      style = "minimal",
+      border = "rounded",
+      title = response_title,
+      title_pos = "center",
+    })
+  end
+
+  -- 展開したパネルにフォーカスを移動
+  local target_win = target_panel == "diff" and state.win_diff or state.win_response
+  if target_win and vim.api.nvim_win_is_valid(target_win) then
+    vim.api.nvim_set_current_win(target_win)
+  end
+
+  -- パネル再描画
+  M._render_all()
+end
+
 ---キーマップを設定
 function M._setup_keymaps()
-  vim.notify(string.format("[DEBUG] Setting up keymaps. win_files=%s, win_diff=%s, win_response=%s",
-    tostring(state.win_files), tostring(state.win_diff), tostring(state.win_response)), vim.log.levels.INFO)
+  -- バッファリストを収集
+  local buffers = {}
 
-  -- filesウィンドウ: Enterキーでファイル選択
   if state.win_files and vim.api.nvim_win_is_valid(state.win_files) then
-    local buf = vim.api.nvim_win_get_buf(state.win_files)
-    vim.notify(string.format("[DEBUG] Setting <CR> keymap for files win=%d, buf=%d", state.win_files, buf), vim.log.levels.INFO)
-
-    vim.keymap.set("n", "<CR>", function()
-      M._on_file_select_from_cursor()
-    end, { buffer = buf, nowait = true, silent = true, desc = "Select file" })
+    buffers.files = vim.api.nvim_win_get_buf(state.win_files)
+  end
+  if state.win_diff and vim.api.nvim_win_is_valid(state.win_diff) then
+    buffers.diff = vim.api.nvim_win_get_buf(state.win_diff)
+  end
+  if state.mode == "inline" and state.win_response and vim.api.nvim_win_is_valid(state.win_response) then
+    buffers.response = vim.api.nvim_win_get_buf(state.win_response)
   end
 
-  -- a/r/q/Esc: 全ウィンドウ
-  local all_wins = { state.win_files, state.win_diff }
-  if state.mode == "inline" then
-    table.insert(all_wins, state.win_response)
-  end
+  -- 各バッファに対してキーマップを設定
+  for buf_type, buf in pairs(buffers) do
+    -- Enter: ファイル選択（Filesバッファのみ）
+    if buf_type == "files" then
+      vim.keymap.set("n", "<CR>", function()
+        M._on_file_select_from_cursor()
+      end, { buffer = buf, silent = true, desc = "Select file" })
+    end
 
-  for _, win in ipairs(all_wins) do
-    if win and vim.api.nvim_win_is_valid(win) then
-      local buf = vim.api.nvim_win_get_buf(win)
+    -- 共通キーマップ: a/r/q/Esc
+    vim.keymap.set("n", "a", M._on_accept, { buffer = buf, silent = true, desc = "Accept changes" })
+    vim.keymap.set("n", "r", M._on_reject, { buffer = buf, silent = true, desc = "Reject changes" })
+    vim.keymap.set("n", "q", M._on_quit, { buffer = buf, silent = true, desc = "Quit" })
+    vim.keymap.set("n", "<Esc>", M._on_quit, { buffer = buf, silent = true, desc = "Quit" })
 
-      vim.keymap.set("n", "a", M._on_accept, { buffer = buf, nowait = true, silent = true, desc = "Accept changes" })
-      vim.keymap.set("n", "r", M._on_reject, { buffer = buf, nowait = true, silent = true, desc = "Reject changes" })
-      vim.keymap.set("n", "q", M._on_quit, { buffer = buf, nowait = true, silent = true, desc = "Quit" })
-      vim.keymap.set("n", "<Esc>", M._on_quit, { buffer = buf, nowait = true, silent = true, desc = "Quit" })
+    -- Tab/Shift-Tab
+    if state.mode == "inline" then
+      -- Inline mode: アコーディオン式パネル切り替え
+      vim.keymap.set("n", "<Tab>", function()
+        local current_win = vim.api.nvim_get_current_win()
+        if current_win == state.win_files then
+          M._switch_panel("diff")
+        elseif current_win == state.win_diff then
+          M._switch_panel("response")
+        elseif current_win == state.win_response then
+          if state.win_files and vim.api.nvim_win_is_valid(state.win_files) then
+            vim.api.nvim_set_current_win(state.win_files)
+          end
+        end
+      end, { buffer = buf, silent = true, desc = "Next panel" })
 
-      -- Tab: プレビューUIウィンドウ間を循環移動
+      vim.keymap.set("n", "<S-Tab>", function()
+        local current_win = vim.api.nvim_get_current_win()
+        if current_win == state.win_files then
+          M._switch_panel("response")
+        elseif current_win == state.win_response then
+          M._switch_panel("diff")
+        elseif current_win == state.win_diff then
+          if state.win_files and vim.api.nvim_win_is_valid(state.win_files) then
+            vim.api.nvim_set_current_win(state.win_files)
+          end
+        end
+      end, { buffer = buf, silent = true, desc = "Previous panel" })
+    else
+      -- Chat mode: 従来のウィンドウ循環
       vim.keymap.set("n", "<Tab>", function()
         M._cycle_window(1)
-      end, { buffer = buf, nowait = true, silent = true, desc = "Next window" })
+      end, { buffer = buf, silent = true, desc = "Next window" })
 
       vim.keymap.set("n", "<S-Tab>", function()
         M._cycle_window(-1)
-      end, { buffer = buf, nowait = true, silent = true, desc = "Previous window" })
+      end, { buffer = buf, silent = true, desc = "Previous window" })
     end
   end
 end
@@ -493,11 +600,8 @@ function M._on_file_select_from_cursor()
 
   -- 範囲チェック
   if file_idx < 1 or file_idx > #state.modified_files then
-    vim.notify("[DEBUG] Invalid file selection: cursor_line=" .. cursor_line .. ", file_idx=" .. file_idx, vim.log.levels.WARN)
     return
   end
-
-  vim.notify(string.format("[DEBUG] Selected file index: %d (from cursor line %d)", file_idx, cursor_line), vim.log.levels.INFO)
 
   state.selected_file_idx = file_idx
 
@@ -509,8 +613,6 @@ end
 ---ファイル選択を変更
 ---@param direction number 1で次、-1で前
 function M._on_file_select(direction)
-  vim.notify(string.format("[DEBUG] _on_file_select called: direction=%d, current=%d, total=%d", direction, state.selected_file_idx, #state.modified_files), vim.log.levels.INFO)
-
   local new_idx = state.selected_file_idx + direction
 
   -- 範囲チェック
@@ -519,8 +621,6 @@ function M._on_file_select(direction)
   elseif new_idx > #state.modified_files then
     new_idx = 1
   end
-
-  vim.notify(string.format("[DEBUG] New index: %d", new_idx), vim.log.levels.INFO)
 
   state.selected_file_idx = new_idx
 
@@ -532,26 +632,51 @@ end
 ---Accept処理（変更を保持）
 function M._on_accept()
   M._close_all()
-  vim.notify(
-    string.format("Accepted changes to %d files", #state.modified_files),
-    vim.log.levels.INFO
-  )
+  if #state.modified_files == 0 then
+    vim.notify("No files modified", vim.log.levels.INFO)
+  else
+    vim.notify(
+      string.format("Accepted changes to %d files", #state.modified_files),
+      vim.log.levels.INFO
+    )
+  end
 end
 
 ---Reject処理（変更を元に戻す）
 function M._on_reject()
+  -- ファイルがない場合はgit checkoutをスキップ
+  if #state.modified_files == 0 then
+    M._close_all()
+    vim.notify("No files to revert", vim.log.levels.INFO)
+    return
+  end
+
   -- git checkout実行
   local result = git.checkout_files(state.modified_files)
 
+  -- 成功したファイルのリストを作成
+  local reverted_files = {}
   if result.success then
+    -- 全ファイル成功
+    reverted_files = vim.deepcopy(state.modified_files)
     vim.notify(
       string.format("Reverted %d files successfully", #state.modified_files),
       vim.log.levels.INFO
     )
   else
-    -- 部分的失敗
+    -- 部分的失敗: エラーがなかったファイルのみをリストに追加
+    local failed_set = {}
+    for _, err in ipairs(result.errors) do
+      failed_set[err.file] = true
+    end
+    for _, file in ipairs(state.modified_files) do
+      if not failed_set[file] then
+        table.insert(reverted_files, file)
+      end
+    end
+
     local failed_count = #result.errors
-    local success_count = #state.modified_files - failed_count
+    local success_count = #reverted_files
 
     vim.notify(
       string.format("Reverted %d/%d files. %d failed.", success_count, #state.modified_files, failed_count),
@@ -562,6 +687,11 @@ function M._on_reject()
     for _, err in ipairs(result.errors) do
       vim.notify(string.format("  - %s: %s", err.file, err.message), vim.log.levels.ERROR)
     end
+  end
+
+  -- 成功したファイルのバッファをリロード
+  if #reverted_files > 0 then
+    BufferReload.reload_files(reverted_files)
   end
 
   M._close_all()

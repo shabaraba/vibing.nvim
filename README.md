@@ -171,26 +171,39 @@ preview UI after execution (requires Git repository):
 
 **Layout:**
 
+Inline mode (3 panels):
+
 ```
-┌─────────────────────────────────────────────────────┐
-│ Action: [fix]  Instruction: [input...]              │
-├──────────────┬──────────────────────────────────────┤
+┌──────────────┬──────────────────────────────────────┐
 │ Files (3)    │ Diff Preview                         │
-│  ▶ src/a.lua │  @@ -10,5 +10,8 @@                   │
+│  > src/a.lua │  @@ -10,5 +10,8 @@                   │
 │    src/b.lua │  -old line                           │
 │    tests/*.lua  +new line                           │
 ├──────────────┴──────────────────────────────────────┤
 │ Response: Modified 3 files successfully             │
 └─────────────────────────────────────────────────────┘
-[a]ccept [r]eject [q]uit
+```
+
+Chat mode (2 panels):
+
+```
+┌──────────────┬──────────────────────────────────────┐
+│ Files (3)    │ Diff Preview                         │
+│  > src/a.lua │  @@ -10,5 +10,8 @@                   │
+│    src/b.lua │  -old line                           │
+│    tests/*.lua  +new line                           │
+└──────────────┴──────────────────────────────────────┘
 ```
 
 **Keybindings:**
 
-- `j`/`k` - Navigate between modified files
-- `a` - Accept changes (keep modifications)
-- `r` - Reject changes (revert using `git checkout HEAD`)
-- `q`/`Esc` - Quit preview (keep changes)
+- `j`/`k` - Move cursor up/down (normal Neovim navigation)
+- `<Enter>` - Select file at cursor position (in Files window)
+- `<Tab>` - Cycle to next window (Files → Diff → Response → Files)
+- `<Shift-Tab>` - Cycle to previous window
+- `a` - Accept all changes (close preview, keep modifications)
+- `r` - Reject all changes (revert all files using `git checkout HEAD`)
+- `q`/`Esc` - Close preview (keep changes)
 
 **Features:**
 
