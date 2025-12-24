@@ -246,8 +246,8 @@ function M._create_inline_layout()
 
   -- ファイルリストバッファ（左側、固定）
   state.buf_files = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_option(state.buf_files, "bufhidden", "wipe")
-  vim.api.nvim_buf_set_option(state.buf_files, "modifiable", false)
+  vim.bo[state.buf_files].bufhidden = "wipe"
+  vim.bo[state.buf_files].modifiable = false
 
   state.win_files = vim.api.nvim_open_win(state.buf_files, true, {
     relative = "editor",
@@ -278,9 +278,9 @@ function M._create_inline_layout()
 
   -- レスポンスバッファ（右下）
   state.buf_response = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_option(state.buf_response, "bufhidden", "wipe")
-  vim.api.nvim_buf_set_option(state.buf_response, "modifiable", false)
-  vim.api.nvim_buf_set_option(state.buf_response, "filetype", "markdown")
+  vim.bo[state.buf_response].bufhidden = "wipe"
+  vim.bo[state.buf_response].modifiable = false
+  vim.bo[state.buf_response].filetype = "markdown"
 
   local response_title = state.active_panel == "response" and " ▼ Response " or " ▶ Response "
   state.win_response = vim.api.nvim_open_win(state.buf_response, false, {
@@ -415,7 +415,7 @@ function M._render_files_panel()
   table.insert(lines, "r Reject")
   table.insert(lines, "q Quit")
 
-  vim.api.nvim_buf_set_option(state.buf_files, "modifiable", true)
+  vim.bo[state.buf_files].modifiable = true
   vim.api.nvim_buf_set_lines(state.buf_files, 0, -1, false, lines)
   vim.api.nvim_buf_set_option(state.buf_files, "modifiable", false)
 
@@ -473,9 +473,9 @@ function M._render_response_panel()
 
   -- Inline modeで折りたたまれている場合は最小限の表示
   if state.mode == "inline" and state.active_panel ~= "response" then
-    vim.api.nvim_buf_set_option(state.buf_response, "modifiable", true)
+    vim.bo[state.buf_response].modifiable = true
     vim.api.nvim_buf_set_lines(state.buf_response, 0, -1, false, { "Press Tab to expand Response panel" })
-    vim.api.nvim_buf_set_option(state.buf_response, "modifiable", false)
+    vim.bo[state.buf_response].modifiable = false
     return
   end
 
@@ -487,9 +487,9 @@ function M._render_response_panel()
     table.insert(lines, line)
   end
 
-  vim.api.nvim_buf_set_option(state.buf_response, "modifiable", true)
+  vim.bo[state.buf_response].modifiable = true
   vim.api.nvim_buf_set_lines(state.buf_response, 0, -1, false, lines)
-  vim.api.nvim_buf_set_option(state.buf_response, "modifiable", false)
+  vim.bo[state.buf_response].modifiable = false
 end
 
 ---プレビューUIウィンドウ間を循環移動
