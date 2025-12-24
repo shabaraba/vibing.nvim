@@ -1,5 +1,11 @@
 local M = {}
 
+-- Retrieve definition locations for the symbol at the given buffer position.
+-- @param params Table with optional and required fields:
+--   - bufnr: (optional) buffer number; defaults to 0.
+--   - line: (required) 1-based line number of the symbol.
+--   - col: (required) 0-based character offset (column) of the symbol.
+-- @return A table `{ locations = locations }` where `locations` is an array of objects with `uri` and `range` keys for each definition location.
 function M.lsp_definition(params)
   local bufnr = params and params.bufnr or 0
   local line = params and params.line
@@ -29,6 +35,13 @@ function M.lsp_definition(params)
   return { locations = locations }
 end
 
+-- Retrieve all references for the symbol at the given buffer position.
+-- @param params Table with optional and required fields.
+-- @param params.bufnr (optional) Buffer number to query; defaults to 0.
+-- @param params.line 1-based line number of the symbol's position.
+-- @param params.col Character column of the symbol's position (0-based).
+-- @return A table `{ references = references }` where `references` is an array of tables each containing `uri` and `range`; empty when no references found.
+-- @throws If `line` or `col` is missing in `params`.
 function M.lsp_references(params)
   local bufnr = params and params.bufnr or 0
   local line = params and params.line
@@ -59,6 +72,10 @@ function M.lsp_references(params)
   return { references = references }
 end
 
+-- Retrieve hover text for the symbol at the specified buffer position.
+-- @param params Table with optional field `bufnr` (buffer number, default 0) and required fields `line` (1-based line) and `col` (0-based column).
+-- @throws If `line` or `col` is missing, raises an error.
+-- @return Table with `contents` — a string containing the consolidated hover text (empty string when no hover information is available).
 function M.lsp_hover(params)
   local bufnr = params and params.bufnr or 0
   local line = params and params.line
@@ -97,6 +114,18 @@ function M.lsp_hover(params)
   return { contents = contents }
 end
 
+-- Get diagnostics for a buffer as plain tables.
+-- @param params Table with optional fields:
+--   - bufnr (number): Buffer number to retrieve diagnostics from. Defaults to 0.
+-- @return Table with field `diagnostics`, an array of diagnostic tables. Each diagnostic contains:
+--   - lnum (number)
+--   - col (number)
+--   - end_lnum (number)
+--   - end_col (number)
+--   - severity (number)
+--   - message (string)
+--   - source (string|nil)
+--   - code (string|number|nil)
 function M.diagnostics_get(params)
   local bufnr = params and params.bufnr or 0
   local diagnostics = vim.diagnostic.get(bufnr)
@@ -116,6 +145,10 @@ function M.diagnostics_get(params)
   return { diagnostics = result }
 end
 
+-- Retrieve document symbols for the given buffer.
+-- @param params Table of options. Fields:
+--   bufnr (number) — buffer number to query; defaults to 0.
+-- @return table containing `symbols`: an array of LSP DocumentSymbol or SymbolInformation objects; empty array when no symbols are available.
 function M.lsp_document_symbols(params)
   local bufnr = params and params.bufnr or 0
   local lsp_params = { textDocument = vim.lsp.util.make_text_document_params(bufnr) }
@@ -133,6 +166,15 @@ function M.lsp_document_symbols(params)
   return { symbols = symbols }
 end
 
+-- Finds type definition locations for the symbol at the given buffer position.
+-- @param params Table with call parameters. Fields:
+--   - bufnr (number, optional): buffer number; defaults to 0.
+--   - line (number): 1-based line number of the symbol.
+--   - col (number): character column of the symbol (used as LSP `character`).
+-- @return A table { locations = locations } where `locations` is an array of objects each containing:
+--   - uri (string): document URI of the target location.
+--   - range (table): LSP range table for the target location.
+-- @throws Error if `line` or `col` is not provided.
 function M.lsp_type_definition(params)
   local bufnr = params and params.bufnr or 0
   local line = params and params.line
@@ -162,6 +204,14 @@ function M.lsp_type_definition(params)
   return { locations = locations }
 end
 
+-- Retrieves incoming call-hierarchy entries for the symbol at the specified buffer position.
+-- @param params Table with fields:
+--   bufnr (number|nil) — buffer number (default 0),
+--   line (number) — 1-based line number of the symbol,
+--   col (number) — 0-based character column of the symbol.
+-- @return table `{ calls = calls }` where `calls` is an array of tables each containing:
+--   `from` (call hierarchy item) and `fromRanges` (array of ranges where the call originates).
+-- @throws if `line` or `col` is missing, if no LSP server is attached to the buffer, or if the prepareCallHierarchy request returns no results.
 function M.lsp_call_hierarchy_incoming(params)
   local bufnr = params and params.bufnr or 0
   local line = params and params.line
@@ -220,6 +270,15 @@ function M.lsp_call_hierarchy_incoming(params)
   return { calls = calls }
 end
 
+-- Retrieves outgoing call-hierarchy entries for the symbol at the given position.
+-- @param params Table with call parameters.
+-- @param params.bufnr (number|nil) Buffer number; defaults to 0.
+-- @param params.line (number) 1-based line number of the symbol.
+-- @param params.col (number) 0-based character column of the symbol.
+-- @return table A table with a `calls` array; each entry contains `to` (call target item) and `fromRanges` (array of ranges).
+-- @throws If `line` or `col` is missing.
+-- @throws If no LSP server is attached to the specified buffer.
+-- @throws If the prepareCallHierarchy request times out or returns no results.
 function M.lsp_call_hierarchy_outgoing(params)
   local bufnr = params and params.bufnr or 0
   local line = params and params.line
