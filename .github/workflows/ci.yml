@@ -47,14 +47,21 @@ jobs:
 
       - name: Run Lua tests
         run: |
-          timeout 30s npm run test:lua || CODE=$?
-          if [ "${CODE}" = "124" ]; then
-            echo "Tests completed but process timed out (expected behavior)"
+          set +e
+          OUTPUT=$(timeout 30s npm run test:lua 2>&1)
+          CODE=$?
+          echo "$OUTPUT"
+
+          # Check if tests actually passed by parsing output
+          if echo "$OUTPUT" | grep -q "Failed *: *0" && echo "$OUTPUT" | grep -q "Errors *: *0"; then
+            echo "All tests passed successfully"
             exit 0
-          elif [ "${CODE}" = "0" ] || [ -z "${CODE}" ]; then
-            exit 0
+          elif [ "${CODE}" = "124" ]; then
+            echo "Tests timed out"
+            exit 1
           else
-            exit ${CODE}
+            echo "Tests failed with code ${CODE}"
+            exit 1
           fi
 
       - name: Run wrapper test
