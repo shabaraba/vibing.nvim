@@ -163,6 +163,11 @@ These tools analyze separate file copies and don't reflect the actual running st
 ### Background LSP Analysis Workflow
 To analyze files without disrupting the user's current work:
 
+**Simplified workflow (recommended):**
+1. Load file without displaying: const { bufnr } = await mcp__vibing-nvim__nvim_load_buffer({ filepath: "path/to/file.ts" })
+2. Analyze with bufnr: mcp__vibing-nvim__nvim_lsp_*({ bufnr: bufnr, line: X, col: Y })
+
+**Legacy workflow (if nvim_load_buffer is unavailable):**
 1. Load file: mcp__vibing-nvim__nvim_execute({ command: "edit path/to/file.ts" })
 2. Get bufnr: mcp__vibing-nvim__nvim_get_info({})
 3. Return to previous buffer: mcp__vibing-nvim__nvim_execute({ command: "bprevious" })

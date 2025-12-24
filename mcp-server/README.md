@@ -100,6 +100,12 @@ The MCP server exposes the following tools to Claude:
 - **nvim_list_buffers** - List all loaded buffers
   - Returns: Array of buffer info (bufnr, name, modified, filetype)
 
+- **nvim_load_buffer** - Load file into buffer without displaying it
+  - `filepath` (required): Absolute or relative path to file
+  - Returns: `{ bufnr, already_loaded }`
+  - Use case: Background loading for LSP operations
+  - Simplifies workflow: replaces `nvim_execute("edit")` + `nvim_execute("bp")`
+
 ### File Information
 
 - **nvim_get_info** - Get current file information
@@ -249,6 +255,12 @@ await use_mcp_tool('vibing-nvim', 'nvim_win_set_buf', {
   winnr: 1000,
   bufnr: 5,
 });
+
+// Load file into buffer without displaying it (for LSP operations)
+const { bufnr } = await use_mcp_tool('vibing-nvim', 'nvim_load_buffer', {
+  filepath: 'src/logger.ts',
+});
+// Now use bufnr for LSP operations without disrupting user's view
 
 // Get definition of symbol at line 10, column 5
 const definition = await use_mcp_tool('vibing-nvim', 'nvim_lsp_definition', {

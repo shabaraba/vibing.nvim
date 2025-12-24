@@ -12,6 +12,7 @@ M.buf_get_lines = buffer.buf_get_lines
 M.buf_set_lines = buffer.buf_set_lines
 M.get_current_file = buffer.get_current_file
 M.list_buffers = buffer.list_buffers
+M.load_buffer = buffer.load_buffer
 
 M.get_cursor_position = cursor.get_cursor_position
 M.set_cursor_position = cursor.set_cursor_position

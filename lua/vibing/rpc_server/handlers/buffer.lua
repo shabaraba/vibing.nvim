@@ -40,4 +40,34 @@ function M.list_buffers(params)
   return bufs
 end
 
+function M.load_buffer(params)
+  local filepath = params and params.filepath
+  if not filepath then
+    error("Missing filepath parameter")
+  end
+
+  -- Expand path to absolute
+  local fullpath = vim.fn.fnamemodify(filepath, ":p")
+
+  -- Check if buffer already exists
+  local existing_bufnr = vim.fn.bufnr(fullpath)
+  if existing_bufnr ~= -1 then
+    -- Buffer exists, make sure it's loaded
+    if not vim.api.nvim_buf_is_loaded(existing_bufnr) then
+      vim.fn.bufload(existing_bufnr)
+    end
+    return { bufnr = existing_bufnr, already_loaded = true }
+  end
+
+  -- Load file into new buffer (background, no display)
+  vim.cmd("badd " .. vim.fn.fnameescape(fullpath))
+  local bufnr = vim.fn.bufnr(fullpath)
+
+  if bufnr == -1 then
+    error("Failed to load buffer: " .. fullpath)
+  end
+
+  return { bufnr = bufnr, already_loaded = false }
+end
+
 return M

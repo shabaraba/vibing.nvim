@@ -127,7 +127,24 @@ When using these tools from Claude Code, prefix them with `mcp__vibing-nvim__`:
 
 All LSP tools work with ANY loaded buffer, not just the active one. This enables background code analysis without disrupting your current work (e.g., staying in chat while analyzing files).
 
-Workflow for background analysis:
+**Simplified workflow (recommended):**
+
+```javascript
+// 1. Load file into buffer without displaying it
+const { bufnr } = await use_mcp_tool('vibing-nvim', 'nvim_load_buffer', {
+  filepath: 'src/logger.ts',
+});
+
+// 2. Analyze in background (no display disruption!)
+const calls = await use_mcp_tool('vibing-nvim', 'nvim_lsp_call_hierarchy_incoming', {
+  bufnr: bufnr,
+  line: 2,
+  col: 4,
+});
+// You're still in chat, got LSP data without any window switching!
+```
+
+**Legacy workflow (for reference):**
 
 ```javascript
 // 1. Load file into buffer (temporarily switches to file)

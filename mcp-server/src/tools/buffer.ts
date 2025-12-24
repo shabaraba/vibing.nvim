@@ -46,4 +46,19 @@ export const bufferTools = [
       properties: {},
     },
   },
+  {
+    name: 'nvim_load_buffer',
+    description:
+      'Load file into buffer without displaying it (background load for LSP). Returns buffer number. Use this instead of nvim_execute("edit") + nvim_execute("bp") workflow.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        filepath: {
+          type: 'string' as const,
+          description: 'Absolute or relative path to file to load',
+        },
+      },
+      required: ['filepath'],
+    },
+  },
 ];
