@@ -7,6 +7,9 @@ local OutputBuffer = {}
 OutputBuffer.__index = OutputBuffer
 
 ---@return Vibing.OutputBuffer
+-- Create a new OutputBuffer instance.
+-- Initializes a new output buffer with fields set to nil (buf, win) and empty chunk buffer.
+-- @return Vibing.OutputBuffer A new OutputBuffer instance.
 function OutputBuffer:new()
   local instance = setmetatable({}, OutputBuffer)
   instance.buf = nil
@@ -18,6 +21,9 @@ end
 
 ---出力ウィンドウを開く
 ---@param title string
+-- Open the output window.
+-- Creates a buffer, opens a centered floating window, and sets up keymaps.
+-- @param title string Title to display in the window header and buffer.
 function OutputBuffer:open(title)
   self:_create_buffer(title)
   self:_create_window()
@@ -25,6 +31,8 @@ function OutputBuffer:open(title)
 end
 
 ---ウィンドウを閉じる
+-- Close the output window.
+-- Stops any active chunk flush timer and closes the floating window if it's valid.
 function OutputBuffer:close()
   if self._chunk_timer then
     vim.fn.timer_stop(self._chunk_timer)
@@ -38,6 +46,8 @@ end
 
 ---ウィンドウが開いているか
 ---@return boolean
+-- Check if the output window is currently open.
+-- @return boolean True if the window is valid and open, false otherwise.
 function OutputBuffer:is_open()
   return self.win ~= nil and vim.api.nvim_win_is_valid(self.win)
 end
@@ -96,6 +106,9 @@ end
 
 ---コンテンツを設定
 ---@param content string
+-- Set the complete content of the output buffer.
+-- Replaces all content after the title header with the provided text.
+-- @param content string The content to display (will be split into lines).
 function OutputBuffer:set_content(content)
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return
@@ -131,6 +144,11 @@ end
 ---ストリーミングチャンクを追加（バッファリング有効）
 ---@param chunk string
 ---@param is_first boolean
+-- Append a streaming chunk to the output buffer (with buffering enabled).
+-- Accumulates chunks and flushes them after 50ms to reduce render overhead.
+-- On the first chunk, removes the "Loading..." placeholder.
+-- @param chunk string The text chunk to append.
+-- @param is_first boolean True if this is the first chunk, false otherwise.
 function OutputBuffer:append_chunk(chunk, is_first)
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return
@@ -159,6 +177,9 @@ end
 
 ---エラーを表示
 ---@param error_msg string
+-- Display an error message in the output buffer.
+-- Replaces content with a formatted error section.
+-- @param error_msg string The error message to display.
 function OutputBuffer:show_error(error_msg)
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return
