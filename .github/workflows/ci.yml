@@ -52,8 +52,12 @@ jobs:
           CODE=$?
           echo "$OUTPUT"
 
+          # Strip ANSI color codes for reliable parsing
+          CLEAN_OUTPUT=$(echo "$OUTPUT" | sed 's/\x1b\[[0-9;]*m//g')
+
           # Check if tests actually passed by parsing output
-          if echo "$OUTPUT" | grep -q "Failed *: *0" && echo "$OUTPUT" | grep -q "Errors *: *0"; then
+          if echo "$CLEAN_OUTPUT" | grep -E "Failed\s*:\s*0" > /dev/null && \
+             echo "$CLEAN_OUTPUT" | grep -E "Errors\s*:\s*0" > /dev/null; then
             echo "All tests passed successfully"
             exit 0
           elif [ "${CODE}" = "124" ]; then
