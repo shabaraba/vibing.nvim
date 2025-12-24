@@ -227,6 +227,41 @@ local function handle_request(client, request)
         vim.api.nvim_set_current_win(winnr)
         return { success = true }
 
+      elseif method == "win_set_buf" then
+        local winnr = req.params and req.params.winnr
+        local bufnr = req.params and req.params.bufnr
+        if not winnr or not bufnr then
+          error("Missing winnr or bufnr parameter")
+        end
+        if not vim.api.nvim_win_is_valid(winnr) then
+          error("Invalid window number: " .. tostring(winnr))
+        end
+        if not vim.api.nvim_buf_is_valid(bufnr) then
+          error("Invalid buffer number: " .. tostring(bufnr))
+        end
+        vim.api.nvim_win_set_buf(winnr, bufnr)
+        return { success = true }
+
+      elseif method == "win_open_file" then
+        local winnr = req.params and req.params.winnr
+        local filepath = req.params and req.params.filepath
+        if not winnr or not filepath then
+          error("Missing winnr or filepath parameter")
+        end
+        if not vim.api.nvim_win_is_valid(winnr) then
+          error("Invalid window number: " .. tostring(winnr))
+        end
+        local current = vim.api.nvim_get_current_win()
+        vim.api.nvim_set_current_win(winnr)
+        vim.cmd("edit " .. vim.fn.fnameescape(filepath))
+        if winnr ~= current then
+          vim.api.nvim_set_current_win(current)
+        end
+        return {
+          success = true,
+          bufnr = vim.api.nvim_get_current_buf()
+        }
+
       else
         error("Unknown method: " .. tostring(method))
       end

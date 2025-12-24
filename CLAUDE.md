@@ -105,6 +105,8 @@ When using these tools from Claude Code, prefix them with `mcp__vibing-nvim__`:
 - `mcp__vibing-nvim__nvim_list_tabpages` - List tab pages with their windows
 - `mcp__vibing-nvim__nvim_set_window_size` - Resize window width/height
 - `mcp__vibing-nvim__nvim_focus_window` - Move focus to a specific window
+- `mcp__vibing-nvim__nvim_win_set_buf` - Set an existing buffer in a specific window
+- `mcp__vibing-nvim__nvim_win_open_file` - Open a file in a specific window without switching focus
 
 **Commands:**
 
@@ -137,6 +139,18 @@ await use_mcp_tool('vibing-nvim', 'nvim_set_window_size', {
 
 // Focus a specific window
 await use_mcp_tool('vibing-nvim', 'nvim_focus_window', { winnr: 1000 });
+
+// Open file in a specific window without switching focus
+await use_mcp_tool('vibing-nvim', 'nvim_win_open_file', {
+  winnr: 1000,
+  filepath: '/path/to/file.txt',
+});
+
+// Set buffer in a specific window
+await use_mcp_tool('vibing-nvim', 'nvim_win_set_buf', {
+  winnr: 1000,
+  bufnr: 5,
+});
 
 // Execute command
 await use_mcp_tool('vibing-nvim', 'nvim_execute', { command: 'write' });

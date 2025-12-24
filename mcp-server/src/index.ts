@@ -288,6 +288,42 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ['winnr'],
         },
       },
+      {
+        name: 'nvim_win_set_buf',
+        description: 'Set an existing buffer in a specific window',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            winnr: {
+              type: 'number',
+              description: 'Window number',
+            },
+            bufnr: {
+              type: 'number',
+              description: 'Buffer number to display',
+            },
+          },
+          required: ['winnr', 'bufnr'],
+        },
+      },
+      {
+        name: 'nvim_win_open_file',
+        description: 'Open a file in a specific window without switching focus',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            winnr: {
+              type: 'number',
+              description: 'Window number',
+            },
+            filepath: {
+              type: 'string',
+              description: 'Path to file to open',
+            },
+          },
+          required: ['winnr', 'filepath'],
+        },
+      },
     ],
   };
 });
@@ -493,6 +529,42 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: `Focused window ${args.winnr}`,
+            },
+          ],
+        };
+      }
+
+      case 'nvim_win_set_buf': {
+        if (!args || args.winnr === undefined || args.bufnr === undefined) {
+          throw new Error('Missing required parameters: winnr and bufnr');
+        }
+        await callNeovim('win_set_buf', {
+          winnr: args.winnr,
+          bufnr: args.bufnr,
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Set buffer ${args.bufnr} in window ${args.winnr}`,
+            },
+          ],
+        };
+      }
+
+      case 'nvim_win_open_file': {
+        if (!args || args.winnr === undefined || !args.filepath) {
+          throw new Error('Missing required parameters: winnr and filepath');
+        }
+        const result = await callNeovim('win_open_file', {
+          winnr: args.winnr,
+          filepath: args.filepath,
+        });
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Opened ${args.filepath} in window ${args.winnr} (buffer ${result.bufnr})`,
             },
           ],
         };
