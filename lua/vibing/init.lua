@@ -140,11 +140,7 @@ function M._register_commands()
 
   vim.api.nvim_create_user_command("VibingClearContext", function()
     require("vibing.context").clear()
-    -- チャットバッファが開いていれば表示を更新
-    local chat = require("vibing.actions.chat")
-    if chat.chat_buffer and chat.chat_buffer:is_open() then
-      chat.chat_buffer:_update_context_line()
-    end
+    update_chat_context_if_open()
   end, { desc = "Clear Vibing context" })
 
   vim.api.nvim_create_user_command("VibingInline", function(opts)
