@@ -19,6 +19,7 @@ local M = {}
 ---@field user_prompt string? ユーザーが入力したプロンプト（振りファイル保存用）
 ---@field action string? 実行されたアクション名（fix, feat等）
 ---@field instruction string? 追加指示
+---@field session_id string? セッションID（会話継続用）
 ---@field win_files number? ファイルリストウィンドウ
 ---@field win_diff number? Diffプレビューウィンドウ
 ---@field win_response number? レスポンス表示ウィンドウ（inlineモードのみ）
@@ -38,6 +39,7 @@ local state = {
   user_prompt = nil,  -- ユーザープロンプト
   action = nil,  -- アクション名
   instruction = nil,  -- 追加指示
+  session_id = nil,  -- セッションID
   win_files = nil,
   win_diff = nil,
   win_response = nil,
@@ -55,8 +57,9 @@ local state = {
 ---@param user_prompt string? ユーザーが入力したプロンプト（オプション）
 ---@param action string? 実行されたアクション名（オプション）
 ---@param instruction string? 追加指示（オプション）
+---@param session_id string? セッションID（オプション）
 ---@return boolean success 成功した場合true
-function M.setup(mode, modified_files, response_text, saved_contents, initial_file, user_prompt, action, instruction)
+function M.setup(mode, modified_files, response_text, saved_contents, initial_file, user_prompt, action, instruction, session_id)
   -- Gitリポジトリチェック
   if not git.is_git_repo() then
     vim.notify(
@@ -74,6 +77,7 @@ function M.setup(mode, modified_files, response_text, saved_contents, initial_fi
   state.user_prompt = user_prompt
   state.action = action
   state.instruction = instruction
+  state.session_id = session_id
 
   -- 変更ファイル＆レスポンスチェック
   local has_files = modified_files and #modified_files > 0
@@ -906,7 +910,12 @@ function M.save_as_vibing()
   -- フロントマター（chatと同様）
   table.insert(lines, "---")
   table.insert(lines, "vibing.nvim: true")
-  table.insert(lines, "session_id: ~")
+  -- session_idを引き継ぐ（ない場合は~）
+  if state.session_id and state.session_id ~= "" then
+    table.insert(lines, "session_id: " .. state.session_id)
+  else
+    table.insert(lines, "session_id: ~")
+  end
   table.insert(lines, "created_at: " .. os.date("%Y-%m-%dT%H:%M:%S"))
   table.insert(lines, "source: inline")
 
@@ -990,6 +999,10 @@ function M.save_as_vibing()
     end
     table.insert(lines, "")
   end
+
+  -- User セクション（新規入力受付用）
+  table.insert(lines, "## User")
+  table.insert(lines, "")
 
   -- ファイルに書き込み
   vim.fn.writefile(lines, file_path)

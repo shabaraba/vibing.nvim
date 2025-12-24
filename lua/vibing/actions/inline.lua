@@ -273,9 +273,15 @@ function M._execute_with_preview(adapter, prompt, opts, action, instruction)
           -- 変更されたファイルをリロード
           BufferReload.reload_files(modified_files)
 
+          -- セッションIDを取得
+          local session_id = nil
+          if adapter:supports("session") then
+            session_id = adapter:get_session_id()
+          end
+
           -- プレビューUIを起動
           local InlinePreview = require("vibing.ui.inline_preview")
-          InlinePreview.setup("inline", modified_files, table.concat(response_text, ""), saved_contents, nil, prompt, action, instruction)
+          InlinePreview.setup("inline", modified_files, table.concat(response_text, ""), saved_contents, nil, prompt, action, instruction, session_id)
         end
       end)
     end)
@@ -290,9 +296,15 @@ function M._execute_with_preview(adapter, prompt, opts, action, instruction)
       status_mgr:set_done(modified_files)
       BufferReload.reload_files(modified_files)
 
+      -- セッションIDを取得
+      local session_id = nil
+      if adapter:supports("session") then
+        session_id = adapter:get_session_id()
+      end
+
       -- プレビューUIを起動
       local InlinePreview = require("vibing.ui.inline_preview")
-      InlinePreview.setup("inline", modified_files, response.content, saved_contents, nil, prompt, action, instruction)
+      InlinePreview.setup("inline", modified_files, response.content, saved_contents, nil, prompt, action, instruction, session_id)
     end
   end
 end
