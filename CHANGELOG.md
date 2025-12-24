@@ -2,22 +2,19 @@
 
 ## [1.4.0](https://github.com/shabaraba/vibing.nvim/compare/v1.3.0...v1.4.0) (2025-12-24)
 
-
 ### Features
 
-* add inline preview UI with diff viewer for inline actions ([#177](https://github.com/shabaraba/vibing.nvim/issues/177)) ([6f75db4](https://github.com/shabaraba/vibing.nvim/commit/6f75db4aa601a1656c23f8c3b1c0c16c3f88ca9c))
-* add status notifications with floating window ([#172](https://github.com/shabaraba/vibing.nvim/issues/172)) ([b45fb54](https://github.com/shabaraba/vibing.nvim/commit/b45fb543f7ba9244679018b7b376ed3317799bb2))
-* enable user MCP servers, slash commands, skills, and subagents in vibing.nvim ([#171](https://github.com/shabaraba/vibing.nvim/issues/171)) ([44deb67](https://github.com/shabaraba/vibing.nvim/commit/44deb6783db32eed217b3f77a3d0c23b11504c5b))
-
+- add inline preview UI with diff viewer for inline actions ([#177](https://github.com/shabaraba/vibing.nvim/issues/177)) ([6f75db4](https://github.com/shabaraba/vibing.nvim/commit/6f75db4aa601a1656c23f8c3b1c0c16c3f88ca9c))
+- add status notifications with floating window ([#172](https://github.com/shabaraba/vibing.nvim/issues/172)) ([b45fb54](https://github.com/shabaraba/vibing.nvim/commit/b45fb543f7ba9244679018b7b376ed3317799bb2))
+- enable user MCP servers, slash commands, skills, and subagents in vibing.nvim ([#171](https://github.com/shabaraba/vibing.nvim/issues/171)) ([44deb67](https://github.com/shabaraba/vibing.nvim/commit/44deb6783db32eed217b3f77a3d0c23b11504c5b))
 
 ### Bug Fixes
 
-* prioritize frontmatter permissions over config defaults ([#169](https://github.com/shabaraba/vibing.nvim/issues/169)) ([f7cbfd5](https://github.com/shabaraba/vibing.nvim/commit/f7cbfd505285a89bb9acd5bcb3d268ee81e99f13))
-
+- prioritize frontmatter permissions over config defaults ([#169](https://github.com/shabaraba/vibing.nvim/issues/169)) ([f7cbfd5](https://github.com/shabaraba/vibing.nvim/commit/f7cbfd505285a89bb9acd5bcb3d268ee81e99f13))
 
 ### Code Refactoring
 
-* remove redundant and deprecated commands ([#175](https://github.com/shabaraba/vibing.nvim/issues/175)) ([ba629e2](https://github.com/shabaraba/vibing.nvim/commit/ba629e2b9652cdc76d2eb417393faabf2b08eb1c))
+- remove redundant and deprecated commands ([#175](https://github.com/shabaraba/vibing.nvim/issues/175)) ([ba629e2](https://github.com/shabaraba/vibing.nvim/commit/ba629e2b9652cdc76d2eb417393faabf2b08eb1c))
 
 ## [1.3.0](https://github.com/shabaraba/vibing.nvim/compare/v1.2.1...v1.3.0) (2025-12-23)
 

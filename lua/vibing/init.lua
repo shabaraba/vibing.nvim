@@ -92,26 +92,51 @@ function M._register_commands()
     require("vibing.ui.command_picker").show(chat.chat_buffer)
   end, { desc = "Show slash command picker" })
 
-  vim.api.nvim_create_user_command("VibingContext", function(opts)
-    -- 引数なしの場合、oil.nvimバッファからファイルを追加
-    if opts.args == "" then
-      local ok, oil = pcall(require, "vibing.integrations.oil")
-      if ok and oil.is_oil_buffer() then
-        local send_ok, err = pcall(oil.send_to_chat)
-        if send_ok then
-          return
-        end
-        -- エラーがあっても続行（通常のコンテキスト追加にフォールスルー）
-      end
-    end
-
-    require("vibing.context").add(opts.args)
-    -- チャットバッファが開いていれば表示を更新
+  ---@private
+  ---チャットバッファが開いている場合、コンテキスト行を更新
+  local function update_chat_context_if_open()
     local chat = require("vibing.actions.chat")
     if chat.chat_buffer and chat.chat_buffer:is_open() then
       chat.chat_buffer:_update_context_line()
     end
-  end, { nargs = "?", desc = "Add file to context (or from oil.nvim)", complete = "file" })
+  end
+
+  vim.api.nvim_create_user_command("VibingContext", function(opts)
+    local Context = require("vibing.context")
+
+    -- 優先順位1: 範囲選択（存在する場合）
+    if opts.range > 0 then
+      Context.add_selection()
+      update_chat_context_if_open()
+      return
+    end
+
+    -- 優先順位2: ファイルパス引数
+    if opts.args ~= "" then
+      Context.add(opts.args)
+      update_chat_context_if_open()
+      return
+    end
+
+    -- 優先順位3: oil.nvimバッファからファイルを追加
+    local ok, oil = pcall(require, "vibing.integrations.oil")
+    if ok and oil.is_oil_buffer() then
+      local send_ok, err = pcall(oil.send_to_chat)
+      if send_ok then
+        return
+      end
+      -- エラーがあっても続行（通常のコンテキスト追加にフォールスルー）
+    end
+
+    -- 優先順位4: 現在のバッファ
+    Context.add()
+    update_chat_context_if_open()
+  end, {
+    nargs = "?",
+    desc = "Add file or selection to context (or from oil.nvim)",
+    complete = "file",
+    range = true,
+  })
 
   vim.api.nvim_create_user_command("VibingClearContext", function()
     require("vibing.context").clear()

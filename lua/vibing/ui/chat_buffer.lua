@@ -310,7 +310,12 @@ function ChatBuffer:_init_content()
 
   vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
   -- "## User"の次の空行（ユーザー入力エリア）にカーソルを設定
-  vim.api.nvim_win_set_cursor(self.win, { #lines - 2, 0 })
+  if self:is_open() and vim.api.nvim_win_is_valid(self.win) and vim.api.nvim_buf_is_valid(self.buf) then
+    local cursor_line = #lines - 2
+    if cursor_line > 0 then
+      pcall(vim.api.nvim_win_set_cursor, self.win, { cursor_line, 0 })
+    end
+  end
 end
 
 ---コンテキスト行を更新（ファイル末尾）
@@ -820,9 +825,11 @@ function ChatBuffer:add_user_section()
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
 
-  if self:is_open() then
+  if self:is_open() and vim.api.nvim_win_is_valid(self.win) and vim.api.nvim_buf_is_valid(self.buf) then
     local total = vim.api.nvim_buf_line_count(self.buf)
-    vim.api.nvim_win_set_cursor(self.win, { total, 0 })
+    if total > 0 then
+      pcall(vim.api.nvim_win_set_cursor, self.win, { total, 0 })
+    end
   end
 end
 

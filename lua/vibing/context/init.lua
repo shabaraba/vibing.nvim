@@ -35,6 +35,41 @@ function M.add(path)
   end
 end
 
+---ビジュアル選択範囲をコンテキストに追加
+---選択範囲を@file:path:L10-L25形式でmanual_contextsに追加（コードブロック付き）
+---同じファイルの既存コンテキストは自動的に削除される
+function M.add_selection()
+  local selection_context = M.get_selection()
+
+  if not selection_context then
+    notify.warn("No selection available", "Context")
+    return
+  end
+
+  local buf = vim.api.nvim_get_current_buf()
+  local file_path = vim.api.nvim_buf_get_name(buf)
+
+  if file_path == "" then
+    notify.warn("Current buffer has no file path", "Context")
+    return
+  end
+
+  -- 同じファイルの既存コンテキストを削除（重複回避）
+  local relative = Collector._to_relative_path(file_path)
+  M.manual_contexts = vim.tbl_filter(function(ctx)
+    return not ctx:match("^@file:" .. vim.pesc(relative) .. "[:\n]")
+  end, M.manual_contexts)
+
+  -- 選択範囲をコンテキストに追加
+  table.insert(M.manual_contexts, selection_context)
+
+  -- 範囲情報を抽出して通知
+  local start_pos = vim.fn.getpos("'<")
+  local end_pos = vim.fn.getpos("'>")
+  local range_info = string.format("L%d-L%d", start_pos[2], end_pos[2])
+  notify.info(string.format("Added selection: %s:%s", relative, range_info), "Context")
+end
+
 ---手動で追加されたコンテキストを全てクリア
 ---自動コンテキスト（開いているバッファ）は設定に従い継続
 function M.clear()
