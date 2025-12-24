@@ -17,7 +17,7 @@ export const lspTools = [
   {
     name: 'nvim_lsp_definition',
     description:
-      '[Neovim LSP] Jump to definition - Get definition location(s) from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
+      '[Neovim LSP] Jump to definition - Works with ANY loaded buffer. Background workflow: nvim_execute("edit file.ts") → nvim_execute("bp") → use this tool with bufnr',
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
@@ -27,7 +27,7 @@ export const lspTools = [
   {
     name: 'nvim_lsp_references',
     description:
-      '[Neovim LSP] Find references - Get all references from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
+      '[Neovim LSP] Find references - Works with ANY loaded buffer. Background workflow: nvim_execute("edit file.ts") → nvim_execute("bp") → use this tool with bufnr',
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
@@ -37,7 +37,7 @@ export const lspTools = [
   {
     name: 'nvim_lsp_hover',
     description:
-      '[Neovim LSP] Hover info - Get type info and documentation from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
+      '[Neovim LSP] Hover info - Works with ANY loaded buffer. Background workflow: nvim_execute("edit file.ts") → nvim_execute("bp") → use this tool with bufnr',
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
@@ -47,7 +47,7 @@ export const lspTools = [
   {
     name: 'nvim_diagnostics',
     description:
-      '[Neovim LSP] Get diagnostics - Get errors/warnings from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
+      '[Neovim LSP] Get diagnostics - Works with ANY loaded buffer. Background workflow: nvim_execute("edit file.ts") → nvim_execute("bp") → use this tool with bufnr',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -61,7 +61,7 @@ export const lspTools = [
   {
     name: 'nvim_lsp_document_symbols',
     description:
-      '[Neovim LSP] Document symbols - Get all symbols from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
+      '[Neovim LSP] Document symbols - Works with ANY loaded buffer. Background workflow: nvim_execute("edit file.ts") → nvim_execute("bp") → use this tool with bufnr',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -75,7 +75,7 @@ export const lspTools = [
   {
     name: 'nvim_lsp_type_definition',
     description:
-      '[Neovim LSP] Type definition - Get type definition location(s) from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
+      '[Neovim LSP] Type definition - Works with ANY loaded buffer. Background workflow: nvim_execute("edit file.ts") → nvim_execute("bp") → use this tool with bufnr',
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
@@ -85,7 +85,7 @@ export const lspTools = [
   {
     name: 'nvim_lsp_call_hierarchy_incoming',
     description:
-      '[Neovim LSP] Incoming calls - Get callers from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
+      '[Neovim LSP] Incoming calls - Works with ANY loaded buffer. Background workflow: nvim_execute("edit file.ts") → nvim_execute("bp") → use this tool with bufnr',
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
@@ -95,7 +95,7 @@ export const lspTools = [
   {
     name: 'nvim_lsp_call_hierarchy_outgoing',
     description:
-      '[Neovim LSP] Outgoing calls - Get callees from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
+      '[Neovim LSP] Outgoing calls - Works with ANY loaded buffer. Background workflow: nvim_execute("edit file.ts") → nvim_execute("bp") → use this tool with bufnr',
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,

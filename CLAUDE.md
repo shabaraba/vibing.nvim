@@ -123,6 +123,40 @@ When using these tools from Claude Code, prefix them with `mcp__vibing-nvim__`:
 - `mcp__vibing-nvim__nvim_lsp_call_hierarchy_incoming` - Get incoming calls (callers)
 - `mcp__vibing-nvim__nvim_lsp_call_hierarchy_outgoing` - Get outgoing calls (callees)
 
+**Background LSP Analysis Workflow:**
+
+All LSP tools work with ANY loaded buffer, not just the active one. This enables background code analysis without disrupting your current work (e.g., staying in chat while analyzing files).
+
+Workflow for background analysis:
+
+```javascript
+// 1. Load file into buffer (temporarily switches to file)
+await use_mcp_tool('vibing-nvim', 'nvim_execute', { command: 'edit src/logger.ts' });
+
+// 2. Get buffer number (now assigned to logger.ts)
+const info = await use_mcp_tool('vibing-nvim', 'nvim_get_info', {});
+const loggerBufnr = info.bufnr;
+
+// 3. Return to previous buffer (e.g., chat)
+await use_mcp_tool('vibing-nvim', 'nvim_execute', { command: 'bprevious' });
+
+// 4. Analyze logger.ts in background (no need to display it)
+const calls = await use_mcp_tool('vibing-nvim', 'nvim_lsp_call_hierarchy_incoming', {
+  bufnr: loggerBufnr,
+  line: 2,
+  col: 4,
+});
+// You're still in chat, but got LSP data from logger.ts!
+```
+
+**Key Points:**
+
+- Files must be loaded into buffers for LSP analysis (use `:edit` or similar)
+- Once loaded, buffers remain in memory even when not displayed
+- Specify `bufnr` parameter to analyze non-active buffers
+- Use `:bprevious` or `:buffer <bufnr>` to return to your original work
+- LSP server continues analyzing all loaded buffers in background
+
 **Example Usage:**
 
 ```javascript
