@@ -16,7 +16,8 @@ const lspPositionSchema = {
 export const lspTools = [
   {
     name: 'nvim_lsp_definition',
-    description: 'Get definition location(s) of symbol at cursor position',
+    description:
+      '[Neovim LSP] Jump to definition - Get definition location(s) from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
@@ -25,7 +26,8 @@ export const lspTools = [
   },
   {
     name: 'nvim_lsp_references',
-    description: 'Get all references to symbol at cursor position',
+    description:
+      '[Neovim LSP] Find references - Get all references from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
@@ -34,7 +36,8 @@ export const lspTools = [
   },
   {
     name: 'nvim_lsp_hover',
-    description: 'Get hover information (type, documentation) for symbol at cursor',
+    description:
+      '[Neovim LSP] Hover info - Get type info and documentation from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
@@ -43,7 +46,8 @@ export const lspTools = [
   },
   {
     name: 'nvim_diagnostics',
-    description: 'Get diagnostics (errors, warnings) for buffer',
+    description:
+      '[Neovim LSP] Get diagnostics - Get errors/warnings from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -56,7 +60,8 @@ export const lspTools = [
   },
   {
     name: 'nvim_lsp_document_symbols',
-    description: 'Get all symbols in the document',
+    description:
+      '[Neovim LSP] Document symbols - Get all symbols from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -69,7 +74,8 @@ export const lspTools = [
   },
   {
     name: 'nvim_lsp_type_definition',
-    description: 'Get type definition location(s) of symbol at cursor',
+    description:
+      '[Neovim LSP] Type definition - Get type definition location(s) from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
@@ -78,7 +84,8 @@ export const lspTools = [
   },
   {
     name: 'nvim_lsp_call_hierarchy_incoming',
-    description: 'Get incoming calls (callers) for symbol at cursor',
+    description:
+      '[Neovim LSP] Incoming calls - Get callers from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
@@ -87,7 +94,8 @@ export const lspTools = [
   },
   {
     name: 'nvim_lsp_call_hierarchy_outgoing',
-    description: 'Get outgoing calls (callees) for symbol at cursor',
+    description:
+      '[Neovim LSP] Outgoing calls - Get callees from RUNNING Neovim LSP server for any loaded buffer (no need to display file)',
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
