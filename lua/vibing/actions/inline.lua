@@ -91,6 +91,19 @@ function M.execute(action_or_prompt, additional_instruction)
 
   local opts = {}
 
+  -- Permissions設定を追加
+  if config.permissions then
+    if config.permissions.mode then
+      opts.permission_mode = config.permissions.mode
+    end
+    if config.permissions.allow then
+      opts.permissions_allow = config.permissions.allow
+    end
+    if config.permissions.deny then
+      opts.permissions_deny = config.permissions.deny
+    end
+  end
+
   if action.tools and #action.tools > 0 and adapter:supports("tools") then
     opts.tools = action.tools
   end
