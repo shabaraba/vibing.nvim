@@ -155,6 +155,52 @@ The MCP server exposes the following tools to Claude:
 - **nvim_execute** - Execute Neovim command
   - `command` (required): Neovim command string (e.g., "write", "edit foo.txt")
 
+### LSP Operations
+
+- **nvim_lsp_definition** - Get definition location(s) of symbol
+  - `bufnr` (optional): Buffer number (0 for current)
+  - `line` (required): Line number (1-indexed)
+  - `col` (required): Column number (0-indexed)
+  - Returns: `{ locations: [{ uri, range }] }`
+
+- **nvim_lsp_references** - Get all references to symbol
+  - `bufnr` (optional): Buffer number (0 for current)
+  - `line` (required): Line number (1-indexed)
+  - `col` (required): Column number (0-indexed)
+  - Returns: `{ references: [{ uri, range }] }`
+
+- **nvim_lsp_hover** - Get hover information (type, documentation)
+  - `bufnr` (optional): Buffer number (0 for current)
+  - `line` (required): Line number (1-indexed)
+  - `col` (required): Column number (0-indexed)
+  - Returns: `{ contents: "..." }`
+
+- **nvim_diagnostics** - Get diagnostics (errors, warnings) for buffer
+  - `bufnr` (optional): Buffer number (0 for current)
+  - Returns: `{ diagnostics: [{ lnum, col, severity, message, source }] }`
+
+- **nvim_lsp_document_symbols** - Get all symbols in the document
+  - `bufnr` (optional): Buffer number (0 for current)
+  - Returns: `{ symbols: [...] }` (LSP DocumentSymbol array)
+
+- **nvim_lsp_type_definition** - Get type definition location(s)
+  - `bufnr` (optional): Buffer number (0 for current)
+  - `line` (required): Line number (1-indexed)
+  - `col` (required): Column number (0-indexed)
+  - Returns: `{ locations: [{ uri, range }] }`
+
+- **nvim_lsp_call_hierarchy_incoming** - Get incoming calls (callers)
+  - `bufnr` (optional): Buffer number (0 for current)
+  - `line` (required): Line number (1-indexed)
+  - `col` (required): Column number (0-indexed)
+  - Returns: `{ calls: [{ from, fromRanges }] }`
+
+- **nvim_lsp_call_hierarchy_outgoing** - Get outgoing calls (callees)
+  - `bufnr` (optional): Buffer number (0 for current)
+  - `line` (required): Line number (1-indexed)
+  - `col` (required): Column number (0-indexed)
+  - Returns: `{ calls: [{ to, fromRanges }] }`
+
 ## Usage Examples
 
 ### From Claude Code
@@ -202,6 +248,48 @@ await use_mcp_tool('vibing-nvim', 'nvim_win_open_file', {
 await use_mcp_tool('vibing-nvim', 'nvim_win_set_buf', {
   winnr: 1000,
   bufnr: 5,
+});
+
+// Get definition of symbol at line 10, column 5
+const definition = await use_mcp_tool('vibing-nvim', 'nvim_lsp_definition', {
+  line: 10,
+  col: 5,
+});
+
+// Get all references to symbol
+const references = await use_mcp_tool('vibing-nvim', 'nvim_lsp_references', {
+  line: 10,
+  col: 5,
+});
+
+// Get hover information (type, documentation)
+const hover = await use_mcp_tool('vibing-nvim', 'nvim_lsp_hover', {
+  line: 10,
+  col: 5,
+});
+
+// Get diagnostics for current buffer
+const diagnostics = await use_mcp_tool('vibing-nvim', 'nvim_diagnostics', {});
+
+// Get all symbols in the document
+const symbols = await use_mcp_tool('vibing-nvim', 'nvim_lsp_document_symbols', {});
+
+// Get type definition
+const typeDef = await use_mcp_tool('vibing-nvim', 'nvim_lsp_type_definition', {
+  line: 10,
+  col: 5,
+});
+
+// Get incoming calls (who calls this function?)
+const incomingCalls = await use_mcp_tool('vibing-nvim', 'nvim_lsp_call_hierarchy_incoming', {
+  line: 10,
+  col: 5,
+});
+
+// Get outgoing calls (what does this function call?)
+const outgoingCalls = await use_mcp_tool('vibing-nvim', 'nvim_lsp_call_hierarchy_outgoing', {
+  line: 10,
+  col: 5,
 });
 ```
 

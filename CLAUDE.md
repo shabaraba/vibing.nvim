@@ -112,6 +112,17 @@ When using these tools from Claude Code, prefix them with `mcp__vibing-nvim__`:
 
 - `mcp__vibing-nvim__nvim_execute` - Execute Neovim commands
 
+**LSP Operations:**
+
+- `mcp__vibing-nvim__nvim_lsp_definition` - Get definition location(s) of symbol
+- `mcp__vibing-nvim__nvim_lsp_references` - Get all references to symbol
+- `mcp__vibing-nvim__nvim_lsp_hover` - Get hover information (type, documentation)
+- `mcp__vibing-nvim__nvim_diagnostics` - Get diagnostics (errors, warnings)
+- `mcp__vibing-nvim__nvim_lsp_document_symbols` - Get all symbols in document
+- `mcp__vibing-nvim__nvim_lsp_type_definition` - Get type definition location(s)
+- `mcp__vibing-nvim__nvim_lsp_call_hierarchy_incoming` - Get incoming calls (callers)
+- `mcp__vibing-nvim__nvim_lsp_call_hierarchy_outgoing` - Get outgoing calls (callees)
+
 **Example Usage:**
 
 ```javascript
