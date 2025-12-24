@@ -45,7 +45,7 @@ function M.collect_buffers()
   return contexts
 end
 
----ビジュアル選択範囲から@file:path:L10-L25形式のメンションを作成
+---ビジュアル選択範囲から@file:path:L10-L25形式のメンションと実際のコンテンツを作成
 ---@param buf number
 ---@param start_line number
 ---@param end_line number
@@ -57,7 +57,21 @@ function M.collect_selection(buf, start_line, end_line)
   end
 
   local relative = M._to_relative_path(path)
-  return string.format("@file:%s:L%d-L%d", relative, start_line, end_line)
+  local mention = string.format("@file:%s:L%d-L%d", relative, start_line, end_line)
+
+  -- 選択範囲の実際のコンテンツを取得
+  local lines = vim.api.nvim_buf_get_lines(buf, start_line - 1, end_line, false)
+  if #lines == 0 then
+    return mention
+  end
+
+  -- ファイルタイプからコードブロックの言語を推定
+  local filetype = vim.bo[buf].filetype
+  local lang = filetype ~= "" and filetype or ""
+
+  -- メンション + コードブロック形式で返す
+  local content = table.concat(lines, "\n")
+  return string.format("%s\n```%s\n%s\n```", mention, lang, content)
 end
 
 ---ファイルパスから@file:形式のコンテキストを作成

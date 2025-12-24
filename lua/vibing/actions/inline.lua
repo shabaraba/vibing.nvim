@@ -21,7 +21,7 @@ M.actions = {
     use_output_buffer = false,
   },
   feat = {
-    prompt = "Implement the following feature by writing actual code. You MUST use Edit or Write tools to modify or create files. Do not just explain or provide suggestions - write the implementation directly into the files:",
+    prompt = "Make the requested changes to the selected code by writing actual code. You MUST use Edit or Write tools to modify or create files. Do not just explain or provide suggestions - write the implementation directly into the files:",
     tools = { "Edit", "Write" },
     use_output_buffer = false,
   },
