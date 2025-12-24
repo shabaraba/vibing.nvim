@@ -275,7 +275,7 @@ function M._execute_with_preview(adapter, prompt, opts, action, instruction)
 
           -- プレビューUIを起動
           local InlinePreview = require("vibing.ui.inline_preview")
-          InlinePreview.setup("inline", modified_files, table.concat(response_text, ""), saved_contents)
+          InlinePreview.setup("inline", modified_files, table.concat(response_text, ""), saved_contents, nil, prompt, action, instruction)
         end
       end)
     end)
@@ -292,7 +292,7 @@ function M._execute_with_preview(adapter, prompt, opts, action, instruction)
 
       -- プレビューUIを起動
       local InlinePreview = require("vibing.ui.inline_preview")
-      InlinePreview.setup("inline", modified_files, response.content, saved_contents)
+      InlinePreview.setup("inline", modified_files, response.content, saved_contents, nil, prompt, action, instruction)
     end
   end
 end

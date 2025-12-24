@@ -16,6 +16,9 @@ local M = {}
 ---@field response_text string Agent SDKレスポンス（chatモードでは空）
 ---@field active_panel "diff"|"response" 現在展開中のパネル（inlineモードのみ）
 ---@field saved_contents table<string, string[]> Claude変更前のファイル内容 { [filepath] = lines }
+---@field user_prompt string? ユーザーが入力したプロンプト（振りファイル保存用）
+---@field action string? 実行されたアクション名（fix, feat等）
+---@field instruction string? 追加指示
 ---@field win_files number? ファイルリストウィンドウ
 ---@field win_diff number? Diffプレビューウィンドウ
 ---@field win_response number? レスポンス表示ウィンドウ（inlineモードのみ）
@@ -32,6 +35,9 @@ local state = {
   response_text = "",
   active_panel = "diff",  -- デフォルトでDiffを展開
   saved_contents = {},  -- Claude変更前のファイル内容
+  user_prompt = nil,  -- ユーザープロンプト
+  action = nil,  -- アクション名
+  instruction = nil,  -- 追加指示
   win_files = nil,
   win_diff = nil,
   win_response = nil,
@@ -46,8 +52,11 @@ local state = {
 ---@param response_text string Agent SDKの応答テキスト（chatモードでは空文字列）
 ---@param saved_contents table<string, string[]>? Claude変更前のファイル内容（オプション）
 ---@param initial_file string? 初期選択するファイルパス（オプション）
+---@param user_prompt string? ユーザーが入力したプロンプト（オプション）
+---@param action string? 実行されたアクション名（オプション）
+---@param instruction string? 追加指示（オプション）
 ---@return boolean success 成功した場合true
-function M.setup(mode, modified_files, response_text, saved_contents, initial_file)
+function M.setup(mode, modified_files, response_text, saved_contents, initial_file, user_prompt, action, instruction)
   -- Gitリポジトリチェック
   if not git.is_git_repo() then
     vim.notify(
@@ -62,6 +71,9 @@ function M.setup(mode, modified_files, response_text, saved_contents, initial_fi
   state.modified_files = modified_files or {}
   state.response_text = response_text or ""
   state.saved_contents = saved_contents or {}
+  state.user_prompt = user_prompt
+  state.action = action
+  state.instruction = instruction
 
   -- 変更ファイル＆レスポンスチェック
   local has_files = modified_files and #modified_files > 0
@@ -619,11 +631,12 @@ function M._setup_keymaps()
       end, { buffer = buf, silent = true, desc = "Select file" })
     end
 
-    -- 共通キーマップ: a/r/q/Esc
+    -- 共通キーマップ: a/r/q/Esc/gs
     vim.keymap.set("n", "a", M._on_accept, { buffer = buf, silent = true, desc = "Accept changes" })
     vim.keymap.set("n", "r", M._on_reject, { buffer = buf, silent = true, desc = "Reject changes" })
     vim.keymap.set("n", "q", M._on_quit, { buffer = buf, silent = true, desc = "Quit" })
     vim.keymap.set("n", "<Esc>", M._on_quit, { buffer = buf, silent = true, desc = "Quit" })
+    vim.keymap.set("n", "gs", M.save_as_vibing, { buffer = buf, silent = true, desc = "Save as vibing file" })
 
     -- Tab/Shift-Tab
     if state.mode == "inline" then
@@ -856,6 +869,107 @@ function M._close_all()
     buf_diff = nil,
     buf_response = nil,
   }
+end
+
+---現在のプレビュー内容を.vibingファイルとして保存してChatBufferで開く
+---inlineモードでのみ使用可能（user_prompt, response_textが必要）
+---@return boolean success 成功した場合true
+function M.save_as_vibing()
+  -- inlineモードでのみ使用可能
+  if state.mode ~= "inline" then
+    vim.notify("Save as vibing is only available in inline mode", vim.log.levels.WARN)
+    return false
+  end
+
+  -- 必要な情報をチェック
+  if not state.user_prompt or state.user_prompt == "" then
+    vim.notify("No user prompt available to save", vim.log.levels.WARN)
+    return false
+  end
+
+  -- 保存先ディレクトリを作成
+  local project_root = vim.fn.getcwd()
+  local save_dir = project_root .. "/.vibing/inline/"
+  vim.fn.mkdir(save_dir, "p")
+
+  -- ファイル名を生成（日時ベース）
+  local filename = os.date("inline-%Y%m%d-%H%M%S.vibing")
+  local file_path = save_dir .. filename
+
+  -- vibingファイルの内容を生成
+  local lines = {}
+
+  -- フロントマター
+  table.insert(lines, "---")
+  table.insert(lines, "vibing.nvim: true")
+  table.insert(lines, "session_id: ~")
+  table.insert(lines, "created_at: " .. os.date("%Y-%m-%dT%H:%M:%S"))
+  table.insert(lines, "source: inline")
+  if state.action then
+    table.insert(lines, "action: " .. state.action)
+  end
+  table.insert(lines, "---")
+  table.insert(lines, "")
+
+  -- タイトル
+  table.insert(lines, "# Inline Action Result")
+  table.insert(lines, "")
+
+  -- アクション情報
+  if state.action then
+    local action_display = state.action:sub(1, 1):upper() .. state.action:sub(2)
+    table.insert(lines, "**Action**: " .. action_display)
+  end
+  if state.instruction and state.instruction ~= "" then
+    table.insert(lines, "**Instruction**: " .. state.instruction)
+  end
+  table.insert(lines, "")
+  table.insert(lines, "---")
+  table.insert(lines, "")
+
+  -- ユーザーメッセージ
+  table.insert(lines, "## User")
+  table.insert(lines, "")
+  table.insert(lines, state.user_prompt)
+  table.insert(lines, "")
+
+  -- アシスタント応答
+  table.insert(lines, "## Assistant")
+  table.insert(lines, "")
+  if state.response_text and state.response_text ~= "" then
+    -- response_textを行ごとに分割して追加
+    for line in state.response_text:gmatch("[^\r\n]+") do
+      table.insert(lines, line)
+    end
+  else
+    table.insert(lines, "(No response)")
+  end
+  table.insert(lines, "")
+
+  -- Modified Files セクション
+  if #state.modified_files > 0 then
+    table.insert(lines, "## Modified Files")
+    table.insert(lines, "")
+    for _, file in ipairs(state.modified_files) do
+      local relative = vim.fn.fnamemodify(file, ":.")
+      table.insert(lines, relative)
+    end
+    table.insert(lines, "")
+  end
+
+  -- ファイルに書き込み
+  vim.fn.writefile(lines, file_path)
+
+  -- ChatBufferで開く
+  local ChatAction = require("vibing.actions.chat")
+  ChatAction.open_file(file_path)
+
+  vim.notify("Saved as " .. filename, vim.log.levels.INFO)
+
+  -- プレビューUIを閉じる
+  M._close_all()
+
+  return true
 end
 
 return M
