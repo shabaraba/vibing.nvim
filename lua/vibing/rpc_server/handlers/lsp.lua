@@ -11,7 +11,7 @@ function M.lsp_definition(params)
     textDocument = vim.lsp.util.make_text_document_params(bufnr),
     position = { line = line - 1, character = col },
   }
-  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/definition", lsp_params, 5000)
+  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/definition", lsp_params, 15000)
   if not result or vim.tbl_isempty(result) then
     return { locations = {} }
   end
@@ -41,7 +41,7 @@ function M.lsp_references(params)
     position = { line = line - 1, character = col },
     context = { includeDeclaration = true },
   }
-  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/references", lsp_params, 5000)
+  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/references", lsp_params, 15000)
   if not result or vim.tbl_isempty(result) then
     return { references = {} }
   end
@@ -70,7 +70,7 @@ function M.lsp_hover(params)
     textDocument = vim.lsp.util.make_text_document_params(bufnr),
     position = { line = line - 1, character = col },
   }
-  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/hover", lsp_params, 5000)
+  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/hover", lsp_params, 15000)
   if not result or vim.tbl_isempty(result) then
     return { contents = "" }
   end
@@ -119,7 +119,7 @@ end
 function M.lsp_document_symbols(params)
   local bufnr = params and params.bufnr or 0
   local lsp_params = { textDocument = vim.lsp.util.make_text_document_params(bufnr) }
-  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/documentSymbol", lsp_params, 5000)
+  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/documentSymbol", lsp_params, 15000)
   if not result or vim.tbl_isempty(result) then
     return { symbols = {} }
   end
@@ -144,7 +144,7 @@ function M.lsp_type_definition(params)
     textDocument = vim.lsp.util.make_text_document_params(bufnr),
     position = { line = line - 1, character = col },
   }
-  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/typeDefinition", lsp_params, 5000)
+  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/typeDefinition", lsp_params, 15000)
   if not result or vim.tbl_isempty(result) then
     return { locations = {} }
   end
@@ -169,13 +169,20 @@ function M.lsp_call_hierarchy_incoming(params)
   if not line or not col then
     error("Missing line or col parameter")
   end
+
+  -- Check if LSP is attached
+  local clients = vim.lsp.get_clients({ bufnr = bufnr })
+  if #clients == 0 then
+    error(string.format("No LSP server attached to buffer %d. Make sure the file is loaded and LSP is initialized.", bufnr))
+  end
+
   local lsp_params = {
     textDocument = vim.lsp.util.make_text_document_params(bufnr),
     position = { line = line - 1, character = col },
   }
-  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/prepareCallHierarchy", lsp_params, 5000)
+  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/prepareCallHierarchy", lsp_params, 15000)
   if not result or vim.tbl_isempty(result) then
-    return { calls = {} }
+    error("LSP request timed out or returned no results. The LSP server may be busy or the symbol may not support call hierarchy.")
   end
   local items = {}
   for _, res in pairs(result) do
@@ -188,7 +195,7 @@ function M.lsp_call_hierarchy_incoming(params)
     return { calls = {} }
   end
   local incoming_params = { item = items[1] }
-  local incoming_result = vim.lsp.buf_request_sync(bufnr, "callHierarchy/incomingCalls", incoming_params, 5000)
+  local incoming_result = vim.lsp.buf_request_sync(bufnr, "callHierarchy/incomingCalls", incoming_params, 15000)
   if not incoming_result or vim.tbl_isempty(incoming_result) then
     return { calls = {} }
   end
@@ -213,13 +220,20 @@ function M.lsp_call_hierarchy_outgoing(params)
   if not line or not col then
     error("Missing line or col parameter")
   end
+
+  -- Check if LSP is attached
+  local clients = vim.lsp.get_clients({ bufnr = bufnr })
+  if #clients == 0 then
+    error(string.format("No LSP server attached to buffer %d. Make sure the file is loaded and LSP is initialized.", bufnr))
+  end
+
   local lsp_params = {
     textDocument = vim.lsp.util.make_text_document_params(bufnr),
     position = { line = line - 1, character = col },
   }
-  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/prepareCallHierarchy", lsp_params, 5000)
+  local result = vim.lsp.buf_request_sync(bufnr, "textDocument/prepareCallHierarchy", lsp_params, 15000)
   if not result or vim.tbl_isempty(result) then
-    return { calls = {} }
+    error("LSP request timed out or returned no results. The LSP server may be busy or the symbol may not support call hierarchy.")
   end
   local items = {}
   for _, res in pairs(result) do
@@ -232,7 +246,7 @@ function M.lsp_call_hierarchy_outgoing(params)
     return { calls = {} }
   end
   local outgoing_params = { item = items[1] }
-  local outgoing_result = vim.lsp.buf_request_sync(bufnr, "callHierarchy/outgoingCalls", outgoing_params, 5000)
+  local outgoing_result = vim.lsp.buf_request_sync(bufnr, "callHierarchy/outgoingCalls", outgoing_params, 15000)
   if not outgoing_result or vim.tbl_isempty(outgoing_result) then
     return { calls = {} }
   end

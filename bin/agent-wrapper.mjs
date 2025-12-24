@@ -161,17 +161,24 @@ These tools connect to the RUNNING Neovim instance with active LSP servers.
 These tools analyze separate file copies and don't reflect the actual running state.
 
 ### Background LSP Analysis Workflow
-To analyze files without disrupting the user's current work:
+IMPORTANT: When you need to perform LSP operations on a file that isn't currently displayed:
 
-**Simplified workflow (recommended):**
+**ALWAYS use nvim_load_buffer (required):**
 1. Load file without displaying: const { bufnr } = await mcp__vibing-nvim__nvim_load_buffer({ filepath: "path/to/file.ts" })
 2. Analyze with bufnr: mcp__vibing-nvim__nvim_lsp_*({ bufnr: bufnr, line: X, col: Y })
 
-**Legacy workflow (if nvim_load_buffer is unavailable):**
-1. Load file: mcp__vibing-nvim__nvim_execute({ command: "edit path/to/file.ts" })
-2. Get bufnr: mcp__vibing-nvim__nvim_get_info({})
-3. Return to previous buffer: mcp__vibing-nvim__nvim_execute({ command: "bprevious" })
-4. Analyze with bufnr: mcp__vibing-nvim__nvim_lsp_*({ bufnr: <saved_bufnr>, line: X, col: Y })
+DO NOT use nvim_execute("edit") for LSP operations - it disrupts the user's workflow by switching windows.
+The nvim_load_buffer tool loads files in the background without any visual disruption.
+
+**Example:**
+// ✅ CORRECT - No window switching
+const { bufnr } = await mcp__vibing-nvim__nvim_load_buffer({ filepath: "src/logger.ts" });
+const calls = await mcp__vibing-nvim__nvim_lsp_call_hierarchy_incoming({ bufnr, line: 2, col: 0 });
+
+// ❌ WRONG - Switches windows, disrupts user
+await mcp__vibing-nvim__nvim_execute({ command: "edit src/logger.ts" });
+const info = await mcp__vibing-nvim__nvim_get_info({});
+await mcp__vibing-nvim__nvim_execute({ command: "bprevious" });
 </vibing-nvim-system>
 
 `;
