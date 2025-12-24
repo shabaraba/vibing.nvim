@@ -77,6 +77,7 @@ intelligent chat conversations and context-aware inline code actions directly in
       agent = {
         default_mode = "code",  -- "code" | "plan" | "explore"
         default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
+        prioritize_vibing_lsp = true,  -- Prioritize vibing-nvim LSP tools (default: true)
       },
       permissions = {
         mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
@@ -404,6 +405,11 @@ agent = {
                             -- "sonnet": Balanced (recommended)
                             -- "opus": Most capable
                             -- "haiku": Fastest
+
+  prioritize_vibing_lsp = true,  -- Prioritize vibing-nvim LSP tools
+                                 -- true: Use vibing-nvim LSP (connects to running Neovim)
+                                 -- false: Allow generic LSP tools (e.g., Serena)
+                                 -- Default: true
 }
 ```
 

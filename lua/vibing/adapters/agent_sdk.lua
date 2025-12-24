@@ -114,6 +114,13 @@ function AgentSDK:build_command(prompt, opts)
     table.insert(cmd, vim.json.encode(rules))
   end
 
+  -- Add prioritize_vibing_lsp flag: Use config only
+  local prioritize_vibing_lsp = self.config.agent and self.config.agent.prioritize_vibing_lsp
+  if prioritize_vibing_lsp ~= nil then
+    table.insert(cmd, "--prioritize-vibing-lsp")
+    table.insert(cmd, tostring(prioritize_vibing_lsp))
+  end
+
   table.insert(cmd, "--prompt")
   table.insert(cmd, prompt)
 

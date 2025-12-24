@@ -40,6 +40,7 @@
 ---Claudeのモード（code/plan/explore）とモデル（sonnet/opus/haiku）を指定
 ---@field default_mode "code"|"plan"|"explore" デフォルトモード（"code": コード生成、"plan": 計画、"explore": 探索）
 ---@field default_model "sonnet"|"opus"|"haiku" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速）
+---@field prioritize_vibing_lsp boolean vibing-nvim LSPツールを優先（true: Serena等の汎用LSPより優先、false: システムプロンプトを挿入しない、デフォルト: true）
 
 ---@class Vibing.McpConfig
 ---MCP統合設定
@@ -100,6 +101,7 @@ M.defaults = {
   agent = {
     default_mode = "code",  -- "code" | "plan" | "explore"
     default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
+    prioritize_vibing_lsp = true,  -- Prioritize vibing-nvim LSP tools over generic LSP tools (e.g. Serena)
   },
   chat = {
     window = {

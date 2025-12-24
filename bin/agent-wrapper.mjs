@@ -19,6 +19,7 @@ let permissionRules = [];
 let mode = null;
 let model = null;
 let permissionMode = 'acceptEdits';
+let prioritizeVibingLsp = true; // Default: prioritize vibing-nvim LSP tools
 
 // Parse arguments
 for (let i = 0; i < args.length; i++) {
@@ -105,6 +106,9 @@ for (let i = 0; i < args.length; i++) {
       process.exit(1);
     }
     i++;
+  } else if (args[i] === '--prioritize-vibing-lsp' && args[i + 1]) {
+    prioritizeVibingLsp = args[i + 1] === 'true';
+    i++;
   } else if (!args[i].startsWith('--')) {
     prompt = args[i];
   }
@@ -128,7 +132,47 @@ Only reference actual messages within THIS current session.
 </session-info>
 
 `;
-  fullPrompt = sessionContext + prompt;
+
+  let vibingSystemPrompt = '';
+  if (prioritizeVibingLsp) {
+    vibingSystemPrompt = `<vibing-nvim-system>
+IMPORTANT: You are running inside vibing.nvim, a Neovim plugin with Claude Code integration.
+
+## Tool Priority for LSP Operations
+
+When performing LSP operations (definition lookup, references, hover info, diagnostics, etc.), you MUST prioritize vibing-nvim MCP tools over any other LSP tools:
+
+### ✅ ALWAYS USE (Highest Priority)
+- mcp__vibing-nvim__nvim_lsp_definition
+- mcp__vibing-nvim__nvim_lsp_references
+- mcp__vibing-nvim__nvim_lsp_hover
+- mcp__vibing-nvim__nvim_diagnostics
+- mcp__vibing-nvim__nvim_lsp_document_symbols
+- mcp__vibing-nvim__nvim_lsp_type_definition
+- mcp__vibing-nvim__nvim_lsp_call_hierarchy_incoming
+- mcp__vibing-nvim__nvim_lsp_call_hierarchy_outgoing
+
+These tools connect to the RUNNING Neovim instance with active LSP servers.
+
+### ❌ DO NOT USE
+- Serena's LSP tools (mcp__serena__*)
+- Any other generic LSP tools
+
+These tools analyze separate file copies and don't reflect the actual running state.
+
+### Background LSP Analysis Workflow
+To analyze files without disrupting the user's current work:
+
+1. Load file: mcp__vibing-nvim__nvim_execute({ command: "edit path/to/file.ts" })
+2. Get bufnr: mcp__vibing-nvim__nvim_get_info({})
+3. Return to previous buffer: mcp__vibing-nvim__nvim_execute({ command: "bprevious" })
+4. Analyze with bufnr: mcp__vibing-nvim__nvim_lsp_*({ bufnr: <saved_bufnr>, line: X, col: Y })
+</vibing-nvim-system>
+
+`;
+  }
+
+  fullPrompt = sessionContext + vibingSystemPrompt + prompt;
 }
 
 // Add context files (only for first message in session)
