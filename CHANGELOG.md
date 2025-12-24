@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/shabaraba/vibing.nvim/compare/v1.4.0...v1.5.0) (2025-12-24)
+
+
+### Features
+
+* support visual selection for VibingContext command ([#181](https://github.com/shabaraba/vibing.nvim/issues/181)) ([2b01a41](https://github.com/shabaraba/vibing.nvim/commit/2b01a41343bef5a0b17db4293d6754847214098f))
+
 ## [1.4.0](https://github.com/shabaraba/vibing.nvim/compare/v1.3.0...v1.4.0) (2025-12-24)
 
 ### Features
