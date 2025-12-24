@@ -772,11 +772,12 @@ function ChatBuffer:_flush_chunks()
   vim.api.nvim_buf_set_lines(self.buf, #lines - 1, #lines, false, chunk_lines)
 
   -- カーソルを最下部に移動
-  if self:is_open() then
+  if self:is_open() and vim.api.nvim_win_is_valid(self.win) and vim.api.nvim_buf_is_valid(self.buf) then
     local new_lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
     local line_count = #new_lines
     if line_count > 0 then
-      vim.api.nvim_win_set_cursor(self.win, { line_count, 0 })
+      -- Safely set cursor with error handling
+      pcall(vim.api.nvim_win_set_cursor, self.win, { line_count, 0 })
     end
   end
 
