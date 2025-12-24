@@ -246,12 +246,20 @@ function StatusManager:_show_float(title, message)
   local lines = {
     title,
     string.rep("─", #title),
-    message,
   }
+  -- Split message by newlines to handle multi-line messages
+  local message_lines = vim.split(message, "\n", { plain = true })
+  for _, line in ipairs(message_lines) do
+    table.insert(lines, line)
+  end
   vim.api.nvim_buf_set_lines(self._float_buf, 0, -1, false, lines)
 
-  -- Calculate window size
-  local width = math.max(#title, #message) + 2
+  -- Calculate window size (consider all lines)
+  local max_width = vim.fn.strdisplaywidth(title)
+  for _, line in ipairs(message_lines) do
+    max_width = math.max(max_width, vim.fn.strdisplaywidth(line))
+  end
+  local width = max_width + 2
   local height = #lines
 
   -- Get editor dimensions
