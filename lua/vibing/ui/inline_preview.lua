@@ -631,12 +631,12 @@ function M._setup_keymaps()
       end, { buffer = buf, silent = true, desc = "Select file" })
     end
 
-    -- 共通キーマップ: a/r/q/Esc/gs
+    -- 共通キーマップ: a/r/q/Esc/b
     vim.keymap.set("n", "a", M._on_accept, { buffer = buf, silent = true, desc = "Accept changes" })
     vim.keymap.set("n", "r", M._on_reject, { buffer = buf, silent = true, desc = "Reject changes" })
     vim.keymap.set("n", "q", M._on_quit, { buffer = buf, silent = true, desc = "Quit" })
     vim.keymap.set("n", "<Esc>", M._on_quit, { buffer = buf, silent = true, desc = "Quit" })
-    vim.keymap.set("n", "gs", M.save_as_vibing, { buffer = buf, silent = true, desc = "Save as vibing file" })
+    vim.keymap.set("n", "b", M.save_as_vibing, { buffer = buf, silent = true, desc = "Save to buffer (vibing file)" })
 
     -- Tab/Shift-Tab
     if state.mode == "inline" then
@@ -899,30 +899,59 @@ function M.save_as_vibing()
   -- vibingファイルの内容を生成
   local lines = {}
 
-  -- フロントマター
+  -- 設定を取得
+  local vibing = require("vibing")
+  local config = vibing.get_config()
+
+  -- フロントマター（chatと同様）
   table.insert(lines, "---")
   table.insert(lines, "vibing.nvim: true")
   table.insert(lines, "session_id: ~")
   table.insert(lines, "created_at: " .. os.date("%Y-%m-%dT%H:%M:%S"))
   table.insert(lines, "source: inline")
+
+  -- アクション情報
   if state.action then
     table.insert(lines, "action: " .. state.action)
   end
+  if state.instruction and state.instruction ~= "" then
+    table.insert(lines, "instruction: " .. state.instruction)
+  end
+
+  -- agent設定（chatと同様）
+  if config.agent then
+    if config.agent.default_mode then
+      table.insert(lines, "mode: " .. config.agent.default_mode)
+    end
+    if config.agent.default_model then
+      table.insert(lines, "model: " .. config.agent.default_model)
+    end
+  end
+
+  -- permissions設定（chatと同様）
+  if config.permissions then
+    if config.permissions.mode then
+      table.insert(lines, "permission_mode: " .. config.permissions.mode)
+    end
+    if config.permissions.allow and #config.permissions.allow > 0 then
+      table.insert(lines, "permissions_allow:")
+      for _, tool in ipairs(config.permissions.allow) do
+        table.insert(lines, "  - " .. tool)
+      end
+    end
+    if config.permissions.deny and #config.permissions.deny > 0 then
+      table.insert(lines, "permissions_deny:")
+      for _, tool in ipairs(config.permissions.deny) do
+        table.insert(lines, "  - " .. tool)
+      end
+    end
+  end
+
   table.insert(lines, "---")
   table.insert(lines, "")
 
   -- タイトル
   table.insert(lines, "# Inline Action Result")
-  table.insert(lines, "")
-
-  -- アクション情報
-  if state.action then
-    local action_display = state.action:sub(1, 1):upper() .. state.action:sub(2)
-    table.insert(lines, "**Action**: " .. action_display)
-  end
-  if state.instruction and state.instruction ~= "" then
-    table.insert(lines, "**Instruction**: " .. state.instruction)
-  end
   table.insert(lines, "")
   table.insert(lines, "---")
   table.insert(lines, "")
@@ -930,7 +959,12 @@ function M.save_as_vibing()
   -- ユーザーメッセージ
   table.insert(lines, "## User")
   table.insert(lines, "")
-  table.insert(lines, state.user_prompt)
+  -- user_promptを行ごとに分割して追加
+  if state.user_prompt and state.user_prompt ~= "" then
+    for _, line in ipairs(vim.split(state.user_prompt, "\n", { plain = true })) do
+      table.insert(lines, line)
+    end
+  end
   table.insert(lines, "")
 
   -- アシスタント応答
@@ -938,7 +972,7 @@ function M.save_as_vibing()
   table.insert(lines, "")
   if state.response_text and state.response_text ~= "" then
     -- response_textを行ごとに分割して追加
-    for line in state.response_text:gmatch("[^\r\n]+") do
+    for _, line in ipairs(vim.split(state.response_text, "\n", { plain = true })) do
       table.insert(lines, line)
     end
   else
