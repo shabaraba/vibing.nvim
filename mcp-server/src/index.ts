@@ -458,6 +458,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'nvim_set_window_size': {
+        if (args?.width === undefined && args?.height === undefined) {
+          throw new Error('At least one of width or height must be specified');
+        }
         if (args?.width !== undefined) {
           await callNeovim('set_window_width', {
             winnr: args.winnr,
