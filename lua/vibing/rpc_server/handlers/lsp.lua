@@ -7,8 +7,10 @@ function M.lsp_definition(params)
   if not line or not col then
     error("Missing line or col parameter")
   end
-  local lsp_params = vim.lsp.util.make_position_params(0, nil)
-  lsp_params.position = { line = line - 1, character = col }
+  local lsp_params = {
+    textDocument = vim.lsp.util.make_text_document_params(bufnr),
+    position = { line = line - 1, character = col },
+  }
   local result = vim.lsp.buf_request_sync(bufnr, "textDocument/definition", lsp_params, 5000)
   if not result or vim.tbl_isempty(result) then
     return { locations = {} }
@@ -34,9 +36,11 @@ function M.lsp_references(params)
   if not line or not col then
     error("Missing line or col parameter")
   end
-  local lsp_params = vim.lsp.util.make_position_params(0, nil)
-  lsp_params.position = { line = line - 1, character = col }
-  lsp_params.context = { includeDeclaration = true }
+  local lsp_params = {
+    textDocument = vim.lsp.util.make_text_document_params(bufnr),
+    position = { line = line - 1, character = col },
+    context = { includeDeclaration = true },
+  }
   local result = vim.lsp.buf_request_sync(bufnr, "textDocument/references", lsp_params, 5000)
   if not result or vim.tbl_isempty(result) then
     return { references = {} }
@@ -62,8 +66,10 @@ function M.lsp_hover(params)
   if not line or not col then
     error("Missing line or col parameter")
   end
-  local lsp_params = vim.lsp.util.make_position_params(0, nil)
-  lsp_params.position = { line = line - 1, character = col }
+  local lsp_params = {
+    textDocument = vim.lsp.util.make_text_document_params(bufnr),
+    position = { line = line - 1, character = col },
+  }
   local result = vim.lsp.buf_request_sync(bufnr, "textDocument/hover", lsp_params, 5000)
   if not result or vim.tbl_isempty(result) then
     return { contents = "" }
@@ -134,8 +140,10 @@ function M.lsp_type_definition(params)
   if not line or not col then
     error("Missing line or col parameter")
   end
-  local lsp_params = vim.lsp.util.make_position_params(0, nil)
-  lsp_params.position = { line = line - 1, character = col }
+  local lsp_params = {
+    textDocument = vim.lsp.util.make_text_document_params(bufnr),
+    position = { line = line - 1, character = col },
+  }
   local result = vim.lsp.buf_request_sync(bufnr, "textDocument/typeDefinition", lsp_params, 5000)
   if not result or vim.tbl_isempty(result) then
     return { locations = {} }
@@ -161,8 +169,10 @@ function M.lsp_call_hierarchy_incoming(params)
   if not line or not col then
     error("Missing line or col parameter")
   end
-  local lsp_params = vim.lsp.util.make_position_params(0, nil)
-  lsp_params.position = { line = line - 1, character = col }
+  local lsp_params = {
+    textDocument = vim.lsp.util.make_text_document_params(bufnr),
+    position = { line = line - 1, character = col },
+  }
   local result = vim.lsp.buf_request_sync(bufnr, "textDocument/prepareCallHierarchy", lsp_params, 5000)
   if not result or vim.tbl_isempty(result) then
     return { calls = {} }
@@ -203,8 +213,10 @@ function M.lsp_call_hierarchy_outgoing(params)
   if not line or not col then
     error("Missing line or col parameter")
   end
-  local lsp_params = vim.lsp.util.make_position_params(0, nil)
-  lsp_params.position = { line = line - 1, character = col }
+  local lsp_params = {
+    textDocument = vim.lsp.util.make_text_document_params(bufnr),
+    position = { line = line - 1, character = col },
+  }
   local result = vim.lsp.buf_request_sync(bufnr, "textDocument/prepareCallHierarchy", lsp_params, 5000)
   if not result or vim.tbl_isempty(result) then
     return { calls = {} }
