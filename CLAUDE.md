@@ -84,13 +84,30 @@ a user-level MCP server during the build process (`build.sh`).
 
 When using these tools from Claude Code, prefix them with `mcp__vibing-nvim__`:
 
+**Buffer Operations:**
+
 - `mcp__vibing-nvim__nvim_get_buffer` - Get current buffer content
 - `mcp__vibing-nvim__nvim_set_buffer` - Replace buffer content
 - `mcp__vibing-nvim__nvim_list_buffers` - List all loaded buffers
 - `mcp__vibing-nvim__nvim_get_info` - Get current file information
+
+**Cursor & Selection:**
+
 - `mcp__vibing-nvim__nvim_get_cursor` - Get cursor position
 - `mcp__vibing-nvim__nvim_set_cursor` - Set cursor position
 - `mcp__vibing-nvim__nvim_get_visual_selection` - Get visual selection
+
+**Window/Pane Operations:**
+
+- `mcp__vibing-nvim__nvim_list_windows` - List all windows with properties (buffer, size, position, focus)
+- `mcp__vibing-nvim__nvim_get_window_info` - Get detailed window information
+- `mcp__vibing-nvim__nvim_get_window_view` - Get viewport info (visible lines, scroll position)
+- `mcp__vibing-nvim__nvim_list_tabpages` - List tab pages with their windows
+- `mcp__vibing-nvim__nvim_set_window_size` - Resize window width/height
+- `mcp__vibing-nvim__nvim_focus_window` - Move focus to a specific window
+
+**Commands:**
+
 - `mcp__vibing-nvim__nvim_execute` - Execute Neovim commands
 
 **Example Usage:**
@@ -101,6 +118,25 @@ const buffers = await use_mcp_tool('vibing-nvim', 'nvim_list_buffers', {});
 
 // Get current buffer content
 const content = await use_mcp_tool('vibing-nvim', 'nvim_get_buffer', {});
+
+// List all windows with their properties
+const windows = await use_mcp_tool('vibing-nvim', 'nvim_list_windows', {});
+
+// Get detailed info for current window
+const winInfo = await use_mcp_tool('vibing-nvim', 'nvim_get_window_info', { winnr: 0 });
+
+// Get viewport information (visible lines)
+const viewport = await use_mcp_tool('vibing-nvim', 'nvim_get_window_view', { winnr: 0 });
+
+// Resize window
+await use_mcp_tool('vibing-nvim', 'nvim_set_window_size', {
+  winnr: 1000,
+  width: 80,
+  height: 30,
+});
+
+// Focus a specific window
+await use_mcp_tool('vibing-nvim', 'nvim_focus_window', { winnr: 1000 });
 
 // Execute command
 await use_mcp_tool('vibing-nvim', 'nvim_execute', { command: 'write' });

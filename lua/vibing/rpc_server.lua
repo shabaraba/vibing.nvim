@@ -104,6 +104,129 @@ local function handle_request(client, request)
         vim.api.nvim_win_set_cursor(0, { line, col })
         return { success = true }
 
+      elseif method == "list_windows" then
+        local wins = {}
+        local current_win = vim.api.nvim_get_current_win()
+        for _, info in ipairs(vim.fn.getwininfo()) do
+          local winnr = info.winid
+          local bufnr = info.bufnr
+          local config = vim.api.nvim_win_get_config(winnr)
+          table.insert(wins, {
+            winnr = winnr,
+            bufnr = bufnr,
+            buffer_name = vim.api.nvim_buf_get_name(bufnr),
+            filetype = vim.bo[bufnr].filetype,
+            width = info.width,
+            height = info.height,
+            row = config.row or 0,
+            col = config.col or 0,
+            relative = config.relative or "",
+            is_current = winnr == current_win,
+            is_floating = config.relative ~= "",
+          })
+        end
+        return wins
+
+      elseif method == "get_window_info" then
+        local winnr = req.params and req.params.winnr or 0
+        if winnr ~= 0 and not vim.api.nvim_win_is_valid(winnr) then
+          error("Invalid window number: " .. tostring(winnr))
+        end
+        local bufnr = vim.api.nvim_win_get_buf(winnr)
+        local config = vim.api.nvim_win_get_config(winnr)
+        local cursor = vim.api.nvim_win_get_cursor(winnr)
+        return {
+          winnr = winnr,
+          bufnr = bufnr,
+          buffer_name = vim.api.nvim_buf_get_name(bufnr),
+          filetype = vim.bo[bufnr].filetype,
+          width = vim.api.nvim_win_get_width(winnr),
+          height = vim.api.nvim_win_get_height(winnr),
+          row = config.row or 0,
+          col = config.col or 0,
+          relative = config.relative or "",
+          is_current = winnr == vim.api.nvim_get_current_win(),
+          is_floating = config.relative ~= "",
+          cursor = { line = cursor[1], col = cursor[2] },
+        }
+
+      elseif method == "get_window_view" then
+        local winnr = req.params and req.params.winnr or 0
+        if winnr ~= 0 and not vim.api.nvim_win_is_valid(winnr) then
+          error("Invalid window number: " .. tostring(winnr))
+        end
+        local bufnr = vim.api.nvim_win_get_buf(winnr)
+        local cursor = vim.api.nvim_win_get_cursor(winnr)
+        local wininfo = vim.fn.getwininfo(winnr)[1]
+        return {
+          winnr = winnr,
+          bufnr = bufnr,
+          topline = vim.fn.line("w0", winnr),
+          botline = vim.fn.line("w$", winnr),
+          width = vim.api.nvim_win_get_width(winnr),
+          height = vim.api.nvim_win_get_height(winnr),
+          cursor = { line = cursor[1], col = cursor[2] },
+          leftcol = wininfo and wininfo.leftcol or 0,
+        }
+
+      elseif method == "list_tabpages" then
+        local tabs = {}
+        local current_tab = vim.api.nvim_get_current_tabpage()
+        for _, tabnr in ipairs(vim.api.nvim_list_tabpages()) do
+          local wins = vim.api.nvim_tabpage_list_wins(tabnr)
+          local win_info = {}
+          for _, winnr in ipairs(wins) do
+            local bufnr = vim.api.nvim_win_get_buf(winnr)
+            table.insert(win_info, {
+              winnr = winnr,
+              bufnr = bufnr,
+              buffer_name = vim.api.nvim_buf_get_name(bufnr),
+            })
+          end
+          table.insert(tabs, {
+            tabnr = tabnr,
+            window_count = #wins,
+            windows = win_info,
+            is_current = tabnr == current_tab,
+          })
+        end
+        return tabs
+
+      elseif method == "set_window_width" then
+        local winnr = req.params and req.params.winnr or 0
+        local width = req.params and req.params.width
+        if not width then
+          error("Missing width parameter")
+        end
+        if winnr ~= 0 and not vim.api.nvim_win_is_valid(winnr) then
+          error("Invalid window number: " .. tostring(winnr))
+        end
+        vim.api.nvim_win_set_width(winnr, width)
+        return { success = true }
+
+      elseif method == "set_window_height" then
+        local winnr = req.params and req.params.winnr or 0
+        local height = req.params and req.params.height
+        if not height then
+          error("Missing height parameter")
+        end
+        if winnr ~= 0 and not vim.api.nvim_win_is_valid(winnr) then
+          error("Invalid window number: " .. tostring(winnr))
+        end
+        vim.api.nvim_win_set_height(winnr, height)
+        return { success = true }
+
+      elseif method == "focus_window" then
+        local winnr = req.params and req.params.winnr
+        if not winnr then
+          error("Missing winnr parameter")
+        end
+        if not vim.api.nvim_win_is_valid(winnr) then
+          error("Invalid window number: " .. tostring(winnr))
+        end
+        vim.api.nvim_set_current_win(winnr)
+        return { success = true }
+
       else
         error("Unknown method: " .. tostring(method))
       end

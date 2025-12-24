@@ -117,6 +117,30 @@ The MCP server exposes the following tools to Claude:
 - **nvim_get_visual_selection** - Get visual selection
   - Returns: `{ lines, start, end }`
 
+### Window Operations
+
+- **nvim_list_windows** - List all windows with their properties
+  - Returns: Array of window info (winnr, bufnr, buffer_name, filetype, width, height, position, is_current, is_floating)
+
+- **nvim_get_window_info** - Get detailed information for a specific window
+  - `winnr` (optional): Window number (0 for current)
+  - Returns: Detailed window info including cursor position
+
+- **nvim_get_window_view** - Get window viewport information
+  - `winnr` (optional): Window number (0 for current)
+  - Returns: `{ winnr, bufnr, topline, botline, width, height, cursor, leftcol }`
+
+- **nvim_list_tabpages** - List all tab pages with their windows
+  - Returns: Array of tab info (tabnr, window_count, windows, is_current)
+
+- **nvim_set_window_size** - Resize window
+  - `winnr` (optional): Window number (0 for current)
+  - `width` (optional): New window width
+  - `height` (optional): New window height
+
+- **nvim_focus_window** - Move focus to a specific window
+  - `winnr` (required): Window number to focus
+
 ### Command Execution
 
 - **nvim_execute** - Execute Neovim command
@@ -142,6 +166,22 @@ await use_mcp_tool('vibing-nvim', 'nvim_execute', {
 
 // List all buffers
 const buffers = await use_mcp_tool('vibing-nvim', 'nvim_list_buffers', {});
+
+// List all windows
+const windows = await use_mcp_tool('vibing-nvim', 'nvim_list_windows', {});
+
+// Get current window viewport
+const viewport = await use_mcp_tool('vibing-nvim', 'nvim_get_window_view', {});
+
+// Resize current window
+await use_mcp_tool('vibing-nvim', 'nvim_set_window_size', {
+  winnr: 0,
+  width: 100,
+  height: 40,
+});
+
+// Focus window 1000
+await use_mcp_tool('vibing-nvim', 'nvim_focus_window', { winnr: 1000 });
 ```
 
 ## Development
