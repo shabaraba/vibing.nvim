@@ -222,6 +222,18 @@ function M._execute_with_preview(adapter, prompt, opts, action, instruction)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
+  -- 選択範囲のファイル内容を保存（Claude変更前の状態）
+  local current_buf = vim.api.nvim_get_current_buf()
+  local file_path = vim.api.nvim_buf_get_name(current_buf)
+  local saved_contents = {}
+
+  if file_path ~= "" then
+    -- 絶対パスに正規化
+    local normalized_path = vim.fn.fnamemodify(file_path, ":p")
+    local content = vim.api.nvim_buf_get_lines(current_buf, 0, -1, false)
+    saved_contents[normalized_path] = content
+  end
+
   -- StatusManager作成
   local StatusManager = require("vibing.status_manager")
   local status_mgr = StatusManager:new(config.status)
@@ -250,7 +262,7 @@ function M._execute_with_preview(adapter, prompt, opts, action, instruction)
 
           -- プレビューUIを起動
           local InlinePreview = require("vibing.ui.inline_preview")
-          InlinePreview.setup("inline", modified_files, table.concat(response_text, ""))
+          InlinePreview.setup("inline", modified_files, table.concat(response_text, ""), saved_contents)
         end
       end)
     end)
@@ -267,7 +279,7 @@ function M._execute_with_preview(adapter, prompt, opts, action, instruction)
 
       -- プレビューUIを起動
       local InlinePreview = require("vibing.ui.inline_preview")
-      InlinePreview.setup("inline", modified_files, response.content)
+      InlinePreview.setup("inline", modified_files, response.content, saved_contents)
     end
   end
 end

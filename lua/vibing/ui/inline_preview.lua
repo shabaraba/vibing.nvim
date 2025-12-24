@@ -15,6 +15,7 @@ local M = {}
 ---@field selected_file_idx number 現在選択中のファイルインデックス
 ---@field response_text string Agent SDKレスポンス（chatモードでは空）
 ---@field active_panel "diff"|"response" 現在展開中のパネル（inlineモードのみ）
+---@field saved_contents table<string, string[]> Claude変更前のファイル内容 { [filepath] = lines }
 ---@field win_files number? ファイルリストウィンドウ
 ---@field win_diff number? Diffプレビューウィンドウ
 ---@field win_response number? レスポンス表示ウィンドウ（inlineモードのみ）
@@ -30,6 +31,7 @@ local state = {
   selected_file_idx = 1,
   response_text = "",
   active_panel = "diff",  -- デフォルトでDiffを展開
+  saved_contents = {},  -- Claude変更前のファイル内容
   win_files = nil,
   win_diff = nil,
   win_response = nil,
@@ -42,8 +44,9 @@ local state = {
 ---@param mode "inline"|"chat" 表示モード
 ---@param modified_files string[] 変更されたファイル一覧
 ---@param response_text string Agent SDKの応答テキスト（chatモードでは空文字列）
+---@param saved_contents table<string, string[]>? Claude変更前のファイル内容（オプション）
 ---@return boolean success 成功した場合true
-function M.setup(mode, modified_files, response_text)
+function M.setup(mode, modified_files, response_text, saved_contents)
   -- Gitリポジトリチェック
   if not git.is_git_repo() then
     vim.notify(
@@ -57,6 +60,7 @@ function M.setup(mode, modified_files, response_text)
   state.mode = mode
   state.modified_files = modified_files or {}
   state.response_text = response_text or ""
+  state.saved_contents = saved_contents or {}
 
   -- 変更ファイル＆レスポンスチェック
   local has_files = modified_files and #modified_files > 0
@@ -87,7 +91,11 @@ function M.setup(mode, modified_files, response_text)
 
   -- Diff取得（ファイルがある場合のみ）
   if has_files then
-    state.diffs = git.get_diffs(modified_files)
+    state.diffs = {}
+    for _, file in ipairs(modified_files) do
+      -- 保存された内容がある場合はそれと比較、ない場合は通常のgit diff
+      state.diffs[file] = M._generate_diff_from_saved(file)
+    end
   else
     state.diffs = {}
   end
@@ -114,6 +122,64 @@ function M.setup(mode, modified_files, response_text)
   M._setup_keymaps()
 
   return true
+end
+
+---保存された内容とファイルの差分を生成（git diff --no-index使用）
+---@param file_path string ファイルパス
+---@return table { lines: string[], has_delta: boolean, error: boolean? }
+function M._generate_diff_from_saved(file_path)
+  -- ファイルパスを正規化（絶対パス）
+  local normalized_path = vim.fn.fnamemodify(file_path, ":p")
+
+  -- 保存された内容がない場合は通常のgit diffにフォールバック
+  if not state.saved_contents[normalized_path] then
+    return git.get_diff(file_path)
+  end
+
+  -- 一時ファイルに保存された内容を書き出し
+  local tmp_before = vim.fn.tempname()
+  vim.fn.writefile(state.saved_contents[normalized_path], tmp_before)
+
+  -- git diff --no-index で差分を取得
+  local cmd = string.format(
+    "git diff --no-index --no-color %s %s",
+    vim.fn.shellescape(tmp_before),
+    vim.fn.shellescape(file_path)
+  )
+
+  local result = vim.fn.systemlist({ "sh", "-c", cmd })
+
+  -- 一時ファイルを削除
+  vim.fn.delete(tmp_before)
+
+  -- git diff --no-index は差分がある場合 exit code 1 を返すので、
+  -- exit code 1 はエラーではない
+  if vim.v.shell_error ~= 0 and vim.v.shell_error ~= 1 then
+    return {
+      lines = {
+        "Error: Could not generate diff for " .. file_path,
+        "Command: " .. cmd,
+        "Exit code: " .. tostring(vim.v.shell_error),
+      },
+      has_delta = false,
+      error = true,
+    }
+  end
+
+  -- 差分がない場合
+  if #result == 0 then
+    return {
+      lines = { "No changes detected for " .. file_path },
+      has_delta = false,
+      error = false,
+    }
+  end
+
+  return {
+    lines = result,
+    has_delta = false,
+    error = false,
+  }
 end
 
 ---ウィンドウレイアウトを作成
@@ -644,39 +710,80 @@ end
 
 ---Reject処理（変更を元に戻す）
 function M._on_reject()
-  -- ファイルがない場合はgit checkoutをスキップ
+  -- ファイルがない場合はスキップ
   if #state.modified_files == 0 then
     M._close_all()
     vim.notify("No files to revert", vim.log.levels.INFO)
     return
   end
 
-  -- git checkout実行
-  local result = git.checkout_files(state.modified_files)
+  -- 保存された内容があるファイルとないファイルを分類
+  local files_with_saved = {}
+  local files_without_saved = {}
 
-  -- 成功したファイルのリストを作成
+  for _, file in ipairs(state.modified_files) do
+    -- ファイルパスを正規化（絶対パス）
+    local normalized_path = vim.fn.fnamemodify(file, ":p")
+    if state.saved_contents[normalized_path] then
+      table.insert(files_with_saved, file)
+    else
+      table.insert(files_without_saved, file)
+    end
+  end
+
   local reverted_files = {}
-  if result.success then
-    -- 全ファイル成功
-    reverted_files = vim.deepcopy(state.modified_files)
+  local errors = {}
+
+  -- 保存された内容で復元（Claude変更のみを巻き戻し）
+  for _, file in ipairs(files_with_saved) do
+    local normalized_path = vim.fn.fnamemodify(file, ":p")
+    local ok, err = pcall(function()
+      vim.fn.writefile(state.saved_contents[normalized_path], file)
+    end)
+
+    if ok then
+      table.insert(reverted_files, file)
+    else
+      table.insert(errors, { file = file, message = tostring(err) })
+    end
+  end
+
+  -- 保存された内容がないファイルはgit checkoutで復元（ユーザー変更も巻き戻る）
+  if #files_without_saved > 0 then
+    local result = git.checkout_files(files_without_saved)
+
+    if result.success then
+      for _, file in ipairs(files_without_saved) do
+        table.insert(reverted_files, file)
+      end
+    else
+      for _, err in ipairs(result.errors) do
+        table.insert(errors, err)
+      end
+      for _, file in ipairs(files_without_saved) do
+        local found_error = false
+        for _, err in ipairs(result.errors) do
+          if err.file == file then
+            found_error = true
+            break
+          end
+        end
+        if not found_error then
+          table.insert(reverted_files, file)
+        end
+      end
+    end
+  end
+
+  -- 結果通知
+  if #errors == 0 then
     vim.notify(
-      string.format("Reverted %d files successfully", #state.modified_files),
+      string.format("Reverted %d files successfully", #reverted_files),
       vim.log.levels.INFO
     )
   else
-    -- 部分的失敗: エラーがなかったファイルのみをリストに追加
-    local failed_set = {}
-    for _, err in ipairs(result.errors) do
-      failed_set[err.file] = true
-    end
-    for _, file in ipairs(state.modified_files) do
-      if not failed_set[file] then
-        table.insert(reverted_files, file)
-      end
-    end
-
-    local failed_count = #result.errors
     local success_count = #reverted_files
+    local failed_count = #errors
 
     vim.notify(
       string.format("Reverted %d/%d files. %d failed.", success_count, #state.modified_files, failed_count),
@@ -684,7 +791,7 @@ function M._on_reject()
     )
 
     -- エラー詳細を表示
-    for _, err in ipairs(result.errors) do
+    for _, err in ipairs(errors) do
       vim.notify(string.format("  - %s: %s", err.file, err.message), vim.log.levels.ERROR)
     end
   end
@@ -725,6 +832,8 @@ function M._close_all()
     diffs = {},
     selected_file_idx = 1,
     response_text = "",
+    active_panel = "diff",
+    saved_contents = {},
     win_files = nil,
     win_diff = nil,
     win_response = nil,
