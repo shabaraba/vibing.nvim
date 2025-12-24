@@ -33,10 +33,15 @@ if [ ! -d "$MCP_DIR" ]; then
     exit 1
 fi
 
+# Install root dependencies (Agent SDK, etc.)
+echo "[vibing.nvim] Installing root dependencies..."
+cd "$SCRIPT_DIR"
+npm install --silent
+
 # Build MCP server
 cd "$MCP_DIR"
 
-echo "[vibing.nvim] Installing dependencies..."
+echo "[vibing.nvim] Installing MCP server dependencies..."
 npm install --silent
 
 echo "[vibing.nvim] Building TypeScript..."
