@@ -1,5 +1,10 @@
 import { callNeovim } from '../rpc.js';
 
+/**
+ * Retrieve the list of Neovim windows and return it as pretty-printed JSON in the response content.
+ *
+ * @returns The response object with a `content` array containing one text node whose `text` is the pretty-printed JSON representation of the window list.
+ */
 export async function handleListWindows(args: any) {
   const windows = await callNeovim('list_windows');
   return {
@@ -7,6 +12,12 @@ export async function handleListWindows(args: any) {
   };
 }
 
+/**
+ * Retrieve information for a specific Neovim window and return it as pretty-printed JSON inside a text content node.
+ *
+ * @param args - An object containing `winnr`, the window number to query
+ * @returns An object with a `content` array whose first element is a text node containing the pretty-printed JSON window info
+ */
 export async function handleGetWindowInfo(args: any) {
   const info = await callNeovim('get_window_info', { winnr: args?.winnr });
   return {
@@ -14,6 +25,12 @@ export async function handleGetWindowInfo(args: any) {
   };
 }
 
+/**
+ * Retrieve the view state for a specified Neovim window.
+ *
+ * @param args - An object with a `winnr` property indicating the target window number.
+ * @returns An object whose `content` is a single text node containing the pretty-printed JSON representation of the window view
+ */
 export async function handleGetWindowView(args: any) {
   const view = await callNeovim('get_window_view', { winnr: args?.winnr });
   return {
@@ -21,6 +38,11 @@ export async function handleGetWindowView(args: any) {
   };
 }
 
+/**
+ * Retrieve the list of Neovim tabpages and return it as pretty-printed JSON inside a content node.
+ *
+ * @returns An object with a `content` array containing a single text node whose `text` is the JSON-stringified (2-space indented) tabpage list
+ */
 export async function handleListTabpages(args: any) {
   const tabs = await callNeovim('list_tabpages');
   return {
@@ -28,6 +50,16 @@ export async function handleListTabpages(args: any) {
   };
 }
 
+/**
+ * Update the width and/or height of a Neovim window.
+ *
+ * @param args - Handler arguments. Expected properties:
+ *   - winnr: the window number to modify
+ *   - width: new width in columns (optional)
+ *   - height: new height in rows (optional)
+ * @returns An object whose `content` is an array containing a text node confirming the update.
+ * @throws Error if neither `width` nor `height` is provided
+ */
 export async function handleSetWindowSize(args: any) {
   if (args?.width === undefined && args?.height === undefined) {
     throw new Error('At least one of width or height must be specified');
@@ -49,6 +81,14 @@ export async function handleSetWindowSize(args: any) {
   };
 }
 
+/**
+ * Focuses the Neovim window identified by the provided window number.
+ *
+ * @param args - Call arguments.
+ * @param args.winnr - The window number to focus.
+ * @returns An object whose `content` is an array with a single text node confirming the focused window (for example, "Focused window 1").
+ * @throws Error if `winnr` is not provided on `args`.
+ */
 export async function handleFocusWindow(args: any) {
   if (!args || args.winnr === undefined) {
     throw new Error('Missing required parameter: winnr');
@@ -59,6 +99,13 @@ export async function handleFocusWindow(args: any) {
   };
 }
 
+/**
+ * Set the buffer displayed in a Neovim window.
+ *
+ * @param args - Object with `winnr` (window number) and `bufnr` (buffer number) to set
+ * @throws Error if `winnr` or `bufnr` is missing
+ * @returns An object with a `content` array containing a text node that confirms the buffer was set for the specified window
+ */
 export async function handleWinSetBuf(args: any) {
   if (!args || args.winnr === undefined || args.bufnr === undefined) {
     throw new Error('Missing required parameters: winnr and bufnr');
@@ -74,6 +121,15 @@ export async function handleWinSetBuf(args: any) {
   };
 }
 
+/**
+ * Open a file in the specified Neovim window and report the resulting buffer.
+ *
+ * @param args - Object containing call arguments:
+ *   - `winnr`: the target window number
+ *   - `filepath`: path of the file to open in the window
+ * @returns An object whose `content` is a single text node describing the opened filepath, the window number, and the resulting buffer number.
+ * @throws Error if `winnr` or `filepath` is missing from `args`.
+ */
 export async function handleWinOpenFile(args: any) {
   if (!args || args.winnr === undefined || !args.filepath) {
     throw new Error('Missing required parameters: winnr and filepath');

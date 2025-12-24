@@ -1,10 +1,19 @@
 local M = {}
 
+-- Retrieve all lines from the specified buffer.
+-- @param params? Table with optional fields.
+-- @param params.bufnr? number Buffer number to read from; defaults to 0 (current buffer).
+-- @return string[] A list of lines from the buffer, in buffer order (each element is a line without trailing newlines).
 function M.buf_get_lines(params)
   local bufnr = params and params.bufnr or 0
   return vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 end
 
+-- Replace the entire contents of a buffer with the provided lines.
+-- @param params Table of options:
+--   bufnr (number, optional): buffer number to modify; defaults to 0 (current buffer).
+--   lines (string|table): new buffer contents; a string will be split on newline into lines.
+-- @return table `{ success = true }` when the buffer was updated.
 function M.buf_set_lines(params)
   local bufnr = params and params.bufnr or 0
   local lines = params and params.lines
@@ -15,6 +24,12 @@ function M.buf_set_lines(params)
   return { success = true }
 end
 
+-- Get metadata for the current buffer and its file.
+-- @return table A table with fields:
+--   bufnr (number): current buffer number.
+--   filename (string): absolute path of the current file.
+--   filetype (string): filetype of the current buffer.
+--   modified (boolean): whether the current buffer has unsaved changes.
 function M.get_current_file(params)
   local bufnr = vim.api.nvim_get_current_buf()
   return {
@@ -25,6 +40,13 @@ function M.get_current_file(params)
   }
 end
 
+-- List loaded buffers with basic metadata.
+-- Each list element is a table describing a loaded buffer.
+-- @return A list where each element is a table with fields:
+--   `bufnr` (number) — buffer number,
+--   `name` (string) — buffer name (path),
+--   `modified` (boolean) — `true` if the buffer is modified, `false` otherwise,
+--   `filetype` (string) — buffer filetype.
 function M.list_buffers(params)
   local bufs = {}
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
@@ -40,6 +62,11 @@ function M.list_buffers(params)
   return bufs
 end
 
+-- Load a file into a Neovim buffer, reusing an existing buffer when available.
+-- @param params Table with a `filepath` string field specifying the file path to load.
+-- @return table { bufnr = number, already_loaded = boolean } where `bufnr` is the buffer number and `already_loaded` is true if the buffer already existed.
+-- @throws If `params.filepath` is missing: error("Missing filepath parameter").
+-- @throws If the buffer fails to load: error("Failed to load buffer: " .. fullpath).
 function M.load_buffer(params)
   local filepath = params and params.filepath
   if not filepath then

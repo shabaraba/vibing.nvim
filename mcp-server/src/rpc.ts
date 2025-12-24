@@ -15,7 +15,13 @@ let socket: net.Socket | null = null;
 let buffer = '';
 
 /**
- * Get or create socket connection to Neovim RPC server
+ * Obtain a connected socket to the Neovim RPC server, creating and wiring a new connection if needed.
+ *
+ * If an active socket already exists, it is returned; otherwise a new socket is created,
+ * event handlers are installed to parse newline-delimited JSON responses and resolve/reject
+ * matching pending requests, and the socket is connected to the configured RPC port.
+ *
+ * @returns The connected `net.Socket` used for Neovim RPC communication.
  */
 function getSocket(): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
@@ -73,7 +79,11 @@ function getSocket(): Promise<net.Socket> {
 }
 
 /**
- * Call Neovim RPC method
+ * Invoke a Neovim RPC method and await its response.
+ *
+ * @param method - The RPC method name to call on the Neovim server
+ * @param params - Parameters to include with the RPC call
+ * @returns The `result` value from the RPC response. The promise is rejected with the RPC `error` if the response contains one, and is also rejected if the socket closes or the request times out.
  */
 export async function callNeovim(method: string, params: any = {}): Promise<any> {
   const sock = await getSocket();
@@ -96,7 +106,9 @@ export async function callNeovim(method: string, params: any = {}): Promise<any>
 }
 
 /**
- * Close socket connection
+ * Destroy the active Neovim RPC socket, if one exists.
+ *
+ * This closes the underlying TCP connection to the Neovim RPC server; if no socket is open, the call is a no-op.
  */
 export function closeSocket(): void {
   if (socket) {
