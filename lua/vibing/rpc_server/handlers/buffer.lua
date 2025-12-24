@@ -67,6 +67,11 @@ function M.load_buffer(params)
     error("Failed to load buffer: " .. fullpath)
   end
 
+  -- Actually load the buffer content to trigger LSP attachment
+  if not vim.api.nvim_buf_is_loaded(bufnr) then
+    vim.fn.bufload(bufnr)
+  end
+
   return { bufnr = bufnr, already_loaded = false }
 end
 
