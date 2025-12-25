@@ -21,15 +21,26 @@ local function try_attach(buf)
     return
   end
 
-  -- .vibingファイルなら無条件でアタッチ
-  attached_bufs[buf] = true
-  vim.schedule(function()
-    local vibing = require("vibing")
-    if not vibing.adapter then
-      vibing.setup()
+  -- バッファ内容をチェック（大文字小文字を区別しない）
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, 5, false)
+  local is_vibing_chat = false
+  for _, line in ipairs(lines) do
+    if line:lower():match("^vibing%.nvim:") then
+      is_vibing_chat = true
+      break
     end
-    require("vibing.actions.chat").attach_to_buffer(buf, name)
-  end)
+  end
+
+  if is_vibing_chat then
+    attached_bufs[buf] = true
+    vim.schedule(function()
+      local vibing = require("vibing")
+      if not vibing.adapter then
+        vibing.setup()
+      end
+      require("vibing.actions.chat").attach_to_buffer(buf, name)
+    end)
+  end
 end
 
 local group = vim.api.nvim_create_augroup("vibing_chat_detect", { clear = true })

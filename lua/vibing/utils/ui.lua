@@ -1,6 +1,8 @@
+---UI utility functions for vibing.nvim
+---@module "vibing.utils.ui"
 local M = {}
 
----Apply wrap configuration to a window.
+---Apply wrap configuration to a window based on ui.wrap config setting.
 ---Reads the ui.wrap setting from config and applies it to the specified window.
 ---
 ---@param win number Window handle (use 0 for current window)

@@ -1,5 +1,6 @@
--- vibing filetype plugin
--- Sets up completion and inherits markdown settings
+---Filetype plugin for vibing chat files (.vibing)
+---Sets up completion, markdown-like settings, and applies wrap configuration
+---@module "ftplugin.vibing"
 
 -- Inherit markdown settings
 vim.bo.syntax = "markdown"
