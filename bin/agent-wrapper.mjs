@@ -569,16 +569,6 @@ try {
           }
 
           // Track vibing-nvim MCP tool modifications
-          // Debug: log tool name and block structure
-          if (toolName && toolName.includes('vibing-nvim')) {
-            console.error('[DEBUG] vibing-nvim tool detected:', {
-              toolName,
-              hasMetaFilename: !!block._meta?.filename,
-              resultText: resultText.substring(0, 100),
-              metaKeys: block._meta ? Object.keys(block._meta) : [],
-            });
-          }
-
           if (toolName === 'mcp__vibing-nvim__nvim_set_buffer') {
             // Try to extract filename from _meta first
             let filename = block._meta?.filename;
@@ -590,12 +580,6 @@ try {
                 filename = match[1];
               }
             }
-
-            console.error('[DEBUG] nvim_set_buffer result:', {
-              hasFilename: !!filename,
-              filename,
-              hasMeta: !!block._meta,
-            });
 
             // Emit tool_use event if filename was found
             if (filename) {

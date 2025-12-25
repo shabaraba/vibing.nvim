@@ -29,15 +29,10 @@ export async function handleSetBuffer(args: any) {
     bufnr: args.bufnr,
   });
 
-  // Debug: log what we got from RPC
-  console.error('[MCP DEBUG] buf_set_lines result:', JSON.stringify(result, null, 2));
-
   // Include file path in response metadata for tracking modified files
   const metadata = result.filename
     ? { filename: result.filename, bufnr: result.bufnr }
     : { bufnr: result.bufnr };
-
-  console.error('[MCP DEBUG] metadata:', JSON.stringify(metadata, null, 2));
 
   return {
     content: [
