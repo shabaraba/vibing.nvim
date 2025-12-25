@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/shabaraba/vibing.nvim/compare/v1.6.0...v1.6.1) (2025-12-25)
+
+
+### Bug Fixes
+
+* format CHANGELOG.md to comply with Prettier rules ([#199](https://github.com/shabaraba/vibing.nvim/issues/199)) ([c67a007](https://github.com/shabaraba/vibing.nvim/commit/c67a007eb153f5bb86f2b034773556a911dec91b))
+
 ## [1.6.0](https://github.com/shabaraba/vibing.nvim/compare/v1.5.0...v1.6.0) (2025-12-25)
 
 ### Features
