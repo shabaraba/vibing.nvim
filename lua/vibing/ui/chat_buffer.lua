@@ -337,6 +337,12 @@ function ChatBuffer:_init_content()
         table.insert(lines, "  - " .. tool)
       end
     end
+    if config.permissions.ask and #config.permissions.ask > 0 then
+      table.insert(lines, "permissions_ask:")
+      for _, tool in ipairs(config.permissions.ask) do
+        table.insert(lines, "  - " .. tool)
+      end
+    end
   end
 
   table.insert(lines, "---")

@@ -210,6 +210,7 @@ function M.send(chat_buffer, message)
     model = frontmatter.model,
     permissions_allow = frontmatter.permissions_allow,
     permissions_deny = frontmatter.permissions_deny,
+    permissions_ask = frontmatter.permissions_ask,
     permission_mode = frontmatter.permission_mode,
     on_tool_use = function(tool, file_path)
       if file_tools[tool] and file_path then

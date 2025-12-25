@@ -30,7 +30,9 @@ return function(args, chat_buffer)
             return
           end
 
-          local key = permission_type == "allow" and "permissions_allow" or "permissions_deny"
+          local key = permission_type == "allow" and "permissions_allow"
+                   or permission_type == "ask" and "permissions_ask"
+                   or "permissions_deny"
           local success = chat_buffer:update_frontmatter_list(key, permission_string, "add")
 
           if success then

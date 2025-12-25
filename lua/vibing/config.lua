@@ -35,10 +35,11 @@
 ---@class Vibing.PermissionsConfig
 ---ツール権限設定
 ---Agent SDKに対してClaudeが使用可能なツールを制御（Read, Edit, Write, Bash等）
----allowで許可、denyで拒否し、セキュリティと機能のバランスを調整
+---allowで許可、denyで拒否、askで確認を要求し、セキュリティと機能のバランスを調整
 ---@field mode "default"|"acceptEdits"|"bypassPermissions" 権限モード（"default": 毎回確認、"acceptEdits": 編集自動許可、"bypassPermissions": 全自動許可）
 ---@field allow string[] 許可するツールリスト（例: {"Read", "Edit", "Write"}）
 ---@field deny string[] 拒否するツールリスト（例: {"Bash"}、危険なツールを明示的に禁止）
+---@field ask string[] 確認が必要なツールリスト（例: {"Bash"}、使用前に承認を要求）
 ---@field rules Vibing.PermissionRule[]? 粒度の細かい権限制御ルール（オプション）
 
 ---@class Vibing.AgentConfig
@@ -145,6 +146,7 @@ M.defaults = {
     deny = {
       "Bash",
     },
+    ask = {},  -- Tools requiring approval before use
     rules = {},  -- Granular permission rules (optional)
   },
   status = {
@@ -205,6 +207,11 @@ function M.setup(opts)
     for _, tool in ipairs(M.options.permissions.deny or {}) do
       if not is_valid_tool(tool) then
         notify.warn(string.format("Unknown tool '%s' in permissions.deny", tool))
+      end
+    end
+    for _, tool in ipairs(M.options.permissions.ask or {}) do
+      if not is_valid_tool(tool) then
+        notify.warn(string.format("Unknown tool '%s' in permissions.ask", tool))
       end
     end
   end

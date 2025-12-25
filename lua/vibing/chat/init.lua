@@ -66,6 +66,12 @@ function M.setup()
   })
 
   commands.register({
+    name = "ask",
+    handler = require("vibing.chat.handlers.ask"),
+    description = "Ask before using tool: /ask <tool> or /ask -<tool> to remove",
+  })
+
+  commands.register({
     name = "permission",
     handler = require("vibing.chat.handlers.permission"),
     description = "Set permission mode: /permission <default|acceptEdits|bypassPermissions>",

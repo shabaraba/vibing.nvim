@@ -15,6 +15,7 @@ const contextFiles = [];
 let sessionId = null;
 let allowedTools = [];
 let deniedTools = [];
+let askedTools = [];
 let permissionRules = [];
 let mode = null;
 let model = null;
@@ -49,6 +50,12 @@ for (let i = 0; i < args.length; i++) {
     i++;
   } else if (args[i] === '--deny' && args[i + 1]) {
     deniedTools = args[i + 1]
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t);
+    i++;
+  } else if (args[i] === '--ask' && args[i + 1]) {
+    askedTools = args[i + 1]
       .split(',')
       .map((t) => t.trim())
       .filter((t) => t);
@@ -402,6 +409,16 @@ queryOptions.canUseTool = async (toolName, input) => {
       return {
         behavior: 'deny',
         message: `Tool ${toolName} is denied by configuration: ${deniedTool}`,
+      };
+    }
+  }
+
+  // Check ask list (second priority - deny with guidance)
+  for (const askedTool of askedTools) {
+    if (matchesPermission(toolName, input, askedTool)) {
+      return {
+        behavior: 'deny',
+        message: `Tool ${toolName} requires user approval before use. To approve this tool, use the /allow ${askedTool} command or update the frontmatter permissions_allow list.`,
       };
     }
   }

@@ -103,6 +103,12 @@ function AgentSDK:build_command(prompt, opts)
     table.insert(cmd, table.concat(deny_tools, ","))
   end
 
+  local ask_tools = opts.permissions_ask
+  if ask_tools and #ask_tools > 0 then
+    table.insert(cmd, "--ask")
+    table.insert(cmd, table.concat(ask_tools, ","))
+  end
+
   -- Add permission mode: Use frontmatter only
   local permission_mode = opts.permission_mode
   if permission_mode then
