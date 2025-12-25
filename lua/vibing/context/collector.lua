@@ -52,11 +52,15 @@ end
 ---@return string?
 function M.collect_selection(buf, start_line, end_line)
   local path = vim.api.nvim_buf_get_name(buf)
+
+  -- 新規バッファ（名前なし）の場合、特別な識別子を使用
+  local relative
   if path == "" then
-    return nil
+    relative = string.format("[Buffer %d]", buf)
+  else
+    relative = M._to_relative_path(path)
   end
 
-  local relative = M._to_relative_path(path)
   local mention = string.format("@file:%s:L%d-L%d", relative, start_line, end_line)
 
   -- 選択範囲の実際のコンテンツを取得
