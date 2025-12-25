@@ -112,14 +112,19 @@ use {
 
 | Command                               | Description                                                                       |
 | ------------------------------------- | --------------------------------------------------------------------------------- |
-| `:VibingChat [file]`                  | Open chat window or saved chat file                                               |
-| `:VibingToggleChat`                   | Toggle chat window (open/close)                                                   |
+| `:VibingChat [file]`                  | Always create a new chat window or open saved chat file (new conversation)        |
+| `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                       |
 | `:VibingSlashCommands`                | Show slash command picker in chat                                                 |
 | `:VibingContext [path]`               | Add file to context (or from oil.nvim if no path)                                 |
 | `:VibingClearContext`                 | Clear all context                                                                 |
 | `:VibingInline [action\|instruction]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled. |
 | `:VibingInlineAction`                 | Alias of `:VibingInline` (for backward compatibility)                             |
 | `:VibingCancel`                       | Cancel current request                                                            |
+
+**Command Semantics:**
+
+- **`:VibingChat`** - Use when you want to start a new conversation on a different topic. Always creates a fresh chat window.
+- **`:VibingToggleChat`** - Use to show/hide your current conversation. Preserves the existing chat state.
 
 ### Inline Actions
 

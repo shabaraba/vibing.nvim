@@ -35,10 +35,24 @@ function ChatBuffer:open()
     return
   end
 
+  -- バッファが既に存在するかチェック
+  local buffer_existed = self.buf and vim.api.nvim_buf_is_valid(self.buf)
+  local has_content = false
+
+  if buffer_existed then
+    -- バッファに内容があるかチェック（空バッファでないか）
+    local line_count = vim.api.nvim_buf_line_count(self.buf)
+    has_content = line_count > 1 or (line_count == 1 and vim.api.nvim_buf_get_lines(self.buf, 0, 1, false)[1] ~= "")
+  end
+
   self:_create_buffer()
   self:_create_window()
   self:_setup_keymaps()
-  self:_init_content()
+
+  -- 新規バッファの場合のみ初期コンテンツを設定
+  if not has_content then
+    self:_init_content()
+  end
 end
 
 ---チャットウィンドウを閉じる
@@ -48,7 +62,25 @@ function ChatBuffer:close()
     self._chunk_timer = nil
   end
   if self.win and vim.api.nvim_win_is_valid(self.win) then
-    vim.api.nvim_win_close(self.win, true)
+    -- position="current"の場合は、ウィンドウを閉じずに前のバッファに切り替える
+    if self.config.window.position == "current" then
+      -- 代替バッファ(直前に使用していたバッファ)に切り替え
+      local alt_buf = vim.fn.bufnr('#')
+      if alt_buf ~= -1 and vim.api.nvim_buf_is_valid(alt_buf) and alt_buf ~= self.buf then
+        -- 有効な代替バッファがある場合はそれに切り替え
+        vim.api.nvim_win_set_buf(self.win, alt_buf)
+      else
+        -- 代替バッファがない、または代替バッファが自分自身の場合は新しい空バッファを作成
+        local new_buf = vim.api.nvim_create_buf(true, false)
+        vim.api.nvim_win_set_buf(self.win, new_buf)
+      end
+    else
+      -- split/vsplit/floatの場合は、最後のウィンドウでなければウィンドウを閉じる
+      local win_count = #vim.api.nvim_list_wins()
+      if win_count > 1 then
+        vim.api.nvim_win_close(self.win, true)
+      end
+    end
   end
   self.win = nil
 end

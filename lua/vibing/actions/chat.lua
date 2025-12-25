@@ -34,17 +34,19 @@ function M.get_current_chat_buffer()
 end
 
 ---チャットを開く
----既存のチャットバッファがない場合は新規作成
+---常に新しいチャットバッファを作成し、M.chat_bufferを上書き
+---複数の独立した会話を同時に進行可能にする
 ---設定のchat.windowに基づいてウィンドウを表示
 function M.open()
   local vibing = require("vibing")
   local config = vibing.get_config()
 
-  if not M.chat_buffer then
-    M.chat_buffer = ChatBuffer:new(config.chat)
-  end
+  -- 常に新しいChatBufferインスタンスを作成
+  local chat_buf = ChatBuffer:new(config.chat)
+  chat_buf:open()
 
-  M.chat_buffer:open()
+  -- 最新のチャットバッファとして追跡
+  M.chat_buffer = chat_buf
 end
 
 ---チャットを閉じる
@@ -56,12 +58,20 @@ function M.close()
 end
 
 ---チャットをトグル
----開いている場合は閉じ、閉じている場合は開く
+---既存のM.chat_bufferが存在する場合はそれをトグル
+---存在しない場合は新規作成（初回のみM.open()と同じ動作）
+---この関数は既存の会話を保持して表示/非表示を切り替えるために使用
 function M.toggle()
   if M.chat_buffer and M.chat_buffer:is_open() then
     M.close()
   else
-    M.open()
+    -- M.chat_bufferが存在しない場合のみ新規作成
+    if not M.chat_buffer then
+      M.open()
+    else
+      -- 既存のM.chat_bufferを再度開く
+      M.chat_buffer:open()
+    end
   end
 end
 
