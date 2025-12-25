@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.0 (2025-12-25)
+
+## What's Changed
+* feat: VibingChat always creates new chat, VibingToggleChat preserves conversation by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/215
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.8.0...v1.9.0
+
 ## 1.8.0 (2025-12-25)
 
 ## What's Changed
