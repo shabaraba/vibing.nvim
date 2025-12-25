@@ -13,7 +13,7 @@ end
 -- @param params Table of options:
 --   bufnr (number, optional): buffer number to modify; defaults to 0 (current buffer).
 --   lines (string|table): new buffer contents; a string will be split on newline into lines.
--- @return table `{ success = true }` when the buffer was updated.
+-- @return table `{ success = true, filename = string }` when the buffer was updated. filename is the buffer's file path (may be empty for unnamed buffers).
 function M.buf_set_lines(params)
   local bufnr = params and params.bufnr or 0
   local lines = params and params.lines
@@ -21,7 +21,15 @@ function M.buf_set_lines(params)
     lines = vim.split(lines, "\n")
   end
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-  return { success = true }
+
+  -- Get the buffer's file path
+  local filename = vim.api.nvim_buf_get_name(bufnr)
+
+  return {
+    success = true,
+    filename = filename,
+    bufnr = bufnr,
+  }
 end
 
 -- Get metadata for the current buffer and its file.
