@@ -12,6 +12,9 @@ InlineProgress.__index = InlineProgress
 
 local spinner_frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
+-- Create a new InlineProgress instance.
+-- Initializes a progress display with nil buf/win, spinner state, and empty modified files list.
+-- @return Vibing.InlineProgress A new InlineProgress instance.
 function InlineProgress:new()
   local instance = setmetatable({}, InlineProgress)
   instance.buf = nil
@@ -23,6 +26,10 @@ function InlineProgress:new()
   return instance
 end
 
+-- Show the inline progress window in the bottom-right corner.
+-- Creates a small floating window with spinner animation and status display.
+-- Does nothing if a window is already open or if running in headless mode.
+-- @param title string|nil Optional title for the progress window (defaults to "Vibing").
 function InlineProgress:show(title)
   if self.win and vim.api.nvim_win_is_valid(self.win) then
     return
@@ -99,11 +106,17 @@ function InlineProgress:_update_display()
   vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
 end
 
+-- Update the status text displayed in the progress window.
+-- @param text string The new status message to display.
 function InlineProgress:update_status(text)
   self._current_status = text
   self:_update_display()
 end
 
+-- Update status to show the current tool operation and file being processed.
+-- Truncates long file paths to fit in the progress window.
+-- @param tool_name string Name of the tool being used (e.g., "Edit", "Write").
+-- @param file_path string Path of the file being processed.
 function InlineProgress:update_tool(tool_name, file_path)
   local display_path = file_path
   if #file_path > 30 then
@@ -113,6 +126,9 @@ function InlineProgress:update_tool(tool_name, file_path)
   self:_update_display()
 end
 
+-- Add a file to the list of modified files.
+-- Avoids duplicates by checking if the file is already in the list.
+-- @param file_path string Path of the modified file to add.
 function InlineProgress:add_modified_file(file_path)
   for _, f in ipairs(self._modified_files) do
     if f == file_path then
@@ -123,10 +139,14 @@ function InlineProgress:add_modified_file(file_path)
   self:_update_display()
 end
 
+-- Get the list of modified files tracked by this progress instance.
+-- @return string[] Array of file paths that have been modified.
 function InlineProgress:get_modified_files()
   return self._modified_files
 end
 
+-- Close the progress window and clean up resources.
+-- Stops the spinner timer, closes the window, and deletes the buffer.
 function InlineProgress:close()
   self:_stop_spinner()
 
