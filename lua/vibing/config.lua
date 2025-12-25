@@ -3,11 +3,17 @@
 ---インラインアクションとチャットの両方で使用されるdiffプレビューUIを制御
 ---@field enabled boolean プレビューUI有効化（trueでGit diffプレビュー表示、要Gitリポジトリ）
 
+---@class Vibing.UiConfig
+---UI設定
+---全UIコンポーネント（Chat、Inline、Output）に適用される表示設定
+---@field wrap "nvim"|"on"|"off" 行の折り返し設定（"nvim": Neovimデフォルト、"on": wrap+linebreak有効、"off": wrap無効）
+
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
 ---Agent SDK設定、チャットウィンドウ、キーマップ、ツール権限を統合管理
 ---@field agent Vibing.AgentConfig Agent SDK設定（モード、モデル）
 ---@field chat Vibing.ChatConfig チャットウィンドウ設定（位置、サイズ、自動コンテキスト、保存先）
+---@field ui Vibing.UiConfig UI設定（wrap等）
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
 ---@field preview Vibing.PreviewConfig プレビューUI設定（diffプレビュー有効化）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
@@ -114,6 +120,9 @@ M.defaults = {
     save_dir = vim.fn.stdpath("data") .. "/vibing/chats",  -- Used when save_location_type is "custom"
     context_position = "append",  -- "prepend" | "append"
   },
+  ui = {
+    wrap = "on",  -- "nvim" | "on" | "off"
+  },
   keymaps = {
     send = "<CR>",
     cancel = "<C-c>",
@@ -197,6 +206,18 @@ function M.setup(opts)
       if not is_valid_tool(tool) then
         notify.warn(string.format("Unknown tool '%s' in permissions.deny", tool))
       end
+    end
+  end
+
+  -- Validate ui.wrap configuration
+  if M.options.ui and M.options.ui.wrap then
+    local valid_wrap_values = { nvim = true, on = true, off = true }
+    if not valid_wrap_values[M.options.ui.wrap] then
+      notify.warn(string.format(
+        "Invalid ui.wrap value '%s'. Valid values: nvim, on, off. Falling back to default 'on'.",
+        M.options.ui.wrap
+      ))
+      M.options.ui.wrap = "on"  -- Fallback to default
     end
   end
 

@@ -148,6 +148,10 @@ function ChatBuffer:_create_window()
       border = win_config.border,
     })
   end
+
+  -- Apply wrap configuration
+  local ui_utils = require("vibing.utils.ui")
+  ui_utils.apply_wrap_config(self.win)
 end
 
 ---キーマップを設定
@@ -793,13 +797,22 @@ function ChatBuffer:_flush_chunks()
 
   vim.api.nvim_buf_set_lines(self.buf, #lines - 1, #lines, false, chunk_lines)
 
-  -- カーソルを最下部に移動
+  -- カーソルを最下部に移動（カーソルが末尾にある場合のみ）
   if self:is_open() and vim.api.nvim_win_is_valid(self.win) and vim.api.nvim_buf_is_valid(self.buf) then
-    local new_lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
-    local line_count = #new_lines
-    if line_count > 0 then
-      -- Safely set cursor with error handling
-      pcall(vim.api.nvim_win_set_cursor, self.win, { line_count, 0 })
+    -- 現在のカーソル位置を取得
+    local ok, cursor = pcall(vim.api.nvim_win_get_cursor, self.win)
+    if ok then
+      local current_line = cursor[1]
+      local old_line_count = #lines
+
+      -- カーソルが末尾にあった場合のみ自動スクロール
+      if current_line >= old_line_count then
+        local new_lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+        local line_count = #new_lines
+        if line_count > 0 then
+          pcall(vim.api.nvim_win_set_cursor, self.win, { line_count, 0 })
+        end
+      end
     end
   end
 

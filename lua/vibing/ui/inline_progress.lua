@@ -61,7 +61,9 @@ function InlineProgress:show(title)
     title_pos = "center",
   })
 
-  vim.wo[self.win].wrap = false
+  -- Apply wrap configuration
+  local ui_utils = require("vibing.utils.ui")
+  ui_utils.apply_wrap_config(self.win)
 
   self:_start_spinner()
   self:_update_display()

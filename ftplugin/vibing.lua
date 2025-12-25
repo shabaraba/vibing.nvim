@@ -1,5 +1,6 @@
--- vibing filetype plugin
--- Sets up completion and inherits markdown settings
+---Filetype plugin for vibing chat files (.vibing)
+---Sets up completion, markdown-like settings, and applies wrap configuration
+---@module "ftplugin.vibing"
 
 -- Inherit markdown settings
 vim.bo.syntax = "markdown"
@@ -19,6 +20,12 @@ vim.bo.completeopt = "menu,menuone,noselect"
 vim.bo.textwidth = 0
 vim.bo.formatoptions = "tcqj"
 vim.wo.conceallevel = 2
+
+-- Apply wrap configuration for .vibing files
+local ok, ui_utils = pcall(require, "vibing.utils.ui")
+if ok then
+  ui_utils.apply_wrap_config(0)  -- 0 = current window
+end
 
 -- Disable spell checking by default (users can enable with :set spell)
 vim.wo.spell = false

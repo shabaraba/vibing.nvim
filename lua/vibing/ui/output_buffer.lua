@@ -89,8 +89,9 @@ function OutputBuffer:_create_window()
     title_pos = "center",
   })
 
-  vim.wo[self.win].wrap = true
-  vim.wo[self.win].linebreak = true
+  -- Apply wrap configuration
+  local ui_utils = require("vibing.utils.ui")
+  ui_utils.apply_wrap_config(self.win)
 end
 
 ---キーマップを設定
