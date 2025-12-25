@@ -48,7 +48,16 @@ function ChatBuffer:close()
     self._chunk_timer = nil
   end
   if self.win and vim.api.nvim_win_is_valid(self.win) then
-    vim.api.nvim_win_close(self.win, true)
+    -- 最後のウィンドウかチェック
+    local win_count = vim.fn.winnr('$')
+    if win_count > 1 then
+      -- 他のウィンドウがある場合は閉じる
+      vim.api.nvim_win_close(self.win, true)
+    else
+      -- 最後のウィンドウの場合は新しい空バッファに切り替える
+      local new_buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_win_set_buf(self.win, new_buf)
+    end
   end
   self.win = nil
 end
@@ -148,6 +157,10 @@ function ChatBuffer:_create_window()
       border = win_config.border,
     })
   end
+
+  -- Apply wrap configuration
+  local ui_utils = require("vibing.utils.ui")
+  ui_utils.apply_wrap_config(self.win)
 end
 
 ---キーマップを設定

@@ -20,5 +20,11 @@ vim.bo.textwidth = 0
 vim.bo.formatoptions = "tcqj"
 vim.wo.conceallevel = 2
 
+-- Apply wrap configuration for .vibing files
+local ok, ui_utils = pcall(require, "vibing.utils.ui")
+if ok then
+  ui_utils.apply_wrap_config(0)  -- 0 = current window
+end
+
 -- Disable spell checking by default (users can enable with :set spell)
 vim.wo.spell = false
