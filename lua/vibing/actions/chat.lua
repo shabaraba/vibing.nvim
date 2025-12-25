@@ -203,6 +203,18 @@ function M.send(chat_buffer, message)
     permission_mode = frontmatter.permission_mode,
     on_tool_use = function(tool, file_path)
       if file_tools[tool] and file_path then
+        -- ファイル編集前に内容を保存（まだ保存されていない場合のみ）
+        local normalized_path = vim.fn.fnamemodify(file_path, ":p")
+        if not saved_contents[normalized_path] then
+          -- ファイルが存在する場合は内容を読み込んで保存
+          if vim.fn.filereadable(normalized_path) == 1 then
+            local ok, content = pcall(vim.fn.readfile, normalized_path)
+            if ok then
+              saved_contents[normalized_path] = content
+            end
+          end
+        end
+
         -- 重複を避けて追加
         local already_exists = false
         for _, path in ipairs(modified_files) do
