@@ -572,7 +572,8 @@ try {
           if (toolName === 'mcp__vibing-nvim__nvim_set_buffer') {
             // Extract filename from result text
             if (resultText) {
-              const match = resultText.match(/Buffer updated successfully \((.+)\)/);
+              // Use [^)]+ to match non-closing-paren chars, handling filenames with parentheses
+              const match = resultText.match(/Buffer updated successfully \(([^)]+)\)/);
               if (match) {
                 const filename = match[1];
                 console.log(

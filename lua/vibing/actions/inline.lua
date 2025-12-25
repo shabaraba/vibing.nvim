@@ -65,6 +65,11 @@ local function apply_unsaved_buffer_handling(prompt, opts, is_modified)
     opts.permissions_deny = {}
   end
 
+  -- Remove Edit/Write from allow list to prevent conflicts
+  opts.permissions_allow = vim.tbl_filter(function(tool)
+    return tool ~= "Edit" and tool ~= "Write"
+  end, opts.permissions_allow)
+
   -- Deny Edit/Write tools for unsaved buffers
   if not vim.tbl_contains(opts.permissions_deny, "Edit") then
     table.insert(opts.permissions_deny, "Edit")
