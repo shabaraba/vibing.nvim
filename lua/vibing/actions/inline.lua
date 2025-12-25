@@ -77,6 +77,10 @@ function M.execute(action_or_prompt, additional_instruction)
     return
   end
 
+  -- Check if current buffer has unsaved changes
+  local current_buf = vim.api.nvim_get_current_buf()
+  local is_modified = vim.bo[current_buf].modified
+
   -- 言語設定を適用
   local lang_code = Language.get_language_code(config.language, "inline")
   local base_prompt = Language.add_language_instruction(action.prompt, lang_code)
@@ -89,6 +93,11 @@ function M.execute(action_or_prompt, additional_instruction)
   -- プロンプトに@file:path:L10-L25形式のメンションを含める
   local prompt = base_prompt .. "\n\n" .. selection_context
 
+  -- For unsaved buffers, add instruction to use nvim_set_buffer instead of Edit
+  if is_modified then
+    prompt = prompt .. "\n\nIMPORTANT: This buffer has unsaved changes. You MUST use mcp__vibing-nvim__nvim_set_buffer tool to edit the buffer directly, NOT the Edit or Write tools. This ensures the changes are applied to the current buffer state, not the saved file."
+  end
+
   local opts = {}
 
   -- Permissions設定を追加
@@ -97,10 +106,33 @@ function M.execute(action_or_prompt, additional_instruction)
       opts.permission_mode = config.permissions.mode
     end
     if config.permissions.allow then
-      opts.permissions_allow = config.permissions.allow
+      opts.permissions_allow = vim.deepcopy(config.permissions.allow)
     end
     if config.permissions.deny then
-      opts.permissions_deny = config.permissions.deny
+      opts.permissions_deny = vim.deepcopy(config.permissions.deny)
+    end
+  end
+
+  -- For unsaved buffers, override permissions to use nvim_set_buffer
+  if is_modified then
+    if not opts.permissions_allow then
+      opts.permissions_allow = {}
+    end
+    if not opts.permissions_deny then
+      opts.permissions_deny = {}
+    end
+
+    -- Deny Edit/Write tools for unsaved buffers
+    if not vim.tbl_contains(opts.permissions_deny, "Edit") then
+      table.insert(opts.permissions_deny, "Edit")
+    end
+    if not vim.tbl_contains(opts.permissions_deny, "Write") then
+      table.insert(opts.permissions_deny, "Write")
+    end
+
+    -- Ensure nvim_set_buffer is allowed
+    if not vim.tbl_contains(opts.permissions_allow, "mcp__vibing-nvim__nvim_set_buffer") then
+      table.insert(opts.permissions_allow, "mcp__vibing-nvim__nvim_set_buffer")
     end
   end
 
@@ -367,13 +399,59 @@ function M.custom(prompt, use_output)
     return
   end
 
+  -- Check if current buffer has unsaved changes
+  local current_buf = vim.api.nvim_get_current_buf()
+  local is_modified = vim.bo[current_buf].modified
+
   -- 言語設定を適用
   local lang_code = Language.get_language_code(config.language, "inline")
   local final_prompt = Language.add_language_instruction(prompt, lang_code)
 
   -- プロンプトに@file:path:L10-L25形式のメンションを含める
   local full_prompt = final_prompt .. "\n\n" .. selection_context
+
+  -- For unsaved buffers, add instruction to use nvim_set_buffer instead of Edit
+  if is_modified then
+    full_prompt = full_prompt .. "\n\nIMPORTANT: This buffer has unsaved changes. You MUST use mcp__vibing-nvim__nvim_set_buffer tool to edit the buffer directly, NOT the Edit or Write tools. This ensures the changes are applied to the current buffer state, not the saved file."
+  end
+
   local opts = {}
+
+  -- Permissions設定を追加（configから）
+  if config.permissions then
+    if config.permissions.mode then
+      opts.permission_mode = config.permissions.mode
+    end
+    if config.permissions.allow then
+      opts.permissions_allow = vim.deepcopy(config.permissions.allow)
+    end
+    if config.permissions.deny then
+      opts.permissions_deny = vim.deepcopy(config.permissions.deny)
+    end
+  end
+
+  -- For unsaved buffers, override permissions to use nvim_set_buffer
+  if is_modified then
+    if not opts.permissions_allow then
+      opts.permissions_allow = {}
+    end
+    if not opts.permissions_deny then
+      opts.permissions_deny = {}
+    end
+
+    -- Deny Edit/Write tools for unsaved buffers
+    if not vim.tbl_contains(opts.permissions_deny, "Edit") then
+      table.insert(opts.permissions_deny, "Edit")
+    end
+    if not vim.tbl_contains(opts.permissions_deny, "Write") then
+      table.insert(opts.permissions_deny, "Write")
+    end
+
+    -- Ensure nvim_set_buffer is allowed
+    if not vim.tbl_contains(opts.permissions_allow, "mcp__vibing-nvim__nvim_set_buffer") then
+      table.insert(opts.permissions_allow, "mcp__vibing-nvim__nvim_set_buffer")
+    end
+  end
 
   if use_output then
     M._execute_with_output(adapter, full_prompt, opts, "Result")
