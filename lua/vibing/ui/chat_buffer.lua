@@ -48,16 +48,7 @@ function ChatBuffer:close()
     self._chunk_timer = nil
   end
   if self.win and vim.api.nvim_win_is_valid(self.win) then
-    -- 最後のウィンドウかチェック
-    local win_count = vim.fn.winnr('$')
-    if win_count > 1 then
-      -- 他のウィンドウがある場合は閉じる
-      vim.api.nvim_win_close(self.win, true)
-    else
-      -- 最後のウィンドウの場合は新しい空バッファに切り替える
-      local new_buf = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_win_set_buf(self.win, new_buf)
-    end
+    vim.api.nvim_win_close(self.win, true)
   end
   self.win = nil
 end

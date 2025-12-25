@@ -214,9 +214,10 @@ function M.setup(opts)
     local valid_wrap_values = { nvim = true, on = true, off = true }
     if not valid_wrap_values[M.options.ui.wrap] then
       notify.warn(string.format(
-        "Invalid ui.wrap value '%s'. Valid values: nvim, on, off",
+        "Invalid ui.wrap value '%s'. Valid values: nvim, on, off. Falling back to default 'on'.",
         M.options.ui.wrap
       ))
+      M.options.ui.wrap = "on"  -- Fallback to default
     end
   end
 
