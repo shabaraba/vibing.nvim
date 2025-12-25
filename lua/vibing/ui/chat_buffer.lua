@@ -192,10 +192,28 @@ function ChatBuffer:_setup_keymaps()
         -- Modified Filesに含まれているかチェック
         local modified_files = self:get_last_modified_files()
         if modified_files and #modified_files > 0 then
-          -- パスを正規化して比較
-          local normalized_cursor = vim.fn.fnamemodify(file_path, ":p")
+          -- パスを正規化して比較（[Buffer N]形式は除く）
+          local is_buffer_id_cursor = file_path:match("^%[Buffer %d+%]$")
+          local normalized_cursor
+
+          if is_buffer_id_cursor then
+            -- Don't normalize buffer identifiers
+            normalized_cursor = file_path
+          else
+            normalized_cursor = vim.fn.fnamemodify(file_path, ":p")
+          end
+
           for _, mf in ipairs(modified_files) do
-            local normalized_mf = vim.fn.fnamemodify(mf, ":p")
+            local is_buffer_id_mf = mf:match("^%[Buffer %d+%]$")
+            local normalized_mf
+
+            if is_buffer_id_mf then
+              -- Don't normalize buffer identifiers
+              normalized_mf = mf
+            else
+              normalized_mf = vim.fn.fnamemodify(mf, ":p")
+            end
+
             if normalized_mf == normalized_cursor then
               -- Modified Filesの一部なのでプレビューUIを開く
               local InlinePreview = require("vibing.ui.inline_preview")
