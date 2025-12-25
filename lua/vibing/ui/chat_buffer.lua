@@ -793,6 +793,9 @@ function ChatBuffer:send_message()
 
   -- 通常のメッセージ送信
   require("vibing.actions.chat").send(self, message)
+
+  -- カーソルを末尾に移動してスクロールモードを有効化
+  self:_move_cursor_to_end()
 end
 
 -- スピナーフレーム
@@ -850,6 +853,18 @@ function ChatBuffer:_flush_chunks()
 
   -- バッファをクリア
   self._chunk_buffer = ""
+end
+
+---カーソルを末尾に移動（スクロールモード有効化用）
+function ChatBuffer:_move_cursor_to_end()
+  if not self:is_open() or not vim.api.nvim_win_is_valid(self.win) or not vim.api.nvim_buf_is_valid(self.buf) then
+    return
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(self.buf)
+  if line_count > 0 then
+    pcall(vim.api.nvim_win_set_cursor, self.win, { line_count, 0 })
+  end
 end
 
 ---ストリーミングチャンクを追加（バッファリング有効）
