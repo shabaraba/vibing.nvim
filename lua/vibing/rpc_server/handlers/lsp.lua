@@ -337,5 +337,4 @@ function M.lsp_call_hierarchy_outgoing(params)
   return { calls = calls }
 end
 
-<<<<<<< HEAD
 return M
