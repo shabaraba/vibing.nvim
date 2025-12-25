@@ -570,26 +570,19 @@ try {
 
           // Track vibing-nvim MCP tool modifications
           if (toolName === 'mcp__vibing-nvim__nvim_set_buffer') {
-            // Try to extract filename from _meta first
-            let filename = block._meta?.filename;
-
-            // If not in _meta, try to parse from result text
-            if (!filename && resultText) {
+            // Extract filename from result text
+            if (resultText) {
               const match = resultText.match(/Buffer updated successfully \((.+)\)/);
               if (match) {
-                filename = match[1];
+                const filename = match[1];
+                console.log(
+                  safeJsonStringify({
+                    type: 'tool_use',
+                    tool: 'nvim_set_buffer',
+                    file_path: filename,
+                  })
+                );
               }
-            }
-
-            // Emit tool_use event if filename was found
-            if (filename) {
-              console.log(
-                safeJsonStringify({
-                  type: 'tool_use',
-                  tool: 'nvim_set_buffer',
-                  file_path: filename,
-                })
-              );
             }
           }
 
