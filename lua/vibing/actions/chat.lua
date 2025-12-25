@@ -169,7 +169,7 @@ function M.send(chat_buffer, message)
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(buf) then
       local file_path = vim.api.nvim_buf_get_name(buf)
-      if file_path ~= "" and vim.fn.filereadable(file_path) == 1 then
+      if file_path ~= "" then
         -- 絶対パスに正規化
         local normalized_path = vim.fn.fnamemodify(file_path, ":p")
         local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
