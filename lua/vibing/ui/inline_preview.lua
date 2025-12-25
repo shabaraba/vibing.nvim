@@ -842,8 +842,18 @@ function M._on_reject()
   local files_without_saved = {}
 
   for _, file in ipairs(state.modified_files) do
-    -- ファイルパスを正規化（絶対パス）
-    local normalized_path = vim.fn.fnamemodify(file, ":p")
+    -- Check if this is a [Buffer N] identifier
+    local is_buffer_id = file:match("^%[Buffer %d+%]$")
+    local normalized_path
+
+    if is_buffer_id then
+      -- Don't normalize buffer identifiers
+      normalized_path = file
+    else
+      -- ファイルパスを正規化（絶対パス）
+      normalized_path = vim.fn.fnamemodify(file, ":p")
+    end
+
     if state.saved_contents[normalized_path] then
       table.insert(files_with_saved, file)
     else
@@ -856,9 +866,30 @@ function M._on_reject()
 
   -- 保存された内容で復元（Claude変更のみを巻き戻し）
   for _, file in ipairs(files_with_saved) do
-    local normalized_path = vim.fn.fnamemodify(file, ":p")
+    -- Check if this is a [Buffer N] identifier
+    local is_buffer_id = file:match("^%[Buffer %d+%]$")
+    local normalized_path
+
+    if is_buffer_id then
+      -- Don't normalize buffer identifiers
+      normalized_path = file
+    else
+      normalized_path = vim.fn.fnamemodify(file, ":p")
+    end
+
     local ok, err = pcall(function()
-      vim.fn.writefile(state.saved_contents[normalized_path], file)
+      if is_buffer_id then
+        -- For unnamed buffers, write directly to the buffer
+        local bufnr = tonumber(file:match("%[Buffer (%d+)%]"))
+        if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+          vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, state.saved_contents[normalized_path])
+        else
+          error("Invalid buffer: " .. file)
+        end
+      else
+        -- For named files, write to file
+        vim.fn.writefile(state.saved_contents[normalized_path], file)
+      end
     end)
 
     if ok then
@@ -869,27 +900,42 @@ function M._on_reject()
   end
 
   -- 保存された内容がないファイルはgit checkoutで復元（ユーザー変更も巻き戻る）
+  -- ただし、[Buffer N]形式のファイルはgit checkoutの対象外
   if #files_without_saved > 0 then
-    local result = git.checkout_files(files_without_saved)
+    -- Filter out [Buffer N] identifiers from git checkout
+    local git_files = {}
+    for _, file in ipairs(files_without_saved) do
+      local is_buffer_id = file:match("^%[Buffer %d+%]$")
+      if not is_buffer_id then
+        table.insert(git_files, file)
+      else
+        -- [Buffer N] without saved_contents is an error
+        table.insert(errors, { file = file, message = "No saved content for unnamed buffer" })
+      end
+    end
 
-    if result.success then
-      for _, file in ipairs(files_without_saved) do
-        table.insert(reverted_files, file)
-      end
-    else
-      for _, err in ipairs(result.errors) do
-        table.insert(errors, err)
-      end
-      for _, file in ipairs(files_without_saved) do
-        local found_error = false
-        for _, err in ipairs(result.errors) do
-          if err.file == file then
-            found_error = true
-            break
-          end
-        end
-        if not found_error then
+    if #git_files > 0 then
+      local result = git.checkout_files(git_files)
+
+      if result.success then
+        for _, file in ipairs(git_files) do
           table.insert(reverted_files, file)
+        end
+      else
+        for _, err in ipairs(result.errors) do
+          table.insert(errors, err)
+        end
+        for _, file in ipairs(git_files) do
+          local found_error = false
+          for _, err in ipairs(result.errors) do
+            if err.file == file then
+              found_error = true
+              break
+            end
+          end
+          if not found_error then
+            table.insert(reverted_files, file)
+          end
         end
       end
     end
