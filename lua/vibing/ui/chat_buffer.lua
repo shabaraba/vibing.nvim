@@ -855,10 +855,21 @@ function ChatBuffer:add_user_section()
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
 
+  -- カーソルを最下部に移動（カーソルが末尾にある場合のみ）
   if self:is_open() and vim.api.nvim_win_is_valid(self.win) and vim.api.nvim_buf_is_valid(self.buf) then
-    local total = vim.api.nvim_buf_line_count(self.buf)
-    if total > 0 then
-      pcall(vim.api.nvim_win_set_cursor, self.win, { total, 0 })
+    -- 現在のカーソル位置を取得
+    local ok, cursor = pcall(vim.api.nvim_win_get_cursor, self.win)
+    if ok then
+      local current_line = cursor[1]
+      local old_line_count = #lines
+
+      -- カーソルが末尾にあった場合のみ自動スクロール
+      if current_line >= old_line_count then
+        local total = vim.api.nvim_buf_line_count(self.buf)
+        if total > 0 then
+          pcall(vim.api.nvim_win_set_cursor, self.win, { total, 0 })
+        end
+      end
     end
   end
 end
