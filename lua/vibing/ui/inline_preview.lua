@@ -162,6 +162,79 @@ function M._generate_diff_from_saved(file_path)
   -- ファイルパスを正規化（絶対パス）
   local normalized_path = vim.fn.fnamemodify(file_path, ":p")
 
+  -- ファイルが実際に存在するかチェック
+  local file_exists = vim.fn.filereadable(normalized_path) == 1
+
+  -- 新規バッファ（ファイルが存在しない）の場合
+  if not file_exists then
+    -- バッファ内容を取得
+    local bufnr = vim.fn.bufnr(normalized_path)
+    local current_lines = {}
+
+    if bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) then
+      current_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    end
+
+    -- saved_contentsがある場合は、それと現在のバッファ内容を比較
+    if state.saved_contents[normalized_path] then
+      -- 一時ファイルに保存された内容を書き出し
+      local tmp_before = vim.fn.tempname()
+      vim.fn.writefile(state.saved_contents[normalized_path], tmp_before)
+
+      -- 現在の内容も一時ファイルに書き出し
+      local tmp_after = vim.fn.tempname()
+      vim.fn.writefile(current_lines, tmp_after)
+
+      -- git diff --no-index で差分を取得
+      local cmd = string.format(
+        "git diff --no-index --no-color %s %s",
+        vim.fn.shellescape(tmp_before),
+        vim.fn.shellescape(tmp_after)
+      )
+
+      local result = vim.fn.systemlist({ "sh", "-c", cmd })
+
+      -- 一時ファイルを削除
+      vim.fn.delete(tmp_before)
+      vim.fn.delete(tmp_after)
+
+      -- 差分がない場合
+      if #result == 0 then
+        return {
+          lines = { "No changes detected for " .. file_path },
+          has_delta = false,
+          error = false,
+        }
+      end
+
+      return {
+        lines = result,
+        has_delta = false,
+        error = false,
+      }
+    else
+      -- saved_contentsがない場合は、全内容を新規追加として表示
+      local diff_lines = {
+        "diff --git a/" .. file_path .. " b/" .. file_path,
+        "new file",
+        "--- /dev/null",
+        "+++ b/" .. file_path,
+        "@@ -0,0 +1," .. #current_lines .. " @@",
+      }
+
+      for _, line in ipairs(current_lines) do
+        table.insert(diff_lines, "+" .. line)
+      end
+
+      return {
+        lines = diff_lines,
+        has_delta = false,
+        error = false,
+      }
+    end
+  end
+
+  -- ファイルが存在する場合の既存ロジック
   -- 保存された内容がない場合は通常のgit diffにフォールバック
   if not state.saved_contents[normalized_path] then
     return git.get_diff(file_path)
