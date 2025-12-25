@@ -2,10 +2,9 @@
 
 ## [1.7.0](https://github.com/shabaraba/vibing.nvim/compare/v1.6.1...v1.7.0) (2025-12-25)
 
-
 ### Features
 
-* add line wrap configuration for vibing buffers ([#204](https://github.com/shabaraba/vibing.nvim/issues/204)) ([4e6d160](https://github.com/shabaraba/vibing.nvim/commit/4e6d160787614601a7c92225eedc4a7cb0883c6c))
+- add line wrap configuration for vibing buffers ([#204](https://github.com/shabaraba/vibing.nvim/issues/204)) ([4e6d160](https://github.com/shabaraba/vibing.nvim/commit/4e6d160787614601a7c92225eedc4a7cb0883c6c))
 
 ## [1.6.1](https://github.com/shabaraba/vibing.nvim/compare/v1.6.0...v1.6.1) (2025-12-25)
 
