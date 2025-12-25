@@ -632,6 +632,39 @@ For detailed architecture documentation, see [CLAUDE.md](./CLAUDE.md).
 - **Context System** - Automatic and manual file context management
 - **Session Persistence** - Resume conversations with full history
 
+### Directory Structure
+
+vibing.nvim is a hybrid project combining Neovim plugin (Lua) and Node.js backend (Agent SDK/MCP).
+This structure follows both Neovim plugin conventions and Node.js ecosystem standards.
+
+**Neovim Plugin (required by Neovim runtime):**
+
+- `lua/` - Plugin implementation (Lua modules)
+- `plugin/` - Auto-loaded plugin entry point
+- `doc/` - Help documentation (`:help vibing`)
+- `ftplugin/` - Filetype-specific settings for `.vibing` chat files
+
+**Node.js Backend:**
+
+- `bin/` - Executable wrappers for Agent SDK
+- `mcp-server/` - MCP integration server for Neovim control
+- `tests/` - Test suite (Lua and Node.js tests)
+- `package.json` - Node.js dependencies and scripts
+
+**Documentation:**
+
+- `README.md` - Main user documentation
+- `CLAUDE.md` - AI development guidelines and architecture details
+- `docs/` - Developer guides (adapter development, performance, examples)
+- `CONTRIBUTING.md` - Contribution guide
+
+**Development Configuration:**
+
+- `.editorconfig`, `.prettierrc` - Code style consistency
+- `eslint.config.mjs` - Linting configuration
+- `.github/` - CI/CD workflows and issue templates
+- `build.sh` - Build script for MCP server
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
