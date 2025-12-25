@@ -155,6 +155,70 @@ function M.setup(mode, modified_files, response_text, saved_contents, initial_fi
   return true
 end
 
+---一時ファイルを使ってgit diff --no-indexを実行
+---@param before_lines string[] 変更前の行
+---@param after_lines string[] 変更後の行
+---@param file_path string ファイルパス（エラーメッセージ用）
+---@return table { lines: string[], has_delta: boolean, error: boolean? }
+local function _generate_diff_with_temp_files(before_lines, after_lines, file_path)
+  local tmp_before = vim.fn.tempname()
+  local tmp_after = vim.fn.tempname()
+
+  -- pcallでクリーンアップを保証
+  local ok, result = pcall(function()
+    -- 一時ファイルに書き出し
+    vim.fn.writefile(before_lines, tmp_before)
+    vim.fn.writefile(after_lines, tmp_after)
+
+    -- git diff --no-index で差分を取得
+    local cmd = string.format(
+      "git diff --no-index --no-color %s %s",
+      vim.fn.shellescape(tmp_before),
+      vim.fn.shellescape(tmp_after)
+    )
+
+    local lines = vim.fn.systemlist({ "sh", "-c", cmd })
+
+    -- エラーチェック（git diff --no-indexは差分がある場合exit code 1を返す）
+    if vim.v.shell_error ~= 0 and vim.v.shell_error ~= 1 then
+      error(string.format("git diff failed with exit code %d", vim.v.shell_error))
+    end
+
+    return lines
+  end)
+
+  -- 一時ファイルを必ずクリーンアップ
+  vim.fn.delete(tmp_before)
+  vim.fn.delete(tmp_after)
+
+  -- エラーチェック
+  if not ok then
+    return {
+      lines = {
+        "Error: Could not generate diff for " .. file_path,
+        "Details: " .. tostring(result),
+      },
+      has_delta = false,
+      error = true,
+    }
+  end
+
+  -- 差分がない場合
+  if #result == 0 then
+    return {
+      lines = { "No changes detected for " .. file_path },
+      has_delta = false,
+      error = false,
+    }
+  end
+
+  return {
+    lines = result,
+    has_delta = false,
+    error = false,
+  }
+end
+
 ---保存された内容とファイルの差分を生成（git diff --no-index使用）
 ---@param file_path string ファイルパス
 ---@return table { lines: string[], has_delta: boolean, error: boolean? }
@@ -188,45 +252,20 @@ function M._generate_diff_from_saved(file_path)
     local current_lines = {}
     if bufnr and bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) then
       current_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    else
+      -- バッファが見つからない場合はエラー
+      return {
+        lines = {
+          "Error: Buffer not found or not loaded for " .. file_path,
+        },
+        has_delta = false,
+        error = true,
+      }
     end
 
     -- saved_contentsがある場合は、それと現在のバッファ内容を比較
     if state.saved_contents[normalized_path] then
-      -- 一時ファイルに保存された内容を書き出し
-      local tmp_before = vim.fn.tempname()
-      vim.fn.writefile(state.saved_contents[normalized_path], tmp_before)
-
-      -- 現在の内容も一時ファイルに書き出し
-      local tmp_after = vim.fn.tempname()
-      vim.fn.writefile(current_lines, tmp_after)
-
-      -- git diff --no-index で差分を取得
-      local cmd = string.format(
-        "git diff --no-index --no-color %s %s",
-        vim.fn.shellescape(tmp_before),
-        vim.fn.shellescape(tmp_after)
-      )
-
-      local result = vim.fn.systemlist({ "sh", "-c", cmd })
-
-      -- 一時ファイルを削除
-      vim.fn.delete(tmp_before)
-      vim.fn.delete(tmp_after)
-
-      -- 差分がない場合
-      if #result == 0 then
-        return {
-          lines = { "No changes detected for " .. file_path },
-          has_delta = false,
-          error = false,
-        }
-      end
-
-      return {
-        lines = result,
-        has_delta = false,
-        error = false,
-      }
+      return _generate_diff_with_temp_files(state.saved_contents[normalized_path], current_lines, file_path)
     else
       -- saved_contentsがない場合は、全内容を新規追加として表示
       local diff_lines = {
@@ -255,50 +294,11 @@ function M._generate_diff_from_saved(file_path)
     return git.get_diff(file_path)
   end
 
-  -- 一時ファイルに保存された内容を書き出し
-  local tmp_before = vim.fn.tempname()
-  vim.fn.writefile(state.saved_contents[normalized_path], tmp_before)
+  -- 現在のファイル内容を取得
+  local current_lines = vim.fn.readfile(file_path)
 
-  -- git diff --no-index で差分を取得
-  local cmd = string.format(
-    "git diff --no-index --no-color %s %s",
-    vim.fn.shellescape(tmp_before),
-    vim.fn.shellescape(file_path)
-  )
-
-  local result = vim.fn.systemlist({ "sh", "-c", cmd })
-
-  -- 一時ファイルを削除
-  vim.fn.delete(tmp_before)
-
-  -- git diff --no-index は差分がある場合 exit code 1 を返すので、
-  -- exit code 1 はエラーではない
-  if vim.v.shell_error ~= 0 and vim.v.shell_error ~= 1 then
-    return {
-      lines = {
-        "Error: Could not generate diff for " .. file_path,
-        "Command: " .. cmd,
-        "Exit code: " .. tostring(vim.v.shell_error),
-      },
-      has_delta = false,
-      error = true,
-    }
-  end
-
-  -- 差分がない場合
-  if #result == 0 then
-    return {
-      lines = { "No changes detected for " .. file_path },
-      has_delta = false,
-      error = false,
-    }
-  end
-
-  return {
-    lines = result,
-    has_delta = false,
-    error = false,
-  }
+  -- 保存された内容と現在の内容を比較
+  return _generate_diff_with_temp_files(state.saved_contents[normalized_path], current_lines, file_path)
 end
 
 ---ウィンドウレイアウトを作成
