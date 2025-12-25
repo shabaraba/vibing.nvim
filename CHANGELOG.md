@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.6.0](https://github.com/shabaraba/vibing.nvim/compare/v1.5.0...v1.6.0) (2025-12-25)
+
+
+### Features
+
+* Add direct window buffer operations (win_set_buf, win_open_file) ([#188](https://github.com/shabaraba/vibing.nvim/issues/188)) ([bb770c1](https://github.com/shabaraba/vibing.nvim/commit/bb770c1e2409c52cbc700b372257447de06bdfa0))
+* Add window/pane information and manipulation MCP tools ([#186](https://github.com/shabaraba/vibing.nvim/issues/186)) ([51ad1ad](https://github.com/shabaraba/vibing.nvim/commit/51ad1add7b87fbc1e8c200251470fa2ced9afb03))
+
+
+### Bug Fixes
+
+* support diff display for unsaved new buffers in preview UI ([#194](https://github.com/shabaraba/vibing.nvim/issues/194)) ([f5a3eb1](https://github.com/shabaraba/vibing.nvim/commit/f5a3eb1c7c2d92bb8f86b572184805777d61d78f))
+
+
+### Documentation
+
+* add missing English docstrings to adapter and UI modules ([#192](https://github.com/shabaraba/vibing.nvim/issues/192)) ([223edd5](https://github.com/shabaraba/vibing.nvim/commit/223edd5fd99a970e02a6c7616c5f0d8ac1c6b5bf))
+
+
+### Miscellaneous
+
+* cleanup root directory structure ([#196](https://github.com/shabaraba/vibing.nvim/issues/196)) ([5604769](https://github.com/shabaraba/vibing.nvim/commit/560476970f81e16afd94ee6fcfe2a327481f015c))
+* fix CHANGELOG.md formatting ([#183](https://github.com/shabaraba/vibing.nvim/issues/183)) ([81465ea](https://github.com/shabaraba/vibing.nvim/commit/81465ea1075f798bf8b0bd7420b903cfb4166594))
+
 ## [1.5.0](https://github.com/shabaraba/vibing.nvim/compare/v1.4.0...v1.5.0) (2025-12-24)
 
 ### Features

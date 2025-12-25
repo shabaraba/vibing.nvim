@@ -1,6 +1,6 @@
 {
   "name": "vibing-nvim",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Neovim plugin that integrates Claude AI through the Agent SDK",
   "keywords": [
     "neovim",
