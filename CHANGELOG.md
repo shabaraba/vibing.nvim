@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.0 (2025-12-25)
+
+## What's Changed
+* feat: implement smart auto-scroll in chat (scroll only when cursor is at bottom) by @claude[bot] in https://github.com/shabaraba/vibing.nvim/pull/208
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.7.0...v1.8.0
+
 ## [1.7.0](https://github.com/shabaraba/vibing.nvim/compare/v1.6.1...v1.7.0) (2025-12-25)
 
 ### Features
