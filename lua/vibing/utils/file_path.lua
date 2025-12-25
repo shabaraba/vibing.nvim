@@ -56,6 +56,17 @@ function M.is_cursor_on_file_path(buf)
     end
   end
 
+  -- Check if this is a [Buffer N] identifier
+  local is_buffer_id = trimmed_line:match("^%[Buffer %d+%]$")
+  if is_buffer_id then
+    -- Extract buffer number and check if buffer exists
+    local bufnr = tonumber(trimmed_line:match("%[Buffer (%d+)%]"))
+    if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+      return trimmed_line  -- Return as-is, don't normalize
+    end
+    return nil
+  end
+
   -- ファイルの存在確認
   -- 相対パスまたは絶対パスを正規化
   local file_path = vim.fn.fnamemodify(trimmed_line, ":p")
@@ -68,8 +79,20 @@ end
 
 ---ファイルを開く
 ---既に開かれている場合はそのバッファに切り替え、そうでない場合は新規に開く
----@param file_path string ファイルパス（絶対パス）
+---@param file_path string ファイルパス（絶対パス）または[Buffer N]形式
 function M.open_file(file_path)
+  -- Check if this is a [Buffer N] identifier
+  local is_buffer_id = file_path:match("^%[Buffer %d+%]$")
+  if is_buffer_id then
+    local bufnr = tonumber(file_path:match("%[Buffer (%d+)%]"))
+    if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+      vim.api.nvim_set_current_buf(bufnr)
+    else
+      vim.notify("[vibing] Buffer not found: " .. file_path, vim.log.levels.ERROR)
+    end
+    return
+  end
+
   -- ファイルの存在確認
   if vim.fn.filereadable(file_path) == 0 then
     vim.notify("[vibing] File not found: " .. file_path, vim.log.levels.ERROR)
