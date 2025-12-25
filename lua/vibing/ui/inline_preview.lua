@@ -159,19 +159,34 @@ end
 ---@param file_path string ファイルパス
 ---@return table { lines: string[], has_delta: boolean, error: boolean? }
 function M._generate_diff_from_saved(file_path)
-  -- ファイルパスを正規化（絶対パス）
-  local normalized_path = vim.fn.fnamemodify(file_path, ":p")
+  -- Check if this is a [Buffer N] identifier
+  local is_buffer_id = file_path:match("^%[Buffer %d+%]$")
+  local normalized_path
+
+  if is_buffer_id then
+    -- Don't normalize buffer identifiers
+    normalized_path = file_path
+  else
+    -- Normalize file paths to absolute
+    normalized_path = vim.fn.fnamemodify(file_path, ":p")
+  end
 
   -- ファイルが実際に存在するかチェック
-  local file_exists = vim.fn.filereadable(normalized_path) == 1
+  local file_exists = not is_buffer_id and vim.fn.filereadable(normalized_path) == 1
 
   -- 新規バッファ（ファイルが存在しない）の場合
   if not file_exists then
     -- バッファ内容を取得
-    local bufnr = vim.fn.bufnr(normalized_path)
-    local current_lines = {}
+    local bufnr
+    if is_buffer_id then
+      -- Extract buffer number from [Buffer N] format
+      bufnr = tonumber(file_path:match("%[Buffer (%d+)%]"))
+    else
+      bufnr = vim.fn.bufnr(normalized_path)
+    end
 
-    if bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) then
+    local current_lines = {}
+    if bufnr and bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) then
       current_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     end
 

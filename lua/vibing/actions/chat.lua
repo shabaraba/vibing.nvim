@@ -169,11 +169,16 @@ function M.send(chat_buffer, message)
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(buf) then
       local file_path = vim.api.nvim_buf_get_name(buf)
+      local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+
       if file_path ~= "" then
-        -- 絶対パスに正規化
+        -- Named buffer: use absolute path as key
         local normalized_path = vim.fn.fnamemodify(file_path, ":p")
-        local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
         saved_contents[normalized_path] = content
+      else
+        -- Unnamed buffer: use [Buffer N] identifier as key
+        local buffer_id = string.format("[Buffer %d]", buf)
+        saved_contents[buffer_id] = content
       end
     end
   end

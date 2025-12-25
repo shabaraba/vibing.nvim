@@ -240,11 +240,16 @@ function M._execute_with_preview(adapter, prompt, opts, action, instruction)
   local file_path = vim.api.nvim_buf_get_name(current_buf)
   local saved_contents = {}
 
+  -- Save buffer content with appropriate key
+  local content = vim.api.nvim_buf_get_lines(current_buf, 0, -1, false)
   if file_path ~= "" then
-    -- 絶対パスに正規化
+    -- Named buffer: use absolute path as key
     local normalized_path = vim.fn.fnamemodify(file_path, ":p")
-    local content = vim.api.nvim_buf_get_lines(current_buf, 0, -1, false)
     saved_contents[normalized_path] = content
+  else
+    -- Unnamed buffer: use [Buffer N] identifier as key
+    local buffer_id = string.format("[Buffer %d]", current_buf)
+    saved_contents[buffer_id] = content
   end
 
   -- StatusManager作成
