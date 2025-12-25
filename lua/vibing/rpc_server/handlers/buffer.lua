@@ -20,6 +20,12 @@ function M.buf_set_lines(params)
   if type(lines) == "string" then
     lines = vim.split(lines, "\n")
   end
+
+  -- Convert bufnr 0 to actual buffer number
+  if bufnr == 0 then
+    bufnr = vim.api.nvim_get_current_buf()
+  end
+
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
 
   -- Get the buffer's file path
