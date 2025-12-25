@@ -1,6 +1,7 @@
 local git = require("vibing.utils.git")
 local diff_util = require("vibing.utils.diff")
 local BufferReload = require("vibing.utils.buffer_reload")
+local BufferIdentifier = require("vibing.utils.buffer_identifier")
 
 ---@class Vibing.InlinePreview
 ---インラインアクションとチャットのプレビューUI
@@ -224,16 +225,8 @@ end
 ---@return table { lines: string[], has_delta: boolean, error: boolean? }
 function M._generate_diff_from_saved(file_path)
   -- Check if this is a [Buffer N] identifier
-  local is_buffer_id = file_path:match("^%[Buffer %d+%]$")
-  local normalized_path
-
-  if is_buffer_id then
-    -- Don't normalize buffer identifiers
-    normalized_path = file_path
-  else
-    -- Normalize file paths to absolute
-    normalized_path = vim.fn.fnamemodify(file_path, ":p")
-  end
+  local is_buffer_id = BufferIdentifier.is_buffer_identifier(file_path)
+  local normalized_path = BufferIdentifier.normalize_path(file_path)
 
   -- ファイルが実際に存在するかチェック
   local file_exists = not is_buffer_id and vim.fn.filereadable(normalized_path) == 1
@@ -244,19 +237,28 @@ function M._generate_diff_from_saved(file_path)
     local bufnr
     if is_buffer_id then
       -- Extract buffer number from [Buffer N] format
-      bufnr = tonumber(file_path:match("%[Buffer (%d+)%]"))
+      bufnr = BufferIdentifier.extract_bufnr(file_path)
     else
       bufnr = vim.fn.bufnr(normalized_path)
     end
 
-    local current_lines = {}
-    if bufnr and bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) then
-      current_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-    else
-      -- バッファが見つからない場合はエラー
+    -- バッファが見つからない、または無効な場合
+    if not bufnr or bufnr == -1 or not vim.api.nvim_buf_is_loaded(bufnr) then
       return {
         lines = {
           "Error: Buffer not found or not loaded for " .. file_path,
+        },
+        has_delta = false,
+        error = true,
+      }
+    end
+
+    -- バッファ内容を安全に取得
+    local ok, current_lines = pcall(vim.api.nvim_buf_get_lines, bufnr, 0, -1, false)
+    if not ok then
+      return {
+        lines = {
+          "Error: Failed to read buffer " .. file_path .. ": " .. tostring(current_lines),
         },
         has_delta = false,
         error = true,

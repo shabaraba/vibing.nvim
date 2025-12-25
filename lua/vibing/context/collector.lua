@@ -1,6 +1,8 @@
 ---@class Vibing.Collector
 local M = {}
 
+local BufferIdentifier = require("vibing.utils.buffer_identifier")
+
 -- cwdのキャッシュ（パフォーマンス最適化）
 local _cwd_cache = nil
 local _cwd_cache_time = 0
@@ -56,7 +58,7 @@ function M.collect_selection(buf, start_line, end_line)
   -- 新規バッファ（名前なし）の場合、特別な識別子を使用
   local relative
   if path == "" then
-    relative = string.format("[Buffer %d]", buf)
+    relative = BufferIdentifier.create_identifier(buf)
   else
     relative = M._to_relative_path(path)
   end

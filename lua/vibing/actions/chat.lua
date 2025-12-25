@@ -2,6 +2,7 @@ local Context = require("vibing.context")
 local ChatBuffer = require("vibing.ui.chat_buffer")
 local Formatter = require("vibing.context.formatter")
 local notify = require("vibing.utils.notify")
+local BufferIdentifier = require("vibing.utils.buffer_identifier")
 
 ---@class Vibing.ChatAction
 local M = {}
@@ -177,7 +178,7 @@ function M.send(chat_buffer, message)
         saved_contents[normalized_path] = content
       else
         -- Unnamed buffer: use [Buffer N] identifier as key
-        local buffer_id = string.format("[Buffer %d]", buf)
+        local buffer_id = BufferIdentifier.create_identifier(buf)
         saved_contents[buffer_id] = content
       end
     end

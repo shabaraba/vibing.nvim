@@ -2,6 +2,8 @@
 ---ファイルパス検出と操作のユーティリティ
 local M = {}
 
+local BufferIdentifier = require("vibing.utils.buffer_identifier")
+
 ---カーソルが "## Modified Files" セクション内のファイルパス上にあるかチェック
 ---現在行がファイルパスであり、かつ "## Modified Files" セクション内にある場合、ファイルパスを返す
 ---@param buf number バッファ番号
@@ -57,10 +59,9 @@ function M.is_cursor_on_file_path(buf)
   end
 
   -- Check if this is a [Buffer N] identifier
-  local is_buffer_id = trimmed_line:match("^%[Buffer %d+%]$")
-  if is_buffer_id then
+  if BufferIdentifier.is_buffer_identifier(trimmed_line) then
     -- Extract buffer number and check if buffer exists
-    local bufnr = tonumber(trimmed_line:match("%[Buffer (%d+)%]"))
+    local bufnr = BufferIdentifier.extract_bufnr(trimmed_line)
     if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
       return trimmed_line  -- Return as-is, don't normalize
     end
@@ -82,9 +83,8 @@ end
 ---@param file_path string ファイルパス（絶対パス）または[Buffer N]形式
 function M.open_file(file_path)
   -- Check if this is a [Buffer N] identifier
-  local is_buffer_id = file_path:match("^%[Buffer %d+%]$")
-  if is_buffer_id then
-    local bufnr = tonumber(file_path:match("%[Buffer (%d+)%]"))
+  if BufferIdentifier.is_buffer_identifier(file_path) then
+    local bufnr = BufferIdentifier.extract_bufnr(file_path)
     if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
       vim.api.nvim_set_current_buf(bufnr)
     else

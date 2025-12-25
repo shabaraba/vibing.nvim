@@ -1,5 +1,7 @@
 local M = {}
 
+local BufferIdentifier = require("vibing.utils.buffer_identifier")
+
 -- Retrieve all lines from the specified buffer.
 -- @param params? Table with optional fields.
 -- @param params.bufnr? number Buffer number to read from; defaults to 0 (current buffer).
@@ -33,7 +35,7 @@ function M.buf_set_lines(params)
 
   -- For unnamed buffers, use [Buffer N] identifier
   if filename == "" then
-    filename = string.format("[Buffer %d]", bufnr)
+    filename = BufferIdentifier.create_identifier(bufnr)
   end
 
   return {

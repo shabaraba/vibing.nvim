@@ -2,6 +2,7 @@ local Context = require("vibing.context")
 local OutputBuffer = require("vibing.ui.output_buffer")
 local notify = require("vibing.utils.notify")
 local Language = require("vibing.utils.language")
+local BufferIdentifier = require("vibing.utils.buffer_identifier")
 
 ---@class Vibing.ActionConfig
 ---@field prompt string アクションの基本プロンプト
@@ -293,7 +294,7 @@ function M._execute_with_preview(adapter, prompt, opts, action, instruction)
     saved_contents[normalized_path] = content
   else
     -- Unnamed buffer: use [Buffer N] identifier as key
-    local buffer_id = string.format("[Buffer %d]", current_buf)
+    local buffer_id = BufferIdentifier.create_identifier(current_buf)
     saved_contents[buffer_id] = content
   end
 
