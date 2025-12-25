@@ -184,7 +184,7 @@ function M.send(chat_buffer, message)
 
   -- 変更されたファイルを追跡
   local modified_files = {}
-  local file_tools = { Edit = true, Write = true }
+  local file_tools = { Edit = true, Write = true, nvim_set_buffer = true }
 
   local opts = {
     streaming = true,
