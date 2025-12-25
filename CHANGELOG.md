@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.1 (2025-12-25)
+
+## What's Changed
+
+- chore: update changelog by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/217
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.9.0...v1.9.1
+
 ## 1.9.0 (2025-12-25)
 
 ## What's Changed
