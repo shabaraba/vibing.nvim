@@ -1,6 +1,7 @@
 local git = require("vibing.utils.git")
 local diff_util = require("vibing.utils.diff")
 local BufferReload = require("vibing.utils.buffer_reload")
+local BufferIdentifier = require("vibing.utils.buffer_identifier")
 
 ---@class Vibing.InlinePreview
 ---インラインアクションとチャットのプレビューUI
@@ -155,42 +156,48 @@ function M.setup(mode, modified_files, response_text, saved_contents, initial_fi
   return true
 end
 
----保存された内容とファイルの差分を生成（git diff --no-index使用）
----@param file_path string ファイルパス
+---一時ファイルを使ってgit diff --no-indexを実行
+---@param before_lines string[] 変更前の行
+---@param after_lines string[] 変更後の行
+---@param file_path string ファイルパス（エラーメッセージ用）
 ---@return table { lines: string[], has_delta: boolean, error: boolean? }
-function M._generate_diff_from_saved(file_path)
-  -- ファイルパスを正規化（絶対パス）
-  local normalized_path = vim.fn.fnamemodify(file_path, ":p")
-
-  -- 保存された内容がない場合は通常のgit diffにフォールバック
-  if not state.saved_contents[normalized_path] then
-    return git.get_diff(file_path)
-  end
-
-  -- 一時ファイルに保存された内容を書き出し
+local function _generate_diff_with_temp_files(before_lines, after_lines, file_path)
   local tmp_before = vim.fn.tempname()
-  vim.fn.writefile(state.saved_contents[normalized_path], tmp_before)
+  local tmp_after = vim.fn.tempname()
 
-  -- git diff --no-index で差分を取得
-  local cmd = string.format(
-    "git diff --no-index --no-color %s %s",
-    vim.fn.shellescape(tmp_before),
-    vim.fn.shellescape(file_path)
-  )
+  -- pcallでクリーンアップを保証
+  local ok, result = pcall(function()
+    -- 一時ファイルに書き出し
+    vim.fn.writefile(before_lines, tmp_before)
+    vim.fn.writefile(after_lines, tmp_after)
 
-  local result = vim.fn.systemlist({ "sh", "-c", cmd })
+    -- git diff --no-index で差分を取得
+    local cmd = string.format(
+      "git diff --no-index --no-color %s %s",
+      vim.fn.shellescape(tmp_before),
+      vim.fn.shellescape(tmp_after)
+    )
 
-  -- 一時ファイルを削除
+    local lines = vim.fn.systemlist({ "sh", "-c", cmd })
+
+    -- エラーチェック（git diff --no-indexは差分がある場合exit code 1を返す）
+    if vim.v.shell_error ~= 0 and vim.v.shell_error ~= 1 then
+      error(string.format("git diff failed with exit code %d", vim.v.shell_error))
+    end
+
+    return lines
+  end)
+
+  -- 一時ファイルを必ずクリーンアップ
   vim.fn.delete(tmp_before)
+  vim.fn.delete(tmp_after)
 
-  -- git diff --no-index は差分がある場合 exit code 1 を返すので、
-  -- exit code 1 はエラーではない
-  if vim.v.shell_error ~= 0 and vim.v.shell_error ~= 1 then
+  -- エラーチェック
+  if not ok then
     return {
       lines = {
         "Error: Could not generate diff for " .. file_path,
-        "Command: " .. cmd,
-        "Exit code: " .. tostring(vim.v.shell_error),
+        "Details: " .. tostring(result),
       },
       has_delta = false,
       error = true,
@@ -211,6 +218,89 @@ function M._generate_diff_from_saved(file_path)
     has_delta = false,
     error = false,
   }
+end
+
+---保存された内容とファイルの差分を生成（git diff --no-index使用）
+---@param file_path string ファイルパス
+---@return table { lines: string[], has_delta: boolean, error: boolean? }
+function M._generate_diff_from_saved(file_path)
+  -- Check if this is a [Buffer N] identifier
+  local is_buffer_id = BufferIdentifier.is_buffer_identifier(file_path)
+  local normalized_path = BufferIdentifier.normalize_path(file_path)
+
+  -- ファイルが実際に存在するかチェック
+  local file_exists = not is_buffer_id and vim.fn.filereadable(normalized_path) == 1
+
+  -- 新規バッファ（ファイルが存在しない）の場合
+  if not file_exists then
+    -- バッファ内容を取得
+    local bufnr
+    if is_buffer_id then
+      -- Extract buffer number from [Buffer N] format
+      bufnr = BufferIdentifier.extract_bufnr(file_path)
+    else
+      bufnr = vim.fn.bufnr(normalized_path)
+    end
+
+    -- バッファが見つからない、または無効な場合
+    if not bufnr or bufnr == -1 or not vim.api.nvim_buf_is_loaded(bufnr) then
+      return {
+        lines = {
+          "Error: Buffer not found or not loaded for " .. file_path,
+        },
+        has_delta = false,
+        error = true,
+      }
+    end
+
+    -- バッファ内容を安全に取得
+    local ok, current_lines = pcall(vim.api.nvim_buf_get_lines, bufnr, 0, -1, false)
+    if not ok then
+      return {
+        lines = {
+          "Error: Failed to read buffer " .. file_path .. ": " .. tostring(current_lines),
+        },
+        has_delta = false,
+        error = true,
+      }
+    end
+
+    -- saved_contentsがある場合は、それと現在のバッファ内容を比較
+    if state.saved_contents[normalized_path] then
+      return _generate_diff_with_temp_files(state.saved_contents[normalized_path], current_lines, file_path)
+    else
+      -- saved_contentsがない場合は、全内容を新規追加として表示
+      local diff_lines = {
+        "diff --git a/" .. file_path .. " b/" .. file_path,
+        "new file",
+        "--- /dev/null",
+        "+++ b/" .. file_path,
+        "@@ -0,0 +1," .. #current_lines .. " @@",
+      }
+
+      for _, line in ipairs(current_lines) do
+        table.insert(diff_lines, "+" .. line)
+      end
+
+      return {
+        lines = diff_lines,
+        has_delta = false,
+        error = false,
+      }
+    end
+  end
+
+  -- ファイルが存在する場合の既存ロジック
+  -- 保存された内容がない場合は通常のgit diffにフォールバック
+  if not state.saved_contents[normalized_path] then
+    return git.get_diff(file_path)
+  end
+
+  -- 現在のファイル内容を取得
+  local current_lines = vim.fn.readfile(file_path)
+
+  -- 保存された内容と現在の内容を比較
+  return _generate_diff_with_temp_files(state.saved_contents[normalized_path], current_lines, file_path)
 end
 
 ---ウィンドウレイアウトを作成
@@ -754,8 +844,18 @@ function M._on_reject()
   local files_without_saved = {}
 
   for _, file in ipairs(state.modified_files) do
-    -- ファイルパスを正規化（絶対パス）
-    local normalized_path = vim.fn.fnamemodify(file, ":p")
+    -- Check if this is a [Buffer N] identifier
+    local is_buffer_id = file:match("^%[Buffer %d+%]$")
+    local normalized_path
+
+    if is_buffer_id then
+      -- Don't normalize buffer identifiers
+      normalized_path = file
+    else
+      -- ファイルパスを正規化（絶対パス）
+      normalized_path = vim.fn.fnamemodify(file, ":p")
+    end
+
     if state.saved_contents[normalized_path] then
       table.insert(files_with_saved, file)
     else
@@ -768,9 +868,30 @@ function M._on_reject()
 
   -- 保存された内容で復元（Claude変更のみを巻き戻し）
   for _, file in ipairs(files_with_saved) do
-    local normalized_path = vim.fn.fnamemodify(file, ":p")
+    -- Check if this is a [Buffer N] identifier
+    local is_buffer_id = file:match("^%[Buffer %d+%]$")
+    local normalized_path
+
+    if is_buffer_id then
+      -- Don't normalize buffer identifiers
+      normalized_path = file
+    else
+      normalized_path = vim.fn.fnamemodify(file, ":p")
+    end
+
     local ok, err = pcall(function()
-      vim.fn.writefile(state.saved_contents[normalized_path], file)
+      if is_buffer_id then
+        -- For unnamed buffers, write directly to the buffer
+        local bufnr = tonumber(file:match("%[Buffer (%d+)%]"))
+        if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+          vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, state.saved_contents[normalized_path])
+        else
+          error("Invalid buffer: " .. file)
+        end
+      else
+        -- For named files, write to file
+        vim.fn.writefile(state.saved_contents[normalized_path], file)
+      end
     end)
 
     if ok then
@@ -781,27 +902,42 @@ function M._on_reject()
   end
 
   -- 保存された内容がないファイルはgit checkoutで復元（ユーザー変更も巻き戻る）
+  -- ただし、[Buffer N]形式のファイルはgit checkoutの対象外
   if #files_without_saved > 0 then
-    local result = git.checkout_files(files_without_saved)
+    -- Filter out [Buffer N] identifiers from git checkout
+    local git_files = {}
+    for _, file in ipairs(files_without_saved) do
+      local is_buffer_id = file:match("^%[Buffer %d+%]$")
+      if not is_buffer_id then
+        table.insert(git_files, file)
+      else
+        -- [Buffer N] without saved_contents is an error
+        table.insert(errors, { file = file, message = "No saved content for unnamed buffer" })
+      end
+    end
 
-    if result.success then
-      for _, file in ipairs(files_without_saved) do
-        table.insert(reverted_files, file)
-      end
-    else
-      for _, err in ipairs(result.errors) do
-        table.insert(errors, err)
-      end
-      for _, file in ipairs(files_without_saved) do
-        local found_error = false
-        for _, err in ipairs(result.errors) do
-          if err.file == file then
-            found_error = true
-            break
-          end
-        end
-        if not found_error then
+    if #git_files > 0 then
+      local result = git.checkout_files(git_files)
+
+      if result.success then
+        for _, file in ipairs(git_files) do
           table.insert(reverted_files, file)
+        end
+      else
+        for _, err in ipairs(result.errors) do
+          table.insert(errors, err)
+        end
+        for _, file in ipairs(git_files) do
+          local found_error = false
+          for _, err in ipairs(result.errors) do
+            if err.file == file then
+              found_error = true
+              break
+            end
+          end
+          if not found_error then
+            table.insert(reverted_files, file)
+          end
         end
       end
     end

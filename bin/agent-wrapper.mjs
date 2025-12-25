@@ -463,6 +463,7 @@ if (sessionId) {
 let sessionIdEmitted = false;
 let respondingEmitted = false;
 const processedToolUseIds = new Set(); // Track processed tool_use IDs to prevent duplicates
+const toolUseMap = new Map(); // Map tool_use_id to tool_name for tracking MCP tool results
 
 try {
   // Create query with all options
@@ -503,6 +504,9 @@ try {
 
           // Tool use indication
           const toolName = block.name;
+
+          // Store tool_use_id -> tool_name mapping for later result tracking
+          toolUseMap.set(toolUseId, toolName);
           let inputSummary = '';
           const toolInput = block.input || {};
           if (toolInput.command) {
@@ -553,12 +557,36 @@ try {
     if (message.type === 'user' && message.message?.content) {
       for (const block of message.message.content) {
         if (block.type === 'tool_result' && block.content) {
+          // Get tool name from mapping
+          const toolUseId = block.tool_use_id;
+          const toolName = toolUseMap.get(toolUseId);
+
           let resultText = '';
           if (typeof block.content === 'string') {
             resultText = block.content;
           } else if (Array.isArray(block.content)) {
             resultText = block.content.map((c) => c.text || '').join('');
           }
+
+          // Track vibing-nvim MCP tool modifications
+          if (toolName === 'mcp__vibing-nvim__nvim_set_buffer') {
+            // Extract filename from result text
+            if (resultText) {
+              // Use [^)]+ to match non-closing-paren chars, handling filenames with parentheses
+              const match = resultText.match(/Buffer updated successfully \(([^)]+)\)/);
+              if (match) {
+                const filename = match[1];
+                console.log(
+                  safeJsonStringify({
+                    type: 'tool_use',
+                    tool: 'nvim_set_buffer',
+                    file_path: filename,
+                  })
+                );
+              }
+            }
+          }
+
           const preview =
             resultText.length > 100 ? resultText.substring(0, 100) + '...' : resultText;
           if (preview) {

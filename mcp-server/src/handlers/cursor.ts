@@ -42,4 +42,3 @@ export async function handleGetVisualSelection(args: any) {
   return {
     content: [{ type: 'text', text: JSON.stringify(selection, null, 2) }],
   };
-}

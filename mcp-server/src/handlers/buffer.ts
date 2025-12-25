@@ -17,19 +17,31 @@ export async function handleGetBuffer(args: any) {
  * Update a Neovim buffer's lines.
  *
  * @param args - Object containing `lines` (array of strings) and optional `bufnr` (buffer number); `lines` are the new buffer contents.
- * @returns An object with a single text content node confirming the buffer was updated.
+ * @returns An object with content confirming the buffer was updated, including file path metadata.
  * @throws Error if `lines` is missing on `args`.
  */
 export async function handleSetBuffer(args: any) {
   if (!args || !args.lines) {
     throw new Error('Missing required parameter: lines');
   }
-  await callNeovim('buf_set_lines', {
+  const result = await callNeovim('buf_set_lines', {
     lines: args.lines,
     bufnr: args.bufnr,
   });
+
+  // Include file path in response metadata for tracking modified files
+  const metadata = result.filename
+    ? { filename: result.filename, bufnr: result.bufnr }
+    : { bufnr: result.bufnr };
+
   return {
-    content: [{ type: 'text', text: 'Buffer updated successfully' }],
+    content: [
+      {
+        type: 'text',
+        text: `Buffer updated successfully${result.filename ? ` (${result.filename})` : ''}`,
+      },
+    ],
+    _meta: metadata, // Include metadata for agent-wrapper to track
   };
 }
 

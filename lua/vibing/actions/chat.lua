@@ -2,6 +2,7 @@ local Context = require("vibing.context")
 local ChatBuffer = require("vibing.ui.chat_buffer")
 local Formatter = require("vibing.context.formatter")
 local notify = require("vibing.utils.notify")
+local BufferIdentifier = require("vibing.utils.buffer_identifier")
 
 ---@class Vibing.ChatAction
 local M = {}
@@ -169,11 +170,16 @@ function M.send(chat_buffer, message)
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(buf) then
       local file_path = vim.api.nvim_buf_get_name(buf)
-      if file_path ~= "" and vim.fn.filereadable(file_path) == 1 then
-        -- 絶対パスに正規化
+      local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+
+      if file_path ~= "" then
+        -- Named buffer: use absolute path as key
         local normalized_path = vim.fn.fnamemodify(file_path, ":p")
-        local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
         saved_contents[normalized_path] = content
+      else
+        -- Unnamed buffer: use [Buffer N] identifier as key
+        local buffer_id = BufferIdentifier.create_identifier(buf)
+        saved_contents[buffer_id] = content
       end
     end
   end
@@ -184,7 +190,7 @@ function M.send(chat_buffer, message)
 
   -- 変更されたファイルを追跡
   local modified_files = {}
-  local file_tools = { Edit = true, Write = true }
+  local file_tools = { Edit = true, Write = true, nvim_set_buffer = true }
 
   local opts = {
     streaming = true,

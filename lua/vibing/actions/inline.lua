@@ -2,6 +2,7 @@ local Context = require("vibing.context")
 local OutputBuffer = require("vibing.ui.output_buffer")
 local notify = require("vibing.utils.notify")
 local Language = require("vibing.utils.language")
+local BufferIdentifier = require("vibing.utils.buffer_identifier")
 
 ---@class Vibing.ActionConfig
 ---@field prompt string アクションの基本プロンプト
@@ -42,6 +43,49 @@ M.actions = {
   },
 }
 
+---Apply unsaved buffer handling to prompt and opts
+---@param prompt string Original prompt
+---@param opts table Options table (will be modified)
+---@param is_modified boolean Whether buffer has unsaved changes
+---@return string Modified prompt
+local function apply_unsaved_buffer_handling(prompt, opts, is_modified)
+  if not is_modified then
+    return prompt
+  end
+
+  -- Modify prompt
+  prompt = prompt
+    .. "\n\nIMPORTANT: This buffer has unsaved changes. You MUST use mcp__vibing-nvim__nvim_set_buffer tool to edit the buffer directly, NOT the Edit or Write tools. This ensures the changes are applied to the current buffer state, not the saved file."
+
+  -- Initialize permission lists if needed
+  if not opts.permissions_allow then
+    opts.permissions_allow = {}
+  end
+  if not opts.permissions_deny then
+    opts.permissions_deny = {}
+  end
+
+  -- Remove Edit/Write from allow list to prevent conflicts
+  opts.permissions_allow = vim.tbl_filter(function(tool)
+    return tool ~= "Edit" and tool ~= "Write"
+  end, opts.permissions_allow)
+
+  -- Deny Edit/Write tools for unsaved buffers
+  if not vim.tbl_contains(opts.permissions_deny, "Edit") then
+    table.insert(opts.permissions_deny, "Edit")
+  end
+  if not vim.tbl_contains(opts.permissions_deny, "Write") then
+    table.insert(opts.permissions_deny, "Write")
+  end
+
+  -- Ensure nvim_set_buffer is allowed
+  if not vim.tbl_contains(opts.permissions_allow, "mcp__vibing-nvim__nvim_set_buffer") then
+    table.insert(opts.permissions_allow, "mcp__vibing-nvim__nvim_set_buffer")
+  end
+
+  return prompt
+end
+
 ---インラインアクションを実行
 ---ビジュアル選択範囲に対して事前定義アクションまたはカスタムプロンプトを実行
 ---アクション名が未定義の場合は自然言語指示としてcustom()に委譲
@@ -77,6 +121,10 @@ function M.execute(action_or_prompt, additional_instruction)
     return
   end
 
+  -- Check if current buffer has unsaved changes
+  local current_buf = vim.api.nvim_get_current_buf()
+  local is_modified = vim.bo[current_buf].modified
+
   -- 言語設定を適用
   local lang_code = Language.get_language_code(config.language, "inline")
   local base_prompt = Language.add_language_instruction(action.prompt, lang_code)
@@ -97,12 +145,15 @@ function M.execute(action_or_prompt, additional_instruction)
       opts.permission_mode = config.permissions.mode
     end
     if config.permissions.allow then
-      opts.permissions_allow = config.permissions.allow
+      opts.permissions_allow = vim.deepcopy(config.permissions.allow)
     end
     if config.permissions.deny then
-      opts.permissions_deny = config.permissions.deny
+      opts.permissions_deny = vim.deepcopy(config.permissions.deny)
     end
   end
+
+  -- Apply unsaved buffer handling
+  prompt = apply_unsaved_buffer_handling(prompt, opts, is_modified)
 
   if action.tools and #action.tools > 0 and adapter:supports("tools") then
     opts.tools = action.tools
@@ -240,11 +291,16 @@ function M._execute_with_preview(adapter, prompt, opts, action, instruction)
   local file_path = vim.api.nvim_buf_get_name(current_buf)
   local saved_contents = {}
 
+  -- Save buffer content with appropriate key
+  local content = vim.api.nvim_buf_get_lines(current_buf, 0, -1, false)
   if file_path ~= "" then
-    -- 絶対パスに正規化
+    -- Named buffer: use absolute path as key
     local normalized_path = vim.fn.fnamemodify(file_path, ":p")
-    local content = vim.api.nvim_buf_get_lines(current_buf, 0, -1, false)
     saved_contents[normalized_path] = content
+  else
+    -- Unnamed buffer: use [Buffer N] identifier as key
+    local buffer_id = BufferIdentifier.create_identifier(current_buf)
+    saved_contents[buffer_id] = content
   end
 
   -- StatusManager作成
@@ -362,13 +418,34 @@ function M.custom(prompt, use_output)
     return
   end
 
+  -- Check if current buffer has unsaved changes
+  local current_buf = vim.api.nvim_get_current_buf()
+  local is_modified = vim.bo[current_buf].modified
+
   -- 言語設定を適用
   local lang_code = Language.get_language_code(config.language, "inline")
   local final_prompt = Language.add_language_instruction(prompt, lang_code)
 
   -- プロンプトに@file:path:L10-L25形式のメンションを含める
   local full_prompt = final_prompt .. "\n\n" .. selection_context
+
   local opts = {}
+
+  -- Permissions設定を追加（configから）
+  if config.permissions then
+    if config.permissions.mode then
+      opts.permission_mode = config.permissions.mode
+    end
+    if config.permissions.allow then
+      opts.permissions_allow = vim.deepcopy(config.permissions.allow)
+    end
+    if config.permissions.deny then
+      opts.permissions_deny = vim.deepcopy(config.permissions.deny)
+    end
+  end
+
+  -- Apply unsaved buffer handling
+  full_prompt = apply_unsaved_buffer_handling(full_prompt, opts, is_modified)
 
   if use_output then
     M._execute_with_output(adapter, full_prompt, opts, "Result")

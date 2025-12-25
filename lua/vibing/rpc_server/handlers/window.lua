@@ -258,5 +258,4 @@ function M.win_open_file(params)
     bufnr = opened_bufnr
   }
 end
-
 return M

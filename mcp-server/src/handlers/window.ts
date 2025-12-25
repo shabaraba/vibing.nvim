@@ -146,4 +146,3 @@ export async function handleWinOpenFile(args: any) {
       },
     ],
   };
-}

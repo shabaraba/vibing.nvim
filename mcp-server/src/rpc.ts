@@ -114,4 +114,3 @@ export function closeSocket(): void {
   if (socket) {
     socket.destroy();
   }
-}

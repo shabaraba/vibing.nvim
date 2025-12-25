@@ -1,4 +1,5 @@
 local Context = require("vibing.context")
+local BufferIdentifier = require("vibing.utils.buffer_identifier")
 
 ---@class Vibing.ChatBuffer
 ---@field buf number?
@@ -192,10 +193,12 @@ function ChatBuffer:_setup_keymaps()
         -- Modified Filesに含まれているかチェック
         local modified_files = self:get_last_modified_files()
         if modified_files and #modified_files > 0 then
-          -- パスを正規化して比較
-          local normalized_cursor = vim.fn.fnamemodify(file_path, ":p")
+          -- パスを正規化して比較（[Buffer N]形式は除く）
+          local normalized_cursor = BufferIdentifier.normalize_path(file_path)
+
           for _, mf in ipairs(modified_files) do
-            local normalized_mf = vim.fn.fnamemodify(mf, ":p")
+            local normalized_mf = BufferIdentifier.normalize_path(mf)
+
             if normalized_mf == normalized_cursor then
               -- Modified Filesの一部なのでプレビューUIを開く
               local InlinePreview = require("vibing.ui.inline_preview")
