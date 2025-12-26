@@ -264,29 +264,7 @@ if (deniedTools.length > 0) {
 // askedTools will NOT be in allowedTools, forcing SDK to call canUseTool for them
 if (allowedTools.length > 0) {
   queryOptions.allowedTools = allowedTools;
-  console.log(
-    JSON.stringify({
-      type: 'debug',
-      message: `Setting allowedTools (forces canUseTool for others): ${JSON.stringify(allowedTools)}`,
-    })
-  );
-} else {
-  console.log(
-    JSON.stringify({ type: 'debug', message: `No allowedTools - SDK will auto-approve all tools` })
-  );
 }
-console.log(
-  JSON.stringify({
-    type: 'debug',
-    message: `Tools requiring canUseTool check (askedTools): ${JSON.stringify(askedTools)}`,
-  })
-);
-console.log(
-  JSON.stringify({
-    type: 'debug',
-    message: `Denied tools (disallowedTools): ${JSON.stringify(deniedTools)}`,
-  })
-);
 
 // Helper function: safe JSON stringify with error handling
 function safeJsonStringify(obj) {
