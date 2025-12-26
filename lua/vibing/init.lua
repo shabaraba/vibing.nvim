@@ -193,6 +193,72 @@ function M._register_commands()
 
     notify.info("Custom commands reloaded")
   end, { desc = "Reload custom slash commands" })
+
+  vim.api.nvim_create_user_command("VibingSave", function()
+    local chat = require("vibing.actions.chat")
+    if not chat.chat_buffer or not chat.chat_buffer:is_open() then
+      notify.warn("Please open a chat window first")
+      return
+    end
+    local save_handler = require("vibing.chat.handlers.save")
+    save_handler({}, chat.chat_buffer)
+  end, { desc = "Save current chat" })
+
+  vim.api.nvim_create_user_command("VibingMode", function(opts)
+    local chat = require("vibing.actions.chat")
+    if not chat.chat_buffer or not chat.chat_buffer:is_open() then
+      notify.warn("Please open a chat window first")
+      return
+    end
+    local mode_handler = require("vibing.chat.handlers.mode")
+    mode_handler(vim.split(opts.args, "%s+"), chat.chat_buffer)
+  end, {
+    nargs = 1,
+    desc = "Set agent execution mode (auto/plan/code/explore)",
+    complete = function(ArgLead, CmdLine, CursorPos)
+      local modes = { "auto", "plan", "code", "explore" }
+      local matches = {}
+      for _, mode in ipairs(modes) do
+        if mode:find("^" .. vim.pesc(ArgLead)) then
+          table.insert(matches, mode)
+        end
+      end
+      return matches
+    end,
+  })
+
+  vim.api.nvim_create_user_command("VibingModel", function(opts)
+    local chat = require("vibing.actions.chat")
+    if not chat.chat_buffer or not chat.chat_buffer:is_open() then
+      notify.warn("Please open a chat window first")
+      return
+    end
+    local model_handler = require("vibing.chat.handlers.model")
+    model_handler(vim.split(opts.args, "%s+"), chat.chat_buffer)
+  end, {
+    nargs = 1,
+    desc = "Set AI model (opus/sonnet/haiku)",
+    complete = function(ArgLead, CmdLine, CursorPos)
+      local models = { "opus", "sonnet", "haiku" }
+      local matches = {}
+      for _, model in ipairs(models) do
+        if model:find("^" .. vim.pesc(ArgLead)) then
+          table.insert(matches, model)
+        end
+      end
+      return matches
+    end,
+  })
+
+  vim.api.nvim_create_user_command("VibingSummarize", function()
+    local chat = require("vibing.actions.chat")
+    if not chat.chat_buffer or not chat.chat_buffer:is_open() then
+      notify.warn("Please open a chat window first")
+      return
+    end
+    local summarize_handler = require("vibing.chat.handlers.summarize")
+    summarize_handler({}, chat.chat_buffer)
+  end, { desc = "Summarize current conversation" })
 end
 
 ---現在のアダプターインスタンスを取得

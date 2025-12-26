@@ -528,6 +528,10 @@ require("vibing").setup({
 | `:VibingContext [path]`          | Add file to context (or from oil.nvim if no path)                                 |
 | `:VibingClearContext`            | Clear all context                                                                 |
 | `:VibingInline [action\|prompt]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled. |
+| `:VibingSave`                    | Save current chat to file                                                         |
+| `:VibingMode <mode>`             | Set agent execution mode (auto/plan/code/explore). Tab completion enabled.        |
+| `:VibingModel <model>`           | Set AI model (opus/sonnet/haiku). Tab completion enabled.                         |
+| `:VibingSummarize`               | Summarize current conversation in a floating window                               |
 | `:VibingCancel`                  | Cancel current request                                                            |
 
 **Command Semantics:**

@@ -119,6 +119,10 @@ use {
 | `:VibingClearContext`                 | Clear all context                                                                 |
 | `:VibingInline [action\|instruction]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled. |
 | `:VibingInlineAction`                 | Alias of `:VibingInline` (for backward compatibility)                             |
+| `:VibingSave`                         | Save current chat to file                                                         |
+| `:VibingMode <mode>`                  | Set agent execution mode (auto/plan/code/explore). Tab completion enabled.        |
+| `:VibingModel <model>`                | Set AI model (opus/sonnet/haiku). Tab completion enabled.                         |
+| `:VibingSummarize`                    | Summarize current conversation in a floating window                               |
 | `:VibingCancel`                       | Cancel current request                                                            |
 
 **Command Semantics:**
