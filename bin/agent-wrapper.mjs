@@ -3,6 +3,7 @@
  * Claude Agent SDK wrapper for vibing.nvim
  * Uses query API for full permission control support
  * Outputs streaming text chunks to stdout as JSON lines
+ * DEBUG VERSION: 2025-12-26 Enhanced permission debugging
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
@@ -21,6 +22,7 @@ let mode = null;
 let model = null;
 let permissionMode = 'acceptEdits';
 let prioritizeVibingLsp = true; // Default: prioritize vibing-nvim LSP tools
+let mcpEnabled = false; // Default: MCP integration disabled
 
 // Parse arguments
 for (let i = 0; i < args.length; i++) {
@@ -59,6 +61,7 @@ for (let i = 0; i < args.length; i++) {
       .split(',')
       .map((t) => t.trim())
       .filter((t) => t);
+    console.error('[DEBUG] Parsed askedTools:', askedTools);
     i++;
   } else if (args[i] === '--permission-mode' && args[i + 1]) {
     permissionMode = args[i + 1];
@@ -116,6 +119,9 @@ for (let i = 0; i < args.length; i++) {
   } else if (args[i] === '--prioritize-vibing-lsp' && args[i + 1]) {
     prioritizeVibingLsp = args[i + 1] === 'true';
     i++;
+  } else if (args[i] === '--mcp-enabled' && args[i + 1]) {
+    mcpEnabled = args[i + 1] === 'true';
+    i++;
   } else if (!args[i].startsWith('--')) {
     prompt = args[i];
   }
@@ -125,6 +131,26 @@ if (!prompt) {
   console.error('Usage: agent-wrapper.mjs --prompt <prompt> [--cwd <dir>] [--context <file>...]');
   process.exit(1);
 }
+
+// Output version info for debugging
+console.log(
+  JSON.stringify({
+    type: 'debug',
+    message: 'agent-wrapper.mjs DEBUG VERSION: 2025-12-26 Enhanced permission debugging',
+  })
+);
+
+// Debug: Output parsed permission settings
+console.log(
+  JSON.stringify({ type: 'debug', message: `Parsed allowedTools: ${JSON.stringify(allowedTools)}` })
+);
+console.log(
+  JSON.stringify({ type: 'debug', message: `Parsed deniedTools: ${JSON.stringify(deniedTools)}` })
+);
+console.log(
+  JSON.stringify({ type: 'debug', message: `Parsed askedTools: ${JSON.stringify(askedTools)}` })
+);
+console.log(JSON.stringify({ type: 'debug', message: `Permission mode: ${permissionMode}` }));
 
 // Build full prompt with context
 let fullPrompt = prompt;
@@ -222,7 +248,10 @@ if (contextFiles.length > 0 && !sessionId) {
 // Build query options
 const queryOptions = {
   cwd: cwd,
-  permissionMode: permissionMode,
+  // CRITICAL: Do NOT set permissionMode (even to 'default')
+  // Setting ANY permissionMode value causes SDK to bypass canUseTool callback
+  // Leave it undefined to ensure canUseTool is called for all tools
+  // ...(permissionMode === 'bypassPermissions' ? { permissionMode: permissionMode } : {}),
   // Required when using bypassPermissions
   allowDangerouslySkipPermissions: permissionMode === 'bypassPermissions',
   // Load user and project settings (~/.claude.json and .claude/)
@@ -234,15 +263,52 @@ const queryOptions = {
   settingSources: ['user', 'project'],
 };
 
-// Add allowed tools (auto-allowed without prompting)
-if (allowedTools.length > 0) {
-  queryOptions.allowedTools = allowedTools;
-}
+// Permission architecture notes:
+// - disallowedTools: SDK built-in feature that removes tools from model context entirely
+// - allowedTools: SDK built-in feature that restricts available tools (triggers canUseTool for others)
+// - canUseTool: Custom callback for fine-grained permission logic (deny > ask > allow)
+//
+// Strategy:
+// 1. Set allowedTools = allowedTools + askedTools (tools that CAN be used, subject to approval)
+// 2. Set disallowedTools = deniedTools (tools that CANNOT be used at all)
+// 3. Use canUseTool to differentiate between auto-approve (allow) and ask-first (ask)
 
-// Add disallowed tools
+// Set disallowedTools to completely block denied tools (removes from model context)
 if (deniedTools.length > 0) {
   queryOptions.disallowedTools = deniedTools;
 }
+
+// CRITICAL FINDING: SDK behavior differs from documentation
+// - If allowedTools is NOT set: SDK auto-approves ALL tools, never calls canUseTool
+// - If allowedTools IS set: SDK calls canUseTool for tools NOT in allowedTools
+//
+// Solution: Set allowedTools to auto-approved tools ONLY
+// askedTools will NOT be in allowedTools, forcing SDK to call canUseTool for them
+if (allowedTools.length > 0) {
+  queryOptions.allowedTools = allowedTools;
+  console.log(
+    JSON.stringify({
+      type: 'debug',
+      message: `Setting allowedTools (forces canUseTool for others): ${JSON.stringify(allowedTools)}`,
+    })
+  );
+} else {
+  console.log(
+    JSON.stringify({ type: 'debug', message: `No allowedTools - SDK will auto-approve all tools` })
+  );
+}
+console.log(
+  JSON.stringify({
+    type: 'debug',
+    message: `Tools requiring canUseTool check (askedTools): ${JSON.stringify(askedTools)}`,
+  })
+);
+console.log(
+  JSON.stringify({
+    type: 'debug',
+    message: `Denied tools (disallowedTools): ${JSON.stringify(deniedTools)}`,
+  })
+);
 
 // Helper function: safe JSON stringify with error handling
 function safeJsonStringify(obj) {
@@ -368,98 +434,366 @@ function checkRule(rule, toolName, input) {
 }
 
 // Add custom canUseTool callback for additional control
-// Helper: Parse Bash pattern like "Bash(git:*)" -> { tool: "bash", pattern: "git" }
-function parseBashPattern(toolStr) {
-  const bashPatternMatch = toolStr.match(/^bash\(([^:]+):\*\)$/i);
-  if (bashPatternMatch) {
-    return { tool: 'bash', pattern: bashPatternMatch[1].toLowerCase() };
+// Helper: Parse tool permission string like "Tool(pattern)" -> { toolName, ruleContent, type }
+// Follows Agent SDK PermissionRuleValue structure: { toolName: string, ruleContent?: string }
+function parseToolPattern(toolStr) {
+  // Match granular pattern: Tool(ruleContent)
+  const granularMatch = toolStr.match(/^([a-z]+)\((.+)\)$/i);
+  if (granularMatch) {
+    const toolName = granularMatch[1].toLowerCase();
+    const ruleContent = granularMatch[2];
+
+    // Determine pattern type based on tool name
+    if (toolName === 'bash') {
+      // Bash: wildcard (npm:*) or exact (npm install)
+      const isWildcard = ruleContent.match(/^([^:]+):\*$/);
+      return {
+        toolName: 'bash',
+        ruleContent: ruleContent.toLowerCase(),
+        type: isWildcard ? 'bash_wildcard' : 'bash_exact',
+      };
+    } else if (['read', 'write', 'edit'].includes(toolName)) {
+      // File tools: glob patterns (src/**/*.ts)
+      return {
+        toolName: toolName,
+        ruleContent: ruleContent,
+        type: 'file_glob',
+      };
+    } else if (['webfetch', 'websearch'].includes(toolName)) {
+      // Web tools: domain patterns (github.com, *.npmjs.com)
+      return {
+        toolName: toolName,
+        ruleContent: ruleContent.toLowerCase(),
+        type: 'domain_pattern',
+      };
+    } else if (['glob', 'grep'].includes(toolName)) {
+      // Search tools: patterns
+      return {
+        toolName: toolName,
+        ruleContent: ruleContent,
+        type: 'search_pattern',
+      };
+    }
+
+    // Unknown tool with pattern
+    return {
+      toolName: toolName,
+      ruleContent: ruleContent,
+      type: 'unknown_pattern',
+    };
   }
-  return { tool: toolStr.toLowerCase(), pattern: null };
+
+  // Simple tool name without pattern
+  return { toolName: toolStr.toLowerCase(), ruleContent: null, type: 'tool_name' };
 }
 
-// Helper: Check if tool matches permission string (including patterns)
-function matchesPermission(toolName, input, permissionStr) {
-  const parsed = parseBashPattern(permissionStr);
+// Helper: Match Bash command against permission pattern
+function matchesBashPattern(command, ruleContent, type) {
+  const cmd = command.trim().toLowerCase();
+  const rule = ruleContent.toLowerCase();
 
-  if (parsed.pattern) {
-    // Pattern-based Bash permission
-    if (toolName.toLowerCase() !== 'bash') {
-      return false;
-    }
-    if (!input.command) {
-      return false;
-    }
-    const commandParts = input.command.trim().split(/\s+/);
-    const baseCommand = commandParts[0].toLowerCase();
-    return (
-      baseCommand === parsed.pattern ||
-      (commandParts.length > 1 &&
-        commandParts[0].toLowerCase() + ' ' + commandParts[1].toLowerCase() === parsed.pattern)
+  console.error(
+    '[DEBUG] matchesBashPattern - command:',
+    command,
+    'ruleContent:',
+    ruleContent,
+    'type:',
+    type
+  );
+
+  if (type === 'bash_wildcard') {
+    // Extract base command from pattern: "npm:*" -> "npm"
+    const basePattern = rule.split(':')[0];
+    const cmdParts = cmd.split(/\s+/);
+    const result = cmdParts[0] === basePattern;
+    console.error(
+      '[DEBUG] matchesBashPattern wildcard - basePattern:',
+      basePattern,
+      'cmdParts[0]:',
+      cmdParts[0],
+      'result:',
+      result
     );
+    return result;
   } else {
-    // Simple tool name match
-    return toolName.toLowerCase() === parsed.tool;
+    // Exact match: "npm install" matches "npm install" or "npm install --save"
+    const result = cmd === rule || cmd.startsWith(rule + ' ');
+    console.error('[DEBUG] matchesBashPattern exact - result:', result);
+    return result;
+  }
+}
+
+// Helper: Match file path against glob pattern
+function matchesFileGlob(filePath, globPattern) {
+  // TODO: Implement glob matching logic
+  // Use matchGlob() helper function that already exists
+  return matchGlob(globPattern, filePath);
+}
+
+// Helper: Match URL domain against pattern
+function matchesDomainPattern(url, domainPattern) {
+  // TODO: Implement domain matching logic
+  // Examples:
+  // - "github.com" matches "https://github.com/..."
+  // - "*.npmjs.com" matches "https://registry.npmjs.com/..."
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname.toLowerCase();
+    const pattern = domainPattern.toLowerCase();
+
+    // Exact match
+    if (hostname === pattern) {
+      return true;
+    }
+
+    // Wildcard match: *.example.com
+    if (pattern.startsWith('*.')) {
+      const baseDomain = pattern.slice(2); // Remove "*."
+      return hostname === baseDomain || hostname.endsWith('.' + baseDomain);
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// Helper: Check if tool matches permission string (unified for all tools)
+function matchesPermission(toolName, input, permissionStr) {
+  try {
+    const parsed = parseToolPattern(permissionStr);
+
+    // Simple tool name match (no pattern)
+    if (parsed.type === 'tool_name') {
+      const permToolName = parsed.toolName;
+      const actualToolName = toolName.toLowerCase();
+
+      // Check for wildcard in tool name (e.g., "mcp__vibing-nvim__*")
+      if (permToolName.endsWith('*')) {
+        const prefix = permToolName.slice(0, -1); // Remove trailing '*'
+        return actualToolName.startsWith(prefix);
+      }
+
+      // Exact match
+      return actualToolName === permToolName;
+    }
+
+    // Tool name must match
+    if (toolName.toLowerCase() !== parsed.toolName) {
+      return false;
+    }
+
+    // Pattern-based matching
+    switch (parsed.type) {
+      case 'bash_wildcard':
+      case 'bash_exact':
+        return input.command
+          ? matchesBashPattern(input.command, parsed.ruleContent, parsed.type)
+          : false;
+
+      case 'file_glob':
+        return input.file_path ? matchesFileGlob(input.file_path, parsed.ruleContent) : false;
+
+      case 'domain_pattern':
+        return input.url ? matchesDomainPattern(input.url, parsed.ruleContent) : false;
+
+      case 'search_pattern':
+        // For Glob/Grep, pattern in ruleContent should match tool's pattern parameter
+        // This is a simple equality check for now
+        return input.pattern ? input.pattern === parsed.ruleContent : false;
+
+      default:
+        // Unknown pattern type - deny for safety
+        return false;
+    }
+  } catch (error) {
+    console.error(
+      '[ERROR] matchesPermission failed:',
+      error.message,
+      'toolName:',
+      toolName,
+      'permissionStr:',
+      permissionStr
+    );
+    // On error, deny for safety
+    return false;
   }
 }
 
 queryOptions.canUseTool = async (toolName, input) => {
-  // Check deny list first (with pattern support)
-  for (const deniedTool of deniedTools) {
-    if (matchesPermission(toolName, input, deniedTool)) {
-      return {
-        behavior: 'deny',
-        message: `Tool ${toolName} is denied by configuration: ${deniedTool}`,
-      };
-    }
-  }
+  try {
+    console.log(
+      JSON.stringify({
+        type: 'debug',
+        message: `[canUseTool] Called for: ${toolName}, input: ${JSON.stringify(input)}`,
+      })
+    );
 
-  // Check ask list (second priority - deny with guidance)
-  for (const askedTool of askedTools) {
-    if (matchesPermission(toolName, input, askedTool)) {
-      return {
-        behavior: 'deny',
-        message: `Tool ${toolName} requires user approval before use. To approve this tool, use the /allow ${askedTool} command or update the frontmatter permissions_allow list.`,
-      };
-    }
-  }
+    // Note: deniedTools are handled by queryOptions.disallowedTools (SDK built-in)
+    // They are already removed from model's context, so won't reach this callback.
 
-  // Check allow list (if specified, with pattern support)
-  if (allowedTools.length > 0) {
-    let allowed = false;
-    for (const allowedTool of allowedTools) {
-      if (matchesPermission(toolName, input, allowedTool)) {
-        allowed = true;
-        break;
-      }
+    // Implement acceptEdits mode: auto-approve Edit/Write tools
+    if (permissionMode === 'acceptEdits' && (toolName === 'Edit' || toolName === 'Write')) {
+      console.error('[DEBUG] acceptEdits mode: auto-approving', toolName);
+      return { behavior: 'allow', updatedInput: input };
     }
-    if (!allowed) {
-      return {
-        behavior: 'deny',
-        message: `Tool ${toolName} is not in the allowed list`,
-      };
-    }
-  }
 
-  // Check granular permission rules
-  if (permissionRules && permissionRules.length > 0) {
-    for (const rule of permissionRules) {
-      const ruleResult = checkRule(rule, toolName, input);
-      if (ruleResult === 'deny') {
+    // Special handling for vibing-nvim internal MCP tools
+    if (toolName.startsWith('mcp__vibing-nvim__')) {
+      if (mcpEnabled) {
+        console.error('[DEBUG] vibing-nvim MCP tool auto-allowed (mcp.enabled=true):', toolName);
+        return { behavior: 'allow', updatedInput: input };
+      } else {
+        console.error('[DEBUG] vibing-nvim MCP tool denied (mcp.enabled=false):', toolName);
         return {
           behavior: 'deny',
-          message: rule.message || `Tool ${toolName} is denied by permission rule`,
+          message:
+            'vibing.nvim MCP integration is disabled. Enable it in config: mcp.enabled = true',
         };
       }
-      // Note: "allow" from rule doesn't override deny list
-      // Rules are additional constraints, not overrides
     }
-  }
 
-  // Allow the tool
-  return {
-    behavior: 'allow',
-    updatedInput: input,
-  };
+    // Check ask list (first priority - but allow list can override)
+    console.log(JSON.stringify({ type: 'debug', message: `=== ASK LIST CHECK START ===` }));
+    console.log(
+      JSON.stringify({
+        type: 'debug',
+        message: `toolName: ${toolName}, askedTools: ${JSON.stringify(askedTools)}`,
+      })
+    );
+
+    for (const askedTool of askedTools) {
+      const askMatches = matchesPermission(toolName, input, askedTool);
+      console.log(
+        JSON.stringify({ type: 'debug', message: `Ask match check: ${askedTool} -> ${askMatches}` })
+      );
+
+      if (askMatches) {
+        console.log(
+          JSON.stringify({
+            type: 'debug',
+            message: `✓ Tool matched ask list: ${toolName} (pattern: ${askedTool})`,
+          })
+        );
+
+        // But check if it's also in the allow list (allow overrides ask)
+        let allowedByAllowList = false;
+        console.log(
+          JSON.stringify({
+            type: 'debug',
+            message: `Checking allow list: ${JSON.stringify(allowedTools)}`,
+          })
+        );
+        console.log(JSON.stringify({ type: 'debug', message: `Input: ${JSON.stringify(input)}` }));
+
+        for (const allowedTool of allowedTools) {
+          const matches = matchesPermission(toolName, input, allowedTool);
+          console.log(JSON.stringify({ type: 'debug', message: `  - ${allowedTool}: ${matches}` }));
+          if (matches) {
+            allowedByAllowList = true;
+            console.log(
+              JSON.stringify({ type: 'debug', message: `✓ MATCHED in allow list: ${allowedTool}` })
+            );
+            break;
+          }
+        }
+
+        if (!allowedByAllowList) {
+          // Tool is in ask list and NOT in allow list
+          // Issue #29 workaround: In resume sessions, Agent SDK bypasses canUseTool
+          // So we must deny (not ask) to prevent unauthorized execution
+          if (sessionId) {
+            // Resume session: deny to prevent bypass (Issue #29)
+            return {
+              behavior: 'deny',
+              message: `Tool ${toolName} requires user approval before use. Add it to the allow list with /allow ${askedTool} to enable in resume sessions.`,
+            };
+          } else {
+            // New session: ask for user confirmation (normal behavior)
+            return {
+              behavior: 'ask',
+              updatedInput: input,
+            };
+          }
+        }
+        // If allowed by allow list, auto-approve immediately (allow overrides ask)
+        console.error('[DEBUG] Tool allowed via allow list override');
+        return {
+          behavior: 'allow',
+          updatedInput: input,
+        };
+      }
+    }
+
+    // Check allow list (if specified, with pattern support)
+    if (allowedTools.length > 0) {
+      let allowed = false;
+      for (const allowedTool of allowedTools) {
+        if (matchesPermission(toolName, input, allowedTool)) {
+          allowed = true;
+          break;
+        }
+      }
+      if (!allowed) {
+        // Generate context-aware error message based on tool type
+        const toolLower = toolName.toLowerCase();
+        const toolPatterns = allowedTools.filter((t) =>
+          t.toLowerCase().startsWith(toolLower + '(')
+        );
+
+        let message = `Tool ${toolName} is not in the allowed list`;
+
+        if (toolPatterns.length > 0) {
+          // User has granular patterns for this tool - provide specific feedback
+          const patterns = toolPatterns.map((p) => `'${p}'`).join(', ');
+
+          if (toolLower === 'bash' && input.command) {
+            message = `Bash command '${input.command}' does not match any allowed patterns. Allowed: ${patterns}`;
+          } else if (['read', 'write', 'edit'].includes(toolLower) && input.file_path) {
+            message = `${toolName} access to '${input.file_path}' does not match any allowed patterns. Allowed: ${patterns}`;
+          } else if (['webfetch', 'websearch'].includes(toolLower) && input.url) {
+            message = `${toolName} access to '${input.url}' does not match any allowed patterns. Allowed: ${patterns}`;
+          } else if (['glob', 'grep'].includes(toolLower) && input.pattern) {
+            message = `${toolName} pattern '${input.pattern}' does not match any allowed patterns. Allowed: ${patterns}`;
+          }
+        }
+
+        return {
+          behavior: 'deny',
+          message: message,
+        };
+      }
+    }
+
+    // Check granular permission rules
+    if (permissionRules && permissionRules.length > 0) {
+      for (const rule of permissionRules) {
+        const ruleResult = checkRule(rule, toolName, input);
+        if (ruleResult === 'deny') {
+          return {
+            behavior: 'deny',
+            message: rule.message || `Tool ${toolName} is denied by permission rule`,
+          };
+        }
+        // Note: "allow" from rule doesn't override deny list
+        // Rules are additional constraints, not overrides
+      }
+    }
+
+    // Allow the tool
+    return {
+      behavior: 'allow',
+      updatedInput: input,
+    };
+  } catch (error) {
+    console.error('[ERROR] canUseTool failed:', error.message, error.stack);
+    console.error('[ERROR] toolName:', toolName, 'input:', JSON.stringify(input));
+    // On error, deny for safety
+    return {
+      behavior: 'deny',
+      message: `Permission check failed due to internal error: ${error.message}`,
+    };
+  }
 };
 
 // Add mode if provided (code, plan, auto, etc.)
@@ -483,6 +817,26 @@ const processedToolUseIds = new Set(); // Track processed tool_use IDs to preven
 const toolUseMap = new Map(); // Map tool_use_id to tool_name for tracking MCP tool results
 
 try {
+  // Debug: Verify canUseTool is set before calling query()
+  console.log(
+    JSON.stringify({
+      type: 'debug',
+      message: `queryOptions.canUseTool is ${queryOptions.canUseTool ? 'SET' : 'NOT SET'}`,
+    })
+  );
+  console.log(
+    JSON.stringify({
+      type: 'debug',
+      message: `queryOptions.permissionMode: ${queryOptions.permissionMode}`,
+    })
+  );
+  console.log(
+    JSON.stringify({
+      type: 'debug',
+      message: `queryOptions.allowDangerouslySkipPermissions: ${queryOptions.allowDangerouslySkipPermissions}`,
+    })
+  );
+
   // Create query with all options
   const result = query({
     prompt: fullPrompt,

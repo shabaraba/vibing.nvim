@@ -42,22 +42,55 @@ end
 ---@return string? command_name コマンド名（コマンドでない場合はnil）
 ---@return string[] args コマンド引数の配列（空配列の場合あり）
 function M.parse(message)
-  -- 先頭の/を削除してスペースで分割
+  -- 先頭の/を削除してスペースで分割（granular構文を保持）
   local trimmed = vim.trim(message)
   if not trimmed:match("^/") then
     return nil, {}
   end
 
-  -- /commandとそれ以降を分離
-  local parts = vim.split(trimmed:sub(2), "%s+", { trimempty = true })
-  if #parts == 0 then
+  -- /を削除
+  local without_slash = trimmed:sub(2)
+
+  -- コマンド名を抽出（最初の空白まで）
+  local command_name = without_slash:match("^(%S+)")
+  if not command_name then
     return nil, {}
   end
 
-  local command_name = parts[1]
+  -- 引数部分を抽出（コマンド名の後）
+  local args_string = without_slash:sub(#command_name + 1):match("^%s*(.*)$")
+  if not args_string or args_string == "" then
+    return command_name, {}
+  end
+
+  -- 引数を分割（Tool(pattern)形式を保持）
   local args = {}
-  for i = 2, #parts do
-    table.insert(args, parts[i])
+  local current_arg = ""
+  local paren_depth = 0
+
+  for i = 1, #args_string do
+    local char = args_string:sub(i, i)
+
+    if char == "(" then
+      paren_depth = paren_depth + 1
+      current_arg = current_arg .. char
+    elseif char == ")" then
+      paren_depth = paren_depth - 1
+      current_arg = current_arg .. char
+    elseif char:match("%s") and paren_depth == 0 then
+      -- 空白かつ括弧の外側：引数の区切り
+      if current_arg ~= "" then
+        table.insert(args, current_arg)
+        current_arg = ""
+      end
+    else
+      current_arg = current_arg .. char
+    end
+  end
+
+  -- 最後の引数を追加
+  if current_arg ~= "" then
+    table.insert(args, current_arg)
   end
 
   return command_name, args

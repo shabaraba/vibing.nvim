@@ -51,6 +51,11 @@ return function(args, chat_buffer)
   if not valid_tool then
     notify.error(string.format("Invalid tool: %s", tool))
     notify.info("Valid tools: " .. table.concat(tools.VALID_TOOLS, ", "))
+    notify.info("Granular patterns:")
+    notify.info("  Bash(npm install) - exact command")
+    notify.info("  Bash(git:*) - wildcard")
+    notify.info("  Read(src/**/*.ts) - file glob")
+    notify.info("  WebFetch(github.com) - domain")
     return false
   end
 

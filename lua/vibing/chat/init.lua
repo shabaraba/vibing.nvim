@@ -56,7 +56,7 @@ function M.setup()
   commands.register({
     name = "allow",
     handler = require("vibing.chat.handlers.allow"),
-    description = "Allow tool: /allow <tool> or /allow -<tool> to remove",
+    description = "Allow tool: /allow <tool>, /allow Tool(pattern), or /allow -<tool> to remove",
   })
 
   commands.register({

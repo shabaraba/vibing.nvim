@@ -202,6 +202,8 @@ function M.send(chat_buffer, message)
   local modified_files = {}
   local file_tools = { Edit = true, Write = true, nvim_set_buffer = true }
 
+  vim.notify("[DEBUG] Frontmatter permissions_ask: " .. vim.inspect(frontmatter.permissions_ask), vim.log.levels.INFO)
+
   local opts = {
     streaming = true,
     action_type = "chat",

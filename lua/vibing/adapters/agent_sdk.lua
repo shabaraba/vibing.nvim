@@ -105,8 +105,11 @@ function AgentSDK:build_command(prompt, opts)
 
   local ask_tools = opts.permissions_ask
   if ask_tools and #ask_tools > 0 then
+    vim.notify("[DEBUG] Passing permissions_ask to wrapper: " .. vim.inspect(ask_tools), vim.log.levels.INFO)
     table.insert(cmd, "--ask")
     table.insert(cmd, table.concat(ask_tools, ","))
+  else
+    vim.notify("[DEBUG] No permissions_ask found in opts", vim.log.levels.WARN)
   end
 
   -- Add permission mode: Use frontmatter only
@@ -130,8 +133,18 @@ function AgentSDK:build_command(prompt, opts)
     table.insert(cmd, tostring(prioritize_vibing_lsp))
   end
 
+  -- Add mcp_enabled flag: Use config only
+  local mcp_enabled = self.config.mcp and self.config.mcp.enabled
+  if mcp_enabled ~= nil then
+    table.insert(cmd, "--mcp-enabled")
+    table.insert(cmd, tostring(mcp_enabled))
+  end
+
   table.insert(cmd, "--prompt")
   table.insert(cmd, prompt)
+
+  -- DEBUG: Log the full command being executed
+  vim.notify("[DEBUG] Executing command: " .. table.concat(cmd, " "), vim.log.levels.INFO)
 
   return cmd
 end
@@ -221,6 +234,13 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
                 on_chunk(msg.text)
               elseif msg.type == "error" then
                 table.insert(error_output, msg.message or "Unknown error")
+              elseif msg.type == "debug" and msg.message then
+                -- Debug message: notify and output to chat
+                vim.schedule(function()
+                  vim.notify("[AGENT DEBUG] " .. msg.message, vim.log.levels.INFO)
+                end)
+                table.insert(output, "\n[DEBUG] " .. msg.message .. "\n")
+                on_chunk("\n[DEBUG] " .. msg.message .. "\n")
               end
               -- "done" type is handled by process exit
             end

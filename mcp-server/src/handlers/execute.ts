@@ -15,3 +15,4 @@ export async function handleExecute(args: any) {
   return {
     content: [{ type: 'text', text: `Executed: ${args.command}` }],
   };
+}

@@ -114,7 +114,7 @@ describe("vibing.chat.init", function()
         count = count + 1
       end
 
-      assert.equals(12, count)
+      assert.equals(13, count)
     end)
 
     it("should be idempotent (can be called multiple times)", function()
@@ -126,7 +126,7 @@ describe("vibing.chat.init", function()
         count = count + 1
       end
 
-      assert.equals(12, count)
+      assert.equals(13, count)
     end)
 
     it("should register commands with correct descriptions", function()

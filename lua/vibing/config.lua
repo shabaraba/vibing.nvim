@@ -155,7 +155,7 @@ M.defaults = {
     auto_dismiss_timeout = 2000,  -- Auto-dismiss done notification after 2s
   },
   mcp = {
-    enabled = false,  -- MCP integration disabled by default
+    enabled = true,  -- MCP integration enabled by default (auto-allows vibing-nvim MCP tools)
     rpc_port = 9876,  -- RPC server port
     auto_setup = false,  -- Auto-build MCP server on plugin install
     auto_configure_claude_json = false,  -- Auto-configure ~/.claude.json
