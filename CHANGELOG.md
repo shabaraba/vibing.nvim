@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.10.0 (2025-12-26)
+
+## What's Changed
+
+- feat: move cursor to end after send to enable auto-scroll mode by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/219
+- feat: add permissions_ask for manual tool approval workflow (Issue #174) by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/223
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.9.1...v1.10.0
+
 ## 1.9.1 (2025-12-25)
 
 ## What's Changed
