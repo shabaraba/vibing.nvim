@@ -555,23 +555,15 @@ end
 ---@param action "add"|"remove" 操作種別
 ---@return boolean success
 function ChatBuffer:update_frontmatter_list(key, value, action)
-  vim.notify(
-    string.format("[DEBUG] update_frontmatter_list: key='%s', value='%s', action='%s'", key, value, action),
-    vim.log.levels.INFO
-  )
-
   if not key or key == "" or not value or value == "" then
-    vim.notify("[DEBUG] Invalid key or value", vim.log.levels.ERROR)
     return false
   end
 
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
-    vim.notify("[DEBUG] Invalid buffer", vim.log.levels.ERROR)
     return false
   end
 
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, 50, false)
-  vim.notify(string.format("[DEBUG] Read %d lines from buffer", #lines), vim.log.levels.INFO)
 
   local frontmatter_end = 0
   local key_start = nil
@@ -609,20 +601,8 @@ function ChatBuffer:update_frontmatter_list(key, value, action)
   end
 
   if frontmatter_end == 0 then
-    vim.notify("[DEBUG] Frontmatter not found", vim.log.levels.ERROR)
     return false
   end
-
-  vim.notify(
-    string.format(
-      "[DEBUG] Frontmatter parsed: end=%d, key_start=%s, key_end=%s, items=%s",
-      frontmatter_end,
-      tostring(key_start),
-      tostring(key_end),
-      vim.inspect(current_items)
-    ),
-    vim.log.levels.INFO
-  )
 
   -- リストを更新
   if action == "add" then
@@ -656,24 +636,13 @@ function ChatBuffer:update_frontmatter_list(key, value, action)
   if key_start then
     -- 既存のキーを置換
     local end_line = key_end or key_start
-    vim.notify(
-      string.format("[DEBUG] Replacing lines %d-%d with %d new lines", key_start - 1, end_line, #new_lines),
-      vim.log.levels.INFO
-    )
     vim.api.nvim_buf_set_lines(self.buf, key_start - 1, end_line, false, new_lines)
   elseif #current_items > 0 then
     -- 新規キーを追加（frontmatter終了の直前）
-    vim.notify(
-      string.format("[DEBUG] Inserting %d new lines before line %d", #new_lines, frontmatter_end - 1),
-      vim.log.levels.INFO
-    )
     vim.api.nvim_buf_set_lines(self.buf, frontmatter_end - 1, frontmatter_end - 1, false, new_lines)
-  else
-    vim.notify("[DEBUG] No items to write, skipping buffer update", vim.log.levels.WARN)
   end
 
   self:update_frontmatter("updated_at", os.date("%Y-%m-%dT%H:%M:%S"), false)
-  vim.notify("[DEBUG] update_frontmatter_list completed successfully", vim.log.levels.INFO)
   return true
 end
 

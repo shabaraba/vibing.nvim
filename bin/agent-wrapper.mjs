@@ -3,7 +3,6 @@
  * Claude Agent SDK wrapper for vibing.nvim
  * Uses query API for full permission control support
  * Outputs streaming text chunks to stdout as JSON lines
- * DEBUG VERSION: 2025-12-26 Enhanced permission debugging
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
@@ -61,7 +60,6 @@ for (let i = 0; i < args.length; i++) {
       .split(',')
       .map((t) => t.trim())
       .filter((t) => t);
-    console.error('[DEBUG] Parsed askedTools:', askedTools);
     i++;
   } else if (args[i] === '--permission-mode' && args[i + 1]) {
     permissionMode = args[i + 1];
@@ -131,26 +129,6 @@ if (!prompt) {
   console.error('Usage: agent-wrapper.mjs --prompt <prompt> [--cwd <dir>] [--context <file>...]');
   process.exit(1);
 }
-
-// Output version info for debugging
-console.log(
-  JSON.stringify({
-    type: 'debug',
-    message: 'agent-wrapper.mjs DEBUG VERSION: 2025-12-26 Enhanced permission debugging',
-  })
-);
-
-// Debug: Output parsed permission settings
-console.log(
-  JSON.stringify({ type: 'debug', message: `Parsed allowedTools: ${JSON.stringify(allowedTools)}` })
-);
-console.log(
-  JSON.stringify({ type: 'debug', message: `Parsed deniedTools: ${JSON.stringify(deniedTools)}` })
-);
-console.log(
-  JSON.stringify({ type: 'debug', message: `Parsed askedTools: ${JSON.stringify(askedTools)}` })
-);
-console.log(JSON.stringify({ type: 'debug', message: `Permission mode: ${permissionMode}` }));
 
 // Build full prompt with context
 let fullPrompt = prompt;
@@ -492,34 +470,14 @@ function matchesBashPattern(command, ruleContent, type) {
   const cmd = command.trim().toLowerCase();
   const rule = ruleContent.toLowerCase();
 
-  console.error(
-    '[DEBUG] matchesBashPattern - command:',
-    command,
-    'ruleContent:',
-    ruleContent,
-    'type:',
-    type
-  );
-
   if (type === 'bash_wildcard') {
     // Extract base command from pattern: "npm:*" -> "npm"
     const basePattern = rule.split(':')[0];
     const cmdParts = cmd.split(/\s+/);
-    const result = cmdParts[0] === basePattern;
-    console.error(
-      '[DEBUG] matchesBashPattern wildcard - basePattern:',
-      basePattern,
-      'cmdParts[0]:',
-      cmdParts[0],
-      'result:',
-      result
-    );
-    return result;
+    return cmdParts[0] === basePattern;
   } else {
     // Exact match: "npm install" matches "npm install" or "npm install --save"
-    const result = cmd === rule || cmd.startsWith(rule + ' ');
-    console.error('[DEBUG] matchesBashPattern exact - result:', result);
-    return result;
+    return cmd === rule || cmd.startsWith(rule + ' ');
   }
 }
 
@@ -622,29 +580,19 @@ function matchesPermission(toolName, input, permissionStr) {
 
 queryOptions.canUseTool = async (toolName, input) => {
   try {
-    console.log(
-      JSON.stringify({
-        type: 'debug',
-        message: `[canUseTool] Called for: ${toolName}, input: ${JSON.stringify(input)}`,
-      })
-    );
-
     // Note: deniedTools are handled by queryOptions.disallowedTools (SDK built-in)
     // They are already removed from model's context, so won't reach this callback.
 
     // Implement acceptEdits mode: auto-approve Edit/Write tools
     if (permissionMode === 'acceptEdits' && (toolName === 'Edit' || toolName === 'Write')) {
-      console.error('[DEBUG] acceptEdits mode: auto-approving', toolName);
       return { behavior: 'allow', updatedInput: input };
     }
 
     // Special handling for vibing-nvim internal MCP tools
     if (toolName.startsWith('mcp__vibing-nvim__')) {
       if (mcpEnabled) {
-        console.error('[DEBUG] vibing-nvim MCP tool auto-allowed (mcp.enabled=true):', toolName);
         return { behavior: 'allow', updatedInput: input };
       } else {
-        console.error('[DEBUG] vibing-nvim MCP tool denied (mcp.enabled=false):', toolName);
         return {
           behavior: 'deny',
           message:
@@ -654,46 +602,17 @@ queryOptions.canUseTool = async (toolName, input) => {
     }
 
     // Check ask list (first priority - but allow list can override)
-    console.log(JSON.stringify({ type: 'debug', message: `=== ASK LIST CHECK START ===` }));
-    console.log(
-      JSON.stringify({
-        type: 'debug',
-        message: `toolName: ${toolName}, askedTools: ${JSON.stringify(askedTools)}`,
-      })
-    );
-
     for (const askedTool of askedTools) {
       const askMatches = matchesPermission(toolName, input, askedTool);
-      console.log(
-        JSON.stringify({ type: 'debug', message: `Ask match check: ${askedTool} -> ${askMatches}` })
-      );
 
       if (askMatches) {
-        console.log(
-          JSON.stringify({
-            type: 'debug',
-            message: `✓ Tool matched ask list: ${toolName} (pattern: ${askedTool})`,
-          })
-        );
-
         // But check if it's also in the allow list (allow overrides ask)
         let allowedByAllowList = false;
-        console.log(
-          JSON.stringify({
-            type: 'debug',
-            message: `Checking allow list: ${JSON.stringify(allowedTools)}`,
-          })
-        );
-        console.log(JSON.stringify({ type: 'debug', message: `Input: ${JSON.stringify(input)}` }));
 
         for (const allowedTool of allowedTools) {
           const matches = matchesPermission(toolName, input, allowedTool);
-          console.log(JSON.stringify({ type: 'debug', message: `  - ${allowedTool}: ${matches}` }));
           if (matches) {
             allowedByAllowList = true;
-            console.log(
-              JSON.stringify({ type: 'debug', message: `✓ MATCHED in allow list: ${allowedTool}` })
-            );
             break;
           }
         }
@@ -717,7 +636,6 @@ queryOptions.canUseTool = async (toolName, input) => {
           }
         }
         // If allowed by allow list, auto-approve immediately (allow overrides ask)
-        console.error('[DEBUG] Tool allowed via allow list override');
         return {
           behavior: 'allow',
           updatedInput: input,
@@ -817,26 +735,6 @@ const processedToolUseIds = new Set(); // Track processed tool_use IDs to preven
 const toolUseMap = new Map(); // Map tool_use_id to tool_name for tracking MCP tool results
 
 try {
-  // Debug: Verify canUseTool is set before calling query()
-  console.log(
-    JSON.stringify({
-      type: 'debug',
-      message: `queryOptions.canUseTool is ${queryOptions.canUseTool ? 'SET' : 'NOT SET'}`,
-    })
-  );
-  console.log(
-    JSON.stringify({
-      type: 'debug',
-      message: `queryOptions.permissionMode: ${queryOptions.permissionMode}`,
-    })
-  );
-  console.log(
-    JSON.stringify({
-      type: 'debug',
-      message: `queryOptions.allowDangerouslySkipPermissions: ${queryOptions.allowDangerouslySkipPermissions}`,
-    })
-  );
-
   // Create query with all options
   const result = query({
     prompt: fullPrompt,
