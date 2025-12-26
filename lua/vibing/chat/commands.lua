@@ -75,7 +75,7 @@ function M.parse(message)
       paren_depth = paren_depth + 1
       current_arg = current_arg .. char
     elseif char == ")" then
-      paren_depth = paren_depth - 1
+      paren_depth = math.max(0, paren_depth - 1)
       current_arg = current_arg .. char
     elseif char:match("%s") and paren_depth == 0 then
       -- 空白かつ括弧の外側：引数の区切り

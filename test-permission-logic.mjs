@@ -3,6 +3,8 @@
  * Test permission matching logic in isolation
  */
 
+/* global URL */
+
 // Copy the exact functions from agent-wrapper.mjs
 function parseToolPattern(toolStr) {
   // Match granular pattern: Tool(ruleContent)
@@ -67,6 +69,58 @@ function matchesBashPattern(command, ruleContent, type) {
   } else {
     // Exact match: "npm install" matches "npm install" or "npm install --save"
     return cmd === rule || cmd.startsWith(rule + ' ');
+  }
+}
+
+function matchGlob(pattern, str) {
+  // Validate input to prevent ReDoS
+  if (typeof pattern !== 'string' || typeof str !== 'string') {
+    return false;
+  }
+
+  // Limit pattern length to prevent ReDoS attacks
+  if (pattern.length > 1000) {
+    return false;
+  }
+
+  try {
+    // Escape all regex special chars except * and ?
+    const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    // Replace glob wildcards with regex equivalents
+    // Use non-greedy matching to reduce ReDoS risk
+    const regexPattern = escaped.replace(/\*/g, '.*?').replace(/\?/g, '.');
+    const regex = new RegExp(`^${regexPattern}$`);
+    return regex.test(str);
+  } catch {
+    // Return false if regex compilation fails
+    return false;
+  }
+}
+
+function matchesFileGlob(filePath, globPattern) {
+  return matchGlob(globPattern, filePath);
+}
+
+function matchesDomainPattern(url, domainPattern) {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname.toLowerCase();
+    const pattern = domainPattern.toLowerCase();
+
+    // Exact match
+    if (hostname === pattern) {
+      return true;
+    }
+
+    // Wildcard match: *.example.com
+    if (pattern.startsWith('*.')) {
+      const baseDomain = pattern.slice(2); // Remove "*."
+      return hostname === baseDomain || hostname.endsWith('.' + baseDomain);
+    }
+
+    return false;
+  } catch {
+    return false;
   }
 }
 
