@@ -461,17 +461,14 @@ function matchesBashPattern(command, ruleContent, type) {
 
 // Helper: Match file path against glob pattern
 function matchesFileGlob(filePath, globPattern) {
-  // TODO: Implement glob matching logic
-  // Use matchGlob() helper function that already exists
   return matchGlob(globPattern, filePath);
 }
 
 // Helper: Match URL domain against pattern
+// Examples:
+// - "github.com" matches "https://github.com/..."
+// - "*.npmjs.com" matches "https://registry.npmjs.com/..."
 function matchesDomainPattern(url, domainPattern) {
-  // TODO: Implement domain matching logic
-  // Examples:
-  // - "github.com" matches "https://github.com/..."
-  // - "*.npmjs.com" matches "https://registry.npmjs.com/..."
   try {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname.toLowerCase();
@@ -543,14 +540,17 @@ function matchesPermission(toolName, input, permissionStr) {
         return false;
     }
   } catch (error) {
-    console.error(
-      '[ERROR] matchesPermission failed:',
-      error.message,
-      'toolName:',
-      toolName,
-      'permissionStr:',
-      permissionStr
+    const errorMsg = `Permission matching failed for ${toolName} with pattern ${permissionStr}: ${error.message}`;
+    console.error('[ERROR]', errorMsg, error.stack);
+
+    // Notify user via JSON Lines protocol (displayed in chat)
+    console.log(
+      JSON.stringify({
+        type: 'error',
+        message: errorMsg,
+      })
     );
+
     // On error, deny for safety
     return false;
   }
@@ -684,10 +684,17 @@ queryOptions.canUseTool = async (toolName, input) => {
   } catch (error) {
     console.error('[ERROR] canUseTool failed:', error.message, error.stack);
     console.error('[ERROR] toolName:', toolName, 'input:', JSON.stringify(input));
-    // On error, deny for safety
+
+    // Distinguish between implementation bugs and runtime errors
+    if (error instanceof TypeError || error instanceof ReferenceError) {
+      // Implementation bugs should fail fast for debugging
+      throw error;
+    }
+
+    // For other errors, deny for safety but notify user
     return {
       behavior: 'deny',
-      message: `Permission check failed due to internal error: ${error.message}`,
+      message: `Permission check failed due to internal error: ${error.message}. Please report this issue if it persists.`,
     };
   }
 };
