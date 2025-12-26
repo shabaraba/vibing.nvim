@@ -41,7 +41,7 @@
     "lint:md": "markdownlint '**/*.md' --ignore node_modules"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.1.70",
+    "@anthropic-ai/claude-agent-sdk": "^0.1.76",
     "neovim": "^5.4.0",
     "zod": "^4.2.1"
   },

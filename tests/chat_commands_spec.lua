@@ -115,6 +115,34 @@ describe("vibing.chat.commands", function()
       assert.is_nil(command_name)
       assert.same({}, args)
     end)
+
+    it("should preserve granular patterns with parentheses and spaces", function()
+      local command_name, args = Commands.parse("/allow Bash(npm install)")
+
+      assert.equals("allow", command_name)
+      assert.same({ "Bash(npm install)" }, args)
+    end)
+
+    it("should handle multiple granular patterns", function()
+      local command_name, args = Commands.parse("/allow Bash(npm install) Read(src/**/*.ts)")
+
+      assert.equals("allow", command_name)
+      assert.same({ "Bash(npm install)", "Read(src/**/*.ts)" }, args)
+    end)
+
+    it("should handle granular patterns with removal flag", function()
+      local command_name, args = Commands.parse("/allow -Bash(git commit)")
+
+      assert.equals("allow", command_name)
+      assert.same({ "-Bash(git commit)" }, args)
+    end)
+
+    it("should handle nested parentheses in patterns", function()
+      local command_name, args = Commands.parse("/allow Grep(function.*\\(.*\\))")
+
+      assert.equals("allow", command_name)
+      assert.same({ "Grep(function.*\\(.*\\))" }, args)
+    end)
   end)
 
   describe("execute", function()

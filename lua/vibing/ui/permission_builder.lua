@@ -317,6 +317,7 @@ end
 function M.prompt_permission_type(tool_name, callback)
   local choices = {
     { type = "allow", description = "Allow - このツールの使用を許可" },
+    { type = "ask", description = "Ask - このツールの使用前に確認を要求" },
     { type = "deny", description = "Deny - このツールの使用を拒否" },
   }
 

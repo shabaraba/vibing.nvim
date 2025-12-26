@@ -154,3 +154,4 @@ export async function handleLspCallHierarchyOutgoing(args: any) {
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
   };
+}

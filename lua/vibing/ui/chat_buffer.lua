@@ -337,6 +337,12 @@ function ChatBuffer:_init_content()
         table.insert(lines, "  - " .. tool)
       end
     end
+    if config.permissions.ask and #config.permissions.ask > 0 then
+      table.insert(lines, "permissions_ask:")
+      for _, tool in ipairs(config.permissions.ask) do
+        table.insert(lines, "  - " .. tool)
+      end
+    end
   end
 
   table.insert(lines, "---")
@@ -558,6 +564,7 @@ function ChatBuffer:update_frontmatter_list(key, value, action)
   end
 
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, 50, false)
+
   local frontmatter_end = 0
   local key_start = nil
   local key_end = nil
@@ -577,7 +584,8 @@ function ChatBuffer:update_frontmatter_list(key, value, action)
       end
       break
     elseif in_frontmatter then
-      if line:match("^" .. key .. ":") then
+      -- Use plain string comparison instead of pattern matching to handle special chars
+      if line:sub(1, #key + 1) == key .. ":" then
         key_start = i
         in_target_list = true
       elseif in_target_list then

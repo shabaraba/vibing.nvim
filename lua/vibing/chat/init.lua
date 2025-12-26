@@ -56,13 +56,19 @@ function M.setup()
   commands.register({
     name = "allow",
     handler = require("vibing.chat.handlers.allow"),
-    description = "Allow tool: /allow <tool> or /allow -<tool> to remove",
+    description = "Allow tool: /allow <tool>, /allow Tool(pattern), or /allow -<tool> to remove",
   })
 
   commands.register({
     name = "deny",
     handler = require("vibing.chat.handlers.deny"),
     description = "Deny tool: /deny <tool> or /deny -<tool> to remove",
+  })
+
+  commands.register({
+    name = "ask",
+    handler = require("vibing.chat.handlers.ask"),
+    description = "Ask before using tool: /ask <tool> or /ask -<tool> to remove",
   })
 
   commands.register({

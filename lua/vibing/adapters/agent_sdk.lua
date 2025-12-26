@@ -103,6 +103,12 @@ function AgentSDK:build_command(prompt, opts)
     table.insert(cmd, table.concat(deny_tools, ","))
   end
 
+  local ask_tools = opts.permissions_ask
+  if ask_tools and #ask_tools > 0 then
+    table.insert(cmd, "--ask")
+    table.insert(cmd, table.concat(ask_tools, ","))
+  end
+
   -- Add permission mode: Use frontmatter only
   local permission_mode = opts.permission_mode
   if permission_mode then
@@ -122,6 +128,13 @@ function AgentSDK:build_command(prompt, opts)
   if prioritize_vibing_lsp ~= nil then
     table.insert(cmd, "--prioritize-vibing-lsp")
     table.insert(cmd, tostring(prioritize_vibing_lsp))
+  end
+
+  -- Add mcp_enabled flag: Use config only
+  local mcp_enabled = self.config.mcp and self.config.mcp.enabled
+  if mcp_enabled ~= nil then
+    table.insert(cmd, "--mcp-enabled")
+    table.insert(cmd, tostring(mcp_enabled))
   end
 
   table.insert(cmd, "--prompt")
