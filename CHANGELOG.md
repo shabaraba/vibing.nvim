@@ -3,8 +3,8 @@
 ## 1.11.0 (2025-12-27)
 
 ## What's Changed
-* feat: add :VibingSetFileTitle command for AI-powered chat file renaming by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/228
 
+- feat: add :VibingSetFileTitle command for AI-powered chat file renaming by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/228
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.10.0...v1.11.0
 
