@@ -54,7 +54,7 @@ end
 
 ---:VibingSetFileTitleコマンドハンドラー
 ---チャット内容からAIにタイトルを生成させ、ファイル名を変更
----旧ファイルを削除し、新しいファイル名で保存
+---vim.fn.rename()でアトミックにリネーム
 ---@param _ string[] コマンド引数（このハンドラーでは未使用）
 ---@param chat_buffer Vibing.ChatBuffer コマンドを実行したチャットバッファ
 ---@return boolean リクエストを送信した場合true
@@ -100,24 +100,39 @@ return function(_, chat_buffer)
 
     local new_file_path = get_unique_file_path(save_dir, new_filename)
 
-    chat_buffer.file_path = new_file_path
-    vim.api.nvim_buf_set_name(chat_buffer.buf, new_file_path)
-
-    local ok, save_err = pcall(function()
-      vim.api.nvim_buf_call(chat_buffer.buf, function()
-        vim.cmd("write")
+    if old_file_path and vim.fn.filereadable(old_file_path) == 1 then
+      local ok, save_err = pcall(function()
+        vim.api.nvim_buf_call(chat_buffer.buf, function()
+          vim.cmd("write")
+        end)
       end)
-    end)
 
-    if not ok then
-      status_mgr:set_error(string.format("Failed to save: %s", save_err))
-      return
-    end
+      if not ok then
+        status_mgr:set_error(string.format("Failed to save: %s", save_err))
+        return
+      end
 
-    if old_file_path and old_file_path ~= new_file_path and vim.fn.filereadable(old_file_path) == 1 then
-      local delete_ok = vim.fn.delete(old_file_path)
-      if delete_ok ~= 0 then
-        notify.warn("Could not delete old file: " .. old_file_path)
+      local rename_result = vim.fn.rename(old_file_path, new_file_path)
+      if rename_result ~= 0 then
+        status_mgr:set_error("Failed to rename file")
+        return
+      end
+
+      vim.api.nvim_buf_set_name(chat_buffer.buf, new_file_path)
+      chat_buffer.file_path = new_file_path
+    else
+      chat_buffer.file_path = new_file_path
+      vim.api.nvim_buf_set_name(chat_buffer.buf, new_file_path)
+
+      local ok, save_err = pcall(function()
+        vim.api.nvim_buf_call(chat_buffer.buf, function()
+          vim.cmd("write")
+        end)
+      end)
+
+      if not ok then
+        status_mgr:set_error(string.format("Failed to save: %s", save_err))
+        return
       end
     end
 
