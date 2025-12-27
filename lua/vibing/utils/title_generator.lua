@@ -4,7 +4,6 @@
 ---:VibingSetFileTitleコマンドで使用
 local M = {}
 
-local notify = require("vibing.utils.notify")
 local filename_util = require("vibing.utils.filename")
 
 ---会話履歴からAIにタイトルを生成させる
@@ -33,11 +32,9 @@ function M.generate_from_conversation(conversation, callback)
 
   local prompt = table.concat(conversation_text, "\n\n")
     .. "\n\n"
-    .. "Based on the above conversation, generate a concise title (maximum 32 characters) that summarizes the main topic. "
+    .. "Based on the above conversation, generate a concise title (maximum 30 characters) that summarizes the main topic. "
     .. "The title should be suitable for a filename - use only alphanumeric characters, spaces, and hyphens. "
     .. "Respond with ONLY the title, nothing else."
-
-  notify.info("Generating title...")
 
   local collected_response = ""
 

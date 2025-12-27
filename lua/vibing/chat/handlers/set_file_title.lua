@@ -18,11 +18,22 @@ local function detect_file_type(file_path)
   return "chat"
 end
 
+---ディレクトリパスの末尾にスラッシュを付与
+---@param dir string ディレクトリパス
+---@return string normalized_dir 末尾スラッシュ付きのパス
+local function ensure_trailing_slash(dir)
+  if dir:sub(-1) ~= "/" then
+    return dir .. "/"
+  end
+  return dir
+end
+
 ---重複しないファイルパスを生成
 ---@param dir string ディレクトリパス
 ---@param base_filename string ベースファイル名（拡張子付き）
 ---@return string unique_path 一意なファイルパス
 local function get_unique_file_path(dir, base_filename)
+  dir = ensure_trailing_slash(dir)
   local new_path = dir .. base_filename
 
   if vim.fn.filereadable(new_path) == 0 then
@@ -81,13 +92,21 @@ return function(_, chat_buffer)
     end
 
     local new_filename = filename_util.generate_with_title(title, file_type)
+    local normalized_dir = ensure_trailing_slash(save_dir)
+
+    if vim.fn.isdirectory(normalized_dir) == 0 then
+      vim.fn.mkdir(normalized_dir, "p")
+    end
+
     local new_file_path = get_unique_file_path(save_dir, new_filename)
 
     chat_buffer.file_path = new_file_path
     vim.api.nvim_buf_set_name(chat_buffer.buf, new_file_path)
 
     local ok, save_err = pcall(function()
-      vim.cmd(string.format("buffer %d | write", chat_buffer.buf))
+      vim.api.nvim_buf_call(chat_buffer.buf, function()
+        vim.cmd("write")
+      end)
     end)
 
     if not ok then
