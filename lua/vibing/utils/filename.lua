@@ -8,7 +8,7 @@ local M = {}
 ---小文字化、特殊文字削除、連続アンダースコア圧縮、長さ制限を実施
 ---@param text string 変換元のテキスト（通常は最初のユーザーメッセージ）
 ---@return string sanitized_text サニタイズ済みのファイル名用文字列（最大32文字）
-local function sanitize(text)
+function M.sanitize(text)
   -- 小文字に変換
   text = text:lower()
   -- 空白とハイフンをアンダースコアに
@@ -44,7 +44,7 @@ function M.generate_from_message(message)
   end
 
   -- サニタイズしてトピック名を生成
-  local topic = sanitize(first_line)
+  local topic = M.sanitize(first_line)
 
   -- トピックが空の場合はタイムスタンプのみ
   if topic == "" then
@@ -61,6 +61,24 @@ end
 ---@return string filename タイムスタンプ形式のファイル名（拡張子なし）
 function M.generate_default()
   return os.date("chat_%Y%m%d_%H%M%S")
+end
+
+---AIが生成したタイトルからファイル名を生成
+---形式: {type}-yyyymmdd-HHmm-{title}.vibing (例: chat-20250627-1430-fix_auth_bug.vibing)
+---:VibingSetFileTitleコマンドで使用
+---@param title string AIが生成したタイトル（サニタイズ前）
+---@param file_type "chat"|"inline" ファイルタイプ
+---@return string filename 完全なファイル名（拡張子付き）
+function M.generate_with_title(title, file_type)
+  file_type = file_type or "chat"
+  local sanitized = M.sanitize(title)
+
+  if sanitized == "" then
+    sanitized = "untitled"
+  end
+
+  local timestamp = os.date("%Y%m%d-%H%M")
+  return string.format("%s-%s-%s.vibing", file_type, timestamp, sanitized)
 end
 
 return M

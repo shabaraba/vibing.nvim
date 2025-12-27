@@ -193,6 +193,19 @@ function M._register_commands()
 
     notify.info("Custom commands reloaded")
   end, { desc = "Reload custom slash commands" })
+
+  vim.api.nvim_create_user_command("VibingSetFileTitle", function()
+    local chat = require("vibing.actions.chat")
+    local current_buffer = chat.get_current_chat_buffer()
+
+    if not current_buffer then
+      notify.warn("Not in a vibing chat buffer")
+      return
+    end
+
+    local handler = require("vibing.chat.handlers.set_file_title")
+    handler({}, current_buffer)
+  end, { desc = "Generate AI title and rename chat file" })
 end
 
 ---現在のアダプターインスタンスを取得
