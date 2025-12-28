@@ -2,6 +2,7 @@ local git = require("vibing.utils.git")
 local diff_util = require("vibing.utils.diff")
 local BufferReload = require("vibing.utils.buffer_reload")
 local BufferIdentifier = require("vibing.utils.buffer_identifier")
+local Timestamp = require("vibing.utils.timestamp")
 
 ---@class Vibing.InlinePreview
 ---インラインアクションとチャットのプレビューUI
@@ -1102,7 +1103,7 @@ function M.save_as_vibing()
   table.insert(lines, "")
 
   -- ユーザーメッセージ
-  table.insert(lines, "## User")
+  table.insert(lines, Timestamp.create_header("User"))
   table.insert(lines, "")
   -- user_promptを行ごとに分割して追加
   if state.user_prompt and state.user_prompt ~= "" then
@@ -1113,7 +1114,7 @@ function M.save_as_vibing()
   table.insert(lines, "")
 
   -- アシスタント応答
-  table.insert(lines, "## Assistant")
+  table.insert(lines, Timestamp.create_header("Assistant"))
   table.insert(lines, "")
   if state.response_text and state.response_text ~= "" then
     -- response_textを行ごとに分割して追加
@@ -1137,7 +1138,7 @@ function M.save_as_vibing()
   end
 
   -- User セクション（新規入力受付用）
-  table.insert(lines, "## User")
+  table.insert(lines, Timestamp.create_header("User"))
   table.insert(lines, "")
 
   -- ファイルに書き込み

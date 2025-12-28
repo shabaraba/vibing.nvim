@@ -1,5 +1,6 @@
 local Context = require("vibing.context")
 local BufferIdentifier = require("vibing.utils.buffer_identifier")
+local Timestamp = require("vibing.utils.timestamp")
 
 ---@class Vibing.ChatBuffer
 ---@field buf number?
@@ -351,7 +352,7 @@ function ChatBuffer:_init_content()
   table.insert(lines, "")
   table.insert(lines, "---")
   table.insert(lines, "")
-  table.insert(lines, "## User")
+  table.insert(lines, Timestamp.create_header("User"))
   table.insert(lines, "")
   table.insert(lines, "")
 
@@ -693,7 +694,9 @@ function ChatBuffer:extract_conversation()
   local current_content = {}
 
   for _, line in ipairs(lines) do
-    if line:match("^## User") then
+    local role = Timestamp.extract_role(line)
+
+    if role == "user" then
       -- 前のセクションを保存
       if current_role and #current_content > 0 then
         table.insert(conversation, {
@@ -703,7 +706,7 @@ function ChatBuffer:extract_conversation()
       end
       current_role = "user"
       current_content = {}
-    elseif line:match("^## Assistant") then
+    elseif role == "assistant" then
       -- 前のセクションを保存
       if current_role and #current_content > 0 then
         table.insert(conversation, {
@@ -713,7 +716,7 @@ function ChatBuffer:extract_conversation()
       end
       current_role = "assistant"
       current_content = {}
-    elseif current_role and not line:match("^#") and not line:match("^---") and not line:match("^Context:") then
+    elseif current_role and not Timestamp.is_header(line) and not line:match("^---") and not line:match("^Context:") then
       table.insert(current_content, line)
     end
   end
@@ -738,9 +741,10 @@ function ChatBuffer:extract_user_message()
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
   local last_user_line = nil
 
-  -- 最後の "## User" 行を見つける（大文字小文字を区別しない）
+  -- 逆順で最後の "## User" 行を見つける
   for i = #lines, 1, -1 do
-    if lines[i]:lower():match("^## user") then
+    local role = Timestamp.extract_role(lines[i])
+    if role == "user" then
       last_user_line = i
       break
     end
@@ -754,8 +758,8 @@ function ChatBuffer:extract_user_message()
   local message_lines = {}
   for i = last_user_line + 1, #lines do
     local line = lines[i]
-    -- 次のセクションに達したら終了
-    if line:match("^## ") or line:match("^---") then
+    -- 次のセクションに達したら終了（タイムスタンプあり/なし両対応）
+    if Timestamp.is_header(line) or line:match("^---") then
       break
     end
     table.insert(message_lines, line)
@@ -814,7 +818,7 @@ function ChatBuffer:start_response()
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
   local new_lines = {
     "",
-    "## Assistant",
+    Timestamp.create_header("Assistant"),
     "",
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
@@ -905,7 +909,7 @@ function ChatBuffer:add_user_section()
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
   local new_lines = {
     "",
-    "## User",
+    Timestamp.create_header("User"),
     "",
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
