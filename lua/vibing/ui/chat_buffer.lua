@@ -687,6 +687,22 @@ end
 
 ---会話履歴全体を抽出
 ---@return {role: string, content: string}[]
+---セクションの内容を会話配列に追加するヘルパー関数
+---@param conversation table 会話配列
+---@param role string|nil 現在のロール
+---@param content table 内容行の配列
+local function save_section(conversation, role, content)
+  if role and #content > 0 then
+    local content_str = vim.trim(table.concat(content, "\n"))
+    if content_str ~= "" then
+      table.insert(conversation, {
+        role = role,
+        content = content_str
+      })
+    end
+  end
+end
+
 function ChatBuffer:extract_conversation()
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
   local conversation = {}
@@ -696,25 +712,10 @@ function ChatBuffer:extract_conversation()
   for _, line in ipairs(lines) do
     local role = Timestamp.extract_role(line)
 
-    if role == "user" then
+    if role == "user" or role == "assistant" then
       -- 前のセクションを保存
-      if current_role and #current_content > 0 then
-        table.insert(conversation, {
-          role = current_role,
-          content = vim.trim(table.concat(current_content, "\n"))
-        })
-      end
-      current_role = "user"
-      current_content = {}
-    elseif role == "assistant" then
-      -- 前のセクションを保存
-      if current_role and #current_content > 0 then
-        table.insert(conversation, {
-          role = current_role,
-          content = vim.trim(table.concat(current_content, "\n"))
-        })
-      end
-      current_role = "assistant"
+      save_section(conversation, current_role, current_content)
+      current_role = role
       current_content = {}
     elseif current_role and not Timestamp.is_header(line) and not line:match("^---") and not line:match("^Context:") then
       table.insert(current_content, line)
@@ -722,15 +723,7 @@ function ChatBuffer:extract_conversation()
   end
 
   -- 最後のセクションを保存
-  if current_role and #current_content > 0 then
-    local content = vim.trim(table.concat(current_content, "\n"))
-    if content ~= "" then
-      table.insert(conversation, {
-        role = current_role,
-        content = content
-      })
-    end
-  end
+  save_section(conversation, current_role, current_content)
 
   return conversation
 end

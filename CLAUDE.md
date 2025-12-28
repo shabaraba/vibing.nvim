@@ -340,6 +340,44 @@ via `/mode` and `/model` slash commands. Configured permissions are recorded in 
 transparency and auditability. The optional `language` field ensures consistent AI response language
 across sessions.
 
+### Message Timestamps
+
+Chat messages include timestamps in their headers to help track conversation chronology and facilitate searching through chat history.
+
+**Timestamp Format:**
+
+```markdown
+## 2025-12-28 14:30:00 User
+Message content here
+
+## 2025-12-28 14:35:15 Assistant
+Response content here
+```
+
+**Key Features:**
+
+- **Automatic Timestamping**: Timestamps are automatically added when messages are sent (User) or responses are generated (Assistant)
+- **Timezone**: All timestamps use the local system timezone (as returned by Lua's `os.date()`)
+- **Backward Compatibility**: Legacy format without timestamps (`## User`, `## Assistant`) is fully supported
+- **Searchability**: Timestamps enable easy searching by date/time:
+  - Neovim search: `/2025-12-28` to find messages from a specific date
+  - File search: `grep "## 2025-12-28" *.vibing` to search across chat files
+  - Useful for extracting conversation history for daily reports
+
+**Timestamp Recording:**
+
+- User messages: Timestamp recorded when message is sent (`<CR>` pressed)
+- Assistant responses: Timestamp recorded when response begins (in `on_done` callback)
+
+**Implementation:**
+
+The `lua/vibing/utils/timestamp.lua` module provides:
+- `create_header(role, timestamp)` - Generate timestamped headers
+- `extract_role(line)` - Parse role from both timestamped and legacy headers
+- `has_timestamp(line)` - Check if header includes timestamp
+- `extract_timestamp(line)` - Extract timestamp from header
+- `is_header(line)` - Validate header format
+
 ### Permissions Configuration
 
 vibing.nvim provides comprehensive permission control over what tools Claude can use:

@@ -4,11 +4,22 @@
 ---@class Vibing.Utils.Timestamp
 local M = {}
 
+-- タイムスタンプフォーマット定数
+local TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
+-- タイムスタンプパターン（正規表現）
+local TIMESTAMP_PATTERN = "%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d"
+-- タイムスタンプ付きヘッダーパターン
+local HEADER_WITH_TIMESTAMP_PATTERN = "^## (" .. TIMESTAMP_PATTERN .. ") (%w+)"
+-- レガシーヘッダーパターン（タイムスタンプなし）
+local LEGACY_HEADER_PATTERN = "^## (%w+)"
+-- ヘッダー検出パターン
+local TIMESTAMP_CHECK_PATTERN = "^## " .. TIMESTAMP_PATTERN .. " %w+"
+
 ---現在時刻のタイムスタンプを生成
 ---フォーマット: "YYYY-MM-DD HH:MM:SS"
 ---@return string timestamp フォーマット済みタイムスタンプ文字列
 function M.now()
-  local timestamp = os.date("%Y-%m-%d %H:%M:%S")
+  local timestamp = os.date(TIMESTAMP_FORMAT)
   if not timestamp then
     -- os.date()が失敗した場合（極めて稀だが可能性はある）
     vim.notify("[vibing] Failed to generate timestamp - using fallback", vim.log.levels.WARN)
@@ -38,13 +49,13 @@ end
 ---@return string? role "user" | "assistant" | nil（ヘッダーでない場合はnil）
 function M.extract_role(line)
   -- タイムスタンプ付きパターン: "## YYYY-MM-DD HH:MM:SS User"
-  local role = line:match("^## %d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d (%w+)")
+  local _, role = line:match(HEADER_WITH_TIMESTAMP_PATTERN)
   if role then
     return role:lower()
   end
 
   -- レガシーパターン（タイムスタンプなし）: "## User"
-  role = line:match("^## (%w+)")
+  role = line:match(LEGACY_HEADER_PATTERN)
   if role then
     return role:lower()
   end
@@ -56,14 +67,15 @@ end
 ---@param line string チェック対象の行
 ---@return boolean has_timestamp タイムスタンプが含まれている場合true
 function M.has_timestamp(line)
-  return line:match("^## %d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d %w+") ~= nil
+  return line:match(TIMESTAMP_CHECK_PATTERN) ~= nil
 end
 
 ---ヘッダー行からタイムスタンプを抽出
 ---@param line string タイムスタンプ付きヘッダー行
 ---@return string? timestamp タイムスタンプ文字列（存在しない場合はnil）
 function M.extract_timestamp(line)
-  return line:match("^## (%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d) %w+")
+  local timestamp = line:match(HEADER_WITH_TIMESTAMP_PATTERN)
+  return timestamp
 end
 
 ---行がメッセージヘッダーかどうかチェック
