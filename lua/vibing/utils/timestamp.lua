@@ -44,10 +44,15 @@ function M.create_header(role, timestamp)
   return string.format("## %s %s", timestamp, role)
 end
 
----ヘッダー行からロールを抽出（タイムスタンプあり/なし両対応）
+---ヘッダー行からロールを抽出（タイムスタンプあり/なし/未送信マーカー対応）
 ---@param line string ヘッダー行
 ---@return string? role "user" | "assistant" | nil（ヘッダーでない場合はnil）
 function M.extract_role(line)
+  -- 未送信ユーザーヘッダー: "## User <!-- unsent -->"
+  if M.is_unsent_user_header(line) then
+    return "user"
+  end
+
   -- タイムスタンプ付きパターン: "## YYYY-MM-DD HH:MM:SS User"
   local _, role = line:match(HEADER_WITH_TIMESTAMP_PATTERN)
   if role then
@@ -106,6 +111,20 @@ end
 function M.is_separator(line)
   -- "─── HH:MM ───" または "─── YYYY-MM-DD HH:MM ───" にマッチ
   return line:match("^───.*───$") ~= nil
+end
+
+---未送信ユーザーヘッダーを作成
+---送信前の一時的なマーカーとして使用され、送信時に正式なヘッダーに置き換えられる
+---@return string header 未送信ユーザーヘッダー（例: "## User <!-- unsent -->"）
+function M.create_unsent_user_header()
+  return "## User <!-- unsent -->"
+end
+
+---行が未送信ユーザーヘッダーかどうかチェック
+---@param line string チェック対象の行
+---@return boolean is_unsent 未送信ヘッダーの場合true
+function M.is_unsent_user_header(line)
+  return line:match("^## User <!%-%- unsent %-%->$") ~= nil
 end
 
 return M

@@ -229,6 +229,57 @@ describe("vibing.ui.chat_buffer", function()
       -- Cleanup
       vim.api.nvim_buf_delete(chat.buf, { force = true })
     end)
+
+    it("should extract message from unsent header (issue#214 fix)", function()
+      local chat = ChatBuffer:new(mock_config)
+      local Timestamp = require("vibing.utils.timestamp")
+
+      -- Create buffer with code block and unsent header
+      chat.buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(chat.buf, 0, -1, false, {
+        "---",
+        "session_id: test",
+        "---",
+        "",
+        "## 2025-12-29 10:00:00 User",
+        "",
+        "Previous message",
+        "",
+        "## 2025-12-29 10:01:00 Assistant",
+        "",
+        "Here's code with ## User:",
+        "```",
+        "## User",
+        "Code example",
+        "```",
+        "",
+        "",
+        Timestamp.create_unsent_user_header(),
+        "",
+        "Real unsent message",
+      })
+
+      -- Simulate send_message flow: insert separator and convert unsent header
+      chat:_insert_timestamp_separator()
+
+      local result = chat:extract_user_message()
+      assert.is_not_nil(result)
+      assert.equals("Real unsent message", result)
+
+      -- Verify separator was inserted
+      local lines = vim.api.nvim_buf_get_lines(chat.buf, 0, -1, false)
+      local has_separator = false
+      for _, line in ipairs(lines) do
+        if Timestamp.is_separator(line) then
+          has_separator = true
+          break
+        end
+      end
+      assert.is_true(has_separator, "Separator should be inserted")
+
+      -- Cleanup
+      vim.api.nvim_buf_delete(chat.buf, { force = true })
+    end)
   end)
 
   describe("integration", function()

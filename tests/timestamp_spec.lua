@@ -164,6 +164,41 @@ describe("vibing.utils.timestamp", function()
     end)
   end)
 
+  describe("未送信ヘッダー", function()
+    it("未送信ヘッダーを作成できる", function()
+      local header = Timestamp.create_unsent_user_header()
+      assert.equals("## User <!-- unsent -->", header)
+    end)
+
+    it("未送信ヘッダーを検出できる", function()
+      local header = "## User <!-- unsent -->"
+      assert.is_true(Timestamp.is_unsent_user_header(header))
+    end)
+
+    it("未送信ヘッダーからロールを抽出できる", function()
+      local header = "## User <!-- unsent -->"
+      local role = Timestamp.extract_role(header)
+      assert.equals("user", role)
+    end)
+
+    it("未送信ヘッダーはヘッダーとして認識される", function()
+      local header = "## User <!-- unsent -->"
+      assert.is_true(Timestamp.is_header(header))
+    end)
+
+    it("通常のヘッダーは未送信として検出されない", function()
+      assert.is_false(Timestamp.is_unsent_user_header("## User"))
+      assert.is_false(Timestamp.is_unsent_user_header("## 2025-12-29 10:00:00 User"))
+      assert.is_false(Timestamp.is_unsent_user_header("## Assistant"))
+    end)
+
+    it("似ているが違うフォーマットは未送信として検出されない", function()
+      assert.is_false(Timestamp.is_unsent_user_header("## User <!--unsent-->"))
+      assert.is_false(Timestamp.is_unsent_user_header("## User <!-- draft -->"))
+      assert.is_false(Timestamp.is_unsent_user_header("## User<!-- unsent -->"))
+    end)
+  end)
+
   describe("エッジケース", function()
     it("空文字列を適切に処理する", function()
       assert.is_nil(Timestamp.extract_role(""))
