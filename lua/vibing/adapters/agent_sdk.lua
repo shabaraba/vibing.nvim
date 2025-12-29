@@ -190,14 +190,14 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
 
   -- セッションIDの決定ロジック:
   -- 1. opts._session_id_explicit が true の場合、opts._session_id を使用（nilでも新規セッション）
-  -- 2. それ以外の場合、opts._session_id またはマップから取得（後方互換性）
+  -- 2. それ以外の場合、opts._session_id を使用（後方互換性）
   local session_id
   if opts._session_id_explicit then
     -- chat.lua から明示的に設定された場合（nilでも新規セッションとして扱う）
     session_id = opts._session_id
   else
     -- inline.lua など、明示的に設定されていない場合は従来の動作
-    session_id = opts._session_id or self._sessions[opts._handle_id or ""]
+    session_id = opts._session_id
   end
 
   local cmd = self:build_command(prompt, opts, session_id)

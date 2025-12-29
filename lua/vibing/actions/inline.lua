@@ -75,7 +75,7 @@ local function process_queue()
   -- タスクを実行（pcallでラップしてエラー時もキューが進むようにする）
   local success, err = pcall(task.execute_fn, on_complete)
   if not success then
-    notify.error("Task execution failed: " .. tostring(err), "Inline")
+    notify.error("An error occurred while processing your request. Please try again.", "Inline")
     -- エラー時もon_completeを呼び出して次のタスクに進む
     on_complete()
   end
