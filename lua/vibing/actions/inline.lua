@@ -3,6 +3,7 @@ local OutputBuffer = require("vibing.ui.output_buffer")
 local notify = require("vibing.utils.notify")
 local Language = require("vibing.utils.language")
 local BufferIdentifier = require("vibing.utils.buffer_identifier")
+local QueueManager = require("vibing.application.inline.queue_manager")
 
 ---@class Vibing.ActionConfig
 ---@field prompt string アクションの基本プロンプト
@@ -11,14 +12,6 @@ local BufferIdentifier = require("vibing.utils.buffer_identifier")
 
 ---@class Vibing.InlineAction
 local M = {}
-
----@class Vibing.InlineQueue
----@field tasks table[] キューイングされたタスクのリスト
----@field is_executing boolean 実行中フラグ
-local queue = {
-  tasks = {},
-  is_executing = false,
-}
 
 ---事前定義されたインラインアクション設定
 ---fix, feat, explain, refactor, testの5種類を提供
@@ -51,53 +44,18 @@ M.actions = {
   },
 }
 
----キューから次のタスクを取り出して実行
----タスクがない場合は何もしない
-local function process_queue()
-  if queue.is_executing or #queue.tasks == 0 then
-    return
-  end
-
-  queue.is_executing = true
-  local task = table.remove(queue.tasks, 1)
-
-  -- キューの残りタスク数を通知
-  if #queue.tasks > 0 then
-    notify.info(string.format("Executing task (%d more in queue)...", #queue.tasks), "Inline")
-  end
-
-  -- on_completeコールバックを作成（エラー時も必ず呼ばれるようにする）
-  local on_complete = function()
-    queue.is_executing = false
-    process_queue()
-  end
-
-  -- タスクを実行（pcallでラップしてエラー時もキューが進むようにする）
-  local success, err = pcall(task.execute_fn, on_complete)
-  if not success then
-    -- エラー内容を表示してデバッグを支援
-    local error_msg = "Task execution failed"
-    if err and type(err) == "string" then
-      error_msg = error_msg .. ": " .. err
-    end
-    notify.error(error_msg, "Inline")
-    -- エラー時もon_completeを呼び出して次のタスクに進む
-    on_complete()
-  end
-end
-
----タスクをキューに追加
----@param task table タスクオブジェクト { execute_fn: function }
+---タスクをキューに追加して処理を開始
+---@param task table タスクオブジェクト { id: string, execute: function(done) }
 local function enqueue_task(task)
-  table.insert(queue.tasks, task)
+  local pos = QueueManager.enqueue(task)
 
-  -- 通知
-  if queue.is_executing then
-    notify.info(string.format("Task queued (%d tasks waiting)", #queue.tasks), "Inline")
+  if QueueManager.is_processing() and pos > 1 then
+    notify.info(string.format("Task queued (%d tasks waiting)", pos - 1), "Inline")
+  elseif pos > 1 then
+    notify.info(string.format("Executing task (%d more in queue)...", pos - 1), "Inline")
   end
 
-  -- キュー処理を開始
-  process_queue()
+  QueueManager.process()
 end
 
 ---Apply unsaved buffer handling to prompt and opts
@@ -219,15 +177,16 @@ function M.execute(action_or_prompt, additional_instruction)
 
   -- タスクをキューに追加
   local task = {
-    execute_fn = function(on_complete)
+    id = string.format("%s-%d", action_or_prompt, vim.loop.hrtime()),
+    execute = function(done)
       if action.use_output_buffer then
-        M._execute_with_output_queued(adapter, prompt, opts, action_or_prompt, on_complete)
+        M._execute_with_output_queued(adapter, prompt, opts, action_or_prompt, done)
       else
         -- Check if preview is enabled in config
         if config.preview and config.preview.enabled then
-          M._execute_with_preview_queued(adapter, prompt, opts, action_or_prompt, additional_instruction, on_complete)
+          M._execute_with_preview_queued(adapter, prompt, opts, action_or_prompt, additional_instruction, done)
         else
-          M._execute_direct_queued(adapter, prompt, opts, on_complete)
+          M._execute_direct_queued(adapter, prompt, opts, done)
         end
       end
     end,
@@ -514,15 +473,16 @@ function M.custom(prompt, use_output)
 
   -- タスクをキューに追加
   local task = {
-    execute_fn = function(on_complete)
+    id = string.format("custom-%d", vim.loop.hrtime()),
+    execute = function(done)
       if use_output then
-        M._execute_with_output_queued(adapter, full_prompt, opts, "Result", on_complete)
+        M._execute_with_output_queued(adapter, full_prompt, opts, "Result", done)
       else
         -- Check if preview is enabled in config
         if config.preview and config.preview.enabled then
-          M._execute_with_preview_queued(adapter, full_prompt, opts, "custom", prompt, on_complete)
+          M._execute_with_preview_queued(adapter, full_prompt, opts, "custom", prompt, done)
         else
-          M._execute_direct_queued(adapter, full_prompt, opts, on_complete)
+          M._execute_direct_queued(adapter, full_prompt, opts, done)
         end
       end
     end,

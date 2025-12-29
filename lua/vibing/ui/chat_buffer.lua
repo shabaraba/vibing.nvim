@@ -1,6 +1,7 @@
 local Context = require("vibing.context")
 local BufferIdentifier = require("vibing.utils.buffer_identifier")
 local Timestamp = require("vibing.utils.timestamp")
+local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 
 ---@class Vibing.ChatBuffer
 ---@field buf number?
@@ -414,58 +415,17 @@ function ChatBuffer:_update_context_line()
 end
 
 ---YAMLフロントマターをパース
----@return table<string, string>
+---@return table<string, string|string[]>
 function ChatBuffer:parse_frontmatter()
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return {}
   end
 
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, 50, false)
-  local frontmatter = {}
-  local in_frontmatter = false
-  local frontmatter_end = 0
-  local current_key = nil
-  local current_list = nil
+  local content = table.concat(lines, "\n")
+  local parsed = Frontmatter.parse(content)
 
-  for i, line in ipairs(lines) do
-    if i == 1 and line == "---" then
-      in_frontmatter = true
-    elseif in_frontmatter and line == "---" then
-      if current_key and current_list then
-        frontmatter[current_key] = current_list
-      end
-      frontmatter_end = i
-      break
-    elseif in_frontmatter then
-      if line:match("^  %- ") and current_list then
-        local item = line:match("^  %- (.+)$")
-        if item then
-          table.insert(current_list, item)
-        end
-      else
-        if current_key and current_list then
-          frontmatter[current_key] = current_list
-        end
-        local key, value = line:match("^([%w_]+):%s*(.*)$")
-        if key then
-          -- 次の行がリスト項目かどうかを確認してからリストモードに入る
-          local next_line = lines[i + 1]
-          local is_list_start = value == "" and next_line and next_line:match("^  %- ")
-          if is_list_start then
-            current_key = key
-            current_list = {}
-          else
-            -- 空の値はnilではなく空文字列として保存
-            frontmatter[key] = value
-            current_key = nil
-            current_list = nil
-          end
-        end
-      end
-    end
-  end
-
-  return frontmatter
+  return parsed or {}
 end
 
 ---フロントマターのsession_idを更新

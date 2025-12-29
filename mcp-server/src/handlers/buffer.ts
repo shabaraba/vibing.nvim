@@ -1,4 +1,5 @@
 import { callNeovim } from '../rpc.js';
+import { validateBufferParams, validateFilePath, validateRequired } from '../validation/schema.js';
 
 /**
  * Retrieve the contents of a Neovim buffer and return them as a single text node.
@@ -7,6 +8,9 @@ import { callNeovim } from '../rpc.js';
  * @returns An object with `content` containing a single text node whose `text` is the buffer's contents (lines joined with `\n`).
  */
 export async function handleGetBuffer(args: any) {
+  if (args?.bufnr !== undefined) {
+    validateBufferParams({ bufnr: args.bufnr });
+  }
   const lines = await callNeovim('buf_get_lines', { bufnr: args?.bufnr });
   return {
     content: [{ type: 'text', text: lines.join('\n') }],
@@ -21,9 +25,11 @@ export async function handleGetBuffer(args: any) {
  * @throws Error if `lines` is missing on `args`.
  */
 export async function handleSetBuffer(args: any) {
-  if (!args || !args.lines) {
-    throw new Error('Missing required parameter: lines');
+  validateRequired(args?.lines, 'lines');
+  if (args?.bufnr !== undefined) {
+    validateBufferParams({ bufnr: args.bufnr });
   }
+
   const result = await callNeovim('buf_set_lines', {
     lines: args.lines,
     bufnr: args.bufnr,
@@ -75,12 +81,12 @@ export async function handleListBuffers(args: any) {
  * @param args - Object containing parameters for loading the buffer.
  * @param args.filepath - Path to the file to load into the buffer; required.
  * @returns An object with a `content` array containing a single text node with the JSON-formatted result.
- * @throws Error if `args` is missing or `args.filepath` is not provided.
+ * @throws Error if `args` is missing or `args.filepath` is not provided or invalid.
  */
 export async function handleLoadBuffer(args: any) {
-  if (!args || !args.filepath) {
-    throw new Error('Missing required parameter: filepath');
-  }
+  validateRequired(args?.filepath, 'filepath');
+  validateFilePath({ filepath: args.filepath });
+
   const result = await callNeovim('load_buffer', { filepath: args.filepath });
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
