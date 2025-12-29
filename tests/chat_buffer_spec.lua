@@ -193,17 +193,19 @@ describe("vibing.ui.chat_buffer", function()
       vim.api.nvim_buf_delete(chat.buf, { force = true })
     end)
 
-    it("should ignore code block ## User and extract message after separator (issue#214)", function()
+    it("should ignore code block ## User (plain text, no HTML comment)", function()
       local chat = ChatBuffer:new(mock_config)
+      local Timestamp = require("vibing.utils.timestamp")
 
-      -- Create buffer with code block containing ## User, then real message after separator
+      -- Code block with plain "## User" should be ignored
+      -- Only User headers with HTML comments are recognized as valid headers
       chat.buf = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_lines(chat.buf, 0, -1, false, {
         "---",
         "session_id: test",
         "---",
         "",
-        "## User",
+        "## User <!-- 2025-12-28 10:00:00 -->",
         "",
         "First message",
         "",
@@ -215,9 +217,7 @@ describe("vibing.ui.chat_buffer", function()
         "Message content",
         "```",
         "",
-        "─── 2025-12-28 10:05 ───",
-        "",
-        "## User",
+        Timestamp.create_unsent_user_header(),
         "",
         "This is the real user message",
       })
@@ -230,7 +230,7 @@ describe("vibing.ui.chat_buffer", function()
       vim.api.nvim_buf_delete(chat.buf, { force = true })
     end)
 
-    it("should extract message from unsent header (issue#214 fix)", function()
+    it("should extract message from unsent header and commit with timestamp (issue#214 fix)", function()
       local chat = ChatBuffer:new(mock_config)
       local Timestamp = require("vibing.utils.timestamp")
 
@@ -241,7 +241,7 @@ describe("vibing.ui.chat_buffer", function()
         "session_id: test",
         "---",
         "",
-        "## User",
+        "## User <!-- 2025-12-28 09:00:00 -->",
         "",
         "Previous message",
         "",
@@ -259,35 +259,30 @@ describe("vibing.ui.chat_buffer", function()
         "Real unsent message",
       })
 
-      -- Simulate send_message flow: extract first (based on unsent header), then insert separator
+      -- Simulate send_message flow: extract first (based on unsent header), then commit
       local result = chat:extract_user_message()
       assert.is_not_nil(result)
       assert.equals("Real unsent message", result)
 
-      -- Then insert separator (this converts unsent header to formal header)
-      chat:_insert_timestamp_separator()
+      -- Then commit message (this converts unsent header to timestamped header)
+      chat:_commit_user_message()
 
-      -- Verify separator was inserted and unsent header was replaced
+      -- Verify unsent header was replaced with timestamped header
       local lines = vim.api.nvim_buf_get_lines(chat.buf, 0, -1, false)
-      local has_separator = false
-      local has_formal_user_header = false
+      local has_timestamped_user_header = false
       local still_has_unsent = false
 
       for i, line in ipairs(lines) do
-        if Timestamp.is_separator(line) then
-          has_separator = true
-        end
-        -- Check for formal "## User" header after line 10 (to avoid matching "Previous message")
-        if line == "## User" and i > 10 then
-          has_formal_user_header = true
+        -- Check for timestamped User header after line 10 (to avoid matching "Previous message")
+        if Timestamp.is_timestamped_user_header(line) and i > 10 then
+          has_timestamped_user_header = true
         end
         if Timestamp.is_unsent_user_header(line) then
           still_has_unsent = true
         end
       end
 
-      assert.is_true(has_separator, "Separator should be inserted")
-      assert.is_true(has_formal_user_header, "Unsent header should be replaced with formal header")
+      assert.is_true(has_timestamped_user_header, "Unsent header should be replaced with timestamped header")
       assert.is_false(still_has_unsent, "Unsent header should be removed")
 
       -- Cleanup
