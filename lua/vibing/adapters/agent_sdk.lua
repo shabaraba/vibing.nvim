@@ -21,6 +21,8 @@ function AgentSDK:new(config)
   -- Find plugin root directory
   local source = debug.getinfo(1, "S").source:sub(2)
   instance._plugin_root = vim.fn.fnamemodify(source, ":h:h:h:h")
+  -- Initialize random seed for handle ID generation
+  math.randomseed(vim.loop.hrtime())
   return instance
 end
 
@@ -267,6 +269,8 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
       -- クリーンアップ：ハンドルをマップから削除（セッションIDは保持）
       self._handles[handle_id] = nil
 
+      -- on_done は常に呼び出される（エラー時も正常終了時も）
+      -- これによりキューがブロックされるのを防ぐ
       if obj.code ~= 0 or #error_output > 0 then
         on_done({
           content = table.concat(output, ""),

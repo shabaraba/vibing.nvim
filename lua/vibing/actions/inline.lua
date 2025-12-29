@@ -66,12 +66,19 @@ local function process_queue()
     notify.info(string.format("Executing task (%d more in queue)...", #queue.tasks), "Inline")
   end
 
-  -- タスクを実行
-  task.execute_fn(function()
-    -- タスク完了後、次のタスクを実行
+  -- on_completeコールバックを作成（エラー時も必ず呼ばれるようにする）
+  local on_complete = function()
     queue.is_executing = false
     process_queue()
-  end)
+  end
+
+  -- タスクを実行（pcallでラップしてエラー時もキューが進むようにする）
+  local success, err = pcall(task.execute_fn, on_complete)
+  if not success then
+    notify.error("Task execution failed: " .. tostring(err), "Inline")
+    -- エラー時もon_completeを呼び出して次のタスクに進む
+    on_complete()
+  end
 end
 
 ---タスクをキューに追加
