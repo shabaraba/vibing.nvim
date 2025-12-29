@@ -281,6 +281,43 @@ If needed, you can manually add or verify the configuration in `~/.claude.json`:
 
 See `mcp-server/README.md` and `docs/lazy-setup-example.lua` for detailed setup instructions.
 
+### Concurrent Execution Support
+
+vibing.nvim supports running multiple chat sessions and inline actions simultaneously without interference:
+
+**Multiple Chat Windows:**
+
+- Each chat buffer maintains its own session ID
+- Sessions are managed via unique handle IDs
+- Old sessions are automatically cleaned up when starting new messages
+
+**Inline Action Queue:**
+
+- Multiple inline actions are queued and executed serially
+- Prevents file modification conflicts
+- Shows queue notifications (e.g., "Executing task (2 more in queue)...")
+- Errors in one task don't block subsequent tasks
+
+**Session Management:**
+
+- Handle IDs: `hrtime + random` ensures uniqueness across concurrent requests
+- Session lifecycle: Created → Used → Automatically cleaned up when stale
+- `cleanup_stale_sessions()` removes completed sessions while preserving active ones
+
+**Example Workflow:**
+
+```lua
+-- Start multiple chats simultaneously
+:VibingChat  -- Chat 1 (session-abc)
+:VibingChat  -- Chat 2 (session-def)
+
+-- Queue multiple inline actions
+:'<,'>VibingInline fix      -- Queued: task 1
+:'<,'>VibingInline refactor -- Queued: task 2 (waits for task 1)
+```
+
+See `docs/adr/002-concurrent-execution-support.md` for architectural details.
+
 ### Module Structure
 
 **Core:**
@@ -307,8 +344,8 @@ See `mcp-server/README.md` and `docs/lazy-setup-example.lua` for detailed setup 
 
 **Actions:**
 
-- `actions/chat.lua` - Chat session orchestration
-- `actions/inline.lua` - Quick actions (fix, feat, explain, refactor, test)
+- `actions/chat.lua` - Chat session orchestration with concurrent session support
+- `actions/inline.lua` - Quick actions (fix, feat, explain, refactor, test) with queue management
 
 ### Session Persistence
 
