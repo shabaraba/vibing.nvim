@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.12.1 (2025-12-29)
+
+## What's Changed
+* fix: resolve issue#214 and improve header spacing by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/235
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.12.0...v1.12.1
+
 ## 1.12.0 (2025-12-29)
 
 ## What's Changed
