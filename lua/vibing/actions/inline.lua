@@ -379,7 +379,7 @@ function M._show_results(modified_files, response_text)
   local lines = {}
 
   if #modified_files > 0 then
-    table.insert(lines, "## Modified Files")
+    table.insert(lines, "### Modified Files")
     table.insert(lines, "")
     for _, f in ipairs(modified_files) do
       table.insert(lines, "- " .. f)

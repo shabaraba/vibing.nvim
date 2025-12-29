@@ -352,7 +352,7 @@ function ChatBuffer:_init_content()
   table.insert(lines, "")
   table.insert(lines, "---")
   table.insert(lines, "")
-  table.insert(lines, "## User")
+  table.insert(lines, Timestamp.create_unsent_user_header())
   table.insert(lines, "")
   table.insert(lines, "")
 
@@ -729,12 +729,15 @@ function ChatBuffer:extract_conversation()
 end
 
 ---ユーザーメッセージを抽出（最後の## Userセクションから）
+---未送信ヘッダー（## User <!-- unsent -->）を優先的に検索
+---コードブロック内の ## User は無視される（HTMLコメント形式により判別可能）
 ---@return string?
 function ChatBuffer:extract_user_message()
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
-  local last_user_line = nil
 
-  -- 逆順で最後の "## User" 行を見つける
+  -- 最後のUserヘッダーを逆順で探す
+  -- 未送信ヘッダー、タイムスタンプ付きヘッダー、レガシーヘッダーの順で認識される
+  local last_user_line = nil
   for i = #lines, 1, -1 do
     local role = Timestamp.extract_role(lines[i])
     if role == "user" then
@@ -773,46 +776,49 @@ function ChatBuffer:extract_user_message()
   return table.concat(message_lines, "\n")
 end
 
----タイムスタンプセパレーターを挿入
----最後の## Userヘッダーの直前にセパレーターを挿入（Markdown標準形式）
-function ChatBuffer:_insert_timestamp_separator()
+---未送信ヘッダーをタイムスタンプ付きヘッダーに置き換える
+---最後の未送信Userヘッダー "## User <!-- unsent -->" を
+---タイムスタンプ付きヘッダー "## User <!-- YYYY-MM-DD HH:MM:SS -->" に置き換える
+function ChatBuffer:_commit_user_message()
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return
   end
 
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
-  local last_user_line = nil
+  local last_unsent_user_line = nil
 
-  -- 逆順で最後の "## User" 行を見つける
+  -- 逆順で最後の未送信 "## User <!-- unsent -->" 行を見つける
   for i = #lines, 1, -1 do
-    local role = Timestamp.extract_role(lines[i])
-    if role == "user" then
-      last_user_line = i
+    if Timestamp.is_unsent_user_header(lines[i]) then
+      last_unsent_user_line = i
       break
     end
   end
 
-  if not last_user_line then
-    -- ## User が見つからない場合は挿入しない（異常ケース）
+  if not last_unsent_user_line then
+    -- 未送信ユーザーヘッダーが見つからない場合は何もしない
     return
   end
 
-  -- セパレーターを生成
-  local separator = Timestamp.create_separator()
+  -- タイムスタンプ付きヘッダーを生成
+  local timestamped_header = Timestamp.create_user_header_with_timestamp()
 
-  -- Markdown標準: セパレーター + 空行 を挿入
-  -- （前の空行は add_user_section() で既に挿入済み、見出しの前には必ず空行が必要）
-  local separator_lines = { separator, "" }
-  vim.api.nvim_buf_set_lines(self.buf, last_user_line - 1, last_user_line - 1, false, separator_lines)
+  -- 未送信ヘッダーをタイムスタンプ付きヘッダーに置き換え
+  vim.api.nvim_buf_set_lines(self.buf, last_unsent_user_line - 1, last_unsent_user_line, false, { timestamped_header })
 end
 
 ---メッセージを送信
 function ChatBuffer:send_message()
+  -- 先にメッセージ抽出（未送信ヘッダー基準）してから、タイムスタンプ確定
+  -- この順序により、同一秒内の複数送信でも正しく動作する（issue#214対策）
   local message = self:extract_user_message()
   if not message then
     vim.notify("[vibing] No message to send", vim.log.levels.WARN)
     return
   end
+
+  -- メッセージ確定後、未送信ヘッダーをタイムスタンプ付きヘッダーに置換
+  self:_commit_user_message()
 
   -- スラッシュコマンドかチェック
   local commands = require("vibing.chat.commands")
@@ -828,9 +834,6 @@ function ChatBuffer:send_message()
       return
     end
   end
-
-  -- メッセージ送信前にタイムスタンプセパレーターを挿入
-  self:_insert_timestamp_separator()
 
   -- 通常のメッセージ送信
   require("vibing.actions.chat").send(self, message)
@@ -852,10 +855,11 @@ function ChatBuffer:start_response()
   end
   vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
 
-  -- Markdown標準: 空行 + 見出し
+  -- Markdown標準: 空行 + 見出し + 空行
   local new_lines = {
     "",
     "## Assistant",
+    "",
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
   -- StatusManagerがスピナー表示を担当するため、ここではスピナーを開始しない
@@ -950,10 +954,13 @@ function ChatBuffer:add_user_section()
   end
   vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
 
-  -- Markdown標準: 空行 + 見出し
+  -- Markdown標準: 空行 + 未送信ヘッダー + 空行2つ（入力エリア確保）
+  -- 未送信マーカー付きヘッダーを使用し、send_message()で正式ヘッダーに置き換える
   local new_lines = {
     "",
-    "## User",
+    Timestamp.create_unsent_user_header(),
+    "",
+    "",
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
 

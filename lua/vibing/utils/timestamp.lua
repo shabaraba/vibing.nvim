@@ -8,12 +8,8 @@ local M = {}
 local TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 -- タイムスタンプパターン（正規表現）
 local TIMESTAMP_PATTERN = "%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d"
--- タイムスタンプ付きヘッダーパターン
-local HEADER_WITH_TIMESTAMP_PATTERN = "^## (" .. TIMESTAMP_PATTERN .. ") (%w+)"
 -- レガシーヘッダーパターン（タイムスタンプなし）
 local LEGACY_HEADER_PATTERN = "^## (%w+)"
--- ヘッダー検出パターン
-local TIMESTAMP_CHECK_PATTERN = "^## " .. TIMESTAMP_PATTERN .. " %w+"
 
 ---現在時刻のタイムスタンプを生成
 ---フォーマット: "YYYY-MM-DD HH:MM:SS"
@@ -29,33 +25,23 @@ function M.now()
   return timestamp
 end
 
----タイムスタンプ付きヘッダーを作成
----@param role "User"|"Assistant" メッセージロール
----@param timestamp? string オプションのタイムスタンプ（省略時は現在時刻）
----@return string header タイムスタンプ付きヘッダー（例: "## 2025-12-27 11:00:13 User"）
-function M.create_header(role, timestamp)
-  if not role or (role ~= "User" and role ~= "Assistant") then
-    local msg = string.format("[vibing] Invalid role for header: %s (expected 'User' or 'Assistant')", tostring(role))
-    vim.notify(msg, vim.log.levels.ERROR)
-    error(msg)
-  end
 
-  timestamp = timestamp or M.now()
-  return string.format("## %s %s", timestamp, role)
-end
-
----ヘッダー行からロールを抽出（タイムスタンプあり/なし両対応）
+---ヘッダー行からロールを抽出（HTMLコメント形式/レガシー対応）
 ---@param line string ヘッダー行
 ---@return string? role "user" | "assistant" | nil（ヘッダーでない場合はnil）
 function M.extract_role(line)
-  -- タイムスタンプ付きパターン: "## YYYY-MM-DD HH:MM:SS User"
-  local _, role = line:match(HEADER_WITH_TIMESTAMP_PATTERN)
-  if role then
-    return role:lower()
+  -- 未送信ユーザーヘッダー: "## User <!-- unsent -->"
+  if M.is_unsent_user_header(line) then
+    return "user"
   end
 
-  -- レガシーパターン（タイムスタンプなし）: "## User"
-  role = line:match(LEGACY_HEADER_PATTERN)
+  -- HTMLコメント形式タイムスタンプ: "## User <!-- YYYY-MM-DD HH:MM:SS -->"
+  if M.is_timestamped_user_header(line) then
+    return "user"
+  end
+
+  -- レガシーパターン（シンプルヘッダー）: "## User" or "## Assistant"
+  local role = line:match(LEGACY_HEADER_PATTERN)
   if role then
     local lower_role = role:lower()
     -- "user" または "assistant" のみ有効なロールとして認識
@@ -67,20 +53,6 @@ function M.extract_role(line)
   return nil
 end
 
----ヘッダー行にタイムスタンプが含まれているか確認
----@param line string チェック対象の行
----@return boolean has_timestamp タイムスタンプが含まれている場合true
-function M.has_timestamp(line)
-  return line:match(TIMESTAMP_CHECK_PATTERN) ~= nil
-end
-
----ヘッダー行からタイムスタンプを抽出
----@param line string タイムスタンプ付きヘッダー行
----@return string? timestamp タイムスタンプ文字列（存在しない場合はnil）
-function M.extract_timestamp(line)
-  local timestamp = line:match(HEADER_WITH_TIMESTAMP_PATTERN)
-  return timestamp
-end
 
 ---行がメッセージヘッダーかどうかチェック
 ---@param line string チェック対象の行
@@ -89,23 +61,42 @@ function M.is_header(line)
   return M.extract_role(line) ~= nil
 end
 
----タイムスタンプセパレーターを作成
----常に完全フォーマット（日付 + 時刻）で生成
----@return string separator セパレーター行（例: "─── 2025-12-28 14:30 ───"）
-function M.create_separator()
-  local now = os.time()
-  local date_part = os.date("%Y-%m-%d", now)
-  local time_part = os.date("%H:%M", now)
 
-  return string.format("─── %s %s ───", date_part, time_part)
+---未送信ユーザーヘッダーを作成
+---送信前の一時的なマーカーとして使用され、送信時にタイムスタンプ付きヘッダーに置き換えられる
+---@return string header 未送信ユーザーヘッダー（例: "## User <!-- unsent -->"）
+function M.create_unsent_user_header()
+  return "## User <!-- unsent -->"
 end
 
----行がタイムスタンプセパレーターかどうかチェック
+---タイムスタンプ付きユーザーヘッダーを作成（HTMLコメント形式）
+---@param timestamp? string オプションのタイムスタンプ（省略時は現在時刻）
+---@return string header タイムスタンプ付きヘッダー（例: "## User <!-- 2025-12-29 14:30:55 -->"）
+function M.create_user_header_with_timestamp(timestamp)
+  timestamp = timestamp or M.now()
+  return string.format("## User <!-- %s -->", timestamp)
+end
+
+---行が未送信ユーザーヘッダーかどうかチェック
 ---@param line string チェック対象の行
----@return boolean is_separator セパレーターの場合true
-function M.is_separator(line)
-  -- "─── HH:MM ───" または "─── YYYY-MM-DD HH:MM ───" にマッチ
-  return line:match("^───.*───$") ~= nil
+---@return boolean is_unsent 未送信ヘッダーの場合true
+function M.is_unsent_user_header(line)
+  return line:match("^## User <!%-%- unsent %-%->$") ~= nil
+end
+
+---行がタイムスタンプ付きユーザーヘッダー（HTMLコメント形式）かどうかチェック
+---@param line string チェック対象の行
+---@return boolean is_timestamped タイムスタンプ付きヘッダーの場合true
+function M.is_timestamped_user_header(line)
+  return line:match("^## User <!%-%- " .. TIMESTAMP_PATTERN .. " %-%->$") ~= nil
+end
+
+---ヘッダーからタイムスタンプを抽出（HTMLコメント形式）
+---@param line string タイムスタンプ付きヘッダー行
+---@return string? timestamp タイムスタンプ文字列（存在しない場合はnil）
+function M.extract_timestamp_from_comment(line)
+  local timestamp = line:match("^## User <!%-%- (" .. TIMESTAMP_PATTERN .. ") %-%->$")
+  return timestamp
 end
 
 return M

@@ -250,7 +250,7 @@ function M.send(chat_buffer, message)
           local BufferReload = require("vibing.utils.buffer_reload")
           BufferReload.reload_files(modified_files)
 
-          chat_buffer:append_chunk("\n\n## Modified Files\n\n")
+          chat_buffer:append_chunk("\n\n### Modified Files\n\n")
           for _, file_path in ipairs(modified_files) do
             -- 相対パスに変換
             local relative_path = vim.fn.fnamemodify(file_path, ":.")
@@ -288,7 +288,7 @@ function M.send(chat_buffer, message)
       local BufferReload = require("vibing.utils.buffer_reload")
       BufferReload.reload_files(modified_files)
 
-      chat_buffer:append_chunk("\n\n## Modified Files\n\n")
+      chat_buffer:append_chunk("\n\n### Modified Files\n\n")
       for _, file_path in ipairs(modified_files) do
         -- 相対パスに変換
         local relative_path = vim.fn.fnamemodify(file_path, ":.")
