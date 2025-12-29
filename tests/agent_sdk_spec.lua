@@ -44,9 +44,16 @@ describe("vibing.adapters.agent_sdk", function()
       assert.is_string(adapter._plugin_root)
     end)
 
-    it("should initialize handle as nil", function()
+    it("should initialize handles as empty table", function()
       local adapter = AgentSDK:new(mock_config)
-      assert.is_nil(adapter._handle)
+      assert.is_table(adapter._handles)
+      assert.equals(0, vim.tbl_count(adapter._handles))
+    end)
+
+    it("should initialize sessions as empty table", function()
+      local adapter = AgentSDK:new(mock_config)
+      assert.is_table(adapter._sessions)
+      assert.equals(0, vim.tbl_count(adapter._sessions))
     end)
 
     it("should store config reference", function()
@@ -143,11 +150,27 @@ describe("vibing.adapters.agent_sdk", function()
   end)
 
   describe("set_session_id", function()
-    it("should store session id", function()
+    it("should store session id in default key", function()
       local adapter = AgentSDK:new(mock_config)
       adapter:set_session_id("test-session-123")
 
-      assert.equals("test-session-123", adapter._session_id)
+      assert.equals("test-session-123", adapter:get_session_id())
+    end)
+
+    it("should store session id with handle_id", function()
+      local adapter = AgentSDK:new(mock_config)
+      adapter:set_session_id("test-session-456", "handle-1")
+
+      assert.equals("test-session-456", adapter:get_session_id("handle-1"))
+      assert.is_nil(adapter:get_session_id("handle-2"))
+    end)
+
+    it("should clear session id when set to nil", function()
+      local adapter = AgentSDK:new(mock_config)
+      adapter:set_session_id("test-session-123")
+      adapter:set_session_id(nil)
+
+      assert.is_nil(adapter:get_session_id())
     end)
   end)
 end)

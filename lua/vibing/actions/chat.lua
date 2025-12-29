@@ -156,14 +156,6 @@ function M.send(chat_buffer, message)
     config.chat.context_position
   )
 
-  -- セッションIDを opts に含める（新しいハンドルで使用）
-  if adapter:supports("session") then
-    local saved_session = chat_buffer:get_session_id()
-    if saved_session then
-      opts._session_id = saved_session
-    end
-  end
-
   -- 会話履歴を取得（SDK resume bug対策）
   local conversation = chat_buffer:extract_conversation()
   if #conversation == 0 then
@@ -230,6 +222,15 @@ function M.send(chat_buffer, message)
     end,
   }
 
+  -- セッションIDを opts に含める（新しいハンドルで使用）
+  -- 新規チャット（session_id未設定）の場合は明示的にnilを設定して新しいセッションを開始
+  -- _session_id_explicit フラグで明示的に設定されたことを示す（commit 8d89445 の修正を維持）
+  if adapter:supports("session") then
+    local saved_session = chat_buffer:get_session_id()
+    opts._session_id = saved_session
+    opts._session_id_explicit = true  -- 明示的に設定されたことを示すフラグ
+  end
+
   -- ストリーミング実行
   if adapter:supports("streaming") then
     local handle_id = adapter:stream(formatted_prompt, opts, function(chunk)
@@ -268,6 +269,8 @@ function M.send(chat_buffer, message)
           if new_session and new_session ~= chat_buffer:get_session_id() then
             chat_buffer:update_session_id(new_session)
           end
+          -- セッションIDを chat_buffer に保存したので、adapter からクリーンアップ
+          adapter:cleanup_session(response._handle_id)
         end
         chat_buffer:add_user_section()
       end)
@@ -306,6 +309,8 @@ function M.send(chat_buffer, message)
       if new_session then
         chat_buffer:update_session_id(new_session)
       end
+      -- セッションIDを chat_buffer に保存したので、adapter からクリーンアップ
+      adapter:cleanup_session(response._handle_id)
     end
     chat_buffer:add_user_section()
   end

@@ -186,8 +186,17 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   -- ハンドルIDを生成（ユニークな識別子）
   local handle_id = tostring(vim.loop.hrtime()) .. "_" .. tostring(math.random(100000))
 
-  -- opts._session_id が指定されていればそれを使用、なければマップから取得
-  local session_id = opts._session_id or self._sessions[opts._handle_id or ""]
+  -- セッションIDの決定ロジック:
+  -- 1. opts._session_id_explicit が true の場合、opts._session_id を使用（nilでも新規セッション）
+  -- 2. それ以外の場合、opts._session_id またはマップから取得（後方互換性）
+  local session_id
+  if opts._session_id_explicit then
+    -- chat.lua から明示的に設定された場合（nilでも新規セッションとして扱う）
+    session_id = opts._session_id
+  else
+    -- inline.lua など、明示的に設定されていない場合は従来の動作
+    session_id = opts._session_id or self._sessions[opts._handle_id or ""]
+  end
 
   local cmd = self:build_command(prompt, opts, session_id)
   local output = {}
@@ -338,6 +347,26 @@ function AgentSDK:get_session_id(handle_id)
   else
     -- handle_id が指定されていない場合は、デフォルトキーから取得
     return self._sessions["__default__"]
+  end
+end
+
+---セッションIDをクリーンアップ
+---get_session_id()でセッションIDを取得した後に呼び出してメモリを解放
+---@param handle_id string クリーンアップするハンドルID
+function AgentSDK:cleanup_session(handle_id)
+  if handle_id then
+    self._sessions[handle_id] = nil
+  end
+end
+
+---すべての完了済みセッションをクリーンアップ
+---_handlesに存在しない_sessionsエントリを削除
+function AgentSDK:cleanup_stale_sessions()
+  for handle_id in pairs(self._sessions) do
+    -- __default__ キーと実行中のハンドルは保持
+    if handle_id ~= "__default__" and not self._handles[handle_id] then
+      self._sessions[handle_id] = nil
+    end
   end
 end
 
