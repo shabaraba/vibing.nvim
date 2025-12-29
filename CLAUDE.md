@@ -348,9 +348,11 @@ Chat messages include timestamps in their headers to help track conversation chr
 
 ```markdown
 ## 2025-12-28 14:30:00 User
+
 Message content here
 
 ## 2025-12-28 14:35:15 Assistant
+
 Response content here
 ```
 
@@ -372,6 +374,7 @@ Response content here
 **Implementation:**
 
 The `lua/vibing/utils/timestamp.lua` module provides:
+
 - `create_header(role, timestamp)` - Generate timestamped headers
 - `extract_role(line)` - Parse role from both timestamped and legacy headers
 - `has_timestamp(line)` - Check if header includes timestamp

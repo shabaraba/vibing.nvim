@@ -85,4 +85,23 @@ function M.is_header(line)
   return M.extract_role(line) ~= nil
 end
 
+---タイムスタンプセパレーターを作成
+---常に完全フォーマット（日付 + 時刻）で生成
+---@return string separator セパレーター行（例: "─── 2025-12-28 14:30 ───"）
+function M.create_separator()
+  local now = os.time()
+  local date_part = os.date("%Y-%m-%d", now)
+  local time_part = os.date("%H:%M", now)
+
+  return string.format("─── %s %s ───", date_part, time_part)
+end
+
+---行がタイムスタンプセパレーターかどうかチェック
+---@param line string チェック対象の行
+---@return boolean is_separator セパレーターの場合true
+function M.is_separator(line)
+  -- "─── HH:MM ───" または "─── YYYY-MM-DD HH:MM ───" にマッチ
+  return line:match("^───.*───$") ~= nil
+end
+
 return M

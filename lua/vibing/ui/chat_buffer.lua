@@ -352,7 +352,7 @@ function ChatBuffer:_init_content()
   table.insert(lines, "")
   table.insert(lines, "---")
   table.insert(lines, "")
-  table.insert(lines, Timestamp.create_header("User"))
+  table.insert(lines, "## User")
   table.insert(lines, "")
   table.insert(lines, "")
 
@@ -773,6 +773,39 @@ function ChatBuffer:extract_user_message()
   return table.concat(message_lines, "\n")
 end
 
+---タイムスタンプセパレーターを挿入
+---最後の## Userヘッダーの直前にセパレーターを挿入（Markdown標準形式）
+function ChatBuffer:_insert_timestamp_separator()
+  if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
+    return
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+  local last_user_line = nil
+
+  -- 逆順で最後の "## User" 行を見つける
+  for i = #lines, 1, -1 do
+    local role = Timestamp.extract_role(lines[i])
+    if role == "user" then
+      last_user_line = i
+      break
+    end
+  end
+
+  if not last_user_line then
+    -- ## User が見つからない場合は挿入しない（異常ケース）
+    return
+  end
+
+  -- セパレーターを生成
+  local separator = Timestamp.create_separator()
+
+  -- Markdown標準: セパレーター + 空行 を挿入
+  -- （前の空行は add_user_section() で既に挿入済み、見出しの前には必ず空行が必要）
+  local separator_lines = { separator, "" }
+  vim.api.nvim_buf_set_lines(self.buf, last_user_line - 1, last_user_line - 1, false, separator_lines)
+end
+
 ---メッセージを送信
 function ChatBuffer:send_message()
   local message = self:extract_user_message()
@@ -796,6 +829,9 @@ function ChatBuffer:send_message()
     end
   end
 
+  -- メッセージ送信前にタイムスタンプセパレーターを挿入
+  self:_insert_timestamp_separator()
+
   -- 通常のメッセージ送信
   require("vibing.actions.chat").send(self, message)
 
@@ -809,10 +845,17 @@ local spinner_frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧",
 ---アシスタントの応答を追加開始
 function ChatBuffer:start_response()
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+
+  -- ユーザーメッセージの末尾の余分な空行を削除
+  while #lines > 0 and lines[#lines] == "" do
+    table.remove(lines, #lines)
+  end
+  vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
+
+  -- Markdown標準: 空行 + 見出し
   local new_lines = {
     "",
-    Timestamp.create_header("Assistant"),
-    "",
+    "## Assistant",
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
   -- StatusManagerがスピナー表示を担当するため、ここではスピナーを開始しない
@@ -900,10 +943,17 @@ function ChatBuffer:add_user_section()
   self:_flush_chunks()
 
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+
+  -- アシスタント応答の末尾の余分な空行を削除
+  while #lines > 0 and lines[#lines] == "" do
+    table.remove(lines, #lines)
+  end
+  vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
+
+  -- Markdown標準: 空行 + 見出し
   local new_lines = {
     "",
-    Timestamp.create_header("User"),
-    "",
+    "## User",
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
 
