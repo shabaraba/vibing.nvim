@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.12.0 (2025-12-29)
+
+## What's Changed
+* feat: Add timestamps to chat message headers by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/231
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.11.0...v1.12.0
+
 ## 1.11.0 (2025-12-27)
 
 ## What's Changed
