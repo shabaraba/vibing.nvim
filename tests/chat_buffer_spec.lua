@@ -192,6 +192,43 @@ describe("vibing.ui.chat_buffer", function()
       -- Cleanup
       vim.api.nvim_buf_delete(chat.buf, { force = true })
     end)
+
+    it("should ignore code block ## User and extract message after separator (issue#214)", function()
+      local chat = ChatBuffer:new(mock_config)
+
+      -- Create buffer with code block containing ## User, then real message after separator
+      chat.buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(chat.buf, 0, -1, false, {
+        "---",
+        "session_id: test",
+        "---",
+        "",
+        "## 2025-12-28 10:00:00 User",
+        "",
+        "First message",
+        "",
+        "## 2025-12-28 10:01:00 Assistant",
+        "",
+        "Here's the format:",
+        "```",
+        "## User",
+        "Message content",
+        "```",
+        "",
+        "─── 2025-12-28 10:05 ───",
+        "",
+        "## 2025-12-28 10:05:30 User",
+        "",
+        "This is the real user message",
+      })
+
+      local result = chat:extract_user_message()
+      assert.is_not_nil(result)
+      assert.equals("This is the real user message", result)
+
+      -- Cleanup
+      vim.api.nvim_buf_delete(chat.buf, { force = true })
+    end)
   end)
 
   describe("integration", function()

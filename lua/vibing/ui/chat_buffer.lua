@@ -729,13 +729,25 @@ function ChatBuffer:extract_conversation()
 end
 
 ---ユーザーメッセージを抽出（最後の## Userセクションから）
+---タイムスタンプセパレーター以降のUserヘッダーのみを認識（issue#214対策）
 ---@return string?
 function ChatBuffer:extract_user_message()
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+
+  -- 最後のタイムスタンプセパレーターを探す
+  local last_separator_line = nil
+  for i = #lines, 1, -1 do
+    if Timestamp.is_separator(lines[i]) then
+      last_separator_line = i
+      break
+    end
+  end
+
+  -- セパレーター以降の範囲で最後の## Userを探す
+  local search_start = last_separator_line or 1
   local last_user_line = nil
 
-  -- 逆順で最後の "## User" 行を見つける
-  for i = #lines, 1, -1 do
+  for i = #lines, search_start, -1 do
     local role = Timestamp.extract_role(lines[i])
     if role == "user" then
       last_user_line = i
@@ -852,10 +864,11 @@ function ChatBuffer:start_response()
   end
   vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
 
-  -- Markdown標準: 空行 + 見出し
+  -- Markdown標準: 空行 + 見出し + 空行
   local new_lines = {
     "",
     "## Assistant",
+    "",
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
   -- StatusManagerがスピナー表示を担当するため、ここではスピナーを開始しない
@@ -950,10 +963,12 @@ function ChatBuffer:add_user_section()
   end
   vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
 
-  -- Markdown標準: 空行 + 見出し
+  -- Markdown標準: 空行 + 見出し + 空行2つ（入力エリア確保）
   local new_lines = {
     "",
     "## User",
+    "",
+    "",
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
 
