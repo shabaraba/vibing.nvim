@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.13.0 (2025-12-29)
+
+## What's Changed
+* feat: Add concurrent execution support with handle/session maps and inline queue by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/239
+* fix: Display plugin slash commands with plugin name in VibingSlashCommands by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/241
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.12.1...v1.13.0
+
 ## 1.12.1 (2025-12-29)
 
 ## What's Changed
