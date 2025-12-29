@@ -1128,7 +1128,7 @@ function M.save_as_vibing()
 
   -- Modified Files セクション
   if #state.modified_files > 0 then
-    table.insert(lines, "## Modified Files")
+    table.insert(lines, "### Modified Files")
     table.insert(lines, "")
     for _, file in ipairs(state.modified_files) do
       local relative = vim.fn.fnamemodify(file, ":.")
