@@ -811,8 +811,9 @@ function ChatBuffer:_insert_timestamp_separator()
   -- セパレーターを生成
   local separator = Timestamp.create_separator()
 
-  -- 正式なタイムスタンプ付きヘッダーを生成
-  local formal_header = Timestamp.create_header("User")
+  -- 正式なヘッダー（タイムスタンプなし）
+  -- セパレーターに時刻情報があるため、ヘッダーにはタイムスタンプ不要
+  local formal_header = "## User"
 
   -- 1. セパレーター + 空行 を挿入（未送信ヘッダーの直前）
   local separator_lines = { separator, "" }

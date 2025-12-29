@@ -203,11 +203,11 @@ describe("vibing.ui.chat_buffer", function()
         "session_id: test",
         "---",
         "",
-        "## 2025-12-28 10:00:00 User",
+        "## User",
         "",
         "First message",
         "",
-        "## 2025-12-28 10:01:00 Assistant",
+        "## Assistant",
         "",
         "Here's the format:",
         "```",
@@ -217,7 +217,7 @@ describe("vibing.ui.chat_buffer", function()
         "",
         "─── 2025-12-28 10:05 ───",
         "",
-        "## 2025-12-28 10:05:30 User",
+        "## User",
         "",
         "This is the real user message",
       })
@@ -241,11 +241,11 @@ describe("vibing.ui.chat_buffer", function()
         "session_id: test",
         "---",
         "",
-        "## 2025-12-29 10:00:00 User",
+        "## User",
         "",
         "Previous message",
         "",
-        "## 2025-12-29 10:01:00 Assistant",
+        "## Assistant",
         "",
         "Here's code with ## User:",
         "```",
@@ -266,16 +266,28 @@ describe("vibing.ui.chat_buffer", function()
       assert.is_not_nil(result)
       assert.equals("Real unsent message", result)
 
-      -- Verify separator was inserted
+      -- Verify separator was inserted and unsent header was replaced
       local lines = vim.api.nvim_buf_get_lines(chat.buf, 0, -1, false)
       local has_separator = false
-      for _, line in ipairs(lines) do
+      local has_formal_user_header = false
+      local still_has_unsent = false
+
+      for i, line in ipairs(lines) do
         if Timestamp.is_separator(line) then
           has_separator = true
-          break
+        end
+        -- Check for formal "## User" header after line 10 (to avoid matching "Previous message")
+        if line == "## User" and i > 10 then
+          has_formal_user_header = true
+        end
+        if Timestamp.is_unsent_user_header(line) then
+          still_has_unsent = true
         end
       end
+
       assert.is_true(has_separator, "Separator should be inserted")
+      assert.is_true(has_formal_user_header, "Unsent header should be replaced with formal header")
+      assert.is_false(still_has_unsent, "Unsent header should be removed")
 
       -- Cleanup
       vim.api.nvim_buf_delete(chat.buf, { force = true })
