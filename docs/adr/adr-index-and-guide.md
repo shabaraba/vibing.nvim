@@ -42,6 +42,32 @@ Documents the implementation of the three-tier permission system (deny/ask/allow
 
 ---
 
+### ADR 002: Concurrent Execution Support
+
+**Status:** Accepted
+**Date:** 2024-12-29
+
+Documents the implementation of concurrent execution support for multiple chat windows and inline actions, including:
+
+- Handle-based concurrent request management
+- Session lifecycle management and cleanup
+- Inline action queuing system
+- Error handling improvements
+
+**Key Files:**
+
+- ADR: [002-concurrent-execution-support.md](./002-concurrent-execution-support.md)
+- Implementation: `lua/vibing/adapters/agent_sdk.lua`
+- Queue: `lua/vibing/actions/inline.lua`
+- Session sync: `lua/vibing/actions/chat.lua`
+- Tests: `tests/agent_sdk_spec.lua`
+
+**Related Issues:**
+
+- [PR #239](https://github.com/shabaraba/vibing.nvim/pull/239) - Agent singleton check
+
+---
+
 ## Creating a New ADR
 
 Use this template when creating a new ADR:

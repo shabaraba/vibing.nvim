@@ -173,4 +173,67 @@ describe("vibing.adapters.agent_sdk", function()
       assert.is_nil(adapter:get_session_id())
     end)
   end)
+
+  describe("cleanup_stale_sessions", function()
+    it("should remove completed session while preserving active ones", function()
+      local adapter = AgentSDK:new(mock_config)
+
+      -- 複数のセッションを設定
+      adapter._sessions["handle-1"] = "session-1"
+      adapter._sessions["handle-2"] = "session-2"
+      adapter._sessions["handle-3"] = "session-3"
+
+      -- handle-2 のみ実行中とマーク
+      adapter._handles["handle-2"] = {}
+
+      -- クリーンアップ実行
+      adapter:cleanup_stale_sessions()
+
+      -- 実行中のセッションは保持、完了済みは削除
+      assert.is_nil(adapter._sessions["handle-1"])
+      assert.equals("session-2", adapter._sessions["handle-2"])
+      assert.is_nil(adapter._sessions["handle-3"])
+    end)
+
+    it("should preserve __default__ key", function()
+      local adapter = AgentSDK:new(mock_config)
+
+      adapter._sessions["__default__"] = "default-session"
+      adapter._sessions["handle-1"] = "session-1"
+
+      adapter:cleanup_stale_sessions()
+
+      assert.equals("default-session", adapter._sessions["__default__"])
+      assert.is_nil(adapter._sessions["handle-1"])
+    end)
+  end)
+
+  describe("concurrent requests", function()
+    it("should handle multiple simultaneous sessions", function()
+      local adapter = AgentSDK:new(mock_config)
+
+      -- 複数のハンドルIDを生成して、セッションIDを設定
+      adapter._sessions["handle-1"] = "session-1"
+      adapter._sessions["handle-2"] = "session-2"
+      adapter._sessions["handle-3"] = "session-3"
+
+      -- すべてのセッションが独立して管理されていることを確認
+      assert.equals("session-1", adapter:get_session_id("handle-1"))
+      assert.equals("session-2", adapter:get_session_id("handle-2"))
+      assert.equals("session-3", adapter:get_session_id("handle-3"))
+    end)
+
+    it("should cleanup specific handle without affecting others", function()
+      local adapter = AgentSDK:new(mock_config)
+
+      adapter._sessions["handle-1"] = "session-1"
+      adapter._sessions["handle-2"] = "session-2"
+
+      -- handle-1 のみクリーンアップ
+      adapter:cleanup_session("handle-1")
+
+      assert.is_nil(adapter:get_session_id("handle-1"))
+      assert.equals("session-2", adapter:get_session_id("handle-2"))
+    end)
+  end)
 end)
