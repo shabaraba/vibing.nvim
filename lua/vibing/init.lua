@@ -84,12 +84,7 @@ function M._register_commands()
   end, { desc = "Toggle Vibing chat window" })
 
   vim.api.nvim_create_user_command("VibingSlashCommands", function()
-    local chat = require("vibing.actions.chat")
-    if not chat.chat_buffer or not chat.chat_buffer:is_open() then
-      notify.warn("Please open a chat window first")
-      return
-    end
-    require("vibing.ui.command_picker").show(chat.chat_buffer)
+    require("vibing.ui.command_picker").show()
   end, { desc = "Show slash command picker" })
 
   ---@private

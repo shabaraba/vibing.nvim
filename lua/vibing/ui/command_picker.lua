@@ -9,11 +9,25 @@ local M = {}
 
 ---コマンドピッカーを表示
 ---Telescopeが利用可能ならリッチなピッカー、なければvim.ui.selectを使用
----@param chat_buffer Vibing.ChatBuffer コマンドを挿入するチャットバッファ
+---@param chat_buffer? Vibing.ChatBuffer コマンドを挿入するチャットバッファ（nilの場合はブラウズ専用）
 function M.show(chat_buffer)
-  if not chat_buffer or not chat_buffer.buf or not vim.api.nvim_buf_is_valid(chat_buffer.buf) then
-    notify.error("Invalid chat buffer")
-    return
+  -- チャットバッファが提供されていない場合は、現在開いているチャットを探す
+  if not chat_buffer then
+    local chat = require("vibing.actions.chat")
+
+    -- 1. グローバルなchat_bufferをチェック
+    if chat.chat_buffer and chat.chat_buffer:is_open() then
+      chat_buffer = chat.chat_buffer
+    else
+      -- 2. 現在のバッファが.vibingファイルかチェック
+      local current_buf = vim.api.nvim_get_current_buf()
+      local filetype = vim.bo[current_buf].filetype
+      if filetype == "vibing" then
+        -- 現在のバッファがvibingファイルなら、それをチャットバッファとして取得
+        chat_buffer = chat.get_current_chat_buffer()
+      end
+    end
+    -- chat_bufferがまだnilの場合はブラウズ専用モード
   end
 
   -- Telescopeが利用可能かチェック
@@ -27,7 +41,7 @@ function M.show(chat_buffer)
 end
 
 ---vim.ui.selectを使用したネイティブピッカー
----@param chat_buffer Vibing.ChatBuffer コマンドを挿入するチャットバッファ
+---@param chat_buffer? Vibing.ChatBuffer コマンドを挿入するチャットバッファ（nilの場合はブラウズ専用）
 function M._show_native(chat_buffer)
   local all_commands = commands.list_all()
 
@@ -39,6 +53,7 @@ function M._show_native(chat_buffer)
       description = cmd.description,
       source = cmd.source or "builtin",
       requires_args = cmd.requires_args or false,
+      plugin_name = cmd.plugin_name,
     })
   end
 
@@ -55,6 +70,12 @@ function M._show_native(chat_buffer)
         source_tag = "[project] "
       elseif item.source == "user" then
         source_tag = "[user] "
+      elseif item.source == "plugin" then
+        if item.plugin_name then
+          source_tag = string.format("[plugin:%s] ", item.plugin_name)
+        else
+          source_tag = "[plugin] "
+        end
       end
       local args_indicator = item.requires_args and " <args>" or ""
       return string.format("%s/%s%s - %s", source_tag, item.name, args_indicator, item.description)
@@ -67,7 +88,7 @@ function M._show_native(chat_buffer)
 end
 
 ---Telescopeを使用したリッチピッカー
----@param chat_buffer Vibing.ChatBuffer コマンドを挿入するチャットバッファ
+---@param chat_buffer? Vibing.ChatBuffer コマンドを挿入するチャットバッファ（nilの場合はブラウズ専用）
 function M._show_telescope(chat_buffer)
   local pickers = require("telescope.pickers")
   local finders = require("telescope.finders")
@@ -86,6 +107,7 @@ function M._show_telescope(chat_buffer)
       description = cmd.description,
       source = cmd.source or "builtin",
       requires_args = cmd.requires_args or false,
+      plugin_name = cmd.plugin_name,
     })
   end
 
@@ -97,7 +119,7 @@ function M._show_telescope(chat_buffer)
   local displayer = entry_display.create({
     separator = " ",
     items = {
-      { width = 15 },  -- source
+      { width = 20 },  -- source (increased for plugin names)
       { width = 25 },  -- command name (with args indicator)
       { remaining = true },  -- description
     },
@@ -111,6 +133,12 @@ function M._show_telescope(chat_buffer)
       source_display = "[custom:project]"
     elseif entry.source == "user" then
       source_display = "[custom:user]"
+    elseif entry.source == "plugin" then
+      if entry.plugin_name then
+        source_display = string.format("[plugin:%s]", entry.plugin_name)
+      else
+        source_display = "[plugin]"
+      end
     end
 
     local command_display = "/" .. entry.name
@@ -139,6 +167,7 @@ function M._show_telescope(chat_buffer)
           description = entry.description,
           source = entry.source,
           requires_args = entry.requires_args,
+          plugin_name = entry.plugin_name,
         }
       end,
     }),
@@ -159,8 +188,29 @@ end
 ---選択されたコマンドを処理
 ---引数補完が必要な場合は追加の選択UIを表示
 ---@param command_name string 選択されたコマンド名
----@param chat_buffer Vibing.ChatBuffer コマンドを挿入するチャットバッファ
+---@param chat_buffer? Vibing.ChatBuffer コマンドを挿入するチャットバッファ（nilの場合はブラウズ専用）
 function M._handle_selection(command_name, chat_buffer)
+  -- チャットバッファがない場合はブラウズ専用モード（情報表示のみ）
+  if not chat_buffer then
+    local all_commands = commands.list_all()
+    local cmd = all_commands[command_name]
+    if cmd then
+      local info_lines = {
+        string.format("Command: /%s", command_name),
+        string.format("Description: %s", cmd.description or "No description"),
+        string.format("Source: %s", cmd.source or "unknown"),
+      }
+      if cmd.plugin_name then
+        table.insert(info_lines, string.format("Plugin: %s", cmd.plugin_name))
+      end
+      if cmd.requires_args then
+        table.insert(info_lines, "Arguments: Required")
+      end
+      notify.info(table.concat(info_lines, "\n"))
+    end
+    return
+  end
+
   -- 引数補完が必要かチェック
   local arg_completions = commands.get_argument_completions(command_name)
 
@@ -180,10 +230,14 @@ function M._handle_selection(command_name, chat_buffer)
 end
 
 ---コマンドをチャットバッファに挿入
----@param chat_buffer Vibing.ChatBuffer 挿入先のチャットバッファ
+---@param chat_buffer? Vibing.ChatBuffer 挿入先のチャットバッファ
 ---@param command_name string コマンド名
 ---@param argument string? コマンド引数（オプショナル）
 function M._insert_command(chat_buffer, command_name, argument)
+  if not chat_buffer then
+    notify.warn("No chat buffer available. Open a chat window first to use commands.")
+    return
+  end
   local buf = chat_buffer.buf
   local win = chat_buffer.win
 

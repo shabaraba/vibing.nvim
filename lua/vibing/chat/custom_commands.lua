@@ -3,9 +3,10 @@ local notify = require("vibing.utils.notify")
 ---@class Vibing.CustomCommand
 ---@field name string コマンド名（ファイル名から生成、例："git-commit"）
 ---@field description string コマンド説明（# タイトル行またはファイル名）
----@field source "project"|"user" コマンドソース
+---@field source "project"|"user"|"plugin" コマンドソース
 ---@field file_path string Markdownファイルのフルパス
 ---@field content string Markdownファイル全体の内容
+---@field plugin_name string? プラグイン名（pluginソースの場合のみ、例："dev-org"）
 
 ---@class Vibing.CustomCommands
 local M = {}
@@ -13,6 +14,25 @@ local M = {}
 ---キャッシュ（nilの場合は未初期化）
 ---@type Vibing.CustomCommand[]?
 M._cache = nil
+
+---ファイルパスからプラグイン名を抽出
+---@param file_path string ファイルパス
+---@return string? plugin_name プラグイン名（抽出できない場合はnil）
+local function extract_plugin_name(file_path)
+  -- marketplaces: ~/.claude/plugins/marketplaces/{marketplace}/plugins/{plugin}/commands/*.md
+  local marketplace_match = file_path:match("/marketplaces/[^/]+/plugins/([^/]+)/commands/")
+  if marketplace_match then
+    return marketplace_match
+  end
+
+  -- cache: ~/.claude/plugins/cache/{owner}/{plugin}/{version}/commands/*.md
+  local cache_match = file_path:match("/cache/[^/]+/([^/]+)/[^/]+/commands/")
+  if cache_match then
+    return cache_match
+  end
+
+  return nil
+end
 
 ---Markdownファイルをパースしてコマンド情報を抽出
 ---ファイル名からコマンド名を生成し、最初の#行を説明として使用
@@ -106,9 +126,30 @@ function M.scan()
               source = "plugin",
               file_path = file,
               content = parsed.content,
+              plugin_name = extract_plugin_name(file),
             })
           end
         end
+      end
+    end
+  end
+
+  -- プラグインキャッシュ (--add-dir含む) もスキャン
+  local plugin_cache = vim.fn.expand("~/.claude/plugins/cache/")
+  if vim.fn.isdirectory(plugin_cache) == 1 then
+    -- {owner}/{plugin}/{version}/commands/*.md パターンでスキャン
+    local cache_plugin_commands = vim.fn.glob(plugin_cache .. "*/*/*/commands/*.md", false, true)
+    for _, file in ipairs(cache_plugin_commands) do
+      local success, parsed = pcall(M._parse_markdown, file)
+      if success and parsed then
+        table.insert(commands, {
+          name = parsed.name,
+          description = parsed.description,
+          source = "plugin",
+          file_path = file,
+          content = parsed.content,
+          plugin_name = extract_plugin_name(file),
+        })
       end
     end
   end
