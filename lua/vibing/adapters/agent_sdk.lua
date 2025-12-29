@@ -1,9 +1,9 @@
 local Base = require("vibing.adapters.base")
 
 ---@class Vibing.AgentSDKAdapter : Vibing.Adapter
----@field _handle table? vim.system()で起動したプロセスハンドル（実行中のみ）
+---@field _handles table<string, table> vim.system()で起動したプロセスハンドルのマップ（handle_id -> handle）
+---@field _sessions table<string, string> セッションIDのマップ（handle_id -> session_id）
 ---@field _plugin_root string プラグインのルートディレクトリパス
----@field _session_id string? 会話セッションID（セッション再開に使用）
 local AgentSDK = setmetatable({}, { __index = Base })
 AgentSDK.__index = AgentSDK
 
@@ -16,7 +16,8 @@ function AgentSDK:new(config)
   local instance = Base.new(self, config)
   setmetatable(instance, AgentSDK)
   instance.name = "agent_sdk"
-  instance._handle = nil
+  instance._handles = {}
+  instance._sessions = {}
   -- Find plugin root directory
   local source = debug.getinfo(1, "S").source:sub(2)
   instance._plugin_root = vim.fn.fnamemodify(source, ":h:h:h:h")
@@ -36,11 +37,13 @@ end
 ---opts内の値はfrontmatterから渡され、グローバル設定より優先される
 ---@param prompt string ユーザープロンプト
 ---@param opts Vibing.AdapterOpts コンテキストファイル等のオプション
+---@param session_id string? セッションID（nilの場合は新規セッション）
 -- Build the Node.js command-line arguments to invoke the agent wrapper for the given prompt and options.
 -- @param prompt The prompt text to provide to the agent.
 -- @param opts Table of frontmatter and runtime options that may influence the command (e.g. mode, model, context entries like "@file:<path>", permissions_allow, permissions_deny, permission_mode).
+-- @param session_id Optional session ID for resuming conversations.
 -- @return string[] Array of command and arguments ready to be executed (first element is the Node executable followed by wrapper path and flags).
-function AgentSDK:build_command(prompt, opts)
+function AgentSDK:build_command(prompt, opts, session_id)
   local cmd = { "node", self:get_wrapper_path() }
 
   table.insert(cmd, "--cwd")
@@ -76,9 +79,9 @@ function AgentSDK:build_command(prompt, opts)
   end
 
   -- Add session ID for resuming (V2 API handles this properly)
-  if self._session_id then
+  if session_id then
     table.insert(cmd, "--session")
-    table.insert(cmd, self._session_id)
+    table.insert(cmd, session_id)
   end
 
   -- Add permissions: Always use frontmatter (opts) only
@@ -154,6 +157,8 @@ function AgentSDK:execute(prompt, opts)
   local result = { content = "" }
   local done = false
 
+  -- execute() はブロッキング実行なので、handle_id の管理は不要
+  -- opts._session_id が指定されていればそれを使用
   self:stream(prompt, opts, function(chunk)
     result.content = result.content .. chunk
   end, function(response)
@@ -174,14 +179,22 @@ end
 ---@param opts Vibing.AdapterOpts コンテキスト等のオプション
 ---@param on_chunk fun(chunk: string) チャンク受信時のコールバック
 ---@param on_done fun(response: Vibing.Response) 完了時のコールバック
+---@return string handle_id 生成されたハンドルID（キャンセル用）
 function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   opts = opts or {}
-  local cmd = self:build_command(prompt, opts)
+
+  -- ハンドルIDを生成（ユニークな識別子）
+  local handle_id = tostring(vim.loop.hrtime()) .. "_" .. tostring(math.random(100000))
+
+  -- opts._session_id が指定されていればそれを使用、なければマップから取得
+  local session_id = opts._session_id or self._sessions[opts._handle_id or ""]
+
+  local cmd = self:build_command(prompt, opts, session_id)
   local output = {}
   local error_output = {}
   local stdout_buffer = ""
 
-  self._handle = vim.system(cmd, {
+  self._handles[handle_id] = vim.system(cmd, {
     text = true,
     stdout = function(err, data)
       if err then return end
@@ -213,7 +226,7 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
                 end
               elseif msg.type == "session" and msg.session_id then
                 -- Store session ID for subsequent calls
-                self._session_id = msg.session_id
+                self._sessions[handle_id] = msg.session_id
               elseif msg.type == "tool_use" and msg.tool and msg.file_path then
                 -- Tool use event for file-modifying operations
                 if opts.on_tool_use then
@@ -242,26 +255,45 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
     end,
   }, function(obj)
     vim.schedule(function()
-      self._handle = nil
+      -- クリーンアップ：ハンドルをマップから削除（セッションIDは保持）
+      self._handles[handle_id] = nil
+
       if obj.code ~= 0 or #error_output > 0 then
         on_done({
           content = table.concat(output, ""),
           error = table.concat(error_output, ""),
+          _handle_id = handle_id,
         })
       else
-        on_done({ content = table.concat(output, "") })
+        on_done({
+          content = table.concat(output, ""),
+          _handle_id = handle_id,
+        })
       end
     end)
   end)
+
+  -- ハンドルIDを返す（キャンセル用）
+  return handle_id
 end
 
 ---実行中のリクエストをキャンセル
 ---Node.jsプロセスをSIGKILL(9)で強制終了
----ハンドルをクリアしてアダプターを再利用可能な状態にリセット
-function AgentSDK:cancel()
-  if self._handle then
-    self._handle:kill(9)
-    self._handle = nil
+---@param handle_id string? キャンセルするハンドルID（nilの場合は全ハンドルをキャンセル）
+function AgentSDK:cancel(handle_id)
+  if handle_id then
+    -- 特定のハンドルのみキャンセル
+    local handle = self._handles[handle_id]
+    if handle then
+      handle:kill(9)
+      self._handles[handle_id] = nil
+    end
+  else
+    -- 全ハンドルをキャンセル
+    for id, handle in pairs(self._handles) do
+      handle:kill(9)
+      self._handles[id] = nil
+    end
   end
 end
 
@@ -285,16 +317,28 @@ end
 ---保存されたチャットファイルを開く際に、フロントマターのsession_idを設定
 ---次回のstream()呼び出し時に--session引数として渡される
 ---@param session_id string? セッションID（nilの場合は新規セッション）
-function AgentSDK:set_session_id(session_id)
-  self._session_id = session_id
+---@param handle_id string? ハンドルID（nilの場合は最新のセッションIDとして保存）
+function AgentSDK:set_session_id(session_id, handle_id)
+  if handle_id then
+    self._sessions[handle_id] = session_id
+  else
+    -- handle_id が指定されていない場合は、後方互換性のため特別なキーに保存
+    self._sessions["__default__"] = session_id
+  end
 end
 
 ---セッションIDを取得
 ---stream()実行時に自動的に保存されたsession_idを返す
 ---チャットファイルのフロントマターに保存するために使用
+---@param handle_id string? ハンドルID（nilの場合はデフォルトセッションIDを返す）
 ---@return string? セッションID（未実行の場合はnil）
-function AgentSDK:get_session_id()
-  return self._session_id
+function AgentSDK:get_session_id(handle_id)
+  if handle_id then
+    return self._sessions[handle_id]
+  else
+    -- handle_id が指定されていない場合は、デフォルトキーから取得
+    return self._sessions["__default__"]
+  end
 end
 
 return AgentSDK

@@ -156,11 +156,12 @@ function M.send(chat_buffer, message)
     config.chat.context_position
   )
 
-  -- セッションIDを同期（chat_buffer → adapter）
-  -- 新規チャット（session_id未設定）の場合は明示的にnilを設定して新しいセッションを開始
+  -- セッションIDを opts に含める（新しいハンドルで使用）
   if adapter:supports("session") then
     local saved_session = chat_buffer:get_session_id()
-    adapter:set_session_id(saved_session)
+    if saved_session then
+      opts._session_id = saved_session
+    end
   end
 
   -- 会話履歴を取得（SDK resume bug対策）
@@ -231,7 +232,7 @@ function M.send(chat_buffer, message)
 
   -- ストリーミング実行
   if adapter:supports("streaming") then
-    adapter:stream(formatted_prompt, opts, function(chunk)
+    local handle_id = adapter:stream(formatted_prompt, opts, function(chunk)
       vim.schedule(function()
         chat_buffer:append_chunk(chunk)
       end)
@@ -261,8 +262,9 @@ function M.send(chat_buffer, message)
         end
 
         -- セッションIDを同期（adapter → chat_buffer）
-        if adapter:supports("session") then
-          local new_session = adapter:get_session_id()
+        -- handle_id を使って正しいセッションIDを取得
+        if adapter:supports("session") and response._handle_id then
+          local new_session = adapter:get_session_id(response._handle_id)
           if new_session and new_session ~= chat_buffer:get_session_id() then
             chat_buffer:update_session_id(new_session)
           end
@@ -298,9 +300,9 @@ function M.send(chat_buffer, message)
       chat_buffer:set_last_modified_files(modified_files, saved_contents)
     end
 
-    -- セッションIDを同期
-    if adapter:supports("session") then
-      local new_session = adapter:get_session_id()
+    -- セッションIDを同期（handle_id を使用）
+    if adapter:supports("session") and response._handle_id then
+      local new_session = adapter:get_session_id(response._handle_id)
       if new_session then
         chat_buffer:update_session_id(new_session)
       end

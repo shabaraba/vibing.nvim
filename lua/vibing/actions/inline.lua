@@ -12,6 +12,14 @@ local BufferIdentifier = require("vibing.utils.buffer_identifier")
 ---@class Vibing.InlineAction
 local M = {}
 
+---@class Vibing.InlineQueue
+---@field tasks table[] キューイングされたタスクのリスト
+---@field is_executing boolean 実行中フラグ
+local queue = {
+  tasks = {},
+  is_executing = false,
+}
+
 ---事前定義されたインラインアクション設定
 ---fix, feat, explain, refactor, testの5種類を提供
 ---@type table<string, Vibing.ActionConfig>
@@ -42,6 +50,43 @@ M.actions = {
     use_output_buffer = false,
   },
 }
+
+---キューから次のタスクを取り出して実行
+---タスクがない場合は何もしない
+local function process_queue()
+  if queue.is_executing or #queue.tasks == 0 then
+    return
+  end
+
+  queue.is_executing = true
+  local task = table.remove(queue.tasks, 1)
+
+  -- キューの残りタスク数を通知
+  if #queue.tasks > 0 then
+    notify.info(string.format("Executing task (%d more in queue)...", #queue.tasks), "Inline")
+  end
+
+  -- タスクを実行
+  task.execute_fn(function()
+    -- タスク完了後、次のタスクを実行
+    queue.is_executing = false
+    process_queue()
+  end)
+end
+
+---タスクをキューに追加
+---@param task table タスクオブジェクト { execute_fn: function }
+local function enqueue_task(task)
+  table.insert(queue.tasks, task)
+
+  -- 通知
+  if queue.is_executing then
+    notify.info(string.format("Task queued (%d tasks waiting)", #queue.tasks), "Inline")
+  end
+
+  -- キュー処理を開始
+  process_queue()
+end
 
 ---Apply unsaved buffer handling to prompt and opts
 ---@param prompt string Original prompt
@@ -89,6 +134,7 @@ end
 ---インラインアクションを実行
 ---ビジュアル選択範囲に対して事前定義アクションまたはカスタムプロンプトを実行
 ---アクション名が未定義の場合は自然言語指示としてcustom()に委譲
+---タスクは自動的にキューに追加され、直列実行される
 ---@param action_or_prompt? string アクション名（fix, feat, explain, refactor, test）または自然言語指示
 ---@param additional_instruction? string 追加の指示（例: "日本語で", "using TypeScript"）
 function M.execute(action_or_prompt, additional_instruction)
@@ -159,15 +205,62 @@ function M.execute(action_or_prompt, additional_instruction)
     opts.tools = action.tools
   end
 
-  if action.use_output_buffer then
-    M._execute_with_output(adapter, prompt, opts, action_or_prompt)
+  -- タスクをキューに追加
+  local task = {
+    execute_fn = function(on_complete)
+      if action.use_output_buffer then
+        M._execute_with_output_queued(adapter, prompt, opts, action_or_prompt, on_complete)
+      else
+        -- Check if preview is enabled in config
+        if config.preview and config.preview.enabled then
+          M._execute_with_preview_queued(adapter, prompt, opts, action_or_prompt, additional_instruction, on_complete)
+        else
+          M._execute_direct_queued(adapter, prompt, opts, on_complete)
+        end
+      end
+    end,
+  }
+
+  enqueue_task(task)
+end
+
+---出力バッファに結果を表示 - キュー対応版
+---@param adapter Vibing.Adapter 使用するアダプター
+---@param prompt string 実行するプロンプト
+---@param opts Vibing.AdapterOpts アダプターオプション
+---@param title string ウィンドウタイトル
+---@param on_complete function 完了時のコールバック
+function M._execute_with_output_queued(adapter, prompt, opts, title, on_complete)
+  local output = OutputBuffer:new()
+  output:open(title:sub(1, 1):upper() .. title:sub(2))
+
+  local first_chunk = true
+
+  if adapter:supports("streaming") then
+    opts.streaming = true
+    adapter:stream(prompt, opts, function(chunk)
+      vim.schedule(function()
+        output:append_chunk(chunk, first_chunk)
+        first_chunk = false
+      end)
+    end, function(response)
+      vim.schedule(function()
+        if response.error then
+          output:show_error(response.error)
+        end
+        -- タスク完了を通知
+        on_complete()
+      end)
+    end)
   else
-    -- Check if preview is enabled in config
-    if config.preview and config.preview.enabled then
-      M._execute_with_preview(adapter, prompt, opts, action_or_prompt, additional_instruction)
+    local response = adapter:execute(prompt, opts)
+    if response.error then
+      output:show_error(response.error)
     else
-      M._execute_direct(adapter, prompt, opts)
+      output:set_content(response.content)
     end
+    -- タスク完了を通知
+    on_complete()
   end
 end
 
@@ -205,6 +298,63 @@ function M._execute_with_output(adapter, prompt, opts, title)
     else
       output:set_content(response.content)
     end
+  end
+end
+
+---直接実行（コード変更）- キュー対応版
+---@param adapter Vibing.Adapter 使用するアダプター
+---@param prompt string 実行するプロンプト
+---@param opts Vibing.AdapterOpts アダプターオプション
+---@param on_complete function 完了時のコールバック
+function M._execute_direct_queued(adapter, prompt, opts, on_complete)
+  local BufferReload = require("vibing.utils.buffer_reload")
+  local vibing = require("vibing")
+  local config = vibing.get_config()
+
+  local StatusManager = require("vibing.status_manager")
+  local status_mgr = StatusManager:new(config.status)
+
+  local response_text = {}
+
+  opts.action_type = "inline"
+  opts.status_manager = status_mgr
+
+  if adapter:supports("streaming") then
+    opts.streaming = true
+    adapter:stream(prompt, opts, function(chunk)
+      table.insert(response_text, chunk)
+    end, function(response)
+      vim.schedule(function()
+        local modified_files = status_mgr:get_modified_files()
+
+        if response.error then
+          status_mgr:set_error(response.error)
+          notify.error(response.error, "Inline")
+        else
+          status_mgr:set_done(modified_files)
+          BufferReload.reload_files(modified_files)
+          M._show_results(modified_files, table.concat(response_text, ""))
+        end
+
+        -- タスク完了を通知
+        on_complete()
+      end)
+    end)
+  else
+    local response = adapter:execute(prompt, opts)
+    local modified_files = status_mgr:get_modified_files()
+
+    if response.error then
+      status_mgr:set_error(response.error)
+      notify.error(response.error, "Inline")
+    else
+      status_mgr:set_done(modified_files)
+      BufferReload.reload_files(modified_files)
+      M._show_results(modified_files, response.content)
+    end
+
+    -- タスク完了を通知
+    on_complete()
   end
 end
 
@@ -262,6 +412,98 @@ function M._execute_direct(adapter, prompt, opts)
       BufferReload.reload_files(modified_files)
       M._show_results(modified_files, response.content)
     end
+  end
+end
+
+---プレビュー付きで実行（コード変更）- キュー対応版
+---@param adapter Vibing.Adapter 使用するアダプター
+---@param prompt string 実行するプロンプト
+---@param opts Vibing.AdapterOpts アダプターオプション
+---@param action string アクション名
+---@param instruction string|nil 追加指示
+---@param on_complete function 完了時のコールバック
+function M._execute_with_preview_queued(adapter, prompt, opts, action, instruction, on_complete)
+  local Git = require("vibing.utils.git")
+
+  if not Git.is_git_repo() then
+    notify.warn("Preview requires Git repository. Falling back to direct execution.", "Inline")
+    return M._execute_direct_queued(adapter, prompt, opts, on_complete)
+  end
+
+  local BufferReload = require("vibing.utils.buffer_reload")
+  local vibing = require("vibing")
+  local config = vibing.get_config()
+
+  local current_buf = vim.api.nvim_get_current_buf()
+  local file_path = vim.api.nvim_buf_get_name(current_buf)
+  local saved_contents = {}
+
+  local content = vim.api.nvim_buf_get_lines(current_buf, 0, -1, false)
+  if file_path ~= "" then
+    local normalized_path = vim.fn.fnamemodify(file_path, ":p")
+    saved_contents[normalized_path] = content
+  else
+    local buffer_id = BufferIdentifier.create_identifier(current_buf)
+    saved_contents[buffer_id] = content
+  end
+
+  local StatusManager = require("vibing.status_manager")
+  local status_mgr = StatusManager:new(config.status)
+  local response_text = {}
+
+  opts.action_type = "inline"
+  opts.status_manager = status_mgr
+
+  if adapter:supports("streaming") then
+    opts.streaming = true
+    adapter:stream(prompt, opts, function(chunk)
+      table.insert(response_text, chunk)
+    end, function(response)
+      vim.schedule(function()
+        local modified_files = status_mgr:get_modified_files()
+
+        if response.error then
+          status_mgr:set_error(response.error)
+          notify.error(response.error, "Inline")
+        else
+          status_mgr:set_done(modified_files)
+          BufferReload.reload_files(modified_files)
+
+          local session_id = nil
+          if adapter:supports("session") and response._handle_id then
+            session_id = adapter:get_session_id(response._handle_id)
+          end
+
+          local InlinePreview = require("vibing.ui.inline_preview")
+          InlinePreview.setup("inline", modified_files, table.concat(response_text, ""), saved_contents, nil, prompt, action, instruction, session_id)
+        end
+
+        -- タスク完了を通知
+        on_complete()
+      end)
+    end)
+  else
+    local response = adapter:execute(prompt, opts)
+    local modified_files = status_mgr:get_modified_files()
+
+    if response.error then
+      status_mgr:set_error(response.error)
+      notify.error(response.error, "Inline")
+    else
+      status_mgr:set_done(modified_files)
+      BufferReload.reload_files(modified_files)
+
+      local session_id = nil
+      if adapter:supports("session") and response._handle_id then
+        session_id = adapter:get_session_id(response._handle_id)
+      end
+
+      local InlinePreview = require("vibing.ui.inline_preview")
+      InlinePreview.setup("inline", modified_files, response.content, saved_contents, nil, prompt, action, instruction, session_id)
+    end
+
+    -- タスク完了を通知
+    on_complete()
   end
 end
 
