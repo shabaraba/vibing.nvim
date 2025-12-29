@@ -259,12 +259,13 @@ describe("vibing.ui.chat_buffer", function()
         "Real unsent message",
       })
 
-      -- Simulate send_message flow: insert separator and convert unsent header
-      chat:_insert_timestamp_separator()
-
+      -- Simulate send_message flow: extract first (based on unsent header), then insert separator
       local result = chat:extract_user_message()
       assert.is_not_nil(result)
       assert.equals("Real unsent message", result)
+
+      -- Then insert separator (this converts unsent header to formal header)
+      chat:_insert_timestamp_separator()
 
       -- Verify separator was inserted and unsent header was replaced
       local lines = vim.api.nvim_buf_get_lines(chat.buf, 0, -1, false)

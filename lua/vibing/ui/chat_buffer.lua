@@ -729,29 +729,39 @@ function ChatBuffer:extract_conversation()
 end
 
 ---ユーザーメッセージを抽出（最後の## Userセクションから）
----タイムスタンプセパレーター以降のUserヘッダーのみを認識（issue#214対策）
+---未送信ヘッダー（## User <!-- unsent -->）を優先的に検索（issue#214対策）
 ---@return string?
 function ChatBuffer:extract_user_message()
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
 
-  -- 最後のタイムスタンプセパレーターを探す
-  local last_separator_line = nil
+  -- 最後の未送信ヘッダーを探す（送信前のメッセージ）
+  local last_user_line = nil
   for i = #lines, 1, -1 do
-    if Timestamp.is_separator(lines[i]) then
-      last_separator_line = i
+    if Timestamp.is_unsent_user_header(lines[i]) then
+      last_user_line = i
       break
     end
   end
 
-  -- セパレーター以降の範囲で最後の## Userを探す
-  local search_start = last_separator_line or 1
-  local last_user_line = nil
+  -- 未送信ヘッダーが見つからない場合は、セパレーター以降の通常ヘッダーを探す
+  if not last_user_line then
+    -- 最後のタイムスタンプセパレーターを探す
+    local last_separator_line = nil
+    for i = #lines, 1, -1 do
+      if Timestamp.is_separator(lines[i]) then
+        last_separator_line = i
+        break
+      end
+    end
 
-  for i = #lines, search_start, -1 do
-    local role = Timestamp.extract_role(lines[i])
-    if role == "user" then
-      last_user_line = i
-      break
+    -- セパレーター以降の範囲で最後の## Userを探す
+    local search_start = last_separator_line or 1
+    for i = #lines, search_start, -1 do
+      local role = Timestamp.extract_role(lines[i])
+      if role == "user" then
+        last_user_line = i
+        break
+      end
     end
   end
 
@@ -825,15 +835,16 @@ end
 
 ---メッセージを送信
 function ChatBuffer:send_message()
-  -- メッセージ抽出前にタイムスタンプセパレーターを挿入（issue#214対策）
-  -- これにより、extract_user_message()がセパレーター以降のUserヘッダーを正しく認識できる
-  self:_insert_timestamp_separator()
-
+  -- 先にメッセージ抽出（未送信ヘッダー基準）してから、セパレーター挿入
+  -- この順序により、同一秒内の複数送信でも正しく動作する（issue#214対策）
   local message = self:extract_user_message()
   if not message then
     vim.notify("[vibing] No message to send", vim.log.levels.WARN)
     return
   end
+
+  -- メッセージ確定後、未送信ヘッダーを正式ヘッダーに置換しセパレーター挿入
+  self:_insert_timestamp_separator()
 
   -- スラッシュコマンドかチェック
   local commands = require("vibing.chat.commands")
