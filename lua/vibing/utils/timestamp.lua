@@ -57,7 +57,11 @@ function M.extract_role(line)
   -- レガシーパターン（タイムスタンプなし）: "## User"
   role = line:match(LEGACY_HEADER_PATTERN)
   if role then
-    return role:lower()
+    local lower_role = role:lower()
+    -- "user" または "assistant" のみ有効なロールとして認識
+    if lower_role == "user" or lower_role == "assistant" then
+      return lower_role
+    end
   end
 
   return nil

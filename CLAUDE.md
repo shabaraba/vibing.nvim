@@ -125,7 +125,8 @@ When using these tools from Claude Code, prefix them with `mcp__vibing-nvim__`:
 
 **Background LSP Analysis Workflow:**
 
-All LSP tools work with ANY loaded buffer, not just the active one. This enables background code analysis without disrupting your current work (e.g., staying in chat while analyzing files).
+All LSP tools work with ANY loaded buffer, not just the active one. This enables background code
+analysis without disrupting your current work (e.g., staying in chat while analyzing files).
 
 **Simplified workflow (recommended):**
 
@@ -342,7 +343,8 @@ across sessions.
 
 ### Message Timestamps
 
-Chat messages include timestamps in their headers to help track conversation chronology and facilitate searching through chat history.
+Chat messages include timestamps in their headers to help track conversation chronology and
+facilitate searching through chat history.
 
 **Timestamp Format:**
 
