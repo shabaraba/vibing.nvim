@@ -1,10 +1,12 @@
----@class Vibing.Infrastructure.RpcServer
----MCP統合用のNeovim RPCサーバー
+---@class Vibing.RpcServer
+---Neovim RPC server for MCP integration
+---非同期TCPサーバーとしてMCPサーバーからのリクエストを処理
+---vim.loopによる非同期I/Oでデッドロックを回避
 local M = {}
 
 local uv = vim.loop
 local notify = require("vibing.utils.notify")
-local handlers = require("vibing.rpc_server.handlers")
+local handlers = require("vibing.infrastructure.rpc.handlers")
 
 ---@type uv_tcp_t?
 local server = nil
@@ -15,22 +17,29 @@ local clients = {}
 ---@type number?
 local current_port = nil
 
----リクエストを処理
----@param client uv_tcp_t
----@param request string
+---Handle incoming JSON-RPC request
+---@param client uv_tcp_t クライアントソケット
+-- Process a newline-delimited JSON-RPC request string and send a JSON-RPC response to the client.
+-- Schedules handler execution on the Neovim main loop, dispatches the request to the corresponding entry in `handlers`,
+-- and writes either a `{ id = req.id, result = ... }` or `{ id = req.id, error = ... }` response (followed by a newline) to the client.
+-- @param client uv_tcp_t|nil TCP client handle; if `nil` or closing, no response will be written.
+-- @param request string JSON-RPC request as a single-line JSON string.
 local function handle_request(client, request)
   local ok, req = pcall(vim.json.decode, request)
   if not ok then
+    local error_response = vim.json.encode({ error = "Invalid JSON" })
     if client and not client:is_closing() then
-      client:write(vim.json.encode({ error = "Invalid JSON" }) .. "\n")
+      client:write(error_response .. "\n")
     end
     return
   end
 
+  -- vim.schedule でメインループに戻してから実行
   vim.schedule(function()
     local success, res = pcall(function()
       local method = req.method
       local handler = handlers[method]
+
       if handler then
         return handler(req.params)
       else
@@ -40,20 +49,27 @@ local function handle_request(client, request)
 
     local response
     if success then
-      response = vim.json.encode({ id = req.id, result = res })
+      response = vim.json.encode({
+        id = req.id,
+        result = res,
+      })
     else
-      response = vim.json.encode({ id = req.id, error = tostring(res) })
+      response = vim.json.encode({
+        id = req.id,
+        error = tostring(res),
+      })
     end
 
+    -- 非同期でレスポンス送信
     if client and not client:is_closing() then
       client:write(response .. "\n")
     end
   end)
 end
 
----RPCサーバーを開始
----@param port number?
----@return number
+---Start RPC server
+---@param port? number ポート番号（デフォルト: 9876）
+---@return number port 実際に使用されているポート番号
 function M.start(port)
   port = port or 9876
 
@@ -85,6 +101,7 @@ function M.start(port)
     clients[client] = true
 
     local buffer = ""
+
     client:read_start(function(read_err, chunk)
       if read_err then
         clients[client] = nil
@@ -94,9 +111,13 @@ function M.start(port)
 
       if chunk then
         buffer = buffer .. chunk
+
+        -- 改行区切りで複数リクエスト処理
         while true do
           local newline_pos = buffer:find("\n")
-          if not newline_pos then break end
+          if not newline_pos then
+            break
+          end
 
           local line = buffer:sub(1, newline_pos - 1)
           buffer = buffer:sub(newline_pos + 1)
@@ -106,6 +127,7 @@ function M.start(port)
           end
         end
       else
+        -- EOF
         clients[client] = nil
         client:close()
       end
@@ -113,7 +135,7 @@ function M.start(port)
   end)
 
   if not listen_ok then
-    notify.error(string.format("Failed to listen: %s", listen_err))
+    notify.error(string.format("Failed to listen on RPC server: %s", listen_err))
     server:close()
     server = nil
     return 0
@@ -121,18 +143,21 @@ function M.start(port)
 
   current_port = port
   notify.info(string.format("RPC server started on port %d", port))
+
   return port
 end
 
----RPCサーバーを停止
+---Stop RPC server
 function M.stop()
-  for client in pairs(clients) do
+  -- Close all client connections
+  for client, _ in pairs(clients) do
     if not client:is_closing() then
       client:close()
     end
   end
   clients = {}
 
+  -- Close server
   if server then
     server:close()
     server = nil
@@ -141,14 +166,14 @@ function M.stop()
   end
 end
 
----現在のポート番号を取得
----@return number?
+---Get current port number
+---@return number? port ポート番号（サーバーが起動していない場合はnil）
 function M.get_port()
   return current_port
 end
 
----サーバーが稼働中か確認
----@return boolean
+---Check if server is running
+---@return boolean running サーバーが起動中かどうか
 function M.is_running()
   return server ~= nil
 end

@@ -1,12 +1,9 @@
-local notify = require("vibing.utils.notify")
-local commands = require("vibing.chat.commands")
+local notify = require("vibing.core.utils.notify")
+local commands = require("vibing.application.chat.commands")
 
----/helpコマンドハンドラー
----利用可能なスラッシュコマンド一覧を表示
----組み込みコマンド、プロジェクトカスタムコマンド、ユーザーカスタムコマンドを区別して表示
----@param args string[] コマンド引数（未使用）
----@param chat_buffer Vibing.ChatBuffer コマンドを実行したチャットバッファ
----@return boolean 成功時はtrue、エラー時はfalse
+---@param args string[]
+---@param chat_buffer Vibing.ChatBuffer
+---@return boolean
 return function(args, chat_buffer)
   if not chat_buffer then
     notify.error("No chat buffer")
@@ -19,7 +16,6 @@ return function(args, chat_buffer)
     return false
   end
 
-  -- 全コマンドを取得してソース別に分類
   local all_commands = commands.list_all()
   local builtin = {}
   local project = {}
@@ -35,19 +31,16 @@ return function(args, chat_buffer)
     end
   end
 
-  -- 各カテゴリをアルファベット順にソート
   table.sort(builtin, function(a, b) return a.name < b.name end)
   table.sort(project, function(a, b) return a.name < b.name end)
   table.sort(user, function(a, b) return a.name < b.name end)
 
-  -- ヘルプテキストを構築
   local lines = {
     "",
     "# Available Slash Commands",
     "",
   }
 
-  -- 組み込みコマンド
   if #builtin > 0 then
     table.insert(lines, "## Built-in Commands")
     table.insert(lines, "")
@@ -57,7 +50,6 @@ return function(args, chat_buffer)
     table.insert(lines, "")
   end
 
-  -- プロジェクトカスタムコマンド
   if #project > 0 then
     table.insert(lines, "## Project Commands")
     table.insert(lines, "")
@@ -67,7 +59,6 @@ return function(args, chat_buffer)
     table.insert(lines, "")
   end
 
-  -- ユーザーカスタムコマンド
   if #user > 0 then
     table.insert(lines, "## User Commands")
     table.insert(lines, "")
@@ -77,7 +68,6 @@ return function(args, chat_buffer)
     table.insert(lines, "")
   end
 
-  -- バッファの最後に挿入
   local line_count = vim.api.nvim_buf_line_count(buf)
   vim.api.nvim_buf_set_lines(buf, line_count, line_count, false, lines)
 

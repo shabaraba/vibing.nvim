@@ -1,13 +1,9 @@
-local notify = require("vibing.utils.notify")
+local notify = require("vibing.core.utils.notify")
 local permission_builder = require("vibing.ui.permission_builder")
 
----/permissionsコマンドハンドラー（/permエイリアス）
----チャット内で/permissions または /permを実行した際に呼び出される
----Permission Builderを起動し、対話的に権限設定を追加
----ループでツール選択→allow/deny選択→Bashパターン選択（該当時）→frontmatter更新を繰り返す
----@param args string[] コマンド引数（使用しない）
----@param chat_buffer Vibing.ChatBuffer コマンドを実行したチャットバッファ
----@return boolean 常にtrue（キャンセル時も含む）
+---@param args string[]
+---@param chat_buffer Vibing.ChatBuffer
+---@return boolean
 return function(args, chat_buffer)
   if not chat_buffer then
     notify.error("No chat buffer")

@@ -1,20 +1,15 @@
-local notify = require("vibing.utils.notify")
+local notify = require("vibing.core.utils.notify")
 local tools = require("vibing.constants.tools")
 
----/askコマンドハンドラー
----チャット内で/ask <tool>を実行した際に呼び出される
----permissions_askリストにツールを追加し、使用前に確認を要求
----引数なしで現在のaskリストを表示
----@param args string[] コマンド引数（args[1]がツール名）
----@param chat_buffer Vibing.ChatBuffer コマンドを実行したチャットバッファ
----@return boolean 成功した場合true
+---@param args string[]
+---@param chat_buffer Vibing.ChatBuffer
+---@return boolean
 return function(args, chat_buffer)
   if not chat_buffer then
     notify.error("No chat buffer")
     return false
   end
 
-  -- 引数なしの場合は現在のリストを表示
   if #args == 0 then
     local current = chat_buffer:get_frontmatter_list("permissions_ask")
     if #current == 0 then
@@ -27,7 +22,6 @@ return function(args, chat_buffer)
 
   local tool = args[1]
 
-  -- -で始まる場合は削除
   if tool:sub(1, 1) == "-" then
     local tool_name = tool:sub(2)
     local valid_tool = tools.validate_tool(tool_name)
@@ -46,7 +40,6 @@ return function(args, chat_buffer)
     return success
   end
 
-  -- 通常は追加
   local valid_tool = tools.validate_tool(tool)
   if not valid_tool then
     notify.error(string.format("Invalid tool: %s", tool))

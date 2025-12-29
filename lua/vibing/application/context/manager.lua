@@ -2,7 +2,7 @@
 ---コンテキスト管理ユースケース
 local M = {}
 
-local Collector = require("vibing.context.collector")
+local Collector = require("vibing.infrastructure.context.collector")
 local notify = require("vibing.utils.notify")
 
 ---@type string[]

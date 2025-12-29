@@ -1,5 +1,5 @@
 ---UI utility functions for vibing.nvim
----@module "vibing.utils.ui"
+---@module "vibing.core.utils.ui"
 
 ---@diagnostic disable-next-line: undefined-global
 local vim = vim

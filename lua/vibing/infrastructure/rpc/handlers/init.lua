@@ -1,11 +1,11 @@
 local M = {}
 
 -- Load all handlers
-local buffer = require("vibing.rpc_server.handlers.buffer")
-local cursor = require("vibing.rpc_server.handlers.cursor")
-local window = require("vibing.rpc_server.handlers.window")
-local lsp = require("vibing.rpc_server.handlers.lsp")
-local execute = require("vibing.rpc_server.handlers.execute")
+local buffer = require("vibing.infrastructure.rpc.handlers.buffer")
+local cursor = require("vibing.infrastructure.rpc.handlers.cursor")
+local window = require("vibing.infrastructure.rpc.handlers.window")
+local lsp = require("vibing.infrastructure.rpc.handlers.lsp")
+local execute = require("vibing.infrastructure.rpc.handlers.execute")
 
 -- Export all handlers
 M.buf_get_lines = buffer.buf_get_lines

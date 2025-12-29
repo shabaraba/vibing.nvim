@@ -1,5 +1,5 @@
 local Config = require("vibing.config")
-local notify = require("vibing.utils.notify")
+local notify = require("vibing.core.utils.notify")
 
 ---@class Vibing
 ---vibing.nvimプラグインのメインモジュール
@@ -35,7 +35,7 @@ function M.setup(opts)
     mcp_setup.auto_setup(M.config)
 
     -- RPCサーバー起動
-    local rpc_server = require("vibing.rpc_server")
+    local rpc_server = require("vibing.infrastructure.rpc.server")
     local port = rpc_server.start(M.config.mcp.rpc_port)
     if port > 0 then
       notify.info(string.format("MCP RPC server started on port %d", port))
@@ -50,15 +50,15 @@ function M.setup(opts)
   end
 
   -- アダプターの初期化（agent_sdk固定）
-  local AgentSDK = require("vibing.adapters.agent_sdk")
+  local AgentSDK = require("vibing.infrastructure.adapter.agent_sdk")
   M.adapter = AgentSDK:new(M.config)
 
   -- チャットコマンド初期化
-  require("vibing.chat").setup()
+  require("vibing.application.chat").setup()
 
   -- カスタムコマンドのスキャンと登録
-  local custom_commands = require("vibing.chat.custom_commands")
-  local commands = require("vibing.chat.commands")
+  local custom_commands = require("vibing.application.chat.custom_commands")
+  local commands = require("vibing.application.chat.commands")
   for _, custom_cmd in ipairs(custom_commands.get_all()) do
     commands.register_custom(custom_cmd)
   end
@@ -73,14 +73,14 @@ end
 function M._register_commands()
   vim.api.nvim_create_user_command("VibingChat", function(opts)
     if opts.args ~= "" then
-      require("vibing.actions.chat").open_file(opts.args)
+      require("vibing.application.chat.use_case").open_file(opts.args)
     else
-      require("vibing.actions.chat").open()
+      require("vibing.application.chat.use_case").open()
     end
   end, { nargs = "?", desc = "Open Vibing chat or chat file", complete = "file" })
 
   vim.api.nvim_create_user_command("VibingToggleChat", function()
-    require("vibing.actions.chat").toggle()
+    require("vibing.application.chat.use_case").toggle()
   end, { desc = "Toggle Vibing chat window" })
 
   vim.api.nvim_create_user_command("VibingSlashCommands", function()
@@ -90,14 +90,14 @@ function M._register_commands()
   ---@private
   ---チャットバッファが開いている場合、コンテキスト行を更新
   local function update_chat_context_if_open()
-    local chat = require("vibing.actions.chat")
+    local chat = require("vibing.application.chat.use_case")
     if chat.chat_buffer and chat.chat_buffer:is_open() then
       chat.chat_buffer:_update_context_line()
     end
   end
 
   vim.api.nvim_create_user_command("VibingContext", function(opts)
-    local Context = require("vibing.context")
+    local Context = require("vibing.application.context.manager")
 
     -- 優先順位1: 範囲選択（存在する場合）
     if opts.range > 0 then
@@ -134,7 +134,7 @@ function M._register_commands()
   })
 
   vim.api.nvim_create_user_command("VibingClearContext", function()
-    require("vibing.context").clear()
+    require("vibing.application.context.manager").clear()
     update_chat_context_if_open()
   end, { desc = "Clear Vibing context" })
 
@@ -147,10 +147,10 @@ function M._register_commands()
         if instruction and instruction ~= "" then
           action_arg = action_arg .. " " .. instruction
         end
-        require("vibing.actions.inline").execute(action_arg)
+        require("vibing.application.inline.use_case").execute(action_arg)
       end)
     else
-      require("vibing.actions.inline").execute(opts.args)
+      require("vibing.application.inline.use_case").execute(opts.args)
     end
   end, {
     nargs = "?",
@@ -176,8 +176,8 @@ function M._register_commands()
 
 
   vim.api.nvim_create_user_command("VibingReloadCommands", function()
-    local custom_commands = require("vibing.chat.custom_commands")
-    local commands = require("vibing.chat.commands")
+    local custom_commands = require("vibing.application.chat.custom_commands")
+    local commands = require("vibing.application.chat.commands")
 
     custom_commands.clear_cache()
     commands.custom_commands = {}
@@ -190,7 +190,7 @@ function M._register_commands()
   end, { desc = "Reload custom slash commands" })
 
   vim.api.nvim_create_user_command("VibingSetFileTitle", function()
-    local chat = require("vibing.actions.chat")
+    local chat = require("vibing.application.chat.use_case")
     local current_buffer = chat.get_current_chat_buffer()
 
     if not current_buffer then
@@ -198,7 +198,7 @@ function M._register_commands()
       return
     end
 
-    local handler = require("vibing.chat.handlers.set_file_title")
+    local handler = require("vibing.application.chat.handlers.set_file_title")
     handler({}, current_buffer)
   end, { desc = "Generate AI title and rename chat file" })
 end

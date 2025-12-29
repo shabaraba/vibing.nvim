@@ -4,7 +4,7 @@
 ---:VibingSetFileTitleコマンドで使用
 local M = {}
 
-local filename_util = require("vibing.utils.filename")
+local filename_util = require("vibing.core.utils.filename")
 
 ---会話履歴からAIにタイトルを生成させる
 ---Claudeに会話全体を送信し、簡潔なファイル名用タイトルを生成

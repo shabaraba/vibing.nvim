@@ -2,7 +2,7 @@
 ---ファイルパス検出と操作のユーティリティ
 local M = {}
 
-local BufferIdentifier = require("vibing.utils.buffer_identifier")
+local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 
 ---カーソルが "### Modified Files" セクション内のファイルパス上にあるかチェック
 ---現在行がファイルパスであり、かつ "### Modified Files" セクション内にある場合、ファイルパスを返す

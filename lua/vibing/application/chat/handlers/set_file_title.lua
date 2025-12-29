@@ -1,10 +1,9 @@
-local notify = require("vibing.utils.notify")
+local notify = require("vibing.core.utils.notify")
 local title_generator = require("vibing.utils.title_generator")
 local filename_util = require("vibing.utils.filename")
 local StatusManager = require("vibing.status_manager")
 
----現在のファイル名からファイルタイプ（chat/inline）を判定
----@param file_path string? 現在のファイルパス
+---@param file_path string?
 ---@return "chat"|"inline"
 local function detect_file_type(file_path)
   if not file_path then
@@ -18,9 +17,8 @@ local function detect_file_type(file_path)
   return "chat"
 end
 
----ディレクトリパスの末尾にスラッシュを付与
----@param dir string ディレクトリパス
----@return string normalized_dir 末尾スラッシュ付きのパス
+---@param dir string
+---@return string
 local function ensure_trailing_slash(dir)
   if dir:sub(-1) ~= "/" then
     return dir .. "/"
@@ -28,10 +26,9 @@ local function ensure_trailing_slash(dir)
   return dir
 end
 
----重複しないファイルパスを生成
----@param dir string ディレクトリパス
----@param base_filename string ベースファイル名（拡張子付き）
----@return string unique_path 一意なファイルパス
+---@param dir string
+---@param base_filename string
+---@return string
 local function get_unique_file_path(dir, base_filename)
   dir = ensure_trailing_slash(dir)
   local new_path = dir .. base_filename
@@ -52,12 +49,9 @@ local function get_unique_file_path(dir, base_filename)
   return new_path
 end
 
----:VibingSetFileTitleコマンドハンドラー
----チャット内容からAIにタイトルを生成させ、ファイル名を変更
----vim.fn.rename()でアトミックにリネーム
----@param _ string[] コマンド引数（このハンドラーでは未使用）
----@param chat_buffer Vibing.ChatBuffer コマンドを実行したチャットバッファ
----@return boolean リクエストを送信した場合true
+---@param _ string[]
+---@param chat_buffer Vibing.ChatBuffer
+---@return boolean
 return function(_, chat_buffer)
   if not chat_buffer or not chat_buffer.buf or not vim.api.nvim_buf_is_valid(chat_buffer.buf) then
     notify.error("No valid chat buffer")
