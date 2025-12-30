@@ -38,7 +38,7 @@ local function try_attach(buf)
       if not vibing.adapter then
         vibing.setup()
       end
-      require("vibing.actions.chat").attach_to_buffer(buf, name)
+      require("vibing.application.chat.use_case").attach_to_buffer(buf, name)
     end)
   end
 end
@@ -60,7 +60,7 @@ vim.api.nvim_create_autocmd("BufDelete", {
   group = group,
   callback = function(ev)
     attached_bufs[ev.buf] = nil
-    local chat = require("vibing.actions.chat")
+    local chat = require("vibing.application.chat.use_case")
     if chat.attached_buffers then
       chat.attached_buffers[ev.buf] = nil
     end

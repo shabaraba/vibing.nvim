@@ -22,6 +22,7 @@ let model = null;
 let permissionMode = 'acceptEdits';
 let prioritizeVibingLsp = true; // Default: prioritize vibing-nvim LSP tools
 let mcpEnabled = false; // Default: MCP integration disabled
+let language = null; // Language code for AI responses (e.g., "ja", "en")
 
 // Parse arguments
 for (let i = 0; i < args.length; i++) {
@@ -120,6 +121,9 @@ for (let i = 0; i < args.length; i++) {
   } else if (args[i] === '--mcp-enabled' && args[i + 1]) {
     mcpEnabled = args[i + 1] === 'true';
     i++;
+  } else if (args[i] === '--language' && args[i + 1]) {
+    language = args[i + 1];
+    i++;
   } else if (!args[i].startsWith('--')) {
     prompt = args[i];
   }
@@ -128,6 +132,47 @@ for (let i = 0; i < args.length; i++) {
 if (!prompt) {
   console.error('Usage: agent-wrapper.mjs --prompt <prompt> [--cwd <dir>] [--context <file>...]');
   process.exit(1);
+}
+
+// Language code to name mapping
+const languageNames = {
+  ja: 'Japanese',
+  en: 'English',
+  zh: 'Chinese',
+  ko: 'Korean',
+  fr: 'French',
+  de: 'German',
+  es: 'Spanish',
+  it: 'Italian',
+  pt: 'Portuguese',
+  ru: 'Russian',
+  ar: 'Arabic',
+  hi: 'Hindi',
+  nl: 'Dutch',
+  sv: 'Swedish',
+  no: 'Norwegian',
+  da: 'Danish',
+  fi: 'Finnish',
+  pl: 'Polish',
+  tr: 'Turkish',
+  vi: 'Vietnamese',
+  th: 'Thai',
+};
+
+// Generate language instruction for AI responses
+function getLanguageInstruction(langCode) {
+  if (!langCode) {
+    return '';
+  }
+
+  const langName = languageNames[langCode];
+  if (!langName) {
+    console.warn(`[vibing.nvim] Unknown language code: ${langCode}, falling back to default`);
+    return '';
+  }
+
+  // Always generate instruction for consistency, even for English
+  return `Please respond to the user in ${langName}.`;
 }
 
 // Build full prompt with context
@@ -195,7 +240,18 @@ await mcp__vibing-nvim__nvim_execute({ command: "bprevious" });
 `;
   }
 
-  fullPrompt = sessionContext + vibingSystemPrompt + prompt;
+  // Add language instruction for AI responses (only for new sessions)
+  const languageInstruction = getLanguageInstruction(language);
+  let languageSystemPrompt = '';
+  if (languageInstruction) {
+    languageSystemPrompt = `<language-instruction>
+${languageInstruction}
+</language-instruction>
+
+`;
+  }
+
+  fullPrompt = sessionContext + vibingSystemPrompt + languageSystemPrompt + prompt;
 }
 
 // Add context files (only for first message in session)

@@ -1,8 +1,8 @@
-local git = require("vibing.utils.git")
-local diff_util = require("vibing.utils.diff")
-local BufferReload = require("vibing.utils.buffer_reload")
-local BufferIdentifier = require("vibing.utils.buffer_identifier")
-local Timestamp = require("vibing.utils.timestamp")
+local git = require("vibing.core.utils.git")
+local diff_util = require("vibing.core.utils.diff")
+local BufferReload = require("vibing.core.utils.buffer_reload")
+local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
+local Timestamp = require("vibing.core.utils.timestamp")
 
 ---@class Vibing.InlinePreview
 ---インラインアクションとチャットのプレビューUI
@@ -1145,7 +1145,7 @@ function M.save_as_vibing()
   vim.fn.writefile(lines, file_path)
 
   -- ChatBufferで開く
-  local ChatAction = require("vibing.actions.chat")
+  local ChatAction = require("vibing.application.chat.use_case")
   ChatAction.open_file(file_path)
 
   vim.notify("Saved as " .. filename, vim.log.levels.INFO)

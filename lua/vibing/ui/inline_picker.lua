@@ -1,4 +1,4 @@
-local notify = require("vibing.utils.notify")
+local notify = require("vibing.core.utils.notify")
 
 ---@class Vibing.InlinePicker
 ---インラインアクションピッカーUI

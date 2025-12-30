@@ -58,6 +58,7 @@ config.mcpServers['vibing-nvim'] = {
   args: [MCP_SERVER_PATH],
   env: {
     VIBING_RPC_PORT: '9876',
+    VIBING_RPC_TIMEOUT: '30000', // 30 seconds (increased from 5s for heavy LSP operations)
   },
 };
 
@@ -77,6 +78,7 @@ try {
   console.log('[vibing.nvim] ✓ Registered vibing-nvim MCP server in ~/.claude.json');
   console.log(`[vibing.nvim]   Path: ${MCP_SERVER_PATH}`);
   console.log('[vibing.nvim]   Port: 9876');
+  console.log('[vibing.nvim]   Timeout: 30000ms (30s)');
 } catch (error) {
   // Clean up temp file if exists
   if (tempFile && existsSync(tempFile)) {

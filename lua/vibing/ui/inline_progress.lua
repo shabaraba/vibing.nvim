@@ -62,7 +62,7 @@ function InlineProgress:show(title)
   })
 
   -- Apply wrap configuration
-  local ui_utils = require("vibing.utils.ui")
+  local ui_utils = require("vibing.core.utils.ui")
   ui_utils.apply_wrap_config(self.win)
 
   self:_start_spinner()
