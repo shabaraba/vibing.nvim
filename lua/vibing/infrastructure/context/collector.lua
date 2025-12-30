@@ -1,7 +1,7 @@
 ---@class Vibing.Collector
 local M = {}
 
-local BufferIdentifier = require("vibing.utils.buffer_identifier")
+local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 
 -- cwdのキャッシュ（パフォーマンス最適化）
 local _cwd_cache = nil

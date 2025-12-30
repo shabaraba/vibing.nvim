@@ -97,9 +97,9 @@
 ---@field show_tool_details boolean ツール詳細を表示（trueで"Running Edit(file.lua)"、falseで"Running Edit"）
 ---@field auto_dismiss_timeout number 完了通知の自動消去タイムアウト（ミリ秒、0で自動消去なし）
 
-local notify = require("vibing.utils.notify")
+local notify = require("vibing.core.utils.notify")
 local tools_const = require("vibing.constants.tools")
-local language_utils = require("vibing.utils.language")
+local language_utils = require("vibing.core.utils.language")
 
 local M = {}
 

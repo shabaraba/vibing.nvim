@@ -3,7 +3,7 @@
 ---claude.jsonへの設定追加、MCPサーバービルドを自動化
 local M = {}
 
-local notify = require("vibing.utils.notify")
+local notify = require("vibing.core.utils.notify")
 
 ---Get plugin root directory
 ---@return string

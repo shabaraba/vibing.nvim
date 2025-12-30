@@ -51,7 +51,7 @@ function OutputView:_create_window()
     title_pos = "center",
   })
 
-  require("vibing.utils.ui").apply_wrap_config(self.win)
+  require("vibing.core.utils.ui").apply_wrap_config(self.win)
 end
 
 ---キーマップを設定

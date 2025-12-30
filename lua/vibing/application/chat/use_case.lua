@@ -1,8 +1,8 @@
-local Context = require("vibing.context")
-local ChatBuffer = require("vibing.ui.chat_buffer")
-local Formatter = require("vibing.context.formatter")
-local notify = require("vibing.utils.notify")
-local BufferIdentifier = require("vibing.utils.buffer_identifier")
+local Context = require("vibing.application.context.manager")
+local ChatBuffer = require("vibing.presentation.chat.buffer")
+local Formatter = require("vibing.infrastructure.context.formatter")
+local notify = require("vibing.core.utils.notify")
+local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 
 ---@class Vibing.ChatAction
 local M = {}
@@ -252,7 +252,7 @@ function M.send(chat_buffer, message)
         -- 編集されたファイル一覧を表示
         if #modified_files > 0 then
           -- 変更されたファイルをリロード（inline機能と同様）
-          local BufferReload = require("vibing.utils.buffer_reload")
+          local BufferReload = require("vibing.core.utils.buffer_reload")
           BufferReload.reload_files(modified_files)
 
           chat_buffer:append_chunk("\n\n### Modified Files\n\n")
@@ -293,7 +293,7 @@ function M.send(chat_buffer, message)
     -- 編集されたファイル一覧を表示
     if #modified_files > 0 then
       -- 変更されたファイルをリロード（inline機能と同様）
-      local BufferReload = require("vibing.utils.buffer_reload")
+      local BufferReload = require("vibing.core.utils.buffer_reload")
       BufferReload.reload_files(modified_files)
 
       chat_buffer:append_chunk("\n\n### Modified Files\n\n")

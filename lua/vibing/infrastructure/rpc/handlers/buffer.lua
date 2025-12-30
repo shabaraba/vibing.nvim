@@ -1,6 +1,6 @@
 local M = {}
 
-local BufferIdentifier = require("vibing.utils.buffer_identifier")
+local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 
 -- Retrieve all lines from the specified buffer.
 -- @param params? Table with optional fields.

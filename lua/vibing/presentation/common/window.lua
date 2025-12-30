@@ -35,7 +35,7 @@ function Window:create_float(opts)
     title_pos = opts.title and "center" or nil,
   })
 
-  local ui_utils = require("vibing.utils.ui")
+  local ui_utils = require("vibing.core.utils.ui")
   ui_utils.apply_wrap_config(self.win)
 
   return self.win
@@ -57,7 +57,7 @@ function Window:create_vsplit_right(opts)
     vim.api.nvim_win_set_width(self.win, width)
   end
 
-  local ui_utils = require("vibing.utils.ui")
+  local ui_utils = require("vibing.core.utils.ui")
   ui_utils.apply_wrap_config(self.win)
 
   return self.win

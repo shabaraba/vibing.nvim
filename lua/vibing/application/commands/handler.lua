@@ -2,7 +2,7 @@
 ---スラッシュコマンドハンドラー
 local M = {}
 
-local notify = require("vibing.utils.notify")
+local notify = require("vibing.core.utils.notify")
 
 ---@type table<string, function>
 M.handlers = {}
@@ -45,7 +45,7 @@ end
 function M.init_builtin()
   -- /context
   M.register("context", function(args, chat_buffer)
-    local Context = require("vibing.context")
+    local Context = require("vibing.application.context.manager")
     if #args > 0 then
       Context.add(args[1])
     else
@@ -55,7 +55,7 @@ function M.init_builtin()
 
   -- /clear
   M.register("clear", function(args, chat_buffer)
-    local Context = require("vibing.context")
+    local Context = require("vibing.application.context.manager")
     Context.clear()
   end)
 

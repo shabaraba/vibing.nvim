@@ -1,4 +1,4 @@
-local notify = require("vibing.utils.notify")
+local notify = require("vibing.core.utils.notify")
 
 ---@class Vibing.OilIntegration
 ---oil.nvim統合モジュール
@@ -91,7 +91,7 @@ function M.send_to_chat()
   end
 
   -- チャットバッファを取得または作成
-  local chat = require("vibing.actions.chat")
+  local chat = require("vibing.application.chat.use_case")
   if not chat.chat_buffer or not chat.chat_buffer:is_open() then
     chat.open()
   end

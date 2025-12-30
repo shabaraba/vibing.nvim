@@ -1,6 +1,6 @@
 local notify = require("vibing.core.utils.notify")
-local title_generator = require("vibing.utils.title_generator")
-local filename_util = require("vibing.utils.filename")
+local title_generator = require("vibing.core.utils.title_generator")
+local filename_util = require("vibing.core.utils.filename")
 local StatusManager = require("vibing.status_manager")
 
 ---@param file_path string?

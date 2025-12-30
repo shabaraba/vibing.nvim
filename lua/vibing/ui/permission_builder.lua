@@ -1,4 +1,4 @@
-local notify = require("vibing.utils.notify")
+local notify = require("vibing.core.utils.notify")
 local tools_const = require("vibing.constants.tools")
 
 ---@class Vibing.PermissionBuilder

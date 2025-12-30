@@ -5,7 +5,7 @@
 local M = {}
 
 local uv = vim.loop
-local notify = require("vibing.utils.notify")
+local notify = require("vibing.core.utils.notify")
 local handlers = require("vibing.infrastructure.rpc.handlers")
 
 ---@type uv_tcp_t?

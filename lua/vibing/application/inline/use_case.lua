@@ -1,8 +1,8 @@
-local Context = require("vibing.context")
+local Context = require("vibing.application.context.manager")
 local OutputBuffer = require("vibing.ui.output_buffer")
-local notify = require("vibing.utils.notify")
-local Language = require("vibing.utils.language")
-local BufferIdentifier = require("vibing.utils.buffer_identifier")
+local notify = require("vibing.core.utils.notify")
+local Language = require("vibing.core.utils.language")
+local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 local QueueManager = require("vibing.application.inline.queue_manager")
 
 ---@class Vibing.ActionConfig
@@ -241,7 +241,7 @@ end
 ---@param opts Vibing.AdapterOpts アダプターオプション
 ---@param on_complete function 完了時のコールバック
 function M._execute_direct_queued(adapter, prompt, opts, on_complete)
-  local BufferReload = require("vibing.utils.buffer_reload")
+  local BufferReload = require("vibing.core.utils.buffer_reload")
   local vibing = require("vibing")
   local config = vibing.get_config()
 
@@ -300,14 +300,14 @@ end
 ---@param instruction string|nil 追加指示
 ---@param on_complete function 完了時のコールバック
 function M._execute_with_preview_queued(adapter, prompt, opts, action, instruction, on_complete)
-  local Git = require("vibing.utils.git")
+  local Git = require("vibing.core.utils.git")
 
   if not Git.is_git_repo() then
     notify.warn("Preview requires Git repository. Falling back to direct execution.", "Inline")
     return M._execute_direct_queued(adapter, prompt, opts, on_complete)
   end
 
-  local BufferReload = require("vibing.utils.buffer_reload")
+  local BufferReload = require("vibing.core.utils.buffer_reload")
   local vibing = require("vibing")
   local config = vibing.get_config()
 

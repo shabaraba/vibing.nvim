@@ -1,5 +1,5 @@
-local notify = require("vibing.utils.notify")
-local commands = require("vibing.chat.commands")
+local notify = require("vibing.core.utils.notify")
+local commands = require("vibing.application.chat.commands")
 
 ---@class Vibing.CommandPicker
 ---スラッシュコマンドピッカーUI
@@ -13,7 +13,7 @@ local M = {}
 function M.show(chat_buffer)
   -- チャットバッファが提供されていない場合は、現在開いているチャットを探す
   if not chat_buffer then
-    local chat = require("vibing.actions.chat")
+    local chat = require("vibing.application.chat.use_case")
 
     -- 1. グローバルなchat_bufferをチェック
     if chat.chat_buffer and chat.chat_buffer:is_open() then

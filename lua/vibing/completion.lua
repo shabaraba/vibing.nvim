@@ -24,7 +24,7 @@ function M.slash_command_complete(findstart, base)
     end
   else
     -- 補完候補を返す
-    local commands = require("vibing.chat.commands")
+    local commands = require("vibing.application.chat.commands")
     local all_commands = commands.list_all()
 
     local candidates = {}

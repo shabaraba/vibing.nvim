@@ -2,11 +2,11 @@
 ---メッセージ送信ユースケース
 local M = {}
 
-local Context = require("vibing.context")
-local Formatter = require("vibing.context.formatter")
+local Context = require("vibing.application.context.manager")
+local Formatter = require("vibing.infrastructure.context.formatter")
 local StatusManager = require("vibing.status_manager")
-local BufferReload = require("vibing.utils.buffer_reload")
-local BufferIdentifier = require("vibing.utils.buffer_identifier")
+local BufferReload = require("vibing.core.utils.buffer_reload")
+local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 
 ---メッセージを送信
 ---@param adapter table アダプター
@@ -15,7 +15,7 @@ local BufferIdentifier = require("vibing.utils.buffer_identifier")
 ---@param config table 設定
 function M.execute(adapter, chat_buffer, message, config)
   if not adapter then
-    require("vibing.utils.notify").error("No adapter configured", "Chat")
+    require("vibing.core.utils.notify").error("No adapter configured", "Chat")
     return
   end
 

@@ -1,6 +1,6 @@
-local Context = require("vibing.context")
-local BufferIdentifier = require("vibing.utils.buffer_identifier")
-local Timestamp = require("vibing.utils.timestamp")
+local Context = require("vibing.application.context.manager")
+local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
+local Timestamp = require("vibing.core.utils.timestamp")
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 
 ---@class Vibing.ChatBuffer
@@ -184,7 +184,7 @@ function ChatBuffer:_create_window()
   end
 
   -- Apply wrap configuration
-  local ui_utils = require("vibing.utils.ui")
+  local ui_utils = require("vibing.core.utils.ui")
   ui_utils.apply_wrap_config(self.win)
 end
 
@@ -225,7 +225,7 @@ function ChatBuffer:_setup_keymaps()
 
     -- ファイルパス上で diff を表示
     vim.keymap.set("n", keymaps.open_diff, function()
-      local FilePath = require("vibing.utils.file_path")
+      local FilePath = require("vibing.core.utils.file_path")
       local file_path = FilePath.is_cursor_on_file_path(buf)
       if file_path then
         -- Modified Filesに含まれているかチェック
@@ -247,14 +247,14 @@ function ChatBuffer:_setup_keymaps()
           end
         end
         -- 通常のdiffを表示
-        local GitDiff = require("vibing.utils.git_diff")
+        local GitDiff = require("vibing.core.utils.git_diff")
         GitDiff.show_diff(file_path)
       end
     end, { buffer = buf, desc = "Open diff for file under cursor" })
 
     -- ファイルパス上でファイルを開く
     vim.keymap.set("n", keymaps.open_file, function()
-      local FilePath = require("vibing.utils.file_path")
+      local FilePath = require("vibing.core.utils.file_path")
       local file_path = FilePath.is_cursor_on_file_path(buf)
       if file_path then
         FilePath.open_file(file_path)
@@ -781,7 +781,7 @@ function ChatBuffer:send_message()
   self:_commit_user_message()
 
   -- スラッシュコマンドかチェック
-  local commands = require("vibing.chat.commands")
+  local commands = require("vibing.application.chat.commands")
   if commands.is_command(message) then
     local handled, is_custom = commands.execute(message, self)
     if handled then
@@ -796,7 +796,7 @@ function ChatBuffer:send_message()
   end
 
   -- 通常のメッセージ送信
-  require("vibing.actions.chat").send(self, message)
+  require("vibing.application.chat.use_case").send(self, message)
 
   -- カーソルを末尾に移動してスクロールモードを有効化
   self:_move_cursor_to_end()
@@ -960,7 +960,7 @@ function ChatBuffer:update_filename_from_message(message)
     return
   end
 
-  local filename_util = require("vibing.utils.filename")
+  local filename_util = require("vibing.core.utils.filename")
   local base_filename = filename_util.generate_from_message(message)
 
   -- 新しいファイルパスを生成

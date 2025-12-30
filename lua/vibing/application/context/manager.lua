@@ -3,7 +3,7 @@
 local M = {}
 
 local Collector = require("vibing.infrastructure.context.collector")
-local notify = require("vibing.utils.notify")
+local notify = require("vibing.core.utils.notify")
 
 ---@type string[]
 M.manual_contexts = {}

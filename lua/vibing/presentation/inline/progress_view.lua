@@ -47,7 +47,7 @@ function ProgressView:show(title)
     title_pos = "center",
   })
 
-  require("vibing.utils.ui").apply_wrap_config(self.win)
+  require("vibing.core.utils.ui").apply_wrap_config(self.win)
   self:_start_spinner()
   self:_update_display()
 end

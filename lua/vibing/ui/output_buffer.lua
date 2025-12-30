@@ -90,7 +90,7 @@ function OutputBuffer:_create_window()
   })
 
   -- Apply wrap configuration
-  local ui_utils = require("vibing.utils.ui")
+  local ui_utils = require("vibing.core.utils.ui")
   ui_utils.apply_wrap_config(self.win)
 end
 

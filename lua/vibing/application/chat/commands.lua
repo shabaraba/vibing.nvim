@@ -151,7 +151,7 @@ local function execute_custom_command(custom_cmd, args, chat_buffer)
   end
 
   vim.schedule(function()
-    require("vibing.actions.chat").send(chat_buffer, message)
+    require("vibing.application.chat.use_case").send(chat_buffer, message)
   end)
 
   notify.info(string.format("Custom command executed: /%s", custom_cmd.name))

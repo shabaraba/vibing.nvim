@@ -18,7 +18,7 @@ return function(args, chat_buffer)
     return false
   end
 
-  require("vibing.context").add(expanded_path)
+  require("vibing.application.context.manager").add(expanded_path)
 
   if chat_buffer and chat_buffer._update_context_line then
     chat_buffer:_update_context_line()

@@ -2,11 +2,11 @@
 ---インラインアクション実行ユースケース
 local M = {}
 
-local notify = require("vibing.utils.notify")
+local notify = require("vibing.core.utils.notify")
 local QueueManager = require("vibing.application.inline.queue_manager")
 local StatusManager = require("vibing.status_manager")
-local BufferReload = require("vibing.utils.buffer_reload")
-local language_utils = require("vibing.utils.language")
+local BufferReload = require("vibing.core.utils.buffer_reload")
+local language_utils = require("vibing.core.utils.language")
 
 ---インラインアクションを実行
 ---@param action table アクション定義
