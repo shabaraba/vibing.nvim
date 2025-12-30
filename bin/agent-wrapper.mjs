@@ -161,13 +161,17 @@ const languageNames = {
 
 // Generate language instruction for AI responses
 function getLanguageInstruction(langCode) {
-  if (!langCode || langCode === 'en') {
+  if (!langCode) {
     return '';
   }
+
   const langName = languageNames[langCode];
   if (!langName) {
+    console.warn(`[vibing.nvim] Unknown language code: ${langCode}, falling back to default`);
     return '';
   }
+
+  // Always generate instruction for consistency, even for English
   return `Please respond to the user in ${langName}.`;
 }
 

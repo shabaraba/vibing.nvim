@@ -796,7 +796,43 @@ function ChatBuffer:send_message()
   end
 
   -- 通常のメッセージ送信
-  require("vibing.application.chat.use_case").send(self, message)
+  local vibing = require("vibing")
+  local adapter = vibing.get_adapter()
+  local config = vibing.get_config()
+  local SendMessage = require("vibing.application.chat.send_message")
+
+  -- ChatBufferのメソッドをコールバックとして渡す
+  local callbacks = {
+    extract_conversation = function()
+      return self:extract_conversation()
+    end,
+    update_filename_from_message = function(msg)
+      return self:update_filename_from_message(msg)
+    end,
+    start_response = function()
+      return self:start_response()
+    end,
+    parse_frontmatter = function()
+      return self:parse_frontmatter()
+    end,
+    append_chunk = function(chunk)
+      return self:append_chunk(chunk)
+    end,
+    set_last_modified_files = function(files, saved_contents)
+      return self:set_last_modified_files(files, saved_contents)
+    end,
+    get_session_id = function()
+      return self:get_session_id()
+    end,
+    update_session_id = function(session_id)
+      return self:update_session_id(session_id)
+    end,
+    add_user_section = function()
+      return self:add_user_section()
+    end,
+  }
+
+  SendMessage.execute(adapter, callbacks, message, config)
 
   -- カーソルを末尾に移動してスクロールモードを有効化
   self:_move_cursor_to_end()
