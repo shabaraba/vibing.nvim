@@ -3,8 +3,8 @@
 ## 1.14.0 (2025-12-30)
 
 ## What's Changed
-* feat: truncate long descriptions in command picker by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/246
 
+- feat: truncate long descriptions in command picker by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/246
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.13.2...v1.14.0
 
