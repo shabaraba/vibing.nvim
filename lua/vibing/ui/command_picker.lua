@@ -141,11 +141,18 @@ function M._show_telescope(chat_buffer)
   local make_display = function(entry)
     local source_display = ""
     local plugin_display = ""
+    local command_name = entry.name
 
     if entry.source == "builtin" then
       source_display = "[vibing]"
     elseif entry.source == "skill" then
       source_display = "[skill]"
+      -- スキル名が "plugin-name:skill-name" 形式の場合、分割して表示
+      local plugin_name, skill_name = entry.name:match("^(.+):(.+)$")
+      if plugin_name and skill_name then
+        plugin_display = plugin_name
+        command_name = skill_name
+      end
     elseif entry.source == "project" then
       source_display = "[project]"
     elseif entry.source == "user" then
@@ -155,7 +162,7 @@ function M._show_telescope(chat_buffer)
       plugin_display = entry.plugin_name or ""
     end
 
-    local command_display = "/" .. entry.name
+    local command_display = "/" .. command_name
     if entry.requires_args then
       command_display = command_display .. " <args>"
     end
