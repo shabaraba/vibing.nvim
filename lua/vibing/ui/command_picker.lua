@@ -26,6 +26,22 @@ local function truncate_description(text, max_length)
   return text
 end
 
+---コマンド名からプレフィックス（プラグイン名や名前空間）を分離
+---"plugin-name:command-name" -> { prefix = "plugin-name", name = "command-name" }
+---"namespace:subspace:command" -> { prefix = "namespace:subspace", name = "command" }
+---"simple-command" -> { prefix = "", name = "simple-command" }
+---@param full_name string 完全なコマンド名
+---@return {prefix: string, name: string}
+local function split_command_name(full_name)
+  -- 最後の:で分割（ネストされた名前空間をサポート）
+  local prefix, name = full_name:match("^(.+):([^:]+)$")
+  if prefix and name then
+    return { prefix = prefix, name = name }
+  end
+  -- コロンがない場合はプレフィックスなし
+  return { prefix = "", name = full_name }
+end
+
 ---コマンドピッカーを表示
 ---Telescopeが利用可能ならリッチなピッカー、なければvim.ui.selectを使用
 ---@param chat_buffer? Vibing.ChatBuffer コマンドを挿入するチャットバッファ（nilの場合はブラウズ専用）
@@ -74,6 +90,11 @@ function M._show_native(chat_buffer)
   vim.ui.select(command_list, {
     prompt = "Select slash command:",
     format_item = function(item)
+      -- コマンド名を分離
+      local split = split_command_name(item.name)
+      local command_name = split.name
+      local prefix = split.prefix
+
       local source_tag = ""
       if item.source == "skill" then
         source_tag = "[skill] "
@@ -82,15 +103,15 @@ function M._show_native(chat_buffer)
       elseif item.source == "user" then
         source_tag = "[user] "
       elseif item.source == "plugin" then
-        if item.plugin_name then
-          source_tag = string.format("[plugin:%s] ", item.plugin_name)
-        else
-          source_tag = "[plugin] "
-        end
+        source_tag = "[plugin] "
       end
+
+      -- プレフィックスがあれば表示
+      local prefix_display = prefix ~= "" and (prefix .. " ") or ""
+
       local args_indicator = item.requires_args and " <args>" or ""
       local description = truncate_description(item.description, 80)
-      return string.format("%s/%s%s - %s", source_tag, item.name, args_indicator, description)
+      return string.format("%s%s/%s%s - %s", source_tag, prefix_display, command_name, args_indicator, description)
     end,
   }, function(choice)
     if choice then
@@ -141,25 +162,26 @@ function M._show_telescope(chat_buffer)
   local make_display = function(entry)
     local source_display = ""
     local plugin_display = ""
-    local command_name = entry.name
+
+    -- コマンド名を分離（プラグイン名や名前空間を抽出）
+    local split = split_command_name(entry.name)
+    local command_name = split.name
 
     if entry.source == "builtin" then
       source_display = "[vibing]"
     elseif entry.source == "skill" then
       source_display = "[skill]"
-      -- スキル名が "plugin-name:skill-name" 形式の場合、分割して表示
-      local plugin_name, skill_name = entry.name:match("^(.+):(.+)$")
-      if plugin_name and skill_name then
-        plugin_display = plugin_name
-        command_name = skill_name
-      end
+      plugin_display = split.prefix
     elseif entry.source == "project" then
       source_display = "[project]"
+      plugin_display = split.prefix
     elseif entry.source == "user" then
       source_display = "[user]"
+      plugin_display = split.prefix
     elseif entry.source == "plugin" then
       source_display = "[plugin]"
-      plugin_display = entry.plugin_name or ""
+      -- pluginの場合は明示的なplugin_nameがあればそれを優先、なければprefixを使用
+      plugin_display = entry.plugin_name or split.prefix
     end
 
     local command_display = "/" .. command_name
