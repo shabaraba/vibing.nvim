@@ -22,6 +22,24 @@
 ---@class PermissionEvaluator
 local M = {}
 
+---Normalize a file path to prevent symlink attacks
+---@param path string Path to normalize
+---@return string Normalized absolute path
+local function normalize_path(path)
+  -- Convert to absolute path
+  local abs_path = vim.fn.fnamemodify(path, ":p")
+
+  -- Resolve symlinks
+  local resolved = vim.fn.resolve(abs_path)
+
+  -- Remove trailing slash for consistency
+  if resolved:match("/$") and resolved ~= "/" then
+    resolved = resolved:sub(1, -2)
+  end
+
+  return resolved
+end
+
 ---Match a glob pattern against a path
 ---@param pattern string Glob pattern
 ---@param path string Path to match
@@ -125,8 +143,17 @@ local function matches_rule(rule, tool, context)
   local matched = false
 
   if rule.paths and context.path then
+    -- Normalize path to prevent symlink attacks
+    local normalized_path = normalize_path(context.path)
+
     for _, pattern in ipairs(rule.paths) do
-      if match_glob(pattern, context.path) then
+      -- Also normalize pattern if it's an absolute path
+      local normalized_pattern = pattern
+      if pattern:match("^/") or pattern:match("^~") then
+        normalized_pattern = normalize_path(vim.fn.expand(pattern))
+      end
+
+      if match_glob(normalized_pattern, normalized_path) then
         matched = true
         break
       end

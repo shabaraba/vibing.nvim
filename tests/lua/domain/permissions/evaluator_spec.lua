@@ -129,4 +129,56 @@ describe("permission evaluator", function()
       assert.is_false(result.allowed)
     end)
   end)
+
+  describe("path normalization security (UT-PERM-005)", function()
+    it("should normalize relative paths to absolute", function()
+      local rules = {
+        { tools = { "Read" }, paths = { vim.fn.getcwd() .. "/src/**" }, action = "allow" },
+      }
+      -- Relative path should be normalized and matched
+      local result = evaluator.evaluate_with_rules("Read", { path = "src/init.lua" }, rules)
+
+      assert.is_true(result.allowed)
+    end)
+
+    it("should resolve symlinks in paths", function()
+      -- Create a temporary file and symlink for testing
+      local tmpfile = vim.fn.tempname()
+      local tmplink = vim.fn.tempname() .. "_link"
+
+      -- Write test file
+      vim.fn.writefile({ "test" }, tmpfile)
+
+      -- Create symlink (if possible on this system)
+      local link_result = vim.fn.system("ln -s " .. tmpfile .. " " .. tmplink)
+
+      if vim.v.shell_error == 0 then
+        local rules = {
+          { tools = { "Read" }, paths = { tmpfile }, action = "deny" },
+        }
+
+        -- Access via symlink should also be denied
+        local result = evaluator.evaluate_with_rules("Read", { path = tmplink }, rules)
+
+        assert.is_false(result.allowed)
+
+        -- Cleanup
+        vim.fn.delete(tmplink)
+      end
+
+      -- Cleanup
+      vim.fn.delete(tmpfile)
+    end)
+
+    it("should handle tilde expansion in patterns", function()
+      local rules = {
+        { tools = { "Read" }, paths = { "~/.config/**" }, action = "allow" },
+      }
+
+      local home_path = vim.fn.expand("~/.config/nvim/init.lua")
+      local result = evaluator.evaluate_with_rules("Read", { path = home_path }, rules)
+
+      assert.is_true(result.allowed)
+    end)
+  end)
 end)

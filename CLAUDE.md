@@ -507,6 +507,20 @@ require("vibing").setup({
 - `action` - "allow" or "deny"
 - `message` - Custom error message (optional, for deny rules)
 
+**Rule Evaluation Order:**
+
+Permission rules are evaluated in the following order to ensure security:
+
+1. **Deny rules are evaluated first** - If any deny rule matches, access is immediately blocked
+2. **Allow rules are evaluated second** - If no deny rule matches and an allow rule matches, access is granted
+3. **Default deny** - If no rules match, access is denied with "No matching allow rule"
+
+**Security Features:**
+
+- **Path Normalization** - All file paths are normalized to absolute paths and symlinks are resolved to prevent directory traversal attacks
+- **Pattern Matching** - Glob patterns support `*` (single directory) and `**` (recursive) wildcards
+- **Explicit Allow** - When using rules, you must explicitly allow operations (deny-by-default)
+
 #### Interactive Permission Builder
 
 Use the `/permissions` (or `/perm`) slash command in chat to interactively configure permissions:
