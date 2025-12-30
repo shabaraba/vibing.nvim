@@ -415,7 +415,7 @@ function ChatBuffer:_update_context_line()
 end
 
 ---YAMLフロントマターをパース
----@return table<string, string|string[]>
+---@return table<string, string|string[]|number|boolean>
 function ChatBuffer:parse_frontmatter()
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return {}

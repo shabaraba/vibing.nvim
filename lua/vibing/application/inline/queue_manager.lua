@@ -21,20 +21,27 @@ function M.enqueue(task)
   return #queue
 end
 
+---Get the current queue size
+---@return integer size Number of tasks in queue
 function M.size()
   return #queue
 end
 
+---Check if a task is currently being processed
+---@return boolean processing True if a task is being processed
 function M.is_processing()
   return processing
 end
 
+---Clear the queue and reset processing state
 function M.clear()
   queue = {}
   processing = false
   current_task = nil
 end
 
+---Get the currently executing task
+---@return Vibing.QueueTask|nil current_task The current task or nil
 function M.get_current()
   return current_task
 end
@@ -66,6 +73,7 @@ local function process_next()
   end
 end
 
+---Start processing the queue
 function M.process()
   if processing then
     return
@@ -79,12 +87,14 @@ function M.process()
   process_next()
 end
 
+---Cancel the currently executing task
 function M.cancel_current()
   if current_task and current_task.cancel then
     current_task.cancel()
   end
 end
 
+---Cancel all tasks (current and queued)
 function M.cancel_all()
   M.cancel_current()
   queue = {}
@@ -92,6 +102,8 @@ function M.cancel_all()
   current_task = nil
 end
 
+---Get queue status information
+---@return {size: integer, processing: boolean, current_id: string|nil} info Queue information
 function M.get_queue_info()
   return {
     size = #queue,

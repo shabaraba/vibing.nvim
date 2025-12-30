@@ -15,9 +15,9 @@ local function parse_yaml_value(value)
   value = trim(value)
 
   if value == "true" then
-    return "true"
+    return true
   elseif value == "false" then
-    return "false"
+    return false
   elseif value:match("^%d+$") then
     return tonumber(value)
   else
