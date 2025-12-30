@@ -7,6 +7,25 @@ local commands = require("vibing.application.chat.commands")
 ---引数補完が必要なコマンド（/mode, /model）にも対応
 local M = {}
 
+---説明文を指定文字数で切り詰める
+---@param text string 説明文
+---@param max_length number 最大文字数
+---@return string 切り詰められた説明文
+local function truncate_description(text, max_length)
+  if not text then
+    return ""
+  end
+  -- 改行を削除してスペースに置換
+  text = text:gsub("\n", " ")
+  -- 連続するスペースを1つに
+  text = text:gsub("%s+", " ")
+  -- 最大文字数で切り詰め
+  if vim.fn.strwidth(text) > max_length then
+    return text:sub(1, max_length - 3) .. "..."
+  end
+  return text
+end
+
 ---コマンドピッカーを表示
 ---Telescopeが利用可能ならリッチなピッカー、なければvim.ui.selectを使用
 ---@param chat_buffer? Vibing.ChatBuffer コマンドを挿入するチャットバッファ（nilの場合はブラウズ専用）
@@ -56,7 +75,9 @@ function M._show_native(chat_buffer)
     prompt = "Select slash command:",
     format_item = function(item)
       local source_tag = ""
-      if item.source == "project" then
+      if item.source == "skill" then
+        source_tag = "[skill] "
+      elseif item.source == "project" then
         source_tag = "[project] "
       elseif item.source == "user" then
         source_tag = "[user] "
@@ -68,7 +89,8 @@ function M._show_native(chat_buffer)
         end
       end
       local args_indicator = item.requires_args and " <args>" or ""
-      return string.format("%s/%s%s - %s", source_tag, item.name, args_indicator, item.description)
+      local description = truncate_description(item.description, 80)
+      return string.format("%s/%s%s - %s", source_tag, item.name, args_indicator, description)
     end,
   }, function(choice)
     if choice then
@@ -119,6 +141,8 @@ function M._show_telescope(chat_buffer)
     local source_display = ""
     if entry.source == "builtin" then
       source_display = "[vibing]"
+    elseif entry.source == "skill" then
+      source_display = "[skill]"
     elseif entry.source == "project" then
       source_display = "[custom:project]"
     elseif entry.source == "user" then
@@ -136,10 +160,12 @@ function M._show_telescope(chat_buffer)
       command_display = command_display .. " <args>"
     end
 
+    local description = truncate_description(entry.description, 100)
+
     return displayer({
       { source_display, "TelescopeResultsComment" },
       { command_display, "TelescopeResultsIdentifier" },
-      { entry.description, "TelescopeResultsString" },
+      { description, "TelescopeResultsString" },
     })
   end
 
