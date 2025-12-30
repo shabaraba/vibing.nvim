@@ -1,9 +1,21 @@
+---@class Vibing.QueueTask
+---@field id string Unique task identifier
+---@field execute fun(done: fun()) Task execution function
+---@field cancel? fun() Optional cancel function
+
+---@class Vibing.QueueManager
 local M = {}
 
+---@type Vibing.QueueTask[]
 local queue = {}
+---@type boolean
 local processing = false
+---@type Vibing.QueueTask|nil
 local current_task = nil
 
+---Add a task to the queue
+---@param task Vibing.QueueTask Task to enqueue
+---@return integer position Position in queue (1-indexed)
 function M.enqueue(task)
   table.insert(queue, task)
   return #queue
@@ -76,6 +88,8 @@ end
 function M.cancel_all()
   M.cancel_current()
   queue = {}
+  processing = false
+  current_task = nil
 end
 
 function M.get_queue_info()

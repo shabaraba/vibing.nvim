@@ -1,5 +1,7 @@
+---@class CommandValidator
 local M = {}
 
+---@type string[]
 local ALLOWED_COMMANDS = {
   "edit",
   "e",
@@ -31,6 +33,7 @@ local ALLOWED_COMMANDS = {
   "norm",
 }
 
+---@type string[]
 local DANGEROUS_PATTERNS = {
   "^!",
   "^:!",
@@ -46,6 +49,7 @@ local DANGEROUS_PATTERNS = {
   "io%.popen",
 }
 
+---@type string[]
 local SENSITIVE_PATHS = {
   "/etc/",
   "/var/",
@@ -57,6 +61,9 @@ local SENSITIVE_PATHS = {
   "/sbin/",
 }
 
+---Check if a command name is in the allowed list
+---@param cmd_name string Command name to check
+---@return boolean
 local function is_allowed_command(cmd_name)
   local lower_cmd = cmd_name:lower()
   for _, allowed in ipairs(ALLOWED_COMMANDS) do
@@ -67,6 +74,10 @@ local function is_allowed_command(cmd_name)
   return false
 end
 
+---Check if a command contains dangerous patterns
+---@param command string Command to check
+---@return boolean is_dangerous
+---@return string? reason Error message if dangerous
 local function has_dangerous_pattern(command)
   for _, pattern in ipairs(DANGEROUS_PATTERNS) do
     if command:match(pattern) then
@@ -76,6 +87,10 @@ local function has_dangerous_pattern(command)
   return false
 end
 
+---Check if a command contains path traversal patterns
+---@param command string Command to check
+---@return boolean has_traversal
+---@return string? reason Error message if path traversal detected
 local function has_path_traversal(command)
   if command:match("%.%.%/") or command:match("%.%.\\") then
     return true, "Path traversal detected"
@@ -83,6 +98,10 @@ local function has_path_traversal(command)
   return false
 end
 
+---Check if a command accesses sensitive paths
+---@param command string Command to check
+---@return boolean is_sensitive
+---@return string? reason Error message if sensitive path detected
 local function is_sensitive_path(command)
   for _, sensitive in ipairs(SENSITIVE_PATHS) do
     if command:match(sensitive) then
@@ -92,12 +111,19 @@ local function is_sensitive_path(command)
   return false
 end
 
+---Extract the command name from a command string
+---@param command string Command string
+---@return string? cmd_name Extracted command name or nil
 local function extract_command_name(command)
   local trimmed = command:gsub("^%s*:?%s*", "")
   local cmd_name = trimmed:match("^(%S+)")
   return cmd_name
 end
 
+---Validate a Neovim command against security rules
+---@param command string|nil The command to validate
+---@return boolean ok True if command is safe
+---@return string? error Error message if validation fails
 function M.validate(command)
   if command == nil or command == "" then
     return false, "Empty command"
@@ -134,6 +160,8 @@ function M.validate(command)
   return true, nil
 end
 
+---Get list of allowed commands
+---@return string[] List of allowed command names
 function M.get_allowed_commands()
   return vim.deepcopy(ALLOWED_COMMANDS)
 end
