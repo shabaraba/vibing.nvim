@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.13.2 (2025-12-30)
+
+## What's Changed
+* fix: resolve undefined function error in command_picker by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/244
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.13.1...v1.13.2
+
 ## 1.13.1 (2025-12-30)
 
 ## What's Changed
