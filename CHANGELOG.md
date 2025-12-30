@@ -3,8 +3,8 @@
 ## 1.14.1 (2025-12-30)
 
 ## What's Changed
-* fix: handle table language config in build_command by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/248
 
+- fix: handle table language config in build_command by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/248
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.14.0...v1.14.1
 
