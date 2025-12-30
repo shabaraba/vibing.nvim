@@ -95,23 +95,12 @@ function M._show_native(chat_buffer)
       local command_name = split.name
       local prefix = split.prefix
 
-      local source_tag = ""
-      if item.source == "skill" then
-        source_tag = "[skill] "
-      elseif item.source == "project" then
-        source_tag = "[project] "
-      elseif item.source == "user" then
-        source_tag = "[user] "
-      elseif item.source == "plugin" then
-        source_tag = "[plugin] "
-      end
-
       -- プレフィックスがあれば表示
       local prefix_display = prefix ~= "" and (prefix .. " ") or ""
 
       local args_indicator = item.requires_args and " <args>" or ""
       local description = truncate_description(item.description, 80)
-      return string.format("%s%s/%s%s - %s", source_tag, prefix_display, command_name, args_indicator, description)
+      return string.format("%s/%s%s - %s", prefix_display, command_name, args_indicator, description)
     end,
   }, function(choice)
     if choice then
@@ -148,41 +137,21 @@ function M._show_telescope(chat_buffer)
     return a.name < b.name
   end)
 
-  -- エントリーメーカー: 表示フォーマットを定義
+  -- エントリーメーカー: 表示フォーマットを定義（3列構成）
   local displayer = entry_display.create({
     separator = " ",
     items = {
-      { width = 12 },  -- source type
-      { width = 20 },  -- plugin name (if applicable)
+      { width = 20 },  -- plugin/namespace name
       { width = 30 },  -- command name (with args indicator)
       { remaining = true },  -- description
     },
   })
 
   local make_display = function(entry)
-    local source_display = ""
-    local plugin_display = ""
-
     -- コマンド名を分離（プラグイン名や名前空間を抽出）
     local split = split_command_name(entry.name)
     local command_name = split.name
-
-    if entry.source == "builtin" then
-      source_display = "[vibing]"
-    elseif entry.source == "skill" then
-      source_display = "[skill]"
-      plugin_display = split.prefix
-    elseif entry.source == "project" then
-      source_display = "[project]"
-      plugin_display = split.prefix
-    elseif entry.source == "user" then
-      source_display = "[user]"
-      plugin_display = split.prefix
-    elseif entry.source == "plugin" then
-      source_display = "[plugin]"
-      -- pluginの場合は明示的なplugin_nameがあればそれを優先、なければprefixを使用
-      plugin_display = entry.plugin_name or split.prefix
-    end
+    local plugin_display = split.prefix
 
     local command_display = "/" .. command_name
     if entry.requires_args then
@@ -192,7 +161,6 @@ function M._show_telescope(chat_buffer)
     local description = truncate_description(entry.description, 100)
 
     return displayer({
-      { source_display, "TelescopeResultsComment" },
       { plugin_display, "TelescopeResultsNumber" },
       { command_display, "TelescopeResultsIdentifier" },
       { description, "TelescopeResultsString" },
