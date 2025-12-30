@@ -13,21 +13,11 @@ local M = {}
 function M.show(chat_buffer)
   -- チャットバッファが提供されていない場合は、現在開いているチャットを探す
   if not chat_buffer then
-    local chat = require("vibing.application.chat.use_case")
+    local view = require("vibing.presentation.chat.view")
 
-    -- 1. グローバルなchat_bufferをチェック
-    if chat.chat_buffer and chat.chat_buffer:is_open() then
-      chat_buffer = chat.chat_buffer
-    else
-      -- 2. 現在のバッファが.vibingファイルかチェック
-      local current_buf = vim.api.nvim_get_current_buf()
-      local filetype = vim.bo[current_buf].filetype
-      if filetype == "vibing" then
-        -- 現在のバッファがvibingファイルなら、それをチャットバッファとして取得
-        chat_buffer = chat.get_current_chat_buffer()
-      end
-    end
-    -- chat_bufferがまだnilの場合はブラウズ専用モード
+    -- view.get_current()で現在のチャットバッファインスタンスを取得
+    chat_buffer = view.get_current()
+    -- chat_bufferがnilの場合はブラウズ専用モード
   end
 
   -- Telescopeが利用可能かチェック
