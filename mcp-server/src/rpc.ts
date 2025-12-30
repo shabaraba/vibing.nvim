@@ -1,6 +1,7 @@
 import * as net from 'net';
 
 const NVIM_RPC_PORT = parseInt(process.env.VIBING_RPC_PORT || '9876', 10);
+const NVIM_RPC_TIMEOUT = parseInt(process.env.VIBING_RPC_TIMEOUT || '30000', 10); // Default 30 seconds
 
 let requestId = 0;
 const pendingRequests = new Map<
@@ -95,13 +96,13 @@ export async function callNeovim(method: string, params: any = {}): Promise<any>
     const request = JSON.stringify({ id, method, params }) + '\n';
     sock.write(request);
 
-    // Timeout after 5 seconds
+    // Timeout after configured duration (default 30 seconds)
     setTimeout(() => {
       if (pendingRequests.has(id)) {
         pendingRequests.delete(id);
         reject(new Error('Request timeout'));
       }
-    }, 5000);
+    }, NVIM_RPC_TIMEOUT);
   });
 }
 
