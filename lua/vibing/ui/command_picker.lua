@@ -8,8 +8,9 @@ local commands = require("vibing.application.chat.commands")
 local M = {}
 
 ---説明文を指定文字数で切り詰める
+---表示幅(strwidth)を考慮してマルチバイト文字を正しく扱う
 ---@param text string 説明文
----@param max_length number 最大文字数
+---@param max_length number 最大表示幅
 ---@return string 切り詰められた説明文
 local function truncate_description(text, max_length)
   if not text then
@@ -19,9 +20,24 @@ local function truncate_description(text, max_length)
   text = text:gsub("\n", " ")
   -- 連続するスペースを1つに
   text = text:gsub("%s+", " ")
-  -- 最大文字数で切り詰め
+  -- 前後の空白を削除
+  text = vim.trim(text)
+
+  -- 最大文字数で切り詰め（マルチバイト対応）
   if vim.fn.strwidth(text) > max_length then
-    return text:sub(1, max_length - 3) .. "..."
+    local result = ""
+    local width = 0
+    -- 文字単位でイテレート（マルチバイト文字を正しく扱う）
+    for _, char in vim.str_utf_pos(text) do
+      local char_text = text:sub(char)
+      local char_width = vim.fn.strwidth(char_text)
+      if width + char_width > max_length - 3 then
+        break
+      end
+      result = result .. char_text
+      width = width + char_width
+    end
+    return result .. "..."
   end
   return text
 end
