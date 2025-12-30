@@ -145,9 +145,15 @@ function AgentSDK:build_command(prompt, opts, session_id)
   -- Add language: opts (frontmatter) > config
   local language = opts.language
   if not language and self.config.language then
-    language = self.config.language
+    -- config.language can be a string or a table {default, chat, inline}
+    if type(self.config.language) == "table" then
+      -- For title generation (and other non-chat/inline uses), use default
+      language = self.config.language.default or self.config.language.chat
+    else
+      language = self.config.language
+    end
   end
-  if language then
+  if language and type(language) == "string" then
     table.insert(cmd, "--language")
     table.insert(cmd, language)
   end
