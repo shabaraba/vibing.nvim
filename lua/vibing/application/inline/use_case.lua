@@ -141,9 +141,11 @@ function M.execute(action_or_prompt, additional_instruction)
   local current_buf = vim.api.nvim_get_current_buf()
   local is_modified = vim.bo[current_buf].modified
 
-  -- 言語設定を適用
+  -- 言語設定を取得
   local lang_code = Language.get_language_code(config.language, "inline")
-  local base_prompt = Language.add_language_instruction(action.prompt, lang_code)
+
+  -- ベースプロンプトを構築
+  local base_prompt = action.prompt
 
   -- 追加指示がある場合はベースプロンプトに追加
   if additional_instruction and additional_instruction ~= "" then
@@ -153,7 +155,9 @@ function M.execute(action_or_prompt, additional_instruction)
   -- プロンプトに@file:path:L10-L25形式のメンションを含める
   local prompt = base_prompt .. "\n\n" .. selection_context
 
-  local opts = {}
+  local opts = {
+    language = lang_code,  -- Pass language code to adapter
+  }
 
   -- Permissions設定を追加
   if config.permissions then
@@ -446,14 +450,15 @@ function M.custom(prompt, use_output)
   local current_buf = vim.api.nvim_get_current_buf()
   local is_modified = vim.bo[current_buf].modified
 
-  -- 言語設定を適用
+  -- 言語設定を取得
   local lang_code = Language.get_language_code(config.language, "inline")
-  local final_prompt = Language.add_language_instruction(prompt, lang_code)
 
   -- プロンプトに@file:path:L10-L25形式のメンションを含める
-  local full_prompt = final_prompt .. "\n\n" .. selection_context
+  local full_prompt = prompt .. "\n\n" .. selection_context
 
-  local opts = {}
+  local opts = {
+    language = lang_code,  -- Pass language code to adapter
+  }
 
   -- Permissions設定を追加（configから）
   if config.permissions then

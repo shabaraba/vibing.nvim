@@ -31,8 +31,9 @@ M.language_names = {
 }
 
 ---言語コードから言語指示文字列を生成
+---ユーザーへのレスポンス言語を明示する形式で返す
 ---@param lang_code string? 言語コード（例: "ja", "en"）
----@return string 言語指示（例: "in Japanese"）または空文字列
+---@return string 言語指示（例: "Please respond to the user in Japanese."）または空文字列
 function M.get_language_instruction(lang_code)
   if not lang_code or lang_code == "" or lang_code == "en" then
     return ""
@@ -43,7 +44,7 @@ function M.get_language_instruction(lang_code)
     return ""
   end
 
-  return " in " .. lang_name
+  return "Please respond to the user in " .. lang_name .. "."
 end
 
 ---プロンプトに言語指示を追加

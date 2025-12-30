@@ -36,6 +36,13 @@ function M.execute(adapter, chat_buffer, message, config)
   local modified_files = {}
   local file_tools = { Edit = true, Write = true, nvim_set_buffer = true }
 
+  -- Get language code: frontmatter > config
+  local language_utils = require("vibing.core.utils.language")
+  local lang_code = frontmatter.language
+  if not lang_code then
+    lang_code = language_utils.get_language_code(config.language, "chat")
+  end
+
   local opts = {
     streaming = true,
     action_type = "chat",
@@ -46,6 +53,7 @@ function M.execute(adapter, chat_buffer, message, config)
     permissions_deny = frontmatter.permissions_deny,
     permissions_ask = frontmatter.permissions_ask,
     permission_mode = frontmatter.permission_mode,
+    language = lang_code,  -- Pass language code to adapter
     on_tool_use = function(tool, file_path)
       if file_tools[tool] and file_path then
         if not vim.tbl_contains(modified_files, file_path) then

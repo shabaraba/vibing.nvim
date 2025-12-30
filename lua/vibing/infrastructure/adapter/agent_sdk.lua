@@ -142,6 +142,16 @@ function AgentSDK:build_command(prompt, opts, session_id)
     table.insert(cmd, tostring(mcp_enabled))
   end
 
+  -- Add language: opts (frontmatter) > config
+  local language = opts.language
+  if not language and self.config.language then
+    language = self.config.language
+  end
+  if language then
+    table.insert(cmd, "--language")
+    table.insert(cmd, language)
+  end
+
   table.insert(cmd, "--prompt")
   table.insert(cmd, prompt)
 

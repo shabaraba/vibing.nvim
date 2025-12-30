@@ -41,8 +41,8 @@ end
 
 ---アクションを実行
 function M._run_action(action, context, additional_prompt, adapter, config, ui, done)
-  local language = language_utils.get_language_for_action("inline", config.language)
-  local language_instruction = language_utils.get_prompt_instruction(language)
+  -- Get language code for inline action
+  local lang_code = language_utils.get_language_code(config.language, "inline")
 
   local prompt_parts = {
     action.prompt,
@@ -53,11 +53,6 @@ function M._run_action(action, context, additional_prompt, adapter, config, ui, 
   if additional_prompt and additional_prompt ~= "" then
     table.insert(prompt_parts, "")
     table.insert(prompt_parts, "Additional instructions: " .. additional_prompt)
-  end
-
-  if language_instruction and language_instruction ~= "" then
-    table.insert(prompt_parts, "")
-    table.insert(prompt_parts, language_instruction)
   end
 
   local prompt = table.concat(prompt_parts, "\n")
@@ -72,6 +67,7 @@ function M._run_action(action, context, additional_prompt, adapter, config, ui, 
     status_manager = status_mgr,
     tools = action.tools,
     permissions_allow = action.tools,
+    language = lang_code,  -- Pass language code to adapter
     on_tool_use = function(tool, file_path)
       if file_tools[tool] and file_path and not vim.tbl_contains(modified_files, file_path) then
         table.insert(modified_files, file_path)

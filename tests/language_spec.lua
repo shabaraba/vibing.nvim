@@ -32,11 +32,11 @@ describe("vibing.utils.language", function()
     end)
 
     it("should return instruction for 'ja'", function()
-      assert.equals(" in Japanese", Language.get_language_instruction("ja"))
+      assert.equals("Please respond to the user in Japanese.", Language.get_language_instruction("ja"))
     end)
 
     it("should return instruction for 'fr'", function()
-      assert.equals(" in French", Language.get_language_instruction("fr"))
+      assert.equals("Please respond to the user in French.", Language.get_language_instruction("fr"))
     end)
 
     it("should return empty string for unknown language code", function()
@@ -44,7 +44,7 @@ describe("vibing.utils.language", function()
     end)
   end)
 
-  describe("add_language_instruction", function()
+  describe("add_language_instruction (deprecated - no longer used in production)", function()
     it("should return prompt unchanged when no language code", function()
       local prompt = "Fix the following code:"
       assert.equals(prompt, Language.add_language_instruction(prompt, nil))
@@ -55,15 +55,17 @@ describe("vibing.utils.language", function()
       assert.equals(prompt, Language.add_language_instruction(prompt, "en"))
     end)
 
-    it("should add instruction before colon", function()
+    it("should add instruction before colon (legacy behavior)", function()
       local prompt = "Fix the following code:"
-      local expected = "Fix the following code in Japanese:"
+      -- Note: This function is deprecated. Language instructions are now added
+      -- to the system prompt in agent-wrapper.mjs instead of user prompts.
+      local expected = "Fix the following codePlease respond to the user in Japanese.:"
       assert.equals(expected, Language.add_language_instruction(prompt, "ja"))
     end)
 
-    it("should add instruction at end when no colon", function()
+    it("should add instruction at end when no colon (legacy behavior)", function()
       local prompt = "Fix the following code"
-      local expected = "Fix the following code in Japanese"
+      local expected = "Fix the following codePlease respond to the user in Japanese."
       assert.equals(expected, Language.add_language_instruction(prompt, "ja"))
     end)
 
