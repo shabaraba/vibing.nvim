@@ -131,28 +131,28 @@ function M._show_telescope(chat_buffer)
   local displayer = entry_display.create({
     separator = " ",
     items = {
-      { width = 20 },  -- source (increased for plugin names)
-      { width = 25 },  -- command name (with args indicator)
+      { width = 12 },  -- source type
+      { width = 20 },  -- plugin name (if applicable)
+      { width = 30 },  -- command name (with args indicator)
       { remaining = true },  -- description
     },
   })
 
   local make_display = function(entry)
     local source_display = ""
+    local plugin_display = ""
+
     if entry.source == "builtin" then
       source_display = "[vibing]"
     elseif entry.source == "skill" then
       source_display = "[skill]"
     elseif entry.source == "project" then
-      source_display = "[custom:project]"
+      source_display = "[project]"
     elseif entry.source == "user" then
-      source_display = "[custom:user]"
+      source_display = "[user]"
     elseif entry.source == "plugin" then
-      if entry.plugin_name then
-        source_display = string.format("[plugin:%s]", entry.plugin_name)
-      else
-        source_display = "[plugin]"
-      end
+      source_display = "[plugin]"
+      plugin_display = entry.plugin_name or ""
     end
 
     local command_display = "/" .. entry.name
@@ -164,6 +164,7 @@ function M._show_telescope(chat_buffer)
 
     return displayer({
       { source_display, "TelescopeResultsComment" },
+      { plugin_display, "TelescopeResultsNumber" },
       { command_display, "TelescopeResultsIdentifier" },
       { description, "TelescopeResultsString" },
     })
