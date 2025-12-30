@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.13.1 (2025-12-30)
+
+## What's Changed
+* refactor: complete Clean Architecture migration by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/242
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.13.0...v1.13.1
+
 ## 1.13.0 (2025-12-29)
 
 ## What's Changed
