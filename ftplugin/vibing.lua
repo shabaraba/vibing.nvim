@@ -21,10 +21,26 @@ vim.bo.textwidth = 0
 vim.bo.formatoptions = "tcqj"
 vim.wo.conceallevel = 2
 
--- Apply wrap configuration for .vibing files
+-- Apply wrap configuration for .vibing files using BufEnter autocmd
+-- This ensures wrap settings only affect vibing buffers and don't leak to other buffers
 local ok, ui_utils = pcall(require, "vibing.utils.ui")
 if ok then
-  ui_utils.apply_wrap_config(0)  -- 0 = current window
+  -- Apply immediately on first load
+  ui_utils.apply_wrap_config(0)
+
+  -- Set up autocmd for future BufEnter events
+  -- This ensures wrap settings are reapplied when re-entering the vibing buffer
+  local bufnr = vim.api.nvim_get_current_buf()
+  local group = vim.api.nvim_create_augroup("vibing_wrap_" .. bufnr, { clear = true })
+
+  vim.api.nvim_create_autocmd("BufEnter", {
+    group = group,
+    buffer = bufnr,
+    callback = function()
+      ui_utils.apply_wrap_config(0)
+    end,
+    desc = "Apply vibing wrap settings on buffer enter"
+  })
 end
 
 -- Disable spell checking by default (users can enable with :set spell)
