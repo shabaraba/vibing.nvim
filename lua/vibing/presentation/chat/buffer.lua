@@ -783,15 +783,16 @@ function ChatBuffer:send_message()
   -- スラッシュコマンドかチェック
   local commands = require("vibing.application.chat.commands")
   if commands.is_command(message) then
-    local handled, is_custom = commands.execute(message, self)
+    local handled, expanded = commands.execute(message, self)
     if handled then
-      -- コマンドが処理された
-      -- カスタムコマンドはM.send()内でadd_user_section()を呼ぶため、ここでは呼ばない
-      -- ビルトインコマンドのみここでadd_user_section()を呼ぶ
-      if not is_custom then
+      if expanded then
+        -- カスタムコマンド: 展開されたメッセージでAI送信を続行
+        message = expanded
+      else
+        -- ビルトインコマンドまたは展開失敗: 処理完了
         self:add_user_section()
+        return
       end
-      return
     end
   end
 
