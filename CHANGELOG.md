@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.14.2 (2025-12-31)
+
+## What's Changed
+* fix: prevent wrap settings from leaking to non-vibing buffers by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/252
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.14.1...v1.14.2
+
 ## 1.14.1 (2025-12-30)
 
 ## What's Changed
