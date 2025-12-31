@@ -56,7 +56,7 @@ end
 ---@param title string
 function OutputBuffer:_create_buffer(title)
   self.buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[self.buf].filetype = "markdown"
+  vim.bo[self.buf].filetype = "vibing"
   vim.bo[self.buf].buftype = "nofile"
   vim.bo[self.buf].modifiable = true
   vim.bo[self.buf].swapfile = false
@@ -89,9 +89,6 @@ function OutputBuffer:_create_window()
     title_pos = "center",
   })
 
-  -- Apply wrap configuration
-  local ui_utils = require("vibing.core.utils.ui")
-  ui_utils.apply_wrap_config(self.win)
 end
 
 ---キーマップを設定

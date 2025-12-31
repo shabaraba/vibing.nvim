@@ -42,6 +42,7 @@ function InlineProgress:show(title)
   end
 
   self.buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[self.buf].filetype = "vibing"
   vim.bo[self.buf].bufhidden = "wipe"
 
   local width = 40
@@ -60,10 +61,6 @@ function InlineProgress:show(title)
     title = " " .. (title or "Vibing") .. " ",
     title_pos = "center",
   })
-
-  -- Apply wrap configuration
-  local ui_utils = require("vibing.core.utils.ui")
-  ui_utils.apply_wrap_config(self.win)
 
   self:_start_spinner()
   self:_update_display()

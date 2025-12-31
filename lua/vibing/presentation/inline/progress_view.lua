@@ -29,6 +29,7 @@ function ProgressView:show(title)
   if not ui then return end
 
   self.buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[self.buf].filetype = "vibing"
   vim.bo[self.buf].bufhidden = "wipe"
 
   local width, height = 40, 3
@@ -47,7 +48,6 @@ function ProgressView:show(title)
     title_pos = "center",
   })
 
-  require("vibing.core.utils.ui").apply_wrap_config(self.win)
   self:_start_spinner()
   self:_update_display()
 end

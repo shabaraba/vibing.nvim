@@ -183,9 +183,6 @@ function ChatBuffer:_create_window()
     })
   end
 
-  -- Apply wrap configuration
-  local ui_utils = require("vibing.core.utils.ui")
-  ui_utils.apply_wrap_config(self.win)
 end
 
 ---キーマップを設定
