@@ -68,6 +68,41 @@ Documents the implementation of concurrent execution support for multiple chat w
 
 ---
 
+### ADR 003: Agent SDK vs CLI Architecture Decision
+
+**Status:** Accepted
+**Date:** 2026-01-04
+
+Comprehensive comparison between Claude Agent SDK (`query()` API) and Claude CLI (`claude -p`) for vibing.nvim's architecture. Documents the decision to continue using Agent SDK based on:
+
+- Custom permission control requirements (`canUseTool` callback)
+- Dependency management reliability (npm vs global binary)
+- Performance considerations (in-process vs subprocess)
+- Known issues comparison (Agent SDK Issue #29 vs CLI bugs)
+- vibing.nvim-specific requirements (granular patterns, MCP control, Issue #29 workarounds)
+
+**Key Files:**
+
+- ADR: [003-agent-sdk-vs-cli-comparison.md](./003-agent-sdk-vs-cli-comparison.md)
+- Implementation: `bin/agent-wrapper.mjs` (full implementation)
+- Dependencies: `package.json` (line 44: `@anthropic-ai/claude-agent-sdk: ^0.1.76`)
+
+**Related ADRs:**
+
+- [ADR 001](#adr-001-permissions-ask-implementation-and-agent-sdk-constraints) - Permission system constraints
+- [ADR 002](#adr-002-concurrent-execution-support) - Concurrent execution architecture
+
+**Related Issues:**
+
+- [Agent SDK Issue #29](https://github.com/anthropics/claude-agent-sdk-typescript/issues/29) - Resume session bypass
+- [CLI Issue #913](https://github.com/eyaltoledano/claude-task-master/issues/913) - JSON Truncation
+- [CLI Issue #1920](https://github.com/anthropics/claude-code/issues/1920) - Missing Final Result Event
+- [CLI Issue #3187](https://github.com/anthropics/claude-code/issues/3187) - Stream Input Hang
+- [CLI Issue #3188](https://github.com/anthropics/claude-code/issues/3188) - Resume Bug
+- [CLI Issue #563](https://github.com/anthropics/claude-code/issues/563) - AllowedTools Reliability
+
+---
+
 ## Creating a New ADR
 
 Use this template when creating a new ADR:
