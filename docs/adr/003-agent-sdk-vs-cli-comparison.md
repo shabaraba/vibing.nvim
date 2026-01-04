@@ -10,7 +10,9 @@ Accepted
 
 ## Context
 
-vibing.nvimは現在、Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) の `query()` API を直接使用してClaude AIと統合しています。しかし、Claude CLIの `claude -p` (headless mode) も同等の機能を提供しており、代替実装の可能性があります。
+vibing.nvimは現在、Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) の `query()` API
+を直接使用してClaude AIと統合しています。しかし、Claude CLIの `claude -p` (headless mode)
+も同等の機能を提供しており、代替実装の可能性があります。
 
 この調査では、現在のAgent SDK実装と `claude -p` CLI実装の徹底的な比較を行い、vibing.nvimの要件に最適なアーキテクチャを決定します。
 
@@ -32,11 +34,13 @@ vibing.nvimは現在、Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) の `
 ### 比較対象
 
 **オプション1: Agent SDK (現在の実装)**
+
 - `@anthropic-ai/claude-agent-sdk` パッケージを直接使用
 - `query()` APIでin-process実行
 - `bin/agent-wrapper.mjs` でカスタムロジックを実装
 
 **オプション2: CLI (`claude -p`)**
+
 - Claude CLIを子プロセスとして起動
 - `--output-format stream-json` でストリーミング
 - `--allowedTools`, `--permission-mode` などのフラグで制御
@@ -73,33 +77,35 @@ vibing.nvimは現在のAgent SDK実装を維持し、`claude -p` CLIへの移行
 
 ### 1. 機能比較マトリクス
 
-| 機能 | Agent SDK | CLI (`claude -p`) | vibing.nvimの要件 | 評価 |
-|------|-----------|-------------------|-------------------|------|
-| **ストリーミング** | ✅ Async generator | ✅ `--output-format stream-json` | 必須 | 同等 |
-| **セッション管理** | ✅ `resume` option | ✅ `--resume`, `--continue` | 必須 | 同等 |
-| **CLAUDE.md読み込み** | ✅ `settingSources` | ✅ Auto-load | 必須 | 同等 (実装済み) |
-| **Slash commands** | ✅ `settingSources` | ✅ Auto-load | 必須 | 同等 (実装済み) |
-| **Skills auto-load** | ✅ `settingSources` | ✅ Auto-load | 必須 | 同等 (実装済み) |
-| **権限制御** | ✅ `canUseTool` callback | ⚠️ Flags only | 必須 | SDK優位 |
-| **MCP統合** | ✅ `settingSources` | ✅ Auto-load | 必須 | 同等 (実装済み) |
-| **モード選択** | ✅ `mode` option | ✅ `--mode` | 必須 | 同等 |
-| **モデル選択** | ✅ `model` option | ✅ `--model` | 必須 | 同等 |
-| **カスタムロジック** | ✅ Full flexibility | ❌ Flags only | 必須 | SDK優位 |
-| **依存管理** | ✅ npm package | ❌ Global binary | 重要 | SDK優位 |
-| **起動時間** | ✅ In-process | ❌ Process spawn | 重要 | SDK優位 |
-| **エラーハンドリング** | ✅ Direct try-catch | ⚠️ Parse stdout | 重要 | SDK優位 |
+| 機能                   | Agent SDK                | CLI (`claude -p`)                | vibing.nvimの要件 | 評価            |
+| ---------------------- | ------------------------ | -------------------------------- | ----------------- | --------------- |
+| **ストリーミング**     | ✅ Async generator       | ✅ `--output-format stream-json` | 必須              | 同等            |
+| **セッション管理**     | ✅ `resume` option       | ✅ `--resume`, `--continue`      | 必須              | 同等            |
+| **CLAUDE.md読み込み**  | ✅ `settingSources`      | ✅ Auto-load                     | 必須              | 同等 (実装済み) |
+| **Slash commands**     | ✅ `settingSources`      | ✅ Auto-load                     | 必須              | 同等 (実装済み) |
+| **Skills auto-load**   | ✅ `settingSources`      | ✅ Auto-load                     | 必須              | 同等 (実装済み) |
+| **権限制御**           | ✅ `canUseTool` callback | ⚠️ Flags only                    | 必須              | SDK優位         |
+| **MCP統合**            | ✅ `settingSources`      | ✅ Auto-load                     | 必須              | 同等 (実装済み) |
+| **モード選択**         | ✅ `mode` option         | ✅ `--mode`                      | 必須              | 同等            |
+| **モデル選択**         | ✅ `model` option        | ✅ `--model`                     | 必須              | 同等            |
+| **カスタムロジック**   | ✅ Full flexibility      | ❌ Flags only                    | 必須              | SDK優位         |
+| **依存管理**           | ✅ npm package           | ❌ Global binary                 | 重要              | SDK優位         |
+| **起動時間**           | ✅ In-process            | ❌ Process spawn                 | 重要              | SDK優位         |
+| **エラーハンドリング** | ✅ Direct try-catch      | ⚠️ Parse stdout                  | 重要              | SDK優位         |
 
 ### 2. 既知の問題比較
 
 #### Agent SDK (現在の実装)
 
 **Issue #29: Resume Session Bypass**
+
 - **症状**: Resume sessionで `allowedTools` と `canUseTool` がバイパスされる
 - **影響**: Ask-listed toolsが自動承認される
 - **対策**: ADR 001で実装済み (resume sessionではask-listed toolsをdeny)
 - **状態**: Workaround実装済み、ユーザーへのガイダンス提供
 
 **permissionMode Bypass**
+
 - **症状**: `permissionMode` を設定すると `canUseTool` が完全にバイパスされる
 - **影響**: カスタム権限ロジックが無効化される
 - **対策**: `permissionMode` を設定しない (ADR 001)
@@ -108,30 +114,35 @@ vibing.nvimは現在のAgent SDK実装を維持し、`claude -p` CLIへの移行
 #### CLI (`claude -p`)
 
 **JSON Truncation Issue (Issue #913)**
+
 - **症状**: 長いJSON応答が固定位置 (4000, 6000, 8000 chars) で切断される
 - **影響**: 大きな構造化データの生成が不可能
 - **対策**: なし (CLI側のバグ)
 - **状態**: 未解決、回避不可能
 
 **Missing Final Result Event (Issue #1920)**
+
 - **症状**: Streaming JSONで最終 `{"type":"result"}` イベントが欠落
 - **影響**: プロセスがハングする可能性
 - **対策**: タイムアウト実装が必要
 - **状態**: 未解決、回避策必要
 
 **Stream Input Hang (Issue #3187)**
+
 - **症状**: `--input-format stream-json` でマルチターンメッセージ時にハング
 - **影響**: 複雑な会話フローが不可能
 - **対策**: なし
 - **状態**: 未解決
 
 **Resume Bug (Issue #3188)**
+
 - **症状**: `--resume <session-id>` がセッションIDを無視して新規セッション作成
 - **影響**: セッション継続が不安定
 - **対策**: なし
 - **状態**: 未解決、信頼性に問題
 
 **AllowedTools Reliability (Issue #563)**
+
 - **症状**: `--allowedTools` フラグがnon-interactiveモードで信頼性が低い
 - **影響**: 権限制御が不安定
 - **対策**: なし
@@ -168,7 +179,7 @@ queryOptions.canUseTool = async (toolName, input) => {
   // - Read(src/**/*.ts) - file glob pattern
   // - WebFetch(github.com) - domain pattern
   if (allowedTools.length > 0) {
-    const matches = allowedTools.some(pattern => matchesPermission(toolName, input, pattern));
+    const matches = allowedTools.some((pattern) => matchesPermission(toolName, input, pattern));
     if (!matches) {
       return { behavior: 'deny', message: `Tool ${toolName} not allowed` };
     }
@@ -222,6 +233,7 @@ claude.stdout.on('data', (data) => {
 #### 4.1. CLAUDE.md自動読み込み
 
 **Claude CLI:**
+
 - ✅ **自動で読み込む** - 設定不要
 - プロジェクトルートの `CLAUDE.md` を自動検出
 - 親ディレクトリを遡って検索
@@ -229,16 +241,20 @@ claude.stdout.on('data', (data) => {
 - `claude` または `claude -p` 実行時に自動的にシステムプロンプトに注入
 
 **Agent SDK:**
+
 - ⚠️ **手動設定が必要** - デフォルトでは読み込まない
 - `settingSources` パラメータで明示的に指定必要:
+
   ```javascript
   {
-    settingSources: ['user', 'project']  // ユーザーとプロジェクト設定を読み込み
+    settingSources: ['user', 'project']; // ユーザーとプロジェクト設定を読み込み
   }
   ```
+
 - `settingSources` 未指定時は、CLAUDE.mdや`.claude/`ディレクトリを読み込まない
 
 **vibing.nvimの実装状況:**
+
 ```javascript
 // bin/agent-wrapper.mjs (line 297)
 settingSources: ['user', 'project'],
@@ -254,30 +270,32 @@ settingSources: ['user', 'project'],
 
 #### 4.2. CLI固有機能の一覧と実装可能性
 
-| 機能 | CLI | Agent SDK | vibing.nvim実装状況 | 実装複雑度 |
-|------|-----|-----------|---------------------|-----------|
-| **CLAUDE.md読み込み** | ✅ Auto | ✅ `settingSources` | ✅ 実装済み (line 297) | 簡単 |
-| **Slash commands** | ✅ Auto | ✅ `settingSources` | ✅ 実装済み | 簡単 |
-| **Skills auto-load** | ✅ Auto | ✅ `settingSources` | ✅ 実装済み | 簡単 |
-| **MCP servers** | ✅ Auto | ✅ `settingSources` | ✅ 実装済み | 簡単 |
-| **`.gitignore` awareness** | ✅ Built-in | ❌ Manual | ❌ 未実装 | 低 |
-| **Project init (`/init`)** | ✅ Built-in | ❌ Manual | ❌ 未実装 | 高 |
-| **Quick memory (`#`)** | ✅ Built-in | ❌ Manual | ❌ 未実装 | 低 |
-| **Built-in slash commands** | ✅ `/clear`, `/export`, etc. | ❌ Custom only | ⚠️ 部分実装 | 中 |
-| **Interactive hooks UI** | ✅ `/hooks` | ❌ Manual config | ❌ 未実装 | 高 |
-| **GitHub App install** | ✅ `/install-github-app` | ❌ Manual | ❌ 未実装 | 不可能 |
-| **Worktree management** | ✅ Desktop app | ❌ Manual | ❌ 未実装 | 高 |
+| 機能                        | CLI                          | Agent SDK           | vibing.nvim実装状況    | 実装複雑度 |
+| --------------------------- | ---------------------------- | ------------------- | ---------------------- | ---------- |
+| **CLAUDE.md読み込み**       | ✅ Auto                      | ✅ `settingSources` | ✅ 実装済み (line 297) | 簡単       |
+| **Slash commands**          | ✅ Auto                      | ✅ `settingSources` | ✅ 実装済み            | 簡単       |
+| **Skills auto-load**        | ✅ Auto                      | ✅ `settingSources` | ✅ 実装済み            | 簡単       |
+| **MCP servers**             | ✅ Auto                      | ✅ `settingSources` | ✅ 実装済み            | 簡単       |
+| **`.gitignore` awareness**  | ✅ Built-in                  | ❌ Manual           | ❌ 未実装              | 低         |
+| **Project init (`/init`)**  | ✅ Built-in                  | ❌ Manual           | ❌ 未実装              | 高         |
+| **Quick memory (`#`)**      | ✅ Built-in                  | ❌ Manual           | ❌ 未実装              | 低         |
+| **Built-in slash commands** | ✅ `/clear`, `/export`, etc. | ❌ Custom only      | ⚠️ 部分実装            | 中         |
+| **Interactive hooks UI**    | ✅ `/hooks`                  | ❌ Manual config    | ❌ 未実装              | 高         |
+| **GitHub App install**      | ✅ `/install-github-app`     | ❌ Manual           | ❌ 未実装              | 不可能     |
+| **Worktree management**     | ✅ Desktop app               | ❌ Manual           | ❌ 未実装              | 高         |
 
 #### 4.3. CLI固有機能の詳細分析
 
 ##### A. **プロジェクト初期化 (`/init`)**
 
 **CLI機能**:
+
 - コードベースを分析してCLAUDE.mdを自動生成
 - git、ファイル構造、依存関係を解析
 - プロジェクトの概要、技術スタック、規約を推測
 
 **Agent SDK実装可能性**:
+
 - ⚠️ **実装可能だが複雑**
 - ファイルシステムスキャン、git統合、コード解析が必要
 - vibing.nvimの要件としては**優先度低** (ユーザーが手動でCLAUDE.md作成可能)
@@ -287,10 +305,12 @@ settingSources: ['user', 'project'],
 ##### B. **Quick memory更新 (`#` prefix)**
 
 **CLI機能**:
+
 - チャット中に `# 覚えておくこと` と入力するとCLAUDE.mdに追記
 - インライン記憶更新機能
 
 **Agent SDK実装可能性**:
+
 - ✅ **実装容易**
 - ファイル追記のみ (数行のコード)
 - Slash commandやカスタムロジックで実装可能
@@ -300,6 +320,7 @@ settingSources: ['user', 'project'],
 ##### C. **組み込みSlash commands**
 
 **CLI組み込みコマンド**:
+
 - `/clear` - 会話をクリアして新規開始
 - `/rewind` - 会話履歴を遡る
 - `/config` - インタラクティブ設定UI
@@ -307,6 +328,7 @@ settingSources: ['user', 'project'],
 - `/hooks` - Hook設定UI
 
 **Agent SDK実装可能性**:
+
 - ✅ **ほぼすべて実装可能**
 - `/clear` → セッションID削除 (簡単)
 - `/rewind` → セッション履歴管理 (中程度)
@@ -314,6 +336,7 @@ settingSources: ['user', 'project'],
 - `/config`, `/hooks` → UI実装必要 (複雑)
 
 **vibing.nvim実装状況**:
+
 - ✅ `/clear` 相当: `:VibingChat` で新規チャット作成
 - ✅ `/export` 相当: チャットは自動的にMarkdownファイルとして保存
 - ⚠️ `/rewind`, `/config`, `/hooks` は未実装
@@ -321,10 +344,12 @@ settingSources: ['user', 'project'],
 ##### D. **`.gitignore` 統合**
 
 **CLI機能**:
+
 - `.gitignore` パターンに基づいてファイルを自動除外
 - 不要なファイルがコンテキストに含まれない
 
 **Agent SDK実装可能性**:
+
 - ✅ **実装容易**
 - `.gitignore` ファイルを読み込んでパターンマッチング
 - Globツールやファイル操作時にフィルタリング
@@ -334,10 +359,12 @@ settingSources: ['user', 'project'],
 ##### E. **GitHub App自動インストール**
 
 **CLI機能**:
+
 - `/install-github-app` でGitHub統合を自動セットアップ
 - OAuth認証フローを処理
 
 **Agent SDK実装可能性**:
+
 - ❌ **実装不可能**
 - OAuth認証フローはCLI/デスクトップアプリ固有
 - 手動で `.claude.json` 設定が必要
@@ -346,29 +373,32 @@ settingSources: ['user', 'project'],
 
 #### 4.4. vibing.nvimが既に提供する同等以上の機能
 
-| vibing.nvim機能 | CLI同等機能 | 優位性 |
-|----------------|-------------|-------|
-| **`settingSources: ['user', 'project']`** | CLAUDE.md auto-load | ✅ 同等 |
-| **Permission Builder UI** | `/permissions` | ✅ より詳細 |
-| **Concurrent sessions** | Single session | ✅ vibing.nvim優位 |
-| **Message timestamps** | なし | ✅ vibing.nvim独自 |
-| **Granular permission rules** | Basic `--allowedTools` | ✅ vibing.nvim優位 |
-| **Session persistence with metadata** | Basic history | ✅ vibing.nvim優位 |
-| **Custom MCP server (vibing-nvim)** | なし | ✅ vibing.nvim独自 |
-| **Language config per session** | なし | ✅ vibing.nvim独自 |
-| **Diff viewer (gd)** | なし | ✅ vibing.nvim独自 |
-| **Inline action queue** | なし | ✅ vibing.nvim独自 |
+| vibing.nvim機能                           | CLI同等機能            | 優位性             |
+| ----------------------------------------- | ---------------------- | ------------------ |
+| **`settingSources: ['user', 'project']`** | CLAUDE.md auto-load    | ✅ 同等            |
+| **Permission Builder UI**                 | `/permissions`         | ✅ より詳細        |
+| **Concurrent sessions**                   | Single session         | ✅ vibing.nvim優位 |
+| **Message timestamps**                    | なし                   | ✅ vibing.nvim独自 |
+| **Granular permission rules**             | Basic `--allowedTools` | ✅ vibing.nvim優位 |
+| **Session persistence with metadata**     | Basic history          | ✅ vibing.nvim優位 |
+| **Custom MCP server (vibing-nvim)**       | なし                   | ✅ vibing.nvim独自 |
+| **Language config per session**           | なし                   | ✅ vibing.nvim独自 |
+| **Diff viewer (gd)**                      | なし                   | ✅ vibing.nvim独自 |
+| **Inline action queue**                   | なし                   | ✅ vibing.nvim独自 |
 
 #### 4.5. 実装推奨度の評価
 
 **高優先度 (vibing.nvimで実装すべき)**:
+
 - ❌ なし (既存機能で十分)
 
 **中優先度 (将来的に検討可能)**:
+
 - `.gitignore` 統合 (コンテキスト自動フィルタリング)
 - Quick memory更新 (`#` prefix または slash command)
 
 **低優先度 (不要または代替可能)**:
+
 - `/init` (ユーザーが手動でCLAUDE.md作成)
 - `/rewind` (セッション履歴はMarkdownファイルとして保存済み)
 - `/config`, `/hooks` (Neovim設定で代替)
@@ -378,12 +408,14 @@ settingSources: ['user', 'project'],
 #### 4.6. 結論: CLI固有機能は代替可能
 
 **重要な発見**:
+
 1. ✅ **CLAUDE.md自動読み込み**: vibing.nvimは `settingSources` で既に実装済み
 2. ✅ **Slash commands/Skills/MCP**: すべて `settingSources` で有効化済み
 3. ⚠️ **CLI独自の利便性機能**: ほとんどがvibing.nvimの要件に不要、または代替可能
 4. ✅ **vibing.nvim独自機能**: CLIにない機能を多数実装済み
 
 **Agent SDK実装のメリットが明確化**:
+
 - CLI固有機能の大部分は `settingSources` で実現可能
 - vibing.nvimは既に適切に設定されており、CLI同等以上の機能を提供
 - CLI移行で得られるメリットは**ほぼゼロ**
@@ -402,24 +434,29 @@ settingSources: ['user', 'project'],
 ```
 
 **メリット**:
+
 - ✅ `package.json` でバージョン固定
 - ✅ `npm install` で自動インストール
 - ✅ `package-lock.json` で完全な再現性
 - ✅ CI/CDで確実にバージョン管理
 
 **デメリット**:
+
 - ⚠️ npm依存の追加 (vibing.nvimは既にnpm使用中のため影響なし)
 
 #### CLI
 
 **必要な依存**:
+
 - ✅ グローバル `claude` コマンドのインストール
 - ❌ バージョン管理が困難 (ユーザー環境依存)
 
 **メリット**:
+
 - ⚠️ npm不要 (しかしvibing.nvimは既にnpm使用中)
 
 **デメリット**:
+
 - ❌ ユーザーが手動で `claude` をインストール必要
 - ❌ バージョン不一致のリスク
 - ❌ CI/CDでバージョン固定が困難
@@ -432,7 +469,7 @@ settingSources: ['user', 'project'],
 ```javascript
 import { query } from '@anthropic-ai/claude-agent-sdk';
 
-const result = query({ prompt, options });  // ✅ 即座に実行開始
+const result = query({ prompt, options }); // ✅ 即座に実行開始
 for await (const message of result) {
   // ストリーミング処理
 }
@@ -490,6 +527,7 @@ try {
 ```
 
 **メリット**:
+
 - ✅ try-catchで直接エラーハンドリング
 - ✅ 型安全なメッセージ処理
 - ✅ エラーの詳細情報が利用可能
@@ -528,6 +566,7 @@ claude.stdout.on('data', (data) => {
 ```
 
 **デメリット**:
+
 - ❌ 複数のエラーソース (spawn, stderr, exit code, JSON error)
 - ❌ エラーの種類を判別困難
 - ❌ JSONパースエラーと実際のエラーの区別が必要
@@ -538,12 +577,14 @@ claude.stdout.on('data', (data) => {
 
 **コード量**: ~925行 (`bin/agent-wrapper.mjs`)
 **主な構成**:
+
 - 引数パース: ~130行
 - 権限ロジック: ~350行 (細かい制御のため)
 - ストリーミング処理: ~150行
 - ユーティリティ: ~295行
 
 **複雑性の理由**:
+
 - ✅ 細かい権限制御 (vibing.nvimの要件)
 - ✅ パターンマッチング実装
 - ✅ Issue #29対策
@@ -553,6 +594,7 @@ claude.stdout.on('data', (data) => {
 
 **推定コード量**: ~400-500行
 **主な構成**:
+
 - プロセス管理: ~100行
 - stdoutパース: ~100行
 - エラーハンドリング: ~100行
@@ -560,6 +602,7 @@ claude.stdout.on('data', (data) => {
 - IPC通信: ~100行
 
 **複雑性の理由**:
+
 - ❌ プロセス管理の複雑さ
 - ❌ JSON Linesパース
 - ❌ エラーソースの多重化
@@ -612,14 +655,17 @@ claude.stdout.on('data', (data) => {
 ### Risks and Mitigations
 
 **Risk 1: Agent SDK Issue #29が悪化**
+
 - _軽減策_: 既存workaround (ADR 001) が安定して動作
 - _軽減策_: SDK更新時のテストカバレッジ (`tests/permission-logic.test.mjs`)
 
 **Risk 2: Agent SDKのbreaking changes**
+
 - _軽減策_: `package.json` でバージョン固定 (`^0.1.76`)
 - _軽減策_: 更新時のregression test実施
 
 **Risk 3: CLI実装の方が将来的に安定する可能性**
+
 - _軽減策_: CLI既知問題が解決され、かつAgent SDK問題が悪化した場合のみ再検討
 - _軽減策_: このADRで比較基準を明確化、将来の再評価を容易に
 
@@ -628,17 +674,24 @@ claude.stdout.on('data', (data) => {
 ### Alternative 1: CLI (`claude -p`) への完全移行
 
 **実装アプローチ**:
+
 ```javascript
 const { spawn } = require('child_process');
 
 function executeQuery(prompt, options) {
   const args = [
-    '-p', prompt,
-    '--output-format', 'stream-json',
-    '--allowedTools', options.allowedTools.join(','),
-    '--permission-mode', options.permissionMode,
-    '--mode', options.mode,
-    '--model', options.model,
+    '-p',
+    prompt,
+    '--output-format',
+    'stream-json',
+    '--allowedTools',
+    options.allowedTools.join(','),
+    '--permission-mode',
+    options.permissionMode,
+    '--mode',
+    options.mode,
+    '--model',
+    options.model,
   ];
 
   if (options.sessionId) {
@@ -664,6 +717,7 @@ function executeQuery(prompt, options) {
 ```
 
 **Rejected because**:
+
 1. ❌ カスタム権限制御が実装不可能 (vibing.nvimの核心要件)
 2. ❌ Issue #29対策が実装不可能
 3. ❌ vibing-nvim MCP制御が不可能
@@ -674,6 +728,7 @@ function executeQuery(prompt, options) {
 8. ❌ エラーハンドリングの複雑化
 
 **メリット**:
+
 - ⚠️ 「CLI公式実装を使う」という心理的安心感のみ (技術的メリットなし)
 - ⚠️ npm依存削減 (しかしvibing.nvimは既にnpm使用中)
 
@@ -682,10 +737,12 @@ function executeQuery(prompt, options) {
 ### Alternative 2: ハイブリッドアプローチ (一部機能でCLI使用)
 
 **実装アプローチ**:
+
 - 通常: Agent SDK使用
 - シンプルなタスク: CLI使用 (例: inline actions)
 
 **Rejected because**:
+
 1. ❌ 実装の複雑化 (2つの実装を維持)
 2. ❌ 一貫性の欠如 (タスクによって挙動が異なる)
 3. ❌ テストの複雑化
@@ -703,10 +760,13 @@ function executeQuery(prompt, options) {
 ### Issues and Discussions
 
 **Agent SDK Issues**:
-- [Issue #29](https://github.com/anthropics/claude-agent-sdk-typescript/issues/29) - Resume session bypasses allowedTools and canUseTool
+
+- [Issue #29](https://github.com/anthropics/claude-agent-sdk-typescript/issues/29) -
+  Resume session bypasses allowedTools and canUseTool
 - ADR 001: Permissions Ask Implementation and Agent SDK Constraints
 
 **CLI Issues**:
+
 - [Issue #913](https://github.com/eyaltoledano/claude-task-master/issues/913) - JSON Truncation at fixed positions
 - [Issue #1920](https://github.com/anthropics/claude-code/issues/1920) - Missing Final Result Event in Streaming JSON Output
 - [Issue #3187](https://github.com/anthropics/claude-code/issues/3187) - Stream JSON Input Hang
@@ -716,6 +776,7 @@ function executeQuery(prompt, options) {
 ### Documentation
 
 **General Documentation**:
+
 - [Claude Code CLI Reference](https://code.claude.com/docs/en/cli-reference)
 - [Run Claude Code Programmatically](https://code.claude.com/docs/en/headless)
 - [Agent SDK Overview](https://platform.claude.com/docs/en/agent-sdk/overview)
@@ -723,6 +784,7 @@ function executeQuery(prompt, options) {
 - [Agent SDK Permissions](https://platform.claude.com/docs/en/agent-sdk/permissions)
 
 **CLI-Specific Features**:
+
 - [Using CLAUDE.MD Files](https://claude.com/blog/using-claude-md-files)
 - [Slash Commands Documentation](https://code.claude.com/docs/en/slash-commands)
 - [Connect Claude Code to Tools via MCP](https://code.claude.com/docs/en/mcp)
@@ -731,6 +793,7 @@ function executeQuery(prompt, options) {
 - [Claude Code CLI Cheat Sheet](https://shipyard.build/blog/claude-code-cheat-sheet/)
 
 **Comparison Articles**:
+
 - [Claude Code vs. Claude Agent SDK Comparison](https://drlee.io/claude-code-vs-claude-agent-sdk-whats-the-difference-177971c442a9)
 
 ### Implementation

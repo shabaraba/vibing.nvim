@@ -4,7 +4,8 @@ This directory contains Architecture Decision Records for vibing.nvim.
 
 ## What is an ADR?
 
-An Architecture Decision Record (ADR) documents important architectural decisions made during the development of the project, including:
+An Architecture Decision Record (ADR) documents important architectural decisions made
+during the development of the project, including:
 
 - The context and problem being addressed
 - The decision that was made
@@ -13,7 +14,8 @@ An Architecture Decision Record (ADR) documents important architectural decision
 - Alternatives that were considered
 - References to related discussions, issues, or commits
 
-ADRs help future maintainers understand WHY certain design choices were made, especially when those choices involve non-obvious constraints or trade-offs.
+ADRs help future maintainers understand WHY certain design choices were made,
+especially when those choices involve non-obvious constraints or trade-offs.
 
 ## Index
 
@@ -22,7 +24,8 @@ ADRs help future maintainers understand WHY certain design choices were made, es
 **Status:** Accepted
 **Date:** 2025-01-26
 
-Documents the implementation of the three-tier permission system (deny/ask/allow) and the critical workarounds required for Claude Agent SDK constraints, particularly:
+Documents the implementation of the three-tier permission system (deny/ask/allow) and the
+critical workarounds required for Claude Agent SDK constraints, particularly:
 
 - Why `permissionMode` is intentionally left undefined
 - How Issue #29 (resume session bypass) is mitigated
@@ -73,7 +76,9 @@ Documents the implementation of concurrent execution support for multiple chat w
 **Status:** Accepted
 **Date:** 2026-01-04
 
-Comprehensive comparison between Claude Agent SDK (`query()` API) and Claude CLI (`claude -p`) for vibing.nvim's architecture. Documents the decision to continue using Agent SDK based on:
+Comprehensive comparison between Claude Agent SDK (`query()` API) and Claude CLI
+(`claude -p`) for vibing.nvim's architecture. Documents the decision to continue using
+Agent SDK based on:
 
 - Custom permission control requirements (`canUseTool` callback)
 - Dependency management reliability (npm vs global binary)
