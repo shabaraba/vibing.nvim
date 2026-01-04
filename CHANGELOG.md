@@ -3,9 +3,9 @@
 ## 1.14.2 (2026-01-04)
 
 ## What's Changed
-* fix: prevent wrap settings from leaking to non-vibing buffers by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/252
-* docs: add ADR 003 - Agent SDK vs CLI Architecture Decision by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/254
 
+- fix: prevent wrap settings from leaking to non-vibing buffers by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/252
+- docs: add ADR 003 - Agent SDK vs CLI Architecture Decision by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/254
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.14.1...v1.14.2
 
