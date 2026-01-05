@@ -4,8 +4,14 @@ import * as os from 'os';
 
 /**
  * Get platform-aware registry directory path
+ *
+ * IMPORTANT: Must match get_registry_dir() in lua/vibing/infrastructure/rpc/registry.lua
+ * which uses vim.fn.stdpath("data") + "/vibing-instances"
+ *
+ * Platform paths:
  * - Linux/macOS: $XDG_DATA_HOME/nvim/vibing-instances or ~/.local/share/nvim/vibing-instances
  * - Windows: %LOCALAPPDATA%\nvim-data\vibing-instances
+ *
  * @returns Registry directory path
  */
 function getRegistryPath(): string {
@@ -13,6 +19,7 @@ function getRegistryPath(): string {
 
   if (platform === 'win32') {
     // Windows: use %LOCALAPPDATA%\nvim-data\vibing-instances
+    // Note: This should match Neovim's stdpath("data") on Windows
     const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
     return path.join(localAppData, 'nvim-data', 'vibing-instances');
   } else {

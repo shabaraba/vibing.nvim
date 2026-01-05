@@ -147,13 +147,18 @@ function M.start(base_port)
         current_port = try_port
         break
       else
+        -- Listen failed, cleanup socket before trying next port
         notify.warn(string.format("Failed to listen on port %d: %s", try_port, listen_err or "unknown"))
-        server:close()
+        if server then
+          server:close()
+        end
         server = nil
       end
     else
-      -- Bind failed, try next port
-      server:close()
+      -- Bind failed, cleanup socket before trying next port
+      if server then
+        server:close()
+      end
       server = nil
     end
 

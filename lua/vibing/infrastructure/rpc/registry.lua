@@ -6,6 +6,10 @@ local M = {}
 local uv = vim.loop
 
 ---Get registry directory path
+---Uses vim.fn.stdpath("data") which handles platform differences:
+---  - Linux/macOS: ~/.local/share/nvim (or $XDG_DATA_HOME/nvim)
+---  - Windows: ~/AppData/Local/nvim-data
+---Note: Must match getRegistryPath() in mcp-server/src/handlers/instances.ts
 ---@return string path Registry directory path
 local function get_registry_dir()
   local data_dir = vim.fn.stdpath("data")

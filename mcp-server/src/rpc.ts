@@ -75,7 +75,18 @@ function getSocket(port: number): Promise<net.Socket> {
     });
 
     socket.on('error', (err) => {
-      reject(err);
+      // Socket not yet connected - reject connection promise
+      if (!sockets.has(port)) {
+        reject(err);
+      }
+      // Socket already connected - clean up pending requests
+      const portPending = pendingRequests.get(port);
+      if (portPending) {
+        for (const [id, pending] of portPending) {
+          pending.reject(err);
+        }
+        portPending.clear();
+      }
     });
 
     socket.on('close', () => {
