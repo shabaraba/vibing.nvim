@@ -109,10 +109,7 @@ export async function callNeovim(method: string, params: any = {}, port?: number
   const sock = await getSocket(targetPort);
   const id = ++requestId;
 
-  // Get port-specific pending requests map
-  if (!pendingRequests.has(targetPort)) {
-    pendingRequests.set(targetPort, new Map());
-  }
+  // getSocket() already initialized pendingRequests for this port
   const portPending = pendingRequests.get(targetPort)!;
 
   return new Promise((resolve, reject) => {

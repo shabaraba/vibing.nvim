@@ -76,7 +76,7 @@ $ ls -la ~/.local/share/nvim/vibing-instances/
 # Expected: Multiple .json files (one per running instance)
 
 # Inspect registry contents
-$ cat ~/.local/share/nvim/vibing-instances/*.json | jq
+$ cat ~/.local/share/nvim/vibing-instances/*.json | jq -s .
 # Expected: Array of instance data with different PIDs and ports
 ```
 
@@ -93,19 +93,19 @@ console.log(instances);
 
 // Get buffer from first instance (port 9876)
 const content1 = await use_mcp_tool('vibing-nvim', 'nvim_get_buffer', {
-  rpc_port: 9876
+  rpc_port: 9876,
 });
-console.log("Instance 1 content:", content1);
+console.log('Instance 1 content:', content1);
 
 // Get buffer from second instance (port 9877)
 const content2 = await use_mcp_tool('vibing-nvim', 'nvim_get_buffer', {
-  rpc_port: 9877
+  rpc_port: 9877,
 });
-console.log("Instance 2 content:", content2);
+console.log('Instance 2 content:', content2);
 
 // Default instance (no rpc_port specified - uses 9876)
 const contentDefault = await use_mcp_tool('vibing-nvim', 'nvim_get_buffer', {});
-console.log("Default instance:", contentDefault);
+console.log('Default instance:', contentDefault);
 ```
 
 ### Test 4: Port Exhaustion
@@ -189,6 +189,7 @@ $ ls ~/.local/share/nvim/vibing-instances/ | wc -l
 **Cause:** More than 10 instances trying to start
 
 **Solution:**
+
 ```bash
 # Clean up stale processes
 pkill nvim
@@ -204,16 +205,15 @@ rm -rf ~/.local/share/nvim/vibing-instances/*
 **Cause:** Incorrect `rpc_port` parameter
 
 **Solution:**
+
 ```javascript
 // Always check available instances first
-const { instances } = JSON.parse(
-  await use_mcp_tool('vibing-nvim', 'nvim_list_instances', {})
-);
+const { instances } = JSON.parse(await use_mcp_tool('vibing-nvim', 'nvim_list_instances', {}));
 
 // Use correct port from instances list
 const targetPort = instances[0].port;
 await use_mcp_tool('vibing-nvim', 'nvim_get_buffer', {
-  rpc_port: targetPort
+  rpc_port: targetPort,
 });
 ```
 
@@ -222,6 +222,7 @@ await use_mcp_tool('vibing-nvim', 'nvim_get_buffer', {
 **Cause:** Instance already exited, but registry not cleaned
 
 **Solution:**
+
 ```javascript
 // nvim_list_instances automatically cleans stale entries
 await use_mcp_tool('vibing-nvim', 'nvim_list_instances', {});
