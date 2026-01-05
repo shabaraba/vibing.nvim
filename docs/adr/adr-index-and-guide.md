@@ -108,6 +108,41 @@ Agent SDK based on:
 
 ---
 
+### ADR 004: Multi-Instance Neovim Support for MCP Integration
+
+**Status:** Accepted
+**Date:** 2026-01-05
+
+Documents the implementation of multi-instance Neovim support for MCP integration, solving
+Issue #212 where only the first started Neovim instance could be operated via MCP tools.
+Key architectural changes include:
+
+- Dynamic port allocation (9876-9885 range) for RPC servers
+- Instance registry system tracking PID, port, cwd, and timestamp
+- Multi-port socket management in MCP server
+- Optional `rpc_port` parameter added to all MCP tools
+- New `nvim_list_instances` tool for instance discovery
+- Automatic cleanup of stale registry entries
+
+**Key Files:**
+
+- ADR: [004-multi-instance-neovim-support.md](./004-multi-instance-neovim-support.md)
+- Testing Guide: [../multi-instance-testing.md](../multi-instance-testing.md)
+- Lua Implementation:
+  - `lua/vibing/infrastructure/rpc/server.lua` - Dynamic port allocation
+  - `lua/vibing/infrastructure/rpc/registry.lua` - Instance registry management
+- TypeScript Implementation:
+  - `mcp-server/src/rpc.ts` - Multi-port socket management
+  - `mcp-server/src/tools/common.ts` - Shared rpc_port parameter
+  - `mcp-server/src/handlers/instances.ts` - Instance listing handler
+
+**Related Issues:**
+
+- [Issue #212](https://github.com/shabaraba/vibing.nvim/issues/212) - neovim複数立ち上げても問題ないように
+- [PR #255](https://github.com/shabaraba/vibing.nvim/pull/255) - Multi-instance implementation
+
+---
+
 ## Creating a New ADR
 
 Use this template when creating a new ADR:

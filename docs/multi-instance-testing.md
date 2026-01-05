@@ -6,6 +6,156 @@ This document describes how to test the multi-instance Neovim support with vibin
 
 The multi-instance feature allows Claude Code to interact with multiple running Neovim instances simultaneously. Each instance runs its own RPC server on a different port (9876-9885), and instances are tracked in a registry.
 
+## Architecture Diagrams
+
+### Before: Single Instance Only (Problem)
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│ Neovim Instance 1                                                │
+│  └─ RPC Server (port 9876) ✅                                    │
+│      └─ Accepts connections                                      │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Neovim Instance 2                                                │
+│  └─ RPC Server (port 9876) ❌                                    │
+│      └─ Bind fails: EADDRINUSE                                   │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Claude Code Process                                              │
+│  └─ MCP Server                                                   │
+│      └─ TCP Client → 127.0.0.1:9876 (fixed)                     │
+│          └─ Only reaches Instance 1 ❌                           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Problem:**
+
+- Fixed port 9876 for all instances
+- Second instance cannot bind (port already in use)
+- MCP Server connects to fixed port (only first instance reachable)
+- No way to discover or target other instances
+
+### After: Multi-Instance Support (Solution)
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│ Neovim Instance 1 (PID: 1234)                                    │
+│  ├─ RPC Server (port 9876) ✅                                    │
+│  └─ Registry: ~/.local/share/nvim/vibing-instances/1234.json    │
+│      └─ { pid: 1234, port: 9876, cwd: "/proj1", started_at: … } │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Neovim Instance 2 (PID: 5678)                                    │
+│  ├─ RPC Server (port 9877) ✅                                    │
+│  └─ Registry: ~/.local/share/nvim/vibing-instances/5678.json    │
+│      └─ { pid: 5678, port: 9877, cwd: "/proj2", started_at: … } │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Neovim Instance 3 (PID: 9012)                                    │
+│  ├─ RPC Server (port 9878) ✅                                    │
+│  └─ Registry: ~/.local/share/nvim/vibing-instances/9012.json    │
+│      └─ { pid: 9012, port: 9878, cwd: "/proj3", started_at: … } │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Claude Code Process                                              │
+│  └─ MCP Server                                                   │
+│      ├─ Socket Pool:                                             │
+│      │   ├─ socket[9876] → Instance 1 ✅                         │
+│      │   ├─ socket[9877] → Instance 2 ✅                         │
+│      │   └─ socket[9878] → Instance 3 ✅                         │
+│      │                                                            │
+│      └─ MCP Tools:                                               │
+│          ├─ nvim_list_instances() → reads registry              │
+│          └─ nvim_get_buffer({ rpc_port: 9877 }) → Instance 2    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Solution:**
+
+- Dynamic port allocation (9876-9885 range)
+- Instance registry tracks PID, port, cwd, timestamp
+- MCP Server maintains socket pool (one per port)
+- All tools accept optional `rpc_port` parameter
+- New `nvim_list_instances` tool for discovery
+
+### Communication Flow
+
+```text
+Step 1: Instance Discovery
+─────────────────────────────
+
+Claude Code                      Registry (Filesystem)
+     │                                  │
+     │  nvim_list_instances()           │
+     ├──────────────────────────────────>│
+     │                                  │
+     │  Read all *.json files           │
+     │  Check process liveness          │
+     │  Cleanup stale entries           │
+     │                                  │
+     │  Return: [                       │
+     │    {pid:1234, port:9876, ...},   │
+     │    {pid:5678, port:9877, ...}    │
+     │  ]                               │
+     │<──────────────────────────────────│
+     │                                  │
+
+
+Step 2: Tool Execution (with port)
+──────────────────────────────────
+
+Claude Code              Socket Pool              Neovim (port 9877)
+     │                        │                            │
+     │  nvim_get_buffer({     │                            │
+     │    rpc_port: 9877      │                            │
+     │  })                    │                            │
+     ├───────────────────────>│                            │
+     │                        │                            │
+     │                        │  getSocket(9877)           │
+     │                        │  (create if not exists)    │
+     │                        │                            │
+     │                        │  JSON-RPC request:         │
+     │                        │  {"id":1, "method":        │
+     │                        │   "buf_get_lines", ...}    │
+     │                        ├───────────────────────────>│
+     │                        │                            │
+     │                        │  Process via vim.schedule()│
+     │                        │  Execute API call          │
+     │                        │                            │
+     │                        │  JSON-RPC response:        │
+     │                        │  {"id":1, "result":[...]}  │
+     │                        │<───────────────────────────│
+     │                        │                            │
+     │  Buffer content        │                            │
+     │<───────────────────────│                            │
+     │                        │                            │
+
+
+Step 3: Default Behavior (no port)
+──────────────────────────────────
+
+Claude Code              Socket Pool              Neovim (port 9876)
+     │                        │                            │
+     │  nvim_get_buffer({     │                            │
+     │    // no rpc_port      │                            │
+     │  })                    │                            │
+     ├───────────────────────>│                            │
+     │                        │                            │
+     │                        │  getSocket(9876)           │
+     │                        │  (default port)            │
+     │                        ├───────────────────────────>│
+     │                        │                            │
+     │  Buffer content        │                            │
+     │<───────────────────────┼────────────────────────────│
+     │                        │                            │
+```
+
 ## Architecture Changes
 
 ### 1. Dynamic Port Allocation (Lua)
