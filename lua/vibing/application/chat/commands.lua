@@ -78,13 +78,13 @@ end
 
 ---@param message string
 ---@param chat_buffer Vibing.ChatBuffer
----@return boolean
----@return boolean
+---@return boolean handled コマンドとして処理されたか
+---@return string? expanded_message カスタムコマンドの場合、展開されたメッセージ
 function M.execute(message, chat_buffer)
   local command_name, args = M.parse(message)
 
   if not command_name then
-    return false, false
+    return false, nil
   end
 
   local command = M.commands[command_name]
@@ -96,15 +96,21 @@ function M.execute(message, chat_buffer)
   end
 
   if not command then
-    return false, false
+    return false, nil
   end
 
-  local success, result = pcall(command.handler, args, chat_buffer)
+  local success, result, expanded = pcall(command.handler, args, chat_buffer)
   if not success then
     notify.error(string.format("Command error: %s", result))
+    return true, nil
   end
 
-  return true, is_custom
+  -- カスタムコマンドの場合、展開されたメッセージを返す
+  if is_custom then
+    return true, expanded
+  end
+
+  return true, nil
 end
 
 ---@return Vibing.SlashCommand[]
@@ -125,10 +131,11 @@ local function has_argument_placeholders(content)
     or content:match("{{%d+}}") ~= nil
 end
 
+---カスタムコマンドのテンプレートを展開
 ---@param custom_cmd Vibing.CustomCommand
 ---@param args string[]
----@param chat_buffer Vibing.ChatBuffer
-local function execute_custom_command(custom_cmd, args, chat_buffer)
+---@return string? expanded_message 展開されたメッセージ（エラー時はnil）
+local function expand_custom_command(custom_cmd, args)
   local message = custom_cmd.content
 
   local all_args = table.concat(args, " ")
@@ -140,22 +147,12 @@ local function execute_custom_command(custom_cmd, args, chat_buffer)
     message = message:gsub("{{" .. i .. "}}", function() return arg end)
   end
 
-  if not chat_buffer then
-    notify.error("No chat buffer")
-    return false
-  end
-
   if vim.trim(message) == "" then
     notify.error(string.format("Custom command /%s produced empty prompt", custom_cmd.name))
-    return false
+    return nil
   end
 
-  vim.schedule(function()
-    require("vibing.application.chat.use_case").send(chat_buffer, message)
-  end)
-
-  notify.info(string.format("Custom command executed: /%s", custom_cmd.name))
-  return true
+  return message
 end
 
 ---@param custom_cmd Vibing.CustomCommand
@@ -164,22 +161,16 @@ function M.register_custom(custom_cmd)
 
   M.custom_commands[custom_cmd.name] = {
     name = custom_cmd.name,
+    ---@return boolean handled
+    ---@return string? expanded_message
     handler = function(args, chat_buffer)
       if requires_args and #args == 0 then
-        vim.ui.input({
-          prompt = string.format("/%s argument: ", custom_cmd.name),
-        }, function(input)
-          if input and vim.trim(input) ~= "" then
-            local input_args = vim.split(input, "%s+", { trimempty = true })
-            execute_custom_command(custom_cmd, input_args, chat_buffer)
-          else
-            notify.warn(string.format("/%s requires an argument", custom_cmd.name))
-          end
-        end)
-        return true
+        notify.warn(string.format("/%s requires an argument. Usage: /%s <args>", custom_cmd.name, custom_cmd.name))
+        return true, nil
       end
 
-      return execute_custom_command(custom_cmd, args, chat_buffer)
+      local expanded = expand_custom_command(custom_cmd, args)
+      return true, expanded
     end,
     description = custom_cmd.description,
     source = custom_cmd.source,
