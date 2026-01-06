@@ -18,6 +18,7 @@ local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 ---@field get_session_id fun(): string|nil セッションIDを取得
 ---@field update_session_id fun(session_id: string) セッションIDを更新
 ---@field add_user_section fun() ユーザーセクションを追加
+---@field get_chat_buffer fun(): table? チャットバッファインスタンスを取得（AskUserQuestion用）
 
 ---メッセージを送信
 ---@param adapter table アダプター
@@ -65,6 +66,7 @@ function M.execute(adapter, callbacks, message, config)
     permissions_ask = frontmatter.permissions_ask,
     permission_mode = frontmatter.permission_mode,
     language = lang_code,  -- Pass language code to adapter
+    chat_buffer = callbacks.get_chat_buffer and callbacks.get_chat_buffer() or nil,  -- For AskUserQuestion
     on_tool_use = function(tool, file_path)
       if file_tools[tool] and file_path then
         if not vim.tbl_contains(modified_files, file_path) then

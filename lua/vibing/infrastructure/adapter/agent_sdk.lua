@@ -4,6 +4,7 @@ local Base = require("vibing.infrastructure.adapter.base")
 ---@field _handles table<string, table> vim.system()で起動したプロセスハンドルのマップ（handle_id -> handle）
 ---@field _sessions table<string, string> セッションIDのマップ（handle_id -> session_id）
 ---@field _plugin_root string プラグインのルートディレクトリパス
+---@field _stdin_handles table<string, table> stdinハンドルのマップ（handle_id -> stdin pipe）
 local AgentSDK = setmetatable({}, { __index = Base })
 AgentSDK.__index = AgentSDK
 
@@ -18,6 +19,7 @@ function AgentSDK:new(config)
   instance.name = "agent_sdk"
   instance._handles = {}
   instance._sessions = {}
+  instance._stdin_handles = {}
   -- Find plugin root directory
   local source = debug.getinfo(1, "S").source:sub(2)
   instance._plugin_root = vim.fn.fnamemodify(source, ":h:h:h:h:h")
@@ -201,6 +203,7 @@ end
 ---プロンプトをストリーミング実行（非ブロッキング）
 ---Node.jsプロセスとしてagent-wrapper.mjsを起動し、JSON Lines形式で応答を受信
 ---session_idを自動的に保存してセッション継続を実現
+---AskUserQuestionツールの双方向通信をサポート
 ---@param prompt string ユーザープロンプト
 ---@param opts Vibing.AdapterOpts コンテキスト等のオプション
 ---@param on_chunk fun(chunk: string) チャンク受信時のコールバック
@@ -229,73 +232,74 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   local error_output = {}
   local stdout_buffer = ""
 
-  self._handles[handle_id] = vim.system(cmd, {
-    text = true,
-    stdout = function(err, data)
-      if err then return end
-      if not data then return end
+  -- vim.loop.spawn を使用して stdin への書き込みをサポート
+  local stdin = vim.loop.new_pipe(false)
+  local stdout = vim.loop.new_pipe(false)
+  local stderr = vim.loop.new_pipe(false)
 
-      vim.schedule(function()
-        -- Buffer and process line by line
-        stdout_buffer = stdout_buffer .. data
-        while true do
-          local newline_pos = stdout_buffer:find("\n")
-          if not newline_pos then break end
+  local handle, pid
+  local adapter = self
 
-          local line = stdout_buffer:sub(1, newline_pos - 1)
-          stdout_buffer = stdout_buffer:sub(newline_pos + 1)
+  -- Helper function to process JSON Lines from stdout
+  local function process_stdout_line(line)
+    if line == "" then return end
 
-          if line ~= "" then
-            local ok, msg = pcall(vim.json.decode, line)
-            if ok then
-              if msg.type == "status" then
-                -- Status message for StatusManager integration
-                if opts.status_manager then
-                  if msg.state == "thinking" then
-                    opts.status_manager:set_thinking(opts.action_type or "chat")
-                  elseif msg.state == "tool_use" then
-                    opts.status_manager:set_tool_use(msg.tool, msg.input_summary)
-                  elseif msg.state == "responding" then
-                    opts.status_manager:set_responding()
-                  end
-                end
-              elseif msg.type == "session" and msg.session_id then
-                -- Store session ID for subsequent calls
-                self._sessions[handle_id] = msg.session_id
-              elseif msg.type == "tool_use" and msg.tool and msg.file_path then
-                -- Tool use event for file-modifying operations
-                if opts.on_tool_use then
-                  opts.on_tool_use(msg.tool, msg.file_path)
-                end
-                -- Also track in StatusManager
-                if opts.status_manager then
-                  opts.status_manager:add_modified_file(msg.file_path)
-                end
-              elseif msg.type == "chunk" and msg.text then
-                table.insert(output, msg.text)
-                on_chunk(msg.text)
-              elseif msg.type == "error" then
-                table.insert(error_output, msg.message or "Unknown error")
-              end
-              -- "done" type is handled by process exit
-            end
-          end
+    local ok, msg = pcall(vim.json.decode, line)
+    if not ok then return end
+
+    if msg.type == "status" then
+      if opts.status_manager then
+        if msg.state == "thinking" then
+          opts.status_manager:set_thinking(opts.action_type or "chat")
+        elseif msg.state == "tool_use" then
+          opts.status_manager:set_tool_use(msg.tool, msg.input_summary)
+        elseif msg.state == "responding" then
+          opts.status_manager:set_responding()
         end
-      end)
-    end,
-    stderr = function(err, data)
-      if data then
-        table.insert(error_output, data)
       end
-    end,
-  }, function(obj)
-    vim.schedule(function()
-      -- クリーンアップ：ハンドルをマップから削除（セッションIDは保持）
-      self._handles[handle_id] = nil
+    elseif msg.type == "session" and msg.session_id then
+      adapter._sessions[handle_id] = msg.session_id
+    elseif msg.type == "tool_use" and msg.tool and msg.file_path then
+      if opts.on_tool_use then
+        opts.on_tool_use(msg.tool, msg.file_path)
+      end
+      if opts.status_manager then
+        opts.status_manager:add_modified_file(msg.file_path)
+      end
+    elseif msg.type == "chunk" and msg.text then
+      table.insert(output, msg.text)
+      on_chunk(msg.text)
+    elseif msg.type == "error" then
+      table.insert(error_output, msg.message or "Unknown error")
+    elseif msg.type == "ask_user_question" then
+      -- AskUserQuestion event: show UI and send response via stdin
+      adapter:_handle_ask_user_question(handle_id, msg, opts)
+    end
+  end
 
-      -- on_done は常に呼び出される（エラー時も正常終了時も）
-      -- これによりキューがブロックされるのを防ぐ
-      if obj.code ~= 0 or #error_output > 0 then
+  -- Extract command and args (first element is command, rest are args)
+  local spawn_cmd = cmd[1]
+  local spawn_args = {}
+  for i = 2, #cmd do
+    table.insert(spawn_args, cmd[i])
+  end
+
+  handle, pid = vim.loop.spawn(spawn_cmd, {
+    args = spawn_args,
+    stdio = { stdin, stdout, stderr },
+    cwd = vim.fn.getcwd(),
+  }, function(code, signal)
+    vim.schedule(function()
+      -- Close pipes
+      if stdin then stdin:close() end
+      if stdout then stdout:close() end
+      if stderr then stderr:close() end
+
+      -- Cleanup
+      adapter._handles[handle_id] = nil
+      adapter._stdin_handles[handle_id] = nil
+
+      if code ~= 0 or #error_output > 0 then
         on_done({
           content = table.concat(output, ""),
           error = table.concat(error_output, ""),
@@ -310,8 +314,120 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
     end)
   end)
 
-  -- ハンドルIDを返す（キャンセル用）
+  if not handle then
+    on_done({
+      content = "",
+      error = "Failed to spawn process",
+      _handle_id = handle_id,
+    })
+    return handle_id
+  end
+
+  -- Store handle and stdin for later use
+  self._handles[handle_id] = handle
+  self._stdin_handles[handle_id] = stdin
+
+  -- Read stdout
+  stdout:read_start(function(err, data)
+    if err then return end
+    if not data then return end
+
+    vim.schedule(function()
+      stdout_buffer = stdout_buffer .. data
+      while true do
+        local newline_pos = stdout_buffer:find("\n")
+        if not newline_pos then break end
+
+        local line = stdout_buffer:sub(1, newline_pos - 1)
+        stdout_buffer = stdout_buffer:sub(newline_pos + 1)
+        process_stdout_line(line)
+      end
+    end)
+  end)
+
+  -- Read stderr
+  stderr:read_start(function(err, data)
+    if data then
+      table.insert(error_output, data)
+    end
+  end)
+
   return handle_id
+end
+
+---AskUserQuestionイベントを処理
+---UIを表示してユーザーの回答を取得し、stdinに送信
+---@param handle_id string ハンドルID
+---@param msg table AskUserQuestionメッセージ
+---@param opts table オプション
+function AgentSDK:_handle_ask_user_question(handle_id, msg, opts)
+  local ask_ui = require("vibing.ui.ask_user_question")
+  local questions = msg.questions or {}
+  local question_id = msg.question_id
+  local total_questions = #questions
+  local current_index = 1
+  local all_answers = {}
+
+  local function process_next_question()
+    if current_index > total_questions then
+      -- All questions answered, send response
+      self:_send_ask_response(handle_id, question_id, all_answers, false)
+      return
+    end
+
+    local question = questions[current_index]
+    local chat_buffer = opts.chat_buffer
+
+    if not chat_buffer then
+      -- No chat buffer, cancel
+      self:_send_ask_response(handle_id, question_id, nil, true)
+      return
+    end
+
+    ask_ui.show(chat_buffer, question, current_index, total_questions, function(answers)
+      if answers == nil then
+        -- User cancelled
+        self:_send_ask_response(handle_id, question_id, nil, true)
+        return
+      end
+
+      -- Store answer for this question
+      local answer_str
+      if #answers == 1 then
+        answer_str = answers[1]
+      else
+        answer_str = table.concat(answers, ", ")
+      end
+      all_answers[question.question] = answer_str
+
+      current_index = current_index + 1
+      process_next_question()
+    end)
+  end
+
+  process_next_question()
+end
+
+---AskUserQuestionの回答をstdinに送信
+---@param handle_id string ハンドルID
+---@param question_id number 質問ID
+---@param answers table<string, string>? 回答（nilの場合はキャンセル）
+---@param cancelled boolean キャンセルされたかどうか
+function AgentSDK:_send_ask_response(handle_id, question_id, answers, cancelled)
+  local stdin = self._stdin_handles[handle_id]
+  if not stdin then
+    return
+  end
+
+  local response = {
+    type = "ask_user_question_response",
+    question_id = question_id,
+    cancelled = cancelled,
+    answers = answers,
+  }
+
+  local json_str = vim.json.encode(response) .. "\n"
+  stdin:write(json_str)
 end
 
 ---実行中のリクエストをキャンセル
@@ -324,12 +440,14 @@ function AgentSDK:cancel(handle_id)
     if handle then
       handle:kill(9)
       self._handles[handle_id] = nil
+      self._stdin_handles[handle_id] = nil
     end
   else
     -- 全ハンドルをキャンセル
     for id, handle in pairs(self._handles) do
       handle:kill(9)
       self._handles[id] = nil
+      self._stdin_handles[id] = nil
     end
   end
 end

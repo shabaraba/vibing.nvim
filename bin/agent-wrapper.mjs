@@ -25,6 +25,37 @@ let mcpEnabled = false; // Default: MCP integration disabled
 let language = null; // Language code for AI responses (e.g., "ja", "en")
 let rpcPort = null; // RPC port of the Neovim instance running this chat
 
+// Pending AskUserQuestion callbacks (question_id -> { resolve, reject })
+const pendingQuestions = new Map();
+let questionIdCounter = 0;
+
+// Setup stdin for receiving answers from Neovim
+import { createInterface } from 'readline';
+const rl = createInterface({
+  input: process.stdin,
+  output: process.stdout,
+  terminal: false,
+});
+
+rl.on('line', (line) => {
+  try {
+    const msg = JSON.parse(line);
+    if (msg.type === 'ask_user_question_response' && msg.question_id !== undefined) {
+      const pending = pendingQuestions.get(msg.question_id);
+      if (pending) {
+        pendingQuestions.delete(msg.question_id);
+        if (msg.cancelled) {
+          pending.reject(new Error('User cancelled the question'));
+        } else {
+          pending.resolve(msg.answers);
+        }
+      }
+    }
+  } catch {
+    // Ignore non-JSON lines on stdin
+  }
+});
+
 // Parse arguments
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--cwd' && args[i + 1]) {
@@ -638,6 +669,54 @@ function matchesPermission(toolName, input, permissionStr) {
 
 queryOptions.canUseTool = async (toolName, input) => {
   try {
+    // Handle AskUserQuestion tool: Send question to Neovim and wait for user response
+    if (toolName === 'AskUserQuestion') {
+      const questions = input.questions || [];
+      if (questions.length === 0) {
+        return { behavior: 'allow', updatedInput: input };
+      }
+
+      // Send questions to Neovim via JSON Lines
+      const questionId = questionIdCounter++;
+      console.log(
+        safeJsonStringify({
+          type: 'ask_user_question',
+          question_id: questionId,
+          questions: questions,
+        })
+      );
+
+      // Wait for response from Neovim via stdin
+      try {
+        const answers = await new Promise((resolve, reject) => {
+          pendingQuestions.set(questionId, { resolve, reject });
+          // Timeout after 5 minutes (user might take time to answer)
+          setTimeout(() => {
+            if (pendingQuestions.has(questionId)) {
+              pendingQuestions.delete(questionId);
+              reject(new Error('Question timed out after 5 minutes'));
+            }
+          }, 300000);
+        });
+
+        // Build the response in the format expected by AskUserQuestion tool
+        // answers is an object: { "question text": "selected label(s)" }
+        return {
+          behavior: 'allow',
+          updatedInput: {
+            questions: questions,
+            answers: answers,
+          },
+        };
+      } catch (error) {
+        // User cancelled or timeout - deny the tool use
+        return {
+          behavior: 'deny',
+          message: error.message || 'User cancelled the question',
+        };
+      }
+    }
+
     // Note: deniedTools are handled by queryOptions.disallowedTools (SDK built-in)
     // They are already removed from model's context, so won't reach this callback.
 
