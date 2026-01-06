@@ -183,6 +183,11 @@ function ChatBuffer:_create_window()
     })
   end
 
+  -- Apply wrap configuration for vibing chat buffer
+  local ok, ui_utils = pcall(require, "vibing.core.utils.ui")
+  if ok and self.win then
+    pcall(ui_utils.apply_wrap_config, self.win)
+  end
 end
 
 ---キーマップを設定
