@@ -833,6 +833,9 @@ function ChatBuffer:send_message()
     add_user_section = function()
       return self:add_user_section()
     end,
+    get_bufnr = function()
+      return self.buf
+    end,
   }
 
   SendMessage.execute(adapter, callbacks, message, config)

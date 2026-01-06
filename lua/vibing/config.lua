@@ -3,10 +3,18 @@
 ---インラインアクションとチャットの両方で使用されるdiffプレビューUIを制御
 ---@field enabled boolean プレビューUI有効化（trueでGit diffプレビュー表示、要Gitリポジトリ）
 
+---@class Vibing.GradientConfig
+---グラデーションアニメーション設定
+---AI応答中に行番号をグラデーションアニメーションで視覚的にフィードバック
+---@field enabled boolean グラデーションアニメーション有効化（trueで応答中に行番号がアニメーション）
+---@field colors string[] グラデーション色の配列（2色指定: {開始色, 終了色}、例: {"#cc3300", "#fffe00"}）
+---@field interval number アニメーション更新間隔（ミリ秒、デフォルト: 100）
+
 ---@class Vibing.UiConfig
 ---UI設定
 ---全UIコンポーネント（Chat、Inline、Output）に適用される表示設定
 ---@field wrap "nvim"|"on"|"off" 行の折り返し設定（"nvim": Neovimデフォルト、"on": wrap+linebreak有効、"off": wrap無効）
+---@field gradient Vibing.GradientConfig グラデーションアニメーション設定（応答中の視覚的フィードバック）
 
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
@@ -123,6 +131,14 @@ M.defaults = {
   },
   ui = {
     wrap = "on",  -- "nvim" | "on" | "off"
+    gradient = {
+      enabled = true,  -- Enable gradient animation during AI response
+      colors = {
+        "#cc3300",  -- Start color (orange, matching vibing.nvim logo)
+        "#fffe00",  -- End color (yellow, matching vibing.nvim logo)
+      },
+      interval = 100,  -- Animation update interval in milliseconds
+    },
   },
   keymaps = {
     send = "<CR>",
@@ -225,6 +241,42 @@ function M.setup(opts)
         M.options.ui.wrap
       ))
       M.options.ui.wrap = "on"  -- Fallback to default
+    end
+  end
+
+  -- Validate ui.gradient configuration
+  if M.options.ui and M.options.ui.gradient then
+    local gradient = M.options.ui.gradient
+
+    -- Validate colors array
+    if gradient.colors then
+      if type(gradient.colors) ~= "table" or #gradient.colors ~= 2 then
+        notify.warn(
+          "Invalid ui.gradient.colors: must be an array of exactly 2 color strings. " ..
+          "Falling back to default (orange to yellow)."
+        )
+        M.options.ui.gradient.colors = { "#cc3300", "#fffe00" }
+      else
+        -- Validate color format (simple hex check)
+        for i, color in ipairs(gradient.colors) do
+          if type(color) ~= "string" or not color:match("^#%x%x%x%x%x%x$") then
+            notify.warn(string.format(
+              "Invalid color format at ui.gradient.colors[%d]: '%s'. Expected hex format like '#ff0000'.",
+              i, tostring(color)
+            ))
+          end
+        end
+      end
+    end
+
+    -- Validate interval
+    if gradient.interval then
+      if type(gradient.interval) ~= "number" or gradient.interval <= 0 then
+        notify.warn(
+          "Invalid ui.gradient.interval: must be a positive number. Falling back to default (100ms)."
+        )
+        M.options.ui.gradient.interval = 100
+      end
     end
   end
 
