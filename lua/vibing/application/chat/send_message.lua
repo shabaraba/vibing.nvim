@@ -4,7 +4,6 @@ local M = {}
 
 local Context = require("vibing.application.context.manager")
 local Formatter = require("vibing.infrastructure.context.formatter")
-local StatusManager = require("vibing.status_manager")
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 local GradientAnimation = require("vibing.ui.gradient_animation")
@@ -51,7 +50,6 @@ function M.execute(adapter, callbacks, message, config)
   local frontmatter = callbacks.parse_frontmatter()
   local saved_contents = M._save_buffer_contents()
 
-  local status_mgr = StatusManager:new(config.status)
   local modified_files = {}
   local file_tools = { Edit = true, Write = true, nvim_set_buffer = true }
 
@@ -65,7 +63,6 @@ function M.execute(adapter, callbacks, message, config)
   local opts = {
     streaming = true,
     action_type = "chat",
-    status_manager = status_mgr,
     mode = frontmatter.mode,
     model = frontmatter.model,
     permissions_allow = frontmatter.permissions_allow,
@@ -95,12 +92,12 @@ function M.execute(adapter, callbacks, message, config)
       end)
     end, function(response)
       vim.schedule(function()
-        M._handle_response(response, status_mgr, callbacks, modified_files, saved_contents, adapter)
+        M._handle_response(response, callbacks, modified_files, saved_contents, adapter)
       end)
     end)
   else
     local response = adapter:execute(formatted_prompt, opts)
-    M._handle_response(response, status_mgr, callbacks, modified_files, saved_contents, adapter)
+    M._handle_response(response, callbacks, modified_files, saved_contents, adapter)
   end
 end
 
@@ -124,7 +121,7 @@ function M._save_buffer_contents()
 end
 
 ---レスポンスを処理
-function M._handle_response(response, status_mgr, callbacks, modified_files, saved_contents, adapter)
+function M._handle_response(response, callbacks, modified_files, saved_contents, adapter)
   -- Stop gradient animation
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
@@ -132,10 +129,7 @@ function M._handle_response(response, status_mgr, callbacks, modified_files, sav
   end
 
   if response.error then
-    status_mgr:set_error(response.error)
     callbacks.append_chunk("\n\n**Error:** " .. response.error)
-  else
-    status_mgr:set_done(modified_files)
   end
 
   if #modified_files > 0 then

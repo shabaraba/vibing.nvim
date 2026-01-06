@@ -4,7 +4,6 @@ local M = {}
 
 local notify = require("vibing.core.utils.notify")
 local QueueManager = require("vibing.application.inline.queue_manager")
-local StatusManager = require("vibing.status_manager")
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local language_utils = require("vibing.core.utils.language")
 
@@ -57,14 +56,12 @@ function M._run_action(action, context, additional_prompt, adapter, config, ui, 
 
   local prompt = table.concat(prompt_parts, "\n")
 
-  local status_mgr = StatusManager:new(config.status)
   local modified_files = {}
   local file_tools = { Edit = true, Write = true, nvim_set_buffer = true }
 
   local opts = {
     streaming = true,
     action_type = "inline",
-    status_manager = status_mgr,
     tools = action.tools,
     permissions_allow = action.tools,
     language = lang_code,  -- Pass language code to adapter
@@ -77,17 +74,17 @@ function M._run_action(action, context, additional_prompt, adapter, config, ui, 
 
   if action.use_output_buffer and ui.create_output_buffer then
     local output_buf = ui.create_output_buffer(action.name)
-    M._stream_to_buffer(adapter, prompt, opts, output_buf, status_mgr, modified_files, config, done)
+    M._stream_to_buffer(adapter, prompt, opts, output_buf, modified_files, config, done)
   else
     if ui.show_progress then
       ui.show_progress(action.name)
     end
-    M._stream_inline(adapter, prompt, opts, status_mgr, modified_files, config, ui, done)
+    M._stream_inline(adapter, prompt, opts, modified_files, config, ui, done)
   end
 end
 
 ---出力バッファにストリーム
-function M._stream_to_buffer(adapter, prompt, opts, output_buf, status_mgr, modified_files, config, done)
+function M._stream_to_buffer(adapter, prompt, opts, output_buf, modified_files, config, done)
   adapter:stream(prompt, opts, function(chunk)
     vim.schedule(function()
       output_buf:append(chunk)
@@ -95,10 +92,7 @@ function M._stream_to_buffer(adapter, prompt, opts, output_buf, status_mgr, modi
   end, function(response)
     vim.schedule(function()
       if response.error then
-        status_mgr:set_error(response.error)
         output_buf:append("\n\n**Error:** " .. response.error)
-      else
-        status_mgr:set_done(modified_files)
       end
 
       if #modified_files > 0 then
@@ -111,7 +105,7 @@ function M._stream_to_buffer(adapter, prompt, opts, output_buf, status_mgr, modi
 end
 
 ---インライン実行（プログレス表示）
-function M._stream_inline(adapter, prompt, opts, status_mgr, modified_files, config, ui, done)
+function M._stream_inline(adapter, prompt, opts, modified_files, config, ui, done)
   adapter:stream(prompt, opts, function(_) end, function(response)
     vim.schedule(function()
       if ui.hide_progress then
@@ -119,10 +113,8 @@ function M._stream_inline(adapter, prompt, opts, status_mgr, modified_files, con
       end
 
       if response.error then
-        status_mgr:set_error(response.error)
         notify.error(response.error, "Inline")
       else
-        status_mgr:set_done(modified_files)
         if #modified_files > 0 then
           BufferReload.reload_files(modified_files)
           notify.info(string.format("Modified %d file(s)", #modified_files), "Inline")

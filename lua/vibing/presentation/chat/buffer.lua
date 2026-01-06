@@ -864,7 +864,6 @@ function ChatBuffer:start_response()
     "",
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
-  -- StatusManagerがスピナー表示を担当するため、ここではスピナーを開始しない
 end
 
 ---バッファリングされたチャンクをフラッシュしてバッファに書き込む

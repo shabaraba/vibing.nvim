@@ -249,13 +249,9 @@ function M._execute_direct_queued(adapter, prompt, opts, on_complete)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
-  local StatusManager = require("vibing.status_manager")
-  local status_mgr = StatusManager:new(config.status)
-
   local response_text = {}
 
   opts.action_type = "inline"
-  opts.status_manager = status_mgr
 
   if adapter:supports("streaming") then
     opts.streaming = true
@@ -263,15 +259,10 @@ function M._execute_direct_queued(adapter, prompt, opts, on_complete)
       table.insert(response_text, chunk)
     end, function(response)
       vim.schedule(function()
-        local modified_files = status_mgr:get_modified_files()
-
         if response.error then
-          status_mgr:set_error(response.error)
           notify.error(response.error, "Inline")
         else
-          status_mgr:set_done(modified_files)
-          BufferReload.reload_files(modified_files)
-          M._show_results(modified_files, table.concat(response_text, ""))
+          M._show_results({}, table.concat(response_text, ""))
         end
 
         -- タスク完了を通知
@@ -280,15 +271,11 @@ function M._execute_direct_queued(adapter, prompt, opts, on_complete)
     end)
   else
     local response = adapter:execute(prompt, opts)
-    local modified_files = status_mgr:get_modified_files()
 
     if response.error then
-      status_mgr:set_error(response.error)
       notify.error(response.error, "Inline")
     else
-      status_mgr:set_done(modified_files)
-      BufferReload.reload_files(modified_files)
-      M._show_results(modified_files, response.content)
+      M._show_results({}, response.content)
     end
 
     -- タスク完了を通知
@@ -328,12 +315,9 @@ function M._execute_with_preview_queued(adapter, prompt, opts, action, instructi
     saved_contents[buffer_id] = content
   end
 
-  local StatusManager = require("vibing.status_manager")
-  local status_mgr = StatusManager:new(config.status)
   local response_text = {}
 
   opts.action_type = "inline"
-  opts.status_manager = status_mgr
 
   if adapter:supports("streaming") then
     opts.streaming = true
@@ -341,15 +325,9 @@ function M._execute_with_preview_queued(adapter, prompt, opts, action, instructi
       table.insert(response_text, chunk)
     end, function(response)
       vim.schedule(function()
-        local modified_files = status_mgr:get_modified_files()
-
         if response.error then
-          status_mgr:set_error(response.error)
           notify.error(response.error, "Inline")
         else
-          status_mgr:set_done(modified_files)
-          BufferReload.reload_files(modified_files)
-
           local session_id = nil
           if adapter:supports("session") and response._handle_id then
             session_id = adapter:get_session_id(response._handle_id)
@@ -358,7 +336,7 @@ function M._execute_with_preview_queued(adapter, prompt, opts, action, instructi
           end
 
           local InlinePreview = require("vibing.ui.inline_preview")
-          InlinePreview.setup("inline", modified_files, table.concat(response_text, ""), saved_contents, nil, prompt, action, instruction, session_id)
+          InlinePreview.setup("inline", {}, table.concat(response_text, ""), saved_contents, nil, prompt, action, instruction, session_id)
         end
 
         -- タスク完了を通知
@@ -367,15 +345,10 @@ function M._execute_with_preview_queued(adapter, prompt, opts, action, instructi
     end)
   else
     local response = adapter:execute(prompt, opts)
-    local modified_files = status_mgr:get_modified_files()
 
     if response.error then
-      status_mgr:set_error(response.error)
       notify.error(response.error, "Inline")
     else
-      status_mgr:set_done(modified_files)
-      BufferReload.reload_files(modified_files)
-
       local session_id = nil
       if adapter:supports("session") and response._handle_id then
         session_id = adapter:get_session_id(response._handle_id)
@@ -384,7 +357,7 @@ function M._execute_with_preview_queued(adapter, prompt, opts, action, instructi
       end
 
       local InlinePreview = require("vibing.ui.inline_preview")
-      InlinePreview.setup("inline", modified_files, response.content, saved_contents, nil, prompt, action, instruction, session_id)
+      InlinePreview.setup("inline", {}, response.content, saved_contents, nil, prompt, action, instruction, session_id)
     end
 
     -- タスク完了を通知
