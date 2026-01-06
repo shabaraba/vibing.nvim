@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.15.0 (2026-01-06)
+
+## What's Changed
+* fix: custom command execution error due to missing use_case.send by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/251
+* feat: add multi-instance Neovim support for MCP integration by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/255
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.14.2...v1.15.0
+
 ## 1.14.2 (2026-01-04)
 
 ## What's Changed
