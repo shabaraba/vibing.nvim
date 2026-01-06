@@ -1,10 +1,12 @@
+import { withRpcPort } from './common.js';
+
 export const windowTools = [
   {
     name: 'nvim_list_windows',
     description: 'List all windows with their properties',
     inputSchema: {
       type: 'object' as const,
-      properties: {},
+      properties: withRpcPort({}),
     },
   },
   {
@@ -12,12 +14,12 @@ export const windowTools = [
     description: 'Get detailed information for a specific window',
     inputSchema: {
       type: 'object' as const,
-      properties: {
+      properties: withRpcPort({
         winnr: {
           type: 'number' as const,
           description: 'Window number (0 for current window)',
         },
-      },
+      }),
     },
   },
   {
@@ -25,12 +27,12 @@ export const windowTools = [
     description: 'Get window viewport information (visible line range, scroll position)',
     inputSchema: {
       type: 'object' as const,
-      properties: {
+      properties: withRpcPort({
         winnr: {
           type: 'number' as const,
           description: 'Window number (0 for current window)',
         },
-      },
+      }),
     },
   },
   {
@@ -38,7 +40,7 @@ export const windowTools = [
     description: 'List all tab pages with their windows',
     inputSchema: {
       type: 'object' as const,
-      properties: {},
+      properties: withRpcPort({}),
     },
   },
   {
@@ -46,7 +48,7 @@ export const windowTools = [
     description: 'Resize window width and/or height',
     inputSchema: {
       type: 'object' as const,
-      properties: {
+      properties: withRpcPort({
         winnr: {
           type: 'number' as const,
           description: 'Window number (0 for current window)',
@@ -59,7 +61,7 @@ export const windowTools = [
           type: 'number' as const,
           description: 'Window height (optional)',
         },
-      },
+      }),
     },
   },
   {
@@ -67,12 +69,12 @@ export const windowTools = [
     description: 'Move focus to a specific window',
     inputSchema: {
       type: 'object' as const,
-      properties: {
+      properties: withRpcPort({
         winnr: {
           type: 'number' as const,
           description: 'Window number to focus',
         },
-      },
+      }),
       required: ['winnr'],
     },
   },
@@ -81,7 +83,7 @@ export const windowTools = [
     description: 'Set an existing buffer in a specific window',
     inputSchema: {
       type: 'object' as const,
-      properties: {
+      properties: withRpcPort({
         winnr: {
           type: 'number' as const,
           description: 'Window number',
@@ -90,7 +92,7 @@ export const windowTools = [
           type: 'number' as const,
           description: 'Buffer number to display',
         },
-      },
+      }),
       required: ['winnr', 'bufnr'],
     },
   },
@@ -99,7 +101,7 @@ export const windowTools = [
     description: 'Open a file in a specific window without switching focus',
     inputSchema: {
       type: 'object' as const,
-      properties: {
+      properties: withRpcPort({
         winnr: {
           type: 'number' as const,
           description: 'Window number',
@@ -108,7 +110,7 @@ export const windowTools = [
           type: 'string' as const,
           description: 'Path to file to open',
         },
-      },
+      }),
       required: ['winnr', 'filepath'],
     },
   },

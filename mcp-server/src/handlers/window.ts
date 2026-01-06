@@ -6,7 +6,7 @@ import { callNeovim } from '../rpc.js';
  * @returns The response object with a `content` array containing one text node whose `text` is the pretty-printed JSON representation of the window list.
  */
 export async function handleListWindows(args: any) {
-  const windows = await callNeovim('list_windows');
+  const windows = await callNeovim('list_windows', {}, args?.rpc_port);
   return {
     content: [{ type: 'text', text: JSON.stringify(windows, null, 2) }],
   };
@@ -19,7 +19,7 @@ export async function handleListWindows(args: any) {
  * @returns An object with a `content` array whose first element is a text node containing the pretty-printed JSON window info
  */
 export async function handleGetWindowInfo(args: any) {
-  const info = await callNeovim('get_window_info', { winnr: args?.winnr });
+  const info = await callNeovim('get_window_info', { winnr: args?.winnr }, args?.rpc_port);
   return {
     content: [{ type: 'text', text: JSON.stringify(info, null, 2) }],
   };
@@ -32,7 +32,7 @@ export async function handleGetWindowInfo(args: any) {
  * @returns An object whose `content` is a single text node containing the pretty-printed JSON representation of the window view
  */
 export async function handleGetWindowView(args: any) {
-  const view = await callNeovim('get_window_view', { winnr: args?.winnr });
+  const view = await callNeovim('get_window_view', { winnr: args?.winnr }, args?.rpc_port);
   return {
     content: [{ type: 'text', text: JSON.stringify(view, null, 2) }],
   };
@@ -44,7 +44,7 @@ export async function handleGetWindowView(args: any) {
  * @returns An object with a `content` array containing a single text node whose `text` is the JSON-stringified (2-space indented) tabpage list
  */
 export async function handleListTabpages(args: any) {
-  const tabs = await callNeovim('list_tabpages');
+  const tabs = await callNeovim('list_tabpages', {}, args?.rpc_port);
   return {
     content: [{ type: 'text', text: JSON.stringify(tabs, null, 2) }],
   };
@@ -68,13 +68,13 @@ export async function handleSetWindowSize(args: any) {
     await callNeovim('set_window_width', {
       winnr: args.winnr,
       width: args.width,
-    });
+    }, args?.rpc_port);
   }
   if (args?.height !== undefined) {
     await callNeovim('set_window_height', {
       winnr: args.winnr,
       height: args.height,
-    });
+    }, args?.rpc_port);
   }
   return {
     content: [{ type: 'text', text: 'Window size updated successfully' }],
@@ -93,7 +93,7 @@ export async function handleFocusWindow(args: any) {
   if (!args || args.winnr === undefined) {
     throw new Error('Missing required parameter: winnr');
   }
-  await callNeovim('focus_window', { winnr: args.winnr });
+  await callNeovim('focus_window', { winnr: args.winnr }, args?.rpc_port);
   return {
     content: [{ type: 'text', text: `Focused window ${args.winnr}` }],
   };
@@ -113,7 +113,7 @@ export async function handleWinSetBuf(args: any) {
   await callNeovim('win_set_buf', {
     winnr: args.winnr,
     bufnr: args.bufnr,
-  });
+  }, args?.rpc_port);
   return {
     content: [
       { type: 'text', text: `Set buffer ${args.bufnr} in window ${args.winnr}` },
@@ -137,7 +137,7 @@ export async function handleWinOpenFile(args: any) {
   const result = await callNeovim('win_open_file', {
     winnr: args.winnr,
     filepath: args.filepath,
-  });
+  }, args?.rpc_port);
   return {
     content: [
       {

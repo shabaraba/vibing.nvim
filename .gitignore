@@ -62,3 +62,5 @@ temp/
 *.tmp
 *.bak
 *.backup
+.worktrees
+.claude-work

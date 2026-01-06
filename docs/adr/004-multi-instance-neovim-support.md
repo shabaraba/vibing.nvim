@@ -131,10 +131,16 @@ end
 const sockets = new Map<number, net.Socket>();
 
 // Multi-port support: Map of port -> (request_id -> pending)
-const pendingRequests = new Map<number, Map<number, {
-  resolve: (value: any) => void;
-  reject: (error: Error) => void
-}>>();
+const pendingRequests = new Map<
+  number,
+  Map<
+    number,
+    {
+      resolve: (value: any) => void;
+      reject: (error: Error) => void;
+    }
+  >
+>();
 
 // Multi-port support: Map of port -> buffer
 const buffers = new Map<number, string>();
@@ -157,11 +163,7 @@ function getSocket(port: number): Promise<net.Socket> {
   });
 }
 
-export async function callNeovim(
-  method: string,
-  params: any = {},
-  port?: number
-): Promise<any> {
+export async function callNeovim(method: string, params: any = {}, port?: number): Promise<any> {
   const targetPort = port !== undefined ? port : NVIM_RPC_PORT;
   const sock = await getSocket(targetPort);
   // ... send JSON-RPC request ...
@@ -171,6 +173,7 @@ export async function callNeovim(
 ### 4. MCPツールの拡張
 
 **実装**:
+
 - `mcp-server/src/tools/common.ts` - 共通の`rpc_port`パラメータ定義
 - `mcp-server/src/tools/*.ts` - 全ツールに`rpc_port`パラメータを追加
 - `mcp-server/src/handlers/*.ts` - ハンドラーで`rpc_port`を`callNeovim()`に渡す

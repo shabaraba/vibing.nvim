@@ -1,4 +1,6 @@
-const lspPositionSchema = {
+import { withRpcPort } from './common.js';
+
+const lspPositionSchema = withRpcPort({
   bufnr: {
     type: 'number' as const,
     description: 'Buffer number (0 for current)',
@@ -11,7 +13,7 @@ const lspPositionSchema = {
     type: 'number' as const,
     description: 'Column number (0-indexed)',
   },
-};
+});
 
 export const lspTools = [
   {
@@ -50,12 +52,12 @@ export const lspTools = [
       '[Neovim LSP] Get diagnostics - Works with ANY loaded buffer. Background workflow: nvim_execute("edit file.ts") → nvim_execute("bp") → use this tool with bufnr',
     inputSchema: {
       type: 'object' as const,
-      properties: {
+      properties: withRpcPort({
         bufnr: {
           type: 'number' as const,
           description: 'Buffer number (0 for current)',
         },
-      },
+      }),
     },
   },
   {
@@ -64,12 +66,12 @@ export const lspTools = [
       '[Neovim LSP] Document symbols - Works with ANY loaded buffer. Background workflow: nvim_execute("edit file.ts") → nvim_execute("bp") → use this tool with bufnr',
     inputSchema: {
       type: 'object' as const,
-      properties: {
+      properties: withRpcPort({
         bufnr: {
           type: 'number' as const,
           description: 'Buffer number (0 for current)',
         },
-      },
+      }),
     },
   },
   {

@@ -1,10 +1,12 @@
+import { withRpcPort } from './common.js';
+
 export const cursorTools = [
   {
     name: 'nvim_get_cursor',
     description: 'Get cursor position',
     inputSchema: {
       type: 'object' as const,
-      properties: {},
+      properties: withRpcPort({}),
     },
   },
   {
@@ -12,7 +14,7 @@ export const cursorTools = [
     description: 'Set cursor position',
     inputSchema: {
       type: 'object' as const,
-      properties: {
+      properties: withRpcPort({
         line: {
           type: 'number' as const,
           description: 'Line number (1-indexed)',
@@ -21,7 +23,7 @@ export const cursorTools = [
           type: 'number' as const,
           description: 'Column number (0-indexed)',
         },
-      },
+      }),
       required: ['line'],
     },
   },
@@ -30,7 +32,7 @@ export const cursorTools = [
     description: 'Get visual selection range and content',
     inputSchema: {
       type: 'object' as const,
-      properties: {},
+      properties: withRpcPort({}),
     },
   },
 ];
