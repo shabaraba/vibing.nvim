@@ -689,14 +689,24 @@ queryOptions.canUseTool = async (toolName, input) => {
       // Wait for response from Neovim via stdin
       try {
         const answers = await new Promise((resolve, reject) => {
-          pendingQuestions.set(questionId, { resolve, reject });
           // Timeout after 5 minutes (user might take time to answer)
-          setTimeout(() => {
+          const timeoutId = setTimeout(() => {
             if (pendingQuestions.has(questionId)) {
               pendingQuestions.delete(questionId);
               reject(new Error('Question timed out after 5 minutes'));
             }
           }, 300000);
+
+          pendingQuestions.set(questionId, {
+            resolve: (value) => {
+              clearTimeout(timeoutId);
+              resolve(value);
+            },
+            reject: (error) => {
+              clearTimeout(timeoutId);
+              reject(error);
+            },
+          });
         });
 
         // Build the response in the format expected by AskUserQuestion tool

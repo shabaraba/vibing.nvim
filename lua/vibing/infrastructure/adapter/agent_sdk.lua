@@ -315,6 +315,10 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   end)
 
   if not handle then
+    -- Cleanup pipes on spawn failure
+    if stdin then stdin:close() end
+    if stdout then stdout:close() end
+    if stderr then stderr:close() end
     on_done({
       content = "",
       error = "Failed to spawn process",

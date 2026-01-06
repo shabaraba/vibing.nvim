@@ -9,35 +9,63 @@ local M = {}
 
 ---@class Vibing.QuestionState
 ---@field active boolean 質問表示中か
----@field buf number? 対象バッファ
 ---@field question_start_line number? 質問セクション開始行
 ---@field question_end_line number? 質問セクション終了行
 ---@field question table? 現在の質問
 ---@field callback function? 選択完了時のコールバック
 ---@field original_keymaps table? 元のキーマップ（復元用）
-local state = {
-  active = false,
-  buf = nil,
-  question_start_line = nil,
-  question_end_line = nil,
-  question = nil,
-  callback = nil,
-  original_keymaps = nil,
-}
 
----選択肢のマーカーパターン
-local OPTION_MARKER_PATTERN = "<!--vibing:option:(.+)-->"
+---バッファごとの状態管理（複数インスタンス対応）
+---@type table<number, Vibing.QuestionState>
+local buffer_states = {}
+
+---選択肢のマーカーパターン（インデックス付き）
+local OPTION_MARKER_PATTERN = "<!--vibing:option:%d+:(.+)-->"
+
+---質問セクション開始マーカー
+local SECTION_START_MARKER = "<!--vibing:question:start-->"
+
+---質問セクション終了マーカー
+local SECTION_END_MARKER = "<!--vibing:question:end-->"
 
 ---セクション区切り線
 local SECTION_LINE = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+---バッファの状態を取得または初期化
+---@param buf number バッファ番号
+---@return Vibing.QuestionState
+local function get_state(buf)
+  if not buffer_states[buf] then
+    buffer_states[buf] = {
+      active = false,
+      question_start_line = nil,
+      question_end_line = nil,
+      question = nil,
+      callback = nil,
+      original_keymaps = nil,
+    }
+  end
+  return buffer_states[buf]
+end
+
+---バッファの状態をリセット
+---@param buf number バッファ番号
+local function reset_state(buf)
+  buffer_states[buf] = nil
+end
 
 ---質問セクションをレンダリング
 ---@param question table Question object
 ---@param question_index number 質問番号（1-based）
 ---@param total_questions number 質問総数
 ---@return string[] lines レンダリングされた行
+---@return number first_option_offset 最初の選択肢行のオフセット
 local function render_question(question, question_index, total_questions)
   local lines = {}
+  local first_option_offset = 0
+
+  -- 開始マーカー（Concealed）
+  table.insert(lines, SECTION_START_MARKER)
 
   -- ヘッダー
   table.insert(lines, "")
@@ -58,10 +86,13 @@ local function render_question(question, question_index, total_questions)
   table.insert(lines, "Delete unwanted options with dd, press <CR> to confirm, <Esc> to cancel")
   table.insert(lines, "")
 
-  -- 選択肢（Concealed textでマーカーを埋め込む）
-  for _, option in ipairs(question.options) do
-    -- 選択肢のラベル行にマーカーを埋め込む
-    local option_line = string.format("%s<!--vibing:option:%s-->", option.label, option.label)
+  -- 最初の選択肢行の位置を記録
+  first_option_offset = #lines
+
+  -- 選択肢（Concealed textでマーカーを埋め込む、インデックス付き）
+  for i, option in ipairs(question.options) do
+    -- 選択肢のラベル行にマーカーを埋め込む（インデックスで一意性を保証）
+    local option_line = string.format("%s<!--vibing:option:%d:%s-->", option.label, i, option.label)
     table.insert(lines, option_line)
 
     -- 説明行
@@ -74,7 +105,10 @@ local function render_question(question, question_index, total_questions)
   -- フッター
   table.insert(lines, SECTION_LINE)
 
-  return lines
+  -- 終了マーカー（Concealed）
+  table.insert(lines, SECTION_END_MARKER)
+
+  return lines, first_option_offset
 end
 
 ---回答セクションをレンダリング
@@ -110,6 +144,30 @@ local function render_answer(question, answers)
   return lines
 end
 
+---バッファから質問セクションの終了行を検出（マーカーベース）
+---@param buf number バッファ番号
+---@param start_line number 検索開始行（0-based）
+---@return number end_line 終了行（0-based、マーカー行を含む）
+local function find_section_end(buf, start_line)
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, start_line, line_count, false)
+
+  for i, line in ipairs(lines) do
+    if line == SECTION_END_MARKER then
+      return start_line + i -- マーカー行を含む
+    end
+  end
+
+  -- マーカーが見つからない場合は最後のセクション区切り線を探す
+  for i = #lines, 1, -1 do
+    if lines[i] == SECTION_LINE then
+      return start_line + i
+    end
+  end
+
+  return line_count
+end
+
 ---バッファから残っている選択肢を収集
 ---@param buf number バッファ番号
 ---@param start_line number 検索開始行（0-based）
@@ -132,17 +190,17 @@ end
 ---キーマップを設定
 ---@param buf number バッファ番号
 local function setup_keymaps(buf)
-  -- 元のキーマップを保存（復元用）
-  state.original_keymaps = {}
+  local buf_state = get_state(buf)
+  buf_state.original_keymaps = {}
 
   -- Enter: 確定
   vim.keymap.set("n", "<CR>", function()
-    M.confirm()
+    M.confirm(buf)
   end, { buffer = buf, nowait = true, desc = "Confirm selection" })
 
   -- Escape: キャンセル
   vim.keymap.set("n", "<Esc>", function()
-    M.cancel()
+    M.cancel(buf)
   end, { buffer = buf, nowait = true, desc = "Cancel question" })
 end
 
@@ -157,7 +215,8 @@ local function cleanup_keymaps(buf)
   pcall(vim.keymap.del, "n", "<CR>", { buffer = buf })
   pcall(vim.keymap.del, "n", "<Esc>", { buffer = buf })
 
-  state.original_keymaps = nil
+  local buf_state = get_state(buf)
+  buf_state.original_keymaps = nil
 end
 
 ---質問セクションを回答セクションに置き換え
@@ -178,12 +237,6 @@ end
 ---@param total_questions number 質問総数
 ---@param callback function(answers: string[]?) 回答コールバック（nilはキャンセル）
 function M.show(chat_buffer, question, question_index, total_questions, callback)
-  if state.active then
-    notify.warn("Another question is already active")
-    callback(nil)
-    return
-  end
-
   local buf = chat_buffer:get_buffer()
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
     notify.error("Invalid chat buffer")
@@ -191,8 +244,16 @@ function M.show(chat_buffer, question, question_index, total_questions, callback
     return
   end
 
+  local buf_state = get_state(buf)
+
+  if buf_state.active then
+    notify.warn("Another question is already active in this buffer")
+    callback(nil)
+    return
+  end
+
   -- 質問セクションをレンダリング
-  local question_lines = render_question(question, question_index, total_questions)
+  local question_lines, first_option_offset = render_question(question, question_index, total_questions)
 
   -- バッファの末尾に追加
   local line_count = vim.api.nvim_buf_line_count(buf)
@@ -201,41 +262,45 @@ function M.show(chat_buffer, question, question_index, total_questions, callback
   local end_line = start_line + #question_lines
 
   -- 状態を更新
-  state.active = true
-  state.buf = buf
-  state.question_start_line = start_line
-  state.question_end_line = end_line
-  state.question = question
-  state.callback = callback
+  buf_state.active = true
+  buf_state.question_start_line = start_line
+  buf_state.question_end_line = end_line
+  buf_state.question = question
+  buf_state.callback = callback
 
   -- キーマップを設定
   setup_keymaps(buf)
 
-  -- カーソルを質問セクションに移動
+  -- カーソルを最初の選択肢に移動（動的に計算）
   if chat_buffer:is_open() then
     local win = chat_buffer.win
     if win and vim.api.nvim_win_is_valid(win) then
-      -- 最初の選択肢の行に移動
-      local cursor_line = start_line + 8 -- ヘッダー + 説明を飛ばした位置
+      -- 開始行 + オフセット + 1（1-basedに変換）
+      local cursor_line = start_line + first_option_offset + 1
       pcall(vim.api.nvim_win_set_cursor, win, { cursor_line, 0 })
     end
   end
 end
 
 ---選択を確定
-function M.confirm()
-  if not state.active then
+---@param buf number? バッファ番号（省略時は現在のバッファ）
+function M.confirm(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local buf_state = get_state(buf)
+
+  if not buf_state.active then
     return
   end
 
-  local buf = state.buf
-  local question = state.question
-  local callback = state.callback
-  local start_line = state.question_start_line
-  local end_line = state.question_end_line
+  local question = buf_state.question
+  local callback = buf_state.callback
+  local start_line = buf_state.question_start_line
+
+  -- マーカーベースで終了行を検出
+  local actual_end_line = find_section_end(buf, start_line)
 
   -- 残っている選択肢を収集
-  local answers = collect_remaining_options(buf, start_line, end_line)
+  local answers = collect_remaining_options(buf, start_line, actual_end_line)
 
   -- バリデーション
   if #answers == 0 then
@@ -250,27 +315,11 @@ function M.confirm()
   end
 
   -- 質問セクションを回答セクションに置き換え
-  -- 現在の終了行を再計算（ユーザーが行を削除しているため）
-  local current_end_line = vim.api.nvim_buf_line_count(buf)
-  -- 質問セクションの実際の終了行を探す
-  local actual_end_line = start_line
-  local lines = vim.api.nvim_buf_get_lines(buf, start_line, current_end_line, false)
-  for i, line in ipairs(lines) do
-    if line == SECTION_LINE then
-      actual_end_line = start_line + i
-    end
-  end
-
   replace_with_answer(buf, start_line, actual_end_line, question, answers)
 
   -- クリーンアップ
   cleanup_keymaps(buf)
-  state.active = false
-  state.buf = nil
-  state.question_start_line = nil
-  state.question_end_line = nil
-  state.question = nil
-  state.callback = nil
+  reset_state(buf)
 
   -- コールバック実行
   if callback then
@@ -279,36 +328,28 @@ function M.confirm()
 end
 
 ---質問をキャンセル
-function M.cancel()
-  if not state.active then
+---@param buf number? バッファ番号（省略時は現在のバッファ）
+function M.cancel(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local buf_state = get_state(buf)
+
+  if not buf_state.active then
     return
   end
 
-  local buf = state.buf
-  local question = state.question
-  local callback = state.callback
-  local start_line = state.question_start_line
+  local question = buf_state.question
+  local callback = buf_state.callback
+  local start_line = buf_state.question_start_line
+
+  -- マーカーベースで終了行を検出
+  local actual_end_line = find_section_end(buf, start_line)
 
   -- 質問セクションを「キャンセル済み」表示に置き換え
-  local current_end_line = vim.api.nvim_buf_line_count(buf)
-  local actual_end_line = start_line
-  local lines = vim.api.nvim_buf_get_lines(buf, start_line, current_end_line, false)
-  for i, line in ipairs(lines) do
-    if line == SECTION_LINE then
-      actual_end_line = start_line + i
-    end
-  end
-
   replace_with_answer(buf, start_line, actual_end_line, question, {})
 
   -- クリーンアップ
   cleanup_keymaps(buf)
-  state.active = false
-  state.buf = nil
-  state.question_start_line = nil
-  state.question_end_line = nil
-  state.question = nil
-  state.callback = nil
+  reset_state(buf)
 
   -- コールバック実行（nilでキャンセルを通知）
   if callback then
@@ -316,16 +357,25 @@ function M.cancel()
   end
 end
 
----質問が表示中かどうか
+---指定バッファで質問が表示中かどうか
+---@param buf number? バッファ番号（省略時は現在のバッファ）
 ---@return boolean
-function M.is_active()
-  return state.active
+function M.is_active(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local buf_state = buffer_states[buf]
+  return buf_state and buf_state.active or false
 end
 
----現在の質問のバッファを取得
----@return number?
-function M.get_active_buffer()
-  return state.buf
+---現在アクティブな質問があるバッファを取得
+---@return number[]
+function M.get_active_buffers()
+  local buffers = {}
+  for buf, buf_state in pairs(buffer_states) do
+    if buf_state.active then
+      table.insert(buffers, buf)
+    end
+  end
+  return buffers
 end
 
 return M
