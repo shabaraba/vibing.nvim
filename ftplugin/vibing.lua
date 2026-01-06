@@ -23,7 +23,7 @@ vim.wo.conceallevel = 2
 
 -- Apply wrap configuration for .vibing files using BufEnter autocmd
 -- This ensures wrap settings only affect vibing buffers and don't leak to other buffers
-local ok, ui_utils = pcall(require, "vibing.utils.ui")
+local ok, ui_utils = pcall(require, "vibing.core.utils.ui")
 if ok then
   -- Apply immediately on first load
   pcall(ui_utils.apply_wrap_config, 0)
