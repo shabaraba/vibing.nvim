@@ -3,7 +3,7 @@
 ---AI応答中に行番号を虹色グラデーションでアニメーションさせ、実行状態を視覚的にフィードバック
 local M = {}
 
----@type table<number, { timer: table, ns_id: number, original_hl: table }>
+---@type table<number, { timer: table, ns_id: number, original_hl: table, original_number: boolean, hl_groups: string[] }>
 local active_animations = {}
 
 ---Generate gradient colors from start to end and back
@@ -63,11 +63,13 @@ local function save_original_highlight(bufnr)
   }
 end
 
----Restore original line number highlight
+---Restore original line number highlight and settings
 ---@param bufnr number Buffer number
 ---@param ns_id number Namespace ID
 ---@param original_hl table Original highlight settings
-local function restore_original_highlight(bufnr, ns_id, original_hl)
+---@param original_number boolean Original number setting
+---@param hl_groups string[] Highlight groups to clear
+local function restore_original_highlight(bufnr, ns_id, original_hl, original_number, hl_groups)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return
   end
@@ -75,9 +77,16 @@ local function restore_original_highlight(bufnr, ns_id, original_hl)
   -- Clear extmarks
   vim.api.nvim_buf_clear_namespace(bufnr, ns_id, 0, -1)
 
-  -- Restore original highlights if they were customized
-  -- Note: We don't need to explicitly restore since clearing extmarks
-  -- will make Neovim use the default LineNr highlight again
+  -- Clear created highlight groups
+  for _, hl_group in ipairs(hl_groups) do
+    pcall(vim.api.nvim_set_hl, 0, hl_group, {})
+  end
+
+  -- Restore original number setting
+  local win = vim.fn.bufwinid(bufnr)
+  if win ~= -1 then
+    vim.api.nvim_set_option_value("number", original_number, { win = win })
+  end
 end
 
 ---Start gradient animation for a buffer
@@ -111,18 +120,25 @@ function M.start(bufnr, start_color, end_color, interval)
   -- Create namespace for this buffer
   local ns_id = vim.api.nvim_create_namespace("vibing_gradient_" .. bufnr)
 
-  -- Save original highlight
+  -- Save original highlight and number setting
   local original_hl = save_original_highlight(bufnr)
-
-  -- Create highlight groups for each color
-  for i, color in ipairs(gradient_colors) do
-    vim.api.nvim_set_hl(0, "VibingGradient" .. bufnr .. "_" .. i, { fg = color, bg = "NONE" })
+  local win = vim.fn.bufwinid(bufnr)
+  local original_number = false
+  if win ~= -1 then
+    original_number = vim.api.nvim_get_option_value("number", { win = win })
   end
 
-  -- Show line numbers
-  local win = vim.fn.bufwinid(bufnr)
-  if win ~= -1 then
-    vim.api.nvim_win_set_option(win, "number", true)
+  -- Create highlight groups for each color
+  local hl_groups = {}
+  for i, color in ipairs(gradient_colors) do
+    local hl_group = "VibingGradient" .. bufnr .. "_" .. i
+    vim.api.nvim_set_hl(0, hl_group, { fg = color, bg = "NONE" })
+    table.insert(hl_groups, hl_group)
+  end
+
+  -- Show line numbers (only if not already enabled)
+  if win ~= -1 and not original_number then
+    vim.api.nvim_set_option_value("number", true, { win = win })
   end
 
   local offset = 0
@@ -161,6 +177,8 @@ function M.start(bufnr, start_color, end_color, interval)
     timer = timer,
     ns_id = ns_id,
     original_hl = original_hl,
+    original_number = original_number,
+    hl_groups = hl_groups,
   }
 end
 
@@ -178,8 +196,14 @@ function M.stop(bufnr)
     animation.timer:close()
   end
 
-  -- Restore original highlight
-  restore_original_highlight(bufnr, animation.ns_id, animation.original_hl)
+  -- Restore original highlight and settings
+  restore_original_highlight(
+    bufnr,
+    animation.ns_id,
+    animation.original_hl,
+    animation.original_number,
+    animation.hl_groups
+  )
 
   -- Remove from active animations
   active_animations[bufnr] = nil

@@ -13,7 +13,6 @@ describe("vibing.actions.inline", function()
     package.loaded["vibing"] = nil
     package.loaded["vibing.context"] = nil
     package.loaded["vibing.ui.output_buffer"] = nil
-    package.loaded["vibing.ui.inline_progress"] = nil
     package.loaded["vibing.utils.buffer_reload"] = nil
 
     -- Setup mock config
@@ -71,24 +70,6 @@ describe("vibing.actions.inline", function()
         }
       end,
     }
-
-    -- Mock InlineProgress
-    local MockInlineProgress = {}
-    MockInlineProgress.__index = MockInlineProgress
-    function MockInlineProgress:new()
-      return setmetatable({ _modified_files = {} }, MockInlineProgress)
-    end
-    function MockInlineProgress:show() end
-    function MockInlineProgress:update_status() end
-    function MockInlineProgress:update_tool() end
-    function MockInlineProgress:add_modified_file(path)
-      table.insert(self._modified_files, path)
-    end
-    function MockInlineProgress:get_modified_files()
-      return self._modified_files
-    end
-    function MockInlineProgress:close() end
-    package.loaded["vibing.ui.inline_progress"] = MockInlineProgress
 
     -- Mock BufferReload
     package.loaded["vibing.utils.buffer_reload"] = {
