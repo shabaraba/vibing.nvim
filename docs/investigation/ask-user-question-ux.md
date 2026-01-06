@@ -302,11 +302,133 @@ local QuestionState = {
 5. **中断可能**: `<Esc>`でキャンセル可能
 6. **Neovimネイティブ**: 外部UIに依存しない
 
-#### ⚠️ 検討事項
+#### ⚠️ 検討事項とキーバインド改善案
 
-1. **一時的なキーマップ**: 通常のキーマップを上書きする（質問中のみ）
-2. **複数質問の処理**: 順次表示（一問ずつ）
-3. **視覚的フィードバック**: バッファ更新で選択状態を表示
+##### 問題: 一時的なキーマップの上書き
+
+番号キー（1-4）やEnterキーを一時的に上書きすることは侵襲的で、以下の問題があります:
+
+- ユーザーの通常の操作を妨げる
+- 予期しない動作でユーザーが混乱する
+- 他のプラグインと競合する可能性
+
+##### 改善案
+
+**方式A: プレフィックスキー方式（推奨）**
+
+`:` や `g` などのプレフィックスキーと組み合わせて使用:
+
+```lua
+-- 質問表示中のキーマップ
+vim.keymap.set('n', ':1', select_option(1), { buffer = buf, nowait = true })
+vim.keymap.set('n', ':2', select_option(2), { buffer = buf, nowait = true })
+vim.keymap.set('n', ':3', select_option(3), { buffer = buf, nowait = true })
+vim.keymap.set('n', ':4', select_option(4), { buffer = buf, nowait = true })
+
+-- または gq (go question) プレフィックス
+vim.keymap.set('n', 'gq1', select_option(1), { buffer = buf, nowait = true })
+vim.keymap.set('n', 'gq2', select_option(2), { buffer = buf, nowait = true })
+-- ...
+```
+
+表示例:
+
+```markdown
+Press :1-4 to select, or <Esc> to cancel
+```
+
+**方式B: 専用コマンド方式**
+
+`:VibingAnswer 1` のようなコマンドを用意:
+
+```vim
+:VibingAnswer 1    " 選択肢1を選ぶ
+:VibingAnswer 2    " 選択肢2を選ぶ
+```
+
+- メリット: キーマップを一切上書きしない
+- デメリット: 入力が冗長
+
+**方式C: カーソル移動 + Enter方式**
+
+選択肢の行にカーソルを移動して `<CR>` で選択:
+
+```markdown
+1. PostgreSQL ← カーソルをここに移動して <CR>
+   → Relational, ACID compliant
+
+2. MongoDB
+   → Document-based, flexible schema
+```
+
+- メリット: Vimの標準操作に近い
+- デメリット: 複数選択時の実装が複雑
+
+**方式D: Insert モード入力方式**
+
+質問セクションの下にプロンプトを表示し、Insert モードで番号を入力:
+
+```markdown
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 Question 1/2: Database
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Which database should we use?
+
+1. PostgreSQL
+2. MongoDB
+3. MySQL
+
+Your answer (1-3): \_ ← Insert モードでここに入力
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+- メリット: キーマップを上書きしない
+- デメリット: モード切り替えが必要
+
+##### 推奨: 方式A（プレフィックスキー）
+
+`:1-4` または `gq1-4` のような**プレフィックスキー方式**を推奨します:
+
+**理由:**
+
+1. ✅ ユーザーの通常のキーマップを保護
+2. ✅ Vim らしい操作感（gf, gd などと同様）
+3. ✅ 実装がシンプル
+4. ✅ 複数選択にも対応しやすい
+
+**実装例:**
+
+```lua
+-- 単一選択モード
+vim.keymap.set('n', 'gq1', select_option(1), { buffer = buf, nowait = true })
+vim.keymap.set('n', 'gq2', select_option(2), { buffer = buf, nowait = true })
+vim.keymap.set('n', 'gq3', select_option(3), { buffer = buf, nowait = true })
+vim.keymap.set('n', 'gq4', select_option(4), { buffer = buf, nowait = true })
+vim.keymap.set('n', '<Esc>', cancel_question, { buffer = buf, nowait = true })
+
+-- 複数選択モード
+vim.keymap.set('n', 'gq1', toggle_option(1), { buffer = buf, nowait = true })
+vim.keymap.set('n', 'gq2', toggle_option(2), { buffer = buf, nowait = true })
+vim.keymap.set('n', 'gq3', toggle_option(3), { buffer = buf, nowait = true })
+vim.keymap.set('n', 'gq4', toggle_option(4), { buffer = buf, nowait = true })
+vim.keymap.set('n', '<CR>', confirm_selection, { buffer = buf, nowait = true })
+vim.keymap.set('n', '<Esc>', cancel_question, { buffer = buf, nowait = true })
+```
+
+**表示例:**
+
+```markdown
+Press gq1-4 to select, or <Esc> to cancel
+```
+
+この方式により、ユーザーの通常の操作を妨げることなく、直感的な質問応答UIを実現できます。
+
+##### その他の検討事項
+
+1. **複数質問の処理**: 順次表示（一問ずつ）
+2. **視覚的フィードバック**: バッファ更新で選択状態を表示
+3. **設定可能なプレフィックス**: ユーザーが `gq` を好みのプレフィックスに変更できる
 
 ### 代替案との比較
 
@@ -365,3 +487,142 @@ local QuestionState = {
 
 Telescopeやvim.ui.selectなどのグローバルUIは使わず、チャットバッファ内で完結させることで、
 複数のvibing.nvimインスタンスが同時に動作しても問題なく動作します。
+
+## 最終推奨案: 方式C（カーソル移動 + Enter）の改良版
+
+### 概要
+
+上記の検討を踏まえ、**キーマップを一切上書きせず**、Neovimの標準的な操作感を保つ方式を最終推奨とします。
+
+### 操作フロー
+
+1. 質問が表示される
+2. ユーザーは `j`/`k` で選択肢にカーソルを移動
+3. 選択したい行で `<CR>` を押す
+4. 回答が確定し、Claudeが処理を続行
+
+### 表示形式
+
+```markdown
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 Question 1/2: Database
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Which database should we use?
+
+→ PostgreSQL ← カーソルがここにある時に <CR>
+Relational, ACID compliant
+
+MongoDB
+Document-based, flexible schema
+
+MySQL
+Popular open-source relational database
+
+Move with j/k, select with <CR>, cancel with <Esc>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### 複数選択の場合
+
+```markdown
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 Question 2/2: Features (Multi-select)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Which features should we enable?
+
+→ [x] Authentication ← カーソルがここにある時に <Space>
+User login and sessions
+
+[ ] Caching
+Redis-based response caching
+
+[x] Logging
+Request and error logging
+
+Toggle with <Space>, confirm with <CR>, cancel with <Esc>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### 実装方式
+
+#### 選択肢の識別
+
+各選択肢の行に特別なマーカーを埋め込む（concealed text使用）:
+
+```lua
+-- 選択肢1の行（ユーザーには "→ PostgreSQL" と表示される）
+"→ PostgreSQL<!--vibing:option:1-->"
+
+-- conceallevelにより "<!--vibing:option:1-->" は非表示
+```
+
+#### キーマップ（最小限）
+
+```lua
+-- 単一選択モード: Enterで選択
+vim.keymap.set('n', '<CR>', function()
+  local line = vim.api.nvim_get_current_line()
+  local option_num = line:match('<!--vibing:option:(%d+)-->')
+  if option_num then
+    select_option(tonumber(option_num))
+  end
+end, { buffer = buf, nowait = true })
+
+-- 複数選択モード: Spaceでトグル、Enterで確定
+vim.keymap.set('n', '<Space>', function()
+  local line = vim.api.nvim_get_current_line()
+  local option_num = line:match('<!--vibing:option:(%d+)-->')
+  if option_num then
+    toggle_option(tonumber(option_num))
+  end
+end, { buffer = buf, nowait = true })
+
+vim.keymap.set('n', '<CR>', confirm_selection, { buffer = buf, nowait = true })
+
+-- 共通: Escでキャンセル
+vim.keymap.set('n', '<Esc>', cancel_question, { buffer = buf, nowait = true })
+```
+
+### メリット
+
+1. ✅ **キーマップの上書きが最小限**: `<CR>`, `<Space>`, `<Esc>` のみ
+   - `j`/`k` などの移動キーは上書きしない
+   - 番号キーは一切触らない
+2. ✅ **Vimらしい操作感**: カーソル移動 → Enter で選択
+3. ✅ **視覚的に直感的**: カーソルが選択肢上にある = 選択可能
+4. ✅ **複数選択も自然**: Space でトグル → Enter で確定
+5. ✅ **実装も比較的シンプル**: concealed text を活用
+
+### デメリットと対策
+
+#### デメリット1: `<CR>` の上書き
+
+- 通常、`<CR>` はカーソル下の行に移動するが、質問中は選択として機能する
+- **対策**: 質問終了後すぐにキーマップを削除
+
+#### デメリット2: 複数選択時の `<Space>` 上書き
+
+- 通常、`<Space>` は右に移動するが、質問中はトグルとして機能する
+- **対策**: 単一選択時は `<Space>` を上書きしない
+
+#### デメリット3: 選択肢以外の行で `<CR>` を押した場合
+
+- 何も起こらないようにする（無視）
+- **対策**: `option_num` が `nil` の場合は何もしない
+
+### 最終的な推奨理由
+
+| 項目                 | 評価                                |
+| -------------------- | ----------------------------------- |
+| キーマップの侵襲性   | ⭐⭐⭐⭐ 最小限（CR/Space/Escのみ） |
+| Vimらしさ            | ⭐⭐⭐⭐⭐ カーソル移動+Enter       |
+| 視覚的わかりやすさ   | ⭐⭐⭐⭐⭐ カーソル位置が明確       |
+| 実装の複雑さ         | ⭐⭐⭐ 中程度（concealed text活用） |
+| 複数選択対応         | ⭐⭐⭐⭐ Spaceトグル+Enter確認      |
+| 複数インスタンス対応 | ⭐⭐⭐⭐⭐ バッファごとに独立       |
+
+**結論**: 方式C（カーソル移動 + Enter）の改良版を最終推奨とします。
+Concealed textを活用することで、視覚的にシンプルな表示を保ちつつ、
+キーマップの上書きを最小限に抑えることができます。
