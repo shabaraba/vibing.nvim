@@ -8,13 +8,6 @@
  */
 
 import { strict as assert } from 'assert';
-import { spawn } from 'child_process';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const wrapperPath = join(__dirname, '..', 'bin', 'agent-wrapper.mjs');
 
 // Mock test data
 const mockQuestion = {
@@ -167,11 +160,7 @@ async function testUpdatedInputFormat() {
 async function testMultiSelectAnswerFormat() {
   console.log('Test: multi-select answer format');
 
-  const multiSelectQuestion = {
-    ...mockQuestion,
-    multiSelect: true,
-  };
-
+  // multiSelect: true case - verify answer format with multiple selections
   // Simulate multiple selections as comma-separated string
   const answers = { 'Which database should we use?': 'PostgreSQL, MongoDB' };
 
