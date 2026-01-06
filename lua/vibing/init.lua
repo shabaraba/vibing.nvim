@@ -74,7 +74,31 @@ function M._register_commands()
   -- チャット関連コマンド
   vim.api.nvim_create_user_command("VibingChat", function(opts)
     require("vibing.presentation.chat.controller").handle_open(opts.args)
-  end, { nargs = "?", desc = "Open Vibing chat or chat file", complete = "file" })
+  end, {
+    nargs = "?",
+    desc = "Open Vibing chat with optional position (current|right|left) or file",
+    complete = function(arg_lead, cmd_line, cursor_pos)
+      -- First argument: position or file
+      local args = vim.split(cmd_line, "%s+")
+      if #args == 2 then
+        -- Complete position keywords or files
+        local positions = { "current", "right", "left" }
+        local matches = {}
+        for _, pos in ipairs(positions) do
+          if pos:find("^" .. vim.pesc(arg_lead)) then
+            table.insert(matches, pos)
+          end
+        end
+        -- Also add file completion
+        local files = vim.fn.getcompletion(arg_lead, "file")
+        for _, file in ipairs(files) do
+          table.insert(matches, file)
+        end
+        return matches
+      end
+      return {}
+    end,
+  })
 
   vim.api.nvim_create_user_command("VibingToggleChat", function()
     require("vibing.presentation.chat.controller").handle_toggle()
