@@ -142,9 +142,11 @@ end
 
 ---Check if a port is already in use by another instance
 ---@param port number Port to check
+---@param instances? table Optional cached instances list (from M.list())
 ---@return boolean in_use Whether port is in use
-function M.is_port_in_use(port)
-  local instances = M.list()
+function M.is_port_in_use(port, instances)
+  -- Use cached instances if provided, otherwise fetch fresh list
+  instances = instances or M.list()
 
   for _, instance in ipairs(instances) do
     if instance.port == port then

@@ -83,16 +83,24 @@ function M.start(base_port)
   local max_attempts = 10
   local successful_port = nil
 
+  -- Cache instance list once to avoid repeated file I/O in port loop
+  local registered_instances = registry.list()
+
   -- Try ports from base_port to base_port+9
   for i = 0, max_attempts - 1 do
     local try_port = base_port + i
 
-    -- Skip if port is already in use by another instance
-    if registry.is_port_in_use(try_port) then
+    -- Skip if port is already in use by another instance (check registry)
+    -- Note: TOCTOU race condition is acceptable here - bind() will fail atomically
+    -- if port becomes occupied between this check and the bind() call
+    if registry.is_port_in_use(try_port, registered_instances) then
       goto continue
     end
 
     server = uv.new_tcp()
+    -- Atomically attempt to bind to the port
+    -- If another process takes the port between the registry check and this call,
+    -- bind() will fail and we'll try the next port
     local bind_ok, bind_err = server:bind("127.0.0.1", try_port)
 
     if bind_ok then
