@@ -3,10 +3,18 @@
 ---インラインアクションとチャットの両方で使用されるdiffプレビューUIを制御
 ---@field enabled boolean プレビューUI有効化（trueでGit diffプレビュー表示、要Gitリポジトリ）
 
+---@class Vibing.GradientConfig
+---グラデーションアニメーション設定
+---AI応答中に行番号をグラデーションアニメーションで視覚的にフィードバック
+---@field enabled boolean グラデーションアニメーション有効化（trueで応答中に行番号がアニメーション）
+---@field colors string[] グラデーション色の配列（2色指定: {開始色, 終了色}、例: {"#cc3300", "#fffe00"}）
+---@field interval number アニメーション更新間隔（ミリ秒、デフォルト: 100）
+
 ---@class Vibing.UiConfig
 ---UI設定
 ---全UIコンポーネント（Chat、Inline、Output）に適用される表示設定
 ---@field wrap "nvim"|"on"|"off" 行の折り返し設定（"nvim": Neovimデフォルト、"on": wrap+linebreak有効、"off": wrap無効）
+---@field gradient Vibing.GradientConfig グラデーションアニメーション設定（応答中の視覚的フィードバック）
 
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
@@ -17,7 +25,6 @@
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
 ---@field preview Vibing.PreviewConfig プレビューUI設定（diffプレビュー有効化）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
----@field status Vibing.StatusConfig ステータス通知設定（Claude側のターン状態表示）
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
 ---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
 
@@ -89,14 +96,6 @@
 ---@field chat? string chatアクションでの言語（指定されていない場合はdefaultを使用）
 ---@field inline? string inlineアクションでの言語（指定されていない場合はdefaultを使用）
 
----@class Vibing.StatusConfig
----ステータス通知設定
----Claudeのターン中（思考中、ツール実行中、応答中）の状態をvim.notifyで表示
----重複するメッセージは自動的にスキップされ、変更があった時のみ通知
----@field enable boolean ステータス通知を有効化（trueで状態表示、falseで無効）
----@field show_tool_details boolean ツール詳細を表示（trueで"Running Edit(file.lua)"、falseで"Running Edit"）
----@field auto_dismiss_timeout number 完了通知の自動消去タイムアウト（ミリ秒、0で自動消去なし）
-
 local notify = require("vibing.core.utils.notify")
 local tools_const = require("vibing.constants.tools")
 local language_utils = require("vibing.core.utils.language")
@@ -123,6 +122,14 @@ M.defaults = {
   },
   ui = {
     wrap = "on",  -- "nvim" | "on" | "off"
+    gradient = {
+      enabled = true,  -- Enable gradient animation during AI response
+      colors = {
+        "#cc3300",  -- Start color (orange, matching vibing.nvim logo)
+        "#fffe00",  -- End color (yellow, matching vibing.nvim logo)
+      },
+      interval = 100,  -- Animation update interval in milliseconds
+    },
   },
   keymaps = {
     send = "<CR>",
@@ -148,11 +155,6 @@ M.defaults = {
     },
     ask = {},  -- Tools requiring approval before use
     rules = {},  -- Granular permission rules (optional)
-  },
-  status = {
-    enable = true,  -- Enable status notifications
-    show_tool_details = true,  -- Show tool input details
-    auto_dismiss_timeout = 2000,  -- Auto-dismiss done notification after 2s
   },
   mcp = {
     enabled = true,  -- MCP integration enabled by default (auto-allows vibing-nvim MCP tools)
@@ -225,6 +227,42 @@ function M.setup(opts)
         M.options.ui.wrap
       ))
       M.options.ui.wrap = "on"  -- Fallback to default
+    end
+  end
+
+  -- Validate ui.gradient configuration
+  if M.options.ui and M.options.ui.gradient then
+    local gradient = M.options.ui.gradient
+
+    -- Validate colors array
+    if gradient.colors then
+      if type(gradient.colors) ~= "table" or #gradient.colors ~= 2 then
+        notify.warn(
+          "Invalid ui.gradient.colors: must be an array of exactly 2 color strings. " ..
+          "Falling back to default (orange to yellow)."
+        )
+        M.options.ui.gradient.colors = { "#cc3300", "#fffe00" }
+      else
+        -- Validate color format (simple hex check)
+        for i, color in ipairs(gradient.colors) do
+          if type(color) ~= "string" or not color:match("^#%x%x%x%x%x%x$") then
+            notify.warn(string.format(
+              "Invalid color format at ui.gradient.colors[%d]: '%s'. Expected hex format like '#ff0000'.",
+              i, tostring(color)
+            ))
+          end
+        end
+      end
+    end
+
+    -- Validate interval
+    if gradient.interval then
+      if type(gradient.interval) ~= "number" or gradient.interval <= 0 then
+        notify.warn(
+          "Invalid ui.gradient.interval: must be a positive number. Falling back to default (100ms)."
+        )
+        M.options.ui.gradient.interval = 100
+      end
     end
   end
 

@@ -833,6 +833,9 @@ function ChatBuffer:send_message()
     add_user_section = function()
       return self:add_user_section()
     end,
+    get_bufnr = function()
+      return self.buf
+    end,
   }
 
   SendMessage.execute(adapter, callbacks, message, config)
@@ -861,7 +864,6 @@ function ChatBuffer:start_response()
     "",
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
-  -- StatusManagerがスピナー表示を担当するため、ここではスピナーを開始しない
 end
 
 ---バッファリングされたチャンクをフラッシュしてバッファに書き込む

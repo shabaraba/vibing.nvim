@@ -51,7 +51,6 @@
 ---@class Vibing.AdapterOpts
 ---@field streaming boolean?
 ---@field action_type "chat"|"inline"?
----@field status_manager any?
 ---@field mode string?
 ---@field model string?
 ---@field tools string[]?

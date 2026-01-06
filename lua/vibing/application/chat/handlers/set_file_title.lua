@@ -1,7 +1,6 @@
 local notify = require("vibing.core.utils.notify")
 local title_generator = require("vibing.core.utils.title_generator")
 local filename_util = require("vibing.core.utils.filename")
-local StatusManager = require("vibing.status_manager")
 
 ---@param file_path string?
 ---@return "chat"|"inline"
@@ -68,19 +67,13 @@ return function(_, chat_buffer)
   local file_type = detect_file_type(old_file_path)
   local save_dir = chat_buffer:_get_save_directory()
 
-  local vibing = require("vibing")
-  local config = vibing.get_config()
-  local status_mgr = StatusManager:new(config.status)
-  status_mgr:set_thinking("chat")
-
   title_generator.generate_from_conversation(conversation, function(title, err)
     if err then
-      status_mgr:set_error(string.format("Failed to generate title: %s", err))
+      notify.error(string.format("Failed to generate title: %s", err))
       return
     end
 
     if not chat_buffer.buf or not vim.api.nvim_buf_is_valid(chat_buffer.buf) then
-      status_mgr:clear()
       notify.warn("Buffer was closed before title generation completed")
       return
     end
@@ -102,13 +95,13 @@ return function(_, chat_buffer)
       end)
 
       if not ok then
-        status_mgr:set_error(string.format("Failed to save: %s", save_err))
+        notify.error(string.format("Failed to save: %s", save_err))
         return
       end
 
       local rename_result = vim.fn.rename(old_file_path, new_file_path)
       if rename_result ~= 0 then
-        status_mgr:set_error("Failed to rename file")
+        notify.error("Failed to rename file")
         return
       end
 
@@ -125,12 +118,11 @@ return function(_, chat_buffer)
       end)
 
       if not ok then
-        status_mgr:set_error(string.format("Failed to save: %s", save_err))
+        notify.error(string.format("Failed to save: %s", save_err))
         return
       end
     end
 
-    status_mgr:set_done()
     local relative_path = vim.fn.fnamemodify(new_file_path, ":.")
     notify.info(string.format("Renamed to: %s", relative_path))
   end)
