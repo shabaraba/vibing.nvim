@@ -49,43 +49,6 @@ function M.setup(opts)
     end
   end
 
-  -- FileType autocmd でvibingバッファにwrap設定を適用
-  local ui_utils = require("vibing.core.utils.ui")
-
-  -- BufWinEnterイベント（ウィンドウに表示されたとき）
-  -- FileTypeイベントよりも確実にウィンドウが存在するタイミングで発火
-  vim.api.nvim_create_autocmd("BufWinEnter", {
-    pattern = "*.vibing",  -- .vibingファイルのみ
-    callback = function(args)
-      local buf = args.buf
-      if vim.bo[buf].filetype == "vibing" then
-        local win = vim.fn.bufwinid(buf)
-        if win ~= -1 then
-          ui_utils.apply_wrap_config(win)
-        end
-      end
-    end,
-    desc = "Apply wrap configuration when vibing buffer enters window",
-  })
-
-  -- FileTypeイベント（filetype設定時）
-  -- プログラムで作成したバッファ（拡張子がない場合）用
-  vim.api.nvim_create_autocmd("FileType", {
-    pattern = "vibing",
-    callback = function(args)
-      -- vim.schedule で次のイベントループまで遅延（ウィンドウが確実に作成されるまで待つ）
-      vim.schedule(function()
-        local buf = args.buf
-        for _, win in ipairs(vim.api.nvim_list_wins()) do
-          if vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
-            ui_utils.apply_wrap_config(win)
-          end
-        end
-      end)
-    end,
-    desc = "Apply wrap configuration to vibing buffers",
-  })
-
   -- アダプターの初期化（agent_sdk固定）
   local AgentSDK = require("vibing.infrastructure.adapter.agent_sdk")
   M.adapter = AgentSDK:new(M.config)
