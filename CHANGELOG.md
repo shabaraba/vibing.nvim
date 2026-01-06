@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.15.1 (2026-01-06)
+
+## What's Changed
+
+- fix: apply wrap settings only to vibing buffers by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/260
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.15.0...v1.15.1
+
 ## 1.15.0 (2026-01-06)
 
 ## What's Changed
