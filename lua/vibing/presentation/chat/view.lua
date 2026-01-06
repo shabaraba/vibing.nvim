@@ -16,23 +16,24 @@ M._attached_buffers = {}
 
 ---セッションをチャットバッファに描画
 ---@param session Vibing.ChatSession
-function M.render(session)
+---@param position? string 位置指定（current|right|left）
+function M.render(session, position)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
-  -- 既存バッファを再利用するか新規作成
-  local chat_buf
-  if M._current_buffer and M._current_buffer:is_open() then
-    chat_buf = M._current_buffer
-  else
-    chat_buf = ChatBuffer:new(config.chat)
-    M._current_buffer = chat_buf
-  end
+  -- 毎回新規バッファを作成（既存バッファを再利用しない）
+  local chat_buf = ChatBuffer:new(config.chat)
+  M._current_buffer = chat_buf
 
   -- セッションデータをバッファに反映
   if session.file_path then
     chat_buf.file_path = session.file_path
     chat_buf.session_id = session.session_id
+  end
+
+  -- 位置指定が指定されている場合は一時的にオーバーライド
+  if position then
+    chat_buf.config.window.position = position
   end
 
   chat_buf:open()
