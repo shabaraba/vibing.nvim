@@ -12,7 +12,7 @@ export async function handleExecute(args: any) {
   validateRequired(args?.command, 'command');
   validateCommand({ command: args.command });
 
-  await callNeovim('execute', { command: args.command });
+  await callNeovim('execute', { command: args.command }, args?.rpc_port);
   return {
     content: [{ type: 'text', text: `Executed: ${args.command}` }],
   };

@@ -23,6 +23,7 @@ let permissionMode = 'acceptEdits';
 let prioritizeVibingLsp = true; // Default: prioritize vibing-nvim LSP tools
 let mcpEnabled = false; // Default: MCP integration disabled
 let language = null; // Language code for AI responses (e.g., "ja", "en")
+let rpcPort = null; // RPC port of the Neovim instance running this chat
 
 // Parse arguments
 for (let i = 0; i < args.length; i++) {
@@ -124,6 +125,9 @@ for (let i = 0; i < args.length; i++) {
   } else if (args[i] === '--language' && args[i + 1]) {
     language = args[i + 1];
     i++;
+  } else if (args[i] === '--rpc-port' && args[i + 1]) {
+    rpcPort = parseInt(args[i + 1], 10);
+    i++;
   } else if (!args[i].startsWith('--')) {
     prompt = args[i];
   }
@@ -191,8 +195,28 @@ Only reference actual messages within THIS current session.
 
   let vibingSystemPrompt = '';
   if (prioritizeVibingLsp) {
+    const rpcPortInfo = rpcPort
+      ? `
+
+## Current Neovim Instance
+
+This chat is running in a Neovim instance with RPC port: ${rpcPort}
+
+CRITICAL: When using vibing-nvim MCP tools, you MUST pass \`rpc_port: ${rpcPort}\` to ensure you operate on THIS Neovim instance, not others.
+
+Example:
+\`\`\`javascript
+// ✅ CORRECT - Operates on THIS Neovim instance
+await mcp__vibing-nvim__nvim_list_windows({ rpc_port: ${rpcPort} });
+
+// ❌ WRONG - May operate on a different Neovim instance
+await mcp__vibing-nvim__nvim_list_windows({});
+\`\`\`
+`
+      : '';
+
     vibingSystemPrompt = `<vibing-nvim-system>
-IMPORTANT: You are running inside vibing.nvim, a Neovim plugin with Claude Code integration.
+IMPORTANT: You are running inside vibing.nvim, a Neovim plugin with Claude Code integration.${rpcPortInfo}
 
 ## Tool Priority for LSP Operations
 

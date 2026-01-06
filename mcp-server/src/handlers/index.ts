@@ -3,6 +3,7 @@ import * as cursor from './cursor.js';
 import * as execute from './execute.js';
 import * as window from './window.js';
 import * as lsp from './lsp.js';
+import * as instances from './instances.js';
 
 export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Buffer operations
@@ -39,4 +40,7 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_lsp_type_definition: lsp.handleLspTypeDefinition,
   nvim_lsp_call_hierarchy_incoming: lsp.handleLspCallHierarchyIncoming,
   nvim_lsp_call_hierarchy_outgoing: lsp.handleLspCallHierarchyOutgoing,
+
+  // Instance management
+  nvim_list_instances: instances.handleListInstances,
 };

@@ -15,7 +15,7 @@ export async function handleLspDefinition(args: any) {
     bufnr: args.bufnr,
     line: args.line,
     col: args.col,
-  });
+  }, args?.rpc_port);
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
   };
@@ -39,7 +39,7 @@ export async function handleLspReferences(args: any) {
     bufnr: args.bufnr,
     line: args.line,
     col: args.col,
-  });
+  }, args?.rpc_port);
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
   };
@@ -59,7 +59,7 @@ export async function handleLspHover(args: any) {
     bufnr: args.bufnr,
     line: args.line,
     col: args.col,
-  });
+  }, args?.rpc_port);
   return {
     content: [
       { type: 'text', text: result.contents || 'No hover information available' },
@@ -74,7 +74,7 @@ export async function handleLspHover(args: any) {
  * @returns An object with a `content` array containing a single text node whose `text` is the pretty-printed JSON representation of the diagnostics result.
  */
 export async function handleDiagnostics(args: any) {
-  const result = await callNeovim('diagnostics_get', { bufnr: args?.bufnr });
+  const result = await callNeovim('diagnostics_get', { bufnr: args?.bufnr }, args?.rpc_port);
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
   };
@@ -87,7 +87,7 @@ export async function handleDiagnostics(args: any) {
  * @returns An object with a `content` array containing a single text node whose `text` is the pretty-printed JSON representation of the document symbols.
  */
 export async function handleLspDocumentSymbols(args: any) {
-  const result = await callNeovim('lsp_document_symbols', { bufnr: args?.bufnr });
+  const result = await callNeovim('lsp_document_symbols', { bufnr: args?.bufnr }, args?.rpc_port);
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
   };
@@ -108,7 +108,7 @@ export async function handleLspTypeDefinition(args: any) {
     bufnr: args.bufnr,
     line: args.line,
     col: args.col,
-  });
+  }, args?.rpc_port);
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
   };
@@ -129,7 +129,7 @@ export async function handleLspCallHierarchyIncoming(args: any) {
     bufnr: args.bufnr,
     line: args.line,
     col: args.col,
-  });
+  }, args?.rpc_port);
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
   };
@@ -150,7 +150,7 @@ export async function handleLspCallHierarchyOutgoing(args: any) {
     bufnr: args.bufnr,
     line: args.line,
     col: args.col,
-  });
+  }, args?.rpc_port);
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
   };

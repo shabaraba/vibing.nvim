@@ -158,6 +158,14 @@ function AgentSDK:build_command(prompt, opts, session_id)
     table.insert(cmd, language)
   end
 
+  -- Add RPC port: Get from RPC server
+  local rpc_server = require("vibing.infrastructure.rpc.server")
+  local rpc_port = rpc_server.get_port()
+  if rpc_port then
+    table.insert(cmd, "--rpc-port")
+    table.insert(cmd, tostring(rpc_port))
+  end
+
   table.insert(cmd, "--prompt")
   table.insert(cmd, prompt)
 

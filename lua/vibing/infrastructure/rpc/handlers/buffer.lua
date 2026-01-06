@@ -51,13 +51,16 @@ end
 --   filename (string): absolute path of the current file.
 --   filetype (string): filetype of the current buffer.
 --   modified (boolean): whether the current buffer has unsaved changes.
+--   rpc_port (number|nil): RPC port of this Neovim instance, or nil if server not running.
 function M.get_current_file(params)
   local bufnr = vim.api.nvim_get_current_buf()
+  local rpc_server = require("vibing.infrastructure.rpc.server")
   return {
     bufnr = bufnr,
     filename = vim.fn.expand("%:p"),
     filetype = vim.bo.filetype,
     modified = vim.bo[bufnr].modified,
+    rpc_port = rpc_server.get_port(),
   }
 end
 

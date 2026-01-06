@@ -1,15 +1,17 @@
+import { withRpcPort } from './common.js';
+
 export const bufferTools = [
   {
     name: 'nvim_get_buffer',
     description: 'Get current buffer content',
     inputSchema: {
       type: 'object' as const,
-      properties: {
+      properties: withRpcPort({
         bufnr: {
           type: 'number' as const,
           description: 'Buffer number (0 for current buffer)',
         },
-      },
+      }),
     },
   },
   {
@@ -17,7 +19,7 @@ export const bufferTools = [
     description: 'Replace buffer content',
     inputSchema: {
       type: 'object' as const,
-      properties: {
+      properties: withRpcPort({
         lines: {
           type: 'string' as const,
           description: 'New content (newline-separated)',
@@ -26,7 +28,7 @@ export const bufferTools = [
           type: 'number' as const,
           description: 'Buffer number (0 for current buffer)',
         },
-      },
+      }),
       required: ['lines'],
     },
   },
@@ -35,7 +37,7 @@ export const bufferTools = [
     description: 'Get current file information',
     inputSchema: {
       type: 'object' as const,
-      properties: {},
+      properties: withRpcPort({}),
     },
   },
   {
@@ -43,7 +45,7 @@ export const bufferTools = [
     description: 'List all loaded buffers',
     inputSchema: {
       type: 'object' as const,
-      properties: {},
+      properties: withRpcPort({}),
     },
   },
   {
@@ -52,12 +54,12 @@ export const bufferTools = [
       'Load file into buffer without displaying it (background load for LSP). Returns buffer number. Use this instead of nvim_execute("edit") + nvim_execute("bp") workflow.',
     inputSchema: {
       type: 'object' as const,
-      properties: {
+      properties: withRpcPort({
         filepath: {
           type: 'string' as const,
           description: 'Absolute or relative path to file to load',
         },
-      },
+      }),
       required: ['filepath'],
     },
   },

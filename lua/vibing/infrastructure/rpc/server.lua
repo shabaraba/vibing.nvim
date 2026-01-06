@@ -7,6 +7,7 @@ local M = {}
 local uv = vim.loop
 local notify = require("vibing.core.utils.notify")
 local handlers = require("vibing.infrastructure.rpc.handlers")
+local registry = require("vibing.infrastructure.rpc.registry")
 
 ---@type uv_tcp_t?
 local server = nil
@@ -67,87 +68,134 @@ local function handle_request(client, request)
   end)
 end
 
----Start RPC server
----@param port? number ポート番号（デフォルト: 9876）
----@return number port 実際に使用されているポート番号
-function M.start(port)
-  port = port or 9876
+---Start RPC server with dynamic port allocation
+---Tries ports from base_port to base_port+9 until finding an available one
+---@param base_port? number Base port number (default: 9876)
+---@return number port Actual port number in use (0 if failed)
+function M.start(base_port)
+  base_port = base_port or 9876
 
   if server then
     notify.warn(string.format("RPC server already running on port %d", current_port))
     return current_port
   end
 
-  server = uv.new_tcp()
-  local bind_ok, bind_err = server:bind("127.0.0.1", port)
+  local max_attempts = 10
+  local successful_port = nil
 
-  if not bind_ok then
-    notify.error(string.format("Failed to bind RPC server: %s", bind_err))
-    server:close()
-    server = nil
-    return 0
-  end
+  -- Cache instance list once to avoid repeated file I/O in port loop
+  local registered_instances = registry.list()
 
-  local listen_ok, listen_err = server:listen(128, function(err)
-    if err then
-      vim.schedule(function()
-        notify.error(string.format("RPC server error: %s", err))
-      end)
-      return
+  -- Try ports from base_port to base_port+9
+  for i = 0, max_attempts - 1 do
+    local try_port = base_port + i
+
+    -- Skip if port is already in use by another instance (check registry)
+    -- Note: TOCTOU race condition is acceptable here - bind() will fail atomically
+    -- if port becomes occupied between this check and the bind() call
+    if registry.is_port_in_use(try_port, registered_instances) then
+      goto continue
     end
 
-    local client = uv.new_tcp()
-    server:accept(client)
-    clients[client] = true
+    server = uv.new_tcp()
+    -- Atomically attempt to bind to the port
+    -- If another process takes the port between the registry check and this call,
+    -- bind() will fail and we'll try the next port
+    local bind_ok, bind_err = server:bind("127.0.0.1", try_port)
 
-    local buffer = ""
-
-    client:read_start(function(read_err, chunk)
-      if read_err then
-        clients[client] = nil
-        client:close()
-        return
-      end
-
-      if chunk then
-        buffer = buffer .. chunk
-
-        -- 改行区切りで複数リクエスト処理
-        while true do
-          local newline_pos = buffer:find("\n")
-          if not newline_pos then
-            break
-          end
-
-          local line = buffer:sub(1, newline_pos - 1)
-          buffer = buffer:sub(newline_pos + 1)
-
-          if #line > 0 then
-            handle_request(client, line)
-          end
+    if bind_ok then
+      local listen_ok, listen_err = server:listen(128, function(err)
+        if err then
+          vim.schedule(function()
+            notify.error(string.format("RPC server error: %s", err))
+          end)
+          return
         end
-      else
-        -- EOF
-        clients[client] = nil
-        client:close()
-      end
-    end)
-  end)
 
-  if not listen_ok then
-    notify.error(string.format("Failed to listen on RPC server: %s", listen_err))
-    server:close()
-    server = nil
+        local client = uv.new_tcp()
+        server:accept(client)
+        clients[client] = true
+
+        local buffer = ""
+
+        client:read_start(function(read_err, chunk)
+          if read_err then
+            clients[client] = nil
+            client:close()
+            return
+          end
+
+          if chunk then
+            buffer = buffer .. chunk
+
+            -- 改行区切りで複数リクエスト処理
+            while true do
+              local newline_pos = buffer:find("\n")
+              if not newline_pos then
+                break
+              end
+
+              local line = buffer:sub(1, newline_pos - 1)
+              buffer = buffer:sub(newline_pos + 1)
+
+              if #line > 0 then
+                handle_request(client, line)
+              end
+            end
+          else
+            -- EOF
+            clients[client] = nil
+            client:close()
+          end
+        end)
+      end)
+
+      if listen_ok then
+        successful_port = try_port
+        current_port = try_port
+        break
+      else
+        -- Listen failed, cleanup socket before trying next port
+        notify.warn(string.format("Failed to listen on port %d: %s", try_port, listen_err or "unknown"))
+        if server then
+          server:close()
+        end
+        server = nil
+      end
+    else
+      -- Bind failed, cleanup socket before trying next port
+      if server then
+        server:close()
+      end
+      server = nil
+    end
+
+    ::continue::
+  end
+
+  if not successful_port then
+    notify.error(
+      string.format(
+        "Failed to start RPC server: all ports (%d-%d) are in use",
+        base_port,
+        base_port + max_attempts - 1
+      )
+    )
     return 0
   end
 
-  current_port = port
-  notify.info(string.format("RPC server started on port %d", port))
+  -- Register instance in registry
+  local registry_ok = registry.register(successful_port)
+  if not registry_ok then
+    notify.warn("RPC server started but failed to register instance")
+  end
 
-  return port
+  notify.info(string.format("RPC server started on port %d", successful_port))
+
+  return successful_port
 end
 
----Stop RPC server
+---Stop RPC server and unregister instance
 function M.stop()
   -- Close all client connections
   for client, _ in pairs(clients) do
@@ -162,6 +210,10 @@ function M.stop()
     server:close()
     server = nil
     current_port = nil
+
+    -- Unregister from registry
+    registry.unregister()
+
     notify.info("RPC server stopped")
   end
 end

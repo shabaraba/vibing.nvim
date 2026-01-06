@@ -6,7 +6,7 @@ import { callNeovim } from '../rpc.js';
  * @returns An object with a `content` array containing a single text node whose `text` is the pretty-printed JSON of the cursor position.
  */
 export async function handleGetCursor(args: any) {
-  const pos = await callNeovim('get_cursor_position');
+  const pos = await callNeovim('get_cursor_position', {}, args?.rpc_port);
   return {
     content: [{ type: 'text', text: JSON.stringify(pos, null, 2) }],
   };
@@ -26,7 +26,7 @@ export async function handleSetCursor(args: any) {
   await callNeovim('set_cursor_position', {
     line: args.line,
     col: args.col,
-  });
+  }, args?.rpc_port);
   return {
     content: [{ type: 'text', text: `Cursor moved to line ${args.line}` }],
   };
@@ -38,7 +38,7 @@ export async function handleSetCursor(args: any) {
  * @returns An object with a `content` array containing a single text node whose `text` is the pretty-printed JSON representation of the visual selection
  */
 export async function handleGetVisualSelection(args: any) {
-  const selection = await callNeovim('get_visual_selection');
+  const selection = await callNeovim('get_visual_selection', {}, args?.rpc_port);
   return {
     content: [{ type: 'text', text: JSON.stringify(selection, null, 2) }],
   };
