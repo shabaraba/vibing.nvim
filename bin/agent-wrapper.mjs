@@ -641,6 +641,11 @@ queryOptions.canUseTool = async (toolName, input) => {
     // Note: deniedTools are handled by queryOptions.disallowedTools (SDK built-in)
     // They are already removed from model's context, so won't reach this callback.
 
+    // AskUserQuestion: Always allow (core interaction feature)
+    if (toolName === 'AskUserQuestion') {
+      return { behavior: 'allow', updatedInput: input };
+    }
+
     // Implement acceptEdits mode: auto-approve Edit/Write tools
     if (permissionMode === 'acceptEdits' && (toolName === 'Edit' || toolName === 'Write')) {
       return { behavior: 'allow', updatedInput: input };
