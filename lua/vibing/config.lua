@@ -15,6 +15,7 @@
 ---全UIコンポーネント（Chat、Inline、Output）に適用される表示設定
 ---@field wrap "nvim"|"on"|"off" 行の折り返し設定（"nvim": Neovimデフォルト、"on": wrap+linebreak有効、"off": wrap無効）
 ---@field gradient Vibing.GradientConfig グラデーションアニメーション設定（応答中の視覚的フィードバック）
+---@field tool_result_display "none"|"compact"|"full" ツール実行結果の表示モード（"none": 非表示、"compact": 数行のみ、"full": 全文表示）
 
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
@@ -130,6 +131,7 @@ M.defaults = {
       },
       interval = 100,  -- Animation update interval in milliseconds
     },
+    tool_result_display = "compact",  -- "none" | "compact" | "full"
   },
   keymaps = {
     send = "<CR>",
@@ -227,6 +229,18 @@ function M.setup(opts)
         M.options.ui.wrap
       ))
       M.options.ui.wrap = "on"  -- Fallback to default
+    end
+  end
+
+  -- Validate ui.tool_result_display configuration
+  if M.options.ui and M.options.ui.tool_result_display then
+    local valid_display_values = { none = true, compact = true, full = true }
+    if not valid_display_values[M.options.ui.tool_result_display] then
+      notify.warn(string.format(
+        "Invalid ui.tool_result_display value '%s'. Valid values: none, compact, full. Falling back to default 'compact'.",
+        M.options.ui.tool_result_display
+      ))
+      M.options.ui.tool_result_display = "compact"  -- Fallback to default
     end
   end
 

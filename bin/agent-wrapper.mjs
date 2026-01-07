@@ -24,6 +24,7 @@ let prioritizeVibingLsp = true; // Default: prioritize vibing-nvim LSP tools
 let mcpEnabled = false; // Default: MCP integration disabled
 let language = null; // Language code for AI responses (e.g., "ja", "en")
 let rpcPort = null; // RPC port of the Neovim instance running this chat
+let toolResultDisplay = 'compact'; // Tool result display mode: "none" | "compact" | "full"
 
 // Parse arguments
 for (let i = 0; i < args.length; i++) {
@@ -128,6 +129,9 @@ for (let i = 0; i < args.length; i++) {
   } else if (args[i] === '--rpc-port' && args[i + 1]) {
     rpcPort = parseInt(args[i + 1], 10);
     i++;
+  } else if (args[i] === '--tool-result-display' && args[i + 1]) {
+    toolResultDisplay = args[i + 1];
+    i++;
   } else if (!args[i].startsWith('--')) {
     prompt = args[i];
   }
@@ -135,6 +139,15 @@ for (let i = 0; i < args.length; i++) {
 
 if (!prompt) {
   console.error('Usage: agent-wrapper.mjs --prompt <prompt> [--cwd <dir>] [--context <file>...]');
+  process.exit(1);
+}
+
+// Validate tool_result_display argument
+const validDisplayModes = ['none', 'compact', 'full'];
+if (!validDisplayModes.includes(toolResultDisplay)) {
+  console.error(
+    `Invalid --tool-result-display value: "${toolResultDisplay}". Valid values: ${validDisplayModes.join(', ')}`
+  );
   process.exit(1);
 }
 
@@ -798,6 +811,8 @@ let sessionIdEmitted = false;
 let respondingEmitted = false;
 const processedToolUseIds = new Set(); // Track processed tool_use IDs to prevent duplicates
 const toolUseMap = new Map(); // Map tool_use_id to tool_name for tracking MCP tool results
+const toolInputMap = new Map(); // Map tool_use_id to input_summary for display pairing
+let lastOutputType = null; // Track last output type: "text" | "tool" | "tool_result"
 
 try {
   // Create query with all options
@@ -827,7 +842,13 @@ try {
             console.log(safeJsonStringify({ type: 'status', state: 'responding' }));
             respondingEmitted = true;
           }
-          console.log(safeJsonStringify({ type: 'chunk', text: block.text }));
+          // Add blank line before text if previous output was tool or tool_result
+          let textToEmit = block.text;
+          if (lastOutputType === 'tool' || lastOutputType === 'tool_result') {
+            textToEmit = '\n' + textToEmit;
+          }
+          console.log(safeJsonStringify({ type: 'chunk', text: textToEmit }));
+          lastOutputType = 'text';
         } else if (block.type === 'tool_use') {
           // Check if this tool_use has already been processed
           const toolUseId = block.id;
@@ -841,13 +862,12 @@ try {
 
           // Store tool_use_id -> tool_name mapping for later result tracking
           toolUseMap.set(toolUseId, toolName);
+
+          // Generate input summary
           let inputSummary = '';
           const toolInput = block.input || {};
           if (toolInput.command) {
-            inputSummary =
-              toolInput.command.length > 50
-                ? toolInput.command.substring(0, 50) + '...'
-                : toolInput.command;
+            inputSummary = toolInput.command;
           } else if (toolInput.file_path) {
             inputSummary = toolInput.file_path;
           } else if (toolInput.pattern) {
@@ -855,6 +875,9 @@ try {
           } else if (toolInput.query) {
             inputSummary = toolInput.query;
           }
+
+          // Store tool_use_id -> input_summary for paired display
+          toolInputMap.set(toolUseId, inputSummary);
 
           // Emit status message for ALL tools
           console.log(
@@ -877,12 +900,7 @@ try {
             );
           }
 
-          console.log(
-            safeJsonStringify({
-              type: 'chunk',
-              text: `\n⏺ ${toolName}(${inputSummary})\n`,
-            })
-          );
+          // Don't display tool execution here - will display paired with result later
         }
       }
     }
@@ -921,16 +939,44 @@ try {
             }
           }
 
-          const preview =
-            resultText.length > 100 ? resultText.substring(0, 100) + '...' : resultText;
-          if (preview) {
-            console.log(
-              safeJsonStringify({
-                type: 'chunk',
-                text: `  ⎿  ${preview.replace(/\n/g, '\n     ')}\n\n`,
-              })
-            );
+          // Display tool execution and result as a pair
+          const inputSummary = toolInputMap.get(toolUseId) || '';
+
+          // Add blank line before tool if previous output was text
+          let toolText = `⏺ ${toolName}(${inputSummary})\n`;
+          if (lastOutputType === 'text') {
+            toolText = '\n' + toolText;
           }
+
+          // Display tool result based on toolResultDisplay setting
+          if (toolResultDisplay !== 'none') {
+            let displayText = '';
+            if (toolResultDisplay === 'compact') {
+              // Show first 100 characters only
+              displayText =
+                resultText.length > 100 ? resultText.substring(0, 100) + '...' : resultText;
+            } else if (toolResultDisplay === 'full') {
+              // Show full text
+              displayText = resultText;
+            }
+
+            if (displayText) {
+              toolText += `  ⎿  ${displayText.replace(/\n/g, '\n     ')}\n`;
+            }
+          }
+
+          // Emit paired tool execution and result
+          console.log(
+            safeJsonStringify({
+              type: 'chunk',
+              text: toolText,
+            })
+          );
+          lastOutputType = 'tool_result';
+
+          // Cleanup: Remove processed tool mappings to prevent memory leaks
+          toolUseMap.delete(toolUseId);
+          toolInputMap.delete(toolUseId);
         }
       }
     }
