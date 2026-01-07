@@ -3,6 +3,9 @@
 ---Inline Previewで使用するGit diff取得、checkout操作を提供
 local M = {}
 
+local PathSanitizer = require("vibing.domain.security.path_sanitizer")
+local CommandValidator = require("vibing.domain.security.command_validator")
+
 ---Git管理下のプロジェクトかチェック
 ---@return boolean Git管理下の場合true
 function M.is_git_repo()
@@ -15,8 +18,15 @@ end
 ---@param file_path string ファイルパス（絶対パスまたは相対パス）
 ---@return table { lines: string[], has_delta: boolean, error: boolean? }
 function M.get_diff(file_path)
-  -- ファイルパスを正規化
-  local normalized_path = vim.fn.fnamemodify(file_path, ":p")
+  -- ファイルパスをサニタイズ（パストラバーサル攻撃を防ぐ）
+  local normalized_path, err = PathSanitizer.sanitize(file_path)
+  if not normalized_path then
+    return {
+      lines = { "Error: Invalid file path - " .. (err or "unknown error") },
+      has_delta = false,
+      error = true,
+    }
+  end
 
   -- deltaは一時的に無効化（カラーコードの問題を回避）
   local has_delta = false
@@ -100,7 +110,27 @@ function M.checkout_files(files)
   local errors = {}
 
   for _, file in ipairs(files) do
-    local normalized_path = vim.fn.fnamemodify(file, ":p")
+    -- ファイルパスをサニタイズ
+    local normalized_path, err = PathSanitizer.sanitize(file)
+    if not normalized_path then
+      table.insert(errors, {
+        file = file,
+        message = "Invalid file path: " .. (err or "unknown error"),
+      })
+      goto continue
+    end
+
+    -- Validate git command
+    local cmd_parts = { "git", "checkout", "HEAD", normalized_path }
+    local valid, validation_err = CommandValidator.validate_full_command("git", { "checkout", "HEAD", normalized_path })
+    if not valid then
+      table.insert(errors, {
+        file = file,
+        message = "Command validation failed: " .. (validation_err or "unknown error"),
+      })
+      goto continue
+    end
+
     local cmd = string.format("git checkout HEAD %s 2>&1", vim.fn.shellescape(normalized_path))
     local result = vim.fn.system(cmd)
 
@@ -110,6 +140,8 @@ function M.checkout_files(files)
         message = result:gsub("\n$", ""),
       })
     end
+
+    ::continue::
   end
 
   return {

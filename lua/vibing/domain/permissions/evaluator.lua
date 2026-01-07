@@ -22,22 +22,25 @@
 ---@class PermissionEvaluator
 local M = {}
 
+local PathSanitizer = require("vibing.domain.security.path_sanitizer")
+
 ---Normalize a file path to prevent symlink attacks
 ---@param path string Path to normalize
 ---@return string Normalized absolute path
 local function normalize_path(path)
-  -- Convert to absolute path
-  local abs_path = vim.fn.fnamemodify(path, ":p")
-
-  -- Resolve symlinks
-  local resolved = vim.fn.resolve(abs_path)
-
-  -- Remove trailing slash for consistency
-  if resolved:match("/$") and resolved ~= "/" then
-    resolved = resolved:sub(1, -2)
+  -- Use PathSanitizer for comprehensive path normalization
+  local normalized, err = PathSanitizer.normalize(path)
+  if not normalized then
+    -- Fallback to simple normalization if PathSanitizer fails
+    return vim.fn.fnamemodify(path, ":p")
   end
 
-  return resolved
+  -- Remove trailing slash for consistency
+  if normalized:match("/$") and normalized ~= "/" then
+    normalized = normalized:sub(1, -2)
+  end
+
+  return normalized
 end
 
 ---Match a glob pattern against a path
@@ -147,10 +150,34 @@ local function matches_rule(rule, tool, context)
     local normalized_path = normalize_path(context.path)
 
     for _, pattern in ipairs(rule.paths) do
-      -- Also normalize pattern if it's an absolute path
+      -- Normalize pattern based on type
       local normalized_pattern = pattern
+
       if pattern:match("^/") or pattern:match("^~") then
-        normalized_pattern = normalize_path(vim.fn.expand(pattern))
+        -- Absolute path or tilde: extract glob suffix first
+        local glob_suffix = ""
+        local base_pattern = pattern
+
+        -- Extract trailing /** or /* patterns
+        if pattern:match("/%*%*$") then
+          glob_suffix = "/**"
+          base_pattern = pattern:sub(1, -4)
+        elseif pattern:match("/%*$") then
+          glob_suffix = "/*"
+          base_pattern = pattern:sub(1, -3)
+        end
+
+        -- Normalize the base path
+        local expanded = vim.fn.expand(base_pattern)
+        local normalized_base = normalize_path(expanded)
+
+        -- Recombine with glob suffix
+        normalized_pattern = normalized_base .. glob_suffix
+      else
+        -- Relative path: convert to absolute based on cwd
+        local cwd = vim.fn.getcwd()
+        local abs_pattern = cwd .. "/" .. pattern
+        normalized_pattern = abs_pattern
       end
 
       if match_glob(normalized_pattern, normalized_path) then

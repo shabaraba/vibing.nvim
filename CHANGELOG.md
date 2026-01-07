@@ -4,6 +4,8 @@
 
 ## What's Changed
 
+### Refactoring (Week 1-2)
+
 - refactor: split chat/buffer.lua into focused modules by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/TBD
   - Split `presentation/chat/buffer.lua` (1086 lines) into main file (375 lines) + 8 modules (824 lines total)
   - Created dedicated modules: window_manager, file_manager, preview_data, frontmatter_handler, renderer, streaming_handler, conversation_extractor, keymap_handler
@@ -25,6 +27,32 @@
     - session_manager.lua (75 lines): Session ID storage, retrieval, and cleanup
   - Each module follows single responsibility principle and is under 227 lines
   - Improves code organization and maintainability
+
+### Security Enhancements (Week 3)
+
+- feat: add path traversal attack prevention by @shabaraba
+  - Implemented `domain/security/path_sanitizer.lua` (138 lines) with functions:
+    - `normalize()`: Path normalization with tilde expansion and symlink resolution
+    - `check_traversal_patterns()`: Detection of `../` and other traversal patterns
+    - `validate_within_roots()`: Ensure paths stay within allowed directories
+    - `sanitize()`: Complete sanitization pipeline
+  - Integrated into `domain/permissions/evaluator.lua` for enhanced path validation
+  - Integrated into `core/utils/git.lua` to protect Git operations from malicious paths
+
+- feat: add command injection attack prevention by @shabaraba
+  - Implemented `domain/security/command_validator.lua` (195 lines) with functions:
+    - `contains_metacharacters()`: Detects shell metacharacters (`;`, `&`, `|`, `$`, `` ` ``, etc.)
+    - `matches_dangerous_pattern()`: Detects dangerous commands (`rm -rf`, `sudo`, `dd`, `eval`, etc.)
+    - `validate_command()` and `validate_arguments()`: Command and argument validation
+    - `is_allowed_command()`: Whitelist-based command filtering
+    - `escape_for_shell()`: Safe shell string escaping
+  - Integrated into `core/utils/git.lua` to validate all Git commands before execution
+
+- test: comprehensive security test suite by @shabaraba
+  - Created `tests/security_spec.lua` (280 lines) with 38 test cases
+  - PathSanitizer tests: normalization, traversal detection, root validation, sanitization
+  - CommandValidator tests: metacharacter detection, dangerous patterns, validation, whitelisting, escaping
+  - All 38 tests passing with full coverage of security modules
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.15.1...v1.16.0
 
