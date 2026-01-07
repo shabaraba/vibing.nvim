@@ -488,10 +488,11 @@ Please answer the question and press `<CR>` to send.
 
 **Implementation Details:**
 
-- Questions are parsed from buffer content when `<CR>` is pressed
-- Selected options are sent to Agent Wrapper via stdin (JSON Lines protocol)
-- Agent Wrapper resolves the pending Promise and continues execution
-- Works seamlessly with session resumption and concurrent chats
+- Agent Wrapper sends `insert_choices` event and denies the tool
+- Choices are inserted into chat buffer as plain markdown
+- User edits choices and sends via normal message flow (`<CR>`)
+- Claude receives selection as a regular user message
+- No special state management or Promise handling required
 
 ### Permissions Configuration
 

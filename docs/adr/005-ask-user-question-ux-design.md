@@ -66,22 +66,22 @@ Assistantが質問を提示する際、選択可能な項目をプレーンテ�
 
 #### 実装アーキテクチャ
 
-**1. Agent Wrapperでのメッセージ変換（サーバー側）**
+##### 1. Agent Wrapperでのメッセージ変換（サーバー側）
 
 `AskUserQuestion`ツールが呼ばれた際、Agent Wrapperは質問内容を自然言語形式でチャットバッファに送信する。
 
-- `ask_user_question`イベントをJSON Lines形式で送信
-- ユーザーの回答をstdin経由で受信するPromiseを生成
+- `insert_choices`イベントをJSON Lines形式で送信
+- ツールを`deny`してClaudeを待機状態にする
 
-**2. Luaでのバッファ編集と回答パース（クライアント側）**
+##### 2. Luaでのバッファ編集と回答パース（クライアント側）
 
-- `ChatBuffer:insert_ask_user_question()` - 質問をバッファに挿入
-- ユーザーが`<CR>`送信時、`ChatBuffer:get_ask_user_question_answers()`で回答をパース
-- バッファ内容から残っている`- {opt.label}`をチェックして選択を判定
+- `ChatBuffer:insert_choices()` - 選択肢をバッファに挿入
+- ユーザーが`<CR>`送信時、通常のメッセージとして送信
+- 特別な状態管理やパース処理は不要
 
-**3. Agent Wrapperでの回答受信とSDK応答（サーバー側）**
+##### 3. Agent Wrapperでの回答受信とSDK応答（サーバー側）
 
-Luaから`ask_user_question_response`イベントを受信し、保留中のPromiseをresolveしてClaude SDKに返す。
+Claudeは通常のユーザーメッセージとして回答を受信する。特別な処理は不要。
 
 ## Rationale
 

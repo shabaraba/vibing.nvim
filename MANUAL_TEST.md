@@ -17,8 +17,9 @@
 
 チャットバッファに以下のメッセージを入力して`<CR>`で送信:
 
-```
+```markdown
 I want to create a web application. Please use AskUserQuestion tool to ask me:
+
 1. Which database to use (PostgreSQL, MySQL, or SQLite)
 2. Which features I need (Authentication, Logging, Caching)
 ```
@@ -76,7 +77,7 @@ Claudeが自発的にAskUserQuestionを使わないことがあります。以�
 
 1. より明示的なプロンプト:
 
-   ```
+   ```vim
    Please MUST use AskUserQuestion tool to ask me about database choice.
    Do not assume or guess - use the tool to ask.
    ```
@@ -103,10 +104,9 @@ Claudeが自発的にAskUserQuestionを使わないことがあります。以�
 
 ## 実装確認ポイント
 
-✅ `bin/agent-wrapper.mjs` - askFollowupQuestionコールバック実装済み
-✅ `lua/vibing/infrastructure/adapter/agent_sdk.lua` - ask_user_questionイベント処理
-✅ `lua/vibing/presentation/chat/buffer.lua` - 質問挿入と回答パース
-✅ stdin/stdout通信経路が正しく設定されている
+✅ `bin/agent-wrapper.mjs` - `insert_choices`イベント送信 (canUseToolでdeny)
+✅ `lua/vibing/infrastructure/adapter/agent_sdk.lua` - `on_insert_choices`コールバック実装
+✅ `lua/vibing/presentation/chat/buffer.lua` - `insert_choices()`メソッド実装
 
 ## 注意事項
 
