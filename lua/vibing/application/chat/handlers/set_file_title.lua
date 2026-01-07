@@ -1,6 +1,7 @@
 local notify = require("vibing.core.utils.notify")
 local title_generator = require("vibing.core.utils.title_generator")
 local filename_util = require("vibing.core.utils.filename")
+local FileManager = require("vibing.presentation.chat.modules.file_manager")
 
 ---@param file_path string?
 ---@return "chat"|"inline"
@@ -65,7 +66,9 @@ return function(_, chat_buffer)
 
   local old_file_path = chat_buffer.file_path
   local file_type = detect_file_type(old_file_path)
-  local save_dir = chat_buffer:_get_save_directory()
+  local vibing = require("vibing")
+  local config = vibing.get_config()
+  local save_dir = FileManager.get_save_directory(config.chat)
 
   title_generator.generate_from_conversation(conversation, function(title, err)
     if err then
