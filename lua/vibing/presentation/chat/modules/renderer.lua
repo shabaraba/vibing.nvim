@@ -1,5 +1,5 @@
 local Timestamp = require("vibing.core.utils.timestamp")
-local Context = require("vibing.context")
+local Context = require("vibing.application.context.manager")
 
 local M = {}
 

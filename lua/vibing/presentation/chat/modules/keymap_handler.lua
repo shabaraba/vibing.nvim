@@ -1,4 +1,4 @@
-local Context = require("vibing.context")
+local Context = require("vibing.application.context.manager")
 
 local M = {}
 
