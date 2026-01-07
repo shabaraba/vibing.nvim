@@ -143,6 +143,34 @@ Key architectural changes include:
 
 ---
 
+### ADR 005: AskUserQuestion Tool UX Design
+
+**Status:** Accepted
+**Date:** 2025-01-07
+
+Documents the UX design and implementation of Claude Agent SDK's `AskUserQuestion` tool in vibing.nvim,
+using a Vim-native approach based on line deletion for option selection. Key design decisions:
+
+- Natural buffer editing workflow using standard Vim commands (`dd`, etc.)
+- Non-invasive implementation without global UI or temporary keymaps
+- Compatible with concurrent chat sessions
+- Simple parsing logic based on remaining buffer content
+
+**Key Files:**
+
+- ADR: [005-ask-user-question-ux-design.md](./005-ask-user-question-ux-design.md)
+- Agent Wrapper: `bin/agent-wrapper.mjs` (AskUserQuestion callback and stdin handling)
+- Lua Implementation:
+  - `lua/vibing/infrastructure/adapter/agent_sdk.lua` - ask_user_question event processing
+  - `lua/vibing/presentation/chat/buffer.lua` - Question insertion and answer parsing
+  - `lua/vibing/application/chat/send_message.lua` - handle_id management
+
+**Related Issues:**
+
+- [Issue #250](https://github.com/shabaraba/vibing.nvim/issues/250) - AskUserQuestion tool support
+
+---
+
 ## Creating a New ADR
 
 Use this template when creating a new ADR:

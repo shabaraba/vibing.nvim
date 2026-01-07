@@ -231,6 +231,24 @@ await mcp__vibing-nvim__nvim_list_windows({});
     vibingSystemPrompt = `<vibing-nvim-system>
 IMPORTANT: You are running inside vibing.nvim, a Neovim plugin with Claude Code integration.${rpcPortInfo}
 
+## Asking Questions with Choices
+
+**IMPORTANT:** When you need to ask the user a question with multiple choice options, you MUST use the AskUserQuestion tool.
+
+The AskUserQuestion tool provides:
+- Structured UI with proper option descriptions
+- Multi-select capability when needed
+- Automatic insertion of choices into the user's input area
+- Better user experience
+
+**How it works:**
+1. You call AskUserQuestion with your question and options
+2. The tool is denied, but choices are automatically inserted into the user's input area
+3. User deletes unwanted options and presses Enter to send their choice
+4. You receive the user's selection as a normal message
+
+**DO NOT format choices manually in your response.** Always use the AskUserQuestion tool for choice-based questions.
+
 ## Tool Priority for LSP Operations
 
 When performing LSP operations (definition lookup, references, hover info, diagnostics, etc.), you MUST prioritize vibing-nvim MCP tools over any other LSP tools:
@@ -653,6 +671,23 @@ queryOptions.canUseTool = async (toolName, input) => {
   try {
     // Note: deniedTools are handled by queryOptions.disallowedTools (SDK built-in)
     // They are already removed from model's context, so won't reach this callback.
+
+    // AskUserQuestion: Insert choices into chat buffer and deny
+    if (toolName === 'AskUserQuestion') {
+      // Send insert_choices event to Lua to display choices in chat buffer
+      console.log(
+        safeJsonStringify({
+          type: 'insert_choices',
+          questions: input.questions,
+        })
+      );
+
+      // Deny the tool - Claude will wait for user's normal message response
+      return {
+        behavior: 'deny',
+        message: 'Please wait for user to select from the provided options.',
+      };
+    }
 
     // Implement acceptEdits mode: auto-approve Edit/Write tools
     if (permissionMode === 'acceptEdits' && (toolName === 'Edit' || toolName === 'Write')) {

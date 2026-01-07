@@ -19,6 +19,7 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field update_session_id fun(session_id: string) セッションIDを更新
 ---@field add_user_section fun() ユーザーセクションを追加
 ---@field get_bufnr fun(): number バッファ番号を取得
+---@field insert_choices fun(questions: table) AskUserQuestion選択肢を挿入
 
 ---メッセージを送信
 ---@param adapter table アダプター
@@ -76,6 +77,12 @@ function M.execute(adapter, callbacks, message, config)
           table.insert(modified_files, file_path)
         end
       end
+    end,
+    on_insert_choices = function(questions)
+      -- Forward insert_choices event to chat buffer
+      vim.schedule(function()
+        callbacks.insert_choices(questions)
+      end)
     end,
   }
 

@@ -12,6 +12,7 @@ local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 ---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
 ---@field _last_modified_files string[]? 最後に変更されたファイル一覧（プレビューUI用）
+---@field _pending_choices table[]? add_user_section()後に挿入する選択肢
 local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
@@ -27,6 +28,7 @@ function ChatBuffer:new(config)
   instance._chunk_buffer = ""
   instance._chunk_timer = nil
   instance._last_modified_files = nil
+  instance._pending_choices = nil
   return instance
 end
 
@@ -717,7 +719,7 @@ function ChatBuffer:extract_user_message()
   for i = last_user_line + 1, #lines do
     local line = lines[i]
     -- 次のセクションに達したら終了（タイムスタンプあり/なし両対応）
-    if Timestamp.is_header(line) or line:match("^---") then
+    if Timestamp.is_header(line) then
       break
     end
     table.insert(message_lines, line)
@@ -835,6 +837,9 @@ function ChatBuffer:send_message()
     end,
     get_bufnr = function()
       return self.buf
+    end,
+    insert_choices = function(questions)
+      return self:insert_choices(questions)
     end,
   }
 
@@ -966,6 +971,30 @@ function ChatBuffer:add_user_section()
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
 
+  -- 保留中の選択肢があれば、未送信Userセクションの直後に挿入
+  if self._pending_choices then
+    local choice_lines = {}
+    for _, q in ipairs(self._pending_choices) do
+      -- 質問文は挿入しない（Claudeが既にAssistantセクションで質問している）
+      -- 選択肢のみを挿入
+      for _, opt in ipairs(q.options) do
+        table.insert(choice_lines, "- " .. opt.label)
+        if opt.description then
+          table.insert(choice_lines, "  " .. opt.description)
+        end
+      end
+      table.insert(choice_lines, "")
+    end
+
+    -- 未送信Userヘッダーの直後（空行2つの後）に挿入
+    local current_lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+    local insert_pos = #current_lines  -- 末尾に追加
+    vim.api.nvim_buf_set_lines(self.buf, insert_pos, insert_pos, false, choice_lines)
+
+    -- 選択肢をクリア
+    self._pending_choices = nil
+  end
+
   -- カーソルを最下部に移動（カーソルが末尾にある場合のみ）
   if self:is_open() and vim.api.nvim_win_is_valid(self.win) and vim.api.nvim_buf_is_valid(self.buf) then
     -- 現在のカーソル位置を取得
@@ -1044,6 +1073,14 @@ end
 ---@return table<string, string[]> Claude変更前のファイル内容
 function ChatBuffer:get_last_saved_contents()
   return self._last_saved_contents or {}
+end
+
+---AskUserQuestion の選択肢を保存
+---応答完了後、add_user_section() 内で未送信Userセクションの直後に挿入される
+---@param questions table Agent SDKから受け取った質問構造
+function ChatBuffer:insert_choices(questions)
+  -- 選択肢を保存（add_user_section()で挿入される）
+  self._pending_choices = questions
 end
 
 return ChatBuffer

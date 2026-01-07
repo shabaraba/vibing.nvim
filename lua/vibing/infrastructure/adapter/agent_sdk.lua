@@ -269,6 +269,11 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
                 if opts.on_tool_use then
                   opts.on_tool_use(msg.tool, msg.file_path)
                 end
+              elseif msg.type == "insert_choices" and msg.questions then
+                -- Insert choices event from Agent Wrapper
+                if opts.on_insert_choices then
+                  opts.on_insert_choices(msg.questions)
+                end
               elseif msg.type == "chunk" and msg.text then
                 table.insert(output, msg.text)
                 on_chunk(msg.text)
@@ -395,5 +400,6 @@ function AgentSDK:cleanup_stale_sessions()
     end
   end
 end
+
 
 return AgentSDK
