@@ -98,18 +98,18 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   local error_output = {}
 
   -- イベント処理コンテキストを構築
-  local event_context = {
-    session_manager = self._session_manager,
-    handle_id = handle_id,
+  local eventContext = {
+    sessionManager = self._session_manager,
+    handleId = handle_id,
     opts = opts,
     output = output,
-    error_output = error_output,
-    on_chunk = on_chunk,
+    errorOutput = error_output,
+    onChunk = on_chunk,
   }
 
   self._handles[handle_id] = vim.system(cmd, {
     text = true,
-    stdout = StreamHandler.create_stdout_handler(EventProcessor, event_context),
+    stdout = StreamHandler.create_stdout_handler(EventProcessor, eventContext),
     stderr = StreamHandler.create_stderr_handler(error_output),
   }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, on_done))
 
