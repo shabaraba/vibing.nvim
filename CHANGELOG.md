@@ -4,6 +4,13 @@
 
 ## What's Changed
 
+### Features
+
+- feat: Add position argument to VibingChat command by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/264
+- feat: Add line number gradient animation during AI response by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/267
+- feat: Add tool result display configuration by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/271
+- feat: simplify AskUserQuestion implementation by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/270
+
 ### Refactoring (Week 1-2)
 
 - refactor: split chat/buffer.lua into focused modules by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/272
