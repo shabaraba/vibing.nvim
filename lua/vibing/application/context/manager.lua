@@ -26,7 +26,8 @@ function M.add(path)
 
   if not vim.tbl_contains(M.manual_contexts, context) then
     table.insert(M.manual_contexts, context)
-    notify.info(string.format("Added context: %s", context), "Context")
+    M._copy_to_clipboard(context)
+    notify.info(string.format("Added context: %s (copied to clipboard)", context), "Context")
   end
 end
 
@@ -52,10 +53,11 @@ function M.add_selection()
   end, M.manual_contexts)
 
   table.insert(M.manual_contexts, selection_context)
+  M._copy_to_clipboard(selection_context)
 
   local start_pos = vim.fn.getpos("'<")
   local end_pos = vim.fn.getpos("'>")
-  notify.info(string.format("Added selection: %s:L%d-L%d", relative, start_pos[2], end_pos[2]), "Context")
+  notify.info(string.format("Added selection: %s:L%d-L%d (copied to clipboard)", relative, start_pos[2], end_pos[2]), "Context")
 end
 
 ---コンテキストをクリア
@@ -69,12 +71,21 @@ end
 ---@return string[]
 function M.get_all(auto_context)
   local contexts = vim.deepcopy(M.manual_contexts)
+  local seen_paths = {}
+
+  -- 手動コンテキストのパスを正規化して追跡
+  for _, ctx in ipairs(contexts) do
+    local normalized = M._extract_and_normalize_path(ctx)
+    seen_paths[normalized] = true
+  end
 
   if auto_context then
     local auto = Collector.collect_buffers()
     for _, ctx in ipairs(auto) do
-      if not vim.tbl_contains(contexts, ctx) then
+      local normalized = M._extract_and_normalize_path(ctx)
+      if not seen_paths[normalized] then
         table.insert(contexts, ctx)
+        seen_paths[normalized] = true
       end
     end
   end
@@ -99,6 +110,35 @@ function M.format_for_display()
     return "No context"
   end
   return table.concat(contexts, ", ")
+end
+
+---@private
+---コンテキストをクリップボードにコピー
+---@param context string コンテキスト文字列
+function M._copy_to_clipboard(context)
+  -- クリップボードプロバイダーを確認
+  if vim.fn.has("clipboard") == 1 then
+    vim.fn.setreg("+", context)
+  else
+    -- クリップボードサポートがない場合は無名レジスタに設定
+    vim.fn.setreg('"', context)
+  end
+end
+
+---@private
+---コンテキスト文字列からファイルパスを抽出して正規化
+---@param context string @file:path または @file:path:L10-L25 形式
+---@return string 正規化された絶対パス
+function M._extract_and_normalize_path(context)
+  -- @file:path または @file:path:L10-L25 からpathを抽出
+  local path = context:match("^@file:([^:]+)")
+  if not path then
+    return context
+  end
+
+  -- 絶対パスに変換して正規化（シンボリックリンク解決含む）
+  local absolute = vim.fn.fnamemodify(path, ":p")
+  return absolute
 end
 
 return M
