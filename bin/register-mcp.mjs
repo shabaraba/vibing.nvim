@@ -4,7 +4,15 @@
  * Called automatically by build.sh after successful build
  */
 
-import { readFileSync, writeFileSync, existsSync, renameSync, mkdtempSync, unlinkSync } from 'fs';
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  renameSync,
+  mkdtempSync,
+  unlinkSync,
+  rmSync,
+} from 'fs';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
@@ -70,9 +78,10 @@ config.mcpServers['vibing-nvim'] = {
 
 // Write updated config atomically (temp file → rename)
 let tempFile;
+let tempDir;
 try {
   // Create temp directory and file
-  const tempDir = mkdtempSync(join(tmpdir(), 'vibing-'));
+  tempDir = mkdtempSync(join(tmpdir(), 'vibing-'));
   tempFile = join(tempDir, 'claude.json');
 
   // Write to temp file
@@ -81,15 +90,25 @@ try {
   // Atomic rename (prevents data loss on failure)
   renameSync(tempFile, CLAUDE_JSON_PATH);
 
+  // Clean up temp directory
+  rmSync(tempDir, { recursive: true, force: true });
+
   console.log('[vibing.nvim] ✓ Registered vibing-nvim MCP server in ~/.claude.json');
   console.log(`[vibing.nvim]   Path: ${MCP_SERVER_PATH}`);
   console.log('[vibing.nvim]   Port: 9876');
   console.log('[vibing.nvim]   Timeout: 30000ms (30s)');
 } catch (error) {
-  // Clean up temp file if exists
+  // Clean up temp file and directory if they exist
   if (tempFile && existsSync(tempFile)) {
     try {
       unlinkSync(tempFile);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+  if (tempDir && existsSync(tempDir)) {
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
     } catch {
       // Ignore cleanup errors
     }

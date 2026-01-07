@@ -84,13 +84,15 @@ function M.update_context_line(buf)
     end
   end
 
-  if context_line_pos then
-    vim.api.nvim_buf_set_lines(buf, context_line_pos - 1, context_line_pos, false, context_lines)
-  else
-    local new_lines = { "" }
-    vim.list_extend(new_lines, context_lines)
-    vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, new_lines)
-  end
+  vim.schedule(function()
+    if context_line_pos then
+      vim.api.nvim_buf_set_lines(buf, context_line_pos - 1, context_line_pos, false, context_lines)
+    else
+      local new_lines = { "" }
+      vim.list_extend(new_lines, context_lines)
+      vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, new_lines)
+    end
+  end)
 end
 
 ---カーソルを末尾に移動
