@@ -12,6 +12,8 @@ local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 ---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
 ---@field _last_modified_files string[]? 最後に変更されたファイル一覧（プレビューUI用）
+---@field _pending_ask_user_question table? 保留中のAskUserQuestion
+---@field _current_handle_id string? 現在実行中のhandle_id
 local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
@@ -27,6 +29,8 @@ function ChatBuffer:new(config)
   instance._chunk_buffer = ""
   instance._chunk_timer = nil
   instance._last_modified_files = nil
+  instance._pending_ask_user_question = nil
+  instance._current_handle_id = nil
   return instance
 end
 
@@ -771,6 +775,31 @@ end
 
 ---メッセージを送信
 function ChatBuffer:send_message()
+  -- AskUserQuestion の回答処理
+  if self:has_pending_ask_user_question() then
+    local answers = self:get_ask_user_question_answers()
+    if not next(answers) then
+      vim.notify("[vibing] No answer selected for question", vim.log.levels.WARN)
+      return
+    end
+
+    -- Agent Wrapperに回答を送信
+    local vibing = require("vibing")
+    local adapter = vibing.get_adapter()
+    if adapter.send_ask_user_question_answer then
+      -- 現在のhandle_idを取得する必要がある
+      -- ここではadapterのメソッドを直接呼び出す
+      -- handle_idはsend_message実行時に保存されている想定
+      local handle_id = self._current_handle_id
+      if handle_id then
+        adapter:send_ask_user_question_answer(handle_id, answers)
+      end
+    end
+
+    self:clear_pending_ask_user_question()
+    return
+  end
+
   -- 先にメッセージ抽出（未送信ヘッダー基準）してから、タイムスタンプ確定
   -- この順序により、同一秒内の複数送信でも正しく動作する（issue#214対策）
   local message = self:extract_user_message()
@@ -835,6 +864,12 @@ function ChatBuffer:send_message()
     end,
     get_bufnr = function()
       return self.buf
+    end,
+    insert_ask_user_question = function(message, questions)
+      return self:insert_ask_user_question(message, questions)
+    end,
+    set_current_handle_id = function(handle_id)
+      self._current_handle_id = handle_id
     end,
   }
 
@@ -1043,6 +1078,86 @@ end
 ---@return table<string, string[]> Claude変更前のファイル内容
 function ChatBuffer:get_last_saved_contents()
   return self._last_saved_contents or {}
+end
+
+---AskUserQuestion質問をバッファに挿入
+---ユーザーは不要な選択肢を削除し、<CR>で送信
+---@param message string フォーマット済みの質問メッセージ
+---@param questions table 元の質問データ（回答パース用に保存）
+function ChatBuffer:insert_ask_user_question(message, questions)
+  -- 残っているチャンクをフラッシュ
+  if self._chunk_timer then
+    vim.fn.timer_stop(self._chunk_timer)
+    self._chunk_timer = nil
+  end
+  self:_flush_chunks()
+
+  if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
+    return
+  end
+
+  -- 保存用にquestions を保持（回答パース時に使用）
+  self._pending_ask_user_question = {
+    questions = questions,
+  }
+
+  -- 質問メッセージをバッファに挿入（Assistantメッセージとして）
+  local lines = vim.split(message, "\n", { plain = true })
+  local current_lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+  local insert_pos = #current_lines
+
+  vim.api.nvim_buf_set_lines(self.buf, insert_pos, insert_pos, false, lines)
+
+  -- カーソルを質問の直後に移動
+  if self:is_open() and vim.api.nvim_win_is_valid(self.win) then
+    local total = vim.api.nvim_buf_line_count(self.buf)
+    pcall(vim.api.nvim_win_set_cursor, self.win, { total, 0 })
+  end
+end
+
+---AskUserQuestion の回答を取得
+---バッファ内容から残っている選択肢を抽出
+---@return table<string, string> 質問ごとの回答（question -> answer）
+function ChatBuffer:get_ask_user_question_answers()
+  if not self._pending_ask_user_question then
+    return {}
+  end
+
+  if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
+    return {}
+  end
+
+  local questions = self._pending_ask_user_question.questions
+  local buffer_content = table.concat(vim.api.nvim_buf_get_lines(self.buf, 0, -1, false), "\n")
+
+  local answers = {}
+  for _, q in ipairs(questions) do
+    local selected_options = {}
+    for _, opt in ipairs(q.options) do
+      -- バッファ内に `- {opt.label}` が残っているかチェック
+      local pattern = "- " .. vim.pesc(opt.label)
+      if buffer_content:find(pattern) then
+        table.insert(selected_options, opt.label)
+      end
+    end
+    -- 単一選択 or 複数選択に応じて回答を構築
+    if #selected_options > 0 then
+      answers[q.question] = table.concat(selected_options, ", ")
+    end
+  end
+
+  return answers
+end
+
+---保留中のAskUserQuestionをクリア
+function ChatBuffer:clear_pending_ask_user_question()
+  self._pending_ask_user_question = nil
+end
+
+---AskUserQuestion が保留中かチェック
+---@return boolean
+function ChatBuffer:has_pending_ask_user_question()
+  return self._pending_ask_user_question ~= nil
 end
 
 return ChatBuffer

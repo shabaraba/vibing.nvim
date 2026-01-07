@@ -19,6 +19,7 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field update_session_id fun(session_id: string) セッションIDを更新
 ---@field add_user_section fun() ユーザーセクションを追加
 ---@field get_bufnr fun(): number バッファ番号を取得
+---@field insert_ask_user_question fun(message: string, questions: table) AskUserQuestion質問を挿入
 
 ---メッセージを送信
 ---@param adapter table アダプター
@@ -77,6 +78,12 @@ function M.execute(adapter, callbacks, message, config)
         end
       end
     end,
+    on_ask_user_question = function(message, questions)
+      -- Forward AskUserQuestion event to chat buffer
+      vim.schedule(function()
+        callbacks.insert_ask_user_question(message, questions)
+      end)
+    end,
   }
 
   if adapter:supports("session") then
@@ -95,6 +102,11 @@ function M.execute(adapter, callbacks, message, config)
         M._handle_response(response, callbacks, modified_files, saved_contents, adapter)
       end)
     end)
+
+    -- Store handle_id for AskUserQuestion answer sending
+    if callbacks.set_current_handle_id then
+      callbacks.set_current_handle_id(handle_id)
+    end
   else
     local response = adapter:execute(formatted_prompt, opts)
     M._handle_response(response, callbacks, modified_files, saved_contents, adapter)

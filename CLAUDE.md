@@ -420,6 +420,79 @@ The `lua/vibing/utils/timestamp.lua` module provides:
 - `extract_timestamp(line)` - Extract timestamp from header
 - `is_header(line)` - Validate header format
 
+### AskUserQuestion Support
+
+vibing.nvim supports Claude's `AskUserQuestion` tool, allowing Claude to ask clarifying questions during code generation. Instead of guessing or assuming, Claude can present multiple-choice questions for user confirmation.
+
+**How It Works:**
+
+1. **Claude asks a question** - When Claude needs clarification, it sends an `AskUserQuestion` event
+2. **Question appears in chat** - The question and options are inserted into the chat buffer as plain text:
+
+```markdown
+Which database should we use?
+
+- PostgreSQL
+- MySQL
+- SQLite
+
+Please answer the question and press `<CR>` to send.
+```
+
+3. **User edits to select** - Delete unwanted options using Vim's standard editing commands (`dd`, etc.)
+4. **Send with `<CR>`** - Press `<CR>` to send the answer back to Claude
+
+**Example Workflow:**
+
+```markdown
+## Assistant
+
+Which database should we use?
+
+- PostgreSQL
+- MySQL
+- SQLite
+
+Which features do you need? (multiple selection allowed)
+
+- Authentication
+- Logging
+- Caching
+
+Please answer the question and press `<CR>` to send.
+```
+
+After editing (removing unwanted options):
+
+```markdown
+## Assistant
+
+Which database should we use?
+
+- PostgreSQL
+
+Which features do you need? (multiple selection allowed)
+
+- Authentication
+- Logging
+
+Please answer the question and press `<CR>` to send.
+```
+
+**Key Features:**
+
+- **Natural Vim workflow** - Use standard Vim commands (`dd`, `d{motion}`, etc.) to select options
+- **Single and multiple selection** - Delete unwanted options; remaining options are selected
+- **Additional instructions** - Add custom notes below the options before sending
+- **Non-invasive** - No special keymaps or UI overlays; works with any buffer editing
+
+**Implementation Details:**
+
+- Questions are parsed from buffer content when `<CR>` is pressed
+- Selected options are sent to Agent Wrapper via stdin (JSON Lines protocol)
+- Agent Wrapper resolves the pending Promise and continues execution
+- Works seamlessly with session resumption and concurrent chats
+
 ### Permissions Configuration
 
 vibing.nvim provides comprehensive permission control over what tools Claude can use:

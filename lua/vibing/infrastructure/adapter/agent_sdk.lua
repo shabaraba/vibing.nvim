@@ -4,6 +4,7 @@ local Base = require("vibing.infrastructure.adapter.base")
 ---@field _handles table<string, table> vim.system()で起動したプロセスハンドルのマップ（handle_id -> handle）
 ---@field _sessions table<string, string> セッションIDのマップ（handle_id -> session_id）
 ---@field _plugin_root string プラグインのルートディレクトリパス
+---@field _pending_questions table<string, table> 保留中のAskUserQuestion（handle_id -> {questions, callback}）
 local AgentSDK = setmetatable({}, { __index = Base })
 AgentSDK.__index = AgentSDK
 
@@ -18,6 +19,7 @@ function AgentSDK:new(config)
   instance.name = "agent_sdk"
   instance._handles = {}
   instance._sessions = {}
+  instance._pending_questions = {}
   -- Find plugin root directory
   local source = debug.getinfo(1, "S").source:sub(2)
   instance._plugin_root = vim.fn.fnamemodify(source, ":h:h:h:h:h")
@@ -256,6 +258,17 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
                 if opts.on_tool_use then
                   opts.on_tool_use(msg.tool, msg.file_path)
                 end
+              elseif msg.type == "ask_user_question" and msg.questions and msg.message then
+                -- AskUserQuestion event from Agent Wrapper
+                if opts.on_ask_user_question then
+                  -- Store pending question for later answer retrieval
+                  self._pending_questions[handle_id] = {
+                    questions = msg.questions,
+                    message = msg.message,
+                  }
+                  -- Notify chat buffer to insert question
+                  opts.on_ask_user_question(msg.message, msg.questions)
+                end
               elseif msg.type == "chunk" and msg.text then
                 table.insert(output, msg.text)
                 on_chunk(msg.text)
@@ -381,6 +394,41 @@ function AgentSDK:cleanup_stale_sessions()
       self._sessions[handle_id] = nil
     end
   end
+end
+
+---AskUserQuestionに対する回答を送信
+---ユーザーがチャットバッファで回答を入力した後に呼び出される
+---@param handle_id string ハンドルID
+---@param answers table<string, string> 質問ごとの回答（質問文 -> 回答）
+function AgentSDK:send_ask_user_question_answer(handle_id, answers)
+  local handle = self._handles[handle_id]
+  if not handle then
+    return
+  end
+
+  -- Send answer to Agent Wrapper via stdin
+  local response = vim.json.encode({
+    type = "ask_user_question_response",
+    answers = answers,
+  }) .. "\n"
+
+  -- Write to process stdin
+  if handle and handle.stdin then
+    handle.stdin:write(response)
+  end
+end
+
+---保留中のAskUserQuestionを取得
+---@param handle_id string ハンドルID
+---@return table|nil 保留中の質問情報（questions, message）
+function AgentSDK:get_pending_question(handle_id)
+  return self._pending_questions[handle_id]
+end
+
+---保留中のAskUserQuestionをクリア
+---@param handle_id string ハンドルID
+function AgentSDK:clear_pending_question(handle_id)
+  self._pending_questions[handle_id] = nil
 end
 
 return AgentSDK
