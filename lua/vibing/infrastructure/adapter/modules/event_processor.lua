@@ -3,13 +3,15 @@
 ---Handles session, chunk, tool_use, insert_choices, error, and done events.
 local M = {}
 
+local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
+
 ---セッションイベントを処理
 ---@param msg table JSONデコードされたメッセージ
 ---@param session_manager Vibing.SessionManager セッション管理モジュール
 ---@param handle_id string ハンドルID
 local function handle_session_event(msg, session_manager, handle_id)
   if msg.session_id then
-    session_manager.store(handle_id, msg.session_id)
+    SessionManagerModule.store(session_manager, handle_id, msg.session_id)
   end
 end
 

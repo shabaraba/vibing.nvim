@@ -97,6 +97,9 @@ end
 ---@param win number ウィンドウ番号
 ---@param buf number バッファ番号
 function M.move_cursor_to_end(win, buf)
+  if type(win) ~= "number" or type(buf) ~= "number" then
+    return
+  end
   if not vim.api.nvim_win_is_valid(win) or not vim.api.nvim_buf_is_valid(buf) then
     return
   end

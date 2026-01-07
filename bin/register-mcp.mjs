@@ -45,11 +45,16 @@ if (!config.mcpServers) {
 
 // Check if vibing-nvim already configured
 const existingConfig = config.mcpServers['vibing-nvim'];
-if (existingConfig && existingConfig.args && existingConfig.args[0] === MCP_SERVER_PATH) {
+if (
+  existingConfig &&
+  existingConfig.args &&
+  existingConfig.args[0] === MCP_SERVER_PATH &&
+  existingConfig.type === 'stdio'
+) {
   console.log('[vibing.nvim] ✓ vibing-nvim MCP server already registered in ~/.claude.json');
   process.exit(0);
 } else if (existingConfig) {
-  console.log('[vibing.nvim] Updating vibing-nvim registration (path changed)...');
+  console.log('[vibing.nvim] Updating vibing-nvim registration (path or configuration changed)...');
 }
 
 // Register vibing-nvim MCP server
@@ -60,6 +65,7 @@ config.mcpServers['vibing-nvim'] = {
     VIBING_RPC_PORT: '9876',
     VIBING_RPC_TIMEOUT: '30000', // 30 seconds (increased from 5s for heavy LSP operations)
   },
+  type: 'stdio',
 };
 
 // Write updated config atomically (temp file → rename)

@@ -293,7 +293,9 @@ function ChatBuffer:send_message()
   }
 
   SendMessage.execute(adapter, callbacks, message, config)
-  Renderer.move_cursor_to_end(self.win, self.buf)
+  if self:is_open() then
+    Renderer.move_cursor_to_end(self.win, self.buf)
+  end
 end
 
 ---アシスタントの応答を追加開始
