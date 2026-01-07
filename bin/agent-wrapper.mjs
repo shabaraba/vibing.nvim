@@ -641,9 +641,21 @@ queryOptions.canUseTool = async (toolName, input) => {
     // Note: deniedTools are handled by queryOptions.disallowedTools (SDK built-in)
     // They are already removed from model's context, so won't reach this callback.
 
-    // AskUserQuestion: Always allow (core interaction feature)
+    // AskUserQuestion: Insert choices into chat buffer and deny
     if (toolName === 'AskUserQuestion') {
-      return { behavior: 'allow', updatedInput: input };
+      // Send insert_choices event to Lua to display choices in chat buffer
+      console.log(
+        safeJsonStringify({
+          type: 'insert_choices',
+          questions: input.questions,
+        })
+      );
+
+      // Deny the tool - Claude will wait for user's normal message response
+      return {
+        behavior: 'deny',
+        message: 'Please wait for user to select from the provided options.',
+      };
     }
 
     // Implement acceptEdits mode: auto-approve Edit/Write tools
@@ -799,82 +811,10 @@ if (sessionId) {
   queryOptions.resume = sessionId;
 }
 
-// Add AskUserQuestion callback
-queryOptions.askFollowupQuestion = async (input) => {
-  // Convert questions to natural language format for chat buffer
-  let message = '';
-  for (const q of input.questions) {
-    message += `${q.question}\n\n`;
-    for (const opt of q.options) {
-      message += `- ${opt.label}\n`;
-      if (opt.description) {
-        message += `  ${opt.description}\n`;
-      }
-    }
-    message += `\n`;
-  }
-  message += `質問に回答し終えたら\`<CR>\`で送信してください。`;
-
-  // Send ask_user_question event to Lua
-  console.log(
-    safeJsonStringify({
-      type: 'ask_user_question',
-      questions: input.questions,
-      message: message,
-    })
-  );
-
-  // Wait for user's answer from Lua (via stdin)
-  return new Promise((resolve) => {
-    pendingAskUserQuestion = input.questions;
-    askUserQuestionResolver = resolve;
-  });
-};
-
 let sessionIdEmitted = false;
 let respondingEmitted = false;
 const processedToolUseIds = new Set(); // Track processed tool_use IDs to prevent duplicates
 const toolUseMap = new Map(); // Map tool_use_id to tool_name for tracking MCP tool results
-
-// AskUserQuestion support
-let pendingAskUserQuestion = null; // Current pending question
-let askUserQuestionResolver = null; // Promise resolver for current question
-
-// Setup stdin listener for receiving answers from Lua
-if (process.stdin.isTTY === false) {
-  let stdinBuffer = '';
-  process.stdin.setEncoding('utf8');
-  process.stdin.on('data', (data) => {
-    stdinBuffer += data;
-    // Process complete JSON messages (newline-delimited)
-    while (true) {
-      const newlinePos = stdinBuffer.indexOf('\n');
-      if (newlinePos === -1) break;
-
-      const line = stdinBuffer.slice(0, newlinePos);
-      stdinBuffer = stdinBuffer.slice(newlinePos + 1);
-
-      if (line.trim()) {
-        try {
-          const msg = JSON.parse(line);
-          if (msg.type === 'ask_user_question_response' && msg.answers) {
-            // Lua sent the user's answer
-            if (askUserQuestionResolver && pendingAskUserQuestion) {
-              askUserQuestionResolver({
-                questions: pendingAskUserQuestion,
-                answers: msg.answers,
-              });
-              askUserQuestionResolver = null;
-              pendingAskUserQuestion = null;
-            }
-          }
-        } catch (e) {
-          console.error('[ERROR] Failed to parse stdin JSON:', e.message);
-        }
-      }
-    }
-  });
-}
 
 try {
   // Create query with all options

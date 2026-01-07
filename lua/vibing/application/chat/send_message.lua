@@ -78,10 +78,10 @@ function M.execute(adapter, callbacks, message, config)
         end
       end
     end,
-    on_ask_user_question = function(message, questions)
-      -- Forward AskUserQuestion event to chat buffer
+    on_insert_choices = function(questions)
+      -- Forward insert_choices event to chat buffer
       vim.schedule(function()
-        callbacks.insert_ask_user_question(message, questions)
+        callbacks.insert_choices(questions)
       end)
     end,
   }
@@ -102,11 +102,6 @@ function M.execute(adapter, callbacks, message, config)
         M._handle_response(response, callbacks, modified_files, saved_contents, adapter)
       end)
     end)
-
-    -- Store handle_id for AskUserQuestion answer sending
-    if callbacks.set_current_handle_id then
-      callbacks.set_current_handle_id(handle_id)
-    end
   else
     local response = adapter:execute(formatted_prompt, opts)
     M._handle_response(response, callbacks, modified_files, saved_contents, adapter)
