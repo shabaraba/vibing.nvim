@@ -10,22 +10,32 @@ local ChatSession = require("vibing.domain.chat.session")
 M._current_session = nil
 
 ---新しいチャットセッションを作成
+---@param opts? {workspace_root?: string}
 ---@return Vibing.ChatSession
-function M.create_new()
+function M.create_new(opts)
+  opts = opts or {}
   local vibing = require("vibing")
   local config = vibing.get_config()
 
   -- 新しいセッションを作成
+  local frontmatter = {
+    ["vibing.nvim"] = true,
+    created_at = os.date("%Y-%m-%dT%H:%M:%S"),
+    mode = config.agent and config.agent.default_mode or "code",
+    model = config.agent and config.agent.default_model or "sonnet",
+    permission_mode = config.permissions and config.permissions.mode or "acceptEdits",
+    permissions_allow = config.permissions and config.permissions.allow or {},
+    permissions_deny = config.permissions and config.permissions.deny or {},
+  }
+
+  -- workspace_rootを追加（指定された場合）
+  if opts.workspace_root then
+    frontmatter.workspace_root = opts.workspace_root
+  end
+
   local session = ChatSession:new({
-    frontmatter = {
-      ["vibing.nvim"] = true,
-      created_at = os.date("%Y-%m-%dT%H:%M:%S"),
-      mode = config.agent and config.agent.default_mode or "code",
-      model = config.agent and config.agent.default_model or "sonnet",
-      permission_mode = config.permissions and config.permissions.mode or "acceptEdits",
-      permissions_allow = config.permissions and config.permissions.allow or {},
-      permissions_deny = config.permissions and config.permissions.deny or {},
-    },
+    frontmatter = frontmatter,
+    workspace_root = opts.workspace_root,
   })
 
   -- ファイルパスを設定

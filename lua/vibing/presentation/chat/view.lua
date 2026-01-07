@@ -17,12 +17,16 @@ M._attached_buffers = {}
 ---セッションをチャットバッファに描画
 ---@param session Vibing.ChatSession
 ---@param position? string 位置指定（current|right|left）
-function M.render(session, position)
+---@param opts? {workspace_root?: string}
+function M.render(session, position, opts)
+  opts = opts or {}
   local vibing = require("vibing")
   local config = vibing.get_config()
 
   -- 毎回新規バッファを作成（既存バッファを再利用しない）
-  local chat_buf = ChatBuffer:new(config.chat)
+  -- workspace_root: opts > session > nil
+  local workspace_root = opts.workspace_root or session.workspace_root
+  local chat_buf = ChatBuffer:new(config.chat, { workspace_root = workspace_root })
   M._current_buffer = chat_buf
 
   -- セッションデータをバッファに反映
@@ -109,11 +113,15 @@ function M.attach_to_buffer(bufnr, file_path)
   chat_buf.buf = bufnr
   chat_buf.file_path = file_path
 
-  -- フロントマターからsession_idを読み込み
+  -- フロントマターからsession_idとworkspace_rootを読み込み
   local frontmatter = chat_buf:parse_frontmatter()
   local sid = frontmatter.session_id
   if type(sid) == "string" and sid ~= "" and sid ~= "~" then
     chat_buf.session_id = sid
+  end
+  local ws = frontmatter.workspace_root
+  if type(ws) == "string" and ws ~= "" and ws ~= "~" then
+    chat_buf.workspace_root = ws
   end
 
   chat_buf:_setup_keymaps()

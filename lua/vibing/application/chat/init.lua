@@ -81,6 +81,18 @@ function M.setup()
     handler = require("vibing.application.chat.handlers.permissions"),
     description = "Alias for /permissions",
   })
+
+  commands.register({
+    name = "workspace",
+    handler = require("vibing.application.chat.handlers.workspace"),
+    description = "Set workspace root: /workspace <path> or show current",
+  })
+
+  commands.register({
+    name = "ws",
+    handler = require("vibing.application.chat.handlers.workspace"),
+    description = "Alias for /workspace",
+  })
 end
 
 return M

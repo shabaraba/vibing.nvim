@@ -75,28 +75,41 @@ function M._register_commands()
   vim.api.nvim_create_user_command("VibingChat", function(opts)
     require("vibing.presentation.chat.controller").handle_open(opts.args)
   end, {
-    nargs = "?",
-    desc = "Open Vibing chat with optional position (current|right|left) or file",
+    nargs = "*",
+    desc = "Open Vibing chat with optional position (current|right|left), file, or workspace=<path>",
     complete = function(arg_lead, cmd_line, cursor_pos)
-      -- First argument: position or file
-      local args = vim.split(cmd_line, "%s+")
-      if #args == 2 then
-        -- Complete position keywords or files
-        local positions = { "current", "right", "left" }
-        local matches = {}
-        for _, pos in ipairs(positions) do
-          if pos:find("^" .. vim.pesc(arg_lead)) then
-            table.insert(matches, pos)
-          end
-        end
-        -- Also add file completion
-        local files = vim.fn.getcompletion(arg_lead, "file")
-        for _, file in ipairs(files) do
-          table.insert(matches, file)
+      local matches = {}
+
+      -- workspace= オプションの補完
+      if arg_lead:match("^workspace=") then
+        local ws_prefix = arg_lead:match("^workspace=(.*)$") or ""
+        local dirs = vim.fn.getcompletion(ws_prefix, "dir")
+        for _, dir in ipairs(dirs) do
+          table.insert(matches, "workspace=" .. dir)
         end
         return matches
       end
-      return {}
+
+      -- 位置キーワードの補完
+      local positions = { "current", "right", "left" }
+      for _, pos in ipairs(positions) do
+        if pos:find("^" .. vim.pesc(arg_lead)) then
+          table.insert(matches, pos)
+        end
+      end
+
+      -- workspace= プレフィックスを提案
+      if "workspace":find("^" .. vim.pesc(arg_lead)) then
+        table.insert(matches, "workspace=")
+      end
+
+      -- ファイル補完
+      local files = vim.fn.getcompletion(arg_lead, "file")
+      for _, file in ipairs(files) do
+        table.insert(matches, file)
+      end
+
+      return matches
     end,
   })
 

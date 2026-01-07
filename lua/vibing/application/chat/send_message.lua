@@ -19,6 +19,7 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field update_session_id fun(session_id: string) セッションIDを更新
 ---@field add_user_section fun() ユーザーセクションを追加
 ---@field get_bufnr fun(): number バッファ番号を取得
+---@field get_workspace_root fun(): string|nil ワークスペースルートを取得
 
 ---メッセージを送信
 ---@param adapter table アダプター
@@ -60,6 +61,12 @@ function M.execute(adapter, callbacks, message, config)
     lang_code = language_utils.get_language_code(config.language, "chat")
   end
 
+  -- Get workspace_root: frontmatter > callbacks > nil (will use cwd in adapter)
+  local workspace_root = frontmatter.workspace_root
+  if not workspace_root and callbacks.get_workspace_root then
+    workspace_root = callbacks.get_workspace_root()
+  end
+
   local opts = {
     streaming = true,
     action_type = "chat",
@@ -70,6 +77,7 @@ function M.execute(adapter, callbacks, message, config)
     permissions_ask = frontmatter.permissions_ask,
     permission_mode = frontmatter.permission_mode,
     language = lang_code,  -- Pass language code to adapter
+    workspace_root = workspace_root,  -- Pass workspace_root to adapter
     on_tool_use = function(tool, file_path)
       if file_tools[tool] and file_path then
         if not vim.tbl_contains(modified_files, file_path) then

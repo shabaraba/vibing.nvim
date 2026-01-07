@@ -194,12 +194,20 @@ function M.list_all()
 end
 
 ---@param command_name string
+---@param arg_lead? string 部分的な引数（補完対象）
 ---@return string[]?
-function M.get_argument_completions(command_name)
+function M.get_argument_completions(command_name, arg_lead)
   local completions = {
     mode = { "auto", "plan", "code", "explore" },
     model = { "opus", "sonnet", "haiku" },
   }
+
+  -- workspaceコマンドの場合はディレクトリ補完
+  if command_name == "workspace" or command_name == "ws" then
+    arg_lead = arg_lead or ""
+    return vim.fn.getcompletion(arg_lead, "dir")
+  end
+
   return completions[command_name]
 end
 

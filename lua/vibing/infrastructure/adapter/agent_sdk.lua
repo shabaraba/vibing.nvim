@@ -48,8 +48,10 @@ end
 function AgentSDK:build_command(prompt, opts, session_id)
   local cmd = { "node", self:get_wrapper_path() }
 
+  -- Use workspace_root if specified, otherwise fall back to cwd
+  local cwd = opts.workspace_root or vim.fn.getcwd()
   table.insert(cmd, "--cwd")
-  table.insert(cmd, vim.fn.getcwd())
+  table.insert(cmd, cwd)
 
   -- Add mode: opts (frontmatter) > config default
   local mode = opts.mode

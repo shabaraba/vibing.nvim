@@ -3,6 +3,7 @@
 ---ビジネスロジックに関わるデータとメタ情報を保持（UI表示から独立）
 ---@field session_id string? Claude SDKのセッションID
 ---@field file_path string? 保存先ファイルパス
+---@field workspace_root string? ワークスペースルート（git worktree等）
 ---@field messages table[] 会話履歴
 ---@field frontmatter table YAMLフロントマターのデータ
 ---@field created_at string 作成日時
@@ -18,6 +19,7 @@ function ChatSession:new(opts)
   local instance = setmetatable({}, ChatSession)
   instance.session_id = opts.session_id
   instance.file_path = opts.file_path
+  instance.workspace_root = opts.workspace_root
   instance.messages = opts.messages or {}
   instance.frontmatter = opts.frontmatter or {}
   instance.created_at = opts.created_at or os.date("%Y-%m-%dT%H:%M:%S")
@@ -45,9 +47,17 @@ function ChatSession.load_from_file(file_path)
     session_id = sid
   end
 
+  -- workspace_rootが有効な文字列の場合のみ設定
+  local workspace_root = nil
+  local ws = frontmatter.workspace_root
+  if type(ws) == "string" and ws ~= "" and ws ~= "~" then
+    workspace_root = ws
+  end
+
   return ChatSession:new({
     session_id = session_id,
     file_path = file_path,
+    workspace_root = workspace_root,
     frontmatter = frontmatter,
     created_at = frontmatter.created_at or os.date("%Y-%m-%dT%H:%M:%S"),
     updated_at = frontmatter.updated_at or os.date("%Y-%m-%dT%H:%M:%S"),

@@ -9,6 +9,7 @@ local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 ---@field config Vibing.ChatConfig
 ---@field session_id string?
 ---@field file_path string?
+---@field workspace_root string? ワークスペースルート（git worktree等で異なるディレクトリを使う場合）
 ---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
 ---@field _last_modified_files string[]? 最後に変更されたファイル一覧（プレビューUI用）
@@ -16,14 +17,17 @@ local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
 ---@param config Vibing.ChatConfig
+---@param opts? {workspace_root?: string}
 ---@return Vibing.ChatBuffer
-function ChatBuffer:new(config)
+function ChatBuffer:new(config, opts)
+  opts = opts or {}
   local instance = setmetatable({}, ChatBuffer)
   instance.buf = nil
   instance.win = nil
   instance.config = config
   instance.session_id = nil
   instance.file_path = nil
+  instance.workspace_root = opts.workspace_root
   instance._chunk_buffer = ""
   instance._chunk_timer = nil
   instance._last_modified_files = nil
@@ -313,6 +317,11 @@ function ChatBuffer:_init_content()
     "session_id: ~",  -- YAMLのnull値
     "created_at: " .. os.date("%Y-%m-%dT%H:%M:%S"),
   }
+
+  -- Add workspace_root if specified
+  if self.workspace_root then
+    table.insert(lines, "workspace_root: " .. self.workspace_root)
+  end
 
   -- Add default mode and model from config
   if config.agent then
@@ -638,6 +647,12 @@ function ChatBuffer:load_from_file(file_path)
     self.session_id = sid
   end
 
+  -- workspace_rootを復元
+  local ws_root = frontmatter.workspace_root
+  if type(ws_root) == "string" and ws_root ~= "" and ws_root ~= "~" then
+    self.workspace_root = ws_root
+  end
+
   return true
 end
 
@@ -835,6 +850,9 @@ function ChatBuffer:send_message()
     end,
     get_bufnr = function()
       return self.buf
+    end,
+    get_workspace_root = function()
+      return self.workspace_root
     end,
   }
 
