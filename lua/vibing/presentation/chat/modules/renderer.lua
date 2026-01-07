@@ -1,6 +1,5 @@
 local Timestamp = require("vibing.core.utils.timestamp")
 local Context = require("vibing.context")
-local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 
 local M = {}
 

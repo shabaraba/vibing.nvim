@@ -33,6 +33,7 @@ function M.create_task(id, execute_fn)
 end
 
 ---タスクIDを生成
+---hrtime + randomパターンで一意性を保証
 ---@param prefix string タスクIDのプレフィックス（action名など）
 ---@return string
 function M.generate_id(prefix)

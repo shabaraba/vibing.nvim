@@ -1,8 +1,4 @@
-local Timestamp = require("vibing.core.utils.timestamp")
-
 local M = {}
-
-local spinner_frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
 ---アシスタント応答を開始
 ---@param buf number バッファ番号

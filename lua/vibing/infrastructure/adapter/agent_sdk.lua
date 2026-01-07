@@ -89,17 +89,9 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   -- ハンドルIDを生成（ユニークな識別子）
   local handle_id = tostring(vim.loop.hrtime()) .. "_" .. tostring(math.random(100000))
 
-  -- セッションIDの決定ロジック:
-  -- 1. opts._session_id_explicit が true の場合、opts._session_id を使用（nilでも新規セッション）
-  -- 2. それ以外の場合、opts._session_id を使用（後方互換性）
-  local session_id
-  if opts._session_id_explicit then
-    -- chat.lua から明示的に設定された場合（nilでも新規セッションとして扱う）
-    session_id = opts._session_id
-  else
-    -- inline.lua など、明示的に設定されていない場合は従来の動作
-    session_id = opts._session_id
-  end
+  -- セッションIDの取得
+  -- opts._session_id が nil の場合は新規セッションとして扱う
+  local session_id = opts._session_id
 
   local cmd = self:build_command(prompt, opts, session_id)
   local output = {}
