@@ -36,7 +36,7 @@ end
 ---@param prefix string タスクIDのプレフィックス（action名など）
 ---@return string
 function M.generate_id(prefix)
-  return string.format("%s-%d", prefix, vim.loop.hrtime())
+  return string.format("%s-%d-%d", prefix, vim.loop.hrtime(), math.random(1000, 9999))
 end
 
 return M

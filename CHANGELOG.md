@@ -6,7 +6,7 @@
 
 ### Refactoring (Week 1-2)
 
-- refactor: split chat/buffer.lua into focused modules by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/TBD
+- refactor: split chat/buffer.lua into focused modules by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/272
   - Split `presentation/chat/buffer.lua` (1086 lines) into main file (375 lines) + 8 modules (824 lines total)
   - Created dedicated modules: window_manager, file_manager, preview_data, frontmatter_handler, renderer, streaming_handler, conversation_extractor, keymap_handler
   - Each module follows single responsibility principle and is under 201 lines

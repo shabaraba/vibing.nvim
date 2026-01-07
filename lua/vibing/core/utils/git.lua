@@ -121,7 +121,6 @@ function M.checkout_files(files)
     end
 
     -- Validate git command
-    local cmd_parts = { "git", "checkout", "HEAD", normalized_path }
     local valid, validation_err = CommandValidator.validate_full_command("git", { "checkout", "HEAD", normalized_path })
     if not valid then
       table.insert(errors, {
