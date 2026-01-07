@@ -4,11 +4,27 @@
 
 ## What's Changed
 
-- refactor: split large files into focused modules (Week 1) by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/TBD
-  - Split `ui/inline_preview.lua` (1159 lines) into 8 modules (1094 lines total)
+- refactor: split chat/buffer.lua into focused modules by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/TBD
   - Split `presentation/chat/buffer.lua` (1086 lines) into main file (375 lines) + 8 modules (824 lines total)
-  - Modules follow single responsibility principle and are under 200 lines each
+  - Created dedicated modules: window_manager, file_manager, preview_data, frontmatter_handler, renderer, streaming_handler, conversation_extractor, keymap_handler
+  - Each module follows single responsibility principle and is under 201 lines
   - Improves maintainability and testability per issue #269
+
+- refactor: split inline/use_case.lua into focused modules by @shabaraba
+  - Split `application/inline/use_case.lua` (472 lines) into main file (129 lines) + 5 modules (425 lines total)
+  - Created dedicated modules: action_config, unsaved_buffer, task_queue, execution, prompt_builder
+  - All modules under 201 lines, following single responsibility principle
+  - Maintains full backward compatibility with exported functions and action configurations
+
+- refactor: split adapter/agent_sdk.lua into focused modules by @shabaraba
+  - Split `infrastructure/adapter/agent_sdk.lua` (405 lines) into main file (195 lines, 52% reduction) + 4 modules (461 lines total)
+  - Created specialized modules:
+    - command_builder.lua (227 lines): Command-line argument construction with all configuration flags
+    - event_processor.lua (83 lines): JSON Lines event handling (session, chunk, tool_use, insert_choices, error)
+    - stream_handler.lua (76 lines): stdout/stderr buffering and line-by-line processing
+    - session_manager.lua (75 lines): Session ID storage, retrieval, and cleanup
+  - Each module follows single responsibility principle and is under 227 lines
+  - Improves code organization and maintainability
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.15.1...v1.16.0
 
