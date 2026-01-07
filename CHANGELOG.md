@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.16.0 (2026-01-07)
+
+## What's Changed
+
+- feat: Add position argument to VibingChat command by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/264
+- feat: Add line number gradient animation during AI response by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/267
+- feat: Add tool result display configuration by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/271
+- feat: simplify AskUserQuestion implementation by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/270
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.15.1...v1.16.0
+
 ## 1.15.1 (2026-01-06)
 
 ## What's Changed
