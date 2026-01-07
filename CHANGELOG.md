@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.17.0 (2026-01-07)
+
+## What's Changed
+
+- refactor: comprehensive project-wide refactoring and security enhancements by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/272
+- feat: remove time from VibingSetFileTitle filename format by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/274
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.16.0...v1.17.0
+
 ## 1.16.0 (2026-01-07)
 
 ## What's Changed
