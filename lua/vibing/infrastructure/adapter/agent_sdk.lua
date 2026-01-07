@@ -46,7 +46,13 @@ end
 -- @param session_id Optional session ID for resuming conversations.
 -- @return string[] Array of command and arguments ready to be executed (first element is the Node executable followed by wrapper path and flags).
 function AgentSDK:build_command(prompt, opts, session_id)
-  local cmd = { "node", self:get_wrapper_path() }
+  -- Use absolute path to node executable to avoid PATH issues
+  -- Falls back to "node" if not found in PATH
+  local node_cmd = vim.fn.exepath("node")
+  if node_cmd == "" then
+    node_cmd = "node"
+  end
+  local cmd = { node_cmd, self:get_wrapper_path() }
 
   table.insert(cmd, "--cwd")
   table.insert(cmd, vim.fn.getcwd())
@@ -164,6 +170,13 @@ function AgentSDK:build_command(prompt, opts, session_id)
   if rpc_port then
     table.insert(cmd, "--rpc-port")
     table.insert(cmd, tostring(rpc_port))
+  end
+
+  -- Add tool_result_display: Use config only
+  local tool_result_display = self.config.ui and self.config.ui.tool_result_display
+  if tool_result_display then
+    table.insert(cmd, "--tool-result-display")
+    table.insert(cmd, tool_result_display)
   end
 
   table.insert(cmd, "--prompt")

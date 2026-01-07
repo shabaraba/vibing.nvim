@@ -608,6 +608,15 @@ require("vibing").setup({
     -- "nvim": Respect Neovim defaults (don't modify wrap settings)
     -- "on": Enable wrap + linebreak (recommended for chat readability)
     -- "off": Disable line wrapping
+    tool_result_display = "compact",  -- "none" | "compact" | "full"
+    -- "none": Don't show tool execution results
+    -- "compact": Show first 100 characters only (default)
+    -- "full": Show complete tool output
+    gradient = {
+      enabled = true,  -- Enable gradient animation during AI response
+      colors = { "#cc3300", "#fffe00" },  -- Start and end colors
+      interval = 100,  -- Animation update interval in milliseconds
+    },
   },
 })
 ```

@@ -515,6 +515,33 @@ preview = {
 }
 ```
 
+### UI Settings
+
+Configure UI appearance and behavior:
+
+```lua
+ui = {
+  wrap = "on",  -- Line wrapping behavior
+                -- "nvim": Respect Neovim defaults (don't modify wrap settings)
+                -- "on": Enable wrap + linebreak (recommended for chat readability)
+                -- "off": Disable line wrapping
+
+  tool_result_display = "compact",  -- Tool execution result display mode
+                                    -- "none": Don't show tool results
+                                    -- "compact": Show first 100 characters only (default)
+                                    -- "full": Show complete tool output
+
+  gradient = {
+    enabled = true,  -- Enable gradient animation during AI response
+    colors = {
+      "#cc3300",  -- Start color (orange, matching vibing.nvim logo)
+      "#fffe00",  -- End color (yellow, matching vibing.nvim logo)
+    },
+    interval = 100,  -- Animation update interval in milliseconds
+  },
+}
+```
+
 ### MCP (Model Context Protocol)
 
 Enable Claude to directly control Neovim:
