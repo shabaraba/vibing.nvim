@@ -140,7 +140,7 @@ function ChatBuffer:_setup_keymaps()
       end
     end,
     update_context_line = function()
-      Renderer.update_context_line(self.buf)
+      Renderer.updateContextLine(self.buf)
     end,
     get_modified_files = function()
       return PreviewData.get_modified_files()
@@ -294,7 +294,7 @@ function ChatBuffer:send_message()
 
   SendMessage.execute(adapter, callbacks, message, config)
   if self:is_open() then
-    Renderer.move_cursor_to_end(self.win, self.buf)
+    Renderer.moveCursorToEnd(self.win, self.buf)
   end
 end
 
@@ -331,7 +331,7 @@ function ChatBuffer:add_user_section()
   end
   self:_flush_chunks()
 
-  Renderer.add_user_section(self.buf, self.win, self._pending_choices)
+  Renderer.addUserSection(self.buf, self.win, self._pending_choices)
   self._pending_choices = nil
 end
 

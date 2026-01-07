@@ -60,9 +60,9 @@ function M.init_content(buf)
   table.insert(lines, "")
   table.insert(lines, "")
 
-  local context_text = "Context: " .. Context.format_for_display()
-  local context_lines = vim.split(context_text, "\n", { plain = true })
-  vim.list_extend(lines, context_lines)
+  local contextText = "Context: " .. Context.format_for_display()
+  local contextLines = vim.split(contextText, "\n", { plain = true })
+  vim.list_extend(lines, contextLines)
 
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
@@ -71,34 +71,37 @@ end
 
 ---Contextディスプレイを更新
 ---@param buf number バッファ番号
-function M.update_context_line(buf)
+function M.updateContextLine(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local context_text = "Context: " .. Context.format_for_display()
-  local context_lines = vim.split(context_text, "\n", { plain = true })
+  local contextText = "Context: " .. Context.format_for_display()
+  local contextLines = vim.split(contextText, "\n", { plain = true })
 
-  local context_line_pos = nil
+  local contextLinePos = nil
   for i = #lines, 1, -1 do
     if lines[i]:match("^Context:") then
-      context_line_pos = i
+      contextLinePos = i
       break
     end
   end
 
   vim.schedule(function()
-    if context_line_pos then
-      vim.api.nvim_buf_set_lines(buf, context_line_pos - 1, context_line_pos, false, context_lines)
+    if contextLinePos then
+      vim.api.nvim_buf_set_lines(buf, contextLinePos - 1, contextLinePos, false, contextLines)
     else
-      local new_lines = { "" }
-      vim.list_extend(new_lines, context_lines)
-      vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, new_lines)
+      local newLines = { "" }
+      vim.list_extend(newLines, contextLines)
+      vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, newLines)
     end
   end)
 end
 
+-- Backward compatibility alias
+M.update_context_line = M.updateContextLine
+
 ---カーソルを末尾に移動
 ---@param win number ウィンドウ番号
 ---@param buf number バッファ番号
-function M.move_cursor_to_end(win, buf)
+function M.moveCursorToEnd(win, buf)
   if type(win) ~= "number" or type(buf) ~= "number" then
     return
   end
@@ -106,17 +109,20 @@ function M.move_cursor_to_end(win, buf)
     return
   end
 
-  local line_count = vim.api.nvim_buf_line_count(buf)
-  if line_count > 0 then
-    pcall(vim.api.nvim_win_set_cursor, win, { line_count, 0 })
+  local lineCount = vim.api.nvim_buf_line_count(buf)
+  if lineCount > 0 then
+    pcall(vim.api.nvim_win_set_cursor, win, { lineCount, 0 })
   end
 end
+
+-- Backward compatibility alias
+M.move_cursor_to_end = M.moveCursorToEnd
 
 ---新しいユーザーセクションを追加
 ---@param buf number バッファ番号
 ---@param win number? ウィンドウ番号
----@param pending_choices table? 保留中の選択肢
-function M.add_user_section(buf, win, pending_choices)
+---@param pendingChoices table? 保留中の選択肢
+function M.addUserSection(buf, win, pendingChoices)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
   while #lines > 0 and lines[#lines] == "" do
@@ -124,38 +130,38 @@ function M.add_user_section(buf, win, pending_choices)
   end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
-  local new_lines = {
+  local newLines = {
     "",
     Timestamp.create_unsent_user_header(),
     "",
     "",
   }
-  vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, new_lines)
+  vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, newLines)
 
-  if pending_choices then
-    local choice_lines = {}
-    for _, q in ipairs(pending_choices) do
+  if pendingChoices then
+    local choiceLines = {}
+    for _, q in ipairs(pendingChoices) do
       for _, opt in ipairs(q.options) do
-        table.insert(choice_lines, "- " .. opt.label)
+        table.insert(choiceLines, "- " .. opt.label)
         if opt.description then
-          table.insert(choice_lines, "  " .. opt.description)
+          table.insert(choiceLines, "  " .. opt.description)
         end
       end
-      table.insert(choice_lines, "")
+      table.insert(choiceLines, "")
     end
 
-    local current_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local insert_pos = #current_lines
-    vim.api.nvim_buf_set_lines(buf, insert_pos, insert_pos, false, choice_lines)
+    local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local insertPos = #currentLines
+    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, choiceLines)
   end
 
   if win and vim.api.nvim_win_is_valid(win) then
     local ok, cursor = pcall(vim.api.nvim_win_get_cursor, win)
     if ok then
-      local current_line = cursor[1]
-      local old_line_count = #lines
+      local currentLine = cursor[1]
+      local oldLineCount = #lines
 
-      if current_line >= old_line_count then
+      if currentLine >= oldLineCount then
         local total = vim.api.nvim_buf_line_count(buf)
         if total > 0 then
           pcall(vim.api.nvim_win_set_cursor, win, { total, 0 })
@@ -164,5 +170,8 @@ function M.add_user_section(buf, win, pending_choices)
     end
   end
 end
+
+-- Backward compatibility alias
+M.add_user_section = M.addUserSection
 
 return M
