@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.16.0 (2026-01-07)
+
+## What's Changed
+
+- refactor: split large files into focused modules (Week 1) by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/TBD
+  - Split `ui/inline_preview.lua` (1159 lines) into 8 modules (1094 lines total)
+  - Split `presentation/chat/buffer.lua` (1086 lines) into main file (375 lines) + 8 modules (824 lines total)
+  - Modules follow single responsibility principle and are under 200 lines each
+  - Improves maintainability and testability per issue #269
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.15.1...v1.16.0
+
 ## 1.15.1 (2026-01-06)
 
 ## What's Changed
