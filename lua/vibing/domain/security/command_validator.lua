@@ -171,8 +171,9 @@ function M.is_allowed_command(cmd, allowlist)
   return false
 end
 
----Escape a string for safe use in shell commands
+---Escape a string for safe use in shell commands using Neovim's built-in function
 ---This should only be used as a last resort - prefer using proper argument arrays
+---Uses vim.fn.shellescape() which handles different shells correctly (bash, zsh, fish, etc.)
 ---@param str string String to escape
 ---@return string escaped Escaped string safe for shell use
 function M.escape_for_shell(str)
@@ -180,8 +181,8 @@ function M.escape_for_shell(str)
     return ""
   end
 
-  -- Wrap in single quotes and escape any single quotes within
-  return "'" .. str:gsub("'", "'\"'\"'") .. "'"
+  -- Use Neovim's built-in shellescape which handles different shells correctly
+  return vim.fn.shellescape(str)
 end
 
 return M

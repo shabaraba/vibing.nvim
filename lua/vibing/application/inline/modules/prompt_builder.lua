@@ -55,6 +55,10 @@ function M.build(base_prompt, additional_instruction, config, action_tools)
 
   -- 未保存バッファのハンドリングを適用
   local is_modified = UnsavedBuffer.is_modified()
+  -- Ensure is_modified is a boolean value
+  if is_modified == nil then
+    is_modified = false
+  end
   prompt = UnsavedBuffer.apply_handling(prompt, opts, is_modified)
 
   -- ツール設定を追加

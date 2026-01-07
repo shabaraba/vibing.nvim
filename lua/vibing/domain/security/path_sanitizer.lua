@@ -1,6 +1,14 @@
 ---@class Vibing.PathSanitizer
 ---Path traversal attack prevention module
 ---Normalizes and validates file paths to prevent directory traversal attacks
+---
+---SECURITY NOTE: TOCTOU (Time-of-Check-Time-of-Use) Race Condition
+---This module validates paths at check time, but the filesystem may change between
+---validation and actual file operations. To mitigate this risk:
+---  1. Validate paths as close to file operations as possible
+---  2. Use proper error handling during file operations
+---  3. Run file operations with minimal privileges
+---  4. Consider using file descriptors instead of paths when possible
 local M = {}
 
 ---Normalize a file path to absolute path and resolve symlinks
