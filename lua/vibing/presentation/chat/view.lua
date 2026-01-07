@@ -98,19 +98,7 @@ end
 ---@param bufnr number バッファ番号
 ---@param file_path string ファイルパス
 function M.attach_to_buffer(bufnr, file_path)
-  vim.notify(
-    "[vibing.nvim DEBUG] attach_to_buffer called for bufnr: " .. bufnr,
-    vim.log.levels.WARN
-  )
-  vim.notify(
-    "[vibing.nvim DEBUG] Stack trace: " .. debug.traceback(),
-    vim.log.levels.WARN
-  )
   if M._attached_buffers[bufnr] then
-    vim.notify(
-      "[vibing.nvim DEBUG] Buffer already attached, returning existing instance: " .. tostring(M._attached_buffers[bufnr]),
-      vim.log.levels.WARN
-    )
     return M._attached_buffers[bufnr]
   end
 

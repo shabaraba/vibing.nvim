@@ -19,7 +19,7 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field update_session_id fun(session_id: string) セッションIDを更新
 ---@field add_user_section fun() ユーザーセクションを追加
 ---@field get_bufnr fun(): number バッファ番号を取得
----@field insert_ask_user_question fun(message: string, questions: table) AskUserQuestion質問を挿入
+---@field insert_choices fun(questions: table) AskUserQuestion選択肢を挿入
 
 ---メッセージを送信
 ---@param adapter table アダプター

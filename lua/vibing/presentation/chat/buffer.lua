@@ -34,16 +34,8 @@ end
 
 ---チャットウィンドウを開く
 function ChatBuffer:open()
-  vim.notify(
-    "[vibing.nvim DEBUG] ChatBuffer:open() called, instance ID: " .. tostring(self),
-    vim.log.levels.WARN
-  )
   if self:is_open() then
     vim.api.nvim_set_current_win(self.win)
-    vim.notify(
-      "[vibing.nvim DEBUG] Window already open, returning early",
-      vim.log.levels.WARN
-    )
     return
   end
 

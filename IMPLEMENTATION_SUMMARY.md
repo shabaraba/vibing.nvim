@@ -4,140 +4,272 @@
 
 Issue #250に基づき、Claude Agent SDKの`AskUserQuestion`ツールをvibing.nvimに統合しました。
 
-## 実装詳細
+## 実装アーキテクチャ
+
+### Simplified Deny-Based Flow
+
+複雑なPromiseベースの実装から、シンプルなdeny-basedフローに簡素化しました:
+
+1. **Claude calls AskUserQuestion tool**
+2. **Agent Wrapper denies the tool** and sends `insert_choices` event
+3. **Lua inserts choices** into chat buffer as plain markdown
+4. **User edits and sends** via normal message flow
+5. **Claude receives answer** as a regular user message
+
+### Why This Approach?
+
+- **No special state management** - No pending questions, no Promise waiting, no handle mapping
+- **No stdin/stdout communication** - Simple one-way event flow
+- **Instance-safe** - No ChatBuffer instance tracking issues
+- **Natural UX** - Users interact with choices as normal text
+
+## Implementation Details
 
 ### 1. Agent Wrapper (Node.js側)
 
-**ファイル:** `bin/agent-wrapper.mjs`
+**File:** `bin/agent-wrapper.mjs`
 
-**追加機能:**
+**Changes:**
 
-- `askFollowupQuestion`コールバック: 質問を自然言語形式に変換してLuaに送信
-- stdin listener: Luaからの回答を受信し、Promiseをresolve
-- `ask_user_question`イベント送信 (JSON Lines形式)
+```javascript
+// In canUseTool callback (lines 644-659)
+if (toolName === 'AskUserQuestion') {
+  // Send insert_choices event to Lua
+  console.log(
+    safeJsonStringify({
+      type: 'insert_choices',
+      questions: input.questions,
+    })
+  );
 
-**通信フロー:**
-
+  // Deny the tool - Claude will wait for user's normal message
+  return {
+    behavior: 'deny',
+    message: 'Please wait for user to select from the provided options.',
+  };
+}
 ```
-Agent SDK → askFollowupQuestion → JSON Lines出力 → Lua
-Lua → stdin入力 → Promise resolve → Agent SDK
+
+**System Prompt Addition (lines 221-237):**
+
+```markdown
+## Asking Questions with Choices
+
+**IMPORTANT:** When you need to ask the user a question with multiple choice options, you MUST use the AskUserQuestion tool.
+
+The AskUserQuestion tool provides:
+
+- Structured UI with proper option descriptions
+- Multi-select capability when needed
+- Automatic insertion of choices into the user's input area
+- Better user experience
+
+**How it works:**
+
+1. You call AskUserQuestion with your question and options
+2. The tool is denied, but choices are automatically inserted into the user's input area
+3. User deletes unwanted options and presses Enter to send their choice
+4. You receive the user's selection as a normal message
+
+**DO NOT format choices manually in your response.** Always use the AskUserQuestion tool for choice-based questions.
 ```
+
+**Removed:**
+
+- ❌ stdin/stdout listeners
+- ❌ `pendingAskUserQuestion` state
+- ❌ `askUserQuestionResolver` Promise handling
+- ❌ `ask_user_question_response` event parsing
 
 ### 2. Lua Adapter
 
-**ファイル:** `lua/vibing/infrastructure/adapter/agent_sdk.lua`
+**File:** `lua/vibing/infrastructure/adapter/agent_sdk.lua`
 
-**追加機能:**
-
-- `on_ask_user_question`イベント処理
-- `send_ask_user_question_answer()`: stdinへの回答送信
-- `get_pending_question()`, `clear_pending_question()`: 質問管理
-- handle_idと質問のマッピング管理
-
-### 3. Chat Buffer (UI層)
-
-**ファイル:** `lua/vibing/presentation/chat/buffer.lua`
-
-**追加機能:**
-
-- `insert_ask_user_question()`: 質問をプレーンテキストとしてバッファに挿入
-- `get_ask_user_question_answers()`: バッファから選択肢をパース
-- `has_pending_ask_user_question()`: 保留中の質問をチェック
-- `clear_pending_ask_user_question()`: 質問状態をクリア
-
-**パース方式:**
+**Changes:**
 
 ```lua
--- バッファ内に `- {opt.label}` が残っているかチェック
-if buffer_content:find("- " .. vim.pesc(opt.label)) then
-  table.insert(selected_options, opt.label)
+-- In stdout handler (lines 259-263)
+elseif msg.type == "insert_choices" and msg.questions then
+  if opts.on_insert_choices then
+    opts.on_insert_choices(msg.questions)
+  end
 end
 ```
 
-### 4. Send Message (アプリケーション層)
+**Removed:**
 
-**ファイル:** `lua/vibing/application/chat/send_message.lua`
+- ❌ `_pending_questions` field
+- ❌ `send_ask_user_question_answer()` method
+- ❌ `get_pending_question()` method
+- ❌ `clear_pending_question()` method
+- ❌ handle_id mapping logic
 
-**追加機能:**
+### 3. Chat Buffer (UI層)
 
-- `on_ask_user_question`コールバックの追加
-- `set_current_handle_id`コールバックでhandle_idを追跡
-- 質問イベントをチャットバッファに転送
+**File:** `lua/vibing/presentation/chat/buffer.lua`
+
+**Changes:**
+
+```lua
+-- New field (line 15)
+---@field _pending_choices table[]? add_user_section()後に挿入する選択肢
+
+-- New method (lines 1085-1091)
+function ChatBuffer:insert_choices(questions)
+  -- 選択肢を保存（add_user_section()で挿入される）
+  self._pending_choices = questions
+end
+
+-- Modified add_user_section() (lines 981-1003)
+-- 保留中の選択肢があれば、未送信Userセクションの直後に挿入
+if self._pending_choices then
+  local choice_lines = {}
+  for _, q in ipairs(self._pending_choices) do
+    for _, opt in ipairs(q.options) do
+      table.insert(choice_lines, "- " .. opt.label)
+      if opt.description then
+        table.insert(choice_lines, "  " .. opt.description)
+      end
+    end
+    table.insert(choice_lines, "")
+  end
+  vim.api.nvim_buf_set_lines(self.buf, insert_pos, insert_pos, false, choice_lines)
+  self._pending_choices = nil
+end
+```
+
+**Critical Bug Fix:**
+
+```lua
+-- BEFORE (BUG - matched "- MongoDB" as "---"):
+if Timestamp.is_header(line) or line:match("^---") then
+  break
+end
+
+-- AFTER (FIXED):
+if Timestamp.is_header(line) then
+  break
+end
+```
+
+**Removed:**
+
+- ❌ `_pending_ask_user_question` field
+- ❌ `_current_handle_id` field
+- ❌ `insert_ask_user_question()` method
+- ❌ `get_ask_user_question_answers()` method
+- ❌ `has_pending_ask_user_question()` method
+- ❌ `clear_pending_ask_user_question()` method
+
+### 4. Send Message (Application Layer)
+
+**File:** `lua/vibing/application/chat/send_message.lua`
+
+**Changes:**
+
+```lua
+-- Updated callback (lines 81-86)
+on_insert_choices = function(questions)
+  vim.schedule(function()
+    callbacks.insert_choices(questions)
+  end)
+end,
+```
+
+**Type Annotation Fix:**
+
+```lua
+-- Fixed (line 22)
+---@field insert_choices fun(questions: table) AskUserQuestion選択肢を挿入
+```
+
+**Removed:**
+
+- ❌ `on_ask_user_question` callback
+- ❌ `set_current_handle_id` callback
+- ❌ handle_id tracking logic
 
 ## UXデザイン
 
-### 基本フロー
+### Basic Flow
 
-1. **Claudeが質問** → 選択肢がプレーンテキストとして表示:
+1. **Claude asks question** → Choices inserted as plain markdown:
 
    ```markdown
-   Which database should we use?
+   ## User <!-- unsent -->
 
    - PostgreSQL
+     PostgreSQL is a powerful open-source relational database
    - MySQL
+     MySQL is a popular open-source database
    - SQLite
+     SQLite is a lightweight embedded database
    ```
 
-2. **ユーザーが編集** → 不要な選択肢を削除（`dd`など）:
+2. **User edits** → Delete unwanted choices (`dd`, etc.):
 
    ```markdown
-   Which database should we use?
+   ## User <!-- unsent -->
 
    - PostgreSQL
+     PostgreSQL is a powerful open-source relational database
    ```
 
-3. **`<CR>`で送信** → 残った選択肢が回答として送信
+3. **User presses `<CR>`** → Selected choice sent as normal message
 
-### 設計の利点
+### Design Benefits
 
-- ✅ **Vimネイティブ**: 標準的な編集コマンドを使用
-- ✅ **非侵襲的**: 特別なキーマップやUI不要
-- ✅ **並行性**: 複数チャットセッションと互換
-- ✅ **柔軟性**: 追加の指示も記述可能
+- ✅ **Vim Native**: Standard editing commands (`dd`, `dj`, etc.)
+- ✅ **Non-Invasive**: No special keymaps or UI elements
+- ✅ **Simple**: No complex state management
+- ✅ **Flexible**: Can add additional instructions
+- ✅ **Instance-Safe**: No ChatBuffer instance tracking needed
 
-## テスト状況
+## Code Statistics
 
-### 自動テスト
+**Net Change:** -81 lines
+
+- ❌ Deleted: 161 lines (old implementation)
+- ✅ Added: 80 lines (new implementation)
+
+## Test Status
+
+### Automated Tests
 
 ```bash
 # Lua syntax check
 npm run check:lua  # ✅ PASS
 
-# Implementation verification
-./verify-implementation.sh  # ✅ PASS (all checks)
+# Lint and format
+npm run lint       # ✅ PASS
+npm run format:check  # ✅ PASS
 ```
 
-### 手動テスト
+### Manual Test
 
-手動テスト手順は`MANUAL_TEST.md`を参照してください。
+See `MANUAL_TEST.md` for detailed test procedures.
 
-**注意:** AskUserQuestionはClaudeが必要と判断した時のみ使用されます。実装は正しく動作しますが、Claudeの判断に依存します。
+**Note:** AskUserQuestion is used only when Claude decides it's necessary. The implementation works correctly, but depends on Claude's judgment.
 
-## ドキュメント
+## Documentation
 
-### 追加/更新ファイル
+### Added/Updated Files
 
-- ✅ `CLAUDE.md` - AskUserQuestionの使用方法を追加
-- ✅ `docs/adr/005-ask-user-question-ux-design.md` - 設計判断を文書化
-- ✅ `docs/adr/adr-index-and-guide.md` - ADR indexを更新
-- ✅ `MANUAL_TEST.md` - 手動テスト手順
-- ✅ `IMPLEMENTATION_SUMMARY.md` - この実装サマリー
+- ✅ `CLAUDE.md` - Added AskUserQuestion usage documentation
+- ✅ `docs/adr/005-ask-user-question-ux-design.md` - Documented design decisions
+- ✅ `docs/adr/adr-index-and-guide.md` - Updated ADR index
+- ✅ `MANUAL_TEST.md` - Manual test procedures
+- ✅ `IMPLEMENTATION_SUMMARY.md` - This summary
 
-## コミット情報
+## Commit Information
 
-```
-Commit: 28cf204
+```text
+Commit: eecfe3d
 Branch: feature/ask-user-question-250
-Message: feat: Implement AskUserQuestion tool support (#250)
+Message: feat: simplify AskUserQuestion implementation
 ```
 
-## 次のステップ
-
-1. **手動テスト**: `MANUAL_TEST.md`の手順でNeovimでの動作確認
-2. **PR作成**: mainブランチへのマージリクエスト
-3. **ユーザーフィードバック**: 実際の使用感を収集
-
-## 技術仕様
+## Technical Specifications
 
 ### JSON Lines Protocol
 
@@ -145,38 +277,45 @@ Message: feat: Implement AskUserQuestion tool support (#250)
 
 ```json
 {
-  "type": "ask_user_question",
-  "questions": [...],
-  "message": "質問テキスト"
+  "type": "insert_choices",
+  "questions": [
+    {
+      "question": "Which database should we use?",
+      "header": "Database",
+      "multiSelect": false,
+      "options": [
+        {
+          "label": "PostgreSQL",
+          "description": "PostgreSQL is a powerful open-source relational database"
+        },
+        {
+          "label": "MySQL",
+          "description": "MySQL is a popular open-source database"
+        }
+      ]
+    }
+  ]
 }
 ```
 
-**Lua → Agent Wrapper (stdin):**
-
-```json
-{
-  "type": "ask_user_question_response",
-  "answers": {
-    "質問文": "選択された回答"
-  }
-}
-```
+**No Response Required** - User sends choice via normal message flow
 
 ### Agent SDK Integration
 
 ```javascript
-queryOptions.askFollowupQuestion = async (input) => {
-  // 質問を自然言語形式に変換
-  // JSON Linesで送信
-  // Promiseで回答を待機
-  return new Promise((resolve) => {
-    askUserQuestionResolver = resolve;
-  });
-};
+// In canUseTool callback
+if (toolName === 'AskUserQuestion') {
+  // Emit insert_choices event
+  console.log(safeJsonStringify({ type: 'insert_choices', questions: input.questions }));
+
+  // Deny tool to make Claude wait for user message
+  return { behavior: 'deny', message: '...' };
+}
 ```
 
-## 関連リソース
+## Related Resources
 
 - Issue #250: AskUserQuestion tool support
+- ADR 005: AskUserQuestion UX Design
 - ADR 002: Concurrent Execution Support
-- Claude Agent SDK Documentation: https://github.com/anthropics/claude-agent-sdk-typescript
+- Claude Agent SDK Documentation: <https://github.com/anthropics/claude-agent-sdk-typescript>

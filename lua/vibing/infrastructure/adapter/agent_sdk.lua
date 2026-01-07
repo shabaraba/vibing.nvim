@@ -276,10 +276,6 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
     stderr = function(err, data)
       if data then
         table.insert(error_output, data)
-        -- DEBUG: Show stderr directly to see Node.js debug logs
-        vim.schedule(function()
-          vim.notify("[STDERR] " .. data, vim.log.levels.WARN)
-        end)
       end
     end,
   }, function(obj)
