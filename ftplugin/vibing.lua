@@ -40,9 +40,38 @@ if ok then
     callback = function()
       pcall(ui_utils.apply_wrap_config, 0)
     end,
-    desc = "Apply vibing wrap settings on buffer enter"
+    desc = "Apply vibing wrap settings on buffer enter",
   })
 end
+
+-- Clean up running processes when buffer is unloaded
+-- This prevents "Job still running" errors when closing Neovim
+local bufnr = vim.api.nvim_get_current_buf()
+local group = vim.api.nvim_create_augroup("vibing_cleanup", { clear = false })
+
+vim.api.nvim_create_autocmd("BufUnload", {
+  group = group,
+  buffer = bufnr,
+  callback = function()
+    -- Get the ChatBuffer instance for this buffer
+    local ok_view, view = pcall(require, "vibing.presentation.chat.view")
+    if not ok_view then
+      return
+    end
+
+    local chat_buf = view._attached_buffers[bufnr] or (view._current_buffer and view._current_buffer.buf == bufnr and view._current_buffer)
+    if chat_buf and chat_buf._current_handle_id then
+      local ok_vibing, vibing = pcall(require, "vibing")
+      if ok_vibing then
+        local adapter = vibing.get_adapter()
+        if adapter then
+          adapter:cancel(chat_buf._current_handle_id)
+        end
+      end
+    end
+  end,
+  desc = "Cancel running Agent SDK process on buffer unload",
+})
 
 -- Disable spell checking by default (users can enable with :set spell)
 vim.wo.spell = false

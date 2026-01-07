@@ -20,6 +20,7 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field add_user_section fun() ユーザーセクションを追加
 ---@field get_bufnr fun(): number バッファ番号を取得
 ---@field insert_choices fun(questions: table) AskUserQuestion選択肢を挿入
+---@field clear_handle_id fun() handle_idをクリア
 
 ---メッセージを送信
 ---@param adapter table アダプター
@@ -92,8 +93,9 @@ function M.execute(adapter, callbacks, message, config)
     opts._session_id_explicit = true
   end
 
+  local handle_id = nil
   if adapter:supports("streaming") then
-    local handle_id = adapter:stream(formatted_prompt, opts, function(chunk)
+    handle_id = adapter:stream(formatted_prompt, opts, function(chunk)
       vim.schedule(function()
         callbacks.append_chunk(chunk)
       end)
@@ -106,6 +108,8 @@ function M.execute(adapter, callbacks, message, config)
     local response = adapter:execute(formatted_prompt, opts)
     M._handle_response(response, callbacks, modified_files, saved_contents, adapter)
   end
+
+  return handle_id
 end
 
 ---バッファの内容を保存
@@ -154,6 +158,9 @@ function M._handle_response(response, callbacks, modified_files, saved_contents,
       callbacks.update_session_id(new_session)
     end
   end
+
+  -- リクエスト完了時にhandle_idをクリア
+  callbacks.clear_handle_id()
 
   callbacks.add_user_section()
 end

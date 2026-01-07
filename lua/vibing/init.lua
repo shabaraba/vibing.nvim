@@ -39,19 +39,28 @@ function M.setup(opts)
     local port = rpc_server.start(M.config.mcp.rpc_port)
     if port > 0 then
       notify.info(string.format("MCP RPC server started on port %d", port))
-
-      -- 終了時にクリーンアップ
-      vim.api.nvim_create_autocmd("VimLeavePre", {
-        callback = function()
-          rpc_server.stop()
-        end,
-      })
     end
   end
 
   -- アダプターの初期化（agent_sdk固定）
   local AgentSDK = require("vibing.infrastructure.adapter.agent_sdk")
   M.adapter = AgentSDK:new(M.config)
+
+  -- 終了時にクリーンアップ
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    callback = function()
+      -- Agent SDKプロセスを全てキャンセル
+      if M.adapter then
+        M.adapter:cancel()
+      end
+
+      -- RPCサーバー停止
+      if M.config.mcp and M.config.mcp.enabled then
+        local rpc_server = require("vibing.infrastructure.rpc.server")
+        rpc_server.stop()
+      end
+    end,
+  })
 
   -- チャットコマンド初期化
   require("vibing.application.chat").setup()

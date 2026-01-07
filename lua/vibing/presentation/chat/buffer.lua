@@ -17,6 +17,7 @@ local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 ---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
 ---@field _pending_choices table[]? add_user_section()後に挿入する選択肢
+---@field _current_handle_id string? 実行中のリクエストのハンドルID
 local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
@@ -32,6 +33,7 @@ function ChatBuffer:new(config)
   instance._chunk_buffer = ""
   instance._chunk_timer = nil
   instance._pending_choices = nil
+  instance._current_handle_id = nil
   return instance
 end
 
@@ -65,6 +67,16 @@ end
 
 ---チャットウィンドウを閉じる
 function ChatBuffer:close()
+  -- 実行中のリクエストをキャンセル
+  if self._current_handle_id then
+    local vibing = require("vibing")
+    local adapter = vibing.get_adapter()
+    if adapter then
+      adapter:cancel(self._current_handle_id)
+    end
+    self._current_handle_id = nil
+  end
+
   if self._chunk_timer then
     vim.fn.timer_stop(self._chunk_timer)
     self._chunk_timer = nil
@@ -290,9 +302,17 @@ function ChatBuffer:send_message()
     insert_choices = function(questions)
       return self:insert_choices(questions)
     end,
+    clear_handle_id = function()
+      self._current_handle_id = nil
+    end,
   }
 
-  SendMessage.execute(adapter, callbacks, message, config)
+  -- リクエストを送信してhandle_idを保存
+  local handle_id = SendMessage.execute(adapter, callbacks, message, config)
+  if handle_id then
+    self._current_handle_id = handle_id
+  end
+
   if self:is_open() then
     Renderer.moveCursorToEnd(self.win, self.buf)
   end
