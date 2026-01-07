@@ -857,10 +857,11 @@ function ChatBuffer:start_response()
   end
   vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, lines)
 
-  -- Markdown標準: 空行 + 見出し + 空行
+  -- Markdown標準: 空行 + 見出し + 空行2つ（応答開始用の余白）
   local new_lines = {
     "",
     "## Assistant",
+    "",
     "",
   }
   vim.api.nvim_buf_set_lines(self.buf, #lines, #lines, false, new_lines)
