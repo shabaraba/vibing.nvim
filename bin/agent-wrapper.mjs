@@ -858,10 +858,7 @@ try {
           let inputSummary = '';
           const toolInput = block.input || {};
           if (toolInput.command) {
-            inputSummary =
-              toolInput.command.length > 50
-                ? toolInput.command.substring(0, 50) + '...'
-                : toolInput.command;
+            inputSummary = toolInput.command;
           } else if (toolInput.file_path) {
             inputSummary = toolInput.file_path;
           } else if (toolInput.pattern) {
