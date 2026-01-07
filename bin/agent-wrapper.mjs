@@ -24,6 +24,7 @@ let prioritizeVibingLsp = true; // Default: prioritize vibing-nvim LSP tools
 let mcpEnabled = false; // Default: MCP integration disabled
 let language = null; // Language code for AI responses (e.g., "ja", "en")
 let rpcPort = null; // RPC port of the Neovim instance running this chat
+let toolResultDisplay = 'compact'; // Tool result display mode: "none" | "compact" | "full"
 
 // Parse arguments
 for (let i = 0; i < args.length; i++) {
@@ -127,6 +128,9 @@ for (let i = 0; i < args.length; i++) {
     i++;
   } else if (args[i] === '--rpc-port' && args[i + 1]) {
     rpcPort = parseInt(args[i + 1], 10);
+    i++;
+  } else if (args[i] === '--tool-result-display' && args[i + 1]) {
+    toolResultDisplay = args[i + 1];
     i++;
   } else if (!args[i].startsWith('--')) {
     prompt = args[i];
@@ -798,6 +802,7 @@ let sessionIdEmitted = false;
 let respondingEmitted = false;
 const processedToolUseIds = new Set(); // Track processed tool_use IDs to prevent duplicates
 const toolUseMap = new Map(); // Map tool_use_id to tool_name for tracking MCP tool results
+let lastOutputType = null; // Track last output type: "text" | "tool" | "tool_result"
 
 try {
   // Create query with all options
@@ -827,7 +832,13 @@ try {
             console.log(safeJsonStringify({ type: 'status', state: 'responding' }));
             respondingEmitted = true;
           }
-          console.log(safeJsonStringify({ type: 'chunk', text: block.text }));
+          // Add blank line before text if previous output was tool or tool_result
+          let textToEmit = block.text;
+          if (lastOutputType === 'tool' || lastOutputType === 'tool_result') {
+            textToEmit = '\n' + textToEmit;
+          }
+          console.log(safeJsonStringify({ type: 'chunk', text: textToEmit }));
+          lastOutputType = 'text';
         } else if (block.type === 'tool_use') {
           // Check if this tool_use has already been processed
           const toolUseId = block.id;
@@ -877,12 +888,18 @@ try {
             );
           }
 
+          // Add blank line before tool if previous output was text
+          let toolText = `⏺ ${toolName}(${inputSummary})\n`;
+          if (lastOutputType === 'text') {
+            toolText = '\n' + toolText;
+          }
           console.log(
             safeJsonStringify({
               type: 'chunk',
-              text: `\n⏺ ${toolName}(${inputSummary})\n`,
+              text: toolText,
             })
           );
+          lastOutputType = 'tool';
         }
       }
     }
@@ -921,15 +938,27 @@ try {
             }
           }
 
-          const preview =
-            resultText.length > 100 ? resultText.substring(0, 100) + '...' : resultText;
-          if (preview) {
-            console.log(
-              safeJsonStringify({
-                type: 'chunk',
-                text: `  ⎿  ${preview.replace(/\n/g, '\n     ')}\n\n`,
-              })
-            );
+          // Display tool result based on toolResultDisplay setting
+          if (toolResultDisplay !== 'none') {
+            let displayText = '';
+            if (toolResultDisplay === 'compact') {
+              // Show first 100 characters only
+              displayText =
+                resultText.length > 100 ? resultText.substring(0, 100) + '...' : resultText;
+            } else if (toolResultDisplay === 'full') {
+              // Show full text
+              displayText = resultText;
+            }
+
+            if (displayText) {
+              console.log(
+                safeJsonStringify({
+                  type: 'chunk',
+                  text: `  ⎿  ${displayText.replace(/\n/g, '\n     ')}\n`,
+                })
+              );
+              lastOutputType = 'tool_result';
+            }
           }
         }
       }
