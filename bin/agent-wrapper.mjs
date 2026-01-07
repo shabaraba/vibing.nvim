@@ -802,6 +802,7 @@ let sessionIdEmitted = false;
 let respondingEmitted = false;
 const processedToolUseIds = new Set(); // Track processed tool_use IDs to prevent duplicates
 const toolUseMap = new Map(); // Map tool_use_id to tool_name for tracking MCP tool results
+const toolInputMap = new Map(); // Map tool_use_id to input_summary for display pairing
 let lastOutputType = null; // Track last output type: "text" | "tool" | "tool_result"
 
 try {
@@ -852,6 +853,8 @@ try {
 
           // Store tool_use_id -> tool_name mapping for later result tracking
           toolUseMap.set(toolUseId, toolName);
+
+          // Generate input summary
           let inputSummary = '';
           const toolInput = block.input || {};
           if (toolInput.command) {
@@ -866,6 +869,9 @@ try {
           } else if (toolInput.query) {
             inputSummary = toolInput.query;
           }
+
+          // Store tool_use_id -> input_summary for paired display
+          toolInputMap.set(toolUseId, inputSummary);
 
           // Emit status message for ALL tools
           console.log(
@@ -888,18 +894,7 @@ try {
             );
           }
 
-          // Add blank line before tool if previous output was text
-          let toolText = `⏺ ${toolName}(${inputSummary})\n`;
-          if (lastOutputType === 'text') {
-            toolText = '\n' + toolText;
-          }
-          console.log(
-            safeJsonStringify({
-              type: 'chunk',
-              text: toolText,
-            })
-          );
-          lastOutputType = 'tool';
+          // Don't display tool execution here - will display paired with result later
         }
       }
     }
@@ -938,6 +933,15 @@ try {
             }
           }
 
+          // Display tool execution and result as a pair
+          const inputSummary = toolInputMap.get(toolUseId) || '';
+
+          // Add blank line before tool if previous output was text
+          let toolText = `⏺ ${toolName}(${inputSummary})\n`;
+          if (lastOutputType === 'text') {
+            toolText = '\n' + toolText;
+          }
+
           // Display tool result based on toolResultDisplay setting
           if (toolResultDisplay !== 'none') {
             let displayText = '';
@@ -951,15 +955,18 @@ try {
             }
 
             if (displayText) {
-              console.log(
-                safeJsonStringify({
-                  type: 'chunk',
-                  text: `  ⎿  ${displayText.replace(/\n/g, '\n     ')}\n`,
-                })
-              );
-              lastOutputType = 'tool_result';
+              toolText += `  ⎿  ${displayText.replace(/\n/g, '\n     ')}\n`;
             }
           }
+
+          // Emit paired tool execution and result
+          console.log(
+            safeJsonStringify({
+              type: 'chunk',
+              text: toolText,
+            })
+          );
+          lastOutputType = 'tool_result';
         }
       }
     }
