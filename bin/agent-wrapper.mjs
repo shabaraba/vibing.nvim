@@ -142,6 +142,15 @@ if (!prompt) {
   process.exit(1);
 }
 
+// Validate tool_result_display argument
+const validDisplayModes = ['none', 'compact', 'full'];
+if (!validDisplayModes.includes(toolResultDisplay)) {
+  console.error(
+    `Invalid --tool-result-display value: "${toolResultDisplay}". Valid values: ${validDisplayModes.join(', ')}`
+  );
+  process.exit(1);
+}
+
 // Language code to name mapping
 const languageNames = {
   ja: 'Japanese',
@@ -964,6 +973,10 @@ try {
             })
           );
           lastOutputType = 'tool_result';
+
+          // Cleanup: Remove processed tool mappings to prevent memory leaks
+          toolUseMap.delete(toolUseId);
+          toolInputMap.delete(toolUseId);
         }
       }
     }
