@@ -90,13 +90,24 @@ function M.get_selected_files(start_line, end_line)
   local files = {}
   local buf = vim.api.nvim_get_current_buf()
 
+  -- oil.nvimの内部APIを取得
+  local ok, parser = pcall(require, "oil.mutator.parser")
+  if not ok then
+    -- oil.nvimの内部APIが利用できない場合はカーソル位置のファイルのみを返す
+    local file = M.get_cursor_file()
+    if file then
+      return { file }
+    end
+    return {}
+  end
+
   for line_nr = start_line, end_line do
-    -- 各行のエントリを取得（oil.nvimの内部API）
-    local parser = require("oil.mutator.parser")
-    local line = vim.api.nvim_buf_get_lines(buf, line_nr - 1, line_nr, false)[1]
-    if line then
-      local entry = parser.parse_line(line)
-      if entry and entry.name and entry.type ~= "directory" then
+    local lines = vim.api.nvim_buf_get_lines(buf, line_nr - 1, line_nr, false)
+    local line = lines[1]
+
+    if line and line ~= "" then
+      local ok_parse, entry = pcall(parser.parse_line, line)
+      if ok_parse and entry and entry.name and entry.type ~= "directory" then
         local file_path = dir
         if not file_path:match("/$") then
           file_path = file_path .. "/"
