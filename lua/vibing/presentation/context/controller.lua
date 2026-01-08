@@ -25,11 +25,16 @@ function M.handle_add(opts)
   -- 優先順位3: oil.nvimバッファからファイルを追加
   local ok, oil = pcall(require, "vibing.integrations.oil")
   if ok and oil.is_oil_buffer() then
-    local send_ok, err = pcall(oil.send_to_chat)
-    if send_ok then
+    local file_path = oil.get_cursor_file()
+    if file_path then
+      Context.add(file_path)
+      M._update_chat_context_if_open()
       return
     end
-    -- エラーがあっても続行（通常のコンテキスト追加にフォールスルー）
+    -- ファイルが取得できない場合（ディレクトリ等）は警告を表示
+    local notify = require("vibing.core.utils.notify")
+    notify.warn("No file selected (directories are not supported)", "Context")
+    return
   end
 
   -- 優先順位4: 現在のバッファ
