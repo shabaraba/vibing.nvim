@@ -25,6 +25,18 @@ function M.is_oil_buffer()
   return current_dir ~= nil
 end
 
+---ディレクトリパスとエントリ名を結合
+---@param dir string ディレクトリパス
+---@param name string エントリ名
+---@return string 結合されたパス
+local function join_path(dir, name)
+  local path = dir
+  if not path:match("/$") then
+    path = path .. "/"
+  end
+  return path .. name
+end
+
 ---カーソル位置のエントリのファイルパスを取得
 ---ディレクトリの場合はnilを返す（ファイルのみ対象）
 ---現在のディレクトリパスとエントリ名を結合して絶対パスを生成
@@ -51,14 +63,7 @@ function M.get_cursor_file()
     return nil
   end
 
-  -- パスを結合（末尾のスラッシュを考慮）
-  local file_path = dir
-  if not file_path:match("/$") then
-    file_path = file_path .. "/"
-  end
-  file_path = file_path .. entry.name
-
-  return file_path
+  return join_path(dir, entry.name)
 end
 
 ---選択されたファイルパスを取得
@@ -94,16 +99,12 @@ function M.get_selected_files(start_line, end_line)
   for line_nr = start_line, end_line do
     local entry = oil.get_entry_on_line(buf, line_nr)
     if entry and entry.name and entry.type ~= "directory" then
-      local file_path = dir
-      if not file_path:match("/$") then
-        file_path = file_path .. "/"
-      end
-      file_path = file_path .. entry.name
-      table.insert(files, file_path)
+      table.insert(files, join_path(dir, entry.name))
     end
   end
 
-  -- デバッグ: 結果が空の場合、少なくともカーソル位置のファイルを返す
+  -- フォールバック: 結果が空の場合、カーソル位置のファイルを返す
+  -- (パース失敗や空行選択時の対策)
   if #files == 0 then
     local file = M.get_cursor_file()
     if file then
