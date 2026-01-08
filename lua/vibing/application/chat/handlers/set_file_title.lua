@@ -91,17 +91,7 @@ return function(_, chat_buffer)
     local new_file_path = get_unique_file_path(save_dir, new_filename)
 
     if old_file_path and vim.fn.filereadable(old_file_path) == 1 then
-      local ok, save_err = pcall(function()
-        vim.api.nvim_buf_call(chat_buffer.buf, function()
-          vim.cmd("write")
-        end)
-      end)
-
-      if not ok then
-        notify.error(string.format("Failed to save: %s", save_err))
-        return
-      end
-
+      -- 既存ファイルの場合：ファイルをリネームしてからバッファ名を変更
       local rename_result = vim.fn.rename(old_file_path, new_file_path)
       if rename_result ~= 0 then
         notify.error("Failed to rename file")
@@ -111,12 +101,13 @@ return function(_, chat_buffer)
       vim.api.nvim_buf_set_name(chat_buffer.buf, new_file_path)
       chat_buffer.file_path = new_file_path
     else
+      -- 新規ファイルの場合：バッファ名を変更してから保存
       chat_buffer.file_path = new_file_path
       vim.api.nvim_buf_set_name(chat_buffer.buf, new_file_path)
 
       local ok, save_err = pcall(function()
         vim.api.nvim_buf_call(chat_buffer.buf, function()
-          vim.cmd("write")
+          vim.cmd("write!")
         end)
       end)
 
