@@ -58,15 +58,11 @@ function M.init_content(buf)
   table.insert(lines, "")
   table.insert(lines, Timestamp.create_unsent_user_header())
   table.insert(lines, "")
-  table.insert(lines, "")
-
-  local contextText = "Context: " .. Context.format_for_display()
-  local contextLines = vim.split(contextText, "\n", { plain = true })
-  vim.list_extend(lines, contextLines)
 
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
-  return #lines - 2
+  -- カーソル位置は最後の行（空行の位置）
+  return #lines
 end
 
 ---Contextディスプレイを更新
