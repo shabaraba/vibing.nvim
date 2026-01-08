@@ -36,16 +36,37 @@ function M.generate_from_conversation(conversation, callback)
     return
   end
 
+  -- 長い会話の場合は最初の2メッセージと最後の2メッセージのみを使用
+  local max_messages = 4
+  local selected_conversation = {}
+
+  if #conversation <= max_messages then
+    selected_conversation = conversation
+  else
+    -- 最初の2メッセージ
+    table.insert(selected_conversation, conversation[1])
+    table.insert(selected_conversation, conversation[2])
+    -- 最後の2メッセージ
+    table.insert(selected_conversation, conversation[#conversation - 1])
+    table.insert(selected_conversation, conversation[#conversation])
+  end
+
   local conversation_text = {}
-  for _, msg in ipairs(conversation) do
-    table.insert(conversation_text, string.format("[%s]: %s", msg.role, msg.content))
+  for _, msg in ipairs(selected_conversation) do
+    -- 各メッセージを300文字に制限
+    local content = msg.content
+    if #content > 300 then
+      content = content:sub(1, 300) .. "..."
+    end
+    table.insert(conversation_text, string.format("[%s]: %s", msg.role, content))
   end
 
   local prompt = table.concat(conversation_text, "\n\n")
     .. "\n\n"
-    .. "Based on the above conversation, generate a concise title (maximum 30 characters) that summarizes the main topic. "
-    .. "The title should be suitable for a filename - use only alphanumeric characters, spaces, and hyphens. "
-    .. "Respond with ONLY the title, nothing else."
+    .. "Based on the above conversation, generate a short and descriptive title (15-30 characters) that captures the main topic. "
+    .. "The title should be suitable for a filename - use only English alphanumeric characters, spaces, and hyphens. "
+    .. "Focus on the technical topic discussed (e.g., 'Ollama Integration Fix', 'Chat Buffer Error', 'API Optimization'). "
+    .. "Respond with ONLY the title, nothing else. Do not use Chinese characters."
 
   local collected_response = ""
 
