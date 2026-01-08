@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.17.1 (2026-01-08)
+
+## What's Changed
+* fix: capture nvim_execute output and prevent blocking by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/276
+* fix: improve VibingContext with clipboard copy and path normalization by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/275
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.17.0...v1.17.1
+
 ## 1.17.0 (2026-01-07)
 
 ## What's Changed
