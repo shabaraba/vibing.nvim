@@ -31,22 +31,9 @@ function M.execute(action_or_prompt, additional_instruction)
 
   local action = ActionConfig.get(action_or_prompt)
 
-  -- アダプター選択: docアクションでOllama有効ならOllama、それ以外はagent_sdk
-  local adapter
-  if action and action_or_prompt == "doc" and config.ollama and config.ollama.enabled and config.ollama.use_for_doc then
-    adapter = vibing.get_ollama_adapter()
-    if not adapter then
-      notify.warn("Ollama adapter not available, falling back to agent_sdk", "Inline")
-      adapter = vibing.get_adapter()
-    end
-  else
-    adapter = vibing.get_adapter()
-  end
-
-  if not adapter then
-    notify.error("No adapter configured", "Inline")
-    return
-  end
+  -- アダプター選択: アクション名に基づいて適切なアダプターを取得
+  local use_case = (action and action_or_prompt == "doc") and "doc" or nil
+  local adapter = vibing.get_adapter_for(use_case)
 
   -- If not a predefined action, treat as custom natural language instruction
   if not action then

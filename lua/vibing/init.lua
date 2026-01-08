@@ -5,17 +5,13 @@ local notify = require("vibing.core.utils.notify")
 ---vibing.nvimプラグインのメインモジュール
 ---設定管理、アダプター初期化、コマンド登録を担当するエントリーポイント
 ---@field config Vibing.Config プラグイン設定オブジェクト（setup()で初期化）
----@field adapter Vibing.Adapter AIバックエンドアダプター（agent_sdk, claude, claude_acp等）
+---@field adapter_manager Vibing.AdapterManager アダプター管理マネージャー
 local M = {}
 
----現在使用中のアダプターインスタンス
----setup()でconfig.adapterに基づいて初期化される
----@type Vibing.Adapter?
-M.adapter = nil
-
----Ollamaアダプターインスタンス（有効な場合のみ）
----@type Vibing.Adapter?
-M.ollama_adapter = nil
+---アダプター管理マネージャー
+---setup()で初期化される
+---@type Vibing.AdapterManager?
+M.adapter_manager = nil
 
 ---vibing.nvimプラグインを初期化
 ---設定のマージ、アダプター初期化、チャットシステム初期化、リモート制御初期化、ユーザーコマンド登録を実行
@@ -46,25 +42,27 @@ function M.setup(opts)
     end
   end
 
-  -- アダプターの初期化（agent_sdk固定）
+  -- アダプターの初期化
   local AgentSDK = require("vibing.infrastructure.adapter.agent_sdk")
-  M.adapter = AgentSDK:new(M.config)
+  local agent_sdk_adapter = AgentSDK:new(M.config)
 
-  -- Ollama アダプターの初期化（有効な場合）
+  local ollama_adapter = nil
   if M.config.ollama and M.config.ollama.enabled then
     local OllamaAdapter = require("vibing.infrastructure.adapter.ollama")
-    M.ollama_adapter = OllamaAdapter:new(M.config)
+    ollama_adapter = OllamaAdapter:new(M.config)
     notify.info("Ollama adapter initialized", "Vibing")
-  else
-    M.ollama_adapter = nil
   end
+
+  -- AdapterManager初期化
+  local AdapterManager = require("vibing.infrastructure.adapter.manager")
+  M.adapter_manager = AdapterManager.new(M.config, agent_sdk_adapter, ollama_adapter)
 
   -- 終了時にクリーンアップ
   vim.api.nvim_create_autocmd("VimLeavePre", {
     callback = function()
       -- Agent SDKプロセスを全てキャンセル
-      if M.adapter then
-        M.adapter:cancel()
+      if M.adapter_manager then
+        M.adapter_manager:get_default_adapter():cancel()
       end
 
       -- RPCサーバー停止
@@ -189,20 +187,32 @@ function M._register_commands()
   end, { desc = "Reload custom slash commands" })
 end
 
----現在のアダプターインスタンスを取得
----setup()で初期化されたアダプター（agent_sdk, claude, claude_acp等）を返す
+---ユースケースに応じた適切なアダプターを取得
+---Ollama設定に基づいて、Ollamaまたはagent_sdkアダプターを返す
+---@param use_case "doc"|"title"|nil ユースケース（"doc": ドキュメント生成, "title": タイトル生成, nil: デフォルト）
+---@return Vibing.Adapter アダプターインスタンス
+function M.get_adapter_for(use_case)
+  if not M.adapter_manager then
+    error("vibing.nvim is not initialized. Call setup() first.")
+  end
+  return M.adapter_manager:get_adapter_for(use_case)
+end
+
+---デフォルトのアダプターインスタンスを取得（agent_sdk）
+---後方互換性のために提供
 ---setup()未実行の場合はnilを返す
 ---@return Vibing.Adapter? アダプターインスタンス（初期化済みの場合）またはnil
 function M.get_adapter()
-  return M.adapter
+  return M.adapter_manager and M.adapter_manager:get_default_adapter() or nil
 end
 
 ---Ollamaアダプターインスタンスを取得
+---後方互換性のために提供
 ---Ollama統合が有効な場合のみ、Ollamaアダプターを返す
 ---無効な場合はnilを返す
 ---@return Vibing.Adapter? Ollamaアダプターインスタンス（有効な場合）またはnil
 function M.get_ollama_adapter()
-  return M.ollama_adapter
+  return M.adapter_manager and M.adapter_manager:get_ollama_adapter() or nil
 end
 
 ---現在の設定を取得

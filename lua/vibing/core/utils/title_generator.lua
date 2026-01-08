@@ -18,23 +18,9 @@ function M.generate_from_conversation(conversation, callback)
   end
 
   local vibing = require("vibing")
-  local config = vibing.get_config()
 
-  -- タイトル生成専用のOllama設定をチェック（デフォルトはagent_sdk）
-  local adapter
-  if config.ollama and config.ollama.enabled and config.ollama.use_for_title then
-    adapter = vibing.get_ollama_adapter()
-    if not adapter then
-      adapter = vibing.get_adapter()
-    end
-  else
-    adapter = vibing.get_adapter()
-  end
-
-  if not adapter then
-    callback(nil, "No adapter configured")
-    return
-  end
+  -- タイトル生成専用のアダプターを取得
+  local adapter = vibing.get_adapter_for("title")
 
   -- 長い会話の場合は最初の2メッセージと最後の2メッセージのみを使用
   local max_messages = 4
