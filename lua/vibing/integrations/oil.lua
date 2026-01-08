@@ -25,6 +25,18 @@ function M.is_oil_buffer()
   return current_dir ~= nil
 end
 
+---ディレクトリパスとエントリ名を結合
+---@param dir string ディレクトリパス
+---@param name string エントリ名
+---@return string 結合されたパス
+local function join_path(dir, name)
+  local path = dir
+  if not path:match("/$") then
+    path = path .. "/"
+  end
+  return path .. name
+end
+
 ---カーソル位置のエントリのファイルパスを取得
 ---ディレクトリの場合はnilを返す（ファイルのみ対象）
 ---現在のディレクトリパスとエントリ名を結合して絶対パスを生成
@@ -51,26 +63,56 @@ function M.get_cursor_file()
     return nil
   end
 
-  -- パスを結合（末尾のスラッシュを考慮）
-  local file_path = dir
-  if not file_path:match("/$") then
-    file_path = file_path .. "/"
-  end
-  file_path = file_path .. entry.name
-
-  return file_path
+  return join_path(dir, entry.name)
 end
 
 ---選択されたファイルパスを取得
----oil.nvimは複数選択をサポートしていないため、カーソル位置のファイルのみを配列で返す
----将来的な複数選択対応のためのインターフェース
----@return string[] カーソル位置のファイルの絶対パス配列（ファイルがない場合は空配列）
-function M.get_selected_files()
-  local file = M.get_cursor_file()
-  if file then
-    return { file }
+---Visual modeでの範囲選択に対応
+---@param start_line number? 開始行（1-indexed）
+---@param end_line number? 終了行（1-indexed）
+---@return string[] 選択されたファイルの絶対パス配列（ファイルがない場合は空配列）
+function M.get_selected_files(start_line, end_line)
+  if not M.is_oil_buffer() then
+    return {}
   end
-  return {}
+
+  local oil = require("oil")
+  local dir = oil.get_current_dir()
+  if not dir then
+    return {}
+  end
+
+  -- 範囲選択がない場合はカーソル位置のファイルのみ
+  if not start_line or not end_line then
+    local file = M.get_cursor_file()
+    if file then
+      return { file }
+    end
+    return {}
+  end
+
+  -- 範囲選択されている場合、その範囲のすべてのファイルを取得
+  local files = {}
+  local buf = vim.api.nvim_get_current_buf()
+
+  -- oil.get_entry_on_line() APIを使用してエントリを取得
+  for line_nr = start_line, end_line do
+    local entry = oil.get_entry_on_line(buf, line_nr)
+    if entry and entry.name and entry.type ~= "directory" then
+      table.insert(files, join_path(dir, entry.name))
+    end
+  end
+
+  -- フォールバック: 結果が空の場合、カーソル位置のファイルを返す
+  -- (パース失敗や空行選択時の対策)
+  if #files == 0 then
+    local file = M.get_cursor_file()
+    if file then
+      return { file }
+    end
+  end
+
+  return files
 end
 
 ---カーソル位置のファイルをチャットに@file:path形式で追加

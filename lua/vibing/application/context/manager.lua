@@ -9,8 +9,27 @@ local notify = require("vibing.core.utils.notify")
 M.manual_contexts = {}
 
 ---ファイルをコンテキストに追加
----@param path string?
+---@param path string|string[]? ファイルパスまたはパスの配列
 function M.add(path)
+  -- 配列の場合は複数ファイルをまとめて追加
+  if type(path) == "table" then
+    local added_contexts = {}
+    for _, p in ipairs(path) do
+      local context = Collector.file_to_context(p)
+      if not vim.tbl_contains(M.manual_contexts, context) then
+        table.insert(M.manual_contexts, context)
+        table.insert(added_contexts, context)
+      end
+    end
+
+    if #added_contexts > 0 then
+      M._copy_to_clipboard(added_contexts)
+      notify.info(string.format("Added %d files to context (copied to clipboard)", #added_contexts), "Context")
+    end
+    return
+  end
+
+  -- 単一ファイルの追加
   local context
   if path and path ~= "" then
     context = Collector.file_to_context(path)
@@ -26,7 +45,8 @@ function M.add(path)
 
   if not vim.tbl_contains(M.manual_contexts, context) then
     table.insert(M.manual_contexts, context)
-    notify.info(string.format("Added context: %s", context), "Context")
+    M._copy_to_clipboard(context)
+    notify.info(string.format("Added context: %s (copied to clipboard)", context), "Context")
   end
 end
 
@@ -52,10 +72,11 @@ function M.add_selection()
   end, M.manual_contexts)
 
   table.insert(M.manual_contexts, selection_context)
+  M._copy_to_clipboard(selection_context)
 
   local start_pos = vim.fn.getpos("'<")
   local end_pos = vim.fn.getpos("'>")
-  notify.info(string.format("Added selection: %s:L%d-L%d", relative, start_pos[2], end_pos[2]), "Context")
+  notify.info(string.format("Added selection: %s:L%d-L%d (copied to clipboard)", relative, start_pos[2], end_pos[2]), "Context")
 end
 
 ---コンテキストをクリア
@@ -69,12 +90,21 @@ end
 ---@return string[]
 function M.get_all(auto_context)
   local contexts = vim.deepcopy(M.manual_contexts)
+  local seen_paths = {}
+
+  -- 手動コンテキストのパスを正規化して追跡
+  for _, ctx in ipairs(contexts) do
+    local normalized = M._extract_and_normalize_path(ctx)
+    seen_paths[normalized] = true
+  end
 
   if auto_context then
     local auto = Collector.collect_buffers()
     for _, ctx in ipairs(auto) do
-      if not vim.tbl_contains(contexts, ctx) then
+      local normalized = M._extract_and_normalize_path(ctx)
+      if not seen_paths[normalized] then
         table.insert(contexts, ctx)
+        seen_paths[normalized] = true
       end
     end
   end
@@ -99,6 +129,53 @@ function M.format_for_display()
     return "No context"
   end
   return table.concat(contexts, ", ")
+end
+
+---@private
+---コンテキストをクリップボードにコピー
+---@param contexts string|string[] コンテキスト文字列または配列
+function M._copy_to_clipboard(contexts)
+  local content
+  if type(contexts) == "table" then
+    content = table.concat(contexts, "\n")
+  else
+    content = contexts
+  end
+
+  -- クリップボードプロバイダーを確認
+  if vim.fn.has("clipboard") == 1 then
+    vim.fn.setreg("+", content)
+  else
+    -- クリップボードサポートがない場合は無名レジスタに設定
+    vim.fn.setreg('"', content)
+  end
+end
+
+---@private
+---コンテキスト文字列からファイルパスを抽出して正規化
+---
+---パス正規化の動作:
+---  - 相対パスは絶対パスに変換される
+---  - シンボリックリンクは実際のパスに解決される（:p修飾子の動作）
+---  - これにより、同じファイルへの異なる経路（相対/絶対/シンボリック）を統一的に扱える
+---
+---@param context string @file:path または @file:path:L10-L25 形式
+---@return string 正規化された絶対パス（エラー時は元のcontext）
+function M._extract_and_normalize_path(context)
+  -- @file:path または @file:path:L10-L25 からpathを抽出
+  local path = context:match("^@file:([^:]+)")
+  if not path then
+    return context
+  end
+
+  -- 絶対パスに変換して正規化（シンボリックリンク解決含む）
+  -- エラーハンドリング: パスが無効な場合は元のcontextを返す
+  local ok, absolute = pcall(vim.fn.fnamemodify, path, ":p")
+  if not ok or not absolute or absolute == "" then
+    return context
+  end
+
+  return absolute
 end
 
 return M

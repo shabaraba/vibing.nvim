@@ -7,29 +7,42 @@ local M = {}
 ---@param opts table Neovimコマンドのオプション（args, range等）
 function M.handle_add(opts)
   local Context = require("vibing.application.context.manager")
+  local notify = require("vibing.core.utils.notify")
 
-  -- 優先順位1: 範囲選択（存在する場合）
+  -- 優先順位1: oil.nvimバッファからファイルを追加（範囲選択より優先）
+  local ok, oil = pcall(require, "vibing.integrations.oil")
+  if ok and oil.is_oil_buffer() then
+    -- 範囲選択がある場合は複数ファイルを取得
+    local start_line, end_line
+    if opts.range > 0 then
+      start_line = opts.line1
+      end_line = opts.line2
+    end
+
+    local files = oil.get_selected_files(start_line, end_line)
+    if #files > 0 then
+      -- 複数ファイルをContext.add()で追加（正規化・重複チェック・クリップボードコピーを含む）
+      Context.add(files)
+      M._update_chat_context_if_open()
+      return
+    end
+    -- ファイルが取得できない場合（ディレクトリ等）は警告を表示
+    notify.warn("No file selected (directories are not supported)", "Context")
+    return
+  end
+
+  -- 優先順位2: 範囲選択（存在する場合）
   if opts.range > 0 then
     Context.add_selection()
     M._update_chat_context_if_open()
     return
   end
 
-  -- 優先順位2: ファイルパス引数
+  -- 優先順位3: ファイルパス引数
   if opts.args ~= "" then
     Context.add(opts.args)
     M._update_chat_context_if_open()
     return
-  end
-
-  -- 優先順位3: oil.nvimバッファからファイルを追加
-  local ok, oil = pcall(require, "vibing.integrations.oil")
-  if ok and oil.is_oil_buffer() then
-    local send_ok, err = pcall(oil.send_to_chat)
-    if send_ok then
-      return
-    end
-    -- エラーがあっても続行（通常のコンテキスト追加にフォールスルー）
   end
 
   -- 優先順位4: 現在のバッファ
@@ -50,8 +63,9 @@ function M._update_chat_context_if_open()
   local view = require("vibing.presentation.chat.view")
   if view.is_open() then
     local current_view = view.get_current()
-    if current_view then
-      current_view:_update_context_line()
+    if current_view and current_view.buf then
+      local Renderer = require("vibing.presentation.chat.modules.renderer")
+      Renderer.updateContextLine(current_view.buf)
     end
   end
 end
