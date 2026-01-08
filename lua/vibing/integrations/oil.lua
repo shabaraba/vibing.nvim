@@ -107,14 +107,25 @@ function M.get_selected_files(start_line, end_line)
 
     if line and line ~= "" then
       local ok_parse, entry = pcall(parser.parse_line, line)
-      if ok_parse and entry and entry.name and entry.type ~= "directory" then
-        local file_path = dir
-        if not file_path:match("/$") then
-          file_path = file_path .. "/"
+      if ok_parse and entry and entry.name then
+        -- ディレクトリはスキップ（type == "directory"）
+        if entry.type ~= "directory" then
+          local file_path = dir
+          if not file_path:match("/$") then
+            file_path = file_path .. "/"
+          end
+          file_path = file_path .. entry.name
+          table.insert(files, file_path)
         end
-        file_path = file_path .. entry.name
-        table.insert(files, file_path)
       end
+    end
+  end
+
+  -- デバッグ: 結果が空の場合、少なくともカーソル位置のファイルを返す
+  if #files == 0 then
+    local file = M.get_cursor_file()
+    if file then
+      return { file }
     end
   end
 
