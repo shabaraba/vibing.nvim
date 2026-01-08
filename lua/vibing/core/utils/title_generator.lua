@@ -63,9 +63,9 @@ function M.generate_from_conversation(conversation, callback)
 
   local prompt = table.concat(conversation_text, "\n\n")
     .. "\n\n"
-    .. "Based on the above conversation, generate a short and descriptive title (15-30 characters) that captures the main topic. "
+    .. "Based on the above conversation, generate a descriptive title (20-50 characters) that captures the main topic. "
     .. "The title should be suitable for a filename - use only English alphanumeric characters, spaces, and hyphens. "
-    .. "Focus on the technical topic discussed (e.g., 'Ollama Integration Fix', 'Chat Buffer Error', 'API Optimization'). "
+    .. "Focus on the technical topic discussed (e.g., 'Ollama Streaming Fix and Buffer Error', 'Chat Title Generation with Qwen'). "
     .. "Respond with ONLY the title, nothing else. Do not use Chinese characters."
 
   local collected_response = ""
