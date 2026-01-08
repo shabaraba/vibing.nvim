@@ -79,8 +79,9 @@ function M._update_chat_context_if_open()
   local view = require("vibing.presentation.chat.view")
   if view.is_open() then
     local current_view = view.get_current()
-    if current_view then
-      current_view:_update_context_line()
+    if current_view and current_view.buf then
+      local Renderer = require("vibing.presentation.chat.modules.renderer")
+      Renderer.updateContextLine(current_view.buf)
     end
   end
 end
