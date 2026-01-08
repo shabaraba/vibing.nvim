@@ -114,21 +114,34 @@ end
 
 ---@private
 ---コンテキストをクリップボードにコピー
----@param context string コンテキスト文字列
-function M._copy_to_clipboard(context)
+---@param contexts string|string[] コンテキスト文字列または配列
+function M._copy_to_clipboard(contexts)
+  local content
+  if type(contexts) == "table" then
+    content = table.concat(contexts, "\n")
+  else
+    content = contexts
+  end
+
   -- クリップボードプロバイダーを確認
   if vim.fn.has("clipboard") == 1 then
-    vim.fn.setreg("+", context)
+    vim.fn.setreg("+", content)
   else
     -- クリップボードサポートがない場合は無名レジスタに設定
-    vim.fn.setreg('"', context)
+    vim.fn.setreg('"', content)
   end
 end
 
 ---@private
 ---コンテキスト文字列からファイルパスを抽出して正規化
+---
+---パス正規化の動作:
+---  - 相対パスは絶対パスに変換される
+---  - シンボリックリンクは実際のパスに解決される（:p修飾子の動作）
+---  - これにより、同じファイルへの異なる経路（相対/絶対/シンボリック）を統一的に扱える
+---
 ---@param context string @file:path または @file:path:L10-L25 形式
----@return string 正規化された絶対パス
+---@return string 正規化された絶対パス（エラー時は元のcontext）
 function M._extract_and_normalize_path(context)
   -- @file:path または @file:path:L10-L25 からpathを抽出
   local path = context:match("^@file:([^:]+)")
@@ -137,7 +150,12 @@ function M._extract_and_normalize_path(context)
   end
 
   -- 絶対パスに変換して正規化（シンボリックリンク解決含む）
-  local absolute = vim.fn.fnamemodify(path, ":p")
+  -- エラーハンドリング: パスが無効な場合は元のcontextを返す
+  local ok, absolute = pcall(vim.fn.fnamemodify, path, ":p")
+  if not ok or not absolute or absolute == "" then
+    return context
+  end
+
   return absolute
 end
 

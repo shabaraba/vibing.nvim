@@ -22,24 +22,18 @@ function M.handle_add(opts)
     local files = oil.get_selected_files(start_line, end_line)
     if #files > 0 then
       -- 複数ファイルをコンテキストに追加
+      local all_contexts = {}
       for _, file_path in ipairs(files) do
-        Context.add(file_path)
+        local ctx = require("vibing.infrastructure.context.collector").file_to_context(file_path)
+        table.insert(Context.manual_contexts, ctx)
+        table.insert(all_contexts, ctx)
       end
+
+      -- まとめてクリップボードにコピー（Context._copy_to_clipboard使用）
+      Context._copy_to_clipboard(all_contexts)
       M._update_chat_context_if_open()
 
-      -- 複数ファイルの場合はまとめてクリップボードにコピー
-      if #files > 1 then
-        local all_contexts = vim.tbl_map(function(path)
-          return require("vibing.infrastructure.context.collector").file_to_context(path)
-        end, files)
-        local clipboard_content = table.concat(all_contexts, "\n")
-        if vim.fn.has("clipboard") == 1 then
-          vim.fn.setreg("+", clipboard_content)
-        else
-          vim.fn.setreg('"', clipboard_content)
-        end
-        notify.info(string.format("Added %d files to context (copied to clipboard)", #files), "Context")
-      end
+      notify.info(string.format("Added %d files to context (copied to clipboard)", #files), "Context")
       return
     end
     -- ファイルが取得できない場合（ディレクトリ等）は警告を表示
