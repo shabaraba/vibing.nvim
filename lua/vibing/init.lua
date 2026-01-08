@@ -156,7 +156,7 @@ function M._register_commands()
     range = true,
     desc = "Run inline action or custom instruction",
     complete = function(ArgLead, CmdLine, CursorPos)
-      local actions = { "fix", "feat", "explain", "refactor", "test" }
+      local actions = { "fix", "feat", "explain", "refactor", "test", "doc" }
       local matches = {}
       for _, action in ipairs(actions) do
         if action:find("^" .. vim.pesc(ArgLead)) then

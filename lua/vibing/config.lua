@@ -26,6 +26,7 @@
 ---@field timeout number タイムアウト時間（ミリ秒、デフォルト: 30000）
 ---@field stream boolean ストリーミング応答を有効化（デフォルト: true）
 ---@field use_for_title boolean タイトル生成にOllamaを使用（オプトイン、デフォルト: false = Claudeを使用）
+---@field use_for_doc boolean ドキュメント生成アクション（doc）でOllamaを使用（オプトイン、デフォルト: false = Claudeを使用）
 
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
@@ -182,6 +183,7 @@ M.defaults = {
     timeout = 30000,  -- Request timeout in milliseconds
     stream = true,  -- Enable streaming responses
     use_for_title = false,  -- Use Ollama for title generation (opt-in, default: use Claude)
+    use_for_doc = false,  -- Use Ollama for doc action (opt-in, default: use Claude)
   },
   language = nil,  -- No language specification by default (responds in English)
 }

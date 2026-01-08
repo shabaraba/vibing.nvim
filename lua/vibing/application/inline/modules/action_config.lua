@@ -7,7 +7,7 @@
 local M = {}
 
 ---事前定義されたインラインアクション設定
----fix, feat, explain, refactor, testの5種類を提供
+---fix, feat, explain, refactor, test, docの6種類を提供
 ---@type table<string, Vibing.ActionConfig>
 M.actions = {
   fix = {
@@ -33,6 +33,11 @@ M.actions = {
   test = {
     prompt = "Generate tests for the following code:",
     tools = { "Edit", "Write" },
+    use_output_buffer = false,
+  },
+  doc = {
+    prompt = "Add documentation comments (JSDoc/TSDoc/EmmyLua/etc) to the following code. Detect the language and use appropriate comment style. Respond with ONLY the documented code, no explanations:",
+    tools = { "Edit" },
     use_output_buffer = false,
   },
 }
