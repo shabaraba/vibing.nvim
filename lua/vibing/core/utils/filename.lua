@@ -11,6 +11,11 @@ local M = {}
 function M.sanitize(text)
   -- 小文字に変換
   text = text:lower()
+  -- タイムスタンプパターンを除去（例: chat_20260108_, 20260108_）
+  text = text:gsub("chat_?%d%d%d%d%d%d%d%d_?", "")
+  text = text:gsub("^%d%d%d%d%d%d%d%d_?", "")
+  -- 拡張子を除去
+  text = text:gsub("%.vibing$", "")
   -- 空白とハイフンをアンダースコアに
   text = text:gsub("[%s%-]+", "_")
   -- ファイル名に使えない文字を削除

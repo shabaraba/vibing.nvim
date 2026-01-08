@@ -65,7 +65,8 @@ function M.generate_from_conversation(conversation, callback)
     .. "\n\n"
     .. "Based on the above conversation, generate a descriptive title (20-50 characters) that captures the main topic. "
     .. "The title should be suitable for a filename - use only English alphanumeric characters, spaces, and hyphens. "
-    .. "Focus on the technical topic discussed (e.g., 'Ollama Streaming Fix and Buffer Error', 'Chat Title Generation with Qwen'). "
+    .. "Focus on the technical topic discussed (e.g., 'Ollama Streaming Fix', 'Buffer Error Resolution', 'API Integration'). "
+    .. "Do NOT include: dates, timestamps, prefixes like 'chat', file extensions, or underscores. "
     .. "Respond with ONLY the title, nothing else. Do not use Chinese characters."
 
   local collected_response = ""
