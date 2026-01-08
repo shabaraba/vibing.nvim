@@ -7,7 +7,7 @@ local M = {}
 local filename_util = require("vibing.core.utils.filename")
 
 ---会話履歴からAIにタイトルを生成させる
----Claudeに会話全体を送信し、簡潔なファイル名用タイトルを生成
+---Ollamaが有効な場合はOllama、それ以外はClaudeを使用してタイトルを生成
 ---結果はコールバックで非同期に返される
 ---@param conversation {role: string, content: string}[] 会話履歴
 ---@param callback fun(title: string?, error: string?) 結果コールバック
@@ -18,7 +18,18 @@ function M.generate_from_conversation(conversation, callback)
   end
 
   local vibing = require("vibing")
-  local adapter = vibing.get_adapter()
+  local config = vibing.get_config()
+
+  -- Ollama有効ならOllama、それ以外はagent_sdk
+  local adapter
+  if config.ollama and config.ollama.enabled then
+    adapter = vibing.get_ollama_adapter()
+    if not adapter then
+      adapter = vibing.get_adapter()
+    end
+  else
+    adapter = vibing.get_adapter()
+  end
 
   if not adapter then
     callback(nil, "No adapter configured")
@@ -38,7 +49,13 @@ function M.generate_from_conversation(conversation, callback)
 
   local collected_response = ""
 
-  adapter:stream(prompt, {}, function(chunk)
+  -- Ollamaの場合は言語設定を追加
+  local opts = {}
+  if adapter.name == "ollama" then
+    opts.language = "en" -- タイトルは英数字のみなので英語で統一
+  end
+
+  adapter:stream(prompt, opts, function(chunk)
     collected_response = collected_response .. chunk
   end, function(response)
     if response.error then
