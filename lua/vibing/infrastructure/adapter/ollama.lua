@@ -48,6 +48,13 @@ function OllamaAdapter:stream(prompt, opts, on_chunk, on_done)
   local full_prompt = self:build_prompt(prompt, opts.context or {})
   local model = opts.model or self.model
 
+  -- 言語指定がある場合はシステムプロンプトを追加
+  if opts.language == "ja" then
+    full_prompt = "You are a helpful coding assistant. Please respond in Japanese only. Do not use Chinese or any other languages.\n\n" .. full_prompt
+  end
+
+  notify.info(string.format("Ollama streaming with model: %s", model), "Ollama")
+
   local request_body = {
     model = model,
     prompt = full_prompt,

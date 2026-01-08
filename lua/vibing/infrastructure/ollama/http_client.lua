@@ -31,35 +31,33 @@ function M.post_stream(url, body, on_chunk, on_done)
 
       for _, line in ipairs(data) do
         if line ~= "" then
-          buffer = buffer .. line
+          -- バッファに残りがあれば結合
+          if buffer ~= "" then
+            line = buffer .. line
+            buffer = ""
+          end
 
-          -- JSON Lines形式でパース（改行区切り）
-          local newline_pos = buffer:find("\n")
-          while newline_pos do
-            local json_line = buffer:sub(1, newline_pos - 1)
-            buffer = buffer:sub(newline_pos + 1)
-
-            -- JSONをデコード
-            local ok, decoded = pcall(vim.json.decode, json_line)
-            if ok and decoded then
-              -- responseフィールドからテキストを抽出
-              if decoded.response then
-                if on_chunk then
-                  on_chunk(decoded.response)
-                end
-              end
-
-              -- 完了チェック
-              if decoded.done then
-                if on_done then
-                  vim.schedule(function()
-                    on_done(true, decoded)
-                  end)
-                end
+          -- JSONとしてパース試行
+          local ok, decoded = pcall(vim.json.decode, line)
+          if ok and decoded then
+            -- responseフィールドからテキストを抽出
+            if decoded.response then
+              if on_chunk then
+                on_chunk(decoded.response)
               end
             end
 
-            newline_pos = buffer:find("\n")
+            -- 完了チェック
+            if decoded.done then
+              if on_done then
+                vim.schedule(function()
+                  on_done(true, decoded)
+                end)
+              end
+            end
+          else
+            -- パースに失敗した場合、次の行と結合するためにバッファに保存
+            buffer = line
           end
         end
       end

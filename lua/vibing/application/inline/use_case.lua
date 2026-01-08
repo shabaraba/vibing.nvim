@@ -38,6 +38,8 @@ function M.execute(action_or_prompt, additional_instruction)
     if not adapter then
       notify.warn("Ollama adapter not available, falling back to agent_sdk", "Inline")
       adapter = vibing.get_adapter()
+    else
+      notify.info("Using Ollama adapter for explain", "Inline")
     end
   else
     adapter = vibing.get_adapter()
