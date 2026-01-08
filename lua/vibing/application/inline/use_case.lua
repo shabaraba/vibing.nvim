@@ -22,12 +22,6 @@ M.actions = ActionConfig.actions
 function M.execute(action_or_prompt, additional_instruction)
   local vibing = require("vibing")
   local config = vibing.get_config()
-  local adapter = vibing.get_adapter()
-
-  if not adapter then
-    notify.error("No adapter configured", "Inline")
-    return
-  end
 
   -- アクション名が未指定の場合はエラー（通常はピッカーから必ず渡される）
   if not action_or_prompt or action_or_prompt == "" then
@@ -36,6 +30,23 @@ function M.execute(action_or_prompt, additional_instruction)
   end
 
   local action = ActionConfig.get(action_or_prompt)
+
+  -- アダプター選択: explainアクションでOllama有効ならOllama、それ以外はagent_sdk
+  local adapter
+  if action and action_or_prompt == "explain" and config.ollama and config.ollama.enabled then
+    adapter = vibing.get_ollama_adapter()
+    if not adapter then
+      notify.warn("Ollama adapter not available, falling back to agent_sdk", "Inline")
+      adapter = vibing.get_adapter()
+    end
+  else
+    adapter = vibing.get_adapter()
+  end
+
+  if not adapter then
+    notify.error("No adapter configured", "Inline")
+    return
+  end
 
   -- If not a predefined action, treat as custom natural language instruction
   if not action then

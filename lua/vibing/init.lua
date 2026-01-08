@@ -13,6 +13,10 @@ local M = {}
 ---@type Vibing.Adapter?
 M.adapter = nil
 
+---Ollamaアダプターインスタンス（有効な場合のみ）
+---@type Vibing.Adapter?
+M.ollama_adapter = nil
+
 ---vibing.nvimプラグインを初期化
 ---設定のマージ、アダプター初期化、チャットシステム初期化、リモート制御初期化、ユーザーコマンド登録を実行
 ---アダプター読み込みに失敗した場合はエラー通知して初期化を中断
@@ -45,6 +49,15 @@ function M.setup(opts)
   -- アダプターの初期化（agent_sdk固定）
   local AgentSDK = require("vibing.infrastructure.adapter.agent_sdk")
   M.adapter = AgentSDK:new(M.config)
+
+  -- Ollama アダプターの初期化（有効な場合）
+  if M.config.ollama and M.config.ollama.enabled then
+    local OllamaAdapter = require("vibing.infrastructure.adapter.ollama")
+    M.ollama_adapter = OllamaAdapter:new(M.config)
+    notify.info("Ollama adapter initialized", "Vibing")
+  else
+    M.ollama_adapter = nil
+  end
 
   -- 終了時にクリーンアップ
   vim.api.nvim_create_autocmd("VimLeavePre", {
@@ -182,6 +195,14 @@ end
 ---@return Vibing.Adapter? アダプターインスタンス（初期化済みの場合）またはnil
 function M.get_adapter()
   return M.adapter
+end
+
+---Ollamaアダプターインスタンスを取得
+---Ollama統合が有効な場合のみ、Ollamaアダプターを返す
+---無効な場合はnilを返す
+---@return Vibing.Adapter? Ollamaアダプターインスタンス（有効な場合）またはnil
+function M.get_ollama_adapter()
+  return M.ollama_adapter
 end
 
 ---現在の設定を取得
