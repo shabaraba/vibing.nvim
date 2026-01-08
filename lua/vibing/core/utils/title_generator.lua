@@ -20,9 +20,9 @@ function M.generate_from_conversation(conversation, callback)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
-  -- Ollama有効ならOllama、それ以外はagent_sdk
+  -- タイトル生成専用のOllama設定をチェック（デフォルトはagent_sdk）
   local adapter
-  if config.ollama and config.ollama.enabled then
+  if config.ollama and config.ollama.enabled and config.ollama.use_for_title then
     adapter = vibing.get_ollama_adapter()
     if not adapter then
       adapter = vibing.get_adapter()

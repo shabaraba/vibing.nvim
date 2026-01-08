@@ -31,19 +31,8 @@ function M.execute(action_or_prompt, additional_instruction)
 
   local action = ActionConfig.get(action_or_prompt)
 
-  -- アダプター選択: explainアクションでOllama有効ならOllama、それ以外はagent_sdk
-  local adapter
-  if action and action_or_prompt == "explain" and config.ollama and config.ollama.enabled then
-    adapter = vibing.get_ollama_adapter()
-    if not adapter then
-      notify.warn("Ollama adapter not available, falling back to agent_sdk", "Inline")
-      adapter = vibing.get_adapter()
-    else
-      notify.info("Using Ollama adapter for explain", "Inline")
-    end
-  else
-    adapter = vibing.get_adapter()
-  end
+  -- 常にagent_sdkを使用（Claudeの高品質な応答が必要）
+  local adapter = vibing.get_adapter()
 
   if not adapter then
     notify.error("No adapter configured", "Inline")

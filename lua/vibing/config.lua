@@ -22,9 +22,10 @@
 ---ローカルOllamaサーバーとの通信を管理
 ---@field enabled boolean Ollama統合の有効化（trueでOllamaを使用、falseでagent_sdkのみ）
 ---@field url string Ollamaサーバー URL（デフォルト: "http://localhost:11434"）
----@field model string デフォルトモデル名（例: "qwen2.5-coder:0.5b"）
+---@field model string デフォルトモデル名（推奨: "qwen2.5-coder:1.5b"、軽量: "qwen2.5-coder:0.5b"、高品質: "qwen2.5-coder:3b-base-q4_K_M"）
 ---@field timeout number タイムアウト時間（ミリ秒、デフォルト: 30000）
 ---@field stream boolean ストリーミング応答を有効化（デフォルト: true）
+---@field use_for_title boolean タイトル生成にOllamaを使用（オプトイン、デフォルト: false = Claudeを使用）
 
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
@@ -177,9 +178,10 @@ M.defaults = {
   ollama = {
     enabled = false,  -- Ollama integration disabled by default
     url = "http://localhost:11434",  -- Ollama server URL
-    model = "qwen2.5-coder:0.5b",  -- Default model
+    model = "qwen2.5-coder:1.5b",  -- Default model (1.5b recommended for better quality)
     timeout = 30000,  -- Request timeout in milliseconds
     stream = true,  -- Enable streaming responses
+    use_for_title = false,  -- Use Ollama for title generation (opt-in, default: use Claude)
   },
   language = nil,  -- No language specification by default (responds in English)
 }
