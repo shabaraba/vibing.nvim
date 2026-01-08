@@ -8,21 +8,7 @@ local M = {}
 function M.handle_add(opts)
   local Context = require("vibing.application.context.manager")
 
-  -- 優先順位1: 範囲選択（存在する場合）
-  if opts.range > 0 then
-    Context.add_selection()
-    M._update_chat_context_if_open()
-    return
-  end
-
-  -- 優先順位2: ファイルパス引数
-  if opts.args ~= "" then
-    Context.add(opts.args)
-    M._update_chat_context_if_open()
-    return
-  end
-
-  -- 優先順位3: oil.nvimバッファからファイルを追加
+  -- 優先順位1: oil.nvimバッファからファイルを追加（範囲選択より優先）
   local ok, oil = pcall(require, "vibing.integrations.oil")
   if ok and oil.is_oil_buffer() then
     local file_path = oil.get_cursor_file()
@@ -34,6 +20,20 @@ function M.handle_add(opts)
     -- ファイルが取得できない場合（ディレクトリ等）は警告を表示
     local notify = require("vibing.core.utils.notify")
     notify.warn("No file selected (directories are not supported)", "Context")
+    return
+  end
+
+  -- 優先順位2: 範囲選択（存在する場合）
+  if opts.range > 0 then
+    Context.add_selection()
+    M._update_chat_context_if_open()
+    return
+  end
+
+  -- 優先順位3: ファイルパス引数
+  if opts.args ~= "" then
+    Context.add(opts.args)
+    M._update_chat_context_if_open()
     return
   end
 
