@@ -9,8 +9,27 @@ local notify = require("vibing.core.utils.notify")
 M.manual_contexts = {}
 
 ---ファイルをコンテキストに追加
----@param path string?
+---@param path string|string[]? ファイルパスまたはパスの配列
 function M.add(path)
+  -- 配列の場合は複数ファイルをまとめて追加
+  if type(path) == "table" then
+    local added_contexts = {}
+    for _, p in ipairs(path) do
+      local context = Collector.file_to_context(p)
+      if not vim.tbl_contains(M.manual_contexts, context) then
+        table.insert(M.manual_contexts, context)
+        table.insert(added_contexts, context)
+      end
+    end
+
+    if #added_contexts > 0 then
+      M._copy_to_clipboard(added_contexts)
+      notify.info(string.format("Added %d files to context (copied to clipboard)", #added_contexts), "Context")
+    end
+    return
+  end
+
+  -- 単一ファイルの追加
   local context
   if path and path ~= "" then
     context = Collector.file_to_context(path)
