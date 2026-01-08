@@ -62,15 +62,52 @@ function M.get_cursor_file()
 end
 
 ---選択されたファイルパスを取得
----oil.nvimは複数選択をサポートしていないため、カーソル位置のファイルのみを配列で返す
----将来的な複数選択対応のためのインターフェース
----@return string[] カーソル位置のファイルの絶対パス配列（ファイルがない場合は空配列）
-function M.get_selected_files()
-  local file = M.get_cursor_file()
-  if file then
-    return { file }
+---Visual modeでの範囲選択に対応
+---@param start_line number? 開始行（1-indexed）
+---@param end_line number? 終了行（1-indexed）
+---@return string[] 選択されたファイルの絶対パス配列（ファイルがない場合は空配列）
+function M.get_selected_files(start_line, end_line)
+  if not M.is_oil_buffer() then
+    return {}
   end
-  return {}
+
+  local oil = require("oil")
+  local dir = oil.get_current_dir()
+  if not dir then
+    return {}
+  end
+
+  -- 範囲選択がない場合はカーソル位置のファイルのみ
+  if not start_line or not end_line then
+    local file = M.get_cursor_file()
+    if file then
+      return { file }
+    end
+    return {}
+  end
+
+  -- 範囲選択されている場合、その範囲のすべてのファイルを取得
+  local files = {}
+  local buf = vim.api.nvim_get_current_buf()
+
+  for line_nr = start_line, end_line do
+    -- 各行のエントリを取得（oil.nvimの内部API）
+    local parser = require("oil.mutator.parser")
+    local line = vim.api.nvim_buf_get_lines(buf, line_nr - 1, line_nr, false)[1]
+    if line then
+      local entry = parser.parse_line(line)
+      if entry and entry.name and entry.type ~= "directory" then
+        local file_path = dir
+        if not file_path:match("/$") then
+          file_path = file_path .. "/"
+        end
+        file_path = file_path .. entry.name
+        table.insert(files, file_path)
+      end
+    end
+  end
+
+  return files
 end
 
 ---カーソル位置のファイルをチャットに@file:path形式で追加

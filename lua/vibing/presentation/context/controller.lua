@@ -7,18 +7,42 @@ local M = {}
 ---@param opts table Neovimコマンドのオプション（args, range等）
 function M.handle_add(opts)
   local Context = require("vibing.application.context.manager")
+  local notify = require("vibing.core.utils.notify")
 
   -- 優先順位1: oil.nvimバッファからファイルを追加（範囲選択より優先）
   local ok, oil = pcall(require, "vibing.integrations.oil")
   if ok and oil.is_oil_buffer() then
-    local file_path = oil.get_cursor_file()
-    if file_path then
-      Context.add(file_path)
+    -- 範囲選択がある場合は複数ファイルを取得
+    local start_line, end_line
+    if opts.range > 0 then
+      start_line = opts.line1
+      end_line = opts.line2
+    end
+
+    local files = oil.get_selected_files(start_line, end_line)
+    if #files > 0 then
+      -- 複数ファイルをコンテキストに追加
+      for _, file_path in ipairs(files) do
+        Context.add(file_path)
+      end
       M._update_chat_context_if_open()
+
+      -- 複数ファイルの場合はまとめてクリップボードにコピー
+      if #files > 1 then
+        local all_contexts = vim.tbl_map(function(path)
+          return require("vibing.infrastructure.context.collector").file_to_context(path)
+        end, files)
+        local clipboard_content = table.concat(all_contexts, "\n")
+        if vim.fn.has("clipboard") == 1 then
+          vim.fn.setreg("+", clipboard_content)
+        else
+          vim.fn.setreg('"', clipboard_content)
+        end
+        notify.info(string.format("Added %d files to context (copied to clipboard)", #files), "Context")
+      end
       return
     end
     -- ファイルが取得できない場合（ディレクトリ等）は警告を表示
-    local notify = require("vibing.core.utils.notify")
     notify.warn("No file selected (directories are not supported)", "Context")
     return
   end
