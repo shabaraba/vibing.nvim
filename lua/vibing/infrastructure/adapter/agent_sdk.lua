@@ -125,13 +125,21 @@ function AgentSDK:cancel(handle_id)
     -- 特定のハンドルのみキャンセル
     local handle = self._handles[handle_id]
     if handle then
-      handle:kill(9)
+      pcall(function()
+        if handle.pid and handle.pid > 0 then
+          handle:kill(9)
+        end
+      end)
       self._handles[handle_id] = nil
     end
   else
     -- 全ハンドルをキャンセル
     for id, handle in pairs(self._handles) do
-      handle:kill(9)
+      pcall(function()
+        if handle.pid and handle.pid > 0 then
+          handle:kill(9)
+        end
+      end)
       self._handles[id] = nil
     end
   end

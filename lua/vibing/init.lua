@@ -28,6 +28,19 @@ function M.setup(opts)
     },
   })
 
+  -- .vibingファイルを開いた時に自動的にattach
+  vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
+    pattern = "*.vibing",
+    callback = function(args)
+      local view = require("vibing.presentation.chat.view")
+      local file_path = vim.api.nvim_buf_get_name(args.buf)
+      if file_path and file_path ~= "" and vim.fn.filereadable(file_path) == 1 then
+        view.attach_to_buffer(args.buf, file_path)
+      end
+    end,
+    desc = "Attach vibing.nvim to .vibing files",
+  })
+
   -- MCP統合の初期化
   if M.config.mcp and M.config.mcp.enabled then
     -- 自動セットアップ（初回のみ）
@@ -47,7 +60,9 @@ function M.setup(opts)
   M.adapter = AgentSDK:new(M.config)
 
   -- 終了時にクリーンアップ
+  local augroup = vim.api.nvim_create_augroup("VibingCleanup", { clear = true })
   vim.api.nvim_create_autocmd("VimLeavePre", {
+    group = augroup,
     callback = function()
       -- Agent SDKプロセスを全てキャンセル
       if M.adapter then

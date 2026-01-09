@@ -1,7 +1,6 @@
 local Context = require("vibing.application.context.manager")
 local WindowManager = require("vibing.presentation.chat.modules.window_manager")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
-local PreviewData = require("vibing.presentation.chat.modules.preview_data")
 local FrontmatterHandler = require("vibing.presentation.chat.modules.frontmatter_handler")
 local Renderer = require("vibing.presentation.chat.modules.renderer")
 local StreamingHandler = require("vibing.presentation.chat.modules.streaming_handler")
@@ -154,12 +153,6 @@ function ChatBuffer:_setup_keymaps()
     update_context_line = function()
       Renderer.updateContextLine(self.buf)
     end,
-    get_modified_files = function()
-      return PreviewData.get_modified_files()
-    end,
-    get_saved_contents = function()
-      return PreviewData.get_saved_contents()
-    end,
     close = function()
       self:close()
     end,
@@ -218,6 +211,8 @@ function ChatBuffer:load_from_file(file_path)
     if type(sid) == "string" and sid ~= "" and sid ~= "~" then
       self.session_id = sid
     end
+    -- NOTE: Diff display uses patch files in .vibing/patches/<session_id>/
+    -- The gd keymap reads patch files directly via PatchFinder and PatchViewer
   end
   return success
 end
@@ -283,9 +278,6 @@ function ChatBuffer:send_message()
     end,
     append_chunk = function(chunk)
       return self:append_chunk(chunk)
-    end,
-    set_last_modified_files = function(files, saved_contents)
-      return self:set_last_modified_files(files, saved_contents)
     end,
     get_session_id = function()
       return self:get_session_id()
@@ -367,25 +359,6 @@ function ChatBuffer:update_filename_from_message(message)
   if new_path then
     self.file_path = new_path
   end
-end
-
----最後に変更されたファイル一覧を設定（プレビューUI用）
----@param modified_files string[] 変更されたファイルパスの配列
----@param saved_contents table<string, string[]>? Claude変更前のファイル内容（オプション）
-function ChatBuffer:set_last_modified_files(modified_files, saved_contents)
-  PreviewData.set_modified_files(modified_files, saved_contents)
-end
-
----最後に変更されたファイル一覧を取得（プレビューUI用）
----@return string[]? 変更されたファイル一覧（設定されていない場合はnil）
-function ChatBuffer:get_last_modified_files()
-  return PreviewData.get_modified_files()
-end
-
----最後に保存されたファイル内容を取得（プレビューUI用）
----@return table<string, string[]> Claude変更前のファイル内容
-function ChatBuffer:get_last_saved_contents()
-  return PreviewData.get_saved_contents() or {}
 end
 
 ---AskUserQuestion の選択肢を保存

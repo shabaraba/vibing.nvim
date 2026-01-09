@@ -42,6 +42,8 @@ function M.render(session, position)
   if session.file_path and vim.fn.filereadable(session.file_path) == 1 then
     local content = vim.fn.readfile(session.file_path)
     vim.api.nvim_buf_set_lines(chat_buf.buf, 0, -1, false, content)
+    -- NOTE: Diff display now uses patch files stored in .vibing/patches/<session_id>/
+    -- The gd keymap reads patch files directly via PatchFinder and PatchViewer
   end
 end
 
@@ -51,6 +53,12 @@ function M.close()
     M._current_buffer:close()
   end
 end
+
+-- NOTE: Patch-based diff system
+-- Modified Filesセクションの差分表示はpatchファイル方式に移行済み
+-- - `.vibing/patches/<session_id>/<timestamp>.patch`に保存
+-- - `gd`キーマップでPatchViewerを使用して表示
+-- - SessionStorage/GitBlobStorage/PreviewDataは不要になった
 
 ---チャットウィンドウが開いているか
 ---@return boolean
@@ -115,6 +123,9 @@ function M.attach_to_buffer(bufnr, file_path)
   if type(sid) == "string" and sid ~= "" and sid ~= "~" then
     chat_buf.session_id = sid
   end
+
+  -- NOTE: Diff display uses patch files in .vibing/patches/<session_id>/
+  -- The gd keymap reads patch files directly via PatchFinder and PatchViewer
 
   chat_buf:_setup_keymaps()
 

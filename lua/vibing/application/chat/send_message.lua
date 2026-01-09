@@ -5,7 +5,6 @@ local M = {}
 local Context = require("vibing.application.context.manager")
 local Formatter = require("vibing.infrastructure.context.formatter")
 local BufferReload = require("vibing.core.utils.buffer_reload")
-local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 local GradientAnimation = require("vibing.ui.gradient_animation")
 
 ---@class Vibing.ChatCallbacks
@@ -14,7 +13,6 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field start_response fun() レスポンス開始
 ---@field parse_frontmatter fun(): table Frontmatterを解析
 ---@field append_chunk fun(chunk: string) チャンクを追加
----@field set_last_modified_files fun(files: string[], saved_contents: table) 変更ファイル一覧を設定
 ---@field get_session_id fun(): string|nil セッションIDを取得
 ---@field update_session_id fun(session_id: string) セッションIDを更新
 ---@field add_user_section fun() ユーザーセクションを追加
@@ -50,10 +48,10 @@ function M.execute(adapter, callbacks, message, config)
   end
 
   local frontmatter = callbacks.parse_frontmatter()
-  local saved_contents = M._save_buffer_contents()
 
   local modified_files = {}
   local file_tools = { Edit = true, Write = true, nvim_set_buffer = true }
+  local pre_saved_patch_filename = nil  -- git add前に保存されたpatchファイル名
 
   -- Get language code: frontmatter > config
   local language_utils = require("vibing.core.utils.language")
@@ -72,10 +70,28 @@ function M.execute(adapter, callbacks, message, config)
     permissions_ask = frontmatter.permissions_ask,
     permission_mode = frontmatter.permission_mode,
     language = lang_code,  -- Pass language code to adapter
-    on_tool_use = function(tool, file_path)
+    on_tool_use = function(tool, file_path, command)
+      -- ファイル変更ツールの場合、modified_filesに追加
       if file_tools[tool] and file_path then
         if not vim.tbl_contains(modified_files, file_path) then
           table.insert(modified_files, file_path)
+        end
+      end
+
+      -- Bashでgit add検知時にpatchを保存（add前ならgit diffで差分が取れる）
+      if tool == "Bash" and command and #modified_files > 0 then
+        local is_git_add = command:match("^git%s+add")
+        if is_git_add and not pre_saved_patch_filename then
+          local PatchStorage = require("vibing.infrastructure.storage.patch_storage")
+          local session_id = callbacks.get_session_id()
+          if session_id then
+            pre_saved_patch_filename = PatchStorage.save(session_id, modified_files)
+            if not pre_saved_patch_filename then
+              vim.schedule(function()
+                vim.notify("Failed to save patch before git add", vim.log.levels.WARN)
+              end)
+            end
+          end
         end
       end
     end,
@@ -101,38 +117,19 @@ function M.execute(adapter, callbacks, message, config)
       end)
     end, function(response)
       vim.schedule(function()
-        M._handle_response(response, callbacks, modified_files, saved_contents, adapter)
+        M._handle_response(response, callbacks, modified_files, adapter, pre_saved_patch_filename)
       end)
     end)
   else
     local response = adapter:execute(formatted_prompt, opts)
-    M._handle_response(response, callbacks, modified_files, saved_contents, adapter)
+    M._handle_response(response, callbacks, modified_files, adapter, pre_saved_patch_filename)
   end
 
   return handle_id
 end
 
----バッファの内容を保存
----@return table<string, string[]>
-function M._save_buffer_contents()
-  local saved = {}
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_is_loaded(buf) then
-      local file_path = vim.api.nvim_buf_get_name(buf)
-      local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-
-      if file_path ~= "" then
-        saved[vim.fn.fnamemodify(file_path, ":p")] = content
-      else
-        saved[BufferIdentifier.create_identifier(buf)] = content
-      end
-    end
-  end
-  return saved
-end
-
 ---レスポンスを処理
-function M._handle_response(response, callbacks, modified_files, saved_contents, adapter)
+function M._handle_response(response, callbacks, modified_files, adapter, pre_saved_patch_filename)
   -- Stop gradient animation
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
@@ -145,11 +142,31 @@ function M._handle_response(response, callbacks, modified_files, saved_contents,
 
   if #modified_files > 0 then
     BufferReload.reload_files(modified_files)
+
+    -- patchファイルを保存（git操作前に保存済みの場合はそれを使用）
+    local PatchStorage = require("vibing.infrastructure.storage.patch_storage")
+    local session_id = callbacks.get_session_id()
+    local patch_filename = pre_saved_patch_filename
+
+    if not patch_filename and session_id then
+      patch_filename = PatchStorage.save(session_id, modified_files)
+      if not patch_filename then
+        vim.schedule(function()
+          vim.notify("Failed to save patch for modified files", vim.log.levels.WARN)
+        end)
+      end
+    end
+
+    -- Modified Filesセクションを出力
     callbacks.append_chunk("\n\n### Modified Files\n\n")
     for _, file_path in ipairs(modified_files) do
       callbacks.append_chunk(vim.fn.fnamemodify(file_path, ":.") .. "\n")
     end
-    callbacks.set_last_modified_files(modified_files, saved_contents)
+
+    -- patchファイル名をコメントとして追加
+    if patch_filename then
+      callbacks.append_chunk("\n<!-- patch: " .. patch_filename .. " -->\n")
+    end
   end
 
   if adapter:supports("session") and response._handle_id then

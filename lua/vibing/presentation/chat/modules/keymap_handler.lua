@@ -39,25 +39,24 @@ function M.setup(buf, callbacks, keymaps)
 
     vim.keymap.set("n", keymaps.open_diff, function()
       local FilePath = require("vibing.core.utils.file_path")
-      local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
+      local PatchFinder = require("vibing.presentation.chat.modules.patch_finder")
+      local PatchViewer = require("vibing.ui.patch_viewer")
+
       local file_path = FilePath.is_cursor_on_file_path(buf)
-      if file_path then
-        local modified_files = callbacks.get_modified_files and callbacks.get_modified_files()
-        if modified_files and #modified_files > 0 then
-          local normalized_cursor = BufferIdentifier.normalize_path(file_path)
+      if not file_path then
+        vim.notify("No file path under cursor", vim.log.levels.INFO)
+        return
+      end
 
-          for _, mf in ipairs(modified_files) do
-            local normalized_mf = BufferIdentifier.normalize_path(mf)
+      -- patchファイル方式で表示を試みる
+      local session_id = PatchFinder.get_session_id(buf)
+      local patch_filename = PatchFinder.find_nearest_patch(buf)
 
-            if normalized_mf == normalized_cursor then
-              local InlinePreview = require("vibing.ui.inline_preview")
-              local saved_contents = callbacks.get_saved_contents and callbacks.get_saved_contents()
-              InlinePreview.setup("chat", modified_files, "", saved_contents, file_path)
-              return
-            end
-          end
-        end
-
+      if session_id and patch_filename then
+        -- patchファイルから該当ファイルのdiffを表示
+        PatchViewer.show(session_id, patch_filename, file_path)
+      else
+        -- patchがない場合は通常のgit diffを表示
         local GitDiff = require("vibing.core.utils.git_diff")
         GitDiff.show_diff(file_path)
       end
@@ -71,17 +70,8 @@ function M.setup(buf, callbacks, keymaps)
       end
     end, { buffer = buf, desc = "Open file under cursor" })
 
-    vim.keymap.set("n", "gp", function()
-      local modified_files = callbacks.get_modified_files and callbacks.get_modified_files()
-      if not modified_files or #modified_files == 0 then
-        vim.notify("No modified files to preview", vim.log.levels.WARN)
-        return
-      end
-
-      local InlinePreview = require("vibing.ui.inline_preview")
-      local saved_contents = callbacks.get_saved_contents and callbacks.get_saved_contents()
-      InlinePreview.setup("chat", modified_files, "", saved_contents)
-    end, { buffer = buf, desc = "Preview all modified files" })
+    -- NOTE: gp (preview all) was removed - use gd on individual files in Modified Files section
+    -- Diff display now uses patch files in .vibing/patches/<session_id>/
 
     vim.keymap.set("n", "q", function()
       if callbacks.close then

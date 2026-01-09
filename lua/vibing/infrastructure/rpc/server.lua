@@ -199,15 +199,21 @@ end
 function M.stop()
   -- Close all client connections
   for client, _ in pairs(clients) do
-    if not client:is_closing() then
-      client:close()
-    end
+    pcall(function()
+      if not client:is_closing() then
+        client:close()
+      end
+    end)
   end
   clients = {}
 
   -- Close server
   if server then
-    server:close()
+    pcall(function()
+      if not server:is_closing() then
+        server:close()
+      end
+    end)
     server = nil
     current_port = nil
 
