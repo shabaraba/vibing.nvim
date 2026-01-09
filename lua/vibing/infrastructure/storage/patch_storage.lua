@@ -89,15 +89,20 @@ function M.save(session_id, modified_files)
 
   -- patchファイルを保存
   local patch_path = generate_patch_path(session_id)
-  local ok = pcall(function()
+  local ok, err = pcall(function()
     local file = io.open(patch_path, "w")
     if file then
       file:write(patch_content)
       file:close()
+    else
+      error("Failed to open file for writing: " .. patch_path)
     end
   end)
 
   if not ok then
+    vim.schedule(function()
+      vim.notify("Failed to save patch: " .. tostring(err), vim.log.levels.WARN)
+    end)
     return nil
   end
 
