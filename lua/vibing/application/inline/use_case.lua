@@ -22,12 +22,6 @@ M.actions = ActionConfig.actions
 function M.execute(action_or_prompt, additional_instruction)
   local vibing = require("vibing")
   local config = vibing.get_config()
-  local adapter = vibing.get_adapter()
-
-  if not adapter then
-    notify.error("No adapter configured", "Inline")
-    return
-  end
 
   -- アクション名が未指定の場合はエラー（通常はピッカーから必ず渡される）
   if not action_or_prompt or action_or_prompt == "" then
@@ -36,6 +30,10 @@ function M.execute(action_or_prompt, additional_instruction)
   end
 
   local action = ActionConfig.get(action_or_prompt)
+
+  -- アダプター選択: アクション名に基づいて適切なアダプターを取得
+  local use_case = (action and action_or_prompt == "doc") and "doc" or nil
+  local adapter = vibing.get_adapter_for(use_case)
 
   -- If not a predefined action, treat as custom natural language instruction
   if not action then

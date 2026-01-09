@@ -17,6 +17,17 @@
 ---@field gradient Vibing.GradientConfig グラデーションアニメーション設定（応答中の視覚的フィードバック）
 ---@field tool_result_display "none"|"compact"|"full" ツール実行結果の表示モード（"none": 非表示、"compact": 数行のみ、"full": 全文表示）
 
+---@class Vibing.OllamaConfig
+---Ollama統合設定
+---ローカルOllamaサーバーとの通信を管理
+---@field enabled boolean Ollama統合の有効化（trueでOllamaを使用、falseでagent_sdkのみ）
+---@field url string Ollamaサーバー URL（デフォルト: "http://localhost:11434"）
+---@field model string デフォルトモデル名（推奨: "qwen2.5-coder:1.5b"、軽量: "qwen2.5-coder:0.5b"、高品質: "qwen2.5-coder:3b-base-q4_K_M"）
+---@field timeout number タイムアウト時間（ミリ秒、デフォルト: 30000）
+---@field stream boolean ストリーミング応答を有効化（デフォルト: true）
+---@field use_for_title boolean タイトル生成にOllamaを使用（オプトイン、デフォルト: false = Claudeを使用）
+---@field use_for_doc boolean ドキュメント生成アクション（doc）でOllamaを使用（オプトイン、デフォルト: false = Claudeを使用）
+
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
 ---Agent SDK設定、チャットウィンドウ、キーマップ、ツール権限を統合管理
@@ -27,6 +38,7 @@
 ---@field preview Vibing.PreviewConfig プレビューUI設定（diffプレビュー有効化）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
+---@field ollama? Vibing.OllamaConfig Ollama統合設定（ローカルAIモデル）
 ---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
 
 ---@class Vibing.PermissionRule
@@ -163,6 +175,15 @@ M.defaults = {
     rpc_port = 9876,  -- RPC server port
     auto_setup = false,  -- Auto-build MCP server on plugin install
     auto_configure_claude_json = false,  -- Auto-configure ~/.claude.json
+  },
+  ollama = {
+    enabled = false,  -- Ollama integration disabled by default
+    url = "http://localhost:11434",  -- Ollama server URL
+    model = "qwen2.5-coder:1.5b",  -- Default model (1.5b recommended for better quality)
+    timeout = 30000,  -- Request timeout in milliseconds
+    stream = true,  -- Enable streaming responses
+    use_for_title = false,  -- Use Ollama for title generation (opt-in, default: use Claude)
+    use_for_doc = false,  -- Use Ollama for doc action (opt-in, default: use Claude)
   },
   language = nil,  -- No language specification by default (responds in English)
 }

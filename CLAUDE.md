@@ -327,8 +327,10 @@ See `docs/adr/002-concurrent-execution-support.md` for architectural details.
 
 **Adapter:**
 
-- `adapters/base.lua` - Abstract adapter interface
-- `adapters/agent_sdk.lua` - Claude Agent SDK adapter (only supported backend)
+- `infrastructure/adapter/base.lua` - Abstract adapter interface
+- `infrastructure/adapter/agent_sdk.lua` - Claude Agent SDK adapter (default backend)
+- `infrastructure/adapter/ollama.lua` - Ollama adapter (local AI for explain action)
+- `infrastructure/ollama/http_client.lua` - HTTP client for Ollama API communication
 
 **UI:**
 
@@ -613,6 +615,78 @@ This launches an interactive UI that guides you through:
 The Permission Builder provides a user-friendly alternative to manually editing configuration
 or frontmatter.
 
+### Ollama Integration (Local AI)
+
+vibing.nvim supports local AI via Ollama for the `explain` inline action. This provides faster, offline
+code explanation without relying on Claude API.
+
+**Setup:**
+
+The `build.sh` script automatically:
+
+1. Installs Ollama (macOS: Homebrew, Linux: official script)
+2. Downloads `qwen2.5-coder:0.5b` model (~400MB)
+3. Starts Ollama service (brew services / systemd)
+
+Skip Ollama setup:
+
+```bash
+VIBING_SKIP_OLLAMA=1 ./build.sh
+```
+
+**Configuration:**
+
+```lua
+require("vibing").setup({
+  ollama = {
+    enabled = true,  -- Enable Ollama for explain action
+    url = "http://localhost:11434",  -- Default Ollama URL
+    model = "qwen2.5-coder:0.5b",  -- Lightweight model
+    timeout = 30000,  -- 30 seconds
+    stream = true,  -- Streaming responses
+  },
+})
+```
+
+**Usage:**
+
+When Ollama is enabled, the `explain` action uses Ollama instead of Claude:
+
+```vim
+:'<,'>VibingInline explain
+" Uses Ollama (local, fast)
+
+:'<,'>VibingInline fix
+" Uses Claude Agent SDK (tools required)
+```
+
+**Architecture:**
+
+- **HTTP Communication:** `lua/vibing/infrastructure/ollama/http_client.lua` uses `curl` for streaming requests
+- **Adapter:** `lua/vibing/infrastructure/adapter/ollama.lua` implements the standard Adapter interface
+- **Fallback:** Automatically falls back to agent_sdk if Ollama unavailable
+- **No Tools:** Ollama adapter doesn't support tool execution (Read/Write/Edit)
+
+**Model Selection:**
+
+- `qwen2.5-coder:0.5b` - Default, lightweight (~500MB RAM), fast
+- `qwen2.5-coder:1.5b` - Better quality, moderate speed
+- `qwen2.5-coder:3b` - High quality, slower
+
+Change model:
+
+```bash
+ollama pull qwen2.5-coder:3b
+```
+
+```lua
+require("vibing").setup({
+  ollama = {
+    model = "qwen2.5-coder:3b",
+  },
+})
+```
+
 ### Key Patterns
 
 **Adapter Pattern:** All AI backends implement the `Adapter` interface with `execute()`, `stream()`,
@@ -675,6 +749,13 @@ require("vibing").setup({
     rpc_port = 9876,
     auto_setup = false,
     auto_configure_claude_json = false,
+  },
+  ollama = {
+    enabled = false,  -- Ollama integration disabled by default
+    url = "http://localhost:11434",  -- Ollama server URL
+    model = "qwen2.5-coder:0.5b",  -- Default model (lightweight, fast)
+    timeout = 30000,  -- Request timeout in milliseconds
+    stream = true,  -- Enable streaming responses
   },
   language = nil,  -- Optional: "ja" | "en" | { default = "ja", chat = "ja", inline = "en" }
   ui = {

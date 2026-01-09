@@ -7,10 +7,15 @@ local M = {}
 ---テキストをファイル名として安全な文字列に変換
 ---小文字化、特殊文字削除、連続アンダースコア圧縮、長さ制限を実施
 ---@param text string 変換元のテキスト（通常は最初のユーザーメッセージ）
----@return string sanitized_text サニタイズ済みのファイル名用文字列（最大32文字）
+---@return string sanitized_text サニタイズ済みのファイル名用文字列（最大50文字）
 function M.sanitize(text)
   -- 小文字に変換
   text = text:lower()
+  -- タイムスタンプパターンを除去（例: chat_20260108_, 20260108_）
+  text = text:gsub("chat_?%d%d%d%d%d%d%d%d_?", "")
+  text = text:gsub("^%d%d%d%d%d%d%d%d_?", "")
+  -- 拡張子を除去
+  text = text:gsub("%.vibing$", "")
   -- 空白とハイフンをアンダースコアに
   text = text:gsub("[%s%-]+", "_")
   -- ファイル名に使えない文字を削除
@@ -19,9 +24,9 @@ function M.sanitize(text)
   text = text:gsub("_+", "_")
   -- 先頭と末尾のアンダースコアを削除
   text = text:gsub("^_+", ""):gsub("_+$", "")
-  -- 最大32文字に制限
-  if #text > 32 then
-    text = text:sub(1, 32)
+  -- 最大50文字に制限
+  if #text > 50 then
+    text = text:sub(1, 50)
   end
   return text
 end

@@ -55,12 +55,31 @@ end
 ---バッファを作成
 ---@param title string
 function OutputBuffer:_create_buffer(title)
+  local buf_name = "vibing://" .. title
+
+  -- 既存のバッファを検索
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_get_name(buf) == buf_name then
+      -- 既存のバッファを再利用
+      self.buf = buf
+      vim.bo[self.buf].modifiable = true
+      -- 内容をクリア
+      vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, {
+        "# " .. title,
+        "",
+        "Loading...",
+      })
+      return
+    end
+  end
+
+  -- 既存のバッファがない場合は新規作成
   self.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[self.buf].filetype = "vibing"
   vim.bo[self.buf].buftype = "nofile"
   vim.bo[self.buf].modifiable = true
   vim.bo[self.buf].swapfile = false
-  vim.api.nvim_buf_set_name(self.buf, "vibing://" .. title)
+  vim.api.nvim_buf_set_name(self.buf, buf_name)
 
   -- タイトルを設定
   vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, {
