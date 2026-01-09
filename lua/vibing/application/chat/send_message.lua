@@ -1,6 +1,6 @@
 ---@class Vibing.Application.SendMessageUseCase
 ---メッセージ送信ユースケース
--- Test: patch preservation before git commit
+-- Test comment for verifying patch path format fix
 local M = {}
 
 local Context = require("vibing.application.context.manager")

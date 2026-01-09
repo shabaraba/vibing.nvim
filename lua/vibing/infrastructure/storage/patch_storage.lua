@@ -158,9 +158,14 @@ function M.save_from_contents(session_id, modified_files, saved_contents)
 
     if ok and diff_result and vim.trim(diff_result) ~= "" then
       -- 一時ファイルパスを実際のファイルパスに置換
+      -- git diff --no-index は a/<path> b/<path> 形式で出力するので、
+      -- a/<tmp> -> a/<relative_path> のように置換する
       local relative_path = vim.fn.fnamemodify(file, ":.")
-      diff_result = diff_result:gsub(vim.pesc(tmp_before), "a/" .. relative_path)
-      diff_result = diff_result:gsub(vim.pesc(tmp_after), "b/" .. relative_path)
+      diff_result = diff_result:gsub("a/" .. vim.pesc(tmp_before), "a/" .. relative_path)
+      diff_result = diff_result:gsub("b/" .. vim.pesc(tmp_after), "b/" .. relative_path)
+      -- --- と +++ 行も置換
+      diff_result = diff_result:gsub("%-%-% a/" .. vim.pesc(tmp_before), "--- a/" .. relative_path)
+      diff_result = diff_result:gsub("%+%+%+ b/" .. vim.pesc(tmp_after), "+++ b/" .. relative_path)
       table.insert(patches, diff_result)
     end
 
