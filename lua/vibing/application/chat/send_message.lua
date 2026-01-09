@@ -83,6 +83,9 @@ function M.execute(adapter, callbacks, message, config)
             if ok then
               saved_contents[normalized_path] = content
             end
+          else
+            -- 新規ファイルの場合は空配列として保存
+            saved_contents[normalized_path] = {}
           end
         end
         if not vim.tbl_contains(modified_files, file_path) then
