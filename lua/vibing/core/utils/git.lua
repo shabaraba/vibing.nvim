@@ -163,14 +163,23 @@ function M.store_blob(content)
     return nil
   end
 
-  local result = vim.fn.system("git hash-object -w " .. vim.fn.shellescape(temp_file) .. " 2>/dev/null")
+  -- シェル経由でstderrを確実にリダイレクト
+  local cmd = "git hash-object -w " .. vim.fn.shellescape(temp_file) .. " 2>/dev/null"
+  local result = vim.fn.systemlist({ "sh", "-c", cmd })
   vim.fn.delete(temp_file)
 
-  if vim.v.shell_error ~= 0 then
+  if vim.v.shell_error ~= 0 or #result == 0 then
     return nil
   end
 
-  return vim.trim(result)
+  local sha = vim.trim(result[1])
+
+  -- Validate SHA format (should be exactly 40 hex characters)
+  if not sha:match("^%x+$") or #sha ~= 40 then
+    return nil
+  end
+
+  return sha
 end
 
 ---Git blobからファイル内容を読み込み
@@ -185,7 +194,14 @@ function M.read_blob(sha)
     return nil
   end
 
-  local result = vim.fn.systemlist("git cat-file -p " .. vim.fn.shellescape(sha) .. " 2>/dev/null")
+  -- Validate SHA format before using it
+  if not sha:match("^%x+$") or #sha ~= 40 then
+    return nil
+  end
+
+  -- シェル経由でstderrを確実にリダイレクト
+  local cmd = "git cat-file -p " .. vim.fn.shellescape(sha) .. " 2>/dev/null"
+  local result = vim.fn.systemlist({ "sh", "-c", cmd })
 
   if vim.v.shell_error ~= 0 then
     return nil
