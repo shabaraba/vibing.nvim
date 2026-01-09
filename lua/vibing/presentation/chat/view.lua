@@ -118,26 +118,18 @@ function M.attach_to_buffer(bufnr, file_path)
 
   -- saved_hashesからsaved_contentsを復元
   if frontmatter.saved_hashes and type(frontmatter.saved_hashes) == "table" then
-    local Git = require("vibing.core.utils.git")
+    local GitBlobStorage = require("vibing.infrastructure.storage.git_blob")
     local PreviewData = require("vibing.presentation.chat.modules.preview_data")
 
-    if Git.is_git_repo() then
-      local saved_contents = {}
-      for path, sha in pairs(frontmatter.saved_hashes) do
-        local content = Git.read_blob(sha)
-        if content then
-          saved_contents[path] = content
-        end
-      end
+    local saved_contents = GitBlobStorage.restore_all(frontmatter.saved_hashes)
 
-      if next(saved_contents) then
-        -- modified_filesも復元（frontmatterのsaved_hashesのキーから）
-        local modified_files = {}
-        for path, _ in pairs(saved_contents) do
-          table.insert(modified_files, path)
-        end
-        PreviewData.set_modified_files(modified_files, saved_contents)
+    if next(saved_contents) then
+      -- modified_filesも復元（frontmatterのsaved_hashesのキーから）
+      local modified_files = {}
+      for path, _ in pairs(saved_contents) do
+        table.insert(modified_files, path)
       end
+      PreviewData.set_modified_files(modified_files, saved_contents)
     end
   end
 

@@ -198,4 +198,35 @@ function M.get_list(buf, key)
   return frontmatter[key] or {}
 end
 
+---saved_hashesをフロントマターに保存
+---@param buf number バッファ番号
+---@param saved_hashes table<string, string> ファイルパスとGit blob SHAのマッピング
+---@return boolean success
+function M.update_saved_hashes(buf, saved_hashes)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return false
+  end
+
+  local current = M.parse(buf)
+  local merged = current.saved_hashes or {}
+  for path, sha in pairs(saved_hashes) do
+    merged[path] = sha
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local content = table.concat(lines, "\n")
+  local parsed, body = Frontmatter.parse(content)
+
+  if not parsed then
+    return false
+  end
+
+  parsed.saved_hashes = merged
+  local new_content = Frontmatter.serialize(parsed, body)
+  local new_lines = vim.split(new_content, "\n", { plain = true })
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, new_lines)
+
+  return true
+end
+
 return M

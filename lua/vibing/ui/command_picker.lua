@@ -276,9 +276,29 @@ function M._insert_command(chat_buffer, command_name, argument)
     return
   end
 
+  -- ウィンドウが無効な場合は、バッファを表示しているウィンドウを探す
   if not win or not vim.api.nvim_win_is_valid(win) then
-    notify.error("Invalid window")
-    return
+    -- すべてのウィンドウからこのバッファを表示しているものを探す
+    local found_win = nil
+    for _, w in ipairs(vim.api.nvim_list_wins()) do
+      if vim.api.nvim_win_get_buf(w) == buf then
+        found_win = w
+        break
+      end
+    end
+
+    if found_win then
+      win = found_win
+      chat_buffer.win = found_win  -- chat_bufferのwinプロパティも更新
+    else
+      -- ウィンドウが見つからない場合のみ新しく開く
+      chat_buffer:open()
+      win = chat_buffer.win
+      if not win or not vim.api.nvim_win_is_valid(win) then
+        notify.error("Failed to open chat window")
+        return
+      end
+    end
   end
 
   -- チャットウィンドウにフォーカス

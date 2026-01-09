@@ -7,7 +7,7 @@ local Formatter = require("vibing.infrastructure.context.formatter")
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 local GradientAnimation = require("vibing.ui.gradient_animation")
-local Git = require("vibing.core.utils.git")
+local GitBlobStorage = require("vibing.infrastructure.storage.git_blob")
 
 ---@class Vibing.ChatCallbacks
 ---@field extract_conversation fun(): table 会話履歴を抽出
@@ -163,14 +163,8 @@ function M._handle_response(response, callbacks, modified_files, saved_contents,
     callbacks.set_last_modified_files(modified_files, saved_contents)
 
     -- saved_contentsをGit blobとして保存し、frontmatterに記録
-    if Git.is_git_repo() and callbacks.update_saved_hashes then
-      local saved_hashes = {}
-      for path, content in pairs(saved_contents) do
-        local sha = Git.store_blob(content)
-        if sha then
-          saved_hashes[path] = sha
-        end
-      end
+    if callbacks.update_saved_hashes then
+      local saved_hashes = GitBlobStorage.store_all(saved_contents)
       if next(saved_hashes) then
         callbacks.update_saved_hashes(saved_hashes)
       end

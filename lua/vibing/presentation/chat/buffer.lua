@@ -404,27 +404,7 @@ function ChatBuffer:update_saved_hashes(saved_hashes)
     return
   end
 
-  local FrontmatterHandler = require("vibing.presentation.chat.modules.frontmatter_handler")
-  local frontmatter = FrontmatterHandler.parse(self.buf)
-
-  -- 既存のsaved_hashesとマージ
-  local merged = frontmatter.saved_hashes or {}
-  for path, sha in pairs(saved_hashes) do
-    merged[path] = sha
-  end
-
-  -- frontmatterを更新（オブジェクト形式で保存）
-  local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
-  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
-  local content = table.concat(lines, "\n")
-  local parsed, body = Frontmatter.parse(content)
-
-  if parsed then
-    parsed.saved_hashes = merged
-    local new_content = Frontmatter.serialize(parsed, body)
-    local new_lines = vim.split(new_content, "\n", { plain = true })
-    vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, new_lines)
-  end
+  FrontmatterHandler.update_saved_hashes(self.buf, saved_hashes)
 end
 
 return ChatBuffer
