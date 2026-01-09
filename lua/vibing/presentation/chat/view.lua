@@ -42,6 +42,18 @@ function M.render(session, position)
   if session.file_path and vim.fn.filereadable(session.file_path) == 1 then
     local content = vim.fn.readfile(session.file_path)
     vim.api.nvim_buf_set_lines(chat_buf.buf, 0, -1, false, content)
+
+    -- PreviewDataを復元（Modified Filesとsaved_contents）
+    local ModifiedFilesParser = require("vibing.presentation.chat.modules.modified_files_parser")
+    local modified_files = ModifiedFilesParser.parse_latest_modified_files(chat_buf.buf)
+    if #modified_files > 0 then
+      local GitBlobStorage = require("vibing.infrastructure.storage.git_blob")
+      local PreviewData = require("vibing.presentation.chat.modules.preview_data")
+      local saved_hashes = session.frontmatter.saved_hashes or {}
+      local saved_contents = GitBlobStorage.restore_all(saved_hashes)
+
+      PreviewData.set_modified_files(modified_files, saved_contents)
+    end
   end
 end
 
