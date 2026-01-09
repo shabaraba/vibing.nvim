@@ -60,7 +60,9 @@ function M.setup(opts)
   M.adapter = AgentSDK:new(M.config)
 
   -- 終了時にクリーンアップ
+  local augroup = vim.api.nvim_create_augroup("VibingCleanup", { clear = true })
   vim.api.nvim_create_autocmd("VimLeavePre", {
+    group = augroup,
     callback = function()
       -- Agent SDKプロセスを全てキャンセル
       if M.adapter then
