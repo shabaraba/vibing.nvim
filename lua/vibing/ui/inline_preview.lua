@@ -229,15 +229,11 @@ function M._generate_diff_from_saved(file_path)
   local is_buffer_id = BufferIdentifier.is_buffer_identifier(file_path)
   local normalized_path = BufferIdentifier.normalize_path(file_path)
 
-  print(string.format("[DEBUG] _generate_diff_from_saved called: file_path=%s, normalized=%s", file_path, normalized_path))
-
   -- ファイルが実際に存在するかチェック
   local file_exists = not is_buffer_id and vim.fn.filereadable(normalized_path) == 1
-  print(string.format("[DEBUG] file_exists=%s, is_buffer_id=%s", file_exists, is_buffer_id))
 
   -- 新規バッファ（ファイルが存在しない）の場合
   if not file_exists then
-    print("[DEBUG] Entering file_exists=false branch")
     -- バッファ内容を取得
     local bufnr
     if is_buffer_id then
@@ -296,20 +292,14 @@ function M._generate_diff_from_saved(file_path)
   end
 
   -- ファイルが存在する場合の既存ロジック
-  print("[DEBUG] Entering file_exists=true branch")
   -- 現在のファイル内容を取得
   local current_lines = vim.fn.readfile(file_path)
-  print(string.format("[DEBUG] Read %d lines from file", #current_lines))
 
   -- 保存された内容がない場合
-  print(string.format("[DEBUG] Checking saved_contents[%s]: %s", normalized_path, state.saved_contents[normalized_path] ~= nil))
   if not state.saved_contents[normalized_path] then
-    -- デバッグ出力
-    print(string.format("[DEBUG] No saved_contents for: %s (normalized: %s)", file_path, normalized_path))
     -- 新規ファイルかどうかをgit statusで確認
     local cmd = string.format("git status --porcelain -- %s", vim.fn.shellescape(file_path))
     local status_output = vim.fn.system(cmd)
-    print(string.format("[DEBUG] Git status output: '%s'", status_output))
     -- エラーメッセージが混入する可能性があるため、行ごとにチェック
     local is_new_file = false
     for line in status_output:gmatch("[^\r\n]+") do
@@ -318,7 +308,6 @@ function M._generate_diff_from_saved(file_path)
         break
       end
     end
-    print(string.format("[DEBUG] Is new file: %s", is_new_file))
 
     if is_new_file then
       -- 新規ファイルとして全内容を追加として表示

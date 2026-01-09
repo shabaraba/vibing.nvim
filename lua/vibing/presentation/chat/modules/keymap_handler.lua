@@ -42,26 +42,20 @@ function M.setup(buf, callbacks, keymaps)
       local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
       local file_path = FilePath.is_cursor_on_file_path(buf)
       if file_path then
-        print(string.format("[DEBUG keymap] file_path from cursor: %s", file_path))
         local modified_files = callbacks.get_modified_files and callbacks.get_modified_files()
-        print(string.format("[DEBUG keymap] modified_files: %s", vim.inspect(modified_files)))
         if modified_files and #modified_files > 0 then
           local normalized_cursor = BufferIdentifier.normalize_path(file_path)
-          print(string.format("[DEBUG keymap] normalized_cursor: %s", normalized_cursor))
 
           for _, mf in ipairs(modified_files) do
             local normalized_mf = BufferIdentifier.normalize_path(mf)
-            print(string.format("[DEBUG keymap] comparing: %s == %s ? %s", normalized_mf, normalized_cursor, normalized_mf == normalized_cursor))
 
             if normalized_mf == normalized_cursor then
-              print("[DEBUG keymap] Match found! Calling InlinePreview.setup")
               local InlinePreview = require("vibing.ui.inline_preview")
               local saved_contents = callbacks.get_saved_contents and callbacks.get_saved_contents()
               InlinePreview.setup("chat", modified_files, "", saved_contents, file_path)
               return
             end
           end
-          print("[DEBUG keymap] No match found in modified_files, falling back to GitDiff")
         end
 
         local GitDiff = require("vibing.core.utils.git_diff")
