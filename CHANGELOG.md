@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.17.2 (2026-01-09)
+
+## What's Changed
+
+- fix: save file content before Edit/Write to preserve diff after commit by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/279
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.17.1...v1.17.2
+
 ## 1.17.1 (2026-01-08)
 
 ## What's Changed
