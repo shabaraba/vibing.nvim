@@ -86,6 +86,11 @@ function M.execute(adapter, callbacks, message, config)
           local session_id = callbacks.get_session_id()
           if session_id then
             pre_saved_patch_filename = PatchStorage.save(session_id, modified_files)
+            if not pre_saved_patch_filename then
+              vim.schedule(function()
+                vim.notify("Failed to save patch before git add", vim.log.levels.WARN)
+              end)
+            end
           end
         end
       end
@@ -145,6 +150,11 @@ function M._handle_response(response, callbacks, modified_files, adapter, pre_sa
 
     if not patch_filename and session_id then
       patch_filename = PatchStorage.save(session_id, modified_files)
+      if not patch_filename then
+        vim.schedule(function()
+          vim.notify("Failed to save patch for modified files", vim.log.levels.WARN)
+        end)
+      end
     end
 
     -- Modified Filesセクションを出力

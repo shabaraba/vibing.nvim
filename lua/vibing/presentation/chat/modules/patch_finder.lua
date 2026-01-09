@@ -6,6 +6,10 @@ local M = {}
 ---@param buf number バッファ番号
 ---@return string? patch_filename patchファイル名
 function M.find_nearest_patch(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return nil
+  end
+
   local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
@@ -56,6 +60,10 @@ end
 ---@param buf number バッファ番号
 ---@return string? session_id
 function M.get_session_id(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return nil
+  end
+
   local lines = vim.api.nvim_buf_get_lines(buf, 0, 50, false) -- frontmatterは先頭50行以内
 
   local in_frontmatter = false
@@ -81,6 +89,10 @@ end
 ---@param buf number バッファ番号
 ---@return string[] files ファイルパスのリスト
 function M.get_modified_files_in_section(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return {}
+  end
+
   local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 

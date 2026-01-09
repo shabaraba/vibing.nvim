@@ -42,23 +42,8 @@ function M.setup(buf, callbacks, keymaps)
       local PatchFinder = require("vibing.presentation.chat.modules.patch_finder")
       local PatchViewer = require("vibing.ui.patch_viewer")
 
-      -- まず現在行の内容を取得してデバッグ
-      local cursor = vim.api.nvim_win_get_cursor(0)
-      local row = cursor[1]
-      local current_line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
-
       local file_path = FilePath.is_cursor_on_file_path(buf)
       if not file_path then
-        -- デバッグ: なぜファイルパスが検出されなかったか
-        if current_line then
-          local trimmed = current_line:match("^%s*(.-)%s*$")
-          local normalized = vim.fn.fnamemodify(trimmed or "", ":p")
-          local readable = vim.fn.filereadable(normalized)
-          vim.notify(
-            string.format("Line: '%s' | Normalized: '%s' | Readable: %d", trimmed or "", normalized, readable),
-            vim.log.levels.DEBUG
-          )
-        end
         vim.notify("No file path under cursor", vim.log.levels.INFO)
         return
       end

@@ -4,6 +4,28 @@ local M = {}
 
 local PATCHES_DIR = ".vibing/patches"
 
+---session_idの検証
+---@param session_id string セッションID
+---@return boolean valid
+local function is_valid_session_id(session_id)
+  if not session_id or session_id == "" then
+    return false
+  end
+  -- 英数字、ハイフン、アンダースコアのみ許可（パストラバーサル防止）
+  return session_id:match("^[%w%-_]+$") ~= nil
+end
+
+---patch_filenameの検証
+---@param filename string ファイル名
+---@return boolean valid
+local function is_valid_patch_filename(filename)
+  if not filename or filename == "" then
+    return false
+  end
+  -- .patchファイルのみ許可、パス区切り文字を含まない
+  return filename:match("^[%d%-T]+%.patch$") ~= nil
+end
+
 ---patchファイルのディレクトリパスを取得
 ---@param session_id string セッションID
 ---@return string dir_path
@@ -74,7 +96,10 @@ end
 ---@param modified_files string[] 変更されたファイルのリスト
 ---@return string? patch_filename 保存されたpatchファイル名（ディレクトリなし）
 function M.save(session_id, modified_files)
-  if not session_id or session_id == "" then
+  if not is_valid_session_id(session_id) then
+    vim.schedule(function()
+      vim.notify("Invalid session_id", vim.log.levels.ERROR)
+    end)
     return nil
   end
 
@@ -115,7 +140,7 @@ end
 ---@param patch_filename string patchファイル名
 ---@return string? patch_content パッチ内容
 function M.read(session_id, patch_filename)
-  if not session_id or not patch_filename then
+  if not is_valid_session_id(session_id) or not is_valid_patch_filename(patch_filename) then
     return nil
   end
 
@@ -134,7 +159,7 @@ end
 ---@param patch_filename string patchファイル名
 ---@return boolean success
 function M.revert(session_id, patch_filename)
-  if not session_id or not patch_filename then
+  if not is_valid_session_id(session_id) or not is_valid_patch_filename(patch_filename) then
     return false
   end
 
@@ -155,7 +180,7 @@ end
 ---@param session_id string セッションID
 ---@return boolean success
 function M.delete_session(session_id)
-  if not session_id or session_id == "" then
+  if not is_valid_session_id(session_id) then
     return false
   end
 
@@ -175,7 +200,7 @@ end
 ---@param session_id string セッションID
 ---@return string[] patch_files patchファイル名のリスト
 function M.list(session_id)
-  if not session_id or session_id == "" then
+  if not is_valid_session_id(session_id) then
     return {}
   end
 
