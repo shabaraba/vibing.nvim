@@ -116,6 +116,31 @@ function M.attach_to_buffer(bufnr, file_path)
     chat_buf.session_id = sid
   end
 
+  -- saved_hashesからsaved_contentsを復元
+  if frontmatter.saved_hashes and type(frontmatter.saved_hashes) == "table" then
+    local Git = require("vibing.core.utils.git")
+    local PreviewData = require("vibing.presentation.chat.modules.preview_data")
+
+    if Git.is_git_repo() then
+      local saved_contents = {}
+      for path, sha in pairs(frontmatter.saved_hashes) do
+        local content = Git.read_blob(sha)
+        if content then
+          saved_contents[path] = content
+        end
+      end
+
+      if next(saved_contents) then
+        -- modified_filesも復元（frontmatterのsaved_hashesのキーから）
+        local modified_files = {}
+        for path, _ in pairs(saved_contents) do
+          table.insert(modified_files, path)
+        end
+        PreviewData.set_modified_files(modified_files, saved_contents)
+      end
+    end
+  end
+
   chat_buf:_setup_keymaps()
 
   M._attached_buffers[bufnr] = chat_buf

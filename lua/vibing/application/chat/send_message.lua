@@ -7,6 +7,7 @@ local Formatter = require("vibing.infrastructure.context.formatter")
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 local GradientAnimation = require("vibing.ui.gradient_animation")
+local Git = require("vibing.core.utils.git")
 
 ---@class Vibing.ChatCallbacks
 ---@field extract_conversation fun(): table 会話履歴を抽出
@@ -21,6 +22,7 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field get_bufnr fun(): number バッファ番号を取得
 ---@field insert_choices fun(questions: table) AskUserQuestion選択肢を挿入
 ---@field clear_handle_id fun() handle_idをクリア
+---@field update_saved_hashes fun(saved_hashes: table<string, string>) saved_hashesを更新
 
 ---メッセージを送信
 ---@param adapter table アダプター
@@ -159,6 +161,20 @@ function M._handle_response(response, callbacks, modified_files, saved_contents,
       callbacks.append_chunk(vim.fn.fnamemodify(file_path, ":.") .. "\n")
     end
     callbacks.set_last_modified_files(modified_files, saved_contents)
+
+    -- saved_contentsをGit blobとして保存し、frontmatterに記録
+    if Git.is_git_repo() and callbacks.update_saved_hashes then
+      local saved_hashes = {}
+      for path, content in pairs(saved_contents) do
+        local sha = Git.store_blob(content)
+        if sha then
+          saved_hashes[path] = sha
+        end
+      end
+      if next(saved_hashes) then
+        callbacks.update_saved_hashes(saved_hashes)
+      end
+    end
   end
 
   if adapter:supports("session") and response._handle_id then

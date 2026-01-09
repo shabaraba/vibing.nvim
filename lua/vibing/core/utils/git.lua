@@ -149,4 +149,49 @@ function M.checkout_files(files)
   }
 end
 
+---ファイル内容をGit blobとして保存
+---@param content string[] ファイル内容（行の配列）
+---@return string? sha 保存されたblobのSHA（失敗時はnil）
+function M.store_blob(content)
+  if not M.is_git_repo() then
+    return nil
+  end
+
+  local temp_file = vim.fn.tempname()
+  local ok = pcall(vim.fn.writefile, content, temp_file)
+  if not ok then
+    return nil
+  end
+
+  local result = vim.fn.system("git hash-object -w " .. vim.fn.shellescape(temp_file))
+  vim.fn.delete(temp_file)
+
+  if vim.v.shell_error ~= 0 then
+    return nil
+  end
+
+  return vim.trim(result)
+end
+
+---Git blobからファイル内容を読み込み
+---@param sha string blobのSHA
+---@return string[]? content ファイル内容（行の配列、失敗時はnil）
+function M.read_blob(sha)
+  if not M.is_git_repo() then
+    return nil
+  end
+
+  if not sha or sha == "" then
+    return nil
+  end
+
+  local result = vim.fn.systemlist("git cat-file -p " .. vim.fn.shellescape(sha))
+
+  if vim.v.shell_error ~= 0 then
+    return nil
+  end
+
+  return result
+end
+
 return M

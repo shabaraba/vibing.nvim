@@ -305,6 +305,9 @@ function ChatBuffer:send_message()
     clear_handle_id = function()
       self._current_handle_id = nil
     end,
+    update_saved_hashes = function(saved_hashes)
+      return self:update_saved_hashes(saved_hashes)
+    end,
   }
 
   -- リクエストを送信してhandle_idを保存
@@ -392,6 +395,36 @@ end
 ---@param questions table Agent SDKから受け取った質問構造
 function ChatBuffer:insert_choices(questions)
   self._pending_choices = questions
+end
+
+---saved_hashesをfrontmatterに保存
+---@param saved_hashes table<string, string> ファイルパスとGit blob SHAのマッピング
+function ChatBuffer:update_saved_hashes(saved_hashes)
+  if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
+    return
+  end
+
+  local FrontmatterHandler = require("vibing.presentation.chat.modules.frontmatter_handler")
+  local frontmatter = FrontmatterHandler.parse(self.buf)
+
+  -- 既存のsaved_hashesとマージ
+  local merged = frontmatter.saved_hashes or {}
+  for path, sha in pairs(saved_hashes) do
+    merged[path] = sha
+  end
+
+  -- frontmatterを更新（オブジェクト形式で保存）
+  local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
+  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+  local content = table.concat(lines, "\n")
+  local parsed, body = Frontmatter.parse(content)
+
+  if parsed then
+    parsed.saved_hashes = merged
+    local new_content = Frontmatter.serialize(parsed, body)
+    local new_lines = vim.split(new_content, "\n", { plain = true })
+    vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, new_lines)
+  end
 end
 
 return ChatBuffer
