@@ -62,9 +62,14 @@ local function generate_patch(files)
   local patches = {}
 
   -- 既存ファイルの変更を取得（ステージング済み + 未ステージング）
-  local cmd = string.format("git diff HEAD -- %s 2>/dev/null", table.concat(file_args, " "))
+  local cmd = string.format("git diff HEAD -- %s", table.concat(file_args, " "))
   local result = vim.fn.system({ "sh", "-c", cmd })
-  if vim.v.shell_error == 0 and result and vim.trim(result) ~= "" then
+  if vim.v.shell_error ~= 0 then
+    -- git diffエラー時はデバッグログ出力（通常の使用では発生しないはず）
+    vim.schedule(function()
+      vim.notify("git diff failed for existing files", vim.log.levels.DEBUG)
+    end)
+  elseif result and vim.trim(result) ~= "" then
     table.insert(patches, result)
   end
 
@@ -110,7 +115,13 @@ function M.save(session_id, modified_files)
 
   -- ディレクトリを作成
   local patch_dir = get_patch_dir(session_id)
-  vim.fn.mkdir(patch_dir, "p")
+  local mkdir_result = vim.fn.mkdir(patch_dir, "p")
+  if mkdir_result == 0 and vim.fn.isdirectory(patch_dir) ~= 1 then
+    vim.schedule(function()
+      vim.notify("Failed to create patch directory", vim.log.levels.ERROR)
+    end)
+    return nil
+  end
 
   -- patchファイルを保存
   local patch_path = generate_patch_path(session_id)
@@ -170,10 +181,21 @@ function M.revert(session_id, patch_filename)
   end
 
   -- git apply -R でパッチを逆適用
-  local cmd = string.format("git apply -R %s 2>/dev/null", vim.fn.shellescape(patch_path))
-  vim.fn.system({ "sh", "-c", cmd })
+  local cmd = string.format("git apply -R %s", vim.fn.shellescape(patch_path))
+  local result = vim.fn.system({ "sh", "-c", cmd })
 
-  return vim.v.shell_error == 0
+  if vim.v.shell_error ~= 0 then
+    -- git apply失敗時はエラー内容をログ出力
+    vim.schedule(function()
+      vim.notify(
+        string.format("git apply -R failed: %s", vim.trim(result or "")),
+        vim.log.levels.DEBUG
+      )
+    end)
+    return false
+  end
+
+  return true
 end
 
 ---セッションのpatchディレクトリを削除
