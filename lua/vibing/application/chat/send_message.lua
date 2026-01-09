@@ -1,6 +1,6 @@
 ---@class Vibing.Application.SendMessageUseCase
 ---メッセージ送信ユースケース
--- TODO: This is a test comment for patch feature testing
+-- Test: patch preservation before git commit
 local M = {}
 
 local Context = require("vibing.application.context.manager")
@@ -56,6 +56,7 @@ function M.execute(adapter, callbacks, message, config)
 
   local modified_files = {}
   local file_tools = { Edit = true, Write = true, nvim_set_buffer = true }
+  local pre_saved_patch_filename = nil  -- git操作前に保存されたpatchファイル名
 
   -- Get language code: frontmatter > config
   local language_utils = require("vibing.core.utils.language")
@@ -100,11 +101,11 @@ function M.execute(adapter, callbacks, message, config)
           or command:match("^git%s+reset")
           or command:match("^git%s+checkout")
           or command:match("^git%s+stash")
-        if is_git_destructive then
+        if is_git_destructive and not pre_saved_patch_filename then
           local PatchStorage = require("vibing.infrastructure.storage.patch_storage")
           local session_id = callbacks.get_session_id()
           if session_id then
-            PatchStorage.save_from_contents(session_id, modified_files, saved_contents)
+            pre_saved_patch_filename = PatchStorage.save_from_contents(session_id, modified_files, saved_contents)
           end
         end
       end
@@ -131,12 +132,12 @@ function M.execute(adapter, callbacks, message, config)
       end)
     end, function(response)
       vim.schedule(function()
-        M._handle_response(response, callbacks, modified_files, saved_contents, adapter)
+        M._handle_response(response, callbacks, modified_files, saved_contents, adapter, pre_saved_patch_filename)
       end)
     end)
   else
     local response = adapter:execute(formatted_prompt, opts)
-    M._handle_response(response, callbacks, modified_files, saved_contents, adapter)
+    M._handle_response(response, callbacks, modified_files, saved_contents, adapter, pre_saved_patch_filename)
   end
 
   return handle_id
@@ -162,7 +163,7 @@ function M._save_buffer_contents()
 end
 
 ---レスポンスを処理
-function M._handle_response(response, callbacks, modified_files, saved_contents, adapter)
+function M._handle_response(response, callbacks, modified_files, saved_contents, adapter, pre_saved_patch_filename)
   -- Stop gradient animation
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
@@ -176,12 +177,12 @@ function M._handle_response(response, callbacks, modified_files, saved_contents,
   if #modified_files > 0 then
     BufferReload.reload_files(modified_files)
 
-    -- patchファイルを保存
+    -- patchファイルを保存（git操作前に保存済みの場合はそれを使用）
     local PatchStorage = require("vibing.infrastructure.storage.patch_storage")
     local session_id = callbacks.get_session_id()
-    local patch_filename = nil
+    local patch_filename = pre_saved_patch_filename
 
-    if session_id then
+    if not patch_filename and session_id then
       patch_filename = PatchStorage.save(session_id, modified_files)
     end
 
