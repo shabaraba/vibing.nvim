@@ -172,10 +172,11 @@ function M._render_files_panel()
   table.insert(lines, "")
   table.insert(lines, string.rep("─", 30))
   local help_start = #lines
-  table.insert(lines, "j/k  Navigate")
-  table.insert(lines, "<CR> Select")
-  table.insert(lines, "r    Revert patch")
-  table.insert(lines, "q    Quit")
+  table.insert(lines, "j/k    Navigate files")
+  table.insert(lines, "<CR>   Select file")
+  table.insert(lines, "<Tab>  Switch pane")
+  table.insert(lines, "r      Revert patch")
+  table.insert(lines, "q      Quit")
 
   vim.bo[state.buf_files].modifiable = true
   vim.api.nvim_buf_set_lines(state.buf_files, 0, -1, false, lines)
@@ -221,49 +222,68 @@ end
 
 ---キーマップを設定
 function M._setup_keymaps()
-  local buffers = { state.buf_files, state.buf_diff }
+  -- Files pane用キーマップ（j/kでファイル選択）
+  if state.buf_files and vim.api.nvim_buf_is_valid(state.buf_files) then
+    local opts = { buffer = state.buf_files, noremap = true, silent = true }
 
-  for _, buf in ipairs(buffers) do
-    if buf and vim.api.nvim_buf_is_valid(buf) then
-      local opts = { buffer = buf, noremap = true, silent = true }
+    vim.keymap.set("n", "j", function()
+      M._select_file(1)
+    end, vim.tbl_extend("force", opts, { desc = "Next file" }))
 
-      -- ナビゲーション
-      vim.keymap.set("n", "j", function()
-        M._select_file(1)
-      end, vim.tbl_extend("force", opts, { desc = "Next file" }))
+    vim.keymap.set("n", "k", function()
+      M._select_file(-1)
+    end, vim.tbl_extend("force", opts, { desc = "Previous file" }))
 
-      vim.keymap.set("n", "k", function()
-        M._select_file(-1)
-      end, vim.tbl_extend("force", opts, { desc = "Previous file" }))
+    vim.keymap.set("n", "<CR>", function()
+      M._select_file_from_cursor()
+    end, vim.tbl_extend("force", opts, { desc = "Select file" }))
 
-      vim.keymap.set("n", "<CR>", function()
-        M._select_file_from_cursor()
-      end, vim.tbl_extend("force", opts, { desc = "Select file" }))
-
-      -- Tab/Shift-Tabでウィンドウ切り替え
-      vim.keymap.set("n", "<Tab>", function()
-        M._cycle_window(1)
-      end, vim.tbl_extend("force", opts, { desc = "Next window" }))
-
-      vim.keymap.set("n", "<S-Tab>", function()
-        M._cycle_window(-1)
-      end, vim.tbl_extend("force", opts, { desc = "Previous window" }))
-
-      -- Revert
-      vim.keymap.set("n", "r", function()
-        M._on_revert()
-      end, vim.tbl_extend("force", opts, { desc = "Revert patch" }))
-
-      -- 閉じる
-      vim.keymap.set("n", "q", function()
-        M._close()
-      end, vim.tbl_extend("force", opts, { desc = "Close" }))
-
-      vim.keymap.set("n", "<Esc>", function()
-        M._close()
-      end, vim.tbl_extend("force", opts, { desc = "Close" }))
-    end
+    M._setup_common_keymaps(state.buf_files)
   end
+
+  -- Diff pane用キーマップ（hjklは通常のカーソル移動、Ctrl+j/kでファイル選択）
+  if state.buf_diff and vim.api.nvim_buf_is_valid(state.buf_diff) then
+    local opts = { buffer = state.buf_diff, noremap = true, silent = true }
+
+    vim.keymap.set("n", "<C-j>", function()
+      M._select_file(1)
+    end, vim.tbl_extend("force", opts, { desc = "Next file" }))
+
+    vim.keymap.set("n", "<C-k>", function()
+      M._select_file(-1)
+    end, vim.tbl_extend("force", opts, { desc = "Previous file" }))
+
+    M._setup_common_keymaps(state.buf_diff)
+  end
+end
+
+---共通キーマップを設定
+---@param buf number バッファ番号
+function M._setup_common_keymaps(buf)
+  local opts = { buffer = buf, noremap = true, silent = true }
+
+  -- Tab/Shift-Tabでウィンドウ切り替え
+  vim.keymap.set("n", "<Tab>", function()
+    M._cycle_window(1)
+  end, vim.tbl_extend("force", opts, { desc = "Next window" }))
+
+  vim.keymap.set("n", "<S-Tab>", function()
+    M._cycle_window(-1)
+  end, vim.tbl_extend("force", opts, { desc = "Previous window" }))
+
+  -- Revert
+  vim.keymap.set("n", "r", function()
+    M._on_revert()
+  end, vim.tbl_extend("force", opts, { desc = "Revert patch" }))
+
+  -- 閉じる
+  vim.keymap.set("n", "q", function()
+    M._close()
+  end, vim.tbl_extend("force", opts, { desc = "Close" }))
+
+  vim.keymap.set("n", "<Esc>", function()
+    M._close()
+  end, vim.tbl_extend("force", opts, { desc = "Close" }))
 end
 
 ---ファイル選択を変更
