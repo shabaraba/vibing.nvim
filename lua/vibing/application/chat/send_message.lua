@@ -1,5 +1,6 @@
 ---@class Vibing.Application.SendMessageUseCase
 ---メッセージ送信ユースケース
+-- TODO: This is a test comment for patch feature testing
 local M = {}
 
 local Context = require("vibing.application.context.manager")
