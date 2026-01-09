@@ -1,5 +1,6 @@
 ---@class Vibing.Application.SendMessageUseCase
 ---メッセージ送信ユースケース
+-- Revert patch test
 local M = {}
 
 local Context = require("vibing.application.context.manager")
