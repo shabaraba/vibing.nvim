@@ -1,6 +1,5 @@
 ---@class Vibing.Application.SendMessageUseCase
 ---メッセージ送信ユースケース
--- Test comment for git add detection patch feature
 local M = {}
 
 local Context = require("vibing.application.context.manager")
