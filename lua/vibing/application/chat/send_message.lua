@@ -74,6 +74,15 @@ function M.execute(adapter, callbacks, message, config)
     language = lang_code,  -- Pass language code to adapter
     on_tool_use = function(tool, file_path)
       if file_tools[tool] and file_path then
+        local normalized_path = vim.fn.fnamemodify(file_path, ":p")
+        if not saved_contents[normalized_path] then
+          if vim.fn.filereadable(normalized_path) == 1 then
+            local ok, content = pcall(vim.fn.readfile, normalized_path)
+            if ok then
+              saved_contents[normalized_path] = content
+            end
+          end
+        end
         if not vim.tbl_contains(modified_files, file_path) then
           table.insert(modified_files, file_path)
         end
