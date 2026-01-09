@@ -223,24 +223,10 @@ function ChatBuffer:load_from_file(file_path)
     local ModifiedFilesParser = require("vibing.presentation.chat.modules.modified_files_parser")
     local modified_files = ModifiedFilesParser.parse_latest_modified_files(self.buf)
     if #modified_files > 0 then
-      -- saved_contentsをsaved_hashesから復元
-      local saved_contents = {}
+      -- saved_contentsをGit blobから復元
+      local GitBlobStorage = require("vibing.infrastructure.storage.git_blob")
       local saved_hashes = frontmatter.saved_hashes or {}
-
-      for _, file_path_str in ipairs(modified_files) do
-        local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
-        local normalized = BufferIdentifier.normalize_path(file_path_str)
-        local hash = saved_hashes[normalized]
-
-        if hash and hash ~= "" then
-          -- Git blob SHAから内容を取得
-          local cmd = string.format("git cat-file -p %s", vim.fn.shellescape(hash))
-          local content = vim.fn.systemlist(cmd)
-          if vim.v.shell_error == 0 then
-            saved_contents[normalized] = content
-          end
-        end
-      end
+      local saved_contents = GitBlobStorage.restore_all(saved_hashes)
 
       PreviewData.set_modified_files(modified_files, saved_contents)
     end
