@@ -935,6 +935,17 @@ try {
             );
           }
 
+          // Emit Bash tool_use event with command for git operation detection
+          if (toolName === 'Bash' && toolInput.command) {
+            console.log(
+              safeJsonStringify({
+                type: 'tool_use',
+                tool: 'Bash',
+                command: toolInput.command,
+              })
+            );
+          }
+
           // Don't display tool execution here - will display paired with result later
         }
       }

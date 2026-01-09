@@ -19,9 +19,10 @@ end
 ---@param msg table JSONデコードされたメッセージ
 ---@param opts Vibing.AdapterOpts アダプターオプション
 local function handleToolUseEvent(msg, opts)
-  if msg.tool and msg.file_path and opts.on_tool_use then
+  if msg.tool and opts.on_tool_use then
+    -- file_path or command (for Bash)
     vim.schedule(function()
-      opts.on_tool_use(msg.tool, msg.file_path)
+      opts.on_tool_use(msg.tool, msg.file_path, msg.command)
     end)
   end
 end

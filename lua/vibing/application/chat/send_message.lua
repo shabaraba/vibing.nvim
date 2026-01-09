@@ -73,7 +73,7 @@ function M.execute(adapter, callbacks, message, config)
     permissions_ask = frontmatter.permissions_ask,
     permission_mode = frontmatter.permission_mode,
     language = lang_code,  -- Pass language code to adapter
-    on_tool_use = function(tool, file_path)
+    on_tool_use = function(tool, file_path, command)
       if file_tools[tool] and file_path then
         local normalized_path = vim.fn.fnamemodify(file_path, ":p")
         if not saved_contents[normalized_path] then
@@ -83,12 +83,28 @@ function M.execute(adapter, callbacks, message, config)
               saved_contents[normalized_path] = content
             end
           else
-            -- 新規ファイルの場合は空配列として保存
             saved_contents[normalized_path] = {}
           end
         end
         if not vim.tbl_contains(modified_files, file_path) then
           table.insert(modified_files, file_path)
+        end
+      end
+
+      -- Bashでgit commit/add/revert等を検知したらpatchを即座に保存
+      if tool == "Bash" and command and #modified_files > 0 then
+        local is_git_destructive = command:match("^git%s+commit")
+          or command:match("^git%s+add")
+          or command:match("^git%s+revert")
+          or command:match("^git%s+reset")
+          or command:match("^git%s+checkout")
+          or command:match("^git%s+stash")
+        if is_git_destructive then
+          local PatchStorage = require("vibing.infrastructure.storage.patch_storage")
+          local session_id = callbacks.get_session_id()
+          if session_id then
+            PatchStorage.save_from_contents(session_id, modified_files, saved_contents)
+          end
         end
       end
     end,
