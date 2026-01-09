@@ -279,9 +279,6 @@ function ChatBuffer:send_message()
     append_chunk = function(chunk)
       return self:append_chunk(chunk)
     end,
-    set_last_modified_files = function(files, saved_contents)
-      return self:set_last_modified_files(files, saved_contents)
-    end,
     get_session_id = function()
       return self:get_session_id()
     end,
@@ -362,15 +359,6 @@ function ChatBuffer:update_filename_from_message(message)
   if new_path then
     self.file_path = new_path
   end
-end
-
----最後に変更されたファイル一覧を設定（後方互換性のため維持、実際はno-op）
----@param modified_files string[] 変更されたファイルパスの配列
----@param saved_contents table<string, string[]>? Claude変更前のファイル内容（オプション）
-function ChatBuffer:set_last_modified_files(modified_files, saved_contents)
-  -- NOTE: Diff display now uses patch files in .vibing/patches/<session_id>/
-  -- This method is kept for backward compatibility but is effectively a no-op
-  -- The gd keymap reads patch files directly via PatchFinder and PatchViewer
 end
 
 ---AskUserQuestion の選択肢を保存
