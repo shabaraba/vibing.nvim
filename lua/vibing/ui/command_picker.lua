@@ -276,9 +276,17 @@ function M._insert_command(chat_buffer, command_name, argument)
     return
   end
 
+  -- winが無効な場合は現在のウィンドウを使用
   if not win or not vim.api.nvim_win_is_valid(win) then
-    notify.error("Invalid window")
-    return
+    -- 現在のウィンドウがチャットバッファと一致するかチェック
+    local current_win = vim.api.nvim_get_current_win()
+    local current_buf = vim.api.nvim_win_get_buf(current_win)
+    if current_buf == buf then
+      win = current_win
+    else
+      notify.error("Invalid window")
+      return
+    end
   end
 
   -- チャットウィンドウにフォーカス
