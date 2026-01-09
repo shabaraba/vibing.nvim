@@ -285,54 +285,20 @@ function M._generate_diff_from_saved(file_path)
 
       return {
         lines = diff_lines,
-        has_delta = #current_lines > 0,  -- 内容がある場合は差分ありとする
+        has_delta = false,
         error = false,
       }
     end
   end
 
   -- ファイルが存在する場合の既存ロジック
+  -- 保存された内容がない場合は通常のgit diffにフォールバック
+  if not state.saved_contents[normalized_path] then
+    return git.get_diff(file_path)
+  end
+
   -- 現在のファイル内容を取得
   local current_lines = vim.fn.readfile(file_path)
-
-  -- 保存された内容がない場合
-  if not state.saved_contents[normalized_path] then
-    -- 新規ファイルかどうかをgit statusで確認
-    local cmd = string.format("git status --porcelain -- %s", vim.fn.shellescape(file_path))
-    local status_output = vim.fn.system(cmd)
-    -- エラーメッセージが混入する可能性があるため、行ごとにチェック
-    local is_new_file = false
-    for line in status_output:gmatch("[^\r\n]+") do
-      if vim.startswith(line, "??") or vim.startswith(line, "A ") then
-        is_new_file = true
-        break
-      end
-    end
-
-    if is_new_file then
-      -- 新規ファイルとして全内容を追加として表示
-      local diff_lines = {
-        "diff --git a/" .. file_path .. " b/" .. file_path,
-        "new file",
-        "--- /dev/null",
-        "+++ b/" .. file_path,
-        "@@ -0,0 +1," .. #current_lines .. " @@",
-      }
-
-      for _, line in ipairs(current_lines) do
-        table.insert(diff_lines, "+" .. line)
-      end
-
-      return {
-        lines = diff_lines,
-        has_delta = #current_lines > 0,
-        error = false,
-      }
-    else
-      -- 既存ファイルの場合は通常のgit diffにフォールバック
-      return git.get_diff(file_path)
-    end
-  end
 
   -- 保存された内容と現在の内容を比較
   return _generate_diff_with_temp_files(state.saved_contents[normalized_path], current_lines, file_path)

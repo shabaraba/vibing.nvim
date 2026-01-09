@@ -28,74 +28,41 @@ end
 local function parse_yaml_simple(yaml_str)
   local result = {}
   local lines = vim.split(yaml_str, "\n", { plain = true })
-  local current_nested_key = nil
-  local current_nested = nil
-  local is_array = nil
+  local current_array_key = nil
+  local current_array = nil
 
   for _, line in ipairs(lines) do
     if line:match("^%s*$") then
       goto continue
     end
 
-    -- Array item: "  - value"
     local array_item = line:match("^%s+%-%s*(.*)$")
-    if array_item and current_nested_key and is_array then
-      table.insert(current_nested, trim(array_item))
+    if array_item and current_array_key then
+      table.insert(current_array, trim(array_item))
       goto continue
     end
 
-    -- Object item: "  key: value" (quoted or unquoted key)
-    local obj_key, obj_value = line:match('^%s+"([^"]+)":%s*(.*)$')
-    if not obj_key then
-      obj_key, obj_value = line:match("^%s+([%w%.%_%-%/]+):%s*(.*)$")
-    end
-    if obj_key and current_nested_key and not is_array then
-      current_nested[obj_key] = trim(obj_value)
-      goto continue
-    end
-
-    -- Top-level key
     local key, value = line:match("^([%w%.%_%-]+):%s*(.*)$")
     if key then
-      if current_nested_key then
-        result[current_nested_key] = current_nested
-        current_nested_key = nil
-        current_nested = nil
-        is_array = nil
+      if current_array_key then
+        result[current_array_key] = current_array
+        current_array_key = nil
+        current_array = nil
       end
 
       if value == "" or value == nil then
-        current_nested_key = key
-        current_nested = {}
-        is_array = nil -- Will be determined by first nested item
+        current_array_key = key
+        current_array = {}
       else
         result[key] = parse_yaml_value(value)
-      end
-    elseif current_nested_key and is_array == nil then
-      -- Determine if nested structure is array or object
-      if line:match("^%s+%-") then
-        is_array = true
-        local item = line:match("^%s+%-%s*(.*)$")
-        if item then
-          table.insert(current_nested, trim(item))
-        end
-      elseif line:match("^%s+") then
-        is_array = false
-        local k, v = line:match('^%s+"([^"]+)":%s*(.*)$')
-        if not k then
-          k, v = line:match("^%s+([%w%.%_%-%/]+):%s*(.*)$")
-        end
-        if k then
-          current_nested[k] = trim(v)
-        end
       end
     end
 
     ::continue::
   end
 
-  if current_nested_key then
-    result[current_nested_key] = current_nested
+  if current_array_key then
+    result[current_array_key] = current_array
   end
 
   return result
@@ -190,17 +157,8 @@ function M.serialize(data, body)
     local value = data[key]
     if type(value) == "table" then
       table.insert(lines, key .. ":")
-      -- Check if table is array (sequential integer keys) or object (string keys)
-      local is_array = #value > 0 or next(value) == nil
-      if is_array then
-        for _, item in ipairs(value) do
-          table.insert(lines, "  - " .. tostring(item))
-        end
-      else
-        -- Object format with quoted keys for paths
-        for k, v in pairs(value) do
-          table.insert(lines, '  "' .. tostring(k) .. '": ' .. tostring(v))
-        end
+      for _, item in ipairs(value) do
+        table.insert(lines, "  - " .. tostring(item))
       end
     else
       table.insert(lines, key .. ": " .. serialize_value(value))
