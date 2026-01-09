@@ -7,7 +7,6 @@ local Formatter = require("vibing.infrastructure.context.formatter")
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 local GradientAnimation = require("vibing.ui.gradient_animation")
-local GitBlobStorage = require("vibing.infrastructure.storage.git_blob")
 
 ---@class Vibing.ChatCallbacks
 ---@field extract_conversation fun(): table 会話履歴を抽出
@@ -159,19 +158,28 @@ function M._handle_response(response, callbacks, modified_files, saved_contents,
 
   if #modified_files > 0 then
     BufferReload.reload_files(modified_files)
+
+    -- patchファイルを保存
+    local PatchStorage = require("vibing.infrastructure.storage.patch_storage")
+    local session_id = callbacks.get_session_id()
+    local patch_filename = nil
+
+    if session_id then
+      patch_filename = PatchStorage.save(session_id, modified_files)
+    end
+
+    -- Modified Filesセクションを出力
     callbacks.append_chunk("\n\n### Modified Files\n\n")
     for _, file_path in ipairs(modified_files) do
       callbacks.append_chunk(vim.fn.fnamemodify(file_path, ":.") .. "\n")
     end
-    callbacks.set_last_modified_files(modified_files, saved_contents)
 
-    -- saved_contentsをGit blobとして保存し、frontmatterに記録
-    if callbacks.update_saved_hashes then
-      local saved_hashes = GitBlobStorage.store_all(saved_contents)
-      if next(saved_hashes) then
-        callbacks.update_saved_hashes(saved_hashes)
-      end
+    -- patchファイル名をコメントとして追加
+    if patch_filename then
+      callbacks.append_chunk("\n<!-- patch: " .. patch_filename .. " -->\n")
     end
+
+    callbacks.set_last_modified_files(modified_files, saved_contents)
   end
 
   if adapter:supports("session") and response._handle_id then

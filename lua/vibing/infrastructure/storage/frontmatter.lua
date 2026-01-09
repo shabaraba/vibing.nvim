@@ -167,7 +167,6 @@ local function get_sorted_keys(tbl)
     permissions_allow = 7,
     permissions_deny = 8,
     language = 9,
-    saved_hashes = 10,
   }
 
   table.sort(keys, function(a, b)

@@ -57,6 +57,8 @@ intelligent chat conversations and context-aware inline code actions directly in
 {
   "shabaraba/vibing.nvim",
   dependencies = {
+    -- Required: for session state persistence
+    "kkharji/sqlite.lua",
     -- Optional: for file browser integration
     "stevearc/oil.nvim",
   },
@@ -99,12 +101,29 @@ intelligent chat conversations and context-aware inline code actions directly in
 ```lua
 use {
   "shabaraba/vibing.nvim",
+  requires = {
+    -- Required: for session state persistence
+    "kkharji/sqlite.lua",
+  },
   run = "./build.sh",  -- Builds MCP server for Neovim integration
   config = function()
     require("vibing").setup()
   end,
 }
 ```
+
+### Requirements
+
+vibing.nvim requires the following dependencies:
+
+- **sqlite.lua** - For session state persistence (diff viewer, modified files tracking)
+  - Requires `sqlite3` to be installed on your system
+  - Install via your package manager:
+    - macOS: `brew install sqlite3`
+    - Ubuntu/Debian: `apt install sqlite3 libsqlite3-dev`
+    - Arch: `pacman -S sqlite`
+
+If `sqlite.lua` is not available, vibing.nvim will function normally but session persistence features (like viewing diffs after Neovim restart) will be disabled.
 
 ## 🚀 Usage
 
