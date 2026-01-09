@@ -163,7 +163,7 @@ function M.store_blob(content)
     return nil
   end
 
-  local result = vim.fn.system("git hash-object -w " .. vim.fn.shellescape(temp_file))
+  local result = vim.fn.system("git hash-object -w " .. vim.fn.shellescape(temp_file) .. " 2>/dev/null")
   vim.fn.delete(temp_file)
 
   if vim.v.shell_error ~= 0 then
@@ -185,7 +185,7 @@ function M.read_blob(sha)
     return nil
   end
 
-  local result = vim.fn.systemlist("git cat-file -p " .. vim.fn.shellescape(sha))
+  local result = vim.fn.systemlist("git cat-file -p " .. vim.fn.shellescape(sha) .. " 2>/dev/null")
 
   if vim.v.shell_error ~= 0 then
     return nil

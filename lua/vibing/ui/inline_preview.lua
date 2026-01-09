@@ -229,11 +229,15 @@ function M._generate_diff_from_saved(file_path)
   local is_buffer_id = BufferIdentifier.is_buffer_identifier(file_path)
   local normalized_path = BufferIdentifier.normalize_path(file_path)
 
+  print(string.format("[DEBUG] _generate_diff_from_saved called: file_path=%s, normalized=%s", file_path, normalized_path))
+
   -- ファイルが実際に存在するかチェック
   local file_exists = not is_buffer_id and vim.fn.filereadable(normalized_path) == 1
+  print(string.format("[DEBUG] file_exists=%s, is_buffer_id=%s", file_exists, is_buffer_id))
 
   -- 新規バッファ（ファイルが存在しない）の場合
   if not file_exists then
+    print("[DEBUG] Entering file_exists=false branch")
     -- バッファ内容を取得
     local bufnr
     if is_buffer_id then
@@ -285,20 +289,61 @@ function M._generate_diff_from_saved(file_path)
 
       return {
         lines = diff_lines,
-        has_delta = false,
+        has_delta = #current_lines > 0,  -- 内容がある場合は差分ありとする
         error = false,
       }
     end
   end
 
   -- ファイルが存在する場合の既存ロジック
-  -- 保存された内容がない場合は通常のgit diffにフォールバック
-  if not state.saved_contents[normalized_path] then
-    return git.get_diff(file_path)
-  end
-
+  print("[DEBUG] Entering file_exists=true branch")
   -- 現在のファイル内容を取得
   local current_lines = vim.fn.readfile(file_path)
+  print(string.format("[DEBUG] Read %d lines from file", #current_lines))
+
+  -- 保存された内容がない場合
+  print(string.format("[DEBUG] Checking saved_contents[%s]: %s", normalized_path, state.saved_contents[normalized_path] ~= nil))
+  if not state.saved_contents[normalized_path] then
+    -- デバッグ出力
+    print(string.format("[DEBUG] No saved_contents for: %s (normalized: %s)", file_path, normalized_path))
+    -- 新規ファイルかどうかをgit statusで確認
+    local cmd = string.format("git status --porcelain -- %s", vim.fn.shellescape(file_path))
+    local status_output = vim.fn.system(cmd)
+    print(string.format("[DEBUG] Git status output: '%s'", status_output))
+    -- エラーメッセージが混入する可能性があるため、行ごとにチェック
+    local is_new_file = false
+    for line in status_output:gmatch("[^\r\n]+") do
+      if vim.startswith(line, "??") or vim.startswith(line, "A ") then
+        is_new_file = true
+        break
+      end
+    end
+    print(string.format("[DEBUG] Is new file: %s", is_new_file))
+
+    if is_new_file then
+      -- 新規ファイルとして全内容を追加として表示
+      local diff_lines = {
+        "diff --git a/" .. file_path .. " b/" .. file_path,
+        "new file",
+        "--- /dev/null",
+        "+++ b/" .. file_path,
+        "@@ -0,0 +1," .. #current_lines .. " @@",
+      }
+
+      for _, line in ipairs(current_lines) do
+        table.insert(diff_lines, "+" .. line)
+      end
+
+      return {
+        lines = diff_lines,
+        has_delta = #current_lines > 0,
+        error = false,
+      }
+    else
+      -- 既存ファイルの場合は通常のgit diffにフォールバック
+      return git.get_diff(file_path)
+    end
+  end
 
   -- 保存された内容と現在の内容を比較
   return _generate_diff_with_temp_files(state.saved_contents[normalized_path], current_lines, file_path)
