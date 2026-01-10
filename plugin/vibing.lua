@@ -60,9 +60,16 @@ vim.api.nvim_create_autocmd("BufDelete", {
   group = group,
   callback = function(ev)
     attached_bufs[ev.buf] = nil
-    local chat = require("vibing.application.chat.use_case")
-    if chat.attached_buffers then
-      chat.attached_buffers[ev.buf] = nil
+
+    -- 実行中のジョブをキャンセル
+    local view = require("vibing.presentation.chat.view")
+    if view._attached_buffers and view._attached_buffers[ev.buf] then
+      local chat_buf = view._attached_buffers[ev.buf]
+      -- close()を呼んでジョブキャンセルとタイマー停止
+      if chat_buf.close then
+        pcall(chat_buf.close, chat_buf)
+      end
+      view._attached_buffers[ev.buf] = nil
     end
   end,
 })
