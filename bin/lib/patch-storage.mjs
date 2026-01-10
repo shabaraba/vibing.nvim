@@ -6,7 +6,6 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync } from 'fs';
 import { resolve, join } from 'path';
 import { spawnSync } from 'child_process';
-import { homedir } from 'os';
 
 /**
  * Session state for tracking modified files
@@ -225,15 +224,15 @@ class PatchStorage {
     }
 
     try {
-      // Determine patch directory
-      const patchDir = join(homedir(), '.local', 'share', 'nvim', 'vibing', 'patches');
+      // Use project-relative patch directory (same as Lua side)
+      const patchDir = join(this.cwd, '.vibing', 'patches', this.sessionId);
 
       // Create directory if not exists
       mkdirSync(patchDir, { recursive: true });
 
-      // Generate filename
+      // Generate filename (without session ID prefix since it's in directory name)
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `${this.sessionId.substring(0, 8)}-${timestamp}.patch`;
+      const filename = `${timestamp}.patch`;
       const filepath = join(patchDir, filename);
 
       // Write patch file

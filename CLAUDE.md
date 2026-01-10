@@ -108,6 +108,13 @@ When using these tools from Claude Code, prefix them with `mcp__vibing-nvim__`:
 - `mcp__vibing-nvim__nvim_win_set_buf` - Set an existing buffer in a specific window
 - `mcp__vibing-nvim__nvim_win_open_file` - Open a file in a specific window without switching focus
 
+**IMPORTANT - Window Identification:**
+
+- `nvim_get_window_info({ winnr: 0 })` returns info for the **currently active window** (where focus is), NOT the window where the cursor is visually located
+- `nvim_list_windows()` returns all windows and indicates which one is active via `is_current: true`
+- When working with specific windows (e.g., resizing chat window), always use `nvim_list_windows()` first to find the correct window by matching buffer name or other properties, then use the `winnr` from the result
+- In vibing.nvim chat context, the chat window may not be the active window when the request is sent, so always identify the target window explicitly
+
 **Commands:**
 
 - `mcp__vibing-nvim__nvim_execute` - Execute Neovim commands
@@ -184,21 +191,34 @@ const buffers = await use_mcp_tool('vibing-nvim', 'nvim_list_buffers', {});
 // Get current buffer content
 const content = await use_mcp_tool('vibing-nvim', 'nvim_get_buffer', {});
 
-// List all windows with their properties
+// ✅ CORRECT: Find specific window and resize it
+// Step 1: List all windows to find the target window
 const windows = await use_mcp_tool('vibing-nvim', 'nvim_list_windows', {});
+
+// Step 2: Find the window you want (e.g., chat window with .vibing file)
+const chatWindow = windows.find((w) => w.buffer_name.endsWith('.vibing'));
+
+// Step 3: Resize using the correct winnr
+if (chatWindow) {
+  await use_mcp_tool('vibing-nvim', 'nvim_set_window_size', {
+    winnr: chatWindow.winnr,
+    width: 120,
+    height: 30,
+  });
+}
+
+// ❌ WRONG: Using winnr: 0 may target wrong window
+// This targets the currently active window, which may not be the one you want
+await use_mcp_tool('vibing-nvim', 'nvim_set_window_size', {
+  winnr: 0, // This is the active window, not necessarily the visible one!
+  width: 120,
+});
 
 // Get detailed info for current window
 const winInfo = await use_mcp_tool('vibing-nvim', 'nvim_get_window_info', { winnr: 0 });
 
 // Get viewport information (visible lines)
 const viewport = await use_mcp_tool('vibing-nvim', 'nvim_get_window_view', { winnr: 0 });
-
-// Resize window
-await use_mcp_tool('vibing-nvim', 'nvim_set_window_size', {
-  winnr: 1000,
-  width: 80,
-  height: 30,
-});
 
 // Focus a specific window
 await use_mcp_tool('vibing-nvim', 'nvim_focus_window', { winnr: 1000 });
