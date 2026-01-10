@@ -774,29 +774,31 @@ language: ja  # オプション：AIレスポンスのデフォルト言語
 
 ### 高レベル概要
 
-```text
-┌─────────────────────────────────────────────────────────┐
-│                      Neovim                             │
-│  ┌───────────────┐     ┌─────────────────────────────┐  │
-│  │ vibing.nvim   │────▶│  Chat Buffer (.vibing)      │  │
-│  │ (Lua plugin)  │     │  - Markdown + YAML          │  │
-│  └───────┬───────┘     │  - Session metadata         │  │
-│          │             │  - Permission settings      │  │
-│          ▼             └─────────────────────────────┘  │
-│  ┌───────────────┐                                      │
-│  │ RPC Server    │◀─────────────────────┐               │
-│  └───────┬───────┘                      │               │
-└──────────┼──────────────────────────────┼───────────────┘
-           │                              │
-           ▼                              │
-┌─────────────────────┐    ┌──────────────┴──────────────┐
-│ Claude Agent SDK    │    │ MCP Server                  │
-│ (Node.js)           │───▶│ - Buffer operations         │
-│                     │    │ - LSP queries               │
-│ - Tool execution    │    │ - Command execution         │
-│ - Session management│    │ - File system access        │
-│ - Streaming response│    └─────────────────────────────┘
-└─────────────────────┘
+```mermaid
+graph TB
+    subgraph Neovim["Neovimプロセス"]
+        Plugin["vibing.nvim<br/>(Luaプラグイン)"]
+        Buffer["チャットバッファ<br/>(.vibingファイル)<br/>- Markdown + YAML<br/>- セッションメタデータ<br/>- 権限設定"]
+        RPC["RPCサーバー<br/>(非同期TCP)"]
+
+        Plugin -->|管理| Buffer
+        Plugin -->|使用| RPC
+    end
+
+    subgraph Backend["Node.jsバックエンド"]
+        SDK["Claude Agent SDK<br/>- ツール実行<br/>- セッション管理<br/>- ストリーミングレスポンス"]
+        MCP["MCPサーバー<br/>- バッファ操作<br/>- LSPクエリ<br/>- コマンド実行<br/>- ファイルシステムアクセス"]
+
+        SDK -->|制御| MCP
+    end
+
+    RPC <-->|JSON-RPC| MCP
+    Plugin -->|起動・通信<br/>JSON Lines| SDK
+
+    style Neovim fill:#e1f5ff
+    style Backend fill:#fff4e1
+    style Plugin fill:#bbdefb
+    style SDK fill:#ffe0b2
 ```
 
 ### 従来のアプローチとの違い

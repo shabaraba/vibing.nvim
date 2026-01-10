@@ -774,29 +774,31 @@ For detailed architecture documentation, see [CLAUDE.md](./CLAUDE.md).
 
 ### High-Level Overview
 
-```text
-┌─────────────────────────────────────────────────────────┐
-│                      Neovim                             │
-│  ┌───────────────┐     ┌─────────────────────────────┐  │
-│  │ vibing.nvim   │────▶│  Chat Buffer (.vibing)      │  │
-│  │ (Lua plugin)  │     │  - Markdown + YAML          │  │
-│  └───────┬───────┘     │  - Session metadata         │  │
-│          │             │  - Permission settings      │  │
-│          ▼             └─────────────────────────────┘  │
-│  ┌───────────────┐                                      │
-│  │ RPC Server    │◀─────────────────────┐               │
-│  └───────┬───────┘                      │               │
-└──────────┼──────────────────────────────┼───────────────┘
-           │                              │
-           ▼                              │
-┌─────────────────────┐    ┌──────────────┴──────────────┐
-│ Claude Agent SDK    │    │ MCP Server                  │
-│ (Node.js)           │───▶│ - Buffer operations         │
-│                     │    │ - LSP queries               │
-│ - Tool execution    │    │ - Command execution         │
-│ - Session management│    │ - File system access        │
-│ - Streaming response│    └─────────────────────────────┘
-└─────────────────────┘
+```mermaid
+graph TB
+    subgraph Neovim["Neovim Process"]
+        Plugin["vibing.nvim<br/>(Lua Plugin)"]
+        Buffer["Chat Buffer<br/>(.vibing file)<br/>- Markdown + YAML<br/>- Session metadata<br/>- Permission settings"]
+        RPC["RPC Server<br/>(Async TCP)"]
+
+        Plugin -->|manages| Buffer
+        Plugin -->|uses| RPC
+    end
+
+    subgraph Backend["Node.js Backend"]
+        SDK["Claude Agent SDK<br/>- Tool execution<br/>- Session management<br/>- Streaming response"]
+        MCP["MCP Server<br/>- Buffer operations<br/>- LSP queries<br/>- Command execution<br/>- File system access"]
+
+        SDK -->|controls via| MCP
+    end
+
+    RPC <-->|JSON-RPC| MCP
+    Plugin -->|spawns & communicates<br/>JSON Lines| SDK
+
+    style Neovim fill:#e1f5ff
+    style Backend fill:#fff4e1
+    style Plugin fill:#bbdefb
+    style SDK fill:#ffe0b2
 ```
 
 ### How It Differs from Traditional Approaches
