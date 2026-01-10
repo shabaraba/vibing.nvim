@@ -189,8 +189,8 @@ ${languageInstruction}
       try {
         const content = readFileSync(file, 'utf-8');
         contextParts.push(`<context file="${file}">\n${content}\n</context>`);
-      } catch {
-        // Skip unreadable files
+      } catch (error) {
+        console.warn(`Warning: Failed to read context file "${file}": ${error.message}`);
       }
     }
     if (contextParts.length > 0) {

@@ -3,9 +3,9 @@
  * Implements ADR 006: JavaScript-based Patch Storage Implementation
  */
 
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync } from 'fs';
 import { resolve, join } from 'path';
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { homedir } from 'os';
 
 /**
@@ -44,7 +44,9 @@ class PatchStorage {
     try {
       const normalizedPath = resolve(this.cwd, filePath);
       if (existsSync(normalizedPath)) {
-        return readFileSync(normalizedPath, 'utf-8');
+        // Resolve symlinks and relative paths to canonical path
+        const realPath = realpathSync(normalizedPath);
+        return readFileSync(realPath, 'utf-8');
       }
       return null;
     } catch {
@@ -60,11 +62,11 @@ class PatchStorage {
   isGitTracked(filePath) {
     try {
       const normalizedPath = resolve(this.cwd, filePath);
-      execSync(`git ls-files --error-unmatch "${normalizedPath}"`, {
+      const result = spawnSync('git', ['ls-files', '--error-unmatch', normalizedPath], {
         stdio: 'ignore',
         cwd: this.cwd,
       });
-      return true;
+      return result.status === 0;
     } catch {
       return false;
     }
@@ -118,8 +120,10 @@ class PatchStorage {
       return null;
     }
 
-    const oldLines = (oldContent || '').split('\n');
-    const newLines = (newContent || '').split('\n');
+    // Normalize line endings (CRLF -> LF) before splitting
+    const normalizeLineEndings = (text) => (text || '').replace(/\r\n/g, '\n');
+    const oldLines = normalizeLineEndings(oldContent).split('\n');
+    const newLines = normalizeLineEndings(newContent).split('\n');
 
     const header = [
       `diff --git a/${filePath} b/${filePath}`,
