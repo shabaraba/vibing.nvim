@@ -28,6 +28,8 @@ export function parseArguments(args) {
     language: null,
     rpcPort: null,
     toolResultDisplay: 'compact',
+    saveLocationType: 'project',
+    saveDir: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -100,6 +102,12 @@ export function parseArguments(args) {
       i++;
     } else if (args[i] === '--tool-result-display' && args[i + 1]) {
       config.toolResultDisplay = args[i + 1];
+      i++;
+    } else if (args[i] === '--save-location-type' && args[i + 1]) {
+      config.saveLocationType = args[i + 1];
+      i++;
+    } else if (args[i] === '--save-dir' && args[i + 1]) {
+      config.saveDir = args[i + 1];
       i++;
     } else if (!args[i].startsWith('--')) {
       config.prompt = args[i];

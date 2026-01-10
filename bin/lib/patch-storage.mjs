@@ -6,6 +6,7 @@
 import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync } from 'fs';
 import { resolve, join } from 'path';
 import { spawnSync } from 'child_process';
+import { homedir } from 'os';
 
 /**
  * Session state for tracking modified files
@@ -16,6 +17,8 @@ class PatchStorage {
     this.savedFileContents = new Map();
     this.sessionId = null;
     this.cwd = process.cwd();
+    this.saveLocationType = 'project';
+    this.saveDir = null;
   }
 
   /**
@@ -32,6 +35,16 @@ class PatchStorage {
    */
   setCwd(cwd) {
     this.cwd = cwd;
+  }
+
+  /**
+   * Set save location configuration
+   * @param {string} saveLocationType - "project" | "user" | "custom"
+   * @param {string|null} saveDir - Custom save directory (only used when type is "custom")
+   */
+  setSaveConfig(saveLocationType, saveDir) {
+    this.saveLocationType = saveLocationType || 'project';
+    this.saveDir = saveDir;
   }
 
   /**
@@ -214,6 +227,28 @@ class PatchStorage {
   }
 
   /**
+   * Get patch base directory based on save location type
+   * Matches the logic in lua/vibing/infrastructure/storage/patch_storage.lua:get_patches_base_dir()
+   * @returns {string} Base directory for patches
+   */
+  getPatchesBaseDir() {
+    if (this.saveLocationType === 'project') {
+      return join(this.cwd, '.vibing', 'patches');
+    } else if (this.saveLocationType === 'user') {
+      // Equivalent to Neovim's stdpath("data")
+      return join(homedir(), '.local', 'share', 'nvim', 'vibing', 'patches');
+    } else if (this.saveLocationType === 'custom') {
+      let basePath = this.saveDir || join(this.cwd, '.vibing');
+      // Remove trailing /chats or /chat if present
+      basePath = basePath.replace(/\/chats?\/?$/, '');
+      return join(basePath, 'patches');
+    } else {
+      // Default to project
+      return join(this.cwd, '.vibing', 'patches');
+    }
+  }
+
+  /**
    * Save patch to file
    * @param {string} patchContent - Patch content
    * @returns {string|null} Patch filename or null on error
@@ -224,8 +259,9 @@ class PatchStorage {
     }
 
     try {
-      // Use project-relative patch directory (same as Lua side)
-      const patchDir = join(this.cwd, '.vibing', 'patches', this.sessionId);
+      // Get base directory based on configuration
+      const patchBaseDir = this.getPatchesBaseDir();
+      const patchDir = join(patchBaseDir, this.sessionId);
 
       // Create directory if not exists
       mkdirSync(patchDir, { recursive: true });

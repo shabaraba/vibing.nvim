@@ -12,9 +12,10 @@ import PatchStorage from './patch-storage.mjs';
  * @param {string} toolResultDisplay - Display mode for tool results ("none" | "compact" | "full")
  * @param {string} sessionId - Session ID for patch storage
  * @param {string} cwd - Current working directory
+ * @param {Object} config - Configuration object with save location settings
  * @returns {Promise<void>}
  */
-export async function processStream(resultStream, toolResultDisplay, sessionId, cwd) {
+export async function processStream(resultStream, toolResultDisplay, sessionId, cwd, config) {
   let sessionIdEmitted = false;
   let respondingEmitted = false;
   const processedToolUseIds = new Set();
@@ -25,6 +26,7 @@ export async function processStream(resultStream, toolResultDisplay, sessionId, 
   const patchStorage = new PatchStorage();
   if (sessionId) patchStorage.setSessionId(sessionId);
   if (cwd) patchStorage.setCwd(cwd);
+  if (config) patchStorage.setSaveConfig(config.saveLocationType, config.saveDir);
 
   for await (const message of resultStream) {
     // Emit session ID once from init message

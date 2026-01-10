@@ -2,8 +2,6 @@
 ---patchファイルを使用したdiff情報の永続化
 local M = {}
 
-local PATCHES_DIR = ".vibing/patches"
-
 ---session_idの検証
 ---@param session_id string セッションID
 ---@return boolean valid
@@ -26,11 +24,32 @@ local function is_valid_patch_filename(filename)
   return filename:match("^[%d%-T]+%.patch$") ~= nil
 end
 
+---patchファイルのベースディレクトリを取得（chat保存場所と同じ設定を使用）
+---@return string base_dir
+local function get_patches_base_dir()
+  local vibing = require("vibing")
+  local config = vibing.get_config()
+  local location_type = config.chat.save_location_type or "project"
+
+  if location_type == "project" then
+    return vim.fn.getcwd() .. "/.vibing/patches"
+  elseif location_type == "user" then
+    return vim.fn.stdpath("data") .. "/vibing/patches"
+  elseif location_type == "custom" then
+    local base_path = config.chat.save_dir or (vim.fn.getcwd() .. "/.vibing")
+    -- Remove trailing /chats or /chat if present
+    base_path = base_path:gsub("/chats?/?$", "")
+    return base_path .. "/patches"
+  else
+    return vim.fn.getcwd() .. "/.vibing/patches"
+  end
+end
+
 ---patchファイルのディレクトリパスを取得
 ---@param session_id string セッションID
 ---@return string dir_path
 local function get_patch_dir(session_id)
-  return string.format("%s/%s/%s", vim.fn.getcwd(), PATCHES_DIR, session_id)
+  return string.format("%s/%s", get_patches_base_dir(), session_id)
 end
 
 ---patchファイルのパスを生成
