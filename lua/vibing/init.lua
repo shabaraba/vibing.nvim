@@ -191,7 +191,8 @@ function M._register_commands()
   end, { desc = "Reload custom slash commands" })
 
   vim.api.nvim_create_user_command("VibingCopyUnsentUserHeader", function()
-    local header = "## User <!-- unsent -->"
+    local timestamp = require("vibing.core.utils.timestamp")
+    local header = timestamp.create_unsent_user_header()
     vim.fn.setreg("+", header)
     notify.info("Copied to clipboard: " .. header)
   end, { desc = "Copy '## User <!-- unsent -->' to clipboard" })
