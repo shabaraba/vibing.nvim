@@ -57,6 +57,24 @@ This means Claude can:
 
 vibing.nvim is purpose-built for Claude, leveraging the official Agent SDK to provide the same capabilities as Claude Code CLI directly within Neovim. This focused approach enables deep integration that multi-provider plugins cannot achieve.
 
+### Concurrent Sessions
+
+Work on multiple tasks simultaneously without blocking:
+
+- **Multiple chat windows** - Open separate conversations, each with its own independent session
+- **Queued inline actions** - Stack up code modifications that execute sequentially
+- **No waiting** - Start a new chat while another is still processing
+
+Example workflow:
+```vim
+:VibingChat  " Debug authentication issue in chat 1
+:VibingChat  " Design new feature in chat 2
+:'<,'>VibingInline fix  " Queue code fix
+:'<,'>VibingInline test " Queue test generation
+```
+
+All sessions run independently with proper conflict management.
+
 ## ✨ Features
 
 ### 🤖 Neovim as an Agent Tool
@@ -95,6 +113,14 @@ Telescope-style diff preview for all code modifications:
 - Navigate between multiple modified files
 - Works in both inline actions and chat mode
 
+### 🔀 Concurrent Session Support
+
+Run multiple AI tasks simultaneously:
+
+- **Independent chat sessions** - Each chat window maintains its own conversation and session ID
+- **Queued inline actions** - Multiple code modifications execute serially to prevent conflicts
+- **Parallel workflows** - Debug in one chat while designing features in another
+
 ### Other Features
 
 - **💬 Interactive Chat Interface** - Seamless chat window with Claude AI, opens in current buffer by default
@@ -116,6 +142,7 @@ Different AI coding plugins serve different needs. Here's how vibing.nvim fits i
 - Want the AI to autonomously navigate and understand your codebase
 - Need persistent, shareable conversation history
 - Prefer fine-grained permission controls
+- Want to work on multiple AI tasks concurrently
 - Want Claude Code CLI capabilities without leaving Neovim
 
 ### Consider alternatives if you:
