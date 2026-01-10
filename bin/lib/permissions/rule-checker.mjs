@@ -3,6 +3,8 @@
  * Evaluates granular permission rules based on paths, commands, patterns, domains
  */
 
+/* global URL */
+
 import { matchGlob } from './matchers.mjs';
 
 /**

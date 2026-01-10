@@ -13,15 +13,8 @@ import { safeJsonStringify } from '../utils.mjs';
  * @returns {Function} canUseTool callback
  */
 export function createCanUseToolCallback(config) {
-  const {
-    allowedTools,
-    deniedTools,
-    askedTools,
-    permissionRules,
-    permissionMode,
-    mcpEnabled,
-    sessionId,
-  } = config;
+  const { allowedTools, askedTools, permissionRules, permissionMode, mcpEnabled, sessionId } =
+    config;
 
   return async (toolName, input) => {
     try {

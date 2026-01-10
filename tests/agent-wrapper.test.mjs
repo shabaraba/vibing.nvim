@@ -24,7 +24,7 @@ describe('Agent Wrapper', () => {
         if (line.trim()) {
           try {
             events.push(JSON.parse(line));
-          } catch (e) {
+          } catch {
             console.error('Failed to parse:', line);
           }
         }
@@ -63,7 +63,9 @@ describe('Agent Wrapper', () => {
         if (line.trim()) {
           try {
             events.push(JSON.parse(line));
-          } catch (e) {}
+          } catch {
+            // Ignore parse errors for partial lines
+          }
         }
       }
     });
