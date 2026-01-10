@@ -49,8 +49,6 @@ function M.execute(adapter, callbacks, message, config)
 
   local frontmatter = callbacks.parse_frontmatter()
 
-  local modified_files = {}
-  local file_tools = { Edit = true, Write = true, nvim_set_buffer = true }
   local patch_filename_from_js = nil  -- JavaScript側で生成されたpatchファイル名
 
   -- Get language code: frontmatter > config
@@ -70,14 +68,6 @@ function M.execute(adapter, callbacks, message, config)
     permissions_ask = frontmatter.permissions_ask,
     permission_mode = frontmatter.permission_mode,
     language = lang_code,  -- Pass language code to adapter
-    on_tool_use = function(tool, file_path, command)
-      -- ファイル変更ツールの場合、modified_filesに追加
-      if file_tools[tool] and file_path then
-        if not vim.tbl_contains(modified_files, file_path) then
-          table.insert(modified_files, file_path)
-        end
-      end
-    end,
     on_patch_saved = function(filename)
       -- JavaScript側で生成されたpatchファイル名を保存
       patch_filename_from_js = filename
@@ -127,17 +117,22 @@ function M._handle_response(response, callbacks, modified_files, adapter, patch_
     callbacks.append_chunk("\n\n**Error:** " .. response.error)
   end
 
-  if #modified_files > 0 then
-    BufferReload.reload_files(modified_files)
+  -- パッチファイルが生成された場合、そこからファイルリストを抽出
+  if patch_filename_from_js then
+    local PatchParser = require("vibing.infrastructure.storage.patch_parser")
+    local session_id = callbacks.get_session_id()
+    local modified_files = PatchParser.extract_file_list(session_id, patch_filename_from_js)
 
-    -- Modified Filesセクションを出力
-    callbacks.append_chunk("\n\n### Modified Files\n\n")
-    for _, file_path in ipairs(modified_files) do
-      callbacks.append_chunk(vim.fn.fnamemodify(file_path, ":.") .. "\n")
-    end
+    if #modified_files > 0 then
+      BufferReload.reload_files(modified_files)
 
-    -- patchファイル名をコメントとして追加（JavaScript側で生成）
-    if patch_filename_from_js then
+      -- Modified Filesセクションを出力
+      callbacks.append_chunk("\n\n### Modified Files\n\n")
+      for _, file_path in ipairs(modified_files) do
+        callbacks.append_chunk(vim.fn.fnamemodify(file_path, ":.") .. "\n")
+      end
+
+      -- patchファイル名をコメントとして追加
       callbacks.append_chunk("\n<!-- patch: " .. patch_filename_from_js .. " -->\n")
     end
   end

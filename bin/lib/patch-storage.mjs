@@ -3,7 +3,7 @@
  * Flow: takeSnapshot() creates git commit -> Claude works -> generatePatch() compares current state
  */
 
-import { writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
 import { homedir } from 'os';
@@ -77,11 +77,7 @@ class PatchStorage {
     const stagedDiff = this.saveStagingState();
 
     // 2. Check for merge/rebase conflicts
-    const mergeHeadExists = spawnSync('test', ['-f', '.git/MERGE_HEAD'], {
-      cwd: this.cwd,
-      shell: true,
-    });
-    if (mergeHeadExists.status === 0) {
+    if (existsSync(join(this.cwd, '.git', 'MERGE_HEAD'))) {
       console.error('[ERROR] Cannot take snapshot during merge/rebase');
       return false;
     }

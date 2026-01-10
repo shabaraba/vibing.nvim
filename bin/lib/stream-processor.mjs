@@ -88,10 +88,6 @@ export async function processStream(resultStream, toolResultDisplay, sessionId, 
 
           emit({ type: 'status', state: 'tool_use', tool: toolName, input_summary: inputSummary });
 
-          if ((toolName === 'Edit' || toolName === 'Write') && toolInput.file_path) {
-            emit({ type: 'tool_use', tool: toolName, file_path: toolInput.file_path });
-          }
-
           if (toolName === 'Bash' && toolInput.command) {
             emit({ type: 'tool_use', tool: 'Bash', command: toolInput.command });
           }
@@ -107,13 +103,6 @@ export async function processStream(resultStream, toolResultDisplay, sessionId, 
         if (!toolName) continue;
 
         const resultText = extractResultText(block.content);
-
-        if (toolName === 'mcp__vibing-nvim__nvim_set_buffer') {
-          const match = resultText.match(/Buffer updated successfully \(([^)]+)\)/);
-          if (match) {
-            emit({ type: 'tool_use', tool: 'nvim_set_buffer', file_path: match[1] });
-          }
-        }
 
         const inputSummary = toolInputMap.get(block.tool_use_id) || '';
         const toolText = formatToolResult(
