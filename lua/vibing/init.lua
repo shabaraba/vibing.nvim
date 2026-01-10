@@ -189,6 +189,12 @@ function M._register_commands()
 
     notify.info("Custom commands reloaded")
   end, { desc = "Reload custom slash commands" })
+
+  vim.api.nvim_create_user_command("VibingCopyUserHeader", function()
+    local header = "## User <!-- unsent -->"
+    vim.fn.setreg("+", header)
+    notify.info("Copied to clipboard: " .. header)
+  end, { desc = "Copy '## User <!-- unsent -->' to clipboard" })
 end
 
 ---現在のアダプターインスタンスを取得
