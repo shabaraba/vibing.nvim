@@ -51,7 +51,7 @@ function M.execute(adapter, callbacks, message, config)
 
   local modified_files = {}
   local file_tools = { Edit = true, Write = true, nvim_set_buffer = true }
-  local pre_saved_patch_filename = nil  -- git add前に保存されたpatchファイル名
+  local patch_filename_from_js = nil  -- JavaScript側で生成されたpatchファイル名
 
   -- Get language code: frontmatter > config
   local language_utils = require("vibing.core.utils.language")
@@ -77,23 +77,10 @@ function M.execute(adapter, callbacks, message, config)
           table.insert(modified_files, file_path)
         end
       end
-
-      -- Bashでgit add検知時にpatchを保存（add前ならgit diffで差分が取れる）
-      if tool == "Bash" and command and #modified_files > 0 then
-        local is_git_add = command:match("^git%s+add")
-        if is_git_add and not pre_saved_patch_filename then
-          local PatchStorage = require("vibing.infrastructure.storage.patch_storage")
-          local session_id = callbacks.get_session_id()
-          if session_id then
-            pre_saved_patch_filename = PatchStorage.save(session_id, modified_files)
-            if not pre_saved_patch_filename then
-              vim.schedule(function()
-                vim.notify("Failed to save patch before git add", vim.log.levels.WARN)
-              end)
-            end
-          end
-        end
-      end
+    end,
+    on_patch_saved = function(filename)
+      -- JavaScript側で生成されたpatchファイル名を保存
+      patch_filename_from_js = filename
     end,
     on_insert_choices = function(questions)
       -- Forward insert_choices event to chat buffer
@@ -117,19 +104,19 @@ function M.execute(adapter, callbacks, message, config)
       end)
     end, function(response)
       vim.schedule(function()
-        M._handle_response(response, callbacks, modified_files, adapter, pre_saved_patch_filename)
+        M._handle_response(response, callbacks, modified_files, adapter, patch_filename_from_js)
       end)
     end)
   else
     local response = adapter:execute(formatted_prompt, opts)
-    M._handle_response(response, callbacks, modified_files, adapter, pre_saved_patch_filename)
+    M._handle_response(response, callbacks, modified_files, adapter, patch_filename_from_js)
   end
 
   return handle_id
 end
 
 ---レスポンスを処理
-function M._handle_response(response, callbacks, modified_files, adapter, pre_saved_patch_filename)
+function M._handle_response(response, callbacks, modified_files, adapter, patch_filename_from_js)
   -- Stop gradient animation
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
@@ -143,29 +130,15 @@ function M._handle_response(response, callbacks, modified_files, adapter, pre_sa
   if #modified_files > 0 then
     BufferReload.reload_files(modified_files)
 
-    -- patchファイルを保存（git操作前に保存済みの場合はそれを使用）
-    local PatchStorage = require("vibing.infrastructure.storage.patch_storage")
-    local session_id = callbacks.get_session_id()
-    local patch_filename = pre_saved_patch_filename
-
-    if not patch_filename and session_id then
-      patch_filename = PatchStorage.save(session_id, modified_files)
-      if not patch_filename then
-        vim.schedule(function()
-          vim.notify("Failed to save patch for modified files", vim.log.levels.WARN)
-        end)
-      end
-    end
-
     -- Modified Filesセクションを出力
     callbacks.append_chunk("\n\n### Modified Files\n\n")
     for _, file_path in ipairs(modified_files) do
       callbacks.append_chunk(vim.fn.fnamemodify(file_path, ":.") .. "\n")
     end
 
-    -- patchファイル名をコメントとして追加
-    if patch_filename then
-      callbacks.append_chunk("\n<!-- patch: " .. patch_filename .. " -->\n")
+    -- patchファイル名をコメントとして追加（JavaScript側で生成）
+    if patch_filename_from_js then
+      callbacks.append_chunk("\n<!-- patch: " .. patch_filename_from_js .. " -->\n")
     end
   end
 

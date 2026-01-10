@@ -38,6 +38,17 @@ local function handleInsertChoicesEvent(msg, opts)
   end
 end
 
+---パッチ保存イベントを処理
+---@param msg table JSONデコードされたメッセージ
+---@param opts Vibing.AdapterOpts アダプターオプション
+local function handlePatchSavedEvent(msg, opts)
+  if msg.filename and opts.on_patch_saved then
+    vim.schedule(function()
+      opts.on_patch_saved(msg.filename)
+    end)
+  end
+end
+
 ---チャンクイベントを処理
 ---@param msg table JSONデコードされたメッセージ
 ---@param output string[] 出力バッファ
@@ -98,6 +109,11 @@ function M.processLine(line, context)
       return false
     end
     handleInsertChoicesEvent(msg, context.opts)
+  elseif msg.type == "patch_saved" then
+    if not context.opts then
+      return false
+    end
+    handlePatchSavedEvent(msg, context.opts)
   elseif msg.type == "chunk" then
     if not context.output or not context.onChunk then
       return false

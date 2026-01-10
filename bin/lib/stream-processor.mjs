@@ -4,14 +4,17 @@
  */
 
 import { safeJsonStringify } from './utils.mjs';
+import PatchStorage from './patch-storage.mjs';
 
 /**
  * Process Agent SDK response stream
  * @param {AsyncIterable} resultStream - Agent SDK result stream
  * @param {string} toolResultDisplay - Display mode for tool results ("none" | "compact" | "full")
+ * @param {string} sessionId - Session ID for patch storage
+ * @param {string} cwd - Current working directory
  * @returns {Promise<void>}
  */
-export async function processStream(resultStream, toolResultDisplay) {
+export async function processStream(resultStream, toolResultDisplay, sessionId, cwd) {
   let sessionIdEmitted = false;
   let respondingEmitted = false;
   const processedToolUseIds = new Set();
@@ -19,12 +22,23 @@ export async function processStream(resultStream, toolResultDisplay) {
   const toolInputMap = new Map();
   let lastOutputType = null;
 
+  // Initialize patch storage
+  const patchStorage = new PatchStorage();
+  if (sessionId) {
+    patchStorage.setSessionId(sessionId);
+  }
+  if (cwd) {
+    patchStorage.setCwd(cwd);
+  }
+
   for await (const message of resultStream) {
     // Emit session ID once from init message
     if (message.type === 'system' && message.subtype === 'init' && message.session_id) {
       if (!sessionIdEmitted) {
         console.log(safeJsonStringify({ type: 'session', session_id: message.session_id }));
         sessionIdEmitted = true;
+        // Set session ID for patch storage
+        patchStorage.setSessionId(message.session_id);
         console.log(safeJsonStringify({ type: 'status', state: 'thinking' }));
       }
     }
@@ -76,7 +90,10 @@ export async function processStream(resultStream, toolResultDisplay) {
             })
           );
 
+          // Track Edit/Write tools for patch generation
           if ((toolName === 'Edit' || toolName === 'Write') && toolInput.file_path) {
+            patchStorage.trackEditWrite(toolInput.file_path);
+
             console.log(
               safeJsonStringify({
                 type: 'tool_use',
@@ -113,7 +130,10 @@ export async function processStream(resultStream, toolResultDisplay) {
             resultText = block.content.map((c) => c.text || '').join('');
           }
 
+          // Track nvim_set_buffer for patch generation
           if (toolName === 'mcp__vibing-nvim__nvim_set_buffer') {
+            patchStorage.trackNvimSetBuffer(resultText);
+
             if (resultText) {
               const match = resultText.match(/Buffer updated successfully \(([^)]+)\)/);
               if (match) {
@@ -164,8 +184,23 @@ export async function processStream(resultStream, toolResultDisplay) {
       }
     }
 
+    // Handle result message - generate and save patch
     if (message.type === 'result') {
-      // Result processing complete
+      const patchContent = await patchStorage.generateSessionPatch();
+      if (patchContent) {
+        const patchFilename = patchStorage.savePatchToFile(patchContent);
+        if (patchFilename) {
+          console.log(
+            safeJsonStringify({
+              type: 'patch_saved',
+              filename: patchFilename,
+            })
+          );
+        }
+      }
+
+      // Clear session state
+      patchStorage.clear();
     }
   }
 

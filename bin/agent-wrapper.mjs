@@ -51,7 +51,7 @@ try {
     options: queryOptions,
   });
 
-  await processStream(result, config.toolResultDisplay);
+  await processStream(result, config.toolResultDisplay, config.sessionId, config.cwd);
 } catch (error) {
   console.log(safeJsonStringify({ type: 'error', message: error.message || String(error) }));
   process.exit(1);
