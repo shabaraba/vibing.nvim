@@ -4,7 +4,7 @@
  */
 
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
-import { resolve, join, dirname } from 'path';
+import { resolve, join } from 'path';
 import { execSync } from 'child_process';
 import { homedir } from 'os';
 
@@ -187,7 +187,7 @@ class PatchStorage {
       const currentContent = this.readFileIfExists(file);
       const savedContent = this.savedFileContents.get(file);
 
-      if (savedContent !== null && savedContent !== undefined) {
+      if (savedContent != null) {
         // Modified file: generate diff
         const diff = this.generateUnifiedDiff(savedContent, currentContent || '', file);
         if (diff) {

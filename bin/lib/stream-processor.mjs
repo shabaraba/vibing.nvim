@@ -22,14 +22,9 @@ export async function processStream(resultStream, toolResultDisplay, sessionId, 
   const toolInputMap = new Map();
   let lastOutputType = null;
 
-  // Initialize patch storage
   const patchStorage = new PatchStorage();
-  if (sessionId) {
-    patchStorage.setSessionId(sessionId);
-  }
-  if (cwd) {
-    patchStorage.setCwd(cwd);
-  }
+  if (sessionId) patchStorage.setSessionId(sessionId);
+  if (cwd) patchStorage.setCwd(cwd);
 
   for await (const message of resultStream) {
     // Emit session ID once from init message
@@ -37,8 +32,7 @@ export async function processStream(resultStream, toolResultDisplay, sessionId, 
       if (!sessionIdEmitted) {
         console.log(safeJsonStringify({ type: 'session', session_id: message.session_id }));
         sessionIdEmitted = true;
-        // Set session ID for patch storage
-        patchStorage.setSessionId(message.session_id);
+        if (!sessionId) patchStorage.setSessionId(message.session_id);
         console.log(safeJsonStringify({ type: 'status', state: 'thinking' }));
       }
     }

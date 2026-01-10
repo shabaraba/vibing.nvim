@@ -69,63 +69,71 @@ local function handleErrorEvent(msg, errorOutput)
   table.insert(errorOutput, msg.message or "Unknown error")
 end
 
+---イベントハンドラーテーブル
+---@type table<string, fun(msg: table, context: table): boolean>
+local eventHandlers = {
+  session = function(msg, context)
+    if not context.sessionManager or not context.handleId then
+      return false
+    end
+    handleSessionEvent(msg, context.sessionManager, context.handleId)
+    return true
+  end,
+  tool_use = function(msg, context)
+    if not context.opts then
+      return false
+    end
+    handleToolUseEvent(msg, context.opts)
+    return true
+  end,
+  insert_choices = function(msg, context)
+    if not context.opts then
+      return false
+    end
+    handleInsertChoicesEvent(msg, context.opts)
+    return true
+  end,
+  patch_saved = function(msg, context)
+    if not context.opts then
+      return false
+    end
+    handlePatchSavedEvent(msg, context.opts)
+    return true
+  end,
+  chunk = function(msg, context)
+    if not context.output or not context.onChunk then
+      return false
+    end
+    handleChunkEvent(msg, context.output, context.onChunk)
+    return true
+  end,
+  error = function(msg, context)
+    if not context.errorOutput then
+      return false
+    end
+    handleErrorEvent(msg, context.errorOutput)
+    return true
+  end,
+}
+
 ---JSON Lines形式のイベントを処理
 ---@param line string JSON文字列
 ---@param context table 処理コンテキスト（sessionManager, handleId, opts, output, errorOutput, onChunk）
 ---@return boolean success デコードと処理が成功した場合true
 function M.processLine(line, context)
-  if line == "" then
-    return false
-  end
-
-  -- Validate required context fields
-  if not context then
+  if line == "" or not context then
     return false
   end
 
   local ok, msg = pcall(vim.json.decode, line)
-  if not ok then
+  if not ok or not msg.type then
     return false
   end
 
-  -- Validate msg.type exists
-  if not msg.type then
-    return false
+  local handler = eventHandlers[msg.type]
+  if handler then
+    return handler(msg, context)
   end
-
-  -- イベントタイプに応じた処理
-  if msg.type == "session" then
-    if not context.sessionManager or not context.handleId then
-      return false
-    end
-    handleSessionEvent(msg, context.sessionManager, context.handleId)
-  elseif msg.type == "tool_use" then
-    if not context.opts then
-      return false
-    end
-    handleToolUseEvent(msg, context.opts)
-  elseif msg.type == "insert_choices" then
-    if not context.opts then
-      return false
-    end
-    handleInsertChoicesEvent(msg, context.opts)
-  elseif msg.type == "patch_saved" then
-    if not context.opts then
-      return false
-    end
-    handlePatchSavedEvent(msg, context.opts)
-  elseif msg.type == "chunk" then
-    if not context.output or not context.onChunk then
-      return false
-    end
-    handleChunkEvent(msg, context.output, context.onChunk)
-  elseif msg.type == "error" then
-    if not context.errorOutput then
-      return false
-    end
-    handleErrorEvent(msg, context.errorOutput)
-  end
-  -- "done" type is handled by process exit
 
   return true
 end
