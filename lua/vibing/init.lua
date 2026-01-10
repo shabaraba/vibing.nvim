@@ -190,7 +190,7 @@ function M._register_commands()
     notify.info("Custom commands reloaded")
   end, { desc = "Reload custom slash commands" })
 
-  vim.api.nvim_create_user_command("VibingCopyUserHeader", function()
+  vim.api.nvim_create_user_command("VibingCopyUnsentUserHeader", function()
     local header = "## User <!-- unsent -->"
     vim.fn.setreg("+", header)
     notify.info("Copied to clipboard: " .. header)
