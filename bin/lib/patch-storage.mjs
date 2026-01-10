@@ -4,7 +4,7 @@
  */
 
 import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync } from 'fs';
-import { resolve, join } from 'path';
+import { resolve, join, relative } from 'path';
 import { spawnSync } from 'child_process';
 import { homedir } from 'os';
 
@@ -124,7 +124,7 @@ class PatchStorage {
    * Generate unified diff for a file
    * @param {string} oldContent - Original content
    * @param {string} newContent - Modified content
-   * @param {string} filePath - File path
+   * @param {string} filePath - File path (will be converted to relative path if absolute)
    * @returns {string|null} Unified diff or null if no changes
    */
   generateUnifiedDiff(oldContent, newContent, filePath) {
@@ -132,15 +132,18 @@ class PatchStorage {
       return null;
     }
 
+    // Convert to relative path if absolute
+    const relativePath = filePath.startsWith('/') ? relative(this.cwd, filePath) : filePath;
+
     // Normalize line endings (CRLF -> LF) before splitting
     const normalizeLineEndings = (text) => (text || '').replace(/\r\n/g, '\n');
     const oldLines = normalizeLineEndings(oldContent).split('\n');
     const newLines = normalizeLineEndings(newContent).split('\n');
 
     const header = [
-      `diff --git a/${filePath} b/${filePath}`,
-      `--- a/${filePath}`,
-      `+++ b/${filePath}`,
+      `diff --git a/${relativePath} b/${relativePath}`,
+      `--- a/${relativePath}`,
+      `+++ b/${relativePath}`,
       `@@ -1,${oldLines.length} +1,${newLines.length} @@`,
     ];
 
@@ -168,17 +171,20 @@ class PatchStorage {
 
   /**
    * Generate diff for a new file
-   * @param {string} filePath - File path
+   * @param {string} filePath - File path (will be converted to relative path if absolute)
    * @param {string} content - File content
    * @returns {string} Unified diff for new file
    */
   generateNewFileDiff(filePath, content) {
+    // Convert to relative path if absolute
+    const relativePath = filePath.startsWith('/') ? relative(this.cwd, filePath) : filePath;
+
     const lines = content.split('\n');
     const header = [
-      `diff --git a/${filePath} b/${filePath}`,
+      `diff --git a/${relativePath} b/${relativePath}`,
       'new file mode 100644',
       '--- /dev/null',
-      `+++ b/${filePath}`,
+      `+++ b/${relativePath}`,
       `@@ -0,0 +1,${lines.length} @@`,
     ];
 
