@@ -89,7 +89,14 @@ export function parseArguments(args) {
       config.language = args[i + 1];
       i++;
     } else if (args[i] === '--rpc-port' && args[i + 1]) {
-      config.rpcPort = parseInt(args[i + 1], 10);
+      const port = parseInt(args[i + 1], 10);
+      if (isNaN(port) || port < 1 || port > 65535) {
+        console.error(
+          `Invalid --rpc-port value: "${args[i + 1]}". Must be a number between 1 and 65535.`
+        );
+        process.exit(1);
+      }
+      config.rpcPort = port;
       i++;
     } else if (args[i] === '--tool-result-display' && args[i + 1]) {
       config.toolResultDisplay = args[i + 1];

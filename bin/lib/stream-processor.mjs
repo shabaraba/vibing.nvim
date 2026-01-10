@@ -46,7 +46,7 @@ export async function processStream(resultStream, toolResultDisplay, sessionId, 
             respondingEmitted = true;
           }
           let textToEmit = block.text;
-          if (lastOutputType === 'tool' || lastOutputType === 'tool_result') {
+          if (lastOutputType === 'tool_result') {
             textToEmit = '\n' + textToEmit;
           }
           console.log(safeJsonStringify({ type: 'chunk', text: textToEmit }));
@@ -116,6 +116,11 @@ export async function processStream(resultStream, toolResultDisplay, sessionId, 
         if (block.type === 'tool_result' && block.content) {
           const toolUseId = block.tool_use_id;
           const toolName = toolUseMap.get(toolUseId);
+
+          if (!toolName) {
+            // Skip tool results for unknown tool_use IDs (e.g., from resumed sessions)
+            continue;
+          }
 
           let resultText = '';
           if (typeof block.content === 'string') {

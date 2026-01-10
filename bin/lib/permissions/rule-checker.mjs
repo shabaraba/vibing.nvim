@@ -67,7 +67,7 @@ export function checkRule(rule, toolName, input) {
     if (rule.domains && rule.domains.length > 0) {
       try {
         const url = new URL(input.url);
-        const hostname = url.hostname;
+        const hostname = url.hostname.toLowerCase();
         const domainMatches = rule.domains.some((domain) => matchGlob(domain, hostname));
         if (domainMatches) {
           return rule.action;
