@@ -1,6 +1,6 @@
 /**
- * Tracks Claude-modified files and generates unified diffs for a session.
- * Flow: takeSnapshot() at start -> trackFile() during tool use -> generatePatch() at end
+ * Snapshot-based patch generation for Claude sessions.
+ * Flow: takeSnapshot() creates git commit -> Claude works -> generatePatch() compares current state
  */
 
 import { writeFileSync, mkdirSync } from 'fs';
@@ -14,11 +14,12 @@ class PatchStorage {
     this.cwd = process.cwd();
     this.saveLocationType = 'project';
     this.saveDir = null;
-    this.modifiedFiles = new Set();
+    this.snapshotTag = null; // git tag for snapshot commit
   }
 
   setSessionId(sessionId) {
     this.sessionId = sessionId;
+    this.snapshotTag = `claude-session-${sessionId}`;
   }
 
   setCwd(cwd) {
@@ -30,73 +31,160 @@ class PatchStorage {
     this.saveDir = saveDir;
   }
 
-  takeSnapshot() {
-    const result = spawnSync('git', ['add', '-A'], { cwd: this.cwd, stdio: 'ignore' });
+  /**
+   * Save current staging state to restore later
+   */
+  saveStagingState() {
+    const result = spawnSync('git', ['diff', '--cached'], {
+      cwd: this.cwd,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return result.status === 0 ? result.stdout : '';
+  }
+
+  /**
+   * Restore staging state from saved diff
+   */
+  restoreStagingState(stagedDiff) {
+    if (!stagedDiff || !stagedDiff.trim()) {
+      return;
+    }
+
+    const result = spawnSync('git', ['apply', '--cached'], {
+      cwd: this.cwd,
+      input: stagedDiff,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'ignore', 'ignore'],
+    });
+
     if (result.error) {
-      console.error('[ERROR] Failed to take git snapshot:', result.error.message);
+      console.error('[WARN] Failed to restore staging state:', result.error.message);
     }
   }
 
-  trackFile(filePath) {
-    this.modifiedFiles.add(filePath);
-  }
-
-  isGitTracked(filePath) {
-    const result = spawnSync('git', ['ls-files', filePath], {
-      cwd: this.cwd,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    // git ls-files returns output if file is tracked (empty if not)
-    return result.status === 0 && result.stdout?.trim().length > 0;
-  }
-
-  generateDiffForTrackedFile(filePath) {
-    const result = spawnSync('git', ['diff', 'HEAD', '--', filePath], {
-      cwd: this.cwd,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-
-    const output = result.stdout?.trim();
-    return result.status === 0 && output ? result.stdout : null;
-  }
-
-  generateDiffForNewFile(filePath) {
-    const result = spawnSync('git', ['diff', '--no-index', '/dev/null', filePath], {
-      cwd: this.cwd,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-
-    if (result.status !== 1 || !result.stdout?.trim()) {
-      return null;
+  /**
+   * Create snapshot commit with current state (including unstaged/untracked)
+   * This becomes the baseline for comparison at session end
+   */
+  takeSnapshot() {
+    if (!this.sessionId) {
+      console.error('[ERROR] Cannot take snapshot: sessionId not set');
+      return false;
     }
 
-    return result.stdout;
+    // 1. Save current staging state
+    const stagedDiff = this.saveStagingState();
+
+    // 2. Check for merge/rebase conflicts
+    const mergeHeadExists = spawnSync('test', ['-f', '.git/MERGE_HEAD'], {
+      cwd: this.cwd,
+      shell: true,
+    });
+    if (mergeHeadExists.status === 0) {
+      console.error('[ERROR] Cannot take snapshot during merge/rebase');
+      return false;
+    }
+
+    // 3. Stage everything (including untracked files)
+    const addResult = spawnSync('git', ['add', '-A'], {
+      cwd: this.cwd,
+      stdio: 'ignore',
+    });
+    if (addResult.error) {
+      console.error('[ERROR] Failed to stage files:', addResult.error.message);
+      this.restoreStagingState(stagedDiff);
+      return false;
+    }
+
+    // 4. Create snapshot commit (skip pre-commit hooks)
+    const commitResult = spawnSync(
+      'git',
+      [
+        'commit',
+        '--quiet',
+        '--allow-empty',
+        '--no-verify',
+        '-m',
+        `CLAUDE_SESSION_SNAPSHOT_${this.sessionId}`,
+      ],
+      { cwd: this.cwd, stdio: 'ignore' }
+    );
+    if (commitResult.error) {
+      console.error('[ERROR] Failed to create snapshot commit:', commitResult.error.message);
+      this.restoreStagingState(stagedDiff);
+      return false;
+    }
+
+    // 5. Tag the snapshot commit for protection from gc
+    const tagResult = spawnSync('git', ['tag', this.snapshotTag], {
+      cwd: this.cwd,
+      stdio: 'ignore',
+    });
+    if (tagResult.error) {
+      console.error('[ERROR] Failed to tag snapshot:', tagResult.error.message);
+    }
+
+    // 6. Reset to original state (remove commit, keep changes)
+    spawnSync('git', ['reset', '--soft', 'HEAD~1'], {
+      cwd: this.cwd,
+      stdio: 'ignore',
+    });
+
+    // 7. Clear staging area
+    spawnSync('git', ['reset', 'HEAD', '--quiet'], {
+      cwd: this.cwd,
+      stdio: 'ignore',
+    });
+
+    // 8. Restore original staging state
+    this.restoreStagingState(stagedDiff);
+
+    return true;
   }
 
+  /**
+   * Generate patch by comparing current state with snapshot
+   * No need to track individual files - just compare everything
+   */
   generatePatch() {
-    if (this.modifiedFiles.size === 0) {
+    if (!this.snapshotTag) {
+      console.error('[ERROR] Cannot generate patch: no snapshot tag');
       return null;
     }
 
-    const diffs = [];
-    for (const filePath of this.modifiedFiles) {
-      const diff = this.isGitTracked(filePath)
-        ? this.generateDiffForTrackedFile(filePath)
-        : this.generateDiffForNewFile(filePath);
+    // 1. Save current staging state
+    const stagedDiff = this.saveStagingState();
 
-      if (diff) {
-        diffs.push(diff);
-      }
+    // 2. Stage everything to capture current state
+    const addResult = spawnSync('git', ['add', '-A'], {
+      cwd: this.cwd,
+      stdio: 'ignore',
+    });
+    if (addResult.error) {
+      console.error('[ERROR] Failed to stage files for patch:', addResult.error.message);
+      return null;
     }
 
-    return diffs.length > 0 ? diffs.join('\n').trim() : null;
-  }
+    // 3. Generate diff from snapshot tag
+    const diffResult = spawnSync('git', ['diff', '--cached', this.snapshotTag], {
+      cwd: this.cwd,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
-  getModifiedFiles() {
-    return Array.from(this.modifiedFiles);
+    const patchContent = diffResult.status === 0 ? diffResult.stdout?.trim() : null;
+
+    // 4. Clear staging area
+    spawnSync('git', ['reset', 'HEAD', '--quiet'], {
+      cwd: this.cwd,
+      stdio: 'ignore',
+    });
+
+    // 5. Restore original staging state
+    this.restoreStagingState(stagedDiff);
+
+    return patchContent || null;
   }
 
   getPatchesBaseDir() {
@@ -132,8 +220,17 @@ class PatchStorage {
     }
   }
 
+  /**
+   * Cleanup snapshot tag and reset state
+   */
   clear() {
-    this.modifiedFiles.clear();
+    if (this.snapshotTag) {
+      spawnSync('git', ['tag', '-d', this.snapshotTag], {
+        cwd: this.cwd,
+        stdio: 'ignore',
+      });
+      this.snapshotTag = null;
+    }
   }
 }
 
