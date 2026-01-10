@@ -13,6 +13,8 @@
 A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Agent SDK, bringing
 intelligent chat conversations and context-aware inline code actions directly into your editor.
 
+English | [日本語](./README.ja.md)
+
 [Features](#-features) • [Installation](#-installation) • [Usage](#-usage) •
 [Configuration](#️-configuration-examples) • [Contributing](#-contributing)
 
@@ -22,32 +24,113 @@ intelligent chat conversations and context-aware inline code actions directly in
 
 ## Table of Contents
 
+- [Why vibing.nvim?](#-why-vibingnvim)
 - [Features](#-features)
+- [How It Differs](#-how-it-differs)
 - [Installation](#-installation)
 - [Usage](#-usage)
 - [Configuration Examples](#️-configuration-examples)
 - [Configuration Reference](#-configuration-reference)
 - [Chat File Format](#-chat-file-format)
 - [Architecture](#️-architecture)
+- [FAQ](#-faq)
 - [Contributing](#-contributing)
 - [License](#-license)
 - [Links](#-links)
 
+## 💡 Why vibing.nvim?
+
+vibing.nvim takes a fundamentally different approach to AI-assisted coding in Neovim.
+
+### Agent-First Architecture
+
+Unlike traditional chat-based AI plugins that send static context to an LLM, vibing.nvim gives Claude **direct access to your Neovim instance** through the Agent SDK and MCP integration.
+
+This means Claude can:
+
+- **Autonomously explore your codebase** - Navigate files, search symbols, and understand project structure without manual context setup
+- **Access real-time editor state** - Query LSP diagnostics, symbol definitions, and references on demand
+- **Execute Neovim commands** - Perform editor operations as part of its workflow
+- **Maintain conversation continuity** - Resume sessions with full context preserved in `.vibing` files
+
+### Designed for Claude
+
+vibing.nvim is purpose-built for Claude, leveraging the official Agent SDK to provide the same capabilities as Claude Code CLI directly within Neovim. This focused approach enables deep integration that multi-provider plugins cannot achieve.
+
 ## ✨ Features
+
+### 🤖 Neovim as an Agent Tool
+
+Claude can directly interact with your running Neovim instance via MCP:
+
+- Read and write buffers programmatically
+- Execute Ex commands and Lua code
+- Query LSP for diagnostics, definitions, references, and symbols
+- Navigate the file system within your project
+
+### 💾 File-Based Session Persistence
+
+Each conversation is saved as a `.vibing` file with YAML frontmatter:
+
+- **Portable** - Share conversations with teammates or across machines
+- **Resumable** - Continue exactly where you left off with full SDK session state
+- **Auditable** - All settings (model, mode, permissions) are visible in the file
+- **Version-controllable** - Track AI-assisted changes in Git
+
+### 🛡️ Granular Permission System
+
+Fine-grained control over what Claude can do:
+
+- Allow/deny specific tools (Read, Edit, Write, Bash, etc.)
+- Path-based rules for sensitive files
+- Command pattern matching for shell operations
+- Interactive Permission Builder UI
+
+### 📋 Inline Preview with Accept/Reject
+
+Telescope-style diff preview for all code modifications:
+
+- Visual diff for each changed file
+- Accept all or reject all with Git-based revert
+- Navigate between multiple modified files
+- Works in both inline actions and chat mode
+
+### Other Features
 
 - **💬 Interactive Chat Interface** - Seamless chat window with Claude AI, opens in current buffer by default
 - **⚡ Inline Actions** - Quick code fixes, explanations, refactoring, and test generation
-- **📋 Inline Preview UI** - Telescope-style diff preview with Accept/Reject for inline actions (Git required)
 - **📝 Natural Language Commands** - Use custom instructions for any code transformation
 - **🔧 Slash Commands** - In-chat commands for context management, permissions, and settings
-- **🛡️ Granular Permissions** - Fine-grained control over AI capabilities with allow/deny rules and patterns
-- **🎨 Permission Builder** - Interactive UI for configuring tool permissions via `/permissions` command
-- **💾 Session Persistence** - Save and resume chat sessions with full context and metadata
 - **🎯 Smart Context** - Automatic file context detection from open buffers and manual additions
 - **🌍 Multi-language Support** - Configure different languages for chat and inline actions
 - **📊 Diff Viewer** - Visual diff display for AI-edited files with `gd` keybinding
-- **🤖 Neovim Agent Tools** - Claude can directly control Neovim (read/write buffers, execute commands) via MCP integration
 - **⚙️ Highly Configurable** - Flexible modes, models, permissions, and UI settings
+
+## 🔄 How It Differs
+
+Different AI coding plugins serve different needs. Here's how vibing.nvim fits in:
+
+### vibing.nvim is ideal if you:
+
+- Use Claude as your primary AI assistant
+- Want the AI to autonomously navigate and understand your codebase
+- Need persistent, shareable conversation history
+- Prefer fine-grained permission controls
+- Want Claude Code CLI capabilities without leaving Neovim
+
+### Consider alternatives if you:
+
+- Need support for multiple LLM providers (OpenAI, Ollama, etc.)
+- Prefer minimal dependencies (vibing.nvim requires Node.js)
+- Want a battle-tested plugin with large community (we're still growing!)
+
+### Complementary Usage
+
+vibing.nvim focuses on deep Claude integration. You might still use other tools for:
+
+- Quick completions (GitHub Copilot, Codeium)
+- Local/offline models (Ollama-based plugins)
+- Provider-agnostic workflows
 
 ## 📦 Installation
 
@@ -662,10 +745,47 @@ Hello! How can I help you today?
 
 For detailed architecture documentation, see [CLAUDE.md](./CLAUDE.md).
 
+### High-Level Overview
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│                      Neovim                             │
+│  ┌───────────────┐     ┌─────────────────────────────┐  │
+│  │ vibing.nvim   │────▶│  Chat Buffer (.vibing)      │  │
+│  │ (Lua plugin)  │     │  - Markdown + YAML          │  │
+│  └───────┬───────┘     │  - Session metadata         │  │
+│          │             │  - Permission settings      │  │
+│          ▼             └─────────────────────────────┘  │
+│  ┌───────────────┐                                      │
+│  │ RPC Server    │◀─────────────────────┐               │
+│  └───────┬───────┘                      │               │
+└──────────┼──────────────────────────────┼───────────────┘
+           │                              │
+           ▼                              │
+┌─────────────────────┐    ┌──────────────┴──────────────┐
+│ Claude Agent SDK    │    │ MCP Server                  │
+│ (Node.js)           │───▶│ - Buffer operations         │
+│                     │    │ - LSP queries               │
+│ - Tool execution    │    │ - Command execution         │
+│ - Session management│    │ - File system access        │
+│ - Streaming response│    └─────────────────────────────┘
+└─────────────────────┘
+```
+
+### How It Differs from Traditional Approaches
+
+| Aspect              | Traditional REST API | vibing.nvim (Agent SDK) |
+| ------------------- | -------------------- | ----------------------- |
+| Context             | Manually assembled   | Agent requests on-demand|
+| Editor Access       | None (fire & forget) | Full bidirectional MCP  |
+| Session State       | Plugin manages       | SDK with resume support |
+| Tool Execution      | Plugin implements    | SDK standard tools      |
+| Capabilities        | Limited to plugin    | Extensible via MCP      |
+
 **Key Components:**
 
 - **Agent SDK Integration** - Node.js wrapper communicating via JSON Lines
-- **Agent SDK Adapter** - Claude Agent SDK for AI interactions
+- **MCP Server** - Provides Claude with direct Neovim control
 - **Context System** - Automatic and manual file context management
 - **Session Persistence** - Resume conversations with full history
 
@@ -705,6 +825,45 @@ This structure follows both Neovim plugin conventions and Node.js ecosystem stan
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
+
+## ❓ FAQ
+
+### Why Claude only? Why not support other providers?
+
+vibing.nvim uses the Claude Agent SDK, which provides capabilities beyond simple chat:
+
+- Built-in tool execution framework
+- Session persistence and resume
+- MCP integration for editor control
+
+These features are specific to Claude's architecture. Supporting other providers would mean either:
+
+- Losing these capabilities, or
+- Reimplementing them from scratch
+
+We chose depth over breadth.
+
+### Why does it require Node.js?
+
+The Claude Agent SDK is a TypeScript/JavaScript library. While we could potentially create Lua bindings, using Node.js directly ensures:
+
+- Full SDK compatibility
+- Immediate access to new SDK features
+- Reliable MCP server implementation
+
+### How does it compare to Claude Code CLI?
+
+vibing.nvim provides similar capabilities to Claude Code CLI but integrated into Neovim:
+
+- Same Agent SDK underneath
+- Same tool execution model
+- MCP for editor control (CLI controls terminal, vibing controls Neovim)
+
+Think of it as "Claude Code for Neovim users."
+
+### Can I use vibing.nvim alongside other AI plugins?
+
+Yes. vibing.nvim doesn't conflict with completion plugins (Copilot, Codeium) or other chat plugins. Use vibing.nvim for deep Claude interactions and other tools for quick completions or different providers.
 
 ## 📄 License
 
