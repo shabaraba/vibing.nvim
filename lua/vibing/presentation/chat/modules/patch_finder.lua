@@ -15,7 +15,6 @@ function M.find_nearest_patch(buf)
 
   -- カーソル位置から上方向にModified Filesセクションを探す
   local section_start = nil
-  local section_end = nil
 
   for i = cursor_line, 1, -1 do
     local line = lines[i]
@@ -33,23 +32,17 @@ function M.find_nearest_patch(buf)
     return nil
   end
 
-  -- セクション終了位置を探す（次のヘッダーまたはファイル末尾）
-  for i = section_start + 1, #lines do
-    local line = lines[i]
-    if line:match("^##[^#]") or line:match("^# ") then
-      section_end = i - 1
-      break
-    end
-  end
-
-  section_end = section_end or #lines
-
-  -- セクション内でpatchコメントを探す
-  for i = section_start, section_end do
+  -- Modified Filesセクションの下にある最初のpatchコメントを探す
+  -- セクション境界を気にせず、下方向に探索する
+  for i = section_start, #lines do
     local line = lines[i]
     local patch_filename = line:match("<!%-%- patch: ([^%s]+) %-%-?>")
     if patch_filename then
       return patch_filename
+    end
+    -- 次のAssistantセクションまで探索（patchコメントはその手前にあるはず）
+    if line:match("^## %d%d%d%d%-%d%d%-%d%d .* Assistant") then
+      break
     end
   end
 

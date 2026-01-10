@@ -1,24 +1,24 @@
 /**
  * Patch storage for tracking file modifications during a session
- * Implements ADR 006: JavaScript-based Patch Storage Implementation
+ * Uses file tracking approach: tracks Claude-modified files and generates
+ * diffs only for those files (tracked: git diff, untracked: git diff --no-index)
  */
 
-import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync } from 'fs';
-import { resolve, join, relative } from 'path';
+import { writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import { spawnSync } from 'child_process';
 import { homedir } from 'os';
 
 /**
- * Session state for tracking modified files
+ * Session state for patch generation
  */
 class PatchStorage {
   constructor() {
-    this.currentSessionModifiedFiles = new Set();
-    this.savedFileContents = new Map();
     this.sessionId = null;
     this.cwd = process.cwd();
     this.saveLocationType = 'project';
     this.saveDir = null;
+    this.modifiedFiles = new Set(); // Track Claude-modified files
   }
 
   /**
@@ -48,188 +48,151 @@ class PatchStorage {
   }
 
   /**
-   * Read file content if exists, null otherwise
-   * @param {string} filePath - File path
-   * @returns {string|null} File content or null
+   * Take a git snapshot (git add -A) at session start
+   * This stages all current changes as the baseline
    */
-  readFileIfExists(filePath) {
+  takeSnapshot() {
     try {
-      const normalizedPath = resolve(this.cwd, filePath);
-      if (existsSync(normalizedPath)) {
-        // Resolve symlinks and relative paths to canonical path
-        const realPath = realpathSync(normalizedPath);
-        return readFileSync(realPath, 'utf-8');
-      }
-      return null;
-    } catch {
-      return null;
+      spawnSync('git', ['add', '-A'], {
+        cwd: this.cwd,
+        stdio: 'ignore',
+      });
+    } catch (error) {
+      console.error('[ERROR] Failed to take git snapshot:', error.message);
     }
   }
 
   /**
-   * Check if file is tracked by git
-   * @param {string} filePath - File path
-   * @returns {boolean} True if tracked
+   * Track a file that was modified by Claude
+   * @param {string} filePath - Absolute or relative file path
    */
-  isGitTracked(filePath) {
+  trackFile(filePath) {
+    // Store as-is (both absolute and relative paths are supported)
+    this.modifiedFiles.add(filePath);
+  }
+
+  /**
+   * Check if a file is tracked by git
+   * @param {string} filePath - Relative file path
+   * @returns {boolean} True if file is tracked
+   */
+  isFileTracked(filePath) {
     try {
-      const normalizedPath = resolve(this.cwd, filePath);
-      const result = spawnSync('git', ['ls-files', '--error-unmatch', normalizedPath], {
-        stdio: 'ignore',
+      const result = spawnSync('git', ['ls-files', filePath], {
         cwd: this.cwd,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
-      return result.status === 0;
+
+      return result.status === 0 && result.stdout && result.stdout.trim() === filePath;
     } catch {
       return false;
     }
   }
 
   /**
-   * Track Edit/Write tool usage
-   * @param {string} filePath - File path being modified
+   * Generate diff for a tracked file
+   * @param {string} filePath - Relative file path
+   * @returns {string|null} Diff content or null
    */
-  trackEditWrite(filePath) {
-    if (!filePath) return;
+  generateTrackedFileDiff(filePath) {
+    try {
+      const result = spawnSync('git', ['diff', 'HEAD', '--', filePath], {
+        cwd: this.cwd,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
 
-    // Save original content on first modification
-    if (!this.savedFileContents.has(filePath)) {
-      const content = this.readFileIfExists(filePath);
-      this.savedFileContents.set(filePath, content);
-    }
-
-    this.currentSessionModifiedFiles.add(filePath);
-  }
-
-  /**
-   * Track nvim_set_buffer tool usage from tool_result
-   * @param {string} resultText - Tool result text
-   */
-  trackNvimSetBuffer(resultText) {
-    if (!resultText) return;
-
-    const match = resultText.match(/Buffer updated successfully \(([^)]+)\)/);
-    if (match) {
-      const filePath = match[1];
-
-      if (!this.savedFileContents.has(filePath)) {
-        const content = this.readFileIfExists(filePath);
-        this.savedFileContents.set(filePath, content);
+      if (result.status === 0 && result.stdout && result.stdout.trim()) {
+        return result.stdout;
       }
-
-      this.currentSessionModifiedFiles.add(filePath);
+    } catch (error) {
+      console.error(`[ERROR] Failed to generate diff for tracked file ${filePath}:`, error.message);
     }
+
+    return null;
   }
 
   /**
-   * Generate unified diff for a file
-   * @param {string} oldContent - Original content
-   * @param {string} newContent - Modified content
-   * @param {string} filePath - File path (will be converted to relative path if absolute)
-   * @returns {string|null} Unified diff or null if no changes
+   * Generate diff for an untracked file using git diff --no-index
+   * @param {string} filePath - Absolute or relative file path
+   * @returns {string|null} Diff content or null
    */
-  generateUnifiedDiff(oldContent, newContent, filePath) {
-    if (oldContent === newContent) {
-      return null;
-    }
+  generateUntrackedFileDiff(filePath) {
+    try {
+      const result = spawnSync('git', ['diff', '--no-index', '/dev/null', filePath], {
+        cwd: this.cwd,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
 
-    // Convert to relative path if absolute
-    const relativePath = filePath.startsWith('/') ? relative(this.cwd, filePath) : filePath;
+      // Exit status 1 is expected when files differ
+      if (result.status === 1 && result.stdout && result.stdout.trim()) {
+        let patchContent = result.stdout;
 
-    // Normalize line endings (CRLF -> LF) before splitting
-    const normalizeLineEndings = (text) => (text || '').replace(/\r\n/g, '\n');
-    const oldLines = normalizeLineEndings(oldContent).split('\n');
-    const newLines = normalizeLineEndings(newContent).split('\n');
+        // git diff --no-index /dev/null /path/to/file produces:
+        // - For relative paths: diff --git a/path/to/file b/path/to/file
+        // - For absolute paths: diff --git a/path/to/file b/path/to/file (without leading /)
+        // We need to preserve the original path format in the diff header
 
-    const header = [
-      `diff --git a/${relativePath} b/${relativePath}`,
-      `--- a/${relativePath}`,
-      `+++ b/${relativePath}`,
-      `@@ -1,${oldLines.length} +1,${newLines.length} @@`,
-    ];
-
-    const body = [];
-    const maxLines = Math.max(oldLines.length, newLines.length);
-
-    for (let i = 0; i < maxLines; i++) {
-      const oldLine = oldLines[i];
-      const newLine = newLines[i];
-
-      if (oldLine === newLine && oldLine !== undefined) {
-        body.push(' ' + oldLine);
-      } else {
-        if (oldLine !== undefined) {
-          body.push('-' + oldLine);
+        // Extract the path that git generated (without leading /)
+        const gitPath = patchContent.match(/diff --git a\/[^/](.+?) b\//)?.[1];
+        if (gitPath) {
+          // Reconstruct with the original filePath
+          const normalizedPath = filePath.startsWith('/') ? filePath.substring(1) : filePath;
+          patchContent = patchContent.replace(
+            /diff --git a\/[^/](.+?) b\/(.+)/,
+            `diff --git a/${normalizedPath} b/${normalizedPath}`
+          );
         }
-        if (newLine !== undefined) {
-          body.push('+' + newLine);
-        }
+
+        return patchContent;
       }
+    } catch (error) {
+      console.error(
+        `[ERROR] Failed to generate diff for untracked file ${filePath}:`,
+        error.message
+      );
     }
 
-    return [...header, ...body].join('\n');
+    return null;
   }
 
   /**
-   * Generate diff for a new file
-   * @param {string} filePath - File path (will be converted to relative path if absolute)
-   * @param {string} content - File content
-   * @returns {string} Unified diff for new file
-   */
-  generateNewFileDiff(filePath, content) {
-    // Convert to relative path if absolute
-    const relativePath = filePath.startsWith('/') ? relative(this.cwd, filePath) : filePath;
-
-    const lines = content.split('\n');
-    const header = [
-      `diff --git a/${relativePath} b/${relativePath}`,
-      'new file mode 100644',
-      '--- /dev/null',
-      `+++ b/${relativePath}`,
-      `@@ -0,0 +1,${lines.length} @@`,
-    ];
-
-    const body = lines.map((line) => '+' + line);
-
-    return [...header, ...body].join('\n');
-  }
-
-  /**
-   * Generate patch for all modified files in this session
+   * Generate patch for all tracked files
    * @returns {string|null} Patch content or null if no modifications
    */
   async generateSessionPatch() {
-    if (this.currentSessionModifiedFiles.size === 0) {
+    if (this.modifiedFiles.size === 0) {
       return null;
     }
 
-    const patches = [];
+    let fullPatch = '';
 
-    for (const file of this.currentSessionModifiedFiles) {
-      const normalizedPath = resolve(this.cwd, file);
-      const currentContent = this.readFileIfExists(file);
-      const savedContent = this.savedFileContents.get(file);
+    for (const filePath of this.modifiedFiles) {
+      const isTracked = this.isFileTracked(filePath);
 
-      if (savedContent != null) {
-        // Modified file: generate diff
-        const diff = this.generateUnifiedDiff(savedContent, currentContent || '', file);
-        if (diff) {
-          patches.push(diff);
-        }
+      let diff;
+      if (isTracked) {
+        diff = this.generateTrackedFileDiff(filePath);
       } else {
-        // New file
-        if (currentContent && !this.isGitTracked(normalizedPath)) {
-          // Untracked file: output as new file
-          const diff = this.generateNewFileDiff(file, currentContent);
-          patches.push(diff);
-        }
+        diff = this.generateUntrackedFileDiff(filePath);
+      }
+
+      if (diff) {
+        fullPatch += diff + '\n';
       }
     }
 
-    if (patches.length === 0) {
-      return null;
-    }
+    return fullPatch.trim() || null;
+  }
 
-    return patches.join('\n\n');
+  /**
+   * Get list of modified files
+   * @returns {string[]} Array of tracked file paths
+   */
+  getModifiedFiles() {
+    return Array.from(this.modifiedFiles);
   }
 
   /**
@@ -291,8 +254,7 @@ class PatchStorage {
    * Clear session state
    */
   clear() {
-    this.currentSessionModifiedFiles.clear();
-    this.savedFileContents.clear();
+    this.modifiedFiles.clear();
   }
 }
 

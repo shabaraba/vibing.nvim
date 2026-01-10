@@ -35,6 +35,10 @@ export async function processStream(resultStream, toolResultDisplay, sessionId, 
         console.log(safeJsonStringify({ type: 'session', session_id: message.session_id }));
         sessionIdEmitted = true;
         if (!sessionId) patchStorage.setSessionId(message.session_id);
+
+        // Take git snapshot at session start (git add -A)
+        patchStorage.takeSnapshot();
+
         console.log(safeJsonStringify({ type: 'status', state: 'thinking' }));
       }
     }
@@ -86,10 +90,9 @@ export async function processStream(resultStream, toolResultDisplay, sessionId, 
             })
           );
 
-          // Track Edit/Write tools for patch generation
+          // Emit tool_use event for Edit/Write tools and track file
           if ((toolName === 'Edit' || toolName === 'Write') && toolInput.file_path) {
-            patchStorage.trackEditWrite(toolInput.file_path);
-
+            patchStorage.trackFile(toolInput.file_path);
             console.log(
               safeJsonStringify({
                 type: 'tool_use',
@@ -131,14 +134,13 @@ export async function processStream(resultStream, toolResultDisplay, sessionId, 
             resultText = block.content.map((c) => c.text || '').join('');
           }
 
-          // Track nvim_set_buffer for patch generation
+          // Track nvim_set_buffer file modifications
           if (toolName === 'mcp__vibing-nvim__nvim_set_buffer') {
-            patchStorage.trackNvimSetBuffer(resultText);
-
             if (resultText) {
               const match = resultText.match(/Buffer updated successfully \(([^)]+)\)/);
               if (match) {
                 const filename = match[1];
+                patchStorage.trackFile(filename);
                 console.log(
                   safeJsonStringify({
                     type: 'tool_use',
