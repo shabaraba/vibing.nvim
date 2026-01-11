@@ -190,10 +190,14 @@ end
 ---Lazy.nvimのdev=trueが設定されている場合、node.dev_modeを自動的にtrueに設定
 ---@param opts? Vibing.Config ユーザー設定オブジェクト（nilの場合はデフォルト設定のみ使用）
 function M.setup(opts)
-  M.options = vim.tbl_deep_extend("force", {}, M.defaults, opts or {})
+  -- Capture user config before merge to detect if dev_mode was explicitly set
+  local user_opts = opts or {}
+  local user_dev_mode = user_opts.node and user_opts.node.dev_mode
 
-  -- Auto-detect dev_mode from Lazy.nvim if not explicitly set
-  if M.options.node and M.options.node.dev_mode == nil then
+  M.options = vim.tbl_deep_extend("force", {}, M.defaults, user_opts)
+
+  -- Auto-detect dev_mode from Lazy.nvim if not explicitly set by user
+  if user_dev_mode == nil then
     local lazy_dev = is_lazy_dev_mode()
     if lazy_dev then
       M.options.node.dev_mode = true
@@ -317,12 +321,16 @@ function M.setup(opts)
     local executable = M.options.node.executable
     if type(executable) ~= "string" or (executable ~= "auto" and executable == "") then
       notify.warn(string.format(
-        "Invalid node.executable value '%s'. Must be 'auto' or a valid file path.",
+        "Invalid node.executable value '%s'. Must be 'auto' or a valid file path. Resetting to 'auto'.",
         tostring(executable)
       ))
       M.options.node.executable = "auto"
     elseif executable ~= "auto" and vim.fn.executable(executable) == 0 then
-      notify.warn(string.format("Node.js executable not found at '%s'.", executable))
+      notify.warn(string.format(
+        "Node.js executable not found at '%s'. Resetting to 'auto'.",
+        executable
+      ))
+      M.options.node.executable = "auto"
     end
   end
 end

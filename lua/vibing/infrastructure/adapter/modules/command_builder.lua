@@ -25,7 +25,7 @@ local function get_node_executable(config)
     local is_absolute = custom_exec:match("^/")
     local is_valid = is_absolute
       and vim.fn.executable(custom_exec) == 1
-      or vim.fn.exepath(custom_exec) ~= ""
+      or (not is_absolute and vim.fn.exepath(custom_exec) ~= "")
 
     if not is_valid then
       vim.notify(
