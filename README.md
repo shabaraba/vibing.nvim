@@ -66,6 +66,7 @@ Work on multiple tasks simultaneously without blocking:
 - **No waiting** - Start a new chat while another is still processing
 
 Example workflow:
+
 ```vim
 :VibingChat  " Debug authentication issue in chat 1
 :VibingChat  " Design new feature in chat 2
@@ -803,13 +804,13 @@ graph TB
 
 ### How It Differs from Traditional Approaches
 
-| Aspect              | Traditional REST API | vibing.nvim (Agent SDK) |
-| ------------------- | -------------------- | ----------------------- |
-| Context             | Manually assembled   | Agent requests on-demand|
-| Editor Access       | None (fire & forget) | Full bidirectional MCP  |
-| Session State       | Plugin manages       | SDK with resume support |
-| Tool Execution      | Plugin implements    | SDK standard tools      |
-| Capabilities        | Limited to plugin    | Extensible via MCP      |
+| Aspect         | Traditional REST API | vibing.nvim (Agent SDK)  |
+| -------------- | -------------------- | ------------------------ |
+| Context        | Manually assembled   | Agent requests on-demand |
+| Editor Access  | None (fire & forget) | Full bidirectional MCP   |
+| Session State  | Plugin manages       | SDK with resume support  |
+| Tool Execution | Plugin implements    | SDK standard tools       |
+| Capabilities   | Limited to plugin    | Extensible via MCP       |
 
 **Key Components:**
 
