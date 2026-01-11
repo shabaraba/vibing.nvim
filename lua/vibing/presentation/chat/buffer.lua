@@ -249,6 +249,36 @@ end
 
 ---メッセージを送信
 function ChatBuffer:send_message()
+  -- 共有バッファ統合が有効な場合、未処理メンションをチェック
+  if self._shared_buffer_enabled and self:has_unprocessed_mentions() then
+    local mentions = self:get_unprocessed_mentions()
+    local notify = require("vibing.core.utils.notify")
+
+    notify.warn(
+      string.format(
+        "You have %d unprocessed mention(s). Use /check-mentions to review them before continuing.",
+        #mentions
+      )
+    )
+
+    -- 未処理メンションを簡潔に表示
+    for i, mention in ipairs(mentions) do
+      if i <= 3 then  -- 最初の3件のみ表示
+        print(string.format(
+          "  - %s from Claude-%s",
+          mention.timestamp,
+          mention.from_claude_id
+        ))
+      end
+    end
+
+    if #mentions > 3 then
+      print(string.format("  ... and %d more", #mentions - 3))
+    end
+
+    return  -- メッセージ送信をブロック
+  end
+
   local message = self:extract_user_message()
   if not message then
     vim.notify("[vibing] No message to send", vim.log.levels.WARN)
@@ -436,14 +466,17 @@ end
 ---共有バッファからの通知を受信
 ---@param message SharedMessage
 function ChatBuffer:_on_shared_buffer_notification(message)
+  -- メンション履歴に記録
+  local MentionTracker = require("vibing.application.shared_buffer.mention_tracker")
+  if self._claude_id then
+    MentionTracker.record_mention(self._claude_id, message)
+  end
+
   -- 通知を表示
   local notify = require("vibing.core.utils.notify")
-  notify.info(
-    string.format("[Claude-%s] %s", message.from_claude_id, vim.split(message.content, "\n")[1])
+  notify.warn(
+    string.format("[Mention from Claude-%s] %s", message.from_claude_id, vim.split(message.content, "\n")[1])
   )
-
-  -- オプション: バッファに通知マーカーを追加
-  -- （将来的には自動返答機能も検討）
 end
 
 ---共有バッファにメッセージを投稿
@@ -465,6 +498,49 @@ end
 ---@return string?
 function ChatBuffer:get_claude_id()
   return self._claude_id
+end
+
+---未処理メンションがあるかチェック
+---@return boolean
+function ChatBuffer:has_unprocessed_mentions()
+  if not self._claude_id or not self._shared_buffer_enabled then
+    return false
+  end
+
+  local MentionTracker = require("vibing.application.shared_buffer.mention_tracker")
+  return MentionTracker.get_unprocessed_count(self._claude_id) > 0
+end
+
+---未処理メンションを取得
+---@return MentionRecord[]
+function ChatBuffer:get_unprocessed_mentions()
+  if not self._claude_id or not self._shared_buffer_enabled then
+    return {}
+  end
+
+  local MentionTracker = require("vibing.application.shared_buffer.mention_tracker")
+  return MentionTracker.get_unprocessed_mentions(self._claude_id)
+end
+
+---全てのメンションを処理済みとしてマーク
+function ChatBuffer:mark_all_mentions_processed()
+  if not self._claude_id then
+    return
+  end
+
+  local MentionTracker = require("vibing.application.shared_buffer.mention_tracker")
+  MentionTracker.mark_all_processed(self._claude_id)
+end
+
+---特定のメンションを処理済みとしてマーク
+---@param message_id string
+function ChatBuffer:mark_mention_processed(message_id)
+  if not self._claude_id then
+    return
+  end
+
+  local MentionTracker = require("vibing.application.shared_buffer.mention_tracker")
+  MentionTracker.mark_processed(self._claude_id, message_id)
 end
 
 return ChatBuffer

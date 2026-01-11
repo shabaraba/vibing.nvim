@@ -106,6 +106,12 @@ function M.setup()
     handler = require("vibing.application.chat.handlers.disable_shared"),
     description = "Disable shared buffer integration",
   })
+
+  commands.register({
+    name = "check-mentions",
+    handler = require("vibing.application.chat.handlers.check_mentions"),
+    description = "Check and clear unprocessed mentions (experimental)",
+  })
 end
 
 return M
