@@ -10,7 +10,39 @@ local M = {}
 local function get_node_executable(config)
   -- Check if user has specified a custom executable
   if config.node and config.node.executable and config.node.executable ~= "auto" then
-    return config.node.executable
+    local custom_exec = config.node.executable
+
+    -- Validate that the custom executable exists
+    -- For absolute paths, check if file exists and is executable
+    if custom_exec:match("^/") then
+      if vim.fn.executable(custom_exec) ~= 1 then
+        vim.notify(
+          string.format(
+            "[vibing.nvim] Error: Node.js executable not found or not executable at '%s'.\n" ..
+            "Please check your config.node.executable setting.",
+            custom_exec
+          ),
+          vim.log.levels.ERROR
+        )
+        error(string.format("Node.js executable not found: %s", custom_exec))
+      end
+    else
+      -- For relative paths or command names, check if in PATH
+      local resolved = vim.fn.exepath(custom_exec)
+      if resolved == "" then
+        vim.notify(
+          string.format(
+            "[vibing.nvim] Error: Node.js executable '%s' not found in PATH.\n" ..
+            "Please check your config.node.executable setting or provide an absolute path.",
+            custom_exec
+          ),
+          vim.log.levels.ERROR
+        )
+        error(string.format("Node.js executable not found in PATH: %s", custom_exec))
+      end
+    end
+
+    return custom_exec
   end
 
   -- Auto-detect from PATH

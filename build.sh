@@ -13,9 +13,19 @@ NODE_EXECUTABLE="${VIBING_NODE_EXECUTABLE:-node}"
 echo "[vibing.nvim] Building MCP server..."
 
 # Check if Node.js is installed
-if ! command -v "$NODE_EXECUTABLE" &> /dev/null; then
-    echo "[vibing.nvim] Error: Node.js not found at '$NODE_EXECUTABLE'. Please install Node.js 18+ from https://nodejs.org/"
-    exit 1
+# Handle both absolute paths and PATH lookups
+if [[ "$NODE_EXECUTABLE" = /* ]]; then
+    # Absolute path - check if file exists and is executable
+    if [ ! -x "$NODE_EXECUTABLE" ]; then
+        echo "[vibing.nvim] Error: Node.js not found at '$NODE_EXECUTABLE'. Please install Node.js 18+ from https://nodejs.org/"
+        exit 1
+    fi
+else
+    # Relative or command name - check PATH
+    if ! command -v "$NODE_EXECUTABLE" &> /dev/null; then
+        echo "[vibing.nvim] Error: Node.js not found at '$NODE_EXECUTABLE'. Please install Node.js 18+ from https://nodejs.org/"
+        exit 1
+    fi
 fi
 
 # Check Node.js version

@@ -36,11 +36,7 @@ const buildOptions = {
   outExtension: { '.js': '.js' },
   minify: true,
   sourcemap: false,
-  external: [
-    '@anthropic-ai/claude-agent-sdk',
-    'neovim',
-    'zod',
-  ],
+  external: ['@anthropic-ai/claude-agent-sdk', 'neovim', 'zod'],
   banner: {
     js: '#!/usr/bin/env node',
   },

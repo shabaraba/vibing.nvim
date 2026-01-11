@@ -4,8 +4,11 @@
  */
 
 import type { AgentConfig, PermissionRule } from '../types.js';
+import { toError } from './utils.js';
 
 const validDisplayModes = ['none', 'compact', 'full'] as const;
+const validPermissionModes = ['default', 'acceptEdits', 'bypassPermissions'] as const;
+const validSaveLocationTypes = ['project', 'user', 'custom'] as const;
 
 /**
  * Parse command-line arguments into configuration object
@@ -70,14 +73,21 @@ export function parseArguments(args: string[]): AgentConfig {
         .filter((t) => t);
       i++;
     } else if (args[i] === '--permission-mode' && args[i + 1]) {
-      config.permissionMode = args[i + 1] as AgentConfig['permissionMode'];
+      const mode = args[i + 1];
+      if (!validPermissionModes.includes(mode as any)) {
+        console.error(
+          `Invalid --permission-mode value: "${mode}". Must be one of: ${validPermissionModes.join(', ')}`
+        );
+        process.exit(1);
+      }
+      config.permissionMode = mode as AgentConfig['permissionMode'];
       i++;
     } else if (args[i] === '--rules' && args[i + 1]) {
       try {
         config.permissionRules = JSON.parse(args[i + 1]) as PermissionRule[];
         validatePermissionRules(config.permissionRules);
       } catch (e) {
-        const error = e as Error;
+        const error = toError(e);
         console.error('Failed to parse --rules JSON:', error.message);
         process.exit(1);
       }
@@ -102,10 +112,24 @@ export function parseArguments(args: string[]): AgentConfig {
       config.rpcPort = port;
       i++;
     } else if (args[i] === '--tool-result-display' && args[i + 1]) {
-      config.toolResultDisplay = args[i + 1] as AgentConfig['toolResultDisplay'];
+      const displayMode = args[i + 1];
+      if (!validDisplayModes.includes(displayMode as any)) {
+        console.error(
+          `Invalid --tool-result-display value: "${displayMode}". Must be one of: ${validDisplayModes.join(', ')}`
+        );
+        process.exit(1);
+      }
+      config.toolResultDisplay = displayMode as AgentConfig['toolResultDisplay'];
       i++;
     } else if (args[i] === '--save-location-type' && args[i + 1]) {
-      config.saveLocationType = args[i + 1] as AgentConfig['saveLocationType'];
+      const locationType = args[i + 1];
+      if (!validSaveLocationTypes.includes(locationType as any)) {
+        console.error(
+          `Invalid --save-location-type value: "${locationType}". Must be one of: ${validSaveLocationTypes.join(', ')}`
+        );
+        process.exit(1);
+      }
+      config.saveLocationType = locationType as AgentConfig['saveLocationType'];
       i++;
     } else if (args[i] === '--save-dir' && args[i + 1]) {
       config.saveDir = args[i + 1];

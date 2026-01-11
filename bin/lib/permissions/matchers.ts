@@ -4,6 +4,7 @@
  */
 
 import { URL } from 'url';
+import { toError } from '../utils.js';
 
 interface ParsedToolPattern {
   toolName: string;
@@ -177,9 +178,7 @@ export function matchesPermission(
           : false;
 
       case 'domain_pattern':
-        return input.url
-          ? matchesDomainPattern(input.url as string, parsed.ruleContent!)
-          : false;
+        return input.url ? matchesDomainPattern(input.url as string, parsed.ruleContent!) : false;
 
       case 'search_pattern':
         return input.pattern ? input.pattern === parsed.ruleContent : false;
@@ -188,7 +187,7 @@ export function matchesPermission(
         return false;
     }
   } catch (error) {
-    const err = error as Error;
+    const err = toError(error);
     const errorMsg = `Permission matching failed for ${toolName} with pattern ${permissionStr}: ${err.message}`;
     console.error('[ERROR]', errorMsg, err.stack);
 

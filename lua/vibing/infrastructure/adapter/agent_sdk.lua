@@ -32,9 +32,24 @@ end
 
 ---ラッパースクリプトのパスを取得
 ---dist/bin/agent-wrapper.js (minified)の絶対パスを返す
+---ビルド済みファイルの存在を確認し、存在しない場合はエラーを通知
 ---@return string ラッパースクリプトの絶対パス
 function AgentSDK:get_wrapper_path()
-  return self._plugin_root .. "/dist/bin/agent-wrapper.js"
+  local wrapper_path = self._plugin_root .. "/dist/bin/agent-wrapper.js"
+
+  -- Validate that the built wrapper exists
+  if vim.fn.filereadable(wrapper_path) ~= 1 then
+    local error_msg = string.format(
+      "[vibing.nvim] Error: Agent wrapper not found at '%s'.\n" ..
+      "Please build the plugin by running: npm install && npm run build\n" ..
+      "Or if using Lazy.nvim, ensure the 'build' hook is configured: build = \"./build.sh\"",
+      wrapper_path
+    )
+    vim.notify(error_msg, vim.log.levels.ERROR)
+    error(string.format("Agent wrapper not found: %s", wrapper_path))
+  end
+
+  return wrapper_path
 end
 
 ---コマンドライン引数を構築

@@ -3,6 +3,16 @@
  */
 
 /**
+ * Safely convert unknown error to Error instance
+ */
+export function toError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+  return new Error(String(error));
+}
+
+/**
  * Safe JSON stringify with error handling
  */
 export function safeJsonStringify(obj: unknown): string {

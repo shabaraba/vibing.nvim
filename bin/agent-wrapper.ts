@@ -10,7 +10,7 @@ import { parseArguments } from './lib/args-parser.js';
 import { buildPrompt } from './lib/prompt-builder.js';
 import { createCanUseToolCallback } from './lib/permissions/can-use-tool.js';
 import { processStream } from './lib/stream-processor.js';
-import { safeJsonStringify } from './lib/utils.js';
+import { safeJsonStringify, toError } from './lib/utils.js';
 
 const args = process.argv.slice(2);
 const config = parseArguments(args);
@@ -53,7 +53,7 @@ try {
 
   await processStream(result, config.toolResultDisplay, config.sessionId, config.cwd, config);
 } catch (error) {
-  const err = error as Error;
-  console.log(safeJsonStringify({ type: 'error', message: err.message || String(error) }));
+  const err = toError(error);
+  console.log(safeJsonStringify({ type: 'error', message: err.message }));
   process.exit(1);
 }

@@ -5,6 +5,7 @@
 
 import { readFileSync } from 'fs';
 import type { AgentConfig } from '../types.js';
+import { toError } from './utils.js';
 
 const languageNames: Record<string, string> = {
   ja: 'Japanese',
@@ -219,7 +220,7 @@ ${languageInstruction}
         const content = readFileSync(file, 'utf-8');
         contextParts.push(`<context file="${file}">\n${content}\n</context>`);
       } catch (error) {
-        const err = error as Error;
+        const err = toError(error);
         console.warn(`Warning: Failed to read context file "${file}": ${err.message}`);
       }
     }

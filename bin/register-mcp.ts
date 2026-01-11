@@ -17,6 +17,7 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import { homedir, tmpdir } from 'os';
+import { toError } from './lib/utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,7 +39,7 @@ if (existsSync(CLAUDE_JSON_PATH)) {
     const content = readFileSync(CLAUDE_JSON_PATH, 'utf-8');
     config = JSON.parse(content);
   } catch (error) {
-    const err = error as Error;
+    const err = toError(error);
     console.error(`[vibing.nvim] Warning: Failed to parse ${CLAUDE_JSON_PATH}: ${err.message}`);
     console.error('[vibing.nvim] Creating new configuration...');
     config = {};
@@ -101,7 +102,7 @@ try {
   console.log('[vibing.nvim]   Port: 9876');
   console.log('[vibing.nvim]   Timeout: 30000ms (30s)');
 } catch (error) {
-  const err = error as Error;
+  const err = toError(error);
   // Clean up temp file and directory if they exist
   if (tempFile && existsSync(tempFile)) {
     try {

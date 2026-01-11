@@ -5,7 +5,7 @@
 
 import { matchesPermission } from './matchers.js';
 import { checkRule } from './rule-checker.js';
-import { safeJsonStringify } from '../utils.js';
+import { safeJsonStringify, toError } from '../utils.js';
 import type { AgentConfig } from '../../types.js';
 
 interface CanUseToolResult {
@@ -154,7 +154,7 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
         updatedInput: input,
       };
     } catch (error) {
-      const err = error as Error;
+      const err = toError(error);
       console.error('[ERROR] canUseTool failed:', err.message, err.stack);
       console.error('[ERROR] toolName:', toolName, 'input:', JSON.stringify(input));
 

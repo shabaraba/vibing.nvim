@@ -7,6 +7,7 @@ import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import GitOperations from './git-operations.js';
+import { toError } from './utils.js';
 
 class PatchStorage {
   private sessionId: string | null = null;
@@ -148,7 +149,7 @@ class PatchStorage {
 
       return filename;
     } catch (error) {
-      const err = error as Error;
+      const err = toError(error);
       console.error('[ERROR] Failed to save patch file:', err.message);
       return null;
     }

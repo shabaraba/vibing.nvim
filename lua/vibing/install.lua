@@ -29,11 +29,13 @@ end
 ---Get Node.js version
 ---@return number? major_version
 local function get_node_version()
-  if not command_exists("node") then
+  local node_exec = get_node_executable()
+
+  if not command_exists(node_exec) then
     return nil
   end
 
-  local version_output = vim.fn.system("node -v")
+  local version_output = vim.fn.system(node_exec .. " -v")
   if vim.v.shell_error ~= 0 then
     return nil
   end
@@ -67,8 +69,15 @@ function M.build()
   print_build("Building MCP server...")
 
   -- Check Node.js
-  if not command_exists("node") then
-    print_build("Error: Node.js not found. Please install Node.js 18+ from https://nodejs.org/", "error")
+  local node_exec = get_node_executable()
+  if not command_exists(node_exec) then
+    print_build(
+      string.format(
+        "Error: Node.js not found at '%s'. Please install Node.js 18+ from https://nodejs.org/",
+        node_exec
+      ),
+      "error"
+    )
     return false
   end
 
@@ -141,8 +150,9 @@ function M.build_async(callback)
   print_build("Building MCP server...")
 
   -- Check prerequisites
-  if not command_exists("node") then
-    print_build("Error: Node.js not found", "error")
+  local node_exec = get_node_executable()
+  if not command_exists(node_exec) then
+    print_build(string.format("Error: Node.js not found at '%s'", node_exec), "error")
     if callback then
       callback(false)
     end

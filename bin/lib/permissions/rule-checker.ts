@@ -20,9 +20,7 @@ export function checkRule(
   }
 
   if (rule.paths && rule.paths.length > 0 && input.file_path) {
-    const pathMatches = rule.paths.some((pattern) =>
-      matchGlob(pattern, input.file_path as string)
-    );
+    const pathMatches = rule.paths.some((pattern) => matchGlob(pattern, input.file_path as string));
     if (pathMatches) {
       return rule.action;
     }
@@ -57,7 +55,10 @@ export function checkRule(
       }
     }
 
-    if ((rule.commands && rule.commands.length > 0) || (rule.patterns && rule.patterns.length > 0)) {
+    if (
+      (rule.commands && rule.commands.length > 0) ||
+      (rule.patterns && rule.patterns.length > 0)
+    ) {
       return null;
     }
   }
