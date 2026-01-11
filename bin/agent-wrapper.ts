@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Claude Agent SDK wrapper for vibing.nvim
  * Uses query API for full permission control support
@@ -6,18 +5,18 @@
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import { parseArguments } from './lib/args-parser.mjs';
-import { buildPrompt } from './lib/prompt-builder.mjs';
-import { createCanUseToolCallback } from './lib/permissions/can-use-tool.mjs';
-import { processStream } from './lib/stream-processor.mjs';
-import { safeJsonStringify } from './lib/utils.mjs';
+import { parseArguments } from './lib/args-parser.js';
+import { buildPrompt } from './lib/prompt-builder.js';
+import { createCanUseToolCallback } from './lib/permissions/can-use-tool.js';
+import { processStream } from './lib/stream-processor.js';
+import { safeJsonStringify, toError } from './lib/utils.js';
 
 const args = process.argv.slice(2);
 const config = parseArguments(args);
 
 const fullPrompt = buildPrompt(config);
 
-const queryOptions = {
+const queryOptions: Record<string, unknown> = {
   cwd: config.cwd,
   allowDangerouslySkipPermissions: config.permissionMode === 'bypassPermissions',
   settingSources: ['user', 'project'],
@@ -53,6 +52,7 @@ try {
 
   await processStream(result, config.toolResultDisplay, config.sessionId, config.cwd, config);
 } catch (error) {
-  console.log(safeJsonStringify({ type: 'error', message: error.message || String(error) }));
+  const err = toError(error);
+  console.log(safeJsonStringify({ type: 'error', message: err.message }));
   process.exit(1);
 }

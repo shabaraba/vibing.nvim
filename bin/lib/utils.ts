@@ -3,11 +3,19 @@
  */
 
 /**
- * Safe JSON stringify with error handling
- * @param {any} obj - Object to stringify
- * @returns {string} JSON string or error message
+ * Safely convert unknown error to Error instance
  */
-export function safeJsonStringify(obj) {
+export function toError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+  return new Error(String(error));
+}
+
+/**
+ * Safe JSON stringify with error handling
+ */
+export function safeJsonStringify(obj: unknown): string {
   try {
     return JSON.stringify(obj);
   } catch (error) {

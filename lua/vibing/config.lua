@@ -26,6 +26,7 @@
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
 ---@field preview Vibing.PreviewConfig プレビューUI設定（diffプレビュー有効化）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
+---@field node Vibing.NodeConfig Node.js実行ファイル設定（バイナリパス）
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
 ---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
 
@@ -56,6 +57,12 @@
 ---@field default_mode "code"|"plan"|"explore" デフォルトモード（"code": コード生成、"plan": 計画、"explore": 探索）
 ---@field default_model "sonnet"|"opus"|"haiku" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速）
 ---@field prioritize_vibing_lsp boolean vibing-nvim LSPツールを優先（true: Serena等の汎用LSPより優先、false: システムプロンプトを挿入しない、デフォルト: true）
+
+---@class Vibing.NodeConfig
+---Node.js実行ファイル設定
+---Agent SDKラッパーとMCPビルドで使用するNode.js実行ファイルのパスを指定
+---@field executable string|"auto" Node.js実行ファイルのパス ("auto": PATHから自動検出、文字列: 明示的なパス指定)
+---@field dev_mode boolean 開発モード有効化 (true: TypeScriptを直接bunで実行、false: コンパイル済みJSを使用)
 
 ---@class Vibing.McpConfig
 ---MCP統合設定
@@ -106,32 +113,29 @@ local M = {}
 ---@type Vibing.Config
 M.defaults = {
   agent = {
-    default_mode = "code",  -- "code" | "plan" | "explore"
-    default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
-    prioritize_vibing_lsp = true,  -- Prioritize vibing-nvim LSP tools over generic LSP tools (e.g. Serena)
+    default_mode = "code",
+    default_model = "sonnet",
+    prioritize_vibing_lsp = true,
   },
   chat = {
     window = {
-      position = "current",  -- "current" | "right" | "left" | "float"
+      position = "current",
       width = 0.4,
       border = "rounded",
     },
     auto_context = true,
-    save_location_type = "project",  -- "project" | "user" | "custom"
-    save_dir = vim.fn.stdpath("data") .. "/vibing/chats",  -- Used when save_location_type is "custom"
-    context_position = "append",  -- "prepend" | "append"
+    save_location_type = "project",
+    save_dir = vim.fn.stdpath("data") .. "/vibing/chats",
+    context_position = "append",
   },
   ui = {
-    wrap = "on",  -- "nvim" | "on" | "off"
+    wrap = "on",
     gradient = {
-      enabled = true,  -- Enable gradient animation during AI response
-      colors = {
-        "#cc3300",  -- Start color (orange, matching vibing.nvim logo)
-        "#fffe00",  -- End color (yellow, matching vibing.nvim logo)
-      },
-      interval = 100,  -- Animation update interval in milliseconds
+      enabled = true,
+      colors = { "#cc3300", "#fffe00" },
+      interval = 100,
     },
-    tool_result_display = "compact",  -- "none" | "compact" | "full"
+    tool_result_display = "compact",
   },
   keymaps = {
     send = "<CR>",
@@ -141,41 +145,65 @@ M.defaults = {
     open_file = "gf",
   },
   preview = {
-    enabled = false,  -- Enable diff preview UI for inline and chat (requires Git)
+    enabled = false,
   },
   permissions = {
-    mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
-    allow = {
-      "Read",
-      "Edit",
-      "Write",
-      "Glob",
-      "Grep",
-    },
-    deny = {
-      "Bash",
-    },
-    ask = {},  -- Tools requiring approval before use
-    rules = {},  -- Granular permission rules (optional)
+    mode = "acceptEdits",
+    allow = { "Read", "Edit", "Write", "Glob", "Grep" },
+    deny = { "Bash" },
+    ask = {},
+    rules = {},
+  },
+  node = {
+    executable = "auto",
+    dev_mode = false,
   },
   mcp = {
-    enabled = true,  -- MCP integration enabled by default (auto-allows vibing-nvim MCP tools)
-    rpc_port = 9876,  -- RPC server port
-    auto_setup = false,  -- Auto-build MCP server on plugin install
-    auto_configure_claude_json = false,  -- Auto-configure ~/.claude.json
+    enabled = true,
+    rpc_port = 9876,
+    auto_setup = false,
+    auto_configure_claude_json = false,
   },
-  language = nil,  -- No language specification by default (responds in English)
+  language = nil,
 }
 
 ---@type Vibing.Config
 M.options = {}
 
+---Lazy.nvimのdevモードを検出
+---vibing.nvimプラグインがLazy.nvimでdev=trueとして設定されているかチェック
+---@return boolean Lazy.nvimのdevモードが有効な場合true
+local function is_lazy_dev_mode()
+  local ok, lazy_config = pcall(require, "lazy.core.config")
+  if ok and lazy_config.plugins then
+    local vibing_plugin = lazy_config.plugins["vibing.nvim"]
+    if vibing_plugin and vibing_plugin.dev then
+      return true
+    end
+  end
+  return false
+end
+
 ---vibing.nvimプラグインの設定を初期化
 ---ユーザー設定とデフォルト設定をマージし、ツール権限の妥当性を検証
 ---permissionsで指定されたツール名が有効かチェックし、無効な場合は警告を出力
+---Lazy.nvimのdev=trueが設定されている場合、node.dev_modeを自動的にtrueに設定
 ---@param opts? Vibing.Config ユーザー設定オブジェクト（nilの場合はデフォルト設定のみ使用）
 function M.setup(opts)
-  M.options = vim.tbl_deep_extend("force", {}, M.defaults, opts or {})
+  -- Capture user config before merge to detect if dev_mode was explicitly set
+  local user_opts = opts or {}
+  local user_dev_mode = user_opts.node and user_opts.node.dev_mode
+
+  M.options = vim.tbl_deep_extend("force", {}, M.defaults, user_opts)
+
+  -- Auto-detect dev_mode from Lazy.nvim if not explicitly set by user
+  if user_dev_mode == nil then
+    local lazy_dev = is_lazy_dev_mode()
+    if lazy_dev then
+      M.options.node.dev_mode = true
+      notify.info("[vibing.nvim] Detected Lazy.nvim dev mode - enabling TypeScript direct execution")
+    end
+  end
 
   if M.options.permissions then
     -- Validate permission mode
@@ -220,44 +248,41 @@ function M.setup(opts)
     end
   end
 
-  -- Validate ui.wrap configuration
-  if M.options.ui and M.options.ui.wrap then
-    local valid_wrap_values = { nvim = true, on = true, off = true }
-    if not valid_wrap_values[M.options.ui.wrap] then
+  local function validate_enum(value, valid_values, field_name, default)
+    if value and not valid_values[value] then
+      local valid_list = table.concat(vim.tbl_keys(valid_values), ", ")
       notify.warn(string.format(
-        "Invalid ui.wrap value '%s'. Valid values: nvim, on, off. Falling back to default 'on'.",
-        M.options.ui.wrap
+        "Invalid %s value '%s'. Valid values: %s. Falling back to '%s'.",
+        field_name, value, valid_list, default
       ))
-      M.options.ui.wrap = "on"  -- Fallback to default
+      return default
     end
+    return value
   end
 
-  -- Validate ui.tool_result_display configuration
-  if M.options.ui and M.options.ui.tool_result_display then
-    local valid_display_values = { none = true, compact = true, full = true }
-    if not valid_display_values[M.options.ui.tool_result_display] then
-      notify.warn(string.format(
-        "Invalid ui.tool_result_display value '%s'. Valid values: none, compact, full. Falling back to default 'compact'.",
-        M.options.ui.tool_result_display
-      ))
-      M.options.ui.tool_result_display = "compact"  -- Fallback to default
-    end
+  if M.options.ui then
+    M.options.ui.wrap = validate_enum(
+      M.options.ui.wrap,
+      { nvim = true, on = true, off = true },
+      "ui.wrap",
+      "on"
+    )
+    M.options.ui.tool_result_display = validate_enum(
+      M.options.ui.tool_result_display,
+      { none = true, compact = true, full = true },
+      "ui.tool_result_display",
+      "compact"
+    )
   end
 
-  -- Validate ui.gradient configuration
   if M.options.ui and M.options.ui.gradient then
     local gradient = M.options.ui.gradient
 
-    -- Validate colors array
     if gradient.colors then
       if type(gradient.colors) ~= "table" or #gradient.colors ~= 2 then
-        notify.warn(
-          "Invalid ui.gradient.colors: must be an array of exactly 2 color strings. " ..
-          "Falling back to default (orange to yellow)."
-        )
+        notify.warn("Invalid ui.gradient.colors: must be an array of exactly 2 hex color strings.")
         M.options.ui.gradient.colors = { "#cc3300", "#fffe00" }
       else
-        -- Validate color format (simple hex check)
         for i, color in ipairs(gradient.colors) do
           if type(color) ~= "string" or not color:match("^#%x%x%x%x%x%x$") then
             notify.warn(string.format(
@@ -269,27 +294,17 @@ function M.setup(opts)
       end
     end
 
-    -- Validate interval
-    if gradient.interval then
-      if type(gradient.interval) ~= "number" or gradient.interval <= 0 then
-        notify.warn(
-          "Invalid ui.gradient.interval: must be a positive number. Falling back to default (100ms)."
-        )
-        M.options.ui.gradient.interval = 100
-      end
+    if gradient.interval and (type(gradient.interval) ~= "number" or gradient.interval <= 0) then
+      notify.warn("Invalid ui.gradient.interval: must be a positive number.")
+      M.options.ui.gradient.interval = 100
     end
   end
 
-  -- Validate language configuration
   if M.options.language then
     local function validate_lang_code(code, field_name)
       if code and code ~= "" and code ~= "en" and not language_utils.language_names[code] then
-        notify.warn(string.format(
-          "Unknown language code '%s' in %s. Supported codes: %s",
-          code,
-          field_name,
-          table.concat(vim.tbl_keys(language_utils.language_names), ", ")
-        ))
+        local supported = table.concat(vim.tbl_keys(language_utils.language_names), ", ")
+        notify.warn(string.format("Unknown language code '%s' in %s. Supported: %s", code, field_name, supported))
       end
     end
 
@@ -302,7 +317,22 @@ function M.setup(opts)
     end
   end
 
-  -- Directory creation is handled by chat_buffer.lua _get_save_directory()
+  if M.options.node and M.options.node.executable then
+    local executable = M.options.node.executable
+    if type(executable) ~= "string" or (executable ~= "auto" and executable == "") then
+      notify.warn(string.format(
+        "Invalid node.executable value '%s'. Must be 'auto' or a valid file path. Resetting to 'auto'.",
+        tostring(executable)
+      ))
+      M.options.node.executable = "auto"
+    elseif executable ~= "auto" and vim.fn.executable(executable) == 0 then
+      notify.warn(string.format(
+        "Node.js executable not found at '%s'. Resetting to 'auto'.",
+        executable
+      ))
+      M.options.node.executable = "auto"
+    end
+  end
 end
 
 ---現在の設定を取得

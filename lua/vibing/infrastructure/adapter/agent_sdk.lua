@@ -31,10 +31,42 @@ function AgentSDK:new(config)
 end
 
 ---ラッパースクリプトのパスを取得
----bin/agent-wrapper.mjsの絶対パスを返す
+---dev_modeがtrueの場合はbin/agent-wrapper.ts（TypeScript）を返す
+---dev_modeがfalseの場合はdist/bin/agent-wrapper.js（コンパイル済み）を返す
+---ファイルの存在を確認し、存在しない場合はエラーを通知
 ---@return string ラッパースクリプトの絶対パス
 function AgentSDK:get_wrapper_path()
-  return self._plugin_root .. "/bin/agent-wrapper.mjs"
+  local dev_mode = self.config.node and self.config.node.dev_mode or false
+
+  local wrapper_path
+  if dev_mode then
+    -- Development mode: use TypeScript directly
+    wrapper_path = self._plugin_root .. "/bin/agent-wrapper.ts"
+    if vim.fn.filereadable(wrapper_path) ~= 1 then
+      local error_msg = string.format(
+        "[vibing.nvim] Error: Agent wrapper (TypeScript) not found at '%s'.\n" ..
+        "Please ensure the source file exists.",
+        wrapper_path
+      )
+      vim.notify(error_msg, vim.log.levels.ERROR)
+      error(string.format("Agent wrapper (TypeScript) not found: %s", wrapper_path))
+    end
+  else
+    -- Production mode: use compiled JavaScript
+    wrapper_path = self._plugin_root .. "/dist/bin/agent-wrapper.js"
+    if vim.fn.filereadable(wrapper_path) ~= 1 then
+      local error_msg = string.format(
+        "[vibing.nvim] Error: Agent wrapper not found at '%s'.\n" ..
+        "Please build the plugin by running: npm install && npm run build\n" ..
+        "Or if using Lazy.nvim, ensure the 'build' hook is configured: build = \"./build.sh\"",
+        wrapper_path
+      )
+      vim.notify(error_msg, vim.log.levels.ERROR)
+      error(string.format("Agent wrapper not found: %s", wrapper_path))
+    end
+  end
+
+  return wrapper_path
 end
 
 ---コマンドライン引数を構築

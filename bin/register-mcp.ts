@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Register vibing-nvim MCP server in ~/.claude.json
  * Called automatically by build.sh after successful build
@@ -17,12 +16,13 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import { homedir, tmpdir } from 'os';
+import { toError } from './lib/utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const CLAUDE_JSON_PATH = join(homedir(), '.claude.json');
-const PLUGIN_ROOT = resolve(__dirname, '..');
+const PLUGIN_ROOT = resolve(__dirname, '../..');
 const MCP_SERVER_PATH = join(PLUGIN_ROOT, 'mcp-server', 'dist', 'index.js');
 
 // Check if MCP server is built
@@ -32,13 +32,14 @@ if (!existsSync(MCP_SERVER_PATH)) {
 }
 
 // Read existing claude.json or create new
-let config = {};
+let config: Record<string, unknown> = {};
 if (existsSync(CLAUDE_JSON_PATH)) {
   try {
     const content = readFileSync(CLAUDE_JSON_PATH, 'utf-8');
     config = JSON.parse(content);
   } catch (error) {
-    console.error(`[vibing.nvim] Warning: Failed to parse ${CLAUDE_JSON_PATH}: ${error.message}`);
+    const err = toError(error);
+    console.error(`[vibing.nvim] Warning: Failed to parse ${CLAUDE_JSON_PATH}: ${err.message}`);
     console.error('[vibing.nvim] Creating new configuration...');
     config = {};
   }
@@ -51,11 +52,13 @@ if (!config.mcpServers) {
   config.mcpServers = {};
 }
 
+const mcpServers = config.mcpServers as Record<string, unknown>;
+
 // Check if vibing-nvim already configured
-const existingConfig = config.mcpServers['vibing-nvim'];
+const existingConfig = mcpServers['vibing-nvim'] as Record<string, unknown> | undefined;
 if (
   existingConfig &&
-  existingConfig.args &&
+  Array.isArray(existingConfig.args) &&
   existingConfig.args[0] === MCP_SERVER_PATH &&
   existingConfig.type === 'stdio'
 ) {
@@ -66,7 +69,7 @@ if (
 }
 
 // Register vibing-nvim MCP server
-config.mcpServers['vibing-nvim'] = {
+mcpServers['vibing-nvim'] = {
   command: 'node',
   args: [MCP_SERVER_PATH],
   env: {
@@ -77,8 +80,8 @@ config.mcpServers['vibing-nvim'] = {
 };
 
 // Write updated config atomically (temp file → rename)
-let tempFile;
-let tempDir;
+let tempFile: string | undefined;
+let tempDir: string | undefined;
 try {
   // Create temp directory and file
   tempDir = mkdtempSync(join(tmpdir(), 'vibing-'));
@@ -98,6 +101,7 @@ try {
   console.log('[vibing.nvim]   Port: 9876');
   console.log('[vibing.nvim]   Timeout: 30000ms (30s)');
 } catch (error) {
+  const err = toError(error);
   // Clean up temp file and directory if they exist
   if (tempFile && existsSync(tempFile)) {
     try {
@@ -113,6 +117,6 @@ try {
       // Ignore cleanup errors
     }
   }
-  console.error(`[vibing.nvim] Error: Failed to write ${CLAUDE_JSON_PATH}: ${error.message}`);
+  console.error(`[vibing.nvim] Error: Failed to write ${CLAUDE_JSON_PATH}: ${err.message}`);
   process.exit(1);
 }

@@ -3,24 +3,24 @@
  * Evaluates granular permission rules based on paths, commands, patterns, domains
  */
 
-/* global URL */
-
-import { matchGlob } from './matchers.mjs';
+import { matchGlob } from './matchers.js';
+import type { PermissionRule } from '../../types.js';
 
 /**
  * Check if rule matches tool and input
- * @param {Object} rule - Permission rule to check
- * @param {string} toolName - Tool name
- * @param {Object} input - Tool input parameters
- * @returns {string|null} "allow", "deny", or null if rule doesn't apply
+ * @returns "allow", "deny", or null if rule doesn't apply
  */
-export function checkRule(rule, toolName, input) {
+export function checkRule(
+  rule: PermissionRule,
+  toolName: string,
+  input: Record<string, unknown>
+): 'allow' | 'deny' | null {
   if (!rule.tools || !rule.tools.includes(toolName)) {
     return null;
   }
 
   if (rule.paths && rule.paths.length > 0 && input.file_path) {
-    const pathMatches = rule.paths.some((pattern) => matchGlob(pattern, input.file_path));
+    const pathMatches = rule.paths.some((pattern) => matchGlob(pattern, input.file_path as string));
     if (pathMatches) {
       return rule.action;
     }
@@ -28,7 +28,7 @@ export function checkRule(rule, toolName, input) {
   }
 
   if (toolName === 'Bash' && input.command) {
-    const commandParts = input.command.trim().split(/\s+/);
+    const commandParts = (input.command as string).trim().split(/\s+/);
     const baseCommand = commandParts[0];
 
     if (rule.commands && rule.commands.length > 0) {
@@ -45,7 +45,7 @@ export function checkRule(rule, toolName, input) {
             return false;
           }
           const regex = new RegExp(pattern);
-          return regex.test(input.command);
+          return regex.test(input.command as string);
         } catch {
           return false;
         }
@@ -66,7 +66,7 @@ export function checkRule(rule, toolName, input) {
   if (toolName === 'WebFetch' && input.url) {
     if (rule.domains && rule.domains.length > 0) {
       try {
-        const url = new URL(input.url);
+        const url = new URL(input.url as string);
         const hostname = url.hostname.toLowerCase();
         const domainMatches = rule.domains.some((domain) => matchGlob(domain, hostname));
         if (domainMatches) {

@@ -6,29 +6,33 @@
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import GitOperations from './git-operations.mjs';
+import GitOperations from './git-operations.js';
+import { toError } from './utils.js';
 
 class PatchStorage {
+  private sessionId: string | null = null;
+  private cwd: string;
+  private saveLocationType: 'project' | 'user' | 'custom' = 'project';
+  private saveDir: string | null = null;
+  private snapshotTag: string | null = null;
+  private gitOps: GitOperations;
+
   constructor() {
-    this.sessionId = null;
     this.cwd = process.cwd();
-    this.saveLocationType = 'project';
-    this.saveDir = null;
-    this.snapshotTag = null;
     this.gitOps = new GitOperations(this.cwd, { timeout: 30000 });
   }
 
-  setSessionId(sessionId) {
+  setSessionId(sessionId: string): void {
     this.sessionId = sessionId;
     this.snapshotTag = `claude-session-${sessionId}`;
   }
 
-  setCwd(cwd) {
+  setCwd(cwd: string): void {
     this.cwd = cwd;
     this.gitOps = new GitOperations(cwd, { timeout: 30000 });
   }
 
-  setSaveConfig(saveLocationType, saveDir) {
+  setSaveConfig(saveLocationType: 'project' | 'user' | 'custom', saveDir: string | null): void {
     this.saveLocationType = saveLocationType || 'project';
     this.saveDir = saveDir;
   }
@@ -37,7 +41,7 @@ class PatchStorage {
    * Create snapshot commit with current state (including unstaged/untracked).
    * This becomes the baseline for comparison at session end.
    */
-  takeSnapshot() {
+  takeSnapshot(): boolean {
     if (!this.sessionId) {
       console.error('[ERROR] Cannot take snapshot: session ID not set');
       return false;
@@ -50,7 +54,7 @@ class PatchStorage {
       return false;
     }
 
-    if (this.gitOps.tagExists(this.snapshotTag)) {
+    if (this.gitOps.tagExists(this.snapshotTag!)) {
       console.error('[ERROR] Cannot take snapshot: tag already exists -', this.snapshotTag);
       return false;
     }
@@ -70,7 +74,7 @@ class PatchStorage {
       return false;
     }
 
-    if (!this.gitOps.createTag(this.snapshotTag).success) {
+    if (!this.gitOps.createTag(this.snapshotTag!).success) {
       this.gitOps.reset('hard', 'HEAD~1');
       this.gitOps.restoreStagingState(stagedDiff);
       return false;
@@ -86,7 +90,7 @@ class PatchStorage {
   /**
    * Generate patch by comparing current state with snapshot.
    */
-  generatePatch() {
+  generatePatch(): string | null {
     if (!this.snapshotTag) {
       console.error('[ERROR] Cannot generate patch: no snapshot tag');
       return null;
@@ -114,7 +118,7 @@ class PatchStorage {
     return patchContent;
   }
 
-  getPatchesBaseDir() {
+  getPatchesBaseDir(): string {
     switch (this.saveLocationType) {
       case 'user':
         return join(homedir(), '.local', 'share', 'nvim', 'vibing', 'patches');
@@ -128,7 +132,7 @@ class PatchStorage {
     }
   }
 
-  savePatchToFile(patchContent) {
+  savePatchToFile(patchContent: string): string | null {
     if (!patchContent || !this.sessionId) {
       return null;
     }
@@ -145,7 +149,8 @@ class PatchStorage {
 
       return filename;
     } catch (error) {
-      console.error('[ERROR] Failed to save patch file:', error.message);
+      const err = toError(error);
+      console.error('[ERROR] Failed to save patch file:', err.message);
       return null;
     }
   }
@@ -153,7 +158,7 @@ class PatchStorage {
   /**
    * Cleanup snapshot tag and reset state
    */
-  clear() {
+  clear(): void {
     if (this.snapshotTag) {
       this.gitOps.deleteTag(this.snapshotTag);
       this.snapshotTag = null;

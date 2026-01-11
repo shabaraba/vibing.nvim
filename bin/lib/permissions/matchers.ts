@@ -4,14 +4,25 @@
  */
 
 import { URL } from 'url';
+import { toError } from '../utils.js';
+
+interface ParsedToolPattern {
+  toolName: string;
+  ruleContent: string | null;
+  type:
+    | 'bash_wildcard'
+    | 'bash_exact'
+    | 'file_glob'
+    | 'domain_pattern'
+    | 'search_pattern'
+    | 'unknown_pattern'
+    | 'tool_name';
+}
 
 /**
  * Simple glob pattern matching
- * @param {string} pattern - Glob pattern (supports * and ?)
- * @param {string} str - String to match
- * @returns {boolean} Whether pattern matches string
  */
-export function matchGlob(pattern, str) {
+export function matchGlob(pattern: string, str: string): boolean {
   if (typeof pattern !== 'string' || typeof str !== 'string') {
     return false;
   }
@@ -32,10 +43,8 @@ export function matchGlob(pattern, str) {
 
 /**
  * Parse tool permission string like "Tool(pattern)"
- * @param {string} toolStr - Tool permission string
- * @returns {Object} Parsed pattern { toolName, ruleContent, type }
  */
-export function parseToolPattern(toolStr) {
+export function parseToolPattern(toolStr: string): ParsedToolPattern {
   const granularMatch = toolStr.match(/^([a-z]+)\((.+)\)$/i);
   if (granularMatch) {
     const toolName = granularMatch[1].toLowerCase();
@@ -80,12 +89,12 @@ export function parseToolPattern(toolStr) {
 
 /**
  * Match Bash command against permission pattern
- * @param {string} command - Bash command to check
- * @param {string} ruleContent - Rule content from pattern
- * @param {string} type - Pattern type (bash_wildcard or bash_exact)
- * @returns {boolean} Whether command matches pattern
  */
-export function matchesBashPattern(command, ruleContent, type) {
+export function matchesBashPattern(
+  command: string,
+  ruleContent: string,
+  type: 'bash_wildcard' | 'bash_exact'
+): boolean {
   const cmd = command.trim().toLowerCase();
   const rule = ruleContent.toLowerCase();
 
@@ -100,21 +109,15 @@ export function matchesBashPattern(command, ruleContent, type) {
 
 /**
  * Match file path against glob pattern
- * @param {string} filePath - File path to check
- * @param {string} globPattern - Glob pattern
- * @returns {boolean} Whether path matches pattern
  */
-export function matchesFileGlob(filePath, globPattern) {
+export function matchesFileGlob(filePath: string, globPattern: string): boolean {
   return matchGlob(globPattern, filePath);
 }
 
 /**
  * Match URL domain against pattern
- * @param {string} url - URL to check
- * @param {string} domainPattern - Domain pattern (supports wildcards)
- * @returns {boolean} Whether domain matches pattern
  */
-export function matchesDomainPattern(url, domainPattern) {
+export function matchesDomainPattern(url: string, domainPattern: string): boolean {
   try {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname.toLowerCase();
@@ -137,12 +140,12 @@ export function matchesDomainPattern(url, domainPattern) {
 
 /**
  * Check if tool matches permission string (unified for all tools)
- * @param {string} toolName - Tool name to check
- * @param {Object} input - Tool input parameters
- * @param {string} permissionStr - Permission string
- * @returns {boolean} Whether tool matches permission
  */
-export function matchesPermission(toolName, input, permissionStr) {
+export function matchesPermission(
+  toolName: string,
+  input: Record<string, unknown>,
+  permissionStr: string
+): boolean {
   try {
     const parsed = parseToolPattern(permissionStr);
 
@@ -166,14 +169,16 @@ export function matchesPermission(toolName, input, permissionStr) {
       case 'bash_wildcard':
       case 'bash_exact':
         return input.command
-          ? matchesBashPattern(input.command, parsed.ruleContent, parsed.type)
+          ? matchesBashPattern(input.command as string, parsed.ruleContent!, parsed.type)
           : false;
 
       case 'file_glob':
-        return input.file_path ? matchesFileGlob(input.file_path, parsed.ruleContent) : false;
+        return input.file_path
+          ? matchesFileGlob(input.file_path as string, parsed.ruleContent!)
+          : false;
 
       case 'domain_pattern':
-        return input.url ? matchesDomainPattern(input.url, parsed.ruleContent) : false;
+        return input.url ? matchesDomainPattern(input.url as string, parsed.ruleContent!) : false;
 
       case 'search_pattern':
         return input.pattern ? input.pattern === parsed.ruleContent : false;
@@ -182,8 +187,9 @@ export function matchesPermission(toolName, input, permissionStr) {
         return false;
     }
   } catch (error) {
-    const errorMsg = `Permission matching failed for ${toolName} with pattern ${permissionStr}: ${error.message}`;
-    console.error('[ERROR]', errorMsg, error.stack);
+    const err = toError(error);
+    const errorMsg = `Permission matching failed for ${toolName} with pattern ${permissionStr}: ${err.message}`;
+    console.error('[ERROR]', errorMsg, err.stack);
 
     console.log(
       JSON.stringify({

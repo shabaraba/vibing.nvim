@@ -3,20 +3,30 @@
  * Handles permission logic for tool usage with ask/allow/deny lists and rules
  */
 
-import { matchesPermission } from './matchers.mjs';
-import { checkRule } from './rule-checker.mjs';
-import { safeJsonStringify } from '../utils.mjs';
+import { matchesPermission } from './matchers.js';
+import { checkRule } from './rule-checker.js';
+import { safeJsonStringify, toError } from '../utils.js';
+import type { AgentConfig } from '../../types.js';
+
+interface CanUseToolResult {
+  behavior: 'allow' | 'deny' | 'ask';
+  message?: string;
+  updatedInput?: Record<string, unknown>;
+}
+
+type CanUseToolCallback = (
+  toolName: string,
+  input: Record<string, unknown>
+) => Promise<CanUseToolResult>;
 
 /**
  * Create canUseTool callback for Agent SDK
- * @param {Object} config - Configuration object
- * @returns {Function} canUseTool callback
  */
-export function createCanUseToolCallback(config) {
+export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallback {
   const { allowedTools, askedTools, permissionRules, permissionMode, mcpEnabled, sessionId } =
     config;
 
-  return async (toolName, input) => {
+  return async (toolName: string, input: Record<string, unknown>): Promise<CanUseToolResult> => {
     try {
       // AskUserQuestion: Insert choices into chat buffer and deny
       if (toolName === 'AskUserQuestion') {
@@ -144,7 +154,8 @@ export function createCanUseToolCallback(config) {
         updatedInput: input,
       };
     } catch (error) {
-      console.error('[ERROR] canUseTool failed:', error.message, error.stack);
+      const err = toError(error);
+      console.error('[ERROR] canUseTool failed:', err.message, err.stack);
       console.error('[ERROR] toolName:', toolName, 'input:', JSON.stringify(input));
 
       if (error instanceof TypeError || error instanceof ReferenceError) {
@@ -153,7 +164,7 @@ export function createCanUseToolCallback(config) {
 
       return {
         behavior: 'deny',
-        message: `Permission check failed due to internal error: ${error.message}. Please report this issue if it persists.`,
+        message: `Permission check failed due to internal error: ${err.message}. Please report this issue if it persists.`,
       };
     }
   };

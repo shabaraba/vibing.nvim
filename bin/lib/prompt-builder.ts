@@ -4,8 +4,10 @@
  */
 
 import { readFileSync } from 'fs';
+import type { AgentConfig } from '../types.js';
+import { toError } from './utils.js';
 
-const languageNames = {
+const languageNames: Record<string, string> = {
   ja: 'Japanese',
   en: 'English',
   zh: 'Chinese',
@@ -31,10 +33,8 @@ const languageNames = {
 
 /**
  * Generate language instruction for AI responses
- * @param {string} langCode - Language code (e.g., "ja", "en")
- * @returns {string} Language instruction text
  */
-function getLanguageInstruction(langCode) {
+function getLanguageInstruction(langCode: string | null): string {
   if (!langCode) {
     return '';
   }
@@ -50,11 +50,8 @@ function getLanguageInstruction(langCode) {
 
 /**
  * Build vibing.nvim system prompt with LSP priority and RPC port info
- * @param {boolean} prioritizeVibingLsp - Whether to prioritize vibing-nvim LSP tools
- * @param {number|null} rpcPort - RPC port of the Neovim instance
- * @returns {string} System prompt text
  */
-function buildVibingSystemPrompt(prioritizeVibingLsp, rpcPort) {
+function buildVibingSystemPrompt(prioritizeVibingLsp: boolean, rpcPort: number | null): string {
   if (!prioritizeVibingLsp) {
     return '';
   }
@@ -183,10 +180,8 @@ await mcp__vibing-nvim__nvim_execute({ command: "bprevious" });
 
 /**
  * Build full prompt with context, system instructions, and language settings
- * @param {Object} config - Configuration object
- * @returns {string} Full prompt text
  */
-export function buildPrompt(config) {
+export function buildPrompt(config: AgentConfig): string {
   const { prompt, contextFiles, sessionId, prioritizeVibingLsp, language, rpcPort } = config;
 
   let fullPrompt = prompt;
@@ -219,13 +214,14 @@ ${languageInstruction}
 
   // Add context files (only for first message in session)
   if (contextFiles.length > 0 && !sessionId) {
-    const contextParts = [];
+    const contextParts: string[] = [];
     for (const file of contextFiles) {
       try {
         const content = readFileSync(file, 'utf-8');
         contextParts.push(`<context file="${file}">\n${content}\n</context>`);
       } catch (error) {
-        console.warn(`Warning: Failed to read context file "${file}": ${error.message}`);
+        const err = toError(error);
+        console.warn(`Warning: Failed to read context file "${file}": ${err.message}`);
       }
     }
     if (contextParts.length > 0) {

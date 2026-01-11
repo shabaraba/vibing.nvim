@@ -3,28 +3,45 @@
  * Encapsulates git command execution with consistent error handling.
  */
 
-import { spawnSync } from 'child_process';
+import { spawnSync, SpawnSyncOptions } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
 
+interface GitResult {
+  success: boolean;
+  stdout: string;
+  stderr: string;
+  error?: Error;
+  timedOut: boolean;
+}
+
+interface GitCommitOptions {
+  allowEmpty?: boolean;
+  noVerify?: boolean;
+}
+
+interface GitOpsOptions {
+  timeout?: number;
+}
+
 class GitOperations {
-  constructor(cwd, options = {}) {
+  private cwd: string;
+  private defaultTimeout: number;
+
+  constructor(cwd: string, options: GitOpsOptions = {}) {
     this.cwd = cwd;
     this.defaultTimeout = options.timeout || 30000; // 30 seconds default
   }
 
   /**
    * Execute git command with consistent error handling.
-   * @param {string[]} args - Git command arguments
-   * @param {Object} options - Additional spawn options
-   * @returns {Object} { success: boolean, stdout: string, stderr: string, timedOut: boolean }
    */
-  execute(args, options = {}) {
+  execute(args: string[], options: SpawnSyncOptions = {}): GitResult {
     const result = spawnSync('git', args, {
       cwd: this.cwd,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: options.timeout !== undefined ? options.timeout : this.defaultTimeout,
+      timeout: options.timeout !== undefined ? (options.timeout as number) : this.defaultTimeout,
       ...options,
     });
 
@@ -47,19 +64,16 @@ class GitOperations {
 
   /**
    * Save current staging state to restore later.
-   * @returns {string} Staged diff content
    */
-  saveStagingState() {
+  saveStagingState(): string {
     const result = this.execute(['diff', '--cached']);
     return result.success ? result.stdout : '';
   }
 
   /**
    * Restore staging state from saved diff.
-   * @param {string} stagedDiff - Saved staging state
-   * @returns {boolean} Success status
    */
-  restoreStagingState(stagedDiff) {
+  restoreStagingState(stagedDiff: string): boolean {
     if (!stagedDiff || !stagedDiff.trim()) {
       return true;
     }
@@ -81,27 +95,23 @@ class GitOperations {
 
   /**
    * Check if repository is in merge/rebase state.
-   * @returns {boolean} True if in merge/rebase
    */
-  isInMergeOrRebase() {
+  isInMergeOrRebase(): boolean {
     return existsSync(join(this.cwd, '.git', 'MERGE_HEAD'));
   }
 
   /**
    * Check if tag exists.
-   * @param {string} tagName - Tag name to check
-   * @returns {boolean} True if tag exists
    */
-  tagExists(tagName) {
+  tagExists(tagName: string): boolean {
     const result = this.execute(['tag', '-l', tagName]);
     return result.success && result.stdout.trim() !== '';
   }
 
   /**
    * Stage all files (including untracked).
-   * @returns {Object} Result with success status
    */
-  stageAll() {
+  stageAll(): GitResult {
     const result = this.execute(['add', '-A']);
     if (!result.success) {
       console.error('[ERROR] Failed to stage files:', result.error?.message || result.stderr);
@@ -111,11 +121,8 @@ class GitOperations {
 
   /**
    * Create a commit.
-   * @param {string} message - Commit message
-   * @param {Object} options - Commit options
-   * @returns {Object} Result with success status
    */
-  commit(message, options = {}) {
+  commit(message: string, options: GitCommitOptions = {}): GitResult {
     const args = ['commit', '--quiet'];
     if (options.allowEmpty) args.push('--allow-empty');
     if (options.noVerify) args.push('--no-verify');
@@ -130,10 +137,8 @@ class GitOperations {
 
   /**
    * Create a tag.
-   * @param {string} tagName - Tag name
-   * @returns {Object} Result with success status
    */
-  createTag(tagName) {
+  createTag(tagName: string): GitResult {
     const result = this.execute(['tag', tagName]);
     if (!result.success) {
       console.error('[ERROR] Failed to create tag:', result.error?.message || result.stderr);
@@ -143,10 +148,8 @@ class GitOperations {
 
   /**
    * Delete a tag.
-   * @param {string} tagName - Tag name
-   * @returns {Object} Result with success status
    */
-  deleteTag(tagName) {
+  deleteTag(tagName: string): GitResult {
     return this.execute(['tag', '-d', tagName], {
       stdio: ['ignore', 'ignore', 'ignore'],
     });
@@ -154,12 +157,9 @@ class GitOperations {
 
   /**
    * Reset to a specific state.
-   * @param {string} mode - Reset mode ('soft', 'hard', 'mixed')
-   * @param {string} target - Reset target (e.g., 'HEAD~1')
-   * @returns {Object} Result with success status
    */
-  reset(mode, target = 'HEAD') {
-    const modeFlags = { soft: '--soft', hard: '--hard', mixed: '--mixed' };
+  reset(mode: 'soft' | 'hard' | 'mixed', target: string = 'HEAD'): GitResult {
+    const modeFlags: Record<string, string> = { soft: '--soft', hard: '--hard', mixed: '--mixed' };
     const args = ['reset', '--quiet'];
 
     if (modeFlags[mode]) {
@@ -176,10 +176,8 @@ class GitOperations {
 
   /**
    * Generate diff between snapshot and current state.
-   * @param {string} snapshotTag - Snapshot tag name
-   * @returns {Object} Result with success status and diff content
    */
-  diffAgainstSnapshot(snapshotTag) {
+  diffAgainstSnapshot(snapshotTag: string): GitResult {
     const result = this.execute(['diff', '--cached', '--relative', snapshotTag]);
     if (!result.success) {
       console.error('[ERROR] Failed to generate diff:', result.error?.message || result.stderr);

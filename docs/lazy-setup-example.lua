@@ -1,5 +1,16 @@
 -- Lazy.nvim setup example for vibing.nvim with auto MCP setup
 -- Place this in ~/.config/nvim/lua/plugins/vibing.lua
+--
+-- This file shows multiple setup patterns. Uncomment the pattern you want to use.
+-- Only ONE pattern should be active (uncommented) at a time.
+
+-- ==========================================
+-- パターン1: 完全自動セットアップ（推奨）
+-- ==========================================
+-- プラグインインストール時に自動的にすべてセットアップ
+-- - Lazy.nvimのbuildフックでMCPサーバービルド
+-- - auto_setup = true でビルド状態チェック
+-- - auto_configure_claude_json = true で ~/.claude.json 自動設定
 
 return {
   {
@@ -12,6 +23,9 @@ return {
     -- Method 1: Shell script (simplest, recommended)
     build = "./build.sh",
 
+    -- Method 1b: Use custom Node.js executable during build
+    -- build = "VIBING_NODE_EXECUTABLE=/usr/local/bin/bun ./build.sh",
+
     -- Method 2: Lua function (more flexible)
     -- build = function()
     --   require("vibing.install").build()
@@ -20,6 +34,11 @@ return {
     config = function()
       require("vibing").setup({
         adapter = "agent_sdk",
+
+        -- Node.js実行ファイル設定（ランタイム）
+        node = {
+          executable = "auto",  -- "auto" or "/usr/local/bin/bun"
+        },
 
         -- MCP統合設定
         mcp = {
@@ -51,41 +70,21 @@ return {
 }
 
 -- ==========================================
--- パターン1: 完全自動セットアップ（推奨）
--- ==========================================
--- プラグインインストール時に自動的にすべてセットアップ
--- - Lazy.nvimのbuildフックでMCPサーバービルド
--- - auto_setup = true でビルド状態チェック
--- - auto_configure_claude_json = true で ~/.claude.json 自動設定
-
-return {
-  {
-    "yourusername/vibing.nvim",
-    build = "./build.sh",  -- シンプルなワンコマンド
-    config = function()
-      require("vibing").setup({
-        mcp = {
-          enabled = true,
-          auto_setup = true,
-          auto_configure_claude_json = true,
-        },
-      })
-    end,
-  },
-}
-
--- ==========================================
 -- パターン2: ビルドのみ自動、設定は手動
 -- ==========================================
 -- MCPサーバーは自動ビルドするが、claude.jsonは手動で設定
 -- セキュリティ重視の場合や既存設定がある場合に推奨
 
+--[[ PATTERN 2:
 return {
   {
     "yourusername/vibing.nvim",
-    build = "cd mcp-server && npm install && npm run build",
+    build = "./build.sh",
     config = function()
       require("vibing").setup({
+        node = {
+          executable = "auto",
+        },
         mcp = {
           enabled = true,
           auto_setup = true,
@@ -98,18 +97,23 @@ return {
     end,
   },
 }
+--]]
 
 -- ==========================================
 -- パターン3: すべて手動
 -- ==========================================
 -- 完全にコントロールしたい場合
 
+--[[ PATTERN 3:
 return {
   {
     "yourusername/vibing.nvim",
     -- buildフックなし（手動でビルド）
     config = function()
       require("vibing").setup({
+        node = {
+          executable = "auto",
+        },
         mcp = {
           enabled = true,
           auto_setup = false,
@@ -125,12 +129,14 @@ return {
     end,
   },
 }
+--]]
 
 -- ==========================================
 -- パターン4: Lua関数でビルド
 -- ==========================================
 -- Lua関数を使った柔軟なビルド方法
 
+--[[ PATTERN 4:
 return {
   {
     "yourusername/vibing.nvim",
@@ -141,6 +147,9 @@ return {
 
     config = function()
       require("vibing").setup({
+        node = {
+          executable = "auto",
+        },
         mcp = {
           enabled = true,
           auto_configure_claude_json = true,
@@ -149,12 +158,14 @@ return {
     end,
   },
 }
+--]]
 
 -- ==========================================
 -- パターン5: 開発用セットアップ
 -- ==========================================
 -- ローカル開発時に使用
 
+--[[ PATTERN 5:
 return {
   {
     dir = "~/projects/vibing.nvim",  -- ローカルパス
@@ -162,6 +173,9 @@ return {
 
     config = function()
       require("vibing").setup({
+        node = {
+          executable = "auto",
+        },
         mcp = {
           enabled = true,
           rpc_port = 9876,
@@ -172,6 +186,7 @@ return {
     end,
   },
 }
+--]]
 
 -- ==========================================
 -- 追加の便利なコマンド

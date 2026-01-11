@@ -9,7 +9,10 @@ let requestId = 0;
 const sockets = new Map<number, net.Socket>();
 
 // Multi-port support: Map of port -> (request_id -> pending)
-const pendingRequests = new Map<number, Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>>();
+const pendingRequests = new Map<
+  number,
+  Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>
+>();
 
 // Multi-port support: Map of port -> buffer
 const buffers = new Map<number, string>();

@@ -2,24 +2,42 @@
  * Processes Agent SDK response stream and outputs JSON Lines format.
  */
 
-import { safeJsonStringify } from './utils.mjs';
-import PatchStorage from './patch-storage.mjs';
+import { safeJsonStringify } from './utils.js';
+import PatchStorage from './patch-storage.js';
+import type { AgentConfig } from '../types.js';
 
-function emit(obj) {
+function emit(obj: Record<string, unknown>): void {
   console.log(safeJsonStringify(obj));
 }
 
-function extractInputSummary(toolInput) {
-  return toolInput.command || toolInput.file_path || toolInput.pattern || toolInput.query || '';
+function extractInputSummary(toolInput: Record<string, unknown>): string {
+  return (
+    (toolInput.command as string) ||
+    (toolInput.file_path as string) ||
+    (toolInput.pattern as string) ||
+    (toolInput.query as string) ||
+    ''
+  );
 }
 
-function extractResultText(content) {
+interface ContentBlock {
+  type?: string;
+  text?: string;
+}
+
+function extractResultText(content: string | ContentBlock[]): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) return content.map((c) => c.text || '').join('');
   return '';
 }
 
-function formatToolResult(toolName, inputSummary, resultText, displayMode, prefixNewline) {
+function formatToolResult(
+  toolName: string,
+  inputSummary: string,
+  resultText: string,
+  displayMode: 'none' | 'compact' | 'full',
+  prefixNewline: boolean
+): string {
   let text = prefixNewline ? '\n' : '';
   text += `⏺ ${toolName}(${inputSummary})\n`;
 
@@ -37,13 +55,19 @@ function formatToolResult(toolName, inputSummary, resultText, displayMode, prefi
   return text;
 }
 
-export async function processStream(resultStream, toolResultDisplay, sessionId, cwd, config) {
+export async function processStream(
+  resultStream: AsyncIterable<any>,
+  toolResultDisplay: 'none' | 'compact' | 'full',
+  sessionId: string | null,
+  cwd: string,
+  config: AgentConfig
+): Promise<void> {
   let sessionIdEmitted = false;
   let respondingEmitted = false;
-  let lastOutputType = null;
-  const processedToolUseIds = new Set();
-  const toolUseMap = new Map();
-  const toolInputMap = new Map();
+  let lastOutputType: 'text' | 'tool_result' | null = null;
+  const processedToolUseIds = new Set<string>();
+  const toolUseMap = new Map<string, string>();
+  const toolInputMap = new Map<string, string>();
 
   const patchStorage = new PatchStorage();
   if (sessionId) patchStorage.setSessionId(sessionId);

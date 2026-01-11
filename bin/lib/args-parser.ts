@@ -3,15 +3,39 @@
  * Parses CLI arguments and returns configuration object
  */
 
-const validDisplayModes = ['none', 'compact', 'full'];
+import type { AgentConfig, PermissionRule } from '../types.js';
+import { toError } from './utils.js';
+
+const validDisplayModes = ['none', 'compact', 'full'] as const;
+const validPermissionModes = ['default', 'acceptEdits', 'bypassPermissions'] as const;
+const validSaveLocationTypes = ['project', 'user', 'custom'] as const;
+
+/**
+ * Type guard for permission mode validation
+ */
+function isValidPermissionMode(mode: string): mode is (typeof validPermissionModes)[number] {
+  return validPermissionModes.includes(mode as any);
+}
+
+/**
+ * Type guard for display mode validation
+ */
+function isValidDisplayMode(mode: string): mode is (typeof validDisplayModes)[number] {
+  return validDisplayModes.includes(mode as any);
+}
+
+/**
+ * Type guard for save location type validation
+ */
+function isValidSaveLocationType(type: string): type is (typeof validSaveLocationTypes)[number] {
+  return validSaveLocationTypes.includes(type as any);
+}
 
 /**
  * Parse command-line arguments into configuration object
- * @param {string[]} args - Command-line arguments (process.argv.slice(2))
- * @returns {Object} Parsed configuration
  */
-export function parseArguments(args) {
-  const config = {
+export function parseArguments(args: string[]): AgentConfig {
+  const config: AgentConfig = {
     prompt: '',
     cwd: process.cwd(),
     contextFiles: [],
@@ -70,14 +94,22 @@ export function parseArguments(args) {
         .filter((t) => t);
       i++;
     } else if (args[i] === '--permission-mode' && args[i + 1]) {
-      config.permissionMode = args[i + 1];
+      const mode = args[i + 1];
+      if (!isValidPermissionMode(mode)) {
+        console.error(
+          `Invalid --permission-mode value: "${mode}". Must be one of: ${validPermissionModes.join(', ')}`
+        );
+        process.exit(1);
+      }
+      config.permissionMode = mode;
       i++;
     } else if (args[i] === '--rules' && args[i + 1]) {
       try {
-        config.permissionRules = JSON.parse(args[i + 1]);
+        config.permissionRules = JSON.parse(args[i + 1]) as PermissionRule[];
         validatePermissionRules(config.permissionRules);
       } catch (e) {
-        console.error('Failed to parse --rules JSON:', e.message);
+        const error = toError(e);
+        console.error('Failed to parse --rules JSON:', error.message);
         process.exit(1);
       }
       i++;
@@ -101,10 +133,24 @@ export function parseArguments(args) {
       config.rpcPort = port;
       i++;
     } else if (args[i] === '--tool-result-display' && args[i + 1]) {
-      config.toolResultDisplay = args[i + 1];
+      const displayMode = args[i + 1];
+      if (!isValidDisplayMode(displayMode)) {
+        console.error(
+          `Invalid --tool-result-display value: "${displayMode}". Must be one of: ${validDisplayModes.join(', ')}`
+        );
+        process.exit(1);
+      }
+      config.toolResultDisplay = displayMode;
       i++;
     } else if (args[i] === '--save-location-type' && args[i + 1]) {
-      config.saveLocationType = args[i + 1];
+      const locationType = args[i + 1];
+      if (!isValidSaveLocationType(locationType)) {
+        console.error(
+          `Invalid --save-location-type value: "${locationType}". Must be one of: ${validSaveLocationTypes.join(', ')}`
+        );
+        process.exit(1);
+      }
+      config.saveLocationType = locationType;
       i++;
     } else if (args[i] === '--save-dir' && args[i + 1]) {
       config.saveDir = args[i + 1];
@@ -131,10 +177,8 @@ export function parseArguments(args) {
 
 /**
  * Validate permission rules structure
- * @param {Array} rules - Permission rules to validate
- * @throws {Error} If validation fails
  */
-function validatePermissionRules(rules) {
+function validatePermissionRules(rules: unknown): asserts rules is PermissionRule[] {
   if (!Array.isArray(rules)) {
     throw new Error('--rules must be an array of rule objects');
   }
@@ -145,31 +189,33 @@ function validatePermissionRules(rules) {
       throw new Error(`Rule at index ${j} must be an object`);
     }
 
-    if (!Array.isArray(rule.tools) || rule.tools.length === 0) {
+    const r = rule as Record<string, unknown>;
+
+    if (!Array.isArray(r.tools) || r.tools.length === 0) {
       throw new Error(`Rule at index ${j} must have a non-empty 'tools' array`);
     }
 
-    if (!rule.action || !['allow', 'deny'].includes(rule.action)) {
+    if (!r.action || !['allow', 'deny'].includes(r.action as string)) {
       throw new Error(`Rule at index ${j} must have 'action' set to "allow" or "deny"`);
     }
 
-    if (rule.paths !== undefined && !Array.isArray(rule.paths)) {
+    if (r.paths !== undefined && !Array.isArray(r.paths)) {
       throw new Error(`Rule at index ${j}: 'paths' must be an array if specified`);
     }
 
-    if (rule.commands !== undefined && !Array.isArray(rule.commands)) {
+    if (r.commands !== undefined && !Array.isArray(r.commands)) {
       throw new Error(`Rule at index ${j}: 'commands' must be an array if specified`);
     }
 
-    if (rule.patterns !== undefined && !Array.isArray(rule.patterns)) {
+    if (r.patterns !== undefined && !Array.isArray(r.patterns)) {
       throw new Error(`Rule at index ${j}: 'patterns' must be an array if specified`);
     }
 
-    if (rule.domains !== undefined && !Array.isArray(rule.domains)) {
+    if (r.domains !== undefined && !Array.isArray(r.domains)) {
       throw new Error(`Rule at index ${j}: 'domains' must be an array if specified`);
     }
 
-    if (rule.message !== undefined && typeof rule.message !== 'string') {
+    if (r.message !== undefined && typeof r.message !== 'string') {
       throw new Error(`Rule at index ${j}: 'message' must be a string if specified`);
     }
   }
