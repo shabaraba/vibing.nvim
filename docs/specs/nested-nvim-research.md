@@ -5,6 +5,7 @@
 ネストした Neovim プロセス（`:terminal` 内で nvim を起動）の動作を調査し、自己開発ループでの利用可能性を検証しました。
 
 **関連ドキュメント**:
+
 - [ADR 007: Self-Development Loop](../adr/007-self-development-loop.md)
 - [Self-Development Loop Design](./self-development-loop-design.md)
 
@@ -27,6 +28,7 @@ Neovim の `:terminal` モードでは、以下の仕様が適用されます：
 > To send input in Neovim's terminal mode, you enter Terminal-mode with `i`, `I`, `a`, `A` or `:startinsert`, and in this mode all keys except `<C-\>` are sent to the underlying program.
 
 **重要な点**:
+
 - `<C-\><C-N>` **以外**のすべてのキーは、下層のプログラム（ネストした nvim）に送信される
 - `<C-\><C-N>` を押すとホスト側の Normal モードに戻る
 - Terminal モード中は、ホスト側のキーバインドは発動しない
@@ -63,6 +65,7 @@ Neovim の `:terminal` モードでは、以下の仕様が適用されます：
    - Terminal 内でファイルを開くと、自動的に現在のインスタンスに追加
 
 **Source**:
+
 - [Neovim as a Terminal Multiplexer and Neovide as a Terminal Emulator](https://loosh.ch/blog/neovidenal)
 - [Running nvim in a neovim terminal should not create a nested neovim · Issue #5472](https://github.com/neovim/neovim/issues/5472)
 
@@ -104,6 +107,7 @@ vim.fn.chansend(term_chan, {
 > To send special keys, you can use `vim.keycode()`, for example: `vim.api.nvim_chan_send(chan["id"], vim.keycode("<C-c>"))`
 
 **Source**:
+
 - [Job Control - Neovim docs](https://neovim.io/doc/user/job_control.html)
 - [Channel - Neovim docs](https://neovim.io/doc/user/channel.html)
 - [Neovim Terminal - Neovim docs](http://neovim.io/doc/user/nvim_terminal_emulator.html)
@@ -127,6 +131,7 @@ Busted を使ったテストガイドより：
 > The key insight is that the Neovim instance running the test does not have to be the same Neovim instance which is being tested, similar to what the Selenium framework does with web browsers.
 
 **Source**:
+
 - [mini.nvim/TESTING.md](https://github.com/echasnovski/mini.nvim/blob/main/TESTING.md)
 - [Testing Neovim plugins with Busted](https://hiphish.github.io/blog/2024/01/29/testing-neovim-plugins-with-busted/)
 - [Dev_test - Neovim docs](https://neovim.io/doc/user/dev_test.html)
@@ -150,6 +155,7 @@ vim.rpcnotify(channel, event, ...)
 **回避策**: プリミティブ型（string、number、table など）のみを使用する。
 
 **Source**:
+
 - [RPC and Channels | neovim/neovim | DeepWiki](https://deepwiki.com/neovim/neovim/4.4-rpc-and-job-management)
 - [Api - Neovim docs](https://neovim.io/doc/user/api.html)
 
@@ -273,6 +279,7 @@ Terminal 内の Neovim は、一部の UI 機能に制限があります：
 ネストした Neovim 内のエラーは、親プロセスから直接見えません。
 
 **対策**:
+
 - テスト結果を JSON に詳細に記録
 - Terminal バッファで目視確認可能
 - `pcall` でエラーをキャッチして記録
@@ -322,6 +329,7 @@ Terminal 内の Neovim は、一部の UI 機能に制限があります：
 5. ✅ **エラーハンドリング**: pcall + JSON で堅牢
 
 **Next Steps**:
+
 1. Git helper の実装
 2. Nested test module の実装
 3. MCP tool の実装
@@ -330,6 +338,7 @@ Terminal 内の Neovim は、一部の UI 機能に制限があります：
 ## References
 
 ### Official Documentation
+
 - [Terminal - Neovim docs](https://neovim.io/doc/user/terminal.html)
 - [Job Control - Neovim docs](https://neovim.io/doc/user/job_control.html)
 - [Channel - Neovim docs](https://neovim.io/doc/user/channel.html)
@@ -338,20 +347,24 @@ Terminal 内の Neovim は、一部の UI 機能に制限があります：
 - [Nvim Terminal Emulator - Neovim docs](http://neovim.io/doc/user/nvim_terminal_emulator.html)
 
 ### Community Resources
+
 - [unnest.nvim GitHub](https://github.com/brianhuster/unnest.nvim)
 - [Neovim as a Terminal Multiplexer and Neovide as a Terminal Emulator (2025)](https://loosh.ch/blog/neovidenal)
 - [nvim-unception](https://neovimcraft.com/plugin/samjwill/nvim-unception/)
 - [flatnvim GitHub](https://github.com/adamtabrams/flatnvim)
 
 ### Testing Frameworks
+
 - [mini.nvim/TESTING.md](https://github.com/echasnovski/mini.nvim/blob/main/TESTING.md)
 - [Testing Neovim plugins with Busted](https://hiphish.github.io/blog/2024/01/29/testing-neovim-plugins-with-busted/)
 
 ### Technical Deep Dives
+
 - [RPC and Channels | neovim/neovim | DeepWiki](https://deepwiki.com/neovim/neovim/4.4-rpc-and-job-management)
 - [Lua Engine Integration | neovim/neovim | DeepWiki](https://deepwiki.com/neovim/neovim/4.2-lua-engine-integration)
 
 ### Issue Discussions
+
 - [Running nvim in a neovim terminal should not create a nested neovim · Issue #5472](https://github.com/neovim/neovim/issues/5472)
 - [Kill the process running inside a given terminal · Discussion #35207](https://github.com/neovim/neovim/discussions/35207)
 

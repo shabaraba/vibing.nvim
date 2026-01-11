@@ -5,6 +5,7 @@
 vibing.nvim が自分自身を修正・テスト・デバッグする「自己開発ループ」機能の詳細設計。
 
 **関連ドキュメント**:
+
 - [ADR 007: Self-Development Loop with Nested Neovim Testing](../adr/007-self-development-loop.md)
 - [Nested Neovim Feasibility Research](./nested-nvim-research.md) - ネストした Neovim の動作検証
 
@@ -112,6 +113,7 @@ function M.commit_backup(backup)
 #### Implementation Details
 
 **create_backup()**:
+
 ```lua
 function M.create_backup()
   -- 1. 変更があるか確認
@@ -155,6 +157,7 @@ end
 ```
 
 **rollback()**:
+
 ```lua
 function M.rollback(backup)
   if not backup or not backup.commit_hash then
@@ -184,6 +187,7 @@ end
 ```
 
 **commit_backup()**:
+
 ```lua
 function M.commit_backup(backup)
   -- WIP コミットメッセージを変更
@@ -235,6 +239,7 @@ function M.close_test_nvim(term_chan)
 #### Implementation Details
 
 **spawn_test_nvim()**:
+
 ```lua
 function M.spawn_test_nvim()
   local test_result_file = vim.fn.stdpath("data") .. "/vibing_reload_test.json"
@@ -278,7 +283,8 @@ function M.spawn_test_nvim()
 end
 ```
 
-**_generate_test_script()**:
+**\_generate_test_script()**:
+
 ```lua
 function M._generate_test_script(test_result_file)
   return {
@@ -350,6 +356,7 @@ end
 ```
 
 **read_test_result()**:
+
 ```lua
 function M.read_test_result()
   local test_file = vim.fn.stdpath("data") .. "/vibing_reload_test.json"
@@ -373,6 +380,7 @@ end
 ```
 
 **close_test_nvim()**:
+
 ```lua
 function M.close_test_nvim(term_chan)
   if not term_chan then
@@ -456,7 +464,7 @@ end
 
 ```typescript
 interface ReloadOptions {
-  timeout_seconds?: number;  // Default: 30
+  timeout_seconds?: number; // Default: 30
 }
 
 interface ReloadResult {
@@ -479,7 +487,10 @@ export function registerReloadTool(server: Server, rpcClient: RPCClient) {
     'nvim_reload_with_nested_test',
     'Reload vibing.nvim and test in nested Neovim process',
     {
-      timeout_seconds: z.number().optional().default(30)
+      timeout_seconds: z
+        .number()
+        .optional()
+        .default(30)
         .describe('Maximum time to wait for test results (seconds)'),
     },
     async (args) => {
@@ -489,15 +500,17 @@ export function registerReloadTool(server: Server, rpcClient: RPCClient) {
         // 1. Start nested test
         const reloadResult = await rpcClient.call('nvim_exec_lua', [
           'return require("vibing").reload_with_nested_test()',
-          []
+          [],
         ]);
 
         if (!reloadResult.success) {
           return {
-            content: [{
-              type: 'text',
-              text: `Failed to start test: ${reloadResult.error}`
-            }]
+            content: [
+              {
+                type: 'text',
+                text: `Failed to start test: ${reloadResult.error}`,
+              },
+            ],
           };
         }
 
@@ -509,11 +522,11 @@ export function registerReloadTool(server: Server, rpcClient: RPCClient) {
         let lastStatus = 'starting';
 
         while (Date.now() - startTime < timeoutMs) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise((resolve) => setTimeout(resolve, 1000));
 
           const result = await rpcClient.call('nvim_exec_lua', [
             'return require("vibing.dev.nested_test").read_test_result()',
-            []
+            [],
           ]);
 
           if (!result) {
@@ -533,28 +546,30 @@ export function registerReloadTool(server: Server, rpcClient: RPCClient) {
               // Success: commit backup
               await rpcClient.call('nvim_exec_lua', [
                 `return require("vibing.core.utils.git_helper").commit_backup(${JSON.stringify(backup)})`,
-                []
+                [],
               ]);
             } else {
               // Failed: rollback
               await rpcClient.call('nvim_exec_lua', [
                 `return require("vibing.core.utils.git_helper").rollback(${JSON.stringify(backup)})`,
-                []
+                [],
               ]);
             }
 
             // 4. Close nested nvim
             await rpcClient.call('nvim_exec_lua', [
               `require("vibing.dev.nested_test").close_test_nvim(${reloadResult.test_info.term_chan})`,
-              []
+              [],
             ]);
 
             // 5. Return result
             return {
-              content: [{
-                type: 'text',
-                text: formatTestResult(result)
-              }]
+              content: [
+                {
+                  type: 'text',
+                  text: formatTestResult(result),
+                },
+              ],
             };
           }
         }
@@ -562,22 +577,25 @@ export function registerReloadTool(server: Server, rpcClient: RPCClient) {
         // Timeout
         await rpcClient.call('nvim_exec_lua', [
           `require("vibing.dev.nested_test").close_test_nvim(${reloadResult.test_info.term_chan})`,
-          []
+          [],
         ]);
 
         return {
-          content: [{
-            type: 'text',
-            text: `Test timeout after ${args.timeout_seconds} seconds. Status: ${lastStatus}`
-          }]
+          content: [
+            {
+              type: 'text',
+              text: `Test timeout after ${args.timeout_seconds} seconds. Status: ${lastStatus}`,
+            },
+          ],
         };
-
       } catch (error) {
         return {
-          content: [{
-            type: 'text',
-            text: `Error during reload: ${error.message}`
-          }]
+          content: [
+            {
+              type: 'text',
+              text: `Error during reload: ${error.message}`,
+            },
+          ],
         };
       }
     }
@@ -706,19 +724,20 @@ function formatTestResult(result: any): string {
 
 ### Error Recovery
 
-| Error | Recovery |
-|-------|----------|
-| Git backup failed | Abort, warn user |
-| Nested nvim spawn failed | Abort, rollback not needed |
-| Test failed | Auto rollback |
-| Timeout | Force close, manual inspection |
-| MCP connection lost | Tests continue, results not reported |
+| Error                    | Recovery                             |
+| ------------------------ | ------------------------------------ |
+| Git backup failed        | Abort, warn user                     |
+| Nested nvim spawn failed | Abort, rollback not needed           |
+| Test failed              | Auto rollback                        |
+| Timeout                  | Force close, manual inspection       |
+| MCP connection lost      | Tests continue, results not reported |
 
 ## Testing Strategy
 
 ### Unit Tests
 
 **File**: `tests/vibing/dev/git_helper_spec.lua`
+
 ```lua
 describe("git_helper", function()
   it("creates backup with WIP commit", function() end)
@@ -729,6 +748,7 @@ end)
 ```
 
 **File**: `tests/vibing/dev/nested_test_spec.lua`
+
 ```lua
 describe("nested_test", function()
   it("generates valid test script", function() end)

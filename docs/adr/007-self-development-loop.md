@@ -95,6 +95,7 @@ M.close_test_nvim(term_chan)
 **ファイルパス**: `~/.local/share/nvim/vibing_reload_test.json`
 
 **フォーマット**:
+
 ```json
 {
   "status": "testing|passed|failed",
@@ -219,6 +220,7 @@ sequenceDiagram
 ### 案1: 同一プロセス内での pcall reload
 
 **却下理由**:
+
 - Lua エラー後の VM 状態が不安定
 - Segfault など致命的なエラーはキャッチ不可
 - Node.js コードの変更は反映されない
@@ -226,6 +228,7 @@ sequenceDiagram
 ### 案2: Headless Neovim
 
 **却下理由**:
+
 - UI の動作確認ができない
 - ユーザーが何が起きているか見えない
 - デバッグが困難
@@ -233,6 +236,7 @@ sequenceDiagram
 ### 案3: 別ターミナル起動
 
 **却下理由**:
+
 - 環境依存（tmux、kitty、alacritty など）
 - 自動検出が複雑
 - クロスプラットフォーム対応が困難
@@ -240,6 +244,7 @@ sequenceDiagram
 ### 案4: HTTP health check
 
 **却下理由**:
+
 - HTTP サーバーの追加依存
 - ポート管理の複雑化
 - オーバーエンジニアリング
