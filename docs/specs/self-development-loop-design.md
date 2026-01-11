@@ -4,7 +4,9 @@
 
 vibing.nvim が自分自身を修正・テスト・デバッグする「自己開発ループ」機能の詳細設計。
 
-**関連 ADR**: [ADR 007: Self-Development Loop with Nested Neovim Testing](../adr/007-self-development-loop.md)
+**関連ドキュメント**:
+- [ADR 007: Self-Development Loop with Nested Neovim Testing](../adr/007-self-development-loop.md)
+- [Nested Neovim Feasibility Research](./nested-nvim-research.md) - ネストした Neovim の動作検証
 
 ## Goals
 

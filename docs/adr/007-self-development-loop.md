@@ -322,6 +322,7 @@ end)
 
 - ADR 002: Concurrent Execution Support
 - ADR 004: Multi-Instance Neovim Support
+- [Nested Neovim Feasibility Research](../specs/nested-nvim-research.md) - ネストした Neovim の動作検証と調査結果
 - Neovim `:help terminal`
 - Neovim `:help vim.fn.chansend()`
 
