@@ -15,7 +15,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "vibing-agent": "./bin/agent-wrapper.mjs"
+    "vibing-agent": "./dist/bin/agent-wrapper.js"
   },
   "repository": {
     "type": "git",
@@ -27,17 +27,19 @@
   },
   "homepage": "https://github.com/shabaraba/vibing.nvim#readme",
   "scripts": {
-    "test": "node bin/agent-wrapper.mjs --prompt 'Say hello' --cwd $(pwd)",
-    "test:wrapper": "node bin/agent-wrapper.mjs --prompt 'Test wrapper functionality' --cwd .",
+    "build": "node scripts/build.mjs",
+    "build:watch": "node scripts/build.mjs --watch",
+    "test": "node dist/bin/agent-wrapper.js --prompt 'Say hello' --cwd $(pwd)",
+    "test:wrapper": "node dist/bin/agent-wrapper.js --prompt 'Test wrapper functionality' --cwd .",
     "test:lua": "nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }\"",
     "check": "find lua -name '*.lua' -exec luac -p {} \\;",
     "check:lua": "luac -p lua/vibing/init.lua",
-    "dev": "node bin/agent-wrapper.mjs --prompt",
+    "dev": "node dist/bin/agent-wrapper.js --prompt",
     "validate": "npm run check && echo 'All checks passed'",
-    "format": "prettier --write '**/*.{js,mjs,json,md,yml,yaml}'",
-    "format:check": "prettier --check '**/*.{js,mjs,json,md,yml,yaml}'",
-    "lint": "eslint '**/*.{js,mjs}'",
-    "lint:fix": "eslint --fix '**/*.{js,mjs}'",
+    "format": "prettier --write '**/*.{js,mjs,ts,json,md,yml,yaml}'",
+    "format:check": "prettier --check '**/*.{js,mjs,ts,json,md,yml,yaml}'",
+    "lint": "eslint '**/*.{js,mjs,ts}'",
+    "lint:fix": "eslint --fix '**/*.{js,mjs,ts}'",
     "lint:md": "markdownlint '**/*.md' --ignore node_modules"
   },
   "dependencies": {
@@ -47,8 +49,11 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.24.2",
     "eslint": "^9.17.0",
     "markdownlint-cli": "^0.47.0",
-    "prettier": "^3.4.2"
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
   }
 }

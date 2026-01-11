@@ -41,6 +41,10 @@ echo "[vibing.nvim] Installing root dependencies..."
 cd "$SCRIPT_DIR"
 npm install --silent
 
+# Build bin/ files (bundle and minify .mjs/.ts files)
+echo "[vibing.nvim] Building bin/ files..."
+npm run build
+
 # Build MCP server
 cd "$MCP_DIR"
 
@@ -57,11 +61,11 @@ if [ -f "dist/index.js" ]; then
     # Register MCP server in ~/.claude.json
     cd "$SCRIPT_DIR"
     echo "[vibing.nvim] Registering MCP server in ~/.claude.json..."
-    if "$NODE_EXECUTABLE" bin/register-mcp.mjs; then
+    if "$NODE_EXECUTABLE" dist/bin/register-mcp.js; then
         exit 0
     else
         echo "[vibing.nvim] ⚠ Warning: MCP server is built but registration failed"
-        echo "[vibing.nvim] You can manually register by running: $NODE_EXECUTABLE bin/register-mcp.mjs"
+        echo "[vibing.nvim] You can manually register by running: $NODE_EXECUTABLE dist/bin/register-mcp.js"
         # Build succeeded but registration failed - still exit 0 since MCP server is functional
         exit 0
     fi

@@ -31,10 +31,10 @@ function AgentSDK:new(config)
 end
 
 ---ラッパースクリプトのパスを取得
----bin/agent-wrapper.mjsの絶対パスを返す
+---dist/bin/agent-wrapper.js (minified)の絶対パスを返す
 ---@return string ラッパースクリプトの絶対パス
 function AgentSDK:get_wrapper_path()
-  return self._plugin_root .. "/bin/agent-wrapper.mjs"
+  return self._plugin_root .. "/dist/bin/agent-wrapper.js"
 end
 
 ---コマンドライン引数を構築
