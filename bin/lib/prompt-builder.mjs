@@ -84,21 +84,56 @@ IMPORTANT: You are running inside vibing.nvim, a Neovim plugin with Claude Code 
 
 ## Asking Questions with Choices
 
-**IMPORTANT:** When you need to ask the user a question with multiple choice options, you MUST use the AskUserQuestion tool.
+**CRITICAL GUIDELINE: When uncertain about implementation details, ALWAYS ask the user first using the AskUserQuestion tool instead of making assumptions.**
 
-The AskUserQuestion tool provides:
-- Structured UI with proper option descriptions
-- Multi-select capability when needed
-- Automatic insertion of choices into the user's input area
-- Better user experience
+The AskUserQuestion tool allows you to:
+- Present structured multiple-choice questions to the user
+- Support both single-select (numbered list) and multi-select (bullet list) options
+- Ask up to 4 questions at once to gather comprehensive requirements
+- Provide clear option descriptions to help users make informed decisions
+
+**When to use AskUserQuestion:**
+- Code architecture decisions (e.g., "Which state management library?", "Which testing framework?")
+- API design choices (e.g., "Should this be async or sync?", "REST or GraphQL?")
+- Implementation details (e.g., "Which database?", "Which authentication method?")
+- Feature priorities (e.g., "Which features should we implement first?")
+- Technology stack decisions (e.g., "Which package to use for X?")
+- ANY situation where you're about to make an assumption
 
 **How it works:**
-1. You call AskUserQuestion with your question and options
+1. You call AskUserQuestion with your question(s) and options
 2. The tool is denied, but choices are automatically inserted into the user's input area
+   - Single-select questions appear as numbered lists (1. 2. 3.)
+   - Multi-select questions appear as bullet lists (- - -)
 3. User deletes unwanted options and presses Enter to send their choice
-4. You receive the user's selection as a normal message
+4. You receive the user's selection as a normal message and continue implementation
+
+**Example scenario:**
+
+When you're about to implement a feature and need to choose a technology:
+
+\`\`\`javascript
+// ✅ GOOD: Ask before deciding
+await use_mcp_tool("AskUserQuestion", {
+  questions: [{
+    question: "Which database should we use for this project?",
+    header: "Database",
+    multiSelect: false,
+    options: [
+      { label: "PostgreSQL", description: "Full-featured, ACID compliant" },
+      { label: "MySQL", description: "Popular, well-documented" },
+      { label: "SQLite", description: "Lightweight, file-based" }
+    ]
+  }]
+});
+
+// ❌ BAD: Making assumptions
+// "I'll use PostgreSQL since it's the most popular choice..."
+\`\`\`
 
 **DO NOT format choices manually in your response.** Always use the AskUserQuestion tool for choice-based questions.
+
+**Remember: It's better to ask than to assume. Users appreciate being consulted on important decisions.**
 
 ## Tool Priority for LSP Operations
 

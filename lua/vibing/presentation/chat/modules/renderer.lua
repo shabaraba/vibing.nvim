@@ -137,8 +137,16 @@ function M.addUserSection(buf, win, pendingChoices)
   if pendingChoices then
     local choiceLines = {}
     for _, q in ipairs(pendingChoices) do
+      -- Use numbered list for single-select, bullet list for multi-select
+      local useNumberedList = not q.multiSelect
+      local optionIndex = 1
       for _, opt in ipairs(q.options) do
-        table.insert(choiceLines, "- " .. opt.label)
+        if useNumberedList then
+          table.insert(choiceLines, optionIndex .. ". " .. opt.label)
+          optionIndex = optionIndex + 1
+        else
+          table.insert(choiceLines, "- " .. opt.label)
+        end
         if opt.description then
           table.insert(choiceLines, "  " .. opt.description)
         end
