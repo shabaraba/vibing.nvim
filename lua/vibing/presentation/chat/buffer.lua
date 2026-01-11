@@ -17,6 +17,8 @@ local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
 ---@field _pending_choices table[]? add_user_section()後に挿入する選択肢
 ---@field _current_handle_id string? 実行中のリクエストのハンドルID
+---@field _claude_id string? 共有バッファシステム用のClaude ID
+---@field _shared_buffer_enabled boolean 共有バッファ統合が有効か
 local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
@@ -33,6 +35,8 @@ function ChatBuffer:new(config)
   instance._chunk_timer = nil
   instance._pending_choices = nil
   instance._current_handle_id = nil
+  instance._claude_id = nil
+  instance._shared_buffer_enabled = false  -- デフォルトでは無効（実験的機能）
   return instance
 end
 
@@ -75,6 +79,9 @@ function ChatBuffer:close()
     end
     self._current_handle_id = nil
   end
+
+  -- 共有バッファシステムから登録解除
+  self:_unregister_from_shared_buffer()
 
   if self._chunk_timer then
     vim.fn.timer_stop(self._chunk_timer)
@@ -172,6 +179,11 @@ end
 function ChatBuffer:update_session_id(session_id)
   self.session_id = session_id
   FrontmatterHandler.update_session_id(self.buf, session_id)
+
+  -- 共有バッファシステムに登録（有効な場合）
+  if self._shared_buffer_enabled then
+    self:_register_to_shared_buffer()
+  end
 end
 
 ---フロントマターのフィールドを更新または追加
@@ -365,6 +377,94 @@ end
 ---@param questions table Agent SDKから受け取った質問構造
 function ChatBuffer:insert_choices(questions)
   self._pending_choices = questions
+end
+
+---=================================================================
+--- 共有バッファシステム統合 (Experimental)
+---=================================================================
+
+---Claude ID を生成（session_id の短縮版）
+---@return string
+function ChatBuffer:_generate_claude_id()
+  if not self.session_id then
+    return "unknown"
+  end
+  -- session_id の最初の5文字を使用
+  return self.session_id:sub(1, 5)
+end
+
+---共有バッファ統合を有効化
+function ChatBuffer:enable_shared_buffer()
+  self._shared_buffer_enabled = true
+  if self.session_id then
+    self:_register_to_shared_buffer()
+  end
+end
+
+---共有バッファ統合を無効化
+function ChatBuffer:disable_shared_buffer()
+  self:_unregister_from_shared_buffer()
+  self._shared_buffer_enabled = false
+end
+
+---共有バッファシステムに登録
+function ChatBuffer:_register_to_shared_buffer()
+  if not self.session_id or not self.buf then
+    return
+  end
+
+  local NotificationDispatcher = require("vibing.application.shared_buffer.notification_dispatcher")
+  local claude_id = "Claude-" .. self:_generate_claude_id()
+  self._claude_id = claude_id
+
+  NotificationDispatcher.register_session(claude_id, self.session_id, self.buf, function(message)
+    self:_on_shared_buffer_notification(message)
+  end)
+end
+
+---共有バッファシステムから登録解除
+function ChatBuffer:_unregister_from_shared_buffer()
+  if not self._claude_id then
+    return
+  end
+
+  local NotificationDispatcher = require("vibing.application.shared_buffer.notification_dispatcher")
+  NotificationDispatcher.unregister_session(self._claude_id)
+  self._claude_id = nil
+end
+
+---共有バッファからの通知を受信
+---@param message SharedMessage
+function ChatBuffer:_on_shared_buffer_notification(message)
+  -- 通知を表示
+  local notify = require("vibing.core.utils.notify")
+  notify.info(
+    string.format("[Claude-%s] %s", message.from_claude_id, vim.split(message.content, "\n")[1])
+  )
+
+  -- オプション: バッファに通知マーカーを追加
+  -- （将来的には自動返答機能も検討）
+end
+
+---共有バッファにメッセージを投稿
+---@param content string
+---@param mentions? string[] メンションするClaude IDリスト
+function ChatBuffer:post_to_shared_buffer(content, mentions)
+  if not self._claude_id or not self._shared_buffer_enabled then
+    local notify = require("vibing.core.utils.notify")
+    notify.warn("Shared buffer integration is not enabled")
+    return
+  end
+
+  local SharedBufferManager = require("vibing.application.shared_buffer.manager")
+  local claude_id_short = self:_generate_claude_id()
+  SharedBufferManager.append_message(claude_id_short, content, mentions)
+end
+
+---Claude IDを取得
+---@return string?
+function ChatBuffer:get_claude_id()
+  return self._claude_id
 end
 
 return ChatBuffer

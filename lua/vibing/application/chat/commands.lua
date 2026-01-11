@@ -199,6 +199,7 @@ function M.get_argument_completions(command_name)
   local completions = {
     mode = { "auto", "plan", "code", "explore" },
     model = { "opus", "sonnet", "haiku" },
+    shared = { "current", "right", "left", "float" },
   }
   return completions[command_name]
 end

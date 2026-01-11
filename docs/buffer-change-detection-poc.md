@@ -1,6 +1,6 @@
 # Buffer Change Detection PoC
 
-**Status:** Experimental / Proof of Concept
+**Status:** Experimental / Phase 2 (ChatBuffer Integration Complete)
 
 This document describes the Proof of Concept (PoC) implementation for buffer change detection and multi-agent coordination in vibing.nvim.
 
@@ -12,16 +12,30 @@ This feature enables multiple Claude sessions to communicate and coordinate thro
 - Mention other Claude sessions using `@Claude-{id}`
 - Broadcast to all sessions using `@All`
 - Receive real-time notifications when mentioned
+- **NEW (Phase 2)**: Enable/disable shared buffer integration per chat session
+- **NEW (Phase 2)**: Use slash commands for easy interaction
 
 ## Architecture
 
 See [ADR 008: Buffer Change Detection for Multi-Agent Coordination](adr/008-buffer-change-detection-multi-agent.md) for detailed architecture.
 
+## What's New in Phase 2
+
+**ChatBuffer Integration**: Chat sessions now have built-in support for shared buffer communication. No more manual registration - just use slash commands!
+
+**New Slash Commands**:
+- `/enable-shared` - Enable shared buffer integration for this chat
+- `/disable-shared` - Disable shared buffer integration
+- `/shared [position]` - Open shared buffer window
+- `/post <message> [@mentions]` - Post to shared buffer with mentions
+
+**Automatic Registration**: When you enable shared buffer in a chat, it automatically registers with a unique Claude ID based on the session ID.
+
 ## Quick Start
 
-### 1. Run the Demo
+### 1. Basic Demo (No ChatBuffer)
 
-The easiest way to see the feature in action:
+The easiest way to see the core feature:
 
 ```vim
 :VibingSharedDemo
@@ -33,7 +47,47 @@ This will:
 - Post sample messages with mentions
 - Display notifications received by each session
 
-### 2. Open the Shared Buffer
+### 2. ChatBuffer Integration (Phase 2)
+
+**Step-by-step guide to use shared buffer with real chat sessions**:
+
+1. **Open two chat windows**:
+   ```vim
+   :VibingChat right
+   :VibingChat left
+   ```
+
+2. **Initialize both sessions** (send a message to each):
+   ```
+   Hello
+   ```
+
+3. **Enable shared buffer in both chats**:
+   ```
+   /enable-shared
+   ```
+   Note the Claude ID displayed (e.g., "You are Claude-abc12")
+
+4. **From the first chat, post a message**:
+   ```
+   /post Need help with testing @Claude-def34
+   ```
+   (Replace `def34` with the actual ID from step 3)
+
+5. **Check the second chat** - you should see a notification!
+
+6. **Open the shared buffer to see all messages**:
+   ```
+   /shared float
+   ```
+
+### 3. View Registered Sessions
+
+```vim
+:VibingListSessions
+```
+
+### 4. Open the Shared Buffer
 
 ```vim
 :VibingShared           " Open in right split (default)
@@ -42,10 +96,10 @@ This will:
 :VibingShared float     " Open in floating window
 ```
 
-### 3. View Registered Sessions
-
-```vim
-:VibingListSessions
+Or from within a chat:
+```
+/shared
+/shared float
 ```
 
 This shows all currently registered Claude sessions.
@@ -157,6 +211,18 @@ end
    - Integrates buffer watcher with message parser
    - Provides high-level API for posting messages
 
+5. **ChatBuffer Integration** (Phase 2) (`lua/vibing/presentation/chat/buffer.lua`)
+   - Claude ID generation from session ID
+   - Automatic registration with shared buffer system
+   - Notification handler for incoming mentions
+   - Methods: `enable_shared_buffer()`, `disable_shared_buffer()`, `post_to_shared_buffer()`
+
+6. **Slash Command Handlers** (Phase 2)
+   - `/enable-shared` (`lua/vibing/application/chat/handlers/enable_shared.lua`)
+   - `/disable-shared` (`lua/vibing/application/chat/handlers/disable_shared.lua`)
+   - `/shared` (`lua/vibing/application/chat/handlers/shared.lua`)
+   - `/post` (`lua/vibing/application/chat/handlers/post.lua`)
+
 ## Testing
 
 ### Manual Testing
@@ -189,38 +255,47 @@ Currently, only integration tests are available. Future work will include:
 - Unit tests for NotificationDispatcher
 - Integration tests with real Claude sessions
 
-## Limitations (PoC)
+## Limitations (Phase 2)
 
-1. **No Integration with Chat Sessions**: Chat sessions don't automatically register with the shared buffer system yet
-2. **Manual Message Posting**: No UI for easily posting messages from chat sessions
-3. **Simple Notifications**: Currently only uses `vim.notify()` - no auto-response capabilities
-4. **Single Shared Buffer**: Only one shared buffer is supported
+1. **~~No Integration with Chat Sessions~~** ✅ **DONE (Phase 2)**: Chat sessions now support shared buffer via `/enable-shared`
+2. **~~Manual Message Posting~~** ✅ **DONE (Phase 2)**: Use `/post` slash command
+3. **~~Display notifications in chat buffer~~** ✅ **DONE (Phase 2)**: Notifications via `vim.notify()`
+4. **No State Persistence**: `_shared_buffer_enabled` state is not saved to frontmatter (sessions must re-enable after reload)
+5. **Simple Notifications**: Currently only uses `vim.notify()` - no auto-response capabilities
+6. **Single Shared Buffer**: Only one shared buffer is supported
+7. **Manual Claude ID Lookup**: Must manually note other sessions' Claude IDs for mentions
 
 ## Next Steps
 
-To evolve this PoC into a production feature:
+**Phase 2 Complete!** ✅ Chat integration and slash commands are now available.
 
-1. **Phase 2: Chat Integration**
-   - Automatically register chat sessions
-   - Add UI for posting to shared buffer
-   - Display notifications in chat buffer
+To evolve this into a production feature:
 
-2. **Phase 3: Enhanced Features**
+1. **~~Phase 2: Chat Integration~~** ✅ **COMPLETED**
+   - ✅ Automatically register chat sessions via `/enable-shared`
+   - ✅ Add slash commands for posting to shared buffer
+   - ✅ Display notifications
+
+2. **Phase 3: Enhanced Features** (Planned)
    - Auto-response capabilities (AI decides whether to respond)
+   - State persistence (save `shared_buffer_enabled` to frontmatter)
    - Multiple shared buffers (per-project, per-topic)
-   - Rich notification system (highlights, sounds)
+   - Rich notification system (in-buffer indicators, highlights)
+   - Claude ID auto-completion for mentions
 
-3. **Phase 4: Safety & Polish**
+3. **Phase 4: Safety & Polish** (Planned)
    - Infinite loop detection
    - Rate limiting
    - Comprehensive error handling
-   - User documentation
+   - Production-ready documentation
+   - Performance optimization
 
 ## Known Issues
 
 1. **No Infinite Loop Protection**: Claude sessions can get into response loops
 2. **No Rate Limiting**: High-frequency messages can cause performance issues
 3. **Limited Error Handling**: Some edge cases may not be handled gracefully
+4. **No State Persistence**: Shared buffer integration must be manually re-enabled after chat reload
 
 ## Feedback
 

@@ -81,6 +81,31 @@ function M.setup()
     handler = require("vibing.application.chat.handlers.permissions"),
     description = "Alias for /permissions",
   })
+
+  -- 共有バッファ関連コマンド（実験的機能）
+  commands.register({
+    name = "shared",
+    handler = require("vibing.application.chat.handlers.shared"),
+    description = "Open shared buffer: /shared [current|right|left|float]",
+  })
+
+  commands.register({
+    name = "post",
+    handler = require("vibing.application.chat.handlers.post"),
+    description = "Post to shared buffer: /post <message> [@Claude-id ...]",
+  })
+
+  commands.register({
+    name = "enable-shared",
+    handler = require("vibing.application.chat.handlers.enable_shared"),
+    description = "Enable shared buffer integration (experimental)",
+  })
+
+  commands.register({
+    name = "disable-shared",
+    handler = require("vibing.application.chat.handlers.disable_shared"),
+    description = "Disable shared buffer integration",
+  })
 end
 
 return M
