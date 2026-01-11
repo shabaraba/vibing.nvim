@@ -2,6 +2,15 @@
 ---承認レスポンスをパースするモジュール
 local M = {}
 
+-- 承認アクションのパターンマップ（番号付きリスト形式）
+-- 例: "1. allow_once - Allow this execution only"
+local APPROVAL_PATTERNS = {
+  allow_once = "^%d+%.%s*allow_once%s*%-",
+  deny_once = "^%d+%.%s*deny_once%s*%-",
+  allow_for_session = "^%d+%.%s*allow_for_session%s*%-",
+  deny_for_session = "^%d+%.%s*deny_for_session%s*%-",
+}
+
 ---承認レスポンスかどうかを判定
 ---@param message string ユーザーメッセージ
 ---@return boolean
@@ -11,16 +20,8 @@ function M.is_approval_response(message)
     return false
   end
 
-  -- 番号付きリスト形式での厳密なパターンマッチング
-  -- 例: "1. allow_once - Allow this execution only"
-  local patterns = {
-    "^%d+%.%s*allow_once%s*%-",
-    "^%d+%.%s*deny_once%s*%-",
-    "^%d+%.%s*allow_for_session%s*%-",
-    "^%d+%.%s*deny_for_session%s*%-",
-  }
-
-  for _, pattern in ipairs(patterns) do
+  -- Check if message matches any approval pattern
+  for _, pattern in pairs(APPROVAL_PATTERNS) do
     if message:match(pattern) then
       return true
     end
@@ -38,32 +39,20 @@ function M.parse_approval_response(message)
     return nil
   end
 
-  -- Extract the selected option from numbered list format
-  -- Example: "1. allow_once - Allow this execution only"
-  local action = nil
-
-  -- 番号付きリスト形式での厳密なマッチング
-  if message:match("^%d+%.%s*allow_once%s*%-") then
-    action = "allow_once"
-  elseif message:match("^%d+%.%s*deny_once%s*%-") then
-    action = "deny_once"
-  elseif message:match("^%d+%.%s*allow_for_session%s*%-") then
-    action = "allow_for_session"
-  elseif message:match("^%d+%.%s*deny_for_session%s*%-") then
-    action = "deny_for_session"
+  -- Find which approval action matches
+  for action, pattern in pairs(APPROVAL_PATTERNS) do
+    if message:match(pattern) then
+      -- Note: Tool name should be obtained from _pending_approval.tool
+      -- rather than parsing from user message, as the approval UI is shown
+      -- in the Assistant section, not in the user's editable area.
+      return {
+        action = action,
+        tool = nil, -- Will be filled by caller from _pending_approval
+      }
+    end
   end
 
-  if not action then
-    return nil
-  end
-
-  -- Note: Tool name should be obtained from _pending_approval.tool
-  -- rather than parsing from user message, as the approval UI is shown
-  -- in the Assistant section, not in the user's editable area.
-  return {
-    action = action,
-    tool = nil, -- Will be filled by caller from _pending_approval
-  }
+  return nil
 end
 
 ---承認アクションに基づいてメッセージを生成

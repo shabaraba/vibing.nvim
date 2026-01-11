@@ -1,25 +1,13 @@
 #!/usr/bin/env node
 import * as esbuild from 'esbuild';
-import { mkdirSync, existsSync } from 'fs';
+import { mkdirSync } from 'fs';
 
 const watch = process.argv.includes('--watch');
 
 mkdirSync('dist/bin', { recursive: true });
 
-const agentWrapperEntry = existsSync('bin/agent-wrapper.ts')
-  ? 'bin/agent-wrapper.ts'
-  : 'bin/agent-wrapper.mjs';
-
-const registerMcpEntry = existsSync('bin/register-mcp.ts')
-  ? 'bin/register-mcp.ts'
-  : 'bin/register-mcp.mjs';
-
-console.log(`[vibing.nvim] Entry points:`);
-console.log(`  - ${agentWrapperEntry}`);
-console.log(`  - ${registerMcpEntry}`);
-
 const buildOptions = {
-  entryPoints: [agentWrapperEntry, registerMcpEntry],
+  entryPoints: ['bin/agent-wrapper.ts', 'bin/register-mcp.ts'],
   bundle: true,
   platform: 'node',
   target: 'node18',

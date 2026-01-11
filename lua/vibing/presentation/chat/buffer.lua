@@ -303,7 +303,8 @@ function ChatBuffer:send_message()
     else
       -- is_approval_response returned true but parsing failed
       vim.notify(
-        "[vibing] Failed to parse approval response. Please select a single option.",
+        "[vibing] Failed to parse approval response. "
+          .. "Please ensure only ONE option remains (use 'dd' to delete unwanted lines), then press <CR> again.",
         vim.log.levels.WARN
       )
       return
