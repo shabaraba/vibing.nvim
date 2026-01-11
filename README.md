@@ -120,6 +120,7 @@ use {
 | `:VibingInline [action\|instruction]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled. |
 | `:VibingInlineAction`                 | Alias of `:VibingInline` (for backward compatibility)                             |
 | `:VibingCancel`                       | Cancel current request                                                            |
+| `:VibingCopyUnsentUserHeader`         | Copy `## User <!-- unsent -->` to clipboard                                       |
 
 **Command Semantics:**
 
