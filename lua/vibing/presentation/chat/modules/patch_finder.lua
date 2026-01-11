@@ -1,79 +1,74 @@
 ---@class Vibing.Presentation.PatchFinder
----Modified Filesセクションからpatchファイル名を見つける
 local M = {}
 
----カーソル位置に最も近いpatchコメントを取得
----@param buf number バッファ番号
----@return string? patch_filename patchファイル名
-function M.find_nearest_patch(buf)
+local MODIFIED_FILES_PATTERN = "^###? Modified Files"
+local PATCH_COMMENT_PATTERN = "<!%-%- patch: ([^%s]+) %-%-?>"
+local NEXT_ASSISTANT_PATTERN = "^## %d%d%d%d%-%d%d%-%d%d .* Assistant"
+local HEADER_PATTERN = "^##[^#]"
+
+---@param buf number
+---@return string[]
+local function get_buffer_lines(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
-    return nil
+    return {}
   end
+  return vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+end
+
+---@param lines string[]
+---@param from_line number
+---@return number?
+local function find_modified_files_section(lines, from_line)
+  for i = from_line, 1, -1 do
+    local line = lines[i]
+    if line:match(MODIFIED_FILES_PATTERN) then
+      return i
+    end
+    if line:match(HEADER_PATTERN) and not line:match("Modified Files") then
+      return nil
+    end
+  end
+  return nil
+end
+
+---@param buf number
+---@return string?
+function M.find_nearest_patch(buf)
+  local lines = get_buffer_lines(buf)
+  if #lines == 0 then return nil end
 
   local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local section_start = find_modified_files_section(lines, cursor_line)
+  if not section_start then return nil end
 
-  -- カーソル位置から上方向にModified Filesセクションを探す
-  local section_start = nil
-  local section_end = nil
-
-  for i = cursor_line, 1, -1 do
+  for i = section_start, #lines do
     local line = lines[i]
-    if line:match("^###? Modified Files") then
-      section_start = i
-      break
-    end
-    -- 別のセクションに入ったら中断
-    if line:match("^##[^#]") and not line:match("Modified Files") then
-      break
-    end
-  end
-
-  if not section_start then
-    return nil
-  end
-
-  -- セクション終了位置を探す（次のヘッダーまたはファイル末尾）
-  for i = section_start + 1, #lines do
-    local line = lines[i]
-    if line:match("^##[^#]") or line:match("^# ") then
-      section_end = i - 1
-      break
-    end
-  end
-
-  section_end = section_end or #lines
-
-  -- セクション内でpatchコメントを探す
-  for i = section_start, section_end do
-    local line = lines[i]
-    local patch_filename = line:match("<!%-%- patch: ([^%s]+) %-%-?>")
+    local patch_filename = line:match(PATCH_COMMENT_PATTERN)
     if patch_filename then
       return patch_filename
+    end
+    if line:match(NEXT_ASSISTANT_PATTERN) then
+      break
     end
   end
 
   return nil
 end
 
----frontmatterからsession_idを取得
----@param buf number バッファ番号
----@return string? session_id
+---@param buf number
+---@return string?
 function M.get_session_id(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return nil
   end
 
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 50, false) -- frontmatterは先頭50行以内
-
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, 50, false)
   local in_frontmatter = false
+
   for _, line in ipairs(lines) do
     if line == "---" then
-      if in_frontmatter then
-        break -- frontmatter終了
-      else
-        in_frontmatter = true
-      end
+      if in_frontmatter then break end
+      in_frontmatter = true
     elseif in_frontmatter then
       local session_id = line:match("^session_id:%s*(.+)$")
       if session_id then
@@ -85,53 +80,28 @@ function M.get_session_id(buf)
   return nil
 end
 
----カーソル位置のModified Filesセクションに含まれるファイル一覧を取得
----@param buf number バッファ番号
----@return string[] files ファイルパスのリスト
+---@param buf number
+---@return string[]
 function M.get_modified_files_in_section(buf)
-  if not vim.api.nvim_buf_is_valid(buf) then
-    return {}
-  end
+  local lines = get_buffer_lines(buf)
+  if #lines == 0 then return {} end
 
   local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local section_start = find_modified_files_section(lines, cursor_line)
+  if not section_start then return {} end
 
-  -- カーソル位置から上方向にModified Filesセクションを探す
-  local section_start = nil
-
-  for i = cursor_line, 1, -1 do
-    local line = lines[i]
-    if line:match("^###? Modified Files") then
-      section_start = i
-      break
-    end
-    if line:match("^##[^#]") and not line:match("Modified Files") then
-      break
-    end
-  end
-
-  if not section_start then
-    return {}
-  end
-
-  -- セクション内のファイルパスを収集
   local files = {}
   for i = section_start + 1, #lines do
     local line = lines[i]
-    -- 次のヘッダーに到達したら終了
-    if line:match("^##[^#]") or line:match("^# ") then
+    if line:match(HEADER_PATTERN) or line:match("^# ") then
       break
     end
-    -- コメント行やpatchコメントはスキップ
-    if line:match("<!%-%-") then
-      goto continue
+    if not line:match("<!%-%-") then
+      local trimmed = vim.trim(line)
+      if trimmed ~= "" and not trimmed:match("^%-%-") then
+        table.insert(files, trimmed)
+      end
     end
-    -- 空行以外のファイルパスを追加
-    local trimmed = vim.trim(line)
-    if trimmed ~= "" and not trimmed:match("^%-%-") then
-      table.insert(files, trimmed)
-    end
-    ::continue::
   end
 
   return files

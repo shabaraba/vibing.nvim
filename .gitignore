@@ -64,3 +64,9 @@ temp/
 *.backup
 .worktrees
 .claude-work
+
+# Test files
+*.txt
+final-*.md
+restart-*.md
+test-*.md

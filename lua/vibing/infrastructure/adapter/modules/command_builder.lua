@@ -147,6 +147,19 @@ local function add_additional_flags(cmd, config)
     table.insert(cmd, "--tool-result-display")
     table.insert(cmd, tool_result_display)
   end
+
+  -- Chat save location (for patch storage alignment)
+  local save_location_type = config.chat and config.chat.save_location_type
+  if save_location_type then
+    table.insert(cmd, "--save-location-type")
+    table.insert(cmd, save_location_type)
+  end
+
+  local save_dir = config.chat and config.chat.save_dir
+  if save_dir and save_location_type == "custom" then
+    table.insert(cmd, "--save-dir")
+    table.insert(cmd, save_dir)
+  end
 end
 
 ---RPCポートを取得して引数に追加
