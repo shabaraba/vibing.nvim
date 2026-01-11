@@ -80,12 +80,24 @@ class PatchStorage {
       return false;
     }
 
+    // Check for existing snapshot tag collision
+    const tagCheckResult = spawnSync('git', ['tag', '-l', this.snapshotTag], {
+      cwd: this.cwd,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (tagCheckResult.stdout?.trim()) {
+      console.error('[ERROR] Snapshot tag already exists:', this.snapshotTag);
+      return false;
+    }
+
     const addResult = spawnSync('git', ['add', '-A'], {
       cwd: this.cwd,
-      stdio: 'ignore',
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-    if (addResult.error) {
-      console.error('[ERROR] Failed to stage files:', addResult.error.message);
+    if (addResult.error || addResult.status !== 0) {
+      console.error('[ERROR] Failed to stage files:', addResult.error?.message || addResult.stderr);
       this.restoreStagingState(stagedDiff);
       return false;
     }
@@ -100,25 +112,58 @@ class PatchStorage {
         '-m',
         `CLAUDE_SESSION_SNAPSHOT_${this.sessionId}`,
       ],
-      { cwd: this.cwd, stdio: 'ignore' }
+      { cwd: this.cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }
     );
-    if (commitResult.error) {
-      console.error('[ERROR] Failed to create snapshot commit:', commitResult.error.message);
+    if (commitResult.error || commitResult.status !== 0) {
+      console.error(
+        '[ERROR] Failed to create snapshot commit:',
+        commitResult.error?.message || commitResult.stderr
+      );
       this.restoreStagingState(stagedDiff);
       return false;
     }
 
     const tagResult = spawnSync('git', ['tag', this.snapshotTag], {
       cwd: this.cwd,
-      stdio: 'ignore',
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-    if (tagResult.error) {
-      console.error('[ERROR] Failed to tag snapshot:', tagResult.error.message);
+    if (tagResult.error || tagResult.status !== 0) {
+      console.error(
+        '[ERROR] Failed to tag snapshot:',
+        tagResult.error?.message || tagResult.stderr
+      );
+      // Attempt to clean up the commit
+      spawnSync('git', ['reset', '--hard', 'HEAD~1'], { cwd: this.cwd, stdio: 'ignore' });
+      this.restoreStagingState(stagedDiff);
+      return false;
     }
 
     // Reset to original state: remove commit but keep changes
-    spawnSync('git', ['reset', '--soft', 'HEAD~1'], { cwd: this.cwd, stdio: 'ignore' });
-    spawnSync('git', ['reset', 'HEAD', '--quiet'], { cwd: this.cwd, stdio: 'ignore' });
+    const softResetResult = spawnSync('git', ['reset', '--soft', 'HEAD~1'], {
+      cwd: this.cwd,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (softResetResult.error || softResetResult.status !== 0) {
+      console.error(
+        '[ERROR] Failed to soft reset:',
+        softResetResult.error?.message || softResetResult.stderr
+      );
+      // Tag still exists for recovery, but working tree may be inconsistent
+    }
+
+    const headResetResult = spawnSync('git', ['reset', 'HEAD', '--quiet'], {
+      cwd: this.cwd,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (headResetResult.error || headResetResult.status !== 0) {
+      console.error(
+        '[ERROR] Failed to reset HEAD:',
+        headResetResult.error?.message || headResetResult.stderr
+      );
+    }
 
     this.restoreStagingState(stagedDiff);
     return true;
@@ -135,9 +180,17 @@ class PatchStorage {
 
     const stagedDiff = this.saveStagingState();
 
-    const addResult = spawnSync('git', ['add', '-A'], { cwd: this.cwd, stdio: 'ignore' });
-    if (addResult.error) {
-      console.error('[ERROR] Failed to stage files for patch:', addResult.error.message);
+    const addResult = spawnSync('git', ['add', '-A'], {
+      cwd: this.cwd,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (addResult.error || addResult.status !== 0) {
+      console.error(
+        '[ERROR] Failed to stage files for patch:',
+        addResult.error?.message || addResult.stderr
+      );
+      this.restoreStagingState(stagedDiff);
       return null;
     }
 
@@ -146,13 +199,33 @@ class PatchStorage {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    if (diffResult.error || diffResult.status !== 0) {
+      console.error(
+        '[ERROR] Failed to generate diff:',
+        diffResult.error?.message || diffResult.stderr
+      );
+      spawnSync('git', ['reset', 'HEAD', '--quiet'], { cwd: this.cwd, stdio: 'ignore' });
+      this.restoreStagingState(stagedDiff);
+      return null;
+    }
 
-    const patchContent = diffResult.status === 0 ? diffResult.stdout?.trim() : null;
+    const patchContent = diffResult.stdout?.trim() || null;
 
-    spawnSync('git', ['reset', 'HEAD', '--quiet'], { cwd: this.cwd, stdio: 'ignore' });
+    const resetResult = spawnSync('git', ['reset', 'HEAD', '--quiet'], {
+      cwd: this.cwd,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (resetResult.error || resetResult.status !== 0) {
+      console.error(
+        '[ERROR] Failed to reset after diff:',
+        resetResult.error?.message || resetResult.stderr
+      );
+    }
+
     this.restoreStagingState(stagedDiff);
 
-    return patchContent || null;
+    return patchContent;
   }
 
   getPatchesBaseDir() {
