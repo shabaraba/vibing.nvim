@@ -64,6 +64,13 @@ interface Option {
 
 Assistantが質問を提示する際、選択可能な項目をプレーンテキストとして配置する。ユーザーは不要な選択肢を**行削除**（`dd`など）で削除し、最終的に残った選択肢を採用する。
 
+**リスト形式の使い分け:**
+
+- **単一選択** (`multiSelect: false`): 番号付きリスト (`1. 2. 3.`) を使用
+- **複数選択** (`multiSelect: true`): 箇条書き (`- - -`) を使用
+
+これにより、ユーザーは視覚的に選択タイプを識別でき、単一選択か複数選択かを直感的に理解できる。
+
 #### 実装アーキテクチャ
 
 ##### 1. Agent Wrapperでのメッセージ変換（サーバー側）
@@ -75,7 +82,11 @@ Assistantが質問を提示する際、選択可能な項目をプレーンテ�
 
 ##### 2. Luaでのバッファ編集と回答パース（クライアント側）
 
-- `ChatBuffer:insert_choices()` - 選択肢をバッファに挿入
+- `ChatBuffer:insert_choices()` - 選択肢を一時保存（`_pending_choices`）
+- `Renderer.addUserSection()` - バッファに選択肢を挿入
+  - `multiSelect === true`: 箇条書きリスト (`- option`)
+  - `multiSelect !== true`: 番号付きリスト (`1. option`)
+  - デフォルトは番号付きリスト（`multiSelect`が未定義の場合）
 - ユーザーが`<CR>`送信時、通常のメッセージとして送信
 - 特別な状態管理やパース処理は不要
 
@@ -117,9 +128,12 @@ Claudeは通常のユーザーメッセージとして回答を受信する。�
 実装は以下のファイルで行われた:
 
 - `bin/agent-wrapper.mjs` - AskUserQuestionコールバックとstdin処理
+- `bin/lib/permissions/can-use-tool.mjs` - ツール拒否と`insert_choices`イベント送信
 - `lua/vibing/infrastructure/adapter/agent_sdk.lua` - ask_user_questionイベント処理
 - `lua/vibing/presentation/chat/buffer.lua` - 質問挿入と回答パース
+- `lua/vibing/presentation/chat/modules/renderer.lua` - リストフォーマット切り替えロジック（ol/ul対応）
 - `lua/vibing/application/chat/send_message.lua` - handle_id管理とコールバック追加
+- `tests/renderer_spec.lua` - リストフォーマット切り替えロジックのユニットテスト
 
 ## References
 
