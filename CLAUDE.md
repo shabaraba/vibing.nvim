@@ -448,13 +448,15 @@ vibing.nvim supports Claude's `AskUserQuestion` tool, allowing Claude to ask cla
 
 1. **Claude asks a question** - When Claude needs clarification, it sends an `AskUserQuestion` event
 2. **Question appears in chat** - The question and options are inserted into the chat buffer as plain text:
+   - **Single-select questions**: Numbered list format (`1. 2. 3.`)
+   - **Multi-select questions**: Bullet list format (`- - -`)
 
 ```markdown
 Which database should we use?
 
-- PostgreSQL
-- MySQL
-- SQLite
+1. PostgreSQL
+2. MySQL
+3. SQLite
 
 Please answer the question and press `<CR>` to send.
 ```
@@ -469,9 +471,9 @@ Please answer the question and press `<CR>` to send.
 
 Which database should we use?
 
-- PostgreSQL
-- MySQL
-- SQLite
+1. PostgreSQL
+2. MySQL
+3. SQLite
 
 Which features do you need? (multiple selection allowed)
 
@@ -489,7 +491,7 @@ After editing (removing unwanted options):
 
 Which database should we use?
 
-- PostgreSQL
+1. PostgreSQL
 
 Which features do you need? (multiple selection allowed)
 
@@ -502,6 +504,7 @@ Please answer the question and press `<CR>` to send.
 **Key Features:**
 
 - **Natural Vim workflow** - Use standard Vim commands (`dd`, `d{motion}`, etc.) to select options
+- **Visual selection type indicators** - Numbered lists for single-select, bullet lists for multi-select
 - **Single and multiple selection** - Delete unwanted options; remaining options are selected
 - **Additional instructions** - Add custom notes below the options before sending
 - **Non-invasive** - No special keymaps or UI overlays; works with any buffer editing
@@ -510,6 +513,8 @@ Please answer the question and press `<CR>` to send.
 
 - Agent Wrapper sends `insert_choices` event and denies the tool
 - Choices are inserted into chat buffer as plain markdown
+  - Single-select (`multiSelect: false`): Numbered list format
+  - Multi-select (`multiSelect: true`): Bullet list format
 - User edits choices and sends via normal message flow (`<CR>`)
 - Claude receives selection as a regular user message
 - No special state management or Promise handling required
