@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.18.0 (2026-01-11)
+
+## What's Changed
+* feat: add VibingCopyUnsentUserHeader command by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/284
+* refactor: modularize agent-wrapper.mjs for better maintainability by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/281
+* fix: enhance AskUserQuestion with ol/ul support and proactive usage by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/287
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.17.2...v1.18.0
+
 ## 1.17.2 (2026-01-09)
 
 ## What's Changed
