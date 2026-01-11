@@ -74,10 +74,7 @@ export async function processStream(resultStream, toolResultDisplay, sessionId, 
           const text = lastOutputType === 'tool_result' ? '\n' + block.text : block.text;
           emit({ type: 'chunk', text });
           lastOutputType = 'text';
-          continue;
-        }
-
-        if (block.type === 'tool_use' && !processedToolUseIds.has(block.id)) {
+        } else if (block.type === 'tool_use' && !processedToolUseIds.has(block.id)) {
           processedToolUseIds.add(block.id);
           const toolName = block.name;
           const toolInput = block.input || {};
@@ -97,26 +94,25 @@ export async function processStream(resultStream, toolResultDisplay, sessionId, 
 
     if (message.type === 'user' && message.message?.content) {
       for (const block of message.message.content) {
-        if (block.type !== 'tool_result' || !block.content) continue;
+        if (block.type === 'tool_result' && block.content) {
+          const toolName = toolUseMap.get(block.tool_use_id);
+          if (toolName) {
+            const resultText = extractResultText(block.content);
+            const inputSummary = toolInputMap.get(block.tool_use_id) || '';
+            const toolText = formatToolResult(
+              toolName,
+              inputSummary,
+              resultText,
+              toolResultDisplay,
+              lastOutputType === 'text'
+            );
+            emit({ type: 'chunk', text: toolText });
+            lastOutputType = 'tool_result';
 
-        const toolName = toolUseMap.get(block.tool_use_id);
-        if (!toolName) continue;
-
-        const resultText = extractResultText(block.content);
-
-        const inputSummary = toolInputMap.get(block.tool_use_id) || '';
-        const toolText = formatToolResult(
-          toolName,
-          inputSummary,
-          resultText,
-          toolResultDisplay,
-          lastOutputType === 'text'
-        );
-        emit({ type: 'chunk', text: toolText });
-        lastOutputType = 'tool_result';
-
-        toolUseMap.delete(block.tool_use_id);
-        toolInputMap.delete(block.tool_use_id);
+            toolUseMap.delete(block.tool_use_id);
+            toolInputMap.delete(block.tool_use_id);
+          }
+        }
       }
     }
 

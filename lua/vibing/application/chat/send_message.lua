@@ -49,7 +49,7 @@ function M.execute(adapter, callbacks, message, config)
 
   local frontmatter = callbacks.parse_frontmatter()
 
-  local patch_filename_from_js = nil  -- JavaScript側で生成されたpatchファイル名
+  local patch_filename = nil
 
   -- Get language code: frontmatter > config
   local language_utils = require("vibing.core.utils.language")
@@ -69,8 +69,7 @@ function M.execute(adapter, callbacks, message, config)
     permission_mode = frontmatter.permission_mode,
     language = lang_code,  -- Pass language code to adapter
     on_patch_saved = function(filename)
-      -- JavaScript側で生成されたpatchファイル名を保存
-      patch_filename_from_js = filename
+      patch_filename = filename
     end,
     on_insert_choices = function(questions)
       -- Forward insert_choices event to chat buffer
@@ -94,19 +93,19 @@ function M.execute(adapter, callbacks, message, config)
       end)
     end, function(response)
       vim.schedule(function()
-        M._handle_response(response, callbacks, modified_files, adapter, patch_filename_from_js)
+        M._handle_response(response, callbacks, adapter, patch_filename)
       end)
     end)
   else
     local response = adapter:execute(formatted_prompt, opts)
-    M._handle_response(response, callbacks, modified_files, adapter, patch_filename_from_js)
+    M._handle_response(response, callbacks, adapter, patch_filename)
   end
 
   return handle_id
 end
 
 ---レスポンスを処理
-function M._handle_response(response, callbacks, modified_files, adapter, patch_filename_from_js)
+function M._handle_response(response, callbacks, adapter, patch_filename)
   -- Stop gradient animation
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
@@ -117,23 +116,20 @@ function M._handle_response(response, callbacks, modified_files, adapter, patch_
     callbacks.append_chunk("\n\n**Error:** " .. response.error)
   end
 
-  -- パッチファイルが生成された場合、そこからファイルリストを抽出
-  if patch_filename_from_js then
+  if patch_filename then
     local PatchParser = require("vibing.infrastructure.storage.patch_parser")
     local session_id = callbacks.get_session_id()
-    local modified_files = PatchParser.extract_file_list(session_id, patch_filename_from_js)
+    local modified_files = PatchParser.extract_file_list(session_id, patch_filename)
 
     if #modified_files > 0 then
       BufferReload.reload_files(modified_files)
 
-      -- Modified Filesセクションを出力
       callbacks.append_chunk("\n\n### Modified Files\n\n")
       for _, file_path in ipairs(modified_files) do
         callbacks.append_chunk(vim.fn.fnamemodify(file_path, ":.") .. "\n")
       end
 
-      -- patchファイル名をコメントとして追加
-      callbacks.append_chunk("\n<!-- patch: " .. patch_filename_from_js .. " -->\n")
+      callbacks.append_chunk("\n<!-- patch: " .. patch_filename .. " -->\n")
     end
   end
 

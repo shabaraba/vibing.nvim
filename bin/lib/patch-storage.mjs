@@ -64,8 +64,8 @@ class PatchStorage {
   }
 
   /**
-   * Create snapshot commit with current state (including unstaged/untracked)
-   * This becomes the baseline for comparison at session end
+   * Create snapshot commit with current state (including unstaged/untracked).
+   * This becomes the baseline for comparison at session end.
    */
   takeSnapshot() {
     if (!this.sessionId) {
@@ -73,16 +73,13 @@ class PatchStorage {
       return false;
     }
 
-    // 1. Save current staging state
     const stagedDiff = this.saveStagingState();
 
-    // 2. Check for merge/rebase conflicts
     if (existsSync(join(this.cwd, '.git', 'MERGE_HEAD'))) {
       console.error('[ERROR] Cannot take snapshot during merge/rebase');
       return false;
     }
 
-    // 3. Stage everything (including untracked files)
     const addResult = spawnSync('git', ['add', '-A'], {
       cwd: this.cwd,
       stdio: 'ignore',
@@ -93,7 +90,6 @@ class PatchStorage {
       return false;
     }
 
-    // 4. Create snapshot commit (skip pre-commit hooks)
     const commitResult = spawnSync(
       'git',
       [
@@ -112,7 +108,6 @@ class PatchStorage {
       return false;
     }
 
-    // 5. Tag the snapshot commit for protection from gc
     const tagResult = spawnSync('git', ['tag', this.snapshotTag], {
       cwd: this.cwd,
       stdio: 'ignore',
@@ -121,27 +116,16 @@ class PatchStorage {
       console.error('[ERROR] Failed to tag snapshot:', tagResult.error.message);
     }
 
-    // 6. Reset to original state (remove commit, keep changes)
-    spawnSync('git', ['reset', '--soft', 'HEAD~1'], {
-      cwd: this.cwd,
-      stdio: 'ignore',
-    });
+    // Reset to original state: remove commit but keep changes
+    spawnSync('git', ['reset', '--soft', 'HEAD~1'], { cwd: this.cwd, stdio: 'ignore' });
+    spawnSync('git', ['reset', 'HEAD', '--quiet'], { cwd: this.cwd, stdio: 'ignore' });
 
-    // 7. Clear staging area
-    spawnSync('git', ['reset', 'HEAD', '--quiet'], {
-      cwd: this.cwd,
-      stdio: 'ignore',
-    });
-
-    // 8. Restore original staging state
     this.restoreStagingState(stagedDiff);
-
     return true;
   }
 
   /**
-   * Generate patch by comparing current state with snapshot
-   * No need to track individual files - just compare everything
+   * Generate patch by comparing current state with snapshot.
    */
   generatePatch() {
     if (!this.snapshotTag) {
@@ -149,20 +133,14 @@ class PatchStorage {
       return null;
     }
 
-    // 1. Save current staging state
     const stagedDiff = this.saveStagingState();
 
-    // 2. Stage everything to capture current state
-    const addResult = spawnSync('git', ['add', '-A'], {
-      cwd: this.cwd,
-      stdio: 'ignore',
-    });
+    const addResult = spawnSync('git', ['add', '-A'], { cwd: this.cwd, stdio: 'ignore' });
     if (addResult.error) {
       console.error('[ERROR] Failed to stage files for patch:', addResult.error.message);
       return null;
     }
 
-    // 3. Generate diff from snapshot tag (--relative ensures relative paths)
     const diffResult = spawnSync('git', ['diff', '--cached', '--relative', this.snapshotTag], {
       cwd: this.cwd,
       encoding: 'utf-8',
@@ -171,13 +149,7 @@ class PatchStorage {
 
     const patchContent = diffResult.status === 0 ? diffResult.stdout?.trim() : null;
 
-    // 4. Clear staging area
-    spawnSync('git', ['reset', 'HEAD', '--quiet'], {
-      cwd: this.cwd,
-      stdio: 'ignore',
-    });
-
-    // 5. Restore original staging state
+    spawnSync('git', ['reset', 'HEAD', '--quiet'], { cwd: this.cwd, stdio: 'ignore' });
     this.restoreStagingState(stagedDiff);
 
     return patchContent || null;
