@@ -189,6 +189,21 @@ function M._register_commands()
 
     notify.info("Custom commands reloaded")
   end, { desc = "Reload custom slash commands" })
+
+  vim.api.nvim_create_user_command("VibingCopyUnsentUserHeader", function()
+    local timestamp = require("vibing.core.utils.timestamp")
+    local header = timestamp.create_unsent_user_header()
+
+    -- クリップボードプロバイダーを確認
+    if vim.fn.has("clipboard") == 1 then
+      vim.fn.setreg("+", header)
+    else
+      -- クリップボードサポートがない場合は無名レジスタに設定
+      vim.fn.setreg('"', header)
+    end
+
+    notify.info("Copied to clipboard: " .. header)
+  end, { desc = "Copy '## User <!-- unsent -->' to clipboard" })
 end
 
 ---現在のアダプターインスタンスを取得
