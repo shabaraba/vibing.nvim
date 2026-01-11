@@ -113,32 +113,29 @@ local M = {}
 ---@type Vibing.Config
 M.defaults = {
   agent = {
-    default_mode = "code",  -- "code" | "plan" | "explore"
-    default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
-    prioritize_vibing_lsp = true,  -- Prioritize vibing-nvim LSP tools over generic LSP tools (e.g. Serena)
+    default_mode = "code",
+    default_model = "sonnet",
+    prioritize_vibing_lsp = true,
   },
   chat = {
     window = {
-      position = "current",  -- "current" | "right" | "left" | "float"
+      position = "current",
       width = 0.4,
       border = "rounded",
     },
     auto_context = true,
-    save_location_type = "project",  -- "project" | "user" | "custom"
-    save_dir = vim.fn.stdpath("data") .. "/vibing/chats",  -- Used when save_location_type is "custom"
-    context_position = "append",  -- "prepend" | "append"
+    save_location_type = "project",
+    save_dir = vim.fn.stdpath("data") .. "/vibing/chats",
+    context_position = "append",
   },
   ui = {
-    wrap = "on",  -- "nvim" | "on" | "off"
+    wrap = "on",
     gradient = {
-      enabled = true,  -- Enable gradient animation during AI response
-      colors = {
-        "#cc3300",  -- Start color (orange, matching vibing.nvim logo)
-        "#fffe00",  -- End color (yellow, matching vibing.nvim logo)
-      },
-      interval = 100,  -- Animation update interval in milliseconds
+      enabled = true,
+      colors = { "#cc3300", "#fffe00" },
+      interval = 100,
     },
-    tool_result_display = "compact",  -- "none" | "compact" | "full"
+    tool_result_display = "compact",
   },
   keymaps = {
     send = "<CR>",
@@ -148,34 +145,26 @@ M.defaults = {
     open_file = "gf",
   },
   preview = {
-    enabled = false,  -- Enable diff preview UI for inline and chat (requires Git)
+    enabled = false,
   },
   permissions = {
-    mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
-    allow = {
-      "Read",
-      "Edit",
-      "Write",
-      "Glob",
-      "Grep",
-    },
-    deny = {
-      "Bash",
-    },
-    ask = {},  -- Tools requiring approval before use
-    rules = {},  -- Granular permission rules (optional)
+    mode = "acceptEdits",
+    allow = { "Read", "Edit", "Write", "Glob", "Grep" },
+    deny = { "Bash" },
+    ask = {},
+    rules = {},
   },
   node = {
-    executable = "auto",  -- "auto" (detect from PATH) or explicit path like "/usr/bin/node" or "/usr/local/bin/bun"
-    dev_mode = false,  -- false: Use compiled JS, true: Use TypeScript directly with bun
+    executable = "auto",
+    dev_mode = false,
   },
   mcp = {
-    enabled = true,  -- MCP integration enabled by default (auto-allows vibing-nvim MCP tools)
-    rpc_port = 9876,  -- RPC server port
-    auto_setup = false,  -- Auto-build MCP server on plugin install
-    auto_configure_claude_json = false,  -- Auto-configure ~/.claude.json
+    enabled = true,
+    rpc_port = 9876,
+    auto_setup = false,
+    auto_configure_claude_json = false,
   },
-  language = nil,  -- No language specification by default (responds in English)
+  language = nil,
 }
 
 ---@type Vibing.Config
@@ -255,44 +244,41 @@ function M.setup(opts)
     end
   end
 
-  -- Validate ui.wrap configuration
-  if M.options.ui and M.options.ui.wrap then
-    local valid_wrap_values = { nvim = true, on = true, off = true }
-    if not valid_wrap_values[M.options.ui.wrap] then
+  local function validate_enum(value, valid_values, field_name, default)
+    if value and not valid_values[value] then
+      local valid_list = table.concat(vim.tbl_keys(valid_values), ", ")
       notify.warn(string.format(
-        "Invalid ui.wrap value '%s'. Valid values: nvim, on, off. Falling back to default 'on'.",
-        M.options.ui.wrap
+        "Invalid %s value '%s'. Valid values: %s. Falling back to '%s'.",
+        field_name, value, valid_list, default
       ))
-      M.options.ui.wrap = "on"  -- Fallback to default
+      return default
     end
+    return value
   end
 
-  -- Validate ui.tool_result_display configuration
-  if M.options.ui and M.options.ui.tool_result_display then
-    local valid_display_values = { none = true, compact = true, full = true }
-    if not valid_display_values[M.options.ui.tool_result_display] then
-      notify.warn(string.format(
-        "Invalid ui.tool_result_display value '%s'. Valid values: none, compact, full. Falling back to default 'compact'.",
-        M.options.ui.tool_result_display
-      ))
-      M.options.ui.tool_result_display = "compact"  -- Fallback to default
-    end
+  if M.options.ui then
+    M.options.ui.wrap = validate_enum(
+      M.options.ui.wrap,
+      { nvim = true, on = true, off = true },
+      "ui.wrap",
+      "on"
+    )
+    M.options.ui.tool_result_display = validate_enum(
+      M.options.ui.tool_result_display,
+      { none = true, compact = true, full = true },
+      "ui.tool_result_display",
+      "compact"
+    )
   end
 
-  -- Validate ui.gradient configuration
   if M.options.ui and M.options.ui.gradient then
     local gradient = M.options.ui.gradient
 
-    -- Validate colors array
     if gradient.colors then
       if type(gradient.colors) ~= "table" or #gradient.colors ~= 2 then
-        notify.warn(
-          "Invalid ui.gradient.colors: must be an array of exactly 2 color strings. " ..
-          "Falling back to default (orange to yellow)."
-        )
+        notify.warn("Invalid ui.gradient.colors: must be an array of exactly 2 hex color strings.")
         M.options.ui.gradient.colors = { "#cc3300", "#fffe00" }
       else
-        -- Validate color format (simple hex check)
         for i, color in ipairs(gradient.colors) do
           if type(color) ~= "string" or not color:match("^#%x%x%x%x%x%x$") then
             notify.warn(string.format(
@@ -304,27 +290,17 @@ function M.setup(opts)
       end
     end
 
-    -- Validate interval
-    if gradient.interval then
-      if type(gradient.interval) ~= "number" or gradient.interval <= 0 then
-        notify.warn(
-          "Invalid ui.gradient.interval: must be a positive number. Falling back to default (100ms)."
-        )
-        M.options.ui.gradient.interval = 100
-      end
+    if gradient.interval and (type(gradient.interval) ~= "number" or gradient.interval <= 0) then
+      notify.warn("Invalid ui.gradient.interval: must be a positive number.")
+      M.options.ui.gradient.interval = 100
     end
   end
 
-  -- Validate language configuration
   if M.options.language then
     local function validate_lang_code(code, field_name)
       if code and code ~= "" and code ~= "en" and not language_utils.language_names[code] then
-        notify.warn(string.format(
-          "Unknown language code '%s' in %s. Supported codes: %s",
-          code,
-          field_name,
-          table.concat(vim.tbl_keys(language_utils.language_names), ", ")
-        ))
+        local supported = table.concat(vim.tbl_keys(language_utils.language_names), ", ")
+        notify.warn(string.format("Unknown language code '%s' in %s. Supported: %s", code, field_name, supported))
       end
     end
 
@@ -337,27 +313,18 @@ function M.setup(opts)
     end
   end
 
-  -- Validate node.executable configuration
   if M.options.node and M.options.node.executable then
     local executable = M.options.node.executable
     if type(executable) ~= "string" or (executable ~= "auto" and executable == "") then
       notify.warn(string.format(
-        "Invalid node.executable value '%s'. Must be 'auto' or a valid file path. Falling back to 'auto'.",
+        "Invalid node.executable value '%s'. Must be 'auto' or a valid file path.",
         tostring(executable)
       ))
       M.options.node.executable = "auto"
-    elseif executable ~= "auto" then
-      -- Validate that the specified executable exists (optional, warn only)
-      if vim.fn.executable(executable) == 0 then
-        notify.warn(string.format(
-          "Node.js executable not found at '%s'. Ensure the path is correct.",
-          executable
-        ))
-      end
+    elseif executable ~= "auto" and vim.fn.executable(executable) == 0 then
+      notify.warn(string.format("Node.js executable not found at '%s'.", executable))
     end
   end
-
-  -- Directory creation is handled by chat_buffer.lua _get_save_directory()
 end
 
 ---現在の設定を取得

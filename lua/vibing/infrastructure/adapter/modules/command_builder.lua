@@ -3,20 +3,16 @@
 ---Combines global config and frontmatter (opts) to build the command array.
 local M = {}
 
----ノード実行可能ファイルのパスを取得
----dev_modeがtrueの場合は"bun"を使用、falseの場合はnode.executableから取得
----@param config Vibing.Config グローバル設定
----@return string ノード実行可能ファイルのパス
+---@param config Vibing.Config
+---@return string
 local function get_node_executable(config)
-  -- Check for development mode
   local dev_mode = config.node and config.node.dev_mode or false
   if dev_mode then
-    -- Development mode: use bun
     local bun_cmd = vim.fn.exepath("bun")
     if bun_cmd == "" then
       vim.notify(
-        "[vibing.nvim] Error: bun not found in PATH.\n" ..
-        "Please install bun or set node.dev_mode = false in your config.",
+        "[vibing.nvim] Error: bun not found in PATH. " ..
+        "Please install bun or set node.dev_mode = false.",
         vim.log.levels.ERROR
       )
       error("bun executable not found in PATH")
@@ -24,120 +20,71 @@ local function get_node_executable(config)
     return bun_cmd
   end
 
-  -- Check if user has specified a custom executable
   if config.node and config.node.executable and config.node.executable ~= "auto" then
     local custom_exec = config.node.executable
+    local is_absolute = custom_exec:match("^/")
+    local is_valid = is_absolute
+      and vim.fn.executable(custom_exec) == 1
+      or vim.fn.exepath(custom_exec) ~= ""
 
-    -- Validate that the custom executable exists
-    -- For absolute paths, check if file exists and is executable
-    if custom_exec:match("^/") then
-      if vim.fn.executable(custom_exec) ~= 1 then
-        vim.notify(
-          string.format(
-            "[vibing.nvim] Error: Node.js executable not found or not executable at '%s'.\n" ..
-            "Please check your config.node.executable setting.",
-            custom_exec
-          ),
-          vim.log.levels.ERROR
-        )
-        error(string.format("Node.js executable not found: %s", custom_exec))
-      end
-    else
-      -- For relative paths or command names, check if in PATH
-      local resolved = vim.fn.exepath(custom_exec)
-      if resolved == "" then
-        vim.notify(
-          string.format(
-            "[vibing.nvim] Error: Node.js executable '%s' not found in PATH.\n" ..
-            "Please check your config.node.executable setting or provide an absolute path.",
-            custom_exec
-          ),
-          vim.log.levels.ERROR
-        )
-        error(string.format("Node.js executable not found in PATH: %s", custom_exec))
-      end
+    if not is_valid then
+      vim.notify(
+        string.format("[vibing.nvim] Error: Node.js executable '%s' not found.", custom_exec),
+        vim.log.levels.ERROR
+      )
+      error(string.format("Node.js executable not found: %s", custom_exec))
     end
-
     return custom_exec
   end
 
-  -- Auto-detect from PATH
   local node_cmd = vim.fn.exepath("node")
-  if node_cmd == "" then
-    node_cmd = "node"
-  end
-  return node_cmd
+  return node_cmd ~= "" and node_cmd or "node"
 end
 
----モードを決定（opts優先、次にconfig）
----@param opts Vibing.AdapterOpts フロントマターオプション
----@param config Vibing.Config グローバル設定
----@return string? モード（auto, plan, code, explore）
+---@param opts Vibing.AdapterOpts
+---@param config Vibing.Config
+---@return string?
 local function resolve_mode(opts, config)
-  local mode = opts.mode
-  if not mode and config.agent and config.agent.default_mode then
-    mode = config.agent.default_mode
-  end
-  return mode
+  return opts.mode or (config.agent and config.agent.default_mode)
 end
 
----モデルを決定（opts優先、次にconfig）
----@param opts Vibing.AdapterOpts フロントマターオプション
----@param config Vibing.Config グローバル設定
----@return string? モデル（sonnet, opus, haiku）
+---@param opts Vibing.AdapterOpts
+---@param config Vibing.Config
+---@return string?
 local function resolve_model(opts, config)
-  local model = opts.model
-  if not model and config.agent and config.agent.default_model then
-    model = config.agent.default_model
-  end
-  return model
+  return opts.model or (config.agent and config.agent.default_model)
 end
 
----言語設定を決定（opts優先、次にconfig）
----@param opts Vibing.AdapterOpts フロントマターオプション
----@param config Vibing.Config グローバル設定
----@return string? 言語コード（ja, enなど）
+---@param opts Vibing.AdapterOpts
+---@param config Vibing.Config
+---@return string?
 local function resolve_language(opts, config)
   local language = opts.language
   if not language and config.language then
     if type(config.language) == "table" then
-      -- For title generation (and other non-chat/inline uses), use default
       language = config.language.default or config.language.chat
     else
       language = config.language
     end
   end
-  if language and type(language) == "string" then
-    return language
-  end
-  return nil
+  return type(language) == "string" and language or nil
 end
 
----コンテキストファイルパスをコマンド引数に追加
----@param cmd string[] コマンド配列
----@param opts Vibing.AdapterOpts フロントマターオプション
+---@param cmd string[]
+---@param opts Vibing.AdapterOpts
 local function add_context_args(cmd, opts)
   for _, ctx in ipairs(opts.context or {}) do
     if ctx:match("^@file:") then
-      local path = ctx:sub(7)
       table.insert(cmd, "--context")
-      table.insert(cmd, path)
+      table.insert(cmd, ctx:sub(7))
     end
   end
 end
 
----パーミッション関連の引数を追加
----フロントマターの設定を使用（configは新規チャット作成時のテンプレートとしてのみ使用）
----@param cmd string[] コマンド配列
----@param opts Vibing.AdapterOpts フロントマターオプション
+---@param cmd string[]
+---@param opts Vibing.AdapterOpts
 local function add_permission_args(cmd, opts)
-  -- Allow tools (always include MCP tools for vibing.nvim integration)
-  local allow_tools = opts.permissions_allow
-  if allow_tools then
-    allow_tools = vim.deepcopy(allow_tools)
-  else
-    allow_tools = {}
-  end
+  local allow_tools = vim.deepcopy(opts.permissions_allow or {})
   table.insert(allow_tools, "mcp__vibing-nvim__*")
 
   if #allow_tools > 0 then
@@ -145,31 +92,24 @@ local function add_permission_args(cmd, opts)
     table.insert(cmd, table.concat(allow_tools, ","))
   end
 
-  -- Deny tools
-  local deny_tools = opts.permissions_deny
-  if deny_tools and #deny_tools > 0 then
+  if opts.permissions_deny and #opts.permissions_deny > 0 then
     table.insert(cmd, "--deny")
-    table.insert(cmd, table.concat(deny_tools, ","))
+    table.insert(cmd, table.concat(opts.permissions_deny, ","))
   end
 
-  -- Ask tools
-  local ask_tools = opts.permissions_ask
-  if ask_tools and #ask_tools > 0 then
+  if opts.permissions_ask and #opts.permissions_ask > 0 then
     table.insert(cmd, "--ask")
-    table.insert(cmd, table.concat(ask_tools, ","))
+    table.insert(cmd, table.concat(opts.permissions_ask, ","))
   end
 
-  -- Permission mode
-  local permission_mode = opts.permission_mode
-  if permission_mode then
+  if opts.permission_mode then
     table.insert(cmd, "--permission-mode")
-    table.insert(cmd, permission_mode)
+    table.insert(cmd, opts.permission_mode)
   end
 end
 
----パーミッションルールを追加（configから取得）
----@param cmd string[] コマンド配列
----@param config Vibing.Config グローバル設定
+---@param cmd string[]
+---@param config Vibing.Config
 local function add_permission_rules(cmd, config)
   local rules = config.permissions and config.permissions.rules
   if rules and #rules > 0 then
@@ -178,47 +118,32 @@ local function add_permission_rules(cmd, config)
   end
 end
 
----追加フラグを追加（prioritize_vibing_lsp, mcp_enabled, tool_result_display）
----@param cmd string[] コマンド配列
----@param config Vibing.Config グローバル設定
-local function add_additional_flags(cmd, config)
-  -- Prioritize vibing LSP
-  local prioritize_vibing_lsp = config.agent and config.agent.prioritize_vibing_lsp
-  if prioritize_vibing_lsp ~= nil then
-    table.insert(cmd, "--prioritize-vibing-lsp")
-    table.insert(cmd, tostring(prioritize_vibing_lsp))
-  end
-
-  -- MCP enabled
-  local mcp_enabled = config.mcp and config.mcp.enabled
-  if mcp_enabled ~= nil then
-    table.insert(cmd, "--mcp-enabled")
-    table.insert(cmd, tostring(mcp_enabled))
-  end
-
-  -- Tool result display
-  local tool_result_display = config.ui and config.ui.tool_result_display
-  if tool_result_display then
-    table.insert(cmd, "--tool-result-display")
-    table.insert(cmd, tool_result_display)
-  end
-
-  -- Chat save location (for patch storage alignment)
-  local save_location_type = config.chat and config.chat.save_location_type
-  if save_location_type then
-    table.insert(cmd, "--save-location-type")
-    table.insert(cmd, save_location_type)
-  end
-
-  local save_dir = config.chat and config.chat.save_dir
-  if save_dir and save_location_type == "custom" then
-    table.insert(cmd, "--save-dir")
-    table.insert(cmd, save_dir)
+---@param cmd string[]
+---@param flag string
+---@param value any
+local function add_flag_if_present(cmd, flag, value)
+  if value ~= nil then
+    table.insert(cmd, flag)
+    table.insert(cmd, tostring(value))
   end
 end
 
----RPCポートを取得して引数に追加
----@param cmd string[] コマンド配列
+---@param cmd string[]
+---@param config Vibing.Config
+local function add_additional_flags(cmd, config)
+  add_flag_if_present(cmd, "--prioritize-vibing-lsp", config.agent and config.agent.prioritize_vibing_lsp)
+  add_flag_if_present(cmd, "--mcp-enabled", config.mcp and config.mcp.enabled)
+  add_flag_if_present(cmd, "--tool-result-display", config.ui and config.ui.tool_result_display)
+
+  local save_location_type = config.chat and config.chat.save_location_type
+  add_flag_if_present(cmd, "--save-location-type", save_location_type)
+
+  if save_location_type == "custom" then
+    add_flag_if_present(cmd, "--save-dir", config.chat and config.chat.save_dir)
+  end
+end
+
+---@param cmd string[]
 local function add_rpc_port(cmd)
   local rpc_server = require("vibing.infrastructure.rpc.server")
   local rpc_port = rpc_server.get_port()
@@ -228,64 +153,28 @@ local function add_rpc_port(cmd)
   end
 end
 
----コマンドライン引数を構築
----Node.jsラッパースクリプトの実行コマンドを生成
----mode, model, context, session, permissionsを設定から反映
----opts内の値はfrontmatterから渡され、グローバル設定より優先される
----@param wrapper_path string ラッパースクリプトの絶対パス
----@param prompt string ユーザープロンプト
----@param opts Vibing.AdapterOpts コンテキストファイル等のオプション
----@param session_id string? セッションID（nilの場合は新規セッション）
----@param config Vibing.Config グローバル設定
----@return string[] コマンドと引数の配列（最初の要素がNode実行可能ファイル、続いてラッパーパスとフラグ）
+---@param wrapper_path string
+---@param prompt string
+---@param opts Vibing.AdapterOpts
+---@param session_id string?
+---@param config Vibing.Config
+---@return string[]
 function M.build(wrapper_path, prompt, opts, session_id, config)
   local cmd = { get_node_executable(config), wrapper_path }
 
-  -- Working directory
   table.insert(cmd, "--cwd")
   table.insert(cmd, vim.fn.getcwd())
 
-  -- Mode
-  local mode = resolve_mode(opts, config)
-  if mode then
-    table.insert(cmd, "--mode")
-    table.insert(cmd, mode)
-  end
-
-  -- Model
-  local model = resolve_model(opts, config)
-  if model then
-    table.insert(cmd, "--model")
-    table.insert(cmd, model)
-  end
-
-  -- Context files
+  add_flag_if_present(cmd, "--mode", resolve_mode(opts, config))
+  add_flag_if_present(cmd, "--model", resolve_model(opts, config))
   add_context_args(cmd, opts)
-
-  -- Session ID for resuming
-  if session_id then
-    table.insert(cmd, "--session")
-    table.insert(cmd, session_id)
-  end
-
-  -- Permissions
+  add_flag_if_present(cmd, "--session", session_id)
   add_permission_args(cmd, opts)
   add_permission_rules(cmd, config)
-
-  -- Additional flags
   add_additional_flags(cmd, config)
-
-  -- Language
-  local language = resolve_language(opts, config)
-  if language then
-    table.insert(cmd, "--language")
-    table.insert(cmd, language)
-  end
-
-  -- RPC port
+  add_flag_if_present(cmd, "--language", resolve_language(opts, config))
   add_rpc_port(cmd)
 
-  -- Prompt (always last)
   table.insert(cmd, "--prompt")
   table.insert(cmd, prompt)
 

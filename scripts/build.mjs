@@ -1,19 +1,11 @@
 #!/usr/bin/env node
-/**
- * Build script for vibing.nvim
- * Bundles and minifies bin/ files using esbuild
- * Supports both .mjs (current) and .ts (migration target) files
- */
-
 import * as esbuild from 'esbuild';
 import { mkdirSync, existsSync } from 'fs';
 
 const watch = process.argv.includes('--watch');
 
-// Ensure dist/bin directory exists
 mkdirSync('dist/bin', { recursive: true });
 
-// Use .ts if available, otherwise fallback to .mjs for gradual migration
 const agentWrapperEntry = existsSync('bin/agent-wrapper.ts')
   ? 'bin/agent-wrapper.ts'
   : 'bin/agent-wrapper.mjs';
