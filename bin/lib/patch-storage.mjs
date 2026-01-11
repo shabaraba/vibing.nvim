@@ -15,7 +15,7 @@ class PatchStorage {
     this.saveLocationType = 'project';
     this.saveDir = null;
     this.snapshotTag = null;
-    this.gitOps = new GitOperations(this.cwd);
+    this.gitOps = new GitOperations(this.cwd, { timeout: 30000 });
   }
 
   setSessionId(sessionId) {
@@ -25,7 +25,7 @@ class PatchStorage {
 
   setCwd(cwd) {
     this.cwd = cwd;
-    this.gitOps = new GitOperations(cwd);
+    this.gitOps = new GitOperations(cwd, { timeout: 30000 });
   }
 
   setSaveConfig(saveLocationType, saveDir) {
@@ -39,19 +39,19 @@ class PatchStorage {
    */
   takeSnapshot() {
     if (!this.sessionId) {
-      console.error('[ERROR] Cannot take snapshot: sessionId not set');
+      console.error('[ERROR] Cannot take snapshot: session ID not set');
       return false;
     }
 
     const stagedDiff = this.gitOps.saveStagingState();
 
     if (this.gitOps.isInMergeOrRebase()) {
-      console.error('[ERROR] Cannot take snapshot during merge/rebase');
+      console.error('[ERROR] Cannot take snapshot: repository is in merge/rebase state');
       return false;
     }
 
     if (this.gitOps.tagExists(this.snapshotTag)) {
-      console.error('[ERROR] Snapshot tag already exists:', this.snapshotTag);
+      console.error('[ERROR] Cannot take snapshot: tag already exists -', this.snapshotTag);
       return false;
     }
 
@@ -76,8 +76,8 @@ class PatchStorage {
       return false;
     }
 
-    this.gitOps.reset('soft', 'HEAD~1');
-    this.gitOps.reset('mixed', 'HEAD');
+    // Remove commit but keep working tree unchanged (mixed reset = soft + unstage)
+    this.gitOps.reset('mixed', 'HEAD~1');
     this.gitOps.restoreStagingState(stagedDiff);
 
     return true;

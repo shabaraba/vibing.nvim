@@ -8,29 +8,40 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 
 class GitOperations {
-  constructor(cwd) {
+  constructor(cwd, options = {}) {
     this.cwd = cwd;
+    this.defaultTimeout = options.timeout || 30000; // 30 seconds default
   }
 
   /**
    * Execute git command with consistent error handling.
    * @param {string[]} args - Git command arguments
    * @param {Object} options - Additional spawn options
-   * @returns {Object} { success: boolean, stdout: string, stderr: string }
+   * @returns {Object} { success: boolean, stdout: string, stderr: string, timedOut: boolean }
    */
   execute(args, options = {}) {
     const result = spawnSync('git', args, {
       cwd: this.cwd,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: options.timeout !== undefined ? options.timeout : this.defaultTimeout,
       ...options,
     });
+
+    const timedOut = result.error?.code === 'ETIMEDOUT';
+    if (timedOut) {
+      console.error(
+        `[ERROR] Git command timed out after ${this.defaultTimeout}ms:`,
+        args.join(' ')
+      );
+    }
 
     return {
       success: result.error == null && result.status === 0,
       stdout: result.stdout || '',
       stderr: result.stderr || '',
       error: result.error,
+      timedOut,
     };
   }
 
