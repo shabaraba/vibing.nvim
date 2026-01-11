@@ -204,6 +204,47 @@ function M._register_commands()
 
     notify.info("Copied to clipboard: " .. header)
   end, { desc = "Copy '## User <!-- unsent -->' to clipboard" })
+
+  -- 共有バッファ関連コマンド（実験的機能）
+  vim.api.nvim_create_user_command("VibingShared", function(opts)
+    local manager = require("vibing.application.shared_buffer.manager")
+    local position = opts.args ~= "" and opts.args or "right"
+    manager.open_shared_buffer(position)
+  end, {
+    nargs = "?",
+    desc = "Open shared buffer for multi-agent coordination (experimental)",
+    complete = function(arg_lead)
+      local positions = { "current", "right", "left", "float" }
+      local matches = {}
+      for _, pos in ipairs(positions) do
+        if pos:find("^" .. vim.pesc(arg_lead)) then
+          table.insert(matches, pos)
+        end
+      end
+      return matches
+    end,
+  })
+
+  vim.api.nvim_create_user_command("VibingSharedDemo", function()
+    local demo = require("vibing.application.shared_buffer.demo")
+    demo.run_demo()
+  end, { desc = "Run shared buffer demo (experimental)" })
+
+  vim.api.nvim_create_user_command("VibingListSessions", function()
+    local dispatcher = require("vibing.application.shared_buffer.notification_dispatcher")
+    local sessions = dispatcher.get_registered_sessions()
+    local count = dispatcher.get_session_count()
+
+    if count == 0 then
+      notify.info("No Claude sessions registered")
+      return
+    end
+
+    notify.info(string.format("Registered Claude sessions (%d):", count))
+    for claude_id, session in pairs(sessions) do
+      print(string.format("  - %s (session: %s, bufnr: %d)", claude_id, session.session_id, session.bufnr))
+    end
+  end, { desc = "List registered Claude sessions (experimental)" })
 end
 
 ---現在のアダプターインスタンスを取得

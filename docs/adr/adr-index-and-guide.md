@@ -171,6 +171,51 @@ using a Vim-native approach based on line deletion for option selection. Key des
 
 ---
 
+### ADR 008: Buffer Change Detection for Multi-Agent Coordination
+
+**Status:** Proposed
+**Date:** 2026-01-11
+
+Documents the design and PoC implementation of buffer change detection system for multi-agent coordination.
+Multiple Claude sessions can communicate and coordinate through a shared buffer using real-time
+change detection via `nvim_buf_attach` API. Key architectural decisions:
+
+- Real-time buffer change detection using `nvim_buf_attach`
+- Shared buffer system (`.vibing-shared` files)
+- Mention-based notification system (`@Claude-{id}`, `@All`)
+- Session registration and notification dispatcher
+
+**Key Features:**
+
+- Multiple Claude sessions can post messages to shared buffer
+- Mention other sessions to trigger notifications
+- Real-time change detection without polling
+- Experimental status with clear path to production
+
+**Key Files:**
+
+- ADR: [008-buffer-change-detection-multi-agent.md](./008-buffer-change-detection-multi-agent.md)
+- PoC Guide: [../buffer-change-detection-poc.md](../buffer-change-detection-poc.md)
+- Core Implementation:
+  - `lua/vibing/core/buffer_watcher.lua` - Real-time buffer change detection
+  - `lua/vibing/application/shared_buffer/manager.lua` - Shared buffer management
+  - `lua/vibing/application/shared_buffer/message_parser.lua` - Message parsing and mention extraction
+  - `lua/vibing/application/shared_buffer/notification_dispatcher.lua` - Notification routing
+  - `lua/vibing/application/shared_buffer/demo.lua` - Demo and testing script
+
+**User Commands:**
+
+- `:VibingShared [position]` - Open shared buffer
+- `:VibingSharedDemo` - Run demo with mock sessions
+- `:VibingListSessions` - List registered Claude sessions
+
+**Related ADRs:**
+
+- [ADR 002](#adr-002-concurrent-execution-support) - Concurrent execution foundation
+- [ADR 004](#adr-004-multi-instance-neovim-support-for-mcp-integration) - Multi-instance support
+
+---
+
 ## Creating a New ADR
 
 Use this template when creating a new ADR:
