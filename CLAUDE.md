@@ -585,7 +585,7 @@ vibing.nvim provides an interactive approval UI for tool usage when permission m
 2. **Approval UI appears in chat** - The tool information and approval options are inserted into the chat buffer as plain text:
 
 ```markdown
-⚠️  Tool approval required
+⚠️ Tool approval required
 
 Tool: Bash
 Command: npm install
@@ -617,7 +617,7 @@ Can you run `npm install` to install dependencies?
 
 ## Assistant
 
-⚠️  Tool approval required
+⚠️ Tool approval required
 
 Tool: Bash
 Command: npm install
