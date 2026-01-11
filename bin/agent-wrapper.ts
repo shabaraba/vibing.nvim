@@ -9,7 +9,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { parseArguments } from './lib/args-parser.js';
 import { buildPrompt } from './lib/prompt-builder.js';
 import { createCanUseToolCallback } from './lib/permissions/can-use-tool.js';
-import { processStream } from './lib/stream-processor.mjs';
+import { processStream } from './lib/stream-processor.js';
 import { safeJsonStringify } from './lib/utils.js';
 
 const args = process.argv.slice(2);
