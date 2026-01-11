@@ -23,10 +23,14 @@ export async function handleSetCursor(args: any) {
   if (!args || args.line === undefined) {
     throw new Error('Missing required parameter: line');
   }
-  await callNeovim('set_cursor_position', {
-    line: args.line,
-    col: args.col,
-  }, args?.rpc_port);
+  await callNeovim(
+    'set_cursor_position',
+    {
+      line: args.line,
+      col: args.col,
+    },
+    args?.rpc_port
+  );
   return {
     content: [{ type: 'text', text: `Cursor moved to line ${args.line}` }],
   };

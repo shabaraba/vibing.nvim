@@ -149,11 +149,7 @@ describe('handleExecute', () => {
 
       await handleExecute({ command: 'set wrap?', rpc_port: 9876 });
 
-      expect(rpc.callNeovim).toHaveBeenCalledWith(
-        'execute',
-        { command: 'set wrap?' },
-        9876
-      );
+      expect(rpc.callNeovim).toHaveBeenCalledWith('execute', { command: 'set wrap?' }, 9876);
     });
 
     it('should work without rpc_port', async () => {
@@ -164,11 +160,7 @@ describe('handleExecute', () => {
 
       await handleExecute({ command: 'set wrap?' });
 
-      expect(rpc.callNeovim).toHaveBeenCalledWith(
-        'execute',
-        { command: 'set wrap?' },
-        undefined
-      );
+      expect(rpc.callNeovim).toHaveBeenCalledWith('execute', { command: 'set wrap?' }, undefined);
     });
   });
 

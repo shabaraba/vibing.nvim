@@ -24,9 +24,10 @@ export async function handleExecute(args: any) {
   const hasOutput = output && output.length > 0;
 
   // Truncate output if it exceeds the maximum length
-  const truncatedOutput = hasOutput && output.length > MAX_OUTPUT_LENGTH
-    ? output.substring(0, MAX_OUTPUT_LENGTH) + '\n... (output truncated)'
-    : output;
+  const truncatedOutput =
+    hasOutput && output.length > MAX_OUTPUT_LENGTH
+      ? output.substring(0, MAX_OUTPUT_LENGTH) + '\n... (output truncated)'
+      : output;
 
   // Provide consistent message format
   const message = hasOutput

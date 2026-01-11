@@ -62,6 +62,7 @@
 ---Node.js実行ファイル設定
 ---Agent SDKラッパーとMCPビルドで使用するNode.js実行ファイルのパスを指定
 ---@field executable string|"auto" Node.js実行ファイルのパス ("auto": PATHから自動検出、文字列: 明示的なパス指定)
+---@field dev_mode boolean 開発モード有効化 (true: TypeScriptを直接bunで実行、false: コンパイル済みJSを使用)
 
 ---@class Vibing.McpConfig
 ---MCP統合設定
@@ -165,7 +166,8 @@ M.defaults = {
     rules = {},  -- Granular permission rules (optional)
   },
   node = {
-    executable = "auto",  -- "auto" (detect from PATH) or explicit path like "/usr/bin/node"
+    executable = "auto",  -- "auto" (detect from PATH) or explicit path like "/usr/bin/node" or "/usr/local/bin/bun"
+    dev_mode = false,  -- false: Use compiled JS, true: Use TypeScript directly with bun
   },
   mcp = {
     enabled = true,  -- MCP integration enabled by default (auto-allows vibing-nvim MCP tools)
@@ -179,12 +181,36 @@ M.defaults = {
 ---@type Vibing.Config
 M.options = {}
 
+---Lazy.nvimのdevモードを検出
+---vibing.nvimプラグインがLazy.nvimでdev=trueとして設定されているかチェック
+---@return boolean Lazy.nvimのdevモードが有効な場合true
+local function is_lazy_dev_mode()
+  local ok, lazy_config = pcall(require, "lazy.core.config")
+  if ok and lazy_config.plugins then
+    local vibing_plugin = lazy_config.plugins["vibing.nvim"]
+    if vibing_plugin and vibing_plugin.dev then
+      return true
+    end
+  end
+  return false
+end
+
 ---vibing.nvimプラグインの設定を初期化
 ---ユーザー設定とデフォルト設定をマージし、ツール権限の妥当性を検証
 ---permissionsで指定されたツール名が有効かチェックし、無効な場合は警告を出力
+---Lazy.nvimのdev=trueが設定されている場合、node.dev_modeを自動的にtrueに設定
 ---@param opts? Vibing.Config ユーザー設定オブジェクト（nilの場合はデフォルト設定のみ使用）
 function M.setup(opts)
   M.options = vim.tbl_deep_extend("force", {}, M.defaults, opts or {})
+
+  -- Auto-detect dev_mode from Lazy.nvim if not explicitly set
+  if M.options.node and M.options.node.dev_mode == nil then
+    local lazy_dev = is_lazy_dev_mode()
+    if lazy_dev then
+      M.options.node.dev_mode = true
+      notify.info("[vibing.nvim] Detected Lazy.nvim dev mode - enabling TypeScript direct execution")
+    end
+  end
 
   if M.options.permissions then
     -- Validate permission mode

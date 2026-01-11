@@ -65,16 +65,24 @@ export async function handleSetWindowSize(args: any) {
     throw new Error('At least one of width or height must be specified');
   }
   if (args?.width !== undefined) {
-    await callNeovim('set_window_width', {
-      winnr: args.winnr,
-      width: args.width,
-    }, args?.rpc_port);
+    await callNeovim(
+      'set_window_width',
+      {
+        winnr: args.winnr,
+        width: args.width,
+      },
+      args?.rpc_port
+    );
   }
   if (args?.height !== undefined) {
-    await callNeovim('set_window_height', {
-      winnr: args.winnr,
-      height: args.height,
-    }, args?.rpc_port);
+    await callNeovim(
+      'set_window_height',
+      {
+        winnr: args.winnr,
+        height: args.height,
+      },
+      args?.rpc_port
+    );
   }
   return {
     content: [{ type: 'text', text: 'Window size updated successfully' }],
@@ -110,14 +118,16 @@ export async function handleWinSetBuf(args: any) {
   if (!args || args.winnr === undefined || args.bufnr === undefined) {
     throw new Error('Missing required parameters: winnr and bufnr');
   }
-  await callNeovim('win_set_buf', {
-    winnr: args.winnr,
-    bufnr: args.bufnr,
-  }, args?.rpc_port);
+  await callNeovim(
+    'win_set_buf',
+    {
+      winnr: args.winnr,
+      bufnr: args.bufnr,
+    },
+    args?.rpc_port
+  );
   return {
-    content: [
-      { type: 'text', text: `Set buffer ${args.bufnr} in window ${args.winnr}` },
-    ],
+    content: [{ type: 'text', text: `Set buffer ${args.bufnr} in window ${args.winnr}` }],
   };
 }
 
@@ -134,10 +144,14 @@ export async function handleWinOpenFile(args: any) {
   if (!args || args.winnr === undefined || !args.filepath) {
     throw new Error('Missing required parameters: winnr and filepath');
   }
-  const result = await callNeovim('win_open_file', {
-    winnr: args.winnr,
-    filepath: args.filepath,
-  }, args?.rpc_port);
+  const result = await callNeovim(
+    'win_open_file',
+    {
+      winnr: args.winnr,
+      filepath: args.filepath,
+    },
+    args?.rpc_port
+  );
   return {
     content: [
       {

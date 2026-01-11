@@ -13,9 +13,7 @@ const validSaveLocationTypes = ['project', 'user', 'custom'] as const;
 /**
  * Type guard for permission mode validation
  */
-function isValidPermissionMode(
-  mode: string
-): mode is (typeof validPermissionModes)[number] {
+function isValidPermissionMode(mode: string): mode is (typeof validPermissionModes)[number] {
   return validPermissionModes.includes(mode as any);
 }
 
@@ -29,9 +27,7 @@ function isValidDisplayMode(mode: string): mode is (typeof validDisplayModes)[nu
 /**
  * Type guard for save location type validation
  */
-function isValidSaveLocationType(
-  type: string
-): type is (typeof validSaveLocationTypes)[number] {
+function isValidSaveLocationType(type: string): type is (typeof validSaveLocationTypes)[number] {
   return validSaveLocationTypes.includes(type as any);
 }
 

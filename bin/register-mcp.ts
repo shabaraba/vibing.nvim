@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Register vibing-nvim MCP server in ~/.claude.json
  * Called automatically by build.sh after successful build

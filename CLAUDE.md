@@ -13,11 +13,55 @@ It provides chat and inline code actions within Neovim.
 # Install dependencies
 npm install
 
+# Build TypeScript to JavaScript (production mode)
+npm run build
+
 # Test Agent SDK wrapper directly
-node bin/agent-wrapper.mjs --prompt "Say hello" --cwd $(pwd)
+node dist/bin/agent-wrapper.js --prompt "Say hello" --cwd $(pwd)
 ```
 
 For Neovim testing, load the plugin and run `:VibingChat`.
+
+### Development Mode
+
+vibing.nvim supports two execution modes:
+
+**Production Mode (default):**
+
+- Uses compiled JavaScript from `dist/bin/agent-wrapper.js`
+- Requires `npm run build` after code changes
+- Faster startup time
+
+**Development Mode:**
+
+- Directly executes TypeScript from `bin/agent-wrapper.ts` using bun
+- No build step required - changes take effect immediately
+- Requires bun to be installed in PATH
+
+**Enable via Lazy.nvim (recommended):**
+
+```lua
+return {
+  "yourusername/vibing.nvim",
+  dev = true,  -- Automatically enables dev_mode
+  dir = "~/workspaces/nvim-plugins/vibing.nvim",
+  config = function()
+    require("vibing").setup({
+      -- node.dev_mode is automatically set to true when dev = true
+    })
+  end,
+}
+```
+
+**Manual enable:**
+
+```lua
+require("vibing").setup({
+  node = {
+    dev_mode = true,  -- Enable TypeScript direct execution with bun
+  },
+})
+```
 
 ## Architecture
 
@@ -697,6 +741,7 @@ require("vibing").setup({
   },
   node = {
     executable = "auto",  -- "auto" (detect from PATH) or explicit path like "/usr/bin/node" or "/usr/local/bin/bun"
+    dev_mode = false,  -- false: Use compiled JS, true: Use TypeScript directly with bun
   },
   mcp = {
     enabled = false,  -- MCP integration disabled by default

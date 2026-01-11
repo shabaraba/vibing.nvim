@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Claude Agent SDK wrapper for vibing.nvim
  * Uses query API for full permission control support

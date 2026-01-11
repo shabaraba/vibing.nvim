@@ -4,10 +4,26 @@
 local M = {}
 
 ---ノード実行可能ファイルのパスを取得
----configからnode.executableを読み取り、"auto"の場合はPATHから検索
+---dev_modeがtrueの場合は"bun"を使用、falseの場合はnode.executableから取得
 ---@param config Vibing.Config グローバル設定
 ---@return string ノード実行可能ファイルのパス
 local function get_node_executable(config)
+  -- Check for development mode
+  local dev_mode = config.node and config.node.dev_mode or false
+  if dev_mode then
+    -- Development mode: use bun
+    local bun_cmd = vim.fn.exepath("bun")
+    if bun_cmd == "" then
+      vim.notify(
+        "[vibing.nvim] Error: bun not found in PATH.\n" ..
+        "Please install bun or set node.dev_mode = false in your config.",
+        vim.log.levels.ERROR
+      )
+      error("bun executable not found in PATH")
+    end
+    return bun_cmd
+  end
+
   -- Check if user has specified a custom executable
   if config.node and config.node.executable and config.node.executable ~= "auto" then
     local custom_exec = config.node.executable

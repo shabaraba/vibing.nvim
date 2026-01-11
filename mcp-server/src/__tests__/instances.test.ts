@@ -127,7 +127,11 @@ describe('handleListInstances', () => {
       ];
 
       vi.mocked(fs.access).mockResolvedValue(undefined);
-      vi.mocked(fs.readdir).mockResolvedValue(['12345.json', '12346.json', 'not-a-json.txt'] as any);
+      vi.mocked(fs.readdir).mockResolvedValue([
+        '12345.json',
+        '12346.json',
+        'not-a-json.txt',
+      ] as any);
       vi.mocked(fs.readFile)
         .mockResolvedValueOnce(JSON.stringify(mockInstances[0]))
         .mockResolvedValueOnce(JSON.stringify(mockInstances[1]));
