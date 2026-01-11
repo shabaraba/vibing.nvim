@@ -11,6 +11,31 @@ const validPermissionModes = ['default', 'acceptEdits', 'bypassPermissions'] as 
 const validSaveLocationTypes = ['project', 'user', 'custom'] as const;
 
 /**
+ * Type guard for permission mode validation
+ */
+function isValidPermissionMode(
+  mode: string
+): mode is (typeof validPermissionModes)[number] {
+  return validPermissionModes.includes(mode as any);
+}
+
+/**
+ * Type guard for display mode validation
+ */
+function isValidDisplayMode(mode: string): mode is (typeof validDisplayModes)[number] {
+  return validDisplayModes.includes(mode as any);
+}
+
+/**
+ * Type guard for save location type validation
+ */
+function isValidSaveLocationType(
+  type: string
+): type is (typeof validSaveLocationTypes)[number] {
+  return validSaveLocationTypes.includes(type as any);
+}
+
+/**
  * Parse command-line arguments into configuration object
  */
 export function parseArguments(args: string[]): AgentConfig {
@@ -74,13 +99,13 @@ export function parseArguments(args: string[]): AgentConfig {
       i++;
     } else if (args[i] === '--permission-mode' && args[i + 1]) {
       const mode = args[i + 1];
-      if (!validPermissionModes.includes(mode as any)) {
+      if (!isValidPermissionMode(mode)) {
         console.error(
           `Invalid --permission-mode value: "${mode}". Must be one of: ${validPermissionModes.join(', ')}`
         );
         process.exit(1);
       }
-      config.permissionMode = mode as AgentConfig['permissionMode'];
+      config.permissionMode = mode;
       i++;
     } else if (args[i] === '--rules' && args[i + 1]) {
       try {
@@ -113,23 +138,23 @@ export function parseArguments(args: string[]): AgentConfig {
       i++;
     } else if (args[i] === '--tool-result-display' && args[i + 1]) {
       const displayMode = args[i + 1];
-      if (!validDisplayModes.includes(displayMode as any)) {
+      if (!isValidDisplayMode(displayMode)) {
         console.error(
           `Invalid --tool-result-display value: "${displayMode}". Must be one of: ${validDisplayModes.join(', ')}`
         );
         process.exit(1);
       }
-      config.toolResultDisplay = displayMode as AgentConfig['toolResultDisplay'];
+      config.toolResultDisplay = displayMode;
       i++;
     } else if (args[i] === '--save-location-type' && args[i + 1]) {
       const locationType = args[i + 1];
-      if (!validSaveLocationTypes.includes(locationType as any)) {
+      if (!isValidSaveLocationType(locationType)) {
         console.error(
           `Invalid --save-location-type value: "${locationType}". Must be one of: ${validSaveLocationTypes.join(', ')}`
         );
         process.exit(1);
       }
-      config.saveLocationType = locationType as AgentConfig['saveLocationType'];
+      config.saveLocationType = locationType;
       i++;
     } else if (args[i] === '--save-dir' && args[i + 1]) {
       config.saveDir = args[i + 1];
