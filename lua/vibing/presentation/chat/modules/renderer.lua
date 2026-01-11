@@ -133,7 +133,8 @@ M.move_cursor_to_end = M.moveCursorToEnd
 ---@param buf number バッファ番号
 ---@param win number? ウィンドウ番号
 ---@param pendingChoices table? 保留中の選択肢
-function M.addUserSection(buf, win, pendingChoices)
+---@param pendingApproval table? 保留中のツール承認要求
+function M.addUserSection(buf, win, pendingChoices, pendingApproval)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
   while #lines > 0 and lines[#lines] == "" do
@@ -173,6 +174,43 @@ function M.addUserSection(buf, win, pendingChoices)
     local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local insertPos = #currentLines
     vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, choiceLines)
+  end
+
+  if pendingApproval then
+    local approvalLines = {}
+    table.insert(approvalLines, "⚠️  Tool approval required")
+    table.insert(approvalLines, "")
+    table.insert(approvalLines, "Tool: " .. pendingApproval.tool)
+
+    -- Show input details based on tool type
+    if pendingApproval.input then
+      if pendingApproval.input.command then
+        table.insert(approvalLines, "Command: " .. pendingApproval.input.command)
+      elseif pendingApproval.input.file_path then
+        table.insert(approvalLines, "File: " .. pendingApproval.input.file_path)
+      elseif pendingApproval.input.pattern then
+        table.insert(approvalLines, "Pattern: " .. pendingApproval.input.pattern)
+      elseif pendingApproval.input.url then
+        table.insert(approvalLines, "URL: " .. pendingApproval.input.url)
+      end
+    end
+
+    table.insert(approvalLines, "")
+
+    -- Use numbered list for single-select approval options
+    local optionIndex = 1
+    for _, opt in ipairs(pendingApproval.options) do
+      table.insert(approvalLines, optionIndex .. ". " .. opt.label)
+      optionIndex = optionIndex + 1
+    end
+
+    table.insert(approvalLines, "")
+    table.insert(approvalLines, "Please select and press <CR> to send.")
+    table.insert(approvalLines, "")
+
+    local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local insertPos = #currentLines
+    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, approvalLines)
   end
 
   if win and vim.api.nvim_win_is_valid(win) then

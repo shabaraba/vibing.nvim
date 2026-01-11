@@ -102,6 +102,21 @@ local function add_permission_args(cmd, opts)
     table.insert(cmd, table.concat(opts.permissions_ask, ","))
   end
 
+  -- Session-level allow tools
+  local session_allow = opts.permissions_session_allow
+  if session_allow and #session_allow > 0 then
+    table.insert(cmd, "--session-allow")
+    table.insert(cmd, table.concat(session_allow, ","))
+  end
+
+  -- Session-level deny tools
+  local session_deny = opts.permissions_session_deny
+  if session_deny and #session_deny > 0 then
+    table.insert(cmd, "--session-deny")
+    table.insert(cmd, table.concat(session_deny, ","))
+  end
+
+  -- Permission mode
   if opts.permission_mode then
     table.insert(cmd, "--permission-mode")
     table.insert(cmd, opts.permission_mode)

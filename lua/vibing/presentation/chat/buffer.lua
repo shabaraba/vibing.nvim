@@ -16,7 +16,10 @@ local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 ---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
 ---@field _pending_choices table[]? add_user_section()後に挿入する選択肢
+---@field _pending_approval table? add_user_section()後に挿入する承認要求UI
 ---@field _current_handle_id string? 実行中のリクエストのハンドルID
+---@field _session_allow table セッションレベルの許可リスト
+---@field _session_deny table セッションレベルの拒否リスト
 local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
@@ -32,7 +35,10 @@ function ChatBuffer:new(config)
   instance._chunk_buffer = ""
   instance._chunk_timer = nil
   instance._pending_choices = nil
+  instance._pending_approval = nil
   instance._current_handle_id = nil
+  instance._session_allow = {}
+  instance._session_deny = {}
   return instance
 end
 
@@ -263,6 +269,16 @@ function ChatBuffer:send_message()
     end
   end
 
+  -- Check if message is an approval response
+  local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
+  if ApprovalParser.is_approval_response(message) then
+    local approval = ApprovalParser.parse_approval_response(message)
+    if approval then
+      self:handle_approval_response(approval, message)
+      return
+    end
+  end
+
   local vibing = require("vibing")
   local adapter = vibing.get_adapter()
   local config = vibing.get_config()
@@ -298,6 +314,15 @@ function ChatBuffer:send_message()
     end,
     insert_choices = function(questions)
       return self:insert_choices(questions)
+    end,
+    insert_approval_request = function(tool, input, options)
+      return self:insert_approval_request(tool, input, options)
+    end,
+    get_session_allow = function()
+      return self:get_session_allow()
+    end,
+    get_session_deny = function()
+      return self:get_session_deny()
     end,
     clear_handle_id = function()
       self._current_handle_id = nil
@@ -348,8 +373,9 @@ function ChatBuffer:add_user_section()
   end
   self:_flush_chunks()
 
-  Renderer.addUserSection(self.buf, self.win, self._pending_choices)
+  Renderer.addUserSection(self.buf, self.win, self._pending_choices, self._pending_approval)
   self._pending_choices = nil
+  self._pending_approval = nil
 end
 
 ---@return number?
@@ -370,6 +396,65 @@ end
 ---@param questions table Agent SDKから受け取った質問構造
 function ChatBuffer:insert_choices(questions)
   self._pending_choices = questions
+end
+
+---ツール承認要求UIを保存
+---@param tool string ツール名
+---@param input table ツール入力
+---@param options table 承認オプション
+function ChatBuffer:insert_approval_request(tool, input, options)
+  self._pending_approval = {
+    tool = tool,
+    input = input,
+    options = options,
+  }
+end
+
+---承認レスポンスを処理
+---@param approval {action: string, tool: string?} パースされた承認データ
+---@param original_message string 元のメッセージ
+function ChatBuffer:handle_approval_response(approval, original_message)
+  local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
+  local tool = approval.tool or "Unknown"
+
+  -- Update session-level permissions based on action
+  if approval.action == "allow_for_session" then
+    table.insert(self._session_allow, tool)
+  elseif approval.action == "deny_for_session" then
+    table.insert(self._session_deny, tool)
+  end
+  -- For allow_once and deny_once, no persistent changes needed
+
+  -- Generate response message to inform Claude
+  local response_msg = ApprovalParser.generate_response_message(approval.action, tool)
+
+  -- Start assistant response with the approval notification
+  self:start_response()
+
+  -- Add the response message
+  self:append_chunk(response_msg)
+
+  -- Flush chunks to ensure message is displayed
+  if self._chunk_timer then
+    vim.fn.timer_stop(self._chunk_timer)
+    self._chunk_timer = nil
+  end
+  self:_flush_chunks()
+
+  -- Add new user section for next input
+  self:add_user_section()
+end
+
+---セッションレベルの許可リストを取得
+---@return table
+function ChatBuffer:get_session_allow()
+  return self._session_allow
+end
+
+---セッションレベルの拒否リストを取得
+---@return table
+function ChatBuffer:get_session_deny()
+  return self._session_deny
 end
 
 return ChatBuffer

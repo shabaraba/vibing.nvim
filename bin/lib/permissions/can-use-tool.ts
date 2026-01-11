@@ -23,8 +23,16 @@ type CanUseToolCallback = (
  * Create canUseTool callback for Agent SDK
  */
 export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallback {
-  const { allowedTools, askedTools, permissionRules, permissionMode, mcpEnabled, sessionId } =
-    config;
+  const {
+    allowedTools,
+    askedTools,
+    sessionAllowedTools,
+    sessionDeniedTools,
+    permissionRules,
+    permissionMode,
+    mcpEnabled,
+    sessionId,
+  } = config;
 
   return async (toolName: string, input: Record<string, unknown>): Promise<CanUseToolResult> => {
     try {
@@ -41,6 +49,30 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
           behavior: 'deny',
           message: 'Please wait for user to select from the provided options.',
         };
+      }
+
+      // Check session-level deny list (highest priority)
+      if (sessionDeniedTools && sessionDeniedTools.length > 0) {
+        for (const deniedTool of sessionDeniedTools) {
+          if (matchesPermission(toolName, input, deniedTool)) {
+            return {
+              behavior: 'deny',
+              message: `Tool ${toolName} was denied for this session.`,
+            };
+          }
+        }
+      }
+
+      // Check session-level allow list (second priority)
+      if (sessionAllowedTools && sessionAllowedTools.length > 0) {
+        for (const allowedTool of sessionAllowedTools) {
+          if (matchesPermission(toolName, input, allowedTool)) {
+            return {
+              behavior: 'allow',
+              updatedInput: input,
+            };
+          }
+        }
       }
 
       // Implement acceptEdits mode: auto-approve Edit/Write tools
@@ -77,18 +109,37 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
           }
 
           if (!allowedByAllowList) {
-            // Issue #29 workaround: In resume sessions, Agent SDK bypasses canUseTool
-            if (sessionId) {
-              return {
-                behavior: 'deny',
-                message: `Tool ${toolName} requires user approval before use. Add it to the allow list with /allow ${askedTool} to enable in resume sessions.`,
-              };
-            } else {
-              return {
-                behavior: 'ask',
-                updatedInput: input,
-              };
-            }
+            // Send approval_required event to show interactive UI in chat
+            console.log(
+              safeJsonStringify({
+                type: 'approval_required',
+                tool: toolName,
+                input: input,
+                options: [
+                  {
+                    value: 'allow_once',
+                    label: 'allow_once - Allow this execution only',
+                  },
+                  {
+                    value: 'deny_once',
+                    label: 'deny_once - Deny this execution only',
+                  },
+                  {
+                    value: 'allow_for_session',
+                    label: 'allow_for_session - Allow for this session',
+                  },
+                  {
+                    value: 'deny_for_session',
+                    label: 'deny_for_session - Deny for this session',
+                  },
+                ],
+              })
+            );
+
+            return {
+              behavior: 'deny',
+              message: 'Please wait for user approval from the provided options.',
+            };
           }
 
           return {

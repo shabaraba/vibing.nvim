@@ -43,6 +43,8 @@ export function parseArguments(args: string[]): AgentConfig {
     allowedTools: [],
     deniedTools: [],
     askedTools: [],
+    sessionAllowedTools: [],
+    sessionDeniedTools: [],
     permissionRules: [],
     mode: null,
     model: null,
@@ -89,6 +91,18 @@ export function parseArguments(args: string[]): AgentConfig {
       i++;
     } else if (args[i] === '--ask' && args[i + 1]) {
       config.askedTools = args[i + 1]
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t);
+      i++;
+    } else if (args[i] === '--session-allow' && args[i + 1]) {
+      config.sessionAllowedTools = args[i + 1]
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t);
+      i++;
+    } else if (args[i] === '--session-deny' && args[i + 1]) {
+      config.sessionDeniedTools = args[i + 1]
         .split(',')
         .map((t) => t.trim())
         .filter((t) => t);
