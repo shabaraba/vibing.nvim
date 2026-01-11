@@ -87,7 +87,7 @@ jobs:
       - name: Check file permissions
         run: |
           echo "Checking executable permissions..."
-          test -x bin/agent-wrapper.mjs && echo "OK: bin/agent-wrapper.mjs is executable" || exit 1
+          test -x bin/agent-wrapper.ts && echo "OK: bin/agent-wrapper.ts is executable" || exit 1
 
       - name: Check file structure
         run: |
