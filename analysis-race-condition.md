@@ -22,11 +22,13 @@ if (block.type === 'tool_use') {
   // ...
 
   // 79-97行目: tool_useイベントを出力
-  console.log(safeJsonStringify({
-    type: 'tool_use',
-    tool: toolName,
-    file_path: toolInput.file_path,
-  }));
+  console.log(
+    safeJsonStringify({
+      type: 'tool_use',
+      tool: toolName,
+      file_path: toolInput.file_path,
+    })
+  );
 }
 ```
 
@@ -102,6 +104,7 @@ T13: PatchStorage.save() が git diff を実行
 **仮説**: `tool_use`メッセージ送信後、Agent SDKはツールを**同期的に**実行し、完了を待ってから`tool_result`を生成する。
 
 **確認方法**:
+
 1. Agent SDK の型定義から`PreToolUse`/`PostToolUse`フックが存在することを確認済み
 2. これらのフックの存在は、ツール実行が明確なタイミングで行われることを示唆
 3. `for await`ループの性質上、各イテレーション間でブロッキングが発生
@@ -115,10 +118,12 @@ T13: PatchStorage.save() が git diff を実行
 ### C. git diff の失敗条件
 
 **`git diff HEAD`の動作**:
+
 - `git commit`後: 差分なし（コミット済みの変更は表示されない）
 - `git add`後でコミット前: ステージングエリアの差分が取れる可能性あるが不完全
 
 **`git diff --staged`の動作**:
+
 - `git add`後: ステージングエリアの差分を表示
 - `git commit`後: 差分なし（コミット済み）
 
@@ -127,6 +132,7 @@ T13: PatchStorage.save() が git diff を実行
 ### Race Conditionは実在する可能性が高い
 
 理由:
+
 1. `tool_use`イベント出力と実際のツール実行の間にタイムラグがある
 2. `vim.schedule()`により`on_tool_use`の実行が遅延する
 3. Agent SDKはツールを同期実行する（推定）
@@ -139,18 +145,24 @@ T13: PatchStorage.save() が git diff を実行
 ```javascript
 // agent-wrapper.mjs
 queryOptions.hooks = {
-  PreToolUse: [{
-    hooks: [async (input) => {
-      if (input.tool_name === 'Bash' && isGitCommand(input.tool_input)) {
-        // ツール実行直前にpatchを保存
-        console.log(safeJsonStringify({
-          type: 'save_patch_before_tool',
-          tool_name: input.tool_name,
-        }));
-      }
-      return { continue: true };
-    }]
-  }]
+  PreToolUse: [
+    {
+      hooks: [
+        async (input) => {
+          if (input.tool_name === 'Bash' && isGitCommand(input.tool_input)) {
+            // ツール実行直前にpatchを保存
+            console.log(
+              safeJsonStringify({
+                type: 'save_patch_before_tool',
+                tool_name: input.tool_name,
+              })
+            );
+          }
+          return { continue: true };
+        },
+      ],
+    },
+  ],
 };
 ```
 
@@ -174,6 +186,7 @@ queryOptions.hooks = {
 ### Critical Evidence
 
 **Double vim.schedule() Queueing:**
+
 1. `stream_handler.lua:17` - First `vim.schedule()` when receiving stdout
 2. `event_processor.lua:24` - Second `vim.schedule()` for `on_tool_use` callback
 
@@ -203,6 +216,7 @@ T13: PatchStorage.save() runs git diff
 ### Why the Comment #3731122580 is Correct
 
 The author correctly identified:
+
 1. ✅ `tool_use` events fire BEFORE tool execution
 2. ✅ `vim.schedule()` delays callback execution
 3. ✅ Agent SDK executes tools synchronously (in Node.js process)
@@ -212,6 +226,7 @@ The author correctly identified:
 ### Additional Finding
 
 The problem is **worse than stated** - there are TWO layers of `vim.schedule()`:
+
 - Layer 1: stdout handler (`stream_handler.lua:17`)
 - Layer 2: event handler (`event_processor.lua:24`)
 

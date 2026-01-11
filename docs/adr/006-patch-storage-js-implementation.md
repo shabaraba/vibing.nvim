@@ -17,6 +17,7 @@ Issue #281 comment #3731122580で指摘された通り、現在のpatch storage�
    - `event_processor.lua:24`: `on_tool_use`で2回目
 
 2. **タイミングの問題**
+
    ```
    tool_use出力 → vim.schedule()×2 ⏱️⏱️
         ↓
@@ -143,10 +144,12 @@ if (currentSessionModifiedFiles.size > 0) {
   if (patch) {
     const patchFilename = savePatchToFile(sessionId, patch);
 
-    console.log(safeJsonStringify({
-      type: 'patch_saved',
-      filename: patchFilename
-    }));
+    console.log(
+      safeJsonStringify({
+        type: 'patch_saved',
+        filename: patchFilename,
+      })
+    );
   }
 
   // セッション終了後にクリア
@@ -169,11 +172,7 @@ async function generateSessionPatch(files, savedContents, sessionId) {
     if (savedContent !== null && savedContent !== undefined) {
       // このセッションで変更したファイル
       // saved_contentと現在の内容の差分
-      const diff = await generateUnifiedDiff(
-        savedContent,
-        currentContent,
-        file
-      );
+      const diff = await generateUnifiedDiff(savedContent, currentContent, file);
 
       if (diff) {
         patches.push(diff);
@@ -207,10 +206,10 @@ function generateNewFileDiff(filepath, content) {
     'new file',
     '--- /dev/null',
     `+++ b/${filepath}`,
-    `@@ -0,0 +1,${lines.length} @@`
+    `@@ -0,0 +1,${lines.length} @@`,
   ];
 
-  const body = lines.map(line => '+' + line);
+  const body = lines.map((line) => '+' + line);
 
   return [...header, ...body].join('\n');
 }
@@ -264,10 +263,12 @@ elseif msg.type == "patch_saved" then
 ### Mitigation
 
 **メモリ対策:**
+
 - ファイルサイズの上限チェック（例: 1MB以上は保存しない）
 - セッション終了時に確実にクリア
 
 **テスト:**
+
 - 新規ファイル作成のテストケース
 - 大量ファイル編集のテストケース
 - git操作の有無によるテストケース
