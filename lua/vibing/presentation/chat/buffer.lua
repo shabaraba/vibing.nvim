@@ -448,6 +448,25 @@ end
 function ChatBuffer:handle_approval_response(approval, original_message)
   local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
 
+  -- Validate approval action
+  local valid_actions = {
+    allow_once = true,
+    deny_once = true,
+    allow_for_session = true,
+    deny_for_session = true,
+  }
+  if not approval.action or not valid_actions[approval.action] then
+    vim.notify(
+      string.format(
+        "[vibing] Invalid approval action: '%s' for tool '%s'",
+        tostring(approval.action),
+        tostring(self._pending_approval and self._pending_approval.tool or "unknown")
+      ),
+      vim.log.levels.ERROR
+    )
+    return
+  end
+
   -- Get tool name from pending approval (not from parsed message)
   local tool = self._pending_approval and self._pending_approval.tool
   if not tool or tool == "" then

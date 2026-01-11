@@ -157,15 +157,19 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval)
       -- Default to single-select (numbered list) when multiSelect is not explicitly true
       local useNumberedList = q.multiSelect ~= true
       local optionIndex = 1
-      for _, opt in ipairs(q.options) do
-        if useNumberedList then
-          table.insert(choiceLines, optionIndex .. ". " .. opt.label)
-          optionIndex = optionIndex + 1
-        else
-          table.insert(choiceLines, "- " .. opt.label)
-        end
-        if opt.description then
-          table.insert(choiceLines, "  " .. opt.description)
+      for _, opt in ipairs(q.options or {}) do
+        -- Safe label extraction
+        local label = (opt.label and opt.label ~= "") and opt.label or ""
+        if label ~= "" then
+          if useNumberedList then
+            table.insert(choiceLines, optionIndex .. ". " .. label)
+            optionIndex = optionIndex + 1
+          else
+            table.insert(choiceLines, "- " .. label)
+          end
+          if opt.description and opt.description ~= "" then
+            table.insert(choiceLines, "  " .. tostring(opt.description))
+          end
         end
       end
       table.insert(choiceLines, "")
@@ -180,28 +184,39 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval)
     local approvalLines = {}
     table.insert(approvalLines, "⚠️  Tool approval required")
     table.insert(approvalLines, "")
-    table.insert(approvalLines, "Tool: " .. pendingApproval.tool)
 
-    -- Show input details based on tool type
+    -- Safe tool name extraction
+    local toolName = (pendingApproval.tool and pendingApproval.tool ~= "")
+      and pendingApproval.tool
+      or "[unknown]"
+    table.insert(approvalLines, "Tool: " .. toolName)
+
+    -- Show input details based on tool type (nil-safe)
     if pendingApproval.input then
       if pendingApproval.input.command then
-        table.insert(approvalLines, "Command: " .. pendingApproval.input.command)
-      elseif pendingApproval.input.file_path then
-        table.insert(approvalLines, "File: " .. pendingApproval.input.file_path)
-      elseif pendingApproval.input.pattern then
-        table.insert(approvalLines, "Pattern: " .. pendingApproval.input.pattern)
-      elseif pendingApproval.input.url then
-        table.insert(approvalLines, "URL: " .. pendingApproval.input.url)
+        table.insert(approvalLines, "Command: " .. tostring(pendingApproval.input.command))
+      end
+      if pendingApproval.input.file_path then
+        table.insert(approvalLines, "File: " .. tostring(pendingApproval.input.file_path))
+      end
+      if pendingApproval.input.pattern then
+        table.insert(approvalLines, "Pattern: " .. tostring(pendingApproval.input.pattern))
+      end
+      if pendingApproval.input.url then
+        table.insert(approvalLines, "URL: " .. tostring(pendingApproval.input.url))
       end
     end
 
     table.insert(approvalLines, "")
 
-    -- Use numbered list for single-select approval options
+    -- Use numbered list for single-select approval options (nil-safe iteration)
     local optionIndex = 1
-    for _, opt in ipairs(pendingApproval.options) do
-      table.insert(approvalLines, optionIndex .. ". " .. opt.label)
-      optionIndex = optionIndex + 1
+    for _, opt in ipairs(pendingApproval.options or {}) do
+      local label = (opt.label and opt.label ~= "") and opt.label or ""
+      if label ~= "" then
+        table.insert(approvalLines, optionIndex .. ". " .. label)
+        optionIndex = optionIndex + 1
+      end
     end
 
     table.insert(approvalLines, "")
