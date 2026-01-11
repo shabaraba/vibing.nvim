@@ -6,12 +6,18 @@ local M = {}
 ---@param message string ユーザーメッセージ
 ---@return boolean
 function M.is_approval_response(message)
-  -- 承認選択肢のパターンをチェック
+  -- Input validation
+  if not message or type(message) ~= "string" or message == "" then
+    return false
+  end
+
+  -- 番号付きリスト形式での厳密なパターンマッチング
+  -- 例: "1. allow_once - Allow this execution only"
   local patterns = {
-    "allow_once",
-    "deny_once",
-    "allow_for_session",
-    "deny_for_session",
+    "^%d+%.%s*allow_once%s*%-",
+    "^%d+%.%s*deny_once%s*%-",
+    "^%d+%.%s*allow_for_session%s*%-",
+    "^%d+%.%s*deny_for_session%s*%-",
   }
 
   for _, pattern in ipairs(patterns) do
@@ -27,19 +33,23 @@ end
 ---@param message string ユーザーメッセージ
 ---@return {action: string, tool: string?}?
 function M.parse_approval_response(message)
+  -- Input validation
+  if not message or type(message) ~= "string" or message == "" then
+    return nil
+  end
+
   -- Extract the selected option from numbered list format
   -- Example: "1. allow_once - Allow this execution only"
-
   local action = nil
 
-  -- Check for each approval action
-  if message:match("allow_once") then
+  -- 番号付きリスト形式での厳密なマッチング
+  if message:match("^%d+%.%s*allow_once%s*%-") then
     action = "allow_once"
-  elseif message:match("deny_once") then
+  elseif message:match("^%d+%.%s*deny_once%s*%-") then
     action = "deny_once"
-  elseif message:match("allow_for_session") then
+  elseif message:match("^%d+%.%s*allow_for_session%s*%-") then
     action = "allow_for_session"
-  elseif message:match("deny_for_session") then
+  elseif message:match("^%d+%.%s*deny_for_session%s*%-") then
     action = "deny_for_session"
   end
 
@@ -47,13 +57,12 @@ function M.parse_approval_response(message)
     return nil
   end
 
-  -- Extract tool name from the message (optional)
-  -- Pattern: "Tool: <tool_name>"
-  local tool = message:match("Tool:%s*(%S+)")
-
+  -- Note: Tool name should be obtained from _pending_approval.tool
+  -- rather than parsing from user message, as the approval UI is shown
+  -- in the Assistant section, not in the user's editable area.
   return {
     action = action,
-    tool = tool,
+    tool = nil, -- Will be filled by caller from _pending_approval
   }
 end
 

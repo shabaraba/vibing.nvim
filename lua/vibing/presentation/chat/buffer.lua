@@ -291,11 +291,21 @@ function ChatBuffer:send_message()
   end
 
   -- Check if message is an approval response
+  -- Only process if there's a pending approval request
   local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-  if ApprovalParser.is_approval_response(message) then
+  if self._pending_approval and ApprovalParser.is_approval_response(message) then
     local approval = ApprovalParser.parse_approval_response(message)
     if approval then
       self:handle_approval_response(approval, message)
+      -- Clear pending approval after processing
+      self._pending_approval = nil
+      return
+    else
+      -- is_approval_response returned true but parsing failed
+      vim.notify(
+        "[vibing] Failed to parse approval response. Please select a single option.",
+        vim.log.levels.WARN
+      )
       return
     end
   end
@@ -436,24 +446,46 @@ end
 ---@param original_message string 元のメッセージ
 function ChatBuffer:handle_approval_response(approval, original_message)
   local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-  local tool = approval.tool or "Unknown"
+
+  -- Get tool name from pending approval (not from parsed message)
+  local tool = self._pending_approval and self._pending_approval.tool
+  if not tool or tool == "" then
+    vim.notify("[vibing] Invalid approval: missing tool name", vim.log.levels.ERROR)
+    return
+  end
 
   -- Update session-level permissions based on action
   if approval.action == "allow_once" then
     -- Add with :once suffix for one-time use
-    table.insert(self._session_allow, tool .. ":once")
+    local tool_once = tool .. ":once"
+    table.insert(self._session_allow, tool_once)
     -- Track for cleanup (JS side also removes, but this is a safety net)
     self._once_tools = self._once_tools or {}
-    table.insert(self._once_tools, tool .. ":once")
+    table.insert(self._once_tools, tool_once)
   elseif approval.action == "deny_once" then
     -- Add with :once suffix for one-time denial
-    table.insert(self._session_deny, tool .. ":once")
+    local tool_once = tool .. ":once"
+    table.insert(self._session_deny, tool_once)
     self._once_tools = self._once_tools or {}
-    table.insert(self._once_tools, tool .. ":once")
+    table.insert(self._once_tools, tool_once)
   elseif approval.action == "allow_for_session" then
-    table.insert(self._session_allow, tool)
+    -- Add to allow list if not already present
+    if not vim.tbl_contains(self._session_allow, tool) then
+      table.insert(self._session_allow, tool)
+    end
+    -- Remove from deny list if present (mutual exclusivity)
+    self._session_deny = vim.tbl_filter(function(t)
+      return t ~= tool
+    end, self._session_deny)
   elseif approval.action == "deny_for_session" then
-    table.insert(self._session_deny, tool)
+    -- Add to deny list if not already present
+    if not vim.tbl_contains(self._session_deny, tool) then
+      table.insert(self._session_deny, tool)
+    end
+    -- Remove from allow list if present (mutual exclusivity)
+    self._session_allow = vim.tbl_filter(function(t)
+      return t ~= tool
+    end, self._session_allow)
   end
 
   -- Generate response message to inform Claude
