@@ -11,6 +11,14 @@ local function get_plugin_root()
   return plugin_root
 end
 
+---Get Node.js executable path
+---Checks environment variable VIBING_NODE_EXECUTABLE, then falls back to "node"
+---@return string
+local function get_node_executable()
+  local node_cmd = vim.env.VIBING_NODE_EXECUTABLE or "node"
+  return node_cmd
+end
+
 ---Check if command exists
 ---@param cmd string
 ---@return boolean
@@ -107,7 +115,8 @@ function M.build()
     local register_script = plugin_root .. "/bin/register-mcp.mjs"
     if vim.fn.filereadable(register_script) == 1 then
       print_build("Registering MCP server in ~/.claude.json...")
-      local register_output = vim.fn.system("node " .. vim.fn.shellescape(register_script))
+      local node_exec = get_node_executable()
+      local register_output = vim.fn.system(node_exec .. " " .. vim.fn.shellescape(register_script))
       if vim.v.shell_error == 0 then
         print_build("✓ MCP server registered")
       else
@@ -177,7 +186,8 @@ function M.build_async(callback)
             local register_script = plugin_root .. "/bin/register-mcp.mjs"
             if vim.fn.filereadable(register_script) == 1 then
               print_build("Registering MCP server in ~/.claude.json...")
-              vim.fn.jobstart("node " .. vim.fn.shellescape(register_script), {
+              local node_exec = get_node_executable()
+              vim.fn.jobstart(node_exec .. " " .. vim.fn.shellescape(register_script), {
                 on_exit = function(_, reg_exit_code)
                   vim.schedule(function()
                     if reg_exit_code == 0 then

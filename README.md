@@ -592,6 +592,51 @@ This allows Claude Code CLI to control your Neovim instance (read/write buffers,
 }
 ```
 
+### Node.js Executable
+
+Configure which Node.js executable to use:
+
+```lua
+node = {
+  executable = "auto",  -- Node.js executable path
+                        -- "auto": Auto-detect from PATH (default)
+                        -- "/usr/bin/node": Explicit path to node binary
+                        -- "/usr/local/bin/bun": Use bun instead of node
+                        -- Can also be set via VIBING_NODE_EXECUTABLE env var
+}
+```
+
+**When to use this:**
+
+- **Custom Node.js location**: If node is not in your PATH
+- **Alternative runtime**: Use bun or another Node.js-compatible runtime
+- **Build environment**: Control which Node.js binary is used during `build.sh`
+
+**Build-time configuration:**
+
+During plugin installation (`build.sh`), you can set the `VIBING_NODE_EXECUTABLE` environment
+variable:
+
+```bash
+VIBING_NODE_EXECUTABLE=/usr/local/bin/bun ./build.sh
+```
+
+Or in your Lazy.nvim config:
+
+```lua
+{
+  "shabaraba/vibing.nvim",
+  build = "VIBING_NODE_EXECUTABLE=/usr/local/bin/bun ./build.sh",
+  config = function()
+    require("vibing").setup({
+      node = {
+        executable = "/usr/local/bin/bun",  -- Runtime executable
+      },
+    })
+  end,
+}
+```
+
 ### Language
 
 Configure AI response language:

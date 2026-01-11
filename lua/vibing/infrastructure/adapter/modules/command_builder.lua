@@ -4,9 +4,16 @@
 local M = {}
 
 ---ノード実行可能ファイルのパスを取得
----PATHから検索し、見つからない場合は"node"にフォールバック
+---configからnode.executableを読み取り、"auto"の場合はPATHから検索
+---@param config Vibing.Config グローバル設定
 ---@return string ノード実行可能ファイルのパス
-local function get_node_executable()
+local function get_node_executable(config)
+  -- Check if user has specified a custom executable
+  if config.node and config.node.executable and config.node.executable ~= "auto" then
+    return config.node.executable
+  end
+
+  -- Auto-detect from PATH
   local node_cmd = vim.fn.exepath("node")
   if node_cmd == "" then
     node_cmd = "node"
@@ -184,7 +191,7 @@ end
 ---@param config Vibing.Config グローバル設定
 ---@return string[] コマンドと引数の配列（最初の要素がNode実行可能ファイル、続いてラッパーパスとフラグ）
 function M.build(wrapper_path, prompt, opts, session_id, config)
-  local cmd = { get_node_executable(), wrapper_path }
+  local cmd = { get_node_executable(config), wrapper_path }
 
   -- Working directory
   table.insert(cmd, "--cwd")

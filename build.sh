@@ -7,18 +7,21 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MCP_DIR="${SCRIPT_DIR}/mcp-server"
 
+# Use VIBING_NODE_EXECUTABLE env var if set, otherwise default to "node"
+NODE_EXECUTABLE="${VIBING_NODE_EXECUTABLE:-node}"
+
 echo "[vibing.nvim] Building MCP server..."
 
 # Check if Node.js is installed
-if ! command -v node &> /dev/null; then
-    echo "[vibing.nvim] Error: Node.js not found. Please install Node.js 18+ from https://nodejs.org/"
+if ! command -v "$NODE_EXECUTABLE" &> /dev/null; then
+    echo "[vibing.nvim] Error: Node.js not found at '$NODE_EXECUTABLE'. Please install Node.js 18+ from https://nodejs.org/"
     exit 1
 fi
 
 # Check Node.js version
-NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+NODE_VERSION=$("$NODE_EXECUTABLE" -v | cut -d'v' -f2 | cut -d'.' -f1)
 if [ "$NODE_VERSION" -lt 18 ]; then
-    echo "[vibing.nvim] Warning: Node.js version 18+ recommended (found: $(node -v))"
+    echo "[vibing.nvim] Warning: Node.js version 18+ recommended (found: $("$NODE_EXECUTABLE" -v))"
 fi
 
 # Check if npm is installed
@@ -54,11 +57,11 @@ if [ -f "dist/index.js" ]; then
     # Register MCP server in ~/.claude.json
     cd "$SCRIPT_DIR"
     echo "[vibing.nvim] Registering MCP server in ~/.claude.json..."
-    if node bin/register-mcp.mjs; then
+    if "$NODE_EXECUTABLE" bin/register-mcp.mjs; then
         exit 0
     else
         echo "[vibing.nvim] ⚠ Warning: MCP server is built but registration failed"
-        echo "[vibing.nvim] You can manually register by running: node bin/register-mcp.mjs"
+        echo "[vibing.nvim] You can manually register by running: $NODE_EXECUTABLE bin/register-mcp.mjs"
         # Build succeeded but registration failed - still exit 0 since MCP server is functional
         exit 0
     fi

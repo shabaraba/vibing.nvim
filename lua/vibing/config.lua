@@ -26,6 +26,7 @@
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
 ---@field preview Vibing.PreviewConfig プレビューUI設定（diffプレビュー有効化）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
+---@field node Vibing.NodeConfig Node.js実行ファイル設定（バイナリパス）
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
 ---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
 
@@ -56,6 +57,11 @@
 ---@field default_mode "code"|"plan"|"explore" デフォルトモード（"code": コード生成、"plan": 計画、"explore": 探索）
 ---@field default_model "sonnet"|"opus"|"haiku" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速）
 ---@field prioritize_vibing_lsp boolean vibing-nvim LSPツールを優先（true: Serena等の汎用LSPより優先、false: システムプロンプトを挿入しない、デフォルト: true）
+
+---@class Vibing.NodeConfig
+---Node.js実行ファイル設定
+---Agent SDKラッパーとMCPビルドで使用するNode.js実行ファイルのパスを指定
+---@field executable string|"auto" Node.js実行ファイルのパス ("auto": PATHから自動検出、文字列: 明示的なパス指定)
 
 ---@class Vibing.McpConfig
 ---MCP統合設定
@@ -157,6 +163,9 @@ M.defaults = {
     },
     ask = {},  -- Tools requiring approval before use
     rules = {},  -- Granular permission rules (optional)
+  },
+  node = {
+    executable = "auto",  -- "auto" (detect from PATH) or explicit path like "/usr/bin/node"
   },
   mcp = {
     enabled = true,  -- MCP integration enabled by default (auto-allows vibing-nvim MCP tools)
@@ -299,6 +308,26 @@ function M.setup(opts)
       validate_lang_code(M.options.language.default, "language.default")
       validate_lang_code(M.options.language.chat, "language.chat")
       validate_lang_code(M.options.language.inline, "language.inline")
+    end
+  end
+
+  -- Validate node.executable configuration
+  if M.options.node and M.options.node.executable then
+    local executable = M.options.node.executable
+    if type(executable) ~= "string" or (executable ~= "auto" and executable == "") then
+      notify.warn(string.format(
+        "Invalid node.executable value '%s'. Must be 'auto' or a valid file path. Falling back to 'auto'.",
+        tostring(executable)
+      ))
+      M.options.node.executable = "auto"
+    elseif executable ~= "auto" then
+      -- Validate that the specified executable exists (optional, warn only)
+      if vim.fn.executable(executable) == 0 then
+        notify.warn(string.format(
+          "Node.js executable not found at '%s'. Ensure the path is correct.",
+          executable
+        ))
+      end
     end
   end
 

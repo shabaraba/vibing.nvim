@@ -12,6 +12,9 @@ return {
     -- Method 1: Shell script (simplest, recommended)
     build = "./build.sh",
 
+    -- Method 1b: Use custom Node.js executable during build
+    -- build = "VIBING_NODE_EXECUTABLE=/usr/local/bin/bun ./build.sh",
+
     -- Method 2: Lua function (more flexible)
     -- build = function()
     --   require("vibing.install").build()
@@ -20,6 +23,11 @@ return {
     config = function()
       require("vibing").setup({
         adapter = "agent_sdk",
+
+        -- Node.js実行ファイル設定（ランタイム）
+        node = {
+          executable = "auto",  -- "auto" or "/usr/local/bin/bun"
+        },
 
         -- MCP統合設定
         mcp = {
@@ -62,8 +70,12 @@ return {
   {
     "yourusername/vibing.nvim",
     build = "./build.sh",  -- シンプルなワンコマンド
+    -- または: build = "VIBING_NODE_EXECUTABLE=/usr/local/bin/bun ./build.sh",  -- カスタムNode.js実行ファイル
     config = function()
       require("vibing").setup({
+        node = {
+          executable = "auto",  -- "auto" or "/usr/local/bin/bun"
+        },
         mcp = {
           enabled = true,
           auto_setup = true,

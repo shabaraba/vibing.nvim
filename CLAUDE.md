@@ -695,6 +695,9 @@ require("vibing").setup({
     deny = { "Bash" },
     rules = {},  -- Optional granular rules
   },
+  node = {
+    executable = "auto",  -- "auto" (detect from PATH) or explicit path like "/usr/bin/node" or "/usr/local/bin/bun"
+  },
   mcp = {
     enabled = false,  -- MCP integration disabled by default
     rpc_port = 9876,
