@@ -162,8 +162,8 @@ class PatchStorage {
       return null;
     }
 
-    // 3. Generate diff from snapshot tag
-    const diffResult = spawnSync('git', ['diff', '--cached', this.snapshotTag], {
+    // 3. Generate diff from snapshot tag (--relative ensures relative paths)
+    const diffResult = spawnSync('git', ['diff', '--cached', '--relative', this.snapshotTag], {
       cwd: this.cwd,
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -207,7 +207,9 @@ class PatchStorage {
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `${timestamp}.patch`;
-      writeFileSync(join(patchDir, filename), patchContent, 'utf-8');
+      // Ensure patch ends with newline (required by git apply)
+      const patchWithNewline = patchContent.endsWith('\n') ? patchContent : patchContent + '\n';
+      writeFileSync(join(patchDir, filename), patchWithNewline, 'utf-8');
 
       return filename;
     } catch (error) {

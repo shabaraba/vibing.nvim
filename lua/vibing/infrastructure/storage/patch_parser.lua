@@ -12,22 +12,19 @@ function M.extract_file_list(session_id, patch_filename)
     return {}
   end
 
-  local patch_path = PatchStorage.get_patch_file_path(session_id, patch_filename)
-  if not patch_path then
-    return {}
-  end
-
-  local file = io.open(patch_path, "r")
-  if not file then
+  -- PatchStorage.read()でパッチ内容を読み込む
+  local patch_content = PatchStorage.read(session_id, patch_filename)
+  if not patch_content then
     return {}
   end
 
   local files = {}
   local seen = {}
 
-  for line in file:lines() do
+  -- 行ごとに処理
+  for line in patch_content:gmatch("[^\r\n]+") do
     -- git diff形式: "diff --git a/path/to/file b/path/to/file"
-    local file_path = line:match("^diff %-%- git a/(.+) b/")
+    local file_path = line:match("^diff %-%-git a/(.+) b/")
     if file_path then
       -- 重複を避ける
       if not seen[file_path] then
@@ -37,7 +34,6 @@ function M.extract_file_list(session_id, patch_filename)
     end
   end
 
-  file:close()
   return files
 end
 
