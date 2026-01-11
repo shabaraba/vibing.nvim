@@ -138,7 +138,8 @@ function M.addUserSection(buf, win, pendingChoices)
     local choiceLines = {}
     for _, q in ipairs(pendingChoices) do
       -- Use numbered list for single-select, bullet list for multi-select
-      local useNumberedList = not q.multiSelect
+      -- Default to single-select (numbered list) when multiSelect is not explicitly true
+      local useNumberedList = q.multiSelect ~= true
       local optionIndex = 1
       for _, opt in ipairs(q.options) do
         if useNumberedList then

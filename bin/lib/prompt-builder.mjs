@@ -103,8 +103,8 @@ The AskUserQuestion tool allows you to:
 **How it works:**
 1. You call AskUserQuestion with your question(s) and options
 2. The tool is denied, but choices are automatically inserted into the user's input area
-   - Single-select questions appear as numbered lists (1. 2. 3.)
-   - Multi-select questions appear as bullet lists (- - -)
+   - Single-select questions appear as a numbered list (1. 2. 3.)
+   - Multi-select questions appear as a bullet list (- - -)
 3. User deletes unwanted options and presses Enter to send their choice
 4. You receive the user's selection as a normal message and continue implementation
 
