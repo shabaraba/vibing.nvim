@@ -52,9 +52,22 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
       }
 
       // Check session-level deny list (highest priority)
+      // Use reverse loop to safely remove :once items
       if (sessionDeniedTools && sessionDeniedTools.length > 0) {
-        for (const deniedTool of sessionDeniedTools) {
-          if (matchesPermission(toolName, input, deniedTool)) {
+        for (let i = sessionDeniedTools.length - 1; i >= 0; i--) {
+          const deniedTool = sessionDeniedTools[i];
+
+          if (deniedTool.endsWith(':once')) {
+            const baseTool = deniedTool.replace(':once', '');
+            if (matchesPermission(toolName, input, baseTool)) {
+              // Deny once and remove from list
+              sessionDeniedTools.splice(i, 1);
+              return {
+                behavior: 'deny',
+                message: `Tool ${toolName} was denied once.`,
+              };
+            }
+          } else if (matchesPermission(toolName, input, deniedTool)) {
             return {
               behavior: 'deny',
               message: `Tool ${toolName} was denied for this session.`,
@@ -64,9 +77,22 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
       }
 
       // Check session-level allow list (second priority)
+      // Use reverse loop to safely remove :once items
       if (sessionAllowedTools && sessionAllowedTools.length > 0) {
-        for (const allowedTool of sessionAllowedTools) {
-          if (matchesPermission(toolName, input, allowedTool)) {
+        for (let i = sessionAllowedTools.length - 1; i >= 0; i--) {
+          const allowedTool = sessionAllowedTools[i];
+
+          if (allowedTool.endsWith(':once')) {
+            const baseTool = allowedTool.replace(':once', '');
+            if (matchesPermission(toolName, input, baseTool)) {
+              // Allow once and remove from list
+              sessionAllowedTools.splice(i, 1);
+              return {
+                behavior: 'allow',
+                updatedInput: input,
+              };
+            }
+          } else if (matchesPermission(toolName, input, allowedTool)) {
             return {
               behavior: 'allow',
               updatedInput: input,

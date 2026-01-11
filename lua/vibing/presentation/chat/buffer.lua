@@ -20,6 +20,7 @@ local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 ---@field _current_handle_id string? 実行中のリクエストのハンドルID
 ---@field _session_allow table セッションレベルの許可リスト
 ---@field _session_deny table セッションレベルの拒否リスト
+---@field _once_tools table? 一時許可/拒否ツールのトラッキング（次のメッセージでクリア）
 local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
@@ -39,6 +40,7 @@ function ChatBuffer:new(config)
   instance._current_handle_id = nil
   instance._session_allow = {}
   instance._session_deny = {}
+  instance._once_tools = nil
   return instance
 end
 
@@ -248,6 +250,25 @@ end
 
 ---メッセージを送信
 function ChatBuffer:send_message()
+  -- Clean up :once tools (JS side removes during use, but this is a safety net)
+  if self._once_tools then
+    for _, once_tool in ipairs(self._once_tools) do
+      -- Remove from allow list
+      for i = #self._session_allow, 1, -1 do
+        if self._session_allow[i] == once_tool then
+          table.remove(self._session_allow, i)
+        end
+      end
+      -- Remove from deny list
+      for i = #self._session_deny, 1, -1 do
+        if self._session_deny[i] == once_tool then
+          table.remove(self._session_deny, i)
+        end
+      end
+    end
+    self._once_tools = nil
+  end
+
   local message = self:extract_user_message()
   if not message then
     vim.notify("[vibing] No message to send", vim.log.levels.WARN)
@@ -418,12 +439,22 @@ function ChatBuffer:handle_approval_response(approval, original_message)
   local tool = approval.tool or "Unknown"
 
   -- Update session-level permissions based on action
-  if approval.action == "allow_for_session" then
+  if approval.action == "allow_once" then
+    -- Add with :once suffix for one-time use
+    table.insert(self._session_allow, tool .. ":once")
+    -- Track for cleanup (JS side also removes, but this is a safety net)
+    self._once_tools = self._once_tools or {}
+    table.insert(self._once_tools, tool .. ":once")
+  elseif approval.action == "deny_once" then
+    -- Add with :once suffix for one-time denial
+    table.insert(self._session_deny, tool .. ":once")
+    self._once_tools = self._once_tools or {}
+    table.insert(self._once_tools, tool .. ":once")
+  elseif approval.action == "allow_for_session" then
     table.insert(self._session_allow, tool)
   elseif approval.action == "deny_for_session" then
     table.insert(self._session_deny, tool)
   end
-  -- For allow_once and deny_once, no persistent changes needed
 
   -- Generate response message to inform Claude
   local response_msg = ApprovalParser.generate_response_message(approval.action, tool)
