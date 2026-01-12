@@ -123,6 +123,42 @@ function M.create_new_for_worktree(worktree_path, branch_name)
   return session
 end
 
+---指定されたディレクトリで新しいチャットセッションを作成
+---@param directory string 作業ディレクトリのパス
+---@return Vibing.ChatSession
+function M.create_new_in_directory(directory)
+  local vibing = require("vibing")
+  local config = vibing.get_config()
+
+  -- 新しいセッションを作成
+  local session = ChatSession:new({
+    frontmatter = {
+      ["vibing.nvim"] = true,
+      created_at = os.date("%Y-%m-%dT%H:%M:%S"),
+      mode = config.agent and config.agent.default_mode or "code",
+      model = config.agent and config.agent.default_model or "sonnet",
+      permission_mode = config.permissions and config.permissions.mode or "acceptEdits",
+      permissions_allow = config.permissions and config.permissions.allow or {},
+      permissions_deny = config.permissions and config.permissions.deny or {},
+    },
+  })
+
+  -- ディレクトリを正規化
+  local normalized_dir = vim.fn.fnamemodify(directory, ":p")
+  if not normalized_dir:match("/$") then
+    normalized_dir = normalized_dir .. "/"
+  end
+
+  -- ファイルパスを設定（指定されたディレクトリ内）
+  local save_path = normalized_dir .. ".vibing/chat/"
+  vim.fn.mkdir(save_path, "p")
+  local filename = os.date("chat-%Y%m%d-%H%M%S.vibing")
+  session:set_file_path(save_path .. filename)
+
+  M._current_session = session
+  return session
+end
+
 ---既存のチャットファイルを開く
 ---@param file_path string ファイルパス
 ---@return Vibing.ChatSession?
