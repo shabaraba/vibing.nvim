@@ -4,6 +4,7 @@ import * as execute from './execute.js';
 import * as window from './window.js';
 import * as lsp from './lsp.js';
 import * as instances from './instances.js';
+import * as sharedBuffer from './shared_buffer.js';
 
 export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Buffer operations
@@ -43,4 +44,8 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
 
   // Instance management
   nvim_list_instances: instances.handleListInstances,
+
+  // Shared buffer operations
+  nvim_has_unprocessed_mentions: sharedBuffer.handleHasUnprocessedMentions,
+  nvim_get_unprocessed_mentions: sharedBuffer.handleGetUnprocessedMentions,
 };

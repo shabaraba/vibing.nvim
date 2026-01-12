@@ -6,6 +6,7 @@ local cursor = require("vibing.infrastructure.rpc.handlers.cursor")
 local window = require("vibing.infrastructure.rpc.handlers.window")
 local lsp = require("vibing.infrastructure.rpc.handlers.lsp")
 local execute = require("vibing.infrastructure.rpc.handlers.execute")
+local shared_buffer = require("vibing.infrastructure.rpc.handlers.shared_buffer")
 
 -- Export all handlers
 M.buf_get_lines = buffer.buf_get_lines
@@ -38,5 +39,8 @@ M.lsp_call_hierarchy_incoming = lsp.lsp_call_hierarchy_incoming
 M.lsp_call_hierarchy_outgoing = lsp.lsp_call_hierarchy_outgoing
 
 M.execute = execute.execute
+
+M.has_unprocessed_mentions = shared_buffer.has_unprocessed_mentions
+M.get_unprocessed_mentions = shared_buffer.get_unprocessed_mentions
 
 return M
