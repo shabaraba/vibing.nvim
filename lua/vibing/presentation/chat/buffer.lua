@@ -53,6 +53,12 @@ function ChatBuffer:open()
   end
 
   self:_create_buffer()
+
+  -- position="back"の場合、バッファをlistedに設定
+  if self.config.window.position == "back" then
+    vim.bo[self.buf].buflisted = true
+  end
+
   self:_create_window()
   self:_setup_keymaps()
 
