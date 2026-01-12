@@ -162,8 +162,10 @@ end
 function M.build(wrapper_path, prompt, opts, session_id, config)
   local cmd = { get_node_executable(config), wrapper_path }
 
+  -- Use cwd from opts (worktree) if set, otherwise use current working directory
+  local cwd = opts.cwd or vim.fn.getcwd()
   table.insert(cmd, "--cwd")
-  table.insert(cmd, vim.fn.getcwd())
+  table.insert(cmd, cwd)
 
   add_flag_if_present(cmd, "--mode", resolve_mode(opts, config))
   add_flag_if_present(cmd, "--model", resolve_model(opts, config))

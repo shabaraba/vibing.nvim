@@ -68,6 +68,7 @@ function M.execute(adapter, callbacks, message, config)
     permissions_ask = frontmatter.permissions_ask,
     permission_mode = frontmatter.permission_mode,
     language = lang_code,  -- Pass language code to adapter
+    cwd = frontmatter.cwd,  -- Pass worktree cwd if set
     on_patch_saved = function(filename)
       patch_filename = filename
     end,
