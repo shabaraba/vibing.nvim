@@ -223,6 +223,15 @@ function ChatBuffer:load_from_file(file_path)
     if type(sid) == "string" and sid ~= "" and sid ~= "~" then
       self.session_id = sid
     end
+
+    -- 共有バッファ統合の自動再接続（Phase 3: State Persistence）
+    if frontmatter.shared_buffer_enabled == true then
+      self._shared_buffer_enabled = true
+      if self.session_id then
+        self:_register_to_shared_buffer()
+      end
+    end
+
     -- NOTE: Diff display uses patch files in .vibing/patches/<session_id>/
     -- The gd keymap reads patch files directly via PatchFinder and PatchViewer
   end
@@ -399,6 +408,10 @@ end
 ---共有バッファ統合を有効化
 function ChatBuffer:enable_shared_buffer()
   self._shared_buffer_enabled = true
+
+  -- フロントマターに保存（セッション再開時に自動有効化）
+  self:update_frontmatter("shared_buffer_enabled", "true")
+
   if self.session_id then
     self:_register_to_shared_buffer()
   end
@@ -408,6 +421,9 @@ end
 function ChatBuffer:disable_shared_buffer()
   self:_unregister_from_shared_buffer()
   self._shared_buffer_enabled = false
+
+  -- フロントマターに保存
+  self:update_frontmatter("shared_buffer_enabled", "false")
 end
 
 ---共有バッファシステムに登録

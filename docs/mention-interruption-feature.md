@@ -1,8 +1,8 @@
 # Mention-Driven Task Interruption
 
-**Status:** Experimental / Phase 2.5 Feature (canToolUse Integration Complete)
+**Status:** Phase 3 - State Persistence Complete (Phase 2.5 canToolUse Integration + Phase 3 State Persistence)
 
-This document describes the mention-driven task interruption feature, which ensures that Claude sessions respond to mentions before continuing with other tasks.
+This document describes the mention-driven task interruption feature, which ensures that Claude sessions respond to mentions before continuing with other tasks. Phase 3 adds state persistence so shared buffer integration is automatically restored when reopening saved chats.
 
 ## Key Feature: Real-Time Interruption
 
@@ -229,6 +229,78 @@ No additional configuration needed. The feature automatically activates when:
 1. Shared buffer integration is enabled (`/enable-shared`)
 2. A mention is received from another Claude session
 
+## Phase 3: State Persistence
+
+**Status:** Complete
+
+State persistence ensures that your shared buffer configuration is preserved across sessions. When you enable shared buffer integration with `/enable-shared`, this setting is automatically saved to the chat file's frontmatter.
+
+### How It Works
+
+1. **Enable shared buffer** - Run `/enable-shared` in a chat session
+2. **Automatic save** - The `shared_buffer_enabled: true` field is added to frontmatter
+3. **Save chat** - Save the chat file (`:w` or automatic save)
+4. **Reopen later** - When you reopen the chat file, shared buffer integration is automatically restored
+5. **Auto-reconnect** - Your Claude session automatically reconnects to the shared buffer system
+
+### Frontmatter Example
+
+When shared buffer is enabled, your chat frontmatter looks like this:
+
+```yaml
+---
+vibing.nvim: true
+session_id: abc12345
+created_at: 2026-01-12T10:00:00
+mode: code
+model: sonnet
+permissions_mode: acceptEdits
+permissions_allow:
+  - Read
+  - Edit
+  - Write
+permissions_deny:
+  - Bash
+language: ja
+shared_buffer_enabled: true
+---
+```
+
+### Benefits
+
+- **No manual re-enabling** - No need to run `/enable-shared` every time you reopen a chat
+- **Seamless collaboration** - Your multi-agent workflow is preserved across sessions
+- **Persistent identity** - Your Claude ID remains consistent within the same session
+- **Automatic cleanup** - Disabling shared buffer (via `/disable-shared`) updates the frontmatter to `false`
+
+### Workflow Example
+
+**Session 1 (Initial setup):**
+```
+User: Hello
+Claude: Hello! How can I help you today?
+
+User: /enable-shared
+[System] Shared buffer enabled. You are Claude-abc12
+
+User: Let me work on the authentication module
+Claude: [working...]
+
+User: :w
+[Chat saved with shared_buffer_enabled: true]
+```
+
+**Session 2 (After reopening):**
+```
+User: :e chat-20260112-100000.vibing
+[Chat loads automatically]
+[System] Shared buffer integration automatically restored
+[Your Claude ID: Claude-abc12]
+
+User: Continue working on authentication
+Claude: [continues from where you left off, still connected to shared buffer]
+```
+
 ## Commands
 
 | Command          | Description                                      |
@@ -342,8 +414,13 @@ chat_buffer:mark_all_mentions_processed()
 2. **All-or-Nothing**: `/check-mentions` marks ALL mentions as processed (no selective processing)
 3. **No Priority**: All mentions are treated equally (no urgent/normal distinction)
 4. **No Timeout**: Mentions don't expire (remain unprocessed until acknowledged)
+5. **No State Persistence Across Neovim Restarts**: Mention history is lost when Neovim restarts (shared buffer state is persisted per-chat, but mention history is in-memory only)
 
 ## Future Enhancements
+
+**Note:** ✅ **State Persistence** (Phase 3) - Completed! Shared buffer configuration now persists in chat frontmatter.
+
+Remaining enhancements for future phases:
 
 1. **Selective Processing**: Mark specific mentions as processed
 2. **Priority Levels**: Urgent mentions could force immediate attention
@@ -351,6 +428,8 @@ chat_buffer:mark_all_mentions_processed()
 4. **Mention Expiry**: Auto-process mentions after timeout
 5. **Rich Display**: Show mention content in popup window instead of print()
 6. **Response Templates**: Quick response options for common scenarios
+7. **Multiple Shared Buffers**: Per-project or per-topic buffers instead of single global buffer
+8. **Auto-response Capabilities**: AI decides whether to respond to mentions automatically
 
 ## Testing
 

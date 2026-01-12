@@ -1,6 +1,6 @@
 # Buffer Change Detection PoC
 
-**Status:** Experimental / Phase 2 (ChatBuffer Integration Complete)
+**Status:** Phase 3 (State Persistence Complete)
 
 This document describes the Proof of Concept (PoC) implementation for buffer change detection and multi-agent coordination in vibing.nvim.
 
@@ -12,8 +12,10 @@ This feature enables multiple Claude sessions to communicate and coordinate thro
 - Mention other Claude sessions using `@Claude-{id}`
 - Broadcast to all sessions using `@All`
 - Receive real-time notifications when mentioned
-- **NEW (Phase 2)**: Enable/disable shared buffer integration per chat session
-- **NEW (Phase 2)**: Use slash commands for easy interaction
+- **Phase 2**: Enable/disable shared buffer integration per chat session
+- **Phase 2**: Use slash commands for easy interaction
+- **Phase 2.5**: Real-time mention interruption via canToolUse integration
+- **Phase 3**: State persistence - shared buffer settings auto-restore when reopening chats
 
 ## Architecture
 
@@ -81,13 +83,55 @@ This will:
    /shared float
    ```
 
-### 3. View Registered Sessions
+### 3. State Persistence (Phase 3)
+
+**Status:** Complete
+
+Phase 3 adds automatic state persistence so your shared buffer configuration is preserved across sessions.
+
+**How it works:**
+
+1. **Enable shared buffer** in a chat:
+   ```
+   /enable-shared
+   ```
+   This automatically saves `shared_buffer_enabled: true` to the chat frontmatter.
+
+2. **Save the chat** (`:w` or automatic save)
+
+3. **Reopen the chat later** (`:e chat-file.vibing` or `:VibingChat path/to/chat.vibing`)
+
+4. **Automatic reconnection** - The chat automatically:
+   - Reads `shared_buffer_enabled: true` from frontmatter
+   - Re-enables shared buffer integration
+   - Registers with the same Claude ID (based on session_id)
+   - Reconnects to the notification system
+
+**Benefits:**
+- No need to run `/enable-shared` every time you reopen a chat
+- Your multi-agent collaboration setup is preserved
+- Claude ID consistency within the same session
+
+**Example Frontmatter:**
+
+```yaml
+---
+vibing.nvim: true
+session_id: abc12345
+created_at: 2026-01-12T10:00:00
+mode: code
+model: sonnet
+shared_buffer_enabled: true
+---
+```
+
+### 4. View Registered Sessions
 
 ```vim
 :VibingListSessions
 ```
 
-### 4. Open the Shared Buffer
+### 5. Open the Shared Buffer
 
 ```vim
 :VibingShared           " Open in right split (default)
