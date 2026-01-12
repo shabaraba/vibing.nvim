@@ -16,6 +16,12 @@ const config = parseArguments(args);
 
 const fullPrompt = buildPrompt(config);
 
+// Change process working directory to match the requested cwd
+// This ensures all shell commands and file operations use the correct directory
+if (config.cwd) {
+  process.chdir(config.cwd);
+}
+
 const queryOptions: Record<string, unknown> = {
   cwd: config.cwd,
   allowDangerouslySkipPermissions: config.permissionMode === 'bypassPermissions',
