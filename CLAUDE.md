@@ -720,6 +720,7 @@ git repository. The system automatically:
 - Copies essential configuration files (`.gitignore`, `package.json`, `tsconfig.json`, etc.)
 - Symlinks `node_modules` from the main worktree to avoid duplicate installations
 - Reuses existing worktrees without recreating the environment
+- Saves chat files in main repository at `.vibing/worktrees/<branch-name>/` (persists after worktree deletion)
 
 ## Configuration
 
@@ -867,6 +868,7 @@ require("vibing").setup({
   - If the worktree already exists, it will be reused without recreating the environment
   - Automatically copies configuration files (`.gitignore`, `package.json`, `tsconfig.json`, etc.) to the worktree
   - Creates a symbolic link to `node_modules` from the main worktree (if it exists) to avoid duplicate installations
+  - Chat files are saved in main repository at `.vibing/worktrees/<branch-name>/` (persists after worktree deletion)
 - **`:VibingToggleChat`** - Use to show/hide your current conversation. Preserves the existing chat state.
 
 ### Inline Action Examples

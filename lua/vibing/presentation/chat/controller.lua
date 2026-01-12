@@ -114,8 +114,8 @@ function M.handle_open_worktree(args)
     return
   end
 
-  -- worktreeディレクトリでチャットを開く
-  local session = use_case.create_new_in_directory(worktree_path)
+  -- worktree用のチャットを開く（チャットファイルはメインリポジトリに保存）
+  local session = use_case.create_new_for_worktree(worktree_path, branch_name)
   view.render(session, position)
 end
 
