@@ -22,6 +22,23 @@ function M.create_window(buf, win_config)
     vim.cmd("vertical resize " .. width)
     win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(win, buf)
+  elseif win_config.position == "top" then
+    vim.cmd("topleft split")
+    local height = math.floor(vim.o.lines * 0.3)
+    vim.cmd("resize " .. height)
+    win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(win, buf)
+  elseif win_config.position == "bottom" then
+    vim.cmd("botright split")
+    local height = math.floor(vim.o.lines * 0.3)
+    vim.cmd("resize " .. height)
+    win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(win, buf)
+  elseif win_config.position == "back" then
+    -- 新しいタブで開く
+    vim.cmd("tabnew")
+    win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(win, buf)
   else
     -- float
     local height = math.floor(vim.o.lines * 0.8)

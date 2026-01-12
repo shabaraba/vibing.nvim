@@ -72,4 +72,51 @@ function M.handle_set_file_title()
   handler({}, current_view)
 end
 
+---Worktreeでチャットを開く
+---@param args string 引数文字列（position branch_name形式）
+function M.handle_open_worktree(args)
+  local use_case = require("vibing.application.chat.use_case")
+  local view = require("vibing.presentation.chat.view")
+  local worktree_manager = require("vibing.infrastructure.worktree.manager")
+
+  -- 引数をパース（position branch_name）
+  local parts = vim.split(args or "", "%s+")
+  local position = nil
+  local branch_name = nil
+
+  -- 位置指定のバリデーション
+  local valid_positions = { "right", "left", "top", "bottom", "back", "current" }
+  if #parts >= 1 then
+    -- 最初の引数が位置指定かチェック
+    for _, pos in ipairs(valid_positions) do
+      if parts[1] == pos then
+        position = parts[1]
+        break
+      end
+    end
+
+    -- 位置指定がマッチしなかった場合、最初の引数をブランチ名として扱う
+    if position then
+      branch_name = parts[2]
+    else
+      branch_name = parts[1]
+    end
+  end
+
+  if not branch_name or branch_name == "" then
+    notify.error("Branch name is required", "Worktree")
+    return
+  end
+
+  -- worktreeを準備
+  local worktree_path = worktree_manager.prepare_worktree(branch_name)
+  if not worktree_path then
+    return
+  end
+
+  -- worktreeディレクトリでチャットを開く
+  local session = use_case.create_new_in_directory(worktree_path)
+  view.render(session, position)
+end
+
 return M
