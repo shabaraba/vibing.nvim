@@ -83,9 +83,10 @@
 
 ---@class Vibing.WindowConfig
 ---チャットウィンドウ表示設定
----位置、幅、枠線スタイルを制御
----@field position "right"|"left"|"float" ウィンドウ位置（"right": 右分割、"left": 左分割、"float": フローティング）
+---位置、幅、高さ、枠線スタイルを制御
+---@field position "right"|"left"|"top"|"bottom"|"back"|"current"|"float" ウィンドウ位置（"right": 右分割、"left": 左分割、"top": 上分割、"bottom": 下分割、"back": バッファのみ作成、"current": 現在のウィンドウ、"float": フローティング）
 ---@field width number ウィンドウ幅（0-1の小数で画面比率、1以上で絶対幅）
+---@field height number ウィンドウ高さ（0-1の小数で画面比率、1以上で絶対高さ、top/bottomで使用）
 ---@field border string 枠線スタイル（"rounded", "single", "double", "none"等）
 
 ---@class Vibing.KeymapConfig
@@ -121,6 +122,7 @@ M.defaults = {
     window = {
       position = "current",
       width = 0.4,
+      height = 0.4,
       border = "rounded",
     },
     auto_context = true,

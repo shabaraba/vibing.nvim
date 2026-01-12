@@ -100,13 +100,13 @@ function M._register_commands()
     require("vibing.presentation.chat.controller").handle_open(opts.args)
   end, {
     nargs = "?",
-    desc = "Open Vibing chat with optional position (current|right|left) or file",
+    desc = "Open Vibing chat with optional position (current|right|left|top|bottom|back) or file",
     complete = function(arg_lead, cmd_line, cursor_pos)
       -- First argument: position or file
       local args = vim.split(cmd_line, "%s+")
       if #args == 2 then
         -- Complete position keywords or files
-        local positions = { "current", "right", "left" }
+        local positions = { "current", "right", "left", "top", "bottom", "back" }
         local matches = {}
         for _, pos in ipairs(positions) do
           if pos:find("^" .. vim.pesc(arg_lead)) then

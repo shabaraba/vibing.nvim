@@ -4,6 +4,7 @@
 local M = {}
 
 local ChatSession = require("vibing.domain.chat.session")
+local FileManager = require("vibing.presentation.chat.modules.file_manager")
 
 ---現在アクティブなセッション
 ---@type Vibing.ChatSession?
@@ -28,22 +29,9 @@ function M.create_new()
     },
   })
 
-  -- ファイルパスを設定
-  local save_location_type = config.chat.save_location_type or "project"
-  local save_path
-  if save_location_type == "project" then
-    save_path = vim.fn.getcwd() .. "/.vibing/chat/"
-  elseif save_location_type == "user" then
-    save_path = vim.fn.stdpath("data") .. "/vibing/chats/"
-  else
-    save_path = config.chat.save_dir or (vim.fn.getcwd() .. "/.vibing/chat/")
-  end
-  if not save_path:match("/$") then
-    save_path = save_path .. "/"
-  end
-
+  local save_path = FileManager.get_save_directory(config.chat)
   vim.fn.mkdir(save_path, "p")
-  local filename = os.date("chat-%Y%m%d-%H%M%S.vibing")
+  local filename = FileManager.generate_unique_filename()
   session:set_file_path(save_path .. filename)
 
   M._current_session = session

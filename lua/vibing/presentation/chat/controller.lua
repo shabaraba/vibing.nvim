@@ -17,7 +17,7 @@ function M.handle_open(args)
 
   if args and args ~= "" then
     -- 位置キーワードのチェック
-    if args == "current" or args == "right" or args == "left" then
+    if args == "current" or args == "right" or args == "left" or args == "top" or args == "bottom" or args == "back" then
       position = args
     else
       -- ファイルパスとして扱う

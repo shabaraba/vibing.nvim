@@ -1,5 +1,14 @@
 local M = {}
 
+---一意なファイル名を生成
+---@return string filename
+function M.generate_unique_filename()
+  local timestamp = os.date("%Y%m%d-%H%M%S")
+  local hrtime = string.format("%016x", vim.loop.hrtime())
+  local random_id = string.format("%04x", math.random(0, 65535))
+  return string.format("chat-%s-%s-%s.vibing", timestamp, hrtime, random_id)
+end
+
 ---保存ディレクトリを取得
 ---@param config table 設定
 ---@return string directory_path

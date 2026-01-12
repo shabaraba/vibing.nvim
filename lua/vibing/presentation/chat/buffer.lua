@@ -118,12 +118,16 @@ function ChatBuffer:_create_buffer()
   vim.bo[self.buf].modifiable = true
   vim.bo[self.buf].swapfile = false
 
+  if self.config.window.position == "back" then
+    vim.bo[self.buf].buflisted = true
+  end
+
   if self.file_path then
     vim.api.nvim_buf_set_name(self.buf, self.file_path)
   else
     local save_path = FileManager.get_save_directory(self.config)
     vim.fn.mkdir(save_path, "p")
-    local filename = os.date("chat-%Y%m%d-%H%M%S.vibing")
+    local filename = FileManager.generate_unique_filename()
     self.file_path = save_path .. filename
     vim.api.nvim_buf_set_name(self.buf, self.file_path)
   end
