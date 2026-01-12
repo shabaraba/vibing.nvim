@@ -55,6 +55,7 @@ function ChatSession.load_from_file(file_path)
     frontmatter = frontmatter,
     created_at = frontmatter.created_at or os.date("%Y-%m-%dT%H:%M:%S"),
     updated_at = frontmatter.updated_at or os.date("%Y-%m-%dT%H:%M:%S"),
+    cwd = frontmatter.cwd,
   })
 end
 

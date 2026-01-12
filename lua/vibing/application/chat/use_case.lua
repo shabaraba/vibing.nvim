@@ -130,6 +130,14 @@ function M.create_new_in_directory(directory)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
+  -- ディレクトリを正規化
+  local normalized_dir = vim.fn.fnamemodify(directory, ":p")
+  if not normalized_dir:match("/$") then
+    normalized_dir = normalized_dir .. "/"
+  end
+  -- 末尾のスラッシュを削除（cwdとして使用）
+  local cwd = normalized_dir:gsub("/$", "")
+
   -- 新しいセッションを作成
   local session = ChatSession:new({
     frontmatter = {
@@ -140,14 +148,10 @@ function M.create_new_in_directory(directory)
       permission_mode = config.permissions and config.permissions.mode or "acceptEdits",
       permissions_allow = config.permissions and config.permissions.allow or {},
       permissions_deny = config.permissions and config.permissions.deny or {},
+      cwd = cwd,
     },
+    cwd = cwd,
   })
-
-  -- ディレクトリを正規化
-  local normalized_dir = vim.fn.fnamemodify(directory, ":p")
-  if not normalized_dir:match("/$") then
-    normalized_dir = normalized_dir .. "/"
-  end
 
   -- ファイルパスを設定（指定されたディレクトリ内）
   local save_path = normalized_dir .. ".vibing/chat/"
