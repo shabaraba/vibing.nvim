@@ -2,7 +2,7 @@
  * Shared buffer operations handlers for vibing.nvim MCP server
  */
 
-import { createRpcRequest } from '../rpc.js';
+import { callNeovim } from '../rpc.js';
 
 /**
  * Check if there are unprocessed mentions for a specific Claude session
@@ -12,13 +12,9 @@ export async function handleHasUnprocessedMentions(args: {
 }): Promise<{ has_mentions: boolean; count: number; claude_id?: string }> {
   const rpcPort = args.rpc_port || parseInt(process.env.VIBING_RPC_PORT || '9876', 10);
 
-  const result = await createRpcRequest(rpcPort, 'has_unprocessed_mentions', {});
+  const result = await callNeovim('has_unprocessed_mentions', {}, rpcPort);
 
-  if (result.error) {
-    throw new Error(result.error);
-  }
-
-  return result.result;
+  return result;
 }
 
 /**
@@ -36,11 +32,7 @@ export async function handleGetUnprocessedMentions(args: {
 }> {
   const rpcPort = args.rpc_port || parseInt(process.env.VIBING_RPC_PORT || '9876', 10);
 
-  const result = await createRpcRequest(rpcPort, 'get_unprocessed_mentions', {});
+  const result = await callNeovim('get_unprocessed_mentions', {}, rpcPort);
 
-  if (result.error) {
-    throw new Error(result.error);
-  }
-
-  return result.result;
+  return result;
 }

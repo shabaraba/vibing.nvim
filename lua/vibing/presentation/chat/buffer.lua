@@ -249,35 +249,8 @@ end
 
 ---メッセージを送信
 function ChatBuffer:send_message()
-  -- 共有バッファ統合が有効な場合、未処理メンションをチェック
-  if self._shared_buffer_enabled and self:has_unprocessed_mentions() then
-    local mentions = self:get_unprocessed_mentions()
-    local notify = require("vibing.core.utils.notify")
-
-    notify.warn(
-      string.format(
-        "You have %d unprocessed mention(s). Use /check-mentions to review them before continuing.",
-        #mentions
-      )
-    )
-
-    -- 未処理メンションを簡潔に表示
-    for i, mention in ipairs(mentions) do
-      if i <= 3 then  -- 最初の3件のみ表示
-        print(string.format(
-          "  - %s from Claude-%s",
-          mention.timestamp,
-          mention.from_claude_id
-        ))
-      end
-    end
-
-    if #mentions > 3 then
-      print(string.format("  ... and %d more", #mentions - 3))
-    end
-
-    return  -- メッセージ送信をブロック
-  end
+  -- NOTE: Mention checking is now handled in canUseTool (agent-wrapper)
+  -- This provides immediate interruption during long-running tasks
 
   local message = self:extract_user_message()
   if not message then

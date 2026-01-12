@@ -28,6 +28,54 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
 
   return async (toolName: string, input: Record<string, unknown>): Promise<CanUseToolResult> => {
     try {
+      // Check for unprocessed mentions (shared buffer integration)
+      // This interrupts tool execution when another Claude session mentions this session
+      if (mcpEnabled && toolName.startsWith('mcp__vibing-nvim__')) {
+        // Skip mention check for vibing-nvim MCP tools (including mention check itself)
+        // to avoid infinite recursion
+      } else if (mcpEnabled) {
+        try {
+          // Check if there are unprocessed mentions via MCP
+          const mentionCheckResult = await (global as any).use_mcp_tool(
+            'vibing-nvim',
+            'nvim_has_unprocessed_mentions',
+            {}
+          );
+
+          if (mentionCheckResult && mentionCheckResult.has_mentions) {
+            // Get mention details
+            const mentionsResult = await (global as any).use_mcp_tool(
+              'vibing-nvim',
+              'nvim_get_unprocessed_mentions',
+              {}
+            );
+
+            const mentions = mentionsResult?.mentions || [];
+            const mentionSummary =
+              mentions.length > 0
+                ? mentions
+                    .slice(0, 3)
+                    .map(
+                      (m: any) =>
+                        `\n  - ${m.timestamp} from Claude-${m.from_claude_id}`
+                    )
+                    .join('')
+                : '';
+
+            const moreCount = mentions.length > 3 ? `\n  ... and ${mentions.length - 3} more` : '';
+
+            return {
+              behavior: 'deny',
+              message: `You have ${mentionCheckResult.count} unprocessed mention(s) from other Claude sessions. Please check and respond to them using /check-mentions before continuing with this task.${mentionSummary}${moreCount}`,
+            };
+          }
+        } catch (err) {
+          // If mention check fails, continue with tool execution
+          // (don't block work due to mention system errors)
+          console.error('[WARN] Failed to check mentions:', err);
+        }
+      }
+
       // AskUserQuestion: Insert choices into chat buffer and deny
       if (toolName === 'AskUserQuestion') {
         console.log(

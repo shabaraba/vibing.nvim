@@ -72,4 +72,11 @@ function M.handle_set_file_title()
   handler({}, current_view)
 end
 
+---現在アクティブなChatBufferを取得（MCP handlers用）
+---@return Vibing.ChatBuffer?
+function M.get_active_chat_buffer()
+  local view = require("vibing.presentation.chat.view")
+  return view.get_current()
+end
+
 return M

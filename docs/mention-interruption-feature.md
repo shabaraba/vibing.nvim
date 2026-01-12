@@ -1,8 +1,12 @@
 # Mention-Driven Task Interruption
 
-**Status:** Experimental / Phase 2.5 Feature
+**Status:** Experimental / Phase 2.5 Feature (canToolUse Integration Complete)
 
 This document describes the mention-driven task interruption feature, which ensures that Claude sessions respond to mentions before continuing with other tasks.
+
+## Key Feature: Real-Time Interruption
+
+**This feature uses canToolUse callback to interrupt Claude immediately when tool execution is attempted**, ensuring mentions are handled even during long-running tasks. This is superior to message-send blocking alone.
 
 ## Overview
 
@@ -16,22 +20,32 @@ When a Claude session receives a mention from another session via the shared buf
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ Message Send Flow                                       │
+│ canToolUse Interruption Flow (Real-Time)                │
 │                                                          │
-│  1. User sends message (Enter)                          │
+│  Claude is executing tools...                           │
 │     ↓                                                   │
-│  2. ChatBuffer:send_message()                           │
+│  Tool about to execute (e.g., Read, Edit, Bash)         │
 │     ↓                                                   │
-│  3. Check unprocessed mentions                          │
+│  canUseTool callback invoked (agent-wrapper)            │
 │     ↓                                                   │
-│  4a. Has mentions → Block + Notify                      │
-│     - Display mention summary                           │
-│     - Show /check-mentions command                      │
-│     - Return (block execution)                          │
+│  Check unprocessed mentions via MCP                     │
+│     │                                                   │
+│     ├─ mcp__vibing-nvim__nvim_has_unprocessed_mentions  │
+│     └─ mcp__vibing-nvim__nvim_get_unprocessed_mentions  │
+│     ↓                                                   │
+│  Has mentions?                                          │
+│     ↓                                                   │
+│  4a. YES → Deny tool execution                          │
+│     - Return deny with mention details                  │
+│     - Claude pauses work immediately                    │
+│     - User sees: "You have N unprocessed mentions"      │
+│     - User runs: /check-mentions                        │
+│     - Mentions marked as processed                      │
+│     - User re-sends message → Work resumes              │
 │                                                          │
-│  4b. No mentions → Continue                             │
-│     - Send message to Agent SDK                         │
-│     - Execute tools normally                            │
+│  4b. NO → Allow tool execution                          │
+│     - Tool executes normally                            │
+│     - Work continues                                    │
 └─────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────┐
@@ -85,7 +99,33 @@ Extended ChatBuffer with mention tracking:
 - `send_message()` - Blocks if unprocessed mentions exist
 - `_on_shared_buffer_notification(message)` - Records mentions automatically
 
-### 3. Slash Command
+### 3. MCP Tools for Mention Checking
+
+**Tools:**
+- `mcp__vibing-nvim__nvim_has_unprocessed_mentions` - Check if mentions exist
+- `mcp__vibing-nvim__nvim_get_unprocessed_mentions` - Get mention details
+
+**Files:**
+- `mcp-server/src/handlers/shared_buffer.ts` - MCP handlers
+- `lua/vibing/infrastructure/rpc/handlers/shared_buffer.lua` - RPC handlers
+- `lua/vibing/presentation/chat/controller.lua` - `get_active_chat_buffer()` method
+
+These tools allow Agent SDK's canUseTool callback to query mention status in real-time.
+
+### 4. canUseTool Integration
+
+**File:** `bin/lib/permissions/can-use-tool.ts`
+
+The `createCanUseToolCallback()` function now checks for unprocessed mentions **before every tool execution**. If mentions exist, it returns `deny` with a descriptive message, immediately interrupting Claude's work.
+
+**Flow:**
+1. Tool about to execute (e.g., `Read`, `Edit`, `Bash`)
+2. canUseTool callback invoked
+3. MCP call: `nvim_has_unprocessed_mentions()`
+4. If mentions exist → `deny` with message listing mentions
+5. If no mentions → `allow` tool execution
+
+### 5. Slash Command
 
 **Command:** `/check-mentions`
 
@@ -211,17 +251,74 @@ function ChatBuffer:_on_shared_buffer_notification(message)
 end
 ```
 
-### Message Blocking
+### canToolUse Integration (Primary Mechanism)
 
-Message sending is blocked in `send_message()`:
+**File:** `bin/lib/permissions/can-use-tool.ts`
+
+Every tool execution checks for mentions via MCP:
+
+```typescript
+// Before every tool execution
+if (mcpEnabled) {
+  const mentionCheckResult = await use_mcp_tool(
+    'vibing-nvim',
+    'nvim_has_unprocessed_mentions',
+    {}
+  );
+
+  if (mentionCheckResult && mentionCheckResult.has_mentions) {
+    // Get details
+    const mentionsResult = await use_mcp_tool(
+      'vibing-nvim',
+      'nvim_get_unprocessed_mentions',
+      {}
+    );
+
+    // Return deny with mention summary
+    return {
+      behavior: 'deny',
+      message: `You have ${mentionCheckResult.count} unprocessed mention(s)...`
+    };
+  }
+}
+
+// Allow tool if no mentions
+return { behavior: 'allow', updatedInput: input };
+```
+
+**Key Benefits:**
+- **Immediate interruption** during long-running tasks
+- **No polling required** - checks happen naturally during tool use
+- **Graceful error handling** - failures don't block work
+
+### MCP Tool Implementation
+
+**TypeScript (mcp-server/src/handlers/shared_buffer.ts):**
+
+```typescript
+export async function handleHasUnprocessedMentions(args: { rpc_port?: number }) {
+  const result = await callNeovim('has_unprocessed_mentions', {}, rpcPort);
+  return result;
+}
+```
+
+**Lua (lua/vibing/infrastructure/rpc/handlers/shared_buffer.lua):**
 
 ```lua
-function ChatBuffer:send_message()
-  if self._shared_buffer_enabled and self:has_unprocessed_mentions() then
-    -- Display warning and list of mentions
-    return  -- Block execution
+function M.has_unprocessed_mentions(params)
+  local chat_buffer = chat_controller.get_active_chat_buffer()
+  if not chat_buffer then
+    return { has_mentions = false, count = 0 }
   end
-  -- ... continue normal message sending
+
+  local has_mentions = chat_buffer:has_unprocessed_mentions()
+  local mentions = chat_buffer:get_unprocessed_mentions()
+
+  return {
+    has_mentions = has_mentions,
+    count = #mentions,
+    claude_id = chat_buffer:get_claude_id(),
+  }
 end
 ```
 
