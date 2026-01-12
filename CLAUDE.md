@@ -436,7 +436,6 @@ permissions_allow:
 permissions_deny:
   - Bash
 language: ja # Optional: default language for AI responses
-cwd: /path/to/worktree # Optional: working directory for Agent SDK (set by VibingChatWorktree)
 ---
 ```
 
@@ -445,9 +444,11 @@ When reopening a saved chat (`:VibingChat <file>` or `:e`), the session resumes 
 `config.agent.default_mode` and `config.agent.default_model` on chat creation, and can be changed
 via `/mode` and `/model` slash commands. Configured permissions are recorded in frontmatter for
 transparency and auditability. The optional `language` field ensures consistent AI response language
-across sessions. The optional `cwd` field specifies the working directory for the Agent SDK, which is
-automatically set when using `:VibingChatWorktree` to ensure Claude operates in the correct worktree
-context.
+across sessions.
+
+**Note on worktree sessions:** When using `:VibingChatWorktree`, the working directory (cwd) is set
+in memory only and not saved to frontmatter. This prevents issues when reopening chat files after
+worktree deletion. The cwd is only active during the initial VibingChatWorktree session.
 
 **Note on worktree sessions:** When using `:VibingChatWorktree`, the working directory (cwd) is set
 in memory only and not saved to frontmatter. This prevents issues when reopening chat files after

@@ -139,6 +139,7 @@ function M.create_new_in_directory(directory)
   local cwd = normalized_dir:gsub("/$", "")
 
   -- 新しいセッションを作成
+  -- NOTE: cwd is NOT saved to frontmatter (only exists in memory)
   local session = ChatSession:new({
     frontmatter = {
       ["vibing.nvim"] = true,
@@ -148,9 +149,8 @@ function M.create_new_in_directory(directory)
       permission_mode = config.permissions and config.permissions.mode or "acceptEdits",
       permissions_allow = config.permissions and config.permissions.allow or {},
       permissions_deny = config.permissions and config.permissions.deny or {},
-      cwd = cwd,
     },
-    cwd = cwd,
+    cwd = cwd,  -- Set cwd in memory only
   })
 
   -- ファイルパスを設定（指定されたディレクトリ内）
@@ -183,6 +183,8 @@ function M.create_new_for_worktree(worktree_path, branch_name)
   end
 
   -- 新しいセッションを作成
+  -- NOTE: cwd is NOT saved to frontmatter (only exists in memory)
+  -- This prevents issues when reopening chat after worktree deletion
   local session = ChatSession:new({
     frontmatter = {
       ["vibing.nvim"] = true,
@@ -192,9 +194,8 @@ function M.create_new_for_worktree(worktree_path, branch_name)
       permission_mode = config.permissions and config.permissions.mode or "acceptEdits",
       permissions_allow = config.permissions and config.permissions.allow or {},
       permissions_deny = config.permissions and config.permissions.deny or {},
-      cwd = normalized_worktree,
     },
-    cwd = normalized_worktree,
+    cwd = normalized_worktree,  -- Set cwd in memory only
   })
 
   -- ファイルパスをメインリポジトリ内の.vibing/worktrees/<branch>/に設定
