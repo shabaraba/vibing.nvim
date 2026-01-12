@@ -58,6 +58,10 @@ function M.execute(adapter, callbacks, message, config)
     lang_code = language_utils.get_language_code(config.language, "chat")
   end
 
+  -- Get cwd from current session (if set by VibingChatWorktree)
+  local use_case = require("vibing.application.chat.use_case")
+  local session_cwd = use_case._current_session and use_case._current_session:get_cwd()
+
   local opts = {
     streaming = true,
     action_type = "chat",
@@ -68,7 +72,7 @@ function M.execute(adapter, callbacks, message, config)
     permissions_ask = frontmatter.permissions_ask,
     permission_mode = frontmatter.permission_mode,
     language = lang_code,  -- Pass language code to adapter
-    cwd = frontmatter.cwd,  -- Pass worktree cwd if set
+    cwd = session_cwd,  -- Pass worktree cwd if set (from memory, not frontmatter)
     on_patch_saved = function(filename)
       patch_filename = filename
     end,

@@ -47,13 +47,14 @@ function ChatSession.load_from_file(file_path)
     session_id = sid
   end
 
+  -- NOTE: cwd is NOT loaded from frontmatter
+  -- cwd is only set when explicitly using VibingChatWorktree command
   return ChatSession:new({
     session_id = session_id,
     file_path = file_path,
     frontmatter = frontmatter,
     created_at = frontmatter.created_at or os.date("%Y-%m-%dT%H:%M:%S"),
     updated_at = frontmatter.updated_at or os.date("%Y-%m-%dT%H:%M:%S"),
-    cwd = frontmatter.cwd,
   })
 end
 
