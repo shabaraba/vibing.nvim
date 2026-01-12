@@ -53,12 +53,6 @@ function ChatBuffer:open()
   end
 
   self:_create_buffer()
-
-  -- position="back"の場合、バッファをlistedに設定
-  if self.config.window.position == "back" then
-    vim.bo[self.buf].buflisted = true
-  end
-
   self:_create_window()
   self:_setup_keymaps()
 
@@ -123,6 +117,10 @@ function ChatBuffer:_create_buffer()
   vim.bo[self.buf].syntax = "markdown"
   vim.bo[self.buf].modifiable = true
   vim.bo[self.buf].swapfile = false
+
+  if self.config.window.position == "back" then
+    vim.bo[self.buf].buflisted = true
+  end
 
   if self.file_path then
     vim.api.nvim_buf_set_name(self.buf, self.file_path)

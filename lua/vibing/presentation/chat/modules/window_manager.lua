@@ -6,7 +6,7 @@ local M = {}
 ---@return number? winnr ウィンドウ番号（"back"の場合はnil）
 function M.create_window(buf, win_config)
   local width = math.floor(vim.o.columns * win_config.width)
-  local height = math.floor(vim.o.lines * win_config.width)
+  local height = math.floor(vim.o.lines * (win_config.height or 0.4))
   local win
 
   if win_config.position == "current" then

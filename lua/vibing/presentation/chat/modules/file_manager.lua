@@ -4,9 +4,9 @@ local M = {}
 ---@return string filename
 function M.generate_unique_filename()
   local timestamp = os.date("%Y%m%d-%H%M%S")
-  local microseconds = string.format("%06d", vim.loop.hrtime() % 1000000)
+  local hrtime = string.format("%016x", vim.loop.hrtime())
   local random_id = string.format("%04x", math.random(0, 65535))
-  return string.format("chat-%s-%s-%s.vibing", timestamp, microseconds, random_id)
+  return string.format("chat-%s-%s-%s.vibing", timestamp, hrtime, random_id)
 end
 
 ---保存ディレクトリを取得
