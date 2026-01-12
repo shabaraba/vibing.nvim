@@ -112,6 +112,12 @@ function M.setup()
     handler = require("vibing.application.chat.handlers.check_mentions"),
     description = "Check and clear unprocessed mentions (experimental)",
   })
+
+  commands.register({
+    name = "mention-picker",
+    handler = require("vibing.application.chat.handlers.mention_picker"),
+    description = "Open session picker to mention Claude (experimental)",
+  })
 end
 
 return M

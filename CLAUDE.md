@@ -779,6 +779,10 @@ require("vibing").setup({
 | `:VibingClearContext`            | Clear all context                                                                 |
 | `:VibingInline [action\|prompt]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled. |
 | `:VibingCancel`                  | Cancel current request                                                            |
+| `:VibingShared [position]`       | Open shared buffer for multi-agent coordination (experimental)                    |
+| `:VibingListSessions`            | List all registered Claude sessions (experimental)                                |
+| `:VibingMention <id> <message>`  | Mention specific Claude session with tab completion (experimental)                |
+| `:VibingMentionPicker`           | Open interactive picker to select and mention Claude session (experimental)       |
 
 **Command Semantics:**
 
@@ -854,6 +858,12 @@ Slash commands can be used within the chat buffer for quick actions:
 | `/allow [tool]`           | Add tool to allow list, or show current list if no args     |
 | `/deny [tool]`            | Add tool to deny list, or show current list if no args      |
 | `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions) |
+| `/enable-shared`          | Enable shared buffer integration (experimental)             |
+| `/disable-shared`         | Disable shared buffer integration                           |
+| `/shared [position]`      | Open shared buffer window                                   |
+| `/post <message> [@mentions]` | Post to shared buffer with mentions                     |
+| `/check-mentions`         | View and clear unprocessed mentions                         |
+| `/mention-picker`         | Interactive picker to select and mention Claude session     |
 
 ## Claude Code on the Web
 

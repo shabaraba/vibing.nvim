@@ -125,6 +125,10 @@ function ChatBuffer:_create_buffer()
   vim.bo[self.buf].modifiable = true
   vim.bo[self.buf].swapfile = false
 
+  -- メンション補完を設定
+  local MentionCompletion = require("vibing.presentation.chat.mention_completion")
+  MentionCompletion.setup(self.buf)
+
   if self.file_path then
     vim.api.nvim_buf_set_name(self.buf, self.file_path)
   else
@@ -461,11 +465,63 @@ function ChatBuffer:_on_shared_buffer_notification(message)
     MentionTracker.record_mention(self._claude_id, message)
   end
 
-  -- 通知を表示
+  -- システム通知
   local notify = require("vibing.core.utils.notify")
   notify.warn(
     string.format("[Mention from Claude-%s] %s", message.from_claude_id, vim.split(message.content, "\n")[1])
   )
+
+  -- バッファ内にハイライト付き通知を追加（バッファが有効な場合のみ）
+  if self.buf and vim.api.nvim_buf_is_valid(self.buf) then
+    vim.schedule(function()
+      if not vim.api.nvim_buf_is_valid(self.buf) then
+        return
+      end
+
+      local line_count = vim.api.nvim_buf_line_count(self.buf)
+      local last_line = vim.api.nvim_buf_get_lines(self.buf, -2, -1, false)[1] or ""
+
+      -- 空行を追加（前の内容と区切るため）
+      if last_line ~= "" then
+        vim.api.nvim_buf_set_lines(self.buf, line_count, line_count, false, { "" })
+        line_count = line_count + 1
+      end
+
+      -- 通知メッセージを追加
+      local notification_lines = {
+        string.format("<!-- Mention from Claude-%s at %s -->", message.from_claude_id, message.timestamp),
+        message.content,
+        "",
+      }
+
+      vim.api.nvim_buf_set_lines(self.buf, line_count, line_count, false, notification_lines)
+
+      -- ハイライトを適用
+      local ns_id = vim.api.nvim_create_namespace("vibing_mentions")
+      vim.api.nvim_buf_add_highlight(self.buf, ns_id, "VibingNotification", line_count, 0, -1)
+
+      -- メンション部分をハイライト
+      for i = 0, #notification_lines - 1 do
+        local line = notification_lines[i + 1]
+        local start_idx = 0
+        while true do
+          local mention_start, mention_end = line:find("@Claude%-%w+", start_idx + 1)
+          if not mention_start then
+            break
+          end
+          vim.api.nvim_buf_add_highlight(
+            self.buf,
+            ns_id,
+            "VibingMention",
+            line_count + i,
+            mention_start - 1,
+            mention_end
+          )
+          start_idx = mention_end
+        end
+      end
+    end)
+  end
 end
 
 ---共有バッファにメッセージを投稿

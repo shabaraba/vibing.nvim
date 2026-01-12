@@ -1,6 +1,6 @@
 # Buffer Change Detection PoC
 
-**Status:** Phase 3 (State Persistence Complete)
+**Status:** Phase 3+ (Enhanced UX Complete)
 
 This document describes the Proof of Concept (PoC) implementation for buffer change detection and multi-agent coordination in vibing.nvim.
 
@@ -9,13 +9,14 @@ This document describes the Proof of Concept (PoC) implementation for buffer cha
 This feature enables multiple Claude sessions to communicate and coordinate through a shared buffer. Each session can:
 
 - Post messages to a shared buffer
-- Mention other Claude sessions using `@Claude-{id}`
+- Mention other Claude sessions using `@Claude-{id}` with auto-completion
 - Broadcast to all sessions using `@All`
-- Receive real-time notifications when mentioned
+- Receive real-time notifications when mentioned (with inline highlighting)
 - **Phase 2**: Enable/disable shared buffer integration per chat session
 - **Phase 2**: Use slash commands for easy interaction
 - **Phase 2.5**: Real-time mention interruption via canToolUse integration
 - **Phase 3**: State persistence - shared buffer settings auto-restore when reopening chats
+- **Phase 3+**: Enhanced UX - mention commands, highlighting, auto-completion, session picker
 
 ## Architecture
 

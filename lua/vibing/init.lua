@@ -41,6 +41,10 @@ function M.setup(opts)
     desc = "Attach vibing.nvim to .vibing files",
   })
 
+  -- ハイライトグループの定義（共有バッファ機能用）
+  vim.api.nvim_set_hl(0, "VibingMention", { fg = "#FFD700", bg = "#2E2E2E", bold = true })
+  vim.api.nvim_set_hl(0, "VibingNotification", { fg = "#FFA500", italic = true })
+
   -- MCP統合の初期化
   if M.config.mcp and M.config.mcp.enabled then
     -- 自動セットアップ（初回のみ）
@@ -245,6 +249,28 @@ function M._register_commands()
       print(string.format("  - %s (session: %s, bufnr: %d)", claude_id, session.session_id, session.bufnr))
     end
   end, { desc = "List registered Claude sessions (experimental)" })
+
+  vim.api.nvim_create_user_command("VibingMention", function(opts)
+    require("vibing.application.commands.mention").execute(opts)
+  end, {
+    nargs = "+",
+    desc = "Mention a specific Claude session (experimental)",
+    complete = function(arg_lead)
+      local dispatcher = require("vibing.application.shared_buffer.notification_dispatcher")
+      local sessions = dispatcher.get_registered_sessions()
+      local matches = {}
+      for claude_id, _ in pairs(sessions) do
+        if claude_id:find("^" .. vim.pesc(arg_lead)) then
+          table.insert(matches, claude_id)
+        end
+      end
+      return matches
+    end,
+  })
+
+  vim.api.nvim_create_user_command("VibingMentionPicker", function()
+    require("vibing.application.commands.mention_picker").execute()
+  end, { desc = "Open session picker to mention Claude (experimental)" })
 end
 
 ---現在のアダプターインスタンスを取得

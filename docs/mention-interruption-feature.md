@@ -1,8 +1,8 @@
 # Mention-Driven Task Interruption
 
-**Status:** Phase 3 - State Persistence Complete (Phase 2.5 canToolUse Integration + Phase 3 State Persistence)
+**Status:** Phase 3+ Complete (canToolUse Integration + State Persistence + Enhanced UX)
 
-This document describes the mention-driven task interruption feature, which ensures that Claude sessions respond to mentions before continuing with other tasks. Phase 3 adds state persistence so shared buffer integration is automatically restored when reopening saved chats.
+This document describes the mention-driven task interruption feature, which ensures that Claude sessions respond to mentions before continuing with other tasks. Phase 3 adds state persistence and Phase 3+ adds enhanced UX features including inline highlighting, auto-completion, and session picker.
 
 ## Key Feature: Real-Time Interruption
 
