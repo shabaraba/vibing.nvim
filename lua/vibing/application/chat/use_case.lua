@@ -71,7 +71,7 @@ function M.create_new_in_directory(directory)
   -- ファイルパスを設定（指定されたディレクトリ内）
   local save_path = normalized_dir .. ".vibing/chat/"
   vim.fn.mkdir(save_path, "p")
-  local filename = os.date("chat-%Y%m%d-%H%M%S.vibing")
+  local filename = FileManager.generate_unique_filename()
   session:set_file_path(save_path .. filename)
 
   M._current_session = session

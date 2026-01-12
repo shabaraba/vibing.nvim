@@ -838,16 +838,16 @@ require("vibing").setup({
 
 ## User Commands
 
-| Command                                   | Description                                                                                              |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `:VibingChat [position\|file]`            | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file     |
-| `:VibingChatWorktree [position] <branch>` | Create git worktree and open chat in it (position: right\|left\|top\|bottom\|back\|current)              |
-| `:VibingToggleChat`                       | Toggle existing chat window (preserve current conversation)                                              |
-| `:VibingSlashCommands`                    | Show slash command picker in chat                                                                        |
-| `:VibingContext [path]`                   | Add file to context (or from oil.nvim if no path)                                                        |
-| `:VibingClearContext`                     | Clear all context                                                                                        |
-| `:VibingInline [action\|prompt]`          | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                        |
-| `:VibingCancel`                           | Cancel current request                                                                                   |
+| Command                                   | Description                                                                                         |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `:VibingChat [position\|file]`            | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file |
+| `:VibingChatWorktree [position] <branch>` | Create git worktree and open chat in it (position: right\|left\|top\|bottom\|back\|current)         |
+| `:VibingToggleChat`                       | Toggle existing chat window (preserve current conversation)                                         |
+| `:VibingSlashCommands`                    | Show slash command picker in chat                                                                   |
+| `:VibingContext [path]`                   | Add file to context (or from oil.nvim if no path)                                                   |
+| `:VibingClearContext`                     | Clear all context                                                                                   |
+| `:VibingInline [action\|prompt]`          | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |
+| `:VibingCancel`                           | Cancel current request                                                                              |
 
 **Command Semantics:**
 
