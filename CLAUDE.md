@@ -717,8 +717,9 @@ require("vibing").setup({
   },
   chat = {
     window = {
-      position = "current",  -- "current" | "right" | "left" | "float"
+      position = "current",  -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
       width = 0.4,
+      height = 0.4,  -- Used for "top" and "bottom" positions
       border = "rounded",
     },
     auto_context = true,
@@ -768,25 +769,79 @@ require("vibing").setup({
 })
 ```
 
+### Window Positions
+
+vibing.nvim supports multiple window positioning options for the chat interface:
+
+- **`current`**: Open in the current window (replaces current buffer)
+- **`right`**: Open as a vertical split on the right side
+  - Width controlled by `config.chat.window.width`
+- **`left`**: Open as a vertical split on the left side
+  - Width controlled by `config.chat.window.width`
+- **`top`**: Open as a horizontal split at the top
+  - Height controlled by `config.chat.window.height`
+- **`bottom`**: Open as a horizontal split at the bottom
+  - Height controlled by `config.chat.window.height`
+- **`back`**: Create buffer only, no window (accessible via `:ls` and `:bnext`)
+  - Buffer is marked as listed for easy navigation
+- **`float`**: Open as a floating window
+  - Width controlled by `config.chat.window.width`
+
+**Examples:**
+
+```lua
+-- Vertical split on the right (40% of screen width)
+require("vibing").setup({
+  chat = {
+    window = {
+      position = "right",
+      width = 0.4,
+    },
+  },
+})
+
+-- Horizontal split at bottom (30% of screen height)
+require("vibing").setup({
+  chat = {
+    window = {
+      position = "bottom",
+      height = 0.3,
+    },
+  },
+})
+
+-- Background buffer (no window, access via buffer list)
+require("vibing").setup({
+  chat = {
+    window = {
+      position = "back",
+    },
+  },
+})
+```
+
 ## User Commands
 
-| Command                          | Description                                                                       |
-| -------------------------------- | --------------------------------------------------------------------------------- |
-| `:VibingChat [position\|file]`   | Create new chat with optional position (current\|right\|left) or open saved file  |
-| `:VibingToggleChat`              | Toggle existing chat window (preserve current conversation)                       |
-| `:VibingSlashCommands`           | Show slash command picker in chat                                                 |
-| `:VibingContext [path]`          | Add file to context (or from oil.nvim if no path)                                 |
-| `:VibingClearContext`            | Clear all context                                                                 |
-| `:VibingInline [action\|prompt]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled. |
-| `:VibingCancel`                  | Cancel current request                                                            |
+| Command                          | Description                                                                                         |
+| -------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `:VibingChat [position\|file]`   | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file |
+| `:VibingToggleChat`              | Toggle existing chat window (preserve current conversation)                                         |
+| `:VibingSlashCommands`           | Show slash command picker in chat                                                                   |
+| `:VibingContext [path]`          | Add file to context (or from oil.nvim if no path)                                                   |
+| `:VibingClearContext`            | Clear all context                                                                                   |
+| `:VibingInline [action\|prompt]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |
+| `:VibingCancel`                  | Cancel current request                                                                              |
 
 **Command Semantics:**
 
-- **`:VibingChat`** - Always creates a fresh chat window. Optionally specify position (`current`, `right`, `left`) to control window placement.
+- **`:VibingChat`** - Always creates a fresh chat window. Optionally specify position to control window placement.
   - `:VibingChat` - New chat using default position from config
   - `:VibingChat current` - New chat in current window
   - `:VibingChat right` - New chat in right split
   - `:VibingChat left` - New chat in left split
+  - `:VibingChat top` - New chat in top split
+  - `:VibingChat bottom` - New chat in bottom split
+  - `:VibingChat back` - New chat as background buffer only (no window)
   - `:VibingChat path/to/file.vibing` - Open saved chat file
 - **`:VibingToggleChat`** - Use to show/hide your current conversation. Preserves the existing chat state.
 
