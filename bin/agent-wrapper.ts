@@ -62,7 +62,21 @@ const fullPrompt = buildPrompt(config);
 // Change process working directory to match the requested cwd
 // This ensures all shell commands and file operations use the correct directory
 if (config.cwd) {
-  process.chdir(config.cwd);
+  try {
+    const { existsSync } = await import('fs');
+    if (existsSync(config.cwd)) {
+      process.chdir(config.cwd);
+    } else {
+      console.error(
+        `[vibing.nvim] Warning: Directory ${config.cwd} does not exist. Using current directory.`
+      );
+      // Reset cwd to current directory
+      config.cwd = process.cwd();
+    }
+  } catch (error) {
+    console.error(`[vibing.nvim] Failed to change directory to ${config.cwd}:`, error);
+    config.cwd = process.cwd();
+  }
 }
 
 const queryOptions: Record<string, unknown> = {
