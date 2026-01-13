@@ -128,6 +128,38 @@ function M._register_commands()
     require("vibing.presentation.chat.controller").handle_toggle()
   end, { desc = "Toggle Vibing chat window" })
 
+  vim.api.nvim_create_user_command("VibingChatWorktree", function(opts)
+    require("vibing.presentation.chat.controller").handle_open_worktree(opts.args)
+  end, {
+    nargs = "+",
+    desc = "Open Vibing chat in git worktree with optional position ([right|left|top|bottom|back|current] <branch>)",
+    complete = function(arg_lead, cmd_line, cursor_pos)
+      local args = vim.split(cmd_line, "%s+")
+      if #args == 2 then
+        -- Complete position keywords
+        local positions = { "right", "left", "top", "bottom", "back", "current" }
+        local matches = {}
+        for _, pos in ipairs(positions) do
+          if pos:find("^" .. vim.pesc(arg_lead)) then
+            table.insert(matches, pos)
+          end
+        end
+        return matches
+      elseif #args == 3 then
+        -- Complete branch names
+        local branches = vim.fn.systemlist("git branch --format='%(refname:short)'")
+        local matches = {}
+        for _, branch in ipairs(branches) do
+          if branch:find("^" .. vim.pesc(arg_lead)) then
+            table.insert(matches, branch)
+          end
+        end
+        return matches
+      end
+      return {}
+    end,
+  })
+
   vim.api.nvim_create_user_command("VibingSlashCommands", function()
     require("vibing.presentation.chat.controller").show_slash_commands()
   end, { desc = "Show slash command picker" })

@@ -69,6 +69,17 @@ local function handleErrorEvent(msg, errorOutput)
   table.insert(errorOutput, msg.message or "Unknown error")
 end
 
+---セッション破損イベントを処理
+---@param msg table JSONデコードされたメッセージ
+---@param opts Vibing.AdapterOpts アダプターオプション
+local function handleSessionCorruptedEvent(msg, opts)
+  if msg.old_session_id and opts.on_session_corrupted then
+    vim.schedule(function()
+      opts.on_session_corrupted(msg.old_session_id)
+    end)
+  end
+end
+
 ---イベントハンドラーテーブル
 ---@type table<string, fun(msg: table, context: table): boolean>
 local eventHandlers = {
@@ -77,6 +88,13 @@ local eventHandlers = {
       return false
     end
     handleSessionEvent(msg, context.sessionManager, context.handleId)
+    return true
+  end,
+  session_corrupted = function(msg, context)
+    if not context.opts then
+      return false
+    end
+    handleSessionCorruptedEvent(msg, context.opts)
     return true
   end,
   tool_use = function(msg, context)

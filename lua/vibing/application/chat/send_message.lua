@@ -58,6 +58,10 @@ function M.execute(adapter, callbacks, message, config)
     lang_code = language_utils.get_language_code(config.language, "chat")
   end
 
+  -- Get cwd from current session (if set by VibingChatWorktree)
+  local use_case = require("vibing.application.chat.use_case")
+  local session_cwd = use_case._current_session and use_case._current_session:get_cwd()
+
   local opts = {
     streaming = true,
     action_type = "chat",
@@ -68,6 +72,7 @@ function M.execute(adapter, callbacks, message, config)
     permissions_ask = frontmatter.permissions_ask,
     permission_mode = frontmatter.permission_mode,
     language = lang_code,  -- Pass language code to adapter
+    cwd = session_cwd,  -- Pass worktree cwd if set (from memory, not frontmatter)
     on_patch_saved = function(filename)
       patch_filename = filename
     end,
@@ -75,6 +80,19 @@ function M.execute(adapter, callbacks, message, config)
       -- Forward insert_choices event to chat buffer
       vim.schedule(function()
         callbacks.insert_choices(questions)
+      end)
+    end,
+    on_session_corrupted = function(old_session_id)
+      -- Clear corrupted session_id from frontmatter
+      vim.schedule(function()
+        callbacks.update_session_id(nil)
+        vim.notify(
+          string.format(
+            "[vibing.nvim] Previous session (%s) was corrupted. Starting fresh session.",
+            old_session_id:sub(1, 8) -- Show only first 8 chars for brevity
+          ),
+          vim.log.levels.INFO -- Changed from WARN to INFO (less alarming)
+        )
       end)
     end,
   }
@@ -114,6 +132,17 @@ function M._handle_response(response, callbacks, adapter, patch_filename)
 
   if response.error then
     callbacks.append_chunk("\n\n**Error:** " .. response.error)
+
+    -- セッションエラーの場合、セッションをクリア
+    local error_msg = tostring(response.error):lower()
+    if error_msg:match("session") or error_msg:match("invalid") or error_msg:match("expired") then
+      local current_session = callbacks.get_session_id()
+      if current_session then
+        callbacks.update_session_id(nil)
+        callbacks.append_chunk("\n\n*Session has been reset. Your next message will start a new session.*")
+        vim.notify("[vibing] Session error detected - session has been automatically reset", vim.log.levels.WARN)
+      end
+    end
   end
 
   if patch_filename then

@@ -411,6 +411,10 @@ See `docs/adr/002-concurrent-execution-support.md` for architectural details.
 - `actions/chat.lua` - Chat session orchestration with concurrent session support
 - `actions/inline.lua` - Quick actions (fix, feat, explain, refactor, test) with queue management
 
+**Infrastructure:**
+
+- `infrastructure/worktree/manager.lua` - Git worktree management (create, check existence, environment setup)
+
 ### Session Persistence
 
 Chat files are saved as Markdown with YAML frontmatter:
@@ -441,6 +445,10 @@ When reopening a saved chat (`:VibingChat <file>` or `:e`), the session resumes 
 via `/mode` and `/model` slash commands. Configured permissions are recorded in frontmatter for
 transparency and auditability. The optional `language` field ensures consistent AI response language
 across sessions.
+
+**Note on worktree sessions:** When using `:VibingChatWorktree`, the working directory (cwd) is set
+in memory only and not saved to frontmatter. This prevents issues when reopening chat files after
+worktree deletion. The cwd is only active during the initial VibingChatWorktree session.
 
 ### Message Timestamps
 
@@ -705,6 +713,16 @@ vertical split diff view showing changes before/after.
 **Language Support:** Configure AI response language globally or per-action (chat vs inline),
 supporting multi-language development workflows.
 
+**Git Worktree Integration:** Create isolated development environments for different branches with
+`:VibingChatWorktree`. Each worktree maintains its own chat history while sharing the same
+git repository. The system automatically:
+
+- Creates worktrees in `.worktrees/<branch-name>` directory
+- Copies essential configuration files (`.gitignore`, `package.json`, `tsconfig.json`, etc.)
+- Symlinks `node_modules` from the main worktree to avoid duplicate installations
+- Reuses existing worktrees without recreating the environment
+- Saves chat files in main repository at `.vibing/worktrees/<branch-name>/` (persists after worktree deletion)
+
 ## Configuration
 
 Example configuration showing all available settings:
@@ -822,15 +840,16 @@ require("vibing").setup({
 
 ## User Commands
 
-| Command                          | Description                                                                                         |
-| -------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `:VibingChat [position\|file]`   | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file |
-| `:VibingToggleChat`              | Toggle existing chat window (preserve current conversation)                                         |
-| `:VibingSlashCommands`           | Show slash command picker in chat                                                                   |
-| `:VibingContext [path]`          | Add file to context (or from oil.nvim if no path)                                                   |
-| `:VibingClearContext`            | Clear all context                                                                                   |
-| `:VibingInline [action\|prompt]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |
-| `:VibingCancel`                  | Cancel current request                                                                              |
+| Command                                   | Description                                                                                         |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `:VibingChat [position\|file]`            | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file |
+| `:VibingChatWorktree [position] <branch>` | Create git worktree and open chat in it (position: right\|left\|top\|bottom\|back\|current)         |
+| `:VibingToggleChat`                       | Toggle existing chat window (preserve current conversation)                                         |
+| `:VibingSlashCommands`                    | Show slash command picker in chat                                                                   |
+| `:VibingContext [path]`                   | Add file to context (or from oil.nvim if no path)                                                   |
+| `:VibingClearContext`                     | Clear all context                                                                                   |
+| `:VibingInline [action\|prompt]`          | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |
+| `:VibingCancel`                           | Cancel current request                                                                              |
 
 **Command Semantics:**
 
@@ -843,6 +862,14 @@ require("vibing").setup({
   - `:VibingChat bottom` - New chat in bottom split
   - `:VibingChat back` - New chat as background buffer only (no window)
   - `:VibingChat path/to/file.vibing` - Open saved chat file
+- **`:VibingChatWorktree`** - Create or reuse a git worktree for the specified branch and open a chat session in that environment.
+  - `:VibingChatWorktree feature-branch` - Create worktree in `.worktrees/feature-branch` and open chat
+  - `:VibingChatWorktree right feature-branch` - Same as above, but open chat in right split
+  - Position options: `right`, `left`, `top`, `bottom`, `back` (new tab), `current`
+  - If the worktree already exists, it will be reused without recreating the environment
+  - Automatically copies configuration files (`.gitignore`, `package.json`, `tsconfig.json`, etc.) to the worktree
+  - Creates a symbolic link to `node_modules` from the main worktree (if it exists) to avoid duplicate installations
+  - Chat files are saved in main repository at `.vibing/worktrees/<branch-name>/` (persists after worktree deletion)
 - **`:VibingToggleChat`** - Use to show/hide your current conversation. Preserves the existing chat state.
 
 ### Inline Action Examples

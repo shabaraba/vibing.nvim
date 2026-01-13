@@ -26,8 +26,12 @@ function M.render(session, position)
   M._current_buffer = chat_buf
 
   -- セッションデータをバッファに反映
+  chat_buf.session = session  -- セッション全体を保持
   if session.file_path then
     chat_buf.file_path = session.file_path
+  end
+  -- session_idが有効な値の場合のみ設定（nilや空文字は設定しない）
+  if session.session_id and session.session_id ~= "" then
     chat_buf.session_id = session.session_id
   end
 

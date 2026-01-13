@@ -81,6 +81,12 @@ function M.setup()
     handler = require("vibing.application.chat.handlers.permissions"),
     description = "Alias for /permissions",
   })
+
+  commands.register({
+    name = "new-session",
+    handler = require("vibing.application.chat.handlers.new_session"),
+    description = "Reset session and start fresh: /new-session",
+  })
 end
 
 return M

@@ -7,6 +7,7 @@
 ---@field frontmatter table YAMLフロントマターのデータ
 ---@field created_at string 作成日時
 ---@field updated_at string 更新日時
+---@field cwd string? 作業ディレクトリ（worktree使用時に設定）
 local ChatSession = {}
 ChatSession.__index = ChatSession
 
@@ -22,6 +23,7 @@ function ChatSession:new(opts)
   instance.frontmatter = opts.frontmatter or {}
   instance.created_at = opts.created_at or os.date("%Y-%m-%dT%H:%M:%S")
   instance.updated_at = opts.updated_at or os.date("%Y-%m-%dT%H:%M:%S")
+  instance.cwd = opts.cwd
   return instance
 end
 
@@ -45,6 +47,8 @@ function ChatSession.load_from_file(file_path)
     session_id = sid
   end
 
+  -- NOTE: cwd is NOT loaded from frontmatter
+  -- cwd is only set when explicitly using VibingChatWorktree command
   return ChatSession:new({
     session_id = session_id,
     file_path = file_path,
@@ -94,6 +98,12 @@ function ChatSession:update_frontmatter(key, value)
   self.frontmatter[key] = value
   self.updated_at = os.date("%Y-%m-%dT%H:%M:%S")
   self.frontmatter.updated_at = self.updated_at
+end
+
+---作業ディレクトリを取得
+---@return string?
+function ChatSession:get_cwd()
+  return self.cwd
 end
 
 return ChatSession
