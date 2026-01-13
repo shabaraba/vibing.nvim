@@ -78,6 +78,14 @@ class GitOperations {
       return true;
     }
 
+    // Validate that diff contains valid patch markers
+    // Valid diffs must have either "diff --git" or "@@" hunk markers
+    const hasDiffMarkers = /^(diff --git|@@)/m.test(stagedDiff);
+    if (!hasDiffMarkers) {
+      // No valid patch content, nothing to restore
+      return true;
+    }
+
     const result = this.execute(['apply', '--cached'], {
       input: stagedDiff,
       stdio: ['pipe', 'ignore', 'pipe'],
@@ -183,6 +191,48 @@ class GitOperations {
       console.error('[ERROR] Failed to generate diff:', result.error?.message || result.stderr);
     }
     return result;
+  }
+
+  /**
+   * Detect if current directory is in a git worktree.
+   * @returns { isWorktree: boolean, worktreeName: string | null }
+   */
+  detectWorktree(): { isWorktree: boolean; worktreeName: string | null } {
+    try {
+      // Get git common dir (points to main worktree's .git)
+      const gitCommonDirResult = this.execute(['rev-parse', '--git-common-dir']);
+      if (!gitCommonDirResult.success) {
+        return { isWorktree: false, worktreeName: null };
+      }
+      const gitCommonDir = gitCommonDirResult.stdout.trim();
+
+      // Get git dir (current worktree's .git)
+      const gitDirResult = this.execute(['rev-parse', '--git-dir']);
+      if (!gitDirResult.success) {
+        return { isWorktree: false, worktreeName: null };
+      }
+      const gitDir = gitDirResult.stdout.trim();
+
+      // If they differ, we're in a worktree
+      if (gitCommonDir !== gitDir) {
+        // Extract worktree name from path
+        const worktreePathResult = this.execute(['rev-parse', '--show-toplevel']);
+        if (!worktreePathResult.success) {
+          return { isWorktree: true, worktreeName: 'unknown' };
+        }
+
+        const worktreePath = worktreePathResult.stdout.trim();
+        const pathParts = worktreePath.split('/');
+        const worktreeName = pathParts[pathParts.length - 1];
+
+        return { isWorktree: true, worktreeName };
+      }
+
+      return { isWorktree: false, worktreeName: null };
+    } catch (error) {
+      // Not a git repository or git command failed
+      return { isWorktree: false, worktreeName: null };
+    }
   }
 }
 

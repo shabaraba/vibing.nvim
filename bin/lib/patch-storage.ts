@@ -24,7 +24,15 @@ class PatchStorage {
 
   setSessionId(sessionId: string): void {
     this.sessionId = sessionId;
-    this.snapshotTag = `claude-session-${sessionId}`;
+
+    // Detect worktree environment
+    const worktreeInfo = this.gitOps.detectWorktree();
+
+    // Generate worktree-specific tag name
+    const worktreeId = worktreeInfo.isWorktree ? `wt-${worktreeInfo.worktreeName}` : 'main';
+
+    // New format: vibing-patch-<worktree-id>-<session-id>
+    this.snapshotTag = `vibing-patch-${worktreeId}-${sessionId}`;
   }
 
   setCwd(cwd: string): void {
