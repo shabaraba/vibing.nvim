@@ -24,7 +24,9 @@ async function validateSessionFile(sessionId: string, cwd: string): Promise<bool
   try {
     // Construct session file path
     // ~/.claude/projects/<normalized-cwd>/<session-id>.jsonl
-    const normalizedCwd = cwd.replace(/\//g, '-').replace(/^-/, '');
+    // Note: Agent SDK normalizes paths by replacing / and . with -
+    // e.g., "/Users/shaba/project.nvim" → "-Users-shaba-project-nvim"
+    const normalizedCwd = cwd.replace(/[/.]/g, '-');
     const sessionDir = join(homedir(), '.claude', 'projects', normalizedCwd);
     const sessionFile = join(sessionDir, `${sessionId}.jsonl`);
 
@@ -32,22 +34,33 @@ async function validateSessionFile(sessionId: string, cwd: string): Promise<bool
     const content = await readFile(sessionFile, 'utf8');
     const lines = content.trim().split('\n');
 
-    // Valid session file should have at least 2 lines
-    if (lines.length < 2) {
+    // Session file must have at least one line
+    if (lines.length < 1) {
       return false;
     }
 
-    // Validate that each line is valid JSON
+    // Parse all lines and validate JSON, collecting actual messages
+    let hasUserOrAssistantMessage = false;
     for (const line of lines) {
       if (!line.trim()) continue;
+
+      let parsed;
       try {
-        JSON.parse(line);
+        parsed = JSON.parse(line);
       } catch {
+        // Invalid JSON line means corrupted session
         return false;
+      }
+
+      // Check if this line is an actual message (not internal events like queue-operation)
+      // Agent SDK messages have type: "user" or type: "assistant"
+      if (parsed.type === 'user' || parsed.type === 'assistant') {
+        hasUserOrAssistantMessage = true;
       }
     }
 
-    return true;
+    // Session is valid only if it contains at least one actual message
+    return hasUserOrAssistantMessage;
   } catch (error) {
     // Session file doesn't exist or can't be read
     return false;
@@ -130,9 +143,8 @@ if (config.sessionId) {
     queryOptions.resume = config.sessionId;
   } else {
     // Session is corrupted, start a new session
-    console.error(
-      `[vibing.nvim] Session ${config.sessionId} is corrupted or invalid. Starting new session.`
-    );
+    // Notify Lua side about corruption via JSON event (Lua will display the error)
+    console.log(JSON.stringify({ type: 'session_corrupted', old_session_id: config.sessionId }));
     // Don't set queryOptions.resume, so Agent SDK creates a new session
   }
 }
