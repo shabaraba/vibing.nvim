@@ -172,10 +172,11 @@ function ChatBuffer:parse_frontmatter()
 end
 
 ---フロントマターのsession_idを更新
----@param session_id string
+---@param session_id string|nil セッションID（nilの場合はセッションをリセット）
 function ChatBuffer:update_session_id(session_id)
   self.session_id = session_id
-  FrontmatterHandler.update_session_id(self.buf, session_id)
+  -- nilの場合は"~"を設定してYAMLでnullとして扱う
+  FrontmatterHandler.update_session_id(self.buf, session_id or "~")
 end
 
 ---フロントマターのフィールドを更新または追加

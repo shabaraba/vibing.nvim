@@ -82,6 +82,19 @@ function M.execute(adapter, callbacks, message, config)
         callbacks.insert_choices(questions)
       end)
     end,
+    on_session_corrupted = function(old_session_id)
+      -- Clear corrupted session_id from frontmatter
+      vim.schedule(function()
+        callbacks.update_session_id(nil)
+        vim.notify(
+          string.format(
+            "[vibing.nvim] Previous session (%s) was corrupted. Starting fresh session.",
+            old_session_id:sub(1, 8) -- Show only first 8 chars for brevity
+          ),
+          vim.log.levels.INFO -- Changed from WARN to INFO (less alarming)
+        )
+      end)
+    end,
   }
 
   if adapter:supports("session") then
@@ -119,6 +132,17 @@ function M._handle_response(response, callbacks, adapter, patch_filename)
 
   if response.error then
     callbacks.append_chunk("\n\n**Error:** " .. response.error)
+
+    -- セッションエラーの場合、セッションをクリア
+    local error_msg = tostring(response.error):lower()
+    if error_msg:match("session") or error_msg:match("invalid") or error_msg:match("expired") then
+      local current_session = callbacks.get_session_id()
+      if current_session then
+        callbacks.update_session_id(nil)
+        callbacks.append_chunk("\n\n*Session has been reset. Your next message will start a new session.*")
+        vim.notify("[vibing] Session error detected - session has been automatically reset", vim.log.levels.WARN)
+      end
+    end
   end
 
   if patch_filename then
