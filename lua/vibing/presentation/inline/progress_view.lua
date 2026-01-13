@@ -28,25 +28,25 @@ function ProgressView:show(title)
   local ui = vim.api.nvim_list_uis()[1]
   if not ui then return end
 
-  self.buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[self.buf].filetype = "vibing"
-  vim.bo[self.buf].bufhidden = "wipe"
+  local Factory = require("vibing.infrastructure.ui.factory")
+  self.buf = Factory.create_buffer({
+    filetype = "vibing",
+    bufhidden = "wipe",
+  })
 
   local width, height = 40, 3
   local row = ui.height - height - 3
   local col = ui.width - width - 2
 
-  self.win = vim.api.nvim_open_win(self.buf, false, {
-    relative = "editor",
+  self.win = Factory.create_float({
     width = width,
     height = height,
     row = row,
     col = col,
-    style = "minimal",
     border = "rounded",
-    title = " " .. (title or "Vibing") .. " ",
-    title_pos = "center",
-  })
+    title = title or "Vibing",
+    enter = false,
+  }, self.buf)
 
   self:_start_spinner()
   self:_update_display()
