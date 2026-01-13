@@ -111,6 +111,7 @@ function M.handle_open_worktree(args)
   -- worktreeを準備
   local worktree_path = worktree_manager.prepare_worktree(branch_name)
   if not worktree_path then
+    notify.error("Failed to prepare worktree for branch: " .. branch_name, "Worktree")
     return
   end
 

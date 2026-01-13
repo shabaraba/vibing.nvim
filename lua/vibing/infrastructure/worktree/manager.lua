@@ -5,32 +5,73 @@ local M = {}
 
 local notify = require("vibing.core.utils.notify")
 
----worktreeのベースディレクトリを取得
----@return string worktreeベースディレクトリのパス
-local function get_worktree_base()
+---Gitリポジトリのルートディレクトリを取得
+---@return string? gitルートのパス（取得失敗時はnil）
+local function get_git_root()
   local handle = io.popen("git rev-parse --show-toplevel 2>/dev/null")
   if not handle then
     return nil
   end
-  local git_root = handle:read("*l") -- 最初の行のみ読み込む
+  local git_root = handle:read("*l")
   handle:close()
 
   -- パスが/で始まっているかチェック（絶対パスであることを確認）
   if not git_root or not git_root:match("^/") then
     return nil
   end
+  return git_root
+end
+
+---worktreeのベースディレクトリを取得
+---@return string worktreeベースディレクトリのパス
+local function get_worktree_base()
+  local git_root = get_git_root()
+  if not git_root then
+    return nil
+  end
   return git_root .. "/.worktrees"
+end
+
+---ブランチ名を検証（パストラバーサル対策）
+---@param branch_name string ブランチ名
+---@return boolean 有効な場合true
+local function validate_branch_name(branch_name)
+  if not branch_name or branch_name == "" then
+    return false
+  end
+  -- パストラバーサルを防止（..や/を含む名前を拒否）
+  if branch_name:match("%.%.") or branch_name:match("/") or branch_name:match("\\") then
+    return false
+  end
+  return true
 end
 
 ---指定されたブランチのworktreeパスを取得
 ---@param branch_name string ブランチ名
 ---@return string? worktreeのフルパス（gitルートが見つからない場合はnil）
 function M.get_worktree_path(branch_name)
+  if not validate_branch_name(branch_name) then
+    notify.error("Invalid branch name: " .. branch_name, "Worktree")
+    return nil
+  end
+
   local base = get_worktree_base()
   if not base then
     return nil
   end
-  return base .. "/" .. branch_name
+
+  local path = base .. "/" .. branch_name
+  -- シンボリックリンクを解決し、正規化された絶対パスを取得
+  path = vim.fn.resolve(vim.fn.fnamemodify(path, ":p"))
+
+  -- 最終パスがベースディレクトリ内にあることを確認
+  local normalized_base = vim.fn.resolve(vim.fn.fnamemodify(base, ":p"))
+  if not path:match("^" .. vim.pesc(normalized_base)) then
+    notify.error("Path traversal detected: " .. branch_name, "Worktree")
+    return nil
+  end
+
+  return path
 end
 
 ---worktreeが既に存在するかチェック
@@ -58,17 +99,17 @@ end
 ---@param worktree_path string worktreeのパス
 ---@return boolean 成功した場合true
 local function create_worktree_internal(branch_name, worktree_path)
-  -- ブランチが既に存在するかチェック
-  local branches = vim.fn.systemlist("git branch --list " .. branch_name)
-  local branch_exists = #branches > 0 and branches[1] ~= ""
+  -- ブランチが既に存在するかチェック（シェルインジェクション対策）
+  local branches = vim.fn.systemlist("git branch --list " .. vim.fn.shellescape(branch_name))
+  local branch_exists = branches and #branches > 0 and branches[1] ~= ""
 
   local cmd
   if branch_exists then
     -- 既存ブランチでworktreeを作成
-    cmd = string.format("git worktree add %s %s", vim.fn.shellescape(worktree_path), branch_name)
+    cmd = string.format("git worktree add %s %s", vim.fn.shellescape(worktree_path), vim.fn.shellescape(branch_name))
   else
     -- 新しいブランチを作成してworktreeを作成
-    cmd = string.format("git worktree add -b %s %s", branch_name, vim.fn.shellescape(worktree_path))
+    cmd = string.format("git worktree add -b %s %s", vim.fn.shellescape(branch_name), vim.fn.shellescape(worktree_path))
   end
 
   local result = vim.fn.system(cmd)
@@ -84,15 +125,8 @@ end
 ---@param worktree_path string worktreeのパス
 ---@return boolean 成功した場合true
 local function setup_environment(worktree_path)
-  local handle = io.popen("git rev-parse --show-toplevel 2>/dev/null")
-  if not handle then
-    notify.error("Failed to get git root", "Worktree")
-    return false
-  end
-  local git_root = handle:read("*l")
-  handle:close()
-
-  if not git_root or not git_root:match("^/") then
+  local git_root = get_git_root()
+  if not git_root then
     notify.error("Failed to get git root", "Worktree")
     return false
   end
@@ -141,6 +175,7 @@ local function setup_environment(worktree_path)
 
   if #errors > 0 then
     notify.warn("Some files could not be copied:\n" .. table.concat(errors, "\n"), "Worktree")
+    return false
   end
 
   return true
@@ -150,14 +185,8 @@ end
 ---@param worktree_path string worktreeのパス
 ---@return boolean 成功した場合true
 local function setup_node_modules(worktree_path)
-  local handle = io.popen("git rev-parse --show-toplevel 2>/dev/null")
-  if not handle then
-    return false
-  end
-  local git_root = handle:read("*l")
-  handle:close()
-
-  if not git_root or not git_root:match("^/") then
+  local git_root = get_git_root()
+  if not git_root then
     return false
   end
 

@@ -869,7 +869,7 @@ require("vibing").setup({
 - **`:VibingChatWorktree`** - Create or reuse a git worktree for the specified branch and open a chat session in that environment.
   - `:VibingChatWorktree feature-branch` - Create worktree in `.worktrees/feature-branch` and open chat
   - `:VibingChatWorktree right feature-branch` - Same as above, but open chat in right split
-  - Position options: `right`, `left`, `top`, `bottom`, `back` (new tab), `current`
+  - Position options: `right`, `left`, `top`, `bottom`, `back` (buffer only, no window - accessible via `:bnext`/`:ls`), `current`
   - If the worktree already exists, it will be reused without recreating the environment
   - Automatically copies configuration files (`.gitignore`, `package.json`, `tsconfig.json`, etc.) to the worktree
   - Creates a symbolic link to `node_modules` from the main worktree (if it exists) to avoid duplicate installations
