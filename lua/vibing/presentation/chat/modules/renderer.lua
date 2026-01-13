@@ -5,48 +5,63 @@ local M = {}
 
 ---バッファを初期化（フロントマター + 初期コンテンツ）
 ---@param buf number バッファ番号
+---@param session? Vibing.ChatSession セッション（指定時はそのfrontmatterを使用）
 ---@return number cursor_line カーソル行番号
-function M.init_content(buf)
+function M.init_content(buf, session)
   local vibing = require("vibing")
   local config = vibing.get_config()
+
+  local frontmatter = session and session.frontmatter or {}
 
   local lines = {
     "---",
     "vibing.nvim: true",
-    "session_id: ~",
-    "created_at: " .. os.date("%Y-%m-%dT%H:%M:%S"),
+    "session_id: " .. (frontmatter.session_id or "~"),
+    "created_at: " .. (frontmatter.created_at or os.date("%Y-%m-%dT%H:%M:%S")),
   }
 
-  if config.agent then
-    if config.agent.default_mode then
-      table.insert(lines, "mode: " .. config.agent.default_mode)
-    end
-    if config.agent.default_model then
-      table.insert(lines, "model: " .. config.agent.default_model)
+  -- mode
+  local mode = frontmatter.mode or (config.agent and config.agent.default_mode)
+  if mode then
+    table.insert(lines, "mode: " .. mode)
+  end
+
+  -- model
+  local model = frontmatter.model or (config.agent and config.agent.default_model)
+  if model then
+    table.insert(lines, "model: " .. model)
+  end
+
+  -- permission_mode
+  local permission_mode = frontmatter.permission_mode or (config.permissions and config.permissions.mode)
+  if permission_mode then
+    table.insert(lines, "permission_mode: " .. permission_mode)
+  end
+
+  -- permissions_allow
+  local allow = frontmatter.permissions_allow or (config.permissions and config.permissions.allow) or {}
+  if #allow > 0 then
+    table.insert(lines, "permissions_allow:")
+    for _, tool in ipairs(allow) do
+      table.insert(lines, "  - " .. tool)
     end
   end
 
-  if config.permissions then
-    if config.permissions.mode then
-      table.insert(lines, "permission_mode: " .. config.permissions.mode)
+  -- permissions_deny
+  local deny = frontmatter.permissions_deny or (config.permissions and config.permissions.deny) or {}
+  if #deny > 0 then
+    table.insert(lines, "permissions_deny:")
+    for _, tool in ipairs(deny) do
+      table.insert(lines, "  - " .. tool)
     end
-    if config.permissions.allow and #config.permissions.allow > 0 then
-      table.insert(lines, "permissions_allow:")
-      for _, tool in ipairs(config.permissions.allow) do
-        table.insert(lines, "  - " .. tool)
-      end
-    end
-    if config.permissions.deny and #config.permissions.deny > 0 then
-      table.insert(lines, "permissions_deny:")
-      for _, tool in ipairs(config.permissions.deny) do
-        table.insert(lines, "  - " .. tool)
-      end
-    end
-    if config.permissions.ask and #config.permissions.ask > 0 then
-      table.insert(lines, "permissions_ask:")
-      for _, tool in ipairs(config.permissions.ask) do
-        table.insert(lines, "  - " .. tool)
-      end
+  end
+
+  -- permissions_ask
+  local ask = frontmatter.permissions_ask or (config.permissions and config.permissions.ask) or {}
+  if #ask > 0 then
+    table.insert(lines, "permissions_ask:")
+    for _, tool in ipairs(ask) do
+      table.insert(lines, "  - " .. tool)
     end
   end
 

@@ -58,9 +58,13 @@ function M.create_exit_handler(handleId, handles, output, errorOutput, onDone)
       -- onDone は常に呼び出される（エラー時も正常終了時も）
       -- これによりキューがブロックされるのを防ぐ
       if obj.code ~= 0 or #errorOutput > 0 then
+        local error_msg = table.concat(errorOutput, "")
+        if error_msg == "" and obj.code ~= 0 then
+          error_msg = "Claude Code process exited with code " .. obj.code
+        end
         onDone({
           content = table.concat(output, ""),
-          error = table.concat(errorOutput, ""),
+          error = error_msg,
           _handle_id = handleId,
         })
       else

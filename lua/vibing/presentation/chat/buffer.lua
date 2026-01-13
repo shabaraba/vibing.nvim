@@ -57,7 +57,7 @@ function ChatBuffer:open()
   self:_setup_keymaps()
 
   if not has_content then
-    local cursor_line = Renderer.init_content(self.buf)
+    local cursor_line = Renderer.init_content(self.buf, self.session)
     if self:is_open() and vim.api.nvim_win_is_valid(self.win) and cursor_line > 0 then
       pcall(vim.api.nvim_win_set_cursor, self.win, { cursor_line, 0 })
     end

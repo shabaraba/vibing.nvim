@@ -8,8 +8,15 @@ local notify = require("vibing.core.utils.notify")
 ---worktreeのベースディレクトリを取得
 ---@return string worktreeベースディレクトリのパス
 local function get_worktree_base()
-  local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
-  if vim.v.shell_error ~= 0 then
+  local handle = io.popen("git rev-parse --show-toplevel 2>/dev/null")
+  if not handle then
+    return nil
+  end
+  local git_root = handle:read("*l") -- 最初の行のみ読み込む
+  handle:close()
+
+  -- パスが/で始まっているかチェック（絶対パスであることを確認）
+  if not git_root or not git_root:match("^/") then
     return nil
   end
   return git_root .. "/.worktrees"
@@ -77,8 +84,15 @@ end
 ---@param worktree_path string worktreeのパス
 ---@return boolean 成功した場合true
 local function setup_environment(worktree_path)
-  local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
-  if vim.v.shell_error ~= 0 then
+  local handle = io.popen("git rev-parse --show-toplevel 2>/dev/null")
+  if not handle then
+    notify.error("Failed to get git root", "Worktree")
+    return false
+  end
+  local git_root = handle:read("*l")
+  handle:close()
+
+  if not git_root or not git_root:match("^/") then
     notify.error("Failed to get git root", "Worktree")
     return false
   end
@@ -136,8 +150,14 @@ end
 ---@param worktree_path string worktreeのパス
 ---@return boolean 成功した場合true
 local function setup_node_modules(worktree_path)
-  local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
-  if vim.v.shell_error ~= 0 then
+  local handle = io.popen("git rev-parse --show-toplevel 2>/dev/null")
+  if not handle then
+    return false
+  end
+  local git_root = handle:read("*l")
+  handle:close()
+
+  if not git_root or not git_root:match("^/") then
     return false
   end
 
@@ -194,7 +214,7 @@ function M.prepare_worktree(branch_name)
     notify.info("Linked node_modules from main worktree", "Worktree")
   end
 
-  notify.success("Worktree ready: " .. worktree_path, "Worktree")
+  notify.info("Worktree ready: " .. worktree_path, "Worktree")
   return worktree_path
 end
 
@@ -220,7 +240,7 @@ function M.remove_worktree(branch_name)
     return false
   end
 
-  notify.success("Worktree removed: " .. worktree_path, "Worktree")
+  notify.info("Worktree removed: " .. worktree_path, "Worktree")
   return true
 end
 
