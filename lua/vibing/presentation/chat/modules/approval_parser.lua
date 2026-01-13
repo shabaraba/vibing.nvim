@@ -4,11 +4,12 @@ local M = {}
 
 -- 承認アクションのパターンマップ（番号付きリスト形式）
 -- 例: "1. allow_once - Allow this execution only"
+-- 引用記号（> ）や先頭の空白も許容
 local APPROVAL_PATTERNS = {
-  allow_once = "^%d+%.%s*allow_once%s*%-",
-  deny_once = "^%d+%.%s*deny_once%s*%-",
-  allow_for_session = "^%d+%.%s*allow_for_session%s*%-",
-  deny_for_session = "^%d+%.%s*deny_for_session%s*%-",
+  allow_once = "^[>%s]*%d+%.%s*allow_once%s*%-",
+  deny_once = "^[>%s]*%d+%.%s*deny_once%s*%-",
+  allow_for_session = "^[>%s]*%d+%.%s*allow_for_session%s*%-",
+  deny_for_session = "^[>%s]*%d+%.%s*deny_for_session%s*%-",
 }
 
 ---承認レスポンスかどうかを判定
@@ -20,13 +21,21 @@ function M.is_approval_response(message)
     return false
   end
 
-  -- Check if message matches any approval pattern
-  for _, pattern in pairs(APPROVAL_PATTERNS) do
-    if message:match(pattern) then
-      return true
+  -- Debug: Log message being checked
+  vim.notify("[DEBUG] Checking approval response for message:\n" .. message, vim.log.levels.INFO)
+
+  -- Check each line for approval patterns
+  for line in message:gmatch("[^\r\n]+") do
+    vim.notify("[DEBUG] Checking line: '" .. line .. "'", vim.log.levels.INFO)
+    for action, pattern in pairs(APPROVAL_PATTERNS) do
+      if line:match(pattern) then
+        vim.notify("[DEBUG] MATCHED! Action: " .. action .. ", Pattern: " .. pattern, vim.log.levels.INFO)
+        return true
+      end
     end
   end
 
+  vim.notify("[DEBUG] No approval pattern matched", vim.log.levels.WARN)
   return false
 end
 
@@ -39,16 +48,18 @@ function M.parse_approval_response(message)
     return nil
   end
 
-  -- Find which approval action matches
-  for action, pattern in pairs(APPROVAL_PATTERNS) do
-    if message:match(pattern) then
-      -- Note: Tool name should be obtained from _pending_approval.tool
-      -- rather than parsing from user message, as the approval UI is shown
-      -- in the Assistant section, not in the user's editable area.
-      return {
-        action = action,
-        tool = nil, -- Will be filled by caller from _pending_approval
-      }
+  -- Check each line and find which approval action matches
+  for line in message:gmatch("[^\r\n]+") do
+    for action, pattern in pairs(APPROVAL_PATTERNS) do
+      if line:match(pattern) then
+        -- Note: Tool name should be obtained from _pending_approval.tool
+        -- rather than parsing from user message, as the approval UI is shown
+        -- in the User section (after our refactoring).
+        return {
+          action = action,
+          tool = nil, -- Will be filled by caller from _pending_approval
+        }
+      end
     end
   end
 

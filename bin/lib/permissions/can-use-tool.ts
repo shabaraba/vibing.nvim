@@ -36,6 +36,11 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
 
   return async (toolName: string, input: Record<string, unknown>): Promise<CanUseToolResult> => {
     try {
+      // Debug: Log permission check
+      console.error(
+        `[DEBUG] canUseTool: tool=${toolName}, mode=${permissionMode}, allowedTools=${JSON.stringify(allowedTools)}`
+      );
+
       // AskUserQuestion: Insert choices into chat buffer and deny
       if (toolName === 'AskUserQuestion') {
         console.log(
@@ -101,9 +106,55 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
         }
       }
 
-      // Implement acceptEdits mode: auto-approve Edit/Write tools
+      // Implement permission modes
       if (permissionMode === 'acceptEdits' && (toolName === 'Edit' || toolName === 'Write')) {
         return { behavior: 'allow', updatedInput: input };
+      }
+
+      if (permissionMode === 'default') {
+        // In default mode, ask for approval for all tools unless explicitly allowed
+        // Check if tool is in allow list
+        let explicitlyAllowed = false;
+        for (const allowedTool of allowedTools) {
+          if (matchesPermission(toolName, input, allowedTool)) {
+            explicitlyAllowed = true;
+            break;
+          }
+        }
+
+        if (!explicitlyAllowed) {
+          // Send approval_required event to show interactive UI in chat
+          console.log(
+            safeJsonStringify({
+              type: 'approval_required',
+              tool: toolName,
+              input: input,
+              options: [
+                {
+                  value: 'allow_once',
+                  label: 'allow_once - Allow this execution only',
+                },
+                {
+                  value: 'deny_once',
+                  label: 'deny_once - Deny this execution only',
+                },
+                {
+                  value: 'allow_for_session',
+                  label: 'allow_for_session - Allow for this session',
+                },
+                {
+                  value: 'deny_for_session',
+                  label: 'deny_for_session - Deny for this session',
+                },
+              ],
+            })
+          );
+
+          return {
+            behavior: 'deny',
+            message: 'Please wait for user approval from the provided options.',
+          };
+        }
       }
 
       // Special handling for vibing-nvim internal MCP tools

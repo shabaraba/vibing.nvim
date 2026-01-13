@@ -50,7 +50,10 @@ local function parse_yaml_simple(yaml_str)
         current_array = nil
       end
 
-      if value == "" or value == nil then
+      -- Handle empty array notation: []
+      if value == "[]" then
+        result[key] = {}
+      elseif value == "" or value == nil then
         current_array_key = key
         current_array = {}
       else

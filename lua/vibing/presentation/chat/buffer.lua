@@ -407,7 +407,9 @@ function ChatBuffer:add_user_section()
 
   Renderer.addUserSection(self.buf, self.win, self._pending_choices, self._pending_approval)
   self._pending_choices = nil
-  self._pending_approval = nil
+  -- NOTE: Don't clear _pending_approval here!
+  -- It needs to persist until the user sends their approval response.
+  -- It will be cleared in send_message() after processing the approval.
 end
 
 ---@return number?
@@ -435,6 +437,7 @@ end
 ---@param input table ツール入力
 ---@param options table 承認オプション
 function ChatBuffer:insert_approval_request(tool, input, options)
+  -- Store for later insertion in add_user_section()
   self._pending_approval = {
     tool = tool,
     input = input,
@@ -479,6 +482,7 @@ function ChatBuffer:handle_approval_response(approval, original_message)
     -- Add with :once suffix for one-time use
     local tool_once = tool .. ":once"
     table.insert(self._session_allow, tool_once)
+    vim.notify("[DEBUG] Added to session_allow: " .. tool_once, vim.log.levels.INFO)
     -- Track for cleanup (JS side also removes, but this is a safety net)
     self._once_tools = self._once_tools or {}
     table.insert(self._once_tools, tool_once)
@@ -526,6 +530,16 @@ function ChatBuffer:handle_approval_response(approval, original_message)
 
   -- Add new user section for next input
   self:add_user_section()
+
+  -- Automatically send continuation message to retry with updated permissions
+  vim.schedule(function()
+    local SendMessageUseCase = require("vibing.application.chat.send_message")
+    local vibing = require("vibing")
+    local config = vibing.get_config()
+    local adapter = require("vibing.infrastructure.adapter.agent_sdk"):new(config)
+
+    SendMessageUseCase.execute(adapter, self:create_callbacks(), "Please try again.", config)
+  end)
 end
 
 ---セッションレベルの許可リストを取得

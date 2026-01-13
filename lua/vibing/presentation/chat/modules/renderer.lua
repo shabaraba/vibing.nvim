@@ -182,13 +182,13 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval)
 
   if pendingApproval then
     local approvalLines = {}
+
+    -- Warning header
     table.insert(approvalLines, "⚠️  Tool approval required")
     table.insert(approvalLines, "")
 
-    -- Safe tool name extraction
-    local toolName = (pendingApproval.tool and pendingApproval.tool ~= "")
-      and pendingApproval.tool
-      or "[unknown]"
+    -- Tool information
+    local toolName = (pendingApproval.tool and pendingApproval.tool ~= "") and pendingApproval.tool or "[unknown]"
     table.insert(approvalLines, "Tool: " .. toolName)
 
     -- Show input details based on tool type (nil-safe)
@@ -243,6 +243,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval)
     end
   end
 end
+
 
 -- Backward compatibility alias
 M.add_user_section = M.addUserSection
