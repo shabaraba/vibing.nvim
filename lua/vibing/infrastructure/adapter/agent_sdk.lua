@@ -141,6 +141,7 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
 
   self._handles[handle_id] = vim.system(cmd, {
     text = true,
+    env = vim.fn.environ(),
     stdout = StreamHandler.create_stdout_handler(EventProcessor, eventContext),
     stderr = StreamHandler.create_stderr_handler(error_output),
   }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, on_done))

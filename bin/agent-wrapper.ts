@@ -80,14 +80,12 @@ if (config.cwd) {
     if (existsSync(config.cwd)) {
       process.chdir(config.cwd);
     } else {
-      console.error(
-        `[vibing.nvim] Warning: Directory ${config.cwd} does not exist. Using current directory.`
-      );
-      // Reset cwd to current directory
+      // Silently fall back to current directory
+      // This is expected behavior when worktree has been deleted
       config.cwd = process.cwd();
     }
   } catch (error) {
-    console.error(`[vibing.nvim] Failed to change directory to ${config.cwd}:`, error);
+    // Silently fall back to current directory on any error
     config.cwd = process.cwd();
   }
 }

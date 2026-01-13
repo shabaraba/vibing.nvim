@@ -4,6 +4,7 @@ import * as execute from './execute.js';
 import * as window from './window.js';
 import * as lsp from './lsp.js';
 import * as instances from './instances.js';
+import * as chat from './chat.js';
 
 export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Buffer operations
@@ -43,4 +44,7 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
 
   // Instance management
   nvim_list_instances: instances.handleListInstances,
+
+  // Chat operations
+  nvim_chat_worktree: chat.handleChatWorktree,
 };
