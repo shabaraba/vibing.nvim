@@ -120,17 +120,57 @@ if (config.sessionId) {
   // Pre-emptively delete existing snapshot tag to avoid duplication error
   try {
     const { execSync } = await import('child_process');
-    const tagName = `claude-session-${config.sessionId}`;
 
-    // Check if tag exists
-    const tagExists = execSync(`git tag -l "${tagName}"`, {
+    // Detect worktree environment
+    let worktreeId = 'main';
+    try {
+      const gitCommonDir = execSync('git rev-parse --git-common-dir', {
+        cwd: config.cwd,
+        encoding: 'utf8',
+      }).trim();
+      const gitDir = execSync('git rev-parse --git-dir', {
+        cwd: config.cwd,
+        encoding: 'utf8',
+      }).trim();
+
+      if (gitCommonDir !== gitDir) {
+        // We're in a worktree
+        const worktreePath = execSync('git rev-parse --show-toplevel', {
+          cwd: config.cwd,
+          encoding: 'utf8',
+        }).trim();
+        const pathParts = worktreePath.split('/');
+        const worktreeName = pathParts[pathParts.length - 1];
+        worktreeId = `wt-${worktreeName}`;
+      }
+    } catch {
+      // Not a git repo or command failed, use 'main' as default
+    }
+
+    // New vibing.nvim tag format
+    const vibingTagName = `vibing-patch-${worktreeId}-${config.sessionId}`;
+
+    // Check and delete vibing.nvim's patch tag
+    const vibingTagExists = execSync(`git tag -l "${vibingTagName}"`, {
       cwd: config.cwd,
       encoding: 'utf8',
     }).trim();
 
-    if (tagExists) {
-      console.error(`[vibing.nvim] Removing existing snapshot tag: ${tagName}`);
-      execSync(`git tag -d ${tagName}`, { cwd: config.cwd, stdio: 'ignore' });
+    if (vibingTagExists) {
+      console.error(`[vibing.nvim] Removing existing patch tag: ${vibingTagName}`);
+      execSync(`git tag -d ${vibingTagName}`, { cwd: config.cwd, stdio: 'ignore' });
+    }
+
+    // Also check for old format tags (backward compatibility)
+    const oldTagName = `claude-session-${config.sessionId}`;
+    const oldTagExists = execSync(`git tag -l "${oldTagName}"`, {
+      cwd: config.cwd,
+      encoding: 'utf8',
+    }).trim();
+
+    if (oldTagExists) {
+      console.error(`[vibing.nvim] Removing old format tag: ${oldTagName}`);
+      execSync(`git tag -d ${oldTagName}`, { cwd: config.cwd, stdio: 'ignore' });
     }
   } catch (error) {
     // Ignore errors from tag deletion (e.g., not a git repo)
