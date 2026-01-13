@@ -69,42 +69,42 @@ function M.show(callback)
     input_col = col
   end
 
+  local Factory = require("vibing.infrastructure.ui.factory")
+
   -- 左側バッファ（メニュー）を作成
-  local menu_buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_option(menu_buf, "bufhidden", "wipe")
-  vim.api.nvim_buf_set_option(menu_buf, "modifiable", false)
+  local menu_buf = Factory.create_buffer({
+    bufhidden = "wipe",
+    modifiable = false,
+  })
 
   -- 右側バッファ（入力）を作成
-  local input_buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_option(input_buf, "bufhidden", "wipe")
-  vim.api.nvim_buf_set_option(input_buf, "buftype", "prompt")
+  local input_buf = Factory.create_buffer({
+    bufhidden = "wipe",
+    buftype = "prompt",
+  })
   vim.fn.prompt_setprompt(input_buf, "> ")
 
   -- メニューウィンドウを作成
-  local menu_win = vim.api.nvim_open_win(menu_buf, false, {
-    relative = "editor",
+  local menu_win = Factory.create_float({
     width = menu_width,
     height = menu_height,
     row = menu_row,
     col = menu_col,
-    style = "minimal",
     border = "rounded",
-    title = " Action ",
-    title_pos = "center",
-  })
+    title = "Action",
+    enter = false,
+  }, menu_buf)
 
   -- 入力ウィンドウを作成
-  local input_win = vim.api.nvim_open_win(input_buf, false, {
-    relative = "editor",
+  local input_win = Factory.create_float({
     width = input_width,
     height = input_height,
     row = input_row,
     col = input_col,
-    style = "minimal",
     border = "rounded",
-    title = " Additional Instruction (optional) ",
-    title_pos = "center",
-  })
+    title = "Additional Instruction (optional)",
+    enter = false,
+  }, input_buf)
 
   -- メニュー描画関数
   local function render_menu()

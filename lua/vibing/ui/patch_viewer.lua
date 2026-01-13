@@ -117,36 +117,35 @@ function M._create_layout()
   local files_width = math.floor(total_width * 0.3)
   local diff_width = total_width - files_width - 3
 
-  -- ファイルリストバッファ
-  state.buf_files = vim.api.nvim_create_buf(false, true)
-  vim.bo[state.buf_files].bufhidden = "wipe"
-  vim.bo[state.buf_files].modifiable = false
+  local Factory = require("vibing.infrastructure.ui.factory")
 
-  state.win_files = vim.api.nvim_open_win(state.buf_files, true, {
-    relative = "editor",
+  -- ファイルリストバッファ
+  state.buf_files = Factory.create_buffer({
+    bufhidden = "wipe",
+    modifiable = false,
+  })
+
+  state.win_files = Factory.create_float({
     width = files_width,
     height = total_height,
     row = start_row,
     col = start_col,
-    style = "minimal",
     border = "rounded",
-    title = " Files ",
-    title_pos = "center",
-  })
+    title = "Files",
+    enter = true,
+  }, state.buf_files)
 
   -- Diffバッファ
   state.buf_diff = diff_util.create_diff_buffer({})
-  state.win_diff = vim.api.nvim_open_win(state.buf_diff, false, {
-    relative = "editor",
+  state.win_diff = Factory.create_float({
     width = diff_width,
     height = total_height,
     row = start_row,
     col = start_col + files_width + 3,
-    style = "minimal",
     border = "rounded",
-    title = " Diff Preview ",
-    title_pos = "center",
-  })
+    title = "Diff Preview",
+    enter = false,
+  }, state.buf_diff)
 end
 
 ---全パネルを描画

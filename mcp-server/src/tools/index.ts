@@ -4,6 +4,7 @@ import { windowTools } from './window.js';
 import { lspTools } from './lsp.js';
 import { executeTools } from './execute.js';
 import { instanceTools } from './instances.js';
+import { chatTools } from './chat.js';
 
 export const allTools = [
   ...bufferTools,
@@ -12,4 +13,5 @@ export const allTools = [
   ...lspTools,
   ...executeTools,
   ...instanceTools,
+  ...chatTools,
 ];

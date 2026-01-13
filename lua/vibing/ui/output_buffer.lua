@@ -55,10 +55,12 @@ end
 ---バッファを作成
 ---@param title string
 function OutputBuffer:_create_buffer(title)
-  self.buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[self.buf].filetype = "vibing"
-  vim.bo[self.buf].buftype = "nofile"
-  vim.bo[self.buf].modifiable = true
+  local Factory = require("vibing.infrastructure.ui.factory")
+  self.buf = Factory.create_buffer({
+    filetype = "vibing",
+    buftype = "nofile",
+    modifiable = true,
+  })
   vim.bo[self.buf].swapfile = false
   vim.api.nvim_buf_set_name(self.buf, "vibing://" .. title)
 
@@ -72,23 +74,13 @@ end
 
 ---フローティングウィンドウを作成
 function OutputBuffer:_create_window()
-  local width = math.floor(vim.o.columns * 0.6)
-  local height = math.floor(vim.o.lines * 0.6)
-  local row = math.floor((vim.o.lines - height) / 2)
-  local col = math.floor((vim.o.columns - width) / 2)
-
-  self.win = vim.api.nvim_open_win(self.buf, true, {
-    relative = "editor",
-    width = width,
-    height = height,
-    row = row,
-    col = col,
-    style = "minimal",
+  local Factory = require("vibing.infrastructure.ui.factory")
+  self.win = Factory.create_float({
+    width = 0.6,
+    height = 0.6,
     border = "rounded",
-    title = " Vibing ",
-    title_pos = "center",
-  })
-
+    title = "Vibing",
+  }, self.buf)
 end
 
 ---キーマップを設定

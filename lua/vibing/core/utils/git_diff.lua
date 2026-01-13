@@ -43,16 +43,18 @@ function M.show_diff(file_path)
       end
 
       -- 一時バッファを作成
-      local buf = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
-      vim.api.nvim_buf_set_option(buf, "bufhidden", "wipe")
-      vim.api.nvim_buf_set_option(buf, "filetype", "diff")
-      vim.api.nvim_buf_set_option(buf, "modifiable", true)
+      local Factory = require("vibing.infrastructure.ui.factory")
+      local buf = Factory.create_buffer({
+        buftype = "nofile",
+        bufhidden = "wipe",
+        filetype = "diff",
+        modifiable = true,
+      })
 
       -- バッファに内容を設定
       local lines = vim.split(output, "\n")
       vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-      vim.api.nvim_buf_set_option(buf, "modifiable", false)
+      vim.bo[buf].modifiable = false
 
       -- 現在のウィンドウで開く
       vim.api.nvim_set_current_buf(buf)

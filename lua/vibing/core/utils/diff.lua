@@ -8,11 +8,13 @@ local M = {}
 ---@param diff_lines string[] Diff内容の行配列
 ---@return number バッファ番号
 function M.create_diff_buffer(diff_lines)
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
-  vim.bo[buf].filetype = "diff"
-  vim.bo[buf].modifiable = true
+  local Factory = require("vibing.infrastructure.ui.factory")
+  local buf = Factory.create_buffer({
+    buftype = "nofile",
+    bufhidden = "wipe",
+    filetype = "diff",
+    modifiable = true,
+  })
 
   -- Diff内容を設定
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, diff_lines)
@@ -49,11 +51,13 @@ end
 function M.create_empty_diff_buffer(message)
   message = message or "No changes detected"
 
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
-  vim.bo[buf].filetype = "markdown"
-  vim.bo[buf].modifiable = true
+  local Factory = require("vibing.infrastructure.ui.factory")
+  local buf = Factory.create_buffer({
+    buftype = "nofile",
+    bufhidden = "wipe",
+    filetype = "markdown",
+    modifiable = true,
+  })
 
   local lines = {
     "",
