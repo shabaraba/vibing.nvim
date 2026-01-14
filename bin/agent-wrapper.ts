@@ -70,6 +70,12 @@ async function validateSessionFile(sessionId: string, cwd: string): Promise<bool
 const args = process.argv.slice(2);
 const config = parseArguments(args);
 
+// Set environment variables for vibing.nvim context awareness
+process.env.VIBING_NVIM_CONTEXT = 'true';
+if (config.rpcPort) {
+  process.env.VIBING_NVIM_RPC_PORT = config.rpcPort.toString();
+}
+
 const fullPrompt = buildPrompt(config);
 
 // Change process working directory to match the requested cwd

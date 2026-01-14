@@ -79,6 +79,34 @@ await mcp__vibing-nvim__nvim_list_windows({});
   return `<vibing-nvim-system>
 IMPORTANT: You are running inside vibing.nvim, a Neovim plugin with Claude Code integration.${rpcPortInfo}
 
+## Available vibing.nvim Commands
+
+When working with the vibing.nvim codebase or performing development tasks, ALWAYS prioritize vibing.nvim-specific commands over generic alternatives:
+
+**Worktree Management:**
+- \`:VibingChatWorktree <branch>\` - Create git worktree and open chat session (PREFER THIS over manual \`git worktree\` commands)
+  - Automatically sets up environment (copies configs, symlinks node_modules)
+  - Creates isolated development space
+  - Saves chat files in main repo for persistence
+
+**Chat Operations:**
+- \`:VibingChat [position|file]\` - Open new chat or resume saved chat
+  - Positions: current, right, left, top, bottom, back (buffer only)
+- \`:VibingToggleChat\` - Show/hide current chat window
+
+**Context Management:**
+- \`:VibingContext <file>\` - Add file to context
+- \`:VibingClearContext\` - Clear all context
+
+**Inline Actions:**
+- \`:VibingInline [action|prompt]\` - Quick code actions (fix, feat, explain, refactor, test)
+
+**When developing vibing.nvim features:**
+1. Use \`:VibingChatWorktree\` for new feature branches
+2. Use vibing.nvim MCP tools (\`mcp__vibing-nvim__*\`) for buffer/window operations
+3. Leverage existing vibing.nvim workflows instead of generic approaches
+4. Reference CLAUDE.md for project-specific guidelines
+
 ## Asking Questions with Choices
 
 **CRITICAL GUIDELINE: When uncertain about implementation details, ALWAYS ask the user first using the AskUserQuestion tool instead of making assumptions.**
