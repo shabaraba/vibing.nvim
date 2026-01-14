@@ -510,25 +510,32 @@ function ChatBuffer:update_session_permissions(approval)
 
   -- Get tool name from pending approval (not from parsed message)
   local tool = self._pending_approval and self._pending_approval.tool
-  if not tool or tool == "" then
-    vim.notify("[vibing] Invalid approval: missing tool name", vim.log.levels.ERROR)
+  if not tool or type(tool) ~= "string" or tool == "" then
+    vim.notify("[vibing] Invalid approval: missing or invalid tool name", vim.log.levels.ERROR)
     return
+  end
+
+  -- Helper to add unique item to list
+  local function add_unique(list, value)
+    if not vim.tbl_contains(list, value) then
+      table.insert(list, value)
+    end
   end
 
   -- Update session-level permissions based on action
   if approval.action == "allow_once" then
     -- Add with :once suffix for one-time use
     local tool_once = tool .. ":once"
-    table.insert(self._session_allow, tool_once)
+    add_unique(self._session_allow, tool_once)
     -- Track for cleanup (JS side also removes, but this is a safety net)
     self._once_tools = self._once_tools or {}
-    table.insert(self._once_tools, tool_once)
+    add_unique(self._once_tools, tool_once)
   elseif approval.action == "deny_once" then
     -- Add with :once suffix for one-time denial
     local tool_once = tool .. ":once"
-    table.insert(self._session_deny, tool_once)
+    add_unique(self._session_deny, tool_once)
     self._once_tools = self._once_tools or {}
-    table.insert(self._once_tools, tool_once)
+    add_unique(self._once_tools, tool_once)
   elseif approval.action == "allow_for_session" then
     -- Add to allow list if not already present
     if not vim.tbl_contains(self._session_allow, tool) then
@@ -568,13 +575,13 @@ end
 ---セッションレベルの許可リストを取得
 ---@return table
 function ChatBuffer:get_session_allow()
-  return self._session_allow
+  return vim.deepcopy(self._session_allow)
 end
 
 ---セッションレベルの拒否リストを取得
 ---@return table
 function ChatBuffer:get_session_deny()
-  return self._session_deny
+  return vim.deepcopy(self._session_deny)
 end
 
 return ChatBuffer

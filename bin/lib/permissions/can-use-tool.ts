@@ -63,7 +63,7 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
           const deniedTool = sessionDeniedTools[i];
 
           if (deniedTool.endsWith(':once')) {
-            const baseTool = deniedTool.replace(':once', '');
+            const baseTool = deniedTool.slice(0, -':once'.length);
             if (matchesPermission(toolName, input, baseTool)) {
               // Deny once and remove from list
               sessionDeniedTools.splice(i, 1);
@@ -88,7 +88,7 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
           const allowedTool = sessionAllowedTools[i];
 
           if (allowedTool.endsWith(':once')) {
-            const baseTool = allowedTool.replace(':once', '');
+            const baseTool = allowedTool.slice(0, -':once'.length);
             if (matchesPermission(toolName, input, baseTool)) {
               // Allow once and remove from list
               sessionAllowedTools.splice(i, 1);
