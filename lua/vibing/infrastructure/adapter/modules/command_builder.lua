@@ -90,12 +90,12 @@ local function add_permission_args(cmd, opts)
     permissions_allow = {}
   end
   local allow_tools = vim.deepcopy(permissions_allow)
+  -- Always include vibing-nvim MCP tools (ensures #allow_tools >= 1)
   table.insert(allow_tools, "mcp__vibing-nvim__*")
 
-  if #allow_tools > 0 then
-    table.insert(cmd, "--allow")
-    table.insert(cmd, table.concat(allow_tools, ","))
-  end
+  -- Always add --allow flag (at minimum contains vibing-nvim MCP tools)
+  table.insert(cmd, "--allow")
+  table.insert(cmd, table.concat(allow_tools, ","))
 
   -- Ensure permissions_deny is a table
   local permissions_deny = opts.permissions_deny

@@ -296,8 +296,18 @@ function ChatBuffer:send_message()
   if self._pending_approval and ApprovalParser.is_approval_response(message) then
     local approval = ApprovalParser.parse_approval_response(message)
     if approval then
-      -- Update session permissions silently
-      self:update_session_permissions(approval)
+      -- Update session permissions and check for errors
+      local success, err = pcall(function()
+        self:update_session_permissions(approval)
+      end)
+
+      if not success then
+        vim.notify(
+          string.format("[vibing] Failed to update permissions: %s", tostring(err)),
+          vim.log.levels.ERROR
+        )
+        return
+      end
 
       -- Get tool name and input for message (before clearing _pending_approval)
       local tool = self._pending_approval.tool
