@@ -133,7 +133,8 @@ M.move_cursor_to_end = M.moveCursorToEnd
 ---@param buf number バッファ番号
 ---@param win number? ウィンドウ番号
 ---@param pendingChoices table? 保留中の選択肢
-function M.addUserSection(buf, win, pendingChoices)
+---@param pendingApproval table? 保留中のツール承認要求
+function M.addUserSection(buf, win, pendingChoices, pendingApproval)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
   while #lines > 0 and lines[#lines] == "" do
@@ -156,15 +157,19 @@ function M.addUserSection(buf, win, pendingChoices)
       -- Default to single-select (numbered list) when multiSelect is not explicitly true
       local useNumberedList = q.multiSelect ~= true
       local optionIndex = 1
-      for _, opt in ipairs(q.options) do
-        if useNumberedList then
-          table.insert(choiceLines, optionIndex .. ". " .. opt.label)
-          optionIndex = optionIndex + 1
-        else
-          table.insert(choiceLines, "- " .. opt.label)
-        end
-        if opt.description then
-          table.insert(choiceLines, "  " .. opt.description)
+      for _, opt in ipairs(q.options or {}) do
+        -- Safe label extraction
+        local label = (opt.label and opt.label ~= "") and opt.label or ""
+        if label ~= "" then
+          if useNumberedList then
+            table.insert(choiceLines, optionIndex .. ". " .. label)
+            optionIndex = optionIndex + 1
+          else
+            table.insert(choiceLines, "- " .. label)
+          end
+          if opt.description and opt.description ~= "" then
+            table.insert(choiceLines, "  " .. tostring(opt.description))
+          end
         end
       end
       table.insert(choiceLines, "")
@@ -173,6 +178,54 @@ function M.addUserSection(buf, win, pendingChoices)
     local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local insertPos = #currentLines
     vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, choiceLines)
+  end
+
+  if pendingApproval then
+    local approvalLines = {}
+
+    -- Warning header
+    table.insert(approvalLines, "⚠️  Tool approval required")
+    table.insert(approvalLines, "")
+
+    -- Tool information
+    local toolName = (pendingApproval.tool and pendingApproval.tool ~= "") and pendingApproval.tool or "[unknown]"
+    table.insert(approvalLines, "Tool: " .. toolName)
+
+    -- Show input details based on tool type (nil-safe)
+    if pendingApproval.input then
+      if pendingApproval.input.command then
+        table.insert(approvalLines, "Command: " .. tostring(pendingApproval.input.command))
+      end
+      if pendingApproval.input.file_path then
+        table.insert(approvalLines, "File: " .. tostring(pendingApproval.input.file_path))
+      end
+      if pendingApproval.input.pattern then
+        table.insert(approvalLines, "Pattern: " .. tostring(pendingApproval.input.pattern))
+      end
+      if pendingApproval.input.url then
+        table.insert(approvalLines, "URL: " .. tostring(pendingApproval.input.url))
+      end
+    end
+
+    table.insert(approvalLines, "")
+
+    -- Use numbered list for single-select approval options (nil-safe iteration)
+    local optionIndex = 1
+    for _, opt in ipairs(pendingApproval.options or {}) do
+      local label = (opt.label and opt.label ~= "") and opt.label or ""
+      if label ~= "" then
+        table.insert(approvalLines, optionIndex .. ". " .. label)
+        optionIndex = optionIndex + 1
+      end
+    end
+
+    table.insert(approvalLines, "")
+    table.insert(approvalLines, "Please select and press <CR> to send.")
+    table.insert(approvalLines, "")
+
+    local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local insertPos = #currentLines
+    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, approvalLines)
   end
 
   if win and vim.api.nvim_win_is_valid(win) then
@@ -190,6 +243,7 @@ function M.addUserSection(buf, win, pendingChoices)
     end
   end
 end
+
 
 -- Backward compatibility alias
 M.add_user_section = M.addUserSection

@@ -18,6 +18,9 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field add_user_section fun() ユーザーセクションを追加
 ---@field get_bufnr fun(): number バッファ番号を取得
 ---@field insert_choices fun(questions: table) AskUserQuestion選択肢を挿入
+---@field insert_approval_request fun(tool: string, input: table, options: table) ツール承認要求UIを挿入
+---@field get_session_allow fun(): table セッションレベルの許可リストを取得
+---@field get_session_deny fun(): table セッションレベルの拒否リストを取得
 ---@field clear_handle_id fun() handle_idをクリア
 
 ---メッセージを送信
@@ -62,6 +65,10 @@ function M.execute(adapter, callbacks, message, config)
   local use_case = require("vibing.application.chat.use_case")
   local session_cwd = use_case._current_session and use_case._current_session:get_cwd()
 
+  -- Get session-level permissions from buffer
+  local session_allow = callbacks.get_session_allow()
+  local session_deny = callbacks.get_session_deny()
+
   local opts = {
     streaming = true,
     action_type = "chat",
@@ -70,6 +77,8 @@ function M.execute(adapter, callbacks, message, config)
     permissions_allow = frontmatter.permissions_allow,
     permissions_deny = frontmatter.permissions_deny,
     permissions_ask = frontmatter.permissions_ask,
+    permissions_session_allow = session_allow,
+    permissions_session_deny = session_deny,
     permission_mode = frontmatter.permission_mode,
     language = lang_code,  -- Pass language code to adapter
     cwd = session_cwd,  -- Pass worktree cwd if set (from memory, not frontmatter)
@@ -93,6 +102,12 @@ function M.execute(adapter, callbacks, message, config)
           ),
           vim.log.levels.INFO -- Changed from WARN to INFO (less alarming)
         )
+      end)
+    end,
+    on_approval_required = function(tool, input, options)
+      -- Forward approval_required event to chat buffer
+      vim.schedule(function()
+        callbacks.insert_approval_request(tool, input, options)
       end)
     end,
   }

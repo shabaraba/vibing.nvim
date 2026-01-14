@@ -20,14 +20,37 @@ type CanUseToolCallback = (
 ) => Promise<CanUseToolResult>;
 
 /**
+ * Suffix for one-time permission (allow_once/deny_once)
+ */
+const ONCE_SUFFIX = ':once';
+
+/**
  * Create canUseTool callback for Agent SDK
  */
 export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallback {
-  const { allowedTools, askedTools, permissionRules, permissionMode, mcpEnabled, sessionId } =
-    config;
+  const {
+    allowedTools,
+    askedTools,
+    sessionAllowedTools,
+    sessionDeniedTools,
+    permissionRules,
+    permissionMode,
+    mcpEnabled,
+    sessionId,
+  } = config;
 
   return async (toolName: string, input: Record<string, unknown>): Promise<CanUseToolResult> => {
     try {
+      /**
+       * Permission evaluation order (highest to lowest priority):
+       * 1. Session-level deny list (immediate block)
+       * 2. Session-level allow list (auto-approve)
+       * 3. Permission modes (acceptEdits, default, bypassPermissions)
+       * 4. Ask list (request approval if not in allow list)
+       * 5. Allow list (with pattern matching support)
+       * 6. Granular permission rules (path/command/pattern/domain based)
+       */
+
       // AskUserQuestion: Insert choices into chat buffer and deny
       if (toolName === 'AskUserQuestion') {
         console.log(
@@ -43,9 +66,105 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
         };
       }
 
-      // Implement acceptEdits mode: auto-approve Edit/Write tools
+      // Check session-level deny list (highest priority)
+      // Use reverse loop to safely remove :once items
+      if (sessionDeniedTools && sessionDeniedTools.length > 0) {
+        for (let i = sessionDeniedTools.length - 1; i >= 0; i--) {
+          const deniedTool = sessionDeniedTools[i];
+
+          if (deniedTool.endsWith(ONCE_SUFFIX)) {
+            const baseTool = deniedTool.slice(0, -ONCE_SUFFIX.length);
+            if (matchesPermission(toolName, input, baseTool)) {
+              // Deny once and remove from list
+              sessionDeniedTools.splice(i, 1);
+              return {
+                behavior: 'deny',
+                message: `Tool ${toolName} was denied once.`,
+              };
+            }
+          } else if (matchesPermission(toolName, input, deniedTool)) {
+            return {
+              behavior: 'deny',
+              message: `Tool ${toolName} was denied for this session.`,
+            };
+          }
+        }
+      }
+
+      // Check session-level allow list (second priority)
+      // Use reverse loop to safely remove :once items
+      if (sessionAllowedTools && sessionAllowedTools.length > 0) {
+        for (let i = sessionAllowedTools.length - 1; i >= 0; i--) {
+          const allowedTool = sessionAllowedTools[i];
+
+          if (allowedTool.endsWith(ONCE_SUFFIX)) {
+            const baseTool = allowedTool.slice(0, -ONCE_SUFFIX.length);
+            if (matchesPermission(toolName, input, baseTool)) {
+              // Allow once and remove from list
+              sessionAllowedTools.splice(i, 1);
+              return {
+                behavior: 'allow',
+                updatedInput: input,
+              };
+            }
+          } else if (matchesPermission(toolName, input, allowedTool)) {
+            return {
+              behavior: 'allow',
+              updatedInput: input,
+            };
+          }
+        }
+      }
+
+      // Implement permission modes
       if (permissionMode === 'acceptEdits' && (toolName === 'Edit' || toolName === 'Write')) {
         return { behavior: 'allow', updatedInput: input };
+      }
+
+      if (permissionMode === 'default') {
+        // In default mode, ask for approval for all tools unless explicitly allowed
+        // Check if tool is in allow list
+        let explicitlyAllowed = false;
+        for (const allowedTool of allowedTools) {
+          if (matchesPermission(toolName, input, allowedTool)) {
+            explicitlyAllowed = true;
+            break;
+          }
+        }
+
+        if (!explicitlyAllowed) {
+          // Send approval_required event to show interactive UI in chat
+          console.log(
+            safeJsonStringify({
+              type: 'approval_required',
+              tool: toolName,
+              input: input,
+              options: [
+                {
+                  value: 'allow_once',
+                  label: 'allow_once - Allow this execution only',
+                },
+                {
+                  value: 'deny_once',
+                  label: 'deny_once - Deny this execution only',
+                },
+                {
+                  value: 'allow_for_session',
+                  label: 'allow_for_session - Allow for this session',
+                },
+                {
+                  value: 'deny_for_session',
+                  label: 'deny_for_session - Deny for this session',
+                },
+              ],
+            })
+          );
+
+          return {
+            behavior: 'deny',
+            message: 'Please wait for user approval from the provided options.',
+          };
+        }
       }
 
       // Special handling for vibing-nvim internal MCP tools
@@ -77,18 +196,37 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
           }
 
           if (!allowedByAllowList) {
-            // Issue #29 workaround: In resume sessions, Agent SDK bypasses canUseTool
-            if (sessionId) {
-              return {
-                behavior: 'deny',
-                message: `Tool ${toolName} requires user approval before use. Add it to the allow list with /allow ${askedTool} to enable in resume sessions.`,
-              };
-            } else {
-              return {
-                behavior: 'ask',
-                updatedInput: input,
-              };
-            }
+            // Send approval_required event to show interactive UI in chat
+            console.log(
+              safeJsonStringify({
+                type: 'approval_required',
+                tool: toolName,
+                input: input,
+                options: [
+                  {
+                    value: 'allow_once',
+                    label: 'allow_once - Allow this execution only',
+                  },
+                  {
+                    value: 'deny_once',
+                    label: 'deny_once - Deny this execution only',
+                  },
+                  {
+                    value: 'allow_for_session',
+                    label: 'allow_for_session - Allow for this session',
+                  },
+                  {
+                    value: 'deny_for_session',
+                    label: 'deny_for_session - Deny for this session',
+                  },
+                ],
+              })
+            );
+
+            return {
+              behavior: 'deny',
+              message: 'Please wait for user approval from the provided options.',
+            };
           }
 
           return {

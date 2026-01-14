@@ -20,6 +20,8 @@ export interface AgentConfig {
   allowedTools: string[];
   deniedTools: string[];
   askedTools: string[];
+  sessionAllowedTools: string[];
+  sessionDeniedTools: string[];
   permissionRules: PermissionRule[];
   mode: string | null;
   model: string | null;

@@ -84,24 +84,48 @@ end
 ---@param cmd string[]
 ---@param opts Vibing.AdapterOpts
 local function add_permission_args(cmd, opts)
-  local allow_tools = vim.deepcopy(opts.permissions_allow or {})
+  -- Ensure permissions_allow is a table
+  local permissions_allow = opts.permissions_allow or {}
+  if type(permissions_allow) ~= "table" then
+    permissions_allow = {}
+  end
+  local allow_tools = vim.deepcopy(permissions_allow)
+  -- Always include vibing-nvim MCP tools (ensures #allow_tools >= 1)
   table.insert(allow_tools, "mcp__vibing-nvim__*")
 
-  if #allow_tools > 0 then
-    table.insert(cmd, "--allow")
-    table.insert(cmd, table.concat(allow_tools, ","))
-  end
+  -- Always add --allow flag (at minimum contains vibing-nvim MCP tools)
+  table.insert(cmd, "--allow")
+  table.insert(cmd, table.concat(allow_tools, ","))
 
-  if opts.permissions_deny and #opts.permissions_deny > 0 then
+  -- Ensure permissions_deny is a table
+  local permissions_deny = opts.permissions_deny
+  if permissions_deny and type(permissions_deny) == "table" and #permissions_deny > 0 then
     table.insert(cmd, "--deny")
-    table.insert(cmd, table.concat(opts.permissions_deny, ","))
+    table.insert(cmd, table.concat(permissions_deny, ","))
   end
 
-  if opts.permissions_ask and #opts.permissions_ask > 0 then
+  -- Ensure permissions_ask is a table
+  local permissions_ask = opts.permissions_ask
+  if permissions_ask and type(permissions_ask) == "table" and #permissions_ask > 0 then
     table.insert(cmd, "--ask")
-    table.insert(cmd, table.concat(opts.permissions_ask, ","))
+    table.insert(cmd, table.concat(permissions_ask, ","))
   end
 
+  -- Session-level allow tools
+  local session_allow = opts.permissions_session_allow
+  if session_allow and type(session_allow) == "table" and #session_allow > 0 then
+    table.insert(cmd, "--session-allow")
+    table.insert(cmd, table.concat(session_allow, ","))
+  end
+
+  -- Session-level deny tools
+  local session_deny = opts.permissions_session_deny
+  if session_deny and type(session_deny) == "table" and #session_deny > 0 then
+    table.insert(cmd, "--session-deny")
+    table.insert(cmd, table.concat(session_deny, ","))
+  end
+
+  -- Permission mode
   if opts.permission_mode then
     table.insert(cmd, "--permission-mode")
     table.insert(cmd, opts.permission_mode)

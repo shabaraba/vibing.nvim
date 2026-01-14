@@ -19,6 +19,7 @@ function M.generate_from_conversation(conversation, callback)
 
   local vibing = require("vibing")
   local adapter = vibing.get_adapter()
+  local config = vibing.get_config()
 
   if not adapter then
     callback(nil, "No adapter configured")
@@ -38,7 +39,14 @@ function M.generate_from_conversation(conversation, callback)
 
   local collected_response = ""
 
-  adapter:stream(prompt, {}, function(chunk)
+  -- Use default permissions from config
+  local opts = {
+    permission_mode = config.permissions and config.permissions.mode or "acceptEdits",
+    permissions_allow = config.permissions and config.permissions.allow or {},
+    permissions_deny = config.permissions and config.permissions.deny or {},
+  }
+
+  adapter:stream(prompt, opts, function(chunk)
     collected_response = collected_response .. chunk
   end, function(response)
     if response.error then

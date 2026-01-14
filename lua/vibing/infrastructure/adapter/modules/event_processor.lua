@@ -38,6 +38,17 @@ local function handleInsertChoicesEvent(msg, opts)
   end
 end
 
+---承認要求イベントを処理
+---@param msg table JSONデコードされたメッセージ
+---@param opts Vibing.AdapterOpts アダプターオプション
+local function handleApprovalRequiredEvent(msg, opts)
+  if msg.tool and msg.options and opts.on_approval_required then
+    vim.schedule(function()
+      opts.on_approval_required(msg.tool, msg.input, msg.options)
+    end)
+  end
+end
+
 ---パッチ保存イベントを処理
 ---@param msg table JSONデコードされたメッセージ
 ---@param opts Vibing.AdapterOpts アダプターオプション
@@ -109,6 +120,13 @@ local eventHandlers = {
       return false
     end
     handleInsertChoicesEvent(msg, context.opts)
+    return true
+  end,
+  approval_required = function(msg, context)
+    if not context.opts then
+      return false
+    end
+    handleApprovalRequiredEvent(msg, context.opts)
     return true
   end,
   patch_saved = function(msg, context)

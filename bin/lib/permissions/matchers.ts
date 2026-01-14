@@ -147,7 +147,9 @@ export function matchesPermission(
   permissionStr: string
 ): boolean {
   try {
-    const parsed = parseToolPattern(permissionStr);
+    // Strip :once suffix before parsing (handled by can-use-tool.ts)
+    const normalizedPermissionStr = permissionStr.replace(/:once$/, '');
+    const parsed = parseToolPattern(normalizedPermissionStr);
 
     if (parsed.type === 'tool_name') {
       const permToolName = parsed.toolName;

@@ -575,6 +575,92 @@ Please answer the question and press `<CR>` to send.
 - Claude receives selection as a regular user message
 - No special state management or Promise handling required
 
+### Tool Approval UI
+
+vibing.nvim provides an interactive approval UI for tool usage when permission mode is set to `default` or when specific tools are in the `ask` list. Instead of using Agent SDK's console prompts, vibing.nvim presents approval options directly in the chat buffer.
+
+**How It Works:**
+
+1. **Claude requests a tool** - When Claude tries to use a tool that requires approval, the Agent Wrapper sends an `approval_required` event
+2. **Approval UI appears in chat** - The tool information and approval options are inserted into the chat buffer as plain text:
+
+```markdown
+⚠️ Tool approval required
+
+Tool: Bash
+Command: npm install
+
+1. allow_once - Allow this execution only
+2. deny_once - Deny this execution only
+3. allow_for_session - Allow for this session
+4. deny_for_session - Deny for this session
+
+Please select and press <CR> to send.
+```
+
+3. **User edits to select** - Delete unwanted options using Vim's standard editing commands (`dd`, etc.)
+4. **Send with `<CR>`** - Press `<CR>` to send the approval decision
+
+**Approval Options:**
+
+- **allow_once** - Allow the tool to execute this one time. Next time Claude tries to use the same tool, approval will be required again.
+- **deny_once** - Deny the tool execution this one time. Claude will try an alternative approach. Next time the tool may be allowed.
+- **allow_for_session** - Add the tool to the session-level allow list. For the rest of this chat session, the tool will be auto-approved.
+- **deny_for_session** - Add the tool to the session-level deny list. For the rest of this chat session, the tool will be auto-denied.
+
+**Example Workflow:**
+
+```markdown
+## User
+
+Can you run `npm install` to install dependencies?
+
+## Assistant
+
+⚠️ Tool approval required
+
+Tool: Bash
+Command: npm install
+
+1. allow_once - Allow this execution only
+2. deny_once - Deny this execution only
+3. allow_for_session - Allow for this session
+4. deny_for_session - Deny for this session
+
+Please select and press <CR> to send.
+```
+
+After editing (keeping only the desired option):
+
+```markdown
+## User
+
+3. allow_for_session - Allow for this session
+
+## Assistant
+
+User approved Bash for this session. Please try again.
+
+Running npm install...
+```
+
+**Key Features:**
+
+- **Natural Vim workflow** - Use standard Vim commands (`dd`, `d{motion}`, etc.) to select approval option
+- **Session-level permissions** - `allow_for_session` and `deny_for_session` persist for the entire chat session
+- **Detailed context** - Shows tool name and relevant input (command, file path, URL, etc.)
+- **Non-invasive** - No special keymaps or UI overlays; works with standard buffer editing
+- **AskUserQuestion-like UX** - Consistent with Claude's question-asking interface
+
+**Implementation Details:**
+
+- Agent Wrapper sends `approval_required` event and denies the tool
+- Approval UI is inserted into chat buffer as plain markdown with numbered list
+- User edits to select option and sends via normal message flow (`<CR>`)
+- Buffer parser detects approval response and updates session permissions
+- Assistant responds with confirmation message
+- Claude retries the tool with updated session permissions
+
 ### Permissions Configuration
 
 vibing.nvim provides comprehensive permission control over what tools Claude can use:
