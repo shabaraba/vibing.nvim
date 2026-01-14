@@ -116,6 +116,17 @@ function M.execute(adapter, callbacks, message, config)
     adapter:cleanup_stale_sessions()
     opts._session_id = callbacks.get_session_id()
     opts._session_id_explicit = true
+
+    -- Debug: Log session info
+    vim.notify(
+      string.format(
+        "[vibing] Sending message with session_id=%s, session_allow=%s, session_deny=%s",
+        tostring(opts._session_id),
+        vim.inspect(opts.permissions_session_allow or {}),
+        vim.inspect(opts.permissions_session_deny or {})
+      ),
+      vim.log.levels.INFO
+    )
   end
 
   local handle_id = nil

@@ -296,10 +296,49 @@ function ChatBuffer:send_message()
   if self._pending_approval and ApprovalParser.is_approval_response(message) then
     local approval = ApprovalParser.parse_approval_response(message)
     if approval then
-      self:handle_approval_response(approval, message)
+      -- Update session permissions silently
+      self:update_session_permissions(approval)
+
+      -- Get tool name and input for message (before clearing _pending_approval)
+      local tool = self._pending_approval.tool
+      local approval_input = self._pending_approval.input or {}
+
       -- Clear pending approval after processing
       self._pending_approval = nil
-      return
+
+      -- Debug: Log session info
+      vim.notify(
+        string.format(
+          "[vibing] Approval processed: action=%s, tool=%s, session_id=%s, input=%s",
+          approval.action,
+          tool,
+          tostring(self:get_session_id()),
+          vim.inspect(approval_input)
+        ),
+        vim.log.levels.INFO
+      )
+
+      -- Replace user's approval message with a clear instruction to retry
+      -- Include the tool name and original input so Claude can retry exactly
+
+      if approval.action == "allow_once" or approval.action == "allow_for_session" then
+        -- Build a message that includes the tool details
+        local input_summary = ""
+        if tool == "Bash" and approval_input.command then
+          input_summary = string.format(" (command: %s)", approval_input.command)
+        elseif (tool == "Read" or tool == "Write" or tool == "Edit") and approval_input.file_path then
+          input_summary = string.format(" (file: %s)", approval_input.file_path)
+        elseif (tool == "WebSearch" or tool == "WebFetch") and approval_input.query then
+          input_summary = string.format(" (query: %s)", approval_input.query)
+        end
+
+        message = string.format("I approved the %s tool%s. Please proceed with the same operation.", tool, input_summary)
+      else
+        -- For deny actions, tell Claude to use an alternative approach
+        message = string.format("I denied the %s tool. Please use a different approach.", tool)
+      end
+
+      -- Continue to normal message flow with the replaced message
     else
       -- is_approval_response returned true but parsing failed
       vim.notify(
@@ -445,12 +484,9 @@ function ChatBuffer:insert_approval_request(tool, input, options)
   }
 end
 
----承認レスポンスを処理
+---セッション許可/拒否を更新（承認レスポンス処理）
 ---@param approval {action: string, tool: string?} パースされた承認データ
----@param original_message string 元のメッセージ
-function ChatBuffer:handle_approval_response(approval, original_message)
-  local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-
+function ChatBuffer:update_session_permissions(approval)
   -- Validate approval action
   local valid_actions = {
     allow_once = true,
@@ -482,7 +518,6 @@ function ChatBuffer:handle_approval_response(approval, original_message)
     -- Add with :once suffix for one-time use
     local tool_once = tool .. ":once"
     table.insert(self._session_allow, tool_once)
-    vim.notify("[DEBUG] Added to session_allow: " .. tool_once, vim.log.levels.INFO)
     -- Track for cleanup (JS side also removes, but this is a safety net)
     self._once_tools = self._once_tools or {}
     table.insert(self._once_tools, tool_once)
@@ -501,6 +536,14 @@ function ChatBuffer:handle_approval_response(approval, original_message)
     self._session_deny = vim.tbl_filter(function(t)
       return t ~= tool
     end, self._session_deny)
+
+    -- Update frontmatter: add to permissions_allow
+    self:update_frontmatter_list("permissions_allow", tool, "add")
+    -- Update frontmatter: remove from permissions_deny (if present)
+    self:update_frontmatter_list("permissions_deny", tool, "remove")
+    -- Update frontmatter: remove from permissions_ask (if present)
+    self:update_frontmatter_list("permissions_ask", tool, "remove")
+
   elseif approval.action == "deny_for_session" then
     -- Add to deny list if not already present
     if not vim.tbl_contains(self._session_deny, tool) then
@@ -510,36 +553,14 @@ function ChatBuffer:handle_approval_response(approval, original_message)
     self._session_allow = vim.tbl_filter(function(t)
       return t ~= tool
     end, self._session_allow)
+
+    -- Update frontmatter: add to permissions_deny
+    self:update_frontmatter_list("permissions_deny", tool, "add")
+    -- Update frontmatter: remove from permissions_allow (if present)
+    self:update_frontmatter_list("permissions_allow", tool, "remove")
+    -- Update frontmatter: remove from permissions_ask (if present)
+    self:update_frontmatter_list("permissions_ask", tool, "remove")
   end
-
-  -- Generate response message to inform Claude
-  local response_msg = ApprovalParser.generate_response_message(approval.action, tool)
-
-  -- Start assistant response with the approval notification
-  self:start_response()
-
-  -- Add the response message
-  self:append_chunk(response_msg)
-
-  -- Flush chunks to ensure message is displayed
-  if self._chunk_timer then
-    vim.fn.timer_stop(self._chunk_timer)
-    self._chunk_timer = nil
-  end
-  self:_flush_chunks()
-
-  -- Add new user section for next input
-  self:add_user_section()
-
-  -- Automatically send continuation message to retry with updated permissions
-  vim.schedule(function()
-    local SendMessageUseCase = require("vibing.application.chat.send_message")
-    local vibing = require("vibing")
-    local config = vibing.get_config()
-    local adapter = require("vibing.infrastructure.adapter.agent_sdk"):new(config)
-
-    SendMessageUseCase.execute(adapter, self:create_callbacks(), "Please try again.", config)
-  end)
 end
 
 ---セッションレベルの許可リストを取得

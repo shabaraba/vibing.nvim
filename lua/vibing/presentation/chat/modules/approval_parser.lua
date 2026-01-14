@@ -21,21 +21,15 @@ function M.is_approval_response(message)
     return false
   end
 
-  -- Debug: Log message being checked
-  vim.notify("[DEBUG] Checking approval response for message:\n" .. message, vim.log.levels.INFO)
-
   -- Check each line for approval patterns
   for line in message:gmatch("[^\r\n]+") do
-    vim.notify("[DEBUG] Checking line: '" .. line .. "'", vim.log.levels.INFO)
     for action, pattern in pairs(APPROVAL_PATTERNS) do
       if line:match(pattern) then
-        vim.notify("[DEBUG] MATCHED! Action: " .. action .. ", Pattern: " .. pattern, vim.log.levels.INFO)
         return true
       end
     end
   end
 
-  vim.notify("[DEBUG] No approval pattern matched", vim.log.levels.WARN)
   return false
 end
 
