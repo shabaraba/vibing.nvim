@@ -8,23 +8,12 @@ local ProgrammaticSender = require("vibing.presentation.chat.modules.programmati
 ---@param params {bufnr: number, message: string, sender?: string}
 ---@return {success: boolean, bufnr: number}
 function M.send_message(params)
-  local bufnr = params and params.bufnr
-  local message = params and params.message
-  local sender = params and params.sender
-
-  -- Parameter validation
-  if not bufnr then
-    error("Missing required parameter: bufnr")
+  if not params then
+    error("Missing parameters")
   end
 
-  if not message or message == "" then
-    error("Missing required parameter: message")
-  end
-
-  -- Execute message send (errors are propagated via error())
-  local result = ProgrammaticSender.send(bufnr, message, sender)
-
-  return result
+  -- ProgrammaticSender.send already validates parameters
+  return ProgrammaticSender.send(params.bufnr, params.message, params.sender)
 end
 
 return M

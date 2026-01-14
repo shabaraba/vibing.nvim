@@ -39,21 +39,17 @@ function M.send(bufnr, message, sender)
   _send_locks[bufnr] = true
 
   local success, err = pcall(function()
-    -- Save current cursor position (always save, regardless of buffer)
-    local saved_cursor = nil
+    -- Save and restore cursor position
     local saved_win = vim.api.nvim_get_current_win()
-    if vim.api.nvim_win_is_valid(saved_win) then
-      saved_cursor = vim.api.nvim_win_get_cursor(saved_win)
-    end
+    local saved_cursor = vim.api.nvim_win_is_valid(saved_win)
+      and vim.api.nvim_win_get_cursor(saved_win)
+      or nil
 
-    -- Add user section with initial message using Renderer abstraction
-    -- Note: sender parameter will be supported when Renderer supports it
+    -- Add user section and send
     Renderer.addUserSection(bufnr, nil, nil, nil, message)
-
-    -- Auto-send message
     chat_buf:send_message()
 
-    -- Restore cursor position (always restore)
+    -- Restore cursor
     if saved_cursor and vim.api.nvim_win_is_valid(saved_win) then
       pcall(vim.api.nvim_win_set_cursor, saved_win, saved_cursor)
     end

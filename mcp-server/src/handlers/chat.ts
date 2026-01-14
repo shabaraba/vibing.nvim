@@ -1,5 +1,4 @@
 import { callNeovim } from '../rpc.js';
-import { validateRequired, validateBufferParams } from '../validation/schema.js';
 import { z } from 'zod';
 
 // Zod schemas for validation
@@ -45,11 +44,7 @@ export async function handleChatWorktree(args: unknown): Promise<any> {
  * Programmatically sends a message to a chat buffer and triggers AI request
  */
 export async function handleChatSendMessage(args: any): Promise<any> {
-  // Validate required parameters
-  validateRequired(args?.bufnr, 'bufnr');
-  validateRequired(args?.message, 'message');
-  validateBufferParams({ bufnr: args.bufnr });
-
+  // Zod schema already validates required fields and types
   const { bufnr, message, sender, rpc_port } = chatSendMessageArgsSchema.parse(args);
 
   await callNeovim('send_message', { bufnr, message, sender }, rpc_port);
