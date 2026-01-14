@@ -153,6 +153,12 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval)
   if pendingChoices then
     local choiceLines = {}
     for _, q in ipairs(pendingChoices) do
+      -- Add question text if available
+      if q.question and q.question ~= "" then
+        table.insert(choiceLines, q.question)
+        table.insert(choiceLines, "")
+      end
+
       -- Use numbered list for single-select, bullet list for multi-select
       -- Default to single-select (numbered list) when multiSelect is not explicitly true
       local useNumberedList = q.multiSelect ~= true
