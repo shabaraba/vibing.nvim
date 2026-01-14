@@ -16,14 +16,12 @@ local APPROVAL_PATTERNS = {
 ---@param message string ユーザーメッセージ
 ---@return boolean
 function M.is_approval_response(message)
-  -- Input validation
   if not message or type(message) ~= "string" or message == "" then
     return false
   end
 
-  -- Check each line for approval patterns
   for line in message:gmatch("[^\r\n]+") do
-    for action, pattern in pairs(APPROVAL_PATTERNS) do
+    for _, pattern in pairs(APPROVAL_PATTERNS) do
       if line:match(pattern) then
         return true
       end

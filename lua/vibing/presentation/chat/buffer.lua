@@ -306,35 +306,14 @@ function ChatBuffer:send_message()
       -- Clear pending approval after processing
       self._pending_approval = nil
 
-      -- Debug: Log session info
-      vim.notify(
-        string.format(
-          "[vibing] Approval processed: action=%s, tool=%s, session_id=%s, input=%s",
-          approval.action,
-          tool,
-          tostring(self:get_session_id()),
-          vim.inspect(approval_input)
-        ),
-        vim.log.levels.INFO
-      )
-
       -- Replace user's approval message with a clear instruction to retry
       -- Include the tool name and original input so Claude can retry exactly
 
-      if approval.action == "allow_once" or approval.action == "allow_for_session" then
-        -- Build a message that includes the tool details
-        local input_summary = ""
-        if tool == "Bash" and approval_input.command then
-          input_summary = string.format(" (command: %s)", approval_input.command)
-        elseif (tool == "Read" or tool == "Write" or tool == "Edit") and approval_input.file_path then
-          input_summary = string.format(" (file: %s)", approval_input.file_path)
-        elseif (tool == "WebSearch" or tool == "WebFetch") and approval_input.query then
-          input_summary = string.format(" (query: %s)", approval_input.query)
-        end
-
+      local is_allow = approval.action == "allow_once" or approval.action == "allow_for_session"
+      if is_allow then
+        local input_summary = self:_build_approval_input_summary(tool, approval_input)
         message = string.format("I approved the %s tool%s. Please proceed with the same operation.", tool, input_summary)
       else
-        -- For deny actions, tell Claude to use an alternative approach
         message = string.format("I denied the %s tool. Please use a different approach.", tool)
       end
 
@@ -469,6 +448,29 @@ end
 ---@param questions table Agent SDKから受け取った質問構造
 function ChatBuffer:insert_choices(questions)
   self._pending_choices = questions
+end
+
+---承認入力のサマリーを生成
+---@param tool string ツール名
+---@param input table ツール入力
+---@return string 空文字列または " (key: value)" 形式のサマリー
+function ChatBuffer:_build_approval_input_summary(tool, input)
+  local tool_input_keys = {
+    Bash = "command",
+    Read = "file_path",
+    Write = "file_path",
+    Edit = "file_path",
+    WebSearch = "query",
+    WebFetch = "query",
+  }
+
+  local key = tool_input_keys[tool]
+  if key and input[key] then
+    local label = key == "file_path" and "file" or key
+    return string.format(" (%s: %s)", label, input[key])
+  end
+
+  return ""
 end
 
 ---ツール承認要求UIを保存
