@@ -13,6 +13,7 @@
 - refactor: comprehensive codebase modularization and cleanup by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/295
 - fix: Support simultaneous main/worktree sessions + staging warnings by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/299
 - feat: add interactive tool approval UI with session-level permissions by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/288
+- fix: Display question text with choices in AskUserQuestion by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/301
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.18.0...v1.19.0
 
