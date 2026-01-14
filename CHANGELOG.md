@@ -3,17 +3,17 @@
 ## 1.19.0 (2026-01-14)
 
 ## What's Changed
-* feat: add configurable Node.js executable support by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/289
-* docs: enhance README with architecture comparison and FAQ by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/282
-* docs: add race condition analysis for patch storage issue by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/283
-* docs: add self-development loop ADR and design spec by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/290
-* feat: add top/bottom/back position options for VibingChat by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/294
-* feat: add session validation and recovery for worktree chat sessions by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/296
-* refactor: comprehensive codebase modularization and cleanup by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/295
-* fix: Support simultaneous main/worktree sessions + staging warnings by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/299
-* feat: add interactive tool approval UI with session-level permissions by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/288
-* fix: Display question text with choices in AskUserQuestion by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/301
 
+- feat: add configurable Node.js executable support by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/289
+- docs: enhance README with architecture comparison and FAQ by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/282
+- docs: add race condition analysis for patch storage issue by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/283
+- docs: add self-development loop ADR and design spec by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/290
+- feat: add top/bottom/back position options for VibingChat by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/294
+- feat: add session validation and recovery for worktree chat sessions by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/296
+- refactor: comprehensive codebase modularization and cleanup by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/295
+- fix: Support simultaneous main/worktree sessions + staging warnings by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/299
+- feat: add interactive tool approval UI with session-level permissions by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/288
+- fix: Display question text with choices in AskUserQuestion by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/301
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.18.0...v1.19.0
 
