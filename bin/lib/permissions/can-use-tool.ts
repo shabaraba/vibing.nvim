@@ -20,6 +20,11 @@ type CanUseToolCallback = (
 ) => Promise<CanUseToolResult>;
 
 /**
+ * Suffix for one-time permission (allow_once/deny_once)
+ */
+const ONCE_SUFFIX = ':once';
+
+/**
  * Create canUseTool callback for Agent SDK
  */
 export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallback {
@@ -36,10 +41,15 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
 
   return async (toolName: string, input: Record<string, unknown>): Promise<CanUseToolResult> => {
     try {
-      // Debug: Log permission check
-      console.error(
-        `[DEBUG] canUseTool: tool=${toolName}, mode=${permissionMode}, allowedTools=${JSON.stringify(allowedTools)}`
-      );
+      /**
+       * Permission evaluation order (highest to lowest priority):
+       * 1. Session-level deny list (immediate block)
+       * 2. Session-level allow list (auto-approve)
+       * 3. Permission modes (acceptEdits, default, bypassPermissions)
+       * 4. Ask list (request approval if not in allow list)
+       * 5. Allow list (with pattern matching support)
+       * 6. Granular permission rules (path/command/pattern/domain based)
+       */
 
       // AskUserQuestion: Insert choices into chat buffer and deny
       if (toolName === 'AskUserQuestion') {
@@ -62,8 +72,8 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
         for (let i = sessionDeniedTools.length - 1; i >= 0; i--) {
           const deniedTool = sessionDeniedTools[i];
 
-          if (deniedTool.endsWith(':once')) {
-            const baseTool = deniedTool.slice(0, -':once'.length);
+          if (deniedTool.endsWith(ONCE_SUFFIX)) {
+            const baseTool = deniedTool.slice(0, -ONCE_SUFFIX.length);
             if (matchesPermission(toolName, input, baseTool)) {
               // Deny once and remove from list
               sessionDeniedTools.splice(i, 1);
@@ -87,8 +97,8 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
         for (let i = sessionAllowedTools.length - 1; i >= 0; i--) {
           const allowedTool = sessionAllowedTools[i];
 
-          if (allowedTool.endsWith(':once')) {
-            const baseTool = allowedTool.slice(0, -':once'.length);
+          if (allowedTool.endsWith(ONCE_SUFFIX)) {
+            const baseTool = allowedTool.slice(0, -ONCE_SUFFIX.length);
             if (matchesPermission(toolName, input, baseTool)) {
               // Allow once and remove from list
               sessionAllowedTools.splice(i, 1);
