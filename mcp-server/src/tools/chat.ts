@@ -1,6 +1,4 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { z } from 'zod';
-import { callNeovim } from '../rpc.js';
 
 /**
  * Chat-related MCP tools
@@ -35,40 +33,34 @@ export const chatTools: Tool[] = [
       required: ['branch_name'],
     },
   },
+  {
+    name: 'nvim_chat_send_message',
+    description:
+      'Programmatically send a message to a chat buffer and trigger AI request. ' +
+      'Useful for multi-agent workflows where one Claude instance sends messages to another.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        bufnr: {
+          type: 'number',
+          description: 'Buffer number of the target chat buffer',
+        },
+        message: {
+          type: 'string',
+          description: 'Message content to send',
+        },
+        sender: {
+          type: 'string',
+          description:
+            'Optional sender identifier (default: "User"). Future: supports "Alpha", "Bravo", etc.',
+        },
+        rpc_port: {
+          type: 'number',
+          description:
+            'RPC port of target Neovim instance (optional, defaults to 9876). Use nvim_list_instances to discover available instances.',
+        },
+      },
+      required: ['bufnr', 'message'],
+    },
+  },
 ];
-
-// Zod schemas for validation
-const chatWorktreeArgsSchema = z.object({
-  branch_name: z.string(),
-  position: z.enum(['current', 'right', 'left', 'top', 'bottom', 'back']).optional(),
-  rpc_port: z.number().optional(),
-});
-
-/**
- * Handler for nvim_chat_worktree
- */
-export async function handleChatWorktree(args: unknown): Promise<any> {
-  const { branch_name, position, rpc_port } = chatWorktreeArgsSchema.parse(args);
-
-  // Build VibingChatWorktree command
-  const cmdParts = ['VibingChatWorktree'];
-  if (position) {
-    cmdParts.push(position);
-  }
-  cmdParts.push(branch_name);
-
-  const command = cmdParts.join(' ');
-
-  const result = await callNeovim('execute', { command }, rpc_port);
-
-  const output = result?.output?.trim();
-  const hasOutput = output && output.length > 0;
-
-  const message = hasOutput
-    ? `Worktree chat opened:\n${output}`
-    : `Worktree chat opened for branch: ${branch_name}`;
-
-  return {
-    content: [{ type: 'text', text: message }],
-  };
-}

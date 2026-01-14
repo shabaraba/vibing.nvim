@@ -129,12 +129,13 @@ end
 -- Backward compatibility alias
 M.move_cursor_to_end = M.moveCursorToEnd
 
----新しいユーザーセクションを追加
----@param buf number バッファ番号
----@param win number? ウィンドウ番号
----@param pendingChoices table? 保留中の選択肢
----@param pendingApproval table? 保留中のツール承認要求
-function M.addUserSection(buf, win, pendingChoices, pendingApproval)
+---Add new user section
+---@param buf number Buffer number
+---@param win number? Window number
+---@param pendingChoices table? Pending choices
+---@param pendingApproval table? Pending tool approval request
+---@param initial_message string? Initial message content (for programmatic send)
+function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_message)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
   while #lines > 0 and lines[#lines] == "" do
@@ -146,8 +147,17 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval)
     "",
     Timestamp.create_unsent_user_header(),
     "",
-    "",
   }
+
+  -- Insert message content if provided (for programmatic send)
+  if initial_message and initial_message ~= "" then
+    local message_lines = vim.split(initial_message, "\n", { plain = true })
+    for _, line in ipairs(message_lines) do
+      table.insert(newLines, line)
+    end
+  end
+
+  table.insert(newLines, "")
   vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, newLines)
 
   if pendingChoices then

@@ -88,18 +88,35 @@ function M.is_current_buffer_chat()
   return false
 end
 
----現在のチャットバッファインスタンスを取得
+---Get current chat buffer instance (for current buffer)
 ---@return Vibing.ChatBuffer?
 function M.get_current()
   local current_buf = vim.api.nvim_get_current_buf()
 
-  -- アタッチ済みバッファをチェック
+  -- Check attached buffers
   if M._attached_buffers[current_buf] then
     return M._attached_buffers[current_buf]
   end
 
-  -- メインチャットバッファをチェック
+  -- Check main chat buffer
   if M._current_buffer and M._current_buffer.buf == current_buf then
+    return M._current_buffer
+  end
+
+  return nil
+end
+
+---Get ChatBuffer instance for a specific buffer number (public API)
+---@param bufnr number Buffer number
+---@return Vibing.ChatBuffer?
+function M.get_chat_buffer(bufnr)
+  -- Check attached buffers
+  if M._attached_buffers[bufnr] then
+    return M._attached_buffers[bufnr]
+  end
+
+  -- Check main chat buffer
+  if M._current_buffer and M._current_buffer.buf == bufnr then
     return M._current_buffer
   end
 

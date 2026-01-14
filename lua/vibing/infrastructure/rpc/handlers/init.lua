@@ -6,6 +6,7 @@ local cursor = require("vibing.infrastructure.rpc.handlers.cursor")
 local window = require("vibing.infrastructure.rpc.handlers.window")
 local lsp = require("vibing.infrastructure.rpc.handlers.lsp")
 local execute = require("vibing.infrastructure.rpc.handlers.execute")
+local message = require("vibing.infrastructure.rpc.handlers.message")
 
 -- Export all handlers
 M.buf_get_lines = buffer.buf_get_lines
@@ -38,5 +39,7 @@ M.lsp_call_hierarchy_incoming = lsp.lsp_call_hierarchy_incoming
 M.lsp_call_hierarchy_outgoing = lsp.lsp_call_hierarchy_outgoing
 
 M.execute = execute.execute
+
+M.send_message = message.send_message
 
 return M
