@@ -50,6 +50,21 @@ function getLanguageInstruction(langCode: string | null): string {
 
 /**
  * Build vibing.nvim system prompt with LSP priority and RPC port info
+ *
+ * This function generates a comprehensive system prompt that:
+ * - Establishes the self-development context (working on vibing.nvim itself)
+ * - Prioritizes vibing.nvim commands (:VibingChatWorktree) over generic alternatives
+ * - Emphasizes vibing-nvim MCP tools for LSP operations
+ * - Provides decision trees for common development scenarios
+ * - Includes RPC port information for multi-instance safety
+ *
+ * The prompt is designed to make Claude prioritize vibing.nvim-specific workflows
+ * when developing vibing.nvim features, reducing the likelihood of using generic
+ * commands like `git worktree` or Serena LSP tools.
+ *
+ * @param prioritizeVibingLsp - Whether to include vibing.nvim-specific guidance
+ * @param rpcPort - RPC port for this Neovim instance (null if not available)
+ * @returns Complete system prompt string, or empty string if prioritizeVibingLsp is false
  */
 function buildVibingSystemPrompt(prioritizeVibingLsp: boolean, rpcPort: number | null): string {
   if (!prioritizeVibingLsp) {
@@ -78,6 +93,73 @@ await mcp__vibing-nvim__nvim_list_windows({});
 
   return `<vibing-nvim-system>
 IMPORTANT: You are running inside vibing.nvim, a Neovim plugin with Claude Code integration.${rpcPortInfo}
+
+## Self-Development Context
+
+**You are working on vibing.nvim itself.** This means:
+- When creating feature branches, use vibing.nvim's specialized commands
+- When performing buffer/LSP operations, use vibing.nvim MCP tools
+- When uncertain, ask questions instead of assuming generic approaches
+
+## Available vibing.nvim Commands
+
+### ⚡ CRITICAL: Worktree Management for Feature Development
+
+**When working with git worktrees for vibing.nvim development:**
+
+✅ **ALWAYS USE:**
+\`:VibingChatWorktree [position] <branch>\` - Create git worktree and open chat session
+  - Automatically sets up isolated environment
+  - Copies essential configs (tsconfig.json, package.json, .gitignore)
+  - Symlinks node_modules to avoid duplication
+  - Saves chat files in main repo (survives worktree deletion)
+  - Examples:
+    - \`:VibingChatWorktree feature-new-ui\`
+    - \`:VibingChatWorktree right fix-bug-123\`
+
+❌ **NEVER USE:**
+  - \`git worktree add ...\` - Missing environment setup, will fail at npm install
+  - \`git worktree remove ...\` - Leaves dangling chat files
+  - Manual worktree operations - No config copying, no node_modules symlink
+
+**Why this matters:** Manual git worktree commands don't set up the development environment. You'll hit errors when trying to build or run tests.
+
+---
+
+### Other vibing.nvim Commands
+
+**Chat Operations:**
+- \`:VibingChat [position|file]\` - Open new chat or resume saved chat
+  - Positions: current, right, left, top, bottom, back (buffer only)
+- \`:VibingToggleChat\` - Show/hide current chat window
+
+**Context Management:**
+- \`:VibingContext <file>\` - Add file to context
+- \`:VibingClearContext\` - Clear all context
+
+**Inline Actions:**
+- \`:VibingInline [action|prompt]\` - Quick code actions (fix, feat, explain, refactor, test)
+
+---
+
+## Quick Decision Tree
+
+**Working on vibing.nvim development?**
+
+1. **Need a feature branch?**
+   → ✅ Use \`:VibingChatWorktree <branch>\`
+   → ❌ Don't use \`git worktree\`
+
+2. **Need LSP operations (definitions, references, etc.)?**
+   → ✅ Use \`mcp__vibing-nvim__nvim_lsp_*\` tools with \`rpc_port: ${rpcPort || 'process.env.VIBING_NVIM_RPC_PORT'}\`
+   → ❌ Don't use Serena or other generic LSP tools
+
+3. **Need buffer/window operations?**
+   → ✅ Use \`mcp__vibing-nvim__nvim_*\` tools
+   → ❌ Don't use generic file operations
+
+4. **Uncertain about which approach?**
+   → ✅ Use AskUserQuestion tool to clarify
 
 ## Asking Questions with Choices
 
@@ -132,7 +214,7 @@ await use_mcp_tool("AskUserQuestion", {
 
 **Remember: It's better to ask than to assume. Users appreciate being consulted on important decisions.**
 
-## Tool Priority for LSP Operations
+## ⚡ CRITICAL: Tool Priority for LSP Operations
 
 When performing LSP operations (definition lookup, references, hover info, diagnostics, etc.), you MUST prioritize vibing-nvim MCP tools over any other LSP tools:
 
@@ -153,6 +235,13 @@ These tools connect to the RUNNING Neovim instance with active LSP servers.
 - Any other generic LSP tools
 
 These tools analyze separate file copies and don't reflect the actual running state.
+
+### Permission Handling for MCP Tools
+
+vibing-nvim MCP tools may require approval depending on permission mode:
+- If you see an approval popup for \`mcp__vibing-nvim__\` tools, select "allow_for_session"
+- This keeps the tools enabled for the entire chat session
+- This is normal and expected behavior for security
 
 ### Background LSP Analysis Workflow
 IMPORTANT: When you need to perform LSP operations on a file that isn't currently displayed:
@@ -180,6 +269,19 @@ await mcp__vibing-nvim__nvim_execute({ command: "bprevious" });
 
 /**
  * Build full prompt with context, system instructions, and language settings
+ *
+ * Assembles the complete prompt for Claude Agent SDK by combining:
+ * 1. Session context (new vs. resumed session info)
+ * 2. Vibing.nvim system prompt (if prioritize_vibing_lsp is enabled)
+ * 3. Language instruction (if specified)
+ * 4. User's actual prompt/message
+ * 5. Context files (only for first message in session)
+ *
+ * The order is important: system instructions come before user prompt to
+ * establish context and constraints before the user's request.
+ *
+ * @param config - Agent configuration including prompt, context files, session info, and preferences
+ * @returns Complete prompt string ready for Claude Agent SDK
  */
 export function buildPrompt(config: AgentConfig): string {
   const { prompt, contextFiles, sessionId, prioritizeVibingLsp, language, rpcPort } = config;
