@@ -66,7 +66,8 @@ function ChatBuffer:open()
 
   if not has_content then
     -- 新規チャット: Squad割り当て
-    self:assign_squad_name()
+    local session_cwd = self.session and self.session.cwd
+    self:assign_squad_name(session_cwd)
     local cursor_line = Renderer.init_content(self.buf, self.session)
     if self:is_open() and vim.api.nvim_win_is_valid(self.win) and cursor_line > 0 then
       pcall(vim.api.nvim_win_set_cursor, self.win, { cursor_line, 0 })
@@ -81,7 +82,8 @@ function ChatBuffer:open()
       Registry.register(frontmatter.squad_name, self.buf)
     else
       -- 既存チャットでSquad名がない場合は割り当て
-      self:assign_squad_name()
+      local session_cwd = self.session and self.session.cwd
+      self:assign_squad_name(session_cwd)
     end
   end
 end
