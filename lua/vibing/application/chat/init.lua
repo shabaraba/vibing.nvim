@@ -87,6 +87,15 @@ function M.setup()
     handler = require("vibing.application.chat.handlers.new_session"),
     description = "Reset session and start fresh: /new-session",
   })
+
+  commands.register({
+    name = "check-mentions",
+    handler = function(args, chat_buffer)
+      require("vibing.application.mention.handlers.check_mentions").execute(chat_buffer, args)
+      return true
+    end,
+    description = "Check and clear unprocessed mentions: /check-mentions",
+  })
 end
 
 return M

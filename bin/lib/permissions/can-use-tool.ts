@@ -6,6 +6,7 @@
 import { matchesPermission } from './matchers.js';
 import { checkRule } from './rule-checker.js';
 import { safeJsonStringify, toError } from '../utils.js';
+import { checkForUnprocessedMentions, formatMentionSummary } from '../mention/checker.js';
 import type { AgentConfig } from '../../types.js';
 
 interface CanUseToolResult {
@@ -36,13 +37,15 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
     permissionRules,
     permissionMode,
     mcpEnabled,
-    sessionId,
+    rpcPort,
+    squadName,
   } = config;
 
   return async (toolName: string, input: Record<string, unknown>): Promise<CanUseToolResult> => {
     try {
       /**
        * Permission evaluation order (highest to lowest priority):
+       * 0. Mention interruption check (blocks all tools if unprocessed mentions exist)
        * 1. Session-level deny list (immediate block)
        * 2. Session-level allow list (auto-approve)
        * 3. Permission modes (acceptEdits, default, bypassPermissions)
@@ -50,6 +53,23 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
        * 5. Allow list (with pattern matching support)
        * 6. Granular permission rules (path/command/pattern/domain based)
        */
+
+      // Check for unprocessed mentions (interruption mechanism)
+      // Skip mention check for vibing-nvim MCP tools to avoid infinite recursion
+      if (rpcPort && squadName && !toolName.startsWith('mcp__vibing-nvim__')) {
+        const mentionResult = await checkForUnprocessedMentions({
+          rpcPort,
+          squadName,
+        });
+
+        if (mentionResult.shouldInterrupt) {
+          const summary = formatMentionSummary(mentionResult);
+          return {
+            behavior: 'deny',
+            message: summary,
+          };
+        }
+      }
 
       // AskUserQuestion: Insert choices into chat buffer and deny
       if (toolName === 'AskUserQuestion') {
