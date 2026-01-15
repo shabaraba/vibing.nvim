@@ -65,9 +65,23 @@ function ChatBuffer:open()
   self:_setup_keymaps()
 
   if not has_content then
+    -- 新規チャット: Squad割り当て
+    self:assign_squad_name()
     local cursor_line = Renderer.init_content(self.buf, self.session)
     if self:is_open() and vim.api.nvim_win_is_valid(self.win) and cursor_line > 0 then
       pcall(vim.api.nvim_win_set_cursor, self.win, { cursor_line, 0 })
+    end
+  else
+    -- 既存チャット: frontmatterからSquad名を読み込み
+    local frontmatter = self:parse_frontmatter()
+    if frontmatter.squad_name then
+      vim.b[self.buf].vibing_squad_name = frontmatter.squad_name
+      -- Registryに登録
+      local Registry = require("vibing.infrastructure.squad.registry")
+      Registry.register(frontmatter.squad_name, self.buf)
+    else
+      -- 既存チャットでSquad名がない場合は割り当て
+      self:assign_squad_name()
     end
   end
 end
@@ -82,6 +96,12 @@ function ChatBuffer:close()
       adapter:cancel(self._current_handle_id)
     end
     self._current_handle_id = nil
+  end
+
+  -- Registryから分隊名を解除
+  if self.buf and vim.api.nvim_buf_is_valid(self.buf) then
+    local Registry = require("vibing.infrastructure.squad.registry")
+    Registry.unregister(self.buf)
   end
 
   if self._chunk_timer then
@@ -226,6 +246,16 @@ function ChatBuffer:load_from_file(file_path)
     end
     -- NOTE: Diff display uses patch files in .vibing/patches/<session_id>/
     -- The gd keymap reads patch files directly via PatchFinder and PatchViewer
+
+    -- 既存ファイルでSquad名がない場合は自動割り当て
+    if not frontmatter.squad_name then
+      self:assign_squad_name()
+    else
+      -- Squad名がある場合は読み込んでRegistry登録
+      vim.b[self.buf].vibing_squad_name = frontmatter.squad_name
+      local Registry = require("vibing.infrastructure.squad.registry")
+      Registry.register(frontmatter.squad_name, self.buf)
+    end
   end
   return success
 end
@@ -592,6 +622,49 @@ end
 ---@return table
 function ChatBuffer:get_session_deny()
   return vim.deepcopy(self._session_deny)
+end
+
+---分隊名を割り当ててバッファに設定
+---@param cwd string? 作業ディレクトリ（省略時は現在のcwd）
+---@param session table? セッション情報（task_refがあれば取得）
+function ChatBuffer:assign_squad_name(cwd, session)
+  if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
+    return
+  end
+
+  local NamingService = require("vibing.domain.squad.services.naming_service")
+  local Registry = require("vibing.infrastructure.squad.registry")
+  local FrontmatterRepository = require("vibing.infrastructure.squad.persistence.frontmatter_repository")
+
+  -- 割り当てコンテキストを構築
+  local context = {
+    cwd = cwd or vim.fn.getcwd(),
+    bufnr = self.buf,
+    task_ref = session and session.task_ref,
+  }
+
+  -- 分隊名を割り当て
+  local squad = NamingService.assign_squad_name(context, Registry)
+
+  -- バッファローカル変数に設定
+  vim.b[self.buf].vibing_squad_name = squad.name.value
+
+  -- Registryに登録
+  Registry.register(squad.name.value, self.buf)
+
+  -- Frontmatterに保存
+  FrontmatterRepository.save(squad, self.buf)
+
+  -- 衝突がある場合は通知を挿入
+  if squad.original_name ~= squad.name.value then
+    local CollisionNotifier = require("vibing.presentation.chat.modules.collision_notifier")
+    local notice = string.format(
+      "Note: Squad name %s was unavailable, using %s instead",
+      squad.original_name,
+      squad.name.value
+    )
+    CollisionNotifier.insert_collision_notice(self.buf, notice)
+  end
 end
 
 return ChatBuffer
