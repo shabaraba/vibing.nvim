@@ -77,4 +77,19 @@ function M.cleanup_stale()
   end
 end
 
+---分隊名からバッファ番号を取得
+---@param squad_name string 分隊名
+---@return number? bufnr バッファ番号（見つからない場合はnil）
+function M.find_buffer(squad_name)
+  local bufnr = M._active_squads[squad_name]
+  if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+    return bufnr
+  end
+  -- 無効バッファはクリーンアップ
+  if bufnr then
+    M._active_squads[squad_name] = nil
+  end
+  return nil
+end
+
 return M
