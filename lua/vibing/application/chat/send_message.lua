@@ -65,6 +65,9 @@ function M.execute(adapter, callbacks, message, config)
   local use_case = require("vibing.application.chat.use_case")
   local session_cwd = use_case._current_session and use_case._current_session:get_cwd()
 
+  -- Get squad name from buffer (for Claude to recognize itself)
+  local squad_name = frontmatter.squad_name
+
   -- Get session-level permissions from buffer
   local session_allow = callbacks.get_session_allow()
   local session_deny = callbacks.get_session_deny()
@@ -81,6 +84,7 @@ function M.execute(adapter, callbacks, message, config)
     permissions_session_deny = session_deny,
     permission_mode = frontmatter.permission_mode,
     language = lang_code,  -- Pass language code to adapter
+    squad_name = squad_name,  -- Pass squad name so Claude recognizes itself
     cwd = session_cwd,  -- Pass worktree cwd if set (from memory, not frontmatter)
     on_patch_saved = function(filename)
       patch_filename = filename
