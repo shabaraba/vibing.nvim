@@ -11,39 +11,28 @@ local Entity = require("vibing.domain.squad.entity")
 ---@param bufnr number バッファ番号
 ---@return boolean success 成功した場合true
 function M.save(squad, bufnr)
-  local frontmatter_data = Entity.to_frontmatter(squad)
+  local data = Entity.to_frontmatter(squad)
 
-  -- squad_name フィールドを更新
-  local ok1 = pcall(
-    FrontmatterHandler.update_field,
-    bufnr,
-    "squad_name",
-    frontmatter_data.squad_name,
-    false -- update_timestamp = false
-  )
+  -- フィールド更新リスト
+  local fields = {
+    { "squad_name", data.squad_name },
+    { "task_type", data.task_type },
+  }
 
-  -- task_type フィールドを更新
-  local ok2 = pcall(
-    FrontmatterHandler.update_field,
-    bufnr,
-    "task_type",
-    frontmatter_data.task_type,
-    false
-  )
-
-  -- task_ref フィールドを更新（オプション）
-  local ok3 = true
-  if frontmatter_data.task_ref then
-    ok3 = pcall(
-      FrontmatterHandler.update_field,
-      bufnr,
-      "task_ref",
-      frontmatter_data.task_ref,
-      false
-    )
+  -- task_ref が存在する場合は追加
+  if data.task_ref then
+    table.insert(fields, { "task_ref", data.task_ref })
   end
 
-  return ok1 and ok2 and ok3
+  -- 各フィールドを更新
+  for _, field in ipairs(fields) do
+    local ok = pcall(FrontmatterHandler.update_field, bufnr, field[1], field[2], false)
+    if not ok then
+      return false
+    end
+  end
+
+  return true
 end
 
 ---バッファからSquadエンティティを読み込み

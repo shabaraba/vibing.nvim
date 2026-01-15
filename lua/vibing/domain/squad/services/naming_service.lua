@@ -44,15 +44,7 @@ end
 ---@param registry table SquadRegistry
 ---@return string? squad_name 次に使用可能な名前（全て使用中の場合nil）
 function M._find_available_name(registry)
-  -- Registryから現在使用中の名前を取得
-  local active_squads = registry.get_all_active()
-  local used_names = {}
-
-  for name, _ in pairs(active_squads) do
-    used_names[name] = true
-  end
-
-  return SquadName.get_next_available(used_names)
+  return SquadName.get_next_available(registry.get_all_active())
 end
 
 return M
