@@ -71,7 +71,7 @@ function ChatBuffer:open()
     local cursor_line = Renderer.init_content(self.buf, self.session)
     -- その後、Squad割り当て（frontmatterを更新）
     local session_cwd = self.session and self.session.cwd
-    self:assign_squad_name(session_cwd)
+    self:assign_squad_name(session_cwd, self.session)
     if self:is_open() and vim.api.nvim_win_is_valid(self.win) and cursor_line > 0 then
       pcall(vim.api.nvim_win_set_cursor, self.win, { cursor_line, 0 })
     end
@@ -86,7 +86,7 @@ function ChatBuffer:open()
     else
       -- 既存チャットでSquad名がない場合は割り当て
       local session_cwd = self.session and self.session.cwd
-      self:assign_squad_name(session_cwd)
+      self:assign_squad_name(session_cwd, self.session)
     end
   end
 end
@@ -252,9 +252,24 @@ function ChatBuffer:load_from_file(file_path)
     -- NOTE: Diff display uses patch files in .vibing/patches/<session_id>/
     -- The gd keymap reads patch files directly via PatchFinder and PatchViewer
 
+    -- task_ref から cwd を復元してセッションを更新
+    if frontmatter.task_ref and frontmatter.task_ref ~= "" then
+      local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
+      if vim.v.shell_error == 0 and git_root then
+        local worktree_path = git_root .. "/" .. frontmatter.task_ref
+        if vim.fn.isdirectory(worktree_path) == 1 then
+          -- session がある場合は cwd を復元
+          if self.session then
+            self.session.cwd = worktree_path
+            self.session.task_ref = frontmatter.task_ref
+          end
+        end
+      end
+    end
+
     -- 既存ファイルでSquad名がない場合は自動割り当て
     if not frontmatter.squad_name then
-      self:assign_squad_name()
+      self:assign_squad_name(self.session and self.session.cwd, self.session)
     else
       -- Squad名がある場合は読み込んでRegistry登録
       vim.b[self.buf].vibing_squad_name = frontmatter.squad_name
@@ -418,6 +433,9 @@ function ChatBuffer:send_message()
     end,
     get_session_deny = function()
       return self:get_session_deny()
+    end,
+    get_session_cwd = function()
+      return self:get_session_cwd()
     end,
     clear_handle_id = function()
       self._current_handle_id = nil
@@ -629,9 +647,15 @@ function ChatBuffer:get_session_deny()
   return vim.deepcopy(self._session_deny)
 end
 
+---セッションの作業ディレクトリを取得
+---@return string?
+function ChatBuffer:get_session_cwd()
+  return self.session and self.session:get_cwd()
+end
+
 ---分隊名を割り当ててバッファに設定
 ---@param cwd string? 作業ディレクトリ（省略時は現在のcwd）
----@param session table? セッション情報（task_refがあれば取得）
+---@param session Vibing.ChatSession? セッション情報（task_refがあれば取得）
 function ChatBuffer:assign_squad_name(cwd, session)
   if not self.buf or not vim.api.nvim_buf_is_valid(self.buf) then
     return
@@ -646,11 +670,17 @@ function ChatBuffer:assign_squad_name(cwd, session)
   local Registry = require("vibing.infrastructure.squad.registry")
   local FrontmatterRepository = require("vibing.infrastructure.squad.persistence.frontmatter_repository")
 
+  -- task_ref を取得（セッションから、または frontmatter から）
+  local task_ref = nil
+  if session then
+    task_ref = session:get_task_ref()
+  end
+
   -- 割り当てコンテキストを構築
   local context = {
     cwd = cwd or vim.fn.getcwd(),
     bufnr = self.buf,
-    task_ref = session and session.task_ref,
+    task_ref = task_ref,
   }
 
   -- 分隊名を割り当て

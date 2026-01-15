@@ -9,7 +9,7 @@ export const squadTools: Tool[] = [
   {
     name: 'nvim_get_squad_info',
     description:
-      'Get squad information for a specific buffer. Returns squad_name, task_type, and other metadata.',
+      'Get squad information for a specific buffer. Returns squad_name, task_ref (worktree path), and other metadata.',
     inputSchema: {
       type: 'object',
       properties: {

@@ -40,11 +40,10 @@ end
 
 ---Squadエンティティをfrontmatter用のテーブルに変換
 ---@param squad table Squadエンティティ
----@return table frontmatter_data { squad_name: string, task_type: string, task_ref?: string }
+---@return table frontmatter_data { squad_name: string, task_ref?: string }
 function M.to_frontmatter(squad)
   return {
     squad_name = squad.name.value,
-    task_type = squad.role.value,
     task_ref = squad.task_ref,
   }
 end
@@ -58,9 +57,15 @@ function M.from_frontmatter(frontmatter, bufnr)
     return nil
   end
 
+  -- task_ref から role を推測（worktree パスがあれば squad、なければ commander）
+  local role = SquadRole.SQUAD
+  if not frontmatter.task_ref or frontmatter.task_ref == "" then
+    role = SquadRole.COMMANDER
+  end
+
   return M.new({
     name = frontmatter.squad_name,
-    role = frontmatter.task_type or SquadRole.SQUAD,
+    role = role,
     bufnr = bufnr,
     task_ref = frontmatter.task_ref,
     created_at = frontmatter.created_at,

@@ -5,7 +5,7 @@ import { validateRequired } from '../validation/schema.js';
  * Get squad information for a specific buffer
  *
  * @param args - Object with `bufnr` (optional, defaults to current), and optional `rpc_port`
- * @returns Squad metadata including squad_name, task_type, task_ref
+ * @returns Squad metadata including squad_name, task_ref (worktree path)
  */
 export async function handleGetSquadInfo(args: any) {
   const info = await callNeovim(

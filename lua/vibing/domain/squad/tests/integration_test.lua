@@ -86,10 +86,11 @@ print("\n=== Frontmatter Conversion Tests ===")
 
 local frontmatter = Entity.to_frontmatter(squad)
 assert_equal(frontmatter.squad_name, "Alpha", "Frontmatter squad_name correct")
-assert_equal(frontmatter.task_type, SquadRole.SQUAD, "Frontmatter task_type correct")
+assert_equal(frontmatter.task_ref, "task-123", "Frontmatter task_ref correct")
 
 local restored = Entity.from_frontmatter(frontmatter, 1)
 assert_equal(restored.name.value, "Alpha", "Restored squad name correct")
+assert_equal(restored.task_ref, "task-123", "Restored task_ref correct")
 
 ---テスト: Registry
 print("\n=== Registry Tests ===")

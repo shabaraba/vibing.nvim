@@ -13,14 +13,13 @@ local Entity = require("vibing.domain.squad.entity")
 function M.save(squad, bufnr)
   local data = Entity.to_frontmatter(squad)
 
-  -- フィールド更新リスト
+  -- フィールド更新リスト（squad_name は必須、task_ref は任意）
   local fields = {
     { "squad_name", data.squad_name },
-    { "task_type", data.task_type },
   }
 
-  -- task_ref が存在する場合は追加
-  if data.task_ref then
+  -- task_ref が存在する場合は追加（worktree の相対パス）
+  if data.task_ref and data.task_ref ~= "" then
     table.insert(fields, { "task_ref", data.task_ref })
   end
 
