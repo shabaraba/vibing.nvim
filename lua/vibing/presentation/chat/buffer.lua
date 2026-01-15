@@ -11,6 +11,7 @@ local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 ---@field buf number?
 ---@field win number?
 ---@field config Vibing.ChatConfig
+---@field session Vibing.ChatSession? チャットセッション（worktree環境のcwd保持用）
 ---@field session_id string?
 ---@field file_path string?
 ---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
@@ -31,6 +32,7 @@ function ChatBuffer:new(config)
   instance.buf = nil
   instance.win = nil
   instance.config = config
+  instance.session = nil
   instance.session_id = nil
   instance.file_path = nil
   instance._chunk_buffer = ""
@@ -65,10 +67,11 @@ function ChatBuffer:open()
   self:_setup_keymaps()
 
   if not has_content then
-    -- 新規チャット: Squad割り当て
+    -- 新規チャット: まずコンテンツを初期化してからSquad割り当て
+    local cursor_line = Renderer.init_content(self.buf, self.session)
+    -- その後、Squad割り当て（frontmatterを更新）
     local session_cwd = self.session and self.session.cwd
     self:assign_squad_name(session_cwd)
-    local cursor_line = Renderer.init_content(self.buf, self.session)
     if self:is_open() and vim.api.nvim_win_is_valid(self.win) and cursor_line > 0 then
       pcall(vim.api.nvim_win_set_cursor, self.win, { cursor_line, 0 })
     end
@@ -634,6 +637,11 @@ function ChatBuffer:assign_squad_name(cwd, session)
     return
   end
 
+  -- 既に分隊名が割り当てられている場合はスキップ
+  if vim.b[self.buf].vibing_squad_name then
+    return
+  end
+
   local NamingService = require("vibing.domain.squad.services.naming_service")
   local Registry = require("vibing.infrastructure.squad.registry")
   local FrontmatterRepository = require("vibing.infrastructure.squad.persistence.frontmatter_repository")
@@ -655,7 +663,10 @@ function ChatBuffer:assign_squad_name(cwd, session)
   Registry.register(squad.name.value, self.buf)
 
   -- Frontmatterに保存
-  FrontmatterRepository.save(squad, self.buf)
+  local ok, err = pcall(FrontmatterRepository.save, squad, self.buf)
+  if not ok then
+    require("vibing.core.utils.notify").error("Failed to save squad to frontmatter: " .. tostring(err), "Squad")
+  end
 
   -- 衝突がある場合は通知を挿入
   if squad.original_name ~= squad.name.value then
