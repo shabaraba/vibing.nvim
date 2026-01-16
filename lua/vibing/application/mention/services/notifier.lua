@@ -60,9 +60,14 @@ end
 ---@param content string メンション内容
 ---@return string message
 function M.build_notification_message(from_squad_name, from_bufnr, content)
+  -- メンション行からメッセージ本文を抽出（@SquadName の後の部分）
+  local message_text = content:match("^@%w+%s+(.+)") or ""
+
   local lines = {
-    string.format("You received a mention from @%s (buffer %d).", from_squad_name, from_bufnr),
-    string.format("Please respond to this mention using `/check-mentions` or reply directly."),
+    string.format("@%s mentioned you in buffer %d:", from_squad_name, from_bufnr),
+    string.format("> %s", message_text),
+    "",
+    string.format("Please reply to buffer %d (use mcp__vibing-nvim__nvim_chat_send_message with bufnr=%d).", from_bufnr, from_bufnr),
   }
   return table.concat(lines, "\n")
 end
