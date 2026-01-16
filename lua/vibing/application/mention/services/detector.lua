@@ -36,20 +36,18 @@ function M.detect_mentions_in_last_response(bufnr)
     end
   end
 
-  -- Assistantセクション内の全メンションを抽出
-  local content_lines = {}
+  -- Assistantセクション内の行頭メンションのみを抽出
   for i = last_assistant_start, last_assistant_end do
-    table.insert(content_lines, lines[i])
-  end
-  local content = table.concat(content_lines, "\n")
+    local line = lines[i]
 
-  -- @SquadName パターンを検出
-  for squad_name in content:gmatch("@(%w+)") do
-    -- メンション内容を抽出（簡易版: 同じ行の内容）
-    table.insert(mentions, {
-      squad_name = squad_name,
-      content = content,
-    })
+    -- 行頭の @SquadName パターンのみを検出
+    local squad_name = line:match("^@(%w+)")
+    if squad_name then
+      table.insert(mentions, {
+        squad_name = squad_name,
+        content = line,
+      })
+    end
   end
 
   return mentions
