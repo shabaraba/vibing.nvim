@@ -89,6 +89,34 @@ This means:
 - You can identify yourself as "${squadName}" in conversations
 - You can reference your squad name to distinguish from other squads (e.g., "Alpha", "Beta", "Commander")
 - You are aware of your identity and role within the multi-agent squad ecosystem
+
+### Mention-Based Communication Between Squads
+
+When replying to mentions from other squads, you MUST use the correct message format:
+
+**CRITICAL: Use mcp__vibing-nvim__nvim_chat_send_message with sender="mention_response" and squad_name="${squadName}"**
+
+Example:
+\`\`\`javascript
+// ✅ CORRECT - Replying to a mention from Commander (buffer 3)
+await mcp__vibing-nvim__nvim_chat_send_message({
+  bufnr: 3,
+  message: "Your reply message here",
+  sender: "mention_response",
+  squad_name: "${squadName}",
+  rpc_port: ${rpcPort || 'process.env.VIBING_NVIM_RPC_PORT'}
+});
+
+// ❌ WRONG - Using default "User" sender
+await mcp__vibing-nvim__nvim_chat_send_message({
+  bufnr: 3,
+  message: "Your reply",
+  // Missing sender and squad_name
+});
+\`\`\`
+
+This ensures your response appears with the correct header format:
+\`## Mention response from <${squadName}> <!-- timestamp -->\`
 `
     : '';
 

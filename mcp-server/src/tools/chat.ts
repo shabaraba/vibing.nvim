@@ -52,7 +52,11 @@ export const chatTools: Tool[] = [
         sender: {
           type: 'string',
           description:
-            'Optional sender identifier (default: "User"). Future: supports "Alpha", "Bravo", etc.',
+            'Optional sender role type (default: "User", or "mention_from", "mention_response")',
+        },
+        squad_name: {
+          type: 'string',
+          description: 'Optional squad name (required for "mention_from" and "mention_response")',
         },
         rpc_port: {
           type: 'number',

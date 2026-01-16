@@ -12,6 +12,7 @@ const chatSendMessageArgsSchema = z.object({
   bufnr: z.number(),
   message: z.string(),
   sender: z.string().optional(),
+  squad_name: z.string().optional(),
   rpc_port: z.number().optional(),
 });
 
@@ -45,12 +46,12 @@ export async function handleChatWorktree(args: unknown): Promise<any> {
  */
 export async function handleChatSendMessage(args: any): Promise<any> {
   // Zod schema already validates required fields and types
-  const { bufnr, message, sender, rpc_port } = chatSendMessageArgsSchema.parse(args);
+  const { bufnr, message, sender, squad_name, rpc_port } = chatSendMessageArgsSchema.parse(args);
 
-  await callNeovim('send_message', { bufnr, message, sender }, rpc_port);
+  await callNeovim('send_message', { bufnr, message, sender, squad_name }, rpc_port);
 
   return {
     content: [{ type: 'text', text: 'Message sent and AI request initiated in chat buffer' }],
-    _meta: { bufnr, sender: sender || 'User' },
+    _meta: { bufnr, sender: sender || 'User', squad_name },
   };
 }

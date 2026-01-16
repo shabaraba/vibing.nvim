@@ -39,7 +39,8 @@ function M.notify_if_idle(to_squad_name, from_squad_name, from_bufnr, content)
   local ok, err = pcall(function()
     -- メンション先Squadのバッファに通知を送信
     -- Squadが起動し、from_bufnr（メンション元）のバッファに返信する
-    ProgrammaticSender.send(to_bufnr, message, "User")
+    -- "Mention from <Squad>" ヘッダーを使用
+    ProgrammaticSender.send(to_bufnr, message, "mention_from", from_squad_name)
   end)
 
   if not ok then

@@ -11,9 +11,10 @@ local _send_locks = {}
 ---Programmatically send a message to a chat buffer
 ---@param bufnr number Buffer number
 ---@param message string Message content to send
----@param sender? string Sender identifier (default: "User", future: "Alpha", "Bravo", etc.)
+---@param sender? string Sender role type (default: "User", or "mention_from", "mention_response")
+---@param squad_name? string Squad name (required for "mention_from" and "mention_response")
 ---@return {success: boolean, bufnr: number}
-function M.send(bufnr, message, sender)
+function M.send(bufnr, message, sender, squad_name)
   sender = sender or "User"
 
   -- Validate buffer
@@ -24,6 +25,11 @@ function M.send(bufnr, message, sender)
   -- Validate message content
   if not message or vim.trim(message) == "" then
     error("Empty message")
+  end
+
+  -- Validate squad_name for mention headers
+  if (sender == "mention_from" or sender == "mention_response") and not squad_name then
+    error("squad_name is required for mention headers")
   end
 
   -- Get ChatBuffer instance via public API
@@ -45,8 +51,14 @@ function M.send(bufnr, message, sender)
       and vim.api.nvim_win_get_cursor(saved_win)
       or nil
 
-    -- Add user section and send
-    Renderer.addUserSection(bufnr, nil, nil, nil, message)
+    -- Add section based on sender type
+    if sender == "mention_from" or sender == "mention_response" then
+      Renderer.addMentionSection(bufnr, sender, squad_name, message)
+    else
+      -- Legacy: User section
+      Renderer.addUserSection(bufnr, nil, nil, nil, message)
+    end
+
     chat_buf:send_message()
 
     -- Restore cursor

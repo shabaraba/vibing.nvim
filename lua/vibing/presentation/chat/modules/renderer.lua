@@ -264,4 +264,71 @@ end
 -- Backward compatibility alias
 M.add_user_section = M.addUserSection
 
+---Add new mention section
+---@param buf number Buffer number
+---@param section_type string Section type ("mention_from" or "mention_response")
+---@param squad_name string Squad name for the header
+---@param message string Message content
+function M.addMentionSection(buf, section_type, squad_name, message)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+
+  -- Remove trailing empty lines
+  while #lines > 0 and lines[#lines] == "" do
+    table.remove(lines, #lines)
+  end
+
+  -- Remove unsent User section if it's at the end
+  -- Check if the last header is an unsent User header
+  local last_header_line = nil
+  for i = #lines, 1, -1 do
+    if Timestamp.is_header(lines[i]) then
+      last_header_line = i
+      break
+    end
+  end
+
+  if last_header_line and Timestamp.is_unsent_user_header(lines[last_header_line]) then
+    -- Remove from the unsent User header to the end
+    local new_lines = {}
+    for i = 1, last_header_line - 1 do
+      table.insert(new_lines, lines[i])
+    end
+    lines = new_lines
+
+    -- Remove trailing empty lines again after removing the section
+    while #lines > 0 and lines[#lines] == "" do
+      table.remove(lines, #lines)
+    end
+  end
+
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+
+  -- Create mention header
+  local header
+  if section_type == "mention_from" then
+    header = Timestamp.create_mention_from_header(squad_name)
+  elseif section_type == "mention_response" then
+    header = Timestamp.create_mention_response_header(squad_name)
+  else
+    error("Invalid section_type: " .. tostring(section_type))
+  end
+
+  local newLines = {
+    "",
+    header,
+    "",
+  }
+
+  -- Insert message content
+  if message and message ~= "" then
+    local message_lines = vim.split(message, "\n", { plain = true })
+    for _, line in ipairs(message_lines) do
+      table.insert(newLines, line)
+    end
+  end
+
+  table.insert(newLines, "")
+  vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, newLines)
+end
+
 return M

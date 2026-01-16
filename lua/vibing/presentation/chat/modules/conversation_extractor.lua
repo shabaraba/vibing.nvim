@@ -30,6 +30,11 @@ function M.extract_conversation(buf)
   for _, line in ipairs(lines) do
     local role = Timestamp.extract_role(line)
 
+    -- Mention headers are treated as "user" role for conversation history
+    if role == "mention_from" or role == "mention_response" then
+      role = "user"
+    end
+
     if role == "user" or role == "assistant" then
       save_section(conversation, current_role, current_content)
       current_role = role
@@ -49,7 +54,7 @@ function M.extract_conversation(buf)
   return conversation
 end
 
----ユーザーメッセージを抽出（最後の## Userセクション）
+---ユーザーメッセージを抽出（最後の## User/Mention from/Mention response fromセクション）
 ---@param buf number バッファ番号
 ---@return string?
 function M.extract_user_message(buf)
@@ -58,7 +63,8 @@ function M.extract_user_message(buf)
   local last_user_line = nil
   for i = #lines, 1, -1 do
     local role = Timestamp.extract_role(lines[i])
-    if role == "user" then
+    -- User, mention_from, mention_response すべてを対象
+    if role == "user" or role == "mention_from" or role == "mention_response" then
       last_user_line = i
       break
     end
