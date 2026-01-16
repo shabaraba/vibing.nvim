@@ -21,7 +21,6 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field insert_approval_request fun(tool: string, input: table, options: table) ツール承認要求UIを挿入
 ---@field get_session_allow fun(): table セッションレベルの許可リストを取得
 ---@field get_session_deny fun(): table セッションレベルの拒否リストを取得
----@field get_session_cwd fun(): string|nil セッションの作業ディレクトリを取得
 ---@field clear_handle_id fun() handle_idをクリア
 
 ---メッセージを送信
@@ -62,11 +61,9 @@ function M.execute(adapter, callbacks, message, config)
     lang_code = language_utils.get_language_code(config.language, "chat")
   end
 
-  -- Get cwd from current buffer's session (not global _current_session)
-  local session_cwd = callbacks.get_session_cwd()
-
-  -- Get squad name from buffer (for Claude to recognize itself)
-  local squad_name = frontmatter.squad_name
+  -- Get cwd from current session (if set by VibingChatWorktree)
+  local use_case = require("vibing.application.chat.use_case")
+  local session_cwd = use_case._current_session and use_case._current_session:get_cwd()
 
   -- Get session-level permissions from buffer
   local session_allow = callbacks.get_session_allow()
@@ -84,7 +81,6 @@ function M.execute(adapter, callbacks, message, config)
     permissions_session_deny = session_deny,
     permission_mode = frontmatter.permission_mode,
     language = lang_code,  -- Pass language code to adapter
-    squad_name = squad_name,  -- Pass squad name so Claude recognizes itself
     cwd = session_cwd,  -- Pass worktree cwd if set (from memory, not frontmatter)
     on_patch_saved = function(filename)
       patch_filename = filename
