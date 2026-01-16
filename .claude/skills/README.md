@@ -4,6 +4,60 @@ This directory contains skills for Claude Code to provide specialized knowledge 
 
 ## Available Skills
 
+### vibing-dev
+
+**Location:** `.claude/skills/vibing-dev/SKILL.md`
+
+Comprehensive development workflow for vibing.nvim plugin development:
+
+- **Worktree Management:** Use `:VibingChatWorktree` instead of manual git worktree
+- **LSP Operations:** Use vibing-nvim MCP tools with rpc_port for live analysis
+- **Background File Loading:** Load files without disrupting user workflow
+- **Build & Test:** Automated quality checks
+- **Development Workflows:** Feature development, bug fixes, refactoring
+
+**When activated:** Automatically when working on vibing.nvim codebase (detected by `lua/vibing/` directory)
+
+**Allowed tools:** All vibing-nvim MCP tools, Edit, Read, Write, Bash
+
+**Coverage:**
+
+- Feature branch development workflow
+- Bug investigation and fixing
+- Code refactoring with LSP analysis
+- Build and test automation
+- Best practices enforcement
+
+### test-feature
+
+**Location:** `.claude/skills/test-feature/SKILL.md`
+
+Quick workflow for testing vibing.nvim features after implementation:
+
+- Plugin reload
+- Manual feature testing
+- Diagnostics checking
+- Automated test execution
+
+**When activated:** User requests to test a newly implemented feature
+
+**Allowed tools:** vibing-nvim MCP tools, Bash
+
+### debug-issue
+
+**Location:** `.claude/skills/debug-issue/SKILL.md`
+
+Systematic workflow for investigating and fixing bugs in vibing.nvim:
+
+- Issue reproduction
+- LSP-based problem location
+- Root cause analysis
+- Fix implementation and verification
+
+**When activated:** User reports a bug or error in vibing.nvim
+
+**Allowed tools:** vibing-nvim MCP tools, Edit, Read, Write, Bash, Grep
+
 ### neovim-remote-control
 
 **Location:** `.claude/skills/neovim-remote-control/SKILL.md`
