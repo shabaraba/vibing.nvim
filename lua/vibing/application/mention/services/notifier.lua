@@ -1,12 +1,13 @@
 ---@class Vibing.Application.Mention.Notifier
 ---メンション通知サービス
----宛先Squadが停止中の場合、メンション元バッファに返信を送信
+---宛先Squadが停止中の場合、宛先Squadのバッファに通知を送信して起動
 local M = {}
 
----宛先Squadが停止中の場合、メンション元バッファに通知を送信
+---宛先Squadが停止中の場合、宛先Squadのバッファに通知を送信
+---通知を受け取った宛先Squadは、メンション元のバッファに返信する
 ---@param to_squad_name string メンション先Squad名（通知を受け取るSquad）
 ---@param from_squad_name string メンション元Squad名（メンションを送ったSquad）
----@param from_bufnr number メンション元のバッファ番号
+---@param from_bufnr number メンション元のバッファ番号（返信先）
 ---@param content string メンション内容
 ---@return boolean notified 通知が送信されたかどうか
 function M.notify_if_idle(to_squad_name, from_squad_name, from_bufnr, content)
@@ -32,17 +33,18 @@ function M.notify_if_idle(to_squad_name, from_squad_name, from_bufnr, content)
     return false
   end
 
-  -- Agent停止中 → メンション元のバッファに返信を送信
-  local message = M.build_reply_message(from_squad_name, content)
+  -- Agent停止中 → 宛先Squadのバッファに通知を送信して起動
+  local message = M.build_notification_message(from_squad_name, from_bufnr, content)
 
   local ok, err = pcall(function()
-    -- メンション元のバッファに、メンション先Squadからの返信として送信
-    ProgrammaticSender.send(from_bufnr, message, "User")
+    -- メンション先Squadのバッファに通知を送信
+    -- Squadが起動し、from_bufnr（メンション元）のバッファに返信する
+    ProgrammaticSender.send(to_bufnr, message, "User")
   end)
 
   if not ok then
     vim.notify(
-      string.format("[vibing] Failed to send mention reply: %s", tostring(err)),
+      string.format("[vibing] Failed to send mention notification: %s", tostring(err)),
       vim.log.levels.WARN
     )
     return false
@@ -51,13 +53,16 @@ function M.notify_if_idle(to_squad_name, from_squad_name, from_bufnr, content)
   return true
 end
 
----返信メッセージを構築
+---通知メッセージを構築
+---メンション先Squadが受け取り、メンション元のバッファに返信するための指示を含む
 ---@param from_squad_name string メンション元Squad名
+---@param from_bufnr number メンション元のバッファ番号
 ---@param content string メンション内容
 ---@return string message
-function M.build_reply_message(from_squad_name, content)
+function M.build_notification_message(from_squad_name, from_bufnr, content)
   local lines = {
-    string.format("Received mention from @%s. Responding to the request:", from_squad_name),
+    string.format("You received a mention from @%s (buffer %d).", from_squad_name, from_bufnr),
+    string.format("Please respond to this mention using `/check-mentions` or reply directly."),
   }
   return table.concat(lines, "\n")
 end
