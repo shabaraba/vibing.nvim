@@ -64,7 +64,7 @@ function M.build_notification_message(from_squad_name, from_bufnr, content)
   local message_text = content:match("^@%w+%s+(.+)") or ""
 
   local lines = {
-    string.format("@%s mentioned you in buffer %d:", from_squad_name, from_bufnr),
+    string.format("Received mention from %s (buffer %d):", from_squad_name, from_bufnr),
     string.format("> %s", message_text),
     "",
     string.format("Please reply to buffer %d (use mcp__vibing-nvim__nvim_chat_send_message with bufnr=%d).", from_bufnr, from_bufnr),
