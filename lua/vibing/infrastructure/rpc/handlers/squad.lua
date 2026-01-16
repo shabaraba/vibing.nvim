@@ -1,15 +1,23 @@
 local M = {}
 
----Extract task_ref from frontmatter of a file
----@param file_path string
+---Extract task_ref from frontmatter of a buffer (reads from buffer, not file)
+---@param bufnr number
 ---@return string? task_ref
-local function extract_task_ref(file_path)
-  if not file_path or file_path == "" then
+local function extract_task_ref_from_buffer(bufnr)
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
     return nil
   end
 
-  local lines = vim.fn.readfile(file_path, "", 50)
-  if not lines or #lines == 0 or not lines[1]:match("^---") then
+  -- Read first 50 lines from buffer (not file)
+  local line_count = vim.api.nvim_buf_line_count(bufnr)
+  local max_lines = math.min(50, line_count)
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, max_lines, false)
+
+  if not lines or #lines == 0 then
+    return nil
+  end
+
+  if not lines[1] or not lines[1]:match("^---") then
     return nil
   end
 
@@ -48,12 +56,12 @@ function M.get_squad_info(params)
     }
   end
 
-  local file_path = vim.api.nvim_buf_get_name(bufnr)
+  local buffer_name = vim.api.nvim_buf_get_name(bufnr)
   return {
     bufnr = bufnr,
     squad_name = squad_name,
-    file_path = file_path,
-    task_ref = extract_task_ref(file_path),
+    buffer_name = buffer_name, -- nvim_buf_get_nameの結果（パス形式だが開くのはbufnrを使う）
+    task_ref = extract_task_ref_from_buffer(bufnr),
   }
 end
 
@@ -67,12 +75,12 @@ function M.list_squads(params)
   local squads = {}
   for squad_name, bufnr in pairs(active_squads) do
     if vim.api.nvim_buf_is_valid(bufnr) then
-      local file_path = vim.api.nvim_buf_get_name(bufnr)
+      local buffer_name = vim.api.nvim_buf_get_name(bufnr)
       table.insert(squads, {
         squad_name = squad_name,
         bufnr = bufnr,
-        file_path = file_path,
-        task_ref = extract_task_ref(file_path),
+        buffer_name = buffer_name,
+        task_ref = extract_task_ref_from_buffer(bufnr),
       })
     end
   end
@@ -115,11 +123,11 @@ function M.find_squad_buffer(params)
     }
   end
 
-  local file_path = vim.api.nvim_buf_get_name(bufnr)
+  local buffer_name = vim.api.nvim_buf_get_name(bufnr)
   return {
     squad_name = params.squad_name,
     bufnr = bufnr,
-    file_path = file_path,
+    buffer_name = buffer_name,
     found = true,
   }
 end

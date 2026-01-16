@@ -66,7 +66,7 @@ function M.build_notification_message(from_squad_name, from_bufnr, content)
     "",
     content,
     "",
-    string.format("Please reply to buffer %d (use mcp__vibing-nvim__nvim_chat_send_message with bufnr=%d).", from_bufnr, from_bufnr),
+    string.format("Please reply using mcp__vibing-nvim__nvim_reply_to_mention with to_squad_name=\"%s\"", from_squad_name),
   }
   return table.concat(lines, "\n")
 end

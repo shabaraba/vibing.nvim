@@ -128,28 +128,28 @@ Please provide your findings as a bullet-point list with severity ratings (High/
 
 **Replying to Mentions:**
 
-When replying to mentions from other squads, you MUST use the correct message format:
+When replying to mentions from other squads, use the \`nvim_reply_to_mention\` tool:
 
-**CRITICAL: Use mcp__vibing-nvim__nvim_chat_send_message with sender="mention_response" and squad_name="${squadName}"**
+**CRITICAL: Use mcp__vibing-nvim__nvim_reply_to_mention to reply to mentions**
 
 Example:
 \`\`\`javascript
-// ✅ CORRECT - Replying to a mention from Commander (buffer 3)
-await mcp__vibing-nvim__nvim_chat_send_message({
-  bufnr: 3,
+// ✅ CORRECT - Replying to a mention from Alpha squad
+await use_mcp_tool('vibing-nvim', 'nvim_reply_to_mention', {
+  to_squad_name: "Alpha",
   message: "Your reply message here",
-  sender: "mention_response",
-  squad_name: "${squadName}",
   rpc_port: ${rpcPort || 'process.env.VIBING_NVIM_RPC_PORT'}
 });
 
-// ❌ WRONG - Using default "User" sender
-await mcp__vibing-nvim__nvim_chat_send_message({
-  bufnr: 3,
-  message: "Your reply",
-  // Missing sender and squad_name
-});
+// ❌ WRONG - Don't use nvim_chat_send_message (internal tool)
+// This is an internal tool and should not be used directly
+await mcp__vibing-nvim__nvim_chat_send_message({ ... });
 \`\`\`
+
+**How nvim_reply_to_mention works:**
+- Automatically finds the target squad's buffer
+- Sends message with proper "Mention response from ${squadName}" header
+- Handles squad name resolution and buffer lookup for you
 
 This ensures your response appears with the correct header format:
 \`## Mention response from <${squadName}> <!-- timestamp -->\`

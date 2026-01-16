@@ -59,30 +59,4 @@ export const chatTools: Tool[] = [
       required: ['to_squad_name', 'message'],
     },
   },
-  {
-    name: 'nvim_report_to_squad',
-    description:
-      "Report progress, results, or findings to another squad's chat buffer. " +
-      'Use this to notify completion, share analysis results, or provide status updates. ' +
-      'The message will appear with a "Mention response from <YourSquadName>" header.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        to_squad_name: {
-          type: 'string',
-          description: 'Name of the squad to send the report to (e.g., "Commander", "Alpha")',
-        },
-        message: {
-          type: 'string',
-          description: 'Report content (progress update, findings, completion notice, etc.)',
-        },
-        rpc_port: {
-          type: 'number',
-          description:
-            'RPC port of your Neovim instance (optional, defaults to 9876). IMPORTANT: Use your own instance port, not another instance.',
-        },
-      },
-      required: ['to_squad_name', 'message'],
-    },
-  },
 ];

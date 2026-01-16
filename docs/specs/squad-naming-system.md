@@ -269,7 +269,7 @@ Issue #123 を Alpha 分隊に割り当てました。
 - [ ] `@Alpha` 形式のメンション解析
 - [ ] メンション集中管理システム
 - [ ] メンション先バッファへのメッセージ送信
-- [ ] MCP tool: `nvim_chat_send_message` の活用
+- [ ] MCP tool: `nvim_reply_to_mention` の活用（`nvim_chat_send_message`は内部ツール）
 
 ## Task Reference Format (Future)
 
@@ -286,4 +286,4 @@ jira:PROJ-789        # Jira Issue（将来拡張）
 - Squad 名は NATO phonetic alphabet から自動割り当て
 - メンション機能は後続Issueで実装
 - Issue連携は後続Issueで実装
-- 既存のMCP tool `nvim_chat_send_message` を活用してメンション返信を実装予定
+- MCP tool `nvim_reply_to_mention` を使ってメンション返信を実装（`nvim_chat_send_message`は内部ツールとして保持）

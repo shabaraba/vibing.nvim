@@ -4,6 +4,30 @@ This directory contains skills for Claude Code to provide specialized knowledge 
 
 ## Available Skills
 
+### squad-mention
+
+**Location:** `.claude/skills/squad-mention/SKILL.md`
+
+Guide for autonomous Squad-to-Squad communication via mentions:
+
+- **Sending Mentions:** Write `@SquadName` in your buffer, end response, automatic delivery
+- **Receiving Mentions:** Read mention, respond with `@SenderSquadName`, end response
+- **No User Intervention:** Fully autonomous collaboration between agents
+- **Best Practices:** Provide full context, be specific, specify deliverables
+- **Common Patterns:** Subtask delegation, review requests, collaborative analysis
+
+**When activated:** When collaborating with other Squads or receiving mentions
+
+**Allowed tools:** N/A (uses built-in mention system, no MCP tools needed)
+
+**Coverage:**
+
+- How to send mentions with proper context
+- How to receive and respond to mentions
+- Interruption handling during busy state
+- Common patterns and examples
+- Technical details of mention system
+
 ### vibing-dev
 
 **Location:** `.claude/skills/vibing-dev/SKILL.md`
