@@ -116,19 +116,17 @@ end
 
 ---Mention from ヘッダーを作成
 ---@param squad_name string 送信元のSquad名（例: "Commander", "Alpha"）
----@param timestamp? string オプションのタイムスタンプ（省略時は現在時刻）
 ---@return string header Mention fromヘッダー（例: "## Mention from <Commander> <!-- 2025-12-29 14:30:55 -->"）
-function M.create_mention_from_header(squad_name, timestamp)
-  timestamp = timestamp or M.now()
+function M.create_mention_from_header(squad_name)
+  local timestamp = M.now()
   return string.format("## Mention from <%s> <!-- %s -->", squad_name, timestamp)
 end
 
 ---Mention response from ヘッダーを作成
 ---@param squad_name string 返信元のSquad名（例: "Alpha", "Bravo"）
----@param timestamp? string オプションのタイムスタンプ（省略時は現在時刻）
 ---@return string header Mention response fromヘッダー（例: "## Mention response from <Alpha> <!-- 2025-12-29 14:30:55 -->"）
-function M.create_mention_response_header(squad_name, timestamp)
-  timestamp = timestamp or M.now()
+function M.create_mention_response_header(squad_name)
+  local timestamp = M.now()
   return string.format("## Mention response from <%s> <!-- %s -->", squad_name, timestamp)
 end
 
@@ -144,22 +142,6 @@ end
 ---@return boolean is_mention_response Mention response fromヘッダーの場合true
 function M.is_mention_response_header(line)
   return line:match("^## Mention response from <[%w%-]+> <!%-%- " .. TIMESTAMP_PATTERN .. " %-%->$") ~= nil
-end
-
----Mention fromヘッダーからSquad名を抽出
----@param line string Mention fromヘッダー行
----@return string? squad_name Squad名（抽出できない場合はnil）
-function M.extract_squad_from_mention_from(line)
-  local squad_name = line:match("^## Mention from <([%w%-]+)> <!%-%- " .. TIMESTAMP_PATTERN .. " %-%->$")
-  return squad_name
-end
-
----Mention response fromヘッダーからSquad名を抽出
----@param line string Mention response fromヘッダー行
----@return string? squad_name Squad名（抽出できない場合はnil）
-function M.extract_squad_from_mention_response(line)
-  local squad_name = line:match("^## Mention response from <([%w%-]+)> <!%-%- " .. TIMESTAMP_PATTERN .. " %-%->$")
-  return squad_name
 end
 
 return M
