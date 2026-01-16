@@ -70,27 +70,38 @@ export function clearMentionCache(): void {
 
 /**
  * Format mention summary for display in canUseTool deny message
+ * Includes full mention content to provide context
  */
 export function formatMentionSummary(result: MentionCheckResult): string {
   if (!result.shouldInterrupt || result.mentions.length === 0) {
     return '';
   }
 
-  const lines = [
-    `You have ${result.count} unprocessed mention(s) from other Squad(s).`,
-    'Please check and respond to them using /check-mentions before continuing.',
-    '',
-  ];
+  const lines = [`⚠️ You have ${result.count} unprocessed mention(s) from other Squad(s).`, ''];
 
-  // Show up to 3 mentions
-  const displayMentions = result.mentions.slice(0, 3);
-  for (const mention of displayMentions) {
-    lines.push(`  - ${mention.created_at} from @${mention.from_squad_name}`);
+  // Show full content of first mention (most recent/important)
+  const firstMention = result.mentions[0];
+  lines.push(`📩 Mention from @${firstMention.from_squad_name} (${firstMention.created_at}):`);
+  lines.push('');
+  lines.push(firstMention.content);
+  lines.push('');
+
+  // Show summary of remaining mentions if any
+  if (result.mentions.length > 1) {
+    lines.push(`📋 You also have ${result.mentions.length - 1} more mention(s):`);
+    const remainingMentions = result.mentions.slice(1, 4); // Show up to 3 more
+    for (const mention of remainingMentions) {
+      lines.push(`  - ${mention.created_at} from @${mention.from_squad_name}`);
+    }
+    if (result.mentions.length > 4) {
+      lines.push(`  ... and ${result.mentions.length - 4} more`);
+    }
+    lines.push('');
+    lines.push('Use /check-mentions to view all mentions.');
   }
 
-  if (result.mentions.length > 3) {
-    lines.push(`  ... and ${result.mentions.length - 3} more`);
-  }
+  lines.push('');
+  lines.push('Please respond to the mention(s) before continuing your current task.');
 
   return lines.join('\n');
 }
