@@ -54,6 +54,7 @@ function M.execute(adapter, callbacks, message, config)
   local frontmatter = callbacks.parse_frontmatter()
 
   local patch_filename = nil
+  local handle_id = nil  -- Declare handle_id early for closure reference
 
   -- Get language code: frontmatter > config
   local language_utils = require("vibing.core.utils.language")
@@ -93,6 +94,13 @@ function M.execute(adapter, callbacks, message, config)
       -- Forward insert_choices event to chat buffer
       vim.schedule(function()
         callbacks.insert_choices(questions)
+        -- AskUserQuestion requires user input, so terminate the stream immediately
+        -- Cancel the process to prevent Claude from continuing to respond
+        if handle_id and adapter.cancel then
+          adapter:cancel(handle_id)
+        end
+        -- Manually trigger response completion to add user section
+        M._handle_response({ content = "", _handle_id = handle_id }, callbacks, adapter, patch_filename)
       end)
     end,
     on_session_corrupted = function(old_session_id)
@@ -112,6 +120,13 @@ function M.execute(adapter, callbacks, message, config)
       -- Forward approval_required event to chat buffer
       vim.schedule(function()
         callbacks.insert_approval_request(tool, input, options)
+        -- Tool approval requires user input, so terminate the stream immediately
+        -- Cancel the process to prevent Claude from continuing to respond
+        if handle_id and adapter.cancel then
+          adapter:cancel(handle_id)
+        end
+        -- Manually trigger response completion to add user section
+        M._handle_response({ content = "", _handle_id = handle_id }, callbacks, adapter, patch_filename)
       end)
     end,
   }
@@ -122,7 +137,6 @@ function M.execute(adapter, callbacks, message, config)
     opts._session_id_explicit = true
   end
 
-  local handle_id = nil
   if adapter:supports("streaming") then
     handle_id = adapter:stream(formatted_prompt, opts, function(chunk)
       vim.schedule(function()
@@ -189,8 +203,15 @@ function M._handle_response(response, callbacks, adapter, patch_filename)
   end
 
   -- メンション検知と記録
+  -- CRITICAL: Must not block add_user_section() if mention detection fails
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
-    M._detect_and_record_mentions(bufnr)
+    local ok, err = pcall(M._detect_and_record_mentions, bufnr)
+    if not ok then
+      vim.notify(
+        "[vibing.nvim] Mention detection failed: " .. tostring(err),
+        vim.log.levels.WARN
+      )
+    end
   end
 
   -- リクエスト完了時にhandle_idをクリア

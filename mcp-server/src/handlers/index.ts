@@ -48,7 +48,9 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
 
   // Chat operations
   nvim_chat_worktree: chat.handleChatWorktree,
-  nvim_chat_send_message: chat.handleChatSendMessage,
+  nvim_chat_send_message: chat.handleChatSendMessage, // Internal use only (not in MCP tool list)
+  nvim_reply_to_mention: chat.handleReplyToMention,
+  nvim_report_to_squad: chat.handleReportToSquad,
 
   // Squad operations
   nvim_get_squad_info: squad.handleGetSquadInfo,

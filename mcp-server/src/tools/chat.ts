@@ -34,37 +34,55 @@ export const chatTools: Tool[] = [
     },
   },
   {
-    name: 'nvim_chat_send_message',
+    name: 'nvim_reply_to_mention',
     description:
-      'Programmatically send a message to a chat buffer and trigger AI request. ' +
-      'Useful for multi-agent workflows where one Claude instance sends messages to another.',
+      'Reply to a mention from another squad. ' +
+      'Use this when you received a mention (e.g., "@Alpha please review this") and want to send your response back to the sender\'s chat buffer. ' +
+      'The message will appear with a "Mention response from <YourSquadName>" header.',
     inputSchema: {
       type: 'object',
       properties: {
-        bufnr: {
-          type: 'number',
-          description: 'Buffer number of the target chat buffer',
+        to_squad_name: {
+          type: 'string',
+          description: 'Name of the squad to reply to (e.g., "Alpha", "Commander")',
         },
         message: {
           type: 'string',
-          description: 'Message content to send',
-        },
-        sender: {
-          type: 'string',
-          description:
-            'Optional sender role type (default: "User", or "mention_from", "mention_response")',
-        },
-        squad_name: {
-          type: 'string',
-          description: 'Optional squad name (required for "mention_from" and "mention_response")',
+          description: 'Your reply message content',
         },
         rpc_port: {
           type: 'number',
           description:
-            'RPC port of target Neovim instance (optional, defaults to 9876). Use nvim_list_instances to discover available instances.',
+            'RPC port of your Neovim instance (optional, defaults to 9876). IMPORTANT: Use your own instance port, not another instance.',
         },
       },
-      required: ['bufnr', 'message'],
+      required: ['to_squad_name', 'message'],
+    },
+  },
+  {
+    name: 'nvim_report_to_squad',
+    description:
+      "Report progress, results, or findings to another squad's chat buffer. " +
+      'Use this to notify completion, share analysis results, or provide status updates. ' +
+      'The message will appear with a "Mention response from <YourSquadName>" header.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to_squad_name: {
+          type: 'string',
+          description: 'Name of the squad to send the report to (e.g., "Commander", "Alpha")',
+        },
+        message: {
+          type: 'string',
+          description: 'Report content (progress update, findings, completion notice, etc.)',
+        },
+        rpc_port: {
+          type: 'number',
+          description:
+            'RPC port of your Neovim instance (optional, defaults to 9876). IMPORTANT: Use your own instance port, not another instance.',
+        },
+      },
+      required: ['to_squad_name', 'message'],
     },
   },
 ];

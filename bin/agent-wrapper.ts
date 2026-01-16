@@ -10,6 +10,7 @@ import { buildPrompt } from './lib/prompt-builder.js';
 import { createCanUseToolCallback } from './lib/permissions/can-use-tool.js';
 import { processStream } from './lib/stream-processor.js';
 import { safeJsonStringify, toError } from './lib/utils.js';
+import { findVibingNvimInstallPath } from './lib/vibing-path.js';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -101,6 +102,18 @@ const queryOptions: Record<string, unknown> = {
   allowDangerouslySkipPermissions: config.permissionMode === 'bypassPermissions',
   settingSources: ['user', 'project'],
 };
+
+// Add vibing.nvim as a plugin to load vibing.nvim-specific skills
+// This enables .claude/skills/ within vibing.nvim installation to be available
+const vibingNvimPath = findVibingNvimInstallPath();
+if (vibingNvimPath) {
+  queryOptions.plugins = [
+    {
+      type: 'local',
+      path: vibingNvimPath,
+    },
+  ];
+}
 
 if (config.deniedTools.length > 0) {
   queryOptions.disallowedTools = config.deniedTools;
