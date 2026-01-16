@@ -33,6 +33,7 @@ export interface AgentConfig {
   toolResultDisplay: 'none' | 'compact' | 'full';
   saveLocationType: 'project' | 'user' | 'custom';
   saveDir: string | null;
+  squadName: string | null;
 }
 
 export interface StreamEvent {
