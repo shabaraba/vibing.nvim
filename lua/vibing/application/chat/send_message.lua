@@ -188,10 +188,43 @@ function M._handle_response(response, callbacks, adapter, patch_filename)
     end
   end
 
+  -- メンション検知と記録
+  if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+    M._detect_and_record_mentions(bufnr)
+  end
+
   -- リクエスト完了時にhandle_idをクリア
   callbacks.clear_handle_id()
 
   callbacks.add_user_section()
+end
+
+---メンションを検知して記録
+---@param bufnr number バッファ番号
+function M._detect_and_record_mentions(bufnr)
+  local Detector = require("vibing.application.mention.services.detector")
+  local MentionHandlers = require("vibing.infrastructure.mention.rpc_handlers")
+
+  -- 自分のSquad名を取得
+  local from_squad_name = vim.b[bufnr].vibing_squad_name
+  if not from_squad_name then
+    return
+  end
+
+  -- メンションを検知
+  local mentions = Detector.detect_mentions_in_last_response(bufnr)
+
+  -- 各メンションを記録
+  for _, mention in ipairs(mentions) do
+    if Detector.is_valid_squad_name(mention.squad_name) then
+      MentionHandlers.record_mention({
+        from_squad_name = from_squad_name,
+        to_squad_name = mention.squad_name,
+        content = mention.content,
+        from_bufnr = bufnr,
+      })
+    end
+  end
 end
 
 return M

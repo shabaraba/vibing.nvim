@@ -60,7 +60,7 @@ end
 
 ---メンションを記録（他Squadからの通知用）
 ---宛先Squadが停止中の場合は自動で通知を送信
----@param params table { from_squad_name: string, to_squad_name: string, content: string }
+---@param params table { from_squad_name: string, to_squad_name: string, content: string, from_bufnr?: number }
 ---@return table { success: boolean, mention_id?: string, notified?: boolean }
 function M.record_mention(params)
   if not params.from_squad_name or params.from_squad_name == "" then
@@ -82,10 +82,17 @@ function M.record_mention(params)
 
   -- 宛先が停止中なら通知を送信（vim.scheduleで非同期実行）
   local notified = false
-  vim.schedule(function()
-    local Notifier = require("vibing.application.mention.services.notifier")
-    Notifier.notify_if_idle(params.to_squad_name, params.from_squad_name, params.content)
-  end)
+  if params.from_bufnr then
+    vim.schedule(function()
+      local Notifier = require("vibing.application.mention.services.notifier")
+      Notifier.notify_if_idle(
+        params.to_squad_name,
+        params.from_squad_name,
+        params.from_bufnr,
+        params.content
+      )
+    end)
+  end
 
   return { success = true, mention_id = mention.id.value, notified = notified }
 end
