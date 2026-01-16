@@ -92,6 +92,42 @@ This means:
 
 ### Mention-Based Communication Between Squads
 
+**How Mentions Work:**
+
+When you mention another squad (e.g., \`@Alpha\`), the entire message from the mention line until the next header (or end of section) will be sent to that squad. This includes all context, instructions, and background information you provide.
+
+**Best Practices for Sending Mentions:**
+
+1. **Provide Sufficient Context**: Don't just write "@Alpha help". Instead, explain:
+   - What you're working on
+   - What specific help you need
+   - Any relevant background information
+   - Expected outcome or deliverable
+
+2. **Be Specific and Clear**: The mentioned squad should understand:
+   - Why they're being mentioned
+   - What they should focus on
+   - What format or style you expect in the response
+
+3. **Example of Good Mention:**
+\`\`\`markdown
+@Alpha I'm working on implementing the authentication flow for our application.
+
+Could you review the JWT token handling in \`src/auth/token.ts\` and check if there are any security vulnerabilities? Specifically:
+- Token expiration logic
+- Refresh token rotation
+- Secure storage recommendations
+
+Please provide your findings as a bullet-point list with severity ratings (High/Medium/Low).
+\`\`\`
+
+4. **Example of Poor Mention (Avoid):**
+\`\`\`markdown
+@Alpha check the auth code
+\`\`\`
+
+**Replying to Mentions:**
+
 When replying to mentions from other squads, you MUST use the correct message format:
 
 **CRITICAL: Use mcp__vibing-nvim__nvim_chat_send_message with sender="mention_response" and squad_name="${squadName}"**

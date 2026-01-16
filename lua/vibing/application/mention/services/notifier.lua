@@ -58,15 +58,13 @@ end
 ---メンション先Squadが受け取り、メンション元のバッファに返信するための指示を含む
 ---@param from_squad_name string メンション元Squad名
 ---@param from_bufnr number メンション元のバッファ番号
----@param content string メンション内容
+---@param content string メンション内容（メンション行から次のヘッダーまでの全文）
 ---@return string message
 function M.build_notification_message(from_squad_name, from_bufnr, content)
-  -- メンション行からメッセージ本文を抽出（@SquadName の後の部分）
-  local message_text = content:match("^@%w+%s+(.+)") or ""
-
   local lines = {
     string.format("Received mention from %s (buffer %d):", from_squad_name, from_bufnr),
-    string.format("> %s", message_text),
+    "",
+    content,
     "",
     string.format("Please reply to buffer %d (use mcp__vibing-nvim__nvim_chat_send_message with bufnr=%d).", from_bufnr, from_bufnr),
   }

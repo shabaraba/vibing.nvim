@@ -36,16 +36,40 @@ function M.detect_mentions_in_last_response(bufnr)
     end
   end
 
-  -- Assistantセクション内の行頭メンションのみを抽出
+  -- Assistantセクション内の行頭メンションを抽出し、次のヘッダーまでの全文を取得
   for i = last_assistant_start, last_assistant_end do
     local line = lines[i]
 
     -- 行頭の @SquadName パターンのみを検出
     local squad_name = line:match("^@(%w+)")
     if squad_name then
+      -- メンション行から次のヘッダーまでの全文を収集
+      local content_lines = {}
+      for j = i, last_assistant_end do
+        -- 次のヘッダー（## で始まる行）に到達したら終了
+        if j > i and lines[j]:match("^##%s") then
+          break
+        end
+        table.insert(content_lines, lines[j])
+      end
+
+      -- @SquadName の後ろの部分から開始
+      local first_line = content_lines[1]
+      local mention_content = first_line:match("^@%w+%s+(.*)") or ""
+
+      -- 残りの行を追加
+      for k = 2, #content_lines do
+        if content_lines[k] ~= "" or k < #content_lines then
+          mention_content = mention_content .. "\n" .. content_lines[k]
+        end
+      end
+
+      -- 末尾の空行を削除
+      mention_content = mention_content:gsub("\n+$", "")
+
       table.insert(mentions, {
         squad_name = squad_name,
-        content = line,
+        content = mention_content,
       })
     end
   end
