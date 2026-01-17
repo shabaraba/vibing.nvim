@@ -1,5 +1,7 @@
 local M = {}
 
+local HeaderRenderer = require("vibing.presentation.chat.modules.header_renderer")
+
 ---アシスタント応答を開始
 ---@param buf number バッファ番号
 function M.start_response(buf)
@@ -10,9 +12,15 @@ function M.start_response(buf)
   end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
+  -- Squad名をバッファローカル変数から取得
+  local squad_name = vim.b[buf].vibing_squad_name
+
+  -- ヘッダー生成（Squad名があれば "## Assistant <Alpha>"、なければ "## Assistant"）
+  local header = HeaderRenderer.render_assistant_header(squad_name)
+
   local new_lines = {
     "",
-    "## Assistant",
+    header,
     "",
     "",
   }

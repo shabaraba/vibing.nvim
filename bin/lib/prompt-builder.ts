@@ -57,6 +57,7 @@ function getLanguageInstruction(langCode: string | null): string {
  * - Emphasizes vibing-nvim MCP tools for LSP operations
  * - Provides decision trees for common development scenarios
  * - Includes RPC port information for multi-instance safety
+ * - Includes squad awareness (if this is a squad session)
  *
  * The prompt is designed to make Claude prioritize vibing.nvim-specific workflows
  * when developing vibing.nvim features, reducing the likelihood of using generic
@@ -64,12 +65,32 @@ function getLanguageInstruction(langCode: string | null): string {
  *
  * @param prioritizeVibingLsp - Whether to include vibing.nvim-specific guidance
  * @param rpcPort - RPC port for this Neovim instance (null if not available)
+ * @param squadName - Squad name for squad-aware sessions (null for regular sessions)
  * @returns Complete system prompt string, or empty string if prioritizeVibingLsp is false
  */
-function buildVibingSystemPrompt(prioritizeVibingLsp: boolean, rpcPort: number | null): string {
+function buildVibingSystemPrompt(
+  prioritizeVibingLsp: boolean,
+  rpcPort: number | null,
+  squadName: string | null
+): string {
   if (!prioritizeVibingLsp) {
     return '';
   }
+
+  const squadInfo = squadName
+    ? `
+
+## Squad Awareness
+
+**You are running as part of a Squad: "${squadName}"**
+
+This means:
+- You are "${squadName}", a specialized Claude agent in the vibing.nvim squad system
+- You can identify yourself as "${squadName}" in conversations
+- You can reference your squad name to distinguish from other squads (e.g., "Alpha", "Beta", "Commander")
+- You are aware of your identity and role within the multi-agent squad ecosystem
+`
+    : '';
 
   const rpcPortInfo = rpcPort
     ? `
@@ -92,7 +113,7 @@ await mcp__vibing-nvim__nvim_list_windows({});
     : '';
 
   return `<vibing-nvim-system>
-IMPORTANT: You are running inside vibing.nvim, a Neovim plugin with Claude Code integration.${rpcPortInfo}
+IMPORTANT: You are running inside vibing.nvim, a Neovim plugin with Claude Code integration.${squadInfo}${rpcPortInfo}
 
 ## Self-Development Context
 
@@ -284,7 +305,8 @@ await mcp__vibing-nvim__nvim_execute({ command: "bprevious" });
  * @returns Complete prompt string ready for Claude Agent SDK
  */
 export function buildPrompt(config: AgentConfig): string {
-  const { prompt, contextFiles, sessionId, prioritizeVibingLsp, language, rpcPort } = config;
+  const { prompt, contextFiles, sessionId, prioritizeVibingLsp, language, rpcPort, squadName } =
+    config;
 
   let fullPrompt = prompt;
 
@@ -299,7 +321,7 @@ Only reference actual messages within THIS current session.
 
 `;
 
-    const vibingSystemPrompt = buildVibingSystemPrompt(prioritizeVibingLsp, rpcPort);
+    const vibingSystemPrompt = buildVibingSystemPrompt(prioritizeVibingLsp, rpcPort, squadName);
 
     const languageInstruction = getLanguageInstruction(language);
     let languageSystemPrompt = '';

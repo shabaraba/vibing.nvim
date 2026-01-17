@@ -8,6 +8,7 @@
 ---@field created_at string 作成日時
 ---@field updated_at string 更新日時
 ---@field cwd string? 作業ディレクトリ（worktree使用時に設定）
+---@field task_ref string? Worktreeの相対パス（.worktrees/branch-name）
 local ChatSession = {}
 ChatSession.__index = ChatSession
 
@@ -24,6 +25,7 @@ function ChatSession:new(opts)
   instance.created_at = opts.created_at or os.date("%Y-%m-%dT%H:%M:%S")
   instance.updated_at = opts.updated_at or os.date("%Y-%m-%dT%H:%M:%S")
   instance.cwd = opts.cwd
+  instance.task_ref = opts.task_ref
   return instance
 end
 
@@ -47,14 +49,28 @@ function ChatSession.load_from_file(file_path)
     session_id = sid
   end
 
-  -- NOTE: cwd is NOT loaded from frontmatter
-  -- cwd is only set when explicitly using VibingChatWorktree command
+  -- task_ref から cwd を復元（worktree が存在する場合のみ）
+  local cwd = nil
+  local task_ref = frontmatter.task_ref
+  if task_ref and task_ref ~= "" then
+    local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
+    if vim.v.shell_error == 0 and git_root then
+      local worktree_path = git_root .. "/" .. task_ref
+      -- worktree ディレクトリが存在する場合のみ cwd を設定
+      if vim.fn.isdirectory(worktree_path) == 1 then
+        cwd = worktree_path
+      end
+    end
+  end
+
   return ChatSession:new({
     session_id = session_id,
     file_path = file_path,
     frontmatter = frontmatter,
     created_at = frontmatter.created_at or os.date("%Y-%m-%dT%H:%M:%S"),
     updated_at = frontmatter.updated_at or os.date("%Y-%m-%dT%H:%M:%S"),
+    cwd = cwd,
+    task_ref = task_ref,
   })
 end
 
@@ -104,6 +120,12 @@ end
 ---@return string?
 function ChatSession:get_cwd()
   return self.cwd
+end
+
+---タスク参照（worktree相対パス）を取得
+---@return string?
+function ChatSession:get_task_ref()
+  return self.task_ref
 end
 
 return ChatSession

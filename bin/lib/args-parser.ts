@@ -56,6 +56,7 @@ export function parseArguments(args: string[]): AgentConfig {
     toolResultDisplay: 'compact',
     saveLocationType: 'project',
     saveDir: null,
+    squadName: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -168,6 +169,9 @@ export function parseArguments(args: string[]): AgentConfig {
       i++;
     } else if (args[i] === '--save-dir' && args[i + 1]) {
       config.saveDir = args[i + 1];
+      i++;
+    } else if (args[i] === '--squad-name' && args[i + 1]) {
+      config.squadName = args[i + 1];
       i++;
     } else if (!args[i].startsWith('--')) {
       config.prompt = args[i];
