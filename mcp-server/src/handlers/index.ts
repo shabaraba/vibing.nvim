@@ -5,7 +5,6 @@ import * as window from './window.js';
 import * as lsp from './lsp.js';
 import * as instances from './instances.js';
 import * as chat from './chat.js';
-import * as squad from './squad.js';
 
 export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Buffer operations
@@ -49,9 +48,4 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Chat operations
   nvim_chat_worktree: chat.handleChatWorktree,
   nvim_chat_send_message: chat.handleChatSendMessage,
-
-  // Squad operations
-  nvim_get_squad_info: squad.handleGetSquadInfo,
-  nvim_list_squads: squad.handleListSquads,
-  nvim_find_squad_buffer: squad.handleFindSquadBuffer,
 };

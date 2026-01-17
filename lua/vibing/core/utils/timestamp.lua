@@ -26,7 +26,7 @@ function M.now()
 end
 
 
----ヘッダー行からロールを抽出（HTMLコメント形式/レガシー対応/Squad-aware対応）
+---ヘッダー行からロールを抽出（HTMLコメント形式/レガシー対応）
 ---@param line string ヘッダー行
 ---@return string? role "user" | "assistant" | nil（ヘッダーでない場合はnil）
 function M.extract_role(line)
@@ -38,11 +38,6 @@ function M.extract_role(line)
   -- HTMLコメント形式タイムスタンプ: "## User <!-- YYYY-MM-DD HH:MM:SS -->"
   if M.is_timestamped_user_header(line) then
     return "user"
-  end
-
-  -- Squad-aware Assistantヘッダー: "## Assistant <Alpha>" or "## Assistant <Commander>"
-  if line:match("^## Assistant <[%w%-]+>") then
-    return "assistant"
   end
 
   -- レガシーパターン（シンプルヘッダー）: "## User" or "## Assistant"

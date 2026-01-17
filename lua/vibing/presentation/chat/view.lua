@@ -148,16 +148,6 @@ function M.attach_to_buffer(bufnr, file_path)
   -- NOTE: Diff display uses patch files in .vibing/patches/<session_id>/
   -- The gd keymap reads patch files directly via PatchFinder and PatchViewer
 
-  -- Squad名を割り当てまたは読み込み
-  if frontmatter.squad_name then
-    vim.b[bufnr].vibing_squad_name = frontmatter.squad_name
-    local Registry = require("vibing.infrastructure.squad.registry")
-    Registry.register(frontmatter.squad_name, bufnr)
-  else
-    -- Squad名がない既存ファイルは自動割り当て
-    chat_buf:assign_squad_name()
-  end
-
   chat_buf:_setup_keymaps()
 
   M._attached_buffers[bufnr] = chat_buf
