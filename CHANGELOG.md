@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.20.0 (2026-01-17)
+
+## What's Changed
+* chore(main): release 1.19.0 by @github-actions[bot] in https://github.com/shabaraba/vibing.nvim/pull/302
+* feat: Prioritize vibing.nvim commands in Claude Agent SDK by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/307
+* feat: implement programmatic message sending to chat buffers (#304) by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/309
+* feat: implement Squad Naming System Phase 1 for multi-agent coordination by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/310
+* revert: Squad Naming System Phase 1 by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/315
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.19.0...v1.20.0
+
 ## 1.19.0 (2026-01-14)
 
 ## What's Changed
