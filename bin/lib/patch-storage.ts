@@ -104,6 +104,15 @@ class PatchStorage {
       return null;
     }
 
+    // Check if snapshot tag still exists
+    if (!this.gitOps.tagExists(this.snapshotTag)) {
+      console.error(
+        '[ERROR] Cannot generate patch: snapshot tag no longer exists:',
+        this.snapshotTag
+      );
+      return null;
+    }
+
     const stagedDiff = this.gitOps.saveStagingState();
 
     if (!this.gitOps.stageAll().success) {
