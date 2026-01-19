@@ -111,6 +111,13 @@ export async function processStream(
 
           if (toolName === 'Bash' && toolInput.command) {
             emit({ type: 'tool_use', tool: 'Bash', command: toolInput.command });
+
+            // VCS operation detection for mote integration
+            const { detectVcsOperation } = await import('./vcs-detector.js');
+            const vcsOp = detectVcsOperation(toolInput.command);
+            if (vcsOp) {
+              emit({ type: 'vcs_operation', operation: vcsOp, command: toolInput.command });
+            }
           }
         }
       }
