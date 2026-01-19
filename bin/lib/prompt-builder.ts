@@ -52,15 +52,13 @@ function getLanguageInstruction(langCode: string | null): string {
  * Build vibing.nvim system prompt with LSP priority and RPC port info
  *
  * This function generates a comprehensive system prompt that:
- * - Establishes the self-development context (working on vibing.nvim itself)
- * - Prioritizes vibing.nvim commands (:VibingChatWorktree) over generic alternatives
+ * - Establishes vibing.nvim context (running inside the plugin)
+ * - Provides best practices for vibing.nvim workflows
  * - Emphasizes vibing-nvim MCP tools for LSP operations
- * - Provides decision trees for common development scenarios
  * - Includes RPC port information for multi-instance safety
  *
- * The prompt is designed to make Claude prioritize vibing.nvim-specific workflows
- * when developing vibing.nvim features, reducing the likelihood of using generic
- * commands like `git worktree` or Serena LSP tools.
+ * The prompt is designed to make Claude use vibing.nvim-specific workflows
+ * effectively regardless of the project being worked on.
  *
  * @param prioritizeVibingLsp - Whether to include vibing.nvim-specific guidance
  * @param rpcPort - RPC port for this Neovim instance (null if not available)
@@ -94,18 +92,19 @@ await mcp__vibing-nvim__nvim_list_windows({});
   return `<vibing-nvim-system>
 IMPORTANT: You are running inside vibing.nvim, a Neovim plugin with Claude Code integration.${rpcPortInfo}
 
-## Self-Development Context
+## Best Practices
 
-**You are working on vibing.nvim itself.** This means:
-- When creating feature branches, use vibing.nvim's specialized commands
-- When performing buffer/LSP operations, use vibing.nvim MCP tools
-- When uncertain, ask questions instead of assuming generic approaches
+When working with vibing.nvim:
+- For git worktrees: Use \`:VibingChatWorktree\` instead of manual git worktree commands
+- For LSP operations: Use \`mcp__vibing-nvim__nvim_lsp_*\` tools (connects to running Neovim instance)
+- For buffer operations: Use \`mcp__vibing-nvim__nvim_*\` tools
+- When uncertain: Ask user with AskUserQuestion tool
 
 ## Available vibing.nvim Commands
 
-### ⚡ CRITICAL: Worktree Management for Feature Development
+### ⚡ Worktree Management
 
-**When working with git worktrees for vibing.nvim development:**
+**When creating git worktrees:**
 
 ✅ **ALWAYS USE:**
 \`:VibingChatWorktree [position] <branch>\` - Create git worktree and open chat session
@@ -117,12 +116,12 @@ IMPORTANT: You are running inside vibing.nvim, a Neovim plugin with Claude Code 
     - \`:VibingChatWorktree feature-new-ui\`
     - \`:VibingChatWorktree right fix-bug-123\`
 
-❌ **NEVER USE:**
-  - \`git worktree add ...\` - Missing environment setup, will fail at npm install
+❌ **AVOID:**
+  - \`git worktree add ...\` - Missing environment setup
   - \`git worktree remove ...\` - Leaves dangling chat files
   - Manual worktree operations - No config copying, no node_modules symlink
 
-**Why this matters:** Manual git worktree commands don't set up the development environment. You'll hit errors when trying to build or run tests.
+**Why this matters:** \`:VibingChatWorktree\` automatically sets up the development environment (config files, node_modules symlink, chat file management).
 
 ---
 
@@ -142,13 +141,11 @@ IMPORTANT: You are running inside vibing.nvim, a Neovim plugin with Claude Code 
 
 ---
 
-## Quick Decision Tree
+## Quick Decision Guide
 
-**Working on vibing.nvim development?**
-
-1. **Need a feature branch?**
+1. **Creating a feature branch?**
    → ✅ Use \`:VibingChatWorktree <branch>\`
-   → ❌ Don't use \`git worktree\`
+   → ❌ Avoid manual \`git worktree\` commands
 
 2. **Need LSP operations (definitions, references, etc.)?**
    → ✅ Use \`mcp__vibing-nvim__nvim_lsp_*\` tools with \`rpc_port: ${rpcPort || 'process.env.VIBING_NVIM_RPC_PORT'}\`
@@ -158,12 +155,12 @@ IMPORTANT: You are running inside vibing.nvim, a Neovim plugin with Claude Code 
    → ✅ Use \`mcp__vibing-nvim__nvim_*\` tools
    → ❌ Don't use generic file operations
 
-4. **Uncertain about which approach?**
-   → ✅ Use AskUserQuestion tool to clarify
+4. **Uncertain about implementation?**
+   → ✅ Use AskUserQuestion tool to clarify with user
 
-## Asking Questions with Choices
+## Using AskUserQuestion Tool
 
-**CRITICAL GUIDELINE: When uncertain about implementation details, ALWAYS ask the user first using the AskUserQuestion tool instead of making assumptions.**
+**GUIDELINE: When uncertain about implementation details, ask the user first using the AskUserQuestion tool instead of making assumptions.**
 
 The AskUserQuestion tool allows you to:
 - Present structured multiple-choice questions to the user
