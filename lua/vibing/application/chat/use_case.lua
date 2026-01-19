@@ -97,9 +97,10 @@ function M.create_new_for_worktree(worktree_path, branch_name)
     return M.create_new()
   end
 
+  -- worktree の相対パスを計算（task_ref として保存）
+  local task_ref = ".worktrees/" .. branch_name
+
   -- 新しいセッションを作成
-  -- NOTE: cwd is NOT saved to frontmatter (only exists in memory)
-  -- This prevents issues when reopening chat after worktree deletion
   local session = ChatSession:new({
     frontmatter = {
       ["vibing.nvim"] = true,
@@ -109,53 +110,10 @@ function M.create_new_for_worktree(worktree_path, branch_name)
       permission_mode = config.permissions and config.permissions.mode or "acceptEdits",
       permissions_allow = config.permissions and config.permissions.allow or {},
       permissions_deny = config.permissions and config.permissions.deny or {},
+      task_ref = task_ref, -- Save worktree relative path to frontmatter
     },
-    cwd = normalized_worktree,  -- Set cwd in memory only
-  })
-
-  -- ファイルパスをメインリポジトリ内の.vibing/worktrees/<branch>/に設定
-  local save_path = git_root .. "/.vibing/worktrees/" .. branch_name .. "/"
-  vim.fn.mkdir(save_path, "p")
-  local filename = os.date("chat-%Y%m%d-%H%M%S.vibing")
-  session:set_file_path(save_path .. filename)
-
-  M._current_session = session
-  return session
-end
-
----worktree用の新しいチャットセッションを作成
----チャットファイルはメインリポジトリの.vibing/worktrees/<branch>/に保存
----@param worktree_path string worktreeのパス
----@param branch_name string ブランチ名
----@return Vibing.ChatSession
-function M.create_new_for_worktree(worktree_path, branch_name)
-  local vibing = require("vibing")
-  local config = vibing.get_config()
-
-  -- worktreeのパスを正規化（cwdとして使用）
-  local normalized_worktree = vim.fn.fnamemodify(worktree_path, ":p"):gsub("/$", "")
-
-  -- メインリポジトリのルートを取得
-  local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
-  if vim.v.shell_error ~= 0 then
-    require("vibing.core.utils.notify").error("Failed to get git root", "Chat")
-    return M.create_new()
-  end
-
-  -- 新しいセッションを作成
-  -- NOTE: cwd is NOT saved to frontmatter (only exists in memory)
-  -- This prevents issues when reopening chat after worktree deletion
-  local session = ChatSession:new({
-    frontmatter = {
-      ["vibing.nvim"] = true,
-      created_at = os.date("%Y-%m-%dT%H:%M:%S"),
-      mode = config.agent and config.agent.default_mode or "code",
-      model = config.agent and config.agent.default_model or "sonnet",
-      permission_mode = config.permissions and config.permissions.mode or "acceptEdits",
-      permissions_allow = config.permissions and config.permissions.allow or {},
-      permissions_deny = config.permissions and config.permissions.deny or {},
-    },
-    cwd = normalized_worktree,  -- Set cwd in memory only
+    cwd = normalized_worktree,
+    task_ref = task_ref,
   })
 
   -- ファイルパスをメインリポジトリ内の.vibing/worktrees/<branch>/に設定
