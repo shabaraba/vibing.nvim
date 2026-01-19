@@ -27,6 +27,16 @@ require("vibing").setup({
     open_diff = "gd",  -- Open diff viewer on file paths
     open_file = "gf",  -- Open file on file paths
   },
+  diff = {
+    tool = "auto",  -- "git" | "mote" | "auto"
+    -- "git": Always use git diff
+    -- "mote": Always use mote diff (requires mote: https://github.com/shabaraba/mote)
+    -- "auto": Use mote if available and initialized, otherwise fallback to git
+    mote = {
+      ignore_file = ".vibing/.moteignore",  -- Path to .moteignore file
+      storage_dir = ".vibing/mote",  -- Path to mote storage directory
+    },
+  },
   permissions = {
     mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
     allow = { "Read", "Edit", "Write", "Glob", "Grep" },
@@ -112,3 +122,70 @@ require("vibing").setup({
   },
 })
 ```
+
+## Diff Tool Configuration
+
+vibing.nvim supports multiple diff tools for displaying file changes:
+
+### Tool Options
+
+- **`git`**: Always use `git diff` (default behavior, requires git repository)
+- **`mote`**: Always use `mote diff` (requires [mote](https://github.com/shabaraba/mote) to be installed and initialized)
+- **`auto`**: Automatically select the best available tool (mote preferred, fallback to git)
+
+### mote Integration
+
+[mote](https://github.com/shabaraba/mote) is a fine-grained snapshot management tool that provides richer diff capabilities than git. It tracks changes at a more granular level than git commits.
+
+**Installation:**
+
+```bash
+# Homebrew (macOS / Linux)
+brew tap shabaraba/tap
+brew install mote
+
+# Or from source
+cargo install --path .
+```
+
+**Setup:**
+
+```bash
+# Initialize mote in your project
+mote init
+
+# Create snapshots (automatically or manually)
+mote snapshot -m "Before refactoring"
+```
+
+**Configuration:**
+
+```lua
+require("vibing").setup({
+  diff = {
+    tool = "auto",  -- Automatically use mote if available
+    mote = {
+      ignore_file = ".vibing/.moteignore",
+      storage_dir = ".vibing/mote",
+    },
+  },
+})
+```
+
+**Important:** All mote commands use the specified `--ignore-file` and `--storage-dir` options to keep mote data separate from your main project. This prevents interference with your regular mote workflow.
+
+**Behavior:**
+
+- When you press `gd` on a file path in chat, vibing.nvim will:
+  1. Check for patch files (if using Agent SDK patch mode)
+  2. If no patch files, use the configured diff tool:
+     - `auto`: Use mote if installed and initialized, otherwise git
+     - `mote`: Always use mote (shows error if not available)
+     - `git`: Always use git diff
+
+**Benefits of mote:**
+
+- Fine-grained snapshots (more granular than git commits)
+- Content-addressable storage with efficient deduplication
+- Works alongside git without conflicts
+- Automatic snapshot creation via hooks (Claude Code, git, jj)

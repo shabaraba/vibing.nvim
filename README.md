@@ -131,6 +131,8 @@ Run multiple AI tasks simultaneously:
 - **🎯 Smart Context** - Automatic file context detection from open buffers and manual additions
 - **🌍 Multi-language Support** - Configure different languages for chat and inline actions
 - **📊 Diff Viewer** - Visual diff display for AI-edited files with `gd` keybinding
+  - Supports both `git diff` and [mote](https://github.com/shabaraba/mote) (fine-grained snapshot tool)
+  - Auto-detection: Uses mote if available, fallback to git
 - **⚙️ Highly Configurable** - Flexible modes, models, permissions, and UI settings
 
 ## 🔄 How It Differs
