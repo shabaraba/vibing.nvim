@@ -1,3 +1,15 @@
+---@class Vibing.MoteConfig
+---mote統合設定
+---fine-grainedスナップショット管理ツールmoteとの統合を制御
+---@field ignore_file string .moteignoreファイルのパス（デフォルト: ".vibing/.moteignore"）
+---@field storage_dir string moteストレージディレクトリのパス（デフォルト: ".vibing/mote"）
+
+---@class Vibing.DiffConfig
+---diff表示設定
+---ファイル変更のdiff表示に使用するツールを制御
+---@field tool "git"|"mote"|"auto" 使用するdiffツール（"git": git diff、"mote": mote diff、"auto": mote優先で自動選択）
+---@field mote Vibing.MoteConfig mote固有の設定
+
 ---@class Vibing.PreviewConfig
 ---プレビューUI設定
 ---インラインアクションとチャットの両方で使用されるdiffプレビューUIを制御
@@ -24,6 +36,7 @@
 ---@field chat Vibing.ChatConfig チャットウィンドウ設定（位置、サイズ、自動コンテキスト、保存先）
 ---@field ui Vibing.UiConfig UI設定（wrap等）
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
+---@field diff Vibing.DiffConfig diff表示設定（使用ツール、mote設定）
 ---@field preview Vibing.PreviewConfig プレビューUI設定（diffプレビュー有効化）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
 ---@field node Vibing.NodeConfig Node.js実行ファイル設定（バイナリパス）
@@ -145,6 +158,13 @@ M.defaults = {
     add_context = "<C-a>",
     open_diff = "gd",
     open_file = "gf",
+  },
+  diff = {
+    tool = "auto",
+    mote = {
+      ignore_file = ".vibing/.moteignore",
+      storage_dir = ".vibing/mote",
+    },
   },
   preview = {
     enabled = false,
@@ -274,6 +294,15 @@ function M.setup(opts)
       { none = true, compact = true, full = true },
       "ui.tool_result_display",
       "compact"
+    )
+  end
+
+  if M.options.diff then
+    M.options.diff.tool = validate_enum(
+      M.options.diff.tool,
+      { git = true, mote = true, auto = true },
+      "diff.tool",
+      "auto"
     )
   end
 

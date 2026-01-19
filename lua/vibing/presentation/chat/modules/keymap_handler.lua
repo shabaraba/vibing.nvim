@@ -56,9 +56,9 @@ function M.setup(buf, callbacks, keymaps)
         -- patchファイルから該当ファイルのdiffを表示
         PatchViewer.show(session_id, patch_filename, file_path)
       else
-        -- patchがない場合は通常のgit diffを表示
-        local GitDiff = require("vibing.core.utils.git_diff")
-        GitDiff.show_diff(file_path)
+        -- patchがない場合は設定に基づいてdiffツールを選択
+        local DiffSelector = require("vibing.core.utils.diff_selector")
+        DiffSelector.show_diff(file_path)
       end
     end, { buffer = buf, desc = "Open diff for file under cursor" })
 
