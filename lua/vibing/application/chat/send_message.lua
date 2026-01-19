@@ -192,7 +192,12 @@ function M._handle_response(response, callbacks, adapter, patch_filename, config
         local patch_path = string.format(".vibing/patches/%s/%s.patch", session_id, timestamp)
 
         MoteDiff.generate_patch(config.diff.mote, patch_path, function(patch_success, patch_error)
-          if not patch_success then
+          if patch_success then
+            -- Patch generation succeeded, append marker
+            vim.schedule(function()
+              callbacks.append_chunk("\n<!-- patch: " .. patch_path .. " -->\n")
+            end)
+          else
             vim.notify("[vibing] Patch generation failed: " .. (patch_error or "Unknown error"), vim.log.levels.WARN)
           end
         end)
@@ -204,8 +209,6 @@ function M._handle_response(response, callbacks, adapter, patch_filename, config
         for _, file_path in ipairs(files) do
           callbacks.append_chunk(file_path .. "\n")
         end
-
-        callbacks.append_chunk("\n<!-- patch: " .. patch_path .. " -->\n")
       elseif not success then
         vim.notify("[vibing] Failed to get changed files: " .. (error or "Unknown error"), vim.log.levels.WARN)
       end

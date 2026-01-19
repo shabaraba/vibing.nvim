@@ -12,7 +12,7 @@ function M.get_mote_path()
 
   -- vibing.nvim同梱のmoteバイナリを探す
   local script_path = debug.getinfo(1, "S").source:sub(2)
-  local plugin_root = vim.fn.fnamemodify(script_path, ":h:h:h:h")
+  local plugin_root = vim.fn.fnamemodify(script_path, ":h:h:h:h:h")
 
   -- プラットフォーム検出
   local platform = vim.loop.os_uname().sysname:lower()

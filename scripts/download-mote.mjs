@@ -8,10 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { spawn } from 'child_process';
 
 const MOTE_VERSION = 'v0.1.1';
 const MOTE_REPO = 'shabaraba/mote';
@@ -39,13 +36,23 @@ function getAssetName(platformKey) {
   return `mote-${MOTE_VERSION}-${target}.tar.gz`;
 }
 
-function downloadFile(url) {
+function downloadFile(url, maxRedirects = 5, redirectCount = 0) {
   return new Promise((resolve, reject) => {
     https
       .get(url, { headers: { 'User-Agent': 'vibing.nvim' } }, (res) => {
         if (res.statusCode === 302 || res.statusCode === 301) {
           // Follow redirect
-          downloadFile(res.headers.location).then(resolve).catch(reject);
+          if (redirectCount >= maxRedirects) {
+            reject(new Error(`Too many redirects (max: ${maxRedirects})`));
+            return;
+          }
+          if (!res.headers.location) {
+            reject(new Error('Redirect without Location header'));
+            return;
+          }
+          downloadFile(res.headers.location, maxRedirects, redirectCount + 1)
+            .then(resolve)
+            .catch(reject);
           return;
         }
         if (res.statusCode !== 200) {
@@ -86,19 +93,51 @@ async function downloadAndExtract(platformKey) {
     fileStream.on('error', reject);
   });
 
-  // Extract using tar command
-  await execAsync(`tar -xzf "${tarPath}" -C "${tmpDir}"`);
+  // Extract using tar command (safe with argument array)
+  await new Promise((resolve, reject) => {
+    const tar = spawn('tar', ['-xzf', tarPath, '-C', tmpDir]);
+    tar.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`tar extraction failed with code ${code}`));
+      } else {
+        resolve();
+      }
+    });
+    tar.on('error', reject);
+  });
 
-  // Find mote binary
-  const { stdout } = await execAsync(`find "${tmpDir}" -name mote -type f`);
-  const motePath = stdout.trim().split('\n')[0];
+  // Find mote binary using recursive directory walk
+  function findMoteRecursive(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const found = findMoteRecursive(fullPath);
+        if (found) return found;
+      } else if (entry.name === 'mote') {
+        return fullPath;
+      }
+    }
+    return null;
+  }
 
+  const motePath = findMoteRecursive(tmpDir);
   if (!motePath || !fs.existsSync(motePath)) {
     throw new Error('mote binary not found in tar.gz');
   }
 
-  // Move to final location
-  fs.renameSync(motePath, outputPath);
+  // Move to final location with cross-filesystem fallback
+  try {
+    fs.renameSync(motePath, outputPath);
+  } catch (err) {
+    // Cross-filesystem move: copy then unlink
+    if (err.code === 'EXDEV') {
+      fs.copyFileSync(motePath, outputPath);
+      fs.unlinkSync(motePath);
+    } else {
+      throw err;
+    }
+  }
   fs.chmodSync(outputPath, 0o755);
 
   // Cleanup

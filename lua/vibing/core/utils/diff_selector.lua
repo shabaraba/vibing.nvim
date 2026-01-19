@@ -9,7 +9,13 @@ function M.select_tool(config)
   if config.tool == "git" then
     return "git"
   elseif config.tool == "mote" then
-    return "mote"
+    -- mote指定でも可用性をチェック
+    local MoteDiff = require("vibing.core.utils.mote_diff")
+    if MoteDiff.is_available() and MoteDiff.is_initialized() then
+      return "mote"
+    else
+      return "git"
+    end
   elseif config.tool == "auto" then
     local MoteDiff = require("vibing.core.utils.mote_diff")
     if MoteDiff.is_available() and MoteDiff.is_initialized() then
