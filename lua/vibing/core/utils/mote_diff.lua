@@ -2,10 +2,47 @@
 ---mote diff表示のユーティリティ
 local M = {}
 
+---プラットフォームに応じたmoteバイナリパスを取得
+---@return string|nil moteバイナリのパス（見つからない場合nil）
+function M.get_mote_path()
+  -- まずPATHからmoteを探す
+  if vim.fn.executable("mote") == 1 then
+    return "mote"
+  end
+
+  -- vibing.nvim同梱のmoteバイナリを探す
+  local script_path = debug.getinfo(1, "S").source:sub(2)
+  local plugin_root = vim.fn.fnamemodify(script_path, ":h:h:h:h")
+
+  -- プラットフォーム検出
+  local platform = vim.loop.os_uname().sysname:lower()
+  local arch = vim.loop.os_uname().machine:lower()
+
+  local platform_map = {
+    ["darwin-arm64"] = "darwin-arm64",
+    ["darwin-aarch64"] = "darwin-arm64",
+    ["darwin-x86_64"] = "darwin-x64",
+    ["linux-aarch64"] = "linux-arm64",
+    ["linux-x86_64"] = "linux-x64",
+  }
+
+  local platform_key = platform_map[platform .. "-" .. arch]
+  if not platform_key then
+    return nil
+  end
+
+  local bundled_mote = plugin_root .. "/bin/mote-" .. platform_key
+  if vim.fn.executable(bundled_mote) == 1 then
+    return bundled_mote
+  end
+
+  return nil
+end
+
 ---moteが利用可能かチェック
 ---@return boolean moteが実行可能な場合true
 function M.is_available()
-  return vim.fn.executable("mote") == 1
+  return M.get_mote_path() ~= nil
 end
 
 ---moteが初期化されているかチェック
@@ -23,11 +60,17 @@ end
 ---@param config Vibing.MoteConfig mote設定
 ---@param callback fun(success: boolean, output: string?, error: string?) コールバック関数
 function M.get_diff(file_path, config, callback)
+  local mote_path = M.get_mote_path()
+  if not mote_path then
+    callback(false, nil, "mote binary not found")
+    return
+  end
+
   local normalized_path = vim.fn.fnamemodify(file_path, ":p")
 
   -- moteのグローバルオプションは必ずサブコマンドの前に指定
   local cmd = {
-    "mote",
+    mote_path,
     "--ignore-file",
     config.ignore_file,
     "--storage-dir",
