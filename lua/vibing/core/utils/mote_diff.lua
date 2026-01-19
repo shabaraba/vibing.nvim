@@ -3,14 +3,10 @@
 local M = {}
 
 ---プラットフォームに応じたmoteバイナリパスを取得
+---vibing.nvim同梱のバイナリを優先的に使用し、見つからない場合のみPATHから探す
 ---@return string|nil moteバイナリのパス（見つからない場合nil）
 function M.get_mote_path()
-  -- まずPATHからmoteを探す
-  if vim.fn.executable("mote") == 1 then
-    return "mote"
-  end
-
-  -- vibing.nvim同梱のmoteバイナリを探す
+  -- vibing.nvim同梱のmoteバイナリを優先的に探す
   local script_path = debug.getinfo(1, "S").source:sub(2)
   local plugin_root = vim.fn.fnamemodify(script_path, ":h:h:h:h:h")
 
@@ -27,13 +23,16 @@ function M.get_mote_path()
   }
 
   local platform_key = platform_map[platform .. "-" .. arch]
-  if not platform_key then
-    return nil
+  if platform_key then
+    local bundled_mote = plugin_root .. "/bin/mote-" .. platform_key
+    if vim.fn.executable(bundled_mote) == 1 then
+      return bundled_mote
+    end
   end
 
-  local bundled_mote = plugin_root .. "/bin/mote-" .. platform_key
-  if vim.fn.executable(bundled_mote) == 1 then
-    return bundled_mote
+  -- 同梱バイナリが見つからない場合のみPATHから探す
+  if vim.fn.executable("mote") == 1 then
+    return "mote"
   end
 
   return nil

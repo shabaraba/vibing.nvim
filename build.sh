@@ -55,6 +55,15 @@ npm install --silent
 echo "[vibing.nvim] Building bin/ files..."
 npm run build
 
+# Download mote binaries for all platforms
+echo "[vibing.nvim] Downloading mote binaries..."
+"$NODE_EXECUTABLE" scripts/download-mote.mjs
+if [ $? -ne 0 ]; then
+    echo "[vibing.nvim] ⚠ Warning: mote binary download failed"
+    echo "[vibing.nvim] mote integration will not be available"
+    echo "[vibing.nvim] You can manually download by running: node scripts/download-mote.mjs"
+fi
+
 # Build MCP server
 cd "$MCP_DIR"
 

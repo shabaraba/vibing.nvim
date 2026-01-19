@@ -148,11 +148,35 @@ brew install mote
 cargo install --path .
 ```
 
+**Binary Installation:**
+
+vibing.nvim automatically downloads and bundles platform-specific mote binaries during installation:
+
+```lua
+-- Lazy.nvim
+{
+  "yourusername/vibing.nvim",
+  build = "./build.sh",  -- Automatically downloads mote binaries
+}
+```
+
+The `build.sh` script downloads mote binaries for all supported platforms:
+
+- `bin/mote-darwin-arm64` (macOS Apple Silicon)
+- `bin/mote-darwin-x64` (macOS Intel)
+- `bin/mote-linux-arm64` (Linux ARM64)
+- `bin/mote-linux-x64` (Linux x64)
+
+**Priority:** vibing.nvim uses its bundled mote binary preferentially, falling back to system `mote` only if the bundled binary is unavailable.
+
 **Setup:**
 
 ```bash
-# Initialize mote in your project
+# Initialize mote in your project (using vibing.nvim's bundled binary)
 mote init
+
+# Or initialize in vibing.nvim's storage directory
+mote --storage-dir .vibing/mote init
 
 # Create snapshots (automatically or manually)
 mote snapshot -m "Before refactoring"
