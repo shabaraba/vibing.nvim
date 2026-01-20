@@ -6,9 +6,6 @@
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { existsSync } from 'fs';
-import { readFile } from 'fs/promises';
-import { homedir } from 'os';
-import { join } from 'path';
 
 import { parseArguments } from './lib/args-parser.js';
 import { createCanUseToolCallback } from './lib/permissions/can-use-tool.js';
@@ -16,72 +13,6 @@ import { loadInstalledPlugins } from './lib/plugin-loader.js';
 import { buildPrompt } from './lib/prompt-builder.js';
 import { processStream } from './lib/stream-processor.js';
 import { safeJsonStringify, toError } from './lib/utils.js';
-
-function buildSessionFilePath(sessionId: string, cwd: string): string {
-  const normalizedCwd = cwd.replace(/\//g, '-').replace(/^-/, '');
-  const sessionDir = join(homedir(), '.claude', 'projects', normalizedCwd);
-  return join(sessionDir, `${sessionId}.jsonl`);
-}
-
-function parseSessionLine(line: string): { type?: string } | null {
-  if (!line.trim()) {
-    return null;
-  }
-  return JSON.parse(line);
-}
-
-function hasConversationMessage(lines: string[]): boolean {
-  for (const line of lines) {
-    const parsed = parseSessionLine(line);
-    if (parsed && (parsed.type === 'user' || parsed.type === 'assistant')) {
-      return true;
-    }
-  }
-  return false;
-}
-
-async function validateSessionFile(
-  sessionId: string,
-  cwd: string
-): Promise<{ valid: boolean; reason?: string }> {
-  const sessionFile = buildSessionFilePath(sessionId, cwd);
-
-  if (!existsSync(sessionFile)) {
-    return { valid: false, reason: 'session_file_not_found' };
-  }
-
-  let content: string;
-  try {
-    content = await readFile(sessionFile, 'utf8');
-  } catch (error) {
-    const err = error as Error;
-    return { valid: false, reason: `read_error: ${err.message}` };
-  }
-
-  const lines = content.trim().split('\n');
-  if (lines.length < 1) {
-    return { valid: false, reason: 'session_file_empty' };
-  }
-
-  let lineNumber = 0;
-  for (const line of lines) {
-    lineNumber++;
-    if (!line.trim()) {
-      continue;
-    }
-    try {
-      JSON.parse(line);
-    } catch {
-      return { valid: false, reason: `json_parse_error_at_line_${lineNumber}` };
-    }
-  }
-
-  if (!hasConversationMessage(lines)) {
-    return { valid: false, reason: 'no_conversation_messages' };
-  }
-
-  return { valid: true };
-}
 
 function detectWorktreeId(cwd: string): string {
   try {
@@ -196,20 +127,7 @@ if (installedPlugins.length > 0) {
 
 if (config.sessionId) {
   cleanupSessionTags(config.sessionId, config.cwd);
-
-  const validation = await validateSessionFile(config.sessionId, config.cwd);
-
-  if (validation.valid) {
-    queryOptions.resume = config.sessionId;
-  } else {
-    console.log(
-      JSON.stringify({
-        type: 'session_corrupted',
-        old_session_id: config.sessionId,
-        reason: validation.reason,
-      })
-    );
-  }
+  queryOptions.resume = config.sessionId;
 }
 
 try {
