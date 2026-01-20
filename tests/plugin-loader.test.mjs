@@ -6,7 +6,7 @@
 import { strict as assert } from 'assert';
 import { mkdir, writeFile, rm, mkdtemp } from 'fs/promises';
 import { join } from 'path';
-import { tmpdir, homedir } from 'os';
+import { tmpdir } from 'os';
 
 // We need to mock homedir for testing, so we'll test the logic directly
 // by creating a temporary directory structure
@@ -19,26 +19,6 @@ function createMockPluginsFile(plugins) {
     version: 2,
     plugins,
   });
-}
-
-/**
- * Test helper to run plugin loader with a custom plugins file
- */
-async function testPluginLoader(tempDir, pluginsContent) {
-  const pluginsDir = join(tempDir, '.claude', 'plugins');
-  await mkdir(pluginsDir, { recursive: true });
-
-  if (pluginsContent !== null) {
-    await writeFile(join(pluginsDir, 'installed_plugins.json'), pluginsContent);
-  }
-
-  // Import fresh module each time
-  const timestamp = Date.now();
-  const module = await import(`../bin/lib/plugin-loader.js?t=${timestamp}`);
-
-  // Override homedir for testing by modifying the environment
-  // Since we can't easily mock homedir, we'll test the parsing logic separately
-  return module;
 }
 
 // Test 1: Parse valid plugin structure
