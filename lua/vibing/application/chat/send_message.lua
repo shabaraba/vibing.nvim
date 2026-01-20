@@ -35,18 +35,47 @@ function M.execute(adapter, callbacks, message, config)
     return
   end
 
+  -- Create session-specific mote storage
+  local mote_config = nil
+  if config.diff and config.diff.mote then
+    mote_config = vim.deepcopy(config.diff.mote)
+    local session_id = callbacks.get_session_id()
+
+    if session_id then
+      -- Use session-specific storage directory to isolate concurrent chats
+      mote_config.storage_dir = string.format(".vibing/mote/%s", session_id)
+    end
+  end
+
   -- mote統合: リクエスト前にスナップショット取得
-  if config.diff and (config.diff.tool == "mote" or config.diff.tool == "auto") then
+  if config.diff and (config.diff.tool == "mote" or config.diff.tool == "auto") and mote_config then
     local MoteDiff = require("vibing.core.utils.mote_diff")
     local DiffSelector = require("vibing.core.utils.diff_selector")
 
     if DiffSelector.select_tool(config.diff) == "mote" then
-      MoteDiff.create_snapshot(config.diff.mote, "Before request", function(success, snapshot_id, error)
-        if not success and error and not error:match("No changes to snapshot") then
-          -- エラーでもリクエストは続行（スナップショット失敗は致命的エラーではない）
-          vim.notify("[vibing] Snapshot creation failed: " .. error, vim.log.levels.WARN)
-        end
-      end)
+      -- Initialize mote storage if not already done
+      if not MoteDiff.is_initialized(nil, mote_config.storage_dir) then
+        MoteDiff.initialize(mote_config, function(init_success, init_error)
+          if not init_success then
+            vim.notify("[vibing] mote initialization failed: " .. (init_error or "Unknown error"), vim.log.levels.WARN)
+            return
+          end
+
+          -- Create snapshot after successful initialization
+          MoteDiff.create_snapshot(mote_config, "Before request", function(success, snapshot_id, error)
+            if not success and error and not error:match("No changes to snapshot") then
+              vim.notify("[vibing] Snapshot creation failed: " .. error, vim.log.levels.WARN)
+            end
+          end)
+        end)
+      else
+        -- Storage already initialized, just create snapshot
+        MoteDiff.create_snapshot(mote_config, "Before request", function(success, snapshot_id, error)
+          if not success and error and not error:match("No changes to snapshot") then
+            vim.notify("[vibing] Snapshot creation failed: " .. error, vim.log.levels.WARN)
+          end
+        end)
+      end
     end
   end
 
@@ -141,12 +170,12 @@ function M.execute(adapter, callbacks, message, config)
       end)
     end, function(response)
       vim.schedule(function()
-        M._handle_response(response, callbacks, adapter, patch_filename, config)
+        M._handle_response(response, callbacks, adapter, patch_filename, config, mote_config)
       end)
     end)
   else
     local response = adapter:execute(formatted_prompt, opts)
-    M._handle_response(response, callbacks, adapter, patch_filename, config)
+    M._handle_response(response, callbacks, adapter, patch_filename, config, mote_config)
   end
 
   return handle_id
@@ -161,7 +190,7 @@ local function is_session_error(error_msg)
 end
 
 ---レスポンスを処理
-function M._handle_response(response, callbacks, adapter, patch_filename, config)
+function M._handle_response(response, callbacks, adapter, patch_filename, config, mote_config)
   -- Stop gradient animation
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
@@ -192,16 +221,16 @@ function M._handle_response(response, callbacks, adapter, patch_filename, config
     using_mote = DiffSelector.select_tool(config.diff) == "mote"
   end
 
-  if using_mote then
+  if using_mote and mote_config then
     local MoteDiff = require("vibing.core.utils.mote_diff")
-    MoteDiff.get_changed_files(config.diff.mote, function(success, files, error)
+    MoteDiff.get_changed_files(mote_config, function(success, files, error)
       if success and files and #files > 0 then
-        -- Patch生成
+        -- Patch生成（mote storage配下に保存）
         local session_id = callbacks.get_session_id() or "unknown"
         local timestamp = os.date("%Y%m%d_%H%M%S")
-        local patch_path = string.format(".vibing/patches/%s/%s.patch", session_id, timestamp)
+        local patch_path = string.format(".vibing/mote/%s/patches/%s.patch", session_id, timestamp)
 
-        MoteDiff.generate_patch(config.diff.mote, patch_path, function(patch_success, patch_error)
+        MoteDiff.generate_patch(mote_config, patch_path, function(patch_success, patch_error)
           if not patch_success then
             vim.notify("[vibing] Patch generation failed: " .. (patch_error or "Unknown error"), vim.log.levels.WARN)
           end

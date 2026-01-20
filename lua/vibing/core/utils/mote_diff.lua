@@ -53,10 +53,19 @@ function M.is_initialized(cwd, storage_dir)
 
   -- 設定されたstorage_dirを優先的にチェック
   if storage_dir then
-    local configured_storage = vim.fn.finddir(storage_dir, cwd .. ";")
-    if configured_storage ~= "" then
-      return true
-    end
+    -- 絶対パスに変換
+    local abs_storage_dir = vim.fn.fnamemodify(storage_dir, ":p")
+    -- 末尾のスラッシュを削除
+    abs_storage_dir = abs_storage_dir:gsub("/$", "")
+
+    -- snapshotsとobjectsディレクトリの絶対パスをチェック
+    local snapshots_dir = abs_storage_dir .. "/snapshots"
+    local objects_dir = abs_storage_dir .. "/objects"
+
+    local snapshots_exists = vim.fn.isdirectory(snapshots_dir) == 1
+    local objects_exists = vim.fn.isdirectory(objects_dir) == 1
+
+    return snapshots_exists and objects_exists
   end
 
   -- レガシーパスもチェック（下位互換性）
@@ -145,6 +154,50 @@ function M.show_diff(file_path, config)
     vim.keymap.set("n", "<Esc>", function()
       vim.api.nvim_buf_delete(buf, { force = true })
     end, { buffer = buf, noremap = true, silent = true })
+  end)
+end
+
+---mote storageを初期化
+---@param config Vibing.MoteConfig mote設定
+---@param callback fun(success: boolean, error: string?) コールバック関数
+function M.initialize(config, callback)
+  local mote_path = M.get_mote_path()
+  if not mote_path then
+    callback(false, "mote binary not found")
+    return
+  end
+
+  -- storage_dirが既に存在する場合はスキップ
+  if M.is_initialized(nil, config.storage_dir) then
+    callback(true, nil)
+    return
+  end
+
+  -- mote init自体がディレクトリを作成するため、明示的なmkdirは不要
+  -- ただし、親ディレクトリ（.vibing/mote/）は必要
+  local storage_dir = config.storage_dir
+  local parent_dir = vim.fn.fnamemodify(storage_dir, ":h")
+  vim.fn.mkdir(parent_dir, "p")
+
+  local cmd = {
+    mote_path,
+    "--ignore-file",
+    config.ignore_file,
+    "--storage-dir",
+    storage_dir,
+    "init",
+  }
+
+  vim.system(cmd, { text = true }, function(obj)
+    vim.schedule(function()
+      if obj.code ~= 0 then
+        local error_msg = obj.stderr or "Unknown error"
+        callback(false, error_msg)
+        return
+      end
+
+      callback(true, nil)
+    end)
   end)
 end
 
