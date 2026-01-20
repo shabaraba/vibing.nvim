@@ -41,7 +41,7 @@ local function validate_branch_name(branch_name)
   end
   -- パストラバーサルを防止（..を含む名前を拒否）
   -- スラッシュは一般的なブランチ命名規則（feature/xxx）で使用されるため許可
-  -- 実際のパストラバーサル防止は後続の正規化チェック（52-59行目）で行う
+  -- 実際のパストラバーサル防止は後続の正規化チェック（72-80行目）で行う
   if branch_name:match("%.%.") or branch_name:match("\\") then
     return false
   end
