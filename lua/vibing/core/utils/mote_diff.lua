@@ -49,26 +49,26 @@ end
 ---@param storage_dir string? moteストレージディレクトリ（設定から渡される）
 ---@return boolean moteが初期化されている場合true
 function M.is_initialized(cwd, storage_dir)
-  cwd = cwd or vim.fn.getcwd()
-
-  -- 設定されたstorage_dirを優先的にチェック
   if storage_dir then
-    -- 絶対パスに変換
-    local abs_storage_dir = vim.fn.fnamemodify(storage_dir, ":p")
-    -- 末尾のスラッシュを削除
-    abs_storage_dir = abs_storage_dir:gsub("/$", "")
-
-    -- snapshotsとobjectsディレクトリの絶対パスをチェック
-    local snapshots_dir = abs_storage_dir .. "/snapshots"
-    local objects_dir = abs_storage_dir .. "/objects"
-
-    local snapshots_exists = vim.fn.isdirectory(snapshots_dir) == 1
-    local objects_exists = vim.fn.isdirectory(objects_dir) == 1
-
-    return snapshots_exists and objects_exists
+    return M._check_storage_dir_initialized(storage_dir)
   end
+  return M._check_legacy_paths(cwd or vim.fn.getcwd())
+end
 
-  -- レガシーパスもチェック（下位互換性）
+---指定されたstorage_dirが初期化済みかチェック
+---@param storage_dir string moteストレージディレクトリ
+---@return boolean
+function M._check_storage_dir_initialized(storage_dir)
+  local abs_path = vim.fn.fnamemodify(storage_dir, ":p"):gsub("/$", "")
+  local has_snapshots = vim.fn.isdirectory(abs_path .. "/snapshots") == 1
+  local has_objects = vim.fn.isdirectory(abs_path .. "/objects") == 1
+  return has_snapshots and has_objects
+end
+
+---レガシーパス（.mote, .git/mote）をチェック
+---@param cwd string チェックするディレクトリ
+---@return boolean
+function M._check_legacy_paths(cwd)
   local mote_dir = vim.fn.finddir(".mote", cwd .. ";")
   local git_mote_dir = vim.fn.finddir(".git/mote", cwd .. ";")
   return mote_dir ~= "" or git_mote_dir ~= ""
