@@ -29,10 +29,20 @@ local state = {
 
 ---patchの内容を2パネル構成で表示
 ---@param session_id string セッションID
----@param patch_filename string patchファイル名
+---@param patch_filename string patchファイル名（相対パスまたはファイル名のみ）
 ---@param target_file? string 初期選択するファイル（オプション）
 function M.show(session_id, patch_filename, target_file)
-  local patch_content = PatchStorage.read(session_id, patch_filename)
+  local patch_content
+
+  -- フルパス（相対パス）が渡された場合はそのまま読む
+  if patch_filename:match("^%.?%.?/") or patch_filename:match("^%.vibing/") then
+    if vim.fn.filereadable(patch_filename) == 1 then
+      patch_content = table.concat(vim.fn.readfile(patch_filename), "\n")
+    end
+  else
+    -- ファイル名のみの場合はPatchStorageを使う
+    patch_content = PatchStorage.read(session_id, patch_filename)
+  end
 
   if not patch_content or patch_content == "" then
     vim.notify("Patch file not found or empty", vim.log.levels.WARN)
@@ -81,8 +91,8 @@ function M._extract_files_from_patch(patch_content)
   local cwd_without_slash = cwd:sub(2)
 
   for line in patch_content:gmatch("[^\r\n]+") do
-    -- diff --git a/path b/path 形式
-    local file = line:match("^diff %-%-git a/(.+) b/")
+    -- diff --git a/path b/path 形式 または diff --mote a/path b/path 形式
+    local file = line:match("^diff %-%-git a/(.+) b/") or line:match("^diff %-%-mote a/(.+) b/")
     if file then
       -- git diff --no-index の出力形式: a/Users/... (先頭/なしの絶対パス風)
       -- cwdを含む場合は相対パスに変換
@@ -414,8 +424,8 @@ function M.extract_file_diff(patch_content, target_file)
   local cwd_without_slash = cwd:sub(2)
 
   for _, line in ipairs(lines) do
-    -- diff --git a/path b/path の行を探す
-    local diff_file = line:match("^diff %-%-git a/(.+) b/")
+    -- diff --git a/path b/path または diff --mote a/path b/path の行を探す
+    local diff_file = line:match("^diff %-%-git a/(.+) b/") or line:match("^diff %-%-mote a/(.+) b/")
     if diff_file then
       -- git diff --no-index の出力形式に対応
       local diff_normalized = diff_file

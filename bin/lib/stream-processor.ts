@@ -156,6 +156,23 @@ export async function processStream(
         }
       }
       patchStorage.clear();
+
+      if (message.subtype === 'error_max_turns') {
+        emit({ type: 'error', message: 'Max turns reached' });
+      }
+    }
+
+    if (message.type === 'error') {
+      const errorMessage = message.error?.message || message.message || 'Unknown error';
+      if (errorMessage.includes('No conversation found') || errorMessage.includes('session')) {
+        emit({
+          type: 'session_corrupted',
+          old_session_id: sessionId,
+          reason: 'sdk_session_not_found',
+        });
+      } else {
+        emit({ type: 'error', message: errorMessage });
+      }
     }
   }
 

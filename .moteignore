@@ -1,0 +1,38 @@
+# Mote ignore file
+# Uses gitignore syntax
+
+# Dependencies
+node_modules/
+vendor/
+.venv/
+venv/
+__pycache__/
+
+# Build outputs
+target/
+dist/
+build/
+*.o
+*.a
+*.so
+*.dylib
+
+# IDE and editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
