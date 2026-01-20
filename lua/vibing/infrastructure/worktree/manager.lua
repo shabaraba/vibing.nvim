@@ -39,8 +39,10 @@ local function validate_branch_name(branch_name)
   if not branch_name or branch_name == "" then
     return false
   end
-  -- パストラバーサルを防止（..や/を含む名前を拒否）
-  if branch_name:match("%.%.") or branch_name:match("/") or branch_name:match("\\") then
+  -- パストラバーサルを防止（..を含む名前を拒否）
+  -- スラッシュは一般的なブランチ命名規則（feature/xxx）で使用されるため許可
+  -- 実際のパストラバーサル防止は後続の正規化チェック（52-59行目）で行う
+  if branch_name:match("%.%.") or branch_name:match("\\") then
     return false
   end
   return true
