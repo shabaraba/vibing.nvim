@@ -172,15 +172,14 @@ The `build.sh` script downloads mote binaries for all supported platforms:
 **Setup:**
 
 ```bash
-# Initialize mote in your project (using vibing.nvim's bundled binary)
-mote init
-
-# Or initialize in vibing.nvim's storage directory
+# Initialize mote in vibing.nvim's storage directory (matches storage_dir config)
 mote --storage-dir .vibing/mote init
 
 # Create snapshots (automatically or manually)
-mote snapshot -m "Before refactoring"
+mote --storage-dir .vibing/mote snapshot -m "Before refactoring"
 ```
+
+**Note:** Running `mote init` without `--storage-dir` uses mote's default storage location (`.mote/` in project root), which does NOT match vibing.nvim's configured `storage_dir = ".vibing/mote"`. Always use `--storage-dir .vibing/mote` to ensure mote commands work with vibing.nvim's configuration.
 
 **Configuration:**
 

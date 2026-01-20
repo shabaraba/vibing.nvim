@@ -13,7 +13,7 @@ function M.select_tool(config)
   -- "mote" または "auto" の場合は可用性をチェック
   if config.tool == "mote" or config.tool == "auto" then
     local MoteDiff = require("vibing.core.utils.mote_diff")
-    if MoteDiff.is_available() and MoteDiff.is_initialized() then
+    if MoteDiff.is_available() and MoteDiff.is_initialized(nil, config.mote.storage_dir) then
       return "mote"
     end
   end

@@ -46,9 +46,20 @@ end
 
 ---moteが初期化されているかチェック
 ---@param cwd string? チェックするディレクトリ（デフォルト: 現在のディレクトリ）
+---@param storage_dir string? moteストレージディレクトリ（設定から渡される）
 ---@return boolean moteが初期化されている場合true
-function M.is_initialized(cwd)
+function M.is_initialized(cwd, storage_dir)
   cwd = cwd or vim.fn.getcwd()
+
+  -- 設定されたstorage_dirを優先的にチェック
+  if storage_dir then
+    local configured_storage = vim.fn.finddir(storage_dir, cwd .. ";")
+    if configured_storage ~= "" then
+      return true
+    end
+  end
+
+  -- レガシーパスもチェック（下位互換性）
   local mote_dir = vim.fn.finddir(".mote", cwd .. ";")
   local git_mote_dir = vim.fn.finddir(".git/mote", cwd .. ";")
   return mote_dir ~= "" or git_mote_dir ~= ""
