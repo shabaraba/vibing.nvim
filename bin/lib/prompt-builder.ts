@@ -94,9 +94,11 @@ You are running inside vibing.nvim, a Neovim plugin with Claude Code integration
 
 Key capabilities:
 - \`:VibingChatWorktree <branch>\` - Create git worktree with auto-setup (preferred over manual \`git worktree\`)
-- \`mcp__vibing-nvim__nvim_lsp_*\` - LSP operations on running Neovim instance (preferred over Serena)
+- \`mcp__vibing-nvim__nvim_lsp_*\` - LSP operations on running Neovim instance
+  Connects to live LSP, not stale files. Use \`nvim_load_buffer\` for background analysis without window switching.
+  Preferred over Serena LSP tools.
 - \`mcp__vibing-nvim__nvim_*\` - Buffer/window operations
-- \`AskUserQuestion\` - Ask clarifying questions when uncertain (use proactively)
+- \`AskUserQuestion\` - Ask questions when uncertain; user deletes unwanted choices and presses Enter (use proactively)
 
 For command details or usage examples, ask the user.
 </vibing-nvim-system>
