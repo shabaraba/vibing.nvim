@@ -178,6 +178,13 @@ function M._handle_response(response, callbacks, adapter, patch_filename, config
     end
   end
 
+  if adapter:supports("session") and response._handle_id then
+    local new_session = adapter:get_session_id(response._handle_id)
+    if new_session and new_session ~= callbacks.get_session_id() then
+      callbacks.update_session_id(new_session)
+    end
+  end
+
   -- mote統合: Modified Files出力とpatch生成
   local using_mote = false
   if config and config.diff and (config.diff.tool == "mote" or config.diff.tool == "auto") then
@@ -195,12 +202,7 @@ function M._handle_response(response, callbacks, adapter, patch_filename, config
         local patch_path = string.format(".vibing/patches/%s/%s.patch", session_id, timestamp)
 
         MoteDiff.generate_patch(config.diff.mote, patch_path, function(patch_success, patch_error)
-          if patch_success then
-            -- Patch generation succeeded, append marker
-            vim.schedule(function()
-              callbacks.append_chunk("\n<!-- patch: " .. patch_path .. " -->\n")
-            end)
-          else
+          if not patch_success then
             vim.notify("[vibing] Patch generation failed: " .. (patch_error or "Unknown error"), vim.log.levels.WARN)
           end
         end)
@@ -212,9 +214,17 @@ function M._handle_response(response, callbacks, adapter, patch_filename, config
         for _, file_path in ipairs(files) do
           callbacks.append_chunk(file_path .. "\n")
         end
+
+        -- Patch marker (before User section)
+        callbacks.append_chunk("\n<!-- patch: " .. patch_path .. " -->\n")
       elseif not success then
         vim.notify("[vibing] Failed to get changed files: " .. (error or "Unknown error"), vim.log.levels.WARN)
       end
+
+      -- Userセクション追加（Modified Files + patch marker出力後）
+      vim.schedule(function()
+        callbacks.add_user_section()
+      end)
     end)
   elseif patch_filename then
     -- 既存のAgent SDK patch処理
@@ -232,17 +242,14 @@ function M._handle_response(response, callbacks, adapter, patch_filename, config
 
       callbacks.append_chunk("\n<!-- patch: " .. patch_filename .. " -->\n")
     end
-  end
 
-  if adapter:supports("session") and response._handle_id then
-    local new_session = adapter:get_session_id(response._handle_id)
-    if new_session and new_session ~= callbacks.get_session_id() then
-      callbacks.update_session_id(new_session)
-    end
+    callbacks.add_user_section()
+  else
+    -- Modified Filesが無い場合もUserセクション追加
+    callbacks.add_user_section()
   end
 
   callbacks.clear_handle_id()
-  callbacks.add_user_section()
 end
 
 return M

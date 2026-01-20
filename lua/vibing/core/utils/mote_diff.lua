@@ -226,8 +226,15 @@ function M.get_changed_files(config, callback)
 
       local files = {}
       for line in output:gmatch("[^\r\n]+") do
-        if line ~= "" and not line:match("^Comparing") then
-          table.insert(files, line)
+        if line ~= "" and not line:match("^Comparing") and not line:match("^%s*$") then
+          -- Remove status prefix (M, A, D, etc.) followed by whitespace
+          local file_path = line:match("^[MAD]%s+(.+)$")
+          if file_path then
+            table.insert(files, file_path)
+          elseif not line:match("^[MAD]%s+") then
+            -- Line doesn't have status prefix, use as-is
+            table.insert(files, line)
+          end
         end
       end
 
