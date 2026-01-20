@@ -10,6 +10,7 @@ import { buildPrompt } from './lib/prompt-builder.js';
 import { createCanUseToolCallback } from './lib/permissions/can-use-tool.js';
 import { processStream } from './lib/stream-processor.js';
 import { safeJsonStringify, toError } from './lib/utils.js';
+import { loadInstalledPlugins } from './lib/plugin-loader.js';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -118,6 +119,12 @@ if (config.mode) {
 
 if (config.model) {
   queryOptions.model = config.model;
+}
+
+// Load installed plugins (agents, commands, skills, hooks)
+const installedPlugins = await loadInstalledPlugins();
+if (installedPlugins.length > 0) {
+  queryOptions.plugins = installedPlugins;
 }
 
 if (config.sessionId) {
