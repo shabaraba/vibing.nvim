@@ -12,6 +12,7 @@ import { join } from 'path';
 
 import { parseArguments } from './lib/args-parser.js';
 import { createCanUseToolCallback } from './lib/permissions/can-use-tool.js';
+import { loadInstalledPlugins } from './lib/plugin-loader.js';
 import { buildPrompt } from './lib/prompt-builder.js';
 import { processStream } from './lib/stream-processor.js';
 import { safeJsonStringify, toError } from './lib/utils.js';
@@ -186,6 +187,12 @@ const fullPrompt = buildPrompt(config);
 config.cwd = initializeWorkingDirectory(config.cwd);
 
 const queryOptions = buildQueryOptions(config);
+
+// Load installed plugins (agents, commands, skills, hooks)
+const installedPlugins = await loadInstalledPlugins();
+if (installedPlugins.length > 0) {
+  queryOptions.plugins = installedPlugins;
+}
 
 if (config.sessionId) {
   cleanupSessionTags(config.sessionId, config.cwd);
