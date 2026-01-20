@@ -2,6 +2,17 @@
 ---mote diff表示のユーティリティ
 local M = {}
 
+---セッション固有のstorage_dirを生成
+---@param base_storage_dir string ベースのstorage_dir
+---@param session_id? string セッションID
+---@return string セッション固有のstorage_dir（session_idがnilの場合はbase_storage_dirをそのまま返す）
+function M.build_session_storage_dir(base_storage_dir, session_id)
+  if session_id then
+    return string.format(".vibing/mote/%s", session_id)
+  end
+  return base_storage_dir
+end
+
 ---プラットフォームに応じたmoteバイナリパスを取得
 ---vibing.nvim同梱のバイナリを優先的に使用し、見つからない場合のみPATHから探す
 ---@return string|nil moteバイナリのパス（見つからない場合nil）
@@ -49,17 +60,26 @@ end
 ---@param storage_dir string? moteストレージディレクトリ（設定から渡される）
 ---@return boolean moteが初期化されている場合true
 function M.is_initialized(cwd, storage_dir)
-  cwd = cwd or vim.fn.getcwd()
-
-  -- 設定されたstorage_dirを優先的にチェック
   if storage_dir then
-    local configured_storage = vim.fn.finddir(storage_dir, cwd .. ";")
-    if configured_storage ~= "" then
-      return true
-    end
+    return M._check_storage_dir_initialized(storage_dir)
   end
+  return M._check_legacy_paths(cwd or vim.fn.getcwd())
+end
 
-  -- レガシーパスもチェック（下位互換性）
+---指定されたstorage_dirが初期化済みかチェック
+---@param storage_dir string moteストレージディレクトリ
+---@return boolean
+function M._check_storage_dir_initialized(storage_dir)
+  local abs_path = vim.fn.fnamemodify(storage_dir, ":p"):gsub("/$", "")
+  local has_snapshots = vim.fn.isdirectory(abs_path .. "/snapshots") == 1
+  local has_objects = vim.fn.isdirectory(abs_path .. "/objects") == 1
+  return has_snapshots and has_objects
+end
+
+---レガシーパス（.mote, .git/mote）をチェック
+---@param cwd string チェックするディレクトリ
+---@return boolean
+function M._check_legacy_paths(cwd)
   local mote_dir = vim.fn.finddir(".mote", cwd .. ";")
   local git_mote_dir = vim.fn.finddir(".git/mote", cwd .. ";")
   return mote_dir ~= "" or git_mote_dir ~= ""
@@ -145,6 +165,50 @@ function M.show_diff(file_path, config)
     vim.keymap.set("n", "<Esc>", function()
       vim.api.nvim_buf_delete(buf, { force = true })
     end, { buffer = buf, noremap = true, silent = true })
+  end)
+end
+
+---mote storageを初期化
+---@param config Vibing.MoteConfig mote設定
+---@param callback fun(success: boolean, error: string?) コールバック関数
+function M.initialize(config, callback)
+  local mote_path = M.get_mote_path()
+  if not mote_path then
+    callback(false, "mote binary not found")
+    return
+  end
+
+  -- storage_dirが既に存在する場合はスキップ
+  if M.is_initialized(nil, config.storage_dir) then
+    callback(true, nil)
+    return
+  end
+
+  -- mote init自体がディレクトリを作成するため、明示的なmkdirは不要
+  -- ただし、親ディレクトリ（.vibing/mote/）は必要
+  local storage_dir = config.storage_dir
+  local parent_dir = vim.fn.fnamemodify(storage_dir, ":h")
+  vim.fn.mkdir(parent_dir, "p")
+
+  local cmd = {
+    mote_path,
+    "--ignore-file",
+    config.ignore_file,
+    "--storage-dir",
+    storage_dir,
+    "init",
+  }
+
+  vim.system(cmd, { text = true }, function(obj)
+    vim.schedule(function()
+      if obj.code ~= 0 then
+        local error_msg = obj.stderr or "Unknown error"
+        callback(false, error_msg)
+        return
+      end
+
+      callback(true, nil)
+    end)
   end)
 end
 
