@@ -5,191 +5,203 @@
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { existsSync } from 'fs';
+import { readFile } from 'fs/promises';
+import { homedir } from 'os';
+import { join } from 'path';
+
 import { parseArguments } from './lib/args-parser.js';
-import { buildPrompt } from './lib/prompt-builder.js';
 import { createCanUseToolCallback } from './lib/permissions/can-use-tool.js';
+import { buildPrompt } from './lib/prompt-builder.js';
 import { processStream } from './lib/stream-processor.js';
 import { safeJsonStringify, toError } from './lib/utils.js';
-import { readFile } from 'fs/promises';
-import { join } from 'path';
-import { homedir } from 'os';
 
-/**
- * Validate session file to check if it's corrupted
- * @param sessionId Session ID to validate
- * @param cwd Current working directory
- * @returns true if session is valid, false if corrupted or not found
- */
-async function validateSessionFile(sessionId: string, cwd: string): Promise<boolean> {
-  try {
-    // Construct session file path
-    // ~/.claude/projects/<normalized-cwd>/<session-id>.jsonl
-    // Note: Agent SDK normalizes paths by replacing / and . with -
-    // e.g., "/Users/shaba/project.nvim" → "-Users-shaba-project-nvim"
-    const normalizedCwd = cwd.replace(/[/.]/g, '-');
-    const sessionDir = join(homedir(), '.claude', 'projects', normalizedCwd);
-    const sessionFile = join(sessionDir, `${sessionId}.jsonl`);
+function buildSessionFilePath(sessionId: string, cwd: string): string {
+  const normalizedCwd = cwd.replace(/\//g, '-').replace(/^-/, '');
+  const sessionDir = join(homedir(), '.claude', 'projects', normalizedCwd);
+  return join(sessionDir, `${sessionId}.jsonl`);
+}
 
-    // Read file content
-    const content = await readFile(sessionFile, 'utf8');
-    const lines = content.trim().split('\n');
-
-    // Session file must have at least one line
-    if (lines.length < 1) {
-      return false;
-    }
-
-    // Parse all lines and validate JSON, collecting actual messages
-    let hasUserOrAssistantMessage = false;
-    for (const line of lines) {
-      if (!line.trim()) continue;
-
-      let parsed;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        // Invalid JSON line means corrupted session
-        return false;
-      }
-
-      // Check if this line is an actual message (not internal events like queue-operation)
-      // Agent SDK messages have type: "user" or type: "assistant"
-      if (parsed.type === 'user' || parsed.type === 'assistant') {
-        hasUserOrAssistantMessage = true;
-      }
-    }
-
-    // Session is valid only if it contains at least one actual message
-    return hasUserOrAssistantMessage;
-  } catch (error) {
-    // Session file doesn't exist or can't be read
-    return false;
+function parseSessionLine(line: string): { type?: string } | null {
+  if (!line.trim()) {
+    return null;
   }
+  return JSON.parse(line);
+}
+
+function hasConversationMessage(lines: string[]): boolean {
+  for (const line of lines) {
+    const parsed = parseSessionLine(line);
+    if (parsed && (parsed.type === 'user' || parsed.type === 'assistant')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function validateSessionFile(
+  sessionId: string,
+  cwd: string
+): Promise<{ valid: boolean; reason?: string }> {
+  const sessionFile = buildSessionFilePath(sessionId, cwd);
+
+  if (!existsSync(sessionFile)) {
+    return { valid: false, reason: 'session_file_not_found' };
+  }
+
+  let content: string;
+  try {
+    content = await readFile(sessionFile, 'utf8');
+  } catch (error) {
+    const err = error as Error;
+    return { valid: false, reason: `read_error: ${err.message}` };
+  }
+
+  const lines = content.trim().split('\n');
+  if (lines.length < 1) {
+    return { valid: false, reason: 'session_file_empty' };
+  }
+
+  let lineNumber = 0;
+  for (const line of lines) {
+    lineNumber++;
+    if (!line.trim()) {
+      continue;
+    }
+    try {
+      JSON.parse(line);
+    } catch {
+      return { valid: false, reason: `json_parse_error_at_line_${lineNumber}` };
+    }
+  }
+
+  if (!hasConversationMessage(lines)) {
+    return { valid: false, reason: 'no_conversation_messages' };
+  }
+
+  return { valid: true };
+}
+
+function detectWorktreeId(cwd: string): string {
+  try {
+    const { execSync } = require('child_process');
+    const gitCommonDir = execSync('git rev-parse --git-common-dir', {
+      cwd,
+      encoding: 'utf8',
+    }).trim();
+    const gitDir = execSync('git rev-parse --git-dir', {
+      cwd,
+      encoding: 'utf8',
+    }).trim();
+
+    if (gitCommonDir !== gitDir) {
+      const worktreePath = execSync('git rev-parse --show-toplevel', {
+        cwd,
+        encoding: 'utf8',
+      }).trim();
+      const worktreeName = worktreePath.split('/').pop();
+      return `wt-${worktreeName}`;
+    }
+  } catch {
+    // Not a git repo or command failed
+  }
+  return 'main';
+}
+
+function deleteGitTag(tagName: string, cwd: string): void {
+  try {
+    const { execSync } = require('child_process');
+    const tagExists = execSync(`git tag -l "${tagName}"`, {
+      cwd,
+      encoding: 'utf8',
+    }).trim();
+
+    if (tagExists) {
+      console.error(`[vibing.nvim] Removing existing patch tag: ${tagName}`);
+      execSync(`git tag -d ${tagName}`, { cwd, stdio: 'ignore' });
+    }
+  } catch {
+    // Ignore errors
+  }
+}
+
+function cleanupSessionTags(sessionId: string, cwd: string): void {
+  const worktreeId = detectWorktreeId(cwd);
+  const vibingTagName = `vibing-patch-${worktreeId}-${sessionId}`;
+  const oldTagName = `claude-session-${sessionId}`;
+
+  deleteGitTag(vibingTagName, cwd);
+  deleteGitTag(oldTagName, cwd);
+}
+
+function initializeWorkingDirectory(cwd: string | undefined): string {
+  if (!cwd) {
+    return process.cwd();
+  }
+
+  if (existsSync(cwd)) {
+    process.chdir(cwd);
+    return cwd;
+  }
+
+  return process.cwd();
+}
+
+function buildQueryOptions(config: ReturnType<typeof parseArguments>): Record<string, unknown> {
+  const options: Record<string, unknown> = {
+    cwd: config.cwd,
+    allowDangerouslySkipPermissions: config.permissionMode === 'bypassPermissions',
+    settingSources: ['user', 'project'],
+    canUseTool: createCanUseToolCallback(config),
+  };
+
+  if (config.deniedTools.length > 0) {
+    options.disallowedTools = config.deniedTools;
+  }
+
+  if (config.allowedTools.length > 0) {
+    options.allowedTools = config.allowedTools;
+  }
+
+  if (config.mode) {
+    options.mode = config.mode;
+  }
+
+  if (config.model) {
+    options.model = config.model;
+  }
+
+  return options;
 }
 
 const args = process.argv.slice(2);
 const config = parseArguments(args);
 
-// Set environment variables for vibing.nvim context awareness
 process.env.VIBING_NVIM_CONTEXT = 'true';
 if (config.rpcPort) {
   process.env.VIBING_NVIM_RPC_PORT = config.rpcPort.toString();
 }
 
 const fullPrompt = buildPrompt(config);
+config.cwd = initializeWorkingDirectory(config.cwd);
 
-// Change process working directory to match the requested cwd
-// This ensures all shell commands and file operations use the correct directory
-if (config.cwd) {
-  try {
-    const { existsSync } = await import('fs');
-    if (existsSync(config.cwd)) {
-      process.chdir(config.cwd);
-    } else {
-      // Silently fall back to current directory
-      // This is expected behavior when worktree has been deleted
-      config.cwd = process.cwd();
-    }
-  } catch (error) {
-    // Silently fall back to current directory on any error
-    config.cwd = process.cwd();
-  }
-}
-
-const queryOptions: Record<string, unknown> = {
-  cwd: config.cwd,
-  allowDangerouslySkipPermissions: config.permissionMode === 'bypassPermissions',
-  settingSources: ['user', 'project'],
-};
-
-if (config.deniedTools.length > 0) {
-  queryOptions.disallowedTools = config.deniedTools;
-}
-
-if (config.allowedTools.length > 0) {
-  queryOptions.allowedTools = config.allowedTools;
-}
-
-queryOptions.canUseTool = createCanUseToolCallback(config);
-
-if (config.mode) {
-  queryOptions.mode = config.mode;
-}
-
-if (config.model) {
-  queryOptions.model = config.model;
-}
+const queryOptions = buildQueryOptions(config);
 
 if (config.sessionId) {
-  // Pre-emptively delete existing snapshot tag to avoid duplication error
-  try {
-    const { execSync } = await import('child_process');
+  cleanupSessionTags(config.sessionId, config.cwd);
 
-    // Detect worktree environment
-    let worktreeId = 'main';
-    try {
-      const gitCommonDir = execSync('git rev-parse --git-common-dir', {
-        cwd: config.cwd,
-        encoding: 'utf8',
-      }).trim();
-      const gitDir = execSync('git rev-parse --git-dir', {
-        cwd: config.cwd,
-        encoding: 'utf8',
-      }).trim();
+  const validation = await validateSessionFile(config.sessionId, config.cwd);
 
-      if (gitCommonDir !== gitDir) {
-        // We're in a worktree
-        const worktreePath = execSync('git rev-parse --show-toplevel', {
-          cwd: config.cwd,
-          encoding: 'utf8',
-        }).trim();
-        const pathParts = worktreePath.split('/');
-        const worktreeName = pathParts[pathParts.length - 1];
-        worktreeId = `wt-${worktreeName}`;
-      }
-    } catch {
-      // Not a git repo or command failed, use 'main' as default
-    }
-
-    // New vibing.nvim tag format
-    const vibingTagName = `vibing-patch-${worktreeId}-${config.sessionId}`;
-
-    // Check and delete vibing.nvim's patch tag
-    const vibingTagExists = execSync(`git tag -l "${vibingTagName}"`, {
-      cwd: config.cwd,
-      encoding: 'utf8',
-    }).trim();
-
-    if (vibingTagExists) {
-      console.error(`[vibing.nvim] Removing existing patch tag: ${vibingTagName}`);
-      execSync(`git tag -d ${vibingTagName}`, { cwd: config.cwd, stdio: 'ignore' });
-    }
-
-    // Also check for old format tags (backward compatibility)
-    const oldTagName = `claude-session-${config.sessionId}`;
-    const oldTagExists = execSync(`git tag -l "${oldTagName}"`, {
-      cwd: config.cwd,
-      encoding: 'utf8',
-    }).trim();
-
-    if (oldTagExists) {
-      console.error(`[vibing.nvim] Removing old format tag: ${oldTagName}`);
-      execSync(`git tag -d ${oldTagName}`, { cwd: config.cwd, stdio: 'ignore' });
-    }
-  } catch (error) {
-    // Ignore errors from tag deletion (e.g., not a git repo)
-  }
-
-  // Validate session file before resuming
-  const sessionValid = await validateSessionFile(config.sessionId, config.cwd);
-
-  if (sessionValid) {
+  if (validation.valid) {
     queryOptions.resume = config.sessionId;
   } else {
-    // Session is corrupted, start a new session
-    // Notify Lua side about corruption via JSON event (Lua will display the error)
-    console.log(JSON.stringify({ type: 'session_corrupted', old_session_id: config.sessionId }));
-    // Don't set queryOptions.resume, so Agent SDK creates a new session
+    console.log(
+      JSON.stringify({
+        type: 'session_corrupted',
+        old_session_id: config.sessionId,
+        reason: validation.reason,
+      })
+    );
   }
 }
 

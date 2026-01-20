@@ -22,6 +22,7 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field get_session_allow fun(): table セッションレベルの許可リストを取得
 ---@field get_session_deny fun(): table セッションレベルの拒否リストを取得
 ---@field clear_handle_id fun() handle_idをクリア
+---@field get_cwd fun(): string|nil worktreeのcwdを取得
 
 ---メッセージを送信
 ---@param adapter table アダプター
@@ -61,9 +62,8 @@ function M.execute(adapter, callbacks, message, config)
     lang_code = language_utils.get_language_code(config.language, "chat")
   end
 
-  -- Get cwd from current session (if set by VibingChatWorktree)
-  local use_case = require("vibing.application.chat.use_case")
-  local session_cwd = use_case._current_session and use_case._current_session:get_cwd()
+  -- Get cwd from chat buffer (if set by VibingChatWorktree)
+  local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
 
   -- Get session-level permissions from buffer
   local session_allow = callbacks.get_session_allow()
@@ -137,9 +137,37 @@ function M.execute(adapter, callbacks, message, config)
   return handle_id
 end
 
+---セッションエラーかどうかを判定
+---@param error_msg string エラーメッセージ
+---@return boolean
+local function is_session_error(error_msg)
+  local lower_msg = error_msg:lower()
+  return lower_msg:match("session") or lower_msg:match("invalid") or lower_msg:match("expired")
+end
+
+---変更されたファイルをチャットに追加
+---@param callbacks table コールバック群
+---@param patch_filename string パッチファイル名
+local function append_modified_files(callbacks, patch_filename)
+  local PatchParser = require("vibing.infrastructure.storage.patch_parser")
+  local session_id = callbacks.get_session_id()
+  local modified_files = PatchParser.extract_file_list(session_id, patch_filename)
+
+  if #modified_files == 0 then
+    return
+  end
+
+  BufferReload.reload_files(modified_files)
+
+  callbacks.append_chunk("\n\n### Modified Files\n\n")
+  for _, file_path in ipairs(modified_files) do
+    callbacks.append_chunk(vim.fn.fnamemodify(file_path, ":.") .. "\n")
+  end
+  callbacks.append_chunk("\n<!-- patch: " .. patch_filename .. " -->\n")
+end
+
 ---レスポンスを処理
 function M._handle_response(response, callbacks, adapter, patch_filename)
-  -- Stop gradient animation
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
     GradientAnimation.stop(bufnr)
@@ -148,33 +176,15 @@ function M._handle_response(response, callbacks, adapter, patch_filename)
   if response.error then
     callbacks.append_chunk("\n\n**Error:** " .. response.error)
 
-    -- セッションエラーの場合、セッションをクリア
-    local error_msg = tostring(response.error):lower()
-    if error_msg:match("session") or error_msg:match("invalid") or error_msg:match("expired") then
-      local current_session = callbacks.get_session_id()
-      if current_session then
-        callbacks.update_session_id(nil)
-        callbacks.append_chunk("\n\n*Session has been reset. Your next message will start a new session.*")
-        vim.notify("[vibing] Session error detected - session has been automatically reset", vim.log.levels.WARN)
-      end
+    if is_session_error(tostring(response.error)) and callbacks.get_session_id() then
+      callbacks.update_session_id(nil)
+      callbacks.append_chunk("\n\n*Session has been reset. Your next message will start a new session.*")
+      vim.notify("[vibing] Session error detected - session has been automatically reset", vim.log.levels.WARN)
     end
   end
 
   if patch_filename then
-    local PatchParser = require("vibing.infrastructure.storage.patch_parser")
-    local session_id = callbacks.get_session_id()
-    local modified_files = PatchParser.extract_file_list(session_id, patch_filename)
-
-    if #modified_files > 0 then
-      BufferReload.reload_files(modified_files)
-
-      callbacks.append_chunk("\n\n### Modified Files\n\n")
-      for _, file_path in ipairs(modified_files) do
-        callbacks.append_chunk(vim.fn.fnamemodify(file_path, ":.") .. "\n")
-      end
-
-      callbacks.append_chunk("\n<!-- patch: " .. patch_filename .. " -->\n")
-    end
+    append_modified_files(callbacks, patch_filename)
   end
 
   if adapter:supports("session") and response._handle_id then
@@ -184,9 +194,7 @@ function M._handle_response(response, callbacks, adapter, patch_filename)
     end
   end
 
-  -- リクエスト完了時にhandle_idをクリア
   callbacks.clear_handle_id()
-
   callbacks.add_user_section()
 end
 

@@ -13,6 +13,8 @@ local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 ---@field config Vibing.ChatConfig
 ---@field session_id string?
 ---@field file_path string?
+---@field cwd string? worktreeの作業ディレクトリ（VibingChatWorktreeで設定）
+---@field session Vibing.ChatSession? セッションオブジェクト（非推奨、後方互換性のため）
 ---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
 ---@field _pending_choices table[]? add_user_section()後に挿入する選択肢
@@ -33,6 +35,8 @@ function ChatBuffer:new(config)
   instance.config = config
   instance.session_id = nil
   instance.file_path = nil
+  instance.cwd = nil
+  instance.session = nil
   instance._chunk_buffer = ""
   instance._chunk_timer = nil
   instance._pending_choices = nil
@@ -185,6 +189,17 @@ function ChatBuffer:update_session_id(session_id)
   self.session_id = session_id
   -- nilの場合は"~"を設定してYAMLでnullとして扱う
   FrontmatterHandler.update_session_id(self.buf, session_id or "~")
+
+  -- session_id更新時に自動保存（永続化を確実にする）
+  if self.buf and vim.api.nvim_buf_is_valid(self.buf) and self.file_path then
+    vim.schedule(function()
+      if vim.api.nvim_buf_is_valid(self.buf) then
+        vim.api.nvim_buf_call(self.buf, function()
+          vim.cmd("silent! write")
+        end)
+      end
+    end)
+  end
 end
 
 ---フロントマターのフィールドを更新または追加
@@ -387,6 +402,9 @@ function ChatBuffer:send_message()
     clear_handle_id = function()
       self._current_handle_id = nil
     end,
+    get_cwd = function()
+      return self:get_cwd()
+    end,
   }
 
   -- リクエストを送信してhandle_idを保存
@@ -496,89 +514,89 @@ function ChatBuffer:insert_approval_request(tool, input, options)
   }
 end
 
+---リストに値をユニークに追加
+---@param list table 対象リスト
+---@param value any 追加する値
+local function add_unique(list, value)
+  if not vim.tbl_contains(list, value) then
+    table.insert(list, value)
+  end
+end
+
+---リストから値を削除
+---@param list table 対象リスト
+---@param value any 削除する値
+---@return table 新しいリスト
+local function remove_from_list(list, value)
+  return vim.tbl_filter(function(item)
+    return item ~= value
+  end, list)
+end
+
+---一時許可/拒否を処理（:once suffix付き）
+---@param self Vibing.ChatBuffer
+---@param tool string ツール名
+---@param target_list table 追加先リスト
+local function handle_once_permission(self, tool, target_list)
+  local tool_once = tool .. ":once"
+  add_unique(target_list, tool_once)
+  self._once_tools = self._once_tools or {}
+  add_unique(self._once_tools, tool_once)
+end
+
+---セッションレベルの許可/拒否を処理
+---@param self Vibing.ChatBuffer
+---@param tool string ツール名
+---@param is_allow boolean 許可かどうか
+local function handle_session_permission(self, tool, is_allow)
+  if is_allow then
+    add_unique(self._session_allow, tool)
+    self._session_deny = remove_from_list(self._session_deny, tool)
+    self:update_frontmatter_list("permissions_allow", tool, "add")
+    self:update_frontmatter_list("permissions_deny", tool, "remove")
+  else
+    add_unique(self._session_deny, tool)
+    self._session_allow = remove_from_list(self._session_allow, tool)
+    self:update_frontmatter_list("permissions_deny", tool, "add")
+    self:update_frontmatter_list("permissions_allow", tool, "remove")
+  end
+  self:update_frontmatter_list("permissions_ask", tool, "remove")
+end
+
 ---セッション許可/拒否を更新（承認レスポンス処理）
 ---@param approval {action: string, tool: string?} パースされた承認データ
 function ChatBuffer:update_session_permissions(approval)
-  -- Validate approval action
   local valid_actions = {
     allow_once = true,
     deny_once = true,
     allow_for_session = true,
     deny_for_session = true,
   }
+
   if not approval.action or not valid_actions[approval.action] then
+    local tool_name = self._pending_approval and self._pending_approval.tool or "unknown"
     vim.notify(
-      string.format(
-        "[vibing] Invalid approval action: '%s' for tool '%s'",
-        tostring(approval.action),
-        tostring(self._pending_approval and self._pending_approval.tool or "unknown")
-      ),
+      string.format("[vibing] Invalid approval action: '%s' for tool '%s'", tostring(approval.action), tool_name),
       vim.log.levels.ERROR
     )
     return
   end
 
-  -- Get tool name from pending approval (not from parsed message)
   local tool = self._pending_approval and self._pending_approval.tool
   if not tool or type(tool) ~= "string" or tool == "" then
     vim.notify("[vibing] Invalid approval: missing or invalid tool name", vim.log.levels.ERROR)
     return
   end
 
-  -- Helper to add unique item to list
-  local function add_unique(list, value)
-    if not vim.tbl_contains(list, value) then
-      table.insert(list, value)
-    end
-  end
-
-  -- Update session-level permissions based on action
-  if approval.action == "allow_once" then
-    -- Add with :once suffix for one-time use
-    local tool_once = tool .. ":once"
-    add_unique(self._session_allow, tool_once)
-    -- Track for cleanup (JS side also removes, but this is a safety net)
-    self._once_tools = self._once_tools or {}
-    add_unique(self._once_tools, tool_once)
-  elseif approval.action == "deny_once" then
-    -- Add with :once suffix for one-time denial
-    local tool_once = tool .. ":once"
-    add_unique(self._session_deny, tool_once)
-    self._once_tools = self._once_tools or {}
-    add_unique(self._once_tools, tool_once)
-  elseif approval.action == "allow_for_session" then
-    -- Add to allow list if not already present
-    if not vim.tbl_contains(self._session_allow, tool) then
-      table.insert(self._session_allow, tool)
-    end
-    -- Remove from deny list if present (mutual exclusivity)
-    self._session_deny = vim.tbl_filter(function(t)
-      return t ~= tool
-    end, self._session_deny)
-
-    -- Update frontmatter: add to permissions_allow
-    self:update_frontmatter_list("permissions_allow", tool, "add")
-    -- Update frontmatter: remove from permissions_deny (if present)
-    self:update_frontmatter_list("permissions_deny", tool, "remove")
-    -- Update frontmatter: remove from permissions_ask (if present)
-    self:update_frontmatter_list("permissions_ask", tool, "remove")
-
-  elseif approval.action == "deny_for_session" then
-    -- Add to deny list if not already present
-    if not vim.tbl_contains(self._session_deny, tool) then
-      table.insert(self._session_deny, tool)
-    end
-    -- Remove from allow list if present (mutual exclusivity)
-    self._session_allow = vim.tbl_filter(function(t)
-      return t ~= tool
-    end, self._session_allow)
-
-    -- Update frontmatter: add to permissions_deny
-    self:update_frontmatter_list("permissions_deny", tool, "add")
-    -- Update frontmatter: remove from permissions_allow (if present)
-    self:update_frontmatter_list("permissions_allow", tool, "remove")
-    -- Update frontmatter: remove from permissions_ask (if present)
-    self:update_frontmatter_list("permissions_ask", tool, "remove")
+  local action = approval.action
+  if action == "allow_once" then
+    handle_once_permission(self, tool, self._session_allow)
+  elseif action == "deny_once" then
+    handle_once_permission(self, tool, self._session_deny)
+  elseif action == "allow_for_session" then
+    handle_session_permission(self, tool, true)
+  elseif action == "deny_for_session" then
+    handle_session_permission(self, tool, false)
   end
 end
 
@@ -592,6 +610,12 @@ end
 ---@return table
 function ChatBuffer:get_session_deny()
   return vim.deepcopy(self._session_deny)
+end
+
+---作業ディレクトリを取得（worktree用）
+---@return string?
+function ChatBuffer:get_cwd()
+  return self.cwd
 end
 
 return ChatBuffer
