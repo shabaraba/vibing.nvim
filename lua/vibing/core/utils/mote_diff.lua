@@ -85,31 +85,56 @@ function M._check_legacy_paths(cwd)
   return mote_dir ~= "" or git_mote_dir ~= ""
 end
 
+---デフォルトの.moteignoreルール
+local DEFAULT_MOTEIGNORE_RULES = {
+  "# vibing.nvim auto-generated .moteignore",
+  "# Ignore .vibing directory contents (vibing.nvim internal files)",
+  ".vibing/",
+  "",
+}
+
 ---.moteignoreファイルが存在しない場合は自動作成
 ---@param ignore_file_path string .moteignoreファイルのパス
 function M._ensure_moteignore_exists(ignore_file_path)
   local abs_path = vim.fn.fnamemodify(ignore_file_path, ":p")
 
-  -- 既に存在する場合はスキップ
   if vim.fn.filereadable(abs_path) == 1 then
     return
   end
 
-  -- 親ディレクトリを作成
   local parent_dir = vim.fn.fnamemodify(abs_path, ":h")
   vim.fn.mkdir(parent_dir, "p")
 
-  -- デフォルトのignoreルール
-  local default_rules = {
-    "# vibing.nvim auto-generated .moteignore",
-    "# Ignore .vibing directory contents (vibing.nvim internal files)",
-    ".vibing/",
-    "",
-  }
+  vim.fn.writefile(DEFAULT_MOTEIGNORE_RULES, abs_path)
+end
 
-  -- ファイルに書き込み
-  local lines = table.concat(default_rules, "\n")
-  vim.fn.writefile(vim.split(lines, "\n"), abs_path)
+---moteコマンドのベース引数を生成
+---@param config Vibing.MoteConfig mote設定
+---@return string[] コマンドライン引数の配列
+local function build_mote_base_args(config)
+  return {
+    M.get_mote_path(),
+    "--ignore-file",
+    config.ignore_file,
+    "--storage-dir",
+    config.storage_dir,
+  }
+end
+
+---moteコマンドを実行し結果をコールバックで返す
+---@param args string[] コマンドライン引数
+---@param on_success fun(stdout: string) 成功時のコールバック
+---@param on_error fun(error: string) エラー時のコールバック
+local function run_mote_command(args, on_success, on_error)
+  vim.system(args, { text = true }, function(obj)
+    vim.schedule(function()
+      if obj.code ~= 0 then
+        on_error(obj.stderr or "Unknown error")
+        return
+      end
+      on_success(obj.stdout or "")
+    end)
+  end)
 end
 
 ---mote diffコマンドを実行してdiffを取得
@@ -117,36 +142,19 @@ end
 ---@param config Vibing.MoteConfig mote設定
 ---@param callback fun(success: boolean, output: string?, error: string?) コールバック関数
 function M.get_diff(file_path, config, callback)
-  local mote_path = M.get_mote_path()
-  if not mote_path then
+  if not M.is_available() then
     callback(false, nil, "mote binary not found")
     return
   end
 
-  local normalized_path = vim.fn.fnamemodify(file_path, ":p")
+  local cmd = build_mote_base_args(config)
+  table.insert(cmd, "diff")
+  table.insert(cmd, vim.fn.fnamemodify(file_path, ":p"))
 
-  -- moteのグローバルオプションは必ずサブコマンドの前に指定
-  local cmd = {
-    mote_path,
-    "--ignore-file",
-    config.ignore_file,
-    "--storage-dir",
-    config.storage_dir,
-    "diff",
-    normalized_path,
-  }
-
-  vim.system(cmd, { text = true }, function(obj)
-    vim.schedule(function()
-      if obj.code ~= 0 then
-        local error_msg = obj.stderr or "Unknown error"
-        callback(false, nil, error_msg)
-        return
-      end
-
-      local output = obj.stdout or ""
-      callback(true, output, nil)
-    end)
+  run_mote_command(cmd, function(stdout)
+    callback(true, stdout, nil)
+  end, function(error)
+    callback(false, nil, error)
   end)
 end
 
@@ -199,46 +207,28 @@ end
 ---@param config Vibing.MoteConfig mote設定
 ---@param callback fun(success: boolean, error: string?) コールバック関数
 function M.initialize(config, callback)
-  local mote_path = M.get_mote_path()
-  if not mote_path then
+  if not M.is_available() then
     callback(false, "mote binary not found")
     return
   end
 
-  -- storage_dirが既に存在する場合はスキップ
   if M.is_initialized(nil, config.storage_dir) then
     callback(true, nil)
     return
   end
 
-  -- .moteignoreファイルを確認・作成
   M._ensure_moteignore_exists(config.ignore_file)
 
-  -- mote init自体がディレクトリを作成するため、明示的なmkdirは不要
-  -- ただし、親ディレクトリ（.vibing/mote/）は必要
-  local storage_dir = config.storage_dir
-  local parent_dir = vim.fn.fnamemodify(storage_dir, ":h")
+  local parent_dir = vim.fn.fnamemodify(config.storage_dir, ":h")
   vim.fn.mkdir(parent_dir, "p")
 
-  local cmd = {
-    mote_path,
-    "--ignore-file",
-    config.ignore_file,
-    "--storage-dir",
-    storage_dir,
-    "init",
-  }
+  local cmd = build_mote_base_args(config)
+  table.insert(cmd, "init")
 
-  vim.system(cmd, { text = true }, function(obj)
-    vim.schedule(function()
-      if obj.code ~= 0 then
-        local error_msg = obj.stderr or "Unknown error"
-        callback(false, error_msg)
-        return
-      end
-
-      callback(true, nil)
-    end)
+  run_mote_command(cmd, function()
+    callback(true, nil)
+  end, function(error)
+    callback(false, error)
   end)
 end
 
@@ -247,93 +237,67 @@ end
 ---@param message? string スナップショットメッセージ
 ---@param callback fun(success: boolean, snapshot_id: string?, error: string?) コールバック関数
 function M.create_snapshot(config, message, callback)
-  local mote_path = M.get_mote_path()
-  if not mote_path then
+  if not M.is_available() then
     callback(false, nil, "mote binary not found")
     return
   end
 
-  local cmd = {
-    mote_path,
-    "--ignore-file",
-    config.ignore_file,
-    "--storage-dir",
-    config.storage_dir,
-    "snapshot",
-    "--auto", -- Silent mode, skip if no changes
-  }
+  local cmd = build_mote_base_args(config)
+  table.insert(cmd, "snapshot")
+  table.insert(cmd, "--auto")
 
   if message then
     table.insert(cmd, "-m")
     table.insert(cmd, message)
   end
 
-  vim.system(cmd, { text = true }, function(obj)
-    vim.schedule(function()
-      if obj.code ~= 0 then
-        local error_msg = obj.stderr or "Unknown error"
-        callback(false, nil, error_msg)
-        return
-      end
-
-      -- Extract snapshot ID from output (e.g., "Created snapshot abc123d")
-      local output = obj.stdout or ""
-      local snapshot_id = output:match("snapshot%s+(%w+)")
-      callback(true, snapshot_id, nil)
-    end)
+  run_mote_command(cmd, function(stdout)
+    local snapshot_id = stdout:match("snapshot%s+(%w+)")
+    callback(true, snapshot_id, nil)
+  end, function(error)
+    callback(false, nil, error)
   end)
+end
+
+---diff出力からファイルパスを抽出
+---@param output string mote diff --name-onlyの出力
+---@return string[] ファイルパスの配列
+local function parse_changed_files(output)
+  if output == "" or output:match("^%s*$") then
+    return {}
+  end
+
+  local files = {}
+  for line in output:gmatch("[^\r\n]+") do
+    if line ~= "" and not line:match("^Comparing") and not line:match("^%s*$") then
+      local file_path = line:match("^[MAD]%s+(.+)$")
+      if file_path then
+        table.insert(files, file_path)
+      elseif not line:match("^[MAD]%s+") then
+        table.insert(files, line)
+      end
+    end
+  end
+  return files
 end
 
 ---変更されたファイル一覧を取得
 ---@param config Vibing.MoteConfig mote設定
 ---@param callback fun(success: boolean, files: string[]?, error: string?) コールバック関数
 function M.get_changed_files(config, callback)
-  local mote_path = M.get_mote_path()
-  if not mote_path then
+  if not M.is_available() then
     callback(false, nil, "mote binary not found")
     return
   end
 
-  local cmd = {
-    mote_path,
-    "--ignore-file",
-    config.ignore_file,
-    "--storage-dir",
-    config.storage_dir,
-    "diff",
-    "--name-only",
-  }
+  local cmd = build_mote_base_args(config)
+  table.insert(cmd, "diff")
+  table.insert(cmd, "--name-only")
 
-  vim.system(cmd, { text = true }, function(obj)
-    vim.schedule(function()
-      if obj.code ~= 0 then
-        local error_msg = obj.stderr or "Unknown error"
-        callback(false, nil, error_msg)
-        return
-      end
-
-      local output = obj.stdout or ""
-      if output == "" or output:match("^%s*$") then
-        callback(true, {}, nil)
-        return
-      end
-
-      local files = {}
-      for line in output:gmatch("[^\r\n]+") do
-        if line ~= "" and not line:match("^Comparing") and not line:match("^%s*$") then
-          -- Remove status prefix (M, A, D, etc.) followed by whitespace
-          local file_path = line:match("^[MAD]%s+(.+)$")
-          if file_path then
-            table.insert(files, file_path)
-          elseif not line:match("^[MAD]%s+") then
-            -- Line doesn't have status prefix, use as-is
-            table.insert(files, line)
-          end
-        end
-      end
-
-      callback(true, files, nil)
-    end)
+  run_mote_command(cmd, function(stdout)
+    callback(true, parse_changed_files(stdout), nil)
+  end, function(error)
+    callback(false, nil, error)
   end)
 end
 
@@ -342,37 +306,23 @@ end
 ---@param output_path string 出力先パス
 ---@param callback fun(success: boolean, error: string?) コールバック関数
 function M.generate_patch(config, output_path, callback)
-  local mote_path = M.get_mote_path()
-  if not mote_path then
+  if not M.is_available() then
     callback(false, "mote binary not found")
     return
   end
 
-  -- 出力ディレクトリを作成
   local output_dir = vim.fn.fnamemodify(output_path, ":h")
   vim.fn.mkdir(output_dir, "p")
 
-  local cmd = {
-    mote_path,
-    "--ignore-file",
-    config.ignore_file,
-    "--storage-dir",
-    config.storage_dir,
-    "diff",
-    "-o",
-    output_path,
-  }
+  local cmd = build_mote_base_args(config)
+  table.insert(cmd, "diff")
+  table.insert(cmd, "-o")
+  table.insert(cmd, output_path)
 
-  vim.system(cmd, { text = true }, function(obj)
-    vim.schedule(function()
-      if obj.code ~= 0 then
-        local error_msg = obj.stderr or "Unknown error"
-        callback(false, error_msg)
-        return
-      end
-
-      callback(true, nil)
-    end)
+  run_mote_command(cmd, function()
+    callback(true, nil)
+  end, function(error)
+    callback(false, error)
   end)
 end
 
