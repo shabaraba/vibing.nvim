@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.21.0 (2026-01-20)
+
+## What's Changed
+* docs: replace claude.md and e2e-tests by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/319
+* feat: Add mote integration for fine-grained snapshot diffing by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/323
+* feat: load installed plugins dynamically via SDK plugins option by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/324
+* fix: remove self-development assumption and simplify system prompt by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/321
+* refactor: improve code clarity and maintainability across core modules by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/325
+* fix: allow slash in branch names for feature/xxx pattern by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/326
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.20.0...v1.21.0
+
 ## 1.20.0 (2026-01-17)
 
 ## What's Changed
