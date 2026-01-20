@@ -2,6 +2,17 @@
 ---mote diff表示のユーティリティ
 local M = {}
 
+---セッション固有のstorage_dirを生成
+---@param base_storage_dir string ベースのstorage_dir
+---@param session_id? string セッションID
+---@return string セッション固有のstorage_dir（session_idがnilの場合はbase_storage_dirをそのまま返す）
+function M.build_session_storage_dir(base_storage_dir, session_id)
+  if session_id then
+    return string.format(".vibing/mote/%s", session_id)
+  end
+  return base_storage_dir
+end
+
 ---プラットフォームに応じたmoteバイナリパスを取得
 ---vibing.nvim同梱のバイナリを優先的に使用し、見つからない場合のみPATHから探す
 ---@return string|nil moteバイナリのパス（見つからない場合nil）

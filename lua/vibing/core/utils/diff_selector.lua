@@ -2,17 +2,6 @@
 ---diff表示ツールの選択と実行を管理
 local M = {}
 
----セッション固有のstorage_dirを生成
----@param base_storage_dir string ベースのstorage_dir
----@param session_id? string セッションID
----@return string
-local function build_storage_dir(base_storage_dir, session_id)
-  if session_id then
-    return string.format(".vibing/mote/%s", session_id)
-  end
-  return base_storage_dir
-end
-
 ---設定に基づいて適切なdiffツールを選択
 ---@param config Vibing.DiffConfig diff設定
 ---@param session_id? string セッションID（セッション固有のstorage_dirをチェックする場合に指定）
@@ -24,7 +13,7 @@ function M.select_tool(config, session_id)
 
   if config.tool == "mote" or config.tool == "auto" then
     local MoteDiff = require("vibing.core.utils.mote_diff")
-    local storage_dir = build_storage_dir(config.mote.storage_dir, session_id)
+    local storage_dir = MoteDiff.build_session_storage_dir(config.mote.storage_dir, session_id)
 
     if MoteDiff.is_available() and MoteDiff.is_initialized(nil, storage_dir) then
       return "mote"
@@ -44,7 +33,7 @@ function M.show_diff(file_path, session_id)
   if tool == "mote" then
     local MoteDiff = require("vibing.core.utils.mote_diff")
     local mote_config = vim.deepcopy(config.diff.mote)
-    mote_config.storage_dir = build_storage_dir(mote_config.storage_dir, session_id)
+    mote_config.storage_dir = MoteDiff.build_session_storage_dir(mote_config.storage_dir, session_id)
     MoteDiff.show_diff(file_path, mote_config)
   else
     local GitDiff = require("vibing.core.utils.git_diff")
