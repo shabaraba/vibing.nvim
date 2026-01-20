@@ -3,8 +3,8 @@
 ## 1.21.1 (2026-01-20)
 
 ## What's Changed
-* refactor: simplify session validation by delegating to SDK by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/327
 
+- refactor: simplify session validation by delegating to SDK by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/327
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.21.0...v1.21.1
 
