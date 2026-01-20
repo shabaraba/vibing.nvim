@@ -85,6 +85,33 @@ function M._check_legacy_paths(cwd)
   return mote_dir ~= "" or git_mote_dir ~= ""
 end
 
+---.moteignoreファイルが存在しない場合は自動作成
+---@param ignore_file_path string .moteignoreファイルのパス
+function M._ensure_moteignore_exists(ignore_file_path)
+  local abs_path = vim.fn.fnamemodify(ignore_file_path, ":p")
+
+  -- 既に存在する場合はスキップ
+  if vim.fn.filereadable(abs_path) == 1 then
+    return
+  end
+
+  -- 親ディレクトリを作成
+  local parent_dir = vim.fn.fnamemodify(abs_path, ":h")
+  vim.fn.mkdir(parent_dir, "p")
+
+  -- デフォルトのignoreルール
+  local default_rules = {
+    "# vibing.nvim auto-generated .moteignore",
+    "# Ignore .vibing directory contents (vibing.nvim internal files)",
+    ".vibing/",
+    "",
+  }
+
+  -- ファイルに書き込み
+  local lines = table.concat(default_rules, "\n")
+  vim.fn.writefile(vim.split(lines, "\n"), abs_path)
+end
+
 ---mote diffコマンドを実行してdiffを取得
 ---@param file_path string ファイルパス（絶対パス）
 ---@param config Vibing.MoteConfig mote設定
@@ -183,6 +210,9 @@ function M.initialize(config, callback)
     callback(true, nil)
     return
   end
+
+  -- .moteignoreファイルを確認・作成
+  M._ensure_moteignore_exists(config.ignore_file)
 
   -- mote init自体がディレクトリを作成するため、明示的なmkdirは不要
   -- ただし、親ディレクトリ（.vibing/mote/）は必要

@@ -69,8 +69,6 @@ function M.execute(adapter, callbacks, message, config)
 
   local frontmatter = callbacks.parse_frontmatter()
 
-  local patch_filename = nil
-
   -- Get language code: frontmatter > config
   local language_utils = require("vibing.core.utils.language")
   local lang_code = frontmatter.language
@@ -98,9 +96,6 @@ function M.execute(adapter, callbacks, message, config)
     permission_mode = frontmatter.permission_mode,
     language = lang_code,  -- Pass language code to adapter
     cwd = session_cwd,  -- Pass worktree cwd if set (from memory, not frontmatter)
-    on_patch_saved = function(filename)
-      patch_filename = filename
-    end,
     on_insert_choices = function(questions)
       -- Forward insert_choices event to chat buffer
       vim.schedule(function()
@@ -142,12 +137,12 @@ function M.execute(adapter, callbacks, message, config)
       end)
     end, function(response)
       vim.schedule(function()
-        M._handle_response(response, callbacks, adapter, patch_filename, config, mote_config)
+        M._handle_response(response, callbacks, adapter, config, mote_config)
       end)
     end)
   else
     local response = adapter:execute(formatted_prompt, opts)
-    M._handle_response(response, callbacks, adapter, patch_filename, config, mote_config)
+    M._handle_response(response, callbacks, adapter, config, mote_config)
   end
 
   return handle_id
@@ -162,7 +157,7 @@ local function is_session_error(error_msg)
 end
 
 ---レスポンスを処理
-function M._handle_response(response, callbacks, adapter, patch_filename, config, mote_config)
+function M._handle_response(response, callbacks, adapter, config, mote_config)
   -- Stop gradient animation
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
@@ -224,24 +219,6 @@ function M._handle_response(response, callbacks, adapter, patch_filename, config
         callbacks.add_user_section()
       end)
     end)
-  elseif patch_filename then
-    -- 既存のAgent SDK patch処理
-    local PatchParser = require("vibing.infrastructure.storage.patch_parser")
-    local session_id = callbacks.get_session_id()
-    local modified_files = PatchParser.extract_file_list(session_id, patch_filename)
-
-    if #modified_files > 0 then
-      BufferReload.reload_files(modified_files)
-
-      callbacks.append_chunk("\n\n### Modified Files\n\n")
-      for _, file_path in ipairs(modified_files) do
-        callbacks.append_chunk(vim.fn.fnamemodify(file_path, ":.") .. "\n")
-      end
-
-      callbacks.append_chunk("\n<!-- patch: " .. patch_filename .. " -->\n")
-    end
-
-    callbacks.add_user_section()
   else
     -- Modified Filesが無い場合もUserセクション追加
     callbacks.add_user_section()

@@ -3,7 +3,6 @@
  */
 
 import { safeJsonStringify } from './utils.js';
-import PatchStorage from './patch-storage.js';
 import { detectVcsOperation } from './vcs-detector.js';
 import type { AgentConfig } from '../types.js';
 
@@ -70,11 +69,6 @@ export async function processStream(
   const toolUseMap = new Map<string, string>();
   const toolInputMap = new Map<string, string>();
 
-  const patchStorage = new PatchStorage();
-  if (sessionId) patchStorage.setSessionId(sessionId);
-  if (cwd) patchStorage.setCwd(cwd);
-  if (config) patchStorage.setSaveConfig(config.saveLocationType, config.saveDir);
-
   for await (const message of resultStream) {
     if (
       message.type === 'system' &&
@@ -84,8 +78,6 @@ export async function processStream(
     ) {
       emit({ type: 'session', session_id: message.session_id });
       sessionIdEmitted = true;
-      if (!sessionId) patchStorage.setSessionId(message.session_id);
-      patchStorage.takeSnapshot();
       emit({ type: 'status', state: 'thinking' });
     }
 
@@ -148,15 +140,6 @@ export async function processStream(
     }
 
     if (message.type === 'result') {
-      const patchContent = patchStorage.generatePatch();
-      if (patchContent) {
-        const patchFilename = patchStorage.savePatchToFile(patchContent);
-        if (patchFilename) {
-          emit({ type: 'patch_saved', filename: patchFilename });
-        }
-      }
-      patchStorage.clear();
-
       if (message.subtype === 'error_max_turns') {
         emit({ type: 'error', message: 'Max turns reached' });
       }
