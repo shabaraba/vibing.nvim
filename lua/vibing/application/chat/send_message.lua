@@ -35,6 +35,21 @@ function M.execute(adapter, callbacks, message, config)
     return
   end
 
+  -- mote統合: リクエスト前にスナップショット取得
+  if config.diff and (config.diff.tool == "mote" or config.diff.tool == "auto") then
+    local MoteDiff = require("vibing.core.utils.mote_diff")
+    local DiffSelector = require("vibing.core.utils.diff_selector")
+
+    if DiffSelector.select_tool(config.diff) == "mote" then
+      MoteDiff.create_snapshot(config.diff.mote, "Before request", function(success, snapshot_id, error)
+        if not success and error and not error:match("No changes to snapshot") then
+          -- エラーでもリクエストは続行（スナップショット失敗は致命的エラーではない）
+          vim.notify("[vibing] Snapshot creation failed: " .. error, vim.log.levels.WARN)
+        end
+      end)
+    end
+  end
+
   local contexts = Context.get_all(config.chat.auto_context)
   local formatted_prompt = Formatter.format_prompt(message, contexts, config.chat.context_position)
 
@@ -126,12 +141,12 @@ function M.execute(adapter, callbacks, message, config)
       end)
     end, function(response)
       vim.schedule(function()
-        M._handle_response(response, callbacks, adapter, patch_filename)
+        M._handle_response(response, callbacks, adapter, patch_filename, config)
       end)
     end)
   else
     local response = adapter:execute(formatted_prompt, opts)
-    M._handle_response(response, callbacks, adapter, patch_filename)
+    M._handle_response(response, callbacks, adapter, patch_filename, config)
   end
 
   return handle_id
@@ -145,29 +160,9 @@ local function is_session_error(error_msg)
   return lower_msg:match("session") or lower_msg:match("invalid") or lower_msg:match("expired")
 end
 
----変更されたファイルをチャットに追加
----@param callbacks table コールバック群
----@param patch_filename string パッチファイル名
-local function append_modified_files(callbacks, patch_filename)
-  local PatchParser = require("vibing.infrastructure.storage.patch_parser")
-  local session_id = callbacks.get_session_id()
-  local modified_files = PatchParser.extract_file_list(session_id, patch_filename)
-
-  if #modified_files == 0 then
-    return
-  end
-
-  BufferReload.reload_files(modified_files)
-
-  callbacks.append_chunk("\n\n### Modified Files\n\n")
-  for _, file_path in ipairs(modified_files) do
-    callbacks.append_chunk(vim.fn.fnamemodify(file_path, ":.") .. "\n")
-  end
-  callbacks.append_chunk("\n<!-- patch: " .. patch_filename .. " -->\n")
-end
-
 ---レスポンスを処理
-function M._handle_response(response, callbacks, adapter, patch_filename)
+function M._handle_response(response, callbacks, adapter, patch_filename, config)
+  -- Stop gradient animation
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
     GradientAnimation.stop(bufnr)
@@ -183,8 +178,60 @@ function M._handle_response(response, callbacks, adapter, patch_filename)
     end
   end
 
-  if patch_filename then
-    append_modified_files(callbacks, patch_filename)
+  -- mote統合: Modified Files出力とpatch生成
+  local using_mote = false
+  if config and config.diff and (config.diff.tool == "mote" or config.diff.tool == "auto") then
+    local DiffSelector = require("vibing.core.utils.diff_selector")
+    using_mote = DiffSelector.select_tool(config.diff) == "mote"
+  end
+
+  if using_mote then
+    local MoteDiff = require("vibing.core.utils.mote_diff")
+    MoteDiff.get_changed_files(config.diff.mote, function(success, files, error)
+      if success and files and #files > 0 then
+        -- Patch生成
+        local session_id = callbacks.get_session_id() or "unknown"
+        local timestamp = os.date("%Y%m%d_%H%M%S")
+        local patch_path = string.format(".vibing/patches/%s/%s.patch", session_id, timestamp)
+
+        MoteDiff.generate_patch(config.diff.mote, patch_path, function(patch_success, patch_error)
+          if patch_success then
+            -- Patch generation succeeded, append marker
+            vim.schedule(function()
+              callbacks.append_chunk("\n<!-- patch: " .. patch_path .. " -->\n")
+            end)
+          else
+            vim.notify("[vibing] Patch generation failed: " .. (patch_error or "Unknown error"), vim.log.levels.WARN)
+          end
+        end)
+
+        -- Modified Files出力
+        BufferReload.reload_files(files)
+
+        callbacks.append_chunk("\n\n### Modified Files\n\n")
+        for _, file_path in ipairs(files) do
+          callbacks.append_chunk(file_path .. "\n")
+        end
+      elseif not success then
+        vim.notify("[vibing] Failed to get changed files: " .. (error or "Unknown error"), vim.log.levels.WARN)
+      end
+    end)
+  elseif patch_filename then
+    -- 既存のAgent SDK patch処理
+    local PatchParser = require("vibing.infrastructure.storage.patch_parser")
+    local session_id = callbacks.get_session_id()
+    local modified_files = PatchParser.extract_file_list(session_id, patch_filename)
+
+    if #modified_files > 0 then
+      BufferReload.reload_files(modified_files)
+
+      callbacks.append_chunk("\n\n### Modified Files\n\n")
+      for _, file_path in ipairs(modified_files) do
+        callbacks.append_chunk(vim.fn.fnamemodify(file_path, ":.") .. "\n")
+      end
+
+      callbacks.append_chunk("\n<!-- patch: " .. patch_filename .. " -->\n")
+    end
   end
 
   if adapter:supports("session") and response._handle_id then

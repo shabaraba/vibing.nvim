@@ -4,6 +4,7 @@
 
 import { safeJsonStringify } from './utils.js';
 import PatchStorage from './patch-storage.js';
+import { detectVcsOperation } from './vcs-detector.js';
 import type { AgentConfig } from '../types.js';
 
 function emit(obj: Record<string, unknown>): void {
@@ -111,6 +112,12 @@ export async function processStream(
 
           if (toolName === 'Bash' && toolInput.command) {
             emit({ type: 'tool_use', tool: 'Bash', command: toolInput.command });
+
+            // VCS operation detection for mote integration
+            const vcsOp = detectVcsOperation(toolInput.command as string);
+            if (vcsOp) {
+              emit({ type: 'vcs_operation', operation: vcsOp, command: toolInput.command });
+            }
           }
         }
       }

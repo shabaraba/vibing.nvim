@@ -47,6 +47,12 @@ export interface ToolUseEvent {
   [key: string]: unknown;
 }
 
+export interface VcsOperationEvent {
+  type: 'vcs_operation';
+  operation: string; // e.g., 'git checkout', 'jj edit'
+  command: string; // full command string
+}
+
 export interface ErrorEvent {
   type: 'error';
   message: string;

@@ -52,6 +52,9 @@ build/
 *.min.js
 *.min.css
 
+# Downloaded binaries
+bin/mote-*
+
 # Debug
 debug/
 *.debug
