@@ -14,17 +14,27 @@ function emit(obj: Record<string, unknown>): void {
 const INITIAL_MESSAGE_TIMEOUT_MS = 30_000;
 
 /**
- * Creates a promise that rejects after the specified timeout
+ * Creates a cancellable timeout promise.
+ * Returns an object with the promise and a cancel function to prevent resource leaks.
  */
-function createTimeout(ms: number): Promise<never> {
-  return new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('Stream timeout: no response from Agent SDK')), ms);
+function createCancellableTimeout(ms: number): {
+  promise: Promise<never>;
+  cancel: () => void;
+} {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const promise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('Stream timeout: no response from Agent SDK')), ms);
   });
+  return {
+    promise,
+    cancel: () => clearTimeout(timeoutId),
+  };
 }
 
 /**
  * Wraps an async iterable with a timeout for the first message.
  * This helps detect hung streams, especially during session resume.
+ * The timeout is properly cancelled after receiving the first message to prevent resource leaks.
  */
 async function* withInitialTimeout<T>(
   stream: AsyncIterable<T>,
@@ -32,23 +42,35 @@ async function* withInitialTimeout<T>(
 ): AsyncIterable<T> {
   const iterator = stream[Symbol.asyncIterator]();
   let isFirstMessage = true;
+  let timeout: { promise: Promise<never>; cancel: () => void } | null = null;
 
-  while (true) {
-    let result: IteratorResult<T>;
-    if (isFirstMessage) {
-      // Apply timeout only for the first message
-      try {
-        result = await Promise.race([iterator.next(), createTimeout(timeoutMs)]);
-        isFirstMessage = false;
-      } catch (error) {
-        throw error;
+  try {
+    while (true) {
+      let result: IteratorResult<T>;
+      if (isFirstMessage) {
+        // Apply timeout only for the first message
+        timeout = createCancellableTimeout(timeoutMs);
+        try {
+          result = await Promise.race([iterator.next(), timeout.promise]);
+          // Cancel timeout after receiving first message
+          timeout.cancel();
+          timeout = null;
+          isFirstMessage = false;
+        } catch (error) {
+          // Ensure timeout is cancelled even on error
+          timeout?.cancel();
+          throw error;
+        }
+      } else {
+        result = await iterator.next();
       }
-    } else {
-      result = await iterator.next();
-    }
 
-    if (result.done) break;
-    yield result.value;
+      if (result.done) break;
+      yield result.value;
+    }
+  } finally {
+    // Ensure cleanup in case of early termination
+    timeout?.cancel();
   }
 }
 

@@ -164,6 +164,8 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   }
 
   -- Build environment with optional debug flags
+  -- g:vibing_skip_plugins: Skip Claude Code plugin loading (debugging session resume hangs)
+  -- g:vibing_debug_stream: Enable verbose stream processing logs
   local env = vim.fn.environ()
   if vim.g.vibing_skip_plugins then
     env.VIBING_SKIP_PLUGINS = "1"
@@ -183,7 +185,11 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
     vim.notify(string.format("[vibing:stream] Command: %s", table.concat(cmd, " "):sub(1, 200)), vim.log.levels.DEBUG)
   end
 
-  -- Lua側ウォッチドッグタイマー（Node.jsがCPUブロックしても効く）
+  -- Session corruption detection (Lua layer):
+  -- This watchdog timer runs independently of Node.js event loop.
+  -- It catches cases where the agent-wrapper process hangs during resume
+  -- (e.g., plugin initialization blocking the event loop).
+  -- TypeScript-side timeout in stream-processor.ts handles normal timeout cases.
   if session_id then
     timeout_timer = vim.fn.timer_start(INITIAL_RESPONSE_TIMEOUT_MS, function()
       if not received_first_response and self._handles[handle_id] then

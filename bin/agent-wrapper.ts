@@ -68,7 +68,9 @@ config.cwd = initializeWorkingDirectory(config.cwd);
 const queryOptions = buildQueryOptions(config);
 
 // Load installed plugins (agents, commands, skills, hooks)
-// Skip if VIBING_SKIP_PLUGINS=1 (for debugging)
+// Debug flag: Set VIBING_SKIP_PLUGINS=1 to skip plugin loading.
+// This is useful for debugging session resume hangs caused by plugin issues.
+// In Neovim, set g:vibing_skip_plugins = 1 before sending a message.
 if (!process.env.VIBING_SKIP_PLUGINS) {
   const installedPlugins = await loadInstalledPlugins();
   if (installedPlugins.length > 0) {
@@ -92,7 +94,10 @@ try {
 } catch (error) {
   const err = toError(error);
 
-  // Handle stream timeout during session resume as session corruption
+  // Session corruption detection (TypeScript layer):
+  // This catches errors when Node.js event loop is responsive.
+  // For cases where the event loop is blocked (e.g., plugin initialization hang),
+  // Lua-side watchdog timer in agent_sdk.lua provides fallback detection.
   if (err.message.includes('Stream timeout') && config.sessionId) {
     console.log(
       safeJsonStringify({

@@ -283,7 +283,11 @@ function M._create_session_mote_config(config, session_id, bufnr)
   return mote_config
 end
 
+-- Mote initialization timeout (10 seconds)
+local MOTE_INIT_TIMEOUT_MS = 10000
+
 ---mote storageの初期化を確認し、スナップショットを作成
+---タイムアウト処理とエラーハンドリングを含む
 ---@param mote_config table セッション固有のmote設定
 ---@param diff_config table diff設定
 ---@param on_complete fun() 完了時のコールバック
@@ -299,12 +303,34 @@ function M._ensure_mote_initialized_and_snapshot(mote_config, diff_config, on_co
     return
   end
 
+  -- Track completion to prevent double-calling on_complete
+  local completed = false
+  local timeout_timer = nil
+
+  local function complete_once()
+    if completed then return end
+    completed = true
+    if timeout_timer then
+      vim.fn.timer_stop(timeout_timer)
+      timeout_timer = nil
+    end
+    on_complete()
+  end
+
+  -- Set up timeout to prevent infinite waiting
+  timeout_timer = vim.fn.timer_start(MOTE_INIT_TIMEOUT_MS, function()
+    if not completed then
+      vim.notify("[vibing] mote initialization timeout - proceeding without mote", vim.log.levels.WARN)
+      complete_once()
+    end
+  end)
+
   local function create_snapshot()
     MoteDiff.create_snapshot(mote_config, "Before request", function(success, _, error)
       if not success and error and not error:match("No changes to snapshot") then
         vim.notify("[vibing] Snapshot creation failed: " .. error, vim.log.levels.WARN)
       end
-      on_complete()
+      complete_once()
     end)
   end
 
@@ -314,9 +340,10 @@ function M._ensure_mote_initialized_and_snapshot(mote_config, diff_config, on_co
   end
 
   MoteDiff.initialize(mote_config, function(init_success, init_error)
+    if completed then return end  -- Already timed out
     if not init_success then
       vim.notify("[vibing] mote initialization failed: " .. (init_error or "Unknown error"), vim.log.levels.WARN)
-      on_complete()
+      complete_once()
       return
     end
     create_snapshot()
