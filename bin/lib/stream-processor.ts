@@ -80,9 +80,20 @@ async function* withInitialTimeout<T>(
 }
 
 function extractInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
-  // For Task tool, show subagent_type
-  if (toolName === 'Task' && toolInput.subagent_type) {
-    return toolInput.subagent_type as string;
+  // For Task tool, show subagent_type or prompt
+  if (toolName === 'Task') {
+    if (toolInput.subagent_type && typeof toolInput.subagent_type === 'string') {
+      const subagentType = toolInput.subagent_type.trim();
+      return subagentType || 'default';
+    }
+    // Fallback to prompt (truncated)
+    if (toolInput.prompt && typeof toolInput.prompt === 'string') {
+      const prompt = toolInput.prompt.trim();
+      if (prompt) {
+        return prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+      }
+    }
+    return 'default';
   }
 
   return (
