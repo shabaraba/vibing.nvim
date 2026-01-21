@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.22.0 (2026-01-21)
+
+## What's Changed
+* refactor: migrate from git-based patch to mote-only diff system by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/330
+* feat: display subagent type in Task tool output by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/332
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.21.1...v1.22.0
+
 ## 1.21.1 (2026-01-20)
 
 ## What's Changed
