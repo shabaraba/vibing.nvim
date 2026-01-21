@@ -10,6 +10,48 @@ function emit(obj: Record<string, unknown>): void {
   console.log(safeJsonStringify(obj));
 }
 
+// Timeout constant for initial message (30 seconds)
+const INITIAL_MESSAGE_TIMEOUT_MS = 30_000;
+
+/**
+ * Creates a promise that rejects after the specified timeout
+ */
+function createTimeout(ms: number): Promise<never> {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('Stream timeout: no response from Agent SDK')), ms);
+  });
+}
+
+/**
+ * Wraps an async iterable with a timeout for the first message.
+ * This helps detect hung streams, especially during session resume.
+ */
+async function* withInitialTimeout<T>(
+  stream: AsyncIterable<T>,
+  timeoutMs: number
+): AsyncIterable<T> {
+  const iterator = stream[Symbol.asyncIterator]();
+  let isFirstMessage = true;
+
+  while (true) {
+    let result: IteratorResult<T>;
+    if (isFirstMessage) {
+      // Apply timeout only for the first message
+      try {
+        result = await Promise.race([iterator.next(), createTimeout(timeoutMs)]);
+        isFirstMessage = false;
+      } catch (error) {
+        throw error;
+      }
+    } else {
+      result = await iterator.next();
+    }
+
+    if (result.done) break;
+    yield result.value;
+  }
+}
+
 function extractInputSummary(toolInput: Record<string, unknown>): string {
   return (
     (toolInput.command as string) ||
@@ -69,7 +111,10 @@ export async function processStream(
   const toolUseMap = new Map<string, string>();
   const toolInputMap = new Map<string, string>();
 
-  for await (const message of resultStream) {
+  // Apply timeout for first message to detect hung streams during resume
+  const stream = withInitialTimeout(resultStream, INITIAL_MESSAGE_TIMEOUT_MS);
+
+  for await (const message of stream) {
     if (
       message.type === 'system' &&
       message.subtype === 'init' &&

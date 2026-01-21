@@ -91,6 +91,26 @@ local DEFAULT_MOTEIGNORE_RULES = {
   "# Ignore .vibing directory contents (vibing.nvim internal files)",
   ".vibing/",
   "",
+  "# Dependencies (large file count, causes slow snapshots)",
+  "node_modules/",
+  "**/node_modules/",
+  "",
+  "# Build outputs",
+  "dist/",
+  "build/",
+  "",
+  "# Version control",
+  ".git/",
+  "",
+  "# Common cache/artifact directories",
+  ".cache/",
+  "coverage/",
+  ".nyc_output/",
+  "__pycache__/",
+  "*.pyc",
+  ".pytest_cache/",
+  "target/",
+  "",
 }
 
 ---.moteignoreファイルが存在しない場合は自動作成
@@ -324,6 +344,47 @@ function M.generate_patch(config, output_path, callback)
   end, function(error)
     callback(false, error)
   end)
+end
+
+---一時ストレージディレクトリを正式なsession_idディレクトリにリネーム
+---@param temp_storage_dir string 一時ストレージディレクトリ
+---@param session_id string 正式なsession_id
+---@param base_storage_dir string ベースのstorage_dir（例: ".vibing/mote"）
+---@return string 新しいstorage_dirパス
+---@return boolean 成功したかどうか
+function M.rename_storage_dir(temp_storage_dir, session_id, base_storage_dir)
+  local new_storage_dir = M.build_session_storage_dir(base_storage_dir, session_id)
+
+  -- 同じパスなら何もしない
+  if temp_storage_dir == new_storage_dir then
+    return new_storage_dir, true
+  end
+
+  local temp_abs = vim.fn.fnamemodify(temp_storage_dir, ":p"):gsub("/$", "")
+  local new_abs = vim.fn.fnamemodify(new_storage_dir, ":p"):gsub("/$", "")
+
+  -- 一時ディレクトリが存在しない場合
+  if vim.fn.isdirectory(temp_abs) ~= 1 then
+    return new_storage_dir, false
+  end
+
+  -- 新しいディレクトリが既に存在する場合は一時ディレクトリを削除
+  if vim.fn.isdirectory(new_abs) == 1 then
+    vim.fn.delete(temp_abs, "rf")
+    return new_storage_dir, true
+  end
+
+  -- 親ディレクトリを作成
+  local parent_dir = vim.fn.fnamemodify(new_abs, ":h")
+  vim.fn.mkdir(parent_dir, "p")
+
+  -- リネーム実行
+  local result = vim.fn.rename(temp_abs, new_abs)
+  if result == 0 then
+    return new_storage_dir, true
+  else
+    return new_storage_dir, false
+  end
 end
 
 return M

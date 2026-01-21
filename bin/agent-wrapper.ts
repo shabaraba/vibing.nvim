@@ -68,9 +68,14 @@ config.cwd = initializeWorkingDirectory(config.cwd);
 const queryOptions = buildQueryOptions(config);
 
 // Load installed plugins (agents, commands, skills, hooks)
-const installedPlugins = await loadInstalledPlugins();
-if (installedPlugins.length > 0) {
-  queryOptions.plugins = installedPlugins;
+// Skip if VIBING_SKIP_PLUGINS=1 (for debugging)
+if (!process.env.VIBING_SKIP_PLUGINS) {
+  const installedPlugins = await loadInstalledPlugins();
+  if (installedPlugins.length > 0) {
+    queryOptions.plugins = installedPlugins;
+  }
+} else {
+  console.error('[vibing:debug] Skipping plugin loading (VIBING_SKIP_PLUGINS=1)');
 }
 
 if (config.sessionId) {
@@ -86,6 +91,18 @@ try {
   await processStream(result, config.toolResultDisplay, config.sessionId, config.cwd, config);
 } catch (error) {
   const err = toError(error);
-  console.log(safeJsonStringify({ type: 'error', message: err.message }));
+
+  // Handle stream timeout during session resume as session corruption
+  if (err.message.includes('Stream timeout') && config.sessionId) {
+    console.log(
+      safeJsonStringify({
+        type: 'session_corrupted',
+        old_session_id: config.sessionId,
+        reason: 'stream_timeout',
+      })
+    );
+  } else {
+    console.log(safeJsonStringify({ type: 'error', message: err.message }));
+  }
   process.exit(1);
 }

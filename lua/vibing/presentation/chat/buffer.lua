@@ -23,6 +23,7 @@ local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 ---@field _session_allow table セッションレベルの許可リスト
 ---@field _session_deny table セッションレベルの拒否リスト
 ---@field _once_tools table? 一時許可/拒否ツールのトラッキング（次のメッセージでクリア）
+---@field _mote_id string? mote用の永続ID（session_idとは独立）
 local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
@@ -45,6 +46,7 @@ function ChatBuffer:new(config)
   instance._session_allow = {}
   instance._session_deny = {}
   instance._once_tools = nil
+  instance._mote_id = nil
   return instance
 end
 
@@ -251,6 +253,17 @@ function ChatBuffer:get_session_id()
   return self.session_id
 end
 
+---mote用IDを取得（なければ生成して保存）
+---session_idとは独立で、chat buffer生存期間中は同じIDを使用
+---@return string
+function ChatBuffer:get_mote_id()
+  if not self._mote_id then
+    -- bufnrベースのIDを生成（同じバッファなら同じID）
+    self._mote_id = "_buffer_" .. tostring(self.buf)
+  end
+  return self._mote_id
+end
+
 ---会話履歴全体を抽出
 ---@return {role: string, content: string}[]
 function ChatBuffer:extract_conversation()
@@ -265,6 +278,16 @@ end
 
 ---メッセージを送信
 function ChatBuffer:send_message()
+  -- 前のリクエストが実行中ならキャンセル（競合防止）
+  if self._current_handle_id then
+    local vibing = require("vibing")
+    local adapter = vibing.get_adapter()
+    if adapter then
+      adapter:cancel(self._current_handle_id)
+    end
+    self._current_handle_id = nil
+  end
+
   -- Clean up :once tools (JS side removes during use, but this is a safety net)
   if self._once_tools then
     for _, once_tool in ipairs(self._once_tools) do
@@ -378,6 +401,9 @@ function ChatBuffer:send_message()
     get_session_id = function()
       return self:get_session_id()
     end,
+    get_mote_id = function()
+      return self:get_mote_id()
+    end,
     update_session_id = function(session_id)
       return self:update_session_id(session_id)
     end,
@@ -402,16 +428,16 @@ function ChatBuffer:send_message()
     clear_handle_id = function()
       self._current_handle_id = nil
     end,
+    set_handle_id = function(handle_id)
+      self._current_handle_id = handle_id
+    end,
     get_cwd = function()
       return self:get_cwd()
     end,
   }
 
-  -- リクエストを送信してhandle_idを保存
-  local handle_id = SendMessage.execute(adapter, callbacks, message, config)
-  if handle_id then
-    self._current_handle_id = handle_id
-  end
+  -- リクエストを送信（handle_idはコールバックで設定される）
+  SendMessage.execute(adapter, callbacks, message, config)
 
   if self:is_open() then
     Renderer.moveCursorToEnd(self.win, self.buf)
