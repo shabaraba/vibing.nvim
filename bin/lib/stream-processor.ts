@@ -11,7 +11,12 @@ function emit(obj: Record<string, unknown>): void {
   console.log(safeJsonStringify(obj));
 }
 
-function extractInputSummary(toolInput: Record<string, unknown>): string {
+function extractInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
+  // For Task tool, show subagent_type
+  if (toolName === 'Task' && toolInput.subagent_type) {
+    return toolInput.subagent_type as string;
+  }
+
   return (
     (toolInput.command as string) ||
     (toolInput.file_path as string) ||
@@ -103,7 +108,7 @@ export async function processStream(
           processedToolUseIds.add(block.id);
           const toolName = block.name;
           const toolInput = block.input || {};
-          const inputSummary = extractInputSummary(toolInput);
+          const inputSummary = extractInputSummary(toolName, toolInput);
 
           toolUseMap.set(block.id, toolName);
           toolInputMap.set(block.id, inputSummary);
