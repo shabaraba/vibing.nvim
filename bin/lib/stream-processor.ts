@@ -3,12 +3,80 @@
  */
 
 import { safeJsonStringify } from './utils.js';
-import PatchStorage from './patch-storage.js';
 import { detectVcsOperation } from './vcs-detector.js';
 import type { AgentConfig } from '../types.js';
 
 function emit(obj: Record<string, unknown>): void {
   console.log(safeJsonStringify(obj));
+}
+
+// Timeout constant for initial message (120 seconds)
+const INITIAL_MESSAGE_TIMEOUT_MS = 120_000;
+
+/**
+ * Creates a cancellable timeout promise.
+ * Returns an object with the promise and a cancel function to prevent resource leaks.
+ */
+function createCancellableTimeout(ms: number): {
+  promise: Promise<never>;
+  cancel: () => void;
+} {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const promise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error('Stream timeout: no response from Agent SDK')),
+      ms
+    );
+  });
+  return {
+    promise,
+    cancel: () => clearTimeout(timeoutId),
+  };
+}
+
+/**
+ * Wraps an async iterable with a timeout for the first message.
+ * This helps detect hung streams, especially during session resume.
+ * The timeout is properly cancelled after receiving the first message to prevent resource leaks.
+ */
+async function* withInitialTimeout<T>(
+  stream: AsyncIterable<T>,
+  timeoutMs: number
+): AsyncIterable<T> {
+  const iterator = stream[Symbol.asyncIterator]();
+  let isFirstMessage = true;
+  let timeout: { promise: Promise<never>; cancel: () => void } | null = null;
+
+  try {
+    while (true) {
+      let result: IteratorResult<T>;
+      if (isFirstMessage) {
+        // Apply timeout only for the first message
+        timeout = createCancellableTimeout(timeoutMs);
+        try {
+          result = await Promise.race([iterator.next(), timeout.promise]);
+          // Cancel timeout after receiving first message
+          timeout.cancel();
+          timeout = null;
+          isFirstMessage = false;
+        } catch (error) {
+          // Ensure timeout is cancelled even on error
+          timeout?.cancel();
+          throw error;
+        }
+      } else {
+        result = await iterator.next();
+      }
+
+      if (result.done) break;
+      yield result.value;
+    }
+  } finally {
+    // Ensure cleanup in case of early termination
+    timeout?.cancel();
+    // Clean up the iterator to prevent resource leaks
+    await iterator.return?.();
+  }
 }
 
 function extractInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
@@ -118,12 +186,10 @@ export async function processStream(
   const toolUseMap = new Map<string, string>();
   const toolInputMap = new Map<string, string>();
 
-  const patchStorage = new PatchStorage();
-  if (sessionId) patchStorage.setSessionId(sessionId);
-  if (cwd) patchStorage.setCwd(cwd);
-  if (config) patchStorage.setSaveConfig(config.saveLocationType, config.saveDir);
+  // Apply timeout for first message to detect hung streams during resume
+  const stream = withInitialTimeout(resultStream, INITIAL_MESSAGE_TIMEOUT_MS);
 
-  for await (const message of resultStream) {
+  for await (const message of stream) {
     if (
       message.type === 'system' &&
       message.subtype === 'init' &&
@@ -132,8 +198,6 @@ export async function processStream(
     ) {
       emit({ type: 'session', session_id: message.session_id });
       sessionIdEmitted = true;
-      if (!sessionId) patchStorage.setSessionId(message.session_id);
-      patchStorage.takeSnapshot();
       emit({ type: 'status', state: 'thinking' });
     }
 
@@ -196,15 +260,6 @@ export async function processStream(
     }
 
     if (message.type === 'result') {
-      const patchContent = patchStorage.generatePatch();
-      if (patchContent) {
-        const patchFilename = patchStorage.savePatchToFile(patchContent);
-        if (patchFilename) {
-          emit({ type: 'patch_saved', filename: patchFilename });
-        }
-      }
-      patchStorage.clear();
-
       if (message.subtype === 'error_max_turns') {
         emit({ type: 'error', message: 'Max turns reached' });
       }

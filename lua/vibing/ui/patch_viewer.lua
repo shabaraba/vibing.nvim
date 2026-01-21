@@ -2,7 +2,6 @@
 ---patchファイルの内容を2パネル構成（Files, Diff）で表示するビューア
 local M = {}
 
-local PatchStorage = require("vibing.infrastructure.storage.patch_storage")
 local diff_util = require("vibing.core.utils.diff")
 
 ---@class Vibing.PatchViewer.State
@@ -27,25 +26,40 @@ local state = {
   buf_diff = nil,
 }
 
+---patchファイルのパスを解決
+---@param patch_filename string patchファイル名（相対パスまたはファイル名のみ）
+---@return string|nil 解決されたパス
+local function resolve_patch_path(patch_filename)
+  if vim.fn.filereadable(patch_filename) == 1 then
+    return patch_filename
+  end
+  return nil
+end
+
+---patchファイルを読み込む
+---@param patch_path string patchファイルのパス
+---@return string|nil patch内容
+local function read_patch_file(patch_path)
+  if vim.fn.filereadable(patch_path) ~= 1 then
+    return nil
+  end
+  return table.concat(vim.fn.readfile(patch_path), "\n")
+end
+
 ---patchの内容を2パネル構成で表示
----@param session_id string セッションID
+---@param session_id string セッションID（未使用だが互換性のため保持）
 ---@param patch_filename string patchファイル名（相対パスまたはファイル名のみ）
 ---@param target_file? string 初期選択するファイル（オプション）
 function M.show(session_id, patch_filename, target_file)
-  local patch_content
-
-  -- フルパス（相対パス）が渡された場合はそのまま読む
-  if patch_filename:match("^%.?%.?/") or patch_filename:match("^%.vibing/") then
-    if vim.fn.filereadable(patch_filename) == 1 then
-      patch_content = table.concat(vim.fn.readfile(patch_filename), "\n")
-    end
-  else
-    -- ファイル名のみの場合はPatchStorageを使う
-    patch_content = PatchStorage.read(session_id, patch_filename)
+  local patch_path = resolve_patch_path(patch_filename)
+  if not patch_path then
+    vim.notify("Patch file not found: " .. patch_filename, vim.log.levels.WARN)
+    return
   end
 
+  local patch_content = read_patch_file(patch_path)
   if not patch_content or patch_content == "" then
-    vim.notify("Patch file not found or empty", vim.log.levels.WARN)
+    vim.notify("Patch file is empty", vim.log.levels.WARN)
     return
   end
 
@@ -457,21 +471,27 @@ function M.extract_file_diff(patch_content, target_file)
 end
 
 ---patchを逆適用（revert）
----@param session_id string セッションID
----@param patch_filename string patchファイル名
+---@param _ string セッションID（未使用だが互換性のため保持）
+---@param patch_filename string patchファイルのパス
 ---@return boolean success
-function M.revert(session_id, patch_filename)
-  local success = PatchStorage.revert(session_id, patch_filename)
-
-  if success then
-    vim.notify("Patch reverted successfully", vim.log.levels.INFO)
-    -- 変更されたファイルをリロード
-    vim.cmd("checktime")
-  else
-    vim.notify("Failed to revert patch", vim.log.levels.ERROR)
+function M.revert(_, patch_filename)
+  local patch_path = resolve_patch_path(patch_filename)
+  if not patch_path then
+    vim.notify("Patch file not found: " .. patch_filename, vim.log.levels.ERROR)
+    return false
   end
 
-  return success
+  local cmd = string.format("git apply -R %s", vim.fn.shellescape(patch_path))
+  local result = vim.fn.system({ "sh", "-c", cmd })
+
+  if vim.v.shell_error ~= 0 then
+    vim.notify("Failed to revert patch: " .. vim.trim(result or ""), vim.log.levels.ERROR)
+    return false
+  end
+
+  vim.notify("Patch reverted successfully", vim.log.levels.INFO)
+  vim.cmd("checktime")
+  return true
 end
 
 return M

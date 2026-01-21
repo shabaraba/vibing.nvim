@@ -115,8 +115,13 @@ end
 ---@param on_chunk fun(chunk: string) チャンク受信時のコールバック
 ---@param on_done fun(response: Vibing.Response) 完了時のコールバック
 ---@return string handle_id 生成されたハンドルID（キャンセル用）
+-- 初回応答タイムアウト（ミリ秒）
+local INITIAL_RESPONSE_TIMEOUT_MS = 120000
+
 function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   opts = opts or {}
+
+  local debug_mode = vim.g.vibing_debug_stream
 
   -- ハンドルIDを生成（ユニークな識別子）
   local handle_id = tostring(vim.loop.hrtime()) .. "_" .. tostring(math.random(100000))
@@ -125,9 +130,23 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   -- opts._session_id が nil の場合は新規セッションとして扱う
   local session_id = opts._session_id
 
+  if debug_mode then
+    -- Check existing handles
+    local handle_count = 0
+    for _ in pairs(self._handles) do handle_count = handle_count + 1 end
+    vim.notify(string.format("[vibing:stream] Starting stream: handle_id=%s, session_id=%s, existing_handles=%d",
+      handle_id, session_id or "new", handle_count), vim.log.levels.INFO)
+  end
+
   local cmd = self:build_command(prompt, opts, session_id)
   local output = {}
   local error_output = {}
+
+  -- 初回応答フラグ（タイムアウト用）
+  local received_first_response = false
+  local timeout_timer = nil
+  -- Completion flag to prevent double on_done invocation
+  local completed = false
 
   -- イベント処理コンテキストを構築
   local eventContext = {
@@ -136,15 +155,77 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
     opts = opts,
     output = output,
     errorOutput = error_output,
-    onChunk = on_chunk,
+    onChunk = function(chunk)
+      received_first_response = true
+      if timeout_timer then
+        vim.fn.timer_stop(timeout_timer)
+        timeout_timer = nil
+      end
+      on_chunk(chunk)
+    end,
   }
+
+  -- Build environment with optional debug flags
+  -- g:vibing_skip_plugins: Skip Claude Code plugin loading (debugging session resume hangs)
+  -- g:vibing_debug_stream: Enable verbose stream processing logs
+  local env = vim.fn.environ()
+  if vim.g.vibing_skip_plugins then
+    env.VIBING_SKIP_PLUGINS = "1"
+  end
+
+  -- Wrap on_done to prevent double invocation
+  local wrapped_on_done = function(response)
+    if not completed then
+      completed = true
+      if timeout_timer then
+        vim.fn.timer_stop(timeout_timer)
+        timeout_timer = nil
+      end
+      on_done(response)
+    end
+  end
 
   self._handles[handle_id] = vim.system(cmd, {
     text = true,
-    env = vim.fn.environ(),
+    env = env,
     stdout = StreamHandler.create_stdout_handler(EventProcessor, eventContext),
     stderr = StreamHandler.create_stderr_handler(error_output),
-  }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, on_done))
+  }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done))
+
+  if debug_mode then
+    local pid = self._handles[handle_id] and self._handles[handle_id].pid or "unknown"
+    vim.notify(string.format("[vibing:stream] Process started: pid=%s", tostring(pid)), vim.log.levels.INFO)
+    -- Log command for debugging
+    vim.notify(string.format("[vibing:stream] Command: %s", table.concat(cmd, " "):sub(1, 200)), vim.log.levels.DEBUG)
+  end
+
+  -- Session corruption detection (Lua layer):
+  -- This watchdog timer runs independently of Node.js event loop.
+  -- It catches cases where the agent-wrapper process hangs during resume
+  -- (e.g., plugin initialization blocking the event loop).
+  -- TypeScript-side timeout in stream-processor.ts handles normal timeout cases.
+  if session_id then
+    timeout_timer = vim.fn.timer_start(INITIAL_RESPONSE_TIMEOUT_MS, function()
+      if not received_first_response and not completed and self._handles[handle_id] then
+        vim.schedule(function()
+          if not completed then
+            completed = true
+            vim.notify(
+              "[vibing] Session resume timeout - killing hung process and resetting session",
+              vim.log.levels.WARN
+            )
+            self:cancel(handle_id)
+            -- session_corruptedイベントを手動で発行
+            on_done({
+              error = "Session resume timeout",
+              _session_corrupted = true,
+              _old_session_id = session_id,
+            })
+          end
+        end)
+      end
+    end)
+  end
 
   -- ハンドルIDを返す（キャンセル用）
   return handle_id

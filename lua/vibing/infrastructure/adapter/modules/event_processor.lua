@@ -49,17 +49,6 @@ local function handleApprovalRequiredEvent(msg, opts)
   end
 end
 
----パッチ保存イベントを処理
----@param msg table JSONデコードされたメッセージ
----@param opts Vibing.AdapterOpts アダプターオプション
-local function handlePatchSavedEvent(msg, opts)
-  if msg.filename and opts.on_patch_saved then
-    vim.schedule(function()
-      opts.on_patch_saved(msg.filename)
-    end)
-  end
-end
-
 ---チャンクイベントを処理
 ---@param msg table JSONデコードされたメッセージ
 ---@param output string[] 出力バッファ
@@ -127,13 +116,6 @@ local eventHandlers = {
       return false
     end
     handleApprovalRequiredEvent(msg, context.opts)
-    return true
-  end,
-  patch_saved = function(msg, context)
-    if not context.opts then
-      return false
-    end
-    handlePatchSavedEvent(msg, context.opts)
     return true
   end,
   chunk = function(msg, context)
