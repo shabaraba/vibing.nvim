@@ -79,7 +79,23 @@ async function* withInitialTimeout<T>(
   }
 }
 
-function extractInputSummary(toolInput: Record<string, unknown>): string {
+function extractInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
+  // For Task tool, show subagent_type or prompt
+  if (toolName === 'Task') {
+    if (toolInput.subagent_type && typeof toolInput.subagent_type === 'string') {
+      const subagentType = toolInput.subagent_type.trim();
+      return subagentType || 'default';
+    }
+    // Fallback to prompt (truncated)
+    if (toolInput.prompt && typeof toolInput.prompt === 'string') {
+      const prompt = toolInput.prompt.trim();
+      if (prompt) {
+        return prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+      }
+    }
+    return 'default';
+  }
+
   return (
     (toolInput.command as string) ||
     (toolInput.file_path as string) ||
@@ -100,6 +116,40 @@ function extractResultText(content: string | ContentBlock[]): string {
   return '';
 }
 
+interface TodoItem {
+  content: string;
+  activeForm: string;
+  status: 'pending' | 'in_progress' | 'completed';
+}
+
+function formatTodoWriteResult(resultText: string): string {
+  try {
+    const result = JSON.parse(resultText);
+    if (!result.todos || !Array.isArray(result.todos)) {
+      return '';
+    }
+
+    const todos = result.todos as TodoItem[];
+    const lines: string[] = [];
+
+    for (const todo of todos) {
+      let emoji = '⏳';
+      if (todo.status === 'completed') {
+        emoji = '✅';
+      } else if (todo.status === 'in_progress') {
+        emoji = '🔄';
+      }
+
+      const displayText = todo.status === 'in_progress' ? todo.activeForm : todo.content;
+      lines.push(`  ${emoji} ${displayText}`);
+    }
+
+    return '\n' + lines.join('\n') + '\n';
+  } catch {
+    return '';
+  }
+}
+
 function formatToolResult(
   toolName: string,
   inputSummary: string,
@@ -109,6 +159,15 @@ function formatToolResult(
 ): string {
   let text = prefixNewline ? '\n' : '';
   text += `⏺ ${toolName}(${inputSummary})\n`;
+
+  // TodoWriteは設定に関わらず常に全内容を整形して表示
+  if (toolName === 'TodoWrite' && resultText) {
+    const formattedTodos = formatTodoWriteResult(resultText);
+    if (formattedTodos) {
+      text += formattedTodos;
+    }
+    return text;
+  }
 
   if (displayMode === 'none' || !resultText) return text;
 
@@ -167,7 +226,7 @@ export async function processStream(
           processedToolUseIds.add(block.id);
           const toolName = block.name;
           const toolInput = block.input || {};
-          const inputSummary = extractInputSummary(toolInput);
+          const inputSummary = extractInputSummary(toolName, toolInput);
 
           toolUseMap.set(block.id, toolName);
           toolInputMap.set(block.id, inputSummary);
