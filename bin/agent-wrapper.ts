@@ -14,58 +14,6 @@ import { buildPrompt } from './lib/prompt-builder.js';
 import { processStream } from './lib/stream-processor.js';
 import { safeJsonStringify, toError } from './lib/utils.js';
 
-function detectWorktreeId(cwd: string): string {
-  try {
-    const { execSync } = require('child_process');
-    const gitCommonDir = execSync('git rev-parse --git-common-dir', {
-      cwd,
-      encoding: 'utf8',
-    }).trim();
-    const gitDir = execSync('git rev-parse --git-dir', {
-      cwd,
-      encoding: 'utf8',
-    }).trim();
-
-    if (gitCommonDir !== gitDir) {
-      const worktreePath = execSync('git rev-parse --show-toplevel', {
-        cwd,
-        encoding: 'utf8',
-      }).trim();
-      const worktreeName = worktreePath.split('/').pop();
-      return `wt-${worktreeName}`;
-    }
-  } catch {
-    // Not a git repo or command failed
-  }
-  return 'main';
-}
-
-function deleteGitTag(tagName: string, cwd: string): void {
-  try {
-    const { execSync } = require('child_process');
-    const tagExists = execSync(`git tag -l "${tagName}"`, {
-      cwd,
-      encoding: 'utf8',
-    }).trim();
-
-    if (tagExists) {
-      console.error(`[vibing.nvim] Removing existing patch tag: ${tagName}`);
-      execSync(`git tag -d ${tagName}`, { cwd, stdio: 'ignore' });
-    }
-  } catch {
-    // Ignore errors
-  }
-}
-
-function cleanupSessionTags(sessionId: string, cwd: string): void {
-  const worktreeId = detectWorktreeId(cwd);
-  const vibingTagName = `vibing-patch-${worktreeId}-${sessionId}`;
-  const oldTagName = `claude-session-${sessionId}`;
-
-  deleteGitTag(vibingTagName, cwd);
-  deleteGitTag(oldTagName, cwd);
-}
-
 function initializeWorkingDirectory(cwd: string | undefined): string {
   if (!cwd) {
     return process.cwd();
@@ -120,13 +68,19 @@ config.cwd = initializeWorkingDirectory(config.cwd);
 const queryOptions = buildQueryOptions(config);
 
 // Load installed plugins (agents, commands, skills, hooks)
-const installedPlugins = await loadInstalledPlugins();
-if (installedPlugins.length > 0) {
-  queryOptions.plugins = installedPlugins;
+// Debug flag: Set VIBING_SKIP_PLUGINS=1 to skip plugin loading.
+// This is useful for debugging session resume hangs caused by plugin issues.
+// In Neovim, set g:vibing_skip_plugins = 1 before sending a message.
+if (!process.env.VIBING_SKIP_PLUGINS) {
+  const installedPlugins = await loadInstalledPlugins();
+  if (installedPlugins.length > 0) {
+    queryOptions.plugins = installedPlugins;
+  }
+} else {
+  console.error('[vibing:debug] Skipping plugin loading (VIBING_SKIP_PLUGINS=1)');
 }
 
 if (config.sessionId) {
-  cleanupSessionTags(config.sessionId, config.cwd);
   queryOptions.resume = config.sessionId;
 }
 
@@ -139,6 +93,21 @@ try {
   await processStream(result, config.toolResultDisplay, config.sessionId, config.cwd, config);
 } catch (error) {
   const err = toError(error);
-  console.log(safeJsonStringify({ type: 'error', message: err.message }));
+
+  // Session corruption detection (TypeScript layer):
+  // This catches errors when Node.js event loop is responsive.
+  // For cases where the event loop is blocked (e.g., plugin initialization hang),
+  // Lua-side watchdog timer in agent_sdk.lua provides fallback detection.
+  if (err.message.includes('Stream timeout') && config.sessionId) {
+    console.log(
+      safeJsonStringify({
+        type: 'session_corrupted',
+        old_session_id: config.sessionId,
+        reason: 'stream_timeout',
+      })
+    );
+  } else {
+    console.log(safeJsonStringify({ type: 'error', message: err.message }));
+  }
   process.exit(1);
 }
