@@ -37,6 +37,40 @@ function extractResultText(content: string | ContentBlock[]): string {
   return '';
 }
 
+interface TodoItem {
+  content: string;
+  activeForm: string;
+  status: 'pending' | 'in_progress' | 'completed';
+}
+
+function formatTodoWriteResult(resultText: string): string {
+  try {
+    const result = JSON.parse(resultText);
+    if (!result.todos || !Array.isArray(result.todos)) {
+      return '';
+    }
+
+    const todos = result.todos as TodoItem[];
+    const lines: string[] = [];
+
+    for (const todo of todos) {
+      let emoji = '⏳';
+      if (todo.status === 'completed') {
+        emoji = '✅';
+      } else if (todo.status === 'in_progress') {
+        emoji = '🔄';
+      }
+
+      const displayText = todo.status === 'in_progress' ? todo.activeForm : todo.content;
+      lines.push(`  ${emoji} ${displayText}`);
+    }
+
+    return '\n' + lines.join('\n') + '\n';
+  } catch {
+    return '';
+  }
+}
+
 function formatToolResult(
   toolName: string,
   inputSummary: string,
@@ -46,6 +80,15 @@ function formatToolResult(
 ): string {
   let text = prefixNewline ? '\n' : '';
   text += `⏺ ${toolName}(${inputSummary})\n`;
+
+  // TodoWriteは設定に関わらず常に全内容を整形して表示
+  if (toolName === 'TodoWrite' && resultText) {
+    const formattedTodos = formatTodoWriteResult(resultText);
+    if (formattedTodos) {
+      text += formattedTodos;
+    }
+    return text;
+  }
 
   if (displayMode === 'none' || !resultText) return text;
 
