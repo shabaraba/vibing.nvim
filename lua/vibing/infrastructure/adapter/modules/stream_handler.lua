@@ -51,9 +51,17 @@ end
 ---@param errorOutput string[] エラー出力バッファ
 ---@return function stderrコールバック関数
 function M.create_stderr_handler(errorOutput)
+  local debug_mode = vim.g.vibing_debug_stream
+
   return function(err, data)
     if data then
       table.insert(errorOutput, data)
+      -- Show stderr in debug mode
+      if debug_mode then
+        vim.schedule(function()
+          vim.notify(string.format("[vibing:stderr] %s", data:sub(1, 200)), vim.log.levels.WARN)
+        end)
+      end
     end
   end
 end
@@ -86,6 +94,10 @@ function M.create_exit_handler(handleId, handles, output, errorOutput, onDone)
         local error_msg = table.concat(errorOutput, "")
         if error_msg == "" and obj.code ~= 0 then
           error_msg = "Claude Code process exited with code " .. obj.code
+        end
+        -- Always show stderr if there's content (may contain plugin errors)
+        if #errorOutput > 0 then
+          vim.notify(string.format("[vibing] Process stderr:\n%s", error_msg:sub(1, 500)), vim.log.levels.WARN)
         end
         onDone({
           content = table.concat(output, ""),

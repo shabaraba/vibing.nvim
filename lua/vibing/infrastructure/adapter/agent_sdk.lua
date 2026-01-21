@@ -116,7 +116,7 @@ end
 ---@param on_done fun(response: Vibing.Response) 完了時のコールバック
 ---@return string handle_id 生成されたハンドルID（キャンセル用）
 -- 初回応答タイムアウト（ミリ秒）
-local INITIAL_RESPONSE_TIMEOUT_MS = 30000
+local INITIAL_RESPONSE_TIMEOUT_MS = 120000
 
 function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   opts = opts or {}
