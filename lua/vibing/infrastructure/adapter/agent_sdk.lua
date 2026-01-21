@@ -145,6 +145,8 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   -- 初回応答フラグ（タイムアウト用）
   local received_first_response = false
   local timeout_timer = nil
+  -- Completion flag to prevent double on_done invocation
+  local completed = false
 
   -- イベント処理コンテキストを構築
   local eventContext = {
@@ -171,12 +173,24 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
     env.VIBING_SKIP_PLUGINS = "1"
   end
 
+  -- Wrap on_done to prevent double invocation
+  local wrapped_on_done = function(response)
+    if not completed then
+      completed = true
+      if timeout_timer then
+        vim.fn.timer_stop(timeout_timer)
+        timeout_timer = nil
+      end
+      on_done(response)
+    end
+  end
+
   self._handles[handle_id] = vim.system(cmd, {
     text = true,
     env = env,
     stdout = StreamHandler.create_stdout_handler(EventProcessor, eventContext),
     stderr = StreamHandler.create_stderr_handler(error_output),
-  }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, on_done))
+  }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done))
 
   if debug_mode then
     local pid = self._handles[handle_id] and self._handles[handle_id].pid or "unknown"
@@ -192,19 +206,22 @@ function AgentSDK:stream(prompt, opts, on_chunk, on_done)
   -- TypeScript-side timeout in stream-processor.ts handles normal timeout cases.
   if session_id then
     timeout_timer = vim.fn.timer_start(INITIAL_RESPONSE_TIMEOUT_MS, function()
-      if not received_first_response and self._handles[handle_id] then
+      if not received_first_response and not completed and self._handles[handle_id] then
         vim.schedule(function()
-          vim.notify(
-            "[vibing] Session resume timeout - killing hung process and resetting session",
-            vim.log.levels.WARN
-          )
-          self:cancel(handle_id)
-          -- session_corruptedイベントを手動で発行
-          on_done({
-            error = "Session resume timeout",
-            _session_corrupted = true,
-            _old_session_id = session_id,
-          })
+          if not completed then
+            completed = true
+            vim.notify(
+              "[vibing] Session resume timeout - killing hung process and resetting session",
+              vim.log.levels.WARN
+            )
+            self:cancel(handle_id)
+            -- session_corruptedイベントを手動で発行
+            on_done({
+              error = "Session resume timeout",
+              _session_corrupted = true,
+              _old_session_id = session_id,
+            })
+          end
         end)
       end
     end)

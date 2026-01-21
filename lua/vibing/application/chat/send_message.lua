@@ -94,10 +94,12 @@ function M.execute(adapter, callbacks, message, config)
       on_session_corrupted = function(old_session_id)
         vim.schedule(function()
           callbacks.update_session_id(nil)
+          -- Safely handle nil old_session_id
+          local session_display = old_session_id and tostring(old_session_id):sub(1, 8) or "unknown"
           vim.notify(
             string.format(
               "[vibing.nvim] Previous session (%s) was corrupted. Starting fresh session.",
-              old_session_id:sub(1, 8)
+              session_display
             ),
             vim.log.levels.INFO
           )
@@ -194,7 +196,10 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
   -- mote統合: session_idが確定したら一時ディレクトリをリネーム
   local MoteDiff = require("vibing.core.utils.mote_diff")
   if mote_config and new_session_id then
-    local is_temp_id = mote_config.mote_session_id and mote_config.mote_session_id:match("^_buffer_")
+    local is_temp_id = mote_config.mote_session_id and (
+      mote_config.mote_session_id:match("^_buffer_") or
+      mote_config.mote_session_id:match("^_temp_")
+    )
     if is_temp_id then
       local base_storage_dir = config.diff and config.diff.mote and config.diff.mote.storage_dir or ".vibing/mote"
       local new_storage_dir, rename_success = MoteDiff.rename_storage_dir(
@@ -202,23 +207,41 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
         new_session_id,
         base_storage_dir
       )
-      -- mote_configを更新
-      mote_config.storage_dir = new_storage_dir
-      mote_config.mote_session_id = new_session_id
+      -- mote_configを更新（リネーム成功/失敗に関わらず新しいパスを使用）
+      if rename_success then
+        mote_config.storage_dir = new_storage_dir
+        mote_config.mote_session_id = new_session_id
+      else
+        -- リネーム失敗時も新しいパスを記録（patch生成時に使用）
+        mote_config.storage_dir = new_storage_dir
+        mote_config.mote_session_id = new_session_id
+        vim.notify(
+          string.format(
+            "[vibing] Failed to rename mote storage directory.\n" ..
+            "Old: %s\nNew: %s\n" ..
+            "Continuing with new path...",
+            vim.fn.fnamemodify(mote_config.storage_dir, ":."),
+            vim.fn.fnamemodify(new_storage_dir, ":.")
+          ),
+          vim.log.levels.WARN
+        )
+      end
     end
   end
 
-  -- mote統合: mote_configが存在し、初期化済みの場合にModified Files出力とpatch生成
+  -- mote統合: config.diff.toolが適切に設定され、mote_configが存在し、初期化済みの場合にModified Files出力とpatch生成
   local using_mote = mote_config ~= nil
+    and (config.diff.tool == "mote" or config.diff.tool == "auto")
     and MoteDiff.is_initialized(nil, mote_config.storage_dir)
 
   if using_mote then
     MoteDiff.get_changed_files(mote_config, function(success, files, error)
       if success and files and #files > 0 then
         -- Patch生成（mote storage配下に保存）
-        local mote_session_id = mote_config.mote_session_id or callbacks.get_session_id() or "unknown"
+        -- Use session-specific storage_dir directly from mote_config to support custom storage directories
+        local storage_base = vim.fn.fnamemodify(mote_config.storage_dir, ":p"):gsub("/$", "")
         local timestamp = os.date("%Y%m%d_%H%M%S")
-        local patch_path = string.format(".vibing/mote/%s/patches/%s.patch", mote_session_id, timestamp)
+        local patch_path = string.format("%s/patches/%s.patch", storage_base, timestamp)
 
         MoteDiff.generate_patch(mote_config, patch_path, function(patch_success, patch_error)
           if not patch_success then

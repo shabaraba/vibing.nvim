@@ -10,8 +10,8 @@ function emit(obj: Record<string, unknown>): void {
   console.log(safeJsonStringify(obj));
 }
 
-// Timeout constant for initial message (30 seconds)
-const INITIAL_MESSAGE_TIMEOUT_MS = 30_000;
+// Timeout constant for initial message (120 seconds)
+const INITIAL_MESSAGE_TIMEOUT_MS = 120_000;
 
 /**
  * Creates a cancellable timeout promise.
@@ -23,7 +23,10 @@ function createCancellableTimeout(ms: number): {
 } {
   let timeoutId: ReturnType<typeof setTimeout>;
   const promise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error('Stream timeout: no response from Agent SDK')), ms);
+    timeoutId = setTimeout(
+      () => reject(new Error('Stream timeout: no response from Agent SDK')),
+      ms
+    );
   });
   return {
     promise,
@@ -71,6 +74,8 @@ async function* withInitialTimeout<T>(
   } finally {
     // Ensure cleanup in case of early termination
     timeout?.cancel();
+    // Clean up the iterator to prevent resource leaks
+    await iterator.return?.();
   }
 }
 

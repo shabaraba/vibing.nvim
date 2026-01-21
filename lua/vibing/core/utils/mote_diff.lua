@@ -167,6 +167,9 @@ function M.get_diff(file_path, config, callback)
     return
   end
 
+  -- Ensure .moteignore exists even for already initialized storage
+  M._ensure_moteignore_exists(config.ignore_file)
+
   local cmd = build_mote_base_args(config)
   table.insert(cmd, "diff")
   table.insert(cmd, vim.fn.fnamemodify(file_path, ":p"))
@@ -232,12 +235,13 @@ function M.initialize(config, callback)
     return
   end
 
+  -- Ensure .moteignore exists before checking initialization
+  M._ensure_moteignore_exists(config.ignore_file)
+
   if M.is_initialized(nil, config.storage_dir) then
     callback(true, nil)
     return
   end
-
-  M._ensure_moteignore_exists(config.ignore_file)
 
   local parent_dir = vim.fn.fnamemodify(config.storage_dir, ":h")
   vim.fn.mkdir(parent_dir, "p")
@@ -261,6 +265,9 @@ function M.create_snapshot(config, message, callback)
     callback(false, nil, "mote binary not found")
     return
   end
+
+  -- Ensure .moteignore exists even for already initialized storage
+  M._ensure_moteignore_exists(config.ignore_file)
 
   local cmd = build_mote_base_args(config)
   table.insert(cmd, "snapshot")
@@ -310,6 +317,9 @@ function M.get_changed_files(config, callback)
     return
   end
 
+  -- Ensure .moteignore exists even for already initialized storage
+  M._ensure_moteignore_exists(config.ignore_file)
+
   local cmd = build_mote_base_args(config)
   table.insert(cmd, "diff")
   table.insert(cmd, "--name-only")
@@ -330,6 +340,9 @@ function M.generate_patch(config, output_path, callback)
     callback(false, "mote binary not found")
     return
   end
+
+  -- Ensure .moteignore exists even for already initialized storage
+  M._ensure_moteignore_exists(config.ignore_file)
 
   local output_dir = vim.fn.fnamemodify(output_path, ":h")
   vim.fn.mkdir(output_dir, "p")
