@@ -117,7 +117,7 @@ Documents the implementation of multi-instance Neovim support for MCP integratio
 Issue #212 where only the first started Neovim instance could be operated via MCP tools.
 Key architectural changes include:
 
-- Dynamic port allocation (9876-9885 range) for RPC servers
+- Dynamic port allocation (9876-9925 range) for RPC servers
 - Instance registry system tracking PID, port, cwd, and timestamp
 - Multi-port socket management in MCP server
 - Optional `rpc_port` parameter added to all MCP tools

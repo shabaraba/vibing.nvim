@@ -4,7 +4,9 @@ This document describes how to test the multi-instance Neovim support with vibin
 
 ## Overview
 
-The multi-instance feature allows Claude Code to interact with multiple running Neovim instances simultaneously. Each instance runs its own RPC server on a different port (9876-9885), and instances are tracked in a registry.
+The multi-instance feature allows Claude Code to interact with multiple running Neovim instances.
+Each instance runs its own RPC server on a different port (9876-9925).
+Instances are tracked in a registry for discovery and management.
 
 ## Architecture Diagrams
 
@@ -78,7 +80,7 @@ The multi-instance feature allows Claude Code to interact with multiple running 
 
 **Solution:**
 
-- Dynamic port allocation (9876-9885 range)
+- Dynamic port allocation (9876-9925 range)
 - Instance registry tracks PID, port, cwd, timestamp
 - MCP Server maintains socket pool (one per port)
 - All tools accept optional `rpc_port` parameter
@@ -266,8 +268,8 @@ for i in {1..10}; do
   nvim -c "lua require('vibing').setup({ mcp = { enabled = true } })" test$i.txt &
 done
 
-# Expected: First 10 instances get ports 9876-9885
-# 11th instance should fail with error message
+# Expected: First 50 instances get ports 9876-9925
+# 51st instance should fail with error message
 
 # Cleanup
 pkill -f "nvim.*test"
@@ -300,7 +302,7 @@ $ ls ~/.local/share/nvim/vibing-instances/ | wc -l
    - First instance: port 9876
    - Second instance: port 9877
    - Third instance: port 9878
-   - Up to 10 instances supported (ports 9876-9885)
+   - Up to 50 instances supported (ports 9876-9925)
 
 2. **Registry Management:**
    - Each running instance has a registry file
@@ -320,9 +322,9 @@ $ ls ~/.local/share/nvim/vibing-instances/ | wc -l
 
 ### ❌ Known Limitations
 
-1. **Maximum 10 Instances:**
-   - Port range: 9876-9885 (10 ports)
-   - 11th instance will fail to start RPC server
+1. **Maximum 50 Instances:**
+   - Port range: 9876-9925 (50 ports)
+   - 51st instance will fail to start RPC server
 
 2. **Manual Port Selection:**
    - Users must remember or query which port corresponds to which instance

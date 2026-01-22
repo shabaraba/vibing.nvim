@@ -48,16 +48,16 @@ vibing.nvimのMCP統合において、複数のNeovimインスタンスを同時
 
 **実装**: `lua/vibing/infrastructure/rpc/server.lua`
 
-- RPCサーバーは9876-9885の範囲でポートを順次試行
+- RPCサーバーは9876-9925の範囲でポートを順次試行
 - 最初に利用可能なポートを使用
-- 最大10インスタンスまで同時実行可能
+- 最大50インスタンスまで同時実行可能
 
 ```lua
 function M.start(base_port)
   base_port = base_port or 9876
-  local max_attempts = 10
+  local max_attempts = 50
 
-  -- Try ports from base_port to base_port+9
+  -- Try ports from base_port to base_port+49
   for i = 0, max_attempts - 1 do
     local try_port = base_port + i
 
@@ -294,7 +294,7 @@ export async function handleListInstances(args: any) {
 
 ### 制約
 
-1. **インスタンス数上限**: 最大10インスタンス（ポート範囲9876-9885）
+1. **インスタンス数上限**: 最大50インスタンス（ポート範囲9876-9925）
 2. **手動ポート指定**: ユーザーはどのインスタンスに接続するか明示的に指定する必要がある
 3. **レジストリクリーンアップタイミング**: `nvim_list_instances`呼び出し時にのみクリーンアップ実行
 

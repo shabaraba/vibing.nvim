@@ -28,7 +28,7 @@ RPC サーバーの起動、通信、各種ハンドラーの動作
 **期待される動作:**
 
 - RPCサーバーが `127.0.0.1:9876` で起動する
-- ポートが使用中の場合は9877-9885で自動的に次のポートを試行する
+- ポートが使用中の場合は9877-9925で自動的に次のポートを試行する
 - 起動成功メッセージが表示される
 
 **検証ポイント:**
@@ -47,7 +47,7 @@ netstat -an | grep 9876
 -- Luaから確認
 local server = require("vibing.infrastructure.rpc.server")
 local port = server.get_current_port()
-assert(port >= 9876 and port <= 9885)
+assert(port >= 9876 and port <= 9925)
 ```
 
 ### 2. RPC レジストリファイルの作成

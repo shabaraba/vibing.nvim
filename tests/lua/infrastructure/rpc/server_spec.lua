@@ -25,7 +25,7 @@ describe("vibing.infrastructure.rpc.server", function()
       local port = server.start(base_port)
 
       assert.is_true(port >= base_port)
-      assert.is_true(port < base_port + 10)
+      assert.is_true(port < base_port + 50)
       assert.is_true(server.is_running())
       assert.equals(port, server.get_port())
 

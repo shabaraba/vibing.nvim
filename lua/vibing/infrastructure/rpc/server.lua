@@ -69,7 +69,7 @@ local function handle_request(client, request)
 end
 
 ---Start RPC server with dynamic port allocation
----Tries ports from base_port to base_port+9 until finding an available one
+---Tries ports from base_port to base_port+49 until finding an available one
 ---@param base_port? number Base port number (default: 9876)
 ---@return number port Actual port number in use (0 if failed)
 function M.start(base_port)
@@ -80,13 +80,13 @@ function M.start(base_port)
     return current_port
   end
 
-  local max_attempts = 10
+  local max_attempts = 50
   local successful_port = nil
 
   -- Cache instance list once to avoid repeated file I/O in port loop
   local registered_instances = registry.list()
 
-  -- Try ports from base_port to base_port+9
+  -- Try ports from base_port to base_port+49
   for i = 0, max_attempts - 1 do
     local try_port = base_port + i
 

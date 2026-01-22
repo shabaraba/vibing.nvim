@@ -6,15 +6,61 @@
 vim.bo.syntax = "markdown"
 vim.bo.commentstring = "<!-- %s -->"
 
--- Set up omni-completion for slash commands
-vim.bo.omnifunc = "v:lua.require'vibing.completion'.slash_command_complete"
+-- Set up completion for vibing buffers
+-- Uses new completion module with nvim-cmp support and omnifunc fallback
+-- Note: setup_buffer may not exist if vibing.setup() hasn't been called yet
+local ok, completion = pcall(require, "vibing.application.completion")
+if ok and completion.setup_buffer then
+  pcall(completion.setup_buffer, vim.api.nvim_get_current_buf())
+elseif ok then
+  -- Module loaded but setup_buffer not ready - use omnifunc directly
+  pcall(function()
+    vim.bo.omnifunc = "v:lua.require('vibing.application.completion').omnifunc"
+    vim.bo.completeopt = "menu,menuone,noselect"
+  end)
+end
 
--- Configure completion menu for slash commands
--- These options ensure the omni-completion menu displays correctly:
--- - menu: show popup menu even with one match
--- - menuone: show menu even when there's only one match
--- - noselect: don't auto-select first match (user explicitly chooses)
-vim.bo.completeopt = "menu,menuone,noselect"
+-- Configure nvim-cmp for vibing buffers (prioritize vibing source over path)
+local has_cmp, cmp = pcall(require, "cmp")
+if has_cmp then
+  -- Ensure vibing source is registered first
+  local ok_completion, completion = pcall(require, "vibing.application.completion")
+  if ok_completion then
+    completion.setup()
+  end
+
+  -- Kind icons for vibing completion items
+  local kind_icons = {
+    Function = "",
+    Module = "",
+    Interface = "",
+    File = "",
+    EnumMember = "",
+    Text = "",
+  }
+
+  cmp.setup.buffer({
+    sources = {
+      { name = "vibing", priority = 1000 },
+      { name = "buffer", priority = 500 },
+    },
+    formatting = {
+      format = function(entry, vim_item)
+        local icon = kind_icons[vim_item.kind] or ""
+        vim_item.kind = icon .. " " .. vim_item.kind
+        -- Keep menu minimal for vibing source
+        if entry.source.name == "vibing" then
+          vim_item.menu = ""
+        end
+        return vim_item
+      end,
+    },
+    -- Enable documentation preview window
+    window = {
+      documentation = cmp.config.window.bordered(),
+    },
+  })
+end
 
 -- Markdown-like settings
 vim.bo.textwidth = 0
