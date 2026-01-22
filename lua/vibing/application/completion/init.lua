@@ -49,9 +49,11 @@ end
 function M.clear_cache()
   local skills = require("vibing.infrastructure.completion.providers.skills")
   local files = require("vibing.infrastructure.completion.providers.files")
+  local agents = require("vibing.infrastructure.completion.providers.agents")
 
   skills.clear_cache()
   files.clear_cache()
+  agents.clear_cache()
 end
 
 return M

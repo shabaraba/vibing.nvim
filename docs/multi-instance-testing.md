@@ -4,7 +4,9 @@ This document describes how to test the multi-instance Neovim support with vibin
 
 ## Overview
 
-The multi-instance feature allows Claude Code to interact with multiple running Neovim instances simultaneously. Each instance runs its own RPC server on a different port (9876-9925), and instances are tracked in a registry.
+The multi-instance feature allows Claude Code to interact with multiple running Neovim instances.
+Each instance runs its own RPC server on a different port (9876-9925).
+Instances are tracked in a registry for discovery and management.
 
 ## Architecture Diagrams
 

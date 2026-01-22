@@ -76,7 +76,9 @@ function M.get_all_sync()
     return _cache
   end
 
-  local ok, result = pcall(vim.fn.systemlist, "git ls-files")
+  -- Use -C option to specify cwd for git, matching async path behavior
+  local cwd = vim.fn.getcwd()
+  local ok, result = pcall(vim.fn.systemlist, { "git", "-C", cwd, "ls-files" })
   if not ok or vim.v.shell_error ~= 0 then
     return {}
   end

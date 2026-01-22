@@ -15,9 +15,9 @@ function M.get_trigger_context(line, col)
   local before_cursor = line:sub(1, col)
 
   -- Pattern: "@agent:" followed by optional agent name
-  local agent_match = before_cursor:match("@agent:([^%s]*)$")
-  if agent_match ~= nil then
-    local trigger_pos = before_cursor:find("@agent:")
+  -- Use position capture () to get the start of the match
+  local trigger_pos, agent_match = before_cursor:match("()@agent:([^%s]*)$")
+  if trigger_pos ~= nil then
     return {
       trigger = "agent",
       query = agent_match,

@@ -15,9 +15,9 @@ function M.get_trigger_context(line, col)
   local before_cursor = line:sub(1, col)
 
   -- Pattern: "@file:" followed by optional path
-  local file_match = before_cursor:match("@file:([^%s]*)$")
-  if file_match ~= nil then
-    local trigger_pos = before_cursor:find("@file:")
+  -- Use position capture () to get the start of the match
+  local trigger_pos, file_match = before_cursor:match("()@file:([^%s]*)$")
+  if trigger_pos ~= nil then
     return {
       trigger = "file",
       query = file_match,

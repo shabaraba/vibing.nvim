@@ -44,7 +44,7 @@ function M.get_trigger_context(line, col)
   return nil
 end
 
----Filter items by query (case-insensitive prefix match on filterText)
+---Filter items by query (case-insensitive substring match on filterText)
 ---@param items Vibing.CompletionItem[]
 ---@param query string?
 ---@return Vibing.CompletionItem[]
