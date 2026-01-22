@@ -5,9 +5,10 @@ local M = {}
 
 local slash_source = require("vibing.application.completion.sources.slash")
 local file_source = require("vibing.application.completion.sources.file")
+local agent_source = require("vibing.application.completion.sources.agent")
 
 ---@type table[]
-local sources = { slash_source, file_source }
+local sources = { slash_source, file_source, agent_source }
 
 ---Create nvim-cmp source
 ---@return table
@@ -27,11 +28,11 @@ function M.create()
   end
 
   function source:get_trigger_characters()
-    return { "/", ":" }
+    return { "/", ":", "@" }
   end
 
   function source:get_keyword_pattern()
-    return [[\%(@file:\)\?\k*]]
+    return [[\%(@\%(file\|agent\):\)\?\k*]]
   end
 
   ---@param params table
@@ -61,38 +62,44 @@ function M.create()
   return source
 end
 
+---Map vibing kind to nvim-cmp CompletionItemKind
+---@param kind string
+---@param cmp_kinds table
+---@return number
+local function to_cmp_kind(kind, cmp_kinds)
+  local kind_map = {
+    File = cmp_kinds.File,
+    Command = cmp_kinds.Function,
+    Skill = cmp_kinds.Module,
+    Agent = cmp_kinds.Interface,
+    Argument = cmp_kinds.EnumMember,
+  }
+  return kind_map[kind] or cmp_kinds.Text
+end
+
 ---Convert vibing items to nvim-cmp format
 ---@param items Vibing.CompletionItem[]
 ---@param context Vibing.TriggerContext
 ---@return table[]
 function M._to_cmp_items(items, context)
-  local cmp = require("cmp")
+  local cmp_kinds = require("cmp").lsp.CompletionItemKind
   local cmp_items = {}
 
   for _, item in ipairs(items) do
-    local kind = cmp.lsp.CompletionItemKind.Text
-    if item.kind == "File" then
-      kind = cmp.lsp.CompletionItemKind.File
-    elseif item.kind == "Command" then
-      kind = cmp.lsp.CompletionItemKind.Function
-    elseif item.kind == "Skill" then
-      kind = cmp.lsp.CompletionItemKind.Module
-    elseif item.kind == "Argument" then
-      kind = cmp.lsp.CompletionItemKind.EnumMember
-    end
-
-    local insert_text = item.insertText or item.word
-    if context.trigger == "slash" then
-      insert_text = item.word
+    local insert_text = item.word
+    if context.trigger ~= "slash" and item.insertText then
+      insert_text = item.insertText
     end
 
     table.insert(cmp_items, {
       label = item.label,
-      kind = kind,
-      detail = item.detail,
-      documentation = item.description,
+      kind = to_cmp_kind(item.kind, cmp_kinds),
+      documentation = {
+        kind = "markdown",
+        value = item.description or "",
+      },
       insertText = insert_text,
-      filterText = item.filterText or item.word,
+      filterText = item.label,
       sortText = item.word,
     })
   end

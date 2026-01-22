@@ -28,11 +28,11 @@ function M.get_trigger_context(line, col)
   return nil
 end
 
----Filter items by query
+---Filter items by query (substring match)
 ---@param items Vibing.CompletionItem[]
----@param query string
+---@param query string?
 ---@return Vibing.CompletionItem[]
-local function filter_by_query(items, query)
+local function filter_items(items, query)
   if not query or query == "" then
     return items
   end
@@ -46,7 +46,7 @@ end
 ---@param callback fun(items: Vibing.CompletionItem[])
 function M.get_candidates(context, callback)
   files_provider.get_all_async(function(items)
-    callback(filter_by_query(items, context.query))
+    callback(filter_items(items, context.query))
   end)
 end
 
@@ -54,8 +54,7 @@ end
 ---@param context Vibing.TriggerContext
 ---@return Vibing.CompletionItem[]
 function M.get_candidates_sync(context)
-  local items = files_provider.get_all_sync()
-  return filter_by_query(items, context.query)
+  return filter_items(files_provider.get_all_sync(), context.query)
 end
 
 return M

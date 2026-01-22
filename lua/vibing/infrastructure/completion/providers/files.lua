@@ -16,10 +16,10 @@ local function build_items(files)
   for _, file in ipairs(files) do
     table.insert(items, {
       word = file,
-      label = file,
+      label = "@file:" .. file,
       kind = "File",
       source = "project",
-      filterText = file,
+      filterText = "@file:" .. file,
     })
   end
   return items

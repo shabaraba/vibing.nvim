@@ -44,33 +44,32 @@ function M.get_trigger_context(line, col)
   return nil
 end
 
+---Filter items by query (case-insensitive prefix match on filterText)
+---@param items Vibing.CompletionItem[]
+---@param query string?
+---@return Vibing.CompletionItem[]
+local function filter_items(items, query)
+  if not query or query == "" then
+    return items
+  end
+  local query_lower = query:lower()
+  return vim.tbl_filter(function(item)
+    return item.filterText:lower():find(query_lower, 1, true) ~= nil
+  end, items)
+end
+
 ---Get completion candidates
 ---@param context Vibing.TriggerContext
 ---@param callback fun(items: Vibing.CompletionItem[])
 function M.get_candidates(context, callback)
   if context.trigger == "argument" and context.command_name then
-    local items = commands_provider.get_arguments(context.command_name)
-    callback(items)
+    callback(commands_provider.get_arguments(context.command_name))
     return
   end
 
-  -- Combine commands and skills
-  local commands = commands_provider.get_all()
-  local skills = skills_provider.get_all()
+  local items = vim.list_extend(commands_provider.get_all(), skills_provider.get_all())
+  items = filter_items(items, context.query)
 
-  local items = {}
-  vim.list_extend(items, commands)
-  vim.list_extend(items, skills)
-
-  -- Filter by query
-  if context.query and context.query ~= "" then
-    local query_lower = context.query:lower()
-    items = vim.tbl_filter(function(item)
-      return item.filterText:lower():find(query_lower, 1, true) ~= nil
-    end, items)
-  end
-
-  -- Sort: commands first, then skills
   table.sort(items, function(a, b)
     if a.kind ~= b.kind then
       return a.kind == "Command"

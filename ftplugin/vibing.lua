@@ -20,6 +20,48 @@ elseif ok then
   end)
 end
 
+-- Configure nvim-cmp for vibing buffers (prioritize vibing source over path)
+local has_cmp, cmp = pcall(require, "cmp")
+if has_cmp then
+  -- Ensure vibing source is registered first
+  local ok_completion, completion = pcall(require, "vibing.application.completion")
+  if ok_completion then
+    completion.setup()
+  end
+
+  -- Kind icons for vibing completion items
+  local kind_icons = {
+    Function = "",
+    Module = "",
+    Interface = "",
+    File = "",
+    EnumMember = "",
+    Text = "",
+  }
+
+  cmp.setup.buffer({
+    sources = {
+      { name = "vibing", priority = 1000 },
+      { name = "buffer", priority = 500 },
+    },
+    formatting = {
+      format = function(entry, vim_item)
+        local icon = kind_icons[vim_item.kind] or ""
+        vim_item.kind = icon .. " " .. vim_item.kind
+        -- Keep menu minimal for vibing source
+        if entry.source.name == "vibing" then
+          vim_item.menu = ""
+        end
+        return vim_item
+      end,
+    },
+    -- Enable documentation preview window
+    window = {
+      documentation = cmp.config.window.bordered(),
+    },
+  })
+end
+
 -- Markdown-like settings
 vim.bo.textwidth = 0
 vim.bo.formatoptions = "tcqj"
