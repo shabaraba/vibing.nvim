@@ -6,15 +6,19 @@
 vim.bo.syntax = "markdown"
 vim.bo.commentstring = "<!-- %s -->"
 
--- Set up omni-completion for slash commands
-vim.bo.omnifunc = "v:lua.require'vibing.completion'.slash_command_complete"
-
--- Configure completion menu for slash commands
--- These options ensure the omni-completion menu displays correctly:
--- - menu: show popup menu even with one match
--- - menuone: show menu even when there's only one match
--- - noselect: don't auto-select first match (user explicitly chooses)
-vim.bo.completeopt = "menu,menuone,noselect"
+-- Set up completion for vibing buffers
+-- Uses new completion module with nvim-cmp support and omnifunc fallback
+-- Note: setup_buffer may not exist if vibing.setup() hasn't been called yet
+local ok, completion = pcall(require, "vibing.application.completion")
+if ok and completion.setup_buffer then
+  pcall(completion.setup_buffer, vim.api.nvim_get_current_buf())
+elseif ok then
+  -- Module loaded but setup_buffer not ready - use omnifunc directly
+  pcall(function()
+    vim.bo.omnifunc = "v:lua.require('vibing.application.completion').omnifunc"
+    vim.bo.completeopt = "menu,menuone,noselect"
+  end)
+end
 
 -- Markdown-like settings
 vim.bo.textwidth = 0

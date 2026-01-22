@@ -89,6 +89,9 @@ function M.setup(opts)
 
   -- コマンド登録
   M._register_commands()
+
+  -- 補完システム初期化（nvim-cmpが利用可能な場合はソースを登録）
+  require("vibing.application.completion").setup()
 end
 
 ---Neovimユーザーコマンドを登録
