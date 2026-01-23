@@ -126,6 +126,25 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
         }
       }
 
+      // Check ask list (highest priority - always ask regardless of allow list)
+      for (const askedTool of askedTools) {
+        if (matchesPermission(toolName, input, askedTool)) {
+          console.log(
+            safeJsonStringify({
+              type: 'approval_required',
+              tool: toolName,
+              input: input,
+              options: APPROVAL_OPTIONS,
+            })
+          );
+
+          return {
+            behavior: 'deny',
+            message: 'Please wait for user approval from the provided options.',
+          };
+        }
+      }
+
       // Implement permission modes
       if (permissionMode === 'acceptEdits' && (toolName === 'Edit' || toolName === 'Write')) {
         return { behavior: 'allow', updatedInput: input };
@@ -168,25 +187,6 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
             behavior: 'deny',
             message:
               'vibing.nvim MCP integration is disabled. Enable it in config: mcp.enabled = true',
-          };
-        }
-      }
-
-      // Check ask list (highest priority - always ask regardless of allow list)
-      for (const askedTool of askedTools) {
-        if (matchesPermission(toolName, input, askedTool)) {
-          console.log(
-            safeJsonStringify({
-              type: 'approval_required',
-              tool: toolName,
-              input: input,
-              options: APPROVAL_OPTIONS,
-            })
-          );
-
-          return {
-            behavior: 'deny',
-            message: 'Please wait for user approval from the provided options.',
           };
         }
       }

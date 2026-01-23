@@ -183,13 +183,18 @@ function getStatusEmoji(status: TodoItem['status']): string {
 }
 
 function formatTodoWriteTodos(todos: TodoItem[]): string {
-  const lines = todos.map((todo) => {
-    const emoji = getStatusEmoji(todo.status);
-    const displayText = todo.status === 'in_progress' ? todo.activeForm : todo.content;
-    return `  ${emoji} ${displayText}`;
-  });
+  try {
+    const lines = todos.map((todo) => {
+      const emoji = getStatusEmoji(todo.status);
+      const displayText = todo.status === 'in_progress' ? todo.activeForm : todo.content;
+      return `  ${emoji} ${displayText}`;
+    });
 
-  return '\n' + lines.join('\n') + '\n';
+    return lines.join('\n') + '\n';
+  } catch (error) {
+    console.error('Error formatting TodoWrite todos:', error);
+    return '  ⚠️ (Failed to format todos)\n';
+  }
 }
 
 type DisplayMode = 'none' | 'compact' | 'full';
@@ -200,6 +205,7 @@ interface FormatToolResultOptions {
   resultText: string;
   displayMode: DisplayMode;
   prefixNewline: boolean;
+  isError: boolean;
   todos?: TodoItem[];
   parentTaskSummary?: string;
 }
@@ -214,6 +220,7 @@ function formatToolResult(options: FormatToolResultOptions): string {
     resultText,
     displayMode,
     prefixNewline,
+    isError,
     todos,
     parentTaskSummary,
   } = options;
@@ -222,7 +229,8 @@ function formatToolResult(options: FormatToolResultOptions): string {
   const parentAnnotation = parentTaskSummary ? ` by Task(${parentTaskSummary})` : '';
   let text = `${prefix}⏺ ${toolName}(${inputSummary})${parentAnnotation}\n`;
 
-  if (toolName === 'TodoWrite' && todos && todos.length > 0) {
+  // Only show formatted todos if there's no error
+  if (toolName === 'TodoWrite' && todos && todos.length > 0 && !isError) {
     text += formatTodoWriteTodos(todos);
     return text;
   }
@@ -249,8 +257,13 @@ function formatTaskCompletion(
   nestedToolCount: number,
   prefixNewline: boolean
 ): string {
-  const prefix = prefixNewline ? '\n' : '';
-  return `${prefix}⏺ Task(${inputSummary}) ✓ (${nestedToolCount} tools used)\n`;
+  try {
+    const prefix = prefixNewline ? '\n' : '';
+    return `${prefix}⏺ Task(${inputSummary}) ✓ (${nestedToolCount} tools used)\n`;
+  } catch (error) {
+    console.error('Error formatting Task completion:', error);
+    return `\n⏺ Task ✓ (Failed to format completion message)\n`;
+  }
 }
 
 /**
@@ -316,11 +329,10 @@ export async function processStream(
             toolInputMap.set(block.id, inputSummary);
 
             // TodoWriteの場合はtodosをキャプチャ（型検証付き）
+            // 空配列も保存して「タスクなし」状態を明示的に表示
             if (toolName === 'TodoWrite' && toolInput.todos && Array.isArray(toolInput.todos)) {
               const validatedTodos = validateTodoItems(toolInput.todos);
-              if (validatedTodos.length > 0) {
-                todoWriteInputMap.set(block.id, validatedTodos);
-              }
+              todoWriteInputMap.set(block.id, validatedTodos);
             }
 
             // Track Task tools for nested display
@@ -379,6 +391,7 @@ export async function processStream(
             const inputSummary = toolInputMap.get(block.tool_use_id) || '';
             const todos = todoWriteInputMap.get(block.tool_use_id);
             const prefixNewline = lastOutputType === 'text';
+            const isError = block.is_error === true;
 
             let outputText: string;
 
@@ -397,6 +410,7 @@ export async function processStream(
                 resultText,
                 displayMode: toolResultDisplay,
                 prefixNewline,
+                isError,
                 todos,
                 parentTaskSummary,
               });
