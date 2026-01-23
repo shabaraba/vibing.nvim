@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.24.1 (2026-01-23)
+
+## What's Changed
+
+- fix: improve tool result display and permissions_ask priority by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/340
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.24.0...v1.24.1
+
 ## 1.24.0 (2026-01-23)
 
 ## What's Changed
