@@ -180,58 +180,39 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
         }
       }
 
-      // Check ask list (first priority - but allow list can override)
+      // Check ask list (highest priority - always ask regardless of allow list)
       for (const askedTool of askedTools) {
-        const askMatches = matchesPermission(toolName, input, askedTool);
-
-        if (askMatches) {
-          let allowedByAllowList = false;
-
-          for (const allowedTool of allowedTools) {
-            const matches = matchesPermission(toolName, input, allowedTool);
-            if (matches) {
-              allowedByAllowList = true;
-              break;
-            }
-          }
-
-          if (!allowedByAllowList) {
-            // Send approval_required event to show interactive UI in chat
-            console.log(
-              safeJsonStringify({
-                type: 'approval_required',
-                tool: toolName,
-                input: input,
-                options: [
-                  {
-                    value: 'allow_once',
-                    label: 'allow_once - Allow this execution only',
-                  },
-                  {
-                    value: 'deny_once',
-                    label: 'deny_once - Deny this execution only',
-                  },
-                  {
-                    value: 'allow_for_session',
-                    label: 'allow_for_session - Allow for this session',
-                  },
-                  {
-                    value: 'deny_for_session',
-                    label: 'deny_for_session - Deny for this session',
-                  },
-                ],
-              })
-            );
-
-            return {
-              behavior: 'deny',
-              message: 'Please wait for user approval from the provided options.',
-            };
-          }
+        if (matchesPermission(toolName, input, askedTool)) {
+          // Send approval_required event to show interactive UI in chat
+          console.log(
+            safeJsonStringify({
+              type: 'approval_required',
+              tool: toolName,
+              input: input,
+              options: [
+                {
+                  value: 'allow_once',
+                  label: 'allow_once - Allow this execution only',
+                },
+                {
+                  value: 'deny_once',
+                  label: 'deny_once - Deny this execution only',
+                },
+                {
+                  value: 'allow_for_session',
+                  label: 'allow_for_session - Allow for this session',
+                },
+                {
+                  value: 'deny_for_session',
+                  label: 'deny_for_session - Deny for this session',
+                },
+              ],
+            })
+          );
 
           return {
-            behavior: 'allow',
-            updatedInput: input,
+            behavior: 'deny',
+            message: 'Please wait for user approval from the provided options.',
           };
         }
       }

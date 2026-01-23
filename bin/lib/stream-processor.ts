@@ -137,6 +137,15 @@ interface TodoItem {
   status: 'pending' | 'in_progress' | 'completed';
 }
 
+/**
+ * Tracks Task tool context for nested tool display
+ */
+interface TaskToolContext {
+  taskToolId: string;          // Task tool's tool_use_id
+  taskInputSummary: string;    // "Explore" or "code-reviewer" etc.
+  nestedToolIds: string[];     // tool_use_ids of nested tools
+}
+
 
 /**
  * Format TodoWrite todos list with emoji status indicators
@@ -225,6 +234,10 @@ export async function processStream(
   const toolInputMap = new Map<string, string>();
   const todoWriteInputMap = new Map<string, TodoItem[]>();
 
+  // Task tool tracking for nested display
+  const taskContextMap = new Map<string, TaskToolContext>(); // taskToolId → context
+  const toolParentMap = new Map<string, string>(); // tool_use_id → parent_task_id
+
   // Apply timeout for first message to detect hung streams during resume
   const stream = withInitialTimeout(resultStream, INITIAL_MESSAGE_TIMEOUT_MS);
 
@@ -264,6 +277,31 @@ export async function processStream(
             todoWriteInputMap.set(block.id, toolInput.todos as TodoItem[]);
           }
 
+          // Track Task tools for nested display
+          if (toolName === 'Task') {
+            taskContextMap.set(block.id, {
+              taskToolId: block.id,
+              taskInputSummary: inputSummary,
+              nestedToolIds: [],
+            });
+
+            // Immediately display Task tool to show subagent is starting
+            const taskText = (lastOutputType === 'text' ? '\n' : '') + `⏺ Task(${inputSummary})\n`;
+            emit({ type: 'chunk', text: taskText });
+            lastOutputType = 'tool_result';
+          }
+
+          // Track parent-child relationship
+          const parentToolUseId = (message as any).parent_tool_use_id;
+          if (parentToolUseId && typeof parentToolUseId === 'string') {
+            toolParentMap.set(block.id, parentToolUseId);
+            // Add to parent Task's nested tool list
+            const parentContext = taskContextMap.get(parentToolUseId);
+            if (parentContext) {
+              parentContext.nestedToolIds.push(block.id);
+            }
+          }
+
           emit({ type: 'status', state: 'tool_use', tool: toolName, input_summary: inputSummary });
 
           if (toolName === 'Bash' && toolInput.command) {
@@ -281,26 +319,47 @@ export async function processStream(
 
     if (message.type === 'user' && message.message?.content) {
       for (const block of message.message.content) {
-        if (block.type === 'tool_result' && block.content) {
+        if (block.type === 'tool_result') {
           const toolName = toolUseMap.get(block.tool_use_id);
           if (toolName) {
-            const resultText = extractResultText(block.content);
+            const resultText = block.content ? extractResultText(block.content) : '';
             const inputSummary = toolInputMap.get(block.tool_use_id) || '';
             const todos = todoWriteInputMap.get(block.tool_use_id);
-            const toolText = formatToolResult(
-              toolName,
-              inputSummary,
-              resultText,
-              toolResultDisplay,
-              lastOutputType === 'text',
-              todos
-            );
-            emit({ type: 'chunk', text: toolText });
-            lastOutputType = 'tool_result';
+
+            // Check if this tool is nested under a Task
+            const isNested = toolParentMap.has(block.tool_use_id);
+
+            if (isNested) {
+              // Skip displaying nested tools individually
+              // They will be shown in aggregate when the parent Task completes
+            } else if (toolName === 'Task') {
+              // Task tool was already displayed at tool_use time
+              // Now just show aggregate count
+              const taskContext = taskContextMap.get(block.tool_use_id);
+              if (taskContext && taskContext.nestedToolIds.length > 0) {
+                const nestedCount = taskContext.nestedToolIds.length;
+                const aggregateText = `  ... (${nestedCount} tools used)\n`;
+                emit({ type: 'chunk', text: aggregateText });
+              }
+            } else {
+              // Display top-level tools normally
+              const toolText = formatToolResult(
+                toolName,
+                inputSummary,
+                resultText,
+                toolResultDisplay,
+                lastOutputType === 'text',
+                todos
+              );
+              emit({ type: 'chunk', text: toolText });
+              lastOutputType = 'tool_result';
+            }
 
             toolUseMap.delete(block.tool_use_id);
             toolInputMap.delete(block.tool_use_id);
             todoWriteInputMap.delete(block.tool_use_id);
+            toolParentMap.delete(block.tool_use_id);
+            taskContextMap.delete(block.tool_use_id);
           }
         }
       }
