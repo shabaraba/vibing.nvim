@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.0 (2026-01-23)
+
+## What's Changed
+* feat: externalize system prompts to MD files with Agent SDK preset by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/336
+* fix: correct commit message to prevent unwanted major version bump by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/338
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.23.0...v2.0.0
+
 ## 1.23.0 (2026-01-22)
 
 ## What's Changed
