@@ -137,37 +137,28 @@ interface TodoItem {
   status: 'pending' | 'in_progress' | 'completed';
 }
 
+
 /**
- * Format TodoWrite tool result with emoji status indicators
- * @param resultText - JSON result from TodoWrite tool
+ * Format TodoWrite todos list with emoji status indicators
+ * @param todos - Array of todo items from tool input
  * @returns Formatted todo list with emojis
  */
-function formatTodoWriteResult(resultText: string): string {
-  try {
-    const result = JSON.parse(resultText);
-    if (!result.todos || !Array.isArray(result.todos)) {
-      return '';
+function formatTodoWriteTodos(todos: TodoItem[]): string {
+  const lines: string[] = [];
+
+  for (const todo of todos) {
+    let emoji = '⏳';
+    if (todo.status === 'completed') {
+      emoji = '✅';
+    } else if (todo.status === 'in_progress') {
+      emoji = '🔄';
     }
 
-    const todos = result.todos as TodoItem[];
-    const lines: string[] = [];
-
-    for (const todo of todos) {
-      let emoji = '⏳';
-      if (todo.status === 'completed') {
-        emoji = '✅';
-      } else if (todo.status === 'in_progress') {
-        emoji = '🔄';
-      }
-
-      const displayText = todo.status === 'in_progress' ? todo.activeForm : todo.content;
-      lines.push(`  ${emoji} ${displayText}`);
-    }
-
-    return '\n' + lines.join('\n') + '\n';
-  } catch {
-    return '';
+    const displayText = todo.status === 'in_progress' ? todo.activeForm : todo.content;
+    lines.push(`  ${emoji} ${displayText}`);
   }
+
+  return '\n' + lines.join('\n') + '\n';
 }
 
 /**
@@ -177,6 +168,7 @@ function formatTodoWriteResult(resultText: string): string {
  * @param resultText - Tool result text
  * @param displayMode - Display mode (none/compact/full)
  * @param prefixNewline - Whether to prefix with newline
+ * @param todos - Optional todos array for TodoWrite tool
  * @returns Formatted tool result string
  */
 function formatToolResult(
@@ -184,17 +176,15 @@ function formatToolResult(
   inputSummary: string,
   resultText: string,
   displayMode: 'none' | 'compact' | 'full',
-  prefixNewline: boolean
+  prefixNewline: boolean,
+  todos?: TodoItem[]
 ): string {
   let text = prefixNewline ? '\n' : '';
   text += `⏺ ${toolName}(${inputSummary})\n`;
 
   // TodoWriteは設定に関わらず常に全内容を整形して表示
-  if (toolName === 'TodoWrite' && resultText) {
-    const formattedTodos = formatTodoWriteResult(resultText);
-    if (formattedTodos) {
-      text += formattedTodos;
-    }
+  if (toolName === 'TodoWrite' && todos && todos.length > 0) {
+    text += formatTodoWriteTodos(todos);
     return text;
   }
 
@@ -233,6 +223,7 @@ export async function processStream(
   const processedToolUseIds = new Set<string>();
   const toolUseMap = new Map<string, string>();
   const toolInputMap = new Map<string, string>();
+  const todoWriteInputMap = new Map<string, TodoItem[]>();
 
   // Apply timeout for first message to detect hung streams during resume
   const stream = withInitialTimeout(resultStream, INITIAL_MESSAGE_TIMEOUT_MS);
@@ -268,6 +259,11 @@ export async function processStream(
           toolUseMap.set(block.id, toolName);
           toolInputMap.set(block.id, inputSummary);
 
+          // TodoWriteの場合はtodosをキャプチャ
+          if (toolName === 'TodoWrite' && toolInput.todos && Array.isArray(toolInput.todos)) {
+            todoWriteInputMap.set(block.id, toolInput.todos as TodoItem[]);
+          }
+
           emit({ type: 'status', state: 'tool_use', tool: toolName, input_summary: inputSummary });
 
           if (toolName === 'Bash' && toolInput.command) {
@@ -290,18 +286,21 @@ export async function processStream(
           if (toolName) {
             const resultText = extractResultText(block.content);
             const inputSummary = toolInputMap.get(block.tool_use_id) || '';
+            const todos = todoWriteInputMap.get(block.tool_use_id);
             const toolText = formatToolResult(
               toolName,
               inputSummary,
               resultText,
               toolResultDisplay,
-              lastOutputType === 'text'
+              lastOutputType === 'text',
+              todos
             );
             emit({ type: 'chunk', text: toolText });
             lastOutputType = 'tool_result';
 
             toolUseMap.delete(block.tool_use_id);
             toolInputMap.delete(block.tool_use_id);
+            todoWriteInputMap.delete(block.tool_use_id);
           }
         }
       }
