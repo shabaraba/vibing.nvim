@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, realpathSync } from 'fs';
 import path from 'path';
 
 import type { TemplateVars } from './template-engine.js';
@@ -48,10 +48,12 @@ export interface SystemPromptConfig {
 function readRequiredPromptFile(filePath: string): string {
   try {
     return readFileSync(filePath, 'utf-8');
-  } catch {
+  } catch (error) {
+    const err = toError(error);
     throw new Error(
-      `Required system prompt not found: ${filePath}\n` +
-        `This should never happen. Please reinstall vibing.nvim.`
+      `Failed to read required system prompt: ${filePath}\n` +
+        `Error: ${err.message}\n` +
+        `This indicates a broken installation. Please reinstall vibing.nvim.`
     );
   }
 }
@@ -91,6 +93,7 @@ function loadAndRenderPrompt(promptsDir: string, filename: string, vars: Templat
 
 /**
  * Load project-specific prompt file if it exists
+ * Protects against symlink attacks by resolving real paths before validation
  * @param projectPromptPath - Path to project prompt file
  * @param cwd - Current working directory
  * @param vars - Template variables for rendering
@@ -101,20 +104,24 @@ function loadProjectPrompt(
   cwd: string,
   vars: TemplateVars
 ): string | null {
-  const normalizedPath = path.resolve(projectPromptPath);
   const normalizedCwd = path.resolve(cwd);
 
-  if (!normalizedPath.startsWith(normalizedCwd) || !existsSync(normalizedPath)) {
-    return null;
-  }
-
   try {
-    const content = readFileSync(normalizedPath, 'utf-8');
+    // Resolve symlinks to prevent path traversal attacks
+    const realPath = realpathSync(projectPromptPath);
+
+    // Validate that resolved path is within cwd
+    if (!realPath.startsWith(normalizedCwd)) {
+      console.warn(`[vibing.nvim] Project prompt outside cwd: ${projectPromptPath}`);
+      return null;
+    }
+
+    const content = readFileSync(realPath, 'utf-8');
     return renderTemplate(content, vars);
   } catch (error) {
     const err = toError(error);
     console.warn(
-      `[vibing.nvim] Failed to read project prompt: ${normalizedPath}\n` +
+      `[vibing.nvim] Failed to read project prompt: ${projectPromptPath}\n` +
         `Reason: ${err.message}\n` +
         `Continuing with default prompts only.`
     );
