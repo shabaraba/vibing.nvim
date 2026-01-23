@@ -39,6 +39,12 @@ export interface SystemPromptConfig {
   prioritizeVibingLsp: boolean;
 }
 
+/**
+ * Read a required prompt file and throw if not found
+ * @param filePath - Path to the prompt file
+ * @returns File content as string
+ * @throws Error if file cannot be read
+ */
 function readRequiredPromptFile(filePath: string): string {
   try {
     return readFileSync(filePath, 'utf-8');
@@ -50,6 +56,11 @@ function readRequiredPromptFile(filePath: string): string {
   }
 }
 
+/**
+ * Build template variables for prompt rendering
+ * @param config - System prompt configuration
+ * @returns Template variables for rendering
+ */
 function buildTemplateVars(config: SystemPromptConfig): TemplateVars {
   const languageName = config.language ? LANGUAGE_NAMES[config.language] : null;
   if (config.language && !languageName) {
@@ -65,16 +76,26 @@ function buildTemplateVars(config: SystemPromptConfig): TemplateVars {
   };
 }
 
-function loadAndRenderPrompt(
-  promptsDir: string,
-  filename: string,
-  vars: TemplateVars
-): string {
+/**
+ * Load and render a prompt file with template variables
+ * @param promptsDir - Directory containing prompt files
+ * @param filename - Name of the prompt file
+ * @param vars - Template variables for rendering
+ * @returns Rendered prompt string
+ */
+function loadAndRenderPrompt(promptsDir: string, filename: string, vars: TemplateVars): string {
   const filePath = path.join(promptsDir, filename);
   const content = readRequiredPromptFile(filePath);
   return renderTemplate(content, vars);
 }
 
+/**
+ * Load project-specific prompt file if it exists
+ * @param projectPromptPath - Path to project prompt file
+ * @param cwd - Current working directory
+ * @param vars - Template variables for rendering
+ * @returns Rendered project prompt string or null if not found
+ */
 function loadProjectPrompt(
   projectPromptPath: string,
   cwd: string,
@@ -101,6 +122,11 @@ function loadProjectPrompt(
   }
 }
 
+/**
+ * Load system prompt by combining multiple prompt files
+ * @param config - System prompt configuration
+ * @returns Combined system prompt string
+ */
 export function loadSystemPrompt(config: SystemPromptConfig): string {
   if (!config.prioritizeVibingLsp) {
     return '';

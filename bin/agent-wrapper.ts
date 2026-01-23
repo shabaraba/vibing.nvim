@@ -39,6 +39,11 @@ function resolvePromptsDir(): string {
   return compiledPath;
 }
 
+/**
+ * Initialize working directory for the Agent SDK
+ * @param cwd - Requested working directory path
+ * @returns Validated working directory path
+ */
 function initializeWorkingDirectory(cwd: string | undefined): string {
   if (!cwd) {
     return process.cwd();
@@ -52,6 +57,11 @@ function initializeWorkingDirectory(cwd: string | undefined): string {
   return process.cwd();
 }
 
+/**
+ * Build query options for Claude Agent SDK
+ * @param config - Parsed command line arguments
+ * @returns Query options object for Agent SDK
+ */
 function buildQueryOptions(config: ReturnType<typeof parseArguments>): Record<string, unknown> {
   const options: Record<string, unknown> = {
     cwd: config.cwd,
@@ -104,12 +114,14 @@ const fullPrompt = buildPrompt(config);
 const queryOptions = buildQueryOptions(config);
 
 // Use Agent SDK's systemPrompt option with Claude Code preset
+// Always set the preset, and conditionally add append if systemPrompt is non-empty
+queryOptions.systemPrompt = {
+  type: 'preset',
+  preset: 'claude_code',
+};
+
 if (systemPrompt) {
-  queryOptions.systemPrompt = {
-    type: 'preset',
-    preset: 'claude_code',
-    append: systemPrompt,
-  };
+  queryOptions.systemPrompt.append = systemPrompt;
 }
 
 // Load installed plugins (agents, commands, skills, hooks)
