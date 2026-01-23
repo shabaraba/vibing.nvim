@@ -1,3 +1,6 @@
+/**
+ * Template variables for prompt rendering
+ */
 export interface TemplateVars {
   RPC_PORT: string | null;
   SESSION_ID: string | null;
@@ -6,6 +9,12 @@ export interface TemplateVars {
   CWD: string;
 }
 
+/**
+ * Render template string with variable substitution
+ * @param template - Template string with {{VAR}} placeholders
+ * @param vars - Variables to substitute into template
+ * @returns Rendered template string
+ */
 export function renderTemplate(template: string, vars: TemplateVars): string {
   return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
     if (!(key in vars)) {
