@@ -138,63 +138,100 @@ interface TodoItem {
 }
 
 /**
- * Format TodoWrite tool result with emoji status indicators
- * @param resultText - JSON result from TodoWrite tool
+ * Type guard to validate TodoItem at runtime
+ */
+function isTodoItem(obj: any): obj is TodoItem {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    typeof obj.content === 'string' &&
+    typeof obj.activeForm === 'string' &&
+    (obj.status === 'pending' || obj.status === 'in_progress' || obj.status === 'completed')
+  );
+}
+
+/**
+ * Validate and filter array of TodoItems
+ */
+function validateTodoItems(items: any[]): TodoItem[] {
+  return items.filter(isTodoItem);
+}
+
+/**
+ * Tracks Task tool context for nested tool display
+ */
+interface TaskToolContext {
+  taskToolId: string;
+  taskInputSummary: string;
+  nestedToolIds: string[];
+}
+
+/**
+ * Format TodoWrite todos list with emoji status indicators
+ * @param todos - Array of todo items from tool input
  * @returns Formatted todo list with emojis
  */
-function formatTodoWriteResult(resultText: string): string {
-  try {
-    const result = JSON.parse(resultText);
-    if (!result.todos || !Array.isArray(result.todos)) {
-      return '';
-    }
-
-    const todos = result.todos as TodoItem[];
-    const lines: string[] = [];
-
-    for (const todo of todos) {
-      let emoji = '⏳';
-      if (todo.status === 'completed') {
-        emoji = '✅';
-      } else if (todo.status === 'in_progress') {
-        emoji = '🔄';
-      }
-
-      const displayText = todo.status === 'in_progress' ? todo.activeForm : todo.content;
-      lines.push(`  ${emoji} ${displayText}`);
-    }
-
-    return '\n' + lines.join('\n') + '\n';
-  } catch {
-    return '';
+function getStatusEmoji(status: TodoItem['status']): string {
+  switch (status) {
+    case 'completed':
+      return '✅';
+    case 'in_progress':
+      return '🔄';
+    default:
+      return '⏳';
   }
+}
+
+function formatTodoWriteTodos(todos: TodoItem[]): string {
+  try {
+    const lines = todos.map((todo) => {
+      const emoji = getStatusEmoji(todo.status);
+      const displayText = todo.status === 'in_progress' ? todo.activeForm : todo.content;
+      return `  ${emoji} ${displayText}`;
+    });
+
+    return lines.join('\n') + '\n';
+  } catch (error) {
+    console.error('Error formatting TodoWrite todos:', error);
+    return '  ⚠️ (Failed to format todos)\n';
+  }
+}
+
+type DisplayMode = 'none' | 'compact' | 'full';
+
+interface FormatToolResultOptions {
+  toolName: string;
+  inputSummary: string;
+  resultText: string;
+  displayMode: DisplayMode;
+  prefixNewline: boolean;
+  isError: boolean;
+  todos?: TodoItem[];
+  parentTaskSummary?: string;
 }
 
 /**
  * Format tool execution result for display
- * @param toolName - Name of the tool
- * @param inputSummary - Brief summary of tool input
- * @param resultText - Tool result text
- * @param displayMode - Display mode (none/compact/full)
- * @param prefixNewline - Whether to prefix with newline
- * @returns Formatted tool result string
  */
-function formatToolResult(
-  toolName: string,
-  inputSummary: string,
-  resultText: string,
-  displayMode: 'none' | 'compact' | 'full',
-  prefixNewline: boolean
-): string {
-  let text = prefixNewline ? '\n' : '';
-  text += `⏺ ${toolName}(${inputSummary})\n`;
+function formatToolResult(options: FormatToolResultOptions): string {
+  const {
+    toolName,
+    inputSummary,
+    resultText,
+    displayMode,
+    prefixNewline,
+    isError,
+    todos,
+    parentTaskSummary,
+  } = options;
 
-  // TodoWriteは設定に関わらず常に全内容を整形して表示
-  if (toolName === 'TodoWrite' && resultText) {
-    const formattedTodos = formatTodoWriteResult(resultText);
-    if (formattedTodos) {
-      text += formattedTodos;
-    }
+  const prefix = prefixNewline ? '\n' : '';
+  const parentAnnotation = parentTaskSummary ? ` by Task(${parentTaskSummary})` : '';
+  let text = `${prefix}⏺ ${toolName}(${inputSummary})${parentAnnotation}\n`;
+
+  // Only show formatted todos if there's no error
+  if (toolName === 'TodoWrite' && todos && todos.length > 0 && !isError) {
+    text += formatTodoWriteTodos(todos);
     return text;
   }
 
@@ -210,6 +247,23 @@ function formatToolResult(
   }
 
   return text;
+}
+
+/**
+ * Format Task tool completion message
+ */
+function formatTaskCompletion(
+  inputSummary: string,
+  nestedToolCount: number,
+  prefixNewline: boolean
+): string {
+  try {
+    const prefix = prefixNewline ? '\n' : '';
+    return `${prefix}⏺ Task(${inputSummary}) ✓ (${nestedToolCount} tools used)\n`;
+  } catch (error) {
+    console.error('Error formatting Task completion:', error);
+    return `\n⏺ Task ✓ (Failed to format completion message)\n`;
+  }
 }
 
 /**
@@ -233,98 +287,174 @@ export async function processStream(
   const processedToolUseIds = new Set<string>();
   const toolUseMap = new Map<string, string>();
   const toolInputMap = new Map<string, string>();
+  const todoWriteInputMap = new Map<string, TodoItem[]>();
+
+  // Task tool tracking for nested display
+  const taskContextMap = new Map<string, TaskToolContext>(); // taskToolId → context
+  const toolParentMap = new Map<string, string>(); // tool_use_id → parent_task_id
 
   // Apply timeout for first message to detect hung streams during resume
   const stream = withInitialTimeout(resultStream, INITIAL_MESSAGE_TIMEOUT_MS);
 
-  for await (const message of stream) {
-    if (
-      message.type === 'system' &&
-      message.subtype === 'init' &&
-      message.session_id &&
-      !sessionIdEmitted
-    ) {
-      emit({ type: 'session', session_id: message.session_id });
-      sessionIdEmitted = true;
-      emit({ type: 'status', state: 'thinking' });
-    }
+  try {
+    for await (const message of stream) {
+      if (
+        message.type === 'system' &&
+        message.subtype === 'init' &&
+        message.session_id &&
+        !sessionIdEmitted
+      ) {
+        emit({ type: 'session', session_id: message.session_id });
+        sessionIdEmitted = true;
+        emit({ type: 'status', state: 'thinking' });
+      }
 
-    if (message.type === 'assistant' && message.message?.content) {
-      for (const block of message.message.content) {
-        if (block.type === 'text' && block.text) {
-          if (!respondingEmitted) {
-            emit({ type: 'status', state: 'responding' });
-            respondingEmitted = true;
-          }
-          const text = lastOutputType === 'tool_result' ? '\n' + block.text : block.text;
-          emit({ type: 'chunk', text });
-          lastOutputType = 'text';
-        } else if (block.type === 'tool_use' && !processedToolUseIds.has(block.id)) {
-          processedToolUseIds.add(block.id);
-          const toolName = block.name;
-          const toolInput = block.input || {};
-          const inputSummary = extractInputSummary(toolName, toolInput);
+      if (message.type === 'assistant' && message.message?.content) {
+        for (const block of message.message.content) {
+          if (block.type === 'text' && block.text) {
+            if (!respondingEmitted) {
+              emit({ type: 'status', state: 'responding' });
+              respondingEmitted = true;
+            }
+            const text = lastOutputType === 'tool_result' ? '\n' + block.text : block.text;
+            emit({ type: 'chunk', text });
+            lastOutputType = 'text';
+          } else if (block.type === 'tool_use' && !processedToolUseIds.has(block.id)) {
+            processedToolUseIds.add(block.id);
+            const toolName = block.name;
+            const toolInput = block.input || {};
+            const inputSummary = extractInputSummary(toolName, toolInput);
 
-          toolUseMap.set(block.id, toolName);
-          toolInputMap.set(block.id, inputSummary);
+            toolUseMap.set(block.id, toolName);
+            toolInputMap.set(block.id, inputSummary);
 
-          emit({ type: 'status', state: 'tool_use', tool: toolName, input_summary: inputSummary });
+            // TodoWriteの場合はtodosをキャプチャ（型検証付き）
+            // 空配列も保存して「タスクなし」状態を明示的に表示
+            if (toolName === 'TodoWrite' && toolInput.todos && Array.isArray(toolInput.todos)) {
+              const validatedTodos = validateTodoItems(toolInput.todos);
+              todoWriteInputMap.set(block.id, validatedTodos);
+            }
 
-          if (toolName === 'Bash' && toolInput.command) {
-            emit({ type: 'tool_use', tool: 'Bash', command: toolInput.command });
+            // Track Task tools for nested display
+            if (toolName === 'Task') {
+              taskContextMap.set(block.id, {
+                taskToolId: block.id,
+                taskInputSummary: inputSummary,
+                nestedToolIds: [],
+              });
 
-            // VCS operation detection for mote integration
-            const vcsOp = detectVcsOperation(toolInput.command as string);
-            if (vcsOp) {
-              emit({ type: 'vcs_operation', operation: vcsOp, command: toolInput.command });
+              // Display Task tool start immediately
+              const taskText =
+                (lastOutputType === 'text' ? '\n' : '') + `⏺ Task(${inputSummary}) ...\n`;
+              emit({ type: 'chunk', text: taskText });
+              lastOutputType = 'tool_result';
+            }
+
+            // Track parent-child relationship (only for Task parents)
+            const parentToolUseId = (message as any).parent_tool_use_id;
+            if (parentToolUseId && typeof parentToolUseId === 'string') {
+              // Only track if parent is a Task tool
+              const parentContext = taskContextMap.get(parentToolUseId);
+              if (parentContext) {
+                toolParentMap.set(block.id, parentToolUseId);
+                parentContext.nestedToolIds.push(block.id);
+              }
+            }
+
+            emit({
+              type: 'status',
+              state: 'tool_use',
+              tool: toolName,
+              input_summary: inputSummary,
+            });
+
+            if (toolName === 'Bash' && toolInput.command) {
+              emit({ type: 'tool_use', tool: 'Bash', command: toolInput.command });
+
+              // VCS operation detection for mote integration
+              const vcsOp = detectVcsOperation(toolInput.command as string);
+              if (vcsOp) {
+                emit({ type: 'vcs_operation', operation: vcsOp, command: toolInput.command });
+              }
             }
           }
         }
       }
-    }
 
-    if (message.type === 'user' && message.message?.content) {
-      for (const block of message.message.content) {
-        if (block.type === 'tool_result' && block.content) {
-          const toolName = toolUseMap.get(block.tool_use_id);
-          if (toolName) {
-            const resultText = extractResultText(block.content);
+      if (message.type === 'user' && message.message?.content) {
+        for (const block of message.message.content) {
+          if (block.type === 'tool_result') {
+            const toolName = toolUseMap.get(block.tool_use_id);
+            if (!toolName) continue;
+
+            const resultText = block.content ? extractResultText(block.content) : '';
             const inputSummary = toolInputMap.get(block.tool_use_id) || '';
-            const toolText = formatToolResult(
-              toolName,
-              inputSummary,
-              resultText,
-              toolResultDisplay,
-              lastOutputType === 'text'
-            );
-            emit({ type: 'chunk', text: toolText });
+            const todos = todoWriteInputMap.get(block.tool_use_id);
+            const prefixNewline = lastOutputType === 'text';
+            const isError = block.is_error === true;
+
+            let outputText: string;
+
+            if (toolName === 'Task') {
+              const taskContext = taskContextMap.get(block.tool_use_id);
+              const nestedCount = taskContext ? taskContext.nestedToolIds.length : 0;
+              outputText = formatTaskCompletion(inputSummary, nestedCount, prefixNewline);
+            } else {
+              const parentTaskId = toolParentMap.get(block.tool_use_id);
+              const parentContext = parentTaskId ? taskContextMap.get(parentTaskId) : null;
+              const parentTaskSummary = parentContext?.taskInputSummary;
+
+              outputText = formatToolResult({
+                toolName,
+                inputSummary,
+                resultText,
+                displayMode: toolResultDisplay,
+                prefixNewline,
+                isError,
+                todos,
+                parentTaskSummary,
+              });
+            }
+
+            emit({ type: 'chunk', text: outputText });
             lastOutputType = 'tool_result';
 
             toolUseMap.delete(block.tool_use_id);
             toolInputMap.delete(block.tool_use_id);
+            todoWriteInputMap.delete(block.tool_use_id);
+            toolParentMap.delete(block.tool_use_id);
+            taskContextMap.delete(block.tool_use_id);
           }
         }
       }
-    }
 
-    if (message.type === 'result') {
-      if (message.subtype === 'error_max_turns') {
-        emit({ type: 'error', message: 'Max turns reached' });
+      if (message.type === 'result') {
+        if (message.subtype === 'error_max_turns') {
+          emit({ type: 'error', message: 'Max turns reached' });
+        }
+      }
+
+      if (message.type === 'error') {
+        const errorMessage = message.error?.message || message.message || 'Unknown error';
+        if (errorMessage.includes('No conversation found') || errorMessage.includes('session')) {
+          emit({
+            type: 'session_corrupted',
+            old_session_id: sessionId,
+            reason: 'sdk_session_not_found',
+          });
+        } else {
+          emit({ type: 'error', message: errorMessage });
+        }
       }
     }
-
-    if (message.type === 'error') {
-      const errorMessage = message.error?.message || message.message || 'Unknown error';
-      if (errorMessage.includes('No conversation found') || errorMessage.includes('session')) {
-        emit({
-          type: 'session_corrupted',
-          old_session_id: sessionId,
-          reason: 'sdk_session_not_found',
-        });
-      } else {
-        emit({ type: 'error', message: errorMessage });
-      }
-    }
+  } finally {
+    // Cleanup tracking maps to prevent memory leaks
+    toolUseMap.clear();
+    toolInputMap.clear();
+    todoWriteInputMap.clear();
+    taskContextMap.clear();
+    toolParentMap.clear();
+    processedToolUseIds.clear();
   }
 
   emit({ type: 'done' });

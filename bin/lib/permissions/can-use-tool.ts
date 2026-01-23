@@ -25,6 +25,16 @@ type CanUseToolCallback = (
 const ONCE_SUFFIX = ':once';
 
 /**
+ * Standard approval options for interactive permission UI
+ */
+const APPROVAL_OPTIONS = [
+  { value: 'allow_once', label: 'allow_once - Allow this execution only' },
+  { value: 'deny_once', label: 'deny_once - Deny this execution only' },
+  { value: 'allow_for_session', label: 'allow_for_session - Allow for this session' },
+  { value: 'deny_for_session', label: 'deny_for_session - Deny for this session' },
+] as const;
+
+/**
  * Create canUseTool callback for Agent SDK
  */
 export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallback {
@@ -45,8 +55,8 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
        * Permission evaluation order (highest to lowest priority):
        * 1. Session-level deny list (immediate block)
        * 2. Session-level allow list (auto-approve)
-       * 3. Permission modes (acceptEdits, default, bypassPermissions)
-       * 4. Ask list (request approval if not in allow list)
+       * 3. Ask list (ALWAYS request approval, regardless of allow list)
+       * 4. Permission modes (acceptEdits, default, bypassPermissions)
        * 5. Allow list (with pattern matching support)
        * 6. Granular permission rules (path/command/pattern/domain based)
        */
@@ -116,6 +126,25 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
         }
       }
 
+      // Check ask list (highest priority - always ask regardless of allow list)
+      for (const askedTool of askedTools) {
+        if (matchesPermission(toolName, input, askedTool)) {
+          console.log(
+            safeJsonStringify({
+              type: 'approval_required',
+              tool: toolName,
+              input: input,
+              options: APPROVAL_OPTIONS,
+            })
+          );
+
+          return {
+            behavior: 'deny',
+            message: 'Please wait for user approval from the provided options.',
+          };
+        }
+      }
+
       // Implement permission modes
       if (permissionMode === 'acceptEdits' && (toolName === 'Edit' || toolName === 'Write')) {
         return { behavior: 'allow', updatedInput: input };
@@ -133,30 +162,12 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
         }
 
         if (!explicitlyAllowed) {
-          // Send approval_required event to show interactive UI in chat
           console.log(
             safeJsonStringify({
               type: 'approval_required',
               tool: toolName,
               input: input,
-              options: [
-                {
-                  value: 'allow_once',
-                  label: 'allow_once - Allow this execution only',
-                },
-                {
-                  value: 'deny_once',
-                  label: 'deny_once - Deny this execution only',
-                },
-                {
-                  value: 'allow_for_session',
-                  label: 'allow_for_session - Allow for this session',
-                },
-                {
-                  value: 'deny_for_session',
-                  label: 'deny_for_session - Deny for this session',
-                },
-              ],
+              options: APPROVAL_OPTIONS,
             })
           );
 
@@ -176,62 +187,6 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
             behavior: 'deny',
             message:
               'vibing.nvim MCP integration is disabled. Enable it in config: mcp.enabled = true',
-          };
-        }
-      }
-
-      // Check ask list (first priority - but allow list can override)
-      for (const askedTool of askedTools) {
-        const askMatches = matchesPermission(toolName, input, askedTool);
-
-        if (askMatches) {
-          let allowedByAllowList = false;
-
-          for (const allowedTool of allowedTools) {
-            const matches = matchesPermission(toolName, input, allowedTool);
-            if (matches) {
-              allowedByAllowList = true;
-              break;
-            }
-          }
-
-          if (!allowedByAllowList) {
-            // Send approval_required event to show interactive UI in chat
-            console.log(
-              safeJsonStringify({
-                type: 'approval_required',
-                tool: toolName,
-                input: input,
-                options: [
-                  {
-                    value: 'allow_once',
-                    label: 'allow_once - Allow this execution only',
-                  },
-                  {
-                    value: 'deny_once',
-                    label: 'deny_once - Deny this execution only',
-                  },
-                  {
-                    value: 'allow_for_session',
-                    label: 'allow_for_session - Allow for this session',
-                  },
-                  {
-                    value: 'deny_for_session',
-                    label: 'deny_for_session - Deny for this session',
-                  },
-                ],
-              })
-            );
-
-            return {
-              behavior: 'deny',
-              message: 'Please wait for user approval from the provided options.',
-            };
-          }
-
-          return {
-            behavior: 'allow',
-            updatedInput: input,
           };
         }
       }
