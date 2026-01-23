@@ -20,6 +20,9 @@ import { safeJsonStringify, toError } from './lib/utils.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Project-specific prompt file path
+const PROJECT_PROMPT_PATH = '.vibing/system-prompt.md';
+
 /**
  * Resolve prompts directory path
  * Handles both dev_mode (bin/) and compiled (dist/bin/) execution
@@ -102,7 +105,7 @@ config.cwd = initializeWorkingDirectory(config.cwd);
 // Load system prompt from external MD files
 const systemPrompt = loadSystemPrompt({
   promptsDir: resolvePromptsDir(),
-  projectPromptPath: path.join(config.cwd, '.vibing/system-prompt.md'),
+  projectPromptPath: path.join(config.cwd, PROJECT_PROMPT_PATH),
   sessionId: config.sessionId,
   language: config.language,
   rpcPort: config.rpcPort,
@@ -115,14 +118,22 @@ const queryOptions = buildQueryOptions(config);
 
 // Use Agent SDK's systemPrompt option with Claude Code preset
 // Always set the preset, and conditionally add append if systemPrompt is non-empty
-queryOptions.systemPrompt = {
+interface SystemPromptOption {
+  type: 'preset';
+  preset: 'claude_code';
+  append?: string;
+}
+
+const systemPromptOption: SystemPromptOption = {
   type: 'preset',
   preset: 'claude_code',
 };
 
 if (systemPrompt) {
-  queryOptions.systemPrompt.append = systemPrompt;
+  systemPromptOption.append = systemPrompt;
 }
+
+queryOptions.systemPrompt = systemPromptOption;
 
 // Load installed plugins (agents, commands, skills, hooks)
 // Debug flag: Set VIBING_SKIP_PLUGINS=1 to skip plugin loading.
