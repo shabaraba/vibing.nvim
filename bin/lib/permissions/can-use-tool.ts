@@ -55,8 +55,8 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
        * Permission evaluation order (highest to lowest priority):
        * 1. Session-level deny list (immediate block)
        * 2. Session-level allow list (auto-approve)
-       * 3. Permission modes (acceptEdits, default, bypassPermissions)
-       * 4. Ask list (request approval if not in allow list)
+       * 3. Ask list (ALWAYS request approval, regardless of allow list)
+       * 4. Permission modes (acceptEdits, default, bypassPermissions)
        * 5. Allow list (with pattern matching support)
        * 6. Granular permission rules (path/command/pattern/domain based)
        */
