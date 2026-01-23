@@ -9,19 +9,6 @@ function M.generate_unique_filename()
   return string.format("chat-%s-%s-%s.vibing", timestamp, hrtime, random_id)
 end
 
----プロジェクト固有のsystem-prompt.mdを初期化
----@param project_root string プロジェクトルート
-local function ensure_system_prompt(project_root)
-  local vibing_dir = project_root .. "/.vibing"
-  local prompt_file = vibing_dir .. "/system-prompt.md"
-
-  -- ファイルが存在しなければ空ファイルを作成
-  if vim.fn.filereadable(prompt_file) == 0 then
-    vim.fn.mkdir(vibing_dir, "p")
-    vim.fn.writefile({}, prompt_file)
-  end
-end
-
 ---保存ディレクトリを取得
 ---@param config table 設定
 ---@return string directory_path
@@ -30,7 +17,6 @@ function M.get_save_directory(config)
 
   if location_type == "project" then
     local project_root = vim.fn.getcwd()
-    ensure_system_prompt(project_root)
     return project_root .. "/.vibing/chat/"
   elseif location_type == "user" then
     return vim.fn.stdpath("data") .. "/vibing/chats/"
@@ -41,9 +27,7 @@ function M.get_save_directory(config)
     end
     return custom_path
   else
-    local project_root = vim.fn.getcwd()
-    ensure_system_prompt(project_root)
-    return project_root .. "/.vibing/chat/"
+    return vim.fn.getcwd() .. "/.vibing/chat/"
   end
 end
 
@@ -80,7 +64,6 @@ function M.update_filename_from_message(buf, current_path, message)
   local base_filename = filename_util.generate_from_message(message)
 
   local project_root = vim.fn.getcwd()
-  ensure_system_prompt(project_root)
   local chat_dir = project_root .. "/.vibing/chat/"
   vim.fn.mkdir(chat_dir, "p")
 

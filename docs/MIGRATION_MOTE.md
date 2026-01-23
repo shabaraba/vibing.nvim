@@ -111,11 +111,11 @@ With mote integration, each chat session maintains isolated storage:
 │   │   ├── objects/
 │   │   └── patches/
 │   │       └── 20250121_143000.patch
-│   ├── <session-id-2>/
-│   │   ├── snapshots/
-│   │   ├── objects/
-│   │   └── patches/
-│   └── .moteignore (auto-generated)
+│   └── <session-id-2>/
+│       ├── snapshots/
+│       ├── objects/
+│       └── patches/
+└── .moteignore (auto-generated)
 ```
 
 **Benefits:**

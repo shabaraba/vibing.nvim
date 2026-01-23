@@ -6,10 +6,6 @@ import { safeJsonStringify } from './utils.js';
 import { detectVcsOperation } from './vcs-detector.js';
 import type { AgentConfig } from '../types.js';
 
-/**
- * Emit a JSON-formatted message to stdout
- * @param obj - Object to serialize and output
- */
 function emit(obj: Record<string, unknown>): void {
   console.log(safeJsonStringify(obj));
 }
@@ -83,12 +79,6 @@ async function* withInitialTimeout<T>(
   }
 }
 
-/**
- * Extract a brief summary from tool input for display
- * @param toolName - Name of the tool being invoked
- * @param toolInput - Tool input parameters
- * @returns Brief summary string for display
- */
 function extractInputSummary(toolName: string, toolInput: Record<string, unknown>): string {
   // For Task tool, show subagent_type or prompt
   if (toolName === 'Task') {
@@ -120,11 +110,6 @@ interface ContentBlock {
   text?: string;
 }
 
-/**
- * Extract text from tool result content
- * @param content - Tool result content (string or array of content blocks)
- * @returns Extracted text content
- */
 function extractResultText(content: string | ContentBlock[]): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) return content.map((c) => c.text || '').join('');
@@ -137,11 +122,6 @@ interface TodoItem {
   status: 'pending' | 'in_progress' | 'completed';
 }
 
-/**
- * Format TodoWrite tool result with emoji status indicators
- * @param resultText - JSON result from TodoWrite tool
- * @returns Formatted todo list with emojis
- */
 function formatTodoWriteResult(resultText: string): string {
   try {
     const result = JSON.parse(resultText);
@@ -170,15 +150,6 @@ function formatTodoWriteResult(resultText: string): string {
   }
 }
 
-/**
- * Format tool execution result for display
- * @param toolName - Name of the tool
- * @param inputSummary - Brief summary of tool input
- * @param resultText - Tool result text
- * @param displayMode - Display mode (none/compact/full)
- * @param prefixNewline - Whether to prefix with newline
- * @returns Formatted tool result string
- */
 function formatToolResult(
   toolName: string,
   inputSummary: string,
@@ -212,14 +183,6 @@ function formatToolResult(
   return text;
 }
 
-/**
- * Process Agent SDK response stream and emit JSON Lines to stdout
- * @param resultStream - Agent SDK response stream
- * @param toolResultDisplay - Tool result display mode
- * @param sessionId - Current session ID (if any)
- * @param cwd - Current working directory
- * @param config - Agent configuration
- */
 export async function processStream(
   resultStream: AsyncIterable<any>,
   toolResultDisplay: 'none' | 'compact' | 'full',
