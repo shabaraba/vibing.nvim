@@ -6,13 +6,38 @@
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { existsSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 import { parseArguments } from './lib/args-parser.js';
 import { createCanUseToolCallback } from './lib/permissions/can-use-tool.js';
 import { loadInstalledPlugins } from './lib/plugin-loader.js';
 import { buildPrompt } from './lib/prompt-builder.js';
+import { loadSystemPrompt } from './lib/prompt-loader.js';
 import { processStream } from './lib/stream-processor.js';
 import { safeJsonStringify, toError } from './lib/utils.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/**
+ * Resolve prompts directory path
+ * Handles both dev_mode (bin/) and compiled (dist/bin/) execution
+ */
+function resolvePromptsDir(): string {
+  // Try compiled path first (dist/bin -> prompts)
+  const compiledPath = path.join(__dirname, '../../prompts');
+  if (existsSync(compiledPath)) {
+    return compiledPath;
+  }
+  // Try dev_mode path (bin -> prompts)
+  const devPath = path.join(__dirname, '../prompts');
+  if (existsSync(devPath)) {
+    return devPath;
+  }
+  // Fallback to compiled path (will error with helpful message)
+  return compiledPath;
+}
 
 function initializeWorkingDirectory(cwd: string | undefined): string {
   if (!cwd) {
@@ -62,10 +87,30 @@ if (config.rpcPort) {
   process.env.VIBING_NVIM_RPC_PORT = config.rpcPort.toString();
 }
 
-const fullPrompt = buildPrompt(config);
 config.cwd = initializeWorkingDirectory(config.cwd);
 
+// Load system prompt from external MD files
+const systemPrompt = loadSystemPrompt({
+  promptsDir: resolvePromptsDir(),
+  projectPromptPath: path.join(config.cwd, '.vibing/system-prompt.md'),
+  sessionId: config.sessionId,
+  language: config.language,
+  rpcPort: config.rpcPort,
+  cwd: config.cwd,
+  prioritizeVibingLsp: config.prioritizeVibingLsp,
+});
+
+const fullPrompt = buildPrompt(config);
 const queryOptions = buildQueryOptions(config);
+
+// Use Agent SDK's systemPrompt option with Claude Code preset
+if (systemPrompt) {
+  queryOptions.systemPrompt = {
+    type: 'preset',
+    preset: 'claude_code',
+    append: systemPrompt,
+  };
+}
 
 // Load installed plugins (agents, commands, skills, hooks)
 // Debug flag: Set VIBING_SKIP_PLUGINS=1 to skip plugin loading.
