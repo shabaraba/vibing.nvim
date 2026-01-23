@@ -285,8 +285,8 @@ export async function processStream(
               nestedToolIds: [],
             });
 
-            // Immediately display Task tool to show subagent is starting
-            const taskText = (lastOutputType === 'text' ? '\n' : '') + `⏺ Task(${inputSummary})\n`;
+            // Display Task tool start immediately
+            const taskText = (lastOutputType === 'text' ? '\n' : '') + `⏺ Task(${inputSummary}) ...\n`;
             emit({ type: 'chunk', text: taskText });
             lastOutputType = 'tool_result';
           }
@@ -330,17 +330,34 @@ export async function processStream(
             const isNested = toolParentMap.has(block.tool_use_id);
 
             if (isNested) {
-              // Skip displaying nested tools individually
-              // They will be shown in aggregate when the parent Task completes
+              // Display nested tools with parent Task identification
+              const parentTaskId = toolParentMap.get(block.tool_use_id);
+              const parentContext = parentTaskId ? taskContextMap.get(parentTaskId) : null;
+              const parentSummary = parentContext ? parentContext.taskInputSummary : 'unknown';
+
+              const toolText = formatToolResult(
+                toolName,
+                inputSummary,
+                resultText,
+                toolResultDisplay,
+                lastOutputType === 'text',
+                todos
+              );
+              // Add parent Task identification after the tool marker
+              const annotatedText = toolText.replace(
+                `⏺ ${toolName}(${inputSummary})\n`,
+                `⏺ ${toolName}(${inputSummary}) by Task(${parentSummary})\n`
+              );
+              emit({ type: 'chunk', text: annotatedText });
+              lastOutputType = 'tool_result';
             } else if (toolName === 'Task') {
-              // Task tool was already displayed at tool_use time
-              // Now just show aggregate count
+              // Display Task completion with tool count
               const taskContext = taskContextMap.get(block.tool_use_id);
-              if (taskContext && taskContext.nestedToolIds.length > 0) {
-                const nestedCount = taskContext.nestedToolIds.length;
-                const aggregateText = `  ... (${nestedCount} tools used)\n`;
-                emit({ type: 'chunk', text: aggregateText });
-              }
+              const nestedCount = taskContext ? taskContext.nestedToolIds.length : 0;
+              const completionText = (lastOutputType === 'text' ? '\n' : '') +
+                `⏺ Task(${inputSummary}) ✓ (${nestedCount} tools used)\n`;
+              emit({ type: 'chunk', text: completionText });
+              lastOutputType = 'tool_result';
             } else {
               // Display top-level tools normally
               const toolText = formatToolResult(
