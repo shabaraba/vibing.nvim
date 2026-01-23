@@ -138,6 +138,26 @@ interface TodoItem {
 }
 
 /**
+ * Type guard to validate TodoItem at runtime
+ */
+function isTodoItem(obj: any): obj is TodoItem {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    typeof obj.content === 'string' &&
+    typeof obj.activeForm === 'string' &&
+    (obj.status === 'pending' || obj.status === 'in_progress' || obj.status === 'completed')
+  );
+}
+
+/**
+ * Validate and filter array of TodoItems
+ */
+function validateTodoItems(items: any[]): TodoItem[] {
+  return items.filter(isTodoItem);
+}
+
+/**
  * Tracks Task tool context for nested tool display
  */
 interface TaskToolContext {
@@ -263,146 +283,164 @@ export async function processStream(
   // Apply timeout for first message to detect hung streams during resume
   const stream = withInitialTimeout(resultStream, INITIAL_MESSAGE_TIMEOUT_MS);
 
-  for await (const message of stream) {
-    if (
-      message.type === 'system' &&
-      message.subtype === 'init' &&
-      message.session_id &&
-      !sessionIdEmitted
-    ) {
-      emit({ type: 'session', session_id: message.session_id });
-      sessionIdEmitted = true;
-      emit({ type: 'status', state: 'thinking' });
-    }
+  try {
+    for await (const message of stream) {
+      if (
+        message.type === 'system' &&
+        message.subtype === 'init' &&
+        message.session_id &&
+        !sessionIdEmitted
+      ) {
+        emit({ type: 'session', session_id: message.session_id });
+        sessionIdEmitted = true;
+        emit({ type: 'status', state: 'thinking' });
+      }
 
-    if (message.type === 'assistant' && message.message?.content) {
-      for (const block of message.message.content) {
-        if (block.type === 'text' && block.text) {
-          if (!respondingEmitted) {
-            emit({ type: 'status', state: 'responding' });
-            respondingEmitted = true;
-          }
-          const text = lastOutputType === 'tool_result' ? '\n' + block.text : block.text;
-          emit({ type: 'chunk', text });
-          lastOutputType = 'text';
-        } else if (block.type === 'tool_use' && !processedToolUseIds.has(block.id)) {
-          processedToolUseIds.add(block.id);
-          const toolName = block.name;
-          const toolInput = block.input || {};
-          const inputSummary = extractInputSummary(toolName, toolInput);
+      if (message.type === 'assistant' && message.message?.content) {
+        for (const block of message.message.content) {
+          if (block.type === 'text' && block.text) {
+            if (!respondingEmitted) {
+              emit({ type: 'status', state: 'responding' });
+              respondingEmitted = true;
+            }
+            const text = lastOutputType === 'tool_result' ? '\n' + block.text : block.text;
+            emit({ type: 'chunk', text });
+            lastOutputType = 'text';
+          } else if (block.type === 'tool_use' && !processedToolUseIds.has(block.id)) {
+            processedToolUseIds.add(block.id);
+            const toolName = block.name;
+            const toolInput = block.input || {};
+            const inputSummary = extractInputSummary(toolName, toolInput);
 
-          toolUseMap.set(block.id, toolName);
-          toolInputMap.set(block.id, inputSummary);
+            toolUseMap.set(block.id, toolName);
+            toolInputMap.set(block.id, inputSummary);
 
-          // TodoWriteの場合はtodosをキャプチャ
-          if (toolName === 'TodoWrite' && toolInput.todos && Array.isArray(toolInput.todos)) {
-            todoWriteInputMap.set(block.id, toolInput.todos as TodoItem[]);
-          }
+            // TodoWriteの場合はtodosをキャプチャ（型検証付き）
+            if (toolName === 'TodoWrite' && toolInput.todos && Array.isArray(toolInput.todos)) {
+              const validatedTodos = validateTodoItems(toolInput.todos);
+              if (validatedTodos.length > 0) {
+                todoWriteInputMap.set(block.id, validatedTodos);
+              }
+            }
 
-          // Track Task tools for nested display
-          if (toolName === 'Task') {
-            taskContextMap.set(block.id, {
-              taskToolId: block.id,
-              taskInputSummary: inputSummary,
-              nestedToolIds: [],
+            // Track Task tools for nested display
+            if (toolName === 'Task') {
+              taskContextMap.set(block.id, {
+                taskToolId: block.id,
+                taskInputSummary: inputSummary,
+                nestedToolIds: [],
+              });
+
+              // Display Task tool start immediately
+              const taskText =
+                (lastOutputType === 'text' ? '\n' : '') + `⏺ Task(${inputSummary}) ...\n`;
+              emit({ type: 'chunk', text: taskText });
+              lastOutputType = 'tool_result';
+            }
+
+            // Track parent-child relationship (only for Task parents)
+            const parentToolUseId = (message as any).parent_tool_use_id;
+            if (parentToolUseId && typeof parentToolUseId === 'string') {
+              // Only track if parent is a Task tool
+              const parentContext = taskContextMap.get(parentToolUseId);
+              if (parentContext) {
+                toolParentMap.set(block.id, parentToolUseId);
+                parentContext.nestedToolIds.push(block.id);
+              }
+            }
+
+            emit({
+              type: 'status',
+              state: 'tool_use',
+              tool: toolName,
+              input_summary: inputSummary,
             });
 
-            // Display Task tool start immediately
-            const taskText =
-              (lastOutputType === 'text' ? '\n' : '') + `⏺ Task(${inputSummary}) ...\n`;
-            emit({ type: 'chunk', text: taskText });
+            if (toolName === 'Bash' && toolInput.command) {
+              emit({ type: 'tool_use', tool: 'Bash', command: toolInput.command });
+
+              // VCS operation detection for mote integration
+              const vcsOp = detectVcsOperation(toolInput.command as string);
+              if (vcsOp) {
+                emit({ type: 'vcs_operation', operation: vcsOp, command: toolInput.command });
+              }
+            }
+          }
+        }
+      }
+
+      if (message.type === 'user' && message.message?.content) {
+        for (const block of message.message.content) {
+          if (block.type === 'tool_result') {
+            const toolName = toolUseMap.get(block.tool_use_id);
+            if (!toolName) continue;
+
+            const resultText = block.content ? extractResultText(block.content) : '';
+            const inputSummary = toolInputMap.get(block.tool_use_id) || '';
+            const todos = todoWriteInputMap.get(block.tool_use_id);
+            const prefixNewline = lastOutputType === 'text';
+
+            let outputText: string;
+
+            if (toolName === 'Task') {
+              const taskContext = taskContextMap.get(block.tool_use_id);
+              const nestedCount = taskContext ? taskContext.nestedToolIds.length : 0;
+              outputText = formatTaskCompletion(inputSummary, nestedCount, prefixNewline);
+            } else {
+              const parentTaskId = toolParentMap.get(block.tool_use_id);
+              const parentContext = parentTaskId ? taskContextMap.get(parentTaskId) : null;
+              const parentTaskSummary = parentContext?.taskInputSummary;
+
+              outputText = formatToolResult({
+                toolName,
+                inputSummary,
+                resultText,
+                displayMode: toolResultDisplay,
+                prefixNewline,
+                todos,
+                parentTaskSummary,
+              });
+            }
+
+            emit({ type: 'chunk', text: outputText });
             lastOutputType = 'tool_result';
-          }
 
-          // Track parent-child relationship
-          const parentToolUseId = (message as any).parent_tool_use_id;
-          if (parentToolUseId && typeof parentToolUseId === 'string') {
-            toolParentMap.set(block.id, parentToolUseId);
-            // Add to parent Task's nested tool list
-            const parentContext = taskContextMap.get(parentToolUseId);
-            if (parentContext) {
-              parentContext.nestedToolIds.push(block.id);
-            }
-          }
-
-          emit({ type: 'status', state: 'tool_use', tool: toolName, input_summary: inputSummary });
-
-          if (toolName === 'Bash' && toolInput.command) {
-            emit({ type: 'tool_use', tool: 'Bash', command: toolInput.command });
-
-            // VCS operation detection for mote integration
-            const vcsOp = detectVcsOperation(toolInput.command as string);
-            if (vcsOp) {
-              emit({ type: 'vcs_operation', operation: vcsOp, command: toolInput.command });
-            }
+            toolUseMap.delete(block.tool_use_id);
+            toolInputMap.delete(block.tool_use_id);
+            todoWriteInputMap.delete(block.tool_use_id);
+            toolParentMap.delete(block.tool_use_id);
+            taskContextMap.delete(block.tool_use_id);
           }
         }
       }
-    }
 
-    if (message.type === 'user' && message.message?.content) {
-      for (const block of message.message.content) {
-        if (block.type === 'tool_result') {
-          const toolName = toolUseMap.get(block.tool_use_id);
-          if (!toolName) continue;
+      if (message.type === 'result') {
+        if (message.subtype === 'error_max_turns') {
+          emit({ type: 'error', message: 'Max turns reached' });
+        }
+      }
 
-          const resultText = block.content ? extractResultText(block.content) : '';
-          const inputSummary = toolInputMap.get(block.tool_use_id) || '';
-          const todos = todoWriteInputMap.get(block.tool_use_id);
-          const prefixNewline = lastOutputType === 'text';
-
-          let outputText: string;
-
-          if (toolName === 'Task') {
-            const taskContext = taskContextMap.get(block.tool_use_id);
-            const nestedCount = taskContext ? taskContext.nestedToolIds.length : 0;
-            outputText = formatTaskCompletion(inputSummary, nestedCount, prefixNewline);
-          } else {
-            const parentTaskId = toolParentMap.get(block.tool_use_id);
-            const parentContext = parentTaskId ? taskContextMap.get(parentTaskId) : null;
-            const parentTaskSummary = parentContext?.taskInputSummary;
-
-            outputText = formatToolResult({
-              toolName,
-              inputSummary,
-              resultText,
-              displayMode: toolResultDisplay,
-              prefixNewline,
-              todos,
-              parentTaskSummary,
-            });
-          }
-
-          emit({ type: 'chunk', text: outputText });
-          lastOutputType = 'tool_result';
-
-          toolUseMap.delete(block.tool_use_id);
-          toolInputMap.delete(block.tool_use_id);
-          todoWriteInputMap.delete(block.tool_use_id);
-          toolParentMap.delete(block.tool_use_id);
-          taskContextMap.delete(block.tool_use_id);
+      if (message.type === 'error') {
+        const errorMessage = message.error?.message || message.message || 'Unknown error';
+        if (errorMessage.includes('No conversation found') || errorMessage.includes('session')) {
+          emit({
+            type: 'session_corrupted',
+            old_session_id: sessionId,
+            reason: 'sdk_session_not_found',
+          });
+        } else {
+          emit({ type: 'error', message: errorMessage });
         }
       }
     }
-
-    if (message.type === 'result') {
-      if (message.subtype === 'error_max_turns') {
-        emit({ type: 'error', message: 'Max turns reached' });
-      }
-    }
-
-    if (message.type === 'error') {
-      const errorMessage = message.error?.message || message.message || 'Unknown error';
-      if (errorMessage.includes('No conversation found') || errorMessage.includes('session')) {
-        emit({
-          type: 'session_corrupted',
-          old_session_id: sessionId,
-          reason: 'sdk_session_not_found',
-        });
-      } else {
-        emit({ type: 'error', message: errorMessage });
-      }
-    }
+  } finally {
+    // Cleanup tracking maps to prevent memory leaks
+    toolUseMap.clear();
+    toolInputMap.clear();
+    todoWriteInputMap.clear();
+    taskContextMap.clear();
+    toolParentMap.clear();
+    processedToolUseIds.clear();
   }
 
   emit({ type: 'done' });
