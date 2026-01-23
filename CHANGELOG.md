@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.23.0 (2026-01-22)
+
+## What's Changed
+
+- feat: add completion engine for slash commands, file paths, and agents by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/334
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.22.0...v1.23.0
+
 ## 1.22.0 (2026-01-21)
 
 ## What's Changed
