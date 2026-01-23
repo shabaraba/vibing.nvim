@@ -25,6 +25,16 @@ type CanUseToolCallback = (
 const ONCE_SUFFIX = ':once';
 
 /**
+ * Standard approval options for interactive permission UI
+ */
+const APPROVAL_OPTIONS = [
+  { value: 'allow_once', label: 'allow_once - Allow this execution only' },
+  { value: 'deny_once', label: 'deny_once - Deny this execution only' },
+  { value: 'allow_for_session', label: 'allow_for_session - Allow for this session' },
+  { value: 'deny_for_session', label: 'deny_for_session - Deny for this session' },
+] as const;
+
+/**
  * Create canUseTool callback for Agent SDK
  */
 export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallback {
@@ -133,30 +143,12 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
         }
 
         if (!explicitlyAllowed) {
-          // Send approval_required event to show interactive UI in chat
           console.log(
             safeJsonStringify({
               type: 'approval_required',
               tool: toolName,
               input: input,
-              options: [
-                {
-                  value: 'allow_once',
-                  label: 'allow_once - Allow this execution only',
-                },
-                {
-                  value: 'deny_once',
-                  label: 'deny_once - Deny this execution only',
-                },
-                {
-                  value: 'allow_for_session',
-                  label: 'allow_for_session - Allow for this session',
-                },
-                {
-                  value: 'deny_for_session',
-                  label: 'deny_for_session - Deny for this session',
-                },
-              ],
+              options: APPROVAL_OPTIONS,
             })
           );
 
@@ -183,30 +175,12 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
       // Check ask list (highest priority - always ask regardless of allow list)
       for (const askedTool of askedTools) {
         if (matchesPermission(toolName, input, askedTool)) {
-          // Send approval_required event to show interactive UI in chat
           console.log(
             safeJsonStringify({
               type: 'approval_required',
               tool: toolName,
               input: input,
-              options: [
-                {
-                  value: 'allow_once',
-                  label: 'allow_once - Allow this execution only',
-                },
-                {
-                  value: 'deny_once',
-                  label: 'deny_once - Deny this execution only',
-                },
-                {
-                  value: 'allow_for_session',
-                  label: 'allow_for_session - Allow for this session',
-                },
-                {
-                  value: 'deny_for_session',
-                  label: 'deny_for_session - Deny for this session',
-                },
-              ],
+              options: APPROVAL_OPTIONS,
             })
           );
 

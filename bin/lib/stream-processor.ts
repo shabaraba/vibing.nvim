@@ -141,57 +141,67 @@ interface TodoItem {
  * Tracks Task tool context for nested tool display
  */
 interface TaskToolContext {
-  taskToolId: string;          // Task tool's tool_use_id
-  taskInputSummary: string;    // "Explore" or "code-reviewer" etc.
-  nestedToolIds: string[];     // tool_use_ids of nested tools
+  taskToolId: string;
+  taskInputSummary: string;
+  nestedToolIds: string[];
 }
-
 
 /**
  * Format TodoWrite todos list with emoji status indicators
  * @param todos - Array of todo items from tool input
  * @returns Formatted todo list with emojis
  */
-function formatTodoWriteTodos(todos: TodoItem[]): string {
-  const lines: string[] = [];
-
-  for (const todo of todos) {
-    let emoji = '⏳';
-    if (todo.status === 'completed') {
-      emoji = '✅';
-    } else if (todo.status === 'in_progress') {
-      emoji = '🔄';
-    }
-
-    const displayText = todo.status === 'in_progress' ? todo.activeForm : todo.content;
-    lines.push(`  ${emoji} ${displayText}`);
+function getStatusEmoji(status: TodoItem['status']): string {
+  switch (status) {
+    case 'completed':
+      return '✅';
+    case 'in_progress':
+      return '🔄';
+    default:
+      return '⏳';
   }
+}
+
+function formatTodoWriteTodos(todos: TodoItem[]): string {
+  const lines = todos.map((todo) => {
+    const emoji = getStatusEmoji(todo.status);
+    const displayText = todo.status === 'in_progress' ? todo.activeForm : todo.content;
+    return `  ${emoji} ${displayText}`;
+  });
 
   return '\n' + lines.join('\n') + '\n';
 }
 
+type DisplayMode = 'none' | 'compact' | 'full';
+
+interface FormatToolResultOptions {
+  toolName: string;
+  inputSummary: string;
+  resultText: string;
+  displayMode: DisplayMode;
+  prefixNewline: boolean;
+  todos?: TodoItem[];
+  parentTaskSummary?: string;
+}
+
 /**
  * Format tool execution result for display
- * @param toolName - Name of the tool
- * @param inputSummary - Brief summary of tool input
- * @param resultText - Tool result text
- * @param displayMode - Display mode (none/compact/full)
- * @param prefixNewline - Whether to prefix with newline
- * @param todos - Optional todos array for TodoWrite tool
- * @returns Formatted tool result string
  */
-function formatToolResult(
-  toolName: string,
-  inputSummary: string,
-  resultText: string,
-  displayMode: 'none' | 'compact' | 'full',
-  prefixNewline: boolean,
-  todos?: TodoItem[]
-): string {
-  let text = prefixNewline ? '\n' : '';
-  text += `⏺ ${toolName}(${inputSummary})\n`;
+function formatToolResult(options: FormatToolResultOptions): string {
+  const {
+    toolName,
+    inputSummary,
+    resultText,
+    displayMode,
+    prefixNewline,
+    todos,
+    parentTaskSummary,
+  } = options;
 
-  // TodoWriteは設定に関わらず常に全内容を整形して表示
+  const prefix = prefixNewline ? '\n' : '';
+  const parentAnnotation = parentTaskSummary ? ` by Task(${parentTaskSummary})` : '';
+  let text = `${prefix}⏺ ${toolName}(${inputSummary})${parentAnnotation}\n`;
+
   if (toolName === 'TodoWrite' && todos && todos.length > 0) {
     text += formatTodoWriteTodos(todos);
     return text;
@@ -209,6 +219,18 @@ function formatToolResult(
   }
 
   return text;
+}
+
+/**
+ * Format Task tool completion message
+ */
+function formatTaskCompletion(
+  inputSummary: string,
+  nestedToolCount: number,
+  prefixNewline: boolean
+): string {
+  const prefix = prefixNewline ? '\n' : '';
+  return `${prefix}⏺ Task(${inputSummary}) ✓ (${nestedToolCount} tools used)\n`;
 }
 
 /**
@@ -286,7 +308,8 @@ export async function processStream(
             });
 
             // Display Task tool start immediately
-            const taskText = (lastOutputType === 'text' ? '\n' : '') + `⏺ Task(${inputSummary}) ...\n`;
+            const taskText =
+              (lastOutputType === 'text' ? '\n' : '') + `⏺ Task(${inputSummary}) ...\n`;
             emit({ type: 'chunk', text: taskText });
             lastOutputType = 'tool_result';
           }
@@ -321,63 +344,43 @@ export async function processStream(
       for (const block of message.message.content) {
         if (block.type === 'tool_result') {
           const toolName = toolUseMap.get(block.tool_use_id);
-          if (toolName) {
-            const resultText = block.content ? extractResultText(block.content) : '';
-            const inputSummary = toolInputMap.get(block.tool_use_id) || '';
-            const todos = todoWriteInputMap.get(block.tool_use_id);
+          if (!toolName) continue;
 
-            // Check if this tool is nested under a Task
-            const isNested = toolParentMap.has(block.tool_use_id);
+          const resultText = block.content ? extractResultText(block.content) : '';
+          const inputSummary = toolInputMap.get(block.tool_use_id) || '';
+          const todos = todoWriteInputMap.get(block.tool_use_id);
+          const prefixNewline = lastOutputType === 'text';
 
-            if (isNested) {
-              // Display nested tools with parent Task identification
-              const parentTaskId = toolParentMap.get(block.tool_use_id);
-              const parentContext = parentTaskId ? taskContextMap.get(parentTaskId) : null;
-              const parentSummary = parentContext ? parentContext.taskInputSummary : 'unknown';
+          let outputText: string;
 
-              const toolText = formatToolResult(
-                toolName,
-                inputSummary,
-                resultText,
-                toolResultDisplay,
-                lastOutputType === 'text',
-                todos
-              );
-              // Add parent Task identification after the tool marker
-              const annotatedText = toolText.replace(
-                `⏺ ${toolName}(${inputSummary})\n`,
-                `⏺ ${toolName}(${inputSummary}) by Task(${parentSummary})\n`
-              );
-              emit({ type: 'chunk', text: annotatedText });
-              lastOutputType = 'tool_result';
-            } else if (toolName === 'Task') {
-              // Display Task completion with tool count
-              const taskContext = taskContextMap.get(block.tool_use_id);
-              const nestedCount = taskContext ? taskContext.nestedToolIds.length : 0;
-              const completionText = (lastOutputType === 'text' ? '\n' : '') +
-                `⏺ Task(${inputSummary}) ✓ (${nestedCount} tools used)\n`;
-              emit({ type: 'chunk', text: completionText });
-              lastOutputType = 'tool_result';
-            } else {
-              // Display top-level tools normally
-              const toolText = formatToolResult(
-                toolName,
-                inputSummary,
-                resultText,
-                toolResultDisplay,
-                lastOutputType === 'text',
-                todos
-              );
-              emit({ type: 'chunk', text: toolText });
-              lastOutputType = 'tool_result';
-            }
+          if (toolName === 'Task') {
+            const taskContext = taskContextMap.get(block.tool_use_id);
+            const nestedCount = taskContext ? taskContext.nestedToolIds.length : 0;
+            outputText = formatTaskCompletion(inputSummary, nestedCount, prefixNewline);
+          } else {
+            const parentTaskId = toolParentMap.get(block.tool_use_id);
+            const parentContext = parentTaskId ? taskContextMap.get(parentTaskId) : null;
+            const parentTaskSummary = parentContext?.taskInputSummary;
 
-            toolUseMap.delete(block.tool_use_id);
-            toolInputMap.delete(block.tool_use_id);
-            todoWriteInputMap.delete(block.tool_use_id);
-            toolParentMap.delete(block.tool_use_id);
-            taskContextMap.delete(block.tool_use_id);
+            outputText = formatToolResult({
+              toolName,
+              inputSummary,
+              resultText,
+              displayMode: toolResultDisplay,
+              prefixNewline,
+              todos,
+              parentTaskSummary,
+            });
           }
+
+          emit({ type: 'chunk', text: outputText });
+          lastOutputType = 'tool_result';
+
+          toolUseMap.delete(block.tool_use_id);
+          toolInputMap.delete(block.tool_use_id);
+          todoWriteInputMap.delete(block.tool_use_id);
+          toolParentMap.delete(block.tool_use_id);
+          taskContextMap.delete(block.tool_use_id);
         }
       }
     }
