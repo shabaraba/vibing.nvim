@@ -239,6 +239,21 @@ function M._register_commands()
 
     notify.info("Copied to clipboard: " .. header)
   end, { desc = "Copy '## User <!-- unsent -->' to clipboard" })
+
+  -- Daily Summary コマンド
+  vim.api.nvim_create_user_command("VibingDailySummary", function(opts)
+    require("vibing.presentation.daily_summary.controller").handle_daily_summary(opts.args)
+  end, {
+    nargs = "?",
+    desc = "Generate daily summary from project .vibing files (default: today)",
+  })
+
+  vim.api.nvim_create_user_command("VibingDailySummaryAll", function(opts)
+    require("vibing.presentation.daily_summary.controller").handle_daily_summary_all(opts.args)
+  end, {
+    nargs = "?",
+    desc = "Generate daily summary from all .vibing files (default: today)",
+  })
 end
 
 ---現在のアダプターインスタンスを取得
