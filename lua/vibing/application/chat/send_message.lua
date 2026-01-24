@@ -39,6 +39,11 @@ function M.execute(adapter, callbacks, message, config)
   local bufnr = callbacks.get_bufnr()
   local mote_config = M._create_session_mote_config(config, callbacks.get_session_id(), bufnr)
 
+  -- mote_configにcwd（frontmatterのroot_pathから算出）を設定
+  if mote_config then
+    mote_config.cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
+  end
+
   -- 実際のメッセージ送信処理（mote初期化後に呼び出される）
   local function do_send()
     local contexts = Context.get_all(config.chat.auto_context)
@@ -66,7 +71,7 @@ function M.execute(adapter, callbacks, message, config)
       lang_code = language_utils.get_language_code(config.language, "chat")
     end
 
-    -- Get cwd from chat buffer (if set by VibingChatWorktree)
+    -- Get cwd from frontmatter root_path
     local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
 
     -- Get session-level permissions from buffer

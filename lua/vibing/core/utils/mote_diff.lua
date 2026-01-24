@@ -143,10 +143,15 @@ end
 
 ---moteコマンドを実行し結果をコールバックで返す
 ---@param args string[] コマンドライン引数
+---@param cwd string|nil 作業ディレクトリ（nilの場合は現在のディレクトリ）
 ---@param on_success fun(stdout: string) 成功時のコールバック
 ---@param on_error fun(error: string) エラー時のコールバック
-local function run_mote_command(args, on_success, on_error)
-  vim.system(args, { text = true }, function(obj)
+local function run_mote_command(args, cwd, on_success, on_error)
+  local opts = { text = true }
+  if cwd then
+    opts.cwd = cwd
+  end
+  vim.system(args, opts, function(obj)
     vim.schedule(function()
       if obj.code ~= 0 then
         on_error(obj.stderr or "Unknown error")
@@ -159,7 +164,7 @@ end
 
 ---mote diffコマンドを実行してdiffを取得
 ---@param file_path string ファイルパス（絶対パス）
----@param config Vibing.MoteConfig mote設定
+---@param config Vibing.MoteConfig mote設定（cwdフィールドを含む）
 ---@param callback fun(success: boolean, output: string?, error: string?) コールバック関数
 function M.get_diff(file_path, config, callback)
   if not M.is_available() then
@@ -174,7 +179,7 @@ function M.get_diff(file_path, config, callback)
   table.insert(cmd, "diff")
   table.insert(cmd, vim.fn.fnamemodify(file_path, ":p"))
 
-  run_mote_command(cmd, function(stdout)
+  run_mote_command(cmd, config.cwd, function(stdout)
     callback(true, stdout, nil)
   end, function(error)
     callback(false, nil, error)
@@ -227,7 +232,7 @@ function M.show_diff(file_path, config)
 end
 
 ---mote storageを初期化
----@param config Vibing.MoteConfig mote設定
+---@param config Vibing.MoteConfig mote設定（cwdフィールドを含む）
 ---@param callback fun(success: boolean, error: string?) コールバック関数
 function M.initialize(config, callback)
   if not M.is_available() then
@@ -249,7 +254,7 @@ function M.initialize(config, callback)
   local cmd = build_mote_base_args(config)
   table.insert(cmd, "init")
 
-  run_mote_command(cmd, function()
+  run_mote_command(cmd, config.cwd, function()
     callback(true, nil)
   end, function(error)
     callback(false, error)
@@ -257,7 +262,7 @@ function M.initialize(config, callback)
 end
 
 ---mote snapshotを作成
----@param config Vibing.MoteConfig mote設定
+---@param config Vibing.MoteConfig mote設定（cwdフィールドを含む）
 ---@param message? string スナップショットメッセージ
 ---@param callback fun(success: boolean, snapshot_id: string?, error: string?) コールバック関数
 function M.create_snapshot(config, message, callback)
@@ -278,7 +283,7 @@ function M.create_snapshot(config, message, callback)
     table.insert(cmd, message)
   end
 
-  run_mote_command(cmd, function(stdout)
+  run_mote_command(cmd, config.cwd, function(stdout)
     local snapshot_id = stdout:match("snapshot%s+(%w+)")
     callback(true, snapshot_id, nil)
   end, function(error)
@@ -309,7 +314,7 @@ local function parse_changed_files(output)
 end
 
 ---変更されたファイル一覧を取得
----@param config Vibing.MoteConfig mote設定
+---@param config Vibing.MoteConfig mote設定（cwdフィールドを含む）
 ---@param callback fun(success: boolean, files: string[]?, error: string?) コールバック関数
 function M.get_changed_files(config, callback)
   if not M.is_available() then
@@ -324,7 +329,7 @@ function M.get_changed_files(config, callback)
   table.insert(cmd, "diff")
   table.insert(cmd, "--name-only")
 
-  run_mote_command(cmd, function(stdout)
+  run_mote_command(cmd, config.cwd, function(stdout)
     callback(true, parse_changed_files(stdout), nil)
   end, function(error)
     callback(false, nil, error)
@@ -332,7 +337,7 @@ function M.get_changed_files(config, callback)
 end
 
 ---patchファイルを生成
----@param config Vibing.MoteConfig mote設定
+---@param config Vibing.MoteConfig mote設定（cwdフィールドを含む）
 ---@param output_path string 出力先パス
 ---@param callback fun(success: boolean, error: string?) コールバック関数
 function M.generate_patch(config, output_path, callback)
@@ -352,7 +357,7 @@ function M.generate_patch(config, output_path, callback)
   table.insert(cmd, "-o")
   table.insert(cmd, output_path)
 
-  run_mote_command(cmd, function()
+  run_mote_command(cmd, config.cwd, function()
     callback(true, nil)
   end, function(error)
     callback(false, error)

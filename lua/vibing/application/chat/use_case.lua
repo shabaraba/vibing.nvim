@@ -59,11 +59,25 @@ function M.create_new_in_directory(directory)
   if not normalized_dir:match("/$") then
     normalized_dir = normalized_dir .. "/"
   end
-  local cwd = normalized_dir:gsub("/$", "")
+
+  -- gitルートからの相対パスを取得
+  local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
+  local root_path = nil
+  if vim.v.shell_error == 0 and git_root then
+    local abs_dir = normalized_dir:gsub("/$", "")
+    if abs_dir:sub(1, #git_root) == git_root then
+      root_path = abs_dir:sub(#git_root + 2) -- +2 for the trailing "/" of git_root and leading "/" of relative path
+    end
+  end
+
+  local frontmatter = create_default_frontmatter(config)
+  if root_path then
+    frontmatter.root_path = root_path
+  end
 
   local session = ChatSession:new({
-    frontmatter = create_default_frontmatter(config),
-    cwd = cwd,
+    frontmatter = frontmatter,
+    root_path = root_path,
   })
 
   local save_path = normalized_dir .. ".vibing/chat/"
@@ -91,9 +105,20 @@ function M.create_new_for_worktree(worktree_path, branch_name)
     return M.create_new()
   end
 
+  -- gitルートからの相対パスを算出（例: ".worktrees/feature-branch"）
+  local root_path = nil
+  if normalized_worktree:sub(1, #git_root) == git_root then
+    root_path = normalized_worktree:sub(#git_root + 2) -- +2 for "/" after git_root
+  end
+
+  local frontmatter = create_default_frontmatter(config)
+  if root_path then
+    frontmatter.root_path = root_path
+  end
+
   local session = ChatSession:new({
-    frontmatter = create_default_frontmatter(config),
-    cwd = normalized_worktree,
+    frontmatter = frontmatter,
+    root_path = root_path,
   })
 
   local save_path = git_root .. "/.vibing/worktrees/" .. branch_name .. "/"

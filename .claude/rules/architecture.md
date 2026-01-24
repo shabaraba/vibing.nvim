@@ -80,6 +80,7 @@ Chat files are saved as Markdown with YAML frontmatter:
 vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
+root_path: .worktrees/feature-branch # Optional: relative path from git root for working directory
 mode: code # auto, plan, code, or explore (from config.agent.default_mode)
 model: sonnet # sonnet, opus, or haiku (from config.agent.default_model)
 permissions_mode: acceptEdits # default, acceptEdits, or bypassPermissions
@@ -102,9 +103,10 @@ via `/mode` and `/model` slash commands. Configured permissions are recorded in 
 transparency and auditability. The optional `language` field ensures consistent AI response language
 across sessions.
 
-**Note on worktree sessions:** When using `:VibingChatWorktree`, the working directory (cwd) is set
-in memory only and not saved to frontmatter. This prevents issues when reopening chat files after
-worktree deletion. The cwd is only active during the initial VibingChatWorktree session.
+**Working directory persistence:** The `root_path` field stores the working directory as a relative
+path from git root (e.g., `.worktrees/feature-branch`). When a chat is reopened, the agent and mote
+commands are executed in this directory. This ensures consistent file operations across sessions,
+even when using `:VibingChatWorktree` or custom directories.
 
 ## Concurrent Execution Support
 
@@ -169,3 +171,4 @@ git repository. The system automatically:
 - Symlinks `node_modules` from the main worktree to avoid duplicate installations
 - Reuses existing worktrees without recreating the environment
 - Saves chat files in main repository at `.vibing/worktrees/<branch-name>/` (persists after worktree deletion)
+- Stores `root_path` in frontmatter for persistent working directory (e.g., `.worktrees/feature-branch`)

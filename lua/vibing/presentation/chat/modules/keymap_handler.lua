@@ -41,6 +41,7 @@ function M.setup(buf, callbacks, keymaps)
       local FilePath = require("vibing.core.utils.file_path")
       local PatchFinder = require("vibing.presentation.chat.modules.patch_finder")
       local PatchViewer = require("vibing.ui.patch_viewer")
+      local view = require("vibing.presentation.chat.view")
 
       local file_path = FilePath.is_cursor_on_file_path(buf)
       if not file_path then
@@ -59,7 +60,13 @@ function M.setup(buf, callbacks, keymaps)
         -- patchがない場合は設定に基づいてdiffツールを選択
         -- session_idを渡してセッション専用のmote storageを使用
         local DiffSelector = require("vibing.core.utils.diff_selector")
-        DiffSelector.show_diff(file_path, session_id)
+        -- cwdをfrontmatterのroot_pathから取得
+        local cwd = nil
+        local chat_buf = view.get_chat_buffer(buf)
+        if chat_buf then
+          cwd = chat_buf:get_cwd()
+        end
+        DiffSelector.show_diff(file_path, session_id, cwd)
       end
     end, { buffer = buf, desc = "Open diff for file under cursor" })
 

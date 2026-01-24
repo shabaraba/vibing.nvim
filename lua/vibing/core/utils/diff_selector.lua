@@ -26,7 +26,8 @@ end
 ---ファイルのdiffを表示（設定に基づいて適切なツールを選択）
 ---@param file_path string ファイルパス（絶対パス）
 ---@param session_id? string セッションID（moteのセッション別storage用）
-function M.show_diff(file_path, session_id)
+---@param cwd? string 作業ディレクトリ（frontmatterのroot_pathから算出）
+function M.show_diff(file_path, session_id, cwd)
   local config = require("vibing.config").get()
   local tool = M.select_tool(config.diff, session_id)
 
@@ -34,6 +35,7 @@ function M.show_diff(file_path, session_id)
     local MoteDiff = require("vibing.core.utils.mote_diff")
     local mote_config = vim.deepcopy(config.diff.mote)
     mote_config.storage_dir = MoteDiff.build_session_storage_dir(mote_config.storage_dir, session_id)
+    mote_config.cwd = cwd
     MoteDiff.show_diff(file_path, mote_config)
   else
     local GitDiff = require("vibing.core.utils.git_diff")
