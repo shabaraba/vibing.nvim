@@ -171,6 +171,10 @@ function M._register_commands()
     require("vibing.presentation.chat.controller").handle_set_file_title()
   end, { desc = "Generate AI title and rename chat file" })
 
+  vim.api.nvim_create_user_command("VibingSummarize", function()
+    require("vibing.presentation.chat.controller").handle_summarize()
+  end, { desc = "Generate and insert summary from chat history" })
+
   -- コンテキスト関連コマンド
   vim.api.nvim_create_user_command("VibingContext", function(opts)
     require("vibing.presentation.context.controller").handle_add(opts)
