@@ -11,6 +11,7 @@
 | `:VibingContext [path]`                   | Add file to context (or from oil.nvim if no path)                                                   |
 | `:VibingClearContext`                     | Clear all context                                                                                   |
 | `:VibingInline [action\|prompt]`          | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |
+| `:VibingSummarize`                        | Generate AI summary of chat history and insert into buffer                                          |
 | `:VibingCancel`                           | Cancel current request                                                                              |
 
 ## Command Semantics
