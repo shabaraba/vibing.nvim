@@ -156,8 +156,6 @@ local function run_mote_command(args, cwd, on_success, on_error)
   if cwd then
     opts.cwd = cwd
   end
-    -- DEBUG: moteコマンドのcwdを確認
-  vim.notify(string.format("[vibing:mote] cwd=%s, cmd=%s", tostring(opts.cwd or "nil"), table.concat(args, " ")), vim.log.levels.DEBUG)
   vim.system(args, opts, function(obj)
     vim.schedule(function()
       if obj.code ~= 0 then

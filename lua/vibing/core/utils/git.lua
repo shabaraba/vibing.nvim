@@ -27,14 +27,15 @@ function M.get_relative_path(abs_path)
   end
 
   local normalized = vim.fn.fnamemodify(abs_path, ":p"):gsub("/$", "")
-  if normalized:sub(1, #git_root) ~= git_root then
+
+  -- パス境界をチェック（完全一致または"/"で分離）
+  if normalized == git_root then
+    return "."
+  elseif normalized:sub(1, #git_root + 1) ~= git_root .. "/" then
     return nil
   end
 
   local relative = normalized:sub(#git_root + 2)
-  if relative == "" then
-    return "."
-  end
   return relative
 end
 
