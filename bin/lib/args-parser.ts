@@ -178,8 +178,12 @@ export function parseArguments(args: string[]): AgentConfig {
       i++;
     } else if (args[i] === '--tool-markers' && args[i + 1]) {
       try {
-        const parsed = JSON.parse(args[i + 1]) as ToolMarkersConfig;
-        config.toolMarkers = { ...config.toolMarkers, ...parsed };
+        const parsed = JSON.parse(args[i + 1]) as Record<string, unknown>;
+        for (const [key, value] of Object.entries(parsed)) {
+          if (typeof value === 'string' && value.trim().length > 0) {
+            config.toolMarkers[key] = value;
+          }
+        }
       } catch (e) {
         const error = toError(e);
         console.error('Failed to parse --tool-markers JSON:', error.message);
