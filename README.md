@@ -530,6 +530,8 @@ require("vibing").setup({
 
 ### Tool Markers Configuration
 
+Customize visual markers for tool execution with optional pattern matching:
+
 ```lua
 require("vibing").setup({
   ui = {
@@ -537,10 +539,22 @@ require("vibing").setup({
       Task = "▶",           -- Task tool start marker
       TaskComplete = "✓",   -- Task tool complete marker
       default = "⏺",        -- Default marker for other tools
-      Read = "📄",          -- Custom marker for Read tool
-      Edit = "✏️",          -- Custom marker for Edit tool
-      Write = "📝",         -- Custom marker for Write tool
-      Bash = "🔧",          -- Custom marker for Bash tool
+
+      -- Simple string markers
+      Read = "📄",
+      Edit = "✏️",
+      Write = "📝",
+
+      -- Pattern matching for command-specific markers
+      Bash = {
+        default = "💻",     -- Default Bash marker
+        patterns = {
+          ["^npm"] = "📦",      -- npm commands
+          ["^git"] = "🌿",      -- git commands
+          ["^docker"] = "🐳",   -- docker commands
+          ["^cargo"] = "🦀",    -- Rust cargo commands
+        }
+      },
     },
   },
 })
@@ -694,11 +708,21 @@ ui = {
     Task = "▶",           -- Task tool start marker
     TaskComplete = "✓",   -- Task tool complete marker
     default = "⏺",        -- Default marker for other tools
-    -- Custom markers for specific tools (optional)
+
+    -- Simple string markers (optional)
     -- Read = "📄",
     -- Edit = "✏️",
     -- Write = "📝",
-    -- Bash = "🔧",
+
+    -- Pattern matching for command-specific markers (optional)
+    -- Bash = {
+    --   default = "💻",
+    --   patterns = {
+    --     ["^npm"] = "📦",
+    --     ["^git"] = "🌿",
+    --     ["^docker"] = "🐳",
+    --   }
+    -- },
   },
 }
 ```
