@@ -37,7 +37,8 @@ function M.execute(adapter, callbacks, message, config)
   end
 
   local bufnr = callbacks.get_bufnr()
-  local mote_config = M._create_session_mote_config(config, callbacks.get_session_id(), bufnr)
+  local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
+  local mote_config = M._create_session_mote_config(config, callbacks.get_session_id(), bufnr, session_cwd)
 
   -- mote_configにcwd（frontmatterのroot_pathから算出）を設定
   if mote_config then
@@ -286,8 +287,9 @@ end
 ---@param config table 全体設定
 ---@param session_id string|nil セッションID
 ---@param bufnr number|nil バッファ番号（session_idがない場合のfallback用）
+---@param session_cwd string|nil worktreeのcwd（worktreeで作業する場合のみ）
 ---@return table|nil セッション固有のmote設定（mote未設定の場合nil）
-function M._create_session_mote_config(config, session_id, bufnr)
+function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
   if not config.diff or not config.diff.mote then
     return nil
   end
@@ -307,6 +309,12 @@ function M._create_session_mote_config(config, session_id, bufnr)
   local mote_config = vim.deepcopy(config.diff.mote)
   mote_config.storage_dir = MoteDiff.build_session_storage_dir(mote_config.storage_dir, mote_session_id)
   mote_config.mote_session_id = mote_session_id  -- patch_path生成用に保存
+
+  -- worktreeで作業する場合はcwdを設定
+  -- moteコマンドはこのcwdで実行され、worktree内のファイルのみを追跡する
+  if session_cwd then
+    mote_config.cwd = session_cwd
+  end
 
   return mote_config
 end

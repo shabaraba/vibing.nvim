@@ -129,15 +129,20 @@ function M._ensure_moteignore_exists(ignore_file_path)
 end
 
 ---moteコマンドのベース引数を生成
+---パスは絶対パスに変換して渡す（cwdの違いによる解決の問題を防ぐため）
 ---@param config Vibing.MoteConfig mote設定
 ---@return string[] コマンドライン引数の配列
 local function build_mote_base_args(config)
+  -- 絶対パスに変換（worktreeで実行する場合でもメインレポジトリのストレージを使用）
+  local abs_ignore_file = vim.fn.fnamemodify(config.ignore_file, ":p")
+  local abs_storage_dir = vim.fn.fnamemodify(config.storage_dir, ":p"):gsub("/$", "")
+
   return {
     M.get_mote_path(),
     "--ignore-file",
-    config.ignore_file,
+    abs_ignore_file,
     "--storage-dir",
-    config.storage_dir,
+    abs_storage_dir,
   }
 end
 
@@ -151,6 +156,8 @@ local function run_mote_command(args, cwd, on_success, on_error)
   if cwd then
     opts.cwd = cwd
   end
+    -- DEBUG: moteコマンドのcwdを確認
+  vim.notify(string.format("[vibing:mote] cwd=%s, cmd=%s", tostring(opts.cwd or "nil"), table.concat(args, " ")), vim.log.levels.DEBUG)
   vim.system(args, opts, function(obj)
     vim.schedule(function()
       if obj.code ~= 0 then
