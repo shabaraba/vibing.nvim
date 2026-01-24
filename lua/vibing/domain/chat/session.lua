@@ -116,14 +116,8 @@ end
 ---working_dirがある場合はgitルートからの絶対パスを算出
 ---@return string?
 function ChatSession:get_cwd()
-  if not self.working_dir then
-    return nil
-  end
-  local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
-  if vim.v.shell_error ~= 0 then
-    return nil
-  end
-  return git_root .. "/" .. self.working_dir
+  local Git = require("vibing.core.utils.git")
+  return Git.resolve_working_dir(self.working_dir)
 end
 
 return ChatSession

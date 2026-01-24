@@ -640,19 +640,8 @@ end
 ---@return string?
 function ChatBuffer:get_cwd()
   local frontmatter = self:parse_frontmatter()
-  local working_dir = frontmatter.working_dir
-  if not working_dir or working_dir == "" or working_dir == "~" then
-    return nil
-  end
-  local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
-  if vim.v.shell_error ~= 0 then
-    return nil
-  end
-  -- working_dir == "." の場合はgit rootそのものを返す
-  if working_dir == "." then
-    return git_root
-  end
-  return git_root .. "/" .. working_dir
+  local Git = require("vibing.core.utils.git")
+  return Git.resolve_working_dir(frontmatter.working_dir)
 end
 
 return ChatBuffer
