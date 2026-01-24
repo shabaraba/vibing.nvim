@@ -91,6 +91,9 @@ local DEFAULT_MOTEIGNORE_RULES = {
   "# Ignore .vibing directory contents (vibing.nvim internal files)",
   ".vibing/",
   "",
+  "# Ignore git worktrees (prevents cross-worktree diff pollution)",
+  ".worktrees/",
+  "",
   "# Dependencies (large file count, causes slow snapshots)",
   "node_modules/",
   "**/node_modules/",
@@ -129,24 +132,34 @@ function M._ensure_moteignore_exists(ignore_file_path)
 end
 
 ---moteコマンドのベース引数を生成
+---パスは絶対パスに変換して渡す（cwdの違いによる解決の問題を防ぐため）
 ---@param config Vibing.MoteConfig mote設定
 ---@return string[] コマンドライン引数の配列
 local function build_mote_base_args(config)
+  -- 絶対パスに変換（worktreeで実行する場合でもメインレポジトリのストレージを使用）
+  local abs_ignore_file = vim.fn.fnamemodify(config.ignore_file, ":p")
+  local abs_storage_dir = vim.fn.fnamemodify(config.storage_dir, ":p"):gsub("/$", "")
+
   return {
     M.get_mote_path(),
     "--ignore-file",
-    config.ignore_file,
+    abs_ignore_file,
     "--storage-dir",
-    config.storage_dir,
+    abs_storage_dir,
   }
 end
 
 ---moteコマンドを実行し結果をコールバックで返す
 ---@param args string[] コマンドライン引数
+---@param opts table? オプション {cwd: string?}
 ---@param on_success fun(stdout: string) 成功時のコールバック
 ---@param on_error fun(error: string) エラー時のコールバック
-local function run_mote_command(args, on_success, on_error)
-  vim.system(args, { text = true }, function(obj)
+local function run_mote_command(args, opts, on_success, on_error)
+  local sys_opts = { text = true }
+  if opts and opts.cwd then
+    sys_opts.cwd = opts.cwd
+  end
+  vim.system(args, sys_opts, function(obj)
     vim.schedule(function()
       if obj.code ~= 0 then
         on_error(obj.stderr or "Unknown error")
@@ -174,7 +187,7 @@ function M.get_diff(file_path, config, callback)
   table.insert(cmd, "diff")
   table.insert(cmd, vim.fn.fnamemodify(file_path, ":p"))
 
-  run_mote_command(cmd, function(stdout)
+  run_mote_command(cmd, { cwd = config.cwd }, function(stdout)
     callback(true, stdout, nil)
   end, function(error)
     callback(false, nil, error)
@@ -249,7 +262,7 @@ function M.initialize(config, callback)
   local cmd = build_mote_base_args(config)
   table.insert(cmd, "init")
 
-  run_mote_command(cmd, function()
+  run_mote_command(cmd, { cwd = config.cwd }, function()
     callback(true, nil)
   end, function(error)
     callback(false, error)
@@ -278,7 +291,7 @@ function M.create_snapshot(config, message, callback)
     table.insert(cmd, message)
   end
 
-  run_mote_command(cmd, function(stdout)
+  run_mote_command(cmd, { cwd = config.cwd }, function(stdout)
     local snapshot_id = stdout:match("snapshot%s+(%w+)")
     callback(true, snapshot_id, nil)
   end, function(error)
@@ -324,7 +337,7 @@ function M.get_changed_files(config, callback)
   table.insert(cmd, "diff")
   table.insert(cmd, "--name-only")
 
-  run_mote_command(cmd, function(stdout)
+  run_mote_command(cmd, { cwd = config.cwd }, function(stdout)
     callback(true, parse_changed_files(stdout), nil)
   end, function(error)
     callback(false, nil, error)
@@ -352,7 +365,7 @@ function M.generate_patch(config, output_path, callback)
   table.insert(cmd, "-o")
   table.insert(cmd, output_path)
 
-  run_mote_command(cmd, function()
+  run_mote_command(cmd, { cwd = config.cwd }, function()
     callback(true, nil)
   end, function(error)
     callback(false, error)
