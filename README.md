@@ -510,6 +510,42 @@ require("vibing").setup({
 })
 ```
 
+### Daily Summary Configuration
+
+```lua
+require("vibing").setup({
+  daily_summary = {
+    save_dir = ".vibing/daily-reports/",  -- Custom save directory (relative path)
+    -- If not set, defaults to <chat_save_dir>/daily/
+  },
+})
+
+-- Or use home directory with vim.fn.expand()
+require("vibing").setup({
+  daily_summary = {
+    save_dir = vim.fn.expand("~/Documents/vibing-daily/"),  -- Expand ~ to home directory
+  },
+})
+```
+
+### Tool Markers Configuration
+
+```lua
+require("vibing").setup({
+  ui = {
+    tool_markers = {
+      Task = "▶",           -- Task tool start marker
+      TaskComplete = "✓",   -- Task tool complete marker
+      default = "⏺",        -- Default marker for other tools
+      Read = "📄",          -- Custom marker for Read tool
+      Edit = "✏️",          -- Custom marker for Edit tool
+      Write = "📝",         -- Custom marker for Write tool
+      Bash = "🔧",          -- Custom marker for Bash tool
+    },
+  },
+})
+```
+
 ## 📚 Configuration Reference
 
 Complete reference of all configuration options:
@@ -653,6 +689,17 @@ ui = {
     },
     interval = 100,  -- Animation update interval in milliseconds
   },
+
+  tool_markers = {
+    Task = "▶",           -- Task tool start marker
+    TaskComplete = "✓",   -- Task tool complete marker
+    default = "⏺",        -- Default marker for other tools
+    -- Custom markers for specific tools (optional)
+    -- Read = "📄",
+    -- Edit = "✏️",
+    -- Write = "📝",
+    -- Bash = "🔧",
+  },
 }
 ```
 
@@ -765,6 +812,32 @@ language = {
   inline = "en",   -- Inline action responses
 }
 ```
+
+### Daily Summary
+
+Configure daily summary generation:
+
+```lua
+daily_summary = {
+  save_dir = nil,  -- Custom save directory for daily summaries
+                   -- nil: Auto-detect from chat save directory
+                   --      If chat_save_dir ends with "/chat/", uses "/daily/"
+                   --      Otherwise, appends "daily/" to chat_save_dir
+                   -- string: Custom path
+                   --      Relative: ".vibing/daily-reports/"
+                   --      Absolute: "/path/to/reports/"
+                   --      Home dir: vim.fn.expand("~/Documents/vibing-daily/")
+}
+```
+
+**Usage:**
+
+```vim
+:VibingDailySummary [YYYY-MM-DD]  " Generate summary for specified date (default: today)
+:VibingDailySummaryAll [YYYY-MM-DD]  " Include all conversations (default: user-only)
+```
+
+Summary files are saved as `YYYY-MM-DD.md` with YAML frontmatter containing metadata (date, source files, total messages).
 
 ### Remote Control
 
