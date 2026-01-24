@@ -202,17 +202,44 @@ type DisplayMode = 'none' | 'compact' | 'full';
 const DEFAULT_MARKER = '⏺';
 
 /**
- * Check if a value is a ToolMarkerDefinition object
+ * Type guard to check if a value is a ToolMarkerDefinition object.
+ * A ToolMarkerDefinition must be a non-null object containing either a 'default' or 'patterns' property.
  */
 function isToolMarkerDefinition(
   value: unknown
 ): value is { default?: string; patterns?: Record<string, string> } {
-  return typeof value === 'object' && value !== null && ('default' in value || 'patterns' in value);
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  return 'default' in value || 'patterns' in value;
 }
 
 /**
- * Resolve the marker for a given tool name using the configured markers
- * Supports pattern matching for tools like Bash with command-specific markers
+ * Find a matching pattern marker for the given tool input.
+ * Returns the marker if a pattern matches, undefined otherwise.
+ */
+function findPatternMarker(
+  patterns: Record<string, string>,
+  toolInput: string
+): string | undefined {
+  for (const [pattern, marker] of Object.entries(patterns)) {
+    try {
+      if (new RegExp(pattern).test(toolInput)) {
+        return marker;
+      }
+    } catch {
+      console.error(`Invalid regex pattern "${pattern}" in tool_markers configuration`);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Resolve the marker for a given tool name using the configured markers.
+ * Resolution order:
+ * 1. Pattern match (if toolInput provided and patterns exist)
+ * 2. Tool-specific default marker
+ * 3. Global default marker
  */
 function resolveToolMarker(
   toolName: string,
@@ -221,34 +248,23 @@ function resolveToolMarker(
 ): string {
   const markerConfig = markers[toolName];
 
-  // If markerConfig is a simple string, return it directly
   if (typeof markerConfig === 'string') {
     return markerConfig;
   }
 
-  // If markerConfig is a ToolMarkerDefinition object, try pattern matching
   if (isToolMarkerDefinition(markerConfig)) {
-    // Try pattern matching if toolInput is provided and patterns exist
     if (toolInput && markerConfig.patterns) {
-      for (const [pattern, marker] of Object.entries(markerConfig.patterns)) {
-        try {
-          const regex = new RegExp(pattern);
-          if (regex.test(toolInput)) {
-            return marker;
-          }
-        } catch (error) {
-          console.error(`Invalid regex pattern "${pattern}":`, error);
-        }
+      const patternMarker = findPatternMarker(markerConfig.patterns, toolInput);
+      if (patternMarker) {
+        return patternMarker;
       }
     }
 
-    // Fall back to definition's default
     if (markerConfig.default) {
       return markerConfig.default;
     }
   }
 
-  // Fall back to global default
   return markers.default ?? DEFAULT_MARKER;
 }
 
