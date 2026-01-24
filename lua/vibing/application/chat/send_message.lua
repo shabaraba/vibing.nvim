@@ -40,7 +40,7 @@ function M.execute(adapter, callbacks, message, config)
   local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
   local mote_config = M._create_session_mote_config(config, callbacks.get_session_id(), bufnr, session_cwd)
 
-  -- mote_configにcwd（frontmatterのroot_pathから算出）を設定
+  -- mote_configにcwd（frontmatterのworking_dirから算出）を設定
   if mote_config then
     mote_config.cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
   end
@@ -72,7 +72,7 @@ function M.execute(adapter, callbacks, message, config)
       lang_code = language_utils.get_language_code(config.language, "chat")
     end
 
-    -- Get cwd from frontmatter root_path
+    -- Get cwd from frontmatter working_dir
     local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
 
     -- Get session-level permissions from buffer

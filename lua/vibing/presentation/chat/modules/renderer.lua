@@ -20,6 +20,11 @@ function M.init_content(buf, session)
     "created_at: " .. (frontmatter.created_at or os.date("%Y-%m-%dT%H:%M:%S")),
   }
 
+  -- working_dir
+  if frontmatter.working_dir then
+    table.insert(lines, "working_dir: " .. frontmatter.working_dir)
+  end
+
   -- mode
   local mode = frontmatter.mode or (config.agent and config.agent.default_mode)
   if mode then

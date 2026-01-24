@@ -636,19 +636,23 @@ function ChatBuffer:get_session_deny()
   return vim.deepcopy(self._session_deny)
 end
 
----作業ディレクトリを取得（frontmatterのroot_pathから算出）
+---作業ディレクトリを取得（frontmatterのworking_dirから算出）
 ---@return string?
 function ChatBuffer:get_cwd()
   local frontmatter = self:parse_frontmatter()
-  local root_path = frontmatter.root_path
-  if not root_path or root_path == "" or root_path == "~" then
+  local working_dir = frontmatter.working_dir
+  if not working_dir or working_dir == "" or working_dir == "~" then
     return nil
   end
   local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
   if vim.v.shell_error ~= 0 then
     return nil
   end
-  return git_root .. "/" .. root_path
+  -- working_dir == "." の場合はgit rootそのものを返す
+  if working_dir == "." then
+    return git_root
+  end
+  return git_root .. "/" .. working_dir
 end
 
 return ChatBuffer

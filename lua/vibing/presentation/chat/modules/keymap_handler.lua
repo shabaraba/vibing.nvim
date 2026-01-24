@@ -60,7 +60,7 @@ function M.setup(buf, callbacks, keymaps)
         -- patchがない場合は設定に基づいてdiffツールを選択
         -- session_idを渡してセッション専用のmote storageを使用
         local DiffSelector = require("vibing.core.utils.diff_selector")
-        -- cwdをfrontmatterのroot_pathから取得
+        -- cwdをfrontmatterのworking_dirから取得
         local cwd = nil
         local chat_buf = view.get_chat_buffer(buf)
         if chat_buf then

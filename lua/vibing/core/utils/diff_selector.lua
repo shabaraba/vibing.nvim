@@ -26,7 +26,7 @@ end
 ---ファイルのdiffを表示（設定に基づいて適切なツールを選択）
 ---@param file_path string ファイルパス（絶対パス）
 ---@param session_id? string セッションID（moteのセッション別storage用）
----@param cwd? string 作業ディレクトリ（frontmatterのroot_pathから算出）
+---@param cwd? string 作業ディレクトリ（frontmatterのworking_dirから算出）
 function M.show_diff(file_path, session_id, cwd)
   local config = require("vibing.config").get()
   local tool = M.select_tool(config.diff, session_id)

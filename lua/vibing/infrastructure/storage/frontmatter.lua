@@ -131,7 +131,7 @@ local function get_sorted_keys(tbl)
     ["vibing.nvim"] = 1,
     session_id = 2,
     created_at = 3,
-    root_path = 4,
+    working_dir = 4,
     mode = 5,
     model = 6,
     permissions_mode = 7,
