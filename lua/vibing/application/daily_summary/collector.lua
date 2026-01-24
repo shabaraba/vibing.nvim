@@ -80,7 +80,7 @@ function M.collect_messages_from_file(file_path, target_date)
 
   for i, section in ipairs(sections) do
     if section.role == "user" then
-      local timestamp = Timestamp.extract_timestamp(section.header)
+      local timestamp = Timestamp.extract_timestamp_from_comment(section.header)
       if timestamp and timestamp:sub(1, 10) == target_date then
         local assistant_content = ""
         if sections[i + 1] and sections[i + 1].role == "assistant" then

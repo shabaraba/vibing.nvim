@@ -112,7 +112,8 @@ local function generate_frontmatter(date, source_files, total_messages)
   if #source_files > 0 then
     table.insert(lines, "source_files:")
     for _, file in ipairs(source_files) do
-      table.insert(lines, string.format('  - "%s"', file))
+      local escaped = file:gsub("\\", "\\\\"):gsub('"', '\\"')
+      table.insert(lines, string.format('  - "%s"', escaped))
     end
   end
 
@@ -148,7 +149,12 @@ function M._save_summary(date, content, source_files, total_messages, config, on
 
   local frontmatter = generate_frontmatter(date, source_files, total_messages)
   local output_lines = vim.list_extend(frontmatter, vim.split(content, "\n"))
-  vim.fn.writefile(output_lines, file_path)
+  local result = vim.fn.writefile(output_lines, file_path)
+  if result == -1 then
+    notify.error("Failed to write summary file: " .. file_path, "Daily Summary")
+    on_complete(false, nil)
+    return
+  end
   on_complete(true, file_path)
 end
 
@@ -211,6 +217,18 @@ function M.generate_summary(date, include_all, on_complete)
   end)
 end
 
+---@param year number
+---@param month number
+---@return number
+local function days_in_month(year, month)
+  local days = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
+  if month == 2 then
+    local is_leap = (year % 4 == 0 and year % 100 ~= 0) or (year % 400 == 0)
+    return is_leap and 29 or 28
+  end
+  return days[month]
+end
+
 ---@param date_str string|nil
 ---@return string|nil validated_date
 ---@return string|nil error
@@ -224,6 +242,7 @@ function M.validate_date(date_str)
     return nil, "Invalid date format. Use YYYY-MM-DD (e.g., 2025-01-24)"
   end
 
+  year = tonumber(year)
   month = tonumber(month)
   day = tonumber(day)
 
@@ -231,8 +250,9 @@ function M.validate_date(date_str)
     return nil, "Invalid month: must be between 01 and 12"
   end
 
-  if day < 1 or day > 31 then
-    return nil, "Invalid day: must be between 01 and 31"
+  local max_days = days_in_month(year, month)
+  if day < 1 or day > max_days then
+    return nil, string.format("Invalid day: %d-%02d has %d days", year, month, max_days)
   end
 
   return date_str, nil
