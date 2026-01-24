@@ -40,7 +40,7 @@ local function find_summary_section(lines, start_line, end_line)
     local line = lines[i]
     if line:lower():match("^##%s*summary") then
       summary_start = i
-    elseif summary_start and (line:match("^##%s[^#]") or line:match("^%-%-%-$")) then
+    elseif summary_start and (line:match("^##%s") or line:match("^%-%-%-$")) then
       return summary_start, i - 1
     end
   end
