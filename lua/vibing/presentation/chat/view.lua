@@ -34,10 +34,7 @@ function M.render(session, position)
   if session.session_id and session.session_id ~= "" then
     chat_buf.session_id = session.session_id
   end
-  -- cwdをセッションから取得（VibingChatWorktreeで設定される）
-  if session.cwd then
-    chat_buf.cwd = session.cwd
-  end
+  -- NOTE: cwdはfrontmatterのroot_pathから算出されるため、ここでの転送は不要
 
   -- 位置指定が指定されている場合は一時的にオーバーライド
   if position then

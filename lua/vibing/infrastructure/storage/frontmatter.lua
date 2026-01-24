@@ -131,12 +131,13 @@ local function get_sorted_keys(tbl)
     ["vibing.nvim"] = 1,
     session_id = 2,
     created_at = 3,
-    mode = 4,
-    model = 5,
-    permissions_mode = 6,
-    permissions_allow = 7,
-    permissions_deny = 8,
-    language = 9,
+    root_path = 4,
+    mode = 5,
+    model = 6,
+    permissions_mode = 7,
+    permissions_allow = 8,
+    permissions_deny = 9,
+    language = 10,
   }
 
   table.sort(keys, function(a, b)

@@ -13,7 +13,6 @@ local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 ---@field config Vibing.ChatConfig
 ---@field session_id string?
 ---@field file_path string?
----@field cwd string? worktreeの作業ディレクトリ（VibingChatWorktreeで設定）
 ---@field session Vibing.ChatSession? セッションオブジェクト（非推奨、後方互換性のため）
 ---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
@@ -36,7 +35,6 @@ function ChatBuffer:new(config)
   instance.config = config
   instance.session_id = nil
   instance.file_path = nil
-  instance.cwd = nil
   instance.session = nil
   instance._chunk_buffer = ""
   instance._chunk_timer = nil
@@ -638,10 +636,19 @@ function ChatBuffer:get_session_deny()
   return vim.deepcopy(self._session_deny)
 end
 
----作業ディレクトリを取得（worktree用）
+---作業ディレクトリを取得（frontmatterのroot_pathから算出）
 ---@return string?
 function ChatBuffer:get_cwd()
-  return self.cwd
+  local frontmatter = self:parse_frontmatter()
+  local root_path = frontmatter.root_path
+  if not root_path or root_path == "" or root_path == "~" then
+    return nil
+  end
+  local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
+  if vim.v.shell_error ~= 0 then
+    return nil
+  end
+  return git_root .. "/" .. root_path
 end
 
 return ChatBuffer
