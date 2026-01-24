@@ -4,7 +4,7 @@
 
 import { safeJsonStringify } from './utils.js';
 import { detectVcsOperation } from './vcs-detector.js';
-import type { AgentConfig } from '../types.js';
+import type { AgentConfig, ToolMarkersConfig } from '../types.js';
 
 /**
  * Emit a JSON-formatted message to stdout
@@ -199,6 +199,15 @@ function formatTodoWriteTodos(todos: TodoItem[]): string {
 
 type DisplayMode = 'none' | 'compact' | 'full';
 
+const DEFAULT_MARKER = '⏺';
+
+/**
+ * Resolve the marker for a given tool name using the configured markers
+ */
+function resolveToolMarker(toolName: string, markers: ToolMarkersConfig): string {
+  return markers[toolName] ?? markers.default ?? DEFAULT_MARKER;
+}
+
 interface FormatToolResultOptions {
   toolName: string;
   inputSummary: string;
@@ -208,6 +217,7 @@ interface FormatToolResultOptions {
   isError: boolean;
   todos?: TodoItem[];
   parentTaskSummary?: string;
+  markers: ToolMarkersConfig;
 }
 
 /**
@@ -223,11 +233,13 @@ function formatToolResult(options: FormatToolResultOptions): string {
     isError,
     todos,
     parentTaskSummary,
+    markers,
   } = options;
 
   const prefix = prefixNewline ? '\n' : '';
   const parentAnnotation = parentTaskSummary ? ` by Task(${parentTaskSummary})` : '';
-  let text = `${prefix}⏺ ${toolName}(${inputSummary})${parentAnnotation}\n`;
+  const marker = resolveToolMarker(toolName, markers);
+  let text = `${prefix}${marker} ${toolName}(${inputSummary})${parentAnnotation}\n`;
 
   // Only show formatted todos if there's no error
   if (toolName === 'TodoWrite' && todos && todos.length > 0 && !isError) {
@@ -249,21 +261,20 @@ function formatToolResult(options: FormatToolResultOptions): string {
   return text;
 }
 
+const DEFAULT_TASK_COMPLETE_MARKER = '✓';
+
 /**
  * Format Task tool completion message
  */
 function formatTaskCompletion(
   inputSummary: string,
   nestedToolCount: number,
-  prefixNewline: boolean
+  prefixNewline: boolean,
+  markers: ToolMarkersConfig
 ): string {
-  try {
-    const prefix = prefixNewline ? '\n' : '';
-    return `${prefix}⏺ Task(${inputSummary}) ✓ (${nestedToolCount} tools used)\n`;
-  } catch (error) {
-    console.error('Error formatting Task completion:', error);
-    return `\n⏺ Task ✓ (Failed to format completion message)\n`;
-  }
+  const prefix = prefixNewline ? '\n' : '';
+  const completionMarker = markers.TaskComplete ?? markers.default ?? DEFAULT_TASK_COMPLETE_MARKER;
+  return `${prefix}${completionMarker} Task(${inputSummary}) (${nestedToolCount} tools used)\n`;
 }
 
 /**
@@ -344,8 +355,10 @@ export async function processStream(
               });
 
               // Display Task tool start immediately
+              const taskMarker = resolveToolMarker('Task', config.toolMarkers);
               const taskText =
-                (lastOutputType === 'text' ? '\n' : '') + `⏺ Task(${inputSummary}) ...\n`;
+                (lastOutputType === 'text' ? '\n' : '') +
+                `${taskMarker} Task(${inputSummary}) ...\n`;
               emit({ type: 'chunk', text: taskText });
               lastOutputType = 'tool_result';
             }
@@ -398,7 +411,12 @@ export async function processStream(
             if (toolName === 'Task') {
               const taskContext = taskContextMap.get(block.tool_use_id);
               const nestedCount = taskContext ? taskContext.nestedToolIds.length : 0;
-              outputText = formatTaskCompletion(inputSummary, nestedCount, prefixNewline);
+              outputText = formatTaskCompletion(
+                inputSummary,
+                nestedCount,
+                prefixNewline,
+                config.toolMarkers
+              );
             } else {
               const parentTaskId = toolParentMap.get(block.tool_use_id);
               const parentContext = parentTaskId ? taskContextMap.get(parentTaskId) : null;
@@ -413,6 +431,7 @@ export async function processStream(
                 isError,
                 todos,
                 parentTaskSummary,
+                markers: config.toolMarkers,
               });
             }
 

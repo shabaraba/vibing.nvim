@@ -3,12 +3,18 @@
  * Parses CLI arguments and returns configuration object
  */
 
-import type { AgentConfig, PermissionRule } from '../types.js';
+import type { AgentConfig, PermissionRule, ToolMarkersConfig } from '../types.js';
 import { toError } from './utils.js';
 
 const validDisplayModes = ['none', 'compact', 'full'] as const;
 const validPermissionModes = ['default', 'acceptEdits', 'bypassPermissions'] as const;
 const validSaveLocationTypes = ['project', 'user', 'custom'] as const;
+
+const DEFAULT_TOOL_MARKERS: ToolMarkersConfig = {
+  Task: '▶',
+  TaskComplete: '✓',
+  default: '⏺',
+};
 
 /**
  * Type guard for permission mode validation
@@ -56,6 +62,7 @@ export function parseArguments(args: string[]): AgentConfig {
     toolResultDisplay: 'compact',
     saveLocationType: 'project',
     saveDir: null,
+    toolMarkers: { ...DEFAULT_TOOL_MARKERS },
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -168,6 +175,20 @@ export function parseArguments(args: string[]): AgentConfig {
       i++;
     } else if (args[i] === '--save-dir' && args[i + 1]) {
       config.saveDir = args[i + 1];
+      i++;
+    } else if (args[i] === '--tool-markers' && args[i + 1]) {
+      try {
+        const parsed = JSON.parse(args[i + 1]) as Record<string, unknown>;
+        for (const [key, value] of Object.entries(parsed)) {
+          if (typeof value === 'string' && value.trim().length > 0) {
+            config.toolMarkers[key] = value;
+          }
+        }
+      } catch (e) {
+        const error = toError(e);
+        console.error('Failed to parse --tool-markers JSON:', error.message);
+        process.exit(1);
+      }
       i++;
     } else if (!args[i].startsWith('--')) {
       config.prompt = args[i];

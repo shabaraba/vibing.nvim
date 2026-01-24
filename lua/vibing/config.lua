@@ -22,12 +22,21 @@
 ---@field colors string[] グラデーション色の配列（2色指定: {開始色, 終了色}、例: {"#cc3300", "#fffe00"}）
 ---@field interval number アニメーション更新間隔（ミリ秒、デフォルト: 100）
 
+---@class Vibing.ToolMarkersConfig
+---ツールマーカー設定
+---チャット出力でツール実行時に表示する視覚的マーカーをカスタマイズ
+---@field Task? string Taskツール開始マーカー（デフォルト: "▶"）
+---@field TaskComplete? string Taskツール完了マーカー（デフォルト: "✓"）
+---@field default? string その他のツール用デフォルトマーカー（デフォルト: "⏺"）
+---@field [string]? string ツール名をキーとした個別マーカー（例: Read = "📄"）
+
 ---@class Vibing.UiConfig
 ---UI設定
 ---全UIコンポーネント（Chat、Inline、Output）に適用される表示設定
 ---@field wrap "nvim"|"on"|"off" 行の折り返し設定（"nvim": Neovimデフォルト、"on": wrap+linebreak有効、"off": wrap無効）
 ---@field gradient Vibing.GradientConfig グラデーションアニメーション設定（応答中の視覚的フィードバック）
 ---@field tool_result_display "none"|"compact"|"full" ツール実行結果の表示モード（"none": 非表示、"compact": 数行のみ、"full": 全文表示）
+---@field tool_markers? Vibing.ToolMarkersConfig ツールマーカー設定（ツール実行時の視覚的マーカー）
 
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
@@ -157,6 +166,11 @@ M.defaults = {
       interval = 100,
     },
     tool_result_display = "compact",
+    tool_markers = {
+      Task = "▶",
+      TaskComplete = "✓",
+      default = "⏺",
+    },
   },
   keymaps = {
     send = "<CR>",
@@ -337,6 +351,19 @@ function M.setup(opts)
     if gradient.interval and (type(gradient.interval) ~= "number" or gradient.interval <= 0) then
       notify.warn("Invalid ui.gradient.interval: must be a positive number.")
       M.options.ui.gradient.interval = 100
+    end
+  end
+
+  if M.options.ui and M.options.ui.tool_markers then
+    local markers = M.options.ui.tool_markers
+    for key, marker in pairs(markers) do
+      if type(marker) ~= "string" then
+        notify.warn(string.format("Invalid ui.tool_markers.%s: must be a string, got %s", key, type(marker)))
+        M.options.ui.tool_markers[key] = nil
+      elseif marker == "" then
+        notify.warn(string.format("ui.tool_markers.%s is empty string - will use default", key))
+        M.options.ui.tool_markers[key] = nil
+      end
     end
   end
 

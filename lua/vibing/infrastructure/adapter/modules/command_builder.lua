@@ -154,10 +154,21 @@ end
 
 ---@param cmd string[]
 ---@param config Vibing.Config
+local function add_tool_markers_flag(cmd, config)
+  local markers = config.ui and config.ui.tool_markers
+  if markers and vim.tbl_count(markers) > 0 then
+    table.insert(cmd, "--tool-markers")
+    table.insert(cmd, vim.json.encode(markers))
+  end
+end
+
+---@param cmd string[]
+---@param config Vibing.Config
 local function add_additional_flags(cmd, config)
   add_flag_if_present(cmd, "--prioritize-vibing-lsp", config.agent and config.agent.prioritize_vibing_lsp)
   add_flag_if_present(cmd, "--mcp-enabled", config.mcp and config.mcp.enabled)
   add_flag_if_present(cmd, "--tool-result-display", config.ui and config.ui.tool_result_display)
+  add_tool_markers_flag(cmd, config)
 
   local save_location_type = config.chat and config.chat.save_location_type
   add_flag_if_present(cmd, "--save-location-type", save_location_type)
