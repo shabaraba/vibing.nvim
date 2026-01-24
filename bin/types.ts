@@ -3,13 +3,53 @@
  */
 
 /**
- * Tool markers configuration for customizing visual indicators
+ * Tool-specific marker configuration with pattern matching support.
+ * Allows different markers based on tool input (e.g., different markers for npm vs git commands in Bash).
+ *
+ * @example
+ * ```typescript
+ * const bashMarker: ToolMarkerDefinition = {
+ *   default: '⏺',
+ *   patterns: {
+ *     '^npm': '📦',
+ *     '^git': '🌿',
+ *   }
+ * };
+ * ```
+ */
+export interface ToolMarkerDefinition {
+  /** Default marker when no pattern matches */
+  default?: string;
+  /** Regex pattern to marker mapping. Patterns are tested against tool input. */
+  patterns?: Record<string, string>;
+}
+
+/**
+ * Configuration for tool execution markers displayed in chat output.
+ * Supports both simple string markers and pattern-based ToolMarkerDefinition objects.
+ *
+ * @example
+ * ```typescript
+ * const markers: ToolMarkersConfig = {
+ *   Task: '▶',
+ *   TaskComplete: '✓',
+ *   default: '⏺',
+ *   Bash: {
+ *     default: '⏺',
+ *     patterns: { '^npm': '📦' }
+ *   }
+ * };
+ * ```
  */
 export interface ToolMarkersConfig {
+  /** Marker for Task tool start */
   Task?: string;
+  /** Marker for Task tool completion */
   TaskComplete?: string;
+  /** Default marker for tools without specific configuration */
   default?: string;
-  [toolName: string]: string | undefined;
+  /** Tool-specific markers (string for simple marker, ToolMarkerDefinition for pattern matching) */
+  [toolName: string]: string | ToolMarkerDefinition | undefined;
 }
 
 /**

@@ -22,13 +22,18 @@
 ---@field colors string[] グラデーション色の配列（2色指定: {開始色, 終了色}、例: {"#cc3300", "#fffe00"}）
 ---@field interval number アニメーション更新間隔（ミリ秒、デフォルト: 100）
 
+---@class Vibing.ToolMarkerDefinition
+---ツール固有のマーカー定義（パターンマッチング対応）
+---@field default? string ツールのデフォルトマーカー
+---@field patterns? table<string, string> 正規表現パターン→マーカーのマッピング（例: Bash用に {["^npm"] = "📦", ["^git"] = "🌿"}）
+
 ---@class Vibing.ToolMarkersConfig
 ---ツールマーカー設定
 ---チャット出力でツール実行時に表示する視覚的マーカーをカスタマイズ
 ---@field Task? string Taskツール開始マーカー（デフォルト: "▶"）
 ---@field TaskComplete? string Taskツール完了マーカー（デフォルト: "✓"）
 ---@field default? string その他のツール用デフォルトマーカー（デフォルト: "⏺"）
----@field [string]? string ツール名をキーとした個別マーカー（例: Read = "📄"）
+---@field [string]? string|Vibing.ToolMarkerDefinition ツール名をキーとした個別マーカー（文字列またはToolMarkerDefinition）
 
 ---@class Vibing.UiConfig
 ---UI設定
@@ -138,6 +143,81 @@ local tools_const = require("vibing.constants.tools")
 local language_utils = require("vibing.core.utils.language")
 
 local M = {}
+
+---Validate a single pattern entry in tool_markers
+---@param key string Tool name for error messages
+---@param pattern string Pattern key
+---@param marker any Marker value to validate
+---@return boolean is_valid
+local function validate_pattern_entry(key, pattern, marker)
+  if type(marker) ~= "string" or marker == "" then
+    notify.warn(string.format(
+      "Invalid ui.tool_markers.%s.patterns['%s']: marker must be a non-empty string",
+      key, pattern
+    ))
+    return false
+  end
+  return true
+end
+
+---Validate a ToolMarkerDefinition table
+---@param key string Tool name for error messages
+---@param marker table ToolMarkerDefinition to validate
+---@return table|nil Validated marker or nil if invalid
+local function validate_marker_definition(key, marker)
+  if marker.default and type(marker.default) ~= "string" then
+    notify.warn(string.format("Invalid ui.tool_markers.%s.default: must be a string", key))
+    marker.default = nil
+  end
+
+  if marker.patterns then
+    if type(marker.patterns) ~= "table" then
+      notify.warn(string.format("Invalid ui.tool_markers.%s.patterns: must be a table", key))
+      marker.patterns = nil
+    else
+      for pattern, pattern_marker in pairs(marker.patterns) do
+        if not validate_pattern_entry(key, pattern, pattern_marker) then
+          marker.patterns[pattern] = nil
+        end
+      end
+    end
+  end
+
+  local has_default = marker.default ~= nil
+  local has_patterns = marker.patterns and next(marker.patterns) ~= nil
+  if not has_default and not has_patterns then
+    notify.warn(string.format("ui.tool_markers.%s has no valid default or patterns - removing", key))
+    return nil
+  end
+
+  return marker
+end
+
+---Validate tool_markers configuration
+---@param markers table Tool markers config to validate
+---@return table Validated markers config
+local function validate_tool_markers(markers)
+  local validated = {}
+
+  for key, marker in pairs(markers) do
+    if type(marker) == "string" then
+      if marker == "" then
+        notify.warn(string.format("ui.tool_markers.%s is empty string - will use default", key))
+      else
+        validated[key] = marker
+      end
+    elseif type(marker) == "table" then
+      validated[key] = validate_marker_definition(key, marker)
+    else
+      notify.warn(string.format(
+        "Invalid ui.tool_markers.%s: must be a string or table, got %s",
+        key, type(marker)
+      ))
+    end
+  end
+
+  return validated
+end
 
 ---@type Vibing.Config
 M.defaults = {
@@ -355,16 +435,7 @@ function M.setup(opts)
   end
 
   if M.options.ui and M.options.ui.tool_markers then
-    local markers = M.options.ui.tool_markers
-    for key, marker in pairs(markers) do
-      if type(marker) ~= "string" then
-        notify.warn(string.format("Invalid ui.tool_markers.%s: must be a string, got %s", key, type(marker)))
-        M.options.ui.tool_markers[key] = nil
-      elseif marker == "" then
-        notify.warn(string.format("ui.tool_markers.%s is empty string - will use default", key))
-        M.options.ui.tool_markers[key] = nil
-      end
-    end
+    M.options.ui.tool_markers = validate_tool_markers(M.options.ui.tool_markers)
   end
 
   if M.options.language then

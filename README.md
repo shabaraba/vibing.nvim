@@ -530,6 +530,8 @@ require("vibing").setup({
 
 ### Tool Markers Configuration
 
+Customize visual markers for tool execution with optional pattern matching:
+
 ```lua
 require("vibing").setup({
   ui = {
@@ -537,14 +539,44 @@ require("vibing").setup({
       Task = "▶",           -- Task tool start marker
       TaskComplete = "✓",   -- Task tool complete marker
       default = "⏺",        -- Default marker for other tools
-      Read = "📄",          -- Custom marker for Read tool
-      Edit = "✏️",          -- Custom marker for Edit tool
-      Write = "📝",         -- Custom marker for Write tool
-      Bash = "🔧",          -- Custom marker for Bash tool
+
+      -- Simple string markers
+      Read = "📄",
+      Edit = "✏️",
+      Write = "📝",
+
+      -- Pattern matching for command-specific markers
+      Bash = {
+        default = "💻",     -- Default Bash marker
+        patterns = {
+          -- Package manager operations (supports npm/pnpm/yarn/bun)
+          ["^(npm|pnpm|yarn|bun) install"] = "📦⬇",
+          ["^(npm|pnpm|yarn|bun) run"] = "📦▶",
+
+          -- Git operations
+          ["^git (commit|push|pull)"] = "🌿📝",
+          ["^git checkout"] = "🌿🔀",
+
+          -- Docker operations
+          ["^docker (build|compose)"] = "🐳🔨",
+          ["^docker run"] = "🐳▶",
+
+          -- Build tools
+          ["^(cargo|go) build"] = "🔨",
+          ["^(cargo|go) test"] = "🧪",
+        }
+      },
     },
   },
 })
 ```
+
+**Pattern Matching Features:**
+
+- Supports full JavaScript regex syntax
+- Patterns are evaluated in definition order (first match wins)
+- Invalid patterns are caught and logged to console
+- More specific patterns should be defined before general ones
 
 ## 📚 Configuration Reference
 
@@ -694,11 +726,23 @@ ui = {
     Task = "▶",           -- Task tool start marker
     TaskComplete = "✓",   -- Task tool complete marker
     default = "⏺",        -- Default marker for other tools
-    -- Custom markers for specific tools (optional)
+
+    -- Simple string markers (optional)
     -- Read = "📄",
     -- Edit = "✏️",
     -- Write = "📝",
-    -- Bash = "🔧",
+
+    -- Pattern matching for command-specific markers (optional)
+    -- Supports full JavaScript regex syntax with grouping and alternation
+    -- Bash = {
+    --   default = "💻",
+    --   patterns = {
+    --     ["^(npm|pnpm|yarn|bun) install"] = "📦⬇",
+    --     ["^(npm|pnpm|yarn|bun) run"] = "📦▶",
+    --     ["^git (commit|push|pull)"] = "🌿📝",
+    --     ["^docker (build|compose)"] = "🐳🔨",
+    --   }
+    -- },
   },
 }
 ```
