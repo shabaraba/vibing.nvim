@@ -202,10 +202,54 @@ type DisplayMode = 'none' | 'compact' | 'full';
 const DEFAULT_MARKER = '⏺';
 
 /**
- * Resolve the marker for a given tool name using the configured markers
+ * Check if a value is a ToolMarkerDefinition object
  */
-function resolveToolMarker(toolName: string, markers: ToolMarkersConfig): string {
-  return markers[toolName] ?? markers.default ?? DEFAULT_MARKER;
+function isToolMarkerDefinition(
+  value: unknown
+): value is { default?: string; patterns?: Record<string, string> } {
+  return typeof value === 'object' && value !== null && ('default' in value || 'patterns' in value);
+}
+
+/**
+ * Resolve the marker for a given tool name using the configured markers
+ * Supports pattern matching for tools like Bash with command-specific markers
+ */
+function resolveToolMarker(
+  toolName: string,
+  markers: ToolMarkersConfig,
+  toolInput?: string
+): string {
+  const markerConfig = markers[toolName];
+
+  // If markerConfig is a simple string, return it directly
+  if (typeof markerConfig === 'string') {
+    return markerConfig;
+  }
+
+  // If markerConfig is a ToolMarkerDefinition object, try pattern matching
+  if (isToolMarkerDefinition(markerConfig)) {
+    // Try pattern matching if toolInput is provided and patterns exist
+    if (toolInput && markerConfig.patterns) {
+      for (const [pattern, marker] of Object.entries(markerConfig.patterns)) {
+        try {
+          const regex = new RegExp(pattern);
+          if (regex.test(toolInput)) {
+            return marker;
+          }
+        } catch (error) {
+          console.error(`Invalid regex pattern "${pattern}":`, error);
+        }
+      }
+    }
+
+    // Fall back to definition's default
+    if (markerConfig.default) {
+      return markerConfig.default;
+    }
+  }
+
+  // Fall back to global default
+  return markers.default ?? DEFAULT_MARKER;
 }
 
 interface FormatToolResultOptions {
@@ -238,7 +282,7 @@ function formatToolResult(options: FormatToolResultOptions): string {
 
   const prefix = prefixNewline ? '\n' : '';
   const parentAnnotation = parentTaskSummary ? ` by Task(${parentTaskSummary})` : '';
-  const marker = resolveToolMarker(toolName, markers);
+  const marker = resolveToolMarker(toolName, markers, inputSummary);
   let text = `${prefix}${marker} ${toolName}(${inputSummary})${parentAnnotation}\n`;
 
   // Only show formatted todos if there's no error
@@ -355,7 +399,7 @@ export async function processStream(
               });
 
               // Display Task tool start immediately
-              const taskMarker = resolveToolMarker('Task', config.toolMarkers);
+              const taskMarker = resolveToolMarker('Task', config.toolMarkers, inputSummary);
               const taskText =
                 (lastOutputType === 'text' ? '\n' : '') +
                 `${taskMarker} Task(${inputSummary}) ...\n`;

@@ -3,13 +3,21 @@
  */
 
 /**
+ * Tool-specific marker configuration with optional pattern matching
+ */
+export interface ToolMarkerDefinition {
+  default?: string;
+  patterns?: Record<string, string>; // regex pattern → marker
+}
+
+/**
  * Tool markers configuration for customizing visual indicators
  */
 export interface ToolMarkersConfig {
   Task?: string;
   TaskComplete?: string;
   default?: string;
-  [toolName: string]: string | undefined;
+  [toolName: string]: string | ToolMarkerDefinition | undefined;
 }
 
 /**

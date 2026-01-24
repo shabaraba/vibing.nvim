@@ -22,13 +22,18 @@
 ---@field colors string[] グラデーション色の配列（2色指定: {開始色, 終了色}、例: {"#cc3300", "#fffe00"}）
 ---@field interval number アニメーション更新間隔（ミリ秒、デフォルト: 100）
 
+---@class Vibing.ToolMarkerDefinition
+---ツール固有のマーカー定義（パターンマッチング対応）
+---@field default? string ツールのデフォルトマーカー
+---@field patterns? table<string, string> 正規表現パターン→マーカーのマッピング（例: Bash用に {["^npm"] = "📦", ["^git"] = "🌿"}）
+
 ---@class Vibing.ToolMarkersConfig
 ---ツールマーカー設定
 ---チャット出力でツール実行時に表示する視覚的マーカーをカスタマイズ
 ---@field Task? string Taskツール開始マーカー（デフォルト: "▶"）
 ---@field TaskComplete? string Taskツール完了マーカー（デフォルト: "✓"）
 ---@field default? string その他のツール用デフォルトマーカー（デフォルト: "⏺"）
----@field [string]? string ツール名をキーとした個別マーカー（例: Read = "📄"）
+---@field [string]? string|Vibing.ToolMarkerDefinition ツール名をキーとした個別マーカー（文字列またはToolMarkerDefinition）
 
 ---@class Vibing.UiConfig
 ---UI設定
@@ -357,11 +362,43 @@ function M.setup(opts)
   if M.options.ui and M.options.ui.tool_markers then
     local markers = M.options.ui.tool_markers
     for key, marker in pairs(markers) do
-      if type(marker) ~= "string" then
-        notify.warn(string.format("Invalid ui.tool_markers.%s: must be a string, got %s", key, type(marker)))
-        M.options.ui.tool_markers[key] = nil
-      elseif marker == "" then
-        notify.warn(string.format("ui.tool_markers.%s is empty string - will use default", key))
+      if type(marker) == "string" then
+        -- String marker: validate non-empty
+        if marker == "" then
+          notify.warn(string.format("ui.tool_markers.%s is empty string - will use default", key))
+          M.options.ui.tool_markers[key] = nil
+        end
+      elseif type(marker) == "table" then
+        -- ToolMarkerDefinition: validate structure
+        if marker.default and type(marker.default) ~= "string" then
+          notify.warn(string.format("Invalid ui.tool_markers.%s.default: must be a string", key))
+          marker.default = nil
+        end
+        if marker.patterns and type(marker.patterns) ~= "table" then
+          notify.warn(string.format("Invalid ui.tool_markers.%s.patterns: must be a table", key))
+          marker.patterns = nil
+        elseif marker.patterns then
+          -- Validate each pattern entry
+          for pattern, pattern_marker in pairs(marker.patterns) do
+            if type(pattern_marker) ~= "string" or pattern_marker == "" then
+              notify.warn(string.format(
+                "Invalid ui.tool_markers.%s.patterns['%s']: marker must be a non-empty string",
+                key, pattern
+              ))
+              marker.patterns[pattern] = nil
+            end
+          end
+        end
+        -- If both default and patterns are nil, remove the entire definition
+        if not marker.default and not (marker.patterns and next(marker.patterns)) then
+          notify.warn(string.format("ui.tool_markers.%s has no valid default or patterns - removing", key))
+          M.options.ui.tool_markers[key] = nil
+        end
+      else
+        notify.warn(string.format(
+          "Invalid ui.tool_markers.%s: must be a string or table, got %s",
+          key, type(marker)
+        ))
         M.options.ui.tool_markers[key] = nil
       end
     end
