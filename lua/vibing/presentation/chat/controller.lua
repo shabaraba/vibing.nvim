@@ -75,15 +75,10 @@ end
 ---チャット履歴からサマリーを生成してバッファに挿入
 function M.handle_summarize()
   local view = require("vibing.presentation.chat.view")
-
-  if not view.is_current_buffer_chat() then
-    notify.warn("Not in a vibing chat buffer")
-    return
-  end
-
   local current_view = view.get_current()
+
   if not current_view then
-    notify.warn("No active chat session")
+    notify.warn("Not in a vibing chat buffer")
     return
   end
 

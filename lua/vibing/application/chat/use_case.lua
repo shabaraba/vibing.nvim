@@ -130,37 +130,30 @@ function M.attach_to_buffer(bufnr, file_path)
   view.attach_to_buffer(bufnr, file_path)
 end
 
----チャット履歴からサマリーを生成してバッファに挿入
----@param chat_buffer Vibing.ChatBuffer
-function M.generate_and_insert_summary(chat_buffer)
-  local notify = require("vibing.core.utils.notify")
-
-  if not chat_buffer or not chat_buffer.buf or not vim.api.nvim_buf_is_valid(chat_buffer.buf) then
-    notify.error("No valid chat buffer")
-    return
-  end
-
-  local conversation = chat_buffer:extract_conversation()
-
-  if #conversation == 0 then
-    notify.warn("No conversation to summarize")
-    return
-  end
-
-  local has_content = false
+---Check if conversation has meaningful content
+---@param conversation table[]
+---@return boolean
+local function has_conversation_content(conversation)
   for _, msg in ipairs(conversation) do
     if msg.content and vim.trim(msg.content) ~= "" then
-      has_content = true
-      break
+      return true
     end
   end
+  return false
+end
 
-  if not has_content then
-    notify.warn("No conversation content to summarize")
-    return
+---Format conversation for summary prompt
+---@param conversation table[]
+---@return string
+local function format_conversation_for_prompt(conversation)
+  local parts = {}
+  for _, msg in ipairs(conversation) do
+    table.insert(parts, string.format("[%s]: %s", msg.role, msg.content))
   end
+  return table.concat(parts, "\n\n")
+end
 
-  local summary_prompt = [[
+local SUMMARY_PROMPT = [[
 Please analyze the conversation above and generate a summary in the following EXACT format (in Japanese):
 
 ## summary
@@ -177,12 +170,22 @@ Please analyze the conversation above and generate a summary in the following EX
 IMPORTANT: Output ONLY the summary section starting with "## summary". Do not include any other text or explanation.
 ]]
 
-  local conversation_text = {}
-  for _, msg in ipairs(conversation) do
-    table.insert(conversation_text, string.format("[%s]: %s", msg.role, msg.content))
+---チャット履歴からサマリーを生成してバッファに挿入
+---@param chat_buffer Vibing.ChatBuffer
+function M.generate_and_insert_summary(chat_buffer)
+  local notify = require("vibing.core.utils.notify")
+
+  if not chat_buffer or not chat_buffer.buf or not vim.api.nvim_buf_is_valid(chat_buffer.buf) then
+    notify.error("No valid chat buffer")
+    return
   end
 
-  local full_prompt = table.concat(conversation_text, "\n\n") .. "\n\n" .. summary_prompt
+  local conversation = chat_buffer:extract_conversation()
+
+  if #conversation == 0 or not has_conversation_content(conversation) then
+    notify.warn("No conversation content to summarize")
+    return
+  end
 
   local vibing = require("vibing")
   local adapter = vibing.get_adapter()
@@ -191,6 +194,8 @@ IMPORTANT: Output ONLY the summary section starting with "## summary". Do not in
     notify.error("No adapter configured")
     return
   end
+
+  local full_prompt = format_conversation_for_prompt(conversation) .. "\n\n" .. SUMMARY_PROMPT
 
   notify.info("Generating summary...")
 
@@ -206,14 +211,14 @@ IMPORTANT: Output ONLY the summary section starting with "## summary". Do not in
     end
 
     local summary = response.content
-    if summary and type(summary) == "string" and summary ~= "" then
-      local SummaryInserter = require("vibing.presentation.chat.modules.summary_inserter")
-      local success = SummaryInserter.insert_or_update(chat_buffer.buf, summary)
-      if success then
-        notify.info("Summary written to chat buffer")
-      end
-    else
+    if not summary or type(summary) ~= "string" or summary == "" then
       notify.warn("AI returned empty summary")
+      return
+    end
+
+    local SummaryInserter = require("vibing.presentation.chat.modules.summary_inserter")
+    if SummaryInserter.insert_or_update(chat_buffer.buf, summary) then
+      notify.info("Summary written to chat buffer")
     end
   end)
 end
