@@ -3,12 +3,18 @@
  * Parses CLI arguments and returns configuration object
  */
 
-import type { AgentConfig, PermissionRule } from '../types.js';
+import type { AgentConfig, PermissionRule, ToolMarkersConfig } from '../types.js';
 import { toError } from './utils.js';
 
 const validDisplayModes = ['none', 'compact', 'full'] as const;
 const validPermissionModes = ['default', 'acceptEdits', 'bypassPermissions'] as const;
 const validSaveLocationTypes = ['project', 'user', 'custom'] as const;
+
+const DEFAULT_TOOL_MARKERS: ToolMarkersConfig = {
+  Task: '▶',
+  TaskComplete: '✓',
+  default: '⏺',
+};
 
 /**
  * Type guard for permission mode validation
@@ -56,6 +62,7 @@ export function parseArguments(args: string[]): AgentConfig {
     toolResultDisplay: 'compact',
     saveLocationType: 'project',
     saveDir: null,
+    toolMarkers: { ...DEFAULT_TOOL_MARKERS },
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -169,6 +176,16 @@ export function parseArguments(args: string[]): AgentConfig {
     } else if (args[i] === '--save-dir' && args[i + 1]) {
       config.saveDir = args[i + 1];
       i++;
+    } else if (args[i] === '--tool-markers' && args[i + 1]) {
+      try {
+        const parsed = JSON.parse(args[i + 1]) as ToolMarkersConfig;
+        config.toolMarkers = { ...config.toolMarkers, ...parsed };
+      } catch (e) {
+        const error = toError(e);
+        console.error('Failed to parse --tool-markers JSON:', error.message);
+        process.exit(1);
+      }
+      i++;
     } else if (!args[i].startsWith('--')) {
       config.prompt = args[i];
     }
@@ -176,13 +193,6 @@ export function parseArguments(args: string[]): AgentConfig {
 
   if (!config.prompt) {
     console.error('Usage: agent-wrapper.mjs --prompt <prompt> [--cwd <dir>] [--context <file>...]');
-    process.exit(1);
-  }
-
-  if (!validDisplayModes.includes(config.toolResultDisplay)) {
-    console.error(
-      `Invalid --tool-result-display value: "${config.toolResultDisplay}". Valid values: ${validDisplayModes.join(', ')}`
-    );
     process.exit(1);
   }
 

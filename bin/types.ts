@@ -3,6 +3,16 @@
  */
 
 /**
+ * Tool markers configuration for customizing visual indicators
+ */
+export interface ToolMarkersConfig {
+  Task?: string;
+  TaskComplete?: string;
+  default?: string;
+  [toolName: string]: string | undefined;
+}
+
+/**
  * Permission rule for granular tool access control
  */
 export interface PermissionRule {
@@ -39,6 +49,7 @@ export interface AgentConfig {
   toolResultDisplay: 'none' | 'compact' | 'full';
   saveLocationType: 'project' | 'user' | 'custom';
   saveDir: string | null;
+  toolMarkers: ToolMarkersConfig;
 }
 
 /**
