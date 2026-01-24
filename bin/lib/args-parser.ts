@@ -200,6 +200,13 @@ export function parseArguments(args: string[]): AgentConfig {
     process.exit(1);
   }
 
+  if (!validDisplayModes.includes(config.toolResultDisplay)) {
+    console.error(
+      `Invalid --tool-result-display value: "${config.toolResultDisplay}". Valid values: ${validDisplayModes.join(', ')}`
+    );
+    process.exit(1);
+  }
+
   return config;
 }
 
