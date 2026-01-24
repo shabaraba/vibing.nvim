@@ -42,6 +42,7 @@
 ---@field node Vibing.NodeConfig Node.js実行ファイル設定（バイナリパス）
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
 ---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
+---@field daily_summary? Vibing.DailySummaryConfig Daily Summary機能設定
 
 ---@class Vibing.PermissionRule
 ---粒度の細かい権限制御ルール
@@ -118,6 +119,11 @@
 ---@field chat? string chatアクションでの言語（指定されていない場合はdefaultを使用）
 ---@field inline? string inlineアクションでの言語（指定されていない場合はdefaultを使用）
 
+---@class Vibing.DailySummaryConfig
+---Daily Summary機能設定
+---当日の.vibingファイルから日報を生成する機能の設定
+---@field save_dir? string サマリー保存先ディレクトリ（nilの場合はチャット保存先の/daily/サブディレクトリ）
+
 local notify = require("vibing.core.utils.notify")
 local tools_const = require("vibing.constants.tools")
 local language_utils = require("vibing.core.utils.language")
@@ -187,6 +193,9 @@ M.defaults = {
     auto_configure_claude_json = false,
   },
   language = nil,
+  daily_summary = {
+    save_dir = nil,
+  },
 }
 
 ---@type Vibing.Config
