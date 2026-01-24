@@ -54,7 +54,7 @@ end
 
 ---Trim leading and trailing empty lines from summary
 ---@param summary_content string
----@return string[]
+---@return string[]? lines Nil if invalid format
 local function prepare_summary_lines(summary_content)
   local lines = vim.split(summary_content, "\n", { plain = true })
 
@@ -63,6 +63,11 @@ local function prepare_summary_lines(summary_content)
   end
   while #lines > 0 and vim.trim(lines[#lines]) == "" do
     table.remove(lines)
+  end
+
+  -- Validate that first line starts with "## summary"
+  if #lines == 0 or not lines[1]:lower():match("^##%s*summary") then
+    return nil
   end
 
   table.insert(lines, "")
@@ -89,6 +94,11 @@ function M.insert_or_update(buf, summary_content)
 
   local summary_start, summary_end = find_summary_section(all_lines, vibing_chat_line, separator_line)
   local summary_lines = prepare_summary_lines(summary_content)
+
+  if not summary_lines then
+    notify.error("Invalid summary format: must start with '## summary'")
+    return false
+  end
 
   if summary_start and summary_end then
     vim.api.nvim_buf_set_lines(buf, summary_start - 1, summary_end, false, summary_lines)
