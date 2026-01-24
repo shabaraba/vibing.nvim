@@ -1,10 +1,62 @@
 ---@class Vibing.Utils.Git
 ---Git操作のユーティリティ
 ---Inline Previewで使用するGit diff取得、checkout操作を提供
+---working_dir関連のパス計算も提供
 local M = {}
 
 local PathSanitizer = require("vibing.domain.security.path_sanitizer")
 local CommandValidator = require("vibing.domain.security.command_validator")
+
+---Gitリポジトリのルートディレクトリを取得
+---@return string|nil gitルートパス（Git管理外の場合はnil）
+function M.get_root()
+  local result = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
+  if vim.v.shell_error ~= 0 then
+    return nil
+  end
+  return result
+end
+
+---絶対パスからgitルートからの相対パスを取得
+---@param abs_path string 絶対パス
+---@return string|nil 相対パス（gitルートそのものの場合は"."、Git管理外の場合はnil）
+function M.get_relative_path(abs_path)
+  local git_root = M.get_root()
+  if not git_root then
+    return nil
+  end
+
+  local normalized = vim.fn.fnamemodify(abs_path, ":p"):gsub("/$", "")
+
+  -- パス境界をチェック（完全一致または"/"で分離）
+  if normalized == git_root then
+    return "."
+  elseif normalized:sub(1, #git_root + 1) ~= git_root .. "/" then
+    return nil
+  end
+
+  local relative = normalized:sub(#git_root + 2)
+  return relative
+end
+
+---working_dir（gitルートからの相対パス）から絶対パスを算出
+---@param working_dir string|nil 相対パス（"."はgitルートを表す）
+---@return string|nil 絶対パス（working_dirがnilまたはGit管理外の場合はnil）
+function M.resolve_working_dir(working_dir)
+  if not working_dir or working_dir == "" or working_dir == "~" then
+    return nil
+  end
+
+  local git_root = M.get_root()
+  if not git_root then
+    return nil
+  end
+
+  if working_dir == "." then
+    return git_root
+  end
+  return git_root .. "/" .. working_dir
+end
 
 ---Git管理下のプロジェクトかチェック
 ---@return boolean Git管理下の場合true

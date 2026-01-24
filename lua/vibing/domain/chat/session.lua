@@ -7,7 +7,7 @@
 ---@field frontmatter table YAMLフロントマターのデータ
 ---@field created_at string 作成日時
 ---@field updated_at string 更新日時
----@field cwd string? 作業ディレクトリ（worktree使用時に設定）
+---@field working_dir string? 作業ディレクトリ（gitルートからの相対パス、frontmatterに保存）
 local ChatSession = {}
 ChatSession.__index = ChatSession
 
@@ -23,7 +23,7 @@ function ChatSession:new(opts)
   instance.frontmatter = opts.frontmatter or {}
   instance.created_at = opts.created_at or os.date("%Y-%m-%dT%H:%M:%S")
   instance.updated_at = opts.updated_at or os.date("%Y-%m-%dT%H:%M:%S")
-  instance.cwd = opts.cwd
+  instance.working_dir = opts.working_dir
   return instance
 end
 
@@ -47,14 +47,20 @@ function ChatSession.load_from_file(file_path)
     session_id = sid
   end
 
-  -- NOTE: cwd is NOT loaded from frontmatter
-  -- cwd is only set when explicitly using VibingChatWorktree command
+  -- working_dirをfrontmatterから読み込む
+  local working_dir = nil
+  local wd = frontmatter.working_dir
+  if type(wd) == "string" and wd ~= "" and wd ~= "~" then
+    working_dir = wd
+  end
+
   return ChatSession:new({
     session_id = session_id,
     file_path = file_path,
     frontmatter = frontmatter,
     created_at = frontmatter.created_at or os.date("%Y-%m-%dT%H:%M:%S"),
     updated_at = frontmatter.updated_at or os.date("%Y-%m-%dT%H:%M:%S"),
+    working_dir = working_dir,
   })
 end
 
@@ -100,10 +106,18 @@ function ChatSession:update_frontmatter(key, value)
   self.frontmatter.updated_at = self.updated_at
 end
 
----作業ディレクトリを取得
+---作業ディレクトリ（相対パス）を取得
+---@return string?
+function ChatSession:get_working_dir()
+  return self.working_dir
+end
+
+---作業ディレクトリの絶対パスを取得
+---working_dirがある場合はgitルートからの絶対パスを算出
 ---@return string?
 function ChatSession:get_cwd()
-  return self.cwd
+  local Git = require("vibing.core.utils.git")
+  return Git.resolve_working_dir(self.working_dir)
 end
 
 return ChatSession

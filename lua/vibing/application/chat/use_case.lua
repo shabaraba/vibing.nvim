@@ -9,6 +9,7 @@ local M = {}
 
 local ChatSession = require("vibing.domain.chat.session")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
+local Git = require("vibing.core.utils.git")
 
 ---@deprecated このグローバル状態は複数チャットウィンドウで問題を起こすため廃止予定
 ---セッションはChatBufferインスタンスの.sessionプロパティを使用すること
@@ -36,8 +37,16 @@ function M.create_new()
   local vibing = require("vibing")
   local config = vibing.get_config()
 
+  local working_dir = Git.get_relative_path(vim.fn.getcwd())
+
+  local frontmatter = create_default_frontmatter(config)
+  if working_dir then
+    frontmatter.working_dir = working_dir
+  end
+
   local session = ChatSession:new({
-    frontmatter = create_default_frontmatter(config),
+    frontmatter = frontmatter,
+    working_dir = working_dir,
   })
 
   local save_path = FileManager.get_save_directory(config.chat)
@@ -59,11 +68,17 @@ function M.create_new_in_directory(directory)
   if not normalized_dir:match("/$") then
     normalized_dir = normalized_dir .. "/"
   end
-  local cwd = normalized_dir:gsub("/$", "")
+
+  local working_dir = Git.get_relative_path(normalized_dir)
+
+  local frontmatter = create_default_frontmatter(config)
+  if working_dir then
+    frontmatter.working_dir = working_dir
+  end
 
   local session = ChatSession:new({
-    frontmatter = create_default_frontmatter(config),
-    cwd = cwd,
+    frontmatter = frontmatter,
+    working_dir = working_dir,
   })
 
   local save_path = normalized_dir .. ".vibing/chat/"
@@ -83,17 +98,22 @@ function M.create_new_for_worktree(worktree_path, branch_name)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
-  local normalized_worktree = vim.fn.fnamemodify(worktree_path, ":p"):gsub("/$", "")
-
-  local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
-  if vim.v.shell_error ~= 0 then
+  local git_root = Git.get_root()
+  if not git_root then
     require("vibing.core.utils.notify").error("Failed to get git root", "Chat")
     return M.create_new()
   end
 
+  local working_dir = Git.get_relative_path(worktree_path)
+
+  local frontmatter = create_default_frontmatter(config)
+  if working_dir then
+    frontmatter.working_dir = working_dir
+  end
+
   local session = ChatSession:new({
-    frontmatter = create_default_frontmatter(config),
-    cwd = normalized_worktree,
+    frontmatter = frontmatter,
+    working_dir = working_dir,
   })
 
   local save_path = git_root .. "/.vibing/worktrees/" .. branch_name .. "/"
