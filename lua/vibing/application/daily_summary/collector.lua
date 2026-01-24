@@ -59,6 +59,19 @@ local function extract_all_sections(lines)
 end
 
 ---@param file_path string
+---@return string
+local function to_tilde_path(file_path)
+  local normalized = vim.fn.fnamemodify(file_path, ":p")
+  normalized = normalized:gsub("//+", "/")
+
+  local home = vim.fn.expand("~")
+  if normalized:sub(1, #home) == home then
+    return "~" .. normalized:sub(#home + 1)
+  end
+  return normalized
+end
+
+---@param file_path string
 ---@param target_date string
 ---@return {user: string, assistant: string, timestamp: string, file: string}[]
 function M.collect_messages_from_file(file_path, target_date)
@@ -91,7 +104,7 @@ function M.collect_messages_from_file(file_path, target_date)
           user = table.concat(section.lines, "\n"),
           assistant = assistant_content,
           timestamp = timestamp,
-          file = vim.fn.fnamemodify(file_path, ":."),
+          file = to_tilde_path(vim.fn.fnamemodify(file_path, ":p")),
         })
       end
     end
@@ -147,7 +160,7 @@ function M.collect_all_messages(target_date, include_all, config)
     for _, file_path in ipairs(M.find_vibing_files(directory)) do
       local messages = M.collect_messages_from_file(file_path, target_date)
       if #messages > 0 then
-        table.insert(source_files, vim.fn.fnamemodify(file_path, ":."))
+        table.insert(source_files, to_tilde_path(vim.fn.fnamemodify(file_path, ":p")))
         vim.list_extend(all_messages, messages)
       end
     end
