@@ -137,6 +137,7 @@
 ---Daily Summary機能設定
 ---当日の.vibingファイルから日報を生成する機能の設定
 ---@field save_dir? string サマリー保存先ディレクトリ（nilの場合はチャット保存先の/daily/サブディレクトリ）
+---@field search_dirs? string[] VibingDailySummaryAllで検索するディレクトリのリスト（指定時はこのリストのみを再帰検索）
 
 local notify = require("vibing.core.utils.notify")
 local tools_const = require("vibing.constants.tools")

@@ -140,11 +140,21 @@ function M.get_search_directories(include_all, config)
   local project_root = vim.fn.getcwd()
 
   if include_all then
-    add_directory_if_exists(project_root .. "/.vibing/chat", directories)
-    add_directory_if_exists(vim.fn.stdpath("data") .. "/vibing/chats", directories)
-    if config.chat and config.chat.save_dir then
-      local save_dir = config.chat.save_dir:gsub("/$", "")
-      add_directory_if_exists(save_dir, directories)
+    -- search_dirsが設定されている場合はそのリストのみを使用
+    if config.daily_summary and config.daily_summary.search_dirs and #config.daily_summary.search_dirs > 0 then
+      for _, dir in ipairs(config.daily_summary.search_dirs) do
+        -- ~を展開
+        local expanded_dir = vim.fn.expand(dir):gsub("/$", "")
+        add_directory_if_exists(expanded_dir, directories)
+      end
+    else
+      -- デフォルト動作: 複数の標準ディレクトリを検索
+      add_directory_if_exists(project_root .. "/.vibing/chat", directories)
+      add_directory_if_exists(vim.fn.stdpath("data") .. "/vibing/chats", directories)
+      if config.chat and config.chat.save_dir then
+        local save_dir = config.chat.save_dir:gsub("/$", "")
+        add_directory_if_exists(save_dir, directories)
+      end
     end
   else
     local FileManager = require("vibing.presentation.chat.modules.file_manager")
