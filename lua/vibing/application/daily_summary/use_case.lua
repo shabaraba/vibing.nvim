@@ -25,17 +25,8 @@ end
 ---@return string|nil
 local function extract_project_name(file_path)
   local normalized = file_path:gsub("^~/", vim.fn.expand("~") .. "/")
-  local parts = vim.split(normalized, "/")
-
-  for i = #parts, 1, -1 do
-    if parts[i]:match("%.vibing$") then
-      if i >= 3 then
-        return parts[i - 2]
-      end
-    end
-  end
-
-  return nil
+  local project = normalized:match("/([^/]+)/chat/[^/]+%.vibing$")
+  return project
 end
 
 ---@param messages table[]
@@ -52,6 +43,33 @@ local function group_messages_by_project(messages)
   end
 
   return projects
+end
+
+local ASSISTANT_PREVIEW_MAX_LENGTH = 1000
+
+---@param msg table
+---@param index number
+---@return string[]
+local function format_single_conversation(msg, index)
+  local assistant_preview = msg.assistant
+  if #assistant_preview > ASSISTANT_PREVIEW_MAX_LENGTH then
+    assistant_preview = assistant_preview:sub(1, ASSISTANT_PREVIEW_MAX_LENGTH) .. "\n\n[... truncated for brevity ...]"
+  end
+
+  return {
+    string.format("### Conversation %d", index),
+    string.format("**Time:** %s", msg.timestamp or "unknown"),
+    string.format("**Source:** %s", msg.file),
+    "",
+    "**User Request:**",
+    msg.user,
+    "",
+    "**Assistant Response:**",
+    assistant_preview,
+    "",
+    "---",
+    "",
+  }
 end
 
 ---@param messages table[]
@@ -73,29 +91,23 @@ local function format_conversations(messages)
     })
 
     for i, msg in ipairs(project_messages) do
-      local assistant_preview = msg.assistant
-      if #assistant_preview > 1000 then
-        assistant_preview = assistant_preview:sub(1, 1000) .. "\n\n[... truncated for brevity ...]"
-      end
-
-      vim.list_extend(lines, {
-        string.format("### Conversation %d", i),
-        string.format("**Time:** %s", msg.timestamp or "unknown"),
-        string.format("**Source:** %s", msg.file),
-        "",
-        "**User Request:**",
-        msg.user,
-        "",
-        "**Assistant Response:**",
-        assistant_preview,
-        "",
-        "---",
-        "",
-      })
+      vim.list_extend(lines, format_single_conversation(msg, i))
     end
   end
 
   return table.concat(lines, "\n")
+end
+
+---@param lang_code string|nil
+---@return string
+local function build_language_instruction(lang_code)
+  if not lang_code or lang_code == "en" then
+    return ""
+  end
+
+  local language_utils = require("vibing.core.utils.language")
+  local lang_name = language_utils.language_names[lang_code] or lang_code
+  return string.format("\n\n**Output language:** Please write the summary in %s.", lang_name)
 end
 
 ---@param messages table[]
@@ -107,24 +119,12 @@ function M._build_summary_prompt(messages, date, config)
   local language_utils = require("vibing.core.utils.language")
   local lang_code = language_utils.get_language_code(config.language, "chat")
 
-  local lang_instruction = ""
-  if lang_code and lang_code ~= "en" then
-    local lang_name = language_utils.language_names[lang_code] or lang_code
-    lang_instruction = string.format("\n\n**Output language:** Please write the summary in %s.", lang_name)
-  end
-
   local PromptLoader = require("vibing.core.utils.prompt_loader")
-  local prompt, err = PromptLoader.load("daily_summary", {
+  return PromptLoader.load("daily_summary", {
     date = date,
-    language_instruction = lang_instruction,
+    language_instruction = build_language_instruction(lang_code),
     conversations = format_conversations(messages),
   })
-
-  if err then
-    return nil, err
-  end
-
-  return prompt, nil
 end
 
 ---@param date string

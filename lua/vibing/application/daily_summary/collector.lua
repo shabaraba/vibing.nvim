@@ -61,49 +61,56 @@ end
 ---@param file_path string
 ---@return string
 local function to_tilde_path(file_path)
-  local normalized = vim.fn.fnamemodify(file_path, ":p")
-
-  local home = vim.fn.expand("~")
-  if normalized:sub(1, #home) == home then
-    return "~" .. normalized:sub(#home + 1)
-  end
-  return normalized
+  return vim.fn.fnamemodify(file_path, ":p:~")
 end
 
 ---@param file_path string
----@param target_date string
----@return {user: string, assistant: string, timestamp: string, file: string}[]
-function M.collect_messages_from_file(file_path, target_date)
-  local messages = {}
+---@return string|nil content
+local function read_file_content(file_path)
   local file = io.open(file_path, "r")
   if not file then
-    return messages
+    return nil
   end
 
   local content = file:read("*all")
   file:close()
 
   if not content or content == "" then
-    return messages
+    return nil
+  end
+
+  return content
+end
+
+---@param file_path string
+---@param target_date string
+---@return {user: string, assistant: string, timestamp: string, file: string}[]
+function M.collect_messages_from_file(file_path, target_date)
+  local content = read_file_content(file_path)
+  if not content then
+    return {}
   end
 
   local lines = vim.split(content, "\n")
   local sections = extract_all_sections(lines)
+  local normalized_path = to_tilde_path(file_path)
 
+  local messages = {}
   for i, section in ipairs(sections) do
     if section.role == "user" then
       local timestamp = Timestamp.extract_timestamp_from_comment(section.header)
       if timestamp and timestamp:sub(1, 10) == target_date then
+        local next_section = sections[i + 1]
         local assistant_content = ""
-        if sections[i + 1] and sections[i + 1].role == "assistant" then
-          assistant_content = table.concat(sections[i + 1].lines, "\n")
+        if next_section and next_section.role == "assistant" then
+          assistant_content = table.concat(next_section.lines, "\n")
         end
 
         table.insert(messages, {
           user = table.concat(section.lines, "\n"),
           assistant = assistant_content,
           timestamp = timestamp,
-          file = to_tilde_path(vim.fn.fnamemodify(file_path, ":p")),
+          file = normalized_path,
         })
       end
     end
@@ -161,7 +168,7 @@ function M.collect_all_messages(target_date, include_all, config)
     for _, file_path in ipairs(M.find_vibing_files(directory)) do
       local messages = M.collect_messages_from_file(file_path, target_date)
       if #messages > 0 then
-        table.insert(source_files, to_tilde_path(vim.fn.fnamemodify(file_path, ":p")))
+        table.insert(source_files, to_tilde_path(file_path))
         vim.list_extend(all_messages, messages)
       end
     end

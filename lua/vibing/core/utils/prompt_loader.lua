@@ -2,14 +2,21 @@
 
 local M = {}
 
+---@param str string
+---@return string
+local function escape_pattern(str)
+  return str:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%1")
+end
+
 ---@param template string
 ---@param replacements table<string, string>
 ---@return string
 local function substitute_variables(template, replacements)
   local result = template
   for key, value in pairs(replacements) do
-    local pattern = "{{" .. key .. "}}"
-    result = result:gsub(pattern:gsub("%-", "%%-"), value)
+    local pattern = escape_pattern("{{" .. key .. "}}")
+    local escaped_value = value:gsub("%%", "%%%%")
+    result = result:gsub(pattern, escaped_value)
   end
   return result
 end
