@@ -62,7 +62,6 @@ end
 ---@return string
 local function to_tilde_path(file_path)
   local normalized = vim.fn.fnamemodify(file_path, ":p")
-  normalized = normalized:gsub("//+", "/")
 
   local home = vim.fn.expand("~")
   if normalized:sub(1, #home) == home then
@@ -134,14 +133,16 @@ function M.get_search_directories(include_all, config)
   local project_root = vim.fn.getcwd()
 
   if include_all then
-    add_directory_if_exists(project_root .. "/.vibing/chat/", directories)
-    add_directory_if_exists(vim.fn.stdpath("data") .. "/vibing/chats/", directories)
+    add_directory_if_exists(project_root .. "/.vibing/chat", directories)
+    add_directory_if_exists(vim.fn.stdpath("data") .. "/vibing/chats", directories)
     if config.chat and config.chat.save_dir then
-      add_directory_if_exists(config.chat.save_dir, directories)
+      local save_dir = config.chat.save_dir:gsub("/$", "")
+      add_directory_if_exists(save_dir, directories)
     end
   else
     local FileManager = require("vibing.presentation.chat.modules.file_manager")
     local save_dir = FileManager.get_save_directory(config.chat or {})
+    save_dir = save_dir:gsub("/$", "")
     add_directory_if_exists(save_dir, directories)
   end
 
