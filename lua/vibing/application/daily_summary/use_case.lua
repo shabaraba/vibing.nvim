@@ -28,14 +28,6 @@ local function extract_project_name(file_path)
   local parts = vim.split(normalized, "/")
 
   for i = #parts, 1, -1 do
-    if parts[i] == "workspace" or parts[i] == "projects" or parts[i] == "dev" then
-      if i < #parts then
-        return parts[i + 1]
-      end
-    end
-  end
-
-  for i = #parts, 1, -1 do
     if parts[i]:match("%.vibing$") then
       if i >= 3 then
         return parts[i - 2]
