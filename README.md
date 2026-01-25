@@ -531,12 +531,11 @@ require("vibing").setup({
 require("vibing").setup({
   daily_summary = {
     search_dirs = {
-      "~/workspaces/project-a/.vibing/chat",
-      "~/workspaces/project-b/.vibing/chat",
-      "~/Documents/vibing-chats",
+      "~/workspaces",  -- Recursively searches ALL .vibing files under this directory
     },
     -- When search_dirs is set, VibingDailySummaryAll searches ONLY these directories
     -- Each directory is recursively searched for .vibing files
+    -- e.g., ~/workspaces/project-a/.vibing/chat/*.vibing will be found
     -- ~ is automatically expanded to home directory
   },
 })
@@ -888,8 +887,9 @@ daily_summary = {
 
   search_dirs = nil,  -- Search directories for VibingDailySummaryAll
                       -- nil: Use default directories (project/.vibing/chat, user data dir, custom save_dir)
-                      -- string[]: Custom list of directories to search (~ is expanded)
-                      --           e.g., { "~/workspaces/project-a/.vibing/chat", "~/Documents/chats" }
+                      -- string[]: Parent directories to recursively search for .vibing files
+                      --           e.g., { "~/workspaces" } finds all .vibing files under ~/workspaces/
+                      --           ~ is automatically expanded
 }
 ```
 
