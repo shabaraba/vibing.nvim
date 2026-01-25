@@ -3,14 +3,14 @@
 ## 1.25.0 (2026-01-25)
 
 ## What's Changed
-* feat: add daily summary generation commands by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/349
-* feat: add configurable tool markers with Task-specific defaults by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/348
-* feat: add :VibingSummarize command to insert summary into chat buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/346
-* fix: isolate mote snapshots per worktree to prevent cross-worktree diff pollution by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/347
-* docs: add daily_summary and tool_markers configuration examples by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/352
-* feat: add pattern matching support for tool_markers configuration by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/353
-* feat: improve daily summary with project grouping and external prompts by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/354
 
+- feat: add daily summary generation commands by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/349
+- feat: add configurable tool markers with Task-specific defaults by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/348
+- feat: add :VibingSummarize command to insert summary into chat buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/346
+- fix: isolate mote snapshots per worktree to prevent cross-worktree diff pollution by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/347
+- docs: add daily_summary and tool_markers configuration examples by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/352
+- feat: add pattern matching support for tool_markers configuration by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/353
+- feat: improve daily summary with project grouping and external prompts by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/354
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.24.1...v1.25.0
 
