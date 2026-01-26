@@ -55,10 +55,13 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
        * Permission evaluation order (highest to lowest priority):
        * 1. Session-level deny list (immediate block)
        * 2. Session-level allow list (auto-approve)
-       * 3. Ask list (ALWAYS request approval, regardless of allow list)
-       * 4. Permission modes (acceptEdits, default, bypassPermissions)
-       * 5. Allow list (with pattern matching support)
+       * 3. Permission modes (acceptEdits, default, bypassPermissions)
+       * 4. Allow list (with pattern matching support)
+       * 5. Ask list (granular patterns override broader allow list permissions)
        * 6. Granular permission rules (path/command/pattern/domain based)
+       *
+       * Note: Ask list is checked AFTER allow list to ensure granular patterns
+       * like Bash(rm:*) can override broader permissions like Bash.
        */
 
       // AskUserQuestion: Insert choices into chat buffer and deny
@@ -123,25 +126,6 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
               updatedInput: input,
             };
           }
-        }
-      }
-
-      // Check ask list (highest priority - always ask regardless of allow list)
-      for (const askedTool of askedTools) {
-        if (matchesPermission(toolName, input, askedTool)) {
-          console.log(
-            safeJsonStringify({
-              type: 'approval_required',
-              tool: toolName,
-              input: input,
-              options: APPROVAL_OPTIONS,
-            })
-          );
-
-          return {
-            behavior: 'deny',
-            message: 'Please wait for user approval from the provided options.',
-          };
         }
       }
 
@@ -225,6 +209,26 @@ export function createCanUseToolCallback(config: AgentConfig): CanUseToolCallbac
           return {
             behavior: 'deny',
             message: message,
+          };
+        }
+      }
+
+      // Check ask list (AFTER allow list - granular patterns take priority)
+      // This ensures that specific patterns like Bash(rm:*) override broader permissions like Bash
+      for (const askedTool of askedTools) {
+        if (matchesPermission(toolName, input, askedTool)) {
+          console.log(
+            safeJsonStringify({
+              type: 'approval_required',
+              tool: toolName,
+              input: input,
+              options: APPROVAL_OPTIONS,
+            })
+          );
+
+          return {
+            behavior: 'deny',
+            message: 'Please wait for user approval from the provided options.',
           };
         }
       }
