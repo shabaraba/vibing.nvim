@@ -77,9 +77,12 @@ function buildQueryOptions(config: ReturnType<typeof parseArguments>): Record<st
     options.disallowedTools = config.deniedTools;
   }
 
-  if (config.allowedTools.length > 0) {
-    options.allowedTools = config.allowedTools;
-  }
+  // IMPORTANT: DO NOT pass allowedTools to Agent SDK!
+  // Agent SDK's allowedTools bypasses canUseTool callback for matching tools.
+  // We handle all permission logic in canUseTool callback for granular control.
+  // if (config.allowedTools.length > 0) {
+  //   options.allowedTools = config.allowedTools;
+  // }
 
   if (config.mode) {
     options.mode = config.mode;

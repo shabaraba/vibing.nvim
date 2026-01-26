@@ -171,6 +171,88 @@ using a Vim-native approach based on line deletion for option selection. Key des
 
 ---
 
+### ADR 006: Patch Storage JavaScript Implementation
+
+**Status:** Accepted
+**Date:** 2026-01-16
+
+Documents the JavaScript implementation of patch storage for diff viewer functionality, solving
+the architectural incompatibility between Agent SDK (event callback-based) and git diff
+(requires completed patch files). Key design decisions:
+
+- Pre-execution patch storage (before tool execution)
+- EventEmitter-based non-blocking async writes
+- File-system storage at `.vibing/patches/`
+- Backward compatibility with git-only workflow
+
+**Key Files:**
+
+- ADR: [006-patch-storage-js-implementation.md](./006-patch-storage-js-implementation.md)
+- Implementation: `bin/lib/patch-storage.mjs`
+- Lua Integration: `lua/vibing/presentation/chat/buffer.lua`
+
+**Related Issues:**
+
+- [Issue #290](https://github.com/shabaraba/vibing.nvim/issues/290) - Claude Code patches not working with diff viewer
+
+---
+
+### ADR 007: Self-Development Loop - vibing.nvim within vibing.nvim
+
+**Status:** Accepted
+**Date:** 2025-01-18
+
+Documents the requirements and constraints for using vibing.nvim to develop vibing.nvim itself.
+Key challenges:
+
+- Preventing infinite recursion and circular dependencies
+- MCP RPC connection handling with nested Neovim instances
+- Session isolation and working directory management
+- Stability requirements for self-development feasibility
+
+**Key Files:**
+
+- ADR: [007-self-development-loop.md](./007-self-development-loop.md)
+- Spec: [../specs/self-development-loop-design.md](../specs/self-development-loop-design.md)
+- Rules: [../../.claude/rules/self-development.md](../../.claude/rules/self-development.md)
+
+**Alternative Considered:**
+
+- [007-bun-binary-compilation-rejected.md](./007-bun-binary-compilation-rejected.md) - Why native compilation was rejected
+
+---
+
+### ADR 008: Agent SDK allowedTools Bypass Issue and Resolution
+
+**Status:** Accepted
+**Date:** 2026-01-26
+
+Documents the critical security vulnerability where Agent SDK's `allowedTools` option bypassed
+the `canUseTool` callback, causing `permissions_ask` patterns to be completely ignored.
+Key findings:
+
+- Root cause: Agent SDK auto-approves tools in `allowedTools` without invoking `canUseTool`
+- Security impact: Dangerous commands (e.g., `rm ~/.pm/secret_key_backup.txt`) executed without approval
+- Solution: Remove `allowedTools` from Agent SDK options, handle all permission logic in `canUseTool`
+- Result: Granular patterns like `Bash(rm:*)` now correctly override broader permissions like `Bash`
+
+**Key Files:**
+
+- ADR: [008-agent-sdk-allowedtools-bypass-issue.md](./008-agent-sdk-allowedtools-bypass-issue.md)
+- Implementation: `bin/agent-wrapper.ts` (buildQueryOptions function)
+- Permission Logic: `bin/lib/permissions/can-use-tool.ts`
+
+**Related ADRs:**
+
+- [ADR 001](#adr-001-permissions-ask-implementation-and-agent-sdk-constraints) - Permission system implementation
+
+**Related Commits:**
+
+- `b07f5dc` - Fix: prevent Agent SDK from bypassing permissions_ask checks
+- `a3bf512` - Fix: permissions_ask granular patterns now override broader allow list
+
+---
+
 ## Creating a New ADR
 
 Use this template when creating a new ADR:
