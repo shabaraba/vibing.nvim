@@ -290,6 +290,7 @@ M.defaults = {
   language = nil,
   daily_summary = {
     save_dir = nil,
+    search_dirs = {},
   },
 }
 

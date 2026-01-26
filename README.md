@@ -537,6 +537,8 @@ require("vibing").setup({
     -- Each directory is recursively searched for .vibing files
     -- e.g., ~/workspaces/project-a/.vibing/chat/*.vibing will be found
     -- ~ is automatically expanded to home directory
+    -- ⚠️ Warning: Large directories (e.g., ~/) may impact performance.
+    --            Use specific project directories for better performance.
   },
 })
 ```
@@ -890,6 +892,8 @@ daily_summary = {
                       -- string[]: Parent directories to recursively search for .vibing files
                       --           e.g., { "~/workspaces" } finds all .vibing files under ~/workspaces/
                       --           ~ is automatically expanded
+                      -- ⚠️ Warning: Large directories (e.g., ~/) may impact performance.
+                      --            Use specific project directories for better performance.
 }
 ```
 
@@ -902,9 +906,9 @@ daily_summary = {
 
 **Command Differences:**
 
-| Command | Search Scope |
-|---------|-------------|
-| `VibingDailySummary` | Current project's chat save directory only |
+| Command                 | Search Scope                                               |
+| ----------------------- | ---------------------------------------------------------- |
+| `VibingDailySummary`    | Current project's chat save directory only                 |
 | `VibingDailySummaryAll` | `search_dirs` if configured, otherwise default directories |
 
 Summary files are saved as `YYYY-MM-DD.md` with YAML frontmatter containing metadata (date, source files, total messages).

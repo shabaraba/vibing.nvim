@@ -143,9 +143,29 @@ function M.get_search_directories(include_all, config)
     -- search_dirsが設定されている場合はそのリストのみを使用
     if config.daily_summary and config.daily_summary.search_dirs and #config.daily_summary.search_dirs > 0 then
       for _, dir in ipairs(config.daily_summary.search_dirs) do
+        -- バリデーション: 無効な値をスキップ
+        if type(dir) ~= "string" or dir == "" then
+          vim.notify(
+            string.format("vibing.nvim: Invalid search_dir (expected non-empty string, got %s)", type(dir)),
+            vim.log.levels.WARN
+          )
+          goto continue
+        end
+
         -- ~を展開
         local expanded_dir = vim.fn.expand(dir):gsub("/$", "")
+
+        -- 存在確認と警告
+        if vim.fn.isdirectory(expanded_dir) ~= 1 then
+          vim.notify(
+            string.format("vibing.nvim: search_dir does not exist: %s", expanded_dir),
+            vim.log.levels.WARN
+          )
+          goto continue
+        end
+
         add_directory_if_exists(expanded_dir, directories)
+        ::continue::
       end
     else
       -- デフォルト動作: 複数の標準ディレクトリを検索
