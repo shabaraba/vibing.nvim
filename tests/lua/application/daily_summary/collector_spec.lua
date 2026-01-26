@@ -308,5 +308,56 @@ describe("vibing.application.daily_summary.collector", function()
       -- Cleanup
       vim.fn.delete(test_dir, "rf")
     end)
+
+    it("should handle symlink circular references without infinite loop", function()
+      local test_dir = vim.fn.getcwd() .. "/test-symlink-circular"
+      local dir_a = test_dir .. "/dir_a"
+      local dir_b = test_dir .. "/dir_b"
+      vim.fn.mkdir(dir_a, "p")
+      vim.fn.mkdir(dir_b, "p")
+
+      -- Create .vibing files in both directories
+      local file_a = dir_a .. "/chat_a.vibing"
+      local file_b = dir_b .. "/chat_b.vibing"
+      vim.fn.writefile({ "test content a" }, file_a)
+      vim.fn.writefile({ "test content b" }, file_b)
+
+      -- Create circular symlinks: dir_a/link_b -> dir_b, dir_b/link_a -> dir_a
+      vim.loop.fs_symlink(dir_b, dir_a .. "/link_b", { dir = true })
+      vim.loop.fs_symlink(dir_a, dir_b .. "/link_a", { dir = true })
+
+      -- Should not hang - finds files from both directories once
+      local result = collector.find_vibing_files(test_dir)
+
+      assert.is_table(result)
+      -- Should find exactly 2 files (not infinite loop)
+      assert.equals(2, #result)
+
+      -- Cleanup
+      vim.fn.delete(test_dir, "rf")
+    end)
+
+    it("should handle symlink to parent directory without infinite loop", function()
+      local test_dir = vim.fn.getcwd() .. "/test-symlink-parent"
+      local sub_dir = test_dir .. "/subdir"
+      vim.fn.mkdir(sub_dir, "p")
+
+      -- Create .vibing file in test_dir
+      local vibing_file = test_dir .. "/chat.vibing"
+      vim.fn.writefile({ "test content" }, vibing_file)
+
+      -- Create symlink from subdir back to parent: subdir/link_parent -> ..
+      vim.loop.fs_symlink(test_dir, sub_dir .. "/link_parent", { dir = true })
+
+      -- Should not hang
+      local result = collector.find_vibing_files(test_dir)
+
+      assert.is_table(result)
+      -- Should find exactly 1 file (not infinite loop)
+      assert.equals(1, #result)
+
+      -- Cleanup
+      vim.fn.delete(test_dir, "rf")
+    end)
   end)
 end)

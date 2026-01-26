@@ -4,13 +4,22 @@ local Timestamp = require("vibing.core.utils.timestamp")
 
 local M = {}
 
+---Internal helper for find_vibing_files with symlink protection
 ---@param directory string
+---@param visited table<string, boolean>
 ---@return string[]
-function M.find_vibing_files(directory)
+local function find_vibing_files_internal(directory, visited)
   local files = {}
   if vim.fn.isdirectory(directory) ~= 1 then
     return files
   end
+
+  -- Resolve symlinks to detect circular references
+  local real_path = vim.loop.fs_realpath(directory) or directory
+  if visited[real_path] then
+    return files -- Skip already visited directory
+  end
+  visited[real_path] = true
 
   local handle = vim.loop.fs_scandir(directory)
   if not handle then
@@ -25,13 +34,20 @@ function M.find_vibing_files(directory)
 
     local full_path = directory .. "/" .. name
     if entry_type == "directory" then
-      vim.list_extend(files, M.find_vibing_files(full_path))
+      vim.list_extend(files, find_vibing_files_internal(full_path, visited))
     elseif entry_type == "file" and name:match("%.vibing$") then
       table.insert(files, full_path)
     end
   end
 
   return files
+end
+
+---Find all .vibing files in directory recursively (with symlink protection)
+---@param directory string
+---@return string[]
+function M.find_vibing_files(directory)
+  return find_vibing_files_internal(directory, {})
 end
 
 ---@param lines string[]
@@ -132,6 +148,17 @@ local function add_directory_if_exists(dir, directories)
   end
 end
 
+---@param dir string
+---@param directories table
+local function add_directory_without_duplicate(dir, directories)
+  for _, existing in ipairs(directories) do
+    if existing == dir then
+      return
+    end
+  end
+  table.insert(directories, dir)
+end
+
 ---@param include_all boolean
 ---@param config table
 ---@return string[]
@@ -164,7 +191,8 @@ function M.get_search_directories(include_all, config)
           goto continue
         end
 
-        add_directory_if_exists(expanded_dir, directories)
+        -- 既に存在確認済みなので、重複チェックのみ行う
+        add_directory_without_duplicate(expanded_dir, directories)
         ::continue::
       end
     else
