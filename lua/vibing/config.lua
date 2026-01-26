@@ -137,7 +137,7 @@
 ---Daily Summary機能設定
 ---当日の.vibingファイルから日報を生成する機能の設定
 ---@field save_dir? string サマリー保存先ディレクトリ（nilの場合はチャット保存先の/daily/サブディレクトリ）
----@field search_dirs? string[] VibingDailySummaryAllで検索するディレクトリのリスト（指定時はこのリストのみを再帰検索）
+---@field search_dirs string[] VibingDailySummaryAllで検索するディレクトリのリスト（空配列の場合はデフォルトディレクトリを検索、要素が存在する場合はそのリストのみを再帰検索）
 
 local notify = require("vibing.core.utils.notify")
 local tools_const = require("vibing.constants.tools")
@@ -454,6 +454,31 @@ function M.setup(opts)
       validate_lang_code(M.options.language.default, "language.default")
       validate_lang_code(M.options.language.chat, "language.chat")
       validate_lang_code(M.options.language.inline, "language.inline")
+    end
+  end
+
+  -- Validate daily_summary.search_dirs
+  if M.options.daily_summary and M.options.daily_summary.search_dirs then
+    local search_dirs = M.options.daily_summary.search_dirs
+    if type(search_dirs) ~= "table" then
+      notify.warn(string.format(
+        "Invalid daily_summary.search_dirs: expected table, got %s. Resetting to default.",
+        type(search_dirs)
+      ))
+      M.options.daily_summary.search_dirs = {}
+    else
+      local valid_dirs = {}
+      for i, dir in ipairs(search_dirs) do
+        if type(dir) ~= "string" or dir == "" then
+          notify.warn(string.format(
+            "Invalid daily_summary.search_dirs[%d]: expected non-empty string, got %s. Skipping.",
+            i, type(dir)
+          ))
+        else
+          table.insert(valid_dirs, dir)
+        end
+      end
+      M.options.daily_summary.search_dirs = valid_dirs
     end
   end
 
