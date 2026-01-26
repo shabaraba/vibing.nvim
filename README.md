@@ -526,6 +526,21 @@ require("vibing").setup({
     save_dir = vim.fn.expand("~/Documents/vibing-daily/"),  -- Expand ~ to home directory
   },
 })
+
+-- Specify search directories for VibingDailySummaryAll
+require("vibing").setup({
+  daily_summary = {
+    search_dirs = {
+      "~/workspaces",  -- Recursively searches ALL .vibing files under this directory
+    },
+    -- When search_dirs is set, VibingDailySummaryAll searches ONLY these directories
+    -- Each directory is recursively searched for .vibing files
+    -- e.g., ~/workspaces/project-a/.vibing/chat/*.vibing will be found
+    -- ~ is automatically expanded to home directory
+    -- ⚠️ Warning: Large directories (e.g., ~/) may impact performance.
+    --            Use specific project directories for better performance.
+  },
+})
 ```
 
 ### Tool Markers Configuration
@@ -871,15 +886,30 @@ daily_summary = {
                    --      Relative: ".vibing/daily-reports/"
                    --      Absolute: "/path/to/reports/"
                    --      Home dir: vim.fn.expand("~/Documents/vibing-daily/")
+
+  search_dirs = nil,  -- Search directories for VibingDailySummaryAll
+                      -- nil: Use default directories (project/.vibing/chat, user data dir, custom save_dir)
+                      -- string[]: Parent directories to recursively search for .vibing files
+                      --           e.g., { "~/workspaces" } finds all .vibing files under ~/workspaces/
+                      --           ~ is automatically expanded
+                      -- ⚠️ Warning: Large directories (e.g., ~/) may impact performance.
+                      --            Use specific project directories for better performance.
 }
 ```
 
 **Usage:**
 
 ```vim
-:VibingDailySummary [YYYY-MM-DD]  " Generate summary for specified date (default: today)
-:VibingDailySummaryAll [YYYY-MM-DD]  " Include all conversations (default: user-only)
+:VibingDailySummary [YYYY-MM-DD]     " Generate summary from current project only
+:VibingDailySummaryAll [YYYY-MM-DD]  " Generate summary from all configured directories
 ```
+
+**Command Differences:**
+
+| Command                 | Search Scope                                               |
+| ----------------------- | ---------------------------------------------------------- |
+| `VibingDailySummary`    | Current project's chat save directory only                 |
+| `VibingDailySummaryAll` | `search_dirs` if configured, otherwise default directories |
 
 Summary files are saved as `YYYY-MM-DD.md` with YAML frontmatter containing metadata (date, source files, total messages).
 

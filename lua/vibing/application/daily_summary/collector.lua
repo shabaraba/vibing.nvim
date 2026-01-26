@@ -4,13 +4,22 @@ local Timestamp = require("vibing.core.utils.timestamp")
 
 local M = {}
 
+---Internal helper for find_vibing_files with symlink protection
 ---@param directory string
+---@param visited table<string, boolean>
 ---@return string[]
-function M.find_vibing_files(directory)
+local function find_vibing_files_internal(directory, visited)
   local files = {}
   if vim.fn.isdirectory(directory) ~= 1 then
     return files
   end
+
+  -- Resolve symlinks to detect circular references
+  local real_path = vim.loop.fs_realpath(directory) or directory
+  if visited[real_path] then
+    return files -- Skip already visited directory
+  end
+  visited[real_path] = true
 
   local handle = vim.loop.fs_scandir(directory)
   if not handle then
@@ -25,13 +34,20 @@ function M.find_vibing_files(directory)
 
     local full_path = directory .. "/" .. name
     if entry_type == "directory" then
-      vim.list_extend(files, M.find_vibing_files(full_path))
+      vim.list_extend(files, find_vibing_files_internal(full_path, visited))
     elseif entry_type == "file" and name:match("%.vibing$") then
       table.insert(files, full_path)
     end
   end
 
   return files
+end
+
+---Find all .vibing files in directory recursively (with symlink protection)
+---@param directory string
+---@return string[]
+function M.find_vibing_files(directory)
+  return find_vibing_files_internal(directory, {})
 end
 
 ---@param lines string[]
@@ -132,6 +148,17 @@ local function add_directory_if_exists(dir, directories)
   end
 end
 
+---@param dir string
+---@param directories table
+local function add_directory_without_duplicate(dir, directories)
+  for _, existing in ipairs(directories) do
+    if existing == dir then
+      return
+    end
+  end
+  table.insert(directories, dir)
+end
+
 ---@param include_all boolean
 ---@param config table
 ---@return string[]
@@ -140,11 +167,42 @@ function M.get_search_directories(include_all, config)
   local project_root = vim.fn.getcwd()
 
   if include_all then
-    add_directory_if_exists(project_root .. "/.vibing/chat", directories)
-    add_directory_if_exists(vim.fn.stdpath("data") .. "/vibing/chats", directories)
-    if config.chat and config.chat.save_dir then
-      local save_dir = config.chat.save_dir:gsub("/$", "")
-      add_directory_if_exists(save_dir, directories)
+    -- search_dirsが設定されている場合はそのリストのみを使用
+    if config.daily_summary and config.daily_summary.search_dirs and #config.daily_summary.search_dirs > 0 then
+      for _, dir in ipairs(config.daily_summary.search_dirs) do
+        -- バリデーション: 無効な値をスキップ
+        if type(dir) ~= "string" or dir == "" then
+          vim.notify(
+            string.format("vibing.nvim: Invalid search_dir (expected non-empty string, got %s)", type(dir)),
+            vim.log.levels.WARN
+          )
+          goto continue
+        end
+
+        -- ~を展開
+        local expanded_dir = vim.fn.expand(dir):gsub("/$", "")
+
+        -- 存在確認と警告
+        if vim.fn.isdirectory(expanded_dir) ~= 1 then
+          vim.notify(
+            string.format("vibing.nvim: search_dir does not exist: %s", expanded_dir),
+            vim.log.levels.WARN
+          )
+          goto continue
+        end
+
+        -- 既に存在確認済みなので、重複チェックのみ行う
+        add_directory_without_duplicate(expanded_dir, directories)
+        ::continue::
+      end
+    else
+      -- デフォルト動作: 複数の標準ディレクトリを検索
+      add_directory_if_exists(project_root .. "/.vibing/chat", directories)
+      add_directory_if_exists(vim.fn.stdpath("data") .. "/vibing/chats", directories)
+      if config.chat and config.chat.save_dir then
+        local save_dir = config.chat.save_dir:gsub("/$", "")
+        add_directory_if_exists(save_dir, directories)
+      end
     end
   else
     local FileManager = require("vibing.presentation.chat.modules.file_manager")
