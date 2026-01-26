@@ -51,7 +51,27 @@ describe("vibing.application.daily_summary.collector", function()
         local result = collector.get_search_directories(true, config)
 
         assert.is_table(result)
-        -- Result may vary based on which directories exist
+        -- Should return at least one default directory (behavior verified by non-empty result)
+        assert.is_true(#result > 0, "Expected at least one default directory, got empty result")
+
+        -- Verify default directories are included (project/.vibing/chat and/or user data dir)
+        local project_root = vim.fn.getcwd()
+        local expected_defaults = {
+          project_root .. "/.vibing/chat",
+          vim.fn.stdpath("data") .. "/vibing/chats",
+        }
+
+        -- At least one default directory should be in the result
+        local has_default = false
+        for _, expected in ipairs(expected_defaults) do
+          for _, actual in ipairs(result) do
+            if actual == expected then
+              has_default = true
+              break
+            end
+          end
+        end
+        assert.is_true(has_default, "Expected result to contain at least one default directory")
       end)
     end)
 
@@ -235,8 +255,17 @@ describe("vibing.application.daily_summary.collector", function()
 
         local result = collector.get_search_directories(true, config)
 
+        -- Get expected default behavior
+        local expected_defaults = collector.get_search_directories(true, {
+          daily_summary = nil,
+          chat = {},
+        })
+
         assert.is_table(result)
-        -- Should return default directories (behavior verified by presence of table)
+        assert.is_table(expected_defaults)
+
+        -- Empty array should produce same result as nil/unconfigured
+        assert.same(result, expected_defaults, "Empty search_dirs should fallback to default directories")
       end)
     end)
   end)
