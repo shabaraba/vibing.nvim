@@ -2,7 +2,7 @@
 ---mote統合設定
 ---fine-grainedスナップショット管理ツールmoteとの統合を制御（mote v0.2.0対応）
 ---@field ignore_file string .moteignoreファイルのパス（デフォルト: ".vibing/.moteignore"）
----@field context_dir string moteコンテキストディレクトリのベースパス（デフォルト: ".vibing/contexts"、実際のパスは動的に生成：root用は.vibing/contexts/root、worktree用は.vibing/contexts/worktrees/<branch>）
+---@field storage_dir string moteストレージディレクトリのベースパス（デフォルト: ".vibing/mote"、実際のパスは動的に生成：root用は.vibing/mote/root、worktree用は.vibing/mote/worktrees/<branch>）
 
 ---@class Vibing.DiffConfig
 ---diff表示設定
@@ -267,7 +267,7 @@ M.defaults = {
     tool = "auto",
     mote = {
       ignore_file = ".vibing/.moteignore",
-      context_dir = ".vibing/contexts",  -- mote v0.2.0: storage_dir → context_dir
+      storage_dir = ".vibing/mote",
     },
   },
   preview = {

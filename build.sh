@@ -55,6 +55,10 @@ npm install --silent
 echo "[vibing.nvim] Building bin/ files..."
 npm run build
 
+# Clean up old mote binaries (version mismatch prevention)
+echo "[vibing.nvim] Cleaning up old mote binaries..."
+rm -f bin/mote-darwin-arm64 bin/mote-darwin-x64 bin/mote-linux-arm64 bin/mote-linux-x64
+
 # Download mote binaries for all platforms
 echo "[vibing.nvim] Downloading mote binaries..."
 if ! "$NODE_EXECUTABLE" scripts/download-mote.mjs; then

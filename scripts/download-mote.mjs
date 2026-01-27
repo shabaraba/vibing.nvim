@@ -149,6 +149,17 @@ async function downloadAndExtract(platformKey) {
 async function downloadAllPlatforms() {
   console.log('[vibing.nvim] Downloading mote binaries for all platforms...\n');
 
+  // Clean up existing binaries to prevent version mismatch
+  console.log('[vibing.nvim] Cleaning up old binaries...');
+  for (const platformKey of Object.keys(PLATFORM_MAP)) {
+    const outputPath = path.join(BIN_DIR, `mote-${platformKey}`);
+    if (fs.existsSync(outputPath)) {
+      fs.unlinkSync(outputPath);
+      console.log(`[vibing.nvim]   Removed: ${outputPath}`);
+    }
+  }
+  console.log();
+
   for (const platformKey of Object.keys(PLATFORM_MAP)) {
     try {
       await downloadAndExtract(platformKey);

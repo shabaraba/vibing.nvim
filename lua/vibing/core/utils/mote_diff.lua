@@ -163,11 +163,6 @@ end
 ---@param on_success fun(stdout: string) 成功時のコールバック
 ---@param on_error fun(error: string) エラー時のコールバック
 local function run_mote_command(args, cwd, on_success, on_error)
-  -- Debug: log full command
-  vim.notify(string.format("[DEBUG] Executing mote:\n  Command: %s\n  CWD: %s",
-    table.concat(args, " "),
-    cwd or vim.fn.getcwd()), vim.log.levels.INFO)
-
   local opts = { text = true }
   if cwd then
     opts.cwd = cwd

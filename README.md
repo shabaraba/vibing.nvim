@@ -1102,4 +1102,4 @@ MIT License - see LICENSE file for details
 
 ---
 
-Made with ❤️ using Claude Code
+Made with ❤️ using Claude Code!

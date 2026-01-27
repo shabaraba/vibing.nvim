@@ -34,7 +34,7 @@ require("vibing").setup({
     -- "auto": Use mote if available and initialized, otherwise fallback to git
     mote = {
       ignore_file = ".vibing/.moteignore",  -- Path to .moteignore file
-      context_dir = ".vibing/contexts",  -- Base path for mote contexts (v0.2.0+)
+      storage_dir = ".vibing/mote",  -- Base path for mote storage
     },
   },
   permissions = {
@@ -172,22 +172,22 @@ The `build.sh` script downloads mote binaries for all supported platforms:
 **Setup:**
 
 ```bash
-# Initialize mote (mote v0.2.0+: --context-dir replaces --storage-dir)
-# For project root context
-mote --context-dir .vibing/contexts/root init
+# Initialize mote storage
+# For project root
+mote --storage-dir .vibing/mote/root init
 
-# For worktree context (e.g., feature-x branch)
-mote --context-dir .vibing/contexts/worktrees/feature-x init
+# For worktree (e.g., feature-x branch)
+mote --storage-dir .vibing/mote/worktrees/feature-x init
 
 # Create snapshots (automatically or manually)
-mote --context-dir .vibing/contexts/root snapshot -m "Before refactoring"
+mote --storage-dir .vibing/mote/root snapshot -m "Before refactoring"
 ```
 
-**Note:** mote v0.2.0 uses `--context-dir` instead of `--storage-dir`. vibing.nvim automatically manages context directories per session:
+**Note:** vibing.nvim automatically manages storage directories per session:
 
-- Project root: `.vibing/contexts/root/`
-- Worktrees: `.vibing/contexts/worktrees/<branch>/`
-  Each context is isolated to prevent cross-worktree diff pollution.
+- Project root: `.vibing/mote/root/`
+- Worktrees: `.vibing/mote/worktrees/<branch>/`
+  Each storage is isolated to prevent cross-worktree diff pollution.
 
 **Configuration:**
 
@@ -197,13 +197,13 @@ require("vibing").setup({
     tool = "auto",  -- Automatically use mote if available
     mote = {
       ignore_file = ".vibing/.moteignore",
-      context_dir = ".vibing/contexts",  -- Base directory for contexts
+      storage_dir = ".vibing/mote",  -- Base directory for mote storage
     },
   },
 })
 ```
 
-**Important:** All mote commands use the specified `--ignore-file` and `--context-dir` options to keep mote data separate from your main project. This prevents interference with your regular mote workflow.
+**Important:** All mote commands use the specified `--ignore-file` and `--storage-dir` options to keep mote data separate from your main project. This prevents interference with your regular mote workflow.
 
 **Behavior:**
 

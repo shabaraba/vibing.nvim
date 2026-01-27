@@ -149,6 +149,7 @@ local function setup_environment(worktree_path)
     "jest.config.*",
     "vitest.config.*",
     ".editorconfig",
+    ".vibing/.moteignore",  -- mote ignore patterns for worktree isolation
   }
 
   local errors = {}
