@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0 (2026-01-27)
+
+## What's Changed
+* fix: add search_dirs config for VibingDailySummaryAll by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/355
+* fix: prevent Agent SDK from bypassing permissions_ask checks by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/357
+* feat: add file_finder and section_parser adapters for DailySummary optimization by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/358
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.25.0...v2.0.0
+
 ## 1.25.0 (2026-01-25)
 
 ## What's Changed
