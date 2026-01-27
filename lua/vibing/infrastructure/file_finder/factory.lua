@@ -9,12 +9,32 @@ local ScanDir = require("vibing.infrastructure.file_finder.scandir")
 ---@type Vibing.Infrastructure.FileFinder?
 local cached_finder = nil
 
+---@type {prune_dirs?: string[]}?
+local cached_opts = nil
+
 ---Get optimal FileFinder for current platform
----@param force_fallback? boolean Force use of fallback (scandir) for testing
+---@param opts? {force_fallback?: boolean, prune_dirs?: string[], mtime_days?: number} Options
 ---@return Vibing.Infrastructure.FileFinder
-function M.get_finder(force_fallback)
-  if cached_finder and not force_fallback then
+function M.get_finder(opts)
+  local force_fallback = opts and opts.force_fallback
+  local prune_dirs = opts and opts.prune_dirs
+  local mtime_days = opts and opts.mtime_days
+
+  -- Return cached finder if no custom options
+  if cached_finder and not force_fallback and not prune_dirs and not mtime_days then
     return cached_finder
+  end
+
+  -- If custom options specified, create new finder (don't cache)
+  if prune_dirs or mtime_days then
+    local find_cmd = FindCommand:new({
+      prune_dirs = prune_dirs,
+      mtime_days = mtime_days,
+    })
+    if find_cmd:supports_platform() then
+      return find_cmd
+    end
+    return ScanDir:new()
   end
 
   if not force_fallback then

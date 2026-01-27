@@ -151,5 +151,52 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       -- Cleanup
       vim.fn.delete(test_dir, "rf")
     end)
+
+    it("should filter by mtime when mtime_days is specified", function()
+      local finder = find_command:new({ mtime_days = 1 })
+      if skip_if_unsupported(finder) then return end
+
+      local test_dir = vim.fn.getcwd() .. "/test-find-mtime"
+      vim.fn.mkdir(test_dir, "p")
+
+      -- Create test file (will be recently modified)
+      local file1 = test_dir .. "/recent.vibing"
+      vim.fn.writefile({ "test" }, file1)
+
+      -- Find with mtime filter (files modified within 1 day)
+      local files, err = finder:find(test_dir, "*.vibing")
+
+      assert.is_nil(err)
+      assert.is_table(files)
+      -- Recently created file should be found
+      assert.equals(1, #files)
+
+      -- Cleanup
+      vim.fn.delete(test_dir, "rf")
+    end)
+
+    it("should use custom prune_dirs when specified", function()
+      local finder = find_command:new({ prune_dirs = { "custom_ignore" } })
+      if skip_if_unsupported(finder) then return end
+
+      local test_dir = vim.fn.getcwd() .. "/test-find-prune"
+      local ignored_dir = test_dir .. "/custom_ignore"
+      vim.fn.mkdir(ignored_dir, "p")
+
+      -- Create files
+      vim.fn.writefile({ "test" }, test_dir .. "/visible.vibing")
+      vim.fn.writefile({ "test" }, ignored_dir .. "/hidden.vibing")
+
+      local files, err = finder:find(test_dir, "*.vibing")
+
+      assert.is_nil(err)
+      assert.is_table(files)
+      -- Only visible.vibing should be found (custom_ignore is pruned)
+      assert.equals(1, #files)
+      assert.is_true(files[1]:match("visible%.vibing$") ~= nil)
+
+      -- Cleanup
+      vim.fn.delete(test_dir, "rf")
+    end)
   end)
 end)
