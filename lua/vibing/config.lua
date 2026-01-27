@@ -133,11 +133,14 @@
 ---@field chat? string chatアクションでの言語（指定されていない場合はdefaultを使用）
 ---@field inline? string inlineアクションでの言語（指定されていない場合はdefaultを使用）
 
+---@alias Vibing.FileFinderStrategy "auto"|"fd"|"find"|"locate"|"ripgrep"
+
 ---@class Vibing.DailySummaryConfig
 ---Daily Summary機能設定
 ---当日の.vibingファイルから日報を生成する機能の設定
 ---@field save_dir? string サマリー保存先ディレクトリ（nilの場合はチャット保存先の/daily/サブディレクトリ）
 ---@field search_dirs string[] VibingDailySummaryAllで検索するディレクトリのリスト（空配列の場合はデフォルトディレクトリを検索、要素が存在する場合はそのリストのみを再帰検索）
+---@field file_finder_strategy? Vibing.FileFinderStrategy ファイル検索戦略（"auto": 最適なツールを自動選択、"fd": fd使用、"find": find使用、"locate": locate/plocate使用、"ripgrep": rg使用）
 
 local notify = require("vibing.core.utils.notify")
 local tools_const = require("vibing.constants.tools")
@@ -291,6 +294,7 @@ M.defaults = {
   daily_summary = {
     save_dir = nil,
     search_dirs = {},
+    file_finder_strategy = "auto",
   },
 }
 
