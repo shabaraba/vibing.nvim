@@ -16,19 +16,34 @@ describe("vibing.infrastructure.file_finder.find_command", function()
   end)
 
   describe("supports_platform", function()
-    it("should return true on macOS/Linux", function()
+    it("should return boolean indicating find command availability", function()
       local finder = find_command:new()
-      -- On macOS/Linux, find command should be available
       local result = finder:supports_platform()
       assert.is_boolean(result)
-      -- This test assumes running on macOS/Linux
+
+      if not result then
+        pending("skipping: find command unavailable on this platform")
+        return
+      end
+
+      -- On macOS/Linux, find command should be available
       assert.is_true(result, "find command should be available on macOS/Linux")
     end)
   end)
 
   describe("find", function()
+    local function skip_if_unsupported(finder)
+      if not finder:supports_platform() then
+        pending("skipping: find command unavailable on this platform")
+        return true
+      end
+      return false
+    end
+
     it("should return error for non-existent directory", function()
       local finder = find_command:new()
+      if skip_if_unsupported(finder) then return end
+
       local files, err = finder:find("/non/existent/directory", "*.vibing")
 
       assert.is_table(files)
@@ -39,6 +54,8 @@ describe("vibing.infrastructure.file_finder.find_command", function()
 
     it("should find files matching pattern", function()
       local finder = find_command:new()
+      if skip_if_unsupported(finder) then return end
+
       local test_dir = vim.fn.getcwd() .. "/test-find-command"
       vim.fn.mkdir(test_dir, "p")
 
@@ -67,6 +84,8 @@ describe("vibing.infrastructure.file_finder.find_command", function()
 
     it("should find files recursively in subdirectories", function()
       local finder = find_command:new()
+      if skip_if_unsupported(finder) then return end
+
       local test_dir = vim.fn.getcwd() .. "/test-find-recursive"
       local sub_dir = test_dir .. "/subdir"
       vim.fn.mkdir(sub_dir, "p")
@@ -89,6 +108,8 @@ describe("vibing.infrastructure.file_finder.find_command", function()
 
     it("should return empty array for directory with no matching files", function()
       local finder = find_command:new()
+      if skip_if_unsupported(finder) then return end
+
       local test_dir = vim.fn.getcwd() .. "/test-find-empty"
       vim.fn.mkdir(test_dir, "p")
 
@@ -107,6 +128,8 @@ describe("vibing.infrastructure.file_finder.find_command", function()
 
     it("should not follow symlinks (prevent circular reference)", function()
       local finder = find_command:new()
+      if skip_if_unsupported(finder) then return end
+
       local test_dir = vim.fn.getcwd() .. "/test-find-symlink"
       local sub_dir = test_dir .. "/subdir"
       vim.fn.mkdir(sub_dir, "p")

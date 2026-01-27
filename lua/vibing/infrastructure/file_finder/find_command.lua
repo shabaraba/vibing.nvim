@@ -45,10 +45,8 @@ function FindCommand:find(directory, pattern)
 
   local result = vim.system(cmd, { text = true }):wait()
 
-  -- code 0: Success
-  -- code 1: No files found (acceptable)
-  -- others: Error
-  if result.code ~= 0 and result.code ~= 1 then
+  -- Any non-zero exit code is an error (permission denied, invalid path, etc.)
+  if result.code ~= 0 then
     return {}, "find command failed: " .. (result.stderr or "unknown error")
   end
 
