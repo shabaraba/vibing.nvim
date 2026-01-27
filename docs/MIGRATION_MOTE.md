@@ -61,7 +61,7 @@ To enable mote-based diff functionality:
        tool = "auto",  -- Use mote if available, fallback to git
        mote = {
          ignore_file = ".vibing/.moteignore",
-         storage_dir = ".vibing/mote",
+         context_dir = ".vibing/contexts",  -- mote v0.2.0+
        },
      },
    })
@@ -128,20 +128,28 @@ With mote integration, each chat session maintains isolated storage:
 
 ### "mote not initialized" error
 
-**Solution:** Initialize mote in your project:
+**Solution:** Initialize mote in your project (mote v0.2.0+):
 
 ```bash
-mote --storage-dir .vibing/mote init
+# For project root
+mote --context-dir .vibing/contexts/root init
+
+# For worktree (e.g., feature-x)
+mote --context-dir .vibing/contexts/worktrees/feature-x init
 ```
 
 ### "No mote snapshot found" when pressing `gd`
 
 **Cause:** The file hasn't been modified since the last snapshot.
 
-**Solution:** Make changes to the file, or manually create a snapshot:
+**Solution:** Make changes to the file, or manually create a snapshot (mote v0.2.0+):
 
 ```bash
-mote --storage-dir .vibing/mote snapshot -m "Manual snapshot"
+# For project root
+mote --context-dir .vibing/contexts/root snapshot -m "Manual snapshot"
+
+# For worktree
+mote --context-dir .vibing/contexts/worktrees/<branch> snapshot -m "Manual snapshot"
 ```
 
 ### Old patches not visible with `gd`

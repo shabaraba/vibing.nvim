@@ -2,15 +2,23 @@
 ---mote diff表示のユーティリティ
 local M = {}
 
----セッション固有のstorage_dirを生成
----@param base_storage_dir string ベースのstorage_dir
+---セッション固有のcontext_dirを生成
+---mote v0.2.0の3層構造に対応（--context-dirを使用）
+---@param base_context_dir string ベースのcontext_dir
 ---@param session_id? string セッションID
----@return string セッション固有のstorage_dir（session_idがnilの場合はbase_storage_dirをそのまま返す）
-function M.build_session_storage_dir(base_storage_dir, session_id)
-  if session_id then
-    return string.format(".vibing/mote/%s", session_id)
+---@param cwd? string 作業ディレクトリ（worktree判定用）
+---@return string セッション固有のcontext_dir
+function M.build_session_context_dir(base_context_dir, session_id, cwd)
+  -- cwdがworktreeパス配下の場合、worktree名を抽出
+  if cwd then
+    local worktree_name = cwd:match("%.worktrees/([^/]+)")
+    if worktree_name then
+      return string.format(".vibing/contexts/worktrees/%s", worktree_name)
+    end
   end
-  return base_storage_dir
+
+  -- プロジェクトルートの場合
+  return ".vibing/contexts/root"
 end
 
 ---プラットフォームに応じたmoteバイナリパスを取得
@@ -57,20 +65,21 @@ end
 
 ---moteが初期化されているかチェック
 ---@param cwd string? チェックするディレクトリ（デフォルト: 現在のディレクトリ）
----@param storage_dir string? moteストレージディレクトリ（設定から渡される）
+---@param context_dir string? moteコンテキストディレクトリ（設定から渡される）
 ---@return boolean moteが初期化されている場合true
-function M.is_initialized(cwd, storage_dir)
-  if storage_dir then
-    return M._check_storage_dir_initialized(storage_dir)
+function M.is_initialized(cwd, context_dir)
+  if context_dir then
+    return M._check_context_dir_initialized(context_dir)
   end
   return M._check_legacy_paths(cwd or vim.fn.getcwd())
 end
 
----指定されたstorage_dirが初期化済みかチェック
----@param storage_dir string moteストレージディレクトリ
+---指定されたcontext_dirが初期化済みかチェック
+---mote v0.2.0: contexts/snapshots, contexts/objects の存在を確認
+---@param context_dir string moteコンテキストディレクトリ
 ---@return boolean
-function M._check_storage_dir_initialized(storage_dir)
-  local abs_path = vim.fn.fnamemodify(storage_dir, ":p"):gsub("/$", "")
+function M._check_context_dir_initialized(context_dir)
+  local abs_path = vim.fn.fnamemodify(context_dir, ":p"):gsub("/$", "")
   local has_snapshots = vim.fn.isdirectory(abs_path .. "/snapshots") == 1
   local has_objects = vim.fn.isdirectory(abs_path .. "/objects") == 1
   return has_snapshots and has_objects
@@ -130,19 +139,20 @@ end
 
 ---moteコマンドのベース引数を生成
 ---パスは絶対パスに変換して渡す（cwdの違いによる解決の問題を防ぐため）
+---mote v0.2.0: --storage-dir → --context-dir に変更
 ---@param config Vibing.MoteConfig mote設定
 ---@return string[] コマンドライン引数の配列
 local function build_mote_base_args(config)
-  -- 絶対パスに変換（worktreeで実行する場合でもメインレポジトリのストレージを使用）
+  -- 絶対パスに変換（worktreeで実行する場合でもメインレポジトリのコンテキストを使用）
   local abs_ignore_file = vim.fn.fnamemodify(config.ignore_file, ":p")
-  local abs_storage_dir = vim.fn.fnamemodify(config.storage_dir, ":p"):gsub("/$", "")
+  local abs_context_dir = vim.fn.fnamemodify(config.context_dir, ":p"):gsub("/$", "")
 
   return {
     M.get_mote_path(),
     "--ignore-file",
     abs_ignore_file,
-    "--storage-dir",
-    abs_storage_dir,
+    "--context-dir",
+    abs_context_dir,
   }
 end
 
@@ -236,7 +246,7 @@ function M.show_diff(file_path, config)
   end)
 end
 
----mote storageを初期化
+---mote contextを初期化
 ---@param config Vibing.MoteConfig mote設定（cwdフィールドを含む）
 ---@param callback fun(success: boolean, error: string?) コールバック関数
 function M.initialize(config, callback)
@@ -248,12 +258,12 @@ function M.initialize(config, callback)
   -- Ensure .moteignore exists before checking initialization
   M._ensure_moteignore_exists(config.ignore_file)
 
-  if M.is_initialized(nil, config.storage_dir) then
+  if M.is_initialized(nil, config.context_dir) then
     callback(true, nil)
     return
   end
 
-  local parent_dir = vim.fn.fnamemodify(config.storage_dir, ":h")
+  local parent_dir = vim.fn.fnamemodify(config.context_dir, ":h")
   vim.fn.mkdir(parent_dir, "p")
 
   local cmd = build_mote_base_args(config)
@@ -369,32 +379,34 @@ function M.generate_patch(config, output_path, callback)
   end)
 end
 
----一時ストレージディレクトリを正式なsession_idディレクトリにリネーム
----@param temp_storage_dir string 一時ストレージディレクトリ
+---一時コンテキストディレクトリを正式なディレクトリにリネーム
+---mote v0.2.0: context_dir構造に対応（不要になった可能性あり、互換性のため残す）
+---@param temp_context_dir string 一時コンテキストディレクトリ
 ---@param session_id string 正式なsession_id
----@param base_storage_dir string ベースのstorage_dir（例: ".vibing/mote"）
----@return string 新しいstorage_dirパス
+---@param base_context_dir string ベースのcontext_dir（例: ".vibing/contexts"）
+---@param cwd? string 作業ディレクトリ（worktree判定用）
+---@return string 新しいcontext_dirパス
 ---@return boolean 成功したかどうか
-function M.rename_storage_dir(temp_storage_dir, session_id, base_storage_dir)
-  local new_storage_dir = M.build_session_storage_dir(base_storage_dir, session_id)
+function M.rename_context_dir(temp_context_dir, session_id, base_context_dir, cwd)
+  local new_context_dir = M.build_session_context_dir(base_context_dir, session_id, cwd)
 
   -- 同じパスなら何もしない
-  if temp_storage_dir == new_storage_dir then
-    return new_storage_dir, true
+  if temp_context_dir == new_context_dir then
+    return new_context_dir, true
   end
 
-  local temp_abs = vim.fn.fnamemodify(temp_storage_dir, ":p"):gsub("/$", "")
-  local new_abs = vim.fn.fnamemodify(new_storage_dir, ":p"):gsub("/$", "")
+  local temp_abs = vim.fn.fnamemodify(temp_context_dir, ":p"):gsub("/$", "")
+  local new_abs = vim.fn.fnamemodify(new_context_dir, ":p"):gsub("/$", "")
 
   -- 一時ディレクトリが存在しない場合
   if vim.fn.isdirectory(temp_abs) ~= 1 then
-    return new_storage_dir, false
+    return new_context_dir, false
   end
 
   -- 新しいディレクトリが既に存在する場合は一時ディレクトリを削除
   if vim.fn.isdirectory(new_abs) == 1 then
     vim.fn.delete(temp_abs, "rf")
-    return new_storage_dir, true
+    return new_context_dir, true
   end
 
   -- 親ディレクトリを作成
@@ -404,9 +416,9 @@ function M.rename_storage_dir(temp_storage_dir, session_id, base_storage_dir)
   -- リネーム実行
   local result = vim.fn.rename(temp_abs, new_abs)
   if result == 0 then
-    return new_storage_dir, true
+    return new_context_dir, true
   else
-    return new_storage_dir, false
+    return new_context_dir, false
   end
 end
 

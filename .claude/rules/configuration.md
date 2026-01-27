@@ -30,11 +30,11 @@ require("vibing").setup({
   diff = {
     tool = "auto",  -- "git" | "mote" | "auto"
     -- "git": Always use git diff
-    -- "mote": Always use mote diff (requires mote: https://github.com/shabaraba/mote)
+    -- "mote": Always use mote diff (requires mote v0.2.0+: https://github.com/shabaraba/mote)
     -- "auto": Use mote if available and initialized, otherwise fallback to git
     mote = {
       ignore_file = ".vibing/.moteignore",  -- Path to .moteignore file
-      storage_dir = ".vibing/mote",  -- Path to mote storage directory
+      context_dir = ".vibing/contexts",  -- Base path for mote contexts (v0.2.0+)
     },
   },
   permissions = {
@@ -172,14 +172,22 @@ The `build.sh` script downloads mote binaries for all supported platforms:
 **Setup:**
 
 ```bash
-# Initialize mote in vibing.nvim's storage directory (matches storage_dir config)
-mote --storage-dir .vibing/mote init
+# Initialize mote (mote v0.2.0+: --context-dir replaces --storage-dir)
+# For project root context
+mote --context-dir .vibing/contexts/root init
+
+# For worktree context (e.g., feature-x branch)
+mote --context-dir .vibing/contexts/worktrees/feature-x init
 
 # Create snapshots (automatically or manually)
-mote --storage-dir .vibing/mote snapshot -m "Before refactoring"
+mote --context-dir .vibing/contexts/root snapshot -m "Before refactoring"
 ```
 
-**Note:** Running `mote init` without `--storage-dir` uses mote's default storage location (`.mote/` in project root), which does NOT match vibing.nvim's configured `storage_dir = ".vibing/mote"`. Always use `--storage-dir .vibing/mote` to ensure mote commands work with vibing.nvim's configuration.
+**Note:** mote v0.2.0 uses `--context-dir` instead of `--storage-dir`. vibing.nvim automatically manages context directories per session:
+
+- Project root: `.vibing/contexts/root/`
+- Worktrees: `.vibing/contexts/worktrees/<branch>/`
+  Each context is isolated to prevent cross-worktree diff pollution.
 
 **Configuration:**
 
@@ -189,13 +197,13 @@ require("vibing").setup({
     tool = "auto",  -- Automatically use mote if available
     mote = {
       ignore_file = ".vibing/.moteignore",
-      storage_dir = ".vibing/mote",
+      context_dir = ".vibing/contexts",  -- Base directory for contexts
     },
   },
 })
 ```
 
-**Important:** All mote commands use the specified `--ignore-file` and `--storage-dir` options to keep mote data separate from your main project. This prevents interference with your regular mote workflow.
+**Important:** All mote commands use the specified `--ignore-file` and `--context-dir` options to keep mote data separate from your main project. This prevents interference with your regular mote workflow.
 
 **Behavior:**
 

@@ -282,7 +282,7 @@ end
 ---@param config table 全体設定
 ---@param session_id string|nil セッションID
 ---@param bufnr number|nil バッファ番号（session_idがない場合のfallback用）
----@param session_cwd string|nil worktreeのcwd（worktreeで作業する場合のみ）
+---@param session_cwd string|nil worktreeのcwd（worktreeで作業する場合のみ、worktree判定用）
 ---@return table|nil セッション固有のmote設定（mote未設定の場合nil）
 function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
   if not config.diff or not config.diff.mote then
@@ -302,7 +302,8 @@ function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
 
   local MoteDiff = require("vibing.core.utils.mote_diff")
   local mote_config = vim.deepcopy(config.diff.mote)
-  mote_config.storage_dir = MoteDiff.build_session_storage_dir(mote_config.storage_dir, mote_session_id)
+  -- mote v0.2.0: context_dir構造に変更（cwdからworktreeを判定して適切なパスを生成）
+  mote_config.context_dir = MoteDiff.build_session_context_dir(mote_config.context_dir, mote_session_id, session_cwd)
   mote_config.mote_session_id = mote_session_id  -- patch_path生成用に保存
 
   -- worktreeで作業する場合はcwdを設定
