@@ -206,15 +206,21 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
       local new_storage_dir, rename_success = MoteDiff.rename_storage_dir(
         mote_config.storage_dir,
         new_session_id,
-        base_storage_dir
+        base_storage_dir,
+        mote_config.cwd  -- Pass cwd for worktree detection
       )
+      -- Convert new_storage_dir to absolute path
+      local Git = require("vibing.core.utils.git")
+      local git_root = Git.get_root()
+      local new_storage_dir_abs = git_root and (git_root .. "/" .. new_storage_dir) or new_storage_dir
+
       -- mote_configを更新（リネーム成功/失敗に関わらず新しいパスを使用）
       if rename_success then
-        mote_config.storage_dir = new_storage_dir
+        mote_config.storage_dir = new_storage_dir_abs
         mote_config.mote_session_id = new_session_id
       else
         -- リネーム失敗時も新しいパスを記録（patch生成時に使用）
-        mote_config.storage_dir = new_storage_dir
+        mote_config.storage_dir = new_storage_dir_abs
         mote_config.mote_session_id = new_session_id
         vim.notify(
           string.format(
@@ -302,9 +308,19 @@ function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
 
   local MoteDiff = require("vibing.core.utils.mote_diff")
   local mote_config = vim.deepcopy(config.diff.mote)
-  -- mote v0.2.0: context_dir構造に変更（cwdからworktreeを判定して適切なパスを生成）
-  mote_config.context_dir = MoteDiff.build_session_context_dir(mote_config.context_dir, mote_session_id, session_cwd)
-  mote_config.mote_session_id = mote_session_id  -- patch_path生成用に保存
+  -- mote v0.2.0: worktree分離対応（cwdからworktreeを判定して適切なパスを生成）
+  local relative_storage_dir = MoteDiff.build_session_storage_dir(mote_config.storage_dir, mote_session_id, session_cwd)
+
+  -- プロジェクトルートからの絶対パスに変換
+  local Git = require("vibing.core.utils.git")
+  local git_root = Git.get_root()
+  if git_root then
+    mote_config.storage_dir = git_root .. "/" .. relative_storage_dir
+  else
+    mote_config.storage_dir = relative_storage_dir
+  end
+
+  mote_config.mote_session_id = mote_session_id -- patch_path生成用に保存
 
   -- worktreeで作業する場合はcwdを設定
   -- moteコマンドはこのcwdで実行され、worktree内のファイルのみを追跡する
@@ -372,7 +388,7 @@ function M._ensure_mote_initialized_and_snapshot(mote_config, diff_config, on_co
   end
 
   MoteDiff.initialize(mote_config, function(init_success, init_error)
-    if completed then return end  -- Already timed out
+    if completed then return end -- Already timed out
     if not init_success then
       vim.notify("[vibing] mote initialization failed: " .. (init_error or "Unknown error"), vim.log.levels.WARN)
       complete_once()
