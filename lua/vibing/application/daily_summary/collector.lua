@@ -7,11 +7,12 @@ local M = {}
 
 ---Find all .vibing files in directory recursively
 ---@param directory string
----@param opts? {mtime_days?: number} Options for file search
+---@param opts? {mtime_days?: number, strategy?: Vibing.FileFinderStrategy} Options for file search
 ---@return string[]
 function M.find_vibing_files(directory, opts)
   local finder = FileFinderFactory.get_finder({
     mtime_days = opts and opts.mtime_days,
+    strategy = opts and opts.strategy,
   })
   local files, err = finder:find(directory, "*.vibing")
 
@@ -139,9 +140,11 @@ function M.collect_all_messages(target_date, include_all, config)
 
   -- Use mtime filter for large directory searches (reduces files to parse)
   local mtime_days = include_all and 1 or nil
+  -- Get strategy from config (default: "auto")
+  local strategy = config.daily_summary and config.daily_summary.file_finder_strategy or "auto"
 
   for _, directory in ipairs(M.get_search_directories(include_all, config)) do
-    for _, file_path in ipairs(M.find_vibing_files(directory, { mtime_days = mtime_days })) do
+    for _, file_path in ipairs(M.find_vibing_files(directory, { mtime_days = mtime_days, strategy = strategy })) do
       local messages = M.collect_messages_from_file(file_path, target_date)
       if #messages > 0 then
         table.insert(source_files, to_tilde_path(file_path))
