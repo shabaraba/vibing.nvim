@@ -98,6 +98,68 @@ end
 | 最適化前 | 50回                 | 基準      | -      |
 | 最適化後 | 1回                  | 約98%削減 | 98%    |
 
+### 3. DailySummary ファイル検索最適化
+
+**影響を受けるモジュール:**
+
+- `lua/vibing/application/daily_summary/collector.lua`
+- `lua/vibing/infrastructure/file_finder/factory.lua`
+- `lua/vibing/infrastructure/file_finder/*.lua`
+
+**問題:**
+`VibingDailySummaryAll` コマンドで大規模ディレクトリ（`~/workspace` 等）を検索する際、従来の `find` コマンドでは検索に約93秒かかっていました。
+
+**解決策:**
+複数のファイル検索戦略をアダプタパターンで実装し、最適なツールを自動選択：
+
+| 戦略 | ツール | 特徴 |
+|------|--------|------|
+| `ripgrep` | rg | 並列処理、高速、隠しディレクトリ対応 |
+| `fd` | fd | Rust製、.gitignore対応、並列処理 |
+| `find` | find | 標準搭載、pruning最適化 |
+| `locate` | locate/plocate | 事前インデックス、要updatedb |
+| `auto` | 自動選択 | 利用可能な最速ツールを選択 |
+
+**設定:**
+
+```lua
+require("vibing").setup({
+  daily_summary = {
+    search_dirs = { "~/workspace" },
+    file_finder_strategy = "auto",  -- "auto"|"fd"|"ripgrep"|"find"|"locate"
+  },
+})
+```
+
+**追加最適化:**
+
+1. **ディレクトリプルーニング**: `node_modules`, `.git`, `vendor` 等の大規模ディレクトリをスキップ
+2. **mtime フィルタ**: 24時間以内に更新されたファイルのみを対象（DailySummaryAll時）
+
+**ベンチマーク結果:**
+
+テスト環境: `~/workspace` ディレクトリ（巨大プロジェクト群）
+
+| 最適化段階 | 検索時間 | ファイル数 | 改善率 |
+|-----------|---------|-----------|--------|
+| 最適化前（find のみ） | 93秒 | 87 | - |
+| + pruning | 25秒 | 87 | 3.7x |
+| + mtime フィルタ | 23秒 | 10 | 4.0x |
+| + ripgrep (auto) | **6.6秒** | 10 | **14x** |
+
+**戦略別ベンチマーク（mtime フィルタ有効時）:**
+
+| 戦略 | 検索時間 | find比 |
+|------|---------|--------|
+| ripgrep | **6.6秒** | **3.5x** |
+| fd | 17.1秒 | 1.4x |
+| find | 23.4秒 | 1.0x |
+
+**注意:**
+- `auto` 戦略は `ripgrep > fd > find > locate` の優先順位で選択
+- ripgrep は隠しディレクトリ（`.vibing/`）検索で fd より高速
+- fd は `-H` オプション（隠しファイル検索）を使用するため、通常検索より遅くなる
+
 ## 将来の最適化候補
 
 ### 1. 非同期ファイル読み込み
