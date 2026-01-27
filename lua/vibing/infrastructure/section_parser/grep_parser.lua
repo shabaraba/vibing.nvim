@@ -40,8 +40,8 @@ local function parse_grep_line(grep_line)
   local role = nil
   local timestamp = nil
 
-  -- Check for User header with timestamp
-  local ts = content:match("^## User <!%-%- (%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d) %-%->$")
+  -- Check for User header with timestamp (allow trailing whitespace)
+  local ts = content:match("^## User <!%-%- (%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d) %-%->%s*$")
   if ts then
     role = "user"
     timestamp = ts
@@ -112,7 +112,15 @@ local function read_line_range(file_path, start_line, end_line)
   }
 
   local result = vim.system(cmd, { text = true }):wait()
-  if result.code ~= 0 or not result.stdout then
+  if result.code ~= 0 then
+    vim.notify(
+      string.format("vibing.nvim: sed failed for %s (lines %d-%d): %s",
+        file_path, start_line, end_line, result.stderr or "unknown error"),
+      vim.log.levels.DEBUG
+    )
+    return {}
+  end
+  if not result.stdout then
     return {}
   end
 
@@ -196,9 +204,9 @@ function GrepParser:extract_messages(file_path, target_date)
     return {}, nil
   end
 
-  -- Step 3: Get total line count
+  -- Step 3: Get total line count (handle leading whitespace in wc output)
   local wc_result = vim.system({ "wc", "-l", file_path }, { text = true }):wait()
-  local total_lines = tonumber(wc_result.stdout:match("(%d+)")) or 0
+  local total_lines = tonumber(wc_result.stdout:match("%s*(%d+)")) or 0
 
   -- Step 4: Find ranges for target date
   local ranges = find_message_ranges(headers, target_date, total_lines)
