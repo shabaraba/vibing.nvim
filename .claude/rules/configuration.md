@@ -124,17 +124,9 @@ require("vibing").setup({
 })
 ```
 
-## Diff Tool Configuration
+## Mote Integration
 
-vibing.nvim supports multiple diff tools for displaying file changes:
-
-### Tool Options
-
-- **`git`**: Always use `git diff` (default behavior, requires git repository)
-- **`mote`**: Always use `mote diff` (requires [mote](https://github.com/shabaraba/mote) to be installed and initialized)
-- **`auto`**: Automatically select the best available tool (mote preferred, fallback to git)
-
-### mote Integration
+vibing.nvim uses mote for displaying file changes and tracking modifications.
 
 [mote](https://github.com/shabaraba/mote) is a fine-grained snapshot management tool that provides richer diff capabilities than git. It tracks changes at a more granular level than git commits.
 
@@ -196,13 +188,10 @@ Each context is isolated to prevent cross-worktree diff pollution.
 
 ```lua
 require("vibing").setup({
-  diff = {
-    tool = "auto",  -- Automatically use mote if available
-    mote = {
-      ignore_file = ".vibing/.moteignore",
-      project = nil,  -- nil = auto-detect from git repo name
-      context_prefix = "vibing",  -- Context name prefix
-    },
+  mote = {
+    ignore_file = ".vibing/.moteignore",
+    project = nil,  -- nil = auto-detect from git repo name
+    context_prefix = "vibing",  -- Context name prefix
   },
 })
 ```
@@ -213,10 +202,7 @@ require("vibing").setup({
 
 - When you press `gd` on a file path in chat, vibing.nvim will:
   1. Check for patch files (if using Agent SDK patch mode)
-  2. If no patch files, use the configured diff tool:
-     - `auto`: Use mote if installed and initialized, otherwise git
-     - `mote`: Always use mote (shows error if not available)
-     - `git`: Always use git diff
+  2. If no patch files, use mote to display the diff
 
 **Benefits of mote:**
 

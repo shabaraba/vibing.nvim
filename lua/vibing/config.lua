@@ -264,13 +264,10 @@ M.defaults = {
     open_diff = "gd",
     open_file = "gf",
   },
-  diff = {
-    tool = "auto",
-    mote = {
-      ignore_file = ".vibing/.moteignore",
-      project = nil,  -- nil = auto-detect from git repo name
-      context_prefix = "vibing",
-    },
+  mote = {
+    ignore_file = ".vibing/.moteignore",
+    project = nil,  -- nil = auto-detect from git repo name
+    context_prefix = "vibing",
   },
   preview = {
     enabled = false,

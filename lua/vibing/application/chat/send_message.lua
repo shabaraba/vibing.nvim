@@ -142,7 +142,7 @@ function M.execute(adapter, callbacks, message, config)
   -- mote統合が有効な場合は初期化とsnapshotを待ってから送信
   -- 無効な場合は即座に送信
   if mote_config then
-    M._ensure_mote_initialized_and_snapshot(mote_config, config.diff, function()
+    M._ensure_mote_initialized_and_snapshot(mote_config, function()
       vim.schedule(do_send)
     end)
   else
@@ -196,11 +196,9 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
 
   -- mote v0.2.0: --project/--context APIではコンテキスト名は最初から確定しているためリネーム不要
 
-  -- mote統合: config.diff.toolが適切に設定され、mote_configが存在し、初期化済みの場合にModified Files出力とpatch生成
+  -- mote統合: mote_configが存在し、初期化済みの場合にModified Files出力とpatch生成
   local MoteDiff = require("vibing.core.utils.mote_diff")
-  local using_mote = mote_config ~= nil
-    and (config.diff.tool == "mote" or config.diff.tool == "auto")
-    and MoteDiff.is_initialized(mote_config.project, mote_config.context)
+  local using_mote = mote_config ~= nil and MoteDiff.is_initialized(mote_config.project, mote_config.context)
 
   if using_mote then
     MoteDiff.get_changed_files(mote_config, function(success, files, error)
@@ -256,12 +254,12 @@ end
 ---@param session_cwd string|nil worktreeのcwd（worktreeで作業する場合のみ、worktree判定用）
 ---@return table|nil セッション固有のmote設定（mote未設定の場合nil）
 function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
-  if not config.diff or not config.diff.mote then
+  if not config.mote then
     return nil
   end
 
   local MoteDiff = require("vibing.core.utils.mote_diff")
-  local mote_config = vim.deepcopy(config.diff.mote)
+  local mote_config = vim.deepcopy(config.mote)
 
   -- mote v0.2.0: --project/--context APIを使用
   -- プロジェクト名（設定 or 自動検出）
@@ -286,14 +284,8 @@ local MOTE_INIT_TIMEOUT_MS = 10000
 ---mote storageの初期化を確認し、スナップショットを作成
 ---タイムアウト処理とエラーハンドリングを含む
 ---@param mote_config table セッション固有のmote設定
----@param diff_config table diff設定
 ---@param on_complete fun() 完了時のコールバック
-function M._ensure_mote_initialized_and_snapshot(mote_config, diff_config, on_complete)
-  if diff_config.tool ~= "mote" and diff_config.tool ~= "auto" then
-    on_complete()
-    return
-  end
-
+function M._ensure_mote_initialized_and_snapshot(mote_config, on_complete)
   local MoteDiff = require("vibing.core.utils.mote_diff")
   if not MoteDiff.is_available() then
     on_complete()
