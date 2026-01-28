@@ -108,7 +108,7 @@ function M.show(callback)
 
   -- メニュー描画関数
   local function render_menu()
-    vim.api.nvim_buf_set_option(menu_buf, "modifiable", true)
+    vim.bo[menu_buf].modifiable = true
     local lines = {}
     table.insert(lines, "")
     for i, action in ipairs(ACTIONS) do
@@ -125,7 +125,7 @@ function M.show(callback)
     end
 
     vim.api.nvim_buf_set_lines(menu_buf, 0, -1, false, lines)
-    vim.api.nvim_buf_set_option(menu_buf, "modifiable", false)
+    vim.bo[menu_buf].modifiable = false
 
     -- 選択中の行をハイライト
     local ns_id = vim.api.nvim_create_namespace("vibing_inline_picker")

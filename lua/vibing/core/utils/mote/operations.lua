@@ -82,15 +82,15 @@ function M.show_diff(file_path, config)
 
     local lines = vim.split(output, "\n")
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.api.nvim_buf_set_option(buf, "modifiable", false)
+    vim.bo[buf].modifiable = false
 
     vim.cmd("vsplit")
     vim.api.nvim_win_set_buf(0, buf)
 
-    vim.api.nvim_buf_set_keymap(buf, "n", "q", "", {
-      callback = function()
-        vim.api.nvim_buf_delete(buf, { force = true })
-      end,
+    vim.keymap.set("n", "q", function()
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end, {
+      buffer = buf,
       noremap = true,
       silent = true,
     })

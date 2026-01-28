@@ -16,11 +16,26 @@ local function sanitize_name(name)
     :gsub("%-$", "")
 end
 
+---元のブランチ名から短いハッシュを生成（衝突防止用）
+---@param original_name string 元のブランチ名
+---@return string 8文字のハッシュ
+local function generate_hash(original_name)
+  local hash = 0
+  for i = 1, #original_name do
+    hash = (hash * 31 + string.byte(original_name, i)) % 2147483647
+  end
+  return string.format("%08x", hash):sub(1, 8)
+end
+
 ---Worktree固有のコンテキスト名を生成
 ---mote v0.2.0: --context API対応
 ---
 ---同じworktree内の全セッションは同じmote contextを共有します。
 ---これにより、worktree内での作業履歴を一貫して追跡できます。
+---
+---衝突防止のため、元のブランチ名のハッシュをサフィックスとして追加します。
+---例: feature/task → vibing-worktree-feature-task-a1b2c3d4
+---     feature-task → vibing-worktree-feature-task-e5f6g7h8
 ---
 ---@param context_prefix string コンテキスト名のプレフィックス
 ---@param cwd? string 作業ディレクトリ（worktree判定用）
@@ -30,7 +45,8 @@ function M.build_name(context_prefix, cwd)
     local worktree_path = cwd:match("%.worktrees/(.+)")
     if worktree_path then
       local worktree_name = sanitize_name(worktree_path)
-      return string.format("%s-worktree-%s", context_prefix, worktree_name)
+      local hash_suffix = generate_hash(worktree_path)
+      return string.format("%s-worktree-%s-%s", context_prefix, worktree_name, hash_suffix)
     end
   end
 

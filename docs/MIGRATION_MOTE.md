@@ -108,7 +108,7 @@ require("vibing").setup({
 
 With mote integration, each chat session maintains isolated contexts with project-local storage:
 
-```
+```text
 .vibing/
 ├── mote/
 │   └── <project-name>/
