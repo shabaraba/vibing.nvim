@@ -336,6 +336,35 @@ function M.setup(opts)
     end
   end
 
+  -- Auto-add "Skill" to permissions.allow if not already present and not in deny list
+  if M.options.permissions and M.options.permissions.allow then
+    local has_skill = false
+    local is_denied = false
+
+    -- Check if Skill is already in allow list
+    for _, tool in ipairs(M.options.permissions.allow) do
+      if tool == "Skill" then
+        has_skill = true
+        break
+      end
+    end
+
+    -- Check if Skill is in deny list
+    if M.options.permissions.deny then
+      for _, tool in ipairs(M.options.permissions.deny) do
+        if tool == "Skill" then
+          is_denied = true
+          break
+        end
+      end
+    end
+
+    -- Add Skill if not present and not denied
+    if not has_skill and not is_denied then
+      table.insert(M.options.permissions.allow, "Skill")
+    end
+  end
+
   if M.options.permissions then
     -- Validate permission mode
     local valid_modes = { default = true, acceptEdits = true, bypassPermissions = true }
