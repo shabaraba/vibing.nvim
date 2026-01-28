@@ -87,6 +87,7 @@ function M.build_dir_path(project, context)
 end
 
 ---moteコンテキストが初期化されているかチェック
+---mote v0.2.1ではignoreファイルとstorageディレクトリで初期化を判定
 ---@param project string? プロジェクト名
 ---@param context string? コンテキスト名
 ---@return boolean moteコンテキストが初期化されている場合true
@@ -101,8 +102,10 @@ function M.is_initialized(project, context)
     return false
   end
 
-  local config_path = context_dir .. "/config.toml"
-  return vim.fn.filereadable(config_path) == 1
+  -- mote v0.2.1スタンドアロンモードではignoreファイルとstorageディレクトリが作成される
+  local ignore_path = context_dir .. "/ignore"
+  local storage_path = context_dir .. "/storage"
+  return vim.fn.filereadable(ignore_path) == 1 or vim.fn.isdirectory(storage_path) == 1
 end
 
 return M

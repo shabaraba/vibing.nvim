@@ -3,26 +3,23 @@
 local M = {}
 
 ---moteコマンドのベース引数を生成
----mote v0.2.0: --project/--context APIを使用
+---mote v0.2.1+: -d/--context-dirでスタンドアロンモード（グローバル設定不要）
+---プロジェクトローカルに完全に独立して動作
 ---@param config Vibing.MoteConfig mote設定
 ---@return string[] コマンドライン引数の配列
 function M.build_base_args(config)
   local Binary = require("vibing.core.utils.mote.binary")
-  local Moteignore = require("vibing.core.utils.mote.moteignore")
   local Context = require("vibing.core.utils.mote.context")
 
-  local abs_ignore_file = vim.fn.fnamemodify(config.ignore_file, ":p")
-  local cmd = { Binary.get_path(), "--ignore-file", abs_ignore_file }
+  local cmd = { Binary.get_path() }
 
+  -- -d/--context-dirでスタンドアロンモード
+  -- mote v0.2.1では初回実行時に自動的にディレクトリ構造とignoreファイルを作成
   local project = config.project or Context.get_project_name()
-  if project then
-    table.insert(cmd, "--project")
-    table.insert(cmd, project)
-  end
-
-  if config.context then
-    table.insert(cmd, "--context")
-    table.insert(cmd, config.context)
+  local context_dir = Context.build_dir_path(project, config.context)
+  if context_dir then
+    table.insert(cmd, "-d")
+    table.insert(cmd, context_dir)
   end
 
   return cmd

@@ -162,41 +162,46 @@ The `build.sh` script downloads mote binaries for all supported platforms:
 
 **Priority:** vibing.nvim uses its bundled mote binary preferentially, falling back to system `mote` only if the bundled binary is unavailable.
 
-**Setup (mote v0.2.0+ --project/--context API):**
+**Setup (mote v0.2.1+ standalone mode with -d/--context-dir):**
+
+vibing.nvim uses `-d/--context-dir` to operate in standalone mode, without depending on global mote configuration (`~/.config/mote/`). All mote data is stored locally in the project:
 
 ```bash
-# Initialize mote context (with project-local storage)
+# vibing.nvim automatically creates context directories as needed:
 # For project root
-mote --project vibing-nvim context new vibing-root --context-dir .vibing/mote/vibing-nvim/vibing-root
+.vibing/mote/<project>/vibing-root/
 
 # For worktree (e.g., feature-x branch)
-mote --project vibing-nvim context new vibing-worktree-feature-x --context-dir .vibing/mote/vibing-nvim/vibing-worktree-feature-x
+.vibing/mote/<project>/vibing-worktree-feature-x-<hash>/
 
-# Create snapshots (automatically or manually)
-mote --project vibing-nvim --context vibing-root snapshot -m "Before refactoring"
+# Manual usage example (vibing.nvim does this automatically)
+# No initialization needed - just use -d option directly
+mote -d .vibing/mote/my-project/vibing-root snap create -m "Before refactoring"
+mote -d .vibing/mote/my-project/vibing-root snap diff
+mote -d .vibing/mote/my-project/vibing-root snap list
 ```
-
-**Note:** vibing.nvim automatically manages contexts per session with project-local storage:
-
-- Project root: `.vibing/mote/<project>/vibing-root/`
-- Worktrees: `.vibing/mote/<project>/vibing-worktree-<branch>/`
-- Patch files: `.vibing/mote/<project>/<context>/patches/`
-
-Each context is isolated to prevent cross-worktree diff pollution.
 
 **Configuration:**
 
 ```lua
 require("vibing").setup({
-  mote = {
-    ignore_file = ".vibing/.moteignore",
-    project = nil,  -- nil = auto-detect from git repo name
-    context_prefix = "vibing",  -- Context name prefix
+  diff = {
+    tool = "auto",  -- "git" | "mote" | "auto"
+    mote = {
+      ignore_file = ".vibing/.moteignore",
+      project = nil,  -- nil = auto-detect from git repo name
+      context_prefix = "vibing",  -- Context name prefix (default: "vibing")
+    },
   },
 })
 ```
 
-**Important:** All mote commands use the specified `--project` and `--context` options (mote v0.2.0+ API). This keeps mote data separate from your main project and prevents interference with your regular mote workflow.
+**Key Features:**
+
+- **Project-local storage**: All mote data stays in `.vibing/mote/` within your project
+- **No global config**: Doesn't touch `~/.config/mote/`, no interference with personal mote usage
+- **Worktree isolation**: Each worktree has its own context (e.g., `vibing-worktree-feature-x-a1b2c3d4`)
+- **Automatic initialization**: vibing.nvim creates contexts automatically when needed
 
 **Behavior:**
 
