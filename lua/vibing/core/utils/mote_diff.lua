@@ -104,25 +104,16 @@ function M.is_initialized(project, context)
     return false
   end
 
-  -- mote context listを実行して、指定されたコンテキストが存在するかチェック
-  local cmd = { M.get_mote_path(), "context", "list" }
-  if project then
-    table.insert(cmd, 2, "--project")
-    table.insert(cmd, 3, project)
-  end
-
-  local result = vim.fn.system(cmd)
-  if vim.v.shell_error ~= 0 then
+  -- mote v0.2.0: --context-dirで作成したコンテキストは`context list`に表示されないため、
+  -- ディレクトリの存在確認で初期化済みかチェック
+  local context_dir = M.build_context_dir_path(project, context)
+  if not context_dir then
     return false
   end
 
-  -- コンテキスト名が出力に含まれているかチェック
-  if context then
-    return result:find(context, 1, true) ~= nil
-  end
-
-  -- コンテキスト名が指定されていない場合は、defaultが存在するかチェック
-  return result:find("default", 1, true) ~= nil
+  -- context-dirのconfig.tomlが存在すればコンテキストは初期化済み
+  local config_path = context_dir .. "/config.toml"
+  return vim.fn.filereadable(config_path) == 1
 end
 
 ---デフォルトの.moteignoreルール
@@ -338,6 +329,47 @@ function M.initialize(config, callback)
   table.insert(cmd, context_dir)
 
   run_mote_command(cmd, config.cwd, function()
+    -- コンテキスト作成後、ignoreファイルに.vibing/を追加
+    local ignore_file_path = context_dir .. "/ignore"
+    local ignore_file = io.open(ignore_file_path, "r")
+    if ignore_file then
+      local content = ignore_file:read("*all")
+      ignore_file:close()
+
+      -- .vibing/がまだ追加されていない場合のみ追加
+      if not content:match("%.vibing/") then
+        local lines = vim.split(content, "\n")
+
+        -- "# Uses gitignore syntax"の直後に挿入位置を探す
+        local insert_pos = nil
+        for i, line in ipairs(lines) do
+          if line:match("^# Uses gitignore syntax") then
+            insert_pos = i + 1
+            break
+          end
+        end
+
+        if insert_pos then
+          -- 空行があればスキップ
+          while insert_pos <= #lines and lines[insert_pos] == "" do
+            insert_pos = insert_pos + 1
+          end
+
+          -- vibing.nvim セクションを挿入
+          table.insert(lines, insert_pos, "")
+          table.insert(lines, insert_pos + 1, "# vibing.nvim internal files")
+          table.insert(lines, insert_pos + 2, ".vibing/")
+
+          local new_content = table.concat(lines, "\n")
+          local write_file = io.open(ignore_file_path, "w")
+          if write_file then
+            write_file:write(new_content)
+            write_file:close()
+          end
+        end
+      end
+    end
+
     callback(true, nil)
   end, function(error)
     callback(false, error)
