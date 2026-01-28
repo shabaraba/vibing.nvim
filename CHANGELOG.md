@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.27.0 (2026-01-28)
+
+## What's Changed
+
+- feat: add Skill tool to default permissions allow list by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/360
+- chore: migrate to mote v0.2.0 with context-dir and worktree isolation by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/359
+- fix: cancel Agent SDK process immediately on approval_required event by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/362
+- feat: upgrade to mote v0.2.1 with standalone mode support by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/363
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.26.0...v1.27.0
+
 ## 1.26.0 (2026-01-27)
 
 ## What's Changed
