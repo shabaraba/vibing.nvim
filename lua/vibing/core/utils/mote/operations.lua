@@ -41,6 +41,7 @@ function M.get_diff(file_path, config, callback)
   Moteignore.ensure_exists(config.ignore_file)
 
   local cmd = Command.build_base_args(config)
+  table.insert(cmd, "snap")
   table.insert(cmd, "diff")
   table.insert(cmd, vim.fn.fnamemodify(file_path, ":p"))
 
@@ -125,23 +126,20 @@ function M.initialize(config, callback)
     return
   end
 
-  local cmd = { Binary.get_path() }
-  if project then
-    table.insert(cmd, "--project")
-    table.insert(cmd, project)
-  end
-  table.insert(cmd, "context")
-  table.insert(cmd, "new")
-  table.insert(cmd, config.context)
-  table.insert(cmd, "--context-dir")
-  table.insert(cmd, context_dir)
+  -- mote v0.2.1: -d/--context-dirでスタンドアロンモード
+  -- context newは不要、ディレクトリ作成のみでOK
+  vim.fn.mkdir(context_dir, "p")
 
-  Command.run(cmd, config.cwd, function()
-    Moteignore.add_vibing_ignore(context_dir)
-    callback(true, nil)
-  end, function(error)
-    callback(false, error)
-  end)
+  -- config.tomlを作成（空でOK）
+  local config_path = context_dir .. "/config.toml"
+  local config_file = io.open(config_path, "w")
+  if config_file then
+    config_file:write("# vibing.nvim mote context\n")
+    config_file:close()
+  end
+
+  Moteignore.add_vibing_ignore(context_dir)
+  callback(true, nil)
 end
 
 ---mote snapshotを作成
@@ -161,7 +159,8 @@ function M.create_snapshot(config, message, callback)
   Moteignore.ensure_exists(config.ignore_file)
 
   local cmd = Command.build_base_args(config)
-  table.insert(cmd, "snapshot")
+  table.insert(cmd, "snap")
+  table.insert(cmd, "create")
   table.insert(cmd, "--auto")
 
   if message then
@@ -193,6 +192,7 @@ function M.get_changed_files(config, callback)
   Moteignore.ensure_exists(config.ignore_file)
 
   local cmd = Command.build_base_args(config)
+  table.insert(cmd, "snap")
   table.insert(cmd, "diff")
   table.insert(cmd, "--name-only")
 
@@ -223,6 +223,7 @@ function M.generate_patch(config, output_path, callback)
   vim.fn.mkdir(output_dir, "p")
 
   local cmd = Command.build_base_args(config)
+  table.insert(cmd, "snap")
   table.insert(cmd, "diff")
   table.insert(cmd, "-o")
   table.insert(cmd, output_path)
