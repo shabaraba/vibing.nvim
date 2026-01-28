@@ -309,7 +309,7 @@ function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
   local MoteDiff = require("vibing.core.utils.mote_diff")
   local mote_config = vim.deepcopy(config.diff.mote)
   -- mote v0.2.0: worktree分離対応（cwdからworktreeを判定して適切なパスを生成）
-  local relative_storage_dir = MoteDiff.build_session_storage_dir(mote_config.storage_dir, mote_session_id, session_cwd)
+  local relative_storage_dir = MoteDiff.build_session_storage_dir(mote_config.storage_dir, session_cwd)
 
   -- プロジェクトルートからの絶対パスに変換
   local Git = require("vibing.core.utils.git")

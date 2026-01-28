@@ -2,19 +2,29 @@
 ---mote diff表示のユーティリティ
 local M = {}
 
----セッション固有のstorage_dirを生成
+---Worktree固有のstorage_dirを生成
 ---mote v0.2.0: worktree分離対応
----@param base_storage_dir string ベースのstorage_dir
----@param session_id? string セッションID
+---
+---同じworktree内の全セッションは同じmote storageを共有します。
+---これにより、worktree内での作業履歴を一貫して追跡できます。
+---
+---@param base_storage_dir string ベースのstorage_dir（未使用、互換性のために保持）
 ---@param cwd? string 作業ディレクトリ（worktree判定用）
----@return string セッション固有のstorage_dir
-function M.build_session_storage_dir(base_storage_dir, session_id, cwd)
+---@return string Worktree固有のstorage_dir
+function M.build_session_storage_dir(base_storage_dir, cwd)
   -- cwdがworktreeパス配下の場合、worktree名を抽出
   if cwd then
     local worktree_path = cwd:match("%.worktrees/(.+)")
     if worktree_path then
-      -- スラッシュをアンダースコアに置き換えてフラットな構造にする
-      local worktree_name = worktree_path:gsub("/", "_")
+      -- ファイルシステムで安全な名前に変換
+      -- スラッシュ、スペース、コロン、その他の特殊文字をアンダースコアに置き換え
+      local worktree_name = worktree_path
+        :gsub("[/\\:]", "_")  -- パス区切りとコロン
+        :gsub("%s+", "_")      -- 空白文字
+        :gsub("[<>:\"|?*]", "_")  -- Windowsで禁止されている文字
+        :gsub("_+", "_")       -- 連続するアンダースコアを1つに
+        :gsub("^_", "")        -- 先頭のアンダースコアを削除
+        :gsub("_$", "")        -- 末尾のアンダースコアを削除
       return string.format(".vibing/mote/worktrees/%s", worktree_name)
     end
   end
@@ -388,7 +398,7 @@ end
 ---@return string 新しいstorage_dirパス
 ---@return boolean 成功したかどうか
 function M.rename_storage_dir(temp_storage_dir, session_id, base_storage_dir, cwd)
-  local new_storage_dir = M.build_session_storage_dir(base_storage_dir, session_id, cwd)
+  local new_storage_dir = M.build_session_storage_dir(base_storage_dir, cwd)
 
   -- 同じパスなら何もしない
   if temp_storage_dir == new_storage_dir then
