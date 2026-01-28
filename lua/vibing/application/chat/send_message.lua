@@ -23,6 +23,7 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field get_session_deny fun(): table セッションレベルの拒否リストを取得
 ---@field clear_handle_id fun() handle_idをクリア
 ---@field set_handle_id fun(handle_id: string) handle_idを設定
+---@field get_handle_id fun(): string|nil handle_idを取得
 ---@field get_cwd fun(): string|nil worktreeのcwdを取得
 
 ---メッセージを送信
@@ -109,6 +110,12 @@ function M.execute(adapter, callbacks, message, config)
       on_approval_required = function(tool, input, options)
         vim.schedule(function()
           callbacks.insert_approval_request(tool, input, options)
+
+          -- Cancel the current request immediately
+          local handle_id = callbacks.get_handle_id()
+          if handle_id then
+            adapter:cancel(handle_id)
+          end
         end)
       end,
     }

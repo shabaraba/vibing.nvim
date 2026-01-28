@@ -162,8 +162,8 @@ function ChatBuffer:_setup_keymaps()
     end,
     cancel = function()
       local adapter = vibing.get_adapter()
-      if adapter then
-        adapter:cancel()
+      if adapter and self._current_handle_id then
+        adapter:cancel(self._current_handle_id)
       end
     end,
     update_context_line = function()
@@ -428,6 +428,9 @@ function ChatBuffer:send_message()
     end,
     set_handle_id = function(handle_id)
       self._current_handle_id = handle_id
+    end,
+    get_handle_id = function()
+      return self._current_handle_id
     end,
     get_cwd = function()
       return self:get_cwd()
