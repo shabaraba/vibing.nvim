@@ -34,7 +34,8 @@ require("vibing").setup({
     -- "auto": Use mote if available and initialized, otherwise fallback to git
     mote = {
       ignore_file = ".vibing/.moteignore",  -- Path to .moteignore file
-      storage_dir = ".vibing/mote",  -- Base path for mote storage
+      project = nil,  -- Project name (nil = auto-detect from git repo name)
+      context_prefix = "vibing",  -- Context name prefix (default: "vibing")
     },
   },
   permissions = {
@@ -169,25 +170,25 @@ The `build.sh` script downloads mote binaries for all supported platforms:
 
 **Priority:** vibing.nvim uses its bundled mote binary preferentially, falling back to system `mote` only if the bundled binary is unavailable.
 
-**Setup:**
+**Setup (mote v0.2.0+ --project/--context API):**
 
 ```bash
-# Initialize mote storage
+# Initialize mote context
 # For project root
-mote --storage-dir .vibing/mote/root init
+mote --project vibing-nvim context new vibing-root
 
 # For worktree (e.g., feature-x branch)
-mote --storage-dir .vibing/mote/worktrees/feature-x init
+mote --project vibing-nvim context new vibing-worktree-feature-x
 
 # Create snapshots (automatically or manually)
-mote --storage-dir .vibing/mote/root snapshot -m "Before refactoring"
+mote --project vibing-nvim --context vibing-root snapshot -m "Before refactoring"
 ```
 
-**Note:** vibing.nvim automatically manages storage directories per session:
+**Note:** vibing.nvim automatically manages contexts per session:
 
-- Project root: `.vibing/mote/root/`
-- Worktrees: `.vibing/mote/worktrees/<branch>/`
-  Each storage is isolated to prevent cross-worktree diff pollution.
+- Project root: `vibing-root`
+- Worktrees: `vibing-worktree-<branch>`
+  Each context is isolated to prevent cross-worktree diff pollution.
 
 **Configuration:**
 
@@ -197,13 +198,14 @@ require("vibing").setup({
     tool = "auto",  -- Automatically use mote if available
     mote = {
       ignore_file = ".vibing/.moteignore",
-      storage_dir = ".vibing/mote",  -- Base directory for mote storage
+      project = nil,  -- nil = auto-detect from git repo name
+      context_prefix = "vibing",  -- Context name prefix
     },
   },
 })
 ```
 
-**Important:** All mote commands use the specified `--ignore-file` and `--storage-dir` options to keep mote data separate from your main project. This prevents interference with your regular mote workflow.
+**Important:** All mote commands use the specified `--project` and `--context` options (mote v0.2.0+ API). This keeps mote data separate from your main project and prevents interference with your regular mote workflow.
 
 **Behavior:**
 

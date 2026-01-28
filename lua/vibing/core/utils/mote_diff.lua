@@ -2,35 +2,48 @@
 ---mote diff表示のユーティリティ
 local M = {}
 
----Worktree固有のstorage_dirを生成
----mote v0.2.0: worktree分離対応
+---Worktree固有のコンテキスト名を生成
+---mote v0.2.0: --context API対応
 ---
----同じworktree内の全セッションは同じmote storageを共有します。
+---同じworktree内の全セッションは同じmote contextを共有します。
 ---これにより、worktree内での作業履歴を一貫して追跡できます。
 ---
----@param base_storage_dir string ベースのstorage_dir（未使用、互換性のために保持）
+---@param context_prefix string コンテキスト名のプレフィックス
 ---@param cwd? string 作業ディレクトリ（worktree判定用）
----@return string Worktree固有のstorage_dir
-function M.build_session_storage_dir(base_storage_dir, cwd)
+---@return string Worktree固有のコンテキスト名
+function M.build_context_name(context_prefix, cwd)
   -- cwdがworktreeパス配下の場合、worktree名を抽出
   if cwd then
     local worktree_path = cwd:match("%.worktrees/(.+)")
     if worktree_path then
-      -- ファイルシステムで安全な名前に変換
-      -- スラッシュ、スペース、コロン、その他の特殊文字をアンダースコアに置き換え
+      -- mote contextのネーミングルールに従う
+      -- ASCII文字、数字、ハイフン、アンダースコア、ドットのみ許可
       local worktree_name = worktree_path
-        :gsub("[/\\:]", "_")  -- パス区切りとコロン
-        :gsub("%s+", "_")      -- 空白文字
-        :gsub("[<>:\"|?*]", "_")  -- Windowsで禁止されている文字
-        :gsub("_+", "_")       -- 連続するアンダースコアを1つに
-        :gsub("^_", "")        -- 先頭のアンダースコアを削除
-        :gsub("_$", "")        -- 末尾のアンダースコアを削除
-      return string.format(".vibing/mote/worktrees/%s", worktree_name)
+        :gsub("[/\\:]", "-")        -- パス区切りとコロン
+        :gsub("%s+", "-")           -- 空白文字
+        :gsub("[^%w%-%_%.]+", "-")  -- ASCII文字/数字/ハイフン/アンダースコア/ドット以外
+        :gsub("%-+", "-")           -- 連続するハイフンを1つに
+        :gsub("^%-", "")            -- 先頭のハイフンを削除
+        :gsub("%-$", "")            -- 末尾のハイフンを削除
+      return string.format("%s-worktree-%s", context_prefix, worktree_name)
     end
   end
 
   -- プロジェクトルートの場合
-  return ".vibing/mote/root"
+  return string.format("%s-root", context_prefix)
+end
+
+---gitリポジトリ名からプロジェクト名を取得
+---@return string|nil プロジェクト名（取得できない場合nil）
+function M.get_project_name()
+  local Git = require("vibing.core.utils.git")
+  local git_root = Git.get_root()
+  if not git_root then
+    return nil
+  end
+
+  -- git rootディレクトリ名を使用
+  return vim.fn.fnamemodify(git_root, ":t")
 end
 
 ---プラットフォームに応じたmoteバイナリパスを取得
@@ -75,34 +88,34 @@ function M.is_available()
   return M.get_mote_path() ~= nil
 end
 
----moteが初期化されているかチェック
----@param cwd string? チェックするディレクトリ（デフォルト: 現在のディレクトリ）
----@param storage_dir string? moteストレージディレクトリ（設定から渡される）
----@return boolean moteが初期化されている場合true
-function M.is_initialized(cwd, storage_dir)
-  if storage_dir then
-    return M._check_storage_dir_initialized(storage_dir)
+---moteコンテキストが初期化されているかチェック
+---@param project string? プロジェクト名
+---@param context string? コンテキスト名
+---@return boolean moteコンテキストが初期化されている場合true
+function M.is_initialized(project, context)
+  if not M.is_available() then
+    return false
   end
-  return M._check_legacy_paths(cwd or vim.fn.getcwd())
-end
 
----指定されたstorage_dirが初期化済みかチェック
----@param storage_dir string moteストレージディレクトリ
----@return boolean
-function M._check_storage_dir_initialized(storage_dir)
-  local abs_path = vim.fn.fnamemodify(storage_dir, ":p"):gsub("/$", "")
-  local has_snapshots = vim.fn.isdirectory(abs_path .. "/snapshots") == 1
-  local has_objects = vim.fn.isdirectory(abs_path .. "/objects") == 1
-  return has_snapshots and has_objects
-end
+  -- mote context listを実行して、指定されたコンテキストが存在するかチェック
+  local cmd = { M.get_mote_path(), "context", "list" }
+  if project then
+    table.insert(cmd, 2, "--project")
+    table.insert(cmd, 3, project)
+  end
 
----レガシーパス（.mote, .git/mote）をチェック
----@param cwd string チェックするディレクトリ
----@return boolean
-function M._check_legacy_paths(cwd)
-  local mote_dir = vim.fn.finddir(".mote", cwd .. ";")
-  local git_mote_dir = vim.fn.finddir(".git/mote", cwd .. ";")
-  return mote_dir ~= "" or git_mote_dir ~= ""
+  local result = vim.fn.system(cmd)
+  if vim.v.shell_error ~= 0 then
+    return false
+  end
+
+  -- コンテキスト名が出力に含まれているかチェック
+  if context then
+    return result:find(context, 1, true) ~= nil
+  end
+
+  -- コンテキスト名が指定されていない場合は、defaultが存在するかチェック
+  return result:find("default", 1, true) ~= nil
 end
 
 ---デフォルトの.moteignoreルール
@@ -149,22 +162,28 @@ function M._ensure_moteignore_exists(ignore_file_path)
 end
 
 ---moteコマンドのベース引数を生成
----パスは絶対パスに変換して渡す（cwdの違いによる解決の問題を防ぐため）
----mote v0.2.0: --storage-dirは継続使用（リリースノートの--context-dirは誤記）
+---mote v0.2.0: --project/--context APIを使用
 ---@param config Vibing.MoteConfig mote設定
 ---@return string[] コマンドライン引数の配列
 local function build_mote_base_args(config)
-  -- 絶対パスに変換（worktreeで実行する場合でもメインレポジトリのストレージを使用）
   local abs_ignore_file = vim.fn.fnamemodify(config.ignore_file, ":p")
-  local abs_storage_dir = vim.fn.fnamemodify(config.storage_dir, ":p"):gsub("/$", "")
 
-  return {
-    M.get_mote_path(),
-    "--ignore-file",
-    abs_ignore_file,
-    "--storage-dir",
-    abs_storage_dir,
-  }
+  local cmd = { M.get_mote_path(), "--ignore-file", abs_ignore_file }
+
+  -- プロジェクト名を追加（設定 or 自動検出）
+  local project = config.project or M.get_project_name()
+  if project then
+    table.insert(cmd, "--project")
+    table.insert(cmd, project)
+  end
+
+  -- コンテキスト名を追加（設定から取得）
+  if config.context then
+    table.insert(cmd, "--context")
+    table.insert(cmd, config.context)
+  end
+
+  return cmd
 end
 
 ---moteコマンドを実行し結果をコールバックで返す
@@ -243,17 +262,18 @@ function M.show_diff(file_path, config)
 
     local lines = vim.split(output, "\n")
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.bo[buf].modifiable = false
+    vim.api.nvim_buf_set_option(buf, "modifiable", false)
 
-    vim.api.nvim_set_current_buf(buf)
+    vim.cmd("vsplit")
+    vim.api.nvim_win_set_buf(0, buf)
 
-    vim.keymap.set("n", "q", function()
-      vim.api.nvim_buf_delete(buf, { force = true })
-    end, { buffer = buf, noremap = true, silent = true })
-
-    vim.keymap.set("n", "<Esc>", function()
-      vim.api.nvim_buf_delete(buf, { force = true })
-    end, { buffer = buf, noremap = true, silent = true })
+    vim.api.nvim_buf_set_keymap(buf, "n", "q", "", {
+      callback = function()
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end,
+      noremap = true,
+      silent = true,
+    })
   end)
 end
 
@@ -269,16 +289,22 @@ function M.initialize(config, callback)
   -- Ensure .moteignore exists before checking initialization
   M._ensure_moteignore_exists(config.ignore_file)
 
-  if M.is_initialized(nil, config.storage_dir) then
+  -- コンテキストが既に存在する場合はスキップ
+  if M.is_initialized(config.project, config.context) then
     callback(true, nil)
     return
   end
 
-  local parent_dir = vim.fn.fnamemodify(config.storage_dir, ":h")
-  vim.fn.mkdir(parent_dir, "p")
-
-  local cmd = build_mote_base_args(config)
-  table.insert(cmd, "init")
+  -- mote context newを実行してコンテキストを作成
+  local cmd = { M.get_mote_path() }
+  local project = config.project or M.get_project_name()
+  if project then
+    table.insert(cmd, "--project")
+    table.insert(cmd, project)
+  end
+  table.insert(cmd, "context")
+  table.insert(cmd, "new")
+  table.insert(cmd, config.context)
 
   run_mote_command(cmd, config.cwd, function()
     callback(true, nil)
@@ -388,48 +414,6 @@ function M.generate_patch(config, output_path, callback)
   end, function(error)
     callback(false, error)
   end)
-end
-
----一時ストレージディレクトリを正式なディレクトリにリネーム
----@param temp_storage_dir string 一時ストレージディレクトリ
----@param session_id string 正式なsession_id
----@param base_storage_dir string ベースのstorage_dir（例: ".vibing/mote"）
----@param cwd? string 作業ディレクトリ（worktree判定用）
----@return string 新しいstorage_dirパス
----@return boolean 成功したかどうか
-function M.rename_storage_dir(temp_storage_dir, session_id, base_storage_dir, cwd)
-  local new_storage_dir = M.build_session_storage_dir(base_storage_dir, cwd)
-
-  -- 同じパスなら何もしない
-  if temp_storage_dir == new_storage_dir then
-    return new_storage_dir, true
-  end
-
-  local temp_abs = vim.fn.fnamemodify(temp_storage_dir, ":p"):gsub("/$", "")
-  local new_abs = vim.fn.fnamemodify(new_storage_dir, ":p"):gsub("/$", "")
-
-  -- 一時ディレクトリが存在しない場合
-  if vim.fn.isdirectory(temp_abs) ~= 1 then
-    return new_storage_dir, false
-  end
-
-  -- 新しいディレクトリが既に存在する場合は一時ディレクトリを削除
-  if vim.fn.isdirectory(new_abs) == 1 then
-    vim.fn.delete(temp_abs, "rf")
-    return new_storage_dir, true
-  end
-
-  -- 親ディレクトリを作成
-  local parent_dir = vim.fn.fnamemodify(new_abs, ":h")
-  vim.fn.mkdir(parent_dir, "p")
-
-  -- リネーム実行
-  local result = vim.fn.rename(temp_abs, new_abs)
-  if result == 0 then
-    return new_storage_dir, true
-  else
-    return new_storage_dir, false
-  end
 end
 
 return M

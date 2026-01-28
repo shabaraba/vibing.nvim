@@ -194,59 +194,28 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
     end
   end
 
-  -- mote統合: session_idが確定したら一時ディレクトリをリネーム
-  local MoteDiff = require("vibing.core.utils.mote_diff")
-  if mote_config and new_session_id then
-    local is_temp_id = mote_config.mote_session_id and (
-      mote_config.mote_session_id:match("^_buffer_") or
-      mote_config.mote_session_id:match("^_temp_")
-    )
-    if is_temp_id then
-      local base_storage_dir = config.diff and config.diff.mote and config.diff.mote.storage_dir or ".vibing/mote"
-      local new_storage_dir, rename_success = MoteDiff.rename_storage_dir(
-        mote_config.storage_dir,
-        new_session_id,
-        base_storage_dir,
-        mote_config.cwd  -- Pass cwd for worktree detection
-      )
-      -- Convert new_storage_dir to absolute path
-      local Git = require("vibing.core.utils.git")
-      local git_root = Git.get_root()
-      local new_storage_dir_abs = git_root and (git_root .. "/" .. new_storage_dir) or new_storage_dir
-
-      -- mote_configを更新（リネーム成功/失敗に関わらず新しいパスを使用）
-      if rename_success then
-        mote_config.storage_dir = new_storage_dir_abs
-        mote_config.mote_session_id = new_session_id
-      else
-        -- リネーム失敗時も新しいパスを記録（patch生成時に使用）
-        mote_config.storage_dir = new_storage_dir_abs
-        mote_config.mote_session_id = new_session_id
-        vim.notify(
-          string.format(
-            "[vibing] Failed to rename mote storage directory.\n" ..
-            "Old: %s\nNew: %s\n" ..
-            "Continuing with new path...",
-            vim.fn.fnamemodify(mote_config.storage_dir, ":."),
-            vim.fn.fnamemodify(new_storage_dir, ":.")
-          ),
-          vim.log.levels.WARN
-        )
-      end
-    end
-  end
+  -- mote v0.2.0: --project/--context APIではコンテキスト名は最初から確定しているためリネーム不要
 
   -- mote統合: config.diff.toolが適切に設定され、mote_configが存在し、初期化済みの場合にModified Files出力とpatch生成
+  local MoteDiff = require("vibing.core.utils.mote_diff")
   local using_mote = mote_config ~= nil
     and (config.diff.tool == "mote" or config.diff.tool == "auto")
-    and MoteDiff.is_initialized(nil, mote_config.storage_dir)
+    and MoteDiff.is_initialized(mote_config.project, mote_config.context)
 
   if using_mote then
     MoteDiff.get_changed_files(mote_config, function(success, files, error)
       if success and files and #files > 0 then
-        -- Patch生成（mote storage配下に保存）
-        -- Use session-specific storage_dir directly from mote_config to support custom storage directories
-        local storage_base = vim.fn.fnamemodify(mote_config.storage_dir, ":p"):gsub("/$", "")
+        -- Patch生成（mote v0.2.0: プロジェクト/コンテキスト配下に保存）
+        local Git = require("vibing.core.utils.git")
+        local git_root = Git.get_root()
+        local base_storage_dir = config.diff and config.diff.mote and config.diff.mote.storage_dir or ".vibing/mote"
+
+        -- プロジェクト名とコンテキスト名からパスを構築
+        local project_name = mote_config.project or "default"
+        local context_name = mote_config.context or "default"
+        local storage_base = git_root and (git_root .. "/" .. base_storage_dir .. "/" .. project_name .. "/" .. context_name) or (base_storage_dir .. "/" .. project_name .. "/" .. context_name)
+        storage_base = vim.fn.fnamemodify(storage_base, ":p"):gsub("/$", "")
+
         local timestamp = os.date("%Y%m%d_%H%M%S")
         local patch_path = string.format("%s/patches/%s.patch", storage_base, timestamp)
 
@@ -295,32 +264,16 @@ function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
     return nil
   end
 
-  -- session_idがない場合はbufnrベースのIDを使用
-  local mote_session_id = session_id
-  if not mote_session_id then
-    if bufnr then
-      mote_session_id = "_buffer_" .. tostring(bufnr)
-    else
-      -- bufnrもない場合はタイムスタンプベースのID
-      mote_session_id = "_temp_" .. tostring(os.time()) .. "_" .. tostring(math.random(10000, 99999))
-    end
-  end
-
   local MoteDiff = require("vibing.core.utils.mote_diff")
   local mote_config = vim.deepcopy(config.diff.mote)
-  -- mote v0.2.0: worktree分離対応（cwdからworktreeを判定して適切なパスを生成）
-  local relative_storage_dir = MoteDiff.build_session_storage_dir(mote_config.storage_dir, session_cwd)
 
-  -- プロジェクトルートからの絶対パスに変換
-  local Git = require("vibing.core.utils.git")
-  local git_root = Git.get_root()
-  if git_root then
-    mote_config.storage_dir = git_root .. "/" .. relative_storage_dir
-  else
-    mote_config.storage_dir = relative_storage_dir
-  end
+  -- mote v0.2.0: --project/--context APIを使用
+  -- プロジェクト名（設定 or 自動検出）
+  mote_config.project = mote_config.project or MoteDiff.get_project_name()
 
-  mote_config.mote_session_id = mote_session_id -- patch_path生成用に保存
+  -- コンテキスト名生成（worktree分離対応）
+  local context_prefix = mote_config.context_prefix or "vibing"
+  mote_config.context = MoteDiff.build_context_name(context_prefix, session_cwd)
 
   -- worktreeで作業する場合はcwdを設定
   -- moteコマンドはこのcwdで実行され、worktree内のファイルのみを追跡する
@@ -382,7 +335,7 @@ function M._ensure_mote_initialized_and_snapshot(mote_config, diff_config, on_co
     end)
   end
 
-  if MoteDiff.is_initialized(nil, mote_config.storage_dir) then
+  if MoteDiff.is_initialized(mote_config.project, mote_config.context) then
     create_snapshot()
     return
   end
