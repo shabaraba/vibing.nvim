@@ -34,6 +34,7 @@ function M.build_context_name(context_prefix, cwd)
 end
 
 ---gitリポジトリ名からプロジェクト名を取得
+---moteのコンテキスト命名ルールに従ってサニタイズ
 ---@return string|nil プロジェクト名（取得できない場合nil）
 function M.get_project_name()
   local Git = require("vibing.core.utils.git")
@@ -42,8 +43,14 @@ function M.get_project_name()
     return nil
   end
 
-  -- git rootディレクトリ名を使用
-  return vim.fn.fnamemodify(git_root, ":t")
+  -- git rootディレクトリ名を使用し、mote命名ルールに従ってサニタイズ
+  -- ASCII文字、数字、ハイフン、アンダースコアのみ許可（ドットは除外）
+  local project_name = vim.fn.fnamemodify(git_root, ":t")
+  return project_name
+    :gsub("[^%w%-_]+", "-")  -- ASCII文字/数字/ハイフン/アンダースコア以外を"-"に置換
+    :gsub("%-+", "-")         -- 連続するハイフンを1つに
+    :gsub("^%-", "")          -- 先頭のハイフンを削除
+    :gsub("%-$", "")          -- 末尾のハイフンを削除
 end
 
 ---プラットフォームに応じたmoteバイナリパスを取得
