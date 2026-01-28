@@ -10,7 +10,7 @@ import path from 'path';
 import https from 'https';
 import { spawn } from 'child_process';
 
-const MOTE_VERSION = 'v0.1.1';
+const MOTE_VERSION = 'v0.2.0';
 const MOTE_REPO = 'shabaraba/mote';
 const BIN_DIR = path.join(process.cwd(), 'bin');
 
@@ -148,6 +148,17 @@ async function downloadAndExtract(platformKey) {
 
 async function downloadAllPlatforms() {
   console.log('[vibing.nvim] Downloading mote binaries for all platforms...\n');
+
+  // Clean up existing binaries to prevent version mismatch
+  console.log('[vibing.nvim] Cleaning up old binaries...');
+  for (const platformKey of Object.keys(PLATFORM_MAP)) {
+    const outputPath = path.join(BIN_DIR, `mote-${platformKey}`);
+    if (fs.existsSync(outputPath)) {
+      fs.unlinkSync(outputPath);
+      console.log(`[vibing.nvim]   Removed: ${outputPath}`);
+    }
+  }
+  console.log();
 
   for (const platformKey of Object.keys(PLATFORM_MAP)) {
     try {

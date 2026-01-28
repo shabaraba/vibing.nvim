@@ -30,11 +30,12 @@ require("vibing").setup({
   diff = {
     tool = "auto",  -- "git" | "mote" | "auto"
     -- "git": Always use git diff
-    -- "mote": Always use mote diff (requires mote: https://github.com/shabaraba/mote)
+    -- "mote": Always use mote diff (requires mote v0.2.0+: https://github.com/shabaraba/mote)
     -- "auto": Use mote if available and initialized, otherwise fallback to git
     mote = {
       ignore_file = ".vibing/.moteignore",  -- Path to .moteignore file
-      storage_dir = ".vibing/mote",  -- Path to mote storage directory
+      project = nil,  -- Project name (nil = auto-detect from git repo name)
+      context_prefix = "vibing",  -- Context name prefix (default: "vibing")
     },
   },
   permissions = {
@@ -123,17 +124,9 @@ require("vibing").setup({
 })
 ```
 
-## Diff Tool Configuration
+## Mote Integration
 
-vibing.nvim supports multiple diff tools for displaying file changes:
-
-### Tool Options
-
-- **`git`**: Always use `git diff` (default behavior, requires git repository)
-- **`mote`**: Always use `mote diff` (requires [mote](https://github.com/shabaraba/mote) to be installed and initialized)
-- **`auto`**: Automatically select the best available tool (mote preferred, fallback to git)
-
-### mote Integration
+vibing.nvim uses mote for displaying file changes and tracking modifications.
 
 [mote](https://github.com/shabaraba/mote) is a fine-grained snapshot management tool that provides richer diff capabilities than git. It tracks changes at a more granular level than git commits.
 
@@ -169,42 +162,47 @@ The `build.sh` script downloads mote binaries for all supported platforms:
 
 **Priority:** vibing.nvim uses its bundled mote binary preferentially, falling back to system `mote` only if the bundled binary is unavailable.
 
-**Setup:**
+**Setup (mote v0.2.0+ --project/--context API):**
 
 ```bash
-# Initialize mote in vibing.nvim's storage directory (matches storage_dir config)
-mote --storage-dir .vibing/mote init
+# Initialize mote context (with project-local storage)
+# For project root
+mote --project vibing-nvim context new vibing-root --context-dir .vibing/mote/vibing-nvim/vibing-root
+
+# For worktree (e.g., feature-x branch)
+mote --project vibing-nvim context new vibing-worktree-feature-x --context-dir .vibing/mote/vibing-nvim/vibing-worktree-feature-x
 
 # Create snapshots (automatically or manually)
-mote --storage-dir .vibing/mote snapshot -m "Before refactoring"
+mote --project vibing-nvim --context vibing-root snapshot -m "Before refactoring"
 ```
 
-**Note:** Running `mote init` without `--storage-dir` uses mote's default storage location (`.mote/` in project root), which does NOT match vibing.nvim's configured `storage_dir = ".vibing/mote"`. Always use `--storage-dir .vibing/mote` to ensure mote commands work with vibing.nvim's configuration.
+**Note:** vibing.nvim automatically manages contexts per session with project-local storage:
+
+- Project root: `.vibing/mote/<project>/vibing-root/`
+- Worktrees: `.vibing/mote/<project>/vibing-worktree-<branch>/`
+- Patch files: `.vibing/mote/<project>/<context>/patches/`
+
+Each context is isolated to prevent cross-worktree diff pollution.
 
 **Configuration:**
 
 ```lua
 require("vibing").setup({
-  diff = {
-    tool = "auto",  -- Automatically use mote if available
-    mote = {
-      ignore_file = ".vibing/.moteignore",
-      storage_dir = ".vibing/mote",
-    },
+  mote = {
+    ignore_file = ".vibing/.moteignore",
+    project = nil,  -- nil = auto-detect from git repo name
+    context_prefix = "vibing",  -- Context name prefix
   },
 })
 ```
 
-**Important:** All mote commands use the specified `--ignore-file` and `--storage-dir` options to keep mote data separate from your main project. This prevents interference with your regular mote workflow.
+**Important:** All mote commands use the specified `--project` and `--context` options (mote v0.2.0+ API). This keeps mote data separate from your main project and prevents interference with your regular mote workflow.
 
 **Behavior:**
 
 - When you press `gd` on a file path in chat, vibing.nvim will:
   1. Check for patch files (if using Agent SDK patch mode)
-  2. If no patch files, use the configured diff tool:
-     - `auto`: Use mote if installed and initialized, otherwise git
-     - `mote`: Always use mote (shows error if not available)
-     - `git`: Always use git diff
+  2. If no patch files, use mote to display the diff
 
 **Benefits of mote:**
 

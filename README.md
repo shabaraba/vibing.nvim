@@ -11,7 +11,7 @@
 [![Release](https://img.shields.io/github/v/release/shabaraba/vibing.nvim)](https://github.com/shabaraba/vibing.nvim/releases)
 
 A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Agent SDK, bringing
-intelligent chat conversations and context-aware inline code actions directly into your editor.
+intelligent chat conversations and context-aware inline code actions directly into your editor..
 
 English | [日本語](./README.ja.md)
 
@@ -1103,4 +1103,4 @@ MIT License - see LICENSE file for details
 
 ---
 
-Made with ❤️ using Claude Code
+Made with ❤️ using Claude Code!

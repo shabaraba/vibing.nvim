@@ -149,6 +149,8 @@ local function setup_environment(worktree_path)
     "jest.config.*",
     "vitest.config.*",
     ".editorconfig",
+    ".vibing/.moteignore",  -- mote ignore patterns for worktree isolation
+    ".vibing/system-prompt.md",  -- vibing.nvim system prompt
   }
 
   local errors = {}
@@ -172,6 +174,25 @@ local function setup_environment(worktree_path)
       if vim.v.shell_error ~= 0 then
         table.insert(errors, string.format("Failed to copy %s: %s", relative_path, result))
       end
+    end
+  end
+
+  -- .vibing/system-prompt.mdが存在しない場合は空ファイルを作成
+  local system_prompt_path = worktree_path .. "/.vibing/system-prompt.md"
+  if vim.fn.filereadable(system_prompt_path) == 0 then
+    -- .vibingディレクトリが存在しない場合は作成
+    local vibing_dir = worktree_path .. "/.vibing"
+    if vim.fn.isdirectory(vibing_dir) == 0 then
+      vim.fn.mkdir(vibing_dir, "p")
+    end
+
+    -- 空のsystem-prompt.mdを作成
+    local file = io.open(system_prompt_path, "w")
+    if file then
+      file:write("# System Prompt\n\n<!-- Add your custom system prompt here -->\n")
+      file:close()
+    else
+      table.insert(errors, "Failed to create .vibing/system-prompt.md")
     end
   end
 

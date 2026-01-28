@@ -1,8 +1,9 @@
 ---@class Vibing.MoteConfig
 ---mote統合設定
----fine-grainedスナップショット管理ツールmoteとの統合を制御
+---fine-grainedスナップショット管理ツールmoteとの統合を制御（mote v0.2.0対応）
 ---@field ignore_file string .moteignoreファイルのパス（デフォルト: ".vibing/.moteignore"）
----@field storage_dir string moteストレージディレクトリのパス（デフォルト: ".vibing/mote"）
+---@field project string? プロジェクト名（省略時はリポジトリ名を自動検出）
+---@field context_prefix string コンテキスト名のプレフィックス（デフォルト: "vibing"）
 
 ---@class Vibing.DiffConfig
 ---diff表示設定
@@ -263,12 +264,10 @@ M.defaults = {
     open_diff = "gd",
     open_file = "gf",
   },
-  diff = {
-    tool = "auto",
-    mote = {
-      ignore_file = ".vibing/.moteignore",
-      storage_dir = ".vibing/mote",
-    },
+  mote = {
+    ignore_file = ".vibing/.moteignore",
+    project = nil,  -- nil = auto-detect from git repo name
+    context_prefix = "vibing",
   },
   preview = {
     enabled = false,

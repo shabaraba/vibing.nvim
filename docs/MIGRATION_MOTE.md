@@ -48,10 +48,14 @@ To enable mote-based diff functionality:
    cargo install --path .
    ```
 
-2. **Initialize mote** in your project (one-time setup)
+2. **Initialize mote** in your project (one-time setup, mote v0.2.0+)
 
    ```bash
-   mote --storage-dir .vibing/mote init
+   # For project root (with project-local storage)
+   mote --project <project-name> context new vibing-root --context-dir .vibing/mote/<project-name>/vibing-root
+
+   # For worktree (e.g., feature-x branch)
+   mote --project <project-name> context new vibing-worktree-feature-x --context-dir .vibing/mote/<project-name>/vibing-worktree-feature-x
    ```
 
 3. **Configure vibing.nvim** (recommended settings)
@@ -61,7 +65,8 @@ To enable mote-based diff functionality:
        tool = "auto",  -- Use mote if available, fallback to git
        mote = {
          ignore_file = ".vibing/.moteignore",
-         storage_dir = ".vibing/mote",
+         project = nil,  -- nil = auto-detect from git repo name
+         context_prefix = "vibing",  -- Context name prefix
        },
      },
    })
@@ -99,49 +104,62 @@ require("vibing").setup({
 })
 ```
 
-## Session Storage Structure
+## Session Storage Structure (mote v0.2.0+)
 
-With mote integration, each chat session maintains isolated storage:
+With mote integration, each chat session maintains isolated contexts with project-local storage:
 
-```
+```text
 .vibing/
 ├── mote/
-│   ├── <session-id-1>/
-│   │   ├── snapshots/
-│   │   ├── objects/
-│   │   └── patches/
-│   │       └── 20250121_143000.patch
-│   ├── <session-id-2>/
-│   │   ├── snapshots/
-│   │   ├── objects/
-│   │   └── patches/
-│   └── .moteignore (auto-generated)
+│   └── <project-name>/
+│       ├── vibing-root/
+│       │   ├── snapshots/
+│       │   ├── objects/
+│       │   └── patches/
+│       │       └── 20250128_092023.patch
+│       └── vibing-worktree-feature-x/
+│           ├── snapshots/
+│           ├── objects/
+│           └── patches/
 ```
+
+**Note:** vibing.nvim uses `--context-dir` to store mote data in `.vibing/mote/<project>/<context>` (project-local storage). The context names are:
+
+- Project root: `vibing-root`
+- Worktrees: `vibing-worktree-<branch>`
 
 **Benefits:**
 
-- Session isolation - Changes in different chat sessions don't interfere
-- Automatic cleanup - Old session storage can be safely removed
+- Session isolation - Changes in different contexts don't interfere
+- Automatic cleanup - Old contexts can be safely removed with `mote context delete`
 - Fine-grained history - More granular than git commits
 
 ## Troubleshooting
 
 ### "mote not initialized" error
 
-**Solution:** Initialize mote in your project:
+**Solution:** Initialize mote context in your project (mote v0.2.0+):
 
 ```bash
-mote --storage-dir .vibing/mote init
+# For project root (with project-local storage)
+mote --project <project-name> context new vibing-root --context-dir .vibing/mote/<project-name>/vibing-root
+
+# For worktree (e.g., feature-x)
+mote --project <project-name> context new vibing-worktree-feature-x --context-dir .vibing/mote/<project-name>/vibing-worktree-feature-x
 ```
 
 ### "No mote snapshot found" when pressing `gd`
 
 **Cause:** The file hasn't been modified since the last snapshot.
 
-**Solution:** Make changes to the file, or manually create a snapshot:
+**Solution:** Make changes to the file, or manually create a snapshot (mote v0.2.0+):
 
 ```bash
-mote --storage-dir .vibing/mote snapshot -m "Manual snapshot"
+# For project root
+mote --project <project-name> --context vibing-root snapshot -m "Manual snapshot"
+
+# For worktree
+mote --project <project-name> --context vibing-worktree-<branch> snapshot -m "Manual snapshot"
 ```
 
 ### Old patches not visible with `gd`

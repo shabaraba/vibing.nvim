@@ -142,7 +142,7 @@ function M.execute(adapter, callbacks, message, config)
   -- mote統合が有効な場合は初期化とsnapshotを待ってから送信
   -- 無効な場合は即座に送信
   if mote_config then
-    M._ensure_mote_initialized_and_snapshot(mote_config, config.diff, function()
+    M._ensure_mote_initialized_and_snapshot(mote_config, function()
       vim.schedule(do_send)
     end)
   else
@@ -194,55 +194,24 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
     end
   end
 
-  -- mote統合: session_idが確定したら一時ディレクトリをリネーム
-  local MoteDiff = require("vibing.core.utils.mote_diff")
-  if mote_config and new_session_id then
-    local is_temp_id = mote_config.mote_session_id and (
-      mote_config.mote_session_id:match("^_buffer_") or
-      mote_config.mote_session_id:match("^_temp_")
-    )
-    if is_temp_id then
-      local base_storage_dir = config.diff and config.diff.mote and config.diff.mote.storage_dir or ".vibing/mote"
-      local new_storage_dir, rename_success = MoteDiff.rename_storage_dir(
-        mote_config.storage_dir,
-        new_session_id,
-        base_storage_dir
-      )
-      -- mote_configを更新（リネーム成功/失敗に関わらず新しいパスを使用）
-      if rename_success then
-        mote_config.storage_dir = new_storage_dir
-        mote_config.mote_session_id = new_session_id
-      else
-        -- リネーム失敗時も新しいパスを記録（patch生成時に使用）
-        mote_config.storage_dir = new_storage_dir
-        mote_config.mote_session_id = new_session_id
-        vim.notify(
-          string.format(
-            "[vibing] Failed to rename mote storage directory.\n" ..
-            "Old: %s\nNew: %s\n" ..
-            "Continuing with new path...",
-            vim.fn.fnamemodify(mote_config.storage_dir, ":."),
-            vim.fn.fnamemodify(new_storage_dir, ":.")
-          ),
-          vim.log.levels.WARN
-        )
-      end
-    end
-  end
+  -- mote v0.2.0: --project/--context APIではコンテキスト名は最初から確定しているためリネーム不要
 
-  -- mote統合: config.diff.toolが適切に設定され、mote_configが存在し、初期化済みの場合にModified Files出力とpatch生成
-  local using_mote = mote_config ~= nil
-    and (config.diff.tool == "mote" or config.diff.tool == "auto")
-    and MoteDiff.is_initialized(nil, mote_config.storage_dir)
+  -- mote統合: mote_configが存在し、初期化済みの場合にModified Files出力とpatch生成
+  local MoteDiff = require("vibing.core.utils.mote_diff")
+  local using_mote = mote_config ~= nil and MoteDiff.is_initialized(mote_config.project, mote_config.context)
 
   if using_mote then
     MoteDiff.get_changed_files(mote_config, function(success, files, error)
       if success and files and #files > 0 then
-        -- Patch生成（mote storage配下に保存）
-        -- Use session-specific storage_dir directly from mote_config to support custom storage directories
-        local storage_base = vim.fn.fnamemodify(mote_config.storage_dir, ":p"):gsub("/$", "")
+        -- Patch生成（mote v0.2.0: プロジェクトローカルのcontext-dir配下に保存）
+        local context_dir = MoteDiff.build_context_dir_path(mote_config.project, mote_config.context)
+        if not context_dir then
+          vim.notify("[vibing] Failed to generate patch: git root not found", vim.log.levels.WARN)
+          return
+        end
+
         local timestamp = os.date("%Y%m%d_%H%M%S")
-        local patch_path = string.format("%s/patches/%s.patch", storage_base, timestamp)
+        local patch_path = string.format("%s/patches/%s.patch", context_dir, timestamp)
 
         MoteDiff.generate_patch(mote_config, patch_path, function(patch_success, patch_error)
           if not patch_success then
@@ -282,28 +251,23 @@ end
 ---@param config table 全体設定
 ---@param session_id string|nil セッションID
 ---@param bufnr number|nil バッファ番号（session_idがない場合のfallback用）
----@param session_cwd string|nil worktreeのcwd（worktreeで作業する場合のみ）
+---@param session_cwd string|nil worktreeのcwd（worktreeで作業する場合のみ、worktree判定用）
 ---@return table|nil セッション固有のmote設定（mote未設定の場合nil）
 function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
-  if not config.diff or not config.diff.mote then
+  if not config.mote then
     return nil
   end
 
-  -- session_idがない場合はbufnrベースのIDを使用
-  local mote_session_id = session_id
-  if not mote_session_id then
-    if bufnr then
-      mote_session_id = "_buffer_" .. tostring(bufnr)
-    else
-      -- bufnrもない場合はタイムスタンプベースのID
-      mote_session_id = "_temp_" .. tostring(os.time()) .. "_" .. tostring(math.random(10000, 99999))
-    end
-  end
-
   local MoteDiff = require("vibing.core.utils.mote_diff")
-  local mote_config = vim.deepcopy(config.diff.mote)
-  mote_config.storage_dir = MoteDiff.build_session_storage_dir(mote_config.storage_dir, mote_session_id)
-  mote_config.mote_session_id = mote_session_id  -- patch_path生成用に保存
+  local mote_config = vim.deepcopy(config.mote)
+
+  -- mote v0.2.0: --project/--context APIを使用
+  -- プロジェクト名（設定 or 自動検出）
+  mote_config.project = mote_config.project or MoteDiff.get_project_name()
+
+  -- コンテキスト名生成（worktree分離対応）
+  local context_prefix = mote_config.context_prefix or "vibing"
+  mote_config.context = MoteDiff.build_context_name(context_prefix, session_cwd)
 
   -- worktreeで作業する場合はcwdを設定
   -- moteコマンドはこのcwdで実行され、worktree内のファイルのみを追跡する
@@ -320,14 +284,8 @@ local MOTE_INIT_TIMEOUT_MS = 10000
 ---mote storageの初期化を確認し、スナップショットを作成
 ---タイムアウト処理とエラーハンドリングを含む
 ---@param mote_config table セッション固有のmote設定
----@param diff_config table diff設定
 ---@param on_complete fun() 完了時のコールバック
-function M._ensure_mote_initialized_and_snapshot(mote_config, diff_config, on_complete)
-  if diff_config.tool ~= "mote" and diff_config.tool ~= "auto" then
-    on_complete()
-    return
-  end
-
+function M._ensure_mote_initialized_and_snapshot(mote_config, on_complete)
   local MoteDiff = require("vibing.core.utils.mote_diff")
   if not MoteDiff.is_available() then
     on_complete()
@@ -365,13 +323,13 @@ function M._ensure_mote_initialized_and_snapshot(mote_config, diff_config, on_co
     end)
   end
 
-  if MoteDiff.is_initialized(nil, mote_config.storage_dir) then
+  if MoteDiff.is_initialized(mote_config.project, mote_config.context) then
     create_snapshot()
     return
   end
 
   MoteDiff.initialize(mote_config, function(init_success, init_error)
-    if completed then return end  -- Already timed out
+    if completed then return end -- Already timed out
     if not init_success then
       vim.notify("[vibing] mote initialization failed: " .. (init_error or "Unknown error"), vim.log.levels.WARN)
       complete_once()
