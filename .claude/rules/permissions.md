@@ -8,7 +8,7 @@ vibing.nvim provides comprehensive permission control over what tools Claude can
 require("vibing").setup({
   permissions = {
     mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
-    allow = { "Read", "Edit", "Write", "Glob", "Grep" },
+    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill" },
     deny = { "Bash" },
   },
 })
@@ -27,7 +27,7 @@ require("vibing").setup({
 - If allow list is empty, all tools except denied ones are allowed
 - Denied tools will return an error message when Claude attempts to use them
 
-**Available Tools:** Read, Edit, Write, Bash, Glob, Grep, WebSearch, WebFetch
+**Available Tools:** Read, Edit, Write, Bash, Glob, Grep, WebSearch, WebFetch, Skill
 
 ## Permission System Layers
 
@@ -117,7 +117,7 @@ Use the `/permissions` (or `/perm`) slash command in chat to interactively confi
 
 This launches an interactive UI that guides you through:
 
-1. Selecting a tool (Read, Edit, Write, Bash, etc.)
+1. Selecting a tool (Read, Edit, Write, Bash, Skill, etc.)
 2. Choosing allow or deny
 3. Optionally specifying Bash command patterns
 4. Automatically updating chat frontmatter

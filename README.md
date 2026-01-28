@@ -393,6 +393,7 @@ permissions = {
     "Write",   -- Write new files
     "Glob",    -- Search files by pattern
     "Grep",    -- Search file contents
+    "Skill",   -- Use skills (slash commands and workflows)
   },
   deny = {
     "Bash",    -- Block shell commands (security)
@@ -420,7 +421,7 @@ require("vibing").setup({
     default_model = "opus",  -- Use most capable model
   },
   permissions = {
-    allow = { "Read", "Edit", "Write", "Glob", "Grep", "WebSearch" },
+    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "WebSearch" },
     deny = {},  -- Allow all tools
   },
   preview = {

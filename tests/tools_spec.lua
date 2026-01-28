@@ -18,6 +18,8 @@ describe("vibing.constants.tools", function()
       assert.equal("Grep", tools.validate_tool("grep"))
       assert.equal("WebSearch", tools.validate_tool("websearch"))
       assert.equal("WebFetch", tools.validate_tool("webfetch"))
+      assert.equal("Skill", tools.validate_tool("skill"))
+      assert.equal("Skill", tools.validate_tool("Skill"))
     end)
 
     it("returns nil for invalid tool names", function()
