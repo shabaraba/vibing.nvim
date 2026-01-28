@@ -277,6 +277,21 @@ function M.show_diff(file_path, config)
   end)
 end
 
+---プロジェクトローカルのcontext-dirパスを生成
+---@param project string|nil プロジェクト名
+---@param context string コンテキスト名
+---@return string|nil context-dirのパス（git rootが取得できない場合nil）
+function M.build_context_dir_path(project, context)
+  local Git = require("vibing.core.utils.git")
+  local git_root = Git.get_root()
+  if not git_root then
+    return nil
+  end
+
+  local project_name = project or "default"
+  return git_root .. "/.vibing/mote/" .. project_name .. "/" .. context
+end
+
 ---mote storageを初期化
 ---@param config Vibing.MoteConfig mote設定（cwdフィールドを含む）
 ---@param callback fun(success: boolean, error: string?) コールバック関数
@@ -295,9 +310,16 @@ function M.initialize(config, callback)
     return
   end
 
-  -- mote context newを実行してコンテキストを作成
-  local cmd = { M.get_mote_path() }
+  -- プロジェクトローカルのcontext-dirパスを生成
   local project = config.project or M.get_project_name()
+  local context_dir = M.build_context_dir_path(project, config.context)
+  if not context_dir then
+    callback(false, "Failed to get git root directory")
+    return
+  end
+
+  -- mote context new <context-name> --context-dir <path>を実行
+  local cmd = { M.get_mote_path() }
   if project then
     table.insert(cmd, "--project")
     table.insert(cmd, project)
@@ -305,6 +327,8 @@ function M.initialize(config, callback)
   table.insert(cmd, "context")
   table.insert(cmd, "new")
   table.insert(cmd, config.context)
+  table.insert(cmd, "--context-dir")
+  table.insert(cmd, context_dir)
 
   run_mote_command(cmd, config.cwd, function()
     callback(true, nil)

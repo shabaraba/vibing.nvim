@@ -51,11 +51,11 @@ To enable mote-based diff functionality:
 2. **Initialize mote** in your project (one-time setup, mote v0.2.0+)
 
    ```bash
-   # For project root
-   mote --project <project-name> context new vibing-root
+   # For project root (with project-local storage)
+   mote --project <project-name> context new vibing-root --context-dir .vibing/mote/<project-name>/vibing-root
 
    # For worktree (e.g., feature-x branch)
-   mote --project <project-name> context new vibing-worktree-feature-x
+   mote --project <project-name> context new vibing-worktree-feature-x --context-dir .vibing/mote/<project-name>/vibing-worktree-feature-x
    ```
 
 3. **Configure vibing.nvim** (recommended settings)
@@ -106,23 +106,24 @@ require("vibing").setup({
 
 ## Session Storage Structure (mote v0.2.0+)
 
-With mote integration, each chat session maintains isolated contexts:
+With mote integration, each chat session maintains isolated contexts with project-local storage:
 
 ```
-~/.mote/
-├── <project-name>/
-│   ├── vibing-root/
-│   │   ├── snapshots/
-│   │   ├── objects/
-│   │   └── patches/
-│   │       └── 20250121_143000.patch
-│   └── vibing-worktree-feature-x/
-│       ├── snapshots/
-│       ├── objects/
-│       └── patches/
+.vibing/
+├── mote/
+│   └── <project-name>/
+│       ├── vibing-root/
+│       │   ├── snapshots/
+│       │   ├── objects/
+│       │   └── patches/
+│       │       └── 20250128_092023.patch
+│       └── vibing-worktree-feature-x/
+│           ├── snapshots/
+│           ├── objects/
+│           └── patches/
 ```
 
-**Note:** mote v0.2.0+ stores data in `~/.mote/<project>/<context>` by default. The context names are:
+**Note:** vibing.nvim uses `--context-dir` to store mote data in `.vibing/mote/<project>/<context>` (project-local storage). The context names are:
 
 - Project root: `vibing-root`
 - Worktrees: `vibing-worktree-<branch>`
@@ -140,11 +141,11 @@ With mote integration, each chat session maintains isolated contexts:
 **Solution:** Initialize mote context in your project (mote v0.2.0+):
 
 ```bash
-# For project root
-mote --project <project-name> context new vibing-root
+# For project root (with project-local storage)
+mote --project <project-name> context new vibing-root --context-dir .vibing/mote/<project-name>/vibing-root
 
 # For worktree (e.g., feature-x)
-mote --project <project-name> context new vibing-worktree-feature-x
+mote --project <project-name> context new vibing-worktree-feature-x --context-dir .vibing/mote/<project-name>/vibing-worktree-feature-x
 ```
 
 ### "No mote snapshot found" when pressing `gd`

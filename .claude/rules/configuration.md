@@ -173,22 +173,24 @@ The `build.sh` script downloads mote binaries for all supported platforms:
 **Setup (mote v0.2.0+ --project/--context API):**
 
 ```bash
-# Initialize mote context
+# Initialize mote context (with project-local storage)
 # For project root
-mote --project vibing-nvim context new vibing-root
+mote --project vibing-nvim context new vibing-root --context-dir .vibing/mote/vibing-nvim/vibing-root
 
 # For worktree (e.g., feature-x branch)
-mote --project vibing-nvim context new vibing-worktree-feature-x
+mote --project vibing-nvim context new vibing-worktree-feature-x --context-dir .vibing/mote/vibing-nvim/vibing-worktree-feature-x
 
 # Create snapshots (automatically or manually)
 mote --project vibing-nvim --context vibing-root snapshot -m "Before refactoring"
 ```
 
-**Note:** vibing.nvim automatically manages contexts per session:
+**Note:** vibing.nvim automatically manages contexts per session with project-local storage:
 
-- Project root: `vibing-root`
-- Worktrees: `vibing-worktree-<branch>`
-  Each context is isolated to prevent cross-worktree diff pollution.
+- Project root: `.vibing/mote/<project>/vibing-root/`
+- Worktrees: `.vibing/mote/<project>/vibing-worktree-<branch>/`
+- Patch files: `.vibing/mote/<project>/<context>/patches/`
+
+Each context is isolated to prevent cross-worktree diff pollution.
 
 **Configuration:**
 

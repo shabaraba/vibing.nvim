@@ -205,19 +205,15 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
   if using_mote then
     MoteDiff.get_changed_files(mote_config, function(success, files, error)
       if success and files and #files > 0 then
-        -- Patch生成（mote v0.2.0: プロジェクト/コンテキスト配下に保存）
-        local Git = require("vibing.core.utils.git")
-        local git_root = Git.get_root()
-        local base_storage_dir = config.diff and config.diff.mote and config.diff.mote.storage_dir or ".vibing/mote"
-
-        -- プロジェクト名とコンテキスト名からパスを構築
-        local project_name = mote_config.project or "default"
-        local context_name = mote_config.context or "default"
-        local storage_base = git_root and (git_root .. "/" .. base_storage_dir .. "/" .. project_name .. "/" .. context_name) or (base_storage_dir .. "/" .. project_name .. "/" .. context_name)
-        storage_base = vim.fn.fnamemodify(storage_base, ":p"):gsub("/$", "")
+        -- Patch生成（mote v0.2.0: プロジェクトローカルのcontext-dir配下に保存）
+        local context_dir = MoteDiff.build_context_dir_path(mote_config.project, mote_config.context)
+        if not context_dir then
+          vim.notify("[vibing] Failed to generate patch: git root not found", vim.log.levels.WARN)
+          return
+        end
 
         local timestamp = os.date("%Y%m%d_%H%M%S")
-        local patch_path = string.format("%s/patches/%s.patch", storage_base, timestamp)
+        local patch_path = string.format("%s/patches/%s.patch", context_dir, timestamp)
 
         MoteDiff.generate_patch(mote_config, patch_path, function(patch_success, patch_error)
           if not patch_success then
