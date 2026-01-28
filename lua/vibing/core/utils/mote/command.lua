@@ -11,10 +11,10 @@ function M.build_base_args(config)
   local Binary = require("vibing.core.utils.mote.binary")
   local Context = require("vibing.core.utils.mote.context")
 
-  local abs_ignore_file = vim.fn.fnamemodify(config.ignore_file, ":p")
-  local cmd = { Binary.get_path(), "--ignore-file", abs_ignore_file }
+  local cmd = { Binary.get_path() }
 
   -- -d/--context-dirでスタンドアロンモード
+  -- mote v0.2.1では初回実行時に自動的にディレクトリ構造とignoreファイルを作成
   local project = config.project or Context.get_project_name()
   local context_dir = Context.build_dir_path(project, config.context)
   if context_dir then

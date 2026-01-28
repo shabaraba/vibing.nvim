@@ -31,14 +31,11 @@ end
 function M.get_diff(file_path, config, callback)
   local Binary = require("vibing.core.utils.mote.binary")
   local Command = require("vibing.core.utils.mote.command")
-  local Moteignore = require("vibing.core.utils.mote.moteignore")
 
   if not Binary.is_available() then
     callback(false, nil, "mote binary not found")
     return
   end
-
-  Moteignore.ensure_exists(config.ignore_file)
 
   local cmd = Command.build_base_args(config)
   table.insert(cmd, "snap")
@@ -99,6 +96,8 @@ function M.show_diff(file_path, config)
 end
 
 ---mote storageを初期化
+---mote v0.2.1では-dオプションの初回実行時に自動初期化される
+---vibing.nvimは.vibing/をignoreに追加するのみ
 ---@param config Vibing.MoteConfig mote設定（cwdフィールドを含む）
 ---@param callback fun(success: boolean, error: string?) コールバック関数
 function M.initialize(config, callback)
@@ -112,9 +111,13 @@ function M.initialize(config, callback)
     return
   end
 
-  Moteignore.ensure_exists(config.ignore_file)
-
   if Context.is_initialized(config.project, config.context) then
+    -- 既に初期化済みの場合、.vibing/がignoreに含まれているか確認
+    local project = config.project or Context.get_project_name()
+    local context_dir = Context.build_dir_path(project, config.context)
+    if context_dir then
+      Moteignore.add_vibing_ignore(context_dir)
+    end
     callback(true, nil)
     return
   end
@@ -126,20 +129,21 @@ function M.initialize(config, callback)
     return
   end
 
-  -- mote v0.2.1: -d/--context-dirでスタンドアロンモード
-  -- context newは不要、ディレクトリ作成のみでOK
-  vim.fn.mkdir(context_dir, "p")
+  -- mote v0.2.1: -dオプションでの初回実行時に自動初期化
+  -- ダミーコマンドを実行して初期化をトリガー
+  local cmd = Command.build_base_args(config)
+  table.insert(cmd, "snap")
+  table.insert(cmd, "list")
 
-  -- config.tomlを作成（空でOK）
-  local config_path = context_dir .. "/config.toml"
-  local config_file = io.open(config_path, "w")
-  if config_file then
-    config_file:write("# vibing.nvim mote context\n")
-    config_file:close()
-  end
-
-  Moteignore.add_vibing_ignore(context_dir)
-  callback(true, nil)
+  Command.run(cmd, config.cwd, function()
+    -- 初期化完了後、.vibing/をignoreに追加
+    Moteignore.add_vibing_ignore(context_dir)
+    callback(true, nil)
+  end, function(error)
+    -- エラーでも初期化は成功している可能性があるので、ignoreは追加
+    Moteignore.add_vibing_ignore(context_dir)
+    callback(true, nil)
+  end)
 end
 
 ---mote snapshotを作成
@@ -149,14 +153,11 @@ end
 function M.create_snapshot(config, message, callback)
   local Binary = require("vibing.core.utils.mote.binary")
   local Command = require("vibing.core.utils.mote.command")
-  local Moteignore = require("vibing.core.utils.mote.moteignore")
 
   if not Binary.is_available() then
     callback(false, nil, "mote binary not found")
     return
   end
-
-  Moteignore.ensure_exists(config.ignore_file)
 
   local cmd = Command.build_base_args(config)
   table.insert(cmd, "snap")
@@ -182,14 +183,11 @@ end
 function M.get_changed_files(config, callback)
   local Binary = require("vibing.core.utils.mote.binary")
   local Command = require("vibing.core.utils.mote.command")
-  local Moteignore = require("vibing.core.utils.mote.moteignore")
 
   if not Binary.is_available() then
     callback(false, nil, "mote binary not found")
     return
   end
-
-  Moteignore.ensure_exists(config.ignore_file)
 
   local cmd = Command.build_base_args(config)
   table.insert(cmd, "snap")
@@ -210,14 +208,11 @@ end
 function M.generate_patch(config, output_path, callback)
   local Binary = require("vibing.core.utils.mote.binary")
   local Command = require("vibing.core.utils.mote.command")
-  local Moteignore = require("vibing.core.utils.mote.moteignore")
 
   if not Binary.is_available() then
     callback(false, "mote binary not found")
     return
   end
-
-  Moteignore.ensure_exists(config.ignore_file)
 
   local output_dir = vim.fn.fnamemodify(output_path, ":h")
   vim.fn.mkdir(output_dir, "p")
