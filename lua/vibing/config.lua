@@ -336,10 +336,11 @@ function M.setup(opts)
     end
   end
 
-  -- Auto-add "Skill" to permissions.allow if not already present and not in deny list
+  -- Auto-add "Skill" to permissions.allow if not already present and not in deny/ask lists
   if M.options.permissions and M.options.permissions.allow then
     local has_skill = false
     local is_denied = false
+    local is_ask = false
 
     -- Check if Skill is already in allow list
     for _, tool in ipairs(M.options.permissions.allow) do
@@ -359,8 +360,18 @@ function M.setup(opts)
       end
     end
 
-    -- Add Skill if not present and not denied
-    if not has_skill and not is_denied then
+    -- Check if Skill is in ask list (user wants confirmation before use)
+    if M.options.permissions.ask then
+      for _, tool in ipairs(M.options.permissions.ask) do
+        if tool == "Skill" then
+          is_ask = true
+          break
+        end
+      end
+    end
+
+    -- Add Skill if not present and not denied and not in ask list
+    if not has_skill and not is_denied and not is_ask then
       table.insert(M.options.permissions.allow, "Skill")
     end
   end
