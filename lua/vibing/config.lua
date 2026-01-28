@@ -275,7 +275,7 @@ M.defaults = {
   },
   permissions = {
     mode = "acceptEdits",
-    allow = { "Read", "Edit", "Write", "Glob", "Grep" },
+    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill" },
     deny = { "Bash" },
     ask = {},
     rules = {},
@@ -333,6 +333,46 @@ function M.setup(opts)
     if lazy_dev then
       M.options.node.dev_mode = true
       notify.info("[vibing.nvim] Detected Lazy.nvim dev mode - enabling TypeScript direct execution")
+    end
+  end
+
+  -- Auto-add "Skill" to permissions.allow if not already present and not in deny/ask lists
+  if M.options.permissions and M.options.permissions.allow then
+    local has_skill = false
+    local is_denied = false
+    local is_ask = false
+
+    -- Check if Skill is already in allow list
+    for _, tool in ipairs(M.options.permissions.allow) do
+      if tool == "Skill" then
+        has_skill = true
+        break
+      end
+    end
+
+    -- Check if Skill is in deny list
+    if M.options.permissions.deny then
+      for _, tool in ipairs(M.options.permissions.deny) do
+        if tool == "Skill" then
+          is_denied = true
+          break
+        end
+      end
+    end
+
+    -- Check if Skill is in ask list (user wants confirmation before use)
+    if M.options.permissions.ask then
+      for _, tool in ipairs(M.options.permissions.ask) do
+        if tool == "Skill" then
+          is_ask = true
+          break
+        end
+      end
+    end
+
+    -- Add Skill if not present and not denied and not in ask list
+    if not has_skill and not is_denied and not is_ask then
+      table.insert(M.options.permissions.allow, "Skill")
     end
   end
 

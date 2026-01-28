@@ -391,6 +391,7 @@ permissions = {
     "Write",   -- 新しいファイルを書く
     "Glob",    -- パターンでファイルを検索
     "Grep",    -- ファイル内容を検索
+    "Skill",   -- スキルを使用（スラッシュコマンドとワークフロー）
   },
   deny = {
     "Bash",    -- シェルコマンドをブロック（セキュリティ）
@@ -418,7 +419,7 @@ require("vibing").setup({
     default_model = "opus",  -- 最も能力の高いモデルを使用
   },
   permissions = {
-    allow = { "Read", "Edit", "Write", "Glob", "Grep", "WebSearch" },
+    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "WebSearch" },
     deny = {},  -- すべてのツールを許可
   },
   preview = {

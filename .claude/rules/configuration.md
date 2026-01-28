@@ -39,7 +39,7 @@ require("vibing").setup({
   },
   permissions = {
     mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
-    allow = { "Read", "Edit", "Write", "Glob", "Grep" },
+    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill" },
     deny = { "Bash" },
     rules = {},  -- Optional granular rules
   },
