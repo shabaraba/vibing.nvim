@@ -13,6 +13,7 @@ M.VALID_TOOLS = {
   "Grep",
   "WebSearch",
   "WebFetch",
+  "Skill",
 }
 
 ---有効なツール名のテーブル（高速検索用）
