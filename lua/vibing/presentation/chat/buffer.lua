@@ -448,6 +448,12 @@ function ChatBuffer:send_message()
     get_cwd = function()
       return self:get_cwd()
     end,
+    get_fork_source_session_id = function()
+      return self:get_fork_source_session_id()
+    end,
+    clear_fork_source_session_id = function()
+      return self:clear_fork_source_session_id()
+    end,
   }
 
   -- リクエストを送信（handle_idはコールバックで設定される）
