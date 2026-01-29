@@ -5,6 +5,7 @@ local M = {}
 local notify = require("vibing.core.utils.notify")
 local ChatSession = require("vibing.domain.chat.session")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
+local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 local Git = require("vibing.core.utils.git")
 
 ---ファイル名から-fork-N.vibingを生成
@@ -112,6 +113,14 @@ function M.execute(chat_buffer)
   local fork_path = save_dir .. fork_filename
 
   fork_session:set_file_path(fork_path)
+
+  -- 元チャットの会話履歴をフォークファイルにコピー
+  local source_content = vim.fn.readfile(chat_buffer.file_path)
+  local source_text = table.concat(source_content, "\n")
+  local _, body = Frontmatter.parse(source_text)
+
+  local fork_content = Frontmatter.serialize(fork_frontmatter, body)
+  vim.fn.writefile(vim.split(fork_content, "\n"), fork_path)
 
   return fork_session
 end
