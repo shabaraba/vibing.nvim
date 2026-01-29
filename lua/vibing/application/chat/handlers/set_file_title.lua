@@ -2,6 +2,8 @@ local notify = require("vibing.core.utils.notify")
 local title_generator = require("vibing.core.utils.title_generator")
 local filename_util = require("vibing.core.utils.filename")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
+local SyncManager = require("vibing.application.link.sync_manager")
+local DailySummaryScanner = require("vibing.infrastructure.link.daily_summary_scanner")
 
 ---@param file_path string?
 ---@return "chat"|"inline"
@@ -41,12 +43,23 @@ local function get_unique_file_path(dir, base_filename)
   local counter = 1
 
   while vim.fn.filereadable(new_path) == 1 do
-    local new_filename = string.format("%s_%d.vibing", name_without_ext, counter)
-    new_path = dir .. new_filename
+    new_path = dir .. string.format("%s_%d.vibing", name_without_ext, counter)
     counter = counter + 1
   end
 
   return new_path
+end
+
+---@param buf number
+---@return boolean ok
+---@return string? error
+local function save_buffer(buf)
+  local ok, err = pcall(function()
+    vim.api.nvim_buf_call(buf, function()
+      vim.cmd("write")
+    end)
+  end)
+  return ok, err
 end
 
 ---@param _ string[]
@@ -66,9 +79,9 @@ return function(_, chat_buffer)
 
   local old_file_path = chat_buffer.file_path
   local file_type = detect_file_type(old_file_path)
-  local vibing = require("vibing")
-  local config = vibing.get_config()
+  local config = require("vibing").get_config()
   local save_dir = FileManager.get_save_directory(config.chat)
+  local is_existing_file = old_file_path and vim.fn.filereadable(old_file_path) == 1
 
   title_generator.generate_from_conversation(conversation, function(title, err)
     if err then
@@ -90,13 +103,8 @@ return function(_, chat_buffer)
 
     local new_file_path = get_unique_file_path(save_dir, new_filename)
 
-    if old_file_path and vim.fn.filereadable(old_file_path) == 1 then
-      local ok, save_err = pcall(function()
-        vim.api.nvim_buf_call(chat_buffer.buf, function()
-          vim.cmd("write")
-        end)
-      end)
-
+    if is_existing_file then
+      local ok, save_err = save_buffer(chat_buffer.buf)
       if not ok then
         notify.error(string.format("Failed to save: %s", save_err))
         return
@@ -107,27 +115,43 @@ return function(_, chat_buffer)
         notify.error("Failed to rename file")
         return
       end
+    end
 
-      vim.api.nvim_buf_set_name(chat_buffer.buf, new_file_path)
-      chat_buffer.file_path = new_file_path
-    else
-      chat_buffer.file_path = new_file_path
-      vim.api.nvim_buf_set_name(chat_buffer.buf, new_file_path)
+    vim.api.nvim_buf_set_name(chat_buffer.buf, new_file_path)
+    chat_buffer.file_path = new_file_path
 
-      local ok, save_err = pcall(function()
-        vim.api.nvim_buf_call(chat_buffer.buf, function()
-          vim.cmd("write")
-        end)
-      end)
-
+    if not is_existing_file then
+      local ok, save_err = save_buffer(chat_buffer.buf)
       if not ok then
         notify.error(string.format("Failed to save: %s", save_err))
         return
       end
     end
 
-    local relative_path = vim.fn.fnamemodify(new_file_path, ":.")
-    notify.info(string.format("Renamed to: %s", relative_path))
+    notify.info(string.format("Renamed to: %s", vim.fn.fnamemodify(new_file_path, ":.")))
+
+    if is_existing_file then
+      local scanners = { DailySummaryScanner.new() }
+
+      -- Daily summaryのベースディレクトリを取得
+      -- config.daily_summary.save_dirが設定されている場合はそれを使用
+      local daily_base_dir
+      if config.daily_summary and config.daily_summary.save_dir then
+        daily_base_dir = config.daily_summary.save_dir
+      else
+        -- チャット保存ディレクトリから派生
+        daily_base_dir = save_dir
+      end
+
+      local result = SyncManager.sync_links(old_file_path, new_file_path, scanners, daily_base_dir)
+
+      if result.updated > 0 then
+        notify.info(string.format("Updated %d daily summary file(s)", result.updated), "Link Sync")
+      end
+      if result.failed > 0 then
+        notify.warn(string.format("Failed to update %d file(s)", result.failed), "Link Sync")
+      end
+    end
   end)
 
   return true
