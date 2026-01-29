@@ -125,12 +125,8 @@ function M.execute(adapter, callbacks, message, config)
       opts._session_id = callbacks.get_session_id()
       opts._session_id_explicit = true
 
-      local fork_source_id = callbacks.get_fork_source_session_id and callbacks.get_fork_source_session_id()
-      if fork_source_id then
-        opts._fork_source_session_id = fork_source_id
-        if callbacks.clear_fork_source_session_id then
-          callbacks.clear_fork_source_session_id()
-        end
+      if frontmatter.forked_from then
+        opts._is_fork = true
       end
     end
 
@@ -207,6 +203,10 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
     if new_session_id and new_session_id ~= callbacks.get_session_id() then
       callbacks.update_session_id(new_session_id)
     end
+  end
+
+  if frontmatter.forked_from and callbacks.clear_forked_from then
+    callbacks.clear_forked_from()
   end
 
   -- mote v0.2.0: --project/--context APIではコンテキスト名は最初から確定しているためリネーム不要

@@ -28,7 +28,7 @@ local function generate_fork_filename(source_path, save_dir)
   return fork_filename
 end
 
----フロントマターをコピー（session_idは除外、forked_fromを追加）
+---フロントマターをコピー（session_idはフォーク元を引き継ぎ、forked_fromを追加）
 ---@param source_frontmatter table
 ---@param forked_from string
 ---@param config table
@@ -36,7 +36,7 @@ end
 local function copy_frontmatter(source_frontmatter, forked_from, config)
   return {
     ["vibing.nvim"] = true,
-    session_id = "~",
+    session_id = source_frontmatter.session_id or "~",
     created_at = os.date("%Y-%m-%dT%H:%M:%S"),
     forked_from = forked_from,
     working_dir = source_frontmatter.working_dir,
@@ -99,12 +99,10 @@ function M.execute(chat_buffer)
   local working_dir = source_frontmatter.working_dir
 
   local fork_session = ChatSession:new({
+    session_id = chat_buffer.session_id,
     frontmatter = fork_frontmatter,
     working_dir = working_dir,
   })
-
-  -- fork_source_session_idを一時的に設定（Agent SDK呼び出し時に使用）
-  fork_session._fork_source_session_id = chat_buffer.session_id
 
   -- ファイル名生成
   local save_dir = FileManager.get_save_directory(config.chat)
