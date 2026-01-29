@@ -97,17 +97,8 @@ function M.handle_fork(args)
     return
   end
 
-  -- 位置指定のパース
-  local position = nil
-  if args and args ~= "" then
-    local valid_positions = { "current", "right", "left", "top", "bottom", "back" }
-    for _, pos in ipairs(valid_positions) do
-      if args == pos then
-        position = args
-        break
-      end
-    end
-  end
+  local valid_positions = { current = true, right = true, left = true, top = true, bottom = true, back = true }
+  local position = (args and args ~= "" and valid_positions[args]) and args or nil
 
   -- フォークセッションを作成
   local fork_use_case = require("vibing.application.chat.use_cases.fork")

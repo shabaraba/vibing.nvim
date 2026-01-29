@@ -74,17 +74,7 @@ function ForkedChatScanner:update_link(file_path, old_path, new_path)
     return false, "No forked_from field"
   end
 
-  -- 新しいパスを相対パスまたはチルダ展開で保存
-  local new_forked_from = Git.get_relative_path(new_path)
-  if not new_forked_from then
-    -- Gitルート外の場合はチルダ展開を試みる
-    local home = os.getenv("HOME")
-    if home and new_path:sub(1, #home) == home then
-      new_forked_from = "~" .. new_path:sub(#home + 1)
-    else
-      new_forked_from = new_path
-    end
-  end
+  local new_forked_from = Git.to_display_path(new_path)
 
   -- frontmatterを更新
   local updated_text = Frontmatter.update(text, { forked_from = new_forked_from })

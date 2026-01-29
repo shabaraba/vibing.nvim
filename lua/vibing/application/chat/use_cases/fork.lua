@@ -27,33 +27,17 @@ local function generate_fork_filename(source_path, save_dir)
   return fork_filename
 end
 
----forked_fromパスを生成（Git相対パスまたはチルダ展開）
----@param source_path string
----@return string forked_from_path
-local function generate_forked_from_path(source_path)
-  local forked_from = Git.get_relative_path(source_path)
-  if not forked_from then
-    -- Gitルート外の場合はチルダ展開を試みる
-    local home = os.getenv("HOME")
-    if home and source_path:sub(1, #home) == home then
-      forked_from = "~" .. source_path:sub(#home + 1)
-    else
-      forked_from = source_path
-    end
-  end
-  return forked_from
-end
-
 ---フロントマターをコピー（session_idは除外、forked_fromを追加）
 ---@param source_frontmatter table
 ---@param forked_from string
 ---@param config table
 ---@return table fork_frontmatter
 local function copy_frontmatter(source_frontmatter, forked_from, config)
-  local fork_frontmatter = {
+  return {
     ["vibing.nvim"] = true,
     created_at = os.date("%Y-%m-%dT%H:%M:%S"),
     forked_from = forked_from,
+    working_dir = source_frontmatter.working_dir,
     mode = source_frontmatter.mode or (config.agent and config.agent.default_mode or "code"),
     model = source_frontmatter.model or (config.agent and config.agent.default_model or "sonnet"),
     permission_mode = source_frontmatter.permission_mode
@@ -61,19 +45,8 @@ local function copy_frontmatter(source_frontmatter, forked_from, config)
     permissions_allow = source_frontmatter.permissions_allow
       or (config.permissions and config.permissions.allow or {}),
     permissions_deny = source_frontmatter.permissions_deny or (config.permissions and config.permissions.deny or {}),
+    language = source_frontmatter.language,
   }
-
-  -- working_dirが存在する場合はコピー
-  if source_frontmatter.working_dir then
-    fork_frontmatter.working_dir = source_frontmatter.working_dir
-  end
-
-  -- languageが存在する場合はコピー
-  if source_frontmatter.language then
-    fork_frontmatter.language = source_frontmatter.language
-  end
-
-  return fork_frontmatter
 end
 
 ---バッファを自動保存
@@ -116,8 +89,7 @@ function M.execute(chat_buffer)
   -- フォーク元のフロントマターを読み込み
   local source_frontmatter = chat_buffer:parse_frontmatter()
 
-  -- forked_fromパスを生成
-  local forked_from = generate_forked_from_path(chat_buffer.file_path)
+  local forked_from = Git.to_display_path(chat_buffer.file_path)
 
   -- フロントマターをコピー
   local fork_frontmatter = copy_frontmatter(source_frontmatter, forked_from, config)

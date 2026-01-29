@@ -254,10 +254,7 @@ end
 ---フォーク元セッションIDを取得
 ---@return string?
 function ChatBuffer:get_fork_source_session_id()
-  if self.session and self.session._fork_source_session_id then
-    return self.session._fork_source_session_id
-  end
-  return nil
+  return self.session and self.session._fork_source_session_id
 end
 
 ---フォーク元セッションIDをクリア（初回メッセージ送信後に呼ばれる）

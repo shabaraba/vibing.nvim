@@ -201,4 +201,21 @@ function M.checkout_files(files)
   }
 end
 
+---絶対パスをGit相対パスまたはチルダ短縮パスに変換
+---@param abs_path string
+---@return string
+function M.to_display_path(abs_path)
+  local relative = M.get_relative_path(abs_path)
+  if relative then
+    return relative
+  end
+
+  local home = os.getenv("HOME")
+  if home and abs_path:sub(1, #home) == home then
+    return "~" .. abs_path:sub(#home + 1)
+  end
+
+  return abs_path
+end
+
 return M
