@@ -4,6 +4,7 @@ local filename_util = require("vibing.core.utils.filename")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local SyncManager = require("vibing.application.link.sync_manager")
 local DailySummaryScanner = require("vibing.infrastructure.link.daily_summary_scanner")
+local ForkedChatScanner = require("vibing.infrastructure.link.forked_chat_scanner")
 
 ---@param file_path string?
 ---@return "chat"|"inline"
@@ -131,7 +132,7 @@ return function(_, chat_buffer)
     notify.info(string.format("Renamed to: %s", vim.fn.fnamemodify(new_file_path, ":.")))
 
     if is_existing_file then
-      local scanners = { DailySummaryScanner.new() }
+      local scanners = { DailySummaryScanner.new(), ForkedChatScanner.new() }
 
       -- Daily summaryのベースディレクトリを取得
       -- config.daily_summary.save_dirが設定されている場合はそれを使用

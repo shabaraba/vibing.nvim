@@ -124,6 +124,19 @@ function M.execute(adapter, callbacks, message, config)
       adapter:cleanup_stale_sessions()
       opts._session_id = callbacks.get_session_id()
       opts._session_id_explicit = true
+
+      -- Check if this is a fork session (from VibingChatFork)
+      if callbacks.get_fork_source_session_id then
+        local fork_source_id = callbacks.get_fork_source_session_id()
+        if fork_source_id then
+          opts._fork_source_session_id = fork_source_id
+
+          -- Clear fork source session ID after first use
+          if callbacks.clear_fork_source_session_id then
+            callbacks.clear_fork_source_session_id()
+          end
+        end
+      end
     end
 
     if adapter:supports("streaming") then

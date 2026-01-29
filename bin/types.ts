@@ -73,6 +73,7 @@ export interface AgentConfig {
   cwd: string;
   contextFiles: string[];
   sessionId: string | null;
+  forkSessionId: string | null;
   allowedTools: string[];
   deniedTools: string[];
   askedTools: string[];

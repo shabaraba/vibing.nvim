@@ -251,6 +251,22 @@ function ChatBuffer:get_session_id()
   return self.session_id
 end
 
+---フォーク元セッションIDを取得
+---@return string?
+function ChatBuffer:get_fork_source_session_id()
+  if self.session and self.session._fork_source_session_id then
+    return self.session._fork_source_session_id
+  end
+  return nil
+end
+
+---フォーク元セッションIDをクリア（初回メッセージ送信後に呼ばれる）
+function ChatBuffer:clear_fork_source_session_id()
+  if self.session then
+    self.session._fork_source_session_id = nil
+  end
+end
+
 ---mote用IDを取得（なければ生成して保存）
 ---session_idとは独立で、chat buffer生存期間中は同じIDを使用
 ---@return string
