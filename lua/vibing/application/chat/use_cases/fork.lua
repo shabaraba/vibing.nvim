@@ -36,6 +36,7 @@ end
 local function copy_frontmatter(source_frontmatter, forked_from, config)
   return {
     ["vibing.nvim"] = true,
+    session_id = "~",
     created_at = os.date("%Y-%m-%dT%H:%M:%S"),
     forked_from = forked_from,
     working_dir = source_frontmatter.working_dir,
