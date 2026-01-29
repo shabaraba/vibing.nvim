@@ -205,7 +205,7 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
     end
   end
 
-  if frontmatter.forked_from and callbacks.clear_forked_from then
+  if callbacks.clear_forked_from then
     callbacks.clear_forked_from()
   end
 
