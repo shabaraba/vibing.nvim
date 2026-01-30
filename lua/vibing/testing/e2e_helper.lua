@@ -39,8 +39,22 @@ end
 ---キー入力を送信
 ---@param instance table インスタンスハンドル
 ---@param keys string キーシーケンス
+---@return boolean 成功したかどうか
 function M.send_keys(instance, keys)
-  vim.fn.rpcrequest(instance.job_id, "nvim_input", keys)
+  if not instance or not instance.job_id then
+    vim.notify("[E2E Helper] Invalid instance in send_keys", vim.log.levels.ERROR)
+    return false
+  end
+
+  local ok, err = pcall(vim.fn.rpcrequest, instance.job_id, "nvim_input", keys)
+  if not ok then
+    vim.notify(
+      string.format("[E2E Helper] Failed to send keys '%s': %s", keys, tostring(err)),
+      vim.log.levels.WARN
+    )
+    return false
+  end
+  return true
 end
 
 ---バッファ内容が条件に一致するまで待機
