@@ -87,11 +87,15 @@ function M.is_cursor_on_file_path(buf)
     file_path = vim.fn.fnamemodify(cwd .. "/" .. trimmed_line, ":p")
   end
 
+  -- ファイルが存在する場合はそのまま返す
   if vim.fn.filereadable(file_path) == 1 or vim.fn.isdirectory(file_path) == 1 then
     return file_path
   end
 
-  return nil
+  -- ファイルが存在しない場合でも、Modified Filesセクション内であれば
+  -- 削除されたファイルの可能性があるため、パスを返す
+  -- （patch previewで表示可能）
+  return file_path
 end
 
 ---ファイルを開く
