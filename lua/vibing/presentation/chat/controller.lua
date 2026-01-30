@@ -86,6 +86,38 @@ function M.handle_summarize()
   use_case.generate_and_insert_summary(current_view)
 end
 
+---チャットをフォーク
+---@param args string? 引数文字列（位置指定のみ）
+function M.handle_fork(args)
+  local view = require("vibing.presentation.chat.view")
+  local current_view = view.get_current()
+
+  if not current_view then
+    notify.error("Not in a vibing chat buffer")
+    return
+  end
+
+  local valid_positions = { current = true, right = true, left = true, top = true, bottom = true, back = true }
+  local position = nil
+  if args and args ~= "" then
+    if valid_positions[args] then
+      position = args
+    else
+      notify.warn("Invalid position: " .. args .. ". Using default.")
+    end
+  end
+
+  -- フォークセッションを作成
+  local fork_use_case = require("vibing.application.chat.use_cases.fork")
+  local fork_session = fork_use_case.execute(current_view)
+
+  if fork_session then
+    view.render(fork_session, position)
+  else
+    notify.error("Failed to fork chat session")
+  end
+end
+
 ---Worktreeでチャットを開く
 ---@param args string 引数文字列（position branch_name形式）
 function M.handle_open_worktree(args)

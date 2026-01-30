@@ -435,6 +435,9 @@ function ChatBuffer:send_message()
     get_cwd = function()
       return self:get_cwd()
     end,
+    clear_forked_from = function()
+      self:update_frontmatter("forked_from", nil)
+    end,
   }
 
   -- リクエストを送信（handle_idはコールバックで設定される）

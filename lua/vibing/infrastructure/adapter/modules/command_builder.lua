@@ -206,6 +206,9 @@ function M.build(wrapper_path, prompt, opts, session_id, config)
   add_flag_if_present(cmd, "--model", resolve_model(opts, config))
   add_context_args(cmd, opts)
   add_flag_if_present(cmd, "--session", session_id)
+  if opts._is_fork then
+    table.insert(cmd, "--fork-session")
+  end
   add_permission_args(cmd, opts)
   add_permission_rules(cmd, config)
   add_additional_flags(cmd, config)

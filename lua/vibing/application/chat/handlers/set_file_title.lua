@@ -4,6 +4,7 @@ local filename_util = require("vibing.core.utils.filename")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local SyncManager = require("vibing.application.link.sync_manager")
 local DailySummaryScanner = require("vibing.infrastructure.link.daily_summary_scanner")
+local ForkedChatScanner = require("vibing.infrastructure.link.forked_chat_scanner")
 
 ---@param file_path string?
 ---@return "chat"|"inline"
@@ -131,25 +132,32 @@ return function(_, chat_buffer)
     notify.info(string.format("Renamed to: %s", vim.fn.fnamemodify(new_file_path, ":.")))
 
     if is_existing_file then
-      local scanners = { DailySummaryScanner.new() }
-
       -- Daily summaryのベースディレクトリを取得
-      -- config.daily_summary.save_dirが設定されている場合はそれを使用
       local daily_base_dir
       if config.daily_summary and config.daily_summary.save_dir then
         daily_base_dir = config.daily_summary.save_dir
       else
-        -- チャット保存ディレクトリから派生
         daily_base_dir = save_dir
       end
 
-      local result = SyncManager.sync_links(old_file_path, new_file_path, scanners, daily_base_dir)
+      -- Daily summaryリンクの更新
+      local daily_result = SyncManager.sync_links(
+        old_file_path, new_file_path, { DailySummaryScanner.new() }, daily_base_dir
+      )
 
-      if result.updated > 0 then
-        notify.info(string.format("Updated %d daily summary file(s)", result.updated), "Link Sync")
+      -- フォーク元リンクの更新（チャット保存ディレクトリを検索）
+      local fork_result = SyncManager.sync_links(
+        old_file_path, new_file_path, { ForkedChatScanner.new() }, save_dir
+      )
+
+      local total_updated = daily_result.updated + fork_result.updated
+      local total_failed = daily_result.failed + fork_result.failed
+
+      if total_updated > 0 then
+        notify.info(string.format("Updated %d linked file(s)", total_updated), "Link Sync")
       end
-      if result.failed > 0 then
-        notify.warn(string.format("Failed to update %d file(s)", result.failed), "Link Sync")
+      if total_failed > 0 then
+        notify.warn(string.format("Failed to update %d file(s)", total_failed), "Link Sync")
       end
     end
   end)

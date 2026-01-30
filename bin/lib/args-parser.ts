@@ -46,6 +46,7 @@ export function parseArguments(args: string[]): AgentConfig {
     cwd: process.cwd(),
     contextFiles: [],
     sessionId: null,
+    forkSession: false,
     allowedTools: [],
     deniedTools: [],
     askedTools: [],
@@ -75,6 +76,8 @@ export function parseArguments(args: string[]): AgentConfig {
     } else if (args[i] === '--session' && args[i + 1]) {
       config.sessionId = args[i + 1];
       i++;
+    } else if (args[i] === '--fork-session') {
+      config.forkSession = true;
     } else if (args[i] === '--mode' && args[i + 1]) {
       config.mode = args[i + 1];
       i++;

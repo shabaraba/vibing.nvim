@@ -145,6 +145,43 @@ vibing.nvim supports running multiple chat sessions and inline actions simultane
 
 See `docs/adr/002-concurrent-execution-support.md` for architectural details.
 
+## Chat Fork
+
+`:VibingChatFork` creates a branched conversation from the current chat session.
+
+**Session Lifecycle:**
+
+```text
+Source Chat (session-abc)
+  │
+  ├─ User sends messages... SDK uses session-abc
+  │
+  └─ :VibingChatFork right
+       │
+       Fork Chat (session_id: session-abc, forked_from: source.vibing)
+         │
+         ├─ First message → SDK: query({ resume: session-abc, forkSession: true })
+         │                  → SDK returns new session-def
+         │                  → frontmatter updated: session_id: session-def
+         │                  → forked_from cleared
+         │
+         └─ Subsequent messages → SDK uses session-def independently
+```
+
+**Key Design Decisions:**
+
+- Fork inherits the source's `session_id` directly in frontmatter (no separate side-channel)
+- The `forked_from` frontmatter field indicates a pending fork; `--fork-session` boolean flag is sent to the SDK
+- After the first response, `forked_from` is cleared and `session_id` is updated to the new value
+- This avoids `BufReadPost`/`attach_to_buffer` lifecycle issues where in-memory state would be lost
+- `ForkedChatScanner` automatically updates `forked_from` links when source files are renamed
+
+**Implementation:**
+
+- `lua/vibing/application/chat/use_cases/fork.lua` - Fork use case
+- `lua/vibing/infrastructure/link/forked_chat_scanner.lua` - Link synchronization scanner
+- `bin/agent-wrapper.ts` - `--fork-session` flag handling
+
 ## Key Patterns
 
 **Adapter Pattern:** All AI backends implement the `Adapter` interface with `execute()`, `stream()`,

@@ -155,6 +155,12 @@ if (config.sessionId) {
   queryOptions.resume = config.sessionId;
 }
 
+// Enable forkSession if --fork-session flag is set
+// Session ID is already set via --session above
+if (config.forkSession) {
+  queryOptions.forkSession = true;
+}
+
 try {
   const result = query({
     prompt: fullPrompt,

@@ -131,6 +131,23 @@ function M._register_commands()
     require("vibing.presentation.chat.controller").handle_toggle()
   end, { desc = "Toggle Vibing chat window" })
 
+  vim.api.nvim_create_user_command("VibingChatFork", function(opts)
+    require("vibing.presentation.chat.controller").handle_fork(opts.args)
+  end, {
+    nargs = "?",
+    desc = "Fork current vibing chat with optional position (current|right|left|top|bottom|back)",
+    complete = function(arg_lead, cmd_line, cursor_pos)
+      local positions = { "current", "right", "left", "top", "bottom", "back" }
+      local matches = {}
+      for _, pos in ipairs(positions) do
+        if pos:find("^" .. vim.pesc(arg_lead)) then
+          table.insert(matches, pos)
+        end
+      end
+      return matches
+    end,
+  })
+
   vim.api.nvim_create_user_command("VibingChatWorktree", function(opts)
     require("vibing.presentation.chat.controller").handle_open_worktree(opts.args)
   end, {

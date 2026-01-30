@@ -124,6 +124,10 @@ function M.execute(adapter, callbacks, message, config)
       adapter:cleanup_stale_sessions()
       opts._session_id = callbacks.get_session_id()
       opts._session_id_explicit = true
+
+      if frontmatter.forked_from then
+        opts._is_fork = true
+      end
     end
 
     if adapter:supports("streaming") then
@@ -199,6 +203,10 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
     if new_session_id and new_session_id ~= callbacks.get_session_id() then
       callbacks.update_session_id(new_session_id)
     end
+  end
+
+  if callbacks.clear_forked_from then
+    callbacks.clear_forked_from()
   end
 
   -- mote v0.2.0: --project/--context APIではコンテキスト名は最初から確定しているためリネーム不要
