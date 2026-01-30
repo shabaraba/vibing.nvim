@@ -264,17 +264,102 @@ When implementing a new feature, follow this sequence:
 1. **Phase 1-4**: Requirements → Exploration → Clarification → Architecture
 2. **Phase 5**: Implementation
    - Write feature code
-   - **Write E2E tests for the feature** (NEW)
    - Update documentation
    - Add npm scripts if needed
-3. **Phase 5.5: Self-Testing** (NEW)
+3. **Phase 5.4: Test Case Design** (NEW - AUTOMATED)
+   - Call `/test-design` skill to generate test scenarios
+   - Review generated test cases
+   - Implement Critical and High priority tests
+   - Save test file in `tests/e2e/`
+4. **Phase 5.5: Self-Testing** (NEW)
    - Run `npm run test:e2e`
    - Apply 3-try auto-fix rule if failures occur
    - Escalate to user if still failing after 3 attempts
-4. **Phase 6**: Code Review (only proceed if tests pass)
-5. **Phase 7**: Final summary
+5. **Phase 6**: Code Review (only proceed if tests pass)
+6. **Phase 7**: Final summary
 
 **Critical Rule**: Do NOT proceed to Phase 6 (Code Review) if E2E tests are failing. Either fix the tests via 3-try rule or escalate to user.
+
+### Phase 5.4: Test Case Design - Detailed Procedure
+
+After completing feature implementation, use the Test Design skill to automatically generate test scenarios:
+
+#### Step 1: Invoke the Skill
+
+```
+/test-design
+
+I implemented [feature description].
+
+Changed files:
+- [list of new/modified files]
+
+Existing tests:
+- [list of existing test files]
+```
+
+**Example:**
+
+```
+/test-design
+
+I implemented a new slash command `/export` that exports chat history to Markdown files.
+
+Changed files:
+- lua/vibing/application/chat/slash_commands.lua (added export_command)
+- lua/vibing/utils/markdown_exporter.lua (new file)
+
+Existing tests:
+- tests/e2e/chat_basic_flow_spec.lua (basic chat operations)
+```
+
+#### Step 2: Review Generated Scenarios
+
+The skill will output:
+
+1. **Test Scenario Analysis** - Categorized test scenarios
+2. **Priority Ranking** - Tests ranked by importance
+3. **Test Code Templates** - Ready-to-implement code
+
+Review the scenarios and verify they cover:
+
+- ✅ Happy path (most common use case)
+- ✅ Error cases (validation, network, permissions)
+- ✅ Edge cases (boundary values, special chars)
+- ✅ Integration points (interaction with other features)
+
+#### Step 3: Implement Tests
+
+Focus on implementing tests in priority order:
+
+1. **Critical tests** (必須) - Core functionality
+2. **High priority tests** (重要) - Error handling
+3. **Medium priority tests** (推奨) - Edge cases (if time allows)
+4. **Low priority tests** (任意) - Optimization (future work)
+
+Save test file as `tests/e2e/[feature-name]_spec.lua`
+
+#### Step 4: Run Tests
+
+```bash
+npm run test:e2e
+```
+
+If tests fail, proceed to Phase 5.5 (3-try auto-fix rule).
+
+### Test Design Skill Reference
+
+For detailed documentation on the Test Design skill, see:
+
+- `.claude/skills/test-design/SKILL.md` - Skill usage guide
+- `.claude/agents/test-case-designer.md` - Agent architecture
+
+**Quick Tips:**
+
+- Be specific in feature description
+- List all changed files (use `git diff --name-only`)
+- Review generated tests - don't blindly accept
+- Implement Critical/High tests first
 
 ## Helper Function Reference
 
