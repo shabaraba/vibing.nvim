@@ -32,6 +32,7 @@
     "test": "node dist/bin/agent-wrapper.js --prompt 'Say hello' --cwd $(pwd)",
     "test:wrapper": "node dist/bin/agent-wrapper.js --prompt 'Test wrapper functionality' --cwd .",
     "test:lua": "nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }\"",
+    "test:e2e": "nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/e2e/ { minimal_init = 'tests/minimal_init.lua' }\"",
     "check": "find lua -name '*.lua' -exec luac -p {} \\;",
     "check:lua": "luac -p lua/vibing/init.lua",
     "dev": "node dist/bin/agent-wrapper.js --prompt",
