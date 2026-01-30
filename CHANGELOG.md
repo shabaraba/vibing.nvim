@@ -3,11 +3,11 @@
 ## 1.28.0 (2026-01-30)
 
 ## What's Changed
-* feat: auto-update daily summary links when renaming chat files by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/366
-* feat: add chat fork functionality and enhance chat management by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/368
-* fix: use relative paths for mote snap restore in patch viewer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/372
-* feat: add self-testing infrastructure with E2E test framework by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/371
 
+- feat: auto-update daily summary links when renaming chat files by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/366
+- feat: add chat fork functionality and enhance chat management by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/368
+- fix: use relative paths for mote snap restore in patch viewer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/372
+- feat: add self-testing infrastructure with E2E test framework by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/371
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.27.0...v1.28.0
 
