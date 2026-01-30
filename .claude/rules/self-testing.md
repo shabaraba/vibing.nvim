@@ -351,8 +351,7 @@ If tests fail, proceed to Phase 5.5 (3-try auto-fix rule).
 
 For detailed documentation on the Test Design skill, see:
 
-- `.claude/skills/test-design/SKILL.md` - Skill usage guide
-- `.claude/agents/test-case-designer.md` - Agent architecture
+- `.claude/skills/test-design/SKILL.md` - Complete skill documentation
 
 **Quick Tips:**
 

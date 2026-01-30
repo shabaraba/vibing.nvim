@@ -1,35 +1,29 @@
-# Test Design Skill
+---
+name: test-design
+description: Automatically design comprehensive E2E test cases for newly implemented vibing.nvim features. Use immediately after completing feature implementation (Phase 5.4) and before running E2E tests. Generates test scenarios covering Happy paths, Error cases, Edge cases, and Integration points with priority ranking (Critical/High/Medium/Low) and ready-to-use test code templates using e2e_helper.lua.
+---
 
-**Skill Name**: `test-design`
-**Invocation**: `/test-design` or `@skill test-design`
+# Test Design for vibing.nvim
 
-## Description
+Generate comprehensive E2E test scenarios after implementing new features.
 
-Analyzes newly implemented features and automatically designs comprehensive E2E test cases. Generates test scenarios covering Happy paths, Error cases, Edge cases, and Integration points, along with ready-to-use test code templates.
+## Usage
 
-## When to Use
-
-Invoke this skill **immediately after completing feature implementation** and before running E2E tests:
+Provide context when invoking:
 
 ```
-Phase 5: Implementation ✅ (Done)
-  ↓
-Phase 5.4: Test Case Design 👈 **Call /test-design here**
-  ↓
-Phase 5.5: Self-Testing (implement generated tests)
-  ↓
-Phase 6: Code Review
+/test-design
+
+I implemented [feature description].
+
+Changed files:
+- [list of new/modified files]
+
+Existing tests:
+- [list of existing test files]
 ```
 
-## Input
-
-Provide the following context when invoking the skill:
-
-1. **Feature Description**: What did you implement?
-2. **Changed Files**: List of new/modified files
-3. **Existing Tests**: What tests already exist?
-
-### Example Invocation
+**Example:**
 
 ```
 /test-design
@@ -44,31 +38,27 @@ Existing tests:
 - tests/e2e/chat_basic_flow_spec.lua (basic chat operations)
 ```
 
-## Output
-
-The skill generates:
+## Output Format
 
 ### 1. Test Scenario Analysis
 
-Categorized test scenarios with checkboxes:
+Categorized scenarios with checkboxes:
 
-- **Happy Path** (正常系): Most common use cases
-- **Error Cases** (異常系): Error handling scenarios
-- **Edge Cases** (境界値): Boundary conditions
-- **Integration Points** (連携): Interactions with other features
+- **Happy Path** ✅ - Most common use cases
+- **Error Cases** ❌ - Error handling (validation, network, permissions)
+- **Edge Cases** 🔸 - Boundary conditions, special characters, timeouts
+- **Integration Points** 🔗 - Interactions with other features
 
 ### 2. Priority Ranking
 
-Tests ranked by importance:
-
-- **Critical**: Must-have for release
-- **High**: Error handling, security
-- **Medium**: Edge cases, usability
-- **Low**: Performance, optimization
+- **Critical**: Core functionality - must work for release
+- **High**: Error handling - security, data loss prevention
+- **Medium**: Usability - edge cases, user experience
+- **Low**: Performance - optimization, rare scenarios
 
 ### 3. Test Code Templates
 
-Ready-to-implement test code using `e2e_helper.lua`:
+Ready-to-implement code using `e2e_helper.lua`:
 
 ```lua
 describe("E2E: [Feature Name]", function()
@@ -85,146 +75,90 @@ describe("E2E: [Feature Name]", function()
     helper.cleanup_instance(nvim_instance)
   end)
 
-  -- Generated test cases here
+  -- Test cases with appropriate TIMEOUTS constants
 end)
 ```
 
-## Skill Workflow
+## Workflow
 
-### Phase 1: Information Gathering
-
-1. Read changed files to understand implementation
-2. Analyze feature scope and dependencies
-3. Review existing tests to avoid duplication
-4. Identify integration points with other features
-
-### Phase 2: Scenario Design
-
-Generate test scenarios for:
-
-- **Happy Path**: Expected normal behavior
-- **Error Cases**: Validation errors, network errors, permission errors, resource errors
-- **Edge Cases**: Boundary values, special characters, concurrent execution, timeouts
-- **Integration**: Interaction with existing features
-
-### Phase 3: Prioritization
-
-Rank test cases using these criteria:
-
-- **Critical**: Core functionality - system breaks without it
-- **High**: Error handling - security risks, data loss prevention
-- **Medium**: Usability - edge cases, user experience
-- **Low**: Optimization - performance, rare scenarios
-
-### Phase 4: Code Generation
-
-Generate implementation-ready test code:
-
-- plenary.nvim test structure
-- `e2e_helper.lua` function calls
-- Appropriate timeout constants
-- Clear assertion messages
-
-## Tools Used
-
-This skill has access to:
-
-- `Read` - Read implementation files
-- `Glob` - Find related files
-- `Grep` - Search for patterns
-- `LSP` - Analyze code structure
+1. **Gather context** - Read changed files, analyze scope, review existing tests
+2. **Design scenarios** - Generate Happy/Error/Edge/Integration cases
+3. **Prioritize** - Rank by Critical/High/Medium/Low
+4. **Generate code** - Create implementation-ready test templates
 
 ## Example Output
 
-### Feature: `/export` Slash Command
+For a `/export` command that exports chat to Markdown:
 
-```markdown
-## Test Scenario Analysis
+### Test Scenarios
 
-### Happy Path ✅
+**Happy Path ✅**
 
 - [ ] Export chat with single message
 - [ ] Export chat with multiple messages
 - [ ] Export with frontmatter preserved
-- [ ] Export to specified file path
 
-### Error Cases ❌
+**Error Cases ❌**
 
 - [ ] Permission denied (read-only directory)
 - [ ] Invalid file path (path traversal attack)
 - [ ] Empty chat (no messages)
-- [ ] Disk full error
 
-### Edge Cases 🔸
+**Edge Cases 🔸**
 
 - [ ] Very long chat (1000+ messages)
-- [ ] Special characters in messages (emoji, control chars)
-- [ ] Overwrite existing file
-- [ ] Relative vs absolute paths
+- [ ] Special characters in messages
 
-### Integration Points 🔗
+**Integration Points 🔗**
 
 - [ ] Export from worktree chat
 - [ ] Export during active Assistant response
-- [ ] Export with context files
 
-## Priority Ranking
+### Priority Ranking
 
-### Critical
+**Critical**
 
 1. Export basic chat successfully
 2. Handle permission errors gracefully
 
-### High
+**High**
 
 3. Validate file path (security)
 4. Handle empty chat
 
-### Medium
+**Medium**
 
 5. Export with special characters
-6. Overwrite confirmation
 
-### Low
+### Test Code
 
-7. Performance with 1000+ messages
-
-## Test Code
-
-\`\`\`lua
+```lua
 -- tests/e2e/export_command_spec.lua
 local helper = require("vibing.testing.e2e_helper")
 
 local TIMEOUTS = {
-CHAT_CREATION = 2000,
-COMMAND_EXECUTION = 3000,
-FILE_CREATION = 1000,
+  CHAT_CREATION = 2000,
+  COMMAND_EXECUTION = 3000,
 }
 
 describe("E2E: /export command", function()
-local nvim_instance
-local temp_dir
+  local nvim_instance
 
-before_each(function()
-nvim_instance = helper.spawn_nvim_instance({
-headless = true,
-init_script = "tests/minimal_init.lua",
-})
-temp_dir = vim.fn.tempname()
-vim.fn.mkdir(temp_dir, "p")
-end)
+  before_each(function()
+    nvim_instance = helper.spawn_nvim_instance({
+      headless = true,
+      init_script = "tests/minimal_init.lua",
+    })
+  end)
 
-after_each(function()
-helper.cleanup_instance(nvim_instance)
-vim.fn.delete(temp_dir, "rf")
-end)
+  after_each(function()
+    helper.cleanup_instance(nvim_instance)
+  end)
 
-it("should export chat to markdown file", function()
--- Create chat
-helper.send_keys(nvim_instance, ":VibingChat<CR>")
-vim.wait(TIMEOUTS.CHAT_CREATION)
+  it("should export chat to markdown file", function()
+    helper.send_keys(nvim_instance, ":VibingChat<CR>")
+    vim.wait(TIMEOUTS.CHAT_CREATION)
 
-    -- Send a message
     helper.send_keys(nvim_instance, "GiTest message<Esc><CR>")
     local ok = helper.wait_for_buffer_content(
       nvim_instance,
@@ -233,108 +167,38 @@ vim.wait(TIMEOUTS.CHAT_CREATION)
     )
     assert.is_true(ok, "Assistant should respond")
 
-    -- Execute /export command
-    local export_path = temp_dir .. "/exported.md"
-    helper.send_keys(nvim_instance, "G")
-    helper.send_keys(nvim_instance, "i/export " .. export_path)
-    helper.send_keys(nvim_instance, "<Esc><CR>")
-
-    vim.wait(TIMEOUTS.COMMAND_EXECUTION)
-
-    -- Verify file was created
-    assert.equals(1, vim.fn.filereadable(export_path), "Export file should exist")
-
-    -- Verify content
-    local content = table.concat(vim.fn.readfile(export_path), "\n")
-    assert.is_true(content:match("Test message"), "Content should contain user message")
-
+    -- Execute /export and verify...
+  end)
 end)
-
-it("should handle permission error gracefully", function()
--- Create chat
-helper.send_keys(nvim_instance, ":VibingChat<CR>")
-vim.wait(TIMEOUTS.CHAT_CREATION)
-
-    -- Try to export to read-only location
-    helper.send_keys(nvim_instance, "Gi/export /root/readonly.md<Esc><CR>")
-    vim.wait(TIMEOUTS.COMMAND_EXECUTION)
-
-    -- Verify error message appears
-    local ok = helper.wait_for_buffer_content(
-      nvim_instance,
-      "Error.*permission",
-      5000
-    )
-    assert.is_true(ok, "Error message should appear")
-
-end)
-
--- Add more test cases for High/Medium priority items...
-end)
-\`\`\`
-```
-
-## Configuration
-
-Optional configuration in `.claude/skill-config.yml`:
-
-```yaml
-test-design:
-  verbosity: detailed # minimal | detailed | comprehensive
-  min_priority: medium # critical | high | medium | low
-  generate_code: true # Generate test code templates
-  include_examples: true # Include usage examples in output
 ```
 
 ## Best Practices
 
-### ✅ Do
+**Do:**
 
-1. **Provide detailed feature description** with expected behavior
-2. **List all changed files** (`git diff --name-only`)
-3. **Mention existing tests** to avoid duplication
-4. **Review generated scenarios** - don't blindly accept
-5. **Implement Critical/High tests first** - defer Medium/Low
+- Provide detailed feature description with expected behavior
+- List all changed files (`git diff --name-only`)
+- Review generated scenarios - don't blindly accept
+- Implement Critical/High tests first
 
-### ❌ Don't
+**Don't:**
 
-1. **Use vague descriptions** - "Added some features" ❌
-2. **Skip review** - Generated tests are templates, not final code ❌
-3. **Implement all tests at once** - Prioritize Critical → High → Medium ❌
+- Use vague descriptions ("Added some features")
+- Skip review - templates need customization
+- Implement all tests at once - prioritize
 
-## Integration with Self-Testing
+## Next Steps
 
 After running `/test-design`:
 
-1. **Review** generated test scenarios
-2. **Approve** Critical and High priority tests
-3. **Implement** approved test cases in `tests/e2e/`
-4. **Run** `npm run test:e2e`
-5. **Apply** 3-try auto-fix rule if failures occur
+1. Review generated test scenarios
+2. Approve Critical and High priority tests
+3. Implement approved tests in `tests/e2e/`
+4. Run `npm run test:e2e`
+5. Apply 3-try auto-fix rule if failures occur (see `.claude/rules/self-testing.md`)
 
-## Troubleshooting
+## References
 
-### Skill generates irrelevant test cases
-
-**Cause**: Unclear feature description
-
-**Fix**: Provide more specific details about what changed and why
-
-### Generated test code has errors
-
-**Cause**: API mismatch with e2e_helper.lua
-
-**Fix**: Check `lua/vibing/testing/e2e_helper.lua` for current API
-
-### Too many test cases generated
-
-**Cause**: Skill tries to cover all possibilities
-
-**Fix**: Focus on Critical/High priority only
-
-## See Also
-
-- `.claude/rules/self-testing.md` - Self-testing procedures
-- `.claude/agents/test-case-designer.md` - Detailed agent documentation
-- `lua/vibing/testing/e2e_helper.lua` - E2E helper API
+- `.claude/rules/self-testing.md` - Complete self-testing procedures
+- `lua/vibing/testing/e2e_helper.lua` - E2E helper API reference
 - `tests/e2e/chat_basic_flow_spec.lua` - Example test suite
