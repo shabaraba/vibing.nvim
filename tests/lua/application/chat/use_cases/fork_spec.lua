@@ -220,7 +220,8 @@ describe("Fork use case", function()
       -- auto_saveが新規ファイルとして書き込む可能性があるため、バッファ内容を空にする
       vim.api.nvim_buf_set_lines(chat_buffer.buf, 0, -1, false, {})
       -- file_pathを存在しないパスに設定
-      chat_buffer.file_path = "/nonexistent/path/file.vibing"
+      local nonexistent = vim.fn.tempname() .. "_nonexistent/file.vibing"
+      chat_buffer.file_path = nonexistent
       local result = Fork.execute(chat_buffer)
       assert.is_nil(result)
     end)
