@@ -12,6 +12,7 @@
 | `:VibingClearContext`                     | Clear all context                                                                                   |
 | `:VibingInline [action\|prompt]`          | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |
 | `:VibingSummarize`                        | Generate AI summary of chat history and insert into buffer                                          |
+| `:VibingChatFork [position]`              | Fork current chat (create branch from current conversation)                                         |
 | `:VibingCancel`                           | Cancel current request                                                                              |
 
 ## Command Semantics
@@ -36,6 +37,17 @@
 - Automatically copies configuration files (`.gitignore`, `package.json`, `tsconfig.json`, etc.) to the worktree
 - Creates a symbolic link to `node_modules` from the main worktree (if it exists) to avoid duplicate installations
 - Chat files are saved in main repository at `.vibing/worktrees/<branch-name>/` (persists after worktree deletion)
+
+**`:VibingChatFork`** - Fork the current chat conversation. Creates a new chat file with the same conversation history and session, allowing you to branch the conversation in a different direction.
+
+- `:VibingChatFork` - Fork using default position
+- `:VibingChatFork right` - Fork and open in right split
+- `:VibingChatFork left` - Fork and open in left split
+- Position options: `current`, `right`, `left`, `top`, `bottom`, `back`
+- The fork file is named `<source>-fork-N.vibing` with auto-incrementing numbers
+- Fork inherits the source's session ID; on the first message, the SDK creates a new session via `forkSession` API
+- The `forked_from` frontmatter field tracks the source file for link synchronization
+- When the source file is renamed (via `:VibingSetFileTitle`), the fork's `forked_from` is automatically updated
 
 **`:VibingToggleChat`** - Use to show/hide your current conversation. Preserves the existing chat state.
 
