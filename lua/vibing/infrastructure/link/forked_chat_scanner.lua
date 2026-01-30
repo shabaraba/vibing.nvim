@@ -40,11 +40,13 @@ function ForkedChatScanner:contains_link(file_path, target_path)
     return false
   end
 
-  -- forked_fromの正規化（Git相対パスまたはチルダ展開パス）
+  -- forked_fromの正規化（Git相対パスまたはチルダ展開パス→絶対パス）
   local Git = require("vibing.core.utils.git")
-  local forked_from_abs = Git.resolve_path(frontmatter.forked_from)
-  if not forked_from_abs then
-    -- チルダ展開パスの場合
+  local forked_from_abs
+  local git_root = Git.get_root()
+  if git_root and not frontmatter.forked_from:match("^[/~]") then
+    forked_from_abs = git_root .. "/" .. frontmatter.forked_from
+  else
     forked_from_abs = vim.fn.expand(frontmatter.forked_from)
   end
 
