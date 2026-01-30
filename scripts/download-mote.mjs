@@ -10,7 +10,7 @@ import path from 'path';
 import https from 'https';
 import { spawn } from 'child_process';
 
-const MOTE_VERSION = 'v0.2.2';
+const MOTE_VERSION = 'v0.2.3';
 const MOTE_REPO = 'shabaraba/mote';
 const BIN_DIR = path.join(process.cwd(), 'bin');
 
