@@ -72,8 +72,21 @@ function M.is_cursor_on_file_path(buf)
   end
 
   -- ファイルの存在確認
-  -- 相対パスまたは絶対パスを正規化
-  local file_path = vim.fn.fnamemodify(trimmed_line, ":p")
+  -- frontmatterのworking_dirを考慮してファイルパスを解決
+  local ChatView = require("vibing.presentation.chat.view")
+  local chat_buf = ChatView.get_chat_buffer(buf)
+  local cwd = chat_buf and chat_buf:get_cwd() or vim.fn.getcwd()
+
+  -- 相対パスの場合はworking_dir基準で解決
+  local file_path
+  if trimmed_line:sub(1, 1) == "/" then
+    -- 絶対パスの場合はそのまま使用
+    file_path = trimmed_line
+  else
+    -- 相対パスの場合はworking_dir基準で解決
+    file_path = vim.fn.fnamemodify(cwd .. "/" .. trimmed_line, ":p")
+  end
+
   if vim.fn.filereadable(file_path) == 1 or vim.fn.isdirectory(file_path) == 1 then
     return file_path
   end

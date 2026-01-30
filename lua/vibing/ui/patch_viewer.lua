@@ -198,7 +198,8 @@ function M._render_files_panel()
   table.insert(lines, "j/k    Navigate files")
   table.insert(lines, "<CR>   Select file")
   table.insert(lines, "<Tab>  Switch pane")
-  table.insert(lines, "r      Revert patch")
+  table.insert(lines, "r      Revert selected file")
+  table.insert(lines, "R      Revert all files")
   table.insert(lines, "q      Quit")
 
   vim.bo[state.buf_files].modifiable = true
@@ -294,10 +295,15 @@ function M._setup_common_keymaps(buf)
     M._cycle_window(-1)
   end, vim.tbl_extend("force", opts, { desc = "Previous window" }))
 
-  -- Revert
+  -- Revert single file
   vim.keymap.set("n", "r", function()
     M._on_revert()
-  end, vim.tbl_extend("force", opts, { desc = "Revert patch" }))
+  end, vim.tbl_extend("force", opts, { desc = "Revert selected file" }))
+
+  -- Revert all files
+  vim.keymap.set("n", "R", function()
+    M._on_revert_all()
+  end, vim.tbl_extend("force", opts, { desc = "Revert all files in patch" }))
 
   -- 閉じる
   vim.keymap.set("n", "q", function()
@@ -375,14 +381,39 @@ function M._cycle_window(direction)
   end
 end
 
----Revert処理
+---Revert処理（選択中のファイルのみ）
 function M._on_revert()
   if not state.session_id or not state.patch_filename then
     vim.notify("No patch to revert", vim.log.levels.WARN)
     return
   end
 
-  local success = M.revert(state.session_id, state.patch_filename)
+  local success = M.revert_single_file(state.session_id, state.patch_filename)
+  if success then
+    M._close()
+  end
+end
+
+---Revert処理（全ファイル）
+function M._on_revert_all()
+  if not state.session_id or not state.patch_filename then
+    vim.notify("No patch to revert", vim.log.levels.WARN)
+    return
+  end
+
+  -- 確認プロンプト
+  local file_count = #state.files
+  local choice = vim.fn.confirm(
+    string.format("Revert all %d file(s) in this patch?", file_count),
+    "&Yes\n&No",
+    2
+  )
+
+  if choice ~= 1 then
+    return
+  end
+
+  local success = M.revert_all_files(state.session_id, state.patch_filename)
   if success then
     M._close()
   end
@@ -470,28 +501,209 @@ function M.extract_file_diff(patch_content, target_file)
   return table.concat(result, "\n")
 end
 
----patchを逆適用（revert）
+---patchファイルからスナップショットIDを抽出
+---@param patch_content string patch内容
+---@return string? snapshot_id スナップショットID
+local function extract_snapshot_id(patch_content)
+  local first_line = patch_content:match("^([^\n]+)")
+  if not first_line then
+    return nil
+  end
+  -- "Comparing <snapshot-id> -> working directory" 形式
+  local snapshot_id = first_line:match("^Comparing (%w+) %-> working directory")
+  return snapshot_id
+end
+
+---patchファイルからcontext_dirを推測
+---@param patch_path string patchファイルのパス
+---@return string? context_dir moteのcontext directory
+local function extract_context_dir_from_path(patch_path)
+  -- patch_path例: .vibing/mote/<session-id>/patches/20260130_123456.patch
+  local context_dir = patch_path:match("(.+)/patches/")
+  return context_dir
+end
+
+---選択中のファイルのみ逆適用（revert）
 ---@param _ string セッションID（未使用だが互換性のため保持）
 ---@param patch_filename string patchファイルのパス
 ---@return boolean success
-function M.revert(_, patch_filename)
+function M.revert_single_file(_, patch_filename)
   local patch_path = resolve_patch_path(patch_filename)
   if not patch_path then
     vim.notify("Patch file not found: " .. patch_filename, vim.log.levels.ERROR)
     return false
   end
 
-  local cmd = string.format("git apply -R %s", vim.fn.shellescape(patch_path))
-  local result = vim.fn.system({ "sh", "-c", cmd })
-
-  if vim.v.shell_error ~= 0 then
-    vim.notify("Failed to revert patch: " .. vim.trim(result or ""), vim.log.levels.ERROR)
+  -- patchファイルを読み込み
+  local patch_content = read_patch_file(patch_path)
+  if not patch_content then
+    vim.notify("Failed to read patch file: " .. patch_filename, vim.log.levels.ERROR)
     return false
   end
 
-  vim.notify("Patch reverted successfully", vim.log.levels.INFO)
-  vim.cmd("checktime")
+  -- スナップショットIDを抽出
+  local snapshot_id = extract_snapshot_id(patch_content)
+  if not snapshot_id then
+    vim.notify("Failed to extract snapshot ID from patch", vim.log.levels.ERROR)
+    return false
+  end
+
+  -- context_dirを抽出
+  local context_dir = extract_context_dir_from_path(patch_path)
+  if not context_dir then
+    vim.notify("Failed to extract context directory from patch path", vim.log.levels.ERROR)
+    return false
+  end
+
+  -- 現在選択中のファイルを取得
+  if not state.files or #state.files == 0 then
+    vim.notify("No files in patch", vim.log.levels.WARN)
+    return false
+  end
+
+  local selected_file = state.files[state.selected_idx]
+  if not selected_file then
+    vim.notify("No file selected", vim.log.levels.WARN)
+    return false
+  end
+
+  -- mote snap restoreでファイルを復元
+  local Binary = require("vibing.core.utils.mote.binary")
+  if not Binary.is_available() then
+    vim.notify("mote binary not found. Cannot revert patch.", vim.log.levels.ERROR)
+    return false
+  end
+
+  local mote_bin = Binary.get_path()
+  -- mote snap restore -f には相対パスを渡す必要がある
+  local relative_path = selected_file
+
+  -- mote snap restore -f <file> <snapshot_id>
+  local cmd = string.format(
+    "%s -d %s snap restore -f %s %s",
+    vim.fn.shellescape(mote_bin),
+    vim.fn.shellescape(context_dir),
+    vim.fn.shellescape(relative_path),
+    vim.fn.shellescape(snapshot_id)
+  )
+
+  local result = vim.fn.system({ "sh", "-c", cmd })
+  if vim.v.shell_error ~= 0 then
+    vim.notify(
+      string.format("Failed to revert %s:\n%s", selected_file, vim.trim(result or "")),
+      vim.log.levels.ERROR
+    )
+    return false
+  end
+
+  -- 変更されたファイルのバッファをリロード
+  local BufferReload = require("vibing.core.utils.buffer_reload")
+  BufferReload.reload_files({ selected_file })
+
+  vim.notify(string.format("Reverted %s to snapshot %s", selected_file, snapshot_id), vim.log.levels.INFO)
   return true
+end
+
+---patch内の全ファイルを逆適用（revert）
+---@param _ string セッションID（未使用だが互換性のため保持）
+---@param patch_filename string patchファイルのパス
+---@return boolean success
+function M.revert_all_files(_, patch_filename)
+  local patch_path = resolve_patch_path(patch_filename)
+  if not patch_path then
+    vim.notify("Patch file not found: " .. patch_filename, vim.log.levels.ERROR)
+    return false
+  end
+
+  -- patchファイルを読み込み
+  local patch_content = read_patch_file(patch_path)
+  if not patch_content then
+    vim.notify("Failed to read patch file: " .. patch_filename, vim.log.levels.ERROR)
+    return false
+  end
+
+  -- スナップショットIDを抽出
+  local snapshot_id = extract_snapshot_id(patch_content)
+  if not snapshot_id then
+    vim.notify("Failed to extract snapshot ID from patch", vim.log.levels.ERROR)
+    return false
+  end
+
+  -- context_dirを抽出
+  local context_dir = extract_context_dir_from_path(patch_path)
+  if not context_dir then
+    vim.notify("Failed to extract context directory from patch path", vim.log.levels.ERROR)
+    return false
+  end
+
+  -- patchから全ファイルを抽出
+  local files = M._extract_files_from_patch(patch_content)
+  if #files == 0 then
+    vim.notify("No files to revert", vim.log.levels.WARN)
+    return false
+  end
+
+  -- mote snap restoreでファイルを復元
+  local Binary = require("vibing.core.utils.mote.binary")
+  if not Binary.is_available() then
+    vim.notify("mote binary not found. Cannot revert patch.", vim.log.levels.ERROR)
+    return false
+  end
+
+  local mote_bin = Binary.get_path()
+  local failed_files = {}
+  local success_count = 0
+
+  for _, file in ipairs(files) do
+    -- mote snap restore -f には相対パスを渡す必要がある
+    local relative_path = file
+    local cmd = string.format(
+      "%s -d %s snap restore -f %s %s",
+      vim.fn.shellescape(mote_bin),
+      vim.fn.shellescape(context_dir),
+      vim.fn.shellescape(relative_path),
+      vim.fn.shellescape(snapshot_id)
+    )
+
+    local result = vim.fn.system({ "sh", "-c", cmd })
+    if vim.v.shell_error ~= 0 then
+      table.insert(failed_files, { file = file, error = vim.trim(result or "") })
+    else
+      success_count = success_count + 1
+    end
+  end
+
+  -- 結果を報告
+  if #failed_files > 0 then
+    local error_msg = string.format("Reverted %d/%d files. Failed files:\n", success_count, #files)
+    for _, failure in ipairs(failed_files) do
+      error_msg = error_msg .. string.format("  - %s: %s\n", failure.file, failure.error)
+    end
+    vim.notify(error_msg, vim.log.levels.WARN)
+  else
+    vim.notify(string.format("Reverted all %d file(s) to snapshot %s", #files, snapshot_id), vim.log.levels.INFO)
+  end
+
+  -- 成功したファイルのバッファをリロード
+  if success_count > 0 then
+    local BufferReload = require("vibing.core.utils.buffer_reload")
+    local success_files = {}
+    for _, file in ipairs(files) do
+      local is_failed = false
+      for _, failure in ipairs(failed_files) do
+        if failure.file == file then
+          is_failed = true
+          break
+        end
+      end
+      if not is_failed then
+        table.insert(success_files, file)
+      end
+    end
+    BufferReload.reload_files(success_files)
+  end
+
+  return success_count > 0
 end
 
 return M
