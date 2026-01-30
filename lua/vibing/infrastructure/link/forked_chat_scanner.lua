@@ -45,9 +45,9 @@ function ForkedChatScanner:contains_link(file_path, target_path)
   local forked_from_abs
   local git_root = Git.get_root()
   if git_root and not frontmatter.forked_from:match("^[/~]") then
-    forked_from_abs = git_root .. "/" .. frontmatter.forked_from
+    forked_from_abs = vim.fs.joinpath(git_root, frontmatter.forked_from)
   else
-    forked_from_abs = vim.fn.expand(frontmatter.forked_from)
+    forked_from_abs = vim.fn.fnamemodify(vim.fn.expand(frontmatter.forked_from), ":p")
   end
 
   local target_abs = vim.fn.fnamemodify(target_path, ":p")

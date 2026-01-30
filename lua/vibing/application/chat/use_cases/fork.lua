@@ -13,16 +13,15 @@ local Git = require("vibing.core.utils.git")
 ---@param save_dir string
 ---@return string fork_filename
 local function generate_fork_filename(source_path, save_dir)
-  local source_basename = vim.fn.fnamemodify(source_path, ":t:r") -- 拡張子なし
+  local source_basename = vim.fn.fnamemodify(source_path, ":t:r")
   local fork_number = 1
   local fork_filename = string.format("%s-fork-%d.vibing", source_basename, fork_number)
-  local fork_path = save_dir .. fork_filename
+  local fork_path = vim.fs.joinpath(save_dir, fork_filename)
 
-  -- 重複チェック
   while vim.fn.filereadable(fork_path) == 1 do
     fork_number = fork_number + 1
     fork_filename = string.format("%s-fork-%d.vibing", source_basename, fork_number)
-    fork_path = save_dir .. fork_filename
+    fork_path = vim.fs.joinpath(save_dir, fork_filename)
   end
 
   return fork_filename
@@ -36,6 +35,8 @@ end
 local function copy_frontmatter(source_frontmatter, forked_from, config)
   return {
     ["vibing.nvim"] = true,
+    -- フォーク元のsession_idを引き継ぐ。SDK側で--fork-sessionフラグにより
+    -- forkSession: trueが設定され、初回メッセージで新しいsession_idが付与される
     session_id = source_frontmatter.session_id or "~",
     created_at = os.date("%Y-%m-%dT%H:%M:%S"),
     forked_from = forked_from,
@@ -80,7 +81,6 @@ function M.execute(chat_buffer)
     return nil
   end
 
-  -- 自動保存
   if not auto_save_if_needed(chat_buffer.buf, chat_buffer.file_path) then
     return nil
   end
@@ -88,38 +88,43 @@ function M.execute(chat_buffer)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
-  -- フォーク元のフロントマターを読み込み
-  local source_frontmatter = chat_buffer:parse_frontmatter()
+  -- ソースファイルを1回だけ読み込み、frontmatterとbodyを同時に取得
+  local ok, source_content = pcall(vim.fn.readfile, chat_buffer.file_path)
+  if not ok or not source_content then
+    notify.error("Failed to read source file: " .. tostring(source_content))
+    return nil
+  end
+  local source_text = table.concat(source_content, "\n")
+  local source_frontmatter, body = Frontmatter.parse(source_text)
+
+  if not source_frontmatter then
+    notify.error("Failed to parse source frontmatter")
+    return nil
+  end
 
   local forked_from = Git.to_display_path(chat_buffer.file_path)
-
-  -- フロントマターをコピー
   local fork_frontmatter = copy_frontmatter(source_frontmatter, forked_from, config)
-
-  local working_dir = source_frontmatter.working_dir
 
   local fork_session = ChatSession:new({
     session_id = chat_buffer.session_id,
     frontmatter = fork_frontmatter,
-    working_dir = working_dir,
+    working_dir = source_frontmatter.working_dir,
   })
 
-  -- ファイル名生成
   local save_dir = FileManager.get_save_directory(config.chat)
   vim.fn.mkdir(save_dir, "p")
 
   local fork_filename = generate_fork_filename(chat_buffer.file_path, save_dir)
-  local fork_path = save_dir .. fork_filename
+  local fork_path = vim.fs.joinpath(save_dir, fork_filename)
 
   fork_session:set_file_path(fork_path)
 
-  -- 元チャットの会話履歴をフォークファイルにコピー
-  local source_content = vim.fn.readfile(chat_buffer.file_path)
-  local source_text = table.concat(source_content, "\n")
-  local _, body = Frontmatter.parse(source_text)
-
-  local fork_content = Frontmatter.serialize(fork_frontmatter, body)
-  vim.fn.writefile(vim.split(fork_content, "\n"), fork_path)
+  local fork_content = Frontmatter.serialize(fork_frontmatter, body or "")
+  local write_result = vim.fn.writefile(vim.split(fork_content, "\n"), fork_path)
+  if write_result ~= 0 then
+    notify.error("Failed to write fork file: " .. fork_path)
+    return nil
+  end
 
   return fork_session
 end

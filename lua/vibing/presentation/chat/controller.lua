@@ -98,7 +98,14 @@ function M.handle_fork(args)
   end
 
   local valid_positions = { current = true, right = true, left = true, top = true, bottom = true, back = true }
-  local position = (args and args ~= "" and valid_positions[args]) and args or nil
+  local position = nil
+  if args and args ~= "" then
+    if valid_positions[args] then
+      position = args
+    else
+      notify.warn("Invalid position: " .. args .. ". Using default.")
+    end
+  end
 
   -- フォークセッションを作成
   local fork_use_case = require("vibing.application.chat.use_cases.fork")
