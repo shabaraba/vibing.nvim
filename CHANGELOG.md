@@ -3,8 +3,8 @@
 ## 1.29.0 (2026-01-31)
 
 ## What's Changed
-* feat: add chat file deletion with comprehensive mote cleanup by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/373
 
+- feat: add chat file deletion with comprehensive mote cleanup by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/373
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.28.0...v1.29.0
 
