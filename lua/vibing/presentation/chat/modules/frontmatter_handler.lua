@@ -77,6 +77,14 @@ function M.update_field(buf, key, value, update_timestamp)
     return false
   end
 
+  -- valueがnilの場合はフィールドを削除
+  if value == nil then
+    if key_line then
+      vim.api.nvim_buf_set_lines(buf, key_line - 1, key_line, false, {})
+    end
+    return true
+  end
+
   local new_line = key .. ": " .. value
 
   if key_line then
