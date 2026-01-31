@@ -192,6 +192,23 @@ function M._register_commands()
     require("vibing.presentation.chat.controller").handle_summarize()
   end, { desc = "Generate and insert summary from chat history" })
 
+  vim.api.nvim_create_user_command("VibingDeleteChats", function(opts)
+    require("vibing.presentation.chat.deletion_controller").handle_delete_command(opts, M.config)
+  end, {
+    nargs = "?",
+    desc = "Delete chat files (use --unrenamed to delete all unrenamed files)",
+    complete = function(arg_lead, cmd_line, cursor_pos)
+      local flags = { "--unrenamed" }
+      local matches = {}
+      for _, flag in ipairs(flags) do
+        if flag:find("^" .. vim.pesc(arg_lead)) then
+          table.insert(matches, flag)
+        end
+      end
+      return matches
+    end,
+  })
+
   -- コンテキスト関連コマンド
   vim.api.nvim_create_user_command("VibingContext", function(opts)
     require("vibing.presentation.context.controller").handle_add(opts)
