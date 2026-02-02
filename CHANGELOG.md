@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.29.1 (2026-02-02)
+
+## What's Changed
+* fix: exclude .worktrees/ from mote ignore only in main context by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/375
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.29.0...v1.29.1
+
 ## 1.29.0 (2026-01-31)
 
 ## What's Changed
