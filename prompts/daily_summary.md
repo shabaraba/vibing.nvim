@@ -1,61 +1,46 @@
 # Daily Summary Request for {{date}}
 
-Below are conversation pairs from today's development sessions, grouped by project.
-Please analyze them and create a development journal following engineering best practices.
+Analyze the development conversations below and extract structured data.
 
-## Required Output Format
+## CRITICAL: Output Format
 
-Use this structure for each project:
+You MUST output ONLY a valid JSON object. No markdown, no explanation, no text before or after.
 
-```markdown
-## [Project Name]
-
-### What I Did (やったこと)
-
-- [Feature/Task] Implementation detail with file/function names
-  - Specific changes made
-  - Progress: XX% complete (if applicable)
-
-### What I Learned (わかったこと)
-
-- Technical insights, discoveries, or new knowledge gained
-- Solutions to problems encountered
-- Best practices or patterns identified
-
-### Challenges & Solutions (課題と解決)
-
-- **Challenge:** Specific problem description
-  - **Solution:** How it was resolved
-  - **Root Cause:** Why it happened (if identified)
-
-### Next Actions (つぎにやること)
-
-- [ ] Specific next steps with action items
-- [ ] Follow-up tasks or improvements needed
-- [ ] Blockers to address
-
-### Notes
-
-- Additional context, ideas, or observations
-- Links to related discussions or documentation
+```json
+{
+  "projects": [
+    {
+      "name": "project-name",
+      "what_i_did": [
+        "Specific task or feature implemented",
+        "Another accomplishment with file/function names"
+      ],
+      "what_i_learned": ["Technical insight or discovery", "Best practice identified"],
+      "challenges": [
+        {
+          "problem": "What went wrong",
+          "solution": "How it was resolved",
+          "root_cause": "Why it happened (optional)"
+        }
+      ],
+      "next_actions": ["Specific next step", "Follow-up task"],
+      "notes": ["Additional observations (optional)"]
+    }
+  ]
+}
 ```
 
-**Important Guidelines:**
+## Extraction Rules
 
-- **Structure by project**: Use `##` headers for each project name
-- **Be specific**: Include file names, function names, error messages, etc.
-- **Focus on impact**: What changed? What was learned? What's next?
-- **Use checkboxes**: Format next actions as `- [ ]` task items
-- **Quantify when possible**: Progress percentages, metrics, numbers
-- **Omit empty sections**: Skip sections with no content
-- **Write concisely**: Use bullet points, not paragraphs
-
-**Format Standards:**
-
-- Code/file references: Use `backticks`
-- Task items: Use `- [ ]` for actionable items
-- Completed items: Use `- [x]` if tracking completion
-- Importance: Use **bold** for key points
+1. **Group by project**: Each distinct project gets its own object
+2. **Be specific**: Include file names, function names, actual values
+3. **Focus on outcomes**: Extract what was DONE, not the process
+4. **Exclude noise**:
+   - NO tool execution logs (`📄 Read`, `⏺ Bash`, `📝 Write`, etc.)
+   - NO meta-commentary ("Let me check...", "I'll now...")
+   - NO raw command output
+5. **Empty arrays are OK**: Use `[]` for sections with no content
+6. **Concise strings**: Each array item should be 1-2 sentences max
 
 {{language_instruction}}
 

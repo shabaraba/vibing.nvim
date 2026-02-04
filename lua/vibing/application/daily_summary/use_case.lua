@@ -1,6 +1,7 @@
 ---@class Vibing.Application.DailySummaryUseCase
 
 local Collector = require("vibing.application.daily_summary.collector")
+local Renderer = require("vibing.application.daily_summary.renderer")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local notify = require("vibing.core.utils.notify")
 
@@ -246,7 +247,12 @@ function M.generate_summary(date, include_all, on_complete)
         return
       end
 
-      local final_content = response.content or accumulated_content
+      local raw_content = response.content or accumulated_content
+      local final_content, render_err = Renderer.process_response(raw_content)
+      if render_err then
+        notify.warn("JSON parse failed, using raw output: " .. render_err, "Daily Summary")
+      end
+
       M._save_summary(date, final_content, result.source_files, result.total_messages, config, function(success, file_path)
         if success and file_path then
           notify.info(string.format("Summary saved: %s", vim.fn.fnamemodify(file_path, ":.")), "Daily Summary")
