@@ -7,19 +7,21 @@ local M = {}
 local slash_source = require("vibing.application.completion.sources.slash")
 local file_source = require("vibing.application.completion.sources.file")
 local agent_source = require("vibing.application.completion.sources.agent")
+local frontmatter_source = require("vibing.application.completion.sources.frontmatter")
 
----@type {context: Vibing.TriggerContext, source: "slash"|"file"|"agent"}?
+---@type {context: Vibing.TriggerContext, source: "slash"|"file"|"agent"|"frontmatter"}?
 local _last_match = nil
 
 ---Sources to check in order of priority
 local sources = {
+  { module = frontmatter_source, name = "frontmatter" }, -- Check YAML frontmatter first
   { module = slash_source, name = "slash" },
   { module = file_source, name = "file" },
   { module = agent_source, name = "agent" },
 }
 
 ---Get candidates for a source
----@param source_name "slash"|"file"|"agent"
+---@param source_name "slash"|"file"|"agent"|"frontmatter"
 ---@param context Vibing.TriggerContext
 ---@return Vibing.CompletionItem[]
 local function get_items(source_name, context)
@@ -27,6 +29,8 @@ local function get_items(source_name, context)
     return file_source.get_candidates_sync(context)
   elseif source_name == "agent" then
     return agent_source.get_candidates_sync(context)
+  elseif source_name == "frontmatter" then
+    return frontmatter_source.get_candidates_sync(context)
   end
   local items = {}
   slash_source.get_candidates(context, function(result)
@@ -89,6 +93,9 @@ function M._kind_to_abbr(kind)
     File = "[File]",
     Agent = "[Agent]",
     Argument = "[Arg]",
+    Enum = "[Enum]",
+    Tool = "[Tool]",
+    Pattern = "[Pat]",
   }
   return abbrs[kind] or "[?]"
 end

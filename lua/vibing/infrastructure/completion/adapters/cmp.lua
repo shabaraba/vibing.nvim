@@ -6,9 +6,10 @@ local M = {}
 local slash_source = require("vibing.application.completion.sources.slash")
 local file_source = require("vibing.application.completion.sources.file")
 local agent_source = require("vibing.application.completion.sources.agent")
+local frontmatter_source = require("vibing.application.completion.sources.frontmatter")
 
 ---@type table[]
-local sources = { slash_source, file_source, agent_source }
+local sources = { frontmatter_source, slash_source, file_source, agent_source }
 
 ---Create nvim-cmp source
 ---@return table
@@ -73,6 +74,9 @@ local function to_cmp_kind(kind, cmp_kinds)
     Skill = cmp_kinds.Module,
     Agent = cmp_kinds.Interface,
     Argument = cmp_kinds.EnumMember,
+    Enum = cmp_kinds.Enum,
+    Tool = cmp_kinds.Class,
+    Pattern = cmp_kinds.Constant,
   }
   return kind_map[kind] or cmp_kinds.Text
 end
