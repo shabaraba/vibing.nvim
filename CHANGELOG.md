@@ -3,9 +3,9 @@
 ## 1.30.0 (2026-02-04)
 
 ## What's Changed
-* feat: add YAML frontmatter completion support by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/377
-* fix: use JSON output format for daily summary by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/379
 
+- feat: add YAML frontmatter completion support by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/377
+- fix: use JSON output format for daily summary by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/379
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.29.1...v1.30.0
 
