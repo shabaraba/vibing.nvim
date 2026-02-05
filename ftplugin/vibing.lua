@@ -20,45 +20,31 @@ elseif ok then
   end)
 end
 
--- Configure nvim-cmp for vibing buffers (prioritize vibing source over path)
+-- Configure nvim-cmp for vibing buffers (merge vibing source with user's existing sources)
 local has_cmp, cmp = pcall(require, "cmp")
 if has_cmp then
   -- Ensure vibing source is registered first
-  local ok_completion, completion = pcall(require, "vibing.application.completion")
+  local ok_completion, completion_module = pcall(require, "vibing.application.completion")
   if ok_completion then
-    completion.setup()
+    completion_module.setup()
   end
 
-  -- Kind icons for vibing completion items
-  local kind_icons = {
-    Function = "",
-    Module = "",
-    Interface = "",
-    File = "",
-    EnumMember = "",
-    Text = "",
+  -- Get user's existing sources and merge with vibing source
+  local global_config = cmp.get_config()
+  local existing_sources = global_config.sources or {}
+
+  -- Build merged sources: vibing first, then user's sources (excluding duplicate vibing)
+  local merged_sources = {
+    { name = "vibing", priority = 1000 },
   }
+  for _, source in ipairs(existing_sources) do
+    if source.name ~= "vibing" then
+      table.insert(merged_sources, source)
+    end
+  end
 
   cmp.setup.buffer({
-    sources = {
-      { name = "vibing", priority = 1000 },
-      { name = "buffer", priority = 500 },
-    },
-    formatting = {
-      format = function(entry, vim_item)
-        local icon = kind_icons[vim_item.kind] or ""
-        vim_item.kind = icon .. " " .. vim_item.kind
-        -- Keep menu minimal for vibing source
-        if entry.source.name == "vibing" then
-          vim_item.menu = ""
-        end
-        return vim_item
-      end,
-    },
-    -- Enable documentation preview window
-    window = {
-      documentation = cmp.config.window.bordered(),
-    },
+    sources = merged_sources,
   })
 end
 
