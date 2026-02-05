@@ -123,16 +123,11 @@ function ChatBuffer:_create_buffer()
     return
   end
 
-  self.buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[self.buf].buftype = ""
+  self.buf = vim.api.nvim_create_buf(true, false)
   vim.bo[self.buf].filetype = "vibing"
   vim.bo[self.buf].syntax = "markdown"
   vim.bo[self.buf].modifiable = true
   vim.bo[self.buf].swapfile = false
-
-  if self.config.window.position == "back" then
-    vim.bo[self.buf].buflisted = true
-  end
 
   if self.file_path then
     vim.api.nvim_buf_set_name(self.buf, self.file_path)
