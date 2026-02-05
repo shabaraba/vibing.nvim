@@ -57,7 +57,7 @@ end
 local function save_buffer(buf)
   local ok, err = pcall(function()
     vim.api.nvim_buf_call(buf, function()
-      vim.cmd("write")
+      vim.cmd.write({ bang = true })  -- Force overwrite with :write!
     end)
   end)
   return ok, err
