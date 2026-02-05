@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.30.1 (2026-02-05)
+
+## What's Changed
+* fix: merge user's cmp sources instead of overwriting by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/380
+* fix: use force overwrite for file save to prevent E13 error by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/382
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.30.0...v1.30.1
+
 ## 1.30.0 (2026-02-04)
 
 ## What's Changed
