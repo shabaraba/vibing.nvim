@@ -60,11 +60,19 @@ function M.generate_from_conversation(conversation, callback)
     end
 
     title = vim.trim(title)
+
+    -- デバッグ: AIの生成結果をログ出力
+    vim.notify(string.format("[vibing] AI generated title: '%s'", title), vim.log.levels.DEBUG)
+
     title = filename_util.sanitize(title)
 
+    -- デバッグ: サニタイズ後の結果をログ出力
+    vim.notify(string.format("[vibing] Sanitized title: '%s'", title), vim.log.levels.DEBUG)
+
     if title == "" then
-      callback(nil, "Failed to generate valid title")
-      return
+      -- 空の場合はフォールバック
+      title = "untitled"
+      vim.notify("[vibing] Title was empty after sanitization, using fallback 'untitled'", vim.log.levels.WARN)
     end
 
     callback(title, nil)
