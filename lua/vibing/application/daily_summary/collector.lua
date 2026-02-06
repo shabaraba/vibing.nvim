@@ -14,16 +14,20 @@ function M.find_vibing_files(directory, opts)
     mtime_days = opts and opts.mtime_days,
     strategy = opts and opts.strategy,
   })
-  local files, err = finder:find(directory, "*.md")
+  -- Search for both *.vibing and *.md files
+  -- (*.md will be the new extension for chat buffers)
+  local vibing_files, err1 = finder:find(directory, "*.vibing")
+  local md_files, err2 = finder:find(directory, "*.md")
 
-  if err then
+  if err1 and err2 then
     vim.notify(
-      string.format("vibing.nvim: Failed to search directory %s: %s", directory, err),
+      string.format("vibing.nvim: Failed to search directory %s: %s", directory, err1),
       vim.log.levels.WARN
     )
     return {}
   end
 
+  local files = vim.list_extend(vibing_files or {}, md_files or {})
   return files
 end
 
