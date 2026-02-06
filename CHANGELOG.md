@@ -3,9 +3,9 @@
 ## 1.30.2 (2026-02-06)
 
 ## What's Changed
-* fix: enable buflisted for chat buffer to support Copilot attachment by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/383
-* fix: improve title generation robustness and sanitization by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/384
 
+- fix: enable buflisted for chat buffer to support Copilot attachment by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/383
+- fix: improve title generation robustness and sanitization by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/384
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.30.1...v1.30.2
 
