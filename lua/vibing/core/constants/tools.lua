@@ -29,9 +29,11 @@ end
 function M.validate_tool(tool)
   local tool_name, rule_content = tool:match("^([A-Za-z]+)%((.+)%)$")
   if tool_name and rule_content then
-    local normalized = tool_name:sub(1, 1):upper() .. tool_name:sub(2):lower()
-    if M.VALID_TOOLS_MAP[normalized] then
-      return normalized .. "(" .. rule_content .. ")"
+    -- Find matching valid tool name (case-insensitive)
+    for _, valid in ipairs(M.VALID_TOOLS) do
+      if tool_name:lower() == valid:lower() then
+        return valid .. "(" .. rule_content .. ")"
+      end
     end
     return nil
   end

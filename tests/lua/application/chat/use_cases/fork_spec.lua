@@ -7,7 +7,7 @@ local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 local function make_chat_buffer(opts)
   opts = opts or {}
   local buf = vim.api.nvim_create_buf(false, true)
-  local file_path = opts.file_path or (vim.fn.tempname() .. ".vibing")
+  local file_path = opts.file_path or (vim.fn.tempname() .. ".md")
 
   local frontmatter = opts.frontmatter or {
     ["vibing.nvim"] = true,
@@ -112,8 +112,8 @@ describe("Fork use case", function()
       assert.is_not_nil(path1)
       assert.is_not_nil(path2)
       assert.are_not.equal(path1, path2)
-      assert.is_truthy(path1:find("fork%-1%.vibing$"))
-      assert.is_truthy(path2:find("fork%-2%.vibing$"))
+      assert.is_truthy(path1:find("fork%-1%.md$"))
+      assert.is_truthy(path2:find("fork%-2%.md$"))
 
       vim.fn.delete(chat_buffer.file_path)
     end)
@@ -145,7 +145,7 @@ describe("Fork use case", function()
 
     it("uses fallback session_id when source has none", function()
       -- session_idフィールドなしのfrontmatterでファイルを作成
-      local file_path = vim.fn.tempname() .. ".vibing"
+      local file_path = vim.fn.tempname() .. ".md"
       local fm = {
         ["vibing.nvim"] = true,
         created_at = "2025-01-01T00:00:00",
@@ -220,7 +220,7 @@ describe("Fork use case", function()
       -- auto_saveが新規ファイルとして書き込む可能性があるため、バッファ内容を空にする
       vim.api.nvim_buf_set_lines(chat_buffer.buf, 0, -1, false, {})
       -- file_pathを存在しないパスに設定
-      local nonexistent = vim.fn.tempname() .. "_nonexistent/file.vibing"
+      local nonexistent = vim.fn.tempname() .. "_nonexistent/file.md"
       chat_buffer.file_path = nonexistent
       local result = Fork.execute(chat_buffer)
       assert.is_nil(result)

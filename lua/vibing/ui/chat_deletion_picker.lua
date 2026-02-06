@@ -3,6 +3,7 @@ local M = {}
 
 local notify = require("vibing.core.utils.notify")
 local DeleteChatsUseCase = require("vibing.application.chat.use_cases.delete_chats")
+local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 
 ---@param success boolean
 ---@param message string
@@ -39,9 +40,9 @@ function M._show_telescope(save_dir, config, unrenamed_only)
   local entry_display = require("telescope.pickers.entry_display")
   local FileEntity = require("vibing.domain.chat.file_entity")
 
-  local find_command = { "fd", "--type", "f", "--extension", "vibing", ".", save_dir }
+  local find_command = { "fd", "--type", "f", "--extension", "md", ".", save_dir }
   if vim.fn.executable("fd") == 0 then
-    find_command = { "find", save_dir, "-type", "f", "-name", "*.vibing" }
+    find_command = { "find", save_dir, "-type", "f", "-name", "*.md" }
   end
 
   local displayer = entry_display.create({
@@ -59,6 +60,11 @@ function M._show_telescope(save_dir, config, unrenamed_only)
       or "Delete Chats (<Tab> to select, <CR> to delete)",
     finder = finders.new_oneshot_job(find_command, {
       entry_maker = function(line)
+        -- フロントマターでvibing.nvimチャットファイルかどうかを判定
+        if not Frontmatter.is_vibing_chat_file(line) then
+          return nil
+        end
+
         local entity = FileEntity.new(line)
         if not entity then
           return nil

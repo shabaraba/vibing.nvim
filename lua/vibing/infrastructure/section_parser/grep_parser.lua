@@ -164,7 +164,7 @@ local function to_tilde_path(file_path)
 end
 
 ---Extract messages for a specific date from a file
----@param file_path string Path to .vibing file
+---@param file_path string Path to chat file
 ---@param target_date string Target date (YYYY-MM-DD)
 ---@return Vibing.Infrastructure.SectionParser.Message[] messages
 ---@return string? error Error message (only on failure)

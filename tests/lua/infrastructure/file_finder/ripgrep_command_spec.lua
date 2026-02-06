@@ -34,7 +34,7 @@ describe("vibing.infrastructure.file_finder.ripgrep_command", function()
       local finder = ripgrep_command:new()
       if skip_if_unsupported(finder) then return end
 
-      local files, err = finder:find("/non/existent/path", "*.vibing")
+      local files, err = finder:find("/non/existent/path", "*.md")
       assert.is_table(files)
       assert.equals(0, #files)
       assert.is_not_nil(err)
@@ -46,15 +46,15 @@ describe("vibing.infrastructure.file_finder.ripgrep_command", function()
 
       local test_dir = vim.fn.getcwd() .. "/test-rg-find"
       vim.fn.mkdir(test_dir, "p")
-      vim.fn.writefile({ "test" }, test_dir .. "/test.vibing")
+      vim.fn.writefile({ "test" }, test_dir .. "/test.md")
       vim.fn.writefile({ "test" }, test_dir .. "/test.txt")
 
-      local files, err = finder:find(test_dir, "*.vibing")
+      local files, err = finder:find(test_dir, "*.md")
 
       assert.is_nil(err)
       assert.is_table(files)
       assert.equals(1, #files)
-      assert.is_true(files[1]:match("test%.vibing$") ~= nil)
+      assert.is_true(files[1]:match("test%.md$") ~= nil)
 
       vim.fn.delete(test_dir, "rf")
     end)
@@ -66,10 +66,10 @@ describe("vibing.infrastructure.file_finder.ripgrep_command", function()
       local test_dir = vim.fn.getcwd() .. "/test-rg-recursive"
       local sub_dir = test_dir .. "/subdir/nested"
       vim.fn.mkdir(sub_dir, "p")
-      vim.fn.writefile({ "test" }, test_dir .. "/root.vibing")
-      vim.fn.writefile({ "test" }, sub_dir .. "/nested.vibing")
+      vim.fn.writefile({ "test" }, test_dir .. "/root.md")
+      vim.fn.writefile({ "test" }, sub_dir .. "/nested.md")
 
-      local files, err = finder:find(test_dir, "*.vibing")
+      local files, err = finder:find(test_dir, "*.md")
 
       assert.is_nil(err)
       assert.is_table(files)
@@ -84,9 +84,9 @@ describe("vibing.infrastructure.file_finder.ripgrep_command", function()
 
       local test_dir = vim.fn.getcwd() .. "/test-rg-mtime"
       vim.fn.mkdir(test_dir, "p")
-      vim.fn.writefile({ "test" }, test_dir .. "/recent.vibing")
+      vim.fn.writefile({ "test" }, test_dir .. "/recent.md")
 
-      local files, err = finder:find(test_dir, "*.vibing")
+      local files, err = finder:find(test_dir, "*.md")
 
       assert.is_nil(err)
       assert.is_table(files)

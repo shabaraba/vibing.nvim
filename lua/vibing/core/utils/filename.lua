@@ -64,7 +64,7 @@ function M.generate_default()
 end
 
 ---AIが生成したタイトルからファイル名を生成
----形式: {type}-yyyymmdd-{title}.vibing (例: chat-20250627-fix_auth_bug.vibing)
+---形式: {type}-yyyymmdd-{title}.md (例: chat-20250627-fix_auth_bug.md)
 ---:VibingSetFileTitleコマンドで使用
 ---@param title string AIが生成したタイトル（サニタイズ前）
 ---@param file_type "chat"|"inline" ファイルタイプ
@@ -78,7 +78,7 @@ function M.generate_with_title(title, file_type)
   end
 
   local timestamp = os.date("%Y%m%d")
-  return string.format("%s-%s-%s.vibing", file_type, timestamp, sanitized)
+  return string.format("%s-%s-%s.md", file_type, timestamp, sanitized)
 end
 
 return M

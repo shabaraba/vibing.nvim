@@ -113,7 +113,7 @@ function M._is_valid_buffer(buf)
   local exclude_patterns = {
     "%.git/",
     "node_modules/",
-    "%.vibing",
+    "%.md",
   }
 
   for _, pattern in ipairs(exclude_patterns) do

@@ -44,7 +44,7 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       local finder = find_command:new()
       if skip_if_unsupported(finder) then return end
 
-      local files, err = finder:find("/non/existent/directory", "*.vibing")
+      local files, err = finder:find("/non/existent/directory", "*.md")
 
       assert.is_table(files)
       assert.equals(0, #files)
@@ -60,14 +60,14 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       vim.fn.mkdir(test_dir, "p")
 
       -- Create test files
-      local file1 = test_dir .. "/chat1.vibing"
-      local file2 = test_dir .. "/chat2.vibing"
+      local file1 = test_dir .. "/chat1.md"
+      local file2 = test_dir .. "/chat2.md"
       local file3 = test_dir .. "/readme.txt"
       vim.fn.writefile({ "test" }, file1)
       vim.fn.writefile({ "test" }, file2)
       vim.fn.writefile({ "test" }, file3)
 
-      local files, err = finder:find(test_dir, "*.vibing")
+      local files, err = finder:find(test_dir, "*.md")
 
       assert.is_nil(err)
       assert.is_table(files)
@@ -75,7 +75,7 @@ describe("vibing.infrastructure.file_finder.find_command", function()
 
       -- Verify all found files match pattern
       for _, f in ipairs(files) do
-        assert.is_true(f:match("%.vibing$") ~= nil)
+        assert.is_true(f:match("%.md$") ~= nil)
       end
 
       -- Cleanup
@@ -91,12 +91,12 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       vim.fn.mkdir(sub_dir, "p")
 
       -- Create test files
-      local file1 = test_dir .. "/chat1.vibing"
-      local file2 = sub_dir .. "/chat2.vibing"
+      local file1 = test_dir .. "/chat1.md"
+      local file2 = sub_dir .. "/chat2.md"
       vim.fn.writefile({ "test" }, file1)
       vim.fn.writefile({ "test" }, file2)
 
-      local files, err = finder:find(test_dir, "*.vibing")
+      local files, err = finder:find(test_dir, "*.md")
 
       assert.is_nil(err)
       assert.is_table(files)
@@ -116,7 +116,7 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       -- Create non-matching file
       vim.fn.writefile({ "test" }, test_dir .. "/readme.txt")
 
-      local files, err = finder:find(test_dir, "*.vibing")
+      local files, err = finder:find(test_dir, "*.md")
 
       assert.is_nil(err)
       assert.is_table(files)
@@ -135,13 +135,13 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       vim.fn.mkdir(sub_dir, "p")
 
       -- Create test file
-      vim.fn.writefile({ "test" }, test_dir .. "/chat.vibing")
+      vim.fn.writefile({ "test" }, test_dir .. "/chat.md")
 
       -- Create symlink back to parent (potential infinite loop)
       vim.loop.fs_symlink(test_dir, sub_dir .. "/link_parent", { dir = true })
 
       -- Should complete without hanging (using -P flag)
-      local files, err = finder:find(test_dir, "*.vibing")
+      local files, err = finder:find(test_dir, "*.md")
 
       assert.is_nil(err)
       assert.is_table(files)
@@ -160,11 +160,11 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       vim.fn.mkdir(test_dir, "p")
 
       -- Create test file (will be recently modified)
-      local file1 = test_dir .. "/recent.vibing"
+      local file1 = test_dir .. "/recent.md"
       vim.fn.writefile({ "test" }, file1)
 
       -- Find with mtime filter (files modified within 1 day)
-      local files, err = finder:find(test_dir, "*.vibing")
+      local files, err = finder:find(test_dir, "*.md")
 
       assert.is_nil(err)
       assert.is_table(files)
@@ -184,16 +184,16 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       vim.fn.mkdir(ignored_dir, "p")
 
       -- Create files
-      vim.fn.writefile({ "test" }, test_dir .. "/visible.vibing")
-      vim.fn.writefile({ "test" }, ignored_dir .. "/hidden.vibing")
+      vim.fn.writefile({ "test" }, test_dir .. "/visible.md")
+      vim.fn.writefile({ "test" }, ignored_dir .. "/hidden.md")
 
-      local files, err = finder:find(test_dir, "*.vibing")
+      local files, err = finder:find(test_dir, "*.md")
 
       assert.is_nil(err)
       assert.is_table(files)
-      -- Only visible.vibing should be found (custom_ignore is pruned)
+      -- Only visible.md should be found (custom_ignore is pruned)
       assert.equals(1, #files)
-      assert.is_true(files[1]:match("visible%.vibing$") ~= nil)
+      assert.is_true(files[1]:match("visible%.md$") ~= nil)
 
       -- Cleanup
       vim.fn.delete(test_dir, "rf")

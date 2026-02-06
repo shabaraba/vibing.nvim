@@ -18,8 +18,8 @@ function ForkedChatScanner:find_target_files(base_dir)
     return {}
   end
 
-  -- すべての.vibingファイルを検索
-  return vim.fn.glob(base_dir .. "**/*.vibing", false, true)
+  -- すべての.mdファイルを検索
+  return vim.fn.glob(base_dir .. "**/*.md", false, true)
 end
 
 ---@param file_path string

@@ -16,7 +16,7 @@ end
 ---Recursively search for files in a directory
 ---Must be implemented by subclass (base class throws error)
 ---@param directory string Target directory to search
----@param pattern string File pattern (e.g., "*.vibing")
+---@param pattern string File pattern (e.g., "*.md")
 ---@return string[] files Array of absolute paths to matched files
 ---@return string? error Error message (only on failure)
 function FileFinder:find(directory, pattern)

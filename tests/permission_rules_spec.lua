@@ -113,10 +113,10 @@ describe("vibing granular permission rules", function()
       -- Reload modules to ensure clean state
       package.loaded["vibing"] = nil
       package.loaded["vibing.config"] = nil
-      package.loaded["vibing.adapters.agent_sdk"] = nil
+      package.loaded["vibing.infrastructure.adapter.agent_sdk"] = nil
 
       local vibing = require("vibing")
-      local agent_sdk = require("vibing.adapters.agent_sdk")
+      local agent_sdk = require("vibing.infrastructure.adapter.agent_sdk")
 
       -- Setup config with rules via vibing.setup()
       vibing.setup({
@@ -159,10 +159,10 @@ describe("vibing granular permission rules", function()
       -- Reload modules to ensure clean state
       package.loaded["vibing"] = nil
       package.loaded["vibing.config"] = nil
-      package.loaded["vibing.adapters.agent_sdk"] = nil
+      package.loaded["vibing.infrastructure.adapter.agent_sdk"] = nil
 
       local vibing = require("vibing")
-      local agent_sdk = require("vibing.adapters.agent_sdk")
+      local agent_sdk = require("vibing.infrastructure.adapter.agent_sdk")
 
       vibing.setup({
         permissions = {

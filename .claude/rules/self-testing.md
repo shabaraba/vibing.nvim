@@ -128,8 +128,8 @@ describe("E2E: Chat basic flow", function()
     vim.wait(2000)
 
     -- Verify buffer creation
-    local ok = helper.wait_for_buffer_content(nvim_instance, "%.vibing", 5000)
-    assert.is_true(ok, "Chat buffer should be created with .vibing extension")
+    local ok = helper.wait_for_buffer_content(nvim_instance, "%.md", 5000)
+    assert.is_true(ok, "Chat buffer should be created with .md extension")
 
     -- Verify frontmatter
     ok = helper.wait_for_buffer_content(nvim_instance, "created_at:", 2000)
@@ -411,7 +411,7 @@ Poll buffer content until pattern matches (or timeout).
 **Parameters:**
 
 - `instance` - Instance from `spawn_nvim_instance()`
-- `pattern` (string) - Lua pattern or regex (e.g., `"%.vibing"`, `"## .* Assistant"`)
+- `pattern` (string) - Lua pattern or regex (e.g., `"%.md"`, `"## .* Assistant"`)
 - `timeout` (number) - Timeout in milliseconds
 
 **Returns:**

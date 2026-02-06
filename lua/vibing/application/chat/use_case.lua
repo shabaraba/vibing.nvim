@@ -118,7 +118,7 @@ function M.create_new_for_worktree(worktree_path, branch_name)
 
   local save_path = git_root .. "/.vibing/worktrees/" .. branch_name .. "/"
   vim.fn.mkdir(save_path, "p")
-  local filename = os.date("chat-%Y%m%d-%H%M%S.vibing")
+  local filename = os.date("chat-%Y%m%d-%H%M%S.md")
   session:set_file_path(save_path .. filename)
 
   return session

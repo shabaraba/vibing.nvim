@@ -8,19 +8,19 @@ local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 local Git = require("vibing.core.utils.git")
 
----ファイル名から-fork-N.vibingを生成
+---ファイル名から-fork-N.mdを生成
 ---@param source_path string
 ---@param save_dir string
 ---@return string fork_filename
 local function generate_fork_filename(source_path, save_dir)
   local source_basename = vim.fn.fnamemodify(source_path, ":t:r")
   local fork_number = 1
-  local fork_filename = string.format("%s-fork-%d.vibing", source_basename, fork_number)
+  local fork_filename = string.format("%s-fork-%d.md", source_basename, fork_number)
   local fork_path = vim.fs.joinpath(save_dir, fork_filename)
 
   while vim.fn.filereadable(fork_path) == 1 do
     fork_number = fork_number + 1
-    fork_filename = string.format("%s-fork-%d.vibing", source_basename, fork_number)
+    fork_filename = string.format("%s-fork-%d.md", source_basename, fork_number)
     fork_path = vim.fs.joinpath(save_dir, fork_filename)
   end
 

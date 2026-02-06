@@ -1,29 +1,29 @@
--- Tests for vibing.chat.init module
+-- Tests for vibing.application.chat.init module
 
-describe("vibing.chat.init", function()
+describe("vibing.application.chat.init", function()
   local ChatInit
   local Commands
 
   before_each(function()
     -- Clear loaded modules
-    package.loaded["vibing.chat.commands"] = nil
-    package.loaded["vibing.chat.init"] = nil
-    package.loaded["vibing.chat.handlers.context"] = nil
-    package.loaded["vibing.chat.handlers.clear"] = nil
-    package.loaded["vibing.chat.handlers.save"] = nil
-    package.loaded["vibing.chat.handlers.summarize"] = nil
-    package.loaded["vibing.chat.handlers.mode"] = nil
-    package.loaded["vibing.chat.handlers.model"] = nil
-    package.loaded["vibing.chat.handlers.help"] = nil
-    package.loaded["vibing.chat.handlers.allow"] = nil
-    package.loaded["vibing.chat.handlers.deny"] = nil
-    package.loaded["vibing.chat.handlers.permission"] = nil
-    package.loaded["vibing.chat.handlers.permissions"] = nil
+    package.loaded["vibing.application.chat.commands"] = nil
+    package.loaded["vibing.application.chat.init"] = nil
+    package.loaded["vibing.application.chat.handlers.context"] = nil
+    package.loaded["vibing.application.chat.handlers.clear"] = nil
+    package.loaded["vibing.application.chat.handlers.save"] = nil
+    package.loaded["vibing.application.chat.handlers.summarize"] = nil
+    package.loaded["vibing.application.chat.handlers.mode"] = nil
+    package.loaded["vibing.application.chat.handlers.model"] = nil
+    package.loaded["vibing.application.chat.handlers.help"] = nil
+    package.loaded["vibing.application.chat.handlers.allow"] = nil
+    package.loaded["vibing.application.chat.handlers.deny"] = nil
+    package.loaded["vibing.application.chat.handlers.permission"] = nil
+    package.loaded["vibing.application.chat.handlers.permissions"] = nil
     package.loaded["vibing.ui.permission_builder"] = nil
     package.loaded["vibing.constants.tools"] = nil
 
-    Commands = require("vibing.chat.commands")
-    ChatInit = require("vibing.chat.init")
+    Commands = require("vibing.application.chat.commands")
+    ChatInit = require("vibing.application.chat.init")
 
     -- Reset commands registry
     Commands.commands = {}
@@ -106,7 +106,7 @@ describe("vibing.chat.init", function()
       assert.is_not_nil(cmd.description:match("model"))
     end)
 
-    it("should have exactly 12 commands after setup", function()
+    it("should have exactly 14 commands after setup", function()
       ChatInit.setup()
 
       local count = 0
@@ -114,7 +114,7 @@ describe("vibing.chat.init", function()
         count = count + 1
       end
 
-      assert.equals(13, count)
+      assert.equals(14, count)
     end)
 
     it("should be idempotent (can be called multiple times)", function()
@@ -126,7 +126,7 @@ describe("vibing.chat.init", function()
         count = count + 1
       end
 
-      assert.equals(13, count)
+      assert.equals(14, count)
     end)
 
     it("should register commands with correct descriptions", function()
@@ -169,7 +169,7 @@ describe("vibing.chat.init", function()
 
       local list = Commands.list()
 
-      assert.equals(13, #list)
+      assert.equals(14, #list)
 
       -- Verify all command names are in the list
       local command_names = {}

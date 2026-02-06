@@ -63,7 +63,7 @@ end
 
 ---Search for files using find command
 ---@param directory string Target directory to search
----@param pattern string File pattern (e.g., "*.vibing")
+---@param pattern string File pattern (e.g., "*.md")
 ---@return string[] files Array of absolute paths to matched files
 ---@return string? error Error message (only on failure)
 function FindCommand:find(directory, pattern)

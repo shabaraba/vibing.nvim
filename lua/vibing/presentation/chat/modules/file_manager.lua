@@ -6,7 +6,7 @@ function M.generate_unique_filename()
   local timestamp = os.date("%Y%m%d-%H%M%S")
   local hrtime = string.format("%016x", vim.loop.hrtime())
   local random_id = string.format("%04x", math.random(0, 65535))
-  return string.format("chat-%s-%s-%s.vibing", timestamp, hrtime, random_id)
+  return string.format("chat-%s-%s-%s.md", timestamp, hrtime, random_id)
 end
 
 ---プロジェクト固有のsystem-prompt.mdを初期化
@@ -84,13 +84,13 @@ function M.update_filename_from_message(buf, current_path, message)
   local chat_dir = project_root .. "/.vibing/chat/"
   vim.fn.mkdir(chat_dir, "p")
 
-  local new_filename = base_filename .. ".vibing"
+  local new_filename = base_filename .. ".md"
   local new_file_path = chat_dir .. new_filename
 
   -- 重複チェック
   local counter = 1
   while vim.fn.filereadable(new_file_path) == 1 do
-    new_filename = base_filename .. "_" .. counter .. ".vibing"
+    new_filename = base_filename .. "_" .. counter .. ".md"
     new_file_path = chat_dir .. new_filename
     counter = counter + 1
   end

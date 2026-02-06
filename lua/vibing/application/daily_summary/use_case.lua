@@ -26,7 +26,7 @@ end
 ---@return string|nil
 local function extract_project_name(file_path)
   local normalized = file_path:gsub("^~/", vim.fn.expand("~") .. "/")
-  local project = normalized:match("/([^/]+)/chat/[^/]+%.vibing$")
+  local project = normalized:match("/([^/]+)/chat/[^/]+%.md$")
   return project
 end
 

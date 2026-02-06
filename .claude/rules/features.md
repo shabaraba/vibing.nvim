@@ -24,7 +24,7 @@ Response content here
 - **Backward Compatibility**: Legacy format without timestamps (`## User`, `## Assistant`) is fully supported
 - **Searchability**: Timestamps enable easy searching by date/time:
   - Neovim search: `/2025-12-28` to find messages from a specific date
-  - File search: `grep "## 2025-12-28" *.vibing` to search across chat files
+  - File search: `grep "## 2025-12-28" .vibing/chat/*.md` to search across chat files
   - Useful for extracting conversation history for daily reports
 
 **Timestamp Recording:**

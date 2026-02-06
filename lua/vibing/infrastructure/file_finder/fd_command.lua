@@ -24,7 +24,7 @@ function FdCommand:supports_platform()
   return result.code == 0
 end
 
----Extract extension from glob pattern (e.g., "*.vibing" -> "vibing")
+---Extract extension from glob pattern (e.g., "*.md" -> "md")
 ---@param pattern string Glob pattern
 ---@return string? extension Extension without dot, or nil if not a simple extension pattern
 local function extract_extension(pattern)
@@ -34,7 +34,7 @@ end
 
 ---Search for files using fd command
 ---@param directory string Target directory to search
----@param pattern string File pattern (e.g., "*.vibing")
+---@param pattern string File pattern (e.g., "*.md")
 ---@return string[] files Array of absolute paths to matched files
 ---@return string? error Error message (only on failure)
 function FdCommand:find(directory, pattern)
@@ -49,7 +49,7 @@ function FdCommand:find(directory, pattern)
   -- -t f: files only
   -- -a: absolute paths
   -- -H: include hidden files/directories (e.g., .vibing/)
-  -- --no-ignore: don't respect .gitignore (we want all .vibing files)
+  -- --no-ignore: don't respect .gitignore (we want all chat files)
   -- --no-follow: don't follow symlinks (prevents circular reference)
   local cmd = {
     "fd",

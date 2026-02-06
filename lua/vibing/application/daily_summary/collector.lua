@@ -5,7 +5,7 @@ local SectionParserFactory = require("vibing.infrastructure.section_parser.facto
 
 local M = {}
 
----Find all .vibing files in directory recursively
+---Find all vibing chat files in directory recursively
 ---@param directory string
 ---@param opts? {mtime_days?: number, strategy?: Vibing.FileFinderStrategy} Options for file search
 ---@return string[]
@@ -14,7 +14,7 @@ function M.find_vibing_files(directory, opts)
     mtime_days = opts and opts.mtime_days,
     strategy = opts and opts.strategy,
   })
-  local files, err = finder:find(directory, "*.vibing")
+  local files, err = finder:find(directory, "*.md")
 
   if err then
     vim.notify(

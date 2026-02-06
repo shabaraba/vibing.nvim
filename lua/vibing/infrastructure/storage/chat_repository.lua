@@ -4,6 +4,7 @@
 local M = {}
 
 local FileEntity = require("vibing.domain.chat.file_entity")
+local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 
 ---@param save_dir string
 ---@return Vibing.Domain.Chat.FileEntity[]
@@ -32,10 +33,13 @@ function M.find_all(save_dir)
 
       if type == "directory" then
         scan_dir(path)
-      elseif type == "file" and name:match("%.vibing$") then
-        local entity = FileEntity.new(path)
-        if entity then
-          table.insert(entities, entity)
+      elseif type == "file" and name:match("%.md$") then
+        -- フロントマターでvibing.nvimチャットファイルかどうかを判定
+        if Frontmatter.is_vibing_chat_file(path) then
+          local entity = FileEntity.new(path)
+          if entity then
+            table.insert(entities, entity)
+          end
         end
       end
     end

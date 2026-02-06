@@ -27,7 +27,9 @@ enabled: false
 ---]]
 
       local result = frontmatter.parse(content)
-      assert.equals("true", result["vibing.nvim"])
+      -- parse_yaml_value converts "true"/"false" to boolean values
+      assert.equals(true, result["vibing.nvim"])
+      assert.equals(false, result.enabled)
     end)
   end)
 

@@ -4,7 +4,7 @@ local helper = require("vibing.testing.e2e_helper")
 -- Timeout constants
 local TIMEOUTS = {
   CHAT_CREATION = 2000, -- Time for chat buffer creation and rendering
-  BUFFER_READY = 5000, -- Time for buffer to be ready with .vibing extension
+  BUFFER_READY = 5000, -- Time for buffer to be ready with .md extension
   FRONTMATTER = 2000, -- Time for frontmatter to be populated
   CURSOR_MOVE = 100, -- Time for cursor movement to complete
   ASSISTANT_RESPONSE = 30000, -- Maximum wait time for Assistant response (30s)
@@ -32,9 +32,9 @@ describe("E2E: Chat basic flow", function()
     -- バッファ作成待機
     vim.wait(TIMEOUTS.CHAT_CREATION)
 
-    -- バッファ名確認（.vibingファイルが作成される）
-    local ok = helper.wait_for_buffer_content(nvim_instance, "%.vibing", TIMEOUTS.BUFFER_READY)
-    assert.is_true(ok, "Chat buffer should be created with .vibing extension")
+    -- バッファ名確認（.mdファイルが作成される）
+    local ok = helper.wait_for_buffer_content(nvim_instance, "%.md", TIMEOUTS.BUFFER_READY)
+    assert.is_true(ok, "Chat buffer should be created with .md extension")
 
     -- フロントマター確認
     ok = helper.wait_for_buffer_content(nvim_instance, "created_at:", TIMEOUTS.FRONTMATTER)
@@ -47,7 +47,7 @@ describe("E2E: Chat basic flow", function()
     vim.wait(TIMEOUTS.CHAT_CREATION)
 
     -- バッファ作成確認
-    local ok = helper.wait_for_buffer_content(nvim_instance, "%.vibing", TIMEOUTS.BUFFER_READY)
+    local ok = helper.wait_for_buffer_content(nvim_instance, "%.md", TIMEOUTS.BUFFER_READY)
     assert.is_true(ok, "Chat buffer should be created")
 
     -- メッセージ送信（簡単なプロンプト）
