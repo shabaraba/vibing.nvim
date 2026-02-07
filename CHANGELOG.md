@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.31.1 (2026-02-07)
+
+## What's Changed
+* fix: improve daily summary search_dirs and mtime handling by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/388
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.31.0...v1.31.1
+
 ## 1.31.0 (2026-02-07)
 
 ## What's Changed
