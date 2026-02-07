@@ -89,12 +89,26 @@ local function add_directory_without_duplicate(dir, directories)
   table.insert(directories, dir)
 end
 
----@param include_all boolean
----@param config table
----@return string[]
+---Get search directories for daily summary collection
+---@param include_all boolean When true, uses search_dirs from config or default directories
+---@param config table Configuration table with daily_summary.search_dirs and chat settings
+---@return string[] Array of directory paths to search for chat files
+---
+---Behavior:
+---  - When include_all=true and search_dirs is configured:
+---    Recursively searches for .vibing/chat directories under each search_dir (up to 5 levels).
+---    Example: search_dirs = {"~/workspace"} will find all .vibing/chat in ~/workspace/*/.vibing/chat
+---  - When include_all=true and search_dirs is not configured:
+---    Uses default directories (project_root/.vibing/chat and user data directory)
+---  - When include_all=false:
+---    Uses only the current project's save directory
+---
+---Performance: Excludes node_modules, .git, build, and dist directories from recursive search
 function M.get_search_directories(include_all, config)
   local directories = {}
-  local project_root = vim.fn.getcwd()
+  -- Use git root if available (for worktree support), otherwise use cwd
+  local Git = require("vibing.core.utils.git")
+  local project_root = Git.get_root() or vim.fn.getcwd()
 
   if include_all then
     -- Use only search_dirs if configured
@@ -121,8 +135,40 @@ function M.get_search_directories(include_all, config)
           goto continue
         end
 
-        -- Already validated existence, only check for duplicates
-        add_directory_without_duplicate(expanded_dir, directories)
+        -- Search for .vibing/chat directories recursively under this directory
+        -- This allows search_dirs to contain parent directories (e.g., ~/workspace)
+        -- and automatically find all project chat directories
+        -- Exclude common large directories to improve performance
+        local vibing_dirs = vim.fn.systemlist({
+          "find",
+          expanded_dir,
+          "-type", "d",
+          "-name", ".vibing",
+          "-maxdepth", "5",
+          -- Exclude common large directories
+          "-not", "-path", "*/node_modules/*",
+          "-not", "-path", "*/.git/*",
+          "-not", "-path", "*/build/*",
+          "-not", "-path", "*/dist/*",
+        })
+
+        if vim.v.shell_error == 0 and #vibing_dirs > 0 then
+          for _, vibing_dir in ipairs(vibing_dirs) do
+            local chat_dir = vibing_dir .. "/chat"
+            add_directory_if_exists(chat_dir, directories)
+          end
+        elseif vim.v.shell_error ~= 0 then
+          -- Log error if find command failed
+          vim.notify(
+            string.format("vibing.nvim: find command failed for %s (exit code: %d)", expanded_dir, vim.v.shell_error),
+            vim.log.levels.WARN
+          )
+          -- Fallback: treat it as a direct chat directory
+          add_directory_if_exists(expanded_dir, directories)
+        else
+          -- No .vibing subdirectories found, treat it as a direct chat directory
+          add_directory_if_exists(expanded_dir, directories)
+        end
         ::continue::
       end
     else
@@ -153,7 +199,8 @@ function M.collect_all_messages(target_date, include_all, config)
   local source_files = {}
 
   -- Use mtime filter for large directory searches (reduces files to parse)
-  local mtime_days = include_all and 1 or nil
+  -- Set to 3 days for -all option to find recent files containing today's messages
+  local mtime_days = include_all and 3 or nil
   -- Get strategy from config (default: "auto")
   local strategy = config.daily_summary and config.daily_summary.file_finder_strategy or "auto"
 
