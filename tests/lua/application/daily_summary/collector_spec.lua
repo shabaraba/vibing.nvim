@@ -277,15 +277,23 @@ describe("vibing.application.daily_summary.collector", function()
       assert.equals(0, #result)
     end)
 
-    it("should find .md files in directory", function()
+    it("should find .md files with vibing.nvim frontmatter in directory", function()
       local test_dir = vim.fn.getcwd() .. "/test-vibing-files"
       vim.fn.mkdir(test_dir, "p")
 
-      -- Create test .md files
+      -- Create test .md files with vibing.nvim frontmatter
       local file1 = test_dir .. "/chat1.md"
       local file2 = test_dir .. "/chat2.md"
-      vim.fn.writefile({ "test content" }, file1)
-      vim.fn.writefile({ "test content" }, file2)
+      local frontmatter = {
+        "---",
+        "vibing.nvim: true",
+        "session_id: test-session",
+        "---",
+        "",
+        "test content",
+      }
+      vim.fn.writefile(frontmatter, file1)
+      vim.fn.writefile(frontmatter, file2)
 
       local result = collector.find_vibing_files(test_dir)
 
@@ -296,16 +304,24 @@ describe("vibing.application.daily_summary.collector", function()
       vim.fn.delete(test_dir, "rf")
     end)
 
-    it("should recursively find .md files in subdirectories", function()
+    it("should recursively find .md files with vibing.nvim frontmatter in subdirectories", function()
       local test_dir = vim.fn.getcwd() .. "/test-recursive"
       local sub_dir = test_dir .. "/subdir"
       vim.fn.mkdir(sub_dir, "p")
 
-      -- Create test .md files in nested directories
+      -- Create test .md files with vibing.nvim frontmatter in nested directories
       local file1 = test_dir .. "/chat1.md"
       local file2 = sub_dir .. "/chat2.md"
-      vim.fn.writefile({ "test content" }, file1)
-      vim.fn.writefile({ "test content" }, file2)
+      local frontmatter = {
+        "---",
+        "vibing.nvim: true",
+        "session_id: test-session",
+        "---",
+        "",
+        "test content",
+      }
+      vim.fn.writefile(frontmatter, file1)
+      vim.fn.writefile(frontmatter, file2)
 
       local result = collector.find_vibing_files(test_dir)
 
@@ -316,7 +332,7 @@ describe("vibing.application.daily_summary.collector", function()
       vim.fn.delete(test_dir, "rf")
     end)
 
-    it("should ignore non-.md files", function()
+    it("should only include .md files with vibing.nvim frontmatter", function()
       local test_dir = vim.fn.getcwd() .. "/test-ignore-non-vibing"
       -- Clean up if directory exists from previous run
       vim.fn.delete(test_dir, "rf")
@@ -344,12 +360,10 @@ describe("vibing.application.daily_summary.collector", function()
       local result = collector.find_vibing_files(test_dir)
 
       assert.is_table(result)
-      -- find_vibing_files returns all .md files (filtering happens in collect_messages_from_file)
-      assert.equals(2, #result)
-      -- Should not include .txt file
-      for _, file in ipairs(result) do
-        assert.is_nil(file:match("%.txt$"))
-      end
+      -- find_vibing_files filters .md files by frontmatter (vibing.nvim: true)
+      -- Only chat.md has valid frontmatter, notes.md does not
+      assert.equals(1, #result)
+      assert.is_not_nil(result[1]:match("chat%.md$"))
 
       -- Cleanup
       vim.fn.delete(test_dir, "rf")
@@ -362,11 +376,19 @@ describe("vibing.application.daily_summary.collector", function()
       vim.fn.mkdir(dir_a, "p")
       vim.fn.mkdir(dir_b, "p")
 
-      -- Create .md files in both directories
+      -- Create .md files with vibing.nvim frontmatter in both directories
       local file_a = dir_a .. "/chat_a.md"
       local file_b = dir_b .. "/chat_b.md"
-      vim.fn.writefile({ "test content a" }, file_a)
-      vim.fn.writefile({ "test content b" }, file_b)
+      local frontmatter = {
+        "---",
+        "vibing.nvim: true",
+        "session_id: test-session",
+        "---",
+        "",
+        "test content",
+      }
+      vim.fn.writefile(frontmatter, file_a)
+      vim.fn.writefile(frontmatter, file_b)
 
       -- Create circular symlinks: dir_a/link_b -> dir_b, dir_b/link_a -> dir_a
       vim.loop.fs_symlink(dir_b, dir_a .. "/link_b", { dir = true })
@@ -388,9 +410,16 @@ describe("vibing.application.daily_summary.collector", function()
       local sub_dir = test_dir .. "/subdir"
       vim.fn.mkdir(sub_dir, "p")
 
-      -- Create .md file in test_dir
+      -- Create .md file with vibing.nvim frontmatter in test_dir
       local vibing_file = test_dir .. "/chat.md"
-      vim.fn.writefile({ "test content" }, vibing_file)
+      vim.fn.writefile({
+        "---",
+        "vibing.nvim: true",
+        "session_id: test-session",
+        "---",
+        "",
+        "test content",
+      }, vibing_file)
 
       -- Create symlink from subdir back to parent: subdir/link_parent -> ..
       vim.loop.fs_symlink(test_dir, sub_dir .. "/link_parent", { dir = true })
