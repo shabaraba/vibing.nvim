@@ -158,7 +158,7 @@ Source Chat (session-abc)
   │
   └─ :VibingChatFork right
        │
-       Fork Chat (session_id: session-abc, forked_from: source.vibing)
+       Fork Chat (session_id: session-abc, forked_from: source.md)
          │
          ├─ First message → SDK: query({ resume: session-abc, forkSession: true })
          │                  → SDK returns new session-def

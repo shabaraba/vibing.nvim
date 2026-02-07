@@ -27,7 +27,7 @@ describe("GrepParser", function()
     local test_date = "2025-01-26"
 
     before_each(function()
-      test_file = vim.fn.tempname() .. ".vibing"
+      test_file = vim.fn.tempname() .. ".md"
     end)
 
     after_each(function()
@@ -35,7 +35,7 @@ describe("GrepParser", function()
     end)
 
     it("returns empty array for non-existent file", function()
-      local messages, err = parser:extract_messages("/nonexistent/file.vibing", test_date)
+      local messages, err = parser:extract_messages("/nonexistent/file.md", test_date)
       assert.same({}, messages)
       assert.is_truthy(err)
     end)

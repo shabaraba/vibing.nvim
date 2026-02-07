@@ -22,7 +22,7 @@ describe("ChatBuffer session permissions", function()
     }
     package.loaded["vibing.presentation.chat.modules.file_manager"] = {
       get_save_directory = function() return "/tmp/" end,
-      generate_unique_filename = function() return "test.vibing" end,
+      generate_unique_filename = function() return "test.md" end,
       load_from_file = function() return true end,
       update_filename_from_message = function() end,
     }

@@ -249,7 +249,8 @@ describe("CommandValidator", function()
   describe("escape_for_shell", function()
     it("should escape single quotes", function()
       local escaped = CommandValidator.escape_for_shell("it's a test")
-      assert.equals("'it'\"'\"'s a test'", escaped)
+      -- vim.fn.shellescape uses '\'' to escape single quotes in POSIX shells
+      assert.equals("'it'\\''s a test'", escaped)
     end)
 
     it("should wrap in single quotes", function()

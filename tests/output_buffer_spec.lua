@@ -35,7 +35,8 @@ describe("vibing.ui.output_buffer", function()
       local output = OutputBuffer:new()
       output:open("Props Test " .. os.time())
 
-      assert.equals("markdown", vim.bo[output.buf].filetype)
+      -- vibing.nvim uses "vibing" filetype for output buffers
+      assert.equals("vibing", vim.bo[output.buf].filetype)
       assert.equals("nofile", vim.bo[output.buf].buftype)
       assert.is_false(vim.bo[output.buf].swapfile)
 

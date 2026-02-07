@@ -1,21 +1,21 @@
--- Tests for vibing.chat.commands module
+-- Tests for vibing.application.chat.commands module
 
-describe("vibing.chat.commands", function()
+describe("vibing.application.chat.commands", function()
   local Commands
 
   before_each(function()
     -- Clear loaded modules to ensure clean state
-    package.loaded["vibing.chat.commands"] = nil
-    package.loaded["vibing.utils.notify"] = nil
+    package.loaded["vibing.application.chat.commands"] = nil
+    package.loaded["vibing.core.utils.notify"] = nil
 
     -- Mock notify module
-    package.loaded["vibing.utils.notify"] = {
+    package.loaded["vibing.core.utils.notify"] = {
       error = function() end,
       warn = function() end,
       info = function() end,
     }
 
-    Commands = require("vibing.chat.commands")
+    Commands = require("vibing.application.chat.commands")
 
     -- Reset commands registry
     Commands.commands = {}

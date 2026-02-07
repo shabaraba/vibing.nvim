@@ -49,9 +49,9 @@ describe("vibing.constants.tools", function()
     end)
 
     it("validates granular patterns for web tools", function()
-      assert.equal("Webfetch(github.com)", tools.validate_tool("Webfetch(github.com)"))
-      assert.equal("Webfetch(github.com)", tools.validate_tool("webfetch(github.com)"))
-      assert.equal("Websearch(*.npmjs.com)", tools.validate_tool("Websearch(*.npmjs.com)"))
+      assert.equal("WebFetch(github.com)", tools.validate_tool("Webfetch(github.com)"))
+      assert.equal("WebFetch(github.com)", tools.validate_tool("webfetch(github.com)"))
+      assert.equal("WebSearch(*.npmjs.com)", tools.validate_tool("Websearch(*.npmjs.com)"))
     end)
 
     it("validates granular patterns for search tools", function()
@@ -63,7 +63,7 @@ describe("vibing.constants.tools", function()
       -- Tool name is capitalized, pattern is preserved
       assert.equal("Bash(npm install)", tools.validate_tool("bash(npm install)"))
       assert.equal("Read(SRC/**/*.TS)", tools.validate_tool("read(SRC/**/*.TS)"))
-      assert.equal("Webfetch(GitHub.com)", tools.validate_tool("webfetch(GitHub.com)"))
+      assert.equal("WebFetch(GitHub.com)", tools.validate_tool("webfetch(GitHub.com)"))
     end)
 
     it("rejects invalid Bash patterns", function()

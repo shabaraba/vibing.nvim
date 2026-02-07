@@ -25,7 +25,7 @@ describe("vibing.infrastructure.file_finder.scandir", function()
   describe("find", function()
     it("should return error for non-existent directory", function()
       local finder = scandir:new()
-      local files, err = finder:find("/non/existent/directory", "*.vibing")
+      local files, err = finder:find("/non/existent/directory", "*.md")
 
       assert.is_table(files)
       assert.equals(0, #files)
@@ -39,14 +39,14 @@ describe("vibing.infrastructure.file_finder.scandir", function()
       vim.fn.mkdir(test_dir, "p")
 
       -- Create test files
-      local file1 = test_dir .. "/chat1.vibing"
-      local file2 = test_dir .. "/chat2.vibing"
+      local file1 = test_dir .. "/chat1.md"
+      local file2 = test_dir .. "/chat2.md"
       local file3 = test_dir .. "/readme.txt"
       vim.fn.writefile({ "test" }, file1)
       vim.fn.writefile({ "test" }, file2)
       vim.fn.writefile({ "test" }, file3)
 
-      local files, err = finder:find(test_dir, "*.vibing")
+      local files, err = finder:find(test_dir, "*.md")
 
       assert.is_nil(err)
       assert.is_table(files)
@@ -54,7 +54,7 @@ describe("vibing.infrastructure.file_finder.scandir", function()
 
       -- Verify all found files match pattern
       for _, f in ipairs(files) do
-        assert.is_true(f:match("%.vibing$") ~= nil)
+        assert.is_true(f:match("%.md$") ~= nil)
       end
 
       -- Cleanup
@@ -68,12 +68,12 @@ describe("vibing.infrastructure.file_finder.scandir", function()
       vim.fn.mkdir(sub_dir, "p")
 
       -- Create test files
-      local file1 = test_dir .. "/chat1.vibing"
-      local file2 = sub_dir .. "/chat2.vibing"
+      local file1 = test_dir .. "/chat1.md"
+      local file2 = sub_dir .. "/chat2.md"
       vim.fn.writefile({ "test" }, file1)
       vim.fn.writefile({ "test" }, file2)
 
-      local files, err = finder:find(test_dir, "*.vibing")
+      local files, err = finder:find(test_dir, "*.md")
 
       assert.is_nil(err)
       assert.is_table(files)
@@ -92,15 +92,15 @@ describe("vibing.infrastructure.file_finder.scandir", function()
       vim.fn.mkdir(dir_b, "p")
 
       -- Create test files
-      vim.fn.writefile({ "test" }, dir_a .. "/chat_a.vibing")
-      vim.fn.writefile({ "test" }, dir_b .. "/chat_b.vibing")
+      vim.fn.writefile({ "test" }, dir_a .. "/chat_a.md")
+      vim.fn.writefile({ "test" }, dir_b .. "/chat_b.md")
 
       -- Create circular symlinks
       vim.loop.fs_symlink(dir_b, dir_a .. "/link_b", { dir = true })
       vim.loop.fs_symlink(dir_a, dir_b .. "/link_a", { dir = true })
 
       -- Should complete without hanging
-      local files, err = finder:find(test_dir, "*.vibing")
+      local files, err = finder:find(test_dir, "*.md")
 
       assert.is_nil(err)
       assert.is_table(files)
@@ -118,7 +118,7 @@ describe("vibing.infrastructure.file_finder.scandir", function()
       -- Create test files
       vim.fn.writefile({ "test" }, test_dir .. "/file.txt")
       vim.fn.writefile({ "test" }, test_dir .. "/file.md")
-      vim.fn.writefile({ "test" }, test_dir .. "/file.vibing")
+      vim.fn.writefile({ "test" }, test_dir .. "/file.md")
 
       -- Test *.txt pattern
       local txt_files, _ = finder:find(test_dir, "*.txt")

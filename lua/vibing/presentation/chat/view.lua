@@ -10,7 +10,7 @@ local notify = require("vibing.core.utils.notify")
 ---@type Vibing.ChatBuffer?
 M._current_buffer = nil
 
----:eで開いた.vibingファイルのアタッチ済みバッファ（バッファ番号 → ChatBuffer）
+---:eで開いたチャットファイルのアタッチ済みバッファ（バッファ番号 → ChatBuffer）
 ---@type table<number, Vibing.ChatBuffer>
 M._attached_buffers = {}
 
@@ -151,8 +151,106 @@ function M.attach_to_buffer(bufnr, file_path)
 
   chat_buf:_setup_keymaps()
 
+  -- vibing.nvimチャットファイル用のバッファ設定を適用
+  M._apply_chat_buffer_settings(bufnr)
+
   M._attached_buffers[bufnr] = chat_buf
   return chat_buf
+end
+
+---チャットバッファ用の設定を適用
+---ftplugin/vibing.luaから移動した設定
+---@param bufnr number バッファ番号
+function M._apply_chat_buffer_settings(bufnr)
+  -- バッファローカル設定
+  vim.bo[bufnr].syntax = "markdown"
+  vim.bo[bufnr].commentstring = "<!-- %s -->"
+  vim.bo[bufnr].textwidth = 0
+  vim.bo[bufnr].formatoptions = "tcqj"
+
+  -- 補完設定
+  local ok_completion, completion = pcall(require, "vibing.application.completion")
+  if ok_completion and completion.setup_buffer then
+    pcall(completion.setup_buffer, bufnr)
+  elseif ok_completion then
+    pcall(function()
+      vim.bo[bufnr].omnifunc = "v:lua.require('vibing.application.completion').omnifunc"
+      vim.bo[bufnr].completeopt = "menu,menuone,noselect"
+    end)
+  end
+
+  -- nvim-cmp設定
+  local has_cmp, cmp = pcall(require, "cmp")
+  if has_cmp then
+    local ok_completion_module, completion_module = pcall(require, "vibing.application.completion")
+    if ok_completion_module then
+      completion_module.setup()
+    end
+
+    local global_config_cmp = cmp.get_config()
+    local existing_sources = global_config_cmp.sources or {}
+
+    local merged_sources = {
+      { name = "vibing", priority = 1000 },
+    }
+    for _, source in ipairs(existing_sources) do
+      if source.name ~= "vibing" then
+        table.insert(merged_sources, source)
+      end
+    end
+
+    cmp.setup.buffer({
+      sources = merged_sources,
+    })
+  end
+
+  -- wrap設定の適用
+  local ok_ui, ui_utils = pcall(require, "vibing.core.utils.ui")
+  if ok_ui then
+    pcall(ui_utils.apply_wrap_config, bufnr)
+
+    -- BufEnterでwrap設定を再適用
+    local group = vim.api.nvim_create_augroup("vibing_wrap_" .. bufnr, { clear = true })
+    vim.api.nvim_create_autocmd("BufEnter", {
+      group = group,
+      buffer = bufnr,
+      callback = function()
+        pcall(ui_utils.apply_wrap_config, bufnr)
+      end,
+      desc = "Apply vibing wrap settings on buffer enter",
+    })
+  end
+
+  -- BufUnloadでのクリーンアップ
+  local cleanup_group = vim.api.nvim_create_augroup("vibing_cleanup_" .. bufnr, { clear = true })
+  vim.api.nvim_create_autocmd("BufUnload", {
+    group = cleanup_group,
+    buffer = bufnr,
+    callback = function()
+      local chat_buffer = M._attached_buffers[bufnr] or (M._current_buffer and M._current_buffer.buf == bufnr and M._current_buffer)
+      if chat_buffer and chat_buffer._current_handle_id then
+        local ok_vibing, vibing_module = pcall(require, "vibing")
+        if ok_vibing then
+          local adapter = vibing_module.get_adapter()
+          if adapter then
+            adapter:cancel(chat_buffer._current_handle_id)
+          end
+        end
+      end
+      -- アタッチ済みバッファからクリーンアップ
+      M._attached_buffers[bufnr] = nil
+    end,
+    desc = "Cancel running Agent SDK process on buffer unload",
+  })
+
+  -- ウィンドウローカル設定（現在のウィンドウに適用）
+  local winnr = vim.fn.bufwinnr(bufnr)
+  if winnr > 0 then
+    vim.api.nvim_win_call(vim.fn.win_getid(winnr), function()
+      vim.wo.conceallevel = 2
+      vim.wo.spell = false
+    end)
+  end
 end
 
 ---アタッチ済みバッファをクリーンアップ

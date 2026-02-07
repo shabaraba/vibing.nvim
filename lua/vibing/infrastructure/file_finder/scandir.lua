@@ -22,7 +22,7 @@ function ScanDir:supports_platform()
 end
 
 ---Convert glob pattern to Lua pattern
----@param pattern string Glob pattern (e.g., "*.vibing")
+---@param pattern string Glob pattern (e.g., "*.md")
 ---@return string lua_pattern Lua pattern
 local function glob_to_lua_pattern(pattern)
   local escaped = pattern:gsub("([%.%+%-%^%$%(%)%%])", "%%%1")
@@ -69,7 +69,7 @@ end
 
 ---Search for files using fs_scandir
 ---@param directory string Target directory to search
----@param pattern string File pattern (e.g., "*.vibing")
+---@param pattern string File pattern (e.g., "*.md")
 ---@return string[] files Array of absolute paths to matched files
 ---@return string? error Error message (only on failure)
 function ScanDir:find(directory, pattern)

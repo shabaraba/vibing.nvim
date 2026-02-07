@@ -193,4 +193,50 @@ function M.update(content, updates)
   return M.serialize(data, body)
 end
 
+---ファイルの内容がvibing.nvimチャットファイルかどうかを判定
+---フロントマターに`vibing.nvim: true`が含まれているかをチェック
+---@param content string ファイルの内容
+---@return boolean
+function M.is_vibing_chat(content)
+  if not content or content == "" then
+    return false
+  end
+
+  local data, _ = M.parse(content)
+  if not data then
+    return false
+  end
+
+  return data["vibing.nvim"] == true
+end
+
+---ファイルパスからvibing.nvimチャットファイルかどうかを判定
+---@param file_path string ファイルパス
+---@return boolean
+function M.is_vibing_chat_file(file_path)
+  if not file_path or file_path == "" then
+    return false
+  end
+
+  if vim.fn.filereadable(file_path) ~= 1 then
+    return false
+  end
+
+  local content = table.concat(vim.fn.readfile(file_path), "\n")
+  return M.is_vibing_chat(content)
+end
+
+---バッファの内容がvibing.nvimチャットファイルかどうかを判定
+---@param bufnr number バッファ番号
+---@return boolean
+function M.is_vibing_chat_buffer(bufnr)
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+    return false
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local content = table.concat(lines, "\n")
+  return M.is_vibing_chat(content)
+end
+
 return M

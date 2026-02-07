@@ -458,7 +458,7 @@ function M._close_all()
   State.reset()
 end
 
----現在のプレビュー内容を.vibingファイルとして保存してChatBufferで開く
+---現在のプレビュー内容を.mdファイルとして保存してChatBufferで開く
 ---inlineモードでのみ使用可能（user_prompt, response_textが必要）
 ---@return boolean success 成功した場合true
 function M.save_as_vibing()
@@ -478,7 +478,7 @@ function M.save_as_vibing()
   local save_dir = project_root .. "/.vibing/inline/"
   vim.fn.mkdir(save_dir, "p")
 
-  local filename = os.date("inline-%Y%m%d-%H%M%S.vibing")
+  local filename = os.date("inline-%Y%m%d-%H%M%S.md")
   local file_path = save_dir .. filename
 
   local lines = {}

@@ -40,7 +40,7 @@ end
 
 ---Search for files using locate command
 ---@param directory string Target directory to search
----@param pattern string File pattern (e.g., "*.vibing")
+---@param pattern string File pattern (e.g., "*.md")
 ---@return string[] files Array of absolute paths to matched files
 ---@return string? error Error message (only on failure)
 function LocateCommand:find(directory, pattern)

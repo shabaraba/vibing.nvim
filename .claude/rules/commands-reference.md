@@ -26,7 +26,7 @@
 - `:VibingChat top` - New chat in top split
 - `:VibingChat bottom` - New chat in bottom split
 - `:VibingChat back` - New chat as background buffer only (no window)
-- `:VibingChat path/to/file.vibing` - Open saved chat file
+- `:VibingChat path/to/file.md` - Open saved chat file
 
 **`:VibingChatWorktree`** - Create or reuse a git worktree for the specified branch and open a chat session in that environment.
 
@@ -44,7 +44,7 @@
 - `:VibingChatFork right` - Fork and open in right split
 - `:VibingChatFork left` - Fork and open in left split
 - Position options: `current`, `right`, `left`, `top`, `bottom`, `back`
-- The fork file is named `<source>-fork-N.vibing` with auto-incrementing numbers
+- The fork file is named `<source>-fork-N.md` with auto-incrementing numbers
 - Fork inherits the source's session ID; on the first message, the SDK creates a new session via `forkSession` API
 - The `forked_from` frontmatter field tracks the source file for link synchronization
 - When the source file is renamed (via `:VibingSetFileTitle`), the fork's `forked_from` is automatically updated

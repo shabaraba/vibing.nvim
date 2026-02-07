@@ -44,7 +44,7 @@ describe("vibing.infrastructure.file_finder.locate_command", function()
       local finder = locate_command:new()
       if skip_if_unsupported(finder) then return end
 
-      local files, err = finder:find("/non/existent/path", "*.vibing")
+      local files, err = finder:find("/non/existent/path", "*.md")
       assert.is_table(files)
       assert.equals(0, #files)
       assert.is_not_nil(err)

@@ -135,8 +135,8 @@ const content = await use_mcp_tool('vibing-nvim', 'nvim_get_buffer', {});
 // Step 1: List all windows to find the target window
 const windows = await use_mcp_tool('vibing-nvim', 'nvim_list_windows', {});
 
-// Step 2: Find the window you want (e.g., chat window with .vibing file)
-const chatWindow = windows.find((w) => w.buffer_name.endsWith('.vibing'));
+// Step 2: Find the window you want (e.g., chat window in .vibing/chat/ directory)
+const chatWindow = windows.find((w) => w.buffer_name.includes('.vibing/chat/'));
 
 // Step 3: Resize using the correct winnr
 if (chatWindow) {

@@ -6,4 +6,4 @@ vim.opt.rtp:prepend(vim.fn.stdpath("data") .. "/lazy/plenary.nvim")
 vim.cmd("runtime plugin/plenary.vim")
 
 -- Set test environment flag
-vim.g.vibing_test_mode = true
+vim.g.md_test_mode = true

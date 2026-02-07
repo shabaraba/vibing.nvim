@@ -21,25 +21,10 @@ function M.setup(opts)
   Config.setup(opts)
   M.config = Config.get()
 
-  -- Register .vibing filetype
-  vim.filetype.add({
-    extension = {
-      vibing = "vibing",
-    },
-  })
-
-  -- .vibingファイルを開いた時に自動的にattach
-  vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
-    pattern = "*.vibing",
-    callback = function(args)
-      local view = require("vibing.presentation.chat.view")
-      local file_path = vim.api.nvim_buf_get_name(args.buf)
-      if file_path and file_path ~= "" and vim.fn.filereadable(file_path) == 1 then
-        view.attach_to_buffer(args.buf, file_path)
-      end
-    end,
-    desc = "Attach vibing.nvim to .vibing files",
-  })
+  -- チャットファイル自動検知（.md と .vibing の両方をサポート）
+  -- フロントマターに vibing.nvim: true が含まれている場合にアタッチ
+  local chat_detect = require("vibing.infrastructure.storage.chat_detect")
+  chat_detect.setup()
 
   -- MCP統合の初期化
   if M.config.mcp and M.config.mcp.enabled then
@@ -283,14 +268,14 @@ function M._register_commands()
     require("vibing.presentation.daily_summary.controller").handle_daily_summary(opts.args)
   end, {
     nargs = "?",
-    desc = "Generate daily summary from project .vibing files (default: today)",
+    desc = "Generate daily summary from project chat files (default: today)",
   })
 
   vim.api.nvim_create_user_command("VibingDailySummaryAll", function(opts)
     require("vibing.presentation.daily_summary.controller").handle_daily_summary_all(opts.args)
   end, {
     nargs = "?",
-    desc = "Generate daily summary from all .vibing files (default: today)",
+    desc = "Generate daily summary from all chat files (default: today)",
   })
 end
 

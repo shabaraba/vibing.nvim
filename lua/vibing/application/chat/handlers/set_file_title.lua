@@ -40,11 +40,11 @@ local function get_unique_file_path(dir, base_filename)
     return new_path
   end
 
-  local name_without_ext = base_filename:gsub("%.vibing$", "")
+  local name_without_ext = base_filename:gsub("%.md$", "")
   local counter = 1
 
   while vim.fn.filereadable(new_path) == 1 do
-    new_path = dir .. string.format("%s_%d.vibing", name_without_ext, counter)
+    new_path = dir .. string.format("%s_%d.md", name_without_ext, counter)
     counter = counter + 1
   end
 
@@ -118,8 +118,40 @@ return function(_, chat_buffer)
       end
     end
 
+    -- Notify LSP clients about file rename
+    local old_uri = vim.uri_from_bufnr(chat_buffer.buf)
+
     vim.api.nvim_buf_set_name(chat_buffer.buf, new_file_path)
     chat_buffer.file_path = new_file_path
+
+    -- Notify all LSP clients: didClose old URI, didOpen new URI
+    local clients = vim.lsp.get_clients({ bufnr = chat_buffer.buf })
+    for _, client in ipairs(clients) do
+      if client.server_capabilities.textDocumentSync then
+        -- didClose for old URI
+        if client.notify then
+          client.notify("textDocument/didClose", {
+            textDocument = { uri = old_uri }
+          })
+        end
+
+        -- didOpen for new URI
+        local new_uri = vim.uri_from_bufnr(chat_buffer.buf)
+        local buflines = vim.api.nvim_buf_get_lines(chat_buffer.buf, 0, -1, false)
+        local text = table.concat(buflines, "\n")
+
+        if client.notify then
+          client.notify("textDocument/didOpen", {
+            textDocument = {
+              uri = new_uri,
+              languageId = vim.bo[chat_buffer.buf].filetype,
+              version = 0,
+              text = text,
+            }
+          })
+        end
+      end
+    end
 
     if not is_existing_file then
       local ok, save_err = save_buffer(chat_buffer.buf)

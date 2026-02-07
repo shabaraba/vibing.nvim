@@ -185,13 +185,13 @@ describe("vibing.ui.permission_builder", function()
   end)
 end)
 
-describe("vibing.chat.handlers.permissions", function()
+describe("vibing.application.chat.handlers.permissions", function()
   local permissions_handler
   local mock_chat_buffer
 
   before_each(function()
     -- Clear loaded modules
-    package.loaded["vibing.chat.handlers.permissions"] = nil
+    package.loaded["vibing.application.chat.handlers.permissions"] = nil
     package.loaded["vibing.ui.permission_builder"] = nil
 
     -- Mock chat buffer with required methods
@@ -210,7 +210,7 @@ describe("vibing.chat.handlers.permissions", function()
   end)
 
   it("should exist and be callable", function()
-    permissions_handler = require("vibing.chat.handlers.permissions")
+    permissions_handler = require("vibing.application.chat.handlers.permissions")
     assert.is_function(permissions_handler)
   end)
 
@@ -225,7 +225,7 @@ describe("vibing.chat.handlers.permissions", function()
       end,
     }
 
-    permissions_handler = require("vibing.chat.handlers.permissions")
+    permissions_handler = require("vibing.application.chat.handlers.permissions")
     local result = permissions_handler({}, mock_chat_buffer)
 
     assert.is_true(result)
@@ -233,7 +233,7 @@ describe("vibing.chat.handlers.permissions", function()
   end)
 
   it("should handle nil chat buffer", function()
-    permissions_handler = require("vibing.chat.handlers.permissions")
+    permissions_handler = require("vibing.application.chat.handlers.permissions")
     local result = permissions_handler({}, nil)
     assert.is_false(result)
   end)

@@ -49,7 +49,7 @@ end
 
 ---@return boolean
 function FileEntity:_is_default_filename()
-  return self.basename:match("^chat%-%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-.+%.vibing$") ~= nil
+  return self.basename:match("^chat%-%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-.+%.md$") ~= nil
 end
 
 ---@return string

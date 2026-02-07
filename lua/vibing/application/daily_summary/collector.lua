@@ -5,7 +5,7 @@ local SectionParserFactory = require("vibing.infrastructure.section_parser.facto
 
 local M = {}
 
----Find all .vibing files in directory recursively
+---Find all vibing chat files in directory recursively
 ---@param directory string
 ---@param opts? {mtime_days?: number, strategy?: Vibing.FileFinderStrategy} Options for file search
 ---@return string[]
@@ -14,17 +14,31 @@ function M.find_vibing_files(directory, opts)
     mtime_days = opts and opts.mtime_days,
     strategy = opts and opts.strategy,
   })
-  local files, err = finder:find(directory, "*.vibing")
+  -- Search for both *.vibing and *.md files
+  -- (*.md will be the new extension for chat buffers)
+  local vibing_files, err1 = finder:find(directory, "*.vibing")
+  local md_files, err2 = finder:find(directory, "*.md")
 
-  if err then
+  if err1 and err2 then
     vim.notify(
-      string.format("vibing.nvim: Failed to search directory %s: %s", directory, err),
+      string.format("vibing.nvim: Failed to search directory %s: %s", directory, err1),
       vim.log.levels.WARN
     )
     return {}
   end
 
-  return files
+  local all_files = vim.list_extend(vibing_files or {}, md_files or {})
+
+  -- Filter .md files to only include vibing chat files (with vibing.nvim: true frontmatter)
+  local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
+  local filtered_files = {}
+  for _, file_path in ipairs(all_files) do
+    if file_path:match("%.vibing$") or Frontmatter.is_vibing_chat_file(file_path) then
+      table.insert(filtered_files, file_path)
+    end
+  end
+
+  return filtered_files
 end
 
 ---@param file_path string
