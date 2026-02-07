@@ -3,8 +3,8 @@
 ## 1.31.0 (2026-02-07)
 
 ## What's Changed
-* feat: migrate chat buffer extension from .vibing to .md by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/386
 
+- feat: migrate chat buffer extension from .vibing to .md by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/386
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.30.2...v1.31.0
 
