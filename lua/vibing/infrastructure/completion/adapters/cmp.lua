@@ -7,6 +7,7 @@ local slash_source = require("vibing.application.completion.sources.slash")
 local file_source = require("vibing.application.completion.sources.file")
 local agent_source = require("vibing.application.completion.sources.agent")
 local frontmatter_source = require("vibing.application.completion.sources.frontmatter")
+local chat_view = require("vibing.presentation.chat.view")
 
 ---@type table[]
 local sources = { frontmatter_source, slash_source, file_source, agent_source }
@@ -25,7 +26,7 @@ function M.create()
   end
 
   function source:is_available()
-    return vim.bo.filetype == "vibing"
+    return chat_view.is_current_buffer_chat()
   end
 
   function source:get_trigger_characters()
