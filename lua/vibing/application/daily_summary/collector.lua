@@ -27,8 +27,18 @@ function M.find_vibing_files(directory, opts)
     return {}
   end
 
-  local files = vim.list_extend(vibing_files or {}, md_files or {})
-  return files
+  local all_files = vim.list_extend(vibing_files or {}, md_files or {})
+
+  -- Filter .md files to only include vibing chat files (with vibing.nvim: true frontmatter)
+  local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
+  local filtered_files = {}
+  for _, file_path in ipairs(all_files) do
+    if file_path:match("%.vibing$") or Frontmatter.is_vibing_chat_file(file_path) then
+      table.insert(filtered_files, file_path)
+    end
+  end
+
+  return filtered_files
 end
 
 ---@param file_path string

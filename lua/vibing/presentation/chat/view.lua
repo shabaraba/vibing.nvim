@@ -152,7 +152,7 @@ function M.attach_to_buffer(bufnr, file_path)
   chat_buf:_setup_keymaps()
 
   -- vibing.nvimチャットファイル用のバッファ設定を適用
-  M._apply_chat_buffer_settings(bufnr, config)
+  M._apply_chat_buffer_settings(bufnr)
 
   M._attached_buffers[bufnr] = chat_buf
   return chat_buf
@@ -161,13 +161,12 @@ end
 ---チャットバッファ用の設定を適用
 ---ftplugin/vibing.luaから移動した設定
 ---@param bufnr number バッファ番号
----@param config table vibing設定
-function M._apply_chat_buffer_settings(bufnr, config)
+function M._apply_chat_buffer_settings(bufnr)
   -- バッファローカル設定
-  vim.api.nvim_buf_set_option(bufnr, "syntax", "markdown")
-  vim.api.nvim_buf_set_option(bufnr, "commentstring", "<!-- %s -->")
-  vim.api.nvim_buf_set_option(bufnr, "textwidth", 0)
-  vim.api.nvim_buf_set_option(bufnr, "formatoptions", "tcqj")
+  vim.bo[bufnr].syntax = "markdown"
+  vim.bo[bufnr].commentstring = "<!-- %s -->"
+  vim.bo[bufnr].textwidth = 0
+  vim.bo[bufnr].formatoptions = "tcqj"
 
   -- 補完設定
   local ok_completion, completion = pcall(require, "vibing.application.completion")
@@ -175,8 +174,8 @@ function M._apply_chat_buffer_settings(bufnr, config)
     pcall(completion.setup_buffer, bufnr)
   elseif ok_completion then
     pcall(function()
-      vim.api.nvim_buf_set_option(bufnr, "omnifunc", "v:lua.require('vibing.application.completion').omnifunc")
-      vim.api.nvim_buf_set_option(bufnr, "completeopt", "menu,menuone,noselect")
+      vim.bo[bufnr].omnifunc = "v:lua.require('vibing.application.completion').omnifunc"
+      vim.bo[bufnr].completeopt = "menu,menuone,noselect"
     end)
   end
 

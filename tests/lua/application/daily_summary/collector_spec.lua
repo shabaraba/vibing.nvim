@@ -54,10 +54,10 @@ describe("vibing.application.daily_summary.collector", function()
         -- Should return at least one default directory (behavior verified by non-empty result)
         assert.is_true(#result > 0, "Expected at least one default directory, got empty result")
 
-        -- Verify default directories are included (project/.md/chat and/or user data dir)
+        -- Verify default directories are included (project/.vibing/chat and/or user data dir)
         local project_root = vim.fn.getcwd()
         local expected_defaults = {
-          project_root .. "/.md/chat",
+          project_root .. "/.vibing/chat",
           vim.fn.stdpath("data") .. "/vibing/chats",
         }
 

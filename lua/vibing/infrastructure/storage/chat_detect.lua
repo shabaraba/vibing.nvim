@@ -21,12 +21,14 @@ local function try_attach(buf)
 
   local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
   if Frontmatter.is_vibing_chat_buffer(buf) then
-    attached_bufs[buf] = true
     vim.schedule(function()
       local view = require("vibing.presentation.chat.view")
       local file_path = vim.api.nvim_buf_get_name(buf)
       if file_path and file_path ~= "" then
-        view.attach_to_buffer(buf, file_path)
+        local ok = pcall(view.attach_to_buffer, buf, file_path)
+        if ok then
+          attached_bufs[buf] = true
+        end
       end
     end)
   end
