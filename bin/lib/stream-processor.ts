@@ -111,6 +111,7 @@ function extractInputSummary(toolName: string, toolInput: Record<string, unknown
     (toolInput.file_path as string) ||
     (toolInput.pattern as string) ||
     (toolInput.query as string) ||
+    (toolInput.url as string) ||
     ''
   );
 }
