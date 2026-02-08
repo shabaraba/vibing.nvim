@@ -26,6 +26,22 @@ function M.setup(opts)
   local chat_detect = require("vibing.infrastructure.storage.chat_detect")
   chat_detect.setup()
 
+  -- グローバルなwrap設定管理（ウィンドウ切り替え時に正しいwrap設定を適用）
+  local wrap_group = vim.api.nvim_create_augroup("VibingWrapManager", { clear = true })
+  vim.api.nvim_create_autocmd("WinEnter", {
+    group = wrap_group,
+    pattern = "*",
+    callback = function()
+      local ok_ui, ui_utils = pcall(require, "vibing.core.utils.ui")
+      if ok_ui then
+        -- 現在のウィンドウとバッファでwrap設定を適用
+        -- force=falseでis_chat_buffer()チェックを行う
+        pcall(ui_utils.apply_wrap_config, 0, nil, false)
+      end
+    end,
+    desc = "Apply correct wrap settings when entering any window",
+  })
+
   -- MCP統合の初期化
   if M.config.mcp and M.config.mcp.enabled then
     -- 自動セットアップ（初回のみ）

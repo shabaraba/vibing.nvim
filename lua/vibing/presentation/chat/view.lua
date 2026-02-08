@@ -207,17 +207,24 @@ function M._apply_chat_buffer_settings(bufnr)
   -- wrap設定の適用
   local ok_ui, ui_utils = pcall(require, "vibing.core.utils.ui")
   if ok_ui then
-    pcall(ui_utils.apply_wrap_config, bufnr)
+    -- 初回適用（force=trueで強制適用、新規作成直後のバッファはまだフロントマターがないため）
+    pcall(ui_utils.apply_wrap_config, 0, bufnr, true)
 
-    -- BufEnterでwrap設定を再適用
+    -- BufEnter, FileType, WinEnterでwrap設定を再適用
+    -- - FileType: ftplugin（markdown.vim等）による上書きを防ぐ
+    -- - WinEnter: 他のウィンドウから戻った時に再適用
     local group = vim.api.nvim_create_augroup("vibing_wrap_" .. bufnr, { clear = true })
-    vim.api.nvim_create_autocmd("BufEnter", {
+    vim.api.nvim_create_autocmd({ "BufEnter", "FileType", "WinEnter" }, {
       group = group,
       buffer = bufnr,
       callback = function()
-        pcall(ui_utils.apply_wrap_config, bufnr)
+        -- 現在のバッファがこのbufnrであることを確認
+        local current_buf = vim.api.nvim_get_current_buf()
+        if current_buf == bufnr then
+          pcall(ui_utils.apply_wrap_config, 0, bufnr, true)
+        end
       end,
-      desc = "Apply vibing wrap settings on buffer enter",
+      desc = "Apply vibing wrap settings on buffer/window enter and filetype change",
     })
   end
 

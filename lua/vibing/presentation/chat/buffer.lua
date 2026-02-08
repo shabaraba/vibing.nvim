@@ -143,7 +143,7 @@ end
 ---ウィンドウを作成
 function ChatBuffer:_create_window()
   self.win = WindowManager.create_window(self.buf, self.config.window)
-  WindowManager.apply_wrap_config(self.win)
+  WindowManager.apply_wrap_config(self.win, self.buf)
 end
 
 ---キーマップを設定
