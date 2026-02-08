@@ -207,17 +207,32 @@ function M._apply_chat_buffer_settings(bufnr)
   -- wrap設定の適用
   local ok_ui, ui_utils = pcall(require, "vibing.core.utils.ui")
   if ok_ui then
-    pcall(ui_utils.apply_wrap_config, bufnr)
+    -- 初回適用（force=trueで強制適用、新規作成直後のバッファはまだフロントマターがないため）
+    pcall(ui_utils.apply_wrap_config, 0, bufnr, true)
 
-    -- BufEnterでwrap設定を再適用
+    -- Mark buffer as chat buffer immediately (cache for performance)
+    vim.b[bufnr].vibing_is_chat_buffer = true
+
+    -- FileTypeでwrap設定を再適用（ftplugin（markdown.vim等）による上書きを防ぐ）
+    -- WinEnterはグローバルイベント（init.lua）で処理するため、ここでは不要
     local group = vim.api.nvim_create_augroup("vibing_wrap_" .. bufnr, { clear = true })
-    vim.api.nvim_create_autocmd("BufEnter", {
+    vim.api.nvim_create_autocmd("FileType", {
       group = group,
       buffer = bufnr,
       callback = function()
-        pcall(ui_utils.apply_wrap_config, bufnr)
+        pcall(ui_utils.apply_wrap_config, 0, bufnr, true)
       end,
-      desc = "Apply vibing wrap settings on buffer enter",
+      desc = "Apply vibing wrap settings after filetype detection",
+    })
+
+    -- BufWritePost: フロントマターが変更された可能性があるためキャッシュをクリア
+    vim.api.nvim_create_autocmd("BufWritePost", {
+      group = group,
+      buffer = bufnr,
+      callback = function()
+        vim.b[bufnr].vibing_is_chat_buffer = nil
+      end,
+      desc = "Clear chat buffer cache after write",
     })
   end
 
