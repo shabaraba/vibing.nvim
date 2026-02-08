@@ -227,6 +227,7 @@ function M.is_vibing_chat_file(file_path)
 end
 
 ---バッファの内容がvibing.nvimチャットファイルかどうかを判定
+---キャッシュを使用してパフォーマンスを最適化
 ---@param bufnr number バッファ番号
 ---@return boolean
 function M.is_vibing_chat_buffer(bufnr)
@@ -234,9 +235,21 @@ function M.is_vibing_chat_buffer(bufnr)
     return false
   end
 
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  -- Check cache first (buffer-local variable)
+  local cached = vim.b[bufnr].vibing_is_chat_buffer
+  if cached ~= nil then
+    return cached
+  end
+
+  -- Only read first 20 lines for frontmatter validation (performance optimization)
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, 20, false)
   local content = table.concat(lines, "\n")
-  return M.is_vibing_chat(content)
+  local is_chat = M.is_vibing_chat(content)
+
+  -- Cache the result
+  vim.b[bufnr].vibing_is_chat_buffer = is_chat
+
+  return is_chat
 end
 
 return M
