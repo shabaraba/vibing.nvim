@@ -3,7 +3,7 @@
 local M = {}
 
 ---moteコマンドのベース引数を生成
----mote v0.2.1+: -d/--context-dirでスタンドアロンモード（グローバル設定不要）
+---mote v0.2.4+: -d/--context-dirでスタンドアロンモード（グローバル設定不要）
 ---プロジェクトローカルに完全に独立して動作
 ---@param config Vibing.MoteConfig mote設定
 ---@return string[] コマンドライン引数の配列
@@ -14,7 +14,7 @@ function M.build_base_args(config)
   local cmd = { Binary.get_path() }
 
   -- -d/--context-dirでスタンドアロンモード
-  -- mote v0.2.1では初回実行時に自動的にディレクトリ構造とignoreファイルを作成
+  -- mote v0.2.4では初回実行時に自動的にディレクトリ構造とignoreファイルを作成
   local project = config.project or Context.get_project_name()
   local context_dir = Context.build_dir_path(project, config.context)
   if context_dir then
@@ -31,6 +31,12 @@ end
 ---@param on_success fun(stdout: string) 成功時のコールバック
 ---@param on_error fun(error: string) エラー時のコールバック
 function M.run(args, cwd, on_success, on_error)
+  -- DEBUG: Log the exact command being executed
+  vim.notify(
+    "[vibing.mote] Executing: " .. table.concat(args, " "),
+    vim.log.levels.DEBUG
+  )
+
   local opts = { text = true }
   if cwd then
     opts.cwd = cwd

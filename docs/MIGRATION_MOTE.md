@@ -48,7 +48,7 @@ To enable mote-based diff functionality:
    cargo install --path .
    ```
 
-2. **Initialize mote** in your project (one-time setup, mote v0.2.0+)
+2. **Initialize mote** in your project (one-time setup, mote v0.2.4+)
 
    ```bash
    # For project root (with project-local storage)
@@ -64,7 +64,6 @@ To enable mote-based diff functionality:
      diff = {
        tool = "auto",  -- Use mote if available, fallback to git
        mote = {
-         ignore_file = ".vibing/.moteignore",
          project = nil,  -- nil = auto-detect from git repo name
          context_prefix = "vibing",  -- Context name prefix
        },
@@ -104,7 +103,7 @@ require("vibing").setup({
 })
 ```
 
-## Session Storage Structure (mote v0.2.0+)
+## Session Storage Structure (mote v0.2.4+)
 
 With mote integration, each chat session maintains isolated contexts with project-local storage:
 
@@ -138,7 +137,7 @@ With mote integration, each chat session maintains isolated contexts with projec
 
 ### "mote not initialized" error
 
-**Solution:** Initialize mote context in your project (mote v0.2.0+):
+**Solution:** Initialize mote context in your project (mote v0.2.4+):
 
 ```bash
 # For project root (with project-local storage)
@@ -152,7 +151,7 @@ mote --project <project-name> context new vibing-worktree-feature-x --context-di
 
 **Cause:** The file hasn't been modified since the last snapshot.
 
-**Solution:** Make changes to the file, or manually create a snapshot (mote v0.2.0+):
+**Solution:** Make changes to the file, or manually create a snapshot (mote v0.2.4+):
 
 ```bash
 # For project root

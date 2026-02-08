@@ -28,7 +28,7 @@ local function generate_hash(original_name)
 end
 
 ---Worktree固有のコンテキスト名を生成
----mote v0.2.0: --context API対応
+---mote v0.2.4: --context API対応
 ---
 ---同じworktree内の全セッションは同じmote contextを共有します。
 ---これにより、worktree内での作業履歴を一貫して追跡できます。
@@ -87,7 +87,7 @@ function M.build_dir_path(project, context)
 end
 
 ---moteコンテキストが初期化されているかチェック
----mote v0.2.1ではignoreファイルとstorageディレクトリで初期化を判定
+---mote v0.2.4ではignoreファイルとstorageディレクトリで初期化を判定
 ---@param project string? プロジェクト名
 ---@param context string? コンテキスト名
 ---@return boolean moteコンテキストが初期化されている場合true
@@ -102,7 +102,7 @@ function M.is_initialized(project, context)
     return false
   end
 
-  -- mote v0.2.1スタンドアロンモードではignoreファイルとstorageディレクトリが作成される
+  -- mote v0.2.4スタンドアロンモードではignoreファイルとstorageディレクトリが作成される
   local ignore_path = context_dir .. "/ignore"
   local storage_path = context_dir .. "/storage"
   return vim.fn.filereadable(ignore_path) == 1 or vim.fn.isdirectory(storage_path) == 1
