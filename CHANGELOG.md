@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.31.4 (2026-02-08)
+
+## What's Changed
+* fix: apply chat buffer settings after file load in fork flow by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/395
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.31.3...v1.31.4
+
 ## 1.31.3 (2026-02-08)
 
 ## What's Changed
