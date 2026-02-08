@@ -241,8 +241,9 @@ function M.is_vibing_chat_buffer(bufnr)
     return cached
   end
 
-  -- Only read first 20 lines for frontmatter validation (performance optimization)
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, 20, false)
+  -- Read enough lines to cover frontmatter (increased from 20 to 50)
+  -- This ensures we capture long permission arrays
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, 50, false)
   local content = table.concat(lines, "\n")
   local is_chat = M.is_vibing_chat(content)
 
