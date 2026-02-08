@@ -50,6 +50,10 @@ function M.render(session, position)
     -- NOTE: Diff display now uses patch files stored in .vibing/patches/<session_id>/
     -- The gd keymap reads patch files directly via PatchFinder and PatchViewer
   end
+
+  -- ファイル内容読み込み後にチャットバッファ設定を適用（wrap設定、補完、autocmdなど）
+  -- これによりftpluginによる上書きを防ぐ
+  M._apply_chat_buffer_settings(chat_buf.buf)
 end
 
 ---チャットウィンドウを閉じる

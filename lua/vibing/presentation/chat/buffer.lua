@@ -124,8 +124,6 @@ function ChatBuffer:_create_buffer()
   end
 
   self.buf = vim.api.nvim_create_buf(true, false)
-  vim.bo[self.buf].filetype = "vibing"
-  vim.bo[self.buf].syntax = "markdown"
   vim.bo[self.buf].modifiable = true
   vim.bo[self.buf].swapfile = false
 
@@ -137,6 +135,16 @@ function ChatBuffer:_create_buffer()
     local filename = FileManager.generate_unique_filename()
     self.file_path = save_path .. filename
     vim.api.nvim_buf_set_name(self.buf, self.file_path)
+  end
+
+  -- ファイル拡張子に基づいてfiletypeを設定
+  -- .mdファイルはmarkdown、.vibingファイルはvibingとする
+  local ext = vim.fn.fnamemodify(self.file_path, ":e")
+  if ext == "md" then
+    vim.bo[self.buf].filetype = "markdown"
+  else
+    vim.bo[self.buf].filetype = "vibing"
+    vim.bo[self.buf].syntax = "markdown"
   end
 end
 
