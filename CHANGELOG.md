@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.31.3 (2026-02-08)
+
+## What's Changed
+
+- fix: support mote v0.2.4 and fix .md chat buffer keymaps by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/392
+- fix: increase frontmatter line limit from 20 to 50 by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/394
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.31.2...v1.31.3
+
 ## 1.31.2 (2026-02-08)
 
 ## What's Changed
