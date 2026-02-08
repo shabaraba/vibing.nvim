@@ -209,7 +209,7 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
     callbacks.clear_forked_from()
   end
 
-  -- mote v0.2.0: --project/--context APIではコンテキスト名は最初から確定しているためリネーム不要
+  -- mote v0.2.4: --project/--context APIではコンテキスト名は最初から確定しているためリネーム不要
 
   -- mote統合: mote_configが存在し、初期化済みの場合にModified Files出力とpatch生成
   local MoteDiff = require("vibing.core.utils.mote_diff")
@@ -218,7 +218,7 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
   if using_mote then
     MoteDiff.get_changed_files(mote_config, function(success, files, error)
       if success and files and #files > 0 then
-        -- Patch生成（mote v0.2.0: プロジェクトローカルのcontext-dir配下に保存）
+        -- Patch生成（mote v0.2.4: プロジェクトローカルのcontext-dir配下に保存）
         local context_dir = MoteDiff.build_context_dir_path(mote_config.project, mote_config.context)
         if not context_dir then
           vim.notify("[vibing] Failed to generate patch: git root not found", vim.log.levels.WARN)
@@ -276,7 +276,7 @@ function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
   local MoteDiff = require("vibing.core.utils.mote_diff")
   local mote_config = vim.deepcopy(config.mote)
 
-  -- mote v0.2.0: --project/--context APIを使用
+  -- mote v0.2.4: --project/--context APIを使用
   -- プロジェクト名（設定 or 自動検出）
   mote_config.project = mote_config.project or MoteDiff.get_project_name()
 

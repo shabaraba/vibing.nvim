@@ -96,7 +96,7 @@ function M.show_diff(file_path, config)
 end
 
 ---mote storageを初期化
----mote v0.2.1では-dオプションの初回実行時に自動初期化される
+---mote v0.2.4では-dオプションの初回実行時に自動初期化される
 ---vibing.nvimは.vibing/をignoreに追加するのみ
 ---@param config Vibing.MoteConfig mote設定（cwdフィールドを含む）
 ---@param callback fun(success: boolean, error: string?) コールバック関数
@@ -129,7 +129,7 @@ function M.initialize(config, callback)
     return
   end
 
-  -- mote v0.2.1: -dオプションでの初回実行時に自動初期化
+  -- mote v0.2.4: -dオプションでの初回実行時に自動初期化
   -- ダミーコマンドを実行して初期化をトリガー
   local cmd = Command.build_base_args(config)
   table.insert(cmd, "snap")

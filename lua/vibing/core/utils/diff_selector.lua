@@ -11,7 +11,7 @@ function M.show_diff(file_path, session_id, cwd)
   local MoteDiff = require("vibing.core.utils.mote_diff")
   local mote_config = vim.deepcopy(config.mote)
 
-  -- mote v0.2.0: --project/--context APIを使用
+  -- mote v0.2.4: --project/--context APIを使用
   mote_config.project = mote_config.project or MoteDiff.get_project_name()
   local context_prefix = mote_config.context_prefix or "vibing"
   mote_config.context = MoteDiff.build_context_name(context_prefix, cwd)

@@ -30,10 +30,9 @@ require("vibing").setup({
   diff = {
     tool = "auto",  -- "git" | "mote" | "auto"
     -- "git": Always use git diff
-    -- "mote": Always use mote diff (requires mote v0.2.0+: https://github.com/shabaraba/mote)
+    -- "mote": Always use mote diff (requires mote v0.2.4+: https://github.com/shabaraba/mote)
     -- "auto": Use mote if available and initialized, otherwise fallback to git
     mote = {
-      ignore_file = ".vibing/.moteignore",  -- Path to .moteignore file
       project = nil,  -- Project name (nil = auto-detect from git repo name)
       context_prefix = "vibing",  -- Context name prefix (default: "vibing")
     },
@@ -162,7 +161,7 @@ The `build.sh` script downloads mote binaries for all supported platforms:
 
 **Priority:** vibing.nvim uses its bundled mote binary preferentially, falling back to system `mote` only if the bundled binary is unavailable.
 
-**Setup (mote v0.2.1+ standalone mode with -d/--context-dir):**
+**Setup (mote v0.2.4+ standalone mode with -d/--context-dir):**
 
 vibing.nvim uses `-d/--context-dir` to operate in standalone mode, without depending on global mote configuration (`~/.config/mote/`). All mote data is stored locally in the project:
 
@@ -188,7 +187,6 @@ require("vibing").setup({
   diff = {
     tool = "auto",  -- "git" | "mote" | "auto"
     mote = {
-      ignore_file = ".vibing/.moteignore",
       project = nil,  -- nil = auto-detect from git repo name
       context_prefix = "vibing",  -- Context name prefix (default: "vibing")
     },
@@ -202,6 +200,7 @@ require("vibing").setup({
 - **No global config**: Doesn't touch `~/.config/mote/`, no interference with personal mote usage
 - **Worktree isolation**: Each worktree has its own context (e.g., `vibing-worktree-feature-x-a1b2c3d4`)
 - **Automatic initialization**: vibing.nvim creates contexts automatically when needed
+- **Automatic ignore management**: vibing.nvim automatically creates and updates `ignore` files in context directories (`.vibing/mote/<project>/<context>/ignore`) with sensible defaults (`.vibing/`, `node_modules/`, `.git/`, etc.)
 
 **Behavior:**
 
@@ -215,3 +214,26 @@ require("vibing").setup({
 - Content-addressable storage with efficient deduplication
 - Works alongside git without conflicts
 - Automatic snapshot creation via hooks (Claude Code, git, jj)
+
+**Managing ignore patterns (mote v0.2.4+):**
+
+vibing.nvim automatically manages ignore patterns, but you can manually customize them if needed:
+
+```bash
+# List current ignore patterns
+mote -d .vibing/mote/<project>/<context> ignore list
+
+# Add ignore pattern
+mote -d .vibing/mote/<project>/<context> ignore add "*.log"
+
+# Remove ignore pattern
+mote -d .vibing/mote/<project>/<context> ignore remove "*.log"
+
+# Edit ignore file directly
+mote -d .vibing/mote/<project>/<context> ignore edit
+```
+
+Example context directories:
+
+- Main repository: `.vibing/mote/vibing-nvim/vibing-root`
+- Worktree: `.vibing/mote/vibing-nvim/vibing-worktree-feature-x-a1b2c3d4`
