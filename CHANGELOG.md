@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.31.2 (2026-02-08)
+
+## What's Changed
+* fix: improve chat buffer wrap settings management by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/390
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.31.1...v1.31.2
+
 ## 1.31.1 (2026-02-07)
 
 ## What's Changed
