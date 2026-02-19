@@ -19,12 +19,23 @@ function M.find_vibing_files(directory, opts)
   local vibing_files, err1 = finder:find(directory, "*.vibing")
   local md_files, err2 = finder:find(directory, "*.md")
 
-  if err1 and err2 then
+  -- Warn about errors but continue with partial results
+  -- If both searches completely failed with no results, return empty
+  local has_results = (vibing_files and #vibing_files > 0) or (md_files and #md_files > 0)
+  if err1 and err2 and not has_results then
     vim.notify(
       string.format("vibing.nvim: Failed to search directory %s: %s", directory, err1),
       vim.log.levels.WARN
     )
     return {}
+  end
+  -- Warn about partial errors (permission denied on some subdirectories)
+  local partial_err = err1 or err2
+  if partial_err and has_results then
+    vim.notify(
+      string.format("vibing.nvim: Partial error searching directory %s: %s", directory, partial_err),
+      vim.log.levels.WARN
+    )
   end
 
   local all_files = vim.list_extend(vibing_files or {}, md_files or {})
