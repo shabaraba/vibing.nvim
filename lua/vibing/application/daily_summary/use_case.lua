@@ -166,6 +166,8 @@ end
 ---@param on_complete fun(success: boolean, file_path: string|nil)
 function M._save_summary(date, content, source_files, total_messages, config, on_complete)
   local save_dir = get_save_directory(config)
+  -- Expand ~ to full path for all file operations
+  save_dir = vim.fn.expand(save_dir)
   vim.fn.mkdir(save_dir, "p")
 
   local file_path = save_dir .. date .. ".md"
@@ -184,13 +186,23 @@ function M._save_summary(date, content, source_files, total_messages, config, on
   end
 
   local frontmatter = generate_frontmatter(date, source_files, total_messages)
-  local output_lines = vim.list_extend(frontmatter, vim.split(content, "\n"))
+  local content_lines = vim.split(content, "\n")
+  local output_lines = vim.list_extend(frontmatter, content_lines)
+
   local result = vim.fn.writefile(output_lines, file_path)
   if result == -1 then
     notify.error("Failed to write summary file: " .. file_path, "Daily Summary")
     on_complete(false, nil)
     return
   end
+
+  -- Verify file was actually written
+  if vim.fn.filereadable(file_path) ~= 1 then
+    notify.error("File not found after write: " .. file_path, "Daily Summary")
+    on_complete(false, nil)
+    return
+  end
+
   on_complete(true, file_path)
 end
 
@@ -256,7 +268,18 @@ function M.generate_summary(date, include_all, on_complete)
       M._save_summary(date, final_content, result.source_files, result.total_messages, config, function(success, file_path)
         if success and file_path then
           notify.info(string.format("Summary saved: %s", vim.fn.fnamemodify(file_path, ":.")), "Daily Summary")
-          vim.cmd("edit " .. vim.fn.fnameescape(file_path))
+
+          -- Expand ~ to full path for buffer operations
+          local expanded_path = vim.fn.expand(file_path)
+
+          -- Delete existing buffer if present to avoid stale content issues
+          local existing_bufnr = vim.fn.bufnr(expanded_path)
+          if existing_bufnr ~= -1 then
+            pcall(vim.api.nvim_buf_delete, existing_bufnr, { force = true })
+          end
+
+          -- Open file fresh
+          vim.cmd("edit " .. vim.fn.fnameescape(expanded_path))
         end
         on_complete(success, file_path)
       end)

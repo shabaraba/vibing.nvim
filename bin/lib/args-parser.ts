@@ -3,6 +3,7 @@
  * Parses CLI arguments and returns configuration object
  */
 
+import { readFileSync, unlinkSync } from 'fs';
 import type { AgentConfig, PermissionRule, ToolMarkersConfig } from '../types.js';
 import { toError } from './utils.js';
 
@@ -86,6 +87,18 @@ export function parseArguments(args: string[]): AgentConfig {
       i++;
     } else if (args[i] === '--prompt' && args[i + 1]) {
       config.prompt = args[i + 1];
+      i++;
+    } else if (args[i] === '--prompt-file' && args[i + 1]) {
+      // Read prompt from file (for large prompts that exceed command line limits)
+      const promptFile = args[i + 1];
+      try {
+        config.prompt = readFileSync(promptFile, 'utf-8');
+        // Clean up temp file after reading
+        unlinkSync(promptFile);
+      } catch (e) {
+        console.error(`Failed to read prompt file: ${promptFile}`);
+        process.exit(1);
+      }
       i++;
     } else if (args[i] === '--allow' && args[i + 1]) {
       config.allowedTools = args[i + 1]

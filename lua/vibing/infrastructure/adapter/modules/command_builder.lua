@@ -188,6 +188,31 @@ local function add_rpc_port(cmd)
   end
 end
 
+-- Threshold for using temp file instead of command line argument (100KB)
+local PROMPT_SIZE_THRESHOLD = 100 * 1024
+
+---@param cmd string[]
+---@param prompt string
+---@return string? temp_file Path to temp file if created, nil otherwise
+local function add_prompt_arg(cmd, prompt)
+  local prompt_size = #prompt
+  if prompt_size > PROMPT_SIZE_THRESHOLD then
+    -- Write prompt to temp file to avoid E2BIG error on Linux
+    local temp_file = vim.fn.tempname() .. ".prompt"
+    local result = vim.fn.writefile(vim.split(prompt, "\n", { plain = true }), temp_file)
+    if result == -1 then
+      error("Failed to write prompt to temp file: " .. temp_file)
+    end
+    table.insert(cmd, "--prompt-file")
+    table.insert(cmd, temp_file)
+    return temp_file
+  else
+    table.insert(cmd, "--prompt")
+    table.insert(cmd, prompt)
+    return nil
+  end
+end
+
 ---@param wrapper_path string
 ---@param prompt string
 ---@param opts Vibing.AdapterOpts
@@ -215,8 +240,7 @@ function M.build(wrapper_path, prompt, opts, session_id, config)
   add_flag_if_present(cmd, "--language", resolve_language(opts, config))
   add_rpc_port(cmd)
 
-  table.insert(cmd, "--prompt")
-  table.insert(cmd, prompt)
+  add_prompt_arg(cmd, prompt)
 
   return cmd
 end
