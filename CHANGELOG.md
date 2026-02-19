@@ -3,8 +3,8 @@
 ## 1.31.5 (2026-02-19)
 
 ## What's Changed
-* fix: handle permission denied in daily summary search and detect fdfind on Ubuntu by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/398
 
+- fix: handle permission denied in daily summary search and detect fdfind on Ubuntu by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/398
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.31.4...v1.31.5
 
