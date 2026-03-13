@@ -340,17 +340,17 @@ Chat mode (2 panels):
 
 ### Slash Commands (in Chat)
 
-| Command                   | Description                                                      |
-| ------------------------- | ---------------------------------------------------------------- |
-| `/context <file>`         | Add file to context                                              |
-| `/clear`                  | Clear context                                                    |
-| `/save`                   | Save current chat                                                |
-| `/summarize`              | Summarize conversation                                           |
-| `/mode <mode>`            | Set execution mode (auto/plan/code/explore)                      |
-| `/model <model>`          | Set AI model (opus/sonnet/haiku)                                 |
-| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules |
-| `/allow [tool]`           | Add tool to allow list, or show current list if no args          |
-| `/deny [tool]`            | Add tool to deny list, or show current list if no args           |
+| Command                   | Description                                                              |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `/context <file>`         | Add file to context                                                      |
+| `/clear`                  | Clear context                                                            |
+| `/save`                   | Save current chat                                                        |
+| `/summarize`              | Summarize conversation                                                   |
+| `/model <model>`          | Set AI model (opus/sonnet/haiku)                                         |
+| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules         |
+| `/allow [tool]`           | Add tool to allow list, or show current list if no args                  |
+| `/deny [tool]`            | Add tool to deny list, or show current list if no args                   |
+| `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk) |
 
 ### Chat Keybindings
 
@@ -934,9 +934,8 @@ Chats are saved as Markdown with YAML frontmatter for session resumption and con
 vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
-mode: code  # auto | plan | code | explore
 model: sonnet  # sonnet | opus | haiku
-permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions
+permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk
 permissions_allow:
   - Read
   - Edit

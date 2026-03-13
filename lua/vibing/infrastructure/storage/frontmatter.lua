@@ -133,12 +133,11 @@ local function get_sorted_keys(tbl)
     created_at = 3,
     forked_from = 4,
     working_dir = 5,
-    mode = 6,
-    model = 7,
-    permissions_mode = 8,
-    permissions_allow = 9,
-    permissions_deny = 10,
-    language = 11,
+    model = 6,
+    permissions_mode = 7,
+    permissions_allow = 8,
+    permissions_deny = 9,
+    language = 10,
   }
 
   table.sort(keys, function(a, b)
@@ -222,7 +221,8 @@ function M.is_vibing_chat_file(file_path)
     return false
   end
 
-  local content = table.concat(vim.fn.readfile(file_path), "\n")
+  -- Read only the first 20 lines to check frontmatter (performance optimization)
+  local content = table.concat(vim.fn.readfile(file_path, "", 20), "\n")
   return M.is_vibing_chat(content)
 end
 

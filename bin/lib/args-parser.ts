@@ -78,9 +78,6 @@ export function parseArguments(args: string[]): AgentConfig {
       i++;
     } else if (args[i] === '--fork-session') {
       config.forkSession = true;
-    } else if (args[i] === '--mode' && args[i + 1]) {
-      config.mode = args[i + 1];
-      i++;
     } else if (args[i] === '--model' && args[i + 1]) {
       config.model = args[i + 1];
       i++;

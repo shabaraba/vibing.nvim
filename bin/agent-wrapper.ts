@@ -84,10 +84,6 @@ function buildQueryOptions(config: ReturnType<typeof parseArguments>): Record<st
   //   options.allowedTools = config.allowedTools;
   // }
 
-  if (config.mode) {
-    options.mode = config.mode;
-  }
-
   if (config.model) {
     options.model = config.model;
   }

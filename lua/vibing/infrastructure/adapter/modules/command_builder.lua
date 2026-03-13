@@ -44,13 +44,6 @@ end
 ---@param opts Vibing.AdapterOpts
 ---@param config Vibing.Config
 ---@return string?
-local function resolve_mode(opts, config)
-  return opts.mode or (config.agent and config.agent.default_mode)
-end
-
----@param opts Vibing.AdapterOpts
----@param config Vibing.Config
----@return string?
 local function resolve_model(opts, config)
   return opts.model or (config.agent and config.agent.default_model)
 end
@@ -202,7 +195,6 @@ function M.build(wrapper_path, prompt, opts, session_id, config)
   table.insert(cmd, "--cwd")
   table.insert(cmd, cwd)
 
-  add_flag_if_present(cmd, "--mode", resolve_mode(opts, config))
   add_flag_if_present(cmd, "--model", resolve_model(opts, config))
   add_context_args(cmd, opts)
   add_flag_if_present(cmd, "--session", session_id)

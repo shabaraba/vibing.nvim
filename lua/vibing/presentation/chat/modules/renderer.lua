@@ -25,12 +25,6 @@ function M.init_content(buf, session)
     table.insert(lines, "working_dir: " .. frontmatter.working_dir)
   end
 
-  -- mode
-  local mode = frontmatter.mode or (config.agent and config.agent.default_mode)
-  if mode then
-    table.insert(lines, "mode: " .. mode)
-  end
-
   -- model
   local model = frontmatter.model or (config.agent and config.agent.default_model)
   if model then
