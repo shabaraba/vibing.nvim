@@ -163,19 +163,25 @@ function M.get_search_directories(include_all, config)
           "-not", "-path", "*/dist/*",
         })
 
-        if vim.v.shell_error == 0 and #vibing_dirs > 0 then
+        -- Use partial results even if find had errors (e.g., permission denied on some dirs)
+        if #vibing_dirs > 0 then
           for _, vibing_dir in ipairs(vibing_dirs) do
             local chat_dir = vibing_dir .. "/chat"
             add_directory_if_exists(chat_dir, directories)
           end
+          -- Warn about partial errors (but don't fallback to expanded_dir)
+          if vim.v.shell_error ~= 0 then
+            vim.notify(
+              string.format("vibing.nvim: find command had errors for %s (some directories may be skipped)", expanded_dir),
+              vim.log.levels.DEBUG
+            )
+          end
         elseif vim.v.shell_error ~= 0 then
-          -- Log error if find command failed
+          -- find completely failed with no results: log and skip (don't fallback to parent dir)
           vim.notify(
             string.format("vibing.nvim: find command failed for %s (exit code: %d)", expanded_dir, vim.v.shell_error),
             vim.log.levels.WARN
           )
-          -- Fallback: treat it as a direct chat directory
-          add_directory_if_exists(expanded_dir, directories)
         else
           -- No .vibing subdirectories found, treat it as a direct chat directory
           add_directory_if_exists(expanded_dir, directories)

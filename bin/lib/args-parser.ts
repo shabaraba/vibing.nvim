@@ -7,7 +7,13 @@ import type { AgentConfig, PermissionRule, ToolMarkersConfig } from '../types.js
 import { toError } from './utils.js';
 
 const validDisplayModes = ['none', 'compact', 'full'] as const;
-const validPermissionModes = ['default', 'acceptEdits', 'bypassPermissions'] as const;
+const validPermissionModes = [
+  'default',
+  'acceptEdits',
+  'bypassPermissions',
+  'plan',
+  'dontAsk',
+] as const;
 const validSaveLocationTypes = ['project', 'user', 'custom'] as const;
 
 const DEFAULT_TOOL_MARKERS: ToolMarkersConfig = {

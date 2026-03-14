@@ -7,7 +7,7 @@ const watch = process.argv.includes('--watch');
 mkdirSync('dist/bin', { recursive: true });
 
 const buildOptions = {
-  entryPoints: ['bin/agent-wrapper.ts', 'bin/register-mcp.ts'],
+  entryPoints: ['bin/agent-wrapper.ts', 'bin/register-mcp.ts', 'bin/list-commands.ts'],
   bundle: true,
   platform: 'node',
   target: 'node18',
@@ -35,6 +35,7 @@ try {
     console.log('[vibing.nvim] ✓ Build complete');
     console.log(`[vibing.nvim]   → dist/bin/agent-wrapper.js (minified)`);
     console.log(`[vibing.nvim]   → dist/bin/register-mcp.js (minified)`);
+    console.log(`[vibing.nvim]   → dist/bin/list-commands.js (minified)`);
   }
 } catch (error) {
   console.error('[vibing.nvim] Build failed:', error);

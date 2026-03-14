@@ -82,7 +82,7 @@ session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
 working_dir: .worktrees/feature-branch # Optional: relative path from git root for working directory
 model: sonnet # sonnet, opus, or haiku (from config.agent.default_model)
-permissions_mode: acceptEdits # default, acceptEdits, or bypassPermissions
+permissions_mode: acceptEdits # default, acceptEdits, bypassPermissions, plan, or dontAsk
 permissions_allow:
   - Read
   - Edit

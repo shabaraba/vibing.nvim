@@ -61,7 +61,7 @@ function M.setup()
   commands.register({
     name = "permission",
     handler = require("vibing.application.chat.handlers.permission"),
-    description = "Set permission mode: /permission <default|acceptEdits|bypassPermissions>",
+    description = "Set permission mode: /permission <default|acceptEdits|bypassPermissions|plan|dontAsk>",
   })
 
   commands.register({
