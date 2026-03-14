@@ -197,7 +197,7 @@ end
 ---@return string[]?
 function M.get_argument_completions(command_name)
   local completions = {
-    permission = { "default", "acceptEdits", "bypassPermissions", "plan", "dontAsk" },
+    permission = { "default", "acceptEdits", "bypassPermissions" },
     model = { "opus", "sonnet", "haiku" },
   }
   return completions[command_name]

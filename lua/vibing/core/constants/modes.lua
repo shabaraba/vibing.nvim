@@ -8,7 +8,7 @@ M.VALID_MODELS = { "sonnet", "opus", "haiku" }
 
 ---権限モード (Agent SDK permissionMode)
 ---@type string[]
-M.PERMISSION_MODES = { "default", "acceptEdits", "bypassPermissions", "plan", "dontAsk" }
+M.PERMISSION_MODES = { "default", "acceptEdits", "bypassPermissions" }
 
 ---モデルが有効かチェック
 ---@param model string

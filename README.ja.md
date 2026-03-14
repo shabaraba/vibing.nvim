@@ -339,17 +339,17 @@ use {
 
 ### スラッシュコマンド（チャット内）
 
-| コマンド                      | 説明                                                                   |
-| ----------------------------- | ---------------------------------------------------------------------- |
-| `/context <file>`             | コンテキストにファイルを追加                                           |
-| `/clear`                      | コンテキストをクリア                                                   |
-| `/save`                       | 現在のチャットを保存                                                   |
-| `/summarize`                  | 会話を要約                                                             |
-| `/model <model>`              | AIモデルを設定（opus/sonnet/haiku）                                    |
-| `/permissions` または `/perm` | インタラクティブな権限ビルダー - ツールの許可/拒否ルールを設定         |
-| `/allow [tool]`               | 許可リストにツールを追加、引数なしで現在のリストを表示                 |
-| `/deny [tool]`                | 拒否リストにツールを追加、引数なしで現在のリストを表示                 |
-| `/permission [mode]`          | 権限モードを設定（default/acceptEdits/bypassPermissions/plan/dontAsk） |
+| コマンド                      | 説明                                                           |
+| ----------------------------- | -------------------------------------------------------------- |
+| `/context <file>`             | コンテキストにファイルを追加                                   |
+| `/clear`                      | コンテキストをクリア                                           |
+| `/save`                       | 現在のチャットを保存                                           |
+| `/summarize`                  | 会話を要約                                                     |
+| `/model <model>`              | AIモデルを設定（opus/sonnet/haiku）                            |
+| `/permissions` または `/perm` | インタラクティブな権限ビルダー - ツールの許可/拒否ルールを設定 |
+| `/allow [tool]`               | 許可リストにツールを追加、引数なしで現在のリストを表示         |
+| `/deny [tool]`                | 拒否リストにツールを追加、引数なしで現在のリストを表示         |
+| `/permission [mode]`          | 権限モードを設定（default/acceptEdits/bypassPermissions）      |
 
 ### チャットキーバインディング
 
@@ -740,7 +740,7 @@ vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
 model: sonnet  # sonnet | opus | haiku
-permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk
+permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions
 permissions_allow:
   - Read
   - Edit
