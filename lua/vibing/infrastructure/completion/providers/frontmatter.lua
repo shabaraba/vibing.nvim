@@ -5,12 +5,6 @@ local M = {}
 
 ---Enum values for frontmatter fields
 local ENUMS = {
-  mode = {
-    { value = "auto", description = "Automatic mode selection" },
-    { value = "plan", description = "Planning mode (design before implementation)" },
-    { value = "code", description = "Code implementation mode" },
-    { value = "explore", description = "Exploration mode (codebase understanding)" },
-  },
   model = {
     { value = "sonnet", description = "Claude Sonnet (balanced)" },
     { value = "opus", description = "Claude Opus (most capable)" },
@@ -20,6 +14,8 @@ local ENUMS = {
     { value = "default", description = "Ask for confirmation before each tool use" },
     { value = "acceptEdits", description = "Auto-approve Edit/Write, ask for others" },
     { value = "bypassPermissions", description = "Auto-approve all operations" },
+    { value = "plan", description = "Read-only planning mode (no tool execution)" },
+    { value = "dontAsk", description = "Deny instead of prompting" },
   },
 }
 
