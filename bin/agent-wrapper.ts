@@ -73,6 +73,12 @@ function buildQueryOptions(config: ReturnType<typeof parseArguments>): Record<st
     canUseTool: createCanUseToolCallback(config),
   };
 
+  // Pass permissionMode to Agent SDK
+  // Supported values: default, acceptEdits, bypassPermissions, plan, dontAsk
+  if (config.permissionMode) {
+    options.permissionMode = config.permissionMode;
+  }
+
   if (config.deniedTools.length > 0) {
     options.disallowedTools = config.deniedTools;
   }
@@ -83,10 +89,6 @@ function buildQueryOptions(config: ReturnType<typeof parseArguments>): Record<st
   // if (config.allowedTools.length > 0) {
   //   options.allowedTools = config.allowedTools;
   // }
-
-  if (config.mode) {
-    options.mode = config.mode;
-  }
 
   if (config.model) {
     options.model = config.model;

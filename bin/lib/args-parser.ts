@@ -7,7 +7,13 @@ import type { AgentConfig, PermissionRule, ToolMarkersConfig } from '../types.js
 import { toError } from './utils.js';
 
 const validDisplayModes = ['none', 'compact', 'full'] as const;
-const validPermissionModes = ['default', 'acceptEdits', 'bypassPermissions'] as const;
+const validPermissionModes = [
+  'default',
+  'acceptEdits',
+  'bypassPermissions',
+  'plan',
+  'dontAsk',
+] as const;
 const validSaveLocationTypes = ['project', 'user', 'custom'] as const;
 
 const DEFAULT_TOOL_MARKERS: ToolMarkersConfig = {
@@ -78,9 +84,6 @@ export function parseArguments(args: string[]): AgentConfig {
       i++;
     } else if (args[i] === '--fork-session') {
       config.forkSession = true;
-    } else if (args[i] === '--mode' && args[i + 1]) {
-      config.mode = args[i + 1];
-      i++;
     } else if (args[i] === '--model' && args[i + 1]) {
       config.model = args[i + 1];
       i++;
@@ -195,6 +198,9 @@ export function parseArguments(args: string[]): AgentConfig {
       i++;
     } else if (!args[i].startsWith('--')) {
       config.prompt = args[i];
+    } else {
+      console.error(`Unknown option: ${args[i]}`);
+      process.exit(1);
     }
   }
 

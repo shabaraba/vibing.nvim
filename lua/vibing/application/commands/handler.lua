@@ -66,17 +66,6 @@ function M.init_builtin()
     end
   end)
 
-  -- /mode
-  M.register("mode", function(args, chat_buffer)
-    if #args == 0 then
-      notify.info("Usage: /mode <auto|plan|code|explore>", "Chat")
-      return
-    end
-    if chat_buffer then
-      chat_buffer:set_mode(args[1])
-    end
-  end)
-
   -- /model
   M.register("model", function(args, chat_buffer)
     if #args == 0 then

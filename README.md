@@ -44,14 +44,20 @@ vibing.nvim takes a fundamentally different approach to AI-assisted coding in Ne
 
 ### Agent-First Architecture
 
-Unlike traditional chat-based AI plugins that send static context to an LLM, vibing.nvim gives Claude **direct access to your Neovim instance** through the Agent SDK and MCP integration.
+Unlike traditional chat-based AI plugins that send static context to an LLM, vibing.nvim gives Claude
+**direct access to your Neovim instance** through the Agent SDK and MCP integration.
 
 This means Claude can:
 
-- **Autonomously explore your codebase** - Navigate files, search symbols, and understand project structure without manual context setup
-- **Access real-time editor state** - Query LSP diagnostics, symbol definitions, and references on demand
+```markdown
+- **Autonomously explore your codebase** - Navigate files, search symbols, and understand
+  project structure without manual context setup
+- **Access real-time editor state** - Query LSP diagnostics, symbol definitions, and references
+  on demand
 - **Execute Neovim commands** - Perform editor operations as part of its workflow
-- **Maintain conversation continuity** - Resume sessions with full context preserved in `.vibing` files
+- **Maintain conversation continuity** - Resume sessions with full context preserved in
+  `.vibing` files
+```
 
 ### Designed for Claude
 
@@ -340,17 +346,17 @@ Chat mode (2 panels):
 
 ### Slash Commands (in Chat)
 
-| Command                   | Description                                                      |
-| ------------------------- | ---------------------------------------------------------------- |
-| `/context <file>`         | Add file to context                                              |
-| `/clear`                  | Clear context                                                    |
-| `/save`                   | Save current chat                                                |
-| `/summarize`              | Summarize conversation                                           |
-| `/mode <mode>`            | Set execution mode (auto/plan/code/explore)                      |
-| `/model <model>`          | Set AI model (opus/sonnet/haiku)                                 |
-| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules |
-| `/allow [tool]`           | Add tool to allow list, or show current list if no args          |
-| `/deny [tool]`            | Add tool to deny list, or show current list if no args           |
+| Command                   | Description                                                              |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `/context <file>`         | Add file to context                                                      |
+| `/clear`                  | Clear context                                                            |
+| `/save`                   | Save current chat                                                        |
+| `/summarize`              | Summarize conversation                                                   |
+| `/model <model>`          | Set AI model (opus/sonnet/haiku)                                         |
+| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules         |
+| `/allow [tool]`           | Add tool to allow list, or show current list if no args                  |
+| `/deny [tool]`            | Add tool to deny list, or show current list if no args                   |
+| `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk) |
 
 ### Chat Keybindings
 
@@ -664,6 +670,8 @@ permissions = {
                         -- "default": Ask for confirmation each time
                         -- "acceptEdits": Auto-approve Edit/Write (recommended)
                         -- "bypassPermissions": Auto-approve all (use with caution)
+                        -- "plan": Read-only planning mode (no tool execution)
+                        -- "dontAsk": Deny instead of prompting
 
   allow = {              -- Tools to allow (empty = allow all except denied)
     "Read",              -- Read files
@@ -934,9 +942,8 @@ Chats are saved as Markdown with YAML frontmatter for session resumption and con
 vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
-mode: code  # auto | plan | code | explore
 model: sonnet  # sonnet | opus | haiku
-permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions
+permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk
 permissions_allow:
   - Read
   - Edit

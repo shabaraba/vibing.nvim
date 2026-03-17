@@ -196,8 +196,9 @@ end
 ---@param command_name string
 ---@return string[]?
 function M.get_argument_completions(command_name)
+  local Modes = require("vibing.core.constants.modes")
   local completions = {
-    mode = { "auto", "plan", "code", "explore" },
+    permission = Modes.PERMISSION_MODES,
     model = { "opus", "sonnet", "haiku" },
   }
   return completions[command_name]
