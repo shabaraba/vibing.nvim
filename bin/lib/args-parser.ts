@@ -198,6 +198,9 @@ export function parseArguments(args: string[]): AgentConfig {
       i++;
     } else if (!args[i].startsWith('--')) {
       config.prompt = args[i];
+    } else {
+      console.error(`Unknown option: ${args[i]}`);
+      process.exit(1);
     }
   }
 

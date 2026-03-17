@@ -44,14 +44,20 @@ vibing.nvim takes a fundamentally different approach to AI-assisted coding in Ne
 
 ### Agent-First Architecture
 
-Unlike traditional chat-based AI plugins that send static context to an LLM, vibing.nvim gives Claude **direct access to your Neovim instance** through the Agent SDK and MCP integration.
+Unlike traditional chat-based AI plugins that send static context to an LLM, vibing.nvim gives Claude
+**direct access to your Neovim instance** through the Agent SDK and MCP integration.
 
 This means Claude can:
 
-- **Autonomously explore your codebase** - Navigate files, search symbols, and understand project structure without manual context setup
-- **Access real-time editor state** - Query LSP diagnostics, symbol definitions, and references on demand
+```markdown
+- **Autonomously explore your codebase** - Navigate files, search symbols, and understand
+  project structure without manual context setup
+- **Access real-time editor state** - Query LSP diagnostics, symbol definitions, and references
+  on demand
 - **Execute Neovim commands** - Perform editor operations as part of its workflow
-- **Maintain conversation continuity** - Resume sessions with full context preserved in `.vibing` files
+- **Maintain conversation continuity** - Resume sessions with full context preserved in
+  `.vibing` files
+```
 
 ### Designed for Claude
 
