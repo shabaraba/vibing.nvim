@@ -3,8 +3,8 @@
 ## 2.0.0 (2026-03-17)
 
 ## What's Changed
-* refactor: remove invalid mode field, update permissions to support all 5 permissionMode values by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/401
 
+- refactor: remove invalid mode field, update permissions to support all 5 permissionMode values by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/401
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.31.5...v2.0.0
 
