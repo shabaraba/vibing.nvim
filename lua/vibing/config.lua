@@ -263,9 +263,12 @@ M.defaults = {
     open_diff = "gd",
     open_file = "gf",
   },
-  mote = {
-    project = nil,  -- nil = auto-detect from git repo name
-    context_prefix = "vibing",
+  diff = {
+    tool = "auto",
+    mote = {
+      project = nil,  -- nil = auto-detect from git repo name
+      context_prefix = "vibing",
+    },
   },
   preview = {
     enabled = false,
@@ -295,8 +298,8 @@ M.defaults = {
   },
 }
 
----@type Vibing.Config
-M.options = {}
+---@type Vibing.Config?
+M.options = nil
 
 ---Lazy.nvimのdevモードを検出
 ---vibing.nvimプラグインがLazy.nvimでdev=trueとして設定されているかチェック
@@ -543,10 +546,10 @@ end
 
 ---現在の設定を取得
 ---setup()で初期化された設定オブジェクトを返す
----setup()が未実行の場合は空のテーブルを返す
+---setup()が未実行の場合はデフォルト設定を返す
 ---@return Vibing.Config 現在の設定オブジェクト
 function M.get()
-  return M.options
+  return M.options or M.defaults
 end
 
 return M
