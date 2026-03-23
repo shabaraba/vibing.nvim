@@ -269,12 +269,12 @@ end
 ---@param session_cwd string|nil worktreeのcwd（worktreeで作業する場合のみ、worktree判定用）
 ---@return table|nil セッション固有のmote設定（mote未設定の場合nil）
 function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
-  if not config.mote then
+  if not config.diff or not config.diff.mote then
     return nil
   end
 
   local MoteDiff = require("vibing.core.utils.mote_diff")
-  local mote_config = vim.deepcopy(config.mote)
+  local mote_config = vim.deepcopy(config.diff.mote)
 
   -- mote v0.2.4: --project/--context APIを使用
   -- プロジェクト名（設定 or 自動検出）

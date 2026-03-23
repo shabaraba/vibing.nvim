@@ -32,21 +32,7 @@
 ---@field execute fun(done: fun())
 ---@field cancel fun()?
 
----@class Vibing.PermissionRule
----@field tools string[]
----@field paths string[]?
----@field commands string[]?
----@field patterns string[]?
----@field domains string[]?
----@field action "allow"|"deny"
----@field message string?
-
----@class Vibing.PermissionConfig
----@field mode "default"|"acceptEdits"|"bypassPermissions"
----@field allow string[]?
----@field deny string[]?
----@field ask string[]?
----@field rules Vibing.PermissionRule[]?
+-- Vibing.PermissionRule and Vibing.PermissionsConfig are defined in config.lua
 
 ---@class Vibing.AdapterOpts
 ---@field streaming boolean?
@@ -67,16 +53,6 @@
 ---@field error string?
 ---@field _handle_id string?
 
----@class Vibing.WindowConfig
----@field position "current"|"right"|"left"|"float"
----@field width number
----@field border string?
-
----@class Vibing.ChatConfig
----@field window Vibing.WindowConfig
----@field auto_context boolean
----@field save_location_type "project"|"user"|"custom"
----@field save_dir string?
----@field context_position "prepend"|"append"
+-- Vibing.WindowConfig and Vibing.ChatConfig are defined in config.lua
 
 return {}
