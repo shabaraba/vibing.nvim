@@ -79,11 +79,33 @@ local function write_hook_response(request_id, allow)
     hookSpecificOutput = { permissionDecision = decision },
   })
 
-  local f = io.open(tmp_file, "w")
+  local f, err = io.open(tmp_file, "w")
   if f then
     f:write(json)
     f:close()
     os.rename(tmp_file, res_file)
+  else
+    vim.schedule(function()
+      vim.notify(
+        string.format("[vibing:hook] Failed to write tmp file %s: %s", tmp_file, err or "unknown"),
+        vim.log.levels.ERROR
+      )
+    end)
+    local fallback_f, fallback_err = io.open(res_file, "w")
+    if fallback_f then
+      local deny_json = vim.json.encode({
+        hookSpecificOutput = { permissionDecision = "deny" },
+      })
+      fallback_f:write(deny_json)
+      fallback_f:close()
+    else
+      vim.schedule(function()
+        vim.notify(
+          string.format("[vibing:hook] Fallback write also failed %s: %s", res_file, fallback_err or "unknown"),
+          vim.log.levels.ERROR
+        )
+      end)
+    end
   end
 end
 

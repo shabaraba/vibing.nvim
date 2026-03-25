@@ -60,6 +60,10 @@ function M.setup(opts)
   local ClaudeCLI = require("vibing.infrastructure.adapter.claude_cli")
   M.adapter = ClaudeCLI:new(M.config)
 
+  -- Cleanup stale hook communication directories from previous sessions
+  local hook_cleanup = require("vibing.infrastructure.adapter.modules.hook_cleanup")
+  hook_cleanup.cleanup_stale_dirs()
+
   -- 終了時にクリーンアップ
   local augroup = vim.api.nvim_create_augroup("VibingCleanup", { clear = true })
   vim.api.nvim_create_autocmd("VimLeavePre", {

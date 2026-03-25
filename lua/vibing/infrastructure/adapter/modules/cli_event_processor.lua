@@ -104,7 +104,11 @@ local function emit_tool_result(block, tool_map, context)
   local tool_name = tool_info.name
   local tool_input = tool_info.input or {}
   local input_summary = extract_input_summary(tool_name, tool_input)
-  local markers = get_markers_config()
+
+  if context._cached_markers == nil then
+    context._cached_markers = get_markers_config() or false
+  end
+  local markers = context._cached_markers or nil
   local marker = resolve_marker(tool_name, markers)
   local header = string.format("\n%s %s(%s)\n", marker, tool_name, input_summary)
 
@@ -121,8 +125,10 @@ local function emit_tool_result(block, tool_map, context)
     result_text = table.concat(parts, "")
   end
 
-  local display_mode = get_display_mode()
-  local result_display = format_result_text(result_text, display_mode)
+  if not context._cached_display_mode then
+    context._cached_display_mode = get_display_mode()
+  end
+  local result_display = format_result_text(result_text, context._cached_display_mode)
   local text = header .. result_display
 
   if context.onChunk then
@@ -170,16 +176,6 @@ local function handle_stream_event(msg, context)
         input_json = "",
       }
       context._current_tool_id = block.id
-      context._emitted_tool_ids = context._emitted_tool_ids or {}
-      context._emitted_tool_ids[block.id] = true
-
-      -- Notify on_tool_use callback
-      if context.opts and context.opts.on_tool_use then
-        local input = block.input or {}
-        vim.schedule(function()
-          context.opts.on_tool_use(block.name, input.file_path, input.command)
-        end)
-      end
     end
   end
 
@@ -232,11 +228,13 @@ local function handle_assistant_event(msg, context)
         }
       end
 
-      -- Emit on_tool_use for tools not seen via stream_event
+      -- Emit on_tool_use with complete input (deferred from content_block_start)
       if not emitted[block.id] and context.opts and context.opts.on_tool_use then
-        local input = block.input or {}
+        emitted[block.id] = true
+        local name = tool_map[block.id].name
+        local input = tool_map[block.id].input or {}
         vim.schedule(function()
-          context.opts.on_tool_use(block.name, input.file_path, input.command)
+          context.opts.on_tool_use(name, input.file_path, input.command)
         end)
       end
     end
@@ -247,6 +245,7 @@ local function handle_assistant_event(msg, context)
   end
 
   context._tool_use_map = tool_map
+  context._emitted_tool_ids = emitted
 end
 
 --- Handle "user" event (tool results in multi-turn)

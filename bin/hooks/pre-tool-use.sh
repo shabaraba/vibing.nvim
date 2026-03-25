@@ -27,7 +27,7 @@ REQ_FILE="$COMM_DIR/${REQUEST_ID}.req"
 RES_FILE="$COMM_DIR/${REQUEST_ID}.res"
 
 # Write request file (atomic via rename)
-echo "$INPUT" > "${REQ_FILE}.tmp"
+printf '%s' "$INPUT" > "${REQ_FILE}.tmp"
 mv "${REQ_FILE}.tmp" "$REQ_FILE"
 
 # Notify Neovim RPC server (fire-and-forget)
