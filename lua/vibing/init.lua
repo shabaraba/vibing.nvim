@@ -56,9 +56,13 @@ function M.setup(opts)
     end
   end
 
-  -- アダプターの初期化（agent_sdk固定）
-  local AgentSDK = require("vibing.infrastructure.adapter.agent_sdk")
-  M.adapter = AgentSDK:new(M.config)
+  -- アダプターの初期化（Claude CLI）
+  local ClaudeCLI = require("vibing.infrastructure.adapter.claude_cli")
+  M.adapter = ClaudeCLI:new(M.config)
+
+  -- Cleanup stale hook communication directories from previous sessions
+  local hook_cleanup = require("vibing.infrastructure.adapter.modules.hook_cleanup")
+  hook_cleanup.cleanup_stale_dirs()
 
   -- 終了時にクリーンアップ
   local augroup = vim.api.nvim_create_augroup("VibingCleanup", { clear = true })
