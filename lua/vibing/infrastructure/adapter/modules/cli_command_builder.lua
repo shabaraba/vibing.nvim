@@ -4,6 +4,8 @@
 
 local M = {}
 
+local cached_claude_path = nil
+
 --- Resolve model name to CLI-compatible format
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config
@@ -100,24 +102,24 @@ end
 --- @param settings_path string|nil Path to hook settings file
 --- @return string[] Command array for vim.system()
 function M.build(prompt, opts, session_id, config, settings_path)
-  local claude_path = vim.fn.exepath("claude")
-  if claude_path == "" then
-    error("Claude CLI not found in PATH. Please install Claude Code CLI.")
+  if not cached_claude_path then
+    cached_claude_path = vim.fn.exepath("claude")
+    if cached_claude_path == "" then
+      cached_claude_path = nil
+      error("Claude CLI not found in PATH. Please install Claude Code CLI.")
+    end
   end
 
-  local cmd = { claude_path }
+  local cmd = { cached_claude_path }
 
-  -- Print mode with streaming JSON output
   table.insert(cmd, "-p")
   table.insert(cmd, "--output-format")
   table.insert(cmd, "stream-json")
   table.insert(cmd, "--verbose")
   table.insert(cmd, "--include-partial-messages")
 
-  -- Model
   add_flag_if_present(cmd, "--model", resolve_model(opts, config))
 
-  -- Session resumption
   if session_id then
     table.insert(cmd, "--resume")
     table.insert(cmd, session_id)
@@ -126,10 +128,8 @@ function M.build(prompt, opts, session_id, config, settings_path)
     end
   end
 
-  -- Permissions
   add_permission_args(cmd, opts)
 
-  -- Hook settings
   if settings_path then
     table.insert(cmd, "--settings")
     table.insert(cmd, settings_path)
@@ -146,7 +146,6 @@ function M.build(prompt, opts, session_id, config, settings_path)
     end
   end
 
-  -- Setting sources (user + project settings)
   table.insert(cmd, "--setting-sources")
   table.insert(cmd, "user,project")
 

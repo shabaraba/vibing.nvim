@@ -2,17 +2,20 @@
 # vibing.nvim pre-tool-use hook
 # Communicates with Neovim RPC server to check tool permissions
 
-LOG="/tmp/vibing-hook-debug.log"
-echo "$(date) hook fired, PID=$$, PORT=${VIBING_NVIM_RPC_PORT:-UNSET}" >> "$LOG"
+debug_log() {
+  [ -n "$VIBING_DEBUG" ] && echo "$(date) $1" >> "/tmp/vibing-hook-debug.log"
+}
+
+debug_log "hook fired, PID=$$, PORT=${VIBING_NVIM_RPC_PORT:-UNSET}"
 
 INPUT=$(cat)
 PORT="${VIBING_NVIM_RPC_PORT}"
 
-echo "$(date) tool=$(echo "$INPUT" | grep -o '"tool_name":"[^"]*"' | head -1)" >> "$LOG"
+debug_log "tool=$(echo "$INPUT" | grep -o '"tool_name":"[^"]*"' | head -1)"
 
 # No RPC port = not running inside vibing.nvim, allow everything
 if [ -z "$PORT" ]; then
-  echo "$(date) no PORT, allowing" >> "$LOG"
+  debug_log "no PORT, allowing"
   exit 0
 fi
 
@@ -31,7 +34,7 @@ mv "${REQ_FILE}.tmp" "$REQ_FILE"
 printf '{"method":"check_tool_permission","id":1,"params":{"request_id":"%s"}}\n' "$REQUEST_ID" \
   | nc -w 1 127.0.0.1 "$PORT" >/dev/null 2>&1
 NC_STATUS=$?
-echo "$(date) nc status=$NC_STATUS, waiting for $RES_FILE" >> "$LOG"
+debug_log "nc status=$NC_STATUS, waiting for $RES_FILE"
 
 # Poll for response file (max 120 seconds)
 ELAPSED=0
@@ -43,7 +46,7 @@ done
 
 if [ -f "$RES_FILE" ]; then
   RESPONSE=$(cat "$RES_FILE")
-  echo "$(date) got response: $RESPONSE" >> "$LOG"
+  debug_log "got response: $RESPONSE"
   rm -f "$REQ_FILE" "$RES_FILE" 2>/dev/null
 
   # Check if decision is deny → exit 2 with reason on stderr
@@ -51,16 +54,16 @@ if [ -f "$RES_FILE" ]; then
 
   if [ "$DECISION" = "deny" ]; then
     REASON=$(echo "$RESPONSE" | grep -o '"permissionDecisionReason":"[^"]*"' | head -1 | cut -d'"' -f4)
-    echo "$(date) DENY: $REASON" >> "$LOG"
+    debug_log "DENY: $REASON"
     echo "${REASON:-Denied by vibing.nvim}" >&2
     exit 2
   fi
 
-  echo "$(date) ALLOW" >> "$LOG"
+  debug_log "ALLOW"
   exit 0
 fi
 
 # Timeout - clean up and allow by default
-echo "$(date) TIMEOUT after ${ELAPSED}0ms, allowing" >> "$LOG"
+debug_log "TIMEOUT after ${ELAPSED}0ms, allowing"
 rm -f "$REQ_FILE" 2>/dev/null
 exit 0

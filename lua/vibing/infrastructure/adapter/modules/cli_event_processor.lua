@@ -91,6 +91,50 @@ local function format_result_text(result_text, display_mode)
   return "  ⎿  " .. display_text:gsub("\n", "\n     ") .. "\n"
 end
 
+--- Format and emit a tool_result block as a chunk
+--- @param block table tool_result content block
+--- @param tool_map table tool_use_id → {name, input} map
+--- @param context table event processing context
+local function emit_tool_result(block, tool_map, context)
+  local tool_info = tool_map[block.tool_use_id]
+  if not tool_info then
+    return
+  end
+
+  local tool_name = tool_info.name
+  local tool_input = tool_info.input or {}
+  local input_summary = extract_input_summary(tool_name, tool_input)
+  local markers = get_markers_config()
+  local marker = resolve_marker(tool_name, markers)
+  local header = string.format("\n%s %s(%s)\n", marker, tool_name, input_summary)
+
+  local result_text = ""
+  if type(block.content) == "string" then
+    result_text = block.content
+  elseif type(block.content) == "table" then
+    local parts = {}
+    for _, c in ipairs(block.content) do
+      if c.text then
+        table.insert(parts, c.text)
+      end
+    end
+    result_text = table.concat(parts, "")
+  end
+
+  local display_mode = get_display_mode()
+  local result_display = format_result_text(result_text, display_mode)
+  local text = header .. result_display
+
+  if context.onChunk then
+    table.insert(context.output, text)
+    vim.schedule(function()
+      context.onChunk(text)
+    end)
+  end
+
+  tool_map[block.tool_use_id] = nil
+end
+
 --- Store session_id if present
 --- @param msg table
 --- @param context table
@@ -116,7 +160,6 @@ local function handle_stream_event(msg, context)
     return
   end
 
-  -- Tool use start
   if event.type == "content_block_start" and event.content_block then
     local block = event.content_block
     if block.type == "tool_use" and block.name then
@@ -126,6 +169,7 @@ local function handle_stream_event(msg, context)
         input = block.input or {},
         input_json = "",
       }
+      context._current_tool_id = block.id
       context._emitted_tool_ids = context._emitted_tool_ids or {}
       context._emitted_tool_ids[block.id] = true
 
@@ -139,11 +183,9 @@ local function handle_stream_event(msg, context)
     end
   end
 
-  -- Accumulate tool input JSON deltas
   if event.type == "content_block_delta" and event.delta then
     local delta = event.delta
 
-    -- Text delta
     if delta.type == "text_delta" and delta.text and context.onChunk then
       table.insert(context.output, delta.text)
       vim.schedule(function()
@@ -151,11 +193,10 @@ local function handle_stream_event(msg, context)
       end)
     end
 
-    -- Tool input delta (accumulate for later parsing)
     if delta.type == "input_json_delta" and delta.partial_json then
       local tool_map = context._tool_use_map or {}
-      -- Find the current tool_use being streamed (last one)
-      for _, info in pairs(tool_map) do
+      if context._current_tool_id and tool_map[context._current_tool_id] then
+        local info = tool_map[context._current_tool_id]
         if info.input_json ~= nil then
           info.input_json = info.input_json .. delta.partial_json
         end
@@ -200,46 +241,8 @@ local function handle_assistant_event(msg, context)
       end
     end
 
-    -- Tool result → format and emit as chunk
     if block.type == "tool_result" and block.tool_use_id then
-      local tool_info = tool_map[block.tool_use_id]
-      if tool_info then
-        local tool_name = tool_info.name
-        local tool_input = tool_info.input or {}
-        local input_summary = extract_input_summary(tool_name, tool_input)
-        local markers = get_markers_config()
-        local marker = resolve_marker(tool_name, markers)
-
-        -- Format: ⏺ Read(/path/to/file)
-        local header = string.format("\n%s %s(%s)\n", marker, tool_name, input_summary)
-
-        -- Result text
-        local result_text = ""
-        if type(block.content) == "string" then
-          result_text = block.content
-        elseif type(block.content) == "table" then
-          local parts = {}
-          for _, c in ipairs(block.content) do
-            if c.text then
-              table.insert(parts, c.text)
-            end
-          end
-          result_text = table.concat(parts, "")
-        end
-
-        local display_mode = get_display_mode()
-        local result_display = format_result_text(result_text, display_mode)
-        local text = header .. result_display
-
-        if context.onChunk then
-          table.insert(context.output, text)
-          vim.schedule(function()
-            context.onChunk(text)
-          end)
-        end
-
-        tool_map[block.tool_use_id] = nil
-      end
+      emit_tool_result(block, tool_map, context)
     end
   end
 
@@ -259,42 +262,7 @@ local function handle_user_event(msg, context)
 
   for _, block in ipairs(message.content or {}) do
     if block.type == "tool_result" and block.tool_use_id then
-      local tool_info = tool_map[block.tool_use_id]
-      if tool_info then
-        local tool_name = tool_info.name
-        local tool_input = tool_info.input or {}
-        local input_summary = extract_input_summary(tool_name, tool_input)
-        local markers = get_markers_config()
-        local marker = resolve_marker(tool_name, markers)
-
-        local header = string.format("\n%s %s(%s)\n", marker, tool_name, input_summary)
-
-        local result_text = ""
-        if type(block.content) == "string" then
-          result_text = block.content
-        elseif type(block.content) == "table" then
-          local parts = {}
-          for _, c in ipairs(block.content) do
-            if c.text then
-              table.insert(parts, c.text)
-            end
-          end
-          result_text = table.concat(parts, "")
-        end
-
-        local display_mode = get_display_mode()
-        local result_display = format_result_text(result_text, display_mode)
-        local text = header .. result_display
-
-        if context.onChunk then
-          table.insert(context.output, text)
-          vim.schedule(function()
-            context.onChunk(text)
-          end)
-        end
-
-        tool_map[block.tool_use_id] = nil
-      end
+      emit_tool_result(block, tool_map, context)
     end
   end
 

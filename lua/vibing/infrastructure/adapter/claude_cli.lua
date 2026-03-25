@@ -19,6 +19,14 @@ ClaudeCLI.__index = ClaudeCLI
 
 local INITIAL_RESPONSE_TIMEOUT_MS = 120000
 
+local SUPPORTED_FEATURES = {
+  streaming = true,
+  tools = true,
+  model_selection = true,
+  context = true,
+  session = true,
+}
+
 ---@param config Vibing.Config
 ---@return Vibing.ClaudeCLIAdapter
 function ClaudeCLI:new(config)
@@ -128,7 +136,6 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   -- Remove CLAUDECODE to allow nested invocation
   env.CLAUDECODE = nil
 
-  -- Set RPC port for hook script and MCP server
   local rpc_server = require("vibing.infrastructure.rpc.server")
   local rpc_port = rpc_server.get_port()
   if rpc_port then
@@ -138,7 +145,6 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     env.VIBING_NVIM_CONTEXT = "true" -- indicates running inside vibing.nvim
   end
 
-  -- Register active stream for RPC handler access (AskUserQuestion, etc.)
   ActiveStreamRegistry.register({
     handle_id = handle_id,
     adapter = self,
@@ -146,7 +152,6 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     on_approval_required = opts.on_approval_required,
   })
 
-  -- Pass frontmatter permission opts to RPC permission handler
   local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
   perm_handler.set_active_opts(opts)
 
@@ -163,7 +168,6 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     end
   end
 
-  -- Use cwd from opts (worktree) if set, otherwise use current working directory
   local cwd = opts.cwd or vim.fn.getcwd()
 
   self._handles[handle_id] = vim.system(cmd, {
@@ -236,14 +240,7 @@ end
 ---@param feature string
 ---@return boolean
 function ClaudeCLI:supports(feature)
-  local features = {
-    streaming = true,
-    tools = true,
-    model_selection = true,
-    context = true,
-    session = true,
-  }
-  return features[feature] or false
+  return SUPPORTED_FEATURES[feature] or false
 end
 
 ---@param session_id string?

@@ -7,7 +7,7 @@ local M = {}
 --- Parse URL and extract hostname
 --- @param url string
 --- @return string|nil hostname
-local function parse_url_hostname(url)
+function M.parse_url_hostname(url)
   if type(url) ~= "string" then
     return nil
   end
@@ -129,7 +129,7 @@ end
 --- @param domain_pattern string
 --- @return boolean
 function M.matches_domain_pattern(url, domain_pattern)
-  local hostname = parse_url_hostname(url)
+  local hostname = M.parse_url_hostname(url)
   if not hostname then
     return false
   end

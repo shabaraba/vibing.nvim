@@ -95,12 +95,6 @@ function M.check_tool_permission(params)
   end
 
   local request_id = params.request_id
-  -- Debug log
-  local log_f = io.open("/tmp/vibing-perm-handler.log", "a")
-  if log_f then
-    log_f:write(os.date() .. " check_tool_permission called, request_id=" .. request_id .. "\n")
-    log_f:close()
-  end
 
   local comm_dir = get_comm_dir()
   local req_file = comm_dir .. "/" .. request_id .. ".req"
@@ -144,13 +138,6 @@ function M.check_tool_permission(params)
   local perm_config = build_permission_config()
   local result = can_use_tool_mod.can_use_tool(tool_name, tool_input, perm_config)
 
-  -- Debug log
-  local log_f2 = io.open("/tmp/vibing-perm-handler.log", "a")
-  if log_f2 then
-    log_f2:write(os.date() .. " tool=" .. tool_name .. " behavior=" .. result.behavior .. "\n")
-    log_f2:close()
-  end
-
   if result.behavior == "allow" then
     write_hook_response(request_id, true)
     return { status = "allowed" }
@@ -163,25 +150,19 @@ function M.check_tool_permission(params)
       tool_name = tool_name,
       tool_input = tool_input,
     }
-    vim.schedule(function()
-      local log_f3 = io.open("/tmp/vibing-perm-handler.log", "a")
-      if log_f3 then
-        log_f3:write(os.date() .. " vim.schedule fired for ask UI\n")
-      end
 
+    -- Clean up if user never responds (hook script times out after 120s)
+    vim.defer_fn(function()
+      pending_hook_approvals[request_id] = nil
+    end, 130000)
+
+    vim.schedule(function()
       local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
       local stream = registry.get()
 
-      if log_f3 then
-        log_f3:write(os.date() .. " stream=" .. tostring(stream ~= nil) .. " on_approval=" .. tostring(stream and stream.on_approval_required ~= nil) .. "\n")
-        log_f3:close()
-      end
-
       if stream and stream.on_approval_required then
-        -- Pass hook_request_id so the chat buffer knows to resolve via file
         stream.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)
       else
-        -- No active stream to show UI, deny as fallback
         write_hook_response(request_id, false)
         pending_hook_approvals[request_id] = nil
       end

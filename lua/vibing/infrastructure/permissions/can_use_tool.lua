@@ -4,10 +4,11 @@
 --- Permission evaluation order (highest to lowest priority):
 --- 1. Session-level deny list (immediate block)
 --- 2. Session-level allow list (auto-approve)
---- 3. Permission modes (acceptEdits, default, bypassPermissions, plan, dontAsk)
---- 4. Allow list (with pattern matching support)
---- 5. Ask list (granular patterns override broader allow list permissions)
---- 6. Granular permission rules (path/command/pattern/domain based)
+--- 3. Internal tools (always allowed)
+--- 4. Permission modes (acceptEdits, default, bypassPermissions, plan, dontAsk)
+--- 5. Allow list (with pattern matching support)
+--- 6. Ask list (granular patterns override broader allow list permissions)
+--- 7. Granular permission rules (path/command/pattern/domain based)
 ---
 --- @module vibing.infrastructure.permissions.can_use_tool
 
@@ -17,6 +18,29 @@ local rule_checker = require("vibing.infrastructure.permissions.rule_checker")
 local M = {}
 
 local ONCE_SUFFIX = ":once"
+
+local INTERNAL_TOOLS = {
+  ToolSearch = true,
+  TodoWrite = true,
+  Agent = true,
+  Task = true,
+  TaskOutput = true,
+  TaskStop = true,
+  EnterPlanMode = true,
+  ExitPlanMode = true,
+  EnterWorktree = true,
+  ExitWorktree = true,
+  NotebookEdit = true,
+}
+
+local READ_ONLY_TOOLS = {
+  Read = true,
+  Glob = true,
+  Grep = true,
+  LSP = true,
+  WebFetch = true,
+  WebSearch = true,
+}
 
 --- @class CanUseToolResult
 --- @field behavior "allow"|"deny"|"ask"
@@ -161,20 +185,7 @@ function M.can_use_tool(tool_name, input, config)
     end
 
     -- 3. Always allow Claude Code internal tools
-    local internal_tools = {
-      ToolSearch = true,
-      TodoWrite = true,
-      Agent = true,
-      Task = true,
-      TaskOutput = true,
-      TaskStop = true,
-      EnterPlanMode = true,
-      ExitPlanMode = true,
-      EnterWorktree = true,
-      ExitWorktree = true,
-      NotebookEdit = true,
-    }
-    if internal_tools[tool_name] then
+    if INTERNAL_TOOLS[tool_name] then
       return allow(input)
     end
 
@@ -186,9 +197,7 @@ function M.can_use_tool(tool_name, input, config)
     end
 
     if mode == "plan" then
-      -- In plan mode, only allow read operations
-      local read_only_tools = { "Read", "Glob", "Grep", "LSP", "WebFetch", "WebSearch" }
-      if vim.tbl_contains(read_only_tools, tool_name) then
+      if READ_ONLY_TOOLS[tool_name] then
         return allow(input)
       end
       -- Also allow MCP read tools
@@ -202,19 +211,6 @@ function M.can_use_tool(tool_name, input, config)
       return allow(input)
     end
 
-    if mode == "default" then
-      local explicitly_allowed = false
-      for _, pattern in ipairs(config.allowed_tools) do
-        if matchers.matches_permission(tool_name, input, pattern) then
-          explicitly_allowed = true
-          break
-        end
-      end
-      if not explicitly_allowed then
-        return ask()
-      end
-    end
-
     -- Handle vibing-nvim MCP tools
     if vim.startswith(tool_name, "mcp__vibing-nvim__") then
       if config.mcp_enabled then
@@ -223,7 +219,7 @@ function M.can_use_tool(tool_name, input, config)
       return deny("vibing.nvim MCP integration is disabled. Enable it in config: mcp.enabled = true")
     end
 
-    -- 4. Check allow list (with pattern support)
+    -- 5. Check allow list (with pattern support)
     if #config.allowed_tools > 0 then
       local is_allowed = false
       for _, pattern in ipairs(config.allowed_tools) do
@@ -233,18 +229,18 @@ function M.can_use_tool(tool_name, input, config)
         end
       end
       if not is_allowed then
-        return deny(build_not_allowed_message(tool_name, input, config.allowed_tools))
+        return ask()
       end
     end
 
-    -- 5. Check ask list (AFTER allow list - granular patterns override broader permissions)
+    -- 6. Check ask list (AFTER allow list - granular patterns override broader permissions)
     for _, pattern in ipairs(config.asked_tools) do
       if matchers.matches_permission(tool_name, input, pattern) then
         return ask()
       end
     end
 
-    -- 6. Check granular permission rules
+    -- 7. Check granular permission rules
     if config.permission_rules and #config.permission_rules > 0 then
       for _, rule in ipairs(config.permission_rules) do
         local rule_result = rule_checker.check_rule(rule, tool_name, input)

@@ -6,20 +6,6 @@ local matchers = require("vibing.infrastructure.permissions.matchers")
 
 local M = {}
 
---- Parse URL and extract hostname
---- @param url string
---- @return string|nil hostname
-local function parse_url_hostname(url)
-  if type(url) ~= "string" then
-    return nil
-  end
-  local hostname = url:match("^https?://([^/:]+)")
-  if hostname then
-    return hostname:lower()
-  end
-  return nil
-end
-
 --- @class PermissionRule
 --- @field tools string[] Tools this rule applies to
 --- @field paths? string[] Glob patterns for file paths
@@ -90,7 +76,7 @@ function M.check_rule(rule, tool_name, input)
 
   if tool_name == "WebFetch" and input.url then
     if rule.domains and #rule.domains > 0 then
-      local hostname = parse_url_hostname(input.url)
+      local hostname = matchers.parse_url_hostname(input.url)
       if hostname then
         for _, domain in ipairs(rule.domains) do
           if matchers.match_glob(domain, hostname) then
