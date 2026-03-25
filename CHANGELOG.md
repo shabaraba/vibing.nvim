@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.0 (2026-03-25)
+
+## What's Changed
+* feat!: migrate from Agent SDK wrapper to Claude CLI by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/405
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v2.0.0...v3.0.0
+
 ## 2.0.0 (2026-03-17)
 
 ## What's Changed
