@@ -36,7 +36,7 @@ end
 --- @return string|nil
 function ClaudeCLI:_get_settings_path()
   if not self._settings_path then
-    local ok, path = pcall(SettingsGenerator.write_temp_settings)
+    local ok, path = pcall(SettingsGenerator.ensure)
     if ok and path then
       self._settings_path = path
     else

@@ -157,6 +157,8 @@ function M.build(prompt, opts, session_id, config, settings_path)
     full_prompt = context_prefix .. prompt
   end
 
+  -- End of options marker (prevents prompt starting with --- being parsed as flags)
+  table.insert(cmd, "--")
   table.insert(cmd, full_prompt)
 
   return cmd

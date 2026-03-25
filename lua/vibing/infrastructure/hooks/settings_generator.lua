@@ -1,5 +1,5 @@
 --- Hook settings generator
---- Creates temp settings file with pre-tool-use hook for --settings flag
+--- Writes hook settings to .vibing/hook-settings.json for --settings flag
 --- @module vibing.infrastructure.hooks.settings_generator
 
 local M = {}
@@ -35,15 +35,19 @@ function M.generate()
   }
 end
 
---- Write settings to a temp file for --settings flag
---- Uses /tmp directly to avoid Neovim temp dir lifecycle issues
---- @return string path Path to the generated settings file
-function M.write_temp_settings()
+--- Ensure hook settings file exists in .vibing/ of the given cwd
+--- @param cwd? string Working directory (defaults to vim.fn.getcwd())
+--- @return string path Relative path to settings file
+function M.ensure(cwd)
+  cwd = cwd or vim.fn.getcwd()
+  local vibing_dir = cwd .. "/.vibing"
+  local settings_path = vibing_dir .. "/hook-settings.json"
+
+  vim.fn.mkdir(vibing_dir, "p")
+
+  -- Always regenerate (hook script path may change after plugin update)
   local settings = M.generate()
   local json = vim.json.encode(settings)
-
-  local pid = vim.fn.getpid()
-  local settings_path = string.format("/tmp/vibing-hook-settings-%d.json", pid)
 
   local f = io.open(settings_path, "w")
   if not f then
@@ -52,7 +56,7 @@ function M.write_temp_settings()
   f:write(json)
   f:close()
 
-  return settings_path
+  return ".vibing/hook-settings.json"
 end
 
 return M

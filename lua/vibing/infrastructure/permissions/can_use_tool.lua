@@ -160,7 +160,25 @@ function M.can_use_tool(tool_name, input, config)
       return session_allow_result
     end
 
-    -- 3. Permission modes
+    -- 3. Always allow Claude Code internal tools
+    local internal_tools = {
+      ToolSearch = true,
+      TodoWrite = true,
+      Agent = true,
+      Task = true,
+      TaskOutput = true,
+      TaskStop = true,
+      EnterPlanMode = true,
+      ExitPlanMode = true,
+      EnterWorktree = true,
+      ExitWorktree = true,
+      NotebookEdit = true,
+    }
+    if internal_tools[tool_name] then
+      return allow(input)
+    end
+
+    -- 4. Permission modes
     local mode = config.permission_mode
 
     if mode == "bypassPermissions" or mode == "dontAsk" then
