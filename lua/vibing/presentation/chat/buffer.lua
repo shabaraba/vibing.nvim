@@ -279,8 +279,16 @@ end
 
 ---メッセージを送信
 function ChatBuffer:send_message()
-  -- Hook-based approval pending: don't cancel the active stream
-  local skip_cancel = self._pending_approval and self._pending_approval.hook_request_id
+  -- Hook-based approval pending: don't cancel the active stream,
+  -- but only if the user message is actually a valid approval response
+  local skip_cancel = false
+  if self._pending_approval and self._pending_approval.hook_request_id then
+    local peek_message = self:extract_user_message()
+    if peek_message then
+      local ApprovalParserPeek = require("vibing.presentation.chat.modules.approval_parser")
+      skip_cancel = ApprovalParserPeek.is_approval_response(peek_message)
+    end
+  end
 
   -- 前のリクエストが実行中ならキャンセル（競合防止）
   if self._current_handle_id and not skip_cancel then
@@ -357,6 +365,21 @@ function ChatBuffer:send_message()
         local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
         local is_allow = approval.action == "allow_once" or approval.action == "allow_for_session"
         perm_handler.resolve_hook_approval(hook_request_id, is_allow)
+
+        -- Mirror session-level permissions into RPC handler's session state
+        local tool = self._pending_approval.tool
+        if tool then
+          if approval.action == "allow_for_session" then
+            perm_handler.add_session_allow(tool, false)
+          elseif approval.action == "deny_for_session" then
+            perm_handler.add_session_deny(tool, false)
+          elseif approval.action == "allow_once" then
+            perm_handler.add_session_allow(tool, true)
+          elseif approval.action == "deny_once" then
+            perm_handler.add_session_deny(tool, true)
+          end
+        end
+
         self._pending_approval = nil
         self:add_user_section()
         return

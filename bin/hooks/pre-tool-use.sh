@@ -19,7 +19,7 @@ if [ -z "$PORT" ]; then
   exit 0
 fi
 
-REQUEST_ID="$$"
+REQUEST_ID="$(date +%s)-$$-$RANDOM"
 COMM_DIR="/tmp/vibing-hook-${PORT}"
 mkdir -p "$COMM_DIR" 2>/dev/null
 
@@ -35,6 +35,14 @@ printf '{"method":"check_tool_permission","id":1,"params":{"request_id":"%s"}}\n
   | nc -w 1 127.0.0.1 "$PORT" >/dev/null 2>&1
 NC_STATUS=$?
 debug_log "nc status=$NC_STATUS, waiting for $RES_FILE"
+
+# If nc failed to connect, fail closed (deny)
+if [ "$NC_STATUS" -ne 0 ]; then
+  debug_log "nc failed (status=$NC_STATUS), denying"
+  echo "Failed to connect to vibing.nvim RPC server" >&2
+  rm -f "$REQ_FILE" 2>/dev/null
+  exit 2
+fi
 
 # Poll for response file (max 120 seconds)
 ELAPSED=0
@@ -63,7 +71,8 @@ if [ -f "$RES_FILE" ]; then
   exit 0
 fi
 
-# Timeout - clean up and allow by default
-debug_log "TIMEOUT after ${ELAPSED}0ms, allowing"
+# Timeout - fail closed (deny)
+debug_log "TIMEOUT after ${ELAPSED}0ms, denying"
+echo "Permission check timed out" >&2
 rm -f "$REQ_FILE" 2>/dev/null
-exit 0
+exit 2

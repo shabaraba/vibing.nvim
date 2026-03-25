@@ -199,7 +199,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
               vim.log.levels.WARN
             )
             self:cancel(handle_id)
-            on_done({
+            wrapped_on_done({
               error = "Session resume timeout",
               _session_corrupted = true,
               _old_session_id = session_id,

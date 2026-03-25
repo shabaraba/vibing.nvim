@@ -5,10 +5,11 @@
 --- 1. Session-level deny list (immediate block)
 --- 2. Session-level allow list (auto-approve)
 --- 3. Internal tools (always allowed)
---- 4. Permission modes (acceptEdits, default, bypassPermissions, plan, dontAsk)
---- 5. Allow list (with pattern matching support)
---- 6. Ask list (granular patterns override broader allow list permissions)
---- 7. Granular permission rules (path/command/pattern/domain based)
+--- 4. Deny list (deny takes precedence over allow)
+--- 5. Permission modes (acceptEdits, default, bypassPermissions, plan, dontAsk)
+--- 6. Allow list (with pattern matching support)
+--- 7. Ask list (granular patterns override broader allow list permissions)
+--- 8. Granular permission rules (path/command/pattern/domain based)
 ---
 --- @module vibing.infrastructure.permissions.can_use_tool
 
@@ -49,6 +50,7 @@ local READ_ONLY_TOOLS = {
 
 --- @class PermissionConfig
 --- @field allowed_tools string[] Tools in allow list
+--- @field denied_tools string[] Tools in deny list
 --- @field asked_tools string[] Tools that require approval
 --- @field session_allowed_tools string[] Session-level allowed tools (mutable)
 --- @field session_denied_tools string[] Session-level denied tools (mutable)
@@ -189,7 +191,16 @@ function M.can_use_tool(tool_name, input, config)
       return allow(input)
     end
 
-    -- 4. Permission modes
+    -- 4. Check deny list (deny takes precedence over allow)
+    if config.denied_tools and #config.denied_tools > 0 then
+      for _, pattern in ipairs(config.denied_tools) do
+        if matchers.matches_permission(tool_name, input, pattern) then
+          return deny(string.format("Tool %s is in the denied list", tool_name))
+        end
+      end
+    end
+
+    -- 5. Permission modes
     local mode = config.permission_mode
 
     if mode == "bypassPermissions" or mode == "dontAsk" then
@@ -219,7 +230,7 @@ function M.can_use_tool(tool_name, input, config)
       return deny("vibing.nvim MCP integration is disabled. Enable it in config: mcp.enabled = true")
     end
 
-    -- 5. Check allow list (with pattern support)
+    -- 6. Check allow list (with pattern support)
     if #config.allowed_tools > 0 then
       local is_allowed = false
       for _, pattern in ipairs(config.allowed_tools) do
@@ -233,20 +244,26 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 6. Check ask list (AFTER allow list - granular patterns override broader permissions)
+    -- 7. Check ask list (AFTER allow list - granular patterns override broader permissions)
     for _, pattern in ipairs(config.asked_tools) do
       if matchers.matches_permission(tool_name, input, pattern) then
         return ask()
       end
     end
 
-    -- 7. Check granular permission rules
+    -- 8. Check granular permission rules
     if config.permission_rules and #config.permission_rules > 0 then
+      local has_matching_allow = false
       for _, rule in ipairs(config.permission_rules) do
         local rule_result = rule_checker.check_rule(rule, tool_name, input)
         if rule_result == "deny" then
           return deny(rule.message or string.format("Tool %s is denied by permission rule", tool_name))
+        elseif rule_result == "allow" then
+          has_matching_allow = true
         end
+      end
+      if has_matching_allow then
+        return allow(input)
       end
     end
 

@@ -48,6 +48,7 @@ local function build_permission_config()
 
   return {
     allowed_tools = o.permissions_allow or perms.allow or {},
+    denied_tools = o.permissions_deny or perms.deny or {},
     asked_tools = o.permissions_ask or perms.ask or {},
     session_allowed_tools = session_state.allowed,
     session_denied_tools = session_state.denied,

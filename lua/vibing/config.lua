@@ -73,7 +73,7 @@
 ---ツール権限設定
 ---Agent SDKに対してClaudeが使用可能なツールを制御（Read, Edit, Write, Bash等）
 ---allowで許可、denyで拒否、askで確認を要求し、セキュリティと機能のバランスを調整
----@field mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk" 権限モード
+---@field mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"|"auto" 権限モード
 ---@field allow string[] 許可するツールリスト（例: {"Read", "Edit", "Write"}）
 ---@field deny string[] 拒否するツールリスト（例: {"Bash"}、危険なツールを明示的に禁止）
 ---@field ask string[] 確認が必要なツールリスト（例: {"Bash"}、使用前に承認を要求）
@@ -381,11 +381,12 @@ function M.setup(opts)
       bypassPermissions = true,
       plan = true,
       dontAsk = true,
+      auto = true,
     }
     local mode = M.options.permissions.mode
     if mode and not valid_modes[mode] then
       notify.warn(string.format(
-        "Invalid permissions.mode '%s'. Valid values: default, acceptEdits, bypassPermissions, plan, dontAsk",
+        "Invalid permissions.mode '%s'. Valid values: default, acceptEdits, bypassPermissions, plan, dontAsk, auto",
         mode
       ))
     end
