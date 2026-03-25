@@ -279,8 +279,11 @@ end
 
 ---メッセージを送信
 function ChatBuffer:send_message()
+  -- Hook-based approval pending: don't cancel the active stream
+  local skip_cancel = self._pending_approval and self._pending_approval.hook_request_id
+
   -- 前のリクエストが実行中ならキャンセル（競合防止）
-  if self._current_handle_id then
+  if self._current_handle_id and not skip_cancel then
     local vibing = require("vibing")
     local adapter = vibing.get_adapter()
     if adapter then
@@ -345,6 +348,17 @@ function ChatBuffer:send_message()
           string.format("[vibing] Failed to update permissions: %s", tostring(err)),
           vim.log.levels.ERROR
         )
+        return
+      end
+
+      -- Hook-based approval: resolve by writing response file, don't send message
+      local hook_request_id = self._pending_approval.hook_request_id
+      if hook_request_id then
+        local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
+        local is_allow = approval.action == "allow_once" or approval.action == "allow_for_session"
+        perm_handler.resolve_hook_approval(hook_request_id, is_allow)
+        self._pending_approval = nil
+        self:add_user_section()
         return
       end
 
@@ -417,8 +431,8 @@ function ChatBuffer:send_message()
     insert_choices = function(questions)
       return self:insert_choices(questions)
     end,
-    insert_approval_request = function(tool, input, options)
-      return self:insert_approval_request(tool, input, options)
+    insert_approval_request = function(tool, input, options, hook_request_id)
+      return self:insert_approval_request(tool, input, options, hook_request_id)
     end,
     get_session_allow = function()
       return self:get_session_allow()
@@ -538,12 +552,14 @@ end
 ---@param tool string ツール名
 ---@param input table ツール入力
 ---@param options table 承認オプション
-function ChatBuffer:insert_approval_request(tool, input, options)
+---@param hook_request_id string? hook-based approval の場合のリクエストID
+function ChatBuffer:insert_approval_request(tool, input, options, hook_request_id)
   -- Store for later insertion in add_user_section()
   self._pending_approval = {
     tool = tool,
     input = input,
     options = options,
+    hook_request_id = hook_request_id,
   }
 end
 
