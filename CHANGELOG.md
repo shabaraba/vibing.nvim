@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.1 (2026-03-27)
+
+## What's Changed
+* fix: dynamically scan frontmatter in is_vibing_chat_file by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/407
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v3.0.0...v3.0.1
+
 ## 3.0.0 (2026-03-25)
 
 ## What's Changed
