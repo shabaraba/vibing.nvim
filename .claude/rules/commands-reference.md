@@ -7,13 +7,19 @@
 | `:VibingChat [position\|file]`            | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file |
 | `:VibingChatWorktree [position] <branch>` | Create git worktree and open chat in it (position: right\|left\|top\|bottom\|back\|current)         |
 | `:VibingToggleChat`                       | Toggle existing chat window (preserve current conversation)                                         |
+| `:VibingChatFork [position]`              | Fork current chat (create branch from current conversation)                                         |
 | `:VibingSlashCommands`                    | Show slash command picker in chat                                                                   |
+| `:VibingSetFileTitle`                     | Generate AI title and rename chat file                                                              |
+| `:VibingSummarize`                        | Generate AI summary of chat history and insert into buffer                                          |
+| `:VibingDeleteChats [--unrenamed]`        | Delete chat files (use --unrenamed to delete all unrenamed files)                                    |
 | `:VibingContext [path]`                   | Add file to context (or from oil.nvim if no path)                                                   |
 | `:VibingClearContext`                     | Clear all context                                                                                   |
 | `:VibingInline [action\|prompt]`          | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |
-| `:VibingSummarize`                        | Generate AI summary of chat history and insert into buffer                                          |
-| `:VibingChatFork [position]`              | Fork current chat (create branch from current conversation)                                         |
 | `:VibingCancel`                           | Cancel current request                                                                              |
+| `:VibingReloadCommands`                   | Reload custom slash commands                                                                        |
+| `:VibingCopyUnsentUserHeader`             | Copy `## User <!-- unsent -->` to clipboard                                                         |
+| `:VibingDailySummary [YYYY-MM-DD]`        | Generate daily summary from project chat files (default: today)                                     |
+| `:VibingDailySummaryAll [YYYY-MM-DD]`     | Generate daily summary from all chat files (default: today)                                         |
 
 ## Command Semantics
 
@@ -110,7 +116,10 @@ Slash commands can be used within the chat buffer for quick actions:
 | `/save`                   | Save current chat                                                        |
 | `/summarize`              | Summarize conversation                                                   |
 | `/model <model>`          | Set AI model (opus/sonnet/haiku)                                         |
+| `/help`                   | Show available slash commands                                            |
 | `/permissions` or `/perm` | Interactive Permission Builder - configure tool permissions              |
 | `/allow [tool]`           | Add tool to allow list, or show current list if no args                  |
 | `/deny [tool]`            | Add tool to deny list, or show current list if no args                   |
+| `/ask [tool]`             | Ask before using tool, or show current list if no args                   |
 | `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk) |
+| `/new-session`            | Reset session and start fresh                                            |

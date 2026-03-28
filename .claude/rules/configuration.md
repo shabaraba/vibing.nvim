@@ -7,6 +7,7 @@ require("vibing").setup({
   agent = {
     default_mode = "code",    -- "code" | "plan" | "explore"
     default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
+    prioritize_vibing_lsp = true,  -- Prioritize vibing-nvim LSP tools over generic LSP
   },
   chat = {
     window = {
@@ -38,9 +39,10 @@ require("vibing").setup({
     },
   },
   permissions = {
-    mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
+    mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "auto"
     allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill" },
     deny = { "Bash" },
+    ask = {},  -- Tools requiring confirmation before use
     rules = {},  -- Optional granular rules
   },
   node = {
@@ -48,7 +50,7 @@ require("vibing").setup({
     dev_mode = false,  -- false: Use compiled JS, true: Use TypeScript directly with bun
   },
   mcp = {
-    enabled = false,  -- MCP integration disabled by default
+    enabled = true,  -- MCP integration enabled by default
     rpc_port = 9876,
     auto_setup = false,
     auto_configure_claude_json = false,
@@ -68,6 +70,18 @@ require("vibing").setup({
       colors = { "#cc3300", "#fffe00" },  -- Start and end colors
       interval = 100,  -- Animation update interval in milliseconds
     },
+    tool_markers = {
+      Task = "▶",           -- Task tool start marker
+      TaskComplete = "✓",   -- Task tool complete marker
+      default = "⏺",        -- Default marker for other tools
+      -- Per-tool markers with optional pattern matching:
+      -- Bash = { default = "💻", patterns = { ["^npm"] = "📦", ["^git"] = "🌿" } }
+    },
+  },
+  daily_summary = {
+    save_dir = nil,  -- Defaults to chat_dir/daily/
+    search_dirs = {},  -- Directories to search for chats (VibingDailySummaryAll)
+    file_finder_strategy = "auto",  -- "auto" | "fd" | "find" | "locate" | "ripgrep"
   },
 })
 ```
