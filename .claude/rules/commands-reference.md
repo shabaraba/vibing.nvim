@@ -11,7 +11,7 @@
 | `:VibingSlashCommands`                    | Show slash command picker in chat                                                                   |
 | `:VibingSetFileTitle`                     | Generate AI title and rename chat file                                                              |
 | `:VibingSummarize`                        | Generate AI summary of chat history and insert into buffer                                          |
-| `:VibingDeleteChats [--unrenamed]`        | Delete chat files (use --unrenamed to delete all unrenamed files)                                    |
+| `:VibingDeleteChats [--unrenamed]`        | Delete chat files (use --unrenamed to delete all unrenamed files)                                   |
 | `:VibingContext [path]`                   | Add file to context (or from oil.nvim if no path)                                                   |
 | `:VibingClearContext`                     | Clear all context                                                                                   |
 | `:VibingInline [action\|prompt]`          | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |

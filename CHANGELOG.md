@@ -3,8 +3,8 @@
 ## 3.0.2 (2026-03-28)
 
 ## What's Changed
-* docs: update README, CLAUDE.md, and rules to reflect current codebase by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/409
 
+- docs: update README, CLAUDE.md, and rules to reflect current codebase by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/409
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v3.0.1...v3.0.2
 
