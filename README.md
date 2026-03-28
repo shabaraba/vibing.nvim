@@ -185,8 +185,9 @@ vibing.nvim focuses on deep Claude integration. You might still use other tools 
       -- Default configuration
       chat = {
         window = {
-          position = "current",  -- "current" | "right" | "left" | "float"
+          position = "current",  -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
           width = 0.4,
+          height = 0.4,
           border = "rounded",
         },
         auto_context = true,
@@ -199,8 +200,8 @@ vibing.nvim focuses on deep Claude integration. You might still use other tools 
         prioritize_vibing_lsp = true,  -- Prioritize vibing-nvim LSP tools (default: true)
       },
       permissions = {
-        mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
-        allow = { "Read", "Edit", "Write", "Glob", "Grep" },
+        mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "auto"
+        allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill" },
         deny = { "Bash" },
         rules = {},  -- Optional granular permission rules
       },
@@ -229,26 +230,40 @@ use {
 
 ### User Commands
 
-| Command                               | Description                                                                       |
-| ------------------------------------- | --------------------------------------------------------------------------------- |
-| `:VibingChat [position\|file]`        | Create new chat with optional position (current\|right\|left) or open saved file  |
-| `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                       |
-| `:VibingSlashCommands`                | Show slash command picker in chat                                                 |
-| `:VibingContext [path]`               | Add file to context (or from oil.nvim if no path)                                 |
-| `:VibingClearContext`                 | Clear all context                                                                 |
-| `:VibingInline [action\|instruction]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled. |
-| `:VibingInlineAction`                 | Alias of `:VibingInline` (for backward compatibility)                             |
-| `:VibingCancel`                       | Cancel current request                                                            |
-| `:VibingCopyUnsentUserHeader`         | Copy `## User <!-- unsent -->` to clipboard                                       |
+| Command                                   | Description                                                                                         |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `:VibingChat [position\|file]`            | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file |
+| `:VibingChatWorktree [position] <branch>` | Create git worktree and open chat in it (position: right\|left\|top\|bottom\|back\|current)         |
+| `:VibingToggleChat`                       | Toggle existing chat window (preserve current conversation)                                         |
+| `:VibingChatFork [position]`              | Fork current chat (create branch from current conversation)                                         |
+| `:VibingSlashCommands`                    | Show slash command picker in chat                                                                   |
+| `:VibingSetFileTitle`                     | Generate AI title and rename chat file                                                              |
+| `:VibingSummarize`                        | Generate AI summary of chat history and insert into buffer                                          |
+| `:VibingDeleteChats [--unrenamed]`        | Delete chat files (use --unrenamed to delete all unrenamed files)                                    |
+| `:VibingContext [path]`                   | Add file to context (or from oil.nvim if no path)                                                   |
+| `:VibingClearContext`                     | Clear all context                                                                                   |
+| `:VibingInline [action\|instruction]`     | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |
+| `:VibingCancel`                           | Cancel current request                                                                              |
+| `:VibingReloadCommands`                   | Reload custom slash commands                                                                        |
+| `:VibingCopyUnsentUserHeader`             | Copy `## User <!-- unsent -->` to clipboard                                                         |
+| `:VibingDailySummary [YYYY-MM-DD]`        | Generate daily summary from project chat files (default: today)                                     |
+| `:VibingDailySummaryAll [YYYY-MM-DD]`     | Generate daily summary from all chat files (default: today)                                         |
 
 **Command Semantics:**
 
-- **`:VibingChat`** - Always creates a fresh chat window. Optionally specify position (`current`, `right`, `left`) to control window placement.
+- **`:VibingChat`** - Always creates a fresh chat window. Optionally specify position to control window placement.
   - `:VibingChat` - New chat using default position from config
   - `:VibingChat current` - New chat in current window
   - `:VibingChat right` - New chat in right split
   - `:VibingChat left` - New chat in left split
-  - `:VibingChat path/to/file.vibing` - Open saved chat file
+  - `:VibingChat top` - New chat in top split
+  - `:VibingChat bottom` - New chat in bottom split
+  - `:VibingChat back` - New chat as background buffer only (no window)
+  - `:VibingChat path/to/file.md` - Open saved chat file
+- **`:VibingChatWorktree`** - Create or reuse a git worktree and open a chat session in it.
+  - `:VibingChatWorktree feature-branch` - Create worktree and open chat
+  - `:VibingChatWorktree right feature-branch` - Same, but open in right split
+- **`:VibingChatFork`** - Fork current chat conversation for branching in a different direction.
 - **`:VibingToggleChat`** - Use to show/hide your current conversation. Preserves the existing chat state.
 
 ### Inline Actions
@@ -353,10 +368,13 @@ Chat mode (2 panels):
 | `/save`                   | Save current chat                                                        |
 | `/summarize`              | Summarize conversation                                                   |
 | `/model <model>`          | Set AI model (opus/sonnet/haiku)                                         |
+| `/help`                   | Show available slash commands                                            |
 | `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules         |
 | `/allow [tool]`           | Add tool to allow list, or show current list if no args                  |
 | `/deny [tool]`            | Add tool to deny list, or show current list if no args                   |
+| `/ask [tool]`             | Ask before using tool, or show current list if no args                   |
 | `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk) |
+| `/new-session`            | Reset session and start fresh                                            |
 
 ### Chat Keybindings
 
@@ -638,9 +656,13 @@ chat = {
                           -- "current": Open in current window
                           -- "right": Right vertical split
                           -- "left": Left vertical split
+                          -- "top": Top horizontal split
+                          -- "bottom": Bottom horizontal split
+                          -- "back": Background buffer only (no window)
                           -- "float": Floating window
 
     width = 0.4,          -- Window width (0-1: ratio, >1: absolute columns)
+    height = 0.4,         -- Window height (0-1: ratio, >1: absolute rows, for top/bottom)
     border = "rounded",   -- Border style: "rounded" | "single" | "double" | "none"
   },
 
@@ -672,6 +694,7 @@ permissions = {
                         -- "bypassPermissions": Auto-approve all (use with caution)
                         -- "plan": Read-only planning mode (no tool execution)
                         -- "dontAsk": Deny instead of prompting
+                        -- "auto": Automatic selection
 
   allow = {              -- Tools to allow (empty = allow all except denied)
     "Read",              -- Read files
@@ -679,6 +702,7 @@ permissions = {
     "Write",             -- Create new files
     "Glob",              -- Search files by pattern
     "Grep",              -- Search file contents
+    "Skill",             -- Use skills (slash commands and workflows)
     -- "Bash",           -- Execute shell commands (security risk)
     -- "WebSearch",      -- Search the web
     -- "WebFetch",       -- Fetch web pages
@@ -687,6 +711,8 @@ permissions = {
   deny = {               -- Tools to deny (takes precedence over allow)
     "Bash",              -- Block shell commands by default
   },
+
+  ask = {},              -- Tools requiring confirmation before use
 
   rules = {},            -- Advanced: Granular permission rules
                         -- See Granular Permission Rules section
@@ -777,7 +803,7 @@ Enable Claude to directly control Neovim:
 
 ```lua
 mcp = {
-  enabled = false,               -- Enable MCP integration
+  enabled = true,                -- Enable MCP integration
   rpc_port = 9876,              -- RPC server port
   auto_setup = false,           -- Auto-build MCP server on plugin install
   auto_configure_claude_json = false,  -- Auto-configure ~/.claude.json
