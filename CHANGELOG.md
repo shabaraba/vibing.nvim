@@ -3,8 +3,8 @@
 ## 3.0.3 (2026-04-02)
 
 ## What's Changed
-* fix: remove hardcoded READ_ONLY_TOOLS in plan mode to respect permissions_allow by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/411
 
+- fix: remove hardcoded READ_ONLY_TOOLS in plan mode to respect permissions_allow by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/411
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v3.0.2...v3.0.3
 
