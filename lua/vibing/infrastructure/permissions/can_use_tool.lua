@@ -34,14 +34,6 @@ local INTERNAL_TOOLS = {
   NotebookEdit = true,
 }
 
-local READ_ONLY_TOOLS = {
-  Read = true,
-  Glob = true,
-  Grep = true,
-  LSP = true,
-  WebFetch = true,
-  WebSearch = true,
-}
 
 --- @class CanUseToolResult
 --- @field behavior "allow"|"deny"|"ask"
@@ -205,17 +197,6 @@ function M.can_use_tool(tool_name, input, config)
 
     if mode == "bypassPermissions" or mode == "dontAsk" then
       return allow(input)
-    end
-
-    if mode == "plan" then
-      if READ_ONLY_TOOLS[tool_name] then
-        return allow(input)
-      end
-      -- Also allow MCP read tools
-      if tool_name:match("^mcp__") and not tool_name:match("set_") and not tool_name:match("write_") then
-        return allow(input)
-      end
-      return ask()
     end
 
     if mode == "acceptEdits" and (tool_name == "Edit" or tool_name == "Write") then
