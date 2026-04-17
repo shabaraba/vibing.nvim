@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.4 (2026-04-17)
+
+## What's Changed
+
+- fix: remove extra blank lines before assistant response by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/413
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v3.0.3...v3.0.4
+
 ## 3.0.3 (2026-04-02)
 
 ## What's Changed
