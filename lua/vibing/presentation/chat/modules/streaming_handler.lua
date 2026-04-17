@@ -14,7 +14,6 @@ function M.start_response(buf)
     "",
     "## Assistant",
     "",
-    "",
   }
   vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, new_lines)
 end
@@ -31,6 +30,11 @@ function M.flush_chunks(buf, win, chunk_buffer)
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local last_line = lines[#lines] or ""
+
+  -- ヘッダー直後の空行に続く先頭改行を除去（余分な空行防止）
+  if last_line == "" and chunk_buffer:sub(1, 1) == "\n" then
+    chunk_buffer = chunk_buffer:gsub("^\n+", "")
+  end
 
   local chunk_lines = vim.split(chunk_buffer, "\n", { plain = true })
   chunk_lines[1] = last_line .. chunk_lines[1]
