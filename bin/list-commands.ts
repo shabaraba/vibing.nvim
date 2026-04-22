@@ -5,15 +5,19 @@
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { safeJsonStringify } from './lib/utils.js';
+import { loadInstalledPlugins } from './lib/plugin-loader.js';
 
 async function listCommands() {
   try {
+    const plugins = await loadInstalledPlugins();
+
     // Create a minimal query session to get access to supportedCommands()
     const result = query({
       prompt: 'list commands',
       options: {
         cwd: process.cwd(),
         settingSources: ['user', 'project'],
+        ...(plugins.length > 0 && { plugins }),
       },
     });
 

@@ -87,8 +87,12 @@ local function get_dynamic_sdk_skills()
     return _bundled_cache
   end
 
-  -- Find the plugin directory
-  local plugin_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h:h")
+  -- Find the plugin root directory by searching upward for package.json
+  local current_file = debug.getinfo(1, "S").source:sub(2)
+  local plugin_dir = vim.fs.root(current_file, "package.json")
+  if not plugin_dir then
+    return {}
+  end
   local list_commands_script = plugin_dir .. "/bin/list-commands.ts"
 
   -- Check if we should use TypeScript directly (dev mode) or compiled JS
@@ -98,8 +102,24 @@ local function get_dynamic_sdk_skills()
     return {}
   end
 
-  local executable = config.node and config.node.executable or "node"
   local dev_mode = config.node and config.node.dev_mode or false
+  local executable
+  if dev_mode then
+    executable = vim.fn.exepath("bun")
+    if executable == "" then
+      return {}
+    end
+  else
+    local configured = config.node and config.node.executable
+    if configured and configured ~= "auto" then
+      executable = configured
+    else
+      executable = vim.fn.exepath("node")
+      if executable == "" then
+        executable = "node"
+      end
+    end
+  end
   local script_path = list_commands_script
 
   if not dev_mode then
