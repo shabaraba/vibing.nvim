@@ -9,7 +9,7 @@ local M = {}
 function M.show_diff(file_path, session_id, cwd)
   local config = require("vibing.config").get()
   local MoteDiff = require("vibing.core.utils.mote_diff")
-  local mote_config = vim.deepcopy(config.mote)
+  local mote_config = vim.deepcopy(config.diff.mote)
 
   -- mote v0.2.4: --project/--context APIを使用
   mote_config.project = mote_config.project or MoteDiff.get_project_name()
