@@ -34,7 +34,7 @@ function M.create()
   end
 
   function source:get_keyword_pattern()
-    return [[\%(@\%(file\|agent\):\)\?\k*]]
+    return [[\%(@\%(file\|agent\):\)\?[[:keyword:]:-]*]]
   end
 
   ---@param params table
