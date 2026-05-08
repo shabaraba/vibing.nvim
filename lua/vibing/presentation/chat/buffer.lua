@@ -19,6 +19,7 @@ local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 ---@field _pending_choices table[]? add_user_section()後に挿入する選択肢
 ---@field _pending_approval table? add_user_section()後に挿入する承認要求UI
 ---@field _current_handle_id string? 実行中のリクエストのハンドルID
+---@field _current_adapter table? per-chatアダプター（フロントマターagent指定時）
 ---@field _session_allow table セッションレベルの許可リスト
 ---@field _session_deny table セッションレベルの拒否リスト
 ---@field _once_tools table? 一時許可/拒否ツールのトラッキング（次のメッセージでクリア）
@@ -41,11 +42,22 @@ function ChatBuffer:new(config)
   instance._pending_choices = nil
   instance._pending_approval = nil
   instance._current_handle_id = nil
+  instance._current_adapter = nil
   instance._session_allow = {}
   instance._session_deny = {}
   instance._once_tools = nil
   instance._mote_id = nil
   return instance
+end
+
+--- 現在のリクエストに対応するアダプターを取得（per-chat優先、なければグローバル）
+---@return table|nil
+function ChatBuffer:_get_active_adapter()
+  if self._current_adapter then
+    return self._current_adapter
+  end
+  local vibing = require("vibing")
+  return vibing.get_adapter()
 end
 
 ---チャットウィンドウを開く
@@ -80,12 +92,12 @@ end
 function ChatBuffer:close()
   -- 実行中のリクエストをキャンセル
   if self._current_handle_id then
-    local vibing = require("vibing")
-    local adapter = vibing.get_adapter()
+    local adapter = self:_get_active_adapter()
     if adapter then
       adapter:cancel(self._current_handle_id)
     end
     self._current_handle_id = nil
+    self._current_adapter = nil
   end
 
   if self._chunk_timer then
@@ -164,7 +176,7 @@ function ChatBuffer:_setup_keymaps()
       self:send_message()
     end,
     cancel = function()
-      local adapter = vibing.get_adapter()
+      local adapter = self:_get_active_adapter()
       if adapter and self._current_handle_id then
         adapter:cancel(self._current_handle_id)
       end
@@ -292,12 +304,12 @@ function ChatBuffer:send_message()
 
   -- 前のリクエストが実行中ならキャンセル（競合防止）
   if self._current_handle_id and not skip_cancel then
-    local vibing = require("vibing")
-    local adapter = vibing.get_adapter()
+    local adapter = self:_get_active_adapter()
     if adapter then
       adapter:cancel(self._current_handle_id)
     end
     self._current_handle_id = nil
+    self._current_adapter = nil
   end
 
   -- Clean up :once tools (JS side removes during use, but this is a safety net)
@@ -465,9 +477,13 @@ function ChatBuffer:send_message()
     end,
     clear_handle_id = function()
       self._current_handle_id = nil
+      self._current_adapter = nil
     end,
     set_handle_id = function(handle_id)
       self._current_handle_id = handle_id
+    end,
+    set_adapter = function(adapter_instance)
+      self._current_adapter = adapter_instance
     end,
     get_handle_id = function()
       return self._current_handle_id

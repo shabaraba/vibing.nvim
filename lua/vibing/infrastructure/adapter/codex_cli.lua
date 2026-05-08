@@ -170,7 +170,6 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
       if not received_first_response and not completed and self._handles[handle_id] then
         vim.schedule(function()
           if not completed then
-            completed = true
             vim.notify(
               "[vibing] Session resume timeout - killing hung process and resetting session",
               vim.log.levels.WARN

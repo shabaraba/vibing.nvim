@@ -85,6 +85,9 @@ function M.format_mcp_tool_call(item, context)
         end
       end
       result_text = table.concat(parts, "")
+    elseif type(item.result) == "table" then
+      local ok, encoded = pcall(vim.json.encode, item.result)
+      result_text = ok and encoded or vim.inspect(item.result)
     else
       result_text = tostring(item.result)
     end
