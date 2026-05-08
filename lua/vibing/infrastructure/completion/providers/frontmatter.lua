@@ -5,6 +5,10 @@ local M = {}
 
 ---Enum values for frontmatter fields
 local ENUMS = {
+  agent = {
+    { value = "claude", description = "Claude CLI (Anthropic)" },
+    { value = "codex", description = "Codex CLI (OpenAI)" },
+  },
   model = {
     { value = "sonnet", description = "Claude Sonnet (balanced)" },
     { value = "opus", description = "Claude Opus (most capable)" },

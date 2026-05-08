@@ -32,6 +32,9 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@param message string メッセージ
 ---@param config table 設定
 function M.execute(adapter, callbacks, message, config)
+  -- Per-chat adapter override from frontmatter "agent" field
+  adapter = M._resolve_adapter(adapter, callbacks, config)
+
   if not adapter then
     require("vibing.core.utils.notify").error("No adapter configured", "Chat")
     return
@@ -357,6 +360,35 @@ function M._ensure_mote_initialized_and_snapshot(mote_config, on_complete)
     end
     create_snapshot()
   end)
+end
+
+---フロントマターのagentフィールドに基づいてアダプターを解決
+---@param default_adapter table デフォルトアダプター（init.luaで初期化されたもの）
+---@param callbacks Vibing.ChatCallbacks
+---@param config table
+---@return table adapter
+function M._resolve_adapter(default_adapter, callbacks, config)
+  local frontmatter = callbacks.parse_frontmatter()
+  local agent_type = frontmatter and frontmatter.agent
+
+  if not agent_type then
+    return default_adapter
+  end
+
+  if default_adapter and default_adapter.name then
+    local expected_name = agent_type == "codex" and "codex_cli" or "claude_cli"
+    if default_adapter.name == expected_name then
+      return default_adapter
+    end
+  end
+
+  if agent_type == "codex" then
+    local CodexCLI = require("vibing.infrastructure.adapter.codex_cli")
+    return CodexCLI:new(config)
+  else
+    local ClaudeCLI = require("vibing.infrastructure.adapter.claude_cli")
+    return ClaudeCLI:new(config)
+  end
 end
 
 return M

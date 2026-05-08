@@ -17,7 +17,7 @@ function M.get_trigger_context(line, col)
 
   -- Pattern 1: "mode: " or "model: " or "permission_mode: " (enum fields)
   -- Note: Both "permissions_mode" and "permission_mode" are supported
-  for _, field_name in ipairs({ "permissions_mode", "permission_mode", "mode", "model" }) do
+  for _, field_name in ipairs({ "permissions_mode", "permission_mode", "agent", "mode", "model" }) do
     local pattern = "^%s*" .. field_name .. ":%s*(.*)$"
     local value = before_cursor:match(pattern)
     if value then
