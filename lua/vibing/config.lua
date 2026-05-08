@@ -45,8 +45,9 @@
 
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
----Agent SDK設定、チャットウィンドウ、キーマップ、ツール権限を統合管理
----@field agent Vibing.AgentConfig Agent SDK設定（モード、モデル）
+---アダプター選択、チャットウィンドウ、キーマップ、ツール権限を統合管理
+---@field adapter? "claude"|"codex" バックエンドアダプター選択（デフォルト: "claude"）
+---@field agent Vibing.AgentConfig エージェント設定（モード、モデル）
 ---@field chat Vibing.ChatConfig チャットウィンドウ設定（位置、サイズ、自動コンテキスト、保存先）
 ---@field ui Vibing.UiConfig UI設定（wrap等）
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
@@ -225,6 +226,7 @@ end
 
 ---@type Vibing.Config
 M.defaults = {
+  adapter = "claude",
   agent = {
     default_mode = "code",
     default_model = "sonnet",

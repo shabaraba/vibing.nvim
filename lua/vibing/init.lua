@@ -5,7 +5,7 @@ local notify = require("vibing.core.utils.notify")
 ---vibing.nvimプラグインのメインモジュール
 ---設定管理、アダプター初期化、コマンド登録を担当するエントリーポイント
 ---@field config Vibing.Config プラグイン設定オブジェクト（setup()で初期化）
----@field adapter Vibing.Adapter AIバックエンドアダプター（agent_sdk, claude, claude_acp等）
+---@field adapter Vibing.Adapter AIバックエンドアダプター（claude_cli, codex_cli等）
 local M = {}
 
 ---現在使用中のアダプターインスタンス
@@ -56,9 +56,14 @@ function M.setup(opts)
     end
   end
 
-  -- アダプターの初期化（Claude CLI）
-  local ClaudeCLI = require("vibing.infrastructure.adapter.claude_cli")
-  M.adapter = ClaudeCLI:new(M.config)
+  -- アダプターの初期化
+  if M.config.adapter == "codex" then
+    local CodexCLI = require("vibing.infrastructure.adapter.codex_cli")
+    M.adapter = CodexCLI:new(M.config)
+  else
+    local ClaudeCLI = require("vibing.infrastructure.adapter.claude_cli")
+    M.adapter = ClaudeCLI:new(M.config)
+  end
 
   -- Cleanup stale hook communication directories from previous sessions
   local hook_cleanup = require("vibing.infrastructure.adapter.modules.hook_cleanup")
@@ -300,7 +305,7 @@ function M._register_commands()
 end
 
 ---現在のアダプターインスタンスを取得
----setup()で初期化されたアダプター（agent_sdk, claude, claude_acp等）を返す
+---setup()で初期化されたアダプター（claude_cli, codex_cli等）を返す
 ---setup()未実行の場合はnilを返す
 ---@return Vibing.Adapter? アダプターインスタンス（初期化済みの場合）またはnil
 function M.get_adapter()

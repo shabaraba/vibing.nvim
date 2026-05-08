@@ -14,9 +14,7 @@
   ],
   "private": true,
   "type": "module",
-  "bin": {
-    "vibing-agent": "./dist/bin/agent-wrapper.js"
-  },
+  "bin": {},
   "repository": {
     "type": "git",
     "url": "https://github.com/shabaraba/vibing.nvim.git"
@@ -29,13 +27,11 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "build:watch": "node scripts/build.mjs --watch",
-    "test": "node dist/bin/agent-wrapper.js --prompt 'Say hello' --cwd $(pwd)",
-    "test:wrapper": "node dist/bin/agent-wrapper.js --prompt 'Test wrapper functionality' --cwd .",
+    "test": "npm run test:lua",
     "test:lua": "nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }\"",
     "test:e2e": "nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/e2e/ { minimal_init = 'tests/minimal_init.lua' }\"",
     "check": "find lua -name '*.lua' -exec luac -p {} \\;",
     "check:lua": "luac -p lua/vibing/init.lua",
-    "dev": "node dist/bin/agent-wrapper.js --prompt",
     "validate": "npm run check && echo 'All checks passed'",
     "format": "prettier --write '**/*.{js,mjs,ts,json,md,yml,yaml}'",
     "format:check": "prettier --check '**/*.{js,mjs,ts,json,md,yml,yaml}'",
