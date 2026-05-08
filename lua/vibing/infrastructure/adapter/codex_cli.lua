@@ -84,7 +84,7 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
 
   local cmd = CodexCommandBuilder.build(prompt, opts, session_id, self.config)
   local output = {}
-  local error_output = {}
+  local error_output = {} -- filtered stderr (codex noise removed)
 
   local received_first_response = false
   local timeout_timer = nil
@@ -135,13 +135,24 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
 
   local cwd = opts.cwd or vim.fn.getcwd()
 
+  -- Codex always emits "Reading additional input from stdin..." to stderr;
+  -- filter it out so the exit handler does not treat the run as an error.
+  local codex_stderr_handler = function(err, data)
+    if data then
+      local cleaned = data:gsub("Reading additional input from stdin%.%.%.%s*", "")
+      if cleaned ~= "" then
+        table.insert(error_output, cleaned)
+      end
+    end
+  end
+
   self._handles[handle_id] = vim.system(cmd, {
     text = true,
     stdin = "",
     cwd = cwd,
     env = env,
     stdout = StreamHandler.create_stdout_handler(CodexEventProcessor, event_context),
-    stderr = StreamHandler.create_stderr_handler(error_output),
+    stderr = codex_stderr_handler,
   }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done))
 
   if debug_mode then

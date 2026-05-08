@@ -5,7 +5,22 @@
 local M = {}
 
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
-local ToolDisplay = require("vibing.infrastructure.adapter.modules.tool_display")
+local ItemDisplay = require("vibing.infrastructure.adapter.modules.codex_item_display")
+
+--- Emit formatted text to output and onChunk callback
+--- @param text string
+--- @param context table
+local function emit_chunk(text, context)
+  if text == "" then
+    return
+  end
+  table.insert(context.output, text)
+  if context.onChunk then
+    vim.schedule(function()
+      context.onChunk(text)
+    end)
+  end
+end
 
 --- Handle "thread.started" event
 --- @param msg table
@@ -19,6 +34,30 @@ local function handle_thread_started(msg, context)
   end
 end
 
+--- Item type formatters for item.completed
+local item_completed_handlers = {
+  agent_message = function(item, context)
+    if item.text then
+      emit_chunk(item.text, context)
+    end
+  end,
+  command_execution = function(item, context)
+    emit_chunk(ItemDisplay.format_command_execution(item, context), context)
+  end,
+  file_change = function(item, context)
+    emit_chunk(ItemDisplay.format_file_change(item, context), context)
+  end,
+  mcp_tool_call = function(item, context)
+    emit_chunk(ItemDisplay.format_mcp_tool_call(item, context), context)
+  end,
+  reasoning = function(item, context)
+    emit_chunk(ItemDisplay.format_reasoning(item), context)
+  end,
+  web_search = function(item, context)
+    emit_chunk(ItemDisplay.format_web_search(item, context), context)
+  end,
+}
+
 --- Handle "item.completed" event
 --- @param msg table
 --- @param context table
@@ -27,76 +66,41 @@ local function handle_item_completed(msg, context)
   if not item then
     return
   end
-
-  if item.type == "agent_message" and item.text then
-    table.insert(context.output, item.text)
-    if context.onChunk then
-      vim.schedule(function()
-        context.onChunk(item.text)
-      end)
-    end
-  end
-
-  if item.type == "command_execution" and item.status == "completed" then
-    if context._cached_markers == nil then
-      context._cached_markers = ToolDisplay.get_markers_config() or false
-    end
-    local markers = context._cached_markers or nil
-    local tool_name = item.tool_name or "Bash"
-    local marker = ToolDisplay.resolve_marker(tool_name, markers)
-    local cmd_display = item.command or ""
-    local header = string.format("\n%s %s(%s)\n", marker, tool_name, cmd_display)
-
-    if not context._cached_display_mode then
-      context._cached_display_mode = ToolDisplay.get_display_mode()
-    end
-    local result_display = ToolDisplay.format_result_text(item.aggregated_output or "", context._cached_display_mode)
-    local text = header .. result_display
-
-    table.insert(context.output, text)
-    if context.onChunk then
-      vim.schedule(function()
-        context.onChunk(text)
-      end)
-    end
+  local handler = item_completed_handlers[item.type]
+  if handler then
+    handler(item, context)
   end
 end
 
---- Handle "item.started" event
+--- Notify on_tool_use for item.started
 --- @param msg table
 --- @param context table
 local function handle_item_started(msg, context)
   local item = msg.item
-  if not item then
+  if not item or not context.opts or not context.opts.on_tool_use then
     return
   end
 
-  if item.type == "command_execution" and context.opts and context.opts.on_tool_use then
-    local tool_name = item.tool_name or "Bash"
-    local command = item.command or ""
+  if item.type == "command_execution" then
+    local command = ItemDisplay.extract_inner_command(item.command or "")
     vim.schedule(function()
-      context.opts.on_tool_use(tool_name, nil, command)
+      context.opts.on_tool_use(item.tool_name or "Bash", nil, command)
     end)
-  end
-end
-
---- Handle "turn.failed" event
---- @param msg table
---- @param context table
-local function handle_turn_failed(msg, context)
-  local err = msg.error
-  if err then
-    local message = type(err) == "table" and err.message or tostring(err)
-    table.insert(context.errorOutput, message)
-  end
-end
-
---- Handle "error" event
---- @param msg table
---- @param context table
-local function handle_error(msg, context)
-  if msg.message then
-    table.insert(context.errorOutput, msg.message)
+  elseif item.type == "file_change" then
+    local paths = {}
+    for _, change in ipairs(item.changes or {}) do
+      if change.path then
+        table.insert(paths, change.path)
+      end
+    end
+    vim.schedule(function()
+      context.opts.on_tool_use("FileChange", table.concat(paths, ", "), nil)
+    end)
+  elseif item.type == "mcp_tool_call" then
+    local label = (item.server or "") .. ":" .. (item.tool or "")
+    vim.schedule(function()
+      context.opts.on_tool_use("MCP", nil, label)
+    end)
   end
 end
 
@@ -106,7 +110,7 @@ local event_handlers = {
     handle_thread_started(msg, context)
     return true
   end,
-  ["turn.started"] = function(msg, context)
+  ["turn.started"] = function(_, context)
     if context.onFirstResponse then
       context.onFirstResponse()
     end
@@ -124,11 +128,16 @@ local event_handlers = {
     return true
   end,
   ["turn.failed"] = function(msg, context)
-    handle_turn_failed(msg, context)
+    local err = msg.error
+    if err then
+      table.insert(context.errorOutput, type(err) == "table" and err.message or tostring(err))
+    end
     return true
   end,
   ["error"] = function(msg, context)
-    handle_error(msg, context)
+    if msg.message then
+      table.insert(context.errorOutput, msg.message)
+    end
     return true
   end,
 }
