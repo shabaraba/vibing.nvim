@@ -10,8 +10,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Release](https://img.shields.io/github/v/release/shabaraba/vibing.nvim)](https://github.com/shabaraba/vibing.nvim/releases)
 
-A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Agent SDK, bringing
-intelligent chat conversations and context-aware inline code actions directly into your editor.
+A powerful Neovim plugin that integrates **Claude** and **Codex** AI via CLI backends,
+bringing intelligent chat conversations and context-aware inline code actions directly into your editor.
 
 English | [日本語](./README.ja.md)
 
@@ -42,12 +42,12 @@ English | [日本語](./README.ja.md)
 
 vibing.nvim takes a fundamentally different approach to AI-assisted coding in Neovim.
 
-### Agent-First Architecture
+### CLI Adapter Architecture
 
-Unlike traditional chat-based AI plugins that send static context to an LLM, vibing.nvim gives Claude
-**direct access to your Neovim instance** through the Agent SDK and MCP integration.
+Unlike traditional chat-based AI plugins that send static context to an LLM, vibing.nvim gives AI
+**direct access to your Neovim instance** through CLI backends and MCP integration.
 
-This means Claude can:
+This means the AI can:
 
 ```markdown
 - **Autonomously explore your codebase** - Navigate files, search symbols, and understand
@@ -59,9 +59,14 @@ This means Claude can:
   `.vibing` files
 ```
 
-### Designed for Claude
+### Multi-Backend Support
 
-vibing.nvim is purpose-built for Claude, leveraging the official Agent SDK to provide the same capabilities as Claude Code CLI directly within Neovim. This focused approach enables deep integration that multi-provider plugins cannot achieve.
+vibing.nvim supports multiple AI CLI backends with a unified interface:
+
+- **Claude CLI** (`claude -p --stream-json`) - Full Claude Code capabilities within Neovim
+- **Codex CLI** (`codex exec --json`) - OpenAI Codex backend for alternative AI workflows
+
+Switch backends globally via `adapter` config or per-chat via the `agent` frontmatter field.
 
 ### Concurrent Sessions
 
@@ -147,17 +152,17 @@ Different AI coding plugins serve different needs. Here's how vibing.nvim fits i
 
 ### vibing.nvim is ideal if you:
 
-- Use Claude as your primary AI assistant
+- Use Claude or Codex as your AI assistant
 - Want the AI to autonomously navigate and understand your codebase
 - Need persistent, shareable conversation history
 - Prefer fine-grained permission controls
 - Want to work on multiple AI tasks concurrently
-- Want Claude Code CLI capabilities without leaving Neovim
+- Want Claude Code / Codex CLI capabilities without leaving Neovim
 
 ### Consider alternatives if you:
 
-- Need support for multiple LLM providers (OpenAI, Ollama, etc.)
-- Prefer minimal dependencies (vibing.nvim requires Node.js)
+- Need support for local/offline models (Ollama, etc.)
+- Prefer minimal dependencies (vibing.nvim requires Node.js for the MCP server)
 - Want a battle-tested plugin with large community (we're still growing!)
 
 ### Complementary Usage
@@ -169,6 +174,14 @@ vibing.nvim focuses on deep Claude integration. You might still use other tools 
 - Provider-agnostic workflows
 
 ## 📦 Installation
+
+### Prerequisites
+
+- **Neovim** 0.9+
+- **Node.js** 18+ (for the MCP server)
+- At least one AI CLI backend:
+  - **Claude CLI** (`claude`) — Install via `npm install -g @anthropic-ai/claude-code`
+  - **Codex CLI** (`codex`) — Install via `npm install -g @openai/codex`
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 
@@ -183,6 +196,7 @@ vibing.nvim focuses on deep Claude integration. You might still use other tools 
   config = function()
     require("vibing").setup({
       -- Default configuration
+      adapter = "claude",  -- "claude" | "codex" (global default; overridable per-chat via frontmatter)
       chat = {
         window = {
           position = "current",  -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
@@ -622,9 +636,20 @@ require("vibing").setup({
 
 Complete reference of all configuration options:
 
+### Adapter Settings
+
+Select the AI CLI backend:
+
+```lua
+adapter = "claude",  -- Global backend adapter
+                     -- "claude": Use Claude CLI (claude -p --stream-json)
+                     -- "codex":  Use Codex CLI  (codex exec --json)
+                     -- Can be overridden per-chat via "agent" frontmatter field
+```
+
 ### Agent Settings
 
-Controls Claude Agent SDK behavior:
+Controls AI agent behavior:
 
 ```lua
 agent = {
@@ -633,7 +658,7 @@ agent = {
                             -- "plan": Plan first, then implement
                             -- "explore": Explore and analyze codebase
 
-  default_model = "sonnet", -- Default Claude model
+  default_model = "sonnet", -- Default model
                             -- "sonnet": Balanced (recommended)
                             -- "opus": Most capable
                             -- "haiku": Fastest
@@ -848,7 +873,7 @@ This allows Claude Code CLI to control your Neovim instance (read/write buffers,
 
 ### Node.js Executable
 
-Configure which Node.js executable to use:
+Configure the Node.js executable used for the MCP server and internal scripts:
 
 ```lua
 node = {
@@ -857,6 +882,10 @@ node = {
                         -- "/usr/bin/node": Explicit path to node binary
                         -- "/usr/local/bin/bun": Use bun instead of node
                         -- Can also be set via VIBING_NODE_EXECUTABLE env var
+
+  dev_mode = false,     -- Development mode for plugin development
+                        -- true: Run TypeScript scripts directly with bun (no build step)
+                        -- false: Use compiled JS from dist/ (default)
 }
 ```
 
@@ -884,7 +913,7 @@ Or in your Lazy.nvim config:
   config = function()
     require("vibing").setup({
       node = {
-        executable = "/usr/local/bin/bun",  -- Runtime executable
+        executable = "/usr/local/bin/bun",
       },
     })
   end,
@@ -966,8 +995,9 @@ Chats are saved as Markdown with YAML frontmatter for session resumption and con
 ```yaml
 ---
 vibing.nvim: true
-session_id: <sdk-session-id>
+session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
+agent: claude  # claude | codex (overrides global adapter setting for this chat)
 model: sonnet  # sonnet | opus | haiku
 permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk
 permissions_allow:
@@ -1015,36 +1045,41 @@ graph TB
         Plugin -->|uses| RPC
     end
 
-    subgraph Backend["Node.js Backend"]
-        SDK["Claude Agent SDK<br/>- Tool execution<br/>- Session management<br/>- Streaming response"]
-        MCP["MCP Server<br/>- Buffer operations<br/>- LSP queries<br/>- Command execution<br/>- File system access"]
-
-        SDK -->|controls via| MCP
+    subgraph MCP["Node.js MCP Server"]
+        MCPServer["MCP Server<br/>- Buffer operations<br/>- LSP queries<br/>- Command execution<br/>- File system access"]
     end
 
-    RPC <-->|JSON-RPC| MCP
-    Plugin -->|spawns & communicates<br/>JSON Lines| SDK
+    subgraph AI["AI CLI Backends"]
+        Claude["Claude CLI<br/>(claude -p --stream-json)"]
+        Codex["Codex CLI<br/>(codex exec --json)"]
+    end
+
+    RPC <-->|JSON-RPC| MCPServer
+    Plugin -->|spawns & communicates<br/>JSON Lines| Claude
+    Plugin -->|spawns & communicates<br/>JSON Lines| Codex
 
     style Neovim fill:#e1f5ff
-    style Backend fill:#fff4e1
+    style MCP fill:#fff4e1
+    style AI fill:#e8f5e9
     style Plugin fill:#bbdefb
-    style SDK fill:#ffe0b2
+    style Claude fill:#ffe0b2
+    style Codex fill:#c8e6c9
 ```
 
 ### How It Differs from Traditional Approaches
 
-| Aspect         | Traditional REST API | vibing.nvim (Agent SDK)  |
-| -------------- | -------------------- | ------------------------ |
-| Context        | Manually assembled   | Agent requests on-demand |
-| Editor Access  | None (fire & forget) | Full bidirectional MCP   |
-| Session State  | Plugin manages       | SDK with resume support  |
-| Tool Execution | Plugin implements    | SDK standard tools       |
-| Capabilities   | Limited to plugin    | Extensible via MCP       |
+| Aspect         | Traditional REST API | vibing.nvim (CLI Adapters)  |
+| -------------- | -------------------- | --------------------------- |
+| Context        | Manually assembled   | MCP: agent requests on-demand |
+| Editor Access  | None (fire & forget) | Full bidirectional MCP      |
+| Session State  | Plugin manages       | CLI session with resume     |
+| Tool Execution | Plugin implements    | CLI native tools            |
+| Capabilities   | Limited to plugin    | Extensible via MCP          |
 
 **Key Components:**
 
-- **Agent SDK Integration** - Node.js wrapper communicating via JSON Lines
-- **MCP Server** - Provides Claude with direct Neovim control
+- **CLI Adapters** - Direct execution of `claude` / `codex` CLI communicating via JSON Lines
+- **MCP Server** - Provides AI with direct Neovim control (buffers, LSP, commands)
 - **Context System** - Automatic and manual file context management
 - **Session Persistence** - Resume conversations with full history
 
@@ -1087,38 +1122,31 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 
 ## ❓ FAQ
 
-### Why Claude only? Why not support other providers?
+### Which AI backends are supported?
 
-vibing.nvim uses the Claude Agent SDK, which provides capabilities beyond simple chat:
+vibing.nvim currently supports:
 
-- Built-in tool execution framework
-- Session persistence and resume
-- MCP integration for editor control
+- **Claude CLI** (`claude -p --stream-json`) — Full Claude Code capabilities
+- **Codex CLI** (`codex exec --json`) — OpenAI Codex backend
 
-These features are specific to Claude's architecture. Supporting other providers would mean either:
-
-- Losing these capabilities, or
-- Reimplementing them from scratch
-
-We chose depth over breadth.
+Switch backends globally with `adapter = "claude"|"codex"` in setup, or per-chat by adding
+`agent: claude` or `agent: codex` to a chat file's YAML frontmatter.
 
 ### Why does it require Node.js?
 
-The Claude Agent SDK is a TypeScript/JavaScript library. While we could potentially create Lua bindings, using Node.js directly ensures:
-
-- Full SDK compatibility
-- Immediate access to new SDK features
-- Reliable MCP server implementation
+Node.js is required for the MCP server, which provides AI with direct access to your running
+Neovim instance (buffer reads/writes, LSP queries, command execution). The AI CLI binaries
+themselves (`claude`, `codex`) are separate installs.
 
 ### How does it compare to Claude Code CLI?
 
 vibing.nvim provides similar capabilities to Claude Code CLI but integrated into Neovim:
 
-- Same Agent SDK underneath
-- Same tool execution model
+- Same `claude` CLI underneath
 - MCP for editor control (CLI controls terminal, vibing controls Neovim)
+- Additional Codex backend option for OpenAI workflows
 
-Think of it as "Claude Code for Neovim users."
+Think of it as "Claude Code (or Codex) for Neovim users."
 
 ### Can I use vibing.nvim alongside other AI plugins?
 
@@ -1131,7 +1159,7 @@ MIT License - see LICENSE file for details
 ## 🔗 Links
 
 - [Claude AI](https://claude.ai)
-- [Claude Agent SDK](https://github.com/anthropics/anthropic-sdk-typescript)
+- [Codex CLI](https://github.com/openai/codex)
 - [GitHub Repository](https://github.com/shabaraba/vibing.nvim)
 
 ---
