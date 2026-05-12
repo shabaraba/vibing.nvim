@@ -9,11 +9,6 @@ local ENUMS = {
     { value = "claude", description = "Claude CLI (Anthropic)" },
     { value = "codex", description = "Codex CLI (OpenAI)" },
   },
-  model = {
-    { value = "sonnet", description = "Claude Sonnet (balanced)" },
-    { value = "opus", description = "Claude Opus (most capable)" },
-    { value = "haiku", description = "Claude Haiku (fastest)" },
-  },
   permissions_mode = {
     { value = "default", description = "Ask for confirmation before each tool use" },
     { value = "acceptEdits", description = "Auto-approve Edit/Write, ask for others" },
@@ -21,6 +16,20 @@ local ENUMS = {
     { value = "plan", description = "Read-only planning mode (no tool execution)" },
     { value = "dontAsk", description = "Deny instead of prompting" },
   },
+}
+
+---Model candidates per agent backend
+local CLAUDE_MODELS = {
+  { value = "haiku", description = "Claude Haiku (fastest)" },
+  { value = "sonnet", description = "Claude Sonnet (balanced)" },
+  { value = "opus", description = "Claude Opus (most capable)" },
+}
+
+local CODEX_MODELS = {
+  { value = "codex-mini-latest", description = "Codex Mini (default)" },
+  { value = "o4-mini", description = "o4-mini" },
+  { value = "o3-mini", description = "o3-mini" },
+  { value = "o3", description = "o3 (most capable)" },
 }
 
 ---Available tool names for permissions lists
@@ -43,7 +52,7 @@ local TOOL_NAMES = {
 }
 
 ---Get enum values for a field
----@param field string Field name (mode, model, permissions_mode)
+---@param field string Field name (agent, permissions_mode, ...)
 ---@return Vibing.CompletionItem[]
 function M.get_enum_values(field)
   local values = ENUMS[field]
@@ -62,6 +71,24 @@ function M.get_enum_values(field)
     })
   end
 
+  return items
+end
+
+---Get model candidates for the given agent backend
+---@param agent string? "claude" | "codex" (defaults to "claude")
+---@return Vibing.CompletionItem[]
+function M.get_model_values(agent)
+  local models = (agent == "codex") and CODEX_MODELS or CLAUDE_MODELS
+  local items = {}
+  for _, m in ipairs(models) do
+    table.insert(items, {
+      word = m.value,
+      label = m.value,
+      kind = "Enum",
+      filterText = m.value,
+      description = m.description,
+    })
+  end
   return items
 end
 

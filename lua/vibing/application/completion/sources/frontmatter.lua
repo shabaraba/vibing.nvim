@@ -7,6 +7,27 @@ M.name = "frontmatter"
 
 local frontmatter_provider = require("vibing.infrastructure.completion.providers.frontmatter")
 
+---Read the "agent:" value from the current buffer's frontmatter
+---@return string? "claude" | "codex" | nil
+function M._read_frontmatter_agent()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, 30, false)
+  local in_frontmatter = false
+  for i, line in ipairs(lines) do
+    if i == 1 and line:match("^%-%-%-") then
+      in_frontmatter = true
+    elseif in_frontmatter and line:match("^%-%-%-") then
+      break
+    elseif in_frontmatter then
+      local v = line:match("^agent:%s*(.+)$")
+      if v then
+        return vim.trim(v)
+      end
+    end
+  end
+  return nil
+end
+
 ---Detect trigger context for frontmatter fields
 ---@param line string Current line content
 ---@param col number Cursor column (0-indexed)
@@ -23,12 +44,17 @@ function M.get_trigger_context(line, col)
     if value then
       -- Normalize field name to "permissions_mode" for provider lookup
       local normalized_field = field_name == "permission_mode" and "permissions_mode" or field_name
-      return {
+      local ctx = {
         trigger = "frontmatter_enum",
         field = normalized_field,
         query = value,
         start_col = #before_cursor - #value + 1,
       }
+      -- For model field, read the agent value from the buffer frontmatter
+      if normalized_field == "model" then
+        ctx.agent = M._read_frontmatter_agent()
+      end
+      return ctx
     end
   end
 
@@ -130,7 +156,11 @@ function M.get_candidates(context, callback)
   local items = {}
 
   if context.trigger == "frontmatter_enum" then
-    items = frontmatter_provider.get_enum_values(context.field)
+    if context.field == "model" then
+      items = frontmatter_provider.get_model_values(context.agent)
+    else
+      items = frontmatter_provider.get_enum_values(context.field)
+    end
   elseif context.trigger == "frontmatter_tool" then
     items = frontmatter_provider.get_tool_names()
   elseif context.trigger == "frontmatter_pattern" then
@@ -147,7 +177,11 @@ function M.get_candidates_sync(context)
   local items = {}
 
   if context.trigger == "frontmatter_enum" then
-    items = frontmatter_provider.get_enum_values(context.field)
+    if context.field == "model" then
+      items = frontmatter_provider.get_model_values(context.agent)
+    else
+      items = frontmatter_provider.get_enum_values(context.field)
+    end
   elseif context.trigger == "frontmatter_tool" then
     items = frontmatter_provider.get_tool_names()
   elseif context.trigger == "frontmatter_pattern" then
