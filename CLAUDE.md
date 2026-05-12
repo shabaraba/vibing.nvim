@@ -107,3 +107,9 @@ Detailed documentation is organized in `.claude/rules/`:
 | `web-workflow.md`       | Claude Code on the Web git push requirements                                    |
 
 All `.md` files in `.claude/rules/` are automatically loaded into Claude Code's context.
+
+## Development Rules
+
+- **テストフィクスチャ・スキャフォルド**: ルートディレクトリに置かない。`tests/` 配下に配置すること
+  - ✅ `tests/fixtures/`, `tests/e2e/`, `tests/lua/` など
+  - ❌ `test-*/`, `test-xxx/` をリポジトリルートに作成しない
