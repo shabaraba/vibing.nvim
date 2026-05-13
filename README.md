@@ -1068,13 +1068,13 @@ graph TB
 
 ### How It Differs from Traditional Approaches
 
-| Aspect         | Traditional REST API | vibing.nvim (CLI Adapters)  |
-| -------------- | -------------------- | --------------------------- |
+| Aspect         | Traditional REST API | vibing.nvim (CLI Adapters)    |
+| -------------- | -------------------- | ----------------------------- |
 | Context        | Manually assembled   | MCP: agent requests on-demand |
-| Editor Access  | None (fire & forget) | Full bidirectional MCP      |
-| Session State  | Plugin manages       | CLI session with resume     |
-| Tool Execution | Plugin implements    | CLI native tools            |
-| Capabilities   | Limited to plugin    | Extensible via MCP          |
+| Editor Access  | None (fire & forget) | Full bidirectional MCP        |
+| Session State  | Plugin manages       | CLI session with resume       |
+| Tool Execution | Plugin implements    | CLI native tools              |
+| Capabilities   | Limited to plugin    | Extensible via MCP            |
 
 **Key Components:**
 
