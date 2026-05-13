@@ -5,10 +5,9 @@ local M = {}
 
 ---Enum values for frontmatter fields
 local ENUMS = {
-  model = {
-    { value = "sonnet", description = "Claude Sonnet (balanced)" },
-    { value = "opus", description = "Claude Opus (most capable)" },
-    { value = "haiku", description = "Claude Haiku (fastest)" },
+  agent = {
+    { value = "claude", description = "Claude CLI (Anthropic)" },
+    { value = "codex", description = "Codex CLI (OpenAI)" },
   },
   permissions_mode = {
     { value = "default", description = "Ask for confirmation before each tool use" },
@@ -17,6 +16,21 @@ local ENUMS = {
     { value = "plan", description = "Read-only planning mode (no tool execution)" },
     { value = "dontAsk", description = "Deny instead of prompting" },
   },
+}
+
+---Model candidates per agent backend
+local CLAUDE_MODELS = {
+  { value = "haiku", description = "Claude Haiku (fastest)" },
+  { value = "sonnet", description = "Claude Sonnet (balanced)" },
+  { value = "opus", description = "Claude Opus (most capable)" },
+}
+
+local CODEX_MODELS = {
+  { value = "gpt-5.5", description = "GPT-5.5 (default)" },
+  { value = "gpt-5.4", description = "gpt-5.4" },
+  { value = "gpt-5.4-mini", description = "GPT-5.4-Mini" },
+  { value = "gpt-5.3-codex", description = "gpt-5.3-codex" },
+  { value = "gpt-5.2", description = "gpt-5.2" },
 }
 
 ---Available tool names for permissions lists
@@ -39,7 +53,7 @@ local TOOL_NAMES = {
 }
 
 ---Get enum values for a field
----@param field string Field name (mode, model, permissions_mode)
+---@param field string Field name (agent, permissions_mode, ...)
 ---@return Vibing.CompletionItem[]
 function M.get_enum_values(field)
   local values = ENUMS[field]
@@ -58,6 +72,24 @@ function M.get_enum_values(field)
     })
   end
 
+  return items
+end
+
+---Get model candidates for the given agent backend
+---@param agent string? "claude" | "codex" (defaults to "claude")
+---@return Vibing.CompletionItem[]
+function M.get_model_values(agent)
+  local models = (agent == "codex") and CODEX_MODELS or CLAUDE_MODELS
+  local items = {}
+  for _, m in ipairs(models) do
+    table.insert(items, {
+      word = m.value,
+      label = m.value,
+      kind = "Enum",
+      filterText = m.value,
+      description = m.description,
+    })
+  end
   return items
 end
 

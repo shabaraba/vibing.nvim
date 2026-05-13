@@ -133,11 +133,12 @@ local function get_sorted_keys(tbl)
     created_at = 3,
     forked_from = 4,
     working_dir = 5,
-    model = 6,
-    permissions_mode = 7,
-    permissions_allow = 8,
-    permissions_deny = 9,
-    language = 10,
+    agent = 6,
+    model = 7,
+    permissions_mode = 8,
+    permissions_allow = 9,
+    permissions_deny = 10,
+    language = 11,
   }
 
   table.sort(keys, function(a, b)

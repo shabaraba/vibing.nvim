@@ -14,9 +14,9 @@
 
 ---@class Vibing.Adapter
 ---AIバックエンドとの通信を抽象化するアダプター基底クラス
----agent_sdk、claude、claude_acpなど複数のバックエンドを統一インターフェースで扱う
+---claude_cli、codex_cliなど複数のバックエンドを統一インターフェースで扱う
 ---サブクラスはexecute(), stream(), build_command()を実装する必要がある
----@field name string アダプター名（"agent_sdk", "claude", "claude_acp"等）
+---@field name string アダプター名（"claude_cli", "codex_cli"等）
 ---@field config Vibing.Config プラグイン設定オブジェクト（API key、モデル名等を含む）
 ---@field job_id number? 現在実行中のジョブID（vim.fn.jobstart()の戻り値、未実行時はnil）
 local Adapter = {}
@@ -80,14 +80,14 @@ end
 
 ---バックエンド実行用のコマンドライン配列を構築
 ---サブクラスで実装必須のメソッド（基底クラスではエラーを投げる）
----vim.fn.jobstart()に渡すコマンド配列を生成（例: {"node", "bin/agent-wrapper.mjs", "--prompt", "..."}）
+---vim.fn.jobstart()に渡すコマンド配列を生成（例: {"claude", "-p", "--output-format", "stream-json", "..."}）
 ---プロンプト、コンテキスト、オプションをコマンドライン引数やJSON入力に変換
 ---@param prompt string 送信するプロンプト
 ---@param opts Vibing.AdapterOpts 実行オプション
 ---@return string[] コマンドライン配列（vim.fn.jobstart()の第一引数に渡す形式）
 -- Build command-line array for backend execution.
 -- Subclasses must implement this method (base class throws an error).
--- Generates command array to pass to vim.fn.jobstart() (e.g., {"node", "bin/agent-wrapper.mjs", "--prompt", "..."}).
+-- Generates command array to pass to vim.fn.jobstart() (e.g., {"claude", "-p", "--output-format", "stream-json", "..."}).
 -- Converts prompt, context, and options into command-line arguments or JSON input.
 -- @param prompt string The prompt to send.
 -- @param opts Vibing.AdapterOpts Execution options.

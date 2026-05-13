@@ -13,7 +13,6 @@ describe("vibing.init", function()
     -- Clear loaded modules
     package.loaded["vibing.init"] = nil
     package.loaded["vibing.config"] = nil
-    package.loaded["vibing.infrastructure.adapter.agent_sdk"] = nil
     package.loaded["vibing.application.chat"] = nil
     package.loaded["vibing.application.chat.commands"] = nil
     package.loaded["vibing.application.chat.custom_commands"] = nil
@@ -73,8 +72,6 @@ describe("vibing.init", function()
         }
       end,
     }
-    package.loaded["vibing.infrastructure.adapter.agent_sdk"] = mock_adapter
-
     -- Mock chat module
     mock_chat = {
       setup = function() end,

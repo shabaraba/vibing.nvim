@@ -1,21 +1,18 @@
---- Claude CLI adapter
---- Uses `claude -p` with stream-json format for communication
---- @module vibing.infrastructure.adapter.claude_cli
+--- Codex CLI adapter
+--- Uses `codex exec --json` for communication
+--- @module vibing.infrastructure.adapter.codex_cli
 
 local Base = require("vibing.infrastructure.adapter.base")
-local CLICommandBuilder = require("vibing.infrastructure.adapter.modules.cli_command_builder")
-local CLIEventProcessor = require("vibing.infrastructure.adapter.modules.cli_event_processor")
+local CodexCommandBuilder = require("vibing.infrastructure.adapter.modules.codex_command_builder")
+local CodexEventProcessor = require("vibing.infrastructure.adapter.modules.codex_event_processor")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
-local SettingsGenerator = require("vibing.infrastructure.hooks.settings_generator")
-local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
 
----@class Vibing.ClaudeCLIAdapter : Vibing.Adapter
+---@class Vibing.CodexCLIAdapter : Vibing.Adapter
 ---@field _handles table<string, table>
 ---@field _session_manager table
----@field _settings_path string|nil
-local ClaudeCLI = setmetatable({}, { __index = Base })
-ClaudeCLI.__index = ClaudeCLI
+local CodexCLI = setmetatable({}, { __index = Base })
+CodexCLI.__index = CodexCLI
 
 local INITIAL_RESPONSE_TIMEOUT_MS = 120000
 
@@ -28,39 +25,21 @@ local SUPPORTED_FEATURES = {
 }
 
 ---@param config Vibing.Config
----@return Vibing.ClaudeCLIAdapter
-function ClaudeCLI:new(config)
+---@return Vibing.CodexCLIAdapter
+function CodexCLI:new(config)
   local instance = Base.new(self, config)
-  setmetatable(instance, ClaudeCLI)
-  instance.name = "claude_cli"
+  setmetatable(instance, CodexCLI)
+  instance.name = "codex_cli"
   instance._handles = {}
   instance._session_manager = SessionManagerModule.new()
-  instance._settings_path = nil
   math.randomseed(vim.loop.hrtime())
   return instance
-end
-
---- Get or create hook settings file (cached)
---- @return string|nil
-function ClaudeCLI:_get_settings_path()
-  if not self._settings_path then
-    local ok, path = pcall(SettingsGenerator.ensure)
-    if ok and path then
-      self._settings_path = path
-    else
-      vim.notify(
-        string.format("[vibing:cli] Failed to create hook settings: %s", tostring(path)),
-        vim.log.levels.WARN
-      )
-    end
-  end
-  return self._settings_path
 end
 
 ---@param prompt string
 ---@param opts Vibing.AdapterOpts
 ---@return Vibing.Response
-function ClaudeCLI:execute(prompt, opts)
+function CodexCLI:execute(prompt, opts)
   opts = opts or {}
   local result = { content = "" }
   local done = false
@@ -85,7 +64,7 @@ end
 ---@param on_chunk fun(chunk: string)
 ---@param on_done fun(response: Vibing.Response)
 ---@return string handle_id
-function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
+function CodexCLI:stream(prompt, opts, on_chunk, on_done)
   opts = opts or {}
 
   local debug_mode = vim.g.vibing_debug_stream
@@ -95,7 +74,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   if debug_mode then
     vim.notify(
       string.format(
-        "[vibing:cli] Starting stream: handle_id=%s, session_id=%s",
+        "[vibing:codex] Starting stream: handle_id=%s, session_id=%s",
         handle_id,
         session_id or "new"
       ),
@@ -103,9 +82,9 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     )
   end
 
-  local cmd = CLICommandBuilder.build(prompt, opts, session_id, self.config, self:_get_settings_path())
+  local cmd = CodexCommandBuilder.build(prompt, opts, session_id, self.config)
   local output = {}
-  local error_output = {}
+  local error_output = {} -- filtered stderr (codex noise removed)
 
   local received_first_response = false
   local timeout_timer = nil
@@ -133,33 +112,19 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   }
 
   local env = vim.fn.environ()
-  -- Remove CLAUDECODE to allow nested invocation
-  env.CLAUDECODE = nil
 
   local rpc_server = require("vibing.infrastructure.rpc.server")
   local rpc_port = rpc_server.get_port()
   if rpc_port then
     local port_str = tostring(rpc_port)
-    env.VIBING_NVIM_RPC_PORT = port_str -- for hook script
-    env.VIBING_RPC_PORT = port_str -- for MCP server (mcp-server/src/rpc.ts)
-    env.VIBING_NVIM_CONTEXT = "true" -- indicates running inside vibing.nvim
+    env.VIBING_NVIM_RPC_PORT = port_str
+    env.VIBING_RPC_PORT = port_str
+    env.VIBING_NVIM_CONTEXT = "true"
   end
-
-  ActiveStreamRegistry.register({
-    handle_id = handle_id,
-    adapter = self,
-    on_insert_choices = opts.on_insert_choices,
-    on_approval_required = opts.on_approval_required,
-  })
-
-  local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
-  perm_handler.set_active_opts(opts)
 
   local wrapped_on_done = function(response)
     if not completed then
       completed = true
-      ActiveStreamRegistry.unregister(handle_id)
-      perm_handler.clear_active_opts()
       if timeout_timer then
         vim.fn.timer_stop(timeout_timer)
         timeout_timer = nil
@@ -170,21 +135,33 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
 
   local cwd = opts.cwd or vim.fn.getcwd()
 
+  -- Codex always emits "Reading additional input from stdin..." to stderr;
+  -- filter it out so the exit handler does not treat the run as an error.
+  local codex_stderr_handler = function(err, data)
+    if data then
+      local cleaned = data:gsub("Reading additional input from stdin%.%.%.%s*", "")
+      if cleaned ~= "" then
+        table.insert(error_output, cleaned)
+      end
+    end
+  end
+
   self._handles[handle_id] = vim.system(cmd, {
     text = true,
+    stdin = "",
     cwd = cwd,
     env = env,
-    stdout = StreamHandler.create_stdout_handler(CLIEventProcessor, event_context, function()
+    stdout = StreamHandler.create_stdout_handler(CodexEventProcessor, event_context, function()
       return self._handles[handle_id] == nil
     end),
-    stderr = StreamHandler.create_stderr_handler(error_output),
+    stderr = codex_stderr_handler,
   }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done))
 
   if debug_mode then
     local pid = self._handles[handle_id] and self._handles[handle_id].pid or "unknown"
-    vim.notify(string.format("[vibing:cli] Process started: pid=%s", tostring(pid)), vim.log.levels.INFO)
+    vim.notify(string.format("[vibing:codex] Process started: pid=%s", tostring(pid)), vim.log.levels.INFO)
     vim.notify(
-      string.format("[vibing:cli] Command: %s", table.concat(cmd, " "):sub(1, 200)),
+      string.format("[vibing:codex] Command: %s", table.concat(cmd, " "):sub(1, 200)),
       vim.log.levels.DEBUG
     )
   end
@@ -195,7 +172,6 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
       if not received_first_response and not completed and self._handles[handle_id] then
         vim.schedule(function()
           if not completed then
-            completed = true
             vim.notify(
               "[vibing] Session resume timeout - killing hung process and resetting session",
               vim.log.levels.WARN
@@ -216,24 +192,34 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
 end
 
 ---@param handle_id string?
-function ClaudeCLI:cancel(handle_id)
+function CodexCLI:cancel(handle_id)
+  -- codex exec spawns child processes (e.g. shells for tool execution) that
+  -- inherit the stdout pipe. Killing only the codex parent leaves those
+  -- children holding the pipe open, so vim.system()'s exit handler never
+  -- fires (it waits for stdout to close), meaning GradientAnimation.stop()
+  -- and add_user_section() are never called and the UI stays frozen.
+  -- Kill children first via pkill, then the parent.
+  local function kill_process(handle)
+    if not handle then return end
+    local pid = handle.pid
+    if not pid or pid <= 0 then return end
+    -- Kill direct child processes that may be holding stdout/stderr pipes open
+    vim.fn.system(string.format("pkill -9 -P %d 2>/dev/null; true", pid))
+    -- Kill the codex process itself
+    pcall(function()
+      handle:kill(9)
+    end)
+  end
+
   if handle_id then
     local handle = self._handles[handle_id]
     if handle then
-      pcall(function()
-        if handle.pid and handle.pid > 0 then
-          handle:kill(9)
-        end
-      end)
+      kill_process(handle)
       self._handles[handle_id] = nil
     end
   else
     for id, handle in pairs(self._handles) do
-      pcall(function()
-        if handle.pid and handle.pid > 0 then
-          handle:kill(9)
-        end
-      end)
+      kill_process(handle)
       self._handles[id] = nil
     end
   end
@@ -241,29 +227,29 @@ end
 
 ---@param feature string
 ---@return boolean
-function ClaudeCLI:supports(feature)
+function CodexCLI:supports(feature)
   return SUPPORTED_FEATURES[feature] or false
 end
 
 ---@param session_id string?
 ---@param handle_id string?
-function ClaudeCLI:set_session_id(session_id, handle_id)
+function CodexCLI:set_session_id(session_id, handle_id)
   SessionManagerModule.set(self._session_manager, session_id, handle_id)
 end
 
 ---@param handle_id string?
 ---@return string?
-function ClaudeCLI:get_session_id(handle_id)
+function CodexCLI:get_session_id(handle_id)
   return SessionManagerModule.get(self._session_manager, handle_id)
 end
 
 ---@param handle_id string
-function ClaudeCLI:cleanup_session(handle_id)
+function CodexCLI:cleanup_session(handle_id)
   SessionManagerModule.cleanup(self._session_manager, handle_id)
 end
 
-function ClaudeCLI:cleanup_stale_sessions()
+function CodexCLI:cleanup_stale_sessions()
   SessionManagerModule.cleanup_stale(self._session_manager, self._handles)
 end
 
-return ClaudeCLI
+return CodexCLI

@@ -84,13 +84,25 @@ if [ -f "dist/index.js" ]; then
     cd "$SCRIPT_DIR"
     echo "[vibing.nvim] Registering MCP server in ~/.claude.json..."
     if "$NODE_EXECUTABLE" dist/bin/register-mcp.js; then
-        exit 0
+        echo "[vibing.nvim] ✓ Registered vibing-nvim MCP server in ~/.claude.json"
     else
         echo "[vibing.nvim] ⚠ Warning: MCP server is built but registration failed"
         echo "[vibing.nvim] You can manually register by running: $NODE_EXECUTABLE dist/bin/register-mcp.js"
-        # Build succeeded but registration failed - still exit 0 since MCP server is functional
-        exit 0
     fi
+
+    # Register MCP server with codex (if available)
+    MCP_SERVER_PATH="${MCP_DIR}/dist/index.js"
+    if command -v codex &> /dev/null; then
+        echo "[vibing.nvim] Registering MCP server with codex..."
+        if VIBING_RPC_PORT="${VIBING_RPC_PORT:-9876}" codex mcp add vibing-nvim -- "$NODE_EXECUTABLE" "$MCP_SERVER_PATH" 2>/dev/null; then
+            echo "[vibing.nvim] ✓ Registered vibing-nvim MCP server with codex"
+        else
+            echo "[vibing.nvim] ⚠ Warning: codex MCP registration failed"
+            echo "[vibing.nvim] You can manually register by running: codex mcp add vibing-nvim -- $NODE_EXECUTABLE $MCP_SERVER_PATH"
+        fi
+    fi
+
+    exit 0
 else
     echo "[vibing.nvim] ✗ Build failed: dist/index.js not found"
     exit 1

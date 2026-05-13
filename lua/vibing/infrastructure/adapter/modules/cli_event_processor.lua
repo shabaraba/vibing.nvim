@@ -5,8 +5,7 @@
 local M = {}
 
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
-
-local DEFAULT_MARKER = "⏺"
+local ToolDisplay = require("vibing.infrastructure.adapter.modules.tool_display")
 
 --- Extract brief summary from tool input for display
 --- @param tool_name string
@@ -32,65 +31,6 @@ local function extract_input_summary(tool_name, tool_input)
     or ""
 end
 
---- Resolve tool marker from config
---- @param tool_name string
---- @param markers table|nil
---- @return string
-local function resolve_marker(tool_name, markers)
-  if not markers then
-    return DEFAULT_MARKER
-  end
-
-  local marker_config = markers[tool_name]
-  if type(marker_config) == "string" then
-    return marker_config
-  end
-  if type(marker_config) == "table" and marker_config.default then
-    return marker_config.default
-  end
-
-  return markers.default or DEFAULT_MARKER
-end
-
---- Get tool markers config
---- @return table|nil
-local function get_markers_config()
-  local ok, config_mod = pcall(require, "vibing.config")
-  if ok then
-    local config = config_mod.get()
-    return config.ui and config.ui.tool_markers
-  end
-  return nil
-end
-
---- Get tool result display mode
---- @return string
-local function get_display_mode()
-  local ok, config_mod = pcall(require, "vibing.config")
-  if ok then
-    local config = config_mod.get()
-    return config.ui and config.ui.tool_result_display or "compact"
-  end
-  return "compact"
-end
-
---- Format tool result text for display
---- @param result_text string
---- @param display_mode string
---- @return string
-local function format_result_text(result_text, display_mode)
-  if display_mode == "none" or not result_text or result_text == "" then
-    return ""
-  end
-
-  local display_text = result_text
-  if display_mode == "compact" and #result_text > 100 then
-    display_text = result_text:sub(1, 100) .. "..."
-  end
-
-  return "  ⎿  " .. display_text:gsub("\n", "\n     ") .. "\n"
-end
-
 --- Format and emit a tool_result block as a chunk
 --- @param block table tool_result content block
 --- @param tool_map table tool_use_id → {name, input} map
@@ -106,10 +46,10 @@ local function emit_tool_result(block, tool_map, context)
   local input_summary = extract_input_summary(tool_name, tool_input)
 
   if context._cached_markers == nil then
-    context._cached_markers = get_markers_config() or false
+    context._cached_markers = ToolDisplay.get_markers_config() or false
   end
   local markers = context._cached_markers or nil
-  local marker = resolve_marker(tool_name, markers)
+  local marker = ToolDisplay.resolve_marker(tool_name, markers)
   local header = string.format("\n%s %s(%s)\n", marker, tool_name, input_summary)
 
   local result_text = ""
@@ -126,9 +66,9 @@ local function emit_tool_result(block, tool_map, context)
   end
 
   if not context._cached_display_mode then
-    context._cached_display_mode = get_display_mode()
+    context._cached_display_mode = ToolDisplay.get_display_mode()
   end
-  local result_display = format_result_text(result_text, context._cached_display_mode)
+  local result_display = ToolDisplay.format_result_text(result_text, context._cached_display_mode)
   local text = header .. result_display
 
   if context.onChunk then

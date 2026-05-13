@@ -41,6 +41,7 @@ local function copy_frontmatter(source_frontmatter, forked_from, config)
     created_at = os.date("%Y-%m-%dT%H:%M:%S"),
     forked_from = forked_from,
     working_dir = source_frontmatter.working_dir,
+    agent = source_frontmatter.agent or (config.adapter or "claude"),
     mode = source_frontmatter.mode or (config.agent and config.agent.default_mode or "code"),
     model = source_frontmatter.model or (config.agent and config.agent.default_model or "sonnet"),
     permission_mode = source_frontmatter.permission_mode
