@@ -255,7 +255,12 @@ function M._register_commands()
   -- その他のコマンド
   vim.api.nvim_create_user_command("VibingCancel", function()
     local view = require("vibing.presentation.chat.view")
+    -- カレントバッファがチャットバッファなら優先
     local chat_buffer = view.get_current()
+    -- カレントバッファがチャット外の場合は直近のチャットバッファを使用
+    if not chat_buffer then
+      chat_buffer = view._current_buffer
+    end
     if chat_buffer then
       local adapter = chat_buffer:_get_active_adapter()
       if adapter then

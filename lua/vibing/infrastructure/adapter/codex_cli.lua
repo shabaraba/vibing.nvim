@@ -151,7 +151,9 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
     stdin = "",
     cwd = cwd,
     env = env,
-    stdout = StreamHandler.create_stdout_handler(CodexEventProcessor, event_context),
+    stdout = StreamHandler.create_stdout_handler(CodexEventProcessor, event_context, function()
+      return self._handles[handle_id] == nil
+    end),
     stderr = codex_stderr_handler,
   }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done))
 
@@ -191,23 +193,33 @@ end
 
 ---@param handle_id string?
 function CodexCLI:cancel(handle_id)
+  -- codex exec spawns child processes (e.g. shells for tool execution) that
+  -- inherit the stdout pipe. Killing only the codex parent leaves those
+  -- children holding the pipe open, so vim.system()'s exit handler never
+  -- fires (it waits for stdout to close), meaning GradientAnimation.stop()
+  -- and add_user_section() are never called and the UI stays frozen.
+  -- Kill children first via pkill, then the parent.
+  local function kill_process(handle)
+    if not handle then return end
+    local pid = handle.pid
+    if not pid or pid <= 0 then return end
+    -- Kill direct child processes that may be holding stdout/stderr pipes open
+    vim.fn.system(string.format("pkill -9 -P %d 2>/dev/null; true", pid))
+    -- Kill the codex process itself
+    pcall(function()
+      handle:kill(9)
+    end)
+  end
+
   if handle_id then
     local handle = self._handles[handle_id]
     if handle then
-      pcall(function()
-        if handle.pid and handle.pid > 0 then
-          handle:kill(9)
-        end
-      end)
+      kill_process(handle)
       self._handles[handle_id] = nil
     end
   else
     for id, handle in pairs(self._handles) do
-      pcall(function()
-        if handle.pid and handle.pid > 0 then
-          handle:kill(9)
-        end
-      end)
+      kill_process(handle)
       self._handles[id] = nil
     end
   end

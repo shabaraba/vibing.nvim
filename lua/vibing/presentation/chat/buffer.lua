@@ -483,9 +483,7 @@ function ChatBuffer:send_message()
       self._current_handle_id = handle_id
     end,
     set_adapter = function(adapter_instance)
-      if self._current_handle_id then
-        self._current_adapter = adapter_instance
-      end
+      self._current_adapter = adapter_instance
     end,
     get_handle_id = function()
       return self._current_handle_id

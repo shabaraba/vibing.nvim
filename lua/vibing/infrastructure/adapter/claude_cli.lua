@@ -174,7 +174,9 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     text = true,
     cwd = cwd,
     env = env,
-    stdout = StreamHandler.create_stdout_handler(CLIEventProcessor, event_context),
+    stdout = StreamHandler.create_stdout_handler(CLIEventProcessor, event_context, function()
+      return self._handles[handle_id] == nil
+    end),
     stderr = StreamHandler.create_stderr_handler(error_output),
   }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done))
 
