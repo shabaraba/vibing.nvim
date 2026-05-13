@@ -254,7 +254,14 @@ function M._register_commands()
 
   -- その他のコマンド
   vim.api.nvim_create_user_command("VibingCancel", function()
-    if M.adapter then
+    local view = require("vibing.presentation.chat.view")
+    local chat_buffer = view.get_current()
+    if chat_buffer then
+      local adapter = chat_buffer:_get_active_adapter()
+      if adapter then
+        adapter:cancel(chat_buffer._current_handle_id)
+      end
+    elseif M.adapter then
       M.adapter:cancel()
     end
   end, { desc = "Cancel current Vibing request" })
