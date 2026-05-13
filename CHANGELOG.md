@@ -3,11 +3,11 @@
 ## 4.0.0 (2026-05-13)
 
 ## What's Changed
-* fix: resolve plugin skill completion not appearing in chat buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/415
-* refactor: nest mote config under diff section by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/404
-* chore: remove unnecessary files and directories from repository by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/418
-* feat: add codex-cli adapter with per-chat agent selection by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/417
 
+- fix: resolve plugin skill completion not appearing in chat buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/415
+- refactor: nest mote config under diff section by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/404
+- chore: remove unnecessary files and directories from repository by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/418
+- feat: add codex-cli adapter with per-chat agent selection by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/417
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v3.0.4...v4.0.0
 
