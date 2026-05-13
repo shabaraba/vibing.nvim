@@ -26,10 +26,11 @@ local CLAUDE_MODELS = {
 }
 
 local CODEX_MODELS = {
-  { value = "codex-mini-latest", description = "Codex Mini (default)" },
-  { value = "o4-mini", description = "o4-mini" },
-  { value = "o3-mini", description = "o3-mini" },
-  { value = "o3", description = "o3 (most capable)" },
+  { value = "gpt-5.5", description = "GPT-5.5 (default)" },
+  { value = "gpt-5.4", description = "gpt-5.4" },
+  { value = "gpt-5.4-mini", description = "GPT-5.4-Mini" },
+  { value = "gpt-5.3-codex", description = "gpt-5.3-codex" },
+  { value = "gpt-5.2", description = "gpt-5.2" },
 }
 
 ---Available tool names for permissions lists
