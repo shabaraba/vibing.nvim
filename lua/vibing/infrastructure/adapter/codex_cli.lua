@@ -7,6 +7,8 @@ local CodexCommandBuilder = require("vibing.infrastructure.adapter.modules.codex
 local CodexEventProcessor = require("vibing.infrastructure.adapter.modules.codex_event_processor")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
+local CodexSettingsGenerator = require("vibing.infrastructure.hooks.codex_settings_generator")
+local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
 
 ---@class Vibing.CodexCLIAdapter : Vibing.Adapter
 ---@field _handles table<string, table>
@@ -82,7 +84,13 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
     )
   end
 
-  local cmd = CodexCommandBuilder.build(prompt, opts, session_id, self.config)
+  local permission_mode = opts.permission_mode or "default"
+  local hook_args = nil
+  if permission_mode ~= "bypassPermissions" then
+    hook_args = CodexSettingsGenerator.get_hook_args()
+  end
+
+  local cmd = CodexCommandBuilder.build(prompt, opts, session_id, self.config, hook_args)
   local output = {}
   local error_output = {} -- filtered stderr (codex noise removed)
 
@@ -122,9 +130,21 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
     env.VIBING_NVIM_CONTEXT = "true"
   end
 
+  ActiveStreamRegistry.register({
+    handle_id = handle_id,
+    adapter = self,
+    on_insert_choices = opts.on_insert_choices,
+    on_approval_required = opts.on_approval_required,
+  })
+
+  local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
+  perm_handler.set_active_opts(vim.tbl_extend("force", opts, { _is_codex = true }))
+
   local wrapped_on_done = function(response)
     if not completed then
       completed = true
+      ActiveStreamRegistry.unregister(handle_id)
+      perm_handler.clear_active_opts()
       if timeout_timer then
         vim.fn.timer_stop(timeout_timer)
         timeout_timer = nil
@@ -172,6 +192,7 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
       if not received_first_response and not completed and self._handles[handle_id] then
         vim.schedule(function()
           if not completed then
+            completed = true
             vim.notify(
               "[vibing] Session resume timeout - killing hung process and resetting session",
               vim.log.levels.WARN

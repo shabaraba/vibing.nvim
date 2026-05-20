@@ -84,8 +84,9 @@ end
 --- @param opts Vibing.AdapterOpts Adapter options
 --- @param session_id string|nil Thread ID for session resumption
 --- @param config Vibing.Config Plugin config
+--- @param hook_args string[]|nil Optional -c flag pair for PreToolUse hook injection
 --- @return string[] Command array for vim.system()
-function M.build(prompt, opts, session_id, config)
+function M.build(prompt, opts, session_id, config, hook_args)
   if not cached_codex_path then
     cached_codex_path = vim.fn.exepath("codex")
     if cached_codex_path == "" then
@@ -102,6 +103,13 @@ function M.build(prompt, opts, session_id, config)
   end
 
   table.insert(cmd, "--json")
+
+  -- Hook injection for permission control
+  if hook_args then
+    for _, arg in ipairs(hook_args) do
+      table.insert(cmd, arg)
+    end
+  end
 
   -- Model selection
   local model = resolve_model(opts, config)

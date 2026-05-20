@@ -21,6 +21,12 @@ local active_opts = nil
 --- @type table<string, {tool_name: string, tool_input: table}>
 local pending_hook_approvals = {}
 
+--- Codex uses different tool names than Claude for equivalent operations.
+--- This mapping ensures frontmatter permissions work identically across adapters.
+local CODEX_TOOL_ALIASES = {
+  apply_patch = "Edit", -- Codex's file patch tool maps to Claude's Edit
+}
+
 local APPROVAL_OPTIONS = {
   { value = "allow_once", label = "allow_once - Allow this execution only" },
   { value = "deny_once", label = "deny_once - Deny this execution only" },
@@ -139,6 +145,10 @@ function M.check_tool_permission(params)
 
   local tool_name = hook_input.tool_name or ""
   local tool_input = hook_input.tool_input or {}
+
+  if active_opts and active_opts._is_codex then
+    tool_name = CODEX_TOOL_ALIASES[tool_name] or tool_name
+  end
 
   -- AskUserQuestion: deny + insert choices into chat buffer + kill process
   if tool_name == "AskUserQuestion" then
