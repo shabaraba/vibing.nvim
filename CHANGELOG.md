@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.1.0 (2026-06-25)
+
+## What's Changed
+* feat: apply frontmatter permissions to codex adapter via PreToolUse hook by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/419
+* perf: async preload skill completion to eliminate first-slash delay by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/420
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v4.0.0...v4.1.0
+
 ## 4.0.0 (2026-05-13)
 
 ## What's Changed
