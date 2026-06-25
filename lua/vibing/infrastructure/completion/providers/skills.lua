@@ -12,6 +12,9 @@ local _bundled_cache = nil
 ---@type boolean
 local _loading = false
 
+---@type integer
+local _load_generation = 0
+
 ---Parse SKILL.md to extract name and description
 ---@param file_path string
 ---@return {name: string, description: string}?
@@ -92,11 +95,12 @@ local function resolve_list_commands()
     return nil, nil
   end
 
-  local ok, config = pcall(require, "vibing.config")
+  local ok, Config = pcall(require, "vibing.config")
   if not ok then
     return nil, nil
   end
 
+  local config = Config.get()
   local dev_mode = config.node and config.node.dev_mode or false
   local executable
   if dev_mode then
@@ -140,22 +144,28 @@ local function parse_commands_output(stdout)
 
   local items = {}
   for _, cmd in ipairs(commands) do
-    if cmd.name then
+    if type(cmd) == "table" and type(cmd.name) == "string" and cmd.name ~= "" then
+      local description = type(cmd.description) == "string" and cmd.description or ""
       local source = "custom"
-      if cmd.description and cmd.description:match("%(plugin:") then
+      if description:match("%(plugin:") then
         source = "plugin"
-      elseif cmd.description and cmd.description:match("%(user%)") then
+      elseif description:match("%(user%)") then
         source = "user"
-      elseif cmd.description and cmd.description:match("%(project%)") then
+      elseif description:match("%(project%)") then
         source = "project"
+      end
+
+      local detail = source
+      if source == "plugin" then
+        detail = description:match("%(plugin:([^@%)]+)") or "plugin"
       end
 
       table.insert(items, {
         word = cmd.name,
         label = "/" .. cmd.name,
         kind = "Skill",
-        description = cmd.description or "",
-        detail = source,
+        description = description,
+        detail = detail,
         source = source,
         filterText = cmd.name,
       })
@@ -177,15 +187,24 @@ local function start_async_load()
   end
 
   _loading = true
-  vim.system({ executable, script_path }, {}, vim.schedule_wrap(function(result)
+  local load_generation = _load_generation
+  local ok = pcall(function()
+    vim.system({ executable, script_path }, {}, vim.schedule_wrap(function(result)
+      if load_generation ~= _load_generation then
+        return
+      end
+      _loading = false
+      if result.code ~= 0 then
+        return
+      end
+      local items = parse_commands_output(result.stdout or "")
+      _bundled_cache = items
+      _cache = nil
+    end))
+  end)
+  if not ok then
     _loading = false
-    if result.code ~= 0 then
-      return
-    end
-    local items = parse_commands_output(result.stdout or "")
-    _bundled_cache = items
-    _cache = nil
-  end))
+  end
 end
 
 ---Get dynamic skills from Agent SDK (custom commands + plugin skills)
@@ -287,8 +306,16 @@ function M.preload()
   start_async_load()
 end
 
+---Check if dynamic skills (SDK/plugin skills) are still loading
+---Returns true before the first async load completes; false once _bundled_cache is populated
+---@return boolean
+function M.is_preloading()
+  return _loading or _bundled_cache == nil
+end
+
 ---Clear cache (call when skills change)
 function M.clear_cache()
+  _load_generation = _load_generation + 1
   _cache = nil
   _bundled_cache = nil
   _loading = false

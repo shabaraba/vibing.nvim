@@ -8,6 +8,7 @@ local file_source = require("vibing.application.completion.sources.file")
 local agent_source = require("vibing.application.completion.sources.agent")
 local frontmatter_source = require("vibing.application.completion.sources.frontmatter")
 local chat_view = require("vibing.presentation.chat.view")
+local skills_provider = require("vibing.infrastructure.completion.providers.skills")
 
 ---@type table[]
 local sources = { frontmatter_source, slash_source, file_source, agent_source }
@@ -49,9 +50,11 @@ function M.create()
       if context then
         src.get_candidates(context, function(items)
           local cmp_items = M._to_cmp_items(items, context)
+          -- Re-query on next keystroke while plugin skills are still loading
+          local is_incomplete = context.trigger == "slash" and skills_provider.is_preloading()
           callback({
             items = cmp_items,
-            isIncomplete = false,
+            isIncomplete = is_incomplete,
           })
         end)
         return
@@ -99,6 +102,8 @@ function M._to_cmp_items(items, context)
     table.insert(cmp_items, {
       label = item.label,
       kind = to_cmp_kind(item.kind, cmp_kinds),
+      detail = item.detail,
+      labelDetails = item.detail and { description = item.detail } or nil,
       documentation = {
         kind = "markdown",
         value = item.description or "",
