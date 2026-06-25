@@ -20,6 +20,10 @@ function M.setup()
     vim.notify("[vibing] nvim-cmp source registered", vim.log.levels.DEBUG)
   end
 
+  -- Warm skills cache in background so first "/" press is instant
+  local skills = require("vibing.infrastructure.completion.providers.skills")
+  skills.preload()
+
   _setup_done = true
 end
 
