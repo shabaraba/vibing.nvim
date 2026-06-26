@@ -277,7 +277,7 @@ M.defaults = {
   },
   permissions = {
     mode = "acceptEdits",
-    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill" },
+    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput" },
     deny = { "Bash" },
     ask = {},
     rules = {},

@@ -14,6 +14,7 @@ M.VALID_TOOLS = {
   "WebSearch",
   "WebFetch",
   "Skill",
+  "StructuredOutput",
 }
 
 ---有効なツール名のテーブル（高速検索用）

@@ -251,9 +251,14 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
         -- Modified Files出力
         BufferReload.reload_files(files)
 
+        local MAX_DISPLAY = 50
         callbacks.append_chunk("\n\n### Modified Files\n\n")
-        for _, file_path in ipairs(files) do
-          callbacks.append_chunk(file_path .. "\n")
+        local display_count = math.min(#files, MAX_DISPLAY)
+        for i = 1, display_count do
+          callbacks.append_chunk(files[i] .. "\n")
+        end
+        if #files > MAX_DISPLAY then
+          callbacks.append_chunk(string.format("... (他%d件)\n", #files - MAX_DISPLAY))
         end
 
         -- Patch marker (before User section)

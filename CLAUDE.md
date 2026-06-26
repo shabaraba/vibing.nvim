@@ -113,3 +113,9 @@ All `.md` files in `.claude/rules/` are automatically loaded into Claude Code's 
 - **テストフィクスチャ・スキャフォルド**: ルートディレクトリに置かない。`tests/` 配下に配置すること
   - ✅ `tests/fixtures/`, `tests/e2e/`, `tests/lua/` など
   - ❌ `test-*/`, `test-xxx/` をリポジトリルートに作成しない
+
+## Key Constants
+
+- **有効ツール名リスト (`VALID_TOOLS`)**: `lua/vibing/core/constants/tools.lua`
+  - 権限バリデーション（未知ツール名の警告）に使用
+  - 新しいツールを追加する場合はここと `lua/vibing/config.lua` の `M.defaults.permissions.allow` の両方に追加する
