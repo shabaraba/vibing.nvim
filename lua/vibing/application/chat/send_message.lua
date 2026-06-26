@@ -252,14 +252,14 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
         BufferReload.reload_files(files)
 
         local MAX_DISPLAY = 50
-        callbacks.append_chunk("\n\n### Modified Files\n\n")
-        local display_count = math.min(#files, MAX_DISPLAY)
-        for i = 1, display_count do
-          callbacks.append_chunk(files[i] .. "\n")
+        local file_lines = {}
+        for i = 1, math.min(#files, MAX_DISPLAY) do
+          table.insert(file_lines, files[i])
         end
         if #files > MAX_DISPLAY then
-          callbacks.append_chunk(string.format("... (他%d件)\n", #files - MAX_DISPLAY))
+          table.insert(file_lines, string.format("... (%d more)", #files - MAX_DISPLAY))
         end
+        callbacks.append_chunk("\n\n### Modified Files\n\n" .. table.concat(file_lines, "\n") .. "\n")
 
         -- Patch marker (before User section)
         callbacks.append_chunk("\n<!-- patch: " .. patch_path .. " -->\n")
