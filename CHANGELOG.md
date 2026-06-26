@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.2.0 (2026-06-26)
+
+## What's Changed
+* fix: load local-scope plugins and fix skill completion for plugin commands by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/422
+* fix: add StructuredOutput tool support and limit modified files display by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/424
+* feat: add VibingCleanMote command and fix mote patch path resolution by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/425
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v4.1.0...v4.2.0
+
 ## 4.1.0 (2026-06-25)
 
 ## What's Changed
