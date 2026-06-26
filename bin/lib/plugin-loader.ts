@@ -138,7 +138,9 @@ async function loadEnabledPluginIds(): Promise<Set<string> | null> {
 
   const merged = { ...userEnabled, ...projectEnabled, ...localEnabled };
   if (Object.keys(merged).length === 0) {
-    debugLog('No enabledPlugins found in user, project, or local settings, loading all installed plugins');
+    debugLog(
+      'No enabledPlugins found in user, project, or local settings, loading all installed plugins'
+    );
     return null;
   }
 
