@@ -92,6 +92,39 @@ function M._build_result_message(success_count, failed_count, errors)
   return table.concat(parts, ". ")
 end
 
+---@param entities Vibing.Domain.Chat.FileEntity[]
+---@param config table
+---@param on_complete fun(success: boolean, message: string)
+function M.clean_mote_selected(entities, config, on_complete)
+  if not entities or #entities == 0 then
+    on_complete(false, "No files selected")
+    return
+  end
+
+  local mote_config = {
+    project = (config.diff and config.diff.mote and config.diff.mote.project) or vim.fn.fnamemodify(vim.fn.getcwd(), ":t"),
+    context = MoteContext.build_name(nil),
+    cwd = vim.fn.getcwd(),
+  }
+
+  MoteCleaner.clean_batch(entities, mote_config, function(success_count, failed_count, errors)
+    local parts = {}
+
+    if success_count > 0 then
+      table.insert(parts, string.format("Cleaned mote objects for %d file(s)", success_count))
+    end
+
+    if failed_count > 0 then
+      local error_summary = #errors > 3
+        and table.concat(vim.list_slice(errors, 1, 3), ", ") .. string.format(" (and %d more)", #errors - 3)
+        or table.concat(errors, ", ")
+      table.insert(parts, string.format("Failed for %d file(s): %s", failed_count, error_summary))
+    end
+
+    on_complete(failed_count == 0, table.concat(parts, ". "))
+  end)
+end
+
 ---@param save_dir string
 ---@param config table
 ---@param on_complete fun(success: boolean, message: string)

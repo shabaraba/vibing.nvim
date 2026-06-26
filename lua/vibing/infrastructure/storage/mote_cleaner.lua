@@ -27,6 +27,9 @@ end
 ---@param context_dir string
 ---@return string
 function M._resolve_patch_path(patch_ref, context_dir)
+  if patch_ref:match("^/") then
+    return patch_ref
+  end
   if patch_ref:match("^%.vibing/") then
     return vim.fn.fnamemodify(patch_ref, ":p")
   end
