@@ -147,6 +147,11 @@ async function loadEnabledPluginIds(): Promise<Set<string> | null> {
       .filter(([, v]) => v === true)
       .map(([k]) => k)
   );
+  if (enabled.size === 0) {
+    // Only false entries present — no allowlist to apply, load all plugins
+    debugLog('enabledPlugins has no positively-enabled entries; loading all installed plugins');
+    return null;
+  }
   debugLog(`Enabled plugins (user+project+local): ${[...enabled].join(', ')}`);
   return enabled;
 }
@@ -192,7 +197,8 @@ export async function loadInstalledPlugins(): Promise<PluginReference[]> {
     if (!Array.isArray(installations) || installations.length === 0) continue;
 
     const hasLocalInstall = installations.some((inst) => inst.scope === 'local');
-    const isEnabledInSettings = enabledIds !== null && enabledIds.has(pluginId);
+    // null means no filter — include all (mirrors behaviour when no enabledPlugins is configured)
+    const isEnabledInSettings = enabledIds === null || enabledIds.has(pluginId);
 
     if (!hasLocalInstall && !isEnabledInSettings) {
       debugLog(`Skipping plugin (not local and not enabled): ${pluginId}`);

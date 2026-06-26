@@ -190,33 +190,22 @@ local function start_async_load()
 
   _loading = true
   local load_generation = _load_generation
-  local tmpfile = vim.fn.tempname()
   local ok = pcall(function()
-    vim.system(
-      { "sh", "-c", vim.fn.shellescape(executable) .. " " .. vim.fn.shellescape(script_path) .. " > " .. tmpfile },
-      {},
-      vim.schedule_wrap(function(result)
-        if load_generation ~= _load_generation then
-          vim.fn.delete(tmpfile)
-          return
-        end
-        _loading = false
-        if result.code ~= 0 then
-          vim.fn.delete(tmpfile)
-          return
-        end
-        local lines = vim.fn.readfile(tmpfile)
-        vim.fn.delete(tmpfile)
-        local stdout = table.concat(lines, "\n")
-        local items = parse_commands_output(stdout)
-        _bundled_cache = items
-        _cache = nil
-      end)
-    )
+    vim.system({ executable, script_path }, {}, vim.schedule_wrap(function(result)
+      if load_generation ~= _load_generation then
+        return
+      end
+      _loading = false
+      if result.code ~= 0 then
+        return
+      end
+      local items = parse_commands_output(result.stdout or "")
+      _bundled_cache = items
+      _cache = nil
+    end))
   end)
   if not ok then
     _loading = false
-    vim.fn.delete(tmpfile)
   end
 end
 
