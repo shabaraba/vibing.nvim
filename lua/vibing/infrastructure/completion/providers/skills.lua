@@ -101,32 +101,23 @@ local function resolve_list_commands()
   end
 
   local config = Config.get()
-  local dev_mode = config.node and config.node.dev_mode or false
-  local executable
-  if dev_mode then
-    executable = vim.fn.exepath("bun")
-    if executable == "" then
-      return nil, nil
-    end
-  else
-    local configured = config.node and config.node.executable
-    if configured and configured ~= "auto" then
-      executable = configured
-    else
-      executable = vim.fn.exepath("node")
-      if executable == "" then
-        executable = "node"
-      end
-    end
+
+  -- Always use compiled JS + node for list-commands regardless of dev_mode.
+  -- Running list-commands.ts via bun causes the process to hang indefinitely
+  -- due to SDK async operations not resolving under bun.
+  local script_path = plugin_dir .. "/dist/bin/list-commands.js"
+  if vim.fn.filereadable(script_path) ~= 1 then
+    return nil, nil
   end
 
-  local script_path
-  if dev_mode then
-    script_path = plugin_dir .. "/bin/list-commands.ts"
+  local configured = config.node and config.node.executable
+  local executable
+  if configured and configured ~= "auto" then
+    executable = configured
   else
-    script_path = plugin_dir .. "/dist/bin/list-commands.js"
-    if vim.fn.filereadable(script_path) ~= 1 then
-      return nil, nil
+    executable = vim.fn.exepath("node")
+    if executable == "" then
+      executable = "node"
     end
   end
 
@@ -160,14 +151,25 @@ local function parse_commands_output(stdout)
         detail = description:match("%(plugin:([^@%)]+)") or "plugin"
       end
 
+      -- For plugin skills without a namespace (no ":" in name), prepend the plugin name.
+      -- Native Claude Code invokes these as "plugin:skill" (e.g. "wt-sessions:start").
+      -- Skip if detail looks like a git hash (all hex chars, >= 8 chars).
+      local word = cmd.name
+      if source == "plugin" and not cmd.name:find(":") then
+        local is_hash = detail:match("^[0-9a-f]+$") and #detail >= 8
+        if not is_hash then
+          word = detail .. ":" .. cmd.name
+        end
+      end
+
       table.insert(items, {
-        word = cmd.name,
-        label = "/" .. cmd.name,
+        word = word,
+        label = "/" .. word,
         kind = "Skill",
         description = description,
         detail = detail,
         source = source,
-        filterText = cmd.name,
+        filterText = word,
       })
     end
   end
@@ -276,11 +278,21 @@ local function scan_skills()
     end
   end
 
-  table.sort(items, function(a, b)
+  -- Deduplicate by word
+  local seen = {}
+  local deduped = {}
+  for _, item in ipairs(items) do
+    if not seen[item.word] then
+      seen[item.word] = true
+      table.insert(deduped, item)
+    end
+  end
+
+  table.sort(deduped, function(a, b)
     return a.word < b.word
   end)
 
-  return items
+  return deduped
 end
 
 ---Define directories to scan for skills

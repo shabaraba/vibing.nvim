@@ -50,8 +50,9 @@ function M.create()
       if context then
         src.get_candidates(context, function(items)
           local cmp_items = M._to_cmp_items(items, context)
-          -- Re-query on next keystroke while plugin skills are still loading
-          local is_incomplete = context.trigger == "slash" and skills_provider.is_preloading()
+          -- Always re-query for slash: our source does substring filtering,
+          -- but cmp's own client-side cache uses prefix matching only.
+          local is_incomplete = context.trigger == "slash"
           callback({
             items = cmp_items,
             isIncomplete = is_incomplete,
@@ -109,7 +110,7 @@ function M._to_cmp_items(items, context)
         value = item.description or "",
       },
       insertText = insert_text,
-      filterText = item.label,
+      filterText = item.filterText or item.word,
       sortText = item.word,
     })
   end

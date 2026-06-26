@@ -104,6 +104,60 @@ async function pathExists(path: string): Promise<boolean> {
  * query({ prompt: '...', options: { plugins } });
  * ```
  */
+/**
+ * Read enabled plugin IDs from a single settings.json file.
+ */
+async function readEnabledPluginsFromFile(settingsFile: string): Promise<Record<string, boolean>> {
+  try {
+    const content = await readFile(settingsFile, 'utf8');
+    const settings = JSON.parse(content) as { enabledPlugins?: Record<string, boolean> };
+    if (settings.enabledPlugins && typeof settings.enabledPlugins === 'object') {
+      return settings.enabledPlugins;
+    }
+  } catch {
+    // File missing or invalid JSON — ignore
+  }
+  return {};
+}
+
+/**
+ * Read the merged set of enabled plugin IDs from both user (~/.claude/settings.json)
+ * and project (.claude/settings.json) settings files.
+ * Returns null if neither file has enabledPlugins (meaning no filtering should apply).
+ */
+async function loadEnabledPluginIds(): Promise<Set<string> | null> {
+  const userSettingsFile = join(homedir(), '.claude', 'settings.json');
+  const projectSettingsFile = join(process.cwd(), '.claude', 'settings.json');
+  const localSettingsFile = join(process.cwd(), '.claude', 'settings.local.json');
+
+  const [userEnabled, projectEnabled, localEnabled] = await Promise.all([
+    readEnabledPluginsFromFile(userSettingsFile),
+    readEnabledPluginsFromFile(projectSettingsFile),
+    readEnabledPluginsFromFile(localSettingsFile),
+  ]);
+
+  const merged = { ...userEnabled, ...projectEnabled, ...localEnabled };
+  if (Object.keys(merged).length === 0) {
+    debugLog(
+      'No enabledPlugins found in user, project, or local settings, loading all installed plugins'
+    );
+    return null;
+  }
+
+  const enabled = new Set(
+    Object.entries(merged)
+      .filter(([, v]) => v === true)
+      .map(([k]) => k)
+  );
+  if (enabled.size === 0) {
+    // Only false entries present — no allowlist to apply, load all plugins
+    debugLog('enabledPlugins has no positively-enabled entries; loading all installed plugins');
+    return null;
+  }
+  debugLog(`Enabled plugins (user+project+local): ${[...enabled].join(', ')}`);
+  return enabled;
+}
+
 export async function loadInstalledPlugins(): Promise<PluginReference[]> {
   const pluginsFile = join(homedir(), '.claude', 'plugins', 'installed_plugins.json');
 
@@ -130,12 +184,36 @@ export async function loadInstalledPlugins(): Promise<PluginReference[]> {
     return [];
   }
 
-  // Collect all installation paths
+  // Load enabled plugin IDs to filter completions to only CLI-available plugins
+  const enabledIds = await loadEnabledPluginIds();
+
+  // Collect installation paths.
+  // For each plugin ID, pick only the best installation to avoid duplicate skills
+  // when multiple versions are cached (e.g. scope=user 1.1.0 + scope=local 1.1.1).
+  // Inclusion rules:
+  //   scope=local → always include (explicitly project-installed, always active)
+  //   scope=user  → include only if in enabledPlugins (needs explicit enable)
+  // Preference order when multiple installs exist: local > user scope, then most recent.
   const allInstallations: InstalledPlugin[] = [];
-  for (const installations of Object.values(installed.plugins)) {
-    if (Array.isArray(installations)) {
-      allInstallations.push(...installations);
+  for (const [pluginId, installations] of Object.entries(installed.plugins)) {
+    if (!Array.isArray(installations) || installations.length === 0) continue;
+
+    const hasLocalInstall = installations.some((inst) => inst.scope === 'local');
+    // null means no filter — include all (mirrors behaviour when no enabledPlugins is configured)
+    const isEnabledInSettings = enabledIds === null || enabledIds.has(pluginId);
+
+    if (!hasLocalInstall && !isEnabledInSettings) {
+      debugLog(`Skipping plugin (not local and not enabled): ${pluginId}`);
+      continue;
     }
+
+    // Pick best: local scope preferred, then most recent lastUpdated
+    const best = installations.reduce((a, b) => {
+      if (a.scope === 'local' && b.scope !== 'local') return a;
+      if (b.scope === 'local' && a.scope !== 'local') return b;
+      return a.lastUpdated >= b.lastUpdated ? a : b;
+    });
+    allInstallations.push(best);
   }
 
   debugLog(`Found ${allInstallations.length} plugin installations`);

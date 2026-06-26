@@ -147,7 +147,7 @@ function M.build(prompt, opts, session_id, config, settings_path)
   end
 
   table.insert(cmd, "--setting-sources")
-  table.insert(cmd, "user,project")
+  table.insert(cmd, "user,project,local")
 
   -- Build prompt with context prefix (only for new sessions, not resume)
   local full_prompt = prompt

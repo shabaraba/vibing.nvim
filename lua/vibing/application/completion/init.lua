@@ -39,11 +39,19 @@ end
 ---Setup completion for a specific buffer
 ---@param buf number Buffer number
 function M.setup_buffer(buf)
-  local has_cmp = pcall(require, "cmp")
+  local has_cmp, cmp = pcall(require, "cmp")
 
   if not has_cmp then
     -- Fallback to omnifunc
     vim.bo[buf].omnifunc = "v:lua.require('vibing.application.completion').omnifunc"
+  else
+    -- Prepend vibing source to existing global sources for this buffer
+    local global_sources = cmp.get_config().sources or {}
+    local sources = { { name = "vibing" } }
+    for _, src in ipairs(global_sources) do
+      table.insert(sources, src)
+    end
+    cmp.setup.buffer({ sources = sources })
   end
 
   vim.bo[buf].completeopt = "menu,menuone,noselect"
