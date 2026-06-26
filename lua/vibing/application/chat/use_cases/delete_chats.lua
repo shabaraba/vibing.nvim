@@ -45,15 +45,21 @@ function M.delete_selected(entities, config, on_complete)
   })
 end
 
----@param entities Vibing.Domain.Chat.FileEntity[]
 ---@param config table
----@param on_complete fun(success: boolean, message: string)
-function M._execute_deletion(entities, config, on_complete)
-  local mote_config = {
+---@return table
+function M._build_mote_config(config)
+  return {
     project = (config.diff and config.diff.mote and config.diff.mote.project) or vim.fn.fnamemodify(vim.fn.getcwd(), ":t"),
     context = MoteContext.build_name(nil),
     cwd = vim.fn.getcwd(),
   }
+end
+
+---@param entities Vibing.Domain.Chat.FileEntity[]
+---@param config table
+---@param on_complete fun(success: boolean, message: string)
+function M._execute_deletion(entities, config, on_complete)
+  local mote_config = M._build_mote_config(config)
 
   MoteCleaner.clean_batch(entities, mote_config, function(_, mote_failed, mote_errors)
     local delete_result = ChatRepository.delete_batch(entities)
@@ -70,12 +76,14 @@ end
 ---@param success_count number
 ---@param failed_count number
 ---@param errors string[]
+---@param success_label string|nil defaults to "Deleted"
 ---@return string
-function M._build_result_message(success_count, failed_count, errors)
+function M._build_result_message(success_count, failed_count, errors, success_label)
+  success_label = success_label or "Deleted"
   local parts = {}
 
   if success_count > 0 then
-    table.insert(parts, string.format("Deleted %d file(s)", success_count))
+    table.insert(parts, string.format("%s %d file(s)", success_label, success_count))
   end
 
   if failed_count > 0 then
@@ -90,6 +98,20 @@ function M._build_result_message(success_count, failed_count, errors)
   end
 
   return table.concat(parts, ". ")
+end
+
+---@param entities Vibing.Domain.Chat.FileEntity[]
+---@param config table
+---@param on_complete fun(success: boolean, message: string)
+function M.clean_mote_selected(entities, config, on_complete)
+  if not entities or #entities == 0 then
+    on_complete(false, "No files selected")
+    return
+  end
+
+  MoteCleaner.clean_batch(entities, M._build_mote_config(config), function(success_count, failed_count, errors)
+    on_complete(failed_count == 0, M._build_result_message(success_count, failed_count, errors, "Cleaned mote objects for"))
+  end)
 end
 
 ---@param save_dir string

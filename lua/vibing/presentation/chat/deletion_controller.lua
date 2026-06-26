@@ -26,4 +26,10 @@ function M.handle_delete_command(opts, config)
   end
 end
 
+---@param config table
+function M.handle_clean_mote_command(config)
+  local save_dir = FileManager.get_save_directory(config)
+  ChatDeletionPicker.show(save_dir, config, false, "clean_mote")
+end
+
 return M

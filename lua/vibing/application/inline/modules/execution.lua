@@ -188,7 +188,7 @@ function M.show_results(modified_files, response_text)
       table.insert(lines, "- " .. modified_files[i])
     end
     if #modified_files > MAX_DISPLAY then
-      table.insert(lines, string.format("... (他%d件)", #modified_files - MAX_DISPLAY))
+      table.insert(lines, string.format("... (%d more)", #modified_files - MAX_DISPLAY))
     end
     table.insert(lines, "")
   end

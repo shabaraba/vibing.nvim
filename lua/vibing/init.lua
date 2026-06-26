@@ -219,6 +219,10 @@ function M._register_commands()
     end,
   })
 
+  vim.api.nvim_create_user_command("VibingCleanMote", function()
+    require("vibing.presentation.chat.deletion_controller").handle_clean_mote_command(M.config)
+  end, { desc = "Clean mote objects for chat files without deleting chats" })
+
   -- コンテキスト関連コマンド
   vim.api.nvim_create_user_command("VibingContext", function(opts)
     require("vibing.presentation.context.controller").handle_add(opts)

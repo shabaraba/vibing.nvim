@@ -27,6 +27,9 @@ end
 ---@param context_dir string
 ---@return string
 function M._resolve_patch_path(patch_ref, context_dir)
+  if patch_ref:match("^/") then
+    return patch_ref
+  end
   if patch_ref:match("^%.vibing/") then
     return vim.fn.fnamemodify(patch_ref, ":p")
   end
@@ -50,8 +53,8 @@ function M.clean_snapshot(file_path, config, callback)
     local patch_path = M._resolve_patch_path(patch_ref, context_dir)
 
     if vim.fn.filereadable(patch_path) == 1 then
-      local ok = pcall(vim.fn.delete, patch_path)
-      if ok then
+      local _, result = pcall(vim.fn.delete, patch_path)
+      if result == 0 then
         deleted_count = deleted_count + 1
       end
     end
@@ -117,6 +120,10 @@ function M._delete_snapshots_containing_file(file_path, context_dir, callback)
   end
 
   local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
+  if not git_root then
+    callback(0)
+    return
+  end
   local relative_path = vim.fn.fnamemodify(file_path, ":p"):gsub("^" .. vim.pesc(git_root .. "/"), "")
 
   local handle = vim.loop.fs_scandir(snapshots_dir)
