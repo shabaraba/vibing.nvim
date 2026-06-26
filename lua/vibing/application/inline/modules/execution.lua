@@ -180,10 +180,15 @@ function M.show_results(modified_files, response_text)
   local lines = {}
 
   if #modified_files > 0 then
+    local MAX_DISPLAY = 50
     table.insert(lines, "### Modified Files")
     table.insert(lines, "")
-    for _, f in ipairs(modified_files) do
-      table.insert(lines, "- " .. f)
+    local display_count = math.min(#modified_files, MAX_DISPLAY)
+    for i = 1, display_count do
+      table.insert(lines, "- " .. modified_files[i])
+    end
+    if #modified_files > MAX_DISPLAY then
+      table.insert(lines, string.format("... (他%d件)", #modified_files - MAX_DISPLAY))
     end
     table.insert(lines, "")
   end

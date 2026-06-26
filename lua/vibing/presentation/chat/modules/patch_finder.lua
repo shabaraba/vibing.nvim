@@ -98,7 +98,7 @@ function M.get_modified_files_in_section(buf)
     end
     if not line:match("<!%-%-") then
       local trimmed = vim.trim(line)
-      if trimmed ~= "" and not trimmed:match("^%-%-") then
+      if trimmed ~= "" and not trimmed:match("^%-%-") and not trimmed:match("^%.%.%.") then
         table.insert(files, trimmed)
       end
     end
