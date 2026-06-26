@@ -16,7 +16,7 @@ async function listCommands() {
       prompt: 'list commands',
       options: {
         cwd: process.cwd(),
-        settingSources: ['user', 'project'],
+        settingSources: ['user', 'project', 'local'],
         ...(plugins.length > 0 && { plugins }),
       },
     });

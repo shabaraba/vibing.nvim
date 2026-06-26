@@ -217,6 +217,16 @@ local function handle_result_event(msg, context)
   end
 end
 
+--- Handle "text" event (error/unknown-command responses that bypass streaming)
+local function handle_text_event(msg, context)
+  if msg.text and context.onChunk then
+    table.insert(context.output, msg.text)
+    vim.schedule(function()
+      context.onChunk(msg.text)
+    end)
+  end
+end
+
 --- Event handler dispatch table
 local event_handlers = {
   system = function(msg, context)
@@ -237,6 +247,10 @@ local event_handlers = {
   end,
   result = function(msg, context)
     handle_result_event(msg, context)
+    return true
+  end,
+  text = function(msg, context)
+    handle_text_event(msg, context)
     return true
   end,
   rate_limit_event = function()
