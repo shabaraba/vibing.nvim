@@ -2,6 +2,8 @@
 --- Builds the command array for the Claude CLI with streaming JSON I/O
 --- @module vibing.infrastructure.adapter.modules.cli_command_builder
 
+local tools_constants = require("vibing.core.constants.tools")
+
 local M = {}
 
 local cached_claude_path = nil
@@ -39,7 +41,11 @@ local function add_permission_args(cmd, opts)
     permissions_allow = {}
   end
   local allow_tools = vim.deepcopy(permissions_allow)
-  for _, tool in ipairs({ "Read", "Skill", "mcp__vibing-nvim__*" }) do
+  local always_allowed = vim.list_extend(
+    vim.deepcopy(tools_constants.ALWAYS_ALLOWED_TOOLS),
+    { "mcp__vibing-nvim__*" }
+  )
+  for _, tool in ipairs(always_allowed) do
     if not vim.tbl_contains(allow_tools, tool) then
       table.insert(allow_tools, tool)
     end
