@@ -204,6 +204,10 @@ local function start_async_load()
       if result.code ~= 0 then
         return
       end
+      -- discard if cwd changed while loading (e.g. worktree switch mid-flight)
+      if vim.fn.getcwd() ~= cwd then
+        return
+      end
       local items = parse_commands_output(result.stdout or "")
       _bundled_cache = items
       _cache = nil

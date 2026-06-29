@@ -30,7 +30,7 @@ export interface PluginReference {
  * This matches the structure in installed_plugins.json.
  */
 interface InstalledPlugin {
-  /** Installation scope: 'user' or 'local' */
+  /** Installation scope: 'user', 'project', or 'local' */
   scope: string;
   /** Absolute path to the plugin installation directory */
   installPath: string;
