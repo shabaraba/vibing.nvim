@@ -24,6 +24,21 @@ for _, tool in ipairs(M.VALID_TOOLS) do
   M.VALID_TOOLS_MAP[tool] = true
 end
 
+---permissions_allowの設定に関わらず、askやdenyに明示的に入っていなければ常に許可されるツール
+---@type string[]
+M.ALWAYS_ALLOWED_TOOLS = {
+  "Read",
+  "Skill",
+  "StructuredOutput",
+}
+
+---ALWAYS_ALLOWED_TOOLSの高速検索用マップ
+---@type table<string, boolean>
+M.ALWAYS_ALLOWED_TOOLS_MAP = {}
+for _, tool in ipairs(M.ALWAYS_ALLOWED_TOOLS) do
+  M.ALWAYS_ALLOWED_TOOLS_MAP[tool] = true
+end
+
 ---ツール名が有効かチェックし、正規化された名前を返す
 ---@param tool string チェックするツール名
 ---@return string|nil 有効な場合は正規化されたツール名

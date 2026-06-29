@@ -4,17 +4,19 @@
 --- Permission evaluation order (highest to lowest priority):
 --- 1. Session-level deny list (immediate block)
 --- 2. Session-level allow list (auto-approve)
---- 3. Internal tools (always allowed)
+--- 3. Internal tools (always allowed, e.g. ToolSearch, Agent)
 --- 4. Deny list (deny takes precedence over allow)
---- 5. Permission modes (acceptEdits, default, bypassPermissions, plan, dontAsk)
---- 6. Allow list (with pattern matching support)
---- 7. Ask list (granular patterns override broader allow list permissions)
---- 8. Granular permission rules (path/command/pattern/domain based)
+--- 5. Always-allowed tools (bypass allow list; deny/ask still respected)
+--- 6. Permission modes (acceptEdits, default, bypassPermissions, plan, dontAsk)
+--- 7. Allow list (with pattern matching support)
+--- 8. Ask list (granular patterns override broader allow list permissions)
+--- 9. Granular permission rules (path/command/pattern/domain based)
 ---
 --- @module vibing.infrastructure.permissions.can_use_tool
 
 local matchers = require("vibing.infrastructure.permissions.matchers")
 local rule_checker = require("vibing.infrastructure.permissions.rule_checker")
+local tools_constants = require("vibing.core.constants.tools")
 
 local M = {}
 
@@ -192,7 +194,17 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 5. Permission modes
+    -- 5. Always-allowed tools: bypass allow list, but respect deny (checked above) and ask
+    if tools_constants.ALWAYS_ALLOWED_TOOLS_MAP[tool_name] then
+      for _, pattern in ipairs(config.asked_tools) do
+        if matchers.matches_permission(tool_name, input, pattern) then
+          return ask()
+        end
+      end
+      return allow(input)
+    end
+
+    -- 6. Permission modes
     local mode = config.permission_mode
 
     if mode == "bypassPermissions" or mode == "dontAsk" then
@@ -211,7 +223,7 @@ function M.can_use_tool(tool_name, input, config)
       return deny("vibing.nvim MCP integration is disabled. Enable it in config: mcp.enabled = true")
     end
 
-    -- 6. Check allow list (with pattern support)
+    -- 7. Check allow list (with pattern support)
     if #config.allowed_tools > 0 then
       local is_allowed = false
       for _, pattern in ipairs(config.allowed_tools) do
@@ -225,14 +237,14 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 7. Check ask list (AFTER allow list - granular patterns override broader permissions)
+    -- 8. Check ask list (AFTER allow list - granular patterns override broader permissions)
     for _, pattern in ipairs(config.asked_tools) do
       if matchers.matches_permission(tool_name, input, pattern) then
         return ask()
       end
     end
 
-    -- 8. Check granular permission rules
+    -- 9. Check granular permission rules
     if config.permission_rules and #config.permission_rules > 0 then
       local has_matching_allow = false
       for _, rule in ipairs(config.permission_rules) do
