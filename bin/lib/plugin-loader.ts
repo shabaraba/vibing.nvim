@@ -30,10 +30,12 @@ export interface PluginReference {
  * This matches the structure in installed_plugins.json.
  */
 interface InstalledPlugin {
-  /** Installation scope: 'user' or 'project' */
+  /** Installation scope: 'user' or 'local' */
   scope: string;
   /** Absolute path to the plugin installation directory */
   installPath: string;
+  /** For local-scope installs: the project directory this plugin was installed for */
+  projectPath?: string;
   /** Plugin version string */
   version: string;
   /** ISO timestamp of initial installation */
@@ -184,36 +186,25 @@ export async function loadInstalledPlugins(): Promise<PluginReference[]> {
     return [];
   }
 
-  // Load enabled plugin IDs to filter completions to only CLI-available plugins
-  const enabledIds = await loadEnabledPluginIds();
-
-  // Collect installation paths.
-  // For each plugin ID, pick only the best installation to avoid duplicate skills
-  // when multiple versions are cached (e.g. scope=user 1.1.0 + scope=local 1.1.1).
-  // Inclusion rules:
-  //   scope=local → always include (explicitly project-installed, always active)
-  //   scope=user  → include only if in enabledPlugins (needs explicit enable)
-  // Preference order when multiple installs exist: local > user scope, then most recent.
+  // Only load local-scope plugins explicitly.
+  // User-scope plugins are auto-discovered by the Agent SDK via settingSources,
+  // so passing them here is unnecessary. Local-scope plugins are project-specific:
+  // include only if projectPath matches the current working directory.
+  const currentProjectPath = process.cwd();
   const allInstallations: InstalledPlugin[] = [];
   for (const [pluginId, installations] of Object.entries(installed.plugins)) {
     if (!Array.isArray(installations) || installations.length === 0) continue;
 
-    const hasLocalInstall = installations.some((inst) => inst.scope === 'local');
-    // null means no filter — include all (mirrors behaviour when no enabledPlugins is configured)
-    const isEnabledInSettings = enabledIds === null || enabledIds.has(pluginId);
+    const localInstall = installations.find(
+      (inst) => inst.scope === 'local' && inst.projectPath === currentProjectPath
+    );
 
-    if (!hasLocalInstall && !isEnabledInSettings) {
-      debugLog(`Skipping plugin (not local and not enabled): ${pluginId}`);
+    if (!localInstall) {
+      debugLog(`Skipping plugin (no local install for current project): ${pluginId}`);
       continue;
     }
 
-    // Pick best: local scope preferred, then most recent lastUpdated
-    const best = installations.reduce((a, b) => {
-      if (a.scope === 'local' && b.scope !== 'local') return a;
-      if (b.scope === 'local' && a.scope !== 'local') return b;
-      return a.lastUpdated >= b.lastUpdated ? a : b;
-    });
-    allInstallations.push(best);
+    allInstallations.push(localInstall);
   }
 
   debugLog(`Found ${allInstallations.length} plugin installations`);

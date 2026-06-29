@@ -15,6 +15,9 @@ local _loading = false
 ---@type integer
 local _load_generation = 0
 
+---@type string?
+local _bundled_cache_cwd = nil
+
 ---Parse SKILL.md to extract name and description
 ---@param file_path string
 ---@return {name: string, description: string}?
@@ -188,10 +191,12 @@ local function start_async_load()
     return
   end
 
+  local cwd = vim.fn.getcwd()
   _loading = true
+  _bundled_cache_cwd = cwd
   local load_generation = _load_generation
   local ok = pcall(function()
-    vim.system({ executable, script_path }, {}, vim.schedule_wrap(function(result)
+    vim.system({ executable, script_path }, { cwd = cwd }, vim.schedule_wrap(function(result)
       if load_generation ~= _load_generation then
         return
       end
@@ -206,6 +211,7 @@ local function start_async_load()
   end)
   if not ok then
     _loading = false
+    _bundled_cache_cwd = nil
   end
 end
 
@@ -213,8 +219,17 @@ end
 ---Returns cached result immediately; starts async load if not yet cached
 ---@return Vibing.CompletionItem[]
 local function get_dynamic_sdk_skills()
+  local current_cwd = vim.fn.getcwd()
   if _bundled_cache then
-    return _bundled_cache
+    if _bundled_cache_cwd == current_cwd then
+      return _bundled_cache
+    end
+    -- cwd changed: invalidate and reload
+    _bundled_cache = nil
+    _bundled_cache_cwd = nil
+    _loading = false
+    _load_generation = _load_generation + 1
+    _cache = nil
   end
   start_async_load()
   return {}
@@ -330,6 +345,7 @@ function M.clear_cache()
   _load_generation = _load_generation + 1
   _cache = nil
   _bundled_cache = nil
+  _bundled_cache_cwd = nil
   _loading = false
 end
 
