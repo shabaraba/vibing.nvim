@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.3.0 (2026-06-30)
+
+## What's Changed
+* fix: introduce ALWAYS_ALLOWED_TOOLS and fix local plugin loading by projectPath by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/426
+* feat: respect language config in VibingSetFileTitle title generation by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/428
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v4.2.0...v4.3.0
+
 ## 4.2.0 (2026-06-26)
 
 ## What's Changed
