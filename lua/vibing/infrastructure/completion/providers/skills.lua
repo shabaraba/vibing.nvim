@@ -191,29 +191,48 @@ local function start_async_load()
     return
   end
 
-  local cwd = vim.fn.getcwd()
+  local cwd = vim.fn.getcwd(-1, -1)
   _loading = true
   _bundled_cache_cwd = cwd
   local load_generation = _load_generation
-  local ok = pcall(function()
-    vim.system({ executable, script_path }, { cwd = cwd }, vim.schedule_wrap(function(result)
+  -- Accumulate streaming chunks correctly: last element of each on_stdout call
+  -- is a partial line continued by the first element of the next call.
+  local stdout_lines = { "" }
+
+  -- Do NOT use stdout_buffered=true: Neovim caps its internal buffer at 65536 bytes,
+  -- which truncates large outputs (e.g. >64KB plugin skill lists) and breaks JSON parsing.
+  -- Instead, stream chunks and reconstruct lines manually.
+  local job_id = vim.fn.jobstart({ executable, script_path }, {
+    cwd = cwd,
+    on_stdout = function(_, data, _)
+      if type(data) ~= "table" or #data == 0 then
+        return
+      end
+      -- data[1] continues the partial line from the previous call
+      stdout_lines[#stdout_lines] = stdout_lines[#stdout_lines] .. (data[1] or "")
+      for i = 2, #data do
+        table.insert(stdout_lines, data[i])
+      end
+    end,
+    on_exit = vim.schedule_wrap(function(_, code, _)
       if load_generation ~= _load_generation then
         return
       end
       _loading = false
-      if result.code ~= 0 then
+      if code ~= 0 then
         return
       end
-      -- discard if cwd changed while loading (e.g. worktree switch mid-flight)
-      if vim.fn.getcwd() ~= cwd then
+      if vim.fn.getcwd(-1, -1) ~= cwd then
         return
       end
-      local items = parse_commands_output(result.stdout or "")
+      local stdout = table.concat(stdout_lines, "\n")
+      local items = parse_commands_output(stdout)
       _bundled_cache = items
       _cache = nil
-    end))
-  end)
-  if not ok then
+    end),
+  })
+
+  if type(job_id) ~= "number" or job_id <= 0 then
     _loading = false
     _bundled_cache_cwd = nil
   end
@@ -223,7 +242,7 @@ end
 ---Returns cached result immediately; starts async load if not yet cached
 ---@return Vibing.CompletionItem[]
 local function get_dynamic_sdk_skills()
-  local current_cwd = vim.fn.getcwd()
+  local current_cwd = vim.fn.getcwd(-1, -1)
   if _bundled_cache then
     if _bundled_cache_cwd == current_cwd then
       return _bundled_cache
@@ -318,7 +337,7 @@ end
 ---@return {dir: string, source: "project"|"user"}[]
 function M.scan_directories()
   return {
-    { dir = vim.fn.getcwd() .. "/.claude/skills/", source = "project" },
+    { dir = vim.fn.getcwd(-1, -1) .. "/.claude/skills/", source = "project" },
     { dir = vim.fn.expand("~/.claude/skills/"), source = "user" },
   }
 end
