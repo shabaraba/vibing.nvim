@@ -278,6 +278,8 @@ function M._register_commands()
   vim.api.nvim_create_user_command("VibingReloadCommands", function()
     local custom_commands = require("vibing.application.chat.custom_commands")
     local commands = require("vibing.application.chat.commands")
+    local completion = require("vibing.application.completion")
+    local skills = require("vibing.infrastructure.completion.providers.skills")
 
     custom_commands.clear_cache()
     commands.custom_commands = {}
@@ -286,8 +288,11 @@ function M._register_commands()
       commands.register_custom(custom_cmd)
     end
 
-    notify.info("Custom commands reloaded")
-  end, { desc = "Reload custom slash commands" })
+    completion.clear_cache()
+    skills.preload()
+
+    notify.info("Commands and completions reloading...")
+  end, { desc = "Reload custom slash commands and completion candidates" })
 
   vim.api.nvim_create_user_command("VibingCopyUnsentUserHeader", function()
     local timestamp = require("vibing.core.utils.timestamp")

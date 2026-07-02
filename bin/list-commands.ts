@@ -24,9 +24,6 @@ async function listCommands() {
     // Get the list of available commands
     const commands = await result.supportedCommands();
 
-    // Output as JSON
-    console.log(safeJsonStringify(commands));
-
     // Try to cancel the query (may fail in some SDK versions)
     try {
       if (typeof result.cancel === 'function') {
@@ -35,6 +32,13 @@ async function listCommands() {
     } catch {
       // Ignore cancel errors
     }
+
+    // Write output and wait for stdout to flush before exiting.
+    // process.exit() called immediately after console.log() can truncate output
+    // when stdout is a pipe and the data exceeds the 65536-byte OS pipe buffer.
+    await new Promise<void>((resolve) => {
+      process.stdout.write(safeJsonStringify(commands) + '\n', () => resolve());
+    });
 
     process.exit(0);
   } catch (error) {
