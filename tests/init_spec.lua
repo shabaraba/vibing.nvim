@@ -200,7 +200,6 @@ describe("vibing.init", function()
         "VibingCancel",
         "VibingSummarize",
         "VibingChatFork",
-        "VibingChatWorktree",
         "VibingSetFileTitle",
         "VibingReloadCommands",
       }

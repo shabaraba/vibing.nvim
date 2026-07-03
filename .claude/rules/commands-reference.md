@@ -2,24 +2,23 @@
 
 ## User Commands
 
-| Command                                   | Description                                                                                         |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `:VibingChat [position\|file]`            | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file |
-| `:VibingChatWorktree [position] <branch>` | Create git worktree and open chat in it (position: right\|left\|top\|bottom\|back\|current)         |
-| `:VibingToggleChat`                       | Toggle existing chat window (preserve current conversation)                                         |
-| `:VibingChatFork [position]`              | Fork current chat (create branch from current conversation)                                         |
-| `:VibingSlashCommands`                    | Show slash command picker in chat                                                                   |
-| `:VibingSetFileTitle`                     | Generate AI title and rename chat file                                                              |
-| `:VibingSummarize`                        | Generate AI summary of chat history and insert into buffer                                          |
-| `:VibingDeleteChats [--unrenamed]`        | Delete chat files (use --unrenamed to delete all unrenamed files)                                   |
-| `:VibingContext [path]`                   | Add file to context (or from oil.nvim if no path)                                                   |
-| `:VibingClearContext`                     | Clear all context                                                                                   |
-| `:VibingInline [action\|prompt]`          | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |
-| `:VibingCancel`                           | Cancel current request                                                                              |
-| `:VibingReloadCommands`                   | Reload custom slash commands                                                                        |
-| `:VibingCopyUnsentUserHeader`             | Copy `## User <!-- unsent -->` to clipboard                                                         |
-| `:VibingDailySummary [YYYY-MM-DD]`        | Generate daily summary from project chat files (default: today)                                     |
-| `:VibingDailySummaryAll [YYYY-MM-DD]`     | Generate daily summary from all chat files (default: today)                                         |
+| Command                               | Description                                                                                         |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `:VibingChat [position\|file]`        | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file |
+| `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                                         |
+| `:VibingChatFork [position]`          | Fork current chat (create branch from current conversation)                                         |
+| `:VibingSlashCommands`                | Show slash command picker in chat                                                                   |
+| `:VibingSetFileTitle`                 | Generate AI title and rename chat file                                                              |
+| `:VibingSummarize`                    | Generate AI summary of chat history and insert into buffer                                          |
+| `:VibingDeleteChats [--unrenamed]`    | Delete chat files (use --unrenamed to delete all unrenamed files)                                   |
+| `:VibingContext [path]`               | Add file to context (or from oil.nvim if no path)                                                   |
+| `:VibingClearContext`                 | Clear all context                                                                                   |
+| `:VibingInline [action\|prompt]`      | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |
+| `:VibingCancel`                       | Cancel current request                                                                              |
+| `:VibingReloadCommands`               | Reload custom slash commands                                                                        |
+| `:VibingCopyUnsentUserHeader`         | Copy `## User <!-- unsent -->` to clipboard                                                         |
+| `:VibingDailySummary [YYYY-MM-DD]`    | Generate daily summary from project chat files (default: today)                                     |
+| `:VibingDailySummaryAll [YYYY-MM-DD]` | Generate daily summary from all chat files (default: today)                                         |
 
 ## Command Semantics
 
@@ -33,16 +32,6 @@
 - `:VibingChat bottom` - New chat in bottom split
 - `:VibingChat back` - New chat as background buffer only (no window)
 - `:VibingChat path/to/file.md` - Open saved chat file
-
-**`:VibingChatWorktree`** - Create or reuse a git worktree for the specified branch and open a chat session in that environment.
-
-- `:VibingChatWorktree feature-branch` - Create worktree in `.worktrees/feature-branch` and open chat
-- `:VibingChatWorktree right feature-branch` - Same as above, but open chat in right split
-- Position options: `right`, `left`, `top`, `bottom`, `back` (buffer only, no window - accessible via `:bnext`/`:ls`), `current`
-- If the worktree already exists, it will be reused without recreating the environment
-- Automatically copies configuration files (`.gitignore`, `package.json`, `tsconfig.json`, etc.) to the worktree
-- Creates a symbolic link to `node_modules` from the main worktree (if it exists) to avoid duplicate installations
-- Chat files are saved in main repository at `.vibing/worktrees/<branch-name>/` (persists after worktree deletion)
 
 **`:VibingChatFork`** - Fork the current chat conversation. Creates a new chat file with the same conversation history and session, allowing you to branch the conversation in a different direction.
 
