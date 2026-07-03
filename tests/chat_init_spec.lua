@@ -12,7 +12,6 @@ describe("vibing.application.chat.init", function()
     package.loaded["vibing.application.chat.handlers.clear"] = nil
     package.loaded["vibing.application.chat.handlers.save"] = nil
     package.loaded["vibing.application.chat.handlers.summarize"] = nil
-    package.loaded["vibing.application.chat.handlers.mode"] = nil
     package.loaded["vibing.application.chat.handlers.model"] = nil
     package.loaded["vibing.application.chat.handlers.help"] = nil
     package.loaded["vibing.application.chat.handlers.allow"] = nil
@@ -33,7 +32,7 @@ describe("vibing.application.chat.init", function()
     it("should register all built-in commands", function()
       ChatInit.setup()
 
-      local expected_commands = { "context", "clear", "save", "summarize", "mode", "model", "help", "allow", "deny", "permission", "permissions", "perm" }
+      local expected_commands = { "context", "clear", "save", "summarize", "model", "help", "allow", "deny", "permission", "permissions", "perm", "new-session" }
 
       for _, cmd_name in ipairs(expected_commands) do
         assert.is_not_nil(Commands.commands[cmd_name], "Command '" .. cmd_name .. "' should be registered")
@@ -84,17 +83,6 @@ describe("vibing.application.chat.init", function()
       assert.is_not_nil(cmd.description:match("[Ss]ummarize"))
     end)
 
-    it("should register mode command with handler", function()
-      ChatInit.setup()
-
-      local cmd = Commands.commands["mode"]
-      assert.is_not_nil(cmd)
-      assert.equals("mode", cmd.name)
-      assert.is_function(cmd.handler)
-      assert.is_not_nil(cmd.description)
-      assert.is_not_nil(cmd.description:match("mode"))
-    end)
-
     it("should register model command with handler", function()
       ChatInit.setup()
 
@@ -106,7 +94,7 @@ describe("vibing.application.chat.init", function()
       assert.is_not_nil(cmd.description:match("model"))
     end)
 
-    it("should have exactly 14 commands after setup", function()
+    it("should have exactly 13 commands after setup", function()
       ChatInit.setup()
 
       local count = 0
@@ -114,7 +102,7 @@ describe("vibing.application.chat.init", function()
         count = count + 1
       end
 
-      assert.equals(14, count)
+      assert.equals(13, count)
     end)
 
     it("should be idempotent (can be called multiple times)", function()
@@ -126,7 +114,7 @@ describe("vibing.application.chat.init", function()
         count = count + 1
       end
 
-      assert.equals(14, count)
+      assert.equals(13, count)
     end)
 
     it("should register commands with correct descriptions", function()
@@ -137,7 +125,6 @@ describe("vibing.application.chat.init", function()
         clear = "Clear context",
         save = "Save current chat",
         summarize = "Summarize conversation",
-        mode = "Set execution mode: /mode <auto|plan|code>",
         model = "Set AI model: /model <opus|sonnet|haiku>",
       }
 
@@ -156,7 +143,6 @@ describe("vibing.application.chat.init", function()
       assert.is_true(Commands.is_command("/clear"))
       assert.is_true(Commands.is_command("/save"))
       assert.is_true(Commands.is_command("/summarize"))
-      assert.is_true(Commands.is_command("/mode auto"))
       assert.is_true(Commands.is_command("/model sonnet"))
       assert.is_true(Commands.is_command("/help"))
       assert.is_true(Commands.is_command("/allow Read"))
@@ -169,7 +155,7 @@ describe("vibing.application.chat.init", function()
 
       local list = Commands.list()
 
-      assert.equals(14, #list)
+      assert.equals(13, #list)
 
       -- Verify all command names are in the list
       local command_names = {}
@@ -181,7 +167,6 @@ describe("vibing.application.chat.init", function()
       assert.is_true(command_names["clear"])
       assert.is_true(command_names["save"])
       assert.is_true(command_names["summarize"])
-      assert.is_true(command_names["mode"])
       assert.is_true(command_names["model"])
       assert.is_true(command_names["help"])
       assert.is_true(command_names["allow"])

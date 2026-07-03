@@ -152,13 +152,24 @@ describe("vibing.init", function()
       local autocmd_created = false
       local autocmd_pattern = nil
       vim.api.nvim_create_autocmd = function(events, opts)
-        -- events is a table like { "BufReadPost" }
-        if type(events) == "table" then
+        -- events is a table like { "BufReadPost", "BufEnter", "BufWinEnter" }
+        -- pattern is a table like { "*.md", "*.vibing" }
+        if type(events) == "table" and type(opts.pattern) == "table" then
+          local has_bufreadpost = false
+          local has_md_pattern = false
           for _, ev in ipairs(events) do
-            if ev == "BufReadPost" and opts.pattern == "*.md" then
-              autocmd_created = true
-              autocmd_pattern = opts.pattern
+            if ev == "BufReadPost" then
+              has_bufreadpost = true
             end
+          end
+          for _, pat in ipairs(opts.pattern) do
+            if pat == "*.md" then
+              has_md_pattern = true
+            end
+          end
+          if has_bufreadpost and has_md_pattern then
+            autocmd_created = true
+            autocmd_pattern = opts.pattern
           end
         end
         return 0
@@ -167,7 +178,7 @@ describe("vibing.init", function()
       Vibing.setup()
 
       assert.is_true(autocmd_created)
-      assert.equals("*.md", autocmd_pattern)
+      assert.is_true(vim.tbl_contains(autocmd_pattern, "*.md"))
     end)
 
     it("should register commands", function()
