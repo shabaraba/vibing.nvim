@@ -5,6 +5,7 @@ local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local SyncManager = require("vibing.application.link.sync_manager")
 local DailySummaryScanner = require("vibing.infrastructure.link.daily_summary_scanner")
 local ForkedChatScanner = require("vibing.infrastructure.link.forked_chat_scanner")
+local WorkspaceChatScanner = require("vibing.infrastructure.link.workspace_chat_scanner")
 
 ---@param file_path string?
 ---@return "chat"|"inline"
@@ -182,8 +183,17 @@ return function(_, chat_buffer)
         old_file_path, new_file_path, { ForkedChatScanner.new() }, save_dir
       )
 
-      local total_updated = daily_result.updated + fork_result.updated
-      local total_failed = daily_result.failed + fork_result.failed
+      -- workspace meta.yaml内のchat_filesリンクを更新（.vibing/workspace/を検索）
+      local git_root = require("vibing.core.utils.git").get_root()
+      local workspace_result = { updated = 0, failed = 0 }
+      if git_root then
+        workspace_result = SyncManager.sync_links(
+          old_file_path, new_file_path, { WorkspaceChatScanner.new() }, git_root .. "/.vibing/workspace/"
+        )
+      end
+
+      local total_updated = daily_result.updated + fork_result.updated + workspace_result.updated
+      local total_failed = daily_result.failed + fork_result.failed + workspace_result.failed
 
       if total_updated > 0 then
         notify.info(string.format("Updated %d linked file(s)", total_updated), "Link Sync")
