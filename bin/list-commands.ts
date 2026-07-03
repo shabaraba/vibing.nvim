@@ -36,8 +36,11 @@ async function listCommands() {
     // Write output and wait for stdout to flush before exiting.
     // process.exit() called immediately after console.log() can truncate output
     // when stdout is a pipe and the data exceeds the 65536-byte OS pipe buffer.
-    await new Promise<void>((resolve) => {
-      process.stdout.write(safeJsonStringify(commands) + '\n', () => resolve());
+    await new Promise<void>((resolve, reject) => {
+      process.stdout.write(safeJsonStringify(commands) + '\n', (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
     });
 
     process.exit(0);
