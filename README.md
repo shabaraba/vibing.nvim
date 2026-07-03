@@ -187,22 +187,29 @@ vibing.nvim focuses on deep Claude integration. You might still use other tools 
 
 vibing.nvim is also distributed as a [Claude Code plugin](https://code.claude.com/docs/en/plugins),
 which bundles the `vibing-nvim` MCP server together with Neovim-aware skills and a read-only
-navigation subagent — no manual `~/.claude.json` editing required:
+navigation subagent — no manual `~/.claude.json` editing required.
+
+**Automatic:** if you install with `build = "./build.sh"` (see below) and have the `claude` CLI
+on your `PATH`, `build.sh` runs `claude plugin marketplace add` + `claude plugin install ... --scope
+user` for you on every build — nothing else to do.
+
+**Manual:** to install it yourself (e.g. without running `build.sh`, or on a different machine):
 
 ```text
 /plugin marketplace add shabaraba/vibing.nvim
 /plugin install vibing-nvim@vibing-nvim
 ```
 
-This registers the `vibing-nvim` MCP server (same tools as `mcp__vibing-nvim__*` described below),
-adds the `nvim-context` and `nvim-lsp-navigation` skills (teach Claude to read live buffer/window/
-cursor state and prefer LSP over grep when a Neovim instance is connected), and the
-`nvim-navigator` subagent (read-only code navigation via `@vibing-nvim:nvim-navigator`).
+Either way, this registers the `vibing-nvim` MCP server (same tools as `mcp__vibing-nvim__*`
+described below), adds the `nvim-context` and `nvim-lsp-navigation` skills (teach Claude to read
+live buffer/window/cursor state and prefer LSP over grep when a Neovim instance is connected), and
+the `nvim-navigator` subagent (read-only code navigation via `@vibing-nvim:nvim-navigator`).
 
 The bundled MCP server builds itself (`npm install && npm run build`) on first launch, so no
-separate build step is needed — this is independent of the Neovim-side `build.sh`, which is still
-required to build the plugin itself (see below). You still need Neovim running with
-`mcp = { enabled = true }` (the default) for the MCP tools to have anything to connect to.
+separate build step is needed for the MCP server itself — this is independent of the Neovim-side
+`build.sh`, which is still required to build the plugin's other native pieces (see below). You
+still need Neovim running with `mcp = { enabled = true }` (the default) for the MCP tools to have
+anything to connect to.
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 

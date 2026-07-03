@@ -80,14 +80,34 @@ npm run build --silent
 if [ -f "dist/index.js" ]; then
     echo "[vibing.nvim] ✓ MCP server built successfully"
 
-    # Register MCP server in ~/.claude.json
+    # Register vibing-nvim with Claude Code: prefer installing it as a proper
+    # Claude Code plugin (user scope) — this registers the MCP server *and*
+    # the bundled skills/agents in one step. Fall back to a raw ~/.claude.json
+    # mcpServers edit (MCP server only) if the `claude` CLI or its plugin
+    # subcommand isn't available.
     cd "$SCRIPT_DIR"
-    echo "[vibing.nvim] Registering MCP server in ~/.claude.json..."
-    if "$NODE_EXECUTABLE" dist/bin/register-mcp.js; then
-        echo "[vibing.nvim] ✓ Registered vibing-nvim MCP server in ~/.claude.json"
+    register_mcp_json_fallback() {
+        echo "[vibing.nvim] Registering MCP server in ~/.claude.json..."
+        if "$NODE_EXECUTABLE" dist/bin/register-mcp.js; then
+            echo "[vibing.nvim] ✓ Registered vibing-nvim MCP server in ~/.claude.json"
+        else
+            echo "[vibing.nvim] ⚠ Warning: MCP server is built but registration failed"
+            echo "[vibing.nvim] You can manually register by running: $NODE_EXECUTABLE dist/bin/register-mcp.js"
+        fi
+    }
+
+    if command -v claude &> /dev/null; then
+        echo "[vibing.nvim] Installing vibing-nvim as a Claude Code plugin (user scope)..."
+        if claude plugin marketplace add "$SCRIPT_DIR" &> /dev/null \
+            && claude plugin install vibing-nvim@vibing-nvim --scope user; then
+            echo "[vibing.nvim] ✓ Installed vibing-nvim Claude Code plugin (scope: user)"
+        else
+            echo "[vibing.nvim] ⚠ Warning: 'claude plugin install' failed, falling back to manual registration"
+            register_mcp_json_fallback
+        fi
     else
-        echo "[vibing.nvim] ⚠ Warning: MCP server is built but registration failed"
-        echo "[vibing.nvim] You can manually register by running: $NODE_EXECUTABLE dist/bin/register-mcp.js"
+        echo "[vibing.nvim] 'claude' CLI not found; falling back to manual registration"
+        register_mcp_json_fallback
     fi
 
     # Register MCP server with codex (if available)

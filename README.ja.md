@@ -169,22 +169,29 @@ vibing.nvimは深いClaude統合に焦点を当てています。以下の用途
 
 vibing.nvimは[Claude Codeプラグイン](https://code.claude.com/docs/en/plugins)としても配布されています。
 `vibing-nvim` MCPサーバーに加えて、Neovim対応のスキルと読み取り専用のナビゲーション用サブエージェントを
-まとめてバンドルしており、`~/.claude.json`を手動編集する必要はありません：
+まとめてバンドルしており、`~/.claude.json`を手動編集する必要はありません。
+
+**自動インストール：** `build = "./build.sh"`（後述）でインストールしていて、`claude` CLIが
+`PATH`上にある場合、`build.sh`がビルドの度に`claude plugin marketplace add` +
+`claude plugin install ... --scope user`を自動実行します。他に何もする必要はありません。
+
+**手動インストール：** 自分でインストールする場合（`build.sh`を実行しない場合や、別のマシンで
+インストールする場合など）：
 
 ```text
 /plugin marketplace add shabaraba/vibing.nvim
 /plugin install vibing-nvim@vibing-nvim
 ```
 
-これにより `vibing-nvim` MCPサーバー（下記で説明する`mcp__vibing-nvim__*`と同じツール群）に加えて、
-`nvim-context`・`nvim-lsp-navigation` スキル（Neovimインスタンスに接続されている場合、grepよりも
+いずれの方法でも、`vibing-nvim` MCPサーバー（下記で説明する`mcp__vibing-nvim__*`と同じツール群）に
+加えて、`nvim-context`・`nvim-lsp-navigation` スキル（Neovimインスタンスに接続されている場合、grepよりも
 ライブなバッファ/ウィンドウ/カーソル状態の読み取りとLSPナビゲーションを優先させる）、`nvim-navigator`
 サブエージェント（`@vibing-nvim:nvim-navigator`で読み取り専用のコードナビゲーションを実行）が
 インストールされます。
 
 バンドルされたMCPサーバーは初回起動時に自身をビルド（`npm install && npm run build`）するため、
-別途ビルド手順は不要です。これはNeovim側の`build.sh`（後述、プラグイン本体のビルドに引き続き必要）
-とは独立しています。MCPツールが接続する対象として、`mcp = { enabled = true }`（デフォルト）で
+MCPサーバー自体に別途ビルド手順は不要です。これはNeovim側の`build.sh`（後述、プラグインの他のネイティブ
+部分のビルドに引き続き必要）とは独立しています。MCPツールが接続する対象として、`mcp = { enabled = true }`（デフォルト）で
 Neovimを起動しておく必要はあります。
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim)を使用
