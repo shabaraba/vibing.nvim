@@ -63,5 +63,32 @@ describe("vibing.core.utils.workspace_generator", function()
       assert.is_nil(result)
       assert.is_not_nil(err)
     end)
+
+    it("returns an error when sanitized branch is empty", function()
+      local original_package = package.loaded["vibing"]
+      package.loaded["vibing"] = {
+        get_adapter = function()
+          return {
+            stream = function(_, prompt, opts, on_chunk, on_done)
+              on_chunk("DESCRIPTION: タスク\nBRANCH: 日本語のみ\n")
+              on_done({})
+            end,
+          }
+        end,
+        get_config = function()
+          return { language = "ja", permissions = { mode = "acceptEdits", allow = {}, deny = {} } }
+        end,
+      }
+
+      local result, err
+      WorkspaceGenerator.generate("Some task description", function(r, e)
+        result, err = r, e
+      end)
+
+      assert.is_nil(result)
+      assert.is_not_nil(err)
+
+      package.loaded["vibing"] = original_package
+    end)
   end)
 end)

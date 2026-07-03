@@ -73,9 +73,15 @@ function M.generate(raw_text, callback)
       return
     end
 
+    local sanitized_branch = M.sanitize_branch(branch)
+    if sanitized_branch == "" then
+      callback(nil, "Failed to parse description/branch from AI response")
+      return
+    end
+
     callback({
       description = vim.trim(description),
-      branch = M.sanitize_branch(branch),
+      branch = sanitized_branch,
     }, nil)
   end)
 end
