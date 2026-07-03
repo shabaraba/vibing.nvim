@@ -2,8 +2,6 @@
 ---メッセージ送信ユースケース
 local M = {}
 
-local Context = require("vibing.application.context.manager")
-local Formatter = require("vibing.infrastructure.context.formatter")
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local GradientAnimation = require("vibing.ui.gradient_animation")
 
@@ -52,8 +50,7 @@ function M.execute(adapter, callbacks, message, config)
 
   -- 実際のメッセージ送信処理（mote初期化後に呼び出される）
   local function do_send()
-    local contexts = Context.get_all(config.chat.auto_context)
-    local formatted_prompt = Formatter.format_prompt(message, contexts, config.chat.context_position)
+    local formatted_prompt = message
 
     local conversation = callbacks.extract_conversation()
     if #conversation == 0 then
