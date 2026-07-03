@@ -31,8 +31,6 @@ The Node.js wrapper (`bin/agent-wrapper.mjs`) outputs streaming responses as JSO
 **UI:**
 
 - `ui/chat_buffer.lua` - Chat window with Markdown rendering, session persistence, diff viewer
-- `ui/output_buffer.lua` - Read-only output for inline actions
-- `ui/inline_progress.lua` - Progress window for inline code modifications
 - `ui/permission_builder.lua` - Interactive permission configuration UI
 
 **Context System:**
@@ -43,7 +41,6 @@ The Node.js wrapper (`bin/agent-wrapper.mjs`) outputs streaming responses as JSO
 **Actions:**
 
 - `actions/chat.lua` - Chat session orchestration with concurrent session support
-- `actions/inline.lua` - Quick actions (fix, feat, explain, refactor, test) with queue management
 
 **Infrastructure:**
 
@@ -109,20 +106,13 @@ even when using `:VibingChatWorktree` or custom directories.
 
 ## Concurrent Execution Support
 
-vibing.nvim supports running multiple chat sessions and inline actions simultaneously without interference:
+vibing.nvim supports running multiple chat sessions simultaneously without interference:
 
 **Multiple Chat Windows:**
 
 - Each chat buffer maintains its own session ID
 - Sessions are managed via unique handle IDs
 - Old sessions are automatically cleaned up when starting new messages
-
-**Inline Action Queue:**
-
-- Multiple inline actions are queued and executed serially
-- Prevents file modification conflicts
-- Shows queue notifications (e.g., "Executing task (2 more in queue)...")
-- Errors in one task don't block subsequent tasks
 
 **Session Management:**
 
@@ -136,10 +126,6 @@ vibing.nvim supports running multiple chat sessions and inline actions simultane
 -- Start multiple chats simultaneously
 :VibingChat  -- Chat 1 (session-abc)
 :VibingChat  -- Chat 2 (session-def)
-
--- Queue multiple inline actions
-:'<,'>VibingInline fix      -- Queued: task 1
-:'<,'>VibingInline refactor -- Queued: task 2 (waits for task 1)
 ```
 
 See `docs/adr/002-concurrent-execution-support.md` for architectural details.
@@ -195,7 +181,7 @@ automatically updating chat frontmatter without manual YAML editing.
 **Diff Viewer:** When Claude edits files, use `gd` (go to diff) on file paths in chat to open a
 vertical split diff view showing changes before/after.
 
-**Language Support:** Configure AI response language globally or per-action (chat vs inline),
+**Language Support:** Configure AI response language for chat,
 supporting multi-language development workflows.
 
 **Git Worktree Integration:** Create isolated development environments for different branches with

@@ -77,21 +77,19 @@ describe("vibing.utils.language", function()
 
   describe("get_language_code", function()
     it("should return nil for nil language", function()
-      assert.is_nil(Language.get_language_code(nil, "inline"))
+      assert.is_nil(Language.get_language_code(nil, "chat"))
     end)
 
     it("should return string as-is", function()
-      assert.equals("ja", Language.get_language_code("ja", "inline"))
+      assert.equals("ja", Language.get_language_code("ja", "chat"))
       assert.equals("en", Language.get_language_code("en", "chat"))
     end)
 
     it("should return action-specific code from table", function()
       local language = {
         default = "en",
-        inline = "ja",
         chat = "fr",
       }
-      assert.equals("ja", Language.get_language_code(language, "inline"))
       assert.equals("fr", Language.get_language_code(language, "chat"))
     end)
 
@@ -99,13 +97,12 @@ describe("vibing.utils.language", function()
       local language = {
         default = "ja",
       }
-      assert.equals("ja", Language.get_language_code(language, "inline"))
       assert.equals("ja", Language.get_language_code(language, "chat"))
     end)
 
     it("should return nil when table has no matching keys", function()
       local language = {}
-      assert.is_nil(Language.get_language_code(language, "inline"))
+      assert.is_nil(Language.get_language_code(language, "chat"))
     end)
   end)
 end)

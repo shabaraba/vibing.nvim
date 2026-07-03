@@ -40,14 +40,6 @@
    - 自動コンテキスト収集
    - プロンプトへの統合
 
-### インライン機能
-
-6. **[06-inline-actions.md](./06-inline-actions.md)** - インライン機能
-   - 事前定義アクション（fix, feat, explain, refactor, test）
-   - カスタムプロンプト
-   - プレビューモードとダイレクトモード
-   - タスクキュー管理
-
 ### ウィンドウ/バッファ管理
 
 7. **[07-window-buffer-management.md](./07-window-buffer-management.md)** - ウィンドウ/バッファ管理
@@ -101,10 +93,9 @@
 | チャット機能        | 3              | 🔴 Critical |
 | MCP/RPC             | 1              | 🟠 High     |
 | コンテキスト管理    | 1              | 🟠 High     |
-| インライン機能      | 1              | 🟡 Medium   |
 | ウィンドウ/バッファ | 1              | 🟡 Medium   |
 | Worktree統合        | 1              | 🟢 Low      |
-| **合計**            | **8**          | -           |
+| **合計**            | **7**          | -           |
 
 ### テストタイプ別
 
@@ -124,7 +115,6 @@
    - 05-context-management.md
 
 3. **Phase 3: 拡張機能** (オプション)
-   - 06-inline-actions.md
    - 07-window-buffer-management.md
    - 08-worktree-integration.md
 

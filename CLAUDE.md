@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 vibing.nvim is a Neovim plugin that integrates Claude AI through the Agent SDK.
-It provides chat and inline code actions within Neovim.
+It provides chat within Neovim.
 
 ## Commands
 
@@ -103,7 +103,7 @@ Detailed documentation is organized in `.claude/rules/`:
 | `self-testing.md`       | E2E testing procedures, 3-try auto-fix rule, test helper reference              |
 | `features.md`           | Message timestamps, AskUserQuestion support                                     |
 | `configuration.md`      | Full configuration examples, window positions, daily summary                    |
-| `commands-reference.md` | User commands, inline actions, slash commands                                   |
+| `commands-reference.md` | User commands, slash commands                                                   |
 | `web-workflow.md`       | Claude Code on the Web git push requirements                                    |
 
 All `.md` files in `.claude/rules/` are automatically loaded into Claude Code's context.

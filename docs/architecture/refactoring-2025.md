@@ -16,7 +16,6 @@ vibing.nvimのアーキテクチャをClean Architectureの原則に従ってリ
 
 - `lua/vibing/presentation/chat/controller.lua` - チャット機能のController
 - `lua/vibing/presentation/chat/view.lua` - チャット機能のViewファサード
-- `lua/vibing/presentation/inline/controller.lua` - インライン機能のController
 - `lua/vibing/presentation/context/controller.lua` - コンテキスト管理のController
 
 ### 2. Domain層の導入

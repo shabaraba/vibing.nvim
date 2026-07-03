@@ -105,8 +105,8 @@ function M.setup(opts)
 end
 
 ---Neovimユーザーコマンドを登録
----VibingChat, VibingContext, VibingInline等の全コマンドを登録
----チャット操作、コンテキスト管理、インラインアクションを含む
+---VibingChat, VibingContext等の全コマンドを登録
+---チャット操作、コンテキスト管理を含む
 function M._register_commands()
   -- チャット関連コマンド
   vim.api.nvim_create_user_command("VibingChat", function(opts)
@@ -236,25 +236,6 @@ function M._register_commands()
   vim.api.nvim_create_user_command("VibingClearContext", function()
     require("vibing.presentation.context.controller").handle_clear()
   end, { desc = "Clear Vibing context" })
-
-  -- インライン関連コマンド
-  vim.api.nvim_create_user_command("VibingInline", function(opts)
-    require("vibing.presentation.inline.controller").handle_execute(opts.args)
-  end, {
-    nargs = "?",
-    range = true,
-    desc = "Run inline action or custom instruction",
-    complete = function(ArgLead, CmdLine, CursorPos)
-      local actions = { "fix", "feat", "explain", "refactor", "test" }
-      local matches = {}
-      for _, action in ipairs(actions) do
-        if action:find("^" .. vim.pesc(ArgLead)) then
-          table.insert(matches, action)
-        end
-      end
-      return matches
-    end,
-  })
 
   -- その他のコマンド
   vim.api.nvim_create_user_command("VibingCancel", function()

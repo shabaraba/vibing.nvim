@@ -218,12 +218,7 @@ Test your changes thoroughly:
    - Add/clear context
    - Slash commands
 
-2. **Inline actions**
-   - Test each action (fix, feat, explain, etc.)
-   - Test custom instructions
-   - Test with various code selections
-
-3. **Configuration**
+2. **Configuration**
    - Test with different config options
    - Test permissions
    - Test window positions

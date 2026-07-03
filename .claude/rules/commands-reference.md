@@ -14,7 +14,6 @@
 | `:VibingDeleteChats [--unrenamed]`        | Delete chat files (use --unrenamed to delete all unrenamed files)                                   |
 | `:VibingContext [path]`                   | Add file to context (or from oil.nvim if no path)                                                   |
 | `:VibingClearContext`                     | Clear all context                                                                                   |
-| `:VibingInline [action\|prompt]`          | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |
 | `:VibingCancel`                           | Cancel current request                                                                              |
 | `:VibingReloadCommands`                   | Reload custom slash commands                                                                        |
 | `:VibingCopyUnsentUserHeader`             | Copy `## User <!-- unsent -->` to clipboard                                                         |
@@ -56,54 +55,6 @@
 - When the source file is renamed (via `:VibingSetFileTitle`), the fork's `forked_from` is automatically updated
 
 **`:VibingToggleChat`** - Use to show/hide your current conversation. Preserves the existing chat state.
-
-## Inline Action Examples
-
-**Rich UI Picker (recommended):**
-
-```vim
-:'<,'>VibingInline
-" Opens a split-panel UI:
-" - Left: Action menu (fix, feat, explain, refactor, test)
-"   - Navigate: j/k or arrow keys
-"   - Move to input: Tab
-" - Right: Additional instruction input (optional)
-"   - Move to menu: Shift-Tab
-" - Execute: Enter (from either panel)
-" - Cancel: Esc or Ctrl-c
-```
-
-**Keybindings in Rich UI:**
-
-- `j`/`k` or `↓`/`↑` - Navigate action menu
-- `Tab` - Move from menu to input field
-- `Shift-Tab` - Move from input field to menu
-- `Enter` - Execute selected action
-- `Esc` or `Ctrl-c` - Cancel
-
-**Direct Execution (with arguments):**
-
-```vim
-:'<,'>VibingInline fix       " Fix code issues
-:'<,'>VibingInline feat      " Implement feature
-:'<,'>VibingInline explain   " Explain code
-:'<,'>VibingInline refactor  " Refactor code
-:'<,'>VibingInline test      " Generate tests
-
-" With additional instructions
-:'<,'>VibingInline explain 日本語で
-:'<,'>VibingInline fix using async/await
-:'<,'>VibingInline test using Jest with mocks
-:'<,'>VibingInline refactor to use functional style
-```
-
-**Natural Language Instructions:**
-
-```vim
-:'<,'>VibingInline "Convert this function to TypeScript"
-:'<,'>VibingInline "Add error handling with try-catch"
-:'<,'>VibingInline "Optimize this loop for performance"
-```
 
 ## Slash Commands (in Chat)
 

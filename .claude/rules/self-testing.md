@@ -239,12 +239,6 @@ When implementing new features, add E2E tests for:
 - [ ] `node_modules` symlinked correctly
 - [ ] Chat files saved in `.vibing/worktrees/<branch>/`
 
-### Inline Actions
-
-- [ ] `:VibingInline fix` modifies code
-- [ ] `:VibingInline explain` shows output
-- [ ] Inline action queue (multiple concurrent requests)
-
 ### MCP Tools
 
 - [ ] `nvim_list_instances` returns correct ports

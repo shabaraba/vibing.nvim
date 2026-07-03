@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Breaking Changes
+
+- **Remove the inline code action feature.** The `:VibingInline` command, its
+  action picker/preview UI, and the `language.inline` configuration option have
+  been removed. Use the chat interface (`:VibingChat`) for code assistance instead.
+
 ## 4.3.0 (2026-06-30)
 
 ## What's Changed

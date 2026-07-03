@@ -13,7 +13,6 @@ This document provides comprehensive call hierarchy diagrams showing how code fl
 - [Command Flows](#command-flows)
   - [Chat Commands](#chat-commands)
   - [Context Commands](#context-commands)
-  - [Inline Commands](#inline-commands)
 - [Message Sending Flow](#message-sending-flow)
 - [Major Call Paths Summary](#major-call-paths-summary)
 - [Before/After Comparison](#beforeafter-comparison)
@@ -49,14 +48,12 @@ Infrastructure Layer (Adapters, RPC, Storage)
 │ Presentation Layer                                               │
 │   Controllers (Input):          Views (Output):                 │
 │   - chat/controller.lua         - chat/view.lua                 │
-│   - inline/controller.lua       - chat/buffer.lua               │
-│   - context/controller.lua      - ui/inline_picker.lua          │
+│   - context/controller.lua      - chat/buffer.lua               │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ Application Layer (Use Cases)                                    │
 │   - chat/use_case.lua                                           │
-│   - inline/use_case.lua                                         │
 │   - context/manager.lua                                         │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
@@ -97,7 +94,6 @@ init.lua
 │   ├─ vim.api.nvim_create_user_command("VibingSetFileTitle", ...)
 │   ├─ vim.api.nvim_create_user_command("VibingContext", ...)
 │   ├─ vim.api.nvim_create_user_command("VibingClearContext", ...)
-│   ├─ vim.api.nvim_create_user_command("VibingInline", ...)
 │   └─ vim.api.nvim_create_user_command("VibingCancel", ...)
 ```
 
@@ -239,42 +235,6 @@ presentation/context/controller.lua::handle_clear()
             └─ presentation/chat/view.lua::get_current():_update_context_line()
 ```
 
-### Inline Commands
-
-#### `:VibingInline [action|prompt]`
-
-**Purpose**: Quick inline code actions with rich UI picker
-
-```
-:'<,'>VibingInline args → init.lua (L198-210)
-    ↓
-presentation/inline/controller.lua::handle_execute(args)
-    ↓
-    ├─ [if args == ""] → ui/inline_picker.lua::show()
-    │       ↓
-    │       ├─ Display split-panel UI (actions + input)
-    │       ├─ User selects action + optional instruction
-    │       └─ callback(action, instruction)
-    │               ↓
-    │               └─ application/inline/use_case.lua::execute(action_arg)
-    │
-    └─ [if args != ""] → application/inline/use_case.lua::execute(args)
-            ↓
-            ├─ actions/inline.lua::handle_action()
-            │   ↓
-            │   ├─ Get visual selection or current buffer
-            │   ├─ Format prompt with action + code
-            │   ├─ adapters/agent_sdk.lua::stream()
-            │   │   ↓
-            │   │   ├─ bin/agent-wrapper.mjs [Node.js subprocess]
-            │   │   ├─ Claude Agent SDK execution
-            │   │   └─ Stream JSON Lines responses
-            │   │
-            │   └─ ui/output_buffer.lua::show() [display results]
-            │
-            └─ actions/inline.lua::_process_queue() [handle concurrent requests]
-```
-
 ## Message Sending Flow
 
 ### User sends message in chat buffer
@@ -331,13 +291,7 @@ ChatBuffer → actions/chat → agent_sdk adapter → Node.js wrapper → Claude
 init.lua → context/controller → context/manager → chat/view → ChatBuffer
 ```
 
-### 4. Inline Action Flow
-
-```
-init.lua → inline/controller → inline_picker → inline/use_case → actions/inline → agent_sdk
-```
-
-### 5. File Operations (Tool Use)
+### 4. File Operations (Tool Use)
 
 ```
 Agent SDK → JSON Lines → actions/chat::on_tool_use → infrastructure/file_operations

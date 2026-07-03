@@ -6,20 +6,6 @@ local SyncManager = require("vibing.application.link.sync_manager")
 local DailySummaryScanner = require("vibing.infrastructure.link.daily_summary_scanner")
 local ForkedChatScanner = require("vibing.infrastructure.link.forked_chat_scanner")
 
----@param file_path string?
----@return "chat"|"inline"
-local function detect_file_type(file_path)
-  if not file_path then
-    return "chat"
-  end
-
-  local basename = vim.fn.fnamemodify(file_path, ":t")
-  if basename:match("^inline") then
-    return "inline"
-  end
-  return "chat"
-end
-
 ---@param dir string
 ---@return string
 local function ensure_trailing_slash(dir)
@@ -79,7 +65,6 @@ return function(_, chat_buffer)
   end
 
   local old_file_path = chat_buffer.file_path
-  local file_type = detect_file_type(old_file_path)
   local config = require("vibing").get_config()
   local save_dir = FileManager.get_save_directory(config.chat)
   local is_existing_file = old_file_path and vim.fn.filereadable(old_file_path) == 1
@@ -95,7 +80,7 @@ return function(_, chat_buffer)
       return
     end
 
-    local new_filename = filename_util.generate_with_title(title, file_type)
+    local new_filename = filename_util.generate_with_title(title, "chat")
     local normalized_dir = ensure_trailing_slash(save_dir)
 
     if vim.fn.isdirectory(normalized_dir) == 0 then
