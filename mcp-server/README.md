@@ -29,6 +29,20 @@ This MCP server enables Claude Code to interact with a running Neovim instance t
 
 ## Installation
 
+### Option 0: Claude Code Plugin (recommended)
+
+Install this MCP server, plus Neovim-aware skills and a `nvim-navigator` subagent, as a single
+[Claude Code plugin](https://code.claude.com/docs/en/plugins) — no manual `~/.claude.json` editing
+and no separate build step (the server builds itself on first launch):
+
+```text
+/plugin marketplace add shabaraba/vibing.nvim
+/plugin install vibing-nvim@vibing-nvim
+```
+
+See the plugin manifest at `../.claude-plugin/plugin.json`. The manual steps below remain useful
+for development or if you need a non-default RPC port/timeout.
+
 ### 1. Build the MCP Server
 
 **Option 1: Using build script (simplest)**
