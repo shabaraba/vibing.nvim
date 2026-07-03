@@ -35,6 +35,7 @@ local INTERNAL_TOOLS = {
   TaskUpdate = true,
   SendMessage = true,
   Monitor = true,
+  ScheduleWakeup = true,
   EnterPlanMode = true,
   ExitPlanMode = true,
   EnterWorktree = true,
