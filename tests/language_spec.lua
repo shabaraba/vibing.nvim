@@ -1,11 +1,11 @@
--- Tests for vibing.utils.language module
+-- Tests for vibing.core.utils.language module
 
-describe("vibing.utils.language", function()
+describe("vibing.core.utils.language", function()
   local Language
 
   before_each(function()
-    package.loaded["vibing.utils.language"] = nil
-    Language = require("vibing.utils.language")
+    package.loaded["vibing.core.utils.language"] = nil
+    Language = require("vibing.core.utils.language")
   end)
 
   describe("language_names", function()
