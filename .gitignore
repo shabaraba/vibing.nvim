@@ -11,6 +11,9 @@ package-lock.json.backup
 # Serena MCP memory
 .serena/
 
+# superpowers subagent-driven-development scratch (briefs, reports, diffs, ledger)
+.superpowers/
+
 # Vim/Neovim
 *.swp
 *.swo
