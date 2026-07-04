@@ -81,6 +81,12 @@ function M.setup()
     handler = require("vibing.application.chat.handlers.new_session"),
     description = "Reset session and start fresh: /new-session",
   })
+
+  commands.register({
+    name = "vibing-workspace-create",
+    handler = require("vibing.application.chat.handlers.workspace_create"),
+    description = "Create a workspace (worktree + meta.yaml + plan.md): /vibing-workspace-create [description]",
+  })
 end
 
 return M
