@@ -66,7 +66,22 @@ if (isBuildStale(fingerprint)) {
 }
 
 const child = spawn(process.execPath, [distEntry], { stdio: 'inherit', env: process.env });
+
+// Forward termination signals so Claude Code stopping this wrapper also stops
+// the actual server process instead of orphaning it.
+const forwardSignal = (signal) => child.kill(signal);
+const forwardedSignals = ['SIGTERM', 'SIGINT'];
+for (const signal of forwardedSignals) {
+  process.on(signal, forwardSignal);
+}
+
 child.on('exit', (code, signal) => {
-  if (signal) process.kill(process.pid, signal);
-  else process.exit(code ?? 0);
+  if (signal) {
+    for (const s of forwardedSignals) {
+      process.removeListener(s, forwardSignal);
+    }
+    process.kill(process.pid, signal);
+  } else {
+    process.exit(code ?? 0);
+  }
 });
