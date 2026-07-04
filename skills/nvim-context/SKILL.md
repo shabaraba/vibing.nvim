@@ -29,4 +29,13 @@ references "this file", "current buffer", "my selection", "what I have open", et
 ## Graceful degradation
 
 If `vibing-nvim` MCP calls fail or time out (no running Neovim instance, RPC not connected),
-don't block — fall back to normal file-based tools silently rather than repeatedly retrying.
+don't retry repeatedly — but don't fail silently either:
+
+1. **Say so.** Note briefly that live Neovim state isn't available, so you're working from
+   on-disk file content, which may not match what the user actually has open (unsaved edits, a
+   different selection, etc.).
+2. **Fall back to normal file-based tools** (Read/Edit/Write) for the rest of the task.
+3. **Don't mix stale and live state.** If `vibing-nvim` calls start succeeding again later in the
+   same task (Neovim was started or reconnected), re-read the buffer via
+   `mcp__vibing-nvim__nvim_get_buffer` before making further edits — don't keep acting on the
+   on-disk snapshot from the degraded period.

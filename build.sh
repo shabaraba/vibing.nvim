@@ -98,11 +98,15 @@ if [ -f "dist/index.js" ]; then
 
     if command -v claude &> /dev/null; then
         echo "[vibing.nvim] Installing vibing-nvim as a Claude Code plugin (user scope)..."
-        if claude plugin marketplace add "$SCRIPT_DIR" &> /dev/null \
-            && claude plugin install vibing-nvim@vibing-nvim --scope user; then
+        MARKETPLACE_ADD_OUTPUT="$(claude plugin marketplace add "$SCRIPT_DIR" 2>&1)"
+        MARKETPLACE_ADD_STATUS=$?
+        if [ $MARKETPLACE_ADD_STATUS -eq 0 ] && claude plugin install vibing-nvim@vibing-nvim --scope user; then
             echo "[vibing.nvim] ✓ Installed vibing-nvim Claude Code plugin (scope: user)"
         else
             echo "[vibing.nvim] ⚠ Warning: 'claude plugin install' failed, falling back to manual registration"
+            if [ $MARKETPLACE_ADD_STATUS -ne 0 ]; then
+                echo "$MARKETPLACE_ADD_OUTPUT"
+            fi
             register_mcp_json_fallback
         fi
     else
