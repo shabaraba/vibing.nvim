@@ -44,11 +44,11 @@ function computeFingerprint() {
   return hash.digest('hex');
 }
 
-function isBuildStale() {
+function isBuildStale(fingerprint) {
   if (!existsSync(distEntry) || !existsSync(nodeModulesDir) || !existsSync(fingerprintFile)) {
     return true;
   }
-  return readFileSync(fingerprintFile, 'utf8').trim() !== computeFingerprint();
+  return readFileSync(fingerprintFile, 'utf8').trim() !== fingerprint;
 }
 
 function run(command, args) {
@@ -57,11 +57,12 @@ function run(command, args) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-if (isBuildStale()) {
+const fingerprint = computeFingerprint();
+if (isBuildStale(fingerprint)) {
   console.error('[vibing-nvim] Building MCP server...');
   run('npm', ['ci', '--silent']);
   run('npm', ['run', 'build', '--silent']);
-  writeFileSync(fingerprintFile, computeFingerprint());
+  writeFileSync(fingerprintFile, fingerprint);
 }
 
 const child = spawn(process.execPath, [distEntry], { stdio: 'inherit', env: process.env });
