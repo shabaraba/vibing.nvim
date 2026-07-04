@@ -99,6 +99,12 @@ function M.setup()
     handler = require("vibing.application.chat.handlers.workspace_done"),
     description = "Finish a workspace, removing its worktree: /vibing-workspace-done [workspace_id]",
   })
+
+  commands.register({
+    name = "vibing-workspace-list",
+    handler = require("vibing.application.chat.handlers.workspace_list"),
+    description = "List workspaces: /vibing-workspace-list [done]",
+  })
 end
 
 return M
