@@ -13,7 +13,7 @@
  * fingerprint of package.json/package-lock.json/src/ (not just dist/index.js
  * presence) is used to detect that and rebuild.
  */
-import { existsSync, readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
