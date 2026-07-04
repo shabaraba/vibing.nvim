@@ -3,17 +3,7 @@ local Manager = require("vibing.infrastructure.workspace.manager")
 local WorkspaceGenerator = require("vibing.core.utils.workspace_generator")
 local Meta = require("vibing.infrastructure.workspace.meta")
 local Git = require("vibing.core.utils.git")
-
----@param chat_buffer Vibing.ChatBuffer
----@return string?
-local function already_bound_workspace_id(chat_buffer)
-  local frontmatter = chat_buffer:parse_frontmatter()
-  local wid = frontmatter and frontmatter.workspace_id
-  if type(wid) == "string" and wid ~= "" and wid ~= "~" then
-    return wid
-  end
-  return nil
-end
+local ChatBinding = require("vibing.infrastructure.workspace.chat_binding")
 
 ---@param chat_buffer Vibing.ChatBuffer
 ---@param lines string[]
@@ -93,7 +83,7 @@ return function(args, chat_buffer)
     return true
   end
 
-  local bound = already_bound_workspace_id(chat_buffer)
+  local bound = ChatBinding.is_bound(chat_buffer)
   if bound then
     notify.error(
       string.format("This chat is already bound to workspace %s. Open a new chat to start another workspace.", bound),

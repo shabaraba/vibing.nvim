@@ -87,6 +87,12 @@ function M.setup()
     handler = require("vibing.application.chat.handlers.workspace_create"),
     description = "Create a workspace (worktree + meta.yaml + plan.md): /vibing-workspace-create [description]",
   })
+
+  commands.register({
+    name = "vibing-workspace-enter",
+    handler = require("vibing.application.chat.handlers.workspace_enter"),
+    description = "Bind this chat to an existing workspace: /vibing-workspace-enter [workspace_id]",
+  })
 end
 
 return M
