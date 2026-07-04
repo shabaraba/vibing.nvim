@@ -46,6 +46,13 @@ and no separate build step (the server builds itself on first launch).
 See the plugin manifest at `../.claude-plugin/plugin.json`. The manual steps below remain useful
 for development or if you need a non-default RPC port/timeout.
 
+To uninstall:
+
+```text
+/plugin uninstall vibing-nvim@vibing-nvim
+/plugin marketplace remove vibing-nvim
+```
+
 ### 1. Build the MCP Server
 
 **Option 1: Using build script (simplest)**

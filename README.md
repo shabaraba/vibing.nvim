@@ -211,6 +211,13 @@ separate build step is needed for the MCP server itself — this is independent 
 still need Neovim running with `mcp = { enabled = true }` (the default) for the MCP tools to have
 anything to connect to.
 
+**Uninstalling:**
+
+```text
+/plugin uninstall vibing-nvim@vibing-nvim
+/plugin marketplace remove vibing-nvim
+```
+
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 
 ```lua
