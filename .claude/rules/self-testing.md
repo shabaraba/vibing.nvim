@@ -232,12 +232,12 @@ When implementing new features, add E2E tests for:
 - [ ] Chat forking (`:VibingChatFork`)
 - [ ] Multi-turn conversations
 
-### Worktree Features
+### Workspace Features
 
-- [ ] `:VibingChatWorktree` creates worktree and chat
-- [ ] Configuration files copied to worktree
-- [ ] `node_modules` symlinked correctly
-- [ ] Chat files saved in `.vibing/worktrees/<branch>/`
+- [ ] `/vibing-workspace-create` creates a workspace (worktree + meta.yaml + plan.md) and binds the chat
+- [ ] `/vibing-workspace-enter` binds an existing chat to an active workspace
+- [ ] `/vibing-workspace-done` removes the worktree and moves the workspace to done
+- [ ] `/vibing-workspace-list` lists active and done workspaces
 
 ### Inline Actions
 
