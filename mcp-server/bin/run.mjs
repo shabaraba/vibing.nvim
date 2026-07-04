@@ -13,7 +13,7 @@
  * fingerprint of package.json/package-lock.json/src/ (not just dist/index.js
  * presence) is used to detect that and rebuild.
  */
-import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
 import { spawnSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
@@ -24,8 +24,11 @@ const distEntry = join(mcpDir, 'dist', 'index.js');
 const nodeModulesDir = join(mcpDir, 'node_modules');
 const fingerprintFile = join(mcpDir, 'dist', '.build-fingerprint');
 
+const IGNORED_FILE_PATTERN = /(?:^\.DS_Store$|\.sw[op]$|~$|\.tmp$)/;
+
 function listFilesRecursive(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    if (IGNORED_FILE_PATTERN.test(entry.name)) return [];
     const full = join(dir, entry.name);
     return entry.isDirectory() ? listFilesRecursive(full) : [full];
   });
@@ -53,13 +56,25 @@ function isBuildStale(fingerprint) {
 
 function run(command, args) {
   const result = spawnSync(command, args, { cwd: mcpDir, stdio: 'inherit' });
-  if (result.error) throw result.error;
-  if (result.status !== 0) process.exit(result.status ?? 1);
+  const label = `${command} ${args.join(' ')}`;
+  if (result.error) {
+    console.error(`[vibing-nvim] Failed to run: ${label}`);
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    console.error(`[vibing-nvim] Command failed (exit ${result.status}): ${label}`);
+    process.exit(result.status ?? 1);
+  }
 }
 
 const fingerprint = computeFingerprint();
 if (isBuildStale(fingerprint)) {
   console.error('[vibing-nvim] Building MCP server...');
+  // Drop any existing fingerprint up front so a build that fails partway
+  // (tsc can emit partial output despite reporting errors) never leaves a
+  // stale fingerprint behind that would make a later, unrelated source
+  // state look "already built" against a corrupted dist/.
+  rmSync(fingerprintFile, { force: true });
   run('npm', ['ci', '--silent']);
   run('npm', ['run', 'build', '--silent']);
   writeFileSync(fingerprintFile, fingerprint);
