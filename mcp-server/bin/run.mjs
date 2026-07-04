@@ -12,6 +12,10 @@
  * `git pull` outside of build.sh) can leave a stale dist/ behind. A content
  * fingerprint of package.json/package-lock.json/src/ (not just dist/index.js
  * presence) is used to detect that and rebuild.
+ *
+ * This runs `npm ci`/`npm run build` against whatever is checked out at
+ * CLAUDE_PLUGIN_ROOT — only add this plugin's marketplace from a source you
+ * trust (see the "Trust note" in mcp-server/README.md).
  */
 import { existsSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
 import { spawnSync, spawn } from 'node:child_process';

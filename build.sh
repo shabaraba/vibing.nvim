@@ -98,6 +98,8 @@ if [ -f "dist/index.js" ]; then
 
     if command -v claude &> /dev/null; then
         echo "[vibing.nvim] Installing vibing-nvim as a Claude Code plugin (user scope)..."
+        # Capture output instead of streaming it directly so it can be printed
+        # below only on failure, keeping successful (repeat) runs quiet.
         MARKETPLACE_ADD_OUTPUT="$(claude plugin marketplace add "$SCRIPT_DIR" 2>&1)"
         MARKETPLACE_ADD_STATUS=$?
         if [ $MARKETPLACE_ADD_STATUS -eq 0 ] && claude plugin install vibing-nvim@vibing-nvim --scope user; then
