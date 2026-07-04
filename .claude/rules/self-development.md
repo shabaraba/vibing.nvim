@@ -6,12 +6,11 @@ When you (Claude Agent SDK) are working on vibing.nvim itself, follow these guid
 
 **For Feature Development:**
 
-1. Use `/vibing-workspace-create [description]` (in chat) instead of manual `git worktree` commands
+1. Use the `vibing-workspace-create` skill instead of manual `git worktree` commands
    - Automatically creates an isolated development environment (worktree + `meta.yaml` + `plan.md`)
-   - Binds the current chat to the new workspace
-   - Use `/vibing-workspace-enter [workspace_id]` to bind another chat to an existing active workspace
-   - Use `/vibing-workspace-done [workspace_id]` to remove the worktree and move the workspace to done
-   - Use `/vibing-workspace-list [done]` to list active (or done) workspaces
+   - Use `vibing-workspace-enter` to bind another chat to an existing active workspace
+   - Use `vibing-workspace-done` to remove the worktree and move the workspace to done
+   - Use `vibing-workspace-list` to list active (or done) workspaces
 
 **For Buffer/Window Operations:**
 
@@ -37,10 +36,8 @@ When you (Claude Agent SDK) are working on vibing.nvim itself, follow these guid
 
 ```typescript
 // ✅ CORRECT - vibing.nvim-aware workflow
-// 1. Create a workspace for new feature (from chat, via slash command)
-await use_mcp_tool('vibing-nvim', 'nvim_chat_send_message', {
-  message: '/vibing-workspace-create feature-new-ui',
-});
+// 1. Create a workspace for new feature (invoke the vibing-workspace-create skill directly,
+//    it uses scripts/vibing-workspace.mjs and git worktree under the hood)
 
 // 2. Load file in background for LSP analysis
 const { bufnr } = await use_mcp_tool('vibing-nvim', 'nvim_load_buffer', {
@@ -79,11 +76,11 @@ const refs = await use_mcp_tool("serena", "lsp_references", { ... });
 
 ## Common Mistakes and How to Fix Them
 
-**Mistake 1: Using `git worktree` instead of `/vibing-workspace-create`**
+**Mistake 1: Using `git worktree` instead of the `vibing-workspace-create` skill**
 
 - ❌ Wrong: `git worktree add .worktrees/feature-branch`
-- ✅ Correct: `/vibing-workspace-create feature-branch` (in chat)
-- Why: Manual git worktree doesn't create the workspace's `meta.yaml`/`plan.md` or bind the chat to it
+- ✅ Correct: invoke the `vibing-workspace-create` skill
+- Why: Manual git worktree doesn't create the workspace's `meta.yaml`/`plan.md`
 
 **Mistake 2: Using Serena LSP tools instead of vibing-nvim MCP tools**
 

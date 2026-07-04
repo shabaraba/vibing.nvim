@@ -196,7 +196,9 @@ supporting multi-language development workflows.
 
 ## Git Worktree Integration
 
-Worktree-backed development now goes through the workspace system (`/vibing-workspace-create`,
-`/vibing-workspace-enter`, `/vibing-workspace-done`, `/vibing-workspace-list`). See
-`.claude/rules/commands-reference.md` for the full command reference. Workspace directories,
-including the git worktree itself, live under `.vibing/workspace/{active,done}/<id>/`.
+Worktree-backed development goes through the `vibing-workspace-*` Claude Code skills bundled
+with this plugin (`skills/vibing-workspace-create`, `-enter`, `-done`, `-list`), not through a
+vibing.nvim chat command. Workspace directories, including the git worktree itself, live under
+`.vibing/workspace/{active,done}/<id>/`. See `skills/vibing-workspace/SKILL.md` for the shared
+directory layout and `meta.yaml` schema, and `scripts/vibing-workspace.mjs` for the bundled
+script that manages workspace creation/removal.

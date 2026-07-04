@@ -234,10 +234,10 @@ When implementing new features, add E2E tests for:
 
 ### Workspace Features
 
-- [ ] `/vibing-workspace-create` creates a workspace (worktree + meta.yaml + plan.md) and binds the chat
-- [ ] `/vibing-workspace-enter` binds an existing chat to an active workspace
-- [ ] `/vibing-workspace-done` removes the worktree and moves the workspace to done
-- [ ] `/vibing-workspace-list` lists active and done workspaces
+- [ ] `vibing-workspace-create` skill creates a workspace (worktree + meta.yaml + plan.md)
+- [ ] `vibing-workspace-enter` skill registers an existing chat against an active workspace
+- [ ] `vibing-workspace-done` skill removes the worktree and moves the workspace to done
+- [ ] `vibing-workspace-list` skill lists active and done workspaces
 
 ### Inline Actions
 

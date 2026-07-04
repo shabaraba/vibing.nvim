@@ -273,7 +273,7 @@ use {
   - `:VibingChat bottom` - New chat in bottom split
   - `:VibingChat back` - New chat as background buffer only (no window)
   - `:VibingChat path/to/file.md` - Open saved chat file
-- **Workspace commands** - Use `/vibing-workspace-create`, `/vibing-workspace-enter`, `/vibing-workspace-done`, and `/vibing-workspace-list` slash commands (in chat) to create or reuse a git worktree with trackable lifecycle state.
+- **Workspace lifecycle** - Use the `vibing-workspace-create`, `vibing-workspace-enter`, `vibing-workspace-done`, and `vibing-workspace-list` Claude Code skills bundled with this plugin to create or reuse a git worktree with trackable lifecycle state.
 - **`:VibingChatFork`** - Fork current chat conversation for branching in a different direction.
 - **`:VibingToggleChat`** - Use to show/hide your current conversation. Preserves the existing chat state.
 
@@ -372,24 +372,23 @@ Chat mode (2 panels):
 
 ### Slash Commands (in Chat)
 
-| Command                                  | Description                                                                             |
-| ---------------------------------------- | --------------------------------------------------------------------------------------- |
-| `/context <file>`                        | Add file to context                                                                     |
-| `/clear`                                 | Clear context                                                                           |
-| `/save`                                  | Save current chat                                                                       |
-| `/summarize`                             | Summarize conversation                                                                  |
-| `/model <model>`                         | Set AI model (opus/sonnet/haiku)                                                        |
-| `/help`                                  | Show available slash commands                                                           |
-| `/permissions` or `/perm`                | Interactive permission builder - configure tool allow/deny rules                        |
-| `/allow [tool]`                          | Add tool to allow list, or show current list if no args                                 |
-| `/deny [tool]`                           | Add tool to deny list, or show current list if no args                                  |
-| `/ask [tool]`                            | Ask before using tool, or show current list if no args                                  |
-| `/permission [mode]`                     | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk)                |
-| `/new-session`                           | Reset session and start fresh                                                           |
-| `/vibing-workspace-create [description]` | Interactively create a workspace (worktree + meta.yaml + plan.md), bind this chat to it |
-| `/vibing-workspace-enter [workspace_id]` | Bind this chat to an existing active workspace (fails if this chat is already bound)    |
-| `/vibing-workspace-done [workspace_id]`  | Remove the workspace's worktree and move it from active to done                         |
-| `/vibing-workspace-list [done]`          | List active workspaces (or done, with the `done` argument)                              |
+| Command                   | Description                                                              |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `/context <file>`         | Add file to context                                                      |
+| `/clear`                  | Clear context                                                            |
+| `/save`                   | Save current chat                                                        |
+| `/summarize`              | Summarize conversation                                                   |
+| `/model <model>`          | Set AI model (opus/sonnet/haiku)                                         |
+| `/help`                   | Show available slash commands                                            |
+| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules         |
+| `/allow [tool]`           | Add tool to allow list, or show current list if no args                  |
+| `/deny [tool]`            | Add tool to deny list, or show current list if no args                   |
+| `/ask [tool]`             | Ask before using tool, or show current list if no args                   |
+| `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk) |
+| `/new-session`            | Reset session and start fresh                                            |
+
+Workspace lifecycle is handled by the `vibing-workspace-*` Claude Code skills bundled with this
+plugin, not by chat slash commands — see `skills/vibing-workspace/SKILL.md`.
 
 ### Chat Keybindings
 

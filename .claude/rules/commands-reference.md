@@ -98,21 +98,22 @@
 
 Slash commands can be used within the chat buffer for quick actions:
 
-| Command                                  | Description                                                                             |
-| ---------------------------------------- | --------------------------------------------------------------------------------------- |
-| `/context <file>`                        | Add file to context                                                                     |
-| `/clear`                                 | Clear context                                                                           |
-| `/save`                                  | Save current chat                                                                       |
-| `/summarize`                             | Summarize conversation                                                                  |
-| `/model <model>`                         | Set AI model (opus/sonnet/haiku)                                                        |
-| `/help`                                  | Show available slash commands                                                           |
-| `/permissions` or `/perm`                | Interactive Permission Builder - configure tool permissions                             |
-| `/allow [tool]`                          | Add tool to allow list, or show current list if no args                                 |
-| `/deny [tool]`                           | Add tool to deny list, or show current list if no args                                  |
-| `/ask [tool]`                            | Ask before using tool, or show current list if no args                                  |
-| `/permission [mode]`                     | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk)                |
-| `/new-session`                           | Reset session and start fresh                                                           |
-| `/vibing-workspace-create [description]` | Interactively create a workspace (worktree + meta.yaml + plan.md), bind this chat to it |
-| `/vibing-workspace-enter [workspace_id]` | Bind this chat to an existing active workspace (fails if this chat is already bound)    |
-| `/vibing-workspace-done [workspace_id]`  | Remove the workspace's worktree and move it from active to done                         |
-| `/vibing-workspace-list [done]`          | List active workspaces (or done, with the `done` argument)                              |
+| Command                   | Description                                                              |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `/context <file>`         | Add file to context                                                      |
+| `/clear`                  | Clear context                                                            |
+| `/save`                   | Save current chat                                                        |
+| `/summarize`              | Summarize conversation                                                   |
+| `/model <model>`          | Set AI model (opus/sonnet/haiku)                                         |
+| `/help`                   | Show available slash commands                                            |
+| `/permissions` or `/perm` | Interactive Permission Builder - configure tool permissions              |
+| `/allow [tool]`           | Add tool to allow list, or show current list if no args                  |
+| `/deny [tool]`            | Add tool to deny list, or show current list if no args                   |
+| `/ask [tool]`             | Ask before using tool, or show current list if no args                   |
+| `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk) |
+| `/new-session`            | Reset session and start fresh                                            |
+
+Workspace lifecycle (create/enter/done/list worktree-backed workspaces) is handled by the
+`vibing-workspace-*` Claude Code skills bundled with this plugin (`skills/`), not by chat slash
+commands. See the plugin's `skills/vibing-workspace/SKILL.md` for the shared reference and the
+four `skills/vibing-workspace-*/SKILL.md` skills for each operation.
