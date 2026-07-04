@@ -76,7 +76,7 @@ Chat files are saved as Markdown with YAML frontmatter:
 vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
-working_dir: .worktrees/feature-branch # Optional: relative path from git root for working directory
+working_dir: .vibing/workspace/active/0001-feature-branch/worktree # Optional: relative path from git root for working directory
 model: sonnet # sonnet, opus, or haiku (from config.agent.default_model)
 permissions_mode: acceptEdits # default, acceptEdits, bypassPermissions, plan, or dontAsk
 permissions_allow:

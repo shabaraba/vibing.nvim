@@ -1,12 +1,13 @@
-# E2Eテストケース: Worktree統合機能
+# E2Eテストケース: Workspace統合機能
 
 ## テストID
 
-`E2E-WORKTREE-001`
+`E2E-WORKSPACE-001`
 
 ## テスト対象
 
-`:VibingChatWorktree` コマンドによるgit worktree統合機能
+`/vibing-workspace-create`, `/vibing-workspace-enter`, `/vibing-workspace-done`, `/vibing-workspace-list`
+のスラッシュコマンドによるworkspace（git worktreeベースの隔離開発環境）統合機能
 
 ## 前提条件
 
@@ -17,268 +18,243 @@
 
 ## テスト手順
 
-### 1. 新規Worktreeの作成
+### 1. 新規Workspaceの作成
 
 **操作:**
 
 ```vim
-:VibingChatWorktree feature-test
+:VibingChat
+i
+/vibing-workspace-create ログイン機能の実装
+<CR>
 ```
 
 **期待される動作:**
 
-1. git worktreeが `.git/worktrees/` に作成される
-2. 新しいブランチ `feature-test` が作成される
-3. worktreeディレクトリが作成される（デフォルト: `../vibing.nvim-feature-test`）
-4. 必要な設定ファイルがコピーされる:
-   - `tsconfig.json`
-   - `package.json`
-   - `.gitignore`
-5. `node_modules` がシンボリックリンクで共有される
-6. チャットファイルはメインリポジトリの `.vibing/chat/` に保存される
-7. チャットバッファが開く
-8. `cwd` が worktreeディレクトリに設定される
+1. `vim.ui.input` でdescriptionとbranch名の確認プロンプトが表示される
+2. 確定すると `.vibing/workspace/active/<id>/` にworkspaceディレクトリが作成される
+3. `.vibing/workspace/active/<id>/worktree/` にgit worktreeが作成される（新しいブランチも作成される）
+4. `.vibing/workspace/active/<id>/meta.yaml` と `plan.md` が作成される
+5. 現在のチャットバッファがそのworkspaceに紐付く（frontmatterに `workspace_id`, `working_dir` が追加される）
+6. チャットバッファに `Workspace \`<id>\` created at \`...\`.` のメッセージが追記される
 
 **検証ポイント:**
 
 ```bash
-# worktreeが作成されていることを確認
+# workspaceディレクトリが作成されていることを確認
+ls .vibing/workspace/active/
+# <id>/ が存在
+
+ls .vibing/workspace/active/<id>/
+# worktree/, meta.yaml, plan.md が存在
+
+# git worktreeが作成されていることを確認
 git worktree list
-
-# 期待される出力:
-# /path/to/vibing.nvim       [main]
-# /path/to/vibing.nvim-feature-test  [feature-test]
-
-# 設定ファイルがコピーされていることを確認
-ls ../vibing.nvim-feature-test/
-# tsconfig.json, package.json, .gitignore が存在
-
-# node_modulesがシンボリックリンクであることを確認
-ls -la ../vibing.nvim-feature-test/node_modules
-# lrwxr-xr-x ... node_modules -> /path/to/vibing.nvim/node_modules
-
-# チャットファイルがメインリポジトリに保存されることを確認
-ls .vibing/chat/
-# chat-*.vibing が存在（worktreeディレクトリではなくメインリポジトリ）
+# .vibing/workspace/active/<id>/worktree が一覧に追加されている
 ```
 
 ```lua
--- Luaから確認
-local session = require("vibing.domain.chat.session")
-local current_session = session.get_current()
-assert(current_session.cwd:match("vibing%.nvim%-feature%-test"))
+-- チャットバッファのfrontmatterを確認
+local frontmatter = require("vibing.domain.chat.frontmatter")
+-- workspace_id と working_dir (.vibing/workspace/active/<id>/worktree) が設定されている
 ```
 
-### 2. 既存ブランチでWorktreeを作成
+### 2. 既存Workspaceへの参加（enter）
 
 **前提条件:**
 
-- ブランチ `existing-branch` が既に存在する
+- workspace `<id>` が既に active な状態で存在する
 
 **操作:**
 
 ```vim
-:VibingChatWorktree existing-branch
-```
-
-**期待される動作:**
-
-- 既存のブランチをチェックアウトする
-- 新しいworktreeが作成される
-- 設定ファイルがコピーされる
-
-**検証ポイント:**
-
-```bash
-git worktree list
-# existing-branch用のworktreeが作成されている
-```
-
-### 3. 位置指定付きWorktree作成
-
-**操作:**
-
-```vim
-:VibingChatWorktree right feature-ui
-```
-
-**期待される動作:**
-
-- worktreeが作成される
-- チャットウィンドウが右側に開く
-- 全ての設定が正しく適用される
-
-### 4. Worktreeでのメッセージ送信
-
-**操作:**
-
-```vim
-:VibingChatWorktree feature-test
+:VibingChat
 i
-このworktreeで作業しています
+/vibing-workspace-enter <id>
 <CR>
 ```
 
 **期待される動作:**
 
-- メッセージが送信される
-- Agent SDKに `--cwd` 引数でworktreeパスが渡される
-- レスポンスが正しく表示される
+- 引数を省略した場合は `vim.ui.select` でactiveなworkspace一覧から選択できる
+- 現在のチャットバッファがそのworkspaceに紐付く
+- `Entered workspace: <id>` の通知が表示される
+- 既にworkspaceに紐付いているチャットで実行した場合はエラーになる
 
-**検証ポイント:**
-
-```lua
--- SendMessage use caseでcwdが設定されていることを確認
-local send_message = require("vibing.application.chat.send_message")
--- opts.cwd が worktreeパスに設定されている
-```
-
-### 5. Worktree内でのファイル操作
+### 3. Workspace内でのメッセージ送信・ファイル操作
 
 **操作:**
 
 ```vim
-:VibingChatWorktree feature-test
+:VibingChat
+i
+/vibing-workspace-create テスト機能
+<CR>
 i
 新しいファイルを作成してください: src/new_feature.lua
 <CR>
-# Claudeが新しいファイルを作成する
 ```
 
 **期待される動作:**
 
-- ファイルがworktreeディレクトリ内に作成される
+- メッセージ送信時、Agent SDKに `--cwd` としてworkspaceのworktreeパスが渡される
+- Claudeが作成するファイルはworktreeディレクトリ内に作成される
 - メインリポジトリには影響しない
 
 **検証ポイント:**
 
 ```bash
 # worktreeディレクトリにファイルが作成されている
-ls ../vibing.nvim-feature-test/src/new_feature.lua
+ls .vibing/workspace/active/<id>/worktree/src/new_feature.lua
 
 # メインリポジトリには存在しない
 ls src/new_feature.lua
 # ファイルが見つからない
 ```
 
-### 6. チャットファイルの永続化
+### 4. 一覧表示（list）
 
 **操作:**
 
 ```vim
-:VibingChatWorktree feature-test
+:VibingChat
 i
-テストメッセージ
+/vibing-workspace-list
 <CR>
-:w
-:q
-
-# worktreeを削除
-:!git worktree remove ../vibing.nvim-feature-test
-
-# チャットファイルが残っていることを確認
-:VibingChat .vibing/chat/chat-*.vibing
 ```
 
 **期待される動作:**
 
-- worktreeを削除してもチャットファイルは残る
-- チャットファイルがメインリポジトリの `.vibing/chat/` にある
-- チャットを再開できる
+- activeなworkspace一覧がチャットバッファに追記される（`- \`<id>\` - <description> (<branch>)` 形式）
+
+```vim
+i
+/vibing-workspace-list done
+<CR>
+```
+
+**期待される動作:**
+
+- doneなworkspace一覧が表示される
+
+**検証ポイント:**
+
+```bash
+# 引数なしはactive、"done"引数はdoneディレクトリの一覧と一致すること
+ls .vibing/workspace/active/
+ls .vibing/workspace/done/
+```
+
+### 5. Workspaceの完了（done）
+
+**操作:**
+
+```vim
+:VibingChat
+i
+/vibing-workspace-done <id>
+<CR>
+```
+
+**期待される動作:**
+
+1. `plan.md` に未完了のTODOがある場合、または対象ブランチが未マージの場合は確認ダイアログが表示される
+2. 確定すると `git worktree remove` でworktreeが削除される
+3. workspaceディレクトリが `.vibing/workspace/active/<id>/` から `.vibing/workspace/done/<id>/` に移動する
+4. `Workspace done: <id>` の通知が表示される
 
 **検証ポイント:**
 
 ```bash
 # worktreeが削除されている
 git worktree list
-# feature-testのworktreeが存在しない
+# <id>用のworktreeが存在しない
 
-# チャットファイルは残っている
-ls .vibing/chat/
-# chat-*.vibing が存在
+# workspaceディレクトリがdoneに移動している
+ls .vibing/workspace/done/<id>/
+# meta.yaml, plan.md が存在（worktree/ ディレクトリは削除済み）
+
+ls .vibing/workspace/active/<id>
+# 存在しない
 ```
 
-### 7. 複数Worktreeの同時管理
+### 6. Workspace削除後もチャットファイルは影響を受けない
 
 **操作:**
 
 ```vim
-:VibingChatWorktree right feature-a
-:VibingChatWorktree left feature-b
-```
-
-**期待される動作:**
-
-- 2つのworktreeが作成される
-- それぞれ独立したチャットセッション
-- 各チャットが正しいworktreeディレクトリを参照
-
-**検証ポイント:**
-
-```bash
-git worktree list
-# 2つのworktreeが存在
-```
-
-```lua
--- 各チャットバッファが異なるcwdを持つことを確認
-```
-
-### 8. Worktreeからメインリポジトリへの切り替え
-
-**操作:**
-
-```vim
-:VibingChatWorktree feature-test
-# worktreeで作業
-:q
-
-# メインリポジトリで新しいチャット
 :VibingChat
 i
-メインリポジトリで作業中
+/vibing-workspace-create 一時作業
+<CR>
+:w
+:q
+
+# workspaceを完了させる
+:VibingChat
+i
+/vibing-workspace-done <id>
 <CR>
 ```
 
 **期待される動作:**
 
-- メインリポジトリの `cwd` が使用される
-- worktreeのパスは使用されない
+- worktreeを削除してもチャットファイルは `.vibing/chat/` に残る
+- チャットを再度開いてもファイル自体は読める（ただし `working_dir` の指す先は既に存在しないため、再開時は要確認）
 
 ## 異常系テスト
 
-### 9. 無効なブランチ名
+### 7. 既にworkspaceに紐付いたチャットで再度create/enter
 
 **操作:**
 
 ```vim
-:VibingChatWorktree "invalid branch name with spaces"
+:VibingChat
+i
+/vibing-workspace-create テストA
+<CR>
+i
+/vibing-workspace-create テストB
+<CR>
 ```
 
 **期待される動作:**
 
-- エラーメッセージが表示される
-- worktreeが作成されない
-- Neovimがクラッシュしない
+- 2回目の `/vibing-workspace-create` はエラーメッセージが表示される
+  （"This chat is already bound to workspace ... Open a new chat to start another workspace."）
+- 新しいworkspaceは作成されない
 
-### 10. 既存のWorktreeと同名
-
-**前提条件:**
-
-- `feature-test` worktreeが既に存在する
+### 8. 存在しないworkspace_idを指定
 
 **操作:**
 
 ```vim
-:VibingChatWorktree feature-test
+:VibingChat
+i
+/vibing-workspace-enter nonexistent-id
+<CR>
 ```
 
 **期待される動作:**
 
-- エラーメッセージが表示される: "worktree already exists"
-- 既存のworktreeに切り替える、または何もしない
+- エラーメッセージが表示される: "No active workspace found: nonexistent-id"
 
-### 11. gitリポジトリ外での実行
+### 9. workspaceに紐付いていないチャットで /vibing-workspace-done を引数なしで実行
+
+**操作:**
+
+```vim
+:VibingChat
+i
+/vibing-workspace-done
+<CR>
+```
+
+**期待される動作:**
+
+- エラーメッセージが表示される: "This chat is not bound to a workspace. Usage: /vibing-workspace-done <workspace_id>"
+
+### 10. gitリポジトリ外での実行
 
 **前提条件:**
 
@@ -287,145 +263,50 @@ i
 **操作:**
 
 ```vim
-:VibingChatWorktree feature-test
+:VibingChat
+i
+/vibing-workspace-create テスト
+<CR>
 ```
 
 **期待される動作:**
 
 - エラーメッセージが表示される
-- コマンドが失敗する
+- workspaceが作成されない
 - Neovimがクラッシュしない
-
-### 12. 設定ファイルのコピー失敗
-
-**前提条件:**
-
-- `tsconfig.json` が存在しない
-
-**操作:**
-
-```vim
-:VibingChatWorktree feature-test
-```
-
-**期待される動作:**
-
-- 警告メッセージが表示される（オプション）
-- worktreeは作成されるが、該当ファイルはコピーされない
-- 処理は継続される
-
-### 13. node_modulesのシンボリックリンク失敗
-
-**前提条件:**
-
-- `node_modules` が存在しない
-
-**操作:**
-
-```vim
-:VibingChatWorktree feature-test
-```
-
-**期待される動作:**
-
-- 警告メッセージが表示される
-- worktreeは作成される
-- ユーザーに手動で `npm install` するよう通知される
-
-### 14. Worktree削除時のチャットファイル保護
-
-**操作:**
-
-```bash
-# 誤ってworktreeディレクトリごと削除
-rm -rf ../vibing.nvim-feature-test
-```
-
-**期待される動作:**
-
-- チャットファイルはメインリポジトリにあるため影響を受けない
-- チャット履歴が失われない
-
-**検証ポイント:**
-
-```bash
-ls .vibing/chat/
-# チャットファイルが残っている
-```
-
-## パフォーマンステスト
-
-### 15. Worktree作成時間
-
-**操作:**
-
-```bash
-# 作成時間を測定
-time nvim -c ":VibingChatWorktree perf-test" -c ":q"
-```
-
-**期待される動作:**
-
-- 作成時間が5秒以内（目標値）
-- UIがブロックされない
-
-### 16. 大量のWorktree
-
-**操作:**
-
-```bash
-# 10個のworktreeを作成
-for i in {1..10}; do
-  nvim -c ":VibingChatWorktree feature-$i" -c ":q"
-done
-```
-
-**期待される動作:**
-
-- 全てのworktreeが正しく作成される
-- node_modulesが共有されるためディスク使用量が最小限
-
-**検証ポイント:**
-
-```bash
-git worktree list
-# 10個のworktreeが存在
-
-du -sh */node_modules
-# 全て同じinodeを指している（シンボリックリンク）
-```
 
 ## クリーンアップ
 
 **操作:**
 
 ```bash
-# 全worktreeを削除
-git worktree list --porcelain | grep "worktree" | grep -v "$(pwd)" | while read -r line; do
-  path=$(echo $line | cut -d' ' -f2)
+# 全workspaceのworktreeを削除
+git worktree list --porcelain | grep "worktree" | grep ".vibing/workspace/" | while read -r _ path; do
   git worktree remove "$path"
 done
 
-# チャットファイルを削除
+# workspaceディレクトリとチャットファイルを削除
+rm -rf .vibing/workspace/
 rm -rf .vibing/chat/
 ```
 
 ## 成功基準
 
-- [ ] Worktreeが正しく作成される
-- [ ] 設定ファイルが正しくコピーされる
-- [ ] node_modulesが共有される
-- [ ] チャットファイルがメインリポジトリに保存される
-- [ ] cwdが正しく設定される
-- [ ] メッセージ送信時にcwdが伝播する
-- [ ] 複数Worktreeの同時管理ができる
-- [ ] Worktree削除後もチャットファイルが残る
+- [ ] `/vibing-workspace-create` でworktree・meta.yaml・plan.mdが作成される
+- [ ] チャットバッファがworkspaceに正しく紐付く（`workspace_id`, `working_dir` frontmatter）
+- [ ] `/vibing-workspace-enter` で既存のactive workspaceに別チャットを紐付けられる
+- [ ] `/vibing-workspace-list` でactive/doneの一覧が正しく表示される
+- [ ] `/vibing-workspace-done` でworktreeが削除され、workspaceがdoneに移動する
+- [ ] メッセージ送信時に `--cwd` がworkspaceのworktreeパスとして伝播する
+- [ ] 既にworkspaceに紐付いたチャットでの再create/enterがエラーになる
 - [ ] エラーハンドリングが適切に機能する
-- [ ] パフォーマンスが許容範囲内
 
 ## 関連ファイル
 
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/presentation/chat/controller.lua` (handle_open_worktree)
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/application/chat/use_case.lua`
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/domain/chat/session.lua` (cwd管理)
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/application/chat/send_message.lua` (cwd伝播)
+- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/application/chat/handlers/workspace_create.lua`
+- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/application/chat/handlers/workspace_enter.lua`
+- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/application/chat/handlers/workspace_done.lua`
+- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/application/chat/handlers/workspace_list.lua`
+- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/infrastructure/workspace/manager.lua`
+- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/infrastructure/workspace/meta.lua`
+- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/infrastructure/workspace/chat_binding.lua`
