@@ -3,11 +3,11 @@
 ## 4.4.0 (2026-07-04)
 
 ## What's Changed
-* fix: fix plugin skill completion truncated at 65536 bytes by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/429
-* fix: fix plugin skill completion truncated at 65536 bytes by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/431
-* fix: allow Task management and subagent messaging tools internally by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/432
-* feat: package MCP server as a Claude Code plugin with skills and agents by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/433
 
+- fix: fix plugin skill completion truncated at 65536 bytes by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/429
+- fix: fix plugin skill completion truncated at 65536 bytes by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/431
+- fix: allow Task management and subagent messaging tools internally by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/432
+- feat: package MCP server as a Claude Code plugin with skills and agents by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/433
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v4.3.0...v4.4.0
 
