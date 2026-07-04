@@ -3,13 +3,19 @@
 local M = {}
 
 ---cwdがworktree内かどうかを判定
+---新方式（.vibing/workspace/{active,done}/<id>/worktree）と
+---旧方式（.worktrees/<branch>/）の両方を認識する
 ---@param cwd string|nil 作業ディレクトリ
 ---@return boolean worktree内の場合true
 local function is_worktree(cwd)
   if not cwd then
     return false
   end
-  return cwd:match("%.worktrees/") ~= nil
+  if cwd:match("%.worktrees/") ~= nil then
+    return true
+  end
+  return cwd:match("%.vibing/workspace/active/[^/]+/worktree") ~= nil
+    or cwd:match("%.vibing/workspace/done/[^/]+/worktree") ~= nil
 end
 
 ---デフォルトの.moteignoreルール

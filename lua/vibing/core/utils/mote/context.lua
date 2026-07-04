@@ -33,15 +33,27 @@ end
 ---同じworktree内の全セッションは同じmote contextを共有します。
 ---これにより、worktree内での作業履歴を一貫して追跡できます。
 ---
----衝突防止のため、元のブランチ名のハッシュをサフィックスとして追加します。
+---衝突防止のため、元のブランチ名（またはworkspace ID）のハッシュをサフィックスとして追加します。
 ---例: feature/task → vibing-worktree-feature-task-a1b2c3d4
 ---     feature-task → vibing-worktree-feature-task-e5f6g7h8
+---     .vibing/workspace/active/0001-feature-task/worktree → vibing-worktree-0001-feature-task-<hash>
 ---
 ---@param context_prefix string コンテキスト名のプレフィックス
 ---@param cwd? string 作業ディレクトリ（worktree判定用）
 ---@return string Worktree固有のコンテキスト名
 function M.build_name(context_prefix, cwd)
   if cwd then
+    -- 新方式: .vibing/workspace/{active,done}/<id>/worktree
+    -- workspace idは既にグローバルに一意なので、それ自体をコンテキストの識別子として使う
+    local workspace_id = cwd:match("%.vibing/workspace/active/([^/]+)/worktree")
+      or cwd:match("%.vibing/workspace/done/([^/]+)/worktree")
+    if workspace_id then
+      local worktree_name = sanitize_name(workspace_id)
+      local hash_suffix = generate_hash(workspace_id)
+      return string.format("%s-worktree-%s-%s", context_prefix, worktree_name, hash_suffix)
+    end
+
+    -- 旧方式: .worktrees/<branch>/
     local worktree_path = cwd:match("%.worktrees/(.+)")
     if worktree_path then
       local worktree_name = sanitize_name(worktree_path)
