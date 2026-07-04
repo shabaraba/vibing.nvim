@@ -32,7 +32,7 @@ describe("vibing.application.chat.init", function()
     it("should register all built-in commands", function()
       ChatInit.setup()
 
-      local expected_commands = { "context", "clear", "save", "summarize", "model", "help", "allow", "deny", "permission", "permissions", "perm", "new-session", "vibing-workspace-create", "vibing-workspace-enter" }
+      local expected_commands = { "context", "clear", "save", "summarize", "model", "help", "allow", "deny", "permission", "permissions", "perm", "new-session", "vibing-workspace-create", "vibing-workspace-enter", "vibing-workspace-done" }
 
       for _, cmd_name in ipairs(expected_commands) do
         assert.is_not_nil(Commands.commands[cmd_name], "Command '" .. cmd_name .. "' should be registered")
@@ -102,7 +102,7 @@ describe("vibing.application.chat.init", function()
         count = count + 1
       end
 
-      assert.equals(15, count)
+      assert.equals(16, count)
     end)
 
     it("should be idempotent (can be called multiple times)", function()
@@ -114,7 +114,7 @@ describe("vibing.application.chat.init", function()
         count = count + 1
       end
 
-      assert.equals(15, count)
+      assert.equals(16, count)
     end)
 
     it("should register commands with correct descriptions", function()
@@ -155,7 +155,7 @@ describe("vibing.application.chat.init", function()
 
       local list = Commands.list()
 
-      assert.equals(15, #list)
+      assert.equals(16, #list)
 
       -- Verify all command names are in the list
       local command_names = {}
