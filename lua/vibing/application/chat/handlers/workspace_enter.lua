@@ -17,10 +17,25 @@ local function bind_to_workspace(chat_buffer, workspace_id)
   chat_buffer:update_frontmatter("workspace_id", ws.id, false)
   if working_dir then
     chat_buffer:update_frontmatter("working_dir", working_dir, false)
+  else
+    notify.warn(
+      string.format(
+        "Could not determine working_dir for workspace %s. Please check the workspace directory manually: %s",
+        ws.id,
+        ws.worktree_path
+      ),
+      "Workspace"
+    )
   end
 
   if chat_buffer.file_path then
-    Meta.add_chat_file(ws.meta_path, Git.to_display_path(chat_buffer.file_path))
+    local ok, meta_err = Meta.add_chat_file(ws.meta_path, Git.to_display_path(chat_buffer.file_path))
+    if not ok then
+      notify.warn(
+        string.format("Failed to register chat file in workspace metadata: %s", tostring(meta_err)),
+        "Workspace"
+      )
+    end
   end
 
   notify.info(string.format("Entered workspace: %s", ws.id), "Workspace")
