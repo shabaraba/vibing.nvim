@@ -2,6 +2,10 @@
 ---メッセージ送信ユースケース
 local M = {}
 
+-- bufnrをキーに、セッション開始時のスナップショットIDを保持
+-- 並行セッション間でのmote差分混入を防ぐためのベースライン管理
+local session_snapshots = {}
+
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local GradientAnimation = require("vibing.ui.gradient_animation")
 
@@ -164,7 +168,7 @@ function M.execute(adapter, callbacks, message, config)
   -- mote統合が有効な場合は初期化とsnapshotを待ってから送信
   -- 無効な場合は即座に送信
   if mote_config then
-    M._ensure_mote_initialized_and_snapshot(mote_config, function()
+    M._ensure_mote_initialized_and_snapshot(mote_config, bufnr, function()
       vim.schedule(do_send)
     end)
   else
@@ -224,6 +228,13 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
 
   -- mote統合: mote_configが存在し、初期化済みの場合にModified Files出力とpatch生成
   local MoteDiff = require("vibing.core.utils.mote_diff")
+
+  -- セッション開始時のスナップショットIDをベースラインとして設定
+  -- これにより並行セッション間で差分が混入しない
+  if mote_config and session_snapshots[bufnr] then
+    mote_config.baseline_snapshot_id = session_snapshots[bufnr]
+  end
+
   local using_mote = mote_config ~= nil and MoteDiff.is_initialized(mote_config.project, mote_config.context)
 
   if using_mote then
@@ -315,8 +326,9 @@ local MOTE_INIT_TIMEOUT_MS = 10000
 ---mote storageの初期化を確認し、スナップショットを作成
 ---タイムアウト処理とエラーハンドリングを含む
 ---@param mote_config table セッション固有のmote設定
+---@param bufnr number|nil バッファ番号（スナップショットIDの保存先キー）
 ---@param on_complete fun() 完了時のコールバック
-function M._ensure_mote_initialized_and_snapshot(mote_config, on_complete)
+function M._ensure_mote_initialized_and_snapshot(mote_config, bufnr, on_complete)
   local MoteDiff = require("vibing.core.utils.mote_diff")
   if not MoteDiff.is_available() then
     on_complete()
@@ -346,9 +358,13 @@ function M._ensure_mote_initialized_and_snapshot(mote_config, on_complete)
   end)
 
   local function create_snapshot()
-    MoteDiff.create_snapshot(mote_config, "Before request", function(success, _, error)
+    MoteDiff.create_snapshot(mote_config, "Before request", function(success, snapshot_id, error)
       if not success and error and not error:match("No changes to snapshot") then
         vim.notify("[vibing] Snapshot creation failed: " .. error, vim.log.levels.WARN)
+      end
+      -- 新しいスナップショットが作成された場合のみ更新（--autoで変更なしの場合はnilのまま）
+      if snapshot_id and bufnr then
+        session_snapshots[bufnr] = snapshot_id
       end
       complete_once()
     end)
