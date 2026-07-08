@@ -52,9 +52,20 @@ function RipgrepCommand:find(directory, pattern)
 
   local result = vim.system(cmd, { text = true }):wait()
 
-  -- rg returns 1 when no matches found (not an error)
-  if result.code ~= 0 and result.code ~= 1 then
+  -- rg returns:
+  --   0: matches found
+  --   1: no matches found (not an error)
+  --   2: error occurred (e.g. permission denied), but may still have partial stdout results
+  if result.code ~= 0 and result.code ~= 1 and result.code ~= 2 then
     return {}, "rg command failed: " .. (result.stderr or "unknown error")
+  end
+
+  -- For exit code 2 (e.g. Permission denied), return partial results with a warning error
+  local partial_error = nil
+  if result.code == 2 and result.stderr and result.stderr ~= "" then
+    -- Extract first line of stderr for a concise warning message
+    local first_error = result.stderr:match("([^\n]+)") or result.stderr
+    partial_error = "rg command failed: " .. first_error
   end
 
   local files = {}
@@ -79,7 +90,7 @@ function RipgrepCommand:find(directory, pattern)
     end
   end
 
-  return files, nil
+  return files, partial_error
 end
 
 return RipgrepCommand

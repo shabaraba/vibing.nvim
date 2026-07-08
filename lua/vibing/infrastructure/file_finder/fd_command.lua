@@ -7,6 +7,18 @@ local Base = require("vibing.infrastructure.file_finder.base")
 local FdCommand = setmetatable({}, { __index = Base })
 FdCommand.__index = FdCommand
 
+---Detect fd executable name (fd or fdfind on Ubuntu/Debian)
+---@return string? executable name or nil if not found
+local function detect_fd_executable()
+  for _, name in ipairs({ "fd", "fdfind" }) do
+    local result = vim.system({ "which", name }, { text = true }):wait()
+    if result.code == 0 then
+      return name
+    end
+  end
+  return nil
+end
+
 ---Create a FdCommandFinder instance
 ---@param opts? {mtime_days?: number} Options for finder
 ---@return Vibing.Infrastructure.FdCommandFinder
@@ -14,14 +26,14 @@ function FdCommand:new(opts)
   local instance = setmetatable({}, self)
   instance.name = "fd_command"
   instance.mtime_days = opts and opts.mtime_days
+  instance.executable = detect_fd_executable()
   return instance
 end
 
 ---Check if fd command is available
 ---@return boolean
 function FdCommand:supports_platform()
-  local result = vim.system({ "which", "fd" }, { text = true }):wait()
-  return result.code == 0
+  return self.executable ~= nil
 end
 
 ---Extract extension from glob pattern (e.g., "*.md" -> "md")
@@ -44,6 +56,10 @@ function FdCommand:find(directory, pattern)
 
   local expanded_dir = vim.fn.expand(directory)
 
+  if not self.executable then
+    return {}, "fd command not available"
+  end
+
   -- Build fd command
   -- fd [OPTIONS] [pattern] [path]
   -- -t f: files only
@@ -52,7 +68,7 @@ function FdCommand:find(directory, pattern)
   -- --no-ignore: don't respect .gitignore (we want all chat files)
   -- --no-follow: don't follow symlinks (prevents circular reference)
   local cmd = {
-    "fd",
+    self.executable,
     "-t", "f",
     "-a",
     "-H",

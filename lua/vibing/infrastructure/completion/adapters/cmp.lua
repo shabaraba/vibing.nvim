@@ -8,6 +8,7 @@ local file_source = require("vibing.application.completion.sources.file")
 local agent_source = require("vibing.application.completion.sources.agent")
 local frontmatter_source = require("vibing.application.completion.sources.frontmatter")
 local chat_view = require("vibing.presentation.chat.view")
+local skills_provider = require("vibing.infrastructure.completion.providers.skills")
 
 ---@type table[]
 local sources = { frontmatter_source, slash_source, file_source, agent_source }
@@ -34,7 +35,7 @@ function M.create()
   end
 
   function source:get_keyword_pattern()
-    return [[\%(@\%(file\|agent\):\)\?\k*]]
+    return [[\%(@\%(file\|agent\):\)\?[[:keyword:]:-]*]]
   end
 
   ---@param params table
@@ -49,9 +50,12 @@ function M.create()
       if context then
         src.get_candidates(context, function(items)
           local cmp_items = M._to_cmp_items(items, context)
+          -- Always re-query for slash: our source does substring filtering,
+          -- but cmp's own client-side cache uses prefix matching only.
+          local is_incomplete = context.trigger == "slash"
           callback({
             items = cmp_items,
-            isIncomplete = false,
+            isIncomplete = is_incomplete,
           })
         end)
         return
@@ -99,12 +103,14 @@ function M._to_cmp_items(items, context)
     table.insert(cmp_items, {
       label = item.label,
       kind = to_cmp_kind(item.kind, cmp_kinds),
+      detail = item.detail,
+      labelDetails = item.detail and { description = item.detail } or nil,
       documentation = {
         kind = "markdown",
         value = item.description or "",
       },
       insertText = insert_text,
-      filterText = item.label,
+      filterText = item.filterText or item.word,
       sortText = item.word,
     })
   end

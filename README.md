@@ -10,8 +10,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Release](https://img.shields.io/github/v/release/shabaraba/vibing.nvim)](https://github.com/shabaraba/vibing.nvim/releases)
 
-A powerful Neovim plugin that seamlessly integrates **Claude AI** through the Agent SDK, bringing
-intelligent chat conversations and context-aware inline code actions directly into your editor.
+A powerful Neovim plugin that integrates **Claude** and **Codex** AI via CLI backends,
+bringing intelligent chat conversations and context-aware inline code actions directly into your editor.
 
 English | [日本語](./README.ja.md)
 
@@ -42,20 +42,31 @@ English | [日本語](./README.ja.md)
 
 vibing.nvim takes a fundamentally different approach to AI-assisted coding in Neovim.
 
-### Agent-First Architecture
+### CLI Adapter Architecture
 
-Unlike traditional chat-based AI plugins that send static context to an LLM, vibing.nvim gives Claude **direct access to your Neovim instance** through the Agent SDK and MCP integration.
+Unlike traditional chat-based AI plugins that send static context to an LLM, vibing.nvim gives AI
+**direct access to your Neovim instance** through CLI backends and MCP integration.
 
-This means Claude can:
+This means the AI can:
 
-- **Autonomously explore your codebase** - Navigate files, search symbols, and understand project structure without manual context setup
-- **Access real-time editor state** - Query LSP diagnostics, symbol definitions, and references on demand
+```markdown
+- **Autonomously explore your codebase** - Navigate files, search symbols, and understand
+  project structure without manual context setup
+- **Access real-time editor state** - Query LSP diagnostics, symbol definitions, and references
+  on demand
 - **Execute Neovim commands** - Perform editor operations as part of its workflow
-- **Maintain conversation continuity** - Resume sessions with full context preserved in `.vibing` files
+- **Maintain conversation continuity** - Resume sessions with full context preserved in
+  `.vibing` files
+```
 
-### Designed for Claude
+### Multi-Backend Support
 
-vibing.nvim is purpose-built for Claude, leveraging the official Agent SDK to provide the same capabilities as Claude Code CLI directly within Neovim. This focused approach enables deep integration that multi-provider plugins cannot achieve.
+vibing.nvim supports multiple AI CLI backends with a unified interface:
+
+- **Claude CLI** (`claude -p --stream-json`) - Full Claude Code capabilities within Neovim
+- **Codex CLI** (`codex exec --json`) - OpenAI Codex backend for alternative AI workflows
+
+Switch backends globally via `adapter` config or per-chat via the `agent` frontmatter field.
 
 ### Concurrent Sessions
 
@@ -141,17 +152,17 @@ Different AI coding plugins serve different needs. Here's how vibing.nvim fits i
 
 ### vibing.nvim is ideal if you:
 
-- Use Claude as your primary AI assistant
+- Use Claude or Codex as your AI assistant
 - Want the AI to autonomously navigate and understand your codebase
 - Need persistent, shareable conversation history
 - Prefer fine-grained permission controls
 - Want to work on multiple AI tasks concurrently
-- Want Claude Code CLI capabilities without leaving Neovim
+- Want Claude Code / Codex CLI capabilities without leaving Neovim
 
 ### Consider alternatives if you:
 
-- Need support for multiple LLM providers (OpenAI, Ollama, etc.)
-- Prefer minimal dependencies (vibing.nvim requires Node.js)
+- Need support for local/offline models (Ollama, etc.)
+- Prefer minimal dependencies (vibing.nvim requires Node.js for the MCP server)
 - Want a battle-tested plugin with large community (we're still growing!)
 
 ### Complementary Usage
@@ -163,6 +174,49 @@ vibing.nvim focuses on deep Claude integration. You might still use other tools 
 - Provider-agnostic workflows
 
 ## 📦 Installation
+
+### Prerequisites
+
+- **Neovim** 0.9+
+- **Node.js** 18+ (for the MCP server)
+- At least one AI CLI backend:
+  - **Claude CLI** (`claude`) — Install via `npm install -g @anthropic-ai/claude-code`
+  - **Codex CLI** (`codex`) — Install via `npm install -g @openai/codex`
+
+### Claude Code Plugin (MCP + Skills + Agents)
+
+vibing.nvim is also distributed as a [Claude Code plugin](https://code.claude.com/docs/en/plugins),
+which bundles the `vibing-nvim` MCP server together with Neovim-aware skills and a read-only
+navigation subagent — no manual `~/.claude.json` editing required.
+
+**Automatic:** if you install with `build = "./build.sh"` (see below) and have the `claude` CLI
+on your `PATH`, `build.sh` runs `claude plugin marketplace add` + `claude plugin install ... --scope
+user` for you on every build — nothing else to do.
+
+**Manual:** to install it yourself (e.g. without running `build.sh`, or on a different machine):
+
+```text
+/plugin marketplace add shabaraba/vibing.nvim
+/plugin install vibing-nvim@vibing-nvim
+```
+
+Either way, this registers the `vibing-nvim` MCP server (same tools as `mcp__vibing-nvim__*`
+described below), adds the `nvim-context` and `nvim-lsp-navigation` skills (teach Claude to read
+live buffer/window/cursor state and prefer LSP over grep when a Neovim instance is connected), and
+the `nvim-navigator` subagent (read-only code navigation via `@vibing-nvim:nvim-navigator`).
+
+The bundled MCP server builds itself (`npm install && npm run build`) on first launch, so no
+separate build step is needed for the MCP server itself — this is independent of the Neovim-side
+`build.sh`, which is still required to build the plugin's other native pieces (see below). You
+still need Neovim running with `mcp = { enabled = true }` (the default) for the MCP tools to have
+anything to connect to.
+
+**Uninstalling:**
+
+```text
+/plugin uninstall vibing-nvim@vibing-nvim
+/plugin marketplace remove vibing-nvim
+```
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 
@@ -177,10 +231,12 @@ vibing.nvim focuses on deep Claude integration. You might still use other tools 
   config = function()
     require("vibing").setup({
       -- Default configuration
+      adapter = "claude",  -- "claude" | "codex" (global default; overridable per-chat via frontmatter)
       chat = {
         window = {
-          position = "current",  -- "current" | "right" | "left" | "float"
+          position = "current",  -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
           width = 0.4,
+          height = 0.4,
           border = "rounded",
         },
         auto_context = true,
@@ -193,8 +249,8 @@ vibing.nvim focuses on deep Claude integration. You might still use other tools 
         prioritize_vibing_lsp = true,  -- Prioritize vibing-nvim LSP tools (default: true)
       },
       permissions = {
-        mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
-        allow = { "Read", "Edit", "Write", "Glob", "Grep" },
+        mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "auto"
+        allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill" },
         deny = { "Bash" },
         rules = {},  -- Optional granular permission rules
       },
@@ -223,26 +279,40 @@ use {
 
 ### User Commands
 
-| Command                               | Description                                                                       |
-| ------------------------------------- | --------------------------------------------------------------------------------- |
-| `:VibingChat [position\|file]`        | Create new chat with optional position (current\|right\|left) or open saved file  |
-| `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                       |
-| `:VibingSlashCommands`                | Show slash command picker in chat                                                 |
-| `:VibingContext [path]`               | Add file to context (or from oil.nvim if no path)                                 |
-| `:VibingClearContext`                 | Clear all context                                                                 |
-| `:VibingInline [action\|instruction]` | Rich UI picker (no args) or direct execution (with args). Tab completion enabled. |
-| `:VibingInlineAction`                 | Alias of `:VibingInline` (for backward compatibility)                             |
-| `:VibingCancel`                       | Cancel current request                                                            |
-| `:VibingCopyUnsentUserHeader`         | Copy `## User <!-- unsent -->` to clipboard                                       |
+| Command                                   | Description                                                                                         |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `:VibingChat [position\|file]`            | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file |
+| `:VibingChatWorktree [position] <branch>` | Create git worktree and open chat in it (position: right\|left\|top\|bottom\|back\|current)         |
+| `:VibingToggleChat`                       | Toggle existing chat window (preserve current conversation)                                         |
+| `:VibingChatFork [position]`              | Fork current chat (create branch from current conversation)                                         |
+| `:VibingSlashCommands`                    | Show slash command picker in chat                                                                   |
+| `:VibingSetFileTitle`                     | Generate AI title and rename chat file                                                              |
+| `:VibingSummarize`                        | Generate AI summary of chat history and insert into buffer                                          |
+| `:VibingDeleteChats [--unrenamed]`        | Delete chat files (use --unrenamed to delete all unrenamed files)                                   |
+| `:VibingContext [path]`                   | Add file to context (or from oil.nvim if no path)                                                   |
+| `:VibingClearContext`                     | Clear all context                                                                                   |
+| `:VibingInline [action\|instruction]`     | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |
+| `:VibingCancel`                           | Cancel current request                                                                              |
+| `:VibingReloadCommands`                   | Reload custom slash commands                                                                        |
+| `:VibingCopyUnsentUserHeader`             | Copy `## User <!-- unsent -->` to clipboard                                                         |
+| `:VibingDailySummary [YYYY-MM-DD]`        | Generate daily summary from project chat files (default: today)                                     |
+| `:VibingDailySummaryAll [YYYY-MM-DD]`     | Generate daily summary from all chat files (default: today)                                         |
 
 **Command Semantics:**
 
-- **`:VibingChat`** - Always creates a fresh chat window. Optionally specify position (`current`, `right`, `left`) to control window placement.
+- **`:VibingChat`** - Always creates a fresh chat window. Optionally specify position to control window placement.
   - `:VibingChat` - New chat using default position from config
   - `:VibingChat current` - New chat in current window
   - `:VibingChat right` - New chat in right split
   - `:VibingChat left` - New chat in left split
-  - `:VibingChat path/to/file.vibing` - Open saved chat file
+  - `:VibingChat top` - New chat in top split
+  - `:VibingChat bottom` - New chat in bottom split
+  - `:VibingChat back` - New chat as background buffer only (no window)
+  - `:VibingChat path/to/file.md` - Open saved chat file
+- **`:VibingChatWorktree`** - Create or reuse a git worktree and open a chat session in it.
+  - `:VibingChatWorktree feature-branch` - Create worktree and open chat
+  - `:VibingChatWorktree right feature-branch` - Same, but open in right split
+- **`:VibingChatFork`** - Fork current chat conversation for branching in a different direction.
 - **`:VibingToggleChat`** - Use to show/hide your current conversation. Preserves the existing chat state.
 
 ### Inline Actions
@@ -340,17 +410,20 @@ Chat mode (2 panels):
 
 ### Slash Commands (in Chat)
 
-| Command                   | Description                                                      |
-| ------------------------- | ---------------------------------------------------------------- |
-| `/context <file>`         | Add file to context                                              |
-| `/clear`                  | Clear context                                                    |
-| `/save`                   | Save current chat                                                |
-| `/summarize`              | Summarize conversation                                           |
-| `/mode <mode>`            | Set execution mode (auto/plan/code/explore)                      |
-| `/model <model>`          | Set AI model (opus/sonnet/haiku)                                 |
-| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules |
-| `/allow [tool]`           | Add tool to allow list, or show current list if no args          |
-| `/deny [tool]`            | Add tool to deny list, or show current list if no args           |
+| Command                   | Description                                                              |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `/context <file>`         | Add file to context                                                      |
+| `/clear`                  | Clear context                                                            |
+| `/save`                   | Save current chat                                                        |
+| `/summarize`              | Summarize conversation                                                   |
+| `/model <model>`          | Set AI model (opus/sonnet/haiku)                                         |
+| `/help`                   | Show available slash commands                                            |
+| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules         |
+| `/allow [tool]`           | Add tool to allow list, or show current list if no args                  |
+| `/deny [tool]`            | Add tool to deny list, or show current list if no args                   |
+| `/ask [tool]`             | Ask before using tool, or show current list if no args                   |
+| `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk) |
+| `/new-session`            | Reset session and start fresh                                            |
 
 ### Chat Keybindings
 
@@ -598,9 +671,20 @@ require("vibing").setup({
 
 Complete reference of all configuration options:
 
+### Adapter Settings
+
+Select the AI CLI backend:
+
+```lua
+adapter = "claude",  -- Global backend adapter
+                     -- "claude": Use Claude CLI (claude -p --stream-json)
+                     -- "codex":  Use Codex CLI  (codex exec --json)
+                     -- Can be overridden per-chat via "agent" frontmatter field
+```
+
 ### Agent Settings
 
-Controls Claude Agent SDK behavior:
+Controls AI agent behavior:
 
 ```lua
 agent = {
@@ -609,7 +693,7 @@ agent = {
                             -- "plan": Plan first, then implement
                             -- "explore": Explore and analyze codebase
 
-  default_model = "sonnet", -- Default Claude model
+  default_model = "sonnet", -- Default model
                             -- "sonnet": Balanced (recommended)
                             -- "opus": Most capable
                             -- "haiku": Fastest
@@ -632,9 +716,13 @@ chat = {
                           -- "current": Open in current window
                           -- "right": Right vertical split
                           -- "left": Left vertical split
+                          -- "top": Top horizontal split
+                          -- "bottom": Bottom horizontal split
+                          -- "back": Background buffer only (no window)
                           -- "float": Floating window
 
     width = 0.4,          -- Window width (0-1: ratio, >1: absolute columns)
+    height = 0.4,         -- Window height (0-1: ratio, >1: absolute rows, for top/bottom)
     border = "rounded",   -- Border style: "rounded" | "single" | "double" | "none"
   },
 
@@ -664,6 +752,9 @@ permissions = {
                         -- "default": Ask for confirmation each time
                         -- "acceptEdits": Auto-approve Edit/Write (recommended)
                         -- "bypassPermissions": Auto-approve all (use with caution)
+                        -- "plan": Read-only planning mode (no tool execution)
+                        -- "dontAsk": Deny instead of prompting
+                        -- "auto": Automatic selection
 
   allow = {              -- Tools to allow (empty = allow all except denied)
     "Read",              -- Read files
@@ -671,6 +762,7 @@ permissions = {
     "Write",             -- Create new files
     "Glob",              -- Search files by pattern
     "Grep",              -- Search file contents
+    "Skill",             -- Use skills (slash commands and workflows)
     -- "Bash",           -- Execute shell commands (security risk)
     -- "WebSearch",      -- Search the web
     -- "WebFetch",       -- Fetch web pages
@@ -679,6 +771,8 @@ permissions = {
   deny = {               -- Tools to deny (takes precedence over allow)
     "Bash",              -- Block shell commands by default
   },
+
+  ask = {},              -- Tools requiring confirmation before use
 
   rules = {},            -- Advanced: Granular permission rules
                         -- See Granular Permission Rules section
@@ -765,11 +859,13 @@ ui = {
 
 ### MCP (Model Context Protocol)
 
-Enable Claude to directly control Neovim:
+Enable Claude to directly control Neovim. The easiest way to register the MCP server (plus
+bundled skills/agents) is the [Claude Code plugin](#claude-code-plugin-mcp--skills--agents)
+described above; the settings below are for manual/advanced configuration.
 
 ```lua
 mcp = {
-  enabled = false,               -- Enable MCP integration
+  enabled = true,                -- Enable MCP integration
   rpc_port = 9876,              -- RPC server port
   auto_setup = false,           -- Auto-build MCP server on plugin install
   auto_configure_claude_json = false,  -- Auto-configure ~/.claude.json
@@ -814,7 +910,7 @@ This allows Claude Code CLI to control your Neovim instance (read/write buffers,
 
 ### Node.js Executable
 
-Configure which Node.js executable to use:
+Configure the Node.js executable used for the MCP server and internal scripts:
 
 ```lua
 node = {
@@ -823,6 +919,10 @@ node = {
                         -- "/usr/bin/node": Explicit path to node binary
                         -- "/usr/local/bin/bun": Use bun instead of node
                         -- Can also be set via VIBING_NODE_EXECUTABLE env var
+
+  dev_mode = false,     -- Development mode for plugin development
+                        -- true: Run TypeScript scripts directly with bun (no build step)
+                        -- false: Use compiled JS from dist/ (default)
 }
 ```
 
@@ -850,7 +950,7 @@ Or in your Lazy.nvim config:
   config = function()
     require("vibing").setup({
       node = {
-        executable = "/usr/local/bin/bun",  -- Runtime executable
+        executable = "/usr/local/bin/bun",
       },
     })
   end,
@@ -932,11 +1032,11 @@ Chats are saved as Markdown with YAML frontmatter for session resumption and con
 ```yaml
 ---
 vibing.nvim: true
-session_id: <sdk-session-id>
+session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
-mode: code  # auto | plan | code | explore
+agent: claude  # claude | codex (overrides global adapter setting for this chat)
 model: sonnet  # sonnet | opus | haiku
-permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions
+permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk
 permissions_allow:
   - Read
   - Edit
@@ -982,36 +1082,41 @@ graph TB
         Plugin -->|uses| RPC
     end
 
-    subgraph Backend["Node.js Backend"]
-        SDK["Claude Agent SDK<br/>- Tool execution<br/>- Session management<br/>- Streaming response"]
-        MCP["MCP Server<br/>- Buffer operations<br/>- LSP queries<br/>- Command execution<br/>- File system access"]
-
-        SDK -->|controls via| MCP
+    subgraph MCP["Node.js MCP Server"]
+        MCPServer["MCP Server<br/>- Buffer operations<br/>- LSP queries<br/>- Command execution<br/>- File system access"]
     end
 
-    RPC <-->|JSON-RPC| MCP
-    Plugin -->|spawns & communicates<br/>JSON Lines| SDK
+    subgraph AI["AI CLI Backends"]
+        Claude["Claude CLI<br/>(claude -p --stream-json)"]
+        Codex["Codex CLI<br/>(codex exec --json)"]
+    end
+
+    RPC <-->|JSON-RPC| MCPServer
+    Plugin -->|spawns & communicates<br/>JSON Lines| Claude
+    Plugin -->|spawns & communicates<br/>JSON Lines| Codex
 
     style Neovim fill:#e1f5ff
-    style Backend fill:#fff4e1
+    style MCP fill:#fff4e1
+    style AI fill:#e8f5e9
     style Plugin fill:#bbdefb
-    style SDK fill:#ffe0b2
+    style Claude fill:#ffe0b2
+    style Codex fill:#c8e6c9
 ```
 
 ### How It Differs from Traditional Approaches
 
-| Aspect         | Traditional REST API | vibing.nvim (Agent SDK)  |
-| -------------- | -------------------- | ------------------------ |
-| Context        | Manually assembled   | Agent requests on-demand |
-| Editor Access  | None (fire & forget) | Full bidirectional MCP   |
-| Session State  | Plugin manages       | SDK with resume support  |
-| Tool Execution | Plugin implements    | SDK standard tools       |
-| Capabilities   | Limited to plugin    | Extensible via MCP       |
+| Aspect         | Traditional REST API | vibing.nvim (CLI Adapters)    |
+| -------------- | -------------------- | ----------------------------- |
+| Context        | Manually assembled   | MCP: agent requests on-demand |
+| Editor Access  | None (fire & forget) | Full bidirectional MCP        |
+| Session State  | Plugin manages       | CLI session with resume       |
+| Tool Execution | Plugin implements    | CLI native tools              |
+| Capabilities   | Limited to plugin    | Extensible via MCP            |
 
 **Key Components:**
 
-- **Agent SDK Integration** - Node.js wrapper communicating via JSON Lines
-- **MCP Server** - Provides Claude with direct Neovim control
+- **CLI Adapters** - Direct execution of `claude` / `codex` CLI communicating via JSON Lines
+- **MCP Server** - Provides AI with direct Neovim control (buffers, LSP, commands)
 - **Context System** - Automatic and manual file context management
 - **Session Persistence** - Resume conversations with full history
 
@@ -1054,38 +1159,31 @@ Contributions are welcome! Please feel free to submit issues or pull requests.
 
 ## ❓ FAQ
 
-### Why Claude only? Why not support other providers?
+### Which AI backends are supported?
 
-vibing.nvim uses the Claude Agent SDK, which provides capabilities beyond simple chat:
+vibing.nvim currently supports:
 
-- Built-in tool execution framework
-- Session persistence and resume
-- MCP integration for editor control
+- **Claude CLI** (`claude -p --stream-json`) — Full Claude Code capabilities
+- **Codex CLI** (`codex exec --json`) — OpenAI Codex backend
 
-These features are specific to Claude's architecture. Supporting other providers would mean either:
-
-- Losing these capabilities, or
-- Reimplementing them from scratch
-
-We chose depth over breadth.
+Switch backends globally with `adapter = "claude"|"codex"` in setup, or per-chat by adding
+`agent: claude` or `agent: codex` to a chat file's YAML frontmatter.
 
 ### Why does it require Node.js?
 
-The Claude Agent SDK is a TypeScript/JavaScript library. While we could potentially create Lua bindings, using Node.js directly ensures:
-
-- Full SDK compatibility
-- Immediate access to new SDK features
-- Reliable MCP server implementation
+Node.js is required for the MCP server, which provides AI with direct access to your running
+Neovim instance (buffer reads/writes, LSP queries, command execution). The AI CLI binaries
+themselves (`claude`, `codex`) are separate installs.
 
 ### How does it compare to Claude Code CLI?
 
 vibing.nvim provides similar capabilities to Claude Code CLI but integrated into Neovim:
 
-- Same Agent SDK underneath
-- Same tool execution model
+- Same `claude` CLI underneath
 - MCP for editor control (CLI controls terminal, vibing controls Neovim)
+- Additional Codex backend option for OpenAI workflows
 
-Think of it as "Claude Code for Neovim users."
+Think of it as "Claude Code (or Codex) for Neovim users."
 
 ### Can I use vibing.nvim alongside other AI plugins?
 
@@ -1098,7 +1196,7 @@ MIT License - see LICENSE file for details
 ## 🔗 Links
 
 - [Claude AI](https://claude.ai)
-- [Claude Agent SDK](https://github.com/anthropics/anthropic-sdk-typescript)
+- [Codex CLI](https://github.com/openai/codex)
 - [GitHub Repository](https://github.com/shabaraba/vibing.nvim)
 
 ---

@@ -29,12 +29,6 @@ function M.setup()
   })
 
   commands.register({
-    name = "mode",
-    handler = require("vibing.application.chat.handlers.mode"),
-    description = "Set execution mode: /mode <auto|plan|code>",
-  })
-
-  commands.register({
     name = "model",
     handler = require("vibing.application.chat.handlers.model"),
     description = "Set AI model: /model <opus|sonnet|haiku>",
@@ -67,7 +61,7 @@ function M.setup()
   commands.register({
     name = "permission",
     handler = require("vibing.application.chat.handlers.permission"),
-    description = "Set permission mode: /permission <default|acceptEdits|bypassPermissions>",
+    description = "Set permission mode: /permission <default|acceptEdits|bypassPermissions|plan|dontAsk>",
   })
 
   commands.register({

@@ -53,6 +53,17 @@ function M.build_name(context_prefix, cwd)
   return string.format("%s-root", context_prefix)
 end
 
+---任意のディレクトリパスからユニークなコンテキスト名を生成
+---VibingMoteDirで指定されたパスに対して使用する
+---@param context_prefix string コンテキスト名のプレフィックス
+---@param abs_path string 絶対パス
+---@return string コンテキスト名
+function M.build_name_from_path(context_prefix, abs_path)
+  local path_tail = sanitize_name(abs_path:match(".+/([^/]+)$") or abs_path)
+  local hash_suffix = generate_hash(abs_path)
+  return string.format("%s-dir-%s-%s", context_prefix, path_tail, hash_suffix)
+end
+
 ---gitリポジトリ名からプロジェクト名を取得
 ---moteのコンテキスト命名ルールに従ってサニタイズ
 ---@return string|nil プロジェクト名（取得できない場合nil）

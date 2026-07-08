@@ -14,6 +14,7 @@ M.VALID_TOOLS = {
   "WebSearch",
   "WebFetch",
   "Skill",
+  "StructuredOutput",
 }
 
 ---有効なツール名のテーブル（高速検索用）
@@ -21,6 +22,21 @@ M.VALID_TOOLS = {
 M.VALID_TOOLS_MAP = {}
 for _, tool in ipairs(M.VALID_TOOLS) do
   M.VALID_TOOLS_MAP[tool] = true
+end
+
+---permissions_allowの設定に関わらず、askやdenyに明示的に入っていなければ常に許可されるツール
+---@type string[]
+M.ALWAYS_ALLOWED_TOOLS = {
+  "Read",
+  "Skill",
+  "StructuredOutput",
+}
+
+---ALWAYS_ALLOWED_TOOLSの高速検索用マップ
+---@type table<string, boolean>
+M.ALWAYS_ALLOWED_TOOLS_MAP = {}
+for _, tool in ipairs(M.ALWAYS_ALLOWED_TOOLS) do
+  M.ALWAYS_ALLOWED_TOOLS_MAP[tool] = true
 end
 
 ---ツール名が有効かチェックし、正規化された名前を返す

@@ -2,6 +2,8 @@ local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 
 local M = {}
 
+local FRONTMATTER_SCAN_LINES = 100
+
 ---フロントマターをパース
 ---@param buf number バッファ番号
 ---@return table<string, string|string[]|number|boolean>
@@ -10,7 +12,7 @@ function M.parse(buf)
     return {}
   end
 
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 50, false)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, FRONTMATTER_SCAN_LINES, false)
   local content = table.concat(lines, "\n")
   local parsed = Frontmatter.parse(content)
 
@@ -57,7 +59,7 @@ function M.update_field(buf, key, value, update_timestamp)
     return str:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
   end
 
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 20, false)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, FRONTMATTER_SCAN_LINES, false)
   local frontmatter_end = 0
   local key_line = nil
   local escaped_key = escape_pattern(key)
@@ -115,7 +117,7 @@ function M.update_list(buf, key, value, action)
     return false
   end
 
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 50, false)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, FRONTMATTER_SCAN_LINES, false)
 
   local frontmatter_end = 0
   local key_start = nil

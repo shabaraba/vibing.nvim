@@ -80,17 +80,55 @@ npm run build --silent
 if [ -f "dist/index.js" ]; then
     echo "[vibing.nvim] ✓ MCP server built successfully"
 
-    # Register MCP server in ~/.claude.json
+    # Register vibing-nvim with Claude Code: prefer installing it as a proper
+    # Claude Code plugin (user scope) — this registers the MCP server *and*
+    # the bundled skills/agents in one step. Fall back to a raw ~/.claude.json
+    # mcpServers edit (MCP server only) if the `claude` CLI or its plugin
+    # subcommand isn't available.
     cd "$SCRIPT_DIR"
-    echo "[vibing.nvim] Registering MCP server in ~/.claude.json..."
-    if "$NODE_EXECUTABLE" dist/bin/register-mcp.js; then
-        exit 0
+    register_mcp_json_fallback() {
+        echo "[vibing.nvim] Registering MCP server in ~/.claude.json..."
+        if "$NODE_EXECUTABLE" dist/bin/register-mcp.js; then
+            echo "[vibing.nvim] ✓ Registered vibing-nvim MCP server in ~/.claude.json"
+        else
+            echo "[vibing.nvim] ⚠ Warning: MCP server is built but registration failed"
+            echo "[vibing.nvim] You can manually register by running: $NODE_EXECUTABLE dist/bin/register-mcp.js"
+        fi
+    }
+
+    if command -v claude &> /dev/null; then
+        echo "[vibing.nvim] Installing vibing-nvim as a Claude Code plugin (user scope)..."
+        # Capture output instead of streaming it directly so it can be printed
+        # below only on failure, keeping successful (repeat) runs quiet.
+        MARKETPLACE_ADD_OUTPUT="$(claude plugin marketplace add "$SCRIPT_DIR" 2>&1)"
+        MARKETPLACE_ADD_STATUS=$?
+        if [ $MARKETPLACE_ADD_STATUS -eq 0 ] && claude plugin install vibing-nvim@vibing-nvim --scope user; then
+            echo "[vibing.nvim] ✓ Installed vibing-nvim Claude Code plugin (scope: user)"
+        else
+            echo "[vibing.nvim] ⚠ Warning: 'claude plugin install' failed, falling back to manual registration"
+            if [ $MARKETPLACE_ADD_STATUS -ne 0 ]; then
+                echo "$MARKETPLACE_ADD_OUTPUT"
+            fi
+            register_mcp_json_fallback
+        fi
     else
-        echo "[vibing.nvim] ⚠ Warning: MCP server is built but registration failed"
-        echo "[vibing.nvim] You can manually register by running: $NODE_EXECUTABLE dist/bin/register-mcp.js"
-        # Build succeeded but registration failed - still exit 0 since MCP server is functional
-        exit 0
+        echo "[vibing.nvim] 'claude' CLI not found; falling back to manual registration"
+        register_mcp_json_fallback
     fi
+
+    # Register MCP server with codex (if available)
+    MCP_SERVER_PATH="${MCP_DIR}/dist/index.js"
+    if command -v codex &> /dev/null; then
+        echo "[vibing.nvim] Registering MCP server with codex..."
+        if VIBING_RPC_PORT="${VIBING_RPC_PORT:-9876}" codex mcp add vibing-nvim -- "$NODE_EXECUTABLE" "$MCP_SERVER_PATH" 2>/dev/null; then
+            echo "[vibing.nvim] ✓ Registered vibing-nvim MCP server with codex"
+        else
+            echo "[vibing.nvim] ⚠ Warning: codex MCP registration failed"
+            echo "[vibing.nvim] You can manually register by running: codex mcp add vibing-nvim -- $NODE_EXECUTABLE $MCP_SERVER_PATH"
+        fi
+    fi
+
+    exit 0
 else
     echo "[vibing.nvim] ✗ Build failed: dist/index.js not found"
     exit 1

@@ -30,10 +30,12 @@ export interface PluginReference {
  * This matches the structure in installed_plugins.json.
  */
 interface InstalledPlugin {
-  /** Installation scope: 'user' or 'project' */
+  /** Installation scope: 'user', 'project', or 'local' */
   scope: string;
   /** Absolute path to the plugin installation directory */
   installPath: string;
+  /** For local-scope installs: the project directory this plugin was installed for */
+  projectPath?: string;
   /** Plugin version string */
   version: string;
   /** ISO timestamp of initial installation */
@@ -104,6 +106,60 @@ async function pathExists(path: string): Promise<boolean> {
  * query({ prompt: '...', options: { plugins } });
  * ```
  */
+/**
+ * Read enabled plugin IDs from a single settings.json file.
+ */
+async function readEnabledPluginsFromFile(settingsFile: string): Promise<Record<string, boolean>> {
+  try {
+    const content = await readFile(settingsFile, 'utf8');
+    const settings = JSON.parse(content) as { enabledPlugins?: Record<string, boolean> };
+    if (settings.enabledPlugins && typeof settings.enabledPlugins === 'object') {
+      return settings.enabledPlugins;
+    }
+  } catch {
+    // File missing or invalid JSON — ignore
+  }
+  return {};
+}
+
+/**
+ * Read the merged set of enabled plugin IDs from both user (~/.claude/settings.json)
+ * and project (.claude/settings.json) settings files.
+ * Returns null if neither file has enabledPlugins (meaning no filtering should apply).
+ */
+async function loadEnabledPluginIds(): Promise<Set<string> | null> {
+  const userSettingsFile = join(homedir(), '.claude', 'settings.json');
+  const projectSettingsFile = join(process.cwd(), '.claude', 'settings.json');
+  const localSettingsFile = join(process.cwd(), '.claude', 'settings.local.json');
+
+  const [userEnabled, projectEnabled, localEnabled] = await Promise.all([
+    readEnabledPluginsFromFile(userSettingsFile),
+    readEnabledPluginsFromFile(projectSettingsFile),
+    readEnabledPluginsFromFile(localSettingsFile),
+  ]);
+
+  const merged = { ...userEnabled, ...projectEnabled, ...localEnabled };
+  if (Object.keys(merged).length === 0) {
+    debugLog(
+      'No enabledPlugins found in user, project, or local settings, loading all installed plugins'
+    );
+    return null;
+  }
+
+  const enabled = new Set(
+    Object.entries(merged)
+      .filter(([, v]) => v === true)
+      .map(([k]) => k)
+  );
+  if (enabled.size === 0) {
+    // Only false entries present — no allowlist to apply, load all plugins
+    debugLog('enabledPlugins has no positively-enabled entries; loading all installed plugins');
+    return null;
+  }
+  debugLog(`Enabled plugins (user+project+local): ${[...enabled].join(', ')}`);
+  return enabled;
+}
+
 export async function loadInstalledPlugins(): Promise<PluginReference[]> {
   const pluginsFile = join(homedir(), '.claude', 'plugins', 'installed_plugins.json');
 
@@ -130,12 +186,25 @@ export async function loadInstalledPlugins(): Promise<PluginReference[]> {
     return [];
   }
 
-  // Collect all installation paths
+  // Only load local-scope plugins explicitly.
+  // User-scope plugins are auto-discovered by the Agent SDK via settingSources,
+  // so passing them here is unnecessary. Local-scope plugins are project-specific:
+  // include only if projectPath matches the current working directory.
+  const currentProjectPath = process.cwd();
   const allInstallations: InstalledPlugin[] = [];
-  for (const installations of Object.values(installed.plugins)) {
-    if (Array.isArray(installations)) {
-      allInstallations.push(...installations);
+  for (const [pluginId, installations] of Object.entries(installed.plugins)) {
+    if (!Array.isArray(installations) || installations.length === 0) continue;
+
+    const localInstall = installations.find(
+      (inst) => inst.scope === 'local' && inst.projectPath === currentProjectPath
+    );
+
+    if (!localInstall) {
+      debugLog(`Skipping plugin (no local install for current project): ${pluginId}`);
+      continue;
     }
+
+    allInstallations.push(localInstall);
   }
 
   debugLog(`Found ${allInstallations.length} plugin installations`);

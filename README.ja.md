@@ -165,6 +165,42 @@ vibing.nvimは深いClaude統合に焦点を当てています。以下の用途
 
 ## 📦 インストール
 
+### Claude Codeプラグイン（MCP + スキル + エージェント）
+
+vibing.nvimは[Claude Codeプラグイン](https://code.claude.com/docs/en/plugins)としても配布されています。
+`vibing-nvim` MCPサーバーに加えて、Neovim対応のスキルと読み取り専用のナビゲーション用サブエージェントを
+まとめてバンドルしており、`~/.claude.json`を手動編集する必要はありません。
+
+**自動インストール：** `build = "./build.sh"`（後述）でインストールしていて、`claude` CLIが
+`PATH`上にある場合、`build.sh`がビルドの度に`claude plugin marketplace add` +
+`claude plugin install ... --scope user`を自動実行します。他に何もする必要はありません。
+
+**手動インストール：** 自分でインストールする場合（`build.sh`を実行しない場合や、別のマシンで
+インストールする場合など）：
+
+```text
+/plugin marketplace add shabaraba/vibing.nvim
+/plugin install vibing-nvim@vibing-nvim
+```
+
+いずれの方法でも、`vibing-nvim` MCPサーバー（下記で説明する`mcp__vibing-nvim__*`と同じツール群）に
+加えて、`nvim-context`・`nvim-lsp-navigation` スキル（Neovimインスタンスに接続されている場合、grepよりも
+ライブなバッファ/ウィンドウ/カーソル状態の読み取りとLSPナビゲーションを優先させる）、`nvim-navigator`
+サブエージェント（`@vibing-nvim:nvim-navigator`で読み取り専用のコードナビゲーションを実行）が
+インストールされます。
+
+バンドルされたMCPサーバーは初回起動時に自身をビルド（`npm install && npm run build`）するため、
+MCPサーバー自体に別途ビルド手順は不要です。これはNeovim側の`build.sh`（後述、プラグインの他のネイティブ
+部分のビルドに引き続き必要）とは独立しています。MCPツールが接続する対象として、`mcp = { enabled = true }`（デフォルト）で
+Neovimを起動しておく必要はあります。
+
+**アンインストール：**
+
+```text
+/plugin uninstall vibing-nvim@vibing-nvim
+/plugin marketplace remove vibing-nvim
+```
+
 ### [lazy.nvim](https://github.com/folke/lazy.nvim)を使用
 
 ```lua
@@ -339,17 +375,17 @@ use {
 
 ### スラッシュコマンド（チャット内）
 
-| コマンド                      | 説明                                                           |
-| ----------------------------- | -------------------------------------------------------------- |
-| `/context <file>`             | コンテキストにファイルを追加                                   |
-| `/clear`                      | コンテキストをクリア                                           |
-| `/save`                       | 現在のチャットを保存                                           |
-| `/summarize`                  | 会話を要約                                                     |
-| `/mode <mode>`                | 実行モードを設定（auto/plan/code/explore）                     |
-| `/model <model>`              | AIモデルを設定（opus/sonnet/haiku）                            |
-| `/permissions` または `/perm` | インタラクティブな権限ビルダー - ツールの許可/拒否ルールを設定 |
-| `/allow [tool]`               | 許可リストにツールを追加、引数なしで現在のリストを表示         |
-| `/deny [tool]`                | 拒否リストにツールを追加、引数なしで現在のリストを表示         |
+| コマンド                      | 説明                                                                   |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| `/context <file>`             | コンテキストにファイルを追加                                           |
+| `/clear`                      | コンテキストをクリア                                                   |
+| `/save`                       | 現在のチャットを保存                                                   |
+| `/summarize`                  | 会話を要約                                                             |
+| `/model <model>`              | AIモデルを設定（opus/sonnet/haiku）                                    |
+| `/permissions` または `/perm` | インタラクティブな権限ビルダー - ツールの許可/拒否ルールを設定         |
+| `/allow [tool]`               | 許可リストにツールを追加、引数なしで現在のリストを表示                 |
+| `/deny [tool]`                | 拒否リストにツールを追加、引数なしで現在のリストを表示                 |
+| `/permission [mode]`          | 権限モードを設定（default/acceptEdits/bypassPermissions/plan/dontAsk） |
 
 ### チャットキーバインディング
 
@@ -578,6 +614,8 @@ permissions = {
                         -- "default": 毎回確認を求める
                         -- "acceptEdits": Edit/Writeを自動承認（推奨）
                         -- "bypassPermissions": すべてを自動承認（慎重に使用）
+                        -- "plan": 読み取り専用の計画モード（ツール実行なし）
+                        -- "dontAsk": プロンプトの代わりに拒否
 
   allow = {              -- 許可するツール（空 = 拒否されたもの以外すべて許可）
     "Read",              -- ファイルを読む
@@ -739,9 +777,8 @@ remote = {
 vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
-mode: code  # auto | plan | code | explore
 model: sonnet  # sonnet | opus | haiku
-permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions
+permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk
 permissions_allow:
   - Read
   - Edit

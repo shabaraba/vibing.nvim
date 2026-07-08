@@ -5,6 +5,7 @@
 local M = {}
 
 local filename_util = require("vibing.core.utils.filename")
+local language_utils = require("vibing.core.utils.language")
 
 ---会話履歴からAIにタイトルを生成させる
 ---Claudeに会話全体を送信し、簡潔なファイル名用タイトルを生成
@@ -31,10 +32,15 @@ function M.generate_from_conversation(conversation, callback)
     table.insert(conversation_text, string.format("[%s]: %s", msg.role, msg.content))
   end
 
+  local lang_code = language_utils.get_language_code(config.language, "chat")
+  local lang_name = lang_code and language_utils.language_names[lang_code]
+  local lang_instruction = lang_name and ("Generate the title in " .. lang_name .. ". ") or ""
+
   local prompt = table.concat(conversation_text, "\n\n")
     .. "\n\n"
     .. "Based on the above conversation, generate a concise title (maximum 30 characters) that summarizes the main topic. "
-    .. "The title should be suitable for a filename - use only alphanumeric characters, spaces, and hyphens. "
+    .. lang_instruction
+    .. "The title should be suitable for a filename. "
     .. "Respond with ONLY the title, nothing else."
 
   local collected_response = ""

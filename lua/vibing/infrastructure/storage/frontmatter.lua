@@ -133,7 +133,7 @@ local function get_sorted_keys(tbl)
     created_at = 3,
     forked_from = 4,
     working_dir = 5,
-    mode = 6,
+    agent = 6,
     model = 7,
     permissions_mode = 8,
     permissions_allow = 9,
@@ -222,8 +222,24 @@ function M.is_vibing_chat_file(file_path)
     return false
   end
 
-  local content = table.concat(vim.fn.readfile(file_path), "\n")
-  return M.is_vibing_chat(content)
+  -- Scan lines until frontmatter close to handle any frontmatter length
+  local MAX_FRONTMATTER_LINES = 200
+  local lines = vim.fn.readfile(file_path, "", MAX_FRONTMATTER_LINES)
+  if #lines < 2 or trim(lines[1]) ~= FRONTMATTER_START then
+    return false
+  end
+
+  local found_vibing = false
+  for i = 2, #lines do
+    if trim(lines[i]) == FRONTMATTER_END then
+      return found_vibing
+    end
+    if lines[i]:match("^vibing%.nvim:%s*true") then
+      found_vibing = true
+    end
+  end
+
+  return false
 end
 
 ---バッファの内容がvibing.nvimチャットファイルかどうかを判定

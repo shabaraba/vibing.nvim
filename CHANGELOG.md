@@ -1,5 +1,111 @@
 # Changelog
 
+## 4.4.0 (2026-07-04)
+
+## What's Changed
+
+- fix: fix plugin skill completion truncated at 65536 bytes by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/429
+- fix: fix plugin skill completion truncated at 65536 bytes by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/431
+- fix: allow Task management and subagent messaging tools internally by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/432
+- feat: package MCP server as a Claude Code plugin with skills and agents by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/433
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v4.3.0...v4.4.0
+
+## 4.3.0 (2026-06-30)
+
+## What's Changed
+
+- fix: introduce ALWAYS_ALLOWED_TOOLS and fix local plugin loading by projectPath by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/426
+- feat: respect language config in VibingSetFileTitle title generation by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/428
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v4.2.0...v4.3.0
+
+## 4.2.0 (2026-06-26)
+
+## What's Changed
+
+- fix: load local-scope plugins and fix skill completion for plugin commands by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/422
+- fix: add StructuredOutput tool support and limit modified files display by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/424
+- feat: add VibingCleanMote command and fix mote patch path resolution by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/425
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v4.1.0...v4.2.0
+
+## 4.1.0 (2026-06-25)
+
+## What's Changed
+
+- feat: apply frontmatter permissions to codex adapter via PreToolUse hook by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/419
+- perf: async preload skill completion to eliminate first-slash delay by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/420
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v4.0.0...v4.1.0
+
+## 4.0.0 (2026-05-13)
+
+## What's Changed
+
+- fix: resolve plugin skill completion not appearing in chat buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/415
+- refactor: nest mote config under diff section by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/404
+- chore: remove unnecessary files and directories from repository by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/418
+- feat: add codex-cli adapter with per-chat agent selection by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/417
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v3.0.4...v4.0.0
+
+## 3.0.4 (2026-04-17)
+
+## What's Changed
+
+- fix: remove extra blank lines before assistant response by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/413
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v3.0.3...v3.0.4
+
+## 3.0.3 (2026-04-02)
+
+## What's Changed
+
+- fix: remove hardcoded READ_ONLY_TOOLS in plan mode to respect permissions_allow by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/411
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v3.0.2...v3.0.3
+
+## 3.0.2 (2026-03-28)
+
+## What's Changed
+
+- docs: update README, CLAUDE.md, and rules to reflect current codebase by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/409
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v3.0.1...v3.0.2
+
+## 3.0.1 (2026-03-27)
+
+## What's Changed
+
+- fix: dynamically scan frontmatter in is_vibing_chat_file by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/407
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v3.0.0...v3.0.1
+
+## 3.0.0 (2026-03-25)
+
+## What's Changed
+
+- feat!: migrate from Agent SDK wrapper to Claude CLI by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/405
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v2.0.0...v3.0.0
+
+## 2.0.0 (2026-03-17)
+
+## What's Changed
+
+- refactor: remove invalid mode field, update permissions to support all 5 permissionMode values by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/401
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.31.5...v2.0.0
+
+## 1.31.5 (2026-02-19)
+
+## What's Changed
+
+- fix: handle permission denied in daily summary search and detect fdfind on Ubuntu by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/398
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v1.31.4...v1.31.5
+
 ## 1.31.4 (2026-02-08)
 
 ## What's Changed

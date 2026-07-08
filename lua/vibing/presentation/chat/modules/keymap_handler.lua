@@ -75,8 +75,63 @@ function M.setup(buf, callbacks, keymaps)
       local file_path = FilePath.is_cursor_on_file_path(buf)
       if file_path then
         FilePath.open_file(file_path)
+      else
+        -- Modified Files セクション外では <cfile> で検出したパスを使う
+        local cfile = vim.fn.expand("<cfile>")
+        if cfile ~= "" then
+          local expanded = vim.fn.expand(cfile)
+          if vim.fn.filereadable(expanded) == 1 then
+            FilePath.open_file(expanded)
+          end
+        end
       end
     end, { buffer = buf, desc = "Open file under cursor" })
+
+    vim.keymap.set("n", keymaps.open_url, function()
+      if not vim.ui.open then
+        vim.notify("vim.ui.open requires Neovim 0.10+", vim.log.levels.WARN)
+        return
+      end
+      -- バッファ行全体を取得（ソフト折り返し時も完全なURLを取得できる）
+      local line = vim.fn.getline(".")
+      local col = vim.api.nvim_win_get_cursor(0)[2] + 1 -- 1-indexed
+
+      local url_pat = "(https?://[^ \t\n%]%)>\"']+)"
+      local found_url = nil
+      local best_dist = math.huge
+      local max_dist = 10
+
+      local search_pos = 1
+      while true do
+        local url_start, url_end, url = line:find(url_pat, search_pos)
+        if not url_start then
+          break
+        end
+        -- 末尾の句読点を除去
+        url = url:gsub("[.,;:!?]+$", "")
+        url_end = url_start + #url - 1
+
+        if col >= url_start and col <= url_end then
+          found_url = url
+          break
+        end
+        local dist = math.min(math.abs(col - url_start), math.abs(col - url_end))
+        if dist < best_dist and dist <= max_dist then
+          best_dist = dist
+          found_url = url
+        end
+        search_pos = url_end + 1
+      end
+
+      if found_url then
+        local err = vim.ui.open(found_url)
+        if err then
+          vim.notify("Failed to open URL: " .. tostring(err), vim.log.levels.ERROR)
+        end
+      else
+        vim.notify("No URL found on current line", vim.log.levels.INFO)
+      end
+    end, { buffer = buf, desc = "Open URL on current line" })
 
     -- NOTE: gp (preview all) was removed - use gd on individual files in Modified Files section
     -- Diff display now uses patch files in .vibing/patches/<session_id>/

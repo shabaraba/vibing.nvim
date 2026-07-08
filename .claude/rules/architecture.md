@@ -81,9 +81,8 @@ vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
 working_dir: .worktrees/feature-branch # Optional: relative path from git root for working directory
-mode: code # auto, plan, code, or explore (from config.agent.default_mode)
 model: sonnet # sonnet, opus, or haiku (from config.agent.default_model)
-permissions_mode: acceptEdits # default, acceptEdits, or bypassPermissions
+permissions_mode: acceptEdits # default, acceptEdits, bypassPermissions, plan, or dontAsk
 permissions_allow:
   - Read
   - Edit
@@ -97,9 +96,9 @@ language: ja # Optional: default language for AI responses
 ```
 
 When reopening a saved chat (`:VibingChat <file>` or `:e`), the session resumes via the stored
-`session_id`. The `mode` and `model` fields are automatically populated from
-`config.agent.default_mode` and `config.agent.default_model` on chat creation, and can be changed
-via `/mode` and `/model` slash commands. Configured permissions are recorded in frontmatter for
+`session_id`. The `model` field is automatically populated from
+`config.agent.default_model` on chat creation, and can be changed
+via `/model` slash command. Configured permissions are recorded in frontmatter for
 transparency and auditability. The optional `language` field ensures consistent AI response language
 across sessions.
 

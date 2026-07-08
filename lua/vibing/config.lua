@@ -45,8 +45,9 @@
 
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
----Agent SDK設定、チャットウィンドウ、キーマップ、ツール権限を統合管理
----@field agent Vibing.AgentConfig Agent SDK設定（モード、モデル）
+---アダプター選択、チャットウィンドウ、キーマップ、ツール権限を統合管理
+---@field adapter? "claude"|"codex" バックエンドアダプター選択（デフォルト: "claude"）
+---@field agent Vibing.AgentConfig エージェント設定（モード、モデル）
 ---@field chat Vibing.ChatConfig チャットウィンドウ設定（位置、サイズ、自動コンテキスト、保存先）
 ---@field ui Vibing.UiConfig UI設定（wrap等）
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
@@ -73,7 +74,7 @@
 ---ツール権限設定
 ---Agent SDKに対してClaudeが使用可能なツールを制御（Read, Edit, Write, Bash等）
 ---allowで許可、denyで拒否、askで確認を要求し、セキュリティと機能のバランスを調整
----@field mode "default"|"acceptEdits"|"bypassPermissions" 権限モード（"default": 毎回確認、"acceptEdits": 編集自動許可、"bypassPermissions": 全自動許可）
+---@field mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"|"auto" 権限モード
 ---@field allow string[] 許可するツールリスト（例: {"Read", "Edit", "Write"}）
 ---@field deny string[] 拒否するツールリスト（例: {"Bash"}、危険なツールを明示的に禁止）
 ---@field ask string[] 確認が必要なツールリスト（例: {"Bash"}、使用前に承認を要求）
@@ -125,6 +126,7 @@
 ---@field add_context string コンテキスト追加キー（デフォルト: "<C-a>"）
 ---@field open_diff string ファイルパス上でdiff表示キー（デフォルト: "gd"）
 ---@field open_file string ファイルパス上でファイルを開くキー（デフォルト: "gf"）
+---@field open_url string カーソル行のURLをブラウザで開くキー（デフォルト: "gx"）
 
 ---@class Vibing.LanguageConfig
 ---言語設定（詳細）
@@ -225,6 +227,7 @@ end
 
 ---@type Vibing.Config
 M.defaults = {
+  adapter = "claude",
   agent = {
     default_mode = "code",
     default_model = "sonnet",
@@ -262,17 +265,21 @@ M.defaults = {
     add_context = "<C-a>",
     open_diff = "gd",
     open_file = "gf",
+    open_url = "gx",
   },
-  mote = {
-    project = nil,  -- nil = auto-detect from git repo name
-    context_prefix = "vibing",
+  diff = {
+    tool = "auto",
+    mote = {
+      project = nil,  -- nil = auto-detect from git repo name
+      context_prefix = "vibing",
+    },
   },
   preview = {
     enabled = false,
   },
   permissions = {
     mode = "acceptEdits",
-    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill" },
+    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput" },
     deny = { "Bash" },
     ask = {},
     rules = {},
@@ -295,8 +302,8 @@ M.defaults = {
   },
 }
 
----@type Vibing.Config
-M.options = {}
+---@type Vibing.Config?
+M.options = nil
 
 ---Lazy.nvimのdevモードを検出
 ---vibing.nvimプラグインがLazy.nvimでdev=trueとして設定されているかチェック
@@ -375,11 +382,18 @@ function M.setup(opts)
 
   if M.options.permissions then
     -- Validate permission mode
-    local valid_modes = { default = true, acceptEdits = true, bypassPermissions = true }
+    local valid_modes = {
+      default = true,
+      acceptEdits = true,
+      bypassPermissions = true,
+      plan = true,
+      dontAsk = true,
+      auto = true,
+    }
     local mode = M.options.permissions.mode
     if mode and not valid_modes[mode] then
       notify.warn(string.format(
-        "Invalid permissions.mode '%s'. Valid values: default, acceptEdits, bypassPermissions",
+        "Invalid permissions.mode '%s'. Valid values: default, acceptEdits, bypassPermissions, plan, dontAsk, auto",
         mode
       ))
     end
@@ -543,10 +557,10 @@ end
 
 ---現在の設定を取得
 ---setup()で初期化された設定オブジェクトを返す
----setup()が未実行の場合は空のテーブルを返す
+---setup()が未実行の場合はデフォルト設定を返す
 ---@return Vibing.Config 現在の設定オブジェクト
 function M.get()
-  return M.options
+  return M.options or M.defaults
 end
 
 return M

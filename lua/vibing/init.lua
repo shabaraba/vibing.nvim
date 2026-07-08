@@ -5,7 +5,7 @@ local notify = require("vibing.core.utils.notify")
 ---vibing.nvimプラグインのメインモジュール
 ---設定管理、アダプター初期化、コマンド登録を担当するエントリーポイント
 ---@field config Vibing.Config プラグイン設定オブジェクト（setup()で初期化）
----@field adapter Vibing.Adapter AIバックエンドアダプター（agent_sdk, claude, claude_acp等）
+---@field adapter Vibing.Adapter AIバックエンドアダプター（claude_cli, codex_cli等）
 local M = {}
 
 ---現在使用中のアダプターインスタンス
@@ -56,9 +56,18 @@ function M.setup(opts)
     end
   end
 
-  -- アダプターの初期化（agent_sdk固定）
-  local AgentSDK = require("vibing.infrastructure.adapter.agent_sdk")
-  M.adapter = AgentSDK:new(M.config)
+  -- アダプターの初期化
+  if M.config.adapter == "codex" then
+    local CodexCLI = require("vibing.infrastructure.adapter.codex_cli")
+    M.adapter = CodexCLI:new(M.config)
+  else
+    local ClaudeCLI = require("vibing.infrastructure.adapter.claude_cli")
+    M.adapter = ClaudeCLI:new(M.config)
+  end
+
+  -- Cleanup stale hook communication directories from previous sessions
+  local hook_cleanup = require("vibing.infrastructure.adapter.modules.hook_cleanup")
+  hook_cleanup.cleanup_stale_dirs()
 
   -- 終了時にクリーンアップ
   local augroup = vim.api.nvim_create_augroup("VibingCleanup", { clear = true })
@@ -210,6 +219,10 @@ function M._register_commands()
     end,
   })
 
+  vim.api.nvim_create_user_command("VibingCleanMote", function()
+    require("vibing.presentation.chat.deletion_controller").handle_clean_mote_command(M.config)
+  end, { desc = "Clean mote objects for chat files without deleting chats" })
+
   -- コンテキスト関連コマンド
   vim.api.nvim_create_user_command("VibingContext", function(opts)
     require("vibing.presentation.context.controller").handle_add(opts)
@@ -245,14 +258,58 @@ function M._register_commands()
 
   -- その他のコマンド
   vim.api.nvim_create_user_command("VibingCancel", function()
-    if M.adapter then
+    local view = require("vibing.presentation.chat.view")
+    -- カレントバッファがチャットバッファなら優先
+    local chat_buffer = view.get_current()
+    -- カレントバッファがチャット外の場合は直近のチャットバッファを使用
+    if not chat_buffer then
+      chat_buffer = view._current_buffer
+    end
+    if chat_buffer then
+      local adapter = chat_buffer:_get_active_adapter()
+      if adapter then
+        adapter:cancel(chat_buffer._current_handle_id)
+      end
+    elseif M.adapter then
       M.adapter:cancel()
     end
   end, { desc = "Cancel current Vibing request" })
 
+  vim.api.nvim_create_user_command("VibingMoteDir", function(opts)
+    local view = require("vibing.presentation.chat.view")
+    local chat_buffer = view.get_current() or view._current_buffer
+    if not chat_buffer then
+      vim.notify("[vibing] No chat buffer active", vim.log.levels.ERROR)
+      return
+    end
+
+    local path = opts.args ~= "" and opts.args or vim.fn.getcwd()
+    path = vim.fn.fnamemodify(path, ":p"):gsub("/$", "")
+
+    local success = chat_buffer:update_frontmatter_list("mote_dirs", path, "add")
+    if success then
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(chat_buffer.buf) and chat_buffer.file_path then
+          vim.api.nvim_buf_call(chat_buffer.buf, function()
+            vim.cmd.write({ bang = true })
+          end)
+        end
+      end)
+      vim.notify("[vibing] Added mote tracking directory: " .. path, vim.log.levels.INFO)
+    else
+      vim.notify("[vibing] Failed to add mote tracking directory", vim.log.levels.ERROR)
+    end
+  end, {
+    nargs = "?",
+    desc = "Set mote tracking directory for current chat session",
+    complete = "dir",
+  })
+
   vim.api.nvim_create_user_command("VibingReloadCommands", function()
     local custom_commands = require("vibing.application.chat.custom_commands")
     local commands = require("vibing.application.chat.commands")
+    local completion = require("vibing.application.completion")
+    local skills = require("vibing.infrastructure.completion.providers.skills")
 
     custom_commands.clear_cache()
     commands.custom_commands = {}
@@ -261,8 +318,11 @@ function M._register_commands()
       commands.register_custom(custom_cmd)
     end
 
-    notify.info("Custom commands reloaded")
-  end, { desc = "Reload custom slash commands" })
+    completion.clear_cache()
+    skills.preload()
+
+    notify.info("Commands and completions reloading...")
+  end, { desc = "Reload custom slash commands and completion candidates" })
 
   vim.api.nvim_create_user_command("VibingCopyUnsentUserHeader", function()
     local timestamp = require("vibing.core.utils.timestamp")
@@ -296,7 +356,7 @@ function M._register_commands()
 end
 
 ---現在のアダプターインスタンスを取得
----setup()で初期化されたアダプター（agent_sdk, claude, claude_acp等）を返す
+---setup()で初期化されたアダプター（claude_cli, codex_cli等）を返す
 ---setup()未実行の場合はnilを返す
 ---@return Vibing.Adapter? アダプターインスタンス（初期化済みの場合）またはnil
 function M.get_adapter()

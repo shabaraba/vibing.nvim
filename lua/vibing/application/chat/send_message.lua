@@ -2,8 +2,10 @@
 ---メッセージ送信ユースケース
 local M = {}
 
-local Context = require("vibing.application.context.manager")
-local Formatter = require("vibing.infrastructure.context.formatter")
+-- bufnrをキーに、セッション開始時のスナップショットIDを保持
+-- 並行セッション間でのmote差分混入を防ぐためのベースライン管理
+local session_snapshots = {}
+
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local GradientAnimation = require("vibing.ui.gradient_animation")
 
@@ -32,6 +34,15 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@param message string メッセージ
 ---@param config table 設定
 function M.execute(adapter, callbacks, message, config)
+  -- Per-chat adapter override from frontmatter "agent" field
+  local original_adapter = adapter
+  adapter = M._resolve_adapter(adapter, callbacks, config)
+
+  -- per-chatアダプターが別インスタンスの場合、callbacksに登録してキャンセル経路を確保
+  if adapter ~= original_adapter and callbacks.set_adapter then
+    callbacks.set_adapter(adapter)
+  end
+
   if not adapter then
     require("vibing.core.utils.notify").error("No adapter configured", "Chat")
     return
@@ -39,12 +50,17 @@ function M.execute(adapter, callbacks, message, config)
 
   local bufnr = callbacks.get_bufnr()
   local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
-  local mote_config = M._create_session_mote_config(config, callbacks.get_session_id(), bufnr, session_cwd)
+  local frontmatter = callbacks.parse_frontmatter()
+  -- mote_dirs (array) が優先。後方互換として mote_cwd (string) も読む
+  local mote_dirs = frontmatter and frontmatter.mote_dirs
+  if (not mote_dirs or #mote_dirs == 0) and frontmatter and frontmatter.mote_cwd then
+    mote_dirs = { frontmatter.mote_cwd }
+  end
+  local mote_configs = M._create_session_mote_configs(config, callbacks.get_session_id(), bufnr, session_cwd, mote_dirs)
 
   -- 実際のメッセージ送信処理（mote初期化後に呼び出される）
   local function do_send()
-    local contexts = Context.get_all(config.chat.auto_context)
-    local formatted_prompt = Formatter.format_prompt(message, contexts, config.chat.context_position)
+    local formatted_prompt = message
 
     local conversation = callbacks.extract_conversation()
     if #conversation == 0 then
@@ -107,14 +123,19 @@ function M.execute(adapter, callbacks, message, config)
           )
         end)
       end,
-      on_approval_required = function(tool, input, options)
+      on_approval_required = function(tool, input, options, hook_request_id)
         vim.schedule(function()
-          callbacks.insert_approval_request(tool, input, options)
+          callbacks.insert_approval_request(tool, input, options, hook_request_id)
 
-          -- Cancel the current request immediately
-          local handle_id = callbacks.get_handle_id()
-          if handle_id then
-            adapter:cancel(handle_id)
+          if hook_request_id then
+            -- Hook-based: render approval UI immediately (hook is blocking)
+            callbacks.add_user_section()
+          else
+            -- Agent-wrapper: cancel process, add_user_section called in on_done
+            local handle_id = callbacks.get_handle_id()
+            if handle_id then
+              adapter:cancel(handle_id)
+            end
           end
         end)
       end,
@@ -137,7 +158,7 @@ function M.execute(adapter, callbacks, message, config)
         end)
       end, function(response)
         vim.schedule(function()
-          M._handle_response(response, callbacks, adapter, config, mote_config)
+          M._handle_response(response, callbacks, adapter, config, mote_configs)
         end)
       end)
       -- handle_idをコールバックで設定（キャンセル用）
@@ -146,14 +167,14 @@ function M.execute(adapter, callbacks, message, config)
       end
     else
       local response = adapter:execute(formatted_prompt, opts)
-      M._handle_response(response, callbacks, adapter, config, mote_config)
+      M._handle_response(response, callbacks, adapter, config, mote_configs)
     end
   end
 
   -- mote統合が有効な場合は初期化とsnapshotを待ってから送信
   -- 無効な場合は即座に送信
-  if mote_config then
-    M._ensure_mote_initialized_and_snapshot(mote_config, function()
+  if mote_configs and #mote_configs > 0 then
+    M._ensure_mote_initialized_and_snapshot(mote_configs, bufnr, function()
       vim.schedule(do_send)
     end)
   else
@@ -170,7 +191,7 @@ local function is_session_error(error_msg)
 end
 
 ---レスポンスを処理
-function M._handle_response(response, callbacks, adapter, config, mote_config)
+function M._handle_response(response, callbacks, adapter, config, mote_configs)
   -- Stop gradient animation
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
@@ -209,52 +230,82 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
     callbacks.clear_forked_from()
   end
 
-  -- mote v0.2.4: --project/--context APIではコンテキスト名は最初から確定しているためリネーム不要
-
-  -- mote統合: mote_configが存在し、初期化済みの場合にModified Files出力とpatch生成
+  -- mote統合: 有効なconfigが1つでもあればModified Files出力とpatch生成
   local MoteDiff = require("vibing.core.utils.mote_diff")
-  local using_mote = mote_config ~= nil and MoteDiff.is_initialized(mote_config.project, mote_config.context)
 
-  if using_mote then
-    MoteDiff.get_changed_files(mote_config, function(success, files, error)
-      if success and files and #files > 0 then
-        -- Patch生成（mote v0.2.4: プロジェクトローカルのcontext-dir配下に保存）
-        local context_dir = MoteDiff.build_context_dir_path(mote_config.project, mote_config.context)
-        if not context_dir then
-          vim.notify("[vibing] Failed to generate patch: git root not found", vim.log.levels.WARN)
-          return
+  -- セッション開始時のスナップショットIDをベースラインとして各configに設定
+  local active_configs = {}
+  local snapshots_by_ctx = session_snapshots[bufnr] or {}
+  for _, mc in ipairs(mote_configs or {}) do
+    if MoteDiff.is_initialized(mc.project, mc.context) then
+      local cfg = vim.deepcopy(mc)
+      cfg.baseline_snapshot_id = snapshots_by_ctx[mc.context]
+      table.insert(active_configs, cfg)
+    end
+  end
+
+  if #active_configs > 0 then
+    -- 全configから変更ファイルを収集し、重複排除して出力
+    local all_files = {}
+    local seen_files = {}
+    local patch_paths = {}
+    local remaining = #active_configs
+    local timestamp = os.date("%Y%m%d_%H%M%S")
+
+    local function finalize()
+      if #all_files > 0 then
+        BufferReload.reload_files(all_files)
+        local MAX_DISPLAY = 50
+        local file_lines = {}
+        for i = 1, math.min(#all_files, MAX_DISPLAY) do
+          table.insert(file_lines, all_files[i])
         end
-
-        local timestamp = os.date("%Y%m%d_%H%M%S")
-        local patch_path = string.format("%s/patches/%s.patch", context_dir, timestamp)
-
-        MoteDiff.generate_patch(mote_config, patch_path, function(patch_success, patch_error)
-          if not patch_success then
-            vim.notify("[vibing] Patch generation failed: " .. (patch_error or "Unknown error"), vim.log.levels.WARN)
-          end
-        end)
-
-        -- Modified Files出力
-        BufferReload.reload_files(files)
-
-        callbacks.append_chunk("\n\n### Modified Files\n\n")
-        for _, file_path in ipairs(files) do
-          callbacks.append_chunk(file_path .. "\n")
+        if #all_files > MAX_DISPLAY then
+          table.insert(file_lines, string.format("... (%d more)", #all_files - MAX_DISPLAY))
         end
-
-        -- Patch marker (before User section)
-        callbacks.append_chunk("\n<!-- patch: " .. patch_path .. " -->\n")
-      elseif not success then
-        vim.notify("[vibing] Failed to get changed files: " .. (error or "Unknown error"), vim.log.levels.WARN)
+        callbacks.append_chunk("\n\n### Modified Files\n\n" .. table.concat(file_lines, "\n") .. "\n")
       end
-
-      -- Userセクション追加（Modified Files + patch marker出力後）
+      for _, pp in ipairs(patch_paths) do
+        callbacks.append_chunk("\n<!-- patch: " .. pp .. " -->\n")
+      end
       vim.schedule(function()
         callbacks.add_user_section()
       end)
-    end)
+    end
+
+    for _, mc in ipairs(active_configs) do
+      MoteDiff.get_changed_files(mc, function(success, files, err)
+        if success and files then
+          for _, f in ipairs(files) do
+            if not seen_files[f] then
+              seen_files[f] = true
+              table.insert(all_files, f)
+            end
+          end
+        elseif not success then
+          vim.notify("[vibing] Failed to get changed files: " .. (err or "Unknown error"), vim.log.levels.WARN)
+        end
+
+        if #(files or {}) > 0 then
+          local context_dir = MoteDiff.build_context_dir_path(mc.project, mc.context)
+          if context_dir then
+            local patch_path = string.format("%s/patches/%s.patch", context_dir, timestamp)
+            MoteDiff.generate_patch(mc, patch_path, function(patch_success, patch_error)
+              if not patch_success then
+                vim.notify("[vibing] Patch generation failed: " .. (patch_error or "Unknown error"), vim.log.levels.WARN)
+              end
+            end)
+            table.insert(patch_paths, patch_path)
+          end
+        end
+
+        remaining = remaining - 1
+        if remaining == 0 then
+          finalize()
+        end
+      end)
+    end
   else
-    -- Modified Filesが無い場合もUserセクション追加
     callbacks.add_user_section()
   end
 
@@ -262,54 +313,77 @@ function M._handle_response(response, callbacks, adapter, config, mote_config)
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
 end
 
----セッション固有のmote設定を作成
+---セッション固有のmote設定を作成（単一dir用）
 ---@param config table 全体設定
----@param session_id string|nil セッションID
----@param bufnr number|nil バッファ番号（session_idがない場合のfallback用）
----@param session_cwd string|nil worktreeのcwd（worktreeで作業する場合のみ、worktree判定用）
----@return table|nil セッション固有のmote設定（mote未設定の場合nil）
-function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
-  if not config.mote then
+---@param session_cwd string|nil worktreeのcwd
+---@param mote_dir string|nil 追跡ディレクトリ（絶対パス）。nilの場合はworktree自動検出
+---@return table|nil
+function M._create_session_mote_config(config, session_cwd, mote_dir)
+  if not config.diff or not config.diff.mote then
     return nil
   end
 
   local MoteDiff = require("vibing.core.utils.mote_diff")
-  local mote_config = vim.deepcopy(config.mote)
+  local mote_config = vim.deepcopy(config.diff.mote)
 
-  -- mote v0.2.4: --project/--context APIを使用
-  -- プロジェクト名（設定 or 自動検出）
   mote_config.project = mote_config.project or MoteDiff.get_project_name()
-
-  -- コンテキスト名生成（worktree分離対応）
   local context_prefix = mote_config.context_prefix or "vibing"
-  mote_config.context = MoteDiff.build_context_name(context_prefix, session_cwd)
 
-  -- worktreeで作業する場合はcwdを設定
-  -- moteコマンドはこのcwdで実行され、worktree内のファイルのみを追跡する
-  if session_cwd then
-    mote_config.cwd = session_cwd
+  if mote_dir then
+    mote_config.context = MoteDiff.build_context_name_from_path(context_prefix, mote_dir)
+    mote_config.cwd = mote_dir
+  else
+    mote_config.context = MoteDiff.build_context_name(context_prefix, session_cwd)
+    if session_cwd then
+      mote_config.cwd = session_cwd
+    end
   end
 
   return mote_config
 end
 
+---複数のmote_dirsに対してmote設定の配列を作成
+---@param config table 全体設定
+---@param session_id string|nil セッションID（将来の拡張用）
+---@param bufnr number|nil バッファ番号（将来の拡張用）
+---@param session_cwd string|nil worktreeのcwd
+---@param mote_dirs string[]|nil VibingMoteDirで指定された追跡ディレクトリ一覧
+---@return table[] mote設定の配列（空の場合はempty table）
+function M._create_session_mote_configs(config, session_id, bufnr, session_cwd, mote_dirs)
+  if mote_dirs and #mote_dirs > 0 then
+    local configs = {}
+    for _, dir in ipairs(mote_dirs) do
+      local cfg = M._create_session_mote_config(config, session_cwd, dir)
+      if cfg then
+        table.insert(configs, cfg)
+      end
+    end
+    return configs
+  end
+
+  -- mote_dirs未指定: worktree自動検出（従来の動作）
+  local cfg = M._create_session_mote_config(config, session_cwd, nil)
+  return cfg and { cfg } or {}
+end
+
 -- Mote initialization timeout (10 seconds)
 local MOTE_INIT_TIMEOUT_MS = 10000
 
----mote storageの初期化を確認し、スナップショットを作成
----タイムアウト処理とエラーハンドリングを含む
----@param mote_config table セッション固有のmote設定
+---mote storageの初期化を確認し、スナップショットを作成（複数configs対応）
+---全configの初期化+snapshot完了後に on_complete を呼ぶ
+---@param mote_configs table[] セッション固有のmote設定配列
+---@param bufnr number|nil バッファ番号（スナップショットID保存先キー）
 ---@param on_complete fun() 完了時のコールバック
-function M._ensure_mote_initialized_and_snapshot(mote_config, on_complete)
+function M._ensure_mote_initialized_and_snapshot(mote_configs, bufnr, on_complete)
   local MoteDiff = require("vibing.core.utils.mote_diff")
-  if not MoteDiff.is_available() then
+  if not MoteDiff.is_available() or #mote_configs == 0 then
     on_complete()
     return
   end
 
-  -- Track completion to prevent double-calling on_complete
   local completed = false
   local timeout_timer = nil
+  local remaining = #mote_configs
 
   local function complete_once()
     if completed then return end
@@ -321,7 +395,13 @@ function M._ensure_mote_initialized_and_snapshot(mote_config, on_complete)
     on_complete()
   end
 
-  -- Set up timeout to prevent infinite waiting
+  local function on_one_done()
+    remaining = remaining - 1
+    if remaining == 0 then
+      complete_once()
+    end
+  end
+
   timeout_timer = vim.fn.timer_start(MOTE_INIT_TIMEOUT_MS, function()
     if not completed then
       vim.notify("[vibing] mote initialization timeout - proceeding without mote", vim.log.levels.WARN)
@@ -329,29 +409,76 @@ function M._ensure_mote_initialized_and_snapshot(mote_config, on_complete)
     end
   end)
 
-  local function create_snapshot()
-    MoteDiff.create_snapshot(mote_config, "Before request", function(success, _, error)
-      if not success and error and not error:match("No changes to snapshot") then
-        vim.notify("[vibing] Snapshot creation failed: " .. error, vim.log.levels.WARN)
-      end
-      complete_once()
-    end)
-  end
+  for _, mote_config in ipairs(mote_configs) do
+    local mc = mote_config  -- ループ変数のキャプチャ
 
-  if MoteDiff.is_initialized(mote_config.project, mote_config.context) then
-    create_snapshot()
-    return
-  end
-
-  MoteDiff.initialize(mote_config, function(init_success, init_error)
-    if completed then return end -- Already timed out
-    if not init_success then
-      vim.notify("[vibing] mote initialization failed: " .. (init_error or "Unknown error"), vim.log.levels.WARN)
-      complete_once()
-      return
+    local function create_snapshot()
+      MoteDiff.create_snapshot(mc, "Before request", function(success, snapshot_id, err)
+        if not success and err and not err:match("No changes to snapshot") then
+          vim.notify("[vibing] Snapshot creation failed: " .. err, vim.log.levels.WARN)
+        end
+        if snapshot_id and bufnr then
+          if not session_snapshots[bufnr] then
+            session_snapshots[bufnr] = {}
+          end
+          session_snapshots[bufnr][mc.context] = snapshot_id
+        end
+        on_one_done()
+      end)
     end
-    create_snapshot()
-  end)
+
+    if MoteDiff.is_initialized(mc.project, mc.context) then
+      create_snapshot()
+    else
+      MoteDiff.initialize(mc, function(init_success, init_error)
+        if completed then return end
+        if not init_success then
+          vim.notify("[vibing] mote initialization failed: " .. (init_error or "Unknown error"), vim.log.levels.WARN)
+          on_one_done()
+          return
+        end
+        create_snapshot()
+      end)
+    end
+  end
+end
+
+---フロントマターのagentフィールドに基づいてアダプターを解決
+---@param default_adapter table デフォルトアダプター（init.luaで初期化されたもの）
+---@param callbacks Vibing.ChatCallbacks
+---@param config table
+---@return table adapter
+function M._resolve_adapter(default_adapter, callbacks, config)
+  local Modes = require("vibing.core.constants.modes")
+  local frontmatter = callbacks.parse_frontmatter()
+  local agent_type = frontmatter and frontmatter.agent
+
+  if not agent_type then
+    return default_adapter
+  end
+
+  if not Modes.is_valid_agent(agent_type) then
+    vim.notify(
+      string.format("[vibing] Invalid agent '%s' in frontmatter; using default adapter", tostring(agent_type)),
+      vim.log.levels.WARN
+    )
+    return default_adapter
+  end
+
+  if default_adapter and default_adapter.name then
+    local expected_name = agent_type == "codex" and "codex_cli" or "claude_cli"
+    if default_adapter.name == expected_name then
+      return default_adapter
+    end
+  end
+
+  if agent_type == "codex" then
+    local CodexCLI = require("vibing.infrastructure.adapter.codex_cli")
+    return CodexCLI:new(config)
+  else
+    local ClaudeCLI = require("vibing.infrastructure.adapter.claude_cli")
+    return ClaudeCLI:new(config)
+  end
 end
 
 return M

@@ -23,6 +23,7 @@ local function create_default_frontmatter(config)
   return {
     ["vibing.nvim"] = true,
     created_at = os.date("%Y-%m-%dT%H:%M:%S"),
+    agent = config.adapter or "claude",
     mode = config.agent and config.agent.default_mode or "code",
     model = config.agent and config.agent.default_model or "sonnet",
     permission_mode = config.permissions and config.permissions.mode or "acceptEdits",

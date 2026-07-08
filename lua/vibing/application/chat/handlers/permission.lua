@@ -1,6 +1,7 @@
 local notify = require("vibing.core.utils.notify")
+local Modes = require("vibing.core.constants.modes")
 
-local VALID_MODES = { "default", "acceptEdits", "bypassPermissions" }
+local VALID_MODES = Modes.PERMISSION_MODES
 
 ---@param args string[]
 ---@param chat_buffer Vibing.ChatBuffer

@@ -7,7 +7,8 @@ local M = {}
 ---@param eventProcessor Vibing.EventProcessor イベント処理モジュール
 ---@param context table 処理コンテキスト
 ---@return function stdoutコールバック関数
-function M.create_stdout_handler(eventProcessor, context)
+---@param is_cancelled_fn fun(): boolean キャンセル済みかどうかを返す関数（オプション）
+function M.create_stdout_handler(eventProcessor, context, is_cancelled_fn)
   local stdoutBuffer = ""
   local debug_mode = vim.g.vibing_debug_stream
 
@@ -23,6 +24,9 @@ function M.create_stdout_handler(eventProcessor, context)
     if not data then return end
 
     vim.schedule(function()
+      -- キャンセル後はキューに積まれたチャンクを破棄
+      if is_cancelled_fn and is_cancelled_fn() then return end
+
       if debug_mode then
         vim.notify("[vibing:stream] vim.schedule executed", vim.log.levels.DEBUG)
       end
