@@ -27,21 +27,37 @@ local function generate_hash(original_name)
   return string.format("%08x", hash):sub(1, 8)
 end
 
----cwdがgit worktreeかをgitコマンドで判定し、識別子を返す
----worktreeでは.gitがファイル（main repoではディレクトリ）
+---cwdのコンテキスト識別子を返す
+---
+---3ケースを処理:
+---  1. git worktree（.gitがファイル）→ ブランチ名
+---  2. gitリポジトリのサブディレクトリ（セッションルート等）→ git rootからの相対パス
+---  3. gitリポジトリルート → nil（vibing-rootにフォールバック）
+---
 ---@param cwd string 作業ディレクトリ
----@return string|nil worktreeの識別子（worktreeでなければnil）
-local function detect_git_worktree(cwd)
-  if vim.fn.filereadable(cwd .. "/.git") ~= 1 then
-    return nil
+---@return string|nil コンテキスト識別子
+local function detect_context_path(cwd)
+  -- ケース1: .gitがファイル → git worktree
+  if vim.fn.filereadable(cwd .. "/.git") == 1 then
+    local branch = vim.fn.system(
+      "git -C " .. vim.fn.shellescape(cwd) .. " rev-parse --abbrev-ref HEAD 2>/dev/null"
+    ):gsub("\n$", "")
+    if branch ~= "" and branch ~= "HEAD" then
+      return branch
+    end
+    return cwd:match(".+/(.+)$") or cwd
   end
-  local branch = vim.fn.system(
-    "git -C " .. vim.fn.shellescape(cwd) .. " rev-parse --abbrev-ref HEAD 2>/dev/null"
+
+  -- ケース2: git rootのサブディレクトリ（セッションルート等）→ 相対パスを識別子に
+  local git_top = vim.fn.system(
+    "git -C " .. vim.fn.shellescape(cwd) .. " rev-parse --show-toplevel 2>/dev/null"
   ):gsub("\n$", "")
-  if branch ~= "" and branch ~= "HEAD" then
-    return branch
+  if git_top ~= "" and git_top ~= cwd then
+    return cwd:sub(#git_top + 2) -- git rootからの相対パス
   end
-  return cwd:match(".+/(.+)$") or cwd
+
+  -- ケース3: git rootそのもの → nil（vibing-rootにフォールバック）
+  return nil
 end
 
 ---Worktree固有のコンテキスト名を生成
@@ -67,12 +83,14 @@ function M.build_name(context_prefix, cwd)
       return string.format("%s-worktree-%s-%s", context_prefix, worktree_name, hash_suffix)
     end
 
-    -- パターン2: gitコマンドによる自動検出（.gitがファイルならworktree）
-    local worktree_id = detect_git_worktree(cwd)
-    if worktree_id then
-      local worktree_name = sanitize_name(worktree_id)
-      local hash_suffix = generate_hash(worktree_id)
-      return string.format("%s-worktree-%s-%s", context_prefix, worktree_name, hash_suffix)
+    -- パターン2: gitコマンドによる自動検出
+    -- worktree（.gitがファイル）→ ブランチ名
+    -- セッションルート等（git rootのサブディレクトリ）→ 相対パス
+    local context_id = detect_context_path(cwd)
+    if context_id then
+      local context_name = sanitize_name(context_id)
+      local hash_suffix = generate_hash(context_id)
+      return string.format("%s-session-%s-%s", context_prefix, context_name, hash_suffix)
     end
   end
 
