@@ -11,8 +11,8 @@
 ## 4.5.1 (2026-07-08)
 
 ## What's Changed
-* fix: daily summary file save issues on Ubuntu by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/400
 
+- fix: daily summary file save issues on Ubuntu by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/400
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v4.5.0...v4.5.1
 
