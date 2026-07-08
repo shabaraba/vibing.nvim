@@ -275,6 +275,36 @@ function M._register_commands()
     end
   end, { desc = "Cancel current Vibing request" })
 
+  vim.api.nvim_create_user_command("VibingMoteDir", function(opts)
+    local view = require("vibing.presentation.chat.view")
+    local chat_buffer = view.get_current() or view._current_buffer
+    if not chat_buffer then
+      vim.notify("[vibing] No chat buffer active", vim.log.levels.ERROR)
+      return
+    end
+
+    local path = opts.args ~= "" and opts.args or vim.fn.getcwd()
+    path = vim.fn.fnamemodify(path, ":p"):gsub("/$", "")
+
+    local success = chat_buffer:update_frontmatter_list("mote_dirs", path, "add")
+    if success then
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(chat_buffer.buf) and chat_buffer.file_path then
+          vim.api.nvim_buf_call(chat_buffer.buf, function()
+            vim.cmd.write({ bang = true })
+          end)
+        end
+      end)
+      vim.notify("[vibing] Added mote tracking directory: " .. path, vim.log.levels.INFO)
+    else
+      vim.notify("[vibing] Failed to add mote tracking directory", vim.log.levels.ERROR)
+    end
+  end, {
+    nargs = "?",
+    desc = "Set mote tracking directory for current chat session",
+    complete = "dir",
+  })
+
   vim.api.nvim_create_user_command("VibingReloadCommands", function()
     local custom_commands = require("vibing.application.chat.custom_commands")
     local commands = require("vibing.application.chat.commands")
