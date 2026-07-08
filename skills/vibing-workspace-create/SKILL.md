@@ -5,7 +5,7 @@ description: Create a new git-worktree-backed workspace (worktree + meta.yaml + 
 
 # vibing-workspace-create
 
-Creates a new workspace: a numbered `.vibing/workspace/active/<id>/` directory containing a git
+Creates a new workspace: a numbered `.vibing/workspace/<id>/` directory containing a git
 worktree, a `meta.yaml` recording what it's for, and a `plan.md` scratchpad — instead of a bare
 `git worktree add` that leaves no record of intent or progress.
 

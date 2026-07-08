@@ -5,7 +5,8 @@ description: List active or done git-worktree-backed workspaces in the current p
 
 # vibing-workspace-list
 
-Lists workspaces recorded under `.vibing/workspace/active/` or `.vibing/workspace/done/`.
+Lists workspaces recorded under `.vibing/workspace/` — active ones (with a `worktree/` still on
+disk) or done ones (worktree already removed).
 
 **Read `${CLAUDE_PLUGIN_ROOT}/skills/vibing-workspace/SKILL.md` first** for what a workspace is
 and how `meta.yaml` is structured.

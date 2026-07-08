@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // Workspace lifecycle helper for the vibing-workspace-* Claude Code skills.
 //
-// Manages git-worktree-backed "workspaces" under .vibing/workspace/{active,done}/<id>/,
-// each with a meta.yaml (workspace_id, branch, created_at, description, chat_files) and
-// a plan.md. This script has no dependency on a running Neovim instance or the vibing.nvim
-// Lua runtime — it only needs Node and git, so it can be invoked from any Claude Code skill.
+// Manages git-worktree-backed "workspaces" under .vibing/workspace/<id>/, each with a
+// meta.yaml (workspace_id, branch, created_at, description, chat_files) and a plan.md.
+// There's no separate active/done directory — a workspace's status is just whether its
+// worktree/ subdirectory still exists (removed by `remove-worktree` once work is finished).
+// This script has no dependency on a running Neovim instance or the vibing.nvim Lua runtime
+// — it only needs Node and git, so it can be invoked from any Claude Code skill.
 //
 // Usage: node vibing-workspace.mjs <subcommand> [args...]
 // All subcommands print a single JSON line to stdout on success and exit 0.
@@ -175,7 +177,7 @@ function cmdCreate(branch, description) {
 
   const number = nextCounter(base);
   const id = `${String(number).padStart(4, '0')}-${branch}`;
-  const dir = path.join(base, 'active', id);
+  const dir = path.join(base, id);
 
   if (fs.existsSync(dir)) fail(`Workspace directory already exists: ${dir}`);
   fs.mkdirSync(dir, { recursive: true });
@@ -213,20 +215,25 @@ function cmdCreate(branch, description) {
   );
 }
 
+function workspaceStatus(dir) {
+  return fs.existsSync(path.join(dir, 'worktree')) ? 'active' : 'done';
+}
+
 function cmdList(status) {
   status = status === 'done' ? 'done' : 'active';
   const base = getWorkspaceBase();
-  const statusDir = path.join(base, status);
-  if (!fs.existsSync(statusDir)) {
+  if (!fs.existsSync(base)) {
     console.log(JSON.stringify([]));
     return;
   }
 
   const entries = [];
-  for (const name of fs.readdirSync(statusDir).sort()) {
-    const dir = path.join(statusDir, name);
-    const metaPath = path.join(dir, 'meta.yaml');
-    const data = readMeta(metaPath);
+  for (const name of fs.readdirSync(base).sort()) {
+    const dir = path.join(base, name);
+    if (!fs.statSync(dir).isDirectory()) continue; // skip .counter
+    if (workspaceStatus(dir) !== status) continue;
+
+    const data = readMeta(path.join(dir, 'meta.yaml'));
     if (data) {
       entries.push({
         id: data.workspace_id,
@@ -240,21 +247,19 @@ function cmdList(status) {
 }
 
 function findWorkspace(base, workspaceId) {
-  for (const status of ['active', 'done']) {
-    const dir = path.join(base, status, workspaceId);
-    if (fs.existsSync(dir)) {
-      const result = {
-        id: workspaceId,
-        dir,
-        status,
-        meta_path: path.join(dir, 'meta.yaml'),
-        plan_path: path.join(dir, 'plan.md'),
-      };
-      if (status === 'active') result.worktree_path = path.join(dir, 'worktree');
-      return result;
-    }
-  }
-  return null;
+  const dir = path.join(base, workspaceId);
+  if (!fs.existsSync(dir)) return null;
+
+  const status = workspaceStatus(dir);
+  const result = {
+    id: workspaceId,
+    dir,
+    status,
+    meta_path: path.join(dir, 'meta.yaml'),
+    plan_path: path.join(dir, 'plan.md'),
+  };
+  if (status === 'active') result.worktree_path = path.join(dir, 'worktree');
+  return result;
 }
 
 function cmdGet(workspaceId) {
@@ -289,18 +294,6 @@ function cmdRemoveWorktree(workspaceId) {
   const result = tryRun('git', ['worktree', 'remove', ws.worktree_path]);
   if (!result.ok) fail(result.stderr || 'git worktree remove failed');
   console.log(JSON.stringify({ ok: true }));
-}
-
-function cmdMoveToDone(workspaceId) {
-  const base = getWorkspaceBase();
-  const ws = findWorkspace(base, workspaceId);
-  if (!ws || ws.status !== 'active') fail(`Not an active workspace: ${workspaceId}`);
-
-  const doneDir = path.join(base, 'done');
-  fs.mkdirSync(doneDir, { recursive: true });
-  const target = path.join(doneDir, workspaceId);
-  fs.renameSync(ws.dir, target);
-  console.log(JSON.stringify({ ok: true, dir: target }));
 }
 
 function planHasIncompleteTodos(planPath) {
@@ -352,14 +345,11 @@ switch (subcommand) {
   case 'remove-worktree':
     cmdRemoveWorktree(args[0]);
     break;
-  case 'move-to-done':
-    cmdMoveToDone(args[0]);
-    break;
   case 'check-done':
     cmdCheckDone(args[0]);
     break;
   default:
     fail(
-      'Usage: vibing-workspace.mjs <create|list|get|add-chat-file|remove-worktree|move-to-done|check-done> [args...]'
+      'Usage: vibing-workspace.mjs <create|list|get|add-chat-file|remove-worktree|check-done> [args...]'
     );
 }

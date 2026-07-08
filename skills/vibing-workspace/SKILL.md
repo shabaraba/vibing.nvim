@@ -15,25 +15,28 @@ it's still active, and which chats have touched it.
 ```text
 <git root>/.vibing/workspace/
 ├── .counter                          # plain-text global counter (next number to use)
-├── active/
-│   └── 0001-fix-auth-session-bug/
-│       ├── meta.yaml
-│       ├── plan.md
-│       └── worktree/                 # the actual git worktree
-└── done/
-    └── 0002-refactor-permission-ui/
-        ├── meta.yaml
-        └── plan.md                   # worktree/ no longer exists — it was removed on "done"
+├── 0001-fix-auth-session-bug/
+│   ├── meta.yaml
+│   ├── plan.md
+│   └── worktree/                     # present → this workspace is active
+└── 0002-refactor-permission-ui/
+    ├── meta.yaml
+    └── plan.md                       # worktree/ absent → this workspace is done
 ```
 
+There's no separate `active/`/`done/` split — every workspace lives directly under
+`.vibing/workspace/<id>/`, and its status is simply whether `worktree/` still exists. Removing
+the worktree (via `remove-worktree`) is what makes a workspace "done"; there's no extra move step
+afterward.
+
 - The `<counter>-<branch>` id is globally unique and monotonically increasing — it's never
-  reused, even after a workspace moves from `active/` to `done/`. Refer to a workspace by this
-  id (e.g. "0001-fix-auth-session-bug") in conversation; it's the one stable handle.
+  reused, even after a workspace is finished. Refer to a workspace by this id (e.g.
+  "0001-fix-auth-session-bug") in conversation; it's the one stable handle.
 - Multiple chat conversations can be associated with the same workspace over time (recorded in
   `meta.yaml`'s `chat_files` list) — there's no restriction on how many, and no chat "owns" a
   workspace exclusively.
-- A workspace moving to `done/` means its worktree was removed; the `meta.yaml`/`plan.md` record
-  stays behind as history. Nothing under `done/` should ever be treated as still checked out.
+- A "done" workspace still has its `meta.yaml`/`plan.md` on disk as a record — only the worktree
+  (the checked-out files) is gone. Never treat a done workspace as still checked out.
 
 ## meta.yaml schema
 
@@ -67,21 +70,20 @@ All of the above is managed through `${CLAUDE_PLUGIN_ROOT}/scripts/vibing-worksp
 dependency-free Node script (only needs `node` and `git` on PATH). It has no awareness of Claude,
 chat files, or Neovim — it only knows about the directory layout above. Each `vibing-workspace-*`
 skill calls it with `Bash` for the mechanical parts (creating the worktree, writing/reading
-`meta.yaml`, moving directories) and handles the parts that need judgment (talking to the user,
-picking a branch name, deciding whether a warning is worth stopping for) itself.
+`meta.yaml`) and handles the parts that need judgment (talking to the user, picking a branch
+name, deciding whether a warning is worth stopping for) itself.
 
 Every subcommand prints one line of JSON to stdout on success, and exits non-zero with a
 plain-text message on stderr on failure — check the exit code, don't just look for JSON.
 
-| Subcommand        | Args                                | Output                                                                                                                                                                                                                  |
-| ----------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `create`          | `<branch> <description>`            | `{id, dir, worktree_path, meta_path, plan_path}`                                                                                                                                                                        |
-| `list`            | `[active\|done]` (default `active`) | `[{id, branch, description, dir}, ...]`                                                                                                                                                                                 |
-| `get`             | `<workspace_id>`                    | `{id, dir, status, meta_path, plan_path, worktree_path?}` (`worktree_path` only present when `status` is `"active"`)                                                                                                    |
-| `add-chat-file`   | `<workspace_id> <chat_file_path>`   | `{ok, chat_files}` — no-ops (still succeeds) if the path is already present                                                                                                                                             |
-| `remove-worktree` | `<workspace_id>`                    | `{ok}` — runs `git worktree remove` with **no `--force`**; if git refuses because of uncommitted changes, that error reaches you verbatim on stderr so you can tell the user rather than silently discarding their work |
-| `move-to-done`    | `<workspace_id>`                    | `{ok, dir}` — only call this after `remove-worktree` succeeds; the worktree must actually be gone first                                                                                                                 |
-| `check-done`      | `<workspace_id>`                    | `{plan_incomplete, branch_merged}` — advisory only, for `vibing-workspace-done` to decide whether to ask for confirmation                                                                                               |
+| Subcommand        | Args                                | Output                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create`          | `<branch> <description>`            | `{id, dir, worktree_path, meta_path, plan_path}`                                                                                                                                                                                                                                                                                                                              |
+| `list`            | `[active\|done]` (default `active`) | `[{id, branch, description, dir}, ...]` — filters by whether each workspace's `worktree/` exists                                                                                                                                                                                                                                                                              |
+| `get`             | `<workspace_id>`                    | `{id, dir, status, meta_path, plan_path, worktree_path?}` (`worktree_path` only present when `status` is `"active"`)                                                                                                                                                                                                                                                          |
+| `add-chat-file`   | `<workspace_id> <chat_file_path>`   | `{ok, chat_files}` — no-ops (still succeeds) if the path is already present                                                                                                                                                                                                                                                                                                   |
+| `remove-worktree` | `<workspace_id>`                    | `{ok}` — runs `git worktree remove` with **no `--force`**; if git refuses because of uncommitted changes, that error reaches you verbatim on stderr so you can tell the user rather than silently discarding their work. This is the whole "finish a workspace" operation — once it succeeds, `get`/`list` immediately report the workspace as done, no separate step needed. |
+| `check-done`      | `<workspace_id>`                    | `{plan_incomplete, branch_merged}` — advisory only, for `vibing-workspace-done` to decide whether to ask for confirmation before calling `remove-worktree`                                                                                                                                                                                                                    |
 
 Example:
 

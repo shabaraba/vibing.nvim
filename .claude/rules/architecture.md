@@ -76,7 +76,7 @@ Chat files are saved as Markdown with YAML frontmatter:
 vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
-working_dir: .vibing/workspace/active/0001-feature-branch/worktree # Optional: relative path from git root for working directory
+working_dir: .vibing/workspace/0001-feature-branch/worktree # Optional: relative path from git root for working directory
 model: sonnet # sonnet, opus, or haiku (from config.agent.default_model)
 permissions_mode: acceptEdits # default, acceptEdits, bypassPermissions, plan, or dontAsk
 permissions_allow:
@@ -99,7 +99,7 @@ transparency and auditability. The optional `language` field ensures consistent 
 across sessions.
 
 **Working directory persistence:** The `working_dir` field stores the working directory as a relative
-path from git root (e.g., `.vibing/workspace/active/<id>/worktree`). When a chat is reopened, the agent
+path from git root (e.g., `.vibing/workspace/<id>/worktree`). When a chat is reopened, the agent
 and mote commands are executed in this directory. This ensures consistent file operations across
 sessions, even when using workspace or custom directories.
 
@@ -199,6 +199,7 @@ supporting multi-language development workflows.
 Worktree-backed development goes through the `vibing-workspace-*` Claude Code skills bundled
 with this plugin (`skills/vibing-workspace-create`, `-enter`, `-done`, `-list`), not through a
 vibing.nvim chat command. Workspace directories, including the git worktree itself, live under
-`.vibing/workspace/{active,done}/<id>/`. See `skills/vibing-workspace/SKILL.md` for the shared
+`.vibing/workspace/<id>/` (a workspace is "done" once its `worktree/` subdirectory has been
+removed). See `skills/vibing-workspace/SKILL.md` for the shared
 directory layout and `meta.yaml` schema, and `scripts/vibing-workspace.mjs` for the bundled
 script that manages workspace creation/removal.
