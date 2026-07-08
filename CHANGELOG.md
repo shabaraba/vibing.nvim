@@ -8,6 +8,14 @@
   action picker/preview UI, and the `language.inline` configuration option have
   been removed. Use the chat interface (`:VibingChat`) for code assistance instead.
 
+## 4.5.1 (2026-07-08)
+
+## What's Changed
+* fix: daily summary file save issues on Ubuntu by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/400
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v4.5.0...v4.5.1
+
 ## 4.5.0 (2026-07-08)
 
 ## What's Changed
