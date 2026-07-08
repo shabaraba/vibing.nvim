@@ -286,7 +286,7 @@ function M._register_commands()
     local path = opts.args ~= "" and opts.args or vim.fn.getcwd()
     path = vim.fn.fnamemodify(path, ":p"):gsub("/$", "")
 
-    local success = chat_buffer:update_frontmatter("mote_cwd", path)
+    local success = chat_buffer:update_frontmatter_list("mote_dirs", path, "add")
     if success then
       vim.schedule(function()
         if vim.api.nvim_buf_is_valid(chat_buffer.buf) and chat_buffer.file_path then
@@ -295,9 +295,9 @@ function M._register_commands()
           end)
         end
       end)
-      vim.notify("[vibing] mote tracking directory: " .. path, vim.log.levels.INFO)
+      vim.notify("[vibing] Added mote tracking directory: " .. path, vim.log.levels.INFO)
     else
-      vim.notify("[vibing] Failed to set mote tracking directory", vim.log.levels.ERROR)
+      vim.notify("[vibing] Failed to add mote tracking directory", vim.log.levels.ERROR)
     end
   end, {
     nargs = "?",
