@@ -11,9 +11,9 @@
 ## 4.5.0 (2026-07-08)
 
 ## What's Changed
-* fix: prevent mote diff pollution between concurrent sessions by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/435
-* Remove inline code action feature by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/434
 
+- fix: prevent mote diff pollution between concurrent sessions by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/435
+- Remove inline code action feature by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/434
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v4.4.0...v4.5.0
 
