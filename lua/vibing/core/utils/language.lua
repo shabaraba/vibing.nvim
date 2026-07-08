@@ -70,7 +70,7 @@ end
 ---設定から言語コードを取得
 ---language が文字列の場合はそのまま返し、テーブルの場合は action_type に応じて適切な値を返す
 ---@param language string|Vibing.LanguageConfig|nil 言語設定
----@param action_type "chat"|"inline" アクションタイプ
+---@param action_type "chat" アクションタイプ
 ---@return string? 言語コード
 function M.get_language_code(language, action_type)
   if not language then

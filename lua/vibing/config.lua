@@ -10,11 +10,6 @@
 ---@field tool "git"|"mote"|"auto" 使用するdiffツール（"git": git diff、"mote": mote diff、"auto": mote優先で自動選択）
 ---@field mote Vibing.MoteConfig mote固有の設定
 
----@class Vibing.PreviewConfig
----プレビューUI設定
----インラインアクションとチャットの両方で使用されるdiffプレビューUIを制御
----@field enabled boolean プレビューUI有効化（trueでGit diffプレビュー表示、要Gitリポジトリ）
-
 ---@class Vibing.GradientConfig
 ---グラデーションアニメーション設定
 ---AI応答中に行番号をグラデーションアニメーションで視覚的にフィードバック
@@ -37,7 +32,7 @@
 
 ---@class Vibing.UiConfig
 ---UI設定
----全UIコンポーネント（Chat、Inline、Output）に適用される表示設定
+---全UIコンポーネント（Chat、Output）に適用される表示設定
 ---@field wrap "nvim"|"on"|"off" 行の折り返し設定（"nvim": Neovimデフォルト、"on": wrap+linebreak有効、"off": wrap無効）
 ---@field gradient Vibing.GradientConfig グラデーションアニメーション設定（応答中の視覚的フィードバック）
 ---@field tool_result_display "none"|"compact"|"full" ツール実行結果の表示モード（"none": 非表示、"compact": 数行のみ、"full": 全文表示）
@@ -52,7 +47,6 @@
 ---@field ui Vibing.UiConfig UI設定（wrap等）
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
 ---@field diff Vibing.DiffConfig diff表示設定（使用ツール、mote設定）
----@field preview Vibing.PreviewConfig プレビューUI設定（diffプレビュー有効化）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
 ---@field node Vibing.NodeConfig Node.js実行ファイル設定（バイナリパス）
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
@@ -130,10 +124,9 @@
 
 ---@class Vibing.LanguageConfig
 ---言語設定（詳細）
----chat と inline で異なる言語を指定可能
+---アクションごとに異なる言語を指定可能
 ---@field default? string デフォルト言語（"ja", "en", "zh", "ko", "fr", "de", "es"等）
 ---@field chat? string chatアクションでの言語（指定されていない場合はdefaultを使用）
----@field inline? string inlineアクションでの言語（指定されていない場合はdefaultを使用）
 
 ---@alias Vibing.FileFinderStrategy "auto"|"fd"|"find"|"locate"|"ripgrep"
 
@@ -273,9 +266,6 @@ M.defaults = {
       project = nil,  -- nil = auto-detect from git repo name
       context_prefix = "vibing",
     },
-  },
-  preview = {
-    enabled = false,
   },
   permissions = {
     mode = "acceptEdits",
@@ -508,7 +498,6 @@ function M.setup(opts)
     elseif type(M.options.language) == "table" then
       validate_lang_code(M.options.language.default, "language.default")
       validate_lang_code(M.options.language.chat, "language.chat")
-      validate_lang_code(M.options.language.inline, "language.inline")
     end
   end
 

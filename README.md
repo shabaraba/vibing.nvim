@@ -11,7 +11,7 @@
 [![Release](https://img.shields.io/github/v/release/shabaraba/vibing.nvim)](https://github.com/shabaraba/vibing.nvim/releases)
 
 A powerful Neovim plugin that integrates **Claude** and **Codex** AI via CLI backends,
-bringing intelligent chat conversations and context-aware inline code actions directly into your editor.
+bringing intelligent, context-aware chat conversations directly into your editor.
 
 English | [日本語](./README.ja.md)
 
@@ -73,7 +73,6 @@ Switch backends globally via `adapter` config or per-chat via the `agent` frontm
 Work on multiple tasks simultaneously without blocking:
 
 - **Multiple chat windows** - Open separate conversations, each with its own independent session
-- **Queued inline actions** - Stack up code modifications that execute sequentially
 - **No waiting** - Start a new chat while another is still processing
 
 Example workflow:
@@ -81,8 +80,6 @@ Example workflow:
 ```vim
 :VibingChat  " Debug authentication issue in chat 1
 :VibingChat  " Design new feature in chat 2
-:'<,'>VibingInline fix  " Queue code fix
-:'<,'>VibingInline test " Queue test generation
 ```
 
 All sessions run independently with proper conflict management.
@@ -116,31 +113,28 @@ Fine-grained control over what Claude can do:
 - Command pattern matching for shell operations
 - Interactive Permission Builder UI
 
-### 📋 Inline Preview with Accept/Reject
+### 📋 Diff Preview with Accept/Reject
 
 Telescope-style diff preview for all code modifications:
 
 - Visual diff for each changed file
 - Accept all or reject all with Git-based revert
 - Navigate between multiple modified files
-- Works in both inline actions and chat mode
+- Works in chat mode
 
 ### 🔀 Concurrent Session Support
 
 Run multiple AI tasks simultaneously:
 
 - **Independent chat sessions** - Each chat window maintains its own conversation and session ID
-- **Queued inline actions** - Multiple code modifications execute serially to prevent conflicts
 - **Parallel workflows** - Debug in one chat while designing features in another
 
 ### Other Features
 
 - **💬 Interactive Chat Interface** - Seamless chat window with Claude AI, opens in current buffer by default
-- **⚡ Inline Actions** - Quick code fixes, explanations, refactoring, and test generation
-- **📝 Natural Language Commands** - Use custom instructions for any code transformation
 - **🔧 Slash Commands** - In-chat commands for context management, permissions, and settings
 - **🎯 Smart Context** - Automatic file context detection from open buffers and manual additions
-- **🌍 Multi-language Support** - Configure different languages for chat and inline actions
+- **🌍 Multi-language Support** - Configure language for chat
 - **📊 Diff Viewer** - Visual diff display for AI-edited files with `gd` keybinding
   - Supports both `git diff` and [mote](https://github.com/shabaraba/mote) (fine-grained snapshot tool)
   - Auto-detection: Uses mote if available, fallback to git
@@ -257,7 +251,7 @@ anything to connect to.
       preview = {
         enabled = false,  -- Enable diff preview UI (requires Git)
       },
-      language = nil,  -- Optional: "ja" | "en" | { default = "ja", chat = "ja", inline = "en" }
+      language = nil,  -- Optional: "ja" | "en" | { default = "ja", chat = "ja" }
     })
   end,
 }
@@ -291,7 +285,6 @@ use {
 | `:VibingDeleteChats [--unrenamed]`        | Delete chat files (use --unrenamed to delete all unrenamed files)                                   |
 | `:VibingContext [path]`                   | Add file to context (or from oil.nvim if no path)                                                   |
 | `:VibingClearContext`                     | Clear all context                                                                                   |
-| `:VibingInline [action\|instruction]`     | Rich UI picker (no args) or direct execution (with args). Tab completion enabled.                   |
 | `:VibingCancel`                           | Cancel current request                                                                              |
 | `:VibingReloadCommands`                   | Reload custom slash commands                                                                        |
 | `:VibingCopyUnsentUserHeader`             | Copy `## User <!-- unsent -->` to clipboard                                                         |
@@ -314,99 +307,6 @@ use {
   - `:VibingChatWorktree right feature-branch` - Same, but open in right split
 - **`:VibingChatFork`** - Fork current chat conversation for branching in a different direction.
 - **`:VibingToggleChat`** - Use to show/hide your current conversation. Preserves the existing chat state.
-
-### Inline Actions
-
-**Rich UI Picker (recommended):**
-
-```vim
-:'<,'>VibingInline
-" Opens a split-panel UI:
-" - Left: Action menu (fix, feat, explain, refactor, test)
-"   Navigate with j/k or arrow keys, Tab to move to input
-" - Right: Additional instruction input (optional)
-"   Shift-Tab to move back to menu
-" - Enter to execute, Esc/Ctrl-c to cancel
-```
-
-**Keybindings:**
-
-- `j`/`k` or `↓`/`↑` - Navigate action menu
-- `Tab` - Move from menu to input field
-- `Shift-Tab` - Move from input field to menu
-- `Enter` - Execute selected action
-- `Esc` or `Ctrl-c` - Cancel
-
-**Direct Execution (with arguments):**
-
-```vim
-:'<,'>VibingInline fix       " Fix code issues
-:'<,'>VibingInline feat      " Implement feature
-:'<,'>VibingInline explain   " Explain code
-:'<,'>VibingInline refactor  " Refactor code
-:'<,'>VibingInline test      " Generate tests
-
-" With additional instructions
-:'<,'>VibingInline fix using async/await
-:'<,'>VibingInline test with Jest mocks
-```
-
-**Natural Language Instructions:**
-
-```vim
-:'<,'>VibingInline "Convert this function to TypeScript"
-:'<,'>VibingInline "Add error handling with try-catch"
-:'<,'>VibingInline "Optimize this loop for performance"
-```
-
-### Inline Preview UI
-
-When `preview.enabled = true` is set in configuration, inline actions display a Telescope-style
-preview UI after execution (requires Git repository):
-
-**Layout:**
-
-Inline mode (3 panels):
-
-```text
-┌──────────────┬──────────────────────────────────────┐
-│ Files (3)    │ Diff Preview                         │
-│  > src/a.lua │  @@ -10,5 +10,8 @@                   │
-│    src/b.lua │  -old line                           │
-│    tests/*.lua  +new line                           │
-├──────────────┴──────────────────────────────────────┤
-│ Response: Modified 3 files successfully             │
-└─────────────────────────────────────────────────────┘
-```
-
-Chat mode (2 panels):
-
-```text
-┌──────────────┬──────────────────────────────────────┐
-│ Files (3)    │ Diff Preview                         │
-│  > src/a.lua │  @@ -10,5 +10,8 @@                   │
-│    src/b.lua │  -old line                           │
-│    tests/*.lua  +new line                           │
-└──────────────┴──────────────────────────────────────┘
-```
-
-**Keybindings:**
-
-- `j`/`k` - Move cursor up/down (normal Neovim navigation)
-- `<Enter>` - Select file at cursor position (in Files window)
-- `<Tab>` - Cycle to next window (Files → Diff → Response → Files)
-- `<Shift-Tab>` - Cycle to previous window
-- `a` - Accept all changes (close preview, keep modifications)
-- `r` - Reject all changes (revert all files using `git checkout HEAD`)
-- `q`/`Esc` - Close preview (keep changes)
-
-**Features:**
-
-- Responsive layout (horizontal ≥120 columns, vertical <120 columns)
-- Delta integration for enhanced diff highlighting (if available)
-- Navigate through multiple modified files
-- Accept/Reject individual or all changes
-- Git-based revert functionality
 
 ### Slash Commands (in Chat)
 
@@ -439,8 +339,8 @@ In chat buffers, the following keybindings are available:
 **Preview All Modified Files (`gp`):**
 
 When Claude modifies multiple files in a chat session, press `gp` anywhere in the chat buffer to open
-the inline preview UI showing all modified files at once. This provides the same Accept/Reject
-functionality as inline actions:
+the preview UI showing all modified files at once. This provides Accept/Reject
+functionality:
 
 - Navigate between files with `j`/`k`
 - Press `a` to accept all changes
@@ -575,11 +475,10 @@ require("vibing").setup({
   -- Simple: All responses in Japanese
   language = "ja",
 
-  -- Advanced: Different languages for chat and inline
+  -- Advanced: Per-context language
   -- language = {
   --   default = "ja",
   --   chat = "ja",     -- Chat in Japanese
-  --   inline = "en",   -- Inline actions in English
   -- },
 })
 ```
@@ -795,7 +694,7 @@ keymaps = {
 
 ### Preview Settings
 
-Configure diff preview UI for inline actions and chat:
+Configure diff preview UI for chat:
 
 ```lua
 preview = {
@@ -803,7 +702,7 @@ preview = {
                     -- Requires Git repository
                     -- Shows Accept/Reject UI after code modifications
                     -- Uses git diff and git checkout for revert
-                    -- Works in both inline actions and chat (gp key)
+                    -- Works in chat (gp key)
 }
 ```
 
@@ -965,11 +864,10 @@ Configure AI response language:
 -- Simple: All responses in one language
 language = "ja"  -- or "en", "fr", etc.
 
--- Advanced: Different languages per context
+-- Advanced: Per-context language
 language = {
   default = "ja",  -- Default language
   chat = "ja",     -- Chat window responses
-  inline = "en",   -- Inline action responses
 }
 ```
 

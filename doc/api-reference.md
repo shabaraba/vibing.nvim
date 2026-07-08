@@ -413,7 +413,6 @@ require("vibing.context").clear()
 ---@field cli_path string Claude CLI パス
 ---@field agent Vibing.AgentConfig Agent SDK設定
 ---@field chat Vibing.ChatConfig チャット設定
----@field inline Vibing.InlineConfig インラインアクション設定
 ---@field keymaps Vibing.KeymapConfig キーマップ設定
 ---@field permissions Vibing.PermissionsConfig 権限設定
 ---@field remote Vibing.RemoteConfig リモート制御設定

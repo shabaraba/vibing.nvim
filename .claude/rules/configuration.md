@@ -55,7 +55,7 @@ require("vibing").setup({
     auto_setup = false,
     auto_configure_claude_json = false,
   },
-  language = nil,  -- Optional: "ja" | "en" | { default = "ja", chat = "ja", inline = "en" }
+  language = nil,  -- Optional: "ja" | "en" | { default = "ja", chat = "ja" }
   ui = {
     wrap = "on",  -- "nvim" | "on" | "off" - Line wrap configuration for all vibing buffers
     -- "nvim": Respect Neovim defaults (don't modify wrap settings)

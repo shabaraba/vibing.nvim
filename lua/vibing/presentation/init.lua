@@ -9,8 +9,4 @@ M.Window = require("vibing.presentation.common.window")
 M.Chat = require("vibing.presentation.chat")
 M.ChatBuffer = require("vibing.presentation.chat.buffer")
 
--- Inline
-M.InlineProgressView = require("vibing.presentation.inline.progress_view")
-M.OutputView = require("vibing.presentation.inline.output_view")
-
 return M

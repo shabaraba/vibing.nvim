@@ -67,7 +67,7 @@ end
 ---形式: {type}-yyyymmdd-{title}.md (例: chat-20250627-fix_auth_bug.md)
 ---:VibingSetFileTitleコマンドで使用
 ---@param title string AIが生成したタイトル（サニタイズ前）
----@param file_type "chat"|"inline" ファイルタイプ
+---@param file_type "chat" ファイルタイプ
 ---@return string filename 完全なファイル名（拡張子付き）
 function M.generate_with_title(title, file_type)
   file_type = file_type or "chat"

@@ -8,9 +8,8 @@
 2. [インストール](#インストール)
 3. [基本設定](#基本設定)
 4. [最初のチャット](#最初のチャット)
-5. [インラインアクション](#インラインアクション)
-6. [コンテキストの活用](#コンテキストの活用)
-7. [よくある質問](#よくある質問)
+5. [コンテキストの活用](#コンテキストの活用)
+6. [よくある質問](#よくある質問)
 
 ## 前提条件
 
@@ -109,8 +108,6 @@ require("vibing").setup({
 
 ```lua
 vim.keymap.set("n", "<leader>cc", ":VibingChat<CR>", { desc = "Open chat" })
-vim.keymap.set("v", "<leader>cf", ":VibingInline fix<CR>", { desc = "Fix selection" })
-vim.keymap.set("v", "<leader>ce", ":VibingInline explain<CR>", { desc = "Explain selection" })
 ```
 
 ## 最初のチャット
@@ -153,41 +150,6 @@ Luaでクイックソートを実装してください。
 
 ```vim
 :VibingOpenChat .vibing/chat/quicksort-implementation.md
-```
-
-## インラインアクション
-
-### コードを修正（fix）
-
-1. ビジュアルモードでコードを選択
-2. `:VibingInline fix` を実行
-3. Claudeが選択範囲の問題を修正します
-
-**例：**
-
-```lua
--- 選択してから :VibingInline fix
-function add(a b)  -- 引数にカンマがない
-  return a + b
-end
-```
-
-### コードを説明（explain）
-
-1. ビジュアルモードでコードを選択
-2. `:VibingInline explain` を実行
-3. 出力バッファにコードの説明が表示されます
-
-### その他のアクション
-
-- **feat**: 新機能を実装
-- **refactor**: コードをリファクタリング
-- **test**: テストを生成
-
-**カスタムプロンプト：**
-
-```vim
-:VibingInline "このコードを TypeScript に変換"
 ```
 
 ## コンテキストの活用
