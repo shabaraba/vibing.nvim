@@ -27,6 +27,23 @@ local function generate_hash(original_name)
   return string.format("%08x", hash):sub(1, 8)
 end
 
+---cwdがgit worktreeかをgitコマンドで判定し、識別子を返す
+---worktreeでは.gitがファイル（main repoではディレクトリ）
+---@param cwd string 作業ディレクトリ
+---@return string|nil worktreeの識別子（worktreeでなければnil）
+local function detect_git_worktree(cwd)
+  if vim.fn.filereadable(cwd .. "/.git") ~= 1 then
+    return nil
+  end
+  local branch = vim.fn.system(
+    "git -C " .. vim.fn.shellescape(cwd) .. " rev-parse --abbrev-ref HEAD 2>/dev/null"
+  ):gsub("\n$", "")
+  if branch ~= "" and branch ~= "HEAD" then
+    return branch
+  end
+  return cwd:match(".+/(.+)$") or cwd
+end
+
 ---Worktree固有のコンテキスト名を生成
 ---mote v0.2.4: --context API対応
 ---
@@ -42,10 +59,19 @@ end
 ---@return string Worktree固有のコンテキスト名
 function M.build_name(context_prefix, cwd)
   if cwd then
+    -- パターン1: .worktrees/ パス（後方互換）
     local worktree_path = cwd:match("%.worktrees/(.+)")
     if worktree_path then
       local worktree_name = sanitize_name(worktree_path)
       local hash_suffix = generate_hash(worktree_path)
+      return string.format("%s-worktree-%s-%s", context_prefix, worktree_name, hash_suffix)
+    end
+
+    -- パターン2: gitコマンドによる自動検出（.gitがファイルならworktree）
+    local worktree_id = detect_git_worktree(cwd)
+    if worktree_id then
+      local worktree_name = sanitize_name(worktree_id)
+      local hash_suffix = generate_hash(worktree_id)
       return string.format("%s-worktree-%s-%s", context_prefix, worktree_name, hash_suffix)
     end
   end
