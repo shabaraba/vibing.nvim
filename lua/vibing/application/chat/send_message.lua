@@ -50,7 +50,9 @@ function M.execute(adapter, callbacks, message, config)
 
   local bufnr = callbacks.get_bufnr()
   local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
-  local mote_config = M._create_session_mote_config(config, callbacks.get_session_id(), bufnr, session_cwd)
+  local frontmatter = callbacks.parse_frontmatter()
+  local mote_cwd_override = frontmatter and frontmatter.mote_cwd or nil
+  local mote_config = M._create_session_mote_config(config, callbacks.get_session_id(), bufnr, session_cwd, mote_cwd_override)
 
   -- 実際のメッセージ送信処理（mote初期化後に呼び出される）
   local function do_send()
@@ -294,8 +296,9 @@ end
 ---@param session_id string|nil セッションID
 ---@param bufnr number|nil バッファ番号（session_idがない場合のfallback用）
 ---@param session_cwd string|nil worktreeのcwd（worktreeで作業する場合のみ、worktree判定用）
+---@param mote_cwd_override string|nil VibingMoteDirで指定された追跡ディレクトリ（絶対パス）
 ---@return table|nil セッション固有のmote設定（mote未設定の場合nil）
-function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
+function M._create_session_mote_config(config, session_id, bufnr, session_cwd, mote_cwd_override)
   if not config.diff or not config.diff.mote then
     return nil
   end
@@ -307,14 +310,19 @@ function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
   -- プロジェクト名（設定 or 自動検出）
   mote_config.project = mote_config.project or MoteDiff.get_project_name()
 
-  -- コンテキスト名生成（worktree分離対応）
   local context_prefix = mote_config.context_prefix or "vibing"
-  mote_config.context = MoteDiff.build_context_name(context_prefix, session_cwd)
 
-  -- worktreeで作業する場合はcwdを設定
-  -- moteコマンドはこのcwdで実行され、worktree内のファイルのみを追跡する
-  if session_cwd then
-    mote_config.cwd = session_cwd
+  if mote_cwd_override then
+    -- VibingMoteDirで明示指定された追跡ディレクトリ
+    -- パスの末尾 + フルパスのハッシュでユニークなコンテキスト名を生成
+    mote_config.context = MoteDiff.build_context_name_from_path(context_prefix, mote_cwd_override)
+    mote_config.cwd = mote_cwd_override
+  else
+    -- worktree判定による自動コンテキスト（.worktrees/ パターン）
+    mote_config.context = MoteDiff.build_context_name(context_prefix, session_cwd)
+    if session_cwd then
+      mote_config.cwd = session_cwd
+    end
   end
 
   return mote_config

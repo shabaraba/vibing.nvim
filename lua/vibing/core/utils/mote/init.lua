@@ -14,6 +14,7 @@ M.is_available = Binary.is_available
 
 -- Context module exports
 M.build_context_name = Context.build_name
+M.build_context_name_from_path = Context.build_name_from_path
 M.get_project_name = Context.get_project_name
 M.build_context_dir_path = Context.build_dir_path
 M.is_initialized = Context.is_initialized
