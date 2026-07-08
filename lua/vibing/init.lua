@@ -288,6 +288,13 @@ function M._register_commands()
 
     local success = chat_buffer:update_frontmatter("mote_cwd", path)
     if success then
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(chat_buffer.buf) and chat_buffer.file_path then
+          vim.api.nvim_buf_call(chat_buffer.buf, function()
+            vim.cmd.write({ bang = true })
+          end)
+        end
+      end)
       vim.notify("[vibing] mote tracking directory: " .. path, vim.log.levels.INFO)
     else
       vim.notify("[vibing] Failed to set mote tracking directory", vim.log.levels.ERROR)

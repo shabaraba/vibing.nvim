@@ -57,7 +57,7 @@ function M.update_field(buf, key, value, update_timestamp)
     return str:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
   end
 
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 20, false)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, 50, false)
   local frontmatter_end = 0
   local key_line = nil
   local escaped_key = escape_pattern(key)
