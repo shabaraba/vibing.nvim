@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace-manifest.json",
+  "name": "vibing-nvim",
+  "owner": {
+    "name": "shabaraba",
+    "url": "https://github.com/shabaraba"
+  },
+  "description": "Marketplace for the vibing.nvim Claude Code plugin: Neovim MCP integration, skills, and subagents.",
+  "plugins": [
+    {
+      "name": "vibing-nvim",
+      "source": "./",
+      "description": "Neovim MCP tools, skills, and subagents for vibing.nvim.",
+      "homepage": "https://github.com/shabaraba/vibing.nvim",
+      "repository": "https://github.com/shabaraba/vibing.nvim",
+      "license": "MIT",
+      "keywords": ["neovim", "nvim", "mcp", "lsp", "editor"]
+    }
+  ]
+}

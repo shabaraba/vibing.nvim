@@ -29,6 +29,41 @@ This MCP server enables Claude Code to interact with a running Neovim instance t
 
 ## Installation
 
+### Option 0: Claude Code Plugin (recommended)
+
+Install this MCP server, plus Neovim-aware skills and a `nvim-navigator` subagent, as a single
+[Claude Code plugin](https://code.claude.com/docs/en/plugins) — no manual `~/.claude.json` editing
+and no separate build step (the server builds itself on first launch).
+
+`../build.sh` does this automatically (`claude plugin marketplace add` + `claude plugin install
+... --scope user`) whenever the `claude` CLI is on `PATH`. To do it yourself instead:
+
+```text
+/plugin marketplace add shabaraba/vibing.nvim
+/plugin install vibing-nvim@vibing-nvim
+```
+
+See the plugin manifest at `../.claude-plugin/plugin.json`. The manual steps below remain useful
+for development or if you need a non-default RPC port/timeout.
+
+**Trust note:** installing this as a "directory"-source plugin runs `npm ci`/`npm run build` from
+that checkout on first launch. Only add the marketplace from a source you trust (the official repo,
+or your own fork/clone).
+
+To uninstall:
+
+```text
+/plugin uninstall vibing-nvim@vibing-nvim
+/plugin marketplace remove vibing-nvim
+```
+
+**Auto-build mechanism:** `mcp-server/bin/run.mjs` hashes `package.json`, `package-lock.json`,
+`tsconfig.json`, and everything under `src/` into a fingerprint stored at
+`dist/.build-fingerprint`, and rebuilds whenever that fingerprint changes (or `dist/`/
+`node_modules` are missing) rather than only on first launch. To force a rebuild manually, delete
+`dist/.build-fingerprint` (or the whole `dist/` directory) and relaunch, or just run
+`npm ci && npm run build` directly in this directory.
+
 ### 1. Build the MCP Server
 
 **Option 1: Using build script (simplest)**
