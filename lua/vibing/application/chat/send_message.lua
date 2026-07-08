@@ -307,24 +307,14 @@ function M._create_session_mote_config(config, session_id, bufnr, session_cwd)
   -- プロジェクト名（設定 or 自動検出）
   mote_config.project = mote_config.project or MoteDiff.get_project_name()
 
-  -- mote用cwdの決定:
-  -- working_dir frontmatterがgit root(.)を指す場合は、Neovimの現在のcwdで
-  -- worktree自動検出を試みる（wt-sessionsなど任意パスのworktreeに対応）
-  local mote_cwd = session_cwd
-  local Git = require("vibing.core.utils.git")
-  local git_root = Git.get_root()
-  if git_root and (not mote_cwd or mote_cwd == git_root) then
-    local nvim_cwd = vim.fn.getcwd()
-    if nvim_cwd and nvim_cwd ~= "" and nvim_cwd ~= git_root then
-      mote_cwd = nvim_cwd
-    end
-  end
-
   -- コンテキスト名生成（worktree分離対応）
   local context_prefix = mote_config.context_prefix or "vibing"
-  mote_config.context = MoteDiff.build_context_name(context_prefix, mote_cwd)
-  if mote_cwd then
-    mote_config.cwd = mote_cwd
+  mote_config.context = MoteDiff.build_context_name(context_prefix, session_cwd)
+
+  -- worktreeで作業する場合はcwdを設定
+  -- moteコマンドはこのcwdで実行され、worktree内のファイルのみを追跡する
+  if session_cwd then
+    mote_config.cwd = session_cwd
   end
 
   return mote_config
