@@ -1,7 +1,5 @@
 {
-  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "vibing-nvim",
-  "displayName": "vibing.nvim",
   "description": "Neovim MCP tools, skills, and subagents for vibing.nvim — lets Claude Code read/edit buffers, drive LSP, and manage windows in a running Neovim instance.",
   "author": {
     "name": "shabaraba",

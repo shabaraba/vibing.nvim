@@ -186,25 +186,34 @@ export async function loadInstalledPlugins(): Promise<PluginReference[]> {
     return [];
   }
 
-  // Only load local-scope plugins explicitly.
-  // User-scope plugins are auto-discovered by the Agent SDK via settingSources,
-  // so passing them here is unnecessary. Local-scope plugins are project-specific:
-  // include only if projectPath matches the current working directory.
+  // Unlike the `claude` CLI, the Agent SDK does NOT auto-discover user-scope
+  // installed plugins via settingSources — they must be passed explicitly via
+  // the `plugins` option, same as local-scope ones. Prefer a local-scope
+  // install matching the current project; otherwise fall back to the
+  // user-scope install (the common case for globally-installed plugins).
   const currentProjectPath = process.cwd();
+  const enabledIds = await loadEnabledPluginIds();
   const allInstallations: InstalledPlugin[] = [];
   for (const [pluginId, installations] of Object.entries(installed.plugins)) {
     if (!Array.isArray(installations) || installations.length === 0) continue;
 
-    const localInstall = installations.find(
-      (inst) => inst.scope === 'local' && inst.projectPath === currentProjectPath
-    );
-
-    if (!localInstall) {
-      debugLog(`Skipping plugin (no local install for current project): ${pluginId}`);
+    if (enabledIds && !enabledIds.has(pluginId)) {
+      debugLog(`Skipping plugin (not in enabledPlugins): ${pluginId}`);
       continue;
     }
 
-    allInstallations.push(localInstall);
+    const localInstall = installations.find(
+      (inst) => inst.scope === 'local' && inst.projectPath === currentProjectPath
+    );
+    const userInstall = installations.find((inst) => inst.scope === 'user');
+    const install = localInstall || userInstall;
+
+    if (!install) {
+      debugLog(`Skipping plugin (no local or user install applicable): ${pluginId}`);
+      continue;
+    }
+
+    allInstallations.push(install);
   }
 
   debugLog(`Found ${allInstallations.length} plugin installations`);
