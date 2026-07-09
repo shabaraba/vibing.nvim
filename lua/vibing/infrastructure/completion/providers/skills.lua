@@ -220,9 +220,11 @@ local function start_async_load()
       end
       _loading = false
       if code ~= 0 then
+        -- Failed: allow retry on next completion trigger
         return
       end
       if vim.fn.getcwd(-1, -1) ~= cwd then
+        -- cwd changed: retry will happen on next trigger with correct cwd
         return
       end
       local stdout = table.concat(stdout_lines, "\n")
@@ -345,10 +347,15 @@ end
 ---Get all skill candidates (cached)
 ---@return Vibing.CompletionItem[]
 function M.get_all()
-  if not _cache then
-    _cache = scan_skills()
+  if _cache then
+    return _cache
   end
-  return _cache
+  local items = scan_skills()
+  -- Only cache when dynamic load is complete; avoid caching incomplete results
+  if not (_loading or _bundled_cache == nil) then
+    _cache = items
+  end
+  return items
 end
 
 ---Preload dynamic skills in background (call at setup time to warm the cache)
