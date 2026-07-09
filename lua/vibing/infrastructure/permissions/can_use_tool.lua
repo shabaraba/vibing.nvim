@@ -56,7 +56,7 @@ local INTERNAL_TOOLS = {
 --- @field session_allowed_tools string[] Session-level allowed tools (mutable)
 --- @field session_denied_tools string[] Session-level denied tools (mutable)
 --- @field permission_rules? PermissionRule[] Granular rules
---- @field permission_mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"
+--- @field permission_mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"|"auto"
 --- @field mcp_enabled boolean
 
 --- Create allow result
@@ -214,7 +214,7 @@ function M.can_use_tool(tool_name, input, config)
     -- 6. Permission modes
     local mode = config.permission_mode
 
-    if mode == "bypassPermissions" or mode == "dontAsk" then
+    if mode == "bypassPermissions" or mode == "dontAsk" or mode == "auto" then
       return allow(input)
     end
 
