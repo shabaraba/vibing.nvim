@@ -6,6 +6,12 @@ local M = {}
 -- 並行セッション間でのmote差分混入を防ぐためのベースライン管理
 local session_snapshots = {}
 
+---バッファのセッションスナップショットをクリア（BufUnload時に呼ぶ）
+---@param bufnr number
+function M.cleanup_snapshots(bufnr)
+  session_snapshots[bufnr] = nil
+end
+
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local GradientAnimation = require("vibing.ui.gradient_animation")
 
@@ -53,6 +59,9 @@ function M.execute(adapter, callbacks, message, config)
   local frontmatter = callbacks.parse_frontmatter()
   -- mote_dirs (array) が優先。後方互換として mote_cwd (string) も読む
   local mote_dirs = frontmatter and frontmatter.mote_dirs
+  if type(mote_dirs) == "string" then
+    mote_dirs = { mote_dirs }
+  end
   if (not mote_dirs or #mote_dirs == 0) and frontmatter and frontmatter.mote_cwd then
     mote_dirs = { frontmatter.mote_cwd }
   end
@@ -110,6 +119,11 @@ function M.execute(adapter, callbacks, message, config)
       on_tool_use = function(tool, file_path, _command)
         if (tool == "Write" or tool == "Edit" or tool == "NotebookEdit") and file_path then
           modified_file_paths[file_path] = true
+        elseif tool == "FileChange" and file_path then
+          -- Codex adapter reports comma-joined paths
+          for path in file_path:gmatch("[^,]+") do
+            modified_file_paths[vim.trim(path)] = true
+          end
         end
       end,
       on_insert_choices = function(questions)

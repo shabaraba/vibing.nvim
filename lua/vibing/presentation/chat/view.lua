@@ -260,6 +260,11 @@ function M._apply_chat_buffer_settings(bufnr)
       end
       -- アタッチ済みバッファからクリーンアップ
       M._attached_buffers[bufnr] = nil
+      -- moteスナップショットIDをクリア（bufnr再利用時の誤ったベースライン防止）
+      local ok_sm, send_message = pcall(require, "vibing.application.chat.send_message")
+      if ok_sm then
+        send_message.cleanup_snapshots(bufnr)
+      end
     end,
     desc = "Cancel running Agent SDK process on buffer unload",
   })
