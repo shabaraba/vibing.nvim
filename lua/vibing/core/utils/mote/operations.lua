@@ -40,6 +40,9 @@ function M.get_diff(file_path, config, callback)
   local cmd = Command.build_base_args(config)
   table.insert(cmd, "snap")
   table.insert(cmd, "diff")
+  if config.baseline_snapshot_id then
+    table.insert(cmd, config.baseline_snapshot_id)
+  end
   table.insert(cmd, vim.fn.fnamemodify(file_path, ":p"))
 
   Command.run(cmd, config.cwd, function(stdout)
@@ -192,6 +195,9 @@ function M.get_changed_files(config, callback)
   local cmd = Command.build_base_args(config)
   table.insert(cmd, "snap")
   table.insert(cmd, "diff")
+  if config.baseline_snapshot_id then
+    table.insert(cmd, config.baseline_snapshot_id)
+  end
   table.insert(cmd, "--name-only")
 
   Command.run(cmd, config.cwd, function(stdout)
@@ -220,6 +226,9 @@ function M.generate_patch(config, output_path, callback)
   local cmd = Command.build_base_args(config)
   table.insert(cmd, "snap")
   table.insert(cmd, "diff")
+  if config.baseline_snapshot_id then
+    table.insert(cmd, config.baseline_snapshot_id)
+  end
   table.insert(cmd, "-o")
   table.insert(cmd, output_path)
 

@@ -9,24 +9,21 @@ CONTENTS                                                     *vibing-contents*
     4. Configuration ........................... |vibing-configuration|
     5. Commands ................................ |vibing-commands|
     6. Chat Commands ........................... |vibing-chat-commands|
-    7. Inline Actions .......................... |vibing-inline-actions|
-    8. Mappings ................................ |vibing-mappings|
-    9. API ..................................... |vibing-api|
-   10. Adapters ................................ |vibing-adapters|
-   11. Troubleshooting ......................... |vibing-troubleshooting|
-   12. License ................................. |vibing-license|
+    7. Mappings ................................ |vibing-mappings|
+    8. API ..................................... |vibing-api|
+    9. Adapters ................................ |vibing-adapters|
+   10. Troubleshooting ......................... |vibing-troubleshooting|
+   11. License ................................. |vibing-license|
 
 ==============================================================================
 1. INTRODUCTION                                          *vibing-introduction*
 
 vibing.nvim is a Neovim plugin that integrates Claude AI through the Agent
-SDK, providing intelligent chat and inline code actions directly within your
+SDK, providing an intelligent chat interface directly within your
 editor.
 
 Features:~
   • Interactive chat window with Claude AI
-  • Quick inline code actions (fix, explain, refactor, test)
-  • Natural language instructions for code transformations
   • Session persistence with context management
   • Configurable permissions and execution modes
   • Remote Neovim control via socket
@@ -126,39 +123,6 @@ keymaps.add_context    Key to add file to context
 :VibingClearContext
     Clear all context files.
 
-                                                            *:VibingInline*
-:VibingInline [action|instruction]
-    Run predefined action or custom instruction on visual selection.
-    Actions: fix, feat, explain, refactor, test
-    Or use natural language: "Convert to TypeScript"
-
-                                                           *:VibingExplain*
-:VibingExplain
-    Explain selected code.
-
-                                                               *:VibingFix*
-:VibingFix
-    Fix issues in selected code.
-
-                                                           *:VibingFeature*
-:VibingFeature
-    Implement a feature in selected code.
-
-                                                          *:VibingRefactor*
-:VibingRefactor
-    Refactor selected code.
-
-                                                              *:VibingTest*
-:VibingTest
-    Generate tests for selected code.
-
-                                                            *:VibingCustom*
-:VibingCustom <instruction>
-    Execute custom natural language instruction on selected code.
-    Example: >
-    :'<,'>VibingCustom "Add error handling"
-<
-
                                                             *:VibingCancel*
 :VibingCancel
     Cancel the current AI request.
@@ -176,26 +140,7 @@ These commands are available within the chat buffer:
 /model <model>          Set AI model (opus/sonnet/haiku)
 
 ==============================================================================
-7. INLINE ACTIONS                                      *vibing-inline-actions*
-
-Predefined actions:~
->
-    :'<,'>VibingInline fix       " Fix code issues
-    :'<,'>VibingInline feat      " Implement feature
-    :'<,'>VibingInline explain   " Explain code
-    :'<,'>VibingInline refactor  " Refactor code
-    :'<,'>VibingInline test      " Generate tests
-<
-
-Natural language instructions:~
->
-    :'<,'>VibingInline "Convert this to async/await"
-    :'<,'>VibingInline "Add comprehensive error handling"
-    :'<,'>VibingCustom "Optimize for performance"
-<
-
-==============================================================================
-8. MAPPINGS                                                  *vibing-mappings*
+7. MAPPINGS                                                  *vibing-mappings*
 
 Default keymaps in chat buffer:~
 
@@ -214,7 +159,7 @@ You can customize these in setup(): >lua
 <
 
 ==============================================================================
-9. API                                                              *vibing-api*
+8. API                                                              *vibing-api*
 
 For detailed API documentation, see: doc/api-reference.md
 
@@ -236,7 +181,7 @@ require("vibing").get_config()                          *vibing.get_config()*
         Configuration table
 
 ==============================================================================
-10. ADAPTERS                                                    *vibing-adapters*
+9. ADAPTERS                                                    *vibing-adapters*
 
 agent_sdk                                                      *vibing-agent_sdk*
     Claude Agent SDK adapter (recommended)
@@ -300,7 +245,7 @@ claude_acp                                                        *vibing-claude
 <
 
 ==============================================================================
-11. TROUBLESHOOTING                                      *vibing-troubleshooting*
+10. TROUBLESHOOTING                                      *vibing-troubleshooting*
 
 Chat not responding:~
     1. Check Claude CLI installation: >
@@ -348,7 +293,7 @@ Include in bug reports:~
     • Steps to reproduce
 
 ==============================================================================
-12. LICENSE                                                    *vibing-license*
+11. LICENSE                                                    *vibing-license*
 
 MIT License
 

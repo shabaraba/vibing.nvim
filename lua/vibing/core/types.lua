@@ -21,12 +21,6 @@
 ---@field end_line number?
 ---@field bufnr number?
 
----@class Vibing.InlineAction
----@field name string
----@field prompt string
----@field tools string[]
----@field use_output_buffer boolean
-
 ---@class Vibing.Task
 ---@field id string
 ---@field execute fun(done: fun())
@@ -36,7 +30,7 @@
 
 ---@class Vibing.AdapterOpts
 ---@field streaming boolean?
----@field action_type "chat"|"inline"?
+---@field action_type "chat"?
 ---@field mode string?
 ---@field model string?
 ---@field tools string[]?

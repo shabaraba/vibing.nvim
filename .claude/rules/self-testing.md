@@ -239,12 +239,6 @@ When implementing new features, add E2E tests for:
 - [ ] `vibing-workspace-done` skill removes the worktree and moves the workspace to done
 - [ ] `vibing-workspace-list` skill lists active and done workspaces
 
-### Inline Actions
-
-- [ ] `:VibingInline fix` modifies code
-- [ ] `:VibingInline explain` shows output
-- [ ] Inline action queue (multiple concurrent requests)
-
 ### MCP Tools
 
 - [ ] `nvim_list_instances` returns correct ports

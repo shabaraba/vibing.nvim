@@ -196,7 +196,6 @@ describe("vibing.init", function()
         "VibingSlashCommands",
         "VibingContext",
         "VibingClearContext",
-        "VibingInline",
         "VibingCancel",
         "VibingSummarize",
         "VibingChatFork",

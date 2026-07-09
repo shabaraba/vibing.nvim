@@ -11,7 +11,7 @@
 [![Release](https://img.shields.io/github/v/release/shabaraba/vibing.nvim)](https://github.com/shabaraba/vibing.nvim/releases)
 
 Agent SDKを通じて**Claude AI**をシームレスに統合し、エディタ内で直接、
-インテリジェントなチャット会話とコンテキスト対応のインラインコードアクションを提供する強力なNeovimプラグインです。
+インテリジェントなチャット会話を提供する強力なNeovimプラグインです。
 
 [English](./README.md) | 日本語
 
@@ -65,7 +65,6 @@ Claude Code CLIと同じ機能をNeovim内で直接提供します。
 ブロックせずに複数のタスクを同時進行：
 
 - **複数のチャットウィンドウ** - それぞれ独立したセッションで別々の会話を開く
-- **キューイングされたインラインアクション** - コード修正を順次実行
 - **待ち時間なし** - 別のチャットが処理中でも新しいチャットを開始
 
 ワークフロー例：
@@ -73,8 +72,6 @@ Claude Code CLIと同じ機能をNeovim内で直接提供します。
 ```vim
 :VibingChat  " チャット1で認証問題をデバッグ
 :VibingChat  " チャット2で新機能を設計
-:'<,'>VibingInline fix  " コード修正をキューに追加
-:'<,'>VibingInline test " テスト生成をキューに追加
 ```
 
 すべてのセッションは適切な競合管理のもと独立して実行されます。
@@ -108,31 +105,29 @@ Claudeができることを細かく制御：
 - シェル操作のコマンドパターンマッチング
 - インタラクティブな権限ビルダーUI
 
-### 📋 Accept/Reject機能付きインラインプレビュー
+### 📋 Accept/Reject機能付き差分プレビュー
 
 すべてのコード修正に対するTelescope風の差分プレビュー：
 
 - 各変更ファイルの視覚的な差分表示
 - Gitベースのrevertによるすべて承認/すべて拒否
 - 複数の変更ファイル間のナビゲート
-- インラインアクションとチャットモードの両方で動作
+- チャットモードで動作
 
 ### 🔀 並行セッションサポート
 
 複数のAIタスクを同時に実行：
 
 - **独立したチャットセッション** - 各チャットウィンドウが独自の会話とセッションIDを維持
-- **キューイングされたインラインアクション** - 複数のコード修正が競合を防ぐために順次実行
 - **並列ワークフロー** - 1つのチャットでデバッグしながら別のチャットで機能を設計
 
 ### その他の機能
 
 - **💬 インタラクティブなチャットインターフェース** - Claude AIとのシームレスなチャットウィンドウ、デフォルトで現在のバッファに開く
-- **⚡ インラインアクション** - 素早いコード修正、説明、リファクタリング、テスト生成
 - **📝 自然言語コマンド** - あらゆるコード変換にカスタム指示を使用
 - **🔧 スラッシュコマンド** - コンテキスト管理、権限、設定のためのチャット内コマンド
 - **🎯 スマートコンテキスト** - 開いているバッファからの自動ファイルコンテキスト検出と手動追加
-- **🌍 多言語サポート** - チャットとインラインアクションで異なる言語を設定可能
+- **🌍 多言語サポート** - AIレスポンスの言語を設定可能
 - **📊 差分ビューアー** - AI編集ファイルの視覚的な差分表示（`gd`キーバインド）
 - **⚙️ 高度な設定可能性** - 柔軟なモード、モデル、権限、UI設定
 
@@ -164,6 +159,42 @@ vibing.nvimは深いClaude統合に焦点を当てています。以下の用途
 - プロバイダー非依存のワークフロー
 
 ## 📦 インストール
+
+### Claude Codeプラグイン（MCP + スキル + エージェント）
+
+vibing.nvimは[Claude Codeプラグイン](https://code.claude.com/docs/en/plugins)としても配布されています。
+`vibing-nvim` MCPサーバーに加えて、Neovim対応のスキルと読み取り専用のナビゲーション用サブエージェントを
+まとめてバンドルしており、`~/.claude.json`を手動編集する必要はありません。
+
+**自動インストール：** `build = "./build.sh"`（後述）でインストールしていて、`claude` CLIが
+`PATH`上にある場合、`build.sh`がビルドの度に`claude plugin marketplace add` +
+`claude plugin install ... --scope user`を自動実行します。他に何もする必要はありません。
+
+**手動インストール：** 自分でインストールする場合（`build.sh`を実行しない場合や、別のマシンで
+インストールする場合など）：
+
+```text
+/plugin marketplace add shabaraba/vibing.nvim
+/plugin install vibing-nvim@vibing-nvim
+```
+
+いずれの方法でも、`vibing-nvim` MCPサーバー（下記で説明する`mcp__vibing-nvim__*`と同じツール群）に
+加えて、`nvim-context`・`nvim-lsp-navigation` スキル（Neovimインスタンスに接続されている場合、grepよりも
+ライブなバッファ/ウィンドウ/カーソル状態の読み取りとLSPナビゲーションを優先させる）、`nvim-navigator`
+サブエージェント（`@vibing-nvim:nvim-navigator`で読み取り専用のコードナビゲーションを実行）が
+インストールされます。
+
+バンドルされたMCPサーバーは初回起動時に自身をビルド（`npm install && npm run build`）するため、
+MCPサーバー自体に別途ビルド手順は不要です。これはNeovim側の`build.sh`（後述、プラグインの他のネイティブ
+部分のビルドに引き続き必要）とは独立しています。MCPツールが接続する対象として、`mcp = { enabled = true }`（デフォルト）で
+Neovimを起動しておく必要はあります。
+
+**アンインストール：**
+
+```text
+/plugin uninstall vibing-nvim@vibing-nvim
+/plugin marketplace remove vibing-nvim
+```
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim)を使用
 
@@ -202,7 +233,7 @@ vibing.nvimは深いClaude統合に焦点を当てています。以下の用途
       preview = {
         enabled = false,  -- 差分プレビューUIを有効化（Git必須）
       },
-      language = nil,  -- オプション："ja" | "en" | { default = "ja", chat = "ja", inline = "en" }
+      language = nil,  -- オプション："ja" | "en" | { default = "ja", chat = "ja" }
     })
   end,
 }
@@ -224,16 +255,14 @@ use {
 
 ### ユーザーコマンド
 
-| コマンド                              | 説明                                                                                         |
-| ------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `:VibingChat [position\|file]`        | オプションの位置（current\|right\|left）で新しいチャットを作成、または保存したファイルを開く |
-| `:VibingToggleChat`                   | 既存のチャットウィンドウを切り替え（現在の会話を保持）                                       |
-| `:VibingSlashCommands`                | チャット内でスラッシュコマンドピッカーを表示                                                 |
-| `:VibingContext [path]`               | コンテキストにファイルを追加（またはパスがない場合oil.nvimから）                             |
-| `:VibingClearContext`                 | すべてのコンテキストをクリア                                                                 |
-| `:VibingInline [action\|instruction]` | リッチUIピッカー（引数なし）または直接実行（引数あり）。タブ補完有効。                       |
-| `:VibingInlineAction`                 | `:VibingInline`のエイリアス（後方互換性のため）                                              |
-| `:VibingCancel`                       | 現在のリクエストをキャンセル                                                                 |
+| コマンド                       | 説明                                                                                         |
+| ------------------------------ | -------------------------------------------------------------------------------------------- |
+| `:VibingChat [position\|file]` | オプションの位置（current\|right\|left）で新しいチャットを作成、または保存したファイルを開く |
+| `:VibingToggleChat`            | 既存のチャットウィンドウを切り替え（現在の会話を保持）                                       |
+| `:VibingSlashCommands`         | チャット内でスラッシュコマンドピッカーを表示                                                 |
+| `:VibingContext [path]`        | コンテキストにファイルを追加（またはパスがない場合oil.nvimから）                             |
+| `:VibingClearContext`          | すべてのコンテキストをクリア                                                                 |
+| `:VibingCancel`                | 現在のリクエストをキャンセル                                                                 |
 
 **コマンドのセマンティクス：**
 
@@ -245,68 +274,11 @@ use {
   - `:VibingChat path/to/file.vibing` - 保存したチャットファイルを開く
 - **`:VibingToggleChat`** - 現在の会話を表示/非表示にします。既存のチャット状態を保持します。
 
-### インラインアクション
+### プレビューUI
 
-**リッチUIピッカー（推奨）：**
-
-```vim
-:'<,'>VibingInline
-" 分割パネルUIを開きます：
-" - 左：アクションメニュー（fix、feat、explain、refactor、test）
-"   j/kまたは矢印キーでナビゲート、Tabで入力に移動
-" - 右：追加指示入力（オプション）
-"   Shift-Tabでメニューに戻る
-" - Enterで実行、Esc/Ctrl-cでキャンセル
-```
-
-**キーバインディング：**
-
-- `j`/`k` または `↓`/`↑` - アクションメニューをナビゲート
-- `Tab` - メニューから入力フィールドに移動
-- `Shift-Tab` - 入力フィールドからメニューに移動
-- `Enter` - 選択したアクションを実行
-- `Esc` または `Ctrl-c` - キャンセル
-
-**直接実行（引数あり）：**
-
-```vim
-:'<,'>VibingInline fix       " コードの問題を修正
-:'<,'>VibingInline feat      " 機能を実装
-:'<,'>VibingInline explain   " コードを説明
-:'<,'>VibingInline refactor  " コードをリファクタリング
-:'<,'>VibingInline test      " テストを生成
-
-" 追加指示付き
-:'<,'>VibingInline fix async/awaitを使って
-:'<,'>VibingInline test Jestのモックで
-```
-
-**自然言語指示：**
-
-```vim
-:'<,'>VibingInline "この関数をTypeScriptに変換"
-:'<,'>VibingInline "try-catchでエラーハンドリングを追加"
-:'<,'>VibingInline "このループをパフォーマンス最適化"
-```
-
-### インラインプレビューUI
-
-設定で`preview.enabled = true`が設定されている場合、インラインアクション実行後にTelescope風のプレビューUIを表示します（Gitリポジトリ必須）：
+設定で`preview.enabled = true`が設定されている場合、チャットでのコード変更後にTelescope風のプレビューUIを表示します（Gitリポジトリ必須）：
 
 **レイアウト：**
-
-インラインモード（3パネル）：
-
-```text
-┌──────────────┬──────────────────────────────────────┐
-│ Files (3)    │ Diff Preview                         │
-│  > src/a.lua │  @@ -10,5 +10,8 @@                   │
-│    src/b.lua │  -old line                           │
-│    tests/*.lua  +new line                           │
-├──────────────┴──────────────────────────────────────┤
-│ Response: Modified 3 files successfully             │
-└─────────────────────────────────────────────────────┘
-```
 
 チャットモード（2パネル）：
 
@@ -365,7 +337,7 @@ use {
 **すべての変更ファイルをプレビュー（`gp`）：**
 
 Claudeがチャットセッションで複数のファイルを変更した場合、チャットバッファ内の任意の場所で`gp`を押すと、
-すべての変更ファイルを一度に表示するインラインプレビューUIが開きます。これにより、インラインアクションと同じAccept/Reject機能が提供されます：
+すべての変更ファイルを一度に表示するプレビューUIが開きます。これにより、Accept/Reject機能が提供されます：
 
 - `j`/`k`でファイル間をナビゲート
 - `a`を押してすべての変更を承認
@@ -500,11 +472,10 @@ require("vibing").setup({
   -- シンプル：すべてのレスポンスを日本語で
   language = "ja",
 
-  -- 高度：チャットとインラインで異なる言語
+  -- 高度：コンテキストごとに異なる言語
   -- language = {
   --   default = "ja",
   --   chat = "ja",     -- チャットは日本語
-  --   inline = "en",   -- インラインアクションは英語
   -- },
 })
 ```
@@ -617,7 +588,7 @@ keymaps = {
 
 ### Preview設定
 
-インラインアクションとチャット用の差分プレビューUIを設定：
+チャット用の差分プレビューUIを設定：
 
 ```lua
 preview = {
@@ -625,7 +596,7 @@ preview = {
                     -- Gitリポジトリが必要
                     -- コード変更後にAccept/Reject UIを表示
                     -- git diffとgit checkoutを使用して元に戻す
-                    -- インラインアクションとチャット（gpキー）の両方で動作
+                    -- チャット（gpキー）で動作
 }
 ```
 
@@ -717,7 +688,6 @@ language = "ja"  -- または "en"、"fr"など
 language = {
   default = "ja",  -- デフォルト言語
   chat = "ja",     -- チャットウィンドウのレスポンス
-  inline = "en",   -- インラインアクションのレスポンス
 }
 ```
 

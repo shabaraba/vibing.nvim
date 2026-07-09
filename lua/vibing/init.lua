@@ -105,8 +105,8 @@ function M.setup(opts)
 end
 
 ---Neovimユーザーコマンドを登録
----VibingChat, VibingContext, VibingInline等の全コマンドを登録
----チャット操作、コンテキスト管理、インラインアクションを含む
+---VibingChat, VibingContext等の全コマンドを登録
+---チャット操作、コンテキスト管理を含む
 function M._register_commands()
   -- チャット関連コマンド
   vim.api.nvim_create_user_command("VibingChat", function(opts)
@@ -205,25 +205,6 @@ function M._register_commands()
     require("vibing.presentation.context.controller").handle_clear()
   end, { desc = "Clear Vibing context" })
 
-  -- インライン関連コマンド
-  vim.api.nvim_create_user_command("VibingInline", function(opts)
-    require("vibing.presentation.inline.controller").handle_execute(opts.args)
-  end, {
-    nargs = "?",
-    range = true,
-    desc = "Run inline action or custom instruction",
-    complete = function(ArgLead, CmdLine, CursorPos)
-      local actions = { "fix", "feat", "explain", "refactor", "test" }
-      local matches = {}
-      for _, action in ipairs(actions) do
-        if action:find("^" .. vim.pesc(ArgLead)) then
-          table.insert(matches, action)
-        end
-      end
-      return matches
-    end,
-  })
-
   -- その他のコマンド
   vim.api.nvim_create_user_command("VibingCancel", function()
     local view = require("vibing.presentation.chat.view")
@@ -242,6 +223,36 @@ function M._register_commands()
       M.adapter:cancel()
     end
   end, { desc = "Cancel current Vibing request" })
+
+  vim.api.nvim_create_user_command("VibingMoteDir", function(opts)
+    local view = require("vibing.presentation.chat.view")
+    local chat_buffer = view.get_current() or view._current_buffer
+    if not chat_buffer then
+      vim.notify("[vibing] No chat buffer active", vim.log.levels.ERROR)
+      return
+    end
+
+    local path = opts.args ~= "" and opts.args or vim.fn.getcwd()
+    path = vim.fn.fnamemodify(path, ":p"):gsub("/$", "")
+
+    local success = chat_buffer:update_frontmatter_list("mote_dirs", path, "add")
+    if success then
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(chat_buffer.buf) and chat_buffer.file_path then
+          vim.api.nvim_buf_call(chat_buffer.buf, function()
+            vim.cmd.write({ bang = true })
+          end)
+        end
+      end)
+      vim.notify("[vibing] Added mote tracking directory: " .. path, vim.log.levels.INFO)
+    else
+      vim.notify("[vibing] Failed to add mote tracking directory", vim.log.levels.ERROR)
+    end
+  end, {
+    nargs = "?",
+    desc = "Set mote tracking directory for current chat session",
+    complete = "dir",
+  })
 
   vim.api.nvim_create_user_command("VibingReloadCommands", function()
     local custom_commands = require("vibing.application.chat.custom_commands")

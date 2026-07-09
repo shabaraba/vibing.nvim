@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "vibing-nvim",
+  "displayName": "vibing.nvim",
+  "description": "Neovim MCP tools, skills, and subagents for vibing.nvim — lets Claude Code read/edit buffers, drive LSP, and manage windows in a running Neovim instance.",
+  "author": {
+    "name": "shabaraba",
+    "url": "https://github.com/shabaraba"
+  },
+  "homepage": "https://github.com/shabaraba/vibing.nvim",
+  "repository": "https://github.com/shabaraba/vibing.nvim",
+  "license": "MIT",
+  "keywords": ["neovim", "nvim", "mcp", "lsp", "editor"],
+  "mcpServers": {
+    "vibing-nvim": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/bin/run.mjs"],
+      "env": {
+        "VIBING_RPC_PORT": "9876",
+        "VIBING_RPC_TIMEOUT": "30000"
+      }
+    }
+  }
+}
