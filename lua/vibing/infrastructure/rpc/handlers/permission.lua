@@ -17,10 +17,6 @@ local session_state = {
 --- @type table|nil
 local active_opts = nil
 
---- Pending hook approvals waiting for user response
---- @type table<string, {tool_name: string, tool_input: table}>
-local pending_hook_approvals = {}
-
 --- Codex uses different tool names than Claude for equivalent operations.
 --- This mapping ensures frontmatter permissions work identically across adapters.
 local CODEX_TOOL_ALIASES = {
@@ -150,20 +146,20 @@ function M.check_tool_permission(params)
     tool_name = CODEX_TOOL_ALIASES[tool_name] or tool_name
   end
 
-  -- AskUserQuestion: deny + insert choices into chat buffer + kill process
+  -- AskUserQuestion: kill process first, then insert choices + write deny
   if tool_name == "AskUserQuestion" then
-    write_hook_response(request_id, false)
     vim.schedule(function()
       local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
       local stream = registry.get()
       if stream then
-        if stream.on_insert_choices and tool_input.questions then
-          stream.on_insert_choices(tool_input.questions)
-        end
         if stream.adapter and stream.handle_id then
           stream.adapter:cancel(stream.handle_id)
         end
+        if stream.on_insert_choices and tool_input.questions then
+          stream.on_insert_choices(tool_input.questions)
+        end
       end
+      write_hook_response(request_id, false)
     end)
     return { status = "denied", reason = "AskUserQuestion intercepted" }
   end
@@ -178,43 +174,24 @@ function M.check_tool_permission(params)
     write_hook_response(request_id, false)
     return { status = "denied", reason = result.message }
   else
-    -- "ask" → show approval UI in chat buffer, hook blocks until user responds
-    pending_hook_approvals[request_id] = {
-      tool_name = tool_name,
-      tool_input = tool_input,
-    }
-
-    -- Clean up if user never responds (hook script times out after 120s)
-    vim.defer_fn(function()
-      pending_hook_approvals[request_id] = nil
-    end, 130000)
-
+    -- "ask" → kill process first, show approval UI, then write deny
+    -- User's approval choice updates session state; Claude retries on next message
     vim.schedule(function()
       local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
       local stream = registry.get()
 
-      if stream and stream.on_approval_required then
-        stream.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)
-      else
-        write_hook_response(request_id, false)
-        pending_hook_approvals[request_id] = nil
+      if stream then
+        if stream.adapter and stream.handle_id then
+          stream.adapter:cancel(stream.handle_id)
+        end
+        if stream.on_approval_required then
+          stream.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)
+        end
       end
+      write_hook_response(request_id, false)
     end)
     return { status = "pending" }
   end
-end
-
---- Resolve a pending hook approval (called from chat buffer after user responds)
---- @param request_id string
---- @param allow boolean
-function M.resolve_hook_approval(request_id, allow)
-  local pending = pending_hook_approvals[request_id]
-  if not pending then
-    return
-  end
-
-  pending_hook_approvals[request_id] = nil
-  write_hook_response(request_id, allow)
 end
 
 --- Add tool to session allow list
@@ -231,7 +208,6 @@ end
 function M.reset_session()
   session_state.allowed = {}
   session_state.denied = {}
-  pending_hook_approvals = {}
 end
 
 --- Get current session state
