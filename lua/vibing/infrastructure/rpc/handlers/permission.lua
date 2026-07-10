@@ -205,14 +205,13 @@ function M.check_tool_permission(params)
 
   local perm_config = build_permission_config(handle_id)
 
-  -- Native AskUserQuestion is unavailable in headless `claude -p` mode, so vibing.nvim exposes
-  -- its own MCP tool for the same purpose. Both are intercepted identically here: the native
-  -- tool as a harmless fallback in case it is ever offered, the MCP tool as the primary path.
-  -- The MCP tool name is matched by suffix (see is_vibing_nvim_mcp_tool) because the vibing-nvim
-  -- MCP server may be registered as a plain user-level server or as a Claude Code plugin, which
-  -- changes the tool name's prefix.
+  -- Native AskUserQuestion is unavailable in headless `claude -p` mode and is fully opaque to us
+  -- (the SDK executes it internally), so the only way to handle it is to intercept + deny it here
+  -- and render the choice UI ourselves. This branch is a harmless fallback kept in case the
+  -- native tool is ever offered. vibing.nvim's own mcp__vibing-nvim__nvim_ask_user_question tool
+  -- is the primary path and does NOT go through this hook: since we fully control its execution,
+  -- its handler calls M.ask_user_question() (below) directly instead of being denied here.
   local is_ask_user_question_tool = tool_name == "AskUserQuestion"
-    or (can_use_tool_mod.is_vibing_nvim_mcp_tool(tool_name, "nvim_ask_user_question") and perm_config.mcp_enabled)
 
   if is_ask_user_question_tool then
     cancel_and_deny(function(stream)
@@ -241,6 +240,49 @@ function M.check_tool_permission(params)
     end, "vibing.nvim could not find the chat buffer to show the approval prompt in (internal error). Do not retry this tool immediately.")
     return { status = "pending" }
   end
+end
+
+--- Handle `ask_user_question` RPC request from the vibing-nvim MCP server's
+--- `nvim_ask_user_question` tool handler. Unlike native AskUserQuestion (intercepted via
+--- PreToolUse hook above, since the SDK executes it as a black box), this is vibing.nvim's own
+--- MCP tool: its handler calls this directly instead of returning a real tool_result, so there is
+--- no hook/deny plumbing here — just cancel the in-flight turn and show the same choice-list UI.
+--- The killed turn means this RPC's return value is never seen by the model; the user's next
+--- chat message (a fresh `--resume`d turn) delivers their answer instead.
+--- @param params {handle_id: string?, questions: table[]}
+--- @return table RPC response
+function M.ask_user_question(params)
+  if not params or not params.questions then
+    return { status = "error", reason = "Missing questions" }
+  end
+
+  local handle_id = params.handle_id
+  if handle_id == "" then
+    handle_id = nil
+  end
+
+  local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+  local stream = registry.get(handle_id)
+  if not stream then
+    return {
+      status = "error",
+      reason = "vibing.nvim could not find the chat buffer to show this question in (internal error).",
+    }
+  end
+
+  if stream.adapter and stream.handle_id then
+    local cancel_ok, cancel_err = pcall(function()
+      stream.adapter:cancel(stream.handle_id)
+    end)
+    if not cancel_ok then
+      vim.notify("[vibing] Failed to cancel stream for ask_user_question: " .. tostring(cancel_err), vim.log.levels.WARN)
+    end
+  end
+  if stream.on_insert_choices then
+    stream.on_insert_choices(params.questions)
+  end
+
+  return { status = "ok" }
 end
 
 --- Add tool to session allow list
