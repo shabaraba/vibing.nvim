@@ -13,9 +13,11 @@ local session_state = {
   denied = {},
 }
 
---- Active chat frontmatter overrides (set by stream start)
---- @type table|nil
-local active_opts = nil
+--- Active chat frontmatter overrides, keyed by handle_id (set by stream start). A single shared
+--- slot would let one chat buffer's opts silently apply to another's permission checks whenever
+--- two chats stream concurrently (see ActiveStreamRegistry for the same class of bug).
+--- @type table<string, table>
+local active_opts_by_handle = {}
 
 --- Codex uses different tool names than Claude for equivalent operations.
 --- This mapping ensures frontmatter permissions work identically across adapters.
@@ -31,22 +33,42 @@ local APPROVAL_OPTIONS = {
 }
 
 --- Set active permission opts from chat frontmatter
+--- @param handle_id string
 --- @param opts table
-function M.set_active_opts(opts)
-  active_opts = opts
+function M.set_active_opts(handle_id, opts)
+  active_opts_by_handle[handle_id] = opts
 end
 
 --- Clear active opts
-function M.clear_active_opts()
-  active_opts = nil
+--- @param handle_id string
+function M.clear_active_opts(handle_id)
+  active_opts_by_handle[handle_id] = nil
+end
+
+--- Resolve the frontmatter opts for a given handle_id. Falls back to the sole registered entry
+--- when handle_id is nil/unmatched and exactly one chat is active (back-compat for hook
+--- processes that don't yet pass VIBING_HANDLE_ID); returns nil rather than guessing when
+--- multiple chats are active. Mirrors ActiveStreamRegistry.get()'s fallback.
+--- @param handle_id string|nil
+--- @return table|nil
+local function get_active_opts(handle_id)
+  if handle_id and active_opts_by_handle[handle_id] then
+    return active_opts_by_handle[handle_id]
+  end
+  local only_handle_id, only_opts = next(active_opts_by_handle)
+  if only_handle_id ~= nil and next(active_opts_by_handle, only_handle_id) == nil then
+    return only_opts
+  end
+  return nil
 end
 
 --- Build permission config from frontmatter opts (priority) or global config
+--- @param handle_id string|nil
 --- @return PermissionConfig
-local function build_permission_config()
+local function build_permission_config(handle_id)
   local config = Config.get()
   local perms = config.permissions or {}
-  local o = active_opts or {}
+  local o = get_active_opts(handle_id) or {}
 
   return {
     allowed_tools = o.permissions_allow or perms.allow or {},
@@ -71,14 +93,22 @@ end
 --- Write response file for hook script
 --- @param request_id string
 --- @param allow boolean
-local function write_hook_response(request_id, allow)
+--- @param reason? string Surfaced to the model as the tool_result when the underlying process
+---   was NOT successfully cancelled (e.g. cancel_and_deny's fallback path). When cancellation
+---   does succeed, the process is killed before this response can ever reach the model, so the
+---   reason is moot in that case — it only matters for the failure path.
+local function write_hook_response(request_id, allow, reason)
   local comm_dir = get_comm_dir()
   local res_file = comm_dir .. "/" .. request_id .. ".res"
   local tmp_file = res_file .. ".tmp"
 
   local decision = allow and "allow" or "deny"
+  local output = { permissionDecision = decision }
+  if reason then
+    output.permissionDecisionReason = reason
+  end
   local json = vim.json.encode({
-    hookSpecificOutput = { permissionDecision = decision },
+    hookSpecificOutput = output,
   })
 
   local f, err = io.open(tmp_file, "w")
@@ -112,7 +142,7 @@ local function write_hook_response(request_id, allow)
 end
 
 --- Handle check_tool_permission RPC request
---- @param params {request_id: string}
+--- @param params {request_id: string, handle_id: string?}
 --- @return table RPC response
 function M.check_tool_permission(params)
   if not params or not params.request_id then
@@ -120,6 +150,10 @@ function M.check_tool_permission(params)
   end
 
   local request_id = params.request_id
+  local handle_id = params.handle_id
+  if handle_id == "" then
+    handle_id = nil
+  end
 
   local comm_dir = get_comm_dir()
   local req_file = comm_dir .. "/" .. request_id .. ".req"
@@ -141,17 +175,21 @@ function M.check_tool_permission(params)
 
   local tool_name = hook_input.tool_name or ""
   local tool_input = hook_input.tool_input or {}
+  local active_opts = get_active_opts(handle_id)
 
   if active_opts and active_opts._is_codex then
     tool_name = CODEX_TOOL_ALIASES[tool_name] or tool_name
   end
 
-  -- Kill process first, call UI callback, then write deny response.
-  -- Used by both AskUserQuestion and "ask" permission paths.
-  local function cancel_and_deny(on_stream_fn)
+  -- Kill process first, call UI callback, then write deny response. Used by both
+  -- AskUserQuestion and "ask" permission paths. The deny response only reaches the model when
+  -- cancellation fails to find a stream (see fallback_reason below) — when the process is
+  -- successfully killed, it dies before it could ever process that response.
+  local function cancel_and_deny(on_stream_fn, fallback_reason)
     vim.schedule(function()
       local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
-      local stream = registry.get()
+      local stream = registry.get(handle_id)
+      local reason = nil
       if stream then
         if stream.adapter and stream.handle_id then
           stream.adapter:cancel(stream.handle_id)
@@ -159,21 +197,32 @@ function M.check_tool_permission(params)
         on_stream_fn(stream)
       else
         vim.notify("[vibing] cancel_and_deny: no active stream found", vim.log.levels.WARN)
+        reason = fallback_reason
       end
-      write_hook_response(request_id, false)
+      write_hook_response(request_id, false, reason)
     end)
   end
 
-  if tool_name == "AskUserQuestion" then
+  local perm_config = build_permission_config(handle_id)
+
+  -- Native AskUserQuestion is unavailable in headless `claude -p` mode, so vibing.nvim exposes
+  -- its own MCP tool for the same purpose. Both are intercepted identically here: the native
+  -- tool as a harmless fallback in case it is ever offered, the MCP tool as the primary path.
+  -- The MCP tool name is matched by suffix (see is_vibing_nvim_mcp_tool) because the vibing-nvim
+  -- MCP server may be registered as a plain user-level server or as a Claude Code plugin, which
+  -- changes the tool name's prefix.
+  local is_ask_user_question_tool = tool_name == "AskUserQuestion"
+    or (can_use_tool_mod.is_vibing_nvim_mcp_tool(tool_name, "nvim_ask_user_question") and perm_config.mcp_enabled)
+
+  if is_ask_user_question_tool then
     cancel_and_deny(function(stream)
       if stream.on_insert_choices and tool_input.questions then
         stream.on_insert_choices(tool_input.questions)
       end
-    end)
+    end, "vibing.nvim could not find the chat buffer to show this question in (internal error). Ask the question as plain text instead of retrying this tool.")
     return { status = "denied", reason = "AskUserQuestion intercepted" }
   end
 
-  local perm_config = build_permission_config()
   local result = can_use_tool_mod.can_use_tool(tool_name, tool_input, perm_config)
 
   if result.behavior == "allow" then
@@ -189,7 +238,7 @@ function M.check_tool_permission(params)
       if stream.on_approval_required then
         stream.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)
       end
-    end)
+    end, "vibing.nvim could not find the chat buffer to show the approval prompt in (internal error). Do not retry this tool immediately.")
     return { status = "pending" }
   end
 end

@@ -151,6 +151,9 @@ function M.build(prompt, opts, session_id, config, settings_path)
     "When creating a git worktree for isolated work, place it under "
       .. worktree_constants.DIR
       .. "<branch-name>/ at the repository root.",
+    "When you need the user to choose among options (single or multi-select), always call the "
+      .. "mcp__vibing-nvim__nvim_ask_user_question tool instead of asking in free text. Do not use "
+      .. "the native AskUserQuestion tool for this — it is unavailable in this environment.",
   }
 
   if opts.chat_file_path and opts.chat_file_path ~= "" then

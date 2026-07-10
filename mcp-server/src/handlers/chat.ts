@@ -24,3 +24,24 @@ export async function handleChatSendMessage(args: any): Promise<any> {
     _meta: { bufnr, sender: sender || 'User' },
   };
 }
+
+/**
+ * Handler for nvim_ask_user_question
+ *
+ * In normal operation, vibing.nvim's PreToolUse hook (see
+ * `lua/vibing/infrastructure/rpc/handlers/permission.lua`) intercepts this tool call before it
+ * executes, cancels the request, and renders the questions as an editable choice list in the
+ * chat buffer instead. This handler only runs if that interception did not happen (e.g. hooks
+ * misconfigured), and exists purely as a defensive fallback.
+ */
+export async function handleAskUserQuestion(_args: any): Promise<any> {
+  return {
+    content: [
+      {
+        type: 'text',
+        text: 'nvim_ask_user_question was not intercepted by the vibing.nvim permission hook. Ask the question as plain text instead.',
+      },
+    ],
+    isError: true,
+  };
+}

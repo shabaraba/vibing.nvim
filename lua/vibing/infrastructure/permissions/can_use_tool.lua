@@ -60,6 +60,16 @@ local INTERNAL_TOOLS = {
 --- @field permission_mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"|"auto"
 --- @field mcp_enabled boolean
 
+--- Check whether a tool name is a vibing-nvim MCP tool, regardless of how the MCP server was
+--- registered (plain user-level server vs. Claude Code plugin — see the call site for details).
+--- @param tool_name string
+--- @param specific_tool? string Match only this vibing-nvim tool (e.g. "nvim_ask_user_question"); omit to match any vibing-nvim MCP tool
+--- @return boolean
+function M.is_vibing_nvim_mcp_tool(tool_name, specific_tool)
+  local pattern = specific_tool and ("vibing%-nvim__" .. specific_tool .. "$") or "vibing%-nvim__nvim_[%w_]+$"
+  return tool_name:match(pattern) ~= nil
+end
+
 --- Create allow result
 --- @param input table<string, any>
 --- @return CanUseToolResult
@@ -231,8 +241,11 @@ function M.can_use_tool(tool_name, input, config)
       return allow(input)
     end
 
-    -- Handle vibing-nvim MCP tools
-    if vim.startswith(tool_name, "mcp__vibing-nvim__") then
+    -- Handle vibing-nvim MCP tools. The vibing-nvim MCP server may be registered either as a
+    -- plain user-level MCP server (mcp__vibing-nvim__<tool>) or as a Claude Code plugin
+    -- (mcp__plugin_<marketplace>_<plugin>__<tool>, e.g. mcp__plugin_vibing-nvim_vibing-nvim__<tool>).
+    -- Match on suffix so both registration styles are recognized identically.
+    if M.is_vibing_nvim_mcp_tool(tool_name) then
       if config.mcp_enabled then
         return allow(input)
       end

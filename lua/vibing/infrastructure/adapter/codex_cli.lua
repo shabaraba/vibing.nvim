@@ -129,6 +129,9 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
     env.VIBING_RPC_PORT = port_str
     env.VIBING_NVIM_CONTEXT = "true"
   end
+  -- Lets the PreToolUse hook identify which chat buffer's stream it belongs to, so concurrent
+  -- chats don't cross-wire each other's approval UI (see ActiveStreamRegistry).
+  env.VIBING_HANDLE_ID = handle_id
 
   ActiveStreamRegistry.register({
     handle_id = handle_id,
@@ -138,13 +141,13 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
   })
 
   local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
-  perm_handler.set_active_opts(vim.tbl_extend("force", opts, { _is_codex = true }))
+  perm_handler.set_active_opts(handle_id, vim.tbl_extend("force", opts, { _is_codex = true }))
 
   local wrapped_on_done = function(response)
     if not completed then
       completed = true
       ActiveStreamRegistry.unregister(handle_id)
-      perm_handler.clear_active_opts()
+      perm_handler.clear_active_opts(handle_id)
       if timeout_timer then
         vim.fn.timer_stop(timeout_timer)
         timeout_timer = nil

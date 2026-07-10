@@ -35,4 +35,53 @@ export const chatTools: Tool[] = [
       required: ['bufnr', 'message'],
     },
   },
+  {
+    name: 'nvim_ask_user_question',
+    description:
+      'Ask the user one or more multiple-choice questions directly in the vibing.nvim chat buffer. ' +
+      'Use this instead of asking questions in free text, and instead of the native AskUserQuestion ' +
+      'tool (which is unavailable in headless CLI mode).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        questions: {
+          type: 'array',
+          description: 'One or more questions to present to the user',
+          items: {
+            type: 'object',
+            properties: {
+              question: {
+                type: 'string',
+                description: 'The question text',
+              },
+              multiSelect: {
+                type: 'boolean',
+                description: 'Whether multiple options can be selected (default: false)',
+              },
+              options: {
+                type: 'array',
+                description: 'The choices offered to the user',
+                items: {
+                  type: 'object',
+                  properties: {
+                    label: {
+                      type: 'string',
+                      description: 'The option text shown to the user',
+                    },
+                    description: {
+                      type: 'string',
+                      description: 'Optional additional detail shown under the option',
+                    },
+                  },
+                  required: ['label'],
+                },
+              },
+            },
+            required: ['question', 'options'],
+          },
+        },
+      },
+      required: ['questions'],
+    },
+  },
 ];
