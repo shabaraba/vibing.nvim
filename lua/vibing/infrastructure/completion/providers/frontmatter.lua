@@ -12,9 +12,10 @@ local ENUMS = {
   permissions_mode = {
     { value = "default", description = "Ask for confirmation before each tool use" },
     { value = "acceptEdits", description = "Auto-approve Edit/Write, ask for others" },
-    { value = "bypassPermissions", description = "Auto-approve all operations" },
     { value = "plan", description = "Read-only planning mode (no tool execution)" },
-    { value = "dontAsk", description = "Deny instead of prompting" },
+    { value = "auto", description = "Background safety classifier, minimal prompts" },
+    { value = "dontAsk", description = "Deny instead of prompting (pre-approved tools only)" },
+    { value = "bypassPermissions", description = "Auto-approve all operations (isolated env only)" },
   },
 }
 

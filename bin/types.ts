@@ -82,7 +82,7 @@ export interface AgentConfig {
   permissionRules: PermissionRule[];
   mode: string | null;
   model: string | null;
-  permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions';
+  permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto';
   prioritizeVibingLsp: boolean;
   mcpEnabled: boolean;
   language: string | null;

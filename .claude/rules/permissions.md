@@ -7,7 +7,7 @@ vibing.nvim provides comprehensive permission control over what tools Claude can
 ```lua
 require("vibing").setup({
   permissions = {
-    mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
+    mode = "acceptEdits",  -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"
     allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill" },
     deny = { "Bash" },
   },
@@ -18,7 +18,10 @@ require("vibing").setup({
 
 - `default` - Ask for user confirmation before each tool use
 - `acceptEdits` - Auto-approve Edit/Write operations, ask for others (recommended)
-- `bypassPermissions` - Auto-approve all operations (use with caution)
+- `plan` - Read-only planning mode (no tool execution)
+- `auto` - Background safety classifier minimizes prompts (Claude Code v2.1.83+)
+- `dontAsk` - Deny instead of prompting (pre-approved tools only)
+- `bypassPermissions` - Auto-approve all operations (isolated environments only)
 
 **Basic Permission Logic:**
 
@@ -34,7 +37,7 @@ require("vibing").setup({
 Three-layer permission control:
 
 1. **Allow/Deny Lists** - Basic tool-level permissions
-2. **Permission Modes** - Automation level (default/acceptEdits/bypassPermissions)
+2. **Permission Modes** - Automation level (default/acceptEdits/plan/auto/dontAsk/bypassPermissions)
 3. **Granular Rules** - Path/command/pattern/domain-based fine-grained control
 
 ## Granular Permission Rules

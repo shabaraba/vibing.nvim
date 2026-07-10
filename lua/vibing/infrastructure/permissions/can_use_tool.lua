@@ -5,9 +5,10 @@
 --- 1. Session-level deny list (immediate block)
 --- 2. Session-level allow list (auto-approve)
 --- 3. Internal tools (always allowed, e.g. ToolSearch, Agent)
+--- 3.5. bypassPermissions mode (bypasses deny list too)
 --- 4. Deny list (deny takes precedence over allow)
 --- 5. Always-allowed tools (bypass allow list; deny/ask still respected)
---- 6. Permission modes (acceptEdits, default, bypassPermissions, plan, dontAsk)
+--- 6. Permission modes (auto, acceptEdits, default; dontAsk changes ask→deny below)
 --- 7. Allow list (with pattern matching support)
 --- 8. Ask list (granular patterns override broader allow list permissions)
 --- 9. Granular permission rules (path/command/pattern/domain based)
@@ -56,7 +57,7 @@ local INTERNAL_TOOLS = {
 --- @field session_allowed_tools string[] Session-level allowed tools (mutable)
 --- @field session_denied_tools string[] Session-level denied tools (mutable)
 --- @field permission_rules? PermissionRule[] Granular rules
---- @field permission_mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"
+--- @field permission_mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"|"auto"
 --- @field mcp_enabled boolean
 
 --- Create allow result
@@ -192,6 +193,13 @@ function M.can_use_tool(tool_name, input, config)
       return allow(input)
     end
 
+    local mode = config.permission_mode
+
+    -- 3.5. bypassPermissions: truly bypass all operations including deny list
+    if mode == "bypassPermissions" then
+      return allow(input)
+    end
+
     -- 4. Check deny list (deny takes precedence over allow)
     if config.denied_tools and #config.denied_tools > 0 then
       for _, pattern in ipairs(config.denied_tools) do
@@ -205,6 +213,9 @@ function M.can_use_tool(tool_name, input, config)
     if tools_constants.ALWAYS_ALLOWED_TOOLS_MAP[tool_name] then
       for _, pattern in ipairs(config.asked_tools) do
         if matchers.matches_permission(tool_name, input, pattern) then
+          if mode == "dontAsk" then
+            return deny(string.format("Tool %s requires manual approval (not available in dontAsk mode)", tool_name))
+          end
           return ask()
         end
       end
@@ -212,9 +223,7 @@ function M.can_use_tool(tool_name, input, config)
     end
 
     -- 6. Permission modes
-    local mode = config.permission_mode
-
-    if mode == "bypassPermissions" or mode == "dontAsk" then
+    if mode == "auto" then
       return allow(input)
     end
 
@@ -240,6 +249,9 @@ function M.can_use_tool(tool_name, input, config)
         end
       end
       if not is_allowed then
+        if mode == "dontAsk" then
+          return deny(build_not_allowed_message(tool_name, input, config.allowed_tools))
+        end
         return ask()
       end
     end
@@ -247,6 +259,9 @@ function M.can_use_tool(tool_name, input, config)
     -- 8. Check ask list (AFTER allow list - granular patterns override broader permissions)
     for _, pattern in ipairs(config.asked_tools) do
       if matchers.matches_permission(tool_name, input, pattern) then
+        if mode == "dontAsk" then
+          return deny(string.format("Tool %s requires manual approval (not available in dontAsk mode)", tool_name))
+        end
         return ask()
       end
     end
@@ -267,6 +282,9 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
+    if mode == "dontAsk" then
+      return deny(string.format("Tool %s is not pre-approved (dontAsk mode)", tool_name))
+    end
     return allow(input)
   end)
 
