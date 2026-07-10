@@ -146,20 +146,11 @@ function M.execute(adapter, callbacks, message, config)
         end)
       end,
       on_approval_required = function(tool, input, options, hook_request_id)
-        vim.schedule(function()
-          callbacks.insert_approval_request(tool, input, options, hook_request_id)
-
-          if hook_request_id then
-            -- Hook-based: render approval UI immediately (hook is blocking)
-            callbacks.add_user_section()
-          else
-            -- Agent-wrapper: cancel process, add_user_section called in on_done
-            local handle_id = callbacks.get_handle_id()
-            if handle_id then
-              adapter:cancel(handle_id)
-            end
-          end
-        end)
+        -- permission.lua の vim.schedule 内から呼ばれるためすでにメインスレッド上
+        -- 二重 vim.schedule を避けることで _pending_approval が add_user_section より確実に先に設定される
+        callbacks.insert_approval_request(tool, input, options, hook_request_id)
+        -- cancel は permission.lua 側で実行済み（hook-based / agent-wrapper 共通）
+        -- add_user_section は on_done 経由で呼ばれる
       end,
     }
 
