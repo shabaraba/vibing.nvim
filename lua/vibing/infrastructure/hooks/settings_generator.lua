@@ -37,7 +37,7 @@ end
 
 --- Ensure hook settings file exists in .vibing/ of the given cwd
 --- @param cwd? string Working directory (defaults to vim.fn.getcwd())
---- @return string path Relative path to settings file
+--- @return string path Absolute path to settings file
 function M.ensure(cwd)
   cwd = cwd or vim.fn.getcwd()
   local vibing_dir = cwd .. "/.vibing"
@@ -56,7 +56,7 @@ function M.ensure(cwd)
   f:write(json)
   f:close()
 
-  return ".vibing/hook-settings.json"
+  return settings_path
 end
 
 return M
