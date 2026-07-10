@@ -271,7 +271,12 @@ function M.ask_user_question(params)
   end
 
   if stream.adapter and stream.handle_id then
-    stream.adapter:cancel(stream.handle_id)
+    local cancel_ok, cancel_err = pcall(function()
+      stream.adapter:cancel(stream.handle_id)
+    end)
+    if not cancel_ok then
+      vim.notify("[vibing] Failed to cancel stream for ask_user_question: " .. tostring(cancel_err), vim.log.levels.WARN)
+    end
   end
   if stream.on_insert_choices then
     stream.on_insert_choices(params.questions)

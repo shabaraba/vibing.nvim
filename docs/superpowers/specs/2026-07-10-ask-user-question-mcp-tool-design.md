@@ -1,5 +1,7 @@
 # vibing.nvim専用 ask_user_question ツール 設計
 
+> **現在の設計は「改訂: ハンドラ自身が横取り処理を行う設計に変更」章以降**。「方針（初版）」章は採用されなかった当初案で、変更の経緯を残すために残置している。
+
 ## 背景
 
 vibing.nvimは`claude -p --output-format stream-json`（ヘッドレス／非対話モード）で`claude` CLIを起動している（`lua/vibing/infrastructure/adapter/modules/cli_command_builder.lua`）。ネイティブの`AskUserQuestion`ツールは対話的なターミナルUIを前提とした機能であり、このヘッドレスモードではツール一覧に含まれないことが確認された（Claude Code CLI側の内部実装によるもので、vibing.nvim側では制御できない）。

@@ -62,7 +62,11 @@ describe('chat tools (worktree redesign)', () => {
     );
     expect(result.isError).toBeUndefined();
 
-    process.env.VIBING_HANDLE_ID = previousHandleId;
+    if (previousHandleId === undefined) {
+      delete process.env.VIBING_HANDLE_ID;
+    } else {
+      process.env.VIBING_HANDLE_ID = previousHandleId;
+    }
   });
 
   it('nvim_ask_user_question surfaces an error result when the RPC call fails to find a stream', async () => {
