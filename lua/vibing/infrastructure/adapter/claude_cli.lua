@@ -135,6 +135,9 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     env.VIBING_RPC_PORT = port_str -- for MCP server (mcp-server/src/rpc.ts)
     env.VIBING_NVIM_CONTEXT = "true" -- indicates running inside vibing.nvim
   end
+  -- Lets the PreToolUse hook identify which chat buffer's stream it belongs to, so concurrent
+  -- chats don't cross-wire each other's AskUserQuestion/approval UI (see ActiveStreamRegistry).
+  env.VIBING_HANDLE_ID = handle_id
 
   ActiveStreamRegistry.register({
     handle_id = handle_id,

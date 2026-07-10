@@ -129,6 +129,9 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
     env.VIBING_RPC_PORT = port_str
     env.VIBING_NVIM_CONTEXT = "true"
   end
+  -- Lets the PreToolUse hook identify which chat buffer's stream it belongs to, so concurrent
+  -- chats don't cross-wire each other's approval UI (see ActiveStreamRegistry).
+  env.VIBING_HANDLE_ID = handle_id
 
   ActiveStreamRegistry.register({
     handle_id = handle_id,

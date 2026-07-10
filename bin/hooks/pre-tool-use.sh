@@ -30,8 +30,13 @@ RES_FILE="$COMM_DIR/${REQUEST_ID}.res"
 printf '%s' "$INPUT" > "${REQ_FILE}.tmp"
 mv "${REQ_FILE}.tmp" "$REQ_FILE"
 
+# Identifies which chat buffer's stream this hook invocation belongs to (see
+# ActiveStreamRegistry), so concurrent chats don't cross-wire each other's approval UI.
+# Restricted to [A-Za-z0-9_] since it's interpolated directly into the JSON request below.
+HANDLE_ID="${VIBING_HANDLE_ID//[^A-Za-z0-9_]/}"
+
 # Notify Neovim RPC server (fire-and-forget)
-printf '{"method":"check_tool_permission","id":1,"params":{"request_id":"%s"}}\n' "$REQUEST_ID" \
+printf '{"method":"check_tool_permission","id":1,"params":{"request_id":"%s","handle_id":"%s"}}\n' "$REQUEST_ID" "$HANDLE_ID" \
   | nc -w 1 127.0.0.1 "$PORT" >/dev/null 2>&1
 NC_STATUS=$?
 debug_log "nc status=$NC_STATUS, waiting for $RES_FILE"

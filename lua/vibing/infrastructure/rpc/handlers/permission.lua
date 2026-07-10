@@ -112,7 +112,7 @@ local function write_hook_response(request_id, allow)
 end
 
 --- Handle check_tool_permission RPC request
---- @param params {request_id: string}
+--- @param params {request_id: string, handle_id: string?}
 --- @return table RPC response
 function M.check_tool_permission(params)
   if not params or not params.request_id then
@@ -120,6 +120,10 @@ function M.check_tool_permission(params)
   end
 
   local request_id = params.request_id
+  local handle_id = params.handle_id
+  if handle_id == "" then
+    handle_id = nil
+  end
 
   local comm_dir = get_comm_dir()
   local req_file = comm_dir .. "/" .. request_id .. ".req"
@@ -151,7 +155,7 @@ function M.check_tool_permission(params)
   local function cancel_and_deny(on_stream_fn)
     vim.schedule(function()
       local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
-      local stream = registry.get()
+      local stream = registry.get(handle_id)
       if stream then
         if stream.adapter and stream.handle_id then
           stream.adapter:cancel(stream.handle_id)
