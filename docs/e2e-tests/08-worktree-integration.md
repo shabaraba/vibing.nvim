@@ -1,312 +1,103 @@
-# E2Eテストケース: Workspace統合機能
+# E2E Test Scenarios: Worktree Integration (`vibing-worktree` skill)
 
-## テストID
+These scenarios exercise the `vibing-worktree` skill's four natural-language flows against a
+real chat session. Each scenario assumes a fresh chat in a git repository with at least one
+commit, and that the `vibing-nvim` MCP server is connected unless a scenario says otherwise.
 
-`E2E-WORKSPACE-001`
+## 1. List worktrees
 
-## テスト対象
+**Steps:**
 
-`/vibing-workspace-create`, `/vibing-workspace-enter`, `/vibing-workspace-done`, `/vibing-workspace-list`
-のスラッシュコマンドによるworkspace（git worktreeベースの隔離開発環境）統合機能
+1. In a chat, send: "what worktrees exist in this repo right now?"
+2. Observe Claude run `git worktree list --porcelain` (and optionally `git log -1 --format=%s`
+   per branch) via the Bash tool.
 
-## 前提条件
+**Expected:**
 
-- Neovimが起動している
-- vibing.nvimプラグインがインストールされている
-- gitリポジトリ内で実行している
-- gitコマンドが利用可能
+- Claude presents the current worktree(s) — at minimum the main repo checkout — without erroring
+  even if `.vibing/worktrees/` doesn't exist yet.
 
-## テスト手順
+## 2. Create a worktree and continue in the same chat
 
-### 1. 新規Workspaceの作成
+**Steps:**
 
-**操作:**
+1. In a chat, send: "let's split fixing the auth session bug off into its own worktree."
+2. Observe Claude propose a branch name (e.g. `fix-auth-session-bug`), run
+   `git worktree add -b fix-auth-session-bug .vibing/worktrees/fix-auth-session-bug`, then edit
+   its own chat file's `working_dir` frontmatter field.
+3. Send a follow-up message, e.g. "what directory are you in now?"
 
-```vim
-:VibingChat
-i
-/vibing-workspace-create ログイン機能の実装
-<CR>
-```
+**Expected:**
 
-**期待される動作:**
+- `.vibing/worktrees/fix-auth-session-bug/` exists on disk (`git worktree list --porcelain`
+  shows it).
+- The chat file's frontmatter now has `working_dir: .vibing/worktrees/fix-auth-session-bug`.
+- The follow-up message's response reflects the new worktree's directory, not the main repo root.
+- No new chat buffer was opened — the same chat file continued.
 
-1. `vim.ui.input` でdescriptionとbranch名の確認プロンプトが表示される
-2. 確定すると `.vibing/workspace/active/<id>/` にworkspaceディレクトリが作成される
-3. `.vibing/workspace/active/<id>/worktree/` にgit worktreeが作成される（新しいブランチも作成される）
-4. `.vibing/workspace/active/<id>/meta.yaml` と `plan.md` が作成される
-5. 現在のチャットバッファがそのworkspaceに紐付く（frontmatterに `workspace_id`, `working_dir` が追加される）
-6. チャットバッファに `Workspace \`<id>\` created at \`...\`.` のメッセージが追記される
+## 3. Attach a new chat to an existing worktree
 
-**検証ポイント:**
+**Steps:**
 
-```bash
-# workspaceディレクトリが作成されていることを確認
-ls .vibing/workspace/active/
-# <id>/ が存在
+1. With the worktree from Scenario 2 still present, open a brand-new chat.
+2. Send: "what worktrees are there? I want to go into the auth one."
 
-ls .vibing/workspace/active/<id>/
-# worktree/, meta.yaml, plan.md が存在
+**Expected:**
 
-# git worktreeが作成されていることを確認
-git worktree list
-# .vibing/workspace/active/<id>/worktree が一覧に追加されている
-```
+- Claude lists the existing worktree(s), including `fix-auth-session-bug`.
+- After the user confirms, Claude edits the new chat's own `working_dir` frontmatter to
+  `.vibing/worktrees/fix-auth-session-bug` (no `git worktree add` — it already exists).
+- A follow-up message in this new chat operates in that worktree.
 
-```lua
--- チャットバッファのfrontmatterを確認
-local frontmatter = require("vibing.domain.chat.frontmatter")
--- workspace_id と working_dir (.vibing/workspace/active/<id>/worktree) が設定されている
-```
+## 4. Finish a worktree — clean removal
 
-### 2. 既存Workspaceへの参加（enter）
+**Steps:**
 
-**前提条件:**
+1. In the worktree-attached chat from Scenario 2 or 3, commit or discard any changes so the
+   worktree is clean.
+2. Send: "clean up this worktree, I'm done."
 
-- workspace `<id>` が既に active な状態で存在する
+**Expected:**
 
-**操作:**
+- Claude runs `git worktree remove .vibing/worktrees/fix-auth-session-bug` (no `--force`).
+- `git worktree list --porcelain` no longer shows it, and the directory is gone from disk.
+- If this was the chat's own `working_dir`, that frontmatter field is cleared (chat reverts to
+  operating in the main repo root).
 
-```vim
-:VibingChat
-i
-/vibing-workspace-enter <id>
-<CR>
-```
+## 5. Finish a worktree — refused due to uncommitted changes
 
-**期待される動作:**
+**Steps:**
 
-- 引数を省略した場合は `vim.ui.select` でactiveなworkspace一覧から選択できる
-- 現在のチャットバッファがそのworkspaceに紐付く
-- `Entered workspace: <id>` の通知が表示される
-- 既にworkspaceに紐付いているチャットで実行した場合はエラーになる
+1. Create a worktree per Scenario 2, then make an uncommitted change inside it (e.g. edit a
+   file) without committing or stashing.
+2. Send: "clean up this worktree."
 
-### 3. Workspace内でのメッセージ送信・ファイル操作
+**Expected:**
 
-**操作:**
+- `git worktree remove` fails because of the uncommitted change.
+- Claude surfaces the exact git error to the user and does **not** retry with `--force`.
+- The worktree and the uncommitted change are both still present after this exchange.
 
-```vim
-:VibingChat
-i
-/vibing-workspace-create テスト機能
-<CR>
-i
-新しいファイルを作成してください: src/new_feature.lua
-<CR>
-```
+## 6. Attach/create with no `vibing-nvim` MCP connection
 
-**期待される動作:**
+**Steps:**
 
-- メッセージ送信時、Agent SDKに `--cwd` としてworkspaceのworktreeパスが渡される
-- Claudeが作成するファイルはworktreeディレクトリ内に作成される
-- メインリポジトリには影響しない
+1. Start a chat with the `vibing-nvim` MCP server unavailable (e.g. no running Neovim RPC
+   server on the configured port).
+2. Send: "split this into its own worktree."
 
-**検証ポイント:**
+**Expected:**
 
-```bash
-# worktreeディレクトリにファイルが作成されている
-ls .vibing/workspace/active/<id>/worktree/src/new_feature.lua
+- Claude still creates the worktree on disk via `git worktree add`.
+- Since `nvim_get_info` isn't available, Claude does not attempt to edit chat frontmatter it
+  can't locate — it tells the user the worktree's path and that `working_dir` needs to be set
+  by hand (or a new chat opened there).
 
-# メインリポジトリには存在しない
-ls src/new_feature.lua
-# ファイルが見つからない
-```
+## Manual verification checklist
 
-### 4. 一覧表示（list）
-
-**操作:**
-
-```vim
-:VibingChat
-i
-/vibing-workspace-list
-<CR>
-```
-
-**期待される動作:**
-
-- activeなworkspace一覧がチャットバッファに追記される（`- \`<id>\` - <description> (<branch>)` 形式）
-
-```vim
-i
-/vibing-workspace-list done
-<CR>
-```
-
-**期待される動作:**
-
-- doneなworkspace一覧が表示される
-
-**検証ポイント:**
-
-```bash
-# 引数なしはactive、"done"引数はdoneディレクトリの一覧と一致すること
-ls .vibing/workspace/active/
-ls .vibing/workspace/done/
-```
-
-### 5. Workspaceの完了（done）
-
-**操作:**
-
-```vim
-:VibingChat
-i
-/vibing-workspace-done <id>
-<CR>
-```
-
-**期待される動作:**
-
-1. `plan.md` に未完了のTODOがある場合、または対象ブランチが未マージの場合は確認ダイアログが表示される
-2. 確定すると `git worktree remove` でworktreeが削除される
-3. workspaceディレクトリが `.vibing/workspace/active/<id>/` から `.vibing/workspace/done/<id>/` に移動する
-4. `Workspace done: <id>` の通知が表示される
-
-**検証ポイント:**
-
-```bash
-# worktreeが削除されている
-git worktree list
-# <id>用のworktreeが存在しない
-
-# workspaceディレクトリがdoneに移動している
-ls .vibing/workspace/done/<id>/
-# meta.yaml, plan.md が存在（worktree/ ディレクトリは削除済み）
-
-ls .vibing/workspace/active/<id>
-# 存在しない
-```
-
-### 6. Workspace削除後もチャットファイルは影響を受けない
-
-**操作:**
-
-```vim
-:VibingChat
-i
-/vibing-workspace-create 一時作業
-<CR>
-:w
-:q
-
-# workspaceを完了させる
-:VibingChat
-i
-/vibing-workspace-done <id>
-<CR>
-```
-
-**期待される動作:**
-
-- worktreeを削除してもチャットファイルは `.vibing/chat/` に残る
-- チャットを再度開いてもファイル自体は読める（ただし `working_dir` の指す先は既に存在しないため、再開時は要確認）
-
-## 異常系テスト
-
-### 7. 既にworkspaceに紐付いたチャットで再度create/enter
-
-**操作:**
-
-```vim
-:VibingChat
-i
-/vibing-workspace-create テストA
-<CR>
-i
-/vibing-workspace-create テストB
-<CR>
-```
-
-**期待される動作:**
-
-- 2回目の `/vibing-workspace-create` はエラーメッセージが表示される
-  （"This chat is already bound to workspace ... Open a new chat to start another workspace."）
-- 新しいworkspaceは作成されない
-
-### 8. 存在しないworkspace_idを指定
-
-**操作:**
-
-```vim
-:VibingChat
-i
-/vibing-workspace-enter nonexistent-id
-<CR>
-```
-
-**期待される動作:**
-
-- エラーメッセージが表示される: "No active workspace found: nonexistent-id"
-
-### 9. workspaceに紐付いていないチャットで /vibing-workspace-done を引数なしで実行
-
-**操作:**
-
-```vim
-:VibingChat
-i
-/vibing-workspace-done
-<CR>
-```
-
-**期待される動作:**
-
-- エラーメッセージが表示される: "This chat is not bound to a workspace. Usage: /vibing-workspace-done <workspace_id>"
-
-### 10. gitリポジトリ外での実行
-
-**前提条件:**
-
-- gitリポジトリではないディレクトリで実行
-
-**操作:**
-
-```vim
-:VibingChat
-i
-/vibing-workspace-create テスト
-<CR>
-```
-
-**期待される動作:**
-
-- エラーメッセージが表示される
-- workspaceが作成されない
-- Neovimがクラッシュしない
-
-## クリーンアップ
-
-**操作:**
-
-```bash
-# 全workspaceのworktreeを削除
-git worktree list --porcelain | grep "worktree" | grep ".vibing/workspace/" | while read -r _ path; do
-  git worktree remove "$path"
-done
-
-# workspaceディレクトリとチャットファイルを削除
-rm -rf .vibing/workspace/
-rm -rf .vibing/chat/
-```
-
-## 成功基準
-
-- [ ] `/vibing-workspace-create` でworktree・meta.yaml・plan.mdが作成される
-- [ ] チャットバッファがworkspaceに正しく紐付く（`workspace_id`, `working_dir` frontmatter）
-- [ ] `/vibing-workspace-enter` で既存のactive workspaceに別チャットを紐付けられる
-- [ ] `/vibing-workspace-list` でactive/doneの一覧が正しく表示される
-- [ ] `/vibing-workspace-done` でworktreeが削除され、workspaceがdoneに移動する
-- [ ] メッセージ送信時に `--cwd` がworkspaceのworktreeパスとして伝播する
-- [ ] 既にworkspaceに紐付いたチャットでの再create/enterがエラーになる
-- [ ] エラーハンドリングが適切に機能する
-
-## 関連ファイル
-
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/application/chat/handlers/workspace_create.lua`
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/application/chat/handlers/workspace_enter.lua`
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/application/chat/handlers/workspace_done.lua`
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/application/chat/handlers/workspace_list.lua`
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/infrastructure/workspace/manager.lua`
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/infrastructure/workspace/meta.lua`
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/infrastructure/workspace/chat_binding.lua`
+- [ ] Scenario 1: listing works with zero and with one-or-more worktrees present
+- [ ] Scenario 2: create updates the _same_ chat's frontmatter, no new buffer
+- [ ] Scenario 3: attach works from a brand-new chat's first message
+- [ ] Scenario 4: finish removes the worktree and clears `working_dir` when applicable
+- [ ] Scenario 5: finish refuses (no `--force`) when there are uncommitted changes
+- [ ] Scenario 6: MCP-unavailable fallback degrades gracefully instead of erroring
