@@ -232,12 +232,14 @@ When implementing new features, add E2E tests for:
 - [ ] Chat forking (`:VibingChatFork`)
 - [ ] Multi-turn conversations
 
-### Workspace Features
+### Worktree Features
 
-- [ ] `vibing-workspace-create` skill creates a workspace (worktree + meta.yaml + plan.md)
-- [ ] `vibing-workspace-enter` skill registers an existing chat against an active workspace
-- [ ] `vibing-workspace-done` skill removes the worktree and moves the workspace to done
-- [ ] `vibing-workspace-list` skill lists active and done workspaces
+- [ ] `vibing-worktree` skill lists worktrees via `git worktree list --porcelain`
+- [ ] `vibing-worktree` skill creates a worktree under `.vibing/worktrees/<branch>/` and rewrites
+      the current chat's `working_dir` frontmatter
+- [ ] `vibing-worktree` skill attaches a chat (new or existing) to an already-existing worktree
+- [ ] `vibing-worktree` skill removes a worktree via `git worktree remove` (never `--force`) and
+      clears `working_dir` if it was the current chat's own worktree
 
 ### MCP Tools
 
