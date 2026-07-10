@@ -116,6 +116,7 @@ function M.execute(adapter, callbacks, message, config)
       permission_mode = frontmatter.permission_mode,
       language = lang_code,
       cwd = session_cwd,
+      chat_file_path = vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_get_name(bufnr) or nil,
       on_tool_use = function(tool, file_path, _command)
         if (tool == "Write" or tool == "Edit" or tool == "NotebookEdit") and file_path then
           modified_file_paths[file_path] = true
