@@ -25,12 +25,48 @@ async function pathExists(path) {
   }
 }
 
+async function readEnabledPluginsFromFile(settingsFile) {
+  try {
+    const content = await readFile(settingsFile, 'utf8');
+    const settings = JSON.parse(content);
+    if (settings.enabledPlugins && typeof settings.enabledPlugins === 'object') {
+      return settings.enabledPlugins;
+    }
+  } catch {
+    // File missing or invalid JSON — ignore
+  }
+  return {};
+}
+
+async function loadEnabledPluginIds(customHome, cwd) {
+  const userSettingsFile = join(customHome, '.claude', 'settings.json');
+  const projectSettingsFile = join(cwd, '.claude', 'settings.json');
+  const localSettingsFile = join(cwd, '.claude', 'settings.local.json');
+
+  const [userEnabled, projectEnabled, localEnabled] = await Promise.all([
+    readEnabledPluginsFromFile(userSettingsFile),
+    readEnabledPluginsFromFile(projectSettingsFile),
+    readEnabledPluginsFromFile(localSettingsFile),
+  ]);
+
+  const merged = { ...userEnabled, ...projectEnabled, ...localEnabled };
+  if (Object.keys(merged).length === 0) return null;
+
+  const enabled = new Set(
+    Object.entries(merged)
+      .filter(([, v]) => v === true)
+      .map(([k]) => k)
+  );
+  return enabled.size === 0 ? null : enabled;
+}
+
 /**
- * Load installed plugins from a custom home directory.
- * This is a test-friendly version of loadInstalledPlugins that accepts a custom home path.
+ * Resolve installed, enabled plugins to their on-disk paths.
+ * This is a test-friendly version of resolveInstalledPlugins that accepts a custom home path.
  */
-async function loadInstalledPlugins(customHome = null) {
+async function resolveInstalledPlugins(customHome = null, cwd = null) {
   const home = customHome || process.env.HOME || homedir();
+  const projectDir = cwd || process.cwd();
   const pluginsFile = join(home, '.claude', 'plugins', 'installed_plugins.json');
 
   let content;
@@ -51,31 +87,30 @@ async function loadInstalledPlugins(customHome = null) {
     return [];
   }
 
-  // Collect all installation paths
-  const allInstallations = [];
-  for (const installations of Object.values(installed.plugins)) {
-    if (Array.isArray(installations)) {
-      allInstallations.push(...installations);
-    }
+  const enabledIds = await loadEnabledPluginIds(home, projectDir);
+  const candidates = [];
+  for (const [pluginId, installations] of Object.entries(installed.plugins)) {
+    if (!Array.isArray(installations) || installations.length === 0) continue;
+    if (enabledIds && !enabledIds.has(pluginId)) continue;
+
+    const localInstall = installations.find(
+      (inst) => inst.scope === 'local' && inst.projectPath === projectDir
+    );
+    const userInstall = installations.find((inst) => inst.scope === 'user');
+    const install = localInstall || userInstall;
+    if (!install) continue;
+
+    candidates.push({ id: pluginId, installation: install });
   }
 
-  // Check all paths in parallel for better performance
   const pathChecks = await Promise.all(
-    allInstallations.map(async (installation) => {
+    candidates.map(async ({ id, installation }) => {
       const exists = await pathExists(installation.installPath);
-      return { installation, exists };
+      return { id, path: installation.installPath, exists };
     })
   );
 
-  // Filter to only existing paths and map to PluginReference format
-  const plugins = pathChecks
-    .filter(({ exists }) => exists)
-    .map(({ installation }) => ({
-      type: 'local',
-      path: installation.installPath,
-    }));
-
-  return plugins;
+  return pathChecks.filter(({ exists }) => exists).map(({ id, path }) => ({ id, path }));
 }
 
 /**
@@ -200,17 +235,17 @@ console.log('Test 6: Null plugins property');
   console.log('  ✓ Null plugins property handled correctly');
 }
 
-// Test 7: PluginReference structure
-console.log('Test 7: PluginReference structure');
+// Test 7: ResolvedPlugin structure
+console.log('Test 7: ResolvedPlugin structure');
 {
-  const pluginRef = {
-    type: 'local',
+  const resolved = {
+    id: 'test-plugin@registry',
     path: '/some/path/to/plugin',
   };
 
-  assert.equal(pluginRef.type, 'local');
-  assert.equal(typeof pluginRef.path, 'string');
-  console.log('  ✓ PluginReference structure is correct');
+  assert.equal(typeof resolved.id, 'string');
+  assert.equal(typeof resolved.path, 'string');
+  console.log('  ✓ ResolvedPlugin structure is correct');
 }
 
 // Test 8: Multiple installations for same plugin
@@ -244,8 +279,8 @@ console.log('Test 8: Multiple installations for same plugin');
   console.log('  ✓ Multiple installations handled correctly');
 }
 
-// Test 9: Integration test - loadInstalledPlugins with real filesystem
-console.log('Test 9: Integration test - loadInstalledPlugins with real filesystem');
+// Test 9: Integration test - resolveInstalledPlugins with real filesystem
+console.log('Test 9: Integration test - resolveInstalledPlugins with real filesystem');
 {
   const tempDir = await mkdtemp(join(tmpdir(), 'vibing-test-'));
 
@@ -258,13 +293,7 @@ console.log('Test 9: Integration test - loadInstalledPlugins with real filesyste
     const pluginPath = join(tempDir, 'test-plugin');
     await mkdir(pluginPath, { recursive: true });
 
-    // Create package.json at plugin root (expected by plugin loader)
-    await writeFile(
-      join(pluginPath, 'package.json'),
-      JSON.stringify({ name: 'test-plugin', version: '1.0.0' })
-    );
-
-    // Create installed_plugins.json
+    // Create installed_plugins.json (user-scope install, no enabledPlugins filter)
     const pluginsData = {
       version: 2,
       plugins: {
@@ -282,29 +311,27 @@ console.log('Test 9: Integration test - loadInstalledPlugins with real filesyste
     };
     await writeFile(join(claudeDir, 'installed_plugins.json'), JSON.stringify(pluginsData));
 
-    // Call loadInstalledPlugins with custom home directory
-    const plugins = await loadInstalledPlugins(tempDir);
+    const plugins = await resolveInstalledPlugins(tempDir, tempDir);
 
-    // Assert the plugin was loaded correctly
     assert.equal(plugins.length, 1);
-    assert.equal(plugins[0].type, 'local');
+    assert.equal(plugins[0].id, 'test-plugin@registry');
     assert.equal(plugins[0].path, pluginPath);
 
-    console.log('  ✓ loadInstalledPlugins correctly loaded plugin');
+    console.log('  ✓ resolveInstalledPlugins correctly resolved a user-scope plugin');
   } finally {
     // Cleanup
     await rm(tempDir, { recursive: true, force: true });
   }
 }
 
-// Test 10: loadInstalledPlugins - missing file
-console.log('Test 10: loadInstalledPlugins - missing file');
+// Test 10: resolveInstalledPlugins - missing file
+console.log('Test 10: resolveInstalledPlugins - missing file');
 {
   const tempDir = await mkdtemp(join(tmpdir(), 'vibing-test-'));
 
   try {
     // Don't create installed_plugins.json
-    const plugins = await loadInstalledPlugins(tempDir);
+    const plugins = await resolveInstalledPlugins(tempDir, tempDir);
 
     // Should return empty array when file doesn't exist
     assert.deepEqual(plugins, []);
@@ -314,8 +341,8 @@ console.log('Test 10: loadInstalledPlugins - missing file');
   }
 }
 
-// Test 11: loadInstalledPlugins - malformed JSON
-console.log('Test 11: loadInstalledPlugins - malformed JSON');
+// Test 11: resolveInstalledPlugins - malformed JSON
+console.log('Test 11: resolveInstalledPlugins - malformed JSON');
 {
   const tempDir = await mkdtemp(join(tmpdir(), 'vibing-test-'));
 
@@ -326,7 +353,7 @@ console.log('Test 11: loadInstalledPlugins - malformed JSON');
     // Write malformed JSON
     await writeFile(join(claudeDir, 'installed_plugins.json'), '{ invalid json }}}');
 
-    const plugins = await loadInstalledPlugins(tempDir);
+    const plugins = await resolveInstalledPlugins(tempDir, tempDir);
 
     // Should return empty array when JSON is malformed
     assert.deepEqual(plugins, []);
@@ -336,8 +363,8 @@ console.log('Test 11: loadInstalledPlugins - malformed JSON');
   }
 }
 
-// Test 12: loadInstalledPlugins - filters non-existent paths
-console.log('Test 12: loadInstalledPlugins - filters non-existent paths');
+// Test 12: resolveInstalledPlugins - filters non-existent paths
+console.log('Test 12: resolveInstalledPlugins - filters non-existent paths');
 {
   const tempDir = await mkdtemp(join(tmpdir(), 'vibing-test-'));
 
@@ -380,7 +407,7 @@ console.log('Test 12: loadInstalledPlugins - filters non-existent paths');
 
     await writeFile(join(claudeDir, 'installed_plugins.json'), JSON.stringify(pluginsData));
 
-    const plugins = await loadInstalledPlugins(tempDir);
+    const plugins = await resolveInstalledPlugins(tempDir, tempDir);
 
     // Should only include the valid plugin
     assert.equal(plugins.length, 1);
@@ -391,8 +418,8 @@ console.log('Test 12: loadInstalledPlugins - filters non-existent paths');
   }
 }
 
-// Test 13: loadInstalledPlugins - parallel path checks
-console.log('Test 13: loadInstalledPlugins - parallel path checks');
+// Test 13: resolveInstalledPlugins - parallel path checks
+console.log('Test 13: resolveInstalledPlugins - parallel path checks');
 {
   const tempDir = await mkdtemp(join(tmpdir(), 'vibing-test-'));
 
@@ -448,7 +475,7 @@ console.log('Test 13: loadInstalledPlugins - parallel path checks');
     await writeFile(join(claudeDir, 'installed_plugins.json'), JSON.stringify(pluginsData));
 
     const startTime = Date.now();
-    const plugins = await loadInstalledPlugins(tempDir);
+    const plugins = await resolveInstalledPlugins(tempDir, tempDir);
     const endTime = Date.now();
 
     // Should load all valid plugins
@@ -458,8 +485,8 @@ console.log('Test 13: loadInstalledPlugins - parallel path checks');
     const paths = plugins.map((p) => p.path).sort();
     assert.deepEqual(paths, [plugin1Path, plugin2Path, plugin3Path].sort());
 
-    // All plugins should have correct type
-    assert.ok(plugins.every((p) => p.type === 'local'));
+    // All plugins should have an id
+    assert.ok(plugins.every((p) => typeof p.id === 'string' && p.id.length > 0));
 
     console.log(`  ✓ Parallel path checks work correctly (${endTime - startTime}ms for 3 plugins)`);
   } finally {
@@ -467,8 +494,8 @@ console.log('Test 13: loadInstalledPlugins - parallel path checks');
   }
 }
 
-// Test 14: loadInstalledPlugins - invalid plugins structure
-console.log('Test 14: loadInstalledPlugins - invalid plugins structure');
+// Test 14: resolveInstalledPlugins - invalid plugins structure
+console.log('Test 14: resolveInstalledPlugins - invalid plugins structure');
 {
   const tempDir = await mkdtemp(join(tmpdir(), 'vibing-test-'));
 
@@ -479,7 +506,7 @@ console.log('Test 14: loadInstalledPlugins - invalid plugins structure');
     // Missing plugins property
     await writeFile(join(claudeDir, 'installed_plugins.json'), JSON.stringify({ version: 2 }));
 
-    let plugins = await loadInstalledPlugins(tempDir);
+    let plugins = await resolveInstalledPlugins(tempDir, tempDir);
     assert.deepEqual(plugins, []);
 
     // Null plugins property
@@ -487,7 +514,7 @@ console.log('Test 14: loadInstalledPlugins - invalid plugins structure');
       join(claudeDir, 'installed_plugins.json'),
       JSON.stringify({ version: 2, plugins: null })
     );
-    plugins = await loadInstalledPlugins(tempDir);
+    plugins = await resolveInstalledPlugins(tempDir, tempDir);
     assert.deepEqual(plugins, []);
 
     console.log('  ✓ Handles invalid plugins structure gracefully');
@@ -496,8 +523,116 @@ console.log('Test 14: loadInstalledPlugins - invalid plugins structure');
   }
 }
 
-// Test 15: Debug logging environment variable
-console.log('Test 15: Debug logging with VIBING_DEBUG');
+// Test 15: enabledPlugins filtering
+console.log('Test 15: enabledPlugins filtering');
+{
+  const tempDir = await mkdtemp(join(tmpdir(), 'vibing-test-'));
+
+  try {
+    const claudeDir = join(tempDir, '.claude', 'plugins');
+    await mkdir(claudeDir, { recursive: true });
+
+    const allowedPath = join(tempDir, 'allowed-plugin');
+    const blockedPath = join(tempDir, 'blocked-plugin');
+    await mkdir(allowedPath, { recursive: true });
+    await mkdir(blockedPath, { recursive: true });
+
+    const pluginsData = {
+      version: 2,
+      plugins: {
+        'allowed@registry': [
+          {
+            scope: 'user',
+            installPath: allowedPath,
+            version: '1.0.0',
+            installedAt: '',
+            lastUpdated: '',
+            gitCommitSha: '',
+          },
+        ],
+        'blocked@registry': [
+          {
+            scope: 'user',
+            installPath: blockedPath,
+            version: '1.0.0',
+            installedAt: '',
+            lastUpdated: '',
+            gitCommitSha: '',
+          },
+        ],
+      },
+    };
+    await writeFile(join(claudeDir, 'installed_plugins.json'), JSON.stringify(pluginsData));
+
+    // enabledPlugins in user settings.json only lists "allowed"
+    await mkdir(join(tempDir, '.claude'), { recursive: true });
+    await writeFile(
+      join(tempDir, '.claude', 'settings.json'),
+      JSON.stringify({ enabledPlugins: { 'allowed@registry': true, 'blocked@registry': false } })
+    );
+
+    const plugins = await resolveInstalledPlugins(tempDir, tempDir);
+
+    assert.equal(plugins.length, 1);
+    assert.equal(plugins[0].id, 'allowed@registry');
+    console.log('  ✓ enabledPlugins filter excludes disabled/unlisted plugins');
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+// Test 16: local-scope install preferred over user-scope for the current project
+console.log('Test 16: local-scope install preferred over user-scope');
+{
+  const tempDir = await mkdtemp(join(tmpdir(), 'vibing-test-'));
+
+  try {
+    const claudeDir = join(tempDir, '.claude', 'plugins');
+    await mkdir(claudeDir, { recursive: true });
+
+    const userPath = join(tempDir, 'user-install');
+    const localPath = join(tempDir, 'local-install');
+    await mkdir(userPath, { recursive: true });
+    await mkdir(localPath, { recursive: true });
+
+    const pluginsData = {
+      version: 2,
+      plugins: {
+        'dual@registry': [
+          {
+            scope: 'user',
+            installPath: userPath,
+            version: '1.0.0',
+            installedAt: '',
+            lastUpdated: '',
+            gitCommitSha: '',
+          },
+          {
+            scope: 'local',
+            projectPath: tempDir,
+            installPath: localPath,
+            version: '1.0.0',
+            installedAt: '',
+            lastUpdated: '',
+            gitCommitSha: '',
+          },
+        ],
+      },
+    };
+    await writeFile(join(claudeDir, 'installed_plugins.json'), JSON.stringify(pluginsData));
+
+    const plugins = await resolveInstalledPlugins(tempDir, tempDir);
+
+    assert.equal(plugins.length, 1);
+    assert.equal(plugins[0].path, localPath);
+    console.log('  ✓ Prefers the local-scope install matching the current project');
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+// Test 17: Debug logging environment variable
+console.log('Test 17: Debug logging with VIBING_DEBUG');
 {
   // Save original value
   const originalDebug = process.env.VIBING_DEBUG;
