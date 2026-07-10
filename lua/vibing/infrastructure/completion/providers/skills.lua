@@ -18,6 +18,9 @@ local _load_generation = 0
 ---@type string?
 local _bundled_cache_cwd = nil
 
+---@type number?
+local _bundled_cache_script_mtime = nil
+
 ---Parse SKILL.md to extract name and description
 ---@param file_path string
 ---@return {name: string, description: string}?
@@ -194,6 +197,7 @@ local function start_async_load()
   local cwd = vim.fn.getcwd(-1, -1)
   _loading = true
   _bundled_cache_cwd = cwd
+  _bundled_cache_script_mtime = vim.fn.getftime(script_path)
   local load_generation = _load_generation
   -- Accumulate streaming chunks correctly: last element of each on_stdout call
   -- is a partial line continued by the first element of the next call.
@@ -235,24 +239,41 @@ local function start_async_load()
   if type(job_id) ~= "number" or job_id <= 0 then
     _loading = false
     _bundled_cache_cwd = nil
+    _bundled_cache_script_mtime = nil
   end
+end
+
+---Invalidate the bundled/top-level caches if cwd changed or dist/bin/list-commands.js
+---was rebuilt (e.g. by build.sh) since the cache was populated.
+local function invalidate_if_stale()
+  if not _bundled_cache then
+    return
+  end
+
+  local current_cwd = vim.fn.getcwd(-1, -1)
+  local _, script_path = resolve_list_commands()
+  local script_stale = script_path
+    and _bundled_cache_script_mtime
+    and vim.fn.getftime(script_path) ~= _bundled_cache_script_mtime
+
+  if _bundled_cache_cwd == current_cwd and not script_stale then
+    return
+  end
+
+  _bundled_cache = nil
+  _bundled_cache_cwd = nil
+  _bundled_cache_script_mtime = nil
+  _loading = false
+  _load_generation = _load_generation + 1
+  _cache = nil
 end
 
 ---Get dynamic skills from Agent SDK (custom commands + plugin skills)
 ---Returns cached result immediately; starts async load if not yet cached
 ---@return Vibing.CompletionItem[]
 local function get_dynamic_sdk_skills()
-  local current_cwd = vim.fn.getcwd(-1, -1)
   if _bundled_cache then
-    if _bundled_cache_cwd == current_cwd then
-      return _bundled_cache
-    end
-    -- cwd changed: invalidate and reload
-    _bundled_cache = nil
-    _bundled_cache_cwd = nil
-    _loading = false
-    _load_generation = _load_generation + 1
-    _cache = nil
+    return _bundled_cache
   end
   start_async_load()
   return {}
@@ -345,6 +366,7 @@ end
 ---Get all skill candidates (cached)
 ---@return Vibing.CompletionItem[]
 function M.get_all()
+  invalidate_if_stale()
   if not _cache then
     _cache = scan_skills()
   end
@@ -353,6 +375,7 @@ end
 
 ---Preload dynamic skills in background (call at setup time to warm the cache)
 function M.preload()
+  invalidate_if_stale()
   start_async_load()
 end
 
@@ -369,6 +392,7 @@ function M.clear_cache()
   _cache = nil
   _bundled_cache = nil
   _bundled_cache_cwd = nil
+  _bundled_cache_script_mtime = nil
   _loading = false
 end
 
