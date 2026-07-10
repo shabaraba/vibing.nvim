@@ -75,4 +75,75 @@ describe("can_use_tool", function()
       assert.equals("allow", result.behavior)
     end)
   end)
+
+  describe("vibing-nvim MCP tools (regardless of registration namespace)", function()
+    local tool_names = {
+      -- Registered as a plain user-level MCP server
+      "mcp__vibing-nvim__nvim_get_buffer",
+      -- Registered as a Claude Code plugin (marketplace + plugin name both "vibing-nvim")
+      "mcp__plugin_vibing-nvim_vibing-nvim__nvim_get_buffer",
+    }
+
+    for _, tool_name in ipairs(tool_names) do
+      it(string.format("should allow %s without permissions_allow when mcp_enabled", tool_name), function()
+        local result = can_use_tool.can_use_tool(tool_name, {}, make_config({
+          allowed_tools = {},
+          permission_mode = "default",
+          mcp_enabled = true,
+        }))
+        assert.equals("allow", result.behavior)
+      end)
+
+      it(string.format("should deny %s when mcp_enabled is false", tool_name), function()
+        local result = can_use_tool.can_use_tool(tool_name, {}, make_config({
+          mcp_enabled = false,
+        }))
+        assert.equals("deny", result.behavior)
+      end)
+
+      it(string.format("should still deny %s when explicitly in deny list", tool_name), function()
+        local result = can_use_tool.can_use_tool(tool_name, {}, make_config({
+          denied_tools = { tool_name },
+          mcp_enabled = true,
+        }))
+        assert.equals("deny", result.behavior)
+      end)
+    end
+
+    it("does not match unrelated MCP tools", function()
+      local result = can_use_tool.can_use_tool("mcp__chrome-devtools__navigate_page", {}, make_config({
+        allowed_tools = { "Read", "Edit" },
+        permission_mode = "default",
+        mcp_enabled = true,
+      }))
+      assert.equals("ask", result.behavior)
+    end)
+  end)
+
+  describe("is_vibing_nvim_mcp_tool", function()
+    it("matches a specific tool regardless of registration namespace", function()
+      assert.is_true(
+        can_use_tool.is_vibing_nvim_mcp_tool(
+          "mcp__plugin_vibing-nvim_vibing-nvim__nvim_ask_user_question",
+          "nvim_ask_user_question"
+        )
+      )
+      assert.is_true(
+        can_use_tool.is_vibing_nvim_mcp_tool("mcp__vibing-nvim__nvim_ask_user_question", "nvim_ask_user_question")
+      )
+    end)
+
+    it("does not match a different vibing-nvim tool", function()
+      assert.is_false(
+        can_use_tool.is_vibing_nvim_mcp_tool(
+          "mcp__plugin_vibing-nvim_vibing-nvim__nvim_get_buffer",
+          "nvim_ask_user_question"
+        )
+      )
+    end)
+
+    it("does not match native AskUserQuestion", function()
+      assert.is_false(can_use_tool.is_vibing_nvim_mcp_tool("AskUserQuestion", "nvim_ask_user_question"))
+    end)
+  end)
 end)

@@ -169,8 +169,11 @@ function M.check_tool_permission(params)
   -- Native AskUserQuestion is unavailable in headless `claude -p` mode, so vibing.nvim exposes
   -- its own MCP tool for the same purpose. Both are intercepted identically here: the native
   -- tool as a harmless fallback in case it is ever offered, the MCP tool as the primary path.
+  -- The MCP tool name is matched by suffix (see is_vibing_nvim_mcp_tool) because the vibing-nvim
+  -- MCP server may be registered as a plain user-level server or as a Claude Code plugin, which
+  -- changes the tool name's prefix.
   local is_ask_user_question_tool = tool_name == "AskUserQuestion"
-    or (tool_name == "mcp__vibing-nvim__nvim_ask_user_question" and perm_config.mcp_enabled)
+    or (can_use_tool_mod.is_vibing_nvim_mcp_tool(tool_name, "nvim_ask_user_question") and perm_config.mcp_enabled)
 
   if is_ask_user_question_tool then
     cancel_and_deny(function(stream)
