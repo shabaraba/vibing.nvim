@@ -93,14 +93,22 @@ end
 --- Write response file for hook script
 --- @param request_id string
 --- @param allow boolean
-local function write_hook_response(request_id, allow)
+--- @param reason? string Surfaced to the model as the tool_result when the underlying process
+---   was NOT successfully cancelled (e.g. cancel_and_deny's fallback path). When cancellation
+---   does succeed, the process is killed before this response can ever reach the model, so the
+---   reason is moot in that case — it only matters for the failure path.
+local function write_hook_response(request_id, allow, reason)
   local comm_dir = get_comm_dir()
   local res_file = comm_dir .. "/" .. request_id .. ".res"
   local tmp_file = res_file .. ".tmp"
 
   local decision = allow and "allow" or "deny"
+  local output = { permissionDecision = decision }
+  if reason then
+    output.permissionDecisionReason = reason
+  end
   local json = vim.json.encode({
-    hookSpecificOutput = { permissionDecision = decision },
+    hookSpecificOutput = output,
   })
 
   local f, err = io.open(tmp_file, "w")
@@ -173,12 +181,15 @@ function M.check_tool_permission(params)
     tool_name = CODEX_TOOL_ALIASES[tool_name] or tool_name
   end
 
-  -- Kill process first, call UI callback, then write deny response.
-  -- Used by both AskUserQuestion and "ask" permission paths.
-  local function cancel_and_deny(on_stream_fn)
+  -- Kill process first, call UI callback, then write deny response. Used by both
+  -- AskUserQuestion and "ask" permission paths. The deny response only reaches the model when
+  -- cancellation fails to find a stream (see fallback_reason below) — when the process is
+  -- successfully killed, it dies before it could ever process that response.
+  local function cancel_and_deny(on_stream_fn, fallback_reason)
     vim.schedule(function()
       local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
       local stream = registry.get(handle_id)
+      local reason = nil
       if stream then
         if stream.adapter and stream.handle_id then
           stream.adapter:cancel(stream.handle_id)
@@ -186,8 +197,9 @@ function M.check_tool_permission(params)
         on_stream_fn(stream)
       else
         vim.notify("[vibing] cancel_and_deny: no active stream found", vim.log.levels.WARN)
+        reason = fallback_reason
       end
-      write_hook_response(request_id, false)
+      write_hook_response(request_id, false, reason)
     end)
   end
 
@@ -207,7 +219,7 @@ function M.check_tool_permission(params)
       if stream.on_insert_choices and tool_input.questions then
         stream.on_insert_choices(tool_input.questions)
       end
-    end)
+    end, "vibing.nvim could not find the chat buffer to show this question in (internal error). Ask the question as plain text instead of retrying this tool.")
     return { status = "denied", reason = "AskUserQuestion intercepted" }
   end
 
@@ -226,7 +238,7 @@ function M.check_tool_permission(params)
       if stream.on_approval_required then
         stream.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)
       end
-    end)
+    end, "vibing.nvim could not find the chat buffer to show the approval prompt in (internal error). Do not retry this tool immediately.")
     return { status = "pending" }
   end
 end
