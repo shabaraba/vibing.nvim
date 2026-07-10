@@ -374,7 +374,7 @@ function M.get_all()
   end
   local items = scan_skills()
   -- Only cache when dynamic load is complete; avoid caching incomplete results
-  if not (_loading or _bundled_cache == nil) then
+  if not M.is_preloading() then
     _cache = items
   end
   return items

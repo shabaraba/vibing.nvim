@@ -3,6 +3,7 @@
 --- @module vibing.infrastructure.adapter.modules.cli_command_builder
 
 local tools_constants = require("vibing.core.constants.tools")
+local worktree_constants = require("vibing.core.constants.worktree")
 
 local M = {}
 
@@ -148,7 +149,8 @@ function M.build(prompt, opts, session_id, config, settings_path)
   -- System prompt additions (worktree convention + optional language instruction)
   local system_prompt_lines = {
     "When creating a git worktree for isolated work, place it under "
-      .. ".vibing/worktrees/<branch-name>/ at the repository root.",
+      .. worktree_constants.DIR
+      .. "<branch-name>/ at the repository root.",
   }
 
   local language = resolve_language(opts, config)

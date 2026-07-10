@@ -1,5 +1,7 @@
 ---@class Vibing.Utils.Mote.Context
 ---moteコンテキストの名前生成とパス管理
+local Worktree = require("vibing.core.constants.worktree")
+
 local M = {}
 
 ---文字列をmoteの命名ルールに従ってサニタイズ
@@ -40,13 +42,11 @@ end
 ---@param cwd? string 作業ディレクトリ（worktree判定用）
 ---@return string Worktree固有のコンテキスト名
 function M.build_name(context_prefix, cwd)
-  if cwd then
-    local branch_name = cwd:match("%.vibing/worktrees/([^/]+)")
-    if branch_name then
-      local worktree_name = sanitize_name(branch_name)
-      local hash_suffix = generate_hash(branch_name)
-      return string.format("%s-worktree-%s-%s", context_prefix, worktree_name, hash_suffix)
-    end
+  local branch_name = Worktree.match_branch(cwd)
+  if branch_name then
+    local worktree_name = sanitize_name(branch_name)
+    local hash_suffix = generate_hash(branch_name)
+    return string.format("%s-worktree-%s-%s", context_prefix, worktree_name, hash_suffix)
   end
 
   return string.format("%s-root", context_prefix)
