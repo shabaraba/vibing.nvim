@@ -46,6 +46,5 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_list_instances: instances.handleListInstances,
 
   // Chat operations
-  nvim_chat_worktree: chat.handleChatWorktree,
   nvim_chat_send_message: chat.handleChatSendMessage,
 };

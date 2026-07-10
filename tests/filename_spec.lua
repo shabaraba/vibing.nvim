@@ -1,30 +1,31 @@
--- Tests for vibing.utils.filename module
+-- Tests for vibing.core.utils.filename module
 
-describe("vibing.utils.filename", function()
+describe("vibing.core.utils.filename", function()
   local filename
 
   before_each(function()
-    package.loaded["vibing.utils.filename"] = nil
-    filename = require("vibing.utils.filename")
+    package.loaded["vibing.core.utils.filename"] = nil
+    filename = require("vibing.core.utils.filename")
   end)
 
   describe("generate_from_message", function()
     it("should generate filename from simple message", function()
       local result = filename.generate_from_message("Hello world")
       local date_prefix = os.date("%Y%m%d")
-      assert.equals(date_prefix .. "_hello_world", result)
+      assert.equals(date_prefix .. "_Hello_world", result)
     end)
 
     it("should sanitize special characters", function()
       local result = filename.generate_from_message("Fix: bug in @file.lua")
       local date_prefix = os.date("%Y%m%d")
-      assert.equals(date_prefix .. "_fix_bug_in_filelua", result)
+      -- Only OS-forbidden characters (/ \ : * ? " < > |) are stripped; others are kept
+      assert.equals(date_prefix .. "_Fix_bug_in_@file.lua", result)
     end)
 
-    it("should convert to lowercase", function()
+    it("should preserve original case", function()
       local result = filename.generate_from_message("UPPER CASE TEXT")
       local date_prefix = os.date("%Y%m%d")
-      assert.equals(date_prefix .. "_upper_case_text", result)
+      assert.equals(date_prefix .. "_UPPER_CASE_TEXT", result)
     end)
 
     it("should handle hyphens", function()
@@ -37,10 +38,10 @@ describe("vibing.utils.filename", function()
       local long_message = "This is a very long message that exceeds fifty characters limit"
       local result = filename.generate_from_message(long_message)
       local date_prefix = os.date("%Y%m%d")
-      -- Should use first 50 chars of message, then sanitize (topic limited to 32)
+      -- Should use first 50 chars of message, then sanitize (topic limited to 64)
       assert.is_not_nil(result:match("^" .. date_prefix .. "_"))
       local topic = result:sub(#date_prefix + 2)
-      assert.is_true(#topic <= 32)
+      assert.is_true(#topic <= 64)
     end)
 
     it("should handle multiline messages", function()
@@ -48,7 +49,7 @@ describe("vibing.utils.filename", function()
       local result = filename.generate_from_message(multiline)
       local date_prefix = os.date("%Y%m%d")
       -- Should only use first line
-      assert.equals(date_prefix .. "_first_line", result)
+      assert.equals(date_prefix .. "_First_line", result)
     end)
 
     it("should return timestamp for empty message", function()
@@ -62,7 +63,8 @@ describe("vibing.utils.filename", function()
     end)
 
     it("should return timestamp when sanitization produces empty string", function()
-      local result = filename.generate_from_message("@#$%^&*()")
+      -- Only OS-forbidden characters (/ \ : * ? " < > |) are stripped by sanitize()
+      local result = filename.generate_from_message(':*?"<>|')
       assert.is_not_nil(result:match("^chat_%d+_%d+$"))
     end)
 
@@ -78,12 +80,12 @@ describe("vibing.utils.filename", function()
       assert.equals(date_prefix .. "_test", result)
     end)
 
-    it("should limit topic length to 32 characters", function()
+    it("should limit topic length to 64 characters", function()
+      -- generate_from_message truncates the first line to 50 chars before
+      -- sanitizing, so exercise sanitize()'s own 64-char cap directly
       local long_topic = string.rep("a", 100)
-      local result = filename.generate_from_message(long_topic)
-      local date_prefix = os.date("%Y%m%d")
-      local topic_part = result:sub(#date_prefix + 2)
-      assert.equals(32, #topic_part)
+      local result = filename.sanitize(long_topic)
+      assert.equals(64, #result)
     end)
   end)
 

@@ -1,8 +1,12 @@
 /**
  * Plugin loader for vibing.nvim
  *
- * This module loads installed Claude Code plugins from the user's plugin cache
- * and returns them in a format compatible with the Agent SDK's `plugins` option.
+ * This module resolves installed Claude Code plugins from the user's plugin
+ * cache to their on-disk paths, for filesystem-based inspection (e.g.
+ * scanning a plugin's skills/ directory). It intentionally does not go
+ * through the Agent SDK: `query({ plugins })` silently drops plugins whose
+ * plugin.json contains fields like $schema/displayName, and spinning up a
+ * whole query() session is unnecessary just to enumerate local files.
  *
  * Plugins are read from ~/.claude/plugins/installed_plugins.json, which is
  * maintained by the Claude Code CLI when users install plugins via `/plugin install`.
@@ -15,13 +19,12 @@ import { join } from 'path';
 import { homedir } from 'os';
 
 /**
- * Reference to a locally installed plugin.
- * This format is expected by the Agent SDK's `plugins` option.
+ * A resolved installed plugin: its registry id and on-disk install path.
  */
-export interface PluginReference {
-  /** Plugin type - always 'local' for filesystem-based plugins */
-  type: 'local';
-  /** Absolute path to the plugin directory */
+export interface ResolvedPlugin {
+  /** Plugin identifier as it appears in installed_plugins.json, e.g. "vibing-nvim@vibing-nvim" */
+  id: string;
+  /** Absolute path to the plugin's installation directory */
   path: string;
 }
 
@@ -89,24 +92,6 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 /**
- * Load all installed plugins from ~/.claude/plugins/installed_plugins.json.
- *
- * This function reads the Claude Code plugin registry and returns plugin
- * references in the format expected by the Agent SDK. Only plugins whose
- * installation paths still exist on disk are included.
- *
- * @returns Promise resolving to array of plugin references for the Agent SDK
- *
- * @example
- * ```typescript
- * const plugins = await loadInstalledPlugins();
- * // Returns: [{ type: 'local', path: '/path/to/plugin' }, ...]
- *
- * // Use with Agent SDK:
- * query({ prompt: '...', options: { plugins } });
- * ```
- */
-/**
  * Read enabled plugin IDs from a single settings.json file.
  */
 async function readEnabledPluginsFromFile(settingsFile: string): Promise<Record<string, boolean>> {
@@ -160,7 +145,19 @@ async function loadEnabledPluginIds(): Promise<Set<string> | null> {
   return enabled;
 }
 
-export async function loadInstalledPlugins(): Promise<PluginReference[]> {
+/**
+ * Resolve all installed, enabled plugins to their on-disk paths.
+ *
+ * @returns Promise resolving to array of {id, path} for plugins whose
+ * installation directory still exists on disk.
+ *
+ * @example
+ * ```typescript
+ * const plugins = await resolveInstalledPlugins();
+ * // Returns: [{ id: 'vibing-nvim@vibing-nvim', path: '/path/to/plugin' }, ...]
+ * ```
+ */
+export async function resolveInstalledPlugins(): Promise<ResolvedPlugin[]> {
   const pluginsFile = join(homedir(), '.claude', 'plugins', 'installed_plugins.json');
 
   debugLog(`Reading plugins from: ${pluginsFile}`);
@@ -186,47 +183,52 @@ export async function loadInstalledPlugins(): Promise<PluginReference[]> {
     return [];
   }
 
-  // Only load local-scope plugins explicitly.
-  // User-scope plugins are auto-discovered by the Agent SDK via settingSources,
-  // so passing them here is unnecessary. Local-scope plugins are project-specific:
-  // include only if projectPath matches the current working directory.
+  // Unlike the `claude` CLI, the Agent SDK does NOT auto-discover user-scope
+  // installed plugins via settingSources — they must be passed explicitly via
+  // the `plugins` option, same as local-scope ones. Prefer a local-scope
+  // install matching the current project; otherwise fall back to the
+  // user-scope install (the common case for globally-installed plugins).
   const currentProjectPath = process.cwd();
-  const allInstallations: InstalledPlugin[] = [];
+  const enabledIds = await loadEnabledPluginIds();
+  const candidates: { id: string; installation: InstalledPlugin }[] = [];
   for (const [pluginId, installations] of Object.entries(installed.plugins)) {
     if (!Array.isArray(installations) || installations.length === 0) continue;
+
+    if (enabledIds && !enabledIds.has(pluginId)) {
+      debugLog(`Skipping plugin (not in enabledPlugins): ${pluginId}`);
+      continue;
+    }
 
     const localInstall = installations.find(
       (inst) => inst.scope === 'local' && inst.projectPath === currentProjectPath
     );
+    const userInstall = installations.find((inst) => inst.scope === 'user');
+    const install = localInstall || userInstall;
 
-    if (!localInstall) {
-      debugLog(`Skipping plugin (no local install for current project): ${pluginId}`);
+    if (!install) {
+      debugLog(`Skipping plugin (no local or user install applicable): ${pluginId}`);
       continue;
     }
 
-    allInstallations.push(localInstall);
+    candidates.push({ id: pluginId, installation: install });
   }
 
-  debugLog(`Found ${allInstallations.length} plugin installations`);
+  debugLog(`Found ${candidates.length} plugin installations`);
 
   // Check all paths in parallel for better performance
   const pathChecks = await Promise.all(
-    allInstallations.map(async (installation) => {
+    candidates.map(async ({ id, installation }) => {
       const exists = await pathExists(installation.installPath);
       if (!exists) {
         debugLog(`Plugin path does not exist: ${installation.installPath}`);
       }
-      return { installation, exists };
+      return { id, path: installation.installPath, exists };
     })
   );
 
-  // Filter to only existing paths and map to PluginReference format
-  const plugins: PluginReference[] = pathChecks
+  const plugins: ResolvedPlugin[] = pathChecks
     .filter(({ exists }) => exists)
-    .map(({ installation }) => ({
-      type: 'local' as const,
-      path: installation.installPath,
-    }));
+    .map(({ id, path }) => ({ id, path }));
 
   debugLog(`Loaded ${plugins.length} valid plugins`);
 

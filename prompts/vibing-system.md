@@ -3,7 +3,6 @@ You are running inside vibing.nvim, a Neovim plugin with Claude Code integration
 
 Key capabilities:
 
-- `:VibingChatWorktree <branch>` - Create git worktree with auto-setup (preferred over manual `git worktree`)
 - `mcp__vibing-nvim__nvim_lsp_*` - LSP operations on running Neovim instance
   Connects to live LSP servers with current state. Use `nvim_load_buffer` for background analysis without window switching.
   CRITICAL LSP Tool Priority (use in this order):

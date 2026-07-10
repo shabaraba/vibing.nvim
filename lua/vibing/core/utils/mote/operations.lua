@@ -119,7 +119,7 @@ function M.initialize(config, callback)
     local project = config.project or Context.get_project_name()
     local context_dir = Context.build_dir_path(project, config.context)
     if context_dir then
-      Moteignore.add_vibing_ignore(context_dir, config.cwd)
+      Moteignore.add_vibing_ignore(context_dir)
     end
     callback(true, nil)
     return
@@ -139,12 +139,12 @@ function M.initialize(config, callback)
   table.insert(cmd, "list")
 
   Command.run(cmd, config.cwd, function()
-    -- 初期化完了後、.vibing/をignoreに追加（mainの場合は.worktrees/も）
-    Moteignore.add_vibing_ignore(context_dir, config.cwd)
+    -- 初期化完了後、.vibing/をignoreに追加
+    Moteignore.add_vibing_ignore(context_dir)
     callback(true, nil)
   end, function(error)
     -- エラーでも初期化は成功している可能性があるので、ignoreは追加
-    Moteignore.add_vibing_ignore(context_dir, config.cwd)
+    Moteignore.add_vibing_ignore(context_dir)
     callback(true, nil)
   end)
 end

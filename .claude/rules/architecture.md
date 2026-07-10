@@ -42,10 +42,6 @@ The Node.js wrapper (`bin/agent-wrapper.mjs`) outputs streaming responses as JSO
 
 - `actions/chat.lua` - Chat session orchestration with concurrent session support
 
-**Infrastructure:**
-
-- `infrastructure/worktree/manager.lua` - Git worktree management (create, check existence, environment setup)
-
 ## Key Entry Points
 
 Quick reference for commonly edited files:
@@ -77,7 +73,7 @@ Chat files are saved as Markdown with YAML frontmatter:
 vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
-working_dir: .worktrees/feature-branch # Optional: relative path from git root for working directory
+working_dir: .vibing/workspace/0001-feature-branch/worktree # Optional: relative path from git root for working directory
 model: sonnet # sonnet, opus, or haiku (from config.agent.default_model)
 permissions_mode: acceptEdits # default, acceptEdits, bypassPermissions, plan, or dontAsk
 permissions_allow:
@@ -100,9 +96,9 @@ transparency and auditability. The optional `language` field ensures consistent 
 across sessions.
 
 **Working directory persistence:** The `working_dir` field stores the working directory as a relative
-path from git root (e.g., `.worktrees/feature-branch`). When a chat is reopened, the agent and mote
-commands are executed in this directory. This ensures consistent file operations across sessions,
-even when using `:VibingChatWorktree` or custom directories.
+path from git root (e.g., `.vibing/workspace/<id>/worktree`). When a chat is reopened, the agent
+and mote commands are executed in this directory. This ensures consistent file operations across
+sessions, even when using workspace or custom directories.
 
 ## Concurrent Execution Support
 
@@ -184,13 +180,13 @@ vertical split diff view showing changes before/after.
 **Language Support:** Configure AI response language for chat,
 supporting multi-language development workflows.
 
-**Git Worktree Integration:** Create isolated development environments for different branches with
-`:VibingChatWorktree`. Each worktree maintains its own chat history while sharing the same
-git repository. The system automatically:
+## Git Worktree Integration
 
-- Creates worktrees in `.worktrees/<branch-name>` directory
-- Copies essential configuration files (`.gitignore`, `package.json`, `tsconfig.json`, etc.)
-- Symlinks `node_modules` from the main worktree to avoid duplicate installations
-- Reuses existing worktrees without recreating the environment
-- Saves chat files in main repository at `.vibing/worktrees/<branch-name>/` (persists after worktree deletion)
-- Stores `working_dir` in frontmatter for persistent working directory (e.g., `.worktrees/feature-branch`)
+Worktree-backed development goes through natural-language requests backed by the
+`vibing-worktree` Claude Code skill bundled with this plugin (`skills/vibing-worktree`), not
+through a vibing.nvim chat command. There is no bespoke lifecycle script or metadata file —
+worktrees are created with plain `git worktree add -b <branch> .vibing/worktrees/<branch>/` and
+removed with `git worktree remove`; a worktree's existence on disk is its entire state. The
+chat's own `working_dir` frontmatter field (unchanged by this) is what keeps a conversation
+attached to its worktree across turns. See `skills/vibing-worktree/SKILL.md` for the full
+list/create/attach/finish workflow.

@@ -49,14 +49,13 @@
    - フローティングウィンドウ
    - バッファのクリーンアップ
 
-### Worktree統合
+### Workspace統合
 
-8. **[08-worktree-integration.md](./08-worktree-integration.md)** - Worktree統合機能
-   - git worktreeの自動作成
-   - 設定ファイルのコピー
-   - node_modulesの共有
-   - チャットファイルの永続化
-   - 複数worktreeの管理
+8. **[08-worktree-integration.md](./08-worktree-integration.md)** - Workspace統合機能
+   - /vibing-workspace-create によるworktree・meta.yaml・plan.mdの自動作成
+   - /vibing-workspace-enter による既存workspaceへの参加
+   - /vibing-workspace-list による一覧表示
+   - /vibing-workspace-done によるworktree削除とdoneへの移動
 
 ## 🎯 テスト実施方法
 

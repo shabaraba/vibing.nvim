@@ -2,16 +2,6 @@
 ---.moteignoreファイルの管理
 local M = {}
 
----cwdがworktree内かどうかを判定
----@param cwd string|nil 作業ディレクトリ
----@return boolean worktree内の場合true
-local function is_worktree(cwd)
-  if not cwd then
-    return false
-  end
-  return cwd:match("%.worktrees/") ~= nil
-end
-
 ---デフォルトの.moteignoreルール
 M.DEFAULT_RULES = {
   "# vibing.nvim auto-generated .moteignore",
@@ -55,10 +45,11 @@ function M.ensure_exists(ignore_file_path)
   vim.fn.writefile(M.DEFAULT_RULES, abs_path)
 end
 
----コンテキストのignoreファイルに.vibing/と（mainの場合）.worktrees/を追加
+---コンテキストのignoreファイルに.vibing/を追加
+---worktreeは常に.vibing/worktrees/配下に作られるため、.vibing/を無視すれば
+---worktree自体も自動的に無視される（.worktrees/専用のルールはもう不要）
 ---@param context_dir string コンテキストディレクトリのパス
----@param cwd string|nil 作業ディレクトリ（worktree判定用）
-function M.add_vibing_ignore(context_dir, cwd)
+function M.add_vibing_ignore(context_dir)
   local ignore_file_path = context_dir .. "/ignore"
   local ignore_file = io.open(ignore_file_path, "r")
   if not ignore_file then
@@ -68,15 +59,7 @@ function M.add_vibing_ignore(context_dir, cwd)
   local content = ignore_file:read("*all")
   ignore_file:close()
 
-  local has_vibing = content:match("%.vibing/") ~= nil
-  local has_worktrees = content:match("%.worktrees/") ~= nil
-  local in_worktree = is_worktree(cwd)
-
-  -- mainコンテキストでは.worktrees/も必要、worktreeコンテキストでは.vibing/のみ
-  local need_vibing = not has_vibing
-  local need_worktrees = not in_worktree and not has_worktrees
-
-  if not need_vibing and not need_worktrees then
+  if content:match("%.vibing/") ~= nil then
     return
   end
 
@@ -98,15 +81,7 @@ function M.add_vibing_ignore(context_dir, cwd)
     insert_pos = insert_pos + 1
   end
 
-  local entries_to_add = {}
-  table.insert(entries_to_add, "")
-  table.insert(entries_to_add, "# vibing.nvim internal files")
-  if need_vibing then
-    table.insert(entries_to_add, ".vibing/")
-  end
-  if need_worktrees then
-    table.insert(entries_to_add, ".worktrees/")
-  end
+  local entries_to_add = { "", "# vibing.nvim internal files", ".vibing/" }
 
   for i, entry in ipairs(entries_to_add) do
     table.insert(lines, insert_pos + i - 1, entry)

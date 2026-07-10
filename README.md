@@ -273,23 +273,22 @@ use {
 
 ### User Commands
 
-| Command                                   | Description                                                                                         |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `:VibingChat [position\|file]`            | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file |
-| `:VibingChatWorktree [position] <branch>` | Create git worktree and open chat in it (position: right\|left\|top\|bottom\|back\|current)         |
-| `:VibingToggleChat`                       | Toggle existing chat window (preserve current conversation)                                         |
-| `:VibingChatFork [position]`              | Fork current chat (create branch from current conversation)                                         |
-| `:VibingSlashCommands`                    | Show slash command picker in chat                                                                   |
-| `:VibingSetFileTitle`                     | Generate AI title and rename chat file                                                              |
-| `:VibingSummarize`                        | Generate AI summary of chat history and insert into buffer                                          |
-| `:VibingDeleteChats [--unrenamed]`        | Delete chat files (use --unrenamed to delete all unrenamed files)                                   |
-| `:VibingContext [path]`                   | Add file to context (or from oil.nvim if no path)                                                   |
-| `:VibingClearContext`                     | Clear all context                                                                                   |
-| `:VibingCancel`                           | Cancel current request                                                                              |
-| `:VibingReloadCommands`                   | Reload custom slash commands                                                                        |
-| `:VibingCopyUnsentUserHeader`             | Copy `## User <!-- unsent -->` to clipboard                                                         |
-| `:VibingDailySummary [YYYY-MM-DD]`        | Generate daily summary from project chat files (default: today)                                     |
-| `:VibingDailySummaryAll [YYYY-MM-DD]`     | Generate daily summary from all chat files (default: today)                                         |
+| Command                               | Description                                                                                         |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `:VibingChat [position\|file]`        | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file |
+| `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                                         |
+| `:VibingChatFork [position]`          | Fork current chat (create branch from current conversation)                                         |
+| `:VibingSlashCommands`                | Show slash command picker in chat                                                                   |
+| `:VibingSetFileTitle`                 | Generate AI title and rename chat file                                                              |
+| `:VibingSummarize`                    | Generate AI summary of chat history and insert into buffer                                          |
+| `:VibingDeleteChats [--unrenamed]`    | Delete chat files (use --unrenamed to delete all unrenamed files)                                   |
+| `:VibingContext [path]`               | Add file to context (or from oil.nvim if no path)                                                   |
+| `:VibingClearContext`                 | Clear all context                                                                                   |
+| `:VibingCancel`                       | Cancel current request                                                                              |
+| `:VibingReloadCommands`               | Reload custom slash commands                                                                        |
+| `:VibingCopyUnsentUserHeader`         | Copy `## User <!-- unsent -->` to clipboard                                                         |
+| `:VibingDailySummary [YYYY-MM-DD]`    | Generate daily summary from project chat files (default: today)                                     |
+| `:VibingDailySummaryAll [YYYY-MM-DD]` | Generate daily summary from all chat files (default: today)                                         |
 
 **Command Semantics:**
 
@@ -302,9 +301,7 @@ use {
   - `:VibingChat bottom` - New chat in bottom split
   - `:VibingChat back` - New chat as background buffer only (no window)
   - `:VibingChat path/to/file.md` - Open saved chat file
-- **`:VibingChatWorktree`** - Create or reuse a git worktree and open a chat session in it.
-  - `:VibingChatWorktree feature-branch` - Create worktree and open chat
-  - `:VibingChatWorktree right feature-branch` - Same, but open in right split
+- **Worktree lifecycle** - Use the `vibing-worktree` Claude Code skill bundled with this plugin, entirely via natural language, to list/create/attach/finish git worktrees under `.vibing/worktrees/<branch>/`.
 - **`:VibingChatFork`** - Fork current chat conversation for branching in a different direction.
 - **`:VibingToggleChat`** - Use to show/hide your current conversation. Preserves the existing chat state.
 
@@ -324,6 +321,9 @@ use {
 | `/ask [tool]`             | Ask before using tool, or show current list if no args                   |
 | `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk) |
 | `/new-session`            | Reset session and start fresh                                            |
+
+Worktree lifecycle is handled by the `vibing-worktree` Claude Code skill bundled with this
+plugin, not by chat slash commands — see `skills/vibing-worktree/SKILL.md`.
 
 ### Chat Keybindings
 

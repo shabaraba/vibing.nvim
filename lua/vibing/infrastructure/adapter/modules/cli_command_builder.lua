@@ -3,6 +3,7 @@
 --- @module vibing.infrastructure.adapter.modules.cli_command_builder
 
 local tools_constants = require("vibing.core.constants.tools")
+local worktree_constants = require("vibing.core.constants.worktree")
 
 local M = {}
 
@@ -145,16 +146,24 @@ function M.build(prompt, opts, session_id, config, settings_path)
     table.insert(cmd, settings_path)
   end
 
-  -- Language as system prompt append
+  -- System prompt additions (worktree convention + optional language instruction)
+  local system_prompt_lines = {
+    "When creating a git worktree for isolated work, place it under "
+      .. worktree_constants.DIR
+      .. "<branch-name>/ at the repository root.",
+  }
+
   local language = resolve_language(opts, config)
   if language and language ~= "en" then
     local language_utils = require("vibing.core.utils.language")
     local lang_name = language_utils.language_names[language]
     if lang_name then
-      table.insert(cmd, "--append-system-prompt")
-      table.insert(cmd, string.format("Always respond in %s (%s).", lang_name, language))
+      table.insert(system_prompt_lines, 1, string.format("Always respond in %s (%s).", lang_name, language))
     end
   end
+
+  table.insert(cmd, "--append-system-prompt")
+  table.insert(cmd, table.concat(system_prompt_lines, "\n"))
 
   table.insert(cmd, "--setting-sources")
   table.insert(cmd, "user,project,local")

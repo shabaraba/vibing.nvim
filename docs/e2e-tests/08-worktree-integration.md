@@ -1,431 +1,103 @@
-# E2Eテストケース: Worktree統合機能
+# E2E Test Scenarios: Worktree Integration (`vibing-worktree` skill)
 
-## テストID
+These scenarios exercise the `vibing-worktree` skill's four natural-language flows against a
+real chat session. Each scenario assumes a fresh chat in a git repository with at least one
+commit, and that the `vibing-nvim` MCP server is connected unless a scenario says otherwise.
 
-`E2E-WORKTREE-001`
+## 1. List worktrees
 
-## テスト対象
+**Steps:**
 
-`:VibingChatWorktree` コマンドによるgit worktree統合機能
+1. In a chat, send: "what worktrees exist in this repo right now?"
+2. Observe Claude run `git worktree list --porcelain` (and optionally `git log -1 --format=%s`
+   per branch) via the Bash tool.
 
-## 前提条件
+**Expected:**
 
-- Neovimが起動している
-- vibing.nvimプラグインがインストールされている
-- gitリポジトリ内で実行している
-- gitコマンドが利用可能
+- Claude presents the current worktree(s) — at minimum the main repo checkout — without erroring
+  even if `.vibing/worktrees/` doesn't exist yet.
 
-## テスト手順
+## 2. Create a worktree and continue in the same chat
 
-### 1. 新規Worktreeの作成
+**Steps:**
 
-**操作:**
+1. In a chat, send: "let's split fixing the auth session bug off into its own worktree."
+2. Observe Claude propose a branch name (e.g. `fix-auth-session-bug`), run
+   `git worktree add -b fix-auth-session-bug .vibing/worktrees/fix-auth-session-bug`, then edit
+   its own chat file's `working_dir` frontmatter field.
+3. Send a follow-up message, e.g. "what directory are you in now?"
 
-```vim
-:VibingChatWorktree feature-test
-```
+**Expected:**
 
-**期待される動作:**
+- `.vibing/worktrees/fix-auth-session-bug/` exists on disk (`git worktree list --porcelain`
+  shows it).
+- The chat file's frontmatter now has `working_dir: .vibing/worktrees/fix-auth-session-bug`.
+- The follow-up message's response reflects the new worktree's directory, not the main repo root.
+- No new chat buffer was opened — the same chat file continued.
 
-1. git worktreeが `.git/worktrees/` に作成される
-2. 新しいブランチ `feature-test` が作成される
-3. worktreeディレクトリが作成される（デフォルト: `../vibing.nvim-feature-test`）
-4. 必要な設定ファイルがコピーされる:
-   - `tsconfig.json`
-   - `package.json`
-   - `.gitignore`
-5. `node_modules` がシンボリックリンクで共有される
-6. チャットファイルはメインリポジトリの `.vibing/chat/` に保存される
-7. チャットバッファが開く
-8. `cwd` が worktreeディレクトリに設定される
+## 3. Attach a new chat to an existing worktree
 
-**検証ポイント:**
+**Steps:**
 
-```bash
-# worktreeが作成されていることを確認
-git worktree list
+1. With the worktree from Scenario 2 still present, open a brand-new chat.
+2. Send: "what worktrees are there? I want to go into the auth one."
 
-# 期待される出力:
-# /path/to/vibing.nvim       [main]
-# /path/to/vibing.nvim-feature-test  [feature-test]
+**Expected:**
 
-# 設定ファイルがコピーされていることを確認
-ls ../vibing.nvim-feature-test/
-# tsconfig.json, package.json, .gitignore が存在
+- Claude lists the existing worktree(s), including `fix-auth-session-bug`.
+- After the user confirms, Claude edits the new chat's own `working_dir` frontmatter to
+  `.vibing/worktrees/fix-auth-session-bug` (no `git worktree add` — it already exists).
+- A follow-up message in this new chat operates in that worktree.
 
-# node_modulesがシンボリックリンクであることを確認
-ls -la ../vibing.nvim-feature-test/node_modules
-# lrwxr-xr-x ... node_modules -> /path/to/vibing.nvim/node_modules
+## 4. Finish a worktree — clean removal
 
-# チャットファイルがメインリポジトリに保存されることを確認
-ls .vibing/chat/
-# chat-*.vibing が存在（worktreeディレクトリではなくメインリポジトリ）
-```
+**Steps:**
 
-```lua
--- Luaから確認
-local session = require("vibing.domain.chat.session")
-local current_session = session.get_current()
-assert(current_session.cwd:match("vibing%.nvim%-feature%-test"))
-```
+1. In the worktree-attached chat from Scenario 2 or 3, commit or discard any changes so the
+   worktree is clean.
+2. Send: "clean up this worktree, I'm done."
 
-### 2. 既存ブランチでWorktreeを作成
+**Expected:**
 
-**前提条件:**
+- Claude runs `git worktree remove .vibing/worktrees/fix-auth-session-bug` (no `--force`).
+- `git worktree list --porcelain` no longer shows it, and the directory is gone from disk.
+- If this was the chat's own `working_dir`, that frontmatter field is cleared (chat reverts to
+  operating in the main repo root).
 
-- ブランチ `existing-branch` が既に存在する
+## 5. Finish a worktree — refused due to uncommitted changes
 
-**操作:**
+**Steps:**
 
-```vim
-:VibingChatWorktree existing-branch
-```
+1. Create a worktree per Scenario 2, then make an uncommitted change inside it (e.g. edit a
+   file) without committing or stashing.
+2. Send: "clean up this worktree."
 
-**期待される動作:**
+**Expected:**
 
-- 既存のブランチをチェックアウトする
-- 新しいworktreeが作成される
-- 設定ファイルがコピーされる
+- `git worktree remove` fails because of the uncommitted change.
+- Claude surfaces the exact git error to the user and does **not** retry with `--force`.
+- The worktree and the uncommitted change are both still present after this exchange.
 
-**検証ポイント:**
+## 6. Attach/create with no `vibing-nvim` MCP connection
 
-```bash
-git worktree list
-# existing-branch用のworktreeが作成されている
-```
+**Steps:**
 
-### 3. 位置指定付きWorktree作成
+1. Start a chat with the `vibing-nvim` MCP server unavailable (e.g. no running Neovim RPC
+   server on the configured port).
+2. Send: "split this into its own worktree."
 
-**操作:**
+**Expected:**
 
-```vim
-:VibingChatWorktree right feature-ui
-```
+- Claude still creates the worktree on disk via `git worktree add`.
+- Since `nvim_get_info` isn't available, Claude does not attempt to edit chat frontmatter it
+  can't locate — it tells the user the worktree's path and that `working_dir` needs to be set
+  by hand (or a new chat opened there).
 
-**期待される動作:**
+## Manual verification checklist
 
-- worktreeが作成される
-- チャットウィンドウが右側に開く
-- 全ての設定が正しく適用される
-
-### 4. Worktreeでのメッセージ送信
-
-**操作:**
-
-```vim
-:VibingChatWorktree feature-test
-i
-このworktreeで作業しています
-<CR>
-```
-
-**期待される動作:**
-
-- メッセージが送信される
-- Agent SDKに `--cwd` 引数でworktreeパスが渡される
-- レスポンスが正しく表示される
-
-**検証ポイント:**
-
-```lua
--- SendMessage use caseでcwdが設定されていることを確認
-local send_message = require("vibing.application.chat.send_message")
--- opts.cwd が worktreeパスに設定されている
-```
-
-### 5. Worktree内でのファイル操作
-
-**操作:**
-
-```vim
-:VibingChatWorktree feature-test
-i
-新しいファイルを作成してください: src/new_feature.lua
-<CR>
-# Claudeが新しいファイルを作成する
-```
-
-**期待される動作:**
-
-- ファイルがworktreeディレクトリ内に作成される
-- メインリポジトリには影響しない
-
-**検証ポイント:**
-
-```bash
-# worktreeディレクトリにファイルが作成されている
-ls ../vibing.nvim-feature-test/src/new_feature.lua
-
-# メインリポジトリには存在しない
-ls src/new_feature.lua
-# ファイルが見つからない
-```
-
-### 6. チャットファイルの永続化
-
-**操作:**
-
-```vim
-:VibingChatWorktree feature-test
-i
-テストメッセージ
-<CR>
-:w
-:q
-
-# worktreeを削除
-:!git worktree remove ../vibing.nvim-feature-test
-
-# チャットファイルが残っていることを確認
-:VibingChat .vibing/chat/chat-*.vibing
-```
-
-**期待される動作:**
-
-- worktreeを削除してもチャットファイルは残る
-- チャットファイルがメインリポジトリの `.vibing/chat/` にある
-- チャットを再開できる
-
-**検証ポイント:**
-
-```bash
-# worktreeが削除されている
-git worktree list
-# feature-testのworktreeが存在しない
-
-# チャットファイルは残っている
-ls .vibing/chat/
-# chat-*.vibing が存在
-```
-
-### 7. 複数Worktreeの同時管理
-
-**操作:**
-
-```vim
-:VibingChatWorktree right feature-a
-:VibingChatWorktree left feature-b
-```
-
-**期待される動作:**
-
-- 2つのworktreeが作成される
-- それぞれ独立したチャットセッション
-- 各チャットが正しいworktreeディレクトリを参照
-
-**検証ポイント:**
-
-```bash
-git worktree list
-# 2つのworktreeが存在
-```
-
-```lua
--- 各チャットバッファが異なるcwdを持つことを確認
-```
-
-### 8. Worktreeからメインリポジトリへの切り替え
-
-**操作:**
-
-```vim
-:VibingChatWorktree feature-test
-# worktreeで作業
-:q
-
-# メインリポジトリで新しいチャット
-:VibingChat
-i
-メインリポジトリで作業中
-<CR>
-```
-
-**期待される動作:**
-
-- メインリポジトリの `cwd` が使用される
-- worktreeのパスは使用されない
-
-## 異常系テスト
-
-### 9. 無効なブランチ名
-
-**操作:**
-
-```vim
-:VibingChatWorktree "invalid branch name with spaces"
-```
-
-**期待される動作:**
-
-- エラーメッセージが表示される
-- worktreeが作成されない
-- Neovimがクラッシュしない
-
-### 10. 既存のWorktreeと同名
-
-**前提条件:**
-
-- `feature-test` worktreeが既に存在する
-
-**操作:**
-
-```vim
-:VibingChatWorktree feature-test
-```
-
-**期待される動作:**
-
-- エラーメッセージが表示される: "worktree already exists"
-- 既存のworktreeに切り替える、または何もしない
-
-### 11. gitリポジトリ外での実行
-
-**前提条件:**
-
-- gitリポジトリではないディレクトリで実行
-
-**操作:**
-
-```vim
-:VibingChatWorktree feature-test
-```
-
-**期待される動作:**
-
-- エラーメッセージが表示される
-- コマンドが失敗する
-- Neovimがクラッシュしない
-
-### 12. 設定ファイルのコピー失敗
-
-**前提条件:**
-
-- `tsconfig.json` が存在しない
-
-**操作:**
-
-```vim
-:VibingChatWorktree feature-test
-```
-
-**期待される動作:**
-
-- 警告メッセージが表示される（オプション）
-- worktreeは作成されるが、該当ファイルはコピーされない
-- 処理は継続される
-
-### 13. node_modulesのシンボリックリンク失敗
-
-**前提条件:**
-
-- `node_modules` が存在しない
-
-**操作:**
-
-```vim
-:VibingChatWorktree feature-test
-```
-
-**期待される動作:**
-
-- 警告メッセージが表示される
-- worktreeは作成される
-- ユーザーに手動で `npm install` するよう通知される
-
-### 14. Worktree削除時のチャットファイル保護
-
-**操作:**
-
-```bash
-# 誤ってworktreeディレクトリごと削除
-rm -rf ../vibing.nvim-feature-test
-```
-
-**期待される動作:**
-
-- チャットファイルはメインリポジトリにあるため影響を受けない
-- チャット履歴が失われない
-
-**検証ポイント:**
-
-```bash
-ls .vibing/chat/
-# チャットファイルが残っている
-```
-
-## パフォーマンステスト
-
-### 15. Worktree作成時間
-
-**操作:**
-
-```bash
-# 作成時間を測定
-time nvim -c ":VibingChatWorktree perf-test" -c ":q"
-```
-
-**期待される動作:**
-
-- 作成時間が5秒以内（目標値）
-- UIがブロックされない
-
-### 16. 大量のWorktree
-
-**操作:**
-
-```bash
-# 10個のworktreeを作成
-for i in {1..10}; do
-  nvim -c ":VibingChatWorktree feature-$i" -c ":q"
-done
-```
-
-**期待される動作:**
-
-- 全てのworktreeが正しく作成される
-- node_modulesが共有されるためディスク使用量が最小限
-
-**検証ポイント:**
-
-```bash
-git worktree list
-# 10個のworktreeが存在
-
-du -sh */node_modules
-# 全て同じinodeを指している（シンボリックリンク）
-```
-
-## クリーンアップ
-
-**操作:**
-
-```bash
-# 全worktreeを削除
-git worktree list --porcelain | grep "worktree" | grep -v "$(pwd)" | while read -r line; do
-  path=$(echo $line | cut -d' ' -f2)
-  git worktree remove "$path"
-done
-
-# チャットファイルを削除
-rm -rf .vibing/chat/
-```
-
-## 成功基準
-
-- [ ] Worktreeが正しく作成される
-- [ ] 設定ファイルが正しくコピーされる
-- [ ] node_modulesが共有される
-- [ ] チャットファイルがメインリポジトリに保存される
-- [ ] cwdが正しく設定される
-- [ ] メッセージ送信時にcwdが伝播する
-- [ ] 複数Worktreeの同時管理ができる
-- [ ] Worktree削除後もチャットファイルが残る
-- [ ] エラーハンドリングが適切に機能する
-- [ ] パフォーマンスが許容範囲内
-
-## 関連ファイル
-
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/presentation/chat/controller.lua` (handle_open_worktree)
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/application/chat/use_case.lua`
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/domain/chat/session.lua` (cwd管理)
-- `/Users/shaba/workspace/nvim-plugins/vibing.nvim/lua/vibing/application/chat/send_message.lua` (cwd伝播)
+- [ ] Scenario 1: listing works with zero and with one-or-more worktrees present
+- [ ] Scenario 2: create updates the _same_ chat's frontmatter, no new buffer
+- [ ] Scenario 3: attach works from a brand-new chat's first message
+- [ ] Scenario 4: finish removes the worktree and clears `working_dir` when applicable
+- [ ] Scenario 5: finish refuses (no `--force`) when there are uncommitted changes
+- [ ] Scenario 6: MCP-unavailable fallback degrades gracefully instead of erroring
