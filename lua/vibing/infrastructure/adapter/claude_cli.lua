@@ -13,7 +13,6 @@ local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.acti
 ---@class Vibing.ClaudeCLIAdapter : Vibing.Adapter
 ---@field _handles table<string, table>
 ---@field _session_manager table
----@field _settings_path string|nil
 local ClaudeCLI = setmetatable({}, { __index = Base })
 ClaudeCLI.__index = ClaudeCLI
 
@@ -35,27 +34,10 @@ function ClaudeCLI:new(config)
   instance.name = "claude_cli"
   instance._handles = {}
   instance._session_manager = SessionManagerModule.new()
-  instance._settings_path = nil
   math.randomseed(vim.loop.hrtime())
   return instance
 end
 
---- Get or create hook settings file (cached)
---- @return string|nil
-function ClaudeCLI:_get_settings_path()
-  if not self._settings_path then
-    local ok, path = pcall(SettingsGenerator.ensure)
-    if ok and path then
-      self._settings_path = path
-    else
-      vim.notify(
-        string.format("[vibing:cli] Failed to create hook settings: %s", tostring(path)),
-        vim.log.levels.WARN
-      )
-    end
-  end
-  return self._settings_path
-end
 
 ---@param prompt string
 ---@param opts Vibing.AdapterOpts
@@ -103,7 +85,16 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     )
   end
 
-  local cmd = CLICommandBuilder.build(prompt, opts, session_id, self.config, self:_get_settings_path())
+  local cwd = opts.cwd or vim.fn.getcwd()
+  local ok, settings_path = pcall(SettingsGenerator.ensure, cwd)
+  if not ok then
+    vim.notify(
+      string.format("[vibing:cli] Failed to create hook settings: %s", tostring(settings_path)),
+      vim.log.levels.WARN
+    )
+    settings_path = nil
+  end
+  local cmd = CLICommandBuilder.build(prompt, opts, session_id, self.config, settings_path)
   local output = {}
   local error_output = {}
 
@@ -167,8 +158,6 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
       on_done(response)
     end
   end
-
-  local cwd = opts.cwd or vim.fn.getcwd()
 
   self._handles[handle_id] = vim.system(cmd, {
     text = true,

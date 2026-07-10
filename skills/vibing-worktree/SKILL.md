@@ -48,8 +48,11 @@ out of curiosity or as a lead-in to attaching.
    If this fails (branch already checked out elsewhere, etc.), the error is self-explanatory —
    surface it verbatim rather than retrying blindly with a different name.
 
-3. Find this chat's own file path. If the `vibing-nvim` MCP server is connected, call
-   `mcp__vibing-nvim__nvim_get_info` to get it.
+3. Find this chat's own file path. The system prompt contains a line like
+   `Current vibing.nvim chat buffer file: /path/to/chat.md` — use that path directly. It is
+   injected per-request by vibing.nvim and is always accurate even when multiple chat buffers
+   are open. Avoid calling `mcp__vibing-nvim__nvim_get_info` for this purpose; it returns
+   whichever buffer currently has focus in Neovim and may return the wrong one.
 4. Edit that file's frontmatter, setting:
 
    ```yaml
@@ -71,7 +74,7 @@ existing one.
 1. Run the **List** steps above to surface candidates.
 2. Once the user picks one, follow **Create** steps 3-5 to point this chat's own `working_dir`
    frontmatter at the chosen worktree's path — the worktree already exists, so skip the
-   `git worktree add` step.
+   `git worktree add` step (step 2).
 
 ## Finish — "clean up this worktree"
 
