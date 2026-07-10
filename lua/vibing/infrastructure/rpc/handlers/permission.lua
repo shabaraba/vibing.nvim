@@ -146,8 +146,9 @@ function M.check_tool_permission(params)
     tool_name = CODEX_TOOL_ALIASES[tool_name] or tool_name
   end
 
-  -- AskUserQuestion: kill process first, then insert choices + write deny
-  if tool_name == "AskUserQuestion" then
+  -- Kill process first, call UI callback, then write deny response.
+  -- Used by both AskUserQuestion and "ask" permission paths.
+  local function cancel_and_deny(on_stream_fn)
     vim.schedule(function()
       local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
       local stream = registry.get()
@@ -155,11 +156,17 @@ function M.check_tool_permission(params)
         if stream.adapter and stream.handle_id then
           stream.adapter:cancel(stream.handle_id)
         end
-        if stream.on_insert_choices and tool_input.questions then
-          stream.on_insert_choices(tool_input.questions)
-        end
+        on_stream_fn(stream)
       end
       write_hook_response(request_id, false)
+    end)
+  end
+
+  if tool_name == "AskUserQuestion" then
+    cancel_and_deny(function(stream)
+      if stream.on_insert_choices and tool_input.questions then
+        stream.on_insert_choices(tool_input.questions)
+      end
     end)
     return { status = "denied", reason = "AskUserQuestion intercepted" }
   end
@@ -176,19 +183,10 @@ function M.check_tool_permission(params)
   else
     -- "ask" → kill process first, show approval UI, then write deny
     -- User's approval choice updates session state; Claude retries on next message
-    vim.schedule(function()
-      local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
-      local stream = registry.get()
-
-      if stream then
-        if stream.adapter and stream.handle_id then
-          stream.adapter:cancel(stream.handle_id)
-        end
-        if stream.on_approval_required then
-          stream.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)
-        end
+    cancel_and_deny(function(stream)
+      if stream.on_approval_required then
+        stream.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)
       end
-      write_hook_response(request_id, false)
     end)
     return { status = "pending" }
   end
