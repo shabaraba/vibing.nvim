@@ -44,5 +44,6 @@ M.execute = execute.execute
 M.send_message = message.send_message
 
 M.check_tool_permission = permission.check_tool_permission
+M.ask_user_question = permission.ask_user_question
 
 return M

@@ -40,7 +40,13 @@ export const chatTools: Tool[] = [
     description:
       'Ask the user one or more multiple-choice questions directly in the vibing.nvim chat buffer. ' +
       'Use this instead of asking questions in free text, and instead of the native AskUserQuestion ' +
-      'tool (which is unavailable in headless CLI mode).',
+      'tool (which is unavailable in headless CLI mode). ' +
+      'IMPORTANT: calling this tool renders the questions as an editable choice list in the chat ' +
+      'buffer and then immediately cancels/kills your current turn — you will NOT get a normal ' +
+      'tool_result back, and you cannot do anything else after calling it. The user edits the list ' +
+      "(deleting unwanted options) and sends it. Your NEXT invocation's prompt IS the user's answer " +
+      'to this question, delivered as a fresh turn — treat it as such rather than waiting for a ' +
+      'tool response.',
     inputSchema: {
       type: 'object',
       properties: {
