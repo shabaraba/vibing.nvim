@@ -164,7 +164,15 @@ function M.check_tool_permission(params)
     end)
   end
 
-  if tool_name == "AskUserQuestion" then
+  local perm_config = build_permission_config()
+
+  -- Native AskUserQuestion is unavailable in headless `claude -p` mode, so vibing.nvim exposes
+  -- its own MCP tool for the same purpose. Both are intercepted identically here: the native
+  -- tool as a harmless fallback in case it is ever offered, the MCP tool as the primary path.
+  local is_ask_user_question_tool = tool_name == "AskUserQuestion"
+    or (tool_name == "mcp__vibing-nvim__nvim_ask_user_question" and perm_config.mcp_enabled)
+
+  if is_ask_user_question_tool then
     cancel_and_deny(function(stream)
       if stream.on_insert_choices and tool_input.questions then
         stream.on_insert_choices(tool_input.questions)
@@ -173,7 +181,6 @@ function M.check_tool_permission(params)
     return { status = "denied", reason = "AskUserQuestion intercepted" }
   end
 
-  local perm_config = build_permission_config()
   local result = can_use_tool_mod.can_use_tool(tool_name, tool_input, perm_config)
 
   if result.behavior == "allow" then

@@ -21,4 +21,27 @@ describe('chat tools (worktree redesign)', () => {
     expect(handlers.nvim_chat_send_message).toBeDefined();
     expect(typeof handlers.nvim_chat_send_message).toBe('function');
   });
+
+  it('registers nvim_ask_user_question with a questions array input schema', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_ask_user_question');
+    expect(tool).toBeDefined();
+    const inputSchema = tool?.inputSchema as {
+      required?: string[];
+      properties: Record<string, unknown>;
+    };
+    expect(inputSchema.required).toContain('questions');
+    expect(inputSchema.properties.questions).toBeDefined();
+  });
+
+  it('has a handler for nvim_ask_user_question', () => {
+    expect(handlers.nvim_ask_user_question).toBeDefined();
+    expect(typeof handlers.nvim_ask_user_question).toBe('function');
+  });
+
+  it('nvim_ask_user_question handler returns an error when invoked directly (defensive fallback)', async () => {
+    const result = await handlers.nvim_ask_user_question({
+      questions: [{ question: 'Which?', options: [{ label: 'A' }] }],
+    });
+    expect(result.isError).toBe(true);
+  });
 });
