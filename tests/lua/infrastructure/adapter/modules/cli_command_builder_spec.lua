@@ -52,5 +52,22 @@ describe("cli_command_builder", function()
       assert.is_true(prompt_text:find("Japanese", 1, true) ~= nil)
       assert.is_true(prompt_text:find(".vibing/worktrees/", 1, true) ~= nil)
     end)
+
+    it("appends the current chat buffer file path when provided", function()
+      local cmd = cli_command_builder.build("hello", { chat_file_path = "/tmp/chat-test.md" }, nil, {}, nil)
+      local idx = find_flag(cmd, "--append-system-prompt")
+      assert.is_not_nil(idx)
+      local prompt_text = cmd[idx + 1]
+      assert.is_true(
+        prompt_text:find("Current vibing.nvim chat buffer file: /tmp/chat-test.md", 1, true) ~= nil
+      )
+    end)
+
+    it("omits the chat buffer file line when chat_file_path is not provided", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local idx = find_flag(cmd, "--append-system-prompt")
+      local prompt_text = cmd[idx + 1]
+      assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer file:", 1, true))
+    end)
   end)
 end)

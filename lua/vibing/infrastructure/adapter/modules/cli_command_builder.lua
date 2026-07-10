@@ -146,12 +146,16 @@ function M.build(prompt, opts, session_id, config, settings_path)
     table.insert(cmd, settings_path)
   end
 
-  -- System prompt additions (worktree convention + optional language instruction)
+  -- System prompt additions (worktree convention + chat file path + optional language)
   local system_prompt_lines = {
     "When creating a git worktree for isolated work, place it under "
       .. worktree_constants.DIR
       .. "<branch-name>/ at the repository root.",
   }
+
+  if opts.chat_file_path and opts.chat_file_path ~= "" then
+    table.insert(system_prompt_lines, "Current vibing.nvim chat buffer file: " .. opts.chat_file_path)
+  end
 
   local language = resolve_language(opts, config)
   if language and language ~= "en" then
