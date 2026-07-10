@@ -377,6 +377,9 @@ function ChatBuffer:send_message()
             perm_handler.add_session_deny(tool, true)
           end
         end
+        -- hook_request_id を nil にしてこのフィールドを消費済みとしてマーク。
+        -- hook denial は cancel_and_deny() で既に送信済みのため、再送を防ぐ。
+        -- _pending_approval 全体は tool/input 参照後に nil にする。
         self._pending_approval.hook_request_id = nil
       end
 

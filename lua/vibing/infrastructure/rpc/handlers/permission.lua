@@ -157,6 +157,8 @@ function M.check_tool_permission(params)
           stream.adapter:cancel(stream.handle_id)
         end
         on_stream_fn(stream)
+      else
+        vim.notify("[vibing] cancel_and_deny: no active stream found", vim.log.levels.WARN)
       end
       write_hook_response(request_id, false)
     end)
