@@ -6,6 +6,12 @@ local M = {}
 -- 並行セッション間でのmote差分混入を防ぐためのベースライン管理
 local session_snapshots = {}
 
+---バッファのセッションスナップショットをクリア（BufUnload時に呼ぶ）
+---@param bufnr number
+function M.cleanup_snapshots(bufnr)
+  session_snapshots[bufnr] = nil
+end
+
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local GradientAnimation = require("vibing.ui.gradient_animation")
 
@@ -53,6 +59,9 @@ function M.execute(adapter, callbacks, message, config)
   local frontmatter = callbacks.parse_frontmatter()
   -- mote_dirs (array) が優先。後方互換として mote_cwd (string) も読む
   local mote_dirs = frontmatter and frontmatter.mote_dirs
+  if type(mote_dirs) == "string" then
+    mote_dirs = { mote_dirs }
+  end
   if (not mote_dirs or #mote_dirs == 0) and frontmatter and frontmatter.mote_cwd then
     mote_dirs = { frontmatter.mote_cwd }
   end
@@ -91,6 +100,9 @@ function M.execute(adapter, callbacks, message, config)
     local session_allow = callbacks.get_session_allow()
     local session_deny = callbacks.get_session_deny()
 
+    -- レスポンス中にWrite/Editで変更されたファイルパスを追跡
+    local modified_file_paths = {}
+
     local opts = {
       streaming = true,
       action_type = "chat",
@@ -104,6 +116,16 @@ function M.execute(adapter, callbacks, message, config)
       permission_mode = frontmatter.permission_mode,
       language = lang_code,
       cwd = session_cwd,
+      on_tool_use = function(tool, file_path, _command)
+        if (tool == "Write" or tool == "Edit" or tool == "NotebookEdit") and file_path then
+          modified_file_paths[file_path] = true
+        elseif tool == "FileChange" and file_path then
+          -- Codex adapter reports comma-joined paths
+          for path in file_path:gmatch("[^,]+") do
+            modified_file_paths[vim.trim(path)] = true
+          end
+        end
+      end,
       on_insert_choices = function(questions)
         vim.schedule(function()
           callbacks.insert_choices(questions)
@@ -124,20 +146,11 @@ function M.execute(adapter, callbacks, message, config)
         end)
       end,
       on_approval_required = function(tool, input, options, hook_request_id)
-        vim.schedule(function()
-          callbacks.insert_approval_request(tool, input, options, hook_request_id)
-
-          if hook_request_id then
-            -- Hook-based: render approval UI immediately (hook is blocking)
-            callbacks.add_user_section()
-          else
-            -- Agent-wrapper: cancel process, add_user_section called in on_done
-            local handle_id = callbacks.get_handle_id()
-            if handle_id then
-              adapter:cancel(handle_id)
-            end
-          end
-        end)
+        -- permission.lua の vim.schedule 内から呼ばれるためすでにメインスレッド上
+        -- 二重 vim.schedule を避けることで _pending_approval が add_user_section より確実に先に設定される
+        callbacks.insert_approval_request(tool, input, options, hook_request_id)
+        -- cancel は permission.lua 側で実行済み（hook-based / agent-wrapper 共通）
+        -- add_user_section は on_done 経由で呼ばれる
       end,
     }
 
@@ -158,7 +171,7 @@ function M.execute(adapter, callbacks, message, config)
         end)
       end, function(response)
         vim.schedule(function()
-          M._handle_response(response, callbacks, adapter, config, mote_configs)
+          M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths)
         end)
       end)
       -- handle_idをコールバックで設定（キャンセル用）
@@ -167,7 +180,7 @@ function M.execute(adapter, callbacks, message, config)
       end
     else
       local response = adapter:execute(formatted_prompt, opts)
-      M._handle_response(response, callbacks, adapter, config, mote_configs)
+      M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths)
     end
   end
 
@@ -191,7 +204,7 @@ local function is_session_error(error_msg)
 end
 
 ---レスポンスを処理
-function M._handle_response(response, callbacks, adapter, config, mote_configs)
+function M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths)
   -- Stop gradient animation
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
@@ -244,15 +257,26 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs)
     end
   end
 
-  if #active_configs > 0 then
+  -- Write/Editで実際にファイルが変更された場合のみmote diffを実行
+  local has_file_changes = next(modified_file_paths or {}) ~= nil
+
+  if #active_configs > 0 and has_file_changes then
     -- 全configから変更ファイルを収集し、重複排除して出力
     local all_files = {}
     local seen_files = {}
     local patch_paths = {}
     local remaining = #active_configs
     local timestamp = os.date("%Y%m%d_%H%M%S")
+    local diff_finalized = false
+    local diff_timeout_timer = nil
 
     local function finalize()
+      if diff_finalized then return end
+      diff_finalized = true
+      if diff_timeout_timer then
+        vim.fn.timer_stop(diff_timeout_timer)
+        diff_timeout_timer = nil
+      end
       if #all_files > 0 then
         BufferReload.reload_files(all_files)
         local MAX_DISPLAY = 50
@@ -272,6 +296,9 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs)
         callbacks.add_user_section()
       end)
     end
+
+    -- mote diffに時間がかかる場合でもUserセクションを即座に表示するタイムアウト
+    diff_timeout_timer = vim.fn.timer_start(5000, vim.schedule_wrap(finalize))
 
     for _, mc in ipairs(active_configs) do
       MoteDiff.get_changed_files(mc, function(success, files, err)

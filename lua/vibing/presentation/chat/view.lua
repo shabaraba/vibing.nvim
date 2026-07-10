@@ -225,8 +225,13 @@ function M._apply_chat_buffer_settings(bufnr)
       buffer = bufnr,
       callback = function()
         pcall(ui_utils.apply_wrap_config, 0, bufnr, true)
+        -- Re-apply completion settings to prevent markdown ftplugin from overwriting omnifunc
+        local ok_c, completion = pcall(require, "vibing.application.completion")
+        if ok_c and completion.setup_buffer then
+          pcall(completion.setup_buffer, bufnr)
+        end
       end,
-      desc = "Apply vibing wrap settings after filetype detection",
+      desc = "Apply vibing wrap and completion settings after filetype detection",
     })
 
     -- BufWritePost: フロントマターが変更された可能性があるためキャッシュをクリア
@@ -255,6 +260,11 @@ function M._apply_chat_buffer_settings(bufnr)
       end
       -- アタッチ済みバッファからクリーンアップ
       M._attached_buffers[bufnr] = nil
+      -- moteスナップショットIDをクリア（bufnr再利用時の誤ったベースライン防止）
+      local ok_sm, send_message = pcall(require, "vibing.application.chat.send_message")
+      if ok_sm then
+        send_message.cleanup_snapshots(bufnr)
+      end
     end,
     desc = "Cancel running Agent SDK process on buffer unload",
   })

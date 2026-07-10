@@ -173,7 +173,7 @@ function M.create_snapshot(config, message, callback)
   end
 
   Command.run(cmd, config.cwd, function(stdout)
-    local snapshot_id = stdout:match("snapshot%s+(%w+)")
+    local snapshot_id = stdout:match("snapshot%s+([%w%-]+)")
     callback(true, snapshot_id, nil)
   end, function(error)
     callback(false, nil, error)

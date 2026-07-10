@@ -7,7 +7,7 @@ vibing.nvim provides comprehensive permission control over what tools Claude can
 ```lua
 require("vibing").setup({
   permissions = {
-    mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
+    mode = "acceptEdits",  -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"
     allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill" },
     deny = { "Bash" },
   },
@@ -18,7 +18,10 @@ require("vibing").setup({
 
 - `default` - Ask for user confirmation before each tool use
 - `acceptEdits` - Auto-approve Edit/Write operations, ask for others (recommended)
-- `bypassPermissions` - Auto-approve all operations (use with caution)
+- `plan` - Read-only planning mode (no tool execution)
+- `auto` - Background safety classifier minimizes prompts (Claude Code v2.1.83+)
+- `dontAsk` - Deny instead of prompting (pre-approved tools only)
+- `bypassPermissions` - Auto-approve all operations (isolated environments only)
 
 **Basic Permission Logic:**
 
@@ -34,7 +37,7 @@ require("vibing").setup({
 Three-layer permission control:
 
 1. **Allow/Deny Lists** - Basic tool-level permissions
-2. **Permission Modes** - Automation level (default/acceptEdits/bypassPermissions)
+2. **Permission Modes** - Automation level (default/acceptEdits/plan/auto/dontAsk/bypassPermissions)
 3. **Granular Rules** - Path/command/pattern/domain-based fine-grained control
 
 ## Granular Permission Rules
@@ -168,9 +171,17 @@ Please select and press <CR> to send.
 
 **Implementation Details:**
 
-- Agent Wrapper sends `approval_required` event and denies the tool
-- Approval UI is inserted into chat buffer as plain markdown with numbered list
+- RPC hook fires in `permission.lua` when Claude requests a tool in the `ask` list
+- `cancel_and_deny()` immediately cancels the Claude process and sends a deny response to the hook
+- `on_approval_required` callback inserts the approval UI into the chat buffer (runs on vim main thread via `vim.schedule`)
 - User edits to select option and sends via normal message flow (`<CR>`)
-- Buffer parser detects approval response and updates session permissions
-- Assistant responds with confirmation message
-- Claude retries the tool with updated session permissions
+- Buffer parser detects the approval response and updates session permissions
+- `hook_request_id` is cleared after processing to prevent double-processing
+- User message is replaced with a retry instruction (e.g., "I approved Bash tool. Please proceed.")
+- New Claude session starts with the updated session-level permissions
+- Claude retries the operation and auto-approves due to updated session state
+
+**Important implementation notes:**
+
+- `on_approval_required` must be called from the vim main thread (inside `vim.schedule`). The caller must ensure this — no inner `vim.schedule` wrapper should be added inside the implementation.
+- `_pending_approval` is set before `add_user_section()` is called, ensuring the approval UI is rendered at the correct position in the chat buffer.
