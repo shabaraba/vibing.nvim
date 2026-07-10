@@ -141,13 +141,13 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
   })
 
   local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
-  perm_handler.set_active_opts(vim.tbl_extend("force", opts, { _is_codex = true }))
+  perm_handler.set_active_opts(handle_id, vim.tbl_extend("force", opts, { _is_codex = true }))
 
   local wrapped_on_done = function(response)
     if not completed then
       completed = true
       ActiveStreamRegistry.unregister(handle_id)
-      perm_handler.clear_active_opts()
+      perm_handler.clear_active_opts(handle_id)
       if timeout_timer then
         vim.fn.timer_stop(timeout_timer)
         timeout_timer = nil
