@@ -14,7 +14,6 @@
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/bin/run.mjs"],
       "env": {
-        "VIBING_RPC_PORT": "9876",
         "VIBING_RPC_TIMEOUT": "30000"
       }
     }

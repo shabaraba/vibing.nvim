@@ -84,11 +84,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Check file permissions
-        run: |
-          echo "Checking executable permissions..."
-          test -x bin/register-mcp.ts && echo "OK: bin/register-mcp.ts is executable" || exit 1
-
       - name: Check file structure
         run: |
           echo "Checking required files..."

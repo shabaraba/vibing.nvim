@@ -182,7 +182,8 @@ return {
 }
 ```
 
-**NOTE:** The `build` script now automatically registers the vibing-nvim MCP server in
-`~/.claude.json`, so manual configuration is typically not needed.
+**NOTE:** The `build` script now automatically installs the vibing-nvim MCP server as a
+Claude Code plugin (user scope) during the build process (`build.sh`) — there is no separate
+`~/.claude.json` registration path.
 
 See `mcp-server/README.md` and `docs/lazy-setup-example.lua` for detailed setup instructions.

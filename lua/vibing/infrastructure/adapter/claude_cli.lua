@@ -132,9 +132,11 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   env.CLAUDECODE = nil
 
   if rpc_port then
-    local port_str = tostring(rpc_port)
-    env.VIBING_NVIM_RPC_PORT = port_str -- for hook script
-    env.VIBING_RPC_PORT = port_str -- for MCP server (mcp-server/src/rpc.ts)
+    -- The MCP server subprocess gets its own rpc_port from the model echoing back the
+    -- system-prompt-embedded value as a tool argument (see cli_command_builder.lua), not from
+    -- env — an MCP client only forwards a fixed env whitelist plus the server's static
+    -- registration config, never the CLI process's own env.
+    env.VIBING_NVIM_RPC_PORT = tostring(rpc_port) -- for hook script
     env.VIBING_NVIM_CONTEXT = "true" -- indicates running inside vibing.nvim
   end
   -- Lets the PreToolUse hook identify which chat buffer's stream it belongs to, so concurrent

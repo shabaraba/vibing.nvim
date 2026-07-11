@@ -92,7 +92,7 @@ describe("cli_command_builder", function()
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]
       assert.is_true(prompt_text:find("Your rpc_port for this turn is 9878", 1, true) ~= nil)
-      assert.is_true(prompt_text:find("mcp__vibing-nvim__%*", 1) ~= nil or prompt_text:find("mcp__vibing-nvim__", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("mcp__vibing-nvim__*", 1, true) ~= nil)
     end)
 
     it("omits the rpc_port line when rpc_port is not provided", function()
