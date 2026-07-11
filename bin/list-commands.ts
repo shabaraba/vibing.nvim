@@ -52,10 +52,10 @@ const BUILTIN_COMMANDS: CommandEntry[] = [
   },
 ];
 
-/** Parse a SKILL.md file's YAML frontmatter for name/description. */
+/** Parse a SKILL.md file's YAML frontmatter for name/description/user-invocable. */
 async function parseSkillFrontmatter(
   skillMdPath: string
-): Promise<{ name: string; description: string } | null> {
+): Promise<{ name: string; description: string; userInvocable: boolean } | null> {
   let content: string;
   try {
     content = await readFile(skillMdPath, 'utf8');
@@ -69,10 +69,14 @@ async function parseSkillFrontmatter(
   const nameMatch = frontmatterMatch[1].match(/^name:\s*(.+)$/m);
   if (!nameMatch) return null;
   const descMatch = frontmatterMatch[1].match(/^description:\s*(.+)$/m);
+  // Default true, matching Claude Code CLI's own opt-out convention: skills are
+  // visible in the slash menu unless they explicitly declare `user-invocable: false`.
+  const userInvocableMatch = frontmatterMatch[1].match(/^user-invocable:\s*(.+)$/m);
 
   return {
     name: nameMatch[1].trim(),
     description: descMatch ? descMatch[1].trim() : '',
+    userInvocable: userInvocableMatch ? userInvocableMatch[1].trim() !== 'false' : true,
   };
 }
 
@@ -104,7 +108,10 @@ async function scanPluginSkills(pluginPath: string, pluginName: string): Promise
   );
 
   return parsed
-    .filter((skill): skill is { name: string; description: string } => skill !== null)
+    .filter(
+      (skill): skill is { name: string; description: string; userInvocable: boolean } =>
+        skill !== null && skill.userInvocable
+    )
     .map((skill) => ({
       name: `${pluginName}:${skill.name}`,
       description: skill.description,
