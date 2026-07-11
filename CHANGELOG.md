@@ -11,23 +11,23 @@
 ## 5.0.0 (2026-07-11)
 
 ## What's Changed
-* fix: skip mote diff when no files were modified to reduce response latency by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/439
-* feat: add auto permission mode and complete mode coverage by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/441
-* fix: unify AskUserQuestion and permissions_ask flows to prevent repeated questions by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/442
-* feat: replace VibingChatWorktree with vibing-worktree skill by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/438
-* feat: add vibing-chat-recall and vibing-chat-search skills by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/445
-* fix: resolve worktree hook-settings path and buffer identification issues by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/447
-* feat: add vibing.nvim-dedicated ask_user_question MCP tool by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/446
-* Let nvim_ask_user_question own its cancel+render behavior directly by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/448
-* fix: pass handle_id and rpc_port as MCP tool arguments instead of env vars by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/449
-* feat: respect user-invocable: false in skill slash-command completion by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/443
-* chore: update claude-code-action to v1.0.171 by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/451
-* feat: dedupe legacy vibing-nvim mcpServers entry and refresh plugin cache on build by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/450
-* fix: pre-approve plugin-scoped vibing-nvim MCP tool names in --allowedTools by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/452
-* fix: edit unsaved chat buffer directly in vibing-worktree skill by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/453
-* chore: update all dependencies to latest versions by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/454
-* fix: track every rendered chat buffer, not just the most recent one by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/455
 
+- fix: skip mote diff when no files were modified to reduce response latency by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/439
+- feat: add auto permission mode and complete mode coverage by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/441
+- fix: unify AskUserQuestion and permissions_ask flows to prevent repeated questions by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/442
+- feat: replace VibingChatWorktree with vibing-worktree skill by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/438
+- feat: add vibing-chat-recall and vibing-chat-search skills by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/445
+- fix: resolve worktree hook-settings path and buffer identification issues by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/447
+- feat: add vibing.nvim-dedicated ask_user_question MCP tool by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/446
+- Let nvim_ask_user_question own its cancel+render behavior directly by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/448
+- fix: pass handle_id and rpc_port as MCP tool arguments instead of env vars by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/449
+- feat: respect user-invocable: false in skill slash-command completion by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/443
+- chore: update claude-code-action to v1.0.171 by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/451
+- feat: dedupe legacy vibing-nvim mcpServers entry and refresh plugin cache on build by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/450
+- fix: pre-approve plugin-scoped vibing-nvim MCP tool names in --allowedTools by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/452
+- fix: edit unsaved chat buffer directly in vibing-worktree skill by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/453
+- chore: update all dependencies to latest versions by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/454
+- fix: track every rendered chat buffer, not just the most recent one by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/455
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v4.5.1...v5.0.0
 
