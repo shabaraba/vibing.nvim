@@ -53,18 +53,23 @@ out of curiosity or as a lead-in to attaching.
    injected per-request by vibing.nvim and is always accurate even when multiple chat buffers
    are open. Avoid calling `mcp__vibing-nvim__nvim_get_info` for this purpose; it returns
    whichever buffer currently has focus in Neovim and may return the wrong one.
-4. Edit that file's frontmatter, setting:
+4. Edit that chat's frontmatter through the live Neovim buffer, not the file on disk — a brand-new
+   chat (first exchange in a freshly opened buffer) has no file on disk yet, so `Read`/`Edit`
+   against the path will simply fail or find nothing. Use the `vibing-nvim` MCP tools instead,
+   which operate on buffer content regardless of save state:
+   1. Call `nvim_list_buffers` and match `name` against the chat buffer path from the system
+      prompt to get its `bufnr`. Don't assume `bufnr: 0` (current buffer) — the chat buffer may
+      not have focus.
+   2. Call `nvim_get_buffer({ bufnr })` to read the current content.
+   3. Set `working_dir: .vibing/worktrees/<branch>` (relative to the git root) in the frontmatter
+      block, then call `nvim_set_buffer({ bufnr, lines })` with the full updated content.
 
-   ```yaml
-   working_dir: .vibing/worktrees/<branch>
-   ```
+   Don't open a new chat buffer — the current conversation continues, and its next turn already
+   runs in the new worktree.
 
-   (relative to the git root). Don't open a new chat buffer — the current conversation continues,
-   and its next turn already runs in the new worktree.
-
-5. If `nvim_get_info` isn't available (no `vibing-nvim` MCP connection), tell the user the
-   worktree is ready at `.vibing/worktrees/<branch>` and that they'll need to set `working_dir`
-   in the chat's frontmatter by hand (or open a new chat there) to actually start using it.
+5. If the `vibing-nvim` MCP connection isn't available at all, tell the user the worktree is
+   ready at `.vibing/worktrees/<branch>` and that they'll need to set `working_dir` in the chat's
+   frontmatter by hand (or open a new chat there) to actually start using it.
 
 ## Attach — "what worktrees are there? — let's go into the auth one"
 
