@@ -1,4 +1,4 @@
-import { withRpcPort } from './common.js';
+import { withRpcPort, requireRpcPort } from './common.js';
 
 const lspPositionSchema = withRpcPort({
   bufnr: {
@@ -15,6 +15,8 @@ const lspPositionSchema = withRpcPort({
   },
 });
 
+const lspPositionRequired = requireRpcPort(['line', 'col']);
+
 export const lspTools = [
   {
     name: 'nvim_lsp_definition',
@@ -23,7 +25,7 @@ export const lspTools = [
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
-      required: ['line', 'col'],
+      required: lspPositionRequired,
     },
   },
   {
@@ -33,7 +35,7 @@ export const lspTools = [
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
-      required: ['line', 'col'],
+      required: lspPositionRequired,
     },
   },
   {
@@ -43,7 +45,7 @@ export const lspTools = [
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
-      required: ['line', 'col'],
+      required: lspPositionRequired,
     },
   },
   {
@@ -58,6 +60,7 @@ export const lspTools = [
           description: 'Buffer number (0 for current)',
         },
       }),
+      required: requireRpcPort(),
     },
   },
   {
@@ -72,6 +75,7 @@ export const lspTools = [
           description: 'Buffer number (0 for current)',
         },
       }),
+      required: requireRpcPort(),
     },
   },
   {
@@ -81,7 +85,7 @@ export const lspTools = [
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
-      required: ['line', 'col'],
+      required: lspPositionRequired,
     },
   },
   {
@@ -91,7 +95,7 @@ export const lspTools = [
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
-      required: ['line', 'col'],
+      required: lspPositionRequired,
     },
   },
   {
@@ -101,7 +105,7 @@ export const lspTools = [
     inputSchema: {
       type: 'object' as const,
       properties: lspPositionSchema,
-      required: ['line', 'col'],
+      required: lspPositionRequired,
     },
   },
 ];

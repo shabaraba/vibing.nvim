@@ -20,7 +20,6 @@ describe("vibing.init", function()
     package.loaded["vibing.presentation.chat.controller"] = nil
     package.loaded["vibing.presentation.context.controller"] = nil
     package.loaded["vibing.core.utils.notify"] = nil
-    package.loaded["vibing.mcp.setup"] = nil
     package.loaded["vibing.infrastructure.rpc.server"] = nil
     package.loaded["vibing.infrastructure.storage.frontmatter"] = nil
 

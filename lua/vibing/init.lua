@@ -44,10 +44,6 @@ function M.setup(opts)
 
   -- MCP統合の初期化
   if M.config.mcp and M.config.mcp.enabled then
-    -- 自動セットアップ（初回のみ）
-    local mcp_setup = require("vibing.mcp.setup")
-    mcp_setup.auto_setup(M.config)
-
     -- RPCサーバー起動
     local rpc_server = require("vibing.infrastructure.rpc.server")
     local port = rpc_server.start(M.config.mcp.rpc_port)

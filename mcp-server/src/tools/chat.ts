@@ -1,4 +1,5 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { withRpcPort, requireRpcPort } from './common.js';
 
 /**
  * Chat-related MCP tools
@@ -12,7 +13,7 @@ export const chatTools: Tool[] = [
       'Useful for multi-agent workflows where one Claude instance sends messages to another.',
     inputSchema: {
       type: 'object',
-      properties: {
+      properties: withRpcPort({
         bufnr: {
           type: 'number',
           description: 'Buffer number of the target chat buffer',
@@ -26,13 +27,8 @@ export const chatTools: Tool[] = [
           description:
             'Optional sender identifier (default: "User"). Future: supports "Alpha", "Bravo", etc.',
         },
-        rpc_port: {
-          type: 'number',
-          description:
-            'RPC port of target Neovim instance (optional, defaults to 9876). Use nvim_list_instances to discover available instances.',
-        },
-      },
-      required: ['bufnr', 'message'],
+      }),
+      required: requireRpcPort(['bufnr', 'message']),
     },
   },
   {
@@ -46,10 +42,18 @@ export const chatTools: Tool[] = [
       'tool_result back, and you cannot do anything else after calling it. The user edits the list ' +
       "(deleting unwanted options) and sends it. Your NEXT invocation's prompt IS the user's answer " +
       'to this question, delivered as a fresh turn — treat it as such rather than waiting for a ' +
-      'tool response.',
+      'tool response. ' +
+      'You MUST pass handle_id using the exact value given to you in your system prompt for this ' +
+      'turn — it identifies which chat buffer to render the question in.',
     inputSchema: {
       type: 'object',
-      properties: {
+      properties: withRpcPort({
+        handle_id: {
+          type: 'string',
+          description:
+            'The exact handle_id value given to you in your system prompt for this turn. Required ' +
+            'to associate this question with the correct chat buffer.',
+        },
         questions: {
           type: 'array',
           description: 'One or more questions to present to the user',
@@ -86,8 +90,8 @@ export const chatTools: Tool[] = [
             required: ['question', 'options'],
           },
         },
-      },
-      required: ['questions'],
+      }),
+      required: requireRpcPort(['handle_id', 'questions']),
     },
   },
 ];

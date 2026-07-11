@@ -111,8 +111,17 @@ end
 --- @param session_id string|nil Session ID for resumption
 --- @param config Vibing.Config Plugin config
 --- @param settings_path string|nil Path to hook settings file
+--- @param handle_id string|nil This turn's stream handle id, embedded in the system prompt so the
+---   model can echo it back on nvim_ask_user_question calls (see ActiveStreamRegistry) — it can't
+---   reach the vibing-nvim MCP server via env, since the MCP client only forwards a fixed env
+---   whitelist plus the server's static registration config, never the CLI process's own env.
+--- @param rpc_port number|nil This Neovim instance's RPC server port, embedded in the system
+---   prompt so the model can echo it back on every vibing-nvim MCP tool call. The MCP server's
+---   registration hardcodes a single default port (see `.claude-plugin/plugin.json`), so without
+---   this it silently targets whichever unrelated Neovim instance happens to be bound to that
+---   port when more than one is running.
 --- @return string[] Command array for vim.system()
-function M.build(prompt, opts, session_id, config, settings_path)
+function M.build(prompt, opts, session_id, config, settings_path, handle_id, rpc_port)
   if not cached_claude_path then
     cached_claude_path = vim.fn.exepath("claude")
     if cached_claude_path == "" then
@@ -155,6 +164,27 @@ function M.build(prompt, opts, session_id, config, settings_path)
       .. "mcp__vibing-nvim__nvim_ask_user_question tool instead of asking in free text. Do not use "
       .. "the native AskUserQuestion tool for this — it is unavailable in this environment.",
   }
+
+  if handle_id then
+    table.insert(
+      system_prompt_lines,
+      'Your handle_id for this turn is "'
+        .. handle_id
+        .. '". When calling mcp__vibing-nvim__nvim_ask_user_question, you MUST pass this exact '
+        .. "value as the handle_id argument."
+    )
+  end
+
+  if rpc_port then
+    table.insert(
+      system_prompt_lines,
+      "Your rpc_port for this turn is "
+        .. tostring(rpc_port)
+        .. ". You MUST pass this exact value as the rpc_port argument on every "
+        .. "mcp__vibing-nvim__* tool call — never omit it or guess, since other unrelated Neovim "
+        .. "instances may be running and reachable on other ports."
+    )
+  end
 
   if opts.chat_file_path and opts.chat_file_path ~= "" then
     table.insert(system_prompt_lines, "Current vibing.nvim chat buffer file: " .. opts.chat_file_path)

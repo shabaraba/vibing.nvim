@@ -80,22 +80,14 @@ npm run build --silent
 if [ -f "dist/index.js" ]; then
     echo "[vibing.nvim] ✓ MCP server built successfully"
 
-    # Register vibing-nvim with Claude Code: prefer installing it as a proper
-    # Claude Code plugin (user scope) — this registers the MCP server *and*
-    # the bundled skills/agents in one step. Fall back to a raw ~/.claude.json
-    # mcpServers edit (MCP server only) if the `claude` CLI or its plugin
-    # subcommand isn't available.
+    # Register vibing-nvim with Claude Code exclusively as a proper Claude Code
+    # plugin (user scope) — this registers the MCP server *and* the bundled
+    # skills/agents in one step. There is intentionally no raw ~/.claude.json
+    # mcpServers fallback: that path can only ever hardcode a single default
+    # RPC port, so it silently targets the wrong Neovim instance whenever more
+    # than one is running (see cli_command_builder.lua's rpc_port handling).
     cd "$SCRIPT_DIR"
-    register_mcp_json_fallback() {
-        echo "[vibing.nvim] Registering MCP server in ~/.claude.json..."
-        if "$NODE_EXECUTABLE" dist/bin/register-mcp.js; then
-            echo "[vibing.nvim] ✓ Registered vibing-nvim MCP server in ~/.claude.json"
-        else
-            echo "[vibing.nvim] ⚠ Warning: MCP server is built but registration failed"
-            echo "[vibing.nvim] You can manually register by running: $NODE_EXECUTABLE dist/bin/register-mcp.js"
-        fi
-    }
-
+    PLUGIN_INSTALL_HINT="claude plugin marketplace add $SCRIPT_DIR && claude plugin install vibing-nvim@vibing-nvim --scope user"
     if command -v claude &> /dev/null; then
         echo "[vibing.nvim] Installing vibing-nvim as a Claude Code plugin (user scope)..."
         # Capture output instead of streaming it directly so it can be printed
@@ -118,15 +110,15 @@ if [ -f "dist/index.js" ]; then
                 echo "[vibing.nvim] You can manually sync by running: claude plugin marketplace update vibing-nvim && claude plugin update vibing-nvim@vibing-nvim"
             fi
         else
-            echo "[vibing.nvim] ⚠ Warning: 'claude plugin install' failed, falling back to manual registration"
+            echo "[vibing.nvim] ⚠ Warning: 'claude plugin install' failed"
             if [ $MARKETPLACE_ADD_STATUS -ne 0 ]; then
                 echo "$MARKETPLACE_ADD_OUTPUT"
             fi
-            register_mcp_json_fallback
+            echo "[vibing.nvim] You can manually install by running: $PLUGIN_INSTALL_HINT"
         fi
     else
-        echo "[vibing.nvim] 'claude' CLI not found; falling back to manual registration"
-        register_mcp_json_fallback
+        echo "[vibing.nvim] ⚠ 'claude' CLI not found; skipping Claude Code plugin registration"
+        echo "[vibing.nvim] Install Claude Code, then run: $PLUGIN_INSTALL_HINT"
     fi
 
     # Register MCP server with codex (if available)

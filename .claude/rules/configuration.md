@@ -52,8 +52,6 @@ require("vibing").setup({
   mcp = {
     enabled = true,  -- MCP integration enabled by default
     rpc_port = 9876,
-    auto_setup = false,
-    auto_configure_claude_json = false,
   },
   language = nil,  -- Optional: "ja" | "en" | { default = "ja", chat = "ja" }
   ui = {

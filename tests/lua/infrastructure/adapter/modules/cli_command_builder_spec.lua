@@ -69,5 +69,37 @@ describe("cli_command_builder", function()
       local prompt_text = cmd[idx + 1]
       assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer file:", 1, true))
     end)
+
+    it("embeds the handle_id and instructs the model to echo it back on nvim_ask_user_question", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil, "abc123_456")
+      local idx = find_flag(cmd, "--append-system-prompt")
+      assert.is_not_nil(idx)
+      local prompt_text = cmd[idx + 1]
+      assert.is_true(prompt_text:find('Your handle_id for this turn is "abc123_456"', 1, true) ~= nil)
+      assert.is_true(prompt_text:find("nvim_ask_user_question", 1, true) ~= nil)
+    end)
+
+    it("omits the handle_id line when handle_id is not provided", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local idx = find_flag(cmd, "--append-system-prompt")
+      local prompt_text = cmd[idx + 1]
+      assert.is_nil(prompt_text:find("Your handle_id for this turn is", 1, true))
+    end)
+
+    it("embeds the rpc_port and instructs the model to echo it back on every vibing-nvim MCP call", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil, nil, 9878)
+      local idx = find_flag(cmd, "--append-system-prompt")
+      assert.is_not_nil(idx)
+      local prompt_text = cmd[idx + 1]
+      assert.is_true(prompt_text:find("Your rpc_port for this turn is 9878", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("mcp__vibing-nvim__*", 1, true) ~= nil)
+    end)
+
+    it("omits the rpc_port line when rpc_port is not provided", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local idx = find_flag(cmd, "--append-system-prompt")
+      local prompt_text = cmd[idx + 1]
+      assert.is_nil(prompt_text:find("Your rpc_port for this turn is", 1, true))
+    end)
   end)
 end)

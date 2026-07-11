@@ -1,6 +1,5 @@
 import * as net from 'net';
 
-const NVIM_RPC_PORT = parseInt(process.env.VIBING_RPC_PORT || '9876', 10);
 const NVIM_RPC_TIMEOUT = parseInt(process.env.VIBING_RPC_TIMEOUT || '30000', 10); // Default 30 seconds
 
 let requestId = 0;
@@ -115,16 +114,21 @@ function getSocket(port: number): Promise<net.Socket> {
  *
  * @param method - The RPC method name to call on the Neovim server
  * @param params - Parameters to include with the RPC call
- * @param port - Optional RPC port to connect to (defaults to VIBING_RPC_PORT env var or 9876)
+ * @param port - RPC port to connect to. Required, not defaulted: every tool schema requires the
+ *   model to supply the exact port for its own Neovim instance (see the `rpc_port` handling in
+ *   `tools/common.ts`), because falling back to a fixed port would silently target whichever
+ *   unrelated Neovim instance happens to be bound to it when more than one is running.
  * @returns The `result` value from the RPC response. The promise is rejected with the RPC `error` if the response contains one, and is also rejected if the socket closes or the request times out.
  */
 export async function callNeovim(method: string, params: any = {}, port?: number): Promise<any> {
-  const targetPort = port !== undefined ? port : NVIM_RPC_PORT;
-  const sock = await getSocket(targetPort);
+  if (port === undefined) {
+    throw new Error(`callNeovim('${method}') requires an explicit rpc_port`);
+  }
+  const sock = await getSocket(port);
   const id = ++requestId;
 
   // getSocket() already initialized pendingRequests for this port
-  const portPending = pendingRequests.get(targetPort)!;
+  const portPending = pendingRequests.get(port)!;
 
   return new Promise((resolve, reject) => {
     portPending.set(id, { resolve, reject });
