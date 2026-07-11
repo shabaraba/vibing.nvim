@@ -25,8 +25,8 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
-        # Pin to specific commit SHA for security
-        uses: anthropics/claude-code-action@7145c3e0510bcdbdd29f67cc4a8c1958f1acfa2f
+        # Pin to specific commit SHA for security (v1.0.171)
+        uses: anthropics/claude-code-action@e90deca47693f9457b72f2b53c17d7c445a87342
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |

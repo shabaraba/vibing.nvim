@@ -89,18 +89,28 @@ if [ -f "dist/index.js" ]; then
     cd "$SCRIPT_DIR"
     PLUGIN_INSTALL_HINT="claude plugin marketplace add $SCRIPT_DIR && claude plugin install vibing-nvim@vibing-nvim --scope user"
     if command -v claude &> /dev/null; then
-        echo "[vibing.nvim] Installing vibing-nvim as a Claude Code plugin (user scope)..."
+        # Remove any legacy direct "vibing-nvim" mcpServers registration (e.g. from
+        # `claude mcp add` predating the plugin-based install above, or a leftover
+        # ~/.claude.json entry). That path hardcodes a single RPC port and silently
+        # targets the wrong Neovim instance whenever more than one is running, so it
+        # must not coexist with the plugin registration. Ignore failure: this is a
+        # no-op when no such entry exists.
+        claude mcp remove vibing-nvim --scope user &> /dev/null || true
+
         # Capture output instead of streaming it directly so it can be printed
         # below only on failure, keeping successful (repeat) runs quiet.
         MARKETPLACE_ADD_OUTPUT="$(claude plugin marketplace add "$SCRIPT_DIR" 2>&1)"
         MARKETPLACE_ADD_STATUS=$?
-        if [ $MARKETPLACE_ADD_STATUS -eq 0 ] && claude plugin install vibing-nvim@vibing-nvim --scope user; then
-            echo "[vibing.nvim] ✓ Installed vibing-nvim Claude Code plugin (scope: user)"
-
-            # `claude plugin install` is a no-op when already installed, so on repeat
+        if [ $MARKETPLACE_ADD_STATUS -ne 0 ]; then
+            echo "[vibing.nvim] ⚠ Warning: 'claude plugin marketplace add' failed"
+            echo "$MARKETPLACE_ADD_OUTPUT"
+            echo "[vibing.nvim] You can manually install by running: $PLUGIN_INSTALL_HINT"
+        elif claude plugin list 2>/dev/null | grep -q '❯ vibing-nvim@vibing-nvim'; then
+            # Already installed: `claude plugin install` is a no-op here, so on repeat
             # runs (e.g. `:Lazy update` re-invoking this script) it won't pick up
             # skill/agent changes on its own. Explicitly refresh the marketplace
             # pointer and re-sync the cached plugin snapshot to the current commit.
+            echo "[vibing.nvim] vibing-nvim plugin already installed; refreshing cache..."
             PLUGIN_UPDATE_OUTPUT="$(claude plugin marketplace update vibing-nvim 2>&1 && claude plugin update vibing-nvim@vibing-nvim 2>&1)"
             if [ $? -eq 0 ]; then
                 echo "[vibing.nvim] ✓ Synced vibing-nvim plugin cache (restart Claude Code to apply)"
@@ -110,11 +120,13 @@ if [ -f "dist/index.js" ]; then
                 echo "[vibing.nvim] You can manually sync by running: claude plugin marketplace update vibing-nvim && claude plugin update vibing-nvim@vibing-nvim"
             fi
         else
-            echo "[vibing.nvim] ⚠ Warning: 'claude plugin install' failed"
-            if [ $MARKETPLACE_ADD_STATUS -ne 0 ]; then
-                echo "$MARKETPLACE_ADD_OUTPUT"
+            echo "[vibing.nvim] Installing vibing-nvim as a Claude Code plugin (user scope)..."
+            if claude plugin install vibing-nvim@vibing-nvim --scope user; then
+                echo "[vibing.nvim] ✓ Installed vibing-nvim Claude Code plugin (scope: user)"
+            else
+                echo "[vibing.nvim] ⚠ Warning: 'claude plugin install' failed"
+                echo "[vibing.nvim] You can manually install by running: $PLUGIN_INSTALL_HINT"
             fi
-            echo "[vibing.nvim] You can manually install by running: $PLUGIN_INSTALL_HINT"
         fi
     else
         echo "[vibing.nvim] ⚠ 'claude' CLI not found; skipping Claude Code plugin registration"
