@@ -42,9 +42,15 @@ local function add_permission_args(cmd, opts)
     permissions_allow = {}
   end
   local allow_tools = vim.deepcopy(permissions_allow)
+  -- The vibing-nvim MCP server may be registered either as a plain user-level MCP server
+  -- (mcp__vibing-nvim__<tool>) or as a Claude Code plugin
+  -- (mcp__plugin_<marketplace>_<plugin>__<tool>, e.g. mcp__plugin_vibing-nvim_vibing-nvim__<tool>).
+  -- Both patterns must be pre-approved here so the CLI's own --allowedTools gate doesn't block
+  -- calls before they ever reach vibing.nvim's PreToolUse hook, which already recognizes both
+  -- registration styles via can_use_tool.M.is_vibing_nvim_mcp_tool (suffix match).
   local always_allowed = vim.list_extend(
     vim.deepcopy(tools_constants.ALWAYS_ALLOWED_TOOLS),
-    { "mcp__vibing-nvim__*" }
+    { "mcp__vibing-nvim__*", "mcp__plugin_vibing-nvim_vibing-nvim__*" }
   )
   for _, tool in ipairs(always_allowed) do
     if not vim.tbl_contains(allow_tools, tool) then
