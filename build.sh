@@ -87,6 +87,7 @@ if [ -f "dist/index.js" ]; then
     # RPC port, so it silently targets the wrong Neovim instance whenever more
     # than one is running (see cli_command_builder.lua's rpc_port handling).
     cd "$SCRIPT_DIR"
+    PLUGIN_INSTALL_HINT="claude plugin marketplace add $SCRIPT_DIR && claude plugin install vibing-nvim@vibing-nvim --scope user"
     if command -v claude &> /dev/null; then
         echo "[vibing.nvim] Installing vibing-nvim as a Claude Code plugin (user scope)..."
         # Capture output instead of streaming it directly so it can be printed
@@ -113,11 +114,11 @@ if [ -f "dist/index.js" ]; then
             if [ $MARKETPLACE_ADD_STATUS -ne 0 ]; then
                 echo "$MARKETPLACE_ADD_OUTPUT"
             fi
-            echo "[vibing.nvim] You can manually install by running: claude plugin marketplace add $SCRIPT_DIR && claude plugin install vibing-nvim@vibing-nvim --scope user"
+            echo "[vibing.nvim] You can manually install by running: $PLUGIN_INSTALL_HINT"
         fi
     else
         echo "[vibing.nvim] ⚠ 'claude' CLI not found; skipping Claude Code plugin registration"
-        echo "[vibing.nvim] Install Claude Code, then run: claude plugin marketplace add $SCRIPT_DIR && claude plugin install vibing-nvim@vibing-nvim --scope user"
+        echo "[vibing.nvim] Install Claude Code, then run: $PLUGIN_INSTALL_HINT"
     fi
 
     # Register MCP server with codex (if available)

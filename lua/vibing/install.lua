@@ -19,6 +19,15 @@ local function get_node_executable()
   return node_cmd
 end
 
+---Build the message guiding the user to register vibing-nvim as a Claude Code plugin
+---@param plugin_root string
+---@return string
+local function plugin_install_message(plugin_root)
+  return "Register vibing-nvim as a Claude Code plugin by running: claude plugin marketplace add "
+    .. plugin_root
+    .. " && claude plugin install vibing-nvim@vibing-nvim --scope user"
+end
+
 ---Check if command exists
 ---@param cmd string
 ---@return boolean
@@ -119,11 +128,7 @@ function M.build()
   local dist_index = mcp_dir .. "/dist/index.js"
   if vim.fn.filereadable(dist_index) == 1 then
     print_build("✓ MCP server built successfully")
-    print_build(
-      "Register vibing-nvim as a Claude Code plugin by running: claude plugin marketplace add "
-        .. plugin_root
-        .. " && claude plugin install vibing-nvim@vibing-nvim --scope user"
-    )
+    print_build(plugin_install_message(plugin_root))
 
     return true
   else
@@ -182,11 +187,7 @@ function M.build_async(callback)
         if vim.fn.filereadable(dist_index) == 1 then
           vim.schedule(function()
             print_build("✓ MCP server built successfully")
-            print_build(
-              "Register vibing-nvim as a Claude Code plugin by running: claude plugin marketplace add "
-                .. plugin_root
-                .. " && claude plugin install vibing-nvim@vibing-nvim --scope user"
-            )
+            print_build(plugin_install_message(plugin_root))
             if callback then
               callback(true)
             end
