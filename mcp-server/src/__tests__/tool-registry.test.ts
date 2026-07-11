@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ToolRegistry, createToolRegistry } from '../registry/tool-registry';
+import { ToolRegistry, createToolRegistry } from '../registry/tool-registry.js';
 
 describe('ToolRegistry (UT-MCP-003)', () => {
   let registry: ToolRegistry;
