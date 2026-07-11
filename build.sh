@@ -105,17 +105,31 @@ if [ -f "dist/index.js" ]; then
             echo "[vibing.nvim] ⚠ Warning: 'claude plugin marketplace add' failed"
             echo "$MARKETPLACE_ADD_OUTPUT"
             echo "[vibing.nvim] You can manually install by running: $PLUGIN_INSTALL_HINT"
-        elif claude plugin list 2>/dev/null | grep -q '❯ vibing-nvim@vibing-nvim'; then
+        # Query installed state as JSON rather than grepping the human-readable table
+        # (`claude plugin list`), whose "❯" marker/formatting is a display detail,
+        # not a stable contract to match against.
+        elif claude plugin list --json 2>/dev/null | "$NODE_EXECUTABLE" -e "process.exit(JSON.parse(require('fs').readFileSync(0,'utf8')||'[]').some(p=>p.id==='vibing-nvim@vibing-nvim')?0:1)" 2>/dev/null; then
             # Already installed: `claude plugin install` is a no-op here, so on repeat
             # runs (e.g. `:Lazy update` re-invoking this script) it won't pick up
             # skill/agent changes on its own. Explicitly refresh the marketplace
             # pointer and re-sync the cached plugin snapshot to the current commit.
             echo "[vibing.nvim] vibing-nvim plugin already installed; refreshing cache..."
-            PLUGIN_UPDATE_OUTPUT="$(claude plugin marketplace update vibing-nvim 2>&1 && claude plugin update vibing-nvim@vibing-nvim 2>&1)"
-            if [ $? -eq 0 ]; then
+            MARKETPLACE_UPDATE_OUTPUT="$(claude plugin marketplace update vibing-nvim 2>&1)"
+            MARKETPLACE_UPDATE_STATUS=$?
+            PLUGIN_UPDATE_OUTPUT=""
+            PLUGIN_UPDATE_STATUS=1
+            if [ $MARKETPLACE_UPDATE_STATUS -eq 0 ]; then
+                PLUGIN_UPDATE_OUTPUT="$(claude plugin update vibing-nvim@vibing-nvim 2>&1)"
+                PLUGIN_UPDATE_STATUS=$?
+            fi
+            if [ $MARKETPLACE_UPDATE_STATUS -eq 0 ] && [ $PLUGIN_UPDATE_STATUS -eq 0 ]; then
                 echo "[vibing.nvim] ✓ Synced vibing-nvim plugin cache (restart Claude Code to apply)"
+            elif [ $MARKETPLACE_UPDATE_STATUS -ne 0 ]; then
+                echo "[vibing.nvim] ⚠ Warning: 'claude plugin marketplace update' failed"
+                echo "$MARKETPLACE_UPDATE_OUTPUT"
+                echo "[vibing.nvim] You can manually sync by running: claude plugin marketplace update vibing-nvim && claude plugin update vibing-nvim@vibing-nvim"
             else
-                echo "[vibing.nvim] ⚠ Warning: failed to sync plugin cache"
+                echo "[vibing.nvim] ⚠ Warning: 'claude plugin update' failed"
                 echo "$PLUGIN_UPDATE_OUTPUT"
                 echo "[vibing.nvim] You can manually sync by running: claude plugin marketplace update vibing-nvim && claude plugin update vibing-nvim@vibing-nvim"
             fi
