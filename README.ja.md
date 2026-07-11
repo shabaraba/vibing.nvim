@@ -629,34 +629,17 @@ ui = {
 
 ### MCP（Model Context Protocol）
 
-ClaudeによるNeovimの直接制御を有効化：
+ClaudeによるNeovimの直接制御を有効化。MCPサーバーの登録は上記の「Claude Codeプラグイン」経由のみを
+サポートしている（`build.sh`が自動でインストールする）。独立した`~/.claude.json`への登録経路は存在
+しない——その経路はデフォルトポートを1つしかハードコードできず、複数のNeovimインスタンスが起動している
+場合に誤ったインスタンスへサイレントに接続してしまうため。
 
 ```lua
 mcp = {
-  enabled = false,               -- MCP統合を有効化
-  rpc_port = 9876,              -- RPCサーバーポート
-  auto_setup = false,           -- プラグインインストール時にMCPサーバーを自動ビルド
-  auto_configure_claude_json = false,  -- ~/.claude.jsonを自動設定
+  enabled = true,   -- MCP統合を有効化
+  rpc_port = 9876,  -- RPCサーバーポート
 }
 ```
-
-**`auto_configure_claude_json`とは？**
-
-有効にすると、vibing.nvim MCPサーバーを`~/.claude.json`に自動的に追加します：
-
-```json
-{
-  "mcpServers": {
-    "vibing-nvim": {
-      "command": "node",
-      "args": ["/path/to/vibing.nvim/mcp-server/dist/index.js"],
-      "env": { "VIBING_RPC_PORT": "9876" }
-    }
-  }
-}
-```
-
-これにより、Claude Code CLIがNeovimインスタンスを制御できるようになります（バッファの読み書き、コマンド実行）。
 
 **lazy.nvim推奨設定：**
 
@@ -666,11 +649,7 @@ mcp = {
   build = "./build.sh",
   config = function()
     require("vibing").setup({
-      mcp = {
-        enabled = true,
-        auto_setup = true,              -- インストール時にビルド
-        auto_configure_claude_json = true,  -- 自動設定
-      },
+      mcp = { enabled = true },
     })
   end,
 }

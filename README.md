@@ -758,36 +758,17 @@ ui = {
 
 ### MCP (Model Context Protocol)
 
-Enable Claude to directly control Neovim. The easiest way to register the MCP server (plus
-bundled skills/agents) is the [Claude Code plugin](#claude-code-plugin-mcp--skills--agents)
-described above; the settings below are for manual/advanced configuration.
+Enable Claude to directly control Neovim. The MCP server is registered exclusively via the
+"Claude Code Plugin" install described above (installed automatically by `build.sh`) — there is
+no separate `~/.claude.json` registration path, since that route can only ever hardcode a single
+default RPC port and silently targets the wrong Neovim instance whenever more than one is running.
 
 ```lua
 mcp = {
-  enabled = true,                -- Enable MCP integration
-  rpc_port = 9876,              -- RPC server port
-  auto_setup = false,           -- Auto-build MCP server on plugin install
-  auto_configure_claude_json = false,  -- Auto-configure ~/.claude.json
+  enabled = true,   -- Enable MCP integration
+  rpc_port = 9876,  -- RPC server port
 }
 ```
-
-**What is `auto_configure_claude_json`?**
-
-When enabled, automatically adds vibing.nvim MCP server to `~/.claude.json`:
-
-```json
-{
-  "mcpServers": {
-    "vibing-nvim": {
-      "command": "node",
-      "args": ["/path/to/vibing.nvim/mcp-server/dist/index.js"],
-      "env": { "VIBING_RPC_PORT": "9876" }
-    }
-  }
-}
-```
-
-This allows Claude Code CLI to control your Neovim instance (read/write buffers, execute commands).
 
 **Recommended for lazy.nvim:**
 
@@ -797,11 +778,7 @@ This allows Claude Code CLI to control your Neovim instance (read/write buffers,
   build = "./build.sh",
   config = function()
     require("vibing").setup({
-      mcp = {
-        enabled = true,
-        auto_setup = true,              -- Build on install
-        auto_configure_claude_json = true,  -- Auto-configure
-      },
+      mcp = { enabled = true },
     })
   end,
 }

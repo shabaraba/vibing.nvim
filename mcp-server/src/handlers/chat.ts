@@ -6,7 +6,7 @@ const chatSendMessageArgsSchema = z.object({
   bufnr: z.number(),
   message: z.string(),
   sender: z.string().optional(),
-  rpc_port: z.number().optional(),
+  rpc_port: z.number(),
 });
 
 /**
@@ -26,8 +26,9 @@ export async function handleChatSendMessage(args: any): Promise<any> {
 }
 
 const askUserQuestionArgsSchema = z.object({
+  handle_id: z.string(),
   questions: z.array(z.any()),
-  rpc_port: z.number().optional(),
+  rpc_port: z.number(),
 });
 
 /**
@@ -40,20 +41,19 @@ const askUserQuestionArgsSchema = z.object({
  * so this handler's return value is never actually seen by the model. The user's next message in
  * that buffer (a fresh `--resume`d turn) IS the answer to this call.
  *
- * `handle_id` correlates the call to the right chat buffer when multiple chats are active
- * concurrently; it comes from the `VIBING_HANDLE_ID` env var vibing.nvim sets on this MCP
- * server's own process (inherited from the `claude` CLI process that spawned it), not from the
- * model — it has no legitimate way to know this value.
+ * `handle_id` and `rpc_port` correlate the call to the right chat buffer/Neovim instance when
+ * multiple are active concurrently. Both are required tool arguments rather than sourced from env
+ * vars: the MCP client (per the `@modelcontextprotocol/sdk` stdio transport) only forwards a fixed
+ * OS-level env whitelist plus whatever is statically configured in the server's registration (see
+ * `.claude-plugin/plugin.json`), so per-turn/per-instance values set on the parent `claude` CLI
+ * process's env can never reach this MCP server subprocess. Instead, `cli_command_builder.lua`
+ * embeds the real values into the turn's system prompt and instructs the model to echo them back
+ * here.
  */
 export async function handleAskUserQuestion(args: any): Promise<any> {
-  const { questions, rpc_port } = askUserQuestionArgsSchema.parse(args);
-  const handleId = process.env.VIBING_HANDLE_ID;
+  const { handle_id, questions, rpc_port } = askUserQuestionArgsSchema.parse(args);
 
-  const result = await callNeovim(
-    'ask_user_question',
-    { handle_id: handleId, questions },
-    rpc_port
-  );
+  const result = await callNeovim('ask_user_question', { handle_id, questions }, rpc_port);
 
   if (result?.status !== 'ok') {
     return {

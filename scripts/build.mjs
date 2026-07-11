@@ -7,7 +7,7 @@ const watch = process.argv.includes('--watch');
 mkdirSync('dist/bin', { recursive: true });
 
 const buildOptions = {
-  entryPoints: ['bin/register-mcp.ts', 'bin/list-commands.ts'],
+  entryPoints: ['bin/list-commands.ts'],
   bundle: true,
   platform: 'node',
   target: 'node18',
@@ -33,7 +33,6 @@ try {
     console.log('[vibing.nvim] Bundling and minifying...');
     await esbuild.build(buildOptions);
     console.log('[vibing.nvim] ✓ Build complete');
-    console.log(`[vibing.nvim]   → dist/bin/register-mcp.js (minified)`);
     console.log(`[vibing.nvim]   → dist/bin/list-commands.js (minified)`);
   }
 } catch (error) {

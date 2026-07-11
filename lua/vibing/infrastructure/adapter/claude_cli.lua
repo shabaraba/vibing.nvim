@@ -94,7 +94,11 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     )
     settings_path = nil
   end
-  local cmd = CLICommandBuilder.build(prompt, opts, session_id, self.config, settings_path)
+
+  local rpc_server = require("vibing.infrastructure.rpc.server")
+  local rpc_port = rpc_server.get_port()
+
+  local cmd = CLICommandBuilder.build(prompt, opts, session_id, self.config, settings_path, handle_id, rpc_port)
   local output = {}
   local error_output = {}
 
@@ -127,8 +131,6 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   -- Remove CLAUDECODE to allow nested invocation
   env.CLAUDECODE = nil
 
-  local rpc_server = require("vibing.infrastructure.rpc.server")
-  local rpc_port = rpc_server.get_port()
   if rpc_port then
     local port_str = tostring(rpc_port)
     env.VIBING_NVIM_RPC_PORT = port_str -- for hook script

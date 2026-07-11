@@ -92,8 +92,6 @@
 ---Neovim RPC ServerとMCPサーバーの連携を制御
 ---@field enabled boolean MCP統合の有効化（trueでRPCサーバーを起動）
 ---@field rpc_port number RPCサーバーのポート番号（デフォルト: 9876）
----@field auto_setup boolean プラグインインストール時に自動セットアップ（MCPビルド）を実行
----@field auto_configure_claude_json boolean ~/.claude.jsonを自動的に設定（要auto_setup）
 
 ---@class Vibing.ChatConfig
 ---チャット機能設定
@@ -281,8 +279,6 @@ M.defaults = {
   mcp = {
     enabled = true,
     rpc_port = 9876,
-    auto_setup = false,
-    auto_configure_claude_json = false,
   },
   language = nil,
   daily_summary = {

@@ -119,20 +119,11 @@ function M.build()
   local dist_index = mcp_dir .. "/dist/index.js"
   if vim.fn.filereadable(dist_index) == 1 then
     print_build("✓ MCP server built successfully")
-
-    -- Register MCP server in ~/.claude.json
-    local register_script = plugin_root .. "/dist/bin/register-mcp.js"
-    if vim.fn.filereadable(register_script) == 1 then
-      print_build("Registering MCP server in ~/.claude.json...")
-      local node_exec = get_node_executable()
-      local register_output = vim.fn.system(node_exec .. " " .. vim.fn.shellescape(register_script))
-      if vim.v.shell_error == 0 then
-        print_build("✓ MCP server registered")
-      else
-        print_build("Warning: MCP registration failed", "warn")
-        print_build(register_output, "warn")
-      end
-    end
+    print_build(
+      "Register vibing-nvim as a Claude Code plugin by running: claude plugin marketplace add "
+        .. plugin_root
+        .. " && claude plugin install vibing-nvim@vibing-nvim --scope user"
+    )
 
     return true
   else
@@ -191,32 +182,13 @@ function M.build_async(callback)
         if vim.fn.filereadable(dist_index) == 1 then
           vim.schedule(function()
             print_build("✓ MCP server built successfully")
-
-            -- Register MCP server in ~/.claude.json
-            local register_script = plugin_root .. "/dist/bin/register-mcp.js"
-            if vim.fn.filereadable(register_script) == 1 then
-              print_build("Registering MCP server in ~/.claude.json...")
-              local node_exec = get_node_executable()
-              vim.fn.jobstart(node_exec .. " " .. vim.fn.shellescape(register_script), {
-                on_exit = function(_, reg_exit_code)
-                  vim.schedule(function()
-                    if reg_exit_code == 0 then
-                      print_build("✓ MCP server registered")
-                    else
-                      print_build("Warning: MCP registration failed", "warn")
-                    end
-                    -- Call callback after registration completes (success or failure)
-                    if callback then
-                      callback(exit_code == 0 and reg_exit_code == 0)
-                    end
-                  end)
-                end,
-              })
-            else
-              -- No registration script, call callback immediately
-              if callback then
-                callback(true)
-              end
+            print_build(
+              "Register vibing-nvim as a Claude Code plugin by running: claude plugin marketplace add "
+                .. plugin_root
+                .. " && claude plugin install vibing-nvim@vibing-nvim --scope user"
+            )
+            if callback then
+              callback(true)
             end
           end)
         else

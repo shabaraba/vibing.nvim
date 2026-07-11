@@ -15,8 +15,9 @@ settings via `settingSources: ['user', 'project']`. This means:
 - User's global settings and subagents are inherited
 
 You can use ALL your existing Claude Code configuration and tools within vibing.nvim sessions
-without any additional configuration. The vibing-nvim MCP server is automatically registered as
-a user-level MCP server during the build process (`build.sh`).
+without any additional configuration. The vibing-nvim MCP server is automatically installed as a
+Claude Code plugin (user scope) during the build process (`build.sh`) — there is no separate
+`~/.claude.json` registration path.
 
 ## Architecture
 
@@ -167,14 +168,13 @@ return {
   {
     "yourusername/vibing.nvim",
     -- Auto-build MCP server on install/update
-    -- This automatically registers vibing-nvim MCP in ~/.claude.json
+    -- This automatically installs vibing-nvim as a Claude Code plugin (user scope)
     build = "./build.sh",
     config = function()
       require("vibing").setup({
         mcp = {
           enabled = true,
           rpc_port = 9876,
-          auto_setup = true,
         },
       })
     end,

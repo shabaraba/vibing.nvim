@@ -1,4 +1,4 @@
-import { withRpcPort } from './common.js';
+import { withRpcPort, requireRpcPort } from './common.js';
 
 export const windowTools = [
   {
@@ -7,6 +7,7 @@ export const windowTools = [
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({}),
+      required: requireRpcPort(),
     },
   },
   {
@@ -20,6 +21,7 @@ export const windowTools = [
           description: 'Window number (0 for current window)',
         },
       }),
+      required: requireRpcPort(),
     },
   },
   {
@@ -33,6 +35,7 @@ export const windowTools = [
           description: 'Window number (0 for current window)',
         },
       }),
+      required: requireRpcPort(),
     },
   },
   {
@@ -41,6 +44,7 @@ export const windowTools = [
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({}),
+      required: requireRpcPort(),
     },
   },
   {
@@ -62,6 +66,7 @@ export const windowTools = [
           description: 'Window height (optional)',
         },
       }),
+      required: requireRpcPort(),
     },
   },
   {
@@ -75,7 +80,7 @@ export const windowTools = [
           description: 'Window number to focus',
         },
       }),
-      required: ['winnr'],
+      required: requireRpcPort(['winnr']),
     },
   },
   {
@@ -93,7 +98,7 @@ export const windowTools = [
           description: 'Buffer number to display',
         },
       }),
-      required: ['winnr', 'bufnr'],
+      required: requireRpcPort(['winnr', 'bufnr']),
     },
   },
   {
@@ -111,7 +116,7 @@ export const windowTools = [
           description: 'Path to file to open',
         },
       }),
-      required: ['winnr', 'filepath'],
+      required: requireRpcPort(['winnr', 'filepath']),
     },
   },
 ];
