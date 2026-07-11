@@ -1,6 +1,7 @@
 ---
 name: nvim-lsp-navigation
 description: Use when navigating or analyzing a codebase that's open in a running Neovim instance via vibing.nvim with an LSP client attached. Prefers the vibing-nvim MCP LSP tools (definitions, references, hover, diagnostics, symbols, call hierarchy) over text search for "where is X defined/used/called", "what type is this", "what's broken here" style questions, since they reflect language-aware, live analysis rather than a text match.
+user-invocable: false
 ---
 
 # Neovim LSP Navigation

@@ -1,6 +1,7 @@
 ---
 name: nvim-context
 description: Use when working on a project that has a running Neovim instance via vibing.nvim (the vibing-nvim MCP server is connected). Reads live buffer, window, cursor, and selection state through vibing-nvim MCP tools before editing or answering, instead of relying on stale file reads or guesses about what the user currently has open or selected.
+user-invocable: false
 ---
 
 # Neovim Live Context

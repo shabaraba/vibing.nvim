@@ -21,6 +21,28 @@ local _bundled_cache_cwd = nil
 ---@type number?
 local _bundled_cache_script_mtime = nil
 
+---Check if SKILL.md frontmatter opts out of slash-menu visibility via `user-invocable: false`.
+---Matches Claude Code CLI's own convention: skills are visible in the `/` menu by default.
+---@param lines string[]
+---@return boolean
+local function is_user_invocable(lines)
+  local in_frontmatter = false
+  for _, line in ipairs(lines) do
+    if line == "---" then
+      if in_frontmatter then
+        break
+      end
+      in_frontmatter = true
+    elseif in_frontmatter then
+      local value = line:match("^user%-invocable:%s*(%S+)")
+      if value == "false" then
+        return false
+      end
+    end
+  end
+  return true
+end
+
 ---Parse SKILL.md to extract name and description
 ---@param file_path string
 ---@return {name: string, description: string}?
@@ -31,6 +53,10 @@ local function parse_skill(file_path)
 
   local lines = vim.fn.readfile(file_path, "", 50)
   if not lines or #lines == 0 then
+    return nil
+  end
+
+  if not is_user_invocable(lines) then
     return nil
   end
 
