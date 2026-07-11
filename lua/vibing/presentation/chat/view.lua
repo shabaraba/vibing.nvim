@@ -43,6 +43,10 @@ function M.render(session, position)
 
   chat_buf:open()
 
+  -- 複数チャット同時実行時も認識できるよう、bufnrキーでも追跡する
+  -- （M._current_buffer は直近にrenderされたチャットしか指さないシングルトンのため）
+  M._attached_buffers[chat_buf.buf] = chat_buf
+
   -- セッションの内容をバッファに書き込む
   if session.file_path and vim.fn.filereadable(session.file_path) == 1 then
     local content = vim.fn.readfile(session.file_path)
