@@ -4,7 +4,7 @@ import {
   validateWindowParams,
   validateFilePath,
   validateCommand,
-} from '../validation/schema';
+} from '../validation/schema.js';
 
 describe('schema validation', () => {
   describe('validateBufferParams (UT-MCP-001)', () => {

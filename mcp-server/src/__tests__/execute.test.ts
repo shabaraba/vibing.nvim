@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleExecute } from '../handlers/execute';
-import * as rpc from '../rpc';
+import { handleExecute } from '../handlers/execute.js';
+import * as rpc from '../rpc.js';
 
 // Mock the RPC module
 vi.mock('../rpc', () => ({
