@@ -1,8 +1,19 @@
 -- Tests for vibing.infrastructure.rpc.server module
 
+-- Ask the OS for a currently-free ephemeral port so tests don't collide with
+-- real vibing.nvim instances (or each other) parked on the hardcoded 9876-9925 range.
+local function find_free_port()
+  local tmp = vim.loop.new_tcp()
+  tmp:bind("127.0.0.1", 0)
+  local port = tmp:getsockname().port
+  tmp:close()
+  return port
+end
+
 describe("vibing.infrastructure.rpc.server", function()
   local server
   local registry
+  local base_port
 
   before_each(function()
     -- Reload modules before each test
@@ -10,6 +21,7 @@ describe("vibing.infrastructure.rpc.server", function()
     package.loaded["vibing.infrastructure.rpc.registry"] = nil
     server = require("vibing.infrastructure.rpc.server")
     registry = require("vibing.infrastructure.rpc.registry")
+    base_port = find_free_port()
   end)
 
   after_each(function()
@@ -21,7 +33,6 @@ describe("vibing.infrastructure.rpc.server", function()
 
   describe("start", function()
     it("should start server on base port when available", function()
-      local base_port = 9876
       local port = server.start(base_port)
 
       assert.is_true(port >= base_port)
@@ -34,7 +45,6 @@ describe("vibing.infrastructure.rpc.server", function()
 
     it("should try next port when base port is in use", function()
       -- Start first server on base port
-      local base_port = 9876
       local first_port = server.start(base_port)
       assert.is_true(server.is_running())
 
@@ -53,8 +63,6 @@ describe("vibing.infrastructure.rpc.server", function()
     it("should return 0 when all ports are exhausted", function()
       -- This test is difficult to implement without blocking 10 ports
       -- We'll test the logic by mocking registry
-      local base_port = 9876
-
       -- Mock registry.is_port_in_use to return true for all ports
       local original_is_port_in_use = registry.is_port_in_use
       registry.is_port_in_use = function()
@@ -79,7 +87,6 @@ describe("vibing.infrastructure.rpc.server", function()
     end)
 
     it("should register instance after successful start", function()
-      local base_port = 9876
       local port = server.start(base_port)
 
       assert.is_true(port > 0)
@@ -102,7 +109,6 @@ describe("vibing.infrastructure.rpc.server", function()
     end)
 
     it("should return current port if already running", function()
-      local base_port = 9876
       local first_port = server.start(base_port)
       local second_port = server.start(base_port)
 
@@ -112,8 +118,6 @@ describe("vibing.infrastructure.rpc.server", function()
     end)
 
     it("should skip ports in registry (cached instances)", function()
-      local base_port = 9876
-
       -- Register a fake instance on base_port
       local registry_dir = vim.fn.stdpath("data") .. "/vibing-instances"
       vim.fn.mkdir(registry_dir, "p")
@@ -140,7 +144,6 @@ describe("vibing.infrastructure.rpc.server", function()
 
   describe("stop", function()
     it("should stop running server", function()
-      local base_port = 9876
       server.start(base_port)
       assert.is_true(server.is_running())
 
@@ -150,7 +153,6 @@ describe("vibing.infrastructure.rpc.server", function()
     end)
 
     it("should unregister instance after stop", function()
-      local base_port = 9876
       local port = server.start(base_port)
       local current_pid = vim.fn.getpid()
 
@@ -184,7 +186,6 @@ describe("vibing.infrastructure.rpc.server", function()
     end)
 
     it("should return current port when server is running", function()
-      local base_port = 9876
       local port = server.start(base_port)
 
       assert.equals(port, server.get_port())
@@ -199,7 +200,7 @@ describe("vibing.infrastructure.rpc.server", function()
     end)
 
     it("should return true when server is running", function()
-      server.start(9876)
+      server.start(base_port)
       assert.is_true(server.is_running())
       server.stop()
     end)
@@ -210,7 +211,6 @@ describe("vibing.infrastructure.rpc.server", function()
       -- This is tested implicitly by the "try next port" test above
       -- The atomic bind() operation ensures TOCTOU is handled correctly
 
-      local base_port = 9876
       local port = server.start(base_port)
 
       -- Even if registry check passes, bind will fail atomically if port is taken
@@ -226,8 +226,6 @@ describe("vibing.infrastructure.rpc.server", function()
     it("should cache instance list during port allocation", function()
       -- This is difficult to test directly, but we can verify behavior
       -- The optimization means registry.list() is called once, not 10 times
-
-      local base_port = 9876
 
       -- Create multiple fake instances to force server to check multiple ports
       local registry_dir = vim.fn.stdpath("data") .. "/vibing-instances"
@@ -247,7 +245,7 @@ describe("vibing.infrastructure.rpc.server", function()
         table.insert(fake_files, fake_file)
       end
 
-      -- Start server - should skip first 5 ports and use port 9881
+      -- Start server - should skip the first 5 registered ports
       local port = server.start(base_port)
 
       assert.is_true(port >= base_port + 5, "Should skip all registered ports")
