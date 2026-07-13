@@ -199,7 +199,7 @@ function M.get_argument_completions(command_name)
   local Modes = require("vibing.core.constants.modes")
   local completions = {
     permission = Modes.PERMISSION_MODES,
-    model = { "opus", "sonnet", "haiku" },
+    model = Modes.VALID_MODELS,
   }
   return completions[command_name]
 end

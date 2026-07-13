@@ -239,7 +239,7 @@ anything to connect to.
       },
       agent = {
         default_mode = "code",  -- "code" | "plan" | "explore"
-        default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
+        default_model = "sonnet",  -- "sonnet" | "opus" | "haiku" | "fable"
         prioritize_vibing_lsp = true,  -- Prioritize vibing-nvim LSP tools (default: true)
       },
       permissions = {
@@ -313,7 +313,7 @@ use {
 | `/clear`                  | Clear context                                                            |
 | `/save`                   | Save current chat                                                        |
 | `/summarize`              | Summarize conversation                                                   |
-| `/model <model>`          | Set AI model (opus/sonnet/haiku)                                         |
+| `/model <model>`          | Set AI model (opus/sonnet/haiku/fable)                                   |
 | `/help`                   | Show available slash commands                                            |
 | `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules         |
 | `/allow [tool]`           | Add tool to allow list, or show current list if no args                  |
@@ -910,7 +910,7 @@ vibing.nvim: true
 session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
 agent: claude  # claude | codex (overrides global adapter setting for this chat)
-model: sonnet  # sonnet | opus | haiku
+model: sonnet  # sonnet | opus | haiku | fable
 permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk
 permissions_allow:
   - Read

@@ -1,4 +1,5 @@
 local notify = require("vibing.core.utils.notify")
+local Modes = require("vibing.core.constants.modes")
 
 ---@param args string[]
 ---@param chat_buffer Vibing.ChatBuffer
@@ -10,18 +11,9 @@ return function(args, chat_buffer)
   end
 
   local model = args[1]
-  local valid_models = { "opus", "sonnet", "haiku" }
-  local is_valid = false
 
-  for _, valid_model in ipairs(valid_models) do
-    if model == valid_model then
-      is_valid = true
-      break
-    end
-  end
-
-  if not is_valid then
-    notify.error(string.format("Invalid model: %s (valid: opus, sonnet, haiku)", model))
+  if not Modes.is_valid_model(model) then
+    notify.error(string.format("Invalid model: %s (valid: %s)", model, table.concat(Modes.VALID_MODELS, ", ")))
     return false
   end
 

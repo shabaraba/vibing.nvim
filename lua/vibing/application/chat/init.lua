@@ -1,3 +1,5 @@
+local Modes = require("vibing.core.constants.modes")
+
 ---@class Vibing.ChatInit
 local M = {}
 
@@ -31,7 +33,7 @@ function M.setup()
   commands.register({
     name = "model",
     handler = require("vibing.application.chat.handlers.model"),
-    description = "Set AI model: /model <opus|sonnet|haiku>",
+    description = string.format("Set AI model: /model <%s>", table.concat(Modes.VALID_MODELS, "|")),
   })
 
   commands.register({

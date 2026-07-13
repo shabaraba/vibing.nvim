@@ -24,6 +24,7 @@ local CLAUDE_MODELS = {
   { value = "haiku", description = "Claude Haiku (fastest)" },
   { value = "sonnet", description = "Claude Sonnet (balanced)" },
   { value = "opus", description = "Claude Opus (most capable)" },
+  { value = "fable", description = "Claude Fable" },
 }
 
 local CODEX_MODELS = {

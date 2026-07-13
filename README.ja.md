@@ -221,7 +221,7 @@ Neovimを起動しておく必要はあります。
       },
       agent = {
         default_mode = "code",  -- "code" | "plan" | "explore"
-        default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
+        default_model = "sonnet",  -- "sonnet" | "opus" | "haiku" | "fable"
         prioritize_vibing_lsp = true,  -- vibing-nvim LSPツールを優先（デフォルト：true）
       },
       permissions = {
@@ -317,7 +317,7 @@ use {
 | `/clear`                      | コンテキストをクリア                                                   |
 | `/save`                       | 現在のチャットを保存                                                   |
 | `/summarize`                  | 会話を要約                                                             |
-| `/model <model>`              | AIモデルを設定（opus/sonnet/haiku）                                    |
+| `/model <model>`              | AIモデルを設定（opus/sonnet/haiku/fable）                              |
 | `/permissions` または `/perm` | インタラクティブな権限ビルダー - ツールの許可/拒否ルールを設定         |
 | `/allow [tool]`               | 許可リストにツールを追加、引数なしで現在のリストを表示                 |
 | `/deny [tool]`                | 拒否リストにツールを追加、引数なしで現在のリストを表示                 |
@@ -690,7 +690,7 @@ remote = {
 vibing.nvim: true
 session_id: <sdk-session-id>
 created_at: 2024-01-01T12:00:00
-model: sonnet  # sonnet | opus | haiku
+model: sonnet  # sonnet | opus | haiku | fable
 permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk
 permissions_allow:
   - Read

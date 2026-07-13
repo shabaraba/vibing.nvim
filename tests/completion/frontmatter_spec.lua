@@ -51,10 +51,11 @@ describe("Frontmatter completion", function()
 
     it("should get model enum values via get_model_values", function()
       local items = frontmatter_provider.get_model_values("claude")
-      assert.are.equal(3, #items)
+      assert.are.equal(4, #items)
       assert.are.equal("haiku", items[1].word)
       assert.are.equal("sonnet", items[2].word)
       assert.are.equal("opus", items[3].word)
+      assert.are.equal("fable", items[4].word)
     end)
 
     it("should get permissions_mode enum values", function()

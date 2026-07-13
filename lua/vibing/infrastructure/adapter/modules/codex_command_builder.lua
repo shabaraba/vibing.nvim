@@ -2,25 +2,20 @@
 --- Builds the command array for the Codex CLI with JSONL output
 --- @module vibing.infrastructure.adapter.modules.codex_command_builder
 
+local Modes = require("vibing.core.constants.modes")
+
 local M = {}
 
 local cached_codex_path = nil
 
---- Claude-specific model names that should not be passed to codex
-local CLAUDE_MODELS = {
-  sonnet = true,
-  opus = true,
-  haiku = true,
-}
-
 --- Resolve model name from opts or config
---- Filters out Claude-specific model names (sonnet/opus/haiku) as codex uses its own models
+--- Filters out Claude-specific model names (sonnet/opus/haiku/fable) as codex uses its own models
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config
 --- @return string|nil
 local function resolve_model(opts, config)
   local model = opts.model or (config.agent and config.agent.default_model)
-  if model and CLAUDE_MODELS[model] then
+  if model and Modes.is_valid_model(model) then
     return nil
   end
   return model
