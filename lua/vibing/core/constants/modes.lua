@@ -2,9 +2,9 @@
 ---モデル、権限モード、エージェントタイプの定数定義
 local M = {}
 
----有効なモデル
+---有効なモデル（claude/codex共通で許可される名称。codex固有のモデル名はcodex_command_builder側で自由入力を許可）
 ---@type string[]
-M.VALID_MODELS = { "sonnet", "opus", "haiku" }
+M.VALID_MODELS = { "sonnet", "opus", "haiku", "fable" }
 
 ---権限モード
 ---@type string[]

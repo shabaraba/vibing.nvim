@@ -6,7 +6,7 @@ Example configuration showing all available settings:
 require("vibing").setup({
   agent = {
     default_mode = "code",    -- "code" | "plan" | "explore"
-    default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
+    default_model = "sonnet",  -- "sonnet" | "opus" | "haiku" | "fable"
     prioritize_vibing_lsp = true,  -- Prioritize vibing-nvim LSP tools over generic LSP
   },
   chat = {

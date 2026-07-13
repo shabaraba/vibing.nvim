@@ -125,7 +125,7 @@ describe("vibing.application.chat.init", function()
         clear = "Clear context",
         save = "Save current chat",
         summarize = "Summarize conversation",
-        model = "Set AI model: /model <opus|sonnet|haiku>",
+        model = "Set AI model: /model <opus|sonnet|haiku|fable>",
       }
 
       for cmd_name, expected_desc in pairs(cmd_descriptions) do

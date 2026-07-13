@@ -31,7 +31,7 @@ function M.setup()
   commands.register({
     name = "model",
     handler = require("vibing.application.chat.handlers.model"),
-    description = "Set AI model: /model <opus|sonnet|haiku>",
+    description = "Set AI model: /model <opus|sonnet|haiku|fable>",
   })
 
   commands.register({
