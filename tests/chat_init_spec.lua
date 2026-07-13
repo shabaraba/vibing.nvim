@@ -120,12 +120,13 @@ describe("vibing.application.chat.init", function()
     it("should register commands with correct descriptions", function()
       ChatInit.setup()
 
+      local Modes = require("vibing.core.constants.modes")
       local cmd_descriptions = {
         context = "Add file to context: /context <file_path>",
         clear = "Clear context",
         save = "Save current chat",
         summarize = "Summarize conversation",
-        model = "Set AI model: /model <opus|sonnet|haiku|fable>",
+        model = string.format("Set AI model: /model <%s>", table.concat(Modes.VALID_MODELS, "|")),
       }
 
       for cmd_name, expected_desc in pairs(cmd_descriptions) do
