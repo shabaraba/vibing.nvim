@@ -2,7 +2,7 @@ local notify = require("vibing.core.utils.notify")
 
 ---@class Vibing.SlashCommand
 ---@field name string
----@field handler fun(args: string[], chat_buffer: Vibing.ChatBuffer): boolean
+---@field handler fun(args: string[], chat_buffer: Vibing.ChatBuffer): boolean, string?
 ---@field description string
 
 ---@class Vibing.CommandRegistry
@@ -79,12 +79,13 @@ end
 ---@param message string
 ---@param chat_buffer Vibing.ChatBuffer
 ---@return boolean handled コマンドとして処理されたか
----@return string? expanded_message カスタムコマンドの場合、展開されたメッセージ
+---@return string? expanded_message カスタムコマンドの場合、展開され即送信されるメッセージ
+---@return string? draft 組み込みコマンドの場合、次のUserセクションに事前入力する下書き
 function M.execute(message, chat_buffer)
   local command_name, args = M.parse(message)
 
   if not command_name then
-    return false, nil
+    return false, nil, nil
   end
 
   local command = M.commands[command_name]
@@ -96,21 +97,22 @@ function M.execute(message, chat_buffer)
   end
 
   if not command then
-    return false, nil
+    return false, nil, nil
   end
 
-  local success, result, expanded = pcall(command.handler, args, chat_buffer)
+  local success, result, second_value = pcall(command.handler, args, chat_buffer)
   if not success then
     notify.error(string.format("Command error: %s", result))
-    return true, nil
+    return true, nil, nil
   end
 
-  -- カスタムコマンドの場合、展開されたメッセージを返す
+  -- カスタムコマンドの場合、展開されたメッセージを即送信する
   if is_custom then
-    return true, expanded
+    return true, second_value, nil
   end
 
-  return true, nil
+  -- 組み込みコマンドの場合、返り値は次のUserセクションへの下書きとして扱う
+  return true, nil, second_value
 end
 
 ---@return Vibing.SlashCommand[]

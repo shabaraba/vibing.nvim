@@ -19,9 +19,10 @@ end
 
 ---絶対パスからgitルートからの相対パスを取得
 ---@param abs_path string 絶対パス
+---@param known_root string|nil 呼び出し側が既に取得済みのgitルート（未指定ならM.get_root()を実行）
 ---@return string|nil 相対パス（gitルートそのものの場合は"."、Git管理外の場合はnil）
-function M.get_relative_path(abs_path)
-  local git_root = M.get_root()
+function M.get_relative_path(abs_path, known_root)
+  local git_root = known_root or M.get_root()
   if not git_root then
     return nil
   end
@@ -203,9 +204,10 @@ end
 
 ---絶対パスをGit相対パスまたはチルダ短縮パスに変換
 ---@param abs_path string
+---@param known_root string|nil 呼び出し側が既に取得済みのgitルート（未指定ならM.get_root()を実行）
 ---@return string
-function M.to_display_path(abs_path)
-  local relative = M.get_relative_path(abs_path)
+function M.to_display_path(abs_path, known_root)
+  local relative = M.get_relative_path(abs_path, known_root)
   if relative then
     return relative
   end

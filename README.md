@@ -307,20 +307,21 @@ use {
 
 ### Slash Commands (in Chat)
 
-| Command                   | Description                                                              |
-| ------------------------- | ------------------------------------------------------------------------ |
-| `/context <file>`         | Add file to context                                                      |
-| `/clear`                  | Clear context                                                            |
-| `/save`                   | Save current chat                                                        |
-| `/summarize`              | Summarize conversation                                                   |
-| `/model <model>`          | Set AI model (opus/sonnet/haiku/fable)                                   |
-| `/help`                   | Show available slash commands                                            |
-| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules         |
-| `/allow [tool]`           | Add tool to allow list, or show current list if no args                  |
-| `/deny [tool]`            | Add tool to deny list, or show current list if no args                   |
-| `/ask [tool]`             | Ask before using tool, or show current list if no args                   |
-| `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk) |
-| `/new-session`            | Reset session and start fresh                                            |
+| Command                   | Description                                                                                              |
+| ------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `/context <file>`         | Add file to context                                                                                      |
+| `/clear`                  | Clear context                                                                                            |
+| `/save`                   | Save current chat                                                                                        |
+| `/summarize`              | Summarize conversation                                                                                   |
+| `/model <model>`          | Set AI model (opus/sonnet/haiku/fable)                                                                   |
+| `/help`                   | Show available slash commands                                                                            |
+| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules                                         |
+| `/allow [tool]`           | Add tool to allow list, or show current list if no args                                                  |
+| `/deny [tool]`            | Add tool to deny list, or show current list if no args                                                   |
+| `/ask [tool]`             | Ask before using tool, or show current list if no args                                                   |
+| `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions/plan/auto/dontAsk)                             |
+| `/new-session`            | Reset session and start fresh                                                                            |
+| `/template <task>`        | Prefill a structured task template (goal/why/context/instructions/output_format) for editing before send |
 
 Worktree lifecycle is handled by the `vibing-worktree` Claude Code skill bundled with this
 plugin, not by chat slash commands — see `skills/vibing-worktree/SKILL.md`.

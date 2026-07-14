@@ -311,17 +311,18 @@ use {
 
 ### スラッシュコマンド（チャット内）
 
-| コマンド                      | 説明                                                                   |
-| ----------------------------- | ---------------------------------------------------------------------- |
-| `/context <file>`             | コンテキストにファイルを追加                                           |
-| `/clear`                      | コンテキストをクリア                                                   |
-| `/save`                       | 現在のチャットを保存                                                   |
-| `/summarize`                  | 会話を要約                                                             |
-| `/model <model>`              | AIモデルを設定（opus/sonnet/haiku/fable）                              |
-| `/permissions` または `/perm` | インタラクティブな権限ビルダー - ツールの許可/拒否ルールを設定         |
-| `/allow [tool]`               | 許可リストにツールを追加、引数なしで現在のリストを表示                 |
-| `/deny [tool]`                | 拒否リストにツールを追加、引数なしで現在のリストを表示                 |
-| `/permission [mode]`          | 権限モードを設定（default/acceptEdits/bypassPermissions/plan/dontAsk） |
+| コマンド                      | 説明                                                                                                |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| `/context <file>`             | コンテキストにファイルを追加                                                                        |
+| `/clear`                      | コンテキストをクリア                                                                                |
+| `/save`                       | 現在のチャットを保存                                                                                |
+| `/summarize`                  | 会話を要約                                                                                          |
+| `/model <model>`              | AIモデルを設定（opus/sonnet/haiku/fable）                                                           |
+| `/permissions` または `/perm` | インタラクティブな権限ビルダー - ツールの許可/拒否ルールを設定                                      |
+| `/allow [tool]`               | 許可リストにツールを追加、引数なしで現在のリストを表示                                              |
+| `/deny [tool]`                | 拒否リストにツールを追加、引数なしで現在のリストを表示                                              |
+| `/permission [mode]`          | 権限モードを設定（default/acceptEdits/bypassPermissions/plan/auto/dontAsk）                         |
+| `/template <task>`            | 構造化タスクテンプレート（goal/why/context/instructions/output_format）を送信前に編集可能な形で挿入 |
 
 ### チャットキーバインディング
 

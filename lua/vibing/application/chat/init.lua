@@ -83,6 +83,12 @@ function M.setup()
     handler = require("vibing.application.chat.handlers.new_session"),
     description = "Reset session and start fresh: /new-session",
   })
+
+  commands.register({
+    name = "template",
+    handler = require("vibing.application.chat.handlers.template"),
+    description = "Compose a structured task template: /template <task description>",
+  })
 end
 
 return M

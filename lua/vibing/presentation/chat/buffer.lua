@@ -330,12 +330,12 @@ function ChatBuffer:send_message()
 
   local commands = require("vibing.application.chat.commands")
   if commands.is_command(message) then
-    local handled, expanded = commands.execute(message, self)
+    local handled, expanded, draft = commands.execute(message, self)
     if handled then
       if expanded then
         message = expanded
       else
-        self:add_user_section()
+        self:add_user_section(draft)
         return
       end
     end
@@ -516,15 +516,17 @@ function ChatBuffer:append_chunk(chunk)
 end
 
 ---新しいユーザー入力セクションを追加
-function ChatBuffer:add_user_section()
+---@param draft string? 事前入力する下書き本文（例: /template コマンドの結果）
+function ChatBuffer:add_user_section(draft)
   if self._chunk_timer then
     vim.fn.timer_stop(self._chunk_timer)
     self._chunk_timer = nil
   end
   self:_flush_chunks()
 
-  Renderer.addUserSection(self.buf, self.win, self._pending_choices, self._pending_approval)
+  local choices = self._pending_choices
   self._pending_choices = nil
+  Renderer.addUserSection(self.buf, self.win, choices, self._pending_approval, draft)
   -- NOTE: Don't clear _pending_approval here!
   -- It needs to persist until the user sends their approval response.
   -- It will be cleared in send_message() after processing the approval.
