@@ -64,6 +64,8 @@ Slash commands can be used within the chat buffer for quick actions:
 | `/permission [mode]`      | Set permission mode (default/acceptEdits/plan/auto/dontAsk/bypassPermissions) |
 | `/new-session`            | Reset session and start fresh                                                 |
 
-Worktree lifecycle (list/create/attach/finish) is handled entirely through natural-language
-requests backed by the `vibing-worktree` Claude Code skill bundled with this plugin (`skills/`),
-not by chat slash commands. See `skills/vibing-worktree/SKILL.md`.
+Worktree lifecycle (list/create/attach/run/finish) is handled entirely through natural-language
+requests backed by the `vibing-worktree-{list,create,attach,run,finish}` Claude Code skills
+bundled with this plugin (`skills/`), not by chat slash commands. See
+`skills/vibing-worktree-list/SKILL.md` and its sibling `-create`, `-attach`, `-run`, `-finish`
+skills.
