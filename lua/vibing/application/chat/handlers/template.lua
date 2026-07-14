@@ -20,7 +20,7 @@ return function(args, chat_buffer)
   local cwd = chat_buffer:get_cwd() or vim.fn.getcwd()
   table.insert(context_lines, "- リポジトリ: " .. Git.to_display_path(cwd, git_root))
 
-  local has_claude_md = (git_root ~= nil and vim.fn.filereadable(git_root .. "/CLAUDE.md") == 1)
+  local has_claude_md = vim.fn.filereadable(cwd .. "/CLAUDE.md") == 1
     or vim.fn.filereadable(vim.fn.expand("~/.claude/CLAUDE.md")) == 1
   if has_claude_md then
     table.insert(context_lines, "- 既存の規約: CLAUDE.mdに従う")
