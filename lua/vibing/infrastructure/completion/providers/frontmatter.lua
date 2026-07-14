@@ -3,13 +3,31 @@
 ---@module "vibing.infrastructure.completion.providers.frontmatter"
 local M = {}
 
+local Modes = require("vibing.core.constants.modes")
+
+---Descriptions for agent backend values (keys must match Modes.VALID_AGENTS)
+local AGENT_DESCRIPTIONS = {
+  claude = "Claude CLI (Anthropic)",
+  codex = "Codex CLI (OpenAI)",
+  grok = "Grok Build CLI (xAI)",
+}
+
+---Build agent enum entries from Modes.VALID_AGENTS so completion never drifts
+---@return { value: string, description: string }[]
+local function build_agent_enums()
+  local items = {}
+  for _, name in ipairs(Modes.VALID_AGENTS) do
+    table.insert(items, {
+      value = name,
+      description = AGENT_DESCRIPTIONS[name] or name,
+    })
+  end
+  return items
+end
+
 ---Enum values for frontmatter fields
 local ENUMS = {
-  agent = {
-    { value = "claude", description = "Claude CLI (Anthropic)" },
-    { value = "codex", description = "Codex CLI (OpenAI)" },
-    { value = "grok", description = "Grok Build CLI (xAI)" },
-  },
+  agent = build_agent_enums(),
   permissions_mode = {
     { value = "default", description = "Ask for confirmation before each tool use" },
     { value = "acceptEdits", description = "Auto-approve Edit/Write, ask for others" },
@@ -36,7 +54,6 @@ local CODEX_MODELS = {
   { value = "gpt-5.2", description = "gpt-5.2" },
 }
 
-local Modes = require("vibing.core.constants.modes")
 local GROK_MODELS = {}
 for _, name in ipairs(Modes.GROK_MODELS) do
   table.insert(GROK_MODELS, {
