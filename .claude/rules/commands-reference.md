@@ -61,7 +61,7 @@ Slash commands can be used within the chat buffer for quick actions:
 | `/allow [tool]`           | Add tool to allow list, or show current list if no args                                                  |
 | `/deny [tool]`            | Add tool to deny list, or show current list if no args                                                   |
 | `/ask [tool]`             | Ask before using tool, or show current list if no args                                                   |
-| `/permission [mode]`      | Set permission mode (default/acceptEdits/plan/auto/dontAsk/bypassPermissions)                             |
+| `/permission [mode]`      | Set permission mode (default/acceptEdits/plan/auto/dontAsk/bypassPermissions)                            |
 | `/new-session`            | Reset session and start fresh                                                                            |
 | `/template <task>`        | Prefill a structured task template (goal/why/context/instructions/output_format) for editing before send |
 
