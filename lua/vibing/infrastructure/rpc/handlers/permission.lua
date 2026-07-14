@@ -201,6 +201,14 @@ function M.check_tool_permission(params)
     tool_name = CODEX_TOOL_ALIASES[tool_name] or tool_name
   elseif active_opts and active_opts._is_grok then
     tool_name = GROK_TOOL_ALIASES[tool_name] or tool_name
+    -- Granular path rules read input.file_path (Claude convention). Grok tools often
+    -- send path / target_file / filePath instead — normalize without mutating the original.
+    if type(tool_input) == "table" and not tool_input.file_path then
+      local path = tool_input.path or tool_input.target_file or tool_input.filePath
+      if path then
+        tool_input = vim.tbl_extend("force", tool_input, { file_path = path })
+      end
+    end
   end
 
   -- Kill process first, call UI callback, then write deny response. Used by both
