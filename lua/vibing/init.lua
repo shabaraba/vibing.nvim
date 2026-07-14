@@ -5,7 +5,7 @@ local notify = require("vibing.core.utils.notify")
 ---vibing.nvimプラグインのメインモジュール
 ---設定管理、アダプター初期化、コマンド登録を担当するエントリーポイント
 ---@field config Vibing.Config プラグイン設定オブジェクト（setup()で初期化）
----@field adapter Vibing.Adapter AIバックエンドアダプター（claude_cli, codex_cli等）
+---@field adapter Vibing.Adapter AIバックエンドアダプター（claude_cli, codex_cli, grok_cli等）
 local M = {}
 
 ---現在使用中のアダプターインスタンス
@@ -56,6 +56,9 @@ function M.setup(opts)
   if M.config.adapter == "codex" then
     local CodexCLI = require("vibing.infrastructure.adapter.codex_cli")
     M.adapter = CodexCLI:new(M.config)
+  elseif M.config.adapter == "grok" then
+    local GrokCLI = require("vibing.infrastructure.adapter.grok_cli")
+    M.adapter = GrokCLI:new(M.config)
   else
     local ClaudeCLI = require("vibing.infrastructure.adapter.claude_cli")
     M.adapter = ClaudeCLI:new(M.config)

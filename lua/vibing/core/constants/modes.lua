@@ -12,7 +12,7 @@ M.PERMISSION_MODES = { "default", "acceptEdits", "bypassPermissions", "plan", "d
 
 ---有効なエージェント（バックエンド）
 ---@type string[]
-M.VALID_AGENTS = { "claude", "codex" }
+M.VALID_AGENTS = { "claude", "codex", "grok" }
 
 ---モデルが有効かチェック
 ---@param model string

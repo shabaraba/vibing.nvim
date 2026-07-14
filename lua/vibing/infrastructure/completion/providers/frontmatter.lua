@@ -8,6 +8,7 @@ local ENUMS = {
   agent = {
     { value = "claude", description = "Claude CLI (Anthropic)" },
     { value = "codex", description = "Codex CLI (OpenAI)" },
+    { value = "grok", description = "Grok Build CLI (xAI)" },
   },
   permissions_mode = {
     { value = "default", description = "Ask for confirmation before each tool use" },
@@ -33,6 +34,11 @@ local CODEX_MODELS = {
   { value = "gpt-5.4-mini", description = "GPT-5.4-Mini" },
   { value = "gpt-5.3-codex", description = "gpt-5.3-codex" },
   { value = "gpt-5.2", description = "gpt-5.2" },
+}
+
+local GROK_MODELS = {
+  { value = "grok-4.5", description = "Grok 4.5 (default)" },
+  { value = "grok-composer-2.5-fast", description = "Grok Composer 2.5 Fast" },
 }
 
 ---Available tool names for permissions lists
@@ -79,10 +85,15 @@ function M.get_enum_values(field)
 end
 
 ---Get model candidates for the given agent backend
----@param agent string? "claude" | "codex" (defaults to "claude")
+---@param agent string? "claude" | "codex" | "grok" (defaults to "claude")
 ---@return Vibing.CompletionItem[]
 function M.get_model_values(agent)
-  local models = (agent == "codex") and CODEX_MODELS or CLAUDE_MODELS
+  local models = CLAUDE_MODELS
+  if agent == "codex" then
+    models = CODEX_MODELS
+  elseif agent == "grok" then
+    models = GROK_MODELS
+  end
   local items = {}
   for _, m in ipairs(models) do
     table.insert(items, {

@@ -41,7 +41,7 @@
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
 ---アダプター選択、チャットウィンドウ、キーマップ、ツール権限を統合管理
----@field adapter? "claude"|"codex" バックエンドアダプター選択（デフォルト: "claude"）
+---@field adapter? "claude"|"codex"|"grok" バックエンドアダプター選択（デフォルト: "claude"）
 ---@field agent Vibing.AgentConfig エージェント設定（モード、モデル）
 ---@field chat Vibing.ChatConfig チャットウィンドウ設定（位置、サイズ、自動コンテキスト、保存先）
 ---@field ui Vibing.UiConfig UI設定（wrap等）
@@ -49,9 +49,14 @@
 ---@field diff Vibing.DiffConfig diff表示設定（使用ツール、mote設定）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
 ---@field node Vibing.NodeConfig Node.js実行ファイル設定（バイナリパス）
+---@field grok? Vibing.GrokConfig Grok Build CLI 設定（バイナリパス）
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
 ---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
 ---@field daily_summary? Vibing.DailySummaryConfig Daily Summary機能設定
+
+---@class Vibing.GrokConfig
+---Grok Build CLI 設定
+---@field executable string|"auto" Grok CLI 実行ファイルのパス ("auto": PATHから自動検出、文字列: 明示的なパス指定)
 
 ---@class Vibing.PermissionRule
 ---粒度の細かい権限制御ルール
@@ -275,6 +280,9 @@ M.defaults = {
   node = {
     executable = "auto",
     dev_mode = false,
+  },
+  grok = {
+    executable = "auto",
   },
   mcp = {
     enabled = true,

@@ -493,8 +493,10 @@ function M._resolve_adapter(default_adapter, callbacks, config)
     return default_adapter
   end
 
+  local AGENT_TO_ADAPTER_NAME = { claude = "claude_cli", codex = "codex_cli", grok = "grok_cli" }
+
   if default_adapter and default_adapter.name then
-    local expected_name = agent_type == "codex" and "codex_cli" or "claude_cli"
+    local expected_name = AGENT_TO_ADAPTER_NAME[agent_type] or "claude_cli"
     if default_adapter.name == expected_name then
       return default_adapter
     end
@@ -503,6 +505,9 @@ function M._resolve_adapter(default_adapter, callbacks, config)
   if agent_type == "codex" then
     local CodexCLI = require("vibing.infrastructure.adapter.codex_cli")
     return CodexCLI:new(config)
+  elseif agent_type == "grok" then
+    local GrokCLI = require("vibing.infrastructure.adapter.grok_cli")
+    return GrokCLI:new(config)
   else
     local ClaudeCLI = require("vibing.infrastructure.adapter.claude_cli")
     return ClaudeCLI:new(config)
