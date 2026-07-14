@@ -63,7 +63,10 @@ function M.ensure(cwd)
 
   vim.fn.mkdir(hooks_dir, "p")
 
-  local hook_script = SettingsGenerator.get_hook_script_path()
+  -- Grok resolves relative command paths against the hook JSON file directory
+  -- (.grok/hooks/), not the project root — so a relative plugin path would miss
+  -- bin/hooks/pre-tool-use.sh. Always write an absolute path.
+  local hook_script = vim.fn.fnamemodify(SettingsGenerator.get_hook_script_path(), ":p")
   local settings = {
     hooks = {
       PreToolUse = {

@@ -32,7 +32,9 @@ describe("grok_settings_generator", function()
     local entry = decoded.hooks.PreToolUse[1]
     assert.equals(".*", entry.matcher)
     assert.equals("command", entry.hooks[1].type)
-    assert.equals(SettingsGenerator.get_hook_script_path(), entry.hooks[1].command)
+    local expected = vim.fn.fnamemodify(SettingsGenerator.get_hook_script_path(), ":p")
+    assert.equals(expected, entry.hooks[1].command)
+    assert.is_true(entry.hooks[1].command:sub(1, 1) == "/", "hook command must be absolute for Grok")
     assert.equals(120, entry.hooks[1].timeout)
   end)
 
