@@ -36,10 +36,14 @@ local CODEX_MODELS = {
   { value = "gpt-5.2", description = "gpt-5.2" },
 }
 
-local GROK_MODELS = {
-  { value = "grok-4.5", description = "Grok 4.5 (default)" },
-  { value = "grok-composer-2.5-fast", description = "Grok Composer 2.5 Fast" },
-}
+local Modes = require("vibing.core.constants.modes")
+local GROK_MODELS = {}
+for _, name in ipairs(Modes.GROK_MODELS) do
+  table.insert(GROK_MODELS, {
+    value = name,
+    description = name == Modes.GROK_MODELS[1] and (name .. " (default)") or name,
+  })
+end
 
 ---Available tool names for permissions lists
 local TOOL_NAMES = {

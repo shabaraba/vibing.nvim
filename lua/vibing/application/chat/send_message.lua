@@ -103,18 +103,29 @@ function M.execute(adapter, callbacks, message, config)
     -- レスポンス中にWrite/Editで変更されたファイルパスを追跡
     local modified_file_paths = {}
 
+    -- agent / model: frontmatter is source of truth. When agent is grok/codex but model still
+    -- holds a Claude shortcut (sonnet/...), fall back to the agent-appropriate default so the
+    -- backend actually receives a usable model instead of silently dropping the flag.
+    local Modes = require("vibing.core.constants.modes")
+    local agent_type = frontmatter.agent or (config and config.adapter) or "claude"
+    local model = frontmatter.model
+    if agent_type ~= "claude" and model and Modes.is_valid_model(model) then
+      model = Modes.default_model_for_agent(agent_type, config.agent and config.agent.default_model)
+    end
+
     local opts = {
       streaming = true,
       action_type = "chat",
       chat_file_path = vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_get_name(bufnr) or nil,
       mode = frontmatter.mode,
-      model = frontmatter.model,
+      model = model,
       permissions_allow = frontmatter.permissions_allow,
       permissions_deny = frontmatter.permissions_deny,
       permissions_ask = frontmatter.permissions_ask,
       permissions_session_allow = session_allow,
       permissions_session_deny = session_deny,
-      permission_mode = frontmatter.permission_mode,
+      -- Accept both permission_mode (canonical) and permissions_mode (legacy alias)
+      permission_mode = frontmatter.permission_mode or frontmatter.permissions_mode,
       language = lang_code,
       cwd = session_cwd,
       on_tool_use = function(tool, file_path, _command)

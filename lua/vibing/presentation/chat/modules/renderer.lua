@@ -26,11 +26,15 @@ function M.init_content(buf, session)
   end
 
   -- agent
+  local Modes = require("vibing.core.constants.modes")
   local agent = frontmatter.agent or (config.adapter or "claude")
   table.insert(lines, "agent: " .. agent)
 
-  -- model
-  local model = frontmatter.model or (config.agent and config.agent.default_model)
+  -- model（エージェント別にデフォルトを選ぶ。claude ショートカット名を grok/codex に残さない）
+  local model = frontmatter.model
+  if not model or (agent ~= "claude" and Modes.is_valid_model(model)) then
+    model = Modes.default_model_for_agent(agent, config.agent and config.agent.default_model)
+  end
   if model then
     table.insert(lines, "model: " .. model)
   end
