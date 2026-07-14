@@ -1053,9 +1053,11 @@ vibing.nvim currently supports:
 Switch backends globally with `adapter = "claude"|"codex"|"grok"` in setup, or per-chat by adding
 `agent: claude`, `agent: codex`, or `agent: grok` to a chat file's YAML frontmatter.
 
-**Grok notes (Phase 1):** Permission control uses `--permission-mode` only (Tool Approval UI and
-granular hook rules are not wired yet). Install the official xAI Grok Build CLI — not the
-community `grok-dev` package — and authenticate via `XAI_API_KEY` or `grok` login.
+**Grok notes:** Install the official xAI Grok Build CLI — not the community `grok-dev` package —
+and authenticate via `XAI_API_KEY` or `grok` login. vibing injects a project PreToolUse hook under
+`<cwd>/.grok/hooks/vibing-nvim-pre-tool-use.json` (reusing `bin/hooks/pre-tool-use.sh`) so
+frontmatter allow/deny lists and the Tool Approval UI work the same as Claude/Codex. Streaming
+JSON does not currently emit per-tool events, so tool markers in chat are limited compared to Claude.
 
 ### Why does it require Node.js?
 

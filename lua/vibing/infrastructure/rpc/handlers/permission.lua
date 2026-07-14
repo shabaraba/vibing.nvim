@@ -25,6 +25,24 @@ local CODEX_TOOL_ALIASES = {
   apply_patch = "Edit", -- Codex's file patch tool maps to Claude's Edit
 }
 
+--- Grok Build CLI native tool names → Claude canonical names used in frontmatter allow/deny.
+--- Confirmed via real PreToolUse payloads and Grok's own Claude-compat matcher aliases.
+local GROK_TOOL_ALIASES = {
+  run_terminal_command = "Bash",
+  read_file = "Read",
+  search_replace = "Edit",
+  write_file = "Write",
+  list_dir = "Glob",
+  grep = "Grep",
+  web_search = "WebSearch",
+  web_fetch = "WebFetch",
+  spawn_subagent = "Task",
+  edit_file = "Edit",
+  apply_patch = "Edit",
+  bash = "Bash",
+  shell = "Bash",
+}
+
 local APPROVAL_OPTIONS = {
   { value = "allow_once", label = "allow_once - Allow this execution only" },
   { value = "deny_once", label = "deny_once - Deny this execution only" },
@@ -173,12 +191,16 @@ function M.check_tool_permission(params)
     return { status = "allowed", reason = "invalid request JSON" }
   end
 
-  local tool_name = hook_input.tool_name or ""
-  local tool_input = hook_input.tool_input or {}
+  -- Claude Code uses snake_case (tool_name/tool_input); Grok Build uses camelCase
+  -- (toolName/toolInput). Accept both so the shared pre-tool-use.sh works for all adapters.
+  local tool_name = hook_input.tool_name or hook_input.toolName or ""
+  local tool_input = hook_input.tool_input or hook_input.toolInput or {}
   local active_opts = get_active_opts(handle_id)
 
   if active_opts and active_opts._is_codex then
     tool_name = CODEX_TOOL_ALIASES[tool_name] or tool_name
+  elseif active_opts and active_opts._is_grok then
+    tool_name = GROK_TOOL_ALIASES[tool_name] or tool_name
   end
 
   -- Kill process first, call UI callback, then write deny response. Used by both

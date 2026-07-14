@@ -8,6 +8,9 @@ package-lock.json.backup
 # vibing.nvim data
 .vibing/
 
+# Generated Grok PreToolUse hook (written by grok_settings_generator at runtime)
+.grok/hooks/vibing-nvim-pre-tool-use.json
+
 # Serena MCP memory
 .serena/
 

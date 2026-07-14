@@ -8,6 +8,7 @@ local GrokEventProcessor = require("vibing.infrastructure.adapter.modules.grok_e
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
 local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local GrokSettingsGenerator = require("vibing.infrastructure.hooks.grok_settings_generator")
 
 ---@class Vibing.GrokCLIAdapter : Vibing.Adapter
 ---@field _handles table<string, table>
@@ -89,6 +90,21 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
   local rpc_server = require("vibing.infrastructure.rpc.server")
   local rpc_port = rpc_server.get_port()
 
+  local cwd = opts.cwd or vim.fn.getcwd()
+
+  -- Install project PreToolUse hook (reuses bin/hooks/pre-tool-use.sh) unless fully bypassed.
+  -- Grok discovers <cwd>/.grok/hooks/*.json when the folder is trusted.
+  local permission_mode = opts.permission_mode or "default"
+  if permission_mode ~= "bypassPermissions" then
+    local ok_hook, hook_err = pcall(GrokSettingsGenerator.ensure, cwd)
+    if not ok_hook then
+      vim.notify(
+        string.format("[vibing:grok] Failed to install PreToolUse hook: %s", tostring(hook_err)),
+        vim.log.levels.WARN
+      )
+    end
+  end
+
   local cmd = GrokCommandBuilder.build(prompt, opts, session_id, self.config, handle_id, rpc_port)
   local output = {}
   local error_output = {}
@@ -125,7 +141,7 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
     env.VIBING_RPC_PORT = port_str
     env.VIBING_NVIM_CONTEXT = "true"
   end
-  -- Future PreToolUse hook routing (Phase 2). Permission control is --permission-mode only for now.
+  -- Lets PreToolUse hook identify which chat buffer's stream it belongs to (see ActiveStreamRegistry).
   env.VIBING_HANDLE_ID = handle_id
 
   ActiveStreamRegistry.register({
@@ -150,8 +166,6 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
       on_done(response)
     end
   end
-
-  local cwd = opts.cwd or vim.fn.getcwd()
 
   self._handles[handle_id] = vim.system(cmd, {
     text = true,
