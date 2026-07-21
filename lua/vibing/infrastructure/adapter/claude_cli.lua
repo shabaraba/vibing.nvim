@@ -71,7 +71,10 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   opts = opts or {}
 
   local debug_mode = vim.g.vibing_debug_stream
-  local handle_id = tostring(vim.loop.hrtime()) .. "_" .. tostring(math.random(100000))
+  -- hex format avoids LuaJIT's tostring() rendering large hrtime doubles in scientific
+  -- notation (e.g. "2.64e+15"), which pre-tool-use.sh's char-sanitized VIBING_HANDLE_ID
+  -- would then fail to match against this exact registry key
+  local handle_id = string.format("%016x_%x", vim.loop.hrtime(), math.random(100000))
   local session_id = opts._session_id
 
   if debug_mode then
