@@ -183,10 +183,11 @@ supporting multi-language development workflows.
 ## Git Worktree Integration
 
 Worktree-backed development goes through natural-language requests backed by the
-`vibing-worktree` Claude Code skill bundled with this plugin (`skills/vibing-worktree`), not
-through a vibing.nvim chat command. There is no bespoke lifecycle script or metadata file —
-worktrees are created with plain `git worktree add -b <branch> .vibing/worktrees/<branch>/` and
-removed with `git worktree remove`; a worktree's existence on disk is its entire state. The
-chat's own `working_dir` frontmatter field (unchanged by this) is what keeps a conversation
-attached to its worktree across turns. See `skills/vibing-worktree/SKILL.md` for the full
-list/create/attach/finish workflow.
+`vibing-worktree-{list,create,attach,run,finish}` Claude Code skills bundled with this plugin
+(`skills/vibing-worktree-*`), not through a vibing.nvim chat command. There is no bespoke
+lifecycle script or metadata file — worktrees are created with plain
+`git worktree add -b <branch> .vibing/worktrees/<branch>/` and removed with
+`git worktree remove`; a worktree's existence on disk is its entire state. The chat's own
+`working_dir` frontmatter field (unchanged by this) is what keeps a conversation attached to its
+worktree across turns. See `skills/vibing-worktree-list/SKILL.md` (and its sibling `-create`,
+`-attach`, `-run`, `-finish` skills) for the full list/create/attach/finish workflow.

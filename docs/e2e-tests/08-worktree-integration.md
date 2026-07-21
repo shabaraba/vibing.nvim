@@ -1,8 +1,9 @@
-# E2E Test Scenarios: Worktree Integration (`vibing-worktree` skill)
+# E2E Test Scenarios: Worktree Integration (`vibing-worktree-*` skills)
 
-These scenarios exercise the `vibing-worktree` skill's four natural-language flows against a
-real chat session. Each scenario assumes a fresh chat in a git repository with at least one
-commit, and that the `vibing-nvim` MCP server is connected unless a scenario says otherwise.
+These scenarios exercise the `vibing-worktree-{list,create,attach,finish}` skills' four
+natural-language flows against a real chat session. Each scenario assumes a fresh chat in a git
+repository with at least one commit, and that the `vibing-nvim` MCP server is connected unless a
+scenario says otherwise.
 
 ## 1. List worktrees
 
