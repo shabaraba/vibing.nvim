@@ -8,6 +8,15 @@
   action picker/preview UI, and the `language.inline` configuration option have
   been removed. Use the chat interface (`:VibingChat`) for code assistance instead.
 
+## 5.1.0 (2026-07-21)
+
+## What's Changed
+
+- feat: add fable as a selectable Claude model by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/456
+- fix: avoid scientific-notation handle_id breaking the approval hook by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/462
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.0.0...v5.1.0
+
 ## 5.0.0 (2026-07-11)
 
 ## What's Changed
