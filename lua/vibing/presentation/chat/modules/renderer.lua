@@ -122,6 +122,9 @@ function M.moveCursorToEnd(win, buf)
   if not vim.api.nvim_win_is_valid(win) or not vim.api.nvim_buf_is_valid(buf) then
     return
   end
+  if vim.api.nvim_win_get_buf(win) ~= buf then
+    return
+  end
 
   local lineCount = vim.api.nvim_buf_line_count(buf)
   if lineCount > 0 then
@@ -247,7 +250,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_mes
     vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, approvalLines)
   end
 
-  if win and vim.api.nvim_win_is_valid(win) then
+  if win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
     local ok, cursor = pcall(vim.api.nvim_win_get_cursor, win)
     if ok then
       local currentLine = cursor[1]
