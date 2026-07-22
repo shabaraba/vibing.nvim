@@ -65,6 +65,7 @@ vibing.nvim supports multiple AI CLI backends with a unified interface:
 
 - **Claude CLI** (`claude -p --stream-json`) - Full Claude Code capabilities within Neovim
 - **Codex CLI** (`codex exec --json`) - OpenAI Codex backend for alternative AI workflows
+- **Grok Build CLI** (`grok -p --output-format streaming-json`) - xAI Grok backend
 
 Switch backends globally via `adapter` config or per-chat via the `agent` frontmatter field.
 
@@ -176,6 +177,7 @@ vibing.nvim focuses on deep Claude integration. You might still use other tools 
 - At least one AI CLI backend:
   - **Claude CLI** (`claude`) — Install via `npm install -g @anthropic-ai/claude-code`
   - **Codex CLI** (`codex`) — Install via `npm install -g @openai/codex`
+  - **Grok Build CLI** (`grok`) — Install via `curl -fsSL https://x.ai/cli/install.sh | bash` (requires `XAI_API_KEY` or `grok` login)
 
 ### Claude Code Plugin (MCP + Skills + Agents)
 
@@ -225,7 +227,7 @@ anything to connect to.
   config = function()
     require("vibing").setup({
       -- Default configuration
-      adapter = "claude",  -- "claude" | "codex" (global default; overridable per-chat via frontmatter)
+      adapter = "claude",  -- "claude" | "codex" | "grok" (global default; overridable per-chat via frontmatter)
       chat = {
         window = {
           position = "current",  -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
@@ -578,7 +580,13 @@ Select the AI CLI backend:
 adapter = "claude",  -- Global backend adapter
                      -- "claude": Use Claude CLI (claude -p --stream-json)
                      -- "codex":  Use Codex CLI  (codex exec --json)
+                     -- "grok":   Use Grok Build CLI (grok -p --output-format streaming-json)
                      -- Can be overridden per-chat via "agent" frontmatter field
+
+-- Optional: explicit path when multiple `grok` binaries exist (official vs community)
+grok = {
+  executable = "auto",  -- "auto" (PATH) or absolute path to official Grok Build CLI
+},
 ```
 
 ### Agent Settings
@@ -909,7 +917,7 @@ Chats are saved as Markdown with YAML frontmatter for session resumption and con
 vibing.nvim: true
 session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
-agent: claude  # claude | codex (overrides global adapter setting for this chat)
+agent: claude  # claude | codex | grok (overrides global adapter setting for this chat)
 model: sonnet  # sonnet | opus | haiku | fable
 permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk
 permissions_allow:
@@ -964,11 +972,13 @@ graph TB
     subgraph AI["AI CLI Backends"]
         Claude["Claude CLI<br/>(claude -p --stream-json)"]
         Codex["Codex CLI<br/>(codex exec --json)"]
+        Grok["Grok CLI<br/>(grok -p streaming-json)"]
     end
 
     RPC <-->|JSON-RPC| MCPServer
     Plugin -->|spawns & communicates<br/>JSON Lines| Claude
     Plugin -->|spawns & communicates<br/>JSON Lines| Codex
+    Plugin -->|spawns & communicates<br/>JSON Lines| Grok
 
     style Neovim fill:#e1f5ff
     style MCP fill:#fff4e1
@@ -976,6 +986,7 @@ graph TB
     style Plugin fill:#bbdefb
     style Claude fill:#ffe0b2
     style Codex fill:#c8e6c9
+    style Grok fill:#f8bbd0
 ```
 
 ### How It Differs from Traditional Approaches
@@ -990,7 +1001,7 @@ graph TB
 
 **Key Components:**
 
-- **CLI Adapters** - Direct execution of `claude` / `codex` CLI communicating via JSON Lines
+- **CLI Adapters** - Direct execution of `claude` / `codex` / `grok` CLI communicating via JSON Lines
 - **MCP Server** - Provides AI with direct Neovim control (buffers, LSP, commands)
 - **Context System** - Automatic and manual file context management
 - **Session Persistence** - Resume conversations with full history
@@ -1040,25 +1051,32 @@ vibing.nvim currently supports:
 
 - **Claude CLI** (`claude -p --stream-json`) — Full Claude Code capabilities
 - **Codex CLI** (`codex exec --json`) — OpenAI Codex backend
+- **Grok Build CLI** (`grok -p --output-format streaming-json`) — xAI Grok backend
 
-Switch backends globally with `adapter = "claude"|"codex"` in setup, or per-chat by adding
-`agent: claude` or `agent: codex` to a chat file's YAML frontmatter.
+Switch backends globally with `adapter = "claude"|"codex"|"grok"` in setup, or per-chat by adding
+`agent: claude`, `agent: codex`, or `agent: grok` to a chat file's YAML frontmatter.
+
+**Grok notes:** Install the official xAI Grok Build CLI — not the community `grok-dev` package —
+and authenticate via `XAI_API_KEY` or `grok` login. vibing injects a project PreToolUse hook under
+`<cwd>/.grok/hooks/vibing-nvim-pre-tool-use.json` (reusing `bin/hooks/pre-tool-use.sh`) so
+frontmatter allow/deny lists and the Tool Approval UI work the same as Claude/Codex. Streaming
+JSON does not currently emit per-tool events, so tool markers in chat are limited compared to Claude.
 
 ### Why does it require Node.js?
 
 Node.js is required for the MCP server, which provides AI with direct access to your running
 Neovim instance (buffer reads/writes, LSP queries, command execution). The AI CLI binaries
-themselves (`claude`, `codex`) are separate installs.
+themselves (`claude`, `codex`, `grok`) are separate installs.
 
 ### How does it compare to Claude Code CLI?
 
 vibing.nvim provides similar capabilities to Claude Code CLI but integrated into Neovim:
 
-- Same `claude` CLI underneath
+- Same `claude` CLI underneath (when using the Claude backend)
 - MCP for editor control (CLI controls terminal, vibing controls Neovim)
-- Additional Codex backend option for OpenAI workflows
+- Additional Codex and Grok backends for multi-provider workflows
 
-Think of it as "Claude Code (or Codex) for Neovim users."
+Think of it as "Claude Code (or Codex / Grok) for Neovim users."
 
 ### Can I use vibing.nvim alongside other AI plugins?
 
@@ -1072,6 +1090,7 @@ MIT License - see LICENSE file for details
 
 - [Claude AI](https://claude.ai)
 - [Codex CLI](https://github.com/openai/codex)
+- [Grok Build CLI](https://x.ai/cli)
 - [GitHub Repository](https://github.com/shabaraba/vibing.nvim)
 
 ---

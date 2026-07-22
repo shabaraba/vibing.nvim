@@ -11,7 +11,8 @@ debug_log "hook fired, PID=$$, PORT=${VIBING_NVIM_RPC_PORT:-UNSET}"
 INPUT=$(cat)
 PORT="${VIBING_NVIM_RPC_PORT}"
 
-debug_log "tool=$(echo "$INPUT" | grep -o '"tool_name":"[^"]*"' | head -1)"
+# Claude: tool_name / Grok Build: toolName
+debug_log "tool=$(echo "$INPUT" | grep -oE '"(tool_name|toolName)":"[^"]*"' | head -1)"
 
 # No RPC port = not running inside vibing.nvim, allow everything
 if [ -z "$PORT" ]; then
@@ -67,17 +68,22 @@ if [ -f "$RES_FILE" ]; then
 
   if [ "$DECISION" = "deny" ]; then
     REASON=$(echo "$RESPONSE" | grep -o '"permissionDecisionReason":"[^"]*"' | head -1 | cut -d'"' -f4)
+    REASON="${REASON:-Denied by vibing.nvim}"
     debug_log "DENY: $REASON"
-    echo "${REASON:-Denied by vibing.nvim}" >&2
+    # Grok Build honors stdout JSON decision (and exit 2). Claude uses exit 2 + stderr.
+    printf '{"decision":"deny","reason":"%s"}\n' "$(echo "$REASON" | sed 's/"/\\"/g')"
+    echo "$REASON" >&2
     exit 2
   fi
 
   debug_log "ALLOW"
+  printf '%s\n' '{"decision":"allow"}'
   exit 0
 fi
 
 # Timeout - fail closed (deny)
 debug_log "TIMEOUT after ${ELAPSED}0ms, denying"
+printf '%s\n' '{"decision":"deny","reason":"Permission check timed out"}'
 echo "Permission check timed out" >&2
 rm -f "$REQ_FILE" 2>/dev/null
 exit 2

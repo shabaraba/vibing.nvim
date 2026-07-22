@@ -3,12 +3,31 @@
 ---@module "vibing.infrastructure.completion.providers.frontmatter"
 local M = {}
 
+local Modes = require("vibing.core.constants.modes")
+
+---Descriptions for agent backend values (keys must match Modes.VALID_AGENTS)
+local AGENT_DESCRIPTIONS = {
+  claude = "Claude CLI (Anthropic)",
+  codex = "Codex CLI (OpenAI)",
+  grok = "Grok Build CLI (xAI)",
+}
+
+---Build agent enum entries from Modes.VALID_AGENTS so completion never drifts
+---@return { value: string, description: string }[]
+local function build_agent_enums()
+  local items = {}
+  for _, name in ipairs(Modes.VALID_AGENTS) do
+    table.insert(items, {
+      value = name,
+      description = AGENT_DESCRIPTIONS[name] or name,
+    })
+  end
+  return items
+end
+
 ---Enum values for frontmatter fields
 local ENUMS = {
-  agent = {
-    { value = "claude", description = "Claude CLI (Anthropic)" },
-    { value = "codex", description = "Codex CLI (OpenAI)" },
-  },
+  agent = build_agent_enums(),
   permissions_mode = {
     { value = "default", description = "Ask for confirmation before each tool use" },
     { value = "acceptEdits", description = "Auto-approve Edit/Write, ask for others" },
@@ -34,6 +53,14 @@ local CODEX_MODELS = {
   { value = "gpt-5.3-codex", description = "gpt-5.3-codex" },
   { value = "gpt-5.2", description = "gpt-5.2" },
 }
+
+local GROK_MODELS = {}
+for _, name in ipairs(Modes.GROK_MODELS) do
+  table.insert(GROK_MODELS, {
+    value = name,
+    description = name == Modes.GROK_MODELS[1] and (name .. " (default)") or name,
+  })
+end
 
 ---Available tool names for permissions lists
 local TOOL_NAMES = {
@@ -79,10 +106,15 @@ function M.get_enum_values(field)
 end
 
 ---Get model candidates for the given agent backend
----@param agent string? "claude" | "codex" (defaults to "claude")
+---@param agent string? "claude" | "codex" | "grok" (defaults to "claude")
 ---@return Vibing.CompletionItem[]
 function M.get_model_values(agent)
-  local models = (agent == "codex") and CODEX_MODELS or CLAUDE_MODELS
+  local models = CLAUDE_MODELS
+  if agent == "codex" then
+    models = CODEX_MODELS
+  elseif agent == "grok" then
+    models = GROK_MODELS
+  end
   local items = {}
   for _, m in ipairs(models) do
     table.insert(items, {

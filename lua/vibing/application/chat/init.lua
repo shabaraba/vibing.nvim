@@ -33,7 +33,10 @@ function M.setup()
   commands.register({
     name = "model",
     handler = require("vibing.application.chat.handlers.model"),
-    description = string.format("Set AI model: /model <%s>", table.concat(Modes.VALID_MODELS, "|")),
+    description = string.format(
+      "Set AI model: /model <%s|gpt-*|grok-*> (depends on frontmatter agent)",
+      table.concat(Modes.VALID_MODELS, "|")
+    ),
   })
 
   commands.register({
