@@ -972,11 +972,13 @@ graph TB
     subgraph AI["AI CLI Backends"]
         Claude["Claude CLI<br/>(claude -p --stream-json)"]
         Codex["Codex CLI<br/>(codex exec --json)"]
+        Grok["Grok CLI<br/>(grok -p streaming-json)"]
     end
 
     RPC <-->|JSON-RPC| MCPServer
     Plugin -->|spawns & communicates<br/>JSON Lines| Claude
     Plugin -->|spawns & communicates<br/>JSON Lines| Codex
+    Plugin -->|spawns & communicates<br/>JSON Lines| Grok
 
     style Neovim fill:#e1f5ff
     style MCP fill:#fff4e1
@@ -984,6 +986,7 @@ graph TB
     style Plugin fill:#bbdefb
     style Claude fill:#ffe0b2
     style Codex fill:#c8e6c9
+    style Grok fill:#f8bbd0
 ```
 
 ### How It Differs from Traditional Approaches
@@ -998,7 +1001,7 @@ graph TB
 
 **Key Components:**
 
-- **CLI Adapters** - Direct execution of `claude` / `codex` CLI communicating via JSON Lines
+- **CLI Adapters** - Direct execution of `claude` / `codex` / `grok` CLI communicating via JSON Lines
 - **MCP Server** - Provides AI with direct Neovim control (buffers, LSP, commands)
 - **Context System** - Automatic and manual file context management
 - **Session Persistence** - Resume conversations with full history

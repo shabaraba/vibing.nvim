@@ -7,7 +7,15 @@ local worktree_constants = require("vibing.core.constants.worktree")
 
 local M = {}
 
+-- Grok's --permission-mode only accepts default/dontAsk/acceptEdits/bypassPermissions/plan.
+-- vibing's "auto" mode (Claude's background safety classifier) has no Grok equivalent, so it
+-- falls back to asking for confirmation instead of forwarding an unsupported value.
+local GROK_PERMISSION_MODE_FALLBACK = {
+  auto = "default",
+}
+
 local cached_grok_path = nil
+local cached_configured_executable = nil
 local verified_official = false
 
 --- Resolve model name from opts or config
@@ -150,11 +158,13 @@ end
 --- @param config Vibing.Config
 --- @return string
 local function resolve_grok_path(config)
-  if cached_grok_path then
+  local configured = config and config.grok and config.grok.executable
+
+  if cached_grok_path and cached_configured_executable == configured then
     return cached_grok_path
   end
 
-  local configured = config and config.grok and config.grok.executable
+  local resolved
   if configured and configured ~= "auto" and configured ~= "" then
     if vim.fn.executable(configured) == 0 then
       error(
@@ -164,7 +174,7 @@ local function resolve_grok_path(config)
         )
       )
     end
-    cached_grok_path = configured
+    resolved = configured
   else
     local found = vim.fn.exepath("grok")
     if found == "" then
@@ -173,9 +183,12 @@ local function resolve_grok_path(config)
           .. "(curl -fsSL https://x.ai/cli/install.sh | bash) or set config.grok.executable."
       )
     end
-    cached_grok_path = found
+    resolved = found
   end
 
+  cached_grok_path = resolved
+  cached_configured_executable = configured
+  verified_official = false
   ensure_official_grok(cached_grok_path)
   return cached_grok_path
 end
@@ -221,10 +234,10 @@ function M.build(prompt, opts, session_id, config, handle_id, rpc_port)
     end
   end
 
-  -- vibing permission_mode values map 1:1 onto Grok's --permission-mode enum
   if opts.permission_mode then
+    local mode = GROK_PERMISSION_MODE_FALLBACK[opts.permission_mode] or opts.permission_mode
     table.insert(cmd, "--permission-mode")
-    table.insert(cmd, opts.permission_mode)
+    table.insert(cmd, mode)
   end
 
   if opts.cwd and opts.cwd ~= "" then

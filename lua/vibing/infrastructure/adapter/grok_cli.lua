@@ -46,7 +46,7 @@ function GrokCLI:execute(prompt, opts)
   local result = { content = "" }
   local done = false
 
-  self:stream(prompt, opts, function(chunk)
+  local handle_id = self:stream(prompt, opts, function(chunk)
     result.content = result.content .. chunk
   end, function(response)
     if response.error then
@@ -55,9 +55,13 @@ function GrokCLI:execute(prompt, opts)
     done = true
   end)
 
-  vim.wait(120000, function()
+  vim.wait(INITIAL_RESPONSE_TIMEOUT_MS, function()
     return done
   end, 100)
+  if not done then
+    self:cancel(handle_id)
+    result.error = result.error or "Execution timeout"
+  end
   return result
 end
 
@@ -167,7 +171,10 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
     end
   end
 
-  self._handles[handle_id] = vim.system(cmd, {
+  -- vim.system throws synchronously on spawn failure (e.g. invalid cwd) before any process
+  -- exists, so the registry/perm-handler state registered above would otherwise never be
+  -- cleaned up (the exit handler that normally does it never runs).
+  local ok_spawn, handle_or_err = pcall(vim.system, cmd, {
     text = true,
     stdin = "",
     cwd = cwd,
@@ -177,6 +184,15 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
     end),
     stderr = StreamHandler.create_stderr_handler(error_output),
   }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done))
+
+  if not ok_spawn then
+    ActiveStreamRegistry.unregister(handle_id)
+    perm_handler.clear_active_opts(handle_id)
+    on_done({ error = string.format("Failed to spawn grok process: %s", tostring(handle_or_err)) })
+    return handle_id
+  end
+
+  self._handles[handle_id] = handle_or_err
 
   if debug_mode then
     local pid = self._handles[handle_id] and self._handles[handle_id].pid or "unknown"
@@ -192,7 +208,6 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
       if not received_first_response and not completed and self._handles[handle_id] then
         vim.schedule(function()
           if not completed then
-            completed = true
             vim.notify(
               "[vibing] Session resume timeout - killing hung process and resetting session",
               vim.log.levels.WARN

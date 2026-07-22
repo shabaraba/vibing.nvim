@@ -163,13 +163,20 @@ describe("grok_command_builder", function()
   end)
 
   describe("--permission-mode", function()
-    it("passes vibing permission modes straight through with no translation", function()
-      for _, mode in ipairs({ "default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto" }) do
+    it("passes vibing permission modes straight through when Grok supports them natively", function()
+      for _, mode in ipairs({ "default", "acceptEdits", "bypassPermissions", "plan", "dontAsk" }) do
         local cmd = grok_command_builder.build("hello", { permission_mode = mode }, nil, {})
         local idx = find_flag(cmd, "--permission-mode")
         assert.is_not_nil(idx, "missing --permission-mode for " .. mode)
         assert.equals(mode, cmd[idx + 1])
       end
+    end)
+
+    it("translates 'auto' to 'default' since Grok has no background-classifier equivalent", function()
+      local cmd = grok_command_builder.build("hello", { permission_mode = "auto" }, nil, {})
+      local idx = find_flag(cmd, "--permission-mode")
+      assert.is_not_nil(idx)
+      assert.equals("default", cmd[idx + 1])
     end)
 
     it("omits --permission-mode when not specified", function()
