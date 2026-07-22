@@ -49,21 +49,20 @@
 
 Slash commands can be used within the chat buffer for quick actions:
 
-| Command                   | Description                                                                                              |
-| ------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `/context <file>`         | Add file to context                                                                                      |
-| `/clear`                  | Clear context                                                                                            |
-| `/save`                   | Save current chat                                                                                        |
-| `/summarize`              | Summarize conversation                                                                                   |
-| `/model <model>`          | Set AI model (opus/sonnet/haiku/fable)                                                                   |
-| `/help`                   | Show available slash commands                                                                            |
-| `/permissions` or `/perm` | Interactive Permission Builder - configure tool permissions                                              |
-| `/allow [tool]`           | Add tool to allow list, or show current list if no args                                                  |
-| `/deny [tool]`            | Add tool to deny list, or show current list if no args                                                   |
-| `/ask [tool]`             | Ask before using tool, or show current list if no args                                                   |
-| `/permission [mode]`      | Set permission mode (default/acceptEdits/plan/auto/dontAsk/bypassPermissions)                            |
-| `/new-session`            | Reset session and start fresh                                                                            |
-| `/template <task>`        | Prefill a structured task template (goal/why/context/instructions/output_format) for editing before send |
+| Command                   | Description                                                                   |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| `/context <file>`         | Add file to context                                                           |
+| `/clear`                  | Clear context                                                                 |
+| `/save`                   | Save current chat                                                             |
+| `/summarize`              | Summarize conversation                                                        |
+| `/model <model>`          | Set AI model (opus/sonnet/haiku/fable)                                        |
+| `/help`                   | Show available slash commands                                                 |
+| `/permissions` or `/perm` | Interactive Permission Builder - configure tool permissions                   |
+| `/allow [tool]`           | Add tool to allow list, or show current list if no args                       |
+| `/deny [tool]`            | Add tool to deny list, or show current list if no args                        |
+| `/ask [tool]`             | Ask before using tool, or show current list if no args                        |
+| `/permission [mode]`      | Set permission mode (default/acceptEdits/plan/auto/dontAsk/bypassPermissions) |
+| `/new-session`            | Reset session and start fresh                                                 |
 
 Worktree lifecycle (list/create/attach/finish) is handled entirely through natural-language
 requests backed by the `vibing-worktree` Claude Code skill bundled with this plugin (`skills/`),

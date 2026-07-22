@@ -31,18 +31,6 @@ You can customize this prompt by editing the file. The format follows engineerin
 - [A Software Engineer's Guide to Journaling](https://medium.com/@aayushuppal/a-software-engineers-guide-to-journaling-f2364162d96d)
 - [エンジニア向け日報作成ガイド](https://teams.qiita.com/daily-report-creation-guide-for-engineers/)
 
-### `template.md`
-
-Prompt template for the `/template` slash command (structured task template).
-
-**Variables:**
-
-- `{{task_description}}` - Raw task description the user typed after `/template`
-- `{{context_block}}` - Auto-detected context bullets (repository path, CLAUDE.md presence)
-
-**Usage:**
-Automatically loaded by the `/template` slash command handler.
-
 ## Adding New Prompts
 
 1. Create a new `.md` file in this directory
