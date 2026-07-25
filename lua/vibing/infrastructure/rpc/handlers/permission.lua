@@ -19,29 +19,48 @@ local session_state = {
 --- @type table<string, table>
 local active_opts_by_handle = {}
 
---- Codex uses different tool names than Claude for equivalent operations.
---- This mapping ensures frontmatter permissions work identically across adapters.
-local CODEX_TOOL_ALIASES = {
-  apply_patch = "Edit", -- Codex's file patch tool maps to Claude's Edit
+--- Non-Claude backends use their own native tool names for operations Claude calls Read/Edit/
+--- Write/Bash/.../Task; frontmatter allow/deny/ask lists are always expressed in Claude's
+--- vocabulary, so each backend's native names are normalized back to it here before the
+--- permission check runs.
+local TOOL_ALIASES_BY_BACKEND = {
+  codex = {
+    apply_patch = "Edit", -- Codex's file patch tool maps to Claude's Edit
+  },
+  -- Grok Build CLI native tool names → Claude canonical names. Confirmed via real PreToolUse
+  -- payloads and Grok's own Claude-compat matcher aliases.
+  grok = {
+    run_terminal_command = "Bash",
+    read_file = "Read",
+    search_replace = "Edit",
+    write_file = "Write",
+    list_dir = "Glob",
+    grep = "Grep",
+    web_search = "WebSearch",
+    web_fetch = "WebFetch",
+    spawn_subagent = "Task",
+    edit_file = "Edit",
+    apply_patch = "Edit",
+    bash = "Bash",
+    shell = "Bash",
+  },
 }
 
---- Grok Build CLI native tool names → Claude canonical names used in frontmatter allow/deny.
---- Confirmed via real PreToolUse payloads and Grok's own Claude-compat matcher aliases.
-local GROK_TOOL_ALIASES = {
-  run_terminal_command = "Bash",
-  read_file = "Read",
-  search_replace = "Edit",
-  write_file = "Write",
-  list_dir = "Glob",
-  grep = "Grep",
-  web_search = "WebSearch",
-  web_fetch = "WebFetch",
-  spawn_subagent = "Task",
-  edit_file = "Edit",
-  apply_patch = "Edit",
-  bash = "Bash",
-  shell = "Bash",
-}
+--- Resolve which non-Claude backend (if any) an active stream's opts belong to.
+--- @param active_opts table|nil
+--- @return "codex"|"grok"|nil
+local function resolve_backend(active_opts)
+  if not active_opts then
+    return nil
+  end
+  if active_opts._is_grok then
+    return "grok"
+  end
+  if active_opts._is_codex then
+    return "codex"
+  end
+  return nil
+end
 
 local APPROVAL_OPTIONS = {
   { value = "allow_once", label = "allow_once - Allow this execution only" },
@@ -196,18 +215,19 @@ function M.check_tool_permission(params)
   local tool_name = hook_input.tool_name or hook_input.toolName or ""
   local tool_input = hook_input.tool_input or hook_input.toolInput or {}
   local active_opts = get_active_opts(handle_id)
+  local backend = resolve_backend(active_opts)
+  local aliases = backend and TOOL_ALIASES_BY_BACKEND[backend]
 
-  if active_opts and active_opts._is_codex then
-    tool_name = CODEX_TOOL_ALIASES[tool_name] or tool_name
-  elseif active_opts and active_opts._is_grok then
-    tool_name = GROK_TOOL_ALIASES[tool_name] or tool_name
+  if aliases then
+    tool_name = aliases[tool_name] or tool_name
+  end
+
+  if backend == "grok" and type(tool_input) == "table" and not tool_input.file_path then
     -- Granular path rules read input.file_path (Claude convention). Grok tools often
     -- send path / target_file / filePath instead — normalize without mutating the original.
-    if type(tool_input) == "table" and not tool_input.file_path then
-      local path = tool_input.path or tool_input.target_file or tool_input.filePath
-      if path then
-        tool_input = vim.tbl_extend("force", tool_input, { file_path = path })
-      end
+    local path = tool_input.path or tool_input.target_file or tool_input.filePath
+    if path then
+      tool_input = vim.tbl_extend("force", tool_input, { file_path = path })
     end
   end
 

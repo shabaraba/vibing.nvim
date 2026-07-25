@@ -13,9 +13,13 @@ function M.get_hook_script_path()
 end
 
 --- Generate settings table with hook configuration
+--- @param hook_script_path? string Override for the hook script path (defaults to
+---   M.get_hook_script_path()) — used by adapters that need an absolute path resolved relative
+---   to a different directory (e.g. Grok resolves relative hook commands against its own
+---   .grok/hooks/ JSON file, not the project root).
 --- @return table
-function M.generate()
-  local hook_script = M.get_hook_script_path()
+function M.generate(hook_script_path)
+  local hook_script = hook_script_path or M.get_hook_script_path()
 
   return {
     hooks = {

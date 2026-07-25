@@ -109,7 +109,7 @@ function M.execute(adapter, callbacks, message, config)
     local Modes = require("vibing.core.constants.modes")
     local agent_type = frontmatter.agent or (config and config.adapter) or "claude"
     local model = frontmatter.model
-    if agent_type ~= "claude" and model and Modes.is_valid_model(model) then
+    if Modes.is_stale_claude_shortcut(model, agent_type) then
       model = Modes.default_model_for_agent(agent_type, config.agent and config.agent.default_model)
     end
 
@@ -489,6 +489,7 @@ end
 ---@return table adapter
 function M._resolve_adapter(default_adapter, callbacks, config)
   local Modes = require("vibing.core.constants.modes")
+  local AdapterFactory = require("vibing.infrastructure.adapter.factory")
   local frontmatter = callbacks.parse_frontmatter()
   local agent_type = frontmatter and frontmatter.agent
 
@@ -504,25 +505,11 @@ function M._resolve_adapter(default_adapter, callbacks, config)
     return default_adapter
   end
 
-  local AGENT_TO_ADAPTER_NAME = { claude = "claude_cli", codex = "codex_cli", grok = "grok_cli" }
-
-  if default_adapter and default_adapter.name then
-    local expected_name = AGENT_TO_ADAPTER_NAME[agent_type] or "claude_cli"
-    if default_adapter.name == expected_name then
-      return default_adapter
-    end
+  if default_adapter and default_adapter.name == AdapterFactory.adapter_name_for(agent_type) then
+    return default_adapter
   end
 
-  if agent_type == "codex" then
-    local CodexCLI = require("vibing.infrastructure.adapter.codex_cli")
-    return CodexCLI:new(config)
-  elseif agent_type == "grok" then
-    local GrokCLI = require("vibing.infrastructure.adapter.grok_cli")
-    return GrokCLI:new(config)
-  else
-    local ClaudeCLI = require("vibing.infrastructure.adapter.claude_cli")
-    return ClaudeCLI:new(config)
-  end
+  return AdapterFactory.create(agent_type, config)
 end
 
 return M

@@ -62,6 +62,13 @@ for _, name in ipairs(Modes.GROK_MODELS) do
   })
 end
 
+---Model candidate lists keyed by agent, mirroring build_agent_enums() above
+local MODELS_BY_AGENT = {
+  claude = CLAUDE_MODELS,
+  codex = CODEX_MODELS,
+  grok = GROK_MODELS,
+}
+
 ---Available tool names for permissions lists
 local TOOL_NAMES = {
   "Read",
@@ -109,12 +116,7 @@ end
 ---@param agent string? "claude" | "codex" | "grok" (defaults to "claude")
 ---@return Vibing.CompletionItem[]
 function M.get_model_values(agent)
-  local models = CLAUDE_MODELS
-  if agent == "codex" then
-    models = CODEX_MODELS
-  elseif agent == "grok" then
-    models = GROK_MODELS
-  end
+  local models = MODELS_BY_AGENT[agent] or CLAUDE_MODELS
   local items = {}
   for _, m in ipairs(models) do
     table.insert(items, {

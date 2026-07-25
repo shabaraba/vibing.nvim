@@ -9,6 +9,11 @@ local M = {}
 
 local HOOK_FILENAME = "vibing-nvim-pre-tool-use.json"
 
+--- cwds already confirmed trusted this session — folder trust is idempotent, so once a cwd is
+--- known-trusted there's no need to re-read/re-scan ~/.grok/trusted_folders.toml on every message.
+--- @type table<string, boolean>
+local trusted_cwds = {}
+
 --- Absolute path to the generated hook JSON for a given cwd
 --- @param cwd string
 --- @return string
@@ -24,6 +29,9 @@ local function ensure_folder_trust(cwd)
   if real == "" or real == "/" or real == vim.fn.expand("~") then
     return
   end
+  if trusted_cwds[real] then
+    return
+  end
 
   local trust_path = vim.fn.expand("~/.grok/trusted_folders.toml")
   vim.fn.mkdir(vim.fn.fnamemodify(trust_path, ":h"), "p")
@@ -36,20 +44,20 @@ local function ensure_folder_trust(cwd)
   end
 
   local marker = 'folders."' .. real .. '"'
-  if existing:find(marker, 1, true) then
-    return
+  if not existing:find(marker, 1, true) then
+    local entry = string.format(
+      '\n[folders."%s"]\ntrusted = true\ndecided_at = %d\n',
+      real,
+      os.time()
+    )
+    local wf = io.open(trust_path, "a")
+    if wf then
+      wf:write(entry)
+      wf:close()
+    end
   end
 
-  local entry = string.format(
-    '\n[folders."%s"]\ntrusted = true\ndecided_at = %d\n',
-    real,
-    os.time()
-  )
-  local wf = io.open(trust_path, "a")
-  if wf then
-    wf:write(entry)
-    wf:close()
-  end
+  trusted_cwds[real] = true
 end
 
 --- Ensure project PreToolUse hook file exists for the given cwd
@@ -67,22 +75,7 @@ function M.ensure(cwd)
   -- (.grok/hooks/), not the project root — so a relative plugin path would miss
   -- bin/hooks/pre-tool-use.sh. Always write an absolute path.
   local hook_script = vim.fn.fnamemodify(SettingsGenerator.get_hook_script_path(), ":p")
-  local settings = {
-    hooks = {
-      PreToolUse = {
-        {
-          matcher = ".*",
-          hooks = {
-            {
-              type = "command",
-              command = hook_script,
-              timeout = 120,
-            },
-          },
-        },
-      },
-    },
-  }
+  local settings = SettingsGenerator.generate(hook_script)
 
   local json = vim.json.encode(settings)
   local f, err = io.open(hook_path, "w")

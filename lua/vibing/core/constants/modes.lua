@@ -19,6 +19,14 @@ M.PERMISSION_MODES = { "default", "acceptEdits", "bypassPermissions", "plan", "d
 ---@type string[]
 M.VALID_AGENTS = { "claude", "codex", "grok" }
 
+---claude 以外の、モデルを自由入力できるエージェント
+---@type table<string, boolean>
+local NON_CLAUDE_AGENTS = { codex = true, grok = true }
+
+---claude 以外のエージェントごとの既定モデル（固定リストなし。未設定は nil のまま）
+---@type table<string, string|nil>
+local NON_CLAUDE_DEFAULT_MODEL = { codex = nil, grok = M.GROK_MODELS[1] }
+
 ---Claude ショートカットモデル名か
 ---@param model string
 ---@return boolean
@@ -35,10 +43,19 @@ function M.is_allowed_model_for_agent(model, agent)
   if type(model) ~= "string" or model == "" then
     return false
   end
-  if agent == "codex" or agent == "grok" then
+  if NON_CLAUDE_AGENTS[agent] then
     return true
   end
   return M.is_valid_model(model)
+end
+
+---model が非claudeエージェントに残った claude ショートカット名（sonnet/opus/...）か
+---エージェント切り替え後などに古いショートカットが frontmatter に残っているケースを検出する
+---@param model string|nil
+---@param agent string|nil "claude"|"codex"|"grok"
+---@return boolean
+function M.is_stale_claude_shortcut(model, agent)
+  return NON_CLAUDE_AGENTS[agent] == true and model ~= nil and M.is_valid_model(model)
 end
 
 ---エージェント向けのデフォルト model を解決
@@ -47,19 +64,13 @@ end
 ---@param config_default string|nil config.agent.default_model
 ---@return string|nil
 function M.default_model_for_agent(agent, config_default)
-  if agent == "grok" then
-    if config_default and not M.is_valid_model(config_default) then
-      return config_default
-    end
-    return M.GROK_MODELS[1]
+  if not NON_CLAUDE_AGENTS[agent] then
+    return config_default or "sonnet"
   end
-  if agent == "codex" then
-    if config_default and not M.is_valid_model(config_default) then
-      return config_default
-    end
-    return nil
+  if config_default and not M.is_valid_model(config_default) then
+    return config_default
   end
-  return config_default or "sonnet"
+  return NON_CLAUDE_DEFAULT_MODEL[agent]
 end
 
 ---権限モードが有効かチェック

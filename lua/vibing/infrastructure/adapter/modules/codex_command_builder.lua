@@ -2,40 +2,11 @@
 --- Builds the command array for the Codex CLI with JSONL output
 --- @module vibing.infrastructure.adapter.modules.codex_command_builder
 
-local Modes = require("vibing.core.constants.modes")
+local Shared = require("vibing.infrastructure.adapter.modules.command_builder_shared")
 
 local M = {}
 
 local cached_codex_path = nil
-
---- Resolve model name from opts or config
---- Filters out Claude-specific model names (sonnet/opus/haiku/fable) as codex uses its own models
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @return string|nil
-local function resolve_model(opts, config)
-  local model = opts.model or (config.agent and config.agent.default_model)
-  if model and Modes.is_valid_model(model) then
-    return nil
-  end
-  return model
-end
-
---- Resolve language setting
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @return string|nil
-local function resolve_language(opts, config)
-  local language = opts.language
-  if not language and config.language then
-    if type(config.language) == "table" then
-      language = config.language.default or config.language.chat
-    else
-      language = config.language
-    end
-  end
-  return type(language) == "string" and language or nil
-end
 
 --- Map vibing permission mode to codex sandbox flag
 --- @param permission_mode string|nil
@@ -48,30 +19,6 @@ local function resolve_sandbox(permission_mode)
     return nil -- use --dangerously-bypass flag instead
   end
   return "workspace-write"
-end
-
---- Build context prefix for the prompt
---- @param opts Vibing.AdapterOpts
---- @return string context_prefix Empty string if no context
-local function build_context_prefix(opts)
-  local context_entries = opts.context or {}
-  if #context_entries == 0 then
-    return ""
-  end
-
-  local parts = {}
-  for _, ctx in ipairs(context_entries) do
-    if ctx:match("^@file:") then
-      local file_ref = ctx:sub(7)
-      table.insert(parts, string.format("Context file: %s", file_ref))
-    end
-  end
-
-  if #parts == 0 then
-    return ""
-  end
-
-  return table.concat(parts, "\n") .. "\n\n"
 end
 
 --- Build the `codex exec --json` command array
@@ -107,7 +54,7 @@ function M.build(prompt, opts, session_id, config, hook_args)
   end
 
   -- Model selection
-  local model = resolve_model(opts, config)
+  local model = Shared.resolve_non_claude_model(opts, config)
   if model then
     table.insert(cmd, "-m")
     table.insert(cmd, model)
@@ -130,11 +77,11 @@ function M.build(prompt, opts, session_id, config, hook_args)
   -- Build prompt with context prefix and language instruction
   local full_prompt = prompt
   if not session_id then
-    local context_prefix = build_context_prefix(opts)
+    local context_prefix = Shared.build_context_prefix(opts)
     full_prompt = context_prefix .. prompt
   end
 
-  local language = resolve_language(opts, config)
+  local language = Shared.resolve_language(opts, config)
   if language and language ~= "en" then
     local language_utils = require("vibing.core.utils.language")
     local lang_name = language_utils.language_names[language]

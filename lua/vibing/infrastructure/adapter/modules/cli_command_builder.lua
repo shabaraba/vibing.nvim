@@ -3,7 +3,7 @@
 --- @module vibing.infrastructure.adapter.modules.cli_command_builder
 
 local tools_constants = require("vibing.core.constants.tools")
-local worktree_constants = require("vibing.core.constants.worktree")
+local Shared = require("vibing.infrastructure.adapter.modules.command_builder_shared")
 
 local M = {}
 
@@ -15,22 +15,6 @@ local cached_claude_path = nil
 --- @return string|nil
 local function resolve_model(opts, config)
   return opts.model or (config.agent and config.agent.default_model)
-end
-
---- Resolve language setting
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @return string|nil
-local function resolve_language(opts, config)
-  local language = opts.language
-  if not language and config.language then
-    if type(config.language) == "table" then
-      language = config.language.default or config.language.chat
-    else
-      language = config.language
-    end
-  end
-  return type(language) == "string" and language or nil
 end
 
 --- Build permission flags for the CLI
@@ -73,31 +57,6 @@ local function add_permission_args(cmd, opts)
     table.insert(cmd, "--permission-mode")
     table.insert(cmd, opts.permission_mode)
   end
-end
-
---- Build context prefix for the prompt
---- Reads @file:path entries and formats them as context references
---- @param opts Vibing.AdapterOpts
---- @return string context_prefix Empty string if no context
-local function build_context_prefix(opts)
-  local context_entries = opts.context or {}
-  if #context_entries == 0 then
-    return ""
-  end
-
-  local parts = {}
-  for _, ctx in ipairs(context_entries) do
-    if ctx:match("^@file:") then
-      local file_ref = ctx:sub(7)
-      table.insert(parts, string.format("Context file: %s", file_ref))
-    end
-  end
-
-  if #parts == 0 then
-    return ""
-  end
-
-  return table.concat(parts, "\n") .. "\n\n"
 end
 
 --- Add optional flag if value is present
@@ -162,48 +121,7 @@ function M.build(prompt, opts, session_id, config, settings_path, handle_id, rpc
   end
 
   -- System prompt additions (worktree convention + chat file path + optional language)
-  local system_prompt_lines = {
-    "When creating a git worktree for isolated work, place it under "
-      .. worktree_constants.DIR
-      .. "<branch-name>/ at the repository root.",
-    "When you need the user to choose among options (single or multi-select), always call the "
-      .. "mcp__vibing-nvim__nvim_ask_user_question tool instead of asking in free text. Do not use "
-      .. "the native AskUserQuestion tool for this — it is unavailable in this environment.",
-  }
-
-  if handle_id then
-    table.insert(
-      system_prompt_lines,
-      'Your handle_id for this turn is "'
-        .. handle_id
-        .. '". When calling mcp__vibing-nvim__nvim_ask_user_question, you MUST pass this exact '
-        .. "value as the handle_id argument."
-    )
-  end
-
-  if rpc_port then
-    table.insert(
-      system_prompt_lines,
-      "Your rpc_port for this turn is "
-        .. tostring(rpc_port)
-        .. ". You MUST pass this exact value as the rpc_port argument on every "
-        .. "mcp__vibing-nvim__* tool call — never omit it or guess, since other unrelated Neovim "
-        .. "instances may be running and reachable on other ports."
-    )
-  end
-
-  if opts.chat_file_path and opts.chat_file_path ~= "" then
-    table.insert(system_prompt_lines, "Current vibing.nvim chat buffer file: " .. opts.chat_file_path)
-  end
-
-  local language = resolve_language(opts, config)
-  if language and language ~= "en" then
-    local language_utils = require("vibing.core.utils.language")
-    local lang_name = language_utils.language_names[language]
-    if lang_name then
-      table.insert(system_prompt_lines, 1, string.format("Always respond in %s (%s).", lang_name, language))
-    end
-  end
+  local system_prompt_lines = Shared.build_system_prompt_lines(opts, config, handle_id, rpc_port)
 
   table.insert(cmd, "--append-system-prompt")
   table.insert(cmd, table.concat(system_prompt_lines, "\n"))
@@ -214,7 +132,7 @@ function M.build(prompt, opts, session_id, config, settings_path, handle_id, rpc
   -- Build prompt with context prefix (only for new sessions, not resume)
   local full_prompt = prompt
   if not session_id then
-    local context_prefix = build_context_prefix(opts)
+    local context_prefix = Shared.build_context_prefix(opts)
     full_prompt = context_prefix .. prompt
   end
 

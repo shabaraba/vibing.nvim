@@ -53,16 +53,8 @@ function M.setup(opts)
   end
 
   -- アダプターの初期化
-  if M.config.adapter == "codex" then
-    local CodexCLI = require("vibing.infrastructure.adapter.codex_cli")
-    M.adapter = CodexCLI:new(M.config)
-  elseif M.config.adapter == "grok" then
-    local GrokCLI = require("vibing.infrastructure.adapter.grok_cli")
-    M.adapter = GrokCLI:new(M.config)
-  else
-    local ClaudeCLI = require("vibing.infrastructure.adapter.claude_cli")
-    M.adapter = ClaudeCLI:new(M.config)
-  end
+  local AdapterFactory = require("vibing.infrastructure.adapter.factory")
+  M.adapter = AdapterFactory.create(M.config.adapter, M.config)
 
   -- Cleanup stale hook communication directories from previous sessions
   local hook_cleanup = require("vibing.infrastructure.adapter.modules.hook_cleanup")

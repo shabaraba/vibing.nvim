@@ -2,8 +2,7 @@
 --- Builds the command array for the Grok Build CLI with streaming JSON output
 --- @module vibing.infrastructure.adapter.modules.grok_command_builder
 
-local Modes = require("vibing.core.constants.modes")
-local worktree_constants = require("vibing.core.constants.worktree")
+local Shared = require("vibing.infrastructure.adapter.modules.command_builder_shared")
 
 local M = {}
 
@@ -17,112 +16,6 @@ local GROK_PERMISSION_MODE_FALLBACK = {
 local cached_grok_path = nil
 local cached_configured_executable = nil
 local verified_official = false
-
---- Resolve model name from opts or config
---- Filters out Claude-specific model names (sonnet/opus/haiku/fable) as grok uses its own models
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @return string|nil
-local function resolve_model(opts, config)
-  local model = opts.model or (config.agent and config.agent.default_model)
-  if model and Modes.is_valid_model(model) then
-    return nil
-  end
-  return model
-end
-
---- Resolve language setting
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @return string|nil
-local function resolve_language(opts, config)
-  local language = opts.language
-  if not language and config.language then
-    if type(config.language) == "table" then
-      language = config.language.default or config.language.chat
-    else
-      language = config.language
-    end
-  end
-  return type(language) == "string" and language or nil
-end
-
---- Build context prefix for the prompt
---- @param opts Vibing.AdapterOpts
---- @return string context_prefix Empty string if no context
-local function build_context_prefix(opts)
-  local context_entries = opts.context or {}
-  if #context_entries == 0 then
-    return ""
-  end
-
-  local parts = {}
-  for _, ctx in ipairs(context_entries) do
-    if ctx:match("^@file:") then
-      local file_ref = ctx:sub(7)
-      table.insert(parts, string.format("Context file: %s", file_ref))
-    end
-  end
-
-  if #parts == 0 then
-    return ""
-  end
-
-  return table.concat(parts, "\n") .. "\n\n"
-end
-
---- Build the `--rules` value (extra rules appended to the system prompt)
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @param handle_id string|nil
---- @param rpc_port number|nil
---- @return string
-local function build_rules(opts, config, handle_id, rpc_port)
-  local lines = {
-    "When creating a git worktree for isolated work, place it under "
-      .. worktree_constants.DIR
-      .. "<branch-name>/ at the repository root.",
-    "When you need the user to choose among options (single or multi-select), always call the "
-      .. "mcp__vibing-nvim__nvim_ask_user_question tool instead of asking in free text. Do not use "
-      .. "the native AskUserQuestion tool for this — it is unavailable in this environment.",
-  }
-
-  if handle_id then
-    table.insert(
-      lines,
-      'Your handle_id for this turn is "'
-        .. handle_id
-        .. '". When calling mcp__vibing-nvim__nvim_ask_user_question, you MUST pass this exact '
-        .. "value as the handle_id argument."
-    )
-  end
-
-  if rpc_port then
-    table.insert(
-      lines,
-      "Your rpc_port for this turn is "
-        .. tostring(rpc_port)
-        .. ". You MUST pass this exact value as the rpc_port argument on every "
-        .. "mcp__vibing-nvim__* tool call — never omit it or guess, since other unrelated Neovim "
-        .. "instances may be running and reachable on other ports."
-    )
-  end
-
-  if opts.chat_file_path and opts.chat_file_path ~= "" then
-    table.insert(lines, "Current vibing.nvim chat buffer file: " .. opts.chat_file_path)
-  end
-
-  local language = resolve_language(opts, config)
-  if language and language ~= "en" then
-    local language_utils = require("vibing.core.utils.language")
-    local lang_name = language_utils.language_names[language]
-    if lang_name then
-      table.insert(lines, 1, string.format("Always respond in %s (%s).", lang_name, language))
-    end
-  end
-
-  return table.concat(lines, "\n")
-end
 
 --- Detect the official xAI Grok Build CLI (not community grok-dev)
 --- @param path string
@@ -211,7 +104,7 @@ function M.build(prompt, opts, session_id, config, handle_id, rpc_port)
 
   local full_prompt = prompt
   if not session_id then
-    full_prompt = build_context_prefix(opts) .. prompt
+    full_prompt = Shared.build_context_prefix(opts) .. prompt
   end
 
   local cmd = { grok_path }
@@ -220,7 +113,7 @@ function M.build(prompt, opts, session_id, config, handle_id, rpc_port)
   table.insert(cmd, "--output-format")
   table.insert(cmd, "streaming-json")
 
-  local model = resolve_model(opts, config)
+  local model = Shared.resolve_non_claude_model(opts, config)
   if model then
     table.insert(cmd, "--model")
     table.insert(cmd, model)
@@ -246,7 +139,7 @@ function M.build(prompt, opts, session_id, config, handle_id, rpc_port)
   end
 
   table.insert(cmd, "--rules")
-  table.insert(cmd, build_rules(opts, config, handle_id, rpc_port))
+  table.insert(cmd, table.concat(Shared.build_system_prompt_lines(opts, config, handle_id, rpc_port), "\n"))
 
   return cmd
 end

@@ -34,6 +34,10 @@ function GrokCLI:new(config)
   instance.name = "grok_cli"
   instance._handles = {}
   instance._session_manager = SessionManagerModule.new()
+  -- Fetched once per adapter instance rather than per stream() call — vim.fn.environ()
+  -- marshals the whole process environment from C, which is wasted work to repeat on every
+  -- message when only a handful of keys actually change per call.
+  instance._base_env = vim.fn.environ()
   math.randomseed(vim.loop.hrtime())
   return instance
 end
@@ -138,15 +142,14 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
     end,
   }
 
-  local env = vim.fn.environ()
+  -- Lets PreToolUse hook identify which chat buffer's stream it belongs to (see ActiveStreamRegistry).
+  local env = vim.tbl_extend("force", self._base_env, { VIBING_HANDLE_ID = handle_id })
   if rpc_port then
     local port_str = tostring(rpc_port)
     env.VIBING_NVIM_RPC_PORT = port_str
     env.VIBING_RPC_PORT = port_str
     env.VIBING_NVIM_CONTEXT = "true"
   end
-  -- Lets PreToolUse hook identify which chat buffer's stream it belongs to (see ActiveStreamRegistry).
-  env.VIBING_HANDLE_ID = handle_id
 
   ActiveStreamRegistry.register({
     handle_id = handle_id,
@@ -155,8 +158,18 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
     on_approval_required = opts.on_approval_required,
   })
 
+  -- Only the fields the permission handler actually reads are kept here (rather than the whole
+  -- `opts` table), so closures like on_insert_choices/on_approval_required aren't pinned in
+  -- memory a second time for the stream's lifetime — they're already held by ActiveStreamRegistry
+  -- above.
   local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
-  perm_handler.set_active_opts(handle_id, vim.tbl_extend("force", opts, { _is_grok = true }))
+  perm_handler.set_active_opts(handle_id, {
+    permissions_allow = opts.permissions_allow,
+    permissions_deny = opts.permissions_deny,
+    permissions_ask = opts.permissions_ask,
+    permission_mode = opts.permission_mode,
+    _is_grok = true,
+  })
 
   local wrapped_on_done = function(response)
     if not completed then
@@ -239,7 +252,10 @@ function GrokCLI:cancel(handle_id)
     if not pid or pid <= 0 then
       return
     end
-    vim.fn.system(string.format("pkill -9 -P %d 2>/dev/null; true", pid))
+    -- Fire-and-forget: consistent with the rest of this adapter's async design, and avoids
+    -- blocking Neovim's main loop while pkill runs (this can be called from a vim.schedule
+    -- callback on the session-resume timeout path).
+    vim.system({ "sh", "-c", string.format("pkill -9 -P %d 2>/dev/null", pid) }, {}, function() end)
     pcall(function()
       handle:kill(9)
     end)
