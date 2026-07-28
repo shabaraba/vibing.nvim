@@ -42,7 +42,7 @@ end
 function M.clean_snapshot(file_path, config, callback)
   local patch_files = M._extract_patch_refs(file_path)
 
-  local context_dir = MoteContext.build_dir_path(config.project, config.context)
+  local context_dir = MoteContext.build_dir_path(config.project, config.context, config.cwd)
   if not context_dir then
     callback(true, nil)
     return

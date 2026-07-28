@@ -353,8 +353,9 @@ function M._create_session_mote_config(config, session_cwd, mote_dir)
 
   local MoteDiff = require("vibing.core.utils.mote_diff")
   local mote_config = vim.deepcopy(config.diff.mote)
+  local effective_cwd = mote_dir or session_cwd
 
-  mote_config.project = mote_config.project or MoteDiff.get_project_name()
+  mote_config.project = mote_config.project or MoteDiff.get_project_name(effective_cwd)
   local context_prefix = mote_config.context_prefix or "vibing"
 
   if mote_dir then

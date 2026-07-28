@@ -15,8 +15,8 @@ function M.build_base_args(config)
 
   -- -d/--context-dirでスタンドアロンモード
   -- mote v0.2.4では初回実行時に自動的にディレクトリ構造とignoreファイルを作成
-  local project = config.project or Context.get_project_name()
-  local context_dir = Context.build_dir_path(project, config.context)
+  local project = config.project or Context.get_project_name(config.cwd)
+  local context_dir = Context.build_dir_path(project, config.context, config.cwd)
   if context_dir then
     table.insert(cmd, "-d")
     table.insert(cmd, context_dir)

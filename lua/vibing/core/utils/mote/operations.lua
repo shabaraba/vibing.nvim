@@ -125,8 +125,8 @@ function M.initialize(config, callback)
     return
   end
 
-  local project = config.project or Context.get_project_name()
-  local context_dir = Context.build_dir_path(project, config.context)
+  local project = config.project or Context.get_project_name(config.cwd)
+  local context_dir = Context.build_dir_path(project, config.context, config.cwd)
   if not context_dir then
     callback(false, "Failed to get git root directory")
     return

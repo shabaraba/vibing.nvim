@@ -11,14 +11,16 @@ function M.show_diff(file_path, session_id, cwd)
   local MoteDiff = require("vibing.core.utils.mote_diff")
   local mote_config = vim.deepcopy(config.diff.mote)
 
-  -- mote v0.2.4: --project/--context APIを使用
-  mote_config.project = mote_config.project or MoteDiff.get_project_name()
-  local context_prefix = mote_config.context_prefix or "vibing"
-  mote_config.context = MoteDiff.build_context_name(context_prefix, cwd)
-
   -- Normalize cwd to absolute path
-  if cwd then
-    mote_config.cwd = vim.fn.fnamemodify(cwd, ":p")
+  local abs_cwd = cwd and vim.fn.fnamemodify(cwd, ":p") or nil
+
+  -- mote v0.2.4: --project/--context APIを使用
+  mote_config.project = mote_config.project or MoteDiff.get_project_name(abs_cwd)
+  local context_prefix = mote_config.context_prefix or "vibing"
+  mote_config.context = MoteDiff.build_context_name(context_prefix, abs_cwd)
+
+  if abs_cwd then
+    mote_config.cwd = abs_cwd
   end
 
   MoteDiff.show_diff(file_path, mote_config)
