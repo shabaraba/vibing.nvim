@@ -20,6 +20,8 @@ local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 ---@field _pending_approval table? add_user_section()後に挿入する承認要求UI
 ---@field _current_handle_id string? 実行中のリクエストのハンドルID
 ---@field _current_adapter table? per-chatアダプター（フロントマターagent指定時）
+---@field _is_sending boolean 送信処理中かどうか（Enter連打による重複送信防止）
+---@field _accepted_handle_id string? 現ターンで最初に受理したレスポンスのハンドルID
 ---@field _session_allow table セッションレベルの許可リスト
 ---@field _session_deny table セッションレベルの拒否リスト
 ---@field _once_tools table? 一時許可/拒否ツールのトラッキング（次のメッセージでクリア）
@@ -43,6 +45,8 @@ function ChatBuffer:new(config)
   instance._pending_approval = nil
   instance._current_handle_id = nil
   instance._current_adapter = nil
+  instance._is_sending = false
+  instance._accepted_handle_id = nil
   instance._session_allow = {}
   instance._session_deny = {}
   instance._once_tools = nil
@@ -291,7 +295,12 @@ end
 
 ---メッセージを送信
 function ChatBuffer:send_message()
-  -- 前のリクエストが実行中ならキャンセル（競合防止）
+  -- 送信処理中はEnter連打による重複送信を無視する
+  if self._is_sending then
+    return
+  end
+
+  -- 前のリクエストが実行中ならキャンセル（ゾンビプロセス対策）
   if self._current_handle_id then
     local adapter = self:_get_active_adapter()
     if adapter then
@@ -300,6 +309,9 @@ function ChatBuffer:send_message()
     self._current_handle_id = nil
     self._current_adapter = nil
   end
+
+  self._is_sending = true
+  self._accepted_handle_id = nil
 
   -- Clean up :once tools (JS side removes during use, but this is a safety net)
   if self._once_tools then
@@ -323,6 +335,7 @@ function ChatBuffer:send_message()
   local message = self:extract_user_message()
   if not message then
     vim.notify("[vibing] No message to send", vim.log.levels.WARN)
+    self._is_sending = false
     return
   end
 
@@ -336,6 +349,7 @@ function ChatBuffer:send_message()
         message = expanded
       else
         self:add_user_section()
+        self._is_sending = false
         return
       end
     end
@@ -357,6 +371,7 @@ function ChatBuffer:send_message()
           string.format("[vibing] Failed to update permissions: %s", tostring(err)),
           vim.log.levels.ERROR
         )
+        self._is_sending = false
         return
       end
 
@@ -409,6 +424,7 @@ function ChatBuffer:send_message()
           .. "Please ensure only ONE option remains (use 'dd' to delete unwanted lines), then press <CR> again.",
         vim.log.levels.WARN
       )
+      self._is_sending = false
       return
     end
   end
@@ -431,8 +447,8 @@ function ChatBuffer:send_message()
     parse_frontmatter = function()
       return self:parse_frontmatter()
     end,
-    append_chunk = function(chunk)
-      return self:append_chunk(chunk)
+    append_chunk = function(chunk, handle_id)
+      return self:append_chunk(chunk, handle_id)
     end,
     get_session_id = function()
       return self:get_session_id()
@@ -474,6 +490,15 @@ function ChatBuffer:send_message()
     get_handle_id = function()
       return self._current_handle_id
     end,
+    clear_sending = function()
+      self._is_sending = false
+    end,
+    get_accepted_handle_id = function()
+      return self._accepted_handle_id
+    end,
+    set_accepted_handle_id = function(handle_id)
+      self._accepted_handle_id = handle_id
+    end,
     get_cwd = function()
       return self:get_cwd()
     end,
@@ -501,8 +526,18 @@ function ChatBuffer:_flush_chunks()
 end
 
 ---ストリーミングチャンクを追加（バッファリング有効）
+---重複送信で複数リクエストが飛んだ場合、最初に到着したチャンクのハンドルIDのみ受理する
 ---@param chunk string
-function ChatBuffer:append_chunk(chunk)
+---@param handle_id string?
+function ChatBuffer:append_chunk(chunk, handle_id)
+  if handle_id then
+    if self._accepted_handle_id == nil then
+      self._accepted_handle_id = handle_id
+    elseif handle_id ~= self._accepted_handle_id then
+      return
+    end
+  end
+
   self._chunk_buffer = self._chunk_buffer .. chunk
 
   if self._chunk_timer then

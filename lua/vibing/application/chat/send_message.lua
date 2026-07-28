@@ -32,6 +32,9 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field clear_handle_id fun() handle_idをクリア
 ---@field set_handle_id fun(handle_id: string) handle_idを設定
 ---@field get_handle_id fun(): string|nil handle_idを取得
+---@field clear_sending fun() 送信中フラグを解除
+---@field get_accepted_handle_id fun(): string|nil 現ターンで受理済みのhandle_idを取得
+---@field set_accepted_handle_id fun(handle_id: string) 現ターンで受理するhandle_idを設定
 ---@field get_cwd fun(): string|nil worktreeのcwdを取得
 
 ---メッセージを送信
@@ -51,6 +54,9 @@ function M.execute(adapter, callbacks, message, config)
 
   if not adapter then
     require("vibing.core.utils.notify").error("No adapter configured", "Chat")
+    if callbacks.clear_sending then
+      callbacks.clear_sending()
+    end
     return
   end
 
@@ -166,9 +172,9 @@ function M.execute(adapter, callbacks, message, config)
     end
 
     if adapter:supports("streaming") then
-      local handle_id = adapter:stream(formatted_prompt, opts, function(chunk)
+      local handle_id = adapter:stream(formatted_prompt, opts, function(chunk, chunk_handle_id)
         vim.schedule(function()
-          callbacks.append_chunk(chunk)
+          callbacks.append_chunk(chunk, chunk_handle_id)
         end)
       end, function(response)
         vim.schedule(function()
@@ -206,6 +212,22 @@ end
 
 ---レスポンスを処理
 function M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths)
+  -- 重複送信で複数リクエストが飛んだ場合、最初に到着したレスポンスのみ受理する
+  local incoming_handle_id = response._handle_id
+  if incoming_handle_id and callbacks.get_accepted_handle_id and callbacks.set_accepted_handle_id then
+    local accepted_handle_id = callbacks.get_accepted_handle_id()
+    if accepted_handle_id == nil then
+      callbacks.set_accepted_handle_id(incoming_handle_id)
+    elseif accepted_handle_id ~= incoming_handle_id then
+      -- 後から到着した重複リクエストのレスポンスは無視する
+      return
+    end
+  end
+
+  if callbacks.clear_sending then
+    callbacks.clear_sending()
+  end
+
   -- Stop gradient animation
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then

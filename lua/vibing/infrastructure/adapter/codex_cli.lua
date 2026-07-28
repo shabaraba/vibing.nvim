@@ -118,7 +118,7 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
     onFirstResponse = cancel_timeout,
     onChunk = function(chunk)
       cancel_timeout()
-      on_chunk(chunk)
+      on_chunk(chunk, handle_id)
     end,
   }
 
@@ -208,6 +208,7 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
               error = "Session resume timeout",
               _session_corrupted = true,
               _old_session_id = session_id,
+              _handle_id = handle_id,
             })
           end
         end)
