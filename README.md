@@ -301,7 +301,7 @@ use {
   - `:VibingChat bottom` - New chat in bottom split
   - `:VibingChat back` - New chat as background buffer only (no window)
   - `:VibingChat path/to/file.md` - Open saved chat file
-- **Worktree lifecycle** - Use the `vibing-worktree` Claude Code skill bundled with this plugin, entirely via natural language, to list/create/attach/finish git worktrees under `.vibing/worktrees/<branch>/`.
+- **Worktree lifecycle** - Use the `vibing-worktree-{list,create,attach,run,finish}` Claude Code skills bundled with this plugin, entirely via natural language, to list/create/attach/run/finish git worktrees under `.vibing/worktrees/<branch>/`.
 - **`:VibingChatFork`** - Fork current chat conversation for branching in a different direction.
 - **`:VibingToggleChat`** - Use to show/hide your current conversation. Preserves the existing chat state.
 
@@ -322,8 +322,10 @@ use {
 | `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk) |
 | `/new-session`            | Reset session and start fresh                                            |
 
-Worktree lifecycle is handled by the `vibing-worktree` Claude Code skill bundled with this
-plugin, not by chat slash commands — see `skills/vibing-worktree/SKILL.md`.
+Worktree lifecycle is handled by the `vibing-worktree-{list,create,attach,run,finish}` Claude
+Code skills bundled with this plugin, not by chat slash commands — see
+`skills/vibing-worktree-list/SKILL.md` and its sibling `-create`, `-attach`, `-run`, `-finish`
+skills.
 
 ### Chat Keybindings
 

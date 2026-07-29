@@ -234,12 +234,15 @@ When implementing new features, add E2E tests for:
 
 ### Worktree Features
 
-- [ ] `vibing-worktree` skill lists worktrees via `git worktree list --porcelain`
-- [ ] `vibing-worktree` skill creates a worktree under `.vibing/worktrees/<branch>/` and rewrites
-      the current chat's `working_dir` frontmatter
-- [ ] `vibing-worktree` skill attaches a chat (new or existing) to an already-existing worktree
-- [ ] `vibing-worktree` skill removes a worktree via `git worktree remove` (never `--force`) and
-      clears `working_dir` if it was the current chat's own worktree
+- [ ] `vibing-worktree-list` skill lists worktrees via `git worktree list --porcelain`
+- [ ] `vibing-worktree-create` skill creates a worktree under `.vibing/worktrees/<branch>/` and
+      rewrites the current chat's `working_dir` frontmatter
+- [ ] `vibing-worktree-attach` skill attaches a chat (new or existing) to an already-existing
+      worktree
+- [ ] `vibing-worktree-run` skill gets a worktree branch's code actually running without
+      merging or rebasing it
+- [ ] `vibing-worktree-finish` skill removes a worktree via `git worktree remove` (never
+      `--force`) and clears `working_dir` if it was the current chat's own worktree
 
 ### MCP Tools
 

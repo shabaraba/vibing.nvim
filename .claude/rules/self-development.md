@@ -6,11 +6,11 @@ When you (Claude Agent SDK) are working on vibing.nvim itself, follow these guid
 
 **For Feature Development:**
 
-1. Use the `vibing-worktree` skill for isolated development environments — ask in natural
-   language ("split this off into its own worktree", "what worktrees exist", "attach to the
-   auth-fix worktree", "clean up this worktree"). It runs plain `git worktree` commands under
-   `.vibing/worktrees/<branch>/` and updates the current chat's `working_dir` frontmatter; there
-   is no separate metadata file or lifecycle state to manage.
+1. Use the `vibing-worktree-{list,create,attach,run,finish}` skills for isolated development
+   environments — ask in natural language ("split this off into its own worktree", "what
+   worktrees exist", "attach to the auth-fix worktree", "clean up this worktree"). They run plain
+   `git worktree` commands under `.vibing/worktrees/<branch>/` and update the current chat's
+   `working_dir` frontmatter; there is no separate metadata file or lifecycle state to manage.
 
 **For Buffer/Window Operations:**
 
@@ -36,8 +36,8 @@ When you (Claude Agent SDK) are working on vibing.nvim itself, follow these guid
 
 ```typescript
 // ✅ CORRECT - vibing.nvim-aware workflow
-// 1. Create an isolated worktree for the new feature (invoke the vibing-worktree skill's
-//    "Create" recipe directly — plain `git worktree add` under .vibing/worktrees/<branch>/)
+// 1. Create an isolated worktree for the new feature (invoke the vibing-worktree-create skill
+//    directly — plain `git worktree add` under .vibing/worktrees/<branch>/)
 
 // 2. Load file in background for LSP analysis
 const { bufnr } = await use_mcp_tool('vibing-nvim', 'nvim_load_buffer', {
@@ -81,8 +81,7 @@ const refs = await use_mcp_tool("serena", "lsp_references", { ... });
 
 - ❌ Wrong: `git worktree add ../feature-branch` or `git worktree add .worktrees/feature-branch`
 - ✅ Correct: `git worktree add -b feature-branch .vibing/worktrees/feature-branch` (what the
-  `vibing-worktree` skill's "Create" recipe does), then update the chat's `working_dir`
-  frontmatter to match
+  `vibing-worktree-create` skill does), then update the chat's `working_dir` frontmatter to match
 - Why: `.vibing/worktrees/` is the convention every vibing.nvim chat is told about via its system
   prompt, and it's already covered by the `.vibing/` mote-ignore rule; a worktree placed elsewhere
   won't be picked up by that convention and needs its own ignore handling
