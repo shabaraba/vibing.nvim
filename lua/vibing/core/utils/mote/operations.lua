@@ -114,10 +114,10 @@ function M.initialize(config, callback)
     return
   end
 
-  if Context.is_initialized(config.project, config.context) then
+  if Context.is_initialized(config.project, config.context, config.cwd) then
     -- 既に初期化済みの場合、.vibing/がignoreに含まれているか確認
-    local project = config.project or Context.get_project_name()
-    local context_dir = Context.build_dir_path(project, config.context)
+    local project = config.project or Context.get_project_name(config.cwd)
+    local context_dir = Context.build_dir_path(project, config.context, config.cwd)
     if context_dir then
       Moteignore.add_vibing_ignore(context_dir)
     end

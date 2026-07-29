@@ -251,7 +251,7 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
   local active_configs = {}
   local snapshots_by_ctx = session_snapshots[bufnr] or {}
   for _, mc in ipairs(mote_configs or {}) do
-    if MoteDiff.is_initialized(mc.project, mc.context) then
+    if MoteDiff.is_initialized(mc.project, mc.context, mc.cwd) then
       local cfg = vim.deepcopy(mc)
       cfg.baseline_snapshot_id = snapshots_by_ctx[mc.context]
       table.insert(active_configs, cfg)
@@ -456,7 +456,7 @@ function M._ensure_mote_initialized_and_snapshot(mote_configs, bufnr, on_complet
       end)
     end
 
-    if MoteDiff.is_initialized(mc.project, mc.context) then
+    if MoteDiff.is_initialized(mc.project, mc.context, mc.cwd) then
       create_snapshot()
     else
       MoteDiff.initialize(mc, function(init_success, init_error)
