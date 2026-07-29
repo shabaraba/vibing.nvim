@@ -15,8 +15,10 @@ function M.get_root(cwd)
   if cwd then
     opts.cwd = cwd
   end
-  local result = vim.system({ "git", "rev-parse", "--show-toplevel" }, opts):wait()
-  if result.code ~= 0 then
+  local ok, result = pcall(function()
+    return vim.system({ "git", "rev-parse", "--show-toplevel" }, opts):wait()
+  end)
+  if not ok or result.code ~= 0 then
     return nil
   end
   return vim.trim(result.stdout or "")

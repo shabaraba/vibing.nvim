@@ -315,7 +315,7 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
         end
 
         if #(files or {}) > 0 then
-          local context_dir = MoteDiff.build_context_dir_path(mc.project, mc.context)
+          local context_dir = MoteDiff.build_context_dir_path(mc.project, mc.context, mc.cwd)
           if context_dir then
             local patch_path = string.format("%s/patches/%s.patch", context_dir, timestamp)
             MoteDiff.generate_patch(mc, patch_path, function(patch_success, patch_error)

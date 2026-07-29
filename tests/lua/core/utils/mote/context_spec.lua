@@ -21,4 +21,33 @@ describe("mote context", function()
       assert.equals("vibing-root", Context.build_name("vibing", nil))
     end)
   end)
+
+  describe("cwd resolution against a foreign git repository", function()
+    local Git = require("vibing.core.utils.git")
+    local tmp_dir
+    local resolved_root
+
+    before_each(function()
+      tmp_dir = vim.fn.tempname()
+      vim.fn.mkdir(tmp_dir, "p")
+      vim.system({ "git", "init" }, { cwd = tmp_dir }):wait()
+      -- git rev-parse resolves symlinks (e.g. macOS /tmp -> /private/tmp),
+      -- so compare against Git.get_root's own resolution rather than tmp_dir itself.
+      resolved_root = Git.get_root(tmp_dir)
+    end)
+
+    after_each(function()
+      vim.fn.delete(tmp_dir, "rf")
+    end)
+
+    it("get_project_name resolves against the given cwd's repo, not Neovim's own cwd", function()
+      local expected = vim.fn.fnamemodify(resolved_root, ":t"):gsub("[^%w%-_]+", "-")
+      assert.equals(expected, Context.get_project_name(tmp_dir))
+    end)
+
+    it("build_dir_path is rooted under the given cwd's repo, not Neovim's own cwd", function()
+      local result = Context.build_dir_path("myproject", "myctx", tmp_dir)
+      assert.equals(resolved_root .. "/.vibing/mote/myproject/myctx", result)
+    end)
+  end)
 end)
