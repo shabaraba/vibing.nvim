@@ -8,13 +8,20 @@ local PathSanitizer = require("vibing.domain.security.path_sanitizer")
 local CommandValidator = require("vibing.domain.security.command_validator")
 
 ---Gitリポジトリのルートディレクトリを取得
+---@param cwd string|nil 基準ディレクトリ（nilの場合はNeovim自身のカレントディレクトリ）
 ---@return string|nil gitルートパス（Git管理外の場合はnil）
-function M.get_root()
-  local result = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
-  if vim.v.shell_error ~= 0 then
+function M.get_root(cwd)
+  local opts = { text = true }
+  if cwd then
+    opts.cwd = cwd
+  end
+  local ok, result = pcall(function()
+    return vim.system({ "git", "rev-parse", "--show-toplevel" }, opts):wait()
+  end)
+  if not ok or result.code ~= 0 then
     return nil
   end
-  return result
+  return vim.trim(result.stdout or "")
 end
 
 ---絶対パスからgitルートからの相対パスを取得

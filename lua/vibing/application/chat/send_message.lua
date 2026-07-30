@@ -251,7 +251,7 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
   local active_configs = {}
   local snapshots_by_ctx = session_snapshots[bufnr] or {}
   for _, mc in ipairs(mote_configs or {}) do
-    if MoteDiff.is_initialized(mc.project, mc.context) then
+    if MoteDiff.is_initialized(mc.project, mc.context, mc.cwd) then
       local cfg = vim.deepcopy(mc)
       cfg.baseline_snapshot_id = snapshots_by_ctx[mc.context]
       table.insert(active_configs, cfg)
@@ -315,7 +315,7 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
         end
 
         if #(files or {}) > 0 then
-          local context_dir = MoteDiff.build_context_dir_path(mc.project, mc.context)
+          local context_dir = MoteDiff.build_context_dir_path(mc.project, mc.context, mc.cwd)
           if context_dir then
             local patch_path = string.format("%s/patches/%s.patch", context_dir, timestamp)
             MoteDiff.generate_patch(mc, patch_path, function(patch_success, patch_error)
@@ -353,8 +353,9 @@ function M._create_session_mote_config(config, session_cwd, mote_dir)
 
   local MoteDiff = require("vibing.core.utils.mote_diff")
   local mote_config = vim.deepcopy(config.diff.mote)
+  local effective_cwd = mote_dir or session_cwd
 
-  mote_config.project = mote_config.project or MoteDiff.get_project_name()
+  mote_config.project = mote_config.project or MoteDiff.get_project_name(effective_cwd)
   local context_prefix = mote_config.context_prefix or "vibing"
 
   if mote_dir then
@@ -455,7 +456,7 @@ function M._ensure_mote_initialized_and_snapshot(mote_configs, bufnr, on_complet
       end)
     end
 
-    if MoteDiff.is_initialized(mc.project, mc.context) then
+    if MoteDiff.is_initialized(mc.project, mc.context, mc.cwd) then
       create_snapshot()
     else
       MoteDiff.initialize(mc, function(init_success, init_error)

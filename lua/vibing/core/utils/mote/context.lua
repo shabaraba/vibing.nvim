@@ -65,10 +65,11 @@ end
 
 ---gitリポジトリ名からプロジェクト名を取得
 ---moteのコンテキスト命名ルールに従ってサニタイズ
+---@param cwd string|nil 基準ディレクトリ（worktree/workspaceのcwd。nilの場合はNeovim自身のカレントディレクトリ）
 ---@return string|nil プロジェクト名（取得できない場合nil）
-function M.get_project_name()
+function M.get_project_name(cwd)
   local Git = require("vibing.core.utils.git")
-  local git_root = Git.get_root()
+  local git_root = Git.get_root(cwd)
   if not git_root then
     return nil
   end
@@ -84,10 +85,11 @@ end
 ---プロジェクトローカルのcontext-dirパスを生成
 ---@param project string|nil プロジェクト名
 ---@param context string コンテキスト名
+---@param cwd string|nil 基準ディレクトリ（worktree/workspaceのcwd。nilの場合はNeovim自身のカレントディレクトリ）
 ---@return string|nil context-dirのパス（git rootが取得できない場合nil）
-function M.build_dir_path(project, context)
+function M.build_dir_path(project, context, cwd)
   local Git = require("vibing.core.utils.git")
-  local git_root = Git.get_root()
+  local git_root = Git.get_root(cwd)
   if not git_root then
     return nil
   end
@@ -100,14 +102,15 @@ end
 ---mote v0.2.4ではignoreファイルとstorageディレクトリで初期化を判定
 ---@param project string? プロジェクト名
 ---@param context string? コンテキスト名
+---@param cwd string? 基準ディレクトリ（worktree/workspaceのcwd）
 ---@return boolean moteコンテキストが初期化されている場合true
-function M.is_initialized(project, context)
+function M.is_initialized(project, context, cwd)
   local Binary = require("vibing.core.utils.mote.binary")
   if not Binary.is_available() then
     return false
   end
 
-  local context_dir = M.build_dir_path(project, context)
+  local context_dir = M.build_dir_path(project, context, cwd)
   if not context_dir then
     return false
   end

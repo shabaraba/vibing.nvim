@@ -42,7 +42,7 @@ end
 function M.clean_snapshot(file_path, config, callback)
   local patch_files = M._extract_patch_refs(file_path)
 
-  local context_dir = MoteContext.build_dir_path(config.project, config.context)
+  local context_dir = MoteContext.build_dir_path(config.project, config.context, config.cwd)
   if not context_dir then
     callback(true, nil)
     return
@@ -66,7 +66,7 @@ function M.clean_snapshot(file_path, config, callback)
     end)
   end
 
-  M._delete_snapshots_containing_file(file_path, context_dir, function(snap_deleted_count)
+  M._delete_snapshots_containing_file(file_path, context_dir, config.cwd, function(snap_deleted_count)
     if snap_deleted_count > 0 then
       vim.schedule(function()
         notify.info(
@@ -110,8 +110,9 @@ end
 
 ---@param file_path string
 ---@param context_dir string
+---@param cwd string|nil 基準ディレクトリ（worktree/workspaceのcwd）
 ---@param callback fun(deleted_count: number)
-function M._delete_snapshots_containing_file(file_path, context_dir, callback)
+function M._delete_snapshots_containing_file(file_path, context_dir, cwd, callback)
   local snapshots_dir = context_dir .. "/storage/snapshots"
 
   if vim.fn.isdirectory(snapshots_dir) ~= 1 then
@@ -119,7 +120,7 @@ function M._delete_snapshots_containing_file(file_path, context_dir, callback)
     return
   end
 
-  local git_root = vim.fn.systemlist("git rev-parse --show-toplevel")[1]
+  local git_root = require("vibing.core.utils.git").get_root(cwd)
   if not git_root then
     callback(0)
     return

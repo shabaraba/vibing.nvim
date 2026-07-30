@@ -17,6 +17,26 @@ describe("vibing.core.utils.git", function()
         assert.is_not_nil(root:match("vibing%.nvim"))
       end
     end)
+
+    it("should resolve root against a given cwd, not Neovim's own cwd", function()
+      local default_root = Git.get_root()
+      if not default_root then
+        pending("Not in git repository")
+        return
+      end
+      -- Passing a subdirectory as cwd should resolve to the same git root
+      local result = Git.get_root(default_root .. "/lua")
+      assert.equals(default_root, result)
+    end)
+
+    it("should return nil instead of erroring when cwd does not exist", function()
+      -- Regression test: vim.system with a non-existent cwd raises at the
+      -- uv_spawn level, so get_root must not propagate that as a Lua error
+      -- (e.g. a stale worktree path in a chat's working_dir frontmatter).
+      local ok, result = pcall(Git.get_root, "/nonexistent/path/for/vibing-nvim-tests")
+      assert.is_true(ok)
+      assert.is_nil(result)
+    end)
   end)
 
   describe("get_relative_path", function()
