@@ -21,7 +21,6 @@ local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 ---@field _current_handle_id string? 実行中のリクエストのハンドルID
 ---@field _current_adapter table? per-chatアダプター（フロントマターagent指定時）
 ---@field _is_sending boolean 送信処理中かどうか（Enter連打による重複送信防止）
----@field _accepted_handle_id string? 現ターンで最初に受理したレスポンスのハンドルID
 ---@field _session_allow table セッションレベルの許可リスト
 ---@field _session_deny table セッションレベルの拒否リスト
 ---@field _once_tools table? 一時許可/拒否ツールのトラッキング（次のメッセージでクリア）
@@ -46,7 +45,6 @@ function ChatBuffer:new(config)
   instance._current_handle_id = nil
   instance._current_adapter = nil
   instance._is_sending = false
-  instance._accepted_handle_id = nil
   instance._session_allow = {}
   instance._session_deny = {}
   instance._once_tools = nil
@@ -311,7 +309,6 @@ function ChatBuffer:send_message()
   end
 
   self._is_sending = true
-  self._accepted_handle_id = nil
 
   -- Clean up :once tools (JS side removes during use, but this is a safety net)
   if self._once_tools then
@@ -493,12 +490,6 @@ function ChatBuffer:send_message()
     clear_sending = function()
       self._is_sending = false
     end,
-    get_accepted_handle_id = function()
-      return self._accepted_handle_id
-    end,
-    set_accepted_handle_id = function(handle_id)
-      self._accepted_handle_id = handle_id
-    end,
     get_cwd = function()
       return self:get_cwd()
     end,
@@ -526,16 +517,13 @@ function ChatBuffer:_flush_chunks()
 end
 
 ---ストリーミングチャンクを追加（バッファリング有効）
----重複送信で複数リクエストが飛んだ場合、最初に到着したチャンクのハンドルIDのみ受理する
+---キャンセル済みの古いリクエストが遅れて発火したチャンクは、現在アクティブなハンドルIDと
+---一致しない限り無視する
 ---@param chunk string
 ---@param handle_id string?
 function ChatBuffer:append_chunk(chunk, handle_id)
-  if handle_id then
-    if self._accepted_handle_id == nil then
-      self._accepted_handle_id = handle_id
-    elseif handle_id ~= self._accepted_handle_id then
-      return
-    end
+  if handle_id and self._current_handle_id and handle_id ~= self._current_handle_id then
+    return
   end
 
   self._chunk_buffer = self._chunk_buffer .. chunk

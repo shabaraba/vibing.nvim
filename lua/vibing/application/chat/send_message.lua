@@ -33,8 +33,6 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field set_handle_id fun(handle_id: string) handle_idを設定
 ---@field get_handle_id fun(): string|nil handle_idを取得
 ---@field clear_sending fun() 送信中フラグを解除
----@field get_accepted_handle_id fun(): string|nil 現ターンで受理済みのhandle_idを取得
----@field set_accepted_handle_id fun(handle_id: string) 現ターンで受理するhandle_idを設定
 ---@field get_cwd fun(): string|nil worktreeのcwdを取得
 
 ---メッセージを送信
@@ -212,14 +210,12 @@ end
 
 ---レスポンスを処理
 function M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths)
-  -- 重複送信で複数リクエストが飛んだ場合、最初に到着したレスポンスのみ受理する
+  -- キャンセル済みの古いリクエストが遅れて完了した場合、現在アクティブなハンドルIDと
+  -- 一致しないレスポンスは無視する（新しいリクエストの結果を上書きさせない）
   local incoming_handle_id = response._handle_id
-  if incoming_handle_id and callbacks.get_accepted_handle_id and callbacks.set_accepted_handle_id then
-    local accepted_handle_id = callbacks.get_accepted_handle_id()
-    if accepted_handle_id == nil then
-      callbacks.set_accepted_handle_id(incoming_handle_id)
-    elseif accepted_handle_id ~= incoming_handle_id then
-      -- 後から到着した重複リクエストのレスポンスは無視する
+  if incoming_handle_id and callbacks.get_handle_id then
+    local current_handle_id = callbacks.get_handle_id()
+    if current_handle_id and incoming_handle_id ~= current_handle_id then
       return
     end
   end
