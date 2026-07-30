@@ -50,7 +50,8 @@ function M.setup_buffer(buf)
     -- 対象bufに設定されるようnvim_buf_callで明示的にスコープする
     vim.api.nvim_buf_call(buf, function()
       -- Prepend vibing source to existing sources for this buffer.
-      -- 既存のvibingエントリは除外してから追加し直す（再呼び出し時の重複登録を防ぐ）
+      -- setup_bufferはFileType再適用などで複数回呼ばれ得るため、既存のvibing
+      -- エントリを除外してから追加し直し、重複登録を防ぐ
       local existing_sources = cmp.get_config().sources or {}
       local sources = { { name = "vibing", priority = 1000 } }
       for _, src in ipairs(existing_sources) do
