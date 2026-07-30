@@ -195,21 +195,27 @@ function M._apply_chat_buffer_settings(bufnr)
       completion_module.setup()
     end
 
-    local global_config_cmp = cmp.get_config()
-    local existing_sources = global_config_cmp.sources or {}
+    -- cmp.setup.buffer()は呼び出し時点の「カレントバッファ」に紐付くため、
+    -- 対象がカレントでないタイミング（chat_detect.lua経由のvim.schedule等）で
+    -- 呼ぶと無関係なバッファにvibingソースが登録されてしまう。
+    -- nvim_buf_callでbufnrを明示的にカレント化してから設定する。
+    vim.api.nvim_buf_call(bufnr, function()
+      local global_config_cmp = cmp.get_config()
+      local existing_sources = global_config_cmp.sources or {}
 
-    local merged_sources = {
-      { name = "vibing", priority = 1000 },
-    }
-    for _, source in ipairs(existing_sources) do
-      if source.name ~= "vibing" then
-        table.insert(merged_sources, source)
+      local merged_sources = {
+        { name = "vibing", priority = 1000 },
+      }
+      for _, source in ipairs(existing_sources) do
+        if source.name ~= "vibing" then
+          table.insert(merged_sources, source)
+        end
       end
-    end
 
-    cmp.setup.buffer({
-      sources = merged_sources,
-    })
+      cmp.setup.buffer({
+        sources = merged_sources,
+      })
+    end)
   end
 
   -- wrap設定の適用
