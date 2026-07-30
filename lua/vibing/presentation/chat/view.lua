@@ -176,7 +176,7 @@ function M._apply_chat_buffer_settings(bufnr)
   vim.bo[bufnr].textwidth = 0
   vim.bo[bufnr].formatoptions = "tcqj"
 
-  -- 補完設定
+  -- 補完設定（cmpソースのバッファスコープ管理も含め、completion.setup_buffer側の責務）
   local ok_completion, completion = pcall(require, "vibing.application.completion")
   if ok_completion and completion.setup_buffer then
     pcall(completion.setup_buffer, bufnr)
@@ -187,36 +187,21 @@ function M._apply_chat_buffer_settings(bufnr)
     end)
   end
 
-  -- nvim-cmp設定
-  local has_cmp, cmp = pcall(require, "cmp")
-  if has_cmp then
-    local ok_completion_module, completion_module = pcall(require, "vibing.application.completion")
-    if ok_completion_module then
-      completion_module.setup()
-    end
-
-    local global_config_cmp = cmp.get_config()
-    local existing_sources = global_config_cmp.sources or {}
-
-    local merged_sources = {
-      { name = "vibing", priority = 1000 },
-    }
-    for _, source in ipairs(existing_sources) do
-      if source.name ~= "vibing" then
-        table.insert(merged_sources, source)
-      end
-    end
-
-    cmp.setup.buffer({
-      sources = merged_sources,
-    })
-  end
-
   -- wrap設定の適用
   local ok_ui, ui_utils = pcall(require, "vibing.core.utils.ui")
   if ok_ui then
+    -- win=0（カレントウィンドウ）をそのまま渡すと、非同期アタッチ時にbufnrと
+    -- 無関係なウィンドウのwrap設定を書き換えてしまうため、bufnrを表示している
+    -- 実際のウィンドウを解決してから適用する（表示中のウィンドウがなければ何もしない）
+    local function apply_wrap_for_bufnr()
+      local winnr = vim.fn.bufwinnr(bufnr)
+      if winnr > 0 then
+        pcall(ui_utils.apply_wrap_config, vim.fn.win_getid(winnr), bufnr, true)
+      end
+    end
+
     -- 初回適用（force=trueで強制適用、新規作成直後のバッファはまだフロントマターがないため）
-    pcall(ui_utils.apply_wrap_config, 0, bufnr, true)
+    apply_wrap_for_bufnr()
 
     -- Mark buffer as chat buffer immediately (cache for performance)
     vim.b[bufnr].vibing_is_chat_buffer = true
@@ -228,7 +213,7 @@ function M._apply_chat_buffer_settings(bufnr)
       group = group,
       buffer = bufnr,
       callback = function()
-        pcall(ui_utils.apply_wrap_config, 0, bufnr, true)
+        apply_wrap_for_bufnr()
         -- Re-apply completion settings to prevent markdown ftplugin from overwriting omnifunc
         local ok_c, completion = pcall(require, "vibing.application.completion")
         if ok_c and completion.setup_buffer then
