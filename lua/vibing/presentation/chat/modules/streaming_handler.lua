@@ -41,7 +41,7 @@ function M.flush_chunks(buf, win, chunk_buffer)
 
   vim.api.nvim_buf_set_lines(buf, #lines - 1, #lines, false, chunk_lines)
 
-  if win and vim.api.nvim_win_is_valid(win) then
+  if win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then
     local ok, cursor = pcall(vim.api.nvim_win_get_cursor, win)
     if ok then
       local current_line = cursor[1]
