@@ -176,7 +176,9 @@ function M._apply_chat_buffer_settings(bufnr)
   vim.bo[bufnr].textwidth = 0
   vim.bo[bufnr].formatoptions = "tcqj"
 
-  -- 補完設定
+  -- 補完設定（cmpソース登録も含めcompletion.setup_bufferに一本化。
+  -- 呼び出し時点のカレントバッファに紐づくcmp.setup.buffer()のスコープ管理は
+  -- completion.setup_buffer内でnvim_buf_callにより行われる）
   local ok_completion, completion = pcall(require, "vibing.application.completion")
   if ok_completion and completion.setup_buffer then
     pcall(completion.setup_buffer, bufnr)
@@ -184,37 +186,6 @@ function M._apply_chat_buffer_settings(bufnr)
     pcall(function()
       vim.bo[bufnr].omnifunc = "v:lua.require('vibing.application.completion').omnifunc"
       vim.bo[bufnr].completeopt = "menu,menuone,noselect"
-    end)
-  end
-
-  -- nvim-cmp設定
-  local has_cmp, cmp = pcall(require, "cmp")
-  if has_cmp then
-    local ok_completion_module, completion_module = pcall(require, "vibing.application.completion")
-    if ok_completion_module then
-      completion_module.setup()
-    end
-
-    -- cmp.setup.buffer()は呼び出し時点の「カレントバッファ」に紐付くため、
-    -- 対象がカレントでないタイミング（chat_detect.lua経由のvim.schedule等）で
-    -- 呼ぶと無関係なバッファにvibingソースが登録されてしまう。
-    -- nvim_buf_callでbufnrを明示的にカレント化してから設定する。
-    vim.api.nvim_buf_call(bufnr, function()
-      local global_config_cmp = cmp.get_config()
-      local existing_sources = global_config_cmp.sources or {}
-
-      local merged_sources = {
-        { name = "vibing", priority = 1000 },
-      }
-      for _, source in ipairs(existing_sources) do
-        if source.name ~= "vibing" then
-          table.insert(merged_sources, source)
-        end
-      end
-
-      cmp.setup.buffer({
-        sources = merged_sources,
-      })
     end)
   end
 
