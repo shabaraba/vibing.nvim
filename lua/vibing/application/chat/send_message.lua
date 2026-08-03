@@ -107,18 +107,29 @@ function M.execute(adapter, callbacks, message, config)
     -- レスポンス中にWrite/Editで変更されたファイルパスを追跡
     local modified_file_paths = {}
 
+    -- agent / model: frontmatter is source of truth. When agent is grok/codex but model still
+    -- holds a Claude shortcut (sonnet/...), fall back to the agent-appropriate default so the
+    -- backend actually receives a usable model instead of silently dropping the flag.
+    local Modes = require("vibing.core.constants.modes")
+    local agent_type = frontmatter.agent or (config and config.adapter) or "claude"
+    local model = frontmatter.model
+    if Modes.is_stale_claude_shortcut(model, agent_type) then
+      model = Modes.default_model_for_agent(agent_type, config.agent and config.agent.default_model)
+    end
+
     local opts = {
       streaming = true,
       action_type = "chat",
       chat_file_path = vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_get_name(bufnr) or nil,
       mode = frontmatter.mode,
-      model = frontmatter.model,
+      model = model,
       permissions_allow = frontmatter.permissions_allow,
       permissions_deny = frontmatter.permissions_deny,
       permissions_ask = frontmatter.permissions_ask,
       permissions_session_allow = session_allow,
       permissions_session_deny = session_deny,
-      permission_mode = frontmatter.permission_mode,
+      -- Accept both permission_mode (canonical) and permissions_mode (legacy alias)
+      permission_mode = frontmatter.permission_mode or frontmatter.permissions_mode,
       language = lang_code,
       cwd = session_cwd,
       on_tool_use = function(tool, file_path, _command)
@@ -497,6 +508,7 @@ end
 ---@return table adapter
 function M._resolve_adapter(default_adapter, callbacks, config)
   local Modes = require("vibing.core.constants.modes")
+  local AdapterFactory = require("vibing.infrastructure.adapter.factory")
   local frontmatter = callbacks.parse_frontmatter()
   local agent_type = frontmatter and frontmatter.agent
 
@@ -512,20 +524,11 @@ function M._resolve_adapter(default_adapter, callbacks, config)
     return default_adapter
   end
 
-  if default_adapter and default_adapter.name then
-    local expected_name = agent_type == "codex" and "codex_cli" or "claude_cli"
-    if default_adapter.name == expected_name then
-      return default_adapter
-    end
+  if default_adapter and default_adapter.name == AdapterFactory.adapter_name_for(agent_type) then
+    return default_adapter
   end
 
-  if agent_type == "codex" then
-    local CodexCLI = require("vibing.infrastructure.adapter.codex_cli")
-    return CodexCLI:new(config)
-  else
-    local ClaudeCLI = require("vibing.infrastructure.adapter.claude_cli")
-    return ClaudeCLI:new(config)
-  end
+  return AdapterFactory.create(agent_type, config)
 end
 
 return M

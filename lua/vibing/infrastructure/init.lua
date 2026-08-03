@@ -6,6 +6,7 @@ local M = {}
 M.BaseAdapter = require("vibing.infrastructure.adapter.base")
 M.ClaudeCLIAdapter = require("vibing.infrastructure.adapter.claude_cli")
 M.CodexCLIAdapter = require("vibing.infrastructure.adapter.codex_cli")
+M.GrokCLIAdapter = require("vibing.infrastructure.adapter.grok_cli")
 
 -- RPC
 M.RpcServer = require("vibing.infrastructure.rpc.server")
