@@ -126,7 +126,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     onFirstResponse = cancel_timeout,
     onChunk = function(chunk)
       cancel_timeout()
-      on_chunk(chunk)
+      on_chunk(chunk, handle_id)
     end,
   }
 
@@ -194,7 +194,6 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
       if not received_first_response and not completed and self._handles[handle_id] then
         vim.schedule(function()
           if not completed then
-            completed = true
             vim.notify(
               "[vibing] Session resume timeout - killing hung process and resetting session",
               vim.log.levels.WARN
@@ -204,6 +203,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
               error = "Session resume timeout",
               _session_corrupted = true,
               _old_session_id = session_id,
+              _handle_id = handle_id,
             })
           end
         end)
