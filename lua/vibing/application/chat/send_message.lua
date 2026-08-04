@@ -14,6 +14,7 @@ end
 
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local GradientAnimation = require("vibing.ui.gradient_animation")
+local UsageDisplay = require("vibing.ui.usage_display")
 
 ---@class Vibing.ChatCallbacks
 ---@field extract_conversation fun(): table 会話履歴を抽出
@@ -228,6 +229,7 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
     GradientAnimation.stop(bufnr)
+    UsageDisplay.refresh(bufnr, callbacks.get_cwd and callbacks.get_cwd() or nil)
   end
 
   -- Lua側タイムアウトによるセッション破損検出

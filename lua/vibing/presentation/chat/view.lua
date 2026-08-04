@@ -254,6 +254,8 @@ function M._apply_chat_buffer_settings(bufnr)
       if ok_sm then
         send_message.cleanup_snapshots(bufnr)
       end
+      -- 利用率表示のnamespace状態をクリア（bufnr再利用時の誤表示防止）
+      require("vibing.ui.usage_display").clear(bufnr)
     end,
     desc = "Cancel running Agent SDK process on buffer unload",
   })
