@@ -177,7 +177,7 @@ return function(_, chat_buffer)
         notify.warn(string.format("Failed to update %d file(s)", total_failed), "Link Sync")
       end
     end
-  end)
+  end, chat_buffer:get_session_id())
 
   return true
 end
