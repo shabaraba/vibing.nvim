@@ -35,7 +35,7 @@ return function(_, chat_buffer)
 
   notify.info("Generating summary...")
 
-  adapter:stream(full_prompt, {}, function(chunk)
+  adapter:stream(full_prompt, { lightweight = true }, function(chunk)
   end, function(response)
     if response.error then
       notify.error(string.format("Summarization failed: %s", response.error))

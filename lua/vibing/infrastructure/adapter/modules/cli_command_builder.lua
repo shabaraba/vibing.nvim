@@ -10,10 +10,15 @@ local M = {}
 local cached_claude_path = nil
 
 --- Resolve model name to CLI-compatible format
+--- Lightweight calls (title generation, summarize, daily summary) always use
+--- config.agent.utility_model, taking priority over opts.model.
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config
 --- @return string|nil
 local function resolve_model(opts, config)
+  if opts.lightweight then
+    return (config.agent and config.agent.utility_model) or "haiku"
+  end
   return opts.model or (config.agent and config.agent.default_model)
 end
 
@@ -154,11 +159,17 @@ function M.build(prompt, opts, session_id, config, settings_path, handle_id, rpc
     end
   end
 
-  add_permission_args(cmd, opts)
+  if opts.lightweight then
+    -- Lightweight calls need no tools: skip permission args/hooks entirely.
+    table.insert(cmd, "--allowedTools")
+    table.insert(cmd, "")
+  else
+    add_permission_args(cmd, opts)
 
-  if settings_path then
-    table.insert(cmd, "--settings")
-    table.insert(cmd, settings_path)
+    if settings_path then
+      table.insert(cmd, "--settings")
+      table.insert(cmd, settings_path)
+    end
   end
 
   -- System prompt additions (worktree convention + chat file path + optional language)
@@ -209,7 +220,14 @@ function M.build(prompt, opts, session_id, config, settings_path, handle_id, rpc
   table.insert(cmd, table.concat(system_prompt_lines, "\n"))
 
   table.insert(cmd, "--setting-sources")
-  table.insert(cmd, "user,project,local")
+  table.insert(cmd, opts.lightweight and "" or "user,project,local")
+
+  if opts.lightweight then
+    -- No CLAUDE.md/rules, no MCP servers, no hook settings for utility calls.
+    table.insert(cmd, "--strict-mcp-config")
+    table.insert(cmd, "--mcp-config")
+    table.insert(cmd, '{"mcpServers":{}}')
+  end
 
   -- Build prompt with context prefix (only for new sessions, not resume)
   local full_prompt = prompt
