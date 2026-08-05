@@ -113,4 +113,49 @@ describe("cli_command_builder", function()
       assert.is_true(allowed:find("mcp__plugin_vibing-nvim_vibing-nvim__*", 1, true) ~= nil)
     end)
   end)
+
+  describe("--setting-sources", function()
+    it("defaults to user,project,local when config.agent.setting_sources is not set", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.is_not_nil(idx)
+      assert.equals("user,project,local", cmd[idx + 1])
+    end)
+
+    it("uses config.agent.setting_sources when provided", function()
+      local config = { agent = { setting_sources = { "project", "local" } } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.is_not_nil(idx)
+      assert.equals("project,local", cmd[idx + 1])
+    end)
+
+    it("falls back to the default when setting_sources is not a table", function()
+      local config = { agent = { setting_sources = "project" } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.equals("user,project,local", cmd[idx + 1])
+    end)
+
+    it("falls back to the default when setting_sources is an empty table", function()
+      local config = { agent = { setting_sources = {} } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.equals("user,project,local", cmd[idx + 1])
+    end)
+
+    it("falls back to the default when setting_sources contains a non-string element", function()
+      local config = { agent = { setting_sources = { "project", 42 } } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.equals("user,project,local", cmd[idx + 1])
+    end)
+
+    it("falls back to the default when setting_sources contains an empty string element", function()
+      local config = { agent = { setting_sources = { "project", "" } } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.equals("user,project,local", cmd[idx + 1])
+    end)
+  end)
 end)

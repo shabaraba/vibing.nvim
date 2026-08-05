@@ -603,6 +603,12 @@ agent = {
                                  -- true: Use vibing-nvim LSP (connects to running Neovim)
                                  -- false: Allow generic LSP tools (e.g., Serena)
                                  -- Default: true
+
+  setting_sources = { "user", "project", "local" },  -- Sources passed to the CLI's
+                                 -- --setting-sources flag. Drop "user" to skip loading your
+                                 -- global CLAUDE.md and personal MCP servers on every chat,
+                                 -- reducing fixed per-session token cost.
+                                 -- Default: { "user", "project", "local" }
 }
 ```
 

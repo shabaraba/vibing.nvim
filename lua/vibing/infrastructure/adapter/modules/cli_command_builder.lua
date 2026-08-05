@@ -7,7 +7,28 @@ local worktree_constants = require("vibing.core.constants.worktree")
 
 local M = {}
 
+local DEFAULT_SETTING_SOURCES = { "user", "project", "local" }
+
 local cached_claude_path = nil
+
+--- Resolve the `--setting-sources` list, falling back to the default when config
+--- is missing, malformed, or contains non-string/empty entries.
+--- @param config Vibing.Config
+--- @return string[]
+local function resolve_setting_sources(config)
+  local setting_sources = config.agent and config.agent.setting_sources
+  if type(setting_sources) ~= "table" or #setting_sources == 0 then
+    return DEFAULT_SETTING_SOURCES
+  end
+
+  for _, source in ipairs(setting_sources) do
+    if type(source) ~= "string" or source == "" then
+      return DEFAULT_SETTING_SOURCES
+    end
+  end
+
+  return setting_sources
+end
 
 --- Resolve model name to CLI-compatible format
 --- @param opts Vibing.AdapterOpts
@@ -209,7 +230,7 @@ function M.build(prompt, opts, session_id, config, settings_path, handle_id, rpc
   table.insert(cmd, table.concat(system_prompt_lines, "\n"))
 
   table.insert(cmd, "--setting-sources")
-  table.insert(cmd, "user,project,local")
+  table.insert(cmd, table.concat(resolve_setting_sources(config), ","))
 
   -- Build prompt with context prefix (only for new sessions, not resume)
   local full_prompt = prompt
