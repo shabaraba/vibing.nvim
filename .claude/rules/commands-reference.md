@@ -19,31 +19,11 @@
 | `:VibingDailySummary [YYYY-MM-DD]`    | Generate daily summary from project chat files (default: today)                                     |
 | `:VibingDailySummaryAll [YYYY-MM-DD]` | Generate daily summary from all chat files (default: today)                                         |
 
-## Command Semantics
-
-**`:VibingChat`** - Always creates a fresh chat window. Optionally specify position to control window placement.
-
-- `:VibingChat` - New chat using default position from config
-- `:VibingChat current` - New chat in current window
-- `:VibingChat right` - New chat in right split
-- `:VibingChat left` - New chat in left split
-- `:VibingChat top` - New chat in top split
-- `:VibingChat bottom` - New chat in bottom split
-- `:VibingChat back` - New chat as background buffer only (no window)
-- `:VibingChat path/to/file.md` - Open saved chat file
-
-**`:VibingChatFork`** - Fork the current chat conversation. Creates a new chat file with the same conversation history and session, allowing you to branch the conversation in a different direction.
-
-- `:VibingChatFork` - Fork using default position
-- `:VibingChatFork right` - Fork and open in right split
-- `:VibingChatFork left` - Fork and open in left split
-- Position options: `current`, `right`, `left`, `top`, `bottom`, `back`
-- The fork file is named `<source>-fork-N.md` with auto-incrementing numbers
-- Fork inherits the source's session ID; on the first message, the SDK creates a new session via `forkSession` API
-- The `forked_from` frontmatter field tracks the source file for link synchronization
-- When the source file is renamed (via `:VibingSetFileTitle`), the fork's `forked_from` is automatically updated
-
-**`:VibingToggleChat`** - Use to show/hide your current conversation. Preserves the existing chat state.
+`:VibingChat`/`:VibingChatFork` position argument: `current` (replace current window), `right`,
+`left`, `top`, `bottom` (splits sized by `config.chat.window.width`/`height`), or `back`
+(buffer-only, no window). `:VibingChat <file>` opens a saved chat file instead of creating a new
+one. Fork's session/frontmatter mechanics (`forked_from`, session inheritance via `forkSession`)
+are documented in `architecture.md` → "Chat Fork" — not duplicated here.
 
 ## Slash Commands (in Chat)
 
