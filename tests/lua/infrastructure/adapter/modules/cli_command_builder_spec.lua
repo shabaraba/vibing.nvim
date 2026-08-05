@@ -70,24 +70,27 @@ describe("cli_command_builder", function()
       assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer file:", 1, true))
     end)
 
-    it("embeds the handle_id and instructs the model to echo it back on nvim_ask_user_question", function()
-      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil, "abc123_456")
+    it("instructs the model to pass chat_file_path on nvim_ask_user_question, without any per-turn id", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]
-      assert.is_true(prompt_text:find('Your handle_id for this turn is "abc123_456"', 1, true) ~= nil)
       assert.is_true(prompt_text:find("nvim_ask_user_question", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("chat_file_path argument", 1, true) ~= nil)
     end)
 
-    it("omits the handle_id line when handle_id is not provided", function()
-      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
-      local idx = find_flag(cmd, "--append-system-prompt")
-      local prompt_text = cmd[idx + 1]
-      assert.is_nil(prompt_text:find("Your handle_id for this turn is", 1, true))
+    it("never embeds a handle_id, so the same conversation's system prompt is byte-identical across turns", function()
+      local opts = { chat_file_path = "/tmp/chat-test.md" }
+      local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil, 9878)
+      local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil, 9878)
+      local idx1 = find_flag(cmd1, "--append-system-prompt")
+      local idx2 = find_flag(cmd2, "--append-system-prompt")
+      assert.equals(cmd1[idx1 + 1], cmd2[idx2 + 1])
+      assert.is_nil(cmd1[idx1 + 1]:find("handle_id", 1, true))
     end)
 
     it("embeds the rpc_port and instructs the model to echo it back on every vibing-nvim MCP call", function()
-      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil, nil, 9878)
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil, 9878)
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]
