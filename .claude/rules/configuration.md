@@ -31,7 +31,8 @@ require("vibing").setup({
   diff = {
     tool = "auto",  -- "git" | "mote" | "auto"
     -- "auto"/"git": Lightweight per-request diff (default). Files touched by
-    --   Write/Edit/NotebookEdit are backed up at PreToolUse time and diffed after the response — no
+    --   Write/Edit/MultiEdit/NotebookEdit are backed up at PreToolUse time and diffed after the
+    --   response — no
     --   whole-tree scanning, no external processes. `gd` falls back to git diff when no
     --   patch file is found.
     -- "mote": Opt-in mote snapshot tracking (requires mote v0.2.4+:
@@ -142,7 +143,7 @@ require("vibing").setup({
 ## Per-Request Diff Tracking (Default)
 
 By default (`diff.tool = "auto"` or `"git"`), vibing.nvim tracks per-request changes without
-mote: when Claude is about to run Write/Edit/NotebookEdit, the PreToolUse hook backs up the
+mote: when Claude is about to run Write/Edit/MultiEdit/NotebookEdit, the PreToolUse hook backs up the
 target file's pre-edit content, and after the response a git-style patch is generated with
 `vim.diff()` (built-in xdiff, no external processes). Patches are stored under
 `.vibing/patches/` and referenced from the chat buffer via `<!-- patch: ... -->` comments, so
