@@ -33,6 +33,82 @@ describe("diff_selector", function()
     end)
   end)
 
+  describe("show_diff mote context selection", function()
+    local Config = require("vibing.config")
+    local original_get
+    local original_mote_diff
+    local captured
+
+    ---MoteDiffをスタブし、show_diffに渡されたconfigをキャプチャする
+    local function stub_mote_diff()
+      captured = {}
+      original_mote_diff = package.loaded["vibing.core.utils.mote_diff"]
+      package.loaded["vibing.core.utils.mote_diff"] = {
+        get_project_name = function()
+          return "test-project"
+        end,
+        build_context_name = function(prefix, cwd)
+          return prefix .. "-session-context"
+        end,
+        build_context_name_from_path = function(prefix, path)
+          return prefix .. "-dir-context"
+        end,
+        show_diff = function(_, mote_config)
+          captured.mote_config = mote_config
+        end,
+      }
+    end
+
+    local function stub_config(tool)
+      original_get = Config.get
+      Config.get = function()
+        return { diff = { tool = tool, mote = { context_prefix = "vibing" } } }
+      end
+    end
+
+    after_each(function()
+      if original_get then
+        Config.get = original_get
+        original_get = nil
+      end
+      if original_mote_diff ~= nil then
+        package.loaded["vibing.core.utils.mote_diff"] = original_mote_diff
+        original_mote_diff = nil
+      end
+    end)
+
+    it("uses the per-dir context when the file is under a mote_dir, even with tool = mote", function()
+      -- 送信時（_create_session_mote_configs）はmote_dirs優先でディレクトリ単位コンテキストに
+      -- スナップショットを書くため、tool = "mote" 併用時も表示側は同じコンテキストを使うこと
+      stub_config("mote")
+      stub_mote_diff()
+
+      DiffSelector.show_diff("/repo/workspaces/app/src/x.lua", nil, "/repo", { "/repo/workspaces/app" })
+
+      assert.equals("vibing-dir-context", captured.mote_config.context)
+      assert.equals("/repo/workspaces/app", captured.mote_config.cwd)
+    end)
+
+    it("uses the session-cwd context with tool = mote and no matching mote_dir", function()
+      stub_config("mote")
+      stub_mote_diff()
+
+      DiffSelector.show_diff("/repo/src/x.lua", nil, "/repo", nil)
+
+      assert.equals("vibing-session-context", captured.mote_config.context)
+    end)
+
+    it("uses the per-dir context when a mote_dir matches under tool = auto", function()
+      stub_config("auto")
+      stub_mote_diff()
+
+      DiffSelector.show_diff("/repo/workspaces/app/src/x.lua", nil, "/repo", { "/repo/workspaces/app" })
+
+      assert.equals("vibing-dir-context", captured.mote_config.context)
+      assert.equals("/repo/workspaces/app", captured.mote_config.cwd)
+    end)
+  end)
+
   describe("_show_git_diff", function()
     local repo_dir
     local notify_messages

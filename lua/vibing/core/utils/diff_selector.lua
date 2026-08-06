@@ -114,8 +114,10 @@ function M.show_diff(file_path, session_id, cwd, mote_dirs)
   local mote_config = vim.deepcopy(config.diff.mote)
   local context_prefix = mote_config.context_prefix or "vibing"
 
-  if matched_mote_dir and tool ~= "mote" then
-    -- VibingMoteDirでopt-inされたディレクトリ: 送信時と同じディレクトリ単位コンテキストを使う
+  if matched_mote_dir then
+    -- VibingMoteDirで指定されたディレクトリ配下: 送信時（_create_session_mote_configs）は
+    -- diff.toolの値に関係なくmote_dirs優先でディレクトリ単位コンテキストにスナップショットを
+    -- 書くため、表示側も同じコンテキストを使う（tool = "mote" 併用時も含む）
     mote_config.project = mote_config.project or MoteDiff.get_project_name(matched_mote_dir)
     mote_config.context = MoteDiff.build_context_name_from_path(context_prefix, matched_mote_dir)
     mote_config.cwd = matched_mote_dir
