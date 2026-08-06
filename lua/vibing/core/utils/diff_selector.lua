@@ -70,6 +70,8 @@ local function show_git_diff(file_path)
 end
 
 ---file_pathを含むmote_dirを探す
+---ファイルパス（gdの対象）を想定しており、mote_dirそのものを指すパスは
+---配下のファイルではないため意図的にマッチさせない
 ---@param file_path string 絶対パス
 ---@param mote_dirs string[]|nil チャットのmote_dirs frontmatter
 ---@return string|nil マッチした追跡ディレクトリ（絶対パス）
@@ -82,6 +84,12 @@ local function find_mote_dir(file_path, mote_dirs)
     end
   end
   return nil
+end
+
+-- テスト用エクスポート
+M._find_mote_dir = find_mote_dir
+M._show_git_diff = function(file_path)
+  return show_git_diff(file_path)
 end
 
 ---ファイルのdiffを表示
