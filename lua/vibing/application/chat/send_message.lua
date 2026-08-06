@@ -129,7 +129,7 @@ function M.execute(adapter, callbacks, message, config)
       language = lang_code,
       cwd = session_cwd,
       on_tool_use = function(tool, file_path, _command)
-        if (tool == "Write" or tool == "Edit" or tool == "NotebookEdit") and file_path then
+        if (tool == "Write" or tool == "Edit" or tool == "MultiEdit" or tool == "NotebookEdit") and file_path then
           modified_file_paths[file_path] = true
         elseif tool == "FileChange" and file_path then
           -- Codex adapter reports comma-joined paths
@@ -308,12 +308,24 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
         diff_timeout_timer = nil
       end
       RequestDiff.clear(handle_id_for_diff)
-      -- moteのignore設定等でdiffから漏れたファイルも、ツールイベントで検知した分は必ず一覧に載せる
+      -- moteのignore設定等でdiffから漏れたファイルも、ツールイベントで検知した分は必ず一覧に載せる。
+      -- mote出力はmc.cwd相対パスなので、絶対パスに直して重複判定し、追加分は絶対パスで載せる
+      -- （BufferReloadがNeovimのcwd基準で誤解決しないように）
       for path in pairs(modified_file_paths or {}) do
-        local rel = vim.fn.fnamemodify(path, ":.")
-        if not seen_files[rel] and not seen_files[path] then
-          seen_files[rel] = true
-          table.insert(all_files, rel)
+        local abs = vim.fn.fnamemodify(path, ":p")
+        local dup = seen_files[path] or seen_files[abs]
+        if not dup then
+          for _, mc in ipairs(active_configs) do
+            local base = vim.fn.fnamemodify(mc.cwd or vim.fn.getcwd(), ":p"):gsub("/$", "")
+            if abs:sub(1, #base + 1) == base .. "/" and seen_files[abs:sub(#base + 2)] then
+              dup = true
+              break
+            end
+          end
+        end
+        if not dup then
+          seen_files[abs] = true
+          table.insert(all_files, abs)
         end
       end
       if #all_files > 0 then

@@ -117,6 +117,19 @@ local function revert_one(ctx, file)
   return restore_file(ctx.context_dir, ctx.snapshot_id, file)
 end
 
+---patch内の相対パスをバッファリロード用に解決する
+---request_diff形式のpatchはbase_dir相対（git applyがcwd=base_dirで動くため）なので、
+---Neovimのcwdと異なっていても正しいファイルをリロードできるよう絶対パスに直す
+---@param ctx Vibing.PatchViewer.RevertContext
+---@param file string patch内の相対パス
+---@return string リロードに使うパス
+local function resolve_reload_path(ctx, file)
+  if ctx.kind == "request_diff" and ctx.base_dir and file:sub(1, 1) ~= "/" then
+    return ctx.base_dir .. "/" .. file
+  end
+  return file
+end
+
 ---@param _ string
 ---@param patch_filename string
 ---@param selected_file string
@@ -138,7 +151,7 @@ function M.revert_single_file(_, patch_filename, selected_file)
   end
 
   local BufferReload = require("vibing.core.utils.buffer_reload")
-  BufferReload.reload_files({ selected_file })
+  BufferReload.reload_files({ resolve_reload_path(ctx, selected_file) })
 
   vim.notify(string.format("Reverted %s", selected_file), vim.log.levels.INFO)
   return true
@@ -173,7 +186,7 @@ function M.revert_all_files(_, patch_filename)
   end
 
   M._report_results(files, failed_files, success_count)
-  M._reload_successful_files(files, failed_files, success_count)
+  M._reload_successful_files(files, failed_files, success_count, ctx)
 
   return success_count > 0
 end
@@ -185,7 +198,7 @@ function M._report_results(files, failed_files, success_count)
   if #failed_files > 0 then
     local error_msg = string.format("Reverted %d/%d files. Failed files:\n", success_count, #files)
     for _, failure in ipairs(failed_files) do
-      error_msg = error_msg .. string.format("  - %s: %s\n", failure.file, failure.error)
+      error_msg = error_msg .. string.format("  - %s: %s\n", failure.file, failure.error or "unknown error")
     end
     vim.notify(error_msg, vim.log.levels.WARN)
   else
@@ -196,7 +209,8 @@ end
 ---@param files string[]
 ---@param failed_files { file: string, error: string? }[]
 ---@param success_count number
-function M._reload_successful_files(files, failed_files, success_count)
+---@param ctx Vibing.PatchViewer.RevertContext|nil
+function M._reload_successful_files(files, failed_files, success_count, ctx)
   if success_count == 0 then
     return
   end
@@ -209,7 +223,7 @@ function M._reload_successful_files(files, failed_files, success_count)
   local success_files = {}
   for _, file in ipairs(files) do
     if not failed_set[file] then
-      table.insert(success_files, file)
+      table.insert(success_files, ctx and resolve_reload_path(ctx, file) or file)
     end
   end
 

@@ -53,15 +53,16 @@ end
 
 ---@param abs string 絶対パス
 ---@param base string|nil 基準ディレクトリ（絶対パス）
----@return string base配下なら相対パス、そうでなければ絶対パスのまま
+---@return string rel base配下なら相対パス、そうでなければ絶対パスのまま
+---@return boolean under_base base配下だったか
 local function to_rel(abs, base)
   if base and base ~= "" then
     local prefix = base:sub(-1) == "/" and base or (base .. "/")
     if abs:sub(1, #prefix) == prefix then
-      return abs:sub(#prefix + 1)
+      return abs:sub(#prefix + 1), true
     end
   end
-  return abs
+  return abs, false
 end
 
 ---TTL超過した放置セッション（キャンセルされたリクエスト等）を破棄
@@ -133,31 +134,64 @@ function M.capture(handle_id, tool_name, tool_input)
   table.insert(s.order, abs)
 end
 
+---git diff --no-index で2ファイル間のhunk部分（@@以降）を取得
+---vim.diff()と違い「\ No newline at end of file」マーカーを正しく出力するため、
+---末尾改行がないファイルはこちらで比較する（git apply --reverse での復元が保証される）
+---@param old_path string 比較元（存在しない側は "/dev/null"）
+---@param new_path string 比較先（存在しない側は "/dev/null"）
+---@return string|nil hunks（差分がない/取得できない場合nil）
+local function git_no_index_hunks(old_path, new_path)
+  local result = vim
+    .system({ "git", "diff", "--no-index", "--", old_path, new_path }, { text = true })
+    :wait()
+  -- --no-index は差分ありで終了コード1を返す
+  if result.code ~= 0 and result.code ~= 1 then
+    return nil
+  end
+  local output = result.stdout or ""
+  local hunk_start = output:find("\n@@", 1, true)
+  if not hunk_start then
+    return nil
+  end
+  return output:sub(hunk_start + 1)
+end
+
 ---1ファイル分のdiffセクションを生成
 ---@param rel string 相対パス
+---@param entry Vibing.RequestDiff.Entry 退避情報
+---@param abs string 絶対パス（現在のファイル）
 ---@param before string|nil 変更前内容（nil=ファイルが存在しなかった）
 ---@param after string|nil 変更後内容（nil=ファイルが削除された）
----@return string|nil diffセクション（変更がなければnil）
-local function build_file_section(rel, before, after)
+---@return string|nil diffセクション（変更がない/patch化できない場合nil）
+local function build_file_section(rel, entry, abs, before, after)
   local before_text = before or ""
   local after_text = after or ""
   if before_text == after_text then
     return nil
   end
 
-  local header = string.format("diff --git a/%s b/%s", rel, rel)
-  local old_label = before and ("a/" .. rel) or "/dev/null"
-  local new_label = after and ("b/" .. rel) or "/dev/null"
-
+  -- バイナリはgit applyで復元できるpatchにならないため、一覧のみでdiffセクションは作らない
   if before_text:find("\0", 1, true) or after_text:find("\0", 1, true) then
-    return string.format("%s\nBinary files %s and %s differ", header, old_label, new_label)
+    return nil
   end
 
-  local hunks = vim.diff(before_text, after_text, { result_type = "unified", ctxlen = 3 })
+  local hunks
+  local missing_trailing_newline = (before and before ~= "" and not before:match("\n$"))
+    or (after and after ~= "" and not after:match("\n$"))
+  if missing_trailing_newline then
+    local old_path = (before and entry.backup_path) or "/dev/null"
+    local new_path = after and abs or "/dev/null"
+    hunks = git_no_index_hunks(old_path, new_path)
+  else
+    hunks = vim.diff(before_text, after_text, { result_type = "unified", ctxlen = 3 })
+  end
   if not hunks or hunks == "" then
     return nil
   end
 
+  local header = string.format("diff --git a/%s b/%s", rel, rel)
+  local old_label = before and ("a/" .. rel) or "/dev/null"
+  local new_label = after and ("b/" .. rel) or "/dev/null"
   return string.format("%s\n--- %s\n+++ %s\n%s", header, old_label, new_label, hunks:gsub("\n$", ""))
 end
 
@@ -184,13 +218,18 @@ function M.generate(handle_id, base_dir, extra_paths)
         before = read_file(entry.backup_path)
       end
       local after = read_file(abs)
-      local rel = to_rel(abs, base_dir)
-      local section = build_file_section(rel, before, after)
-      if section then
+      local rel, under_base = to_rel(abs, base_dir)
+      local changed = (before or "") ~= (after or "")
+      -- base_dir外のファイルはgit apply（cwd=base_dir、-p1）で復元できるpatchにならないため、
+      -- 一覧にのみ載せてdiffセクションは作らない（バイナリも同様、build_file_section内で除外）
+      local section = under_base and build_file_section(rel, entry, abs, before, after) or nil
+      if section or changed then
         seen[abs] = true
         table.insert(files, rel)
         table.insert(abs_files, abs)
-        table.insert(sections, section)
+        if section then
+          table.insert(sections, section)
+        end
       end
     end
   end
@@ -200,7 +239,8 @@ function M.generate(handle_id, base_dir, extra_paths)
     local abs = vim.fn.fnamemodify(path, ":p")
     if not seen[abs] and not (s and s.files[abs]) then
       seen[abs] = true
-      table.insert(files, to_rel(abs, base_dir))
+      local rel = to_rel(abs, base_dir)
+      table.insert(files, rel)
       table.insert(abs_files, abs)
     end
   end

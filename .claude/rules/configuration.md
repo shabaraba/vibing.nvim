@@ -30,8 +30,8 @@ require("vibing").setup({
   },
   diff = {
     tool = "auto",  -- "git" | "mote" | "auto"
-    -- "auto"/"git": Lightweight per-request diff (default). Files touched by Write/Edit are
-    --   backed up at PreToolUse time and diffed with vim.diff() after the response — no
+    -- "auto"/"git": Lightweight per-request diff (default). Files touched by
+    --   Write/Edit/NotebookEdit are backed up at PreToolUse time and diffed after the response — no
     --   whole-tree scanning, no external processes. `gd` falls back to git diff when no
     --   patch file is found.
     -- "mote": Opt-in mote snapshot tracking (requires mote v0.2.4+:
