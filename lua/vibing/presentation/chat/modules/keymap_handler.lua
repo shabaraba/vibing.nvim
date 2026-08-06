@@ -66,14 +66,7 @@ function M.setup(buf, callbacks, keymaps)
         local chat_buf = view.get_chat_buffer(buf)
         if chat_buf then
           cwd = chat_buf:get_cwd()
-          local frontmatter = chat_buf:parse_frontmatter()
-          mote_dirs = frontmatter and frontmatter.mote_dirs
-          if type(mote_dirs) == "string" then
-            mote_dirs = { mote_dirs }
-          end
-          if (not mote_dirs or #mote_dirs == 0) and frontmatter and frontmatter.mote_cwd then
-            mote_dirs = { frontmatter.mote_cwd }
-          end
+          mote_dirs = require("vibing.core.utils.mote.frontmatter").get_dirs(chat_buf:parse_frontmatter())
         end
         DiffSelector.show_diff(file_path, session_id, cwd, mote_dirs)
       end

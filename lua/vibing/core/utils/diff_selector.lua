@@ -69,7 +69,7 @@ local function show_git_diff(file_path)
   show_diff_buffer(output)
 end
 
----file_pathを含むmote_dirを探す
+---file_pathを含むmote_dirを探す（ネストしたmote_dirsは最長一致=最も深いディレクトリを優先）
 ---ファイルパス（gdの対象）を想定しており、mote_dirそのものを指すパスは
 ---配下のファイルではないため意図的にマッチさせない
 ---@param file_path string 絶対パス
@@ -77,13 +77,14 @@ end
 ---@return string|nil マッチした追跡ディレクトリ（絶対パス）
 local function find_mote_dir(file_path, mote_dirs)
   local abs = vim.fn.fnamemodify(file_path, ":p")
+  local best = nil
   for _, dir in ipairs(mote_dirs or {}) do
     local base = vim.fn.fnamemodify(dir, ":p"):gsub("/$", "")
-    if abs:sub(1, #base + 1) == base .. "/" then
-      return base
+    if abs:sub(1, #base + 1) == base .. "/" and (not best or #base > #best) then
+      best = base
     end
   end
-  return nil
+  return best
 end
 
 -- テスト用エクスポート

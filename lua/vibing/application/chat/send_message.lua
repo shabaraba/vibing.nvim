@@ -61,14 +61,7 @@ function M.execute(adapter, callbacks, message, config)
   local bufnr = callbacks.get_bufnr()
   local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
   local frontmatter = callbacks.parse_frontmatter()
-  -- mote_dirs (array) が優先。後方互換として mote_cwd (string) も読む
-  local mote_dirs = frontmatter and frontmatter.mote_dirs
-  if type(mote_dirs) == "string" then
-    mote_dirs = { mote_dirs }
-  end
-  if (not mote_dirs or #mote_dirs == 0) and frontmatter and frontmatter.mote_cwd then
-    mote_dirs = { frontmatter.mote_cwd }
-  end
+  local mote_dirs = require("vibing.core.utils.mote.frontmatter").get_dirs(frontmatter)
   -- moteはopt-in: diff.tool = "mote" 明示か、mote_dirs指定時のみスナップショットを取る。
   -- デフォルトはPreToolUseフックで変更前ファイルだけを退避する軽量なリクエスト単位diff
   -- （request_diff.lua）を使うため、全ツリースキャンやmoteプロセスは発生しない。

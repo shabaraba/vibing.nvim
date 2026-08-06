@@ -31,6 +31,15 @@ describe("diff_selector", function()
       local dir = DiffSelector._find_mote_dir("/repo/workspaces/app/file.lua", { "/repo/workspaces/app/" })
       assert.equals("/repo/workspaces/app", dir)
     end)
+
+    it("prefers the deepest matching mote_dir when dirs are nested", function()
+      local dir = DiffSelector._find_mote_dir("/repo/a/b/file.lua", { "/repo/a", "/repo/a/b" })
+      assert.equals("/repo/a/b", dir)
+
+      -- 登録順に依存しないこと
+      dir = DiffSelector._find_mote_dir("/repo/a/b/file.lua", { "/repo/a/b", "/repo/a" })
+      assert.equals("/repo/a/b", dir)
+    end)
   end)
 
   describe("show_diff mote context selection", function()

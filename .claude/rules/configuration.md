@@ -32,9 +32,9 @@ require("vibing").setup({
     tool = "auto",  -- "git" | "mote" | "auto"
     -- "auto"/"git": Lightweight per-request diff (default). Files touched by
     --   Write/Edit/MultiEdit/NotebookEdit are backed up at PreToolUse time and diffed after the
-    --   response — no
-    --   whole-tree scanning, no external processes. `gd` falls back to git diff when no
-    --   patch file is found.
+    --   response — no whole-tree scanning; diffs are computed in-process with vim.diff()
+    --   (git is invoked only for files without a trailing newline). `gd` falls back to
+    --   git diff when no patch file is found.
     -- "mote": Opt-in mote snapshot tracking (requires mote v0.2.4+:
     --   https://github.com/shabaraba/mote). Also catches Bash-driven file changes, at the
     --   cost of snapshotting the whole tracked tree on every request.
@@ -145,7 +145,8 @@ require("vibing").setup({
 By default (`diff.tool = "auto"` or `"git"`), vibing.nvim tracks per-request changes without
 mote: when Claude is about to run Write/Edit/MultiEdit/NotebookEdit, the PreToolUse hook backs up the
 target file's pre-edit content, and after the response a git-style patch is generated with
-`vim.diff()` (built-in xdiff, no external processes). Patches are stored under
+`vim.diff()` (built-in xdiff — git is invoked only for files without a trailing newline, to
+preserve the `\ No newline at end of file` marker). Patches are stored under
 `.vibing/patches/` and referenced from the chat buffer via `<!-- patch: ... -->` comments, so
 `gd` and patch revert work per request and per chat buffer — concurrent chats never mix
 diffs, and cost scales with the number of files actually touched (not the tree size, which
