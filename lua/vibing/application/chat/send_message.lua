@@ -129,7 +129,7 @@ function M.execute(adapter, callbacks, message, config)
       language = lang_code,
       cwd = session_cwd,
       on_tool_use = function(tool, file_path, _command)
-        if (tool == "Write" or tool == "Edit" or tool == "NotebookEdit") and file_path then
+        if (tool == "Write" or tool == "Edit" or tool == "MultiEdit" or tool == "NotebookEdit") and file_path then
           modified_file_paths[file_path] = true
         elseif tool == "FileChange" and file_path then
           -- Codex adapter reports comma-joined paths
@@ -291,9 +291,8 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
   local handle_id_for_diff = incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
 
   if #active_configs > 0 and has_file_changes then
-    -- 全configから変更ファイルを収集し、重複排除して出力
-    local all_files = {}
-    local seen_files = {}
+    -- 各configの変更ファイルを収集し、finalizeで絶対パスに正規化・重複排除して出力
+    local mote_batches = {}
     local patch_paths = {}
     local remaining = #active_configs
     local timestamp = os.date("%Y%m%d_%H%M%S")
@@ -308,20 +307,18 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
         diff_timeout_timer = nil
       end
       RequestDiff.clear(handle_id_for_diff)
-      -- moteのignore設定等でdiffから漏れたファイルも、ツールイベントで検知した分は必ず一覧に載せる
-      for path in pairs(modified_file_paths or {}) do
-        local rel = vim.fn.fnamemodify(path, ":.")
-        if not seen_files[rel] and not seen_files[path] then
-          seen_files[rel] = true
-          table.insert(all_files, rel)
-        end
-      end
+      -- moteの結果（mc.cwd相対）とツールイベントのパスを絶対パスに正規化して統合。
+      -- 別mote_dirsの同名相対パスの衝突や、Neovim cwdと異なる作業ディレクトリでの
+      -- 誤ったバッファリロードを防ぐ。moteのignore設定等でdiffから漏れたファイルも
+      -- ツールイベントで検知した分は必ず一覧に載る
+      local all_files = M._merge_modified_files(mote_batches, modified_file_paths)
       if #all_files > 0 then
         BufferReload.reload_files(all_files)
         local MAX_DISPLAY = 50
         local file_lines = {}
         for i = 1, math.min(#all_files, MAX_DISPLAY) do
-          table.insert(file_lines, all_files[i])
+          -- 表示はNeovim cwd相対（cwd外なら絶対パスのまま）、リロードは絶対パス
+          table.insert(file_lines, vim.fn.fnamemodify(all_files[i], ":."))
         end
         if #all_files > MAX_DISPLAY then
           table.insert(file_lines, string.format("... (%d more)", #all_files - MAX_DISPLAY))
@@ -342,12 +339,7 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
     for _, mc in ipairs(active_configs) do
       MoteDiff.get_changed_files(mc, function(success, files, err)
         if success and files then
-          for _, f in ipairs(files) do
-            if not seen_files[f] then
-              seen_files[f] = true
-              table.insert(all_files, f)
-            end
-          end
+          table.insert(mote_batches, { base = mc.cwd or vim.fn.getcwd(), files = files })
         elseif not success then
           vim.notify("[vibing] Failed to get changed files: " .. (err or "Unknown error"), vim.log.levels.WARN)
         end
@@ -382,6 +374,40 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
 
   -- NOTE: clear_handle_id() は呼ばない
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
+end
+
+---moteの変更ファイル結果とツールイベントのパスを絶対パスに正規化して統合する
+---moteは各configのcwd相対パスを返すため、そのまま扱うと別mote_dirsの同名ファイルが
+---重複排除で潰れたり、Neovim cwd基準の誤ったリロードが起きる
+---@param mote_batches {base: string, files: string[]}[] mote configごとの結果（baseはそのconfigのcwd）
+---@param modified_file_paths table<string, boolean>|nil ツールイベントで検知した変更ファイル
+---@return string[] 重複排除済みの絶対パス一覧
+function M._merge_modified_files(mote_batches, modified_file_paths)
+  local seen = {}
+  local out = {}
+  local function add(abs)
+    if not seen[abs] then
+      seen[abs] = true
+      table.insert(out, abs)
+    end
+  end
+
+  for _, batch in ipairs(mote_batches or {}) do
+    local base = vim.fn.fnamemodify(batch.base, ":p"):gsub("/$", "")
+    for _, f in ipairs(batch.files or {}) do
+      if f:sub(1, 1) == "/" then
+        add(f)
+      else
+        add(base .. "/" .. f)
+      end
+    end
+  end
+
+  for path in pairs(modified_file_paths or {}) do
+    add(vim.fn.fnamemodify(path, ":p"))
+  end
+
+  return out
 end
 
 ---リクエスト単位diff（軽量パス）のModified Files出力とpatch生成

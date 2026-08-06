@@ -57,16 +57,25 @@ function M.setup(buf, callbacks, keymaps)
         -- patchファイルから該当ファイルのdiffを表示
         PatchViewer.show(session_id, patch_filename, file_path)
       else
-        -- patchがない場合は設定に基づいてdiffツールを選択
-        -- session_idを渡してセッション専用のmote storageを使用
+        -- patchがない場合は送信時と同じ規則でdiffバックエンドを選択
+        -- （diff.tool = "mote" またはmote_dirs該当ならmote、それ以外はgit diff）
         local DiffSelector = require("vibing.core.utils.diff_selector")
-        -- cwdをfrontmatterのworking_dirから取得
+        -- cwd・mote_dirsをチャットのfrontmatterから取得
         local cwd = nil
+        local mote_dirs = nil
         local chat_buf = view.get_chat_buffer(buf)
         if chat_buf then
           cwd = chat_buf:get_cwd()
+          local frontmatter = chat_buf:parse_frontmatter()
+          mote_dirs = frontmatter and frontmatter.mote_dirs
+          if type(mote_dirs) == "string" then
+            mote_dirs = { mote_dirs }
+          end
+          if (not mote_dirs or #mote_dirs == 0) and frontmatter and frontmatter.mote_cwd then
+            mote_dirs = { frontmatter.mote_cwd }
+          end
         end
-        DiffSelector.show_diff(file_path, session_id, cwd)
+        DiffSelector.show_diff(file_path, session_id, cwd, mote_dirs)
       end
     end, { buffer = buf, desc = "Open diff for file under cursor" })
 

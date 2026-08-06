@@ -155,6 +155,56 @@ describe("request_diff", function()
       RequestDiff.clear(other_handle)
     end)
 
+    it("lists files outside base_dir without a diff section", function()
+      local outside_dir = vim.fn.tempname()
+      vim.fn.mkdir(outside_dir, "p")
+      outside_dir = vim.fn.fnamemodify(outside_dir, ":p"):gsub("/$", "")
+      local outside = outside_dir .. "/outside.txt"
+      write_file(outside, "a\n")
+      RequestDiff.capture(handle_id, "Edit", { file_path = outside })
+      write_file(outside, "b\n")
+
+      local files, abs_files, patch = RequestDiff.generate(handle_id, tmp_dir, nil)
+
+      assert.same({ outside }, files)
+      assert.same({ outside }, abs_files)
+      assert.is_nil(patch)
+
+      vim.fn.delete(outside_dir, "rf")
+    end)
+
+    it("lists binary files without a diff section", function()
+      local file = tmp_dir .. "/bin.dat"
+      write_file(file, "a\0b")
+      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      write_file(file, "c\0d")
+
+      local files, _, patch = RequestDiff.generate(handle_id, tmp_dir, nil)
+
+      assert.same({ "bin.dat" }, files)
+      assert.is_nil(patch)
+    end)
+
+    it("handles files without trailing newlines so reverse-apply restores them exactly", function()
+      local file = tmp_dir .. "/no-newline.txt"
+      write_file(file, "one\ntwo")
+      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      write_file(file, "one\nTWO")
+
+      local _, _, patch = RequestDiff.generate(handle_id, tmp_dir, nil)
+      assert.is_truthy(patch)
+      assert.is_truthy(patch:find("No newline at end of file", 1, true))
+
+      local patch_file = tmp_dir .. "/nn.patch"
+      local parser = require("vibing.ui.patch_viewer.parser")
+      write_file(patch_file, parser.extract_file_diff(patch, "no-newline.txt") .. "\n")
+      local result = vim
+        .system({ "git", "apply", "--reverse", "--whitespace=nowarn", patch_file }, { cwd = tmp_dir, text = true })
+        :wait()
+      assert.equals(0, result.code, result.stderr)
+      assert.equals("one\ntwo", read_file(file))
+    end)
+
     it("is compatible with the patch viewer parser and git apply --reverse", function()
       local file = tmp_dir .. "/roundtrip.txt"
       write_file(file, "one\ntwo\nthree\n")
