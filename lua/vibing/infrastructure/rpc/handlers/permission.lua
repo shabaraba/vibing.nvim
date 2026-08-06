@@ -225,6 +225,18 @@ function M.check_tool_permission(params)
   local result = can_use_tool_mod.can_use_tool(tool_name, tool_input, perm_config)
 
   if result.behavior == "allow" then
+    -- ツールが実行される前（=レスポンスを書いてフックのブロックを解く前）に、
+    -- 対象ファイルの「変更前」内容を退避する。リクエスト単位diffのベースラインになる。
+    -- 退避の失敗が許可判断を壊さないよう pcall で保護する。
+    pcall(function()
+      local effective_handle = handle_id
+      if not effective_handle then
+        local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+        local stream = registry.get(nil)
+        effective_handle = stream and stream.handle_id
+      end
+      require("vibing.core.utils.request_diff").capture(effective_handle, tool_name, tool_input)
+    end)
     write_hook_response(request_id, true)
     return { status = "allowed" }
   elseif result.behavior == "deny" then
