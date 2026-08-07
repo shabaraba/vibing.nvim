@@ -22,7 +22,7 @@ import { homedir } from 'os';
  * A resolved installed plugin: its registry id and on-disk install path.
  */
 export interface ResolvedPlugin {
-  /** Plugin identifier as it appears in installed_plugins.json, e.g. "vibing-nvim@vibing-nvim" */
+  /** Plugin identifier as it appears in installed_plugins.json, e.g. "vibing-nvim@vibing" */
   id: string;
   /** Absolute path to the plugin's installation directory */
   path: string;
@@ -154,7 +154,7 @@ async function loadEnabledPluginIds(): Promise<Set<string> | null> {
  * @example
  * ```typescript
  * const plugins = await resolveInstalledPlugins();
- * // Returns: [{ id: 'vibing-nvim@vibing-nvim', path: '/path/to/plugin' }, ...]
+ * // Returns: [{ id: 'vibing-nvim@vibing', path: '/path/to/plugin' }, ...]
  * ```
  */
 export async function resolveInstalledPlugins(): Promise<ResolvedPlugin[]> {

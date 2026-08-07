@@ -194,7 +194,7 @@ user` for you on every build — nothing else to do.
 
 ```text
 /plugin marketplace add shabaraba/vibing.nvim
-/plugin install vibing-nvim@vibing-nvim
+/plugin install vibing-nvim@vibing
 ```
 
 Either way, this registers the `vibing-nvim` MCP server (same tools as `mcp__vibing-nvim__*`
@@ -211,8 +211,8 @@ anything to connect to.
 **Uninstalling:**
 
 ```text
-/plugin uninstall vibing-nvim@vibing-nvim
-/plugin marketplace remove vibing-nvim
+/plugin uninstall vibing-nvim@vibing
+/plugin marketplace remove vibing
 ```
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
