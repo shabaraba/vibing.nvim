@@ -157,5 +157,12 @@ describe("cli_command_builder", function()
       local idx = find_flag(cmd, "--setting-sources")
       assert.equals("user,project,local", cmd[idx + 1])
     end)
+
+    it("falls back to the default when setting_sources contains an unsupported source name", function()
+      local config = { agent = { setting_sources = { "project", "workspace" } } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.equals("user,project,local", cmd[idx + 1])
+    end)
   end)
 end)

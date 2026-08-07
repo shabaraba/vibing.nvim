@@ -606,8 +606,9 @@ agent = {
 
   setting_sources = { "user", "project", "local" },  -- Sources passed to the CLI's
                                  -- --setting-sources flag. Drop "user" to skip loading your
-                                 -- global CLAUDE.md and personal MCP servers on every chat,
-                                 -- reducing fixed per-session token cost.
+                                 -- global CLAUDE.md on every chat, reducing fixed per-session
+                                 -- token cost. Note: this does not affect MCP server loading —
+                                 -- use --strict-mcp-config for that.
                                  -- Default: { "user", "project", "local" }
 }
 ```

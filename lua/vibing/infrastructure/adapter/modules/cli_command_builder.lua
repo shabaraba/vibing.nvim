@@ -8,11 +8,12 @@ local worktree_constants = require("vibing.core.constants.worktree")
 local M = {}
 
 local DEFAULT_SETTING_SOURCES = { "user", "project", "local" }
+local VALID_SETTING_SOURCES = { user = true, project = true, ["local"] = true }
 
 local cached_claude_path = nil
 
 --- Resolve the `--setting-sources` list, falling back to the default when config
---- is missing, malformed, or contains non-string/empty entries.
+--- is missing, malformed, or contains entries outside `user`/`project`/`local`.
 --- @param config Vibing.Config
 --- @return string[]
 local function resolve_setting_sources(config)
@@ -22,7 +23,7 @@ local function resolve_setting_sources(config)
   end
 
   for _, source in ipairs(setting_sources) do
-    if type(source) ~= "string" or source == "" then
+    if type(source) ~= "string" or not VALID_SETTING_SOURCES[source] then
       return DEFAULT_SETTING_SOURCES
     end
   end
