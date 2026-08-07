@@ -30,9 +30,14 @@ require("vibing").setup({
   },
   diff = {
     tool = "auto",  -- "git" | "mote" | "auto"
-    -- "git": Always use git diff
-    -- "mote": Always use mote diff (requires mote v0.2.4+: https://github.com/shabaraba/mote)
-    -- "auto": Use mote if available and initialized, otherwise fallback to git
+    -- "auto"/"git": Lightweight per-request diff (default). Files touched by
+    --   Write/Edit/MultiEdit/NotebookEdit are backed up at PreToolUse time and diffed after the
+    --   response — no
+    --   whole-tree scanning, no external processes. `gd` falls back to git diff when no
+    --   patch file is found.
+    -- "mote": Opt-in mote snapshot tracking (requires mote v0.2.4+:
+    --   https://github.com/shabaraba/mote). Also catches Bash-driven file changes, at the
+    --   cost of snapshotting the whole tracked tree on every request.
     mote = {
       project = nil,  -- Project name (nil = auto-detect from git repo name)
       context_prefix = "vibing",  -- Context name prefix (default: "vibing")
@@ -135,9 +140,25 @@ require("vibing").setup({
 })
 ```
 
-## Mote Integration
+## Per-Request Diff Tracking (Default)
 
-vibing.nvim uses mote for displaying file changes and tracking modifications.
+By default (`diff.tool = "auto"` or `"git"`), vibing.nvim tracks per-request changes without
+mote: when Claude is about to run Write/Edit/MultiEdit/NotebookEdit, the PreToolUse hook backs up the
+target file's pre-edit content, and after the response a git-style patch is generated with
+`vim.diff()` (built-in xdiff, no external processes). Patches are stored under
+`.vibing/patches/` and referenced from the chat buffer via `<!-- patch: ... -->` comments, so
+`gd` and patch revert work per request and per chat buffer — concurrent chats never mix
+diffs, and cost scales with the number of files actually touched (not the tree size, which
+matters for virtual-monorepo setups with many workspaces).
+
+Limitation: files changed via Bash commands are listed in Modified Files (when reported by
+tool events) but have no diff section. Use mote mode if you need Bash-driven changes tracked.
+
+## Mote Integration (Opt-In)
+
+vibing.nvim can alternatively use mote for displaying file changes and tracking
+modifications. Mote snapshots run only when `diff.tool = "mote"` is set explicitly, or when a
+chat has `mote_dirs` in its frontmatter (via `:VibingMoteDir`).
 
 [mote](https://github.com/shabaraba/mote) is a fine-grained snapshot management tool that provides richer diff capabilities than git. It tracks changes at a more granular level than git commits.
 
