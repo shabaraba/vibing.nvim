@@ -146,6 +146,13 @@ npm install --silent
 echo "[vibing.nvim] Building TypeScript..."
 npm run build --silent
 
+# Record the fingerprint run.mjs's self-build check compares against (same
+# algorithm, via bin/build-fingerprint.mjs), so the plugin cache's run.mjs
+# recognizes this build as fresh on first launch instead of running `npm ci`
+# over the node_modules symlink set up below and replacing it with a real
+# copy until the next build.sh run re-links it.
+"$NODE_EXECUTABLE" bin/write-fingerprint.mjs
+
 # Verify build succeeded
 if [ -f "dist/index.js" ]; then
     echo "[vibing.nvim] ✓ MCP server built successfully"
@@ -193,8 +200,8 @@ if [ -f "dist/index.js" ]; then
         # the migration window instead of two extra `claude` CLI spawns on every
         # future build forever.
         if echo "$PLUGIN_LIST_JSON" | "$NODE_EXECUTABLE" -e "process.exit(JSON.parse(require('fs').readFileSync(0,'utf8')||'[]').some(p=>p.id==='${OLD_PLUGIN_ID}')?0:1)" 2>/dev/null; then
-            claude plugin uninstall "$OLD_PLUGIN_ID" &> /dev/null || true
-            claude plugin marketplace remove "$OLD_MARKETPLACE_NAME" &> /dev/null || true
+            run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin uninstall "$OLD_PLUGIN_ID" &> /dev/null || true
+            run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin marketplace remove "$OLD_MARKETPLACE_NAME" &> /dev/null || true
             PLUGIN_LIST_JSON="$(run_with_timeout "$CLAUDE_CLI_LIST_TIMEOUT" claude plugin list --json 2>/dev/null)" || true
         fi
 
@@ -284,8 +291,15 @@ if [ -f "dist/index.js" ]; then
         if [ -n "$PLUGIN_INSTALL_PATH" ]; then
             echo "[vibing.nvim] Syncing plugin cache with this checkout..."
             mkdir -p "$PLUGIN_INSTALL_PATH/mcp-server"
+            # A partial-copy failure here (permission errors, EDR/antivirus
+            # interference — the exact class of environment this sync exists
+            # to work around) must not abort the rest of build.sh under `set
+            # -e`, the way every other `claude plugin ...` call above already
+            # tolerates failure. Capture the status via `||` instead of
+            # letting a failing command be the tail of its own statement.
+            SYNC_STATUS=0
             if command -v rsync &> /dev/null; then
-                rsync -a --delete --exclude='.git' --exclude='/node_modules' --exclude='/mcp-server/node_modules' --exclude='/mcp-server/dist' "$SCRIPT_DIR/" "$PLUGIN_INSTALL_PATH/"
+                rsync -a --delete --exclude='.git' --exclude='/node_modules' --exclude='/mcp-server/node_modules' --exclude='/mcp-server/dist' "$SCRIPT_DIR/" "$PLUGIN_INSTALL_PATH/" || SYNC_STATUS=$?
             else
                 # Portable fallback without rsync. Copy each top-level entry
                 # individually and skip the excluded ones outright, rather than
@@ -301,15 +315,18 @@ if [ -f "dist/index.js" ]; then
                     [ "$name" = ".git" ] && continue
                     [ "$name" = "node_modules" ] && continue
                     [ "$name" = "mcp-server" ] && continue
-                    cp -R "$entry" "$PLUGIN_INSTALL_PATH/"
+                    cp -R "$entry" "$PLUGIN_INSTALL_PATH/" || SYNC_STATUS=$?
                 done
                 for entry in "$MCP_DIR"/* "$MCP_DIR"/.[!.]*; do
                     [ -e "$entry" ] || continue
                     name="$(basename "$entry")"
                     [ "$name" = "node_modules" ] && continue
                     [ "$name" = "dist" ] && continue
-                    cp -R "$entry" "$PLUGIN_INSTALL_PATH/mcp-server/"
+                    cp -R "$entry" "$PLUGIN_INSTALL_PATH/mcp-server/" || SYNC_STATUS=$?
                 done
+            fi
+            if [ "$SYNC_STATUS" -ne 0 ]; then
+                echo "[vibing.nvim] ⚠ Warning: plugin cache sync failed (exit $SYNC_STATUS); cache may be incomplete"
             fi
 
             # Unconditionally (re)point node_modules/dist at this live checkout's own
