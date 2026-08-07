@@ -90,4 +90,42 @@ describe("active_stream_registry", function()
       assert.is_nil(registry.get(nil))
     end)
   end)
+
+  describe("get_by_chat_file_path", function()
+    it("returns the entry whose chat_file_path matches, even with several concurrent streams", function()
+      local registry = fresh_registry()
+      registry.register({ handle_id = "a", chat_file_path = "/tmp/chat-a.md", adapter = {} })
+      registry.register({ handle_id = "b", chat_file_path = "/tmp/chat-b.md", adapter = {} })
+
+      local stream = registry.get_by_chat_file_path("/tmp/chat-b.md")
+      assert.is_not_nil(stream)
+      assert.equals("b", stream.handle_id)
+    end)
+
+    it("falls back to the sole stream when chat_file_path is nil", function()
+      local registry = fresh_registry()
+      registry.register({ handle_id = "only", chat_file_path = "/tmp/chat-only.md", adapter = {} })
+
+      local stream = registry.get_by_chat_file_path(nil)
+      assert.is_not_nil(stream)
+      assert.equals("only", stream.handle_id)
+    end)
+
+    it("falls back to the sole stream when chat_file_path doesn't match any entry (e.g. mid-turn rename)", function()
+      local registry = fresh_registry()
+      registry.register({ handle_id = "only", chat_file_path = "/tmp/old-name.md", adapter = {} })
+
+      local stream = registry.get_by_chat_file_path("/tmp/new-name.md")
+      assert.is_not_nil(stream)
+      assert.equals("only", stream.handle_id)
+    end)
+
+    it("returns nil on mismatch when multiple streams are registered (avoids guessing)", function()
+      local registry = fresh_registry()
+      registry.register({ handle_id = "a", chat_file_path = "/tmp/chat-a.md", adapter = {} })
+      registry.register({ handle_id = "b", chat_file_path = "/tmp/chat-b.md", adapter = {} })
+
+      assert.is_nil(registry.get_by_chat_file_path("/tmp/unknown.md"))
+    end)
+  end)
 end)

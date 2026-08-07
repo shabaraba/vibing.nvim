@@ -101,7 +101,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   local rpc_server = require("vibing.infrastructure.rpc.server")
   local rpc_port = rpc_server.get_port()
 
-  local cmd = CLICommandBuilder.build(prompt, opts, session_id, self.config, settings_path, handle_id, rpc_port)
+  local cmd = CLICommandBuilder.build(prompt, opts, session_id, self.config, settings_path, rpc_port)
   local output = {}
   local error_output = {}
 
@@ -148,6 +148,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
 
   ActiveStreamRegistry.register({
     handle_id = handle_id,
+    chat_file_path = opts.chat_file_path,
     adapter = self,
     on_insert_choices = opts.on_insert_choices,
     on_approval_required = opts.on_approval_required,
