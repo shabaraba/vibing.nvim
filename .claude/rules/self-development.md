@@ -1,6 +1,7 @@
 # Developing vibing.nvim with vibing.nvim
 
-When you (Claude Agent SDK) are working on vibing.nvim itself, follow these guidelines to leverage vibing.nvim's built-in workflows.
+When you (Claude Agent SDK) are working on vibing.nvim itself, follow these guidelines to
+leverage vibing.nvim's built-in workflows.
 
 ## Preferred Workflows
 
@@ -31,49 +32,6 @@ When you (Claude Agent SDK) are working on vibing.nvim itself, follow these guid
 
 1. Use `:VibingContext <file>` to add files to context
 2. Use `:VibingClearContext` to clear context
-
-## Example Development Workflow
-
-```typescript
-// ✅ CORRECT - vibing.nvim-aware workflow
-// 1. Create an isolated worktree for the new feature (invoke the vibing-worktree-create skill
-//    directly — plain `git worktree add` under .vibing/worktrees/<branch>/)
-
-// 2. Load file in background for LSP analysis
-const { bufnr } = await use_mcp_tool('vibing-nvim', 'nvim_load_buffer', {
-  filepath: 'lua/vibing/ui/chat_buffer.lua',
-  rpc_port: process.env.VIBING_NVIM_RPC_PORT,
-});
-
-// 3. Use LSP to find references
-const refs = await use_mcp_tool('vibing-nvim', 'nvim_lsp_references', {
-  bufnr: bufnr,
-  line: 100,
-  col: 5,
-  rpc_port: process.env.VIBING_NVIM_RPC_PORT,
-});
-
-// 4. Make changes via Edit tool
-// ... (Agent SDK's Edit tool)
-
-// 5. Build and test
-await use_mcp_tool('vibing-nvim', 'nvim_execute', {
-  command: '!npm run build && npm test',
-});
-```
-
-```typescript
-// ❌ WRONG - Generic workflow
-// 1. Worktree placed outside the .vibing/worktrees/ convention (and chat frontmatter left
-//    pointing at the old directory)
-await bash("git worktree add ../feature-new-ui");
-
-// 2. Use Serena LSP tools (analyzes stale file copies)
-const refs = await use_mcp_tool("serena", "lsp_references", { ... });
-
-// 3. Edit files without Neovim awareness
-// (may conflict with open buffers)
-```
 
 ## Common Mistakes and How to Fix Them
 

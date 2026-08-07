@@ -1,273 +1,34 @@
 # Configuration
 
-Example configuration showing all available settings:
+The full user-facing configuration reference (every `setup()` field, window positions, permission
+rule examples, daily summary, etc.) lives in `README.md` → `## 📚 Configuration Reference` and in
+`lua/vibing/config.lua` (defaults + type annotations) — read those instead of duplicating the
+field list here.
 
-```lua
-require("vibing").setup({
-  agent = {
-    default_mode = "code",    -- "code" | "plan" | "explore"
-    default_model = "sonnet",  -- "sonnet" | "opus" | "haiku" | "fable"
-    utility_model = "haiku",  -- Model used for lightweight utility calls (title generation, summarize, daily summary)
-    prioritize_vibing_lsp = true,  -- Prioritize vibing-nvim LSP tools over generic LSP
-  },
-  chat = {
-    window = {
-      position = "current",  -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
-      width = 0.4,
-      height = 0.4,  -- Used for "top" and "bottom" positions
-      border = "rounded",
-    },
-    auto_context = true,
-    save_location_type = "project",  -- "project" | "user" | "custom"
-    save_dir = vim.fn.stdpath("data") .. "/vibing/chats",  -- Used when "custom"
-    context_position = "append",  -- "prepend" | "append"
-  },
-  keymaps = {
-    send = "<CR>",
-    cancel = "<C-c>",
-    add_context = "<C-a>",
-    open_diff = "gd",  -- Open diff viewer on file paths
-    open_file = "gf",  -- Open file on file paths
-  },
-  diff = {
-    tool = "auto",  -- "git" | "mote" | "auto"
-    -- "auto"/"git": Lightweight per-request diff (default). Files touched by
-    --   Write/Edit/MultiEdit/NotebookEdit are backed up at PreToolUse time and diffed after the
-    --   response — no
-    --   whole-tree scanning, no external processes. `gd` falls back to git diff when no
-    --   patch file is found.
-    -- "mote": Opt-in mote snapshot tracking (requires mote v0.2.4+:
-    --   https://github.com/shabaraba/mote). Also catches Bash-driven file changes, at the
-    --   cost of snapshotting the whole tracked tree on every request.
-    mote = {
-      project = nil,  -- Project name (nil = auto-detect from git repo name)
-      context_prefix = "vibing",  -- Context name prefix (default: "vibing")
-    },
-  },
-  permissions = {
-    mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "auto"
-    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill" },
-    deny = { "Bash" },
-    ask = {},  -- Tools requiring confirmation before use
-    rules = {},  -- Optional granular rules
-  },
-  node = {
-    executable = "auto",  -- "auto" (detect from PATH) or explicit path like "/usr/bin/node" or "/usr/local/bin/bun"
-    dev_mode = false,  -- false: Use compiled JS, true: Use TypeScript directly with bun
-  },
-  mcp = {
-    enabled = true,  -- MCP integration enabled by default
-    rpc_port = 9876,
-  },
-  language = nil,  -- Optional: "ja" | "en" | { default = "ja", chat = "ja" }
-  ui = {
-    wrap = "on",  -- "nvim" | "on" | "off" - Line wrap configuration for all vibing buffers
-    -- "nvim": Respect Neovim defaults (don't modify wrap settings)
-    -- "on": Enable wrap + linebreak (recommended for chat readability)
-    -- "off": Disable line wrapping
-    tool_result_display = "compact",  -- "none" | "compact" | "full"
-    -- "none": Don't show tool execution results
-    -- "compact": Show first 100 characters only (default)
-    -- "full": Show complete tool output
-    gradient = {
-      enabled = true,  -- Enable gradient animation during AI response
-      colors = { "#cc3300", "#fffe00" },  -- Start and end colors
-      interval = 100,  -- Animation update interval in milliseconds
-    },
-    tool_markers = {
-      Task = "▶",           -- Task tool start marker
-      TaskComplete = "✓",   -- Task tool complete marker
-      default = "⏺",        -- Default marker for other tools
-      -- Per-tool markers with optional pattern matching:
-      -- Bash = { default = "💻", patterns = { ["^npm"] = "📦", ["^git"] = "🌿" } }
-    },
-  },
-  daily_summary = {
-    save_dir = nil,  -- Defaults to chat_dir/daily/
-    search_dirs = {},  -- Directories to search for chats (VibingDailySummaryAll)
-    file_finder_strategy = "auto",  -- "auto" | "fd" | "find" | "locate" | "ripgrep"
-  },
-})
-```
+## Where Things Live
 
-## Window Positions
+- Full option list & defaults: `README.md` → `## 📚 Configuration Reference`
+- Mote (diff tool) setup, session storage layout, and troubleshooting: `docs/MIGRATION_MOTE.md`
+- Defaults and type annotations: `lua/vibing/config.lua`
 
-vibing.nvim supports multiple window positioning options for the chat interface:
+## Diff Tracking (Claude-relevant behavior)
 
-- **`current`**: Open in the current window (replaces current buffer)
-- **`right`**: Open as a vertical split on the right side
-  - Width controlled by `config.chat.window.width`
-- **`left`**: Open as a vertical split on the left side
-  - Width controlled by `config.chat.window.width`
-- **`top`**: Open as a horizontal split at the top
-  - Height controlled by `config.chat.window.height`
-- **`bottom`**: Open as a horizontal split at the bottom
-  - Height controlled by `config.chat.window.height`
-- **`back`**: Create buffer only, no window (accessible via `:ls` and `:bnext`)
-  - Buffer is marked as listed for easy navigation
-- **`float`**: Open as a floating window
-  - Width controlled by `config.chat.window.width`
+`config.diff.tool` (`"git"` | `"mote"` | `"auto"`) selects the diff strategy used by `gd` (diff
+viewer):
 
-**Examples:**
+**Per-request tracking (default, `"auto"`/`"git"`):** the PreToolUse hook backs up a file's
+pre-edit content before Write/Edit/MultiEdit/NotebookEdit, and a git-style patch is generated with
+`vim.diff()` (built-in xdiff, no external process) after the response. Patches are stored under
+`.vibing/patches/` and referenced per chat buffer via `<!-- patch: ... -->` comments, so `gd` and
+patch revert work per request and per chat buffer — concurrent chats never mix diffs, and cost
+scales with files actually touched, not tree size. Limitation: Bash-driven file changes have no
+diff section (only mote catches those).
 
-```lua
--- Vertical split on the right (40% of screen width)
-require("vibing").setup({
-  chat = {
-    window = {
-      position = "right",
-      width = 0.4,
-    },
-  },
-})
-
--- Horizontal split at bottom (30% of screen height)
-require("vibing").setup({
-  chat = {
-    window = {
-      position = "bottom",
-      height = 0.3,
-    },
-  },
-})
-
--- Background buffer (no window, access via buffer list)
-require("vibing").setup({
-  chat = {
-    window = {
-      position = "back",
-    },
-  },
-})
-```
-
-## Per-Request Diff Tracking (Default)
-
-By default (`diff.tool = "auto"` or `"git"`), vibing.nvim tracks per-request changes without
-mote: when Claude is about to run Write/Edit/MultiEdit/NotebookEdit, the PreToolUse hook backs up the
-target file's pre-edit content, and after the response a git-style patch is generated with
-`vim.diff()` (built-in xdiff, no external processes). Patches are stored under
-`.vibing/patches/` and referenced from the chat buffer via `<!-- patch: ... -->` comments, so
-`gd` and patch revert work per request and per chat buffer — concurrent chats never mix
-diffs, and cost scales with the number of files actually touched (not the tree size, which
-matters for virtual-monorepo setups with many workspaces).
-
-Limitation: files changed via Bash commands are listed in Modified Files (when reported by
-tool events) but have no diff section. Use mote mode if you need Bash-driven changes tracked.
-
-## Mote Integration (Opt-In)
-
-vibing.nvim can alternatively use mote for displaying file changes and tracking
-modifications. Mote snapshots run only when `diff.tool = "mote"` is set explicitly, or when a
-chat has `mote_dirs` in its frontmatter (via `:VibingMoteDir`).
-
-[mote](https://github.com/shabaraba/mote) is a fine-grained snapshot management tool that provides richer diff capabilities than git. It tracks changes at a more granular level than git commits.
-
-**Installation:**
-
-```bash
-# Homebrew (macOS / Linux)
-brew tap shabaraba/tap
-brew install mote
-
-# Or from source
-cargo install --path .
-```
-
-**Binary Installation:**
-
-vibing.nvim automatically downloads and bundles platform-specific mote binaries during installation:
-
-```lua
--- Lazy.nvim
-{
-  "yourusername/vibing.nvim",
-  build = "./build.sh",  -- Automatically downloads mote binaries
-}
-```
-
-The `build.sh` script downloads mote binaries for all supported platforms:
-
-- `bin/mote-darwin-arm64` (macOS Apple Silicon)
-- `bin/mote-darwin-x64` (macOS Intel)
-- `bin/mote-linux-arm64` (Linux ARM64)
-- `bin/mote-linux-x64` (Linux x64)
-
-**Priority:** vibing.nvim uses its bundled mote binary preferentially, falling back to system `mote` only if the bundled binary is unavailable.
-
-**Setup (mote v0.2.4+ standalone mode with -d/--context-dir):**
-
-vibing.nvim uses `-d/--context-dir` to operate in standalone mode, without depending on global mote configuration (`~/.config/mote/`). All mote data is stored locally in the project:
-
-```bash
-# vibing.nvim automatically creates context directories as needed:
-# For project root
-.vibing/mote/<project>/vibing-root/
-
-# For worktree (e.g., feature-x branch)
-.vibing/mote/<project>/vibing-worktree-feature-x-<hash>/
-
-# Manual usage example (vibing.nvim does this automatically)
-# No initialization needed - just use -d option directly
-mote -d .vibing/mote/my-project/vibing-root snap create -m "Before refactoring"
-mote -d .vibing/mote/my-project/vibing-root snap diff
-mote -d .vibing/mote/my-project/vibing-root snap list
-```
-
-**Configuration:**
-
-```lua
-require("vibing").setup({
-  diff = {
-    tool = "auto",  -- "git" | "mote" | "auto"
-    mote = {
-      project = nil,  -- nil = auto-detect from git repo name
-      context_prefix = "vibing",  -- Context name prefix (default: "vibing")
-    },
-  },
-})
-```
-
-**Key Features:**
-
-- **Project-local storage**: All mote data stays in `.vibing/mote/` within your project
-- **No global config**: Doesn't touch `~/.config/mote/`, no interference with personal mote usage
-- **Worktree isolation**: Each worktree has its own context (e.g., `vibing-worktree-feature-x-a1b2c3d4`)
-- **Automatic initialization**: vibing.nvim creates contexts automatically when needed
-- **Automatic ignore management**: vibing.nvim automatically creates and updates `ignore` files in context directories (`.vibing/mote/<project>/<context>/ignore`) with sensible defaults (`.vibing/`, `node_modules/`, `.git/`, etc.)
-
-**Behavior:**
-
-- When you press `gd` on a file path in chat, vibing.nvim will:
-  1. Check for patch files (if using Agent SDK patch mode)
-  2. If no patch files, use mote to display the diff
-
-**Benefits of mote:**
-
-- Fine-grained snapshots (more granular than git commits)
-- Content-addressable storage with efficient deduplication
-- Works alongside git without conflicts
-- Automatic snapshot creation via hooks (Claude Code, git, jj)
-
-**Managing ignore patterns (mote v0.2.4+):**
-
-vibing.nvim automatically manages ignore patterns, but you can manually customize them if needed:
-
-```bash
-# List current ignore patterns
-mote -d .vibing/mote/<project>/<context> ignore list
-
-# Add ignore pattern
-mote -d .vibing/mote/<project>/<context> ignore add "*.log"
-
-# Remove ignore pattern
-mote -d .vibing/mote/<project>/<context> ignore remove "*.log"
-
-# Edit ignore file directly
-mote -d .vibing/mote/<project>/<context> ignore edit
-```
-
-Example context directories:
-
-- Main repository: `.vibing/mote/vibing-nvim/vibing-root`
-- Worktree: `.vibing/mote/vibing-nvim/vibing-worktree-feature-x-a1b2c3d4`
+**mote (opt-in, `"mote"`):** vibing.nvim ships its own bundled mote binary per platform
+(`bin/mote-<os>-<arch>`), falling back to a system `mote` only if the bundled one is unavailable.
+All mote data is project-local, stored via `-d/--context-dir`, never `~/.config/mote/`:
+`.vibing/mote/<project>/vibing-root/` for the main repo, and
+`.vibing/mote/<project>/vibing-worktree-<branch>-<hash>/` per worktree. Contexts and `ignore`
+files (`.vibing/`, `node_modules/`, `.git/`, ...) are created and updated automatically — no
+manual `mote context new` step is needed. `gd` on a file path checks for patch files first, then
+falls back to mote.

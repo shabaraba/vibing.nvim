@@ -116,14 +116,6 @@ vibing.nvim supports running multiple chat sessions simultaneously without inter
 - Session lifecycle: Created → Used → Automatically cleaned up when stale
 - `cleanup_stale_sessions()` removes completed sessions while preserving active ones
 
-**Example Workflow:**
-
-```lua
--- Start multiple chats simultaneously
-:VibingChat  -- Chat 1 (session-abc)
-:VibingChat  -- Chat 2 (session-def)
-```
-
 See `docs/adr/002-concurrent-execution-support.md` for architectural details.
 
 ## Chat Fork

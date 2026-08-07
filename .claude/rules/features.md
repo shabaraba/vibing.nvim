@@ -2,56 +2,20 @@
 
 ## Message Timestamps
 
-Chat messages include timestamps in their headers to help track conversation chronology and
-facilitate searching through chat history.
+Chat messages include timestamps in their headers (`## 2025-12-28 14:30:00 User`) for chronology
+and search — `/2025-12-28` in Neovim, or `grep "## 2025-12-28" .vibing/chat/*.md` across chat
+files. Legacy headers without timestamps (`## User`, `## Assistant`) remain fully supported. User
+timestamps are recorded when the message is sent (`<CR>`); Assistant timestamps are recorded when
+the response begins (`on_done` callback). Timestamps use the local system timezone (Lua's
+`os.date()`).
 
-**Timestamp Format:**
-
-```markdown
-## 2025-12-28 14:30:00 User
-
-Message content here
-
-## 2025-12-28 14:35:15 Assistant
-
-Response content here
-```
-
-**Key Features:**
-
-- **Automatic Timestamping**: Timestamps are automatically added when messages are sent (User) or responses are generated (Assistant)
-- **Timezone**: All timestamps use the local system timezone (as returned by Lua's `os.date()`)
-- **Backward Compatibility**: Legacy format without timestamps (`## User`, `## Assistant`) is fully supported
-- **Searchability**: Timestamps enable easy searching by date/time:
-  - Neovim search: `/2025-12-28` to find messages from a specific date
-  - File search: `grep "## 2025-12-28" .vibing/chat/*.md` to search across chat files
-  - Useful for extracting conversation history for daily reports
-
-**Timestamp Recording:**
-
-- User messages: Timestamp recorded when message is sent (`<CR>` pressed)
-- Assistant responses: Timestamp recorded when response begins (in `on_done` callback)
-
-**Implementation:**
-
-The `lua/vibing/utils/timestamp.lua` module provides:
-
-- `create_header(role, timestamp)` - Generate timestamped headers
-- `extract_role(line)` - Parse role from both timestamped and legacy headers
-- `has_timestamp(line)` - Check if header includes timestamp
-- `extract_timestamp(line)` - Extract timestamp from header
-- `is_header(line)` - Validate header format
+Implemented in `lua/vibing/utils/timestamp.lua`: `create_header(role, timestamp)`,
+`extract_role(line)`, `has_timestamp(line)`, `extract_timestamp(line)`, `is_header(line)`.
 
 ## AskUserQuestion Support
 
-vibing.nvim supports Claude's `AskUserQuestion` tool, allowing Claude to ask clarifying questions during code generation. Instead of guessing or assuming, Claude can present multiple-choice questions for user confirmation.
-
-**How It Works:**
-
-1. **Claude asks a question** - When Claude needs clarification, it sends an `AskUserQuestion` event
-2. **Question appears in chat** - The question and options are inserted into the chat buffer as plain text:
-   - **Single-select questions**: Numbered list format (`1. 2. 3.`)
-   - **Multi-select questions**: Bullet list format (`- - -`)
+Claude's `AskUserQuestion` tool renders as plain markdown in the chat buffer instead of a native
+prompt, so the user can answer with ordinary Vim editing:
 
 ```markdown
 Which database should we use?
@@ -63,60 +27,10 @@ Which database should we use?
 Please answer the question and press `<CR>` to send.
 ```
 
-3. **User edits to select** - Delete unwanted options using Vim's standard editing commands (`dd`, etc.)
-4. **Send with `<CR>`** - Press `<CR>` to send the answer back to Claude
+Single-select questions render as a numbered list (`1. 2. 3.`); multi-select questions render as a
+bullet list (`- - -`). The user deletes unwanted options with standard Vim commands (`dd`, etc.)
+and sends the remainder with `<CR>`; Claude receives the edited list as a normal user message — no
+special Promise/state handling is required.
 
-**Example Workflow:**
-
-```markdown
-## Assistant
-
-Which database should we use?
-
-1. PostgreSQL
-2. MySQL
-3. SQLite
-
-Which features do you need? (multiple selection allowed)
-
-- Authentication
-- Logging
-- Caching
-
-Please answer the question and press `<CR>` to send.
-```
-
-After editing (removing unwanted options):
-
-```markdown
-## Assistant
-
-Which database should we use?
-
-1. PostgreSQL
-
-Which features do you need? (multiple selection allowed)
-
-- Authentication
-- Logging
-
-Please answer the question and press `<CR>` to send.
-```
-
-**Key Features:**
-
-- **Natural Vim workflow** - Use standard Vim commands (`dd`, `d{motion}`, etc.) to select options
-- **Visual selection type indicators** - Numbered lists for single-select, bullet lists for multi-select
-- **Single and multiple selection** - Delete unwanted options; remaining options are selected
-- **Additional instructions** - Add custom notes below the options before sending
-- **Non-invasive** - No special keymaps or UI overlays; works with any buffer editing
-
-**Implementation Details:**
-
-- Agent Wrapper sends `insert_choices` event and denies the tool
-- Choices are inserted into chat buffer as plain markdown
-  - Single-select (`multiSelect: false`): Numbered list format
-  - Multi-select (`multiSelect: true`): Bullet list format
-- User edits choices and sends via normal message flow (`<CR>`)
-- Claude receives selection as a regular user message
-- No special state management or Promise handling required
+**Implementation:** the Agent Wrapper sends an `insert_choices` event and denies the tool; the
+choices are inserted as plain markdown (numbered for `multiSelect: false`, bulleted for `true`).

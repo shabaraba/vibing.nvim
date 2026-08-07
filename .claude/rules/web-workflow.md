@@ -1,53 +1,23 @@
 # Claude Code on the Web
 
-When developing with Claude Code on the web, there are specific Git push constraints that require special handling.
+When developing with Claude Code on the web, there are specific Git push constraints that require
+special handling.
 
 ## Git Push Requirements
 
-**Branch Naming:**
+**Branch Naming:** branch names MUST start with `claude/` and end with a matching session ID
+(e.g. `claude/feature-name-abc123`). Pushing to a non-compliant branch fails with HTTP 403.
 
-- Branch names MUST start with `claude/`
-- Branch names MUST end with a matching session ID
-- Example: `claude/feature-name-abc123`
-- Pushing to non-compliant branches will fail with HTTP 403
-
-**Retry Logic:**
-
-- Network operations may experience transient failures
-- Always use exponential backoff retry (2s, 4s, 8s, 16s)
-- Maximum 4 retry attempts recommended
+**Retry Logic:** network operations may fail transiently — always retry pushes with exponential
+backoff (2s, 4s, 8s, 16s), up to 4 attempts.
 
 ## Using the Git Workflow Skill
 
-A comprehensive skill is available at `.claude/skills/git-remote-workflow/SKILL.md` that provides:
-
-**Branch Management:**
-
-- Branch name validation and conversion
-- Pattern compliance checking (`claude/*-<sessionId>`)
-
-**Push Operations:**
-
-- Automatic retry with exponential backoff
-- Force push handling with safety checks
-
-**Pull Request Creation:**
-
-- GitHub API integration (no `gh` CLI required)
-- Multi-line PR descriptions with proper formatting
-- Multiple PR creation in one session
-- PR update capabilities
-
-**Complete Workflows:**
-
-- Feature development to PR creation
-- Review comment resolution
-- Multi-PR workflows
-
-**Environment Detection:**
-
-- Automatic detection of Claude Code on the web (`CLAUDE_CODE_REMOTE=true`)
-- Environment-specific logic application
+`.claude/skills/git-remote-workflow/SKILL.md` provides branch name validation/conversion, push
+retry with exponential backoff and safe force-push handling, PR creation/update via the GitHub API
+(no `gh` CLI required, including multi-line descriptions), and complete workflows (feature → PR,
+review-comment resolution, multi-PR sessions). It auto-detects Claude Code on the web via
+`CLAUDE_CODE_REMOTE=true` and applies environment-specific logic accordingly.
 
 ## Quick Reference
 
@@ -69,4 +39,5 @@ curl -X POST \
   -d '{"title":"My PR","head":"claude/branch-abc","base":"main","body":"Description"}'
 ```
 
-See `.claude/skills/git-remote-workflow/SKILL.md` for complete documentation, workflows, and troubleshooting.
+See `.claude/skills/git-remote-workflow/SKILL.md` for complete documentation, workflows, and
+troubleshooting.
