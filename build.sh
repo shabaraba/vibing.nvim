@@ -10,6 +10,29 @@ MCP_DIR="${SCRIPT_DIR}/mcp-server"
 # Use VIBING_NODE_EXECUTABLE env var if set, otherwise default to "node"
 NODE_EXECUTABLE="${VIBING_NODE_EXECUTABLE:-node}"
 
+# Timeouts (seconds) for `claude` CLI calls in the plugin-registration block below.
+# `claude plugin list --json` only reads local state, so it gets a shorter budget
+# than the marketplace/plugin subcommands, which may hit the network.
+readonly CLAUDE_CLI_LIST_TIMEOUT=30
+readonly CLAUDE_CLI_TIMEOUT=60
+
+# Kill a process and everything it forked. Killing only the direct child would
+# leave a grandchild alive (e.g. a network helper process spawned by `claude`)
+# still holding this script's stdout/stderr open, reproducing the exact hang
+# run_with_timeout exists to prevent. There's no grace period (SIGTERM then
+# SIGKILL) — by the time this runs, the process is already deemed hung, so
+# waiting on it to exit cleanly defeats the point of a hard timeout.
+kill_tree() {
+    local pid="$1"
+    if command -v pgrep &> /dev/null; then
+        local child
+        for child in $(pgrep -P "$pid" 2>/dev/null); do
+            kill_tree "$child"
+        done
+    fi
+    kill -9 "$pid" 2>/dev/null
+}
+
 # Run a command with a hard timeout. macOS doesn't ship GNU coreutils' `timeout`,
 # so this is implemented with a background watchdog instead of relying on it.
 # Needed because `claude plugin ...` invocations below can hang indefinitely on
@@ -33,7 +56,7 @@ run_with_timeout() {
             sleep 1
             elapsed=$((elapsed + 1))
         done
-        kill -9 "$cmd_pid" 2>/dev/null
+        kill_tree "$cmd_pid"
     ) &
     local watchdog_pid=$!
     wait "$cmd_pid" 2>/dev/null
@@ -132,7 +155,7 @@ if [ -f "dist/index.js" ]; then
 
         # Capture output instead of streaming it directly so it can be printed
         # below only on failure, keeping successful (repeat) runs quiet.
-        MARKETPLACE_ADD_OUTPUT="$(run_with_timeout 60 claude plugin marketplace add "$SCRIPT_DIR" 2>&1)"
+        MARKETPLACE_ADD_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin marketplace add "$SCRIPT_DIR" 2>&1)"
         MARKETPLACE_ADD_STATUS=$?
         if [ $MARKETPLACE_ADD_STATUS -ne 0 ]; then
             echo "[vibing.nvim] ⚠ Warning: 'claude plugin marketplace add' failed"
@@ -141,18 +164,18 @@ if [ -f "dist/index.js" ]; then
         # Query installed state as JSON rather than grepping the human-readable table
         # (`claude plugin list`), whose "❯" marker/formatting is a display detail,
         # not a stable contract to match against.
-        elif run_with_timeout 30 claude plugin list --json 2>/dev/null | "$NODE_EXECUTABLE" -e "process.exit(JSON.parse(require('fs').readFileSync(0,'utf8')||'[]').some(p=>p.id==='vibing-nvim@vibing-nvim')?0:1)" 2>/dev/null; then
+        elif run_with_timeout "$CLAUDE_CLI_LIST_TIMEOUT" claude plugin list --json 2>/dev/null | "$NODE_EXECUTABLE" -e "process.exit(JSON.parse(require('fs').readFileSync(0,'utf8')||'[]').some(p=>p.id==='vibing-nvim@vibing-nvim')?0:1)" 2>/dev/null; then
             # Already installed: `claude plugin install` is a no-op here, so on repeat
             # runs (e.g. `:Lazy update` re-invoking this script) it won't pick up
             # skill/agent changes on its own. Explicitly refresh the marketplace
             # pointer and re-sync the cached plugin snapshot to the current commit.
             echo "[vibing.nvim] vibing-nvim plugin already installed; refreshing cache..."
-            MARKETPLACE_UPDATE_OUTPUT="$(run_with_timeout 60 claude plugin marketplace update vibing-nvim 2>&1)"
+            MARKETPLACE_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin marketplace update vibing-nvim 2>&1)"
             MARKETPLACE_UPDATE_STATUS=$?
             PLUGIN_UPDATE_OUTPUT=""
             PLUGIN_UPDATE_STATUS=1
             if [ $MARKETPLACE_UPDATE_STATUS -eq 0 ]; then
-                PLUGIN_UPDATE_OUTPUT="$(run_with_timeout 60 claude plugin update vibing-nvim@vibing-nvim 2>&1)"
+                PLUGIN_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin update vibing-nvim@vibing-nvim 2>&1)"
                 PLUGIN_UPDATE_STATUS=$?
             fi
             if [ $MARKETPLACE_UPDATE_STATUS -eq 0 ] && [ $PLUGIN_UPDATE_STATUS -eq 0 ]; then
@@ -168,7 +191,7 @@ if [ -f "dist/index.js" ]; then
             fi
         else
             echo "[vibing.nvim] Installing vibing-nvim as a Claude Code plugin (user scope)..."
-            if run_with_timeout 60 claude plugin install vibing-nvim@vibing-nvim --scope user; then
+            if run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin install vibing-nvim@vibing-nvim --scope user; then
                 echo "[vibing.nvim] ✓ Installed vibing-nvim Claude Code plugin (scope: user)"
             else
                 echo "[vibing.nvim] ⚠ Warning: 'claude plugin install' failed"
