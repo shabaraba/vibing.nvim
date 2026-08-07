@@ -96,22 +96,24 @@ if ! command -v npm &> /dev/null; then
     exit 1
 fi
 
+# Check if MCP directory exists
+if [ ! -d "$MCP_DIR" ]; then
+    echo "[vibing.nvim] Error: MCP server directory not found: $MCP_DIR"
+    exit 1
+fi
+
 # Record the exact node binary resolved above so the Claude Code plugin's MCP
 # server launcher (mcp-server/bin/run.sh) can invoke it directly by absolute
 # path instead of relying on `node` being on PATH. Claude Code spawns
 # plugin-declared MCP server commands with a minimal PATH that doesn't
 # include version-manager shims (mise, nvm, volta, asdf, ...), so a bare
 # `command: "node"` fails with "Executable not found in $PATH" on any machine
-# where node is only installed through one of those.
+# where node is only installed through one of those. Written after the
+# directory check above so a missing mcp-server/ checkout fails with that
+# clear error instead of a raw redirect failure here.
 NODE_ABS_PATH="$(command -v "$NODE_EXECUTABLE" 2>/dev/null || true)"
 if [ -n "$NODE_ABS_PATH" ]; then
     echo "$NODE_ABS_PATH" > "${MCP_DIR}/bin/.node-path"
-fi
-
-# Check if MCP directory exists
-if [ ! -d "$MCP_DIR" ]; then
-    echo "[vibing.nvim] Error: MCP server directory not found: $MCP_DIR"
-    exit 1
 fi
 
 # Install root dependencies (Agent SDK, etc.)
@@ -164,6 +166,18 @@ if [ -f "dist/index.js" ]; then
         # must not coexist with the plugin registration. Ignore failure: this is a
         # no-op when no such entry exists.
         claude mcp remove vibing-nvim --scope user &> /dev/null || true
+
+        # Remove the pre-rename "vibing-nvim" marketplace/plugin registration (this
+        # marketplace was renamed to "vibing" so the plugin-scoped MCP tool prefix
+        # isn't mcp__plugin_vibing-nvim_vibing-nvim__* — see git history). `claude
+        # plugin marketplace add` on the same directory does not migrate an
+        # existing registration to the new name on its own, so without this an
+        # upgrading user would end up with both the old and new marketplace/plugin
+        # registered side by side — reintroducing the very duplicate-tool-name
+        # problem this rename fixed, just under two names instead of one. Ignore
+        # failure: a no-op once no one is left on the old name.
+        claude plugin uninstall vibing-nvim@vibing-nvim &> /dev/null || true
+        claude plugin marketplace remove vibing-nvim &> /dev/null || true
 
         # Capture output instead of streaming it directly so it can be printed
         # below only on failure, keeping successful (repeat) runs quiet.
@@ -251,8 +265,29 @@ if [ -f "dist/index.js" ]; then
             if command -v rsync &> /dev/null; then
                 rsync -a --delete --exclude='.git' --exclude='/node_modules' --exclude='/mcp-server/node_modules' --exclude='/mcp-server/dist' "$SCRIPT_DIR/" "$PLUGIN_INSTALL_PATH/"
             else
-                cp -R "$SCRIPT_DIR/." "$PLUGIN_INSTALL_PATH/"
-                rm -rf "$PLUGIN_INSTALL_PATH/node_modules" "$PLUGIN_INSTALL_PATH/.git" "$PLUGIN_INSTALL_PATH/mcp-server/node_modules" "$PLUGIN_INSTALL_PATH/mcp-server/dist"
+                # Portable fallback without rsync. Copy each top-level entry
+                # individually and skip the excluded ones outright, rather than
+                # `cp -R` the whole tree and `rm -rf` them after: on a repeat run,
+                # the destination's mcp-server/node_modules and mcp-server/dist are
+                # already symlinks back into this very checkout (from the symlink
+                # step below), and `cp -R` landing on an existing symlink follows it
+                # — copying this checkout's node_modules into itself through the
+                # link — instead of replacing it.
+                for entry in "$SCRIPT_DIR"/* "$SCRIPT_DIR"/.[!.]*; do
+                    [ -e "$entry" ] || continue
+                    name="$(basename "$entry")"
+                    [ "$name" = ".git" ] && continue
+                    [ "$name" = "node_modules" ] && continue
+                    [ "$name" = "mcp-server" ] && continue
+                    cp -R "$entry" "$PLUGIN_INSTALL_PATH/"
+                done
+                for entry in "$MCP_DIR"/* "$MCP_DIR"/.[!.]*; do
+                    [ -e "$entry" ] || continue
+                    name="$(basename "$entry")"
+                    [ "$name" = "node_modules" ] && continue
+                    [ "$name" = "dist" ] && continue
+                    cp -R "$entry" "$PLUGIN_INSTALL_PATH/mcp-server/"
+                done
             fi
 
             # Unconditionally (re)point node_modules/dist at this live checkout's own
