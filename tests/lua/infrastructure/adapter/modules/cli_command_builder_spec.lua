@@ -114,6 +114,43 @@ describe("cli_command_builder", function()
     end)
   end)
 
+  describe("--resume / --fork-session", function()
+    it("adds --resume with the given session_id when session_id is provided", function()
+      local cmd = cli_command_builder.build("hello", {}, "session-abc", {}, nil)
+      local idx = find_flag(cmd, "--resume")
+      assert.is_not_nil(idx)
+      assert.equals("session-abc", cmd[idx + 1])
+    end)
+
+    it("omits --resume when session_id is nil", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      assert.is_nil(find_flag(cmd, "--resume"))
+    end)
+
+    it("adds --fork-session right after --resume when opts._is_fork is true", function()
+      local cmd = cli_command_builder.build("hello", { _is_fork = true }, "session-abc", {}, nil)
+      local resume_idx = find_flag(cmd, "--resume")
+      assert.is_not_nil(resume_idx)
+      assert.equals("--fork-session", cmd[resume_idx + 2])
+    end)
+
+    it("omits --fork-session when opts._is_fork is not set, even with a session_id", function()
+      local cmd = cli_command_builder.build("hello", {}, "session-abc", {}, nil)
+      assert.is_nil(find_flag(cmd, "--fork-session"))
+    end)
+
+    it("omits --fork-session when opts._is_fork is true but there is no session_id to resume", function()
+      local cmd = cli_command_builder.build("hello", { _is_fork = true }, nil, {}, nil)
+      assert.is_nil(find_flag(cmd, "--fork-session"))
+    end)
+
+    it("sends only the short instruction prompt (not full history) when resuming a session", function()
+      local cmd = cli_command_builder.build("Please summarize.", {}, "session-abc", {}, nil)
+      -- The prompt is the last argument, after the `--` end-of-options marker
+      assert.equals("Please summarize.", cmd[#cmd])
+    end)
+  end)
+
   describe("--setting-sources", function()
     it("defaults to user,project,local when config.agent.setting_sources is not set", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)

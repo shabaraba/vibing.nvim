@@ -18,14 +18,31 @@ return function(_, chat_buffer)
 
   local summary_prompt = "Please summarize the above conversation in a concise manner, highlighting key points and decisions."
 
-  local conversation_text = {}
-  for _, msg in ipairs(conversation) do
-    table.insert(conversation_text, string.format("[%s]: %s", msg.role, msg.content))
+  -- セッションIDがあれば --resume --fork-session で履歴をプロンプトキャッシュ参照させ、
+  -- 履歴の平文再送を避ける（新規セッションでのフルプライス送信を防ぐ）
+  local vibing = require("vibing")
+  local vibing_config = vibing.get_config()
+  local session_id = chat_buffer:get_session_id()
+  local full_prompt
+  local opts = {
+    permission_mode = vibing_config.permissions and vibing_config.permissions.mode or "acceptEdits",
+    permissions_allow = vibing_config.permissions and vibing_config.permissions.allow or {},
+    permissions_deny = vibing_config.permissions and vibing_config.permissions.deny or {},
+  }
+
+  if session_id and session_id ~= "" then
+    full_prompt = summary_prompt
+    opts._session_id = session_id
+    opts._session_id_explicit = true
+    opts._is_fork = true
+  else
+    local conversation_text = {}
+    for _, msg in ipairs(conversation) do
+      table.insert(conversation_text, string.format("[%s]: %s", msg.role, msg.content))
+    end
+    full_prompt = table.concat(conversation_text, "\n\n") .. "\n\n" .. summary_prompt
   end
 
-  local full_prompt = table.concat(conversation_text, "\n\n") .. "\n\n" .. summary_prompt
-
-  local vibing = require("vibing")
   local adapter = vibing.get_adapter()
 
   if not adapter then
@@ -35,7 +52,7 @@ return function(_, chat_buffer)
 
   notify.info("Generating summary...")
 
-  adapter:stream(full_prompt, {}, function(chunk)
+  adapter:stream(full_prompt, opts, function(chunk)
   end, function(response)
     if response.error then
       notify.error(string.format("Summarization failed: %s", response.error))
