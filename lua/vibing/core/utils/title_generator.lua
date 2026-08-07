@@ -40,11 +40,9 @@ function M.generate_from_conversation(conversation, callback, session_id)
     .. "The title should be suitable for a filename. "
     .. "Respond with ONLY the title, nothing else."
 
-  -- Use default permissions from config
+  -- Title generation is a lightweight utility call: no tools/CLAUDE.md/MCP needed
   local opts = {
-    permission_mode = config.permissions and config.permissions.mode or "acceptEdits",
-    permissions_allow = config.permissions and config.permissions.allow or {},
-    permissions_deny = config.permissions and config.permissions.deny or {},
+    lightweight = true,
   }
 
   local prompt

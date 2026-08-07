@@ -89,13 +89,17 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   end
 
   local cwd = opts.cwd or vim.fn.getcwd()
-  local ok, settings_path = pcall(SettingsGenerator.ensure, cwd)
-  if not ok then
-    vim.notify(
-      string.format("[vibing:cli] Failed to create hook settings: %s", tostring(settings_path)),
-      vim.log.levels.WARN
-    )
-    settings_path = nil
+  local settings_path = nil
+  if not opts.lightweight then
+    local ok
+    ok, settings_path = pcall(SettingsGenerator.ensure, cwd)
+    if not ok then
+      vim.notify(
+        string.format("[vibing:cli] Failed to create hook settings: %s", tostring(settings_path)),
+        vim.log.levels.WARN
+      )
+      settings_path = nil
+    end
   end
 
   local rpc_server = require("vibing.infrastructure.rpc.server")

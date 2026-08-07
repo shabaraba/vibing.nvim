@@ -117,6 +117,105 @@ describe("cli_command_builder", function()
     end)
   end)
 
+  describe("lightweight mode", function()
+    it("passes an empty --setting-sources to skip CLAUDE.md/rules loading", function()
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, {}, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.is_not_nil(idx)
+      assert.equals("", cmd[idx + 1])
+    end)
+
+    it("disables MCP servers via --strict-mcp-config and an empty --mcp-config", function()
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, {}, nil)
+      local strict_idx = find_flag(cmd, "--strict-mcp-config")
+      assert.is_not_nil(strict_idx)
+      local mcp_config_idx = find_flag(cmd, "--mcp-config")
+      assert.is_not_nil(mcp_config_idx)
+      assert.equals('{"mcpServers":{}}', cmd[mcp_config_idx + 1])
+    end)
+
+    it("passes an empty --allowedTools instead of the usual pre-approved tool list", function()
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, {}, nil)
+      local idx = find_flag(cmd, "--allowedTools")
+      assert.is_not_nil(idx)
+      assert.equals("", cmd[idx + 1])
+    end)
+
+    it("does not pass --settings even when a hook settings_path is provided", function()
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, {}, "/tmp/settings.json")
+      assert.is_nil(find_flag(cmd, "--settings"))
+    end)
+
+    it("does not pass --permission-mode even when opts.permission_mode is set", function()
+      local cmd = cli_command_builder.build("hello", { lightweight = true, permission_mode = "acceptEdits" }, nil, {}, nil)
+      assert.is_nil(find_flag(cmd, "--permission-mode"))
+    end)
+
+    it("passes --disallowedTools naming the known built-in tools", function()
+      -- An empty --allowedTools alone does not reliably block tool execution (verified against
+      -- the CLI directly: the model can still invoke Bash/Write with an empty allow list and no
+      -- --permission-mode, or with --permission-mode dontAsk). --permission-mode plan does
+      -- hard-block tool use, but was also verified to leak plan-mode meta-commentary into
+      -- otherwise plain text-generation output, corrupting title/summary content — so
+      -- --disallowedTools naming the known built-in tools is used as the real defense instead.
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, {}, nil)
+      local idx = find_flag(cmd, "--disallowedTools")
+      assert.is_not_nil(idx)
+      local disallowed = cmd[idx + 1]
+      assert.is_true(disallowed:find("Bash", 1, true) ~= nil)
+      assert.is_true(disallowed:find("Write", 1, true) ~= nil)
+      assert.is_true(disallowed:find("Task", 1, true) ~= nil)
+    end)
+
+    it("uses config.agent.utility_model, defaulting to haiku when unset", function()
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, {}, nil)
+      local idx = find_flag(cmd, "--model")
+      assert.is_not_nil(idx)
+      assert.equals("haiku", cmd[idx + 1])
+    end)
+
+    it("prefers config.agent.utility_model over opts.model and config.agent.default_model", function()
+      local config = { agent = { default_model = "sonnet", utility_model = "opus" } }
+      local cmd = cli_command_builder.build("hello", { lightweight = true, model = "fable" }, nil, config, nil)
+      local idx = find_flag(cmd, "--model")
+      assert.is_not_nil(idx)
+      assert.equals("opus", cmd[idx + 1])
+    end)
+
+    it("uses opts.model as usual when lightweight is not set", function()
+      local cmd = cli_command_builder.build("hello", { model = "opus" }, nil, {}, nil)
+      local idx = find_flag(cmd, "--model")
+      assert.is_not_nil(idx)
+      assert.equals("opus", cmd[idx + 1])
+    end)
+
+    it("omits the worktree/ask_user_question/rpc_port tool instructions from the system prompt", function()
+      local cmd = cli_command_builder.build(
+        "hello",
+        { lightweight = true, chat_file_path = "/tmp/chat-test.md" },
+        nil,
+        {},
+        nil,
+        9878
+      )
+      local idx = find_flag(cmd, "--append-system-prompt")
+      assert.is_not_nil(idx)
+      local prompt_text = cmd[idx + 1]
+      assert.is_nil(prompt_text:find(".vibing/worktrees/", 1, true))
+      assert.is_nil(prompt_text:find("nvim_ask_user_question", 1, true))
+      assert.is_nil(prompt_text:find("Your rpc_port for this turn is", 1, true))
+      assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer file:", 1, true))
+    end)
+
+    it("still applies the language instruction to the system prompt", function()
+      local config = { language = "ja" }
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, config, nil)
+      local idx = find_flag(cmd, "--append-system-prompt")
+      assert.is_not_nil(idx)
+      assert.is_true(cmd[idx + 1]:find("Japanese", 1, true) ~= nil)
+    end)
+  end)
+
   describe("--resume / --fork-session", function()
     it("adds --resume with the given session_id when session_id is provided", function()
       local cmd = cli_command_builder.build("hello", {}, "session-abc", {}, nil)

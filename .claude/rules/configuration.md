@@ -7,6 +7,7 @@ require("vibing").setup({
   agent = {
     default_mode = "code",    -- "code" | "plan" | "explore"
     default_model = "sonnet",  -- "sonnet" | "opus" | "haiku" | "fable"
+    utility_model = "haiku",  -- Model used for lightweight utility calls (title generation, summarize, daily summary)
     prioritize_vibing_lsp = true,  -- Prioritize vibing-nvim LSP tools over generic LSP
   },
   chat = {

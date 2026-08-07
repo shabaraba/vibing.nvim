@@ -60,13 +60,14 @@ describe("summarize handler", function()
     assert.is_not_nil(captured_prompt:find("summarize", 1, true))
   end)
 
-  it("passes configured permissions through opts", function()
+  it("marks the call as lightweight instead of passing configured permissions", function()
     local chat_buffer = make_chat_buffer("session-abc")
     summarize({}, chat_buffer)
 
-    assert.equals("acceptEdits", captured_opts.permission_mode)
-    assert.same({ "Read" }, captured_opts.permissions_allow)
-    assert.same({ "Bash" }, captured_opts.permissions_deny)
+    assert.is_true(captured_opts.lightweight)
+    assert.is_nil(captured_opts.permission_mode)
+    assert.is_nil(captured_opts.permissions_allow)
+    assert.is_nil(captured_opts.permissions_deny)
   end)
 
   it("falls back to sending the full conversation text when there is no session_id", function()

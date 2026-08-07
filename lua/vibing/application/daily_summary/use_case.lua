@@ -248,7 +248,7 @@ function M.generate_summary(date, include_all, on_complete)
     streaming = true,
     action_type = "daily_summary",
     mode = "code",
-    model = config.agent and config.agent.default_model or "sonnet",
+    lightweight = true,
   }, function(chunk)
     accumulated_content = accumulated_content .. chunk
   end, function(response)

@@ -21,13 +21,11 @@ return function(_, chat_buffer)
   -- セッションIDがあれば --resume --fork-session で履歴をプロンプトキャッシュ参照させ、
   -- 履歴の平文再送を避ける（新規セッションでのフルプライス送信を防ぐ）
   local vibing = require("vibing")
-  local vibing_config = vibing.get_config()
   local session_id = chat_buffer:get_session_id()
   local full_prompt
+  -- Summarization is a lightweight utility call: no tools/CLAUDE.md/MCP needed
   local opts = {
-    permission_mode = vibing_config.permissions and vibing_config.permissions.mode or "acceptEdits",
-    permissions_allow = vibing_config.permissions and vibing_config.permissions.allow or {},
-    permissions_deny = vibing_config.permissions and vibing_config.permissions.deny or {},
+    lightweight = true,
   }
 
   if session_id and session_id ~= "" then

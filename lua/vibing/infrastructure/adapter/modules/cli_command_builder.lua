@@ -32,10 +32,15 @@ local function resolve_setting_sources(config)
 end
 
 --- Resolve model name to CLI-compatible format
+--- Lightweight calls (title generation, summarize, daily summary) always use
+--- config.agent.utility_model, taking priority over opts.model.
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config
 --- @return string|nil
 local function resolve_model(opts, config)
+  if opts.lightweight then
+    return (config.agent and config.agent.utility_model) or "haiku"
+  end
   return opts.model or (config.agent and config.agent.default_model)
 end
 
@@ -172,11 +177,27 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
     end
   end
 
-  add_permission_args(cmd, opts)
+  if opts.lightweight then
+    -- Lightweight calls need no tools: skip permission args/hooks entirely. An empty
+    -- --allowedTools alone does NOT reliably block tool execution (verified against the CLI:
+    -- with no --permission-mode, or with --permission-mode dontAsk, the model can still invoke
+    -- Bash/Write despite an empty allow list). --permission-mode plan does hard-block tool use,
+    -- but it was also verified to leak plan-mode meta-commentary ("this isn't a planning
+    -- task...") into otherwise plain text-generation output, corrupting title/summary content
+    -- even with an explicit system-prompt instruction to suppress it — unacceptable for this
+    -- use case. --disallowedTools naming the known built-in tools is the real defense instead:
+    -- verified to reliably block Bash/Write with zero content pollution across repeated runs.
+    table.insert(cmd, "--allowedTools")
+    table.insert(cmd, "")
+    table.insert(cmd, "--disallowedTools")
+    table.insert(cmd, table.concat(tools_constants.LIGHTWEIGHT_DISALLOWED_TOOLS, ","))
+  else
+    add_permission_args(cmd, opts)
 
-  if settings_path then
-    table.insert(cmd, "--settings")
-    table.insert(cmd, settings_path)
+    if settings_path then
+      table.insert(cmd, "--settings")
+      table.insert(cmd, settings_path)
+    end
   end
 
   -- System prompt additions (worktree convention + chat file path + optional language). This
@@ -184,30 +205,40 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
   -- Anthropic's prompt cache matches on a forward-prefix basis (tools -> system -> messages), so
   -- any per-turn value here (e.g. a freshly generated handle_id) would invalidate the cached
   -- system+history prefix on every single turn. See issue #469.
-  local system_prompt_lines = {
-    "When creating a git worktree for isolated work, place it under "
-      .. worktree_constants.DIR
-      .. "<branch-name>/ at the repository root.",
-    "When you need the user to choose among options (single or multi-select), always call the "
-      .. "mcp__vibing-nvim__nvim_ask_user_question tool instead of asking in free text. Do not use "
-      .. "the native AskUserQuestion tool for this — it is unavailable in this environment. Pass "
-      .. "this turn's \"Current vibing.nvim chat buffer file\" path (given elsewhere in this "
-      .. "system prompt) as the chat_file_path argument.",
-  }
+  -- Lightweight calls have no tools/MCP servers at all, so tool-usage instructions below would
+  -- just be wasted prompt tokens describing capabilities that don't exist.
+  local system_prompt_lines = {}
 
-  if rpc_port then
+  if not opts.lightweight then
     table.insert(
       system_prompt_lines,
-      "Your rpc_port for this turn is "
-        .. tostring(rpc_port)
-        .. ". You MUST pass this exact value as the rpc_port argument on every "
-        .. "mcp__vibing-nvim__* tool call — never omit it or guess, since other unrelated Neovim "
-        .. "instances may be running and reachable on other ports."
+      "When creating a git worktree for isolated work, place it under "
+        .. worktree_constants.DIR
+        .. "<branch-name>/ at the repository root."
     )
-  end
+    table.insert(
+      system_prompt_lines,
+      "When you need the user to choose among options (single or multi-select), always call the "
+        .. "mcp__vibing-nvim__nvim_ask_user_question tool instead of asking in free text. Do not use "
+        .. "the native AskUserQuestion tool for this — it is unavailable in this environment. Pass "
+        .. "this turn's \"Current vibing.nvim chat buffer file\" path (given elsewhere in this "
+        .. "system prompt) as the chat_file_path argument."
+    )
 
-  if opts.chat_file_path and opts.chat_file_path ~= "" then
-    table.insert(system_prompt_lines, "Current vibing.nvim chat buffer file: " .. opts.chat_file_path)
+    if rpc_port then
+      table.insert(
+        system_prompt_lines,
+        "Your rpc_port for this turn is "
+          .. tostring(rpc_port)
+          .. ". You MUST pass this exact value as the rpc_port argument on every "
+          .. "mcp__vibing-nvim__* tool call — never omit it or guess, since other unrelated Neovim "
+          .. "instances may be running and reachable on other ports."
+      )
+    end
+
+    if opts.chat_file_path and opts.chat_file_path ~= "" then
+      table.insert(system_prompt_lines, "Current vibing.nvim chat buffer file: " .. opts.chat_file_path)
+    end
   end
 
   local language = resolve_language(opts, config)
@@ -223,7 +254,15 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
   table.insert(cmd, table.concat(system_prompt_lines, "\n"))
 
   table.insert(cmd, "--setting-sources")
-  table.insert(cmd, table.concat(resolve_setting_sources(config), ","))
+  if opts.lightweight then
+    table.insert(cmd, "")
+    -- No CLAUDE.md/rules, no MCP servers, no hook settings for utility calls.
+    table.insert(cmd, "--strict-mcp-config")
+    table.insert(cmd, "--mcp-config")
+    table.insert(cmd, '{"mcpServers":{}}')
+  else
+    table.insert(cmd, table.concat(resolve_setting_sources(config), ","))
+  end
 
   -- Build prompt with context prefix (only for new sessions, not resume)
   local full_prompt = prompt
