@@ -606,6 +606,13 @@ agent = {
                                  -- true: Use vibing-nvim LSP (connects to running Neovim)
                                  -- false: Allow generic LSP tools (e.g., Serena)
                                  -- Default: true
+
+  setting_sources = { "user", "project", "local" },  -- Sources passed to the CLI's
+                                 -- --setting-sources flag. Drop "user" to skip loading your
+                                 -- global CLAUDE.md on every chat, reducing fixed per-session
+                                 -- token cost. Note: this does not affect MCP server loading —
+                                 -- use --strict-mcp-config for that.
+                                 -- Default: { "user", "project", "local" }
 }
 ```
 

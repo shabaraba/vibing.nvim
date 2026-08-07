@@ -80,6 +80,7 @@
 ---@field default_mode "code"|"plan"|"explore" デフォルトモード（"code": コード生成、"plan": 計画、"explore": 探索）
 ---@field default_model "sonnet"|"opus"|"haiku"|"fable" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速、"fable": Claude Fable）
 ---@field prioritize_vibing_lsp boolean vibing-nvim LSPツールを優先（true: Serena等の汎用LSPより優先、false: システムプロンプトを挿入しない、デフォルト: true）
+---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）
 
 ---@class Vibing.NodeConfig
 ---Node.js実行ファイル設定
@@ -223,6 +224,7 @@ M.defaults = {
     default_mode = "code",
     default_model = "sonnet",
     prioritize_vibing_lsp = true,
+    setting_sources = { "user", "project", "local" },
   },
   chat = {
     window = {
