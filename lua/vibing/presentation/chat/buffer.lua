@@ -131,6 +131,14 @@ function ChatBuffer:is_open()
   return self.win ~= nil and vim.api.nvim_win_is_valid(self.win)
 end
 
+---メイン応答がストリーミング中かどうか
+---summarize/set_file_titleなど、同一session_idに対して並行で--resumeを叩くと
+---競合しうる処理は、送信前にこれをチェックしてブロックする
+---@return boolean
+function ChatBuffer:is_sending()
+  return self._is_sending == true
+end
+
 ---バッファを作成
 function ChatBuffer:_create_buffer()
   if self.buf and vim.api.nvim_buf_is_valid(self.buf) then

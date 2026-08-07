@@ -58,6 +58,11 @@ return function(_, chat_buffer)
     return false
   end
 
+  if chat_buffer:is_sending() then
+    notify.warn("Cannot generate title while a response is streaming")
+    return false
+  end
+
   local conversation = chat_buffer:extract_conversation()
   if #conversation == 0 then
     notify.warn("No conversation to generate title from")
