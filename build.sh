@@ -110,11 +110,11 @@ fi
 # `command: "node"` fails with "Executable not found in $PATH" on any machine
 # where node is only installed through one of those. Written after the
 # directory check above so a missing mcp-server/ checkout fails with that
-# clear error instead of a raw redirect failure here.
-NODE_ABS_PATH="$(command -v "$NODE_EXECUTABLE" 2>/dev/null || true)"
-if [ -n "$NODE_ABS_PATH" ]; then
-    echo "$NODE_ABS_PATH" > "${MCP_DIR}/bin/.node-path"
-fi
+# clear error instead of a raw redirect failure here. `command -v` is
+# guaranteed to succeed here (the checks above already proved $NODE_EXECUTABLE
+# is either an executable absolute path or resolvable on PATH), so no extra
+# empty-value guard is needed around it.
+echo "$(command -v "$NODE_EXECUTABLE")" > "${MCP_DIR}/bin/.node-path"
 
 # Install root dependencies (Agent SDK, etc.)
 echo "[vibing.nvim] Installing root dependencies..."
@@ -157,7 +157,12 @@ if [ -f "dist/index.js" ]; then
     # RPC port, so it silently targets the wrong Neovim instance whenever more
     # than one is running (see cli_command_builder.lua's rpc_port handling).
     cd "$SCRIPT_DIR"
-    PLUGIN_INSTALL_HINT="claude plugin marketplace add $SCRIPT_DIR && claude plugin install vibing-nvim@vibing --scope user"
+    MARKETPLACE_NAME="vibing"
+    PLUGIN_ID="vibing-nvim@${MARKETPLACE_NAME}"
+    # Pre-rename identifiers, kept only for the one-time migration cleanup below.
+    OLD_MARKETPLACE_NAME="vibing-nvim"
+    OLD_PLUGIN_ID="vibing-nvim@${OLD_MARKETPLACE_NAME}"
+    PLUGIN_INSTALL_HINT="claude plugin marketplace add $SCRIPT_DIR && claude plugin install ${PLUGIN_ID} --scope user"
     if command -v claude &> /dev/null; then
         # Remove any legacy direct "vibing-nvim" mcpServers registration (e.g. from
         # `claude mcp add` predating the plugin-based install above, or a leftover
@@ -167,17 +172,31 @@ if [ -f "dist/index.js" ]; then
         # no-op when no such entry exists.
         claude mcp remove vibing-nvim --scope user &> /dev/null || true
 
+        # Fetch the installed-plugin list once up front and reuse it below for the
+        # migration-cleanup check, the already-installed check, and (after a
+        # refresh) the installPath lookup, instead of asking `claude` — slow on at
+        # least one real machine in this project's history — for the same data
+        # repeatedly. Re-fetched only after an operation that actually changes it
+        # (a fresh install, or the migration cleanup below).
+        PLUGIN_LIST_JSON="$(run_with_timeout "$CLAUDE_CLI_LIST_TIMEOUT" claude plugin list --json 2>/dev/null)" || true
+
         # Remove the pre-rename "vibing-nvim" marketplace/plugin registration (this
         # marketplace was renamed to "vibing" so the plugin-scoped MCP tool prefix
-        # isn't mcp__plugin_vibing-nvim_vibing-nvim__* — see git history). `claude
-        # plugin marketplace add` on the same directory does not migrate an
-        # existing registration to the new name on its own, so without this an
-        # upgrading user would end up with both the old and new marketplace/plugin
-        # registered side by side — reintroducing the very duplicate-tool-name
-        # problem this rename fixed, just under two names instead of one. Ignore
-        # failure: a no-op once no one is left on the old name.
-        claude plugin uninstall vibing-nvim@vibing-nvim &> /dev/null || true
-        claude plugin marketplace remove vibing-nvim &> /dev/null || true
+        # isn't mcp__plugin_vibing-nvim_vibing-nvim__* — see git history), but only
+        # when there's actual evidence of it in the plugin list. `claude plugin
+        # marketplace add` on the same directory does not migrate an existing
+        # registration to the new name on its own, so without this an upgrading
+        # user would end up with both the old and new marketplace/plugin registered
+        # side by side — reintroducing the very duplicate-tool-name problem this
+        # rename fixed, just under two names instead of one. Gating on the list
+        # (rather than running unconditionally) keeps this a one-time cost during
+        # the migration window instead of two extra `claude` CLI spawns on every
+        # future build forever.
+        if echo "$PLUGIN_LIST_JSON" | "$NODE_EXECUTABLE" -e "process.exit(JSON.parse(require('fs').readFileSync(0,'utf8')||'[]').some(p=>p.id==='${OLD_PLUGIN_ID}')?0:1)" 2>/dev/null; then
+            claude plugin uninstall "$OLD_PLUGIN_ID" &> /dev/null || true
+            claude plugin marketplace remove "$OLD_MARKETPLACE_NAME" &> /dev/null || true
+            PLUGIN_LIST_JSON="$(run_with_timeout "$CLAUDE_CLI_LIST_TIMEOUT" claude plugin list --json 2>/dev/null)" || true
+        fi
 
         # Capture output instead of streaming it directly so it can be printed
         # below only on failure, keeping successful (repeat) runs quiet.
@@ -197,7 +216,7 @@ if [ -f "dist/index.js" ]; then
         # Query installed state as JSON rather than grepping the human-readable table
         # (`claude plugin list`), whose "❯" marker/formatting is a display detail,
         # not a stable contract to match against.
-        elif run_with_timeout "$CLAUDE_CLI_LIST_TIMEOUT" claude plugin list --json 2>/dev/null | "$NODE_EXECUTABLE" -e "process.exit(JSON.parse(require('fs').readFileSync(0,'utf8')||'[]').some(p=>p.id==='vibing-nvim@vibing')?0:1)" 2>/dev/null; then
+        elif echo "$PLUGIN_LIST_JSON" | "$NODE_EXECUTABLE" -e "process.exit(JSON.parse(require('fs').readFileSync(0,'utf8')||'[]').some(p=>p.id==='${PLUGIN_ID}')?0:1)" 2>/dev/null; then
             # Already installed: `claude plugin install` is a no-op here, so on repeat
             # runs (e.g. `:Lazy update` re-invoking this script) it won't pick up
             # skill/agent changes on its own. Explicitly refresh the marketplace
@@ -206,28 +225,31 @@ if [ -f "dist/index.js" ]; then
             # See the MARKETPLACE_ADD_STATUS comment above for why the fallback is
             # attached via `||` on the same line rather than a separate `STATUS=$?`.
             MARKETPLACE_UPDATE_STATUS=0
-            MARKETPLACE_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin marketplace update vibing 2>&1)" || MARKETPLACE_UPDATE_STATUS=$?
+            MARKETPLACE_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin marketplace update "$MARKETPLACE_NAME" 2>&1)" || MARKETPLACE_UPDATE_STATUS=$?
             PLUGIN_UPDATE_OUTPUT=""
             PLUGIN_UPDATE_STATUS=1
             if [ $MARKETPLACE_UPDATE_STATUS -eq 0 ]; then
                 PLUGIN_UPDATE_STATUS=0
-                PLUGIN_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin update vibing-nvim@vibing 2>&1)" || PLUGIN_UPDATE_STATUS=$?
+                PLUGIN_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin update "$PLUGIN_ID" 2>&1)" || PLUGIN_UPDATE_STATUS=$?
             fi
             if [ $MARKETPLACE_UPDATE_STATUS -eq 0 ] && [ $PLUGIN_UPDATE_STATUS -eq 0 ]; then
                 echo "[vibing.nvim] ✓ Synced vibing-nvim plugin cache (restart Claude Code to apply)"
             elif [ $MARKETPLACE_UPDATE_STATUS -ne 0 ]; then
                 echo "[vibing.nvim] ⚠ Warning: 'claude plugin marketplace update' failed"
                 echo "$MARKETPLACE_UPDATE_OUTPUT"
-                echo "[vibing.nvim] You can manually sync by running: claude plugin marketplace update vibing && claude plugin update vibing-nvim@vibing"
+                echo "[vibing.nvim] You can manually sync by running: claude plugin marketplace update $MARKETPLACE_NAME && claude plugin update $PLUGIN_ID"
             else
                 echo "[vibing.nvim] ⚠ Warning: 'claude plugin update' failed"
                 echo "$PLUGIN_UPDATE_OUTPUT"
-                echo "[vibing.nvim] You can manually sync by running: claude plugin marketplace update vibing && claude plugin update vibing-nvim@vibing"
+                echo "[vibing.nvim] You can manually sync by running: claude plugin marketplace update $MARKETPLACE_NAME && claude plugin update $PLUGIN_ID"
             fi
         else
             echo "[vibing.nvim] Installing vibing-nvim as a Claude Code plugin (user scope)..."
-            if run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin install vibing-nvim@vibing --scope user; then
+            if run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin install "$PLUGIN_ID" --scope user; then
                 echo "[vibing.nvim] ✓ Installed vibing-nvim Claude Code plugin (scope: user)"
+                # The snapshot above predates this install, so it won't have an
+                # installPath for $PLUGIN_ID yet — refetch before using it below.
+                PLUGIN_LIST_JSON="$(run_with_timeout "$CLAUDE_CLI_LIST_TIMEOUT" claude plugin list --json 2>/dev/null)" || true
             else
                 echo "[vibing.nvim] ⚠ Warning: 'claude plugin install' failed"
                 echo "[vibing.nvim] You can manually install by running: $PLUGIN_INSTALL_HINT"
@@ -253,9 +275,9 @@ if [ -f "dist/index.js" ]; then
         # doing it here would just as easily blow past lazy.nvim's own build-step
         # timeout; (2) a symlink means a later `npm run build` here is reflected
         # immediately without rerunning this sync.
-        PLUGIN_INSTALL_PATH="$(run_with_timeout "$CLAUDE_CLI_LIST_TIMEOUT" claude plugin list --json 2>/dev/null | "$NODE_EXECUTABLE" -e "
+        PLUGIN_INSTALL_PATH="$(echo "$PLUGIN_LIST_JSON" | "$NODE_EXECUTABLE" -e "
           const plugins = JSON.parse(require('fs').readFileSync(0, 'utf8') || '[]');
-          const p = plugins.find((p) => p.id === 'vibing-nvim@vibing');
+          const p = plugins.find((p) => p.id === '${PLUGIN_ID}');
           process.stdout.write(p && p.installPath ? p.installPath : '');
         " 2>/dev/null)"
 

@@ -39,6 +39,18 @@ for _, tool in ipairs(M.ALWAYS_ALLOWED_TOOLS) do
   M.ALWAYS_ALLOWED_TOOLS_MAP[tool] = true
 end
 
+---vibing-nvim自身が提供するMCPツールの許可パターン。プレーンなユーザーレベルMCPサーバー登録
+---（mcp__vibing-nvim__*）と、Claude Codeプラグイン登録（mcp__plugin_<marketplace>_vibing-nvim__*、
+---このリポジトリが.claude-plugin/marketplace.jsonで出荷する"vibing"マーケットプレイス名前提）の
+---両方に対応する。can_use_tool.M.is_vibing_nvim_mcp_tool側はサフィックスマッチでマーケットプレイス名
+---に依存しないが、Claude Code CLIの--allowedToolsゲート自体は具体的なプレフィックスを要求するため、
+---こちらは定数化のみで対応している。マーケットプレイス名を変更した場合はここを更新すること。
+---@type string[]
+M.VIBING_NVIM_MCP_TOOL_PATTERNS = {
+  "mcp__vibing-nvim__*",
+  "mcp__plugin_vibing_vibing-nvim__*",
+}
+
 ---lightweightなユーティリティ呼び出し（タイトル生成・要約等）で明示的に拒否するClaude Code CLIの
 ---組み込みツール名一覧。`--allowedTools ""`だけでは実際のツール実行をブロックできないことを
 ---実機検証で確認したため、`--disallowedTools`で個別に拒否する。新しいツールがCLIに追加された場合は
