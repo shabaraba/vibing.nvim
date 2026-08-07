@@ -58,6 +58,11 @@ return function(_, chat_buffer)
     return false
   end
 
+  if chat_buffer:is_sending() then
+    notify.warn("Cannot generate title while a response is streaming")
+    return false
+  end
+
   local conversation = chat_buffer:extract_conversation()
   if #conversation == 0 then
     notify.warn("No conversation to generate title from")
@@ -177,7 +182,7 @@ return function(_, chat_buffer)
         notify.warn(string.format("Failed to update %d file(s)", total_failed), "Link Sync")
       end
     end
-  end)
+  end, chat_buffer:get_session_id())
 
   return true
 end

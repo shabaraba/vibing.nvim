@@ -10,9 +10,13 @@ local language_utils = require("vibing.core.utils.language")
 ---会話履歴からAIにタイトルを生成させる
 ---Claudeに会話全体を送信し、簡潔なファイル名用タイトルを生成
 ---結果はコールバックで非同期に返される
+---session_idが渡された場合は --resume --fork-session で履歴をプロンプトキャッシュ参照させ、
+---履歴の平文再送を避ける（新規セッションでのフルプライス送信を防ぐ）。省略時は従来通り
+---会話全文をプロンプトに連結してフォールバックする。
 ---@param conversation {role: string, content: string}[] 会話履歴
 ---@param callback fun(title: string?, error: string?) 結果コールバック
-function M.generate_from_conversation(conversation, callback)
+---@param session_id string? 対象チャットのセッションID（あればfork-sessionで再利用）
+function M.generate_from_conversation(conversation, callback, session_id)
   if not conversation or #conversation == 0 then
     callback(nil, "No conversation to generate title from")
     return
@@ -27,28 +31,35 @@ function M.generate_from_conversation(conversation, callback)
     return
   end
 
-  local conversation_text = {}
-  for _, msg in ipairs(conversation) do
-    table.insert(conversation_text, string.format("[%s]: %s", msg.role, msg.content))
-  end
-
   local lang_code = language_utils.get_language_code(config.language, "chat")
   local lang_name = lang_code and language_utils.language_names[lang_code]
   local lang_instruction = lang_name and ("Generate the title in " .. lang_name .. ". ") or ""
 
-  local prompt = table.concat(conversation_text, "\n\n")
-    .. "\n\n"
-    .. "Based on the above conversation, generate a concise title (maximum 30 characters) that summarizes the main topic. "
+  local title_instruction = "Based on the above conversation, generate a concise title (maximum 30 characters) that summarizes the main topic. "
     .. lang_instruction
     .. "The title should be suitable for a filename. "
     .. "Respond with ONLY the title, nothing else."
-
-  local collected_response = ""
 
   -- Title generation is a lightweight utility call: no tools/CLAUDE.md/MCP needed
   local opts = {
     lightweight = true,
   }
+
+  local prompt
+  if session_id and session_id ~= "" then
+    prompt = title_instruction
+    opts._session_id = session_id
+    opts._session_id_explicit = true
+    opts._is_fork = true
+  else
+    local conversation_text = {}
+    for _, msg in ipairs(conversation) do
+      table.insert(conversation_text, string.format("[%s]: %s", msg.role, msg.content))
+    end
+    prompt = table.concat(conversation_text, "\n\n") .. "\n\n" .. title_instruction
+  end
+
+  local collected_response = ""
 
   adapter:stream(prompt, opts, function(chunk)
     collected_response = collected_response .. chunk

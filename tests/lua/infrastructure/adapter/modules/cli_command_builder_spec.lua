@@ -70,24 +70,27 @@ describe("cli_command_builder", function()
       assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer file:", 1, true))
     end)
 
-    it("embeds the handle_id and instructs the model to echo it back on nvim_ask_user_question", function()
-      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil, "abc123_456")
+    it("instructs the model to pass chat_file_path on nvim_ask_user_question, without any per-turn id", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]
-      assert.is_true(prompt_text:find('Your handle_id for this turn is "abc123_456"', 1, true) ~= nil)
       assert.is_true(prompt_text:find("nvim_ask_user_question", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("chat_file_path argument", 1, true) ~= nil)
     end)
 
-    it("omits the handle_id line when handle_id is not provided", function()
-      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
-      local idx = find_flag(cmd, "--append-system-prompt")
-      local prompt_text = cmd[idx + 1]
-      assert.is_nil(prompt_text:find("Your handle_id for this turn is", 1, true))
+    it("never embeds a handle_id, so the same conversation's system prompt is byte-identical across turns", function()
+      local opts = { chat_file_path = "/tmp/chat-test.md" }
+      local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil, 9878)
+      local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil, 9878)
+      local idx1 = find_flag(cmd1, "--append-system-prompt")
+      local idx2 = find_flag(cmd2, "--append-system-prompt")
+      assert.equals(cmd1[idx1 + 1], cmd2[idx2 + 1])
+      assert.is_nil(cmd1[idx1 + 1]:find("handle_id", 1, true))
     end)
 
     it("embeds the rpc_port and instructs the model to echo it back on every vibing-nvim MCP call", function()
-      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil, nil, 9878)
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil, 9878)
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]
@@ -143,9 +146,15 @@ describe("cli_command_builder", function()
       assert.is_nil(find_flag(cmd, "--settings"))
     end)
 
-    it("does not pass --permission-mode even when opts.permission_mode is set", function()
+    it("forces --permission-mode plan regardless of opts.permission_mode", function()
+      -- An empty --allowedTools alone does not reliably block tool execution (verified against
+      -- the CLI directly: the model can still invoke Bash/Write with an empty allow list and no
+      -- --permission-mode, or with --permission-mode dontAsk). --permission-mode plan is a
+      -- confirmed hard block, so it's forced here as the real defense-in-depth layer.
       local cmd = cli_command_builder.build("hello", { lightweight = true, permission_mode = "acceptEdits" }, nil, {}, nil)
-      assert.is_nil(find_flag(cmd, "--permission-mode"))
+      local idx = find_flag(cmd, "--permission-mode")
+      assert.is_not_nil(idx)
+      assert.equals("plan", cmd[idx + 1])
     end)
 
     it("uses config.agent.utility_model, defaulting to haiku when unset", function()
@@ -168,6 +177,121 @@ describe("cli_command_builder", function()
       local idx = find_flag(cmd, "--model")
       assert.is_not_nil(idx)
       assert.equals("opus", cmd[idx + 1])
+    end)
+
+    it("omits the worktree/ask_user_question/rpc_port tool instructions from the system prompt", function()
+      local cmd = cli_command_builder.build(
+        "hello",
+        { lightweight = true, chat_file_path = "/tmp/chat-test.md" },
+        nil,
+        {},
+        nil,
+        9878
+      )
+      local idx = find_flag(cmd, "--append-system-prompt")
+      assert.is_not_nil(idx)
+      local prompt_text = cmd[idx + 1]
+      assert.is_nil(prompt_text:find(".vibing/worktrees/", 1, true))
+      assert.is_nil(prompt_text:find("nvim_ask_user_question", 1, true))
+      assert.is_nil(prompt_text:find("Your rpc_port for this turn is", 1, true))
+      assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer file:", 1, true))
+    end)
+
+    it("still applies the language instruction to the system prompt", function()
+      local config = { language = "ja" }
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, config, nil)
+      local idx = find_flag(cmd, "--append-system-prompt")
+      assert.is_not_nil(idx)
+      assert.is_true(cmd[idx + 1]:find("Japanese", 1, true) ~= nil)
+    end)
+  end)
+
+  describe("--resume / --fork-session", function()
+    it("adds --resume with the given session_id when session_id is provided", function()
+      local cmd = cli_command_builder.build("hello", {}, "session-abc", {}, nil)
+      local idx = find_flag(cmd, "--resume")
+      assert.is_not_nil(idx)
+      assert.equals("session-abc", cmd[idx + 1])
+    end)
+
+    it("omits --resume when session_id is nil", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      assert.is_nil(find_flag(cmd, "--resume"))
+    end)
+
+    it("adds --fork-session right after --resume when opts._is_fork is true", function()
+      local cmd = cli_command_builder.build("hello", { _is_fork = true }, "session-abc", {}, nil)
+      local resume_idx = find_flag(cmd, "--resume")
+      assert.is_not_nil(resume_idx)
+      assert.equals("--fork-session", cmd[resume_idx + 2])
+    end)
+
+    it("omits --fork-session when opts._is_fork is not set, even with a session_id", function()
+      local cmd = cli_command_builder.build("hello", {}, "session-abc", {}, nil)
+      assert.is_nil(find_flag(cmd, "--fork-session"))
+    end)
+
+    it("omits --fork-session when opts._is_fork is true but there is no session_id to resume", function()
+      local cmd = cli_command_builder.build("hello", { _is_fork = true }, nil, {}, nil)
+      assert.is_nil(find_flag(cmd, "--fork-session"))
+    end)
+
+    it("sends only the short instruction prompt (not full history) when resuming a session", function()
+      local cmd = cli_command_builder.build("Please summarize.", {}, "session-abc", {}, nil)
+      -- The prompt is the last argument, after the `--` end-of-options marker
+      assert.equals("Please summarize.", cmd[#cmd])
+    end)
+  end)
+
+  describe("--setting-sources", function()
+    it("defaults to user,project,local when config.agent.setting_sources is not set", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.is_not_nil(idx)
+      assert.equals("user,project,local", cmd[idx + 1])
+    end)
+
+    it("uses config.agent.setting_sources when provided", function()
+      local config = { agent = { setting_sources = { "project", "local" } } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.is_not_nil(idx)
+      assert.equals("project,local", cmd[idx + 1])
+    end)
+
+    it("falls back to the default when setting_sources is not a table", function()
+      local config = { agent = { setting_sources = "project" } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.equals("user,project,local", cmd[idx + 1])
+    end)
+
+    it("falls back to the default when setting_sources is an empty table", function()
+      local config = { agent = { setting_sources = {} } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.equals("user,project,local", cmd[idx + 1])
+    end)
+
+    it("falls back to the default when setting_sources contains a non-string element", function()
+      local config = { agent = { setting_sources = { "project", 42 } } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.equals("user,project,local", cmd[idx + 1])
+    end)
+
+    it("falls back to the default when setting_sources contains an empty string element", function()
+      local config = { agent = { setting_sources = { "project", "" } } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.equals("user,project,local", cmd[idx + 1])
+    end)
+
+    it("falls back to the default when setting_sources contains an unsupported source name", function()
+      local config = { agent = { setting_sources = { "project", "workspace" } } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      local idx = find_flag(cmd, "--setting-sources")
+      assert.equals("user,project,local", cmd[idx + 1])
     end)
   end)
 end)

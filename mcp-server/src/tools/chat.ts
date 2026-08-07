@@ -43,16 +43,17 @@ export const chatTools: Tool[] = [
       "(deleting unwanted options) and sends it. Your NEXT invocation's prompt IS the user's answer " +
       'to this question, delivered as a fresh turn — treat it as such rather than waiting for a ' +
       'tool response. ' +
-      'You MUST pass handle_id using the exact value given to you in your system prompt for this ' +
-      'turn — it identifies which chat buffer to render the question in.',
+      'You MUST pass chat_file_path using the exact "Current vibing.nvim chat buffer file" value ' +
+      'given to you in your system prompt — it identifies which chat buffer to render the ' +
+      'question in.',
     inputSchema: {
       type: 'object',
       properties: withRpcPort({
-        handle_id: {
+        chat_file_path: {
           type: 'string',
           description:
-            'The exact handle_id value given to you in your system prompt for this turn. Required ' +
-            'to associate this question with the correct chat buffer.',
+            'The exact "Current vibing.nvim chat buffer file" path given to you in your system ' +
+            'prompt. Required to associate this question with the correct chat buffer.',
         },
         questions: {
           type: 'array',
@@ -91,7 +92,7 @@ export const chatTools: Tool[] = [
           },
         },
       }),
-      required: requireRpcPort(['handle_id', 'questions']),
+      required: requireRpcPort(['chat_file_path', 'questions']),
     },
   },
 ];

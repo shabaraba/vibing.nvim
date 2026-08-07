@@ -89,19 +89,23 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   end
 
   local cwd = opts.cwd or vim.fn.getcwd()
-  local ok, settings_path = pcall(SettingsGenerator.ensure, cwd)
-  if not ok then
-    vim.notify(
-      string.format("[vibing:cli] Failed to create hook settings: %s", tostring(settings_path)),
-      vim.log.levels.WARN
-    )
-    settings_path = nil
+  local settings_path = nil
+  if not opts.lightweight then
+    local ok
+    ok, settings_path = pcall(SettingsGenerator.ensure, cwd)
+    if not ok then
+      vim.notify(
+        string.format("[vibing:cli] Failed to create hook settings: %s", tostring(settings_path)),
+        vim.log.levels.WARN
+      )
+      settings_path = nil
+    end
   end
 
   local rpc_server = require("vibing.infrastructure.rpc.server")
   local rpc_port = rpc_server.get_port()
 
-  local cmd = CLICommandBuilder.build(prompt, opts, session_id, self.config, settings_path, handle_id, rpc_port)
+  local cmd = CLICommandBuilder.build(prompt, opts, session_id, self.config, settings_path, rpc_port)
   local output = {}
   local error_output = {}
 
@@ -148,6 +152,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
 
   ActiveStreamRegistry.register({
     handle_id = handle_id,
+    chat_file_path = opts.chat_file_path,
     adapter = self,
     on_insert_choices = opts.on_insert_choices,
     on_approval_required = opts.on_approval_required,

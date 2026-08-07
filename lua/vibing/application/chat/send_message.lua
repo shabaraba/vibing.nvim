@@ -69,7 +69,14 @@ function M.execute(adapter, callbacks, message, config)
   if (not mote_dirs or #mote_dirs == 0) and frontmatter and frontmatter.mote_cwd then
     mote_dirs = { frontmatter.mote_cwd }
   end
-  local mote_configs = M._create_session_mote_configs(config, callbacks.get_session_id(), bufnr, session_cwd, mote_dirs)
+  -- moteはopt-in: diff.tool = "mote" 明示か、mote_dirs指定時のみスナップショットを取る。
+  -- デフォルトはPreToolUseフックで変更前ファイルだけを退避する軽量なリクエスト単位diff
+  -- （request_diff.lua）を使うため、全ツリースキャンやmoteプロセスは発生しない。
+  local use_mote = (config.diff and config.diff.tool == "mote") or (mote_dirs and #mote_dirs > 0)
+  local mote_configs = {}
+  if use_mote then
+    mote_configs = M._create_session_mote_configs(config, callbacks.get_session_id(), bufnr, session_cwd, mote_dirs)
+  end
 
   -- 実際のメッセージ送信処理（mote初期化後に呼び出される）
   local function do_send()
@@ -122,7 +129,7 @@ function M.execute(adapter, callbacks, message, config)
       language = lang_code,
       cwd = session_cwd,
       on_tool_use = function(tool, file_path, _command)
-        if (tool == "Write" or tool == "Edit" or tool == "NotebookEdit") and file_path then
+        if (tool == "Write" or tool == "Edit" or tool == "MultiEdit" or tool == "NotebookEdit") and file_path then
           modified_file_paths[file_path] = true
         elseif tool == "FileChange" and file_path then
           -- Codex adapter reports comma-joined paths
@@ -213,9 +220,12 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
   -- キャンセル済みの古いリクエストが遅れて完了した場合、現在アクティブなハンドルIDと
   -- 一致しないレスポンスは無視する（新しいリクエストの結果を上書きさせない）
   local incoming_handle_id = response._handle_id
+  local RequestDiff = require("vibing.core.utils.request_diff")
   if incoming_handle_id and callbacks.get_handle_id then
     local current_handle_id = callbacks.get_handle_id()
     if current_handle_id and incoming_handle_id ~= current_handle_id then
+      -- このリクエストは破棄されるので、対応するバックアップも破棄
+      RequestDiff.clear(incoming_handle_id)
       return
     end
   end
@@ -262,7 +272,7 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
     callbacks.clear_forked_from()
   end
 
-  -- mote統合: 有効なconfigが1つでもあればModified Files出力とpatch生成
+  -- mote統合（opt-in時のみ）: 有効なconfigが1つでもあればModified Files出力とpatch生成
   local MoteDiff = require("vibing.core.utils.mote_diff")
 
   -- セッション開始時のスナップショットIDをベースラインとして各configに設定
@@ -276,13 +286,13 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
     end
   end
 
-  -- Write/Editで実際にファイルが変更された場合のみmote diffを実行
+  -- Write/Editで実際にファイルが変更された場合のみdiff処理を実行
   local has_file_changes = next(modified_file_paths or {}) ~= nil
+  local handle_id_for_diff = incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
 
   if #active_configs > 0 and has_file_changes then
-    -- 全configから変更ファイルを収集し、重複排除して出力
-    local all_files = {}
-    local seen_files = {}
+    -- 各configの変更ファイルを収集し、finalizeで絶対パスに正規化・重複排除して出力
+    local mote_batches = {}
     local patch_paths = {}
     local remaining = #active_configs
     local timestamp = os.date("%Y%m%d_%H%M%S")
@@ -296,12 +306,19 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
         vim.fn.timer_stop(diff_timeout_timer)
         diff_timeout_timer = nil
       end
+      RequestDiff.clear(handle_id_for_diff)
+      -- moteの結果（mc.cwd相対）とツールイベントのパスを絶対パスに正規化して統合。
+      -- 別mote_dirsの同名相対パスの衝突や、Neovim cwdと異なる作業ディレクトリでの
+      -- 誤ったバッファリロードを防ぐ。moteのignore設定等でdiffから漏れたファイルも
+      -- ツールイベントで検知した分は必ず一覧に載る
+      local all_files = M._merge_modified_files(mote_batches, modified_file_paths)
       if #all_files > 0 then
         BufferReload.reload_files(all_files)
         local MAX_DISPLAY = 50
         local file_lines = {}
         for i = 1, math.min(#all_files, MAX_DISPLAY) do
-          table.insert(file_lines, all_files[i])
+          -- 表示はNeovim cwd相対（cwd外なら絶対パスのまま）、リロードは絶対パス
+          table.insert(file_lines, vim.fn.fnamemodify(all_files[i], ":."))
         end
         if #all_files > MAX_DISPLAY then
           table.insert(file_lines, string.format("... (%d more)", #all_files - MAX_DISPLAY))
@@ -322,12 +339,7 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
     for _, mc in ipairs(active_configs) do
       MoteDiff.get_changed_files(mc, function(success, files, err)
         if success and files then
-          for _, f in ipairs(files) do
-            if not seen_files[f] then
-              seen_files[f] = true
-              table.insert(all_files, f)
-            end
-          end
+          table.insert(mote_batches, { base = mc.cwd or vim.fn.getcwd(), files = files })
         elseif not success then
           vim.notify("[vibing] Failed to get changed files: " .. (err or "Unknown error"), vim.log.levels.WARN)
         end
@@ -351,12 +363,99 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
         end
       end)
     end
+  elseif has_file_changes then
+    -- 軽量パス（デフォルト）: PreToolUseフックで退避した変更前内容からpatchを生成。
+    -- 外部プロセスを使わず、触ったファイル数分のvim.diff()だけで完結する。
+    M._finalize_request_diff(callbacks, handle_id_for_diff, modified_file_paths)
   else
+    RequestDiff.clear(handle_id_for_diff)
     callbacks.add_user_section()
   end
 
   -- NOTE: clear_handle_id() は呼ばない
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
+end
+
+---moteの変更ファイル結果とツールイベントのパスを絶対パスに正規化して統合する
+---moteは各configのcwd相対パスを返すため、そのまま扱うと別mote_dirsの同名ファイルが
+---重複排除で潰れたり、Neovim cwd基準の誤ったリロードが起きる
+---@param mote_batches {base: string, files: string[]}[] mote configごとの結果（baseはそのconfigのcwd）
+---@param modified_file_paths table<string, boolean>|nil ツールイベントで検知した変更ファイル
+---@return string[] 重複排除済みの絶対パス一覧
+function M._merge_modified_files(mote_batches, modified_file_paths)
+  local seen = {}
+  local out = {}
+  local function add(abs)
+    if not seen[abs] then
+      seen[abs] = true
+      table.insert(out, abs)
+    end
+  end
+
+  for _, batch in ipairs(mote_batches or {}) do
+    local base = vim.fn.fnamemodify(batch.base, ":p"):gsub("/$", "")
+    for _, f in ipairs(batch.files or {}) do
+      if f:sub(1, 1) == "/" then
+        add(f)
+      else
+        add(base .. "/" .. f)
+      end
+    end
+  end
+
+  for path in pairs(modified_file_paths or {}) do
+    add(vim.fn.fnamemodify(path, ":p"))
+  end
+
+  return out
+end
+
+---リクエスト単位diff（軽量パス）のModified Files出力とpatch生成
+---@param callbacks Vibing.ChatCallbacks
+---@param handle_id string|nil リクエストのハンドルID
+---@param modified_file_paths table<string, boolean> ツールイベントで検知した変更ファイル
+function M._finalize_request_diff(callbacks, handle_id, modified_file_paths)
+  local RequestDiff = require("vibing.core.utils.request_diff")
+  local Git = require("vibing.core.utils.git")
+
+  local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
+  local base_dir = session_cwd or Git.get_root(nil) or vim.fn.getcwd()
+  base_dir = vim.fn.fnamemodify(base_dir, ":p"):gsub("/$", "")
+
+  local files, abs_files, patch_content = RequestDiff.generate(handle_id, base_dir, modified_file_paths)
+  RequestDiff.clear(handle_id)
+
+  if #files > 0 then
+    BufferReload.reload_files(abs_files)
+    local MAX_DISPLAY = 50
+    local file_lines = {}
+    for i = 1, math.min(#files, MAX_DISPLAY) do
+      table.insert(file_lines, files[i])
+    end
+    if #files > MAX_DISPLAY then
+      table.insert(file_lines, string.format("... (%d more)", #files - MAX_DISPLAY))
+    end
+    callbacks.append_chunk("\n\n### Modified Files\n\n" .. table.concat(file_lines, "\n") .. "\n")
+  end
+
+  if patch_content then
+    local patch_dir = base_dir .. "/.vibing/patches"
+    vim.fn.mkdir(patch_dir, "p")
+    local suffix = tostring(handle_id or ""):gsub("%W", ""):sub(-6)
+    local patch_path = string.format("%s/%s_%s.patch", patch_dir, os.date("%Y%m%d_%H%M%S"), suffix)
+    local f = io.open(patch_path, "w")
+    if f then
+      f:write(patch_content)
+      f:close()
+      callbacks.append_chunk("\n<!-- patch: " .. patch_path .. " -->\n")
+    else
+      vim.notify("[vibing] Failed to write patch file: " .. patch_path, vim.log.levels.WARN)
+    end
+  end
+
+  vim.schedule(function()
+    callbacks.add_user_section()
+  end)
 end
 
 ---セッション固有のmote設定を作成（単一dir用）

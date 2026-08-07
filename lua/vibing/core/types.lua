@@ -41,6 +41,7 @@
 ---@field on_tool_use fun(tool: string, file_path: string?)?
 ---@field _session_id string?
 ---@field _session_id_explicit boolean?
+---@field lightweight boolean? タイトル生成・要約等の軽量ユーティリティ呼び出し用フラグ（true時はCLAUDE.md/rules・MCPサーバー・フックを無効化）
 
 ---@class Vibing.AdapterResponse
 ---@field content string?

@@ -91,6 +91,13 @@ function M.extract_file_diff(patch_content, target_file)
   return table.concat(result, "\n")
 end
 
+---request_diff.luaが生成したpatchの基準ディレクトリを抽出
+---@param patch_content string
+---@return string?
+function M.extract_base_dir(patch_content)
+  return patch_content:match("^# vibing%-request%-diff base: ([^\n]+)")
+end
+
 ---@param patch_content string
 ---@return string?
 function M.extract_snapshot_id(patch_content)

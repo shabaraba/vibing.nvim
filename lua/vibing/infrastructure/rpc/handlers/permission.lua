@@ -225,6 +225,18 @@ function M.check_tool_permission(params)
   local result = can_use_tool_mod.can_use_tool(tool_name, tool_input, perm_config)
 
   if result.behavior == "allow" then
+    -- ツールが実行される前（=レスポンスを書いてフックのブロックを解く前）に、
+    -- 対象ファイルの「変更前」内容を退避する。リクエスト単位diffのベースラインになる。
+    -- 退避の失敗が許可判断を壊さないよう pcall で保護する。
+    pcall(function()
+      local effective_handle = handle_id
+      if not effective_handle then
+        local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+        local stream = registry.get(nil)
+        effective_handle = stream and stream.handle_id
+      end
+      require("vibing.core.utils.request_diff").capture(effective_handle, tool_name, tool_input)
+    end)
     write_hook_response(request_id, true)
     return { status = "allowed" }
   elseif result.behavior == "deny" then
@@ -249,20 +261,20 @@ end
 --- no hook/deny plumbing here — just cancel the in-flight turn and show the same choice-list UI.
 --- The killed turn means this RPC's return value is never seen by the model; the user's next
 --- chat message (a fresh `--resume`d turn) delivers their answer instead.
---- @param params {handle_id: string?, questions: table[]}
+--- @param params {chat_file_path: string?, questions: table[]}
 --- @return table RPC response
 function M.ask_user_question(params)
   if not params or not params.questions then
     return { status = "error", reason = "Missing questions" }
   end
 
-  local handle_id = params.handle_id
-  if handle_id == "" then
-    handle_id = nil
+  local chat_file_path = params.chat_file_path
+  if chat_file_path == "" then
+    chat_file_path = nil
   end
 
   local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
-  local stream = registry.get(handle_id)
+  local stream = registry.get_by_chat_file_path(chat_file_path)
   if not stream then
     return {
       status = "error",
