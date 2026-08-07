@@ -146,15 +146,25 @@ describe("cli_command_builder", function()
       assert.is_nil(find_flag(cmd, "--settings"))
     end)
 
-    it("forces --permission-mode plan regardless of opts.permission_mode", function()
+    it("does not pass --permission-mode even when opts.permission_mode is set", function()
+      local cmd = cli_command_builder.build("hello", { lightweight = true, permission_mode = "acceptEdits" }, nil, {}, nil)
+      assert.is_nil(find_flag(cmd, "--permission-mode"))
+    end)
+
+    it("passes --disallowedTools naming the known built-in tools", function()
       -- An empty --allowedTools alone does not reliably block tool execution (verified against
       -- the CLI directly: the model can still invoke Bash/Write with an empty allow list and no
-      -- --permission-mode, or with --permission-mode dontAsk). --permission-mode plan is a
-      -- confirmed hard block, so it's forced here as the real defense-in-depth layer.
-      local cmd = cli_command_builder.build("hello", { lightweight = true, permission_mode = "acceptEdits" }, nil, {}, nil)
-      local idx = find_flag(cmd, "--permission-mode")
+      -- --permission-mode, or with --permission-mode dontAsk). --permission-mode plan does
+      -- hard-block tool use, but was also verified to leak plan-mode meta-commentary into
+      -- otherwise plain text-generation output, corrupting title/summary content — so
+      -- --disallowedTools naming the known built-in tools is used as the real defense instead.
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, {}, nil)
+      local idx = find_flag(cmd, "--disallowedTools")
       assert.is_not_nil(idx)
-      assert.equals("plan", cmd[idx + 1])
+      local disallowed = cmd[idx + 1]
+      assert.is_true(disallowed:find("Bash", 1, true) ~= nil)
+      assert.is_true(disallowed:find("Write", 1, true) ~= nil)
+      assert.is_true(disallowed:find("Task", 1, true) ~= nil)
     end)
 
     it("uses config.agent.utility_model, defaulting to haiku when unset", function()

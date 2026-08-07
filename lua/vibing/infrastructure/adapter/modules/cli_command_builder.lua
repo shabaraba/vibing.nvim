@@ -181,13 +181,16 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
     -- Lightweight calls need no tools: skip permission args/hooks entirely. An empty
     -- --allowedTools alone does NOT reliably block tool execution (verified against the CLI:
     -- with no --permission-mode, or with --permission-mode dontAsk, the model can still invoke
-    -- Bash/Write despite an empty allow list). --permission-mode plan is the only mode
-    -- confirmed to hard-block tool use even when the model attempts one, so it's the real
-    -- defense here; --allowedTools "" is kept as a secondary layer.
+    -- Bash/Write despite an empty allow list). --permission-mode plan does hard-block tool use,
+    -- but it was also verified to leak plan-mode meta-commentary ("this isn't a planning
+    -- task...") into otherwise plain text-generation output, corrupting title/summary content
+    -- even with an explicit system-prompt instruction to suppress it — unacceptable for this
+    -- use case. --disallowedTools naming the known built-in tools is the real defense instead:
+    -- verified to reliably block Bash/Write with zero content pollution across repeated runs.
     table.insert(cmd, "--allowedTools")
     table.insert(cmd, "")
-    table.insert(cmd, "--permission-mode")
-    table.insert(cmd, "plan")
+    table.insert(cmd, "--disallowedTools")
+    table.insert(cmd, table.concat(tools_constants.LIGHTWEIGHT_DISALLOWED_TOOLS, ","))
   else
     add_permission_args(cmd, opts)
 
