@@ -96,6 +96,18 @@ if ! command -v npm &> /dev/null; then
     exit 1
 fi
 
+# Record the exact node binary resolved above so the Claude Code plugin's MCP
+# server launcher (mcp-server/bin/run.sh) can invoke it directly by absolute
+# path instead of relying on `node` being on PATH. Claude Code spawns
+# plugin-declared MCP server commands with a minimal PATH that doesn't
+# include version-manager shims (mise, nvm, volta, asdf, ...), so a bare
+# `command: "node"` fails with "Executable not found in $PATH" on any machine
+# where node is only installed through one of those.
+NODE_ABS_PATH="$(command -v "$NODE_EXECUTABLE" 2>/dev/null || true)"
+if [ -n "$NODE_ABS_PATH" ]; then
+    echo "$NODE_ABS_PATH" > "${MCP_DIR}/bin/.node-path"
+fi
+
 # Check if MCP directory exists
 if [ ! -d "$MCP_DIR" ]; then
     echo "[vibing.nvim] Error: MCP server directory not found: $MCP_DIR"
@@ -143,7 +155,7 @@ if [ -f "dist/index.js" ]; then
     # RPC port, so it silently targets the wrong Neovim instance whenever more
     # than one is running (see cli_command_builder.lua's rpc_port handling).
     cd "$SCRIPT_DIR"
-    PLUGIN_INSTALL_HINT="claude plugin marketplace add $SCRIPT_DIR && claude plugin install vibing-nvim@vibing-nvim --scope user"
+    PLUGIN_INSTALL_HINT="claude plugin marketplace add $SCRIPT_DIR && claude plugin install vibing-nvim@vibing --scope user"
     if command -v claude &> /dev/null; then
         # Remove any legacy direct "vibing-nvim" mcpServers registration (e.g. from
         # `claude mcp add` predating the plugin-based install above, or a leftover
@@ -171,7 +183,7 @@ if [ -f "dist/index.js" ]; then
         # Query installed state as JSON rather than grepping the human-readable table
         # (`claude plugin list`), whose "❯" marker/formatting is a display detail,
         # not a stable contract to match against.
-        elif run_with_timeout "$CLAUDE_CLI_LIST_TIMEOUT" claude plugin list --json 2>/dev/null | "$NODE_EXECUTABLE" -e "process.exit(JSON.parse(require('fs').readFileSync(0,'utf8')||'[]').some(p=>p.id==='vibing-nvim@vibing-nvim')?0:1)" 2>/dev/null; then
+        elif run_with_timeout "$CLAUDE_CLI_LIST_TIMEOUT" claude plugin list --json 2>/dev/null | "$NODE_EXECUTABLE" -e "process.exit(JSON.parse(require('fs').readFileSync(0,'utf8')||'[]').some(p=>p.id==='vibing-nvim@vibing')?0:1)" 2>/dev/null; then
             # Already installed: `claude plugin install` is a no-op here, so on repeat
             # runs (e.g. `:Lazy update` re-invoking this script) it won't pick up
             # skill/agent changes on its own. Explicitly refresh the marketplace
@@ -180,31 +192,85 @@ if [ -f "dist/index.js" ]; then
             # See the MARKETPLACE_ADD_STATUS comment above for why the fallback is
             # attached via `||` on the same line rather than a separate `STATUS=$?`.
             MARKETPLACE_UPDATE_STATUS=0
-            MARKETPLACE_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin marketplace update vibing-nvim 2>&1)" || MARKETPLACE_UPDATE_STATUS=$?
+            MARKETPLACE_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin marketplace update vibing 2>&1)" || MARKETPLACE_UPDATE_STATUS=$?
             PLUGIN_UPDATE_OUTPUT=""
             PLUGIN_UPDATE_STATUS=1
             if [ $MARKETPLACE_UPDATE_STATUS -eq 0 ]; then
                 PLUGIN_UPDATE_STATUS=0
-                PLUGIN_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin update vibing-nvim@vibing-nvim 2>&1)" || PLUGIN_UPDATE_STATUS=$?
+                PLUGIN_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin update vibing-nvim@vibing 2>&1)" || PLUGIN_UPDATE_STATUS=$?
             fi
             if [ $MARKETPLACE_UPDATE_STATUS -eq 0 ] && [ $PLUGIN_UPDATE_STATUS -eq 0 ]; then
                 echo "[vibing.nvim] ✓ Synced vibing-nvim plugin cache (restart Claude Code to apply)"
             elif [ $MARKETPLACE_UPDATE_STATUS -ne 0 ]; then
                 echo "[vibing.nvim] ⚠ Warning: 'claude plugin marketplace update' failed"
                 echo "$MARKETPLACE_UPDATE_OUTPUT"
-                echo "[vibing.nvim] You can manually sync by running: claude plugin marketplace update vibing-nvim && claude plugin update vibing-nvim@vibing-nvim"
+                echo "[vibing.nvim] You can manually sync by running: claude plugin marketplace update vibing && claude plugin update vibing-nvim@vibing"
             else
                 echo "[vibing.nvim] ⚠ Warning: 'claude plugin update' failed"
                 echo "$PLUGIN_UPDATE_OUTPUT"
-                echo "[vibing.nvim] You can manually sync by running: claude plugin marketplace update vibing-nvim && claude plugin update vibing-nvim@vibing-nvim"
+                echo "[vibing.nvim] You can manually sync by running: claude plugin marketplace update vibing && claude plugin update vibing-nvim@vibing"
             fi
         else
             echo "[vibing.nvim] Installing vibing-nvim as a Claude Code plugin (user scope)..."
-            if run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin install vibing-nvim@vibing-nvim --scope user; then
+            if run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin install vibing-nvim@vibing --scope user; then
                 echo "[vibing.nvim] ✓ Installed vibing-nvim Claude Code plugin (scope: user)"
             else
                 echo "[vibing.nvim] ⚠ Warning: 'claude plugin install' failed"
                 echo "[vibing.nvim] You can manually install by running: $PLUGIN_INSTALL_HINT"
+            fi
+        fi
+
+        # `claude plugin install`/`update` above can report success while leaving an
+        # incomplete cache snapshot behind: on machines where copying many small
+        # files is slow (observed with real-time antivirus/EDR scanning on a
+        # corporate-managed Mac), the CLI's own copy step can silently stop partway
+        # while still updating its bookkeeping as if it finished. `claude plugin
+        # update` also treats a matching git commit SHA as "already up to date" and
+        # never re-copies — which, for a "directory"-source (dev-mode) plugin whose
+        # whole point is tracking uncommitted local edits, means it silently skips
+        # syncing on every single build.sh run where HEAD hasn't moved. So sync this
+        # checkout's tracked files into the cache directly on every run, rather than
+        # only when detected as broken.
+        #
+        # mcp-server/node_modules and mcp-server/dist are symlinked into the cache
+        # rather than copied, for two reasons: (1) rsync/cp copying node_modules'
+        # thousands of small files is exactly the kind of slow-on-this-machine
+        # operation that produced the incomplete snapshot in the first place, and
+        # doing it here would just as easily blow past lazy.nvim's own build-step
+        # timeout; (2) a symlink means a later `npm run build` here is reflected
+        # immediately without rerunning this sync.
+        PLUGIN_INSTALL_PATH="$(run_with_timeout "$CLAUDE_CLI_LIST_TIMEOUT" claude plugin list --json 2>/dev/null | "$NODE_EXECUTABLE" -e "
+          const plugins = JSON.parse(require('fs').readFileSync(0, 'utf8') || '[]');
+          const p = plugins.find((p) => p.id === 'vibing-nvim@vibing');
+          process.stdout.write(p && p.installPath ? p.installPath : '');
+        " 2>/dev/null)"
+
+        if [ -n "$PLUGIN_INSTALL_PATH" ]; then
+            echo "[vibing.nvim] Syncing plugin cache with this checkout..."
+            mkdir -p "$PLUGIN_INSTALL_PATH/mcp-server"
+            if command -v rsync &> /dev/null; then
+                rsync -a --delete --exclude='.git' --exclude='/node_modules' --exclude='/mcp-server/node_modules' --exclude='/mcp-server/dist' "$SCRIPT_DIR/" "$PLUGIN_INSTALL_PATH/"
+            else
+                cp -R "$SCRIPT_DIR/." "$PLUGIN_INSTALL_PATH/"
+                rm -rf "$PLUGIN_INSTALL_PATH/node_modules" "$PLUGIN_INSTALL_PATH/.git" "$PLUGIN_INSTALL_PATH/mcp-server/node_modules" "$PLUGIN_INSTALL_PATH/mcp-server/dist"
+            fi
+
+            # Unconditionally (re)point node_modules/dist at this live checkout's own
+            # build output rather than only when missing: an earlier run of this
+            # script, or an earlier version of it, may have left a real (now stale)
+            # copy behind instead of a symlink, and `ln -sfn` is instant either way so
+            # there's no cost to always re-asserting it.
+            if [ -d "$PLUGIN_INSTALL_PATH/mcp-server" ]; then
+                [ -L "$PLUGIN_INSTALL_PATH/mcp-server/node_modules" ] || rm -rf "$PLUGIN_INSTALL_PATH/mcp-server/node_modules"
+                [ -L "$PLUGIN_INSTALL_PATH/mcp-server/dist" ] || rm -rf "$PLUGIN_INSTALL_PATH/mcp-server/dist"
+                ln -sfn "$MCP_DIR/node_modules" "$PLUGIN_INSTALL_PATH/mcp-server/node_modules"
+                ln -sfn "$MCP_DIR/dist" "$PLUGIN_INSTALL_PATH/mcp-server/dist"
+            fi
+
+            if [ -f "$PLUGIN_INSTALL_PATH/mcp-server/bin/run.mjs" ] && [ -d "$PLUGIN_INSTALL_PATH/mcp-server/node_modules" ]; then
+                echo "[vibing.nvim] ✓ Plugin cache OK (restart Claude Code to apply any changes)"
+            else
+                echo "[vibing.nvim] ✗ Repair failed; mcp-server/ still incomplete under $PLUGIN_INSTALL_PATH"
             fi
         fi
     else

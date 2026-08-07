@@ -48,7 +48,7 @@ local TOOL_NAMES = {
   "WebFetch",
   "Skill",
   "mcp__vibing-nvim__*",
-  "mcp__plugin_vibing-nvim_vibing-nvim__*",
+  "mcp__plugin_vibing_vibing-nvim__*",
   "mcp__chrome-devtools__*",
   "mcp__context7__*",
   "mcp__serena__*",
