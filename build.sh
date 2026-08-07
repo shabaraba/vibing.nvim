@@ -155,8 +155,15 @@ if [ -f "dist/index.js" ]; then
 
         # Capture output instead of streaming it directly so it can be printed
         # below only on failure, keeping successful (repeat) runs quiet.
-        MARKETPLACE_ADD_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin marketplace add "$SCRIPT_DIR" 2>&1)"
-        MARKETPLACE_ADD_STATUS=$?
+        # `... || STATUS=$?` (rather than a bare `STATUS=$?` on the next line) is
+        # required under `set -e`: a plain `VAR="$(cmd)"` assignment fails the
+        # *script* the moment cmd's timeout/error trips a non-zero exit, before
+        # the "if $STATUS -ne 0" fallback below ever runs. A command is exempt
+        # from set -e only when it isn't the final element of a && / || list, so
+        # attaching the fallback via `||` on the same line keeps the assignment's
+        # own failure from aborting the script while still capturing its status.
+        MARKETPLACE_ADD_STATUS=0
+        MARKETPLACE_ADD_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin marketplace add "$SCRIPT_DIR" 2>&1)" || MARKETPLACE_ADD_STATUS=$?
         if [ $MARKETPLACE_ADD_STATUS -ne 0 ]; then
             echo "[vibing.nvim] ⚠ Warning: 'claude plugin marketplace add' failed"
             echo "$MARKETPLACE_ADD_OUTPUT"
@@ -170,13 +177,15 @@ if [ -f "dist/index.js" ]; then
             # skill/agent changes on its own. Explicitly refresh the marketplace
             # pointer and re-sync the cached plugin snapshot to the current commit.
             echo "[vibing.nvim] vibing-nvim plugin already installed; refreshing cache..."
-            MARKETPLACE_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin marketplace update vibing-nvim 2>&1)"
-            MARKETPLACE_UPDATE_STATUS=$?
+            # See the MARKETPLACE_ADD_STATUS comment above for why the fallback is
+            # attached via `||` on the same line rather than a separate `STATUS=$?`.
+            MARKETPLACE_UPDATE_STATUS=0
+            MARKETPLACE_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin marketplace update vibing-nvim 2>&1)" || MARKETPLACE_UPDATE_STATUS=$?
             PLUGIN_UPDATE_OUTPUT=""
             PLUGIN_UPDATE_STATUS=1
             if [ $MARKETPLACE_UPDATE_STATUS -eq 0 ]; then
-                PLUGIN_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin update vibing-nvim@vibing-nvim 2>&1)"
-                PLUGIN_UPDATE_STATUS=$?
+                PLUGIN_UPDATE_STATUS=0
+                PLUGIN_UPDATE_OUTPUT="$(run_with_timeout "$CLAUDE_CLI_TIMEOUT" claude plugin update vibing-nvim@vibing-nvim 2>&1)" || PLUGIN_UPDATE_STATUS=$?
             fi
             if [ $MARKETPLACE_UPDATE_STATUS -eq 0 ] && [ $PLUGIN_UPDATE_STATUS -eq 0 ]; then
                 echo "[vibing.nvim] ✓ Synced vibing-nvim plugin cache (restart Claude Code to apply)"
