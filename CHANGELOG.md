@@ -11,24 +11,24 @@
 ## 5.1.0 (2026-08-07)
 
 ## What's Changed
-* feat: add fable as a selectable Claude model by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/456
-* fix: avoid scientific-notation handle_id breaking the approval hook by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/462
-* revert: remove /template slash command by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/459
-* refactor: split vibing-worktree skill into per-operation skills by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/461
-* fix: resolve mote context directory against session cwd by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/465
-* fix: scope cmp.setup.buffer() to the target buffer explicitly by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/467
-* fix: skip cursor-follow when chat window shows a different buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/464
-* fix: prevent duplicate message sends from rapid Enter presses by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/466
-* feat: lightweight per-request diff tracking without mote snapshots by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/479
-* fix: address review findings on per-request diff tracking by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/481
-* fix: bound claude plugin CLI calls in build.sh with a timeout by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/480
-* feat: make --setting-sources configurable by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/474
-* feat: use --resume --fork-session for summarize/title instead of resending flattened history by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/475
-* fix: remove per-turn handle_id from system prompt to preserve prompt cache by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/477
-* feat: add lightweight execution profile for utility calls by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/476
-* fix: prevent set -e from silently aborting build.sh on a claude plugin timeout by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/482
-* docs: reduce auto-loaded rules size via skill extraction by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/478
 
+- feat: add fable as a selectable Claude model by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/456
+- fix: avoid scientific-notation handle_id breaking the approval hook by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/462
+- revert: remove /template slash command by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/459
+- refactor: split vibing-worktree skill into per-operation skills by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/461
+- fix: resolve mote context directory against session cwd by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/465
+- fix: scope cmp.setup.buffer() to the target buffer explicitly by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/467
+- fix: skip cursor-follow when chat window shows a different buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/464
+- fix: prevent duplicate message sends from rapid Enter presses by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/466
+- feat: lightweight per-request diff tracking without mote snapshots by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/479
+- fix: address review findings on per-request diff tracking by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/481
+- fix: bound claude plugin CLI calls in build.sh with a timeout by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/480
+- feat: make --setting-sources configurable by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/474
+- feat: use --resume --fork-session for summarize/title instead of resending flattened history by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/475
+- fix: remove per-turn handle_id from system prompt to preserve prompt cache by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/477
+- feat: add lightweight execution profile for utility calls by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/476
+- fix: prevent set -e from silently aborting build.sh on a claude plugin timeout by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/482
+- docs: reduce auto-loaded rules size via skill extraction by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/478
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.0.0...v5.1.0
 
