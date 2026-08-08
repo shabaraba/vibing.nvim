@@ -114,7 +114,7 @@ vim.keymap.set("n", "<leader>cc", ":VibingChat<CR>", { desc = "Open chat" })
 
 または設定したキーマップで：
 
-```
+```text
 <leader>cc
 ```
 
@@ -239,7 +239,7 @@ vim.g.vibing_debug_stream = true
 ### サポート
 
 問題が解決しない場合は、以下にissueを作成してください：
-https://github.com/shabaraba/vibing.nvim/issues
+<https://github.com/shabaraba/vibing.nvim/issues>
 
 **報告時に含めるべき情報：**
 
