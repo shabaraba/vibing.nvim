@@ -8,6 +8,14 @@
   action picker/preview UI, and the `language.inline` configuration option have
   been removed. Use the chat interface (`:VibingChat`) for code assistance instead.
 
+## 5.1.1 (2026-08-08)
+
+## What's Changed
+* docs: remove obsolete config items from README by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/499
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.1.0...v5.1.1
+
 ## 5.1.0 (2026-08-07)
 
 ## What's Changed
