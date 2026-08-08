@@ -209,13 +209,22 @@ keymaps = {
 
 ## Diff
 
-Selects the strategy used by the `gd` diff viewer:
+How diffs work by default (regardless of `diff.tool`): when a write tool (Write / Edit /
+MultiEdit / NotebookEdit) is approved, the target file's pre-edit content is backed up at
+PreToolUse-hook time; when the response completes, a git-style patch is generated in-process
+with `vim.diff()` (no external commands, no tree scanning) and stored under `.vibing/patches/`.
+`gd` on a changed file shows that patch first.
+
+`diff.tool` controls two things: whether mote snapshots are also taken, and what `gd` falls
+back to when no patch file exists for the file (e.g. changes made via Bash, or reopening an
+old chat):
 
 ```lua
 diff = {
-  tool = "auto",  -- "auto" / "git": per-request patches (vim.diff-based, no external
-                  --                 process) — these two currently behave the same
-                  -- "mote": mote snapshots (catches Bash-driven file changes too)
+  tool = "auto",  -- "auto" / "git": no mote; fallback viewer is `git diff`
+                  --                 (these two currently behave the same)
+                  -- "mote": take mote snapshots and fall back to mote diff
+                  --         (catches Bash-driven file changes too)
   mote = {
     project = nil,              -- Project name (nil = auto-detect from git repo name)
     context_prefix = "vibing",  -- Prefix for mote context names
@@ -223,11 +232,9 @@ diff = {
 }
 ```
 
-mote is **opt-in**: it is used only when `tool = "mote"` is set explicitly, or when a chat has
+mote is **opt-in**: it runs only when `tool = "mote"` is set explicitly, or when a chat has
 `mote_dirs` in its frontmatter (added via `:VibingMoteDir` — those directories use mote
-regardless of `tool`). Otherwise edited files are backed up before each write and stored as
-patches under `.vibing/patches/`; Bash-driven file changes are only captured by the mote
-backend. See [MIGRATION_MOTE.md](./MIGRATION_MOTE.md) for mote setup details.
+regardless of `tool`). See [MIGRATION_MOTE.md](./MIGRATION_MOTE.md) for mote setup details.
 
 ## Permissions
 
