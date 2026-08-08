@@ -157,24 +157,24 @@ AI は同じバッファ内に応答します。`<C-c>` で実行中のリクエ
 
 ### ユーザーコマンド
 
-| コマンド | 説明 |
-| --- | --- |
-| `:VibingChat [position\|file]` | 新規チャット作成。位置指定(current\|right\|left\|top\|bottom\|back)または保存済みファイルを開く |
-| `:VibingToggleChat` | 既存チャットウィンドウの表示切り替え(会話を保持) |
-| `:VibingChatFork [position]` | 現在のチャットをフォーク(会話を分岐) |
-| `:VibingSlashCommands` | スラッシュコマンドピッカーを表示 |
-| `:VibingSetFileTitle` | AI がタイトルを生成しチャットファイルをリネーム |
-| `:VibingSummarize` | チャット履歴の AI 要約を生成してバッファに挿入 |
-| `:VibingDeleteChats [--unrenamed]` | チャットファイルを削除(--unrenamed で未リネームのファイルを一括削除) |
-| `:VibingContext [path]` | コンテキスト追加: oil.nvim のエントリ、ビジュアル選択(range)、パス引数、引数なしなら現在のバッファ |
-| `:VibingClearContext` | コンテキストを全クリア |
-| `:VibingCancel` | 実行中のリクエストをキャンセル |
-| `:VibingReloadCommands` | カスタムスラッシュコマンドと補完候補を再読み込み |
-| `:VibingCopyUnsentUserHeader` | `## User <!-- unsent -->` をクリップボードにコピー |
-| `:VibingDailySummary [YYYY-MM-DD]` | プロジェクトのチャットから日報を生成(デフォルト: 今日) |
-| `:VibingDailySummaryAll [YYYY-MM-DD]` | すべてのチャットから日報を生成(デフォルト: 今日) |
-| `:VibingCleanMote` | チャットを削除せずに mote オブジェクトをクリーンアップ |
-| `:VibingMoteDir [dir]` | チャットの mote 追跡対象ディレクトリを追加(`mote_dirs` frontmatter。デフォルト: cwd) |
+| コマンド                              | 説明                                                                                               |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `:VibingChat [position\|file]`        | 新規チャット作成。位置指定(current\|right\|left\|top\|bottom\|back)または保存済みファイルを開く    |
+| `:VibingToggleChat`                   | 既存チャットウィンドウの表示切り替え(会話を保持)                                                   |
+| `:VibingChatFork [position]`          | 現在のチャットをフォーク(会話を分岐)                                                               |
+| `:VibingSlashCommands`                | スラッシュコマンドピッカーを表示                                                                   |
+| `:VibingSetFileTitle`                 | AI がタイトルを生成しチャットファイルをリネーム                                                    |
+| `:VibingSummarize`                    | チャット履歴の AI 要約を生成してバッファに挿入                                                     |
+| `:VibingDeleteChats [--unrenamed]`    | チャットファイルを削除(--unrenamed で未リネームのファイルを一括削除)                               |
+| `:VibingContext [path]`               | コンテキスト追加: oil.nvim のエントリ、ビジュアル選択(range)、パス引数、引数なしなら現在のバッファ |
+| `:VibingClearContext`                 | コンテキストを全クリア                                                                             |
+| `:VibingCancel`                       | 実行中のリクエストをキャンセル                                                                     |
+| `:VibingReloadCommands`               | カスタムスラッシュコマンドと補完候補を再読み込み                                                   |
+| `:VibingCopyUnsentUserHeader`         | `## User <!-- unsent -->` をクリップボードにコピー                                                 |
+| `:VibingDailySummary [YYYY-MM-DD]`    | プロジェクトのチャットから日報を生成(デフォルト: 今日)                                             |
+| `:VibingDailySummaryAll [YYYY-MM-DD]` | すべてのチャットから日報を生成(デフォルト: 今日)                                                   |
+| `:VibingCleanMote`                    | チャットを削除せずに mote オブジェクトをクリーンアップ                                             |
+| `:VibingMoteDir [dir]`                | チャットの mote 追跡対象ディレクトリを追加(`mote_dirs` frontmatter。デフォルト: cwd)               |
 
 **コマンドの補足:**
 
@@ -189,20 +189,20 @@ AI は同じバッファ内に応答します。`<C-c>` で実行中のリクエ
 
 ### スラッシュコマンド(チャット内)
 
-| コマンド | 説明 |
-| --- | --- |
-| `/context <file>` | ファイルをコンテキストに追加 |
-| `/clear` | コンテキストをクリア |
-| `/save` | 現在のチャットを保存 |
-| `/summarize` | 会話を要約 |
-| `/model <model>` | AI モデルを設定(opus/sonnet/haiku/fable) |
-| `/help` | 利用可能なスラッシュコマンドを表示 |
-| `/permissions` or `/perm` | 対話的 Permission Builder — ツールの allow/deny ルールを設定 |
-| `/allow [tool]` | allow リストに追加(`-tool` で削除)。引数なしで現在のリストを表示 |
-| `/deny [tool]` | deny リストに追加(`-tool` で削除)。引数なしで現在のリストを表示 |
-| `/ask [tool]` | 使用前に確認するツールを追加(`-tool` で削除)。引数なしで現在のリストを表示 |
-| `/permission [mode]` | 権限モードを設定(default/acceptEdits/bypassPermissions/plan/dontAsk/auto) |
-| `/new-session` | セッションをリセットして新規開始 |
+| コマンド                  | 説明                                                                       |
+| ------------------------- | -------------------------------------------------------------------------- |
+| `/context <file>`         | ファイルをコンテキストに追加                                               |
+| `/clear`                  | コンテキストをクリア                                                       |
+| `/save`                   | 現在のチャットを保存                                                       |
+| `/summarize`              | 会話を要約                                                                 |
+| `/model <model>`          | AI モデルを設定(opus/sonnet/haiku/fable)                                   |
+| `/help`                   | 利用可能なスラッシュコマンドを表示                                         |
+| `/permissions` or `/perm` | 対話的 Permission Builder — ツールの allow/deny ルールを設定               |
+| `/allow [tool]`           | allow リストに追加(`-tool` で削除)。引数なしで現在のリストを表示           |
+| `/deny [tool]`            | deny リストに追加(`-tool` で削除)。引数なしで現在のリストを表示            |
+| `/ask [tool]`             | 使用前に確認するツールを追加(`-tool` で削除)。引数なしで現在のリストを表示 |
+| `/permission [mode]`      | 権限モードを設定(default/acceptEdits/bypassPermissions/plan/dontAsk/auto)  |
+| `/new-session`            | セッションをリセットして新規開始                                           |
 
 `/allow`・`/deny`・`/ask` は `Bash(git:*)`、`Read(src/**/*.ts)`、`WebFetch(github.com)` の
 ような粒度指定パターンも受け付けます。
@@ -212,15 +212,15 @@ AI は同じバッファ内に応答します。`<C-c>` で実行中のリクエ
 チャットバッファでは以下のキーバインドが使えます(`q` 以外は `keymaps` 設定で変更可能 —
 [設定](#️-設定)参照):
 
-| キー | 説明 |
-| --- | --- |
-| `<CR>` | メッセージ送信(ノーマルモード) |
-| `<C-c>` | 実行中のリクエストをキャンセル |
-| `<C-a>` | ファイルをコンテキストに追加 |
-| `gd` | カーソル下のファイルの diff 表示(Modified Files セクション内) |
-| `gf` | カーソル下のファイルを開く(Modified Files セクションほかチャット内のパス) |
-| `gx` | カーソル行の URL をブラウザで開く |
-| `q` | チャットウィンドウを閉じる |
+| キー    | 説明                                                                      |
+| ------- | ------------------------------------------------------------------------- |
+| `<CR>`  | メッセージ送信(ノーマルモード)                                            |
+| `<C-c>` | 実行中のリクエストをキャンセル                                            |
+| `<C-a>` | ファイルをコンテキストに追加                                              |
+| `gd`    | カーソル下のファイルの diff 表示(Modified Files セクション内)             |
+| `gf`    | カーソル下のファイルを開く(Modified Files セクションほかチャット内のパス) |
+| `gx`    | カーソル行の URL をブラウザで開く                                         |
+| `q`     | チャットウィンドウを閉じる                                                |
 
 ## ⚙️ 設定
 
@@ -329,12 +329,12 @@ graph TB
     Plugin -->|spawns & communicates<br/>JSON Lines| Codex
 ```
 
-| 観点 | 従来の REST API | vibing.nvim(CLI アダプター) |
-| --- | --- | --- |
-| コンテキスト | 手動で組み立て | MCP: エージェントが随時要求 |
+| 観点             | 従来の REST API     | vibing.nvim(CLI アダプター)    |
+| ---------------- | ------------------- | ------------------------------ |
+| コンテキスト     | 手動で組み立て      | MCP: エージェントが随時要求    |
 | エディタアクセス | なし(fire & forget) | MCP による完全な双方向アクセス |
-| セッション状態 | プラグインが管理 | CLI セッションを resume |
-| ツール実行 | プラグインが実装 | CLI ネイティブツール |
+| セッション状態   | プラグインが管理    | CLI セッションを resume        |
+| ツール実行       | プラグインが実装    | CLI ネイティブツール           |
 
 ## ❓ FAQ
 

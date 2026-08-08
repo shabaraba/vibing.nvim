@@ -298,15 +298,15 @@ permissions = {
 
 Field reference:
 
-| Field | Applies to | Matching |
-| --- | --- | --- |
-| `tools` | any | Exact tool-name match |
-| `paths` | tools whose input has a file path (Read/Write/Edit/...) | Glob: `*` (single dir), `**` (recursive); paths are normalized to absolute, symlink-resolved form first |
-| `commands` | `Bash` only | Exact match against the base command (first word) |
-| `patterns` | `Bash` only | **Lua patterns**, not regex — escape `-` as `%-` (e.g. `"^rm %-rf"`). Patterns longer than 500 chars are ignored |
-| `domains` | `WebFetch` only | Domain match with `*.` wildcard support |
-| `action` | — | `"allow"` or `"deny"` |
-| `message` | — | Shown when a `deny` rule blocks a call |
+| Field      | Applies to                                              | Matching                                                                                                         |
+| ---------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `tools`    | any                                                     | Exact tool-name match                                                                                            |
+| `paths`    | tools whose input has a file path (Read/Write/Edit/...) | Glob: `*` (single dir), `**` (recursive); paths are normalized to absolute, symlink-resolved form first          |
+| `commands` | `Bash` only                                             | Exact match against the base command (first word)                                                                |
+| `patterns` | `Bash` only                                             | **Lua patterns**, not regex — escape `-` as `%-` (e.g. `"^rm %-rf"`). Patterns longer than 500 chars are ignored |
+| `domains`  | `WebFetch` only                                         | Domain match with `*.` wildcard support                                                                          |
+| `action`   | —                                                       | `"allow"` or `"deny"`                                                                                            |
+| `message`  | —                                                       | Shown when a `deny` rule blocks a call                                                                           |
 
 Evaluation notes:
 

@@ -42,7 +42,7 @@ Unlike chat plugins that send static context to an LLM, vibing.nvim gives the AI
 access to your Neovim instance** through CLI backends and MCP integration.
 
 - **🤖 Neovim as an agent tool** — via MCP, the AI reads and writes buffers, executes commands,
-  and queries LSP (diagnostics, definitions, references, symbols) in your *running* editor
+  and queries LSP (diagnostics, definitions, references, symbols) in your _running_ editor
 - **🔀 Multi-backend** — Claude CLI (`claude -p --output-format stream-json`) or Codex CLI
   (`codex exec --json`); switch globally via `adapter` or per-chat via the `agent` frontmatter
   field
@@ -187,20 +187,20 @@ buffers — save, search, and edit them like any other file.
 
 ### Slash Commands (in Chat)
 
-| Command                   | Description                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------ |
-| `/context <file>`         | Add file to context                                                            |
-| `/clear`                  | Clear context                                                                  |
-| `/save`                   | Save current chat                                                              |
-| `/summarize`              | Summarize conversation                                                         |
-| `/model <model>`          | Set AI model (opus/sonnet/haiku/fable)                                         |
-| `/help`                   | Show available slash commands                                                  |
-| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules               |
-| `/allow [tool]`           | Add tool to allow list (`-tool` removes), or show current list if no args      |
-| `/deny [tool]`            | Add tool to deny list (`-tool` removes), or show current list if no args       |
-| `/ask [tool]`             | Ask before using tool (`-tool` removes), or show current list if no args       |
-| `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk/auto)  |
-| `/new-session`            | Reset session and start fresh                                                  |
+| Command                   | Description                                                                   |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| `/context <file>`         | Add file to context                                                           |
+| `/clear`                  | Clear context                                                                 |
+| `/save`                   | Save current chat                                                             |
+| `/summarize`              | Summarize conversation                                                        |
+| `/model <model>`          | Set AI model (opus/sonnet/haiku/fable)                                        |
+| `/help`                   | Show available slash commands                                                 |
+| `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules              |
+| `/allow [tool]`           | Add tool to allow list (`-tool` removes), or show current list if no args     |
+| `/deny [tool]`            | Add tool to deny list (`-tool` removes), or show current list if no args      |
+| `/ask [tool]`             | Ask before using tool (`-tool` removes), or show current list if no args      |
+| `/permission [mode]`      | Set permission mode (default/acceptEdits/bypassPermissions/plan/dontAsk/auto) |
+| `/new-session`            | Reset session and start fresh                                                 |
 
 `/allow`, `/deny`, and `/ask` also accept granular patterns like `Bash(git:*)`,
 `Read(src/**/*.ts)`, and `WebFetch(github.com)`.
