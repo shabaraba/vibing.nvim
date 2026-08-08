@@ -4,19 +4,19 @@
 
 # vibing.nvim
 
-**Neovim用のインテリジェントAIコードアシスタント**
+**Neovim のためのインテリジェント AI コードアシスタント**
 
 [![CI](https://github.com/shabaraba/vibing.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/shabaraba/vibing.nvim/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Release](https://img.shields.io/github/v/release/shabaraba/vibing.nvim)](https://github.com/shabaraba/vibing.nvim/releases)
 
-Agent SDKを通じて**Claude AI**をシームレスに統合し、エディタ内で直接、
-インテリジェントなチャット会話を提供する強力なNeovimプラグインです。
+**Claude** と **Codex** を CLI バックエンドとして統合し、コンテキストを理解した
+AI チャットをエディタ内で直接利用できる Neovim プラグイン。
 
 [English](./README.md) | 日本語
 
 [機能](#-機能) • [インストール](#-インストール) • [使い方](#-使い方) •
-[設定例](#️-設定例) • [コントリビューション](#-コントリビューション)
+[設定](#️-設定) • [コントリビュート](#-コントリビュート)
 
 </div>
 
@@ -24,674 +24,253 @@ Agent SDKを通じて**Claude AI**をシームレスに統合し、エディタ�
 
 ## 目次
 
-- [なぜvibing.nvimなのか？](#-なぜvibingnvimなのか)
 - [機能](#-機能)
-- [他のプラグインとの違い](#-他のプラグインとの違い)
 - [インストール](#-インストール)
+- [クイックスタート](#-クイックスタート)
 - [使い方](#-使い方)
-- [設定例](#️-設定例)
-- [設定リファレンス](#-設定リファレンス)
+- [設定](#️-設定)
 - [チャットファイル形式](#-チャットファイル形式)
 - [アーキテクチャ](#️-アーキテクチャ)
 - [FAQ](#-faq)
-- [コントリビューション](#-コントリビューション)
+- [コントリビュート](#-コントリビュート)
 - [ライセンス](#-ライセンス)
 - [リンク](#-リンク)
 
-## 💡 なぜvibing.nvimなのか？
-
-vibing.nvimは、NeovimにおけるAI支援コーディングに対して、根本的に異なるアプローチを取っています。
-
-### エージェント・ファーストなアーキテクチャ
-
-従来のチャットベースAIプラグインがLLMに静的なコンテキストを送信するのとは異なり、
-vibing.nvimはAgent SDKとMCP統合を通じて、ClaudeにNeovimインスタンスへの**直接アクセス**を与えます。
-
-これにより、Claudeは以下のことが可能になります：
-
-- **コードベースを自律的に探索** - 手動でコンテキストを設定することなく、ファイルをナビゲートし、シンボルを検索し、プロジェクト構造を理解
-- **リアルタイムなエディタ状態へのアクセス** - LSP診断、シンボル定義、参照をオンデマンドでクエリ
-- **Neovimコマンドの実行** - ワークフローの一部としてエディタ操作を実行
-- **会話の継続性を維持** - `.vibing`ファイルに完全なコンテキストを保存してセッションを再開
-
-### Claudeのために設計
-
-vibing.nvimは、公式Agent SDKを活用してClaude専用に構築されており、
-Claude Code CLIと同じ機能をNeovim内で直接提供します。
-この焦点を絞ったアプローチにより、マルチプロバイダープラグインでは実現できない深い統合が可能になります。
-
-### 並行セッション
-
-ブロックせずに複数のタスクを同時進行：
-
-- **複数のチャットウィンドウ** - それぞれ独立したセッションで別々の会話を開く
-- **待ち時間なし** - 別のチャットが処理中でも新しいチャットを開始
-
-ワークフロー例：
-
-```vim
-:VibingChat  " チャット1で認証問題をデバッグ
-:VibingChat  " チャット2で新機能を設計
-```
-
-すべてのセッションは適切な競合管理のもと独立して実行されます。
-
 ## ✨ 機能
 
-### 🤖 Neovimをエージェントツールとして活用
+静的なコンテキストを LLM に送るだけのチャットプラグインと異なり、vibing.nvim は
+CLI バックエンドと MCP 統合を通じて、AI に**実行中の Neovim インスタンスへの直接アクセス**を
+提供します。
 
-ClaudeはMCPを介して実行中のNeovimインスタンスと直接対話できます：
+- **🤖 Neovim をエージェントのツールに** — MCP 経由で AI がバッファの読み書き、コマンド実行、
+  LSP クエリ(診断・定義・参照・シンボル)を*実行中の*エディタに対して行える
+- **🔀 マルチバックエンド** — Claude CLI(`claude -p --output-format stream-json`)または
+  Codex CLI(`codex exec --json`)。`adapter` 設定でグローバルに、チャットごとには
+  frontmatter の `agent` フィールドで切り替え
+- **💾 ファイルベースのセッション永続化** — チャットは `.vibing/chat/` 配下の YAML frontmatter
+  付き Markdown ファイル。持ち運び可能・再開可能(CLI セッション状態を完全復元)・監査可能・
+  バージョン管理可能
+- **🔀 並行セッション** — 複数の独立したチャットを同時実行。あるチャットの処理中でも新しい
+  チャットを開始できる
+- **🛡️ きめ細かい権限制御** — ツールごとの allow/deny/ask リスト、機密ファイル向けの
+  パスベースルール、Bash コマンドパターン、対話的な Permission Builder UI
+- **📊 diff ビューア** — 変更ファイル上で `gd` を押すと before/after の diff を表示。
+  デフォルトはリクエスト単位のパッチ追跡で、[mote](https://github.com/shabaraba/mote)
+  スナップショットバックエンド(利用可能なら自動選択)を使うと Bash 経由のファイル変更も
+  捕捉できる
+- **🎯 スマートコンテキスト** — 手動追加、oil.nvim、ビジュアル選択からファイルをコンテキストへ
+- **🌍 多言語対応** — AI 応答の言語をチャットごとに設定可能
 
-- バッファの読み書きをプログラマティックに実行
-- ExコマンドとLuaコードの実行
-- LSPによる診断、定義、参照、シンボルのクエリ
-- プロジェクト内のファイルシステムのナビゲート
+### 他の選択肢を検討すべきケース
 
-### 💾 ファイルベースのセッション永続化
+- ローカル/オフラインモデル(Ollama 等)が必要
+- 最小限の依存関係を好む(vibing.nvim は MCP サーバーのため Node.js が必要)
+- 大きなコミュニティを持つ実績あるプラグインが欲しい(私たちはまだ成長中です!)
 
-各会話はYAMLフロントマター付きの`.vibing`ファイルとして保存されます：
-
-- **ポータブル** - チームメイトやマシン間で会話を共有
-- **再開可能** - 完全なSDKセッション状態で中断したところから正確に続行
-- **監査可能** - すべての設定（モデル、モード、権限）がファイル内で可視化
-- **バージョン管理可能** - AI支援による変更をGitで追跡
-
-### 🛡️ きめ細かい権限システム
-
-Claudeができることを細かく制御：
-
-- 特定のツールの許可/拒否（Read、Edit、Write、Bashなど）
-- センシティブファイルのパスベースルール
-- シェル操作のコマンドパターンマッチング
-- インタラクティブな権限ビルダーUI
-
-### 📋 Accept/Reject機能付き差分プレビュー
-
-すべてのコード修正に対するTelescope風の差分プレビュー：
-
-- 各変更ファイルの視覚的な差分表示
-- Gitベースのrevertによるすべて承認/すべて拒否
-- 複数の変更ファイル間のナビゲート
-- チャットモードで動作
-
-### 🔀 並行セッションサポート
-
-複数のAIタスクを同時に実行：
-
-- **独立したチャットセッション** - 各チャットウィンドウが独自の会話とセッションIDを維持
-- **並列ワークフロー** - 1つのチャットでデバッグしながら別のチャットで機能を設計
-
-### その他の機能
-
-- **💬 インタラクティブなチャットインターフェース** - Claude AIとのシームレスなチャットウィンドウ、デフォルトで現在のバッファに開く
-- **📝 自然言語コマンド** - あらゆるコード変換にカスタム指示を使用
-- **🔧 スラッシュコマンド** - コンテキスト管理、権限、設定のためのチャット内コマンド
-- **🎯 スマートコンテキスト** - 開いているバッファからの自動ファイルコンテキスト検出と手動追加
-- **🌍 多言語サポート** - AIレスポンスの言語を設定可能
-- **📊 差分ビューアー** - AI編集ファイルの視覚的な差分表示（`gd`キーバインド）
-- **⚙️ 高度な設定可能性** - 柔軟なモード、モデル、権限、UI設定
-
-## 🔄 他のプラグインとの違い
-
-AIコーディングプラグインは、それぞれ異なるニーズに対応します。vibing.nvimの位置づけは以下の通りです：
-
-### vibing.nvimが最適な場合：
-
-- Claudeを主要なAIアシスタントとして使用している
-- AIに自律的にコードベースをナビゲートして理解させたい
-- 永続的で共有可能な会話履歴が必要
-- きめ細かい権限制御を好む
-- 複数のAIタスクを同時進行したい
-- NeovimからClaude Code CLIの機能を使いたい
-
-### 代替手段を検討すべき場合：
-
-- 複数のLLMプロバイダー（OpenAI、Ollamaなど）のサポートが必要
-- 最小限の依存関係を好む（vibing.nvimはNode.jsが必要）
-- 大規模コミュニティを持つ実績あるプラグインを求めている（私たちはまだ成長中です！）
-
-### 補完的な使用
-
-vibing.nvimは深いClaude統合に焦点を当てています。以下の用途には他のツールも併用できます：
-
-- クイック補完（GitHub Copilot、Codeium）
-- ローカル/オフラインモデル（Ollamaベースのプラグイン）
-- プロバイダー非依存のワークフロー
+vibing.nvim は補完プラグイン(Copilot、Codeium)や他のチャットプラグインと競合しません。
 
 ## 📦 インストール
 
-### Claude Codeプラグイン（MCP + スキル + エージェント）
+### 前提条件
 
-vibing.nvimは[Claude Codeプラグイン](https://code.claude.com/docs/en/plugins)としても配布されています。
-`vibing-nvim` MCPサーバーに加えて、Neovim対応のスキルと読み取り専用のナビゲーション用サブエージェントを
-まとめてバンドルしており、`~/.claude.json`を手動編集する必要はありません。
+- **Neovim** 0.10+(`vim.system()` を使用)
+- **Node.js** 18+(MCP サーバー用)
+- AI CLI バックエンドを最低1つ:
+  - **Claude CLI**(`claude`)— `npm install -g @anthropic-ai/claude-code`
+  - **Codex CLI**(`codex`)— `npm install -g @openai/codex`
 
-**自動インストール：** `build = "./build.sh"`（後述）でインストールしていて、`claude` CLIが
-`PATH`上にある場合、`build.sh`がビルドの度に`claude plugin marketplace add` +
-`claude plugin install ... --scope user`を自動実行します。他に何もする必要はありません。
-
-**手動インストール：** 自分でインストールする場合（`build.sh`を実行しない場合や、別のマシンで
-インストールする場合など）：
-
-```text
-/plugin marketplace add shabaraba/vibing.nvim
-/plugin install vibing-nvim@vibing-nvim
-```
-
-いずれの方法でも、`vibing-nvim` MCPサーバー（下記で説明する`mcp__vibing-nvim__*`と同じツール群）に
-加えて、`nvim-context`・`nvim-lsp-navigation` スキル（Neovimインスタンスに接続されている場合、grepよりも
-ライブなバッファ/ウィンドウ/カーソル状態の読み取りとLSPナビゲーションを優先させる）、`nvim-navigator`
-サブエージェント（`@vibing-nvim:nvim-navigator`で読み取り専用のコードナビゲーションを実行）が
-インストールされます。
-
-バンドルされたMCPサーバーは初回起動時に自身をビルド（`npm install && npm run build`）するため、
-MCPサーバー自体に別途ビルド手順は不要です。これはNeovim側の`build.sh`（後述、プラグインの他のネイティブ
-部分のビルドに引き続き必要）とは独立しています。MCPツールが接続する対象として、`mcp = { enabled = true }`（デフォルト）で
-Neovimを起動しておく必要はあります。
-
-**アンインストール：**
-
-```text
-/plugin uninstall vibing-nvim@vibing-nvim
-/plugin marketplace remove vibing-nvim
-```
-
-### [lazy.nvim](https://github.com/folke/lazy.nvim)を使用
+### [lazy.nvim](https://github.com/folke/lazy.nvim) を使う場合
 
 ```lua
 {
   "shabaraba/vibing.nvim",
   dependencies = {
-    -- オプション：ファイルブラウザ統合用
-    "stevearc/oil.nvim",
+    "stevearc/oil.nvim",  -- オプション: ファイルブラウザ統合
   },
-  build = "./build.sh",  -- Neovim統合用MCPサーバーをビルド
-  config = function()
-    require("vibing").setup({
-      -- デフォルト設定
-      chat = {
-        window = {
-          position = "current",  -- "current" | "right" | "left" | "float"
-          width = 0.4,
-          border = "rounded",
-        },
-        auto_context = true,
-        save_location_type = "project",  -- "project" | "user" | "custom"
-        context_position = "append",  -- "prepend" | "append"
-      },
-      agent = {
-        default_mode = "code",  -- "code" | "plan" | "explore"
-        default_model = "sonnet",  -- "sonnet" | "opus" | "haiku" | "fable"
-        prioritize_vibing_lsp = true,  -- vibing-nvim LSPツールを優先（デフォルト：true）
-      },
-      permissions = {
-        mode = "acceptEdits",  -- "default" | "acceptEdits" | "bypassPermissions"
-        allow = { "Read", "Edit", "Write", "Glob", "Grep" },
-        deny = { "Bash" },
-        rules = {},  -- オプション：きめ細かい権限ルール
-      },
-      preview = {
-        enabled = false,  -- 差分プレビューUIを有効化（Git必須）
-      },
-      language = nil,  -- オプション："ja" | "en" | { default = "ja", chat = "ja" }
-    })
-  end,
-}
-```
-
-### [packer.nvim](https://github.com/wbthomason/packer.nvim)を使用
-
-```lua
-use {
-  "shabaraba/vibing.nvim",
-  run = "./build.sh",  -- Neovim統合用MCPサーバーをビルド
+  build = "./build.sh",  -- MCP サーバーのビルドと Claude Code プラグインの登録
   config = function()
     require("vibing").setup()
   end,
 }
 ```
 
-## 🚀 使い方
+`setup()` に渡せるオプションは[設定](#️-設定)を参照してください。
 
-### ユーザーコマンド
-
-| コマンド                       | 説明                                                                                         |
-| ------------------------------ | -------------------------------------------------------------------------------------------- |
-| `:VibingChat [position\|file]` | オプションの位置（current\|right\|left）で新しいチャットを作成、または保存したファイルを開く |
-| `:VibingToggleChat`            | 既存のチャットウィンドウを切り替え（現在の会話を保持）                                       |
-| `:VibingSlashCommands`         | チャット内でスラッシュコマンドピッカーを表示                                                 |
-| `:VibingContext [path]`        | コンテキストにファイルを追加（またはパスがない場合oil.nvimから）                             |
-| `:VibingClearContext`          | すべてのコンテキストをクリア                                                                 |
-| `:VibingCancel`                | 現在のリクエストをキャンセル                                                                 |
-
-**コマンドのセマンティクス：**
-
-- **`:VibingChat`** - 常に新しいチャットウィンドウを作成します。オプションで位置（`current`、`right`、`left`）を指定してウィンドウ配置を制御できます。
-  - `:VibingChat` - 設定のデフォルト位置を使用して新しいチャット
-  - `:VibingChat current` - 現在のウィンドウに新しいチャット
-  - `:VibingChat right` - 右分割に新しいチャット
-  - `:VibingChat left` - 左分割に新しいチャット
-  - `:VibingChat path/to/file.vibing` - 保存したチャットファイルを開く
-- **`:VibingToggleChat`** - 現在の会話を表示/非表示にします。既存のチャット状態を保持します。
-
-### プレビューUI
-
-設定で`preview.enabled = true`が設定されている場合、チャットでのコード変更後にTelescope風のプレビューUIを表示します（Gitリポジトリ必須）：
-
-**レイアウト：**
-
-チャットモード（2パネル）：
-
-```text
-┌──────────────┬──────────────────────────────────────┐
-│ Files (3)    │ Diff Preview                         │
-│  > src/a.lua │  @@ -10,5 +10,8 @@                   │
-│    src/b.lua │  -old line                           │
-│    tests/*.lua  +new line                           │
-└──────────────┴──────────────────────────────────────┘
-```
-
-**キーバインディング：**
-
-- `j`/`k` - カーソルを上下に移動（通常のNeovimナビゲーション）
-- `<Enter>` - カーソル位置のファイルを選択（Filesウィンドウ内）
-- `<Tab>` - 次のウィンドウにサイクル（Files → Diff → Response → Files）
-- `<Shift-Tab>` - 前のウィンドウにサイクル
-- `a` - すべての変更を承認（プレビューを閉じて変更を保持）
-- `r` - すべての変更を拒否（`git checkout HEAD`を使用してすべてのファイルを元に戻す）
-- `q`/`Esc` - プレビューを閉じる（変更を保持）
-
-**機能：**
-
-- レスポンシブレイアウト（横幅 ≥120列で水平、<120列で垂直）
-- Delta統合による強化された差分ハイライト（利用可能な場合）
-- 複数の変更ファイル間のナビゲート
-- 個別またはすべての変更を承認/拒否
-- Gitベースの元に戻す機能
-
-### スラッシュコマンド（チャット内）
-
-| コマンド                      | 説明                                                                   |
-| ----------------------------- | ---------------------------------------------------------------------- |
-| `/context <file>`             | コンテキストにファイルを追加                                           |
-| `/clear`                      | コンテキストをクリア                                                   |
-| `/save`                       | 現在のチャットを保存                                                   |
-| `/summarize`                  | 会話を要約                                                             |
-| `/model <model>`              | AIモデルを設定（opus/sonnet/haiku/fable）                              |
-| `/permissions` または `/perm` | インタラクティブな権限ビルダー - ツールの許可/拒否ルールを設定         |
-| `/allow [tool]`               | 許可リストにツールを追加、引数なしで現在のリストを表示                 |
-| `/deny [tool]`                | 拒否リストにツールを追加、引数なしで現在のリストを表示                 |
-| `/permission [mode]`          | 権限モードを設定（default/acceptEdits/bypassPermissions/plan/dontAsk） |
-
-### チャットキーバインディング
-
-チャットバッファ内では、以下のキーバインディングが使用できます：
-
-| キー | 説明                                                                              |
-| ---- | --------------------------------------------------------------------------------- |
-| `gd` | カーソル下のファイルの差分を表示（Modified Filesセクション内）                    |
-| `gf` | カーソル下のファイルを開く（Modified Filesセクション内）                          |
-| `gp` | **すべての変更ファイルをプレビュー** - Telescope風のプレビューUIを開く（Git必須） |
-| `q`  | チャットウィンドウを閉じる                                                        |
-
-**すべての変更ファイルをプレビュー（`gp`）：**
-
-Claudeがチャットセッションで複数のファイルを変更した場合、チャットバッファ内の任意の場所で`gp`を押すと、
-すべての変更ファイルを一度に表示するプレビューUIが開きます。これにより、Accept/Reject機能が提供されます：
-
-- `j`/`k`でファイル間をナビゲート
-- `a`を押してすべての変更を承認
-- `r`を押してすべての変更を拒否して元に戻す（`git checkout HEAD`経由）
-- `q`を押してプレビューを終了
-
-## ⚙️ 設定例
-
-### 基本セットアップ
+### [packer.nvim](https://github.com/wbthomason/packer.nvim) を使う場合
 
 ```lua
-require("vibing").setup()
-```
-
-設定を提供しない場合、以下の**デフォルト権限**が適用されます：
-
-```lua
-permissions = {
-  mode = "acceptEdits",  -- ファイル編集を自動承認、他のツールは確認
-  allow = {
-    "Read",    -- ファイルを読む
-    "Edit",    -- ファイルを編集
-    "Write",   -- 新しいファイルを書く
-    "Glob",    -- パターンでファイルを検索
-    "Grep",    -- ファイル内容を検索
-    "Skill",   -- スキルを使用（スラッシュコマンドとワークフロー）
-  },
-  deny = {
-    "Bash",    -- シェルコマンドをブロック（セキュリティ）
-  },
-}
-```
-
-これらのデフォルトは、新しいチャットファイルを作成する際の**テンプレート**として使用されます。
-各チャットファイルのフロントマターには独自の権限が含まれ、実行時に使用されます。
-
-### カスタム設定
-
-```lua
-require("vibing").setup({
-  chat = {
-    window = {
-      position = "float",
-      width = 0.6,
-      border = "single",
-    },
-    save_location_type = "user",  -- グローバルチャット履歴
-  },
-  agent = {
-    default_mode = "plan",  -- プランニングモードで開始
-    default_model = "opus",  -- 最も能力の高いモデルを使用
-  },
-  permissions = {
-    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "WebSearch" },
-    deny = {},  -- すべてのツールを許可
-  },
-  preview = {
-    enabled = true,  -- 差分プレビューUIを有効化
-  },
-  keymaps = {
-    send = "<C-CR>",  -- カスタム送信キー
-    cancel = "<C-c>",
-    add_context = "<C-a>",
-  },
-})
-```
-
-### プロジェクト固有の設定
-
-```lua
--- チャットをプロジェクトディレクトリに保存
-require("vibing").setup({
-  chat = {
-    save_location_type = "project",  -- プロジェクトルートの.vibing/chat/
-  },
-})
-```
-
-### カスタム保存場所
-
-```lua
-require("vibing").setup({
-  chat = {
-    save_location_type = "custom",
-    save_dir = "~/my-ai-chats/vibing/",
-  },
-})
-```
-
-### きめ細かい権限ルール
-
-```lua
-require("vibing").setup({
-  permissions = {
-    mode = "default",  -- 毎回確認を求める
-    rules = {
-      -- 特定のパスの読み取りを許可
-      {
-        tools = { "Read" },
-        paths = { "src/**", "tests/**" },
-        action = "allow",
-      },
-      -- 重要なファイルへの書き込みを拒否
-      {
-        tools = { "Write", "Edit" },
-        paths = { ".env", "*.secret" },
-        action = "deny",
-        message = "機密ファイルは変更できません",
-      },
-      -- 特定のnpmコマンドのみ許可
-      {
-        tools = { "Bash" },
-        commands = { "npm", "yarn" },
-        action = "allow",
-      },
-      -- 危険なbashパターンを拒否
-      {
-        tools = { "Bash" },
-        patterns = { "^rm -rf", "^sudo" },
-        action = "deny",
-        message = "危険なコマンドがブロックされました",
-      },
-    },
-  },
-})
-```
-
-### 多言語設定
-
-```lua
-require("vibing").setup({
-  -- シンプル：すべてのレスポンスを日本語で
-  language = "ja",
-
-  -- 高度：コンテキストごとに異なる言語
-  -- language = {
-  --   default = "ja",
-  --   chat = "ja",     -- チャットは日本語
-  -- },
-})
-```
-
-## 📚 設定リファレンス
-
-すべての設定オプションの完全なリファレンス：
-
-### Agent設定
-
-Claude Agent SDKの動作を制御：
-
-```lua
-agent = {
-  default_mode = "code",    -- デフォルト実行モード
-                            -- "code": 直接実装
-                            -- "plan": まず計画してから実装
-                            -- "explore": コードベースを探索・分析
-
-  default_model = "sonnet", -- デフォルトClaudeモデル
-                            -- "sonnet": バランス型（推奨）
-                            -- "opus": 最も能力が高い
-                            -- "haiku": 最速
-
-  prioritize_vibing_lsp = true,  -- vibing-nvim LSPツールを優先
-                                 -- true: vibing-nvim LSPを使用（実行中のNeovimに接続）
-                                 -- false: 汎用LSPツール（例：Serena）を許可
-                                 -- デフォルト：true
-}
-```
-
-### Chat設定
-
-チャットウィンドウとセッション設定：
-
-```lua
-chat = {
-  window = {
-    position = "current",  -- ウィンドウ位置
-                          -- "current": 現在のウィンドウに開く
-                          -- "right": 右垂直分割
-                          -- "left": 左垂直分割
-                          -- "float": フローティングウィンドウ
-
-    width = 0.4,          -- ウィンドウ幅（0-1: 比率、>1: 絶対列数）
-    border = "rounded",   -- ボーダースタイル："rounded" | "single" | "double" | "none"
-  },
-
-  auto_context = true,     -- 開いているバッファを自動的にコンテキストに追加
-
-  save_location_type = "project",  -- チャットファイルの保存場所
-                                   -- "project": プロジェクトルートの.vibing/chat/
-                                   -- "user": ~/.local/share/nvim/vibing/chats/
-                                   -- "custom": save_dirパスを使用
-
-  save_dir = "~/.local/share/nvim/vibing/chats",  -- save_location_type="custom"の場合に使用
-
-  context_position = "append",  -- 新しいコンテキストファイルを追加する場所
-                               -- "append": コンテキストリストの末尾に追加
-                               -- "prepend": 先頭に追加
-}
-```
-
-### Permissions（権限）
-
-Claudeが使用できるツールを制御。詳細な例については[きめ細かい権限ルール](#きめ細かい権限ルール)を参照してください。
-
-```lua
-permissions = {
-  mode = "acceptEdits",  -- 権限モード
-                        -- "default": 毎回確認を求める
-                        -- "acceptEdits": Edit/Writeを自動承認（推奨）
-                        -- "bypassPermissions": すべてを自動承認（慎重に使用）
-                        -- "plan": 読み取り専用の計画モード（ツール実行なし）
-                        -- "dontAsk": プロンプトの代わりに拒否
-
-  allow = {              -- 許可するツール（空 = 拒否されたもの以外すべて許可）
-    "Read",              -- ファイルを読む
-    "Edit",              -- 既存ファイルを編集
-    "Write",             -- 新しいファイルを作成
-    "Glob",              -- パターンでファイルを検索
-    "Grep",              -- ファイル内容を検索
-    -- "Bash",           -- シェルコマンドを実行（セキュリティリスク）
-    -- "WebSearch",      -- Webを検索
-    -- "WebFetch",       -- Webページを取得
-  },
-
-  deny = {               -- 拒否するツール（allowより優先）
-    "Bash",              -- デフォルトでシェルコマンドをブロック
-  },
-
-  rules = {},            -- 高度：きめ細かい権限ルール
-                        -- きめ細かい権限ルールセクションを参照
-}
-```
-
-### Keymaps（キーマップ）
-
-チャットバッファのキーバインディング：
-
-```lua
-keymaps = {
-  send = "<CR>",         -- メッセージを送信
-  cancel = "<C-c>",      -- 現在のリクエストをキャンセル
-  add_context = "<C-a>", -- コンテキストにファイルを追加
-  open_diff = "gd",      -- ファイルパス上で差分ビューアーを開く
-  open_file = "gf",      -- ファイルパス上でファイルを開く
-}
-```
-
-### Preview設定
-
-チャット用の差分プレビューUIを設定：
-
-```lua
-preview = {
-  enabled = false,  -- Telescope風の差分プレビューUIを有効化
-                    -- Gitリポジトリが必要
-                    -- コード変更後にAccept/Reject UIを表示
-                    -- git diffとgit checkoutを使用して元に戻す
-                    -- チャット（gpキー）で動作
-}
-```
-
-### UI設定
-
-UIの外観と動作を設定：
-
-```lua
-ui = {
-  wrap = "on",  -- 行の折り返し動作
-                -- "nvim": Neovimのデフォルトを尊重（ラップ設定を変更しない）
-                -- "on": wrap + linebreakを有効化（チャット可読性のため推奨）
-                -- "off": 行の折り返しを無効化
-
-  tool_result_display = "compact",  -- ツール実行結果の表示モード
-                                    -- "none": ツール結果を表示しない
-                                    -- "compact": 最初の100文字のみ表示（デフォルト）
-                                    -- "full": 完全なツール出力を表示
-
-  gradient = {
-    enabled = true,  -- AIレスポンス中のグラデーションアニメーションを有効化
-    colors = {
-      "#cc3300",  -- 開始色（オレンジ、vibing.nvimロゴに合わせて）
-      "#fffe00",  -- 終了色（黄色、vibing.nvimロゴに合わせて）
-    },
-    interval = 100,  -- アニメーション更新間隔（ミリ秒）
-  },
-}
-```
-
-### MCP（Model Context Protocol）
-
-ClaudeによるNeovimの直接制御を有効化。MCPサーバーの登録は上記の「Claude Codeプラグイン」経由のみを
-サポートしている（`build.sh`が自動でインストールする）。独立した`~/.claude.json`への登録経路は存在
-しない——その経路はデフォルトポートを1つしかハードコードできず、複数のNeovimインスタンスが起動している
-場合に誤ったインスタンスへサイレントに接続してしまうため。
-
-```lua
-mcp = {
-  enabled = true,   -- MCP統合を有効化
-  rpc_port = 9876,  -- RPCサーバーポート
-}
-```
-
-**lazy.nvim推奨設定：**
-
-```lua
-{
+use {
   "shabaraba/vibing.nvim",
-  build = "./build.sh",
+  run = "./build.sh",
   config = function()
-    require("vibing").setup({
-      mcp = { enabled = true },
-    })
+    require("vibing").setup()
   end,
 }
 ```
 
-### Language（言語）
+### Claude Code プラグイン(MCP + スキル + エージェント)
 
-AIレスポンスの言語を設定：
+vibing.nvim は [Claude Code プラグイン](https://code.claude.com/docs/en/plugins)としても配布
+されており、`vibing-nvim` MCP サーバー・Neovim 対応スキル・読み取り専用ナビゲーション
+サブエージェントが同梱されます。`~/.claude.json` の手動編集は不要です。
 
-```lua
--- シンプル：すべてのレスポンスを1つの言語で
-language = "ja"  -- または "en"、"fr"など
+**自動:** 上記のように `build = "./build.sh"` でインストールし、`claude` CLI が `PATH` に
+あれば、ビルドのたびに `build.sh` が `claude plugin marketplace add` +
+`claude plugin install ... --scope user` を実行します。追加作業はありません。
 
--- 高度：コンテキストごとに異なる言語
-language = {
-  default = "ja",  -- デフォルト言語
-  chat = "ja",     -- チャットウィンドウのレスポンス
-}
+**手動:** 自分でインストールする場合(`build.sh` を実行しない場合や別マシンなど):
+
+```text
+/plugin marketplace add shabaraba/vibing.nvim
+/plugin install vibing-nvim@vibing-nvim
 ```
 
-### Remote Control（リモート制御）
+いずれの方法でも、`vibing-nvim` MCP サーバー(実行中の Neovim へのバッファ/ウィンドウ/
+カーソルアクセス・Ex コマンド・LSP クエリを `mcp__vibing-nvim__*` ツールとして提供)、
+同梱スキル(`nvim-context`、`nvim-lsp-navigation`、`vibing-chat-recall`、
+`vibing-chat-search`、および worktree ワークフローの
+`vibing-worktree-{list,create,attach,run,finish}`)、`nvim-navigator` サブエージェント
+(`@vibing-nvim:nvim-navigator` による読み取り専用コードナビゲーション)が登録されます。
 
-テストと開発用（高度）：
+同梱 MCP サーバーは初回起動時(およびソース変更時)に自動でビルドされるため、MCP サーバー
+自体の個別ビルドは不要です。MCP ツールの接続先として、`mcp = { enabled = true }`(デフォルト)
+の Neovim が起動している必要があります。
+
+**アンインストール:**
+
+```text
+/plugin uninstall vibing-nvim@vibing-nvim
+/plugin marketplace remove vibing-nvim
+```
+
+## 🚀 クイックスタート
+
+```vim
+:VibingChat        " 新しいチャットを開く
+```
+
+`## User` ヘッダの下にメッセージを書き、ノーマルモードで `<CR>` を押すと送信されます。
+AI は同じバッファ内に応答します。`<C-c>` で実行中のリクエストをキャンセルできます。
+チャットは通常の Markdown バッファなので、他のファイルと同様に保存・検索・編集できます。
+
+## 🚀 使い方
+
+### ユーザーコマンド
+
+| コマンド | 説明 |
+| --- | --- |
+| `:VibingChat [position\|file]` | 新規チャット作成。位置指定(current\|right\|left\|top\|bottom\|back)または保存済みファイルを開く |
+| `:VibingToggleChat` | 既存チャットウィンドウの表示切り替え(会話を保持) |
+| `:VibingChatFork [position]` | 現在のチャットをフォーク(会話を分岐) |
+| `:VibingSlashCommands` | スラッシュコマンドピッカーを表示 |
+| `:VibingSetFileTitle` | AI がタイトルを生成しチャットファイルをリネーム |
+| `:VibingSummarize` | チャット履歴の AI 要約を生成してバッファに挿入 |
+| `:VibingDeleteChats [--unrenamed]` | チャットファイルを削除(--unrenamed で未リネームのファイルを一括削除) |
+| `:VibingContext [path]` | コンテキスト追加: oil.nvim のエントリ、ビジュアル選択(range)、パス引数、引数なしなら現在のバッファ |
+| `:VibingClearContext` | コンテキストを全クリア |
+| `:VibingCancel` | 実行中のリクエストをキャンセル |
+| `:VibingReloadCommands` | カスタムスラッシュコマンドと補完候補を再読み込み |
+| `:VibingCopyUnsentUserHeader` | `## User <!-- unsent -->` をクリップボードにコピー |
+| `:VibingDailySummary [YYYY-MM-DD]` | プロジェクトのチャットから日報を生成(デフォルト: 今日) |
+| `:VibingDailySummaryAll [YYYY-MM-DD]` | すべてのチャットから日報を生成(デフォルト: 今日) |
+| `:VibingCleanMote` | チャットを削除せずに mote オブジェクトをクリーンアップ |
+| `:VibingMoteDir [dir]` | チャットの mote 追跡対象ディレクトリを追加(`mote_dirs` frontmatter。デフォルト: cwd) |
+
+**コマンドの補足:**
+
+- **`:VibingChat`** — 常に新規チャットを作成。位置
+  (`current` / `right` / `left` / `top` / `bottom` / `back`)または保存済みチャットファイルの
+  パスを指定できます。
+- **`:VibingChatFork`** — 現在の会話をフォークして別方向に分岐(同じ位置指定を受け付けます)。
+- **`:VibingToggleChat`** — 現在の会話の表示/非表示を切り替え(状態は保持)。
+- **worktree のライフサイクル** — 同梱の
+  `vibing-worktree-{list,create,attach,run,finish}` Claude Code スキルが自然言語
+  (「worktree に切り出して」など)で処理します。エディタコマンドはありません。
+
+### スラッシュコマンド(チャット内)
+
+| コマンド | 説明 |
+| --- | --- |
+| `/context <file>` | ファイルをコンテキストに追加 |
+| `/clear` | コンテキストをクリア |
+| `/save` | 現在のチャットを保存 |
+| `/summarize` | 会話を要約 |
+| `/model <model>` | AI モデルを設定(opus/sonnet/haiku/fable) |
+| `/help` | 利用可能なスラッシュコマンドを表示 |
+| `/permissions` or `/perm` | 対話的 Permission Builder — ツールの allow/deny ルールを設定 |
+| `/allow [tool]` | allow リストに追加(`-tool` で削除)。引数なしで現在のリストを表示 |
+| `/deny [tool]` | deny リストに追加(`-tool` で削除)。引数なしで現在のリストを表示 |
+| `/ask [tool]` | 使用前に確認するツールを追加(`-tool` で削除)。引数なしで現在のリストを表示 |
+| `/permission [mode]` | 権限モードを設定(default/acceptEdits/bypassPermissions/plan/dontAsk/auto) |
+| `/new-session` | セッションをリセットして新規開始 |
+
+`/allow`・`/deny`・`/ask` は `Bash(git:*)`、`Read(src/**/*.ts)`、`WebFetch(github.com)` の
+ような粒度指定パターンも受け付けます。
+
+### チャットのキーバインド
+
+チャットバッファでは以下のキーバインドが使えます(`q` 以外は `keymaps` 設定で変更可能 —
+[設定](#️-設定)参照):
+
+| キー | 説明 |
+| --- | --- |
+| `<CR>` | メッセージ送信(ノーマルモード) |
+| `<C-c>` | 実行中のリクエストをキャンセル |
+| `<C-a>` | ファイルをコンテキストに追加 |
+| `gd` | カーソル下のファイルの diff 表示(Modified Files セクション内) |
+| `gf` | カーソル下のファイルを開く(Modified Files セクションほかチャット内のパス) |
+| `gx` | カーソル行の URL をブラウザで開く |
+| `q` | チャットウィンドウを閉じる |
+
+## ⚙️ 設定
+
+`require("vibing").setup()` はそのままで動作します。よく変更されるオプション:
 
 ```lua
-remote = {
-  socket_path = nil,   -- NVIM環境変数から自動検出
-  auto_detect = true,  -- リモート制御検出を有効化
-}
+require("vibing").setup({
+  adapter = "claude",              -- "claude" | "codex"
+  chat = {
+    window = {
+      position = "current",        -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
+      width = 0.4,                 -- 画面幅に対する比率(0-1)
+    },
+    save_location_type = "project", -- "project" | "user" | "custom"
+  },
+  agent = {
+    default_model = "sonnet",      -- "sonnet" | "opus" | "haiku" | "fable"
+  },
+  permissions = {
+    mode = "acceptEdits",          -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"
+    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput" },
+    deny = { "Bash" },
+  },
+  language = nil,                  -- 例: "ja"、または { default = "ja", chat = "ja" }
+})
 ```
+
+上記のデフォルト権限は、新規チャットファイル作成時の**テンプレート**として使われます。実行時に
+適用されるのは各チャットファイルの frontmatter に記録された権限です。
+
+**完全なリファレンス:** すべてのオプション(ウィンドウ詳細、UI/グラデーション/ツールマーカー、
+diff バックエンド、粒度の細かい権限ルール、MCP、Node.js 実行ファイル、日報など)は
+[docs/configuration.md](./docs/configuration.md)(英語)を参照してください。
 
 ## 📝 チャットファイル形式
 
-チャットはセッション再開と設定のためにYAMLフロントマター付きMarkdownとして保存されます：
+チャットは YAML frontmatter 付きの Markdown ファイル(デフォルトで
+`.vibing/chat/chat-<timestamp>-....md`)として保存され、セッション再開と設定の記録に
+使われます:
 
 ```yaml
 ---
 vibing.nvim: true
-session_id: <sdk-session-id>
+session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
+working_dir: .vibing/worktrees/feature-x  # オプション: 作業ディレクトリ(git ルートからの相対パス)
+agent: claude  # claude | codex(このチャットに限りグローバルの adapter 設定を上書き)
+mode: code  # code | plan | explore
 model: sonnet  # sonnet | opus | haiku | fable
-permissions_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk
+permission_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk | auto
 permissions_allow:
   - Read
   - Edit
@@ -700,164 +279,109 @@ permissions_allow:
   - Grep
 permissions_deny:
   - Bash
-language: ja  # オプション：AIレスポンスのデフォルト言語
+permissions_ask: []
+language: ja  # オプション: AI 応答のデフォルト言語
 ---
 # Vibing Chat
 
 ## User
 
-こんにちは、Claude！
+Hello, Claude!
 
 ## Assistant
 
-こんにちは！今日はどのようにお手伝いできますか？
+Hello! How can I help you today?
 ```
 
-**主な機能：**
+**ポイント:**
 
-- **セッション再開**：`session_id`を使用して自動的に会話を再開
-- **設定追跡**：透明性のためにモード、モデル、権限を記録
-- **言語サポート**：オプションの`language`フィールドでセッション全体で一貫したAIレスポンス言語を確保
-- **監査可能性**：すべての権限がフロントマターで可視化
+- **セッション再開** — 保存済みチャットを開き直すと `session_id` で会話を再開
+- **フォーク追跡** — フォークされたチャットは最初の応答まで `forked_from` フィールドを保持
+- **監査可能性** — モデル・モード・権限がすべて frontmatter で確認できる
+- **言語サポート** — オプションの `language` フィールドで AI 応答言語を固定
 
 ## 🏗️ アーキテクチャ
 
-詳細なアーキテクチャドキュメントについては、[CLAUDE.md](./CLAUDE.md)を参照してください。
-
-### 高レベル概要
+詳細なアーキテクチャドキュメントは [CLAUDE.md](./CLAUDE.md) を参照してください。
 
 ```mermaid
 graph TB
-    subgraph Neovim["Neovimプロセス"]
-        Plugin["vibing.nvim<br/>(Luaプラグイン)"]
-        Buffer["チャットバッファ<br/>(.vibingファイル)<br/>- Markdown + YAML<br/>- セッションメタデータ<br/>- 権限設定"]
-        RPC["RPCサーバー<br/>(非同期TCP)"]
+    subgraph Neovim["Neovim Process"]
+        Plugin["vibing.nvim<br/>(Lua Plugin)"]
+        Buffer["Chat Buffer<br/>(.vibing/chat/*.md)<br/>- Markdown + YAML<br/>- Session metadata<br/>- Permission settings"]
+        RPC["RPC Server<br/>(Async TCP)"]
 
-        Plugin -->|管理| Buffer
-        Plugin -->|使用| RPC
+        Plugin -->|manages| Buffer
+        Plugin -->|uses| RPC
     end
 
-    subgraph Backend["Node.jsバックエンド"]
-        SDK["Claude Agent SDK<br/>- ツール実行<br/>- セッション管理<br/>- ストリーミングレスポンス"]
-        MCP["MCPサーバー<br/>- バッファ操作<br/>- LSPクエリ<br/>- コマンド実行<br/>- ファイルシステムアクセス"]
-
-        SDK -->|制御| MCP
+    subgraph MCP["Node.js MCP Server"]
+        MCPServer["MCP Server<br/>- Buffer operations<br/>- LSP queries<br/>- Command execution"]
     end
 
-    RPC <-->|JSON-RPC| MCP
-    Plugin -->|起動・通信<br/>JSON Lines| SDK
+    subgraph AI["AI CLI Backends"]
+        Claude["Claude CLI<br/>(claude -p --output-format stream-json)"]
+        Codex["Codex CLI<br/>(codex exec --json)"]
+    end
 
-    style Neovim fill:#e1f5ff
-    style Backend fill:#fff4e1
-    style Plugin fill:#bbdefb
-    style SDK fill:#ffe0b2
+    RPC <-->|JSON-RPC| MCPServer
+    Plugin -->|spawns & communicates<br/>JSON Lines| Claude
+    Plugin -->|spawns & communicates<br/>JSON Lines| Codex
 ```
 
-### 従来のアプローチとの違い
-
-| 側面             | 従来のREST API        | vibing.nvim (Agent SDK)                |
-| ---------------- | --------------------- | -------------------------------------- |
-| コンテキスト     | 手動で組み立て        | エージェントがオンデマンドでリクエスト |
-| エディタアクセス | なし（fire & forget） | 完全な双方向MCP                        |
-| セッション状態   | プラグインが管理      | 再開サポート付きSDK                    |
-| ツール実行       | プラグインが実装      | SDK標準ツール                          |
-| 機能             | プラグインに制限      | MCPで拡張可能                          |
-
-**主要コンポーネント：**
-
-- **Agent SDK統合** - JSON Lines経由で通信するNode.jsラッパー
-- **MCPサーバー** - Claudeに直接Neovim制御を提供
-- **コンテキストシステム** - 自動および手動のファイルコンテキスト管理
-- **セッション永続化** - 完全な履歴で会話を再開
-
-### ディレクトリ構造
-
-vibing.nvimは、Neovimプラグイン（Lua）とNode.jsバックエンド（Agent SDK/MCP）を組み合わせたハイブリッドプロジェクトです。
-この構造は、Neovimプラグインの慣例とNode.jsエコシステムの標準の両方に従っています。
-
-**Neovimプラグイン（Neovimランタイムに必要）：**
-
-- `lua/` - プラグイン実装（Luaモジュール）
-- `plugin/` - 自動ロードされるプラグインエントリーポイント
-- `doc/` - ヘルプドキュメント（`:help vibing`）
-- `ftplugin/` - `.vibing`チャットファイル用のファイルタイプ固有設定
-
-**Node.jsバックエンド：**
-
-- `bin/` - Agent SDK用実行可能ラッパー
-- `mcp-server/` - Neovim制御用MCP統合サーバー
-- `tests/` - テストスイート（LuaとNode.jsのテスト）
-- `package.json` - Node.js依存関係とスクリプト
-
-**ドキュメント：**
-
-- `README.md` - メインユーザードキュメント
-- `CLAUDE.md` - AI開発ガイドラインとアーキテクチャ詳細
-- `docs/` - 開発者ガイド（アダプター開発、パフォーマンス、例）
-- `CONTRIBUTING.md` - コントリビューションガイド
-
-**開発設定：**
-
-- `.editorconfig`、`.prettierrc` - コードスタイルの一貫性
-- `eslint.config.mjs` - リント設定
-- `.github/` - CI/CDワークフローとissueテンプレート
-- `build.sh` - MCPサーバー用ビルドスクリプト
+| 観点 | 従来の REST API | vibing.nvim(CLI アダプター) |
+| --- | --- | --- |
+| コンテキスト | 手動で組み立て | MCP: エージェントが随時要求 |
+| エディタアクセス | なし(fire & forget) | MCP による完全な双方向アクセス |
+| セッション状態 | プラグインが管理 | CLI セッションを resume |
+| ツール実行 | プラグインが実装 | CLI ネイティブツール |
 
 ## ❓ FAQ
 
-### なぜClaude専用なのか？他のプロバイダーをサポートしないのはなぜ？
+### どの AI バックエンドに対応していますか?
 
-vibing.nvimは、単純なチャット以上の機能を提供するClaude Agent SDKを使用しています：
+- **Claude CLI**(`claude -p --output-format stream-json`)— Claude Code のフル機能
+- **Codex CLI**(`codex exec --json`)— OpenAI Codex バックエンド
 
-- 組み込みツール実行フレームワーク
-- セッション永続化と再開
-- エディタ制御のためのMCP統合
+setup の `adapter = "claude"|"codex"` でグローバルに、チャットファイルの frontmatter に
+`agent: claude` / `agent: codex` を書けばチャット単位で切り替えられます。
 
-これらの機能はClaudeのアーキテクチャに固有のものです。他のプロバイダーをサポートすることは、次のいずれかを意味します：
+### なぜ Node.js が必要なのですか?
 
-- これらの機能を失う、または
-- ゼロから再実装する
+MCP サーバーに必要です。MCP サーバーは実行中の Neovim インスタンスへの直接アクセス
+(バッファ読み書き・LSP クエリ・コマンド実行)を AI に提供します。AI CLI バイナリ
+(`claude`、`codex`)自体は別途インストールします。
 
-私たちは幅よりも深さを選びました。
+### Claude Code CLI と比べてどうですか?
 
-### なぜNode.jsが必要なのか？
+vibing.nvim は Claude Code CLI と同等の機能を Neovim に統合したものです:
 
-Claude Agent SDKはTypeScript/JavaScriptライブラリです。Luaバインディングを作成することも可能ですが、
-Node.jsを直接使用することで以下が保証されます：
+- 内部では同じ `claude` CLI を使用
+- MCP でエディタを制御(CLI はターミナルを、vibing は Neovim を制御)
+- OpenAI ワークフロー向けに Codex バックエンドも選択可能
 
-- 完全なSDK互換性
-- 新しいSDK機能への即座のアクセス
-- 信頼性の高いMCPサーバー実装
+「Neovim ユーザーのための Claude Code(または Codex)」と考えてください。
 
-### Claude Code CLIと比較してどうか？
+### 他の AI プラグインと併用できますか?
 
-vibing.nvimは、Claude Code CLIと同様の機能をNeovimに統合して提供します：
+はい。vibing.nvim は補完プラグイン(Copilot、Codeium)や他のチャットプラグインと競合しません。
+深い対話には vibing.nvim を、素早い補完や別プロバイダーには他のツールを使い分けられます。
 
-- 同じAgent SDKを基盤として使用
-- 同じツール実行モデル
-- エディタ制御のためのMCP（CLIはターミナルを制御、vibingはNeovimを制御）
+## 🤝 コントリビュート
 
-「Neovimユーザー向けのClaude Code」と考えてください。
-
-### vibing.nvimを他のAIプラグインと併用できるか？
-
-はい。vibing.nvimは補完プラグイン（Copilot、Codeium）や他のチャットプラグインと競合しません。
-深いClaude対話にはvibing.nvimを使用し、クイック補完や異なるプロバイダーには他のツールを使用してください。
-
-## 🤝 コントリビューション
-
-コントリビューションを歓迎します！issueやプルリクエストをお気軽に提出してください。
+コントリビューションを歓迎します! [CONTRIBUTING.md](./CONTRIBUTING.md) を参照の上、
+Issue や Pull Request をお気軽にどうぞ。
 
 ## 📄 ライセンス
 
-MITライセンス - 詳細はLICENSEファイルを参照
+MIT License — 詳細は LICENSE ファイルを参照してください。
 
 ## 🔗 リンク
 
 - [Claude AI](https://claude.ai)
-- [Claude Agent SDK](https://github.com/anthropics/anthropic-sdk-typescript)
-- [GitHubリポジトリ](https://github.com/shabaraba/vibing.nvim)
+- [Codex CLI](https://github.com/openai/codex)
+- [GitHub リポジトリ](https://github.com/shabaraba/vibing.nvim)
 
 ---
 
-Made with ❤️ using Claude Code
+Made with ❤️ using Claude Code!
