@@ -24,18 +24,22 @@
 
 ```lua
 require("vibing").setup({
-  adapter = "agent_sdk",
+  adapter = "claude",  -- "claude" | "codex"
   agent = {
-    mode = "command",
-    model = "claude-sonnet-4-5",
+    default_mode = "code",     -- "code" | "plan" | "explore"
+    default_model = "sonnet",  -- "sonnet" | "opus" | "haiku" | "fable"
   },
   chat = {
-    position = "right",
-    size = 80,
-    auto_context = false,
+    window = {
+      position = "right",  -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
+      width = 0.4,         -- 画面幅に対する比率（0-1）
+    },
+    save_location_type = "project",
   },
 })
 ```
+
+全オプションは [docs/configuration.md](../docs/configuration.md) を参照してください。
 
 ### `vibing.get_adapter()`
 
