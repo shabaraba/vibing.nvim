@@ -113,15 +113,6 @@ Fine-grained control over what Claude can do:
 - Command pattern matching for shell operations
 - Interactive Permission Builder UI
 
-### 📋 Diff Preview with Accept/Reject
-
-Telescope-style diff preview for all code modifications:
-
-- Visual diff for each changed file
-- Accept all or reject all with Git-based revert
-- Navigate between multiple modified files
-- Works in chat mode
-
 ### 🔀 Concurrent Session Support
 
 Run multiple AI tasks simultaneously:
@@ -251,9 +242,6 @@ anything to connect to.
         deny = { "Bash" },
         rules = {},  -- Optional granular permission rules
       },
-      preview = {
-        enabled = false,  -- Enable diff preview UI (requires Git)
-      },
       language = nil,  -- Optional: "ja" | "en" | { default = "ja", chat = "ja" }
     })
   end,
@@ -338,19 +326,8 @@ In chat buffers, the following keybindings are available:
 | ---- | -------------------------------------------------------------------------------- |
 | `gd` | Show diff for file under cursor (in Modified Files section)                      |
 | `gf` | Open file under cursor (in Modified Files section)                               |
-| `gp` | **Preview all modified files** - Opens Telescope-style preview UI (requires Git) |
+| `gx` | Open URL on current line in browser                                              |
 | `q`  | Close chat window                                                                |
-
-**Preview All Modified Files (`gp`):**
-
-When Claude modifies multiple files in a chat session, press `gp` anywhere in the chat buffer to open
-the preview UI showing all modified files at once. This provides Accept/Reject
-functionality:
-
-- Navigate between files with `j`/`k`
-- Press `a` to accept all changes
-- Press `r` to reject and revert all changes (via `git checkout HEAD`)
-- Press `q` to quit preview
 
 ## ⚙️ Configuration Examples
 
@@ -401,9 +378,6 @@ require("vibing").setup({
   permissions = {
     allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "WebSearch" },
     deny = {},  -- Allow all tools
-  },
-  preview = {
-    enabled = true,  -- Enable diff preview UI
   },
   keymaps = {
     send = "<C-CR>",  -- Custom send key
@@ -701,20 +675,7 @@ keymaps = {
   add_context = "<C-a>", -- Add file to context
   open_diff = "gd",      -- Open diff viewer on file paths
   open_file = "gf",      -- Open file on file paths
-}
-```
-
-### Preview Settings
-
-Configure diff preview UI for chat:
-
-```lua
-preview = {
-  enabled = false,  -- Enable Telescope-style diff preview UI
-                    -- Requires Git repository
-                    -- Shows Accept/Reject UI after code modifications
-                    -- Uses git diff and git checkout for revert
-                    -- Works in chat (gp key)
+  open_url = "gx",       -- Open URL on current line in browser
 }
 ```
 
@@ -900,17 +861,6 @@ daily_summary = {
 | `VibingDailySummaryAll` | `search_dirs` if configured, otherwise default directories |
 
 Summary files are saved as `YYYY-MM-DD.md` with YAML frontmatter containing metadata (date, source files, total messages).
-
-### Remote Control
-
-For testing and development (advanced):
-
-```lua
-remote = {
-  socket_path = nil,   -- Auto-detect from NVIM env variable
-  auto_detect = true,  -- Enable remote control detection
-}
-```
 
 ## 📝 Chat File Format
 
