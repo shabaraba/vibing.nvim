@@ -7,7 +7,7 @@
 ---@class Vibing.DiffConfig
 ---diff表示設定
 ---ファイル変更のdiff表示に使用するツールを制御
----@field tool "git"|"mote"|"auto" 使用するdiffツール（"git": git diff、"mote": mote diff、"auto": mote優先で自動選択）
+---@field tool "git"|"mote"|"auto" 使用するdiffツール（"auto"/"git": リクエスト単位パッチのgit diff表示、"mote": mote diff。moteはopt-inで、"mote"明示またはチャットのmote_dirs指定時のみ使用）
 ---@field mote Vibing.MoteConfig mote固有の設定
 
 ---@class Vibing.GradientConfig

@@ -298,5 +298,5 @@ Configure separate MCP servers in `~/.claude.json`:
 ## References
 
 - [MCP Server README](../mcp-server/README.md)
-- [vibing.nvim Configuration](../README.md#configuration)
+- [vibing.nvim Configuration](./configuration.md)
 - [Model Context Protocol Specification](https://modelcontextprotocol.io/)
