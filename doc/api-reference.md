@@ -409,13 +409,17 @@ require("vibing.context").clear()
 
 ```lua
 ---@class Vibing.Config
----@field adapter string アダプター名（"agent_sdk", "claude", "claude_acp"）
----@field cli_path string Claude CLI パス
----@field agent Vibing.AgentConfig Agent SDK設定
+---@field adapter "claude"|"codex" バックエンドアダプター選択
+---@field agent Vibing.AgentConfig エージェント設定（モード、モデル）
 ---@field chat Vibing.ChatConfig チャット設定
+---@field ui Vibing.UiConfig UI設定
 ---@field keymaps Vibing.KeymapConfig キーマップ設定
+---@field diff Vibing.DiffConfig diff表示設定
 ---@field permissions Vibing.PermissionsConfig 権限設定
----@field remote Vibing.RemoteConfig リモート制御設定
+---@field node Vibing.NodeConfig Node.js実行ファイル設定
+---@field mcp Vibing.McpConfig MCP統合設定
+---@field language string|Vibing.LanguageConfig? AI応答のデフォルト言語
+---@field daily_summary Vibing.DailySummaryConfig? Daily Summary機能設定
 ```
 
 ### `Vibing.AdapterOpts`

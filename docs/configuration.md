@@ -213,8 +213,8 @@ Selects the strategy used by the `gd` diff viewer:
 
 ```lua
 diff = {
-  tool = "auto",  -- "auto": use mote when available, otherwise per-request patches
-                  -- "git":  per-request patches (vim.diff-based, no external process)
+  tool = "auto",  -- "auto" / "git": per-request patches (vim.diff-based, no external
+                  --                 process) — these two currently behave the same
                   -- "mote": mote snapshots (catches Bash-driven file changes too)
   mote = {
     project = nil,              -- Project name (nil = auto-detect from git repo name)
@@ -223,9 +223,11 @@ diff = {
 }
 ```
 
-With per-request patches, edited files are backed up before each write and stored as patches
-under `.vibing/patches/`; Bash-driven file changes are only captured by the mote backend. See
-[MIGRATION_MOTE.md](./MIGRATION_MOTE.md) for mote setup details.
+mote is **opt-in**: it is used only when `tool = "mote"` is set explicitly, or when a chat has
+`mote_dirs` in its frontmatter (added via `:VibingMoteDir` — those directories use mote
+regardless of `tool`). Otherwise edited files are backed up before each write and stored as
+patches under `.vibing/patches/`; Bash-driven file changes are only captured by the mote
+backend. See [MIGRATION_MOTE.md](./MIGRATION_MOTE.md) for mote setup details.
 
 ## Permissions
 

@@ -55,9 +55,9 @@ CLI バックエンドと MCP 統合を通じて、AI に**実行中の Neovim �
 - **🛡️ きめ細かい権限制御** — ツールごとの allow/deny/ask リスト、機密ファイル向けの
   パスベースルール、Bash コマンドパターン、対話的な Permission Builder UI
 - **📊 diff ビューア** — 変更ファイル上で `gd` を押すと before/after の diff を表示。
-  デフォルトはリクエスト単位のパッチ追跡で、[mote](https://github.com/shabaraba/mote)
-  スナップショットバックエンド(利用可能なら自動選択)を使うと Bash 経由のファイル変更も
-  捕捉できる
+  デフォルトはリクエスト単位のパッチ追跡で、opt-in の [mote](https://github.com/shabaraba/mote)
+  スナップショットバックエンド(`diff.tool = "mote"` または `:VibingMoteDir`)を使うと
+  Bash 経由のファイル変更も捕捉できる
 - **🎯 スマートコンテキスト** — 手動追加、oil.nvim、ビジュアル選択からファイルをコンテキストへ
 - **🌍 多言語対応** — AI 応答の言語をチャットごとに設定可能
 

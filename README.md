@@ -54,8 +54,8 @@ access to your Neovim instance** through CLI backends and MCP integration.
 - **🛡️ Granular permissions** — allow/deny/ask lists per tool, path-based rules for sensitive
   files, Bash command patterns, and an interactive Permission Builder UI
 - **📊 Diff viewer** — `gd` on a changed file shows a before/after diff; per-request patch
-  tracking by default, with an optional [mote](https://github.com/shabaraba/mote) snapshot
-  backend (used automatically when available) that also catches Bash-driven changes
+  tracking by default, with an opt-in [mote](https://github.com/shabaraba/mote) snapshot
+  backend (`diff.tool = "mote"` or `:VibingMoteDir`) that also catches Bash-driven changes
 - **🎯 Smart context** — add files manually, from oil.nvim, or from a visual selection
 - **🌍 Multi-language support** — configure the AI response language per chat
 
