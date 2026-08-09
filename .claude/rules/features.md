@@ -1,5 +1,27 @@
 # Features
 
+## Auto-Resume on Usage Limit
+
+When a turn is rejected because the plan's usage limit is exhausted, vibing.nvim can park the chat
+and send a single continuation message once the limit resets. Opt-in via
+`agent.auto_resume_on_limit.enabled` (default `false` — it spends tokens unattended).
+
+Detection merges three signals in `lua/vibing/core/utils/rate_limit.lua`: the CLI's
+`rate_limit_event` stream line (the **only** source of `resetsAt`), the `StopFailure` hook filtered
+to `error_type = rate_limit` (confirms the turn died, no timestamp), and the error text as a
+fallback. None of these payload shapes is officially documented, so every field is optional and a
+schema change degrades the feature instead of breaking the stream.
+
+Pending resumes persist to `.vibing/pending-resume.json` and are re-armed on `setup()`, since a
+five-hour reset usually outlives the Neovim session. Safeguards: `max_retries` (default 1) per
+limit hit, never overwriting an unsent `## User` message, and an 8-day sanity ceiling on the reset
+timestamp. Concurrently parked chats all fire at once by design. See `docs/configuration.md` →
+"Auto-Resume on Usage Limit".
+
+**Implementation:** `application/chat/auto_resume.lua` (scheduler),
+`infrastructure/storage/pending_resume.lua` (persistence),
+`infrastructure/rpc/handlers/rate_limit.lua` (StopFailure receiver), `bin/hooks/stop-failure.sh`.
+
 ## Message Timestamps
 
 Chat messages include timestamps in their headers (`## 2025-12-28 14:30:00 User`) for chronology

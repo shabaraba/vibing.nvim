@@ -170,6 +170,21 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
         vim.fn.timer_stop(timeout_timer)
         timeout_timer = nil
       end
+
+      -- Combine every channel that can report a usage limit. Only the stream event carries a
+      -- reset timestamp; the StopFailure hook confirms the turn actually died; the error text is
+      -- the fallback if either payload shape changes. See core/utils/rate_limit.lua.
+      local RateLimit = require("vibing.core.utils.rate_limit")
+      local rate_limit_handler = require("vibing.infrastructure.rpc.handlers.rate_limit")
+      local merged = RateLimit.merge(
+        event_context.rateLimitInfo,
+        rate_limit_handler.take_failure(handle_id),
+        response.error and RateLimit.from_error_text(tostring(response.error)) or nil
+      )
+      if merged and merged.rejected then
+        response._rate_limit_info = merged
+      end
+
       on_done(response)
     end
   end
