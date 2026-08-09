@@ -8,7 +8,7 @@
 ---   * opt-in (`agent.auto_resume_on_limit.enabled`, default false)
 ---   * a retry budget per limit hit (`max_retries`, default 1)
 ---   * never overwrites text the user has already typed into the pending `## User` section
----   * resumes are staggered so several parked chats don't all fire into the same fresh quota
+---   * an entry is marked in_flight before sending, so a restart can't replay it for free
 ---
 --- @module vibing.application.chat.auto_resume
 
