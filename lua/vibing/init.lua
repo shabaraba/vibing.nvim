@@ -265,6 +265,11 @@ function M._register_commands()
   vim.api.nvim_create_user_command("VibingCancelResume", function(opts)
     local AutoResume = require("vibing.application.chat.auto_resume")
 
+    if opts.args ~= "" and opts.args ~= "all" then
+      notify.warn("Usage: :VibingCancelResume [all]")
+      return
+    end
+
     if opts.args == "all" then
       notify.info(string.format("Cancelled %d pending resume(s)", AutoResume.cancel(nil)))
       return

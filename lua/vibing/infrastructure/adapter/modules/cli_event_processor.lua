@@ -229,9 +229,10 @@ end
 
 --- Handle "rate_limit_event" (usage limit status)
 --- Emitted mid-stream both as a remaining-quota warning and when a request is actually turned
---- away; only the latter carries a reset timestamp worth acting on. Warnings are recorded but
---- never override an earlier rejection, so a trailing warning can't mask the rejection that
---- ended the turn.
+--- away. Events are merged rather than replaced, because the two facts we need can arrive on
+--- different events: a warning may carry `resetsAt` while the rejection that ends the turn omits
+--- it. Merging newest-first keeps a fresher reset time while never losing a known one, and
+--- rejection stays sticky so a trailing warning can't mask it.
 ---
 --- Recorded on the context synchronously rather than dispatched through a callback: processLine
 --- already runs inside vim.schedule, and deferring by another tick could land after the process
@@ -244,10 +245,7 @@ local function handle_rate_limit_event(msg, context)
   end
 
   local previous = context.rateLimitInfo
-  if previous and previous.rejected and not info.rejected then
-    return
-  end
-  context.rateLimitInfo = info
+  context.rateLimitInfo = previous and RateLimit.merge(info, previous) or info
 end
 
 --- Event handler dispatch table

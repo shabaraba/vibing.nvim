@@ -146,6 +146,13 @@ local function fire(chat_file_path, entry)
     return
   end
 
+  -- Defence in depth. on_rate_limited() is the usual budget gate, but a resume can also reach
+  -- here straight from restore(), which never consults it.
+  if (current.retry_count or 0) >= (opts.max_retries or 1) then
+    PendingResume.remove(chat_file_path)
+    return
+  end
+
   local chat_buf, err = resolve_chat_buffer(chat_file_path)
   if not chat_buf then
     PendingResume.remove(chat_file_path)
@@ -176,7 +183,11 @@ local function fire(chat_file_path, entry)
     return
   end
 
+  -- Mark the request in flight *before* sending. If Neovim dies between here and the response,
+  -- restore() must not treat this entry as still-waiting and send a second automatic request —
+  -- the retry budget is only consulted when a limit is observed, not when a timer fires.
   current.retry_count = (current.retry_count or 0) + 1
+  current.state = "in_flight"
   PendingResume.put(current)
 
   local bufnr = chat_buf:get_buffer()
@@ -293,6 +304,7 @@ function M.on_rate_limited(chat_file_path, info)
     limit_type = info.limit_type,
     retry_count = retry_count,
     recorded_at = os.time(),
+    state = "waiting",
   }
   PendingResume.put(entry)
   schedule(entry, opts)
@@ -354,7 +366,11 @@ function M.restore()
   end
 
   for _, entry in pairs(PendingResume.load()) do
-    if entry.chat_file_path then
+    -- Only re-arm chats still waiting on a reset. An "in_flight" entry was already sent by a
+    -- previous session whose outcome we never saw; re-sending it would spend a second request
+    -- outside the retry budget. The entry is kept (not deleted) so its retry_count still counts
+    -- against max_retries if that chat hits the limit again.
+    if entry.chat_file_path and (entry.state or "waiting") == "waiting" then
       schedule(entry, opts)
     end
   end

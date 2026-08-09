@@ -17,6 +17,9 @@ local M = {}
 --- @field limit_type string|nil e.g. "five_hour"
 --- @field retry_count number How many auto-resumes have already been spent on this limit hit
 --- @field recorded_at number Unix seconds when the limit was first observed
+--- @field state "waiting"|"in_flight" "waiting" until the continuation is actually sent. Only
+---   "waiting" entries are re-armed on startup, so a session that died mid-request cannot have
+---   its resume replayed for free by the next one.
 
 --- Resolve the store path for a working directory
 --- @param cwd? string

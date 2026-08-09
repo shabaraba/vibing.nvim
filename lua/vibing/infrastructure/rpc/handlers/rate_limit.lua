@@ -14,14 +14,14 @@ local M = {}
 --- Parsed failures awaiting pickup by wrapped_on_done, keyed by handle_id.
 --- Keyed rather than a single slot so concurrent chats can't consume each other's failure — the
 --- same class of bug ActiveStreamRegistry exists to prevent.
+---
+--- A failure that arrives without a handle_id is dropped rather than parked in a shared slot:
+--- whichever stream finished first would consume it, and mislabelling a healthy concurrent chat
+--- as rate-limited would auto-resume it for no reason. claude_cli.lua always exports
+--- VIBING_HANDLE_ID, so this is a real defect if it ever happens — and the stream-json
+--- `rate_limit_event`, not this hook, is the primary detection channel anyway.
 --- @type table<string, Vibing.RateLimitInfo>
 local pending_failures = {}
-
---- Failures that arrived without a usable handle_id. Keyed lookups can't reach these, so they are
---- consumed by whichever stream finishes first — only correct because a missing handle_id already
---- means we cannot tell the streams apart.
---- @type Vibing.RateLimitInfo|nil
-local unkeyed_failure = nil
 
 --- Get the communication directory for the current RPC port
 --- @return string
@@ -64,12 +64,16 @@ function M.stop_failure(params)
     return { status = "ignored", reason = "not a rate limit" }
   end
 
-  if handle_id then
-    pending_failures[handle_id] = info
-  else
-    unkeyed_failure = info
+  if not handle_id then
+    vim.notify(
+      "[vibing] StopFailure hook reported a rate limit without a handle_id; ignoring it "
+        .. "rather than risk attributing it to the wrong chat",
+      vim.log.levels.WARN
+    )
+    return { status = "ignored", reason = "missing handle_id" }
   end
 
+  pending_failures[handle_id] = info
   return { status = "ok" }
 end
 
@@ -79,25 +83,17 @@ end
 --- @param handle_id string|nil
 --- @return Vibing.RateLimitInfo|nil
 function M.take_failure(handle_id)
-  local info = handle_id and pending_failures[handle_id] or nil
-  if info then
-    pending_failures[handle_id] = nil
-    return info
+  if not handle_id then
+    return nil
   end
-
-  if unkeyed_failure then
-    info = unkeyed_failure
-    unkeyed_failure = nil
-    return info
-  end
-
-  return nil
+  local info = pending_failures[handle_id]
+  pending_failures[handle_id] = nil
+  return info
 end
 
 --- Drop all recorded failures (test helper / session reset)
 function M.reset()
   pending_failures = {}
-  unkeyed_failure = nil
 end
 
 return M

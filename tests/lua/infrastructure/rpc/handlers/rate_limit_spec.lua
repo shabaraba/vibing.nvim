@@ -60,6 +60,19 @@ describe("rpc.handlers.rate_limit", function()
       assert.is_not_nil(handler.take_failure("chat-b"))
     end)
 
+    it("drops a failure with no handle_id instead of attributing it to a chat (regression)", function()
+      local handler = fresh_handler()
+      write_payload("req-unkeyed", { error_type = "rate_limit" })
+
+      local res = handler.stop_failure({ request_id = "req-unkeyed", handle_id = "" })
+      assert.equals("ignored", res.status)
+
+      -- Neither concurrent chat may inherit it: doing so would auto-resume a healthy chat.
+      assert.is_nil(handler.take_failure("chat-a"))
+      assert.is_nil(handler.take_failure("chat-b"))
+      assert.is_nil(handler.take_failure(nil))
+    end)
+
     it("ignores non-rate-limit API errors", function()
       local handler = fresh_handler()
       write_payload("req-overloaded", { error_type = "overloaded" })
