@@ -29,6 +29,7 @@ require("vibing").setup({
     default_model = "sonnet",
     utility_model = "haiku",
     setting_sources = { "user", "project", "local" },
+    auto_resume_on_limit = { enabled = false, max_retries = 1 },
   },
   chat = {
     window = {
@@ -123,8 +124,58 @@ agent = {
                             -- Drop "user" to skip loading your global CLAUDE.md on
                             -- every chat, reducing fixed per-session token cost.
                             -- Note: does not affect MCP server loading.
+
+  auto_resume_on_limit = {  -- Resume a chat automatically once a usage limit resets
+    enabled = false,        -- Opt-in: this spends tokens with nobody watching
+    max_retries = 1,        -- Auto-resumes allowed per limit hit
+    prompt = "Continue from where you left off.",
+    fallback_delay_sec = 300, -- Used only when no reset timestamp was reported
+    grace_sec = 10,         -- Added to the reset time to avoid firing on the boundary
+  },
 }
 ```
+
+### Auto-Resume on Usage Limit
+
+When a turn is rejected because the plan's usage limit is exhausted, vibing.nvim can park the
+chat, wait for the reset, and send a single continuation message so the conversation carries on
+by itself.
+
+```lua
+require("vibing").setup({
+  agent = {
+    auto_resume_on_limit = {
+      enabled = true,
+      max_retries = 1,
+      prompt = "Continue from where you left off.",
+    },
+  },
+})
+```
+
+**How the limit is detected.** Three independent signals feed one decision
+(`lua/vibing/core/utils/rate_limit.lua`):
+
+| Signal                                 | Carries reset time | Role                                     |
+| -------------------------------------- | ------------------ | ---------------------------------------- |
+| `rate_limit_event` on the CLI's stdout | Yes (`resetsAt`)   | Primary — supplies when to wake up       |
+| `StopFailure` hook (`rate_limit`)      | No                 | Confirms the turn actually died          |
+| Error text of the failed run           | No                 | Fallback if either payload shape changes |
+
+The reset timestamp is the only thing that makes scheduling possible, and it arrives solely on the
+stream event. If it is missing, `fallback_delay_sec` is used instead — bounded in practice by
+`max_retries`.
+
+**Persistence.** A five-hour limit resets hours away and a weekly limit days away, so pending
+resumes are written to `<project root>/.vibing/pending-resume.json` and re-armed at startup. A
+resume still requires Neovim to be running when the timer fires; nothing happens while the editor
+is closed, but a chat parked before a restart is picked up after it.
+
+**Safeguards.** Auto-resume never overwrites an unsent message you left in the chat, stops after
+`max_retries` limit hits in a row, and refuses reset timestamps more than 8 days out (a sign the
+payload was misread). Several parked chats all resume at once, which is intentional — a reset
+hands back a full quota, and concurrent chats are normal usage. Inspect and control pending
+resumes with `:VibingPendingResumes` and `:VibingCancelResume`.
 
 ## Chat
 

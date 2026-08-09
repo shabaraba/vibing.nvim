@@ -250,6 +250,16 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
     return
   end
 
+  -- 使用量リミットで弾かれた場合はリセット時刻まで待って自動継続する（opt-in）。
+  -- リミット以外で正常終了したときはリトライ budget をクリアする。
+  local AutoResume = require("vibing.application.chat.auto_resume")
+  local chat_file_path = (bufnr and vim.api.nvim_buf_is_valid(bufnr)) and vim.api.nvim_buf_get_name(bufnr) or nil
+  if response._rate_limit_info then
+    pcall(AutoResume.on_rate_limited, chat_file_path, response._rate_limit_info)
+  elseif not response.error then
+    pcall(AutoResume.on_success, chat_file_path)
+  end
+
   if response.error then
     callbacks.append_chunk("\n\n**Error:** " .. response.error)
 

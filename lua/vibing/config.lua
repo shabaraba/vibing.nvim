@@ -227,6 +227,20 @@ M.defaults = {
     prioritize_vibing_lsp = true,
     utility_model = "haiku",
     setting_sources = { "user", "project", "local" },
+    -- 使用量リミットで応答が弾かれたとき、リセット時刻を待って自動で継続リクエストを送る。
+    -- 無人でトークンを消費するため既定は無効。
+    auto_resume_on_limit = {
+      enabled = false,
+      -- 1回のリミットヒットにつき許可する自動再送の回数。
+      -- 再送がまたリミットに当たった時点で打ち切られる。
+      max_retries = 1,
+      -- 再送する継続プロンプト。セッションはresumeされるので文脈の再説明は不要。
+      prompt = "Continue from where you left off.",
+      -- リセット時刻が取得できなかった場合の待ち時間（秒）。
+      fallback_delay_sec = 300,
+      -- リセット時刻からの上乗せ秒数。境界ぴったりで再送して弾かれるのを防ぐ。
+      grace_sec = 10,
+    },
   },
   chat = {
     window = {

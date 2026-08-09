@@ -8,6 +8,7 @@ local lsp = require("vibing.infrastructure.rpc.handlers.lsp")
 local execute = require("vibing.infrastructure.rpc.handlers.execute")
 local message = require("vibing.infrastructure.rpc.handlers.message")
 local permission = require("vibing.infrastructure.rpc.handlers.permission")
+local rate_limit = require("vibing.infrastructure.rpc.handlers.rate_limit")
 
 -- Export all handlers
 M.buf_get_lines = buffer.buf_get_lines
@@ -45,5 +46,7 @@ M.send_message = message.send_message
 
 M.check_tool_permission = permission.check_tool_permission
 M.ask_user_question = permission.ask_user_question
+
+M.stop_failure = rate_limit.stop_failure
 
 return M

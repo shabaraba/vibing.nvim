@@ -4,19 +4,30 @@
 
 local M = {}
 
---- Get the path to the hook script
+--- Resolve a bundled hook script by file name
+--- @param name string File name under bin/hooks/
 --- @return string
-function M.get_hook_script_path()
+local function hook_script_path(name)
   local source = debug.getinfo(1, "S").source:sub(2)
   local plugin_root = vim.fn.fnamemodify(source, ":h:h:h:h:h")
-  return plugin_root .. "/bin/hooks/pre-tool-use.sh"
+  return plugin_root .. "/bin/hooks/" .. name
+end
+
+--- Get the path to the PreToolUse hook script
+--- @return string
+function M.get_hook_script_path()
+  return hook_script_path("pre-tool-use.sh")
+end
+
+--- Get the path to the StopFailure hook script
+--- @return string
+function M.get_stop_failure_script_path()
+  return hook_script_path("stop-failure.sh")
 end
 
 --- Generate settings table with hook configuration
 --- @return table
 function M.generate()
-  local hook_script = M.get_hook_script_path()
-
   return {
     hooks = {
       PreToolUse = {
@@ -25,8 +36,24 @@ function M.generate()
           hooks = {
             {
               type = "command",
-              command = hook_script,
+              command = M.get_hook_script_path(),
               timeout = 120,
+            },
+          },
+        },
+      },
+      -- StopFailure fires when a turn dies from an API error. The matcher filters on error type,
+      -- and only rate_limit is actionable — the rest (overloaded, billing_error, ...) have no
+      -- reset time to wait for. The hook cannot block or alter anything; it exists purely so the
+      -- auto-resume scheduler learns the turn died rather than completed.
+      StopFailure = {
+        {
+          matcher = "rate_limit",
+          hooks = {
+            {
+              type = "command",
+              command = M.get_stop_failure_script_path(),
+              timeout = 10,
             },
           },
         },

@@ -227,6 +227,29 @@ local function handle_text_event(msg, context)
   end
 end
 
+--- Handle "rate_limit_event" (usage limit status)
+--- Emitted mid-stream both as a remaining-quota warning and when a request is actually turned
+--- away; only the latter carries a reset timestamp worth acting on. Warnings are recorded but
+--- never override an earlier rejection, so a trailing warning can't mask the rejection that
+--- ended the turn.
+---
+--- Recorded on the context synchronously rather than dispatched through a callback: processLine
+--- already runs inside vim.schedule, and deferring by another tick could land after the process
+--- exit handler has already built the response, silently dropping the reset timestamp.
+local function handle_rate_limit_event(msg, context)
+  local RateLimit = require("vibing.core.utils.rate_limit")
+  local info = RateLimit.from_event(msg)
+  if not info then
+    return
+  end
+
+  local previous = context.rateLimitInfo
+  if previous and previous.rejected and not info.rejected then
+    return
+  end
+  context.rateLimitInfo = info
+end
+
 --- Event handler dispatch table
 local event_handlers = {
   system = function(msg, context)
@@ -253,7 +276,8 @@ local event_handlers = {
     handle_text_event(msg, context)
     return true
   end,
-  rate_limit_event = function()
+  rate_limit_event = function(msg, context)
+    handle_rate_limit_event(msg, context)
     return true
   end,
 }
