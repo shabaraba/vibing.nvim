@@ -59,6 +59,122 @@ describe("auto_resume", function()
     end)
   end)
 
+  describe("compute_delay", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+    local OPTS = { fallback_delay_sec = 300, grace_sec = 10 }
+
+    it("waits until the reset plus the grace period", function()
+      local resets_at = os.time() + 3600
+      local delay = AutoResume._compute_delay({ resets_at = resets_at }, OPTS)
+
+      -- Timing-tolerant: os.time() may tick between the fixture and the call.
+      assert.is_true(delay >= 3605 and delay <= 3610)
+    end)
+
+    it("falls back to fallback_delay_sec when no reset time was reported", function()
+      assert.equals(300, AutoResume._compute_delay({}, OPTS))
+    end)
+
+    it("clamps an already-elapsed reset to a short delay rather than firing instantly", function()
+      -- Neovim was closed across the whole window; let startup settle before a request goes out.
+      local delay = AutoResume._compute_delay({ resets_at = os.time() - 10000 }, OPTS)
+
+      assert.equals(3, delay)
+    end)
+
+    it("refuses an implausible reset more than 8 days out", function()
+      local delay, reason = AutoResume._compute_delay({ resets_at = os.time() + 30 * 86400 }, OPTS)
+
+      -- A misread payload (wrong unit or field) must not arm a timer for weeks.
+      assert.is_nil(delay)
+      assert.truthy(reason:match("days away"))
+    end)
+
+    it("accepts a reset just inside the 8-day ceiling", function()
+      local delay = AutoResume._compute_delay({ resets_at = os.time() + 7 * 86400 }, OPTS)
+
+      assert.is_not_nil(delay)
+    end)
+  end)
+
+  describe("on_rate_limited", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+    local Config = require("vibing.config")
+    local original_get
+    local chat_path
+
+    ---@param auto_resume_opts table
+    local function stub_config(auto_resume_opts)
+      Config.get = function()
+        return { agent = { auto_resume_on_limit = auto_resume_opts } }
+      end
+    end
+
+    before_each(function()
+      original_get = Config.get
+      -- Per-chat store operations resolve from the chat file's own directory, so a chat path
+      -- inside tmp_root keeps this test off the real repository.
+      chat_path = tmp_root .. "/chat.md"
+    end)
+
+    after_each(function()
+      Config.get = original_get
+    end)
+
+    it("does not park a chat while the feature is disabled", function()
+      stub_config({ enabled = false })
+
+      AutoResume.on_rate_limited(chat_path, { rejected = true, resets_at = os.time() + 60, source = "test" })
+
+      assert.is_nil(PendingResume.get(chat_path))
+    end)
+
+    it("parks a chat in the waiting state on the first limit hit", function()
+      stub_config({ enabled = true, max_retries = 1 })
+      local resets_at = os.time() + 3600
+
+      AutoResume.on_rate_limited(chat_path, {
+        rejected = true,
+        resets_at = resets_at,
+        limit_type = "five_hour",
+        source = "test",
+      })
+
+      local entry = PendingResume.get(chat_path)
+      assert.is_not_nil(entry)
+      assert.equals("waiting", entry.state)
+      assert.equals(0, entry.retry_count)
+      assert.equals(resets_at, entry.resets_at)
+
+      AutoResume.cancel(chat_path)
+    end)
+
+    it("gives up instead of re-parking once the retry budget is spent", function()
+      stub_config({ enabled = true, max_retries = 1 })
+      PendingResume.put({
+        chat_file_path = chat_path,
+        resets_at = os.time() + 60,
+        retry_count = 1,
+        recorded_at = os.time(),
+        state = "in_flight",
+      })
+
+      AutoResume.on_rate_limited(chat_path, { rejected = true, resets_at = os.time() + 3600, source = "test" })
+
+      -- The entry is dropped, not refreshed: a second auto-resume would exceed max_retries.
+      assert.is_nil(PendingResume.get(chat_path))
+    end)
+
+    it("ignores a chat with no file path", function()
+      stub_config({ enabled = true, max_retries = 1 })
+
+      assert.has_no.errors(function()
+        AutoResume.on_rate_limited(nil, { rejected = true, source = "test" })
+        AutoResume.on_rate_limited("", { rejected = true, source = "test" })
+      end)
+    end)
+  end)
+
   describe("format_duration", function()
     local AutoResume = require("vibing.application.chat.auto_resume")
 

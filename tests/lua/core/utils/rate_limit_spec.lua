@@ -120,5 +120,33 @@ describe("rate_limit", function()
     it("returns nil when nothing was detected", function()
       assert.is_nil(RateLimit.merge(nil, nil, nil))
     end)
+
+    -- Regression: merge iterated with ipairs, which stops at the first nil hole. Production
+    -- always passes one argument per channel, so a nil in any position silently discarded every
+    -- later channel — including a hook-only detection, the whole point of the StopFailure hook.
+    it("detects a hook-only limit when the leading channel is nil (regression)", function()
+      local merged = RateLimit.merge(nil, RateLimit.from_hook({ error_type = "rate_limit" }), nil)
+
+      assert.is_not_nil(merged)
+      assert.is_true(merged.rejected)
+    end)
+
+    it("still reaches the error-text fallback past a nil middle channel (regression)", function()
+      local merged = RateLimit.merge(
+        RateLimit.from_event({ rate_limit_info = { status = "allowed", resetsAt = 1778193600 } }),
+        nil,
+        RateLimit.from_error_text("Claude AI usage limit reached")
+      )
+
+      assert.is_true(merged.rejected)
+      assert.equals(1778193600, merged.resets_at)
+    end)
+
+    it("detects a limit reported only by the last channel (regression)", function()
+      local merged = RateLimit.merge(nil, nil, RateLimit.from_error_text("429 Too Many Requests"))
+
+      assert.is_not_nil(merged)
+      assert.is_true(merged.rejected)
+    end)
   end)
 end)

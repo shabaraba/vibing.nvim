@@ -63,6 +63,29 @@ describe("pending_resume", function()
     assert.same({}, PendingResume.load(tmp_root))
   end)
 
+  it("anchors a per-chat write to the chat's own project, not Neovim's cwd (regression)", function()
+    -- A :cd (or a worktree chat) between parking a resume and firing it used to resolve to a
+    -- different project's store, silently losing the pending entry.
+    local chat_path = tmp_root .. "/.vibing/chat/a.md"
+    vim.fn.mkdir(vim.fn.fnamemodify(chat_path, ":h"), "p")
+
+    PendingResume.put({ chat_file_path = chat_path, retry_count = 0, recorded_at = 1 })
+
+    -- Readable back without being told where to look, and stored under the chat's own tree.
+    assert.is_not_nil(PendingResume.get(chat_path))
+    assert.equals(1, vim.fn.filereadable(PendingResume.get_path_for_chat(chat_path)))
+  end)
+
+  it("removes a per-chat entry from the chat's own store", function()
+    local chat_path = tmp_root .. "/.vibing/chat/b.md"
+    vim.fn.mkdir(vim.fn.fnamemodify(chat_path, ":h"), "p")
+    PendingResume.put({ chat_file_path = chat_path, retry_count = 0, recorded_at = 1 })
+
+    PendingResume.remove(chat_path)
+
+    assert.is_nil(PendingResume.get(chat_path))
+  end)
+
   it("clears every entry", function()
     PendingResume.put({ chat_file_path = "/a.md", retry_count = 0, recorded_at = 1 }, tmp_root)
     PendingResume.put({ chat_file_path = "/b.md", retry_count = 0, recorded_at = 1 }, tmp_root)

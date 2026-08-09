@@ -46,6 +46,9 @@ local function stop_timer(path)
 end
 
 --- Seconds to wait before resuming a parked chat.
+--- Exposed as M._compute_delay for tests: it is the pure core of the safety limits (8-day sanity
+--- ceiling, fallback delay, past-reset clamp) and would otherwise only be reachable through a
+--- libuv timer.
 --- @param entry Vibing.PendingResume
 --- @param opts table
 --- @return number|nil delay_sec, string|nil reason_when_nil
@@ -136,6 +139,9 @@ local function fire(chat_file_path, entry)
 
   local opts = get_options()
   if not opts.enabled then
+    -- The feature was switched off while this chat was parked. Drop the entry rather than leave
+    -- it in the store, where :VibingPendingResumes would list a resume that can never fire.
+    PendingResume.remove(chat_file_path)
     return
   end
 
@@ -239,15 +245,21 @@ local function schedule(entry, opts)
     end)
   )
 
+  -- Say so when the delay is a guess. A bare "will resume in 5m" reads as a known reset time,
+  -- but for a five-hour or weekly limit the fallback will almost certainly be rejected again.
+  local qualifier = entry.resets_at and "" or " (no reset time reported; this is a fallback retry)"
   vim.notify(
     string.format(
-      "[vibing] Usage limit hit - %s will resume in %s",
+      "[vibing] Usage limit hit - %s will resume in %s%s",
       vim.fn.fnamemodify(path, ":t"),
-      M.format_duration(math.floor(delay_ms / 1000))
+      M.format_duration(math.floor(delay_ms / 1000)),
+      qualifier
     ),
     vim.log.levels.INFO
   )
 end
+
+M._compute_delay = compute_delay
 
 --- Format a second count as a short human-readable duration
 --- @param seconds number

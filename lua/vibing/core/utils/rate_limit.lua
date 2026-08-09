@@ -151,11 +151,18 @@ end
 --- Merge detections from several channels into the single best answer.
 --- Rejection is a logical OR (any channel claiming rejection wins), while `resets_at` takes the
 --- first channel that actually supplies one — in practice always the stream event.
+---
+--- Iterates by argument count rather than with ipairs: callers routinely pass nil for channels
+--- that reported nothing (a turn with no rate_limit_event is the common case), and ipairs stops
+--- at the first nil hole — which silently discarded every later channel, including a
+--- hook-only detection.
 --- @param ... Vibing.RateLimitInfo|nil
 --- @return Vibing.RateLimitInfo|nil
 function M.merge(...)
+  local args = { ... }
   local merged = nil
-  for _, info in ipairs({ ... }) do
+  for i = 1, select("#", ...) do
+    local info = args[i]
     if info then
       if not merged then
         merged = vim.deepcopy(info)

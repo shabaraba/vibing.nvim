@@ -21,12 +21,49 @@ local M = {}
 ---   "waiting" entries are re-armed on startup, so a session that died mid-request cannot have
 ---   its resume replayed for free by the next one.
 
+--- Memoized `git rev-parse` results, keyed by the directory asked about.
+--- A single fire()/on_rate_limited() call does several get/put/remove round trips, and each one
+--- would otherwise spawn a synchronous subprocess on the main thread.
+--- @type table<string, string|false>
+local root_cache = {}
+
+--- @param dir string|nil
+--- @return string|nil
+local function git_root_cached(dir)
+  local key = dir or "<cwd>"
+  local cached = root_cache[key]
+  if cached ~= nil then
+    return cached or nil
+  end
+  local root = Git.get_root(dir)
+  root_cache[key] = root or false
+  return root
+end
+
+--- Drop memoized roots (test helper; also useful after a worktree is added or removed)
+function M.clear_cache()
+  root_cache = {}
+end
+
 --- Resolve the store path for a working directory
 --- @param cwd? string
 --- @return string
 function M.get_path(cwd)
-  local root = Git.get_root(cwd) or cwd or vim.fn.getcwd()
+  local root = git_root_cached(cwd) or cwd or vim.fn.getcwd()
   return root .. "/.vibing/pending-resume.json"
+end
+
+--- Resolve the store that owns a given chat file.
+---
+--- Per-chat reads and writes must anchor to the chat file itself, not to Neovim's current
+--- directory: a `:cd` (or a chat whose `working_dir` is a worktree) between parking a resume and
+--- firing it would otherwise resolve to a different project's store, and the pending entry would
+--- silently vanish. Enumeration (`load`/`clear`) still uses the current project, since "which
+--- chats am I resuming" is inherently scoped to the project Neovim was opened in.
+--- @param chat_file_path string
+--- @return string
+function M.get_path_for_chat(chat_file_path)
+  return M.get_path(vim.fn.fnamemodify(chat_file_path, ":h"))
 end
 
 --- Read the whole store
@@ -74,13 +111,23 @@ function M.save(entries, cwd)
   return true
 end
 
+--- The directory a per-chat operation should resolve its store from.
+--- Defaults to the chat file's own location rather than Neovim's cwd — see get_path_for_chat.
+--- @param chat_file_path string
+--- @param cwd string|nil Explicit override (tests, callers that already know the root)
+--- @return string
+local function chat_scope(chat_file_path, cwd)
+  return cwd or vim.fn.fnamemodify(chat_file_path, ":h")
+end
+
 --- Record (or refresh) the pending resume for a chat
 --- @param entry Vibing.PendingResume
 --- @param cwd? string
 function M.put(entry, cwd)
-  local entries = M.load(cwd)
+  local scope = chat_scope(entry.chat_file_path, cwd)
+  local entries = M.load(scope)
   entries[entry.chat_file_path] = entry
-  M.save(entries, cwd)
+  M.save(entries, scope)
 end
 
 --- Read one entry
@@ -88,19 +135,20 @@ end
 --- @param cwd? string
 --- @return Vibing.PendingResume|nil
 function M.get(chat_file_path, cwd)
-  return M.load(cwd)[chat_file_path]
+  return M.load(chat_scope(chat_file_path, cwd))[chat_file_path]
 end
 
 --- Drop one entry
 --- @param chat_file_path string
 --- @param cwd? string
 function M.remove(chat_file_path, cwd)
-  local entries = M.load(cwd)
+  local scope = chat_scope(chat_file_path, cwd)
+  local entries = M.load(scope)
   if entries[chat_file_path] == nil then
     return
   end
   entries[chat_file_path] = nil
-  M.save(entries, cwd)
+  M.save(entries, scope)
 end
 
 --- Drop every entry

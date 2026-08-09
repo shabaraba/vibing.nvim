@@ -171,6 +171,11 @@ resumes are written to `<project root>/.vibing/pending-resume.json` and re-armed
 resume still requires Neovim to be running when the timer fires; nothing happens while the editor
 is closed, but a chat parked before a restart is picked up after it.
 
+Each chat's entry is stored under the project that owns its **chat file**, not Neovim's current
+directory, so a `:cd` or a worktree-backed chat cannot lose a pending resume. Startup recovery and
+`:VibingPendingResumes` are still scoped to the project Neovim was opened in — resumes for a
+different project are picked up when you open Neovim there.
+
 **Safeguards.** Auto-resume never overwrites an unsent message you left in the chat, stops after
 `max_retries` limit hits in a row, and refuses reset timestamps more than 8 days out (a sign the
 payload was misread). Several parked chats all resume at once, which is intentional — a reset
