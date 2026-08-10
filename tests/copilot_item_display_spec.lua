@@ -12,6 +12,13 @@ describe("copilot_item_display", function()
       assert.are.equal("Bash", ItemDisplay.resolve_label("bash"))
     end)
 
+    it("maps the file tools onto vibing labels", function()
+      assert.are.equal("Read", ItemDisplay.resolve_label("view"))
+      assert.are.equal("Write", ItemDisplay.resolve_label("create"))
+      assert.are.equal("Edit", ItemDisplay.resolve_label("edit"))
+      assert.are.equal("WebSearch", ItemDisplay.resolve_label("web_search"))
+    end)
+
     it("returns unknown tool names unchanged", function()
       assert.are.equal("some_future_tool", ItemDisplay.resolve_label("some_future_tool"))
     end)
@@ -36,8 +43,20 @@ describe("copilot_item_display", function()
       assert.are.equal("path", kind)
     end)
 
-    it("falls back to encoded json with the other kind", function()
+    it("uses query verbatim for web_search", function()
       local summary, kind = ItemDisplay.summarize_arguments({ query = "vibing" })
+      assert.are.equal("vibing", summary)
+      assert.are.equal("other", kind)
+    end)
+
+    it("prefers path over file_text for the create tool", function()
+      local summary, kind = ItemDisplay.summarize_arguments({ path = "b.txt", file_text = "x" })
+      assert.are.equal("b.txt", summary)
+      assert.are.equal("path", kind)
+    end)
+
+    it("falls back to encoded json with the other kind", function()
+      local summary, kind = ItemDisplay.summarize_arguments({ unknown_field = "vibing" })
       assert.are.equal("other", kind)
       assert.is_true(summary:find("vibing", 1, true) ~= nil)
     end)
@@ -60,6 +79,20 @@ describe("copilot_item_display", function()
 
     it("reads the error field when there is no result", function()
       assert.are.equal("boom", ItemDisplay.extract_result_text({ error = "boom" }))
+    end)
+
+    it("unwraps a table error into its message", function()
+      local text = ItemDisplay.extract_result_text({
+        success = false,
+        error = { message = "Permission to run this tool was denied", code = "denied" },
+      })
+      assert.are.equal("Permission to run this tool was denied", text)
+    end)
+
+    it("encodes a table error that has no message", function()
+      local text = ItemDisplay.extract_result_text({ error = { code = "denied" } })
+      assert.is_true(text:find("denied", 1, true) ~= nil)
+      assert.is_nil(text:find("table: 0x", 1, true))
     end)
 
     it("returns an empty string with no usable field", function()
@@ -100,6 +133,14 @@ describe("copilot_item_display", function()
         error = "permission denied",
       }, make_context())
       assert.are.equal("  ⎿  Error: permission denied\n", text)
+    end)
+
+    it("renders a denied tool call from its table error", function()
+      local text = ItemDisplay.format_execution_complete({
+        success = false,
+        error = { message = "Permission to run this tool was denied", code = "denied" },
+      }, make_context())
+      assert.are.equal("  ⎿  Error: Permission to run this tool was denied\n", text)
     end)
 
     it("returns an empty string when there is nothing to show", function()

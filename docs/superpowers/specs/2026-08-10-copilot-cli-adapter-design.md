@@ -120,12 +120,16 @@ copilot の非対話モードは `--allow-all-tools` が必須仕様のため、
 
 | vibing                  | copilot        |
 | ----------------------- | -------------- |
-| `Bash`                  | `shell()`      |
+| `Bash`                  | `shell`        |
 | `Bash(npm:*)`           | `shell(npm:*)` |
-| `Write`, `Edit`         | `write()`      |
-| `WebFetch`, `WebSearch` | `url()`        |
+| `Write`, `Edit`         | `write`        |
+| `WebFetch`, `WebSearch` | `url`          |
 
-`Write` と `Edit` が両方 deny にあっても `--deny-tool write()` は 1 回だけ渡す（重複排除する）。
+種別全体にマッチさせるときは **パーレンを付けない**。`shell()` のような空パーレンは CLI に
+`Invalid rule format` で拒否される（実機で確認済み）。help の "the argument is optional" は
+「引数を省略できる」ではなく「パーレンごと省略する」の意味。
+
+`Write` と `Edit` が両方 deny にあっても `--deny-tool write` は 1 回だけ渡す（重複排除する）。
 
 ### コンテキストと言語
 
@@ -164,14 +168,24 @@ codex と同一。セッション新規作成時のみプロンプト先頭に�
 
 `toolName` をキーにしたフォーマッタテーブルで分岐する。
 
-- `bash`: コマンド文字列と終了コード
-- ファイル編集系: 変更ファイルパス（既存の patch/diff 機構に載せる）
-- MCP ツール: サーバー名とツール名
-- テーブルに無い `toolName`: ツール名と引数サマリだけの汎用表示にフォールバックする
+実機で確認した `toolName` と引数の形は次のとおり。
+
+| copilot の `toolName` | 引数                         | 表示ラベル  |
+| --------------------- | ---------------------------- | ----------- |
+| `bash`                | `command`, `description`     | `Bash`      |
+| `view`                | `path`                       | `Read`      |
+| `create`              | `path`, `file_text`          | `Write`     |
+| `edit`                | `path`, `old_str`, `new_str` | `Edit`      |
+| `web_search`          | `query`                      | `WebSearch` |
+
+- 引数サマリは `command` → `path` → `file_path` → `query` の順に拾い、`path` 系のときだけ
+  `on_tool_use` の第 2 引数（file_path）に渡す
+- テーブルに無い `toolName`: ツール名をそのまま出し、引数は JSON エンコードして汎用表示にする
 - 出力は長さ上限で切り詰める
 
-実装時に実際の `toolName` を実機で確認して埋める（`bash` は確認済み。ファイル編集系と MCP の
-命名は未確認なので、汎用フォールバックを先に用意してから個別対応を足す）。
+`tool.execution_complete` の `error` は文字列ではなく `{ message, code }` のテーブルで届く
+（ツールが deny されたときなど）。`tostring()` すると `table: 0x...` がチャットに漏れるため、
+`message` を取り出して表示する。
 
 ## セッションとキャンセル
 

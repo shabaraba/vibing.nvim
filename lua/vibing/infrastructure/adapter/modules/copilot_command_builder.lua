@@ -61,6 +61,8 @@ local function build_context_prefix(opts)
 end
 
 --- Map a vibing permission entry to a copilot permission pattern
+--- The bare kind name matches every invocation of that kind; empty parens ("shell()")
+--- are rejected by the CLI as an invalid rule format.
 --- @param entry string
 --- @return string|nil
 function M.to_deny_pattern(entry)
@@ -69,13 +71,13 @@ function M.to_deny_pattern(entry)
     return string.format("shell(%s)", bash_pattern)
   end
   if entry == "Bash" then
-    return "shell()"
+    return "shell"
   end
   if entry == "Write" or entry == "Edit" then
-    return "write()"
+    return "write"
   end
   if entry == "WebFetch" or entry == "WebSearch" then
-    return "url()"
+    return "url"
   end
   return nil
 end

@@ -12,6 +12,10 @@ local ARGUMENT_SUMMARY_LIMIT = 100
 --- Names absent here are displayed verbatim; extend as more are confirmed on real runs.
 local TOOL_LABELS = {
   bash = "Bash",
+  view = "Read",
+  create = "Write",
+  edit = "Edit",
+  web_search = "WebSearch",
 }
 
 --- Map a copilot tool name to its display label
@@ -38,6 +42,9 @@ function M.summarize_arguments(args)
   if type(args.file_path) == "string" then
     return args.file_path, "path"
   end
+  if type(args.query) == "string" then
+    return args.query, "other"
+  end
 
   local ok, encoded = pcall(vim.json.encode, args)
   if not ok then
@@ -50,6 +57,8 @@ function M.summarize_arguments(args)
 end
 
 --- Extract displayable text from a tool.execution_complete payload
+--- `error` is a table ({ message, code }) on denied or failed calls, so it is unwrapped
+--- rather than stringified — tostring() on a table leaks its address into the chat.
 --- @param data table
 --- @return string
 function M.extract_result_text(data)
@@ -64,8 +73,17 @@ function M.extract_result_text(data)
     local ok, encoded = pcall(vim.json.encode, result)
     return ok and encoded or ""
   end
-  if data.error then
-    return tostring(data.error)
+
+  local err = data.error
+  if type(err) == "string" then
+    return err
+  end
+  if type(err) == "table" then
+    if type(err.message) == "string" then
+      return err.message
+    end
+    local ok, encoded = pcall(vim.json.encode, err)
+    return ok and encoded or ""
   end
   return ""
 end
