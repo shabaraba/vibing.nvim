@@ -10,29 +10,30 @@ local ADAPTER_MODULES = {
   copilot = "vibing.infrastructure.adapter.copilot_cli",
 }
 
-local ADAPTER_NAMES = {
-  claude = "claude_cli",
-  codex = "codex_cli",
-  copilot = "copilot_cli",
-}
-
 local DEFAULT_AGENT = "claude"
 
---- Get the adapter instance name for an agent type
+--- Resolve an agent type to its adapter module path
+--- Unknown or nil agent types fall back to the claude adapter
+--- @param agent_type string|nil
+--- @return string
+local function resolve_module(agent_type)
+  return ADAPTER_MODULES[agent_type] or ADAPTER_MODULES[DEFAULT_AGENT]
+end
+
+--- Get the adapter instance name for an agent type.
+--- Derived from the module path so it cannot drift from ADAPTER_MODULES.
 --- @param agent_type string|nil
 --- @return string
 function M.adapter_name(agent_type)
-  return ADAPTER_NAMES[agent_type] or ADAPTER_NAMES[DEFAULT_AGENT]
+  return resolve_module(agent_type):match("[^.]+$")
 end
 
 --- Create an adapter instance for an agent type
---- Unknown or nil agent types fall back to the claude adapter
 --- @param agent_type string|nil
 --- @param config Vibing.Config
 --- @return Vibing.Adapter
 function M.create(agent_type, config)
-  local module_path = ADAPTER_MODULES[agent_type] or ADAPTER_MODULES[DEFAULT_AGENT]
-  return require(module_path):new(config)
+  return require(resolve_module(agent_type)):new(config)
 end
 
 return M

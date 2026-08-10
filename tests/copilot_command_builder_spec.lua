@@ -27,12 +27,17 @@ local function value_after(cmd, flag)
 end
 
 describe("copilot_command_builder", function()
+  local original_exepath
+
   before_each(function()
-    Builder._set_executable_path("/usr/local/bin/copilot")
+    original_exepath = vim.fn.exepath
+    vim.fn.exepath = function()
+      return "/usr/local/bin/copilot"
+    end
   end)
 
   after_each(function()
-    Builder._set_executable_path(nil)
+    vim.fn.exepath = original_exepath
   end)
 
   describe("to_deny_pattern", function()

@@ -56,18 +56,19 @@ function M.summarize_arguments(args)
   return encoded, "other"
 end
 
---- Turn an error-ish value into displayable text.
---- copilot sends `error` as a table ({ message, code }) on denied or failed calls, so it is
---- unwrapped rather than stringified — tostring() on a table leaks its address into the chat.
+--- Turn a payload value into displayable text, preferring one well-known key when it is a table.
+--- copilot sends `error` as a table ({ message, code }) and `result` as ({ content, ... }), so
+--- both are unwrapped rather than stringified — tostring() leaks a table's address into the chat.
 --- @param value any
+--- @param preferred_key string
 --- @return string
-function M.stringify_message(value)
+local function to_text(value, preferred_key)
   if type(value) == "string" then
     return value
   end
   if type(value) == "table" then
-    if type(value.message) == "string" then
-      return value.message
+    if type(value[preferred_key]) == "string" then
+      return value[preferred_key]
     end
     local ok, encoded = pcall(vim.json.encode, value)
     return ok and encoded or ""
@@ -78,22 +79,21 @@ function M.stringify_message(value)
   return tostring(value)
 end
 
+--- Turn an error-ish value into displayable text
+--- @param value any
+--- @return string
+function M.stringify_message(value)
+  return to_text(value, "message")
+end
+
 --- Extract displayable text from a tool.execution_complete payload
 --- @param data table
 --- @return string
 function M.extract_result_text(data)
-  local result = data.result
-  if type(result) == "string" then
-    return result
+  if data.result ~= nil then
+    return to_text(data.result, "content")
   end
-  if type(result) == "table" then
-    if type(result.content) == "string" then
-      return result.content
-    end
-    local ok, encoded = pcall(vim.json.encode, result)
-    return ok and encoded or ""
-  end
-  return M.stringify_message(data.error)
+  return to_text(data.error, "message")
 end
 
 --- Format the header emitted when a tool starts executing
@@ -113,11 +113,17 @@ end
 --- @param context table
 --- @return string
 function M.format_execution_complete(data, context)
+  local display_mode = ToolDisplay.get_cached_display_mode(context)
+  -- Extracting can JSON-encode a large result payload, so skip it when nothing is displayed.
+  if display_mode == "none" then
+    return ""
+  end
+
   local text = M.extract_result_text(data)
   if text ~= "" and data.success == false then
     text = "Error: " .. text
   end
-  return ToolDisplay.format_result_text(text, ToolDisplay.get_cached_display_mode(context))
+  return ToolDisplay.format_result_text(text, display_mode)
 end
 
 return M

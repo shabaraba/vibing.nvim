@@ -32,8 +32,9 @@ local function notify_tool_use(data, context)
 
   local label = ItemDisplay.resolve_label(data.toolName or "tool")
   local summary, kind = ItemDisplay.summarize_arguments(data.arguments)
+  -- Only a real shell command goes in the command slot; the "other" kind is a JSON blob.
   local file_path = kind == "path" and summary or nil
-  local command = kind ~= "path" and summary or nil
+  local command = kind == "command" and summary or nil
 
   vim.schedule(function()
     context.opts.on_tool_use(label, file_path, command)

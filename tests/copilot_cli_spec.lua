@@ -44,8 +44,6 @@ describe("copilot_cli adapter", function()
   end)
 
   it("reports a missing copilot binary through on_done instead of raising", function()
-    local Builder = require("vibing.infrastructure.adapter.modules.copilot_command_builder")
-    Builder._set_executable_path(nil)
     local original_exepath = vim.fn.exepath
     vim.fn.exepath = function()
       return ""

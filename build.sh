@@ -212,38 +212,35 @@ if [ -f "dist/index.js" ]; then
         echo "[vibing.nvim] Install Claude Code, then run: $PLUGIN_INSTALL_HINT"
     fi
 
-    # Register MCP server with codex (if available)
     MCP_SERVER_PATH="${MCP_DIR}/dist/index.js"
     # Quoted so paths containing spaces stay a single argument when the user copy-pastes the hint
     MANUAL_MCP_ARGS="$(printf '%q %q' "$NODE_EXECUTABLE" "$MCP_SERVER_PATH")"
-    if command -v codex &> /dev/null; then
-        echo "[vibing.nvim] Registering MCP server with codex..."
-        if VIBING_RPC_PORT="${VIBING_RPC_PORT:-9876}" codex mcp add vibing-nvim -- "$NODE_EXECUTABLE" "$MCP_SERVER_PATH" 2>/dev/null; then
-            echo "[vibing.nvim] ✓ Registered vibing-nvim MCP server with codex"
-        else
-            echo "[vibing.nvim] ⚠ Warning: codex MCP registration failed"
-            echo "[vibing.nvim] You can manually register by running: codex mcp add vibing-nvim -- $MANUAL_MCP_ARGS"
-        fi
-    fi
 
-    # Register MCP server with copilot (if available)
-    if command -v copilot &> /dev/null; then
-        # `copilot mcp add` exits 1 when the name already exists, so re-running build.sh would
-        # otherwise report a failure for an already-correct registration. An existing entry is
-        # left untouched rather than replaced, so a hand-edited config is never clobbered.
-        if copilot mcp list 2>/dev/null | grep -qE '^[[:space:]]*vibing-nvim[[:space:]]'; then
-            echo "[vibing.nvim] ✓ vibing-nvim MCP server already registered with copilot"
-            echo "[vibing.nvim] To update it: copilot mcp remove vibing-nvim && copilot mcp add vibing-nvim -- $MANUAL_MCP_ARGS"
-        else
-            echo "[vibing.nvim] Registering MCP server with copilot..."
-            if VIBING_RPC_PORT="${VIBING_RPC_PORT:-9876}" copilot mcp add vibing-nvim -- "$NODE_EXECUTABLE" "$MCP_SERVER_PATH" 2>/dev/null; then
-                echo "[vibing.nvim] ✓ Registered vibing-nvim MCP server with copilot"
-            else
-                echo "[vibing.nvim] ⚠ Warning: copilot MCP registration failed"
-                echo "[vibing.nvim] You can manually register by running: copilot mcp add vibing-nvim -- $MANUAL_MCP_ARGS"
-            fi
+    # Register the built MCP server with a CLI that speaks `<cli> mcp add`.
+    # Both codex and copilot exit 1 when the name already exists, so an existing entry is
+    # detected first and left untouched — re-running build.sh must not report a false failure,
+    # and a hand-edited config must never be clobbered.
+    register_mcp_server() {
+        local cli="$1"
+        command -v "$cli" &> /dev/null || return 0
+
+        if "$cli" mcp list 2>/dev/null | grep -qE '^[[:space:]]*vibing-nvim[[:space:]]'; then
+            echo "[vibing.nvim] ✓ vibing-nvim MCP server already registered with $cli"
+            echo "[vibing.nvim] To update it: $cli mcp remove vibing-nvim && $cli mcp add vibing-nvim -- $MANUAL_MCP_ARGS"
+            return 0
         fi
-    fi
+
+        echo "[vibing.nvim] Registering MCP server with $cli..."
+        if VIBING_RPC_PORT="${VIBING_RPC_PORT:-9876}" "$cli" mcp add vibing-nvim -- "$NODE_EXECUTABLE" "$MCP_SERVER_PATH" 2>/dev/null; then
+            echo "[vibing.nvim] ✓ Registered vibing-nvim MCP server with $cli"
+        else
+            echo "[vibing.nvim] ⚠ Warning: $cli MCP registration failed"
+            echo "[vibing.nvim] You can manually register by running: $cli mcp add vibing-nvim -- $MANUAL_MCP_ARGS"
+        fi
+    }
+
+    register_mcp_server codex
+    register_mcp_server copilot
 
     exit 0
 else

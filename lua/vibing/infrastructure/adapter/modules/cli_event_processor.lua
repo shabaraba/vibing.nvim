@@ -45,11 +45,7 @@ local function emit_tool_result(block, tool_map, context)
   local tool_input = tool_info.input or {}
   local input_summary = extract_input_summary(tool_name, tool_input)
 
-  if context._cached_markers == nil then
-    context._cached_markers = ToolDisplay.get_markers_config() or false
-  end
-  local markers = context._cached_markers or nil
-  local marker = ToolDisplay.resolve_marker(tool_name, markers)
+  local marker = ToolDisplay.resolve_marker(tool_name, ToolDisplay.get_cached_markers(context))
   local header = string.format("\n%s %s(%s)\n", marker, tool_name, input_summary)
 
   local result_text = ""

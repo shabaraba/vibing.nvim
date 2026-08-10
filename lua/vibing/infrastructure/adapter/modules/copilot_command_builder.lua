@@ -6,14 +6,6 @@ local Modes = require("vibing.core.constants.modes")
 
 local M = {}
 
-local cached_copilot_path = nil
-
---- Override the resolved executable path. Test seam only.
---- @param path string|nil
-function M._set_executable_path(path)
-  cached_copilot_path = path
-end
-
 --- Resolve model name from opts or config
 --- Claude short names (sonnet/opus/haiku/fable) are not valid copilot model ids,
 --- so they are dropped and copilot's own default is used instead.
@@ -157,15 +149,12 @@ end
 --- @param config Vibing.Config Plugin config
 --- @return string[] Command array for vim.system()
 function M.build(prompt, opts, session_id, config)
-  if not cached_copilot_path then
-    cached_copilot_path = vim.fn.exepath("copilot")
-    if cached_copilot_path == "" then
-      cached_copilot_path = nil
-      error("Copilot CLI not found in PATH. Please install GitHub Copilot CLI.")
-    end
+  local copilot_path = vim.fn.exepath("copilot")
+  if copilot_path == "" then
+    error("Copilot CLI not found in PATH. Please install GitHub Copilot CLI.")
   end
 
-  local cmd = { cached_copilot_path, "--output-format", "json", "--stream", "on", "--no-color" }
+  local cmd = { copilot_path, "--output-format", "json", "--stream", "on", "--no-color" }
 
   if session_id then
     table.insert(cmd, "--resume=" .. session_id)
