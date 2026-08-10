@@ -79,7 +79,6 @@
 ---Claudeのモード（code/plan/explore）とモデル（sonnet/opus/haiku/fable）を指定
 ---@field default_mode "code"|"plan"|"explore" デフォルトモード（"code": コード生成、"plan": 計画、"explore": 探索）
 ---@field default_model "sonnet"|"opus"|"haiku"|"fable" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速、"fable": Claude Fable）
----@field prioritize_vibing_lsp boolean vibing-nvim LSPツールを優先（true: Serena等の汎用LSPより優先、false: システムプロンプトを挿入しない、デフォルト: true）
 ---@field utility_model "sonnet"|"opus"|"haiku"|"fable" タイトル生成・要約等の軽量ユーティリティ呼び出し専用モデル（デフォルト: "haiku"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）
 
@@ -102,7 +101,6 @@
 ---@field auto_context boolean 自動コンテキスト有効化（trueで開いているバッファを自動的にコンテキストに含める）
 ---@field save_location_type "project"|"user"|"custom" 保存先タイプ（"project": プロジェクト内、"user": ユーザーディレクトリ、"custom": カスタムパス）
 ---@field save_dir string カスタム保存先ディレクトリ（save_location_type="custom"時に使用）
----@field context_position "prepend"|"append" コンテキスト挿入位置（"prepend": プロンプト前、"append": プロンプト後）
 
 ---@class Vibing.WindowConfig
 ---チャットウィンドウ表示設定
@@ -224,7 +222,6 @@ M.defaults = {
   agent = {
     default_mode = "code",
     default_model = "sonnet",
-    prioritize_vibing_lsp = true,
     utility_model = "haiku",
     setting_sources = { "user", "project", "local" },
     -- 使用量リミットで応答が弾かれたとき、リセット時刻を待って自動で継続リクエストを送る。
@@ -252,7 +249,6 @@ M.defaults = {
     auto_context = true,
     save_location_type = "project",
     save_dir = vim.fn.stdpath("data") .. "/vibing/chats",
-    context_position = "append",
   },
   ui = {
     wrap = "on",

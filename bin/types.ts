@@ -83,7 +83,6 @@ export interface AgentConfig {
   mode: string | null;
   model: string | null;
   permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto';
-  prioritizeVibingLsp: boolean;
   mcpEnabled: boolean;
   language: string | null;
   rpcPort: number | null;

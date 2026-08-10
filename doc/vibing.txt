@@ -73,7 +73,6 @@ Default configuration: >lua
         },
         auto_context = true,
         save_location_type = "project",  -- "project" | "user" | "custom"
-        context_position = "append",  -- "prepend" | "append"
       },
       agent = {
         default_mode = "code",  -- "code" | "plan" | "explore"
@@ -99,7 +98,6 @@ chat.window.width       Chat window width (0.0-1.0 or absolute)
 chat.window.border      Window border style
 chat.auto_context       Automatically add open buffers to context
 chat.save_location_type Where to save chat files
-chat.context_position   Where to place context in prompt
 agent.default_mode      Default execution mode
 agent.default_model     Default AI model to use
 permissions.allow       Tools AI can use
