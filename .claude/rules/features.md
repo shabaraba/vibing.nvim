@@ -36,8 +36,8 @@ Implemented in `lua/vibing/utils/timestamp.lua`: `create_header(role, timestamp)
 
 ## AskUserQuestion Support
 
-Claude's `AskUserQuestion` tool renders as plain markdown in the chat buffer instead of a native
-prompt, so the user can answer with ordinary Vim editing:
+Multiple-choice questions render as plain markdown in the chat buffer instead of a native prompt,
+so the user can answer with ordinary Vim editing:
 
 ```markdown
 Which database should we use?
@@ -51,8 +51,15 @@ Please answer the question and press `<CR>` to send.
 
 Single-select questions render as a numbered list (`1. 2. 3.`); multi-select questions render as a
 bullet list (`- - -`). The user deletes unwanted options with standard Vim commands (`dd`, etc.)
-and sends the remainder with `<CR>`; Claude receives the edited list as a normal user message — no
-special Promise/state handling is required.
+and sends the remainder with `<CR>`.
 
-**Implementation:** the Agent Wrapper sends an `insert_choices` event and denies the tool; the
-choices are inserted as plain markdown (numbered for `multiSelect: false`, bulleted for `true`).
+**Implementation:** the primary path is vibing.nvim's own MCP tool
+`mcp__vibing-nvim__nvim_ask_user_question` (`mcp-server/src/tools/chat.ts`), which the CLI's
+system prompt instructs the model to use instead of the native tool. Its handler calls
+`M.ask_user_question()` in `infrastructure/rpc/handlers/permission.lua`, which cancels the
+in-flight turn and renders the choice list via `on_insert_choices`. Because the turn is killed,
+the tool's return value never reaches the model — the user's answer arrives as the next `--resume`d
+turn's user message, so no Promise/state handling is required.
+
+Native `AskUserQuestion` is unavailable in headless `claude -p` mode and is opaque to vibing.nvim,
+so the PreToolUse hook intercepts and denies it, rendering the same UI as a fallback.

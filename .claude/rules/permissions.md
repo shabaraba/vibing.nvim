@@ -71,7 +71,8 @@ alternative to hand-editing config or frontmatter.
 ## Tool Approval UI
 
 When permission mode is `default`, or a tool is in the `ask` list, vibing.nvim shows an approval
-prompt directly in the chat buffer instead of using the Agent SDK's console prompt:
+prompt directly in the chat buffer instead of the CLI's own console prompt (which is unreachable
+in headless `claude -p` mode):
 
 ```markdown
 ⚠️ Tool approval required
@@ -93,7 +94,8 @@ one with `<CR>`. `allow_once`/`deny_once` apply to this call only; `allow_for_se
 
 **Implementation notes:**
 
-- The RPC hook fires in `permission.lua` when Claude requests a tool in the `ask` list;
+- The PreToolUse hook (`bin/hooks/pre-tool-use.sh`) posts to the RPC server, which dispatches to
+  `infrastructure/rpc/handlers/permission.lua`. When the requested tool is in the `ask` list,
   `cancel_and_deny()` immediately cancels the Claude process and sends a deny response to the
   hook.
 - `on_approval_required` must be called from the vim main thread (inside `vim.schedule`) — the

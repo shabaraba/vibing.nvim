@@ -2,45 +2,92 @@
 
 ## Communication Flow
 
+There is **no Node.js wrapper process**. vibing.nvim spawns the `claude` CLI directly with
+`vim.system()` and parses its streaming JSON output:
+
 ```text
-Neovim (Lua) → vim.system() → Node.js wrapper → Claude Agent SDK
-                    ↑
-            JSON Lines protocol
+Neovim (Lua) ──vim.system()──> claude -p --output-format stream-json
+     ▲                                    │
+     │  stream-json lines (stdout)        │
+     └────────────────────────────────────┘
+     ▲
+     │  hook callbacks (PreToolUse / StopFailure) over TCP
+     └── bin/hooks/*.sh ──> RPC server (lua/vibing/infrastructure/rpc/)
 ```
 
-The Node.js wrapper (`bin/agent-wrapper.mjs`) outputs streaming responses as JSON Lines:
+The command is assembled in `cli_command_builder.lua`; the base flags are
+`-p --output-format stream-json --verbose --include-partial-messages`, plus `--model`,
+`--resume <session_id>` (`--fork-session` for forks), `--append-system-prompt`,
+`--setting-sources`, permission flags, and `--settings .vibing/hook-settings.json`.
 
-- `{"type": "session", "session_id": "..."}` - Session identifier for resumption
-- `{"type": "chunk", "text": "..."}` - Streamed text content
-- `{"type": "tool_use", "tool": "Edit", "file_path": "..."}` - File modification event
-- `{"type": "done"}` - Completion signal
-- `{"type": "error", "message": "..."}` - Error messages
+`cli_event_processor.lua` consumes the CLI's stream-json lines — `content_block_start`,
+`content_block_delta` (`text_delta` / `input_json_delta`), `tool_use`, `tool_result`, `error`,
+and `rate_limit_event` — and turns them into chunk/tool-display callbacks.
+
+Everything that needs to call _back into_ Neovim mid-turn (permission decisions, approval UI,
+`AskUserQuestion`, rate-limit reporting) goes through the RPC server rather than the stream.
+`.vibing/hook-settings.json` (generated per cwd by `hooks/settings_generator.lua`) registers
+`bin/hooks/pre-tool-use.sh` and `bin/hooks/stop-failure.sh`.
+
+The PreToolUse hook is synchronous and blocks the tool call: it writes the hook payload to
+`/tmp/vibing-hook-<port>/<request_id>.req`, sends a one-line JSON-RPC notification to the RPC port
+with `nc`, then polls for `<request_id>.res` (up to 120s). It **fails closed** — if `nc` cannot
+connect, or the response never arrives, the hook exits 2 and the tool is denied. `VIBING_HANDLE_ID`
+is passed through so concurrent chats don't cross-wire each other's approval UI (see
+`active_stream_registry.lua`). Note that the `/tmp` comm directory is keyed only by port, which is
+machine-wide shared state.
+
+**Backends:** `claude_cli.lua` (default) and `codex_cli.lua` both implement the adapter
+interface; `init.lua` picks one from `config.adapter`, and `send_message.lua` can switch per
+request for `codex` agent types.
 
 ## Module Structure
 
+The tree is layered (`domain` / `application` / `infrastructure` / `presentation`), not the flat
+`actions/` + `ui/` layout used before v4.
+
 **Core:**
 
-- `lua/vibing/init.lua` - Entry point, command registration
-- `lua/vibing/config.lua` - Configuration with type annotations
+- `lua/vibing/init.lua` - Entry point, command registration, adapter selection
+- `lua/vibing/config.lua` - Configuration defaults with type annotations
+- `lua/vibing/core/constants/` - `tools.lua` (VALID_TOOLS), `modes.lua`, `worktree.lua`
+- `lua/vibing/core/utils/` - timestamp, language, git, mote, rate_limit, request_diff, ...
 
-**Adapter:**
+**Adapter (`lua/vibing/infrastructure/adapter/`):**
 
-- `adapters/base.lua` - Abstract adapter interface
-- `adapters/agent_sdk.lua` - Claude Agent SDK adapter (only supported backend)
+- `base.lua` - Abstract adapter interface
+- `claude_cli.lua` / `codex_cli.lua` - Backend adapters (spawn + stream lifecycle)
+- `modules/cli_command_builder.lua` - Claude CLI argv construction (flags, system prompt)
+- `modules/cli_event_processor.lua` - stream-json → chunk/tool events
+- `modules/codex_command_builder.lua` / `modules/codex_event_processor.lua` - Codex equivalents
+- `modules/session_manager.lua`, `modules/active_stream_registry.lua` - Session/handle tracking
 
-**UI:**
+**Chat (presentation + application):**
 
-- `ui/chat_buffer.lua` - Chat window with Markdown rendering, session persistence, diff viewer
-- `ui/permission_builder.lua` - Interactive permission configuration UI
+- `presentation/chat/buffer.lua`, `view.lua`, `controller.lua` - Chat buffer and window
+- `presentation/chat/modules/` - renderer, streaming_handler, frontmatter_handler, file_manager,
+  approval_parser, keymap_handler, ...
+- `application/chat/send_message.lua` - Request orchestration (opts, callbacks, diffs)
+- `application/chat/use_cases/fork.lua` - Chat fork
+- `application/chat/auto_resume.lua` - Usage-limit auto-resume scheduler
+
+**RPC / hooks:**
+
+- `infrastructure/rpc/server.lua` - Async TCP server queried by hooks and the MCP server
+- `infrastructure/rpc/handlers/permission.lua` - PreToolUse decisions, approval UI,
+  `ask_user_question`
+- `infrastructure/rpc/handlers/rate_limit.lua` - StopFailure receiver
+- `infrastructure/hooks/settings_generator.lua` - Writes `.vibing/hook-settings.json`
 
 **Context System:**
 
-- `context/init.lua` - Context manager (manual + auto from open buffers)
-- `context/collector.lua` - Collects `@file:path` formatted contexts
+- `application/context/manager.lua` - Context manager (manual + auto from open buffers)
+- `infrastructure/context/collector.lua` - Collects `@file:path` formatted contexts
 
-**Actions:**
+**UI:**
 
-- `actions/chat.lua` - Chat session orchestration with concurrent session support
+- `ui/permission_builder.lua` - Interactive permission configuration UI
+- `ui/patch_viewer/`, `ui/command_picker.lua`, `ui/chat_deletion_picker.lua`
 
 ## Key Entry Points
 
@@ -48,20 +95,25 @@ Quick reference for commonly edited files:
 
 ```text
 Lua Plugin:
-- lua/vibing/init.lua          - Plugin initialization and commands
-- lua/vibing/config.lua        - Configuration schema and defaults
-- lua/vibing/adapters/agent_sdk.lua - Agent SDK adapter implementation
-- lua/vibing/ui/chat_buffer.lua     - Chat window implementation
-- lua/vibing/actions/chat.lua       - Chat session orchestration
+- lua/vibing/init.lua                    - Plugin initialization and commands
+- lua/vibing/config.lua                  - Configuration schema and defaults
+- lua/vibing/infrastructure/adapter/claude_cli.lua                 - Claude CLI adapter
+- lua/vibing/infrastructure/adapter/modules/cli_command_builder.lua - CLI argv / system prompt
+- lua/vibing/presentation/chat/buffer.lua                          - Chat buffer implementation
+- lua/vibing/application/chat/send_message.lua                     - Request orchestration
 
-Node.js Backend:
-- bin/agent-wrapper.ts         - Agent SDK wrapper entry point
+Node.js side (no agent wrapper — only these):
+- bin/hooks/pre-tool-use.sh    - PreToolUse hook → RPC
+- bin/hooks/stop-failure.sh    - StopFailure hook → RPC
+- bin/list-commands.ts         - Slash command/skill enumeration for completion
 - mcp-server/src/index.ts      - MCP server entry point
-- mcp-server/src/tools/        - MCP tool implementations (buffer, lsp, window)
+- mcp-server/src/tools/        - MCP tool implementations (buffer, lsp, window, chat)
 
 Tests:
-- tests/*_spec.lua             - Lua tests (plenary.nvim)
+- tests/lua/**/*_spec.lua      - Lua tests (plenary.nvim)
+- tests/*_spec.lua             - Older top-level Lua specs
 - tests/*.test.mjs             - Node.js tests
+- tests/e2e/*.spec.lua         - E2E tests against a spawned Neovim instance
 ```
 
 ## Session Persistence
@@ -71,11 +123,11 @@ Chat files are saved as Markdown with YAML frontmatter:
 ```yaml
 ---
 vibing.nvim: true
-session_id: <sdk-session-id>
+session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
-working_dir: .vibing/workspace/0001-feature-branch/worktree # Optional: relative path from git root for working directory
+working_dir: .vibing/worktrees/fix-auth-session # Optional: relative path from git root for working directory
 model: sonnet # sonnet, opus, haiku, or fable (from config.agent.default_model)
-permissions_mode: acceptEdits # default, acceptEdits, bypassPermissions, plan, or dontAsk
+permission_mode: acceptEdits # default, acceptEdits, bypassPermissions, plan, dontAsk, or auto
 permissions_allow:
   - Read
   - Edit
@@ -95,10 +147,13 @@ via `/model` slash command. Configured permissions are recorded in frontmatter f
 transparency and auditability. The optional `language` field ensures consistent AI response language
 across sessions.
 
+Note the singular `permission_mode`: that is the key `send_message.lua` actually reads. Completion
+also offers `permissions_mode`, but nothing reads it — don't rely on the plural form.
+
 **Working directory persistence:** The `working_dir` field stores the working directory as a relative
-path from git root (e.g., `.vibing/workspace/<id>/worktree`). When a chat is reopened, the agent
+path from git root (e.g., `.vibing/worktrees/<branch>`). When a chat is reopened, the agent
 and mote commands are executed in this directory. This ensures consistent file operations across
-sessions, even when using workspace or custom directories.
+sessions, even when using a worktree or a custom directory.
 
 ## Concurrent Execution Support
 
@@ -127,24 +182,25 @@ See `docs/adr/002-concurrent-execution-support.md` for architectural details.
 ```text
 Source Chat (session-abc)
   │
-  ├─ User sends messages... SDK uses session-abc
+  ├─ User sends messages... CLI resumes session-abc
   │
   └─ :VibingChatFork right
        │
        Fork Chat (session_id: session-abc, forked_from: source.md)
          │
-         ├─ First message → SDK: query({ resume: session-abc, forkSession: true })
-         │                  → SDK returns new session-def
+         ├─ First message → CLI: claude -p --resume session-abc --fork-session
+         │                  → CLI returns new session-def
          │                  → frontmatter updated: session_id: session-def
          │                  → forked_from cleared
          │
-         └─ Subsequent messages → SDK uses session-def independently
+         └─ Subsequent messages → CLI resumes session-def independently
 ```
 
 **Key Design Decisions:**
 
 - Fork inherits the source's `session_id` directly in frontmatter (no separate side-channel)
-- The `forked_from` frontmatter field indicates a pending fork; `--fork-session` boolean flag is sent to the SDK
+- The `forked_from` frontmatter field indicates a pending fork; `opts._is_fork` makes the command
+  builder emit `--fork-session` right after `--resume`
 - After the first response, `forked_from` is cleared and `session_id` is updated to the new value
 - This avoids `BufReadPost`/`attach_to_buffer` lifecycle issues where in-memory state would be lost
 - `ForkedChatScanner` automatically updates `forked_from` links when source files are renamed
@@ -153,12 +209,12 @@ Source Chat (session-abc)
 
 - `lua/vibing/application/chat/use_cases/fork.lua` - Fork use case
 - `lua/vibing/infrastructure/link/forked_chat_scanner.lua` - Link synchronization scanner
-- `bin/agent-wrapper.ts` - `--fork-session` flag handling
+- `lua/vibing/infrastructure/adapter/modules/cli_command_builder.lua` - `--fork-session` flag
 
 ## Key Patterns
 
-**Adapter Pattern:** All AI backends implement the `Adapter` interface with `execute()`, `stream()`,
-`cancel()`, and feature detection via `supports()`.
+**Adapter Pattern:** All AI backends (`claude_cli`, `codex_cli`) implement the `Adapter` interface
+with `execute()`, `stream()`, `cancel()`, and feature detection via `supports()`.
 
 **Context Format:** Files are referenced as `@file:relative/path.lua` or `@file:path:L10-L25` for
 selections.
