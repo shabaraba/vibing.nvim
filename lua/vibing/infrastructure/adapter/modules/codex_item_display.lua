@@ -117,19 +117,13 @@ end
 --- @param context table
 --- @return table|nil
 function M._get_markers(context)
-  if context._cached_markers == nil then
-    context._cached_markers = ToolDisplay.get_markers_config() or false
-  end
-  return context._cached_markers or nil
+  return ToolDisplay.get_cached_markers(context)
 end
 
 --- @param context table
 --- @return string
 function M._get_display_mode(context)
-  if not context._cached_display_mode then
-    context._cached_display_mode = ToolDisplay.get_display_mode()
-  end
-  return context._cached_display_mode
+  return ToolDisplay.get_cached_display_mode(context)
 end
 
 return M
