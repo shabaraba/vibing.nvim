@@ -355,6 +355,9 @@ setup の `adapter = "claude"|"codex"|"copilot"` でグローバルに、チャ�
 > 実行され、`permissions.deny` は copilot の `--deny-tool` フラグ経由で反映されます。
 > `permissions.ask` を強制しているのは承認 UI なので、Copilot では ask リストは効果がなく、
 > 指定したツールは確認なしで実行されます。実行させたくないものは `permissions.deny` に入れてください。
+> `permissions.deny` が対応するのは `Bash`(`Bash(cmd:*)` 形式を含む)・`Write`・`Edit`・`WebFetch`・
+> `WebSearch` です。それ以外のツール名は Copilot 側に対応する権限パターンが無いため無視され、
+> その際は一度だけ警告を出します。
 
 ### なぜ Node.js が必要なのですか?
 

@@ -56,9 +56,29 @@ function M.summarize_arguments(args)
   return encoded, "other"
 end
 
+--- Turn an error-ish value into displayable text.
+--- copilot sends `error` as a table ({ message, code }) on denied or failed calls, so it is
+--- unwrapped rather than stringified — tostring() on a table leaks its address into the chat.
+--- @param value any
+--- @return string
+function M.stringify_message(value)
+  if type(value) == "string" then
+    return value
+  end
+  if type(value) == "table" then
+    if type(value.message) == "string" then
+      return value.message
+    end
+    local ok, encoded = pcall(vim.json.encode, value)
+    return ok and encoded or ""
+  end
+  if value == nil then
+    return ""
+  end
+  return tostring(value)
+end
+
 --- Extract displayable text from a tool.execution_complete payload
---- `error` is a table ({ message, code }) on denied or failed calls, so it is unwrapped
---- rather than stringified — tostring() on a table leaks its address into the chat.
 --- @param data table
 --- @return string
 function M.extract_result_text(data)
@@ -73,19 +93,7 @@ function M.extract_result_text(data)
     local ok, encoded = pcall(vim.json.encode, result)
     return ok and encoded or ""
   end
-
-  local err = data.error
-  if type(err) == "string" then
-    return err
-  end
-  if type(err) == "table" then
-    if type(err.message) == "string" then
-      return err.message
-    end
-    local ok, encoded = pcall(vim.json.encode, err)
-    return ok and encoded or ""
-  end
-  return ""
+  return M.stringify_message(data.error)
 end
 
 --- Format the header emitted when a tool starts executing

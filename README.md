@@ -352,6 +352,9 @@ Switch globally with `adapter = "claude"|"codex"|"copilot"` in setup, or per-cha
 > `--allow-all-tools` and honors the `permissions.deny` list via copilot's `--deny-tool` flag.
 > Because the approval UI is what enforces `permissions.ask`, that list has no effect on Copilot —
 > tools listed there run without prompting. Use `permissions.deny` for anything that must not run.
+> `permissions.deny` covers `Bash` (including `Bash(cmd:*)` patterns), `Write`, `Edit`, `WebFetch`,
+> and `WebSearch`; Copilot has no permission pattern for the other tool names, and vibing.nvim
+> warns once when it drops one.
 
 ### Why does it require Node.js?
 

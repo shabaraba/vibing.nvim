@@ -93,8 +93,13 @@ local event_handlers = {
 
   ["error"] = function(msg, context)
     local message = msg.message or (msg.data and msg.data.message)
-    if message then
-      table.insert(context.errorOutput, tostring(message))
+    if message ~= nil then
+      -- Unwrap the same way tool errors are unwrapped; a table message would otherwise
+      -- surface as "table: 0x..." in the chat buffer.
+      local text = ItemDisplay.stringify_message(message)
+      if text ~= "" then
+        table.insert(context.errorOutput, text)
+      end
     end
     return true
   end,

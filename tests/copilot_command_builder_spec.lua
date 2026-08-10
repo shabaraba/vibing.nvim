@@ -69,6 +69,26 @@ describe("copilot_command_builder", function()
     it("returns an empty list for nil", function()
       assert.are.same({}, Builder.build_deny_patterns(nil))
     end)
+
+    it("warns once per unsupported entry instead of dropping it silently", function()
+      Builder._reset_unmapped_warnings()
+      local messages = {}
+      local original_notify = vim.notify
+      vim.notify = function(msg)
+        table.insert(messages, msg)
+      end
+
+      local first = Builder.build_deny_patterns({ "Grep", "Bash" })
+      local second = Builder.build_deny_patterns({ "Grep" })
+
+      vim.notify = original_notify
+      Builder._reset_unmapped_warnings()
+
+      assert.are.same({ "shell" }, first)
+      assert.are.same({}, second)
+      assert.are.equal(1, #messages)
+      assert.is_true(messages[1]:find("Grep", 1, true) ~= nil)
+    end)
   end)
 
   describe("build", function()

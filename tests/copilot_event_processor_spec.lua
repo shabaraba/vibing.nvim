@@ -116,6 +116,60 @@ describe("copilot_event_processor", function()
     assert.are.equal("rate limited", table.concat(context.errorOutput, ""))
   end)
 
+  it("unwraps a table message on an error event", function()
+    process({ type = "error", data = { message = { message = "quota exceeded", code = "429" } } })
+    local text = table.concat(context.errorOutput, "")
+    assert.are.equal("quota exceeded", text)
+    assert.is_nil(text:find("table: 0x", 1, true))
+  end)
+
+  -- 以下 2 件のペイロードは copilot 1.0.78 の実行ログから採取したもの。
+  -- send_message.lua の on_tool_use は tool 名が Write/Edit で file_path が非 nil のときだけ
+  -- modified_file_paths に登録し、それが gd の diff 表示に使われる。
+  describe("real file tool payloads", function()
+    ---tool.execution_start を処理して on_tool_use が受け取った値を返す
+    ---@param data table
+    ---@return table
+    local function capture_tool_use(data)
+      local seen = nil
+      context.opts.on_tool_use = function(tool, file_path, command)
+        seen = { tool = tool, file_path = file_path, command = command }
+      end
+      process({ type = "tool.execution_start", data = data })
+      vim.wait(100, function()
+        return seen ~= nil
+      end, 10)
+      return seen
+    end
+
+    it("routes the create tool to Write with its path", function()
+      local seen = capture_tool_use({
+        toolCallId = "t1",
+        toolName = "create",
+        arguments = { path = "/tmp/note.txt", file_text = "hello" },
+      })
+      assert.are.same({ tool = "Write", file_path = "/tmp/note.txt", command = nil }, seen)
+    end)
+
+    it("routes the edit tool to Edit with its path", function()
+      local seen = capture_tool_use({
+        toolCallId = "t2",
+        toolName = "edit",
+        arguments = { path = "/tmp/target.txt", old_str = "old", new_str = "new" },
+      })
+      assert.are.same({ tool = "Edit", file_path = "/tmp/target.txt", command = nil }, seen)
+    end)
+
+    it("routes the view tool to Read with its path", function()
+      local seen = capture_tool_use({
+        toolCallId = "t3",
+        toolName = "view",
+        arguments = { path = "/tmp/target.txt" },
+      })
+      assert.are.same({ tool = "Read", file_path = "/tmp/target.txt", command = nil }, seen)
+    end)
+  end)
+
   it("ignores unrelated event types", function()
     assert.is_true(Processor.processLine(
       vim.json.encode({ type = "session.mcp_server_status_changed", data = {} }),
