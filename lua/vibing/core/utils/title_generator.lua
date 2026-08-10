@@ -7,23 +7,74 @@ local M = {}
 local filename_util = require("vibing.core.utils.filename")
 local language_utils = require("vibing.core.utils.language")
 
+-- Title generation only needs the gist of the conversation. Sending the whole
+-- history (or resuming/forking the full session) makes long chats fail with
+-- "Prompt is too long", so we build a bounded excerpt instead.
+-- Keep per-message and tail sizes small enough that first + tail comfortably fit
+-- under MAX_TOTAL_CHARS, so the final safety-net truncation never drops the most
+-- recent message (which matters most for the title).
+local MAX_MESSAGE_CHARS = 800
+local TAIL_MESSAGE_COUNT = 4
+local MAX_TOTAL_CHARS = 6000
+
+---@param s string
+---@param n integer
+---@return string
+local function truncate(s, n)
+  if #s > n then
+    return s:sub(1, n) .. "…"
+  end
+  return s
+end
+
+---会話から「最初のユーザーメッセージ＋末尾数メッセージ」の抜粋を作る。
+---各メッセージと全体の両方に上限を設け、長い会話でも context を超えないようにする。
+---@param conversation {role: string, content: string}[]
+---@return string
+local function build_excerpt(conversation)
+  local selected
+  if #conversation <= TAIL_MESSAGE_COUNT + 1 then
+    selected = conversation
+  else
+    selected = {}
+    -- 最初のユーザーメッセージでトピックを固定
+    for _, msg in ipairs(conversation) do
+      if msg.role == "user" then
+        selected[#selected + 1] = msg
+        break
+      end
+    end
+    -- 直近の文脈
+    for i = #conversation - TAIL_MESSAGE_COUNT + 1, #conversation do
+      selected[#selected + 1] = conversation[i]
+    end
+  end
+
+  local parts = {}
+  for _, msg in ipairs(selected) do
+    parts[#parts + 1] = string.format("[%s]: %s", msg.role, truncate(msg.content or "", MAX_MESSAGE_CHARS))
+  end
+  return truncate(table.concat(parts, "\n\n"), MAX_TOTAL_CHARS)
+end
+
 ---会話履歴からAIにタイトルを生成させる
----Claudeに会話全体を送信し、簡潔なファイル名用タイトルを生成
----結果はコールバックで非同期に返される
----session_idが渡された場合は --resume --fork-session で履歴をプロンプトキャッシュ参照させ、
----履歴の平文再送を避ける（新規セッションでのフルプライス送信を防ぐ）。省略時は従来通り
----会話全文をプロンプトに連結してフォールバックする。
+---会話の抜粋（最初のユーザーメッセージ＋末尾数メッセージ、各上限付き）をアダプタに送り、
+---簡潔なファイル名用タイトルを生成する。結果はコールバックで非同期に返される。
+---セッションの resume/fork は行わない（全履歴を読み込んで context を超過し
+---"Prompt is too long" になるのを避けるため）。そのため session_id は使用しない。
 ---@param conversation {role: string, content: string}[] 会話履歴
 ---@param callback fun(title: string?, error: string?) 結果コールバック
----@param session_id string? 対象チャットのセッションID（あればfork-sessionで再利用）
-function M.generate_from_conversation(conversation, callback, session_id)
+---@param session_id string? 後方互換のため受け取るが未使用（resume/forkは廃止）
+---@param adapter table? タイトル生成に使うアダプタ。省略時はグローバル既定を使う。
+function M.generate_from_conversation(conversation, callback, session_id, adapter)
+  local _ = session_id -- 後方互換で受け取るのみ（resume/fork廃止のため未使用）
   if not conversation or #conversation == 0 then
     callback(nil, "No conversation to generate title from")
     return
   end
 
   local vibing = require("vibing")
-  local adapter = vibing.get_adapter()
+  adapter = adapter or vibing.get_adapter()
   local config = vibing.get_config()
 
   if not adapter then
@@ -45,19 +96,9 @@ function M.generate_from_conversation(conversation, callback, session_id)
     lightweight = true,
   }
 
-  local prompt
-  if session_id and session_id ~= "" then
-    prompt = title_instruction
-    opts._session_id = session_id
-    opts._session_id_explicit = true
-    opts._is_fork = true
-  else
-    local conversation_text = {}
-    for _, msg in ipairs(conversation) do
-      table.insert(conversation_text, string.format("[%s]: %s", msg.role, msg.content))
-    end
-    prompt = table.concat(conversation_text, "\n\n") .. "\n\n" .. title_instruction
-  end
+  -- Always send a bounded excerpt as a fresh prompt (no resume/fork), so long
+  -- chats never exceed the context window.
+  local prompt = build_excerpt(conversation) .. "\n\n" .. title_instruction
 
   local collected_response = ""
 

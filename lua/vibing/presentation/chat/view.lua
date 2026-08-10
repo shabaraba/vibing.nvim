@@ -82,19 +82,7 @@ end
 ---現在のバッファがチャットバッファかチェック
 ---@return boolean
 function M.is_current_buffer_chat()
-  local current_buf = vim.api.nvim_get_current_buf()
-
-  -- アタッチ済みバッファをチェック
-  if M._attached_buffers[current_buf] then
-    return true
-  end
-
-  -- メインチャットバッファをチェック
-  if M._current_buffer and M._current_buffer.buf == current_buf then
-    return true
-  end
-
-  return false
+  return M.get_current() ~= nil
 end
 
 ---Get current chat buffer instance (for current buffer)
@@ -110,6 +98,21 @@ function M.get_current()
   -- Check main chat buffer
   if M._current_buffer and M._current_buffer.buf == current_buf then
     return M._current_buffer
+  end
+
+  -- Self-heal: the buffer is a chat file (by path or frontmatter) but was never
+  -- attached — e.g. the detection autocmd did not fire in time, or a cache went
+  -- stale. Attach it on demand so commands work regardless of autocmd timing,
+  -- instead of failing with "Not in a vibing chat buffer".
+  local file_path = vim.api.nvim_buf_get_name(current_buf)
+  if file_path and file_path ~= "" then
+    local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
+    if Frontmatter.is_vibing_chat_buffer(current_buf) then
+      local ok, chat_buf = pcall(M.attach_to_buffer, current_buf, file_path)
+      if ok and chat_buf then
+        return chat_buf
+      end
+    end
   end
 
   return nil

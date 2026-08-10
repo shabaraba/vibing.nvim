@@ -242,6 +242,29 @@ function M.is_vibing_chat_file(file_path)
   return false
 end
 
+---ファイルパスがvibing.nvimのチャット保存ディレクトリ配下かどうかを判定
+---内容（frontmatter）に依存しないため、ストリーミング途中や frontmatter 未完成の
+---ファイルでも確実にチャットとして認識できる。project/user のデフォルト保存先を
+---カバーする（custom save_dir は frontmatter 判定側で拾う）。
+---@param file_path string? ファイルパス
+---@return boolean
+function M.is_vibing_chat_path(file_path)
+  if not file_path or file_path == "" then
+    return false
+  end
+
+  local normalized = vim.fn.fnamemodify(file_path, ":p"):gsub("\\", "/")
+  -- project 保存先: <root>/.vibing/chat/ 、user 保存先: <data>/vibing/chats/
+  if normalized:match("/%.vibing/chat/[^/]+%.md$") then
+    return true
+  end
+  if normalized:match("/vibing/chats/[^/]+%.md$") then
+    return true
+  end
+
+  return false
+end
+
 ---バッファの内容がvibing.nvimチャットファイルかどうかを判定
 ---キャッシュを使用してパフォーマンスを最適化
 ---@param bufnr number バッファ番号
@@ -256,6 +279,14 @@ function M.is_vibing_chat_buffer(bufnr)
   -- confirmed chat buffer.
   local cached = vim.b[bufnr].vibing_is_chat_buffer
   if cached == true then
+    return true
+  end
+
+  -- Path-based detection first: files under the chat save directory are chats
+  -- regardless of content. This is content-independent, so it works even while a
+  -- buffer is still being streamed and its frontmatter is incomplete.
+  if M.is_vibing_chat_path(vim.api.nvim_buf_get_name(bufnr)) then
+    vim.b[bufnr].vibing_is_chat_buffer = true
     return true
   end
 
