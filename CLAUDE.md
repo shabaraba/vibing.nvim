@@ -49,47 +49,6 @@ npm run lint:md
 
 For Neovim testing, load the plugin and run `:VibingChat`.
 
-## Development Mode
-
-vibing.nvim supports two execution modes:
-
-**Production Mode (default):**
-
-- Uses compiled JavaScript from `dist/bin/agent-wrapper.js`
-- Requires `npm run build` after code changes
-- Faster startup time
-
-**Development Mode:**
-
-- Directly executes TypeScript from `bin/agent-wrapper.ts` using bun
-- No build step required - changes take effect immediately
-- Requires bun to be installed in PATH
-
-**Enable via Lazy.nvim (recommended):**
-
-```lua
-return {
-  "yourusername/vibing.nvim",
-  dev = true,  -- Automatically enables dev_mode
-  dir = "~/workspaces/nvim-plugins/vibing.nvim",
-  config = function()
-    require("vibing").setup({
-      -- node.dev_mode is automatically set to true when dev = true
-    })
-  end,
-}
-```
-
-**Manual enable:**
-
-```lua
-require("vibing").setup({
-  node = {
-    dev_mode = true,  -- Enable TypeScript direct execution with bun
-  },
-})
-```
-
 ## Documentation Structure
 
 Detailed documentation is organized in `.claude/rules/`:
