@@ -606,6 +606,7 @@ end
 ---@return table adapter
 function M._resolve_adapter(default_adapter, callbacks, config)
   local Modes = require("vibing.core.constants.modes")
+  local adapter_factory = require("vibing.infrastructure.adapter.factory")
   local frontmatter = callbacks.parse_frontmatter()
   local agent_type = frontmatter and frontmatter.agent
 
@@ -621,20 +622,11 @@ function M._resolve_adapter(default_adapter, callbacks, config)
     return default_adapter
   end
 
-  if default_adapter and default_adapter.name then
-    local expected_name = agent_type == "codex" and "codex_cli" or "claude_cli"
-    if default_adapter.name == expected_name then
-      return default_adapter
-    end
+  if default_adapter and default_adapter.name == adapter_factory.adapter_name(agent_type) then
+    return default_adapter
   end
 
-  if agent_type == "codex" then
-    local CodexCLI = require("vibing.infrastructure.adapter.codex_cli")
-    return CodexCLI:new(config)
-  else
-    local ClaudeCLI = require("vibing.infrastructure.adapter.claude_cli")
-    return ClaudeCLI:new(config)
-  end
+  return adapter_factory.create(agent_type, config)
 end
 
 return M

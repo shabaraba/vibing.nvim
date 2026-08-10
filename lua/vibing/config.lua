@@ -41,7 +41,7 @@
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
 ---アダプター選択、チャットウィンドウ、キーマップ、ツール権限を統合管理
----@field adapter? "claude"|"codex" バックエンドアダプター選択（デフォルト: "claude"）
+---@field adapter? "claude"|"codex"|"copilot" バックエンドアダプター選択（デフォルト: "claude"）
 ---@field agent Vibing.AgentConfig エージェント設定（モード、モデル）
 ---@field chat Vibing.ChatConfig チャットウィンドウ設定（位置、サイズ、自動コンテキスト、保存先）
 ---@field ui Vibing.UiConfig UI設定（wrap等）

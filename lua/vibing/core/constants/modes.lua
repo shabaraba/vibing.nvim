@@ -2,7 +2,7 @@
 ---モデル、権限モード、エージェントタイプの定数定義
 local M = {}
 
----有効なモデル（claude/codex共通で許可される名称。codex固有のモデル名はcodex_command_builder側で自由入力を許可）
+---有効なモデル（claude短縮名。codex/copilot固有のモデル名は各command_builder側で自由入力を許可）
 ---@type string[]
 M.VALID_MODELS = { "sonnet", "opus", "haiku", "fable" }
 
@@ -12,7 +12,7 @@ M.PERMISSION_MODES = { "default", "acceptEdits", "bypassPermissions", "plan", "d
 
 ---有効なエージェント（バックエンド）
 ---@type string[]
-M.VALID_AGENTS = { "claude", "codex" }
+M.VALID_AGENTS = { "claude", "codex", "copilot" }
 
 ---モデルが有効かチェック
 ---@param model string
