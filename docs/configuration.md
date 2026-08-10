@@ -17,6 +17,7 @@ Complete reference for every `require("vibing").setup()` option. Defaults shown 
 - [MCP](#mcp)
 - [Node.js Executable](#nodejs-executable)
 - [Language](#language)
+- [Project System Prompt](#project-system-prompt)
 - [Daily Summary](#daily-summary)
 
 ## Defaults at a Glance
@@ -435,6 +436,32 @@ language = {
   chat = "ja",     -- Chat responses (falls back to default)
 }
 ```
+
+## Project System Prompt
+
+`.vibing/system-prompt.md` holds instructions that apply to every chat in this project. The file
+is created empty the first time a chat is saved into the project, and its contents are appended to
+the system prompt of every request.
+
+```markdown
+Prefer `pnpm` over `npm` in this repository.
+Generated files live under `src/generated/` — never edit them by hand.
+```
+
+Notes:
+
+- Edits take effect from the **next message**; there is no reload command.
+- The system prompt is part of the prompt cache's forward prefix, so editing the file invalidates
+  the cached prefix once. Leaving it untouched keeps the cache intact across turns.
+- An empty or whitespace-only file is treated as "not set" and adds nothing to the request.
+- Content over 8 KiB is truncated (with a warning) to keep it from dominating every request.
+- Utility calls (title generation, summarize, daily summary) do not receive it.
+- The file is read from the project root Neovim was started in, and is not committed
+  (`.vibing/` is git-ignored) — it is per-checkout, not shared with collaborators.
+- A chat with a `working_dir` (a worktree under `.vibing/worktrees/<branch>/`) uses that
+  directory's `.vibing/system-prompt.md` when it exists and has content, and otherwise falls back
+  to the project root's file — so a worktree can override the project prompt without having to
+  copy it.
 
 ## Daily Summary
 
