@@ -72,7 +72,18 @@ function CopilotCLI:stream(prompt, opts, on_chunk, on_done)
   local handle_id = string.format("%016x_%x", vim.loop.hrtime(), math.random(100000))
   local session_id = opts._session_id
 
-  local cmd = CopilotCommandBuilder.build(prompt, opts, session_id, self.config)
+  -- The builder raises when the copilot binary is missing. The caller in send_message.lua
+  -- does not wrap stream() in pcall, so without this the chat buffer would show a raw Lua
+  -- stack trace instead of an actionable message.
+  local build_ok, cmd = pcall(CopilotCommandBuilder.build, prompt, opts, session_id, self.config)
+  if not build_ok then
+    local message = type(cmd) == "string" and cmd:gsub("^.*:%d+:%s*", "") or tostring(cmd)
+    vim.schedule(function()
+      on_done({ content = "", error = message, _handle_id = handle_id })
+    end)
+    return handle_id
+  end
+
   local output = {}
   local error_output = {}
 

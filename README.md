@@ -77,7 +77,8 @@ they compose well.
 - At least one AI CLI backend:
   - **Claude CLI** (`claude`) — `npm install -g @anthropic-ai/claude-code`
   - **Codex CLI** (`codex`) — `npm install -g @openai/codex`
-  - **GitHub Copilot CLI** (`copilot`) — `npm install -g @github/copilot`
+  - **GitHub Copilot CLI** (`copilot`) — `npm install -g @github/copilot` (needs Node.js 22+,
+    higher than the 18+ the MCP server itself requires)
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 
@@ -349,6 +350,8 @@ Switch globally with `adapter = "claude"|"codex"|"copilot"` in setup, or per-cha
 
 > **Note:** the Copilot backend does not yet support the in-chat Tool Approval UI. It runs with
 > `--allow-all-tools` and honors the `permissions.deny` list via copilot's `--deny-tool` flag.
+> Because the approval UI is what enforces `permissions.ask`, that list has no effect on Copilot —
+> tools listed there run without prompting. Use `permissions.deny` for anything that must not run.
 
 ### Why does it require Node.js?
 

@@ -43,6 +43,33 @@ describe("copilot_cli adapter", function()
     assert.is_nil(adapter:get_session_id("handle-a"))
   end)
 
+  it("reports a missing copilot binary through on_done instead of raising", function()
+    local Builder = require("vibing.infrastructure.adapter.modules.copilot_command_builder")
+    Builder._set_executable_path(nil)
+    local original_exepath = vim.fn.exepath
+    vim.fn.exepath = function()
+      return ""
+    end
+
+    local adapter = CopilotCLI:new({})
+    local response, raised = nil, nil
+    local ok = pcall(function()
+      adapter:stream("hi", {}, function() end, function(r)
+        response = r
+      end)
+    end)
+    raised = not ok
+
+    vim.fn.exepath = original_exepath
+    vim.wait(500, function()
+      return response ~= nil
+    end, 10)
+
+    assert.is_false(raised)
+    assert.is_not_nil(response)
+    assert.are.equal("Copilot CLI not found in PATH. Please install GitHub Copilot CLI.", response.error)
+  end)
+
   it("does not error when cancelling an unknown handle", function()
     local adapter = CopilotCLI:new({})
     assert.has_no.errors(function()

@@ -79,6 +79,7 @@ vibing.nvim は補完プラグイン(Copilot、Codeium)や他のチャットプ�
   - **Claude CLI**(`claude`)— `npm install -g @anthropic-ai/claude-code`
   - **Codex CLI**(`codex`)— `npm install -g @openai/codex`
   - **GitHub Copilot CLI**(`copilot`)— `npm install -g @github/copilot`
+    (Node.js 22+ が必要。MCP サーバー自体の要件 18+ より高い)
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim) を使う場合
 
@@ -352,6 +353,8 @@ setup の `adapter = "claude"|"codex"|"copilot"` でグローバルに、チャ�
 
 > **注意:** Copilot バックエンドはチャット内のツール承認 UI に未対応です。`--allow-all-tools` で
 > 実行され、`permissions.deny` は copilot の `--deny-tool` フラグ経由で反映されます。
+> `permissions.ask` を強制しているのは承認 UI なので、Copilot では ask リストは効果がなく、
+> 指定したツールは確認なしで実行されます。実行させたくないものは `permissions.deny` に入れてください。
 
 ### なぜ Node.js が必要なのですか?
 
