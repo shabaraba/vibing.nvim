@@ -127,6 +127,40 @@ no closing delimiter]]
     end)
   end)
 
+  describe("is_vibing_chat_buffer (UT-FM-005)", function()
+    local function make_buf(lines)
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      return buf
+    end
+
+    it("detects a chat buffer whose frontmatter closes past line 50", function()
+      -- Long permission arrays (e.g. codex sessions) push the closing `---`
+      -- well past line 50; the buffer check must still recognize it.
+      local lines = { "---", "vibing.nvim: true", "permissions_allow:" }
+      for i = 1, 80 do
+        table.insert(lines, "  - perm" .. i)
+      end
+      table.insert(lines, "---")
+      table.insert(lines, "# Vibing Chat")
+
+      local buf = make_buf(lines)
+      assert.is_true(frontmatter.is_vibing_chat_buffer(buf))
+    end)
+
+    it("does not stick a negative result while content is still incomplete", function()
+      -- A buffer mid-stream (frontmatter not yet closed) must not cache `false`,
+      -- otherwise it stays unrecognized forever once the content completes.
+      local buf = make_buf({ "---", "vibing.nvim: true" })
+      assert.is_false(frontmatter.is_vibing_chat_buffer(buf))
+      assert.is_nil(vim.b[buf].vibing_is_chat_buffer)
+
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "---", "vibing.nvim: true", "---", "# Vibing Chat" })
+      assert.is_true(frontmatter.is_vibing_chat_buffer(buf))
+      assert.is_true(vim.b[buf].vibing_is_chat_buffer)
+    end)
+  end)
+
   describe("roundtrip", function()
     it("should parse what it serializes", function()
       local original = {

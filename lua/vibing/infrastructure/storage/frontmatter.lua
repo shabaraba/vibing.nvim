@@ -252,19 +252,28 @@ function M.is_vibing_chat_buffer(bufnr)
   end
 
   -- Check cache first (buffer-local variable)
+  -- NOTE: only `true` is ever cached (see below), so a cached value is always a
+  -- confirmed chat buffer.
   local cached = vim.b[bufnr].vibing_is_chat_buffer
-  if cached ~= nil then
-    return cached
+  if cached == true then
+    return true
   end
 
-  -- Read enough lines to cover frontmatter (increased from 20 to 50)
-  -- This ensures we capture long permission arrays
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, 50, false)
+  -- Read enough lines to cover the whole frontmatter, matching is_vibing_chat_file.
+  -- 50 lines was not enough for chats with long permission arrays (e.g. codex
+  -- sessions), where the closing `---` can sit well past line 50.
+  local MAX_FRONTMATTER_LINES = 200
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, MAX_FRONTMATTER_LINES, false)
   local content = table.concat(lines, "\n")
   local is_chat = M.is_vibing_chat(content)
 
-  -- Cache the result
-  vim.b[bufnr].vibing_is_chat_buffer = is_chat
+  -- Only cache a positive result. Caching `false` would stick permanently while
+  -- a buffer is still being streamed/written (incomplete frontmatter), because
+  -- buffer-local vars survive `:edit` and nothing invalidates them — leaving a
+  -- valid chat file unrecognized. A `false` here just means "re-check next time".
+  if is_chat then
+    vim.b[bufnr].vibing_is_chat_buffer = true
+  end
 
   return is_chat
 end
