@@ -8,6 +8,7 @@ local ENUMS = {
   agent = {
     { value = "claude", description = "Claude CLI (Anthropic)" },
     { value = "codex", description = "Codex CLI (OpenAI)" },
+    { value = "copilot", description = "GitHub Copilot CLI" },
   },
   permissions_mode = {
     { value = "default", description = "Ask for confirmation before each tool use" },
@@ -33,6 +34,26 @@ local CODEX_MODELS = {
   { value = "gpt-5.4-mini", description = "GPT-5.4-Mini" },
   { value = "gpt-5.3-codex", description = "gpt-5.3-codex" },
   { value = "gpt-5.2", description = "gpt-5.2" },
+}
+
+---copilot は 30 種類以上のモデルを持つため、代表的なものだけを候補に出す。
+---実際に利用できるモデルは利用者のプランに依存するので、ここは候補提示であって検証ではない。
+local COPILOT_MODELS = {
+  { value = "auto", description = "Let Copilot pick the model" },
+  { value = "claude-sonnet-5", description = "Claude Sonnet 5" },
+  { value = "claude-opus-5", description = "Claude Opus 5" },
+  { value = "claude-haiku-4.5", description = "Claude Haiku 4.5 (fastest)" },
+  { value = "gpt-5.5", description = "GPT-5.5" },
+  { value = "gpt-5.4", description = "GPT-5.4" },
+  { value = "gpt-5.4-mini", description = "GPT-5.4 Mini" },
+  { value = "gpt-5.3-codex", description = "GPT-5.3 Codex" },
+  { value = "gemini-3.1-pro-preview", description = "Gemini 3.1 Pro (preview)" },
+}
+
+local MODELS_BY_AGENT = {
+  claude = CLAUDE_MODELS,
+  codex = CODEX_MODELS,
+  copilot = COPILOT_MODELS,
 }
 
 ---Available tool names for permissions lists
@@ -79,10 +100,10 @@ function M.get_enum_values(field)
 end
 
 ---Get model candidates for the given agent backend
----@param agent string? "claude" | "codex" (defaults to "claude")
+---@param agent string? "claude" | "codex" | "copilot" (defaults to "claude")
 ---@return Vibing.CompletionItem[]
 function M.get_model_values(agent)
-  local models = (agent == "codex") and CODEX_MODELS or CLAUDE_MODELS
+  local models = MODELS_BY_AGENT[agent] or CLAUDE_MODELS
   local items = {}
   for _, m in ipairs(models) do
     table.insert(items, {
