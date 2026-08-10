@@ -134,9 +134,9 @@ local function resolve_list_commands()
 
   local config = Config.get()
 
-  -- Always use compiled JS + node for list-commands regardless of dev_mode.
-  -- Running list-commands.ts via bun causes the process to hang indefinitely
-  -- due to SDK async operations not resolving under bun.
+  -- Always use compiled JS + node for list-commands: running list-commands.ts via
+  -- bun causes the process to hang indefinitely due to SDK async operations not
+  -- resolving under bun.
   local script_path = plugin_dir .. "/dist/bin/list-commands.js"
   if vim.fn.filereadable(script_path) ~= 1 then
     return nil, nil
