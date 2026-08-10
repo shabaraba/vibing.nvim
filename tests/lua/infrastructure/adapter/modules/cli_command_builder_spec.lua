@@ -106,6 +106,94 @@ describe("cli_command_builder", function()
     end)
   end)
 
+  describe("project-local system prompt (.vibing/system-prompt.md)", function()
+    local project_root
+    local original_getcwd
+
+    local function write_project_prompt(lines)
+      vim.fn.mkdir(project_root .. "/.vibing", "p")
+      vim.fn.writefile(lines, project_root .. "/.vibing/system-prompt.md")
+    end
+
+    before_each(function()
+      project_root = vim.fn.tempname()
+      vim.fn.mkdir(project_root, "p")
+      original_getcwd = vim.fn.getcwd
+      vim.fn.getcwd = function()
+        return project_root
+      end
+    end)
+
+    after_each(function()
+      vim.fn.getcwd = original_getcwd
+      vim.fn.delete(project_root, "rf")
+    end)
+
+    it("appends the file contents to --append-system-prompt", function()
+      write_project_prompt({ "Prefer tabs over spaces.", "Never touch generated/." })
+
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+      assert.is_true(prompt_text:find("Prefer tabs over spaces.", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("Never touch generated/.", 1, true) ~= nil)
+    end)
+
+    it("adds nothing when the file is missing", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local baseline = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+      write_project_prompt({ "" })
+      local cmd2 = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local with_empty_file = cmd2[find_flag(cmd2, "--append-system-prompt") + 1]
+
+      -- An empty (freshly created) file must be indistinguishable from no file at all
+      assert.equals(baseline, with_empty_file)
+    end)
+
+    it("adds nothing when the file is whitespace-only", function()
+      write_project_prompt({ "   ", "", "\t" })
+
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+      assert.is_nil(prompt_text:find("\t", 1, true))
+    end)
+
+    it("stays byte-identical across turns while the file is unchanged", function()
+      write_project_prompt({ "Project rule: always run the linter." })
+
+      local opts = { chat_file_path = "/tmp/chat-test.md" }
+      local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil, 9878)
+      local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil, 9878)
+
+      assert.equals(cmd1[find_flag(cmd1, "--append-system-prompt") + 1], cmd2[find_flag(cmd2, "--append-system-prompt") + 1])
+    end)
+
+    it("picks up an edit on the next request", function()
+      write_project_prompt({ "First revision." })
+      local cmd1 = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local before = cmd1[find_flag(cmd1, "--append-system-prompt") + 1]
+
+      write_project_prompt({ "Second revision." })
+      local cmd2 = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local after = cmd2[find_flag(cmd2, "--append-system-prompt") + 1]
+
+      assert.is_true(before:find("First revision.", 1, true) ~= nil)
+      assert.is_true(after:find("Second revision.", 1, true) ~= nil)
+      assert.is_nil(after:find("First revision.", 1, true))
+    end)
+
+    it("is not sent on lightweight (title/summary) calls", function()
+      write_project_prompt({ "Project rule: always run the linter." })
+
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, {}, nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+      assert.is_nil(prompt_text:find("always run the linter", 1, true))
+    end)
+  end)
+
   describe("--allowedTools", function()
     it("always pre-approves both vibing-nvim MCP registration styles (plain and plugin-scoped)", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
