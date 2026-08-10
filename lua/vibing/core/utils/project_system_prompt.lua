@@ -27,6 +27,24 @@ function M.ensure(project_root)
   end
 end
 
+--- Cut `s` down to at most `max_bytes` without splitting a UTF-8 character:
+--- walk back off any continuation bytes (`0b10xxxxxx`) left at the boundary.
+--- @param s string
+--- @param max_bytes number
+--- @return string
+local function cut_at_utf8_boundary(s, max_bytes)
+  local cut = max_bytes
+  while cut > 0 do
+    local next_byte = s:byte(cut + 1)
+    -- nil (nothing dropped), ASCII, or a lead byte all mean `cut` is a boundary
+    if not next_byte or next_byte < 0x80 or next_byte >= 0xC0 then
+      break
+    end
+    cut = cut - 1
+  end
+  return s:sub(1, cut)
+end
+
 --- Read the project-local system prompt.
 --- Returns nil when the file is missing, unreadable, empty, or whitespace-only,
 --- so callers can skip it without special-casing. Content over MAX_BYTES is
@@ -51,7 +69,7 @@ function M.read(project_root)
   end
 
   if #content > MAX_BYTES then
-    content = content:sub(1, MAX_BYTES)
+    content = cut_at_utf8_boundary(content, MAX_BYTES)
     require("vibing.core.utils.notify").warn(
       string.format(".vibing/system-prompt.md exceeds %d bytes - truncated", MAX_BYTES),
       "Config"
@@ -59,6 +77,26 @@ function M.read(project_root)
   end
 
   return content
+end
+
+--- Read the prompt that applies to a request running in `cwd`.
+---
+--- A chat with a `working_dir` (a worktree under `.vibing/worktrees/<branch>/`) runs
+--- the CLI there, so its own `.vibing/system-prompt.md` wins when it has content.
+--- Worktrees are separate checkouts and `.vibing/` is git-ignored, so that file
+--- usually doesn't exist there — fall back to the root Neovim was started in, which
+--- is where `ensure()` creates the file and where users actually edit it.
+--- @param cwd string|nil working directory of the request (`opts.cwd`)
+--- @return string|nil content
+function M.read_for_cwd(cwd)
+  local nvim_root = vim.fn.getcwd()
+  if cwd and cwd ~= "" and cwd ~= nvim_root then
+    local from_cwd = M.read(cwd)
+    if from_cwd then
+      return from_cwd
+    end
+  end
+  return M.read(nvim_root)
 end
 
 return M
