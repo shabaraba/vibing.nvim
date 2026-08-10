@@ -37,6 +37,18 @@ local function get_unique_file_path(dir, base_filename)
   return new_path
 end
 
+---会話から最初のユーザーメッセージの1行目を取り出す（タイトル生成フォールバック用）
+---@param conversation {role: string, content: string}[]
+---@return string? first_line
+local function first_user_line(conversation)
+  for _, msg in ipairs(conversation) do
+    if msg.role == "user" and msg.content and msg.content ~= "" then
+      return msg.content:match("^([^\n]+)") or msg.content
+    end
+  end
+  return nil
+end
+
 ---@param buf number
 ---@return boolean ok
 ---@return string? error
@@ -70,14 +82,40 @@ return function(_, chat_buffer)
   end
 
   local old_file_path = chat_buffer.file_path
-  local config = require("vibing").get_config()
+  local vibing = require("vibing")
+  local config = vibing.get_config()
   local save_dir = FileManager.get_save_directory(config.chat)
   local is_existing_file = old_file_path and vim.fn.filereadable(old_file_path) == 1
 
+  -- Resolve the adapter for THIS chat's agent (frontmatter "agent"), not the
+  -- global default. The session_id we pass below belongs to that agent; sending a
+  -- codex session_id to the claude adapter (or vice versa) makes --resume fail
+  -- with "no such session". If the agent has no session_id, generation still
+  -- works via the full-conversation fallback in title_generator.
+  -- Resolution failure must never block title generation, so fall back to the
+  -- default adapter (nil → title_generator uses vibing.get_adapter()).
+  local title_adapter = nil
+  if chat_buffer.parse_frontmatter then
+    local ok_adapter, resolved = pcall(function()
+      local SendMessage = require("vibing.application.chat.send_message")
+      return SendMessage._resolve_adapter(vibing.get_adapter(), {
+        parse_frontmatter = function()
+          return chat_buffer:parse_frontmatter()
+        end,
+      }, config)
+    end)
+    if ok_adapter then
+      title_adapter = resolved
+    end
+  end
+
   title_generator.generate_from_conversation(conversation, function(title, err)
     if err then
-      notify.error(string.format("Failed to generate title: %s", err))
-      return
+      -- Don't fail the rename just because AI title generation failed (prompt
+      -- too long, CLI/cache issues, offline). Fall back to a name derived from
+      -- the first user message; generate_with_title turns "" into "untitled".
+      title = first_user_line(conversation) or ""
+      notify.warn(string.format("Title generation failed (%s); using message-based name", err))
     end
 
     if not chat_buffer.buf or not vim.api.nvim_buf_is_valid(chat_buffer.buf) then
@@ -182,7 +220,7 @@ return function(_, chat_buffer)
         notify.warn(string.format("Failed to update %d file(s)", total_failed), "Link Sync")
       end
     end
-  end, chat_buffer:get_session_id())
+  end, chat_buffer:get_session_id(), title_adapter)
 
   return true
 end

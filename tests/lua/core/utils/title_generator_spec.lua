@@ -36,33 +36,45 @@ describe("title_generator.generate_from_conversation", function()
     package.loaded["vibing"] = nil
   end)
 
-  it("sends only the short instruction and sets fork opts when session_id is provided", function()
+  it("returns the sanitized title from the adapter", function()
     local result_title, result_err
     title_generator.generate_from_conversation(CONVERSATION, function(title, err)
       result_title = title
       result_err = err
-    end, "session-abc")
+    end)
 
     assert.is_nil(result_err)
     assert.equals("My_Title", result_title)
-    assert.equals("session-abc", captured_opts._session_id)
-    assert.is_true(captured_opts._is_fork)
-    assert.is_nil(captured_prompt:find("Hello there", 1, true))
   end)
 
-  it("falls back to sending the full conversation text when session_id is omitted", function()
-    title_generator.generate_from_conversation(CONVERSATION, function() end)
+  it("never resumes/forks a session (avoids 'Prompt is too long')", function()
+    -- Even when a session_id is passed (backward-compat arg), title generation
+    -- must send a fresh excerpt prompt instead of resuming the full session.
+    title_generator.generate_from_conversation(CONVERSATION, function() end, "session-abc")
 
     assert.is_nil(captured_opts._session_id)
     assert.is_nil(captured_opts._is_fork)
+    -- Short conversation: the excerpt still carries the actual content.
     assert.is_not_nil(captured_prompt:find("Hello there", 1, true))
     assert.is_not_nil(captured_prompt:find("General Kenobi", 1, true))
   end)
 
-  it("falls back to full conversation text when session_id is an empty string", function()
-    title_generator.generate_from_conversation(CONVERSATION, function() end, "")
+  it("bounds the prompt for long conversations", function()
+    local long = {}
+    long[#long + 1] = { role = "user", content = "FIRST_TOPIC_ANCHOR" }
+    for i = 1, 40 do
+      long[#long + 1] = { role = "assistant", content = "middle message " .. i .. " " .. string.rep("x", 4000) }
+    end
+    long[#long + 1] = { role = "user", content = "LAST_RECENT_MESSAGE" }
 
-    assert.is_nil(captured_opts._session_id)
-    assert.is_not_nil(captured_prompt:find("Hello there", 1, true))
+    title_generator.generate_from_conversation(long, function() end, "session-abc")
+
+    -- First user message is kept as a topic anchor and the tail is included...
+    assert.is_not_nil(captured_prompt:find("FIRST_TOPIC_ANCHOR", 1, true))
+    assert.is_not_nil(captured_prompt:find("LAST_RECENT_MESSAGE", 1, true))
+    -- ...but the whole history is not sent verbatim (a far-middle message is dropped).
+    assert.is_nil(captured_prompt:find("middle message 1 ", 1, true))
+    -- And the total prompt stays bounded.
+    assert.is_true(#captured_prompt < 20000)
   end)
 end)

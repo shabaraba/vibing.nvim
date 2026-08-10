@@ -94,14 +94,21 @@ function M.create_exit_handler(handleId, handles, output, errorOutput, onDone)
 
       -- onDone は常に呼び出される（エラー時も正常終了時も）
       -- これによりキューがブロックされるのを防ぐ
-      if obj.code ~= 0 or #errorOutput > 0 then
-        local error_msg = table.concat(errorOutput, "")
-        if error_msg == "" and obj.code ~= 0 then
-          error_msg = "Claude Code process exited with code " .. obj.code
-        end
-        -- Always show stderr if there's content (may contain plugin errors)
-        if #errorOutput > 0 then
-          vim.notify(string.format("[vibing] Process stderr:\n%s", error_msg:sub(1, 500)), vim.log.levels.WARN)
+      local stderr_text = table.concat(errorOutput, "")
+
+      -- stderr に出力があっても、それだけでは失敗としない。
+      -- CLI は正常終了(code 0)でも非致命的な警告を stderr に出すことがあり
+      -- （例: codex の "failed to load models cache" 警告）、それで生成済みの
+      -- stdout を握り潰すとタイトル生成などが不必要に失敗する。失敗判定は
+      -- 終了コードで行い、stderr は可視化のため通知だけ残す。
+      if #errorOutput > 0 then
+        vim.notify(string.format("[vibing] Process stderr:\n%s", stderr_text:sub(1, 500)), vim.log.levels.WARN)
+      end
+
+      if obj.code ~= 0 then
+        local error_msg = stderr_text
+        if error_msg == "" then
+          error_msg = "Process exited with code " .. tostring(obj.code)
         end
         onDone({
           content = table.concat(output, ""),
