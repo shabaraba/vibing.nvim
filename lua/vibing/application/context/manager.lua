@@ -124,7 +124,13 @@ end
 ---表示用フォーマット
 ---@return string
 function M.format_for_display()
-  local contexts = M.get_all(true)
+  local config = require("vibing.config")
+  local auto_context = config.options and config.options.chat and config.options.chat.auto_context
+  if auto_context == nil then
+    auto_context = true
+  end
+
+  local contexts = M.get_all(auto_context)
   if #contexts == 0 then
     return "No context"
   end
