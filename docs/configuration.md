@@ -458,6 +458,10 @@ Notes:
 - Utility calls (title generation, summarize, daily summary) do not receive it.
 - The file is read from the project root Neovim was started in, and is not committed
   (`.vibing/` is git-ignored) — it is per-checkout, not shared with collaborators.
+- A chat with a `working_dir` (a worktree under `.vibing/worktrees/<branch>/`) uses that
+  directory's `.vibing/system-prompt.md` when it exists and has content, and otherwise falls back
+  to the project root's file — so a worktree can override the project prompt without having to
+  copy it.
 
 ## Daily Summary
 

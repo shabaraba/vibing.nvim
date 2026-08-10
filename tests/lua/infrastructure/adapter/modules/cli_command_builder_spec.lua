@@ -192,6 +192,50 @@ describe("cli_command_builder", function()
 
       assert.is_nil(prompt_text:find("always run the linter", 1, true))
     end)
+
+    describe("with a worktree working_dir (opts.cwd)", function()
+      local worktree_root
+
+      local function write_worktree_prompt(lines)
+        vim.fn.mkdir(worktree_root .. "/.vibing", "p")
+        vim.fn.writefile(lines, worktree_root .. "/.vibing/system-prompt.md")
+      end
+
+      before_each(function()
+        worktree_root = project_root .. "/.vibing/worktrees/feature-x"
+        vim.fn.mkdir(worktree_root, "p")
+      end)
+
+      it("prefers the worktree's own file over the project root's", function()
+        write_project_prompt({ "Root rule." })
+        write_worktree_prompt({ "Worktree rule." })
+
+        local cmd = cli_command_builder.build("hello", { cwd = worktree_root }, nil, {}, nil)
+        local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+        assert.is_true(prompt_text:find("Worktree rule.", 1, true) ~= nil)
+        assert.is_nil(prompt_text:find("Root rule.", 1, true))
+      end)
+
+      it("falls back to the project root when the worktree has no file", function()
+        write_project_prompt({ "Root rule." })
+
+        local cmd = cli_command_builder.build("hello", { cwd = worktree_root }, nil, {}, nil)
+        local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+        assert.is_true(prompt_text:find("Root rule.", 1, true) ~= nil)
+      end)
+
+      it("falls back to the project root when the worktree file is empty", function()
+        write_project_prompt({ "Root rule." })
+        write_worktree_prompt({ "" })
+
+        local cmd = cli_command_builder.build("hello", { cwd = worktree_root }, nil, {}, nil)
+        local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+        assert.is_true(prompt_text:find("Root rule.", 1, true) ~= nil)
+      end)
+    end)
   end)
 
   describe("--allowedTools", function()
