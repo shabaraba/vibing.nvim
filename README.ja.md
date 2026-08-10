@@ -10,7 +10,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Release](https://img.shields.io/github/v/release/shabaraba/vibing.nvim)](https://github.com/shabaraba/vibing.nvim/releases)
 
-**Claude** と **Codex** を CLI バックエンドとして統合し、コンテキストを理解した
+**Claude**・**Codex**・**GitHub Copilot** を CLI バックエンドとして統合し、コンテキストを理解した
 AI チャットをエディタ内で直接利用できる Neovim プラグイン。
 
 [English](./README.md) | 日本語
@@ -44,9 +44,9 @@ CLI バックエンドと MCP 統合を通じて、AI に**実行中の Neovim �
 
 - **🤖 Neovim をエージェントのツールに** — MCP 経由で AI がバッファの読み書き、コマンド実行、
   LSP クエリ(診断・定義・参照・シンボル)を*実行中の*エディタに対して行える
-- **🔀 マルチバックエンド** — Claude CLI(`claude -p --output-format stream-json`)または
-  Codex CLI(`codex exec --json`)。`adapter` 設定でグローバルに、チャットごとには
-  frontmatter の `agent` フィールドで切り替え
+- **🔀 マルチバックエンド** — Claude CLI(`claude -p --output-format stream-json`)、
+  Codex CLI(`codex exec --json`)、GitHub Copilot CLI(`copilot -p --output-format json`)。
+  `adapter` 設定でグローバルに、チャットごとには frontmatter の `agent` フィールドで切り替え
 - **💾 ファイルベースのセッション永続化** — チャットは `.vibing/chat/` 配下の YAML frontmatter
   付き Markdown ファイル。持ち運び可能・再開可能(CLI セッション状態を完全復元)・監査可能・
   バージョン管理可能
@@ -78,6 +78,7 @@ vibing.nvim は補完プラグイン(Copilot、Codeium)や他のチャットプ�
 - AI CLI バックエンドを最低1つ:
   - **Claude CLI**(`claude`)— `npm install -g @anthropic-ai/claude-code`
   - **Codex CLI**(`codex`)— `npm install -g @openai/codex`
+  - **GitHub Copilot CLI**(`copilot`)— `npm install -g @github/copilot`
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim) を使う場合
 
@@ -228,7 +229,7 @@ AI は同じバッファ内に応答します。`<C-c>` で実行中のリクエ
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",              -- "claude" | "codex"
+  adapter = "claude",              -- "claude" | "codex" | "copilot"
   chat = {
     window = {
       position = "current",        -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
@@ -267,7 +268,7 @@ vibing.nvim: true
 session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
 working_dir: .vibing/worktrees/feature-x  # オプション: 作業ディレクトリ(git ルートからの相対パス)
-agent: claude  # claude | codex(このチャットに限りグローバルの adapter 設定を上書き)
+agent: claude  # claude | codex | copilot(このチャットに限りグローバルの adapter 設定を上書き)
 mode: code  # code | plan | explore
 model: sonnet  # sonnet | opus | haiku | fable
 permission_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk | auto
@@ -322,11 +323,13 @@ graph TB
     subgraph AI["AI CLI Backends"]
         Claude["Claude CLI<br/>(claude -p --output-format stream-json)"]
         Codex["Codex CLI<br/>(codex exec --json)"]
+        Copilot["Copilot CLI<br/>(copilot -p --output-format json)"]
     end
 
     RPC <-->|JSON-RPC| MCPServer
     Plugin -->|spawns & communicates<br/>JSON Lines| Claude
     Plugin -->|spawns & communicates<br/>JSON Lines| Codex
+    Plugin -->|spawns & communicates<br/>JSON Lines| Copilot
 ```
 
 | 観点             | 従来の REST API     | vibing.nvim(CLI アダプター)    |
@@ -342,15 +345,19 @@ graph TB
 
 - **Claude CLI**(`claude -p --output-format stream-json`)— Claude Code のフル機能
 - **Codex CLI**(`codex exec --json`)— OpenAI Codex バックエンド
+- **GitHub Copilot CLI**(`copilot -p --output-format json`)— GitHub Copilot バックエンド
 
-setup の `adapter = "claude"|"codex"` でグローバルに、チャットファイルの frontmatter に
-`agent: claude` / `agent: codex` を書けばチャット単位で切り替えられます。
+setup の `adapter = "claude"|"codex"|"copilot"` でグローバルに、チャットファイルの frontmatter に
+`agent: claude` / `agent: codex` / `agent: copilot` を書けばチャット単位で切り替えられます。
+
+> **注意:** Copilot バックエンドはチャット内のツール承認 UI に未対応です。`--allow-all-tools` で
+> 実行され、`permissions.deny` は copilot の `--deny-tool` フラグ経由で反映されます。
 
 ### なぜ Node.js が必要なのですか?
 
 MCP サーバーに必要です。MCP サーバーは実行中の Neovim インスタンスへの直接アクセス
 (バッファ読み書き・LSP クエリ・コマンド実行)を AI に提供します。AI CLI バイナリ
-(`claude`、`codex`)自体は別途インストールします。
+(`claude`、`codex`、`copilot`)自体は別途インストールします。
 
 ### Claude Code CLI と比べてどうですか?
 
@@ -358,9 +365,9 @@ vibing.nvim は Claude Code CLI と同等の機能を Neovim に統合したも�
 
 - 内部では同じ `claude` CLI を使用
 - MCP でエディタを制御(CLI はターミナルを、vibing は Neovim を制御)
-- OpenAI ワークフロー向けに Codex バックエンドも選択可能
+- Anthropic 以外のワークフロー向けに Codex / GitHub Copilot バックエンドも選択可能
 
-「Neovim ユーザーのための Claude Code(または Codex)」と考えてください。
+「Neovim ユーザーのための Claude Code(または Codex、Copilot)」と考えてください。
 
 ### 他の AI プラグインと併用できますか?
 
@@ -380,6 +387,7 @@ MIT License — 詳細は LICENSE ファイルを参照してください。
 
 - [Claude AI](https://claude.ai)
 - [Codex CLI](https://github.com/openai/codex)
+- [GitHub Copilot CLI](https://github.com/github/copilot-cli)
 - [GitHub リポジトリ](https://github.com/shabaraba/vibing.nvim)
 
 ---

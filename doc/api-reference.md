@@ -24,7 +24,7 @@
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",  -- "claude" | "codex"
+  adapter = "claude",  -- "claude" | "codex" | "copilot"
   agent = {
     default_mode = "code",     -- "code" | "plan" | "explore"
     default_model = "sonnet",  -- "sonnet" | "opus" | "haiku" | "fable"
@@ -413,7 +413,7 @@ require("vibing.context").clear()
 
 ```lua
 ---@class Vibing.Config
----@field adapter "claude"|"codex" バックエンドアダプター選択
+---@field adapter "claude"|"codex"|"copilot" バックエンドアダプター選択
 ---@field agent Vibing.AgentConfig エージェント設定（モード、モデル）
 ---@field chat Vibing.ChatConfig チャット設定
 ---@field ui Vibing.UiConfig UI設定

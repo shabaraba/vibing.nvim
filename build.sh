@@ -224,6 +224,17 @@ if [ -f "dist/index.js" ]; then
         fi
     fi
 
+    # Register MCP server with copilot (if available)
+    if command -v copilot &> /dev/null; then
+        echo "[vibing.nvim] Registering MCP server with copilot..."
+        if VIBING_RPC_PORT="${VIBING_RPC_PORT:-9876}" copilot mcp add vibing-nvim -- "$NODE_EXECUTABLE" "$MCP_SERVER_PATH" 2>/dev/null; then
+            echo "[vibing.nvim] ✓ Registered vibing-nvim MCP server with copilot"
+        else
+            echo "[vibing.nvim] ⚠ Warning: copilot MCP registration failed"
+            echo "[vibing.nvim] You can manually register by running: copilot mcp add vibing-nvim -- $NODE_EXECUTABLE $MCP_SERVER_PATH"
+        fi
+    fi
+
     exit 0
 else
     echo "[vibing.nvim] ✗ Build failed: dist/index.js not found"
