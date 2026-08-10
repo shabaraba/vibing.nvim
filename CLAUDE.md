@@ -4,8 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-vibing.nvim is a Neovim plugin that integrates Claude AI through the Agent SDK.
-It provides chat within Neovim.
+vibing.nvim is a Neovim plugin that provides a Claude chat inside Neovim by spawning the `claude`
+CLI directly (`claude -p --output-format stream-json`) and parsing its stream. There is no
+Node.js agent wrapper process; the Node side is only the MCP server, two hook scripts, and a
+slash-command lister. A Codex CLI backend is also supported. See
+`.claude/rules/architecture.md`.
 
 ## Commands
 
@@ -13,14 +16,11 @@ It provides chat within Neovim.
 # Install dependencies
 npm install
 
-# Build TypeScript to JavaScript (production mode)
+# Build the Node.js side (MCP server + bin/list-commands.ts) into dist/
 npm run build
 
 # Build with watch mode (for development)
 npm run build:watch
-
-# Test Agent SDK wrapper directly
-node dist/bin/agent-wrapper.js --prompt "Say hello" --cwd $(pwd)
 
 # Run Lua tests (requires Neovim with plenary.nvim)
 npm run test:lua
@@ -101,7 +101,7 @@ Detailed documentation is organized in `.claude/rules/`:
 | `permissions.md`        | Permission system, granular rules, Tool Approval UI                             |
 | `self-development.md`   | Guidelines for developing vibing.nvim with vibing.nvim                          |
 | `self-testing.md`       | E2E testing procedures, 3-try auto-fix rule, test helper reference              |
-| `features.md`           | Message timestamps, AskUserQuestion support                                     |
+| `features.md`           | Auto-resume on usage limit, message timestamps, AskUserQuestion support         |
 | `configuration.md`      | Full configuration examples, window positions, daily summary                    |
 | `commands-reference.md` | User commands, slash commands                                                   |
 | `web-workflow.md`       | Claude Code on the Web git push requirements                                    |

@@ -1,7 +1,7 @@
 # Developing vibing.nvim with vibing.nvim
 
-When you (Claude Agent SDK) are working on vibing.nvim itself, follow these guidelines to
-leverage vibing.nvim's built-in workflows.
+When you are working on vibing.nvim itself, follow these guidelines to leverage vibing.nvim's
+built-in workflows.
 
 ## Preferred Workflows
 
