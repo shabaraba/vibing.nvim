@@ -68,19 +68,6 @@ describe("cli_command_builder", function()
       assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer number:", 1, true))
     end)
 
-    it("never embeds the chat file path, which a rename would change mid-conversation", function()
-      local cmd = cli_command_builder.build(
-        "hello",
-        { chat_bufnr = 12, chat_file_path = "/tmp/chat-test.md" },
-        nil,
-        {},
-        nil
-      )
-      local idx = find_flag(cmd, "--append-system-prompt")
-      local prompt_text = cmd[idx + 1]
-      assert.is_nil(prompt_text:find("/tmp/chat-test.md", 1, true))
-    end)
-
     it("keeps the system prompt byte-identical when only the chat file path changes", function()
       local before = cli_command_builder.build("hello", { chat_bufnr = 12, chat_file_path = "/tmp/a.md" }, nil, {}, nil)
       local after = cli_command_builder.build(
@@ -350,7 +337,7 @@ describe("cli_command_builder", function()
     it("omits the worktree/ask_user_question/rpc_port tool instructions from the system prompt", function()
       local cmd = cli_command_builder.build(
         "hello",
-        { lightweight = true, chat_file_path = "/tmp/chat-test.md" },
+        { lightweight = true, chat_bufnr = 12 },
         nil,
         {},
         nil,
@@ -362,7 +349,7 @@ describe("cli_command_builder", function()
       assert.is_nil(prompt_text:find(".vibing/worktrees/", 1, true))
       assert.is_nil(prompt_text:find("nvim_ask_user_question", 1, true))
       assert.is_nil(prompt_text:find("Your rpc_port for this turn is", 1, true))
-      assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer file:", 1, true))
+      assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer number:", 1, true))
     end)
 
     it("still applies the language instruction to the system prompt", function()

@@ -102,18 +102,6 @@ describe("active_stream_registry", function()
       assert.equals("b", stream.handle_id)
     end)
 
-    it("keeps matching after the chat file is renamed mid-turn", function()
-      local registry = fresh_registry()
-      registry.register({ handle_id = "a", chat_bufnr = 11, adapter = {} })
-      registry.register({ handle_id = "b", chat_bufnr = 12, adapter = {} })
-
-      -- The buffer keeps its number across a rename, so routing stays exact instead of
-      -- degrading to the sole-stream fallback (which cannot disambiguate here anyway).
-      local stream = registry.get_by_chat_bufnr(11)
-      assert.is_not_nil(stream)
-      assert.equals("a", stream.handle_id)
-    end)
-
     it("falls back to the sole stream when chat_bufnr is nil", function()
       local registry = fresh_registry()
       registry.register({ handle_id = "only", chat_bufnr = 7, adapter = {} })

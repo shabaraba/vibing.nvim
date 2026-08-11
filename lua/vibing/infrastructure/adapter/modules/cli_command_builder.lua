@@ -236,10 +236,7 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
       )
     end
 
-    -- Buffer number rather than file path: it identifies the chat just as well for routing, but
-    -- survives `:VibingSetFileTitle` renaming the chat file mid-conversation. A path here would
-    -- change from the next turn onward and invalidate the cached system+history prefix — a rename
-    -- is part of the recommended workflow, so that was not rare. See issue #489.
+    -- Buffer number, not file path: it survives a rename, keeping this prefix byte-stable (#489).
     if opts.chat_bufnr then
       table.insert(system_prompt_lines, "Current vibing.nvim chat buffer number: " .. tostring(opts.chat_bufnr))
     end

@@ -52,8 +52,10 @@ end
 --- Get an active stream entry by chat buffer number — the stable value embedded in the system
 --- prompt (see cli_command_builder.lua), used to route mcp__vibing-nvim__nvim_ask_user_question
 --- calls instead of a per-turn handle_id (see the ActiveStreamEntry docstring, issues #469/#489).
---- Unlike M.get(), a non-matching bufnr still falls back to the sole registered stream rather than
---- returning nil — safe only because there's no other candidate to confuse it with.
+--- Unlike M.get(), a non-matching bufnr still falls back to the sole registered stream: `--resume`
+--- replays earlier turns, so the model can read a buffer number from a previous Neovim session and
+--- pass one that no longer exists. With a single stream there is no other candidate to confuse it
+--- with; with several, the loop above is what decides.
 --- @param chat_bufnr number|nil
 --- @return ActiveStreamEntry|nil
 function M.get_by_chat_bufnr(chat_bufnr)

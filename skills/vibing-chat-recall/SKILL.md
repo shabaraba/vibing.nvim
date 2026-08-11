@@ -43,10 +43,11 @@ and stop.
    buffer's current content. This is the _live_ in-memory content, including edits that haven't
    been written to disk yet — vibing.nvim chat buffers are not auto-saved, so the on-disk file
    can lag behind what's actually been discussed.
-2. If that MCP call fails (no RPC connection, Neovim not reachable), call
-   `mcp__vibing-nvim__nvim_list_buffers` to find the chat file's path by `bufnr` and read it from
-   disk with the normal `Read` tool. This may miss the most recent unsaved exchange, but is
-   better than nothing.
+2. If that call reports an invalid buffer — a resumed conversation can replay a buffer number
+   from an earlier Neovim session — call `mcp__vibing-nvim__nvim_list_buffers`, find the chat
+   file by name, and use its current `bufnr`.
+3. If the RPC connection itself is down (Neovim not reachable), there is no fallback: every other
+   route to the buffer goes over the same channel. Tell the user briefly and stop.
 
 ## Responding
 

@@ -117,9 +117,6 @@ function M.execute(adapter, callbacks, message, config)
     local opts = {
       streaming = true,
       action_type = "chat",
-      chat_file_path = vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_get_name(bufnr) or nil,
-      -- Routing key for nvim_ask_user_question. Unlike the path, it does not change when the chat
-      -- file is renamed, so the system prompt stays byte-stable across the conversation (#489).
       chat_bufnr = vim.api.nvim_buf_is_valid(bufnr) and bufnr or nil,
       mode = frontmatter.mode,
       model = frontmatter.model,

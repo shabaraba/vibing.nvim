@@ -30,24 +30,20 @@ predictable for later listing (see the `vibing-worktree-list` skill).
    If this fails (branch already checked out elsewhere, etc.), the error is self-explanatory —
    surface it verbatim rather than retrying blindly with a different name.
 
-3. Find this chat's own buffer. The system prompt contains a line like
-   `Current vibing.nvim chat buffer number: 12` — that `bufnr` is this conversation's chat
-   buffer. It is injected per-request by vibing.nvim and is always accurate even when multiple
-   chat buffers are open. Avoid calling `mcp__vibing-nvim__nvim_get_info` for this purpose; it
-   returns whichever buffer currently has focus in Neovim and may return the wrong one.
-4. Edit that chat's frontmatter through the live Neovim buffer, not the file on disk — a brand-new
+3. Edit this chat's frontmatter through the live Neovim buffer, not the file on disk — a brand-new
    chat (first exchange in a freshly opened buffer) has no file on disk yet, so `Read`/`Edit`
    against a path will simply fail or find nothing. Use the `vibing-nvim` MCP tools instead,
    which operate on buffer content regardless of save state:
-   1. Call `nvim_get_buffer({ bufnr })` with the buffer number from the system prompt to read the
-      current content. Don't assume `bufnr: 0` (current buffer) — the chat buffer may not have
-      focus.
+   1. Call `nvim_get_buffer({ bufnr })` with the buffer number from the system prompt's
+      `Current vibing.nvim chat buffer number:` line to read the current content. Don't reach for
+      `nvim_get_info` or `bufnr: 0` — those give whichever buffer has focus, which may be another
+      one entirely.
    2. Set `working_dir: .vibing/worktrees/<branch>` (relative to the git root) in the frontmatter
       block, then call `nvim_set_buffer({ bufnr, lines })` with the full updated content.
 
    Don't open a new chat buffer — the current conversation continues, and its next turn already
    runs in the new worktree.
 
-5. If the `vibing-nvim` MCP connection isn't available at all, tell the user the worktree is
+4. If the `vibing-nvim` MCP connection isn't available at all, tell the user the worktree is
    ready at `.vibing/worktrees/<branch>` and that they'll need to set `working_dir` in the chat's
    frontmatter by hand (or open a new chat there) to actually start using it.
