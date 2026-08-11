@@ -136,31 +136,6 @@ local language_utils = require("vibing.core.utils.language")
 
 local M = {}
 
----Flatten the legacy `{ default = "x", patterns = {...} }` marker form to a plain string.
----`patterns` was documented but never implemented — marker resolution only ever receives a tool
----name, never the command string — so it is dropped with an explicit warning rather than being
----silently ignored the way it used to be. See issue #502.
----@param key string Tool name for error messages
----@param marker table Legacy marker definition
----@return string|nil
-local function flatten_legacy_marker(key, marker)
-  if marker.patterns ~= nil then
-    notify.warn(
-      string.format("ui.tool_markers.%s.patterns is not supported and has no effect - remove it", key)
-    )
-  end
-
-  if type(marker.default) == "string" and marker.default ~= "" then
-    notify.warn(
-      string.format('ui.tool_markers.%s: use the marker string directly instead of { default = ... }', key)
-    )
-    return marker.default
-  end
-
-  notify.warn(string.format("Invalid ui.tool_markers.%s: expected a non-empty string - removing", key))
-  return nil
-end
-
 ---Validate tool_markers configuration
 ---Markers are a flat "tool name -> marker string" table.
 ---@param markers table Tool markers config to validate
@@ -176,7 +151,18 @@ local function validate_tool_markers(markers)
         validated[key] = marker
       end
     elseif type(marker) == "table" then
-      validated[key] = flatten_legacy_marker(key, marker)
+      -- Legacy `{ default = "x", patterns = {...} }`. `patterns` was documented but never
+      -- implemented — resolution only ever receives a tool name, never the command string — so
+      -- the whole form is dropped loudly rather than silently ignored. See issue #502.
+      notify.warn(
+        string.format(
+          "ui.tool_markers.%s: give the marker string directly; { default = ..., patterns = ... } is no longer supported",
+          key
+        )
+      )
+      if type(marker.default) == "string" and marker.default ~= "" then
+        validated[key] = marker.default
+      end
     else
       notify.warn(
         string.format("Invalid ui.tool_markers.%s: must be a string, got %s", key, type(marker))

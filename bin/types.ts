@@ -3,9 +3,8 @@
  */
 
 /**
- * Markers displayed in chat output when a tool runs: a flat "tool name -> marker" table.
- * Marker resolution only ever sees the tool name, so a marker cannot vary with a tool's
- * arguments.
+ * Markers displayed in chat output when a tool runs: a flat "tool name -> marker" table, with
+ * `default` used for tools that have no entry of their own.
  *
  * @example
  * ```typescript
@@ -17,11 +16,6 @@
  * ```
  */
 export interface ToolMarkersConfig {
-  /** Marker for the Task tool */
-  Task?: string;
-  /** Marker for tools without a specific entry */
-  default?: string;
-  /** Tool-specific markers */
   [toolName: string]: string | undefined;
 }
 

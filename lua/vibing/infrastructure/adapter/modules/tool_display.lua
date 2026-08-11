@@ -18,20 +18,14 @@ function M.get_markers_config()
 end
 
 --- Resolve tool marker from config
---- Markers are a flat "tool name -> marker string" table; config.lua normalises anything else
---- away before it gets here.
 --- @param tool_name string
---- @param markers table<string, string>|nil
+--- @param markers table<string, string>|nil Flat table; config.lua normalises anything else away
 --- @return string
 function M.resolve_marker(tool_name, markers)
   if not markers then
     return DEFAULT_MARKER
   end
-  local marker = markers[tool_name]
-  if type(marker) == "string" then
-    return marker
-  end
-  return markers.default or DEFAULT_MARKER
+  return markers[tool_name] or markers.default or DEFAULT_MARKER
 end
 
 --- Get tool result display mode from vibing.config
