@@ -1,5 +1,5 @@
 ---@class Vibing.Core.ToolsConstants
----Agent SDKで利用可能なツールの定数定義
+---Claude CLIで利用可能なツールの定数定義
 local M = {}
 
 ---有効なツール名の配列

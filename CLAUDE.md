@@ -25,6 +25,9 @@ npm run build:watch
 # Run Lua tests (requires Neovim with plenary.nvim)
 npm run test:lua
 
+# Run Node.js tests (tests/**/*.test.mjs)
+npm run test:node
+
 # Run E2E tests
 npm run test:e2e
 

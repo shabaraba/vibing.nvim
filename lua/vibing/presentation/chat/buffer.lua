@@ -576,7 +576,7 @@ function ChatBuffer:update_filename_from_message(message)
 end
 
 ---AskUserQuestion の選択肢を保存
----@param questions table Agent SDKから受け取った質問構造
+---@param questions table CLIから受け取った質問構造
 function ChatBuffer:insert_choices(questions)
   self._pending_choices = questions
 end

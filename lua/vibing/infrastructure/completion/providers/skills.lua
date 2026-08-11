@@ -208,7 +208,7 @@ local function parse_commands_output(stdout)
   return items
 end
 
----Start async load of dynamic skills from Agent SDK
+---Start async load of dynamic skills from the CLI
 ---Loads in background; sets _bundled_cache when done and invalidates _cache
 local function start_async_load()
   if _loading or _bundled_cache then
@@ -296,7 +296,7 @@ local function invalidate_if_stale()
   _cache = nil
 end
 
----Get dynamic skills from Agent SDK (custom commands + plugin skills)
+---Get dynamic skills from the CLI (custom commands + plugin skills)
 ---Returns cached result immediately; starts async load if not yet cached
 ---@return Vibing.CompletionItem[]
 local function get_dynamic_sdk_skills()

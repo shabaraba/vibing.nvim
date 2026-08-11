@@ -258,7 +258,7 @@ function M._apply_chat_buffer_settings(bufnr)
         send_message.cleanup_snapshots(bufnr)
       end
     end,
-    desc = "Cancel running Agent SDK process on buffer unload",
+    desc = "Cancel running CLI process on buffer unload",
   })
 
   -- ウィンドウローカル設定（現在のウィンドウに適用）

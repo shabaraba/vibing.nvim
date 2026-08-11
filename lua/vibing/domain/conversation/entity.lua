@@ -56,7 +56,7 @@ function Conversation:clear()
   self.messages = {}
 end
 
----Agent SDK形式に変換
+---辞書のリスト形式に変換
 ---@return table[]
 function Conversation:to_sdk_format()
   local result = {}
