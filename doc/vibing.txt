@@ -20,8 +20,10 @@ This help is deliberately short. The authoritative, always-current references
 are kept in the repository:
 
     Every setup() option ...... docs/configuration.md
-    Commands & keybindings .... README.md, "🚀 Usage"
     Architecture .............. .claude/rules/architecture.md
+
+Commands, slash commands and keybindings are documented here (sections 5-7);
+they carry the |:VibingChat|-style tags, so this file is their reference.
 
 ==============================================================================
 1. INTRODUCTION                                          *vibing-introduction*
@@ -108,7 +110,7 @@ actually tend to change: >lua
         -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk"
         -- | "bypassPermissions"
         mode = "acceptEdits",
-        allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill" },
+        -- omit allow/deny to keep the shipped defaults
         deny = { "Bash" },
       },
       -- "ja", or { default = "ja", chat = "ja" }
@@ -270,12 +272,15 @@ with YAML frontmatter: >
     created_at: 2026-01-01T12:00:00
     working_dir: .vibing/worktrees/fix-auth   # optional, relative to git root
     agent: claude
+    mode: code                                # code | plan | explore
     model: sonnet
     permission_mode: acceptEdits
     permissions_allow:
       - Read
       - Edit
     permissions_deny:
+      - Bash
+    permissions_ask:
       - Bash
     language: ja                              # optional
     ---
@@ -349,8 +354,7 @@ Seeing what the CLI actually sent:~
     Set |g:vibing_debug_stream| to log the spawned command, its PID and the
     stream events it produces via |vim.notify()|: >lua
     vim.g.vibing_debug_stream = true
-<    (The old `vim.g.vibing_debug` flag was never read by anything.)
-
+<
 Reporting a bug:~
     https://github.com/shabaraba/vibing.nvim/issues
 

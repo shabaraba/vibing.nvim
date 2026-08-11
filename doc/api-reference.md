@@ -241,32 +241,15 @@ OpenAI の `codex` CLI（`codex exec --json`）を使用するアダプター。
 `vibing.setup()` / `vibing.get_adapter()` / `vibing.get_config()` と、上のアダプター
 インターフェース以外は内部実装であり、予告なく変わる。
 
-以前このドキュメントには Context API (`require("vibing.context")`)、Chat Buffer API、
-Output Buffer API の節があったが、いずれも v4 のレイヤー分割で移動・削除されており、
-記載どおりのモジュールはもう存在しない（`vibing.context` と Output Buffer は現存せず、
-チャットバッファは `vibing.presentation.chat.buffer` に移り、メソッド構成も変わっている）。
-誤った API を載せ続けるより外すほうが害が小さいため、節ごと削除した。
-
 現在のモジュール構成は `.claude/rules/architecture.md` の "Module Structure" を参照。
 
 ## Types
 
 ### `Vibing.Config`
 
-```lua
----@class Vibing.Config
----@field adapter "claude"|"codex" バックエンドアダプター選択
----@field agent Vibing.AgentConfig エージェント設定（モード、モデル）
----@field chat Vibing.ChatConfig チャット設定
----@field ui Vibing.UiConfig UI設定
----@field keymaps Vibing.KeymapConfig キーマップ設定
----@field diff Vibing.DiffConfig diff表示設定
----@field permissions Vibing.PermissionsConfig 権限設定
----@field node Vibing.NodeConfig Node.js実行ファイル設定
----@field mcp Vibing.McpConfig MCP統合設定
----@field language string|Vibing.LanguageConfig? AI応答のデフォルト言語
----@field daily_summary Vibing.DailySummaryConfig? Daily Summary機能設定
-```
+`setup()` が受け取る設定オブジェクト。フィールド一覧と型注釈は
+`lua/vibing/config.lua` の `---@class Vibing.Config`、各項目の意味と既定値は
+`docs/configuration.md` にある。ここに写すと設定が増えるたびに古くなるので置かない。
 
 ### `Vibing.AdapterOpts`
 
