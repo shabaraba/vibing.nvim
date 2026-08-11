@@ -6,8 +6,6 @@ local M = {}
 
 --- @class ActiveStreamEntry
 --- @field handle_id string
---- @field chat_file_path? string The chat buffer's path at the time the turn started. Informational
----   only — routing uses chat_bufnr, since the path changes when the chat file is renamed.
 --- @field chat_bufnr? number Stable value (the "Current vibing.nvim chat buffer number" line
 ---   embedded in the system prompt) used to route nvim_ask_user_question calls without a per-turn
 ---   handle_id, which would otherwise defeat Anthropic's prompt cache (see issues #469, #489).

@@ -104,8 +104,8 @@ describe("active_stream_registry", function()
 
     it("keeps matching after the chat file is renamed mid-turn", function()
       local registry = fresh_registry()
-      registry.register({ handle_id = "a", chat_bufnr = 11, chat_file_path = "/tmp/old-name.md", adapter = {} })
-      registry.register({ handle_id = "b", chat_bufnr = 12, chat_file_path = "/tmp/chat-b.md", adapter = {} })
+      registry.register({ handle_id = "a", chat_bufnr = 11, adapter = {} })
+      registry.register({ handle_id = "b", chat_bufnr = 12, adapter = {} })
 
       -- The buffer keeps its number across a rename, so routing stays exact instead of
       -- degrading to the sole-stream fallback (which cannot disambiguate here anyway).
