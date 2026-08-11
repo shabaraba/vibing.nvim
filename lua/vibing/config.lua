@@ -106,7 +106,7 @@
 ---位置、幅、高さ、枠線スタイルを制御
 ---@field position "right"|"left"|"top"|"bottom"|"back"|"current"|"float" ウィンドウ位置（"right": 右分割、"left": 左分割、"top": 上分割、"bottom": 下分割、"back": バッファのみ作成、"current": 現在のウィンドウ、"float": フローティング）
 ---@field width number ウィンドウ幅（0-1の小数で画面比率、1以上で絶対カラム数。right/left/floatで使用）
----@field height number ウィンドウ高さ（0-1の小数で画面比率、1以上で絶対行数。top/bottom/floatで使用。float未指定時のみ0.8）
+---@field height number? ウィンドウ高さ（0-1の小数で画面比率、1以上で絶対行数。top/bottom/floatで使用）。未指定時の既定値は位置により異なり、分割は0.4、floatは0.8
 ---@field border string 枠線スタイル（"rounded", "single", "double", "none"等）。floatのみ有効で、値は`nvim_open_win`にそのまま渡される（vibing.nvim側の検証はしない）
 
 ---@class Vibing.KeymapConfig
@@ -242,7 +242,10 @@ M.defaults = {
     window = {
       position = "current",
       width = 0.4,
-      height = 0.4,
+      -- heightは意図的に未設定。位置ごとに既定値が違う（分割は0.4、floatは0.8）ので、
+      -- ここで値を埋めると「ユーザーが指定したのか既定値なのか」が区別できなくなり、
+      -- floatが常に分割用の既定値で描画されてしまう。window_manager側の
+      -- DEFAULT_HEIGHT_RATIO / DEFAULT_FLOAT_HEIGHT_RATIO が既定値の正。
       border = "rounded",
     },
     auto_context = true,
