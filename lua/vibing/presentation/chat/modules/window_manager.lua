@@ -30,15 +30,24 @@ M._resolve_size = resolve_size
 ---@param win_config table ウィンドウ設定
 ---@return number? winnr ウィンドウ番号（"back"の場合はnil）
 function M.create_window(buf, win_config)
-  local width = resolve_size(win_config.width, vim.o.columns, DEFAULT_WIDTH_RATIO)
-  local height = resolve_size(win_config.height, vim.o.lines, DEFAULT_HEIGHT_RATIO)
   local win
 
   if win_config.position == "current" then
     -- 現在のウィンドウで新規バッファを開く
     win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(win, buf)
-  elseif win_config.position == "right" then
+    return win
+  elseif win_config.position == "back" then
+    -- バッファのみ作成、ウィンドウは作成しない
+    -- バッファはlistされているので、:bnext等でアクセス可能
+    return nil
+  end
+
+  -- ここから先はサイズを使う分岐だけ
+  local width = resolve_size(win_config.width, vim.o.columns, DEFAULT_WIDTH_RATIO)
+  local height = resolve_size(win_config.height, vim.o.lines, DEFAULT_HEIGHT_RATIO)
+
+  if win_config.position == "right" then
     vim.cmd("botright vsplit")
     vim.cmd("vertical resize " .. width)
     win = vim.api.nvim_get_current_win()
@@ -58,10 +67,6 @@ function M.create_window(buf, win_config)
     vim.cmd("resize " .. height)
     win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(win, buf)
-  elseif win_config.position == "back" then
-    -- バッファのみ作成、ウィンドウは作成しない
-    -- バッファはlistされているので、:bnext等でアクセス可能
-    return nil
   else
     -- float
     -- heightが設定されていればfloatでも尊重する（未設定時のみ従来の0.8）

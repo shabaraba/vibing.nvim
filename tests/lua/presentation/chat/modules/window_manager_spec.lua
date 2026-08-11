@@ -49,11 +49,24 @@ describe("window_manager.create_window", function()
     end
   end)
 
-  it("honours an absolute width on a right split", function()
-    local win = window_manager.create_window(buf, { position = "right", width = 30 })
-    assert.is_not_nil(win)
-    assert.equals(30, vim.api.nvim_win_get_width(win))
-    vim.api.nvim_win_close(win, true)
+  it("honours an absolute width on the vertical splits", function()
+    for _, position in ipairs({ "right", "left" }) do
+      local win = window_manager.create_window(buf, { position = position, width = 30 })
+      assert.is_not_nil(win, position)
+      assert.equals(30, vim.api.nvim_win_get_width(win), position)
+      vim.api.nvim_win_close(win, true)
+    end
+  end)
+
+  it("honours an absolute height on the horizontal splits", function()
+    -- top/bottom are the only positions that feed `height` to :resize, so they need their own
+    -- coverage even though resolve_size is shared.
+    for _, position in ipairs({ "top", "bottom" }) do
+      local win = window_manager.create_window(buf, { position = position, height = 8 })
+      assert.is_not_nil(win, position)
+      assert.equals(8, vim.api.nvim_win_get_height(win), position)
+      vim.api.nvim_win_close(win, true)
+    end
   end)
 
   it("honours the configured height on a float instead of the hardcoded 0.8", function()
