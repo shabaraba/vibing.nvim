@@ -1,14 +1,14 @@
 # API Reference
 
-このドキュメントは vibing.nvim の全 API の詳細なリファレンスです。
+vibing.nvim が公開している API のリファレンス。設定項目そのものは
+[docs/configuration.md](../docs/configuration.md) を参照。
 
 ## 目次
 
 - [Core API](#core-api)
 - [Adapter API](#adapter-api)
-- [Context API](#context-api)
-- [Chat Buffer API](#chat-buffer-api)
-- [Output Buffer API](#output-buffer-api)
+- [Internal Modules](#internal-modules)
+- [Types](#types)
 
 ## Core API
 
@@ -70,7 +70,7 @@ end
 
 ```lua
 local config = require("vibing").get_config()
-print(config.adapter)  -- "agent_sdk"
+print(config.adapter)  -- "claude"
 ```
 
 ## Adapter API
@@ -186,18 +186,18 @@ end
 
 ### Adapter Types
 
-#### Agent SDK Adapter
+#### Claude CLI Adapter
 
-Claude Agent SDK を使用するアダプター（推奨）。
+`claude` CLI を直接 spawn するアダプター（デフォルト）。
+`claude -p --output-format stream-json` の出力をパースする。
 
 **Configuration:**
 
 ```lua
 {
-  adapter = "agent_sdk",
+  adapter = "claude",
   agent = {
-    mode = "command",  -- または "agentic"
-    model = "claude-sonnet-4-5",
+    default_model = "sonnet",  -- "sonnet" | "opus" | "haiku" | "fable"
   },
 }
 ```
@@ -208,20 +208,23 @@ Claude Agent SDK を使用するアダプター（推奨）。
 - ✅ Tools
 - ✅ Model selection
 - ✅ Context
-- ✅ Session management
+- ✅ Session management（`--resume <session_id>`）
 
-#### Claude CLI Adapter
+**Implementation:** `lua/vibing/infrastructure/adapter/claude_cli.lua`
 
-公式 `claude` CLI を使用するアダプター。
+#### Codex CLI Adapter
+
+OpenAI の `codex` CLI（`codex exec --json`）を使用するアダプター。
 
 **Configuration:**
 
 ```lua
 {
-  adapter = "claude",
-  cli_path = "claude",  -- CLI のパス
+  adapter = "codex",
 }
 ```
+
+チャットごとに切り替える場合は frontmatter の `agent: codex` を使う。
 
 **Features:**
 
@@ -229,183 +232,22 @@ Claude Agent SDK を使用するアダプター（推奨）。
 - ✅ Tools
 - ✅ Model selection
 - ✅ Context
-- ❌ Session management
-
-#### Claude ACP Adapter
-
-JSON-RPC プロトコルでclaude-code-acpと通信するアダプター。
-
-**Configuration:**
-
-```lua
-{
-  adapter = "claude_acp",
-}
-```
-
-**Features:**
-
-- ✅ Streaming
-- ✅ Tools
-- ❌ Model selection
-- ✅ Context
 - ✅ Session management
 
-## Context API
+**Implementation:** `lua/vibing/infrastructure/adapter/codex_cli.lua`
 
-### `Context.add(path?)`
+## Internal Modules
 
-手動でコンテキストを追加します。
+`vibing.setup()` / `vibing.get_adapter()` / `vibing.get_config()` と、上のアダプター
+インターフェース以外は内部実装であり、予告なく変わる。
 
-**Parameters:**
+以前このドキュメントには Context API (`require("vibing.context")`)、Chat Buffer API、
+Output Buffer API の節があったが、いずれも v4 のレイヤー分割で移動・削除されており、
+記載どおりのモジュールはもう存在しない（`vibing.context` と Output Buffer は現存せず、
+チャットバッファは `vibing.presentation.chat.buffer` に移り、メソッド構成も変わっている）。
+誤った API を載せ続けるより外すほうが害が小さいため、節ごと削除した。
 
-- `path` (`string?`): ファイルパス（省略時は現在のバッファ）
-
-**Example:**
-
-```lua
-local Context = require("vibing.context")
-Context.add("lua/vibing/init.lua")
-Context.add()  -- 現在のバッファを追加
-```
-
-### `Context.clear()`
-
-全てのコンテキストをクリアします。
-
-**Example:**
-
-```lua
-require("vibing.context").clear()
-```
-
-### `Context.get_all(auto_context)`
-
-全コンテキストを取得します（自動 + 手動）。
-
-**Parameters:**
-
-- `auto_context` (`boolean`): 自動コンテキストを含めるか
-
-**Returns:**
-
-- `string[]`: コンテキスト配列（@file:path形式）
-
-### `Context.get_selection()`
-
-ビジュアル選択範囲のコンテキストを取得します。
-
-**Returns:**
-
-- `string?`: コンテキスト（@file:path:L10-L25形式）
-
-## Chat Buffer API
-
-### `ChatBuffer:new(config)`
-
-チャットバッファインスタンスを生成します。
-
-**Parameters:**
-
-- `config` (`Vibing.ChatConfig`): チャット設定
-
-**Returns:**
-
-- `Vibing.ChatBuffer`: 新しいチャットバッファインスタンス
-
-### `ChatBuffer:open()`
-
-チャットウィンドウを開きます。
-
-### `ChatBuffer:close()`
-
-チャットウィンドウを閉じます。
-
-### `ChatBuffer:is_open()`
-
-チャットウィンドウが開いているかチェックします。
-
-**Returns:**
-
-- `boolean`: 開いている場合true
-
-### `ChatBuffer:append_chunk(chunk)`
-
-ストリーミングチャンクを追加します。
-
-**Parameters:**
-
-- `chunk` (`string`): 追加するテキスト
-
-### `ChatBuffer:start_spinner()`
-
-処理中スピナーを開始します。
-
-### `ChatBuffer:stop_spinner()`
-
-処理中スピナーを停止します。
-
-### `ChatBuffer:save()`
-
-チャットをファイルに保存します。
-
-**Returns:**
-
-- `string?`: 保存したファイルパス（失敗時はnil）
-
-## Output Buffer API
-
-### `OutputBuffer:new(title)`
-
-出力バッファインスタンスを生成します。
-
-**Parameters:**
-
-- `title` (`string`): バッファタイトル
-
-**Returns:**
-
-- `Vibing.OutputBuffer`: 新しい出力バッファインスタンス
-
-### `OutputBuffer:open()`
-
-出力ウィンドウを開きます。
-
-### `OutputBuffer:close()`
-
-出力ウィンドウを閉じます。
-
-### `OutputBuffer:is_open()`
-
-出力ウィンドウが開いているかチェックします。
-
-**Returns:**
-
-- `boolean`: 開いている場合true
-
-### `OutputBuffer:set_content(lines)`
-
-バッファの内容を設定します。
-
-**Parameters:**
-
-- `lines` (`string[]`): 設定する行の配列
-
-### `OutputBuffer:append_chunk(chunk)`
-
-ストリーミングチャンクを追加します。
-
-**Parameters:**
-
-- `chunk` (`string`): 追加するテキスト
-
-### `OutputBuffer:show_error(error_message)`
-
-エラーメッセージを表示します。
-
-**Parameters:**
-
-- `error_message` (`string`): エラーメッセージ
+現在のモジュール構成は `.claude/rules/architecture.md` の "Module Structure" を参照。
 
 ## Types
 
@@ -446,6 +288,6 @@ require("vibing.context").clear()
 
 ## See Also
 
-- [Getting Started Tutorial](tutorials/getting-started.md)
-- [Configuration Examples](examples/configurations.md)
-- [Architecture Overview](architecture/overview.md)
+- [Configuration Reference](../docs/configuration.md)
+- [`:help vibing`](./vibing.txt)
+- [Architecture](../.claude/rules/architecture.md)

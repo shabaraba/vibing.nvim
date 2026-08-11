@@ -1,4 +1,4 @@
-*vibing.txt*  Claude AI integration for Neovim
+*vibing.txt*  Claude chat inside Neovim, driven by the Claude/Codex CLI
 
 ==============================================================================
 CONTENTS                                                     *vibing-contents*
@@ -8,33 +8,49 @@ CONTENTS                                                     *vibing-contents*
     3. Installation ............................ |vibing-installation|
     4. Configuration ........................... |vibing-configuration|
     5. Commands ................................ |vibing-commands|
-    6. Chat Commands ........................... |vibing-chat-commands|
+    6. Slash Commands .......................... |vibing-slash-commands|
     7. Mappings ................................ |vibing-mappings|
-    8. API ..................................... |vibing-api|
-    9. Adapters ................................ |vibing-adapters|
-   10. Troubleshooting ......................... |vibing-troubleshooting|
-   11. License ................................. |vibing-license|
+    8. Chat File Format ........................ |vibing-chat-file|
+    9. Backends ................................ |vibing-backends|
+   10. API ..................................... |vibing-api|
+   11. Troubleshooting ......................... |vibing-troubleshooting|
+   12. License ................................. |vibing-license|
+
+This help is deliberately short. The authoritative, always-current references
+are kept in the repository:
+
+    Every setup() option ...... docs/configuration.md
+    Commands & keybindings .... README.md, "Usage"
+    Architecture .............. .claude/rules/architecture.md
 
 ==============================================================================
 1. INTRODUCTION                                          *vibing-introduction*
 
-vibing.nvim is a Neovim plugin that integrates Claude AI through the Agent
-SDK, providing an intelligent chat interface directly within your
-editor.
+vibing.nvim runs a Claude conversation inside a Neovim buffer. It spawns the
+`claude` CLI directly (`claude -p --output-format stream-json`) and parses its
+stream; there is no wrapper daemon. A Codex CLI backend is also supported.
 
 Features:~
-  • Interactive chat window with Claude AI
-  • Session persistence with context management
-  • Configurable permissions and execution modes
-  • Remote Neovim control via socket
+  • Chat in an ordinary Markdown buffer — edit, yank and search as usual
+  • Chats persist to disk with YAML frontmatter, and resume by session id
+  • Per-chat model, language and tool permissions
+  • Tool approval and multiple-choice questions rendered in the buffer
+  • An MCP server that lets the CLI read and drive the running Neovim
+  • Per-request diffs, viewable with `gd` on a file path in the chat
 
 ==============================================================================
 2. REQUIREMENTS                                          *vibing-requirements*
 
-• Neovim >= 0.8.0
-• Node.js >= 16.0.0
-• npm or yarn
-• Claude API access (via Agent SDK)
+• Neovim >= 0.10 (uses |vim.system()|)
+• Node.js >= 18 (for the MCP server)
+• At least one CLI backend on your PATH:
+    - Claude CLI: npm install -g @anthropic-ai/claude-code
+    - Codex CLI:  npm install -g @openai/codex
+
+Optional:~
+• oil.nvim — |:VibingContext| with no argument picks up the file under the
+  cursor in an oil buffer
+• plenary.nvim — required only to run the test suite
 
 ==============================================================================
 3. INSTALLATION                                          *vibing-installation*
@@ -42,256 +58,301 @@ Features:~
 Using lazy.nvim: >lua
     {
       "shabaraba/vibing.nvim",
-      build = "npm install",
+      dependencies = {
+        "stevearc/oil.nvim",  -- optional
+      },
+      build = "./build.sh",
       config = function()
         require("vibing").setup()
       end,
     }
 <
-
 Using packer.nvim: >lua
     use {
       "shabaraba/vibing.nvim",
-      run = "npm install",
+      run = "./build.sh",
       config = function()
         require("vibing").setup()
       end,
     }
 <
-
+`build.sh` builds the MCP server and, when the `claude` CLI is on your PATH,
+registers vibing.nvim as a Claude Code plugin (user scope). That plugin ships
+the `vibing-nvim` MCP server, the bundled skills and the `nvim-navigator`
+subagent. To install it by hand instead: >
+    /plugin marketplace add shabaraba/vibing.nvim
+    /plugin install vibing-nvim@vibing-nvim
+<
 ==============================================================================
 4. CONFIGURATION                                        *vibing-configuration*
 
-Default configuration: >lua
+`require("vibing").setup()` works with no arguments. The options people
+actually tend to change: >lua
     require("vibing").setup({
-      adapter = "agent_sdk",  -- "agent_sdk" | "claude" | "claude_acp"
+      adapter = "claude",               -- "claude" | "codex"
       chat = {
         window = {
-          position = "right",  -- "right" | "left" | "float"
+          -- "current" | "right" | "left" | "top" | "bottom" | "back"
+          -- | "float"
+          position = "current",
+          -- ratio below 1, absolute columns at 1 and above
           width = 0.4,
-          border = "rounded",
         },
-        auto_context = true,
         save_location_type = "project",  -- "project" | "user" | "custom"
       },
       agent = {
-        default_mode = "code",  -- "code" | "plan" | "explore"
-        default_model = "sonnet",  -- "sonnet" | "opus" | "haiku"
+        -- "sonnet" | "opus" | "haiku" | "fable"
+        default_model = "sonnet",
       },
       permissions = {
-        allow = { "Read", "Edit", "Write", "Glob", "Grep" },
+        -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk"
+        -- | "bypassPermissions"
+        mode = "acceptEdits",
+        allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill" },
         deny = { "Bash" },
       },
-      keymaps = {
-        send = "<CR>",
-        cancel = "<C-c>",
-        add_context = "<C-a>",
-      },
+      -- "ja", or { default = "ja", chat = "ja" }
+      language = nil,
     })
 <
+The permissions above are only a starting point for new chat files. What
+gets enforced at runtime is the permission block in each chat file's own
+frontmatter — see |vibing-chat-file|.
 
-Configuration options:~
-
-adapter                 Which backend to use for Claude AI
-chat.window.position    Where to open chat window
-chat.window.width       Chat window width (0.0-1.0 or absolute)
-chat.window.border      Window border style
-chat.auto_context       Automatically add open buffers to context
-chat.save_location_type Where to save chat files
-agent.default_mode      Default execution mode
-agent.default_model     Default AI model to use
-permissions.allow       Tools AI can use
-permissions.deny        Tools AI cannot use
-keymaps.send           Key to send message in chat
-keymaps.cancel         Key to cancel current request
-keymaps.add_context    Key to add file to context
+For the full list — window details, UI and tool markers, diff backends,
+granular permission rules, MCP, Node.js executable, auto-resume on usage
+limit, daily summary — read docs/configuration.md. It is generated against
+lua/vibing/config.lua and is the only complete reference; this section is not
+kept in sync field by field.
 
 ==============================================================================
 5. COMMANDS                                                  *vibing-commands*
 
-                                                              *:VibingChat*
-:VibingChat
-    Open the chat window.
+                                                                *:VibingChat*
+:VibingChat [{position}|{file}]
+    Create a new chat. {position} is one of `current` (replace the current
+    window), `right`, `left`, `top`, `bottom` (splits sized by
+    `chat.window.width`/`height`) or `back` (buffer only, no window).
+    Passing a path opens that saved chat file instead of creating one.
 
-                                                           *:VibingContext*
-:VibingContext [path]
-    Add file to context. If no path provided, adds current buffer.
+                                                          *:VibingToggleChat*
+:VibingToggleChat
+    Toggle the chat window without ending the conversation.
 
-                                                      *:VibingClearContext*
+                                                            *:VibingChatFork*
+:VibingChatFork [{position}]
+    Branch a new chat off the current one. The fork inherits the source
+    session and diverges from its first message onward.
+
+                                                       *:VibingSlashCommands*
+:VibingSlashCommands
+    Open the slash-command picker for the current chat.
+
+                                                        *:VibingSetFileTitle*
+:VibingSetFileTitle
+    Generate a title from the conversation and rename the chat file.
+
+                                                           *:VibingSummarize*
+:VibingSummarize
+    Summarise the conversation so far and insert it into the buffer.
+
+                                                         *:VibingDeleteChats*
+:VibingDeleteChats [--unrenamed]
+    Pick chat files to delete. With `--unrenamed`, delete every chat that
+    still has its generated filename.
+
+                                                           *:VibingCleanMote*
+:VibingCleanMote
+    Drop mote objects belonging to chat files, keeping the chats themselves.
+
+                                                             *:VibingContext*
+:[range]VibingContext [{path}]
+    Add a file to the context. With no argument, uses the current buffer — or
+    the file under the cursor in an oil.nvim buffer. Accepts a range to add
+    only the selected lines.
+
+                                                        *:VibingClearContext*
 :VibingClearContext
-    Clear all context files.
+    Clear every context entry.
 
-                                                            *:VibingCancel*
+                                                              *:VibingCancel*
 :VibingCancel
-    Cancel the current AI request.
+    Cancel the request in flight.
+
+                                                       *:VibingPendingResumes*
+:VibingPendingResumes
+    List chats parked until a usage limit resets.
+
+                                                        *:VibingCancelResume*
+:VibingCancelResume [all]
+    Cancel this chat's pending auto-resume, or every one with `all`.
+
+                                                              *:VibingMoteDir*
+:VibingMoteDir [{dir}]
+    Add a directory to this chat's mote tracking list (defaults to the
+    current working directory).
+
+                                                      *:VibingReloadCommands*
+:VibingReloadCommands
+    Reload custom slash commands and completion candidates.
+
+                                                *:VibingCopyUnsentUserHeader*
+:VibingCopyUnsentUserHeader
+    Copy `## User <!-- unsent -->` to the clipboard.
+
+                                                        *:VibingDailySummary*
+:VibingDailySummary [{YYYY-MM-DD}]
+    Summarise this project's chat files for a day (default: today).
+
+                                                     *:VibingDailySummaryAll*
+:VibingDailySummaryAll [{YYYY-MM-DD}]
+    Same, across every chat file rather than just this project's.
 
 ==============================================================================
-6. CHAT COMMANDS                                        *vibing-chat-commands*
+6. SLASH COMMANDS                                      *vibing-slash-commands*
 
-These commands are available within the chat buffer:
+Type these on their own line in a chat buffer and send with `<CR>`:
 
-/context <file>         Add file to context
-/clear                  Clear context
-/save                   Save current chat
-/summarize              Summarize conversation
-/mode <mode>            Set execution mode (auto/plan/code)
-/model <model>          Set AI model (opus/sonnet/haiku)
+/context <file>         Add a file to the context
+/clear                  Clear the context
+/save                   Save the current chat
+/summarize              Summarise the conversation
+/model <model>          Set the model (sonnet|opus|haiku|fable)
+/help                   List the available slash commands
+/permissions, /perm     Interactive permission builder
+/allow [tool]           Add to the allow list, or show it
+/deny [tool]            Add to the deny list, or show it
+/ask [tool]             Require approval for a tool, or show the list
+/permission [mode]      Set the permission mode
+/new-session            Forget the session and start fresh
+
+`/allow`, `/deny` and `/ask` accept granular patterns such as `Bash(git:*)`,
+`Read(src/**/*.ts)` and `WebFetch(github.com)`; prefix a tool with `-` to
+remove it (e.g. `/allow -Bash`).
+
+Worktree workflows (list, create, attach, run, finish) are not slash commands.
+Ask for them in plain language — they are backed by the bundled
+`vibing-worktree-*` Claude Code skills.
 
 ==============================================================================
 7. MAPPINGS                                                  *vibing-mappings*
 
-Default keymaps in chat buffer:~
+In a chat buffer:~
 
-<CR>        Send message
-<C-c>       Cancel current request
-<C-a>       Add current file to context
+    <CR>        Send the message (normal mode)
+    <C-c>       Cancel the current request
+    <C-a>       Add a file to the context
+    gd          Show the diff for the file path under the cursor
+    gf          Open the file path under the cursor
+    gx          Open the URL on the current line in a browser
+    q           Close the chat window
 
-You can customize these in setup(): >lua
+Everything except `q` is configurable: >lua
     require("vibing").setup({
       keymaps = {
-        send = "<C-CR>",
-        cancel = "<Esc>",
-        add_context = "<C-f>",
+        send = "<CR>",
+        cancel = "<C-c>",
+        add_context = "<C-a>",
+        open_diff = "gd",
+        open_file = "gf",
+        open_url = "gx",
       },
     })
 <
+==============================================================================
+8. CHAT FILE FORMAT                                         *vibing-chat-file*
+
+Chats are Markdown files (by default `.vibing/chat/chat-<timestamp>-....md`)
+with YAML frontmatter: >
+    ---
+    vibing.nvim: true
+    session_id: <cli-session-id>
+    created_at: 2026-01-01T12:00:00
+    working_dir: .vibing/worktrees/fix-auth   # optional, relative to git root
+    agent: claude
+    model: sonnet
+    permission_mode: acceptEdits
+    permissions_allow:
+      - Read
+      - Edit
+    permissions_deny:
+      - Bash
+    language: ja                              # optional
+    ---
+<
+Note the singular `permission_mode`; the permissions lists are plural. Reopen
+a chat with |:VibingChat| {file} or plain |:edit| — the session resumes from
+`session_id`, and `working_dir` decides where the CLI runs.
 
 ==============================================================================
-8. API                                                              *vibing-api*
+9. BACKENDS                                                  *vibing-backends*
 
-For detailed API documentation, see: doc/api-reference.md
+Set globally with `adapter`, or per chat with the `agent` frontmatter field.
 
-Core functions:~
+claude                                                        *vibing-claude*
+    Default. Runs `claude -p --output-format stream-json --verbose
+    --include-partial-messages`, plus flags for the model, session resume,
+    system prompt, setting sources and permissions.
+    Requires: the `claude` CLI.
+
+codex                                                          *vibing-codex*
+    Runs the Codex CLI (`codex exec --json`).
+    Requires: the `codex` CLI.
+
+Both implement the same adapter interface (`execute`, `stream`, `cancel`,
+`supports`), so chat behaviour is the same either way; only the flags and the
+stream format differ.
+
+==============================================================================
+10. API                                                           *vibing-api*
 
 require("vibing").setup({opts})                              *vibing.setup()*
-    Initialize the plugin
-    Parameters:~
-        {opts} Configuration table (optional)
+    Initialise the plugin, register the commands and validate the config.
+    {opts} is optional.
 
 require("vibing").get_adapter()                        *vibing.get_adapter()*
-    Get current adapter instance
-    Returns:~
-        Adapter instance or nil
+    The adapter instance currently selected by `config.adapter`, or nil
+    before setup().
 
 require("vibing").get_config()                          *vibing.get_config()*
-    Get current configuration
-    Returns:~
-        Configuration table
+    The merged, validated configuration table.
+
+Everything under `lua/vibing/` beyond these three functions is internal and
+may change without notice.
 
 ==============================================================================
-9. ADAPTERS                                                    *vibing-adapters*
+11. TROUBLESHOOTING                                   *vibing-troubleshooting*
 
-agent_sdk                                                      *vibing-agent_sdk*
-    Claude Agent SDK adapter (recommended)
-    Features:~
-        • Streaming responses
-        • Tool usage support
-        • Model selection
-        • Context management
-        • Session persistence
-
-    Requirements:~
-        • Node.js >= 18
-        • npm install (run automatically)
-
-    Configuration:~
->lua
-        require("vibing").setup({
-          adapter = "agent_sdk",
-          agent = {
-            mode = "command",
-            model = "claude-sonnet-4-5",
-          },
-        })
-<
-
-claude                                                              *vibing-claude*
-    Official Claude CLI adapter
-    Features:~
-        • Streaming responses
-        • Tool usage support
-        • Model selection
-        • Context management
-
-    Requirements:~
-        • Claude Code CLI installed
-
-    Configuration:~
->lua
-        require("vibing").setup({
-          adapter = "claude",
-          cli_path = "claude",
-        })
-<
-
-claude_acp                                                        *vibing-claude_acp*
-    Claude ACP (Agent Communication Protocol) adapter
-    Features:~
-        • Streaming responses
-        • Tool usage support
-        • Context management
-        • Session persistence
-
-    Requirements:~
-        • claude-code-acp installed
-
-    Configuration:~
->lua
-        require("vibing").setup({
-          adapter = "claude_acp",
-        })
-<
-
-==============================================================================
-10. TROUBLESHOOTING                                      *vibing-troubleshooting*
-
-Chat not responding:~
-    1. Check Claude CLI installation: >
+Nothing comes back when you send a message:~
+    1. Check the backend runs at all: >
         $ claude --version
-<
-    2. Verify API key is configured
-    3. Check network connection
-    4. View error messages: >
+<    2. Check it is authenticated (run `claude` once in a terminal).
+    3. Read the errors: >
         :messages
 <
+Every tool call is denied:~
+    The PreToolUse hook fails closed on purpose: if it cannot reach Neovim's
+    RPC server, the tool is denied rather than silently allowed. Check that
+    `mcp.enabled` is true and that `.vibing/hook-settings.json` exists in the
+    directory the CLI runs in.
 
-Adapter not found error:~
-    Error: Adapter 'agent_sdk' not found
+MCP tools cannot find the right Neovim:~
+    Several Neovim instances each get their own RPC port. Pass the port shown
+    in the chat's system prompt on every `mcp__vibing-nvim__*` call rather
+    than guessing.
 
-    Solution:~
-        • Ensure Node.js is installed (>= 18)
-        • Run npm install in plugin directory
-        • Try different adapter: >lua
-            require("vibing").setup({ adapter = "claude" })
-<
+A chat resumes into the wrong directory:~
+    The `working_dir` field in the chat's frontmatter wins over Neovim's
+    current directory. Edit or remove it.
 
-Performance issues:~
-    • Disable auto_context if not needed
-    • Close unused buffers to reduce context
-    • Use smaller context when possible
-    • Consider using "command" mode instead of "agentic"
-
-Session persistence not working:~
-    • Check save location configuration
-    • Ensure directory exists and is writable
-    • Verify frontmatter format in chat file
-
-Enable debug logging:~
->lua
-    vim.g.vibing_debug = true
-<
-
-Report issues:~
+Reporting a bug:~
     https://github.com/shabaraba/vibing.nvim/issues
 
-Include in bug reports:~
-    • Neovim version (`:version`)
-    • Plugin configuration
-    • Error messages (`:messages`)
-    • Steps to reproduce
+    Please include the Neovim version (|:version|), your `setup()` call, the
+    output of |:messages|, and the steps to reproduce.
 
 ==============================================================================
-11. LICENSE                                                    *vibing-license*
+12. LICENSE                                                   *vibing-license*
 
 MIT License
 
