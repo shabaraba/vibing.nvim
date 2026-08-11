@@ -345,6 +345,12 @@ A chat resumes into the wrong directory:~
     The `working_dir` field in the chat's frontmatter wins over Neovim's
     current directory. Edit or remove it.
 
+Seeing what the CLI actually sent:~
+    Set |g:vibing_debug_stream| to log the spawned command, its PID and the
+    stream events it produces via |vim.notify()|: >lua
+    vim.g.vibing_debug_stream = true
+<    (The old `vim.g.vibing_debug` flag was never read by anything.)
+
 Reporting a bug:~
     https://github.com/shabaraba/vibing.nvim/issues
 

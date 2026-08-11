@@ -278,6 +278,10 @@ Output Buffer API の節があったが、いずれも v4 のレイヤー分割�
 ---@field context string[] コンテキストファイル（@file:path形式）
 ```
 
+これはアダプターインターフェースが要求する最小の形。実行時には
+`send_message` が権限・セッション・cwd などの内部フィールドも載せて渡す
+（`lua/vibing/core/types.lua` の同名クラスが全項目）。
+
 ### `Vibing.Response`
 
 ```lua
