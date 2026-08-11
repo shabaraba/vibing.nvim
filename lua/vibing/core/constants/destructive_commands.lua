@@ -11,6 +11,9 @@
 ---
 ---意図的に`^`で先頭固定していない。`cd /tmp && sudo rm -rf /`のように、パイプや`&&`の後ろに
 ---現れる破壊的コマンドも捕まえるため。
+---
+---マッチは大文字小文字を区別する（`rule_checker`が`command`をそのまま`:match`する）。ここで
+---扱うのはいずれも小文字固定のUnixコマンド名なので、これは意図的な割り切り。
 local M = {}
 
 ---コマンド位置（行頭、または`;` `&&` `||` `|` の直後）に現れる`command`にマッチするパターン群
@@ -36,23 +39,42 @@ local function concat(...)
   return result
 end
 
----`rm`の再帰削除フラグ（`-rf` / `-fr` / `-Rf` ...）
-local RM_RECURSIVE = "rm%s+%-%a*[rR]%a*%s+"
+---`rm`の再帰削除フラグ。短縮形（`-rf` / `-fr` / `-Rf` ...）とGNUのlongform（`--recursive`）を
+---それぞれ別パターンとして持つ。Lua patternに選択（`|`）がないため、ターゲットごとに両方を展開する。
+---`[%-%a%s]*`はフラグらしい文字しか含まないので、`rm --recursive ./dist/`のターゲット部分を
+---巻き込んでしまうことがない（`.`や`/`がクラスに入っていない）。
+local RM_RECURSIVE_FLAGS = {
+  "rm%s+%-%a*[rR]%a*%s+",
+  "rm%s+[%-%a%s]*%-%-recursive[%-%a%s]*%s",
+}
+
+---再帰削除フラグ × 危険なターゲットの組み合わせを展開する
+---@param targets string[] Lua pattern（フラグの直後に続く部分）
+---@return string[]
+local function rm_patterns(targets)
+  local patterns = {}
+  for _, flags in ipairs(RM_RECURSIVE_FLAGS) do
+    for _, target in ipairs(targets) do
+      table.insert(patterns, flags .. target)
+    end
+  end
+  return patterns
+end
 
 ---@type PermissionRule[]
 M.DEFAULT_DENY_RULES = {
   {
     tools = { "Bash" },
-    patterns = {
-      -- rm -rf / , rm -rf /* , rm -rf / --no-preserve-root
-      RM_RECURSIVE .. "/%s*$",
-      RM_RECURSIVE .. "/%s",
-      RM_RECURSIVE .. "/%*",
-      -- rm -rf ~ , rm -rf ~/ , rm -rf $HOME
-      RM_RECURSIVE .. "~",
-      RM_RECURSIVE .. "%$HOME",
-      RM_RECURSIVE .. "%${HOME}",
-    },
+    patterns = rm_patterns({
+      -- / , /* , / --no-preserve-root
+      "/%s*$",
+      "/%s",
+      "/%*",
+      -- ~ , ~/ , $HOME , ${HOME}
+      "~",
+      "%$HOME",
+      "%${HOME}",
+    }),
     action = "deny",
     message = "Recursive deletion of / or the home directory is blocked by vibing.nvim's default "
       .. "deny rules. Delete a specific path instead, or set permissions.default_deny_rules = false.",

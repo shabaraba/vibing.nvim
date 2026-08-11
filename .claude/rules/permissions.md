@@ -58,12 +58,16 @@ require("vibing").setup({
 Fields: `tools` (target tools), `paths` (glob, for Read/Write/Edit), `commands`/`patterns` (Bash),
 `domains` (WebFetch/WebSearch), `action` (`allow`/`deny`), `message` (optional, for deny rules).
 
-**Evaluation order:** deny rules are checked first — before the permission mode and the tool-level
-lists, so they hold under `mode = "auto"` and for always-allowed tools (`bypassPermissions` is the
-one deliberate way past them) → allow rules after the tool-level lists → default deny if nothing
-matches ("No matching allow rule"). Paths are normalized to absolute, symlink-resolved paths
-before matching (prevents traversal attacks); glob patterns support `*` (single directory) and
-`**` (recursive). `patterns` are **Lua patterns, not regex**.
+**Evaluation order:** deny rules are checked first — before the permission mode, the tool-level
+lists and the session-level allow list — so they hold under `mode = "auto"`, for always-allowed
+tools, and after an `allow_for_session` approval (which records only the bare tool name, so it
+would otherwise whitelist every later Bash command). `bypassPermissions` is the one deliberate way
+past them. Allow rules are evaluated after the tool-level lists, and anything unmatched is denied
+("No matching allow rule").
+
+Paths are normalized to absolute, symlink-resolved paths before matching (prevents traversal
+attacks); glob patterns support `*` (single directory) and `**` (recursive). `patterns` are **Lua
+patterns, not regex**.
 
 **Default deny rules:** `permissions.default_deny_rules` (default `true`) prepends bundled deny
 rules for destructive Bash commands — `rm -rf /` or `$HOME`, `sudo`/`doas`, raw device writes

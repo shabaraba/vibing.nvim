@@ -374,9 +374,10 @@ Field reference:
 
 Evaluation notes:
 
-- `deny` rules run **before** the permission mode and the tool-level lists, so a denied call stays
-  denied even under `mode = "auto"` and for always-allowed tools. `mode = "bypassPermissions"` is
-  the one deliberate way past them.
+- `deny` rules run **before** the permission mode, the tool-level lists, and any session-level
+  grant, so a denied call stays denied under `mode = "auto"`, for always-allowed tools, and after
+  an "allow for this session" approval. `mode = "bypassPermissions"` is the one deliberate way
+  past them.
 - `allow` rules are evaluated **after** the tool-level `allow`/`ask` lists.
 - A rule whose condition doesn't apply to the tool's input (e.g. `paths` on a `Bash` call)
   is skipped.
@@ -405,7 +406,9 @@ at the start of the line. The full list lives in
 
 Known gaps — these are a safety net, not a sandbox:
 
-- Split flags (`rm -r -f /`) and obfuscation (`$(echo rm) -rf /`) are not matched.
+- Split short flags (`rm -r -f /`) and obfuscation (`$(echo rm) -rf /`) are not matched. Combined
+  short flags (`-rf`) and GNU longform (`--recursive`) are.
+- Matching is case-sensitive; every command covered here is a lowercase Unix command name.
 - A bare `git push --force` is allowed, because a pattern cannot know which branch it lands on.
 - `permissions.deny`/`allow` cannot switch off an individual bundled rule; use
   `default_deny_rules = false` and re-add the ones you want to `rules`.

@@ -28,6 +28,11 @@ describe("destructive_commands.DEFAULT_DENY_RULES", function()
       assert.is_true(is_denied("rm -rf ${HOME}"))
     end)
 
+    it("blocks the GNU longform flag too", function()
+      assert.is_true(is_denied("rm --recursive --force /"))
+      assert.is_true(is_denied("rm --recursive ~"))
+    end)
+
     it("blocks it after a shell separator, not just at the start of the line", function()
       assert.is_true(is_denied("cd /tmp && rm -rf /"))
       assert.is_true(is_denied("echo hi; rm -rf ~"))
@@ -35,6 +40,7 @@ describe("destructive_commands.DEFAULT_DENY_RULES", function()
 
     it("leaves ordinary deletions alone", function()
       assert.is_false(is_denied("rm -rf node_modules"))
+      assert.is_false(is_denied("rm --recursive ./dist/"))
       assert.is_false(is_denied("rm -rf ./dist"))
       assert.is_false(is_denied("rm file.txt"))
       assert.is_false(is_denied("rm -rf /tmp/vibing-test"))
@@ -128,6 +134,19 @@ describe("can_use_tool with the bundled deny rules", function()
     assert.equals("deny", result.behavior)
 
     local harmless = can_use_tool.can_use_tool("Bash", { command = "ls" }, perm_config({ permission_mode = "auto" }))
+    assert.equals("allow", harmless.behavior)
+  end)
+
+  it("still denies after the user approved some other Bash command for the session", function()
+    -- The approval UI records the bare tool name, so "allow_for_session" on `npm install`
+    -- matches every later Bash call. It must not thereby approve a destructive one.
+    local config = perm_config({ session_allowed_tools = { "Bash" } })
+
+    local result = can_use_tool.can_use_tool("Bash", { command = "sudo rm -rf /" }, config)
+    assert.equals("deny", result.behavior)
+
+    -- The session grant still does its job for everything else.
+    local harmless = can_use_tool.can_use_tool("Bash", { command = "npm install" }, config)
     assert.equals("allow", harmless.behavior)
   end)
 

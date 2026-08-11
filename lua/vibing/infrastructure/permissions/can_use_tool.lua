@@ -3,17 +3,18 @@
 ---
 --- Permission evaluation order (highest to lowest priority):
 --- 1. Session-level deny list (immediate block)
---- 2. Session-level allow list (auto-approve)
---- 3. Internal tools (always allowed, e.g. ToolSearch, Agent)
---- 3.5. bypassPermissions mode (bypasses deny list too)
+--- 2. Internal tools (always allowed, e.g. ToolSearch, Agent)
+--- 3. bypassPermissions mode (bypasses deny list too)
 --- 4. Deny list (deny takes precedence over allow)
---- 4.5. Deny rules (path/command/pattern/domain based) — before any mode shortcut, so the bundled
----      destructive-command rules hold under `auto` mode and for always-allowed tools
---- 5. Always-allowed tools (bypass allow list; deny/ask still respected)
---- 6. Permission modes (auto, acceptEdits, default; dontAsk changes ask→deny below)
---- 7. Allow list (with pattern matching support)
---- 8. Ask list (granular patterns override broader allow list permissions)
---- 9. Granular allow rules (path/command/pattern/domain based)
+--- 4.5. Deny rules (path/command/pattern/domain based) — before any mode shortcut or session
+---      grant, so the bundled destructive-command rules hold under `auto` mode, for
+---      always-allowed tools, and after an "allow_for_session" approval
+--- 5. Session-level allow list (auto-approve)
+--- 6. Always-allowed tools (bypass allow list; deny/ask still respected)
+--- 7. Permission modes (auto, acceptEdits, default; dontAsk changes ask→deny below)
+--- 8. Allow list (with pattern matching support)
+--- 9. Ask list (granular patterns override broader allow list permissions)
+--- 10. Granular allow rules (path/command/pattern/domain based)
 ---
 --- @module vibing.infrastructure.permissions.can_use_tool
 
@@ -194,20 +195,14 @@ function M.can_use_tool(tool_name, input, config)
       return session_deny_result
     end
 
-    -- 2. Session-level allow list
-    local session_allow_result = check_session_list(tool_name, input, config.session_allowed_tools, "allow")
-    if session_allow_result then
-      return session_allow_result
-    end
-
-    -- 3. Always allow Claude Code internal tools
+    -- 2. Always allow Claude Code internal tools
     if INTERNAL_TOOLS[tool_name] then
       return allow(input)
     end
 
     local mode = config.permission_mode
 
-    -- 3.5. bypassPermissions: truly bypass all operations including deny list
+    -- 3. bypassPermissions: truly bypass all operations including deny list
     if mode == "bypassPermissions" then
       return allow(input)
     end
@@ -221,10 +216,10 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 4.5. Deny rules, before any mode shortcut can allow the call. The rules' documented
-    -- semantics are "deny is checked first", and the bundled destructive-command rules are only
-    -- a real boundary if `auto` mode and always-allowed tools cannot walk past them.
-    -- bypassPermissions (handled above) remains the one deliberate way out.
+    -- 4.5. Deny rules, before any mode shortcut or session grant can allow the call. The rules'
+    -- documented semantics are "deny is checked first", and the bundled destructive-command rules
+    -- are only a real boundary if `auto` mode, always-allowed tools and a session grant cannot
+    -- walk past them. bypassPermissions (handled above) remains the one deliberate way out.
     if config.permission_rules and #config.permission_rules > 0 then
       for _, rule in ipairs(config.permission_rules) do
         if rule.action == "deny" and rule_checker.check_rule(rule, tool_name, input) == "deny" then
@@ -233,7 +228,16 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 5. Always-allowed tools: bypass allow list, but respect deny (checked above) and ask
+    -- 5. Session-level allow list. Deliberately after the deny checks: "allow_for_session" on a
+    -- Bash approval records the bare tool name, so it matches every later Bash call regardless of
+    -- its command. Approving `npm install` for the session must not thereby approve
+    -- `sudo rm -rf /`.
+    local session_allow_result = check_session_list(tool_name, input, config.session_allowed_tools, "allow")
+    if session_allow_result then
+      return session_allow_result
+    end
+
+    -- 6. Always-allowed tools: bypass allow list, but respect deny (checked above) and ask
     if tools_constants.ALWAYS_ALLOWED_TOOLS_MAP[tool_name] then
       for _, pattern in ipairs(config.asked_tools) do
         if matchers.matches_permission(tool_name, input, pattern) then
@@ -246,7 +250,7 @@ function M.can_use_tool(tool_name, input, config)
       return allow(input)
     end
 
-    -- 6. Permission modes
+    -- 7. Permission modes
     if mode == "auto" then
       return allow(input)
     end
@@ -266,7 +270,7 @@ function M.can_use_tool(tool_name, input, config)
       return deny("vibing.nvim MCP integration is disabled. Enable it in config: mcp.enabled = true")
     end
 
-    -- 7. Check allow list (with pattern support)
+    -- 8. Check allow list (with pattern support)
     if #config.allowed_tools > 0 then
       local is_allowed = false
       for _, pattern in ipairs(config.allowed_tools) do
@@ -283,7 +287,7 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 8. Check ask list (AFTER allow list - granular patterns override broader permissions)
+    -- 9. Check ask list (AFTER allow list - granular patterns override broader permissions)
     for _, pattern in ipairs(config.asked_tools) do
       if matchers.matches_permission(tool_name, input, pattern) then
         if mode == "dontAsk" then
@@ -293,7 +297,7 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 9. Check granular allow rules (deny rules already ran at step 4.5)
+    -- 10. Check granular allow rules (deny rules already ran at step 4.5)
     if config.permission_rules and #config.permission_rules > 0 then
       for _, rule in ipairs(config.permission_rules) do
         if rule.action ~= "deny" and rule_checker.check_rule(rule, tool_name, input) == "allow" then
