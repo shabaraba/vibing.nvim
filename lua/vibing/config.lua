@@ -77,7 +77,7 @@
 ---@class Vibing.AgentConfig
 ---Agent SDK設定
 ---Claudeのモード（code/plan/explore）とモデル（sonnet/opus/haiku/fable）を指定
----@field default_mode "code"|"plan"|"explore" デフォルトモード（"code": コード生成、"plan": 計画、"explore": 探索）
+---@field default_mode "code"|"plan"|"explore" 新規チャットのfrontmatterに`mode`として記録される（"code": コード生成、"plan": 計画、"explore": 探索）。ユーザーが意図を記録するためのメタデータで、現状は挙動を変えずCLIにも渡らない（`permissions.mode = "plan"`とは別物）
 ---@field default_model "sonnet"|"opus"|"haiku"|"fable" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速、"fable": Claude Fable）
 ---@field utility_model "sonnet"|"opus"|"haiku"|"fable" タイトル生成・要約等の軽量ユーティリティ呼び出し専用モデル（デフォルト: "haiku"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）
@@ -434,6 +434,16 @@ function M.setup(opts)
       "diff.tool",
       "auto"
     )
+  end
+
+  if M.options.agent then
+    local modes = require("vibing.core.constants.modes")
+    local valid_agent_modes = {}
+    for _, mode in ipairs(modes.AGENT_MODES) do
+      valid_agent_modes[mode] = true
+    end
+    M.options.agent.default_mode =
+      validate_enum(M.options.agent.default_mode, valid_agent_modes, "agent.default_mode", "code")
   end
 
   if M.options.ui and M.options.ui.gradient then

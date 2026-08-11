@@ -108,7 +108,10 @@ adapter = "claude",  -- Global backend adapter
 agent = {
   default_mode = "code",    -- Recorded in each new chat's frontmatter as `mode`
                             -- ("code" | "plan" | "explore"). Currently metadata only —
-                            -- it does not change runtime behavior.
+                            -- it does not change runtime behavior, and is not the same
+                            -- thing as permissions.mode = "plan" (which does). Anything
+                            -- outside the three values warns and falls back to "code";
+                            -- an invalid frontmatter `mode` warns and is dropped.
 
   default_model = "sonnet", -- Default model for new chats
                             -- "sonnet": Balanced (recommended)
