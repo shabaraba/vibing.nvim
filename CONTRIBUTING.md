@@ -71,7 +71,7 @@ git checkout -b fix/your-bug-fix
 # Validate Lua syntax
 npm run check
 
-# Test the wrapper
+# Run the test suites (Lua + Node.js)
 npm test
 
 # Run all checks
@@ -228,7 +228,7 @@ Test your changes thoroughly:
 Currently, we have basic checks:
 
 ```bash
-npm test        # Basic wrapper test
+npm test        # Lua (plenary) + Node.js test suites
 npm run check   # Lua syntax validation
 ```
 

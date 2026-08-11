@@ -56,14 +56,4 @@ function Conversation:clear()
   self.messages = {}
 end
 
----辞書のリスト形式に変換
----@return table[]
-function Conversation:to_sdk_format()
-  local result = {}
-  for _, msg in ipairs(self.messages) do
-    table.insert(result, msg:to_dict())
-  end
-  return result
-end
-
 return Conversation

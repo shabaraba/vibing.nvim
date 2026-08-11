@@ -299,7 +299,7 @@ end
 ---Get dynamic skills from the CLI (custom commands + plugin skills)
 ---Returns cached result immediately; starts async load if not yet cached
 ---@return Vibing.CompletionItem[]
-local function get_dynamic_sdk_skills()
+local function get_dynamic_cli_skills()
   if _bundled_cache then
     return _bundled_cache
   end
@@ -311,7 +311,7 @@ end
 ---@return Vibing.CompletionItem[]
 local function get_bundled_skills()
   local hardcoded = get_hardcoded_bundled_skills()
-  local dynamic = get_dynamic_sdk_skills()
+  local dynamic = get_dynamic_cli_skills()
 
   -- Merge without duplicates
   local seen = {}

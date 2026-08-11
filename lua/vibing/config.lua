@@ -84,7 +84,8 @@
 
 ---@class Vibing.NodeConfig
 ---Node.js実行ファイル設定
----MCPサーバーのビルドで使用するNode.js実行ファイルのパスを指定
+---スラッシュコマンド補完（bin/list-commands.ts）の実行に使うNode.jsのパス。
+---MCPサーバーのビルドは`VIBING_NODE_EXECUTABLE`を見るのでこの設定を使わない点に注意。
 ---@field executable string|"auto" Node.js実行ファイルのパス ("auto": PATHから自動検出、文字列: 明示的なパス指定)
 
 ---@class Vibing.McpConfig
