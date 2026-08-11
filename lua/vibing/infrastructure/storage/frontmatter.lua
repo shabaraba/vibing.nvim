@@ -71,21 +71,23 @@ local function parse_yaml_simple(yaml_str)
   return result
 end
 
----旧キー名を実行時キー名へ寄せる
----`permissions_mode`(複数形)は過去のREADMEが案内していた綴りで、実行時に読まれるのは
----`permission_mode`(単数形)。旧READMEどおりに書いたチャットファイルの設定が黙って無視
----されないよう、パース時に単数形へ移送する(単数形が既にあればそちらを優先)。
----@param parsed table?
-local function normalize_legacy_keys(parsed)
-  if type(parsed) ~= "table" then
-    return
-  end
+---旧frontmatterキー名 → 実行時キー名。`permissions_mode`(複数形)は過去のREADMEが案内していた
+---綴りで、実行時に読まれるのは`permission_mode`(単数形)だった。
+---@type table<string, string>
+M.LEGACY_KEY_ALIASES = {
+  permissions_mode = "permission_mode",
+}
 
-  if parsed.permissions_mode ~= nil then
-    if parsed.permission_mode == nil then
-      parsed.permission_mode = parsed.permissions_mode
+---旧キー名を実行時キー名へ寄せる(正式なキーが既にあればそちらを優先)
+---@param parsed table
+local function normalize_legacy_keys(parsed)
+  for legacy, canonical in pairs(M.LEGACY_KEY_ALIASES) do
+    if parsed[legacy] ~= nil then
+      if parsed[canonical] == nil then
+        parsed[canonical] = parsed[legacy]
+      end
+      parsed[legacy] = nil
     end
-    parsed.permissions_mode = nil
   end
 end
 
@@ -209,6 +211,8 @@ function M.update(content, updates)
   for k, v in pairs(updates) do
     data[k] = v
   end
+  -- updates 側が旧キーを持ち込んでも書き戻さない
+  normalize_legacy_keys(data)
 
   return M.serialize(data, body)
 end

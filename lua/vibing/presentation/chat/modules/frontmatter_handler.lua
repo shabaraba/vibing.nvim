@@ -59,10 +59,19 @@ function M.update_field(buf, key, value, update_timestamp)
     return str:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
   end
 
+  -- 正式なキーに加えて、その旧綴り(Frontmatter.LEGACY_KEY_ALIASES)の行も書き換え対象にする。
+  -- そうしないと旧キーの行が残ったまま正式なキーの行が追加され、1つのfrontmatterに
+  -- 同じ設定が二重に並ぶ。
+  local key_patterns = { "^" .. escape_pattern(key) .. ":" }
+  for legacy, canonical in pairs(Frontmatter.LEGACY_KEY_ALIASES) do
+    if canonical == key then
+      table.insert(key_patterns, "^" .. escape_pattern(legacy) .. ":")
+    end
+  end
+
   local lines = vim.api.nvim_buf_get_lines(buf, 0, FRONTMATTER_SCAN_LINES, false)
   local frontmatter_end = 0
   local key_line = nil
-  local escaped_key = escape_pattern(key)
 
   for i, line in ipairs(lines) do
     if i == 1 and line == "---" then
@@ -70,8 +79,13 @@ function M.update_field(buf, key, value, update_timestamp)
     elseif line == "---" then
       frontmatter_end = i
       break
-    elseif line:match("^" .. escaped_key .. ":") then
-      key_line = i
+    else
+      for _, pattern in ipairs(key_patterns) do
+        if line:match(pattern) then
+          key_line = i
+          break
+        end
+      end
     end
   end
 

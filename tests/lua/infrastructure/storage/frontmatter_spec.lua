@@ -84,6 +84,16 @@ permissions_mode: plan
       assert.is_nil(result.permissions_mode)
     end)
 
+    it("should not let update() write the legacy plural key back out", function()
+      local content = [[---
+session_id: abc
+---]]
+
+      local updated = frontmatter.update(content, { permissions_mode = "plan" })
+      assert.is_truthy(updated:find("permission_mode: plan", 1, true))
+      assert.is_nil(updated:find("permissions_mode:", 1, true))
+    end)
+
     it("should serialize permission_mode before the permissions lists", function()
       local serialized = frontmatter.serialize({
         language = "ja",
