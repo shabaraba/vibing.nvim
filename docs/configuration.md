@@ -194,12 +194,14 @@ chat = {
                            -- "back": background buffer only (no window)
                            -- "float": floating window
 
-    width = 0.4,           -- Screen-width ratio (0-1). Applied to right/left splits
-                           -- and floating windows. Always interpreted as a ratio —
-                           -- absolute column counts are not supported.
+    width = 0.4,           -- Applied to right/left splits and floating windows.
+                           -- Below 1 it is a screen-width ratio; 1 or above is an
+                           -- absolute column count (e.g. width = 80).
 
-    height = 0.4,          -- Screen-height ratio (0-1). Applied to top/bottom splits
-                           -- only. Floating windows use a fixed 0.8 screen ratio.
+    height = 0.4,          -- Applied to top/bottom splits and floating windows.
+                           -- Same rule as width: ratio below 1, absolute rows at 1
+                           -- or above. Floating windows fall back to 0.8 of the
+                           -- screen only when height is unset.
 
     border = "rounded",    -- Border for position = "float" only (any nvim_open_win
                            -- border spec). Split windows have no border.
