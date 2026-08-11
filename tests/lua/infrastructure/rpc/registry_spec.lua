@@ -199,6 +199,56 @@ describe("vibing.infrastructure.rpc.registry", function()
     end)
   end)
 
+  describe("liveness filtering", function()
+    ---Write an instance file for a PID that does not exist.
+    ---@param port number
+    ---@return number pid
+    ---@return string file_path
+    local function write_dead_instance(port)
+      -- Above the platform PID ceiling, so it cannot collide with a real process.
+      local dead_pid = 4000000 + port
+      vim.fn.mkdir(registry.get_registry_dir(), "p")
+      local file_path = registry.get_registry_dir() .. "/" .. dead_pid .. ".json"
+      vim.fn.writefile({
+        vim.json.encode({ pid = dead_pid, port = port, cwd = vim.fn.getcwd(), started_at = os.time() }),
+      }, file_path)
+      return dead_pid, file_path
+    end
+
+    it("omits an instance whose process is gone", function()
+      -- The aliveness probe is pcall(uv.kill, pid, 0). luv returns nil+err rather than raising
+      -- for a dead PID, so reading only pcall's first value marks every entry as alive.
+      write_dead_instance(9990)
+
+      local instances = registry.list()
+      assert.equals(0, #instances)
+    end)
+
+    it("deletes the registry file of a dead instance", function()
+      local _, file_path = write_dead_instance(9991)
+
+      registry.list()
+
+      assert.equals(0, vim.fn.filereadable(file_path))
+    end)
+
+    it("does not report a dead instance's port as in use", function()
+      write_dead_instance(9992)
+
+      assert.is_false(registry.is_port_in_use(9992))
+    end)
+
+    it("keeps a live instance", function()
+      registry.register(9993)
+
+      local instances = registry.list()
+      assert.equals(1, #instances)
+      assert.equals(vim.fn.getpid(), instances[1].pid)
+
+      registry.unregister()
+    end)
+  end)
+
   describe("error handling", function()
     it("should handle missing registry directory gracefully", function()
       -- Remove registry directory if it exists

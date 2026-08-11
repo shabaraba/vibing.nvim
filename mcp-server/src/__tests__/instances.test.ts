@@ -38,16 +38,19 @@ describe('handleListInstances', () => {
       const originalOverride = process.env.VIBING_INSTANCES_DIR;
       process.env.VIBING_INSTANCES_DIR = '/tmp/private-registry';
 
-      vi.mocked(fs.access).mockRejectedValue(new Error('Directory not found'));
+      // try/finally so a failed expect cannot leak the override into later tests.
+      try {
+        vi.mocked(fs.access).mockRejectedValue(new Error('Directory not found'));
 
-      await handleListInstances({});
+        await handleListInstances({});
 
-      expect(vi.mocked(fs.access)).toHaveBeenCalledWith('/tmp/private-registry');
-
-      if (originalOverride === undefined) {
-        delete process.env.VIBING_INSTANCES_DIR;
-      } else {
-        process.env.VIBING_INSTANCES_DIR = originalOverride;
+        expect(vi.mocked(fs.access)).toHaveBeenCalledWith('/tmp/private-registry');
+      } finally {
+        if (originalOverride === undefined) {
+          delete process.env.VIBING_INSTANCES_DIR;
+        } else {
+          process.env.VIBING_INSTANCES_DIR = originalOverride;
+        }
       }
     });
 

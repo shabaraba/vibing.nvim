@@ -79,6 +79,22 @@ describe("hook_cleanup.cleanup_stale_dirs", function()
     registry.unregister()
   end)
 
+  it("removes a directory whose instance is still registered but no longer running", function()
+    -- unregister() only runs on a clean exit, so a crashed/killed Neovim leaves its registry
+    -- entry behind. Guarding on the registry must not turn that stale entry into a permanent
+    -- reason to keep the comm directory -- otherwise /tmp accumulates forever.
+    local dead_pid = 4000123
+    vim.fn.mkdir(registry_dir, "p")
+    vim.fn.writefile({
+      vim.json.encode({ pid = dead_pid, port = 65010, cwd = vim.fn.getcwd(), started_at = os.time() }),
+    }, registry_dir .. "/" .. dead_pid .. ".json")
+    local crashed = make_dir(CommDir.PREFIX .. "65010")
+
+    hook_cleanup.cleanup_stale_dirs()
+
+    assert.is_false(exists(crashed))
+  end)
+
   it("sweeps leftover files out of its own directory without removing it", function()
     local own = make_dir(CommDir.PREFIX .. "65004")
     vim.env[CommDir.ENV_VAR] = own

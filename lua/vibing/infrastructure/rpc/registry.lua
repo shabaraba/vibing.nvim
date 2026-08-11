@@ -136,10 +136,19 @@ function M.list()
         local json_ok, data = pcall(vim.json.decode, content[1])
 
         if json_ok and data and data.pid then
-          -- Check if process is still alive
-          local alive = pcall(uv.kill, data.pid, 0)
+          -- Check if process is still alive.
+          -- uv.kill follows luv's "value, or nil + err" convention rather than raising, so
+          -- pcall's first return only says "the call did not throw" — it is true for a dead PID
+          -- too, which would mark every entry alive. The signal-0 outcome is in the *second*
+          -- return: 0 if the process exists.
+          -- Only ESRCH proves the process is gone. EPERM means it exists but belongs to another
+          -- user, and anything unexpected is treated as alive too: a wrong "dead" verdict
+          -- deletes this file and lets hook_cleanup remove a live instance's comm directory,
+          -- so the safe default is to keep the entry.
+          local call_ok, result, err = pcall(uv.kill, data.pid, 0)
+          local gone = call_ok and result == nil and tostring(err or ""):match("^ESRCH") ~= nil
 
-          if alive then
+          if not gone then
             table.insert(instances, data)
           else
             -- Process is dead, clean up stale registry
