@@ -20,7 +20,7 @@ This help is deliberately short. The authoritative, always-current references
 are kept in the repository:
 
     Every setup() option ...... docs/configuration.md
-    Commands & keybindings .... README.md, "Usage"
+    Commands & keybindings .... README.md, "🚀 Usage"
     Architecture .............. .claude/rules/architecture.md
 
 ==============================================================================
