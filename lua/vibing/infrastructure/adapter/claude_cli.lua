@@ -153,6 +153,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   ActiveStreamRegistry.register({
     handle_id = handle_id,
     chat_file_path = opts.chat_file_path,
+    chat_bufnr = opts.chat_bufnr,
     adapter = self,
     on_insert_choices = opts.on_insert_choices,
     on_approval_required = opts.on_approval_required,

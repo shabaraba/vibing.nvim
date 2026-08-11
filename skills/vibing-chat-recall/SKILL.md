@@ -1,6 +1,6 @@
 ---
 name: vibing-chat-recall
-description: Use when a vibing.nvim chat session's context feels lost or discontinuous — after a session reset, a dropped connection, or when Claude's own reasoning no longer matches what was discussed earlier in this conversation. Re-reads this conversation's own chat buffer (the file whose path is announced via the "Current vibing.nvim chat buffer file:" line in the system prompt) to silently restore context. Also invoke when the user explicitly asks to "remember", "recall", or "re-read the chat history" (in any language). Not for browsing other, unrelated past chat files — use vibing-chat-search for that.
+description: Use when a vibing.nvim chat session's context feels lost or discontinuous — after a session reset, a dropped connection, or when Claude's own reasoning no longer matches what was discussed earlier in this conversation. Re-reads this conversation's own chat buffer (the buffer announced via the "Current vibing.nvim chat buffer number:" line in the system prompt) to silently restore context. Also invoke when the user explicitly asks to "remember", "recall", or "re-read the chat history" (in any language). Not for browsing other, unrelated past chat files — use vibing-chat-search for that.
 ---
 
 # vibing-chat-recall
@@ -19,17 +19,19 @@ conversation is running in.
 This skill only makes sense inside a vibing.nvim chat session. If the environment doesn't look
 like one (see below), say so briefly and stop — don't guess at a file to read.
 
-## Locating this conversation's own chat file
+## Locating this conversation's own chat buffer
 
 Every request sent through vibing.nvim's Claude CLI adapter carries one extra line appended to
 the system prompt:
 
 ```text
-Current vibing.nvim chat buffer file: /absolute/path/to/chat.md
+Current vibing.nvim chat buffer number: 12
 ```
 
-Use that path — never rely on which Neovim window currently has focus, since the user may have
-switched away, or another chat may be running concurrently.
+Use that buffer number — never rely on which Neovim window currently has focus, since the user
+may have switched away, or another chat may be running concurrently. It is a buffer number rather
+than a path so that `:VibingSetFileTitle` renaming the chat mid-conversation neither breaks this
+lookup nor invalidates the prompt cache.
 
 If that line isn't present in the system prompt, this skill isn't running inside vibing.nvim (or
 is running against an older vibing.nvim build that doesn't send it yet). Tell the user briefly
@@ -37,16 +39,14 @@ and stop.
 
 ## Reading the buffer
 
-1. Call `mcp__vibing-nvim__nvim_load_buffer` with `filepath` set to the path from the system
-   prompt. This loads the file into a Neovim buffer in the background (no window switch) and
-   returns its `bufnr`, whether or not it was already open.
-2. Call `mcp__vibing-nvim__nvim_get_buffer` with that `bufnr` to fetch the buffer's current
-   content. This is the _live_ in-memory content, including edits that haven't been written to
-   disk yet — vibing.nvim chat buffers are not auto-saved, so the on-disk file can lag behind
-   what's actually been discussed.
-3. If either MCP call fails (no RPC connection, Neovim not reachable), fall back to reading the
-   same path from disk with the normal `Read` tool. This may miss the most recent unsaved
-   exchange, but is better than nothing.
+1. Call `mcp__vibing-nvim__nvim_get_buffer` with the `bufnr` from the system prompt to fetch the
+   buffer's current content. This is the _live_ in-memory content, including edits that haven't
+   been written to disk yet — vibing.nvim chat buffers are not auto-saved, so the on-disk file
+   can lag behind what's actually been discussed.
+2. If that MCP call fails (no RPC connection, Neovim not reachable), call
+   `mcp__vibing-nvim__nvim_list_buffers` to find the chat file's path by `bufnr` and read it from
+   disk with the normal `Read` tool. This may miss the most recent unsaved exchange, but is
+   better than nothing.
 
 ## Responding
 

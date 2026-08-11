@@ -2,7 +2,7 @@ local SendMessage = require("vibing.application.chat.send_message")
 
 describe("send_message", function()
   describe("execute", function()
-    it("propagates the sending chat buffer's file path as opts.chat_file_path", function()
+    it("propagates the sending chat buffer's file path and number to the adapter opts", function()
       local buf = vim.api.nvim_create_buf(false, true)
       local file_path = vim.fn.tempname() .. ".md"
       vim.api.nvim_buf_set_name(buf, file_path)
@@ -47,6 +47,7 @@ describe("send_message", function()
 
       assert.is_not_nil(captured.opts)
       assert.equals(vim.api.nvim_buf_get_name(buf), captured.opts.chat_file_path)
+      assert.equals(buf, captured.opts.chat_bufnr)
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)

@@ -53,30 +53,56 @@ describe("cli_command_builder", function()
       assert.is_true(prompt_text:find(".vibing/worktrees/", 1, true) ~= nil)
     end)
 
-    it("appends the current chat buffer file path when provided", function()
-      local cmd = cli_command_builder.build("hello", { chat_file_path = "/tmp/chat-test.md" }, nil, {}, nil)
+    it("appends the current chat buffer number when provided", function()
+      local cmd = cli_command_builder.build("hello", { chat_bufnr = 12 }, nil, {}, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]
-      assert.is_true(
-        prompt_text:find("Current vibing.nvim chat buffer file: /tmp/chat-test.md", 1, true) ~= nil
-      )
+      assert.is_true(prompt_text:find("Current vibing.nvim chat buffer number: 12", 1, true) ~= nil)
     end)
 
-    it("omits the chat buffer file line when chat_file_path is not provided", function()
+    it("omits the chat buffer line when chat_bufnr is not provided", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
       local prompt_text = cmd[idx + 1]
-      assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer file:", 1, true))
+      assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer number:", 1, true))
     end)
 
-    it("instructs the model to pass chat_file_path on nvim_ask_user_question, without any per-turn id", function()
+    it("never embeds the chat file path, which a rename would change mid-conversation", function()
+      local cmd = cli_command_builder.build(
+        "hello",
+        { chat_bufnr = 12, chat_file_path = "/tmp/chat-test.md" },
+        nil,
+        {},
+        nil
+      )
+      local idx = find_flag(cmd, "--append-system-prompt")
+      local prompt_text = cmd[idx + 1]
+      assert.is_nil(prompt_text:find("/tmp/chat-test.md", 1, true))
+    end)
+
+    it("keeps the system prompt byte-identical when only the chat file path changes", function()
+      local before = cli_command_builder.build("hello", { chat_bufnr = 12, chat_file_path = "/tmp/a.md" }, nil, {}, nil)
+      local after = cli_command_builder.build(
+        "hello",
+        { chat_bufnr = 12, chat_file_path = "/tmp/renamed-by-set-file-title.md" },
+        nil,
+        {},
+        nil
+      )
+
+      local before_idx = find_flag(before, "--append-system-prompt")
+      local after_idx = find_flag(after, "--append-system-prompt")
+      assert.equals(before[before_idx + 1], after[after_idx + 1])
+    end)
+
+    it("instructs the model to pass chat_bufnr on nvim_ask_user_question, without any per-turn id", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]
       assert.is_true(prompt_text:find("nvim_ask_user_question", 1, true) ~= nil)
-      assert.is_true(prompt_text:find("chat_file_path argument", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("chat_bufnr argument", 1, true) ~= nil)
     end)
 
     it("never embeds a handle_id, so the same conversation's system prompt is byte-identical across turns", function()
