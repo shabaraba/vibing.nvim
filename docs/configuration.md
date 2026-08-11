@@ -196,7 +196,8 @@ chat = {
 
     width = 0.4,           -- Applied to right/left splits and floating windows.
                            -- Below 1 it is a screen-width ratio; 1 or above is an
-                           -- absolute column count (e.g. width = 80).
+                           -- absolute column count (e.g. width = 80). Note the
+                           -- boundary: width = 1 means one column, not 100%.
 
     -- height is not in the defaults on purpose: the fallback differs per position
     -- (0.4 for top/bottom splits, 0.8 for floats), and a value here would apply to

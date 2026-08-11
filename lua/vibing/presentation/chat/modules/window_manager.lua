@@ -43,9 +43,9 @@ function M.create_window(buf, win_config)
     return nil
   end
 
-  -- ここから先はサイズを使う分岐だけ
+  -- ここから先はサイズを使う分岐だけ。heightは既定値がpositionごとに違う（分割0.4 / float0.8）
+  -- ので、共通では出さずそれぞれの分岐で解決する。
   local width = resolve_size(win_config.width, vim.o.columns, DEFAULT_WIDTH_RATIO)
-  local height = resolve_size(win_config.height, vim.o.lines, DEFAULT_HEIGHT_RATIO)
 
   if win_config.position == "right" then
     vim.cmd("botright vsplit")
@@ -59,12 +59,12 @@ function M.create_window(buf, win_config)
     vim.api.nvim_win_set_buf(win, buf)
   elseif win_config.position == "top" then
     vim.cmd("topleft split")
-    vim.cmd("resize " .. height)
+    vim.cmd("resize " .. resolve_size(win_config.height, vim.o.lines, DEFAULT_HEIGHT_RATIO))
     win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(win, buf)
   elseif win_config.position == "bottom" then
     vim.cmd("botright split")
-    vim.cmd("resize " .. height)
+    vim.cmd("resize " .. resolve_size(win_config.height, vim.o.lines, DEFAULT_HEIGHT_RATIO))
     win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(win, buf)
   else
