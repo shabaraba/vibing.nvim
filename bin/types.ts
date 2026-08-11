@@ -1,55 +1,28 @@
 /**
- * Type definitions for vibing.nvim agent wrapper
+ * Shared type definitions for the Node.js side of vibing.nvim
  */
 
 /**
- * Tool-specific marker configuration with pattern matching support.
- * Allows different markers based on tool input (e.g., different markers for npm vs git commands in Bash).
- *
- * @example
- * ```typescript
- * const bashMarker: ToolMarkerDefinition = {
- *   default: '⏺',
- *   patterns: {
- *     '^npm': '📦',
- *     '^git': '🌿',
- *   }
- * };
- * ```
- */
-export interface ToolMarkerDefinition {
-  /** Default marker when no pattern matches */
-  default?: string;
-  /** Regex pattern to marker mapping. Patterns are tested against tool input. */
-  patterns?: Record<string, string>;
-}
-
-/**
- * Configuration for tool execution markers displayed in chat output.
- * Supports both simple string markers and pattern-based ToolMarkerDefinition objects.
+ * Markers displayed in chat output when a tool runs: a flat "tool name -> marker" table.
+ * Marker resolution only ever sees the tool name, so a marker cannot vary with a tool's
+ * arguments.
  *
  * @example
  * ```typescript
  * const markers: ToolMarkersConfig = {
  *   Task: '▶',
- *   TaskComplete: '✓',
  *   default: '⏺',
- *   Bash: {
- *     default: '⏺',
- *     patterns: { '^npm': '📦' }
- *   }
+ *   Bash: '💻',
  * };
  * ```
  */
 export interface ToolMarkersConfig {
-  /** Marker for Task tool start */
+  /** Marker for the Task tool */
   Task?: string;
-  /** Marker for Task tool completion */
-  TaskComplete?: string;
-  /** Default marker for tools without specific configuration */
+  /** Marker for tools without a specific entry */
   default?: string;
-  /** Tool-specific markers (string for simple marker, ToolMarkerDefinition for pattern matching) */
-  [toolName: string]: string | ToolMarkerDefinition | undefined;
+  /** Tool-specific markers */
+  [toolName: string]: string | undefined;
 }
 
 /**
