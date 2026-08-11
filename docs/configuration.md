@@ -374,10 +374,45 @@ Field reference:
 
 Evaluation notes:
 
-- Rules are evaluated **after** the tool-level `allow`/`ask` lists.
-- Any matching `deny` rule blocks immediately and beats every `allow` rule.
+- `deny` rules run **before** the permission mode and the tool-level lists, so a denied call stays
+  denied even under `mode = "auto"` and for always-allowed tools. `mode = "bypassPermissions"` is
+  the one deliberate way past them.
+- `allow` rules are evaluated **after** the tool-level `allow`/`ask` lists.
 - A rule whose condition doesn't apply to the tool's input (e.g. `paths` on a `Bash` call)
   is skipped.
+
+## Default Deny Rules
+
+vibing.nvim ships deny rules for a small set of destructive Bash commands, enabled by default:
+
+```lua
+permissions = {
+  default_deny_rules = true,  -- set to false to ship nothing and rely on your own rules
+}
+```
+
+| Blocked                              | Examples                                                      |
+| ------------------------------------ | ------------------------------------------------------------- |
+| Recursive deletion of `/` or `$HOME` | `rm -rf /`, `rm -rf /*`, `rm -rf ~`, `rm -rf $HOME`           |
+| Privilege escalation                 | `sudo ...`, `doas ...`                                        |
+| Raw device writes                    | `dd if=... of=/dev/sda`, `mkfs.ext4 /dev/sda1`                |
+| World-writable trees                 | `chmod -R 777 .`                                              |
+| Force-pushing main/master            | `git push --force origin main` (`--force-with-lease` is fine) |
+
+They match after shell separators too, so `cd /tmp && sudo rm -rf /` is caught, not just a command
+at the start of the line. The full list lives in
+`lua/vibing/core/constants/destructive_commands.lua`.
+
+Known gaps — these are a safety net, not a sandbox:
+
+- Split flags (`rm -r -f /`) and obfuscation (`$(echo rm) -rf /`) are not matched.
+- A bare `git push --force` is allowed, because a pattern cannot know which branch it lands on.
+- `permissions.deny`/`allow` cannot switch off an individual bundled rule; use
+  `default_deny_rules = false` and re-add the ones you want to `rules`.
+
+The point is that the boundary is drawn in the environment rather than in an approval prompt:
+prompts are approved reflexively most of the time, so they are a last line of defence, not the
+primary one.
 
 ## MCP
 

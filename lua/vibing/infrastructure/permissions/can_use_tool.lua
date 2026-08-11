@@ -7,11 +7,13 @@
 --- 3. Internal tools (always allowed, e.g. ToolSearch, Agent)
 --- 3.5. bypassPermissions mode (bypasses deny list too)
 --- 4. Deny list (deny takes precedence over allow)
+--- 4.5. Deny rules (path/command/pattern/domain based) — before any mode shortcut, so the bundled
+---      destructive-command rules hold under `auto` mode and for always-allowed tools
 --- 5. Always-allowed tools (bypass allow list; deny/ask still respected)
 --- 6. Permission modes (auto, acceptEdits, default; dontAsk changes ask→deny below)
 --- 7. Allow list (with pattern matching support)
 --- 8. Ask list (granular patterns override broader allow list permissions)
---- 9. Granular permission rules (path/command/pattern/domain based)
+--- 9. Granular allow rules (path/command/pattern/domain based)
 ---
 --- @module vibing.infrastructure.permissions.can_use_tool
 
@@ -219,6 +221,18 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
+    -- 4.5. Deny rules, before any mode shortcut can allow the call. The rules' documented
+    -- semantics are "deny is checked first", and the bundled destructive-command rules are only
+    -- a real boundary if `auto` mode and always-allowed tools cannot walk past them.
+    -- bypassPermissions (handled above) remains the one deliberate way out.
+    if config.permission_rules and #config.permission_rules > 0 then
+      for _, rule in ipairs(config.permission_rules) do
+        if rule.action == "deny" and rule_checker.check_rule(rule, tool_name, input) == "deny" then
+          return deny(rule.message or string.format("Tool %s is denied by permission rule", tool_name))
+        end
+      end
+    end
+
     -- 5. Always-allowed tools: bypass allow list, but respect deny (checked above) and ask
     if tools_constants.ALWAYS_ALLOWED_TOOLS_MAP[tool_name] then
       for _, pattern in ipairs(config.asked_tools) do
@@ -279,19 +293,12 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 9. Check granular permission rules
+    -- 9. Check granular allow rules (deny rules already ran at step 4.5)
     if config.permission_rules and #config.permission_rules > 0 then
-      local has_matching_allow = false
       for _, rule in ipairs(config.permission_rules) do
-        local rule_result = rule_checker.check_rule(rule, tool_name, input)
-        if rule_result == "deny" then
-          return deny(rule.message or string.format("Tool %s is denied by permission rule", tool_name))
-        elseif rule_result == "allow" then
-          has_matching_allow = true
+        if rule.action ~= "deny" and rule_checker.check_rule(rule, tool_name, input) == "allow" then
+          return allow(input)
         end
-      end
-      if has_matching_allow then
-        return allow(input)
       end
     end
 
