@@ -36,7 +36,7 @@ enabled: false
   describe("parse permissions (UT-FM-002)", function()
     it("should parse permission arrays", function()
       local content = [[---
-permissions_mode: acceptEdits
+permission_mode: acceptEdits
 permissions_allow:
   - Read
   - Edit
@@ -46,7 +46,7 @@ permissions_deny:
 ---]]
 
       local result = frontmatter.parse(content)
-      assert.equals("acceptEdits", result.permissions_mode)
+      assert.equals("acceptEdits", result.permission_mode)
       assert.is_table(result.permissions_allow)
       assert.equals(3, #result.permissions_allow)
       assert.equals("Read", result.permissions_allow[1])
@@ -61,6 +61,45 @@ permissions_deny:
 
       local result = frontmatter.parse(content)
       assert.is_not_nil(result)
+    end)
+
+    it("should migrate the legacy plural permissions_mode to permission_mode", function()
+      local content = [[---
+permissions_mode: plan
+---]]
+
+      local result = frontmatter.parse(content)
+      assert.equals("plan", result.permission_mode)
+      assert.is_nil(result.permissions_mode)
+    end)
+
+    it("should prefer the singular permission_mode when both keys are present", function()
+      local content = [[---
+permission_mode: acceptEdits
+permissions_mode: plan
+---]]
+
+      local result = frontmatter.parse(content)
+      assert.equals("acceptEdits", result.permission_mode)
+      assert.is_nil(result.permissions_mode)
+    end)
+
+    it("should serialize permission_mode before the permissions lists", function()
+      local serialized = frontmatter.serialize({
+        language = "ja",
+        permissions_allow = { "Read" },
+        permission_mode = "acceptEdits",
+        session_id = "abc",
+      })
+      local lines = vim.split(serialized, "\n", { plain = true })
+      local order = {}
+      for _, line in ipairs(lines) do
+        local key = line:match("^([%w_%.]+):")
+        if key then
+          table.insert(order, key)
+        end
+      end
+      assert.same({ "session_id", "permission_mode", "permissions_allow", "language" }, order)
     end)
   end)
 

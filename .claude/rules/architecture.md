@@ -147,8 +147,10 @@ via `/model` slash command. Configured permissions are recorded in frontmatter f
 transparency and auditability. The optional `language` field ensures consistent AI response language
 across sessions.
 
-Note the singular `permission_mode`: that is the key `send_message.lua` actually reads. Completion
-also offers `permissions_mode`, but nothing reads it — don't rely on the plural form.
+Note the singular `permission_mode`: that is the key `send_message.lua` actually reads, the key
+completion offers, and the key the serializer orders. The legacy plural `permissions_mode` is
+migrated to the singular form on parse (`infrastructure/storage/frontmatter.lua`) so old chat
+files keep working, but it is no longer completed and should not be written.
 
 **Working directory persistence:** The `working_dir` field stores the working directory as a relative
 path from git root (e.g., `.vibing/worktrees/<branch>`). When a chat is reopened, the agent

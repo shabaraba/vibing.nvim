@@ -71,6 +71,24 @@ local function parse_yaml_simple(yaml_str)
   return result
 end
 
+---旧キー名を実行時キー名へ寄せる
+---`permissions_mode`(複数形)は過去のREADMEが案内していた綴りで、実行時に読まれるのは
+---`permission_mode`(単数形)。旧READMEどおりに書いたチャットファイルの設定が黙って無視
+---されないよう、パース時に単数形へ移送する(単数形が既にあればそちらを優先)。
+---@param parsed table?
+local function normalize_legacy_keys(parsed)
+  if type(parsed) ~= "table" then
+    return
+  end
+
+  if parsed.permissions_mode ~= nil then
+    if parsed.permission_mode == nil then
+      parsed.permission_mode = parsed.permissions_mode
+    end
+    parsed.permissions_mode = nil
+  end
+end
+
 function M.parse(content)
   if not content or content == "" then
     return nil, content
@@ -107,6 +125,7 @@ function M.parse(content)
   local body = table.concat(body_lines, "\n")
 
   local parsed = parse_yaml_simple(yaml_str)
+  normalize_legacy_keys(parsed)
 
   return parsed, body
 end
@@ -135,10 +154,11 @@ local function get_sorted_keys(tbl)
     working_dir = 5,
     agent = 6,
     model = 7,
-    permissions_mode = 8,
+    permission_mode = 8,
     permissions_allow = 9,
     permissions_deny = 10,
-    language = 11,
+    permissions_ask = 11,
+    language = 12,
   }
 
   table.sort(keys, function(a, b)
