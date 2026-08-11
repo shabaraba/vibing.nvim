@@ -1,15 +1,9 @@
 --- Resolves the directory the hook scripts and Neovim exchange request/response files through.
 ---
 --- Single source of truth for what used to be a `/tmp/vibing-hook-<port>` string literal repeated
---- in permission.lua, rate_limit.lua and hook_cleanup.lua. The path is machine-wide shared state,
---- so it has two seams:
----
----   * `$VIBING_HOOK_COMM_DIR` overrides it outright. `bin/hooks/*.sh` honour the same variable,
----     and the adapters spawn the CLI with `vim.fn.environ()`, so the hook side sees the same
----     value and both agree. Tests use it to get a private directory instead of racing on the
----     shared one.
----   * without a listening port (tests, or before the server starts) the path is suffixed with the
----     PID rather than collapsing to a single `vibing-hook-0` that every instance would share.
+--- in permission.lua, rate_limit.lua and hook_cleanup.lua. `bin/hooks/*.sh` read the same
+--- `$VIBING_HOOK_COMM_DIR` override, and the adapters spawn the CLI with `vim.fn.environ()`, so
+--- both sides always agree.
 ---
 --- @module vibing.infrastructure.rpc.comm_dir
 
@@ -38,7 +32,7 @@ local function current_port()
 end
 
 --- Path of the comm directory a given RPC port would use.
---- @param port number
+--- @param port number|string
 --- @return string
 function M.for_port(port)
   return M.ROOT .. "/" .. M.PREFIX .. tostring(port)
@@ -58,7 +52,7 @@ function M.path()
   end
 
   -- No port to key on: stay per-process so two portless instances cannot share a directory.
-  return M.ROOT .. "/" .. M.PREFIX .. "0-" .. tostring(vim.fn.getpid())
+  return M.for_port("0-" .. vim.fn.getpid())
 end
 
 return M

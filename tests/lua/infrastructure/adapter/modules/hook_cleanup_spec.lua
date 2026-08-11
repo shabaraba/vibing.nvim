@@ -105,6 +105,19 @@ describe("hook_cleanup.cleanup_stale_dirs", function()
     assert.equals(0, vim.fn.filereadable(own .. "/req-1.req"))
   end)
 
+  it("sweeps its own directory even when the override puts it outside ROOT", function()
+    local own = vim.fn.tempname() .. "/elsewhere"
+    vim.fn.mkdir(own, "p")
+    vim.fn.writefile({ "{}" }, own .. "/req-1.req")
+    vim.env[CommDir.ENV_VAR] = own
+
+    hook_cleanup.cleanup_stale_dirs()
+
+    assert.is_true(exists(own))
+    assert.equals(0, vim.fn.filereadable(own .. "/req-1.req"))
+    pcall(vim.fn.delete, own, "rf")
+  end)
+
   it("does not touch unrelated directories", function()
     local unrelated = make_dir("something-else")
 

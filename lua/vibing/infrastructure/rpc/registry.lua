@@ -17,8 +17,9 @@ M.ENV_REGISTRY_DIR = "VIBING_INSTANCES_DIR"
 ---  - Linux/macOS: ~/.local/share/nvim (or $XDG_DATA_HOME/nvim)
 ---  - Windows: ~/AppData/Local/nvim-data
 ---Note: Must match getRegistryPath() in mcp-server/src/handlers/instances.ts
+---Exposed so tests can point it at a temporary directory.
 ---@return string path Registry directory path
-local function get_registry_dir()
+function M.get_registry_dir()
   local override = vim.env[M.ENV_REGISTRY_DIR]
   if override and override ~= "" then
     return override
@@ -28,23 +29,17 @@ local function get_registry_dir()
   return data_dir .. "/vibing-instances"
 end
 
----Registry directory path (exposed for tests and for the cleanup helpers)
----@return string
-function M.get_registry_dir()
-  return get_registry_dir()
-end
-
 ---Get registry file path for current instance
 ---@return string path Registry file path
 local function get_instance_file()
   local pid = vim.fn.getpid()
-  return get_registry_dir() .. "/" .. pid .. ".json"
+  return M.get_registry_dir() .. "/" .. pid .. ".json"
 end
 
 ---Ensure registry directory exists
 ---@return boolean success Whether directory was created or already exists
 local function ensure_registry_dir()
-  local dir = get_registry_dir()
+  local dir = M.get_registry_dir()
   local stat = uv.fs_stat(dir)
   if not stat then
     local ok, err = vim.fn.mkdir(dir, "p")
@@ -113,7 +108,7 @@ end
 ---List all registered instances
 ---@return table instances Array of instance data
 function M.list()
-  local dir = get_registry_dir()
+  local dir = M.get_registry_dir()
   local stat = uv.fs_stat(dir)
 
   if not stat then
@@ -136,15 +131,10 @@ function M.list()
         local json_ok, data = pcall(vim.json.decode, content[1])
 
         if json_ok and data and data.pid then
-          -- Check if process is still alive.
-          -- uv.kill follows luv's "value, or nil + err" convention rather than raising, so
-          -- pcall's first return only says "the call did not throw" — it is true for a dead PID
-          -- too, which would mark every entry alive. The signal-0 outcome is in the *second*
-          -- return: 0 if the process exists.
-          -- Only ESRCH proves the process is gone. EPERM means it exists but belongs to another
-          -- user, and anything unexpected is treated as alive too: a wrong "dead" verdict
-          -- deletes this file and lets hook_cleanup remove a live instance's comm directory,
-          -- so the safe default is to keep the entry.
+          -- uv.kill returns nil+err instead of raising, so pcall's first return says nothing
+          -- about liveness. Only ESRCH proves the process is gone; EPERM and anything
+          -- unexpected count as alive, since a wrong "dead" verdict deletes a live instance's
+          -- entry and its comm directory with it.
           local call_ok, result, err = pcall(uv.kill, data.pid, 0)
           local gone = call_ok and result == nil and tostring(err or ""):match("^ESRCH") ~= nil
 

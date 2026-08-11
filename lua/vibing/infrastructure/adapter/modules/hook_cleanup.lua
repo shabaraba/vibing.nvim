@@ -7,24 +7,18 @@ local M = {}
 --- `registry.list()` already drops entries whose PID is gone, so whatever it returns is live.
 --- @return table<string, boolean> set of directory paths
 local function live_comm_dirs()
-  local ok_registry, registry = pcall(require, "vibing.infrastructure.rpc.registry")
-  if not ok_registry then
-    return {}
-  end
-
-  local CommDir = require("vibing.infrastructure.rpc.comm_dir")
-  local dirs = {}
-  local ok_list, instances = pcall(registry.list)
-  if not ok_list then
-    return {}
-  end
-
-  for _, instance in ipairs(instances) do
-    if instance.port then
-      dirs[CommDir.for_port(instance.port)] = true
+  local ok, dirs = pcall(function()
+    local registry = require("vibing.infrastructure.rpc.registry")
+    local CommDir = require("vibing.infrastructure.rpc.comm_dir")
+    local result = {}
+    for _, instance in ipairs(registry.list()) do
+      if instance.port then
+        result[CommDir.for_port(instance.port)] = true
+      end
     end
-  end
-  return dirs
+    return result
+  end)
+  return ok and dirs or {}
 end
 
 --- Remove stale /tmp/vibing-hook-* directories
@@ -36,7 +30,10 @@ end
 function M.cleanup_stale_dirs()
   local CommDir = require("vibing.infrastructure.rpc.comm_dir")
   local current_dir = CommDir.path()
-  local in_use = live_comm_dirs()
+
+  -- Sweep our own directory up front: $VIBING_HOOK_COMM_DIR can put it outside ROOT, where the
+  -- scan below would never reach it.
+  M._cleanup_files_in_dir(current_dir)
 
   local handle = vim.loop.fs_scandir(CommDir.ROOT)
   if not handle then
@@ -44,6 +41,7 @@ function M.cleanup_stale_dirs()
   end
 
   local prefix_pattern = "^" .. vim.pesc(CommDir.PREFIX)
+  local in_use
 
   while true do
     local name, type = vim.loop.fs_scandir_next(handle)
@@ -52,10 +50,12 @@ function M.cleanup_stale_dirs()
     end
     if type == "directory" and name:match(prefix_pattern) then
       local dir = CommDir.ROOT .. "/" .. name
-      if dir == current_dir then
-        M._cleanup_files_in_dir(dir)
-      elseif not in_use[dir] then
-        M._remove_dir_recursive(dir)
+      if dir ~= current_dir then
+        -- Built on the first leftover found: with none (the usual startup) we skip the scan.
+        in_use = in_use or live_comm_dirs()
+        if not in_use[dir] then
+          M._remove_dir_recursive(dir)
+        end
       end
     end
   end
