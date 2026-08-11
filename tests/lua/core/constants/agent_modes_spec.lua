@@ -40,6 +40,26 @@ describe("config validation of agent.default_mode", function()
   end)
 end)
 
+describe("fork._copy_frontmatter", function()
+  local fork = require("vibing.application.chat.use_cases.fork")
+  local config = { agent = { default_mode = "code", default_model = "sonnet" } }
+
+  it("carries a valid mode over to the fork", function()
+    local copied = fork._copy_frontmatter({ mode = "explore" }, "source.md", config)
+    assert.equals("explore", copied.mode)
+  end)
+
+  it("resets an invalid mode instead of propagating it into the fork", function()
+    local copied = fork._copy_frontmatter({ mode = "planning" }, "source.md", config)
+    assert.equals("code", copied.mode)
+  end)
+
+  it("falls back to the configured default when the source has no mode", function()
+    local copied = fork._copy_frontmatter({}, "source.md", { agent = { default_mode = "plan" } })
+    assert.equals("plan", copied.mode)
+  end)
+end)
+
 describe("send_message._validate_frontmatter_mode", function()
   local SendMessage = require("vibing.application.chat.send_message")
 
