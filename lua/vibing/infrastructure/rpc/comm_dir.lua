@@ -61,12 +61,4 @@ function M.path()
   return M.ROOT .. "/" .. M.PREFIX .. "0-" .. tostring(vim.fn.getpid())
 end
 
---- Create the comm directory if it does not exist yet.
---- @return string path
-function M.ensure()
-  local dir = M.path()
-  vim.fn.mkdir(dir, "p")
-  return dir
-end
-
 return M

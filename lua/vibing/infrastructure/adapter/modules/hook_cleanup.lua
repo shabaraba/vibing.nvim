@@ -73,7 +73,9 @@ function M._cleanup_files_in_dir(dir)
     if not name then
       break
     end
-    if name:match("%.req$") or name:match("%.res$") or name:match("%.tmp$") then
+    -- .fail is written by stop-failure.sh and consumed by the rate_limit handler; if that
+    -- handler never ran (Neovim was already gone), the file would otherwise stay forever.
+    if name:match("%.req$") or name:match("%.res$") or name:match("%.tmp$") or name:match("%.fail$") then
       os.remove(dir .. "/" .. name)
     end
   end

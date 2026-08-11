@@ -62,15 +62,4 @@ describe("vibing.infrastructure.rpc.comm_dir", function()
     -- The whole point: two portless instances must not land on the same directory.
     assert.is_not.equals("/tmp/vibing-hook-0", path)
   end)
-
-  it("creates the directory on ensure()", function()
-    local dir = vim.fn.tempname() .. "/comm"
-    vim.env[CommDir.ENV_VAR] = dir
-
-    assert.equals(0, vim.fn.isdirectory(dir))
-    assert.equals(dir, CommDir.ensure())
-    assert.equals(1, vim.fn.isdirectory(dir))
-
-    vim.fn.delete(dir, "rf")
-  end)
 end)
