@@ -27,16 +27,6 @@ local function generate_fork_filename(source_path, save_dir)
   return fork_filename
 end
 
----@param mode any
----@return string|nil mode 有効なagent modeならそのまま、そうでなければnil
-local function valid_agent_mode(mode)
-  local Modes = require("vibing.core.constants.modes")
-  if type(mode) == "string" and Modes.is_valid_agent_mode(mode) then
-    return mode
-  end
-  return nil
-end
-
 ---フロントマターをコピー（session_idはフォーク元を引き継ぎ、forked_fromを追加）
 ---@param source_frontmatter table
 ---@param forked_from string
@@ -53,7 +43,7 @@ function M._copy_frontmatter(source_frontmatter, forked_from, config)
     working_dir = source_frontmatter.working_dir,
     agent = source_frontmatter.agent or (config.adapter or "claude"),
     -- 不正なmodeはフォーク先へ持ち込まない（コピーすると誤りが増殖するだけなのでデフォルトに戻す）
-    mode = valid_agent_mode(source_frontmatter.mode) or (config.agent and config.agent.default_mode or "code"),
+    mode = require("vibing.core.constants.modes").coerce_agent_mode(source_frontmatter.mode) or (config.agent and config.agent.default_mode or "code"),
     model = source_frontmatter.model or (config.agent and config.agent.default_model or "sonnet"),
     permission_mode = source_frontmatter.permission_mode
       or (config.permissions and config.permissions.mode or "acceptEdits"),

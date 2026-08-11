@@ -48,4 +48,15 @@ function M.is_valid_agent_mode(mode)
   return vim.tbl_contains(M.AGENT_MODES, mode)
 end
 
+---agent modeとして使える値ならそのまま返し、そうでなければnilを返す
+---呼び出し側は「nilが返った＋元がnilでない」で綴り間違いを検出できる
+---@param mode any
+---@return string|nil
+function M.coerce_agent_mode(mode)
+  if M.is_valid_agent_mode(mode) then
+    return mode
+  end
+  return nil
+end
+
 return M

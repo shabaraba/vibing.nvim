@@ -75,6 +75,21 @@ describe("send_message._validate_frontmatter_mode", function()
     assert.is_nil(SendMessage._validate_frontmatter_mode("planning"))
   end)
 
+  it("warns only once for the same typo, since execute runs per message", function()
+    local warned = 0
+    local original = vim.notify
+    vim.notify = function()
+      warned = warned + 1
+    end
+
+    SendMessage._validate_frontmatter_mode("repeated-typo")
+    SendMessage._validate_frontmatter_mode("repeated-typo")
+    SendMessage._validate_frontmatter_mode("repeated-typo")
+
+    vim.notify = original
+    assert.equals(1, warned)
+  end)
+
   it("drops a non-string mode", function()
     assert.is_nil(SendMessage._validate_frontmatter_mode(42))
   end)

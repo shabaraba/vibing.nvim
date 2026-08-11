@@ -35,9 +35,12 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field clear_sending fun() 送信中フラグを解除
 ---@field get_cwd fun(): string|nil worktreeのcwdを取得
 
----frontmatterの`mode`を検証する
----`mode`はそのチャットの意図を記録するメタデータで、アダプター層に消費者はなくCLIにも渡らない
----（権限モードの`plan`とは別物）。それでも綴り間違いを黙って飲み込まないよう警告する。
+---綴り間違いの警告済み集合。executeは1メッセージごとに走るので、これがないと同じ誤字の
+---チャットで送信のたびに同じ警告が出続ける
+---@type table<string, boolean>
+local warned_modes = {}
+
+---frontmatterの`mode`を検証する（`mode`の意味は core/constants/modes.lua を参照）
 ---@param mode any frontmatterのmode値
 ---@return string|nil mode 有効な場合はそのまま、無効な場合はnil
 function M._validate_frontmatter_mode(mode)
@@ -46,18 +49,19 @@ function M._validate_frontmatter_mode(mode)
   end
 
   local Modes = require("vibing.core.constants.modes")
-  if type(mode) == "string" and Modes.is_valid_agent_mode(mode) then
-    return mode
+  local valid = Modes.coerce_agent_mode(mode)
+  if valid then
+    return valid
   end
 
-  vim.notify(
-    string.format(
-      "[vibing] Invalid mode '%s' in frontmatter; expected one of: %s",
-      tostring(mode),
-      table.concat(Modes.AGENT_MODES, ", ")
-    ),
-    vim.log.levels.WARN
-  )
+  local key = tostring(mode)
+  if not warned_modes[key] then
+    warned_modes[key] = true
+    vim.notify(
+      string.format("[vibing] Invalid mode '%s' in frontmatter; expected one of: %s", key, table.concat(Modes.AGENT_MODES, ", ")),
+      vim.log.levels.WARN
+    )
+  end
   return nil
 end
 

@@ -77,7 +77,7 @@
 ---@class Vibing.AgentConfig
 ---Agent SDK設定
 ---Claudeのモード（code/plan/explore）とモデル（sonnet/opus/haiku/fable）を指定
----@field default_mode "code"|"plan"|"explore" 新規チャットのfrontmatterに`mode`として記録される（"code": コード生成、"plan": 計画、"explore": 探索）。ユーザーが意図を記録するためのメタデータで、現状は挙動を変えずCLIにも渡らない（`permissions.mode = "plan"`とは別物）
+---@field default_mode "code"|"plan"|"explore" 新規チャットのfrontmatterに記録される`mode`の既定値（意味は core/constants/modes.lua の M.AGENT_MODES 参照）
 ---@field default_model "sonnet"|"opus"|"haiku"|"fable" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速、"fable": Claude Fable）
 ---@field utility_model "sonnet"|"opus"|"haiku"|"fable" タイトル生成・要約等の軽量ユーティリティ呼び出し専用モデル（デフォルト: "haiku"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）
@@ -402,7 +402,10 @@ function M.setup(opts)
 
   local function validate_enum(value, valid_values, field_name, default)
     if value and not valid_values[value] then
-      local valid_list = table.concat(vim.tbl_keys(valid_values), ", ")
+      -- tbl_keysの順序は不定なので、警告文が実行ごとに変わらないようソートする
+      local keys = vim.tbl_keys(valid_values)
+      table.sort(keys)
+      local valid_list = table.concat(keys, ", ")
       notify.warn(string.format(
         "Invalid %s value '%s'. Valid values: %s. Falling back to '%s'.",
         field_name, value, valid_list, default
