@@ -16,14 +16,23 @@
 ---扱うのはいずれも小文字固定のUnixコマンド名なので、これは意図的な割り切り。
 local M = {}
 
----コマンド位置（行頭、または`;` `&&` `||` `|` の直後）に現れる`command`にマッチするパターン群
+---コマンド位置（先頭、または`;` `&&` `||` `|` 改行の直後）に現れる`command`にマッチするパターン群。
+---Bashツールは複数行スクリプトを1つの`command`として渡してくるので、改行も区切りとして扱わないと
+---2行目以降のコマンドが素通りする。
 ---@param command string Lua pattern（コマンド名部分）
 ---@return string[]
 local function at_command_position(command)
   return {
     "^%s*" .. command,
-    "[;&|]%s*" .. command,
+    "[;&|\n]%s*" .. command,
   }
+end
+
+---トークンの終端（空白 or 文字列末尾）。`%f[%s]`だけだと末尾のトークンを取りこぼす。
+---@param token string Lua pattern
+---@return string[]
+local function token_end(token)
+  return { token .. "%f[%s]", token .. "$" }
 end
 
 ---複数のパターン配列を連結する
@@ -61,6 +70,35 @@ local function rm_patterns(targets)
   return patterns
 end
 
+---main/masterへのforce pushを表すパターン群を展開する。
+---`git push`はフラグの位置を問わないので、`--force origin main`と`origin main --force`の
+---両方の並び順を生成する必要がある（Lua patternに選択がないため）。
+---ブランチ名は空白/末尾で区切られたトークンとしてのみ一致させる。`%f[%W]`だけだと`-`も境界に
+---なってしまい、`main-v2`のような別ブランチを誤検知する。
+---@return string[]
+local function git_force_push_patterns()
+  local PREFIX = "git%s+push%s+"
+  local SEGMENT = "[^;&|\n]*"
+  -- 長形式と短縮クラスタ（`-f`, `-uf` ...）。`--force-with-lease`はいずれにも一致しない。
+  local FORCE_FLAGS = { "%-%-force", "%-%a*f%a*" }
+  local BRANCHES = { "main", "master" }
+
+  local patterns = {}
+  for _, flag in ipairs(FORCE_FLAGS) do
+    for _, branch in ipairs(BRANCHES) do
+      for _, branch_token in ipairs(token_end("%s" .. branch)) do
+        -- フラグが先: git push --force origin main
+        table.insert(patterns, PREFIX .. SEGMENT .. flag .. "%f[%s]" .. SEGMENT .. branch_token)
+      end
+      for _, flag_token in ipairs(token_end(flag)) do
+        -- ブランチが先: git push origin main --force
+        table.insert(patterns, PREFIX .. SEGMENT .. "%s" .. branch .. "%f[%s]" .. SEGMENT .. flag_token)
+      end
+    end
+  end
+  return patterns
+end
+
 ---@type PermissionRule[]
 M.DEFAULT_DENY_RULES = {
   {
@@ -89,8 +127,9 @@ M.DEFAULT_DENY_RULES = {
   {
     tools = { "Bash" },
     patterns = concat(
-      -- dd writing to a raw device, and filesystem creation
-      { "dd%s+[^;&|]*of=/dev/" },
+      -- dd writing to a raw device, and filesystem creation.
+      -- `dd` is anchored at command position so "add"/"odd" cannot trip the rule.
+      at_command_position("dd%f[%W][^;&|]*of=/dev/"),
       at_command_position("dd%s+if="),
       at_command_position("mkfs%f[%W]"),
       at_command_position("mkfs%.")
@@ -112,14 +151,9 @@ M.DEFAULT_DENY_RULES = {
   {
     -- Only force-pushes that name main/master are matched: a Lua pattern cannot know which branch
     -- a bare `git push --force` would land on. `--force-with-lease` is deliberately allowed —
-    -- `%f[%s]` requires whitespace right after "force".
+    -- the flag must be followed by whitespace or end there, and "force-with-lease" is neither.
     tools = { "Bash" },
-    patterns = {
-      "git%s+push%s+[^;&|]*%-%-force%f[%s][^;&|]*%f[%w]main%f[%W]",
-      "git%s+push%s+[^;&|]*%-%-force%f[%s][^;&|]*%f[%w]master%f[%W]",
-      "git%s+push%s+[^;&|]*%-%a*f%a*%f[%s][^;&|]*%f[%w]main%f[%W]",
-      "git%s+push%s+[^;&|]*%-%a*f%a*%f[%s][^;&|]*%f[%w]master%f[%W]",
-    },
+    patterns = git_force_push_patterns(),
     action = "deny",
     message = "Force-pushing main/master is blocked by vibing.nvim's default deny rules. "
       .. "Use --force-with-lease on a feature branch, or set permissions.default_deny_rules = false.",

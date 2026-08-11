@@ -38,6 +38,11 @@ describe("destructive_commands.DEFAULT_DENY_RULES", function()
       assert.is_true(is_denied("echo hi; rm -rf ~"))
     end)
 
+    it("blocks it on a later line of a multi-line script", function()
+      -- The Bash tool passes a whole script as one command string.
+      assert.is_true(is_denied("echo prep\nrm -rf /"))
+    end)
+
     it("leaves ordinary deletions alone", function()
       assert.is_false(is_denied("rm -rf node_modules"))
       assert.is_false(is_denied("rm --recursive ./dist/"))
@@ -55,6 +60,11 @@ describe("destructive_commands.DEFAULT_DENY_RULES", function()
       assert.is_true(is_denied("doas pkg_add tree"))
     end)
 
+    it("blocks it on a later line of a multi-line script", function()
+      assert.is_true(is_denied("echo prep\nsudo rm -rf /important-data"))
+      assert.is_true(is_denied("cd /tmp\ndoas pkg_add tree"))
+    end)
+
     it("does not trip on the word appearing inside an argument", function()
       assert.is_false(is_denied("grep sudo /etc/group"))
       assert.is_false(is_denied("echo 'no sudo here'"))
@@ -70,9 +80,15 @@ describe("destructive_commands.DEFAULT_DENY_RULES", function()
       assert.is_true(is_denied("mkfs -t ext4 /dev/sda1"))
     end)
 
+    it("blocks them on a later line of a multi-line script", function()
+      assert.is_true(is_denied("echo prep\nmkfs.ext4 /dev/sda1"))
+    end)
+
     it("leaves unrelated commands alone", function()
       assert.is_false(is_denied("ls /dev/null"))
       assert.is_false(is_denied("cat file > /dev/null"))
+      -- "add" contains "dd"; the rule is anchored at command position so this is not a match.
+      assert.is_false(is_denied("echo add of=/dev/null"))
     end)
   end)
 
@@ -95,12 +111,25 @@ describe("destructive_commands.DEFAULT_DENY_RULES", function()
       assert.is_true(is_denied("git push --force origin main"))
       assert.is_true(is_denied("git push --force origin master"))
       assert.is_true(is_denied("git push -f origin main"))
+      assert.is_true(is_denied("git push -uf origin master"))
+    end)
+
+    it("blocks it regardless of where the flag sits", function()
+      -- git push does not care about flag order, so neither can the rule.
+      assert.is_true(is_denied("git push origin main --force"))
+      assert.is_true(is_denied("git push origin master -f"))
     end)
 
     it("allows --force-with-lease, and force-pushing other branches", function()
       assert.is_false(is_denied("git push --force-with-lease origin main"))
       assert.is_false(is_denied("git push --force origin my-feature"))
       assert.is_false(is_denied("git push origin main"))
+    end)
+
+    it("does not mistake a branch that merely starts with main/master", function()
+      assert.is_false(is_denied("git push --force origin main-v2"))
+      assert.is_false(is_denied("git push --force origin master-old"))
+      assert.is_false(is_denied("git push origin mainline --force"))
     end)
   end)
 end)

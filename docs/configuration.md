@@ -400,8 +400,9 @@ permissions = {
 | World-writable trees                 | `chmod -R 777 .`                                              |
 | Force-pushing main/master            | `git push --force origin main` (`--force-with-lease` is fine) |
 
-They match after shell separators too, so `cd /tmp && sudo rm -rf /` is caught, not just a command
-at the start of the line. The full list lives in
+They match after shell separators **and after newlines**, so both `cd /tmp && sudo rm -rf /` and a
+`sudo` on the second line of a multi-line script are caught — the Bash tool hands a whole script
+over as one command. The full list lives in
 `lua/vibing/core/constants/destructive_commands.lua`.
 
 Known gaps — these are a safety net, not a sandbox:
@@ -410,6 +411,8 @@ Known gaps — these are a safety net, not a sandbox:
   short flags (`-rf`) and GNU longform (`--recursive`) are.
 - Matching is case-sensitive; every command covered here is a lowercase Unix command name.
 - A bare `git push --force` is allowed, because a pattern cannot know which branch it lands on.
+  Naming the branch is caught in either flag order (`--force origin main` and `origin main
+--force`), and a branch that merely starts with main/master (`main-v2`) is not.
 - `permissions.deny`/`allow` cannot switch off an individual bundled rule; use
   `default_deny_rules = false` and re-add the ones you want to `rules`.
 
