@@ -71,7 +71,9 @@ function M.update_field(buf, key, value, update_timestamp)
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, FRONTMATTER_SCAN_LINES, false)
   local frontmatter_end = 0
-  local key_line = nil
+  -- 正式キーと旧綴りの行を全部拾う。旧バージョンが両方の行を書いてしまったファイルが実在しうる
+  -- ので、1本だけ残して残りは消さないと重複が永久に残る。
+  local matched_lines = {}
 
   for i, line in ipairs(lines) do
     if i == 1 and line == "---" then
@@ -82,7 +84,7 @@ function M.update_field(buf, key, value, update_timestamp)
     else
       for _, pattern in ipairs(key_patterns) do
         if line:match(pattern) then
-          key_line = i
+          table.insert(matched_lines, i)
           break
         end
       end
@@ -92,6 +94,14 @@ function M.update_field(buf, key, value, update_timestamp)
   if frontmatter_end == 0 then
     return false
   end
+
+  -- 後ろから消して、先頭の1本（なければ挿入位置）だけを書き換え対象に残す
+  for i = #matched_lines, 2, -1 do
+    local line_nr = matched_lines[i]
+    vim.api.nvim_buf_set_lines(buf, line_nr - 1, line_nr, false, {})
+    frontmatter_end = frontmatter_end - 1
+  end
+  local key_line = matched_lines[1]
 
   -- valueがnilの場合はフィールドを削除
   if value == nil then

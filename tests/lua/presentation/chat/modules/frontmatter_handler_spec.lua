@@ -45,6 +45,15 @@ describe("frontmatter_handler.update_field", function()
     assert.same({ "session_id: abc", "permission_mode: plan" }, frontmatter_lines())
   end)
 
+  it("collapses a file that already carries both spellings", function()
+    -- Before this branch, /permission appended the canonical key next to the legacy one, so
+    -- files with both lines exist in the wild. Writing the key has to leave exactly one.
+    open({ "---", "permissions_mode: default", "session_id: abc", "permission_mode: plan", "---", "" })
+
+    assert.is_true(handler.update_field(buf, "permission_mode", "acceptEdits", false))
+    assert.same({ "permission_mode: acceptEdits", "session_id: abc" }, frontmatter_lines())
+  end)
+
   it("rewrites a legacy plural line in place instead of adding a duplicate", function()
     -- A chat written against the old README. Writing the canonical key must not leave the file
     -- carrying the same setting twice under two spellings.
