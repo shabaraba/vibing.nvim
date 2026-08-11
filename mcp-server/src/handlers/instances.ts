@@ -14,7 +14,18 @@ import * as os from 'os';
  *
  * @returns Registry directory path
  */
+/**
+ * Overrides the registry directory. Must match ENV_REGISTRY_DIR in
+ * lua/vibing/infrastructure/rpc/registry.lua, or the two sides look at different directories.
+ */
+const REGISTRY_DIR_ENV = 'VIBING_INSTANCES_DIR';
+
 function getRegistryPath(): string {
+  const override = process.env[REGISTRY_DIR_ENV];
+  if (override) {
+    return override;
+  }
+
   const platform = os.platform();
 
   if (platform === 'win32') {

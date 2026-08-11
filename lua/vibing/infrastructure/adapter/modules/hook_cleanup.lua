@@ -7,30 +7,27 @@ local M = {}
 --- Cleans up leftover .req/.res files from previous vibing.nvim sessions.
 --- Skips the directory for the current RPC port (if running).
 function M.cleanup_stale_dirs()
-  local current_port = nil
-  local ok, rpc_server = pcall(require, "vibing.infrastructure.rpc.server")
-  if ok then
-    current_port = rpc_server.get_port()
-  end
+  local CommDir = require("vibing.infrastructure.rpc.comm_dir")
+  local current_dir = CommDir.path()
 
-  local current_dir_suffix = current_port and tostring(current_port) or nil
-
-  local handle = vim.loop.fs_scandir("/tmp")
+  local handle = vim.loop.fs_scandir(CommDir.ROOT)
   if not handle then
     return
   end
+
+  local prefix_pattern = "^" .. vim.pesc(CommDir.PREFIX)
 
   while true do
     local name, type = vim.loop.fs_scandir_next(handle)
     if not name then
       break
     end
-    if type == "directory" and name:match("^vibing%-hook%-") then
-      local port_suffix = name:match("^vibing%-hook%-(.+)$")
-      if current_dir_suffix and port_suffix == current_dir_suffix then
-        M._cleanup_files_in_dir("/tmp/" .. name)
+    if type == "directory" and name:match(prefix_pattern) then
+      local dir = CommDir.ROOT .. "/" .. name
+      if dir == current_dir then
+        M._cleanup_files_in_dir(dir)
       else
-        M._remove_dir_recursive("/tmp/" .. name)
+        M._remove_dir_recursive(dir)
       end
     end
   end

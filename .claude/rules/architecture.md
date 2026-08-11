@@ -34,8 +34,13 @@ The PreToolUse hook is synchronous and blocks the tool call: it writes the hook 
 with `nc`, then polls for `<request_id>.res` (up to 120s). It **fails closed** — if `nc` cannot
 connect, or the response never arrives, the hook exits 2 and the tool is denied. `VIBING_HANDLE_ID`
 is passed through so concurrent chats don't cross-wire each other's approval UI (see
-`active_stream_registry.lua`). Note that the `/tmp` comm directory is keyed only by port, which is
-machine-wide shared state.
+`active_stream_registry.lua`). The comm directory path comes from
+`infrastructure/rpc/comm_dir.lua` (the single source of truth shared by the handlers, the cleanup
+routine and `bin/hooks/*.sh`). It is machine-wide shared state keyed by port, so it has two
+escape hatches: `$VIBING_HOOK_COMM_DIR` overrides it outright (tests use this), and without a
+listening port it falls back to a PID-suffixed path rather than a single shared `vibing-hook-0`.
+The instance registry has the same treatment via `$VIBING_INSTANCES_DIR` (honoured by both
+`rpc/registry.lua` and `mcp-server/src/handlers/instances.ts`).
 
 **Backends:** `claude_cli.lua` (default) and `codex_cli.lua` both implement the adapter
 interface; `init.lua` picks one from `config.adapter`, and `send_message.lua` can switch per

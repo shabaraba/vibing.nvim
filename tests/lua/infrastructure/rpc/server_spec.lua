@@ -14,8 +14,16 @@ describe("vibing.infrastructure.rpc.server", function()
   local server
   local registry
   local base_port
+  local registry_dir
+  local saved_env
 
   before_each(function()
+    -- Private registry directory: the default under stdpath("data") is shared machine-wide, so
+    -- the fake instance files written below would collide with the parallel plenary jobs.
+    saved_env = vim.env.VIBING_INSTANCES_DIR
+    registry_dir = vim.fn.tempname() .. "/vibing-instances"
+    vim.env.VIBING_INSTANCES_DIR = registry_dir
+
     -- Reload modules before each test
     package.loaded["vibing.infrastructure.rpc.server"] = nil
     package.loaded["vibing.infrastructure.rpc.registry"] = nil
@@ -29,6 +37,8 @@ describe("vibing.infrastructure.rpc.server", function()
     if server.is_running() then
       server.stop()
     end
+    pcall(vim.fn.delete, registry_dir, "rf")
+    vim.env.VIBING_INSTANCES_DIR = saved_env
   end)
 
   describe("start", function()
@@ -119,7 +129,7 @@ describe("vibing.infrastructure.rpc.server", function()
 
     it("should skip ports in registry (cached instances)", function()
       -- Register a fake instance on base_port
-      local registry_dir = vim.fn.stdpath("data") .. "/vibing-instances"
+      local registry_dir = registry.get_registry_dir()
       vim.fn.mkdir(registry_dir, "p")
       local fake_pid = vim.fn.getpid() + 100
       local fake_instance = {
@@ -228,7 +238,7 @@ describe("vibing.infrastructure.rpc.server", function()
       -- The optimization means registry.list() is called once, not 10 times
 
       -- Create multiple fake instances to force server to check multiple ports
-      local registry_dir = vim.fn.stdpath("data") .. "/vibing-instances"
+      local registry_dir = registry.get_registry_dir()
       vim.fn.mkdir(registry_dir, "p")
       local fake_files = {}
 

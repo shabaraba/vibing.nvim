@@ -3,11 +3,25 @@
 describe("vibing.infrastructure.rpc.registry", function()
   local registry
   local uv = vim.loop
+  local registry_dir
+  local saved_env
 
   before_each(function()
+    -- Point the registry at a private directory. The default lives under stdpath("data") and is
+    -- shared by every Neovim on the machine, so specs that clear it would race with the parallel
+    -- plenary jobs (and delete the developer's real instance files).
+    saved_env = vim.env.VIBING_INSTANCES_DIR
+    registry_dir = vim.fn.tempname() .. "/vibing-instances"
+    vim.env.VIBING_INSTANCES_DIR = registry_dir
+
     -- Reload module before each test
     package.loaded["vibing.infrastructure.rpc.registry"] = nil
     registry = require("vibing.infrastructure.rpc.registry")
+  end)
+
+  after_each(function()
+    pcall(vim.fn.delete, registry_dir, "rf")
+    vim.env.VIBING_INSTANCES_DIR = saved_env
   end)
 
   describe("register", function()
@@ -72,8 +86,8 @@ describe("vibing.infrastructure.rpc.registry", function()
 
       local instances = registry.list()
       assert.is_table(instances)
-      -- Note: May contain other instances from other Neovim processes
-      -- So we can't assert it's completely empty
+      -- The registry directory is private to this spec, so nothing else can be in it.
+      assert.equals(0, #instances)
     end)
 
     it("should return registered instances", function()
@@ -107,7 +121,7 @@ describe("vibing.infrastructure.rpc.registry", function()
 
       -- Register second instance (newer)
       local current_pid = vim.fn.getpid()
-      local registry_dir = vim.fn.stdpath("data") .. "/vibing-instances"
+      local registry_dir = registry.get_registry_dir()
       local fake_pid = current_pid + 1
 
       -- Manually create a second instance file with newer timestamp
@@ -186,7 +200,7 @@ describe("vibing.infrastructure.rpc.registry", function()
   describe("error handling", function()
     it("should handle missing registry directory gracefully", function()
       -- Remove registry directory if it exists
-      local registry_dir = vim.fn.stdpath("data") .. "/vibing-instances"
+      local registry_dir = registry.get_registry_dir()
       pcall(vim.fn.delete, registry_dir, "rf")
 
       -- list() should return empty array

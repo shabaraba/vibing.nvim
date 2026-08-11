@@ -5,6 +5,13 @@ local M = {}
 
 local uv = vim.loop
 
+---Environment variable overriding the registry directory.
+---Exists so tests can point at a private temporary directory: the default path is shared by every
+---Neovim instance on the machine, including the developer's real one, and specs that clear the
+---directory would otherwise delete live instance files.
+---Note: Must match REGISTRY_DIR_ENV in mcp-server/src/handlers/instances.ts
+M.ENV_REGISTRY_DIR = "VIBING_INSTANCES_DIR"
+
 ---Get registry directory path
 ---Uses vim.fn.stdpath("data") which handles platform differences:
 ---  - Linux/macOS: ~/.local/share/nvim (or $XDG_DATA_HOME/nvim)
@@ -12,8 +19,19 @@ local uv = vim.loop
 ---Note: Must match getRegistryPath() in mcp-server/src/handlers/instances.ts
 ---@return string path Registry directory path
 local function get_registry_dir()
+  local override = vim.env[M.ENV_REGISTRY_DIR]
+  if override and override ~= "" then
+    return override
+  end
+
   local data_dir = vim.fn.stdpath("data")
   return data_dir .. "/vibing-instances"
+end
+
+---Registry directory path (exposed for tests and for the cleanup helpers)
+---@return string
+function M.get_registry_dir()
+  return get_registry_dir()
 end
 
 ---Get registry file path for current instance
