@@ -408,7 +408,7 @@ over as one command. The full list lives in
 Known gaps — these are a safety net, not a sandbox:
 
 - Split short flags (`rm -r -f /`) and obfuscation (`$(echo rm) -rf /`) are not matched. Combined
-  short flags (`-rf`) and GNU longform (`--recursive`) are.
+  short flags (`-rf`), GNU longform (`--recursive`) and quoted targets (`rm -rf "$HOME"`) are.
 - Matching is case-sensitive; every command covered here is a lowercase Unix command name.
 - A bare `git push --force` is allowed, because a pattern cannot know which branch it lands on.
   Naming the branch is caught in either flag order (`--force origin main` and `origin main

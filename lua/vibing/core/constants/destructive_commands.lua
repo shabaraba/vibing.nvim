@@ -28,6 +28,10 @@ local function at_command_position(command)
   }
 end
 
+---引数を囲むクォート（任意）。`rm -rf "$HOME"`のようにクォートするのはshellcheckも勧める
+---普通の書き方で、難読化ではない。
+local QUOTE = "[\"']?"
+
 ---トークンの終端（空白 or 文字列末尾）。`%f[%s]`だけだと末尾のトークンを取りこぼす。
 ---@param token string Lua pattern
 ---@return string[]
@@ -52,9 +56,11 @@ end
 ---それぞれ別パターンとして持つ。Lua patternに選択（`|`）がないため、ターゲットごとに両方を展開する。
 ---`[%-%a%s]*`はフラグらしい文字しか含まないので、`rm --recursive ./dist/`のターゲット部分を
 ---巻き込んでしまうことがない（`.`や`/`がクラスに入っていない）。
+---`%f[%w]`で単語境界を要求する。コマンド位置への固定ではないのは、`find . | xargs rm -rf /`の
+---ような形も捕まえたいため。境界だけ見れば`xterm -rf /`の誤検知は防げる。
 local RM_RECURSIVE_FLAGS = {
-  "rm%s+%-%a*[rR]%a*%s+",
-  "rm%s+[%-%a%s]*%-%-recursive[%-%a%s]*%s",
+  "%f[%w]rm%s+%-%a*[rR]%a*%s+",
+  "%f[%w]rm%s+[%-%a%s]*%-%-recursive[%-%a%s]*%s",
 }
 
 ---再帰削除フラグ × 危険なターゲットの組み合わせを展開する
@@ -77,7 +83,10 @@ end
 ---なってしまい、`main-v2`のような別ブランチを誤検知する。
 ---@return string[]
 local function git_force_push_patterns()
-  local PREFIX = "git%s+push%s+"
+  -- `git -C /path push ...` や `git --no-pager push ...` のように、gitとpushの間にグローバル
+  -- オプションが挟まる形も拾う。クラスにクォートを含めないので、`git commit -m "push ..."` の
+  -- ようなメッセージ中の push は跨げない。
+  local PREFIX = "git%s+[%-%w%./_%s]*push%s+"
   local SEGMENT = "[^;&|\n]*"
   -- 長形式と短縮クラスタ（`-f`, `-uf` ...）。`--force-with-lease`はいずれにも一致しない。
   local FORCE_FLAGS = { "%-%-force", "%-%a*f%a*" }
@@ -86,13 +95,16 @@ local function git_force_push_patterns()
   local patterns = {}
   for _, flag in ipairs(FORCE_FLAGS) do
     for _, branch in ipairs(BRANCHES) do
-      for _, branch_token in ipairs(token_end("%s" .. branch)) do
+      for _, branch_token in ipairs(token_end("%s" .. QUOTE .. branch .. QUOTE)) do
         -- フラグが先: git push --force origin main
         table.insert(patterns, PREFIX .. SEGMENT .. flag .. "%f[%s]" .. SEGMENT .. branch_token)
       end
       for _, flag_token in ipairs(token_end(flag)) do
         -- ブランチが先: git push origin main --force
-        table.insert(patterns, PREFIX .. SEGMENT .. "%s" .. branch .. "%f[%s]" .. SEGMENT .. flag_token)
+        table.insert(
+          patterns,
+          PREFIX .. SEGMENT .. "%s" .. QUOTE .. branch .. QUOTE .. "%f[%s]" .. SEGMENT .. flag_token
+        )
       end
     end
   end
@@ -104,14 +116,14 @@ M.DEFAULT_DENY_RULES = {
   {
     tools = { "Bash" },
     patterns = rm_patterns({
-      -- / , /* , / --no-preserve-root
-      "/%s*$",
-      "/%s",
-      "/%*",
-      -- ~ , ~/ , $HOME , ${HOME}
-      "~",
-      "%$HOME",
-      "%${HOME}",
+      -- / , "/" , / --no-preserve-root , /*
+      QUOTE .. "/" .. QUOTE .. "%s*$",
+      QUOTE .. "/" .. QUOTE .. "%s",
+      QUOTE .. "/%*",
+      -- ~ , ~/ , $HOME , ${HOME} , and the quoted forms of each
+      QUOTE .. "~",
+      QUOTE .. "%$HOME",
+      QUOTE .. "%${HOME}",
     }),
     action = "deny",
     message = "Recursive deletion of / or the home directory is blocked by vibing.nvim's default "

@@ -67,7 +67,7 @@ end
 --- can_use_tool checks every deny rule before any allow rule.
 --- @param perms table config.permissions
 --- @return PermissionRule[]
-local function resolve_permission_rules(perms)
+function M._resolve_permission_rules(perms)
   local user_rules = perms.rules or {}
 
   if perms.default_deny_rules == false then
@@ -94,7 +94,7 @@ local function build_permission_config(handle_id)
     asked_tools = o.permissions_ask or perms.ask or {},
     session_allowed_tools = session_state.allowed,
     session_denied_tools = session_state.denied,
-    permission_rules = resolve_permission_rules(perms),
+    permission_rules = M._resolve_permission_rules(perms),
     permission_mode = o.permission_mode or perms.mode or "default",
     mcp_enabled = config.mcp and config.mcp.enabled or false,
   }
