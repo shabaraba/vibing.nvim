@@ -37,6 +37,13 @@ local function current_port()
   return port
 end
 
+--- Path of the comm directory a given RPC port would use.
+--- @param port number
+--- @return string
+function M.for_port(port)
+  return M.ROOT .. "/" .. M.PREFIX .. tostring(port)
+end
+
 --- Path of the comm directory for this Neovim instance.
 --- @return string
 function M.path()
@@ -47,7 +54,7 @@ function M.path()
 
   local port = current_port()
   if port then
-    return M.ROOT .. "/" .. M.PREFIX .. tostring(port)
+    return M.for_port(port)
   end
 
   -- No port to key on: stay per-process so two portless instances cannot share a directory.

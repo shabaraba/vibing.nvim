@@ -1,5 +1,7 @@
 -- Tests for vibing.infrastructure.rpc.registry module
 
+local ENV_REGISTRY_DIR = require("vibing.infrastructure.rpc.registry").ENV_REGISTRY_DIR
+
 describe("vibing.infrastructure.rpc.registry", function()
   local registry
   local uv = vim.loop
@@ -10,9 +12,9 @@ describe("vibing.infrastructure.rpc.registry", function()
     -- Point the registry at a private directory. The default lives under stdpath("data") and is
     -- shared by every Neovim on the machine, so specs that clear it would race with the parallel
     -- plenary jobs (and delete the developer's real instance files).
-    saved_env = vim.env.VIBING_INSTANCES_DIR
+    saved_env = vim.env[ENV_REGISTRY_DIR]
     registry_dir = vim.fn.tempname() .. "/vibing-instances"
-    vim.env.VIBING_INSTANCES_DIR = registry_dir
+    vim.env[ENV_REGISTRY_DIR] = registry_dir
 
     -- Reload module before each test
     package.loaded["vibing.infrastructure.rpc.registry"] = nil
@@ -21,7 +23,7 @@ describe("vibing.infrastructure.rpc.registry", function()
 
   after_each(function()
     pcall(vim.fn.delete, registry_dir, "rf")
-    vim.env.VIBING_INSTANCES_DIR = saved_env
+    vim.env[ENV_REGISTRY_DIR] = saved_env
   end)
 
   describe("register", function()

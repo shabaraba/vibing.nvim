@@ -1,5 +1,7 @@
 -- Tests for vibing.infrastructure.rpc.comm_dir
 
+local ENV_REGISTRY_DIR = require("vibing.infrastructure.rpc.registry").ENV_REGISTRY_DIR
+
 describe("vibing.infrastructure.rpc.comm_dir", function()
   local CommDir
   local saved_env
@@ -13,15 +15,15 @@ describe("vibing.infrastructure.rpc.comm_dir", function()
     vim.env[CommDir.ENV_VAR] = nil
 
     -- Starting the server below registers an instance; keep that out of the shared registry.
-    saved_registry_env = vim.env.VIBING_INSTANCES_DIR
+    saved_registry_env = vim.env[ENV_REGISTRY_DIR]
     registry_dir = vim.fn.tempname() .. "/vibing-instances"
-    vim.env.VIBING_INSTANCES_DIR = registry_dir
+    vim.env[ENV_REGISTRY_DIR] = registry_dir
   end)
 
   after_each(function()
     vim.env[CommDir.ENV_VAR] = saved_env
     pcall(vim.fn.delete, registry_dir, "rf")
-    vim.env.VIBING_INSTANCES_DIR = saved_registry_env
+    vim.env[ENV_REGISTRY_DIR] = saved_registry_env
   end)
 
   it("uses the override when it is set", function()

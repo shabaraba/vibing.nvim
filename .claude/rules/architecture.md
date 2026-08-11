@@ -42,6 +42,10 @@ listening port it falls back to a PID-suffixed path rather than a single shared 
 The instance registry has the same treatment via `$VIBING_INSTANCES_DIR` (honoured by both
 `rpc/registry.lua` and `mcp-server/src/handlers/instances.ts`).
 
+`hook_cleanup.cleanup_stale_dirs()` (run at startup) treats a comm directory as stale only when
+its owning Neovim is gone: it cross-checks `registry.list()`, which already filters to live PIDs,
+so a concurrent instance's in-flight `.req`/`.res` files are never deleted.
+
 **Backends:** `claude_cli.lua` (default) and `codex_cli.lua` both implement the adapter
 interface; `init.lua` picks one from `config.adapter`, and `send_message.lua` can switch per
 request for `codex` agent types.

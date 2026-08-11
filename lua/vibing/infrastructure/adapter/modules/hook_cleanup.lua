@@ -3,12 +3,40 @@
 
 local M = {}
 
+--- Comm directories owned by a Neovim that is still running.
+--- `registry.list()` already drops entries whose PID is gone, so whatever it returns is live.
+--- @return table<string, boolean> set of directory paths
+local function live_comm_dirs()
+  local ok_registry, registry = pcall(require, "vibing.infrastructure.rpc.registry")
+  if not ok_registry then
+    return {}
+  end
+
+  local CommDir = require("vibing.infrastructure.rpc.comm_dir")
+  local dirs = {}
+  local ok_list, instances = pcall(registry.list)
+  if not ok_list then
+    return {}
+  end
+
+  for _, instance in ipairs(instances) do
+    if instance.port then
+      dirs[CommDir.for_port(instance.port)] = true
+    end
+  end
+  return dirs
+end
+
 --- Remove stale /tmp/vibing-hook-* directories
 --- Cleans up leftover .req/.res files from previous vibing.nvim sessions.
---- Skips the directory for the current RPC port (if running).
+--- "Stale" means the owning Neovim is gone: this instance's own directory is only swept of
+--- leftover files, and a directory belonging to another *running* instance is left completely
+--- alone. Deleting those would destroy in-flight hook requests of a healthy concurrent session
+--- (see "Concurrent Execution Support" in architecture.md).
 function M.cleanup_stale_dirs()
   local CommDir = require("vibing.infrastructure.rpc.comm_dir")
   local current_dir = CommDir.path()
+  local in_use = live_comm_dirs()
 
   local handle = vim.loop.fs_scandir(CommDir.ROOT)
   if not handle then
@@ -26,7 +54,7 @@ function M.cleanup_stale_dirs()
       local dir = CommDir.ROOT .. "/" .. name
       if dir == current_dir then
         M._cleanup_files_in_dir(dir)
-      else
+      elseif not in_use[dir] then
         M._remove_dir_recursive(dir)
       end
     end
