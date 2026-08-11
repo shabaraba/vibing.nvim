@@ -16,16 +16,18 @@
 ---扱うのはいずれも小文字固定のUnixコマンド名なので、これは意図的な割り切り。
 local M = {}
 
----コマンド位置（先頭、または`;` `&&` `||` `|` 改行の直後）に現れる`command`にマッチするパターン群。
+---コマンド位置（先頭、または`;` `&&` `||` `|` 改行の直後）に現れるコマンドにマッチするパターン群。
 ---Bashツールは複数行スクリプトを1つの`command`として渡してくるので、改行も区切りとして扱わないと
 ---2行目以降のコマンドが素通りする。
----@param command string Lua pattern（コマンド名部分）
+---@param ... string Lua pattern（コマンド名部分）
 ---@return string[]
-local function at_command_position(command)
-  return {
-    "^%s*" .. command,
-    "[;&|\n]%s*" .. command,
-  }
+local function at_command_position(...)
+  local patterns = {}
+  for _, command in ipairs({ ... }) do
+    table.insert(patterns, "^%s*" .. command)
+    table.insert(patterns, "[;&|\n]%s*" .. command)
+  end
+  return patterns
 end
 
 ---引数を囲むクォート（任意）。`rm -rf "$HOME"`のようにクォートするのはshellcheckも勧める
@@ -39,38 +41,40 @@ local function token_end(token)
   return { token .. "%f[%s]", token .. "$" }
 end
 
----複数のパターン配列を連結する
----@param ... string[]
+---再帰フラグを`prefix`と`suffix`で挟んだパターンに展開する。短縮クラスタ（`-rf` / `-fr` /
+---`-R` ...）とGNUのlongform（`--recursive`）は別々に書くしかない（Lua patternに選択がない）。
+---longformの前後の`[%-%a%s]*`は`rm -f --recursive /`のように他のフラグと並ぶ形のための穴埋めで、
+---フラグらしい文字しか含まないのでターゲットの`.`や`/`を巻き込まない。
+---@param prefix string フラグの手前（コマンド名まで）
+---@param suffix string フラグの後ろ（ターゲット）
 ---@return string[]
-local function concat(...)
-  local result = {}
-  for _, list in ipairs({ ... }) do
-    for _, pattern in ipairs(list) do
-      table.insert(result, pattern)
-    end
-  end
-  return result
+local function recursive_variants(prefix, suffix)
+  return {
+    prefix .. "%-%a*[rR]%a*%s+" .. suffix,
+    prefix .. "[%-%a%s]*%-%-recursive[%-%a%s]*%s" .. suffix,
+  }
 end
 
----`rm`の再帰削除フラグ。短縮形（`-rf` / `-fr` / `-Rf` ...）とGNUのlongform（`--recursive`）を
----それぞれ別パターンとして持つ。Lua patternに選択（`|`）がないため、ターゲットごとに両方を展開する。
----`[%-%a%s]*`はフラグらしい文字しか含まないので、`rm --recursive ./dist/`のターゲット部分を
----巻き込んでしまうことがない（`.`や`/`がクラスに入っていない）。
----`%f[%w]`で単語境界を要求する。コマンド位置への固定ではないのは、`find . | xargs rm -rf /`の
+---`rm`による再帰削除のうち、/ とホームディレクトリを狙うものを展開する。
+---`%f[%w]`で単語境界を要求するだけでコマンド位置には固定しない。`find . | xargs rm -rf /`の
 ---ような形も捕まえたいため。境界だけ見れば`xterm -rf /`の誤検知は防げる。
-local RM_RECURSIVE_FLAGS = {
-  "%f[%w]rm%s+%-%a*[rR]%a*%s+",
-  "%f[%w]rm%s+[%-%a%s]*%-%-recursive[%-%a%s]*%s",
-}
-
----再帰削除フラグ × 危険なターゲットの組み合わせを展開する
----@param targets string[] Lua pattern（フラグの直後に続く部分）
 ---@return string[]
-local function rm_patterns(targets)
+local function rm_deny_patterns()
+  local TARGETS = {
+    -- / , "/" , / --no-preserve-root , /*
+    QUOTE .. "/" .. QUOTE .. "%s*$",
+    QUOTE .. "/" .. QUOTE .. "%s",
+    QUOTE .. "/%*",
+    -- ~ , ~/ , $HOME , ${HOME} , and the quoted forms of each
+    QUOTE .. "~",
+    QUOTE .. "%$HOME",
+    QUOTE .. "%${HOME}",
+  }
+
   local patterns = {}
-  for _, flags in ipairs(RM_RECURSIVE_FLAGS) do
-    for _, target in ipairs(targets) do
-      table.insert(patterns, flags .. target)
+  for _, target in ipairs(TARGETS) do
+    for _, pattern in ipairs(recursive_variants("%f[%w]rm%s+", target)) do
+      table.insert(patterns, pattern)
     end
   end
   return patterns
@@ -95,80 +99,79 @@ local function git_force_push_patterns()
   local patterns = {}
   for _, flag in ipairs(FORCE_FLAGS) do
     for _, branch in ipairs(BRANCHES) do
-      for _, branch_token in ipairs(token_end("%s" .. QUOTE .. branch .. QUOTE)) do
+      local branch_token = "%s" .. QUOTE .. branch .. QUOTE
+      for _, terminated in ipairs(token_end(branch_token)) do
         -- フラグが先: git push --force origin main
-        table.insert(patterns, PREFIX .. SEGMENT .. flag .. "%f[%s]" .. SEGMENT .. branch_token)
+        table.insert(patterns, PREFIX .. SEGMENT .. flag .. "%f[%s]" .. SEGMENT .. terminated)
       end
-      for _, flag_token in ipairs(token_end(flag)) do
+      for _, terminated in ipairs(token_end(flag)) do
         -- ブランチが先: git push origin main --force
-        table.insert(
-          patterns,
-          PREFIX .. SEGMENT .. "%s" .. QUOTE .. branch .. QUOTE .. "%f[%s]" .. SEGMENT .. flag_token
-        )
+        table.insert(patterns, PREFIX .. SEGMENT .. branch_token .. "%f[%s]" .. SEGMENT .. terminated)
       end
     end
   end
   return patterns
 end
 
+---全ルール共通の逃げ道。文面を1か所に集約して、ルールごとの言い回しのブレをなくす。
+local ESCAPE_HATCH = "Set permissions.default_deny_rules = false to turn these defaults off."
+
+---@param reason string そのルール固有の説明
+---@return string
+local function deny_message(reason)
+  return reason .. " " .. ESCAPE_HATCH
+end
+
 ---@type PermissionRule[]
 M.DEFAULT_DENY_RULES = {
   {
     tools = { "Bash" },
-    patterns = rm_patterns({
-      -- / , "/" , / --no-preserve-root , /*
-      QUOTE .. "/" .. QUOTE .. "%s*$",
-      QUOTE .. "/" .. QUOTE .. "%s",
-      QUOTE .. "/%*",
-      -- ~ , ~/ , $HOME , ${HOME} , and the quoted forms of each
-      QUOTE .. "~",
-      QUOTE .. "%$HOME",
-      QUOTE .. "%${HOME}",
-    }),
+    patterns = rm_deny_patterns(),
     action = "deny",
-    message = "Recursive deletion of / or the home directory is blocked by vibing.nvim's default "
-      .. "deny rules. Delete a specific path instead, or set permissions.default_deny_rules = false.",
-  },
-  {
-    tools = { "Bash" },
-    patterns = concat(at_command_position("sudo%f[%W]"), at_command_position("doas%f[%W]")),
-    action = "deny",
-    message = "Running commands as root is blocked by vibing.nvim's default deny rules. "
-      .. "Run it yourself in a terminal, or set permissions.default_deny_rules = false.",
-  },
-  {
-    tools = { "Bash" },
-    patterns = concat(
-      -- dd writing to a raw device, and filesystem creation.
-      -- `dd` is anchored at command position so "add"/"odd" cannot trip the rule.
-      at_command_position("dd%f[%W][^;&|]*of=/dev/"),
-      at_command_position("dd%s+if="),
-      at_command_position("mkfs%f[%W]"),
-      at_command_position("mkfs%.")
+    message = deny_message(
+      "Recursive deletion of / or the home directory is blocked by vibing.nvim's default deny "
+        .. "rules. Delete a specific path instead."
     ),
-    action = "deny",
-    message = "Writing raw devices or creating filesystems is blocked by vibing.nvim's default "
-      .. "deny rules. Set permissions.default_deny_rules = false if you really need this.",
   },
   {
     tools = { "Bash" },
-    patterns = {
-      "chmod%s+[^;&|]*%-%a*[rR]%a*%s+0?777",
-      "chmod%s+[^;&|]*%-%-recursive%s+0?777",
-    },
+    patterns = at_command_position("sudo%f[%W]", "doas%f[%W]"),
     action = "deny",
-    message = "Recursively making a tree world-writable is blocked by vibing.nvim's default deny "
-      .. "rules. Set a narrower mode, or set permissions.default_deny_rules = false.",
+    message = deny_message(
+      "Running commands as root is blocked by vibing.nvim's default deny rules. Run it yourself "
+        .. "in a terminal."
+    ),
+  },
+  {
+    tools = { "Bash" },
+    -- dd writing to a raw device, and filesystem creation.
+    -- `dd` is anchored at command position so "add"/"odd" cannot trip the rule.
+    patterns = at_command_position("dd%f[%W][^;&|]*of=/dev/", "dd%s+if=", "mkfs%f[%W]", "mkfs%."),
+    action = "deny",
+    message = deny_message(
+      "Writing raw devices or creating filesystems is blocked by vibing.nvim's default deny rules."
+    ),
+  },
+  {
+    tools = { "Bash" },
+    patterns = recursive_variants("chmod%s+[^;&|]*", "0?777"),
+    action = "deny",
+    message = deny_message(
+      "Recursively making a tree world-writable is blocked by vibing.nvim's default deny rules. "
+        .. "Set a narrower mode."
+    ),
   },
   {
     -- Only force-pushes that name main/master are matched: a Lua pattern cannot know which branch
-    -- a bare `git push --force` would land on. `--force-with-lease` is deliberately allowed —
+    -- a bare `git push --force` would land on. `--force-with-lease` is deliberately allowed --
     -- the flag must be followed by whitespace or end there, and "force-with-lease" is neither.
     tools = { "Bash" },
     patterns = git_force_push_patterns(),
     action = "deny",
-    message = "Force-pushing main/master is blocked by vibing.nvim's default deny rules. "
-      .. "Use --force-with-lease on a feature branch, or set permissions.default_deny_rules = false.",
+    message = deny_message(
+      "Force-pushing main/master is blocked by vibing.nvim's default deny rules. Use "
+        .. "--force-with-lease on a feature branch."
+    ),
   },
 }
 
