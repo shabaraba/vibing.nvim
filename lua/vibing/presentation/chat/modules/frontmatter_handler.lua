@@ -62,6 +62,8 @@ function M.update_field(buf, key, value, update_timestamp)
   -- 正式なキーに加えて、その旧綴り(Frontmatter.LEGACY_KEY_ALIASES)の行も書き換え対象にする。
   -- そうしないと旧キーの行が残ったまま正式なキーの行が追加され、1つのfrontmatterに
   -- 同じ設定が二重に並ぶ。
+  -- 正式なキーを先頭に置く。複数の旧綴りが同じcanonicalを指すようになった場合、どの行を
+  -- 「残す1行」にするかは下のmatched_lines[1]（＝出現順で最初の行）で決まる。
   local key_patterns = { "^" .. escape_pattern(key) .. ":" }
   for legacy, canonical in pairs(Frontmatter.LEGACY_KEY_ALIASES) do
     if canonical == key then
