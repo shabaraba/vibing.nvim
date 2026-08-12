@@ -254,6 +254,62 @@ Source Chat (session-abc)
 - `lua/vibing/infrastructure/link/forked_chat_scanner.lua` - Link synchronization scanner
 - `lua/vibing/infrastructure/adapter/modules/cli_command_builder.lua` - `--fork-session` flag
 
+## Subagent Chat
+
+`:VibingSubagentChat` opens a buffer bound to one subagent (`Task`/`Agent`) this chat started, so
+the conversation with that agent can continue after the turn that spawned it ended.
+
+**How the pieces connect:**
+
+```text
+Parent chat (session-abc)
+  │
+  ├─ Agent tool runs; its tool_result ends with
+  │    agentId: ab2e... (use SendMessage with to: 'ab2e...' ...)
+  │  → cli_event_processor writes `<!-- subagent: ab2e... type=general-purpose -->` into the
+  │    chat text (subagent_marker.lua), so it is saved with the file
+  │
+  └─ :VibingSubagentChat
+       │  subagent_finder scans the buffer for those markers (picker when there is more than one)
+       │
+       Subagent chat (session_id: session-abc, subagent_id: ab2e...)
+         │
+         └─ Every message → claude -p --resume session-abc  (NO --fork-session)
+                          → --allowedTools gains Agent,Task,SendMessage,ToolSearch
+                          → system prompt tells the model to relay via SendMessage(to: ab2e...)
+```
+
+**Why the session_id is shared permanently** (verified against the real CLI, not assumed): a
+subagent's transcript lives under the _parent_ session's directory
+(`.../<session_id>/tasks/<agentId>.output`). Resuming the parent session from a brand-new CLI
+process and calling `SendMessage` works. Adding `--fork-session` does not — the forked session gets
+a new id and `SendMessage` fails with `No transcript found for agent ID`. So unlike a fork, this
+chat must never diverge, and `forked_from` is never written; `subagent_id` is the marker instead,
+and `send_message.lua` sets `opts._subagent_id` rather than `opts._is_fork`.
+
+**The cost of that:** two buffers now resume one `session_id` for good. Two
+`claude --resume <same id>` processes would append to the same transcript concurrently, so
+`send_message.lua` hard-refuses a send while another buffer's stream holds the same session
+(`ActiveStreamRegistry.find_other_active_for_session`), before `start_response()` and without
+touching the unsent `## User` line. Switching between the two buffers also re-diverges the shared
+session's prompt cache, since each carries a different system prompt — accepted, not solved.
+
+`SendMessage` resumes the agent in the background and returns immediately, so one request can now
+produce two `result` events in a single CLI process lifetime. That is handled: `handle_result_event`
+is idempotent and the exit handler fires once, on process exit, with both turns' output.
+
+Built-in `Explore`/`Plan` agents are one-shot and return no `agentId`, so no marker is written and
+they simply never appear in the picker.
+
+Forking strips the markers from the copied body (`SubagentMarker.strip`): a fork diverges to its
+own session on the first message, and those agents only exist under the original one, so keeping
+them would offer a binding the CLI cannot resolve.
+
+**Implementation:** `infrastructure/adapter/modules/subagent_marker.lua` (capture),
+`presentation/chat/modules/subagent_finder.lua` (scan),
+`application/chat/use_cases/subagent_chat.lua` (open, with a dedup check so one agent never gets two
+rival buffers), `presentation/chat/controller.lua` → `handle_subagent_chat`.
+
 ## Key Patterns
 
 **Adapter Pattern:** All AI backends (`claude_cli`, `codex_cli`) implement the `Adapter` interface

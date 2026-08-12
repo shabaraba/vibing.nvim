@@ -7,6 +7,7 @@ local M = {}
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
 local ToolDisplay = require("vibing.infrastructure.adapter.modules.tool_display")
 local SubagentDisplay = require("vibing.infrastructure.adapter.modules.subagent_display")
+local SubagentMarker = require("vibing.infrastructure.adapter.modules.subagent_marker")
 
 --- Extract brief summary from tool input for display
 --- @param tool_name string
@@ -75,7 +76,7 @@ local function emit_tool_result(block, tool_map, context)
     context._cached_display_mode = ToolDisplay.get_display_mode()
   end
   local result_display = ToolDisplay.format_result_text(result_text, context._cached_display_mode)
-  local text = header .. result_display
+  local text = header .. result_display .. SubagentMarker.for_tool_result(tool_name, tool_input, result_text)
 
   if context.onChunk then
     table.insert(context.output, text)
@@ -281,6 +282,12 @@ local function handle_result_event(msg, context)
 
   if msg.subtype == "error" or msg.is_error then
     table.insert(context.errorOutput, msg.result or "Unknown error")
+    -- Also kept apart from stderr. stderr is only a failure when the exit code says so (the CLI
+    -- writes harmless warnings there), but this is the CLI declaring the turn failed — and with
+    -- SendMessage resuming a subagent in the background, a request can end in a failed second
+    -- turn while the process still exits 0.
+    context.resultErrors = context.resultErrors or {}
+    table.insert(context.resultErrors, msg.result or "Unknown error")
   end
 end
 

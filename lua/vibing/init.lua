@@ -106,6 +106,19 @@ function M.setup(opts)
   require("vibing.application.completion").setup()
 end
 
+---位置指定を取るコマンド（VibingChat/VibingChatFork/VibingSubagentChat）の補完候補
+---@param arg_lead string
+---@return string[]
+local function complete_positions(arg_lead)
+  local matches = {}
+  for _, pos in ipairs({ "current", "right", "left", "top", "bottom", "back" }) do
+    if pos:find("^" .. vim.pesc(arg_lead)) then
+      table.insert(matches, pos)
+    end
+  end
+  return matches
+end
+
 ---Neovimユーザーコマンドを登録
 ---VibingChat, VibingContext等の全コマンドを登録
 ---チャット操作、コンテキスト管理を含む
@@ -120,17 +133,8 @@ function M._register_commands()
       -- First argument: position or file
       local args = vim.split(cmd_line, "%s+")
       if #args == 2 then
-        -- Complete position keywords or files
-        local positions = { "current", "right", "left", "top", "bottom", "back" }
-        local matches = {}
-        for _, pos in ipairs(positions) do
-          if pos:find("^" .. vim.pesc(arg_lead)) then
-            table.insert(matches, pos)
-          end
-        end
-        -- Also add file completion
-        local files = vim.fn.getcompletion(arg_lead, "file")
-        for _, file in ipairs(files) do
+        local matches = complete_positions(arg_lead)
+        for _, file in ipairs(vim.fn.getcompletion(arg_lead, "file")) do
           table.insert(matches, file)
         end
         return matches
@@ -148,15 +152,18 @@ function M._register_commands()
   end, {
     nargs = "?",
     desc = "Fork current vibing chat with optional position (current|right|left|top|bottom|back)",
-    complete = function(arg_lead, cmd_line, cursor_pos)
-      local positions = { "current", "right", "left", "top", "bottom", "back" }
-      local matches = {}
-      for _, pos in ipairs(positions) do
-        if pos:find("^" .. vim.pesc(arg_lead)) then
-          table.insert(matches, pos)
-        end
-      end
-      return matches
+    complete = function(arg_lead)
+      return complete_positions(arg_lead)
+    end,
+  })
+
+  vim.api.nvim_create_user_command("VibingSubagentChat", function(opts)
+    require("vibing.presentation.chat.controller").handle_subagent_chat(opts.args)
+  end, {
+    nargs = "?",
+    desc = "Continue a subagent this chat started, in its own buffer (current|right|left|top|bottom|back)",
+    complete = function(arg_lead)
+      return complete_positions(arg_lead)
     end,
   })
 

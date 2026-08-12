@@ -9,6 +9,9 @@ local M = {}
 --- @field chat_bufnr? number Stable value (the "Current vibing.nvim chat buffer number" line
 ---   embedded in the system prompt) used to route nvim_ask_user_question calls without a per-turn
 ---   handle_id, which would otherwise defeat Anthropic's prompt cache (see issues #469, #489).
+--- @field session_id? string CLI session this stream is resuming. Two chat buffers can be bound to
+---   the same session (a subagent chat shares its parent's), and two processes resuming one session
+---   would write the same transcript concurrently — this is what lets a send be refused.
 --- @field adapter table ClaudeCLI adapter reference
 --- @field on_insert_choices? fun(questions: table)
 --- @field on_approval_required? fun(tool: string, input: table, options: table, hook_request_id?: string)
@@ -67,6 +70,22 @@ function M.get_by_chat_bufnr(chat_bufnr)
     end
   end
   return M.get(nil)
+end
+
+--- Find another buffer's in-flight stream that is resuming the same session.
+--- @param session_id string|nil
+--- @param exclude_chat_bufnr number|nil the buffer asking; its own stream is not a conflict
+--- @return ActiveStreamEntry|nil
+function M.find_other_active_for_session(session_id, exclude_chat_bufnr)
+  if not session_id or session_id == "" then
+    return nil
+  end
+  for _, entry in pairs(streams) do
+    if entry.session_id == session_id and entry.chat_bufnr ~= exclude_chat_bufnr then
+      return entry
+    end
+  end
+  return nil
 end
 
 return M

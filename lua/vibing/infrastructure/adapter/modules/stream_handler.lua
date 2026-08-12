@@ -76,8 +76,9 @@ end
 ---@param output string[] 出力バッファ
 ---@param errorOutput string[] エラー出力バッファ
 ---@param onDone fun(response: Vibing.Response) 完了コールバック
+---@param get_result_errors? fun(): string[]|nil CLIが自ら「このターンは失敗」と告げた本文
 ---@return function 終了コールバック関数
-function M.create_exit_handler(handleId, handles, output, errorOutput, onDone)
+function M.create_exit_handler(handleId, handles, output, errorOutput, onDone, get_result_errors)
   local debug_mode = vim.g.vibing_debug_stream
 
   return function(obj)
@@ -116,8 +117,12 @@ function M.create_exit_handler(handleId, handles, output, errorOutput, onDone)
           _handle_id = handleId,
         })
       else
+        -- 終了コードが0でも、CLIがresultイベントでエラーを宣言していればそれは失敗。
+        -- stderrと違い警告混じりではないので握り潰さない
+        local result_errors = get_result_errors and get_result_errors() or nil
         onDone({
           content = table.concat(output, ""),
+          error = result_errors and #result_errors > 0 and table.concat(result_errors, "\n") or nil,
           _handle_id = handleId,
         })
       end

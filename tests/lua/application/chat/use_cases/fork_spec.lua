@@ -226,4 +226,52 @@ describe("Fork use case", function()
       assert.is_nil(result)
     end)
   end)
+
+  it("does not carry subagent markers into the fork", function()
+    -- The fork gets its own session on first send, and those agents live under the source's
+    -- session — offering them afterwards would bind a chat to an unreachable transcript.
+    local source = make_chat_buffer({
+      body = "\n## User\n\nhi\n<!-- subagent: aaa111 type=general-purpose -->\n",
+    })
+
+    local session = Fork.execute(source)
+
+    local content = table.concat(vim.fn.readfile(session.file_path), "\n")
+    assert.is_nil(content:find("subagent: aaa111", 1, true))
+    assert.is_truthy(content:find("## User", 1, true))
+  end)
+
+  it("carries the source's effort, so a fork does not silently get a different one", function()
+    local source = make_chat_buffer({
+      frontmatter = {
+        ["vibing.nvim"] = true,
+        session_id = "test-session-123",
+        created_at = "2025-01-01T00:00:00",
+        effort = "xhigh",
+      },
+    })
+
+    local session = Fork.execute(source)
+
+    local fm = Frontmatter.parse(table.concat(vim.fn.readfile(session.file_path), "\n"))
+    assert.equals("xhigh", fm.effort)
+  end)
+
+  it("carries the source's ask list, so approvals are not silently dropped", function()
+    local source = make_chat_buffer({
+      frontmatter = {
+        ["vibing.nvim"] = true,
+        session_id = "test-session-123",
+        created_at = "2025-01-01T00:00:00",
+        permissions_allow = { "Read" },
+        permissions_deny = {},
+        permissions_ask = { "Bash" },
+      },
+    })
+
+    local session = Fork.execute(source)
+
+    local fm = Frontmatter.parse(table.concat(vim.fn.readfile(session.file_path), "\n"))
+    assert.same({ "Bash" }, fm.permissions_ask)
+  end)
 end)
