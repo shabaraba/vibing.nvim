@@ -54,11 +54,14 @@ function M._validate_frontmatter_mode(mode)
     return valid
   end
 
-  local key = tostring(mode)
-  if not warned_modes[key] then
-    warned_modes[key] = true
+  -- Key on the type for non-strings: tostring() of a table is its address, which differs on
+  -- every re-parse and would defeat the dedupe.
+  local shown = type(mode) == "string" and mode or type(mode)
+  if not warned_modes[shown] then
+    warned_modes[shown] = true
+    local valid_list = table.concat(Modes.AGENT_MODES, ", ")
     vim.notify(
-      string.format("[vibing] Invalid mode '%s' in frontmatter; expected one of: %s", key, table.concat(Modes.AGENT_MODES, ", ")),
+      string.format("[vibing] Invalid mode '%s' in frontmatter; expected one of: %s", shown, valid_list),
       vim.log.levels.WARN
     )
   end

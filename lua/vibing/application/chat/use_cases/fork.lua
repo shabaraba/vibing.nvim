@@ -7,6 +7,7 @@ local ChatSession = require("vibing.domain.chat.session")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 local Git = require("vibing.core.utils.git")
+local Modes = require("vibing.core.constants.modes")
 
 ---ファイル名から-fork-N.mdを生成
 ---@param source_path string
@@ -43,7 +44,9 @@ function M._copy_frontmatter(source_frontmatter, forked_from, config)
     working_dir = source_frontmatter.working_dir,
     agent = source_frontmatter.agent or (config.adapter or "claude"),
     -- 不正なmodeはフォーク先へ持ち込まない（コピーすると誤りが増殖するだけなのでデフォルトに戻す）
-    mode = require("vibing.core.constants.modes").coerce_agent_mode(source_frontmatter.mode) or (config.agent and config.agent.default_mode or "code"),
+    -- 黙ってデフォルトに戻す。send_message側が送信時に警告を出すので、フォークのたびに
+    -- 同じ誤字を二重に通知しても意味がない
+    mode = Modes.coerce_agent_mode(source_frontmatter.mode) or (config.agent and config.agent.default_mode or "code"),
     model = source_frontmatter.model or (config.agent and config.agent.default_model or "sonnet"),
     permission_mode = source_frontmatter.permission_mode
       or (config.permissions and config.permissions.mode or "acceptEdits"),

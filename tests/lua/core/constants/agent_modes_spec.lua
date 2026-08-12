@@ -90,6 +90,21 @@ describe("send_message._validate_frontmatter_mode", function()
     assert.equals(1, warned)
   end)
 
+  it("dedupes the warning for a non-string mode too", function()
+    -- tostring() of a table is its address, so a fresh table each parse would warn every time.
+    local warned = 0
+    local original = vim.notify
+    vim.notify = function()
+      warned = warned + 1
+    end
+
+    SendMessage._validate_frontmatter_mode({ "a", "b" })
+    SendMessage._validate_frontmatter_mode({ "c", "d" })
+
+    vim.notify = original
+    assert.equals(1, warned)
+  end)
+
   it("drops a non-string mode", function()
     assert.is_nil(SendMessage._validate_frontmatter_mode(42))
   end)
