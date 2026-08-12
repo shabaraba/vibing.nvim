@@ -110,13 +110,23 @@ describe("cli_command_builder", function()
       assert.is_nil(cmd1[idx1 + 1]:find("handle_id", 1, true))
     end)
 
+    it("names both MCP registration styles, so the model does not cite a tool that is not there", function()
+      -- Installed as a Claude Code plugin the prefix is mcp__plugin_<marketplace>_vibing-nvim__,
+      -- not mcp__vibing-nvim__. Naming only the latter made the model claim tools it could not call.
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_true(prompt_text:find("mcp__vibing%-nvim__<tool>") ~= nil)
+      assert.is_true(prompt_text:find("mcp__plugin_<marketplace>_vibing%-nvim__<tool>") ~= nil)
+    end)
+
     it("embeds the rpc_port and instructs the model to echo it back on every vibing-nvim MCP call", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil, 9878)
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]
       assert.is_true(prompt_text:find("Your rpc_port for this turn is 9878", 1, true) ~= nil)
-      assert.is_true(prompt_text:find("mcp__vibing-nvim__*", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("mcp__vibing-nvim__", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("mcp__plugin_<marketplace>_vibing-nvim__", 1, true) ~= nil)
     end)
 
     it("omits the rpc_port line when rpc_port is not provided", function()
@@ -266,7 +276,7 @@ describe("cli_command_builder", function()
       assert.is_not_nil(idx)
       local allowed = cmd[idx + 1]
       assert.is_true(allowed:find("mcp__vibing-nvim__*", 1, true) ~= nil)
-      assert.is_true(allowed:find("mcp__plugin_vibing-nvim_vibing-nvim__*", 1, true) ~= nil)
+      assert.is_true(allowed:find("mcp__plugin_vibing_vibing-nvim__*", 1, true) ~= nil)
     end)
   end)
 

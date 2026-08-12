@@ -11,8 +11,8 @@
   "keywords": ["neovim", "nvim", "mcp", "lsp", "editor"],
   "mcpServers": {
     "vibing-nvim": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/bin/run.mjs"],
+      "command": "sh",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/bin/run.sh"],
       "env": {
         "VIBING_RPC_TIMEOUT": "30000"
       }

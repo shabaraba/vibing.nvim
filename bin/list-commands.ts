@@ -82,7 +82,7 @@ async function parseSkillFrontmatter(
 
 /**
  * Derive a plugin's short name from its registry id, e.g.
- * "vibing-nvim@vibing-nvim" -> "vibing-nvim", "document-skills@anthropic-agent-skills" -> "document-skills".
+ * "vibing-nvim@vibing" -> "vibing-nvim", "document-skills@anthropic-agent-skills" -> "document-skills".
  * This is how Claude Code itself namespaces skill invocations ("plugin:skill"),
  * and it's reliable even for plugins nested in a marketplace repo that don't
  * ship their own .claude-plugin/plugin.json (e.g. document-skills).

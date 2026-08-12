@@ -114,15 +114,14 @@ local function add_permission_args(cmd, opts)
     permissions_allow = {}
   end
   local allow_tools = vim.deepcopy(permissions_allow)
-  -- The vibing-nvim MCP server may be registered either as a plain user-level MCP server
-  -- (mcp__vibing-nvim__<tool>) or as a Claude Code plugin
-  -- (mcp__plugin_<marketplace>_<plugin>__<tool>, e.g. mcp__plugin_vibing-nvim_vibing-nvim__<tool>).
-  -- Both patterns must be pre-approved here so the CLI's own --allowedTools gate doesn't block
-  -- calls before they ever reach vibing.nvim's PreToolUse hook, which already recognizes both
-  -- registration styles via can_use_tool.M.is_vibing_nvim_mcp_tool (suffix match).
+  -- Both of vibing-nvim's own possible MCP registration styles (see
+  -- tools_constants.VIBING_NVIM_MCP_TOOL_PATTERNS) must be pre-approved here so the CLI's own
+  -- --allowedTools gate doesn't block calls before they ever reach vibing.nvim's PreToolUse hook,
+  -- which already recognizes both via can_use_tool.M.is_vibing_nvim_mcp_tool (suffix match, so it
+  -- isn't tied to a specific marketplace name).
   local always_allowed = vim.list_extend(
     vim.deepcopy(tools_constants.ALWAYS_ALLOWED_TOOLS),
-    { "mcp__vibing-nvim__*", "mcp__plugin_vibing-nvim_vibing-nvim__*" }
+    vim.deepcopy(tools_constants.VIBING_NVIM_MCP_TOOL_PATTERNS)
   )
   allow_additionally(allow_tools, always_allowed)
 
@@ -285,6 +284,12 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
     )
     table.insert(
       system_prompt_lines,
+      "vibing-nvim MCP tools may be registered as mcp__vibing-nvim__<tool> (a plain user-level MCP "
+        .. "server) or mcp__plugin_<marketplace>_vibing-nvim__<tool> (a Claude Code plugin) — search "
+        .. "for a tool name ending in the specific tool you need if the plain prefix isn't available."
+    )
+    table.insert(
+      system_prompt_lines,
       "When you need the user to choose among options (single or multi-select), always call the "
         .. "mcp__vibing-nvim__nvim_ask_user_question tool instead of asking in free text. Do not use "
         .. "the native AskUserQuestion tool for this — it is unavailable in this environment. Pass "
@@ -314,9 +319,9 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
         system_prompt_lines,
         "Your rpc_port for this turn is "
           .. tostring(rpc_port)
-          .. ". You MUST pass this exact value as the rpc_port argument on every "
-          .. "mcp__vibing-nvim__* tool call — never omit it or guess, since other unrelated Neovim "
-          .. "instances may be running and reachable on other ports."
+          .. ". You MUST pass this exact value as the rpc_port argument on every vibing-nvim MCP tool "
+          .. "call — never omit it or guess, since other unrelated Neovim instances may be running and "
+          .. "reachable on other ports."
       )
     end
 

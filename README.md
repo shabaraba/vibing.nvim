@@ -123,7 +123,7 @@ user` for you on every build — nothing else to do.
 
 ```text
 /plugin marketplace add shabaraba/vibing.nvim
-/plugin install vibing-nvim@vibing-nvim
+/plugin install vibing-nvim@vibing
 ```
 
 Either way, this registers the `vibing-nvim` MCP server (buffer/window/cursor access, Ex commands,
@@ -139,7 +139,7 @@ separate build step is needed for the MCP server itself. You still need Neovim r
 **Uninstalling:**
 
 ```text
-/plugin uninstall vibing-nvim@vibing-nvim
+/plugin uninstall vibing-nvim@vibing
 /plugin marketplace remove vibing-nvim
 ```
 

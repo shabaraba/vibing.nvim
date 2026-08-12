@@ -261,8 +261,9 @@ function M.can_use_tool(tool_name, input, config)
 
     -- Handle vibing-nvim MCP tools. The vibing-nvim MCP server may be registered either as a
     -- plain user-level MCP server (mcp__vibing-nvim__<tool>) or as a Claude Code plugin
-    -- (mcp__plugin_<marketplace>_<plugin>__<tool>, e.g. mcp__plugin_vibing-nvim_vibing-nvim__<tool>).
-    -- Match on suffix so both registration styles are recognized identically.
+    -- (mcp__plugin_<marketplace>_<plugin>__<tool>, e.g. mcp__plugin_vibing_vibing-nvim__<tool>).
+    -- Match on suffix so both registration styles are recognized identically, regardless of
+    -- marketplace name.
     if M.is_vibing_nvim_mcp_tool(tool_name) then
       if config.mcp_enabled then
         return allow(input)

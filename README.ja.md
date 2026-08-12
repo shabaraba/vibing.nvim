@@ -124,7 +124,7 @@ vibing.nvim は [Claude Code プラグイン](https://code.claude.com/docs/en/pl
 
 ```text
 /plugin marketplace add shabaraba/vibing.nvim
-/plugin install vibing-nvim@vibing-nvim
+/plugin install vibing-nvim@vibing
 ```
 
 いずれの方法でも、`vibing-nvim` MCP サーバー(実行中の Neovim へのバッファ/ウィンドウ/
@@ -141,7 +141,7 @@ vibing.nvim は [Claude Code プラグイン](https://code.claude.com/docs/en/pl
 **アンインストール:**
 
 ```text
-/plugin uninstall vibing-nvim@vibing-nvim
+/plugin uninstall vibing-nvim@vibing
 /plugin marketplace remove vibing-nvim
 ```
 
