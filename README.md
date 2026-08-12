@@ -58,6 +58,9 @@ access to your Neovim instance** through CLI backends and MCP integration.
   tracking by default, with an opt-in [mote](https://github.com/shabaraba/mote) snapshot
   backend (`diff.tool = "mote"` or `:VibingMoteDir`) that also catches Bash-driven changes
 - **🎯 Smart context** — add files manually, from oil.nvim, or from a visual selection
+- **⏳ Usage-limit scheduling** — while a usage limit is in force, `<CR>` parks your message
+  instead of burning a doomed request, and sends it verbatim once the limit resets;
+  `:VibingSchedule 30m` schedules one by hand, with or without a limit
 - **🌍 Multi-language support** — configure the AI response language per chat
 
 ### Consider alternatives if you
@@ -249,6 +252,9 @@ require("vibing").setup({
   },
   agent = {
     default_model = "sonnet",      -- "sonnet" | "opus" | "haiku" | "fable"
+    scheduled_requests = {
+      enabled = true,              -- during a usage limit, <CR> schedules instead of sending
+    },
   },
   permissions = {
     mode = "acceptEdits",          -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"
