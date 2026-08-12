@@ -249,8 +249,10 @@ ui = {
 }
 ```
 
-A `tool_markers` entry may also be a table with a `default` key (e.g.
-`Bash = { default = "💻" }`); only the `default` key is used.
+Every `tool_markers` entry is a plain string. Markers are resolved from the tool name alone, so
+they cannot vary with a tool's arguments (there is no way to give `Bash` one marker for `npm` and
+another for `git`). The legacy `Bash = { default = "💻" }` table form is still accepted — it is
+flattened to the `default` string with a warning — but should be replaced with `Bash = "💻"`.
 
 ## Keymaps
 
