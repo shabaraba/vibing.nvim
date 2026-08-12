@@ -73,6 +73,21 @@
 ---@field rules Vibing.PermissionRule[]? 粒度の細かい権限制御ルール（オプション）
 ---@field default_deny_rules boolean? 破壊的Bashコマンド（`rm -rf /`、`sudo`、`dd`、`chmod -R 777`、main/masterへのforce push等）の同梱denyルールを有効にするか（デフォルト: true）。`core/constants/destructive_commands.lua`を参照
 
+---@class Vibing.AutoResumeOnLimitConfig
+---使用量リミット自動継続設定
+---使用量リミットで応答が弾かれたとき、リセット時刻を待って自動で継続リクエストを送る
+---@field enabled boolean リミット時に自動で継続リクエストを送るか（デフォルト: false、無人でトークンを消費するため）
+---@field max_retries number 1回のリミットヒットにつき許可する自動再送の回数（再送がまたリミットに当たった時点で打ち切り）
+---@field prompt string 再送する継続プロンプト（セッションはresumeされるので文脈の再説明は不要）
+---@field fallback_delay_sec number リセット時刻が取得できなかった場合の待ち時間（秒）
+---@field grace_sec number リセット時刻からの上乗せ秒数（境界ぴったりで再送して弾かれるのを防ぐ）
+
+---@class Vibing.ScheduledRequestsConfig
+---予約リクエスト設定
+---使用量リミット中に送信しようとしたリクエストを、リセット後に送る予約に切り替える
+---@field enabled boolean リミット中のリクエストを予約に切り替えるか（デフォルト: true、リミット中のリクエストはどのみち失敗するため）
+---@field max_retries number 予約したリクエストがまた弾かれたときに許可する再予約の回数
+
 ---@class Vibing.AgentConfig
 ---エージェント設定
 ---Claudeのモード（code/plan/explore）とモデル（sonnet/opus/haiku/fable）を指定
@@ -83,6 +98,8 @@
 ---@field utility_effort ("low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）
 ---@field subagent Vibing.SubagentConfig? subagent（Task/Agentツール）の出力表示設定
+---@field auto_resume_on_limit Vibing.AutoResumeOnLimitConfig 使用量リミット自動継続設定
+---@field scheduled_requests Vibing.ScheduledRequestsConfig 予約リクエスト設定
 
 ---@class Vibing.SubagentConfig
 ---subagentが喋った内容をチャットに出すかどうかの設定
@@ -229,6 +246,15 @@ M.defaults = {
       fallback_delay_sec = 300,
       -- リセット時刻からの上乗せ秒数。境界ぴったりで再送して弾かれるのを防ぐ。
       grace_sec = 10,
+    },
+    -- 使用量リミット中に送信しようとしたリクエストを、リセット後に送る予約に切り替える。
+    -- リミット中のリクエストはどのみち失敗するため既定で有効。
+    -- :VibingSchedule による明示的な予約はこのフラグに関係なく常に動く。
+    scheduled_requests = {
+      enabled = true,
+      -- 予約したリクエストがまた弾かれたときに許可する再予約の回数。
+      -- これがループの唯一の歯止めなので 0 未満にはしない。
+      max_retries = 3,
     },
   },
   chat = {
