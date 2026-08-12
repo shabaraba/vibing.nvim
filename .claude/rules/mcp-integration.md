@@ -31,6 +31,7 @@ Prefix with `mcp__vibing-nvim__`:
 - **Chat**: `nvim_ask_user_question` (renders a choice list in the chat buffer — see
   `features.md`), `nvim_chat_send_message`
 - **Instances**: `nvim_list_instances`
+- **Quickfix**: `nvim_set_qflist` (pushes a new list; the previous one survives under `:colder`)
 - **LSP**: `nvim_lsp_definition`, `nvim_lsp_references`, `nvim_lsp_hover`, `nvim_diagnostics`,
   `nvim_lsp_document_symbols`, `nvim_lsp_type_definition`, `nvim_lsp_call_hierarchy_incoming`,
   `nvim_lsp_call_hierarchy_outgoing`
