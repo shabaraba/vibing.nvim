@@ -46,12 +46,23 @@ describe("rate_limit", function()
       assert.equals(1778193600, info.resets_at)
     end)
 
-    it("rejects when only overageStatus reports the rejection", function()
+    -- Real payload from an account with no extra-usage credits. Every event looks like this,
+    -- including the ones for turns that completed normally.
+    it("ignores overageStatus, which reports billing availability rather than this request", function()
       local info = RateLimit.from_event({
-        rate_limit_info = { status = "allowed", overageStatus = "rejected" },
+        rate_limit_info = {
+          status = "allowed",
+          resetsAt = 1786506000,
+          rateLimitType = "five_hour",
+          overageStatus = "rejected",
+          overageDisabledReason = "out_of_credits",
+          isUsingOverage = false,
+        },
       })
 
-      assert.is_true(info.rejected)
+      assert.is_false(info.rejected)
+      assert.equals(1786506000, info.resets_at)
+      assert.equals("five_hour", info.limit_type)
     end)
 
     it("survives an unrecognized payload instead of erroring", function()
