@@ -86,8 +86,9 @@ function M.parse(spec, now)
     local today = os.date("*t", now)
     local at = os.time({ year = today.year, month = today.month, day = today.day, hour = hour, min = min, sec = 0 })
     if at <= now then
-      -- The clock time already passed today; the user means the next one.
-      at = at + 24 * 60 * 60
+      -- Next occurrence of that clock time. Recomputed via os.time rather than +86400: a DST
+      -- transition makes a local day 23 or 25 hours long, which would shift the wall-clock time.
+      at = os.time({ year = today.year, month = today.month, day = today.day + 1, hour = hour, min = min, sec = 0 })
     end
     return at
   end

@@ -28,6 +28,11 @@ describe("when.parse", function()
     assert.equals(os.time({ year = 2026, month = 8, day = 13, hour = 9, min = 0, sec = 0 }), When.parse("09:00", NOW))
   end)
 
+  it("rolls a past clock time across a month boundary", function()
+    local last_day = os.time({ year = 2026, month = 8, day = 31, hour = 10, min = 0, sec = 0 })
+    assert.equals(os.time({ year = 2026, month = 9, day = 1, hour = 9, min = 0, sec = 0 }), When.parse("09:00", last_day))
+  end)
+
   it("parses an absolute date-time", function()
     local expected = os.time({ year = 2026, month = 8, day = 14, hour = 7, min = 5, sec = 0 })
     assert.equals(expected, When.parse("2026-08-14T07:05", NOW))
