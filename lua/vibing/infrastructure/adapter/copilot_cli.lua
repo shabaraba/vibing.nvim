@@ -23,6 +23,11 @@ local SUPPORTED_FEATURES = {
   model_selection = true,
   context = true,
   session = true,
+  -- Copilot CLI has no flag to inject a hook per run, so permissions are fixed at launch with
+  -- --allow-all-tools plus --deny-tool. permission_mode, the ask list, session-level allow and
+  -- the approval UI therefore do nothing here. Declared rather than left to be discovered by
+  -- reading copilot_cli.lua; #512 tracks making it real.
+  dynamic_permissions = false,
 }
 
 ---@param config Vibing.Config

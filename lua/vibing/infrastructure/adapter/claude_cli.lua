@@ -24,6 +24,9 @@ local SUPPORTED_FEATURES = {
   model_selection = true,
   context = true,
   session = true,
+  -- Permission decisions are made per tool call at runtime, via the PreToolUse hook: the
+  -- ask list, session-level allow/deny and the approval UI all work.
+  dynamic_permissions = true,
 }
 
 ---@param config Vibing.Config

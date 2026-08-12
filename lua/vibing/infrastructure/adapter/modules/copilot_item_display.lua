@@ -6,23 +6,17 @@ local ToolDisplay = require("vibing.infrastructure.adapter.modules.tool_display"
 
 local M = {}
 
+local ToolVocabulary = require("vibing.infrastructure.adapter.modules.copilot_tool_vocabulary")
+
 local ARGUMENT_SUMMARY_LIMIT = 100
 
 --- copilot tool names that map onto a vibing-style display label.
 --- Names absent here are displayed verbatim; extend as more are confirmed on real runs.
-local TOOL_LABELS = {
-  bash = "Bash",
-  view = "Read",
-  create = "Write",
-  edit = "Edit",
-  web_search = "WebSearch",
-}
-
 --- Map a copilot tool name to its display label
 --- @param tool_name string
 --- @return string
 function M.resolve_label(tool_name)
-  return TOOL_LABELS[tool_name] or tool_name
+  return ToolVocabulary.to_canonical(tool_name) or tool_name
 end
 
 --- Summarize tool arguments for the header

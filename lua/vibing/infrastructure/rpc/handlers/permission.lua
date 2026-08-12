@@ -19,12 +19,6 @@ local session_state = {
 --- @type table<string, table>
 local active_opts_by_handle = {}
 
---- Codex uses different tool names than Claude for equivalent operations.
---- This mapping ensures frontmatter permissions work identically across adapters.
-local CODEX_TOOL_ALIASES = {
-  apply_patch = "Edit", -- Codex's file patch tool maps to Claude's Edit
-}
-
 local APPROVAL_OPTIONS = {
   { value = "allow_once", label = "allow_once - Allow this execution only" },
   { value = "deny_once", label = "deny_once - Deny this execution only" },
@@ -193,8 +187,12 @@ function M.check_tool_permission(params)
   local tool_input = hook_input.tool_input or {}
   local active_opts = get_active_opts(handle_id)
 
-  if active_opts and active_opts._is_codex then
-    tool_name = CODEX_TOOL_ALIASES[tool_name] or tool_name
+  -- Backends name their tools differently (codex calls an edit "apply_patch"). The adapter
+  -- supplies its own translation table as a generic `_tool_vocabulary`, so this handler stays
+  -- ignorant of which backend it is serving -- adding a fourth needs no change here (#516).
+  local vocabulary = active_opts and active_opts._tool_vocabulary
+  if vocabulary and vocabulary.to_canonical then
+    tool_name = vocabulary.to_canonical(tool_name) or tool_name
   end
 
   -- Kill process first, call UI callback, then write deny response. Used by both

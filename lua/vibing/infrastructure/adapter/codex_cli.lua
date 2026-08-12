@@ -24,6 +24,9 @@ local SUPPORTED_FEATURES = {
   model_selection = true,
   context = true,
   session = true,
+  -- Permission decisions are made per tool call at runtime, via the PreToolUse hook: the
+  -- ask list, session-level allow/deny and the approval UI all work.
+  dynamic_permissions = true,
 }
 
 ---@param config Vibing.Config
@@ -151,7 +154,8 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
   })
 
   local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
-  perm_handler.set_active_opts(handle_id, vim.tbl_extend("force", opts, { _is_codex = true }))
+  local ToolVocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
+  perm_handler.set_active_opts(handle_id, vim.tbl_extend("force", opts, { _tool_vocabulary = ToolVocabulary }))
 
   local wrapped_on_done = function(response)
     if not completed then
