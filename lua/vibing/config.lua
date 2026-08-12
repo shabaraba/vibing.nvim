@@ -133,7 +133,7 @@
 ---@field file_finder_strategy? Vibing.FileFinderStrategy ファイル検索戦略（"auto": 最適なツールを自動選択、"fd": fd使用、"find": find使用、"locate": locate/plocate使用、"ripgrep": rg使用）
 
 local notify = require("vibing.core.utils.notify")
-local tools_const = require("vibing.constants.tools")
+local tools_const = require("vibing.core.constants.tools")
 local language_utils = require("vibing.core.utils.language")
 
 local M = {}
@@ -241,7 +241,7 @@ M.defaults = {
   },
   permissions = {
     mode = "acceptEdits",
-    allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput" },
+    allow = vim.deepcopy(tools_const.DEFAULT_ALLOWED_TOOLS),
     deny = { "Bash" },
     ask = {},
     rules = {},

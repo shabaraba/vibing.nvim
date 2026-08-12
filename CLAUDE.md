@@ -78,6 +78,13 @@ All `.md` files in `.claude/rules/` are automatically loaded into Claude Code's 
 
 ## Key Constants
 
-- **有効ツール名リスト (`VALID_TOOLS`)**: `lua/vibing/core/constants/tools.lua`
-  - 権限バリデーション（未知ツール名の警告）に使用
-  - 新しいツールを追加する場合はここと `lua/vibing/config.lua` の `M.defaults.permissions.allow` の両方に追加する
+`lua/vibing/core/constants/tools.lua` がツール名の唯一の定義元。`lua/vibing/config.lua` は値を
+再列挙せずここを参照する。
+
+- **`VALID_TOOLS`**: 権限設定に書けるツール名の一覧。権限バリデーション（未知ツール名の警告）に使う
+- **`DEFAULT_ALLOWED_TOOLS`**: `permissions.allow` の既定値。`VALID_TOOLS` からの差集合としては
+  導出しない（理由は同ファイルのコメント参照）
+- **`ALWAYS_ALLOWED_TOOLS`**: `allow` の内容に関わらず（`ask` / `deny` に無い限り）常に許可される
+  下限。`DEFAULT_ALLOWED_TOOLS` から外しても、こちらに残っていれば許可されたままになる
+- 新しいツールを追加するとき: 既定で許可するなら `VALID_TOOLS` と `DEFAULT_ALLOWED_TOOLS` の
+  両方に、Bash のように既定では許可しないなら `VALID_TOOLS` にのみ足す
