@@ -7,6 +7,7 @@
 | `:VibingChat [position\|file]`        | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file |
 | `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                                         |
 | `:VibingChatFork [position]`          | Fork current chat (create branch from current conversation)                                         |
+| `:VibingSubagentChat [position]`      | Continue a subagent this chat started, in its own buffer                                            |
 | `:VibingSlashCommands`                | Show slash command picker in chat                                                                   |
 | `:VibingSetFileTitle`                 | Generate AI title and rename chat file                                                              |
 | `:VibingSummarize`                    | Generate AI summary of chat history and insert into buffer                                          |
@@ -26,7 +27,9 @@
 `left`, `top`, `bottom` (splits sized by `config.chat.window.width`/`height`), or `back`
 (buffer-only, no window). `:VibingChat <file>` opens a saved chat file instead of creating a new
 one. Fork's session/frontmatter mechanics (`forked_from`, session inheritance via `forkSession`)
-are documented in `architecture.md` → "Chat Fork" — not duplicated here.
+are documented in `architecture.md` → "Chat Fork" — not duplicated here. `:VibingSubagentChat`
+takes the same position argument; why it shares the parent's `session_id` and never forks is in
+`architecture.md` → "Subagent Chat".
 
 ## Slash Commands (in Chat)
 

@@ -7,7 +7,8 @@ local ChatSession = require("vibing.domain.chat.session")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 local Git = require("vibing.core.utils.git")
-local Modes = require("vibing.core.constants.modes")
+local InheritedFrontmatter = require("vibing.application.chat.inherited_frontmatter")
+local SubagentMarker = require("vibing.infrastructure.adapter.modules.subagent_marker")
 
 ---ファイル名から-fork-N.mdを生成
 ---@param source_path string
@@ -34,28 +35,11 @@ end
 ---@param config table
 ---@return table fork_frontmatter
 function M._copy_frontmatter(source_frontmatter, forked_from, config)
-  return {
-    ["vibing.nvim"] = true,
-    -- フォーク元のsession_idを引き継ぐ。SDK側で--fork-sessionフラグにより
-    -- forkSession: trueが設定され、初回メッセージで新しいsession_idが付与される
-    session_id = source_frontmatter.session_id or "~",
-    created_at = os.date("%Y-%m-%dT%H:%M:%S"),
-    forked_from = forked_from,
-    working_dir = source_frontmatter.working_dir,
-    agent = source_frontmatter.agent or (config.adapter or "claude"),
-    -- 不正なmodeはフォーク先へ持ち込まない（コピーすると誤りが増殖するだけなのでデフォルトに戻す）
-    -- 黙ってデフォルトに戻す。send_message側が送信時に警告を出すので、フォークのたびに
-    -- 同じ誤字を二重に通知しても意味がない
-    mode = Modes.coerce_agent_mode(source_frontmatter.mode) or (config.agent and config.agent.default_mode or "code"),
-    model = source_frontmatter.model or (config.agent and config.agent.default_model or "sonnet"),
-    effort = source_frontmatter.effort or (config.agent and config.agent.default_effort),
-    permission_mode = source_frontmatter.permission_mode
-      or (config.permissions and config.permissions.mode or "acceptEdits"),
-    permissions_allow = source_frontmatter.permissions_allow
-      or (config.permissions and config.permissions.allow or {}),
-    permissions_deny = source_frontmatter.permissions_deny or (config.permissions and config.permissions.deny or {}),
-    language = source_frontmatter.language,
-  }
+  local fork_frontmatter = InheritedFrontmatter.from_source(source_frontmatter, config)
+  -- session_idはフォーク元のまま渡す。--fork-sessionフラグでforkSession: trueが設定され、
+  -- 初回メッセージで新しいsession_idが付与される
+  fork_frontmatter.forked_from = forked_from
+  return fork_frontmatter
 end
 
 ---バッファを自動保存
@@ -125,7 +109,12 @@ function M.execute(chat_buffer)
 
   fork_session:set_file_path(fork_path)
 
-  local fork_content = Frontmatter.serialize(fork_frontmatter, body or "")
+  -- subagentマーカーは持ち込まない。forkは初回送信で別のsession_idへ分岐するが、
+  -- subagentのtranscriptは元のsession配下にあるので、分岐後のバッファからそのagentを
+  -- 選ばせても "No transcript found for agent ID" になるだけ（architecture.md「Subagent Chat」）
+  local fork_body = SubagentMarker.strip(body or "")
+
+  local fork_content = Frontmatter.serialize(fork_frontmatter, fork_body)
   local write_result = vim.fn.writefile(vim.split(fork_content, "\n"), fork_path)
   if write_result ~= 0 then
     notify.error("Failed to write fork file: " .. fork_path)

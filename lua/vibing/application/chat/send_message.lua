@@ -14,6 +14,7 @@ end
 
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local GradientAnimation = require("vibing.ui.gradient_animation")
+local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
 
 ---@class Vibing.ChatCallbacks
 ---@field extract_conversation fun(): table 会話履歴を抽出
@@ -94,6 +95,27 @@ function M.execute(adapter, callbacks, message, config)
   local bufnr = callbacks.get_bufnr()
   local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
   local frontmatter = callbacks.parse_frontmatter()
+
+  -- A subagent chat shares its parent's session_id for good, so two buffers can now be pointed at
+  -- one session. Two `claude --resume <same id>` processes append to the same transcript file, so
+  -- refuse rather than corrupt it. Bail before start_response(), leaving the user's unsent
+  -- `## User` message untouched so they can just resend.
+  local session_id = callbacks.get_session_id and callbacks.get_session_id() or nil
+  local conflict = ActiveStreamRegistry.find_other_active_for_session(session_id, bufnr)
+  if conflict then
+    require("vibing.core.utils.notify").error(
+      string.format(
+        "Buffer %s is using this same session right now — wait for it to finish.",
+        tostring(conflict.chat_bufnr or "?")
+      ),
+      "Chat"
+    )
+    if callbacks.clear_sending then
+      callbacks.clear_sending()
+    end
+    return
+  end
+
   -- mote_dirs (array) が優先。後方互換として mote_cwd (string) も読む
   local mote_dirs = frontmatter and frontmatter.mote_dirs
   if type(mote_dirs) == "string" then
@@ -114,6 +136,12 @@ function M.execute(adapter, callbacks, message, config)
   -- 実際のメッセージ送信処理（mote初期化後に呼び出される）
   local function do_send()
     local formatted_prompt = message
+    -- system promptにも同じ指示を入れているが、こちらはターンごとのメッセージなので
+    -- プロンプトキャッシュの前方一致を壊さない。効かなかったときの保険として重ねておく
+    local bound_agent = frontmatter and frontmatter.subagent_id
+    if bound_agent then
+      formatted_prompt = string.format("[Continuing subagent %s] %s", bound_agent, message)
+    end
 
     local conversation = callbacks.extract_conversation()
     if #conversation == 0 then
@@ -205,7 +233,12 @@ function M.execute(adapter, callbacks, message, config)
       opts._session_id = callbacks.get_session_id()
       opts._session_id_explicit = true
 
-      if frontmatter.forked_from then
+      -- forkは新しいsession_idへ分岐させるが、subagentチャットは分岐させてはいけない。
+      -- subagentのtranscriptは親のsession_idのディレクトリにあり、--fork-sessionを付けると
+      -- SendMessageが "No transcript found for agent ID" で失敗する（実CLIで確認済み）
+      if frontmatter.subagent_id then
+        opts._subagent_id = frontmatter.subagent_id
+      elseif frontmatter.forked_from then
         opts._is_fork = true
       end
     end

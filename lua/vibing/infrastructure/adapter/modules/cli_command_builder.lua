@@ -94,6 +94,17 @@ local function resolve_language(opts, config)
   return type(language) == "string" and language or nil
 end
 
+--- Append tools that are not in the list yet, preserving the user's own ordering
+--- @param allow_tools string[]
+--- @param tools string[]
+local function allow_additionally(allow_tools, tools)
+  for _, tool in ipairs(tools) do
+    if not vim.tbl_contains(allow_tools, tool) then
+      table.insert(allow_tools, tool)
+    end
+  end
+end
+
 --- Build permission flags for the CLI
 --- @param cmd string[]
 --- @param opts Vibing.AdapterOpts
@@ -113,10 +124,13 @@ local function add_permission_args(cmd, opts)
     vim.deepcopy(tools_constants.ALWAYS_ALLOWED_TOOLS),
     { "mcp__vibing-nvim__*", "mcp__plugin_vibing-nvim_vibing-nvim__*" }
   )
-  for _, tool in ipairs(always_allowed) do
-    if not vim.tbl_contains(allow_tools, tool) then
-      table.insert(allow_tools, tool)
-    end
+  allow_additionally(allow_tools, always_allowed)
+
+  -- A subagent-bound chat exists to talk to one agent; without these the CLI's own gate blocks the
+  -- only thing it can do. SendMessage is a deferred tool, so ToolSearch has to come along to find
+  -- it. Both spellings of the launcher are listed because the CLI renamed Task to Agent.
+  if opts._subagent_id then
+    allow_additionally(allow_tools, { "Agent", "Task", "SendMessage", "ToolSearch" })
   end
 
   if #allow_tools > 0 then
@@ -303,6 +317,22 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
           .. ". You MUST pass this exact value as the rpc_port argument on every "
           .. "mcp__vibing-nvim__* tool call — never omit it or guess, since other unrelated Neovim "
           .. "instances may be running and reachable on other ports."
+      )
+    end
+
+    -- Constant for this buffer's whole life, so it does not churn the cached prefix across the
+    -- buffer's own turns (#469). Switching between the parent chat and this one still re-diverges
+    -- the shared session's cache — unavoidable while both resume one session_id.
+    if opts._subagent_id then
+      table.insert(
+        system_prompt_lines,
+        string.format(
+          "This chat buffer is bound to subagent %s. For every user message here, relay it by "
+            .. "calling the SendMessage tool with to: '%s' and a 5-10 word summary, then report "
+            .. "what that agent answered. Do not answer in its place.",
+          opts._subagent_id,
+          opts._subagent_id
+        )
       )
     end
 

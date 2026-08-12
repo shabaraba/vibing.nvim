@@ -128,4 +128,47 @@ describe("active_stream_registry", function()
       assert.is_nil(registry.get_by_chat_bufnr(99))
     end)
   end)
+
+  describe("find_other_active_for_session", function()
+    -- A subagent chat shares its parent's session_id permanently, so two buffers can end up
+    -- resuming one session; two CLI processes appending to that transcript would corrupt it.
+    it("finds another buffer already streaming the same session", function()
+      local registry = fresh_registry()
+      registry.register({ handle_id = "a", chat_bufnr = 11, session_id = "s-1", adapter = {} })
+
+      local conflict = registry.find_other_active_for_session("s-1", 12)
+      assert.is_not_nil(conflict)
+      assert.equals(11, conflict.chat_bufnr)
+    end)
+
+    it("does not report a buffer's own stream as a conflict", function()
+      local registry = fresh_registry()
+      registry.register({ handle_id = "a", chat_bufnr = 11, session_id = "s-1", adapter = {} })
+
+      assert.is_nil(registry.find_other_active_for_session("s-1", 11))
+    end)
+
+    it("ignores streams on other sessions", function()
+      local registry = fresh_registry()
+      registry.register({ handle_id = "a", chat_bufnr = 11, session_id = "s-1", adapter = {} })
+
+      assert.is_nil(registry.find_other_active_for_session("s-2", 12))
+    end)
+
+    it("reports nothing once that stream has finished", function()
+      local registry = fresh_registry()
+      registry.register({ handle_id = "a", chat_bufnr = 11, session_id = "s-1", adapter = {} })
+      registry.unregister("a")
+
+      assert.is_nil(registry.find_other_active_for_session("s-1", 12))
+    end)
+
+    it("treats a chat with no session yet as unconflicted", function()
+      local registry = fresh_registry()
+      registry.register({ handle_id = "a", chat_bufnr = 11, session_id = "s-1", adapter = {} })
+
+      assert.is_nil(registry.find_other_active_for_session(nil, 12))
+      assert.is_nil(registry.find_other_active_for_session("", 12))
+    end)
+  end)
 end)

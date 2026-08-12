@@ -164,6 +164,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   ActiveStreamRegistry.register({
     handle_id = handle_id,
     chat_bufnr = opts.chat_bufnr,
+    session_id = opts._session_id,
     adapter = self,
     on_insert_choices = opts.on_insert_choices,
     on_approval_required = opts.on_approval_required,
@@ -208,7 +209,9 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
       return self._handles[handle_id] == nil
     end),
     stderr = StreamHandler.create_stderr_handler(error_output),
-  }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done))
+  }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done, function()
+    return event_context.resultErrors
+  end))
 
   if debug_mode then
     local pid = self._handles[handle_id] and self._handles[handle_id].pid or "unknown"

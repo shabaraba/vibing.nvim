@@ -15,6 +15,9 @@ M.VALID_TOOLS = {
   "WebFetch",
   "Skill",
   "StructuredOutput",
+  -- CLIはv2.1.63でTaskをAgentに改名した。どちらのCLIが動いていても /allow が通るよう両方持つ
+  "Task",
+  "Agent",
 }
 
 ---有効なツール名のテーブル（高速検索用）

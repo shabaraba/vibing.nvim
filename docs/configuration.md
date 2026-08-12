@@ -352,6 +352,9 @@ permissions = {
 
   allow = {              -- Tools to allow (empty = allow all except denied)
     "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput",
+                         -- Add "Task" (or "Agent" — same launcher, newer CLI name) to let a chat
+                         -- spawn subagents. Left out by default: a subagent runs a whole nested
+                         -- session with these same permissions, unattended.
   },
 
   deny = { "Bash" },     -- Tools to deny (takes precedence over allow)
