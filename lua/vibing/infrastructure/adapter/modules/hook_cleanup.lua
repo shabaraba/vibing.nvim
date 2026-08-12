@@ -5,6 +5,9 @@ local M = {}
 
 --- Comm directories owned by a Neovim that is still running.
 --- `registry.list()` already drops entries whose PID is gone, so whatever it returns is live.
+--- Note this only covers instances that have a port: an instance still on `CommDir.path()`'s
+--- portless fallback is not in the registry. Nothing writes there (the hooks exit early without
+--- `VIBING_NVIM_RPC_PORT`), so there is nothing to protect, but it is not a complete set.
 --- @return table<string, boolean> set of directory paths
 local function live_comm_dirs()
   local ok, dirs = pcall(function()
