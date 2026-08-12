@@ -219,13 +219,22 @@ local function handle_assistant_event(msg, context)
         }
       end
 
-      -- Emit on_tool_use with complete input (deferred from content_block_start)
-      if not emitted[block.id] and context.opts and context.opts.on_tool_use then
+      -- Emit the tool callbacks with complete input (deferred from content_block_start).
+      -- on_tool_use carries only the two fields the chat display needs; on_tool_use_full carries
+      -- the input untouched, so the eval harness can assert on arguments like rpc_port or a full
+      -- Bash command without widening the callback every chat depends on.
+      local opts = context.opts or {}
+      if not emitted[block.id] and (opts.on_tool_use or opts.on_tool_use_full) then
         emitted[block.id] = true
         local name = tool_map[block.id].name
         local input = tool_map[block.id].input or {}
         vim.schedule(function()
-          context.opts.on_tool_use(name, input.file_path, input.command)
+          if opts.on_tool_use then
+            opts.on_tool_use(name, input.file_path, input.command)
+          end
+          if opts.on_tool_use_full then
+            opts.on_tool_use_full(name, input)
+          end
         end)
       end
     end

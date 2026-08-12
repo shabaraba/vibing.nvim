@@ -31,6 +31,9 @@ npm run test:node
 # Run E2E tests
 npm run test:e2e
 
+# Run agent behavior evals (spends real tokens — see tests/evals/README.md)
+npm run test:eval
+
 # Validate Lua syntax
 npm run check
 

@@ -39,6 +39,7 @@
 ---@field permissions_ask string[]?
 ---@field permission_mode string?
 ---@field on_tool_use fun(tool: string, file_path: string?)?
+---@field on_tool_use_full fun(tool: string, input: table)? 表示用に間引かない生のツール入力（eval用）
 ---@field _session_id string?
 ---@field _session_id_explicit boolean?
 ---@field lightweight boolean? タイトル生成・要約等の軽量ユーティリティ呼び出し用フラグ（true時はCLAUDE.md/rules・MCPサーバー・フックを無効化）
