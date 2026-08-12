@@ -39,6 +39,23 @@ for _, tool in ipairs(M.ALWAYS_ALLOWED_TOOLS) do
   M.ALWAYS_ALLOWED_TOOLS_MAP[tool] = true
 end
 
+---`permissions.allow`の既定値。`config.lua`はこのリストを参照するだけで、値を再列挙しない。
+---VALID_TOOLSからの差集合としては導出しない。導出にするとVALID_TOOLSへツールを足した人が
+---「既定で許可してよいか」を判断しないまま自動的に許可され得るため、あえて列挙にしてその判断を
+---1行の追加として残す。ここに無いのはBash（任意コマンド実行）とWebSearch/WebFetch（外部通信）。
+---`ALWAYS_ALLOWED_TOOLS`とは別物で、あちらは`allow`の内容に関わらず効く下限。ここから外しても
+---あちらに残っていれば許可されたままになる。
+---@type string[]
+M.DEFAULT_ALLOWED_TOOLS = {
+  "Read",
+  "Edit",
+  "Write",
+  "Glob",
+  "Grep",
+  "Skill",
+  "StructuredOutput",
+}
+
 ---ツール名が有効かチェックし、正規化された名前を返す
 ---@param tool string チェックするツール名
 ---@return string|nil 有効な場合は正規化されたツール名

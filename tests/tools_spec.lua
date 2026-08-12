@@ -75,4 +75,38 @@ describe("vibing.constants.tools", function()
       assert.is_nil(tools.validate_tool("Bash()"))
     end)
   end)
+
+  describe("DEFAULT_ALLOWED_TOOLS", function()
+    it("only names tools that VALID_TOOLS knows about", function()
+      -- The drift guard: DEFAULT_ALLOWED_TOOLS is written out by hand rather than derived, so a
+      -- typo or a rename in VALID_TOOLS would otherwise silently drop a tool from the default
+      -- allow list.
+      for _, tool in ipairs(tools.DEFAULT_ALLOWED_TOOLS) do
+        assert.is_true(tools.VALID_TOOLS_MAP[tool] ~= nil, tool .. " is not in VALID_TOOLS")
+      end
+    end)
+
+    it("leaves out the tools that must not be allowed by default", function()
+      for _, tool in ipairs({ "Bash", "WebSearch", "WebFetch" }) do
+        assert.is_false(vim.tbl_contains(tools.DEFAULT_ALLOWED_TOOLS, tool), tool .. " is allowed by default")
+      end
+    end)
+
+    it("is the value config.defaults.permissions.allow uses", function()
+      -- The point of #493: config.lua must not re-list these names, it must read them from here.
+      local config = require("vibing.config")
+      assert.same(tools.DEFAULT_ALLOWED_TOOLS, config.defaults.permissions.allow)
+    end)
+
+    it("survives a caller mutating config.defaults.permissions.allow", function()
+      local config = require("vibing.config")
+      local before = vim.deepcopy(tools.DEFAULT_ALLOWED_TOOLS)
+
+      table.insert(config.defaults.permissions.allow, "Bash")
+      local unchanged = vim.deepcopy(tools.DEFAULT_ALLOWED_TOOLS)
+      table.remove(config.defaults.permissions.allow)
+
+      assert.same(before, unchanged)
+    end)
+  end)
 end)
