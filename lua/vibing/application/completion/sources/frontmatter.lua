@@ -8,7 +8,7 @@ M.name = "frontmatter"
 local frontmatter_provider = require("vibing.infrastructure.completion.providers.frontmatter")
 
 ---Read the "agent:" value from the current buffer's frontmatter
----@return string? "claude" | "codex" | nil
+---@return string? "claude" | "codex" | "copilot" | nil
 function M._read_frontmatter_agent()
   local bufnr = vim.api.nvim_get_current_buf()
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, 30, false)

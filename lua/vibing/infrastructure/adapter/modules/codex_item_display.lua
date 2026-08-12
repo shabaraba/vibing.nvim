@@ -25,13 +25,13 @@ end
 --- @param context table
 --- @return string
 function M.format_command_execution(item, context)
-  local markers = M._get_markers(context)
+  local markers = ToolDisplay.get_cached_markers(context)
   local tool_name = item.tool_name or "Bash"
   local marker = ToolDisplay.resolve_marker(tool_name, markers)
   local cmd_display = M.extract_inner_command(item.command or "")
   local header = string.format("\n%s %s(%s)\n", marker, tool_name, cmd_display)
 
-  local display_mode = M._get_display_mode(context)
+  local display_mode = ToolDisplay.get_cached_display_mode(context)
   local result = ToolDisplay.format_result_text(item.aggregated_output or "", display_mode)
   return header .. result
 end
@@ -40,7 +40,7 @@ end
 --- @param item table
 --- @return string
 function M.format_file_change(item, context)
-  local markers = M._get_markers(context)
+  local markers = ToolDisplay.get_cached_markers(context)
   local marker = ToolDisplay.resolve_marker("Edit", markers)
   local changes = item.changes or {}
 
@@ -62,7 +62,7 @@ end
 --- @param item table
 --- @return string
 function M.format_mcp_tool_call(item, context)
-  local markers = M._get_markers(context)
+  local markers = ToolDisplay.get_cached_markers(context)
   local tool_label = item.tool or "unknown"
   if item.server then
     tool_label = item.server .. ":" .. tool_label
@@ -70,7 +70,7 @@ function M.format_mcp_tool_call(item, context)
   local marker = ToolDisplay.resolve_marker("mcp", markers)
   local header = string.format("\n%s MCP(%s)\n", marker, tool_label)
 
-  local display_mode = M._get_display_mode(context)
+  local display_mode = ToolDisplay.get_cached_display_mode(context)
   local result_text = ""
   if item.error then
     result_text = "Error: " .. tostring(item.error)
@@ -109,27 +109,9 @@ end
 --- @param item table
 --- @return string
 function M.format_web_search(item, context)
-  local markers = M._get_markers(context)
+  local markers = ToolDisplay.get_cached_markers(context)
   local marker = ToolDisplay.resolve_marker("WebSearch", markers)
   return string.format("\n%s WebSearch(%s)\n", marker, item.query or "")
-end
-
---- @param context table
---- @return table|nil
-function M._get_markers(context)
-  if context._cached_markers == nil then
-    context._cached_markers = ToolDisplay.get_markers_config() or false
-  end
-  return context._cached_markers or nil
-end
-
---- @param context table
---- @return string
-function M._get_display_mode(context)
-  if not context._cached_display_mode then
-    context._cached_display_mode = ToolDisplay.get_display_mode()
-  end
-  return context._cached_display_mode
 end
 
 return M

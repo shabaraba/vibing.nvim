@@ -24,7 +24,7 @@ vibing.nvim が公開している API のリファレンス。設定項目その
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",  -- "claude" | "codex"
+  adapter = "claude",  -- "claude" | "codex" | "copilot"
   agent = {
     default_mode = "code",     -- "code" | "plan" | "explore"
     default_model = "sonnet",  -- "sonnet" | "opus" | "haiku" | "fable"

@@ -14,9 +14,9 @@
 
 ---@class Vibing.Adapter
 ---AIバックエンドとの通信を抽象化するアダプター基底クラス
----claude_cli、codex_cliなど複数のバックエンドを統一インターフェースで扱う
+---claude_cli、codex_cli、copilot_cliなど複数のバックエンドを統一インターフェースで扱う
 ---サブクラスはexecute(), stream(), build_command()を実装する必要がある
----@field name string アダプター名（"claude_cli", "codex_cli"等）
+---@field name string アダプター名（"claude_cli", "codex_cli", "copilot_cli"等）
 ---@field config Vibing.Config プラグイン設定オブジェクト（API key、モデル名等を含む）
 ---@field job_id number? 現在実行中のジョブID（vim.fn.jobstart()の戻り値、未実行時はnil）
 local Adapter = {}

@@ -96,8 +96,9 @@ require("vibing").setup({
 
 ```lua
 adapter = "claude",  -- Global backend adapter
-                     -- "claude": Claude CLI (claude -p --output-format stream-json)
-                     -- "codex":  Codex CLI  (codex exec --json)
+                     -- "claude":  Claude CLI  (claude -p --output-format stream-json)
+                     -- "codex":   Codex CLI   (codex exec --json)
+                     -- "copilot": Copilot CLI (copilot -p --output-format json)
                      -- Overridable per-chat via the "agent" frontmatter field
 ```
 

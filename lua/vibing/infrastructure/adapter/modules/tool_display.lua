@@ -54,4 +54,24 @@ function M.format_result_text(result_text, display_mode)
   return "  ⎿  " .. display_text:gsub("\n", "\n     ") .. "\n"
 end
 
+--- Get tool markers config, cached on the per-stream processing context
+--- @param context table
+--- @return table|nil
+function M.get_cached_markers(context)
+  if context._cached_markers == nil then
+    context._cached_markers = M.get_markers_config() or false
+  end
+  return context._cached_markers or nil
+end
+
+--- Get the tool result display mode, cached on the per-stream processing context
+--- @param context table
+--- @return string
+function M.get_cached_display_mode(context)
+  if not context._cached_display_mode then
+    context._cached_display_mode = M.get_display_mode()
+  end
+  return context._cached_display_mode
+end
+
 return M

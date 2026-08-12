@@ -10,8 +10,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Release](https://img.shields.io/github/v/release/shabaraba/vibing.nvim)](https://github.com/shabaraba/vibing.nvim/releases)
 
-A powerful Neovim plugin that integrates **Claude** and **Codex** AI via CLI backends,
-bringing intelligent, context-aware chat conversations directly into your editor.
+A powerful Neovim plugin that integrates **Claude**, **Codex**, and **GitHub Copilot** AI via CLI
+backends, bringing intelligent, context-aware chat conversations directly into your editor.
 
 English | [日本語](./README.ja.md)
 
@@ -43,9 +43,9 @@ access to your Neovim instance** through CLI backends and MCP integration.
 
 - **🤖 Neovim as an agent tool** — via MCP, the AI reads and writes buffers, executes commands,
   and queries LSP (diagnostics, definitions, references, symbols) in your _running_ editor
-- **🔀 Multi-backend** — Claude CLI (`claude -p --output-format stream-json`) or Codex CLI
-  (`codex exec --json`); switch globally via `adapter` or per-chat via the `agent` frontmatter
-  field
+- **🔀 Multi-backend** — Claude CLI (`claude -p --output-format stream-json`), Codex CLI
+  (`codex exec --json`), or GitHub Copilot CLI (`copilot -p --output-format json`); switch
+  globally via `adapter` or per-chat via the `agent` frontmatter field
 - **💾 File-based session persistence** — chats are plain Markdown files with YAML frontmatter
   saved under `.vibing/chat/`: portable, resumable (full CLI session state), auditable, and
   version-controllable
@@ -77,6 +77,8 @@ they compose well.
 - At least one AI CLI backend:
   - **Claude CLI** (`claude`) — `npm install -g @anthropic-ai/claude-code`
   - **Codex CLI** (`codex`) — `npm install -g @openai/codex`
+  - **GitHub Copilot CLI** (`copilot`) — `npm install -g @github/copilot` (needs Node.js 22+,
+    higher than the 18+ the MCP server itself requires)
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 
@@ -231,7 +233,7 @@ In chat buffers (all except `q` are configurable via `keymaps` — see
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",              -- "claude" | "codex"
+  adapter = "claude",              -- "claude" | "codex" | "copilot"
   chat = {
     window = {
       position = "current",        -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
@@ -269,7 +271,7 @@ vibing.nvim: true
 session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
 working_dir: .vibing/worktrees/feature-x  # Optional: working directory (relative to git root)
-agent: claude  # claude | codex (overrides global adapter setting for this chat)
+agent: claude  # claude | codex | copilot (overrides global adapter setting for this chat)
 mode: code  # code | plan | explore
 model: sonnet  # sonnet | opus | haiku | fable
 permission_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk | auto
@@ -324,11 +326,13 @@ graph TB
     subgraph AI["AI CLI Backends"]
         Claude["Claude CLI<br/>(claude -p --output-format stream-json)"]
         Codex["Codex CLI<br/>(codex exec --json)"]
+        Copilot["Copilot CLI<br/>(copilot -p --output-format json)"]
     end
 
     RPC <-->|JSON-RPC| MCPServer
     Plugin -->|spawns & communicates<br/>JSON Lines| Claude
     Plugin -->|spawns & communicates<br/>JSON Lines| Codex
+    Plugin -->|spawns & communicates<br/>JSON Lines| Copilot
 ```
 
 | Aspect         | Traditional REST API | vibing.nvim (CLI Adapters)    |
@@ -344,15 +348,24 @@ graph TB
 
 - **Claude CLI** (`claude -p --output-format stream-json`) — full Claude Code capabilities
 - **Codex CLI** (`codex exec --json`) — OpenAI Codex backend
+- **GitHub Copilot CLI** (`copilot -p --output-format json`) — GitHub Copilot backend
 
-Switch globally with `adapter = "claude"|"codex"` in setup, or per-chat by adding `agent: claude`
-or `agent: codex` to a chat file's YAML frontmatter.
+Switch globally with `adapter = "claude"|"codex"|"copilot"` in setup, or per-chat by adding
+`agent: claude`, `agent: codex`, or `agent: copilot` to a chat file's YAML frontmatter.
+
+> **Note:** the Copilot backend does not yet support the in-chat Tool Approval UI. It runs with
+> `--allow-all-tools` and honors the `permissions.deny` list via copilot's `--deny-tool` flag.
+> Because the approval UI is what enforces `permissions.ask`, that list has no effect on Copilot —
+> tools listed there run without prompting. Use `permissions.deny` for anything that must not run.
+> `permissions.deny` covers `Bash` (including `Bash(cmd:*)` patterns), `Write`, `Edit`, `WebFetch`,
+> and `WebSearch`; Copilot has no permission pattern for the other tool names, and vibing.nvim
+> warns once when it drops one.
 
 ### Why does it require Node.js?
 
 Node.js is required for the MCP server, which provides AI with direct access to your running
 Neovim instance (buffer reads/writes, LSP queries, command execution). The AI CLI binaries
-themselves (`claude`, `codex`) are separate installs.
+themselves (`claude`, `codex`, `copilot`) are separate installs.
 
 ### How does it compare to Claude Code CLI?
 
@@ -360,9 +373,9 @@ vibing.nvim provides similar capabilities to Claude Code CLI but integrated into
 
 - Same `claude` CLI underneath
 - MCP for editor control (CLI controls terminal, vibing controls Neovim)
-- Additional Codex backend option for OpenAI workflows
+- Additional Codex and GitHub Copilot backend options for non-Anthropic workflows
 
-Think of it as "Claude Code (or Codex) for Neovim users."
+Think of it as "Claude Code (or Codex, or Copilot) for Neovim users."
 
 ### Can I use vibing.nvim alongside other AI plugins?
 
@@ -383,6 +396,7 @@ MIT License - see LICENSE file for details
 
 - [Claude AI](https://claude.ai)
 - [Codex CLI](https://github.com/openai/codex)
+- [GitHub Copilot CLI](https://github.com/github/copilot-cli)
 - [GitHub Repository](https://github.com/shabaraba/vibing.nvim)
 
 ---
