@@ -345,6 +345,7 @@ describe("vibing.init", function()
     describe("VibingSchedule", function()
       local original_auto_resume, original_view, original_limit_state
       local scratch_bufnr, scratch_path
+      local unwritable_bufnr, unwritable_dir, unwritable_path
 
       before_each(function()
         original_auto_resume = package.loaded["vibing.application.chat.auto_resume"]
@@ -354,6 +355,17 @@ describe("vibing.init", function()
         scratch_path = vim.fn.tempname() .. "-vibing-schedule-spec.md"
         scratch_bufnr = vim.api.nvim_create_buf(false, true)
         vim.api.nvim_buf_set_name(scratch_bufnr, scratch_path)
+
+        -- A real (non-scratch) buffer named under a directory that does not exist, so `:write`
+        -- deterministically fails (E212) and `vim.bo[bufnr].modified` stays true afterward. A
+        -- scratch buffer (scratch=true) does not reproduce this: `:write` against one clears
+        -- `modified` even when nothing was written, which would make the save-failure path
+        -- untestable through it.
+        unwritable_dir = vim.fn.tempname()
+        unwritable_path = unwritable_dir .. "/does-not-exist/chat.md"
+        unwritable_bufnr = vim.api.nvim_create_buf(false, false)
+        vim.api.nvim_buf_set_name(unwritable_bufnr, unwritable_path)
+        vim.api.nvim_buf_set_lines(unwritable_bufnr, 0, -1, false, { "## User <!-- unsent -->", "hello there" })
       end)
 
       after_each(function()
@@ -363,6 +375,10 @@ describe("vibing.init", function()
         pcall(vim.api.nvim_buf_delete, scratch_bufnr, { force = true })
         if scratch_path then
           vim.fn.delete(scratch_path)
+        end
+        pcall(vim.api.nvim_buf_delete, unwritable_bufnr, { force = true })
+        if unwritable_dir then
+          vim.fn.delete(unwritable_dir, "rf")
         end
       end)
 
@@ -409,6 +425,126 @@ describe("vibing.init", function()
 
         assert.is_not_nil(captured_opts)
         assert.is_true(captured_opts.quiet)
+      end)
+
+      it("does not arm a schedule when the chat file cannot be saved", function()
+        stub_chat_buffer(unwritable_bufnr, "hello there")
+
+        local schedule_request_called = false
+        package.loaded["vibing.application.chat.auto_resume"] = {
+          schedule_request = function()
+            schedule_request_called = true
+            return true, nil
+          end,
+          format_duration = function(seconds)
+            return seconds .. "s"
+          end,
+        }
+
+        local callback
+        vim.api.nvim_create_user_command = function(name, cb)
+          if name == "VibingSchedule" then
+            callback = cb
+          end
+        end
+
+        local warn_message
+        package.loaded["vibing.core.utils.notify"].warn = function(msg)
+          warn_message = msg
+        end
+
+        Vibing.setup()
+        local ok, err = pcall(callback, { args = "30m" })
+
+        assert.is_true(ok, err)
+        assert.is_false(
+          schedule_request_called,
+          "AutoResume.schedule_request must not be called when the save failed"
+        )
+        assert.is_not_nil(warn_message)
+        assert.matches("[Cc]ould not save", warn_message)
+        -- The failed `:write` left the buffer's own unsaved-changes flag set; a passing save
+        -- would have cleared it. This is the same signal the command itself checks.
+        assert.is_true(vim.bo[unwritable_bufnr].modified)
+      end)
+
+      it("computes fire_at as resets_at + grace_sec when scheduling from an active limit", function()
+        stub_chat_buffer(scratch_bufnr, "hello there")
+
+        local resets_at = os.time() + 1200
+        package.loaded["vibing.infrastructure.storage.limit_state"] = {
+          get_active = function()
+            return { resets_at = resets_at, limit_type = "five_hour" }
+          end,
+        }
+
+        local captured_fire_at
+        package.loaded["vibing.application.chat.auto_resume"] = {
+          schedule_request = function(_, fire_at)
+            captured_fire_at = fire_at
+            return true, nil
+          end,
+          format_duration = function(seconds)
+            return seconds .. "s"
+          end,
+        }
+
+        local callback
+        vim.api.nvim_create_user_command = function(name, cb)
+          if name == "VibingSchedule" then
+            callback = cb
+          end
+        end
+
+        Vibing.setup()
+        callback({ args = "" })
+
+        -- mock_config.get() (outer before_each) returns no `agent` field at all, exercising the
+        -- `agent.auto_resume_on_limit and ... or 10` fallback down to the default grace of 10.
+        assert.equals(resets_at + 10, captured_fire_at)
+      end)
+
+      it("computes fire_at using a configured grace_sec instead of the default", function()
+        stub_chat_buffer(scratch_bufnr, "hello there")
+
+        local original_config_get = mock_config.get
+        local resets_at = os.time() + 1200
+        mock_config.get = function()
+          return {
+            mcp = { enabled = false },
+            agent = { auto_resume_on_limit = { grace_sec = 45 } },
+          }
+        end
+
+        package.loaded["vibing.infrastructure.storage.limit_state"] = {
+          get_active = function()
+            return { resets_at = resets_at, limit_type = "five_hour" }
+          end,
+        }
+
+        local captured_fire_at
+        package.loaded["vibing.application.chat.auto_resume"] = {
+          schedule_request = function(_, fire_at)
+            captured_fire_at = fire_at
+            return true, nil
+          end,
+          format_duration = function(seconds)
+            return seconds .. "s"
+          end,
+        }
+
+        local callback
+        vim.api.nvim_create_user_command = function(name, cb)
+          if name == "VibingSchedule" then
+            callback = cb
+          end
+        end
+
+        Vibing.setup()
+        callback({ args = "" })
+
+        mock_config.get = original_config_get
+        assert.equals(resets_at + 45, captured_fire_at)
       end)
 
       it("warns instead of erroring when there is no argument and no active limit", function()

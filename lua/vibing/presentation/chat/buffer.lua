@@ -339,6 +339,21 @@ function ChatBuffer:_try_schedule_instead_of_send(message)
     or 10
   local fire_at = state.resets_at + grace
 
+  -- 予約本文はバッファにしか無いので、エントリを組む前に保存しておく。保存に失敗したまま
+  -- 予約すると、再起動後にfire_scheduled()がディスク上の本文（空）を読み、
+  -- "メッセージが空" として黙って予約が失われる。保存できなければ予約せず、
+  -- 呼び出し元（send_message）に通常送信させる（fail open）。
+  vim.api.nvim_buf_call(self.buf, function()
+    vim.cmd("silent! write")
+  end)
+  if vim.bo[self.buf].modified then
+    vim.notify(
+      "[vibing] Could not save this chat, so the scheduled message would not survive a restart. Sending normally instead.",
+      vim.log.levels.WARN
+    )
+    return false
+  end
+
   -- quiet=true: this helper's own notification below already names the fire time and the escape
   -- hatch, so schedule()'s generic "scheduled to send in..." notification would just duplicate it.
   local ok, reason =
@@ -347,11 +362,6 @@ function ChatBuffer:_try_schedule_instead_of_send(message)
     vim.notify("[vibing] Could not schedule this request: " .. tostring(reason), vim.log.levels.WARN)
     return false
   end
-
-  -- 予約本文はバッファにしか無いので、再起動をまたいでも残るよう保存しておく。
-  vim.api.nvim_buf_call(self.buf, function()
-    vim.cmd("silent! write")
-  end)
 
   vim.notify(
     string.format(

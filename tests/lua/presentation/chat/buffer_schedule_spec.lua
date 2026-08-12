@@ -74,6 +74,26 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
     return instance, chat_path
   end
 
+  --- Build a ChatBuffer around a real, non-scratch buffer named under a directory that does not
+  --- exist, so `:write` deterministically fails (E212) and `vim.bo[bufnr].modified` stays true
+  --- afterward — the same signal the helper under test checks. Kept separate from make_buffer()
+  --- (whose path is always writable) so the happy-path tests are unaffected.
+  --- @param message string
+  --- @return table chat_buffer, string chat_path
+  local function make_unwritable_buffer(message)
+    local bufnr = vim.api.nvim_create_buf(false, false)
+    table.insert(created_bufs, bufnr)
+    vim.api.nvim_buf_set_name(bufnr, tmp_root .. "/no-such-subdir/chat.md")
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+      "## User <!-- unsent -->",
+      message,
+    })
+    local chat_path = vim.api.nvim_buf_get_name(bufnr)
+    table.insert(created_chat_paths, chat_path)
+    local instance = setmetatable({ buf = bufnr, _pending_approval = nil }, ChatBuffer)
+    return instance, chat_path
+  end
+
   describe("exclusions", function()
     before_each(function()
       stub_config()
@@ -141,6 +161,20 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
 
     local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, 1, false)
     assert.matches("unsent", lines[1])
+  end)
+
+  it("does not arm a schedule when the chat file cannot be saved (fails open)", function()
+    stub_config()
+    local chat_buf, chat_path = make_unwritable_buffer("hello there")
+    LimitState.record({ resets_at = os.time() + 3600, limit_type = "five_hour" }, tmp_root)
+
+    local scheduled = chat_buf:_try_schedule_instead_of_send("hello there")
+
+    assert.is_false(scheduled)
+    assert.is_nil(PendingResume.get(chat_path))
+    -- The failed `:write` left the buffer's unsaved-changes flag set; a passing save would have
+    -- cleared it. This is the same signal the helper itself checks before arming.
+    assert.is_true(vim.bo[chat_buf.buf].modified)
   end)
 
   describe("send_message() ordering", function()

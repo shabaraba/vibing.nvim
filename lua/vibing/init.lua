@@ -317,16 +317,22 @@ function M._register_commands()
       fire_at = state.resets_at + grace
     end
 
+    -- 予約本文はバッファにしか無いので、エントリを組む前に保存しておく。保存に失敗したまま
+    -- 予約すると、再起動後にfire_scheduled()がディスク上の本文（空）を読み、
+    -- "メッセージが空" として黙って予約が失われる。
+    vim.api.nvim_buf_call(bufnr, function()
+      vim.cmd("silent! write")
+    end)
+    if vim.bo[bufnr].modified then
+      notify.warn("Could not save this chat, so the scheduled message would not survive a restart. Not scheduling.")
+      return
+    end
+
     local ok, err = AutoResume.schedule_request(chat_file_path, fire_at, { quiet = true })
     if not ok then
       notify.warn("Could not schedule: " .. tostring(err))
       return
     end
-
-    -- 予約本文はバッファにしか無いので、再起動をまたいでも残るよう保存しておく。
-    vim.api.nvim_buf_call(bufnr, function()
-      vim.cmd("silent! write")
-    end)
 
     notify.info(
       string.format(
