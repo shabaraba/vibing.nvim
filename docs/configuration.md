@@ -36,7 +36,6 @@ require("vibing").setup({
     window = {
       position = "current",
       width = 0.4,
-      height = 0.4,
       border = "rounded",
     },
     save_location_type = "project",
@@ -194,12 +193,16 @@ chat = {
                            -- "back": background buffer only (no window)
                            -- "float": floating window
 
-    width = 0.4,           -- Screen-width ratio (0-1). Applied to right/left splits
-                           -- and floating windows. Always interpreted as a ratio —
-                           -- absolute column counts are not supported.
+    width = 0.4,           -- Applied to right/left splits and floating windows.
+                           -- Below 1 it is a screen-width ratio; 1 or above is an
+                           -- absolute column count (e.g. width = 80). Note the
+                           -- boundary: width = 1 means one column, not 100%.
 
-    height = 0.4,          -- Screen-height ratio (0-1). Applied to top/bottom splits
-                           -- only. Floating windows use a fixed 0.8 screen ratio.
+    -- height is not in the defaults on purpose: the fallback differs per position
+    -- (0.4 for top/bottom splits, 0.8 for floats), and a value here would apply to
+    -- both. Set it to override either.
+    --   height = 0.5,     -- Same rule as width: ratio below 1, absolute rows at 1
+                           -- or above. Applies to top/bottom splits and floats.
 
     border = "rounded",    -- Border for position = "float" only (any nvim_open_win
                            -- border spec). Split windows have no border.

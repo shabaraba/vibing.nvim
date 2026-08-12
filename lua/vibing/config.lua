@@ -106,9 +106,9 @@
 ---チャットウィンドウ表示設定
 ---位置、幅、高さ、枠線スタイルを制御
 ---@field position "right"|"left"|"top"|"bottom"|"back"|"current"|"float" ウィンドウ位置（"right": 右分割、"left": 左分割、"top": 上分割、"bottom": 下分割、"back": バッファのみ作成、"current": 現在のウィンドウ、"float": フローティング）
----@field width number ウィンドウ幅（0-1の小数で画面比率、1以上で絶対幅）
----@field height number ウィンドウ高さ（0-1の小数で画面比率、1以上で絶対高さ、top/bottomで使用）
----@field border string 枠線スタイル（"rounded", "single", "double", "none"等）
+---@field width number ウィンドウ幅（0-1の小数で画面比率、1以上で絶対カラム数。right/left/floatで使用）。境界に注意: `1`は100%ではなく1カラム
+---@field height number? ウィンドウ高さ（0-1の小数で画面比率、1以上で絶対行数。top/bottom/floatで使用。`1`は100%ではなく1行）。未指定時の既定値は位置により異なり、分割は0.4、floatは0.8
+---@field border string 枠線スタイル（"rounded", "single", "double", "none"等）。floatのみ有効で、値は`nvim_open_win`にそのまま渡される（vibing.nvim側の検証はしない）
 
 ---@class Vibing.KeymapConfig
 ---キーマップ設定
@@ -243,7 +243,8 @@ M.defaults = {
     window = {
       position = "current",
       width = 0.4,
-      height = 0.4,
+      -- heightは意図的に未設定。既定値がpositionごとに違うのでwindow_manager側で解決する
+      -- （docs/configuration.md の chat.window.height 参照）
       border = "rounded",
     },
     auto_context = true,
