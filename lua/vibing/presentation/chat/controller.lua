@@ -176,4 +176,64 @@ function M.handle_subagent_chat(args)
   end)
 end
 
+---現在のチャットバッファでUserセクションのヘッダー行番号を集める（1-indexed, 昇順）
+---@param buf number バッファ番号
+---@return number[] lines
+local function collect_user_header_lines(buf)
+  local Timestamp = require("vibing.core.utils.timestamp")
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local result = {}
+  for i, line in ipairs(lines) do
+    if Timestamp.extract_role(line) == "user" then
+      table.insert(result, i)
+    end
+  end
+  return result
+end
+
+---次/前のUserセクションへカーソルを移動
+---コマンド `:VibingChatJumpNextUser` / `:VibingChatJumpPrevUser` から呼ばれる
+---@param direction "next"|"prev" 移動方向
+function M.handle_jump_user(direction)
+  local view = require("vibing.presentation.chat.view")
+  local current_view = view.get_current()
+
+  if not current_view then
+    notify.warn("Not in a vibing chat buffer")
+    return
+  end
+
+  local headers = collect_user_header_lines(current_view.buf)
+  if #headers == 0 then
+    notify.info("No User section found")
+    return
+  end
+
+  local cur = vim.api.nvim_win_get_cursor(0)[1] -- 1-indexed
+  local target
+  if direction == "next" then
+    for _, lnum in ipairs(headers) do
+      if lnum > cur then
+        target = lnum
+        break
+      end
+    end
+  else
+    for i = #headers, 1, -1 do
+      if headers[i] < cur then
+        target = headers[i]
+        break
+      end
+    end
+  end
+
+  if not target then
+    notify.info(direction == "next" and "No next User section" or "No previous User section")
+    return
+  end
+
+  vim.api.nvim_win_set_cursor(0, { target, 0 })
+  vim.cmd("normal! zz")
+end
+
 return M

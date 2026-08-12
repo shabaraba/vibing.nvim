@@ -185,6 +185,14 @@ function M._register_commands()
     end,
   })
 
+  vim.api.nvim_create_user_command("VibingChatJumpNextUser", function()
+    require("vibing.presentation.chat.controller").handle_jump_user("next")
+  end, { desc = "Jump to the next User section in the chat buffer" })
+
+  vim.api.nvim_create_user_command("VibingChatJumpPrevUser", function()
+    require("vibing.presentation.chat.controller").handle_jump_user("prev")
+  end, { desc = "Jump to the previous User section in the chat buffer" })
+
   vim.api.nvim_create_user_command("VibingSlashCommands", function()
     require("vibing.presentation.chat.controller").show_slash_commands()
   end, { desc = "Show slash command picker" })

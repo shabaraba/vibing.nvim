@@ -8,6 +8,8 @@
 | `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                                         |
 | `:VibingChatFork [position]`          | Fork current chat (create branch from current conversation)                                         |
 | `:VibingSubagentChat [position]`      | Continue a subagent this chat started, in its own buffer                                            |
+| `:VibingChatJumpNextUser`             | Move the cursor to the next User section in the chat buffer                                          |
+| `:VibingChatJumpPrevUser`             | Move the cursor to the previous User section in the chat buffer                                      |
 | `:VibingSlashCommands`                | Show slash command picker in chat                                                                   |
 | `:VibingSetFileTitle`                 | Generate AI title and rename chat file                                                              |
 | `:VibingSummarize`                    | Generate AI summary of chat history and insert into buffer                                          |
