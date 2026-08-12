@@ -63,13 +63,11 @@ function M.setup(opts)
   -- 使用量リミット待ちのチャットのタイマーを張り直す。
   -- 5時間/週次リミットのリセットはNeovimの再起動を跨ぐことが多いため、
   -- .vibing/pending-resume.json から復元する。VimEnter後に遅延させて起動を妨げない。
-  if M.config.agent and M.config.agent.auto_resume_on_limit and M.config.agent.auto_resume_on_limit.enabled then
-    vim.schedule(function()
-      pcall(function()
-        require("vibing.application.chat.auto_resume").restore()
-      end)
+  vim.schedule(function()
+    pcall(function()
+      require("vibing.application.chat.auto_resume").restore()
     end)
-  end
+  end)
 
   -- nvim-dapの停止イベントを購読する。nvim-dapがまだロードされていない可能性があるので
   -- VimEnter後に遅らせる（未インストールならsetup側がfalseを返して何もしない）

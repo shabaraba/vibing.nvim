@@ -245,21 +245,84 @@ local function schedule(entry, opts)
     end)
   )
 
-  -- Say so when the delay is a guess. A bare "will resume in 5m" reads as a known reset time,
-  -- but for a five-hour or weekly limit the fallback will almost certainly be rejected again.
-  local qualifier = entry.resets_at and "" or " (no reset time reported; this is a fallback retry)"
-  vim.notify(
-    string.format(
-      "[vibing] Usage limit hit - %s will resume in %s%s",
-      vim.fn.fnamemodify(path, ":t"),
-      M.format_duration(math.floor(delay_ms / 1000)),
-      qualifier
-    ),
-    vim.log.levels.INFO
-  )
+  local name = vim.fn.fnamemodify(path, ":t")
+  local human = M.format_duration(math.floor(delay_ms / 1000))
+  if (entry.kind or "auto_resume") == "scheduled" then
+    vim.notify(
+      string.format("[vibing] %s scheduled to send in %s (%s)", name, human, os.date("%H:%M", entry.resets_at)),
+      vim.log.levels.INFO
+    )
+  else
+    -- Say so when the delay is a guess. A bare "will resume in 5m" reads as a known reset time,
+    -- but for a five-hour or weekly limit the fallback will almost certainly be rejected again.
+    local qualifier = entry.resets_at and "" or " (no reset time reported; this is a fallback retry)"
+    vim.notify(
+      string.format("[vibing] Usage limit hit - %s will resume in %s%s", name, human, qualifier),
+      vim.log.levels.INFO
+    )
+  end
 end
 
 M._compute_delay = compute_delay
+
+--- Whether another scheduled request may be armed.
+--- A scheduled request that gets rejected re-arms itself (see send_message.lua), so this budget
+--- is the only thing standing between a persistent limit and an unbounded retry loop. An
+--- explicit :VibingSchedule passes no budget and is never refused.
+--- @param retry_count number|nil
+--- @param max_retries number|nil
+--- @return boolean
+local function may_schedule(retry_count, max_retries)
+  if max_retries == nil then
+    return true
+  end
+  return (retry_count or 0) < max_retries
+end
+
+M._may_schedule = may_schedule
+
+--- Options passed to schedule() for scheduled entries.
+--- grace_sec is zero because the caller already decided the exact moment: :VibingSchedule 30m
+--- means 30 minutes, and a reset-derived time has the grace added by the caller.
+local SCHEDULED_OPTS = { grace_sec = 0 }
+
+--- Park a chat's unsent `## User` body and send it at `fire_at`.
+--- The body is not copied anywhere: it stays in the chat buffer, and fire() reads it back. See
+--- the design spec, "Where the body lives".
+--- @param chat_file_path string
+--- @param fire_at number Unix seconds
+--- @param opts {limit_type: string|nil, retry_count: number|nil, max_retries: number|nil}|nil
+--- @return boolean ok, string|nil reason
+function M.schedule_request(chat_file_path, fire_at, opts)
+  opts = opts or {}
+
+  if not chat_file_path or chat_file_path == "" then
+    return false, "no chat file path"
+  end
+
+  if not may_schedule(opts.retry_count, opts.max_retries) then
+    return false, string.format("re-schedule budget of %d is spent", opts.max_retries)
+  end
+
+  local entry = {
+    chat_file_path = chat_file_path,
+    kind = "scheduled",
+    resets_at = fire_at,
+    limit_type = opts.limit_type,
+    retry_count = opts.retry_count or 0,
+    recorded_at = os.time(),
+    state = "waiting",
+  }
+
+  local delay_sec, reason = compute_delay(entry, SCHEDULED_OPTS)
+  if not delay_sec then
+    return false, reason
+  end
+
+  PendingResume.put(entry)
+  schedule(entry, SCHEDULED_OPTS)
+  return true
+end
 
 --- Format a second count as a short human-readable duration
 --- @param seconds number
@@ -369,21 +432,36 @@ function M.list()
   return out
 end
 
+--- Whether a stored entry should be re-armed at startup.
+--- An "in_flight" entry was already sent by a session whose outcome we never saw; re-sending it
+--- would spend a request outside the retry budget. It is kept (not deleted) so its retry_count
+--- still counts. A scheduled entry ignores the auto-resume opt-in: the user armed it by hand.
+--- @param entry Vibing.PendingResume
+--- @param opts table
+--- @return boolean
+local function is_restorable(entry, opts)
+  if not entry.chat_file_path then
+    return false
+  end
+  if (entry.state or "waiting") ~= "waiting" then
+    return false
+  end
+  if (entry.kind or "auto_resume") == "scheduled" then
+    return true
+  end
+  return opts.enabled == true
+end
+
+M._is_restorable = is_restorable
+
 --- Re-arm timers for chats parked before Neovim was restarted.
 --- Called once at startup; safe to call again (each chat's timer is replaced, not stacked).
 function M.restore()
   local opts = get_options()
-  if not opts.enabled then
-    return
-  end
 
   for _, entry in pairs(PendingResume.load()) do
-    -- Only re-arm chats still waiting on a reset. An "in_flight" entry was already sent by a
-    -- previous session whose outcome we never saw; re-sending it would spend a second request
-    -- outside the retry budget. The entry is kept (not deleted) so its retry_count still counts
-    -- against max_retries if that chat hits the limit again.
-    if entry.chat_file_path and (entry.state or "waiting") == "waiting" then
-      schedule(entry, opts)
+    if is_restorable(entry, opts) then
+      schedule(entry, (entry.kind or "auto_resume") == "scheduled" and SCHEDULED_OPTS or opts)
     end
   end
 end

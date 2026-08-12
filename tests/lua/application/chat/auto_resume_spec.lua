@@ -229,4 +229,97 @@ describe("auto_resume", function()
       assert.equals("/unknown.md", entries[2].chat_file_path)
     end)
   end)
+
+  describe("_may_schedule", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+
+    it("allows scheduling when no budget is given (explicit :VibingSchedule)", function()
+      assert.is_true(AutoResume._may_schedule(nil, nil))
+    end)
+
+    it("allows a re-schedule while the budget has room", function()
+      assert.is_true(AutoResume._may_schedule(1, 3))
+    end)
+
+    it("refuses once the budget is spent", function()
+      -- This is the only guard against fire -> rejected -> re-schedule looping forever.
+      assert.is_false(AutoResume._may_schedule(3, 3))
+    end)
+
+    it("treats a missing retry_count as zero", function()
+      assert.is_true(AutoResume._may_schedule(nil, 3))
+    end)
+  end)
+
+  describe("_is_restorable", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+
+    it("re-arms a scheduled entry even when auto-resume is disabled", function()
+      -- The user asked for this one by hand; the opt-in flag governs unattended resumes only.
+      local entry = { chat_file_path = "/a.md", kind = "scheduled", state = "waiting" }
+      assert.is_true(AutoResume._is_restorable(entry, { enabled = false }))
+    end)
+
+    it("does not re-arm an auto_resume entry when the feature is disabled", function()
+      local entry = { chat_file_path = "/a.md", kind = "auto_resume", state = "waiting" }
+      assert.is_false(AutoResume._is_restorable(entry, { enabled = false }))
+    end)
+
+    it("re-arms an auto_resume entry when the feature is enabled", function()
+      local entry = { chat_file_path = "/a.md", state = "waiting" }
+      assert.is_true(AutoResume._is_restorable(entry, { enabled = true }))
+    end)
+
+    it("never re-arms an in_flight entry, whatever its kind", function()
+      assert.is_false(
+        AutoResume._is_restorable({ chat_file_path = "/a.md", kind = "scheduled", state = "in_flight" }, { enabled = true })
+      )
+    end)
+
+    it("never re-arms an entry without a chat file path", function()
+      assert.is_false(AutoResume._is_restorable({ kind = "scheduled", state = "waiting" }, { enabled = true }))
+    end)
+  end)
+
+  describe("schedule_request", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+
+    it("writes a scheduled entry armed for the requested time", function()
+      local chat_path = tmp_root .. "/.vibing/chat/a.md"
+      vim.fn.mkdir(vim.fn.fnamemodify(chat_path, ":h"), "p")
+      local fire_at = os.time() + 3600
+
+      local ok = AutoResume.schedule_request(chat_path, fire_at, { limit_type = "five_hour" })
+      assert.is_true(ok)
+
+      local entry = PendingResume.get(chat_path)
+      assert.is_not_nil(entry)
+      assert.equals("scheduled", entry.kind)
+      assert.equals(fire_at, entry.resets_at)
+      assert.equals("five_hour", entry.limit_type)
+      assert.equals("waiting", entry.state)
+
+      AutoResume.cancel(chat_path)
+    end)
+
+    it("refuses when the re-schedule budget is spent", function()
+      local chat_path = tmp_root .. "/.vibing/chat/b.md"
+      vim.fn.mkdir(vim.fn.fnamemodify(chat_path, ":h"), "p")
+
+      local ok, reason = AutoResume.schedule_request(chat_path, os.time() + 60, { retry_count = 3, max_retries = 3 })
+      assert.is_false(ok)
+      assert.is_string(reason)
+      assert.is_nil(PendingResume.get(chat_path))
+    end)
+
+    it("refuses a fire time far enough out to be implausible", function()
+      -- Same 8-day ceiling auto-resume uses: a timer armed for months means a misread payload.
+      local chat_path = tmp_root .. "/.vibing/chat/c.md"
+      vim.fn.mkdir(vim.fn.fnamemodify(chat_path, ":h"), "p")
+
+      local ok = AutoResume.schedule_request(chat_path, os.time() + 30 * 24 * 3600, {})
+      assert.is_false(ok)
+      assert.is_nil(PendingResume.get(chat_path))
+    end)
+  end)
 end)
