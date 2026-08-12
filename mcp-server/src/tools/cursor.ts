@@ -7,7 +7,7 @@ export const cursorTools = [
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({}),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -34,7 +34,7 @@ export const cursorTools = [
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({}),
-      required: requireRpcPort(),
+      required: [],
     },
   },
 ];

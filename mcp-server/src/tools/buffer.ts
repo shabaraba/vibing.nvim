@@ -12,7 +12,7 @@ export const bufferTools = [
           description: 'Buffer number (0 for current buffer)',
         },
       }),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -41,7 +41,7 @@ export const bufferTools = [
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({}),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -50,7 +50,7 @@ export const bufferTools = [
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({}),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {

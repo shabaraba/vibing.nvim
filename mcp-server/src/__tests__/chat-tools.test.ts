@@ -39,6 +39,8 @@ describe('chat tools (worktree redesign)', () => {
       properties: Record<string, unknown>;
     };
     expect(inputSchema.required).toContain('chat_bufnr');
+    // Still required despite the registry fallback added for read-only tools: this one cancels
+    // the in-flight turn, and every Claude Code session on the machine can see it.
     expect(inputSchema.required).toContain('rpc_port');
     expect(inputSchema.required).toContain('questions');
     expect(inputSchema.properties.chat_bufnr).toBeDefined();
@@ -87,7 +89,7 @@ describe('chat tools (worktree redesign)', () => {
     expect(rpc.callNeovim).not.toHaveBeenCalled();
   });
 
-  it('nvim_ask_user_question rejects a call missing rpc_port instead of silently targeting the wrong Neovim instance', async () => {
+  it('nvim_ask_user_question rejects a call missing rpc_port instead of falling back to the registry', async () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ status: 'ok' });
 
     await expect(

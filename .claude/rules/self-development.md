@@ -53,8 +53,14 @@ built-in workflows.
 **Mistake 3: Forgetting to pass `rpc_port` to MCP tools**
 
 - ❌ Wrong: `mcp__vibing-nvim__nvim_list_windows({})`
-- ✅ Correct: `mcp__vibing-nvim__nvim_list_windows({ rpc_port: process.env.VIBING_NVIM_RPC_PORT })`
-- Why: Multiple Neovim instances may be running, need to target the correct one
+- ✅ Correct: `mcp__vibing-nvim__nvim_list_windows({ rpc_port: <the value in your system prompt> })`
+- Why: Multiple Neovim instances may be running, need to target the correct one. Worktrees and
+  concurrent chats make this the normal case, not the exception
+- Note: `process.env.VIBING_NVIM_RPC_PORT` does **not** work as a substitute. MCP clients forward
+  only a fixed whitelist of variables (`HOME`, `PATH`, `SHELL`, ...) plus the static `env` block in
+  the server's registration, so that variable never reaches the MCP server process. Omitting
+  `rpc_port` falls back to the instance registry, which only answers when exactly one Neovim is
+  live — otherwise it errors and tells you to pick one with `nvim_list_instances`
 
 ## Environment Variables
 

@@ -7,7 +7,7 @@ export const windowTools = [
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({}),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -23,7 +23,7 @@ export const windowTools = [
           description: 'Window number (0 for current window)',
         },
       }),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -39,7 +39,7 @@ export const windowTools = [
           description: 'Window number (0 for current window)',
         },
       }),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -48,7 +48,7 @@ export const windowTools = [
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({}),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {

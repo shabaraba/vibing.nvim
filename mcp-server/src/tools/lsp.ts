@@ -1,4 +1,4 @@
-import { withRpcPort, requireRpcPort } from './common.js';
+import { withRpcPort } from './common.js';
 
 const lspPositionSchema = withRpcPort({
   bufnr: {
@@ -15,7 +15,7 @@ const lspPositionSchema = withRpcPort({
   },
 });
 
-const lspPositionRequired = requireRpcPort(['line', 'col']);
+const lspPositionRequired = ['line', 'col'];
 
 export const lspTools = [
   {
@@ -60,7 +60,7 @@ export const lspTools = [
           description: 'Buffer number (0 for current)',
         },
       }),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -75,7 +75,7 @@ export const lspTools = [
           description: 'Buffer number (0 for current)',
         },
       }),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
