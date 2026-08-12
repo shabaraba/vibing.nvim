@@ -153,6 +153,9 @@ buffers — save, search, and edit them like any other file.
 
 ## 🚀 Usage
 
+Also available offline as `:help vibing-commands`, which carries per-command
+help tags.
+
 ### User Commands
 
 | Command                               | Description                                                                                          |
