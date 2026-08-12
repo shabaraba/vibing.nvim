@@ -220,18 +220,32 @@ if [ -f "dist/index.js" ]; then
     # Both codex and copilot exit 1 when the name already exists, so an existing entry is
     # detected first and left untouched — re-running build.sh must not report a false failure,
     # and a hand-edited config must never be clobbered.
+    #
+    # No port is baked into the registration: the MCP server takes `rpc_port` as an explicit
+    # argument on every tool call (mcp-server/src/rpc.ts throws without it) and reads no port
+    # from its environment, so persisting one via `--env` would only enshrine a value nothing
+    # reads and mislead anyone running Neovim on a non-default port.
     register_mcp_server() {
         local cli="$1"
         command -v "$cli" &> /dev/null || return 0
 
         if "$cli" mcp list 2>/dev/null | grep -qE '^[[:space:]]*vibing-nvim[[:space:]]'; then
+            # `copilot mcp list` renders a disabled server exactly like an enabled one, so the
+            # plain-text hit above is not proof it will actually be launched. Only copilot has
+            # this per-server flag and only its --json view exposes it; codex has no equivalent.
+            if [ "$cli" = "copilot" ] && copilot mcp list --json 2>/dev/null |
+                "$NODE_EXECUTABLE" -e "const e=(JSON.parse(require('fs').readFileSync(0,'utf8')||'{}').mcpServers||{})['vibing-nvim'];process.exit(e&&e.enabled===false?0:1)" 2>/dev/null; then
+                echo "[vibing.nvim] ⚠ vibing-nvim MCP server is registered with copilot but disabled"
+                echo "[vibing.nvim] Enable it from copilot, or replace it: copilot mcp remove vibing-nvim && copilot mcp add vibing-nvim -- $MANUAL_MCP_ARGS"
+                return 0
+            fi
             echo "[vibing.nvim] ✓ vibing-nvim MCP server already registered with $cli"
             echo "[vibing.nvim] To update it: $cli mcp remove vibing-nvim && $cli mcp add vibing-nvim -- $MANUAL_MCP_ARGS"
             return 0
         fi
 
         echo "[vibing.nvim] Registering MCP server with $cli..."
-        if VIBING_RPC_PORT="${VIBING_RPC_PORT:-9876}" "$cli" mcp add vibing-nvim -- "$NODE_EXECUTABLE" "$MCP_SERVER_PATH" 2>/dev/null; then
+        if "$cli" mcp add vibing-nvim -- "$NODE_EXECUTABLE" "$MCP_SERVER_PATH" 2>/dev/null; then
             echo "[vibing.nvim] ✓ Registered vibing-nvim MCP server with $cli"
         else
             echo "[vibing.nvim] ⚠ Warning: $cli MCP registration failed"
