@@ -35,6 +35,39 @@ local GradientAnimation = require("vibing.ui.gradient_animation")
 ---@field clear_sending fun() 送信中フラグを解除
 ---@field get_cwd fun(): string|nil worktreeのcwdを取得
 
+---綴り間違いの警告済み集合。executeは1メッセージごとに走るので、これがないと同じ誤字の
+---チャットで送信のたびに同じ警告が出続ける
+---@type table<string, boolean>
+local warned_modes = {}
+
+---frontmatterの`mode`を検証する（`mode`の意味は core/constants/modes.lua を参照）
+---@param mode any frontmatterのmode値
+---@return string|nil mode 有効な場合はそのまま、無効な場合はnil
+function M._validate_frontmatter_mode(mode)
+  if mode == nil then
+    return nil
+  end
+
+  local Modes = require("vibing.core.constants.modes")
+  local valid = Modes.coerce_agent_mode(mode)
+  if valid then
+    return valid
+  end
+
+  -- Key on the type for non-strings: tostring() of a table is its address, which differs on
+  -- every re-parse and would defeat the dedupe.
+  local shown = type(mode) == "string" and mode or type(mode)
+  if not warned_modes[shown] then
+    warned_modes[shown] = true
+    local valid_list = table.concat(Modes.AGENT_MODES, ", ")
+    vim.notify(
+      string.format("[vibing] Invalid mode '%s' in frontmatter; expected one of: %s", shown, valid_list),
+      vim.log.levels.WARN
+    )
+  end
+  return nil
+end
+
 ---メッセージを送信
 ---@param adapter table アダプター
 ---@param callbacks Vibing.ChatCallbacks チャットバッファへの操作コールバック
@@ -118,7 +151,7 @@ function M.execute(adapter, callbacks, message, config)
       streaming = true,
       action_type = "chat",
       chat_bufnr = vim.api.nvim_buf_is_valid(bufnr) and bufnr or nil,
-      mode = frontmatter.mode,
+      mode = M._validate_frontmatter_mode(frontmatter.mode),
       model = frontmatter.model,
       permissions_allow = frontmatter.permissions_allow,
       permissions_deny = frontmatter.permissions_deny,

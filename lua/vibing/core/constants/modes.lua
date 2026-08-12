@@ -14,6 +14,12 @@ M.PERMISSION_MODES = { "default", "acceptEdits", "bypassPermissions", "plan", "d
 ---@type string[]
 M.VALID_AGENTS = { "claude", "codex" }
 
+---エージェントモード（`agent.default_mode` / frontmatter の `mode`）
+---ユーザーがそのチャットの意図を記録するためのメタデータで、現状は挙動を変えない。
+---CLIにフラグとしては渡らない（権限モードの`plan`とは別物）。
+---@type string[]
+M.AGENT_MODES = { "code", "plan", "explore" }
+
 ---モデルが有効かチェック
 ---@param model string
 ---@return boolean
@@ -33,6 +39,24 @@ end
 ---@return boolean
 function M.is_valid_agent(agent)
   return vim.tbl_contains(M.VALID_AGENTS, agent)
+end
+
+---エージェントモードが有効かチェック
+---@param mode string
+---@return boolean
+function M.is_valid_agent_mode(mode)
+  return vim.tbl_contains(M.AGENT_MODES, mode)
+end
+
+---agent modeとして使える値ならそのまま返し、そうでなければnilを返す
+---呼び出し側は「nilが返った＋元がnilでない」で綴り間違いを検出できる
+---@param mode any
+---@return string|nil
+function M.coerce_agent_mode(mode)
+  if M.is_valid_agent_mode(mode) then
+    return mode
+  end
+  return nil
 end
 
 return M
