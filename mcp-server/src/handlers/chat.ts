@@ -6,7 +6,7 @@ const chatSendMessageArgsSchema = z.object({
   bufnr: z.number(),
   message: z.string(),
   sender: z.string().optional(),
-  rpc_port: z.number(),
+  rpc_port: z.number().optional(),
 });
 
 /**
@@ -28,7 +28,7 @@ export async function handleChatSendMessage(args: any): Promise<any> {
 const askUserQuestionArgsSchema = z.object({
   chat_bufnr: z.number(),
   questions: z.array(z.any()),
-  rpc_port: z.number(),
+  rpc_port: z.number().optional(),
 });
 
 /**
@@ -42,13 +42,11 @@ const askUserQuestionArgsSchema = z.object({
  * that buffer (a fresh `--resume`d turn) IS the answer to this call.
  *
  * `chat_bufnr` and `rpc_port` correlate the call to the right chat buffer/Neovim instance when
- * multiple are active concurrently. Both are required tool arguments rather than sourced from env
- * vars: the MCP client (per the `@modelcontextprotocol/sdk` stdio transport) only forwards a fixed
- * OS-level env whitelist plus whatever is statically configured in the server's registration (see
- * `.claude-plugin/plugin.json`), so per-turn/per-instance values set on the parent `claude` CLI
- * process's env can never reach this MCP server subprocess. Instead, `cli_command_builder.lua`
- * embeds the real values into the turn's system prompt and instructs the model to echo them back
- * here. `chat_bufnr` (unlike a per-turn handle_id) is stable across turns of the same conversation,
+ * multiple are active concurrently. They are tool arguments rather than env lookups because env
+ * can't carry them here — `resolveRpcPort` in `../rpc.ts` explains why, and handles an omitted
+ * `rpc_port`. `cli_command_builder.lua` embeds both values into the turn's system prompt and
+ * instructs the model to echo them back.
+ * `chat_bufnr` (unlike a per-turn handle_id) is stable across turns of the same conversation,
  * so it doesn't defeat Anthropic's prompt cache — see issue #469. It is the buffer number rather
  * than the chat file path because `:VibingSetFileTitle` renames the file mid-conversation, which
  * would change the system prompt and invalidate that cache — see issue #489.

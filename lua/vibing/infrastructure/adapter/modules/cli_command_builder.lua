@@ -145,10 +145,10 @@ end
 --- @param config Vibing.Config Plugin config
 --- @param settings_path string|nil Path to hook settings file
 --- @param rpc_port number|nil This Neovim instance's RPC server port, embedded in the system
----   prompt so the model can echo it back on every vibing-nvim MCP tool call. The MCP server's
----   registration hardcodes a single default port (see `.claude-plugin/plugin.json`), so without
----   this it silently targets whichever unrelated Neovim instance happens to be bound to that
----   port when more than one is running.
+---   prompt so the model can echo it back on every vibing-nvim MCP tool call. The MCP server
+---   cannot read it from its own environment (MCP clients forward only a fixed env whitelist),
+---   and without it the server falls back to the instance registry — which refuses to choose
+---   once more than one Neovim is live, the normal case with worktrees and concurrent chats.
 --- @return string[] Command array for vim.system()
 function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
   if not cached_claude_path then

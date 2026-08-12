@@ -31,7 +31,7 @@ describe('chat tools (worktree redesign)', () => {
     expect(typeof handlers.nvim_chat_send_message).toBe('function');
   });
 
-  it('registers nvim_ask_user_question with chat_bufnr, rpc_port, and questions all required', () => {
+  it('registers nvim_ask_user_question with chat_bufnr and questions required, rpc_port optional', () => {
     const tool = allTools.find((t) => t.name === 'nvim_ask_user_question');
     expect(tool).toBeDefined();
     const inputSchema = tool?.inputSchema as {
@@ -39,17 +39,23 @@ describe('chat tools (worktree redesign)', () => {
       properties: Record<string, unknown>;
     };
     expect(inputSchema.required).toContain('chat_bufnr');
-    expect(inputSchema.required).toContain('rpc_port');
     expect(inputSchema.required).toContain('questions');
+    // rpc_port is offered but not required: omitting it resolves through the instance registry,
+    // which only answers when exactly one Neovim is live (see resolveRpcPort in rpc.ts).
+    expect(inputSchema.required).not.toContain('rpc_port');
     expect(inputSchema.properties.chat_bufnr).toBeDefined();
     expect(inputSchema.properties.rpc_port).toBeDefined();
     expect(inputSchema.properties.questions).toBeDefined();
   });
 
-  it('registers nvim_chat_send_message with rpc_port required', () => {
+  it('registers nvim_chat_send_message with rpc_port optional', () => {
     const tool = allTools.find((t) => t.name === 'nvim_chat_send_message');
-    const inputSchema = tool?.inputSchema as { required?: string[] };
-    expect(inputSchema.required).toContain('rpc_port');
+    const inputSchema = tool?.inputSchema as {
+      required?: string[];
+      properties: Record<string, unknown>;
+    };
+    expect(inputSchema.required).not.toContain('rpc_port');
+    expect(inputSchema.properties.rpc_port).toBeDefined();
   });
 
   it('has a handler for nvim_ask_user_question', () => {
@@ -87,16 +93,19 @@ describe('chat tools (worktree redesign)', () => {
     expect(rpc.callNeovim).not.toHaveBeenCalled();
   });
 
-  it('nvim_ask_user_question rejects a call missing rpc_port instead of silently targeting the wrong Neovim instance', async () => {
+  it('nvim_ask_user_question leaves a missing rpc_port for callNeovim to resolve, never guessing one here', async () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ status: 'ok' });
 
-    await expect(
-      handlers.nvim_ask_user_question({
-        chat_bufnr: 12,
-        questions: [{ question: 'Which?', options: [{ label: 'A' }] }],
-      })
-    ).rejects.toThrow();
-    expect(rpc.callNeovim).not.toHaveBeenCalled();
+    const questions = [{ question: 'Which?', options: [{ label: 'A' }] }];
+    await handlers.nvim_ask_user_question({ chat_bufnr: 12, questions });
+
+    // undefined, not a default: callNeovim resolves it from the instance registry and errors when
+    // more than one Neovim is live, so the wrong editor can never be targeted silently.
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'ask_user_question',
+      { chat_bufnr: 12, questions },
+      undefined
+    );
   });
 
   it('nvim_ask_user_question surfaces an error result when the RPC call fails to find a stream', async () => {

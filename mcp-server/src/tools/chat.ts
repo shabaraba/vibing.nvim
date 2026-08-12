@@ -1,5 +1,5 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { withRpcPort, requireRpcPort } from './common.js';
+import { withRpcPort } from './common.js';
 
 /**
  * Chat-related MCP tools
@@ -28,7 +28,7 @@ export const chatTools: Tool[] = [
             'Optional sender identifier (default: "User"). Future: supports "Alpha", "Bravo", etc.',
         },
       }),
-      required: requireRpcPort(['bufnr', 'message']),
+      required: ['bufnr', 'message'],
     },
   },
   {
@@ -92,7 +92,7 @@ export const chatTools: Tool[] = [
           },
         },
       }),
-      required: requireRpcPort(['chat_bufnr', 'questions']),
+      required: ['chat_bufnr', 'questions'],
     },
   },
 ];

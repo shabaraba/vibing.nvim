@@ -1,4 +1,4 @@
-import { withRpcPort, requireRpcPort } from './common.js';
+import { withRpcPort } from './common.js';
 
 export const bufferTools = [
   {
@@ -12,7 +12,7 @@ export const bufferTools = [
           description: 'Buffer number (0 for current buffer)',
         },
       }),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -30,7 +30,7 @@ export const bufferTools = [
           description: 'Buffer number (0 for current buffer)',
         },
       }),
-      required: requireRpcPort(['lines']),
+      required: ['lines'],
     },
   },
   {
@@ -41,7 +41,7 @@ export const bufferTools = [
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({}),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -50,7 +50,7 @@ export const bufferTools = [
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({}),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -66,7 +66,7 @@ export const bufferTools = [
           description: 'Absolute or relative path to file to load',
         },
       }),
-      required: requireRpcPort(['filepath']),
+      required: ['filepath'],
     },
   },
 ];

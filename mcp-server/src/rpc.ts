@@ -1,4 +1,5 @@
 import * as net from 'net';
+import { listLiveInstances } from './instance-registry.js';
 
 const NVIM_RPC_TIMEOUT = parseInt(process.env.VIBING_RPC_TIMEOUT || '30000', 10); // Default 30 seconds
 
@@ -110,25 +111,54 @@ function getSocket(port: number): Promise<net.Socket> {
 }
 
 /**
+ * Work out which Neovim to talk to when the caller did not name a port.
+ *
+ * The MCP server cannot learn the port from its environment: MCP clients forward only a fixed
+ * whitelist of variables (HOME, PATH, SHELL, ...) plus the static `env` block in the server's
+ * registration, so `VIBING_NVIM_RPC_PORT` — which vibing.nvim does set on the `claude` process —
+ * never reaches this process. The instance registry is the one source that does work, and it is
+ * only unambiguous when a single Neovim is live.
+ *
+ * @param method - RPC method name, used only to make the error message actionable
+ * @returns The port of the single live instance
+ * @throws When no instance is live, or when more than one is and the caller must disambiguate
+ */
+async function resolveRpcPort(method: string): Promise<number> {
+  const instances = await listLiveInstances();
+
+  if (instances.length === 0) {
+    throw new Error(
+      `callNeovim('${method}'): no running vibing.nvim Neovim instance found. Start Neovim with ` +
+        'vibing.nvim loaded, or pass rpc_port explicitly.'
+    );
+  }
+
+  if (instances.length === 1) {
+    return instances[0].port;
+  }
+
+  const listed = instances.map((i) => `port=${i.port} cwd=${i.cwd ?? '?'}`).join(', ');
+  throw new Error(
+    `callNeovim('${method}'): ${instances.length} vibing.nvim Neovim instances are running ` +
+      `(${listed}). Pass rpc_port explicitly — call nvim_list_instances to pick one.`
+  );
+}
+
+/**
  * Invoke a Neovim RPC method and await its response.
  *
  * @param method - The RPC method name to call on the Neovim server
  * @param params - Parameters to include with the RPC call
- * @param port - RPC port to connect to. Required, not defaulted: every tool schema requires the
- *   model to supply the exact port for its own Neovim instance (see the `rpc_port` handling in
- *   `tools/common.ts`), because falling back to a fixed port would silently target whichever
- *   unrelated Neovim instance happens to be bound to it when more than one is running.
+ * @param port - RPC port to connect to. When omitted, `resolveRpcPort` works it out.
  * @returns The `result` value from the RPC response. The promise is rejected with the RPC `error` if the response contains one, and is also rejected if the socket closes or the request times out.
  */
 export async function callNeovim(method: string, params: any = {}, port?: number): Promise<any> {
-  if (port === undefined) {
-    throw new Error(`callNeovim('${method}') requires an explicit rpc_port`);
-  }
-  const sock = await getSocket(port);
+  const resolvedPort = port ?? (await resolveRpcPort(method));
+  const sock = await getSocket(resolvedPort);
   const id = ++requestId;
 
   // getSocket() already initialized pendingRequests for this port
-  const portPending = pendingRequests.get(port)!;
+  const portPending = pendingRequests.get(resolvedPort)!;
 
   return new Promise((resolve, reject) => {
     portPending.set(id, { resolve, reject });

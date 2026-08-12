@@ -1,4 +1,4 @@
-import { withRpcPort, requireRpcPort } from './common.js';
+import { withRpcPort } from './common.js';
 
 export const cursorTools = [
   {
@@ -7,7 +7,7 @@ export const cursorTools = [
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({}),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -25,7 +25,7 @@ export const cursorTools = [
           description: 'Column number (0-indexed)',
         },
       }),
-      required: requireRpcPort(['line']),
+      required: ['line'],
     },
   },
   {
@@ -34,7 +34,7 @@ export const cursorTools = [
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({}),
-      required: requireRpcPort(),
+      required: [],
     },
   },
 ];
