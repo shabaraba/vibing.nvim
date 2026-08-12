@@ -23,6 +23,8 @@ local SUPPORTED_FEATURES = {
   model_selection = true,
   context = true,
   session = true,
+  -- False here, true for the others: see architecture.md. #512 tracks making it real.
+  dynamic_permissions = false,
 }
 
 ---@param config Vibing.Config

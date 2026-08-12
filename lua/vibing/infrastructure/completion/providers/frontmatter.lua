@@ -3,13 +3,22 @@
 ---@module "vibing.infrastructure.completion.providers.frontmatter"
 local M = {}
 
+local Agents = require("vibing.core.constants.agents")
+
+---Agent enum and per-agent model candidates both come from the backend registry, so adding a
+---backend needs no edit here.
+local AGENT_ENUM = vim.tbl_map(function(def)
+  return { value = def.id, description = def.description }
+end, Agents.list())
+
+local MODELS_BY_AGENT = {}
+for _, def in ipairs(Agents.list()) do
+  MODELS_BY_AGENT[def.id] = def.models
+end
+
 ---Enum values for frontmatter fields
 local ENUMS = {
-  agent = {
-    { value = "claude", description = "Claude CLI (Anthropic)" },
-    { value = "codex", description = "Codex CLI (OpenAI)" },
-    { value = "copilot", description = "GitHub Copilot CLI" },
-  },
+  agent = AGENT_ENUM,
   permission_mode = {
     { value = "default", description = "Ask for confirmation before each tool use" },
     { value = "acceptEdits", description = "Auto-approve Edit/Write, ask for others" },
@@ -18,42 +27,6 @@ local ENUMS = {
     { value = "dontAsk", description = "Deny instead of prompting (pre-approved tools only)" },
     { value = "bypassPermissions", description = "Auto-approve all operations (isolated env only)" },
   },
-}
-
----Model candidates per agent backend
-local CLAUDE_MODELS = {
-  { value = "haiku", description = "Claude Haiku (fastest)" },
-  { value = "sonnet", description = "Claude Sonnet (balanced)" },
-  { value = "opus", description = "Claude Opus (most capable)" },
-  { value = "fable", description = "Claude Fable" },
-}
-
-local CODEX_MODELS = {
-  { value = "gpt-5.5", description = "GPT-5.5 (default)" },
-  { value = "gpt-5.4", description = "gpt-5.4" },
-  { value = "gpt-5.4-mini", description = "GPT-5.4-Mini" },
-  { value = "gpt-5.3-codex", description = "gpt-5.3-codex" },
-  { value = "gpt-5.2", description = "gpt-5.2" },
-}
-
----copilot は 30 種類以上のモデルを持つため、代表的なものだけを候補に出す。
----実際に利用できるモデルは利用者のプランに依存するので、ここは候補提示であって検証ではない。
-local COPILOT_MODELS = {
-  { value = "auto", description = "Let Copilot pick the model" },
-  { value = "claude-sonnet-5", description = "Claude Sonnet 5" },
-  { value = "claude-opus-5", description = "Claude Opus 5" },
-  { value = "claude-haiku-4.5", description = "Claude Haiku 4.5 (fastest)" },
-  { value = "gpt-5.5", description = "GPT-5.5" },
-  { value = "gpt-5.4", description = "GPT-5.4" },
-  { value = "gpt-5.4-mini", description = "GPT-5.4 Mini" },
-  { value = "gpt-5.3-codex", description = "GPT-5.3 Codex" },
-  { value = "gemini-3.1-pro-preview", description = "Gemini 3.1 Pro (preview)" },
-}
-
-local MODELS_BY_AGENT = {
-  claude = CLAUDE_MODELS,
-  codex = CODEX_MODELS,
-  copilot = COPILOT_MODELS,
 }
 
 ---Available tool names for permissions lists
@@ -103,7 +76,7 @@ end
 ---@param agent string? "claude" | "codex" | "copilot" (defaults to "claude")
 ---@return Vibing.CompletionItem[]
 function M.get_model_values(agent)
-  local models = MODELS_BY_AGENT[agent] or CLAUDE_MODELS
+  local models = MODELS_BY_AGENT[agent] or MODELS_BY_AGENT[Agents.DEFAULT]
   local items = {}
   for _, m in ipairs(models) do
     table.insert(items, {

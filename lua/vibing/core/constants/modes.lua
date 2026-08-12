@@ -2,9 +2,13 @@
 ---モデル、権限モード、エージェントタイプの定数定義
 local M = {}
 
+local Agents = require("vibing.core.constants.agents")
+
 ---有効なモデル（claude短縮名。codex/copilot固有のモデル名は各command_builder側で自由入力を許可）
 ---@type string[]
-M.VALID_MODELS = { "sonnet", "opus", "haiku", "fable" }
+M.VALID_MODELS = vim.tbl_map(function(m)
+  return m.value
+end, Agents.get(Agents.DEFAULT).models)
 
 ---権限モード
 ---@type string[]
@@ -12,7 +16,7 @@ M.PERMISSION_MODES = { "default", "acceptEdits", "bypassPermissions", "plan", "d
 
 ---有効なエージェント（バックエンド）
 ---@type string[]
-M.VALID_AGENTS = { "claude", "codex", "copilot" }
+M.VALID_AGENTS = Agents.ORDER
 
 ---エージェントモード（`agent.default_mode` / frontmatter の `mode`）
 ---ユーザーがそのチャットの意図を記録するためのメタデータで、現状は挙動を変えない。
@@ -38,7 +42,7 @@ end
 ---@param agent string
 ---@return boolean
 function M.is_valid_agent(agent)
-  return vim.tbl_contains(M.VALID_AGENTS, agent)
+  return Agents.is_valid(agent)
 end
 
 ---エージェントモードが有効かチェック

@@ -4,24 +4,19 @@
 
 local M = {}
 
-local ADAPTER_MODULES = {
-  claude = "vibing.infrastructure.adapter.claude_cli",
-  codex = "vibing.infrastructure.adapter.codex_cli",
-  copilot = "vibing.infrastructure.adapter.copilot_cli",
-}
-
-local DEFAULT_AGENT = "claude"
+local Agents = require("vibing.core.constants.agents")
 
 --- Resolve an agent type to its adapter module path
 --- Unknown or nil agent types fall back to the claude adapter
 --- @param agent_type string|nil
 --- @return string
 local function resolve_module(agent_type)
-  return ADAPTER_MODULES[agent_type] or ADAPTER_MODULES[DEFAULT_AGENT]
+  return Agents.get(agent_type).adapter_module
 end
 
 --- Get the adapter instance name for an agent type.
---- Derived from the module path so it cannot drift from ADAPTER_MODULES.
+--- Derived from the module path in agents.lua, so it cannot drift from what factory actually
+--- loads.
 --- @param agent_type string|nil
 --- @return string
 function M.adapter_name(agent_type)

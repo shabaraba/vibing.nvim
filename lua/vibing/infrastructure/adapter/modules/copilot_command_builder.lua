@@ -6,6 +6,8 @@ local Modes = require("vibing.core.constants.modes")
 
 local M = {}
 
+local ToolVocabulary = require("vibing.infrastructure.adapter.modules.copilot_tool_vocabulary")
+
 --- Resolve model name from opts or config
 --- Claude short names (sonnet/opus/haiku/fable) are not valid copilot model ids,
 --- so they are dropped and copilot's own default is used instead.
@@ -52,73 +54,6 @@ local function build_context_prefix(opts)
   return table.concat(parts, "\n") .. "\n\n"
 end
 
---- Map a vibing permission entry to a copilot permission pattern
---- The bare kind name matches every invocation of that kind; empty parens ("shell()")
---- are rejected by the CLI as an invalid rule format.
---- @param entry string
---- @return string|nil
-function M.to_deny_pattern(entry)
-  local bash_pattern = entry:match("^Bash%((.+)%)$")
-  if bash_pattern then
-    return string.format("shell(%s)", bash_pattern)
-  end
-  if entry == "Bash" then
-    return "shell"
-  end
-  if entry == "Write" or entry == "Edit" then
-    return "write"
-  end
-  if entry == "WebFetch" or entry == "WebSearch" then
-    return "url"
-  end
-  return nil
-end
-
---- Entries already reported as unsupported, so a repeated request does not re-warn.
---- @type table<string, boolean>
-local warned_unmapped = {}
-
---- Reset the unsupported-deny-entry warning state. Test seam only.
-function M._reset_unmapped_warnings()
-  warned_unmapped = {}
-end
-
---- Convert a deny list into deduplicated copilot patterns, preserving input order.
---- Entries copilot has no permission pattern for are dropped, and warned about once each —
---- silently ignoring them would leave the user believing a tool is blocked when it is not.
---- @param deny string[]|nil
---- @return string[]
-function M.build_deny_patterns(deny)
-  local patterns, seen = {}, {}
-  local unmapped = {}
-
-  for _, entry in ipairs(deny or {}) do
-    local pattern = M.to_deny_pattern(entry)
-    if pattern then
-      if not seen[pattern] then
-        seen[pattern] = true
-        table.insert(patterns, pattern)
-      end
-    elseif not warned_unmapped[entry] then
-      warned_unmapped[entry] = true
-      table.insert(unmapped, entry)
-    end
-  end
-
-  if #unmapped > 0 then
-    vim.notify(
-      string.format(
-        "[vibing] copilot has no deny pattern for %s; %s will not be blocked",
-        table.concat(unmapped, ", "),
-        #unmapped == 1 and "it" or "they"
-      ),
-      vim.log.levels.WARN
-    )
-  end
-
-  return patterns
-end
-
 --- Append permission flags. copilot's non-interactive mode requires --allow-all-tools,
 --- so denies are expressed with --deny-tool rather than an allow list.
 --- @param cmd string[]
@@ -136,7 +71,7 @@ local function append_permission_flags(cmd, opts)
   end
   table.insert(cmd, "--allow-all-tools")
 
-  for _, pattern in ipairs(M.build_deny_patterns(opts.permissions_deny)) do
+  for _, pattern in ipairs(ToolVocabulary.build_deny_patterns(opts.permissions_deny)) do
     table.insert(cmd, "--deny-tool")
     table.insert(cmd, pattern)
   end

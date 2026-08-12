@@ -24,6 +24,7 @@ local SUPPORTED_FEATURES = {
   model_selection = true,
   context = true,
   session = true,
+  dynamic_permissions = true,
 }
 
 ---@param config Vibing.Config

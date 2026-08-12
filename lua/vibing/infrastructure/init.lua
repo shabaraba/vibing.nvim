@@ -4,9 +4,9 @@ local M = {}
 
 -- Adapters
 M.BaseAdapter = require("vibing.infrastructure.adapter.base")
-M.ClaudeCLIAdapter = require("vibing.infrastructure.adapter.claude_cli")
-M.CodexCLIAdapter = require("vibing.infrastructure.adapter.codex_cli")
-M.CopilotCLIAdapter = require("vibing.infrastructure.adapter.copilot_cli")
+for _, def in ipairs(require("vibing.core.constants.agents").list()) do
+  M[def.export_name] = require(def.adapter_module)
+end
 
 -- RPC
 M.RpcServer = require("vibing.infrastructure.rpc.server")

@@ -40,62 +40,6 @@ describe("copilot_command_builder", function()
     vim.fn.exepath = original_exepath
   end)
 
-  describe("to_deny_pattern", function()
-    it("maps Bash to shell", function()
-      assert.are.equal("shell", Builder.to_deny_pattern("Bash"))
-    end)
-
-    it("maps Bash(npm:*) to shell(npm:*)", function()
-      assert.are.equal("shell(npm:*)", Builder.to_deny_pattern("Bash(npm:*)"))
-    end)
-
-    it("maps Write and Edit to write", function()
-      assert.are.equal("write", Builder.to_deny_pattern("Write"))
-      assert.are.equal("write", Builder.to_deny_pattern("Edit"))
-    end)
-
-    it("maps WebFetch and WebSearch to url", function()
-      assert.are.equal("url", Builder.to_deny_pattern("WebFetch"))
-      assert.are.equal("url", Builder.to_deny_pattern("WebSearch"))
-    end)
-
-    it("returns nil for unmapped tools", function()
-      assert.is_nil(Builder.to_deny_pattern("Read"))
-      assert.is_nil(Builder.to_deny_pattern("Glob"))
-    end)
-  end)
-
-  describe("build_deny_patterns", function()
-    it("deduplicates write from Write and Edit", function()
-      local patterns = Builder.build_deny_patterns({ "Write", "Edit", "Bash" })
-      assert.are.same({ "write", "shell" }, patterns)
-    end)
-
-    it("returns an empty list for nil", function()
-      assert.are.same({}, Builder.build_deny_patterns(nil))
-    end)
-
-    it("warns once per unsupported entry instead of dropping it silently", function()
-      Builder._reset_unmapped_warnings()
-      local messages = {}
-      local original_notify = vim.notify
-      vim.notify = function(msg)
-        table.insert(messages, msg)
-      end
-
-      local first = Builder.build_deny_patterns({ "Grep", "Bash" })
-      local second = Builder.build_deny_patterns({ "Grep" })
-
-      vim.notify = original_notify
-      Builder._reset_unmapped_warnings()
-
-      assert.are.same({ "shell" }, first)
-      assert.are.same({}, second)
-      assert.are.equal(1, #messages)
-      assert.is_true(messages[1]:find("Grep", 1, true) ~= nil)
-    end)
-  end)
-
   describe("build", function()
     it("emits the base flags with the prompt last", function()
       local cmd = Builder.build("hello", {}, nil, {})

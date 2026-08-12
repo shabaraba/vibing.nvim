@@ -46,10 +46,28 @@ The instance registry has the same treatment via `$VIBING_INSTANCES_DIR` (honour
 its owning Neovim is gone: it cross-checks `registry.list()`, which already filters to live PIDs,
 so a concurrent instance's in-flight `.req`/`.res` files are never deleted.
 
-**Backends:** `claude_cli.lua` (default) and `codex_cli.lua` both implement the adapter
-interface; `init.lua` picks one from `config.adapter`, and `send_message.lua` can switch per
-request for `codex` agent types. Implementing the interface is not the same as feature parity —
-`AskUserQuestion` is Claude-only, for reasons `features.md` records.
+**Backends:** `claude_cli.lua` (default), `codex_cli.lua` and `copilot_cli.lua` implement the
+adapter interface; `init.lua` picks one from `config.adapter`, and `send_message.lua` can switch
+per request for non-claude agent types. Implementing the interface is not the same as feature
+parity — `AskUserQuestion` is Claude-only, for reasons `features.md` records.
+
+`lua/vibing/core/constants/agents.lua` is the single definition of what a backend is — module
+path, export name, description, model candidates. `factory.lua`, `modes.lua` (`VALID_AGENTS`,
+`VALID_MODELS`), `completion/providers/frontmatter.lua` and `infrastructure/init.lua` all derive
+from it, so adding a fourth backend is a one-file change. It deliberately requires nothing, which
+is what keeps the dependency one-way.
+
+Two things stop backend identity leaking into shared code:
+
+- **Tool vocabulary.** Backends name their tools differently (codex calls an edit `apply_patch`,
+  copilot uses `bash`/`view`/`create`/`edit`/`web_search`). Each adapter owns a
+  `<backend>_tool_vocabulary.lua` and passes it to `set_active_opts` as a generic
+  `_tool_vocabulary`; `rpc/handlers/permission.lua` just calls `to_canonical` if it was given one.
+  The handler contains no backend name.
+- **`dynamic_permissions` capability.** `adapter:supports("dynamic_permissions")` is `false` for
+  copilot, because its CLI has no per-run hook flag: permissions are fixed at launch with
+  `--allow-all-tools` + `--deny-tool`, so `permission_mode`, the `ask` list and the approval UI do
+  nothing there. Declared rather than left to be discovered by reading the adapter.
 
 ## Module Structure
 
@@ -60,16 +78,18 @@ The tree is layered (`domain` / `application` / `infrastructure` / `presentation
 
 - `lua/vibing/init.lua` - Entry point, command registration, adapter selection
 - `lua/vibing/config.lua` - Configuration defaults with type annotations
-- `lua/vibing/core/constants/` - `tools.lua` (VALID_TOOLS), `modes.lua`, `worktree.lua`
+- `lua/vibing/core/constants/` - `agents.lua` (backend registry), `tools.lua` (VALID_TOOLS),
+  `modes.lua`, `worktree.lua`
 - `lua/vibing/core/utils/` - timestamp, language, git, mote, rate_limit, request_diff, ...
 
 **Adapter (`lua/vibing/infrastructure/adapter/`):**
 
 - `base.lua` - Abstract adapter interface
-- `claude_cli.lua` / `codex_cli.lua` - Backend adapters (spawn + stream lifecycle)
+- `claude_cli.lua` / `codex_cli.lua` / `copilot_cli.lua` - Backend adapters (spawn + stream lifecycle)
 - `modules/cli_command_builder.lua` - Claude CLI argv construction (flags, system prompt)
 - `modules/cli_event_processor.lua` - stream-json → chunk/tool events
 - `modules/codex_command_builder.lua` / `modules/codex_event_processor.lua` - Codex equivalents
+- `modules/<backend>_tool_vocabulary.lua` - Native tool name <-> canonical name, per backend
 - `modules/session_manager.lua`, `modules/active_stream_registry.lua` - Session/handle tracking
 
 **Chat (presentation + application):**
