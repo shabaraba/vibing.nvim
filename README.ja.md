@@ -45,7 +45,8 @@ CLI バックエンドと MCP 統合を通じて、AI に**実行中の Neovim �
 - **🤖 Neovim をエージェントのツールに** — MCP 経由で AI がバッファの読み書き、コマンド実行、
   LSP クエリ(診断・定義・参照・シンボル)を*実行中の*エディタに対して行える
 - **🔀 マルチバックエンド** — Claude CLI(`claude -p --output-format stream-json`)、
-  Codex CLI(`codex exec --json`)、GitHub Copilot CLI(`copilot -p --output-format json`)。
+  Codex CLI(`codex exec --json`)、GitHub Copilot CLI(`copilot -p --output-format json`)、
+  Grok Build CLI(`grok --single --output-format streaming-json`)。
   `adapter` 設定でグローバルに、チャットごとには frontmatter の `agent` フィールドで切り替え
 - **💾 ファイルベースのセッション永続化** — チャットは `.vibing/chat/` 配下の YAML frontmatter
   付き Markdown ファイル。持ち運び可能・再開可能(CLI セッション状態を完全復元)・監査可能・
@@ -79,6 +80,7 @@ vibing.nvim は補完プラグイン(Copilot、Codeium)や他のチャットプ�
   - **Claude CLI**(`claude`)— `npm install -g @anthropic-ai/claude-code`
   - **Codex CLI**(`codex`)— `npm install -g @openai/codex`
   - **GitHub Copilot CLI**(`copilot`)— `npm install -g @github/copilot`
+  - **Grok Build CLI**(`grok`)— [xAI のインストール手順](https://github.com/xai-org/grok-cli)を参照
     (Node.js 22+ が必要。MCP サーバー自体の要件 18+ より高い)
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim) を使う場合
@@ -348,6 +350,7 @@ graph TB
 - **Claude CLI**(`claude -p --output-format stream-json`)— Claude Code のフル機能
 - **Codex CLI**(`codex exec --json`)— OpenAI Codex バックエンド
 - **GitHub Copilot CLI**(`copilot -p --output-format json`)— GitHub Copilot バックエンド
+- **Grok Build CLI**(`grok --single --output-format streaming-json`)— xAI Grok バックエンド
 
 setup の `adapter = "claude"|"codex"|"copilot"` でグローバルに、チャットファイルの frontmatter に
 `agent: claude` / `agent: codex` / `agent: copilot` を書けばチャット単位で切り替えられます。
@@ -395,6 +398,7 @@ MIT License — 詳細は LICENSE ファイルを参照してください。
 - [Claude AI](https://claude.ai)
 - [Codex CLI](https://github.com/openai/codex)
 - [GitHub Copilot CLI](https://github.com/github/copilot-cli)
+- [Grok CLI](https://github.com/xai-org/grok-cli)
 - [GitHub リポジトリ](https://github.com/shabaraba/vibing.nvim)
 
 ---

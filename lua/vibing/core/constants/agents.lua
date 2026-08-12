@@ -12,6 +12,8 @@ local M = {}
 ---@class Vibing.AgentDefinition
 ---@field id string エージェント識別子（frontmatter の `agent` フィールドの値）
 ---@field adapter_module string アダプターの require パス
+---@field command_builder_module string argv を組み立てるモジュールの require パス。テストが
+---  バックエンドを一覧するときに使う（列挙を手で並べると新しいバックエンドで更新漏れが起きる）
 ---@field export_name string `infrastructure/init.lua` でのエクスポート名
 ---@field description string frontmatter 補完の agent enum に出す説明
 ---@field models Vibing.AgentModelCandidate[] 補完候補。妥当性検証ではない（自由入力を許す
@@ -22,6 +24,7 @@ M.AGENTS = {
   claude = {
     id = "claude",
     adapter_module = "vibing.infrastructure.adapter.claude_cli",
+    command_builder_module = "vibing.infrastructure.adapter.modules.cli_command_builder",
     export_name = "ClaudeCLIAdapter",
     description = "Claude CLI (Anthropic)",
     models = {
@@ -34,6 +37,7 @@ M.AGENTS = {
   codex = {
     id = "codex",
     adapter_module = "vibing.infrastructure.adapter.codex_cli",
+    command_builder_module = "vibing.infrastructure.adapter.modules.codex_command_builder",
     export_name = "CodexCLIAdapter",
     description = "Codex CLI (OpenAI)",
     models = {
@@ -47,6 +51,7 @@ M.AGENTS = {
   copilot = {
     id = "copilot",
     adapter_module = "vibing.infrastructure.adapter.copilot_cli",
+    command_builder_module = "vibing.infrastructure.adapter.modules.copilot_command_builder",
     export_name = "CopilotCLIAdapter",
     description = "GitHub Copilot CLI",
     -- copilot は30種類以上のモデルを持つため、代表的なものだけを候補に出す。
@@ -63,11 +68,22 @@ M.AGENTS = {
       { value = "gemini-3.1-pro-preview", description = "Gemini 3.1 Pro (preview)" },
     },
   },
+  grok = {
+    id = "grok",
+    adapter_module = "vibing.infrastructure.adapter.grok_cli",
+    command_builder_module = "vibing.infrastructure.adapter.modules.grok_command_builder",
+    export_name = "GrokCLIAdapter",
+    description = "Grok Build CLI (xAI)",
+    models = {
+      { value = "grok-4.5", description = "Grok 4.5" },
+      { value = "grok-composer-2.5-fast", description = "Grok Composer 2.5 Fast" },
+    },
+  },
 }
 
 ---列挙順。`pairs()` の順序は不定なので、ユーザーに見える一覧はすべてこれを経由する。
 ---@type string[]
-M.ORDER = { "claude", "codex", "copilot" }
+M.ORDER = { "claude", "codex", "copilot", "grok" }
 
 ---未知・未指定のエージェントのフォールバック先
 ---@type string

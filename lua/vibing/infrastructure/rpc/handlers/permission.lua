@@ -194,6 +194,11 @@ function M.check_tool_permission(params)
   if vocabulary and vocabulary.to_canonical then
     tool_name = vocabulary.to_canonical(tool_name) or tool_name
   end
+  -- Same reasoning for the input: granular `paths` rules read `file_path`, and a backend that
+  -- names it `path`/`target_file` would slip past every one of them.
+  if vocabulary and vocabulary.normalize_input then
+    tool_input = vocabulary.normalize_input(tool_input)
+  end
 
   -- Kill process first, call UI callback, then write deny response. Used by both
   -- AskUserQuestion and "ask" permission paths. The deny response only reaches the model when

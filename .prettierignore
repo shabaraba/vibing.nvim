@@ -24,3 +24,6 @@ pnpm-lock.yaml
 
 # Lua files (handled by luac)
 *.lua
+
+# Generated at request time by the Grok adapter
+.grok/

@@ -88,12 +88,10 @@ end
 --- The caches are module-level and therefore process-wide: once one spec has resolved a path, a
 --- later spec stubbing exepath to "" would otherwise never reach the missing-CLI branch.
 function M.reset_path_caches()
-  for _, module in ipairs({
-    "vibing.infrastructure.adapter.modules.cli_command_builder",
-    "vibing.infrastructure.adapter.modules.codex_command_builder",
-    "vibing.infrastructure.adapter.modules.copilot_command_builder",
-  }) do
-    local builder = require(module)
+  -- Derived from the registry, not listed here: a hardcoded list silently skips a new backend,
+  -- and then its "CLI missing" test passes against a stale cached path.
+  for _, def in ipairs(require("vibing.core.constants.agents").list()) do
+    local builder = require(def.command_builder_module)
     if builder._reset_path_cache then
       builder._reset_path_cache()
     end
