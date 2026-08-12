@@ -48,7 +48,8 @@ so a concurrent instance's in-flight `.req`/`.res` files are never deleted.
 
 **Backends:** `claude_cli.lua` (default) and `codex_cli.lua` both implement the adapter
 interface; `init.lua` picks one from `config.adapter`, and `send_message.lua` can switch per
-request for `codex` agent types.
+request for `codex` agent types. Implementing the interface is not the same as feature parity —
+`AskUserQuestion` is Claude-only, for reasons `features.md` records.
 
 ## Module Structure
 

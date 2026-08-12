@@ -63,3 +63,20 @@ turn's user message, so no Promise/state handling is required.
 
 Native `AskUserQuestion` is unavailable in headless `claude -p` mode and is opaque to vibing.nvim,
 so the PreToolUse hook intercepts and denies it, rendering the same UI as a fallback.
+
+**Codex backend: not available.** Codex sessions cannot reach this UI, so `codex_cli.lua`
+deliberately omits `chat_bufnr` when registering with `ActiveStreamRegistry`. Two things block it,
+and neither is fixable from this side:
+
+- Codex takes no system prompt (context and language are prepended to the user prompt instead), so
+  there is no place to hand the model the `chat_bufnr` the tool needs.
+- Registering the MCP server per run via `-c mcp_servers.*` would not help. Headless `codex exec`
+  auto-cancels MCP tool calls at the approval prompt — stdin is closed, so EOF reads as a denial —
+  unless it runs with `--dangerously-bypass-approvals-and-sandbox`, which vibing.nvim only passes
+  in `bypassPermissions` mode. See [openai/codex#24135][codex-24135].
+
+What still works on Codex is the ordinary tool-approval flow (the `ask` permission list): it routes
+on `handle_id`, not `chat_bufnr`. Only the question-list UI is missing. Revisit if the upstream
+issue is resolved.
+
+[codex-24135]: https://github.com/openai/codex/issues/24135
