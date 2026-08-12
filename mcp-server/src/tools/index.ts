@@ -8,6 +8,7 @@ import { chatTools } from './chat.js';
 import { highlightTools } from './highlight.js';
 import { annotationTools } from './annotations.js';
 import { qflistTools } from './qflist.js';
+import { dapTools } from './dap.js';
 
 export const allTools = [
   ...bufferTools,
@@ -20,4 +21,5 @@ export const allTools = [
   ...highlightTools,
   ...annotationTools,
   ...qflistTools,
+  ...dapTools,
 ];

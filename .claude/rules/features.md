@@ -69,6 +69,42 @@ The pacing question in the skill inherits AskUserQuestion's turn-killing behavio
 skill is instructed to write the tour's position and remaining stops into its chat message before
 every ask — the transcript is the only place that state survives.
 
+## Debugger Analysis (nvim-dap)
+
+When the debugger is stopped, the agent can look at the actual runtime state instead of reasoning
+about the source: `nvim_dap_get_state`, `nvim_dap_get_stack_trace`, `nvim_dap_get_variables`,
+`nvim_dap_set_breakpoint`, `nvim_dap_evaluate` (`infrastructure/rpc/handlers/dap.lua`).
+
+nvim-dap is an **optional** dependency. Every entry point reports "nvim-dap is not installed" or
+"no debug session is running" rather than erroring, so the agent gets an explanation it can act on
+— which is also why `nvim_dap_get_state` exists and its description tells the model to call it
+first.
+
+DAP requests are callback-based while RPC handlers return a value, so each request is awaited with
+`vim.wait`. That is only safe because the RPC server already dispatches handlers inside
+`vim.schedule`: we are on the main loop, and `vim.wait` keeps processing events, which is what lets
+the adapter's reply arrive at all.
+
+`vim.wait` does still block the editor, though, so a handler that issues several requests spends
+**one shared budget** across them (`deadline()` in `dap.lua`). `dap_get_variables` asks for scopes
+and then for the variables of each scope; with a per-request timeout a slow adapter and a frame
+with four scopes would freeze Neovim for 25 seconds on a single tool call.
+
+`dap_get_variables` expands only the top level of each scope. A deep object graph would flood the
+chat, and the agent can follow up with `dap_evaluate` on whatever it actually wants. Note that
+`dap_evaluate` runs **in the debuggee** — an expression with side effects will have them, and the
+tool description says so.
+
+`:VibingDebugAnalyze` and `:VibingDebugHelp` send a request to the chat. They send only the
+request, never a state dump: the agent fetches whatever depth it needs through the tools above.
+`config.dap.enabled` additionally subscribes to nvim-dap's stopped event; `auto_analyze_on_error`
+(default `true`) fires on exceptions, `auto_analyze_on_breakpoint` (default `false`) on ordinary
+breakpoints — a breakpoint is something the user placed on purpose, and spending tokens unattended
+every time one is hit gets in the way. The whole feature is off until `dap.enabled` is set.
+
+**Implementation:** `application/debug/analyze.lua` (commands + stopped-event listener),
+`infrastructure/rpc/handlers/dap.lua`, `mcp-server/src/{tools,handlers}/dap.ts`.
+
 ## Message Timestamps
 
 Chat messages include timestamps in their headers (`## 2025-12-28 14:30:00 User`) for chronology

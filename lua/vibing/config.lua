@@ -48,6 +48,7 @@
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
 ---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
 ---@field daily_summary? Vibing.DailySummaryConfig Daily Summary機能設定
+---@field dap? Vibing.DapConfig nvim-dap連携設定
 
 ---@class Vibing.PermissionRule
 ---粒度の細かい権限制御ルール
@@ -133,6 +134,14 @@
 ---@field chat? string chatアクションでの言語（指定されていない場合はdefaultを使用）
 
 ---@alias Vibing.FileFinderStrategy "auto"|"fd"|"find"|"locate"|"ripgrep"
+
+---@class Vibing.DapConfig
+---nvim-dap連携設定
+---デバッガが停止したときに、その状態をエージェントに解析させる
+---nvim-dapは任意依存。未インストールなら各機能は「入っていない」と報告して何もしない
+---@field enabled boolean? 停止イベントの購読を有効にするか（デフォルト: false）
+---@field auto_analyze_on_error boolean? 例外で止まったとき自動で解析を投げるか（デフォルト: true）
+---@field auto_analyze_on_breakpoint boolean? ブレークポイントで止まったとき自動で投げるか（デフォルト: false）
 
 ---@class Vibing.DailySummaryConfig
 ---Daily Summary機能設定
@@ -276,6 +285,13 @@ M.defaults = {
     save_dir = nil,
     search_dirs = {},
     file_finder_strategy = "auto",
+  },
+  -- nvim-dapで止まったときの自動解析。既定は無効で、有効にしても既定はエラー時のみ。
+  -- ブレークポイントは意図して置くものなので、止まるたびに無人でトークンを使われると邪魔になる
+  dap = {
+    enabled = false,
+    auto_analyze_on_error = true,
+    auto_analyze_on_breakpoint = false,
   },
 }
 
