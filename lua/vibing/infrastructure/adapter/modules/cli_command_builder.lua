@@ -150,6 +150,12 @@ end
 ---   and without it the server falls back to the instance registry — which refuses to choose
 ---   once more than one Neovim is live, the normal case with worktrees and concurrent chats.
 --- @return string[] Command array for vim.system()
+--- Forget the resolved binary path. Test seam only: the cache is process-wide, so a spec that
+--- wants to exercise the "CLI missing" path has to clear what an earlier spec resolved.
+function M._reset_path_cache()
+  cached_claude_path = nil
+end
+
 function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
   if not cached_claude_path then
     cached_claude_path = vim.fn.exepath("claude")

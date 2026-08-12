@@ -106,7 +106,17 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   local rpc_server = require("vibing.infrastructure.rpc.server")
   local rpc_port = rpc_server.get_port()
 
-  local cmd = CLICommandBuilder.build(prompt, opts, session_id, self.config, settings_path, rpc_port)
+  -- The builder raises when the claude binary is missing. send_message.lua does not wrap stream()
+  -- in pcall, so without this the chat buffer would show a raw Lua stack trace instead of an
+  -- actionable message. Matches copilot_cli.lua.
+  local build_ok, cmd = pcall(CLICommandBuilder.build, prompt, opts, session_id, self.config, settings_path, rpc_port)
+  if not build_ok then
+    local message = type(cmd) == "string" and cmd:gsub("^.*:%%d+:%%s*", "") or tostring(cmd)
+    vim.schedule(function()
+      on_done({ content = "", error = message, _handle_id = handle_id })
+    end)
+    return handle_id
+  end
   local output = {}
   local error_output = {}
 

@@ -94,7 +94,17 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
     hook_args = CodexSettingsGenerator.get_hook_args()
   end
 
-  local cmd = CodexCommandBuilder.build(prompt, opts, session_id, self.config, hook_args)
+  -- The builder raises when the codex binary is missing. send_message.lua does not wrap stream()
+  -- in pcall, so without this the chat buffer would show a raw Lua stack trace instead of an
+  -- actionable message. Matches copilot_cli.lua.
+  local build_ok, cmd = pcall(CodexCommandBuilder.build, prompt, opts, session_id, self.config, hook_args)
+  if not build_ok then
+    local message = type(cmd) == "string" and cmd:gsub("^.*:%%d+:%%s*", "") or tostring(cmd)
+    vim.schedule(function()
+      on_done({ content = "", error = message, _handle_id = handle_id })
+    end)
+    return handle_id
+  end
   local output = {}
   local error_output = {} -- filtered stderr (codex noise removed)
 

@@ -81,6 +81,11 @@ end
 --- @param config Vibing.Config Plugin config
 --- @param hook_args string[]|nil Optional -c flag pair for PreToolUse hook injection
 --- @return string[] Command array for vim.system()
+--- Forget the resolved binary path. Test seam only, same reason as cli_command_builder.
+function M._reset_path_cache()
+  cached_codex_path = nil
+end
+
 function M.build(prompt, opts, session_id, config, hook_args)
   if not cached_codex_path then
     cached_codex_path = vim.fn.exepath("codex")
