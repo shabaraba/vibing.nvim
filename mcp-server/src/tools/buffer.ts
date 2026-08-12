@@ -1,4 +1,4 @@
-import { withRpcPort } from './common.js';
+import { withRpcPort, requireRpcPort } from './common.js';
 
 export const bufferTools = [
   {
@@ -30,7 +30,7 @@ export const bufferTools = [
           description: 'Buffer number (0 for current buffer)',
         },
       }),
-      required: ['lines'],
+      required: requireRpcPort(['lines']),
     },
   },
   {
@@ -66,7 +66,7 @@ export const bufferTools = [
           description: 'Absolute or relative path to file to load',
         },
       }),
-      required: ['filepath'],
+      required: requireRpcPort(['filepath']),
     },
   },
 ];

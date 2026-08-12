@@ -6,7 +6,7 @@ const chatSendMessageArgsSchema = z.object({
   bufnr: z.number(),
   message: z.string(),
   sender: z.string().optional(),
-  rpc_port: z.number().optional(),
+  rpc_port: z.number(),
 });
 
 /**
@@ -28,7 +28,7 @@ export async function handleChatSendMessage(args: any): Promise<any> {
 const askUserQuestionArgsSchema = z.object({
   chat_bufnr: z.number(),
   questions: z.array(z.any()),
-  rpc_port: z.number().optional(),
+  rpc_port: z.number(),
 });
 
 /**
@@ -43,9 +43,9 @@ const askUserQuestionArgsSchema = z.object({
  *
  * `chat_bufnr` and `rpc_port` correlate the call to the right chat buffer/Neovim instance when
  * multiple are active concurrently. They are tool arguments rather than env lookups because env
- * can't carry them here — `resolveRpcPort` in `../rpc.ts` explains why, and handles an omitted
- * `rpc_port`. `cli_command_builder.lua` embeds both values into the turn's system prompt and
- * instructs the model to echo them back.
+ * can't carry them here — see `resolveRpcPort` in `../rpc.ts`. Both stay required: this tool kills
+ * the in-flight turn, so it is one of the write-side tools that must name its target rather than
+ * fall back to the registry (see `requireRpcPort` in `../tools/common.ts`).
  * `chat_bufnr` (unlike a per-turn handle_id) is stable across turns of the same conversation,
  * so it doesn't defeat Anthropic's prompt cache — see issue #469. It is the buffer number rather
  * than the chat file path because `:VibingSetFileTitle` renames the file mid-conversation, which
