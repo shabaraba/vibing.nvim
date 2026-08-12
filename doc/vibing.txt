@@ -186,8 +186,9 @@ kept in sync field by field.
     Schedule this chat's unsent message to send later instead of now.
     {when} accepts relative offsets (`90s`, `30m`, `2h`, `1h30m`), a clock
     time (`18:30`, rolled to tomorrow if already past today) or an
-    absolute timestamp (`2026-08-14T07:05`). With no argument, uses the
-    project's recorded usage limit reset time.
+    absolute timestamp (`2026-08-14T07:05` or `2026-08-14 07:05`). With no
+    argument, uses the project's recorded usage limit reset time, and
+    errors if none is on record.
 
                                                        *:VibingPendingResumes*
 :VibingPendingResumes

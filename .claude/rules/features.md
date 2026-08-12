@@ -27,20 +27,32 @@ sends the configured continuation prompt above. `scheduled` sends the chat's own
 body instead — the body is never copied into the pending-resume store, so it stays visible and
 editable in the buffer while parked.
 
-Scheduled requests come from three places: `:VibingSchedule [when]`; a `<CR>` that lands while
-`.vibing/limit-state.json` records a still-active limit; and a turn the limit actually rejected,
-whose message is written back into a fresh unsent section instead of being discarded. The first
-two save the chat file as part of arming the timer and refuse to schedule if the save fails —
-arming a schedule whose body cannot survive a restart would be silent data loss; the rejected-turn
-path writes the text back into the buffer the same way but leaves the actual save to whatever
-happens next. The limit-aware `<CR>` and the rejected-turn re-schedule are both governed by
-`agent.scheduled_requests.enabled` (default `true`); `:VibingSchedule` is not, since the user armed
-it by hand.
+Scheduled requests come from three places: `:VibingSchedule [when]`, which works with no usage
+limit on record at all as long as `when` is given (the no-argument form is the one that needs
+`.vibing/limit-state.json`); a `<CR>` that lands while that file records a still-active limit
+(excluding slash commands and a reply to a pending approval prompt, which always send
+immediately); and a turn the limit actually rejected, whose message is written back into a fresh
+unsent section instead of being discarded. The limit-aware `<CR>` and the rejected-turn
+re-schedule are both governed by `agent.scheduled_requests.enabled` (default `true`);
+`:VibingSchedule` is not, since the user armed it by hand.
+
+`:VibingSchedule` and the limit-aware `<CR>` both save the chat file before arming the timer, but
+differ on a save failure: `:VibingSchedule` refuses to schedule and nothing is sent — the message
+stays unsent in the buffer for the user to retry; the `<CR>` interception instead fails open and
+sends the message immediately, on the reasoning that a normal send is safer than silently sitting
+on a message the user just tried to send. The rejected-turn path writes the text back into the
+buffer the same way but leaves the actual save to whatever happens next (e.g. the buffer being
+saved for an unrelated reason), rather than saving synchronously itself.
 
 `agent.scheduled_requests.max_retries` (default 3) bounds the fire → rejected → re-schedule loop.
 Because the budget check is applied to the already-incremented retry count, the default only
-permits **2** re-schedules after the first rejection — the next rejection falls through to the
-ordinary `auto_resume` continuation prompt (if `auto_resume_on_limit.enabled`) or is just dropped.
+permits **2** re-schedules after the first rejection. The next rejection falls through to
+`auto_resume.on_rate_limited`, which re-checks the _same_ stored `retry_count` (already at 2)
+against `auto_resume_on_limit.max_retries` — with both features at their defaults
+(`scheduled_requests.max_retries = 3`, `auto_resume_on_limit.max_retries = 1`) that budget is
+already spent, so the request is simply dropped. The fixed continuation prompt only fires if the
+user has raised `auto_resume_on_limit.max_retries` above what the scheduled retries already
+consumed.
 
 `.vibing/limit-state.json` holds one record per project — the last observed reset time — and is
 what lets a chat that never hit the limit itself still schedule instead of send. It is written
