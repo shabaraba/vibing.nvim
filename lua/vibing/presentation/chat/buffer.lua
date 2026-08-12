@@ -300,6 +300,67 @@ function ChatBuffer:extract_user_message()
   return ConversationExtractor.extract_user_message(self.buf)
 end
 
+---リミット中の送信を予約に切り替える
+---
+---スラッシュコマンドと承認応答は対象外: 前者はローカル処理で完結し、後者は待っている
+---セッションに届かないと意味がないため、どちらも遅らせる理由がない。
+---@param message string
+---@return boolean scheduled 予約に切り替えたか
+function ChatBuffer:_try_schedule_instead_of_send(message)
+  local config = require("vibing.config").get()
+  local opts = (config.agent and config.agent.scheduled_requests) or {}
+  if not opts.enabled then
+    return false
+  end
+
+  local commands = require("vibing.application.chat.commands")
+  if commands.is_command(message) then
+    return false
+  end
+
+  local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
+  if self._pending_approval and ApprovalParser.is_approval_response(message) then
+    return false
+  end
+
+  local chat_file_path = vim.api.nvim_buf_get_name(self.buf)
+  if chat_file_path == "" then
+    return false
+  end
+
+  local LimitState = require("vibing.infrastructure.storage.limit_state")
+  local state = LimitState.get_active(vim.fn.fnamemodify(chat_file_path, ":h"))
+  if not state then
+    return false
+  end
+
+  local AutoResume = require("vibing.application.chat.auto_resume")
+  local grace = (config.agent and config.agent.auto_resume_on_limit and config.agent.auto_resume_on_limit.grace_sec)
+    or 10
+  local fire_at = state.resets_at + grace
+
+  local ok, reason = AutoResume.schedule_request(chat_file_path, fire_at, { limit_type = state.limit_type })
+  if not ok then
+    vim.notify("[vibing] Could not schedule this request: " .. tostring(reason), vim.log.levels.WARN)
+    return false
+  end
+
+  -- 予約本文はバッファにしか無いので、再起動をまたいでも残るよう保存しておく。
+  vim.api.nvim_buf_call(self.buf, function()
+    vim.cmd("silent! write")
+  end)
+
+  vim.notify(
+    string.format(
+      "[vibing] Usage limit active - scheduled for %s (in %s). To send now: :VibingCancelResume, then <CR>.",
+      os.date("%H:%M", fire_at),
+      AutoResume.format_duration(math.max(fire_at - os.time(), 0))
+    ),
+    vim.log.levels.INFO
+  )
+  return true
+end
+
 ---メッセージを送信
 function ChatBuffer:send_message()
   -- 送信処理中はEnter連打による重複送信を無視する
@@ -341,6 +402,13 @@ function ChatBuffer:send_message()
   local message = self:extract_user_message()
   if not message then
     vim.notify("[vibing] No message to send", vim.log.levels.WARN)
+    self._is_sending = false
+    return
+  end
+
+  -- リミット中と分かっているならコミットせずに予約へ回す。commit_user_message を通さないので
+  -- `## User <!-- unsent -->` がそのまま残り、それが発火時に送られる本文になる。
+  if self:_try_schedule_instead_of_send(message) then
     self._is_sending = false
     return
   end
