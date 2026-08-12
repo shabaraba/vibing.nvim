@@ -27,6 +27,7 @@ Prefix with `mcp__vibing-nvim__`:
   `nvim_win_open_file`
 - **Commands**: `nvim_execute`
 - **Highlighting**: `nvim_highlight_range`, `nvim_clear_highlight` (see "Showing Code" below)
+- **Annotations**: `nvim_annotate`, `nvim_clear_annotations` (see "Inline Review Notes" below)
 - **Chat**: `nvim_ask_user_question` (renders a choice list in the chat buffer — see
   `features.md`), `nvim_chat_send_message`
 - **Instances**: `nvim_list_instances`
@@ -53,6 +54,21 @@ user's config overrides it. It clears itself after `duration_ms` (default 3000; 
 a second call to the same buffer replaces the first rather than stacking. Out-of-range lines are
 clamped to the buffer rather than rejected — search results go stale by a line or two, and pointing
 at roughly the right place beats refusing to point.
+
+## Inline Review Notes
+
+`nvim_annotate` puts a review point under the line it is about, as extmark `virt_lines` in the
+`vibing_annotations` namespace. The file is never written and `modified` never gets set. Severity
+picks between `VibingAnnotationInfo` / `Warn` / `Error`, each `default link`ed to the matching
+`DiagnosticVirtualText*` group so a user's own `hi` command overrides it. Every annotation line is
+prefixed with `┃ ` so a note can't be misread as code.
+
+Annotations are **not persisted** — unloading the buffer takes them with it. That is the intended
+lifetime: a review is read once and dismissed. Editing near an annotation moves it the way
+extmarks normally move; no attempt is made to re-anchor it.
+
+`nvim_clear_annotations` clears one buffer, or every buffer when `bufnr` is omitted.
+`:VibingClearAnnotations` is the same thing from the user's side.
 
 ## Background LSP Analysis
 

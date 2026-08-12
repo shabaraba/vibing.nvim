@@ -6,6 +6,7 @@ import { executeTools } from './execute.js';
 import { instanceTools } from './instances.js';
 import { chatTools } from './chat.js';
 import { highlightTools } from './highlight.js';
+import { annotationTools } from './annotations.js';
 
 export const allTools = [
   ...bufferTools,
@@ -16,4 +17,5 @@ export const allTools = [
   ...instanceTools,
   ...chatTools,
   ...highlightTools,
+  ...annotationTools,
 ];

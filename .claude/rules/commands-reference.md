@@ -14,6 +14,7 @@
 | `:VibingContext [path]`               | Add file to context (or from oil.nvim if no path)                                                   |
 | `:VibingClearContext`                 | Clear all context                                                                                   |
 | `:VibingCancel`                       | Cancel current request                                                                              |
+| `:VibingClearAnnotations`             | Remove inline review annotations from every buffer                                                  |
 | `:VibingPendingResumes`               | List chats waiting on a usage limit reset                                                           |
 | `:VibingCancelResume [all]`           | Cancel the pending auto-resume for this chat (or every one with `all`)                              |
 | `:VibingReloadCommands`               | Reload custom slash commands                                                                        |

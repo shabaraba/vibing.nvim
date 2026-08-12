@@ -245,6 +245,13 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
         .. "is the only window, make one with mcp__vibing-nvim__nvim_execute and a split command. "
         .. "Skip all of this when the user only wants a path or a name."
     )
+    table.insert(
+      system_prompt_lines,
+      "When reviewing code, put each point next to the code it is about: load the file with "
+        .. "mcp__vibing-nvim__nvim_load_buffer and call mcp__vibing-nvim__nvim_annotate for every "
+        .. "finding, choosing severity info, warn or error. Keep the chat to the overall verdict "
+        .. "and the count, and mention that :VibingClearAnnotations removes the notes."
+    )
 
     if rpc_port then
       table.insert(
