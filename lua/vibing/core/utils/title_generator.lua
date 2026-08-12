@@ -27,6 +27,35 @@ local function truncate(s, n)
   return s
 end
 
+-- チャットバッファ上でツール呼び出しをレンダリングするときの行頭マーカー。
+-- 軽量呼び出しでツールを無効化していても（denylist が腐って）モデルが narration や
+-- ツール実況を返した場合に、その行をタイトル候補から除外するための防御。
+local TOOL_RENDER_MARKERS = { "⏺", "📄", "💻", "🔧", "✳", "☒", "☐", "⎿", "→" }
+
+---AI応答から「タイトルとして使える最初の1行」を取り出す。
+---ツール実況行（⏺ ToolSearch(...) 等）や空行を飛ばし、最初の意味のあるテキスト行を返す。
+---これによりモデルがタイトル以外を返しても、複数行のゴミがそのままファイル名になるのを防ぐ。
+---@param text string
+---@return string
+local function first_title_line(text)
+  for _, line in ipairs(vim.split(text or "", "\n", { plain = true })) do
+    local trimmed = vim.trim(line)
+    if trimmed ~= "" then
+      local is_marker = false
+      for _, marker in ipairs(TOOL_RENDER_MARKERS) do
+        if trimmed:sub(1, #marker) == marker then
+          is_marker = true
+          break
+        end
+      end
+      if not is_marker then
+        return trimmed
+      end
+    end
+  end
+  return vim.trim((text or ""):match("^([^\n]*)") or "")
+end
+
 ---会話から「最初のユーザーメッセージ＋末尾数メッセージ」の抜粋を作る。
 ---各メッセージと全体の両方に上限を設け、長い会話でも context を超えないようにする。
 ---@param conversation {role: string, content: string}[]
@@ -61,13 +90,11 @@ end
 ---会話の抜粋（最初のユーザーメッセージ＋末尾数メッセージ、各上限付き）をアダプタに送り、
 ---簡潔なファイル名用タイトルを生成する。結果はコールバックで非同期に返される。
 ---セッションの resume/fork は行わない（全履歴を読み込んで context を超過し
----"Prompt is too long" になるのを避けるため）。そのため session_id は使用しない。
+---"Prompt is too long" になるのを避けるため）。抜粋を都度フレッシュに送るだけなので session_id は不要。
 ---@param conversation {role: string, content: string}[] 会話履歴
 ---@param callback fun(title: string?, error: string?) 結果コールバック
----@param session_id string? 後方互換のため受け取るが未使用（resume/forkは廃止）
 ---@param adapter table? タイトル生成に使うアダプタ。省略時はグローバル既定を使う。
-function M.generate_from_conversation(conversation, callback, session_id, adapter)
-  local _ = session_id -- 後方互換で受け取るのみ（resume/fork廃止のため未使用）
+function M.generate_from_conversation(conversation, callback, adapter)
   if not conversation or #conversation == 0 then
     callback(nil, "No conversation to generate title from")
     return
@@ -119,6 +146,10 @@ function M.generate_from_conversation(conversation, callback, session_id, adapte
 
     -- デバッグ: AIの生成結果をログ出力
     vim.notify(string.format("[vibing] AI generated title: '%s'", title), vim.log.levels.DEBUG)
+
+    -- 防御: モデルがタイトル以外（narration やツール実況）を返しても、
+    -- 最初の意味のある1行だけをタイトルにする。複数行がそのままファイル名になるのを防ぐ。
+    title = first_title_line(title)
 
     title = filename_util.sanitize(title)
 

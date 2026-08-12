@@ -88,10 +88,10 @@ return function(_, chat_buffer)
   local is_existing_file = old_file_path and vim.fn.filereadable(old_file_path) == 1
 
   -- Resolve the adapter for THIS chat's agent (frontmatter "agent"), not the
-  -- global default. The session_id we pass below belongs to that agent; sending a
-  -- codex session_id to the claude adapter (or vice versa) makes --resume fail
-  -- with "no such session". If the agent has no session_id, generation still
-  -- works via the full-conversation fallback in title_generator.
+  -- global default, so the lightweight utility call runs on the right CLI
+  -- (e.g. a codex chat generates its title via the codex adapter, not claude).
+  -- Title generation never resumes/forks the session (it sends a fresh bounded
+  -- excerpt), so no session_id is threaded through here.
   -- Resolution failure must never block title generation, so fall back to the
   -- default adapter (nil → title_generator uses vibing.get_adapter()).
   local title_adapter = nil
@@ -220,7 +220,7 @@ return function(_, chat_buffer)
         notify.warn(string.format("Failed to update %d file(s)", total_failed), "Link Sync")
       end
     end
-  end, chat_buffer:get_session_id(), title_adapter)
+  end, title_adapter)
 
   return true
 end

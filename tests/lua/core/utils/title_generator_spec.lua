@@ -47,10 +47,36 @@ describe("title_generator.generate_from_conversation", function()
     assert.equals("My_Title", result_title)
   end)
 
+  it("uses only the first meaningful line when the model returns tool narration", function()
+    -- Defense in depth: even if the lightweight sandbox leaks tools and the model
+    -- starts "continuing the session" (tool render markers + narration), the title
+    -- must be the first clean line, not the whole multi-line transcript.
+    package.loaded["vibing"] = {
+      get_config = function()
+        return { language = nil, permissions = { mode = "acceptEdits", allow = {}, deny = {} } }
+      end,
+      get_adapter = function()
+        return {
+          stream = function(_, _, _, on_chunk, on_done)
+            on_chunk("Fix login bug\n⏺ ToolSearch(select:TaskList,TaskCreate)\n📄 Read()\nmore narration")
+            on_done({ content = "" })
+          end,
+        }
+      end,
+    }
+
+    local result_title
+    title_generator.generate_from_conversation(CONVERSATION, function(title)
+      result_title = title
+    end)
+
+    assert.equals("Fix_login_bug", result_title)
+  end)
+
   it("never resumes/forks a session (avoids 'Prompt is too long')", function()
-    -- Even when a session_id is passed (backward-compat arg), title generation
-    -- must send a fresh excerpt prompt instead of resuming the full session.
-    title_generator.generate_from_conversation(CONVERSATION, function() end, "session-abc")
+    -- Title generation must send a fresh excerpt prompt instead of resuming the
+    -- full session, so no session_id/fork opts are ever set.
+    title_generator.generate_from_conversation(CONVERSATION, function() end)
 
     assert.is_nil(captured_opts._session_id)
     assert.is_nil(captured_opts._is_fork)
@@ -67,7 +93,7 @@ describe("title_generator.generate_from_conversation", function()
     end
     long[#long + 1] = { role = "user", content = "LAST_RECENT_MESSAGE" }
 
-    title_generator.generate_from_conversation(long, function() end, "session-abc")
+    title_generator.generate_from_conversation(long, function() end)
 
     -- First user message is kept as a topic anchor and the tail is included...
     assert.is_not_nil(captured_prompt:find("FIRST_TOPIC_ANCHOR", 1, true))

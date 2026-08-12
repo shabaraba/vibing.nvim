@@ -4,6 +4,18 @@
 ---メッセージ内容から意味のあるファイル名を自動生成
 local M = {}
 
+---文字数（バイト数ではなく）で切り詰める。日本語や絵文字などのマルチバイト文字の
+---途中で切って不正なUTF-8ファイル名を作らないようにする（macOSは不正なUTF-8名のrenameを拒否する）。
+---@param text string
+---@param max_chars integer
+---@return string
+local function truncate_chars(text, max_chars)
+  if vim.fn.strchars(text) > max_chars then
+    return vim.fn.strcharpart(text, 0, max_chars)
+  end
+  return text
+end
+
 ---テキストをファイル名として安全な文字列に変換
 ---ファイル名として使用できない文字のみ削除、日本語などマルチバイト文字は保持
 ---@param text string 変換元のテキスト（通常は最初のユーザーメッセージまたはAI生成タイトル）
@@ -17,12 +29,10 @@ function M.sanitize(text)
   text = text:gsub("_+", "_")
   -- 先頭と末尾のアンダースコアを削除
   text = text:gsub("^_+", ""):gsub("_+$", "")
-  -- 最大32文字に制限（バイト数ではなく文字数）
-  -- Note: Luaの#演算子はバイト数を返すため、日本語などマルチバイト文字では文字数と一致しない
-  -- しかし、ファイル名の長さ制限は通常バイト数ベースなので、ここではそのまま使用
-  if #text > 64 then
-    text = text:sub(1, 64)
-  end
+  -- 最大64文字に制限（バイト数ではなく文字数境界で切る）。
+  -- byte境界で切るとマルチバイト文字の途中で切れて不正なUTF-8ファイル名になり、
+  -- macOSではrenameが失敗する。64文字なら最大でも約256バイトでファイル名長制限に収まる。
+  text = truncate_chars(text, 64)
   return text
 end
 
@@ -37,11 +47,9 @@ function M.generate_from_message(message)
     return os.date("chat_%Y%m%d_%H%M%S")
   end
 
-  -- 最初の行または最初の50文字を取得
+  -- 最初の行または最初の50文字を取得（文字境界で切る）
   local first_line = message:match("^([^\n]+)") or message
-  if #first_line > 50 then
-    first_line = first_line:sub(1, 50)
-  end
+  first_line = truncate_chars(first_line, 50)
 
   -- サニタイズしてトピック名を生成
   local topic = M.sanitize(first_line)
