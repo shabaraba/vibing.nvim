@@ -1,7 +1,8 @@
 # MCP Integration (Model Context Protocol)
 
 vibing.nvim provides MCP server integration so Claude Code can interact with a running Neovim
-instance without deadlocks: an async RPC server (`lua/vibing/rpc_server.lua`, `vim.loop` TCP,
+instance without deadlocks: an async RPC server (`lua/vibing/infrastructure/rpc/server.lua`,
+`vim.loop` TCP,
 `vim.schedule()` for safe API calls) is queried by the Node MCP server (`mcp-server/`) acting as a
 TCP client, so both buffer reads and writes are possible. Installation is handled by `build.sh`
 (installs the `vibing-nvim` Claude Code plugin, user scope) — see `mcp-server/README.md` and
@@ -9,8 +10,8 @@ TCP client, so both buffer reads and writes are possible. Installation is handle
 
 ## User MCP Servers, Slash Commands, Skills, and Subagents
 
-vibing.nvim's Agent SDK wrapper (`bin/agent-wrapper.mjs`) loads user and project settings via
-`settingSources: ['user', 'project']`, so your existing `~/.claude.json` MCP servers,
+vibing.nvim invokes the `claude` CLI with `--setting-sources user,project,local` (configurable via
+`config.agent.setting_sources`), so your existing `~/.claude.json` MCP servers,
 `.claude/commands/` project slash commands, `.claude/skills/`, and global settings/subagents are
 all available inside vibing.nvim sessions automatically — no extra configuration needed.
 
@@ -25,6 +26,9 @@ Prefix with `mcp__vibing-nvim__`:
   `nvim_list_tabpages`, `nvim_set_window_size`, `nvim_focus_window`, `nvim_win_set_buf`,
   `nvim_win_open_file`
 - **Commands**: `nvim_execute`
+- **Chat**: `nvim_ask_user_question` (renders a choice list in the chat buffer — see
+  `features.md`), `nvim_chat_send_message`
+- **Instances**: `nvim_list_instances`
 - **LSP**: `nvim_lsp_definition`, `nvim_lsp_references`, `nvim_lsp_hover`, `nvim_diagnostics`,
   `nvim_lsp_document_symbols`, `nvim_lsp_type_definition`, `nvim_lsp_call_hierarchy_incoming`,
   `nvim_lsp_call_hierarchy_outgoing`

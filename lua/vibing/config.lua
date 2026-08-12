@@ -17,18 +17,14 @@
 ---@field colors string[] グラデーション色の配列（2色指定: {開始色, 終了色}、例: {"#cc3300", "#fffe00"}）
 ---@field interval number アニメーション更新間隔（ミリ秒、デフォルト: 100）
 
----@class Vibing.ToolMarkerDefinition
----ツール固有のマーカー定義（パターンマッチング対応）
----@field default? string ツールのデフォルトマーカー
----@field patterns? table<string, string> 正規表現パターン→マーカーのマッピング（例: Bash用に {["^npm"] = "📦", ["^git"] = "🌿"}）
-
 ---@class Vibing.ToolMarkersConfig
 ---ツールマーカー設定
 ---チャット出力でツール実行時に表示する視覚的マーカーをカスタマイズ
----@field Task? string Taskツール開始マーカー（デフォルト: "▶"）
----@field TaskComplete? string Taskツール完了マーカー（デフォルト: "✓"）
----@field default? string その他のツール用デフォルトマーカー（デフォルト: "⏺"）
----@field [string]? string|Vibing.ToolMarkerDefinition ツール名をキーとした個別マーカー（文字列またはToolMarkerDefinition）
+---ツール名 → マーカー文字列のフラットな対応表。マーカーの解決にはツール名しか渡らないため、
+---コマンド内容による出し分け（Bashの`^npm`だけ別マーカー等）は行えない
+---@field Task? string Taskツールのマーカー（デフォルト: "▶"）
+---@field default? string 個別指定のないツール用マーカー（デフォルト: "⏺"）
+---@field [string]? string ツール名をキーとしたマーカー文字列
 
 ---@class Vibing.UiConfig
 ---UI設定
@@ -59,35 +55,35 @@
 ---@field tools string[] 対象ツール名のリスト（例: {"Read", "Write"}）
 ---@field paths string[]? ファイルパスのglobパターンリスト（例: {"src/**", "tests/**"}）
 ---@field commands string[]? Bashコマンド名のリスト（例: {"npm", "yarn"}）
----@field patterns string[]? Bashコマンドパターン（正規表現）のリスト（例: {"^rm -rf", "^sudo"}）
+---@field patterns string[]? Bashコマンドパターン（**Lua pattern**であって正規表現ではない）のリスト（例: {"^rm%s+%-rf", "^sudo%f[%W]"}）。`-`は量指定子なのでリテラルは`%-`とエスケープすること
 ---@field domains string[]? 許可/拒否するドメインリスト（例: {"github.com", "*.example.com"}）
 ---@field action "allow"|"deny" ルールのアクション（"allow": 許可、"deny": 拒否）
 ---@field message string? 拒否時のメッセージ（actionが"deny"の場合に表示）
 
 ---@class Vibing.PermissionsConfig
 ---ツール権限設定
----Agent SDKに対してClaudeが使用可能なツールを制御（Read, Edit, Write, Bash等）
+---CLIに対してClaudeが使用可能なツールを制御（Read, Edit, Write, Bash等）
 ---allowで許可、denyで拒否、askで確認を要求し、セキュリティと機能のバランスを調整
 ---@field mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"|"auto" 権限モード
 ---@field allow string[] 許可するツールリスト（例: {"Read", "Edit", "Write"}）
 ---@field deny string[] 拒否するツールリスト（例: {"Bash"}、危険なツールを明示的に禁止）
 ---@field ask string[] 確認が必要なツールリスト（例: {"Bash"}、使用前に承認を要求）
 ---@field rules Vibing.PermissionRule[]? 粒度の細かい権限制御ルール（オプション）
+---@field default_deny_rules boolean? 破壊的Bashコマンド（`rm -rf /`、`sudo`、`dd`、`chmod -R 777`、main/masterへのforce push等）の同梱denyルールを有効にするか（デフォルト: true）。`core/constants/destructive_commands.lua`を参照
 
 ---@class Vibing.AgentConfig
----Agent SDK設定
+---エージェント設定
 ---Claudeのモード（code/plan/explore）とモデル（sonnet/opus/haiku/fable）を指定
----@field default_mode "code"|"plan"|"explore" デフォルトモード（"code": コード生成、"plan": 計画、"explore": 探索）
+---@field default_mode "code"|"plan"|"explore" 新規チャットのfrontmatterに記録される`mode`の既定値（意味は core/constants/modes.lua の M.AGENT_MODES 参照）
 ---@field default_model "sonnet"|"opus"|"haiku"|"fable" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速、"fable": Claude Fable）
----@field prioritize_vibing_lsp boolean vibing-nvim LSPツールを優先（true: Serena等の汎用LSPより優先、false: システムプロンプトを挿入しない、デフォルト: true）
 ---@field utility_model "sonnet"|"opus"|"haiku"|"fable" タイトル生成・要約等の軽量ユーティリティ呼び出し専用モデル（デフォルト: "haiku"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）
 
 ---@class Vibing.NodeConfig
 ---Node.js実行ファイル設定
----Agent SDKラッパーとMCPビルドで使用するNode.js実行ファイルのパスを指定
+---スラッシュコマンド補完（bin/list-commands.ts）の実行に使うNode.jsのパス。
+---MCPサーバーのビルドは`VIBING_NODE_EXECUTABLE`を見るのでこの設定を使わない点に注意。
 ---@field executable string|"auto" Node.js実行ファイルのパス ("auto": PATHから自動検出、文字列: 明示的なパス指定)
----@field dev_mode boolean 開発モード有効化 (true: TypeScriptを直接bunで実行、false: コンパイル済みJSを使用)
 
 ---@class Vibing.McpConfig
 ---MCP統合設定
@@ -102,15 +98,14 @@
 ---@field auto_context boolean 自動コンテキスト有効化（trueで開いているバッファを自動的にコンテキストに含める）
 ---@field save_location_type "project"|"user"|"custom" 保存先タイプ（"project": プロジェクト内、"user": ユーザーディレクトリ、"custom": カスタムパス）
 ---@field save_dir string カスタム保存先ディレクトリ（save_location_type="custom"時に使用）
----@field context_position "prepend"|"append" コンテキスト挿入位置（"prepend": プロンプト前、"append": プロンプト後）
 
 ---@class Vibing.WindowConfig
 ---チャットウィンドウ表示設定
 ---位置、幅、高さ、枠線スタイルを制御
 ---@field position "right"|"left"|"top"|"bottom"|"back"|"current"|"float" ウィンドウ位置（"right": 右分割、"left": 左分割、"top": 上分割、"bottom": 下分割、"back": バッファのみ作成、"current": 現在のウィンドウ、"float": フローティング）
----@field width number ウィンドウ幅（0-1の小数で画面比率、1以上で絶対幅）
----@field height number ウィンドウ高さ（0-1の小数で画面比率、1以上で絶対高さ、top/bottomで使用）
----@field border string 枠線スタイル（"rounded", "single", "double", "none"等）
+---@field width number ウィンドウ幅（0-1の小数で画面比率、1以上で絶対カラム数。right/left/floatで使用）。境界に注意: `1`は100%ではなく1カラム
+---@field height number? ウィンドウ高さ（0-1の小数で画面比率、1以上で絶対行数。top/bottom/floatで使用。`1`は100%ではなく1行）。未指定時の既定値は位置により異なり、分割は0.4、floatは0.8
+---@field border string 枠線スタイル（"rounded", "single", "double", "none"等）。floatのみ有効で、値は`nvim_open_win`にそのまま渡される（vibing.nvim側の検証はしない）
 
 ---@class Vibing.KeymapConfig
 ---キーマップ設定
@@ -143,56 +138,8 @@ local language_utils = require("vibing.core.utils.language")
 
 local M = {}
 
----Validate a single pattern entry in tool_markers
----@param key string Tool name for error messages
----@param pattern string Pattern key
----@param marker any Marker value to validate
----@return boolean is_valid
-local function validate_pattern_entry(key, pattern, marker)
-  if type(marker) ~= "string" or marker == "" then
-    notify.warn(string.format(
-      "Invalid ui.tool_markers.%s.patterns['%s']: marker must be a non-empty string",
-      key, pattern
-    ))
-    return false
-  end
-  return true
-end
-
----Validate a ToolMarkerDefinition table
----@param key string Tool name for error messages
----@param marker table ToolMarkerDefinition to validate
----@return table|nil Validated marker or nil if invalid
-local function validate_marker_definition(key, marker)
-  if marker.default and type(marker.default) ~= "string" then
-    notify.warn(string.format("Invalid ui.tool_markers.%s.default: must be a string", key))
-    marker.default = nil
-  end
-
-  if marker.patterns then
-    if type(marker.patterns) ~= "table" then
-      notify.warn(string.format("Invalid ui.tool_markers.%s.patterns: must be a table", key))
-      marker.patterns = nil
-    else
-      for pattern, pattern_marker in pairs(marker.patterns) do
-        if not validate_pattern_entry(key, pattern, pattern_marker) then
-          marker.patterns[pattern] = nil
-        end
-      end
-    end
-  end
-
-  local has_default = marker.default ~= nil
-  local has_patterns = marker.patterns and next(marker.patterns) ~= nil
-  if not has_default and not has_patterns then
-    notify.warn(string.format("ui.tool_markers.%s has no valid default or patterns - removing", key))
-    return nil
-  end
-
-  return marker
-end
-
 ---Validate tool_markers configuration
+---Markers are a flat "tool name -> marker string" table.
 ---@param markers table Tool markers config to validate
 ---@return table Validated markers config
 local function validate_tool_markers(markers)
@@ -206,12 +153,23 @@ local function validate_tool_markers(markers)
         validated[key] = marker
       end
     elseif type(marker) == "table" then
-      validated[key] = validate_marker_definition(key, marker)
+      -- Legacy `{ default = "x", patterns = {...} }`. `patterns` was documented but never
+      -- implemented — resolution only ever receives a tool name, never the command string — so
+      -- the whole form is dropped loudly rather than silently ignored. See issue #502.
+      -- Name `patterns` only when the user actually wrote it: mentioning a feature they never
+      -- used reads like a warning about something else.
+      local detail = marker.patterns ~= nil and "; patterns never had any effect and is dropped"
+        or ""
+      notify.warn(
+        string.format("ui.tool_markers.%s: give the marker string directly%s", key, detail)
+      )
+      if type(marker.default) == "string" and marker.default ~= "" then
+        validated[key] = marker.default
+      end
     else
-      notify.warn(string.format(
-        "Invalid ui.tool_markers.%s: must be a string or table, got %s",
-        key, type(marker)
-      ))
+      notify.warn(
+        string.format("Invalid ui.tool_markers.%s: must be a string, got %s", key, type(marker))
+      )
     end
   end
 
@@ -224,7 +182,6 @@ M.defaults = {
   agent = {
     default_mode = "code",
     default_model = "sonnet",
-    prioritize_vibing_lsp = true,
     utility_model = "haiku",
     setting_sources = { "user", "project", "local" },
     -- 使用量リミットで応答が弾かれたとき、リセット時刻を待って自動で継続リクエストを送る。
@@ -246,13 +203,13 @@ M.defaults = {
     window = {
       position = "current",
       width = 0.4,
-      height = 0.4,
+      -- heightは意図的に未設定。既定値がpositionごとに違うのでwindow_manager側で解決する
+      -- （docs/configuration.md の chat.window.height 参照）
       border = "rounded",
     },
     auto_context = true,
     save_location_type = "project",
     save_dir = vim.fn.stdpath("data") .. "/vibing/chats",
-    context_position = "append",
   },
   ui = {
     wrap = "on",
@@ -264,7 +221,6 @@ M.defaults = {
     tool_result_display = "compact",
     tool_markers = {
       Task = "▶",
-      TaskComplete = "✓",
       default = "⏺",
     },
   },
@@ -289,10 +245,10 @@ M.defaults = {
     deny = { "Bash" },
     ask = {},
     rules = {},
+    default_deny_rules = true,
   },
   node = {
     executable = "auto",
-    dev_mode = false,
   },
   mcp = {
     enabled = true,
@@ -309,40 +265,12 @@ M.defaults = {
 ---@type Vibing.Config?
 M.options = nil
 
----Lazy.nvimのdevモードを検出
----vibing.nvimプラグインがLazy.nvimでdev=trueとして設定されているかチェック
----@return boolean Lazy.nvimのdevモードが有効な場合true
-local function is_lazy_dev_mode()
-  local ok, lazy_config = pcall(require, "lazy.core.config")
-  if ok and lazy_config.plugins then
-    local vibing_plugin = lazy_config.plugins["vibing.nvim"]
-    if vibing_plugin and vibing_plugin.dev then
-      return true
-    end
-  end
-  return false
-end
-
 ---vibing.nvimプラグインの設定を初期化
 ---ユーザー設定とデフォルト設定をマージし、ツール権限の妥当性を検証
 ---permissionsで指定されたツール名が有効かチェックし、無効な場合は警告を出力
----Lazy.nvimのdev=trueが設定されている場合、node.dev_modeを自動的にtrueに設定
 ---@param opts? Vibing.Config ユーザー設定オブジェクト（nilの場合はデフォルト設定のみ使用）
 function M.setup(opts)
-  -- Capture user config before merge to detect if dev_mode was explicitly set
-  local user_opts = opts or {}
-  local user_dev_mode = user_opts.node and user_opts.node.dev_mode
-
-  M.options = vim.tbl_deep_extend("force", {}, M.defaults, user_opts)
-
-  -- Auto-detect dev_mode from Lazy.nvim if not explicitly set by user
-  if user_dev_mode == nil then
-    local lazy_dev = is_lazy_dev_mode()
-    if lazy_dev then
-      M.options.node.dev_mode = true
-      notify.info("[vibing.nvim] Detected Lazy.nvim dev mode - enabling TypeScript direct execution")
-    end
-  end
+  M.options = vim.tbl_deep_extend("force", {}, M.defaults, opts or {})
 
   -- Auto-add "Skill" to permissions.allow if not already present and not in deny/ask lists
   if M.options.permissions and M.options.permissions.allow then
@@ -436,7 +364,10 @@ function M.setup(opts)
 
   local function validate_enum(value, valid_values, field_name, default)
     if value and not valid_values[value] then
-      local valid_list = table.concat(vim.tbl_keys(valid_values), ", ")
+      -- tbl_keysの順序は不定なので、警告文が実行ごとに変わらないようソートする
+      local keys = vim.tbl_keys(valid_values)
+      table.sort(keys)
+      local valid_list = table.concat(keys, ", ")
       notify.warn(string.format(
         "Invalid %s value '%s'. Valid values: %s. Falling back to '%s'.",
         field_name, value, valid_list, default
@@ -468,6 +399,16 @@ function M.setup(opts)
       "diff.tool",
       "auto"
     )
+  end
+
+  if M.options.agent then
+    local modes = require("vibing.core.constants.modes")
+    local valid_agent_modes = {}
+    for _, mode in ipairs(modes.AGENT_MODES) do
+      valid_agent_modes[mode] = true
+    end
+    M.options.agent.default_mode =
+      validate_enum(M.options.agent.default_mode, valid_agent_modes, "agent.default_mode", "code")
   end
 
   if M.options.ui and M.options.ui.gradient then

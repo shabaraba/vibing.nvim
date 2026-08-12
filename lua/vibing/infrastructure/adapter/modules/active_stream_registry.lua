@@ -6,9 +6,9 @@ local M = {}
 
 --- @class ActiveStreamEntry
 --- @field handle_id string
---- @field chat_file_path? string Stable per-turn value (the "Current vibing.nvim chat buffer
----   file" line embedded in the system prompt) used to route nvim_ask_user_question calls without
----   a per-turn handle_id, which would otherwise defeat Anthropic's prompt cache (see issue #469).
+--- @field chat_bufnr? number Stable value (the "Current vibing.nvim chat buffer number" line
+---   embedded in the system prompt) used to route nvim_ask_user_question calls without a per-turn
+---   handle_id, which would otherwise defeat Anthropic's prompt cache (see issues #469, #489).
 --- @field adapter table ClaudeCLI adapter reference
 --- @field on_insert_choices? fun(questions: table)
 --- @field on_approval_required? fun(tool: string, input: table, options: table, hook_request_id?: string)
@@ -49,19 +49,19 @@ function M.get(handle_id)
   return nil
 end
 
---- Get an active stream entry by chat_file_path — the stable value embedded in the system prompt
---- (see cli_command_builder.lua), used to route mcp__vibing-nvim__nvim_ask_user_question calls
---- instead of a per-turn handle_id (see M module docstring, issue #469). Unlike M.get(), a
---- non-matching chat_file_path still falls back to the sole registered stream rather than
---- returning nil, since a mid-turn `:VibingSetFileTitle` rename can legitimately desync the path
---- the model was given from the buffer's current path — safe only because there's no other
---- candidate to confuse it with.
---- @param chat_file_path string|nil
+--- Get an active stream entry by chat buffer number — the stable value embedded in the system
+--- prompt (see cli_command_builder.lua), used to route mcp__vibing-nvim__nvim_ask_user_question
+--- calls instead of a per-turn handle_id (see the ActiveStreamEntry docstring, issues #469/#489).
+--- Unlike M.get(), a non-matching bufnr still falls back to the sole registered stream: `--resume`
+--- replays earlier turns, so the model can read a buffer number from a previous Neovim session and
+--- pass one that no longer exists. With a single stream there is no other candidate to confuse it
+--- with; with several, the loop above is what decides.
+--- @param chat_bufnr number|nil
 --- @return ActiveStreamEntry|nil
-function M.get_by_chat_file_path(chat_file_path)
-  if chat_file_path and chat_file_path ~= "" then
+function M.get_by_chat_bufnr(chat_bufnr)
+  if chat_bufnr then
     for _, entry in pairs(streams) do
-      if entry.chat_file_path == chat_file_path then
+      if entry.chat_bufnr == chat_bufnr then
         return entry
       end
     end

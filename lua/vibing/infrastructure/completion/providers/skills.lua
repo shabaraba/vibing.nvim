@@ -134,9 +134,9 @@ local function resolve_list_commands()
 
   local config = Config.get()
 
-  -- Always use compiled JS + node for list-commands regardless of dev_mode.
-  -- Running list-commands.ts via bun causes the process to hang indefinitely
-  -- due to SDK async operations not resolving under bun.
+  -- Always use compiled JS + node for list-commands: running list-commands.ts via
+  -- bun causes the process to hang indefinitely due to SDK async operations not
+  -- resolving under bun.
   local script_path = plugin_dir .. "/dist/bin/list-commands.js"
   if vim.fn.filereadable(script_path) ~= 1 then
     return nil, nil
@@ -208,7 +208,7 @@ local function parse_commands_output(stdout)
   return items
 end
 
----Start async load of dynamic skills from Agent SDK
+---Start async load of dynamic skills from the CLI
 ---Loads in background; sets _bundled_cache when done and invalidates _cache
 local function start_async_load()
   if _loading or _bundled_cache then
@@ -296,10 +296,10 @@ local function invalidate_if_stale()
   _cache = nil
 end
 
----Get dynamic skills from Agent SDK (custom commands + plugin skills)
+---Get dynamic skills from the CLI (custom commands + plugin skills)
 ---Returns cached result immediately; starts async load if not yet cached
 ---@return Vibing.CompletionItem[]
-local function get_dynamic_sdk_skills()
+local function get_dynamic_cli_skills()
   if _bundled_cache then
     return _bundled_cache
   end
@@ -311,7 +311,7 @@ end
 ---@return Vibing.CompletionItem[]
 local function get_bundled_skills()
   local hardcoded = get_hardcoded_bundled_skills()
-  local dynamic = get_dynamic_sdk_skills()
+  local dynamic = get_dynamic_cli_skills()
 
   -- Merge without duplicates
   local seen = {}

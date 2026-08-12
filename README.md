@@ -155,6 +155,9 @@ buffers — save, search, and edit them like any other file.
 
 ## 🚀 Usage
 
+Also available offline as `:help vibing-commands`, which carries per-command
+help tags.
+
 ### User Commands
 
 | Command                               | Description                                                                                          |
@@ -169,6 +172,8 @@ buffers — save, search, and edit them like any other file.
 | `:VibingContext [path]`               | Add context: oil.nvim entry, visual selection (range), path argument, or current buffer when no args |
 | `:VibingClearContext`                 | Clear all context                                                                                    |
 | `:VibingCancel`                       | Cancel current request                                                                               |
+| `:VibingPendingResumes`               | List chats waiting on a usage limit reset                                                            |
+| `:VibingCancelResume [all]`           | Cancel the pending auto-resume for this chat (or every one with `all`)                               |
 | `:VibingReloadCommands`               | Reload custom slash commands and completion candidates                                               |
 | `:VibingCopyUnsentUserHeader`         | Copy `## User <!-- unsent -->` to clipboard                                                          |
 | `:VibingDailySummary [YYYY-MM-DD]`    | Generate daily summary from project chat files (default: today)                                      |

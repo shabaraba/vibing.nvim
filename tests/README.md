@@ -84,7 +84,7 @@ end)
 ## Coverage Goals
 
 - Core modules: config, init
-- Adapters: agent_sdk, claude
+- Adapters: claude, codex
 - Context system
 - UI components
 - Utility functions

@@ -10,12 +10,22 @@ local function find_free_port()
   return port
 end
 
+local ENV_REGISTRY_DIR = require("vibing.infrastructure.rpc.registry").ENV_REGISTRY_DIR
+
 describe("vibing.infrastructure.rpc.server", function()
   local server
   local registry
   local base_port
+  local registry_dir
+  local saved_env
 
   before_each(function()
+    -- Private registry directory: the default under stdpath("data") is shared machine-wide, so
+    -- the fake instance files written below would collide with the parallel plenary jobs.
+    saved_env = vim.env[ENV_REGISTRY_DIR]
+    registry_dir = vim.fn.tempname() .. "/vibing-instances"
+    vim.env[ENV_REGISTRY_DIR] = registry_dir
+
     -- Reload modules before each test
     package.loaded["vibing.infrastructure.rpc.server"] = nil
     package.loaded["vibing.infrastructure.rpc.registry"] = nil
@@ -29,6 +39,8 @@ describe("vibing.infrastructure.rpc.server", function()
     if server.is_running() then
       server.stop()
     end
+    pcall(vim.fn.delete, registry_dir, "rf")
+    vim.env[ENV_REGISTRY_DIR] = saved_env
   end)
 
   describe("start", function()
@@ -118,26 +130,19 @@ describe("vibing.infrastructure.rpc.server", function()
     end)
 
     it("should skip ports in registry (cached instances)", function()
-      -- Register a fake instance on base_port
-      local registry_dir = vim.fn.stdpath("data") .. "/vibing-instances"
-      vim.fn.mkdir(registry_dir, "p")
-      local fake_pid = vim.fn.getpid() + 100
-      local fake_instance = {
-        pid = fake_pid,
-        port = base_port,
-        cwd = vim.fn.getcwd(),
-        started_at = os.time(),
-      }
-      local fake_file = registry_dir .. "/" .. fake_pid .. ".json"
-      vim.fn.writefile({ vim.json.encode(fake_instance) }, fake_file)
+      -- Stub list() rather than writing an instance file: a file needs a PID, and list() now
+      -- correctly prunes entries whose process is gone, so a fabricated PID would be dropped
+      -- before port allocation ever saw it.
+      local original_list = registry.list
+      registry.list = function()
+        return { { pid = vim.fn.getpid(), port = base_port, cwd = vim.fn.getcwd(), started_at = os.time() } }
+      end
 
-      -- Start server - should skip base_port and use next one
       local port = server.start(base_port)
+      registry.list = original_list
 
       assert.is_true(port > base_port, "Should skip registered port")
 
-      -- Cleanup
-      vim.fn.delete(fake_file)
       server.stop()
     end)
   end)
@@ -227,33 +232,28 @@ describe("vibing.infrastructure.rpc.server", function()
       -- This is difficult to test directly, but we can verify behavior
       -- The optimization means registry.list() is called once, not 10 times
 
-      -- Create multiple fake instances to force server to check multiple ports
-      local registry_dir = vim.fn.stdpath("data") .. "/vibing-instances"
-      vim.fn.mkdir(registry_dir, "p")
-      local fake_files = {}
-
+      -- Stub list() for the same reason as the test above: five instances would need five live
+      -- PIDs, and the registry keys files by PID so they cannot be faked on disk.
+      local instances = {}
       for i = 0, 4 do
-        local fake_pid = vim.fn.getpid() + 100 + i
-        local fake_instance = {
-          pid = fake_pid,
+        table.insert(instances, {
+          pid = vim.fn.getpid(),
           port = base_port + i,
           cwd = vim.fn.getcwd(),
           started_at = os.time(),
-        }
-        local fake_file = registry_dir .. "/" .. fake_pid .. ".json"
-        vim.fn.writefile({ vim.json.encode(fake_instance) }, fake_file)
-        table.insert(fake_files, fake_file)
+        })
+      end
+      local original_list = registry.list
+      registry.list = function()
+        return instances
       end
 
       -- Start server - should skip the first 5 registered ports
       local port = server.start(base_port)
+      registry.list = original_list
 
       assert.is_true(port >= base_port + 5, "Should skip all registered ports")
 
-      -- Cleanup
-      for _, file in ipairs(fake_files) do
-        vim.fn.delete(file)
-      end
       server.stop()
     end)
   end)

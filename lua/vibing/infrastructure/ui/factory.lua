@@ -33,7 +33,7 @@ local M = {}
 ---@param value number|fun():number 値（0-1で比率、>1で絶対値、または計算関数）
 ---@param total number 全体のサイズ
 ---@return number
-local function calculate_size(value, total)
+function M.calculate_size(value, total)
   if type(value) == "function" then
     return value()
   end
@@ -78,8 +78,8 @@ end
 function M.create_float(config, bufnr)
   bufnr = bufnr or M.create_buffer()
 
-  local width = calculate_size(config.width or 0.6, vim.o.columns)
-  local height = calculate_size(config.height or 0.6, vim.o.lines)
+  local width = M.calculate_size(config.width or 0.6, vim.o.columns)
+  local height = M.calculate_size(config.height or 0.6, vim.o.lines)
   local row = config.row or math.floor((vim.o.lines - height) / 2)
   local col = config.col or math.floor((vim.o.columns - width) / 2)
 
@@ -141,12 +141,12 @@ function M.create_split(split_config, bufnr)
   -- サイズ設定
   if position == "right" or position == "left" then
     if split_config.width then
-      local width = calculate_size(split_config.width, vim.o.columns)
+      local width = M.calculate_size(split_config.width, vim.o.columns)
       vim.api.nvim_win_set_width(winid, width)
     end
   else
     if split_config.height then
-      local height = calculate_size(split_config.height, vim.o.lines)
+      local height = M.calculate_size(split_config.height, vim.o.lines)
       vim.api.nvim_win_set_height(winid, height)
     end
   end

@@ -36,7 +36,7 @@ enabled: false
   describe("parse permissions (UT-FM-002)", function()
     it("should parse permission arrays", function()
       local content = [[---
-permissions_mode: acceptEdits
+permission_mode: acceptEdits
 permissions_allow:
   - Read
   - Edit
@@ -46,7 +46,7 @@ permissions_deny:
 ---]]
 
       local result = frontmatter.parse(content)
-      assert.equals("acceptEdits", result.permissions_mode)
+      assert.equals("acceptEdits", result.permission_mode)
       assert.is_table(result.permissions_allow)
       assert.equals(3, #result.permissions_allow)
       assert.equals("Read", result.permissions_allow[1])
@@ -61,6 +61,55 @@ permissions_deny:
 
       local result = frontmatter.parse(content)
       assert.is_not_nil(result)
+    end)
+
+    it("should migrate the legacy plural permissions_mode to permission_mode", function()
+      local content = [[---
+permissions_mode: plan
+---]]
+
+      local result = frontmatter.parse(content)
+      assert.equals("plan", result.permission_mode)
+      assert.is_nil(result.permissions_mode)
+    end)
+
+    it("should prefer the singular permission_mode when both keys are present", function()
+      local content = [[---
+permission_mode: acceptEdits
+permissions_mode: plan
+---]]
+
+      local result = frontmatter.parse(content)
+      assert.equals("acceptEdits", result.permission_mode)
+      assert.is_nil(result.permissions_mode)
+    end)
+
+    it("should not let update() write the legacy plural key back out", function()
+      local content = [[---
+session_id: abc
+---]]
+
+      local updated = frontmatter.update(content, { permissions_mode = "plan" })
+      assert.is_truthy(updated:find("permission_mode: plan", 1, true))
+      assert.is_nil(updated:find("permissions_mode:", 1, true))
+    end)
+
+    it("should serialize permission_mode before the permissions lists", function()
+      local serialized = frontmatter.serialize({
+        language = "ja",
+        permissions_allow = { "Read" },
+        permission_mode = "acceptEdits",
+        session_id = "abc",
+      })
+      local lines = vim.split(serialized, "\n", { plain = true })
+      local order = {}
+      for _, line in ipairs(lines) do
+        local key = line:match("^([%w_%.]+):")
+        if key then
+          table.insert(order, key)
+        end
+      end
+      assert.same({ "session_id", "permission_mode", "permissions_allow", "language" }, order)
     end)
   end)
 
@@ -124,6 +173,40 @@ no closing delimiter]]
 
       local result = frontmatter.serialize(data, body)
       assert.is_not_nil(result:match("Hello world"))
+    end)
+  end)
+
+  describe("is_vibing_chat_buffer (UT-FM-005)", function()
+    local function make_buf(lines)
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      return buf
+    end
+
+    it("detects a chat buffer whose frontmatter closes past line 50", function()
+      -- Long permission arrays (e.g. codex sessions) push the closing `---`
+      -- well past line 50; the buffer check must still recognize it.
+      local lines = { "---", "vibing.nvim: true", "permissions_allow:" }
+      for i = 1, 80 do
+        table.insert(lines, "  - perm" .. i)
+      end
+      table.insert(lines, "---")
+      table.insert(lines, "# Vibing Chat")
+
+      local buf = make_buf(lines)
+      assert.is_true(frontmatter.is_vibing_chat_buffer(buf))
+    end)
+
+    it("does not stick a negative result while content is still incomplete", function()
+      -- A buffer mid-stream (frontmatter not yet closed) must not cache `false`,
+      -- otherwise it stays unrecognized forever once the content completes.
+      local buf = make_buf({ "---", "vibing.nvim: true" })
+      assert.is_false(frontmatter.is_vibing_chat_buffer(buf))
+      assert.is_nil(vim.b[buf].vibing_is_chat_buffer)
+
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "---", "vibing.nvim: true", "---", "# Vibing Chat" })
+      assert.is_true(frontmatter.is_vibing_chat_buffer(buf))
+      assert.is_true(vim.b[buf].vibing_is_chat_buffer)
     end)
   end)
 

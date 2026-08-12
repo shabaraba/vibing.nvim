@@ -53,34 +53,47 @@ describe("cli_command_builder", function()
       assert.is_true(prompt_text:find(".vibing/worktrees/", 1, true) ~= nil)
     end)
 
-    it("appends the current chat buffer file path when provided", function()
-      local cmd = cli_command_builder.build("hello", { chat_file_path = "/tmp/chat-test.md" }, nil, {}, nil)
+    it("appends the current chat buffer number when provided", function()
+      local cmd = cli_command_builder.build("hello", { chat_bufnr = 12 }, nil, {}, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]
-      assert.is_true(
-        prompt_text:find("Current vibing.nvim chat buffer file: /tmp/chat-test.md", 1, true) ~= nil
-      )
+      assert.is_true(prompt_text:find("Current vibing.nvim chat buffer number: 12", 1, true) ~= nil)
     end)
 
-    it("omits the chat buffer file line when chat_file_path is not provided", function()
+    it("omits the chat buffer line when chat_bufnr is not provided", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
       local prompt_text = cmd[idx + 1]
-      assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer file:", 1, true))
+      assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer number:", 1, true))
     end)
 
-    it("instructs the model to pass chat_file_path on nvim_ask_user_question, without any per-turn id", function()
+    it("keeps the system prompt byte-identical when only the chat file path changes", function()
+      local before = cli_command_builder.build("hello", { chat_bufnr = 12, chat_file_path = "/tmp/a.md" }, nil, {}, nil)
+      local after = cli_command_builder.build(
+        "hello",
+        { chat_bufnr = 12, chat_file_path = "/tmp/renamed-by-set-file-title.md" },
+        nil,
+        {},
+        nil
+      )
+
+      local before_idx = find_flag(before, "--append-system-prompt")
+      local after_idx = find_flag(after, "--append-system-prompt")
+      assert.equals(before[before_idx + 1], after[after_idx + 1])
+    end)
+
+    it("instructs the model to pass chat_bufnr on nvim_ask_user_question, without any per-turn id", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]
       assert.is_true(prompt_text:find("nvim_ask_user_question", 1, true) ~= nil)
-      assert.is_true(prompt_text:find("chat_file_path argument", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("chat_bufnr argument", 1, true) ~= nil)
     end)
 
     it("never embeds a handle_id, so the same conversation's system prompt is byte-identical across turns", function()
-      local opts = { chat_file_path = "/tmp/chat-test.md" }
+      local opts = { chat_bufnr = 12 }
       local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil, 9878)
       local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil, 9878)
       local idx1 = find_flag(cmd1, "--append-system-prompt")
@@ -103,6 +116,138 @@ describe("cli_command_builder", function()
       local idx = find_flag(cmd, "--append-system-prompt")
       local prompt_text = cmd[idx + 1]
       assert.is_nil(prompt_text:find("Your rpc_port for this turn is", 1, true))
+    end)
+  end)
+
+  describe("project-local system prompt (.vibing/system-prompt.md)", function()
+    local project_root
+    local original_getcwd
+
+    local function write_project_prompt(lines)
+      vim.fn.mkdir(project_root .. "/.vibing", "p")
+      vim.fn.writefile(lines, project_root .. "/.vibing/system-prompt.md")
+    end
+
+    before_each(function()
+      project_root = vim.fn.tempname()
+      vim.fn.mkdir(project_root, "p")
+      original_getcwd = vim.fn.getcwd
+      vim.fn.getcwd = function()
+        return project_root
+      end
+    end)
+
+    after_each(function()
+      vim.fn.getcwd = original_getcwd
+      vim.fn.delete(project_root, "rf")
+    end)
+
+    it("appends the file contents to --append-system-prompt", function()
+      write_project_prompt({ "Prefer tabs over spaces.", "Never touch generated/." })
+
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+      assert.is_true(prompt_text:find("Prefer tabs over spaces.", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("Never touch generated/.", 1, true) ~= nil)
+    end)
+
+    it("adds nothing when the file is missing", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local baseline = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+      write_project_prompt({ "" })
+      local cmd2 = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local with_empty_file = cmd2[find_flag(cmd2, "--append-system-prompt") + 1]
+
+      -- An empty (freshly created) file must be indistinguishable from no file at all
+      assert.equals(baseline, with_empty_file)
+    end)
+
+    it("adds nothing when the file is whitespace-only", function()
+      write_project_prompt({ "   ", "", "\t" })
+
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+      assert.is_nil(prompt_text:find("\t", 1, true))
+    end)
+
+    it("stays byte-identical across turns while the file is unchanged", function()
+      write_project_prompt({ "Project rule: always run the linter." })
+
+      local opts = { chat_bufnr = 12 }
+      local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil, 9878)
+      local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil, 9878)
+
+      assert.equals(cmd1[find_flag(cmd1, "--append-system-prompt") + 1], cmd2[find_flag(cmd2, "--append-system-prompt") + 1])
+    end)
+
+    it("picks up an edit on the next request", function()
+      write_project_prompt({ "First revision." })
+      local cmd1 = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local before = cmd1[find_flag(cmd1, "--append-system-prompt") + 1]
+
+      write_project_prompt({ "Second revision." })
+      local cmd2 = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local after = cmd2[find_flag(cmd2, "--append-system-prompt") + 1]
+
+      assert.is_true(before:find("First revision.", 1, true) ~= nil)
+      assert.is_true(after:find("Second revision.", 1, true) ~= nil)
+      assert.is_nil(after:find("First revision.", 1, true))
+    end)
+
+    it("is not sent on lightweight (title/summary) calls", function()
+      write_project_prompt({ "Project rule: always run the linter." })
+
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, {}, nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+      assert.is_nil(prompt_text:find("always run the linter", 1, true))
+    end)
+
+    describe("with a worktree working_dir (opts.cwd)", function()
+      local worktree_root
+
+      local function write_worktree_prompt(lines)
+        vim.fn.mkdir(worktree_root .. "/.vibing", "p")
+        vim.fn.writefile(lines, worktree_root .. "/.vibing/system-prompt.md")
+      end
+
+      before_each(function()
+        worktree_root = project_root .. "/.vibing/worktrees/feature-x"
+        vim.fn.mkdir(worktree_root, "p")
+      end)
+
+      it("prefers the worktree's own file over the project root's", function()
+        write_project_prompt({ "Root rule." })
+        write_worktree_prompt({ "Worktree rule." })
+
+        local cmd = cli_command_builder.build("hello", { cwd = worktree_root }, nil, {}, nil)
+        local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+        assert.is_true(prompt_text:find("Worktree rule.", 1, true) ~= nil)
+        assert.is_nil(prompt_text:find("Root rule.", 1, true))
+      end)
+
+      it("falls back to the project root when the worktree has no file", function()
+        write_project_prompt({ "Root rule." })
+
+        local cmd = cli_command_builder.build("hello", { cwd = worktree_root }, nil, {}, nil)
+        local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+        assert.is_true(prompt_text:find("Root rule.", 1, true) ~= nil)
+      end)
+
+      it("falls back to the project root when the worktree file is empty", function()
+        write_project_prompt({ "Root rule." })
+        write_worktree_prompt({ "" })
+
+        local cmd = cli_command_builder.build("hello", { cwd = worktree_root }, nil, {}, nil)
+        local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+
+        assert.is_true(prompt_text:find("Root rule.", 1, true) ~= nil)
+      end)
     end)
   end)
 
@@ -192,7 +337,7 @@ describe("cli_command_builder", function()
     it("omits the worktree/ask_user_question/rpc_port tool instructions from the system prompt", function()
       local cmd = cli_command_builder.build(
         "hello",
-        { lightweight = true, chat_file_path = "/tmp/chat-test.md" },
+        { lightweight = true, chat_bufnr = 12 },
         nil,
         {},
         nil,
@@ -204,7 +349,7 @@ describe("cli_command_builder", function()
       assert.is_nil(prompt_text:find(".vibing/worktrees/", 1, true))
       assert.is_nil(prompt_text:find("nvim_ask_user_question", 1, true))
       assert.is_nil(prompt_text:find("Your rpc_port for this turn is", 1, true))
-      assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer file:", 1, true))
+      assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer number:", 1, true))
     end)
 
     it("still applies the language instruction to the system prompt", function()

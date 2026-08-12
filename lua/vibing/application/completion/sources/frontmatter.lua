@@ -36,22 +36,19 @@ function M.get_trigger_context(line, col)
   local before_cursor = line:sub(1, col)
   local before_cursor_plus = line:sub(1, col + 1) -- Include next char for pattern matching
 
-  -- Pattern 1: "mode: " or "model: " or "permission_mode: " (enum fields)
-  -- Note: Both "permissions_mode" and "permission_mode" are supported
-  for _, field_name in ipairs({ "permissions_mode", "permission_mode", "agent", "mode", "model" }) do
+  -- Pattern 1: enum fields. permission_mode は単数形が実行時キー
+  for _, field_name in ipairs({ "permission_mode", "agent", "mode", "model" }) do
     local pattern = "^%s*" .. field_name .. ":%s*(.*)$"
     local value = before_cursor:match(pattern)
     if value then
-      -- Normalize field name to "permissions_mode" for provider lookup
-      local normalized_field = field_name == "permission_mode" and "permissions_mode" or field_name
       local ctx = {
         trigger = "frontmatter_enum",
-        field = normalized_field,
+        field = field_name,
         query = value,
         start_col = #before_cursor - #value + 1,
       }
       -- For model field, read the agent value from the buffer frontmatter
-      if normalized_field == "model" then
+      if field_name == "model" then
         ctx.agent = M._read_frontmatter_agent()
       end
       return ctx

@@ -43,7 +43,8 @@ require("vibing").setup({
         message = "Cannot modify sensitive files",
       },
       { tools = { "Bash" }, commands = { "npm", "yarn" }, action = "allow" },
-      { tools = { "Bash" }, patterns = { "^rm -rf", "^sudo", "^dd if=" }, action = "deny" },
+      -- Lua patterns, NOT regex: "-" is a quantifier, so escape it as "%-"
+      { tools = { "Bash" }, patterns = { "^rm%s+%-rf", "^sudo%f[%W]" }, action = "deny" },
       {
         tools = { "WebFetch", "WebSearch" },
         domains = { "github.com", "*.npmjs.com", "docs.rs" },
@@ -57,10 +58,17 @@ require("vibing").setup({
 Fields: `tools` (target tools), `paths` (glob, for Read/Write/Edit), `commands`/`patterns` (Bash),
 `domains` (WebFetch/WebSearch), `action` (`allow`/`deny`), `message` (optional, for deny rules).
 
-**Evaluation order:** deny rules are checked first (any match blocks immediately) → allow rules
-second → default deny if nothing matches ("No matching allow rule"). Paths are normalized to
-absolute, symlink-resolved paths before matching (prevents traversal attacks); glob patterns
-support `*` (single directory) and `**` (recursive).
+**Evaluation order (the part worth knowing before editing `can_use_tool.lua`):** deny rules are
+checked before the permission mode, the tool-level lists _and_ the session-level allow list. That
+last one is the non-obvious constraint — `allow_for_session` records only the bare tool name, so
+evaluating it first would let one approved `Bash` call whitelist every later one. Allow rules run
+after the tool-level lists. Full field/matching table and the rest of the ordering:
+`docs/configuration.md` → "Granular Permission Rules". `patterns` are **Lua patterns, not regex**.
+
+**Default deny rules:** `permissions.default_deny_rules` (default `true`) prepends bundled deny
+rules for destructive Bash commands, defined in
+`lua/vibing/core/constants/destructive_commands.lua`. The blocked list and its known gaps live in
+`docs/configuration.md` → "Default Deny Rules".
 
 ## Interactive Permission Builder
 
@@ -71,7 +79,8 @@ alternative to hand-editing config or frontmatter.
 ## Tool Approval UI
 
 When permission mode is `default`, or a tool is in the `ask` list, vibing.nvim shows an approval
-prompt directly in the chat buffer instead of using the Agent SDK's console prompt:
+prompt directly in the chat buffer instead of the CLI's own console prompt (which is unreachable
+in headless `claude -p` mode):
 
 ```markdown
 ⚠️ Tool approval required
@@ -93,7 +102,8 @@ one with `<CR>`. `allow_once`/`deny_once` apply to this call only; `allow_for_se
 
 **Implementation notes:**
 
-- The RPC hook fires in `permission.lua` when Claude requests a tool in the `ask` list;
+- The PreToolUse hook (`bin/hooks/pre-tool-use.sh`) posts to the RPC server, which dispatches to
+  `infrastructure/rpc/handlers/permission.lua`. When the requested tool is in the `ask` list,
   `cancel_and_deny()` immediately cancels the Claude process and sends a deny response to the
   hook.
 - `on_approval_required` must be called from the vim main thread (inside `vim.schedule`) — the

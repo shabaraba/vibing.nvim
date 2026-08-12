@@ -10,21 +10,20 @@ User Input → ChatBuffer → Adapter → LLM Provider
                          Response Stream
 ```
 
-All adapters inherit from `lua/vibing/adapters/base.lua` and implement a common interface.
+All adapters inherit from `lua/vibing/infrastructure/adapter/base.lua` and implement a common interface.
 
 ## Existing Adapters
 
-| Adapter      | File                      | Description                    |
-| ------------ | ------------------------- | ------------------------------ |
-| `agent_sdk`  | `adapters/agent_sdk.lua`  | Claude Agent SDK (recommended) |
-| `claude`     | `adapters/claude.lua`     | Claude CLI direct              |
-| `claude_acp` | `adapters/claude_acp.lua` | Anthropic Claude Protocol      |
+| Adapter  | File                                    | Description                            |
+| -------- | --------------------------------------- | -------------------------------------- |
+| `claude` | `infrastructure/adapter/claude_cli.lua` | Claude CLI, spawned directly (default) |
+| `codex`  | `infrastructure/adapter/codex_cli.lua`  | Codex CLI (`codex exec --json`)        |
 
 ## Creating a New Adapter
 
 ### Step 1: Create the Adapter File
 
-Create `lua/vibing/adapters/your_adapter.lua`:
+Create `lua/vibing/infrastructure/adapter/your_adapter.lua`:
 
 ```lua
 local Base = require("vibing.adapters.base")
@@ -179,7 +178,7 @@ Update `lua/vibing/init.lua` to recognize your adapter:
 
 ```lua
 local function create_adapter(config)
-  local adapter_name = config.adapter or "agent_sdk"
+  local adapter_name = config.adapter or "claude"
 
   if adapter_name == "your_adapter" then
     local YourAdapter = require("vibing.adapters.your_adapter")

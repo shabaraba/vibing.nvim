@@ -10,16 +10,10 @@ function M.generate_unique_filename()
 end
 
 ---プロジェクト固有のsystem-prompt.mdを初期化
+---中身は cli_command_builder が --append-system-prompt に連結する
 ---@param project_root string プロジェクトルート
 local function ensure_system_prompt(project_root)
-  local vibing_dir = project_root .. "/.vibing"
-  local prompt_file = vibing_dir .. "/system-prompt.md"
-
-  -- ファイルが存在しなければ空ファイルを作成
-  if vim.fn.filereadable(prompt_file) == 0 then
-    vim.fn.mkdir(vibing_dir, "p")
-    vim.fn.writefile({}, prompt_file)
-  end
+  require("vibing.core.utils.project_system_prompt").ensure(project_root)
 end
 
 ---保存ディレクトリを取得

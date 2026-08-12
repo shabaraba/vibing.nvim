@@ -31,17 +31,17 @@ describe('chat tools (worktree redesign)', () => {
     expect(typeof handlers.nvim_chat_send_message).toBe('function');
   });
 
-  it('registers nvim_ask_user_question with chat_file_path, rpc_port, and questions all required', () => {
+  it('registers nvim_ask_user_question with chat_bufnr, rpc_port, and questions all required', () => {
     const tool = allTools.find((t) => t.name === 'nvim_ask_user_question');
     expect(tool).toBeDefined();
     const inputSchema = tool?.inputSchema as {
       required?: string[];
       properties: Record<string, unknown>;
     };
-    expect(inputSchema.required).toContain('chat_file_path');
+    expect(inputSchema.required).toContain('chat_bufnr');
     expect(inputSchema.required).toContain('rpc_port');
     expect(inputSchema.required).toContain('questions');
-    expect(inputSchema.properties.chat_file_path).toBeDefined();
+    expect(inputSchema.properties.chat_bufnr).toBeDefined();
     expect(inputSchema.properties.rpc_port).toBeDefined();
     expect(inputSchema.properties.questions).toBeDefined();
   });
@@ -57,25 +57,25 @@ describe('chat tools (worktree redesign)', () => {
     expect(typeof handlers.nvim_ask_user_question).toBe('function');
   });
 
-  it('nvim_ask_user_question calls the ask_user_question RPC with chat_file_path and rpc_port passed as arguments', async () => {
+  it('nvim_ask_user_question calls the ask_user_question RPC with chat_bufnr and rpc_port passed as arguments', async () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ status: 'ok' });
 
     const questions = [{ question: 'Which?', options: [{ label: 'A' }] }];
     const result = await handlers.nvim_ask_user_question({
-      chat_file_path: '/tmp/chat-test.md',
+      chat_bufnr: 12,
       rpc_port: 9878,
       questions,
     });
 
     expect(rpc.callNeovim).toHaveBeenCalledWith(
       'ask_user_question',
-      { chat_file_path: '/tmp/chat-test.md', questions },
+      { chat_bufnr: 12, questions },
       9878
     );
     expect(result.isError).toBeUndefined();
   });
 
-  it('nvim_ask_user_question rejects a call missing chat_file_path instead of silently guessing', async () => {
+  it('nvim_ask_user_question rejects a call missing chat_bufnr instead of silently guessing', async () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ status: 'ok' });
 
     await expect(
@@ -92,7 +92,7 @@ describe('chat tools (worktree redesign)', () => {
 
     await expect(
       handlers.nvim_ask_user_question({
-        chat_file_path: '/tmp/chat-test.md',
+        chat_bufnr: 12,
         questions: [{ question: 'Which?', options: [{ label: 'A' }] }],
       })
     ).rejects.toThrow();
@@ -103,7 +103,7 @@ describe('chat tools (worktree redesign)', () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ status: 'error', reason: 'no active chat' });
 
     const result = await handlers.nvim_ask_user_question({
-      chat_file_path: '/tmp/chat-test.md',
+      chat_bufnr: 12,
       rpc_port: 9878,
       questions: [{ question: 'Which?', options: [{ label: 'A' }] }],
     });

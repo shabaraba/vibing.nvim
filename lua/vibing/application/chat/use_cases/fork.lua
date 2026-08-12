@@ -7,6 +7,7 @@ local ChatSession = require("vibing.domain.chat.session")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 local Git = require("vibing.core.utils.git")
+local Modes = require("vibing.core.constants.modes")
 
 ---ファイル名から-fork-N.mdを生成
 ---@param source_path string
@@ -32,7 +33,7 @@ end
 ---@param forked_from string
 ---@param config table
 ---@return table fork_frontmatter
-local function copy_frontmatter(source_frontmatter, forked_from, config)
+function M._copy_frontmatter(source_frontmatter, forked_from, config)
   return {
     ["vibing.nvim"] = true,
     -- フォーク元のsession_idを引き継ぐ。SDK側で--fork-sessionフラグにより
@@ -42,7 +43,10 @@ local function copy_frontmatter(source_frontmatter, forked_from, config)
     forked_from = forked_from,
     working_dir = source_frontmatter.working_dir,
     agent = source_frontmatter.agent or (config.adapter or "claude"),
-    mode = source_frontmatter.mode or (config.agent and config.agent.default_mode or "code"),
+    -- 不正なmodeはフォーク先へ持ち込まない（コピーすると誤りが増殖するだけなのでデフォルトに戻す）
+    -- 黙ってデフォルトに戻す。send_message側が送信時に警告を出すので、フォークのたびに
+    -- 同じ誤字を二重に通知しても意味がない
+    mode = Modes.coerce_agent_mode(source_frontmatter.mode) or (config.agent and config.agent.default_mode or "code"),
     model = source_frontmatter.model or (config.agent and config.agent.default_model or "sonnet"),
     permission_mode = source_frontmatter.permission_mode
       or (config.permissions and config.permissions.mode or "acceptEdits"),
@@ -104,7 +108,7 @@ function M.execute(chat_buffer)
   end
 
   local forked_from = Git.to_display_path(chat_buffer.file_path)
-  local fork_frontmatter = copy_frontmatter(source_frontmatter, forked_from, config)
+  local fork_frontmatter = M._copy_frontmatter(source_frontmatter, forked_from, config)
 
   local fork_session = ChatSession:new({
     session_id = chat_buffer.session_id,

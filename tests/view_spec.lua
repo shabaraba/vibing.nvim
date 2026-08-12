@@ -45,5 +45,22 @@ describe("vibing.presentation.chat.view", function()
 
       assert.is_true(view.is_current_buffer_chat())
     end)
+
+    it("self-heals: attaches an unattached chat file on demand", function()
+      -- Simulate the live failure: a chat file is open but was never attached
+      -- (detection autocmd never fired). The command entry path must still
+      -- recognize it by attaching on demand rather than reporting "not a chat".
+      local dir = "/tmp/vibing_selfheal/.vibing/chat"
+      vim.fn.mkdir(dir, "p")
+      local path = dir .. "/chat-selfheal.md"
+      vim.fn.writefile({ "---", "vibing.nvim: true", "---", "# Vibing Chat" }, path)
+
+      vim.cmd("edit " .. path)
+      local buf = vim.api.nvim_get_current_buf()
+      assert.is_nil(view._attached_buffers[buf])
+
+      assert.is_true(view.is_current_buffer_chat())
+      assert.is_not_nil(view._attached_buffers[buf])
+    end)
   end)
 end)

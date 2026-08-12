@@ -1,6 +1,6 @@
 ---@class Vibing.Domain.Session
 ---セッションエンティティ
----Claude Agent SDKとの会話セッションを表現
+---Claude CLIとの会話セッションを表現
 local Session = {}
 Session.__index = Session
 

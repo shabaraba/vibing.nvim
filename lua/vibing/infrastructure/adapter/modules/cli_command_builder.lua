@@ -221,8 +221,8 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
       "When you need the user to choose among options (single or multi-select), always call the "
         .. "mcp__vibing-nvim__nvim_ask_user_question tool instead of asking in free text. Do not use "
         .. "the native AskUserQuestion tool for this — it is unavailable in this environment. Pass "
-        .. "this turn's \"Current vibing.nvim chat buffer file\" path (given elsewhere in this "
-        .. "system prompt) as the chat_file_path argument."
+        .. 'this turn\'s "Current vibing.nvim chat buffer number" (given elsewhere in this system '
+        .. "prompt) as the chat_bufnr argument."
     )
 
     if rpc_port then
@@ -236,8 +236,20 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
       )
     end
 
-    if opts.chat_file_path and opts.chat_file_path ~= "" then
-      table.insert(system_prompt_lines, "Current vibing.nvim chat buffer file: " .. opts.chat_file_path)
+    -- Buffer number, not file path: it survives a rename, keeping this prefix byte-stable (#489).
+    if opts.chat_bufnr then
+      table.insert(system_prompt_lines, "Current vibing.nvim chat buffer number: " .. tostring(opts.chat_bufnr))
+    end
+
+    -- Project-local instructions from .vibing/system-prompt.md. Read fresh on every
+    -- request, so an edit takes effect from the next message onward; that edit is also
+    -- the only thing that invalidates the cached system prefix (see #469 note above).
+    -- An unedited file keeps the block byte-for-byte identical across turns.
+    -- Resolved against `opts.cwd` (the chat's `working_dir`, e.g. a worktree) first,
+    -- like every other cwd-sensitive part of the request, then the Neovim root.
+    local project_prompt = require("vibing.core.utils.project_system_prompt").read_for_cwd(opts.cwd)
+    if project_prompt then
+      table.insert(system_prompt_lines, project_prompt)
     end
   end
 

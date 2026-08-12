@@ -17,6 +17,7 @@ Complete reference for every `require("vibing").setup()` option. Defaults shown 
 - [MCP](#mcp)
 - [Node.js Executable](#nodejs-executable)
 - [Language](#language)
+- [Project System Prompt](#project-system-prompt)
 - [Daily Summary](#daily-summary)
 
 ## Defaults at a Glance
@@ -35,7 +36,6 @@ require("vibing").setup({
     window = {
       position = "current",
       width = 0.4,
-      height = 0.4,
       border = "rounded",
     },
     save_location_type = "project",
@@ -108,7 +108,10 @@ adapter = "claude",  -- Global backend adapter
 agent = {
   default_mode = "code",    -- Recorded in each new chat's frontmatter as `mode`
                             -- ("code" | "plan" | "explore"). Currently metadata only —
-                            -- it does not change runtime behavior.
+                            -- it does not change runtime behavior, and is not the same
+                            -- thing as permissions.mode = "plan" (which does). Anything
+                            -- outside the three values warns and falls back to "code";
+                            -- an invalid frontmatter `mode` warns and is dropped.
 
   default_model = "sonnet", -- Default model for new chats
                             -- "sonnet": Balanced (recommended)
@@ -194,12 +197,16 @@ chat = {
                            -- "back": background buffer only (no window)
                            -- "float": floating window
 
-    width = 0.4,           -- Screen-width ratio (0-1). Applied to right/left splits
-                           -- and floating windows. Always interpreted as a ratio —
-                           -- absolute column counts are not supported.
+    width = 0.4,           -- Applied to right/left splits and floating windows.
+                           -- Below 1 it is a screen-width ratio; 1 or above is an
+                           -- absolute column count (e.g. width = 80). Note the
+                           -- boundary: width = 1 means one column, not 100%.
 
-    height = 0.4,          -- Screen-height ratio (0-1). Applied to top/bottom splits
-                           -- only. Floating windows use a fixed 0.8 screen ratio.
+    -- height is not in the defaults on purpose: the fallback differs per position
+    -- (0.4 for top/bottom splits, 0.8 for floats), and a value here would apply to
+    -- both. Set it to override either.
+    --   height = 0.5,     -- Same rule as width: ratio below 1, absolute rows at 1
+                           -- or above. Applies to top/bottom splits and floats.
 
     border = "rounded",    -- Border for position = "float" only (any nvim_open_win
                            -- border spec). Split windows have no border.
@@ -246,8 +253,10 @@ ui = {
 }
 ```
 
-A `tool_markers` entry may also be a table with a `default` key (e.g.
-`Bash = { default = "💻" }`); only the `default` key is used.
+Every `tool_markers` entry is a plain string. Markers are resolved from the tool name alone, so
+they cannot vary with a tool's arguments (there is no way to give `Bash` one marker for `npm` and
+another for `git`). The legacy `Bash = { default = "💻" }` table form is still accepted — it is
+flattened to the `default` string with a warning — but should be replaced with `Bash = "💻"`.
 
 ## Keymaps
 
@@ -374,10 +383,57 @@ Field reference:
 
 Evaluation notes:
 
-- Rules are evaluated **after** the tool-level `allow`/`ask` lists.
-- Any matching `deny` rule blocks immediately and beats every `allow` rule.
+- `deny` rules run **before** the permission mode, the tool-level lists, and any session-level
+  grant, so a denied call stays denied under `mode = "auto"`, for always-allowed tools, and after
+  an "allow for this session" approval. `mode = "bypassPermissions"` is the one deliberate way
+  past them.
+- `allow` rules are evaluated **after** the tool-level `allow`/`ask` lists.
 - A rule whose condition doesn't apply to the tool's input (e.g. `paths` on a `Bash` call)
   is skipped.
+
+## Default Deny Rules
+
+vibing.nvim ships deny rules for a small set of destructive Bash commands, enabled by default:
+
+```lua
+permissions = {
+  default_deny_rules = true,  -- set to false to ship nothing and rely on your own rules
+}
+```
+
+| Blocked                              | Examples                                                      |
+| ------------------------------------ | ------------------------------------------------------------- |
+| Recursive deletion of `/` or `$HOME` | `rm -rf /`, `rm -rf /*`, `rm -rf ~`, `rm -rf $HOME`           |
+| Privilege escalation                 | `sudo ...`, `doas ...`                                        |
+| Raw device writes                    | `dd ... of=/dev/sda`, `mkfs.ext4 /dev/sda1`                   |
+| World-writable trees                 | `chmod -R 777 .`, `chmod 777 -R .`                            |
+| Force-pushing main/master            | `git push --force origin main` (`--force-with-lease` is fine) |
+
+They match after shell separators **and after newlines**, so both `cd /tmp && sudo rm -rf /` and a
+`sudo` on the second line of a multi-line script are caught — the Bash tool hands a whole script
+over as one command. The full list lives in
+`lua/vibing/core/constants/destructive_commands.lua`.
+
+Known gaps — these are a safety net, not a sandbox:
+
+- Split short flags (`rm -r -f /`) and obfuscation (`$(echo rm) -rf /`) are not matched. Combined
+  short flags (`-rf`), GNU longform (`--recursive`) and quoted targets (`rm -rf "$HOME"`) are.
+- Flag order does not matter. GNU `getopt_long` permutes options, so `rm / -rf` and
+  `chmod 777 -R .` run exactly as their flag-first spellings do and are matched the same way.
+- `dd` is judged by its write target only: `dd ... of=/dev/...` is blocked, an ordinary
+  file-to-file copy such as `dd if=backup.img of=backup2.img` is not.
+- Matching never reaches across a newline to assemble a hit from two different lines, but it
+  cannot tell a real command from the same text quoted inside an `echo` on its own line.
+- Matching is case-sensitive; every command covered here is a lowercase Unix command name.
+- A bare `git push --force` is allowed, because a pattern cannot know which branch it lands on.
+  Naming the branch is caught in either flag order (`--force origin main` and `origin main
+--force`), and a branch that merely starts with main/master (`main-v2`) is not.
+- `permissions.deny`/`allow` cannot switch off an individual bundled rule; use
+  `default_deny_rules = false` and re-add the ones you want to `rules`.
+
+The point is that the boundary is drawn in the environment rather than in an approval prompt:
+prompts are approved reflexively most of the time, so they are a last line of defence, not the
+primary one.
 
 ## MCP
 
@@ -436,6 +492,32 @@ language = {
   chat = "ja",     -- Chat responses (falls back to default)
 }
 ```
+
+## Project System Prompt
+
+`.vibing/system-prompt.md` holds instructions that apply to every chat in this project. The file
+is created empty the first time a chat is saved into the project, and its contents are appended to
+the system prompt of every request.
+
+```markdown
+Prefer `pnpm` over `npm` in this repository.
+Generated files live under `src/generated/` — never edit them by hand.
+```
+
+Notes:
+
+- Edits take effect from the **next message**; there is no reload command.
+- The system prompt is part of the prompt cache's forward prefix, so editing the file invalidates
+  the cached prefix once. Leaving it untouched keeps the cache intact across turns.
+- An empty or whitespace-only file is treated as "not set" and adds nothing to the request.
+- Content over 8 KiB is truncated (with a warning) to keep it from dominating every request.
+- Utility calls (title generation, summarize, daily summary) do not receive it.
+- The file is read from the project root Neovim was started in, and is not committed
+  (`.vibing/` is git-ignored) — it is per-checkout, not shared with collaborators.
+- A chat with a `working_dir` (a worktree under `.vibing/worktrees/<branch>/`) uses that
+  directory's `.vibing/system-prompt.md` when it exists and has content, and otherwise falls back
+  to the project root's file — so a worktree can override the project prompt without having to
+  copy it.
 
 ## Daily Summary
 

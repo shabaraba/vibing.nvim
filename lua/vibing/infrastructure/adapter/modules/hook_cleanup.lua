@@ -3,34 +3,62 @@
 
 local M = {}
 
+--- Comm directories owned by a Neovim that is still running.
+--- `registry.list()` already drops entries whose PID is gone, so whatever it returns is live.
+--- Note this only covers instances that have a port: an instance still on `CommDir.path()`'s
+--- portless fallback is not in the registry. Nothing writes there (the hooks exit early without
+--- `VIBING_NVIM_RPC_PORT`), so there is nothing to protect, but it is not a complete set.
+--- @return table<string, boolean> set of directory paths
+local function live_comm_dirs()
+  local ok, dirs = pcall(function()
+    local registry = require("vibing.infrastructure.rpc.registry")
+    local CommDir = require("vibing.infrastructure.rpc.comm_dir")
+    local result = {}
+    for _, instance in ipairs(registry.list()) do
+      if instance.port then
+        result[CommDir.for_port(instance.port)] = true
+      end
+    end
+    return result
+  end)
+  return ok and dirs or {}
+end
+
 --- Remove stale /tmp/vibing-hook-* directories
 --- Cleans up leftover .req/.res files from previous vibing.nvim sessions.
---- Skips the directory for the current RPC port (if running).
+--- "Stale" means the owning Neovim is gone: this instance's own directory is only swept of
+--- leftover files, and a directory belonging to another *running* instance is left completely
+--- alone. Deleting those would destroy in-flight hook requests of a healthy concurrent session
+--- (see "Concurrent Execution Support" in architecture.md).
 function M.cleanup_stale_dirs()
-  local current_port = nil
-  local ok, rpc_server = pcall(require, "vibing.infrastructure.rpc.server")
-  if ok then
-    current_port = rpc_server.get_port()
-  end
+  local CommDir = require("vibing.infrastructure.rpc.comm_dir")
+  local current_dir = CommDir.path()
 
-  local current_dir_suffix = current_port and tostring(current_port) or nil
+  -- Sweep our own directory up front: $VIBING_HOOK_COMM_DIR can put it outside ROOT, where the
+  -- scan below would never reach it.
+  M._cleanup_files_in_dir(current_dir)
 
-  local handle = vim.loop.fs_scandir("/tmp")
+  local handle = vim.loop.fs_scandir(CommDir.ROOT)
   if not handle then
     return
   end
+
+  local prefix_pattern = "^" .. vim.pesc(CommDir.PREFIX)
+  local in_use
 
   while true do
     local name, type = vim.loop.fs_scandir_next(handle)
     if not name then
       break
     end
-    if type == "directory" and name:match("^vibing%-hook%-") then
-      local port_suffix = name:match("^vibing%-hook%-(.+)$")
-      if current_dir_suffix and port_suffix == current_dir_suffix then
-        M._cleanup_files_in_dir("/tmp/" .. name)
-      else
-        M._remove_dir_recursive("/tmp/" .. name)
+    if type == "directory" and name:match(prefix_pattern) then
+      local dir = CommDir.ROOT .. "/" .. name
+      if dir ~= current_dir then
+        -- Built on the first leftover found: with none (the usual startup) we skip the scan.
+        in_use = in_use or live_comm_dirs()
+        if not in_use[dir] then
+          M._remove_dir_recursive(dir)
+        end
       end
     end
   end
@@ -48,7 +76,9 @@ function M._cleanup_files_in_dir(dir)
     if not name then
       break
     end
-    if name:match("%.req$") or name:match("%.res$") or name:match("%.tmp$") then
+    -- .fail is written by stop-failure.sh and consumed by the rate_limit handler; if that
+    -- handler never ran (Neovim was already gone), the file would otherwise stay forever.
+    if name:match("%.req$") or name:match("%.res$") or name:match("%.tmp$") or name:match("%.fail$") then
       os.remove(dir .. "/" .. name)
     end
   end
