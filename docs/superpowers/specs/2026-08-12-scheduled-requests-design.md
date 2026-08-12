@@ -200,3 +200,45 @@ a scheduled one strictly improves the outcome, and the notification states how t
   this feature exists to remove.
 - **Fixed-interval retry instead of a reset timestamp.** Needs no time bookkeeping, but spends
   requests polling a limit whose reset time the CLI already reports.
+
+## Known gaps and follow-ups
+
+Recorded during implementation review. None blocks the feature; each has a concrete failure
+scenario and was judged shippable.
+
+- **The store race is narrowed, not closed.** Two Neovim instances open on the same project both
+  re-arm the same entry at startup. `fire_scheduled` bails when the entry is no longer `waiting`,
+  but both can read `waiting` before either writes `in_flight`. Closing it needs an atomic
+  claim in `pending_resume.lua`, not a read-modify-write.
+- **`_session_corrupted` bypasses `discard_scheduled`.** `_handle_response` returns early on a
+  Lua-side resume timeout, so an armed schedule survives a manual send that died that way. It
+  only bites if the user then types a new message and abandons it — that text is sent unattended
+  when the timer fires. The fix is hoisting `chat_file_path` above the early return.
+- **The rejected-turn path writes the body back but never saves.** Restart before any save and
+  `fire_scheduled` reads the disk copy: usually empty (dropped with a warning), but a file `:w`-ed
+  during an earlier turn still carries that earlier `<!-- unsent -->` body and would re-send an
+  already-answered message.
+- **`retry_count` is incremented at different points by the two callers.** The rejected-turn path
+  passes the post-increment count to `may_schedule`, `on_rate_limited` passes the pre-increment
+  one. Self-consistent, but it means `scheduled_requests.max_retries = 3` permits two
+  re-schedules; the docs state the real number.
+- **A scheduled body that is a slash command** executes locally, still reports "Sent…", and leaves
+  an `in_flight` row that `restore()` will never re-arm.
+- **Orphan `in_flight` rows** survive `:VibingCancel` and non-success outcomes. They never
+  double-send; `:VibingCancelResume` clears them.
+- **`vim.bo[buf].modified` as a save-success proxy** misreads an already-unmodified buffer whose
+  `:write` fails (externally deleted file, read-only mount) as success.
+
+### Pre-existing issues this work uncovered
+
+Unrelated to scheduled requests, but invisible until now and worth fixing separately:
+
+- `spawn_nvim_instance` omitted `--embed`, so every E2E `rpcrequest` hung forever and the three
+  older `tests/e2e/` specs had **never actually executed**. Fixed here (`e2e_helper.lua`), which
+  is why their failures are now visible.
+- Those three specs also never called `require("vibing").setup()`, so no `:Vibing*` command
+  existed in their child instances. `setup()` was added, but they still fail on one impossible
+  assertion repeated at five sites: `wait_for_buffer_content(inst, "%.md")` searches buffer
+  _text_ for a filename. Repairing it means their real assertions run for the first time, with
+  unknown results — and they use the repo root as cwd, so they will need a temp-dir cwd to avoid
+  writing real chat files during CI.
