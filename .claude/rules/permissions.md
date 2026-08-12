@@ -72,9 +72,26 @@ rules for destructive Bash commands, defined in
 
 ## Interactive Permission Builder
 
-`/permissions` (or `/perm`) launches a `vim.ui.select()`-driven UI: pick a tool, choose allow/deny,
-optionally specify a Bash command pattern, and the result is written to chat frontmatter — an
-alternative to hand-editing config or frontmatter.
+`/permissions` (or `/perm`) launches a `vim.ui.select()`-driven UI: pick a tool, choose
+allow/ask/deny, optionally narrow it with an argument, and the result is written to chat
+frontmatter — an alternative to hand-editing config or frontmatter. The allow/ask/deny step shows
+what is currently set for that tool, so you can see `Bash(git:*)` is already allowed before adding
+another entry.
+
+Which argument a tool takes follows `infrastructure/permissions/matchers.lua`, since that is what
+has to parse the result back:
+
+| Tool                         | Argument       | Example                |
+| ---------------------------- | -------------- | ---------------------- |
+| `Bash`                       | command prefix | `Bash(git:*)`          |
+| `Read` / `Write` / `Edit`    | path glob      | `Read(src/**)`         |
+| `WebFetch` / `WebSearch`     | domain         | `WebFetch(github.com)` |
+| `Glob` / `Grep`              | exact pattern  | `Glob(**/*.ts)`        |
+| `Skill` / `StructuredOutput` | none           | `Skill`                |
+
+The last row is deliberate. `matchers` classifies anything else as `unknown_pattern` and never
+matches it, so letting the picker build a `Skill(x)` would produce a rule that silently never
+fires.
 
 ## Tool Approval UI
 

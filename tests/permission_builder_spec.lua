@@ -22,16 +22,16 @@ describe("vibing.ui.permission_builder", function()
       assert.is_function(permission_builder._show_telescope)
     end)
 
-    it("should have show_bash_preset_picker function", function()
-      assert.is_function(permission_builder.show_bash_preset_picker)
+    it("should have show_pattern_picker function", function()
+      assert.is_function(permission_builder.show_pattern_picker)
     end)
 
-    it("should have _show_bash_native function", function()
-      assert.is_function(permission_builder._show_bash_native)
+    it("should have _show_pattern_native function", function()
+      assert.is_function(permission_builder._show_pattern_native)
     end)
 
-    it("should have _show_bash_telescope function", function()
-      assert.is_function(permission_builder._show_bash_telescope)
+    it("should have _show_pattern_telescope function", function()
+      assert.is_function(permission_builder._show_pattern_telescope)
     end)
 
     it("should have _prompt_custom_pattern function", function()
@@ -42,8 +42,8 @@ describe("vibing.ui.permission_builder", function()
       assert.is_function(permission_builder.prompt_permission_type)
     end)
 
-    it("should have handle_bash_pattern_selection function", function()
-      assert.is_function(permission_builder.handle_bash_pattern_selection)
+    it("should have handle_pattern_selection function", function()
+      assert.is_function(permission_builder.handle_pattern_selection)
     end)
 
     it("should have build_permission_string function", function()
@@ -114,6 +114,120 @@ describe("vibing.ui.permission_builder", function()
       assert.equals("Bash(npm:*)", permission_builder.build_permission_string("Bash", "npm"))
       assert.equals("Bash(docker:*)", permission_builder.build_permission_string("Bash", "docker"))
     end)
+
+    it("should build a path pattern without the Bash :* suffix", function()
+      assert.equals("Read(src/**)", permission_builder.build_permission_string("Read", "src/**"))
+      assert.equals("Write(.env)", permission_builder.build_permission_string("Write", ".env"))
+      assert.equals("Edit(tests/**)", permission_builder.build_permission_string("Edit", "tests/**"))
+    end)
+
+    it("should build a domain pattern", function()
+      assert.equals("WebFetch(github.com)", permission_builder.build_permission_string("WebFetch", "github.com"))
+      assert.equals(
+        "WebSearch(*.npmjs.com)",
+        permission_builder.build_permission_string("WebSearch", "*.npmjs.com")
+      )
+    end)
+
+    it("should build a literal pattern for Glob and Grep", function()
+      assert.equals("Glob(**/*.ts)", permission_builder.build_permission_string("Glob", "**/*.ts"))
+      assert.equals("Grep(TODO)", permission_builder.build_permission_string("Grep", "TODO"))
+    end)
+
+    it("should drop the pattern for tools matchers.lua cannot parse", function()
+      -- Skill(foo) parses as unknown_pattern and never matches, so never emit one.
+      assert.equals("Skill", permission_builder.build_permission_string("Skill", "foo"))
+      assert.equals("StructuredOutput", permission_builder.build_permission_string("StructuredOutput", "x"))
+    end)
+
+    it("should return the bare tool name for an empty pattern", function()
+      assert.equals("Bash", permission_builder.build_permission_string("Bash", ""))
+      assert.equals("Read", permission_builder.build_permission_string("Read", ""))
+    end)
+  end)
+
+  describe("ARG_KIND", function()
+    it("should map every tool that matchers.lua can parse an argument for", function()
+      local expected = {
+        Bash = "bash",
+        Read = "path",
+        Write = "path",
+        Edit = "path",
+        WebFetch = "domain",
+        WebSearch = "domain",
+        Glob = "literal",
+        Grep = "literal",
+      }
+      assert.same(expected, permission_builder.ARG_KIND)
+    end)
+  end)
+
+  describe("build_permission_type_choices", function()
+    it("should report no current setting when the lists are empty", function()
+      local choices = permission_builder.build_permission_type_choices("Bash", { allow = {}, ask = {}, deny = {} })
+
+      assert.equals(3, #choices)
+      for _, choice in ipairs(choices) do
+        assert.is_true(choice.description:find("現在: なし", 1, true) ~= nil)
+      end
+    end)
+
+    it("should show the entry that is already configured", function()
+      local choices = permission_builder.build_permission_type_choices("Read", {
+        allow = { "Read", "Write" },
+        ask = {},
+        deny = {},
+      })
+
+      assert.is_true(choices[1].description:find("現在: Read", 1, true) ~= nil)
+      assert.is_true(choices[2].description:find("現在: なし", 1, true) ~= nil)
+    end)
+
+    it("should match argument-carrying entries for the same tool", function()
+      local choices = permission_builder.build_permission_type_choices("Bash", {
+        allow = { "Bash(git:*)", "Bash(npm:*)", "Read" },
+        ask = {},
+        deny = {},
+      })
+
+      assert.is_true(choices[1].description:find("Bash(git:*), Bash(npm:*)", 1, true) ~= nil)
+      -- "Read" is a different tool and must not be counted here.
+      assert.is_nil(choices[1].description:find("Read", 1, true))
+    end)
+
+    it("should tolerate missing lists", function()
+      local choices = permission_builder.build_permission_type_choices("Bash", {})
+      assert.equals(3, #choices)
+    end)
+  end)
+
+  describe("path_presets and domain_presets", function()
+    it("should define path presets with the shared preset fields", function()
+      assert.is_true(#permission_builder.path_presets > 0)
+      for _, preset in ipairs(permission_builder.path_presets) do
+        assert.is_string(preset.pattern)
+        assert.is_string(preset.description)
+        assert.is_boolean(preset.danger)
+      end
+    end)
+
+    it("should flag the sensitive path presets as dangerous", function()
+      local danger = {}
+      for _, preset in ipairs(permission_builder.path_presets) do
+        danger[preset.pattern] = preset.danger
+      end
+      assert.is_true(danger[".env"])
+      assert.is_true(danger["*.secret"])
+      assert.is_false(danger["src/**"])
+    end)
+
+    it("should define domain presets", function()
+      local patterns = {}
+      for _, preset in ipairs(permission_builder.domain_presets) do
+        patterns[preset.pattern] = true
+      end
+      assert.is_true(patterns["github.com"])
+    end)
   end)
 
   describe("bash_presets", function()
@@ -143,19 +257,55 @@ describe("vibing.ui.permission_builder", function()
     end)
   end)
 
-  describe("handle_bash_pattern_selection", function()
-    it("should call callback with tool name for non-Bash tools", function()
+  describe("handle_pattern_selection", function()
+    it("should skip the pattern prompt for tools that cannot take an argument", function()
+      -- Skill has no ARG_KIND: matchers.lua would parse Skill(x) as unknown_pattern and never
+      -- match it, so the picker must not let one be built.
       local called_with = nil
-      local tool = {
-        name = "Read",
-        is_bash = false,
-      }
 
-      permission_builder.handle_bash_pattern_selection(tool, "allow", function(result)
+      permission_builder.handle_pattern_selection({ name = "Skill" }, "allow", function(result)
         called_with = result
       end)
 
-      assert.equals("Read", called_with)
+      assert.equals("Skill", called_with)
+    end)
+
+    it("should offer path presets for Read", function()
+      local seen_presets = nil
+      local original_show = permission_builder.show_pattern_picker
+      permission_builder.show_pattern_picker = function(presets, _title, _skip, callback)
+        seen_presets = presets
+        callback("src/**")
+      end
+
+      local result = nil
+      permission_builder.handle_pattern_selection({ name = "Read" }, "allow", function(permission_string)
+        result = permission_string
+      end)
+
+      assert.equals(permission_builder.path_presets, seen_presets)
+      assert.equals("Read(src/**)", result)
+
+      permission_builder.show_pattern_picker = original_show
+    end)
+
+    it("should offer domain presets for WebFetch", function()
+      local seen_presets = nil
+      local original_show = permission_builder.show_pattern_picker
+      permission_builder.show_pattern_picker = function(presets, _title, _skip, callback)
+        seen_presets = presets
+        callback("github.com")
+      end
+
+      local result = nil
+      permission_builder.handle_pattern_selection({ name = "WebFetch" }, "allow", function(permission_string)
+        result = permission_string
+      end)
+
+      assert.equals(permission_builder.domain_presets, seen_presets)
+      assert.equals("WebFetch(github.com)", result)
+
+      permission_builder.show_pattern_picker = original_show
     end)
 
     it("should prompt for pattern when tool is Bash", function()
@@ -165,14 +315,14 @@ describe("vibing.ui.permission_builder", function()
       }
 
       local picker_shown = false
-      local original_show = permission_builder.show_bash_preset_picker
-      permission_builder.show_bash_preset_picker = function(callback)
+      local original_show = permission_builder.show_pattern_picker
+      permission_builder.show_pattern_picker = function(_presets, _title, _skip, callback)
         picker_shown = true
         callback("git") -- Simulate user selecting "git"
       end
 
       local result = nil
-      permission_builder.handle_bash_pattern_selection(tool, "allow", function(permission_string)
+      permission_builder.handle_pattern_selection(tool, "allow", function(permission_string)
         result = permission_string
       end)
 
@@ -180,7 +330,7 @@ describe("vibing.ui.permission_builder", function()
       assert.equals("Bash(git:*)", result)
 
       -- Restore
-      permission_builder.show_bash_preset_picker = original_show
+      permission_builder.show_pattern_picker = original_show
     end)
   end)
 end)
@@ -199,6 +349,10 @@ describe("vibing.application.chat.handlers.permissions", function()
       buf = 1,
       update_frontmatter_list = function(self, key, value, action)
         return true
+      end,
+      -- The builder reads these back so the allow/ask/deny prompt can show what is already set.
+      get_frontmatter_list = function(self, key)
+        return {}
       end,
     }
 
