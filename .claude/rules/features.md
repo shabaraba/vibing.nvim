@@ -22,6 +22,29 @@ timestamp. Concurrently parked chats all fire at once by design. See `docs/confi
 `infrastructure/storage/pending_resume.lua` (persistence),
 `infrastructure/rpc/handlers/rate_limit.lua` (StopFailure receiver), `bin/hooks/stop-failure.sh`.
 
+## Subagent Output Visibility
+
+The Claude CLI hides everything a subagent says unless it is launched with
+`--forward-subagent-text`; without the flag a `Task`/`Agent` call shows only its header and final
+result. `agent.subagent.enabled` (default `false`) opts in, and
+`modules/subagent_display.lua` renders the forwarded text under the tool header behind a `│` rail
+(`show_prefix` adds a `[<subagent_type>]` label per line).
+
+The shape of the stream is what makes this simple, and was verified against the CLI rather than
+assumed: subagent contributions arrive as **complete `assistant`/`user` events with a top-level
+`parent_tool_use_id`**, never as `stream_event` deltas. So the parent's own streaming text is
+untouched, and `cli_event_processor.lua` can buffer per `tool_use_id` in `context._subagent_text`
+and flush at `emit_tool_result` — which is what keeps parallel subagents from interleaving.
+
+**The trap:** top-level events carry `"parent_tool_use_id": null`, which `vim.json.decode` turns
+into `vim.NIL` — truthy in Lua. Testing the field directly routes every ordinary assistant message
+into the subagent buffer and silently stops all tool results from rendering. Go through the
+`parent_tool_use_id(msg)` helper, which requires a non-empty string.
+
+Only the subagent's assistant text is surfaced; the prompt echo, thinking blocks, and its nested
+tool results stay hidden. `tests/fixtures/subagent_stream.jsonl` is a real captured stream used to
+replay the whole path in `cli_event_processor_subagent_spec.lua`.
+
 ## Message Timestamps
 
 Chat messages include timestamps in their headers (`## 2025-12-28 14:30:00 User`) for chronology

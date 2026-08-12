@@ -447,4 +447,29 @@ describe("cli_command_builder", function()
       assert.equals("user,project,local", cmd[idx + 1])
     end)
   end)
+
+  describe("--forward-subagent-text", function()
+    it("is omitted by default", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      assert.is_nil(find_flag(cmd, "--forward-subagent-text"))
+    end)
+
+    it("is emitted when agent.subagent.enabled is true", function()
+      local config = { agent = { subagent = { enabled = true } } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      assert.is_not_nil(find_flag(cmd, "--forward-subagent-text"))
+    end)
+
+    it("is omitted when agent.subagent.enabled is false", function()
+      local config = { agent = { subagent = { enabled = false, show_prefix = true } } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      assert.is_nil(find_flag(cmd, "--forward-subagent-text"))
+    end)
+
+    it("is omitted for lightweight calls, which have no tools to delegate with", function()
+      local config = { agent = { subagent = { enabled = true } } }
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, config, nil)
+      assert.is_nil(find_flag(cmd, "--forward-subagent-text"))
+    end)
+  end)
 end)

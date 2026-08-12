@@ -209,6 +209,13 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
       table.insert(cmd, "--settings")
       table.insert(cmd, settings_path)
     end
+
+    -- Without this the CLI swallows everything a subagent says and only its final tool_result
+    -- surfaces. Opt-in because it makes long delegated turns much noisier.
+    local subagent = config.agent and config.agent.subagent
+    if subagent and subagent.enabled then
+      table.insert(cmd, "--forward-subagent-text")
+    end
   end
 
   -- System prompt additions (worktree convention + chat file path + optional language). This
