@@ -7,6 +7,7 @@ import { instanceTools } from './instances.js';
 import { chatTools } from './chat.js';
 import { highlightTools } from './highlight.js';
 import { annotationTools } from './annotations.js';
+import { qflistTools } from './qflist.js';
 
 export const allTools = [
   ...bufferTools,
@@ -18,4 +19,5 @@ export const allTools = [
   ...chatTools,
   ...highlightTools,
   ...annotationTools,
+  ...qflistTools,
 ];

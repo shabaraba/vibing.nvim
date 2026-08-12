@@ -45,6 +45,30 @@ Only the subagent's assistant text is surfaced; the prompt echo, thinking blocks
 tool results stay hidden. `tests/fixtures/subagent_stream.jsonl` is a real captured stream used to
 replay the whole path in `cli_event_processor_subagent_spec.lua`.
 
+## Code Tour
+
+`skills/vibing-code-tour/SKILL.md` turns "explain how X works" into a walkthrough the editor
+performs: each stop is a real file opened at a real line (`nvim_win_open_file` +
+`nvim_set_cursor`), and the whole route is left in the quickfix list so the user can replay it
+with `:cnext`/`:cprev` afterwards.
+
+The quickfix half is the MCP tool `nvim_set_qflist` (`mcp-server/src/tools/qflist.ts` →
+`infrastructure/rpc/handlers/qflist.lua`). It always pushes a **new** list
+(`vim.fn.setqflist({}, " ", ...)`), so whatever the user had in quickfix stays reachable under
+`:colder` — which is also why the skill must call it exactly once per tour, or `:cnext` walks a
+different list than the one being narrated. `open: true` opens the quickfix window but restores
+focus, matching `win_open_file`. `col` is 1-based here (native quickfix), unlike the 0-based `col`
+everywhere else in this tool surface.
+
+A stop naming a file that does not exist rejects the whole call: the tool result does reach the
+model, so a hard error is actionable, while a silently shortened tour is not. That existence check
+is Lua-side, not in the MCP server, because relative paths resolve against the target instance's
+cwd — often a worktree the server process knows nothing about.
+
+The pacing question in the skill inherits AskUserQuestion's turn-killing behavior (below), so the
+skill is instructed to write the tour's position and remaining stops into its chat message before
+every ask — the transcript is the only place that state survives.
+
 ## Message Timestamps
 
 Chat messages include timestamps in their headers (`## 2025-12-28 14:30:00 User`) for chronology

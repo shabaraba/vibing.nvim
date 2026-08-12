@@ -7,6 +7,7 @@ import * as instances from './instances.js';
 import * as chat from './chat.js';
 import * as highlight from './highlight.js';
 import * as annotations from './annotations.js';
+import * as qflist from './qflist.js';
 
 export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Buffer operations
@@ -58,4 +59,6 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Annotations
   nvim_annotate: annotations.handleAnnotate,
   nvim_clear_annotations: annotations.handleClearAnnotations,
+  // Quickfix
+  nvim_set_qflist: qflist.handleSetQflist,
 };

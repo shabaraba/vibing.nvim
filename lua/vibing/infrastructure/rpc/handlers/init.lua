@@ -11,6 +11,7 @@ local annotations = require("vibing.infrastructure.rpc.handlers.annotations")
 local message = require("vibing.infrastructure.rpc.handlers.message")
 local permission = require("vibing.infrastructure.rpc.handlers.permission")
 local rate_limit = require("vibing.infrastructure.rpc.handlers.rate_limit")
+local qflist = require("vibing.infrastructure.rpc.handlers.qflist")
 
 -- Export all handlers
 M.buf_get_lines = buffer.buf_get_lines
@@ -56,5 +57,7 @@ M.check_tool_permission = permission.check_tool_permission
 M.ask_user_question = permission.ask_user_question
 
 M.stop_failure = rate_limit.stop_failure
+
+M.set_qflist = qflist.set_qflist
 
 return M

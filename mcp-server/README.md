@@ -279,6 +279,17 @@ The MCP server exposes the following tools to Claude:
   - `col` (required): Column number (0-indexed)
   - Returns: `{ calls: [{ to, fromRanges }] }`
 
+### Quickfix
+
+- **nvim_set_qflist** - Push a route of file:line stops as a NEW quickfix list
+  - `items` (required): `[{ filename, lnum, col?, text? }]` in visiting order. `lnum`/`col` are
+    1-based here, matching native quickfix — not the 0-based `col` the cursor and LSP tools use
+  - `title` (optional): quickfix list title (default `"vibing.nvim"`)
+  - `open` (optional): also open the quickfix window, without moving focus
+  - Returns: `{ success, count, title, qf_winnr? }`
+  - The previous quickfix list is never overwritten — it stays reachable with `:colder`. Any
+    invalid or nonexistent stop rejects the whole call rather than being dropped
+
 ## Usage Examples
 
 ### From Claude Code
@@ -299,6 +310,16 @@ await use_mcp_tool('vibing-nvim', 'nvim_execute', {
 
 // List all buffers
 const buffers = await use_mcp_tool('vibing-nvim', 'nvim_list_buffers', {});
+
+// Leave a code tour route in quickfix for the user to replay with :cnext
+await use_mcp_tool('vibing-nvim', 'nvim_set_qflist', {
+  title: 'Code tour: request handling',
+  open: true,
+  items: [
+    { filename: 'src/server.ts', lnum: 42, text: 'request enters here' },
+    { filename: 'src/router.ts', lnum: 17, text: 'dispatched by path' },
+  ],
+});
 
 // List all windows
 const windows = await use_mcp_tool('vibing-nvim', 'nvim_list_windows', {});
