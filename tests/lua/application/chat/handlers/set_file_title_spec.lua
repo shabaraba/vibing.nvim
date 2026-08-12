@@ -67,10 +67,9 @@ describe("set_file_title handler - streaming guard", function()
   it("resolves the per-chat agent adapter (codex chat -> codex adapter)", function()
     require("vibing").setup({})
 
-    local passed_session_id, passed_adapter
+    local passed_adapter
     local original_generate = require("vibing.core.utils.title_generator").generate_from_conversation
-    require("vibing.core.utils.title_generator").generate_from_conversation = function(_, _, session_id, adapter)
-      passed_session_id = session_id
+    require("vibing.core.utils.title_generator").generate_from_conversation = function(_, _, adapter)
       passed_adapter = adapter
     end
 
@@ -93,9 +92,9 @@ describe("set_file_title handler - streaming guard", function()
 
     handler({}, chat_buffer)
 
-    -- The codex chat's session_id must be routed to the codex adapter, not the
-    -- global default (claude), otherwise --resume fails with "no such session".
-    assert.equals("codex-session-123", passed_session_id)
+    -- The lightweight title call must run on the per-chat agent's adapter (codex),
+    -- not the global default (claude). Title generation does not resume, so no
+    -- session_id is threaded through.
     assert.is_not_nil(passed_adapter)
     assert.equals("codex_cli", passed_adapter.name)
 
