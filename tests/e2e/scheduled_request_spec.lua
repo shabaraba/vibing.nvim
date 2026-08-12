@@ -142,10 +142,14 @@ describe("E2E: Scheduled requests", function()
     assert.equals("waiting", entry.state)
     assert.equals(chat_file_path, path)
 
-    -- The header keeps its unsent marker: commit_user_message was never reached.
+    -- The header keeps its unsent marker: commit_user_message was never reached. The marker is
+    -- anchored to the body so that "park it, but stamp the header anyway and append a fresh
+    -- unsent section below" would fail here rather than pass on the appended header.
     local content = exec_lua(nvim_instance, "return table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '\\n')")
-    assert.is_truthy(content:match("## User <!%-%- unsent %-%->"), "The user section should still be unsent")
-    assert.is_truthy(content:match("please do the thing"), "The message body should still be in the buffer")
+    assert.is_truthy(
+      content:match("## User <!%-%- unsent %-%->\nplease do the thing"),
+      "The parked message should still sit under an unsent User header, got:\n" .. content
+    )
     assert.is_nil(content:match("## Assistant"), "Nothing should have been sent")
   end)
 
@@ -161,8 +165,12 @@ describe("E2E: Scheduled requests", function()
 
     assert.is_nil(first_pending(tmp), "The entry should be gone")
     local content = exec_lua(nvim_instance, "return table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '\\n')")
-    assert.is_truthy(content:match("not yet please"), "Cancelling must not delete what the user wrote")
-    assert.is_truthy(content:match("## User <!%-%- unsent %-%->"), "The message should still be unsent, ready to send")
+    -- Anchored for the same reason as the parking scenario: the message has to still be the
+    -- unsent one, not a stamped send with an empty unsent section appended after it.
+    assert.is_truthy(
+      content:match("## User <!%-%- unsent %-%->\nnot yet please"),
+      "Cancelling must leave the message unsent and ready to send, got:\n" .. content
+    )
   end)
 
   it("sends the parked message when the scheduled time arrives", function()
