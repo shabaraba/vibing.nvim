@@ -242,10 +242,8 @@ M.defaults = {
     window = {
       position = "current",
       width = 0.4,
-      -- heightは意図的に未設定。位置ごとに既定値が違う（分割は0.4、floatは0.8）ので、
-      -- ここで値を埋めると「ユーザーが指定したのか既定値なのか」が区別できなくなり、
-      -- floatが常に分割用の既定値で描画されてしまう。window_manager側の
-      -- DEFAULT_HEIGHT_RATIO / DEFAULT_FLOAT_HEIGHT_RATIO が既定値の正。
+      -- heightは意図的に未設定。既定値がpositionごとに違うのでwindow_manager側で解決する
+      -- （docs/configuration.md の chat.window.height 参照）
       border = "rounded",
     },
     auto_context = true,

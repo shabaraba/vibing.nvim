@@ -36,7 +36,6 @@ require("vibing").setup({
     window = {
       position = "current",
       width = 0.4,
-      -- height is intentionally unset; see below
       border = "rounded",
     },
     save_location_type = "project",
