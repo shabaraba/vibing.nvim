@@ -322,4 +322,62 @@ describe("auto_resume", function()
       assert.is_nil(PendingResume.get(chat_path))
     end)
   end)
+
+  describe("_scheduled_decision", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+
+    it("sends when a body is waiting and the chat is idle", function()
+      assert.equals("send", AutoResume._scheduled_decision("do the thing", false))
+    end)
+
+    it("drops when the chat is already sending", function()
+      local action = AutoResume._scheduled_decision("do the thing", true)
+      assert.equals("drop", action)
+    end)
+
+    it("drops when the body was deleted while the chat was parked", function()
+      -- The body lives in the buffer, so the user can remove it. Sending an empty message, or
+      -- the generic continuation prompt, would both be wrong.
+      local action, reason = AutoResume._scheduled_decision(nil, false)
+      assert.equals("drop", action)
+      assert.is_string(reason)
+    end)
+
+    it("drops when the body is only whitespace", function()
+      assert.equals("drop", AutoResume._scheduled_decision("   \n  ", false))
+    end)
+  end)
+
+  describe("fire() dispatch ordering (source pin)", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+
+    -- fire() is a module-local function that needs a live chat buffer and a libuv timer to
+    -- exercise end-to-end, so it cannot be called directly from this spec. What matters for the
+    -- defect the review flagged is purely structural: a "scheduled" entry must be dispatched to
+    -- fire_scheduled() before fire() ever reaches the auto_resume `opts.enabled` gate or the
+    -- `max_retries` gate, since restore() deliberately re-arms "scheduled" entries even when
+    -- auto-resume is disabled (see the "_is_restorable" tests above). This test pins that source
+    -- ordering directly so a future edit that moves the dispatch below either gate fails loudly.
+    it("dispatches scheduled entries ahead of the enabled and max_retries gates", function()
+      local info = debug.getinfo(AutoResume.schedule_request, "S")
+      local source_path = info.source:gsub("^@", "")
+      local lines = vim.fn.readfile(source_path)
+      local text = table.concat(lines, "\n")
+
+      local fire_pos = text:find("local function fire(", 1, true)
+      assert.is_not_nil(fire_pos, "could not locate fire() in auto_resume.lua")
+
+      local dispatch_pos =
+        text:find('if (entry.kind or "auto_resume") == "scheduled" then', fire_pos, true)
+      local enabled_pos = text:find("if not opts.enabled then", fire_pos, true)
+      local max_retries_pos =
+        text:find("(current.retry_count or 0) >= (opts.max_retries or 1)", fire_pos, true)
+
+      assert.is_not_nil(dispatch_pos, "scheduled dispatch not found in fire()")
+      assert.is_not_nil(enabled_pos, "opts.enabled gate not found in fire()")
+      assert.is_not_nil(max_retries_pos, "max_retries gate not found in fire()")
+      assert.is_true(dispatch_pos < enabled_pos, "dispatch must precede the opts.enabled gate")
+      assert.is_true(dispatch_pos < max_retries_pos, "dispatch must precede the max_retries gate")
+    end)
+  end)
 end)

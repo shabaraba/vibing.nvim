@@ -131,11 +131,81 @@ local function trim_empty_trailing_user_section(bufnr)
   vim.api.nvim_buf_set_lines(bufnr, header_idx - 1, -1, false, {})
 end
 
+--- Whether a due scheduled request should actually go out.
+--- Split from fire_scheduled so the rules are testable without a live chat buffer.
+--- @param body string|nil The chat's unsent `## User` body
+--- @param is_sending boolean
+--- @return "send"|"drop" action, string|nil reason
+local function scheduled_decision(body, is_sending)
+  if is_sending then
+    return "drop", "the chat is already sending a request"
+  end
+  if not body or vim.trim(body) == "" then
+    return "drop", "the scheduled message is empty"
+  end
+  return "send"
+end
+
+M._scheduled_decision = scheduled_decision
+
+--- Send a chat's own parked `## User` body.
+--- Unlike the auto_resume path this deliberately does NOT consult `enabled`: the user armed this
+--- request explicitly (or accepted the swap at <CR> time), and a flag governing unattended token
+--- spend should not silently discard it.
+--- @param chat_file_path string
+local function fire_scheduled(chat_file_path)
+  local current = PendingResume.get(chat_file_path)
+  if not current then
+    return
+  end
+
+  local name = vim.fn.fnamemodify(chat_file_path, ":t")
+
+  local chat_buf, err = resolve_chat_buffer(chat_file_path)
+  if not chat_buf then
+    PendingResume.remove(chat_file_path)
+    vim.notify(string.format("[vibing] Scheduled request skipped for %s: %s", name, err), vim.log.levels.WARN)
+    return
+  end
+
+  local action, reason = scheduled_decision(chat_buf:extract_user_message(), chat_buf:is_sending())
+  if action == "drop" then
+    PendingResume.remove(chat_file_path)
+    vim.notify(string.format("[vibing] Scheduled request skipped for %s: %s", name, reason), vim.log.levels.WARN)
+    return
+  end
+
+  -- Mark in flight before sending, for the same reason the auto_resume path does: a crash
+  -- between here and the response must not let restore() send it a second time.
+  current.state = "in_flight"
+  PendingResume.put(current)
+
+  -- Deliberately not ProgrammaticSender.send: it appends a *new* user section, and the body is
+  -- already sitting in the unsent one this request exists to deliver.
+  local ok, send_err = pcall(function()
+    chat_buf:send_message()
+  end)
+  if not ok then
+    PendingResume.remove(chat_file_path)
+    vim.notify("[vibing] Scheduled request failed: " .. tostring(send_err), vim.log.levels.WARN)
+    return
+  end
+
+  vim.notify(string.format("[vibing] Sent the request scheduled for %s", name), vim.log.levels.INFO)
+end
+
 --- Send the continuation message for a parked chat.
 --- @param chat_file_path string
 --- @param entry Vibing.PendingResume
 local function fire(chat_file_path, entry)
   stop_timer(chat_file_path)
+
+  -- Scheduled entries carry their own delivery rules (own body, no enabled/max_retries gate) and
+  -- must never reach the auto_resume gates below: restore() re-arms them even when auto-resume is
+  -- disabled, so routing through opts.enabled or max_retries here would silently drop them.
+  if (entry.kind or "auto_resume") == "scheduled" then
+    return fire_scheduled(chat_file_path)
+  end
 
   local opts = get_options()
   if not opts.enabled then
