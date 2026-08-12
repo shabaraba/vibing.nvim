@@ -377,9 +377,8 @@ describe("vibing.init", function()
           vim.fn.delete(scratch_path)
         end
         pcall(vim.api.nvim_buf_delete, unwritable_bufnr, { force = true })
-        if unwritable_dir then
-          vim.fn.delete(unwritable_dir, "rf")
-        end
+        -- unwritable_dir is never created on disk (that's the point: `:write` must fail because
+        -- its "does-not-exist" child never exists), so there is nothing under it to delete here.
       end)
 
       --- @param bufnr number

@@ -74,21 +74,30 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
     return instance, chat_path
   end
 
-  --- Build a ChatBuffer around a real, non-scratch buffer named under a directory that does not
-  --- exist, so `:write` deterministically fails (E212) and `vim.bo[bufnr].modified` stays true
-  --- afterward — the same signal the helper under test checks. Kept separate from make_buffer()
-  --- (whose path is always writable) so the happy-path tests are unaffected.
+  --- Build a ChatBuffer whose `:write` deterministically fails, WITHOUT changing its directory
+  --- from tmp_root. This matters: the helper looks up the active limit via
+  --- `LimitState.get_active(fnamemodify(chat_file_path, ":h"))`, and every test in this file
+  --- records the limit under `tmp_root`. An earlier version of this fixture pointed the buffer at
+  --- `tmp_root .. "/no-such-subdir/chat.md"` to force a write failure, which silently broke that
+  --- lookup (dirname became `tmp_root/no-such-subdir`, a different, empty store) — the helper then
+  --- returned false at the earlier "no active limit" guard, never reaching the save/arm code the
+  --- test claimed to cover. Pre-creating the target path itself as a directory reproduces a real
+  --- `:write` failure (can't write a file where a directory already exists) while keeping the
+  --- buffer's dirname exactly `tmp_root`, so the lookup still lines up.
   --- @param message string
   --- @return table chat_buffer, string chat_path
   local function make_unwritable_buffer(message)
+    local chat_path = tmp_root .. "/chat.md"
+    vim.fn.mkdir(chat_path, "p")
+
     local bufnr = vim.api.nvim_create_buf(false, false)
     table.insert(created_bufs, bufnr)
-    vim.api.nvim_buf_set_name(bufnr, tmp_root .. "/no-such-subdir/chat.md")
+    vim.api.nvim_buf_set_name(bufnr, chat_path)
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
       "## User <!-- unsent -->",
       message,
     })
-    local chat_path = vim.api.nvim_buf_get_name(bufnr)
+    chat_path = vim.api.nvim_buf_get_name(bufnr)
     table.insert(created_chat_paths, chat_path)
     local instance = setmetatable({ buf = bufnr, _pending_approval = nil }, ChatBuffer)
     return instance, chat_path
@@ -168,13 +177,58 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
     local chat_buf, chat_path = make_unwritable_buffer("hello there")
     LimitState.record({ resets_at = os.time() + 3600, limit_type = "five_hour" }, tmp_root)
 
+    -- Sanity check on the fixture itself: this must be truthy, or the assertions below would
+    -- pass for the wrong reason (the earlier "no active limit" guard) instead of proving the
+    -- save-failure guard was reached. This is exactly the mismatch that made the previous version
+    -- of this test vacuous.
+    assert.is_not_nil(LimitState.get_active(vim.fn.fnamemodify(chat_path, ":h")))
+
+    -- Track whether AutoResume.schedule_request is invoked at all, without fully replacing the
+    -- module (other tests in this file rely on the real one). If the save-failure guard were
+    -- ever skipped or moved after the arm call, this would flip true.
+    local schedule_request_called = false
+    local original_schedule_request = AutoResume.schedule_request
+    AutoResume.schedule_request = function(...)
+      schedule_request_called = true
+      return original_schedule_request(...)
+    end
+
+    -- The save-failure branch is the only silent-guard exit that also calls vim.notify (the
+    -- earlier guards - disabled config, slash command, approval response, no active limit - all
+    -- return false without notifying anything). Capturing the message is therefore a second,
+    -- independent signal that this specific guard fired, not an earlier one.
+    local notified = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg)
+      table.insert(notified, msg)
+    end
+
     local scheduled = chat_buf:_try_schedule_instead_of_send("hello there")
 
+    vim.notify = original_notify
+    AutoResume.schedule_request = original_schedule_request
+
     assert.is_false(scheduled)
+    assert.is_false(
+      schedule_request_called,
+      "AutoResume.schedule_request must not be called when the save failed"
+    )
     assert.is_nil(PendingResume.get(chat_path))
     -- The failed `:write` left the buffer's unsaved-changes flag set; a passing save would have
     -- cleared it. This is the same signal the helper itself checks before arming.
     assert.is_true(vim.bo[chat_buf.buf].modified)
+
+    local found_save_warning = false
+    for _, msg in ipairs(notified) do
+      if msg:match("[Cc]ould not save") then
+        found_save_warning = true
+        break
+      end
+    end
+    assert.is_true(
+      found_save_warning,
+      "expected a 'could not save' warning naming the reason; got: " .. vim.inspect(notified)
+    )
   end)
 
   describe("send_message() ordering", function()
