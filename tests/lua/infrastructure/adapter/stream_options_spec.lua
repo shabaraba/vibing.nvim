@@ -120,6 +120,20 @@ for _, backend in ipairs(helper.adapters()) do
         assert.is_not_nil(result.done_responses[1].error)
         assert.equals(0, #system.calls, "no process should be spawned when the CLI is missing")
       end)
+
+      it("strips the Lua file:line prefix so the chat shows a message, not a stack location", function()
+        system.restore()
+        system = helper.stub_system("")
+        helper.reset_path_caches()
+
+        local result = helper.run_stream(adapter)
+        vim.wait(200, function()
+          return #result.done_responses > 0
+        end)
+
+        local message = result.done_responses[1].error
+        assert.is_nil(message:find("%.lua:%d+:"), "internal path leaked into the error: " .. message)
+      end)
     end)
   end)
 end

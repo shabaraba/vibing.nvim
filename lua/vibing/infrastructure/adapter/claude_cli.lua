@@ -111,7 +111,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   -- actionable message. Matches copilot_cli.lua.
   local build_ok, cmd = pcall(CLICommandBuilder.build, prompt, opts, session_id, self.config, settings_path, rpc_port)
   if not build_ok then
-    local message = type(cmd) == "string" and cmd:gsub("^.*:%%d+:%%s*", "") or tostring(cmd)
+    local message = type(cmd) == "string" and cmd:gsub("^.*:%d+:%s*", "") or tostring(cmd)
     vim.schedule(function()
       on_done({ content = "", error = message, _handle_id = handle_id })
     end)
