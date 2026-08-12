@@ -39,32 +39,6 @@ for _, tool in ipairs(M.ALWAYS_ALLOWED_TOOLS) do
   M.ALWAYS_ALLOWED_TOOLS_MAP[tool] = true
 end
 
----lightweightなユーティリティ呼び出し（タイトル生成・要約等）で明示的に拒否するClaude Code CLIの
----組み込みツール名一覧。`--allowedTools ""`だけでは実際のツール実行をブロックできないことを
----実機検証で確認したため、`--disallowedTools`で個別に拒否する。新しいツールがCLIに追加された場合は
----このリストも追従して更新する必要がある。
----@type string[]
-M.LIGHTWEIGHT_DISALLOWED_TOOLS = {
-  "Task",
-  "Bash",
-  "BashOutput",
-  "KillShell",
-  "Edit",
-  "MultiEdit",
-  "Write",
-  "Read",
-  "Glob",
-  "Grep",
-  "WebFetch",
-  "WebSearch",
-  "NotebookEdit",
-  "TodoWrite",
-  "SlashCommand",
-  "ExitPlanMode",
-  "AskUserQuestion",
-  "Skill",
-}
-
 ---ツール名が有効かチェックし、正規化された名前を返す
 ---@param tool string チェックするツール名
 ---@return string|nil 有効な場合は正規化されたツール名

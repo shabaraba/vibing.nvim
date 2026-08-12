@@ -178,19 +178,24 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
   end
 
   if opts.lightweight then
-    -- Lightweight calls need no tools: skip permission args/hooks entirely. An empty
-    -- --allowedTools alone does NOT reliably block tool execution (verified against the CLI:
-    -- with no --permission-mode, or with --permission-mode dontAsk, the model can still invoke
-    -- Bash/Write despite an empty allow list). --permission-mode plan does hard-block tool use,
-    -- but it was also verified to leak plan-mode meta-commentary ("this isn't a planning
-    -- task...") into otherwise plain text-generation output, corrupting title/summary content
-    -- even with an explicit system-prompt instruction to suppress it — unacceptable for this
-    -- use case. --disallowedTools naming the known built-in tools is the real defense instead:
-    -- verified to reliably block Bash/Write with zero content pollution across repeated runs.
-    table.insert(cmd, "--allowedTools")
+    -- Lightweight calls need no tools: skip permission args/hooks entirely and empty out the
+    -- CLI's built-in tool set. --tools "" removes the tools rather than gating them, which is
+    -- why it works where the alternatives don't: an empty --allowedTools alone does NOT block
+    -- execution (verified — with no --permission-mode, or with --permission-mode dontAsk, the
+    -- model still invokes Bash/Write despite an empty allow list), and --permission-mode plan
+    -- does hard-block but leaks plan-mode meta-commentary ("this isn't a planning task...")
+    -- into plain text-generation output, corrupting title/summary content.
+    --
+    -- This replaces an earlier --disallowedTools enumeration of the known built-in tools. That
+    -- worked, but a denylist has to be updated every time the CLI grows a tool, and it had
+    -- already drifted (Agent/TaskCreate were never listed) — see #488. --tools names nothing,
+    -- so it cannot drift. Verified against the CLI directly: with --tools "" plus the empty
+    -- MCP config below, prompts explicitly ordering Write/Bash produce no file at all.
+    --
+    -- No version probe: on a claude CLI predating --tools the process just fails, and the three
+    -- callers already surface that as response.error — a failed title/summary, not a broken chat.
+    table.insert(cmd, "--tools")
     table.insert(cmd, "")
-    table.insert(cmd, "--disallowedTools")
-    table.insert(cmd, table.concat(tools_constants.LIGHTWEIGHT_DISALLOWED_TOOLS, ","))
   else
     add_permission_args(cmd, opts)
 
