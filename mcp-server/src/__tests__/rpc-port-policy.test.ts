@@ -7,57 +7,70 @@ import { allTools } from '../tools/index.js';
  * scope, so every Claude Code session on the machine sees these tools — including sessions with
  * nothing to do with vibing.nvim, which have no port to pass. See requireRpcPort in
  * tools/common.ts.
+ *
+ * The list below is the *reads*, not the writes, so the rule fails closed: a tool nobody
+ * classified is treated as state-changing and must require the port. Listing the writes instead
+ * meant every new state-changing tool broke this test on arrival even though it was correct —
+ * which is exactly what happened when nvim_highlight_range landed.
  */
-const WRITE_TOOLS = [
-  'nvim_set_buffer',
-  'nvim_load_buffer',
-  'nvim_set_cursor',
-  'nvim_execute',
-  'nvim_set_window_size',
-  'nvim_focus_window',
-  'nvim_win_set_buf',
-  'nvim_win_open_file',
-  'nvim_chat_send_message',
-  'nvim_ask_user_question',
+const READ_ONLY_TOOLS = [
+  'nvim_diagnostics',
+  'nvim_get_buffer',
+  'nvim_get_cursor',
+  'nvim_get_info',
+  'nvim_get_visual_selection',
+  'nvim_get_window_info',
+  'nvim_get_window_view',
+  'nvim_list_buffers',
+  'nvim_list_tabpages',
+  'nvim_list_windows',
+  'nvim_lsp_call_hierarchy_incoming',
+  'nvim_lsp_call_hierarchy_outgoing',
+  'nvim_lsp_definition',
+  'nvim_lsp_document_symbols',
+  'nvim_lsp_hover',
+  'nvim_lsp_references',
+  'nvim_lsp_type_definition',
 ];
 
-const schemaOf = (name: string) =>
-  allTools.find((t) => t.name === name)?.inputSchema as
-    { required?: string[]; properties?: Record<string, unknown> } | undefined;
+/**
+ * Reading the registry is how you find out which ports exist, so this one cannot take a port at
+ * all — it is neither a read that may omit it nor a write that must supply it.
+ */
+const PORTLESS_TOOLS = ['nvim_list_instances'];
+
+const requiredOf = (tool: { inputSchema: unknown }) =>
+  (tool.inputSchema as { required?: string[] })?.required ?? [];
+
+const acceptsRpcPort = (tool: { inputSchema: unknown }) =>
+  Boolean((tool.inputSchema as { properties?: Record<string, unknown> })?.properties?.rpc_port);
 
 describe('rpc_port policy', () => {
-  it('requires rpc_port on every state-changing tool', () => {
-    for (const name of WRITE_TOOLS) {
-      const schema = schemaOf(name);
-      expect(schema, `${name} is not registered`).toBeDefined();
-      expect(schema?.required ?? [], `${name} must require rpc_port`).toContain('rpc_port');
-    }
-  });
-
-  it('leaves rpc_port optional on every other tool that accepts it', () => {
-    const readOnly = allTools
-      .filter((t) => !WRITE_TOOLS.includes(t.name))
-      .filter(
-        (t) => (t.inputSchema as { properties?: Record<string, unknown> })?.properties?.rpc_port
-      );
-
-    expect(readOnly.length).toBeGreaterThan(0);
-    for (const tool of readOnly) {
-      const required = (tool.inputSchema as { required?: string[] })?.required ?? [];
-      expect(required, `${tool.name} should not require rpc_port`).not.toContain('rpc_port');
-    }
-  });
-
-  it('covers every registered tool by one rule or the other', () => {
-    // Guards against a new tool being added without deciding which side it falls on.
-    const undecided = allTools.filter(
-      (t) =>
-        !WRITE_TOOLS.includes(t.name) &&
-        !(t.inputSchema as { properties?: Record<string, unknown> })?.properties?.rpc_port
+  it('requires rpc_port on every tool that is not a known read', () => {
+    const writes = allTools.filter(
+      (t) => !READ_ONLY_TOOLS.includes(t.name) && !PORTLESS_TOOLS.includes(t.name)
     );
 
-    // nvim_list_instances is the one tool that legitimately takes no port: reading the registry
-    // is how you find out which ports exist in the first place.
-    expect(undecided.map((t) => t.name)).toEqual(['nvim_list_instances']);
+    expect(writes.length).toBeGreaterThan(0);
+    for (const tool of writes) {
+      expect(requiredOf(tool), `${tool.name} must require rpc_port`).toContain('rpc_port');
+    }
+  });
+
+  it('leaves rpc_port optional on the reads', () => {
+    for (const name of READ_ONLY_TOOLS) {
+      const tool = allTools.find((t) => t.name === name);
+      expect(tool, `${name} is not registered`).toBeDefined();
+      expect(acceptsRpcPort(tool!), `${name} should accept rpc_port`).toBe(true);
+      expect(requiredOf(tool!), `${name} should not require rpc_port`).not.toContain('rpc_port');
+    }
+  });
+
+  it('does not offer rpc_port on the tool that exists to find ports', () => {
+    for (const name of PORTLESS_TOOLS) {
+      const tool = allTools.find((t) => t.name === name);
+      expect(tool, `${name} is not registered`).toBeDefined();
+      expect(acceptsRpcPort(tool!), `${name} should not take rpc_port`).toBe(false);
+    }
   });
 });
