@@ -26,6 +26,9 @@ local function create_default_frontmatter(config)
     agent = config.adapter or "claude",
     mode = config.agent and config.agent.default_mode or "code",
     model = config.agent and config.agent.default_model or "sonnet",
+    -- nil when default_effort is unset, which leaves the key out of the frontmatter entirely and
+    -- lets the CLI apply its own default.
+    effort = config.agent and config.agent.default_effort,
     permission_mode = config.permissions and config.permissions.mode or "acceptEdits",
     permissions_allow = config.permissions and config.permissions.allow or {},
     permissions_deny = config.permissions and config.permissions.deny or {},

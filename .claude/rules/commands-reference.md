@@ -39,6 +39,7 @@ Slash commands can be used within the chat buffer for quick actions:
 | `/save`                   | Save current chat                                                             |
 | `/summarize`              | Summarize conversation                                                        |
 | `/model <model>`          | Set AI model (haiku/sonnet/opus/fable)                                        |
+| `/effort <level>`         | Set reasoning effort (low/medium/high/xhigh/max)                              |
 | `/help`                   | Show available slash commands                                                 |
 | `/permissions` or `/perm` | Interactive Permission Builder - configure tool permissions                   |
 | `/allow [tool]`           | Add tool to allow list, or show current list if no args                       |

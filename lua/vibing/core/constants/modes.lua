@@ -24,6 +24,11 @@ M.VALID_AGENTS = Agents.ORDER
 ---@type string[]
 M.AGENT_MODES = { "code", "plan", "explore" }
 
+---推論量のレベル。claude CLI の `--effort` がそのまま受け取る値。
+---CLI は未知の値を弾かず黙って無視するので、渡す前にここで検証する。
+--- string[]
+M.EFFORT_LEVELS = { "low", "medium", "high", "xhigh", "max" }
+
 ---モデルが有効かチェック
 ---@param model string
 ---@return boolean
@@ -48,6 +53,13 @@ end
 ---エージェントモードが有効かチェック
 ---@param mode string
 ---@return boolean
+---effortレベルが有効かチェック
+--- effort string
+--- boolean
+function M.is_valid_effort(effort)
+  return vim.tbl_contains(M.EFFORT_LEVELS, effort)
+end
+
 function M.is_valid_agent_mode(mode)
   return vim.tbl_contains(M.AGENT_MODES, mode)
 end

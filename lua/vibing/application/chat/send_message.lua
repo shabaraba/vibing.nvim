@@ -153,6 +153,7 @@ function M.execute(adapter, callbacks, message, config)
       chat_bufnr = vim.api.nvim_buf_is_valid(bufnr) and bufnr or nil,
       mode = M._validate_frontmatter_mode(frontmatter.mode),
       model = frontmatter.model,
+      effort = frontmatter.effort,
       permissions_allow = frontmatter.permissions_allow,
       permissions_deny = frontmatter.permissions_deny,
       permissions_ask = frontmatter.permissions_ask,

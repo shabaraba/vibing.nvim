@@ -156,11 +156,12 @@ local function get_sorted_keys(tbl)
     working_dir = 5,
     agent = 6,
     model = 7,
-    permission_mode = 8,
-    permissions_allow = 9,
-    permissions_deny = 10,
-    permissions_ask = 11,
-    language = 12,
+    effort = 8,
+    permission_mode = 9,
+    permissions_allow = 10,
+    permissions_deny = 11,
+    permissions_ask = 12,
+    language = 13,
   }
 
   table.sort(keys, function(a, b)

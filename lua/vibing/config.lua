@@ -77,6 +77,8 @@
 ---@field default_mode "code"|"plan"|"explore" 新規チャットのfrontmatterに記録される`mode`の既定値（意味は core/constants/modes.lua の M.AGENT_MODES 参照）
 ---@field default_model "sonnet"|"opus"|"haiku"|"fable" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速、"fable": Claude Fable）
 ---@field utility_model "sonnet"|"opus"|"haiku"|"fable" タイトル生成・要約等の軽量ユーティリティ呼び出し専用モデル（デフォルト: "haiku"）
+---@field default_effort ("low"|"medium"|"high"|"xhigh"|"max")? 推論量の既定値（未指定ならCLIの既定に任せる）
+---@field utility_effort ("low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）
 
 ---@class Vibing.NodeConfig
@@ -183,6 +185,10 @@ M.defaults = {
     default_mode = "code",
     default_model = "sonnet",
     utility_model = "haiku",
+    -- default_effort is deliberately nil: without it vibing.nvim passes no --effort and the CLI
+    -- applies its own default, which moves as Anthropic tunes it. Set it to pin a level.
+    default_effort = nil,
+    utility_effort = "low",
     setting_sources = { "user", "project", "local" },
     -- 使用量リミットで応答が弾かれたとき、リセット時刻を待って自動で継続リクエストを送る。
     -- 無人でトークンを消費するため既定は無効。

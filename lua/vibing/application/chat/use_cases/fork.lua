@@ -48,6 +48,7 @@ function M._copy_frontmatter(source_frontmatter, forked_from, config)
     -- 同じ誤字を二重に通知しても意味がない
     mode = Modes.coerce_agent_mode(source_frontmatter.mode) or (config.agent and config.agent.default_mode or "code"),
     model = source_frontmatter.model or (config.agent and config.agent.default_model or "sonnet"),
+    effort = source_frontmatter.effort or (config.agent and config.agent.default_effort),
     permission_mode = source_frontmatter.permission_mode
       or (config.permissions and config.permissions.mode or "acceptEdits"),
     permissions_allow = source_frontmatter.permissions_allow
