@@ -33,6 +33,27 @@ describe('handleListInstances', () => {
   });
 
   describe('Platform-specific registry paths', () => {
+    it('should prefer VIBING_INSTANCES_DIR over the platform default', async () => {
+      vi.mocked(os.platform).mockReturnValue('linux');
+      const originalOverride = process.env.VIBING_INSTANCES_DIR;
+      process.env.VIBING_INSTANCES_DIR = '/tmp/private-registry';
+
+      // try/finally so a failed expect cannot leak the override into later tests.
+      try {
+        vi.mocked(fs.access).mockRejectedValue(new Error('Directory not found'));
+
+        await handleListInstances({});
+
+        expect(vi.mocked(fs.access)).toHaveBeenCalledWith('/tmp/private-registry');
+      } finally {
+        if (originalOverride === undefined) {
+          delete process.env.VIBING_INSTANCES_DIR;
+        } else {
+          process.env.VIBING_INSTANCES_DIR = originalOverride;
+        }
+      }
+    });
+
     it('should use XDG_DATA_HOME on Linux when set', async () => {
       vi.mocked(os.platform).mockReturnValue('linux');
       const originalXdgDataHome = process.env.XDG_DATA_HOME;

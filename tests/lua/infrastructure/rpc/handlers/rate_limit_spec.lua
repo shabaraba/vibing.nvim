@@ -23,14 +23,28 @@ describe("rpc.handlers.rate_limit", function()
   end)
 
   describe("with a payload file on disk", function()
-    local rpc_server = require("vibing.infrastructure.rpc.server")
+    local CommDir = require("vibing.infrastructure.rpc.comm_dir")
     local comm_dir
+    local saved_env
+
+    before_each(function()
+      -- Without an override the handler resolves /tmp/vibing-hook-0 here (no RPC port in tests),
+      -- which every parallel plenary job would share — they would then read and delete each
+      -- other's payload files.
+      saved_env = vim.env[CommDir.ENV_VAR]
+      comm_dir = vim.fn.tempname() .. "/vibing-hook"
+      vim.env[CommDir.ENV_VAR] = comm_dir
+    end)
+
+    after_each(function()
+      pcall(vim.fn.delete, comm_dir, "rf")
+      vim.env[CommDir.ENV_VAR] = saved_env
+    end)
 
     ---Write a hook payload where the handler expects to find it.
     ---@param request_id string
     ---@param payload table
     local function write_payload(request_id, payload)
-      comm_dir = "/tmp/vibing-hook-" .. tostring(rpc_server.get_port() or 0)
       vim.fn.mkdir(comm_dir, "p")
       vim.fn.writefile({ vim.json.encode(payload) }, comm_dir .. "/" .. request_id .. ".fail")
     end

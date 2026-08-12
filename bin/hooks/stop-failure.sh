@@ -23,7 +23,7 @@ if [ -z "$PORT" ]; then
 fi
 
 REQUEST_ID="$(date +%s)-$$-$RANDOM"
-COMM_DIR="/tmp/vibing-hook-${PORT}"
+COMM_DIR="${VIBING_HOOK_COMM_DIR:-/tmp/vibing-hook-${PORT}}"
 mkdir -p "$COMM_DIR" 2>/dev/null
 
 REQ_FILE="$COMM_DIR/${REQUEST_ID}.fail"
