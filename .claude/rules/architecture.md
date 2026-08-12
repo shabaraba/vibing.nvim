@@ -157,6 +157,7 @@ session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
 working_dir: .vibing/worktrees/fix-auth-session # Optional: relative path from git root for working directory
 model: sonnet # sonnet, opus, haiku, or fable (from config.agent.default_model)
+effort: xhigh # Optional: low, medium, high, xhigh, max (from config.agent.default_effort)
 permission_mode: acceptEdits # default, acceptEdits, bypassPermissions, plan, dontAsk, or auto
 permissions_allow:
   - Read
@@ -173,7 +174,17 @@ language: ja # Optional: default language for AI responses
 When reopening a saved chat (`:VibingChat <file>` or `:e`), the session resumes via the stored
 `session_id`. The `model` field is automatically populated from
 `config.agent.default_model` on chat creation, and can be changed
-via `/model` slash command. Configured permissions are recorded in frontmatter for
+via `/model` slash command.
+
+`effort` is the second cost/quality knob, passed to the CLI as `--effort`. Unlike `model` it is
+**omitted unless configured**: with no `agent.default_effort` vibing.nvim passes no flag and the
+CLI applies its own default, which Anthropic tunes over time — pinning a level here would freeze
+it. Set it per chat with `/effort`. Lightweight calls (title generation, `/summarize`, daily
+summary) use `agent.utility_effort` (default `low`) instead, pairing with `utility_model` so those
+calls are cheap on both axes. An unrecognised level is dropped with a warning rather than passed
+through: the CLI accepts unknown levels silently and then ignores them.
+
+Configured permissions are recorded in frontmatter for
 transparency and auditability. The optional `language` field ensures consistent AI response language
 across sessions.
 

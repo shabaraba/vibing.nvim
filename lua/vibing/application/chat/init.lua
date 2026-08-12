@@ -37,6 +37,12 @@ function M.setup()
   })
 
   commands.register({
+    name = "effort",
+    handler = require("vibing.application.chat.handlers.effort"),
+    description = string.format("Set reasoning effort: /effort <%s>", table.concat(Modes.EFFORT_LEVELS, "|")),
+  })
+
+  commands.register({
     name = "help",
     handler = require("vibing.application.chat.handlers.help"),
     description = "Show available slash commands",

@@ -19,6 +19,13 @@ end
 ---Enum values for frontmatter fields
 local ENUMS = {
   agent = AGENT_ENUM,
+  effort = {
+    { value = "low", description = "Least reasoning, fastest and cheapest" },
+    { value = "medium", description = "Moderate reasoning" },
+    { value = "high", description = "More reasoning for intelligence-sensitive work" },
+    { value = "xhigh", description = "Recommended for coding and agentic work" },
+    { value = "max", description = "Most reasoning, slowest and most expensive" },
+  },
   permission_mode = {
     { value = "default", description = "Ask for confirmation before each tool use" },
     { value = "acceptEdits", description = "Auto-approve Edit/Write, ask for others" },

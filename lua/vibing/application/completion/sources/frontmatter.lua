@@ -37,7 +37,7 @@ function M.get_trigger_context(line, col)
   local before_cursor_plus = line:sub(1, col + 1) -- Include next char for pattern matching
 
   -- Pattern 1: enum fields. permission_mode は単数形が実行時キー
-  for _, field_name in ipairs({ "permission_mode", "agent", "mode", "model" }) do
+  for _, field_name in ipairs({ "permission_mode", "agent", "mode", "model", "effort" }) do
     local pattern = "^%s*" .. field_name .. ":%s*(.*)$"
     local value = before_cursor:match(pattern)
     if value then

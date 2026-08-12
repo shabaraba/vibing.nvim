@@ -198,6 +198,7 @@ AI は同じバッファ内に応答します。`<C-c>` で実行中のリクエ
 | `/save`                   | 現在のチャットを保存                                                       |
 | `/summarize`              | 会話を要約                                                                 |
 | `/model <model>`          | AI モデルを設定(haiku/sonnet/opus/fable)                                   |
+| `/effort <level>`         | 推論量を設定(low/medium/high/xhigh/max)                                    |
 | `/help`                   | 利用可能なスラッシュコマンドを表示                                         |
 | `/permissions` or `/perm` | 対話的 Permission Builder — ツールの allow/deny ルールを設定               |
 | `/allow [tool]`           | allow リストに追加(`-tool` で削除)。引数なしで現在のリストを表示           |

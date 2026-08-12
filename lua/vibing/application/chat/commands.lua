@@ -200,6 +200,7 @@ function M.get_argument_completions(command_name)
   local completions = {
     permission = Modes.PERMISSION_MODES,
     model = Modes.VALID_MODELS,
+    effort = Modes.EFFORT_LEVELS,
   }
   return completions[command_name]
 end
