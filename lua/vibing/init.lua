@@ -274,12 +274,80 @@ function M._register_commands()
       notify.info(string.format("Cleared annotations in %d buffer(s)", count))
     end
   end, { desc = "Clear vibing.nvim inline review annotations from all buffers" })
+  vim.api.nvim_create_user_command("VibingSchedule", function(opts)
+    local view = require("vibing.presentation.chat.view")
+    local chat_buffer = view.get_current()
+    if not chat_buffer then
+      notify.warn("Not in a chat buffer")
+      return
+    end
+
+    local bufnr = chat_buffer:get_buffer()
+    local chat_file_path = vim.api.nvim_buf_get_name(bufnr)
+    if chat_file_path == "" then
+      notify.warn("Save this chat before scheduling a request")
+      return
+    end
+
+    local message = chat_buffer:extract_user_message()
+    if not message or vim.trim(message) == "" then
+      notify.warn("Write a message under the '## User' header first")
+      return
+    end
+
+    local AutoResume = require("vibing.application.chat.auto_resume")
+    local agent = M.config.agent or {}
+    local grace = (agent.auto_resume_on_limit and agent.auto_resume_on_limit.grace_sec) or 10
+
+    local fire_at, reason
+    if opts.args ~= "" then
+      local When = require("vibing.core.utils.when")
+      fire_at, reason = When.parse(opts.args)
+      if not fire_at then
+        notify.warn("Invalid time: " .. tostring(reason))
+        return
+      end
+    else
+      local LimitState = require("vibing.infrastructure.storage.limit_state")
+      local state = LimitState.get_active(vim.fn.fnamemodify(chat_file_path, ":h"))
+      if not state then
+        notify.warn("No usage limit on record. Give a time, e.g. ':VibingSchedule 30m'")
+        return
+      end
+      fire_at = state.resets_at + grace
+    end
+
+    local ok, err = AutoResume.schedule_request(chat_file_path, fire_at, { quiet = true })
+    if not ok then
+      notify.warn("Could not schedule: " .. tostring(err))
+      return
+    end
+
+    -- 予約本文はバッファにしか無いので、再起動をまたいでも残るよう保存しておく。
+    vim.api.nvim_buf_call(bufnr, function()
+      vim.cmd("silent! write")
+    end)
+
+    notify.info(
+      string.format(
+        "Scheduled for %s (in %s)",
+        os.date("%Y-%m-%d %H:%M", fire_at),
+        AutoResume.format_duration(math.max(fire_at - os.time(), 0))
+      )
+    )
+  end, {
+    nargs = "?",
+    complete = function()
+      return { "15m", "30m", "1h", "2h", "5h" }
+    end,
+    desc = "Schedule this chat's unsent message to be sent later",
+  })
 
   vim.api.nvim_create_user_command("VibingPendingResumes", function()
     local AutoResume = require("vibing.application.chat.auto_resume")
     local entries = AutoResume.list()
     if #entries == 0 then
-      notify.info("No chats are waiting on a usage limit reset")
+      notify.info("No chats are waiting on a usage limit reset or a scheduled send")
       return
     end
     local now = os.time()
@@ -292,19 +360,21 @@ function M._register_commands()
             AutoResume.format_duration(math.max(entry.resets_at - now, 0))
           )
         or "reset time unknown"
+      local kind = (entry.kind or "auto_resume") == "scheduled" and "scheduled" or "auto-resume"
       table.insert(
         lines,
         string.format(
-          "%s - %s [%s, retries used: %d]",
+          "%s - %s [%s, %s, retries used: %d]",
           vim.fn.fnamemodify(entry.chat_file_path, ":t"),
           when,
+          kind,
           entry.limit_type or "unknown limit",
           entry.retry_count or 0
         )
       )
     end
     notify.info("Pending resumes:\n" .. table.concat(lines, "\n"))
-  end, { desc = "List chats waiting on a usage limit reset" })
+  end, { desc = "List chats waiting on a usage limit reset or a scheduled send" })
 
   vim.api.nvim_create_user_command("VibingCancelResume", function(opts)
     local AutoResume = require("vibing.application.chat.auto_resume")
@@ -328,16 +398,16 @@ function M._register_commands()
 
     local path = vim.api.nvim_buf_get_name(chat_buffer:get_buffer())
     if AutoResume.cancel(path) > 0 then
-      notify.info("Cancelled pending resume for this chat")
+      notify.info("Cancelled the pending request for this chat")
     else
-      notify.info("This chat has no pending resume")
+      notify.info("This chat has nothing scheduled")
     end
   end, {
     nargs = "?",
     complete = function()
       return { "all" }
     end,
-    desc = "Cancel pending auto-resume for this chat (or 'all')",
+    desc = "Cancel this chat's pending auto-resume or scheduled request (or 'all')",
   })
 
   vim.api.nvim_create_user_command("VibingMoteDir", function(opts)
