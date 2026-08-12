@@ -2,6 +2,11 @@
 
 This directory contains prompt templates used by vibing.nvim features.
 
+`daily_summary.md` is the only prompt loaded from here. Every other prompt vibing.nvim sends —
+including the system prompt appended to each turn — is built inline in
+`lua/vibing/infrastructure/adapter/modules/cli_command_builder.lua`. Adding a file to this
+directory does not make it take effect; it has to be loaded via `PromptLoader.load` from Lua.
+
 ## Available Prompts
 
 ### `daily_summary.md`
