@@ -71,6 +71,16 @@ function M.setup(opts)
     end)
   end
 
+  -- nvim-dapの停止イベントを購読する。nvim-dapがまだロードされていない可能性があるので
+  -- VimEnter後に遅らせる（未インストールならsetup側がfalseを返して何もしない）
+  if M.config.dap and M.config.dap.enabled then
+    vim.schedule(function()
+      pcall(function()
+        require("vibing.application.debug.analyze").setup(M.config.dap)
+      end)
+    end)
+  end
+
   -- 終了時にクリーンアップ
   local augroup = vim.api.nvim_create_augroup("VibingCleanup", { clear = true })
   vim.api.nvim_create_autocmd("VimLeavePre", {
@@ -146,6 +156,14 @@ function M._register_commands()
   vim.api.nvim_create_user_command("VibingToggleChat", function()
     require("vibing.presentation.chat.controller").handle_toggle()
   end, { desc = "Toggle Vibing chat window" })
+
+  vim.api.nvim_create_user_command("VibingDebugAnalyze", function()
+    require("vibing.application.debug.analyze").analyze()
+  end, { desc = "Ask the agent to analyze the stopped debug session" })
+
+  vim.api.nvim_create_user_command("VibingDebugHelp", function()
+    require("vibing.application.debug.analyze").help()
+  end, { desc = "Ask the agent what to check next in the stopped debug session" })
 
   vim.api.nvim_create_user_command("VibingChatFork", function(opts)
     require("vibing.presentation.chat.controller").handle_fork(opts.args)

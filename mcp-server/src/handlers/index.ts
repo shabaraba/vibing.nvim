@@ -8,6 +8,7 @@ import * as chat from './chat.js';
 import * as highlight from './highlight.js';
 import * as annotations from './annotations.js';
 import * as qflist from './qflist.js';
+import * as dap from './dap.js';
 
 export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Buffer operations
@@ -61,4 +62,11 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_clear_annotations: annotations.handleClearAnnotations,
   // Quickfix
   nvim_set_qflist: qflist.handleSetQflist,
+
+  // Debugger (nvim-dap)
+  nvim_dap_get_state: dap.handleDapGetState,
+  nvim_dap_get_stack_trace: dap.handleDapGetStackTrace,
+  nvim_dap_get_variables: dap.handleDapGetVariables,
+  nvim_dap_set_breakpoint: dap.handleDapSetBreakpoint,
+  nvim_dap_evaluate: dap.handleDapEvaluate,
 };

@@ -18,6 +18,7 @@ Complete reference for every `require("vibing").setup()` option. Defaults shown 
 - [Node.js Executable](#nodejs-executable)
 - [Language](#language)
 - [Project System Prompt](#project-system-prompt)
+- [Debugger (nvim-dap)](#debugger-nvim-dap)
 - [Daily Summary](#daily-summary)
 
 ## Defaults at a Glance
@@ -555,6 +556,28 @@ Notes:
   directory's `.vibing/system-prompt.md` when it exists and has content, and otherwise falls back
   to the project root's file — so a worktree can override the project prompt without having to
   copy it.
+
+## Debugger (nvim-dap)
+
+```lua
+dap = {
+  enabled = false,             -- Subscribe to nvim-dap's stopped event.
+                               -- Everything below is inert until this is true; the MCP
+                               -- nvim_dap_* tools work regardless, on demand.
+  auto_analyze_on_error = true,      -- Analyze automatically when the program stops on an
+                                     -- exception — something is already wrong there
+  auto_analyze_on_breakpoint = false, -- ...but not on an ordinary breakpoint, which you placed
+                                     -- on purpose and may hit in a loop
+}
+```
+
+`:VibingDebugAnalyze` and `:VibingDebugHelp` work without `enabled`; the flag only controls whether
+stopping fires a request by itself. Requires [nvim-dap](https://github.com/mfussenegger/nvim-dap);
+without it, both commands and all `nvim_dap_*` tools say so rather than failing.
+
+What gets sent is only the request — never a dump of the stack and variables. The agent pulls
+whatever depth it needs through the tools, so a large object graph never lands in the prompt
+uninvited. See `.claude/rules/features.md` → "Debugger Analysis".
 
 ## Daily Summary
 

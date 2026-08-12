@@ -59,7 +59,9 @@ build/
 bin/mote-*
 
 # Debug
-debug/
+# ルート直下のdebug/だけを対象にする。パターンだけだと
+# lua/vibing/application/debug/ のような正規のソースまで飲み込む
+/debug/
 *.debug
 
 # Temporary

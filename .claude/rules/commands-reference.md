@@ -16,6 +16,8 @@
 | `:VibingClearContext`                 | Clear all context                                                                                   |
 | `:VibingCancel`                       | Cancel current request                                                                              |
 | `:VibingClearAnnotations`             | Remove inline review annotations from every buffer                                                  |
+| `:VibingDebugAnalyze`                 | Ask the agent to analyze the stopped debug session (needs nvim-dap)                                 |
+| `:VibingDebugHelp`                    | Ask the agent what to check next in the stopped debug session                                       |
 | `:VibingPendingResumes`               | List chats waiting on a usage limit reset                                                           |
 | `:VibingCancelResume [all]`           | Cancel the pending auto-resume for this chat (or every one with `all`)                              |
 | `:VibingReloadCommands`               | Reload custom slash commands                                                                        |
