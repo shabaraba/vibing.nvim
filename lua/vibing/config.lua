@@ -154,11 +154,12 @@ local function validate_tool_markers(markers)
       -- Legacy `{ default = "x", patterns = {...} }`. `patterns` was documented but never
       -- implemented — resolution only ever receives a tool name, never the command string — so
       -- the whole form is dropped loudly rather than silently ignored. See issue #502.
+      -- Name `patterns` only when the user actually wrote it: mentioning a feature they never
+      -- used reads like a warning about something else.
+      local detail = marker.patterns ~= nil and "; patterns never had any effect and is dropped"
+        or ""
       notify.warn(
-        string.format(
-          "ui.tool_markers.%s: give the marker string directly; { default = ..., patterns = ... } is no longer supported",
-          key
-        )
+        string.format("ui.tool_markers.%s: give the marker string directly%s", key, detail)
       )
       if type(marker.default) == "string" and marker.default ~= "" then
         validated[key] = marker.default
