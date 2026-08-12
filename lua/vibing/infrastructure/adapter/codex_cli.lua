@@ -136,9 +136,15 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
   -- chats don't cross-wire each other's approval UI (see ActiveStreamRegistry).
   env.VIBING_HANDLE_ID = handle_id
 
+  -- No chat_bufnr here, unlike claude_cli: it only exists to route nvim_ask_user_question back to
+  -- the right chat buffer, and Codex has no way to call that tool. Codex takes no system prompt,
+  -- so there is nowhere to tell the model the value, and registering the MCP server via
+  -- `-c mcp_servers.*` does not help either — headless `codex exec` auto-cancels MCP tool calls
+  -- on the approval prompt unless run with --dangerously-bypass-approvals-and-sandbox
+  -- (openai/codex#24135), which vibing.nvim only passes in bypassPermissions mode. Registering a
+  -- value nothing can consume would just look like a working route. See #532.
   ActiveStreamRegistry.register({
     handle_id = handle_id,
-    chat_bufnr = opts.chat_bufnr,
     adapter = self,
     on_insert_choices = opts.on_insert_choices,
     on_approval_required = opts.on_approval_required,
