@@ -81,7 +81,7 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = augroup,
     callback = function()
-      -- Agent SDKプロセスを全てキャンセル
+      -- CLIプロセスを全てキャンセル
       if M.adapter then
         M.adapter:cancel()
       end

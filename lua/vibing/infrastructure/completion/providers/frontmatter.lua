@@ -9,7 +9,7 @@ local ENUMS = {
     { value = "claude", description = "Claude CLI (Anthropic)" },
     { value = "codex", description = "Codex CLI (OpenAI)" },
   },
-  permissions_mode = {
+  permission_mode = {
     { value = "default", description = "Ask for confirmation before each tool use" },
     { value = "acceptEdits", description = "Auto-approve Edit/Write, ask for others" },
     { value = "plan", description = "Read-only planning mode (no tool execution)" },
@@ -56,7 +56,7 @@ local TOOL_NAMES = {
 }
 
 ---Get enum values for a field
----@param field string Field name (agent, permissions_mode, ...)
+---@param field string Field name (agent, permission_mode, ...)
 ---@return Vibing.CompletionItem[]
 function M.get_enum_values(field)
   local values = ENUMS[field]

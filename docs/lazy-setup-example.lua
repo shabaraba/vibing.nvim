@@ -22,7 +22,7 @@ return {
 
     config = function()
       require("vibing").setup({
-        adapter = "agent_sdk",
+        adapter = "claude",
 
         -- Node.js実行ファイル設定（ランタイム）
         node = {

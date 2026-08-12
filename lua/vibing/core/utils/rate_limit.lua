@@ -85,12 +85,16 @@ function M.from_event(msg)
     info = msg
   end
 
+  -- `status` alone decides rejection. `overageStatus` sits right next to it and uses the same
+  -- vocabulary, but it answers a different question — whether extra-usage billing is available —
+  -- and is a standing account property, not this request's outcome. An account with no credits
+  -- reports `overageStatus = "rejected"` (alongside `overageDisabledReason = "out_of_credits"`)
+  -- on every event, `status = "allowed"` ones included, so reading it as a rejection marked every
+  -- successful turn as limit-blocked. It stays in `raw` for diagnostics.
   local status = pick(info, "status", "rateLimitStatus")
-  local overage_status = pick(info, "overageStatus", "overage_status")
 
   return {
-    rejected = REJECTED_STATUSES[tostring(status):lower()] == true
-      or REJECTED_STATUSES[tostring(overage_status):lower()] == true,
+    rejected = REJECTED_STATUSES[tostring(status):lower()] == true,
     resets_at = to_unix_seconds(pick(info, "resetsAt", "resets_at", "resetAt", "reset_at")),
     limit_type = pick(info, "rateLimitType", "rate_limit_type", "limitType"),
     status = status and tostring(status) or nil,

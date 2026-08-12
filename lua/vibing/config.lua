@@ -17,18 +17,14 @@
 ---@field colors string[] グラデーション色の配列（2色指定: {開始色, 終了色}、例: {"#cc3300", "#fffe00"}）
 ---@field interval number アニメーション更新間隔（ミリ秒、デフォルト: 100）
 
----@class Vibing.ToolMarkerDefinition
----ツール固有のマーカー定義（パターンマッチング対応）
----@field default? string ツールのデフォルトマーカー
----@field patterns? table<string, string> 正規表現パターン→マーカーのマッピング（例: Bash用に {["^npm"] = "📦", ["^git"] = "🌿"}）
-
 ---@class Vibing.ToolMarkersConfig
 ---ツールマーカー設定
 ---チャット出力でツール実行時に表示する視覚的マーカーをカスタマイズ
----@field Task? string Taskツール開始マーカー（デフォルト: "▶"）
----@field TaskComplete? string Taskツール完了マーカー（デフォルト: "✓"）
----@field default? string その他のツール用デフォルトマーカー（デフォルト: "⏺"）
----@field [string]? string|Vibing.ToolMarkerDefinition ツール名をキーとした個別マーカー（文字列またはToolMarkerDefinition）
+---ツール名 → マーカー文字列のフラットな対応表。マーカーの解決にはツール名しか渡らないため、
+---コマンド内容による出し分け（Bashの`^npm`だけ別マーカー等）は行えない
+---@field Task? string Taskツールのマーカー（デフォルト: "▶"）
+---@field default? string 個別指定のないツール用マーカー（デフォルト: "⏺"）
+---@field [string]? string ツール名をキーとしたマーカー文字列
 
 ---@class Vibing.UiConfig
 ---UI設定
@@ -66,7 +62,7 @@
 
 ---@class Vibing.PermissionsConfig
 ---ツール権限設定
----Agent SDKに対してClaudeが使用可能なツールを制御（Read, Edit, Write, Bash等）
+---CLIに対してClaudeが使用可能なツールを制御（Read, Edit, Write, Bash等）
 ---allowで許可、denyで拒否、askで確認を要求し、セキュリティと機能のバランスを調整
 ---@field mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"|"auto" 権限モード
 ---@field allow string[] 許可するツールリスト（例: {"Read", "Edit", "Write"}）
@@ -75,7 +71,7 @@
 ---@field rules Vibing.PermissionRule[]? 粒度の細かい権限制御ルール（オプション）
 
 ---@class Vibing.AgentConfig
----Agent SDK設定
+---エージェント設定
 ---Claudeのモード（code/plan/explore）とモデル（sonnet/opus/haiku/fable）を指定
 ---@field default_mode "code"|"plan"|"explore" 新規チャットのfrontmatterに記録される`mode`の既定値（意味は core/constants/modes.lua の M.AGENT_MODES 参照）
 ---@field default_model "sonnet"|"opus"|"haiku"|"fable" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速、"fable": Claude Fable）
@@ -84,7 +80,8 @@
 
 ---@class Vibing.NodeConfig
 ---Node.js実行ファイル設定
----Agent SDKラッパーとMCPビルドで使用するNode.js実行ファイルのパスを指定
+---スラッシュコマンド補完（bin/list-commands.ts）の実行に使うNode.jsのパス。
+---MCPサーバーのビルドは`VIBING_NODE_EXECUTABLE`を見るのでこの設定を使わない点に注意。
 ---@field executable string|"auto" Node.js実行ファイルのパス ("auto": PATHから自動検出、文字列: 明示的なパス指定)
 
 ---@class Vibing.McpConfig
@@ -105,9 +102,9 @@
 ---チャットウィンドウ表示設定
 ---位置、幅、高さ、枠線スタイルを制御
 ---@field position "right"|"left"|"top"|"bottom"|"back"|"current"|"float" ウィンドウ位置（"right": 右分割、"left": 左分割、"top": 上分割、"bottom": 下分割、"back": バッファのみ作成、"current": 現在のウィンドウ、"float": フローティング）
----@field width number ウィンドウ幅（0-1の小数で画面比率、1以上で絶対幅）
----@field height number ウィンドウ高さ（0-1の小数で画面比率、1以上で絶対高さ、top/bottomで使用）
----@field border string 枠線スタイル（"rounded", "single", "double", "none"等）
+---@field width number ウィンドウ幅（0-1の小数で画面比率、1以上で絶対カラム数。right/left/floatで使用）。境界に注意: `1`は100%ではなく1カラム
+---@field height number? ウィンドウ高さ（0-1の小数で画面比率、1以上で絶対行数。top/bottom/floatで使用。`1`は100%ではなく1行）。未指定時の既定値は位置により異なり、分割は0.4、floatは0.8
+---@field border string 枠線スタイル（"rounded", "single", "double", "none"等）。floatのみ有効で、値は`nvim_open_win`にそのまま渡される（vibing.nvim側の検証はしない）
 
 ---@class Vibing.KeymapConfig
 ---キーマップ設定
@@ -140,56 +137,8 @@ local language_utils = require("vibing.core.utils.language")
 
 local M = {}
 
----Validate a single pattern entry in tool_markers
----@param key string Tool name for error messages
----@param pattern string Pattern key
----@param marker any Marker value to validate
----@return boolean is_valid
-local function validate_pattern_entry(key, pattern, marker)
-  if type(marker) ~= "string" or marker == "" then
-    notify.warn(string.format(
-      "Invalid ui.tool_markers.%s.patterns['%s']: marker must be a non-empty string",
-      key, pattern
-    ))
-    return false
-  end
-  return true
-end
-
----Validate a ToolMarkerDefinition table
----@param key string Tool name for error messages
----@param marker table ToolMarkerDefinition to validate
----@return table|nil Validated marker or nil if invalid
-local function validate_marker_definition(key, marker)
-  if marker.default and type(marker.default) ~= "string" then
-    notify.warn(string.format("Invalid ui.tool_markers.%s.default: must be a string", key))
-    marker.default = nil
-  end
-
-  if marker.patterns then
-    if type(marker.patterns) ~= "table" then
-      notify.warn(string.format("Invalid ui.tool_markers.%s.patterns: must be a table", key))
-      marker.patterns = nil
-    else
-      for pattern, pattern_marker in pairs(marker.patterns) do
-        if not validate_pattern_entry(key, pattern, pattern_marker) then
-          marker.patterns[pattern] = nil
-        end
-      end
-    end
-  end
-
-  local has_default = marker.default ~= nil
-  local has_patterns = marker.patterns and next(marker.patterns) ~= nil
-  if not has_default and not has_patterns then
-    notify.warn(string.format("ui.tool_markers.%s has no valid default or patterns - removing", key))
-    return nil
-  end
-
-  return marker
-end
-
 ---Validate tool_markers configuration
+---Markers are a flat "tool name -> marker string" table.
 ---@param markers table Tool markers config to validate
 ---@return table Validated markers config
 local function validate_tool_markers(markers)
@@ -203,12 +152,23 @@ local function validate_tool_markers(markers)
         validated[key] = marker
       end
     elseif type(marker) == "table" then
-      validated[key] = validate_marker_definition(key, marker)
+      -- Legacy `{ default = "x", patterns = {...} }`. `patterns` was documented but never
+      -- implemented — resolution only ever receives a tool name, never the command string — so
+      -- the whole form is dropped loudly rather than silently ignored. See issue #502.
+      -- Name `patterns` only when the user actually wrote it: mentioning a feature they never
+      -- used reads like a warning about something else.
+      local detail = marker.patterns ~= nil and "; patterns never had any effect and is dropped"
+        or ""
+      notify.warn(
+        string.format("ui.tool_markers.%s: give the marker string directly%s", key, detail)
+      )
+      if type(marker.default) == "string" and marker.default ~= "" then
+        validated[key] = marker.default
+      end
     else
-      notify.warn(string.format(
-        "Invalid ui.tool_markers.%s: must be a string or table, got %s",
-        key, type(marker)
-      ))
+      notify.warn(
+        string.format("Invalid ui.tool_markers.%s: must be a string, got %s", key, type(marker))
+      )
     end
   end
 
@@ -242,7 +202,8 @@ M.defaults = {
     window = {
       position = "current",
       width = 0.4,
-      height = 0.4,
+      -- heightは意図的に未設定。既定値がpositionごとに違うのでwindow_manager側で解決する
+      -- （docs/configuration.md の chat.window.height 参照）
       border = "rounded",
     },
     auto_context = true,
@@ -259,7 +220,6 @@ M.defaults = {
     tool_result_display = "compact",
     tool_markers = {
       Task = "▶",
-      TaskComplete = "✓",
       default = "⏺",
     },
   },

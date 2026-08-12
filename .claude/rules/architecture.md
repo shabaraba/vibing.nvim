@@ -34,8 +34,17 @@ The PreToolUse hook is synchronous and blocks the tool call: it writes the hook 
 with `nc`, then polls for `<request_id>.res` (up to 120s). It **fails closed** — if `nc` cannot
 connect, or the response never arrives, the hook exits 2 and the tool is denied. `VIBING_HANDLE_ID`
 is passed through so concurrent chats don't cross-wire each other's approval UI (see
-`active_stream_registry.lua`). Note that the `/tmp` comm directory is keyed only by port, which is
-machine-wide shared state.
+`active_stream_registry.lua`). The comm directory path comes from
+`infrastructure/rpc/comm_dir.lua` (the single source of truth shared by the handlers, the cleanup
+routine and `bin/hooks/*.sh`). It is machine-wide shared state keyed by port, so it has two
+escape hatches: `$VIBING_HOOK_COMM_DIR` overrides it outright (tests use this), and without a
+listening port it falls back to a PID-suffixed path rather than a single shared `vibing-hook-0`.
+The instance registry has the same treatment via `$VIBING_INSTANCES_DIR` (honoured by both
+`rpc/registry.lua` and `mcp-server/src/handlers/instances.ts`).
+
+`hook_cleanup.cleanup_stale_dirs()` (run at startup) treats a comm directory as stale only when
+its owning Neovim is gone: it cross-checks `registry.list()`, which already filters to live PIDs,
+so a concurrent instance's in-flight `.req`/`.res` files are never deleted.
 
 **Backends:** `claude_cli.lua` (default) and `codex_cli.lua` both implement the adapter
 interface; `init.lua` picks one from `config.adapter`, and `send_message.lua` can switch per
@@ -147,8 +156,10 @@ via `/model` slash command. Configured permissions are recorded in frontmatter f
 transparency and auditability. The optional `language` field ensures consistent AI response language
 across sessions.
 
-Note the singular `permission_mode`: that is the key `send_message.lua` actually reads. Completion
-also offers `permissions_mode`, but nothing reads it — don't rely on the plural form.
+Note the singular `permission_mode`: that is the key `send_message.lua` actually reads, the key
+completion offers, and the key the serializer orders. The legacy plural `permissions_mode` is
+migrated to the singular form on parse (`infrastructure/storage/frontmatter.lua`) so old chat
+files keep working, but it is no longer completed and should not be written.
 
 **Working directory persistence:** The `working_dir` field stores the working directory as a relative
 path from git root (e.g., `.vibing/worktrees/<branch>`). When a chat is reopened, the agent

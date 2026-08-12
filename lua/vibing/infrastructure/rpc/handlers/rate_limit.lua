@@ -26,9 +26,7 @@ local pending_failures = {}
 --- Get the communication directory for the current RPC port
 --- @return string
 local function get_comm_dir()
-  local rpc_server = require("vibing.infrastructure.rpc.server")
-  local port = rpc_server.get_port()
-  return "/tmp/vibing-hook-" .. tostring(port or 0)
+  return require("vibing.infrastructure.rpc.comm_dir").path()
 end
 
 --- Handle a stop_failure notification from bin/hooks/stop-failure.sh

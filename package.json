@@ -1,14 +1,16 @@
 {
   "name": "vibing-nvim",
   "version": "5.1.0",
-  "description": "Neovim plugin that integrates Claude AI through the Agent SDK",
+  "description": "Neovim plugin that runs an AI chat inside Neovim via the claude or codex CLI",
   "keywords": [
     "neovim",
     "nvim",
     "plugin",
     "claude",
+    "claude-code",
+    "codex",
     "ai",
-    "agent-sdk",
+    "mcp",
     "chat",
     "code-assistant"
   ],
@@ -27,7 +29,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "build:watch": "node scripts/build.mjs --watch",
-    "test": "npm run test:lua",
+    "test": "npm run test:lua && npm run test:node",
+    "test:node": "find tests -name '*.test.mjs' -exec node --test {} +",
     "test:lua": "nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }\"",
     "test:e2e": "nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/e2e/ { minimal_init = 'tests/minimal_init.lua' }\"",
     "check": "find lua -name '*.lua' -exec luac -p {} \\;",

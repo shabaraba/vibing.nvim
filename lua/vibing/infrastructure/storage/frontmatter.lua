@@ -71,6 +71,26 @@ local function parse_yaml_simple(yaml_str)
   return result
 end
 
+---旧frontmatterキー名 → 実行時キー名。`permissions_mode`(複数形)は過去のREADMEが案内していた
+---綴りで、実行時に読まれるのは`permission_mode`(単数形)だった。
+---@type table<string, string>
+M.LEGACY_KEY_ALIASES = {
+  permissions_mode = "permission_mode",
+}
+
+---旧キー名を実行時キー名へ寄せる(正式なキーが既にあればそちらを優先)
+---@param parsed table
+local function normalize_legacy_keys(parsed)
+  for legacy, canonical in pairs(M.LEGACY_KEY_ALIASES) do
+    if parsed[legacy] ~= nil then
+      if parsed[canonical] == nil then
+        parsed[canonical] = parsed[legacy]
+      end
+      parsed[legacy] = nil
+    end
+  end
+end
+
 function M.parse(content)
   if not content or content == "" then
     return nil, content
@@ -107,6 +127,7 @@ function M.parse(content)
   local body = table.concat(body_lines, "\n")
 
   local parsed = parse_yaml_simple(yaml_str)
+  normalize_legacy_keys(parsed)
 
   return parsed, body
 end
@@ -135,10 +156,11 @@ local function get_sorted_keys(tbl)
     working_dir = 5,
     agent = 6,
     model = 7,
-    permissions_mode = 8,
+    permission_mode = 8,
     permissions_allow = 9,
     permissions_deny = 10,
-    language = 11,
+    permissions_ask = 11,
+    language = 12,
   }
 
   table.sort(keys, function(a, b)
@@ -189,6 +211,8 @@ function M.update(content, updates)
   for k, v in pairs(updates) do
     data[k] = v
   end
+  -- updates 側が旧キーを持ち込んでも書き戻さない
+  normalize_legacy_keys(data)
 
   return M.serialize(data, body)
 end
