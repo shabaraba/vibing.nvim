@@ -11,10 +11,11 @@
 export const rpcPortProperty = {
   rpc_port: {
     type: 'number' as const,
+    // Every tool carries a copy of this string, so its length is multiplied by the tool count.
+    // Keep it to the instruction; the reasoning behind it belongs in the comment above.
     description:
-      'RPC port of the target Neovim instance. Use the exact value given to you in your system ' +
-      'prompt for this turn — do not guess or omit it, since multiple unrelated Neovim instances ' +
-      'may be running.',
+      'RPC port of the target Neovim instance (the value in your system prompt this turn). ' +
+      'Never guess or omit it.',
   },
 };
 

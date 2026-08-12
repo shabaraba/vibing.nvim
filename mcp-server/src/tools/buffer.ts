@@ -35,7 +35,9 @@ export const bufferTools = [
   },
   {
     name: 'nvim_get_info',
-    description: 'Get current file information',
+    description:
+      'Get metadata for the current file only (filepath, filetype, bufnr) — no content. Use ' +
+      'nvim_get_buffer for content, and pass it a bufnr to reach a buffer other than the current one.',
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({}),
@@ -54,7 +56,8 @@ export const bufferTools = [
   {
     name: 'nvim_load_buffer',
     description:
-      'Load file into buffer without displaying it (background load for LSP). Returns buffer number. Use this instead of nvim_execute("edit") + nvim_execute("bp") workflow.',
+      'Load a file into a buffer without displaying it, and return its bufnr. Use this to give the ' +
+      'LSP tools a buffer to work on without changing what the user is looking at.',
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({

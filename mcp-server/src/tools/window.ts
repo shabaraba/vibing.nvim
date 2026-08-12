@@ -12,7 +12,9 @@ export const windowTools = [
   },
   {
     name: 'nvim_get_window_info',
-    description: 'Get detailed information for a specific window',
+    description:
+      "Get one window's buffer, size, position and cursor. For its scroll position and visible " +
+      'line range, use nvim_get_window_view.',
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({
@@ -26,7 +28,9 @@ export const windowTools = [
   },
   {
     name: 'nvim_get_window_view',
-    description: 'Get window viewport information (visible line range, scroll position)',
+    description:
+      "Get one window's scroll position and visible line range. For its buffer, size and position, " +
+      'use nvim_get_window_info.',
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({

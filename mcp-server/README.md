@@ -141,15 +141,14 @@ The MCP server exposes the following tools to Claude:
 - **nvim_list_buffers** - List all loaded buffers
   - Returns: Array of buffer info (bufnr, name, modified, filetype)
 
-- **nvim_load_buffer** - Load file into buffer without displaying it
+- **nvim_load_buffer** - Load a file into a buffer without displaying it
   - `filepath` (required): Absolute or relative path to file
   - Returns: `{ bufnr, already_loaded }`
-  - Use case: Background loading for LSP operations
-  - Simplifies workflow: replaces `nvim_execute("edit")` + `nvim_execute("bp")`
+  - Use case: give the LSP tools a buffer to work on without changing what the user is looking at
 
 ### File Information
 
-- **nvim_get_info** - Get current file information
+- **nvim_get_info** - Get metadata for the current file only, no content (use **nvim_get_buffer** for content)
   - Returns: `{ bufnr, filename, filetype, modified }`
 
 ### Cursor Operations
