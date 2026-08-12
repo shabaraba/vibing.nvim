@@ -62,6 +62,24 @@ local function get_active_opts(handle_id)
   return nil
 end
 
+--- Combine the bundled destructive-command deny rules with the user's own rules.
+--- The defaults go first so they read as the baseline, though order does not decide the outcome:
+--- can_use_tool checks every deny rule before any allow rule.
+--- @param perms table config.permissions
+--- @return PermissionRule[]
+function M._resolve_permission_rules(perms)
+  local user_rules = perms.rules or {}
+
+  if perms.default_deny_rules == false then
+    return user_rules
+  end
+
+  local destructive = require("vibing.core.constants.destructive_commands")
+  local rules = vim.list_slice(destructive.DEFAULT_DENY_RULES)
+  vim.list_extend(rules, user_rules)
+  return rules
+end
+
 --- Build permission config from frontmatter opts (priority) or global config
 --- @param handle_id string|nil
 --- @return PermissionConfig
@@ -76,7 +94,7 @@ local function build_permission_config(handle_id)
     asked_tools = o.permissions_ask or perms.ask or {},
     session_allowed_tools = session_state.allowed,
     session_denied_tools = session_state.denied,
-    permission_rules = perms.rules or {},
+    permission_rules = M._resolve_permission_rules(perms),
     permission_mode = o.permission_mode or perms.mode or "default",
     mcp_enabled = config.mcp and config.mcp.enabled or false,
   }

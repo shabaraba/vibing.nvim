@@ -55,7 +55,7 @@
 ---@field tools string[] 対象ツール名のリスト（例: {"Read", "Write"}）
 ---@field paths string[]? ファイルパスのglobパターンリスト（例: {"src/**", "tests/**"}）
 ---@field commands string[]? Bashコマンド名のリスト（例: {"npm", "yarn"}）
----@field patterns string[]? Bashコマンドパターン（正規表現）のリスト（例: {"^rm -rf", "^sudo"}）
+---@field patterns string[]? Bashコマンドパターン（**Lua pattern**であって正規表現ではない）のリスト（例: {"^rm%s+%-rf", "^sudo%f[%W]"}）。`-`は量指定子なのでリテラルは`%-`とエスケープすること
 ---@field domains string[]? 許可/拒否するドメインリスト（例: {"github.com", "*.example.com"}）
 ---@field action "allow"|"deny" ルールのアクション（"allow": 許可、"deny": 拒否）
 ---@field message string? 拒否時のメッセージ（actionが"deny"の場合に表示）
@@ -69,6 +69,7 @@
 ---@field deny string[] 拒否するツールリスト（例: {"Bash"}、危険なツールを明示的に禁止）
 ---@field ask string[] 確認が必要なツールリスト（例: {"Bash"}、使用前に承認を要求）
 ---@field rules Vibing.PermissionRule[]? 粒度の細かい権限制御ルール（オプション）
+---@field default_deny_rules boolean? 破壊的Bashコマンド（`rm -rf /`、`sudo`、`dd`、`chmod -R 777`、main/masterへのforce push等）の同梱denyルールを有効にするか（デフォルト: true）。`core/constants/destructive_commands.lua`を参照
 
 ---@class Vibing.AgentConfig
 ---エージェント設定
@@ -244,6 +245,7 @@ M.defaults = {
     deny = { "Bash" },
     ask = {},
     rules = {},
+    default_deny_rules = true,
   },
   node = {
     executable = "auto",

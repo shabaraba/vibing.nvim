@@ -10,7 +10,7 @@ local M = {}
 --- @field tools string[] Tools this rule applies to
 --- @field paths? string[] Glob patterns for file paths
 --- @field commands? string[] Allowed/denied command names
---- @field patterns? string[] Regex patterns for command matching
+--- @field patterns? string[] Lua patterns (not regex) for command matching; escape `-` as `%-`
 --- @field domains? string[] Domain patterns for web requests
 --- @field action "allow"|"deny"
 --- @field message? string Custom error message

@@ -382,10 +382,57 @@ Field reference:
 
 Evaluation notes:
 
-- Rules are evaluated **after** the tool-level `allow`/`ask` lists.
-- Any matching `deny` rule blocks immediately and beats every `allow` rule.
+- `deny` rules run **before** the permission mode, the tool-level lists, and any session-level
+  grant, so a denied call stays denied under `mode = "auto"`, for always-allowed tools, and after
+  an "allow for this session" approval. `mode = "bypassPermissions"` is the one deliberate way
+  past them.
+- `allow` rules are evaluated **after** the tool-level `allow`/`ask` lists.
 - A rule whose condition doesn't apply to the tool's input (e.g. `paths` on a `Bash` call)
   is skipped.
+
+## Default Deny Rules
+
+vibing.nvim ships deny rules for a small set of destructive Bash commands, enabled by default:
+
+```lua
+permissions = {
+  default_deny_rules = true,  -- set to false to ship nothing and rely on your own rules
+}
+```
+
+| Blocked                              | Examples                                                      |
+| ------------------------------------ | ------------------------------------------------------------- |
+| Recursive deletion of `/` or `$HOME` | `rm -rf /`, `rm -rf /*`, `rm -rf ~`, `rm -rf $HOME`           |
+| Privilege escalation                 | `sudo ...`, `doas ...`                                        |
+| Raw device writes                    | `dd ... of=/dev/sda`, `mkfs.ext4 /dev/sda1`                   |
+| World-writable trees                 | `chmod -R 777 .`, `chmod 777 -R .`                            |
+| Force-pushing main/master            | `git push --force origin main` (`--force-with-lease` is fine) |
+
+They match after shell separators **and after newlines**, so both `cd /tmp && sudo rm -rf /` and a
+`sudo` on the second line of a multi-line script are caught — the Bash tool hands a whole script
+over as one command. The full list lives in
+`lua/vibing/core/constants/destructive_commands.lua`.
+
+Known gaps — these are a safety net, not a sandbox:
+
+- Split short flags (`rm -r -f /`) and obfuscation (`$(echo rm) -rf /`) are not matched. Combined
+  short flags (`-rf`), GNU longform (`--recursive`) and quoted targets (`rm -rf "$HOME"`) are.
+- Flag order does not matter. GNU `getopt_long` permutes options, so `rm / -rf` and
+  `chmod 777 -R .` run exactly as their flag-first spellings do and are matched the same way.
+- `dd` is judged by its write target only: `dd ... of=/dev/...` is blocked, an ordinary
+  file-to-file copy such as `dd if=backup.img of=backup2.img` is not.
+- Matching never reaches across a newline to assemble a hit from two different lines, but it
+  cannot tell a real command from the same text quoted inside an `echo` on its own line.
+- Matching is case-sensitive; every command covered here is a lowercase Unix command name.
+- A bare `git push --force` is allowed, because a pattern cannot know which branch it lands on.
+  Naming the branch is caught in either flag order (`--force origin main` and `origin main
+--force`), and a branch that merely starts with main/master (`main-v2`) is not.
+- `permissions.deny`/`allow` cannot switch off an individual bundled rule; use
+  `default_deny_rules = false` and re-add the ones you want to `rules`.
+
+The point is that the boundary is drawn in the environment rather than in an approval prompt:
+prompts are approved reflexively most of the time, so they are a last line of defence, not the
+primary one.
 
 ## MCP
 
