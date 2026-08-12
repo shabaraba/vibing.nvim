@@ -35,6 +35,14 @@ describe("cli_command_builder", function()
       assert.is_true(prompt_text:find(".vibing/worktrees/", 1, true) ~= nil)
     end)
 
+    it("tells the model to open, jump and highlight rather than describe where code is", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_true(prompt_text:find("nvim_highlight_range", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("nvim_win_open_file", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("nvim_set_cursor", 1, true) ~= nil)
+    end)
+
     it("combines the language instruction and worktree instruction into a single flag", function()
       local config = { language = "ja" }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
@@ -350,6 +358,7 @@ describe("cli_command_builder", function()
       assert.is_nil(prompt_text:find("nvim_ask_user_question", 1, true))
       assert.is_nil(prompt_text:find("Your rpc_port for this turn is", 1, true))
       assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer number:", 1, true))
+      assert.is_nil(prompt_text:find("nvim_highlight_range", 1, true))
     end)
 
     it("still applies the language instruction to the system prompt", function()

@@ -5,6 +5,7 @@ import { lspTools } from './lsp.js';
 import { executeTools } from './execute.js';
 import { instanceTools } from './instances.js';
 import { chatTools } from './chat.js';
+import { highlightTools } from './highlight.js';
 
 export const allTools = [
   ...bufferTools,
@@ -14,4 +15,5 @@ export const allTools = [
   ...executeTools,
   ...instanceTools,
   ...chatTools,
+  ...highlightTools,
 ];
