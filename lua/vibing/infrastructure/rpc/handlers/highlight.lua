@@ -3,6 +3,8 @@
 
 local M = {}
 
+local resolve_bufnr = require("vibing.infrastructure.rpc.handlers.bufnr").resolve
+
 local NAMESPACE = vim.api.nvim_create_namespace("vibing_highlight")
 
 --- Pending auto-clear timers, keyed by buffer. A second call to the same buffer has to stop the
@@ -37,18 +39,6 @@ local function clear(bufnr)
     timer:close()
   end
   clear_marks(bufnr)
-end
-
---- @param bufnr any
---- @return number
-local function resolve_bufnr(bufnr)
-  if type(bufnr) ~= "number" then
-    error("Missing bufnr parameter")
-  end
-  if bufnr == 0 then
-    return vim.api.nvim_get_current_buf()
-  end
-  return bufnr
 end
 
 --- Highlight a line range, then take it away again.

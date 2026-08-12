@@ -7,6 +7,7 @@ local window = require("vibing.infrastructure.rpc.handlers.window")
 local lsp = require("vibing.infrastructure.rpc.handlers.lsp")
 local execute = require("vibing.infrastructure.rpc.handlers.execute")
 local highlight = require("vibing.infrastructure.rpc.handlers.highlight")
+local annotations = require("vibing.infrastructure.rpc.handlers.annotations")
 local message = require("vibing.infrastructure.rpc.handlers.message")
 local permission = require("vibing.infrastructure.rpc.handlers.permission")
 local rate_limit = require("vibing.infrastructure.rpc.handlers.rate_limit")
@@ -45,6 +46,9 @@ M.execute = execute.execute
 
 M.highlight_range = highlight.highlight_range
 M.clear_highlight = highlight.clear_highlight
+
+M.annotate = annotations.annotate
+M.clear_annotations = annotations.clear_annotations
 
 M.send_message = message.send_message
 

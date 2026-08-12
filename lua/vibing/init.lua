@@ -226,6 +226,22 @@ function M._register_commands()
     end
   end, { desc = "Cancel current Vibing request" })
 
+  vim.api.nvim_create_user_command("VibingClearAnnotations", function()
+    -- Reaches into the RPC handler rather than a presentation controller, unlike the commands
+    -- around it. There is no presentation state to own here: annotations live entirely in an
+    -- extmark namespace, and this command and the MCP tool both want the same one function. A
+    -- controller would be a pass-through with nothing in it. Give annotations real UI state and
+    -- this should grow one like the rest.
+    local annotations = require("vibing.infrastructure.rpc.handlers.annotations")
+    local result = annotations.clear_annotations({})
+    local count = #result.cleared_buffers
+    if count == 0 then
+      notify.info("No annotations to clear")
+    else
+      notify.info(string.format("Cleared annotations in %d buffer(s)", count))
+    end
+  end, { desc = "Clear vibing.nvim inline review annotations from all buffers" })
+
   vim.api.nvim_create_user_command("VibingPendingResumes", function()
     local AutoResume = require("vibing.application.chat.auto_resume")
     local entries = AutoResume.list()

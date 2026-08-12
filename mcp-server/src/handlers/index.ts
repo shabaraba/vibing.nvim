@@ -6,6 +6,7 @@ import * as lsp from './lsp.js';
 import * as instances from './instances.js';
 import * as chat from './chat.js';
 import * as highlight from './highlight.js';
+import * as annotations from './annotations.js';
 
 export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Buffer operations
@@ -53,4 +54,8 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Highlighting
   nvim_highlight_range: highlight.handleHighlightRange,
   nvim_clear_highlight: highlight.handleClearHighlight,
+
+  // Annotations
+  nvim_annotate: annotations.handleAnnotate,
+  nvim_clear_annotations: annotations.handleClearAnnotations,
 };
