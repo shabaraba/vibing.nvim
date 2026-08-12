@@ -33,6 +33,20 @@ describe("destructive_commands.DEFAULT_DENY_RULES", function()
       assert.is_true(is_denied("rm --recursive ~"))
     end)
 
+    it("blocks the target-first flag order GNU getopt permutes", function()
+      -- `rm / -rf` is what `rm -rf /` actually runs: getopt_long reorders options.
+      assert.is_true(is_denied("rm / -rf"))
+      assert.is_true(is_denied("rm ~ -rf"))
+      assert.is_true(is_denied("rm '/' -rf"))
+      assert.is_true(is_denied("rm $HOME --recursive"))
+    end)
+
+    it("does not mistake a long flag for a short recursive cluster", function()
+      -- "--force" contains "-...r...", so a naive short-cluster pattern matches it and would
+      -- block this non-recursive deletion.
+      assert.is_false(is_denied("rm --force ~/notes.txt"))
+    end)
+
     it("blocks it after a shell separator, not just at the start of the line", function()
       assert.is_true(is_denied("cd /tmp && rm -rf /"))
       assert.is_true(is_denied("echo hi; rm -rf ~"))
@@ -59,6 +73,9 @@ describe("destructive_commands.DEFAULT_DENY_RULES", function()
       assert.is_false(is_denied('rm -rf "./dist"'))
       -- A word merely ending in "rm" is not the rm command.
       assert.is_false(is_denied("xterm -rf /"))
+      -- Target-first order must not widen the target: these are not / or $HOME.
+      assert.is_false(is_denied("rm /tmp/x -rf"))
+      assert.is_false(is_denied("rm ./release -rf"))
     end)
 
     it("still catches rm reached through a pipe, which is why it is not command-anchored", function()
@@ -104,6 +121,16 @@ describe("destructive_commands.DEFAULT_DENY_RULES", function()
       -- "add" contains "dd"; the rule is anchored at command position so this is not a match.
       assert.is_false(is_denied("echo add of=/dev/null"))
     end)
+
+    it("only cares about the write target, not the read source", function()
+      -- The danger is of=/dev/, so an ordinary file-to-file copy must stay allowed.
+      assert.is_false(is_denied("dd if=backup.img bs=1M"))
+      assert.is_false(is_denied("dd if=backup.img of=backup2.img"))
+    end)
+
+    it("does not reach across a newline to find of=/dev/", function()
+      assert.is_false(is_denied('dd if=backup.img bs=1M\necho "restore skipped; of=/dev/sda1"'))
+    end)
   end)
 
   describe("chmod", function()
@@ -111,6 +138,22 @@ describe("destructive_commands.DEFAULT_DENY_RULES", function()
       assert.is_true(is_denied("chmod -R 777 ."))
       assert.is_true(is_denied("chmod -R 0777 /var/www"))
       assert.is_true(is_denied("chmod --recursive 777 ."))
+    end)
+
+    it("blocks the mode-first flag order GNU getopt permutes", function()
+      -- `chmod 777 -R .` is what `chmod -R 777 .` actually runs.
+      assert.is_true(is_denied("chmod 777 -R ."))
+      assert.is_true(is_denied("chmod 0777 --recursive /var/www"))
+      assert.is_true(is_denied("chmod -v -R 777 dist"))
+    end)
+
+    it("does not mistake a long flag for a short recursive cluster", function()
+      -- "--verbose" contains "-...r...", so a naive short-cluster pattern matches it.
+      assert.is_false(is_denied("chmod --verbose 777 file.txt"))
+    end)
+
+    it("does not reach across a newline to find the flag", function()
+      assert.is_false(is_denied("chmod 644 f.txt\necho '-R 0777'"))
     end)
 
     it("allows narrower modes and non-recursive changes", function()

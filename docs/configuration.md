@@ -396,8 +396,8 @@ permissions = {
 | ------------------------------------ | ------------------------------------------------------------- |
 | Recursive deletion of `/` or `$HOME` | `rm -rf /`, `rm -rf /*`, `rm -rf ~`, `rm -rf $HOME`           |
 | Privilege escalation                 | `sudo ...`, `doas ...`                                        |
-| Raw device writes                    | `dd if=... of=/dev/sda`, `mkfs.ext4 /dev/sda1`                |
-| World-writable trees                 | `chmod -R 777 .`                                              |
+| Raw device writes                    | `dd ... of=/dev/sda`, `mkfs.ext4 /dev/sda1`                   |
+| World-writable trees                 | `chmod -R 777 .`, `chmod 777 -R .`                            |
 | Force-pushing main/master            | `git push --force origin main` (`--force-with-lease` is fine) |
 
 They match after shell separators **and after newlines**, so both `cd /tmp && sudo rm -rf /` and a
@@ -409,6 +409,12 @@ Known gaps — these are a safety net, not a sandbox:
 
 - Split short flags (`rm -r -f /`) and obfuscation (`$(echo rm) -rf /`) are not matched. Combined
   short flags (`-rf`), GNU longform (`--recursive`) and quoted targets (`rm -rf "$HOME"`) are.
+- Flag order does not matter. GNU `getopt_long` permutes options, so `rm / -rf` and
+  `chmod 777 -R .` run exactly as their flag-first spellings do and are matched the same way.
+- `dd` is judged by its write target only: `dd ... of=/dev/...` is blocked, an ordinary
+  file-to-file copy such as `dd if=backup.img of=backup2.img` is not.
+- Matching never reaches across a newline to assemble a hit from two different lines, but it
+  cannot tell a real command from the same text quoted inside an `echo` on its own line.
 - Matching is case-sensitive; every command covered here is a lowercase Unix command name.
 - A bare `git push --force` is allowed, because a pattern cannot know which branch it lands on.
   Naming the branch is caught in either flag order (`--force origin main` and `origin main

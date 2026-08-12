@@ -41,18 +41,43 @@ local function token_end(token)
   return { token .. "%f[%s]", token .. "$" }
 end
 
----再帰フラグを`prefix`と`suffix`で挟んだパターンに展開する。短縮クラスタ（`-rf` / `-fr` /
----`-R` ...）とGNUのlongform（`--recursive`）は別々に書くしかない（Lua patternに選択がない）。
----longformの前後の`[%-%a%s]*`は`rm -f --recursive /`のように他のフラグと並ぶ形のための穴埋めで、
----フラグらしい文字しか含まないのでターゲットの`.`や`/`を巻き込まない。
----@param prefix string フラグの手前（コマンド名まで）
----@param suffix string フラグの後ろ（ターゲット）
+---同一コマンド内の他の引数。`SEGMENT`と同じく改行は跨がない。Bashツールは複数行スクリプトを
+---1つの`command`として渡してくるので、跨げるようにすると別の行の文字列で誤検知する。
+local ARGS = "[^;&|\n]*"
+
+---フラグの並びだけを飛ばすための穴埋め。フラグらしい文字しか含まないのでターゲットの`.`や`/`を
+---巻き込まず、`%s`ではなく空白とタブに限ることで行も跨がない。
+local FLAG_FILLER = "[%-%a \t]*"
+
+---再帰フラグ。Lua patternに選択（`|`）がないので、短縮クラスタとGNUのlongformを別々に持つ。
+---短縮側の`%f[%-]`は「連続するダッシュの途中から」始まるのを禁じる。これが無いと`--force`や
+---`--verbose`が`-`+`...r...`として短縮クラスタに化け、`rm --force ~/notes`のような非再帰の
+---操作まで拾ってしまう。
+local RECURSIVE_FLAGS = {
+  "%f[%-]%-%a*[rR]%a*",
+  "%-%-recursive",
+}
+
+---再帰フラグとターゲットが「どちらが先でも」マッチするパターンを展開する。
+---GNUのgetopt_longはオプションを並べ替えるので、`rm / -rf`は`rm -rf /`と、`chmod 777 -R .`は
+---`chmod -R 777 .`と等価に動く。git pushで両方向を生成しているのと同じ理由。
+---@param prefix string コマンド名と直後の空白まで
+---@param target string ターゲット部分
+---@param endings string[] ターゲット直後に要求する終端（トークン境界）
 ---@return string[]
-local function recursive_variants(prefix, suffix)
-  return {
-    prefix .. "%-%a*[rR]%a*%s+" .. suffix,
-    prefix .. "[%-%a%s]*%-%-recursive[%-%a%s]*%s" .. suffix,
-  }
+local function either_order(prefix, target, endings)
+  local patterns = {}
+  for _, ending in ipairs(endings) do
+    for _, flag in ipairs(RECURSIVE_FLAGS) do
+      -- フラグが先: rm -rf /
+      table.insert(patterns, prefix .. FLAG_FILLER .. flag .. FLAG_FILLER .. "%s" .. target .. ending)
+      -- ターゲットが先: rm / -rf
+      for _, terminated in ipairs(token_end(flag)) do
+        table.insert(patterns, prefix .. target .. ending .. FLAG_FILLER .. terminated)
+      end
+    end
+  end
+  return patterns
 end
 
 ---`rm`による再帰削除のうち、/ とホームディレクトリを狙うものを展開する。
@@ -60,20 +85,19 @@ end
 ---ような形も捕まえたいため。境界だけ見れば`xterm -rf /`の誤検知は防げる。
 ---@return string[]
 local function rm_deny_patterns()
+  -- `/`だけは完全なトークンとして一致させる（そうしないと`rm -rf /home/x`まで巻き込む）。
+  -- 残りは前方一致でよい: `~/foo`や`$HOME/bar`も同じ危険度として扱う。
   local TARGETS = {
-    -- / , "/" , / --no-preserve-root , /*
-    QUOTE .. "/" .. QUOTE .. "%s*$",
-    QUOTE .. "/" .. QUOTE .. "%s",
-    QUOTE .. "/%*",
-    -- ~ , ~/ , $HOME , ${HOME} , and the quoted forms of each
-    QUOTE .. "~",
-    QUOTE .. "%$HOME",
-    QUOTE .. "%${HOME}",
+    { QUOTE .. "/" .. QUOTE, token_end("") },
+    { QUOTE .. "/%*", { "" } },
+    { QUOTE .. "~", { "" } },
+    { QUOTE .. "%$HOME", { "" } },
+    { QUOTE .. "%${HOME}", { "" } },
   }
 
   local patterns = {}
   for _, target in ipairs(TARGETS) do
-    for _, pattern in ipairs(recursive_variants("%f[%w]rm%s+", target)) do
+    for _, pattern in ipairs(either_order("%f[%w]rm%s+", target[1], target[2])) do
       table.insert(patterns, pattern)
     end
   end
@@ -146,7 +170,11 @@ M.DEFAULT_DENY_RULES = {
     tools = { "Bash" },
     -- dd writing to a raw device, and filesystem creation.
     -- `dd` is anchored at command position so "add"/"odd" cannot trip the rule.
-    patterns = at_command_position("dd%f[%W][^;&|]*of=/dev/", "dd%s+if=", "mkfs%f[%W]", "mkfs%."),
+    -- 危険なのは書き込み先で、読み込み元ではない。`dd%s+if=`という広い形も持っていたが、
+    -- `dd if=backup.img of=backup2.img`のような無害なファイルコピーまで拒否してしまう上、
+    -- 実際に塞ぎたいケースは`of=/dev/`側だけで足りる。
+    -- `mkfs%f[%W]`のfrontierは`.`の直前でも成立するので、`mkfs.ext4`もこれ1本で足りる。
+    patterns = at_command_position("dd%f[%W]" .. ARGS .. "of=/dev/", "mkfs%f[%W]"),
     action = "deny",
     message = deny_message(
       "Writing raw devices or creating filesystems is blocked by vibing.nvim's default deny rules."
@@ -154,7 +182,7 @@ M.DEFAULT_DENY_RULES = {
   },
   {
     tools = { "Bash" },
-    patterns = recursive_variants("chmod%s+[^;&|]*", "0?777"),
+    patterns = either_order("chmod%s+", "0?777", { "%f[%W]" }),
     action = "deny",
     message = deny_message(
       "Recursively making a tree world-writable is blocked by vibing.nvim's default deny rules. "
