@@ -259,20 +259,17 @@ end
 --- no hook/deny plumbing here — just cancel the in-flight turn and show the same choice-list UI.
 --- The killed turn means this RPC's return value is never seen by the model; the user's next
 --- chat message (a fresh `--resume`d turn) delivers their answer instead.
---- @param params {chat_file_path: string?, questions: table[]}
+--- @param params {chat_bufnr: number?, questions: table[]}
 --- @return table RPC response
 function M.ask_user_question(params)
   if not params or not params.questions then
     return { status = "error", reason = "Missing questions" }
   end
 
-  local chat_file_path = params.chat_file_path
-  if chat_file_path == "" then
-    chat_file_path = nil
-  end
+  local chat_bufnr = tonumber(params.chat_bufnr)
 
   local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
-  local stream = registry.get_by_chat_file_path(chat_file_path)
+  local stream = registry.get_by_chat_bufnr(chat_bufnr)
   if not stream then
     return {
       status = "error",
