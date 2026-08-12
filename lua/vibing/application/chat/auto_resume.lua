@@ -284,6 +284,10 @@ local function fire(chat_file_path, entry)
   )
 end
 
+-- Test seam: fire() is otherwise only reachable through a libuv timer callback, and the
+-- kind-dispatch ordering at its top is exactly what needs pinning behaviourally.
+M._fire = fire
+
 --- Arm a timer for a parked chat.
 --- Several chats parked on the same window all fire at once, which is deliberate: a reset hands
 --- back a full quota, and vibing.nvim already runs concurrent chats during normal use.
