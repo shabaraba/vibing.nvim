@@ -14,6 +14,7 @@
 
 local PendingResume = require("vibing.infrastructure.storage.pending_resume")
 local RateLimit = require("vibing.core.utils.rate_limit")
+local LimitState = require("vibing.infrastructure.storage.limit_state")
 
 local M = {}
 
@@ -322,10 +323,14 @@ local function schedule(entry, opts)
   local name = vim.fn.fnamemodify(path, ":t")
   local human = M.format_duration(math.floor(delay_ms / 1000))
   if (entry.kind or "auto_resume") == "scheduled" then
-    vim.notify(
-      string.format("[vibing] %s scheduled to send in %s (%s)", name, human, os.date("%H:%M", entry.resets_at)),
-      vim.log.levels.INFO
-    )
+    -- A caller that already told the user (e.g. ChatBuffer:_try_schedule_instead_of_send, whose
+    -- own notification names the escape hatch too) passes quiet=true to avoid a duplicate.
+    if not opts.quiet then
+      vim.notify(
+        string.format("[vibing] %s scheduled to send in %s (%s)", name, human, os.date("%H:%M", entry.resets_at)),
+        vim.log.levels.INFO
+      )
+    end
   else
     -- Say so when the delay is a guess. A bare "will resume in 5m" reads as a known reset time,
     -- but for a five-hour or weekly limit the fallback will almost certainly be rejected again.
@@ -365,7 +370,7 @@ local SCHEDULED_OPTS = { grace_sec = 0 }
 --- the design spec, "Where the body lives".
 --- @param chat_file_path string
 --- @param fire_at number Unix seconds
---- @param opts {limit_type: string|nil, retry_count: number|nil, max_retries: number|nil}|nil
+--- @param opts {limit_type: string|nil, retry_count: number|nil, max_retries: number|nil, quiet: boolean|nil}|nil
 --- @return boolean ok, string|nil reason
 function M.schedule_request(chat_file_path, fire_at, opts)
   opts = opts or {}
@@ -388,13 +393,18 @@ function M.schedule_request(chat_file_path, fire_at, opts)
     state = "waiting",
   }
 
-  local delay_sec, reason = compute_delay(entry, SCHEDULED_OPTS)
+  -- A fresh table per call (never mutate the shared SCHEDULED_OPTS): restore() re-arms scheduled
+  -- entries at startup with that same constant and must keep notifying, since nothing else tells
+  -- the user a resume was re-armed after a restart.
+  local schedule_opts = opts.quiet and vim.tbl_extend("force", SCHEDULED_OPTS, { quiet = true }) or SCHEDULED_OPTS
+
+  local delay_sec, reason = compute_delay(entry, schedule_opts)
   if not delay_sec then
     return false, reason
   end
 
   PendingResume.put(entry)
-  schedule(entry, SCHEDULED_OPTS)
+  schedule(entry, schedule_opts)
   return true
 end
 
@@ -473,6 +483,11 @@ function M.on_success(chat_file_path)
 end
 
 --- Cancel a pending resume (user-initiated)
+---
+--- Also forgets the project's recorded usage limit: cancelling means "I want to send now", so
+--- the record that would otherwise re-park the very next message is deliberately discarded. This
+--- is safe even if the limit is in fact still in force — the next rejected response re-records
+--- it, so the worst case is one attempted request that fails and gets parked again.
 --- @param chat_file_path string|nil When nil, cancels every pending resume
 --- @return number cancelled_count
 function M.cancel(chat_file_path)
@@ -480,6 +495,7 @@ function M.cancel(chat_file_path)
     stop_timer(chat_file_path)
     local existed = PendingResume.get(chat_file_path) ~= nil
     PendingResume.remove(chat_file_path)
+    LimitState.clear(vim.fn.fnamemodify(chat_file_path, ":h"))
     return existed and 1 or 0
   end
 
@@ -490,6 +506,7 @@ function M.cancel(chat_file_path)
     count = count + 1
   end
   PendingResume.clear()
+  LimitState.clear()
   return count
 end
 

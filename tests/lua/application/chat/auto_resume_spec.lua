@@ -323,6 +323,117 @@ describe("auto_resume", function()
     end)
   end)
 
+  describe("schedule_request quiet option", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+
+    it("suppresses schedule()'s own notification when quiet=true", function()
+      -- ChatBuffer:_try_schedule_instead_of_send already tells the user (with the escape hatch
+      -- named), so the generic "scheduled to send in..." notification from schedule() would just
+      -- be a duplicate for that caller.
+      local chat_path = tmp_root .. "/.vibing/chat/quiet.md"
+      vim.fn.mkdir(vim.fn.fnamemodify(chat_path, ":h"), "p")
+
+      local original_notify = vim.notify
+      local messages = {}
+      vim.notify = function(msg)
+        table.insert(messages, msg)
+      end
+
+      local ok, err = pcall(AutoResume.schedule_request, chat_path, os.time() + 3600, { quiet = true })
+      vim.notify = original_notify
+      assert.is_true(ok, err)
+
+      for _, msg in ipairs(messages) do
+        assert.is_falsy(msg:match("scheduled to send in"), "quiet=true must suppress schedule()'s own notification")
+      end
+
+      AutoResume.cancel(chat_path)
+    end)
+
+    it("still notifies by default, and a later call is unaffected by an earlier quiet one", function()
+      -- Guards against a regression where quiet=true would leak into the shared SCHEDULED_OPTS
+      -- table and silence every later schedule_request() call, quiet or not.
+      local chat_path = tmp_root .. "/.vibing/chat/loud.md"
+      vim.fn.mkdir(vim.fn.fnamemodify(chat_path, ":h"), "p")
+
+      local original_notify = vim.notify
+      local messages = {}
+      vim.notify = function(msg)
+        table.insert(messages, msg)
+      end
+
+      local ok, err = pcall(AutoResume.schedule_request, chat_path, os.time() + 3600, {})
+      vim.notify = original_notify
+      assert.is_true(ok, err)
+
+      local found = false
+      for _, msg in ipairs(messages) do
+        if msg:match("scheduled to send in") then
+          found = true
+        end
+      end
+      assert.is_true(found, "expected the default (non-quiet) notification; got: " .. vim.inspect(messages))
+
+      AutoResume.cancel(chat_path)
+    end)
+  end)
+
+  describe("cancel", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+    local LimitState = require("vibing.infrastructure.storage.limit_state")
+
+    it("also releases the project's recorded usage limit for the cancelled chat", function()
+      -- Otherwise the very next <CR> would re-park under the same stale record: cancelling means
+      -- "send now", so the record must go with it.
+      -- Flat path (not nested under a subdirectory): cancel() resolves LimitState's cwd from
+      -- fnamemodify(chat_path, ":h"), and tmp_root itself is not a git repo, so the seed below
+      -- and cancel()'s own resolution must agree on the literal directory, not just "some
+      -- directory under tmp_root" (unlike a real repo, there is no git root to walk up to here).
+      local chat_path = tmp_root .. "/chat.md"
+      LimitState.record({ resets_at = os.time() + 3600, limit_type = "five_hour" }, tmp_root)
+      assert.is_not_nil(LimitState.get_active(tmp_root))
+
+      AutoResume.cancel(chat_path)
+
+      assert.is_nil(LimitState.get_active(tmp_root))
+    end)
+
+    it("cancelling every pending resume also clears the current project's recorded limit", function()
+      -- Stub the stores rather than touch real files: cancel(nil) resolves both stores through
+      -- the *process* cwd (this repository), the same reason the `list` tests above stub
+      -- PendingResume.load instead of writing through it.
+      local original_load = PendingResume.load
+      local original_pending_clear = PendingResume.clear
+      local original_limit_clear = LimitState.clear
+      local limit_clear_call_count = 0
+      -- Tracked separately from the count: table.insert(t, nil) is a no-op on #t, so a plain
+      -- "insert every call's arg into a list" stub would silently under-count the very call
+      -- (LimitState.clear() with no cwd) this test exists to check.
+      local last_limit_clear_cwd = "<not called>"
+
+      PendingResume.load = function()
+        return { ["/a.md"] = { chat_file_path = "/a.md" } }
+      end
+      PendingResume.clear = function() end
+      LimitState.clear = function(cwd)
+        limit_clear_call_count = limit_clear_call_count + 1
+        last_limit_clear_cwd = cwd
+      end
+
+      local ok, err = pcall(AutoResume.cancel)
+
+      PendingResume.load = original_load
+      PendingResume.clear = original_pending_clear
+      LimitState.clear = original_limit_clear
+
+      assert.is_true(ok, err)
+      assert.equals(1, limit_clear_call_count)
+      -- No cwd argument: clears the current project's record, matching PendingResume.clear()'s
+      -- own (also-argument-less) resolution one line above it in cancel().
+      assert.is_nil(last_limit_clear_cwd)
+    end)
+  end)
+
   describe("_scheduled_decision", function()
     local AutoResume = require("vibing.application.chat.auto_resume")
 

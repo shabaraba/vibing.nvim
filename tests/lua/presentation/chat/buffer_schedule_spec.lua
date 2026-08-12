@@ -142,4 +142,33 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
     local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, 1, false)
     assert.matches("unsent", lines[1])
   end)
+
+  describe("send_message() ordering", function()
+    -- The test above calls the helper directly, which never touches buffer text and so cannot
+    -- distinguish "helper runs before commit_user_message" from "helper runs after" — it would
+    -- pass either way. This test instead drives the real ChatBuffer:send_message() (with real,
+    -- unstubbed collaborators: commands, approval_parser, conversation_extractor), which is the
+    -- only place the ordering promise in the brief actually lives. Moving the scheduling branch
+    -- in send_message() to after ConversationExtractor.commit_user_message(self.buf) must make
+    -- this test fail — verified manually (see task-7-report.md, "Fix round 1").
+    before_each(function()
+      stub_config()
+    end)
+
+    it("never reaches commit_user_message: the header stays unsent when send_message() parks it", function()
+      local chat_buf, chat_path = make_buffer("hello there")
+      LimitState.record({ resets_at = os.time() + 3600, limit_type = "five_hour" }, tmp_root)
+
+      chat_buf:send_message()
+
+      assert.is_false(chat_buf._is_sending)
+
+      local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, 1, false)
+      assert.matches("unsent", lines[1], "commit_user_message must not have run before the schedule check")
+
+      local entry = PendingResume.get(chat_path)
+      assert.is_not_nil(entry)
+      assert.equals("scheduled", entry.kind)
+    end)
+  end)
 end)

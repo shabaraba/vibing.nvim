@@ -339,7 +339,10 @@ function ChatBuffer:_try_schedule_instead_of_send(message)
     or 10
   local fire_at = state.resets_at + grace
 
-  local ok, reason = AutoResume.schedule_request(chat_file_path, fire_at, { limit_type = state.limit_type })
+  -- quiet=true: this helper's own notification below already names the fire time and the escape
+  -- hatch, so schedule()'s generic "scheduled to send in..." notification would just duplicate it.
+  local ok, reason =
+    AutoResume.schedule_request(chat_file_path, fire_at, { limit_type = state.limit_type, quiet = true })
   if not ok then
     vim.notify("[vibing] Could not schedule this request: " .. tostring(reason), vim.log.levels.WARN)
     return false
