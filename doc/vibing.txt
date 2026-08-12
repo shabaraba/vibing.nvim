@@ -181,13 +181,30 @@ kept in sync field by field.
 :VibingCancel
     Cancel the request in flight.
 
+                                                             *:VibingSchedule*
+:VibingSchedule [{when}]
+    Schedule this chat's unsent message to send later instead of now.
+    {when} accepts relative offsets (`90s`, `30m`, `2h`, `1h30m`), a clock
+    time (`18:30`, rolled to tomorrow if already past today) or an
+    absolute timestamp (`2026-08-14T07:05`). With no argument, uses the
+    project's recorded usage limit reset time.
+
                                                        *:VibingPendingResumes*
 :VibingPendingResumes
-    List chats parked until a usage limit resets.
+    List chats parked until a usage limit resets or a scheduled send fires.
 
                                                         *:VibingCancelResume*
 :VibingCancelResume [all]
-    Cancel this chat's pending auto-resume, or every one with `all`.
+    Cancel this chat's pending auto-resume or scheduled send, or every one
+    with `all`. Also clears the project's recorded usage limit, so a
+    follow-up `<CR>` actually sends instead of being parked again.
+
+Scheduled requests:~
+    A rejected turn, a `<CR>` sent while the project's recorded usage
+    limit is still active, and an explicit |:VibingSchedule| all park the
+    same way: the message stays in the chat's own unsent `## User`
+    section rather than being copied elsewhere, so it is still visible
+    and editable while parked, and deleting it cancels the send.
 
                                                               *:VibingMoteDir*
 :VibingMoteDir [{dir}]
