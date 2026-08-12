@@ -68,11 +68,8 @@ jobs:
             exit 1
           fi
 
-      - name: Run wrapper test
-        run: npm test
-        continue-on-error: true
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - name: Run Node.js tests
+        run: npm run test:node
 
       - name: Run validation suite
         run: npm run validate

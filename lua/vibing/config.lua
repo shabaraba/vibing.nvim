@@ -66,7 +66,7 @@
 
 ---@class Vibing.PermissionsConfig
 ---ツール権限設定
----Agent SDKに対してClaudeが使用可能なツールを制御（Read, Edit, Write, Bash等）
+---CLIに対してClaudeが使用可能なツールを制御（Read, Edit, Write, Bash等）
 ---allowで許可、denyで拒否、askで確認を要求し、セキュリティと機能のバランスを調整
 ---@field mode "default"|"acceptEdits"|"bypassPermissions"|"plan"|"dontAsk"|"auto" 権限モード
 ---@field allow string[] 許可するツールリスト（例: {"Read", "Edit", "Write"}）
@@ -75,7 +75,7 @@
 ---@field rules Vibing.PermissionRule[]? 粒度の細かい権限制御ルール（オプション）
 
 ---@class Vibing.AgentConfig
----Agent SDK設定
+---エージェント設定
 ---Claudeのモード（code/plan/explore）とモデル（sonnet/opus/haiku/fable）を指定
 ---@field default_mode "code"|"plan"|"explore" デフォルトモード（"code": コード生成、"plan": 計画、"explore": 探索）
 ---@field default_model "sonnet"|"opus"|"haiku"|"fable" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速、"fable": Claude Fable）
@@ -84,7 +84,8 @@
 
 ---@class Vibing.NodeConfig
 ---Node.js実行ファイル設定
----Agent SDKラッパーとMCPビルドで使用するNode.js実行ファイルのパスを指定
+---スラッシュコマンド補完（bin/list-commands.ts）の実行に使うNode.jsのパス。
+---MCPサーバーのビルドは`VIBING_NODE_EXECUTABLE`を見るのでこの設定を使わない点に注意。
 ---@field executable string|"auto" Node.js実行ファイルのパス ("auto": PATHから自動検出、文字列: 明示的なパス指定)
 
 ---@class Vibing.McpConfig
