@@ -16,12 +16,20 @@ return function(args, chat_buffer)
         return
       end
 
-      permission_builder.prompt_permission_type(tool.name, function(permission_type)
+      -- Read back the current state so the allow/ask/deny prompt can show what is already set for
+      -- this tool, instead of asking blind.
+      local current_lists = {
+        allow = chat_buffer:get_frontmatter_list("permissions_allow"),
+        ask = chat_buffer:get_frontmatter_list("permissions_ask"),
+        deny = chat_buffer:get_frontmatter_list("permissions_deny"),
+      }
+
+      permission_builder.prompt_permission_type(tool.name, current_lists, function(permission_type)
         if not permission_type then
           return
         end
 
-        permission_builder.handle_bash_pattern_selection(tool, permission_type, function(permission_string)
+        permission_builder.handle_pattern_selection(tool, permission_type, function(permission_string)
           if not permission_string then
             return
           end

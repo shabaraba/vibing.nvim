@@ -25,6 +25,24 @@ local TOOL_DESCRIPTIONS = {
   Grep = "Search for patterns in files",
   WebSearch = "Search the web for information",
   WebFetch = "Fetch content from URLs",
+  Skill = "Invoke a Claude Code skill",
+  StructuredOutput = "Return a schema-validated response",
+}
+
+---ツール名 → 引数の種類。`matchers.parse_tool_pattern` が解釈できる形だけを載せる。
+---ここに無いツール（Skill / StructuredOutput）にはピッカーから引数を付けさせない。
+---`matchers` は未知の形を `unknown_pattern` として黙って不一致にするので、付けられるようにすると
+---「ルールを作ったのに永久にマッチしない」という静かな不具合になる。
+---@type table<string, "bash"|"path"|"domain"|"literal">
+M.ARG_KIND = {
+  Bash = "bash",
+  Read = "path",
+  Write = "path",
+  Edit = "path",
+  WebFetch = "domain",
+  WebSearch = "domain",
+  Glob = "literal",
+  Grep = "literal",
 }
 
 ---Bashコマンドプリセット
@@ -35,6 +53,24 @@ M.bash_presets = {
   { pattern = "docker", description = "Dockerコマンド", danger = false },
   { pattern = "chmod", description = "パーミッション変更", danger = true },
   { pattern = "sudo", description = "特権実行", danger = true },
+}
+
+---パスパターンのプリセット（Read / Write / Edit）
+---`danger` が付くものは deny 向けの例。allow で選ぶと機密ファイルを開放してしまうため警告を出す。
+M.path_presets = {
+  { pattern = "src/**", description = "ソースツリー全体", danger = false },
+  { pattern = "tests/**", description = "テストツリー全体", danger = false },
+  { pattern = "docs/**", description = "ドキュメント", danger = false },
+  { pattern = ".env", description = "環境変数ファイル（deny向け）", danger = true },
+  { pattern = "*.secret", description = "シークレットファイル（deny向け）", danger = true },
+  { pattern = "*.key", description = "鍵ファイル（deny向け）", danger = true },
+}
+
+---ドメインのプリセット（WebFetch / WebSearch）
+M.domain_presets = {
+  { pattern = "github.com", description = "GitHub", danger = false },
+  { pattern = "*.npmjs.com", description = "npm レジストリ", danger = false },
+  { pattern = "docs.rs", description = "Rust ドキュメント", danger = false },
 }
 
 ---組み込みツールのリストを取得
@@ -176,16 +212,34 @@ function M._show_telescope(chat_buffer, callback)
     :find()
 end
 
----Bashプリセットピッカーを表示
----@param callback function(pattern: string)
-function M.show_bash_preset_picker(callback)
+---引数の種類ごとのプリセットとプロンプト文言
+---@param kind "bash"|"path"|"domain"|"literal"
+---@return table[] presets, string prompt_title, string skip_description
+function M._presets_for_kind(kind)
+  if kind == "bash" then
+    return M.bash_presets, "Select Bash command pattern:", "パターンなし（Bash全体）"
+  elseif kind == "path" then
+    return M.path_presets, "Select path pattern:", "パターンなし（全パス）"
+  elseif kind == "domain" then
+    return M.domain_presets, "Select domain:", "ドメイン指定なし（全ドメイン）"
+  end
+  -- literal は完全一致でしか使えないため、事前定義しても再利用性がない。custom 入力だけ出す。
+  return {}, "Enter pattern:", "パターンなし（全体）"
+end
+
+---パターンピッカーを表示
+---@param presets table[] 選択肢のプリセット
+---@param prompt_title string
+---@param skip_description string 「パターンなし」の説明文
+---@param callback function(pattern: string?)
+function M.show_pattern_picker(presets, prompt_title, skip_description, callback)
   local preset_list = vim.tbl_map(function(preset)
     return {
       pattern = preset.pattern,
       description = preset.description,
       danger = preset.danger,
     }
-  end, M.bash_presets)
+  end, presets)
 
   table.insert(preset_list, {
     pattern = "custom",
@@ -195,25 +249,26 @@ function M.show_bash_preset_picker(callback)
 
   table.insert(preset_list, {
     pattern = "skip",
-    description = "パターンなし（Bash全体）",
+    description = skip_description,
     danger = false,
   })
 
   local has_telescope, _ = pcall(require, "telescope")
 
   if has_telescope then
-    M._show_bash_telescope(preset_list, callback)
+    M._show_pattern_telescope(preset_list, prompt_title, callback)
   else
-    M._show_bash_native(preset_list, callback)
+    M._show_pattern_native(preset_list, prompt_title, callback)
   end
 end
 
----vim.ui.selectでBashプリセット選択
+---vim.ui.selectでパターン選択
 ---@param preset_list table[]
+---@param prompt_title string
 ---@param callback function(pattern: string)
-function M._show_bash_native(preset_list, callback)
+function M._show_pattern_native(preset_list, prompt_title, callback)
   vim.ui.select(preset_list, {
-    prompt = "Select Bash command pattern:",
+    prompt = prompt_title,
     format_item = function(item)
       local danger_mark = item.danger and "⚠️ " or ""
       return string.format("%s%s - %s", danger_mark, item.pattern, item.description)
@@ -233,10 +288,11 @@ function M._show_bash_native(preset_list, callback)
   end)
 end
 
----TelescopeでBashプリセット選択
+---Telescopeでパターン選択
 ---@param preset_list table[]
+---@param prompt_title string
 ---@param callback function(pattern: string)
-function M._show_bash_telescope(preset_list, callback)
+function M._show_pattern_telescope(preset_list, prompt_title, callback)
   local pickers = require("telescope.pickers")
   local finders = require("telescope.finders")
   local conf = require("telescope.config").values
@@ -262,7 +318,7 @@ function M._show_bash_telescope(preset_list, callback)
 
   pickers
     .new({}, {
-      prompt_title = "Bash Command Pattern",
+      prompt_title = prompt_title,
       finder = finders.new_table({
         results = preset_list,
         entry_maker = function(entry)
@@ -311,15 +367,47 @@ function M._prompt_custom_pattern(callback)
   end)
 end
 
----Allow/Deny選択プロンプト
----@param tool_name string ツール名
----@param callback function(permission_type: string) "allow" または "deny"
-function M.prompt_permission_type(tool_name, callback)
-  local choices = {
-    { type = "allow", description = "Allow - このツールの使用を許可" },
-    { type = "ask", description = "Ask - このツールの使用前に確認を要求" },
-    { type = "deny", description = "Deny - このツールの使用を拒否" },
+---allow/ask/deny の選択肢を、そのツールの現在の設定付きで組み立てる
+---「このツール、もう allow に入ってたっけ?」に答えられるようにするのが目的。
+---引数付きのエントリ（`Bash(git:*)`）も同じツールのものとして拾う。
+---@param tool_name string
+---@param current_lists table {allow: string[], ask: string[], deny: string[]}
+---@return table[] choices
+function M.build_permission_type_choices(tool_name, current_lists)
+  current_lists = current_lists or {}
+
+  local function summarize(list)
+    local matches = vim.tbl_filter(function(entry)
+      return entry == tool_name or vim.startswith(entry, tool_name .. "(")
+    end, list or {})
+    if #matches == 0 then
+      return "現在: なし"
+    end
+    return "現在: " .. table.concat(matches, ", ")
+  end
+
+  return {
+    {
+      type = "allow",
+      description = string.format("Allow - このツールの使用を許可 (%s)", summarize(current_lists.allow)),
+    },
+    {
+      type = "ask",
+      description = string.format("Ask - このツールの使用前に確認を要求 (%s)", summarize(current_lists.ask)),
+    },
+    {
+      type = "deny",
+      description = string.format("Deny - このツールの使用を拒否 (%s)", summarize(current_lists.deny)),
+    },
   }
+end
+
+---Allow/Ask/Deny選択プロンプト
+---@param tool_name string ツール名
+---@param current_lists table {allow: string[], ask: string[], deny: string[]}
+---@param callback function(permission_type: string) "allow" / "ask" / "deny"
+function M.prompt_permission_type(tool_name, current_lists, callback)
+  local choices = M.build_permission_type_choices(tool_name, current_lists)
 
   vim.ui.select(choices, {
     prompt = string.format("Configure permission for '%s':", tool_name),
@@ -333,32 +421,44 @@ function M.prompt_permission_type(tool_name, callback)
   end)
 end
 
----Bashパターン選択フロー
----Bashツールの場合のみパターン選択を促す
+---パターン選択フロー
+---引数を取れるツール（`ARG_KIND` に載っているもの）だけパターン選択を促す。
+---載っていないツールに引数を付けさせないのは意図的: `matchers` が解釈できない形は
+---`unknown_pattern` として黙って不一致になり、作ったルールが永久に効かなくなるため。
 ---@param tool table ツール情報
----@param permission_type string "allow" または "deny"
+---@param permission_type string "allow" / "ask" / "deny"
 ---@param callback function(permission_string: string)
-function M.handle_bash_pattern_selection(tool, permission_type, callback)
-  if not tool.is_bash then
-    local permission_string = M.build_permission_string(tool.name, nil)
-    callback(permission_string)
+function M.handle_pattern_selection(tool, permission_type, callback)
+  local kind = M.ARG_KIND[tool.name]
+  if not kind then
+    callback(M.build_permission_string(tool.name, nil))
     return
   end
 
-  M.show_bash_preset_picker(function(pattern)
-    local permission_string = M.build_permission_string(tool.name, pattern)
-    callback(permission_string)
+  local presets, prompt_title, skip_description = M._presets_for_kind(kind)
+  M.show_pattern_picker(presets, prompt_title, skip_description, function(pattern)
+    callback(M.build_permission_string(tool.name, pattern))
   end)
 end
 
 ---権限文字列を構築
+---Bashだけが `Bash(git:*)` のように `:*` を付ける。パス・ドメイン・リテラルは
+---`Read(src/**)` のように素の引数を括弧に入れる（`matchers.parse_tool_pattern` の分類に従う）。
 ---@param tool_name string ツール名
----@param pattern string? Bashコマンドパターン
+---@param pattern string? 引数パターン
 ---@return string permission_string
 function M.build_permission_string(tool_name, pattern)
-  if tool_name == "Bash" and pattern then
-    return string.format("Bash(%s:*)", pattern)
+  if not pattern or pattern == "" then
+    return tool_name
   end
+
+  local kind = M.ARG_KIND[tool_name]
+  if kind == "bash" then
+    return string.format("%s(%s:*)", tool_name, pattern)
+  elseif kind then
+    return string.format("%s(%s)", tool_name, pattern)
+  end
+
   return tool_name
 end
 
