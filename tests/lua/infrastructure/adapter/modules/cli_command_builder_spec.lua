@@ -93,7 +93,7 @@ describe("cli_command_builder", function()
     end)
 
     it("never embeds a handle_id, so the same conversation's system prompt is byte-identical across turns", function()
-      local opts = { chat_file_path = "/tmp/chat-test.md" }
+      local opts = { chat_bufnr = 12 }
       local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil, 9878)
       local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil, 9878)
       local idx1 = find_flag(cmd1, "--append-system-prompt")
@@ -176,7 +176,7 @@ describe("cli_command_builder", function()
     it("stays byte-identical across turns while the file is unchanged", function()
       write_project_prompt({ "Project rule: always run the linter." })
 
-      local opts = { chat_file_path = "/tmp/chat-test.md" }
+      local opts = { chat_bufnr = 12 }
       local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil, 9878)
       local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil, 9878)
 
