@@ -200,7 +200,7 @@ help tags.
 | `/clear`                  | Clear context                                                                 |
 | `/save`                   | Save current chat                                                             |
 | `/summarize`              | Summarize conversation                                                        |
-| `/model <model>`          | Set AI model (opus/sonnet/haiku/fable)                                        |
+| `/model <model>`          | Set AI model (haiku/sonnet/opus/fable)                                        |
 | `/help`                   | Show available slash commands                                                 |
 | `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules              |
 | `/allow [tool]`           | Add tool to allow list (`-tool` removes), or show current list if no args     |

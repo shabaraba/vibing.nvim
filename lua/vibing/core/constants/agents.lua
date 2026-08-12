@@ -1,9 +1,5 @@
 ---@class Vibing.Core.AgentsConstants
----バックエンド（エージェント）定義の単一ソース。
----`factory.lua` / `modes.lua` / `completion/providers/frontmatter.lua` / `infrastructure/init.lua`
----はすべてここから派生する。以前はこの4箇所に同じ知識が散っていて、`VALID_AGENTS` にあって
----factory に無いエージェントが検証を通った上で黙って claude にフォールバックし得た。
----バックエンドの追加はこのファイル1箇所の変更で完結する。
+---バックエンド（エージェント）定義の単一ソース。派生先と経緯は architecture.md を参照。
 ---
 ---このモジュールは意図的に何も require しない。派生先がここを require する一方向の依存に
 ---しておくことで、循環 require が構造的に起きないようにしている。

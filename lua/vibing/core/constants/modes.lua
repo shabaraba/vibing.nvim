@@ -8,7 +8,7 @@ local Agents = require("vibing.core.constants.agents")
 ---@type string[]
 M.VALID_MODELS = vim.tbl_map(function(m)
   return m.value
-end, Agents.AGENTS[Agents.DEFAULT].models)
+end, Agents.get(Agents.DEFAULT).models)
 
 ---権限モード
 ---@type string[]

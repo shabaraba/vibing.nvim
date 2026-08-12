@@ -15,7 +15,8 @@ local function resolve_module(agent_type)
 end
 
 --- Get the adapter instance name for an agent type.
---- Derived from the module path so it cannot drift from ADAPTER_MODULES.
+--- Derived from the module path in agents.lua, so it cannot drift from what factory actually
+--- loads.
 --- @param agent_type string|nil
 --- @return string
 function M.adapter_name(agent_type)

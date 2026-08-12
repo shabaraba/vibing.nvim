@@ -1,10 +1,6 @@
---- Copilot's tool vocabulary: its own tool names and permission-rule syntax, kept next to the
---- adapter rather than spread across the display, permission and command-building code.
----
---- There used to be three separate views of the same correspondence — a native→canonical label
---- map for display, a canonical→native map for `--deny-tool`, and nothing at all for permission
---- checks — which drifted: display distinguished `edit`→Edit from `create`→Write while deny
---- collapsed both to `write`. One table per direction, in one file, is the fix (#516).
+--- Copilot.s tool vocabulary: its own tool names and permission-rule syntax, in one place instead
+--- of spread across the display, permission and command-building code, where the two directions
+--- had already drifted from each other. See architecture.md.
 --- @module vibing.infrastructure.adapter.modules.copilot_tool_vocabulary
 
 local M = {}
