@@ -334,9 +334,11 @@ function M._register_commands()
       return
     end
 
+    -- 逃げ道（今すぐ送る手順）まで案内する。<CR>側の予約通知と同じ文面に揃えてあり、
+    -- どちらの経路で予約されたかによって案内が変わらないようにしている。
     notify.info(
       string.format(
-        "Scheduled for %s (in %s)",
+        "Scheduled for %s (in %s). To send now: :VibingCancelResume, then <CR>.",
         os.date("%Y-%m-%d %H:%M", fire_at),
         AutoResume.format_duration(math.max(fire_at - os.time(), 0))
       )

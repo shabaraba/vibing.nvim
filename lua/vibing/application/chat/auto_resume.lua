@@ -65,7 +65,14 @@ local function compute_delay(entry, opts)
 
   local delay = entry.resets_at + (opts.grace_sec or 10) - now
   if delay > MAX_DELAY_SEC then
-    return nil, string.format("reset time is %d days away; ignoring as implausible", math.floor(delay / 86400))
+    local days = math.floor(delay / 86400)
+    if (entry.kind or "auto_resume") == "scheduled" then
+      -- A scheduled time was typed by the user, not read out of an undocumented payload, so
+      -- "ignoring as implausible" would be accusing them of a bug. State the ceiling instead.
+      local max_days = math.floor(MAX_DELAY_SEC / 86400)
+      return nil, string.format("requested time is %d days away; the limit is %d days", days, max_days)
+    end
+    return nil, string.format("reset time is %d days away; ignoring as implausible", days)
   end
   -- Already past (e.g. Neovim was closed across the whole window): resume promptly, not instantly,
   -- so startup has settled before a request goes out.
@@ -160,6 +167,16 @@ local function fire_scheduled(chat_file_path)
     return
   end
 
+  -- The store is one file shared by every Neovim instance open on this project, and each one's
+  -- restore() arms a timer for the same entry, so one scheduled request can have several timers
+  -- fire for it. A freshly-read state other than "waiting" means somebody else already claimed
+  -- it; leave the entry alone (removing it here would delete another instance's in-flight row).
+  -- This narrows the race, it does not close it: two instances can both read "waiting" before
+  -- either writes "in_flight" back, because nothing locks the read-modify-write on the store.
+  if (current.state or "waiting") ~= "waiting" then
+    return
+  end
+
   local name = vim.fn.fnamemodify(chat_file_path, ":t")
 
   local chat_buf, err = resolve_chat_buffer(chat_file_path)
@@ -189,6 +206,16 @@ local function fire_scheduled(chat_file_path)
   if not ok then
     PendingResume.remove(chat_file_path)
     vim.notify("[vibing] Scheduled request failed: " .. tostring(send_err), vim.log.levels.WARN)
+    return
+  end
+
+  -- send_message() does not always send: if a limit is recorded as still active (a sibling chat
+  -- can hit one between arming and firing) it parks the request again instead. That re-park
+  -- overwrites the in_flight row above with a fresh waiting one, which is how the two outcomes
+  -- are told apart here — and it has already announced the new fire time, so claiming the
+  -- request was sent would be both a duplicate and a lie.
+  local after = PendingResume.get(chat_file_path)
+  if after and (after.state or "waiting") == "waiting" then
     return
   end
 
@@ -298,17 +325,22 @@ local function schedule(entry, opts)
   local path = entry.chat_file_path
   stop_timer(path)
 
+  -- A scheduled entry is a request the user typed a time for, so a refusal must not be reported
+  -- as an auto-resume that did not happen.
+  local label = (entry.kind or "auto_resume") == "scheduled" and "Request not scheduled"
+    or "Auto-resume not scheduled"
+
   local delay_sec, reason = compute_delay(entry, opts)
   if not delay_sec then
     PendingResume.remove(path)
-    vim.notify("[vibing] Auto-resume not scheduled: " .. tostring(reason), vim.log.levels.WARN)
+    vim.notify(string.format("[vibing] %s: %s", label, tostring(reason)), vim.log.levels.WARN)
     return
   end
 
   local delay_ms = delay_sec * 1000
   local timer = vim.loop.new_timer()
   if not timer then
-    vim.notify("[vibing] Auto-resume not scheduled: no timer available", vim.log.levels.WARN)
+    vim.notify(string.format("[vibing] %s: no timer available", label), vim.log.levels.WARN)
     return
   end
   timers[path] = timer
@@ -476,6 +508,29 @@ function M.on_success(chat_file_path)
     return
   end
   if not PendingResume.get(chat_file_path) then
+    return
+  end
+  stop_timer(chat_file_path)
+  PendingResume.remove(chat_file_path)
+end
+
+--- Called when a turn ends for a reason other than a usage limit — in practice, an error.
+---
+--- Only "scheduled" entries are dropped, and deliberately so. A scheduled request stores no body:
+--- it sends whatever occupies the chat's unsent `## User` section when its timer fires. A turn
+--- that ran on that section has consumed it, so an entry surviving the turn would later send
+--- whatever landed there next — a half-typed follow-up, or an approval / AskUserQuestion option
+--- block, both of which live in exactly that section.
+---
+--- An "auto_resume" entry is left untouched: it carries its own fixed continuation prompt, and an
+--- errored turn is no evidence its limit lifted. on_success remains its only remover.
+--- @param chat_file_path string|nil
+function M.discard_scheduled(chat_file_path)
+  if not chat_file_path or chat_file_path == "" then
+    return
+  end
+  local entry = PendingResume.get(chat_file_path)
+  if not entry or (entry.kind or "auto_resume") ~= "scheduled" then
     return
   end
   stop_timer(chat_file_path)

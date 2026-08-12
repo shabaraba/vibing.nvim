@@ -286,7 +286,10 @@ schedule, leaving the message unsent in the buffer, while the `<CR>` interceptio
 sends the message immediately instead of parking it. Either way, an armed schedule whose body
 cannot survive a restart is avoided. The rejected-turn path writes the text back into the buffer
 the same way but does not force a save itself — it relies on the buffer being saved for some other
-reason before a restart.
+reason before a restart. Because the body is the section rather than a copy of it, a schedule does
+not outlive a turn that consumes that section: sending manually with `<CR>` while a request is
+parked drops the entry whether the turn succeeds or fails, so the timer can never fire on whatever
+text happens to occupy the section later. Only a usage-limit rejection re-parks it.
 
 **`when` formats.** `:VibingSchedule` accepts relative offsets (`90s`, `30m`, `2h`, `1h30m`), a
 bare clock time (`18:30` — the next occurrence of that time; already past today rolls to

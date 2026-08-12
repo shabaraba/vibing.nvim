@@ -355,6 +355,12 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
   elseif not response.error then
     pcall(AutoResume.on_success, chat_file_path)
     pcall(LimitState.clear, chat_dir)
+  else
+    -- リミット以外のエラーで終わったターンも、未送信Userセクションは消費済み。予約
+    -- （scheduled）を残すと、その後そこに入った別のテキスト（書きかけの続きや承認UIの
+    -- 選択肢）をタイマーが送ってしまうので破棄する。auto_resume側のリトライbudgetは
+    -- リミットを観測したときにしか動かさないので、ここでは触らない。
+    pcall(AutoResume.discard_scheduled, chat_file_path)
   end
 
   if response.error then

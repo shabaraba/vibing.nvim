@@ -531,4 +531,47 @@ describe("auto_resume", function()
       assert.is_nil(PendingResume.get(chat_path))
     end)
   end)
+
+  describe("fire_scheduled state guard", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+
+    it("leaves an entry another Neovim instance already claimed alone", function()
+      -- pending-resume.json is shared by every Neovim open on the project, and each instance's
+      -- restore() arms a timer for the same entry, so both fire. The loser must notice the
+      -- freshly-read row is no longer "waiting" and do nothing at all — otherwise the request
+      -- goes out twice and the winner's in_flight row gets deleted underneath it.
+      local chat_path = tmp_root .. "/claimed.md"
+      local armed = {
+        chat_file_path = chat_path,
+        kind = "scheduled",
+        resets_at = os.time() + 60,
+        retry_count = 0,
+        recorded_at = os.time(),
+        state = "waiting",
+      }
+      -- What the other instance wrote to the store just before this timer fired. The `armed`
+      -- table above stays "waiting": it is the stale copy this instance's timer closed over,
+      -- which is why the guard has to read the store rather than trust its argument.
+      PendingResume.put(vim.tbl_extend("force", armed, { state = "in_flight" }))
+
+      local original_notify = vim.notify
+      local messages = {}
+      vim.notify = function(msg)
+        table.insert(messages, msg)
+      end
+
+      local ok, err = pcall(AutoResume._fire, chat_path, armed)
+      vim.notify = original_notify
+      assert.is_true(ok, err)
+
+      -- The chat file does not exist, so without the guard fire_scheduled() would fall through to
+      -- resolve_chat_buffer(), warn, and remove the winner's row.
+      assert.same({}, messages)
+      local still = PendingResume.get(chat_path)
+      assert.is_not_nil(still)
+      assert.equals("in_flight", still.state)
+
+      PendingResume.remove(chat_path)
+    end)
+  end)
 end)
