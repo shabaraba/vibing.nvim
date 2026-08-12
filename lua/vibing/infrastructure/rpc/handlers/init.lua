@@ -6,6 +6,7 @@ local cursor = require("vibing.infrastructure.rpc.handlers.cursor")
 local window = require("vibing.infrastructure.rpc.handlers.window")
 local lsp = require("vibing.infrastructure.rpc.handlers.lsp")
 local execute = require("vibing.infrastructure.rpc.handlers.execute")
+local highlight = require("vibing.infrastructure.rpc.handlers.highlight")
 local message = require("vibing.infrastructure.rpc.handlers.message")
 local permission = require("vibing.infrastructure.rpc.handlers.permission")
 local rate_limit = require("vibing.infrastructure.rpc.handlers.rate_limit")
@@ -41,6 +42,9 @@ M.lsp_call_hierarchy_incoming = lsp.lsp_call_hierarchy_incoming
 M.lsp_call_hierarchy_outgoing = lsp.lsp_call_hierarchy_outgoing
 
 M.execute = execute.execute
+
+M.highlight_range = highlight.highlight_range
+M.clear_highlight = highlight.clear_highlight
 
 M.send_message = message.send_message
 

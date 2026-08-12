@@ -5,6 +5,7 @@ import * as window from './window.js';
 import * as lsp from './lsp.js';
 import * as instances from './instances.js';
 import * as chat from './chat.js';
+import * as highlight from './highlight.js';
 
 export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Buffer operations
@@ -48,4 +49,8 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Chat operations
   nvim_chat_send_message: chat.handleChatSendMessage,
   nvim_ask_user_question: chat.handleAskUserQuestion,
+
+  // Highlighting
+  nvim_highlight_range: highlight.handleHighlightRange,
+  nvim_clear_highlight: highlight.handleClearHighlight,
 };

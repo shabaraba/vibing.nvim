@@ -26,6 +26,7 @@ Prefix with `mcp__vibing-nvim__`:
   `nvim_list_tabpages`, `nvim_set_window_size`, `nvim_focus_window`, `nvim_win_set_buf`,
   `nvim_win_open_file`
 - **Commands**: `nvim_execute`
+- **Highlighting**: `nvim_highlight_range`, `nvim_clear_highlight` (see "Showing Code" below)
 - **Chat**: `nvim_ask_user_question` (renders a choice list in the chat buffer — see
   `features.md`), `nvim_chat_send_message`
 - **Instances**: `nvim_list_instances`
@@ -38,6 +39,20 @@ Prefix with `mcp__vibing-nvim__`:
 chat window may not be active when a request is sent). Always call `nvim_list_windows()` first,
 match the target by `buffer_name`/`is_current`, and use the returned `winnr` — don't assume
 `winnr: 0` is the right window.
+
+## Showing Code
+
+When the user asks to see code, open it rather than describing where it is: `nvim_list_windows` →
+pick a window that isn't the chat → `nvim_win_open_file` → `nvim_set_cursor` → `nvim_highlight_range`.
+The CLI's system prompt tells the model to do this, so the tools exist to make that instruction
+actionable.
+
+`nvim_highlight_range` puts an extmark range in the `vibing_highlight` namespace using the
+`VibingHighlight` group, which is `default link`ed to `Visual` so `hi VibingHighlight ...` in a
+user's config overrides it. It clears itself after `duration_ms` (default 3000; `0` keeps it), and
+a second call to the same buffer replaces the first rather than stacking. Out-of-range lines are
+clamped to the buffer rather than rejected — search results go stale by a line or two, and pointing
+at roughly the right place beats refusing to point.
 
 ## Background LSP Analysis
 
