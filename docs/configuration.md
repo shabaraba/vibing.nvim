@@ -30,6 +30,7 @@ require("vibing").setup({
     default_model = "sonnet",
     utility_model = "haiku",
     setting_sources = { "user", "project", "local" },
+    subagent = { enabled = false, show_prefix = false },
     auto_resume_on_limit = { enabled = false, max_retries = 1 },
   },
   chat = {
@@ -129,6 +130,13 @@ agent = {
                             -- every chat, reducing fixed per-session token cost.
                             -- Note: does not affect MCP server loading.
 
+  subagent = {              -- What a subagent (Task/Agent tool) says in the chat
+    enabled = false,        -- Opt-in: passes --forward-subagent-text to the CLI so the
+                            -- subagent's own text reaches vibing.nvim at all. Without it
+                            -- the CLI forwards only the final tool result.
+    show_prefix = false,    -- Prefix each forwarded line with [<subagent_type>]
+  },
+
   auto_resume_on_limit = {  -- Resume a chat automatically once a usage limit resets
     enabled = false,        -- Opt-in: this spends tokens with nobody watching
     max_retries = 1,        -- Auto-resumes allowed per limit hit
@@ -138,6 +146,32 @@ agent = {
   },
 }
 ```
+
+### Subagent Output
+
+By default the Claude CLI forwards nothing a subagent says — a `Task`/`Agent` call shows up in
+the chat as its header and its final result, with everything in between invisible. Set
+`agent.subagent.enabled = true` to pass `--forward-subagent-text`, and the subagent's text is
+rendered under the tool header, indented behind a `│` rail:
+
+```text
+▶ Agent(code-explorer)
+  │ Checked every adapter: only claude_cli.lua reads the flag.
+  ⎿ (tool result)
+```
+
+The text is buffered per `tool_use_id` and flushed when that tool's result arrives, rather than
+streamed as it comes in. Two reasons: the CLI delivers subagent output as complete `assistant`
+messages (never as `stream_event` deltas, so there is nothing to stream), and with several
+subagents running in parallel, printing on arrival would interleave their voices. Buffering keeps
+each subagent's reasoning attached to the call it belongs to.
+
+Only the subagent's assistant text is shown. Its prompt echo, thinking blocks, and its own nested
+tool results stay hidden — those belong to the subagent's transcript, not the parent's. Turn on
+`show_prefix` when several subagents run at once and you want each line labelled with its type.
+
+Lightweight utility calls (title generation, summaries) never get the flag; they have no tools to
+delegate with.
 
 ### Auto-Resume on Usage Limit
 

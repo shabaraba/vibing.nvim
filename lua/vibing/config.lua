@@ -78,6 +78,13 @@
 ---@field default_model "sonnet"|"opus"|"haiku"|"fable" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速、"fable": Claude Fable）
 ---@field utility_model "sonnet"|"opus"|"haiku"|"fable" タイトル生成・要約等の軽量ユーティリティ呼び出し専用モデル（デフォルト: "haiku"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）
+---@field subagent Vibing.SubagentConfig? subagent（Task/Agentツール）の出力表示設定
+
+---@class Vibing.SubagentConfig
+---subagentが喋った内容をチャットに出すかどうかの設定
+---既定では subagent の中身は隠され、ツール結果だけが見える（従来の挙動）
+---@field enabled boolean? trueでCLIに`--forward-subagent-text`を渡し、subagentの本文をチャットに表示する（デフォルト: false）
+---@field show_prefix boolean? 各行に`[subagent_type]`のラベルを付けるか（デフォルト: false）
 
 ---@class Vibing.NodeConfig
 ---Node.js実行ファイル設定
@@ -184,6 +191,10 @@ M.defaults = {
     default_model = "sonnet",
     utility_model = "haiku",
     setting_sources = { "user", "project", "local" },
+    subagent = {
+      enabled = false,
+      show_prefix = false,
+    },
     -- 使用量リミットで応答が弾かれたとき、リセット時刻を待って自動で継続リクエストを送る。
     -- 無人でトークンを消費するため既定は無効。
     auto_resume_on_limit = {

@@ -6,6 +6,7 @@ local M = {}
 
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
 local ToolDisplay = require("vibing.infrastructure.adapter.modules.tool_display")
+local SubagentDisplay = require("vibing.infrastructure.adapter.modules.subagent_display")
 
 --- Extract brief summary from tool input for display
 --- @param tool_name string
@@ -47,6 +48,15 @@ local function emit_tool_result(block, tool_map, context)
 
   local marker = ToolDisplay.resolve_marker(tool_name, ToolDisplay.get_cached_markers(context))
   local header = string.format("\n%s %s(%s)\n", marker, tool_name, input_summary)
+
+  -- Anything the subagent said arrived while this tool was running; show it between the header
+  -- and the result, so the reasoning appears before the conclusion it produced.
+  local buffered = context._subagent_text and context._subagent_text[block.tool_use_id]
+  if buffered then
+    context._subagent_text[block.tool_use_id] = nil
+    local show_prefix = SubagentDisplay.get_cached_show_prefix(context)
+    header = header .. SubagentDisplay.format_buffer(tool_input.subagent_type, buffered, show_prefix)
+  end
 
   local result_text = ""
   if type(block.content) == "string" then
@@ -139,11 +149,56 @@ local function handle_stream_event(msg, context)
   store_session(msg, context)
 end
 
+--- The id of the tool call a message belongs to, or nil for the parent's own messages.
+---
+--- Top-level messages carry `"parent_tool_use_id": null`, which vim.json.decode turns into
+--- `vim.NIL` -- truthy in Lua. Testing the field directly would classify every ordinary assistant
+--- message as subagent output and stop tool results from rendering at all.
+--- @param msg table
+--- @return string|nil
+local function parent_tool_use_id(msg)
+  local id = msg.parent_tool_use_id
+  return type(id) == "string" and id ~= "" and id or nil
+end
+
+--- Collect text a subagent produced, keyed by the tool call that started it.
+---
+--- Verified against the CLI: with --forward-subagent-text, a subagent's contribution arrives as
+--- complete `assistant`/`user` events carrying a top-level `parent_tool_use_id` -- never as
+--- `stream_event` deltas. So the parent's streaming text is untouched by this feature, and the
+--- subagent's output can be held until its tool_result lands instead of interleaving with the
+--- other subagents running in parallel.
+---
+--- Only `text` blocks: thinking blocks are not what the reader asked to see.
+--- @param message table
+--- @param tool_use_id string
+--- @param context table
+local function buffer_subagent_text(message, tool_use_id, context)
+  local parts = {}
+  for _, block in ipairs(message.content or {}) do
+    if block.type == "text" and block.text then
+      table.insert(parts, block.text)
+    end
+  end
+  if #parts == 0 then
+    return
+  end
+
+  context._subagent_text = context._subagent_text or {}
+  local buffered = context._subagent_text[tool_use_id] or ""
+  context._subagent_text[tool_use_id] = buffered .. table.concat(parts, "")
+end
+
 --- Handle "assistant" event (complete response message)
 local function handle_assistant_event(msg, context)
   local message = msg.message
   if not message then
     return
+  end
+
+  local subagent_of = parent_tool_use_id(msg)
+  if subagent_of then
+    return buffer_subagent_text(message, subagent_of, context)
   end
 
   store_session(msg, context)
@@ -188,6 +243,13 @@ end
 local function handle_user_event(msg, context)
   local message = msg.message
   if not message then
+    return
+  end
+
+  -- A subagent's `user` events belong to its transcript, not the parent's: the prompt echo the
+  -- parent already showed in the tool header, and its own nested tool results. Those results
+  -- would find no entry in the shared tool_map anyway, but bailing out here says so on purpose.
+  if parent_tool_use_id(msg) then
     return
   end
 
