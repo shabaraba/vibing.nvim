@@ -27,6 +27,7 @@ local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.acti
 ---@field add_user_section fun() ユーザーセクションを追加
 ---@field get_bufnr fun(): number バッファ番号を取得
 ---@field insert_choices fun(questions: table) AskUserQuestion選択肢を挿入
+---@field set_pending_user_text fun(text: string) 次のユーザーセクションに差し込む本文を保存
 ---@field insert_approval_request fun(tool: string, input: table, options: table) ツール承認要求UIを挿入
 ---@field get_session_allow fun(): table セッションレベルの許可リストを取得
 ---@field get_session_deny fun(): table セッションレベルの拒否リストを取得
@@ -250,7 +251,7 @@ function M.execute(adapter, callbacks, message, config)
         end)
       end, function(response)
         vim.schedule(function()
-          M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths)
+          M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths, message)
         end)
       end)
       -- handle_idをコールバックで設定（キャンセル用）
@@ -259,7 +260,7 @@ function M.execute(adapter, callbacks, message, config)
       end
     else
       local response = adapter:execute(formatted_prompt, opts)
-      M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths)
+      M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths, message)
     end
   end
 
@@ -283,7 +284,14 @@ local function is_session_error(error_msg)
 end
 
 ---レスポンスを処理
-function M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths)
+---@param response table アダプターからのレスポンス
+---@param callbacks Vibing.ChatCallbacks
+---@param adapter table アダプター
+---@param config table 設定
+---@param mote_configs table[] セッション固有のmote設定配列
+---@param modified_file_paths table<string, boolean> ツールイベントで検知した変更ファイル
+---@param message string|nil 送信したユーザーメッセージ（リミットで弾かれた場合の再予約に使う）
+function M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths, message)
   -- キャンセル済みの古いリクエストが遅れて完了した場合、現在アクティブなハンドルIDと
   -- 一致しないレスポンスは無視する（新しいリクエストの結果を上書きさせない）
   local incoming_handle_id = response._handle_id
@@ -317,14 +325,36 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
     return
   end
 
-  -- 使用量リミットで弾かれた場合はリセット時刻まで待って自動継続する（opt-in）。
-  -- リミット以外で正常終了したときはリトライ budget をクリアする。
+  -- 使用量リミットで弾かれた場合の扱い:
+  --   1. プロジェクト単位のリセット時刻を記録し、次の送信を事前に予約へ回せるようにする
+  --   2. 弾かれた本文を未送信Userセクションとして書き戻し、リセット後に再送する予約を張る
+  --   3. 予約に回せなかった場合だけ、従来の auto_resume（固定プロンプト）にフォールバックする
+  -- リミット以外で正常終了したときはリトライ budget とリセット時刻の記録をクリアする。
   local AutoResume = require("vibing.application.chat.auto_resume")
+  local LimitState = require("vibing.infrastructure.storage.limit_state")
   local chat_file_path = (bufnr and vim.api.nvim_buf_is_valid(bufnr)) and vim.api.nvim_buf_get_name(bufnr) or nil
+  local chat_dir = chat_file_path and vim.fn.fnamemodify(chat_file_path, ":h") or nil
+
   if response._rate_limit_info then
-    pcall(AutoResume.on_rate_limited, chat_file_path, response._rate_limit_info)
+    pcall(LimitState.record, response._rate_limit_info, chat_dir)
+    local rescheduled = false
+    local ok, result = pcall(
+      M._reschedule_rejected_message,
+      callbacks,
+      chat_file_path,
+      response._rate_limit_info,
+      message,
+      config
+    )
+    if ok then
+      rescheduled = result
+    end
+    if not rescheduled then
+      pcall(AutoResume.on_rate_limited, chat_file_path, response._rate_limit_info)
+    end
   elseif not response.error then
     pcall(AutoResume.on_success, chat_file_path)
+    pcall(LimitState.clear, chat_dir)
   end
 
   if response.error then
@@ -451,6 +481,65 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
 
   -- NOTE: clear_handle_id() は呼ばない
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
+end
+
+---リミットで弾かれたメッセージを、リセット後に再送する予約に切り替える
+---
+---本文はバッファの未送信Userセクションが唯一の置き場所なので、ここではJSONに複製せず
+---set_pending_user_textで次のセクションに差し込むよう予約するだけにする。
+---セクション生成は_handle_response内の3経路（うち2つはvim.schedule/moteコールバック内）
+---から行われるため、直接書き込むとどれが走るかで競合する。
+---@param callbacks Vibing.ChatCallbacks
+---@param chat_file_path string|nil
+---@param info Vibing.RateLimitInfo
+---@param message string|nil 弾かれたユーザーメッセージ
+---@param config table
+---@return boolean rescheduled 予約に切り替えられたか
+function M._reschedule_rejected_message(callbacks, chat_file_path, info, message, config)
+  local opts = (config.agent and config.agent.scheduled_requests) or {}
+  if not opts.enabled then
+    return false
+  end
+  if not chat_file_path or chat_file_path == "" or not message or vim.trim(message) == "" then
+    return false
+  end
+  if not callbacks.set_pending_user_text then
+    return false
+  end
+
+  -- リセット時刻が分からない場合は予約時刻を決められない。固定プロンプトを投げ直す
+  -- auto_resume のフォールバック待ちにする方が、当てずっぽうの時刻で再送するより無害。
+  if not info.resets_at then
+    return false
+  end
+
+  local PendingResume = require("vibing.infrastructure.storage.pending_resume")
+  local existing = PendingResume.get(chat_file_path)
+  local retry_count = (existing and existing.retry_count or 0) + 1
+
+  local AutoResume = require("vibing.application.chat.auto_resume")
+  local grace = (config.agent and config.agent.auto_resume_on_limit and config.agent.auto_resume_on_limit.grace_sec)
+    or 10
+
+  local ok, reason = AutoResume.schedule_request(chat_file_path, info.resets_at + grace, {
+    limit_type = info.limit_type,
+    retry_count = retry_count,
+    max_retries = opts.max_retries or 3,
+  })
+  if not ok then
+    vim.notify(
+      string.format(
+        "[vibing] Not re-scheduling %s: %s",
+        vim.fn.fnamemodify(chat_file_path, ":t"),
+        tostring(reason)
+      ),
+      vim.log.levels.WARN
+    )
+    return false
+  end
+
+  callbacks.set_pending_user_text(message)
+  return true
 end
 
 ---moteの変更ファイル結果とツールイベントのパスを絶対パスに正規化して統合する

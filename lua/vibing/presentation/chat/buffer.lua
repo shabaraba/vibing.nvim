@@ -18,6 +18,7 @@ local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
 ---@field _pending_choices table[]? add_user_section()後に挿入する選択肢
 ---@field _pending_approval table? add_user_section()後に挿入する承認要求UI
+---@field _pending_user_text string? 次のadd_user_section()で本文として差し込むテキスト
 ---@field _current_handle_id string? 実行中のリクエストのハンドルID
 ---@field _current_adapter table? per-chatアダプター（フロントマターagent指定時）
 ---@field _is_sending boolean 送信処理中かどうか（Enter連打による重複送信防止）
@@ -473,6 +474,9 @@ function ChatBuffer:send_message()
     insert_choices = function(questions)
       return self:insert_choices(questions)
     end,
+    set_pending_user_text = function(text)
+      return self:set_pending_user_text(text)
+    end,
     insert_approval_request = function(tool, input, options, hook_request_id)
       return self:insert_approval_request(tool, input, options, hook_request_id)
     end,
@@ -554,8 +558,9 @@ function ChatBuffer:add_user_section()
   end
   self:_flush_chunks()
 
-  Renderer.addUserSection(self.buf, self.win, self._pending_choices, self._pending_approval)
+  Renderer.addUserSection(self.buf, self.win, self._pending_choices, self._pending_approval, self._pending_user_text)
   self._pending_choices = nil
+  self._pending_user_text = nil
   -- NOTE: Don't clear _pending_approval here!
   -- It needs to persist until the user sends their approval response.
   -- It will be cleared in send_message() after processing the approval.
@@ -579,6 +584,13 @@ end
 ---@param questions table CLIから受け取った質問構造
 function ChatBuffer:insert_choices(questions)
   self._pending_choices = questions
+end
+
+---次のユーザーセクションに差し込む本文を保存
+---リミットで弾かれたメッセージを予約として書き戻すために使う
+---@param text string
+function ChatBuffer:set_pending_user_text(text)
+  self._pending_user_text = text
 end
 
 ---承認入力のサマリーを生成
