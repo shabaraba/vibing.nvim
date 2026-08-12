@@ -19,15 +19,24 @@ local function ensure_highlight_group()
 end
 
 --- @param bufnr number
-local function clear(bufnr)
-  local timer = clear_timers[bufnr]
-  if timer then
-    timer:stop()
-    clear_timers[bufnr] = nil
-  end
+local function clear_marks(bufnr)
   if vim.api.nvim_buf_is_valid(bufnr) then
     vim.api.nvim_buf_clear_namespace(bufnr, NAMESPACE, 0, -1)
   end
+end
+
+--- Cancel a pending auto-clear and drop the marks. Only for the early paths — the timer's own
+--- callback must not come through here, because vim.defer_fn closes the handle after the callback
+--- returns and closing it again from inside errors.
+--- @param bufnr number
+local function clear(bufnr)
+  local timer = clear_timers[bufnr]
+  clear_timers[bufnr] = nil
+  if timer and not timer:is_closing() then
+    timer:stop()
+    timer:close()
+  end
+  clear_marks(bufnr)
 end
 
 --- @param bufnr any
@@ -69,8 +78,10 @@ function M.highlight_range(params)
   start_line = math.max(1, math.min(start_line, line_count))
   end_line = math.max(start_line, math.min(end_line, line_count))
 
+  -- A negative duration would otherwise fall through the `> 0` check below and read as "keep
+  -- forever", which is what 0 means. Treat it as unset rather than as a second way to say 0.
   local duration_ms = params.duration_ms
-  if type(duration_ms) ~= "number" then
+  if type(duration_ms) ~= "number" or duration_ms < 0 then
     duration_ms = DEFAULT_DURATION_MS
   end
 
@@ -86,7 +97,8 @@ function M.highlight_range(params)
 
   if duration_ms > 0 then
     clear_timers[bufnr] = vim.defer_fn(function()
-      clear(bufnr)
+      clear_timers[bufnr] = nil
+      clear_marks(bufnr)
     end, duration_ms)
   end
 

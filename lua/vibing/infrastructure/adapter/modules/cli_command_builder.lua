@@ -230,8 +230,9 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
         .. "mcp__vibing-nvim__nvim_list_windows to find a window that is not the chat, open the file "
         .. "there with mcp__vibing-nvim__nvim_win_open_file, move to the line with "
         .. "mcp__vibing-nvim__nvim_set_cursor, and point at the range with "
-        .. "mcp__vibing-nvim__nvim_highlight_range. Then explain the point in the chat. Skip this "
-        .. "when the user only wants a path or a name."
+        .. "mcp__vibing-nvim__nvim_highlight_range. Then explain the point in the chat. If the chat "
+        .. "is the only window, make one with mcp__vibing-nvim__nvim_execute and a split command. "
+        .. "Skip all of this when the user only wants a path or a name."
     )
 
     if rpc_port then

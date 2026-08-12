@@ -202,6 +202,38 @@ The MCP server exposes the following tools to Claude:
 - **nvim_execute** - Execute Neovim command
   - `command` (required): Neovim command string (e.g., "write", "edit foo.txt")
 
+### Highlighting
+
+- **nvim_highlight_range** - Temporarily highlight a line range so the user can see which code you
+  mean. Pair with `nvim_win_open_file` and `nvim_set_cursor` to open and jump there first
+  - `bufnr` (required): Buffer number (0 for current)
+  - `start_line` (required): First line to highlight (1-indexed)
+  - `end_line` (optional): Last line, inclusive (defaults to `start_line`)
+  - `duration_ms` (optional): Auto-clear delay, default 3000. `0` keeps it until the next
+    highlight or `nvim_clear_highlight`
+  - Uses the `VibingHighlight` group, `default link`ed to `Visual` and overridable with
+    `hi VibingHighlight ...`
+
+- **nvim_clear_highlight** - Remove the highlight before it times out
+  - `bufnr` (required): Buffer number (0 for current)
+
+### Chat
+
+- **nvim_chat_send_message** - Send a message to a chat buffer and start an AI request
+  - `bufnr` (required): Chat buffer number
+  - `message` (required): Message text
+  - `sender` (optional): Sender label, defaults to "User"
+
+- **nvim_ask_user_question** - Render a multiple-choice question in the chat buffer. This cancels
+  the in-flight turn; the user's answer arrives as the next turn's message
+  - `chat_bufnr` (required): Chat buffer number
+  - `questions` (required): Array of `{ question, options, multiSelect? }`
+
+### Instances
+
+- **nvim_list_instances** - List running Neovim instances with a vibing.nvim RPC server
+  - Returns: `{ instances: [{ pid, port, cwd, started_at }] }`
+
 ### LSP Operations
 
 - **nvim_lsp_definition** - Get definition location(s) of symbol
