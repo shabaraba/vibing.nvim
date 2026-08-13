@@ -83,6 +83,44 @@ describe("chat_excerpt.clean", function()
 
     assert.equals("", chat_excerpt.clean(text))
   end)
+
+  it("drops the whole approval block, including its Tool/Command lines", function()
+    -- The user answers by deleting all but one option, so what is sent still carries the header
+    -- and the tool details. Leaving those in put the approved command back into the title, which
+    -- is the exact failure this module exists to prevent.
+    local text = table.concat({
+      "⚠️  Tool approval required",
+      "",
+      "Tool: Bash",
+      "Command: npm install",
+      "File: /tmp/x.lua",
+      "",
+      "1. allow_once - Allow this execution only",
+      "",
+      "Please select and press `<CR>` to send.",
+      "",
+      "allow_once",
+    }, "\n")
+
+    assert.equals("allow_once", chat_excerpt.clean(text))
+  end)
+end)
+
+describe("chat_excerpt.clean_user", function()
+  it("keeps a request that opens with a marker glyph", function()
+    -- `→` and `💻` are rendered tool markers, but they are also ordinary punctuation in a
+    -- request. Stripping them here deletes the very thing the excerpt is built from.
+    local text = "認証まわりのバグ修正\n→ ログイン失敗時のエラーメッセージを直して"
+
+    assert.equals(text, chat_excerpt.clean_user(text))
+    assert.equals("💻 環境構築で詰まってるので直して", chat_excerpt.clean_user("💻 環境構築で詰まってるので直して"))
+  end)
+
+  it("still drops structured tool renders and results", function()
+    local text = "⏺ Bash(npm test)\n⎿ 3 passed\n     detail line\nこれで直った？"
+
+    assert.equals("これで直った？", chat_excerpt.clean_user(text))
+  end)
 end)
 
 describe("chat_excerpt.is_tool_line", function()
@@ -133,6 +171,34 @@ describe("chat_excerpt.build", function()
     local excerpt = chat_excerpt.build(conversation)
 
     assert.is_nil(excerpt:find("Continue from where", 1, true))
+  end)
+
+  it("keeps a user request written with marker glyphs, while still cleaning the assistant", function()
+    local conversation = {
+      { role = "user", content = "→ ログイン失敗時のエラーメッセージを直して" },
+      { role = "assistant", content = "⏺ Bash(npm test)\n直しました。" },
+    }
+
+    local excerpt = chat_excerpt.build(conversation)
+
+    assert.is_not_nil(excerpt:find("→ ログイン失敗時のエラーメッセージを直して", 1, true))
+    assert.is_nil(excerpt:find("(none)", 1, true))
+    assert.is_nil(excerpt:find("npm test", 1, true))
+  end)
+
+  it("drops a user message that is nothing but an approval answer", function()
+    local conversation = {
+      { role = "user", content = "認証まわりのバグを直したい" },
+      {
+        role = "user",
+        content = "⚠️  Tool approval required\n\nTool: Bash\nCommand: rm -rf build\n\n1. allow_once - Allow this execution only\n\nPlease select and press `<CR>` to send.\n\nallow_once",
+      },
+    }
+
+    local excerpt = chat_excerpt.build(conversation)
+
+    assert.is_nil(excerpt:find("rm -rf build", 1, true))
+    assert.is_nil(excerpt:find("allow_once", 1, true))
   end)
 
   it("labels user requests as the subject and assistant replies as background", function()

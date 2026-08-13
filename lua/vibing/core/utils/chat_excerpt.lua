@@ -55,13 +55,22 @@ end
 ---`- fix parse(input)` のような markdown 箇条書きがツール行と誤判定され、
 ---ユーザーの依頼そのものが抜粋から消える。ASCII記号のマーカーを使う人は
 ---`config.ui.tool_markers` に載っているので glyphs 側で拾える。
+---
+---`allow_glyph_prefix` は「マーカーで始まるだけ」の緩い判定を使うかどうか。構造マッチと違って
+---行の中身を一切見ないので、user の発言に対しては使ってはいけない: `→ ログインを直して` や
+---`💻 環境構築で詰まってる` のような、記号を箇条書き代わりに使った依頼文がそのまま消え、
+---1行の依頼ならメッセージごと抜粋から落ちる（このPRが直そうとしている症状そのもの）。
 ---@param trimmed string
 ---@param glyphs string[]
+---@param allow_glyph_prefix boolean
 ---@return boolean
-local function is_tool_header(trimmed, glyphs)
+local function is_tool_header(trimmed, glyphs, allow_glyph_prefix)
   local head, name = trimmed:match("^(%S+)%s+([%w_][%w_%.:%-]*)%(")
   if head and name and not head:match("[%w]") and head:match("[\128-\255]") then
     return true
+  end
+  if not allow_glyph_prefix then
+    return false
   end
   for _, g in ipairs(glyphs) do
     if trimmed:sub(1, #g) == g then
@@ -82,8 +91,9 @@ end
 
 ---@param text string
 ---@param glyphs string[]
+---@param allow_glyph_prefix boolean マーカーで始まるだけの行もツール実況として落とすか（assistant のみ）
 ---@return string
-local function clean_with(text, glyphs)
+local function clean_with(text, glyphs, allow_glyph_prefix)
   -- HTMLコメントは複数行にまたがりうるので行分割の前に落とす
   text = text:gsub("<!%-%-.-%-%->", "")
 
@@ -109,7 +119,16 @@ local function clean_with(text, glyphs)
       while i <= #lines and lines[i]:match("^     ") do
         i = i + 1
       end
-    elseif is_tool_header(trimmed, glyphs) then
+    elseif trimmed:match("Tool approval required") then
+      -- 承認UIは1ブロックまるごと落とす。`Tool:` / `Command:` / `File:` 等の行まで含めるため、
+      -- 選択肢行を個別に消すのではなく締めの一行まで読み飛ばす。ユーザーは選択肢を1つ残して
+      -- 送るので、残った `allow_once` もこの範囲に入る。
+      i = i + 1
+      while i <= #lines and not vim.trim(lines[i]):match("^Please select and press") do
+        i = i + 1
+      end
+      i = i + 1
+    elseif is_tool_header(trimmed, glyphs, allow_glyph_prefix) then
       -- ヘッダーの引数は複数行になりうる（Bashの複数行コマンド等）。括弧の釣り合いで終端を探す。
       -- 空行でも打ち切るのは、`case x)` のように釣り合わない括弧を含むコマンドで
       -- 後続の地の文まで丸ごと食べてしまわないため。
@@ -124,7 +143,8 @@ local function clean_with(text, glyphs)
       or trimmed:match("^Context:")
       or trimmed:match("^%*%*Error:%*%*")
       or trimmed:match("^%*Session has been reset")
-      or trimmed:match("Tool approval required")
+      -- 承認ブロックはひとつ上の分岐で丸ごと落とすが、締めの行が消された状態で送られた場合に
+      -- 選択肢だけが残るので、個別のパターンも残しておく
       or trimmed:match("^%d+%.%s+%a+_once%f[%W]")
       or trimmed:match("^%d+%.%s+%a+_for_session%f[%W]")
       or trimmed:match("^Please select and press")
@@ -145,14 +165,26 @@ end
 ---1メッセージ分の描画テキストから、タイトル生成に意味のある地の文だけを残す。
 ---落とすもの: ツール呼び出しヘッダーとその複数行引数、ツール結果ブロック、フェンス済みコードブロック、
 ---HTMLコメント（patch/subagent マーカー等）、`@file:` コンテキスト行、
----レート制限などのシステム通知、ツール承認UIの選択肢。
+---レート制限などのシステム通知、ツール承認UIのブロック。
+---
+---assistant の描画テキスト向け。user の発言には `M.clean_user` を使う。
 ---@param text string?
 ---@return string
 function M.clean(text)
   if not text or text == "" then
     return ""
   end
-  return clean_with(text, marker_glyphs())
+  return clean_with(text, marker_glyphs(), true)
+end
+
+---`M.clean` の user 発言版。マーカーで始まるだけの行は落とさない（理由は `is_tool_header`）。
+---@param text string?
+---@return string
+function M.clean_user(text)
+  if not text or text == "" then
+    return ""
+  end
+  return clean_with(text, marker_glyphs(), false)
 end
 
 ---ツール実況行かどうか。`first_title_line`（モデルの応答側）と抜粋のクリーニングで
@@ -160,7 +192,8 @@ end
 ---@param line string
 ---@return boolean
 function M.is_tool_line(line)
-  return is_tool_header(vim.trim(line), marker_glyphs())
+  -- ここはモデル自身が返したタイトル候補1行が対象なので、緩いマーカー前方一致で構わない。
+  return is_tool_header(vim.trim(line), marker_glyphs(), true)
 end
 
 ---@param s string
@@ -192,7 +225,12 @@ function M.build(conversation)
   local glyphs = marker_glyphs()
 
   for _, msg in ipairs(conversation or {}) do
-    local cleaned = msg.content and msg.content ~= "" and clean_with(msg.content, glyphs) or ""
+    -- マーカー前方一致による除去は assistant 側だけ。user の発言に効かせると、記号を
+    -- 箇条書き代わりに使った依頼文がそのまま消える。
+    local cleaned = msg.content
+        and msg.content ~= ""
+        and clean_with(msg.content, glyphs, msg.role ~= "user")
+      or ""
     if cleaned ~= "" and not BOILERPLATE_MESSAGES[cleaned:lower()] then
       if msg.role == "user" then
         users[#users + 1] = cleaned
