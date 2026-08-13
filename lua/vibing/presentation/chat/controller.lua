@@ -200,6 +200,8 @@ end
 ---@param count number|nil 何個進むか（省略時は1）
 ---@return number|nil target 移動先の行番号。移動先が無ければnil
 function M._resolve_jump_target(headers, cur, direction, count)
+  -- Both "no count" spellings arrive here: nil from a direct Lua call, and 0 from
+  -- nvim_create_user_command{ count = 0 } when the user typed none. Neither means "stay put".
   count = math.max(count or 1, 1)
 
   local candidates = {}
@@ -228,6 +230,11 @@ end
 ---@param direction "next"|"prev" 移動方向
 ---@param count number|nil いくつ先のセクションへ飛ぶか（省略時は1）
 function M.handle_jump_user(direction, count)
+  if direction ~= "next" and direction ~= "prev" then
+    notify.warn(string.format("Unknown jump direction: %s", tostring(direction)))
+    return
+  end
+
   local view = require("vibing.presentation.chat.view")
   local current_view = view.get_current()
 
@@ -254,7 +261,10 @@ function M.handle_jump_user(direction, count)
   -- これが無いと、このコマンドに ]u などを割り当てたとき <C-o> で戻れず、
   -- 他の `]`/`[` 系モーションと挙動が食い違う。
   vim.cmd("normal! m'")
-  vim.api.nvim_win_set_cursor(0, { target, 0 })
+  -- pcall to match every other nvim_win_set_cursor call site in the codebase (buffer.lua,
+  -- renderer.lua, oil.lua). `target` came from this same buffer a moment ago, but a cursor move
+  -- is not worth an error dialog if the buffer changed underneath us.
+  pcall(vim.api.nvim_win_set_cursor, 0, { target, 0 })
   vim.cmd("normal! zz")
 end
 

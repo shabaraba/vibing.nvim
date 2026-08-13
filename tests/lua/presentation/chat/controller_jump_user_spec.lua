@@ -2,6 +2,8 @@
 --- tests/e2e/chat_jump_user_spec.lua drives the commands for real; this pins the edge cases that
 --- would need one spawned Neovim instance each to reach through the command.
 local Controller = require("vibing.presentation.chat.controller")
+local view = require("vibing.presentation.chat.view")
+local notify = require("vibing.core.utils.notify")
 
 describe("controller User section jump", function()
   local buffers = {}
@@ -90,6 +92,67 @@ describe("controller User section jump", function()
       assert.is_nil(Controller._resolve_jump_target(headers, 12, "next"))
       assert.is_nil(Controller._resolve_jump_target(headers, 4, "prev"))
       assert.is_nil(Controller._resolve_jump_target({}, 1, "next"))
+    end)
+  end)
+
+  describe("handle_jump_user guard branches", function()
+    -- The E2E spec can only reach these by spawning an instance per case, which is why they were
+    -- uncovered: each is a one-line early return that decides which message the user sees.
+    local original_get_current, original_warn, original_info
+    local messages
+
+    before_each(function()
+      messages = {}
+      original_get_current, original_warn, original_info = view.get_current, notify.warn, notify.info
+      notify.warn = function(msg)
+        table.insert(messages, { level = "warn", msg = msg })
+      end
+      notify.info = function(msg)
+        table.insert(messages, { level = "info", msg = msg })
+      end
+    end)
+
+    after_each(function()
+      view.get_current, notify.warn, notify.info = original_get_current, original_warn, original_info
+    end)
+
+    it("warns when the current buffer is not a chat", function()
+      view.get_current = function()
+        return nil
+      end
+
+      Controller.handle_jump_user("next")
+
+      assert.equals(1, #messages)
+      assert.equals("warn", messages[1].level)
+      assert.equals("Not in a vibing chat buffer", messages[1].msg)
+    end)
+
+    it("says so for a chat with no User section at all", function()
+      -- A brand-new chat, before the first message is committed.
+      local buf = scratch({ "---", "vibing.nvim: true", "---", "" })
+      view.get_current = function()
+        return { buf = buf }
+      end
+
+      Controller.handle_jump_user("next")
+
+      assert.equals(1, #messages)
+      assert.equals("info", messages[1].level)
+      assert.equals("No User section found", messages[1].msg)
+    end)
+
+    it("rejects a direction it does not know instead of silently jumping backwards", function()
+      -- The two commands hardcode next/prev, but the function is exported and reachable.
+      view.get_current = function()
+        error("must not be reached: direction is validated first")
+      end
+
+      Controller.handle_jump_user("sideways")
+
+      assert.equals(1, #messages)
+      assert.equals("warn", messages[1].level)
+      assert.is_truthy(messages[1].msg:find("sideways", 1, true))
     end)
   end)
 end)
