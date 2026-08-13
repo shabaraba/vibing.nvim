@@ -63,6 +63,14 @@ the suffix instead, so the grant survives a rename that `VIBING_NVIM_MCP_TOOL_PA
 Before #564 every allowed call took the silent path, so under any mode but `bypassPermissions` the
 CLI refused those tools while vibing.nvim's own log said "allow".
 
+The match is on the name and nothing else, and that is worth stating plainly because an `allow`
+skips the user's own `settings.json` rules. It requires the separator both registration styles put
+before the server name (`_vibing-nvim__nvim_<tool>`), so a server merely _ending_ with the name
+(`mcp__my-vibing-nvim__…`) does not match. A third-party server genuinely registered as
+`vibing-nvim` and exposing `nvim_*` tools **would** be granted — nothing in a tool name says who
+registered it. That needs an untrusted MCP server already in the user's own Claude Code config, so
+it is accepted rather than solved.
+
 `hook_cleanup.cleanup_stale_dirs()` (run at startup) treats a comm directory as stale only when
 its owning Neovim is gone: it cross-checks `registry.list()`, which already filters to live PIDs,
 so a concurrent instance's in-flight `.req`/`.res` files are never deleted.

@@ -63,6 +63,21 @@ describe("permission handler hook decision", function()
     assert.equals("allow", output.permissionDecision)
   end)
 
+  it("defers a server whose name merely ends with vibing-nvim", function()
+    -- Permitted by the allow list, so the only question left is which of the two "yes" answers it
+    -- gets. "allow" would hand an unrelated MCP server the same bypass of the user's own
+    -- settings.json that vibing-nvim's own tools get.
+    local LOOKALIKE = "mcp__my-vibing-nvim__nvim_get_buffer"
+    permission.set_active_opts(HANDLE_ID, {
+      permissions_allow = { LOOKALIKE },
+      permission_mode = "acceptEdits",
+    })
+
+    local output = decide("req-lookalike", LOOKALIKE, {})
+
+    assert.equals("defer", output.permissionDecision)
+  end)
+
   it("defers an ordinary allowed tool to the CLI's own gate", function()
     -- Not "allow": granting every permitted tool would also override the deny rules in the user's
     -- own settings.json, which --setting-sources still pulls in.
