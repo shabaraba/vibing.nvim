@@ -25,6 +25,13 @@ require("vibing").setup({
   -- RPC server could never pass it. Concurrent children do not collide — the server walks to the
   -- next free port when 9876 is taken.
   mcp = { enabled = true },
+  -- The child is a throwaway editor in a temp directory, and these specs are about UI plumbing,
+  -- not about permissions. It also has to be bypassPermissions to work at all: under acceptEdits
+  -- the CLI refuses the vibing-nvim MCP tool ("Claude requested permissions to use ..."), and
+  -- listing it in --allowedTools does not change that — verified with the exact tool name, the
+  -- `mcp__<server>__*` form and the bare `mcp__<server>` form. vibing's own PreToolUse hook
+  -- allows it; the CLI's gate is what refuses, and this is the only lever that clears it.
+  permissions = { mode = "bypassPermissions" },
 })
 
 -- Read back by cleanup_instance so the parent can delete what this child wrote.

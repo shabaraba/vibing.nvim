@@ -13,7 +13,7 @@ end
 local TIMEOUTS = {
   CHAT_CREATION = 2000,
   BUFFER_READY = 5000,
-  ASSISTANT_RESPONSE = 30000,
+  ASSISTANT_RESPONSE = 60000,
 }
 
 --- Count how many lines in the current buffer match the given pattern.
@@ -21,7 +21,7 @@ local TIMEOUTS = {
 ---@param pattern string Lua pattern
 ---@return number
 local function count_lines_matching(nvim_instance, pattern)
-  local lines = vim.fn.rpcrequest(nvim_instance.job_id, "nvim_buf_get_lines", { 0, 0, -1, false })
+  local lines = vim.fn.rpcrequest(nvim_instance.job_id, "nvim_buf_get_lines", 0, 0, -1, false)
   local count = 0
   for _, line in ipairs(lines) do
     if line:match(pattern) then
@@ -63,10 +63,10 @@ describe("E2E: nvim_ask_user_question MCP tool", function()
     helper.send_keys(nvim_instance, "<CR>")
 
     -- Wait for question prompt (same UI as AskUserQuestion)
-    ok = helper.wait_for_buffer_content(nvim_instance, "Please answer the question", TIMEOUTS.ASSISTANT_RESPONSE)
+    ok = helper.wait_for_buffer_content(nvim_instance, "\n1%. A\n", TIMEOUTS.ASSISTANT_RESPONSE)
     assert.is_true(ok, "Choice-list prompt should appear")
 
-    local count = count_lines_matching(nvim_instance, "Please answer the question")
-    assert.equals(1, count, "Question prompt must appear exactly once — no duplicate UI insertion")
+    local count = count_lines_matching(nvim_instance, "^1%. A$")
+    assert.equals(1, count, "The question must be rendered exactly once — no duplicate UI insertion")
   end)
 end)

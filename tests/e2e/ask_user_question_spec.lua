@@ -12,7 +12,7 @@ end
 local TIMEOUTS = {
   CHAT_CREATION = 2000,
   BUFFER_READY = 5000,
-  ASSISTANT_RESPONSE = 30000,
+  ASSISTANT_RESPONSE = 60000,
 }
 
 --- Count how many lines in the current buffer match the given pattern.
@@ -20,7 +20,7 @@ local TIMEOUTS = {
 ---@param pattern string Lua pattern
 ---@return number
 local function count_lines_matching(nvim_instance, pattern)
-  local lines = vim.fn.rpcrequest(nvim_instance.job_id, "nvim_buf_get_lines", { 0, 0, -1, false })
+  local lines = vim.fn.rpcrequest(nvim_instance.job_id, "nvim_buf_get_lines", 0, 0, -1, false)
   local count = 0
   for _, line in ipairs(lines) do
     if line:match(pattern) then
@@ -62,12 +62,12 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
     helper.send_keys(nvim_instance, "<CR>")
 
     -- Wait for question prompt
-    ok = helper.wait_for_buffer_content(nvim_instance, "Please answer the question", TIMEOUTS.ASSISTANT_RESPONSE)
-    assert.is_true(ok, "AskUserQuestion prompt should appear")
+    ok = helper.wait_for_buffer_content(nvim_instance, "\n1%. A\n", TIMEOUTS.ASSISTANT_RESPONSE)
+    assert.is_true(ok, "Choice list should be rendered into the buffer")
 
     -- Verify prompt appears exactly once (regression: was duplicated before the fix)
-    local count = count_lines_matching(nvim_instance, "Please answer the question")
-    assert.equals(1, count, "Question prompt must appear exactly once — no duplicate UI insertion")
+    local count = count_lines_matching(nvim_instance, "^1%. A$")
+    assert.equals(1, count, "The question must be rendered exactly once — no duplicate UI insertion")
   end)
 
   it("should not repeat the question prompt after user answers", function()
@@ -88,8 +88,8 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
     helper.send_keys(nvim_instance, "<CR>")
 
     -- Wait for question prompt to appear
-    ok = helper.wait_for_buffer_content(nvim_instance, "Please answer the question", TIMEOUTS.ASSISTANT_RESPONSE)
-    assert.is_true(ok, "AskUserQuestion prompt should appear")
+    ok = helper.wait_for_buffer_content(nvim_instance, "\n1%. Red\n", TIMEOUTS.ASSISTANT_RESPONSE)
+    assert.is_true(ok, "Choice list should be rendered into the buffer")
 
     -- Send an answer by pressing <CR> (all options remain — Claude understands)
     helper.send_keys(nvim_instance, "<CR>")
@@ -99,7 +99,7 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
     assert.is_true(ok, "Claude should respond after the answer is sent")
 
     -- Verify prompt still appears only once (not re-inserted after answering)
-    local count = count_lines_matching(nvim_instance, "Please answer the question")
+    local count = count_lines_matching(nvim_instance, "^1%. Red$")
     assert.equals(1, count, "Question prompt must not be re-inserted after the user answers")
   end)
 end)

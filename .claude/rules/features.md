@@ -133,9 +133,13 @@ Which database should we use?
 1. PostgreSQL
 2. MySQL
 3. SQLite
-
-Please answer the question and press `<CR>` to send.
 ```
+
+That is the whole of it — the question text and the options, appended under the unsent `## User`
+header. There is no trailing "press `<CR>` to send" line; only the _approval_ UI has one
+(`renderer.lua`). This example used to include one, and `tests/e2e/ask_user_question_spec.lua` was
+written against the documentation rather than the renderer, so it waited forever for a string
+nothing emits.
 
 Single-select questions render as a numbered list (`1. 2. 3.`); multi-select questions render as a
 bullet list (`- - -`). The user deletes unwanted options with standard Vim commands (`dd`, etc.)
