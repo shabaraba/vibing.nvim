@@ -229,4 +229,349 @@ describe("auto_resume", function()
       assert.equals("/unknown.md", entries[2].chat_file_path)
     end)
   end)
+
+  describe("_may_schedule", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+
+    it("allows scheduling when no budget is given (explicit :VibingSchedule)", function()
+      assert.is_true(AutoResume._may_schedule(nil, nil))
+    end)
+
+    it("allows a re-schedule while the budget has room", function()
+      assert.is_true(AutoResume._may_schedule(1, 3))
+    end)
+
+    it("refuses once the budget is spent", function()
+      -- This is the only guard against fire -> rejected -> re-schedule looping forever.
+      assert.is_false(AutoResume._may_schedule(3, 3))
+    end)
+
+    it("treats a missing retry_count as zero", function()
+      assert.is_true(AutoResume._may_schedule(nil, 3))
+    end)
+  end)
+
+  describe("_is_restorable", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+
+    it("re-arms a scheduled entry even when auto-resume is disabled", function()
+      -- The user asked for this one by hand; the opt-in flag governs unattended resumes only.
+      local entry = { chat_file_path = "/a.md", kind = "scheduled", state = "waiting" }
+      assert.is_true(AutoResume._is_restorable(entry, { enabled = false }))
+    end)
+
+    it("does not re-arm an auto_resume entry when the feature is disabled", function()
+      local entry = { chat_file_path = "/a.md", kind = "auto_resume", state = "waiting" }
+      assert.is_false(AutoResume._is_restorable(entry, { enabled = false }))
+    end)
+
+    it("re-arms an auto_resume entry when the feature is enabled", function()
+      local entry = { chat_file_path = "/a.md", state = "waiting" }
+      assert.is_true(AutoResume._is_restorable(entry, { enabled = true }))
+    end)
+
+    it("never re-arms an in_flight entry, whatever its kind", function()
+      assert.is_false(
+        AutoResume._is_restorable({ chat_file_path = "/a.md", kind = "scheduled", state = "in_flight" }, { enabled = true })
+      )
+    end)
+
+    it("never re-arms an entry without a chat file path", function()
+      assert.is_false(AutoResume._is_restorable({ kind = "scheduled", state = "waiting" }, { enabled = true }))
+    end)
+  end)
+
+  describe("schedule_request", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+
+    it("writes a scheduled entry armed for the requested time", function()
+      local chat_path = tmp_root .. "/.vibing/chat/a.md"
+      vim.fn.mkdir(vim.fn.fnamemodify(chat_path, ":h"), "p")
+      local fire_at = os.time() + 3600
+
+      local ok = AutoResume.schedule_request(chat_path, fire_at, { limit_type = "five_hour" })
+      assert.is_true(ok)
+
+      local entry = PendingResume.get(chat_path)
+      assert.is_not_nil(entry)
+      assert.equals("scheduled", entry.kind)
+      assert.equals(fire_at, entry.resets_at)
+      assert.equals("five_hour", entry.limit_type)
+      assert.equals("waiting", entry.state)
+
+      AutoResume.cancel(chat_path)
+    end)
+
+    it("refuses when the re-schedule budget is spent", function()
+      local chat_path = tmp_root .. "/.vibing/chat/b.md"
+      vim.fn.mkdir(vim.fn.fnamemodify(chat_path, ":h"), "p")
+
+      local ok, reason = AutoResume.schedule_request(chat_path, os.time() + 60, { retry_count = 3, max_retries = 3 })
+      assert.is_false(ok)
+      assert.is_string(reason)
+      assert.is_nil(PendingResume.get(chat_path))
+    end)
+
+    it("refuses a fire time far enough out to be implausible", function()
+      -- Same 8-day ceiling auto-resume uses: a timer armed for months means a misread payload.
+      local chat_path = tmp_root .. "/.vibing/chat/c.md"
+      vim.fn.mkdir(vim.fn.fnamemodify(chat_path, ":h"), "p")
+
+      local ok = AutoResume.schedule_request(chat_path, os.time() + 30 * 24 * 3600, {})
+      assert.is_false(ok)
+      assert.is_nil(PendingResume.get(chat_path))
+    end)
+  end)
+
+  describe("schedule_request quiet option", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+
+    it("suppresses schedule()'s own notification when quiet=true", function()
+      -- ChatBuffer:_try_schedule_instead_of_send already tells the user (with the escape hatch
+      -- named), so the generic "scheduled to send in..." notification from schedule() would just
+      -- be a duplicate for that caller.
+      local chat_path = tmp_root .. "/.vibing/chat/quiet.md"
+      vim.fn.mkdir(vim.fn.fnamemodify(chat_path, ":h"), "p")
+
+      local original_notify = vim.notify
+      local messages = {}
+      vim.notify = function(msg)
+        table.insert(messages, msg)
+      end
+
+      local ok, err = pcall(AutoResume.schedule_request, chat_path, os.time() + 3600, { quiet = true })
+      vim.notify = original_notify
+      assert.is_true(ok, err)
+
+      for _, msg in ipairs(messages) do
+        assert.is_falsy(msg:match("scheduled to send in"), "quiet=true must suppress schedule()'s own notification")
+      end
+
+      AutoResume.cancel(chat_path)
+    end)
+
+    it("still notifies by default, and a later call is unaffected by an earlier quiet one", function()
+      -- Guards against a regression where quiet=true would leak into the shared SCHEDULED_OPTS
+      -- table and silence every later schedule_request() call, quiet or not.
+      local chat_path = tmp_root .. "/.vibing/chat/loud.md"
+      vim.fn.mkdir(vim.fn.fnamemodify(chat_path, ":h"), "p")
+
+      local original_notify = vim.notify
+      local messages = {}
+      vim.notify = function(msg)
+        table.insert(messages, msg)
+      end
+
+      local ok, err = pcall(AutoResume.schedule_request, chat_path, os.time() + 3600, {})
+      vim.notify = original_notify
+      assert.is_true(ok, err)
+
+      local found = false
+      for _, msg in ipairs(messages) do
+        if msg:match("scheduled to send in") then
+          found = true
+        end
+      end
+      assert.is_true(found, "expected the default (non-quiet) notification; got: " .. vim.inspect(messages))
+
+      AutoResume.cancel(chat_path)
+    end)
+  end)
+
+  describe("cancel", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+    local LimitState = require("vibing.infrastructure.storage.limit_state")
+
+    it("also releases the project's recorded usage limit for the cancelled chat", function()
+      -- Otherwise the very next <CR> would re-park under the same stale record: cancelling means
+      -- "send now", so the record must go with it.
+      -- Flat path (not nested under a subdirectory): cancel() resolves LimitState's cwd from
+      -- fnamemodify(chat_path, ":h"), and tmp_root itself is not a git repo, so the seed below
+      -- and cancel()'s own resolution must agree on the literal directory, not just "some
+      -- directory under tmp_root" (unlike a real repo, there is no git root to walk up to here).
+      local chat_path = tmp_root .. "/chat.md"
+      LimitState.record({ resets_at = os.time() + 3600, limit_type = "five_hour" }, tmp_root)
+      assert.is_not_nil(LimitState.get_active(tmp_root))
+
+      AutoResume.cancel(chat_path)
+
+      assert.is_nil(LimitState.get_active(tmp_root))
+    end)
+
+    it("cancelling every pending resume also clears the current project's recorded limit", function()
+      -- Stub the stores rather than touch real files: cancel(nil) resolves both stores through
+      -- the *process* cwd (this repository), the same reason the `list` tests above stub
+      -- PendingResume.load instead of writing through it.
+      local original_load = PendingResume.load
+      local original_pending_clear = PendingResume.clear
+      local original_limit_clear = LimitState.clear
+      local limit_clear_call_count = 0
+      -- Tracked separately from the count: table.insert(t, nil) is a no-op on #t, so a plain
+      -- "insert every call's arg into a list" stub would silently under-count the very call
+      -- (LimitState.clear() with no cwd) this test exists to check.
+      local last_limit_clear_cwd = "<not called>"
+
+      PendingResume.load = function()
+        return { ["/a.md"] = { chat_file_path = "/a.md" } }
+      end
+      PendingResume.clear = function() end
+      LimitState.clear = function(cwd)
+        limit_clear_call_count = limit_clear_call_count + 1
+        last_limit_clear_cwd = cwd
+      end
+
+      local ok, err = pcall(AutoResume.cancel)
+
+      PendingResume.load = original_load
+      PendingResume.clear = original_pending_clear
+      LimitState.clear = original_limit_clear
+
+      assert.is_true(ok, err)
+      assert.equals(1, limit_clear_call_count)
+      -- No cwd argument: clears the current project's record, matching PendingResume.clear()'s
+      -- own (also-argument-less) resolution one line above it in cancel().
+      assert.is_nil(last_limit_clear_cwd)
+    end)
+  end)
+
+  describe("_scheduled_decision", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+
+    it("sends when a body is waiting and the chat is idle", function()
+      assert.equals("send", AutoResume._scheduled_decision("do the thing", false))
+    end)
+
+    it("drops when the chat is already sending", function()
+      local action = AutoResume._scheduled_decision("do the thing", true)
+      assert.equals("drop", action)
+    end)
+
+    it("drops when the body was deleted while the chat was parked", function()
+      -- The body lives in the buffer, so the user can remove it. Sending an empty message, or
+      -- the generic continuation prompt, would both be wrong.
+      local action, reason = AutoResume._scheduled_decision(nil, false)
+      assert.equals("drop", action)
+      assert.is_string(reason)
+    end)
+
+    it("drops when the body is only whitespace", function()
+      assert.equals("drop", AutoResume._scheduled_decision("   \n  ", false))
+    end)
+
+    it("returns no reason on a send verdict", function()
+      local action, reason = AutoResume._scheduled_decision("do the thing", false)
+      assert.equals("send", action)
+      assert.is_nil(reason)
+    end)
+
+    it("prioritises the is_sending check over an empty body", function()
+      -- Both conditions hold here; the reason should name the actual guard that fired first.
+      local action, reason = AutoResume._scheduled_decision(nil, true)
+      assert.equals("drop", action)
+      assert.equals("the chat is already sending a request", reason)
+    end)
+  end)
+
+  describe("fire() kind dispatch (behavioural)", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+    local Config = require("vibing.config")
+    local original_get
+
+    before_each(function()
+      original_get = Config.get
+      -- The defect under test is a "scheduled" entry reaching the auto_resume opts.enabled gate.
+      -- Falsy enabled is the default and the exact condition restore() re-arms scheduled entries
+      -- under, so it is the only config that distinguishes correct dispatch from the regression.
+      Config.get = function()
+        return { agent = { auto_resume_on_limit = { enabled = false } } }
+      end
+    end)
+
+    after_each(function()
+      Config.get = original_get
+    end)
+
+    it("routes a scheduled entry to fire_scheduled instead of the auto_resume enabled gate", function()
+      -- A path that can't exist on disk forces fire_scheduled() down its
+      -- resolve_chat_buffer-failure branch, which removes the entry and warns. If the dispatch
+      -- were ever moved below `if not opts.enabled then`, this entry would instead be removed
+      -- *silently* by that gate — same removal, no warning — which is exactly what this test
+      -- must catch and the deleted source-position test could not.
+      local chat_path = tmp_root .. "/does-not-exist.md"
+      local entry = {
+        chat_file_path = chat_path,
+        kind = "scheduled",
+        resets_at = os.time() + 60,
+        retry_count = 0,
+        recorded_at = os.time(),
+        state = "waiting",
+      }
+      PendingResume.put(entry)
+
+      local original_notify = vim.notify
+      local messages = {}
+      vim.notify = function(msg, ...)
+        table.insert(messages, msg)
+      end
+
+      -- Restore the real vim.notify before asserting, so a failed assertion here can never leave
+      -- the stub installed for the rest of the suite.
+      local ok, err = pcall(AutoResume._fire, chat_path, entry)
+      vim.notify = original_notify
+      assert.is_true(ok, err)
+
+      local found = false
+      for _, msg in ipairs(messages) do
+        if msg:match("Scheduled request skipped for") then
+          found = true
+          break
+        end
+      end
+      assert.is_true(found, "expected a 'Scheduled request skipped for' notification; got: " .. vim.inspect(messages))
+      assert.is_nil(PendingResume.get(chat_path))
+    end)
+  end)
+
+  describe("fire_scheduled state guard", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+
+    it("leaves an entry another Neovim instance already claimed alone", function()
+      -- pending-resume.json is shared by every Neovim open on the project, and each instance's
+      -- restore() arms a timer for the same entry, so both fire. The loser must notice the
+      -- freshly-read row is no longer "waiting" and do nothing at all — otherwise the request
+      -- goes out twice and the winner's in_flight row gets deleted underneath it.
+      local chat_path = tmp_root .. "/claimed.md"
+      local armed = {
+        chat_file_path = chat_path,
+        kind = "scheduled",
+        resets_at = os.time() + 60,
+        retry_count = 0,
+        recorded_at = os.time(),
+        state = "waiting",
+      }
+      -- What the other instance wrote to the store just before this timer fired. The `armed`
+      -- table above stays "waiting": it is the stale copy this instance's timer closed over,
+      -- which is why the guard has to read the store rather than trust its argument.
+      PendingResume.put(vim.tbl_extend("force", armed, { state = "in_flight" }))
+
+      local original_notify = vim.notify
+      local messages = {}
+      vim.notify = function(msg)
+        table.insert(messages, msg)
+      end
+
+      local ok, err = pcall(AutoResume._fire, chat_path, armed)
+      vim.notify = original_notify
+      assert.is_true(ok, err)
+
+      -- The chat file does not exist, so without the guard fire_scheduled() would fall through to
+      -- resolve_chat_buffer(), warn, and remove the winner's row.
+      assert.same({}, messages)
+      local still = PendingResume.get(chat_path)
+      assert.is_not_nil(still)
+      assert.equals("in_flight", still.state)
+
+      PendingResume.remove(chat_path)
+    end)
+  end)
 end)

@@ -58,6 +58,9 @@ access to your Neovim instance** through CLI backends and MCP integration.
   tracking by default, with an opt-in [mote](https://github.com/shabaraba/mote) snapshot
   backend (`diff.tool = "mote"` or `:VibingMoteDir`) that also catches Bash-driven changes
 - **🎯 Smart context** — add files manually, from oil.nvim, or from a visual selection
+- **⏳ Usage-limit scheduling** — while a usage limit is in force, `<CR>` parks your message
+  instead of burning a doomed request, and sends it verbatim once the limit resets;
+  `:VibingSchedule 30m` schedules one by hand, with or without a limit
 - **🌍 Multi-language support** — configure the AI response language per chat
 
 ### Consider alternatives if you
@@ -162,28 +165,29 @@ help tags.
 
 ### User Commands
 
-| Command                               | Description                                                                                          |
-| ------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `:VibingChat [position\|file]`        | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file  |
-| `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                                          |
-| `:VibingChatFork [position]`          | Fork current chat (create branch from current conversation)                                          |
-| `:VibingChatJumpNextUser [count]`     | Move the cursor to the next User section in the chat buffer                                          |
-| `:VibingChatJumpPrevUser [count]`     | Move the cursor to the previous User section in the chat buffer                                      |
-| `:VibingSlashCommands`                | Show slash command picker in chat                                                                    |
-| `:VibingSetFileTitle`                 | Generate AI title and rename chat file                                                               |
-| `:VibingSummarize`                    | Generate AI summary of chat history and insert into buffer                                           |
-| `:VibingDeleteChats [--unrenamed]`    | Delete chat files (use --unrenamed to delete all unrenamed files)                                    |
-| `:VibingContext [path]`               | Add context: oil.nvim entry, visual selection (range), path argument, or current buffer when no args |
-| `:VibingClearContext`                 | Clear all context                                                                                    |
-| `:VibingCancel`                       | Cancel current request                                                                               |
-| `:VibingPendingResumes`               | List chats waiting on a usage limit reset                                                            |
-| `:VibingCancelResume [all]`           | Cancel the pending auto-resume for this chat (or every one with `all`)                               |
-| `:VibingReloadCommands`               | Reload custom slash commands and completion candidates                                               |
-| `:VibingCopyUnsentUserHeader`         | Copy `## User <!-- unsent -->` to clipboard                                                          |
-| `:VibingDailySummary [YYYY-MM-DD]`    | Generate daily summary from project chat files (default: today)                                      |
-| `:VibingDailySummaryAll [YYYY-MM-DD]` | Generate daily summary from all chat files (default: today)                                          |
-| `:VibingCleanMote`                    | Clean mote objects for chat files without deleting the chats                                         |
-| `:VibingMoteDir [dir]`                | Add a directory to the chat's mote tracking (`mote_dirs` frontmatter; default: cwd)                  |
+| Command                               | Description                                                                                                                           |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `:VibingChat [position\|file]`        | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file                                   |
+| `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                                                                           |
+| `:VibingChatFork [position]`          | Fork current chat (create branch from current conversation)                                                                           |
+| `:VibingChatJumpNextUser [count]`     | Move the cursor to the next User section in the chat buffer                                                                           |
+| `:VibingChatJumpPrevUser [count]`     | Move the cursor to the previous User section in the chat buffer                                                                       |
+| `:VibingSlashCommands`                | Show slash command picker in chat                                                                                                     |
+| `:VibingSetFileTitle`                 | Generate AI title and rename chat file                                                                                                |
+| `:VibingSummarize`                    | Generate AI summary of chat history and insert into buffer                                                                            |
+| `:VibingDeleteChats [--unrenamed]`    | Delete chat files (use --unrenamed to delete all unrenamed files)                                                                     |
+| `:VibingContext [path]`               | Add context: oil.nvim entry, visual selection (range), path argument, or current buffer when no args                                  |
+| `:VibingClearContext`                 | Clear all context                                                                                                                     |
+| `:VibingCancel`                       | Cancel current request                                                                                                                |
+| `:VibingSchedule [when]`              | Schedule this chat's unsent message (default: the recorded limit reset; or `30m`, `18:30`, …)                                         |
+| `:VibingPendingResumes`               | List chats waiting on a usage limit reset or a scheduled send                                                                         |
+| `:VibingCancelResume [all]`           | Cancel the pending auto-resume/scheduled send for this chat (or every one with `all`); also clears the project's recorded usage limit |
+| `:VibingReloadCommands`               | Reload custom slash commands and completion candidates                                                                                |
+| `:VibingCopyUnsentUserHeader`         | Copy `## User <!-- unsent -->` to clipboard                                                                                           |
+| `:VibingDailySummary [YYYY-MM-DD]`    | Generate daily summary from project chat files (default: today)                                                                       |
+| `:VibingDailySummaryAll [YYYY-MM-DD]` | Generate daily summary from all chat files (default: today)                                                                           |
+| `:VibingCleanMote`                    | Clean mote objects for chat files without deleting the chats                                                                          |
+| `:VibingMoteDir [dir]`                | Add a directory to the chat's mote tracking (`mote_dirs` frontmatter; default: cwd)                                                   |
 
 **Command Semantics:**
 
@@ -248,6 +252,9 @@ require("vibing").setup({
   },
   agent = {
     default_model = "sonnet",      -- "sonnet" | "opus" | "haiku" | "fable"
+    scheduled_requests = {
+      enabled = true,              -- during a usage limit, <CR> schedules instead of sending
+    },
   },
   permissions = {
     mode = "acceptEdits",          -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"

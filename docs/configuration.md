@@ -34,6 +34,7 @@ require("vibing").setup({
     setting_sources = { "user", "project", "local" },
     subagent = { enabled = false, show_prefix = false },
     auto_resume_on_limit = { enabled = false, max_retries = 1 },
+    scheduled_requests = { enabled = true, max_retries = 3 },
   },
   chat = {
     window = {
@@ -247,6 +248,80 @@ different project are picked up when you open Neovim there.
 payload was misread). Several parked chats all resume at once, which is intentional — a reset
 hands back a full quota, and concurrent chats are normal usage. Inspect and control pending
 resumes with `:VibingPendingResumes` and `:VibingCancelResume`.
+
+### Scheduled Requests
+
+Any chat message can be parked to send later as a **scheduled request** — unlike auto-resume's
+fixed continuation prompt, it resends the chat's own message, unedited, at the chosen time. This
+is not limited to usage-limit recovery: `:VibingSchedule 18:30` works with no limit ever having
+been hit. Two of the three ways a scheduled request gets created, described below, are
+specifically about usage limits.
+
+```lua
+require("vibing").setup({
+  agent = {
+    scheduled_requests = {
+      enabled = true,    -- Opt-out, not opt-in: a request during an active limit would
+                         -- fail anyway, so scheduling it instead is the safer default
+      max_retries = 3,   -- Re-schedules allowed if a scheduled send is rejected again
+    },
+  },
+})
+```
+
+Scheduled requests come from three places: `:VibingSchedule [when]` (see below), which needs no
+recorded limit at all when `when` is given — only the no-argument form reads
+`.vibing/limit-state.json`; a `<CR>` sent while that file shows the project's limit is still
+active, unless the message is a slash command or a reply to a pending approval prompt (those
+always send immediately); and a turn the limit actually rejected, whose message is written back
+into a fresh unsent `## User` section instead of being discarded. `:VibingSchedule` always works;
+the other two are governed by `scheduled_requests.enabled`.
+
+**Where the body lives.** The scheduled message is never copied into the pending-resume store — it
+stays in the chat buffer's unsent `## User` section, visible and editable while parked. Deleting
+it before the timer fires empties the section, so the scheduled send finds nothing there and is
+dropped. `:VibingSchedule` and the limit-aware `<CR>` interception both save the chat file before
+arming the timer, but react differently to a save failure: `:VibingSchedule` simply refuses to
+schedule, leaving the message unsent in the buffer, while the `<CR>` interception fails open and
+sends the message immediately instead of parking it. Either way, an armed schedule whose body
+cannot survive a restart is avoided. The rejected-turn path writes the text back into the buffer
+the same way but does not force a save itself — it relies on the buffer being saved for some other
+reason before a restart. Because the body is the section rather than a copy of it, a schedule does
+not outlive a turn that consumes that section: sending manually with `<CR>` while a request is
+parked drops the entry whether the turn succeeds or fails, so the timer can never fire on whatever
+text happens to occupy the section later. Only a usage-limit rejection re-parks it.
+
+**`when` formats.** `:VibingSchedule` accepts relative offsets (`90s`, `30m`, `2h`, `1h30m`), a
+bare clock time (`18:30` — the next occurrence of that time; already past today rolls to
+tomorrow, computed by date rather than by adding 24 hours so it holds across a DST transition), or
+an absolute timestamp (`2026-08-14T07:05` or `2026-08-14 07:05`). A zero-length offset (e.g. `0m`)
+or an out-of-range clock time is rejected, but an absolute timestamp already in the past is
+**not** — it is clamped to fire about 3 seconds later, the same floor auto-resume uses for a
+reset time missed while Neovim was closed. With no argument, `:VibingSchedule` uses the project's
+recorded usage-limit reset time from `.vibing/limit-state.json`, if any, and errors if there is
+none.
+
+**`.vibing/limit-state.json`.** One record per project holding the last observed reset time, so a
+chat that never hit the limit itself can still schedule instead of send while another chat's
+rejection is still in force. It is written only when the rejection carried a reset timestamp, and
+cleared on any successful response, so a limit that lifts early is forgotten as soon as one
+request gets through.
+
+**Re-scheduling.** `max_retries` bounds how many times a scheduled request may be rescheduled
+after being rejected again. Because the check is applied to the already-incremented retry count,
+the default of `3` permits only **2** re-schedules. The next rejection falls through to
+`auto_resume_on_limit`'s own handling instead.
+
+That fallback re-checks the same stored `retry_count`, now `2`, against
+`auto_resume_on_limit.max_retries`. With both settings at their defaults that budget is already
+spent, so the request is simply dropped rather than falling back to the fixed continuation prompt.
+The prompt only fires if `auto_resume_on_limit.max_retries` has been raised above what the
+scheduled retries already consumed.
+
+**`:VibingCancelResume`** cancels either an auto-resume or a scheduled request, and also clears the
+project's recorded usage limit — so "send now" (cancel, then `<CR>`) actually sends instead of
+being re-parked by the stale record. If the limit is genuinely still in force, the next rejected
+response re-records it.
 
 ## Chat
 

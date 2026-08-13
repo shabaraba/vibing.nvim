@@ -1,6 +1,6 @@
 # Features
 
-## Auto-Resume on Usage Limit
+## Usage Limit: Auto-Resume and Scheduled Requests
 
 When a turn is rejected because the plan's usage limit is exhausted, vibing.nvim can park the chat
 and send a single continuation message once the limit resets. Opt-in via
@@ -21,6 +21,50 @@ timestamp. Concurrently parked chats all fire at once by design. See `docs/confi
 **Implementation:** `application/chat/auto_resume.lua` (scheduler),
 `infrastructure/storage/pending_resume.lua` (persistence),
 `infrastructure/rpc/handlers/rate_limit.lua` (StopFailure receiver), `bin/hooks/stop-failure.sh`.
+
+A pending entry also has a `kind`. `auto_resume` (the default, and what a missing `kind` reads as)
+sends the configured continuation prompt above. `scheduled` sends the chat's own unsent `## User`
+body instead — the body is never copied into the pending-resume store, so it stays visible and
+editable in the buffer while parked.
+
+Scheduled requests come from three places: `:VibingSchedule [when]`, which works with no usage
+limit on record at all as long as `when` is given (the no-argument form is the one that needs
+`.vibing/limit-state.json`); a `<CR>` that lands while that file records a still-active limit
+(excluding slash commands and a reply to a pending approval prompt, which always send
+immediately); and a turn the limit actually rejected, whose message is written back into a fresh
+unsent section instead of being discarded. The limit-aware `<CR>` and the rejected-turn
+re-schedule are both governed by `agent.scheduled_requests.enabled` (default `true`);
+`:VibingSchedule` is not, since the user armed it by hand.
+
+`:VibingSchedule` and the limit-aware `<CR>` both save the chat file before arming the timer, but
+differ on a save failure: `:VibingSchedule` refuses to schedule and nothing is sent — the message
+stays unsent in the buffer for the user to retry; the `<CR>` interception instead fails open and
+sends the message immediately, on the reasoning that a normal send is safer than silently sitting
+on a message the user just tried to send. The rejected-turn path writes the text back into the
+buffer the same way but leaves the actual save to whatever happens next (e.g. the buffer being
+saved for an unrelated reason), rather than saving synchronously itself.
+
+`agent.scheduled_requests.max_retries` (default 3) bounds the fire → rejected → re-schedule loop.
+Because the budget check is applied to the already-incremented retry count, the default only
+permits **2** re-schedules after the first rejection. The next rejection falls through to
+`auto_resume.on_rate_limited`, which re-checks the _same_ stored `retry_count` (already at 2)
+against `auto_resume_on_limit.max_retries` — with both features at their defaults
+(`scheduled_requests.max_retries = 3`, `auto_resume_on_limit.max_retries = 1`) that budget is
+already spent, so the request is simply dropped. The fixed continuation prompt only fires if the
+user has raised `auto_resume_on_limit.max_retries` above what the scheduled retries already
+consumed.
+
+`.vibing/limit-state.json` holds one record per project — the last observed reset time — and is
+what lets a chat that never hit the limit itself still schedule instead of send. It is written
+only when the payload carried a reset timestamp, and cleared on any successful response, so a
+limit that lifts early is forgotten as soon as one request gets through. `:VibingCancelResume` also
+clears this record (in addition to cancelling the entry), so "send now" — cancel, then `<CR>` —
+actually sends instead of being re-parked by a stale record; if the limit is genuinely still in
+force, the next rejected response re-records it.
+
+**Implementation:** `infrastructure/storage/limit_state.lua` (project limit record),
+`core/utils/when.lua` (time spec parser), plus the `kind` dispatch in
+`application/chat/auto_resume.lua`.
 
 ## Subagent Output Visibility
 

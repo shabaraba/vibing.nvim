@@ -256,6 +256,356 @@ describe("vibing.init", function()
 
       assert.is_true(cancel_called)
     end)
+
+    describe("VibingPendingResumes", function()
+      local original_auto_resume
+
+      before_each(function()
+        original_auto_resume = package.loaded["vibing.application.chat.auto_resume"]
+      end)
+
+      after_each(function()
+        package.loaded["vibing.application.chat.auto_resume"] = original_auto_resume
+      end)
+
+      it("renders a kind-absent entry as auto-resume", function()
+        package.loaded["vibing.application.chat.auto_resume"] = {
+          list = function()
+            return {
+              {
+                chat_file_path = "/tmp/no-kind.md",
+                resets_at = os.time() + 900,
+                limit_type = "weekly",
+                retry_count = 0,
+                -- kind intentionally absent: must be read as auto-resume, not dropped/errored
+              },
+            }
+          end,
+          format_duration = function(seconds)
+            return seconds .. "s"
+          end,
+        }
+
+        local callback
+        vim.api.nvim_create_user_command = function(name, cb)
+          if name == "VibingPendingResumes" then
+            callback = cb
+          end
+        end
+
+        local info_message
+        package.loaded["vibing.core.utils.notify"].info = function(msg)
+          info_message = msg
+        end
+
+        Vibing.setup()
+        callback()
+
+        assert.is_not_nil(info_message)
+        assert.matches("no%-kind%.md.*%[auto%-resume, weekly", info_message)
+      end)
+
+      it("renders a scheduled entry as scheduled, not auto-resume", function()
+        package.loaded["vibing.application.chat.auto_resume"] = {
+          list = function()
+            return {
+              {
+                chat_file_path = "/tmp/scheduled.md",
+                kind = "scheduled",
+                resets_at = os.time() + 1800,
+                retry_count = 0,
+              },
+            }
+          end,
+          format_duration = function(seconds)
+            return seconds .. "s"
+          end,
+        }
+
+        local callback
+        vim.api.nvim_create_user_command = function(name, cb)
+          if name == "VibingPendingResumes" then
+            callback = cb
+          end
+        end
+
+        local info_message
+        package.loaded["vibing.core.utils.notify"].info = function(msg)
+          info_message = msg
+        end
+
+        Vibing.setup()
+        callback()
+
+        assert.is_not_nil(info_message)
+        assert.matches("scheduled%.md.*%[scheduled,", info_message)
+      end)
+    end)
+
+    describe("VibingSchedule", function()
+      local original_auto_resume, original_view, original_limit_state
+      local scratch_bufnr, scratch_path
+      local unwritable_bufnr, unwritable_dir, unwritable_path
+
+      before_each(function()
+        original_auto_resume = package.loaded["vibing.application.chat.auto_resume"]
+        original_view = package.loaded["vibing.presentation.chat.view"]
+        original_limit_state = package.loaded["vibing.infrastructure.storage.limit_state"]
+
+        scratch_path = vim.fn.tempname() .. "-vibing-schedule-spec.md"
+        scratch_bufnr = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_name(scratch_bufnr, scratch_path)
+
+        -- A real (non-scratch) buffer named under a directory that does not exist, so `:write`
+        -- deterministically fails (E212) and `vim.bo[bufnr].modified` stays true afterward. A
+        -- scratch buffer (scratch=true) does not reproduce this: `:write` against one clears
+        -- `modified` even when nothing was written, which would make the save-failure path
+        -- untestable through it.
+        unwritable_dir = vim.fn.tempname()
+        unwritable_path = unwritable_dir .. "/does-not-exist/chat.md"
+        unwritable_bufnr = vim.api.nvim_create_buf(false, false)
+        vim.api.nvim_buf_set_name(unwritable_bufnr, unwritable_path)
+        vim.api.nvim_buf_set_lines(unwritable_bufnr, 0, -1, false, { "## User <!-- unsent -->", "hello there" })
+      end)
+
+      after_each(function()
+        package.loaded["vibing.application.chat.auto_resume"] = original_auto_resume
+        package.loaded["vibing.presentation.chat.view"] = original_view
+        package.loaded["vibing.infrastructure.storage.limit_state"] = original_limit_state
+        pcall(vim.api.nvim_buf_delete, scratch_bufnr, { force = true })
+        if scratch_path then
+          vim.fn.delete(scratch_path)
+        end
+        pcall(vim.api.nvim_buf_delete, unwritable_bufnr, { force = true })
+        -- unwritable_dir is never created on disk (that's the point: `:write` must fail because
+        -- its "does-not-exist" child never exists), so there is nothing under it to delete here.
+      end)
+
+      --- @param bufnr number
+      --- @param message string|nil
+      local function stub_chat_buffer(bufnr, message)
+        package.loaded["vibing.presentation.chat.view"] = {
+          get_current = function()
+            return {
+              get_buffer = function()
+                return bufnr
+              end,
+              extract_user_message = function()
+                return message
+              end,
+            }
+          end,
+        }
+      end
+
+      it("passes quiet = true to AutoResume.schedule_request (no duplicate notification)", function()
+        stub_chat_buffer(scratch_bufnr, "hello there")
+
+        local captured_opts
+        package.loaded["vibing.application.chat.auto_resume"] = {
+          schedule_request = function(_, _, opts)
+            captured_opts = opts
+            return true, nil
+          end,
+          format_duration = function(seconds)
+            return seconds .. "s"
+          end,
+        }
+
+        local callback
+        vim.api.nvim_create_user_command = function(name, cb)
+          if name == "VibingSchedule" then
+            callback = cb
+          end
+        end
+
+        Vibing.setup()
+        callback({ args = "30m" })
+
+        assert.is_not_nil(captured_opts)
+        assert.is_true(captured_opts.quiet)
+      end)
+
+      it("does not arm a schedule when the chat file cannot be saved", function()
+        stub_chat_buffer(unwritable_bufnr, "hello there")
+
+        local schedule_request_called = false
+        package.loaded["vibing.application.chat.auto_resume"] = {
+          schedule_request = function()
+            schedule_request_called = true
+            return true, nil
+          end,
+          format_duration = function(seconds)
+            return seconds .. "s"
+          end,
+        }
+
+        local callback
+        vim.api.nvim_create_user_command = function(name, cb)
+          if name == "VibingSchedule" then
+            callback = cb
+          end
+        end
+
+        local warn_message
+        package.loaded["vibing.core.utils.notify"].warn = function(msg)
+          warn_message = msg
+        end
+
+        Vibing.setup()
+        local ok, err = pcall(callback, { args = "30m" })
+
+        assert.is_true(ok, err)
+        assert.is_false(
+          schedule_request_called,
+          "AutoResume.schedule_request must not be called when the save failed"
+        )
+        assert.is_not_nil(warn_message)
+        assert.matches("[Cc]ould not save", warn_message)
+        -- The failed `:write` left the buffer's own unsaved-changes flag set; a passing save
+        -- would have cleared it. This is the same signal the command itself checks.
+        assert.is_true(vim.bo[unwritable_bufnr].modified)
+      end)
+
+      it("computes fire_at as resets_at + grace_sec when scheduling from an active limit", function()
+        stub_chat_buffer(scratch_bufnr, "hello there")
+
+        local resets_at = os.time() + 1200
+        package.loaded["vibing.infrastructure.storage.limit_state"] = {
+          get_active = function()
+            return { resets_at = resets_at, limit_type = "five_hour" }
+          end,
+        }
+
+        local captured_fire_at
+        package.loaded["vibing.application.chat.auto_resume"] = {
+          schedule_request = function(_, fire_at)
+            captured_fire_at = fire_at
+            return true, nil
+          end,
+          format_duration = function(seconds)
+            return seconds .. "s"
+          end,
+        }
+
+        local callback
+        vim.api.nvim_create_user_command = function(name, cb)
+          if name == "VibingSchedule" then
+            callback = cb
+          end
+        end
+
+        Vibing.setup()
+        callback({ args = "" })
+
+        -- mock_config.get() (outer before_each) returns no `agent` field at all, exercising the
+        -- `agent.auto_resume_on_limit and ... or 10` fallback down to the default grace of 10.
+        assert.equals(resets_at + 10, captured_fire_at)
+      end)
+
+      it("computes fire_at using a configured grace_sec instead of the default", function()
+        stub_chat_buffer(scratch_bufnr, "hello there")
+
+        local original_config_get = mock_config.get
+        local resets_at = os.time() + 1200
+        mock_config.get = function()
+          return {
+            mcp = { enabled = false },
+            agent = { auto_resume_on_limit = { grace_sec = 45 } },
+          }
+        end
+
+        package.loaded["vibing.infrastructure.storage.limit_state"] = {
+          get_active = function()
+            return { resets_at = resets_at, limit_type = "five_hour" }
+          end,
+        }
+
+        local captured_fire_at
+        package.loaded["vibing.application.chat.auto_resume"] = {
+          schedule_request = function(_, fire_at)
+            captured_fire_at = fire_at
+            return true, nil
+          end,
+          format_duration = function(seconds)
+            return seconds .. "s"
+          end,
+        }
+
+        local callback
+        vim.api.nvim_create_user_command = function(name, cb)
+          if name == "VibingSchedule" then
+            callback = cb
+          end
+        end
+
+        Vibing.setup()
+        callback({ args = "" })
+
+        mock_config.get = original_config_get
+        assert.equals(resets_at + 45, captured_fire_at)
+      end)
+
+      it("warns instead of erroring when there is no argument and no active limit", function()
+        stub_chat_buffer(scratch_bufnr, "hello there")
+
+        package.loaded["vibing.infrastructure.storage.limit_state"] = {
+          get_active = function()
+            return nil
+          end,
+        }
+        package.loaded["vibing.application.chat.auto_resume"] = {
+          schedule_request = function()
+            error("schedule_request must not be called when there is no active limit and no argument")
+          end,
+          format_duration = function(seconds)
+            return seconds .. "s"
+          end,
+        }
+
+        local callback
+        vim.api.nvim_create_user_command = function(name, cb)
+          if name == "VibingSchedule" then
+            callback = cb
+          end
+        end
+
+        local warn_message
+        package.loaded["vibing.core.utils.notify"].warn = function(msg)
+          warn_message = msg
+        end
+
+        Vibing.setup()
+        local ok, err = pcall(callback, { args = "" })
+
+        assert.is_true(ok, err)
+        assert.is_not_nil(warn_message)
+        assert.matches("No usage limit on record", warn_message)
+      end)
+
+      it("warns instead of erroring when there is no unsent message", function()
+        stub_chat_buffer(scratch_bufnr, nil)
+
+        local callback
+        vim.api.nvim_create_user_command = function(name, cb)
+          if name == "VibingSchedule" then
+            callback = cb
+          end
+        end
+
+        local warn_message
+        package.loaded["vibing.core.utils.notify"].warn = function(msg)
+          warn_message = msg
+        end
+
+        Vibing.setup()
+        local ok, err = pcall(callback, { args = "30m" })
+
+        assert.is_true(ok, err)
+        assert.is_not_nil(warn_message)
+        assert.matches("Write a message", warn_message)
+      end)
+    end)
   end)
 
   describe("get_adapter", function()

@@ -1,8 +1,13 @@
 -- Minimal init.lua for running tests
 -- Sets up plenary and vibing.nvim for testing
 
--- Add vibing.nvim to runtimepath
-vim.opt.runtimepath:append(".")
+-- Add vibing.nvim to runtimepath.
+-- Resolved from this script's own path (always absolute when invoked via `-u <abs path>`),
+-- not from the process cwd: E2E specs may spawn the child Neovim with cwd set to a throwaway
+-- test repo, in which case "." would not point at the plugin root at all.
+local this_file = debug.getinfo(1, "S").source:sub(2)
+local plugin_root = vim.fn.fnamemodify(this_file, ":p:h:h")
+vim.opt.runtimepath:append(plugin_root)
 
 -- Add plenary to runtimepath
 local plenary_path = vim.fn.stdpath("data") .. "/site/pack/vendor/start/plenary.nvim"

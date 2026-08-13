@@ -2,30 +2,31 @@
 
 ## User Commands
 
-| Command                               | Description                                                                                         |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `:VibingChat [position\|file]`        | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file |
-| `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                                         |
-| `:VibingChatFork [position]`          | Fork current chat (create branch from current conversation)                                         |
-| `:VibingSubagentChat [position]`      | Continue a subagent this chat started, in its own buffer                                            |
-| `:VibingChatJumpNextUser [count]`     | Move the cursor to the next User section in the chat buffer                                         |
-| `:VibingChatJumpPrevUser [count]`     | Move the cursor to the previous User section in the chat buffer                                     |
-| `:VibingSlashCommands`                | Show slash command picker in chat                                                                   |
-| `:VibingSetFileTitle`                 | Generate AI title and rename chat file                                                              |
-| `:VibingSummarize`                    | Generate AI summary of chat history and insert into buffer                                          |
-| `:VibingDeleteChats [--unrenamed]`    | Delete chat files (use --unrenamed to delete all unrenamed files)                                   |
-| `:VibingContext [path]`               | Add file to context (or from oil.nvim if no path)                                                   |
-| `:VibingClearContext`                 | Clear all context                                                                                   |
-| `:VibingCancel`                       | Cancel current request                                                                              |
-| `:VibingClearAnnotations`             | Remove inline review annotations from every buffer                                                  |
-| `:VibingDebugAnalyze`                 | Ask the agent to analyze the stopped debug session (needs nvim-dap)                                 |
-| `:VibingDebugHelp`                    | Ask the agent what to check next in the stopped debug session                                       |
-| `:VibingPendingResumes`               | List chats waiting on a usage limit reset                                                           |
-| `:VibingCancelResume [all]`           | Cancel the pending auto-resume for this chat (or every one with `all`)                              |
-| `:VibingReloadCommands`               | Reload custom slash commands                                                                        |
-| `:VibingCopyUnsentUserHeader`         | Copy `## User <!-- unsent -->` to clipboard                                                         |
-| `:VibingDailySummary [YYYY-MM-DD]`    | Generate daily summary from project chat files (default: today)                                     |
-| `:VibingDailySummaryAll [YYYY-MM-DD]` | Generate daily summary from all chat files (default: today)                                         |
+| Command                               | Description                                                                                                                           |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `:VibingChat [position\|file]`        | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file                                   |
+| `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                                                                           |
+| `:VibingChatFork [position]`          | Fork current chat (create branch from current conversation)                                                                           |
+| `:VibingSubagentChat [position]`      | Continue a subagent this chat started, in its own buffer                                                                              |
+| `:VibingChatJumpNextUser [count]`     | Move the cursor to the next User section in the chat buffer                                                                           |
+| `:VibingChatJumpPrevUser [count]`     | Move the cursor to the previous User section in the chat buffer                                                                       |
+| `:VibingSlashCommands`                | Show slash command picker in chat                                                                                                     |
+| `:VibingSetFileTitle`                 | Generate AI title and rename chat file                                                                                                |
+| `:VibingSummarize`                    | Generate AI summary of chat history and insert into buffer                                                                            |
+| `:VibingDeleteChats [--unrenamed]`    | Delete chat files (use --unrenamed to delete all unrenamed files)                                                                     |
+| `:VibingContext [path]`               | Add file to context (or from oil.nvim if no path)                                                                                     |
+| `:VibingClearContext`                 | Clear all context                                                                                                                     |
+| `:VibingCancel`                       | Cancel current request                                                                                                                |
+| `:VibingSchedule [when]`              | Schedule this chat's unsent message (default: the recorded limit reset; or `30m`, `18:30`, …)                                         |
+| `:VibingClearAnnotations`             | Remove inline review annotations from every buffer                                                                                    |
+| `:VibingDebugAnalyze`                 | Ask the agent to analyze the stopped debug session (needs nvim-dap)                                                                   |
+| `:VibingDebugHelp`                    | Ask the agent what to check next in the stopped debug session                                                                         |
+| `:VibingPendingResumes`               | List chats waiting on a usage limit reset or a scheduled send                                                                         |
+| `:VibingCancelResume [all]`           | Cancel the pending auto-resume/scheduled send for this chat (or every one with `all`); also clears the project's recorded usage limit |
+| `:VibingReloadCommands`               | Reload custom slash commands                                                                                                          |
+| `:VibingCopyUnsentUserHeader`         | Copy `## User <!-- unsent -->` to clipboard                                                                                           |
+| `:VibingDailySummary [YYYY-MM-DD]`    | Generate daily summary from project chat files (default: today)                                                                       |
+| `:VibingDailySummaryAll [YYYY-MM-DD]` | Generate daily summary from all chat files (default: today)                                                                           |
 
 `:VibingChat`/`:VibingChatFork` position argument: `current` (replace current window), `right`,
 `left`, `top`, `bottom` (splits sized by `config.chat.window.width`/`height`), or `back`

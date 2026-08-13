@@ -20,6 +20,9 @@ local M = {}
 --- @field state "waiting"|"in_flight" "waiting" until the continuation is actually sent. Only
 ---   "waiting" entries are re-armed on startup, so a session that died mid-request cannot have
 ---   its resume replayed for free by the next one.
+--- @field kind "auto_resume"|"scheduled"|nil What to send when the timer fires. "auto_resume"
+---   (the default when absent, so pre-existing stores keep working) sends the configured
+---   continuation prompt; "scheduled" sends the chat's own unsent `## User` body.
 
 --- Memoized `git rev-parse` results, keyed by the directory asked about.
 --- A single fire()/on_rate_limited() call does several get/put/remove round trips, and each one
