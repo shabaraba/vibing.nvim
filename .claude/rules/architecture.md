@@ -46,24 +46,52 @@ The instance registry has the same treatment via `$VIBING_INSTANCES_DIR` (honour
 its owning Neovim is gone: it cross-checks `registry.list()`, which already filters to live PIDs,
 so a concurrent instance's in-flight `.req`/`.res` files are never deleted.
 
-**Backends:** `claude_cli.lua` (default), `codex_cli.lua` and `copilot_cli.lua` implement the
-adapter interface; `init.lua` picks one from `config.adapter`, and `send_message.lua` can switch
+**Backends:** `claude_cli.lua` (default), `codex_cli.lua`, `copilot_cli.lua` and `grok_cli.lua`
+implement the adapter interface; `init.lua` picks one from `config.adapter`, and `send_message.lua` can switch
 per request for non-claude agent types. Implementing the interface is not the same as feature
 parity — `AskUserQuestion` is Claude-only, for reasons `features.md` records.
 
 `lua/vibing/core/constants/agents.lua` is the single definition of what a backend is — module
 path, export name, description, model candidates. `factory.lua`, `modes.lua` (`VALID_AGENTS`,
 `VALID_MODELS`), `completion/providers/frontmatter.lua` and `infrastructure/init.lua` all derive
-from it, so adding a fourth backend is a one-file change. It deliberately requires nothing, which
+from it, so adding a backend is a one-file change (grok was added that way). It deliberately requires nothing, which
 is what keeps the dependency one-way.
 
 Two things stop backend identity leaking into shared code:
 
 - **Tool vocabulary.** Backends name their tools differently (codex calls an edit `apply_patch`,
-  copilot uses `bash`/`view`/`create`/`edit`/`web_search`). Each adapter owns a
-  `<backend>_tool_vocabulary.lua` and passes it to `set_active_opts` as a generic
-  `_tool_vocabulary`; `rpc/handlers/permission.lua` just calls `to_canonical` if it was given one.
-  The handler contains no backend name.
+  copilot uses `bash`/`view`/`create`/`edit`/`web_search`, grok `search_replace`/
+  `run_terminal_command`). Each adapter owns a `<backend>_tool_vocabulary.lua` and passes it to
+  `set_active_opts` as a generic `_tool_vocabulary`; `rpc/handlers/permission.lua` just calls
+  `normalize_payload`, `to_canonical` and `normalize_input` when the module offers them. The
+  handler contains no backend name.
+
+  The three are separate because backends disagree at three different levels, and the order
+  matters — each step feeds the next:
+
+  1. `normalize_payload` — the hook payload's own key names. Claude sends
+     `tool_name`/`tool_input`; grok sends `toolName`/`toolInput`. Read straight through, the
+     handler sees a nil tool name, so the two steps below get nothing to work on, every rule
+     misses, and the turn stalls until the hook fails closed. This must run **first**.
+  2. `to_canonical` — the tool's name (`apply_patch` → `Edit`).
+  3. `normalize_input` — where the path lives inside the input. Granular `paths` rules read
+     `input.file_path`; grok sends `path`/`target_file`/`filePath`.
+
+  All three shapes were captured from the real CLIs, not read off their docs.
+
+- **No MCP on every backend.** Grok, like codex, registers no `chat_bufnr` and reaches no
+  vibing-nvim MCP server, so `grok_command_builder` deliberately keeps `--rules` to the
+  backend-agnostic conventions. Naming `nvim_ask_user_question` there would hand the model a tool
+  it cannot call — see `features.md` → AskUserQuestion Support.
+
+- **Grok's hooks need a git repository.** `grok_settings_generator.lua` writes
+  `<cwd>/.grok/hooks/` and marks the cwd trusted in `<$GROK_HOME|~/.grok>/trusted_folders.toml`,
+  but grok discovers project hooks only inside a git repo (verified with `grok inspect`: the
+  `project` entry appears under "Hooks" after `git init` and is absent before). Outside one the
+  file is written and never read, which would silently allow every tool, so `ensure()` warns
+  once per cwd instead. `$GROK_HOME` is grok's own documented override and is honoured — which is
+  also the seam the specs use, since folder trust cascades to subdirectories and never expires.
+
 - **`dynamic_permissions` capability.** `adapter:supports("dynamic_permissions")` is `false` for
   copilot, because its CLI has no per-run hook flag: permissions are fixed at launch with
   `--allow-all-tools` + `--deny-tool`, so `permission_mode`, the `ask` list and the approval UI do

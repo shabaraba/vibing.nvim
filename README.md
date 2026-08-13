@@ -44,8 +44,9 @@ access to your Neovim instance** through CLI backends and MCP integration.
 - **🤖 Neovim as an agent tool** — via MCP, the AI reads and writes buffers, executes commands,
   and queries LSP (diagnostics, definitions, references, symbols) in your _running_ editor
 - **🔀 Multi-backend** — Claude CLI (`claude -p --output-format stream-json`), Codex CLI
-  (`codex exec --json`), or GitHub Copilot CLI (`copilot -p --output-format json`); switch
-  globally via `adapter` or per-chat via the `agent` frontmatter field
+  (`codex exec --json`), GitHub Copilot CLI (`copilot -p --output-format json`), or Grok Build CLI
+  (`grok --single --output-format streaming-json`); switch globally via `adapter` or per-chat via
+  the `agent` frontmatter field
 - **💾 File-based session persistence** — chats are plain Markdown files with YAML frontmatter
   saved under `.vibing/chat/`: portable, resumable (full CLI session state), auditable, and
   version-controllable
@@ -79,6 +80,7 @@ they compose well.
   - **Codex CLI** (`codex`) — `npm install -g @openai/codex`
   - **GitHub Copilot CLI** (`copilot`) — `npm install -g @github/copilot` (needs Node.js 22+,
     higher than the 18+ the MCP server itself requires)
+  - **Grok Build CLI** (`grok`) — see [xAI's install docs](https://github.com/xai-org/grok-cli)
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 
@@ -352,8 +354,9 @@ graph TB
 - **Claude CLI** (`claude -p --output-format stream-json`) — full Claude Code capabilities
 - **Codex CLI** (`codex exec --json`) — OpenAI Codex backend
 - **GitHub Copilot CLI** (`copilot -p --output-format json`) — GitHub Copilot backend
+- **Grok Build CLI** (`grok --single --output-format streaming-json`) — xAI Grok backend
 
-Switch globally with `adapter = "claude"|"codex"|"copilot"` in setup, or per-chat by adding
+Switch globally with `adapter = "claude"|"codex"|"copilot"|"grok"` in setup, or per-chat by adding
 `agent: claude`, `agent: codex`, or `agent: copilot` to a chat file's YAML frontmatter.
 
 > **Note:** the Copilot backend does not yet support the in-chat Tool Approval UI. It runs with
@@ -400,6 +403,7 @@ MIT License - see LICENSE file for details
 - [Claude AI](https://claude.ai)
 - [Codex CLI](https://github.com/openai/codex)
 - [GitHub Copilot CLI](https://github.com/github/copilot-cli)
+- [Grok CLI](https://github.com/xai-org/grok-cli)
 - [GitHub Repository](https://github.com/shabaraba/vibing.nvim)
 
 ---

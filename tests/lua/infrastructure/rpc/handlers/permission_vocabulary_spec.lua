@@ -16,6 +16,13 @@ local function write_request(request_id, tool_name, tool_input)
   f:close()
 end
 
+--- Write a payload verbatim, for backends whose hook does not speak Claude's key names.
+local function write_raw_request(request_id, payload)
+  local f = assert(io.open(comm_dir .. "/" .. request_id .. ".req", "w"))
+  f:write(vim.json.encode(payload))
+  f:close()
+end
+
 local function read_response(request_id)
   local f = io.open(comm_dir .. "/" .. request_id .. ".res", "r")
   if not f then
@@ -104,5 +111,49 @@ describe("permission handler tool vocabulary", function()
     local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
     assert.equals("Edit", vocabulary.to_canonical("apply_patch"))
     assert.is_nil(vocabulary.to_canonical("Read"))
+  end)
+
+  it("normalizes a payload whose keys are not Claude's before reading the tool name", function()
+    -- Grok's PreToolUse hook sends camelCase. Read straight through, tool_name is nil, every rule
+    -- misses, and the turn stalls until the hook fails closed. Payload captured from grok 0.2.101.
+    local vocabulary = require("vibing.infrastructure.adapter.modules.grok_tool_vocabulary")
+    permission.set_active_opts(HANDLE_ID, {
+      permissions_deny = { "Read" },
+      _tool_vocabulary = vocabulary,
+    })
+
+    write_raw_request("req-grok", {
+      hookEventName = "pre_tool_use",
+      toolName = "read_file",
+      toolInput = { target_file = "/tmp/vault/secret.txt" },
+    })
+    local result = permission.check_tool_permission({ request_id = "req-grok", handle_id = HANDLE_ID })
+
+    assert.equals("denied", result.status)
+    assert.is_not_nil(read_response("req-grok"), "the hook must get a response, not a 120s stall")
+  end)
+
+  it("sends a deny rule's message to the hook, not just back to its own caller", function()
+    -- pre-tool-use.sh echoes permissionDecisionReason on stderr; that is the only route by which
+    -- a rule's `message` reaches the model. Omitting it renders every denial as "denied by hook".
+    permission.set_active_opts(HANDLE_ID, { permissions_deny = { "Edit" } })
+
+    write_request("req-reason", "Edit", { file_path = "/tmp/x.lua" })
+    local result = permission.check_tool_permission({ request_id = "req-reason", handle_id = HANDLE_ID })
+
+    assert.equals("denied", result.status)
+    assert.is_string(result.reason)
+    local response = read_response("req-reason")
+    assert.equals(result.reason, response.hookSpecificOutput.permissionDecisionReason)
+  end)
+
+  it("normalizes the input of such a payload too, so paths rules have a file_path to match", function()
+    -- The two normalizations are separate steps; this pins that the second still runs after the
+    -- first rewrote the payload's keys.
+    local vocabulary = require("vibing.infrastructure.adapter.modules.grok_tool_vocabulary")
+    local normalized = vocabulary.normalize_input(
+      vocabulary.normalize_payload({ toolName = "read_file", toolInput = { target_file = "a.lua" } }).tool_input
+    )
+    assert.equals("a.lua", normalized.file_path)
   end)
 end)

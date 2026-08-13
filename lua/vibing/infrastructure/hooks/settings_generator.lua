@@ -26,8 +26,13 @@ function M.get_stop_failure_script_path()
 end
 
 --- Generate settings table with hook configuration
+--- @param hook_script_path? string Override for the PreToolUse script path. Grok resolves a
+---   relative hook command against its own .grok/hooks/ file rather than the project root, so it
+---   has to pass an absolute path it computed itself.
 --- @return table
-function M.generate()
+function M.generate(hook_script_path)
+  local pre_tool_use_script = hook_script_path or M.get_hook_script_path()
+
   return {
     hooks = {
       PreToolUse = {
@@ -36,7 +41,7 @@ function M.generate()
           hooks = {
             {
               type = "command",
-              command = M.get_hook_script_path(),
+              command = pre_tool_use_script,
               timeout = 120,
             },
           },

@@ -139,9 +139,9 @@ for _, backend in ipairs(helper.adapters()) do
 end
 
 describe("adapter stream() options: stdin", function()
-  -- claude reads its prompt from argv; codex and copilot are given an explicit empty stdin so they
-  -- do not sit waiting on a terminal that isn't there.
-  local STDIN_BY_BACKEND = { claude = nil, codex = "", copilot = "" }
+  -- claude reads its prompt from argv; codex, copilot and grok are given an explicit empty stdin
+  -- so they do not sit waiting on a terminal that isn't there.
+  local STDIN_BY_BACKEND = { claude = nil, codex = "", copilot = "", grok = "" }
 
   for _, backend in ipairs(helper.adapters()) do
     it("matches the documented stdin handling for " .. backend.name, function()

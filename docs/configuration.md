@@ -7,6 +7,7 @@ Complete reference for every `require("vibing").setup()` option. Defaults shown 
 
 - [Defaults at a Glance](#defaults-at-a-glance)
 - [Adapter](#adapter)
+- [Grok CLI](#grok-cli)
 - [Agent](#agent)
 - [Chat](#chat)
 - [UI](#ui)
@@ -98,11 +99,37 @@ require("vibing").setup({
 
 ```lua
 adapter = "claude",  -- Global backend adapter
-                     -- "claude":  Claude CLI  (claude -p --output-format stream-json)
-                     -- "codex":   Codex CLI   (codex exec --json)
-                     -- "copilot": Copilot CLI (copilot -p --output-format json)
+                     -- "claude":  Claude CLI      (claude -p --output-format stream-json)
+                     -- "codex":   Codex CLI       (codex exec --json)
+                     -- "copilot": Copilot CLI     (copilot -p --output-format json)
+                     -- "grok":    Grok Build CLI  (grok --single=... --output-format streaming-json)
                      -- Overridable per-chat via the "agent" frontmatter field
 ```
+
+Backends are not feature-equivalent. `AskUserQuestion`'s choice-list UI is Claude-only, and
+`copilot` cannot honour `permissions.mode`, the `ask` list or the Tool Approval UI at all
+(`adapter:supports("dynamic_permissions")` is `false` for it). Grok does honour them, but only
+inside a git repository — see [Grok CLI](#grok-cli).
+
+## Grok CLI
+
+```lua
+grok = {
+  executable = "auto",  -- "auto": detect `grok` on PATH (default)
+                        -- or an explicit path, e.g. "~/.grok/bin/grok"
+}
+```
+
+Only read when `adapter = "grok"` (or a chat's `agent: grok` frontmatter). Unlike
+`node.executable`, a path that does not exist is **not** reset to `"auto"`: having asked for a
+specific binary, silently falling back to whatever `grok` is on PATH would be worse than failing.
+vibing.nvim also refuses a `grok` that is not the official xAI Grok Build CLI, since the name is
+shared with unrelated tools.
+
+**Permission rules need a git repository.** Grok discovers the PreToolUse hook vibing.nvim installs
+(`<cwd>/.grok/hooks/`) only inside a git repo. Outside one the hook is written and never read, so
+`permissions.rules`, the `ask` list and the Tool Approval UI silently do nothing — vibing.nvim
+warns once per working directory when it detects this.
 
 ## Agent
 

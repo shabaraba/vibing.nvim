@@ -3,7 +3,7 @@ local Agents = require("vibing.core.constants.agents")
 
 describe("agents registry", function()
   it("lists the backends in a fixed order", function()
-    assert.same({ "claude", "codex", "copilot" }, Agents.ORDER)
+    assert.same({ "claude", "codex", "copilot", "grok" }, Agents.ORDER)
   end)
 
   it("has a definition for every id in ORDER, and no strays", function()

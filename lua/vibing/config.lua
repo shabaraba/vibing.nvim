@@ -37,7 +37,7 @@
 ---@class Vibing.Config
 ---vibing.nvimプラグインの設定オブジェクト
 ---アダプター選択、チャットウィンドウ、キーマップ、ツール権限を統合管理
----@field adapter? "claude"|"codex"|"copilot" バックエンドアダプター選択（デフォルト: "claude"）
+---@field adapter? "claude"|"codex"|"copilot"|"grok" バックエンドアダプター選択（デフォルト: "claude"）
 ---@field agent Vibing.AgentConfig エージェント設定（モード、モデル）
 ---@field chat Vibing.ChatConfig チャットウィンドウ設定（位置、サイズ、自動コンテキスト、保存先）
 ---@field ui Vibing.UiConfig UI設定（wrap等）
@@ -45,6 +45,7 @@
 ---@field diff Vibing.DiffConfig diff表示設定（使用ツール、mote設定）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
 ---@field node Vibing.NodeConfig Node.js実行ファイル設定（バイナリパス）
+---@field grok Vibing.GrokConfig Grok Build CLI設定（バイナリパス）
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
 ---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
 ---@field daily_summary? Vibing.DailySummaryConfig Daily Summary機能設定
@@ -88,6 +89,11 @@
 ---既定では subagent の中身は隠され、ツール結果だけが見える（従来の挙動）
 ---@field enabled boolean? trueでCLIに`--forward-subagent-text`を渡し、subagentの本文をチャットに表示する（デフォルト: false）
 ---@field show_prefix boolean? 各行に`[subagent_type]`のラベルを付けるか（デフォルト: false）
+
+---@class Vibing.GrokConfig
+---Grok Build CLI設定
+---`adapter = "grok"`（またはfrontmatterの`agent: grok`）のときだけ参照される。
+---@field executable string|"auto" grokバイナリのパス（"auto": PATHから自動検出、文字列: 明示的なパス指定）
 
 ---@class Vibing.NodeConfig
 ---Node.js実行ファイル設定
@@ -274,6 +280,9 @@ M.defaults = {
     default_deny_rules = true,
   },
   node = {
+    executable = "auto",
+  },
+  grok = {
     executable = "auto",
   },
   mcp = {
@@ -528,6 +537,28 @@ function M.setup(opts)
         executable
       ))
       M.options.node.executable = "auto"
+    end
+  end
+
+  -- grok_command_builder tells the user to "set config.grok.executable" when the binary is
+  -- missing, so a bad value here has to be caught the same way node.executable's is -- otherwise
+  -- the advice leads to a setting nothing validates. Unlike node this is NOT reset to "auto" on a
+  -- missing binary: `adapter = "grok"` with a wrong path should say so, not quietly fall back to
+  -- whatever `grok` happens to be on PATH.
+  if M.options.grok and M.options.grok.executable then
+    local executable = M.options.grok.executable
+    if type(executable) ~= "string" or executable == "" then
+      notify.warn(
+        string.format(
+          "Invalid grok.executable value '%s'. Must be 'auto' or a path to the grok binary. Resetting to 'auto'.",
+          tostring(executable)
+        )
+      )
+      M.options.grok.executable = "auto"
+    elseif executable ~= "auto" and vim.fn.executable(executable) == 0 then
+      notify.warn(
+        string.format("Grok CLI not found at '%s'. Grok chats will fail until this is corrected.", executable)
+      )
     end
   end
 end
