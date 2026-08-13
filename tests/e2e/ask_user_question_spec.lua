@@ -9,6 +9,12 @@ if not helper.should_run() then
   return
 end
 
+-- These two specs depend on the model echoing the option labels it was told to use, so the
+-- assertions below match the rendered `1. A` / `1. Red` lines verbatim. That is a deliberate
+-- departure from the eval harness's rule of never reading response prose (see
+-- .claude/rules/self-testing.md): here the rendered list *is* the thing under test, and the
+-- renderer copies `opt.label` straight through. If the model ever paraphrases a label, this goes
+-- flaky — the fix is to loosen the pattern, not to conclude the UI broke.
 local TIMEOUTS = {
   CHAT_CREATION = 2000,
   BUFFER_READY = 5000,
