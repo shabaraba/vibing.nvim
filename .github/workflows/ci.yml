@@ -45,28 +45,16 @@ jobs:
       - name: Run Lua syntax check
         run: npm run check
 
+      # The exit code is the gate — do not parse the output. PlenaryBustedDirectory runs one
+      # child Neovim per spec file and already fails the run on a failing assertion, an error,
+      # a file that would not load, or a child that never finished; that is pinned by
+      # tests/lua-test-exit-code.test.mjs. The previous version instead grepped for a single
+      # `Failed : 0` line, and since one summary is printed per spec file, that line was always
+      # there however many specs failed. timeout-minutes is only a backstop: the suite takes
+      # seconds, and plenary already gives up on an individual spec after 50s.
       - name: Run Lua tests
-        run: |
-          set +e
-          OUTPUT=$(timeout 30s npm run test:lua 2>&1)
-          CODE=$?
-          echo "$OUTPUT"
-
-          # Strip ANSI color codes for reliable parsing
-          CLEAN_OUTPUT=$(echo "$OUTPUT" | sed 's/\x1b\[[0-9;]*m//g')
-
-          # Check if tests actually passed by parsing output
-          if echo "$CLEAN_OUTPUT" | grep -E "Failed\s*:\s*0" > /dev/null && \
-             echo "$CLEAN_OUTPUT" | grep -E "Errors\s*:\s*0" > /dev/null; then
-            echo "All tests passed successfully"
-            exit 0
-          elif [ "${CODE}" = "124" ]; then
-            echo "Tests timed out"
-            exit 1
-          else
-            echo "Tests failed with code ${CODE}"
-            exit 1
-          fi
+        timeout-minutes: 10
+        run: npm run test:lua
 
       - name: Run Node.js tests
         run: npm run test:node

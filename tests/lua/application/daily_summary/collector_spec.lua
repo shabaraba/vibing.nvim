@@ -43,6 +43,17 @@ describe("vibing.application.daily_summary.collector", function()
 
     describe("when include_all is true and search_dirs is not configured", function()
       it("should return default directories", function()
+        -- A default directory is only returned if it exists on disk. A fresh checkout has
+        -- neither of them, so create the project one for the duration of the test instead of
+        -- relying on the developer's own repository happening to have chats in it.
+        local Git = require("vibing.core.utils.git")
+        local project_root = Git.get_root() or vim.fn.getcwd()
+        local project_chat_dir = project_root .. "/.vibing/chat"
+        local created = vim.fn.isdirectory(project_chat_dir) == 0
+        if created then
+          vim.fn.mkdir(project_chat_dir, "p")
+        end
+
         local config = {
           daily_summary = {},
           chat = {},
@@ -50,28 +61,16 @@ describe("vibing.application.daily_summary.collector", function()
 
         local result = collector.get_search_directories(true, config)
 
-        assert.is_table(result)
-        -- Should return at least one default directory (behavior verified by non-empty result)
-        assert.is_true(#result > 0, "Expected at least one default directory, got empty result")
-
-        -- Verify default directories are included (project/.vibing/chat and/or user data dir)
-        local project_root = vim.fn.getcwd()
-        local expected_defaults = {
-          project_root .. "/.vibing/chat",
-          vim.fn.stdpath("data") .. "/vibing/chats",
-        }
-
-        -- At least one default directory should be in the result
-        local has_default = false
-        for _, expected in ipairs(expected_defaults) do
-          for _, actual in ipairs(result) do
-            if actual == expected then
-              has_default = true
-              break
-            end
-          end
+        if created then
+          -- "d" only removes an empty directory, so this can never take a real chat store with it.
+          vim.fn.delete(project_chat_dir, "d")
         end
-        assert.is_true(has_default, "Expected result to contain at least one default directory")
+
+        assert.is_table(result)
+        assert.is_true(
+          vim.tbl_contains(result, project_chat_dir),
+          "Expected result to contain the project's default chat directory"
+        )
       end)
     end)
 
