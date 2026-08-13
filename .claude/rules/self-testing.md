@@ -42,6 +42,18 @@ It spends real tokens — one request per task per attempt — so it is not part
 Run it when changing the system prompt, a tool description, permission flags, or the model. Details
 and how to add a task: `tests/evals/README.md`.
 
+## The CI Gate Is the Exit Code
+
+CI runs `npm run test:lua` and reads nothing but its exit status. Do not add output parsing back:
+`PlenaryBustedDirectory` prints one summary **per spec file**, so any `grep` for `Failed : 0`
+matches while other files are failing — which is exactly how the gate passed a run with five dead
+specs (#561). `tests/lua-test-exit-code.test.mjs` pins the three cases the gate rests on: a failing
+assertion, a spec that will not load, and an otherwise-passing run.
+
+The one case neither the exit code nor a summary count catches is a spec file that runs **zero**
+tests (a `describe` that stopped being reached): plenary exits 0 without printing a summary, which
+is also how the E2E specs opt out via `should_run()`.
+
 ## 3-Try Auto-Fix Rule
 
 After implementing a feature, run `npm run test:e2e`. If it fails: analyze the failure, apply a
