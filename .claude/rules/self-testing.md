@@ -8,6 +8,25 @@ For test architecture, the helper API reference (`spawn_nvim_instance`, `send_ke
 and troubleshooting, see the `self-testing` skill (`.claude/skills/self-testing/SKILL.md`).
 Invoke it when writing or debugging E2E tests.
 
+**These specs spend real tokens, and only `test:e2e` runs them.** Some drive a full turn against
+the CLI. `test:lua` sweeps `tests/` including `tests/e2e/`, so every spec self-skips unless
+`VIBING_E2E=1` — which only `test:e2e` sets (`helper.should_run()`). Do not remove that guard to
+"make E2E part of the normal suite": that is a per-run API bill on `pnpm run test`.
+
+Three things the child Neovim needs, each of which silently produced a dead spec before:
+
+- **`--embed`.** `spawn_nvim_instance` starts the child with it, because `jobstart{ rpc = true }`
+  talks msgpack-RPC to its stdio. Without it every `rpcrequest` fails and the spec never gets past
+  its first wait — which is the state all four specs were in.
+- **`tests/e2e_init.lua`, not `tests/minimal_init.lua`.** The latter is the _parent's_ init (it
+  wires up plenary); a child started with it has vibing.nvim on `runtimepath` but never calls
+  `setup()`, so no `:Vibing*` command exists and `:VibingChat` does nothing. `e2e_init.lua` also
+  points `chat.save_dir` at a per-child temp directory, so running the suite stops writing real
+  chat files into the repository.
+- **`wait_for_buffer_name`, not `wait_for_buffer_content`, for a filename.** The latter matches
+  against buffer _text_, so `wait_for_buffer_content(inst, "%.md")` can never match. That one line,
+  repeated at six sites, is what every spec was actually failing on.
+
 ## Agent Behavior Evals
 
 E2E covers the harness; it does not cover whether the **agent** still behaves. `pnpm run test:eval`

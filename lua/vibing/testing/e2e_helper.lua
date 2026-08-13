@@ -2,13 +2,27 @@
 ---E2Eテスト用のヘルパー関数集
 local M = {}
 
+---E2E specを実行してよい環境かどうか
+---
+---`test:lua`は`PlenaryBustedDirectory tests/`なので`tests/e2e/`まで巻き込む。E2Eは子Neovimを
+---起動して**実際にCLIへリクエストを投げる**ものがあり、通常のユニットテストのつもりで回すと
+---黙ってトークンを使う。`test:e2e`だけが`VIBING_E2E=1`を立てるので、それ以外では各specが
+---自分でスキップする。
+---@return boolean
+function M.should_run()
+  return vim.env.VIBING_E2E == "1"
+end
+
 ---別Neovimインスタンスを起動
 ---@param config? { headless?: boolean, init_script?: string, cwd?: string }
 ---@return table インスタンスハンドル { job_id: number }
 function M.spawn_nvim_instance(config)
   config = config or {}
 
-  local cmd = { "nvim", "--clean" }
+  -- --embed makes the child's stdio a msgpack-RPC channel, which is what `rpc = true` below is
+  -- talking to. Without it the child starts as an ordinary editor, every rpcrequest fails, and
+  -- the spec never gets past its first wait.
+  local cmd = { "nvim", "--clean", "--embed" }
   if config.headless then
     table.insert(cmd, "--headless")
   end
@@ -124,11 +138,79 @@ function M.wait_for_buffer_content(instance, pattern, timeout)
   return false
 end
 
+---現在のバッファ「名」が条件に一致するまで待機
+---
+---wait_for_buffer_contentと紛らわしいが、見るものが違う。`.md`拡張子やチャットファイル名を
+---待つのはこちら。本文を探しても永久に一致しないため、全specがそこで詰まっていた。
+---@param instance table インスタンスハンドル
+---@param pattern string Luaパターン（バッファ名に対して）
+---@param timeout number タイムアウト（ミリ秒）
+---@return boolean 成功したかどうか
+function M.wait_for_buffer_name(instance, pattern, timeout)
+  if not instance or not instance.job_id then
+    vim.notify("[E2E Helper] Invalid instance: instance or job_id is nil", vim.log.levels.ERROR)
+    return false
+  end
+
+  local start_time = vim.loop.hrtime()
+  local timeout_ns = timeout * 1000000
+  local last_name = ""
+
+  while (vim.loop.hrtime() - start_time) < timeout_ns do
+    local ok, bufnr = pcall(vim.fn.rpcrequest, instance.job_id, "nvim_get_current_buf")
+    if not ok then
+      vim.notify(
+        string.format("[E2E Helper] RPC failed to get buffer: %s", tostring(bufnr)),
+        vim.log.levels.WARN
+      )
+      return false
+    end
+
+    local ok2, name = pcall(vim.fn.rpcrequest, instance.job_id, "nvim_buf_get_name", bufnr)
+    if not ok2 then
+      vim.notify(
+        string.format("[E2E Helper] RPC failed to get buffer name: %s", tostring(name)),
+        vim.log.levels.WARN
+      )
+      return false
+    end
+
+    last_name = name or ""
+    if last_name:match(pattern) then
+      return true
+    end
+
+    vim.loop.sleep(100)
+  end
+
+  vim.notify(
+    string.format(
+      "[E2E Helper] Timeout waiting for buffer name '%s' after %dms\nLast buffer name: %s",
+      pattern,
+      timeout,
+      last_name
+    ),
+    vim.log.levels.DEBUG
+  )
+
+  return false
+end
+
 ---インスタンスをクリーンアップ
+---子が書いたチャットファイルの一時ディレクトリも消す（tests/e2e_init.luaが場所を伝えてくる）
 ---@param instance table インスタンスハンドル
 function M.cleanup_instance(instance)
-  if instance and instance.job_id then
-    vim.fn.jobstop(instance.job_id)
+  if not instance or not instance.job_id then
+    return
+  end
+
+  local ok, chat_dir = pcall(vim.fn.rpcrequest, instance.job_id, "nvim_get_var", "vibing_e2e_chat_dir")
+  vim.fn.jobstop(instance.job_id)
+
+  -- tempname() is always under the system temp dir; refuse anything else rather than trust a
+  -- value read back over RPC.
+  if ok and type(chat_dir) == "string" and chat_dir:find(vim.fn.fnamemodify(vim.fn.tempname(), ":h:h"), 1, true) == 1 then
+    vim.fn.delete(vim.fn.fnamemodify(chat_dir, ":h"), "rf")
   end
 end
 

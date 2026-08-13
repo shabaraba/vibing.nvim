@@ -3,6 +3,12 @@
 -- AskUserQuestion and permissions_ask flows inserted UI multiple times.
 local helper = require("vibing.testing.e2e_helper")
 
+-- tests/e2e is swept by `test:lua` too, and some of these specs send a real request to the CLI.
+-- Only `test:e2e` sets VIBING_E2E=1; everything else skips rather than quietly spending tokens.
+if not helper.should_run() then
+  return
+end
+
 local TIMEOUTS = {
   CHAT_CREATION = 2000,
   BUFFER_READY = 5000,
@@ -30,7 +36,7 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
   before_each(function()
     nvim_instance = helper.spawn_nvim_instance({
       headless = true,
-      init_script = "tests/minimal_init.lua",
+      init_script = "tests/e2e_init.lua",
     })
   end)
 
@@ -42,7 +48,7 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
     helper.send_keys(nvim_instance, ":VibingChat<CR>")
     vim.wait(TIMEOUTS.CHAT_CREATION)
 
-    local ok = helper.wait_for_buffer_content(nvim_instance, "%.md", TIMEOUTS.BUFFER_READY)
+    local ok = helper.wait_for_buffer_name(nvim_instance, "%.md$", TIMEOUTS.BUFFER_READY)
     assert.is_true(ok, "Chat buffer should be created")
 
     -- Prompt Claude to use AskUserQuestion tool
@@ -68,7 +74,7 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
     helper.send_keys(nvim_instance, ":VibingChat<CR>")
     vim.wait(TIMEOUTS.CHAT_CREATION)
 
-    local ok = helper.wait_for_buffer_content(nvim_instance, "%.md", TIMEOUTS.BUFFER_READY)
+    local ok = helper.wait_for_buffer_name(nvim_instance, "%.md$", TIMEOUTS.BUFFER_READY)
     assert.is_true(ok, "Chat buffer should be created")
 
     -- Prompt Claude to use AskUserQuestion tool
