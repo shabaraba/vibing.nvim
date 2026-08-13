@@ -43,15 +43,22 @@ for _, tool in ipairs(M.ALWAYS_ALLOWED_TOOLS) do
 end
 
 ---vibing-nvim自身が提供するMCPツールの許可パターン。プレーンなユーザーレベルMCPサーバー登録
----（mcp__vibing-nvim__*）と、Claude Codeプラグイン登録（mcp__plugin_<marketplace>_vibing-nvim__*、
----このリポジトリが.claude-plugin/marketplace.jsonで出荷する"vibing"マーケットプレイス名前提）の
----両方に対応する。can_use_tool.M.is_vibing_nvim_mcp_tool側はサフィックスマッチでマーケットプレイス名
----に依存しないが、Claude Code CLIの--allowedToolsゲート自体は具体的なプレフィックスを要求するため、
----こちらは定数化のみで対応している。マーケットプレイス名を変更した場合はここを更新すること。
+---（mcp__vibing-nvim__*）と、Claude Codeプラグイン登録（mcp__plugin_<marketplace>_vibing-nvim__*）の
+---両方に対応する。
+---
+---プラグイン側の接頭辞は`mcp__plugin_vibing-nvim_vibing-nvim__`。マーケットプレイス名は
+---.claude-plugin/marketplace.jsonの`name`（"vibing"）ではなく`claude plugin marketplace add`が
+---実際に登録した名前で決まり、build.shが入れるのは`vibing-nvim@vibing-nvim`である（`claude plugin
+---list --json`のidと、実際に配られるツール名の両方で確認済み）。
+---
+---ただしこのリストにマーケットプレイス名の追従を頼ってはいけない。--allowedToolsは具体的な
+---プレフィックスしか受け付けず、ここがずれると当該ツールはCLI自身のゲートで止まる（#564）。
+---最終的な担保はPreToolUseフックが返す明示的なallow決定のほうで、そちらは
+---can_use_tool.M.is_vibing_nvim_mcp_toolのサフィックスマッチなのでマーケットプレイス名に依存しない。
 ---@type string[]
 M.VIBING_NVIM_MCP_TOOL_PATTERNS = {
   "mcp__vibing-nvim__*",
-  "mcp__plugin_vibing_vibing-nvim__*",
+  "mcp__plugin_vibing-nvim_vibing-nvim__*",
 }
 
 ---`permissions.allow`の既定値。`config.lua`はこのリストを参照するだけで、値を再列挙しない。

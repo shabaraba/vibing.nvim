@@ -62,18 +62,30 @@ if [ -f "$RES_FILE" ]; then
   debug_log "got response: $RESPONSE"
   rm -f "$REQ_FILE" "$RES_FILE" 2>/dev/null
 
-  # Check if decision is deny → exit 2 with reason on stderr
   DECISION=$(echo "$RESPONSE" | grep -o '"permissionDecision":"[^"]*"' | head -1 | cut -d'"' -f4)
 
-  if [ "$DECISION" = "deny" ]; then
-    REASON=$(echo "$RESPONSE" | grep -o '"permissionDecisionReason":"[^"]*"' | head -1 | cut -d'"' -f4)
-    debug_log "DENY: $REASON"
-    echo "${REASON:-Denied by vibing.nvim}" >&2
-    exit 2
-  fi
-
-  debug_log "ALLOW"
-  exit 0
+  case "$DECISION" in
+    deny)
+      REASON=$(echo "$RESPONSE" | grep -o '"permissionDecisionReason":"[^"]*"' | head -1 | cut -d'"' -f4)
+      debug_log "DENY: $REASON"
+      echo "${REASON:-Denied by vibing.nvim}" >&2
+      exit 2
+      ;;
+    allow)
+      # An explicit grant, which makes the CLI skip its own permission gate. Exiting 0 without
+      # printing this is NOT a grant -- a silent exit 0 reads as "no opinion", and in headless
+      # `-p` mode the gate it falls back to cannot prompt anyone, so the tool is refused (#564).
+      debug_log "ALLOW (explicit grant)"
+      printf '%s' "$RESPONSE"
+      exit 0
+      ;;
+    *)
+      # "defer" (and any response shape this script does not recognise): vibing.nvim permits the
+      # call but leaves the CLI's own gate, and with it the user's settings.json rules, in charge.
+      debug_log "DEFER to the CLI's own permission flow"
+      exit 0
+      ;;
+  esac
 fi
 
 # Timeout - fail closed (deny)
