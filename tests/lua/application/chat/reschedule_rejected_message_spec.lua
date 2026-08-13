@@ -139,4 +139,56 @@ describe("send_message._reschedule_rejected_message", function()
     assert.is_not_nil(entry)
     assert.equals("scheduled", entry.kind)
   end)
+
+  it("refuses an auto_resume continuation that was itself rejected", function()
+    -- fire() sends `opts.prompt` through the ordinary send path after marking the entry
+    -- in_flight, so `message` here is a string vibing.nvim wrote, not the user. Scheduling it
+    -- would put that sentence in the buffer as the user's own message and hand the retry budget
+    -- from auto_resume_on_limit.max_retries (1) to scheduled_requests.max_retries (3).
+    local PendingResume = require("vibing.infrastructure.storage.pending_resume")
+    PendingResume.put({
+      chat_file_path = chat_path,
+      kind = "auto_resume",
+      state = "in_flight",
+      retry_count = 1,
+      resets_at = os.time() + 3600,
+    }, tmp_root)
+
+    local captured = {}
+    local ok = SendMessage._reschedule_rejected_message(
+      make_callbacks(captured),
+      chat_path,
+      { resets_at = os.time() + 3600, limit_type = "five_hour" },
+      "Continue from where you left off.",
+      make_config(true, 3)
+    )
+
+    assert.is_false(ok, "must fall through to on_rate_limited, which owns auto_resume's budget")
+    assert.is_nil(captured.text, "the fixed prompt must not be written back as a user message")
+    assert.equals("auto_resume", PendingResume.get(chat_path, tmp_root).kind)
+  end)
+
+  it("still re-schedules a scheduled request that was rejected again", function()
+    -- The documented fire -> rejected -> re-schedule loop, which the guard above must not break.
+    local PendingResume = require("vibing.infrastructure.storage.pending_resume")
+    PendingResume.put({
+      chat_file_path = chat_path,
+      kind = "scheduled",
+      state = "in_flight",
+      retry_count = 1,
+      resets_at = os.time() + 3600,
+    }, tmp_root)
+
+    local captured = {}
+    local ok = SendMessage._reschedule_rejected_message(
+      make_callbacks(captured),
+      chat_path,
+      { resets_at = os.time() + 3600, limit_type = "five_hour" },
+      "my own message",
+      make_config(true, 3)
+    )
+
+    assert.is_true(ok)
+    assert.equals("my own message", captured.text)
+  end)
 end)

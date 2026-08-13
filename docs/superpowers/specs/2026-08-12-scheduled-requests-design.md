@@ -228,6 +228,12 @@ scenario and was judged shippable.
   double-send; `:VibingCancelResume` clears them.
 - **`vim.bo[buf].modified` as a save-success proxy** misreads an already-unmodified buffer whose
   `:write` fails (externally deleted file, read-only mount) as success.
+- **`.vibing/limit-state.json` is scoped per git root, but the limit is per account.** `get_path`
+  resolves through `Git.get_root`, so a worktree under `.vibing/worktrees/<branch>/` keeps its own
+  record. A limit observed in the main checkout is invisible to a chat in the worktree, which will
+  try an ordinary send and only learn about it by being rejected. `pending_resume.lua` already
+  scopes the same way, so this is consistent rather than novel — but `architecture.md` advertises
+  concurrent chats across worktrees, which is exactly where it shows.
 
 ### Pre-existing issues this work uncovered
 

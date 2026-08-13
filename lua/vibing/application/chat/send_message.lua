@@ -521,6 +521,18 @@ function M._reschedule_rejected_message(callbacks, chat_file_path, info, message
 
   local PendingResume = require("vibing.infrastructure.storage.pending_resume")
   local existing = PendingResume.get(chat_file_path)
+
+  -- `message` is whatever the turn sent, and an auto_resume continuation is a turn too: fire()
+  -- sends `opts.prompt` ("Continue from where you left off.") through the ordinary send path.
+  -- Converting that to a scheduled request would write a sentence the user never typed into the
+  -- buffer as their own message, and swap auto_resume's max_retries budget (default 1) for
+  -- scheduled_requests' (default 3). fire() marks the entry in_flight before sending, so an
+  -- in-flight auto_resume entry is exactly that case; hand it back to on_rate_limited, which
+  -- owns that budget. A scheduled entry in flight is the documented re-schedule loop and stays.
+  if existing and (existing.kind or "auto_resume") == "auto_resume" and existing.state == "in_flight" then
+    return false
+  end
+
   local retry_count = (existing and existing.retry_count or 0) + 1
 
   local AutoResume = require("vibing.application.chat.auto_resume")
