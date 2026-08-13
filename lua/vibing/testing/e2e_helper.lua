@@ -207,9 +207,20 @@ function M.cleanup_instance(instance)
   local ok, chat_dir = pcall(vim.fn.rpcrequest, instance.job_id, "nvim_get_var", "vibing_e2e_chat_dir")
   vim.fn.jobstop(instance.job_id)
 
-  -- tempname() is always under the system temp dir; refuse anything else rather than trust a
-  -- value read back over RPC.
-  if ok and type(chat_dir) == "string" and chat_dir:find(vim.fn.fnamemodify(vim.fn.tempname(), ":h:h"), 1, true) == 1 then
+  if not ok or type(chat_dir) ~= "string" or chat_dir == "" then
+    return
+  end
+
+  -- This path arrived over RPC and is about to be handed to `delete(..., "rf")`, so confirm it is
+  -- under the system temp dir first. Normalize both sides with vim.fs.normalize, which collapses
+  -- `..`: a prefix test on raw strings (or on `fnamemodify(:p)`, which leaves `..` in place —
+  -- checked, not assumed) would accept `<temp>/../../etc`.
+  --
+  -- The base comes from tempname()'s own layout (`<temp>/nvim.<user>/<rand>/<counter>`), a Neovim
+  -- implementation detail. If that ever changes the comparison simply stops matching, so the
+  -- failure mode is a leftover temp directory rather than a wrong `rf`.
+  local temp_base = vim.fs.normalize(vim.fn.fnamemodify(vim.fn.tempname(), ":h:h"))
+  if vim.fs.normalize(chat_dir):find(temp_base, 1, true) == 1 then
     vim.fn.delete(vim.fn.fnamemodify(chat_dir, ":h"), "rf")
   end
 end

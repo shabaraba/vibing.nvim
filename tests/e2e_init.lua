@@ -21,9 +21,9 @@ require("vibing").setup({
     save_location_type = "custom",
     save_dir = chat_dir,
   },
-  -- MCP stays on: nvim_ask_user_question_spec exists to drive that tool, so a child without the
-  -- RPC server could never pass it. Concurrent children do not collide — the server walks to the
-  -- next free port when 9876 is taken.
+  -- Already the default; stated because nvim_ask_user_question_spec exists to drive that tool and
+  -- a child without the RPC server could never pass it, so this is not safe to "tidy away".
+  -- Concurrent children do not collide — the server walks to the next free port when 9876 is taken.
   mcp = { enabled = true },
   -- The child is a throwaway editor in a temp directory, and these specs are about UI plumbing,
   -- not about permissions. It also has to be bypassPermissions to work at all: under acceptEdits

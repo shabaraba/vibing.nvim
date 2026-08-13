@@ -13,6 +13,8 @@ end
 local TIMEOUTS = {
   CHAT_CREATION = 2000,
   BUFFER_READY = 5000,
+  -- Longer than chat_basic_flow's 30s: those turns answer directly, while these have to find
+  -- the tool through ToolSearch and round-trip through the MCP server first. Measured, not guessed.
   ASSISTANT_RESPONSE = 60000,
 }
 
