@@ -39,7 +39,7 @@ end
 --- @return string|nil
 local function resolve_model(opts, config)
   if opts.lightweight then
-    return (config.agent and config.agent.utility_model) or "haiku"
+    return (config.agent and config.agent.utility_model) or "sonnet"
   end
   return opts.model or (config.agent and config.agent.default_model)
 end

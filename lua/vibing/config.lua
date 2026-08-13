@@ -93,7 +93,7 @@
 ---Claudeのモード（code/plan/explore）とモデル（sonnet/opus/haiku/fable）を指定
 ---@field default_mode "code"|"plan"|"explore" 新規チャットのfrontmatterに記録される`mode`の既定値（意味は core/constants/modes.lua の M.AGENT_MODES 参照）
 ---@field default_model "sonnet"|"opus"|"haiku"|"fable" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速、"fable": Claude Fable）
----@field utility_model "sonnet"|"opus"|"haiku"|"fable" タイトル生成・要約等の軽量ユーティリティ呼び出し専用モデル（デフォルト: "haiku"）
+---@field utility_model "sonnet"|"opus"|"haiku"|"fable" タイトル生成・要約等の軽量ユーティリティ呼び出し専用モデル（デフォルト: "sonnet"）
 ---@field default_effort ("low"|"medium"|"high"|"xhigh"|"max")? 推論量の既定値（未指定ならCLIの既定に任せる）
 ---@field utility_effort ("low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）
@@ -223,7 +223,11 @@ M.defaults = {
   agent = {
     default_mode = "code",
     default_model = "sonnet",
-    utility_model = "haiku",
+    -- sonnet, not haiku: the utility calls are all summarisation over a noisy chat transcript,
+    -- and haiku measurably picks the wrong subject (it titles a chat after the last step or the
+    -- commands that ran). The inputs are a few thousand tokens and the calls are on-demand, so
+    -- the extra cost is small. Set it back to "haiku" if you want the cheapest possible.
+    utility_model = "sonnet",
     -- default_effort is deliberately nil: without it vibing.nvim passes no --effort and the CLI
     -- applies its own default, which moves as Anthropic tunes it. Set it to pin a level.
     default_effort = nil,
