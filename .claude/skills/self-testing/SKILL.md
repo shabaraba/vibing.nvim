@@ -15,7 +15,8 @@ Test Runner (Current Nvim)
   ├─ lua/vibing/testing/e2e_helper.lua
   │   ├─ spawn_nvim_instance()  - Launch child Nvim via jobstart(rpc=true)
   │   ├─ send_keys()             - Send key input via rpcrequest
-  │   ├─ wait_for_buffer_content() - Poll buffer until pattern matches
+  │   ├─ wait_for_buffer_content() - Poll buffer TEXT until pattern matches
+  │   ├─ wait_for_buffer_name()    - Poll buffer NAME (use this for a filename)
   │   └─ cleanup_instance()      - Stop job
   │
   └─ tests/e2e/*.spec.lua - plenary.nvim test specs
@@ -29,11 +30,13 @@ unique RPC port in the 9876-9925 range.
 ## Running Tests
 
 ```bash
-npm run test:e2e   # all E2E tests
-npm test           # unit + E2E
+npm run test:e2e   # all E2E tests (sets VIBING_E2E=1; spends real tokens)
+npm test           # unit only (test:lua + test:node) — E2E is deliberately not included
 
-# Specific file
-nvim --headless -c "PlenaryBustedDirectory tests/e2e/ { minimal_init = 'tests/minimal_init.lua' }"
+# Specific file. VIBING_E2E=1 is required: without it every spec self-skips, and the run reports
+# "0 tests" as a pass rather than telling you nothing ran.
+VIBING_E2E=1 nvim --headless -u tests/minimal_init.lua \
+  -c "PlenaryBustedFile tests/e2e/chat_jump_user_spec.lua"
 ```
 
 ## Writing a Test
@@ -49,7 +52,7 @@ describe("E2E: Chat basic flow", function()
   before_each(function()
     nvim_instance = helper.spawn_nvim_instance({
       headless = true,
-      init_script = "tests/minimal_init.lua",
+      init_script = "tests/e2e_init.lua",
     })
   end)
 
@@ -61,7 +64,7 @@ describe("E2E: Chat basic flow", function()
     helper.send_keys(nvim_instance, ":VibingChat<CR>")
     vim.wait(2000)
 
-    local ok = helper.wait_for_buffer_content(nvim_instance, "%.md", 5000)
+    local ok = helper.wait_for_buffer_name(nvim_instance, "%.md$", 5000)
     assert.is_true(ok, "Chat buffer should be created with .md extension")
 
     ok = helper.wait_for_buffer_content(nvim_instance, "created_at:", 2000)
@@ -84,7 +87,9 @@ responses 30000ms, command execution 1000-2000ms.
 Spawn a separate Neovim instance for testing.
 
 - `config.headless` (boolean) - run without UI
-- `config.init_script` (string) - path to init script (e.g. `"tests/minimal_init.lua"`)
+- `config.init_script` (string) - path to the _child's_ init. Use `"tests/e2e_init.lua"`:
+  `minimal_init.lua` is the parent's and leaves the child without `setup()`, so no `:Vibing*`
+  command exists
 - `config.cwd` (string, optional) - working directory
 - Returns: `instance` table with a `job_id` field
 

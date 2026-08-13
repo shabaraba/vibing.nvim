@@ -1,6 +1,12 @@
 -- E2E Tests for vibing.nvim chat basic flow
 local helper = require("vibing.testing.e2e_helper")
 
+-- tests/e2e is swept by `test:lua` too, and some of these specs send a real request to the CLI.
+-- Only `test:e2e` sets VIBING_E2E=1; everything else skips rather than quietly spending tokens.
+if not helper.should_run() then
+  return
+end
+
 -- Timeout constants
 local TIMEOUTS = {
   CHAT_CREATION = 2000, -- Time for chat buffer creation and rendering
@@ -17,7 +23,7 @@ describe("E2E: Chat basic flow", function()
     -- 別Neovimインスタンスを起動（vibing.nvimロード済み）
     nvim_instance = helper.spawn_nvim_instance({
       headless = true,
-      init_script = "tests/minimal_init.lua",
+      init_script = "tests/e2e_init.lua",
     })
   end)
 
@@ -33,7 +39,7 @@ describe("E2E: Chat basic flow", function()
     vim.wait(TIMEOUTS.CHAT_CREATION)
 
     -- バッファ名確認（.mdファイルが作成される）
-    local ok = helper.wait_for_buffer_content(nvim_instance, "%.md", TIMEOUTS.BUFFER_READY)
+    local ok = helper.wait_for_buffer_name(nvim_instance, "%.md$", TIMEOUTS.BUFFER_READY)
     assert.is_true(ok, "Chat buffer should be created with .md extension")
 
     -- フロントマター確認
@@ -47,7 +53,7 @@ describe("E2E: Chat basic flow", function()
     vim.wait(TIMEOUTS.CHAT_CREATION)
 
     -- バッファ作成確認
-    local ok = helper.wait_for_buffer_content(nvim_instance, "%.md", TIMEOUTS.BUFFER_READY)
+    local ok = helper.wait_for_buffer_name(nvim_instance, "%.md$", TIMEOUTS.BUFFER_READY)
     assert.is_true(ok, "Chat buffer should be created")
 
     -- メッセージ送信（簡単なプロンプト）
