@@ -67,6 +67,16 @@ describe("set_cursor_position", function()
     assert.equals(0, vim.api.nvim_win_get_cursor(other_win)[2])
   end)
 
+  it("treats an explicit winnr of 0 as the active window, the way the nvim API does", function()
+    -- 0 is truthy in Lua, so it reaches the validity check rather than the `or 0` fallback --
+    -- and nvim_win_is_valid(0) is true, since 0 is the API's own name for the current window.
+    -- Same destination by either route, but worth pinning: a reviewer read it as "0 is rejected".
+    cursor.set_cursor_position({ line = 9, winnr = 0 })
+
+    assert.equals(9, vim.api.nvim_win_get_cursor(origin_win)[1])
+    assert.equals(1, vim.api.nvim_win_get_cursor(other_win)[1])
+  end)
+
   it("rejects an invalid window instead of silently moving the active one", function()
     local ok, err = pcall(cursor.set_cursor_position, { line = 3, winnr = 999999 })
 
