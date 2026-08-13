@@ -185,6 +185,16 @@ function M._register_commands()
     end,
   })
 
+  -- count = 0 で「カウントを取るが既定は無し」になる。`]u` などに割り当てたとき
+  -- 3]u が3セクション先へ飛ぶよう、他の `]`/`[` 系モーションと揃えている。
+  vim.api.nvim_create_user_command("VibingChatJumpNextUser", function(opts)
+    require("vibing.presentation.chat.controller").handle_jump_user("next", opts.count)
+  end, { count = 0, desc = "Jump to the next User section in the chat buffer" })
+
+  vim.api.nvim_create_user_command("VibingChatJumpPrevUser", function(opts)
+    require("vibing.presentation.chat.controller").handle_jump_user("prev", opts.count)
+  end, { count = 0, desc = "Jump to the previous User section in the chat buffer" })
+
   vim.api.nvim_create_user_command("VibingSlashCommands", function()
     require("vibing.presentation.chat.controller").show_slash_commands()
   end, { desc = "Show slash command picker" })

@@ -165,6 +165,8 @@ help tags.
 | `:VibingChat [position\|file]`        | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file  |
 | `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                                          |
 | `:VibingChatFork [position]`          | Fork current chat (create branch from current conversation)                                          |
+| `:VibingChatJumpNextUser [count]`     | Move the cursor to the next User section in the chat buffer                                          |
+| `:VibingChatJumpPrevUser [count]`     | Move the cursor to the previous User section in the chat buffer                                      |
 | `:VibingSlashCommands`                | Show slash command picker in chat                                                                    |
 | `:VibingSetFileTitle`                 | Generate AI title and rename chat file                                                               |
 | `:VibingSummarize`                    | Generate AI summary of chat history and insert into buffer                                           |

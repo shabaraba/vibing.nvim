@@ -8,6 +8,8 @@
 | `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                                         |
 | `:VibingChatFork [position]`          | Fork current chat (create branch from current conversation)                                         |
 | `:VibingSubagentChat [position]`      | Continue a subagent this chat started, in its own buffer                                            |
+| `:VibingChatJumpNextUser [count]`     | Move the cursor to the next User section in the chat buffer                                         |
+| `:VibingChatJumpPrevUser [count]`     | Move the cursor to the previous User section in the chat buffer                                     |
 | `:VibingSlashCommands`                | Show slash command picker in chat                                                                   |
 | `:VibingSetFileTitle`                 | Generate AI title and rename chat file                                                              |
 | `:VibingSummarize`                    | Generate AI summary of chat history and insert into buffer                                          |
@@ -32,6 +34,22 @@ one. Fork's session/frontmatter mechanics (`forked_from`, session inheritance vi
 are documented in `architecture.md` → "Chat Fork" — not duplicated here. `:VibingSubagentChat`
 takes the same position argument; why it shares the parent's `session_id` and never forks is in
 `architecture.md` → "Subagent Chat".
+
+The two jump commands ship without a keymap. They take a count
+(`:3VibingChatJumpNextUser`) and clamp to the last section rather than refusing to move, and they
+push the starting position onto the jumplist so `<C-o>` comes back — `nvim_win_set_cursor` updates
+neither the `'` mark nor the jumplist on its own.
+
+To bind them as `]`/`[` motions and keep the count, forward `v:count1` explicitly. A plain
+`<Cmd>VibingChatJumpNextUser<CR>` mapping works but always moves one section, and the command
+cannot read `v:count` itself: from the command line that variable still holds the count of the
+last Normal-mode command, so `3j` followed by `:VibingChatJumpNextUser` would jump three sections.
+
+```lua
+vim.keymap.set("n", "]u", function()
+  vim.cmd(vim.v.count1 .. "VibingChatJumpNextUser")
+end, { desc = "Next User section" })
+```
 
 ## Slash Commands (in Chat)
 
