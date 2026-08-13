@@ -80,8 +80,8 @@ describe("can_use_tool", function()
     local tool_names = {
       -- Registered as a plain user-level MCP server
       "mcp__vibing-nvim__nvim_get_buffer",
-      -- Registered as a Claude Code plugin (marketplace + plugin name both "vibing-nvim")
-      "mcp__plugin_vibing-nvim_vibing-nvim__nvim_get_buffer",
+      -- Registered as a Claude Code plugin (marketplace "vibing", plugin "vibing-nvim")
+      "mcp__plugin_vibing_vibing-nvim__nvim_get_buffer",
     }
 
     for _, tool_name in ipairs(tool_names) do
@@ -124,7 +124,7 @@ describe("can_use_tool", function()
     it("matches a specific tool regardless of registration namespace", function()
       assert.is_true(
         can_use_tool.is_vibing_nvim_mcp_tool(
-          "mcp__plugin_vibing-nvim_vibing-nvim__nvim_ask_user_question",
+          "mcp__plugin_vibing_vibing-nvim__nvim_ask_user_question",
           "nvim_ask_user_question"
         )
       )
@@ -136,7 +136,7 @@ describe("can_use_tool", function()
     it("does not match a different vibing-nvim tool", function()
       assert.is_false(
         can_use_tool.is_vibing_nvim_mcp_tool(
-          "mcp__plugin_vibing-nvim_vibing-nvim__nvim_get_buffer",
+          "mcp__plugin_vibing_vibing-nvim__nvim_get_buffer",
           "nvim_ask_user_question"
         )
       )

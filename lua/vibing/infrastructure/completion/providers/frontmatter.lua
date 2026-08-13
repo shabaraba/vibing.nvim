@@ -1,6 +1,8 @@
 ---@class Vibing.FrontmatterProvider
 ---Provider for YAML frontmatter completion items
 ---@module "vibing.infrastructure.completion.providers.frontmatter"
+local tools_constants = require("vibing.core.constants.tools")
+
 local M = {}
 
 local Agents = require("vibing.core.constants.agents")
@@ -48,13 +50,12 @@ local TOOL_NAMES = {
   "WebSearch",
   "WebFetch",
   "Skill",
-  "mcp__vibing-nvim__*",
-  "mcp__plugin_vibing-nvim_vibing-nvim__*",
   "mcp__chrome-devtools__*",
   "mcp__context7__*",
   "mcp__serena__*",
   "mcp__lapras__*",
 }
+vim.list_extend(TOOL_NAMES, tools_constants.VIBING_NVIM_MCP_TOOL_PATTERNS)
 
 ---Get enum values for a field
 ---@param field string Field name (agent, permission_mode, ...)

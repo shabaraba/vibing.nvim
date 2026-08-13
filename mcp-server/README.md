@@ -40,7 +40,7 @@ and no separate build step (the server builds itself on first launch).
 
 ```text
 /plugin marketplace add shabaraba/vibing.nvim
-/plugin install vibing-nvim@vibing-nvim
+/plugin install vibing-nvim@vibing
 ```
 
 See the plugin manifest at `../.claude-plugin/plugin.json`. The manual steps below remain useful
@@ -53,8 +53,8 @@ or your own fork/clone).
 To uninstall:
 
 ```text
-/plugin uninstall vibing-nvim@vibing-nvim
-/plugin marketplace remove vibing-nvim
+/plugin uninstall vibing-nvim@vibing
+/plugin marketplace remove vibing
 ```
 
 **Auto-build mechanism:** `mcp-server/bin/run.mjs` hashes `package.json`, `package-lock.json`,

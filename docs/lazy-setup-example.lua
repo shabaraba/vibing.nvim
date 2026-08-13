@@ -2,7 +2,7 @@
 -- Place this in ~/.config/nvim/lua/plugins/vibing.lua
 --
 -- MCP server registration is exclusively via the Claude Code plugin marketplace
--- (`claude plugin install vibing-nvim@vibing-nvim`), which build.sh installs automatically.
+-- (`claude plugin install vibing-nvim@vibing`), which build.sh installs automatically.
 -- There is no separate ~/.claude.json registration path: that route can only ever hardcode a
 -- single default RPC port, so it silently targets the wrong Neovim instance whenever more than
 -- one is running.

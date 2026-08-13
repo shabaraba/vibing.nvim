@@ -25,7 +25,7 @@ end
 local function plugin_install_message(plugin_root)
   return "Register vibing-nvim as a Claude Code plugin by running: claude plugin marketplace add "
     .. plugin_root
-    .. " && claude plugin install vibing-nvim@vibing-nvim --scope user"
+    .. " && claude plugin install vibing-nvim@vibing --scope user"
 end
 
 ---Check if command exists
