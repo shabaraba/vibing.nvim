@@ -57,7 +57,9 @@ async function runSuite(specs) {
         '-c',
         `PlenaryBustedDirectory ${dir} { minimal_init = 'tests/minimal_init.lua' }`,
       ],
-      { cwd: repoRoot, encoding: 'utf8' }
+      // `npm run test:node` has no step-level timeout of its own, so bound the child here:
+      // a nvim that never exits leaves `status` null, which the assertion below fails on.
+      { cwd: repoRoot, encoding: 'utf8', timeout: 120_000 }
     );
 
     assert.notEqual(result.status, null, `nvim did not exit: ${result.error ?? 'unknown'}`);

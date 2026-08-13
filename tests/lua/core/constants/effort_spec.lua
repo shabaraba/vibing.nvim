@@ -25,6 +25,26 @@ describe("effort levels", function()
 end)
 
 describe("cli_command_builder --effort", function()
+  local original_exepath
+
+  -- build() resolves the claude binary before it looks at any flag, so without this the whole
+  -- describe fails on a machine that has no claude installed — which is every CI runner.
+  before_each(function()
+    original_exepath = vim.fn.exepath
+    vim.fn.exepath = function(name)
+      if name == "claude" then
+        return "/usr/local/bin/claude"
+      end
+      return original_exepath(name)
+    end
+    cli_command_builder._reset_path_cache()
+  end)
+
+  after_each(function()
+    vim.fn.exepath = original_exepath
+    cli_command_builder._reset_path_cache()
+  end)
+
   it("passes nothing when no effort is configured", function()
     -- The CLI's own default applies, and that default moves as Anthropic tunes it.
     local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
