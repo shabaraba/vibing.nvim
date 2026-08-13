@@ -35,8 +35,10 @@ function M.spawn_nvim_instance(config)
   -- parent asking for it afterwards. Asking would mean an rpcrequest during cleanup, and
   -- rpcrequest has no timeout: a child wedged by a failing test would hang after_each, and with
   -- it the whole suite. Owning the path here means cleanup only ever calls jobstop and delete.
+  -- Only the path is decided here; tests/e2e_init.lua does the mkdir in the child. Creating it
+  -- before jobstart would leak the directory on the `error()` below, since the caller never gets
+  -- an instance to hand to cleanup_instance.
   local chat_dir = vim.fn.tempname() .. "/chat"
-  vim.fn.mkdir(chat_dir, "p")
 
   local instance = {
     chat_dir = chat_dir,
@@ -178,7 +180,8 @@ function M.cleanup_instance(instance)
   -- jobstop first, and no RPC anywhere in here: a child wedged by a failing test must not be able
   -- to hang the suite's cleanup. `chat_dir` is the path this process created in
   -- spawn_nvim_instance, so it needs no validation before deletion — nothing the child said is
-  -- involved. Delete the tempname() directory itself, one level above the `chat` subdir.
+  -- involved. Delete the tempname() directory itself, one level above the `chat` subdir; if the
+  -- child never got far enough to create it, this is a no-op.
   vim.fn.jobstop(instance.job_id)
 
   if type(instance.chat_dir) == "string" and instance.chat_dir ~= "" then
