@@ -11,52 +11,52 @@
 ## 5.2.0 (2026-08-13)
 
 ## What's Changed
-* docs: remove obsolete config items from README by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/499
-* feat: auto-resume chats when a usage limit resets by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/509
-* fix: recognize chat buffers with frontmatter past line 50 by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/511
-* docs: sync CLAUDE.md and .claude/rules with the CLI-direct architecture by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/521
-* docs: add pending-resume commands to README by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/517
-* chore: remove the unimplemented node.dev_mode option by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/519
-* fix: wire chat.auto_context and drop two unread setup() options by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/518
-* feat: apply .vibing/system-prompt.md to every request by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/520
-* fix: stop treating overageStatus as a usage-limit rejection by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/533
-* test: stop RPC specs racing on machine-wide shared paths by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/525
-* perf: key the chat routing on bufnr so renames don't bust the prompt cache by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/526
-* chore: remove agent-wrapper remnants and wire up node tests by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/523
-* refactor: unify the frontmatter permission mode key on the singular form by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/524
-* fix: make chat.window width/height match their documented spec by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/527
-* refactor: simplify ui.tool_markers to a flat tool -> string table by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/528
-* feat: validate the agent mode instead of accepting any string by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/529
-* feat: ship deny rules for destructive Bash commands by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/530
-* docs: rewrite :help vibing against the current implementation by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/531
-* test: stop asserting an exact size for a full-screen float by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/534
-* feat(copilot): add GitHub Copilot CLI as a selectable backend by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/510
-* chore: delete unused prompt files that contradict the live system prompt by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/535
-* feat: let /perm narrow any tool that supports an argument, not just Bash by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/544
-* fix(codex): stop registering a chat_bufnr Codex can never use by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/540
-* fix: empty the tool set for lightweight calls instead of listing tools to deny by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/536
-* refactor: shrink the MCP tool surface where it costs the most by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/549
-* refactor: read the default allow list from tools.lua instead of restating it by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/538
-* fix: resolve an omitted rpc_port from the instance registry for read-only tools by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/539
-* refactor: stop the shared layers from knowing which backend is running by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/546
-* test: cover what stream() sets up, and make all three adapters agree by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/547
-* feat: let the agent point at code instead of describing where it is by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/543
-* fix: state the rpc_port policy as reads, so new write tools stop breaking it by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/556
-* feat: show review points next to the code instead of only in the chat by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/545
-* feat: make subagent output visible in the chat buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/550
-* feat: notice when the agent stops honouring this project's contracts by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/553
-* fix: stop a stray narration line becoming the chat's filename by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/555
-* feat: walk the user through code instead of listing file paths at them by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/551
-* feat: add /effort so reasoning depth is a per-chat knob, not just the model by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/548
-* feat: keep talking to a subagent after the turn that spawned it by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/552
-* feat: let the agent read the debugger instead of guessing from the source by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/554
-* fix: make the bundled Claude Code plugin actually start its MCP server by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/557
-* fix(mcp): repair the open-then-jump path that "show me the code" and code tours run on by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/562
-* feat: jump between User sections in the chat buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/559
-* feat: add Grok Build CLI as a fourth backend by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/558
-* fix(test): make the E2E specs actually run, and keep them out of test:lua by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/563
-* feat(schedule): schedule chat requests during a usage limit by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/560
 
+- docs: remove obsolete config items from README by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/499
+- feat: auto-resume chats when a usage limit resets by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/509
+- fix: recognize chat buffers with frontmatter past line 50 by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/511
+- docs: sync CLAUDE.md and .claude/rules with the CLI-direct architecture by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/521
+- docs: add pending-resume commands to README by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/517
+- chore: remove the unimplemented node.dev_mode option by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/519
+- fix: wire chat.auto_context and drop two unread setup() options by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/518
+- feat: apply .vibing/system-prompt.md to every request by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/520
+- fix: stop treating overageStatus as a usage-limit rejection by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/533
+- test: stop RPC specs racing on machine-wide shared paths by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/525
+- perf: key the chat routing on bufnr so renames don't bust the prompt cache by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/526
+- chore: remove agent-wrapper remnants and wire up node tests by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/523
+- refactor: unify the frontmatter permission mode key on the singular form by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/524
+- fix: make chat.window width/height match their documented spec by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/527
+- refactor: simplify ui.tool_markers to a flat tool -> string table by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/528
+- feat: validate the agent mode instead of accepting any string by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/529
+- feat: ship deny rules for destructive Bash commands by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/530
+- docs: rewrite :help vibing against the current implementation by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/531
+- test: stop asserting an exact size for a full-screen float by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/534
+- feat(copilot): add GitHub Copilot CLI as a selectable backend by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/510
+- chore: delete unused prompt files that contradict the live system prompt by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/535
+- feat: let /perm narrow any tool that supports an argument, not just Bash by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/544
+- fix(codex): stop registering a chat_bufnr Codex can never use by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/540
+- fix: empty the tool set for lightweight calls instead of listing tools to deny by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/536
+- refactor: shrink the MCP tool surface where it costs the most by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/549
+- refactor: read the default allow list from tools.lua instead of restating it by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/538
+- fix: resolve an omitted rpc_port from the instance registry for read-only tools by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/539
+- refactor: stop the shared layers from knowing which backend is running by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/546
+- test: cover what stream() sets up, and make all three adapters agree by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/547
+- feat: let the agent point at code instead of describing where it is by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/543
+- fix: state the rpc_port policy as reads, so new write tools stop breaking it by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/556
+- feat: show review points next to the code instead of only in the chat by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/545
+- feat: make subagent output visible in the chat buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/550
+- feat: notice when the agent stops honouring this project's contracts by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/553
+- fix: stop a stray narration line becoming the chat's filename by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/555
+- feat: walk the user through code instead of listing file paths at them by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/551
+- feat: add /effort so reasoning depth is a per-chat knob, not just the model by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/548
+- feat: keep talking to a subagent after the turn that spawned it by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/552
+- feat: let the agent read the debugger instead of guessing from the source by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/554
+- fix: make the bundled Claude Code plugin actually start its MCP server by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/557
+- fix(mcp): repair the open-then-jump path that "show me the code" and code tours run on by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/562
+- feat: jump between User sections in the chat buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/559
+- feat: add Grok Build CLI as a fourth backend by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/558
+- fix(test): make the E2E specs actually run, and keep them out of test:lua by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/563
+- feat(schedule): schedule chat requests during a usage limit by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/560
 
 **Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.1.0...v5.2.0
 
