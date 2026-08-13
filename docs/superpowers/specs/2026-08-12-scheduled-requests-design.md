@@ -218,6 +218,15 @@ scenario and was judged shippable.
   `fire_scheduled` reads the disk copy: usually empty (dropped with a warning), but a file `:w`-ed
   during an earlier turn still carries that earlier `<!-- unsent -->` body and would re-send an
   already-answered message.
+- **The `<CR>` interception carries no retry budget, and resets the count.** `buffer.lua`'s
+  `_try_schedule_instead_of_send` calls `schedule_request` without `retry_count`/`max_retries`, so
+  `may_schedule` waves it through and the entry's count goes back to 0. That is deliberate for a
+  user pressing `<CR>` — the same reasoning as `:VibingSchedule` being unbudgeted — but it is also
+  reachable _without_ a user: `fire_scheduled` sends through `chat_buf:send_message()`, which runs
+  the same interception, so a limit still on record at fire time re-parks the request with a fresh
+  budget. It can therefore re-park indefinitely, which the "loop guard" description of
+  `max_retries` above does not cover. No request is spent while this happens, and one successful
+  response clears `limit-state.json` and ends it — hence recorded rather than fixed.
 - **`retry_count` is incremented at different points by the two callers.** The rejected-turn path
   passes the post-increment count to `may_schedule`, `on_rate_limited` passes the pre-increment
   one. Self-consistent, but it means `scheduled_requests.max_retries = 3` permits two
