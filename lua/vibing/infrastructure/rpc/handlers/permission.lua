@@ -101,19 +101,30 @@ local function get_comm_dir()
 end
 
 --- Write response file for hook script
+---
+--- The file is a private protocol between this handler and `bin/hooks/pre-tool-use.sh`, so it
+--- carries three decisions where the CLI's own hook schema has two:
+---
+---   "allow"  — an explicit grant. The hook prints this JSON verbatim on stdout, which makes the
+---              CLI skip its own permission gate. Anything less is not a grant: a hook that just
+---              exits 0 reads as "no opinion", and in headless `-p` mode the gate it falls
+---              through to has no way to prompt, so the tool is refused (#564).
+---   "deny"   — the hook exits 2 with the reason on stderr.
+---   "defer"  — vibing.nvim permits the call but leaves the CLI's own gate (and with it the
+---              user's own settings.json rules) in charge. The hook exits 0 silently.
+---
 --- @param request_id string
---- @param allow boolean
+--- @param decision "allow"|"deny"|"defer"
 --- @param reason? string Surfaced to the model as the tool_result when the underlying process
 ---   was NOT successfully cancelled (e.g. cancel_and_deny's fallback path). When cancellation
 ---   does succeed, the process is killed before this response can ever reach the model, so the
 ---   reason is moot in that case — it only matters for the failure path.
-local function write_hook_response(request_id, allow, reason)
+local function write_hook_response(request_id, decision, reason)
   local comm_dir = get_comm_dir()
   local res_file = comm_dir .. "/" .. request_id .. ".res"
   local tmp_file = res_file .. ".tmp"
 
-  local decision = allow and "allow" or "deny"
-  local output = { permissionDecision = decision }
+  local output = { hookEventName = "PreToolUse", permissionDecision = decision }
   if reason then
     output.permissionDecisionReason = reason
   end
@@ -136,7 +147,7 @@ local function write_hook_response(request_id, allow, reason)
     local fallback_f, fallback_err = io.open(res_file, "w")
     if fallback_f then
       local deny_json = vim.json.encode({
-        hookSpecificOutput = { permissionDecision = "deny" },
+        hookSpecificOutput = { hookEventName = "PreToolUse", permissionDecision = "deny" },
       })
       fallback_f:write(deny_json)
       fallback_f:close()
@@ -170,7 +181,7 @@ function M.check_tool_permission(params)
 
   local f = io.open(req_file, "r")
   if not f then
-    write_hook_response(request_id, true)
+    write_hook_response(request_id, "defer")
     return { status = "allowed", reason = "request file not found" }
   end
 
@@ -179,7 +190,7 @@ function M.check_tool_permission(params)
 
   local ok, hook_input = pcall(vim.json.decode, content)
   if not ok or not hook_input then
-    write_hook_response(request_id, true)
+    write_hook_response(request_id, "defer")
     return { status = "allowed", reason = "invalid request JSON" }
   end
 
@@ -227,7 +238,7 @@ function M.check_tool_permission(params)
         vim.notify("[vibing] cancel_and_deny: no active stream found", vim.log.levels.WARN)
         reason = fallback_reason
       end
-      write_hook_response(request_id, false, reason)
+      write_hook_response(request_id, "deny", reason)
     end)
   end
 
@@ -265,13 +276,20 @@ function M.check_tool_permission(params)
       end
       require("vibing.core.utils.request_diff").capture(effective_handle, tool_name, tool_input)
     end)
-    write_hook_response(request_id, true)
+    -- Only vibing-nvim's own MCP tools are granted outright; everything else defers to the CLI's
+    -- gate, which is still where the user's own settings.json rules are enforced. The distinction
+    -- is not cosmetic: --allowedTools needs a literal prefix, and the plugin's is
+    -- mcp__plugin_<marketplace>_vibing-nvim__ — a name decided at install time that this process
+    -- cannot know. is_vibing_nvim_mcp_tool matches on the suffix instead, so granting here is the
+    -- only form of the answer that survives the marketplace being renamed (#564).
+    local decision = can_use_tool_mod.is_vibing_nvim_mcp_tool(tool_name) and "allow" or "defer"
+    write_hook_response(request_id, decision)
     return { status = "allowed" }
   elseif result.behavior == "deny" then
     -- The reason has to go into the response, not just the return value: the hook script reads
     -- `permissionDecisionReason` and echoes it on stderr, which is the only way a deny rule's
     -- `message` ever reaches the model. Without it every denial reads as a bare "denied by hook".
-    write_hook_response(request_id, false, result.message)
+    write_hook_response(request_id, "deny", result.message)
     return { status = "denied", reason = result.message }
   else
     -- "ask" → kill process first, show approval UI, then write deny

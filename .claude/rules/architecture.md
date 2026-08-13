@@ -42,6 +42,35 @@ listening port it falls back to a PID-suffixed path rather than a single shared 
 The instance registry has the same treatment via `$VIBING_INSTANCES_DIR` (honoured by both
 `rpc/registry.lua` and `mcp-server/src/handlers/instances.ts`).
 
+The `.res` file carries **three** decisions, not two, and the difference is the whole permission
+contract with the CLI:
+
+- **`deny`** — the hook exits 2 with the reason on stderr, which is how a deny rule's `message`
+  reaches the model.
+- **`allow`** — the hook prints the JSON verbatim on stdout, and the CLI skips its own permission
+  gate. Note that exiting 0 in silence is **not** an approval: the CLI reads it as "no opinion".
+- **`defer`** — vibing.nvim permits the call but leaves the CLI's gate, and with it the user's own
+  `settings.json` rules, in charge. The hook exits 0 silently.
+
+Only vibing-nvim's own MCP tools get `allow`; everything else vibing.nvim permits gets `defer`.
+Granting everything would override the user's `settings.json` deny rules, which
+`--setting-sources user,project,local` still pulls in.
+
+Those MCP tools are the exception because `--allowedTools` cannot express them reliably: it takes
+literal prefixes, and the plugin-scoped one is `mcp__plugin_<marketplace>_vibing-nvim__`, a name
+fixed when `claude plugin marketplace add` ran. `can_use_tool.is_vibing_nvim_mcp_tool` matches on
+the suffix instead, so the grant survives a rename that `VIBING_NVIM_MCP_TOOL_PATTERNS` would not.
+Before #564 every allowed call took the silent path, so under any mode but `bypassPermissions` the
+CLI refused those tools while vibing.nvim's own log said "allow".
+
+The match is on the name and nothing else, and that is worth stating plainly because an `allow`
+skips the user's own `settings.json` rules. It requires the separator both registration styles put
+before the server name (`_vibing-nvim__nvim_<tool>`), so a server merely _ending_ with the name
+(`mcp__my-vibing-nvim__…`) does not match. A third-party server genuinely registered as
+`vibing-nvim` and exposing `nvim_*` tools **would** be granted — nothing in a tool name says who
+registered it. That needs an untrusted MCP server already in the user's own Claude Code config, so
+it is accepted rather than solved.
+
 `hook_cleanup.cleanup_stale_dirs()` (run at startup) treats a comm directory as stale only when
 its owning Neovim is gone: it cross-checks `registry.list()`, which already filters to live PIDs,
 so a concurrent instance's in-flight `.req`/`.res` files are never deleted.

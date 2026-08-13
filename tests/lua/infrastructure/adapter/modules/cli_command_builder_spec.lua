@@ -276,7 +276,10 @@ describe("cli_command_builder", function()
       assert.is_not_nil(idx)
       local allowed = cmd[idx + 1]
       assert.is_true(allowed:find("mcp__vibing-nvim__*", 1, true) ~= nil)
-      assert.is_true(allowed:find("mcp__plugin_vibing_vibing-nvim__*", 1, true) ~= nil)
+      -- The plugin-scoped prefix has to be the one build.sh actually installs
+      -- (`vibing-nvim@vibing-nvim`); --allowedTools takes literal prefixes, so a stale
+      -- marketplace name here silently matches nothing at all (#564).
+      assert.is_true(allowed:find("mcp__plugin_vibing-nvim_vibing-nvim__*", 1, true) ~= nil)
     end)
   end)
 

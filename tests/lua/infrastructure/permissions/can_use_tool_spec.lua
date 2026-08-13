@@ -145,5 +145,18 @@ describe("can_use_tool", function()
     it("does not match native AskUserQuestion", function()
       assert.is_false(can_use_tool.is_vibing_nvim_mcp_tool("AskUserQuestion", "nvim_ask_user_question"))
     end)
+
+    it("does not match a server whose name merely ends with vibing-nvim", function()
+      -- Matching here would grant an unrelated server the CLI-gate bypass. Both real registration
+      -- styles put a separator right before the name, so requiring one costs nothing.
+      assert.is_false(can_use_tool.is_vibing_nvim_mcp_tool("mcp__my-vibing-nvim__nvim_get_buffer"))
+      assert.is_false(
+        can_use_tool.is_vibing_nvim_mcp_tool("mcp__my-vibing-nvim__nvim_ask_user_question", "nvim_ask_user_question")
+      )
+    end)
+
+    it("does not match a non-nvim_ tool on the vibing-nvim server", function()
+      assert.is_false(can_use_tool.is_vibing_nvim_mcp_tool("mcp__vibing-nvim__something_else"))
+    end)
   end)
 end)

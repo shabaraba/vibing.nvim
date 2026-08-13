@@ -65,11 +65,19 @@ local INTERNAL_TOOLS = {
 
 --- Check whether a tool name is a vibing-nvim MCP tool, regardless of how the MCP server was
 --- registered (plain user-level server vs. Claude Code plugin — see the call site for details).
+---
+--- The leading `_` is the whole reason this is not a bare suffix match. Both registration styles
+--- put a separator directly before the server name — `mcp__vibing-nvim__` and
+--- `mcp__plugin_<marketplace>_vibing-nvim__` — so requiring one rejects a server whose name merely
+--- *ends* with it (`mcp__my-vibing-nvim__nvim_get_buffer`). What it cannot reject is a third-party
+--- server actually named `vibing-nvim` exposing `nvim_*` tools: nothing in the tool name says who
+--- registered it. That call is granted, which matters because this decision bypasses the CLI's own
+--- gate — see the call site in `rpc/handlers/permission.lua`.
 --- @param tool_name string
 --- @param specific_tool? string Match only this vibing-nvim tool (e.g. "nvim_ask_user_question"); omit to match any vibing-nvim MCP tool
 --- @return boolean
 function M.is_vibing_nvim_mcp_tool(tool_name, specific_tool)
-  local pattern = specific_tool and ("vibing%-nvim__" .. specific_tool .. "$") or "vibing%-nvim__nvim_[%w_]+$"
+  local pattern = specific_tool and ("_vibing%-nvim__" .. specific_tool .. "$") or "_vibing%-nvim__nvim_[%w_]+$"
   return tool_name:match(pattern) ~= nil
 end
 
