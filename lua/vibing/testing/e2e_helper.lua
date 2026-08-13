@@ -15,7 +15,7 @@ end
 
 ---別Neovimインスタンスを起動
 ---@param config? { headless?: boolean, init_script?: string, cwd?: string }
----@return table インスタンスハンドル { job_id: number }
+---@return table インスタンスハンドル { job_id: number, chat_dir: string }
 function M.spawn_nvim_instance(config)
   config = config or {}
 
@@ -31,10 +31,19 @@ function M.spawn_nvim_instance(config)
     table.insert(cmd, config.init_script)
   end
 
+  -- The parent picks where the child writes its chats, rather than the child picking and the
+  -- parent asking for it afterwards. Asking would mean an rpcrequest during cleanup, and
+  -- rpcrequest has no timeout: a child wedged by a failing test would hang after_each, and with
+  -- it the whole suite. Owning the path here means cleanup only ever calls jobstop and delete.
+  local chat_dir = vim.fn.tempname() .. "/chat"
+  vim.fn.mkdir(chat_dir, "p")
+
   local instance = {
+    chat_dir = chat_dir,
     job_id = vim.fn.jobstart(cmd, {
       cwd = config.cwd or vim.fn.getcwd(),
       rpc = true,
+      env = { VIBING_E2E_CHAT_DIR = chat_dir },
       on_exit = function(_, code)
         if code ~= 0 then
           vim.notify("[E2E] Nvim instance exited with code: " .. code, vim.log.levels.WARN)
@@ -159,33 +168,21 @@ function M.wait_for_buffer_name(instance, pattern, timeout)
 end
 
 ---インスタンスをクリーンアップ
----子が書いたチャットファイルの一時ディレクトリも消す（tests/e2e_init.luaが場所を伝えてくる）
+---子が書いたチャットファイルの一時ディレクトリも消す（spawn時にこちらが決めた場所）
 ---@param instance table インスタンスハンドル
 function M.cleanup_instance(instance)
   if not instance or not instance.job_id then
     return
   end
 
-  local ok, chat_dir = pcall(vim.fn.rpcrequest, instance.job_id, "nvim_get_var", "vibing_e2e_chat_dir")
+  -- jobstop first, and no RPC anywhere in here: a child wedged by a failing test must not be able
+  -- to hang the suite's cleanup. `chat_dir` is the path this process created in
+  -- spawn_nvim_instance, so it needs no validation before deletion — nothing the child said is
+  -- involved. Delete the tempname() directory itself, one level above the `chat` subdir.
   vim.fn.jobstop(instance.job_id)
 
-  if not ok or type(chat_dir) ~= "string" or chat_dir == "" then
-    return
-  end
-
-  -- This path arrived over RPC and is about to be handed to `delete(..., "rf")`, so confirm it is
-  -- under the system temp dir first. Normalize both sides with vim.fs.normalize, which collapses
-  -- `..`: a prefix test on raw strings (or on `fnamemodify(:p)`, which leaves `..` in place —
-  -- checked, not assumed) would accept `<temp>/../../etc`.
-  --
-  -- The base comes from tempname()'s own layout (`<temp>/nvim.<user>/<rand>/<counter>`), a Neovim
-  -- implementation detail. If that ever changes the comparison simply stops matching, so the
-  -- failure mode is a leftover temp directory rather than a wrong `rf`.
-  -- Trailing separator so the prefix test lands on a directory boundary: without it a base of
-  -- `<temp>/nvim.foo` also matches `<temp>/nvim.foobar/...`, a different directory entirely.
-  local temp_base = vim.fs.normalize(vim.fn.fnamemodify(vim.fn.tempname(), ":h:h")) .. "/"
-  if vim.fs.normalize(chat_dir):find(temp_base, 1, true) == 1 then
-    vim.fn.delete(vim.fn.fnamemodify(chat_dir, ":h"), "rf")
+  if type(instance.chat_dir) == "string" and instance.chat_dir ~= "" then
+    vim.fn.delete(vim.fn.fnamemodify(instance.chat_dir, ":h"), "rf")
   end
 end
 

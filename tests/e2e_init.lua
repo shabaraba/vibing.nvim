@@ -13,7 +13,14 @@ vim.opt.backup = false
 -- Chats go to a per-child temp directory. The default ("project") writes into the repository's
 -- own .vibing/chat/, so running the suite used to leave real chat files behind — in CI, in a
 -- checkout, every time.
-local chat_dir = vim.fn.tempname() .. "/chat"
+--
+-- The path comes from the parent (spawn_nvim_instance sets $VIBING_E2E_CHAT_DIR) so that cleanup
+-- never has to ask this process where it wrote; rpcrequest has no timeout, and a wedged child
+-- would otherwise hang the suite. The fallback keeps this init usable when run by hand.
+local chat_dir = vim.env.VIBING_E2E_CHAT_DIR
+if not chat_dir or chat_dir == "" then
+  chat_dir = vim.fn.tempname() .. "/chat"
+end
 vim.fn.mkdir(chat_dir, "p")
 
 require("vibing").setup({
@@ -33,6 +40,3 @@ require("vibing").setup({
   -- allows it; the CLI's gate is what refuses, and this is the only lever that clears it.
   permissions = { mode = "bypassPermissions" },
 })
-
--- Read back by cleanup_instance so the parent can delete what this child wrote.
-vim.g.vibing_e2e_chat_dir = chat_dir
