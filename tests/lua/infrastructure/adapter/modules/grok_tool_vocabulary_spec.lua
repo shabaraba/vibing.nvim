@@ -28,6 +28,50 @@ describe("grok_tool_vocabulary", function()
     end)
   end)
 
+  describe("normalize_payload", function()
+    -- Captured from grok 0.2.101's PreToolUse hook, not hand-written.
+    local GROK_PAYLOAD = {
+      hookEventName = "pre_tool_use",
+      sessionId = "019ff868-db76-7d22-80d1-3530826638aa",
+      toolName = "read_file",
+      toolUseId = "call-c2935dd2-d4e9-4626-81a3-7732aecd6ab8-0",
+      toolInput = { target_file = "README.md" },
+      permissionMode = "auto",
+    }
+
+    it("exposes Grok's camelCase payload under the snake_case keys the handler reads", function()
+      local out = vocabulary.normalize_payload(GROK_PAYLOAD)
+      assert.equals("read_file", out.tool_name)
+      assert.same({ target_file = "README.md" }, out.tool_input)
+    end)
+
+    it("keeps the fields the approval UI still needs", function()
+      local out = vocabulary.normalize_payload(GROK_PAYLOAD)
+      assert.equals("019ff868-db76-7d22-80d1-3530826638aa", out.sessionId)
+      assert.equals("pre_tool_use", out.hookEventName)
+    end)
+
+    it("does not mutate the original", function()
+      local payload = vim.deepcopy(GROK_PAYLOAD)
+      vocabulary.normalize_payload(payload)
+      assert.is_nil(payload.tool_name)
+    end)
+
+    it("leaves a payload that already speaks snake_case alone", function()
+      local payload = { tool_name = "read_file", tool_input = { file_path = "a.lua" }, toolName = "ignored" }
+      assert.equals("read_file", vocabulary.normalize_payload(payload).tool_name)
+    end)
+
+    it("defaults tool_input to a table when Grok sends a tool with no input", function()
+      assert.same({}, vocabulary.normalize_payload({ toolName = "list_dir" }).tool_input)
+    end)
+
+    it("passes through anything that is neither shape", function()
+      assert.same({ other = 1 }, vocabulary.normalize_payload({ other = 1 }))
+      assert.equals("nope", vocabulary.normalize_payload("nope"))
+    end)
+  end)
+
   describe("normalize_input", function()
     it("fills in file_path from the keys Grok actually uses", function()
       -- Granular `paths` rules read file_path; without this they match nothing on Grok.

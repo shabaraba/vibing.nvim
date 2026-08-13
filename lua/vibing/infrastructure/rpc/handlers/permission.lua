@@ -183,14 +183,23 @@ function M.check_tool_permission(params)
     return { status = "allowed", reason = "invalid request JSON" }
   end
 
-  local tool_name = hook_input.tool_name or ""
-  local tool_input = hook_input.tool_input or {}
   local active_opts = get_active_opts(handle_id)
 
   -- Backends name their tools differently (codex calls an edit "apply_patch"). The adapter
   -- supplies its own translation table as a generic `_tool_vocabulary`, so this handler stays
   -- ignorant of which backend it is serving -- adding a fourth needs no change here (#516).
   local vocabulary = active_opts and active_opts._tool_vocabulary
+
+  -- Backends also disagree on the payload's own key names, not just the tool names inside it
+  -- (grok sends `toolName`/`toolInput`). Normalize before reading, or the two calls below are
+  -- handed nothing to translate.
+  if vocabulary and vocabulary.normalize_payload then
+    hook_input = vocabulary.normalize_payload(hook_input)
+  end
+
+  local tool_name = hook_input.tool_name or ""
+  local tool_input = hook_input.tool_input or {}
+
   if vocabulary and vocabulary.to_canonical then
     tool_name = vocabulary.to_canonical(tool_name) or tool_name
   end
@@ -259,7 +268,10 @@ function M.check_tool_permission(params)
     write_hook_response(request_id, true)
     return { status = "allowed" }
   elseif result.behavior == "deny" then
-    write_hook_response(request_id, false)
+    -- The reason has to go into the response, not just the return value: the hook script reads
+    -- `permissionDecisionReason` and echoes it on stderr, which is the only way a deny rule's
+    -- `message` ever reaches the model. Without it every denial reads as a bare "denied by hook".
+    write_hook_response(request_id, false, result.message)
     return { status = "denied", reason = result.message }
   else
     -- "ask" → kill process first, show approval UI, then write deny

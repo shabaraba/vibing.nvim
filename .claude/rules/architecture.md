@@ -63,17 +63,34 @@ Two things stop backend identity leaking into shared code:
   copilot uses `bash`/`view`/`create`/`edit`/`web_search`, grok `search_replace`/
   `run_terminal_command`). Each adapter owns a `<backend>_tool_vocabulary.lua` and passes it to
   `set_active_opts` as a generic `_tool_vocabulary`; `rpc/handlers/permission.lua` just calls
-  `to_canonical`, and `normalize_input` when the module offers one. The handler contains no
-  backend name.
+  `normalize_payload`, `to_canonical` and `normalize_input` when the module offers them. The
+  handler contains no backend name.
 
-  `normalize_input` exists because granular `paths` rules read `input.file_path`. Grok sends
-  `path`/`target_file`/`filePath` instead, so without it a `paths` rule would silently match
-  nothing on that backend.
+  The three are separate because backends disagree at three different levels, and the order
+  matters — each step feeds the next:
+
+  1. `normalize_payload` — the hook payload's own key names. Claude sends
+     `tool_name`/`tool_input`; grok sends `toolName`/`toolInput`. Read straight through, the
+     handler sees a nil tool name, so the two steps below get nothing to work on, every rule
+     misses, and the turn stalls until the hook fails closed. This must run **first**.
+  2. `to_canonical` — the tool's name (`apply_patch` → `Edit`).
+  3. `normalize_input` — where the path lives inside the input. Granular `paths` rules read
+     `input.file_path`; grok sends `path`/`target_file`/`filePath`.
+
+  All three shapes were captured from the real CLIs, not read off their docs.
 
 - **No MCP on every backend.** Grok, like codex, registers no `chat_bufnr` and reaches no
   vibing-nvim MCP server, so `grok_command_builder` deliberately keeps `--rules` to the
   backend-agnostic conventions. Naming `nvim_ask_user_question` there would hand the model a tool
   it cannot call — see `features.md` → AskUserQuestion Support.
+
+- **Grok's hooks need a git repository.** `grok_settings_generator.lua` writes
+  `<cwd>/.grok/hooks/` and marks the cwd trusted in `<$GROK_HOME|~/.grok>/trusted_folders.toml`,
+  but grok discovers project hooks only inside a git repo (verified with `grok inspect`: the
+  `project` entry appears under "Hooks" after `git init` and is absent before). Outside one the
+  file is written and never read, which would silently allow every tool, so `ensure()` warns
+  once per cwd instead. `$GROK_HOME` is grok's own documented override and is honoured — which is
+  also the seam the specs use, since folder trust cascades to subdirectories and never expires.
 
 - **`dynamic_permissions` capability.** `adapter:supports("dynamic_permissions")` is `false` for
   copilot, because its CLI has no per-run hook flag: permissions are fixed at launch with

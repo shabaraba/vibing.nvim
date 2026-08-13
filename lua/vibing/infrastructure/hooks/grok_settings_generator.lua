@@ -21,7 +21,20 @@ function M.hook_file_path(cwd)
   return cwd .. "/.grok/hooks/" .. HOOK_FILENAME
 end
 
---- Ensure the session cwd is marked trusted in ~/.grok/trusted_folders.toml
+--- Grok's config directory. `$GROK_HOME` is Grok's own documented override of `~/.grok`, so
+--- honouring it is both correct for users who set it and the seam the specs need: folder trust
+--- cascades to subdirectories and is never expired, so a spec writing throwaway `tempname()`
+--- paths into the real file would keep granting trust that outlives the test run.
+--- @return string
+local function grok_home()
+  local override = vim.env.GROK_HOME
+  if override and override ~= "" then
+    return override
+  end
+  return vim.fn.expand("~/.grok")
+end
+
+--- Ensure the session cwd is marked trusted in <grok home>/trusted_folders.toml
 --- Project hooks are silently skipped without folder trust. Cascades to subdirs.
 --- @param cwd string
 local function ensure_folder_trust(cwd)
@@ -33,7 +46,7 @@ local function ensure_folder_trust(cwd)
     return
   end
 
-  local trust_path = vim.fn.expand("~/.grok/trusted_folders.toml")
+  local trust_path = grok_home() .. "/trusted_folders.toml"
   vim.fn.mkdir(vim.fn.fnamemodify(trust_path, ":h"), "p")
 
   local existing = ""
@@ -60,12 +73,40 @@ local function ensure_folder_trust(cwd)
   trusted_cwds[real] = true
 end
 
+--- cwds already warned about this session, so a non-git worktree does not notify on every message.
+--- @type table<string, boolean>
+local warned_non_git = {}
+
+--- Grok discovers `.grok/hooks/` only inside a git repository -- verified with `grok inspect`,
+--- which lists the project hook under "Hooks" after `git init` and omits it before. Outside one
+--- the hook file is written and then never read, which would silently mean every tool is allowed.
+--- @param cwd string
+local function warn_if_not_git(cwd)
+  if warned_non_git[cwd] then
+    return
+  end
+  if #vim.fs.find(".git", { path = cwd, upward = true }) > 0 then
+    return
+  end
+
+  warned_non_git[cwd] = true
+  vim.notify(
+    string.format(
+      "[vibing:grok] %s is not inside a git repository. Grok ignores .grok/hooks/ there, so "
+        .. "permission rules and the Tool Approval UI will not apply to this session.",
+      cwd
+    ),
+    vim.log.levels.WARN
+  )
+end
+
 --- Ensure project PreToolUse hook file exists for the given cwd
 --- @param cwd? string Working directory (defaults to vim.fn.getcwd())
 --- @return string path Absolute path to the hook JSON file
 function M.ensure(cwd)
   cwd = cwd or vim.fn.getcwd()
   local real_cwd = vim.fn.resolve(cwd)
+  warn_if_not_git(real_cwd)
   local hooks_dir = real_cwd .. "/.grok/hooks"
   local hook_path = hooks_dir .. "/" .. HOOK_FILENAME
 
