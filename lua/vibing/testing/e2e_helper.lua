@@ -219,7 +219,9 @@ function M.cleanup_instance(instance)
   -- The base comes from tempname()'s own layout (`<temp>/nvim.<user>/<rand>/<counter>`), a Neovim
   -- implementation detail. If that ever changes the comparison simply stops matching, so the
   -- failure mode is a leftover temp directory rather than a wrong `rf`.
-  local temp_base = vim.fs.normalize(vim.fn.fnamemodify(vim.fn.tempname(), ":h:h"))
+  -- Trailing separator so the prefix test lands on a directory boundary: without it a base of
+  -- `<temp>/nvim.foo` also matches `<temp>/nvim.foobar/...`, a different directory entirely.
+  local temp_base = vim.fs.normalize(vim.fn.fnamemodify(vim.fn.tempname(), ":h:h")) .. "/"
   if vim.fs.normalize(chat_dir):find(temp_base, 1, true) == 1 then
     vim.fn.delete(vim.fn.fnamemodify(chat_dir, ":h"), "rf")
   end

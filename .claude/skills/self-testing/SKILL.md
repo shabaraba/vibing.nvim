@@ -31,10 +31,12 @@ unique RPC port in the 9876-9925 range.
 
 ```bash
 npm run test:e2e   # all E2E tests (sets VIBING_E2E=1; spends real tokens)
-npm test           # unit + E2E
+npm test           # unit only (test:lua + test:node) — E2E is deliberately not included
 
-# Specific file
-nvim --headless -c "PlenaryBustedDirectory tests/e2e/ { minimal_init = 'tests/minimal_init.lua' }"
+# Specific file. VIBING_E2E=1 is required: without it every spec self-skips, and the run reports
+# "0 tests" as a pass rather than telling you nothing ran.
+VIBING_E2E=1 nvim --headless -u tests/minimal_init.lua \
+  -c "PlenaryBustedFile tests/e2e/chat_jump_user_spec.lua"
 ```
 
 ## Writing a Test
