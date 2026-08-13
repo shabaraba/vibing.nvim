@@ -45,8 +45,9 @@ local function resolve_model(opts, config)
 end
 
 --- Resolve the reasoning effort level for this call.
---- Lightweight calls (title generation, summarize, daily summary) use config.agent.utility_effort,
---- which pairs with utility_model to make those calls cheap on both axes.
+--- Lightweight calls (title generation, summarize, daily summary) use config.agent.utility_effort.
+--- It is not paired with a cheap model: utility_model defaults to sonnet because those calls
+--- summarise a noisy transcript. Low effort on a capable model is the trade being made.
 --- Returns nil when nothing is configured, so no --effort is passed and the CLI's own default
 --- applies — that default moves as Anthropic tunes it, and pinning it here would freeze it.
 --- Invalid values are dropped with a warning: the CLI accepts an unknown level without complaint
