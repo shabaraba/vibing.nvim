@@ -71,8 +71,19 @@ describe("grok_settings_generator", function()
     assert.is_true(vim.fn.filereadable(path2) == 1)
   end)
 
+  it("escapes a path before writing it as a TOML key", function()
+    -- The trust file is grok's, not ours: an unescaped quote in a cwd would break its structure
+    -- and take the user's other trusted folders down with it.
+    assert.equals('a\\"b', GrokSettingsGenerator._toml_escape('a"b'))
+    assert.equals("a\\\\b", GrokSettingsGenerator._toml_escape("a\\b"))
+    assert.equals("a\\nb", GrokSettingsGenerator._toml_escape("a\nb"))
+    assert.equals("/plain/path", GrokSettingsGenerator._toml_escape("/plain/path"))
+  end)
+
   it("returns hook_file_path for a cwd without writing", function()
-    local expected = tmp_dir .. "/.grok/hooks/vibing-nvim-pre-tool-use.json"
+    -- Resolved, so it agrees with what ensure() writes for a symlinked cwd.
+    local expected = vim.fn.resolve(tmp_dir) .. "/.grok/hooks/vibing-nvim-pre-tool-use.json"
     assert.equals(expected, GrokSettingsGenerator.hook_file_path(tmp_dir))
+    assert.equals(GrokSettingsGenerator.ensure(tmp_dir), GrokSettingsGenerator.hook_file_path(tmp_dir))
   end)
 end)

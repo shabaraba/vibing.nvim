@@ -236,5 +236,26 @@ describe("grok_command_builder", function()
         fresh_builder.build("hello", {}, nil, {})
       end)
     end)
+
+    it("keeps rejecting an unofficial binary on every call, not just the first", function()
+      -- The path used to be cached before it was verified, so a second build() hit the cache,
+      -- skipped the check, and handed back the unofficial binary with no error at all.
+      vim.fn.system = function(cmd)
+        if type(cmd) == "table" and cmd[1] == "/opt/custom/grok" then
+          return "grok-dev, a community CLI\n"
+        end
+        return original_system(cmd)
+      end
+      package.loaded["vibing.infrastructure.adapter.modules.grok_command_builder"] = nil
+      local fresh_builder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
+      local config = { grok = { executable = "/opt/custom/grok" } }
+
+      assert.has_error(function()
+        fresh_builder.build("hello", {}, nil, config)
+      end)
+      assert.has_error(function()
+        fresh_builder.build("hello again", {}, nil, config)
+      end)
+    end)
   end)
 end)

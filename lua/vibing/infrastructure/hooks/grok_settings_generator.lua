@@ -15,10 +15,28 @@ local HOOK_FILENAME = "vibing-nvim-pre-tool-use.json"
 local trusted_cwds = {}
 
 --- Absolute path to the generated hook JSON for a given cwd
+--- Resolved, so this reports the same path `ensure()` writes -- that one resolves the cwd, and a
+--- symlinked working directory would otherwise make the two disagree.
 --- @param cwd string
 --- @return string
 function M.hook_file_path(cwd)
-  return cwd .. "/.grok/hooks/" .. HOOK_FILENAME
+  return vim.fn.resolve(cwd) .. "/.grok/hooks/" .. HOOK_FILENAME
+end
+
+--- Escape a string for a TOML basic string (the `folders."<path>"` key).
+--- A path is not arbitrary text, but `"` and `\` are both legal in POSIX filenames and either one
+--- would break the file's structure -- and this file is grok's, not ours, so corrupting it takes
+--- out the user's other trusted folders too. Everything else here is written through vim.json.
+--- @param s string
+--- @return string
+function M._toml_escape(s)
+  return (
+    s:gsub("\\", "\\\\")
+      :gsub('"', '\\"')
+      :gsub("\n", "\\n")
+      :gsub("\r", "\\r")
+      :gsub("\t", "\\t")
+  )
 end
 
 --- Grok's config directory. `$GROK_HOME` is Grok's own documented override of `~/.grok`, so
@@ -56,13 +74,15 @@ local function ensure_folder_trust(cwd)
     rf:close()
   end
 
-  local marker = 'folders."' .. real .. '"'
+  local key = M._toml_escape(real)
+  local marker = 'folders."' .. key .. '"'
   if not existing:find(marker, 1, true) then
-    local entry = string.format(
-      '\n[folders."%s"]\ntrusted = true\ndecided_at = %d\n',
-      real,
-      os.time()
-    )
+    local entry = string.format('\n[folders."%s"]\ntrusted = true\ndecided_at = %d\n', key, os.time())
+    -- Appended rather than rewritten on purpose: grok writes this same file itself (`/hooks-trust`),
+    -- and a read-modify-write would clobber whatever it added in between. A small append is atomic
+    -- on POSIX, so the remaining race is two Neovims first touching the *same new* cwd at once and
+    -- both appending the key -- which grok's TOML parser would reject as a duplicate. Narrow enough
+    -- to accept; rewriting the file would trade it for a worse one.
     local wf = io.open(trust_path, "a")
     if wf then
       wf:write(entry)

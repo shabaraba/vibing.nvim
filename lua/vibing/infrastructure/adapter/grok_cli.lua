@@ -238,6 +238,10 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
               error = "Session resume timeout",
               _session_corrupted = true,
               _old_session_id = session_id,
+              -- Without this, send_message's staleness check is skipped entirely: a timeout that
+              -- fires after the user cancelled and sent something new would be treated as the new
+              -- request's result and reset its session id.
+              _handle_id = handle_id,
             })
           end
         end)

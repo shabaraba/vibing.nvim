@@ -80,10 +80,14 @@ local function resolve_grok_path(config)
     resolved = found
   end
 
+  -- Verify before caching. The other order makes the "not the official CLI" error fire exactly
+  -- once: the second call hits the cache above, skips ensure_official_grok, and hands back the
+  -- unofficial binary silently.
+  verified_official = false
+  ensure_official_grok(resolved)
+
   cached_grok_path = resolved
   cached_configured_executable = configured
-  verified_official = false
-  ensure_official_grok(cached_grok_path)
   return cached_grok_path
 end
 
@@ -172,8 +176,10 @@ function M._reset_path_cache()
 end
 
 --- @param config Vibing.Config Plugin config
---- @param handle_id string|nil This turn's stream handle id
---- @param rpc_port number|nil This Neovim instance's RPC server port
+--- @param handle_id string|nil Unused. Kept so every backend's builder takes the same arguments;
+---   grok reaches no vibing-nvim MCP server, so nothing here needs the handle. The value still
+---   travels to the hook, via `VIBING_HANDLE_ID` in the environment `grok_cli` spawns with.
+--- @param rpc_port number|nil Unused, for the same reason: passed through the environment, not argv.
 --- @return string[] Command array for vim.system()
 function M.build(prompt, opts, session_id, config, handle_id, rpc_port)
   opts = opts or {}
