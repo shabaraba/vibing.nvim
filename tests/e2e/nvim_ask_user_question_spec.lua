@@ -47,10 +47,6 @@ describe("E2E: nvim_ask_user_question MCP tool", function()
       headless = true,
       init_script = "tests/e2e_init.lua",
     })
-    vim.wait(800)
-    -- minimal_init only puts the plugin on the runtimepath; the :Vibing* commands these specs
-    -- drive are registered by setup(), so the child has to be set up explicitly.
-    vim.fn.rpcrequest(nvim_instance.job_id, "nvim_exec_lua", "require('vibing').setup({})", {})
   end)
 
   after_each(function()

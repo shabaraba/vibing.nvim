@@ -1,6 +1,12 @@
 -- E2E Tests for scheduled requests (usage-limit request parking)
 local helper = require("vibing.testing.e2e_helper")
 
+-- tests/e2e is swept by `test:lua` too, and the fired request below is a real CLI call.
+-- Only `test:e2e` sets VIBING_E2E=1; everything else skips rather than quietly spending tokens.
+if not helper.should_run() then
+  return
+end
+
 local TIMEOUTS = {
   BUFFER_READY = 8000, -- Chat buffer created and rendered
   COMMAND = 3000, -- A user command / <CR> has been processed
