@@ -12,19 +12,30 @@ function M.get_cursor_position(params)
   }
 end
 
--- Set the window cursor to the specified position.
+-- Set a window's cursor to the specified position.
+--
+-- `winnr` matters more than it looks. Window 0 is the *current* window, which is not the one
+-- `win_open_file` just opened a file in — that handler restores focus before returning. So the
+-- documented open-then-jump sequence ("show me the code", every stop of the code-tour skill)
+-- moved the chat's cursor instead of the opened file's until this took a window.
+--
 -- @param params Table with cursor position fields:
 --   - line (number): 1-based line number to move the cursor to (required).
 --   - col (number): 0-based column number within the line (optional, defaults to 0).
+--   - winnr (number): window to move (optional, defaults to the current window).
 -- @return table A table `{ success = true }` on successful cursor move.
--- @throws error if `params.line` is not provided.
+-- @throws error if `params.line` is not provided, or `params.winnr` is not a valid window.
 function M.set_cursor_position(params)
   local line = params and params.line
   local col = params and params.col or 0
+  local winnr = params and params.winnr
   if not line then
     error("Missing line parameter")
   end
-  vim.api.nvim_win_set_cursor(0, { line, col })
+  if winnr and not vim.api.nvim_win_is_valid(winnr) then
+    error("Invalid window number: " .. tostring(winnr))
+  end
+  vim.api.nvim_win_set_cursor(winnr or 0, { line, col })
   return { success = true }
 end
 

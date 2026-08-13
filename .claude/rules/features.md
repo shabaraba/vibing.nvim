@@ -52,6 +52,11 @@ performs: each stop is a real file opened at a real line (`nvim_win_open_file` +
 `nvim_set_cursor`), and the whole route is left in the quickfix list so the user can replay it
 with `:cnext`/`:cprev` afterwards.
 
+Both calls take the target window explicitly, and the skill insists on it: `nvim_win_open_file`
+restores focus before returning, so the window showing the file is never the current one. A
+`nvim_set_cursor` without `winnr` moves the chat's cursor instead — and succeeds, so the tour
+looks like it is working while the code window never moves.
+
 The quickfix half is the MCP tool `nvim_set_qflist` (`mcp-server/src/tools/qflist.ts` →
 `infrastructure/rpc/handlers/qflist.lua`). It always pushes a **new** list
 (`vim.fn.setqflist({}, " ", ...)`), so whatever the user had in quickfix stays reachable under

@@ -52,9 +52,15 @@ result.
 For each stop:
 
 1. `nvim_list_windows` to find a window that isn't the chat buffer — never assume `winnr: 0`
-2. `nvim_win_open_file` with that `winnr`, then `nvim_set_cursor` (1-based line, **0-based** col)
+2. `nvim_win_open_file` with that `winnr`, then `nvim_set_cursor` with **the same `winnr`**
+   (1-based line, **0-based** col)
 3. Explain that stop in chat: what this code does, and why the flow moves from here to the next
    stop
+
+Pass `winnr` to `nvim_set_cursor` every time. `nvim_win_open_file` restores focus before it
+returns, so the window holding the file is not the current one; omitting `winnr` moves the chat's
+cursor instead and nothing reports an error. Same for `nvim_highlight_range` — give it the `bufnr`
+the open returned, not `0`.
 
 ### 4. Let the user set the pace
 
