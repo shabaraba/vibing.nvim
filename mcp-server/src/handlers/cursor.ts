@@ -15,7 +15,9 @@ export async function handleGetCursor(args: any) {
 /**
  * Move Neovim's cursor to the specified line and optional column.
  *
- * @param args - Object containing cursor position; must include `line` (number). `col` (number) is optional.
+ * @param args - Object containing cursor position; must include `line` (number). `col` (number) and
+ * `winnr` (number) are optional. Without `winnr` the currently active window is moved, which is
+ * not the one `nvim_win_open_file` just opened a file in — it restores focus before returning.
  * @returns An object with a `content` array containing a single text node confirming the new cursor line.
  * @throws Error if `args` is falsy or `args.line` is undefined with message 'Missing required parameter: line'.
  */
@@ -28,11 +30,13 @@ export async function handleSetCursor(args: any) {
     {
       line: args.line,
       col: args.col,
+      winnr: args.winnr,
     },
     args?.rpc_port
   );
+  const where = args.winnr === undefined ? '' : ` in window ${args.winnr}`;
   return {
-    content: [{ type: 'text', text: `Cursor moved to line ${args.line}` }],
+    content: [{ type: 'text', text: `Cursor moved to line ${args.line}${where}` }],
   };
 }
 

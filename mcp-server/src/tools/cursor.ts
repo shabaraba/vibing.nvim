@@ -12,7 +12,10 @@ export const cursorTools = [
   },
   {
     name: 'nvim_set_cursor',
-    description: 'Set cursor position',
+    description:
+      'Set cursor position. Pass winnr when you opened the file with nvim_win_open_file — that ' +
+      'tool leaves focus where it was, so without winnr this moves the cursor of whatever window ' +
+      'is currently active (usually the chat), not the file you just opened.',
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({
@@ -23,6 +26,11 @@ export const cursorTools = [
         col: {
           type: 'number' as const,
           description: 'Column number (0-indexed)',
+        },
+        winnr: {
+          type: 'number' as const,
+          description:
+            'Window to move the cursor in, as returned by nvim_list_windows. Defaults to the currently active window.',
         },
       }),
       required: requireRpcPort(['line']),

@@ -52,6 +52,12 @@ pick a window that isn't the chat → `nvim_win_open_file` → `nvim_set_cursor`
 The CLI's system prompt tells the model to do this, so the tools exist to make that instruction
 actionable.
 
+**Carry the `winnr` through the whole sequence.** `nvim_win_open_file` restores focus before it
+returns, so the window it opened is not the current one. `nvim_set_cursor` without a `winnr` moves
+whatever window is active — the chat — and `nvim_highlight_range` wants the `bufnr` the open
+returned, not `0`. Both take the target explicitly for this reason; neither errors when pointed at
+the wrong one, so the failure is silent.
+
 `nvim_highlight_range` puts an extmark range in the `vibing_highlight` namespace using the
 `VibingHighlight` group, which is `default link`ed to `Visual` so `hi VibingHighlight ...` in a
 user's config overrides it. It clears itself after `duration_ms` (default 3000; `0` keeps it), and

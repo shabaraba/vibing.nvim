@@ -240,7 +240,9 @@ function M.win_open_file(params)
   if filepath == "" or filepath:match("^%s*$") then
     error("Invalid filepath: empty or whitespace-only")
   end
-  if filepath:match("\0") then
+  -- Plain find, not match: Lua 5.1 patterns cannot contain an embedded zero, so `match("\0")`
+  -- parses as the *empty* pattern and matches every string -- this guard rejected every path.
+  if filepath:find("\0", 1, true) then
     error("Invalid filepath: contains null character")
   end
   if not vim.api.nvim_win_is_valid(winnr) then
