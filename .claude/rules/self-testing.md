@@ -54,6 +54,23 @@ The one case neither the exit code nor a summary count catches is a spec file th
 tests (a `describe` that stopped being reached): plenary exits 0 without printing a summary, which
 is also how the E2E specs opt out via `should_run()`.
 
+## Vim Help Verification
+
+`npm run check:doc` (`scripts/check-help.lua`, run by the "Verify Vim help files" CI step) is the
+only thing that reads `doc/*.txt`: `npm run check` compiles `lua/` alone, and the prettier / eslint
+/ markdownlint steps do not match `.txt`. It checks three things — that `helptags` generates (a
+duplicate or malformed tag fails only here), that no line exceeds 78 columns, and that CONTENTS and
+the body agree on section numbers and tags.
+
+The width is measured with `strdisplaywidth`, which is why the checker runs inside nvim at all.
+A byte count rejects the `•` and `—` already in `vibing.txt`; a character count would let a CJK
+line run to 156 columns. Only Vim's own measure is right, and it already honours `ambiwidth`.
+
+`:helptags` raises a Vim error instead of setting an exit code, so the checker wraps it in `pcall`
+— nvim otherwise prints `E154` and still exits 0. `tests/help-check.test.mjs` pins each failure the
+gate is supposed to catch, including both width cases above; the CI step gates the document, that
+file gates the checker.
+
 ## 3-Try Auto-Fix Rule
 
 After implementing a feature, run `npm run test:e2e`. If it fails: analyze the failure, apply a

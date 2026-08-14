@@ -37,6 +37,9 @@ npm run test:eval
 # Validate Lua syntax
 npm run check
 
+# Verify doc/*.txt (helptags, 78-column limit, CONTENTS/tag agreement)
+npm run check:doc
+
 # Lint TypeScript/JavaScript
 npm run lint
 

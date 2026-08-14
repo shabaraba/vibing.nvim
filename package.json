@@ -36,6 +36,7 @@
     "test:eval": "nvim --headless -u tests/minimal_init.lua -l tests/evals/run.lua",
     "check": "find lua -name '*.lua' -exec luac -p {} \\;",
     "check:lua": "luac -p lua/vibing/init.lua",
+    "check:doc": "nvim --headless -l scripts/check-help.lua",
     "validate": "npm run check && echo 'All checks passed'",
     "format": "prettier --write '**/*.{js,mjs,ts,json,md,yml,yaml}'",
     "format:check": "prettier --check '**/*.{js,mjs,ts,json,md,yml,yaml}'",
