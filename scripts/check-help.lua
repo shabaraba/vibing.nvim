@@ -24,11 +24,15 @@ local function fail(fmt, ...)
   table.insert(problems, string.format(fmt, ...))
 end
 
---- `    2.1 Sub-heading ....` -- a sub-section, which neither pattern above can read, because both
---- require whitespace straight after the dot. Detected explicitly so it fails rather than being
---- dropped from the comparison without a word: silently skipping is the failure mode this whole
---- checker exists to prevent.
-local SUBSECTION_ROW = '^%s*%d+%.%d'
+--- A sub-section, which neither pattern above can read because both require whitespace straight
+--- after the dot. Detected explicitly so it fails rather than being dropped from the comparison
+--- without a word: silently skipping is the failure mode this whole checker exists to prevent.
+---
+--- Two forms, scoped the same way as the rows they would otherwise have been: `    2.1 Sub ...`
+--- inside the CONTENTS block, and `2.1 SUB ...` at column 0 in the body. Scanning the whole file
+--- for either would flag ordinary prose and `>` code examples that merely start with `N.M`.
+local CONTENTS_SUBSECTION = '^%s*%d+%.%d'
+local SECTION_SUBSECTION = '^%d+%.%d'
 
 --- Where the CONTENTS section starts and ends, or nil when the file has no CONTENTS heading.
 ---
@@ -77,14 +81,19 @@ end
 --- two lists in parallel meant a single inserted or renumbered section shifted everything after
 --- it, so one typo reported as a cascade and the first message named a section that was fine.
 local function by_number(rows)
-  local map, duplicates = {}, {}
+  local map, seen_duplicate, duplicates = {}, {}, {}
   for _, row in ipairs(rows) do
     if map[row.number] then
-      table.insert(duplicates, row.number)
+      -- Once per number, not once per repeat: three copies of `2.` is one mistake to report.
+      if not seen_duplicate[row.number] then
+        seen_duplicate[row.number] = true
+        table.insert(duplicates, row.number)
+      end
     else
       map[row.number] = row
     end
   end
+  table.sort(duplicates)
   return map, duplicates
 end
 
@@ -153,7 +162,9 @@ for _, file in ipairs(files) do
     -- comparison unannounced. Say so instead; supporting them is a deliberate decision, not
     -- something to discover from a green run.
     for lnum, line in ipairs(lines) do
-      if line:match(SUBSECTION_ROW) then
+      local in_contents = lnum >= from and lnum <= to
+      local pattern = in_contents and CONTENTS_SUBSECTION or SECTION_SUBSECTION
+      if line:match(pattern) then
         fail('%s:%d: sub-section numbering (N.M) is not checked; flatten it or teach the checker', name, lnum)
       end
     end

@@ -299,3 +299,54 @@ test('every help file in the directory is checked, not just the first', async ()
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('an indented N.M line in the body is prose, not an unchecked sub-section', async () => {
+  // The subsection scan used to run over the whole file, so a `>` code example or an ordinary
+  // paragraph starting with `2.1` tripped it. Same class of bug as the CONTENTS row scan.
+  const text = helpFile({
+    contents: [entry(1, 'One', 'fixture-one')],
+    body: [
+      heading(1, 'One', 'fixture-one'),
+      '',
+      'Example: >',
+      '    2.1 is a ratio, not a heading',
+      '<',
+      '',
+      '    3.5 mm of travel.',
+    ],
+  });
+
+  const { code, stderr } = await checkText(text);
+  assert.equal(code, 0, stderr);
+});
+
+test('a real sub-section at column 0 is still caught', async () => {
+  const text = helpFile({
+    contents: [entry(1, 'One', 'fixture-one')],
+    body: [
+      heading(1, 'One', 'fixture-one'),
+      '',
+      RULE,
+      '2.1 SUB' + ' '.repeat(50) + '*fixture-sub*',
+    ],
+  });
+
+  const { code, stderr } = await checkText(text);
+  assert.equal(code, 1);
+  assert.match(stderr, /sub-section numbering/);
+});
+
+test('a number repeated three times is reported once, not twice', async () => {
+  const text = helpFile({
+    contents: [
+      entry(1, 'One', 'fixture-one'),
+      entry(1, 'Again', 'fixture-again'),
+      entry(1, 'Thrice', 'fixture-thrice'),
+    ],
+    body: [heading(1, 'One', 'fixture-one')],
+  });
+
+  const { code, stderr } = await checkText(text);
+  assert.equal(code, 1);
+  assert.equal(stderr.match(/lists section 1 more than once/g).length, 1);
+});
