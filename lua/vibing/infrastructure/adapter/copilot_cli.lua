@@ -16,7 +16,8 @@ local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.acti
 local CopilotCLI = setmetatable({}, { __index = Base })
 CopilotCLI.__index = CopilotCLI
 
-local INITIAL_RESPONSE_TIMEOUT_MS = 120000
+-- Shared with execute()'s own wait, so the two cannot drift apart.
+local INITIAL_RESPONSE_TIMEOUT_MS = CliRuntime.INITIAL_RESPONSE_TIMEOUT_MS
 
 local SUPPORTED_FEATURES = {
   streaming = true,

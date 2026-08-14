@@ -17,7 +17,8 @@ local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.acti
 local ClaudeCLI = setmetatable({}, { __index = Base })
 ClaudeCLI.__index = ClaudeCLI
 
-local INITIAL_RESPONSE_TIMEOUT_MS = 120000
+-- Shared with execute()'s own wait, so the two cannot drift apart.
+local INITIAL_RESPONSE_TIMEOUT_MS = CliRuntime.INITIAL_RESPONSE_TIMEOUT_MS
 
 local SUPPORTED_FEATURES = {
   streaming = true,
