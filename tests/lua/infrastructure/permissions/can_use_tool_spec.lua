@@ -18,7 +18,7 @@ end
 
 describe("can_use_tool", function()
   describe("ALWAYS_ALLOWED_TOOLS (UT-PERM-010)", function()
-    local always_allowed = { "Read", "Skill", "StructuredOutput" }
+    local always_allowed = { "Read", "Glob", "Grep", "Skill", "StructuredOutput" }
 
     for _, tool in ipairs(always_allowed) do
       it(string.format("should allow %s even when permissions_allow is empty", tool), function()
@@ -55,6 +55,20 @@ describe("can_use_tool", function()
           asked_tools = { tool },
         }))
         assert.equals("deny", result.behavior)
+      end)
+    end
+  end)
+
+  describe("INTERNAL_TOOLS are allowed even over deny (UT-PERM-012)", function()
+    -- ハーネス内部の副作用なし制御ツール。ALWAYS_ALLOWED_TOOLSと違い、deny/askすら通さず常に許可。
+    local internal = { "ToolSearch", "TodoWrite", "ReportFindings", "ScheduleWakeup" }
+
+    for _, tool in ipairs(internal) do
+      it(string.format("should allow %s even when in the deny list", tool), function()
+        local result = can_use_tool.can_use_tool(tool, {}, make_config({
+          denied_tools = { tool },
+        }))
+        assert.equals("allow", result.behavior)
       end)
     end
   end)

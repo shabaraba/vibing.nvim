@@ -29,6 +29,7 @@ local ONCE_SUFFIX = ":once"
 local INTERNAL_TOOLS = {
   ToolSearch = true,
   TodoWrite = true,
+  ReportFindings = true,
   Agent = true,
   Task = true,
   TaskCreate = true,

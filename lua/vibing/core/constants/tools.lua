@@ -27,10 +27,21 @@ for _, tool in ipairs(M.VALID_TOOLS) do
   M.VALID_TOOLS_MAP[tool] = true
 end
 
----permissions_allowの設定に関わらず、askやdenyに明示的に入っていなければ常に許可されるツール
+---permissions_allowの設定に関わらず、askやdenyに明示的に入っていなければ常に許可されるツール。
+---
+---収録の基準は「ファイルを作成・更新・削除しない読み取り専用のビルトインツール」であること。
+---Edit/Write/Bashは当然対象外。Agent/Workflowはサブエージェント経由でファイルを変更しうるので外す。
+---WebSearch/WebFetch/ShareOnboardingGuideはファイルこそ触らないが外部通信という別軸のリスクがあるので
+---ここには入れない（DEFAULT_ALLOWED_TOOLSのコメントも参照）。
+---
+---ここはあくまで「既定では許可するがユーザーがask/denyで上書きできる」下限。ToolSearchやTodoWriteの
+---ようなハーネス内部の制御ツールは、deny/askすら通さず常に許可すべきなのでcan_use_tool.luaの
+---INTERNAL_TOOLS側に置く（あちらはこの下限より前で評価される）。
 ---@type string[]
 M.ALWAYS_ALLOWED_TOOLS = {
   "Read",
+  "Glob",
+  "Grep",
   "Skill",
   "StructuredOutput",
 }

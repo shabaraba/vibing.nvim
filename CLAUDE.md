@@ -91,6 +91,11 @@ All `.md` files in `.claude/rules/` are automatically loaded into Claude Code's 
 - **`DEFAULT_ALLOWED_TOOLS`**: `permissions.allow` の既定値。`VALID_TOOLS` からの差集合としては
   導出しない（理由は同ファイルのコメント参照）
 - **`ALWAYS_ALLOWED_TOOLS`**: `allow` の内容に関わらず（`ask` / `deny` に無い限り）常に許可される
-  下限。`DEFAULT_ALLOWED_TOOLS` から外しても、こちらに残っていれば許可されたままになる
+  下限。`DEFAULT_ALLOWED_TOOLS` から外しても、こちらに残っていれば許可されたままになる。基準は
+  「ファイルを作成・更新・削除しない読み取り専用のビルトインツール」（`Read` / `Glob` / `Grep` など）。
+  ユーザーが `ask` / `deny` で上書きできる点が下の `INTERNAL_TOOLS` との違い
+- **`INTERNAL_TOOLS`** (`can_use_tool.lua`): `ToolSearch` / `TodoWrite` / `ReportFindings` /
+  `ScheduleWakeup` など、Claude Code ハーネス内部の副作用なし制御ツール。`ask` / `deny` すら通さず
+  常に許可される（評価順で `ALWAYS_ALLOWED_TOOLS` より前）。`VALID_TOOLS` への登録は不要
 - 新しいツールを追加するとき: 既定で許可するなら `VALID_TOOLS` と `DEFAULT_ALLOWED_TOOLS` の
   両方に、Bash のように既定では許可しないなら `VALID_TOOLS` にのみ足す
