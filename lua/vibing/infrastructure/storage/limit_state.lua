@@ -12,6 +12,7 @@
 --- @module vibing.infrastructure.storage.limit_state
 
 local Git = require("vibing.core.utils.git")
+local Fs = require("vibing.core.utils.fs")
 
 local M = {}
 
@@ -82,7 +83,7 @@ function M.record(info, cwd)
   end
 
   local path = M.get_path(cwd)
-  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+  Fs.ensure_dir(vim.fn.fnamemodify(path, ":h"))
 
   local json = vim.json.encode({
     resets_at = info.resets_at,

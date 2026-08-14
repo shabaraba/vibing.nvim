@@ -9,6 +9,7 @@ local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 local Git = require("vibing.core.utils.git")
 local InheritedFrontmatter = require("vibing.application.chat.inherited_frontmatter")
 local SubagentMarker = require("vibing.infrastructure.adapter.modules.subagent_marker")
+local Fs = require("vibing.core.utils.fs")
 
 ---ファイル名から-fork-N.mdを生成
 ---@param source_path string
@@ -102,7 +103,7 @@ function M.execute(chat_buffer)
   })
 
   local save_dir = FileManager.get_save_directory(config.chat)
-  vim.fn.mkdir(save_dir, "p")
+  Fs.ensure_dir(save_dir)
 
   local fork_filename = generate_fork_filename(chat_buffer.file_path, save_dir)
   local fork_path = vim.fs.joinpath(save_dir, fork_filename)

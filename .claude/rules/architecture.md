@@ -328,6 +328,27 @@ vibing.nvim supports running multiple chat sessions simultaneously without inter
 
 See `docs/adr/002-concurrent-execution-support.md` for architectural details.
 
+**Directory creation is a shared-state operation here.** `vim.fn.mkdir(path, "p")` is not atomic —
+it walks the path creating each component and raises `E739` when another process creates one
+first. That is routine rather than theoretical: the instance registry is machine-wide, a project's
+`.vibing/` is shared by every chat open on it, and the test suite runs one child Neovim per spec
+file. Measured at 9 failures in 200 concurrent calls, and it is what made `tests/view_spec.lua`
+flake in CI (#576).
+
+Every directory creation therefore goes through `core/utils/fs.lua`'s `ensure_dir`, and
+`fs_spec.lua` fails the build if a direct `vim.fn.mkdir` reappears anywhere in `lua/`.
+
+`ensure_dir` **retries**; catching the error and re-checking is not enough, which is worth knowing
+before simplifying it. The component that collided is often an intermediate one, and the process
+that won it has not necessarily reached the leaf yet — so the loser's `fs_stat` on the leaf
+legitimately finds nothing. Catch-and-recheck still failed 3 times in 200; retrying measured 0 in 320.
+
+Only the race is swallowed. Every other way `mkdir` fails — a read-only filesystem, a permission
+denial, a file where the directory should go — raises `E739` as well, and `ensure_dir` re-raises
+those with the original message. Callers were written against `vim.fn.mkdir`'s raising contract,
+so returning a quiet `false` instead would leave eighteen of them continuing as though the
+directory existed.
+
 ## Chat Fork
 
 `:VibingChatFork` creates a branched conversation from the current chat session.

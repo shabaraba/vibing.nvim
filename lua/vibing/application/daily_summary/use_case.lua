@@ -4,6 +4,7 @@ local Collector = require("vibing.application.daily_summary.collector")
 local Renderer = require("vibing.application.daily_summary.renderer")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local notify = require("vibing.core.utils.notify")
+local Fs = require("vibing.core.utils.fs")
 
 local M = {}
 
@@ -168,7 +169,7 @@ function M._save_summary(date, content, source_files, total_messages, config, on
   local save_dir = get_save_directory(config)
   -- Expand ~ to full path for all file operations
   save_dir = vim.fn.expand(save_dir)
-  vim.fn.mkdir(save_dir, "p")
+  Fs.ensure_dir(save_dir)
 
   local file_path = save_dir .. date .. ".md"
 

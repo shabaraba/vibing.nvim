@@ -1,5 +1,7 @@
 ---@class Vibing.Utils.Mote.Moteignore
 ---.moteignoreファイルの管理
+local Fs = require("vibing.core.utils.fs")
+
 local M = {}
 
 ---デフォルトの.moteignoreルール
@@ -40,7 +42,7 @@ function M.ensure_exists(ignore_file_path)
   end
 
   local parent_dir = vim.fn.fnamemodify(abs_path, ":h")
-  vim.fn.mkdir(parent_dir, "p")
+  Fs.ensure_dir(parent_dir)
 
   vim.fn.writefile(M.DEFAULT_RULES, abs_path)
 end

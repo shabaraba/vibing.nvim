@@ -8,6 +8,7 @@
 --- @module vibing.infrastructure.storage.pending_resume
 
 local Git = require("vibing.core.utils.git")
+local Fs = require("vibing.core.utils.fs")
 
 local M = {}
 
@@ -100,7 +101,7 @@ end
 --- @return boolean success
 function M.save(entries, cwd)
   local path = M.get_path(cwd)
-  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+  Fs.ensure_dir(vim.fn.fnamemodify(path, ":h"))
 
   -- vim.json.encode turns an empty Lua table into "[]" (an array), which decodes back as a list
   -- and would break every keyed lookup on the next load. Store an explicit empty object instead.
