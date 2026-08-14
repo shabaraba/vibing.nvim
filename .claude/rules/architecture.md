@@ -451,6 +451,71 @@ them would offer a binding the CLI cannot resolve.
 `application/chat/use_cases/subagent_chat.lua` (open, with a dedup check so one agent never gets two
 rival buffers), `presentation/chat/controller.lua` → `handle_subagent_chat`.
 
+## Multi-Agent Orchestration
+
+One chat can create and drive other chats: `nvim_chat_create` (MCP) →
+`infrastructure/rpc/handlers/chat.lua` → `application/chat/use_cases/create_chat.lua` →
+`view.render`. The orchestrator briefs each worker with `nvim_chat_send_message` and polls it with
+`nvim_get_buffer`. The workflow is the bundled `skills/vibing-orchestrate/SKILL.md`; there is no
+command and no scheduler — the whole feature is three MCP calls and a skill.
+
+Nothing new was needed to keep the workers apart. Each chat buffer already owns its own session
+id and handle id (see "Concurrent Execution Support"), so parallel workers are the existing
+concurrency guarantee being used rather than extended.
+
+The use case is the fork/subagent shape: it returns a `ChatSession` and touches no presentation
+code, and the RPC handler is what renders it. That is also why position validation sits in the
+handler — it is an argument the RPC caller supplied, not a property of the session.
+
+Four things it does differently from `:VibingChat`, each for a reason:
+
+- **`position` defaults to `back`.** The chat exists as a listed buffer with no window. A worker
+  the model created is not something the user asked to look at.
+- **The chat file is written immediately** (`save_now` in the handler), matching `fork.lua`.
+  `:VibingChat` leaves the file unwritten until `update_session_id` fires on the first response,
+  so returning the path any earlier would name a file that does not exist.
+- **`working_dir` is validated up front.** It is a git-root-relative path like the frontmatter
+  field, resolved through `Git.resolve_working_dir`. A missing directory is rejected at creation;
+  accepted, it would produce a chat that only fails on its first request, in a buffer the user
+  is not watching.
+- **The chat file still goes to the configured `save_dir`,** not inside `working_dir`. A worker
+  attached to a worktree has to outlive `git worktree remove`, and this matches
+  `vibing-worktree-create`, which only rewrites an existing chat's frontmatter. (The pre-existing
+  and never-called `use_case.create_new_in_directory` does the opposite; `create_new` takes an
+  optional `working_dir` instead.)
+
+`view.render` now returns its `ChatBuffer` and replaces the `window` table before applying a
+one-off `position`. It used to assign straight into `chat_buf.config.window.position`, and
+`ChatBuffer` holds a reference to the live `config.chat` table — so a single `back` render changed
+the user's default position for the rest of the session, right down to `Config.defaults`, which
+survives a later `setup()`. Harmless enough at one `:VibingChat back` a day; not harmless when an
+orchestrator opens three workers that way. Note that `vim.tbl_deep_extend("force", {}, cfg)` does
+**not** fix it: with an empty base nothing collides, so every nested table is assigned by
+reference and `config.window` stays the same table.
+
+**Completion detection is a status field, not a text heuristic.** `nvim_get_buffer` passes
+`include_chat_status` to `buf_get_lines`, which attaches `presentation/chat/modules/chat_status`'s
+verdict: `"responding"` when `ChatBuffer:is_responding()` (either `_is_sending` or a
+`_current_handle_id`), `"idle"` otherwise, and nothing at all for a buffer that is not a chat.
+Both fields are needed — `_current_handle_id` is only set once the adapter spawns the CLI, so the
+gap after `<CR>` would otherwise read as finished. Reading the transcript's shape instead would
+call a turn that died on an error, or one part-way through silent tool calls, complete.
+
+The flag is opt-in rather than a new return shape because the MCP server installs at Claude
+Code's _user_ scope and updates independently of the plugin: without a parameter to key on, a
+newer Neovim answering an older server would hand it an object where it calls `.join()`. Both
+directions of that skew are covered — the Lua side returns the bare array unless asked, and the
+Node side accepts either shape.
+
+`idle` means "no request in flight", not "succeeded": a worker that failed, that is waiting on a
+tool-approval prompt, or that asked a question is idle too. The skill says so, because the
+distinction is not something the status can carry.
+
+**Out of scope, deliberately:** workers cannot message the orchestrator back, there is no
+event-driven completion notification, and the orchestrator does not poll inside its own turn — it
+hands control back to the user and reports when asked. All three would need a channel that does
+not exist yet; the MVP is "distribute, observe, report".
+
 ## Key Patterns
 
 **Adapter Pattern:** All AI backends (`claude_cli`, `codex_cli`) implement the `Adapter` interface

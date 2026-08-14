@@ -16,14 +16,26 @@ M._attached_buffers = {}
 
 ---セッションをチャットバッファに描画
 ---@param session Vibing.ChatSession
----@param position? string 位置指定（current|right|left）
-function M.render(session, position)
+---@param position? string 位置指定（core/constants/chat.lua の POSITIONS）
+---@param opts? {background?: boolean} backgroundはM._current_bufferを更新しない
+---@return Vibing.ChatBuffer chat_buf 作成したチャットバッファ
+function M.render(session, position, opts)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
   -- 毎回新規バッファを作成（既存バッファを再利用しない）
   local chat_buf = ChatBuffer:new(config.chat)
-  M._current_buffer = chat_buf
+
+  -- M._current_buffer は「ユーザーが最後に開いたチャット」を指すシングルトンで、
+  -- :VibingCancel / :VibingToggleChat / :VibingMoteDir がカーソルがチャット外にあるときの
+  -- フォールバックに使う。nvim_chat_createのワーカーはユーザーが開いたものではないので
+  -- ここを奪ってはいけない。奪うと:VibingCancelがユーザーの実行中リクエストではなくワーカーを
+  -- 止め、backのワーカーにはウィンドウが無いのでis_open()がfalseになり:VibingToggleChatが
+  -- 開いているチャットをトグルせず新しいチャットを作ってしまう。
+  -- 検索は_attached_buffers側で足りる（get_chat_buffer）ので、ワーカーが迷子になることはない
+  if not (opts and opts.background) then
+    M._current_buffer = chat_buf
+  end
 
   -- セッションデータをバッファに反映
   chat_buf.session = session  -- セッション全体を保持（後方互換性のため）
@@ -36,9 +48,16 @@ function M.render(session, position)
   end
   -- NOTE: cwdはfrontmatterのworking_dirから算出されるため、ここでの転送は不要
 
-  -- 位置指定が指定されている場合は一時的にオーバーライド
+  -- 位置指定が指定されている場合はこのバッファに限ってオーバーライドする。
+  -- ChatBuffer:new はグローバル設定テーブルへの参照をそのまま持つので、`window`テーブルまで
+  -- 差し替えないと `:VibingChat back` 1回でユーザーの既定位置が永久にbackになる。
+  -- tbl_deep_extendでは足りない: 空テーブルをベースにすると衝突が起きず、ネストした値は
+  -- 参照のまま代入されるので `config.window` は同じテーブルのままになる（実測でConfig.defaults
+  -- まで書き換わった）。nvim_chat_createはワーカーを常にbackで作るため、この漏れは致命的になる
   if position then
-    chat_buf.config.window.position = position
+    chat_buf.config = vim.tbl_extend("force", {}, chat_buf.config, {
+      window = vim.tbl_extend("force", {}, chat_buf.config.window, { position = position }),
+    })
   end
 
   chat_buf:open()
@@ -58,6 +77,8 @@ function M.render(session, position)
   -- ファイル内容読み込み後にチャットバッファ設定を適用（wrap設定、補完、autocmdなど）
   -- これによりftpluginによる上書きを防ぐ
   M._apply_chat_buffer_settings(chat_buf.buf)
+
+  return chat_buf
 end
 
 ---チャットウィンドウを閉じる

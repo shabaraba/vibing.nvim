@@ -141,6 +141,14 @@ function ChatBuffer:is_sending()
   return self._is_sending == true
 end
 
+---このチャットがリクエストを実行中か（送信開始からCLI終了まで）
+---`_is_sending`は<CR>からCLI起動までの隙間、`_current_handle_id`は起動後の実行中をカバーする。
+---片方だけを見ると送信直後の数十msを「完了」と読んでしまうので、両方を見る必要がある
+---@return boolean
+function ChatBuffer:is_responding()
+  return self:is_sending() or self._current_handle_id ~= nil
+end
+
 ---バッファを作成
 function ChatBuffer:_create_buffer()
   if self.buf and vim.api.nvim_buf_is_valid(self.buf) then

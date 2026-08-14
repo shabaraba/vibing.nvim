@@ -119,7 +119,7 @@ end
 ---@return string[]
 local function complete_positions(arg_lead)
   local matches = {}
-  for _, pos in ipairs({ "current", "right", "left", "top", "bottom", "back" }) do
+  for _, pos in ipairs(require("vibing.core.constants.chat").POSITIONS) do
     if pos:find("^" .. vim.pesc(arg_lead)) then
       table.insert(matches, pos)
     end

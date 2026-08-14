@@ -1,20 +1,50 @@
 import { callNeovim } from '../rpc.js';
 import { validateBufferParams, validateFilePath, validateRequired } from '../validation/schema.js';
 
+const CHAT_STATUS_TEXT: Record<string, string> = {
+  responding:
+    'vibing.nvim chat buffer status: responding. A reply is being streamed into this buffer ' +
+    'right now, so what you just read is incomplete. Read it again later to see the finished ' +
+    'response.',
+  idle: 'vibing.nvim chat buffer status: idle. No request is in flight for this buffer, so what you just read is the complete transcript so far.',
+};
+
 /**
  * Retrieve the contents of a Neovim buffer and return them as a single text node.
  *
+ * For a vibing.nvim chat buffer a second text node reports whether a reply is currently being
+ * streamed into it. That is what lets an orchestrator poll a worker chat for completion
+ * (see the `vibing-orchestrate` skill) instead of guessing from the transcript's shape — a
+ * turn that ended in an error, or one still running silent tool calls, both look "finished"
+ * to a text heuristic.
+ *
+ * It is a separate content block rather than a line appended to the transcript so it can never
+ * be mistaken for something the buffer actually contains.
+ *
  * @param args - An object with `bufnr`, the buffer number to retrieve, and optional `rpc_port`.
- * @returns An object with `content` containing a single text node whose `text` is the buffer's contents (lines joined with `\n`).
+ * @returns An object with `content` containing the buffer's contents (lines joined with `\n`),
+ *   plus a chat-status node when the buffer is a vibing.nvim chat.
  */
 export async function handleGetBuffer(args: any) {
   if (args?.bufnr !== undefined) {
     validateBufferParams({ bufnr: args.bufnr });
   }
-  const lines = await callNeovim('buf_get_lines', { bufnr: args?.bufnr }, args?.rpc_port);
-  return {
-    content: [{ type: 'text', text: lines.join('\n') }],
-  };
+  const result = await callNeovim(
+    'buf_get_lines',
+    { bufnr: args?.bufnr, include_chat_status: true },
+    args?.rpc_port
+  );
+
+  // A Neovim running an older plugin version ignores include_chat_status and answers with the
+  // bare line array this tool used to get.
+  const lines: string[] = Array.isArray(result) ? result : result.lines;
+  const state: string | undefined = Array.isArray(result) ? undefined : result.chat_status;
+
+  const content = [{ type: 'text', text: lines.join('\n') }];
+  if (state && CHAT_STATUS_TEXT[state]) {
+    content.push({ type: 'text', text: CHAT_STATUS_TEXT[state] });
+  }
+  return { content };
 }
 
 /**

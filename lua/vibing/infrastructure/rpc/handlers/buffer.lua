@@ -5,10 +5,22 @@ local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 -- Retrieve all lines from the specified buffer.
 -- @param params? Table with optional fields.
 -- @param params.bufnr? number Buffer number to read from; defaults to 0 (current buffer).
--- @return string[] A list of lines from the buffer, in buffer order (each element is a line without trailing newlines).
+-- @param params.include_chat_status? boolean Wrap the result and attach the buffer's chat status.
+-- @return string[]|table Bare line array by default; `{ lines, chat_status }` when
+--   `include_chat_status` is set (`chat_status` is "responding"/"idle", or absent for a buffer
+--   that is not a vibing.nvim chat). The shape stays opt-in because the MCP server and this
+--   plugin are installed separately and can be at different versions: an older MCP server sends
+--   no flag and must keep receiving the array it calls `.join()` on.
 function M.buf_get_lines(params)
   local bufnr = params and params.bufnr or 0
-  return vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+  if not (params and params.include_chat_status) then
+    return lines
+  end
+
+  local ChatStatus = require("vibing.presentation.chat.modules.chat_status")
+  return { lines = lines, chat_status = ChatStatus.get(bufnr) }
 end
 
 -- Replace the entire contents of a buffer with the provided lines.

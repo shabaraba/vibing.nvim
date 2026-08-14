@@ -50,6 +50,7 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_list_instances: instances.handleListInstances,
 
   // Chat operations
+  nvim_chat_create: chat.handleChatCreate,
   nvim_chat_send_message: chat.handleChatSendMessage,
   nvim_ask_user_question: chat.handleAskUserQuestion,
 

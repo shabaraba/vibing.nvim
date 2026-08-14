@@ -9,6 +9,7 @@ local execute = require("vibing.infrastructure.rpc.handlers.execute")
 local highlight = require("vibing.infrastructure.rpc.handlers.highlight")
 local annotations = require("vibing.infrastructure.rpc.handlers.annotations")
 local message = require("vibing.infrastructure.rpc.handlers.message")
+local chat = require("vibing.infrastructure.rpc.handlers.chat")
 local permission = require("vibing.infrastructure.rpc.handlers.permission")
 local rate_limit = require("vibing.infrastructure.rpc.handlers.rate_limit")
 local qflist = require("vibing.infrastructure.rpc.handlers.qflist")
@@ -53,6 +54,8 @@ M.annotate = annotations.annotate
 M.clear_annotations = annotations.clear_annotations
 
 M.send_message = message.send_message
+
+M.create_chat = chat.create_chat
 
 M.check_tool_permission = permission.check_tool_permission
 M.ask_user_question = permission.ask_user_question

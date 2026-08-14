@@ -29,7 +29,7 @@ Prefix with `mcp__vibing-nvim__`:
 - **Highlighting**: `nvim_highlight_range`, `nvim_clear_highlight` (see "Showing Code" below)
 - **Annotations**: `nvim_annotate`, `nvim_clear_annotations` (see "Inline Review Notes" below)
 - **Chat**: `nvim_ask_user_question` (renders a choice list in the chat buffer — see
-  `features.md`), `nvim_chat_send_message`
+  `features.md`), `nvim_chat_send_message`, `nvim_chat_create` (see "Orchestration" below)
 - **Instances**: `nvim_list_instances`
 - **Quickfix**: `nvim_set_qflist` (pushes a new list; the previous one survives under `:colder`)
 - **Debugger**: `nvim_dap_get_state`, `nvim_dap_get_stack_trace`, `nvim_dap_get_variables`,
@@ -64,6 +64,17 @@ user's config overrides it. It clears itself after `duration_ms` (default 3000; 
 a second call to the same buffer replaces the first rather than stacking. Out-of-range lines are
 clamped to the buffer rather than rejected — search results go stale by a line or two, and pointing
 at roughly the right place beats refusing to point.
+
+## Orchestration
+
+`nvim_chat_create({ rpc_port, position?, working_dir? })` creates a chat buffer and returns
+`{ bufnr, file_path, working_dir, position, saved }` as JSON, so one chat can spawn worker chats,
+brief each with `nvim_chat_send_message`, and poll them with `nvim_get_buffer` — which reports a
+chat buffer's `responding` / `idle` status as a second content block.
+
+The workflow is the bundled `vibing-orchestrate` skill. Why `position` defaults to `back`, why the
+chat file is written at creation, why the status is a field rather than a text heuristic, and what
+is deliberately out of scope: `architecture.md` → "Multi-Agent Orchestration".
 
 ## Inline Review Notes
 

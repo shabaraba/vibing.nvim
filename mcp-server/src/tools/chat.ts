@@ -5,7 +5,45 @@ import { withRpcPort, requireRpcPort } from './common.js';
  * Chat-related MCP tools
  */
 
+/**
+ * Window positions nvim_chat_create accepts, mirroring `lua/vibing/core/constants/chat.lua`.
+ * Exported so the handler's zod schema validates against the same list the advertised schema
+ * offers — otherwise the two can drift and a value one accepts the other rejects.
+ */
+export const CHAT_POSITIONS = ['back', 'current', 'right', 'left', 'top', 'bottom'] as const;
+
 export const chatTools: Tool[] = [
+  {
+    name: 'nvim_chat_create',
+    description:
+      'Create a new vibing.nvim chat buffer and return its bufnr and chat file path. ' +
+      'Use it to spawn worker chats you then drive with nvim_chat_send_message — the ' +
+      'multi-agent orchestration workflow (see the vibing-orchestrate skill). ' +
+      'Leave position at its "back" default for workers: that creates the buffer without ' +
+      "opening a window, so the user's layout is untouched. " +
+      'The new chat starts empty and shares nothing with yours, so every message you send it ' +
+      'must be self-contained.',
+    inputSchema: {
+      type: 'object',
+      properties: withRpcPort({
+        position: {
+          type: 'string',
+          enum: [...CHAT_POSITIONS],
+          description:
+            'Where to put the chat window (default "back": buffer only, no window). ' +
+            'Same values as :VibingChat.',
+        },
+        working_dir: {
+          type: 'string',
+          description:
+            'Optional working directory for the chat, as a path relative to the git root ' +
+            '(e.g. ".vibing/worktrees/fix-auth"). Must already exist. Omit to use the ' +
+            "Neovim instance's own working directory.",
+        },
+      }),
+      required: requireRpcPort([]),
+    },
+  },
   {
     name: 'nvim_chat_send_message',
     description:

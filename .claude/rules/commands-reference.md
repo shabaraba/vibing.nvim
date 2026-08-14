@@ -77,3 +77,9 @@ requests backed by the `vibing-worktree-{list,create,attach,run,finish}` Claude 
 bundled with this plugin (`skills/`), not by chat slash commands. See
 `skills/vibing-worktree-list/SKILL.md` and its sibling `-create`, `-attach`, `-run`, `-finish`
 skills.
+
+Running several tasks in parallel across worker chats is the same story: ask for it in natural
+language ("並行でやって"), and the bundled `vibing-orchestrate` skill
+(`skills/vibing-orchestrate/SKILL.md`) drives it through the `nvim_chat_create` /
+`nvim_chat_send_message` / `nvim_get_buffer` MCP tools. There is no `:Vibing*` command for it —
+see `architecture.md` → "Multi-Agent Orchestration".

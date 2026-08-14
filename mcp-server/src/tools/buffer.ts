@@ -3,7 +3,10 @@ import { withRpcPort, requireRpcPort } from './common.js';
 export const bufferTools = [
   {
     name: 'nvim_get_buffer',
-    description: 'Get current buffer content',
+    description:
+      'Get current buffer content. For a vibing.nvim chat buffer the result also reports ' +
+      'whether a reply is being streamed into it right now — poll this to tell whether a ' +
+      'worker chat has finished.',
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({
