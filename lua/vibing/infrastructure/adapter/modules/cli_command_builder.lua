@@ -149,6 +149,12 @@ local function add_flag_if_present(cmd, flag, value)
   end
 end
 
+--- Forget the resolved binary path. Test seam only: the cache is process-wide, so a spec that
+--- wants to exercise the "CLI missing" path has to clear what an earlier spec resolved.
+function M._reset_path_cache()
+  binary_path.reset()
+end
+
 --- Build the `claude` CLI command array
 --- @param prompt string User prompt
 --- @param opts Vibing.AdapterOpts Adapter options
@@ -161,12 +167,6 @@ end
 ---   and without it the server falls back to the instance registry — which refuses to choose
 ---   once more than one Neovim is live, the normal case with worktrees and concurrent chats.
 --- @return string[] Command array for vim.system()
---- Forget the resolved binary path. Test seam only: the cache is process-wide, so a spec that
---- wants to exercise the "CLI missing" path has to clear what an earlier spec resolved.
-function M._reset_path_cache()
-  binary_path.reset()
-end
-
 function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
   local cmd = { binary_path.resolve() }
 
