@@ -45,6 +45,12 @@ jobs:
       - name: Run Lua syntax check
         run: npm run check
 
+      # doc/*.txt is reachable by no other step: `check` compiles lua/ only, and the
+      # prettier/eslint/markdownlint steps do not match `.txt`. This gates the document;
+      # tests/help-check.test.mjs gates the checker itself, so neither replaces the other.
+      - name: Verify Vim help files
+        run: npm run check:doc
+
       # The exit code is the gate — do not parse the output. PlenaryBustedDirectory runs one
       # child Neovim per spec file and already fails the run on a failing assertion, an error,
       # a file that would not load, or a child that never finished; that is pinned by
