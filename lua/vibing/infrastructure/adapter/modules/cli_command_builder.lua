@@ -3,6 +3,7 @@
 --- @module vibing.infrastructure.adapter.modules.cli_command_builder
 
 local tools_constants = require("vibing.core.constants.tools")
+local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
 local worktree_constants = require("vibing.core.constants.worktree")
 
 local M = {}
@@ -10,7 +11,10 @@ local M = {}
 local DEFAULT_SETTING_SOURCES = { "user", "project", "local" }
 local VALID_SETTING_SOURCES = { user = true, project = true, ["local"] = true }
 
-local cached_claude_path = nil
+local binary_path = CommonBuilder.binary_resolver(
+  "claude",
+  "Claude CLI not found in PATH. Please install Claude Code CLI."
+)
 
 --- Resolve the `--setting-sources` list, falling back to the default when config
 --- is missing, malformed, or contains entries outside `user`/`project`/`local`.
@@ -79,22 +83,6 @@ local function resolve_effort(opts, config)
   return effort
 end
 
---- Resolve language setting
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @return string|nil
-local function resolve_language(opts, config)
-  local language = opts.language
-  if not language and config.language then
-    if type(config.language) == "table" then
-      language = config.language.default or config.language.chat
-    else
-      language = config.language
-    end
-  end
-  return type(language) == "string" and language or nil
-end
-
 --- Append tools that are not in the list yet, preserving the user's own ordering
 --- @param allow_tools string[]
 --- @param tools string[]
@@ -150,31 +138,6 @@ local function add_permission_args(cmd, opts)
   end
 end
 
---- Build context prefix for the prompt
---- Reads @file:path entries and formats them as context references
---- @param opts Vibing.AdapterOpts
---- @return string context_prefix Empty string if no context
-local function build_context_prefix(opts)
-  local context_entries = opts.context or {}
-  if #context_entries == 0 then
-    return ""
-  end
-
-  local parts = {}
-  for _, ctx in ipairs(context_entries) do
-    if ctx:match("^@file:") then
-      local file_ref = ctx:sub(7)
-      table.insert(parts, string.format("Context file: %s", file_ref))
-    end
-  end
-
-  if #parts == 0 then
-    return ""
-  end
-
-  return table.concat(parts, "\n") .. "\n\n"
-end
-
 --- Add optional flag if value is present
 --- @param cmd string[]
 --- @param flag string
@@ -201,19 +164,11 @@ end
 --- Forget the resolved binary path. Test seam only: the cache is process-wide, so a spec that
 --- wants to exercise the "CLI missing" path has to clear what an earlier spec resolved.
 function M._reset_path_cache()
-  cached_claude_path = nil
+  binary_path.reset()
 end
 
 function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
-  if not cached_claude_path then
-    cached_claude_path = vim.fn.exepath("claude")
-    if cached_claude_path == "" then
-      cached_claude_path = nil
-      error("Claude CLI not found in PATH. Please install Claude Code CLI.")
-    end
-  end
-
-  local cmd = { cached_claude_path }
+  local cmd = { binary_path.resolve() }
 
   table.insert(cmd, "-p")
   table.insert(cmd, "--output-format")
@@ -359,13 +314,9 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
     end
   end
 
-  local language = resolve_language(opts, config)
-  if language and language ~= "en" then
-    local language_utils = require("vibing.core.utils.language")
-    local lang_name = language_utils.language_names[language]
-    if lang_name then
-      table.insert(system_prompt_lines, 1, string.format("Always respond in %s (%s).", lang_name, language))
-    end
+  local language_instruction = CommonBuilder.language_instruction(opts, config)
+  if language_instruction then
+    table.insert(system_prompt_lines, 1, language_instruction)
   end
 
   table.insert(cmd, "--append-system-prompt")
@@ -385,7 +336,7 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
   -- Build prompt with context prefix (only for new sessions, not resume)
   local full_prompt = prompt
   if not session_id then
-    local context_prefix = build_context_prefix(opts)
+    local context_prefix = CommonBuilder.context_prefix(opts)
     full_prompt = context_prefix .. prompt
   end
 

@@ -3,6 +3,7 @@
 --- @module vibing.infrastructure.adapter.copilot_cli
 
 local Base = require("vibing.infrastructure.adapter.base")
+local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
 local CopilotCommandBuilder = require("vibing.infrastructure.adapter.modules.copilot_command_builder")
 local CopilotEventProcessor = require("vibing.infrastructure.adapter.modules.copilot_event_processor")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
@@ -15,7 +16,8 @@ local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.acti
 local CopilotCLI = setmetatable({}, { __index = Base })
 CopilotCLI.__index = CopilotCLI
 
-local INITIAL_RESPONSE_TIMEOUT_MS = 120000
+-- Shared with execute()'s own wait, so the two cannot drift apart.
+local INITIAL_RESPONSE_TIMEOUT_MS = CliRuntime.INITIAL_RESPONSE_TIMEOUT_MS
 
 local SUPPORTED_FEATURES = {
   streaming = true,
@@ -26,6 +28,8 @@ local SUPPORTED_FEATURES = {
   -- False here, true for the others: see architecture.md. #512 tracks making it real.
   dynamic_permissions = false,
 }
+
+CliRuntime.install(CopilotCLI, SUPPORTED_FEATURES)
 
 ---@param config Vibing.Config
 ---@return Vibing.CopilotCLIAdapter
@@ -41,29 +45,6 @@ end
 
 ---@param prompt string
 ---@param opts Vibing.AdapterOpts
----@return Vibing.Response
-function CopilotCLI:execute(prompt, opts)
-  opts = opts or {}
-  local result = { content = "" }
-  local done = false
-
-  self:stream(prompt, opts, function(chunk)
-    result.content = result.content .. chunk
-  end, function(response)
-    if response.error then
-      result.error = response.error
-    end
-    done = true
-  end)
-
-  vim.wait(120000, function()
-    return done
-  end, 100)
-  return result
-end
-
----@param prompt string
----@param opts Vibing.AdapterOpts
 ---@param on_chunk fun(chunk: string)
 ---@param on_done fun(response: Vibing.Response)
 ---@return string handle_id
@@ -71,7 +52,7 @@ function CopilotCLI:stream(prompt, opts, on_chunk, on_done)
   opts = opts or {}
 
   local debug_mode = vim.g.vibing_debug_stream
-  local handle_id = string.format("%016x_%x", vim.loop.hrtime(), math.random(100000))
+  local handle_id = CliRuntime.new_handle_id()
   local session_id = opts._session_id
 
   -- The builder raises when the copilot binary is missing. The caller in send_message.lua
@@ -79,10 +60,7 @@ function CopilotCLI:stream(prompt, opts, on_chunk, on_done)
   -- stack trace instead of an actionable message.
   local build_ok, cmd = pcall(CopilotCommandBuilder.build, prompt, opts, session_id, self.config)
   if not build_ok then
-    local message = type(cmd) == "string" and cmd:gsub("^.*:%d+:%s*", "") or tostring(cmd)
-    vim.schedule(function()
-      on_done({ content = "", error = message, _handle_id = handle_id })
-    end)
+    CliRuntime.report_build_failure(handle_id, cmd, on_done)
     return handle_id
   end
 
@@ -191,66 +169,6 @@ function CopilotCLI:stream(prompt, opts, on_chunk, on_done)
   end
 
   return handle_id
-end
-
----@param handle_id string?
-function CopilotCLI:cancel(handle_id)
-  -- copilot's shell tool spawns children that inherit the stdout pipe. Killing only
-  -- the parent leaves them holding it open, so vim.system()'s exit handler never fires
-  -- and the chat UI stays frozen. Kill children first, then the parent.
-  local function kill_process(handle)
-    if not handle then
-      return
-    end
-    local pid = handle.pid
-    if not pid or pid <= 0 then
-      return
-    end
-    vim.fn.system(string.format("pkill -9 -P %d 2>/dev/null; true", pid))
-    pcall(function()
-      handle:kill(9)
-    end)
-  end
-
-  if handle_id then
-    local handle = self._handles[handle_id]
-    if handle then
-      kill_process(handle)
-      self._handles[handle_id] = nil
-    end
-  else
-    for id, handle in pairs(self._handles) do
-      kill_process(handle)
-      self._handles[id] = nil
-    end
-  end
-end
-
----@param feature string
----@return boolean
-function CopilotCLI:supports(feature)
-  return SUPPORTED_FEATURES[feature] or false
-end
-
----@param session_id string?
----@param handle_id string?
-function CopilotCLI:set_session_id(session_id, handle_id)
-  SessionManagerModule.set(self._session_manager, session_id, handle_id)
-end
-
----@param handle_id string?
----@return string?
-function CopilotCLI:get_session_id(handle_id)
-  return SessionManagerModule.get(self._session_manager, handle_id)
-end
-
----@param handle_id string
-function CopilotCLI:cleanup_session(handle_id)
-  SessionManagerModule.cleanup(self._session_manager, handle_id)
-end
-
-function CopilotCLI:cleanup_stale_sessions()
-  SessionManagerModule.cleanup_stale(self._session_manager, self._handles)
 end
 
 return CopilotCLI
