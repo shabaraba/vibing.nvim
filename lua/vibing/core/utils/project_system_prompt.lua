@@ -5,6 +5,8 @@
 --- `--append-system-prompt` on every non-lightweight request.
 --- @module vibing.core.utils.project_system_prompt
 
+local Fs = require("vibing.core.utils.fs")
+
 local M = {}
 
 --- 8 KiB. Large enough for real instructions, small enough that a stray paste
@@ -22,7 +24,7 @@ end
 function M.ensure(project_root)
   local prompt_file = M.path(project_root)
   if vim.fn.filereadable(prompt_file) == 0 then
-    vim.fn.mkdir(project_root .. "/.vibing", "p")
+    Fs.ensure_dir(project_root .. "/.vibing")
     vim.fn.writefile({}, prompt_file)
   end
 end

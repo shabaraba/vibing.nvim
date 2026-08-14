@@ -1,3 +1,5 @@
+local Fs = require("vibing.core.utils.fs")
+
 local M = {}
 
 ---一意なファイル名を生成
@@ -76,7 +78,7 @@ function M.update_filename_from_message(buf, current_path, message)
   local project_root = vim.fn.getcwd()
   ensure_system_prompt(project_root)
   local chat_dir = project_root .. "/.vibing/chat/"
-  vim.fn.mkdir(chat_dir, "p")
+  Fs.ensure_dir(chat_dir)
 
   local new_filename = base_filename .. ".md"
   local new_file_path = chat_dir .. new_filename

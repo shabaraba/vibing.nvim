@@ -12,6 +12,7 @@ local ChatSession = require("vibing.domain.chat.session")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 local InheritedFrontmatter = require("vibing.application.chat.inherited_frontmatter")
+local Fs = require("vibing.core.utils.fs")
 
 ---@param save_dir string
 ---@param agent_id string
@@ -77,7 +78,7 @@ function M.execute(chat_buffer, agent_id)
   local config = vibing.get_config()
 
   local save_dir = FileManager.get_save_directory(config.chat)
-  vim.fn.mkdir(save_dir, "p")
+  Fs.ensure_dir(save_dir)
 
   -- 同じsubagentに2つ目のバッファを作ると、同じsession_idを共有するバッファ同士が
   -- 送信を奪い合う。既にあるなら開き直す

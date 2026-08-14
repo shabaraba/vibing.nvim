@@ -2,6 +2,8 @@
 --- Writes hook settings to .vibing/hook-settings.json for --settings flag
 --- @module vibing.infrastructure.hooks.settings_generator
 
+local Fs = require("vibing.core.utils.fs")
+
 local M = {}
 
 --- Resolve a bundled hook script by file name
@@ -75,7 +77,7 @@ function M.ensure(cwd)
   local vibing_dir = cwd .. "/.vibing"
   local settings_path = vibing_dir .. "/hook-settings.json"
 
-  vim.fn.mkdir(vibing_dir, "p")
+  Fs.ensure_dir(vibing_dir)
 
   -- Always regenerate (hook script path may change after plugin update)
   local settings = M.generate()

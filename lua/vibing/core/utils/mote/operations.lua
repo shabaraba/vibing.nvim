@@ -1,5 +1,7 @@
 ---@class Vibing.Utils.Mote.Operations
 ---moteの各種操作（diff, snapshot, patch）
+local Fs = require("vibing.core.utils.fs")
+
 local M = {}
 
 ---diff出力からファイルパスを抽出
@@ -221,7 +223,7 @@ function M.generate_patch(config, output_path, callback)
   end
 
   local output_dir = vim.fn.fnamemodify(output_path, ":h")
-  vim.fn.mkdir(output_dir, "p")
+  Fs.ensure_dir(output_dir)
 
   local cmd = Command.build_base_args(config)
   table.insert(cmd, "snap")

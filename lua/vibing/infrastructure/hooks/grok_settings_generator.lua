@@ -4,6 +4,7 @@
 --- @module vibing.infrastructure.hooks.grok_settings_generator
 
 local SettingsGenerator = require("vibing.infrastructure.hooks.settings_generator")
+local Fs = require("vibing.core.utils.fs")
 
 local M = {}
 
@@ -65,7 +66,7 @@ local function ensure_folder_trust(cwd)
   end
 
   local trust_path = grok_home() .. "/trusted_folders.toml"
-  vim.fn.mkdir(vim.fn.fnamemodify(trust_path, ":h"), "p")
+  Fs.ensure_dir(vim.fn.fnamemodify(trust_path, ":h"))
 
   local existing = ""
   local rf = io.open(trust_path, "r")
@@ -130,7 +131,7 @@ function M.ensure(cwd)
   local hooks_dir = real_cwd .. "/.grok/hooks"
   local hook_path = hooks_dir .. "/" .. HOOK_FILENAME
 
-  vim.fn.mkdir(hooks_dir, "p")
+  Fs.ensure_dir(hooks_dir)
 
   -- Grok resolves relative command paths against the hook JSON file directory
   -- (.grok/hooks/), not the project root — so a relative plugin path would miss

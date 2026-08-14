@@ -5,6 +5,7 @@ local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local SyncManager = require("vibing.application.link.sync_manager")
 local DailySummaryScanner = require("vibing.infrastructure.link.daily_summary_scanner")
 local ForkedChatScanner = require("vibing.infrastructure.link.forked_chat_scanner")
+local Fs = require("vibing.core.utils.fs")
 
 ---@param dir string
 ---@return string
@@ -126,9 +127,7 @@ return function(_, chat_buffer)
     local new_filename = filename_util.generate_with_title(title, "chat")
     local normalized_dir = ensure_trailing_slash(save_dir)
 
-    if vim.fn.isdirectory(normalized_dir) == 0 then
-      vim.fn.mkdir(normalized_dir, "p")
-    end
+    Fs.ensure_dir(normalized_dir)
 
     local new_file_path = get_unique_file_path(save_dir, new_filename)
 

@@ -9,6 +9,8 @@
 ---「そのリクエストで実際に触ったファイル数」にのみ比例する。
 ---バックアップはhandle_id（リクエスト）単位で管理されるので、
 ---並行するチャットバッファ間で差分が混ざることもない。
+local Fs = require("vibing.core.utils.fs")
+
 local M = {}
 
 local uv = vim.uv or vim.loop
@@ -121,7 +123,7 @@ function M.capture(handle_id, tool_name, tool_input)
 
   if not s.dir then
     s.dir = vim.fn.tempname() .. ".vibing-reqdiff"
-    vim.fn.mkdir(s.dir, "p")
+    Fs.ensure_dir(s.dir)
   end
   s.count = s.count + 1
   local backup_path = string.format("%s/%d", s.dir, s.count)

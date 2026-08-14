@@ -10,6 +10,8 @@
 ---
 ---1タスク＝実CLI呼び出し1回＝実トークン消費。通常のテストスイートには入れず
 ---`pnpm run test:eval`（`tests/evals/run.lua`）からのみ回す。
+local Fs = require("vibing.core.utils.fs")
+
 local M = {}
 
 ---@class Vibing.Eval.Record 1試行の観測結果
@@ -50,7 +52,7 @@ local TIMEOUT_MS = 180000
 ---@return string path
 function M.create_scratch_repo()
   local path = vim.fn.tempname() .. "_eval_repo"
-  vim.fn.mkdir(path, "p")
+  Fs.ensure_dir(path)
   vim.fn.system({ "git", "-C", path, "init", "-q" })
   vim.fn.writefile({ "# eval scratch" }, vim.fs.joinpath(path, "README.md"))
   vim.fn.system({ "git", "-C", path, "add", "." })

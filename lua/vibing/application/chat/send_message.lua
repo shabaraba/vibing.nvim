@@ -15,6 +15,7 @@ end
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local GradientAnimation = require("vibing.ui.gradient_animation")
 local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local Fs = require("vibing.core.utils.fs")
 
 ---@class Vibing.ChatCallbacks
 ---@field extract_conversation fun(): table 会話履歴を抽出
@@ -624,7 +625,7 @@ function M._finalize_request_diff(callbacks, handle_id, modified_file_paths)
 
   if patch_content then
     local patch_dir = base_dir .. "/.vibing/patches"
-    vim.fn.mkdir(patch_dir, "p")
+    Fs.ensure_dir(patch_dir)
     local suffix = tostring(handle_id or ""):gsub("%W", ""):sub(-6)
     local patch_path = string.format("%s/%s_%s.patch", patch_dir, os.date("%Y%m%d_%H%M%S"), suffix)
     local f = io.open(patch_path, "w")

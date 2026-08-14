@@ -6,6 +6,7 @@ local Renderer = require("vibing.presentation.chat.modules.renderer")
 local StreamingHandler = require("vibing.presentation.chat.modules.streaming_handler")
 local ConversationExtractor = require("vibing.presentation.chat.modules.conversation_extractor")
 local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
+local Fs = require("vibing.core.utils.fs")
 
 ---@class Vibing.ChatBuffer
 ---@field buf number?
@@ -154,7 +155,7 @@ function ChatBuffer:_create_buffer()
     vim.api.nvim_buf_set_name(self.buf, self.file_path)
   else
     local save_path = FileManager.get_save_directory(self.config)
-    vim.fn.mkdir(save_path, "p")
+    Fs.ensure_dir(save_path)
     local filename = FileManager.generate_unique_filename()
     self.file_path = save_path .. filename
     vim.api.nvim_buf_set_name(self.buf, self.file_path)

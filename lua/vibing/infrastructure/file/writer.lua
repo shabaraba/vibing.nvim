@@ -32,13 +32,6 @@ function M.append(path, content)
   return true, nil
 end
 
----ディレクトリを作成
----@param path string
----@return boolean success
-function M.mkdir(path)
-  return vim.fn.mkdir(path, "p") == 1
-end
-
 ---ファイルを削除
 ---@param path string
 ---@return boolean success

@@ -10,6 +10,7 @@ local M = {}
 local ChatSession = require("vibing.domain.chat.session")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local Git = require("vibing.core.utils.git")
+local Fs = require("vibing.core.utils.fs")
 
 ---@deprecated このグローバル状態は複数チャットウィンドウで問題を起こすため廃止予定
 ---セッションはChatBufferインスタンスの.sessionプロパティを使用すること
@@ -54,7 +55,7 @@ function M.create_new()
   })
 
   local save_path = FileManager.get_save_directory(config.chat)
-  vim.fn.mkdir(save_path, "p")
+  Fs.ensure_dir(save_path)
   local filename = FileManager.generate_unique_filename()
   session:set_file_path(save_path .. filename)
 
@@ -86,7 +87,7 @@ function M.create_new_in_directory(directory)
   })
 
   local save_path = normalized_dir .. ".vibing/chat/"
-  vim.fn.mkdir(save_path, "p")
+  Fs.ensure_dir(save_path)
   local filename = FileManager.generate_unique_filename()
   session:set_file_path(save_path .. filename)
 

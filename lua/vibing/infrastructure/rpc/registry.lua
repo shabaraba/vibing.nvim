@@ -1,6 +1,8 @@
 ---@class Vibing.RpcRegistry
 ---Instance registry for managing multiple Neovim instances with vibing.nvim RPC servers
 ---Tracks running instances by PID, port, and working directory
+local Fs = require("vibing.core.utils.fs")
+
 local M = {}
 
 local uv = vim.loop
@@ -37,21 +39,20 @@ local function get_instance_file()
 end
 
 ---Ensure registry directory exists
+---
+---This path is machine-wide, so several Neovim instances race to create it on startup and the
+---suite's per-spec children race hardest of all. `Fs.ensure_dir` is what makes losing that race
+---a non-event; the `fs_stat` guard that used to sit here was the check half of the same
+---check-then-act and never prevented anything (#576).
 ---@return boolean success Whether directory was created or already exists
 local function ensure_registry_dir()
   local dir = M.get_registry_dir()
-  local stat = uv.fs_stat(dir)
-  if not stat then
-    local ok, err = vim.fn.mkdir(dir, "p")
-    if ok == 0 then
-      vim.notify(
-        string.format("Failed to create registry directory: %s", err or "unknown error"),
-        vim.log.levels.ERROR
-      )
-      return false
-    end
+  if Fs.ensure_dir(dir) then
+    return true
   end
-  return true
+
+  vim.notify(string.format("Failed to create registry directory: %s", dir), vim.log.levels.ERROR)
+  return false
 end
 
 ---Register current instance
