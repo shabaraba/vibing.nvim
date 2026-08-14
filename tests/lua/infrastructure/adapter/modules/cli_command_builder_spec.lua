@@ -322,11 +322,11 @@ describe("cli_command_builder", function()
       assert.is_nil(find_flag(cmd, "--permission-mode"))
     end)
 
-    it("uses config.agent.utility_model, defaulting to haiku when unset", function()
+    it("uses config.agent.utility_model, defaulting to sonnet when unset", function()
       local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, {}, nil)
       local idx = find_flag(cmd, "--model")
       assert.is_not_nil(idx)
-      assert.equals("haiku", cmd[idx + 1])
+      assert.equals("sonnet", cmd[idx + 1])
     end)
 
     it("prefers config.agent.utility_model over opts.model and config.agent.default_model", function()

@@ -30,7 +30,7 @@ require("vibing").setup({
   agent = {
     default_mode = "code",
     default_model = "sonnet",
-    utility_model = "haiku",
+    utility_model = "sonnet",
     setting_sources = { "user", "project", "local" },
     subagent = { enabled = false, show_prefix = false },
     auto_resume_on_limit = { enabled = false, max_retries = 1 },
@@ -149,9 +149,11 @@ agent = {
                             -- "haiku": Fastest
                             -- "fable": Claude Fable
 
-  utility_model = "haiku",  -- Model used for lightweight utility calls
+  utility_model = "sonnet", -- Model used for lightweight utility calls
                             -- (AI title generation, chat summaries, daily summaries).
                             -- Takes priority over the chat's model for those calls.
+                            -- Set to "haiku" for the cheapest option: it costs less but
+                            -- picks the wrong subject noticeably more often.
 
   setting_sources = { "user", "project", "local" },
                             -- Passed to the Claude CLI's --setting-sources flag.

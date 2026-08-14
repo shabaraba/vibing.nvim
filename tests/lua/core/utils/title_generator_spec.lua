@@ -99,8 +99,21 @@ describe("title_generator.generate_from_conversation", function()
     assert.is_not_nil(captured_prompt:find("FIRST_TOPIC_ANCHOR", 1, true))
     assert.is_not_nil(captured_prompt:find("LAST_RECENT_MESSAGE", 1, true))
     -- ...but the whole history is not sent verbatim (a far-middle message is dropped).
-    assert.is_nil(captured_prompt:find("middle message 1 ", 1, true))
+    assert.is_nil(captured_prompt:find("middle message 20 ", 1, true))
     -- And the total prompt stays bounded.
     assert.is_true(#captured_prompt < 20000)
+  end)
+
+  it("strips tool narration from the excerpt it sends", function()
+    -- The chat buffer stores rendered tool calls, so the raw conversation is mostly
+    -- `💻 Bash(...)` lines. Sending those makes the model title the chat after the
+    -- commands that ran instead of what the user asked for.
+    title_generator.generate_from_conversation({
+      { role = "user", content = "認証のバグを直して" },
+      { role = "assistant", content = "調べます。\n💻 Bash(git rebase origin/main)\n直りました。" },
+    }, function() end)
+
+    assert.is_nil(captured_prompt:find("git rebase", 1, true))
+    assert.is_not_nil(captured_prompt:find("認証のバグを直して", 1, true))
   end)
 end)

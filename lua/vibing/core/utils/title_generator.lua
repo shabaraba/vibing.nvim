@@ -6,89 +6,28 @@ local M = {}
 
 local filename_util = require("vibing.core.utils.filename")
 local language_utils = require("vibing.core.utils.language")
-
--- Title generation only needs the gist of the conversation. Sending the whole
--- history (or resuming/forking the full session) makes long chats fail with
--- "Prompt is too long", so we build a bounded excerpt instead.
--- Keep per-message and tail sizes small enough that first + tail comfortably fit
--- under MAX_TOTAL_CHARS, so the final safety-net truncation never drops the most
--- recent message (which matters most for the title).
-local MAX_MESSAGE_CHARS = 800
-local TAIL_MESSAGE_COUNT = 4
-local MAX_TOTAL_CHARS = 6000
-
----@param s string
----@param n integer
----@return string
-local function truncate(s, n)
-  if #s > n then
-    return s:sub(1, n) .. "…"
-  end
-  return s
-end
-
--- チャットバッファ上でツール呼び出しをレンダリングするときの行頭マーカー。
--- 軽量呼び出しでツールを無効化していても（denylist が腐って）モデルが narration や
--- ツール実況を返した場合に、その行をタイトル候補から除外するための防御。
-local TOOL_RENDER_MARKERS = { "⏺", "📄", "💻", "🔧", "✳", "☒", "☐", "⎿", "→" }
+local chat_excerpt = require("vibing.core.utils.chat_excerpt")
 
 ---AI応答から「タイトルとして使える最初の1行」を取り出す。
 ---ツール実況行（⏺ ToolSearch(...) 等）や空行を飛ばし、最初の意味のあるテキスト行を返す。
 ---これによりモデルがタイトル以外を返しても、複数行のゴミがそのままファイル名になるのを防ぐ。
+---軽量呼び出しでツールは無効化しているが、それが破れたときの防御として残している。
+---ツール行の判定は抜粋クリーニングと同じ `chat_excerpt` のものを使う（二重定義を作らないため）。
 ---@param text string
 ---@return string
 local function first_title_line(text)
   for _, line in ipairs(vim.split(text or "", "\n", { plain = true })) do
     local trimmed = vim.trim(line)
-    if trimmed ~= "" then
-      local is_marker = false
-      for _, marker in ipairs(TOOL_RENDER_MARKERS) do
-        if trimmed:sub(1, #marker) == marker then
-          is_marker = true
-          break
-        end
-      end
-      if not is_marker then
-        return trimmed
-      end
+    if trimmed ~= "" and not chat_excerpt.is_tool_line(trimmed) then
+      return trimmed
     end
   end
   return vim.trim((text or ""):match("^([^\n]*)") or "")
 end
 
----会話から「最初のユーザーメッセージ＋末尾数メッセージ」の抜粋を作る。
----各メッセージと全体の両方に上限を設け、長い会話でも context を超えないようにする。
----@param conversation {role: string, content: string}[]
----@return string
-local function build_excerpt(conversation)
-  local selected
-  if #conversation <= TAIL_MESSAGE_COUNT + 1 then
-    selected = conversation
-  else
-    selected = {}
-    -- 最初のユーザーメッセージでトピックを固定
-    for _, msg in ipairs(conversation) do
-      if msg.role == "user" then
-        selected[#selected + 1] = msg
-        break
-      end
-    end
-    -- 直近の文脈
-    for i = #conversation - TAIL_MESSAGE_COUNT + 1, #conversation do
-      selected[#selected + 1] = conversation[i]
-    end
-  end
-
-  local parts = {}
-  for _, msg in ipairs(selected) do
-    parts[#parts + 1] = string.format("[%s]: %s", msg.role, truncate(msg.content or "", MAX_MESSAGE_CHARS))
-  end
-  return truncate(table.concat(parts, "\n\n"), MAX_TOTAL_CHARS)
-end
-
 ---会話履歴からAIにタイトルを生成させる
----会話の抜粋（最初のユーザーメッセージ＋末尾数メッセージ、各上限付き）をアダプタに送り、
----簡潔なファイル名用タイトルを生成する。結果はコールバックで非同期に返される。
+---会話の抜粋（`chat_excerpt` がツール実況を落として user 発言中心に組み立てたもの）を
+---アダプタに送り、簡潔なファイル名用タイトルを生成する。結果はコールバックで非同期に返される。
 ---セッションの resume/fork は行わない（全履歴を読み込んで context を超過し
 ---"Prompt is too long" になるのを避けるため）。抜粋を都度フレッシュに送るだけなので session_id は不要。
 ---@param conversation {role: string, content: string}[] 会話履歴
@@ -111,12 +50,27 @@ function M.generate_from_conversation(conversation, callback, adapter)
 
   local lang_code = language_utils.get_language_code(config.language, "chat")
   local lang_name = lang_code and language_utils.language_names[lang_code]
-  local lang_instruction = lang_name and ("Generate the title in " .. lang_name .. ". ") or ""
 
-  local title_instruction = "Based on the above conversation, generate a concise title (maximum 30 characters) that summarizes the main topic. "
-    .. lang_instruction
-    .. "The title should be suitable for a filename. "
-    .. "Respond with ONLY the title, nothing else."
+  -- 「主題 = ユーザーが達成しようとしたこと」を明示する。これを言わないと、モデルは
+  -- 抜粋の末尾（マージ・クリーンアップ等の後始末）や実行したコマンドをタイトルにしてしまう。
+  local lines = {
+    "The text above is an excerpt of a conversation between a user and an AI coding assistant.",
+    "",
+    "Write a title naming WHAT THE USER WAS TRYING TO ACCOMPLISH across the whole conversation.",
+    "",
+    "Rules:",
+    "- The subject comes from the user's requests, not from the assistant's replies.",
+    "- Do not title it after the last step, the wrap-up work, or the tools and commands that were run.",
+    "- Be specific: name the feature, bug, file, or component involved.",
+    "- 30 characters maximum.",
+    "- No date, no file extension, no quotes, no surrounding punctuation.",
+  }
+  if lang_name then
+    lines[#lines + 1] = "- Write the title in " .. lang_name .. "."
+  end
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = "Respond with ONLY the title, nothing else."
+  local title_instruction = table.concat(lines, "\n")
 
   -- Title generation is a lightweight utility call: no tools/CLAUDE.md/MCP needed
   local opts = {
@@ -125,7 +79,7 @@ function M.generate_from_conversation(conversation, callback, adapter)
 
   -- Always send a bounded excerpt as a fresh prompt (no resume/fork), so long
   -- chats never exceed the context window.
-  local prompt = build_excerpt(conversation) .. "\n\n" .. title_instruction
+  local prompt = chat_excerpt.build(conversation) .. "\n\n" .. title_instruction
 
   local collected_response = ""
 

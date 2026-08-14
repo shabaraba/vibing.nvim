@@ -237,8 +237,10 @@ via `/model` slash command.
 **omitted unless configured**: with no `agent.default_effort` vibing.nvim passes no flag and the
 CLI applies its own default, which Anthropic tunes over time — pinning a level here would freeze
 it. Set it per chat with `/effort`. Lightweight calls (title generation, `/summarize`, daily
-summary) use `agent.utility_effort` (default `low`) instead, pairing with `utility_model` so those
-calls are cheap on both axes. An unrecognised level is dropped with a warning rather than passed
+summary) use `agent.utility_effort` (default `low`) instead. It does **not** pair with a cheap
+model: `utility_model` defaults to `sonnet`, because those calls summarize a noisy chat transcript
+and haiku measurably picks the wrong subject. Low effort on a capable model is the trade actually
+being made here. An unrecognised level is dropped with a warning rather than passed
 through: the CLI accepts unknown levels silently and then ignores them.
 
 Configured permissions are recorded in frontmatter for
