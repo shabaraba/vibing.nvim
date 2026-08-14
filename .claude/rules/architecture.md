@@ -170,6 +170,14 @@ chat UI frozen. And `execute()` now cancels a run that outlives its timeout inst
 and leaving the process alive; only grok did that. `cli_runtime_spec.lua` runs both over every
 backend.
 
+The pkill is asynchronous (`vim.system`, grok's form) rather than blocking (`vim.fn.system`, what
+codex and copilot used), because `cancel()` can be reached from a `vim.schedule` callback and
+should not stall the main loop there. The cost is that the parent's `kill(9)` is not sequenced
+after the children's: signal delivery is effectively immediate, so an orphan is theoretical rather
+than observed, but it is a real ordering change and not something a test can pin while the call is
+fire-and-forget. Revisit by chaining the parent kill onto the pkill's `on_exit` if orphans ever
+show up.
+
 **Chat (presentation + application):**
 
 - `presentation/chat/buffer.lua`, `view.lua`, `controller.lua` - Chat buffer and window

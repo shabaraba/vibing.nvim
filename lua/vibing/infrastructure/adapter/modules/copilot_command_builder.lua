@@ -5,6 +5,11 @@
 local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
 
+local binary_path = CommonBuilder.binary_resolver(
+  "copilot",
+  "Copilot CLI not found in PATH. Please install GitHub Copilot CLI."
+)
+
 local M = {}
 
 local ToolVocabulary = require("vibing.infrastructure.adapter.modules.copilot_tool_vocabulary")
@@ -38,13 +43,15 @@ end
 --- @param session_id string|nil Session ID for resumption
 --- @param config Vibing.Config Plugin config
 --- @return string[] Command array for vim.system()
-function M.build(prompt, opts, session_id, config)
-  local copilot_path = vim.fn.exepath("copilot")
-  if copilot_path == "" then
-    error("Copilot CLI not found in PATH. Please install GitHub Copilot CLI.")
-  end
+--- Forget the resolved binary path. Test seam only, same reason as the other builders: the
+--- cache is process-wide, so a spec exercising the "CLI missing" path has to clear what an
+--- earlier spec resolved.
+function M._reset_path_cache()
+  binary_path.reset()
+end
 
-  local cmd = { copilot_path, "--output-format", "json", "--stream", "on", "--no-color" }
+function M.build(prompt, opts, session_id, config)
+  local cmd = { binary_path.resolve(), "--output-format", "json", "--stream", "on", "--no-color" }
 
   if session_id then
     table.insert(cmd, "--resume=" .. session_id)
