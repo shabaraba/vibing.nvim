@@ -25,6 +25,12 @@ local function resolve_sandbox(permission_mode)
   return "workspace-write"
 end
 
+--- Forget the resolved binary path. Test seam only: the cache is process-wide, so a spec
+--- exercising the "CLI missing" path has to clear what an earlier spec resolved.
+function M._reset_path_cache()
+  binary_path.reset()
+end
+
 --- Build the `codex exec --json` command array
 --- @param prompt string User prompt
 --- @param opts Vibing.AdapterOpts Adapter options
@@ -32,11 +38,6 @@ end
 --- @param config Vibing.Config Plugin config
 --- @param hook_args string[]|nil Optional -c flag pair for PreToolUse hook injection
 --- @return string[] Command array for vim.system()
---- Forget the resolved binary path. Test seam only, same reason as cli_command_builder.
-function M._reset_path_cache()
-  binary_path.reset()
-end
-
 function M.build(prompt, opts, session_id, config, hook_args)
   local cmd = { binary_path.resolve(), "exec" }
 
