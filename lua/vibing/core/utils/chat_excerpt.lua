@@ -22,6 +22,25 @@ local BOILERPLATE_MESSAGES = {
   ["deny_for_session"] = true,
 }
 
+---定型メッセージ判定。自動継続プロンプトは設定で差し替えられるので、既定値のハードコードに
+---加えて実際の設定値も見る（差し替えた人だけ「Continue…」が主題として残る、を避ける）。
+---@param cleaned string
+---@return boolean
+local function is_boilerplate(cleaned)
+  local lowered = cleaned:lower()
+  if BOILERPLATE_MESSAGES[lowered] then
+    return true
+  end
+  local ok, config_mod = pcall(require, "vibing.config")
+  if not ok then
+    return false
+  end
+  local ok_get, config = pcall(config_mod.get)
+  local agent = ok_get and config and config.agent
+  local prompt = agent and agent.auto_resume_on_limit and agent.auto_resume_on_limit.prompt
+  return type(prompt) == "string" and vim.trim(prompt):lower() == lowered
+end
+
 ---@return string[]
 local function marker_glyphs()
   local glyphs = {}
@@ -60,6 +79,11 @@ end
 ---行の中身を一切見ないので、user の発言に対しては使ってはいけない: `→ ログインを直して` や
 ---`💻 環境構築で詰まってる` のような、記号を箇条書き代わりに使った依頼文がそのまま消え、
 ---1行の依頼ならメッセージごと抜粋から落ちる（このPRが直そうとしている症状そのもの）。
+---
+---構造マッチのほうは `allow_glyph_prefix` に関わらず user にも効く。これは承知の上で、
+---`⏺ Bash(npm test)` のような描画済みツール行が user セクションに混ざった場合に落とすため。
+---代償として `→ fix(login)`（記号+識別子+`(` がそのまま揃った依頼文）は消える。`→ fix login(x)`
+---のように識別子と `(` の間に何か挟まれば残るので、実際に踏む形はかなり狭い。
 ---@param trimmed string
 ---@param glyphs string[]
 ---@param allow_glyph_prefix boolean
@@ -81,9 +105,17 @@ local function is_tool_header(trimmed, glyphs, allow_glyph_prefix)
 end
 
 ---括弧の釣り合い（開き - 閉じ）。ツールヘッダーの複数行引数の終端検出に使う。
+---
+---引用符の中の括弧は数えない。`💻 Bash(echo ')'` のような行でここが先に0になると、
+---続く `git rebase origin/main)` が地の文として抜粋に残り、そのコマンドがタイトルになる。
+---行をまたぐ引用符までは追わない（そこまで来るとシェルのパーサが要る）が、
+---1行で閉じる引用が実際にはほとんどで、追えなかった場合も次の空行で打ち切られる。
 ---@param s string
 ---@return integer
 local function paren_balance(s)
+  s = s:gsub("\\.", "") -- エスケープされた引用符が対を崩さないよう先に落とす
+  s = s:gsub("'[^']*'", "")
+  s = s:gsub('"[^"]*"', "")
   local _, opens = s:gsub("%(", "")
   local _, closes = s:gsub("%)", "")
   return opens - closes
@@ -231,7 +263,7 @@ function M.build(conversation)
         and msg.content ~= ""
         and clean_with(msg.content, glyphs, msg.role ~= "user")
       or ""
-    if cleaned ~= "" and not BOILERPLATE_MESSAGES[cleaned:lower()] then
+    if cleaned ~= "" and not is_boilerplate(cleaned) then
       if msg.role == "user" then
         users[#users + 1] = cleaned
       elseif msg.role == "assistant" then

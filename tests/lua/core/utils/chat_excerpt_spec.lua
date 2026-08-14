@@ -84,6 +84,14 @@ describe("chat_excerpt.clean", function()
     assert.equals("", chat_excerpt.clean(text))
   end)
 
+  it("does not let a quoted paren end a multi-line Bash header early", function()
+    -- `echo ')'` balances the header's own `(` on the first line, so a naive count stops there
+    -- and leaves the rest of the command as prose — putting that command back in the title.
+    local text = "💻 Bash(echo ')'\ngit rebase origin/main)\n直しました。"
+
+    assert.equals("直しました。", chat_excerpt.clean(text))
+  end)
+
   it("drops the whole approval block, including its Tool/Command lines", function()
     -- The user answers by deleting all but one option, so what is sent still carries the header
     -- and the tool details. Leaving those in put the approved command back into the title, which
@@ -120,6 +128,14 @@ describe("chat_excerpt.clean_user", function()
     local text = "⏺ Bash(npm test)\n⎿ 3 passed\n     detail line\nこれで直った？"
 
     assert.equals("これで直った？", chat_excerpt.clean_user(text))
+  end)
+
+  it("keeps a request whose identifier is not immediately followed by a paren", function()
+    -- The known cost of applying the structural match to user text: `→ fix(login)` looks exactly
+    -- like a rendered tool call and is dropped. Anything between the identifier and the `(`
+    -- breaks the resemblance, which is what most prose does.
+    assert.equals("→ fix login(button)", chat_excerpt.clean_user("→ fix login(button)"))
+    assert.equals("", chat_excerpt.clean_user("→ fix(login)"))
   end)
 end)
 
