@@ -181,3 +181,25 @@ test('a help file with no CONTENTS block at all passes', async () => {
   const { code, stderr } = await checkText(text);
   assert.equal(code, 0, stderr);
 });
+
+test('a numbered body line ending in a |tag| is not mistaken for a CONTENTS entry', async () => {
+  // CONTENTS rows are indented, so unlike a section heading their pattern cannot be anchored at
+  // column 0. Scanning the whole file for it also matched a line like the one below, shifting
+  // every index after it and reporting a section that is present as missing.
+  const text = helpFile({
+    contents: [entry(1, 'One', 'fixture-one'), entry(2, 'Two', 'fixture-two')],
+    body: [
+      heading(1, 'One', 'fixture-one'),
+      '',
+      RULE,
+      heading(2, 'Two', 'fixture-two'),
+      '',
+      'Troubleshooting:',
+      '',
+      '    4. See |fixture-one|',
+    ],
+  });
+
+  const { code, stderr } = await checkText(text);
+  assert.equal(code, 0, stderr);
+});

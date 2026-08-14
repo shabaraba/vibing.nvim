@@ -24,6 +24,26 @@ local function fail(fmt, ...)
   table.insert(problems, string.format(fmt, ...))
 end
 
+--- The lines inside the CONTENTS section, or nil when the file has no CONTENTS heading.
+---
+--- Scoping matters: CONTENTS_ROW cannot be anchored at column 0 the way SECTION_HEADING is, since
+--- its rows are indented. Run over the whole file it also matches an ordinary body line that ends
+--- in a `|tag|` reference -- `    4. See |vibing-commands|` in a troubleshooting list, say --
+--- which shifts every index after it and reports a section that is present as missing.
+local function contents_block(lines)
+  local first = nil
+  for index, line in ipairs(lines) do
+    if not first then
+      if line:match('^CONTENTS%f[%W]') then
+        first = index
+      end
+    elseif line:match('^=====') then
+      return vim.list_slice(lines, first + 1, index - 1)
+    end
+  end
+  return first and vim.list_slice(lines, first + 1) or nil
+end
+
 --- The `{ number, tag }` of every line matching `pattern`, in the order they appear.
 local function numbered_rows(lines, pattern)
   local rows = {}
@@ -73,18 +93,12 @@ for _, file in ipairs(files) do
   -- CONTENTS block disable the check while still reporting OK, which is the exact failure #542
   -- was filed about -- so a file with a CONTENTS heading and no parseable rows is a problem,
   -- not a pass. A file with no CONTENTS heading at all has nothing to disagree with.
-  local has_contents = false
-  for _, line in ipairs(lines) do
-    if line:match('^CONTENTS%f[%s]') then
-      has_contents = true
-      break
-    end
-  end
+  local block = contents_block(lines)
+  local entries = block and numbered_rows(block, CONTENTS_ROW) or {}
 
-  local entries = numbered_rows(lines, CONTENTS_ROW)
-  if has_contents and #entries == 0 then
+  if block and #entries == 0 then
     fail('%s: CONTENTS block found but no `N. Title |tag|` rows could be read from it', name)
-  elseif has_contents then
+  elseif block then
     local headings = numbered_rows(lines, SECTION_HEADING)
 
     for index = 1, math.max(#entries, #headings) do
