@@ -243,6 +243,21 @@ and haiku measurably picks the wrong subject. Low effort on a capable model is t
 being made here. An unrecognised level is dropped with a warning rather than passed
 through: the CLI accepts unknown levels silently and then ignores them.
 
+**Lightweight calls are restricted differently per backend, because the CLIs differ in kind.**
+Claude removes the tools outright with `--tools ""`. Codex cannot: probing its config schema with
+`--strict-config` (which rejects unknown fields) against codex 0.147 shows `tools.shell`,
+`tools.apply_patch`, `tools.view_image`, `tools.plan_tool` and `tools.mcp` are all unknown fields,
+and `tools.web_search` is the only tool toggle that exists. So `codex_command_builder` fences the
+call in instead — `sandbox_mode="read-only"`, `tools.web_search=false`, `approval_policy="never"` —
+and `codex_cli.lua` skips hook registration, matching `claude_cli.lua`.
+
+Three details there are not interchangeable. They are `-c` overrides rather than the `-s` flag
+because `/summarize` passes a session id and `codex exec resume` does not accept `-s`. The
+restriction ignores `permission_mode` entirely, `bypassPermissions` included: the user put the
+_chat_ in that mode, and a title generated behind their back is not the call they made. And
+`utility_model` still goes through the Claude-name filter, so its `sonnet` default becomes no
+`-m` at all rather than a model codex would reject.
+
 Configured permissions are recorded in frontmatter for
 transparency and auditability. The optional `language` field ensures consistent AI response language
 across sessions.

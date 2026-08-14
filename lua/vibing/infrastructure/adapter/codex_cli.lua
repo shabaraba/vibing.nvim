@@ -90,7 +90,10 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
 
   local permission_mode = opts.permission_mode or "default"
   local hook_args = nil
-  if permission_mode ~= "bypassPermissions" then
+  -- Lightweight calls skip hook registration, matching claude_cli.lua. The builder fences them
+  -- into a read-only sandbox instead, and routing a title-generation tool call into the chat's
+  -- approval UI would prompt the user about a request they never made.
+  if permission_mode ~= "bypassPermissions" and not opts.lightweight then
     hook_args = CodexSettingsGenerator.get_hook_args()
   end
 

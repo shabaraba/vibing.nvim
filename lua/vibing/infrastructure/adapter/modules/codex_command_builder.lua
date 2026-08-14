@@ -10,11 +10,20 @@ local cached_codex_path = nil
 
 --- Resolve model name from opts or config
 --- Filters out Claude-specific model names (sonnet/opus/haiku/fable) as codex uses its own models
+--- Lightweight calls (title generation, summarize, daily summary) use config.agent.utility_model,
+--- matching cli_command_builder. Its default is "sonnet", which the filter below turns into nil so
+--- codex falls back to its own default rather than being handed a model it does not have.
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config
 --- @return string|nil
 local function resolve_model(opts, config)
-  local model = opts.model or (config.agent and config.agent.default_model)
+  local agent = config.agent or {}
+  local model
+  if opts.lightweight then
+    model = agent.utility_model
+  else
+    model = opts.model or agent.default_model
+  end
   if model and Modes.is_valid_model(model) then
     return nil
   end
@@ -118,8 +127,29 @@ function M.build(prompt, opts, session_id, config, hook_args)
     table.insert(cmd, model)
   end
 
+  if opts.lightweight then
+    -- Lightweight calls need no tools, but codex has no way to remove them. Probing the config
+    -- schema with `--strict-config` (which rejects unknown fields) against codex 0.147:
+    -- tools.shell, tools.apply_patch, tools.view_image, tools.plan_tool and tools.mcp are all
+    -- "unknown configuration field", and tools.web_search is the only tool toggle that exists.
+    -- There is no `--tools ""` equivalent, so the tools cannot be taken away -- only fenced in.
+    --
+    -- These are `-c` overrides rather than the `-s`/`--sandbox` flag because /summarize passes a
+    -- session id, and `codex exec resume` does not accept `-s`. sandbox_mode is what `-s` sets.
+    --
+    -- This deliberately ignores permission_mode, including bypassPermissions: the user put the
+    -- *chat* in that mode, and a title generated behind their back is not the call they made.
+    table.insert(cmd, "-c")
+    table.insert(cmd, 'sandbox_mode="read-only"')
+    table.insert(cmd, "-c")
+    table.insert(cmd, "tools.web_search=false")
+    -- With the approval prompt unreachable in headless exec, anything that did ask would stall
+    -- until the timeout. Verified value: one of untrusted/on-failure/on-request/granular/never.
+    table.insert(cmd, "-c")
+    table.insert(cmd, 'approval_policy="never"')
+
   -- Permission mapping (only for new sessions; resume does not accept -s)
-  if not session_id then
+  elseif not session_id then
     local permission_mode = opts.permission_mode
     if permission_mode == "bypassPermissions" then
       table.insert(cmd, "--dangerously-bypass-approvals-and-sandbox")
