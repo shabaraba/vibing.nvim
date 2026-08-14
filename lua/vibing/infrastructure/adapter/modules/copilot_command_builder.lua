@@ -2,25 +2,11 @@
 --- Builds the command array for the GitHub Copilot CLI with JSONL output
 --- @module vibing.infrastructure.adapter.modules.copilot_command_builder
 
-local Modes = require("vibing.core.constants.modes")
+local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
 
 local M = {}
 
 local ToolVocabulary = require("vibing.infrastructure.adapter.modules.copilot_tool_vocabulary")
-
---- Resolve model name from opts or config
---- Claude short names (sonnet/opus/haiku/fable) are not valid copilot model ids,
---- so they are dropped and copilot's own default is used instead.
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @return string|nil
-local function resolve_model(opts, config)
-  local model = opts.model or (config.agent and config.agent.default_model)
-  if model and Modes.is_valid_model(model) then
-    return nil
-  end
-  return model
-end
 
 --- Resolve language setting
 --- @param opts Vibing.AdapterOpts
@@ -95,7 +81,7 @@ function M.build(prompt, opts, session_id, config)
     table.insert(cmd, "--resume=" .. session_id)
   end
 
-  local model = resolve_model(opts, config)
+  local model = NonClaudeModel.resolve(opts, config)
   if model then
     table.insert(cmd, "--model")
     table.insert(cmd, model)

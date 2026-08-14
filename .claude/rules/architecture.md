@@ -258,6 +258,14 @@ _chat_ in that mode, and a title generated behind their back is not the call the
 `utility_model` still goes through the Claude-name filter, so its `sonnet` default becomes no
 `-m` at all rather than a model codex would reject.
 
+The model half of that lives in `modules/non_claude_model.lua`, shared by codex, copilot and grok.
+It was three byte-identical private copies before, and #537 was filed against codex alone — so
+teaching one copy about `lightweight` would have left the same bug live on the other two, with
+nothing marking them stale. The restriction half stays per-backend on purpose: claude _removes_
+tools with `--tools ""`, codex can only fence them, and no shared vocabulary spans that.
+`core/types.lua` states the obligation each adapter owes for `lightweight` — no tools, no project
+config, no hooks, `utility_model` — rather than the mechanism any one of them uses.
+
 Configured permissions are recorded in frontmatter for
 transparency and auditability. The optional `language` field ensures consistent AI response language
 across sessions.

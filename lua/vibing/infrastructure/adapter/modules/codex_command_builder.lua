@@ -2,33 +2,11 @@
 --- Builds the command array for the Codex CLI with JSONL output
 --- @module vibing.infrastructure.adapter.modules.codex_command_builder
 
-local Modes = require("vibing.core.constants.modes")
+local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
 
 local M = {}
 
 local cached_codex_path = nil
-
---- Resolve model name from opts or config
---- Filters out Claude-specific model names (sonnet/opus/haiku/fable) as codex uses its own models
---- Lightweight calls (title generation, summarize, daily summary) use config.agent.utility_model,
---- matching cli_command_builder. Its default is "sonnet", which the filter below turns into nil so
---- codex falls back to its own default rather than being handed a model it does not have.
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @return string|nil
-local function resolve_model(opts, config)
-  local agent = config.agent or {}
-  local model
-  if opts.lightweight then
-    model = agent.utility_model
-  else
-    model = opts.model or agent.default_model
-  end
-  if model and Modes.is_valid_model(model) then
-    return nil
-  end
-  return model
-end
 
 --- Resolve language setting
 --- @param opts Vibing.AdapterOpts
@@ -121,7 +99,7 @@ function M.build(prompt, opts, session_id, config, hook_args)
   end
 
   -- Model selection
-  local model = resolve_model(opts, config)
+  local model = NonClaudeModel.resolve(opts, config)
   if model then
     table.insert(cmd, "-m")
     table.insert(cmd, model)

@@ -39,10 +39,6 @@ describe("codex_command_builder", function()
     return overrides
   end
 
-  local function contains(list, value)
-    return vim.tbl_contains(list, value)
-  end
-
   describe("lightweight mode", function()
     -- Codex offers no `--tools ""` equivalent: probing the schema with `--strict-config` against
     -- codex 0.147 rejects tools.shell / tools.apply_patch / tools.view_image / tools.plan_tool /
@@ -50,23 +46,23 @@ describe("codex_command_builder", function()
     -- assertions pin a sandbox, not an empty tool set -- fencing the tools in is all there is.
     it("confines the call to a read-only sandbox", function()
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, {}, nil)
-      assert.is_true(contains(config_overrides(cmd), 'sandbox_mode="read-only"'))
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), 'sandbox_mode="read-only"'))
     end)
 
     it("turns off the one tool codex can actually disable", function()
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, {}, nil)
-      assert.is_true(contains(config_overrides(cmd), "tools.web_search=false"))
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), "tools.web_search=false"))
     end)
 
     it("never waits on an approval prompt that headless exec cannot show", function()
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, {}, nil)
-      assert.is_true(contains(config_overrides(cmd), 'approval_policy="never"'))
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), 'approval_policy="never"'))
     end)
 
     it("does not fall back to the workspace-write sandbox", function()
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, {}, nil)
       assert.is_nil(find_flag(cmd, "-s"))
-      assert.is_false(contains(config_overrides(cmd), 'sandbox_mode="workspace-write"'))
+      assert.is_false(vim.tbl_contains(config_overrides(cmd), 'sandbox_mode="workspace-write"'))
     end)
 
     it("stays read-only even when the chat is in bypassPermissions", function()
@@ -80,14 +76,14 @@ describe("codex_command_builder", function()
         nil
       )
       assert.is_nil(find_flag(cmd, "--dangerously-bypass-approvals-and-sandbox"))
-      assert.is_true(contains(config_overrides(cmd), 'sandbox_mode="read-only"'))
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), 'sandbox_mode="read-only"'))
     end)
 
     it("still restricts a resumed session, where -s is not accepted", function()
       -- /summarize passes the chat's session id, so this is the common case, not the edge one.
       local cmd = codex_command_builder.build("hi", { lightweight = true }, "thread-1", {}, nil)
       assert.is_nil(find_flag(cmd, "-s"))
-      assert.is_true(contains(config_overrides(cmd), 'sandbox_mode="read-only"'))
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), 'sandbox_mode="read-only"'))
     end)
 
     it("uses utility_model rather than default_model", function()
@@ -109,9 +105,9 @@ describe("codex_command_builder", function()
     it("are unaffected by the lightweight restrictions", function()
       local cmd = codex_command_builder.build("hi", {}, nil, {}, nil)
       local overrides = config_overrides(cmd)
-      assert.is_false(contains(overrides, 'sandbox_mode="read-only"'))
-      assert.is_false(contains(overrides, "tools.web_search=false"))
-      assert.is_false(contains(overrides, 'approval_policy="never"'))
+      assert.is_false(vim.tbl_contains(overrides, 'sandbox_mode="read-only"'))
+      assert.is_false(vim.tbl_contains(overrides, "tools.web_search=false"))
+      assert.is_false(vim.tbl_contains(overrides, 'approval_policy="never"'))
       assert.equals("workspace-write", cmd[find_flag(cmd, "-s") + 1])
     end)
 
