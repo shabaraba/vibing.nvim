@@ -2,7 +2,7 @@
 --- Builds the command array for the Grok Build CLI with streaming JSON output
 --- @module vibing.infrastructure.adapter.modules.grok_command_builder
 
-local Modes = require("vibing.core.constants.modes")
+local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
 local worktree_constants = require("vibing.core.constants.worktree")
 
 local M = {}
@@ -114,19 +114,6 @@ local function resolve_language(opts, config)
   return type(language) == "string" and language or nil
 end
 
---- Grok has its own model catalog, so a Claude shortcut name (sonnet/opus/...) left over from a
---- chat that switched backends must not be forwarded as Grok's `--model`.
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @return string|nil
-local function resolve_model(opts, config)
-  local model = opts.model or (config.agent and config.agent.default_model)
-  if model and Modes.is_valid_model(model) then
-    return nil
-  end
-  return model
-end
-
 --- @param opts Vibing.AdapterOpts
 --- @return string context_prefix Empty string if no context
 local function build_context_prefix(opts)
@@ -198,7 +185,7 @@ function M.build(prompt, opts, session_id, config, handle_id, rpc_port)
   table.insert(cmd, "--output-format")
   table.insert(cmd, "streaming-json")
 
-  local model = resolve_model(opts, config)
+  local model = NonClaudeModel.resolve(opts, config)
   if model then
     table.insert(cmd, "--model")
     table.insert(cmd, model)

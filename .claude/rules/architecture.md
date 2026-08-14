@@ -243,6 +243,38 @@ and haiku measurably picks the wrong subject. Low effort on a capable model is t
 being made here. An unrecognised level is dropped with a warning rather than passed
 through: the CLI accepts unknown levels silently and then ignores them.
 
+**Lightweight calls are restricted differently per backend, because the CLIs differ in kind.**
+Claude removes the tools outright with `--tools ""`. Codex cannot: probing its config schema with
+`--strict-config` (which rejects unknown fields) against codex 0.147 shows `tools.shell`,
+`tools.apply_patch`, `tools.view_image`, `tools.plan_tool` and `tools.mcp` are all unknown fields,
+and `tools.web_search` is the only tool toggle that exists. So `codex_command_builder` fences the
+call in instead — `sandbox_mode="read-only"`, `tools.web_search=false`, `approval_policy="never"` —
+plus `mcp_servers={}` and `project_doc_max_bytes=0` — and `codex_cli.lua` skips hook
+registration, matching `claude_cli.lua`. Those last two are codex's answers to claude's
+`--strict-mcp-config`/`--mcp-config` and `--setting-sources ""`: without them a utility call
+still reached the user's MCP servers and still read `AGENTS.md`.
+
+`read-only` blocks writes **and** network, verified by running commands under `codex sandbox`
+rather than read off the docs: a write reports `Operation not permitted` and `curl` returns
+`000` where the same request outside the sandbox returns `200`. That matters because the shell
+tool itself cannot be removed, so the sandbox is the only thing closing the exfiltration path
+a prompt injection in the summarized transcript would otherwise have.
+
+Three details there are not interchangeable. They are `-c` overrides rather than the `-s` flag
+because `/summarize` passes a session id and `codex exec resume` does not accept `-s`. The
+restriction ignores `permission_mode` entirely, `bypassPermissions` included: the user put the
+_chat_ in that mode, and a title generated behind their back is not the call they made. And
+`utility_model` still goes through the Claude-name filter, so its `sonnet` default becomes no
+`-m` at all rather than a model codex would reject.
+
+The model half of that lives in `modules/non_claude_model.lua`, shared by codex, copilot and grok.
+It was three byte-identical private copies before, and #537 was filed against codex alone — so
+teaching one copy about `lightweight` would have left the same bug live on the other two, with
+nothing marking them stale. The restriction half stays per-backend on purpose: claude _removes_
+tools with `--tools ""`, codex can only fence them, and no shared vocabulary spans that.
+`core/types.lua` states the obligation each adapter owes for `lightweight` — no tools, no project
+config, no hooks, `utility_model` — rather than the mechanism any one of them uses.
+
 Configured permissions are recorded in frontmatter for
 transparency and auditability. The optional `language` field ensures consistent AI response language
 across sessions.

@@ -90,7 +90,10 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
 
   local permission_mode = opts.permission_mode or "default"
   local hook_args = nil
-  if permission_mode ~= "bypassPermissions" then
+  -- Lightweight calls skip hook registration, matching claude_cli.lua. The builder fences them
+  -- into a read-only sandbox instead, and routing a title-generation tool call into the chat's
+  -- approval UI would prompt the user about a request they never made.
+  if permission_mode ~= "bypassPermissions" and not opts.lightweight then
     hook_args = CodexSettingsGenerator.get_hook_args()
   end
 
@@ -164,6 +167,11 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
   local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
   local ToolVocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
   perm_handler.set_active_opts(handle_id, vim.tbl_extend("force", opts, { _tool_vocabulary = ToolVocabulary }))
+
+  -- Both registrations above run for a lightweight call too, even though it registers no hook.
+  -- They are what `cancel()` and the exit path resolve the handle through, not just permission
+  -- routing, and with no hook to fire nothing consumes the permission entry. Skipping them would
+  -- leave a lightweight stream unreachable by the very cleanup that unregisters it.
 
   local wrapped_on_done = function(response)
     if not completed then
