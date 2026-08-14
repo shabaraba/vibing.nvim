@@ -3,6 +3,7 @@
 --- @module vibing.infrastructure.adapter.modules.grok_command_builder
 
 local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
+local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
 local worktree_constants = require("vibing.core.constants.worktree")
 
 local M = {}
@@ -98,37 +99,6 @@ end
 --- @param opts Vibing.AdapterOpts Adapter options
 --- @param session_id string|nil Session ID for resumption
 
---- Resolve the language to answer in, from opts then config.
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @return string|nil
-local function resolve_language(opts, config)
-  local language = opts.language
-  if not language and config.language then
-    if type(config.language) == "table" then
-      language = config.language.default or config.language.chat
-    else
-      language = config.language
-    end
-  end
-  return type(language) == "string" and language or nil
-end
-
---- @param opts Vibing.AdapterOpts
---- @return string context_prefix Empty string if no context
-local function build_context_prefix(opts)
-  local parts = {}
-  for _, ctx in ipairs(opts.context or {}) do
-    if ctx:match("^@file:") then
-      table.insert(parts, string.format("Context file: %s", ctx:sub(7)))
-    end
-  end
-  if #parts == 0 then
-    return ""
-  end
-  return table.concat(parts, "\n") .. "\n\n"
-end
-
 --- What goes into `--rules`, Grok's equivalent of a system prompt.
 ---
 --- Deliberately much smaller than the Claude adapter's block: Grok reaches no vibing-nvim MCP
@@ -144,12 +114,9 @@ local function build_rules(opts, config)
       .. "<branch-name>/ at the repository root.",
   }
 
-  local language = resolve_language(opts, config)
-  if language and language ~= "en" then
-    local lang_name = require("vibing.core.utils.language").language_names[language]
-    if lang_name then
-      table.insert(lines, 1, string.format("Always respond in %s (%s).", lang_name, language))
-    end
+  local language_instruction = CommonBuilder.language_instruction(opts, config)
+  if language_instruction then
+    table.insert(lines, 1, language_instruction)
   end
 
   return table.concat(lines, "\n")
@@ -176,7 +143,7 @@ function M.build(prompt, opts, session_id, config, handle_id, rpc_port)
 
   local full_prompt = prompt
   if not session_id then
-    full_prompt = build_context_prefix(opts) .. prompt
+    full_prompt = CommonBuilder.context_prefix(opts) .. prompt
   end
 
   local cmd = { grok_path }

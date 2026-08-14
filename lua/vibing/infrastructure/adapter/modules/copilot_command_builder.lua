@@ -3,42 +3,11 @@
 --- @module vibing.infrastructure.adapter.modules.copilot_command_builder
 
 local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
+local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
 
 local M = {}
 
 local ToolVocabulary = require("vibing.infrastructure.adapter.modules.copilot_tool_vocabulary")
-
---- Resolve language setting
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @return string|nil
-local function resolve_language(opts, config)
-  local language = opts.language
-  if not language and config.language then
-    if type(config.language) == "table" then
-      language = config.language.default or config.language.chat
-    else
-      language = config.language
-    end
-  end
-  return type(language) == "string" and language or nil
-end
-
---- Build context prefix for the prompt
---- @param opts Vibing.AdapterOpts
---- @return string context_prefix Empty string if no context
-local function build_context_prefix(opts)
-  local parts = {}
-  for _, ctx in ipairs(opts.context or {}) do
-    if ctx:match("^@file:") then
-      table.insert(parts, string.format("Context file: %s", ctx:sub(7)))
-    end
-  end
-  if #parts == 0 then
-    return ""
-  end
-  return table.concat(parts, "\n") .. "\n\n"
-end
 
 --- Append permission flags. copilot's non-interactive mode requires --allow-all-tools,
 --- so denies are expressed with --deny-tool rather than an allow list.
@@ -91,16 +60,12 @@ function M.build(prompt, opts, session_id, config)
 
   local full_prompt = prompt
   if not session_id then
-    full_prompt = build_context_prefix(opts) .. prompt
+    full_prompt = CommonBuilder.context_prefix(opts) .. prompt
   end
 
-  local language = resolve_language(opts, config)
-  if language and language ~= "en" then
-    local language_utils = require("vibing.core.utils.language")
-    local lang_name = language_utils.language_names[language]
-    if lang_name then
-      full_prompt = string.format("Always respond in %s (%s).\n\n%s", lang_name, language, full_prompt)
-    end
+  local language_instruction = CommonBuilder.language_instruction(opts, config)
+  if language_instruction then
+    full_prompt = language_instruction .. "\n\n" .. full_prompt
   end
 
   table.insert(cmd, "-p")
