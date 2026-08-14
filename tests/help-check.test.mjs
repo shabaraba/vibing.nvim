@@ -113,10 +113,10 @@ const DISAGREEMENTS = [
     expect: /fixture-nowhere/,
   },
   {
-    name: 'a section numbered out of step with CONTENTS fails',
+    name: 'a renumbered section is reported against its own number, not its neighbour',
     contents: [entry(1, 'One', 'fixture-one'), entry(2, 'Two', 'fixture-two')],
     body: [heading(1, 'One', 'fixture-one'), '', RULE, heading(3, 'Two', 'fixture-two')],
-    expect: /does not match section 3/,
+    expect: /body has no section 2/,
   },
   {
     name: 'a section missing from CONTENTS fails',
@@ -128,7 +128,7 @@ const DISAGREEMENTS = [
     name: 'a CONTENTS entry with no section at all fails',
     contents: [entry(1, 'One', 'fixture-one'), entry(2, 'Two', 'fixture-two')],
     body: [heading(1, 'One', 'fixture-one')],
-    expect: /no matching section/,
+    expect: /body has no section 2/,
   },
 ];
 
@@ -153,7 +153,7 @@ test('a CONTENTS block aligned with spaces is still checked', async () => {
 
   const { code, stderr } = await checkText(text);
   assert.equal(code, 1);
-  assert.match(stderr, /does not match section 5/);
+  assert.match(stderr, /body has no section 2/);
 });
 
 test('a CONTENTS block with no readable rows fails rather than passing', async () => {
@@ -202,4 +202,100 @@ test('a numbered body line ending in a |tag| is not mistaken for a CONTENTS entr
 
   const { code, stderr } = await checkText(text);
   assert.equal(code, 0, stderr);
+});
+
+test('one renumbered section does not cascade into its neighbours', async () => {
+  // Walking the two lists in parallel turned a single mistake into a message per section after
+  // it, and the first one named a section that was fine. Number-keyed matching reports the two
+  // facts about section 3 and says nothing about sections 1 or 2.
+  const text = helpFile({
+    contents: [
+      entry(1, 'One', 'fixture-one'),
+      entry(2, 'Two', 'fixture-two'),
+      entry(3, 'Three', 'fixture-three'),
+    ],
+    body: [
+      heading(1, 'One', 'fixture-one'),
+      '',
+      RULE,
+      heading(2, 'Two', 'fixture-two'),
+      '',
+      RULE,
+      heading(9, 'Three', 'fixture-three'),
+    ],
+  });
+
+  const { code, stderr } = await checkText(text);
+  assert.equal(code, 1);
+  assert.match(stderr, /2 problem/);
+  assert.doesNotMatch(stderr, /section 1\b/);
+});
+
+test('a duplicated section number in CONTENTS is reported', async () => {
+  const text = helpFile({
+    contents: [entry(1, 'One', 'fixture-one'), entry(1, 'Again', 'fixture-again')],
+    body: [heading(1, 'One', 'fixture-one')],
+  });
+
+  const { code, stderr } = await checkText(text);
+  assert.equal(code, 1);
+  assert.match(stderr, /lists section 1 more than once/);
+});
+
+test('a duplicated section number in the body is reported', async () => {
+  const text = helpFile({
+    contents: [entry(1, 'One', 'fixture-one')],
+    body: [heading(1, 'One', 'fixture-one'), '', RULE, heading(1, 'Again', 'fixture-again')],
+  });
+
+  const { code, stderr } = await checkText(text);
+  assert.equal(code, 1);
+  assert.match(stderr, /more than one section numbered 1/);
+});
+
+test('sub-section numbering fails rather than being skipped in silence', async () => {
+  // Neither pattern can read `2.1`, so it used to drop out of the comparison without a word --
+  // checked-looking and unchecked.
+  const text = helpFile({
+    contents: [entry(1, 'One', 'fixture-one'), '    2.1 Sub ......... |fixture-sub|'],
+    body: [heading(1, 'One', 'fixture-one')],
+  });
+
+  const { code, stderr } = await checkText(text);
+  assert.equal(code, 1);
+  assert.match(stderr, /sub-section numbering/);
+});
+
+test('a directory with no help file at all fails', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'vibing-help-'));
+  try {
+    const result = spawnSync('nvim', ['--headless', '-l', 'scripts/check-help.lua', dir], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /no \*\.txt help file/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('every help file in the directory is checked, not just the first', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'vibing-help-'));
+  try {
+    await writeFile(join(dir, 'a.txt'), VALID);
+    // Second file is fine except for one overlong line.
+    await writeFile(join(dir, 'b.txt'), `${VALID}\n${'x'.repeat(90)}\n`);
+
+    const result = spawnSync('nvim', ['--headless', '-l', 'scripts/check-help.lua', dir], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /b\.txt:\d+: 90 columns/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
