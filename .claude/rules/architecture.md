@@ -343,6 +343,12 @@ before simplifying it. The component that collided is often an intermediate one,
 that won it has not necessarily reached the leaf yet — so the loser's `fs_stat` on the leaf
 legitimately finds nothing. Catch-and-recheck still failed 3 times in 200; retrying measured 0 in 320.
 
+Only the race is swallowed. Every other way `mkdir` fails — a read-only filesystem, a permission
+denial, a file where the directory should go — raises `E739` as well, and `ensure_dir` re-raises
+those with the original message. Callers were written against `vim.fn.mkdir`'s raising contract,
+so returning a quiet `false` instead would leave eighteen of them continuing as though the
+directory existed.
+
 ## Chat Fork
 
 `:VibingChatFork` creates a branched conversation from the current chat session.

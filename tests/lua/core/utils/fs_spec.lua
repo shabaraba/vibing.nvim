@@ -74,16 +74,16 @@ describe("fs.ensure_dir", function()
       error("Vim:E739: Cannot create directory /nope: file already exists")
     end
 
-    assert.is_false(Fs.ensure_dir(tmp .. "/never-created"))
+    assert.is_false(pcall(Fs.ensure_dir, tmp .. "/never-created"))
     assert.is_true(attempts <= 5, "retries must be bounded, got " .. attempts)
   end)
 
-  it("reports failure when mkdir returns 0 without raising", function()
+  it("raises when mkdir declines without raising", function()
     vim.fn.mkdir = function()
       return 0
     end
 
-    assert.is_false(Fs.ensure_dir(tmp .. "/never-created"))
+    assert.is_false(pcall(Fs.ensure_dir, tmp .. "/never-created"))
   end)
 
   it("reports failure when the path exists but is a file", function()
@@ -92,7 +92,7 @@ describe("fs.ensure_dir", function()
     local file = tmp .. "/afile"
     vim.fn.writefile({}, file)
 
-    assert.is_false(Fs.ensure_dir(file))
+    assert.is_false(pcall(Fs.ensure_dir, file))
   end)
 end)
 
@@ -111,6 +111,9 @@ describe("mkdir call sites", function()
       end
     end
 
+    -- Positive control: fs.lua itself calls it, so an empty result means the grep looked at the
+    -- wrong tree rather than that the tree is clean.
+    assert.is_true(#hits > 0, "grep found nothing at all -- did it run against the right lua/?")
     assert.equals(0, #offenders, "direct vim.fn.mkdir call(s):\n" .. table.concat(offenders, "\n"))
   end)
 end)

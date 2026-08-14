@@ -47,11 +47,14 @@ end
 ---@return boolean success Whether directory was created or already exists
 local function ensure_registry_dir()
   local dir = M.get_registry_dir()
-  if Fs.ensure_dir(dir) then
+  local ok, err = pcall(Fs.ensure_dir, dir)
+  if ok then
     return true
   end
 
-  vim.notify(string.format("Failed to create registry directory: %s", dir), vim.log.levels.ERROR)
+  -- The reason matters and used to be thrown away: the old code read a second return value
+  -- `vim.fn.mkdir` does not have, so this always said "unknown error".
+  vim.notify(string.format("Failed to create registry directory %s: %s", dir, err), vim.log.levels.ERROR)
   return false
 end
 
