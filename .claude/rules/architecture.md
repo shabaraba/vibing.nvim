@@ -86,7 +86,9 @@ path, export name, description, model candidates. `factory.lua`, `modes.lua` (`V
 from it, so adding a backend is a one-file change (grok was added that way). It deliberately requires nothing, which
 is what keeps the dependency one-way.
 
-Two things stop backend identity leaking into shared code:
+These are the seams that stop backend identity leaking into shared code. The rule they encode:
+**a backend name belongs in that backend's own module, and shared code takes what it is handed.**
+`bin/hooks/pre-tool-use.sh` is the one deliberate exception, and the last bullet says why.
 
 - **Tool vocabulary.** Backends name their tools differently (codex calls an edit `apply_patch`,
   copilot uses `bash`/`view`/`create`/`edit`/`web_search`, grok `search_replace`/
@@ -121,10 +123,52 @@ Two things stop backend identity leaking into shared code:
   once per cwd instead. `$GROK_HOME` is grok's own documented override and is honoured — which is
   also the seam the specs use, since folder trust cascades to subdirectories and never expires.
 
-- **`dynamic_permissions` capability.** `adapter:supports("dynamic_permissions")` is `false` for
-  copilot, because its CLI has no per-run hook flag: permissions are fixed at launch with
-  `--allow-all-tools` + `--deny-tool`, so `permission_mode`, the `ask` list and the approval UI do
-  nothing there. Declared rather than left to be discovered by reading the adapter.
+- **Copilot injects its hook as a plugin.** Copilot has no per-run hook flag, and the two places
+  it reads hooks from are both off limits: `~/.copilot/` is the user's own config and
+  `.github/hooks/` is their repository. But `copilot --plugin-dir <dir>` loads a plugin for that
+  run only, and a plugin may contribute hooks — so `copilot_settings_generator.lua` writes a
+  throwaway plugin to `<cwd>/.vibing/copilot-plugin/` and points `--plugin-dir` at it. The hooks
+  are inlined in `plugin.json` (one file, no sibling `hooks.json`), which works only as a bare
+  event map: the `{"version": 1, "hooks": …}` envelope a standalone hooks file requires is
+  silently ignored when inlined — both forms were run against the CLI.
+  That is what makes `dynamic_permissions` true for copilot. Unlike grok's, it does **not** need a
+  git repository (checked by running copilot in a non-git cwd and reading its own log).
+
+  Three things about copilot's hook contract were captured from copilot 1.0.78 rather than read
+  off its docs, and each one silently disables the gate if got wrong:
+
+  1. **Its schema is not Claude's.** The event is lowercase `preToolUse`, the command goes under
+     `bash`, and the timeout is `timeoutSec`. A matcher in a camelCase event is compiled as a
+     regex, so Claude's `*` is rejected — `~/.copilot/logs` reports "Invalid matcher regex … hook
+     will be skipped" and every tool runs unchecked. The generated file omits the matcher.
+  2. **It reads a flat decision.** `{"permissionDecision":…}` on stdout; the
+     `{"hookSpecificOutput":{…}}` wrapper is ignored, and a nested deny let the tool run. Exit 2
+     denies too, but the model is told only "hook exited with code 2" — stderr is dropped, where
+     Claude uses it to carry the reason. So `pre-tool-use.sh` takes a `copilot` argument and
+     unwraps the response instead of re-encoding it (a reason containing a quote survives).
+  3. **A hook timeout fails _open_.** Every non-zero exit fails closed, but a hook that outlives
+     `timeoutSec` is ignored and the tool proceeds. The generated `timeoutSec` therefore stays
+     well above the ~120s that `pre-tool-use.sh` waits before denying.
+
+  The payload differs too — `toolName` with `toolArgs` as a JSON _string_ — which
+  `copilot_tool_vocabulary.normalize_payload` handles, the same seam grok uses.
+
+  **Why the backend name is in the shared script**, against the rule above: what varies is not
+  only the JSON shape but the deny _signalling convention_ — Claude denies with exit 2 + stderr,
+  copilot with exit 0 + stdout. That is shell semantics, so it lives in the shell. The
+  alternatives are worse: a second script would duplicate the ~90 lines that are the security
+  half of this one (comm dir, atomic `.req` rename, `nc` fail-closed, the 120s poll, the timeout
+  deny), and a fail-closed protocol that exists twice is one that drifts into failing open;
+  writing the decision in the backend's own format from `permission.lua` would move process
+  control into Lua and force the handler — which deliberately knows no backend name — to pick an
+  encoder, including on the fallback deny path where no `active_opts` resolve. Passing no
+  argument selects Claude's convention, which is what the other three backends do.
+
+  The gate is skipped in two cases, both by `copilot_cli.lua` rather than the generator:
+  `bypassPermissions` (the mode asked for no gate) and `lightweight` (`core/types.lua` obliges
+  every adapter to register no hooks for utility calls). And installing it is allowed to fail:
+  the generator runs under `pcall`, and a failure warns and falls back to the static
+  `--deny-tool` flags rather than taking the turn down.
 
 ## Module Structure
 

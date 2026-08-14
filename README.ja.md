@@ -370,13 +370,13 @@ graph TB
 setup の `adapter = "claude"|"codex"|"copilot"` でグローバルに、チャットファイルの frontmatter に
 `agent: claude` / `agent: codex` / `agent: copilot` を書けばチャット単位で切り替えられます。
 
-> **注意:** Copilot バックエンドはチャット内のツール承認 UI に未対応です。`--allow-all-tools` で
-> 実行され、`permissions.deny` は copilot の `--deny-tool` フラグ経由で反映されます。
-> `permissions.ask` を強制しているのは承認 UI なので、Copilot では ask リストは効果がなく、
-> 指定したツールは確認なしで実行されます。実行させたくないものは `permissions.deny` に入れてください。
-> `permissions.deny` が対応するのは `Bash`(`Bash(cmd:*)` 形式を含む)・`Write`・`Edit`・`WebFetch`・
-> `WebSearch` です。それ以外のツール名は Copilot 側に対応する権限パターンが無いため無視され、
-> その際は一度だけ警告を出します。
+> **注意:** Copilot バックエンドでは、`permissions.mode`・`permissions.ask`・チャット内のツール
+> 承認 UI を、vibing.nvim が生成する Copilot プラグイン(`.vibing/copilot-plugin/`)経由で適用
+> します。これは実行ごとに `copilot --plugin-dir` で読み込まれるもので、ユーザーの
+> `~/.copilot/` の設定・ログイン情報には一切触れません。Copilot の静的な `--deny-tool` フラグも
+> 引き続きバックストップとして渡します。対応するのは `Bash`(`Bash(cmd:*)` 形式を含む)・
+> `Write`・`Edit`・`WebFetch`・`WebSearch` で、Copilot 側に権限パターンが無いツール名を落とす
+> 際は一度だけ警告を出します。
 
 ### なぜ Node.js が必要なのですか?
 

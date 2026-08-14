@@ -107,6 +107,22 @@ describe("copilot_command_builder", function()
       assert.is_true(contains(cmd, "write"))
     end)
 
+    it("loads the generated hook plugin with --plugin-dir", function()
+      local cmd = Builder.build("hi", { permission_mode = "default" }, nil, {}, "/proj/.vibing/copilot-plugin")
+      assert.are.equal("/proj/.vibing/copilot-plugin", value_after(cmd, "--plugin-dir"))
+    end)
+
+    it("omits --plugin-dir when no plugin was generated", function()
+      local cmd = Builder.build("hi", { permission_mode = "default" }, nil, {})
+      assert.is_false(contains(cmd, "--plugin-dir"))
+    end)
+
+    it("omits --plugin-dir under bypassPermissions", function()
+      -- The mode asked for no gate at all, so the hook that implements one is not loaded.
+      local cmd = Builder.build("hi", { permission_mode = "bypassPermissions" }, nil, {}, "/proj/plugin")
+      assert.is_false(contains(cmd, "--plugin-dir"))
+    end)
+
     it("ignores the deny list under bypassPermissions", function()
       local cmd = Builder.build("hi", {
         permission_mode = "bypassPermissions",
