@@ -79,6 +79,35 @@ function M.build(prompt, opts, session_id, config, hook_args)
     -- 000 where the same request outside the sandbox returns 200. That closes the exfiltration
     -- path a prompt injection in the summarized transcript would otherwise have, which matters
     -- because the shell tool itself cannot be taken away.
+    --
+    -- `--ignore-user-config` is what actually keeps the user's MCP servers out. It replaced
+    -- `-c mcp_servers={}`, which looked equivalent and did nothing: `-c` *deep-merges* into
+    -- config.toml, so an empty table adds no keys and removes none. Measured against codex
+    -- 0.147, not inferred -- `codex mcp list -c 'mcp_servers={}'` still lists every configured
+    -- server, and under `codex exec` a server whose command touches a file still got launched and
+    -- still wrote it. That last part is why this is a boundary and not a preference: codex spawns
+    -- MCP servers itself, so the process runs *outside* the read-only sandbox above. There is no
+    -- narrower switch -- mcp.enabled, tools.mcp, features.mcp, mcp_enabled and disable_mcp are all
+    -- unknown fields, `mcp_servers=false` is a type error, and per-server
+    -- `mcp_servers.<name>.enabled=false` works but needs a name list that would go stale silently
+    -- the moment the user added a server.
+    --
+    -- The cost is the one #571 named: this also drops model_provider, so a user on a custom
+    -- provider gets utility calls against the default OpenAI endpoint. Accepted now that the
+    -- alternative is known to be a hole rather than an equivalent. Auth is unaffected -- codex
+    -- reads it from CODEX_HOME either way.
+    table.insert(cmd, "--ignore-user-config")
+    -- `--strict-config` makes codex reject unknown config keys, so the day it renames or drops one
+    -- of the overrides below, the utility call fails loudly instead of quietly running unfenced.
+    -- Every restriction here is a safety boundary whose absence is otherwise unobservable, so this
+    -- fails closed on purpose (#574).
+    --
+    -- This is only safe in company with --ignore-user-config: on its own, --strict-config also
+    -- strictifies the user's config.toml, and one unrecognised field of their own would break
+    -- every title generation. With the user config unread, it validates our overrides and nothing
+    -- else. Both flags have existed since at least codex 0.140 and are accepted on
+    -- `codex exec resume` too, so unlike `-s` neither is lost on the /summarize path.
+    table.insert(cmd, "--strict-config")
     table.insert(cmd, "-c")
     table.insert(cmd, 'sandbox_mode="read-only"')
     table.insert(cmd, "-c")
@@ -87,13 +116,12 @@ function M.build(prompt, opts, session_id, config, hook_args)
     -- until the timeout. Verified value: one of untrusted/on-failure/on-request/granular/never.
     table.insert(cmd, "-c")
     table.insert(cmd, 'approval_policy="never"')
-    -- The other two halves of what `lightweight` promises (core/types.lua): no MCP tools and no
-    -- project instructions. These are codex's answers to claude's --strict-mcp-config/--mcp-config
-    -- and --setting-sources "". `--ignore-user-config` would cover both and is deliberately not
-    -- used: unlike claude's flag it also drops model_provider and base URL, so a user on a custom
-    -- provider would lose utility calls entirely.
-    table.insert(cmd, "-c")
-    table.insert(cmd, "mcp_servers={}")
+    -- The last piece of what `lightweight` promises (core/types.lua): no project instructions.
+    -- codex's answer to claude's --setting-sources "". `--ignore-user-config` does *not* cover
+    -- this: AGENTS.md is discovered from the cwd, not from config.toml, so ignoring the user
+    -- config only restores this key's 32768-byte default. Verified with `codex debug prompt-input`
+    -- (which renders the model-visible prompt without calling the model): a marker line in
+    -- AGENTS.md is present without this override and absent with it.
     table.insert(cmd, "-c")
     table.insert(cmd, "project_doc_max_bytes=0")
 

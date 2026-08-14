@@ -277,11 +277,41 @@ Claude removes the tools outright with `--tools ""`. Codex cannot: probing its c
 `--strict-config` (which rejects unknown fields) against codex 0.147 shows `tools.shell`,
 `tools.apply_patch`, `tools.view_image`, `tools.plan_tool` and `tools.mcp` are all unknown fields,
 and `tools.web_search` is the only tool toggle that exists. So `codex_command_builder` fences the
-call in instead — `sandbox_mode="read-only"`, `tools.web_search=false`, `approval_policy="never"` —
-plus `mcp_servers={}` and `project_doc_max_bytes=0` — and `codex_cli.lua` skips hook
-registration, matching `claude_cli.lua`. Those last two are codex's answers to claude's
-`--strict-mcp-config`/`--mcp-config` and `--setting-sources ""`: without them a utility call
-still reached the user's MCP servers and still read `AGENTS.md`.
+call in instead — `sandbox_mode="read-only"`, `tools.web_search=false`, `approval_policy="never"`,
+`project_doc_max_bytes=0`, plus the flags `--ignore-user-config --strict-config` — and
+`codex_cli.lua` skips hook registration, matching `claude_cli.lua`. `project_doc_max_bytes=0` and
+`--ignore-user-config` are codex's answers to claude's `--setting-sources ""` and
+`--strict-mcp-config`/`--mcp-config`: without them a utility call still read `AGENTS.md` and still
+reached the user's MCP servers. `--strict-config` is not a fence of its own — it is what keeps the
+others from lapsing unnoticed.
+
+**`-c mcp_servers={}` used to stand in for that and did nothing**, which is what #574 was about.
+`-c` _deep-merges_ into `config.toml`, so an empty table adds no keys and removes none: measured
+against codex 0.147, `codex mcp list -c 'mcp_servers={}'` still lists every configured server, and
+under `codex exec` a server whose command touches a file was still launched and still wrote it.
+That last part makes it a boundary rather than a preference — codex spawns MCP servers itself, so
+the process runs **outside** the read-only sandbox. No narrower switch exists (`mcp.enabled`,
+`tools.mcp`, `features.mcp`, `mcp_enabled`, `disable_mcp` are all unknown fields; `mcp_servers=false`
+is a type error), and per-server `mcp_servers.<name>.enabled=false` works but needs a name list
+that goes stale the moment a server is added — silently, which is the failure mode being fixed.
+`--ignore-user-config` is therefore accepted along with its known cost: it also drops
+`model_provider`, so a user on a custom provider gets utility calls against the default OpenAI
+endpoint. Auth is unaffected; codex reads it from `CODEX_HOME` either way.
+
+`--ignore-user-config` does **not** cover `project_doc_max_bytes`. `AGENTS.md` is discovered from
+the cwd, not from `config.toml`, so dropping the user config only restores the key's 32768-byte
+default. Verified with `codex debug prompt-input`, which renders the model-visible prompt without
+calling the model: a marker line in `AGENTS.md` is present without the override and absent with it.
+
+**`--strict-config` is what stops the rest of that list from lapsing in silence.** Codex ignores
+unknown `-c` keys, so the day it renames or drops one, the fence would come off with no error and
+no warning — and unlike the degradation `rate_limit.lua` tolerates, what is lost here is a safety
+boundary whose absence is unobservable. With the flag, the utility call fails loudly instead. It is
+only safe **paired with `--ignore-user-config`**: on its own it also strictifies the user's
+`config.toml`, so one unrecognised field of their own would break every title generation — which is
+what made #571 reject the flag. With the user config unread it validates our overrides and nothing
+else. Both flags have existed since at least codex 0.140 and are accepted on `codex exec resume`
+too, so unlike `-s` neither is lost on the `/summarize` path.
 
 `read-only` blocks writes **and** network, verified by running commands under `codex sandbox`
 rather than read off the docs: a write reports `Operation not permitted` and `curl` returns
@@ -289,8 +319,8 @@ rather than read off the docs: a write reports `Operation not permitted` and `cu
 tool itself cannot be removed, so the sandbox is the only thing closing the exfiltration path
 a prompt injection in the summarized transcript would otherwise have.
 
-Three details there are not interchangeable. They are `-c` overrides rather than the `-s` flag
-because `/summarize` passes a session id and `codex exec resume` does not accept `-s`. The
+Three details there are not interchangeable. The restrictions are `-c` overrides rather than the
+`-s` flag because `/summarize` passes a session id and `codex exec resume` does not accept `-s`. The
 restriction ignores `permission_mode` entirely, `bypassPermissions` included: the user put the
 _chat_ in that mode, and a title generated behind their back is not the call they made. And
 `utility_model` still goes through the Claude-name filter, so its `sonnet` default becomes no

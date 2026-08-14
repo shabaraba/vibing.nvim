@@ -42,7 +42,7 @@
 ---@field on_tool_use_full fun(tool: string, input: table)? 表示用に間引かない生のツール入力（eval用）
 ---@field _session_id string?
 ---@field _session_id_explicit boolean?
----@field lightweight boolean? タイトル生成・要約等の軽量ユーティリティ呼び出し用フラグ。各アダプタは「ツールを使わせない・プロジェクト設定を読ませない・フックを登録しない・utility_model を使う」を果たす責務を負う（claude は --tools ""、codex は read-only サンドボックス）
+---@field lightweight boolean? タイトル生成・要約等の軽量ユーティリティ呼び出し用フラグ。各アダプタは「ツールを使わせない・プロジェクト設定とユーザー MCP サーバーを読ませない・フックを登録しない・utility_model を使う」、かつ「これらが CLI 側のスキーマ変更で黙って外れないこと」を果たす責務を負う（claude は --tools ""、codex は read-only サンドボックス + --ignore-user-config）
 
 ---@class Vibing.AdapterResponse
 ---@field content string?
