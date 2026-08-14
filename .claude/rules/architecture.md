@@ -97,6 +97,7 @@ Two things stop backend identity leaking into shared code:
 
   The three are separate because backends disagree at three different levels, and the order
   matters — each step feeds the next:
+
   1. `normalize_payload` — the hook payload's own key names. Claude sends
      `tool_name`/`tool_input`; grok sends `toolName`/`toolInput`. Read straight through, the
      handler sees a nil tool name, so the two steps below get nothing to work on, every rule

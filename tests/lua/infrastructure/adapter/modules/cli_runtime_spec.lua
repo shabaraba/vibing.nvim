@@ -172,22 +172,24 @@ for _, backend in ipairs(helper.adapters()) do
     end)
 
     it("execute cancels a run that never finishes rather than leaving it alive", function()
+      -- The timeout is module-level state, so it is restored before the assertions rather than
+      -- after: a failing assertion here would otherwise leave every later spec on a 50ms budget.
       local original_timeout = CliRuntime.INITIAL_RESPONSE_TIMEOUT_MS
-      CliRuntime.INITIAL_RESPONSE_TIMEOUT_MS = 50
+      local original_cancel = adapter.cancel
 
       local cancelled_with = false
-      local original_cancel = adapter.cancel
       adapter.cancel = function(self, handle_id)
         cancelled_with = handle_id
         return original_cancel(self, handle_id)
       end
 
+      CliRuntime.INITIAL_RESPONSE_TIMEOUT_MS = 50
       -- stub_system never invokes on_exit, so on_done never fires: the timeout path.
-      local result = adapter:execute("hi", {})
-
+      local ok, result = pcall(adapter.execute, adapter, "hi", {})
       CliRuntime.INITIAL_RESPONSE_TIMEOUT_MS = original_timeout
       adapter.cancel = original_cancel
 
+      assert.is_true(ok, tostring(result))
       assert.equals("Execution timeout", result.error)
       assert.is_string(cancelled_with, "the timed-out handle was not cancelled")
     end)
