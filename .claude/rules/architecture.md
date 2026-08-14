@@ -249,7 +249,16 @@ Claude removes the tools outright with `--tools ""`. Codex cannot: probing its c
 `tools.apply_patch`, `tools.view_image`, `tools.plan_tool` and `tools.mcp` are all unknown fields,
 and `tools.web_search` is the only tool toggle that exists. So `codex_command_builder` fences the
 call in instead — `sandbox_mode="read-only"`, `tools.web_search=false`, `approval_policy="never"` —
-and `codex_cli.lua` skips hook registration, matching `claude_cli.lua`.
+plus `mcp_servers={}` and `project_doc_max_bytes=0` — and `codex_cli.lua` skips hook
+registration, matching `claude_cli.lua`. Those last two are codex's answers to claude's
+`--strict-mcp-config`/`--mcp-config` and `--setting-sources ""`: without them a utility call
+still reached the user's MCP servers and still read `AGENTS.md`.
+
+`read-only` blocks writes **and** network, verified by running commands under `codex sandbox`
+rather than read off the docs: a write reports `Operation not permitted` and `curl` returns
+`000` where the same request outside the sandbox returns `200`. That matters because the shell
+tool itself cannot be removed, so the sandbox is the only thing closing the exfiltration path
+a prompt injection in the summarized transcript would otherwise have.
 
 Three details there are not interchangeable. They are `-c` overrides rather than the `-s` flag
 because `/summarize` passes a session id and `codex exec resume` does not accept `-s`. The

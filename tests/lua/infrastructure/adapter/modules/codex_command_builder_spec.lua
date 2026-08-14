@@ -59,6 +59,17 @@ describe("codex_command_builder", function()
       assert.is_true(vim.tbl_contains(config_overrides(cmd), 'approval_policy="never"'))
     end)
 
+    it("reaches none of the user's MCP servers", function()
+      -- codex's answer to claude's --strict-mcp-config + empty --mcp-config.
+      local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, {}, nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), "mcp_servers={}"))
+    end)
+
+    it("reads no AGENTS.md, the way the claude path reads no CLAUDE.md", function()
+      local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, {}, nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), "project_doc_max_bytes=0"))
+    end)
+
     it("does not fall back to the workspace-write sandbox", function()
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, {}, nil)
       assert.is_nil(find_flag(cmd, "-s"))
@@ -105,9 +116,15 @@ describe("codex_command_builder", function()
     it("are unaffected by the lightweight restrictions", function()
       local cmd = codex_command_builder.build("hi", {}, nil, {}, nil)
       local overrides = config_overrides(cmd)
-      assert.is_false(vim.tbl_contains(overrides, 'sandbox_mode="read-only"'))
-      assert.is_false(vim.tbl_contains(overrides, "tools.web_search=false"))
-      assert.is_false(vim.tbl_contains(overrides, 'approval_policy="never"'))
+      for _, restriction in ipairs({
+        'sandbox_mode="read-only"',
+        "tools.web_search=false",
+        'approval_policy="never"',
+        "mcp_servers={}",
+        "project_doc_max_bytes=0",
+      }) do
+        assert.is_false(vim.tbl_contains(overrides, restriction), restriction .. " leaked")
+      end
       assert.equals("workspace-write", cmd[find_flag(cmd, "-s") + 1])
     end)
 
