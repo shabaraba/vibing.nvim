@@ -77,7 +77,19 @@ not require a dot leader, because space-aligned CONTENTS is ordinary vimdoc and 
 check entirely. A file with no CONTENTS heading has nothing to disagree with and passes.
 
 Section headings are matched at column 0 on purpose: that is what keeps a heading-shaped line
-inside an indented `>` code example from being read as a real section.
+inside an indented `>` code example from being read as a real section. CONTENTS rows cannot be
+anchored that way — they are indented — so they are read only from inside the CONTENTS block, and
+headings only from outside it. Neither side depends on the two patterns never overlapping.
+
+CONTENTS and the body are matched **by section number**, not by position. Walking the two lists in
+parallel meant one renumbered section shifted everything after it, so a single typo reported as a
+cascade and the first message named a section that was fine. Duplicate numbers on either side are
+reported as such.
+
+Sub-section numbering (`2.1`) is **rejected rather than skipped**. Neither pattern can read it, so
+it used to drop out of the comparison without a word — checked-looking and unchecked, which is the
+failure this checker exists to prevent. Supporting it should be a decision, not something
+discovered from a green run.
 
 `tests/help-check.test.mjs` pins each failure the gate is supposed to catch, including both width
 cases and both fail-closed cases. The CI step gates the document; that file gates the checker.

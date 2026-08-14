@@ -24,36 +24,92 @@ local function fail(fmt, ...)
   table.insert(problems, string.format(fmt, ...))
 end
 
---- The lines inside the CONTENTS section, or nil when the file has no CONTENTS heading.
+--- A sub-section, which neither pattern above can read because both require whitespace straight
+--- after the dot. Detected explicitly so it fails rather than being dropped from the comparison
+--- without a word: silently skipping is the failure mode this whole checker exists to prevent.
 ---
---- Scoping matters: CONTENTS_ROW cannot be anchored at column 0 the way SECTION_HEADING is, since
---- its rows are indented. Run over the whole file it also matches an ordinary body line that ends
---- in a `|tag|` reference -- `    4. See |vibing-commands|` in a troubleshooting list, say --
---- which shifts every index after it and reports a section that is present as missing.
-local function contents_block(lines)
+--- Two forms, scoped the same way as the rows they would otherwise have been: `    2.1 Sub ...`
+--- inside the CONTENTS block, and `2.1 SUB ...` at column 0 in the body. Scanning the whole file
+--- for either would flag ordinary prose and `>` code examples that merely start with `N.M`.
+local CONTENTS_SUBSECTION = '^%s*%d+%.%d'
+local SECTION_SUBSECTION = '^%d+%.%d'
+
+--- Where the CONTENTS section starts and ends, or nil when the file has no CONTENTS heading.
+---
+--- Scoping matters in both directions. CONTENTS_ROW cannot be anchored at column 0 the way
+--- SECTION_HEADING is, since its rows are indented; run over the whole file it also matches an
+--- ordinary body line ending in a `|tag|` reference -- `    4. See |vibing-commands|` in a
+--- troubleshooting list, say. And scanning for headings *inside* the CONTENTS block would rely on
+--- the two patterns never overlapping, which is true today only because one ends in `|tag|` and
+--- the other in `*tag*`. Neither side has to depend on that.
+---
+--- @return integer? first line after the CONTENTS heading
+--- @return integer? last line before the rule that closes the section
+local function contents_range(lines)
   local first = nil
   for index, line in ipairs(lines) do
     if not first then
       if line:match('^CONTENTS%f[%W]') then
-        first = index
+        first = index + 1
       end
     elseif line:match('^=====') then
-      return vim.list_slice(lines, first + 1, index - 1)
+      return first, index - 1
     end
   end
-  return first and vim.list_slice(lines, first + 1) or nil
+  return first, first and #lines or nil
 end
 
---- The `{ number, tag }` of every line matching `pattern`, in the order they appear.
-local function numbered_rows(lines, pattern)
+--- The `{ number, tag }` of every line matching `pattern` within `range`, in the order they appear.
+--- @param range table? `{ from, to }` line bounds, or nil for the whole list
+local function numbered_rows(lines, pattern, range)
   local rows = {}
-  for _, line in ipairs(lines) do
-    local number, tag = line:match(pattern)
-    if number then
-      table.insert(rows, { number = tonumber(number), tag = tag })
+  for index, line in ipairs(lines) do
+    local inside = range == nil or (index >= range.from and index <= range.to)
+    if inside then
+      local number, tag = line:match(pattern)
+      if number then
+        table.insert(rows, { number = tonumber(number), tag = tag, lnum = index })
+      end
     end
   end
   return rows
+end
+
+--- Rows keyed by their section number, plus any number that appeared more than once.
+---
+--- Keying by number rather than by position is what keeps one mistake to one message. Walking the
+--- two lists in parallel meant a single inserted or renumbered section shifted everything after
+--- it, so one typo reported as a cascade and the first message named a section that was fine.
+local function by_number(rows)
+  local map, seen_duplicate, duplicates = {}, {}, {}
+  for _, row in ipairs(rows) do
+    if map[row.number] then
+      -- Once per number, not once per repeat: three copies of `2.` is one mistake to report.
+      if not seen_duplicate[row.number] then
+        seen_duplicate[row.number] = true
+        table.insert(duplicates, row.number)
+      end
+    else
+      map[row.number] = row
+    end
+  end
+  table.sort(duplicates)
+  return map, duplicates
+end
+
+--- Every number present in either side, ascending, so diagnostics come out in document order.
+local function all_numbers(a, b)
+  local seen, numbers = {}, {}
+  for _, map in ipairs({ a, b }) do
+    for number in pairs(map) do
+      if not seen[number] then
+        seen[number] = true
+        table.insert(numbers, number)
+      end
+    end
+  end
+  table.sort(numbers)
+  return numbers
 end
 
 -- 1. helptags must be generatable. Duplicate or malformed tags fail here, and only here --
@@ -85,40 +141,69 @@ for _, file in ipairs(files) do
     end
   end
 
-  -- 3. CONTENTS and the body must agree, entry by entry, on both number and tag. Comparing them
-  -- in order covers a mistyped link too: a heading only matches SECTION_HEADING if it defines
-  -- its own tag, so an entry pointing at a tag nothing defines shows up as a mismatch here.
+  -- 3. CONTENTS and the body must agree, section number by section number, on the tag. That also
+  -- covers a mistyped link: a heading only matches SECTION_HEADING if it defines its own tag, so
+  -- an entry pointing at a tag nothing defines has no heading to pair with.
   --
   -- This fails closed. Keying it on "did we parse any entries" instead would let one unreadable
   -- CONTENTS block disable the check while still reporting OK, which is the exact failure #542
   -- was filed about -- so a file with a CONTENTS heading and no parseable rows is a problem,
   -- not a pass. A file with no CONTENTS heading at all has nothing to disagree with.
-  local block = contents_block(lines)
-  local entries = block and numbered_rows(block, CONTENTS_ROW) or {}
+  local from, to = contents_range(lines)
+  if not from then
+    goto continue
+  end
 
-  if block and #entries == 0 then
-    fail('%s: CONTENTS block found but no `N. Title |tag|` rows could be read from it', name)
-  elseif block then
-    local headings = numbered_rows(lines, SECTION_HEADING)
+  do
+    local contents = { from = from, to = to }
+    local entries = numbered_rows(lines, CONTENTS_ROW, contents)
 
-    for index = 1, math.max(#entries, #headings) do
-      local entry, heading = entries[index], headings[index]
+    -- Sub-sections read as neither an entry nor a heading, so they would drop out of the
+    -- comparison unannounced. Say so instead; supporting them is a deliberate decision, not
+    -- something to discover from a green run.
+    for lnum, line in ipairs(lines) do
+      local in_contents = lnum >= from and lnum <= to
+      local pattern = in_contents and CONTENTS_SUBSECTION or SECTION_SUBSECTION
+      if line:match(pattern) then
+        fail('%s:%d: sub-section numbering (N.M) is not checked; flatten it or teach the checker', name, lnum)
+      end
+    end
+
+    if #entries == 0 then
+      fail('%s: CONTENTS block found but no `N. Title |tag|` rows could be read from it', name)
+      goto continue
+    end
+
+    local headings = numbered_rows(lines, SECTION_HEADING, nil)
+    -- Headings inside the CONTENTS block are not sections. Today the two patterns cannot both
+    -- match one line, but nothing enforces that, so the range does the work instead.
+    headings = vim.tbl_filter(function(row)
+      return row.lnum < from or row.lnum > to
+    end, headings)
+
+    local entry_by_number, entry_dupes = by_number(entries)
+    local heading_by_number, heading_dupes = by_number(headings)
+
+    for _, number in ipairs(entry_dupes) do
+      fail('%s: CONTENTS lists section %d more than once', name, number)
+    end
+    for _, number in ipairs(heading_dupes) do
+      fail('%s: the body has more than one section numbered %d', name, number)
+    end
+
+    for _, number in ipairs(all_numbers(entry_by_number, heading_by_number)) do
+      local entry, heading = entry_by_number[number], heading_by_number[number]
       if not heading then
-        fail('%s: CONTENTS lists %d. |%s| but the body has no matching section', name, entry.number, entry.tag)
+        fail('%s: CONTENTS lists %d. |%s| but the body has no section %d', name, number, entry.tag, number)
       elseif not entry then
-        fail('%s: section %d. *%s* is missing from CONTENTS', name, heading.number, heading.tag)
-      elseif heading.number ~= entry.number or heading.tag ~= entry.tag then
-        fail(
-          '%s: CONTENTS entry %d. |%s| does not match section %d. *%s*',
-          name,
-          entry.number,
-          entry.tag,
-          heading.number,
-          heading.tag
-        )
+        fail('%s: section %d. *%s* is missing from CONTENTS', name, number, heading.tag)
+      elseif entry.tag ~= heading.tag then
+        fail('%s: section %d links to |%s| in CONTENTS but defines *%s*', name, number, entry.tag, heading.tag)
       end
     end
   end
+
+  ::continue::
 end
 
 if #problems > 0 then
