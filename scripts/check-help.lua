@@ -1,10 +1,5 @@
 -- Verify the Vim help files under doc/ the way Vim itself would read them.
 --
--- Nothing in CI looked at doc/*.txt before this: `npm run check` only compiles lua/, and the
--- prettier/eslint/markdownlint steps do not match `.txt`. The helptags, the 78-column rule and
--- the CONTENTS/tag correspondence were all verified by hand while writing #531, which is why
--- they were about to rot (#542).
---
 -- Usage:
 --   nvim --headless -l scripts/check-help.lua [doc-dir]
 --
@@ -14,6 +9,14 @@
 
 local MAX_WIDTH = 78
 
+-- `    1. Introduction ....... |vibing-introduction|` -- a CONTENTS row. The leader is left
+-- unconstrained: dots and plain spaces are both ordinary vimdoc style, and requiring dots made
+-- the whole CONTENTS check below silently skip a space-aligned file.
+local CONTENTS_ROW = '^%s*(%d+)%.%s+.*|(%S-)|%s*$'
+-- `1. INTRODUCTION            *vibing-introduction*` -- a section heading. Anchored at column 0,
+-- which is what keeps a heading-shaped line inside an indented `>` code example from matching.
+local SECTION_HEADING = '^(%d+)%.%s+%S.-%s+%*([^%*%s]+)%*%s*$'
+
 local doc_dir = (arg and arg[1]) or 'doc'
 local problems = {}
 
@@ -21,40 +24,16 @@ local function fail(fmt, ...)
   table.insert(problems, string.format(fmt, ...))
 end
 
---- Every `*tag*` the file defines. Vim's own definition: an asterisk-delimited run with no
---- whitespace or asterisk inside it.
-local function defined_tags(lines)
-  local tags = {}
+--- The `{ number, tag }` of every line matching `pattern`, in the order they appear.
+local function numbered_rows(lines, pattern)
+  local rows = {}
   for _, line in ipairs(lines) do
-    for tag in line:gmatch('%*([^%*%s]+)%*') do
-      tags[tag] = true
-    end
-  end
-  return tags
-end
-
---- The `N. Title ....... |tag|` rows of the CONTENTS block, in the order they appear.
-local function contents_entries(lines)
-  local entries = {}
-  for _, line in ipairs(lines) do
-    local number, tag = line:match('^%s*(%d+)%.%s+.-%s%.%.+%s*|(%S-)|%s*$')
+    local number, tag = line:match(pattern)
     if number then
-      table.insert(entries, { number = tonumber(number), tag = tag })
+      table.insert(rows, { number = tonumber(number), tag = tag })
     end
   end
-  return entries
-end
-
---- The `N. HEADING                *tag*` section headings, in the order they appear.
-local function section_headings(lines)
-  local headings = {}
-  for _, line in ipairs(lines) do
-    local number, tag = line:match('^(%d+)%.%s+%S.-%s+%*([^%*%s]+)%*%s*$')
-    if number then
-      table.insert(headings, { number = tonumber(number), tag = tag })
-    end
-  end
-  return headings
+  return rows
 end
 
 -- 1. helptags must be generatable. Duplicate or malformed tags fail here, and only here --
@@ -86,22 +65,34 @@ for _, file in ipairs(files) do
     end
   end
 
-  -- 3. CONTENTS must agree with the body: every entry links to a tag that exists, and the
-  -- section headings carry the same numbers and tags in the same order.
-  local entries = contents_entries(lines)
-  if #entries > 0 then
-    local tags = defined_tags(lines)
-    for _, entry in ipairs(entries) do
-      if not tags[entry.tag] then
-        fail('%s: CONTENTS entry %d links to |%s|, which no *%s* defines', name, entry.number, entry.tag, entry.tag)
-      end
+  -- 3. CONTENTS and the body must agree, entry by entry, on both number and tag. Comparing them
+  -- in order covers a mistyped link too: a heading only matches SECTION_HEADING if it defines
+  -- its own tag, so an entry pointing at a tag nothing defines shows up as a mismatch here.
+  --
+  -- This fails closed. Keying it on "did we parse any entries" instead would let one unreadable
+  -- CONTENTS block disable the check while still reporting OK, which is the exact failure #542
+  -- was filed about -- so a file with a CONTENTS heading and no parseable rows is a problem,
+  -- not a pass. A file with no CONTENTS heading at all has nothing to disagree with.
+  local has_contents = false
+  for _, line in ipairs(lines) do
+    if line:match('^CONTENTS%f[%s]') then
+      has_contents = true
+      break
     end
+  end
 
-    local headings = section_headings(lines)
-    for index, entry in ipairs(entries) do
-      local heading = headings[index]
+  local entries = numbered_rows(lines, CONTENTS_ROW)
+  if has_contents and #entries == 0 then
+    fail('%s: CONTENTS block found but no `N. Title |tag|` rows could be read from it', name)
+  elseif has_contents then
+    local headings = numbered_rows(lines, SECTION_HEADING)
+
+    for index = 1, math.max(#entries, #headings) do
+      local entry, heading = entries[index], headings[index]
       if not heading then
         fail('%s: CONTENTS lists %d. |%s| but the body has no matching section', name, entry.number, entry.tag)
+      elseif not entry then
+        fail('%s: section %d. *%s* is missing from CONTENTS', name, heading.number, heading.tag)
       elseif heading.number ~= entry.number or heading.tag ~= entry.tag then
         fail(
           '%s: CONTENTS entry %d. |%s| does not match section %d. *%s*',
@@ -112,10 +103,6 @@ for _, file in ipairs(files) do
           heading.tag
         )
       end
-    end
-    if #headings > #entries then
-      local extra = headings[#entries + 1]
-      fail('%s: section %d. *%s* is missing from CONTENTS', name, extra.number, extra.tag)
     end
   end
 end

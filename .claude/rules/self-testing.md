@@ -67,9 +67,28 @@ A byte count rejects the `•` and `—` already in `vibing.txt`; a character co
 line run to 156 columns. Only Vim's own measure is right, and it already honours `ambiwidth`.
 
 `:helptags` raises a Vim error instead of setting an exit code, so the checker wraps it in `pcall`
-— nvim otherwise prints `E154` and still exits 0. `tests/help-check.test.mjs` pins each failure the
-gate is supposed to catch, including both width cases above; the CI step gates the document, that
-file gates the checker.
+— nvim otherwise prints `E154` and still exits 0.
+
+The CONTENTS check **fails closed**, which is the part worth not undoing. Keying it on "did any
+rows parse" would let one unreadable CONTENTS block switch the check off while the run still
+reported OK — the same shape of dead gate the whole exercise is about. So a file with a `CONTENTS`
+heading and no readable `N. Title |tag|` rows is a failure, and the row pattern deliberately does
+not require a dot leader, because space-aligned CONTENTS is ordinary vimdoc and used to skip the
+check entirely. A file with no CONTENTS heading has nothing to disagree with and passes.
+
+Section headings are matched at column 0 on purpose: that is what keeps a heading-shaped line
+inside an indented `>` code example from being read as a real section.
+
+`tests/help-check.test.mjs` pins each failure the gate is supposed to catch, including both width
+cases and both fail-closed cases. The CI step gates the document; that file gates the checker.
+
+## The Lua Syntax Gate Had the Same Hole
+
+`npm run check` could not fail. `find lua -name '*.lua' -exec luac -p {} \;` reports `find`'s exit
+status, not `luac`'s, so a file that would not compile printed its error and CI went green. It is
+`-exec ... +` now, which propagates, and `tests/lua-syntax-gate.test.mjs` holds it there — reading
+the command out of `package.json` rather than restating it, so the test cannot pass against a
+command the project no longer runs.
 
 ## 3-Try Auto-Fix Rule
 

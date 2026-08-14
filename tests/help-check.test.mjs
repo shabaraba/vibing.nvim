@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 /**
- * scripts/check-help.lua is the only thing in CI that reads doc/*.txt, and CI reads nothing but
- * its exit code. These tests pin that exit code against each failure it is supposed to catch --
- * a gate that cannot fail is how doc/vibing.txt went unchecked in the first place (#542).
+ * scripts/check-help.lua is what CI runs over doc/*.txt, and CI reads nothing but its exit code.
+ * These tests pin that exit code against each failure it is supposed to catch -- a gate that
+ * cannot fail is how doc/vibing.txt went unchecked in the first place (#542). The CI step gates
+ * the document; this file gates the checker.
  *
- * The two width tests are the point of the exercise. Measuring bytes flags the • and — already
- * in vibing.txt as overlong; measuring characters lets a CJK line run to 156 columns. Only
- * Vim's own strdisplaywidth gets both right, which is why the checker runs inside nvim.
+ * The two width tests are the point of the exercise: only Vim's own strdisplaywidth accepts the
+ * • and — already in vibing.txt while still rejecting a CJK line, which is why the checker runs
+ * inside nvim at all.
  */
 
 import { strict as assert } from 'assert';
@@ -19,64 +20,55 @@ import { fileURLToPath } from 'url';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
+/** `    1. One ....... |fixture-one|`, padded the way a CONTENTS row is. */
+const entry = (number, title, tag) => `    ${number}. ${title} ${'.'.repeat(30)} |${tag}|`;
+
+/** `1. ONE                    *fixture-one*`, padded the way a section heading is. */
+const heading = (number, title, tag) => `${number}. ${title.toUpperCase()}`.padEnd(60) + `*${tag}*`;
+
+const RULE = '='.repeat(78);
+
 /** A minimal but valid help file, used as the base every failure case deviates from. */
 function helpFile({ contents, body }) {
   return [
     '*fixture.txt*  fixture',
     '',
-    '='.repeat(78),
-    'CONTENTS                                                    *fixture-contents*',
+    RULE,
+    `CONTENTS${' '.repeat(52)}*fixture-contents*`,
     '',
     ...contents,
     '',
-    '='.repeat(78),
+    RULE,
     ...body,
     '',
   ].join('\n');
 }
 
 const VALID = helpFile({
-  contents: ['    1. One ..................................... |fixture-one|'],
-  body: [
-    '1. ONE                                                           *fixture-one*',
-    '',
-    'Body.',
-  ],
+  contents: [entry(1, 'One', 'fixture-one')],
+  body: [heading(1, 'One', 'fixture-one'), '', 'Body.'],
 });
 
-/** Run the checker over `dir` (or the repository's own doc/) and return its exit code. */
-function check(dir) {
-  const result = spawnSync(
-    'nvim',
-    ['--headless', '-l', 'scripts/check-help.lua', ...(dir ? [dir] : [])],
-    {
-      cwd: repoRoot,
-      encoding: 'utf8',
-      timeout: 60_000,
-    }
-  );
-
-  assert.notEqual(result.status, null, `nvim did not exit: ${result.error ?? 'unknown'}`);
-  return { code: result.status, stderr: result.stderr };
-}
-
-/** Write `text` as the sole help file in a throwaway directory and check it. */
+/** Write `text` as the sole help file in a throwaway directory and run the checker over it. */
 async function checkText(text) {
   const dir = await mkdtemp(join(tmpdir(), 'vibing-help-'));
   try {
     await writeFile(join(dir, 'fixture.txt'), text);
-    return check(dir);
+
+    const result = spawnSync('nvim', ['--headless', '-l', 'scripts/check-help.lua', dir], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+
+    assert.notEqual(result.status, null, `nvim did not exit: ${result.error ?? 'unknown'}`);
+    return { code: result.status, stderr: result.stderr };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 }
 
-test("the repository's own doc/ passes", () => {
-  const { code, stderr } = check();
-  assert.equal(code, 0, `doc/ must stay valid:\n${stderr}`);
-});
-
-test('a well-formed fixture passes', async () => {
+test('a well-formed help file passes', async () => {
   const { code, stderr } = await checkText(VALID);
   assert.equal(code, 0, stderr);
 });
@@ -113,60 +105,79 @@ test('a 78-character CJK line fails, because it occupies 156 columns', async () 
   assert.match(stderr, /156 columns/);
 });
 
-test('a CONTENTS entry pointing at an undefined tag fails', async () => {
-  const text = helpFile({
-    contents: ['    1. One ..................................... |fixture-nowhere|'],
-    body: [
-      '1. ONE                                                           *fixture-one*',
-      '',
-      'Body.',
-    ],
+const DISAGREEMENTS = [
+  {
+    name: 'a CONTENTS entry linking to a tag no section defines fails',
+    contents: [entry(1, 'One', 'fixture-nowhere')],
+    body: [heading(1, 'One', 'fixture-one')],
+    expect: /fixture-nowhere/,
+  },
+  {
+    name: 'a section numbered out of step with CONTENTS fails',
+    contents: [entry(1, 'One', 'fixture-one'), entry(2, 'Two', 'fixture-two')],
+    body: [heading(1, 'One', 'fixture-one'), '', RULE, heading(3, 'Two', 'fixture-two')],
+    expect: /does not match section 3/,
+  },
+  {
+    name: 'a section missing from CONTENTS fails',
+    contents: [entry(1, 'One', 'fixture-one')],
+    body: [heading(1, 'One', 'fixture-one'), '', RULE, heading(2, 'Two', 'fixture-two')],
+    expect: /missing from CONTENTS/,
+  },
+  {
+    name: 'a CONTENTS entry with no section at all fails',
+    contents: [entry(1, 'One', 'fixture-one'), entry(2, 'Two', 'fixture-two')],
+    body: [heading(1, 'One', 'fixture-one')],
+    expect: /no matching section/,
+  },
+];
+
+for (const { name, contents, body, expect } of DISAGREEMENTS) {
+  test(name, async () => {
+    const { code, stderr } = await checkText(helpFile({ contents, body }));
+    assert.equal(code, 1);
+    assert.match(stderr, expect);
   });
+}
 
-  const { code, stderr } = await checkText(text);
-  assert.equal(code, 1);
-  assert.match(stderr, /fixture-nowhere/);
-});
-
-test('a section numbered out of step with CONTENTS fails', async () => {
+test('a CONTENTS block aligned with spaces is still checked', async () => {
+  // Requiring a dot leader used to make the whole CONTENTS check skip itself on a file like
+  // this, reporting OK while a real mismatch sat in it. Space alignment is ordinary vimdoc.
   const text = helpFile({
     contents: [
-      '    1. One ..................................... |fixture-one|',
-      '    2. Two ..................................... |fixture-two|',
+      `    1. One${' '.repeat(30)}|fixture-one|`,
+      `    2. Two${' '.repeat(30)}|fixture-two|`,
     ],
-    body: [
-      '1. ONE                                                           *fixture-one*',
-      '',
-      'Body.',
-      '',
-      '='.repeat(78),
-      '3. TWO                                                           *fixture-two*',
-      '',
-      'Body.',
-    ],
+    body: [heading(1, 'One', 'fixture-one'), '', RULE, heading(5, 'Two', 'fixture-two')],
   });
 
   const { code, stderr } = await checkText(text);
   assert.equal(code, 1);
-  assert.match(stderr, /does not match section 3/);
+  assert.match(stderr, /does not match section 5/);
 });
 
-test('a section missing from CONTENTS fails', async () => {
+test('a CONTENTS block with no readable rows fails rather than passing', async () => {
   const text = helpFile({
-    contents: ['    1. One ..................................... |fixture-one|'],
-    body: [
-      '1. ONE                                                           *fixture-one*',
-      '',
-      'Body.',
-      '',
-      '='.repeat(78),
-      '2. TWO                                                           *fixture-two*',
-      '',
-      'Body.',
-    ],
+    contents: ['    see the sections below'],
+    body: [heading(1, 'One', 'fixture-one'), '', 'Body.'],
   });
 
   const { code, stderr } = await checkText(text);
   assert.equal(code, 1);
-  assert.match(stderr, /missing from CONTENTS/);
+  assert.match(stderr, /no `N\. Title \|tag\|` rows/);
+});
+
+test('a help file with no CONTENTS block at all passes', async () => {
+  const text = [
+    '*fixture.txt*  fixture',
+    '',
+    RULE,
+    heading(1, 'One', 'fixture-one'),
+    '',
+    'Body.',
+    '',
+  ].join('\n');
+
+  const { code, stderr } = await checkText(text);
+  assert.equal(code, 0, stderr);
 });
