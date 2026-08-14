@@ -26,28 +26,6 @@ local M = {}
 
 local ONCE_SUFFIX = ":once"
 
-local INTERNAL_TOOLS = {
-  ToolSearch = true,
-  TodoWrite = true,
-  ReportFindings = true,
-  Agent = true,
-  Task = true,
-  TaskCreate = true,
-  TaskGet = true,
-  TaskList = true,
-  TaskOutput = true,
-  TaskStop = true,
-  TaskUpdate = true,
-  SendMessage = true,
-  Monitor = true,
-  ScheduleWakeup = true,
-  EnterPlanMode = true,
-  ExitPlanMode = true,
-  EnterWorktree = true,
-  ExitWorktree = true,
-  NotebookEdit = true,
-}
-
 
 --- @class CanUseToolResult
 --- @field behavior "allow"|"deny"|"ask"
@@ -205,7 +183,7 @@ function M.can_use_tool(tool_name, input, config)
     end
 
     -- 2. Always allow Claude Code internal tools
-    if INTERNAL_TOOLS[tool_name] then
+    if tools_constants.INTERNAL_TOOLS_MAP[tool_name] then
       return allow(input)
     end
 

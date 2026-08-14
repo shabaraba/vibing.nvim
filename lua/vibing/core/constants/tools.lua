@@ -53,6 +53,44 @@ for _, tool in ipairs(M.ALWAYS_ALLOWED_TOOLS) do
   M.ALWAYS_ALLOWED_TOOLS_MAP[tool] = true
 end
 
+---Claude Codeハーネス内部の副作用なし制御ツール。`ask`/`deny`すら通さず常に許可される
+---（can_use_tool.luaの評価順で`ALWAYS_ALLOWED_TOOLS`より前）。
+---
+---`ALWAYS_ALLOWED_TOOLS`との違いは「ユーザーがask/denyで上書きできるか」。あちらは上書き可・
+---deny/denyルールより後ろで評価されるので、`Read`に対する`paths`限定のdenyルール（.env等）が効く。
+---こちらは上書き不可・denyルールより前で許可を即決するので、止めるとハーネスが機能しなくなる
+---制御ツールだけを収録する。「読み取り専用か」ではなく「ハーネスの制御に必須か」が基準なので、
+---ファイルを変更するもの（NotebookEdit / EnterWorktree / Agent）も含む。`VALID_TOOLS`への登録は不要。
+---@type string[]
+M.INTERNAL_TOOLS = {
+  "ToolSearch",
+  "TodoWrite",
+  "ReportFindings",
+  "Agent",
+  "Task",
+  "TaskCreate",
+  "TaskGet",
+  "TaskList",
+  "TaskOutput",
+  "TaskStop",
+  "TaskUpdate",
+  "SendMessage",
+  "Monitor",
+  "ScheduleWakeup",
+  "EnterPlanMode",
+  "ExitPlanMode",
+  "EnterWorktree",
+  "ExitWorktree",
+  "NotebookEdit",
+}
+
+---INTERNAL_TOOLSの高速検索用マップ
+---@type table<string, boolean>
+M.INTERNAL_TOOLS_MAP = {}
+for _, tool in ipairs(M.INTERNAL_TOOLS) do
+  M.INTERNAL_TOOLS_MAP[tool] = true
+end
+
 ---vibing-nvim自身が提供するMCPツールの許可パターン。プレーンなユーザーレベルMCPサーバー登録
 ---（mcp__vibing-nvim__*）と、Claude Codeプラグイン登録（mcp__plugin_<marketplace>_vibing-nvim__*）の
 ---両方に対応する。
