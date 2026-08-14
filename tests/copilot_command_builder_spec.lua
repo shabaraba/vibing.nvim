@@ -34,6 +34,10 @@ describe("copilot_command_builder", function()
     vim.fn.exepath = function()
       return "/usr/local/bin/copilot"
     end
+    -- The builder's resolved path is cached at module scope, so without this only the first
+    -- test's stub would take effect and every later one would read test #1's value. It passes
+    -- today only because every test here stubs the same constant path.
+    require("tests.helpers.adapter_stream").reset_path_caches()
   end)
 
   after_each(function()
@@ -129,6 +133,81 @@ describe("copilot_command_builder", function()
     it("skips the language instruction for en", function()
       local cmd = Builder.build("hi", { language = "en" }, nil, {})
       assert.are.equal("hi", cmd[#cmd])
+    end)
+  end)
+
+  describe("lightweight mode", function()
+    --- The `--available-tools=<name>` argument, which copilot takes as one argv token.
+    local function available_tools(cmd)
+      for _, arg in ipairs(cmd) do
+        local value = arg:match("^%-%-available%-tools=(.*)$")
+        if value then
+          return value
+        end
+      end
+      return nil
+    end
+
+    it("leaves the model no tools, by naming one copilot does not have", function()
+      -- Unlike codex, copilot can genuinely remove the tools, so this pins an empty toolset
+      -- rather than a sandbox around a toolset that has to stay. `--available-tools=` would not
+      -- do it: an empty list is ignored outright, leaving every tool in place. The sentinel is
+      -- what makes the filter match nothing instead.
+      local cmd = Builder.build("hi", { lightweight = true }, nil, {})
+      local value = available_tools(cmd)
+      assert.is_not_nil(value)
+      assert.are_not.equal("", value)
+      for _, real_tool in ipairs({ "bash", "view", "create", "edit", "web_search", "task" }) do
+        assert.are_not.equal(real_tool, value)
+      end
+    end)
+
+    it("reads no AGENTS.md, the way the claude path reads no CLAUDE.md", function()
+      local cmd = Builder.build("hi", { lightweight = true }, nil, {})
+      assert.is_true(contains(cmd, "--no-custom-instructions"))
+    end)
+
+    it("keeps --allow-all-tools, which copilot requires in non-interactive mode", function()
+      local cmd = Builder.build("hi", { lightweight = true }, nil, {})
+      assert.is_true(contains(cmd, "--allow-all-tools"))
+    end)
+
+    it("does not inherit the chat's plan mode", function()
+      local cmd = Builder.build("hi", { lightweight = true, permission_mode = "plan" }, nil, {})
+      assert.is_false(contains(cmd, "--plan"))
+    end)
+
+    it("stays tool-free even when the chat is in bypassPermissions", function()
+      -- The user put the chat in that mode; a title generated behind their back is not the call
+      -- they made, so the utility call does not inherit it.
+      local cmd =
+        Builder.build("hi", { lightweight = true, permission_mode = "bypassPermissions" }, nil, {})
+      assert.is_false(contains(cmd, "--allow-all"))
+      assert.is_not_nil(available_tools(cmd))
+    end)
+
+    it("carries none of the chat's deny patterns", function()
+      -- With no tools to gate, a --deny-tool would be describing a toolset that isn't there.
+      local cmd = Builder.build("hi", { lightweight = true, permissions_deny = { "Bash" } }, nil, {})
+      assert.is_false(contains(cmd, "--deny-tool"))
+    end)
+
+    it("still restricts a resumed session, which /summarize always is", function()
+      local cmd = Builder.build("hi", { lightweight = true }, "sess-1", {})
+      assert.is_not_nil(available_tools(cmd))
+      assert.is_true(contains(cmd, "--no-custom-instructions"))
+    end)
+
+    it("leaves an ordinary call's tools untouched", function()
+      local cmd = Builder.build("hi", {}, nil, {})
+      assert.is_nil(available_tools(cmd))
+      assert.is_false(contains(cmd, "--no-custom-instructions"))
+    end)
+
+    it("uses utility_model rather than default_model", function()
+      local config = { agent = { default_model = "gpt-5", utility_model = "gpt-5-mini" } }
+      local cmd = Builder.build("hi", { lightweight = true }, nil, config)
+      assert.are.equal("gpt-5-mini", value_after(cmd, "--model"))
     end)
   end)
 end)

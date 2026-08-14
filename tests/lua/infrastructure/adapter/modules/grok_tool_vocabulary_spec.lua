@@ -22,6 +22,15 @@ describe("grok_tool_vocabulary", function()
       assert.equals("Bash", vocabulary.to_canonical("shell"))
     end)
 
+    it("maps todo_write onto TodoWrite, which is always-allowed", function()
+      -- Unmapped, the raw name reaches can_use_tool, misses the INTERNAL_TOOLS list (which holds
+      -- the capitalised spelling) and resolves to `ask` -- an approval prompt for a bookkeeping
+      -- tool. A lightweight utility call has no UI to show that prompt in and gets killed by
+      -- cancel_and_deny instead, so this mapping is what keeps title generation working on a
+      -- project whose .grok/hooks/ an earlier ordinary chat already wrote.
+      assert.equals("TodoWrite", vocabulary.to_canonical("todo_write"))
+    end)
+
     it("returns nil for a name it does not know, so the caller keeps the original", function()
       assert.is_nil(vocabulary.to_canonical("Bash"))
       assert.is_nil(vocabulary.to_canonical("something_new"))

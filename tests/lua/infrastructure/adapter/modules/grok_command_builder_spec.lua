@@ -50,6 +50,11 @@ describe("grok_command_builder", function()
     return nil
   end
 
+  local function value_after(cmd, flag)
+    local index = find_flag(cmd, flag)
+    return index and cmd[index + 1] or nil
+  end
+
   local function find_prefixed(cmd, prefix)
     for _, arg in ipairs(cmd) do
       if arg:sub(1, #prefix) == prefix then
@@ -256,6 +261,72 @@ describe("grok_command_builder", function()
       assert.has_error(function()
         fresh_builder.build("hello again", {}, nil, config)
       end)
+    end)
+  end)
+
+  describe("lightweight mode", function()
+    it("allows only todo_write, the one tool with no file, shell or network reach", function()
+      -- Grok fails open on an allowlist it cannot map: `--tools ""` is ignored and an unknown
+      -- name logs "keeping full grok toolset". So this must name a real tool, which is the whole
+      -- reason it cannot copy copilot's sentinel.
+      local cmd = grok_command_builder.build("hi", { lightweight = true }, nil, {})
+      assert.equals("todo_write", value_after(cmd, "--tools"))
+    end)
+
+    it("denies the MCP tools the allowlist cannot reach", function()
+      -- `--tools` filters built-ins only; MCP tools are added on top regardless, and grok has no
+      -- per-run way to turn those servers off. Denying execution is all that is left.
+      local cmd = grok_command_builder.build("hi", { lightweight = true }, nil, {})
+      assert.equals("MCPTool(*)", value_after(cmd, "--deny"))
+    end)
+
+    it("never waits on an approval prompt no hook is registered to answer", function()
+      local cmd = grok_command_builder.build("hi", { lightweight = true }, nil, {})
+      assert.equals("dontAsk", value_after(cmd, "--permission-mode"))
+    end)
+
+    it("does not inherit the chat's permission mode, bypassPermissions included", function()
+      -- The user put the chat in that mode; a title generated behind their back is not the call
+      -- they made, so the utility call does not inherit it.
+      local cmd = grok_command_builder.build(
+        "hi",
+        { lightweight = true, permission_mode = "bypassPermissions" },
+        nil,
+        {}
+      )
+      assert.equals("dontAsk", value_after(cmd, "--permission-mode"))
+      assert.equals("todo_write", value_after(cmd, "--tools"))
+    end)
+
+    it("still restricts a resumed session, which /summarize always is", function()
+      local cmd = grok_command_builder.build("hi", { lightweight = true }, "sess-1", {})
+      assert.equals("todo_write", value_after(cmd, "--tools"))
+    end)
+
+    it("drops the worktree convention it has no tool to act on", function()
+      local cmd = grok_command_builder.build("hi", { lightweight = true }, nil, {})
+      assert.is_nil(find_flag(cmd, "--rules"))
+    end)
+
+    it("keeps a configured language instruction in --rules", function()
+      local cmd = grok_command_builder.build("hi", { lightweight = true, language = "ja" }, nil, {})
+      local rules = value_after(cmd, "--rules")
+      assert.is_not_nil(rules)
+      assert.is_nil(rules:find("worktree", 1, true))
+      assert.is_not_nil(rules:find("Japanese", 1, true))
+    end)
+
+    it("leaves an ordinary call unrestricted", function()
+      local cmd = grok_command_builder.build("hi", {}, nil, {})
+      assert.is_nil(find_flag(cmd, "--tools"))
+      assert.is_nil(find_flag(cmd, "--deny"))
+      assert.is_not_nil(find_flag(cmd, "--rules"))
+    end)
+
+    it("uses utility_model rather than default_model", function()
+      local config = { agent = { default_model = "grok-4", utility_model = "grok-3-mini" } }
+      local cmd = grok_command_builder.build("hi", { lightweight = true }, nil, config)
+      assert.equals("grok-3-mini", value_after(cmd, "--model"))
     end)
   end)
 end)

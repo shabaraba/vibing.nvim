@@ -26,6 +26,19 @@ local NATIVE_TO_CANONICAL = {
   web_search = "WebSearch",
   web_fetch = "WebFetch",
   spawn_subagent = "Task",
+  -- Grok's in-session todo list, which is claude's `TodoWrite` under another name. Unmapped, the
+  -- raw `todo_write` reaches `can_use_tool` (`to_canonical(x) or x`), misses the `INTERNAL_TOOLS`
+  -- always-allow list that holds the capitalised spelling, matches nothing in the default allow
+  -- list, and so resolves to `ask` -- an approval prompt for a bookkeeping tool that touches no
+  -- file, shell or network.
+  --
+  -- That matters most where nothing can answer the prompt. `.grok/hooks/` is written once per cwd
+  -- and never removed, so a lightweight utility call (title generation, /summarize) still runs
+  -- with whatever hook an earlier ordinary chat left on disk -- and `todo_write` is the one tool
+  -- its allowlist leaves available. An `ask` there reaches `cancel_and_deny`, which kills the CLI
+  -- process before checking for an approval UI the lightweight call never registered, so the
+  -- title generation would fail with no prompt shown and no way to answer one.
+  todo_write = "TodoWrite",
 }
 
 --- Where Grok puts the path a tool is about. Granular permission rules read `file_path` (the
