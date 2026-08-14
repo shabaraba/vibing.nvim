@@ -26,7 +26,6 @@ local M = {}
 
 local ONCE_SUFFIX = ":once"
 
-
 --- @class CanUseToolResult
 --- @field behavior "allow"|"deny"|"ask"
 --- @field message? string

@@ -2,6 +2,17 @@
 ---Claude CLIで利用可能なツールの定数定義
 local M = {}
 
+---ツール名の配列を高速検索用の集合（name -> true）に変換する
+---@param tools string[]
+---@return table<string, boolean>
+local function to_map(tools)
+  local map = {}
+  for _, tool in ipairs(tools) do
+    map[tool] = true
+  end
+  return map
+end
+
 ---有効なツール名の配列
 ---@type string[]
 M.VALID_TOOLS = {
@@ -22,10 +33,7 @@ M.VALID_TOOLS = {
 
 ---有効なツール名のテーブル（高速検索用）
 ---@type table<string, boolean>
-M.VALID_TOOLS_MAP = {}
-for _, tool in ipairs(M.VALID_TOOLS) do
-  M.VALID_TOOLS_MAP[tool] = true
-end
+M.VALID_TOOLS_MAP = to_map(M.VALID_TOOLS)
 
 ---permissions_allowの設定に関わらず、askやdenyに明示的に入っていなければ常に許可されるツール。
 ---
@@ -48,10 +56,7 @@ M.ALWAYS_ALLOWED_TOOLS = {
 
 ---ALWAYS_ALLOWED_TOOLSの高速検索用マップ
 ---@type table<string, boolean>
-M.ALWAYS_ALLOWED_TOOLS_MAP = {}
-for _, tool in ipairs(M.ALWAYS_ALLOWED_TOOLS) do
-  M.ALWAYS_ALLOWED_TOOLS_MAP[tool] = true
-end
+M.ALWAYS_ALLOWED_TOOLS_MAP = to_map(M.ALWAYS_ALLOWED_TOOLS)
 
 ---Claude Codeハーネス内部の副作用なし制御ツール。`ask`/`deny`すら通さず常に許可される
 ---（can_use_tool.luaの評価順で`ALWAYS_ALLOWED_TOOLS`より前）。
@@ -86,10 +91,7 @@ M.INTERNAL_TOOLS = {
 
 ---INTERNAL_TOOLSの高速検索用マップ
 ---@type table<string, boolean>
-M.INTERNAL_TOOLS_MAP = {}
-for _, tool in ipairs(M.INTERNAL_TOOLS) do
-  M.INTERNAL_TOOLS_MAP[tool] = true
-end
+M.INTERNAL_TOOLS_MAP = to_map(M.INTERNAL_TOOLS)
 
 ---vibing-nvim自身が提供するMCPツールの許可パターン。プレーンなユーザーレベルMCPサーバー登録
 ---（mcp__vibing-nvim__*）と、Claude Codeプラグイン登録（mcp__plugin_<marketplace>_vibing-nvim__*）の
