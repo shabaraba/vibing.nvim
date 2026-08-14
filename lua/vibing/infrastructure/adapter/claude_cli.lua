@@ -3,6 +3,7 @@
 --- @module vibing.infrastructure.adapter.claude_cli
 
 local Base = require("vibing.infrastructure.adapter.base")
+local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
 local CLICommandBuilder = require("vibing.infrastructure.adapter.modules.cli_command_builder")
 local CLIEventProcessor = require("vibing.infrastructure.adapter.modules.cli_event_processor")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
@@ -27,6 +28,8 @@ local SUPPORTED_FEATURES = {
   dynamic_permissions = true,
 }
 
+CliRuntime.install(ClaudeCLI, SUPPORTED_FEATURES)
+
 ---@param config Vibing.Config
 ---@return Vibing.ClaudeCLIAdapter
 function ClaudeCLI:new(config)
@@ -42,29 +45,6 @@ end
 
 ---@param prompt string
 ---@param opts Vibing.AdapterOpts
----@return Vibing.Response
-function ClaudeCLI:execute(prompt, opts)
-  opts = opts or {}
-  local result = { content = "" }
-  local done = false
-
-  self:stream(prompt, opts, function(chunk)
-    result.content = result.content .. chunk
-  end, function(response)
-    if response.error then
-      result.error = response.error
-    end
-    done = true
-  end)
-
-  vim.wait(120000, function()
-    return done
-  end, 100)
-  return result
-end
-
----@param prompt string
----@param opts Vibing.AdapterOpts
 ---@param on_chunk fun(chunk: string)
 ---@param on_done fun(response: Vibing.Response)
 ---@return string handle_id
@@ -72,10 +52,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   opts = opts or {}
 
   local debug_mode = vim.g.vibing_debug_stream
-  -- hex format avoids LuaJIT's tostring() rendering large hrtime doubles in scientific
-  -- notation (e.g. "2.64e+15"), which pre-tool-use.sh's char-sanitized VIBING_HANDLE_ID
-  -- would then fail to match against this exact registry key
-  local handle_id = string.format("%016x_%x", vim.loop.hrtime(), math.random(100000))
+  local handle_id = CliRuntime.new_handle_id()
   local session_id = opts._session_id
 
   if debug_mode then
@@ -111,10 +88,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   -- actionable message. Matches copilot_cli.lua.
   local build_ok, cmd = pcall(CLICommandBuilder.build, prompt, opts, session_id, self.config, settings_path, rpc_port)
   if not build_ok then
-    local message = type(cmd) == "string" and cmd:gsub("^.*:%d+:%s*", "") or tostring(cmd)
-    vim.schedule(function()
-      on_done({ content = "", error = message, _handle_id = handle_id })
-    end)
+    CliRuntime.report_build_failure(handle_id, cmd, on_done)
     return handle_id
   end
   local output = {}
@@ -246,57 +220,6 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   end
 
   return handle_id
-end
-
----@param handle_id string?
-function ClaudeCLI:cancel(handle_id)
-  if handle_id then
-    local handle = self._handles[handle_id]
-    if handle then
-      pcall(function()
-        if handle.pid and handle.pid > 0 then
-          handle:kill(9)
-        end
-      end)
-      self._handles[handle_id] = nil
-    end
-  else
-    for id, handle in pairs(self._handles) do
-      pcall(function()
-        if handle.pid and handle.pid > 0 then
-          handle:kill(9)
-        end
-      end)
-      self._handles[id] = nil
-    end
-  end
-end
-
----@param feature string
----@return boolean
-function ClaudeCLI:supports(feature)
-  return SUPPORTED_FEATURES[feature] or false
-end
-
----@param session_id string?
----@param handle_id string?
-function ClaudeCLI:set_session_id(session_id, handle_id)
-  SessionManagerModule.set(self._session_manager, session_id, handle_id)
-end
-
----@param handle_id string?
----@return string?
-function ClaudeCLI:get_session_id(handle_id)
-  return SessionManagerModule.get(self._session_manager, handle_id)
-end
-
----@param handle_id string
-function ClaudeCLI:cleanup_session(handle_id)
-  SessionManagerModule.cleanup(self._session_manager, handle_id)
-end
-
-function ClaudeCLI:cleanup_stale_sessions()
-  SessionManagerModule.cleanup_stale(self._session_manager, self._handles)
 end
 
 return ClaudeCLI

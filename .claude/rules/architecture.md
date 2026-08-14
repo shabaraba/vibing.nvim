@@ -97,7 +97,6 @@ Two things stop backend identity leaking into shared code:
 
   The three are separate because backends disagree at three different levels, and the order
   matters — each step feeds the next:
-
   1. `normalize_payload` — the hook payload's own key names. Claude sends
      `tool_name`/`tool_input`; grok sends `toolName`/`toolInput`. Read straight through, the
      handler sees a nil tool name, so the two steps below get nothing to work on, every rule
@@ -142,12 +141,33 @@ The tree is layered (`domain` / `application` / `infrastructure` / `presentation
 **Adapter (`lua/vibing/infrastructure/adapter/`):**
 
 - `base.lua` - Abstract adapter interface
-- `claude_cli.lua` / `codex_cli.lua` / `copilot_cli.lua` - Backend adapters (spawn + stream lifecycle)
+- `claude_cli.lua` / `codex_cli.lua` / `copilot_cli.lua` / `grok_cli.lua` - Backend adapters
+  (`new()` and `stream()`; everything else comes from `cli_runtime`)
+- `modules/cli_runtime.lua` - `execute`/`cancel`/`supports` + session delegations, installed onto
+  each adapter class; plus `new_handle_id`, `kill_tree`, `report_build_failure`
+- `modules/command_builder_common.lua` - Language resolution, the response-language sentence, the
+  `@file:` context prefix, and cached binary lookup — the backend-agnostic half of argv building
 - `modules/cli_command_builder.lua` - Claude CLI argv construction (flags, system prompt)
 - `modules/cli_event_processor.lua` - stream-json → chunk/tool events
 - `modules/codex_command_builder.lua` / `modules/codex_event_processor.lua` - Codex equivalents
+- `modules/non_claude_model.lua` - Model resolution for codex/copilot/grok
 - `modules/<backend>_tool_vocabulary.lua` - Native tool name <-> canonical name, per backend
 - `modules/session_manager.lua`, `modules/active_stream_registry.lua` - Session/handle tracking
+
+**What a new backend still has to write** is `new()` and `stream()`. `stream()` stayed
+per-adapter deliberately: its variation points — which settings generator runs before the build,
+how many arguments the command builder takes, whether a `chat_bufnr` or a tool vocabulary gets
+registered, whether stderr needs filtering — outnumber its shared lines, and the four adapters
+genuinely disagree on the child environment. `cli_runtime` covers the pieces inside it that do
+repeat.
+
+Two behaviours were unified rather than parameterised while extracting them, because the split
+was drift rather than intent. `cancel()` now kills the CLI's children before the parent on every
+backend; claude killed only the parent, so the shells its tools spawned kept the stdout pipe open
+and `vim.system()`'s exit handler — which waits for that pipe to close — never fired, leaving the
+chat UI frozen. And `execute()` now cancels a run that outlives its timeout instead of returning
+and leaving the process alive; only grok did that. `cli_runtime_spec.lua` runs both over every
+backend.
 
 **Chat (presentation + application):**
 
