@@ -80,10 +80,18 @@ they compose well.
 - **Node.js** 18+ (for the MCP server)
 - At least one AI CLI backend:
   - **Claude CLI** (`claude`) — `npm install -g @anthropic-ai/claude-code`
-  - **Codex CLI** (`codex`) — `npm install -g @openai/codex`
+  - **Codex CLI** (`codex`) — `npm install -g @openai/codex` (**0.140+**; see note below)
   - **GitHub Copilot CLI** (`copilot`) — `npm install -g @github/copilot` (needs Node.js 22+,
     higher than the 18+ the MCP server itself requires)
   - **Grok Build CLI** (`grok`) — see [xAI's install docs](https://github.com/xai-org/grok-cli)
+
+> **Codex version note.** vibing.nvim runs the Codex backend's lightweight calls (chat title
+> generation, `/summarize`, daily summary) with `--ignore-user-config --strict-config`, which keeps
+> those calls out of your MCP servers and makes them fail loudly rather than silently unfenced if
+> Codex renames a config key. Both flags were verified present in **0.140.0 and 0.147.0**, on
+> `codex exec` and `codex exec resume` alike. Older releases were not tested; if they lack the
+> flags, ordinary chat is unaffected but lightweight calls fail with an unknown-argument error.
+> Upgrade Codex if you see that.
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 

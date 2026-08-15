@@ -60,12 +60,20 @@ describe("codex_command_builder", function()
     end)
 
     it("reaches none of the user's MCP servers", function()
-      -- codex's answer to claude's --strict-mcp-config + empty --mcp-config.
+      -- Not `-c mcp_servers={}`: it deep-merged, so it removed nothing. See the builder.
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, {}, nil)
-      assert.is_true(vim.tbl_contains(config_overrides(cmd), "mcp_servers={}"))
+      assert.is_not_nil(find_flag(cmd, "--ignore-user-config"))
+      assert.is_false(vim.tbl_contains(config_overrides(cmd), "mcp_servers={}"))
+    end)
+
+    it("rejects unknown config keys so a renamed one cannot unfence the call silently", function()
+      -- A key codex renames or drops must fail the call rather than quietly stop applying (#574).
+      local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, {}, nil)
+      assert.is_not_nil(find_flag(cmd, "--strict-config"))
     end)
 
     it("reads no AGENTS.md, the way the claude path reads no CLAUDE.md", function()
+      -- Still needed alongside --ignore-user-config: AGENTS.md is found from the cwd.
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, {}, nil)
       assert.is_true(vim.tbl_contains(config_overrides(cmd), "project_doc_max_bytes=0"))
     end)
@@ -120,11 +128,13 @@ describe("codex_command_builder", function()
         'sandbox_mode="read-only"',
         "tools.web_search=false",
         'approval_policy="never"',
-        "mcp_servers={}",
         "project_doc_max_bytes=0",
       }) do
         assert.is_false(vim.tbl_contains(overrides, restriction), restriction .. " leaked")
       end
+      -- An ordinary chat is where the user's MCP servers and their own config.toml are the point.
+      assert.is_nil(find_flag(cmd, "--ignore-user-config"))
+      assert.is_nil(find_flag(cmd, "--strict-config"))
       assert.equals("workspace-write", cmd[find_flag(cmd, "-s") + 1])
     end)
 
@@ -144,5 +154,34 @@ describe("codex_command_builder", function()
       local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
       assert.equals("gpt-5-codex", cmd[find_flag(cmd, "-m") + 1])
     end)
+  end)
+
+  -- Checked structurally rather than on one fixture, because the risk is a *future* build that
+  -- sends --strict-config down a path where --ignore-user-config is gated more narrowly. Alone,
+  -- --strict-config also strictifies the user's own config.toml, so one unrecognised field of
+  -- theirs would break the call -- which is exactly why #571 rejected the flag in the first place.
+  describe("--strict-config never travels alone", function()
+    for _, case in ipairs({
+      { name = "lightweight, new session", opts = { lightweight = true }, session = nil },
+      { name = "lightweight, resumed", opts = { lightweight = true }, session = "thread-1" },
+      {
+        name = "lightweight in bypassPermissions",
+        opts = { lightweight = true, permission_mode = "bypassPermissions" },
+        session = nil,
+      },
+      { name = "ordinary call", opts = {}, session = nil },
+      { name = "ordinary plan mode", opts = { permission_mode = "plan" }, session = nil },
+      { name = "ordinary resumed", opts = {}, session = "thread-1" },
+    }) do
+      it("holds for " .. case.name, function()
+        local cmd = codex_command_builder.build("hi", case.opts, case.session, {}, nil)
+        if find_flag(cmd, "--strict-config") then
+          assert.is_not_nil(
+            find_flag(cmd, "--ignore-user-config"),
+            "--strict-config without --ignore-user-config would strictify the user's config.toml"
+          )
+        end
+      end)
+    end
   end)
 end)

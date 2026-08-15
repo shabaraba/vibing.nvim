@@ -78,10 +78,18 @@ vibing.nvim は補完プラグイン(Copilot、Codeium)や他のチャットプ�
 - **Node.js** 18+(MCP サーバー用)
 - AI CLI バックエンドを最低1つ:
   - **Claude CLI**(`claude`)— `npm install -g @anthropic-ai/claude-code`
-  - **Codex CLI**(`codex`)— `npm install -g @openai/codex`
+  - **Codex CLI**(`codex`)— `npm install -g @openai/codex`(**0.140+**。下の注記を参照)
   - **GitHub Copilot CLI**(`copilot`)— `npm install -g @github/copilot`
   - **Grok Build CLI**(`grok`)— [xAI のインストール手順](https://github.com/xai-org/grok-cli)を参照
     (Node.js 22+ が必要。MCP サーバー自体の要件 18+ より高い)
+
+> **Codex のバージョンについて。** vibing.nvim は Codex バックエンドの軽量呼び出し(チャットタイトル
+> 生成・`/summarize`・デイリーサマリー)を `--ignore-user-config --strict-config` 付きで実行します。
+> これによりユーザーの MCP サーバーに到達させず、また Codex 側が設定キーをリネームした際に「気づかない
+> まま制限が外れる」のではなく明示的に失敗するようにしています。両フラグは **0.140.0 と 0.147.0** で、
+> `codex exec` / `codex exec resume` の双方に存在することを確認済みです。それより古いバージョンは未検証
+> で、フラグが無い場合は通常のチャットには影響しませんが、軽量呼び出しが unknown argument エラーで
+> 失敗します。その場合は Codex を更新してください。
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim) を使う場合
 
