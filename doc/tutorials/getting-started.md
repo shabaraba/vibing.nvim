@@ -96,7 +96,7 @@ require("vibing").setup({
 })
 ```
 
-全オプションは [docs/configuration.md](../../docs/configuration.md) を参照してください。
+全オプションは [handbook/configuration.md](../../handbook/configuration.md) を参照してください。
 
 ### カスタムキーマップ
 
@@ -219,7 +219,7 @@ require("vibing").setup({
 
 ## 次のステップ
 
-- [Configuration Reference](../../docs/configuration.md) - 全設定オプションの詳細
+- [Configuration Reference](../../handbook/configuration.md) - 全設定オプションの詳細
 - [API Reference](../api-reference.md) - Lua API の詳細
 
 ## トラブルシューティング

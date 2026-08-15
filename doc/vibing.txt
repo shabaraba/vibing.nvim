@@ -19,7 +19,7 @@ CONTENTS                                                     *vibing-contents*
 This help is deliberately short. The authoritative, always-current references
 are kept in the repository:
 
-    Every setup() option ...... docs/configuration.md
+    Every setup() option ...... handbook/configuration.md
     Architecture .............. .claude/rules/architecture.md
 
 Commands, slash commands and keybindings are documented here (sections 5-7);
@@ -123,9 +123,9 @@ frontmatter — see |vibing-chat-file|.
 
 For the full list — window details, UI and tool markers, diff backends,
 granular permission rules, MCP, Node.js executable, auto-resume on usage
-limit, daily summary — read docs/configuration.md. It is generated against
-lua/vibing/config.lua and is the only complete reference; this section is not
-kept in sync field by field.
+limit, daily summary — read handbook/configuration.md. It is generated
+against lua/vibing/config.lua and is the only complete reference; this
+section is not kept in sync field by field.
 
 ==============================================================================
 5. COMMANDS                                                  *vibing-commands*

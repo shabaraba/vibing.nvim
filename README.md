@@ -285,7 +285,7 @@ chat file's frontmatter carries its own permissions, which are what's enforced a
 
 **Full reference:** every option (window details, UI/gradient/tool markers, diff backends,
 granular permission rules, MCP, Node.js executable, daily summary, ...) is documented in
-[docs/configuration.md](./docs/configuration.md).
+[handbook/configuration.md](./handbook/configuration.md).
 
 ## 📝 Chat File Format
 

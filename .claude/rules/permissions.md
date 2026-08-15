@@ -66,12 +66,12 @@ checked before the permission mode, the tool-level lists _and_ the session-level
 last one is the non-obvious constraint — `allow_for_session` records only the bare tool name, so
 evaluating it first would let one approved `Bash` call whitelist every later one. Allow rules run
 after the tool-level lists. Full field/matching table and the rest of the ordering:
-`docs/configuration.md` → "Granular Permission Rules". `patterns` are **Lua patterns, not regex**.
+`handbook/configuration.md` → "Granular Permission Rules". `patterns` are **Lua patterns, not regex**.
 
 **Default deny rules:** `permissions.default_deny_rules` (default `true`) prepends bundled deny
 rules for destructive Bash commands, defined in
 `lua/vibing/core/constants/destructive_commands.lua`. The blocked list and its known gaps live in
-`docs/configuration.md` → "Default Deny Rules".
+`handbook/configuration.md` → "Default Deny Rules".
 
 ## Interactive Permission Builder
 

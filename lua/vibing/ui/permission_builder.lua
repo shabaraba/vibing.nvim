@@ -60,7 +60,7 @@ M.bash_presets = {
 M.path_presets = {
   { pattern = "src/**", description = "ソースツリー全体", danger = false },
   { pattern = "tests/**", description = "テストツリー全体", danger = false },
-  { pattern = "docs/**", description = "ドキュメント", danger = false },
+  { pattern = "handbook/**", description = "ドキュメント", danger = false },
   { pattern = ".env", description = "環境変数ファイル（deny向け）", danger = true },
   { pattern = "*.secret", description = "シークレットファイル（deny向け）", danger = true },
   { pattern = "*.key", description = "鍵ファイル（deny向け）", danger = true },

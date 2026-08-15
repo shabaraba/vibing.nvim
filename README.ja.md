@@ -273,7 +273,7 @@ require("vibing").setup({
 
 **完全なリファレンス:** すべてのオプション(ウィンドウ詳細、UI/グラデーション/ツールマーカー、
 diff バックエンド、粒度の細かい権限ルール、MCP、Node.js 実行ファイル、日報など)は
-[docs/configuration.md](./docs/configuration.md)(英語)を参照してください。
+[handbook/configuration.md](./handbook/configuration.md)(英語)を参照してください。
 
 ## 📝 チャットファイル形式
 

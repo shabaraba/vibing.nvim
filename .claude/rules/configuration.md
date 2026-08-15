@@ -1,15 +1,15 @@
 # Configuration
 
 The full user-facing configuration reference (every `setup()` field, window positions, permission
-rule examples, daily summary, etc.) lives in `docs/configuration.md` and in
+rule examples, daily summary, etc.) lives in `handbook/configuration.md` and in
 `lua/vibing/config.lua` (defaults + type annotations) — read those instead of duplicating the
 field list here. `README.md` keeps only a short "commonly tweaked options" block that links to
-`docs/configuration.md`.
+`handbook/configuration.md`.
 
 ## Where Things Live
 
-- Full option list & defaults: `docs/configuration.md`
-- Mote (diff tool) setup, session storage layout, and troubleshooting: `docs/MIGRATION_MOTE.md`
+- Full option list & defaults: `handbook/configuration.md`
+- Mote (diff tool) setup, session storage layout, and troubleshooting: `handbook/MIGRATION_MOTE.md`
 - Defaults and type annotations: `lua/vibing/config.lua`
 
 ## Diff Tracking (Claude-relevant behavior)

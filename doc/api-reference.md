@@ -1,7 +1,7 @@
 # API Reference
 
 vibing.nvim が公開している API のリファレンス。設定項目そのものは
-[docs/configuration.md](../docs/configuration.md) を参照。
+[handbook/configuration.md](../handbook/configuration.md) を参照。
 
 ## 目次
 
@@ -39,7 +39,7 @@ require("vibing").setup({
 })
 ```
 
-全オプションは [docs/configuration.md](../docs/configuration.md) を参照してください。
+全オプションは [handbook/configuration.md](../handbook/configuration.md) を参照してください。
 
 ### `vibing.get_adapter()`
 
@@ -249,7 +249,7 @@ OpenAI の `codex` CLI（`codex exec --json`）を使用するアダプター。
 
 `setup()` が受け取る設定オブジェクト。フィールド一覧と型注釈は
 `lua/vibing/config.lua` の `---@class Vibing.Config`、各項目の意味と既定値は
-`docs/configuration.md` にある。ここに写すと設定が増えるたびに古くなるので置かない。
+`handbook/configuration.md` にある。ここに写すと設定が増えるたびに古くなるので置かない。
 
 ### `Vibing.AdapterOpts`
 
@@ -275,6 +275,6 @@ OpenAI の `codex` CLI（`codex exec --json`）を使用するアダプター。
 
 ## See Also
 
-- [Configuration Reference](../docs/configuration.md)
+- [Configuration Reference](../handbook/configuration.md)
 - [`:help vibing`](./vibing.txt)
 - [Architecture](../.claude/rules/architecture.md)
