@@ -5,6 +5,7 @@ describe("cli_command_builder subagent chat", function()
   local AGENT_ID = "ab2e2379a4f9c8c52"
 
   before_each(function()
+    cli_command_builder._reset_path_cache()
     original_exepath = vim.fn.exepath
     vim.fn.exepath = function(name)
       if name == "claude" then
@@ -16,6 +17,7 @@ describe("cli_command_builder subagent chat", function()
 
   after_each(function()
     vim.fn.exepath = original_exepath
+    cli_command_builder._reset_path_cache()
   end)
 
   local function find_flag(cmd, flag)

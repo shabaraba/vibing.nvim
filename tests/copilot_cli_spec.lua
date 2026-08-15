@@ -1,9 +1,18 @@
+local CopilotCommandBuilder = require("vibing.infrastructure.adapter.modules.copilot_command_builder")
+
 describe("copilot_cli adapter", function()
   local CopilotCLI
 
   before_each(function()
     package.loaded["vibing.infrastructure.adapter.copilot_cli"] = nil
     CopilotCLI = require("vibing.infrastructure.adapter.copilot_cli")
+    -- The resolved binary path lives in the builder, a separate module the reload above does not
+    -- touch, so the missing-binary test below would otherwise build against a cached path.
+    CopilotCommandBuilder._reset_path_cache()
+  end)
+
+  after_each(function()
+    CopilotCommandBuilder._reset_path_cache()
   end)
 
   it("creates an instance named copilot_cli", function()
