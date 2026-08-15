@@ -14,6 +14,21 @@ local M = {}
 
 local ToolVocabulary = require("vibing.infrastructure.adapter.modules.copilot_tool_vocabulary")
 
+--- A tool name copilot does not have, handed to `--available-tools` to leave the model with an
+--- empty toolset.
+---
+--- `--available-tools` is documented as the filter that "disables all other tools" and decides
+--- "which tools the model can see" (`copilot help permissions`), so a list matching nothing
+--- resolves to nothing. Verified against copilot 1.0.78 by counting the tool schemas in
+--- `--log-level debug` output: an ordinary run offers 62 tools, `--available-tools=view` offers
+--- exactly 1, and this sentinel offers 0 — and the turn still completes normally
+--- (`toolRequests: []`, exit 0), so an empty toolset is not an error to copilot.
+---
+--- The value has to be a name rather than an empty string. `--available-tools=` parses as an
+--- empty list, which copilot ignores outright: it left all 62 tools in place, the same silent
+--- no-op grok has for `--tools ""`.
+local NO_TOOLS_SENTINEL = "__vibing_no_tools__"
+
 --- Append permission flags. copilot's non-interactive mode requires --allow-all-tools,
 --- so denies are expressed with --deny-tool rather than an allow list.
 --- @param cmd string[]
@@ -35,6 +50,29 @@ local function append_permission_flags(cmd, opts)
     table.insert(cmd, "--deny-tool")
     table.insert(cmd, pattern)
   end
+end
+
+--- Append the flags a lightweight utility call (title generation, /summarize, daily summary)
+--- runs under, in place of the permission flags.
+---
+--- This is copilot's half of what `lightweight` promises in `core/types.lua`. Unlike codex,
+--- copilot can genuinely take the tools away, so there is no sandbox to fence anything into:
+--- `--available-tools` filters the user's MCP tools too (the 62-tool baseline above includes
+--- them, and the sentinel leaves 0), which covers claude's `--strict-mcp-config` in one flag.
+--- The MCP servers themselves are still spawned, but expose nothing to the model.
+---
+--- `--allow-all-tools` stays because copilot requires it in non-interactive mode at all, not
+--- because anything is left to allow. `permission_mode` is deliberately ignored,
+--- `bypassPermissions` included: the user put the *chat* in that mode, and a title generated
+--- behind their back is not the call they made.
+--- @param cmd string[]
+local function append_lightweight_flags(cmd)
+  table.insert(cmd, "--allow-all-tools")
+  table.insert(cmd, "--available-tools=" .. NO_TOOLS_SENTINEL)
+  -- claude's `--setting-sources ""` and codex's `project_doc_max_bytes=0`. Verified on 1.0.78:
+  -- an AGENTS.md sentinel string reaches the prompt twice without this flag and not at all
+  -- with it.
+  table.insert(cmd, "--no-custom-instructions")
 end
 
 --- Forget the resolved binary path. Test seam only: the cache is process-wide, so a spec
@@ -62,7 +100,11 @@ function M.build(prompt, opts, session_id, config)
     table.insert(cmd, model)
   end
 
-  append_permission_flags(cmd, opts)
+  if opts.lightweight then
+    append_lightweight_flags(cmd)
+  else
+    append_permission_flags(cmd, opts)
+  end
 
   local full_prompt = prompt
   if not session_id then

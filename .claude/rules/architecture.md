@@ -326,6 +326,66 @@ _chat_ in that mode, and a title generated behind their back is not the call the
 `utility_model` still goes through the Claude-name filter, so its `sonnet` default becomes no
 `-m` at all rather than a model codex would reject.
 
+**Copilot can remove the tools outright, and does it in one flag.** `--available-tools` is the
+filter deciding "which tools the model can see" (`copilot help permissions`), so a list naming
+nothing leaves nothing. Measured against copilot 1.0.78 by counting tool schemas in
+`--log-level debug` output: an ordinary run offers 62 tools, `--available-tools=view` offers 1,
+and `--available-tools=__vibing_no_tools__` offers 0 — with the turn still completing normally
+(`toolRequests: []`, exit 0). That count includes the user's MCP tools, so the one flag also
+covers what claude needs `--strict-mcp-config` for; the MCP servers are still spawned, but expose
+nothing. `--no-custom-instructions` is the `--setting-sources ""` half, verified by planting a
+sentinel string in `AGENTS.md` and watching it reach the prompt twice without the flag and not at
+all with it. Nothing to skip on the hook side: `copilot_cli` registers none at all.
+
+The sentinel has to be a name, not an empty string. `--available-tools=` parses as an empty list
+and copilot ignores it, leaving all 62 tools — so the flag reads as working while doing nothing.
+
+**Grok fails open on exactly that trick, which is why it does the opposite.** Its `--tools` is an
+allowlist, but an entry it cannot map to a real tool id makes it discard the whole restriction:
+`--debug-file` on grok 0.2.101 records
+`tools allowlist had unmappable entries; keeping full grok toolset` for `--tools "none"`, and
+`--tools ""` is ignored the same way copilot's empty list is. So `grok_command_builder` names a
+real tool — `todo_write`, the only built-in reaching no file, shell or network — and the run logs
+`tools allowlist applied` with the toolset down from 26 to 3. `--permission-mode dontAsk` stands
+in for codex's `approval_policy="never"`.
+
+**Skipping the hook does not mean grok has no hook**, and that difference bites. Claude and codex
+register one per invocation (`--settings <path>`, `-c hooks.pre_tool_use=…`), so omitting the flag
+genuinely leaves the run hookless. Grok discovers `<cwd>/.grok/hooks/` instead, which
+`GrokSettingsGenerator.ensure` writes once per cwd and nothing ever removes — so `grok_cli`
+skipping `ensure` for a lightweight call only skips _rewriting_ it. Any project that has had one
+ordinary grok chat still has the hook on disk, and a utility call is by definition something that
+happens after a chat.
+
+That is why `todo_write` had to be added to `grok_tool_vocabulary`. It is claude's `TodoWrite`
+under another name; unmapped, the raw name reached `can_use_tool`, missed the `INTERNAL_TOOLS`
+always-allow list, matched nothing in the default allow list and resolved to `ask` — which
+`cancel_and_deny` serves by killing the CLI process _before_ checking for an approval UI. A
+lightweight call registers none, so a title generation would have died silently on the one tool
+its own allowlist leaves it. Deleting the hook file instead was rejected: the cwd is shared with
+every concurrent chat, which still needs it.
+
+**Grok is the one backend that cannot keep the whole `lightweight` bargain,** and that is a
+property of its CLI rather than something left undone here. `--tools` filters built-ins only —
+MCP tools are added on top regardless (the advertised count stays ~254 higher either way) and
+grok 0.2.101 has no per-run flag to disable MCP servers, so the builder can only deny their
+_execution_ with `--deny "MCPTool(*)"`, in the `MCPTool(server__tool)` form grok's rules require.
+
+That wildcard is measured, not assumed, because a rule grok does not recognise is dropped in
+silence — `grok inspect`'s permission count goes 1 → 2 for `MCPTool(*)` loaded from a
+`.grok/config.toml` but stays at 1 for an invented kind, which it still reports as "0 skipped".
+Enforcement was then checked through the flag itself against a real MCP call: same prompt, same
+flags, `--deny` the only difference. Without it the model reports the tool called successfully;
+with it, "denied by a permission policy", and the debug log records
+`deny rule matched (enforced before YOLO) tool="mcp:vibing-nvim__nvim_list_instances"`. Both runs
+passed `--always-approve`, so "before YOLO" is where the `deny` > `ask` > `allow` precedence gets
+confirmed too — which is what makes this not redundant with `dontAsk`.
+Project instructions have no escape hatch at all: grok reads `AGENTS.md`/`CLAUDE.md` from the repo
+and the home directory, and the only switches (`[compat.claude]`, `[mcp_servers]`) are persistent
+config, not per-invocation. `--sandbox read-only` was considered and rejected — grok's own docs
+say its network blocking is a no-op on macOS, and resuming a session under a sandbox profile is
+constrained, which `/summarize` always is.
+
 The model half of that lives in `modules/non_claude_model.lua`, shared by codex, copilot and grok.
 It was three byte-identical private copies before, and #537 was filed against codex alone — so
 teaching one copy about `lightweight` would have left the same bug live on the other two, with

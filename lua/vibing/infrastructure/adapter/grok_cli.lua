@@ -76,8 +76,12 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
 
   -- Install project PreToolUse hook (reuses bin/hooks/pre-tool-use.sh) unless fully bypassed.
   -- Grok discovers <cwd>/.grok/hooks/*.json when the folder is trusted.
+  --
+  -- Lightweight calls skip it too, matching claude_cli and codex_cli. The builder takes their
+  -- tools away instead, and routing a title-generation tool call into the chat's approval UI
+  -- would prompt the user about a request they never made.
   local permission_mode = opts.permission_mode or "default"
-  if permission_mode ~= "bypassPermissions" then
+  if permission_mode ~= "bypassPermissions" and not opts.lightweight then
     local ok_hook, hook_err = pcall(GrokSettingsGenerator.ensure, cwd)
     if not ok_hook then
       vim.notify(

@@ -15,6 +15,52 @@ local GROK_PERMISSION_MODE_FALLBACK = {
   auto = "default",
 }
 
+--- The tool allowlist a lightweight utility call runs under.
+---
+--- Grok's `--tools` is an allowlist ("only the listed tools will be available; all others are
+--- removed"), but it **fails open** on anything it cannot map to a real tool id. Verified against
+--- grok 0.2.101 via `--debug-file`: `--tools "none"` logs
+--- `tools allowlist had unmappable entries; keeping full grok toolset` and leaves every tool in
+--- place, and `--tools ""` is ignored outright — the advertised tool count is unchanged from a
+--- plain run either way. So the copilot trick of naming nothing is exactly wrong here; the list
+--- has to name a tool grok actually has.
+---
+--- `todo_write` is that tool. Of grok's built-ins (`run_terminal_cmd`, `grep`, `read_file`,
+--- `search_replace`, `list_dir`, `web_search`, `web_fetch`, `todo_write`, `task`) it is the only
+--- one that touches no file, no shell and no network — it writes an in-session todo list and
+--- nothing else. With it the run logs `tools allowlist applied allowed=["todo_write"]` and the
+--- toolset drops from 26 to 3 (the tool plus grok's two always-on MCP meta-tools).
+local LIGHTWEIGHT_TOOLS = "todo_write"
+
+--- Deny rule covering every MCP tool, in the `MCPTool(server__tool)` form grok's permission
+--- rules require -- an `mcp__server__tool` pattern never matches.
+---
+--- Needed because `--tools` filters grok's *built-in* tools only; the tools its MCP servers
+--- expose are added on top regardless, and grok offers no per-run way to turn those servers off.
+--- The allowlist cannot reach them, so execution is denied instead. This is weaker than claude's
+--- empty `--mcp-config`, which stops them being offered at all.
+---
+--- Not redundant with the `dontAsk` mode below, which is the tempting reading. grok's own docs
+--- say `dontAsk` stops short of auto-denying while always-approve is on, and grok imports the
+--- user's `settings.json` permission rules -- so an allow rule there could pre-approve an MCP
+--- tool. An explicit deny is what survives both: grok evaluates `deny` > `ask` > `allow`,
+--- "regardless of order or source".
+---
+--- Both halves of that were measured against grok 0.2.101 rather than trusted to the docs:
+---
+--- 1. The rule *form* is recognised. Loading it from a `.grok/config.toml` moves
+---    `grok inspect`'s permission count from 1 to 2, while an invented kind
+---    (`TotallyBogusKind(*)`) leaves it at 1 -- and is reported as "0 skipped", so an
+---    unrecognised rule vanishes without a word. A wildcard that silently did nothing would look
+---    exactly like one that worked.
+--- 2. The rule is *enforced*, through this flag, against a real MCP call. Same prompt and flags
+---    twice, `--deny` the only difference: without it the model reports the tool called
+---    successfully; with it, "denied by a permission policy", and the debug log records
+---    `deny rule matched (enforced before YOLO) tool="mcp:vibing-nvim__nvim_list_instances"`.
+---    Both runs passed `--always-approve`, so "enforced before YOLO" is also the precedence
+---    claim above, confirmed rather than assumed.
+local LIGHTWEIGHT_MCP_DENY = "MCPTool(*)"
+
 local cached_grok_path = nil
 local cached_configured_executable = nil
 local verified_official = false
@@ -106,20 +152,53 @@ end
 --- name tools it cannot invoke. Only the backend-agnostic conventions go here.
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config
---- @return string
+--- @return string|nil rules `nil` when there is nothing to say, so the caller omits the flag —
+---   grok reads an empty `--rules` as a rule rather than as silence. `nil` rather than `""`
+---   matches `CommonBuilder.language_instruction` and makes the omission impossible to drop:
+---   `table.insert(cmd, nil)` raises where an empty string would sail through.
 local function build_rules(opts, config)
-  local lines = {
-    "When creating a git worktree for isolated work, place it under "
-      .. worktree_constants.DIR
-      .. "<branch-name>/ at the repository root.",
-  }
+  local lines = {}
 
   local language_instruction = CommonBuilder.language_instruction(opts, config)
   if language_instruction then
-    table.insert(lines, 1, language_instruction)
+    table.insert(lines, language_instruction)
   end
 
+  -- A lightweight call has no tools to create a worktree with, so the convention would just be
+  -- wasted prompt tokens describing a capability that isn't there. Matches the claude builder,
+  -- which drops the same line from `--append-system-prompt`.
+  if not opts.lightweight then
+    table.insert(
+      lines,
+      "When creating a git worktree for isolated work, place it under "
+        .. worktree_constants.DIR
+        .. "<branch-name>/ at the repository root."
+    )
+  end
+
+  if #lines == 0 then
+    return nil
+  end
   return table.concat(lines, "\n")
+end
+
+--- Append the flags a lightweight utility call (title generation, /summarize, daily summary) runs
+--- under, in place of the chat's permission mode.
+---
+--- Takes no `opts` on purpose: "the utility call does not inherit the chat's permission mode,
+--- `bypassPermissions` included" is then enforced by the signature rather than by a comment. The
+--- user put the *chat* in that mode, and a title generated behind their back is not the call they
+--- made.
+--- @param cmd string[]
+local function append_lightweight_flags(cmd)
+  table.insert(cmd, "--tools")
+  table.insert(cmd, LIGHTWEIGHT_TOOLS)
+  table.insert(cmd, "--deny")
+  table.insert(cmd, LIGHTWEIGHT_MCP_DENY)
+  -- codex's `approval_policy="never"`, in grok's vocabulary. grok_cli registers no hook for a
+  -- lightweight call, so a mode that prompts would stall on an approval nothing can answer.
+  table.insert(cmd, "--permission-mode")
+  table.insert(cmd, "dontAsk")
 end
 
 --- Forget the resolved binary path. Test seam only: the cache is process-wide, so a spec that
@@ -166,7 +245,9 @@ function M.build(prompt, opts, session_id, config, handle_id, rpc_port)
     end
   end
 
-  if opts.permission_mode then
+  if opts.lightweight then
+    append_lightweight_flags(cmd)
+  elseif opts.permission_mode then
     local mode = GROK_PERMISSION_MODE_FALLBACK[opts.permission_mode] or opts.permission_mode
     table.insert(cmd, "--permission-mode")
     table.insert(cmd, mode)
@@ -177,8 +258,11 @@ function M.build(prompt, opts, session_id, config, handle_id, rpc_port)
     table.insert(cmd, opts.cwd)
   end
 
-  table.insert(cmd, "--rules")
-  table.insert(cmd, build_rules(opts, config))
+  local rules = build_rules(opts, config)
+  if rules then
+    table.insert(cmd, "--rules")
+    table.insert(cmd, rules)
+  end
 
   return cmd
 end
