@@ -30,6 +30,32 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 5.3.0 (2026-08-15)
+
+## What's Changed
+
+- fix(ci): make the Lua test gate actually fail when specs fail by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/565
+- fix(permissions): actually grant vibing-nvim MCP tools in the PreToolUse hook by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/567
+- fix: title chats after what the user asked for, not the commands that ran by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/566
+- chore: delete bin/types.ts, which nothing imports by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/569
+- ci: verify doc/vibing.txt instead of trusting manual review by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/570
+- fix(codex): restrict lightweight calls instead of running them unfenced by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/571
+- refactor: extract a shared runtime for the four CLI adapters by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/572
+- fix(ci): stop losing a mkdir race, which is what flaked view_spec by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/579
+- ci: match CONTENTS by section number, and stop skipping what it cannot read by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/580
+- refactor: cache copilot's binary lookup like the other builders by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/581
+- fix(permissions): always-allow read-only builtin tools by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/578
+- fix(codex): block MCP servers for real, and fail closed on a renamed key by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/582
+- feat(mcp): add nvim_chat_create so one chat can drive worker chats by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/584
+- fix(git): bound working_dir to the git root by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/591
+- fix(codex): say when a lightweight call leaves the configured provider by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/592
+- fix(copilot,grok): restrict lightweight utility calls by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/585
+- feat(copilot): support the in-chat Tool Approval UI by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/583
+- test(copilot): reset the binary path cache so the exepath stub is authoritative by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/590
+- fix(adapter): re-validate the cached binary path, and guard every spawn by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/594
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.2.0...v5.3.0
+
 ## 5.2.0 (2026-08-13)
 
 ## What's Changed
