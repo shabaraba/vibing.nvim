@@ -334,6 +334,47 @@ tools with `--tools ""`, codex can only fence them, and no shared vocabulary spa
 `core/types.lua` states the obligation each adapter owes for `lightweight` — no tools, no project
 config, no hooks, `utility_model` — rather than the mechanism any one of them uses.
 
+**The `model_provider` that `--ignore-user-config` drops is announced rather than left to be
+discovered** (#587). `codex_provider_notice.lua` warns once per Neovim session when the configured
+provider is not codex's own `openai` default. `codex_cli.lua` triggers it on `--ignore-user-config`
+actually being in the argv it just built, not on `opts.lightweight` alone: the builder documents
+that flag as a stand-in for a narrower switch codex does not have yet, so reading the built command
+is what makes the warning disarm itself the day the flag stops being used, rather than going on
+describing a loss that no longer happens. `lightweight` still guards the scan because the prompt is
+the last element of the argv, and a message consisting of exactly that flag would otherwise match.
+
+It warns and does not repair, because codex will hand over the provider's _name_ and not its
+_definition_: `codex doctor --json` reports the resolved provider at
+`checks["config.load"].details["model provider"]`, but nothing reports the
+`[model_providers.<name>]` table — not `doctor`, and not the app-server protocol, whose
+`ConfigReadResponse.Config` carries `model_provider` as a bare string and no provider map at all
+(`codex app-server generate-json-schema --experimental`). Re-injecting the provider would still
+mean hand-parsing `config.toml`, which is why #587's option 2 was not taken.
+
+Asking codex is the whole point: the name comes back **resolved**, by codex's own config loader,
+so there is no TOML parsing and none of the false positives (an inactive profile section) or false
+negatives (a profile) that kept the warning out of #582. Three properties of the probe are
+load-bearing:
+
+- **The exit status says nothing.** `codex doctor --json` exits 1 whenever any check fails, and a
+  missing login alone is enough — it exits 1 even on a config that loaded cleanly. Only
+  `checks["config.load"].status` answers the question, and stdout is valid JSON either way.
+- **The key is `"model provider"`, with a space.** Captured from codex 0.147 into
+  `tests/fixtures/codex_doctor.json` rather than read off a schema.
+- **Unreadable means silent.** Every parse failure returns nil and nothing is said, because an
+  unreliable warning is worse than none — its silence gets read as "you are fine".
+
+It runs on the first lightweight call rather than at `setup()` because `doctor` makes one
+reachability request to the active provider's endpoint; it is asynchronous and nothing waits for
+it. `agent.codex_provider_notice.enabled` turns the whole thing off, probe included, and is the
+one toggle of this shape that **defaults to `true`** — `subagent`, `auto_resume_on_limit` and
+`dap` all default to `false` because they spend tokens or run unattended, and this spends none. A
+warning about a change the user cannot otherwise see fails at its only job if it is off until
+asked for. Absent config reads as enabled, so a hand-built config table does not silently lose it. The `profile = "x"` config key that #582 named as a false-negative route is moot from codex
+0.147, which rejects it outright (`legacy profile = "x" config is no longer supported`); the
+surviving route is the `-p/--profile` flag, which vibing.nvim passes to neither `codex exec` nor
+the probe, so the two resolve identically.
+
 Configured permissions are recorded in frontmatter for
 transparency and auditability. The optional `language` field ensures consistent AI response language
 across sessions.

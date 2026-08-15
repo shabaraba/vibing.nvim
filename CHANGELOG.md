@@ -10,11 +10,25 @@
   of silently removing a restriction. Both flags were verified present in 0.140.0 and 0.147.0;
   older releases were not tested. Ordinary chat is unaffected — only lightweight calls would fail,
   with an unknown-argument error. Note that `--ignore-user-config` also drops `model_provider`, so
-  on a custom provider these utility calls now go to the default OpenAI endpoint.
+  on a custom provider these utility calls now go to the default OpenAI endpoint. vibing.nvim
+  warns about that once per Neovim session (see below) rather than letting it be discovered from a
+  bill or an unexplained 401.
 
 - **Remove the inline code action feature.** The `:VibingInline` command, its
   action picker/preview UI, and the `language.inline` configuration option have
   been removed. Use the chat interface (`:VibingChat`) for code assistance instead.
+
+### Added
+
+- **Codex: warn when lightweight calls leave your configured provider.** On the first lightweight
+  Codex call of a Neovim session, vibing.nvim asks Codex itself which provider is configured
+  (`codex doctor --json`, which reports the _resolved_ `model_provider` — no `config.toml` parsing,
+  so a provider set through a profile is not missed and one in an inactive section is not
+  misreported) and warns once if it is not the `openai` default. The probe is asynchronous and
+  nothing waits for it; if Codex cannot answer, nothing is said. Controlled by
+  `agent.codex_provider_notice.enabled`, which — unlike `subagent` and `auto_resume_on_limit` —
+  defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
+  useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
 ## 5.2.0 (2026-08-13)
 

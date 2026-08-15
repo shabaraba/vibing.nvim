@@ -35,6 +35,7 @@ require("vibing").setup({
     subagent = { enabled = false, show_prefix = false },
     auto_resume_on_limit = { enabled = false, max_retries = 1 },
     scheduled_requests = { enabled = true, max_retries = 3 },
+    codex_provider_notice = { enabled = true },
   },
   chat = {
     window = {
@@ -175,8 +176,39 @@ agent = {
     fallback_delay_sec = 300, -- Used only when no reset timestamp was reported
     grace_sec = 10,         -- Added to the reset time to avoid firing on the boundary
   },
+
+  codex_provider_notice = {
+    enabled = true,         -- Warn when a Codex lightweight call leaves your model_provider.
+                            -- On by default, unlike the toggles above: it spends no tokens,
+                            -- and a warning about a silent change is useless if it is itself
+                            -- off by default. Turn it off to stop the `codex doctor --json`
+                            -- probe it needs. Codex backend only.
+  },
 }
 ```
+
+### Codex Provider Notice
+
+Only applies to the Codex backend. Codex's lightweight calls (chat title generation, `/summarize`,
+daily summary) run with `--ignore-user-config`, which is what keeps them out of your MCP servers —
+and which also drops `model_provider`. So if your `config.toml` points Codex at a custom or local
+provider, those calls go to the default OpenAI endpoint while ordinary chat still uses yours. That
+is unexpected billing for some and an unexplained 401 for anyone on a local provider, with nothing
+said either way.
+
+With this on, the first lightweight Codex call of a Neovim session runs `codex doctor --json` in
+the background to ask Codex which provider is actually configured, and warns once if it is not
+`openai`. Nothing waits for the probe, and if Codex cannot answer, nothing is said — a warning that
+cannot be trusted is worse than none, because its silence reads as "you are fine".
+
+**Why this one defaults to on** while `subagent` and `auto_resume_on_limit` default to off: those
+two spend tokens unattended, so the safe default is silence. This one spends none and exists to
+stop a change happening behind your back — off by default, it would fail at exactly the job it has.
+
+Turn it off if you would rather Neovim never spawn the extra process. `codex doctor` has no flag to
+run a single check, so the probe also makes one reachability request to the active provider's
+endpoint. That is also why an unreachable local provider gets its warning late: the probe waits out
+its 10-second timeout first.
 
 ### Subagent Output
 
