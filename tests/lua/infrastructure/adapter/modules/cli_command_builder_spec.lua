@@ -4,6 +4,7 @@ describe("cli_command_builder", function()
   local original_exepath
 
   before_each(function()
+    cli_command_builder._reset_path_cache()
     original_exepath = vim.fn.exepath
     vim.fn.exepath = function(name)
       if name == "claude" then
@@ -15,6 +16,7 @@ describe("cli_command_builder", function()
 
   after_each(function()
     vim.fn.exepath = original_exepath
+    cli_command_builder._reset_path_cache()
   end)
 
   local function find_flag(cmd, flag)

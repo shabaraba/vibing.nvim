@@ -30,6 +30,10 @@ describe("copilot_command_builder", function()
   local original_exepath
 
   before_each(function()
+    -- The builder's resolved path is module-level and therefore process-wide. Without this the
+    -- stub below is only honoured while nothing has resolved `copilot` first, which makes every
+    -- assertion on cmd[1] depend on execution order.
+    Builder._reset_path_cache()
     original_exepath = vim.fn.exepath
     vim.fn.exepath = function()
       return "/usr/local/bin/copilot"
@@ -42,6 +46,7 @@ describe("copilot_command_builder", function()
 
   after_each(function()
     vim.fn.exepath = original_exepath
+    Builder._reset_path_cache()
   end)
 
   describe("build", function()
@@ -157,6 +162,18 @@ describe("copilot_command_builder", function()
     it("skips the language instruction for en", function()
       local cmd = Builder.build("hi", { language = "en" }, nil, {})
       assert.are.equal("hi", cmd[#cmd])
+    end)
+
+    -- binary_cache_spec covers the caching contract for every backend; what is copilot's own is
+    -- the wording the user actually sees, and this case is only reachable at all because the
+    -- hooks above clear the cache.
+    it("names the copilot CLI when it is not on PATH", function()
+      vim.fn.exepath = function()
+        return ""
+      end
+      local ok, err = pcall(Builder.build, "hi", {}, nil, {})
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):find("Copilot CLI not found in PATH", 1, true))
     end)
   end)
 
