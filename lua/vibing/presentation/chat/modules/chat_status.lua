@@ -1,7 +1,7 @@
 ---@class Vibing.Presentation.ChatStatus
 ---バッファ番号を、そのチャットが今リクエストを実行中かどうかに変換する
 ---
----オーケストレーター（`skills/vibing-orchestrate`）がワーカーの進捗をポーリングするときの
+---オーケストレーター（`claude-plugin/skills/vibing-orchestrate`）がワーカーの進捗をポーリングするときの
 ---唯一の判定材料。本文から「最後のセクションがAssistantか」を推測する方法は、応答がエラーで
 ---終わった場合やツール実行だけで無言のまま進んでいる場合に誤判定するため使わない。
 local M = {}
