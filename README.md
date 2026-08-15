@@ -152,9 +152,6 @@ skills (`nvim-context`, `nvim-lsp-navigation`, `vibing-chat-recall`, `vibing-cha
 `vibing-worktree-{list,create,attach,run,finish}` worktree workflow), and the `nvim-navigator`
 subagent (read-only code navigation via `@vibing-nvim:nvim-navigator`).
 
-The subagent needs `Task` (or `Agent`) in `permissions.allow` — it is not in the default list, so
-a chat left at the defaults cannot spawn one. Everything else above works out of the box.
-
 The bundled MCP server builds itself on first launch (and whenever its sources change), so no
 separate build step is needed for the MCP server itself. You still need Neovim running with
 `mcp = { enabled = true }` (the default) for the MCP tools to have anything to connect to.
