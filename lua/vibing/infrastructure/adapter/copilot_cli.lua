@@ -9,6 +9,8 @@ local CopilotEventProcessor = require("vibing.infrastructure.adapter.modules.cop
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
 local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local CopilotSettingsGenerator = require("vibing.infrastructure.hooks.copilot_settings_generator")
+local ToolVocabulary = require("vibing.infrastructure.adapter.modules.copilot_tool_vocabulary")
 
 ---@class Vibing.CopilotCLIAdapter : Vibing.Adapter
 ---@field _handles table<string, table>
@@ -25,8 +27,7 @@ local SUPPORTED_FEATURES = {
   model_selection = true,
   context = true,
   session = true,
-  -- False here, true for the others: see architecture.md. #512 tracks making it real.
-  dynamic_permissions = false,
+  dynamic_permissions = true,
 }
 
 CliRuntime.install(CopilotCLI, SUPPORTED_FEATURES)
@@ -55,10 +56,31 @@ function CopilotCLI:stream(prompt, opts, on_chunk, on_done)
   local handle_id = CliRuntime.new_handle_id()
   local session_id = opts._session_id
 
+  local cwd = opts.cwd or vim.fn.getcwd()
+
+  -- Generate the throwaway copilot plugin that registers bin/hooks/pre-tool-use.sh, and load it
+  -- with --plugin-dir. This is what gives copilot `permission_mode`, the `ask` list and the Tool
+  -- Approval UI (#512); a failure here degrades to the static --deny-tool flags rather than
+  -- taking the turn down with it. bypassPermissions asked for no gate at all, so it gets none,
+  -- and a lightweight call registers no hooks by contract (`core/types.lua`) — matching codex.
+  local permission_mode = opts.permission_mode or "default"
+  local plugin_dir
+  if permission_mode ~= "bypassPermissions" and not opts.lightweight then
+    local ok_hook, dir_or_err = pcall(CopilotSettingsGenerator.ensure, cwd)
+    if ok_hook then
+      plugin_dir = dir_or_err
+    else
+      vim.notify(
+        string.format("[vibing:copilot] Failed to install preToolUse hook: %s", tostring(dir_or_err)),
+        vim.log.levels.WARN
+      )
+    end
+  end
+
   -- The builder raises when the copilot binary is missing. The caller in send_message.lua
   -- does not wrap stream() in pcall, so without this the chat buffer would show a raw Lua
   -- stack trace instead of an actionable message.
-  local build_ok, cmd = pcall(CopilotCommandBuilder.build, prompt, opts, session_id, self.config)
+  local build_ok, cmd = pcall(CopilotCommandBuilder.build, prompt, opts, session_id, self.config, plugin_dir)
   if not build_ok then
     CliRuntime.report_build_failure(handle_id, cmd, on_done)
     return handle_id
@@ -113,10 +135,16 @@ function CopilotCLI:stream(prompt, opts, on_chunk, on_done)
     on_approval_required = opts.on_approval_required,
   })
 
+  -- Hands the permission handler this chat's frontmatter permissions plus copilot's tool
+  -- vocabulary, so the handler stays ignorant of which backend it is serving (#516).
+  local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
+  perm_handler.set_active_opts(handle_id, vim.tbl_extend("force", opts, { _tool_vocabulary = ToolVocabulary }))
+
   local wrapped_on_done = function(response)
     if not completed then
       completed = true
       ActiveStreamRegistry.unregister(handle_id)
+      perm_handler.clear_active_opts(handle_id)
       if timeout_timer then
         vim.fn.timer_stop(timeout_timer)
         timeout_timer = nil
@@ -125,16 +153,29 @@ function CopilotCLI:stream(prompt, opts, on_chunk, on_done)
     end
   end
 
-  self._handles[handle_id] = vim.system(cmd, {
+  -- vim.system throws synchronously on spawn failure (e.g. invalid cwd) before any process
+  -- exists, so the registry/perm-handler state registered above would otherwise never be cleaned
+  -- up — and a stale permission entry is not inert: with a single entry left behind, the handler
+  -- falls back to it for hook calls that carry no matching handle_id. Matches grok_cli.lua.
+  local ok_spawn, handle_or_err = pcall(vim.system, cmd, {
     text = true,
     stdin = "",
-    cwd = opts.cwd or vim.fn.getcwd(),
+    cwd = cwd,
     env = env,
     stdout = StreamHandler.create_stdout_handler(CopilotEventProcessor, event_context, function()
       return self._handles[handle_id] == nil
     end),
     stderr = StreamHandler.create_stderr_handler(error_output),
   }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done))
+
+  if not ok_spawn then
+    ActiveStreamRegistry.unregister(handle_id)
+    perm_handler.clear_active_opts(handle_id)
+    on_done({ error = string.format("Failed to spawn copilot process: %s", tostring(handle_or_err)) })
+    return handle_id
+  end
+
+  self._handles[handle_id] = handle_or_err
 
   if debug_mode then
     local pid = self._handles[handle_id] and self._handles[handle_id].pid or "unknown"

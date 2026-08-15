@@ -15,6 +15,25 @@ describe("copilot_tool_vocabulary", function()
       assert.are.equal("WebSearch", Vocabulary.to_canonical("web_search"))
     end)
 
+    it("covers the search, fetch and subagent tools, which rules name canonically", function()
+      -- Unmapped names reach can_use_tool verbatim, so a `Grep` entry in allow/ask/deny would
+      -- never match copilot's `grep` and the rule would silently do nothing. Each name here was
+      -- read off a real preToolUse payload from copilot 1.0.78.
+      assert.are.equal("Grep", Vocabulary.to_canonical("grep"))
+      assert.are.equal("Glob", Vocabulary.to_canonical("glob"))
+      assert.are.equal("WebFetch", Vocabulary.to_canonical("web_fetch"))
+      -- `task` launches a subagent, so getting it wrong would quietly un-gate the whole feature.
+      assert.are.equal("Task", Vocabulary.to_canonical("task"))
+    end)
+
+    it("keeps the aliases documented but not observed, since a missing one fails open", function()
+      -- Neither could be produced on macOS (no pwsh; this install searches with `grep`, not `rg`).
+      -- They come from GitHub's hooks reference. Dropping them would let a `Bash`/`Grep` deny rule
+      -- miss the first time copilot does send one; keeping them costs a dead table entry.
+      assert.are.equal("Bash", Vocabulary.to_canonical("powershell"))
+      assert.are.equal("Grep", Vocabulary.to_canonical("rg"))
+    end)
+
     it("returns nil for a name it has no mapping for", function()
       assert.is_nil(Vocabulary.to_canonical("something_new"))
     end)
@@ -76,4 +95,57 @@ describe("copilot_tool_vocabulary", function()
     end)
   end)
 
+  describe("normalize_payload", function()
+    -- Shape captured from copilot 1.0.78's preToolUse hook, not read off its docs.
+    it("renames toolName/toolArgs and decodes the arguments, which arrive as a JSON string", function()
+      local normalized = Vocabulary.normalize_payload({
+        sessionId = "s-1",
+        cwd = "/proj",
+        toolName = "bash",
+        toolArgs = '{"command":"echo hi","description":"greet"}',
+      })
+
+      assert.are.equal("bash", normalized.tool_name)
+      assert.are.equal("echo hi", normalized.tool_input.command)
+    end)
+
+    it("accepts arguments that already arrived decoded", function()
+      local normalized = Vocabulary.normalize_payload({ toolName = "view", toolArgs = { path = "a.lua" } })
+      assert.are.equal("a.lua", normalized.tool_input.path)
+    end)
+
+    it("yields an empty input rather than failing when toolArgs is not JSON", function()
+      -- A tool whose arguments cannot be read still has to reach a permission decision; the
+      -- alternative is an error inside the handler and a turn that hangs until the hook denies.
+      local normalized = Vocabulary.normalize_payload({ toolName = "bash", toolArgs = "not json" })
+      assert.are.equal("bash", normalized.tool_name)
+      assert.are.same({}, normalized.tool_input)
+    end)
+
+    it("leaves a payload that already speaks the canonical shape alone", function()
+      local input = { tool_name = "Read", tool_input = { file_path = "a.lua" } }
+      assert.are.same(input, Vocabulary.normalize_payload(input))
+    end)
+
+    it("does not mutate the payload it was given", function()
+      local input = { toolName = "bash", toolArgs = '{"command":"ls"}' }
+      Vocabulary.normalize_payload(input)
+      assert.is_nil(input.tool_name)
+    end)
+  end)
+
+  describe("normalize_input", function()
+    it("fills in file_path from copilot's path key, which granular rules read", function()
+      assert.are.equal("a.lua", Vocabulary.normalize_input({ path = "a.lua" }).file_path)
+    end)
+
+    it("keeps an existing file_path", function()
+      local input = Vocabulary.normalize_input({ file_path = "kept.lua", path = "other.lua" })
+      assert.are.equal("kept.lua", input.file_path)
+    end)
+
+    it("leaves an input with no path alone", function()
+      assert.are.same({ command = "ls" }, Vocabulary.normalize_input({ command = "ls" }))
+    end)
+  end)
 end)

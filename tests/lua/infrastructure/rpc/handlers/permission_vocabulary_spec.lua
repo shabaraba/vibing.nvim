@@ -133,6 +133,38 @@ describe("permission handler tool vocabulary", function()
     assert.is_not_nil(read_response("req-grok"), "the hook must get a response, not a 120s stall")
   end)
 
+  it("decodes a payload whose arguments arrive as a JSON string", function()
+    -- Copilot's preToolUse payload, captured verbatim from copilot 1.0.78: camelCase like grok's,
+    -- but `toolArgs` is a *string* holding JSON rather than an object. Handed through unparsed,
+    -- every granular rule sees an empty input and the approval UI has nothing to render.
+    local vocabulary = require("vibing.infrastructure.adapter.modules.copilot_tool_vocabulary")
+    permission.set_active_opts(HANDLE_ID, {
+      permissions_deny = { "Bash" },
+      _tool_vocabulary = vocabulary,
+    })
+
+    write_raw_request("req-copilot", {
+      sessionId = "936ec555-021d-4585-b1d0-8a2ed0a20285",
+      cwd = "/tmp/project",
+      toolName = "bash",
+      toolArgs = '{"command":"echo hello","description":"Print hello"}',
+    })
+    local result = permission.check_tool_permission({ request_id = "req-copilot", handle_id = HANDLE_ID })
+
+    assert.equals("denied", result.status)
+    assert.is_not_nil(read_response("req-copilot"), "the hook must get a response, not a 120s stall")
+  end)
+
+  it("lifts the path out of that decoded string, so paths rules have a file_path to match", function()
+    -- The whole chain in one go: decode toolArgs, then lift `path` to `file_path`. A granular
+    -- `paths` rule reads neither under copilot's own names.
+    local vocabulary = require("vibing.infrastructure.adapter.modules.copilot_tool_vocabulary")
+    local normalized = vocabulary.normalize_input(
+      vocabulary.normalize_payload({ toolName = "edit", toolArgs = '{"path":"/tmp/project/.env"}' }).tool_input
+    )
+    assert.equals("/tmp/project/.env", normalized.file_path)
+  end)
+
   it("sends a deny rule's message to the hook, not just back to its own caller", function()
     -- pre-tool-use.sh echoes permissionDecisionReason on stderr; that is the only route by which
     -- a rule's `message` reaches the model. Omitting it renders every denial as "denied by hook".

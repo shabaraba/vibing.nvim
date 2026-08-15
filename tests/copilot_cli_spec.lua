@@ -18,6 +18,9 @@ describe("copilot_cli adapter", function()
     assert.is_true(adapter:supports("model_selection"))
     assert.is_true(adapter:supports("context"))
     assert.is_true(adapter:supports("session"))
+    -- The hook that backs this is generated per run and loaded with `copilot --plugin-dir`; the
+    -- flag is what the rest of the plugin reads to decide whether the approval UI can work here.
+    assert.is_true(adapter:supports("dynamic_permissions"))
     assert.is_false(adapter:supports("nonexistent_feature"))
   end)
 

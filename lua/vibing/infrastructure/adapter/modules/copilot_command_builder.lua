@@ -29,11 +29,17 @@ local ToolVocabulary = require("vibing.infrastructure.adapter.modules.copilot_to
 --- no-op grok has for `--tools ""`.
 local NO_TOOLS_SENTINEL = "__vibing_no_tools__"
 
---- Append permission flags. copilot's non-interactive mode requires --allow-all-tools,
---- so denies are expressed with --deny-tool rather than an allow list.
+--- Append permission flags. copilot's non-interactive mode requires --allow-all-tools, so the
+--- real gate is the generated `preToolUse` hook (`--plugin-dir`, see copilot_settings_generator):
+--- it is what carries `permission_mode`, the `ask` list and the Tool Approval UI. The static
+--- `--deny-tool` patterns stay as a backstop that still applies if the plugin fails to load.
+---
+--- A lightweight call never reaches here — it takes the branch below instead, which is what keeps
+--- "registers no hooks" true for copilot no matter what the adapter passes.
 --- @param cmd string[]
 --- @param opts Vibing.AdapterOpts
-local function append_permission_flags(cmd, opts)
+--- @param plugin_dir string|nil Generated hook plugin directory, nil when hooks are not installed
+local function append_permission_flags(cmd, opts, plugin_dir)
   local permission_mode = opts.permission_mode or "default"
 
   if permission_mode == "bypassPermissions" then
@@ -45,6 +51,11 @@ local function append_permission_flags(cmd, opts)
     table.insert(cmd, "--plan")
   end
   table.insert(cmd, "--allow-all-tools")
+
+  if plugin_dir then
+    table.insert(cmd, "--plugin-dir")
+    table.insert(cmd, plugin_dir)
+  end
 
   for _, pattern in ipairs(ToolVocabulary.build_deny_patterns(opts.permissions_deny)) do
     table.insert(cmd, "--deny-tool")
@@ -86,8 +97,9 @@ end
 --- @param opts Vibing.AdapterOpts Adapter options
 --- @param session_id string|nil Session ID for resumption
 --- @param config Vibing.Config Plugin config
+--- @param plugin_dir? string Generated hook plugin directory to load with --plugin-dir
 --- @return string[] Command array for vim.system()
-function M.build(prompt, opts, session_id, config)
+function M.build(prompt, opts, session_id, config, plugin_dir)
   local cmd = { binary_path.resolve(), "--output-format", "json", "--stream", "on", "--no-color" }
 
   if session_id then
@@ -103,7 +115,7 @@ function M.build(prompt, opts, session_id, config)
   if opts.lightweight then
     append_lightweight_flags(cmd)
   else
-    append_permission_flags(cmd, opts)
+    append_permission_flags(cmd, opts, plugin_dir)
   end
 
   local full_prompt = prompt

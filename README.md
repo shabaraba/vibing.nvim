@@ -381,13 +381,12 @@ graph TB
 Switch globally with `adapter = "claude"|"codex"|"copilot"|"grok"` in setup, or per-chat by adding
 `agent: claude`, `agent: codex`, or `agent: copilot` to a chat file's YAML frontmatter.
 
-> **Note:** the Copilot backend does not yet support the in-chat Tool Approval UI. It runs with
-> `--allow-all-tools` and honors the `permissions.deny` list via copilot's `--deny-tool` flag.
-> Because the approval UI is what enforces `permissions.ask`, that list has no effect on Copilot —
-> tools listed there run without prompting. Use `permissions.deny` for anything that must not run.
-> `permissions.deny` covers `Bash` (including `Bash(cmd:*)` patterns), `Write`, `Edit`, `WebFetch`,
-> and `WebSearch`; Copilot has no permission pattern for the other tool names, and vibing.nvim
-> warns once when it drops one.
+> **Note:** on the Copilot backend, `permissions.mode`, `permissions.ask` and the in-chat Tool
+> Approval UI are enforced through a generated Copilot plugin (`.vibing/copilot-plugin/`) that
+> vibing.nvim loads per run with `copilot --plugin-dir`. Your own `~/.copilot/` configuration and
+> login are never touched. Copilot's static `--deny-tool` flags are still passed as a backstop;
+> they cover `Bash` (including `Bash(cmd:*)` patterns), `Write`, `Edit`, `WebFetch` and
+> `WebSearch`, and vibing.nvim warns once when it drops a tool name Copilot cannot express.
 
 ### Why does it require Node.js?
 

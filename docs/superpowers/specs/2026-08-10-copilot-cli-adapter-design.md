@@ -278,3 +278,8 @@ codex の `-c hooks.pre_tool_use=[...]` に相当する実行ごとの注入フ�
 3. `--available-tools` / `--excluded-tools` による静的な絞り込みで代替する
 
 本スコープの実装が動作確認できた後、この調査結果を添えて issue 化する。
+
+**追記 (#512 で解決済み)**: 上の 3 案はいずれも採用しなかった。プラグインが `hooks.json` を
+提供でき、`copilot --plugin-dir <dir>` がその実行限りでプラグインを読み込む — つまり実行ごとの
+フック注入手段は存在した。生成先は `<cwd>/.vibing/copilot-plugin/` で、`~/.copilot/` にも
+リポジトリにも触れない。詳細は `.claude/rules/architecture.md` を参照。

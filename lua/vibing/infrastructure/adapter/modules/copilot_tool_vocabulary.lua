@@ -6,20 +6,84 @@
 local M = {}
 
 --- Copilot's native tool names → the canonical vocabulary (`tools.lua`) that `ui.tool_markers`
---- and `permissions_*` are written in.
+--- and `permissions_*` are written in. A name missing from here reaches `can_use_tool` verbatim,
+--- where no `Grep`/`Task`/... rule can match it — so an absent entry silently disables a rule.
+---
+--- Every name below marked "seen" was read off a real preToolUse payload from copilot 1.0.78.
+--- The two marked "unseen" come from GitHub's own hooks reference (the `toolName` enum) and could
+--- not be produced on macOS: `powershell` needs a `pwsh` this machine does not have, and this
+--- install resolves text search to `grep`, never `rg`. They are kept rather than dropped because
+--- the two directions are not symmetric: an alias copilot never sends is dead weight, while a
+--- missing one lets a `Bash`/`Grep` **deny** rule fall open the first time it does send it. Both
+--- are unambiguous by meaning (pwsh is a shell, rg is ripgrep), so neither can be *mis*-mapped.
 --- @type table<string, string>
 local NATIVE_TO_CANONICAL = {
-  bash = "Bash",
-  view = "Read",
-  create = "Write",
-  edit = "Edit",
-  web_search = "WebSearch",
+  bash = "Bash", -- seen
+  powershell = "Bash", -- unseen (no pwsh on this platform)
+  view = "Read", -- seen
+  create = "Write", -- seen
+  edit = "Edit", -- seen
+  glob = "Glob", -- seen
+  grep = "Grep", -- seen
+  rg = "Grep", -- unseen (this install resolves search to `grep`)
+  web_search = "WebSearch", -- seen
+  web_fetch = "WebFetch", -- seen
+  task = "Task", -- seen; a subagent's own tool calls hit this hook too, under their own names
 }
+
+--- Where copilot puts the path a tool is about. Granular permission rules read `file_path` (the
+--- Claude convention), so a `paths` rule would never match a copilot tool without this.
+--- `file_path` itself is deliberately absent: an input that already has it is returned untouched.
+--- @type string[]
+local PATH_KEYS = { "path", "filePath" }
 
 --- @param native_tool_name string
 --- @return string|nil canonical name, or nil when there is no mapping
 function M.to_canonical(native_tool_name)
   return NATIVE_TO_CANONICAL[native_tool_name]
+end
+
+--- Copilot's preToolUse payload is camelCase, and its arguments arrive as a JSON *string* rather
+--- than an object:
+---
+---   {"sessionId":"…","cwd":"…","toolName":"bash","toolArgs":"{\"command\":\"echo hi\"}"}
+---
+--- Captured from copilot 1.0.78, not inferred from its docs. Without this the permission handler
+--- reads a nil tool name, so every rule misses and the turn stalls until the hook fails closed.
+--- @param hook_input table Raw decoded preToolUse payload
+--- @return table payload with `tool_name`/`tool_input` present. Never mutates the original.
+function M.normalize_payload(hook_input)
+  if type(hook_input) ~= "table" or hook_input.tool_name ~= nil or hook_input.toolName == nil then
+    return hook_input
+  end
+
+  local args = hook_input.toolArgs
+  if type(args) == "string" then
+    local ok, decoded = pcall(vim.json.decode, args)
+    args = ok and decoded or nil
+  end
+
+  return vim.tbl_extend("force", hook_input, {
+    tool_name = hook_input.toolName,
+    tool_input = type(args) == "table" and args or {},
+  })
+end
+
+--- @param tool_input table
+--- @return table input with `file_path` filled in when copilot named it something else. The
+---   original is never mutated: the same payload is also used to render the approval UI.
+function M.normalize_input(tool_input)
+  if type(tool_input) ~= "table" or tool_input.file_path then
+    return tool_input
+  end
+
+  for _, key in ipairs(PATH_KEYS) do
+    if tool_input[key] then
+      return vim.tbl_extend("force", tool_input, { file_path = tool_input[key] })
+    end
+  end
+
+  return tool_input
 end
 
 --- Map a vibing permission entry to a copilot permission pattern
