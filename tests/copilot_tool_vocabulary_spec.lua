@@ -15,15 +15,23 @@ describe("copilot_tool_vocabulary", function()
       assert.are.equal("WebSearch", Vocabulary.to_canonical("web_search"))
     end)
 
-    it("covers the search and fetch tools, which permission rules name canonically", function()
+    it("covers the search, fetch and subagent tools, which rules name canonically", function()
       -- Unmapped names reach can_use_tool verbatim, so a `Grep` entry in allow/ask/deny would
-      -- never match copilot's `grep` and the rule would silently do nothing.
+      -- never match copilot's `grep` and the rule would silently do nothing. Each name here was
+      -- read off a real preToolUse payload from copilot 1.0.78.
       assert.are.equal("Grep", Vocabulary.to_canonical("grep"))
-      assert.are.equal("Grep", Vocabulary.to_canonical("rg"))
       assert.are.equal("Glob", Vocabulary.to_canonical("glob"))
       assert.are.equal("WebFetch", Vocabulary.to_canonical("web_fetch"))
-      assert.are.equal("Bash", Vocabulary.to_canonical("powershell"))
+      -- `task` launches a subagent, so getting it wrong would quietly un-gate the whole feature.
       assert.are.equal("Task", Vocabulary.to_canonical("task"))
+    end)
+
+    it("keeps the aliases documented but not observed, since a missing one fails open", function()
+      -- Neither could be produced on macOS (no pwsh; this install searches with `grep`, not `rg`).
+      -- They come from GitHub's hooks reference. Dropping them would let a `Bash`/`Grep` deny rule
+      -- miss the first time copilot does send one; keeping them costs a dead table entry.
+      assert.are.equal("Bash", Vocabulary.to_canonical("powershell"))
+      assert.are.equal("Grep", Vocabulary.to_canonical("rg"))
     end)
 
     it("returns nil for a name it has no mapping for", function()

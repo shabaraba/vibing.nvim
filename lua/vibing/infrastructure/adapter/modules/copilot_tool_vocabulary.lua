@@ -6,20 +6,29 @@
 local M = {}
 
 --- Copilot's native tool names → the canonical vocabulary (`tools.lua`) that `ui.tool_markers`
---- and `permissions_*` are written in.
+--- and `permissions_*` are written in. A name missing from here reaches `can_use_tool` verbatim,
+--- where no `Grep`/`Task`/... rule can match it — so an absent entry silently disables a rule.
+---
+--- Every name below marked "seen" was read off a real preToolUse payload from copilot 1.0.78.
+--- The two marked "unseen" come from GitHub's own hooks reference (the `toolName` enum) and could
+--- not be produced on macOS: `powershell` needs a `pwsh` this machine does not have, and this
+--- install resolves text search to `grep`, never `rg`. They are kept rather than dropped because
+--- the two directions are not symmetric: an alias copilot never sends is dead weight, while a
+--- missing one lets a `Bash`/`Grep` **deny** rule fall open the first time it does send it. Both
+--- are unambiguous by meaning (pwsh is a shell, rg is ripgrep), so neither can be *mis*-mapped.
 --- @type table<string, string>
 local NATIVE_TO_CANONICAL = {
-  bash = "Bash",
-  powershell = "Bash",
-  view = "Read",
-  create = "Write",
-  edit = "Edit",
-  glob = "Glob",
-  grep = "Grep",
-  rg = "Grep",
-  web_search = "WebSearch",
-  web_fetch = "WebFetch",
-  task = "Task",
+  bash = "Bash", -- seen
+  powershell = "Bash", -- unseen (no pwsh on this platform)
+  view = "Read", -- seen
+  create = "Write", -- seen
+  edit = "Edit", -- seen
+  glob = "Glob", -- seen
+  grep = "Grep", -- seen
+  rg = "Grep", -- unseen (this install resolves search to `grep`)
+  web_search = "WebSearch", -- seen
+  web_fetch = "WebFetch", -- seen
+  task = "Task", -- seen; a subagent's own tool calls hit this hook too, under their own names
 }
 
 --- Where copilot puts the path a tool is about. Granular permission rules read `file_path` (the

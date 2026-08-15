@@ -151,7 +151,13 @@ These are the seams that stop backend identity leaking into shared code. The rul
      well above the ~120s that `pre-tool-use.sh` waits before denying.
 
   The payload differs too — `toolName` with `toolArgs` as a JSON _string_ — which
-  `copilot_tool_vocabulary.normalize_payload` handles, the same seam grok uses.
+  `copilot_tool_vocabulary.normalize_payload` handles, the same seam grok uses. Every name in that
+  table except `powershell` and `rg` was read off a real payload; those two come from GitHub's
+  hooks reference and are kept because a missing alias lets a deny rule fall open, while a
+  never-sent one is inert.
+
+  A subagent's own tool calls reach this hook as well, under their own names (`task` fires, then
+  the `bash` the subagent runs) — so the gate covers delegated work, not just the top-level turn.
 
   **Why the backend name is in the shared script**, against the rule above: what varies is not
   only the JSON shape but the deny _signalling convention_ — Claude denies with exit 2 + stderr,

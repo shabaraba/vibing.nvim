@@ -83,6 +83,12 @@ function M.ensure(cwd)
   -- would give a copilot that happens to be reading the manifest at that moment a partial file —
   -- and an unreadable manifest means no hook, which is the one failure mode that fails *open*.
   -- rename(2) is atomic within a directory, so a concurrent reader sees either version whole.
+  --
+  -- What makes one shared path safe at all is that the contents are the same for every chat: the
+  -- per-request identity (`VIBING_HANDLE_ID`, the RPC port) travels in copilot's environment, not
+  -- in this file. Anything that has to differ per chat therefore belongs in the environment too —
+  -- putting it here would make concurrent chats overwrite each other's manifest, and this
+  -- directory would have to become per-handle instead.
   local path = dir .. "/plugin.json"
   local tmp_path = string.format("%s.%d.tmp", path, vim.loop.getpid())
   local f, err = io.open(tmp_path, "w")
