@@ -4,6 +4,14 @@
 
 ### Breaking Changes
 
+- **The Codex backend now requires codex 0.140+.** Lightweight calls (chat title generation,
+  `/summarize`, daily summary) are run with `--ignore-user-config --strict-config`, so that they
+  cannot reach the user's MCP servers and so that a renamed Codex config key fails the call instead
+  of silently removing a restriction. Both flags were verified present in 0.140.0 and 0.147.0;
+  older releases were not tested. Ordinary chat is unaffected — only lightweight calls would fail,
+  with an unknown-argument error. Note that `--ignore-user-config` also drops `model_provider`, so
+  on a custom provider these utility calls now go to the default OpenAI endpoint.
+
 - **Remove the inline code action feature.** The `:VibingInline` command, its
   action picker/preview UI, and the `language.inline` configuration option have
   been removed. Use the chat interface (`:VibingChat`) for code assistance instead.
