@@ -80,8 +80,25 @@ end
 --- A cached `exepath` lookup for one CLI binary.
 ---
 --- The cache is process-wide and deliberately so -- `exepath` is not free and PATH does not move
---- under a running Neovim. `reset()` is the test seam: a spec that wants the "CLI missing" path
---- has to clear what an earlier spec resolved.
+--- under a running Neovim. But the **binary** can: an uninstall, or a reinstall that relocates it,
+--- leaves the resolved path pointing at nothing. A cache that never looks again then hands that
+--- path back, so `error(missing_message)` is never reached and `vim.system` raises a raw ENOENT
+--- instead (#593). A cache hit is therefore confirmed with one `fs_stat` -- a single stat, not the
+--- PATH walk the cache exists to avoid -- and a path that has gone is re-resolved from scratch.
+---
+--- `fs_stat` rather than `vim.fn.executable`, which is how the rest of the codebase asks whether a
+--- binary is usable: those calls vet a path the *user* supplied, while this one only has to notice
+--- that a path `exepath` already vetted stopped existing. Asking the narrower question also keeps
+--- the exec bit out of it, which matters because `grok_command_builder`'s official-CLI sniff is
+--- keyed on `executable()` and would start firing against test doubles.
+---
+--- What this does **not** cover is a binary that still exists but is no longer the one PATH would
+--- pick: `nvm use` leaves the previous version's tree in place, so the cached path stays valid and
+--- keeps being used. Catching that would mean re-walking PATH on every request, which is the cost
+--- the cache exists to avoid. Restarting Neovim is the answer there, as it was before #581.
+---
+--- `reset()` is the test seam: a spec that wants the "CLI missing" path has to clear what an
+--- earlier spec resolved.
 ---
 --- @param binary string name to look up on PATH
 --- @param missing_message string raised when it is not there
@@ -92,6 +109,9 @@ function M.binary_resolver(binary, missing_message)
   return {
     --- @return string path
     resolve = function()
+      if cached and not vim.uv.fs_stat(cached) then
+        cached = nil
+      end
       if not cached then
         local found = vim.fn.exepath(binary)
         if found == "" then

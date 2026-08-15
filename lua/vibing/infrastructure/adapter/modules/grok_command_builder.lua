@@ -95,13 +95,45 @@ local function ensure_official_grok(path)
   )
 end
 
+--- Whether a cached path still points at something, for the cases where we can tell.
+---
+--- The cached path is confirmed rather than trusted, for the reason
+--- `command_builder_common.binary_resolver` states (#593): an uninstall or a relocating reinstall
+--- leaves it pointing at nothing, and handing it back skips both errors below and turns into a raw
+--- ENOENT out of vim.system. Grok keeps its own cache because it resolves a *configurable*
+--- executable and sniffs it for officialness, neither of which the shared resolver does.
+---
+--- What is skipped is a **bare command name**: no `/` at all. `config.grok.executable` accepts one
+--- (`vim.fn.executable("grok")` searches PATH for it), and `fs_stat` would resolve that against
+--- Neovim's cwd and answer nil forever -- defeating the cache on every request, which costs far
+--- more than the lookup: the fallthrough re-runs `ensure_official_grok`, and that blocks the main
+--- loop on a `grok --version` subprocess. Those keep the pre-#593 behaviour.
+---
+--- Anything with a `/` in it is a location, relative ones included, and is checked. `fs_stat`
+--- resolves a relative path against Neovim's cwd -- which is the same basis `vim.fn.executable`
+--- used to accept it in the first place, so the two agree. Gating on "starts with `/`" instead
+--- would leave `./bin/grok` permanently unchecked and #593 alive for it.
+---
+--- A Windows path written with backslashes only (`C:\bin\grok.exe`, a UNC share) reads as a bare
+--- name here and goes unchecked, i.e. keeps the pre-#593 behaviour. Not worth parsing drive
+--- letters for while the rest of the process handling (`pkill`, `sh -c`) is POSIX-only anyway.
+---
+--- @param path string
+--- @return boolean
+local function still_installed(path)
+  if not path:find("/", 1, true) then
+    return true
+  end
+  return vim.uv.fs_stat(path) ~= nil
+end
+
 --- Resolve path to the grok binary
 --- @param config Vibing.Config
 --- @return string
 local function resolve_grok_path(config)
   local configured = config and config.grok and config.grok.executable
 
-  if cached_grok_path and cached_configured_executable == configured then
+  if cached_grok_path and cached_configured_executable == configured and still_installed(cached_grok_path) then
     return cached_grok_path
   end
 

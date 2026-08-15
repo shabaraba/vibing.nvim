@@ -195,7 +195,9 @@ The tree is layered (`domain` / `application` / `infrastructure` / `presentation
 - `claude_cli.lua` / `codex_cli.lua` / `copilot_cli.lua` / `grok_cli.lua` - Backend adapters
   (`new()` and `stream()`; everything else comes from `cli_runtime`)
 - `modules/cli_runtime.lua` - `execute`/`cancel`/`supports` + session delegations, installed onto
-  each adapter class; plus `new_handle_id`, `kill_tree`, `report_build_failure`
+  each adapter class; plus `new_handle_id`, `kill_tree`, `spawn` (the guarded `vim.system` call —
+  a spawn that raises leaves no process, so the exit handler never cleans up), and
+  `report_build_failure`
 - `modules/command_builder_common.lua` - Language resolution, the response-language sentence, the
   `@file:` context prefix, and cached binary lookup — the backend-agnostic half of argv building
 - `modules/cli_command_builder.lua` - Claude CLI argv construction (flags, system prompt)

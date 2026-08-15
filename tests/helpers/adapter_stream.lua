@@ -11,18 +11,41 @@
 
 local M = {}
 
+--- Created on first use and reused, so one spec file leaves one throwaway file behind.
+local default_binary = nil
+
 --- @class Vibing.Test.SystemCall
 --- @field cmd string[] argv as passed to vim.system
 --- @field opts table the options table (text/cwd/env/stdin/stdout/stderr)
 --- @field on_exit function the exit callback vim.system was given
 --- @field handle table the fake handle returned to the adapter
 
+--- A path to a file that really exists, standing in for a resolved CLI binary.
+---
+--- It has to exist on disk, not just look like a path: the builders confirm a cached path with
+--- `fs_stat` before reusing it (#593), so a made-up `/usr/local/bin/...` would be treated as a
+--- binary that has gone and re-resolved on every call -- which is precisely what the caching
+--- assertions are about.
+---
+--- Deliberately left non-executable: `grok_command_builder` skips its official-CLI sniff for a
+--- path `executable()` rejects, which is the seam its own spec already relies on.
+---
+--- @param name string? a distinguishing suffix, so two calls can differ
+--- @return string path
+function M.fake_binary(name)
+  local path = vim.fn.tempname() .. "-" .. (name or "cli")
+  local fd = assert(io.open(path, "w"))
+  fd:write("#!/bin/sh\n")
+  fd:close()
+  return path
+end
+
 --- Replace `vim.system`, `vim.fn.exepath` and the RPC port lookup for the duration of a test.
 ---
 --- The port is stubbed rather than left to the real server: whether one is listening depends on
 --- what else the test run started, and the env assertions need a fixed answer.
 ---
---- @param exe_path string? what exepath should report, defaults to a plausible binary path
+--- @param exe_path string? what exepath should report, defaults to a real throwaway file
 --- @param rpc_port number? what the RPC server should report, defaults to 9999
 --- @return table state `{ calls = Vibing.Test.SystemCall[], restore = fun() }`
 function M.stub_system(exe_path, rpc_port)
@@ -37,8 +60,9 @@ function M.stub_system(exe_path, rpc_port)
 
   local state = { calls = {} }
 
+  default_binary = default_binary or M.fake_binary("fake-cli")
   vim.fn.exepath = function()
-    return exe_path or "/usr/local/bin/fake-cli"
+    return exe_path or default_binary
   end
 
   vim.system = function(cmd, opts, on_exit)

@@ -176,7 +176,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     end
   end
 
-  self._handles[handle_id] = vim.system(cmd, {
+  local started = CliRuntime.spawn(self._handles, handle_id, cmd, {
     text = true,
     cwd = cwd,
     env = env,
@@ -186,7 +186,11 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     stderr = StreamHandler.create_stderr_handler(error_output),
   }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done, function()
     return event_context.resultErrors
-  end))
+  end), wrapped_on_done)
+
+  if not started then
+    return handle_id
+  end
 
   if debug_mode then
     local pid = self._handles[handle_id] and self._handles[handle_id].pid or "unknown"

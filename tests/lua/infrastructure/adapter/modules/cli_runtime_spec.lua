@@ -116,6 +116,82 @@ describe("cli_runtime", function()
       assert.is_truthy(response.error)
     end)
   end)
+
+  describe("spawn", function()
+    local original_system
+
+    before_each(function()
+      original_system = vim.system
+    end)
+
+    after_each(function()
+      vim.system = original_system
+    end)
+
+    --- @return boolean started, table response, table handles
+    local function spawn_raising(cmd, err)
+      vim.system = function()
+        error(err)
+      end
+
+      local handles, response = {}, nil
+      local started = CliRuntime.spawn(handles, "h1", cmd, {}, function() end, function(r)
+        response = r
+      end)
+      vim.wait(200, function()
+        return response ~= nil
+      end)
+      return started, response, handles
+    end
+
+    it("keeps the handle when the CLI starts", function()
+      local handle = { pid = 4242 }
+      vim.system = function()
+        return handle
+      end
+
+      local handles = {}
+      local reported = false
+      local started = CliRuntime.spawn(handles, "h1", { "/bin/claude" }, {}, function() end, function()
+        reported = true
+      end)
+
+      assert.is_true(started)
+      assert.equals(handle, handles.h1)
+      assert.is_false(reported)
+    end)
+
+    it("names the binary and drops libuv's wording when it is gone", function()
+      -- What the user gets when a CLI moves between the builder resolving it and the spawn (#593).
+      -- "ENOENT ... (cmd)" is an error code, not something to act on.
+      local raised = "vim/_system.lua:340: ENOENT: no such file or directory (cmd): '/old/bin/claude'"
+      local started, response, handles = spawn_raising({ "/old/bin/claude", "-p" }, raised)
+
+      assert.is_false(started)
+      assert.is_nil(handles.h1, "a handle was recorded for a process that never started")
+      assert.is_truthy(response.error:find("/old/bin/claude", 1, true))
+      assert.is_truthy(response.error:find("could not be started", 1, true))
+      assert.is_nil(response.error:find("ENOENT", 1, true))
+      assert.equals("h1", response._handle_id)
+    end)
+
+    it("does not blame the CLI for a working directory that is gone", function()
+      -- libuv raises ENOENT for a missing cwd as well, and the two are told apart only by the
+      -- (cwd)/(cmd) marker. A chat's working_dir outlives `git worktree remove`, so this is the
+      -- ordinary way to reach it -- and "reinstall the CLI" would be the wrong thing to do.
+      local raised = "vim/_core/system:338: ENOENT: no such file or directory (cwd): '/gone/worktree'"
+      local _, response = spawn_raising({ "/bin/claude" }, raised)
+
+      assert.is_truthy(response.error:find("/gone/worktree", 1, true))
+      assert.is_nil(response.error:find("Reinstall", 1, true), "blamed the CLI: " .. response.error)
+    end)
+
+    it("passes any other spawn failure through with its own text", function()
+      local _, response = spawn_raising({ "/bin/claude" }, "EACCES: permission denied")
+
+      assert.is_truthy(response.error:find("EACCES: permission denied", 1, true))
+    end)
+  end)
 end)
 
 -- The two behaviours below were not the same on every backend before the extraction: only grok
