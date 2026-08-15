@@ -407,6 +407,13 @@ skipping `ensure` for a lightweight call only skips _rewriting_ it. Any project 
 ordinary grok chat still has the hook on disk, and a utility call is by definition something that
 happens after a chat.
 
+**Copilot does not have grok's problem**, despite also writing its hook into the project tree. The
+generated plugin under `<cwd>/.vibing/copilot-plugin/` is reachable only through `--plugin-dir`,
+which the lightweight branch never emits — copilot auto-discovers hooks from `~/.copilot/hooks/`,
+`.github/hooks/`, its policy dirs and `settings.json`, and vibing.nvim writes none of those. So a
+leftover plugin from an earlier chat is inert, and skipping generation really does leave the run
+hookless, the way it does for claude and codex.
+
 That is why `todo_write` had to be added to `grok_tool_vocabulary`. It is claude's `TodoWrite`
 under another name; unmapped, the raw name reached `can_use_tool`, missed the `INTERNAL_TOOLS`
 always-allow list, matched nothing in the default allow list and resolved to `ask` — which

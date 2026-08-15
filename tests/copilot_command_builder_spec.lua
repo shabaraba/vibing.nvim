@@ -117,6 +117,14 @@ describe("copilot_command_builder", function()
       assert.is_false(contains(cmd, "--plugin-dir"))
     end)
 
+    it("omits --plugin-dir for a lightweight call even when one is passed", function()
+      -- `lightweight` obliges every adapter to register no hooks (core/types.lua). The adapter
+      -- already declines to generate the plugin, so this pins the second half of that: the
+      -- lightweight branch cannot emit the flag no matter what it is handed.
+      local cmd = Builder.build("hi", { lightweight = true }, nil, {}, "/proj/.vibing/copilot-plugin")
+      assert.is_false(contains(cmd, "--plugin-dir"))
+    end)
+
     it("omits --plugin-dir under bypassPermissions", function()
       -- The mode asked for no gate at all, so the hook that implements one is not loaded.
       local cmd = Builder.build("hi", { permission_mode = "bypassPermissions" }, nil, {}, "/proj/plugin")
