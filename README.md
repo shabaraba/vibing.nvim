@@ -97,7 +97,8 @@ they compose well.
 > custom or local provider, **those lightweight calls go to the default OpenAI endpoint instead**.
 > Ordinary chat still uses your provider. vibing.nvim warns once per Neovim session when this
 > applies to you, asking Codex itself (`codex doctor --json`) which provider is configured; it says
-> nothing if Codex cannot answer.
+> nothing if Codex cannot answer. Set `agent.codex_provider_notice.enabled = false` to turn the
+> warning and its probe off.
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 

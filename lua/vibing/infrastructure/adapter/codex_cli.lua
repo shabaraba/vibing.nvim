@@ -194,7 +194,11 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
   -- happens. `lightweight` still guards it because the prompt is the last element of `cmd`, and a
   -- message consisting of exactly that flag would otherwise match. Fired after the spawn above,
   -- since the probe exists to describe that call and must not delay it.
-  if opts.lightweight and vim.tbl_contains(cmd, "--ignore-user-config") then
+  --
+  -- Absent config reads as enabled, not disabled: the default is on (see config.lua), so a caller
+  -- that built its config table by hand must not silently lose the warning.
+  local notice_enabled = vim.tbl_get(self.config or {}, "agent", "codex_provider_notice", "enabled") ~= false
+  if notice_enabled and opts.lightweight and vim.tbl_contains(cmd, "--ignore-user-config") then
     CodexProviderNotice.check(cmd[1], cwd)
   end
 

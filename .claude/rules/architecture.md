@@ -366,7 +366,11 @@ load-bearing:
 
 It runs on the first lightweight call rather than at `setup()` because `doctor` makes one
 reachability request to the active provider's endpoint; it is asynchronous and nothing waits for
-it. The `profile = "x"` config key that #582 named as a false-negative route is moot from codex
+it. `agent.codex_provider_notice.enabled` turns the whole thing off, probe included, and is the
+one toggle of this shape that **defaults to `true`** — `subagent`, `auto_resume_on_limit` and
+`dap` all default to `false` because they spend tokens or run unattended, and this spends none. A
+warning about a change the user cannot otherwise see fails at its only job if it is off until
+asked for. Absent config reads as enabled, so a hand-built config table does not silently lose it. The `profile = "x"` config key that #582 named as a false-negative route is moot from codex
 0.147, which rejects it outright (`legacy profile = "x" config is no longer supported`); the
 surviving route is the `-p/--profile` flag, which vibing.nvim passes to neither `codex exec` nor
 the probe, so the two resolve identically.

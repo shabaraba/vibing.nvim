@@ -100,6 +100,14 @@
 ---@field subagent Vibing.SubagentConfig? subagent（Task/Agentツール）の出力表示設定
 ---@field auto_resume_on_limit Vibing.AutoResumeOnLimitConfig 使用量リミット自動継続設定
 ---@field scheduled_requests Vibing.ScheduledRequestsConfig 予約リクエスト設定
+---@field codex_provider_notice Vibing.CodexProviderNoticeConfig codex軽量呼び出しのプロバイダ警告設定
+
+---@class Vibing.CodexProviderNoticeConfig
+---codexの軽量呼び出し（タイトル生成・要約等）が設定済みプロバイダから外れることを警告するか
+---警告のために`codex doctor --json`を1セッション1回だけ起動する。他の多くのトグルと違い既定で
+---有効なのは、これがトークンを使う機能ではなく「黙って宛先が変わる」ことを防ぐ安全側の通知で、
+---既定で無効ではそもそも気づけないため。probeのプロセス起動自体を避けたい場合に無効化する。
+---@field enabled boolean? falseでプロバイダ警告とそのprobeを完全に止める（デフォルト: true）
 
 ---@class Vibing.SubagentConfig
 ---subagentが喋った内容をチャットに出すかどうかの設定
@@ -259,6 +267,16 @@ M.defaults = {
       -- 予約したリクエストがまた弾かれたときに許可する再予約の回数。
       -- これがループの唯一の歯止めなので 0 未満にはしない。
       max_retries = 3,
+    },
+    -- codexの軽量呼び出しは --ignore-user-config で走るので、ユーザーの model_provider が落ちて
+    -- 既定のOpenAIエンドポイントに向く。それを1セッション1回だけ警告する。
+    --
+    -- auto_resume_on_limit や dap と違って既定で有効なのは、これがトークンを使う機能ではなく、
+    -- 黙って宛先が変わることを防ぐ通知だから。既定で無効なら、気づけないという当の問題が残る。
+    -- 代償は `codex doctor --json` の起動が1回入ることで、doctorには単一チェックだけ走らせる
+    -- フラグが無いためプロバイダへの到達性通信も付いてくる。それを避けたい場合はfalseにする。
+    codex_provider_notice = {
+      enabled = true,
     },
   },
   chat = {

@@ -77,4 +77,19 @@ describe("codex_cli hook registration", function()
     adapter:stream("--ignore-user-config", opts, function() end, function() end)
     assert.are.equal(1, #system.calls)
   end)
+
+  it("does not probe when the notice is turned off", function()
+    local off = codex:new(vim.tbl_deep_extend("force", CONFIG, {
+      agent = { codex_provider_notice = { enabled = false } },
+    }))
+    helper.run_stream(off, { permission_mode = "default", lightweight = true })
+    assert.are.equal(1, #system.calls)
+  end)
+
+  -- The default is on, so a config that never mentions the notice must still get it. CONFIG here
+  -- is exactly that: an agent table with only default_model in it.
+  it("probes when the config does not mention the notice at all", function()
+    helper.run_stream(adapter, { permission_mode = "default", lightweight = true })
+    assert.are.equal(2, #system.calls)
+  end)
 end)

@@ -25,7 +25,10 @@
   (`codex doctor --json`, which reports the _resolved_ `model_provider` — no `config.toml` parsing,
   so a provider set through a profile is not missed and one in an inactive section is not
   misreported) and warns once if it is not the `openai` default. The probe is asynchronous and
-  nothing waits for it; if Codex cannot answer, nothing is said.
+  nothing waits for it; if Codex cannot answer, nothing is said. Controlled by
+  `agent.codex_provider_notice.enabled`, which — unlike `subagent` and `auto_resume_on_limit` —
+  defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
+  useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
 ## 5.2.0 (2026-08-13)
 

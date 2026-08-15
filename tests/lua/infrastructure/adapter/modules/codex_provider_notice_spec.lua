@@ -94,6 +94,17 @@ describe("codex_provider_notice", function()
       assert.is_truthy(notified[1].msg:find("openai", 1, true))
     end)
 
+    -- %q would render this as `\"weird\"` plus a Lua escape for the newline. The name comes
+    -- straight from the user's config.toml, so it is only ever displayed, never re-parsed.
+    it("shows an awkward provider name as written, without Lua escapes", function()
+      stub_system(report_with('we"ird\nname'))
+      notice.check("/usr/local/bin/codex")
+      drain()
+
+      assert.is_truthy(notified[1].msg:find('we"ird\nname', 1, true))
+      assert.is_nil(notified[1].msg:find("\\", 1, true))
+    end)
+
     it("asks codex to resolve the provider rather than reading config.toml", function()
       stub_system(report_with("myprov"))
       notice.check("/usr/local/bin/codex", "/tmp/some-worktree")

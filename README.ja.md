@@ -95,7 +95,8 @@ vibing.nvim は補完プラグイン(Copilot、Codeium)や他のチャットプ�
 > ローカルプロバイダを指定している場合、**軽量呼び出しだけが既定の OpenAI エンドポイントに向きます**
 > (通常のチャットは指定どおりのプロバイダを使います)。該当する場合は Neovim セッションごとに一度だけ
 > 警告します。プロバイダの判定は Codex 自身 (`codex doctor --json`) に問い合わせており、Codex が
-> 答えられなかったときは何も表示しません。
+> 答えられなかったときは何も表示しません。`agent.codex_provider_notice.enabled = false` で警告と
+> probe をまとめて止められます。
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim) を使う場合
 

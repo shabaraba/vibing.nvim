@@ -87,12 +87,15 @@ function M.check(codex_path, cwd)
     end
 
     vim.schedule(function()
+      -- %s with explicit quotes, not %q: %q escapes for Lua to read back, so a provider name
+      -- carrying a quote or a control character would reach the user as `\"` or a Lua newline
+      -- escape. The name comes from the user's own config.toml and is only ever displayed.
       Notify.warn(
         string.format(
           "lightweight calls (chat title, /summarize, daily summary) run with "
             .. "--ignore-user-config to keep them out of your MCP servers, which also drops "
-            .. "model_provider -- so they go to the default %q provider, not the configured %q. "
-            .. "Ordinary chat is unaffected.",
+            .. 'model_provider -- so they go to the default "%s" provider, not the configured '
+            .. '"%s". Ordinary chat is unaffected.',
           DEFAULT_PROVIDER,
           provider
         ),
@@ -101,6 +104,13 @@ function M.check(codex_path, cwd)
     end)
   end
 
+  -- No `env`, deliberately, where the `codex exec` call it describes passes `vim.fn.environ()`
+  -- plus the VIBING_* variables. Inheriting is the same environment minus those, and those exist
+  -- to tell a *stream* which chat and RPC port it belongs to -- a probe that reads config and
+  -- talks to nobody has no use for them. What both must agree on is what selects the config
+  -- (CODEX_HOME, PATH, cwd), and inheriting is what keeps that true by construction. If a future
+  -- change starts overriding one of those on the exec call, this has to follow.
+  --
   -- pcall because a spawn failure here must not take the lightweight call down with it; the
   -- binary resolved a moment ago, so this is the narrow window in which it stopped existing.
   pcall(
