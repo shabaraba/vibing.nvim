@@ -264,6 +264,35 @@ describe("grok_command_builder", function()
       assert.equals(replacement, fresh_builder.build("hello", {}, nil, {})[1], "kept the stale path")
     end)
 
+    it("re-validates a relative path, which is a location and not a PATH lookup", function()
+      -- `./bin/grok` is not a bare command name: `vim.fn.executable` resolves it against Neovim's
+      -- cwd, and so does fs_stat. Skipping the check for everything that does not start with "/"
+      -- left exactly this shape carrying #593 -- the cache would hand the path back after it was
+      -- gone, and vim.system would raise a raw ENOENT on it.
+      local relative = "./vibing-593-not-here/grok"
+      assert.is_nil(vim.uv.fs_stat(relative), "the fixture path must not exist")
+
+      local installed = true
+      vim.fn.executable = function(path)
+        return (path == relative and installed) and 1 or 0
+      end
+      vim.fn.system = function()
+        return "grok 0.2.101 (5bc4b5dfadcf) [stable]\n"
+      end
+
+      package.loaded["vibing.infrastructure.adapter.modules.grok_command_builder"] = nil
+      local fresh_builder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
+      local config = { grok = { executable = relative } }
+      assert.equals(relative, fresh_builder.build("hello", {}, nil, config)[1])
+
+      -- Gone. The cached path must not survive it: the user gets the actionable "not found at
+      -- configured path" error instead of an ENOENT out of the spawn.
+      installed = false
+      assert.has_error(function()
+        fresh_builder.build("hello again", {}, nil, config)
+      end)
+    end)
+
     it("still caches a bare command name, which no fs_stat can confirm", function()
       -- config.grok.executable takes a name off PATH as well as a path, and fs_stat would resolve
       -- that against Neovim's own cwd and answer nil forever. Losing the cache is not just a
