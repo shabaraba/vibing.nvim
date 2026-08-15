@@ -267,17 +267,20 @@ if [ -f "dist/index.js" ]; then
             fi
         fi
 
-        # `claude plugin install`/`update` above can report success while leaving an
-        # incomplete cache snapshot behind: on machines where copying many small
-        # files is slow (observed with real-time antivirus/EDR scanning on a
-        # corporate-managed Mac), the CLI's own copy step can silently stop partway
-        # while still updating its bookkeeping as if it finished. `claude plugin
-        # update` also treats a matching git commit SHA as "already up to date" and
-        # never re-copies — which, for a "directory"-source (dev-mode) plugin whose
-        # whole point is tracking uncommitted local edits, means it silently skips
-        # syncing on every single build.sh run where HEAD hasn't moved. So sync this
-        # checkout's tracked files into the cache directly on every run, rather than
-        # only when detected as broken.
+        # `claude plugin update` treats a matching git commit SHA as "already up to
+        # date" and never re-copies — which, for a "directory"-source (dev-mode)
+        # plugin whose whole point is tracking uncommitted local edits, means it
+        # silently skips syncing on every single build.sh run where HEAD hasn't
+        # moved. So sync this checkout's plugin tree into the cache directly on
+        # every run, rather than only when detected as broken.
+        #
+        # This block predates the claude-plugin/ layout, when `source` was the
+        # repository root and the CLI's own copy step ran over ~700MB / ~26k files
+        # per snapshot — slow enough on a machine with real-time antivirus/EDR
+        # scanning (observed on a corporate-managed Mac) that it could stop partway
+        # while still updating its bookkeeping as if it finished. That copy is now
+        # ~60 files, so the incomplete-snapshot failure is largely retired; the
+        # SHA-skip above is what keeps this sync load-bearing.
         #
         # mcp-server/node_modules and mcp-server/dist are symlinked into the cache
         # rather than copied, for two reasons: (1) rsync/cp copying node_modules'
@@ -294,7 +297,6 @@ if [ -f "dist/index.js" ]; then
 
         if [ -n "$PLUGIN_INSTALL_PATH" ]; then
             echo "[vibing.nvim] Syncing plugin cache with this checkout..."
-            mkdir -p "$PLUGIN_INSTALL_PATH/mcp-server"
             # A partial-copy failure here (permission errors, EDR/antivirus
             # interference — the exact class of environment this sync exists
             # to work around) must not abort the rest of build.sh under `set
@@ -315,13 +317,15 @@ if [ -f "dist/index.js" ]; then
                 # link — instead of replacing it.
                 for entry in "$PLUGIN_SRC_DIR"/* "$PLUGIN_SRC_DIR"/.[!.]*; do
                     [ -e "$entry" ] || continue
-                    name="$(basename "$entry")"
-                    [ "$name" = "mcp-server" ] && continue
+                    [ "$entry" = "$MCP_DIR" ] && continue
                     cp -R "$entry" "$PLUGIN_INSTALL_PATH/" || SYNC_STATUS=$?
                 done
+                # Only this loop copies *into* the destination's mcp-server/, so it
+                # is the only one that needs the directory to exist first.
+                mkdir -p "$PLUGIN_INSTALL_PATH/mcp-server"
                 for entry in "$MCP_DIR"/* "$MCP_DIR"/.[!.]*; do
                     [ -e "$entry" ] || continue
-                    name="$(basename "$entry")"
+                    name="${entry##*/}"
                     [ "$name" = "node_modules" ] && continue
                     [ "$name" = "dist" ] && continue
                     cp -R "$entry" "$PLUGIN_INSTALL_PATH/mcp-server/" || SYNC_STATUS=$?

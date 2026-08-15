@@ -91,8 +91,8 @@ replay the whole path in `cli_event_processor_subagent_spec.lua`.
 
 ## Code Tour
 
-`claude-plugin/skills/vibing-code-tour/SKILL.md` turns "explain how X works" into a walkthrough the editor
-performs: each stop is a real file opened at a real line (`nvim_win_open_file` +
+`claude-plugin/skills/vibing-code-tour/SKILL.md` turns "explain how X works" into a walkthrough
+the editor performs: each stop is a real file opened at a real line (`nvim_win_open_file` +
 `nvim_set_cursor`), and the whole route is left in the quickfix list so the user can replay it
 with `:cnext`/`:cprev` afterwards.
 
@@ -101,8 +101,9 @@ restores focus before returning, so the window showing the file is never the cur
 `nvim_set_cursor` without `winnr` moves the chat's cursor instead — and succeeds, so the tour
 looks like it is working while the code window never moves.
 
-The quickfix half is the MCP tool `nvim_set_qflist` (`claude-plugin/mcp-server/src/tools/qflist.ts` →
-`infrastructure/rpc/handlers/qflist.lua`). It always pushes a **new** list
+The quickfix half is the MCP tool `nvim_set_qflist`
+(`claude-plugin/mcp-server/src/tools/qflist.ts` → `infrastructure/rpc/handlers/qflist.lua`). It
+always pushes a **new** list
 (`vim.fn.setqflist({}, " ", ...)`), so whatever the user had in quickfix stays reachable under
 `:colder` — which is also why the skill must call it exactly once per tour, or `:cnext` walks a
 different list than the one being narrated. `open: true` opens the quickfix window but restores
@@ -190,8 +191,8 @@ bullet list (`- - -`). The user deletes unwanted options with standard Vim comma
 and sends the remainder with `<CR>`.
 
 **Implementation:** the primary path is vibing.nvim's own MCP tool
-`mcp__vibing-nvim__nvim_ask_user_question` (`claude-plugin/mcp-server/src/tools/chat.ts`), which the CLI's
-system prompt instructs the model to use instead of the native tool. Its handler calls
+`mcp__vibing-nvim__nvim_ask_user_question` (`claude-plugin/mcp-server/src/tools/chat.ts`), which
+the CLI's system prompt instructs the model to use instead of the native tool. Its handler calls
 `M.ask_user_question()` in `infrastructure/rpc/handlers/permission.lua`, which cancels the
 in-flight turn and renders the choice list via `on_insert_choices`. Because the turn is killed,
 the tool's return value never reaches the model — the user's answer arrives as the next `--resume`d

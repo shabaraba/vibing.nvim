@@ -11,6 +11,19 @@ local function get_plugin_root()
   return plugin_root
 end
 
+---MCP server directory. Everything shipped to Claude Code lives under
+---claude-plugin/ — see CLAUDE.md → "Repository Layout".
+---@return string
+local function get_mcp_dir()
+  return get_plugin_root() .. "/claude-plugin/mcp-server"
+end
+
+---The build artefact whose presence means "the MCP server is built"
+---@return string
+local function get_dist_entry()
+  return get_mcp_dir() .. "/dist/index.js"
+end
+
 ---Get Node.js executable path
 ---Checks environment variable VIBING_NODE_EXECUTABLE, then falls back to "node"
 ---@return string
@@ -73,7 +86,7 @@ end
 ---@return boolean success
 function M.build()
   local plugin_root = get_plugin_root()
-  local mcp_dir = plugin_root .. "/claude-plugin/mcp-server"
+  local mcp_dir = get_mcp_dir()
 
   print_build("Building MCP server...")
 
@@ -125,7 +138,7 @@ function M.build()
   end
 
   -- Verify build succeeded
-  local dist_index = mcp_dir .. "/dist/index.js"
+  local dist_index = get_dist_entry()
   if vim.fn.filereadable(dist_index) == 1 then
     print_build("✓ MCP server built successfully")
     print_build(plugin_install_message(plugin_root))
@@ -141,7 +154,7 @@ end
 ---@param callback? function Callback function called with success status
 function M.build_async(callback)
   local plugin_root = get_plugin_root()
-  local mcp_dir = plugin_root .. "/claude-plugin/mcp-server"
+  local mcp_dir = get_mcp_dir()
 
   print_build("Building MCP server...")
 
@@ -183,7 +196,7 @@ function M.build_async(callback)
   vim.fn.jobstart(cmd, {
     on_exit = function(_, exit_code)
       if exit_code == 0 then
-        local dist_index = mcp_dir .. "/dist/index.js"
+        local dist_index = get_dist_entry()
         if vim.fn.filereadable(dist_index) == 1 then
           vim.schedule(function()
             print_build("✓ MCP server built successfully")
@@ -215,9 +228,7 @@ end
 ---Check if MCP server is built
 ---@return boolean
 function M.is_built()
-  local plugin_root = get_plugin_root()
-  local dist_index = plugin_root .. "/claude-plugin/mcp-server/dist/index.js"
-  return vim.fn.filereadable(dist_index) == 1
+  return vim.fn.filereadable(get_dist_entry()) == 1
 end
 
 return M

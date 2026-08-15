@@ -11,14 +11,14 @@ local uv = vim.loop
 ---Exists so tests can point at a private temporary directory: the default path is shared by every
 ---Neovim instance on the machine, including the developer's real one, and specs that clear the
 ---directory would otherwise delete live instance files.
----Note: Must match REGISTRY_DIR_ENV in mcp-server/src/handlers/instances.ts
+---Note: Must match REGISTRY_DIR_ENV in claude-plugin/mcp-server/src/handlers/instances.ts
 M.ENV_REGISTRY_DIR = "VIBING_INSTANCES_DIR"
 
 ---Get registry directory path
 ---Uses vim.fn.stdpath("data") which handles platform differences:
 ---  - Linux/macOS: ~/.local/share/nvim (or $XDG_DATA_HOME/nvim)
 ---  - Windows: ~/AppData/Local/nvim-data
----Note: Must match getRegistryPath() in mcp-server/src/handlers/instances.ts
+---Note: Must match getRegistryPath() in claude-plugin/mcp-server/src/handlers/instances.ts
 ---Exposed so tests can point it at a temporary directory.
 ---@return string path Registry directory path
 function M.get_registry_dir()

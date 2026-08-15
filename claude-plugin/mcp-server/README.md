@@ -68,7 +68,7 @@ To uninstall:
 
 **Option 1: Using build script (simplest)**
 
-From plugin root:
+From the repository root (one level above this plugin root, where `build.sh` lives):
 
 ```bash
 ./build.sh
