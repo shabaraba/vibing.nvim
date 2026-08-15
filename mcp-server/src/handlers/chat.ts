@@ -1,5 +1,34 @@
 import { callNeovim } from '../rpc.js';
 import { z } from 'zod';
+import { CHAT_POSITIONS } from '../tools/chat.js';
+
+const chatCreateArgsSchema = z.object({
+  position: z.enum(CHAT_POSITIONS).optional(),
+  working_dir: z.string().optional(),
+  rpc_port: z.number(),
+});
+
+/**
+ * Handler for nvim_chat_create
+ *
+ * Creates a chat buffer the caller can then drive with `nvim_chat_send_message`. The result is
+ * JSON rather than prose because the orchestrator has to carry `bufnr` forward across turns —
+ * it is the only handle to a worker chat, and a `back` chat has no window to find it by.
+ *
+ * The chat file is written to disk by the Lua handler at creation time, so `file_path` names a
+ * file that actually exists; `saved: false` means that write failed and the chat lives only in
+ * the buffer.
+ */
+export async function handleChatCreate(args: any): Promise<any> {
+  const { position, working_dir, rpc_port } = chatCreateArgsSchema.parse(args);
+
+  const result = await callNeovim('create_chat', { position, working_dir }, rpc_port);
+
+  return {
+    content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+    _meta: { bufnr: result?.bufnr, file_path: result?.file_path },
+  };
+}
 
 // Zod schemas for validation
 const chatSendMessageArgsSchema = z.object({

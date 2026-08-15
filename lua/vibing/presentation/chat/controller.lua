@@ -6,7 +6,8 @@ local M = {}
 local notify = require("vibing.core.utils.notify")
 
 ---コマンド引数として受け付けるウィンドウ位置
-local VALID_POSITIONS = { current = true, right = true, left = true, top = true, bottom = true, back = true }
+---（MCPツール nvim_chat_create と同じ集合を使う。定義元は core/constants/chat.lua）
+local ChatConstants = require("vibing.core.constants.chat")
 
 ---位置指定のみを取る引数をパースする（不正値は警告してデフォルトに落とす）
 ---@param args string?
@@ -15,7 +16,7 @@ local function parse_position(args)
   if not args or args == "" then
     return nil
   end
-  if VALID_POSITIONS[args] then
+  if ChatConstants.is_valid_position(args) then
     return args
   end
   notify.warn("Invalid position: " .. args .. ". Using default.")
@@ -33,7 +34,7 @@ function M.handle_open(args)
   local file_path = nil
 
   if args and args ~= "" then
-    if VALID_POSITIONS[args] then
+    if ChatConstants.is_valid_position(args) then
       position = args
     else
       -- 位置キーワードでなければファイルパスとして扱う

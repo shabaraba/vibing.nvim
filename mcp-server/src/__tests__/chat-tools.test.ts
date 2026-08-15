@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { allTools } from '../tools/index.js';
+import { CHAT_POSITIONS } from '../tools/chat.js';
 import { handlers } from '../handlers/index.js';
 import * as rpc from '../rpc.js';
 
@@ -46,6 +47,73 @@ describe('chat tools (worktree redesign)', () => {
     expect(inputSchema.properties.chat_bufnr).toBeDefined();
     expect(inputSchema.properties.rpc_port).toBeDefined();
     expect(inputSchema.properties.questions).toBeDefined();
+  });
+
+  it('registers nvim_chat_create with rpc_port required and everything else optional', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_create');
+    expect(tool).toBeDefined();
+    const inputSchema = tool?.inputSchema as {
+      required?: string[];
+      properties: Record<string, any>;
+    };
+    // It creates a buffer, so it is a write: it must name its instance rather than fall back to
+    // the registry (see requireRpcPort in ../tools/common.ts).
+    expect(inputSchema.required).toEqual(['rpc_port']);
+    expect(inputSchema.properties.position.enum).toEqual([...CHAT_POSITIONS]);
+    expect(inputSchema.properties.working_dir).toBeDefined();
+  });
+
+  it('nvim_chat_create defaults to no position and lets Neovim apply "back"', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 7, file_path: '/tmp/chat.md' });
+
+    const result = await handlers.nvim_chat_create({ rpc_port: 9878 });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'create_chat',
+      { position: undefined, working_dir: undefined },
+      9878
+    );
+    expect(result.isError).toBeUndefined();
+    expect(result._meta).toEqual({ bufnr: 7, file_path: '/tmp/chat.md' });
+  });
+
+  it('nvim_chat_create forwards position and working_dir, and returns the bufnr as text', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({
+      bufnr: 12,
+      file_path: '/repo/.vibing/worktrees/x/.vibing/chat/chat-1.md',
+      working_dir: '.vibing/worktrees/x',
+    });
+
+    const result = await handlers.nvim_chat_create({
+      rpc_port: 9878,
+      position: 'back',
+      working_dir: '.vibing/worktrees/x',
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'create_chat',
+      { position: 'back', working_dir: '.vibing/worktrees/x' },
+      9878
+    );
+    // The orchestrator has to read bufnr back out of the transcript on a later turn, so it has
+    // to be in the text, not only in _meta.
+    expect(result.content[0].text).toContain('"bufnr": 12');
+  });
+
+  it('nvim_chat_create rejects a call missing rpc_port instead of guessing an instance', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 7 });
+
+    await expect(handlers.nvim_chat_create({ position: 'back' })).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
+  it('nvim_chat_create rejects a position the Lua handler would refuse anyway', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 7 });
+
+    await expect(
+      handlers.nvim_chat_create({ rpc_port: 9878, position: 'sideways' })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
   });
 
   it('registers nvim_chat_send_message with rpc_port required', () => {

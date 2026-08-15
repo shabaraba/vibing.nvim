@@ -2,26 +2,18 @@
 -- Regression: a chat buffer created earlier must still be recognized as a
 -- chat buffer after a newer chat becomes the most-recently-rendered one.
 
+local ChatBuffers = require("tests.helpers.chat_buffers")
+
 describe("vibing.presentation.chat.view", function()
   local view
 
   before_each(function()
     package.loaded["vibing.presentation.chat.view"] = nil
-    require("vibing").setup({})
+    ChatBuffers.setup()
     view = require("vibing.presentation.chat.view")
-    view._attached_buffers = {}
-    view._current_buffer = nil
   end)
 
-  after_each(function()
-    for bufnr, _ in pairs(view._attached_buffers) do
-      if vim.api.nvim_buf_is_valid(bufnr) then
-        vim.api.nvim_buf_delete(bufnr, { force = true })
-      end
-    end
-    view._attached_buffers = {}
-    view._current_buffer = nil
-  end)
+  after_each(ChatBuffers.reset)
 
   describe("render", function()
     it("tracks every rendered chat buffer, not just the most recent one", function()
@@ -31,6 +23,30 @@ describe("vibing.presentation.chat.view", function()
       view.render({ session_id = "session-2" }, "back")
 
       assert.is_not_nil(view._attached_buffers[first_buf])
+    end)
+
+    it("returns the chat buffer it created", function()
+      local chat_buf = view.render({ session_id = "session-1" }, "back")
+
+      assert.is_not_nil(chat_buf)
+      assert.equals(view._current_buffer.buf, chat_buf.buf)
+    end)
+
+    it("does not leak a one-off position into the global config", function()
+      -- ChatBuffer holds a reference to config.chat, so overriding the position in place used to
+      -- change the user's default for the rest of the session — right down to Config.defaults,
+      -- which survives a later setup(). nvim_chat_create always renders "back", which would have
+      -- left every subsequent :VibingChat opening no window at all.
+      -- Asserting the literal "current" rather than a value read beforehand is deliberate: a
+      -- leak from an earlier render in this file would have made the read-first form pass.
+      local config = require("vibing").get_config()
+
+      local chat_buf = view.render({ session_id = "session-1" }, "back")
+
+      assert.equals("back", chat_buf.config.window.position)
+      assert.equals("current", config.chat.window.position)
+      assert.equals("current", require("vibing.config").defaults.chat.window.position)
+      assert.is_false(chat_buf.config.window == config.chat.window)
     end)
   end)
 

@@ -37,12 +37,22 @@ local function create_default_frontmatter(config)
 end
 
 ---新しいチャットセッションを作成
+---@param opts? {working_dir?: string} working_dirはgitルートからの相対パス（省略時はcwdから算出）
 ---@return Vibing.ChatSession
-function M.create_new()
+function M.create_new(opts)
   local vibing = require("vibing")
   local config = vibing.get_config()
 
-  local working_dir = Git.get_relative_path(vim.fn.getcwd())
+  -- チャットファイル自体は working_dir がどこであれ常に設定どおりの保存先に置く。
+  -- worktreeの中に置くと `git worktree remove` で会話ごと消えてしまい、
+  -- vibing-worktree-create（frontmatterだけ書き換える）とも挙動が食い違う
+  --
+  -- 空文字を明示的に弾く: Luaでは `""` がtruthyなので `opts.working_dir or ...` だけだと
+  -- cwd由来の既定値にフォールバックせず `working_dir = ""` のまま進んでしまう。
+  -- 呼び出し元（create_chat.lua）でも弾いているが、既定値の決定はこの関数の責務なので
+  -- 呼び出し元頼みにしない
+  local explicit = opts and opts.working_dir
+  local working_dir = (explicit and explicit ~= "") and explicit or Git.get_relative_path(vim.fn.getcwd())
 
   local frontmatter = create_default_frontmatter(config)
   if working_dir then
