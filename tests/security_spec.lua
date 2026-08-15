@@ -60,6 +60,26 @@ describe("PathSanitizer", function()
     end)
   end)
 
+  describe("is_within_root", function()
+    it("should accept a descendant", function()
+      assert.is_true(PathSanitizer.is_within_root("/a/repo", "/a/repo/sub/file.lua"))
+    end)
+
+    it("should accept the root itself", function()
+      -- Unlike validate_within_roots, which requires a strict descendant
+      assert.is_true(PathSanitizer.is_within_root("/a/repo", "/a/repo"))
+    end)
+
+    it("should reject a sibling that merely shares the root's prefix", function()
+      assert.is_false(PathSanitizer.is_within_root("/a/repo", "/a/repo-other/file.lua"))
+      assert.is_false(PathSanitizer.is_within_root("/a/repo", "/a/repository"))
+    end)
+
+    it("should reject an unrelated path", function()
+      assert.is_false(PathSanitizer.is_within_root("/a/repo", "/etc/passwd"))
+    end)
+  end)
+
   describe("validate_within_roots", function()
     it("should allow path within allowed root", function()
       local valid, err = PathSanitizer.validate_within_roots(

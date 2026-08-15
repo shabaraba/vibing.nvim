@@ -7,6 +7,16 @@ local M = {}
 local PathSanitizer = require("vibing.domain.security.path_sanitizer")
 local CommandValidator = require("vibing.domain.security.command_validator")
 
+---境界チェック用にパスを実体パスへ正規化する
+---vim.fn.resolve()はシンボリックリンクを辿ったうえで".."を畳み、存在しないパスでも動く。
+---fnamemodify(path, ":p")は絶対パスの".."を畳まないので、ここでは使えない。
+---@param path string
+---@return string
+local function to_real_path(path)
+  local resolved = vim.fn.resolve(path):gsub("/+$", "")
+  return resolved
+end
+
 ---Gitリポジトリのルートディレクトリを取得
 ---@param cwd string|nil 基準ディレクトリ（nilの場合はNeovim自身のカレントディレクトリ）
 ---@return string|nil gitルートパス（Git管理外の場合はnil）
@@ -35,11 +45,11 @@ function M.get_relative_path(abs_path)
 
   local normalized = vim.fn.fnamemodify(abs_path, ":p"):gsub("/$", "")
 
-  -- パス境界をチェック（完全一致または"/"で分離）
+  if not PathSanitizer.is_within_root(git_root, normalized) then
+    return nil
+  end
   if normalized == git_root then
     return "."
-  elseif normalized:sub(1, #git_root + 1) ~= git_root .. "/" then
-    return nil
   end
 
   local relative = normalized:sub(#git_root + 2)
@@ -47,8 +57,9 @@ function M.get_relative_path(abs_path)
 end
 
 ---working_dir（gitルートからの相対パス）から絶対パスを算出
+---gitルート外を指す値は無視してnilを返す（get_relative_pathの境界チェックと対称）
 ---@param working_dir string|nil 相対パス（"."はgitルートを表す）
----@return string|nil 絶対パス（working_dirがnilまたはGit管理外の場合はnil）
+---@return string|nil 絶対パス（working_dirがnil・Git管理外・gitルート外の場合はnil）
 function M.resolve_working_dir(working_dir)
   if not working_dir or working_dir == "" or working_dir == "~" then
     return nil
@@ -62,7 +73,28 @@ function M.resolve_working_dir(working_dir)
   if working_dir == "." then
     return git_root
   end
-  return git_root .. "/" .. working_dir
+
+  local resolved = git_root .. "/" .. working_dir
+  -- git rev-parse --show-toplevel は常に実体パス（末尾"/"なし）を返すので、比較の左辺は
+  -- そのまま使える。右辺だけを実体パスへ揃える
+  local real_path = to_real_path(resolved)
+  if not PathSanitizer.is_within_root(git_root, real_path) then
+    require("vibing.core.utils.notify").warn_once(
+      -- gitルートまで含めて数える。同じworking_dir文字列でも別プロジェクトなら別の警告
+      git_root .. "\0" .. working_dir,
+      string.format(
+        "working_dir '%s' points outside the git root (resolved to %s) and was ignored - "
+          .. "set it to a path inside the repository",
+        working_dir,
+        real_path
+      )
+    )
+    return nil
+  end
+
+  -- 境界判定は実体パスで行うが、返すのは連結したままのパス。シンボリックリンク経由の
+  -- working_dirでも、これまでと同じ文字列が呼び出し元に渡る
+  return resolved
 end
 
 ---Git管理下のプロジェクトかチェック
