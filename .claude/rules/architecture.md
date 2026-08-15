@@ -318,6 +318,25 @@ path from git root (e.g., `.vibing/worktrees/<branch>`). When a chat is reopened
 and mote commands are executed in this directory. This ensures consistent file operations across
 sessions, even when using a worktree or a custom directory.
 
+`Git.resolve_working_dir` **bounds it to the git root**, symmetrically with `get_relative_path`:
+a value resolving outside (`../../etc`, or a symlink inside the repo pointing out of it) is
+warned about once and treated as unset, so the chat falls back to Neovim's own cwd rather than
+failing to open. Returning `nil` rather than substituting the git root is what keeps the meaning
+single — `nil` already means "no chat-specific cwd" at every call site — and is what lets a
+caller that validates the directory (`create_chat.lua`) reject an out-of-bounds request outright
+instead of silently succeeding at the root.
+
+Two things about that check are not interchangeable, both verified against the real functions
+rather than read off the docs. `vim.fn.fnamemodify(path, ":p")` does **not** collapse `..` in a
+path that is already absolute (`/a/b/../c` comes back unchanged), so it cannot do this job;
+`vim.fn.resolve()` collapses `..` _and_ follows symlinks, and unlike `vim.uv.fs_realpath()` it
+works on a path that does not exist yet. And the comparison is between physical paths on both
+sides: `git rev-parse --show-toplevel` always reports the symlink-resolved path, which on macOS
+is `/private/tmp/...` for anything under `/tmp`, so comparing it against an unresolved candidate
+would reject directories that are genuinely inside. The boundary is decided on the resolved
+form, but the string handed back is the plain `git_root .. "/" .. working_dir` — a chat whose
+`working_dir` goes through a symlink keeps seeing the path it wrote.
+
 ## Concurrent Execution Support
 
 vibing.nvim supports running multiple chat sessions simultaneously without interference:

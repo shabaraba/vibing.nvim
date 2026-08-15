@@ -40,6 +40,23 @@ function M.warn(message, action)
   M.notify(message, M.levels.WARN, action)
 end
 
+---warn_onceが既に通知したkey
+---テストは`package.loaded`から外して再requireすればリセットできる
+local warned_keys = {}
+
+---同じkeyについて一度だけ警告する（WARN レベル）
+---毎リクエスト・毎パス解決のように何度も通る経路から出す警告のためのもの
+---@param key string 重複判定のキー
+---@param message string 警告メッセージ
+---@param action string? アクション名（省略可）
+function M.warn_once(key, message, action)
+  if warned_keys[key] then
+    return
+  end
+  warned_keys[key] = true
+  M.warn(message, action)
+end
+
 ---情報メッセージを送信（INFO レベル）
 ---正常な操作の完了通知に使用
 ---@param message string 情報メッセージ

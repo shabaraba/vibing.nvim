@@ -205,6 +205,91 @@ describe("vibing.core.utils.git", function()
     end)
   end)
 
+  describe("resolve_working_dir path boundary", function()
+    -- A fixture tree stands in for the git root so symlinks can be created without
+    -- touching the real repository. `git rev-parse --show-toplevel` always reports the
+    -- physical path, so the stub resolves the tempdir the same way (on macOS
+    -- vim.fn.tempname() lives under the /tmp -> /private/tmp symlink).
+    local Fs = require("vibing.core.utils.fs")
+    local root, outside, real_get_root, notifications
+
+    before_each(function()
+      local base = vim.fn.resolve(vim.fn.tempname())
+      root = base .. "/repo"
+      outside = base .. "/outside"
+      Fs.ensure_dir(root .. "/sub")
+      Fs.ensure_dir(outside)
+      assert(vim.uv.fs_symlink(root .. "/sub", root .. "/link_inside"))
+      assert(vim.uv.fs_symlink(outside, root .. "/link_outside"))
+
+      real_get_root = Git.get_root
+      Git.get_root = function()
+        return root
+      end
+
+      -- Notify holds warn_once's memo table, so reloading it between tests is what makes each
+      -- rejection warn again
+      package.loaded["vibing.core.utils.notify"] = nil
+      notifications = {}
+      ---@diagnostic disable-next-line: duplicate-set-field
+      require("vibing.core.utils.notify").notify = function(message)
+        table.insert(notifications, message)
+      end
+    end)
+
+    after_each(function()
+      Git.get_root = real_get_root
+      package.loaded["vibing.core.utils.notify"] = nil
+    end)
+
+    it("allows a directory inside the git root", function()
+      assert.equals(root .. "/sub", Git.resolve_working_dir("sub"))
+      assert.same({}, notifications)
+    end)
+
+    it("allows the git root itself reached through '..'", function()
+      -- The boundary itself is inside, not outside
+      assert.equals(root .. "/sub/..", Git.resolve_working_dir("sub/.."))
+      assert.same({}, notifications)
+    end)
+
+    it("rejects a path that escapes the git root with '..'", function()
+      assert.is_nil(Git.resolve_working_dir("../outside"))
+      assert.is_nil(Git.resolve_working_dir("../.."))
+    end)
+
+    it("rejects a sibling directory whose name merely shares the root's prefix", function()
+      -- "<root>-evil" starts with the root string but is not under it
+      assert.is_nil(Git.resolve_working_dir("../repo-evil"))
+    end)
+
+    it("follows symlinks: one pointing inside the root is allowed", function()
+      assert.equals(root .. "/link_inside", Git.resolve_working_dir("link_inside"))
+      assert.same({}, notifications)
+    end)
+
+    it("follows symlinks: one pointing outside the root is rejected", function()
+      -- A pure string comparison would accept this, since the literal path is under the root
+      assert.is_nil(Git.resolve_working_dir("link_outside"))
+    end)
+
+    it("rejects a '..' that climbs out through a symlink", function()
+      -- link_inside resolves to <root>/sub, so this lands on <root>/../outside
+      assert.is_nil(Git.resolve_working_dir("link_inside/../../outside"))
+    end)
+
+    it("warns once per rejected working_dir instead of on every call", function()
+      Git.resolve_working_dir("../outside")
+      Git.resolve_working_dir("../outside")
+      Git.resolve_working_dir("../outside")
+      assert.equals(1, #notifications)
+      assert.is_truthy(notifications[1]:find("../outside", 1, true))
+
+      Git.resolve_working_dir("../..")
+      assert.equals(2, #notifications)
+    end)
+  end)
+
   describe("is_git_repo", function()
     it("should return boolean", function()
       local result = Git.is_git_repo()

@@ -35,6 +35,18 @@ function M.normalize(path)
   return resolved, nil
 end
 
+---Whether an absolute path is `root` itself or a descendant of it
+---Both arguments must already be normalized (absolute, no trailing "/"); this is a pure string
+---predicate so that callers stay in charge of how much resolving their case needs.
+---Unlike `validate_within_roots`, the root itself counts as inside — a caller that means
+---"strictly below" should compare for equality separately.
+---@param root string
+---@param path string
+---@return boolean
+function M.is_within_root(root, path)
+  return path == root or path:sub(1, #root + 1) == root .. "/"
+end
+
 ---Validate that a path is within allowed directories
 ---@param path string Path to validate
 ---@param allowed_roots string[] List of allowed root directories
