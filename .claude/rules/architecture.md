@@ -370,6 +370,16 @@ property of its CLI rather than something left undone here. `--tools` filters bu
 MCP tools are added on top regardless (the advertised count stays ~254 higher either way) and
 grok 0.2.101 has no per-run flag to disable MCP servers, so the builder can only deny their
 _execution_ with `--deny "MCPTool(*)"`, in the `MCPTool(server__tool)` form grok's rules require.
+
+That wildcard is measured, not assumed, because a rule grok does not recognise is dropped in
+silence — `grok inspect`'s permission count goes 1 → 2 for `MCPTool(*)` loaded from a
+`.grok/config.toml` but stays at 1 for an invented kind, which it still reports as "0 skipped".
+Enforcement was then checked through the flag itself against a real MCP call: same prompt, same
+flags, `--deny` the only difference. Without it the model reports the tool called successfully;
+with it, "denied by a permission policy", and the debug log records
+`deny rule matched (enforced before YOLO) tool="mcp:vibing-nvim__nvim_list_instances"`. Both runs
+passed `--always-approve`, so "before YOLO" is where the `deny` > `ask` > `allow` precedence gets
+confirmed too — which is what makes this not redundant with `dontAsk`.
 Project instructions have no escape hatch at all: grok reads `AGENTS.md`/`CLAUDE.md` from the repo
 and the home directory, and the only switches (`[compat.claude]`, `[mcp_servers]`) are persistent
 config, not per-invocation. `--sandbox read-only` was considered and rejected — grok's own docs

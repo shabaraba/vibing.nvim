@@ -45,6 +45,20 @@ local LIGHTWEIGHT_TOOLS = "todo_write"
 --- user's `settings.json` permission rules -- so an allow rule there could pre-approve an MCP
 --- tool. An explicit deny is what survives both: grok evaluates `deny` > `ask` > `allow`,
 --- "regardless of order or source".
+---
+--- Both halves of that were measured against grok 0.2.101 rather than trusted to the docs:
+---
+--- 1. The rule *form* is recognised. Loading it from a `.grok/config.toml` moves
+---    `grok inspect`'s permission count from 1 to 2, while an invented kind
+---    (`TotallyBogusKind(*)`) leaves it at 1 -- and is reported as "0 skipped", so an
+---    unrecognised rule vanishes without a word. A wildcard that silently did nothing would look
+---    exactly like one that worked.
+--- 2. The rule is *enforced*, through this flag, against a real MCP call. Same prompt and flags
+---    twice, `--deny` the only difference: without it the model reports the tool called
+---    successfully; with it, "denied by a permission policy", and the debug log records
+---    `deny rule matched (enforced before YOLO) tool="mcp:vibing-nvim__nvim_list_instances"`.
+---    Both runs passed `--always-approve`, so "enforced before YOLO" is also the precedence
+---    claim above, confirmed rather than assumed.
 local LIGHTWEIGHT_MCP_DENY = "MCPTool(*)"
 
 local cached_grok_path = nil
