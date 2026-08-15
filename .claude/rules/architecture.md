@@ -543,7 +543,7 @@ vibing.nvim supports running multiple chat sessions simultaneously without inter
 - Session lifecycle: Created → Used → Automatically cleaned up when stale
 - `cleanup_stale_sessions()` removes completed sessions while preserving active ones
 
-See `docs/adr/002-concurrent-execution-support.md` for architectural details.
+See `handbook/adr/002-concurrent-execution-support.md` for architectural details.
 
 **Directory creation is a shared-state operation here.** `vim.fn.mkdir(path, "p")` is not atomic —
 it walks the path creating each component and raises `E739` when another process creates one

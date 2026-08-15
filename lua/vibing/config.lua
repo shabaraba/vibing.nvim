@@ -284,7 +284,7 @@ M.defaults = {
       position = "current",
       width = 0.4,
       -- heightは意図的に未設定。既定値がpositionごとに違うのでwindow_manager側で解決する
-      -- （docs/configuration.md の chat.window.height 参照）
+      -- （handbook/configuration.md の chat.window.height 参照）
       border = "rounded",
     },
     auto_context = true,

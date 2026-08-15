@@ -15,7 +15,7 @@ schema change degrades the feature instead of breaking the stream.
 Pending resumes persist to `.vibing/pending-resume.json` and are re-armed on `setup()`, since a
 five-hour reset usually outlives the Neovim session. Safeguards: `max_retries` (default 1) per
 limit hit, never overwriting an unsent `## User` message, and an 8-day sanity ceiling on the reset
-timestamp. Concurrently parked chats all fire at once by design. See `docs/configuration.md` →
+timestamp. Concurrently parked chats all fire at once by design. See `handbook/configuration.md` →
 "Auto-Resume on Usage Limit".
 
 **Implementation:** `application/chat/auto_resume.lua` (scheduler),

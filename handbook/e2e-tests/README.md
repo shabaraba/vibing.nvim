@@ -72,7 +72,7 @@
 各mdファイルを開いて、記載されているテスト手順に従って実施してください。
 
 ```vim
-:edit docs/e2e-tests/01-chat-basic-flow.md
+:edit handbook/e2e-tests/01-chat-basic-flow.md
 ```
 
 ### 自動テスト（将来の実装）

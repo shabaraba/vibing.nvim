@@ -6,7 +6,7 @@ instance without deadlocks: an async RPC server (`lua/vibing/infrastructure/rpc/
 `vim.schedule()` for safe API calls) is queried by the Node MCP server (`mcp-server/`) acting as a
 TCP client, so both buffer reads and writes are possible. Installation is handled by `build.sh`
 (installs the `vibing-nvim` Claude Code plugin, user scope) — see `mcp-server/README.md` and
-`docs/lazy-setup-example.lua` for setup details; don't duplicate them here.
+`handbook/lazy-setup-example.lua` for setup details; don't duplicate them here.
 
 ## User MCP Servers, Slash Commands, Skills, and Subagents
 
