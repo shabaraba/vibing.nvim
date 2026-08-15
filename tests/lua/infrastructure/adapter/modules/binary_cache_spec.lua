@@ -24,10 +24,11 @@ describe("command builder binary caching", function()
       local builder = require(def.command_builder_module)
 
       it(def.id .. " resolves its binary once, not once per request", function()
+        local installed = helper.fake_binary(def.id)
         local lookups = 0
-        vim.fn.exepath = function(name)
+        vim.fn.exepath = function()
           lookups = lookups + 1
-          return "/usr/local/bin/" .. name
+          return installed
         end
 
         builder.build("hi", {}, nil, {}, nil)
@@ -35,6 +36,25 @@ describe("command builder binary caching", function()
         builder.build("hi", {}, nil, {}, nil)
 
         assert.equals(1, lookups, def.id .. " called exepath " .. lookups .. " times")
+      end)
+
+      it(def.id .. " re-resolves a cached path once the binary has moved", function()
+        -- #593: `nvm use`, a reinstall or an uninstall relocates the CLI under a running Neovim.
+        -- The cache used to hand out the old path for the rest of the session, so the builder's
+        -- own "not found" check was skipped and vim.system raised a raw ENOENT instead.
+        local before = helper.fake_binary(def.id .. "-before")
+        local after = helper.fake_binary(def.id .. "-after")
+
+        vim.fn.exepath = function()
+          return before
+        end
+        assert.equals(before, builder.build("hi", {}, nil, {}, nil)[1])
+
+        os.remove(before)
+        vim.fn.exepath = function()
+          return after
+        end
+        assert.equals(after, builder.build("hi", {}, nil, {}, nil)[1], def.id .. " kept the stale path")
       end)
 
       it(def.id .. " exposes the reset seam every cached builder needs", function()
@@ -52,8 +72,9 @@ describe("command builder binary caching", function()
         assert.is_false(ok)
         assert.is_truthy(tostring(err):lower():find("not found", 1, true))
 
-        vim.fn.exepath = function(name)
-          return "/usr/local/bin/" .. name
+        local installed = helper.fake_binary(def.id)
+        vim.fn.exepath = function()
+          return installed
         end
         assert.is_true(pcall(builder.build, "hi", {}, nil, {}, nil), "a later lookup should succeed")
       end)

@@ -121,6 +121,28 @@ for _, backend in ipairs(helper.adapters()) do
         assert.equals(0, #system.calls, "no process should be spawned when the CLI is missing")
       end)
 
+      it("reports a spawn that raises, instead of throwing out of stream()", function()
+        -- #593's second half. A binary can go missing between the builder resolving it and the
+        -- spawn, and libuv answers that with a raw `ENOENT: ... (cmd): '<path>'` that vim.system
+        -- raises. Unguarded, that reaches the user as a Lua stack trace and leaves the handle
+        -- registered, because the exit handler that unregisters it never runs.
+        vim.system = function()
+          error("ENOENT: no such file or directory (cmd): '/gone/cli'")
+        end
+
+        local result = helper.run_stream(adapter)
+        vim.wait(200, function()
+          return #result.done_responses > 0
+        end)
+
+        assert.equals(1, #result.done_responses)
+        -- The wording itself is cli_runtime_spec's business; what matters here is that the adapter
+        -- routes through it rather than handing libuv's text to the chat.
+        local message = result.done_responses[1].error or ""
+        assert.is_nil(message:find("ENOENT", 1, true), "raw libuv error leaked: " .. message)
+        assert.is_nil(ActiveStreamRegistry.get(result.handle_id), "the handle outlived the failed spawn")
+      end)
+
       it("strips the Lua file:line prefix so the chat shows a message, not a stack location", function()
         system.restore()
         system = helper.stub_system("")

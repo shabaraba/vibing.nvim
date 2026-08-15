@@ -1,4 +1,5 @@
 local grok_command_builder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
+local helper = require("tests.helpers.adapter_stream")
 
 describe("grok_command_builder", function()
   local original_exepath
@@ -240,6 +241,51 @@ describe("grok_command_builder", function()
       assert.has_error(function()
         fresh_builder.build("hello", {}, nil, {})
       end)
+    end)
+
+    it("re-resolves a cached path once the binary has moved", function()
+      -- #593, for grok's own cache: the shared binary_resolver the other three backends use is not
+      -- this one, so the same "hands back a path that is gone, and vim.system raises a raw ENOENT"
+      -- bug lived here separately. Real files, because the check is an fs_stat.
+      local moved = helper.fake_binary("grok-moved")
+      local replacement = helper.fake_binary("grok-replacement")
+      vim.fn.exepath = function()
+        return moved
+      end
+
+      package.loaded["vibing.infrastructure.adapter.modules.grok_command_builder"] = nil
+      local fresh_builder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
+      assert.equals(moved, fresh_builder.build("hello", {}, nil, {})[1])
+
+      os.remove(moved)
+      vim.fn.exepath = function()
+        return replacement
+      end
+      assert.equals(replacement, fresh_builder.build("hello", {}, nil, {})[1], "kept the stale path")
+    end)
+
+    it("still caches a bare command name, which no fs_stat can confirm", function()
+      -- config.grok.executable takes a name off PATH as well as a path, and fs_stat would resolve
+      -- that against Neovim's own cwd and answer nil forever. Losing the cache is not just a
+      -- lookup: the fallthrough re-runs the officialness sniff, blocking the main loop on a
+      -- `grok --version` subprocess on every single send.
+      local sniffs = 0
+      vim.fn.executable = function(path)
+        return path == "grok" and 1 or 0
+      end
+      vim.fn.system = function()
+        sniffs = sniffs + 1
+        return "grok 0.2.101 (5bc4b5dfadcf) [stable]\n"
+      end
+
+      package.loaded["vibing.infrastructure.adapter.modules.grok_command_builder"] = nil
+      local fresh_builder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
+      local config = { grok = { executable = "grok" } }
+
+      fresh_builder.build("hello", {}, nil, config)
+      fresh_builder.build("hello again", {}, nil, config)
+
+      assert.equals(1, sniffs, "the sniff ran " .. sniffs .. " times: the cache is defeated")
     end)
 
     it("keeps rejecting an unofficial binary on every call, not just the first", function()

@@ -1,4 +1,5 @@
 local Common = require("vibing.infrastructure.adapter.modules.command_builder_common")
+local helper = require("tests.helpers.adapter_stream")
 
 describe("command_builder_common", function()
   describe("resolve_language", function()
@@ -79,16 +80,54 @@ describe("command_builder_common", function()
     end)
 
     it("looks the binary up once and caches it", function()
+      local installed = helper.fake_binary("thing")
       local lookups = 0
       vim.fn.exepath = function()
         lookups = lookups + 1
-        return "/usr/local/bin/thing"
+        return installed
       end
 
       local resolver = Common.binary_resolver("thing", "missing")
       resolver.resolve()
       resolver.resolve()
       assert.equals(1, lookups)
+    end)
+
+    it("re-resolves when the cached binary is no longer there", function()
+      -- #593: a CLI can move under a running Neovim (`nvm use`, a reinstall). The cache used to
+      -- keep handing out the old path, so the missing-binary branch below was never reached and
+      -- vim.system raised a raw ENOENT on a path nothing had checked.
+      local before = helper.fake_binary("before")
+      local after = helper.fake_binary("after")
+
+      vim.fn.exepath = function()
+        return before
+      end
+      local resolver = Common.binary_resolver("thing", "missing")
+      assert.equals(before, resolver.resolve())
+
+      os.remove(before)
+      vim.fn.exepath = function()
+        return after
+      end
+      assert.equals(after, resolver.resolve())
+    end)
+
+    it("raises once a moved binary has no replacement on PATH", function()
+      local installed = helper.fake_binary("thing")
+      vim.fn.exepath = function()
+        return installed
+      end
+      local resolver = Common.binary_resolver("thing", "thing is not installed")
+      assert.equals(installed, resolver.resolve())
+
+      os.remove(installed)
+      vim.fn.exepath = function()
+        return ""
+      end
+      local ok, err = pcall(resolver.resolve)
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):find("thing is not installed", 1, true))
     end)
 
     it("raises the given message when the binary is absent", function()
@@ -113,19 +152,23 @@ describe("command_builder_common", function()
     end)
 
     it("forgets the cached path on reset, which is what the specs need", function()
+      local first = helper.fake_binary("first")
+      local second = helper.fake_binary("second")
+
       vim.fn.exepath = function()
-        return "/first"
+        return first
       end
       local resolver = Common.binary_resolver("thing", "missing")
-      assert.equals("/first", resolver.resolve())
+      assert.equals(first, resolver.resolve())
 
       vim.fn.exepath = function()
-        return "/second"
+        return second
       end
-      assert.equals("/first", resolver.resolve(), "should still be cached")
+      -- `first` is still installed, so nothing invalidates the cache on its own.
+      assert.equals(first, resolver.resolve(), "should still be cached")
 
       resolver.reset()
-      assert.equals("/second", resolver.resolve())
+      assert.equals(second, resolver.resolve())
     end)
 
     it("gives each caller its own cache", function()

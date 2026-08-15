@@ -95,13 +95,36 @@ local function ensure_official_grok(path)
   )
 end
 
+--- Whether a cached path still points at something, for the cases where we can tell.
+---
+--- The cached path is confirmed rather than trusted, for the reason
+--- `command_builder_common.binary_resolver` states (#593): an uninstall or a relocating reinstall
+--- leaves it pointing at nothing, and handing it back skips both errors below and turns into a raw
+--- ENOENT out of vim.system. Grok keeps its own cache because it resolves a *configurable*
+--- executable and sniffs it for officialness, neither of which the shared resolver does.
+---
+--- Only an absolute path is checked. `config.grok.executable` is accepted as a bare command name
+--- (`vim.fn.executable("grok")` searches PATH), and `fs_stat` would resolve that against Neovim's
+--- cwd and answer nil forever -- defeating the cache on every request, which costs far more than
+--- the lookup: the fallthrough re-runs `ensure_official_grok`, and that blocks the main loop on a
+--- `grok --version` subprocess. Those paths simply keep the pre-#593 behaviour.
+---
+--- @param path string
+--- @return boolean
+local function still_installed(path)
+  if not vim.startswith(path, "/") then
+    return true
+  end
+  return vim.uv.fs_stat(path) ~= nil
+end
+
 --- Resolve path to the grok binary
 --- @param config Vibing.Config
 --- @return string
 local function resolve_grok_path(config)
   local configured = config and config.grok and config.grok.executable
 
-  if cached_grok_path and cached_configured_executable == configured then
+  if cached_grok_path and cached_configured_executable == configured and still_installed(cached_grok_path) then
     return cached_grok_path
   end
 

@@ -175,7 +175,7 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
     end
   end
 
-  self._handles[handle_id] = vim.system(cmd, {
+  local started = CliRuntime.spawn(self._handles, handle_id, cmd, {
     text = true,
     stdin = "",
     cwd = cwd,
@@ -184,7 +184,11 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
       return self._handles[handle_id] == nil
     end),
     stderr = codex_stderr_handler,
-  }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done))
+  }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done), wrapped_on_done)
+
+  if not started then
+    return handle_id
+  end
 
   -- `--ignore-user-config` drops the user's model_provider along with their MCP servers (#587),
   -- so say once where these calls are actually going. The argv is what decides, not

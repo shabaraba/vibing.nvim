@@ -167,10 +167,7 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
     end
   end
 
-  -- vim.system throws synchronously on spawn failure (e.g. invalid cwd) before any process
-  -- exists, so the registry/perm-handler state registered above would otherwise never be
-  -- cleaned up (the exit handler that normally does it never runs).
-  local ok_spawn, handle_or_err = pcall(vim.system, cmd, {
+  local started = CliRuntime.spawn(self._handles, handle_id, cmd, {
     text = true,
     stdin = "",
     cwd = cwd,
@@ -179,16 +176,11 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
       return self._handles[handle_id] == nil
     end),
     stderr = StreamHandler.create_stderr_handler(error_output),
-  }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done))
+  }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done), wrapped_on_done)
 
-  if not ok_spawn then
-    ActiveStreamRegistry.unregister(handle_id)
-    perm_handler.clear_active_opts(handle_id)
-    on_done({ error = string.format("Failed to spawn grok process: %s", tostring(handle_or_err)) })
+  if not started then
     return handle_id
   end
-
-  self._handles[handle_id] = handle_or_err
 
   if debug_mode then
     local pid = self._handles[handle_id] and self._handles[handle_id].pid or "unknown"
