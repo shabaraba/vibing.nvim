@@ -76,6 +76,27 @@ Detailed documentation is organized in `.claude/rules/`:
 
 All `.md` files in `.claude/rules/` are automatically loaded into Claude Code's context.
 
+## Repository Layout
+
+Claude Code に配布されるものは**すべて `claude-plugin/` 配下**にある。リポジトリルートは
+marketplace root（`.claude-plugin/marketplace.json` があるディレクトリ）で、plugin root は
+その1階層下という関係になっている。
+
+| 場所                                       | 中身                                                   |
+| ------------------------------------------ | ------------------------------------------------------ |
+| `.claude-plugin/marketplace.json`          | marketplace 定義。`source` が `./claude-plugin` を指す |
+| `claude-plugin/.claude-plugin/plugin.json` | plugin 定義。`${CLAUDE_PLUGIN_ROOT}` はここの親        |
+| `claude-plugin/{agents,skills}/`           | **配布される** サブエージェント・スキル                |
+| `claude-plugin/mcp-server/`                | 配布される MCP サーバー                                |
+| `.claude/{skills,commands,rules}/`         | **このリポジトリを開発するため**のもの。配布されない   |
+
+`claude-plugin/` に置いたものは `claude plugin install` でユーザーに届き、`.claude/` に置いた
+ものは届かない。スキルを追加するときはどちらの読者向けかで置き場所を決める。
+
+ディレクトリ名が `plugin/` でないのは Neovim の予約名だからで、`plugin/**/*.lua` は
+runtimepath 上で毎起動時に自動 source される（`:h load-plugins`）。`node_modules` を含む
+ツリーをそこに置くと起動のたびに全走査される。
+
 ## Development Rules
 
 - **テストフィクスチャ・スキャフォルド**: ルートディレクトリに置かない。`tests/` 配下に配置すること

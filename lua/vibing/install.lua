@@ -73,7 +73,7 @@ end
 ---@return boolean success
 function M.build()
   local plugin_root = get_plugin_root()
-  local mcp_dir = plugin_root .. "/mcp-server"
+  local mcp_dir = plugin_root .. "/claude-plugin/mcp-server"
 
   print_build("Building MCP server...")
 
@@ -141,7 +141,7 @@ end
 ---@param callback? function Callback function called with success status
 function M.build_async(callback)
   local plugin_root = get_plugin_root()
-  local mcp_dir = plugin_root .. "/mcp-server"
+  local mcp_dir = plugin_root .. "/claude-plugin/mcp-server"
 
   print_build("Building MCP server...")
 
@@ -216,7 +216,7 @@ end
 ---@return boolean
 function M.is_built()
   local plugin_root = get_plugin_root()
-  local dist_index = plugin_root .. "/mcp-server/dist/index.js"
+  local dist_index = plugin_root .. "/claude-plugin/mcp-server/dist/index.js"
   return vim.fn.filereadable(dist_index) == 1
 end
 

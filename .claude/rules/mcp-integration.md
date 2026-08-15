@@ -3,10 +3,11 @@
 vibing.nvim provides MCP server integration so Claude Code can interact with a running Neovim
 instance without deadlocks: an async RPC server (`lua/vibing/infrastructure/rpc/server.lua`,
 `vim.loop` TCP,
-`vim.schedule()` for safe API calls) is queried by the Node MCP server (`mcp-server/`) acting as a
+`vim.schedule()` for safe API calls) is queried by the Node MCP server (`claude-plugin/mcp-server/`) acting as a
 TCP client, so both buffer reads and writes are possible. Installation is handled by `build.sh`
-(installs the `vibing-nvim` Claude Code plugin, user scope) — see `mcp-server/README.md` and
-`handbook/lazy-setup-example.lua` for setup details; don't duplicate them here.
+(installs the `vibing-nvim` Claude Code plugin, user scope) — see
+`claude-plugin/mcp-server/README.md` and `handbook/lazy-setup-example.lua` for setup details;
+don't duplicate them here.
 
 ## User MCP Servers, Slash Commands, Skills, and Subagents
 

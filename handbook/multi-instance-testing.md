@@ -179,7 +179,7 @@ Claude Code              Socket Pool              Neovim (port 9876)
 
 ### 3. Multi-Port Socket Management (TypeScript)
 
-**File:** `mcp-server/src/rpc.ts`
+**File:** `claude-plugin/mcp-server/src/rpc.ts`
 
 - Maintains separate sockets for each port
 - `callNeovim(method, params, port?)` accepts optional port parameter
@@ -188,7 +188,7 @@ Claude Code              Socket Pool              Neovim (port 9876)
 
 ### 4. MCP Tools Enhanced
 
-**Files:** `mcp-server/src/tools/*.ts`, `mcp-server/src/handlers/*.ts`
+**Files:** `claude-plugin/mcp-server/src/tools/*.ts`, `claude-plugin/mcp-server/src/handlers/*.ts`
 
 - All tools accept optional `rpc_port` parameter
 - New tool: `nvim_list_instances` - lists all running instances
@@ -391,11 +391,11 @@ await use_mcp_tool('vibing-nvim', 'nvim_list_instances', {});
 
 ### TypeScript Files (MCP Server)
 
-- `mcp-server/src/rpc.ts` - Multi-port socket management
-- `mcp-server/src/tools/common.ts` - Shared rpc_port property
-- `mcp-server/src/tools/instances.ts` - nvim_list_instances tool
-- `mcp-server/src/handlers/instances.ts` - Instance listing handler
-- `mcp-server/src/handlers/buffer.ts` - Updated with rpc_port support
+- `claude-plugin/mcp-server/src/rpc.ts` - Multi-port socket management
+- `claude-plugin/mcp-server/src/tools/common.ts` - Shared rpc_port property
+- `claude-plugin/mcp-server/src/tools/instances.ts` - nvim_list_instances tool
+- `claude-plugin/mcp-server/src/handlers/instances.ts` - Instance listing handler
+- `claude-plugin/mcp-server/src/handlers/buffer.ts` - Updated with rpc_port support
 
 ## Next Steps
 

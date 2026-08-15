@@ -74,12 +74,12 @@ Slash commands can be used within the chat buffer for quick actions:
 
 Worktree lifecycle (list/create/attach/run/finish) is handled entirely through natural-language
 requests backed by the `vibing-worktree-{list,create,attach,run,finish}` Claude Code skills
-bundled with this plugin (`skills/`), not by chat slash commands. See
-`skills/vibing-worktree-list/SKILL.md` and its sibling `-create`, `-attach`, `-run`, `-finish`
+bundled with this plugin (`claude-plugin/skills/`), not by chat slash commands. See
+`claude-plugin/skills/vibing-worktree-list/SKILL.md` and its sibling `-create`, `-attach`, `-run`, `-finish`
 skills.
 
 Running several tasks in parallel across worker chats is the same story: ask for it in natural
 language ("並行でやって"), and the bundled `vibing-orchestrate` skill
-(`skills/vibing-orchestrate/SKILL.md`) drives it through the `nvim_chat_create` /
+(`claude-plugin/skills/vibing-orchestrate/SKILL.md`) drives it through the `nvim_chat_create` /
 `nvim_chat_send_message` / `nvim_get_buffer` MCP tools. There is no `:Vibing*` command for it —
 see `architecture.md` → "Multi-Agent Orchestration".

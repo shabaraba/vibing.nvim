@@ -1,5 +1,5 @@
 -- Tests for the `create_chat` RPC method backing the nvim_chat_create MCP tool.
--- The orchestrator (skills/vibing-orchestrate) has no other way to make a worker chat, and the
+-- The orchestrator (claude-plugin/skills/vibing-orchestrate) has no other way to make a worker chat, and the
 -- bufnr this returns is its only handle on that worker, so the return shape is the contract.
 
 local ChatConstants = require("vibing.core.constants.chat")

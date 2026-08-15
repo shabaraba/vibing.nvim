@@ -35,7 +35,7 @@ Install this MCP server, plus Neovim-aware skills and a `nvim-navigator` subagen
 [Claude Code plugin](https://code.claude.com/docs/en/plugins) — no manual `~/.claude.json` editing
 and no separate build step (the server builds itself on first launch).
 
-`../build.sh` does this automatically (`claude plugin marketplace add` + `claude plugin install
+`../../build.sh` does this automatically (`claude plugin marketplace add` + `claude plugin install
 ... --scope user`) whenever the `claude` CLI is on `PATH`. To do it yourself instead:
 
 ```text
@@ -77,7 +77,7 @@ From plugin root:
 **Option 2: Manual build**
 
 ```bash
-cd mcp-server
+cd claude-plugin/mcp-server
 npm install
 npm run build
 ```
@@ -99,7 +99,7 @@ Add to `~/.claude.json`:
   "mcpServers": {
     "vibing-nvim": {
       "command": "node",
-      "args": ["/path/to/vibing.nvim/mcp-server/dist/index.js"],
+      "args": ["/path/to/vibing.nvim/claude-plugin/mcp-server/dist/index.js"],
       "env": {
         "VIBING_RPC_PORT": "9876",
         "VIBING_RPC_TIMEOUT": "30000"

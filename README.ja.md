@@ -151,6 +151,10 @@ vibing.nvim は [Claude Code プラグイン](https://code.claude.com/docs/en/pl
 `vibing-worktree-{list,create,attach,run,finish}`)、`nvim-navigator` サブエージェント
 (`@vibing-nvim:nvim-navigator` による読み取り専用コードナビゲーション)が登録されます。
 
+サブエージェントの利用には `permissions.allow` に `Task`(または `Agent`)が必要です。
+デフォルトには含まれないため、設定を変えていないチャットからは起動できません。それ以外は
+追加設定なしで動作します。
+
 同梱 MCP サーバーは初回起動時(およびソース変更時)に自動でビルドされるため、MCP サーバー
 自体の個別ビルドは不要です。MCP ツールの接続先として、`mcp = { enabled = true }`(デフォルト)
 の Neovim が起動している必要があります。

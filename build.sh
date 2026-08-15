@@ -5,7 +5,11 @@ set -e
 # Automatically builds the MCP server on plugin installation
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MCP_DIR="${SCRIPT_DIR}/mcp-server"
+# Everything shipped to Claude Code lives under claude-plugin/, which is what
+# .claude-plugin/marketplace.json points `source` at. The repository root is the
+# *marketplace* root; the plugin root is one level down.
+PLUGIN_SRC_DIR="${SCRIPT_DIR}/claude-plugin"
+MCP_DIR="${PLUGIN_SRC_DIR}/mcp-server"
 
 # Use VIBING_NODE_EXECUTABLE env var if set, otherwise default to "node"
 NODE_EXECUTABLE="${VIBING_NODE_EXECUTABLE:-node}"
@@ -103,13 +107,13 @@ if [ ! -d "$MCP_DIR" ]; then
 fi
 
 # Record the exact node binary resolved above so the Claude Code plugin's MCP
-# server launcher (mcp-server/bin/run.sh) can invoke it directly by absolute
+# server launcher (claude-plugin/mcp-server/bin/run.sh) can invoke it directly by absolute
 # path instead of relying on `node` being on PATH. Claude Code spawns
 # plugin-declared MCP server commands with a minimal PATH that doesn't
 # include version-manager shims (mise, nvm, volta, asdf, ...), so a bare
 # `command: "node"` fails with "Executable not found in $PATH" on any machine
 # where node is only installed through one of those. Written after the
-# directory check above so a missing mcp-server/ checkout fails with that
+# directory check above so a missing claude-plugin/mcp-server/ checkout fails with that
 # clear error instead of a raw redirect failure here. `command -v` is
 # guaranteed to succeed here (the checks above already proved $NODE_EXECUTABLE
 # is either an executable absolute path or resolvable on PATH), so no extra
@@ -299,7 +303,7 @@ if [ -f "dist/index.js" ]; then
             # letting a failing command be the tail of its own statement.
             SYNC_STATUS=0
             if command -v rsync &> /dev/null; then
-                rsync -a --delete --exclude='.git' --exclude='/node_modules' --exclude='/mcp-server/node_modules' --exclude='/mcp-server/dist' "$SCRIPT_DIR/" "$PLUGIN_INSTALL_PATH/" || SYNC_STATUS=$?
+                rsync -a --delete --exclude='/mcp-server/node_modules' --exclude='/mcp-server/dist' "$PLUGIN_SRC_DIR/" "$PLUGIN_INSTALL_PATH/" || SYNC_STATUS=$?
             else
                 # Portable fallback without rsync. Copy each top-level entry
                 # individually and skip the excluded ones outright, rather than
@@ -309,11 +313,9 @@ if [ -f "dist/index.js" ]; then
                 # step below), and `cp -R` landing on an existing symlink follows it
                 # — copying this checkout's node_modules into itself through the
                 # link — instead of replacing it.
-                for entry in "$SCRIPT_DIR"/* "$SCRIPT_DIR"/.[!.]*; do
+                for entry in "$PLUGIN_SRC_DIR"/* "$PLUGIN_SRC_DIR"/.[!.]*; do
                     [ -e "$entry" ] || continue
                     name="$(basename "$entry")"
-                    [ "$name" = ".git" ] && continue
-                    [ "$name" = "node_modules" ] && continue
                     [ "$name" = "mcp-server" ] && continue
                     cp -R "$entry" "$PLUGIN_INSTALL_PATH/" || SYNC_STATUS=$?
                 done
@@ -362,7 +364,7 @@ if [ -f "dist/index.js" ]; then
     # and a hand-edited config must never be clobbered.
     #
     # No port is baked into the registration: the MCP server takes `rpc_port` as an explicit
-    # argument on every tool call (mcp-server/src/rpc.ts throws without it) and reads no port
+    # argument on every tool call (claude-plugin/mcp-server/src/rpc.ts throws without it) and reads no port
     # from its environment, so persisting one via `--env` would only enshrine a value nothing
     # reads and mislead anyone running Neovim on a non-default port.
     register_mcp_server() {
