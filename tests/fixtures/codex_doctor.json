@@ -1,0 +1,29 @@
+{
+  "checks": {
+    "config.load": {
+      "category": "config",
+      "details": {
+        "CODEX_HOME": "/tmp/codex-home",
+        "config.toml": "/tmp/codex-home/config.toml",
+        "config.toml parse": "ok",
+        "cwd": "/tmp/project",
+        "enabled feature flags": "shell_tool, view_image, unified_exec",
+        "feature flag overrides": "none",
+        "feature flags enabled": "3",
+        "log dir": "/tmp/codex-home/log",
+        "mcp servers": "0",
+        "model": "gpt-5",
+        "model provider": "myprov",
+        "sqlite home": "/tmp/codex-home"
+      },
+      "durationMs": 0,
+      "id": "config.load",
+      "remediation": null,
+      "status": "ok",
+      "summary": "config loaded"
+    }
+  },
+  "codexVersion": "0.147.0",
+  "overallStatus": "fail",
+  "schemaVersion": 1
+}

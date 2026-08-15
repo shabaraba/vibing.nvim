@@ -7,6 +7,7 @@
 
 local helper = require("tests.helpers.adapter_stream")
 local codex = require("vibing.infrastructure.adapter.codex_cli")
+local notice = require("vibing.infrastructure.adapter.modules.codex_provider_notice")
 
 local CONFIG = { agent = { default_model = "sonnet" } }
 
@@ -26,31 +27,54 @@ describe("codex_cli hook registration", function()
   before_each(function()
     system = helper.stub_system("/usr/local/bin/codex")
     adapter = codex:new(CONFIG)
+    notice._reset()
   end)
 
   after_each(function()
     system.restore()
+    notice._reset()
   end)
 
   it("registers the PreToolUse hook for an ordinary call", function()
     helper.run_stream(adapter, { permission_mode = "default" })
-    assert.is_true(registers_hook(system.only_call().cmd))
+    assert.is_true(registers_hook(system.cli_call().cmd))
   end)
 
   it("skips it for a lightweight call, matching claude_cli", function()
     -- Routing a title-generation tool call into the chat's approval UI would prompt the user
     -- about a request they never made. The read-only sandbox is what constrains it instead.
     helper.run_stream(adapter, { permission_mode = "default", lightweight = true })
-    assert.is_false(registers_hook(system.only_call().cmd))
+    assert.is_false(registers_hook(system.cli_call().cmd))
   end)
 
   it("skips it in bypassPermissions, as before", function()
     helper.run_stream(adapter, { permission_mode = "bypassPermissions" })
-    assert.is_false(registers_hook(system.only_call().cmd))
+    assert.is_false(registers_hook(system.cli_call().cmd))
   end)
 
   it("still fences the lightweight call even with the hook gone", function()
     helper.run_stream(adapter, { permission_mode = "default", lightweight = true })
-    assert.is_true(vim.tbl_contains(system.only_call().cmd, 'sandbox_mode="read-only"'))
+    assert.is_true(vim.tbl_contains(system.cli_call().cmd, 'sandbox_mode="read-only"'))
+  end)
+
+  -- The other half of that fence: --ignore-user-config takes the user's model_provider with the
+  -- MCP servers it was aimed at, so the run also asks codex where it is now pointed (#587).
+  it("probes for the provider the lightweight call gives up", function()
+    helper.run_stream(adapter, { permission_mode = "default", lightweight = true })
+    assert.are.equal(2, #system.calls)
+    assert.are.same({ "/usr/local/bin/codex", "doctor", "--json" }, system.calls[2].cmd)
+  end)
+
+  it("does not probe for an ordinary call, which keeps the user's provider", function()
+    helper.run_stream(adapter, { permission_mode = "default" })
+    assert.are.equal(1, #system.calls)
+  end)
+
+  -- The prompt is the last element of the argv, so the flag scan alone would match a message
+  -- that happens to be exactly that flag and warn about a loss this call never took.
+  it("does not probe because the prompt looks like the flag", function()
+    local opts = { permission_mode = "default", permissions_allow = {} }
+    adapter:stream("--ignore-user-config", opts, function() end, function() end)
+    assert.are.equal(1, #system.calls)
   end)
 end)

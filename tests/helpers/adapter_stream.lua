@@ -60,6 +60,20 @@ function M.stub_system(exe_path, rpc_port)
     return state.calls[1]
   end
 
+  --- The call that launched the CLI, ignoring any side process the adapter fires alongside it.
+  ---
+  --- `stream()` is no longer always one spawn: a lightweight codex run also probes
+  --- `codex doctor --json` to report the provider `--ignore-user-config` drops (#587). The CLI
+  --- itself is the call whose stdout the adapter is streaming, which no side process has.
+  --- @return Vibing.Test.SystemCall
+  function state.cli_call()
+    local streamed = vim.tbl_filter(function(call)
+      return type(call.opts.stdout) == "function"
+    end, state.calls)
+    assert(#streamed == 1, "expected exactly one streamed vim.system call, got " .. #streamed)
+    return streamed[1]
+  end
+
   return state
 end
 

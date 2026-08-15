@@ -90,6 +90,12 @@ vibing.nvim は補完プラグイン(Copilot、Codeium)や他のチャットプ�
 > `codex exec` / `codex exec resume` の双方に存在することを確認済みです。それより古いバージョンは未検証
 > で、フラグが無い場合は通常のチャットには影響しませんが、軽量呼び出しが unknown argument エラーで
 > 失敗します。その場合は Codex を更新してください。
+>
+> `--ignore-user-config` は `model_provider` も落とします。`config.toml` でカスタムプロバイダや
+> ローカルプロバイダを指定している場合、**軽量呼び出しだけが既定の OpenAI エンドポイントに向きます**
+> (通常のチャットは指定どおりのプロバイダを使います)。該当する場合は Neovim セッションごとに一度だけ
+> 警告します。プロバイダの判定は Codex 自身 (`codex doctor --json`) に問い合わせており、Codex が
+> 答えられなかったときは何も表示しません。
 
 ### [lazy.nvim](https://github.com/folke/lazy.nvim) を使う場合
 

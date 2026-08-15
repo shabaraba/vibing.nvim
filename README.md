@@ -92,6 +92,12 @@ they compose well.
 > `codex exec` and `codex exec resume` alike. Older releases were not tested; if they lack the
 > flags, ordinary chat is unaffected but lightweight calls fail with an unknown-argument error.
 > Upgrade Codex if you see that.
+>
+> `--ignore-user-config` also drops `model_provider`, so if your `config.toml` points Codex at a
+> custom or local provider, **those lightweight calls go to the default OpenAI endpoint instead**.
+> Ordinary chat still uses your provider. vibing.nvim warns once per Neovim session when this
+> applies to you, asking Codex itself (`codex doctor --json`) which provider is configured; it says
+> nothing if Codex cannot answer.
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 

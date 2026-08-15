@@ -5,6 +5,7 @@
 local Base = require("vibing.infrastructure.adapter.base")
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
 local CodexCommandBuilder = require("vibing.infrastructure.adapter.modules.codex_command_builder")
+local CodexProviderNotice = require("vibing.infrastructure.adapter.modules.codex_provider_notice")
 local CodexEventProcessor = require("vibing.infrastructure.adapter.modules.codex_event_processor")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
@@ -184,6 +185,18 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
     end),
     stderr = codex_stderr_handler,
   }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done))
+
+  -- `--ignore-user-config` drops the user's model_provider along with their MCP servers (#587),
+  -- so say once where these calls are actually going. The argv is what decides, not
+  -- `opts.lightweight` alone: the builder documents that flag as a stand-in for a narrower switch
+  -- codex does not have yet, so reading the built command is what makes the warning disarm itself
+  -- the day the flag stops being used, instead of going on describing a loss that no longer
+  -- happens. `lightweight` still guards it because the prompt is the last element of `cmd`, and a
+  -- message consisting of exactly that flag would otherwise match. Fired after the spawn above,
+  -- since the probe exists to describe that call and must not delay it.
+  if opts.lightweight and vim.tbl_contains(cmd, "--ignore-user-config") then
+    CodexProviderNotice.check(cmd[1], cwd)
+  end
 
   if debug_mode then
     local pid = self._handles[handle_id] and self._handles[handle_id].pid or "unknown"
