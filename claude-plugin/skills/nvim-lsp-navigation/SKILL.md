@@ -10,6 +10,12 @@ Text search (`Grep`/`Glob`) finds string matches; a language server understands 
 overloads, generics, and cross-file symbol resolution. When `vibing-nvim` MCP tools are
 available and the target filetype has an LSP client attached, prefer LSP-backed answers.
 
+**Before calling anything:** pass `rpc_port` on every tool call (your system prompt has it inside
+a vibing.nvim chat; otherwise `nvim_list_instances` reports it), and if the `mcp__vibing-nvim__`
+prefix below is unavailable, look for a tool name **ending** in the one you need — a plugin
+install registers them as `mcp__plugin_<marketplace>_vibing-nvim__<tool>`. The `nvim-context`
+skill explains both in full.
+
 ## Tool mapping
 
 | Question                                  | Tool                                                 |

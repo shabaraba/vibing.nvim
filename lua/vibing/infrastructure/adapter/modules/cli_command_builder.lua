@@ -277,7 +277,8 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
           .. tostring(rpc_port)
           .. ". You MUST pass this exact value as the rpc_port argument on every vibing-nvim MCP tool "
           .. "call — never omit it or guess, since other unrelated Neovim instances may be running and "
-          .. "reachable on other ports."
+          .. "reachable on other ports. A subagent does not inherit this system prompt, so when you "
+          .. "delegate work that will touch Neovim, state the rpc_port in the task prompt you hand it."
       )
     end
 

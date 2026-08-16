@@ -131,6 +131,16 @@ describe("cli_command_builder", function()
       assert.is_true(prompt_text:find("mcp__plugin_<marketplace>_vibing-nvim__", 1, true) ~= nil)
     end)
 
+    -- A subagent gets its own system prompt, so the port never reaches it on its own. Without
+    -- this half the bundled nvim-navigator agent falls back to nvim_list_instances, which only
+    -- resolves while exactly one Neovim is live.
+    it("tells the model to forward the rpc_port when it delegates to a subagent", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil, 9878)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_true(prompt_text:find("subagent does not inherit this system prompt", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("state the rpc_port in the task prompt", 1, true) ~= nil)
+    end)
+
     it("omits the rpc_port line when rpc_port is not provided", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local idx = find_flag(cmd, "--append-system-prompt")

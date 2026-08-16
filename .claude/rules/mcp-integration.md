@@ -17,6 +17,28 @@ vibing.nvim invokes the `claude` CLI with `--setting-sources user,project,local`
 `.claude/commands/` project slash commands, `.claude/skills/`, and global settings/subagents are
 all available inside vibing.nvim sessions automatically — no extra configuration needed.
 
+## Naming the Tool and the Instance
+
+Two facts decide whether a call reaches the editor the user is looking at, and both have one home
+in the distributed plugin: `claude-plugin/skills/nvim-context/SKILL.md` → "Calling the tools". The
+other skills and the `nvim-navigator` agent state the rule in a line each and point there, rather
+than restating the reasoning — a skill is loaded on its own, so a bare cross-reference would leave
+the rule unstated.
+
+**The prefix depends on how the server was registered.** `mcp__vibing-nvim__<tool>` for a plain
+user-level entry, `mcp__plugin_<marketplace>_vibing-nvim__<tool>` for a plugin install.
+`VIBING_NVIM_MCP_TOOL_PATTERNS` (`core/constants/tools.lua`) enumerates the prefixes for
+`--allowedTools`, which accepts nothing but literals — so it must be updated by hand on a
+marketplace rename. It silently went stale once when the marketplace became `vibing`;
+`tests/lua/core/constants/tools_spec.lua` now reads the name out of
+`.claude-plugin/marketplace.json` and fails if the matching entry is missing. The grant still
+works while that list is stale, because the hook's suffix match is what actually decides — which
+is exactly why nothing noticed.
+
+**The port has to be named explicitly**, and a subagent does not inherit the chat's. The system
+prompt therefore tells the model both to pass its own `rpc_port` and to forward it in any task
+prompt it hands a subagent.
+
 ## Available MCP Tools
 
 Prefix with `mcp__vibing-nvim__`:

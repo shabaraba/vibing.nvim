@@ -39,6 +39,11 @@ and stop.
 
 ## Reading the buffer
 
+Pass this turn's `rpc_port` (also in the system prompt) on both calls below. If the
+`mcp__vibing-nvim__` prefix is unavailable, look for a tool name **ending** in the one you need —
+a plugin install registers them as `mcp__plugin_<marketplace>_vibing-nvim__<tool>`. The
+`nvim-context` skill explains both in full.
+
 1. Call `mcp__vibing-nvim__nvim_get_buffer` with the `bufnr` from the system prompt to fetch the
    buffer's current content. This is the _live_ in-memory content, including edits that haven't
    been written to disk yet — vibing.nvim chat buffers are not auto-saved, so the on-disk file

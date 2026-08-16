@@ -97,18 +97,25 @@ M.INTERNAL_TOOLS_MAP = to_map(M.INTERNAL_TOOLS)
 ---（mcp__vibing-nvim__*）と、Claude Codeプラグイン登録（mcp__plugin_<marketplace>_vibing-nvim__*）の
 ---両方に対応する。
 ---
----プラグイン側の接頭辞は`mcp__plugin_vibing-nvim_vibing-nvim__`。マーケットプレイス名は
----.claude-plugin/marketplace.jsonの`name`（"vibing"）ではなく`claude plugin marketplace add`が
----実際に登録した名前で決まり、build.shが入れるのは`vibing-nvim@vibing-nvim`である（`claude plugin
----list --json`のidと、実際に配られるツール名の両方で確認済み）。
+---プラグイン側の接頭辞は`mcp__plugin_<marketplace>_vibing-nvim__`で、マーケットプレイス名は
+---`claude plugin marketplace add`が実際に登録した名前で決まる。build.shはそれを
+---.claude-plugin/marketplace.jsonの`name`から取るので、現行は`vibing`（=`vibing-nvim@vibing`）。
+---`vibing-nvim`は改名前の名前で、build.shの移行処理を通していない既存インストールがまだそちらの
+---接頭辞でツールを配るため残してある。
 ---
----ただしこのリストにマーケットプレイス名の追従を頼ってはいけない。--allowedToolsは具体的な
----プレフィックスしか受け付けず、ここがずれると当該ツールはCLI自身のゲートで止まる（#564）。
+---**この列挙は手で追従させるしかない。** --allowedToolsは具体的なプレフィックスしか受け付けず、
+---ここがずれると当該ツールはCLI自身のゲートで止まる（#564）。実際に一度ずれた: marketplace.jsonが
+---`vibing`に改名された後もここは`vibing-nvim`のままで、事前承認が黙って空振りしていた。
+---tools_spec.luaがmarketplace.jsonの`name`を読んで対応する要素の存在を検証するので、次に改名する人は
+---テストで気づく。
+---
 ---最終的な担保はPreToolUseフックが返す明示的なallow決定のほうで、そちらは
 ---can_use_tool.M.is_vibing_nvim_mcp_toolのサフィックスマッチなのでマーケットプレイス名に依存しない。
+---だからこのリストが古くても通常のチャットは動く（それが上のずれが表面化しなかった理由でもある）。
 ---@type string[]
 M.VIBING_NVIM_MCP_TOOL_PATTERNS = {
   "mcp__vibing-nvim__*",
+  "mcp__plugin_vibing_vibing-nvim__*",
   "mcp__plugin_vibing-nvim_vibing-nvim__*",
 }
 
