@@ -103,11 +103,12 @@ local function add_permission_args(cmd, opts)
     permissions_allow = {}
   end
   local allow_tools = vim.deepcopy(permissions_allow)
-  -- Both of vibing-nvim's own possible MCP registration styles (see
-  -- tools_constants.VIBING_NVIM_MCP_TOOL_PATTERNS) must be pre-approved here so the CLI's own
-  -- --allowedTools gate doesn't block calls before they ever reach vibing.nvim's PreToolUse hook,
-  -- which already recognizes both via can_use_tool.M.is_vibing_nvim_mcp_tool (suffix match, so it
-  -- isn't tied to a specific marketplace name).
+  -- Every vibing-nvim MCP registration style (see tools_constants.VIBING_NVIM_MCP_TOOL_PATTERNS)
+  -- is pre-approved here, as the CLI's first gate. It is not the load-bearing one: the PreToolUse
+  -- hook recognizes them all via can_use_tool.M.is_vibing_nvim_mcp_tool (suffix match, so it isn't
+  -- tied to a marketplace name) and returns an explicit allow, which makes the CLI skip its own
+  -- gate entirely. A stale entry here is therefore invisible rather than fatal — which is exactly
+  -- how the list came to name a marketplace that had already been renamed.
   local always_allowed = vim.list_extend(
     vim.deepcopy(tools_constants.ALWAYS_ALLOWED_TOOLS),
     vim.deepcopy(tools_constants.VIBING_NVIM_MCP_TOOL_PATTERNS)
@@ -277,7 +278,8 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
           .. tostring(rpc_port)
           .. ". You MUST pass this exact value as the rpc_port argument on every vibing-nvim MCP tool "
           .. "call — never omit it or guess, since other unrelated Neovim instances may be running and "
-          .. "reachable on other ports."
+          .. "reachable on other ports. A subagent does not inherit this system prompt, so when you "
+          .. "delegate work that will touch Neovim, state the rpc_port in the task prompt you hand it."
       )
     end
 

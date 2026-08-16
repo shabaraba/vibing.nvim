@@ -11,6 +11,31 @@ in-memory state (open buffers, splits, cursor position, unsaved edits) is the gr
 it can differ from what's on disk. Prefer live state over assumptions whenever the user
 references "this file", "current buffer", "my selection", "what I have open", etc.
 
+## Calling the tools
+
+Two things decide whether a `vibing-nvim` tool call reaches the editor the user is looking at.
+Both apply to every skill and subagent in this plugin, so they are stated once here.
+
+**Which name.** Tools are written below as `mcp__vibing-nvim__<tool>`, which is the plain
+user-level MCP server registration. A Claude Code plugin install exposes them as
+`mcp__plugin_<marketplace>_vibing-nvim__<tool>` instead, where `<marketplace>` is fixed at
+`claude plugin marketplace add` time. If the plain prefix is not available, look for a tool whose
+name **ends** in the one you need rather than assuming it is missing.
+
+**Which instance.** Every tool takes an `rpc_port` naming the target Neovim.
+
+- Inside a vibing.nvim chat, the port is in your system prompt for the turn — pass that exact
+  value on every call.
+- A subagent does **not** inherit it. Take it from your task prompt, and if it isn't there, call
+  `nvim_list_instances` and use the port it reports.
+- Anywhere else (an ordinary Claude Code session — this MCP server installs at user scope, so it
+  is visible in sessions that have nothing to do with vibing.nvim), `nvim_list_instances` is the
+  only way to know. If it lists more than one, say which you found and ask rather than guessing.
+
+Omitting `rpc_port` works only while exactly one Neovim is live: reads fall back to the instance
+registry, and writes refuse outright. Worktrees and concurrent chats make more than one the normal
+case, so treat the fallback as a diagnostic, not a default.
+
 ## Workflow
 
 1. **Ground yourself first.** Call `mcp__vibing-nvim__nvim_get_info` for the active file and

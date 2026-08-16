@@ -131,6 +131,16 @@ describe("cli_command_builder", function()
       assert.is_true(prompt_text:find("mcp__plugin_<marketplace>_vibing-nvim__", 1, true) ~= nil)
     end)
 
+    -- A subagent gets its own system prompt, so the port never reaches it on its own. Without
+    -- this half the bundled nvim-navigator agent falls back to nvim_list_instances, which only
+    -- resolves while exactly one Neovim is live.
+    it("tells the model to forward the rpc_port when it delegates to a subagent", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil, 9878)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_true(prompt_text:find("subagent does not inherit this system prompt", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("state the rpc_port in the task prompt", 1, true) ~= nil)
+    end)
+
     it("omits the rpc_port line when rpc_port is not provided", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
@@ -278,10 +288,14 @@ describe("cli_command_builder", function()
       assert.is_not_nil(idx)
       local allowed = cmd[idx + 1]
       assert.is_true(allowed:find("mcp__vibing-nvim__*", 1, true) ~= nil)
-      -- The plugin-scoped prefix has to be the one build.sh actually installs
-      -- (`vibing-nvim@vibing-nvim`); --allowedTools takes literal prefixes, so a stale
-      -- marketplace name here silently matches nothing at all (#564).
-      assert.is_true(allowed:find("mcp__plugin_vibing-nvim_vibing-nvim__*", 1, true) ~= nil)
+      -- --allowedTools takes literal prefixes, so every plugin-scoped name has to appear
+      -- verbatim: the current marketplace (`vibing-nvim@vibing`) and the pre-rename one that
+      -- installs which never ran build.sh's migration still use. Which names belong in the list
+      -- is tests/lua/core/constants/tools_spec.lua's job; this only pins that the builder
+      -- forwards all of them.
+      for _, pattern in ipairs(require("vibing.core.constants.tools").VIBING_NVIM_MCP_TOOL_PATTERNS) do
+        assert.is_true(allowed:find(pattern, 1, true) ~= nil, pattern .. " missing from --allowedTools")
+      end
     end)
   end)
 
