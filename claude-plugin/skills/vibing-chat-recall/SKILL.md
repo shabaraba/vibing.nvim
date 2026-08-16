@@ -39,7 +39,9 @@ and stop.
 
 ## Reading the buffer
 
-Pass this turn's `rpc_port` (also in the system prompt) on both calls below. If the
+Pass this turn's `rpc_port` (also in the system prompt) on both calls below — this skill only runs
+inside a vibing.nvim chat, so the port is always there and `nvim_list_instances` is never the
+route. If the
 `mcp__vibing-nvim__` prefix is unavailable, look for a tool name **ending** in the one you need —
 a plugin install registers them as `mcp__plugin_<marketplace>_vibing-nvim__<tool>`. The
 `nvim-context` skill explains both in full.
