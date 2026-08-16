@@ -83,7 +83,7 @@ registers vibing.nvim as a Claude Code plugin (user scope). That plugin ships
 the `vibing-nvim` MCP server, the bundled skills and the `nvim-navigator`
 subagent. To install it by hand instead: >
     /plugin marketplace add shabaraba/vibing.nvim
-    /plugin install vibing-nvim@vibing-nvim
+    /plugin install vibing-nvim@vibing
 <
 ==============================================================================
 4. CONFIGURATION                                        *vibing-configuration*
