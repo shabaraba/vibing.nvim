@@ -63,7 +63,7 @@ return {
 return {
   {
     dir = "~/projects/vibing.nvim",  -- ローカルパス
-    build = "cd mcp-server && npm install && npm run dev",  -- Watch mode
+    build = "cd claude-plugin/mcp-server && npm install && npm run dev",  -- Watch mode
 
     config = function()
       require("vibing").setup({

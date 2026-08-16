@@ -67,7 +67,7 @@ Append to `tasks.lua`. The bar for a new task:
 
 - The check decides from `record.tool_calls` alone.
 - It encodes a contract this project actually states somewhere — a system prompt line
-  (`cli_command_builder.lua`), a tool description (`mcp-server/src/tools/`), or a documented
+  (`cli_command_builder.lua`), a tool description (`claude-plugin/mcp-server/src/tools/`), or a documented
   convention. If nothing states it, the eval is testing a hope, not a regression.
 - Its id is unique and reads as `area/what-it-asserts`.
 

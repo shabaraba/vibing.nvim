@@ -1,6 +1,6 @@
 --- vibing.nvim固有の「エージェントが守るべき契約」をタスク化したもの。
 ---
---- 契約は基本的にsystem prompt（cli_command_builder.lua）かツールdescription（mcp-server/）で
+--- 契約は基本的にsystem prompt（cli_command_builder.lua）かツールdescription（claude-plugin/mcp-server/）で
 --- 表明されている。ここが落ちたら、その表明が効かなくなったということ。
 ---
 --- 追加するときの基準: 判定が**観測されたツール呼び出し**だけで決まること。応答文の良し悪しを

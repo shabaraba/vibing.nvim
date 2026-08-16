@@ -11,7 +11,7 @@ This guide shows how to set up the MCP (Model Context Protocol) integration betw
 ## Step 1: Build the MCP Server
 
 ```bash
-cd /path/to/vibing.nvim/mcp-server
+cd /path/to/vibing.nvim/claude-plugin/mcp-server
 npm install
 npm run build
 ```
@@ -69,7 +69,7 @@ Create or update `~/.claude.json`:
   "mcpServers": {
     "vibing-nvim": {
       "command": "node",
-      "args": ["/absolute/path/to/vibing.nvim/mcp-server/dist/index.js"],
+      "args": ["/absolute/path/to/vibing.nvim/claude-plugin/mcp-server/dist/index.js"],
       "env": {
         "VIBING_RPC_PORT": "9876"
       }
@@ -249,7 +249,7 @@ require("vibing").setup({
   "mcpServers": {
     "vibing-nvim": {
       "command": "node",
-      "args": ["/path/to/vibing.nvim/mcp-server/dist/index.js"],
+      "args": ["/path/to/vibing.nvim/claude-plugin/mcp-server/dist/index.js"],
       "env": {
         "VIBING_RPC_PORT": "8888"
       }
@@ -277,12 +277,12 @@ Configure separate MCP servers in `~/.claude.json`:
   "mcpServers": {
     "vibing-nvim-1": {
       "command": "node",
-      "args": ["/path/to/vibing.nvim/mcp-server/dist/index.js"],
+      "args": ["/path/to/vibing.nvim/claude-plugin/mcp-server/dist/index.js"],
       "env": { "VIBING_RPC_PORT": "9876" }
     },
     "vibing-nvim-2": {
       "command": "node",
-      "args": ["/path/to/vibing.nvim/mcp-server/dist/index.js"],
+      "args": ["/path/to/vibing.nvim/claude-plugin/mcp-server/dist/index.js"],
       "env": { "VIBING_RPC_PORT": "9877" }
     }
   }
@@ -297,6 +297,6 @@ Configure separate MCP servers in `~/.claude.json`:
 
 ## References
 
-- [MCP Server README](../mcp-server/README.md)
+- [MCP Server README](../claude-plugin/mcp-server/README.md)
 - [vibing.nvim Configuration](./configuration.md)
 - [Model Context Protocol Specification](https://modelcontextprotocol.io/)

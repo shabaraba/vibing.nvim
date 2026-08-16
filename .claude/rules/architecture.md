@@ -40,7 +40,7 @@ routine and `bin/hooks/*.sh`). It is machine-wide shared state keyed by port, so
 escape hatches: `$VIBING_HOOK_COMM_DIR` overrides it outright (tests use this), and without a
 listening port it falls back to a PID-suffixed path rather than a single shared `vibing-hook-0`.
 The instance registry has the same treatment via `$VIBING_INSTANCES_DIR` (honoured by both
-`rpc/registry.lua` and `mcp-server/src/handlers/instances.ts`).
+`rpc/registry.lua` and `claude-plugin/mcp-server/src/handlers/instances.ts`).
 
 The `.res` file carries **three** decisions, not two, and the difference is the whole permission
 contract with the CLI:
@@ -274,8 +274,8 @@ Node.js side (no agent wrapper — only these):
 - bin/hooks/pre-tool-use.sh    - PreToolUse hook → RPC
 - bin/hooks/stop-failure.sh    - StopFailure hook → RPC
 - bin/list-commands.ts         - Slash command/skill enumeration for completion
-- mcp-server/src/index.ts      - MCP server entry point
-- mcp-server/src/tools/        - MCP tool implementations (buffer, lsp, window, chat)
+- claude-plugin/mcp-server/src/index.ts      - MCP server entry point
+- claude-plugin/mcp-server/src/tools/        - MCP tool implementations (buffer, lsp, window, chat)
 
 Tests:
 - tests/lua/**/*_spec.lua      - Lua tests (plenary.nvim)
@@ -665,8 +665,9 @@ rival buffers), `presentation/chat/controller.lua` → `handle_subagent_chat`.
 One chat can create and drive other chats: `nvim_chat_create` (MCP) →
 `infrastructure/rpc/handlers/chat.lua` → `application/chat/use_cases/create_chat.lua` →
 `view.render`. The orchestrator briefs each worker with `nvim_chat_send_message` and polls it with
-`nvim_get_buffer`. The workflow is the bundled `skills/vibing-orchestrate/SKILL.md`; there is no
-command and no scheduler — the whole feature is three MCP calls and a skill.
+`nvim_get_buffer`. The workflow is the bundled
+`claude-plugin/skills/vibing-orchestrate/SKILL.md`; there is no command and no scheduler — the
+whole feature is three MCP calls and a skill.
 
 Nothing new was needed to keep the workers apart. Each chat buffer already owns its own session
 id and handle id (see "Concurrent Execution Support"), so parallel workers are the existing
@@ -746,10 +747,10 @@ supporting multi-language development workflows.
 
 Worktree-backed development goes through natural-language requests backed by the
 `vibing-worktree-{list,create,attach,run,finish}` Claude Code skills bundled with this plugin
-(`skills/vibing-worktree-*`), not through a vibing.nvim chat command. There is no bespoke
-lifecycle script or metadata file — worktrees are created with plain
+(`claude-plugin/skills/vibing-worktree-*`), not through a vibing.nvim chat command. There is no
+bespoke lifecycle script or metadata file — worktrees are created with plain
 `git worktree add -b <branch> .vibing/worktrees/<branch>/` and removed with
 `git worktree remove`; a worktree's existence on disk is its entire state. The chat's own
 `working_dir` frontmatter field (unchanged by this) is what keeps a conversation attached to its
-worktree across turns. See `skills/vibing-worktree-list/SKILL.md` (and its sibling `-create`,
-`-attach`, `-run`, `-finish` skills) for the full list/create/attach/finish workflow.
+worktree across turns. See `claude-plugin/skills/vibing-worktree-list/SKILL.md` (and its sibling
+`-create`, `-attach`, `-run`, `-finish` skills) for the full list/create/attach/finish workflow.

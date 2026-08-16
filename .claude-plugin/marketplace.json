@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "vibing-nvim",
-      "source": "./",
+      "source": "./claude-plugin",
       "description": "Neovim MCP tools, skills, and subagents for vibing.nvim.",
       "homepage": "https://github.com/shabaraba/vibing.nvim",
       "repository": "https://github.com/shabaraba/vibing.nvim",
