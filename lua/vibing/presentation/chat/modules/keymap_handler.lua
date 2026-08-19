@@ -105,7 +105,9 @@ function M.setup(buf, callbacks, keymaps)
       local line = vim.fn.getline(".")
       local col = vim.api.nvim_win_get_cursor(0)[2] + 1 -- 1-indexed
 
-      local url_pat = "(https?://[^ \t\n%]%)>\"']+)"
+      -- マークダウン装飾（**bold**, `code`）や括弧で囲まれた URL の閉じ記号を取り込まないよう、
+      -- `*`・バッククォート・各種括弧も URL の区切りとして扱う
+      local url_pat = "(https?://[^ \t\n%]%)%(%[<>{}\"'*`]+)"
       local found_url = nil
       local best_dist = math.huge
       local max_dist = 10
