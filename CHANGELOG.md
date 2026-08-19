@@ -30,6 +30,18 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 5.3.1 (2026-08-19)
+
+## What's Changed
+* Rename docs/ to handbook/ to avoid clashing with doc/ by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/596
+* refactor: drop plugin/vibing.lua, which setup() already did by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/595
+* refactor: move everything shipped to Claude Code under claude-plugin/ by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/598
+* fix: give the two MCP tool-call rules one home, and gate the stale one by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/599
+* fix: exclude markdown decorations and brackets from gx URL matching by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/600
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.3.0...v5.3.1
+
 ## 5.3.0 (2026-08-15)
 
 ## What's Changed
