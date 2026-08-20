@@ -337,8 +337,12 @@ function ChatBuffer:_try_schedule_instead_of_send(message)
     return false
   end
 
+  -- リミットはバックエンド単位。別のバックエンドで取られた記録でこのチャットを止めると、
+  -- リセットまでのあいだ会話そのものができなくなる。
+  local Modes = require("vibing.core.constants.modes")
   local LimitState = require("vibing.infrastructure.storage.limit_state")
-  local state = LimitState.get_active(vim.fn.fnamemodify(chat_file_path, ":h"))
+  local agent = Modes.resolve_agent(self:parse_frontmatter(), config)
+  local state = LimitState.get_active(vim.fn.fnamemodify(chat_file_path, ":h"), agent)
   if not state then
     return false
   end

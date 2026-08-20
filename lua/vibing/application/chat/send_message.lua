@@ -335,9 +335,12 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
   local LimitState = require("vibing.infrastructure.storage.limit_state")
   local chat_file_path = (bufnr and vim.api.nvim_buf_is_valid(bufnr)) and vim.api.nvim_buf_get_name(bufnr) or nil
   local chat_dir = chat_file_path and vim.fn.fnamemodify(chat_file_path, ":h") or nil
+  -- 記録も解除もバックエンド単位。誰がリミットに当たったか（誰のリクエストが通ったか）は
+  -- 実際に走ったアダプターそのものが答えで、ターン中に書き換わりうるfrontmatterではない。
+  local agent = require("vibing.infrastructure.adapter.factory").agent_id(adapter)
 
   if response._rate_limit_info then
-    pcall(LimitState.record, response._rate_limit_info, chat_dir)
+    pcall(LimitState.record, response._rate_limit_info, chat_dir, agent)
     local rescheduled = false
     local ok, result = pcall(
       M._reschedule_rejected_message,
@@ -355,7 +358,7 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
     end
   elseif not response.error then
     pcall(AutoResume.on_success, chat_file_path)
-    pcall(LimitState.clear, chat_dir)
+    pcall(LimitState.clear, chat_dir, agent)
   else
     -- リミット以外のエラーで終わったターンも、未送信Userセクションは消費済み。予約
     -- （scheduled）を残すと、その後そこに入った別のテキスト（書きかけの続きや承認UIの

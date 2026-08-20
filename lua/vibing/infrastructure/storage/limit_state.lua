@@ -9,8 +9,15 @@
 --- fallback confirm a rejection without saying when it lifts, and a record that cannot answer
 --- "still active?" would strand every later request.
 ---
+--- The record is also scoped to the backend that hit the limit. A limit belongs to one provider's
+--- plan, while the store is per project, so a claude limit says nothing about a codex chat in the
+--- same repository — and a codex request getting through says nothing about the claude limit
+--- lifting. Callers that mean a specific backend pass its name; passing none means "whatever is
+--- recorded", which is what `:VibingCancelResume`'s explicit "forget it" wants.
+---
 --- @module vibing.infrastructure.storage.limit_state
 
+local Agents = require("vibing.core.constants.agents")
 local Git = require("vibing.core.utils.git")
 local Fs = require("vibing.core.utils.fs")
 
@@ -20,6 +27,8 @@ local M = {}
 --- @field resets_at number Unix seconds when the limit lifts
 --- @field limit_type string|nil e.g. "five_hour"
 --- @field observed_at number Unix seconds when the limit was observed
+--- @field agent string|nil Backend that hit the limit. Absent in stores written before this
+---   field existed, which are read as claude's — the only backend that reports a rate limit.
 
 --- Memoized `git rev-parse` results, keyed by the directory asked about — the same reason
 --- pending_resume.lua caches: one send/receive cycle resolves the path several times.
@@ -76,8 +85,9 @@ end
 --- Record an observed limit. Ignored unless the payload carried a reset timestamp.
 --- @param info Vibing.RateLimitInfo
 --- @param cwd? string
+--- @param agent? string Backend that hit the limit (default: claude)
 --- @return boolean recorded
-function M.record(info, cwd)
+function M.record(info, cwd, agent)
   if type(info) ~= "table" or type(info.resets_at) ~= "number" then
     return false
   end
@@ -89,6 +99,7 @@ function M.record(info, cwd)
     resets_at = info.resets_at,
     limit_type = info.limit_type,
     observed_at = os.time(),
+    agent = agent or Agents.DEFAULT,
   })
 
   local ok, err = pcall(vim.fn.writefile, { json }, path)
@@ -99,25 +110,38 @@ function M.record(info, cwd)
   return true
 end
 
---- The record, but only while the limit is still in force.
+--- Does the record belong to `agent`? A nil `agent` matches anything.
+--- @param state Vibing.LimitState
+--- @param agent string|nil
+--- @return boolean
+local function belongs_to(state, agent)
+  return agent == nil or (state.agent or Agents.DEFAULT) == agent
+end
+
+--- The record, but only while the limit is still in force — and only if it is `agent`'s.
 --- @param cwd? string
+--- @param agent? string Backend asking (default: any)
 --- @return Vibing.LimitState|nil
-function M.get_active(cwd)
+function M.get_active(cwd, agent)
   local state = M.load(cwd)
-  if state and state.resets_at > os.time() then
+  if state and state.resets_at > os.time() and belongs_to(state, agent) then
     return state
   end
   return nil
 end
 
 --- Forget the recorded limit. Called on any successful response — a request that got through
---- proves the limit is not in force, whatever the stored reset time claimed.
+--- proves *that backend's* limit is not in force, whatever the stored reset time claimed.
 --- @param cwd? string
-function M.clear(cwd)
-  local path = M.get_path(cwd)
-  if vim.fn.filereadable(path) == 1 then
-    pcall(vim.fn.delete, path)
+--- @param agent? string Only clear the record if it is this backend's (default: clear any)
+function M.clear(cwd, agent)
+  -- An unreadable record is cleared rather than kept: it can no longer answer "still active?"
+  -- for anyone, so leaving it in place would strand every later request behind a corrupt file.
+  local state = M.load(cwd)
+  if state and not belongs_to(state, agent) then
+    return
   end
+  pcall(vim.fn.delete, M.get_path(cwd))
 end
 
 return M

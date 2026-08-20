@@ -398,6 +398,19 @@ describe("auto_resume", function()
       assert.is_nil(LimitState.get_active(tmp_root))
     end)
 
+    it("leaves another backend's recorded limit alone when the cancelling chat names its own", function()
+      -- "Send now" in a codex chat is no reason to unpark every claude chat in the project: the
+      -- record is per backend, and clearing it would cost each of them a rejected round-trip.
+      local chat_path = tmp_root .. "/chat.md"
+      LimitState.record({ resets_at = os.time() + 3600, limit_type = "five_hour" }, tmp_root, "claude")
+
+      AutoResume.cancel(chat_path, "codex")
+
+      assert.is_not_nil(LimitState.get_active(tmp_root, "claude"))
+
+      LimitState.clear(tmp_root)
+    end)
+
     it("cancelling every pending resume also clears the current project's recorded limit", function()
       -- Stub the stores rather than touch real files: cancel(nil) resolves both stores through
       -- the *process* cwd (this repository), the same reason the `list` tests above stub

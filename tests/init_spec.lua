@@ -383,7 +383,9 @@ describe("vibing.init", function()
 
       --- @param bufnr number
       --- @param message string|nil
-      local function stub_chat_buffer(bufnr, message)
+      --- @param frontmatter table|nil The chat's frontmatter; its `agent` decides which backend's
+      ---   recorded usage limit these commands read and clear.
+      local function stub_chat_buffer(bufnr, message, frontmatter)
         package.loaded["vibing.presentation.chat.view"] = {
           get_current = function()
             return {
@@ -392,6 +394,9 @@ describe("vibing.init", function()
               end,
               extract_user_message = function()
                 return message
+              end,
+              parse_frontmatter = function()
+                return frontmatter or {}
               end,
             }
           end,

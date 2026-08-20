@@ -197,8 +197,9 @@ section is not kept in sync field by field.
                                                         *:VibingCancelResume*
 :VibingCancelResume [all]
     Cancel this chat's pending auto-resume or scheduled send, or every one
-    with `all`. Also clears the project's recorded usage limit, so a
-    follow-up `<CR>` actually sends instead of being parked again.
+    with `all`. Also clears the project's recorded usage limit for this
+    chat's backend (`all` clears it whichever backend it belongs to), so
+    a follow-up `<CR>` actually sends instead of being parked again.
 
 Scheduled requests:~
     A rejected turn, a `<CR>` sent while the project's recorded usage

@@ -543,14 +543,19 @@ end
 --- the record that would otherwise re-park the very next message is deliberately discarded. This
 --- is safe even if the limit is in fact still in force — the next rejected response re-records
 --- it, so the worst case is one attempted request that fails and gets parked again.
+---
+--- `agent` narrows that to the cancelling chat's own backend, since the record is per backend: a
+--- codex chat's "send now" is no reason to unpark every claude chat in the project. Cancelling
+--- *every* pending resume passes none, and clears whatever is recorded.
 --- @param chat_file_path string|nil When nil, cancels every pending resume
+--- @param agent string|nil Only forget the recorded limit if it is this backend's
 --- @return number cancelled_count
-function M.cancel(chat_file_path)
+function M.cancel(chat_file_path, agent)
   if chat_file_path then
     stop_timer(chat_file_path)
     local existed = PendingResume.get(chat_file_path) ~= nil
     PendingResume.remove(chat_file_path)
-    LimitState.clear(vim.fn.fnamemodify(chat_file_path, ":h"))
+    LimitState.clear(vim.fn.fnamemodify(chat_file_path, ":h"), agent)
     return existed and 1 or 0
   end
 

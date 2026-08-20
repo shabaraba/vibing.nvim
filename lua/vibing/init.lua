@@ -308,8 +308,11 @@ function M._register_commands()
         return
       end
     else
+      -- 別のバックエンドのリセット時刻は、このチャットが待つべき時刻ではない
+      local Modes = require("vibing.core.constants.modes")
       local LimitState = require("vibing.infrastructure.storage.limit_state")
-      local state = LimitState.get_active(vim.fn.fnamemodify(chat_file_path, ":h"))
+      local chat_agent = Modes.resolve_agent(chat_buffer:parse_frontmatter(), M.config)
+      local state = LimitState.get_active(vim.fn.fnamemodify(chat_file_path, ":h"), chat_agent)
       if not state then
         notify.warn("No usage limit on record. Give a time, e.g. ':VibingSchedule 30m'")
         return
@@ -405,7 +408,8 @@ function M._register_commands()
     end
 
     local path = vim.api.nvim_buf_get_name(chat_buffer:get_buffer())
-    if AutoResume.cancel(path) > 0 then
+    local Modes = require("vibing.core.constants.modes")
+    if AutoResume.cancel(path, Modes.resolve_agent(chat_buffer:parse_frontmatter(), M.config)) > 0 then
       notify.info("Cancelled the pending request for this chat")
     else
       notify.info("This chat has nothing scheduled")
