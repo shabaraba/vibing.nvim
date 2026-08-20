@@ -30,6 +30,15 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 5.3.2 (2026-08-20)
+
+## What's Changed
+* fix: exclude release-please CHANGELOG.md from prettier check by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/601
+* fix: scope the usage-limit record to the backend that hit it by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/603
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.3.1...v5.3.2
+
 ## 5.3.1 (2026-08-19)
 
 ## What's Changed
