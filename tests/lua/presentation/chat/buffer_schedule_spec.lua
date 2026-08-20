@@ -55,15 +55,21 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
   --- `## User` section, without going through :new()/open() (which need window_manager,
   --- file_manager, etc.). The helper under test only touches self.buf and self._pending_approval.
   --- @param message string
+  --- @param agent string|nil Written into the buffer's frontmatter when given
   --- @return table chat_buffer, string chat_path
-  local function make_buffer(message)
+  local function make_buffer(message, agent)
     local bufnr = vim.api.nvim_create_buf(false, false)
     table.insert(created_bufs, bufnr)
     vim.api.nvim_buf_set_name(bufnr, tmp_root .. "/chat.md")
-    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+    local lines = {}
+    if agent then
+      vim.list_extend(lines, { "---", "vibing.nvim: true", "agent: " .. agent, "---", "" })
+    end
+    vim.list_extend(lines, {
       "## User <!-- unsent -->",
       message,
     })
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
     -- nvim_buf_set_name resolves symlinks in an already-existing directory (e.g. macOS
     -- /tmp -> /private/tmp), so the name actually stored can differ from what was passed in.
     -- Read it back rather than assuming it round-trips, since the helper under test and the
@@ -170,6 +176,34 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
 
     local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, 1, false)
     assert.matches("unsent", lines[1])
+  end)
+
+  describe("agent scoping", function()
+    -- The record says one backend's plan is exhausted. Parking a chat that talks to a different
+    -- backend on the back of it makes that chat unusable for the whole reset window.
+    before_each(function()
+      stub_config()
+    end)
+
+    it("does not park a codex chat on a claude limit", function()
+      local chat_buf, chat_path = make_buffer("hello there", "codex")
+      LimitState.record({ resets_at = os.time() + 3600, limit_type = "five_hour" }, tmp_root, "claude")
+
+      local scheduled = chat_buf:_try_schedule_instead_of_send("hello there")
+
+      assert.is_false(scheduled)
+      assert.is_nil(PendingResume.get(chat_path))
+    end)
+
+    it("still parks a claude chat on a claude limit", function()
+      local chat_buf, chat_path = make_buffer("hello there", "claude")
+      LimitState.record({ resets_at = os.time() + 3600, limit_type = "five_hour" }, tmp_root, "claude")
+
+      local scheduled = chat_buf:_try_schedule_instead_of_send("hello there")
+
+      assert.is_true(scheduled)
+      assert.is_not_nil(PendingResume.get(chat_path))
+    end)
   end)
 
   it("does not arm a schedule when the chat file cannot be saved (fails open)", function()

@@ -62,6 +62,23 @@ clears this record (in addition to cancelling the entry), so "send now" — canc
 actually sends instead of being re-parked by a stale record; if the limit is genuinely still in
 force, the next rejected response re-records it.
 
+**The record names the backend that hit the limit, and every reader is scoped to it.** The store
+is per project but a limit belongs to one provider's plan, so an unscoped record parked codex
+chats behind a claude limit — for the whole reset window, with no way to converse — and let a
+successful codex turn clear the claude record out from under the chats waiting on it.
+The two sides name the backend differently, and the difference is deliberate. **Writing** the
+record — and clearing it on a successful turn — asks `factory.agent_id(adapter)` about the adapter
+that actually ran, because "who was rejected" is a fact about the process, not about frontmatter a
+user can edit while the turn is in flight. **Reading** it before a request exists
+(`<CR>`, `:VibingSchedule`, `:VibingCancelResume`) has no adapter yet, so it predicts one with
+`Modes.resolve_agent` (frontmatter `agent` > `config.adapter` > claude) — the same precedence
+`send_message._resolve_adapter` applies a moment later.
+
+A record with no `agent` field reads as claude's, since claude is the only backend that reports a
+rate limit (`claude_cli.lua`) and so the only one that could have written one.
+`:VibingCancelResume all` is the one unscoped clear left: it has no chat in hand, and "forget
+everything" is the user saying so by hand.
+
 **Implementation:** `infrastructure/storage/limit_state.lua` (project limit record),
 `core/utils/when.lua` (time spec parser), plus the `kind` dispatch in
 `application/chat/auto_resume.lua`.

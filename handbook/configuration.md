@@ -342,6 +342,13 @@ rejection is still in force. It is written only when the rejection carried a res
 cleared on any successful response, so a limit that lifts early is forgotten as soon as one
 request gets through.
 
+The record also names the backend that hit the limit, and only chats on that backend are parked
+by it. A usage limit belongs to one provider's plan, so a claude limit leaves a codex chat in the
+same project free to send — and a codex response getting through does not clear the claude record.
+Which backend a chat is on is its frontmatter `agent`, falling back to `adapter` in `setup()`.
+`:VibingCancelResume` clears it only when it is the current chat's backend; `:VibingCancelResume
+all` has no chat in hand and clears whatever is recorded.
+
 **Re-scheduling.** `max_retries` bounds how many times a scheduled request may be rescheduled
 after being rejected again. Because the check is applied to the already-incremented retry count,
 the default of `3` permits only **2** re-schedules. The next rejection falls through to
@@ -354,9 +361,10 @@ The prompt only fires if `auto_resume_on_limit.max_retries` has been raised abov
 scheduled retries already consumed.
 
 **`:VibingCancelResume`** cancels either an auto-resume or a scheduled request, and also clears the
-project's recorded usage limit — so "send now" (cancel, then `<CR>`) actually sends instead of
-being re-parked by the stale record. If the limit is genuinely still in force, the next rejected
-response re-records it.
+project's recorded usage limit for this chat's backend — so "send now" (cancel, then `<CR>`)
+actually sends instead of being re-parked by the stale record, without unparking chats on a
+different backend. If the limit is genuinely still in force, the next rejected response re-records
+it.
 
 ## Chat
 

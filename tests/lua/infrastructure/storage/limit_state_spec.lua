@@ -70,4 +70,55 @@ describe("limit_state", function()
   it("stores under .vibing/limit-state.json", function()
     assert.is_truthy(LimitState.get_path(tmp_root):find("/%.vibing/limit%-state%.json$"))
   end)
+
+  describe("agent scoping", function()
+    -- The record answers "is *this backend's* plan exhausted". A claude limit says nothing about
+    -- a codex chat in the same project, and a codex chat getting through says nothing about the
+    -- claude limit still being in force.
+
+    it("records which agent hit the limit", function()
+      LimitState.record({ resets_at = os.time() + 600 }, tmp_root, "claude")
+      assert.equals("claude", LimitState.load(tmp_root).agent)
+    end)
+
+    it("reports the limit as active for the agent that hit it", function()
+      LimitState.record({ resets_at = os.time() + 600 }, tmp_root, "claude")
+      assert.is_not_nil(LimitState.get_active(tmp_root, "claude"))
+    end)
+
+    it("reports no active limit for a different agent", function()
+      LimitState.record({ resets_at = os.time() + 600 }, tmp_root, "claude")
+      assert.is_nil(LimitState.get_active(tmp_root, "codex"))
+    end)
+
+    it("reads an agent-less record as claude's, for stores written before this field existed", function()
+      local path = LimitState.get_path(tmp_root)
+      vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+      vim.fn.writefile({ vim.json.encode({ resets_at = os.time() + 600, observed_at = os.time() }) }, path)
+
+      assert.is_not_nil(LimitState.get_active(tmp_root, "claude"))
+      assert.is_nil(LimitState.get_active(tmp_root, "codex"))
+    end)
+
+    it("answers without an agent as before, unscoped", function()
+      LimitState.record({ resets_at = os.time() + 600 }, tmp_root, "claude")
+      assert.is_not_nil(LimitState.get_active(tmp_root))
+    end)
+
+    it("clears only the matching agent's record", function()
+      LimitState.record({ resets_at = os.time() + 600 }, tmp_root, "claude")
+
+      LimitState.clear(tmp_root, "codex")
+      assert.is_not_nil(LimitState.get_active(tmp_root, "claude"))
+
+      LimitState.clear(tmp_root, "claude")
+      assert.is_nil(LimitState.load(tmp_root))
+    end)
+
+    it("clears unconditionally when given no agent", function()
+      LimitState.record({ resets_at = os.time() + 600 }, tmp_root, "claude")
+      LimitState.clear(tmp_root)
+      assert.is_nil(LimitState.load(tmp_root))
+    end)
+  end)
 end)

@@ -64,6 +64,28 @@ function M.is_valid_agent_mode(mode)
   return vim.tbl_contains(M.AGENT_MODES, mode)
 end
 
+---チャットが実際に話す相手のバックエンドを解決する
+---frontmatterの`agent` > `config.adapter` > 既定（claude）。未知の名前は
+---`send_message._resolve_adapter`と同じくフォールバックする（警告はそちらが1度だけ出す）。
+---バックエンド単位のスコープを持つもの（使用量リミットの記録など）は、実際に使われる
+---アダプターとここで一致していないと、使われないバックエンドに対して働いてしまう。
+---@param frontmatter table|nil
+---@param config table|nil
+---@return string
+function M.resolve_agent(frontmatter, config)
+  local from_frontmatter = frontmatter and frontmatter.agent
+  if M.is_valid_agent(from_frontmatter) then
+    return from_frontmatter
+  end
+
+  local from_config = config and config.adapter
+  if M.is_valid_agent(from_config) then
+    return from_config
+  end
+
+  return Agents.DEFAULT
+end
+
 ---agent modeとして使える値ならそのまま返し、そうでなければnilを返す
 ---呼び出し側は「nilが返った＋元がnilでない」で綴り間違いを検出できる
 ---@param mode any
