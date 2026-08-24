@@ -5,6 +5,7 @@ local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local SyncManager = require("vibing.application.link.sync_manager")
 local DailySummaryScanner = require("vibing.infrastructure.link.daily_summary_scanner")
 local ForkedChatScanner = require("vibing.infrastructure.link.forked_chat_scanner")
+local SummaryInserter = require("vibing.presentation.chat.modules.summary_inserter")
 local Fs = require("vibing.core.utils.fs")
 
 ---@param dir string
@@ -71,6 +72,10 @@ return function(_, chat_buffer)
     return false
   end
 
+  -- ストリーミング中はバッファがまだ確定していない。会話は途中状態なのでそこからタイトルを
+  -- 作ることになるし、リネームのための `:write!` が応答の追記と競合する。
+  -- （#475 当時の理由だった「同一 session_id への resume 競合」は、タイトル生成が resume を
+  -- やめた時点で消えている。残っているのは上の2つ。）
   if chat_buffer:is_sending() then
     notify.warn("Cannot generate title while a response is streaming")
     return false
@@ -81,6 +86,11 @@ return function(_, chat_buffer)
     notify.warn("No conversation to generate title from")
     return false
   end
+
+  -- `:VibingSummarize` が書いた `## summary` があれば、抜粋ではなくそちらを入力にする。
+  -- summary は既に「会話全体で何をしたか」に圧縮されているので、長い会話でも主題を外しにくく、
+  -- 送るテキストも短い。無ければ従来どおり抜粋にフォールバックする（後方互換）。
+  local summary = SummaryInserter.extract(chat_buffer.buf)
 
   local old_file_path = chat_buffer.file_path
   local vibing = require("vibing")
@@ -219,7 +229,7 @@ return function(_, chat_buffer)
         notify.warn(string.format("Failed to update %d file(s)", total_failed), "Link Sync")
       end
     end
-  end, title_adapter)
+  end, title_adapter, { summary = summary })
 
   return true
 end

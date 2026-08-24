@@ -152,11 +152,16 @@ section is not kept in sync field by field.
 
                                                         *:VibingSetFileTitle*
 :VibingSetFileTitle
-    Generate a title from the conversation and rename the chat file.
+    Generate a title from the conversation and rename the chat file. When the
+    buffer already holds a `## summary` section written by |:VibingSummarize|,
+    that summary is used as the input instead of a conversation excerpt, which
+    keeps long chats from being titled after their last step. Refused while a
+    response is streaming.
 
                                                            *:VibingSummarize*
 :VibingSummarize
-    Summarise the conversation so far and insert it into the buffer.
+    Summarise the conversation so far and insert it into the buffer. Refused
+    while a response is streaming.
 
                                                          *:VibingDeleteChats*
 :VibingDeleteChats [--unrenamed]

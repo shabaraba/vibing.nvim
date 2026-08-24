@@ -116,4 +116,50 @@ describe("title_generator.generate_from_conversation", function()
     assert.is_nil(captured_prompt:find("git rebase", 1, true))
     assert.is_not_nil(captured_prompt:find("認証のバグを直して", 1, true))
   end)
+
+  describe("summary input", function()
+    it("summary が渡されたら抜粋の代わりにそれを送る", function()
+      title_generator.generate_from_conversation(CONVERSATION, function() end, nil, {
+        summary = "## summary\n\n### 一行要約\n- タイトル生成の入力を summary 優先にした",
+      })
+
+      assert.is_truthy(captured_prompt:find("タイトル生成の入力を summary 優先にした", 1, true))
+      -- 抜粋側の構造も、抜粋固有の防御ルールも混ざらない
+      assert.is_nil(captured_prompt:find("USER REQUESTS", 1, true))
+      assert.is_nil(captured_prompt:find("Hello there", 1, true))
+      assert.is_nil(captured_prompt:find("the last step", 1, true))
+      assert.is_truthy(captured_prompt:find("is a summary of a conversation", 1, true))
+    end)
+
+    it("summary が無ければ従来どおり抜粋を送る", function()
+      title_generator.generate_from_conversation(CONVERSATION, function() end, nil, {})
+
+      assert.is_truthy(captured_prompt:find("USER REQUESTS", 1, true))
+      assert.is_truthy(captured_prompt:find("Hello there", 1, true))
+      assert.is_nil(captured_prompt:find("is a summary of a conversation", 1, true))
+    end)
+
+    it("空文字の summary は「無し」として扱う", function()
+      title_generator.generate_from_conversation(CONVERSATION, function() end, nil, { summary = "" })
+
+      assert.is_truthy(captured_prompt:find("USER REQUESTS", 1, true))
+    end)
+
+    it("体裁のルールはどちらの入力でも共通で付く", function()
+      for _, opts in ipairs({ {}, { summary = "## summary\n\n- 決めたこと" } }) do
+        title_generator.generate_from_conversation(CONVERSATION, function() end, nil, opts)
+
+        assert.is_truthy(captured_prompt:find("30 characters maximum", 1, true))
+        assert.is_truthy(captured_prompt:find("Respond with ONLY the title", 1, true))
+      end
+    end)
+
+    it("軽量呼び出しのフラグは summary 入力でも立つ", function()
+      title_generator.generate_from_conversation(CONVERSATION, function() end, nil, {
+        summary = "## summary\n\n- 決めたこと",
+      })
+
+      assert.is_true(captured_opts.lightweight)
+    end)
+  end)
 end)

@@ -25,15 +25,72 @@ local function first_title_line(text)
   return vim.trim((text or ""):match("^([^\n]*)") or "")
 end
 
+---タイトルの体裁に関する共通ルール。入力が抜粋でも summary でも変わらない部分。
+---@param lang_name string?
+---@return string[]
+local function format_rules(lang_name)
+  local rules = {
+    "- Be specific: name the feature, bug, file, or component involved.",
+    "- 30 characters maximum.",
+    "- No date, no file extension, no quotes, no surrounding punctuation.",
+  }
+  if lang_name then
+    rules[#rules + 1] = "- Write the title in " .. lang_name .. "."
+  end
+  return rules
+end
+
+---@param lead string[] 入力の説明と主題の取り方（入力の種類ごとに違う部分）
+---@param lang_name string?
+---@return string
+local function build_instruction(lead, lang_name)
+  local lines = vim.list_extend(vim.deepcopy(lead), format_rules(lang_name))
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = "Respond with ONLY the title, nothing else."
+  return table.concat(lines, "\n")
+end
+
+-- 抜粋入力。「主題 = ユーザーが達成しようとしたこと」を明示する。これを言わないと、モデルは
+-- 抜粋の末尾（マージ・クリーンアップ等の後始末）や実行したコマンドをタイトルにしてしまう。
+local EXCERPT_LEAD = {
+  "The text above is an excerpt of a conversation between a user and an AI coding assistant.",
+  "",
+  "Write a title naming WHAT THE USER WAS TRYING TO ACCOMPLISH across the whole conversation.",
+  "",
+  "Rules:",
+  "- The subject comes from the user's requests, not from the assistant's replies.",
+  "- Do not title it after the last step, the wrap-up work, or the tools and commands that were run.",
+}
+
+-- summary 入力。抜粋固有の防御（主題は user 側から / 末尾に引きずられるな）はここでは不要で、
+-- 代わりに summary 自身の構成（`### 一行要約` / `### 決定事項` が主題、`### やったこと` と
+-- `### 未解決 / 次の一手` は主題ではない）に沿った取り方を指示する。
+-- 見出し名を直接は書かない: `prompts/chat_summary.md` のテンプレートを変えたときに、
+-- ここが黙って古い見出しを指し続けるのを避けるため。
+local SUMMARY_LEAD = {
+  "The text above is a summary of a conversation between a user and an AI coding assistant.",
+  "",
+  "Write a title naming WHAT THE CONVERSATION WAS ABOUT.",
+  "",
+  "Rules:",
+  "- The subject is the one-line overview and the decisions, not the file-by-file work log.",
+  "- Do not title it after the open questions, the next steps, or the files that were touched.",
+}
+
 ---会話履歴からAIにタイトルを生成させる
----会話の抜粋（`chat_excerpt` がツール実況を落として user 発言中心に組み立てたもの）を
----アダプタに送り、簡潔なファイル名用タイトルを生成する。結果はコールバックで非同期に返される。
----セッションの resume/fork は行わない（全履歴を読み込んで context を超過し
----"Prompt is too long" になるのを避けるため）。抜粋を都度フレッシュに送るだけなので session_id は不要。
+---
+---入力は2種類ある。`opts.summary`（`:VibingSummarize` がバッファに書いた `## summary`）が
+---あればそれを使い、無ければ会話の抜粋（`chat_excerpt` がツール実況を落として user 発言中心に
+---組み立てたもの）にフォールバックする。summary を優先するのは、それが既に「会話全体で
+---何をしたか」に圧縮されていて、長い会話でも主題を外しにくく、送るテキストも短いため。
+---
+---どちらの場合もセッションの resume/fork は行わない（全履歴を読み込んで context を超過し
+---"Prompt is too long" になるのを避けるため）。都度フレッシュに送るだけなので session_id は不要。
 ---@param conversation {role: string, content: string}[] 会話履歴
 ---@param callback fun(title: string?, error: string?) 結果コールバック
 ---@param adapter table? タイトル生成に使うアダプタ。省略時はグローバル既定を使う。
-function M.generate_from_conversation(conversation, callback, adapter)
+---@param opts {summary: string?}? summary があれば抜粋の代わりにそれを入力にする
+function M.generate_from_conversation(conversation, callback, adapter, opts)
   if not conversation or #conversation == 0 then
     callback(nil, "No conversation to generate title from")
     return
@@ -51,39 +108,26 @@ function M.generate_from_conversation(conversation, callback, adapter)
   local lang_code = language_utils.get_language_code(config.language, "chat")
   local lang_name = lang_code and language_utils.language_names[lang_code]
 
-  -- 「主題 = ユーザーが達成しようとしたこと」を明示する。これを言わないと、モデルは
-  -- 抜粋の末尾（マージ・クリーンアップ等の後始末）や実行したコマンドをタイトルにしてしまう。
-  local lines = {
-    "The text above is an excerpt of a conversation between a user and an AI coding assistant.",
-    "",
-    "Write a title naming WHAT THE USER WAS TRYING TO ACCOMPLISH across the whole conversation.",
-    "",
-    "Rules:",
-    "- The subject comes from the user's requests, not from the assistant's replies.",
-    "- Do not title it after the last step, the wrap-up work, or the tools and commands that were run.",
-    "- Be specific: name the feature, bug, file, or component involved.",
-    "- 30 characters maximum.",
-    "- No date, no file extension, no quotes, no surrounding punctuation.",
-  }
-  if lang_name then
-    lines[#lines + 1] = "- Write the title in " .. lang_name .. "."
+  local summary = opts and opts.summary
+  if summary == "" then
+    summary = nil
   end
-  lines[#lines + 1] = ""
-  lines[#lines + 1] = "Respond with ONLY the title, nothing else."
-  local title_instruction = table.concat(lines, "\n")
+
+  local input = summary or chat_excerpt.build(conversation)
+  local title_instruction = build_instruction(summary and SUMMARY_LEAD or EXCERPT_LEAD, lang_name)
 
   -- Title generation is a lightweight utility call: no tools/CLAUDE.md/MCP needed
-  local opts = {
+  local stream_opts = {
     lightweight = true,
   }
 
-  -- Always send a bounded excerpt as a fresh prompt (no resume/fork), so long
+  -- Always send a bounded input as a fresh prompt (no resume/fork), so long
   -- chats never exceed the context window.
-  local prompt = chat_excerpt.build(conversation) .. "\n\n" .. title_instruction
+  local prompt = input .. "\n\n" .. title_instruction
 
   local collected_response = ""
 
-  adapter:stream(prompt, opts, function(chunk)
+  adapter:stream(prompt, stream_opts, function(chunk)
     collected_response = collected_response .. chunk
   end, function(response)
     if response.error then
