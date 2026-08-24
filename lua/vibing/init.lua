@@ -21,6 +21,12 @@ function M.setup(opts)
   Config.setup(opts)
   M.config = Config.get()
 
+  -- vibing filetype 専用の treesitter パーサは存在しないため markdown を割り当てる。
+  -- これがないと vibing バッファで treesitter ハイライトも
+  -- render-markdown.nvim のレンダリングも一切効かない。
+  -- (vim.bo.syntax = "markdown" は旧来の syntax エンジンにしか効かない)
+  pcall(vim.treesitter.language.register, "markdown", "vibing")
+
   -- チャットファイル自動検知（.md と .vibing の両方をサポート）
   -- フロントマターに vibing.nvim: true が含まれている場合にアタッチ
   local chat_detect = require("vibing.infrastructure.storage.chat_detect")
