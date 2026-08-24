@@ -116,4 +116,41 @@ function M.insert_or_update(buf, summary_content)
   return true
 end
 
+---バッファから `## summary` セクションを取り出す。
+---
+---探索範囲も終端の判定も `M.insert_or_update` と同じもの（`find_insertion_points` /
+---`find_summary_section`）を使う。読む側と書く側でセクション境界の定義がずれると、
+---次の `:VibingSummarize` が上書きするのと違う範囲をタイトル生成が読むことになるため、
+---別モジュールに切り出さずここに置いている。
+---
+---見出しだけで本文が空のセクションは nil を返す。タイトル生成側はこれを
+---「summary は無い」と読んで抜粋にフォールバックする。
+---@param buf number バッファ番号
+---@return string? summary `## summary` 見出しを含む本文。無ければ nil
+function M.extract(buf)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return nil
+  end
+
+  local all_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local vibing_chat_line, separator_line = find_insertion_points(all_lines)
+
+  if not vibing_chat_line or not separator_line then
+    return nil
+  end
+
+  local summary_start, summary_end = find_summary_section(all_lines, vibing_chat_line, separator_line)
+
+  if not summary_start or not summary_end then
+    return nil
+  end
+
+  local body = vim.trim(table.concat(vim.list_slice(all_lines, summary_start + 1, summary_end), "\n"))
+  if body == "" then
+    return nil
+  end
+
+  return vim.trim(all_lines[summary_start]) .. "\n\n" .. body
+end
+
 return M

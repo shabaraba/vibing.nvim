@@ -41,3 +41,32 @@ describe("chat use_case.create_new", function()
     assert.are_not.equal("", session.working_dir)
   end)
 end)
+
+describe("chat use_case.generate_and_insert_summary", function()
+  local use_case
+
+  before_each(function()
+    use_case = require("vibing.application.chat.use_case")
+  end)
+
+  it("refuses while a response is streaming", function()
+    -- The summary goes in just below `# Vibing Chat` with nvim_buf_set_lines, so writing it
+    -- while the stream appends at the end shifts the line numbers under the streaming handler.
+    -- Symmetrical with the guard :VibingSetFileTitle has had since #475.
+    local extracted = false
+    local chat_buffer = {
+      buf = vim.api.nvim_create_buf(false, true),
+      is_sending = function()
+        return true
+      end,
+      extract_conversation = function()
+        extracted = true
+        return { { role = "user", content = "hi" } }
+      end,
+    }
+
+    use_case.generate_and_insert_summary(chat_buffer)
+
+    assert.is_false(extracted)
+  end)
+end)

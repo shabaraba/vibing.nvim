@@ -705,11 +705,26 @@ reference and `config.window` stays the same table.
 
 **Completion detection is a status field, not a text heuristic.** `nvim_get_buffer` passes
 `include_chat_status` to `buf_get_lines`, which attaches `presentation/chat/modules/chat_status`'s
-verdict: `"responding"` when `ChatBuffer:is_responding()` (either `_is_sending` or a
-`_current_handle_id`), `"idle"` otherwise, and nothing at all for a buffer that is not a chat.
-Both fields are needed — `_current_handle_id` is only set once the adapter spawns the CLI, so the
-gap after `<CR>` would otherwise read as finished. Reading the transcript's shape instead would
-call a turn that died on an error, or one part-way through silent tool calls, complete.
+verdict: `"responding"` when `ChatBuffer:is_responding()`, `"idle"` otherwise, and nothing at all
+for a buffer that is not a chat. Reading the transcript's shape instead would call a turn that died
+on an error, or one part-way through silent tool calls, complete.
+
+`is_responding()` needs two signals, and the second one is **not** `_current_handle_id`'s
+existence. `_is_sending` covers `<CR>` until the adapter spawns the CLI; after that the handle id
+is what marks the run — but `send_message.lua` deliberately never clears it on completion, so the
+next `send_message()` can kill a process that outlived its own `result` event. Read as a boolean
+that field therefore reports every chat as `responding` forever after its first turn, which is the
+one answer an orchestrator's polling loop can never recover from. So the second signal is
+`ActiveStreamRegistry.get(handle_id)`: all four adapters `register` when the stream starts and
+`unregister` in `wrapped_on_done`, which makes the registry the only place that knows a run is
+over without also being the place that has to remember how to kill it.
+
+One window stays uncovered, and only under `diff.tool = "mote"`: `_handle_response` clears
+`_is_sending` before mote's asynchronous callbacks write `### Modified Files` and the next
+`## User`, so a poll landing in between reads `idle` while the buffer is still growing. The reply
+itself is already complete by then — what is pending is the diff footer — and the default git path
+finalizes synchronously, so it cannot happen there. The old boolean check did cover this window,
+but only as a side effect of being true forever.
 
 The flag is opt-in rather than a new return shape because the MCP server installs at Claude
 Code's _user_ scope and updates independently of the plugin: without a parameter to key on, a

@@ -193,6 +193,14 @@ function M.generate_and_insert_summary(chat_buffer)
     return
   end
 
+  -- set_file_title と同じ理由でストリーミング中は断る。summary は `# Vibing Chat` の直下へ
+  -- `nvim_buf_set_lines` で差し込むので、末尾に追記中のストリーミングと行番号で競合しうる。
+  -- 加えて、途中状態の会話から要約を作ることにもなる。
+  if chat_buffer:is_sending() then
+    notify.warn("Cannot summarize while a response is streaming")
+    return
+  end
+
   local conversation = chat_buffer:extract_conversation()
 
   if #conversation == 0 or not has_conversation_content(conversation) then

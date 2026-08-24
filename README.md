@@ -188,7 +188,7 @@ help tags.
 | `:VibingChatJumpNextUser [count]`     | Move the cursor to the next User section in the chat buffer                                                                           |
 | `:VibingChatJumpPrevUser [count]`     | Move the cursor to the previous User section in the chat buffer                                                                       |
 | `:VibingSlashCommands`                | Show slash command picker in chat                                                                                                     |
-| `:VibingSetFileTitle`                 | Generate AI title and rename chat file                                                                                                |
+| `:VibingSetFileTitle`                 | Generate AI title and rename chat file (uses an existing `## summary` if present)                                                     |
 | `:VibingSummarize`                    | Generate AI summary of chat history and insert into buffer                                                                            |
 | `:VibingDeleteChats [--unrenamed]`    | Delete chat files (use --unrenamed to delete all unrenamed files)                                                                     |
 | `:VibingContext [path]`               | Add context: oil.nvim entry, visual selection (range), path argument, or current buffer when no args                                  |

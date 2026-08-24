@@ -282,4 +282,87 @@ describe("vibing.presentation.chat.modules.summary_inserter", function()
       assert.is_true(summary_found)
     end)
   end)
+
+  describe("extract()", function()
+    it("`## summary` セクションを見出しごと取り出す", function()
+      mock_buf_lines = {
+        "---",
+        "vibing.nvim: true",
+        "---",
+        "# Vibing Chat",
+        "",
+        "## summary",
+        "",
+        "### 一行要約",
+        "- タイトル生成の入力を summary 優先にした",
+        "",
+        "---",
+        "## User",
+        "Hello",
+      }
+
+      assert.equals(
+        "## summary\n\n### 一行要約\n- タイトル生成の入力を summary 優先にした",
+        SummaryInserter.extract(1)
+      )
+    end)
+
+    it("summary が無ければ nil を返す", function()
+      mock_buf_lines = {
+        "---",
+        "vibing.nvim: true",
+        "---",
+        "# Vibing Chat",
+        "---",
+        "## User",
+        "Hello",
+      }
+
+      assert.is_nil(SummaryInserter.extract(1))
+    end)
+
+    it("見出しだけで本文が空なら nil を返す（抜粋にフォールバックさせるため）", function()
+      mock_buf_lines = {
+        "---",
+        "vibing.nvim: true",
+        "---",
+        "# Vibing Chat",
+        "",
+        "## summary",
+        "",
+        "---",
+        "## User",
+        "Hello",
+      }
+
+      assert.is_nil(SummaryInserter.extract(1))
+    end)
+
+    it("`## User` は本文に含めない（insert_or_update と同じ終端判定）", function()
+      -- 挿入側とセクション境界の定義がずれると、次の :VibingSummarize が上書きする範囲と
+      -- タイトル生成が読む範囲が食い違う。同じ locals を通っていることをここで固定する。
+      mock_buf_lines = {
+        "---",
+        "vibing.nvim: true",
+        "---",
+        "# Vibing Chat",
+        "",
+        "## summary",
+        "",
+        "- 決めたこと",
+        "",
+        "## User",
+        "Hello",
+        "---",
+      }
+
+      assert.equals("## summary\n\n- 決めたこと", SummaryInserter.extract(1))
+    end)
+
+    it("無効なバッファでは nil を返す", function()
+      mock_buf_valid = false
+
+      assert.is_nil(SummaryInserter.extract(1))
+    end)
+  end)
 end)

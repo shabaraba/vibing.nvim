@@ -143,3 +143,81 @@ describe("set_file_title handler - streaming guard", function()
     end
   end)
 end)
+
+describe("set_file_title handler - summary as input", function()
+  local handler, title_generator, original_generate
+
+  local function chat_buffer_with(lines)
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    return {
+      buf = buf,
+      is_sending = function()
+        return false
+      end,
+      extract_conversation = function()
+        return { { role = "user", content = "hi" } }
+      end,
+      get_session_id = function()
+        return nil
+      end,
+    }
+  end
+
+  before_each(function()
+    package.loaded["vibing.application.chat.handlers.set_file_title"] = nil
+    handler = require("vibing.application.chat.handlers.set_file_title")
+    title_generator = require("vibing.core.utils.title_generator")
+    original_generate = title_generator.generate_from_conversation
+  end)
+
+  after_each(function()
+    title_generator.generate_from_conversation = original_generate
+    package.loaded["vibing.application.chat.handlers.set_file_title"] = nil
+  end)
+
+  it("passes the buffer's `## summary` section to the title generator", function()
+    local passed_opts
+    title_generator.generate_from_conversation = function(_, _, _, opts)
+      passed_opts = opts
+    end
+
+    handler({}, chat_buffer_with({
+      "---",
+      "vibing.nvim: true",
+      "---",
+      "# Vibing Chat",
+      "",
+      "## summary",
+      "",
+      "### 一行要約",
+      "- タイトル生成の入力を summary 優先にした",
+      "",
+      "---",
+      "## User",
+      "hi",
+    }))
+
+    assert.is_truthy(passed_opts.summary:find("タイトル生成の入力を summary 優先にした", 1, true))
+  end)
+
+  it("passes no summary when the buffer has none, so the excerpt path stays the default", function()
+    local passed_opts
+    title_generator.generate_from_conversation = function(_, _, _, opts)
+      passed_opts = opts
+    end
+
+    handler({}, chat_buffer_with({
+      "---",
+      "vibing.nvim: true",
+      "---",
+      "# Vibing Chat",
+      "---",
+      "## User",
+      "hi",
+    }))
+
+    assert.is_table(passed_opts)
+    assert.is_nil(passed_opts.summary)
+  end)
+end)

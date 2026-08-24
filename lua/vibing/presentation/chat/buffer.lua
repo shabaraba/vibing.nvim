@@ -5,6 +5,7 @@ local FrontmatterHandler = require("vibing.presentation.chat.modules.frontmatter
 local Renderer = require("vibing.presentation.chat.modules.renderer")
 local StreamingHandler = require("vibing.presentation.chat.modules.streaming_handler")
 local ConversationExtractor = require("vibing.presentation.chat.modules.conversation_extractor")
+local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
 local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 local Fs = require("vibing.core.utils.fs")
 
@@ -142,11 +143,26 @@ function ChatBuffer:is_sending()
 end
 
 ---このチャットがリクエストを実行中か（送信開始からCLI終了まで）
----`_is_sending`は<CR>からCLI起動までの隙間、`_current_handle_id`は起動後の実行中をカバーする。
----片方だけを見ると送信直後の数十msを「完了」と読んでしまうので、両方を見る必要がある
+---
+---`_is_sending`は<CR>からCLI起動までの隙間をカバーする。`_current_handle_id`はその後だが、
+---応答完了時にクリアされない（次のsend_message()でkillしてゾンビプロセスを刈るため意図的に
+---残している）ので、存在だけを見ると1ターン目以降ずっと"responding"になる。
+---実行中かどうかはActiveStreamRegistryが唯一の答えを持っている: 全アダプタがstream開始で
+---registerし、on_doneでunregisterする。
+---
+---既知の隙間: `diff.tool = "mote"` のときだけ、_handle_responseがmoteの非同期コールバックから
+---`### Modified Files`と次の`## User`を書き終える前にidleを返す。応答本文はこの時点で完成して
+---いるのでdiff脚注だけの話で、既定のgitパスは同期なので起きない。旧実装はこの窓も
+---"responding"にできていたが、それは1ターン目以降ずっとtrueだったからで、代償が大きすぎた。
 ---@return boolean
 function ChatBuffer:is_responding()
-  return self:is_sending() or self._current_handle_id ~= nil
+  if self:is_sending() then
+    return true
+  end
+  if not self._current_handle_id then
+    return false
+  end
+  return ActiveStreamRegistry.get(self._current_handle_id) ~= nil
 end
 
 ---バッファを作成
