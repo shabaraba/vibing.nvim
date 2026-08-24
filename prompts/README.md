@@ -57,8 +57,8 @@ them. Unlike `daily_summary.md`, this template does not take a `{{language_instr
 it pins Japanese, and `config.language` is not consulted.
 
 What is **not** free to change is the heading shape: `## summary` first, `###` or deeper after it, no
-bare `---`. Those three are a format contract with the parser, stated for the model as rule 7 of the
-template and explained where it is enforced — `presentation/chat/modules/summary_inserter.lua`, above
+bare `---`. Those three are a format contract with the parser, stated for the model in the
+template's rules and explained where it is enforced — `presentation/chat/modules/summary_inserter.lua`, above
 `find_summary_section`. Loosen the parser first.
 
 **Why it is a decision log rather than a work log:**
