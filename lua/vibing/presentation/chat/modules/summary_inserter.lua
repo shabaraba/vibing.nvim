@@ -28,6 +28,12 @@ local function find_insertion_points(lines)
 end
 
 ---Find existing ## summary section between start and end lines
+---
+---The `^## ` / `^---$` terminators below, together with the first-line check in
+---`prepare_summary_lines`, are a format contract with `prompts/chat_summary.md`: the model is told
+---to emit `## summary` first and nothing but `###`-or-deeper headings after it, because a
+---`##` in the body ends the section here and leaves the tail of the previous summary orphaned on the
+---next `:VibingSummarize`. Loosen the template only together with these two patterns.
 ---@param lines string[]
 ---@param start_line number 1-indexed search start
 ---@param end_line number 1-indexed search end
