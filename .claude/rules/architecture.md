@@ -719,6 +719,13 @@ one answer an orchestrator's polling loop can never recover from. So the second 
 `unregister` in `wrapped_on_done`, which makes the registry the only place that knows a run is
 over without also being the place that has to remember how to kill it.
 
+One window stays uncovered, and only under `diff.tool = "mote"`: `_handle_response` clears
+`_is_sending` before mote's asynchronous callbacks write `### Modified Files` and the next
+`## User`, so a poll landing in between reads `idle` while the buffer is still growing. The reply
+itself is already complete by then — what is pending is the diff footer — and the default git path
+finalizes synchronously, so it cannot happen there. The old boolean check did cover this window,
+but only as a side effect of being true forever.
+
 The flag is opt-in rather than a new return shape because the MCP server installs at Claude
 Code's _user_ scope and updates independently of the plugin: without a parameter to key on, a
 newer Neovim answering an older server would hand it an object where it calls `.join()`. Both

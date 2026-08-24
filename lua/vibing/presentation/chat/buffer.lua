@@ -149,6 +149,11 @@ end
 ---残している）ので、存在だけを見ると1ターン目以降ずっと"responding"になる。
 ---実行中かどうかはActiveStreamRegistryが唯一の答えを持っている: 全アダプタがstream開始で
 ---registerし、on_doneでunregisterする。
+---
+---既知の隙間: `diff.tool = "mote"` のときだけ、_handle_responseがmoteの非同期コールバックから
+---`### Modified Files`と次の`## User`を書き終える前にidleを返す。応答本文はこの時点で完成して
+---いるのでdiff脚注だけの話で、既定のgitパスは同期なので起きない。旧実装はこの窓も
+---"responding"にできていたが、それは1ターン目以降ずっとtrueだったからで、代償が大きすぎた。
 ---@return boolean
 function ChatBuffer:is_responding()
   if self:is_sending() then
