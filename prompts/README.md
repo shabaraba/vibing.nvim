@@ -52,9 +52,14 @@ command is a different path with its own inline prompt (`application/chat/handle
 and is unaffected by this file.
 
 **Customization:**
-The section headings and the output language are part of the template, so editing this file changes
-them. Unlike `daily_summary.md`, this template does not take a `{{language_instruction}}` variable —
-it pins Japanese, and `config.language` is not consulted.
+The section headings, their emojis, and the output language are part of the template, so editing this
+file changes them. Unlike `daily_summary.md`, this template does not take a
+`{{language_instruction}}` variable — it pins Japanese, and `config.language` is not consulted.
+
+The emojis sit on the `###` headings only. `## summary` deliberately has none: `prepare_summary_lines`
+matches that first line as `^##%s*summary`, so an emoji there fails the check and the whole summary is
+thrown away rather than degrading. The `#### 決定:` blocks are entries rather than sections, and are
+left bare so a chat with three decisions does not repeat the same glyph three times.
 
 What is **not** free to change is the heading shape: `## summary` first, `###` or deeper after it, no
 bare `---`. Those three are a format contract with the parser, stated for the model in the
