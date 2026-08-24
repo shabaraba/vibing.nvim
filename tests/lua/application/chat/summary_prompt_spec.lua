@@ -54,6 +54,19 @@ describe("chat_summary prompt", function()
     vim.api.nvim_buf_delete(buf, { force = true })
   end)
 
+  it("cites the example's own headings in its rules", function()
+    local rules = template:match("\n## Rules\n(.*)$")
+    assert.is_truthy(rules, "no ## Rules section found in the template")
+
+    local cited = 0
+    for heading in rules:gmatch("`(###[^`]*)`") do
+      cited = cited + 1
+      local msg = ("the rules cite `%s`, which the example does not contain"):format(heading)
+      assert.is_truthy(example:find(heading, 1, true), msg)
+    end
+    assert.is_true(cited > 0, "no `###` heading is cited in the rules")
+  end)
+
   it("keeps the decision block the format exists for", function()
     assert.is_truthy(example:find("#### 決定:", 1, true), "example lost the per-decision block")
     assert.is_truthy(example:find("却下", 1, true), "example lost the rejected-alternatives line")
