@@ -48,19 +48,23 @@ function M.setup(opts)
     desc = "Apply correct wrap settings when entering any window",
   })
 
-  -- MCP統合の初期化
-  if M.config.mcp and M.config.mcp.enabled then
-    -- RPCサーバー起動
-    local rpc_server = require("vibing.infrastructure.rpc.server")
-    local port = rpc_server.start(M.config.mcp.rpc_port)
-    if port > 0 then
-      notify.info(string.format("MCP RPC server started on port %d", port))
+  -- MCP RPCサーバー起動とアダプター初期化はどちらも同期I/Oを伴う
+  -- （ポートbindの探索ループ・レジストリファイル書き込み・アダプターの長いrequire連鎖）。
+  -- セッション復元で ft=vibing バッファが開くと setup() が起動中に走るため、起動パスから外す。
+  -- 同一コールバック内で順に実行するので、RPCサーバーが受信可能になった時点でadapterは必ず存在する。
+  -- また後続の vim.schedule(auto_resume.restore 等) より先に登録されるため、実行順も従来通り。
+  vim.schedule(function()
+    if M.config.mcp and M.config.mcp.enabled then
+      local rpc_server = require("vibing.infrastructure.rpc.server")
+      local port = rpc_server.start(M.config.mcp.rpc_port)
+      if port > 0 then
+        notify.info(string.format("MCP RPC server started on port %d", port))
+      end
     end
-  end
 
-  -- アダプターの初期化
-  local adapter_factory = require("vibing.infrastructure.adapter.factory")
-  M.adapter = adapter_factory.create(M.config.adapter, M.config)
+    local adapter_factory = require("vibing.infrastructure.adapter.factory")
+    M.adapter = adapter_factory.create(M.config.adapter, M.config)
+  end)
 
   -- Cleanup stale hook communication directories from previous sessions.
   -- 起動直後に必要な処理ではない（hookが動くのは最初のリクエスト時）ので、/tmp のscanと
