@@ -30,6 +30,17 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 5.5.0 (2026-08-25)
+
+## What's Changed
+* feat: give the chat summary template a per-section emoji by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/607
+* feat: use an existing ## summary as the title-generation input by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/608
+* perf: move startup-path disk I/O off setup() by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/610
+* perf: defer RPC server start and adapter creation off setup() by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/611
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.4.0...v5.5.0
+
 ## 5.4.0 (2026-08-24)
 
 ## What's Changed
