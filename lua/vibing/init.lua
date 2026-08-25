@@ -62,9 +62,14 @@ function M.setup(opts)
   local adapter_factory = require("vibing.infrastructure.adapter.factory")
   M.adapter = adapter_factory.create(M.config.adapter, M.config)
 
-  -- Cleanup stale hook communication directories from previous sessions
-  local hook_cleanup = require("vibing.infrastructure.adapter.modules.hook_cleanup")
-  hook_cleanup.cleanup_stale_dirs()
+  -- Cleanup stale hook communication directories from previous sessions.
+  -- 起動直後に必要な処理ではない（hookが動くのは最初のリクエスト時）ので、/tmp のscanと
+  -- 削除を起動パスから外す。
+  vim.schedule(function()
+    pcall(function()
+      require("vibing.infrastructure.adapter.modules.hook_cleanup").cleanup_stale_dirs()
+    end)
+  end)
 
   -- 使用量リミット待ちのチャットのタイマーを張り直す。
   -- 5時間/週次リミットのリセットはNeovimの再起動を跨ぐことが多いため、
@@ -106,12 +111,8 @@ function M.setup(opts)
   -- チャットコマンド初期化
   require("vibing.application.chat").setup()
 
-  -- カスタムコマンドのスキャンと登録
-  local custom_commands = require("vibing.application.chat.custom_commands")
-  local commands = require("vibing.application.chat.commands")
-  for _, custom_cmd in ipairs(custom_commands.get_all()) do
-    commands.register_custom(custom_cmd)
-  end
+  -- カスタムコマンド（.claude/commands/*.md）はここでは読まない。
+  -- commands.lua が初回利用時にスキャンする（理由は同ファイルの ensure_custom_loaded 参照）。
 
   -- コマンド登録
   M._register_commands()
@@ -459,17 +460,11 @@ function M._register_commands()
   })
 
   vim.api.nvim_create_user_command("VibingReloadCommands", function()
-    local custom_commands = require("vibing.application.chat.custom_commands")
     local commands = require("vibing.application.chat.commands")
     local completion = require("vibing.application.completion")
     local skills = require("vibing.infrastructure.completion.providers.skills")
 
-    custom_commands.clear_cache()
-    commands.custom_commands = {}
-
-    for _, custom_cmd in ipairs(custom_commands.get_all()) do
-      commands.register_custom(custom_cmd)
-    end
+    commands.reload_custom()
 
     completion.clear_cache()
     skills.preload()
