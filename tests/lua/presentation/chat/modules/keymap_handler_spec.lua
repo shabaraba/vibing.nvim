@@ -3,6 +3,10 @@
 -- gx (open_url) は行内の URL を抽出して vim.ui.open に渡す。Markdown 装飾や括弧で
 -- 囲まれた URL の閉じ記号を取り込むと 404 になる一方、URL 自体に括弧・アスタリスク・
 -- IPv6 のブラケットを含む正当な URL は保持しなければならない。両立を回帰で守る。
+--
+-- 全角括弧・読点も同じ構図で、`.../pull/300（draft、…` を丸ごと URL として渡すと
+-- ブラウザが percent-encode して 404 になる。一方 `wiki/日本語` のように非 ASCII の
+-- 文字そのものが URL の一部であるケースは保持する必要がある。
 
 local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 
@@ -93,6 +97,74 @@ describe("keymap_handler.find_url_on_line", function()
         assert.equals(c.want, url_at(c.line))
       end)
     end
+  end)
+
+  describe("stops at Japanese punctuation adjoining the URL", function()
+    local cases = {
+      {
+        name = "full-width paren right after the URL",
+        line = "**PR**: https://github.com/o/r/pull/300（draft、コミット 9 本）。本文も更新済みです。",
+        want = "https://github.com/o/r/pull/300",
+      },
+      {
+        name = "ideographic comma right after the URL",
+        line = "参照: https://example.com/a、あとで見る",
+        want = "https://example.com/a",
+      },
+      {
+        name = "ideographic full stop right after the URL",
+        line = "詳細は https://example.com/b。",
+        want = "https://example.com/b",
+      },
+      {
+        name = "corner brackets around the URL",
+        line = "「https://example.com/c」を参照",
+        want = "https://example.com/c",
+      },
+      {
+        name = "ideographic space after the URL",
+        line = "https://example.com/d\227\128\128次の語",
+        want = "https://example.com/d",
+      },
+    }
+
+    for _, c in ipairs(cases) do
+      it(c.name, function()
+        assert.equals(c.want, url_at(c.line))
+      end)
+    end
+  end)
+
+  describe("keeps non-ASCII letters that are part of the URL", function()
+    local cases = {
+      {
+        name = "kanji in the path",
+        line = "https://ja.wikipedia.org/wiki/日本語",
+        want = "https://ja.wikipedia.org/wiki/日本語",
+      },
+      {
+        name = "katakana long vowel mark in the path",
+        line = "https://example.com/サーバー",
+        want = "https://example.com/サーバー",
+      },
+      {
+        name = "kanji path followed by Japanese punctuation",
+        line = "https://ja.wikipedia.org/wiki/日本語（言語）を参照",
+        want = "https://ja.wikipedia.org/wiki/日本語",
+      },
+    }
+
+    for _, c in ipairs(cases) do
+      it(c.name, function()
+        assert.equals(c.want, url_at(c.line))
+      end)
+    end
+  end)
+
+  it("finds the second URL when two are separated only by a comma", function()
+    local line = "https://example.com/one、https://example.com/two"
+    local col = line:find("two")
+    assert.equals("https://example.com/two", KeymapHandler.find_url_on_line(line, col))
   end)
 
   it("returns the URL under the cursor when several are on the line", function()
