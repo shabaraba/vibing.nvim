@@ -284,6 +284,37 @@ Tests:
 - tests/e2e/*.spec.lua         - E2E tests against a spawned Neovim instance
 ```
 
+## Startup Cost
+
+`setup()` runs eagerly — the lazy.nvim example deliberately has no `cmd`/`event` trigger, because
+the RPC server has to be listening and in the instance registry for Claude Code to find this
+Neovim at all. So everything `setup()` does is on the user's startup path, and the module tree is
+not what costs: measured on a warm cache, requiring every module `setup()` touches is ~9ms of it.
+The cost is synchronous I/O.
+
+Two pieces were therefore moved off that path, taking a measured ~32ms `setup()` to ~11ms:
+
+- **Custom slash commands are scanned on first use, not at startup.**
+  `custom_commands.scan()` globs `.claude/commands/*.md` for the project, the user, _and_ every
+  installed Claude Code plugin, then `readfile`s each one whole — 76 files / ~417KB on one
+  developer's machine, ~13ms, and it grows with every plugin installed. `commands.lua` owns the
+  trigger now (`ensure_custom_loaded`), fired from `execute()` and `list_all()`, which are the
+  only two readers of `M.custom_commands`. A Neovim that never opens a chat never pays it.
+
+  The guard is set **before** the scan, not after, so a scan that finds nothing does not retry:
+  `list_all()` is on the completion path and runs per keystroke.
+
+  `:VibingReloadCommands` goes through `commands.reload_custom()` rather than clearing
+  `custom_commands.lua`'s cache and re-running the loop itself. Assigning
+  `commands.custom_commands = {}` from outside would empty the table while leaving the
+  already-loaded flag set, and the commands would never come back.
+
+- **`hook_cleanup.cleanup_stale_dirs()` is deferred to `vim.schedule`.** Hooks only run once a
+  request is in flight, so nothing needs the sweep before the UI is up.
+
+A scan moved to first use also reads `vim.fn.getcwd()` at first use, which is the more accurate
+cwd for picking up a project's `.claude/commands/` anyway.
+
 ## Session Persistence
 
 Chat files are saved as Markdown with YAML frontmatter:

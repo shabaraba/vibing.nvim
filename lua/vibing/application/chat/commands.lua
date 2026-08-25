@@ -14,6 +14,35 @@ M.commands = {}
 ---@type table<string, Vibing.SlashCommand>
 M.custom_commands = {}
 
+---カスタムコマンドはsetup()ではなく初回利用時にスキャンする。
+---スキャンはプロジェクト・ユーザー・インストール済み全プラグインの .claude/commands/*.md を
+---全文読み込みするため、実測で ~32ms の setup() のうち ~13ms を占めていた。チャットを一度も
+---開かないセッションはスラッシュコマンドを解決しないので、その分は丸ごと不要なコストになる。
+local custom_loaded = false
+
+---M.custom_commands にスキャン結果が入っていることを保証する
+local function ensure_custom_loaded()
+  if custom_loaded then
+    return
+  end
+  -- スキャンが失敗しても再試行しない。ここはキー入力ごとの補完経路から呼ばれるので、
+  -- 失敗のたびに数十msのI/Oを繰り返すほうが、カスタムコマンドが無いことより害が大きい。
+  custom_loaded = true
+
+  local custom_commands = require("vibing.application.chat.custom_commands")
+  for _, custom_cmd in ipairs(custom_commands.get_all()) do
+    M.register_custom(custom_cmd)
+  end
+end
+
+---カスタムコマンドを再スキャンして登録し直す（:VibingReloadCommands）
+function M.reload_custom()
+  require("vibing.application.chat.custom_commands").clear_cache()
+  M.custom_commands = {}
+  custom_loaded = false
+  ensure_custom_loaded()
+end
+
 ---@param command Vibing.SlashCommand
 function M.register(command)
   M.commands[command.name] = command
@@ -91,6 +120,7 @@ function M.execute(message, chat_buffer)
   local is_custom = false
 
   if not command then
+    ensure_custom_loaded()
     command = M.custom_commands[command_name]
     is_custom = command ~= nil
   end
@@ -180,6 +210,8 @@ end
 
 ---@return table<string, Vibing.SlashCommand>
 function M.list_all()
+  ensure_custom_loaded()
+
   local all = {}
 
   for name, cmd in pairs(M.commands) do
