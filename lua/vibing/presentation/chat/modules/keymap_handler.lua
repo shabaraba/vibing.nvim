@@ -12,6 +12,47 @@ local URL_PAT = "(https?://[^ \t\n<>\"'`]+)"
 -- 末尾から削る Markdown 装飾（**bold**, `code`）と句読点
 local TRAILING_PUNCT_PAT = "[%*`.,;:!?]+$"
 
+-- URL の終端として扱う非 ASCII 文字のコードポイント範囲。
+-- 生の非 ASCII は RFC 3986 上 URL に使えないが `https://ja.wikipedia.org/wiki/日本語`
+-- のように貼られること自体はあるため、非 ASCII を丸ごと区切りにはせず
+-- 「URL 中に現れることがない約物・記号」だけを終端にする。
+-- Lua パターンの文字クラスに多バイト文字を書く方式は取れない（バイト単位の集合に
+-- なるため、`、`(E3 80 81) を除外すると先頭バイト E3 を共有するひらがな・カタカナ
+-- ごと弾いてしまう）。UTF-8 のコードポイントで判定する。
+local NON_ASCII_TERMINATORS = {
+  { 0x2000, 0x206F }, -- General Punctuation（“ ” … – — 各種スペース）
+  { 0x3000, 0x303F }, -- CJK 記号・約物（　、。「」『』【】〈〉《》〜）
+  { 0x30FB, 0x30FB }, -- ・（U+30FC の `ー` は語中に現れるので含めない）
+  { 0xFF01, 0xFF0F }, -- ！＂＃＄％＆＇（）＊＋，－．／
+  { 0xFF1A, 0xFF20 }, -- ：；＜＝＞？＠
+  { 0xFF3B, 0xFF40 }, -- ［＼］＾＿｀
+  { 0xFF5B, 0xFF65 }, -- ｛｜｝～ と半角カナ約物 ｡｢｣､･
+}
+
+---@param cp number コードポイント
+---@return boolean
+local function is_terminator(cp)
+  for _, range in ipairs(NON_ASCII_TERMINATORS) do
+    if cp >= range[1] and cp <= range[2] then
+      return true
+    end
+  end
+  return false
+end
+
+---URL を最初の非 ASCII 約物の直前で切る（`.../300（draft、…` → `.../300`）。
+---@param url string
+---@return string
+local function truncate_at_non_ascii_punct(url)
+  for i = 0, vim.fn.strchars(url) - 1 do
+    local cp = vim.fn.strgetchar(url, i)
+    if cp >= 0x80 and is_terminator(cp) then
+      return vim.fn.strcharpart(url, 0, i)
+    end
+  end
+  return url
+end
+
 -- 閉じ括弧 → 対応する開き括弧
 local CLOSERS = { [")"] = "(", ["]"] = "[", ["}"] = "{" }
 
@@ -61,12 +102,12 @@ function M.find_url_on_line(line, col)
 
   local search_pos = 1
   while true do
-    local url_start, raw_end, url = line:find(URL_PAT, search_pos)
+    local url_start, _, url = line:find(URL_PAT, search_pos)
     if not url_start then
       break
     end
 
-    url = trim_url(url)
+    url = trim_url(truncate_at_non_ascii_punct(url))
     local url_end = url_start + #url - 1
 
     if col >= url_start and col <= url_end then
@@ -77,8 +118,10 @@ function M.find_url_on_line(line, col)
       best_dist = dist
       found_url = url
     end
-    -- 広くマッチした範囲全体をスキップ（トリムした末尾を再走査しない）
-    search_pos = raw_end + 1
+    -- 確定した URL の直後から再開する。raw マッチ末尾まで飛ばすと
+    -- `https://a、https://b` のように空白なしで区切られた2つ目を取りこぼす。
+    -- URL は必ず `http://` 以上の長さなので search_pos は前進する。
+    search_pos = url_start + #url
   end
 
   return found_url
