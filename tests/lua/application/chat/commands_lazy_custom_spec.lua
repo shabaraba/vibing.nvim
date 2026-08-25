@@ -7,6 +7,16 @@ describe("commands custom command lazy loading", function()
   local Commands
   local scan_count
 
+  -- このspecは package.loaded を3つ差し替える。PlenaryBustedDirectory はspecファイルごとに
+  -- 別のnvimを起動するので他ファイルには漏れないが、それはこのファイルの外の都合であって
+  -- ここが保証していることではない。元の値を持って帰る。
+  local MOCKED_MODULES = {
+    "vibing.application.chat.commands",
+    "vibing.application.chat.custom_commands",
+    "vibing.core.utils.notify",
+  }
+  local original_loaded
+
   local function fake_custom_commands(commands)
     scan_count = 0
     package.loaded["vibing.application.chat.custom_commands"] = {
@@ -19,8 +29,12 @@ describe("commands custom command lazy loading", function()
   end
 
   before_each(function()
+    original_loaded = {}
+    for _, name in ipairs(MOCKED_MODULES) do
+      original_loaded[name] = package.loaded[name]
+    end
+
     package.loaded["vibing.application.chat.commands"] = nil
-    package.loaded["vibing.core.utils.notify"] = nil
     package.loaded["vibing.core.utils.notify"] = {
       error = function() end,
       warn = function() end,
@@ -43,7 +57,9 @@ describe("commands custom command lazy loading", function()
   end)
 
   after_each(function()
-    package.loaded["vibing.application.chat.custom_commands"] = nil
+    for _, name in ipairs(MOCKED_MODULES) do
+      package.loaded[name] = original_loaded[name]
+    end
   end)
 
   it("does not scan the disk just because the module was loaded", function()
