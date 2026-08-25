@@ -133,6 +133,11 @@ describe("vibing.init", function()
     it("should initialize adapter", function()
       Vibing.setup()
 
+      -- Adapter creation is deferred via vim.schedule to keep it off the
+      -- startup path; drain the scheduled callback before asserting.
+      vim.wait(1000, function()
+        return Vibing.adapter ~= nil
+      end)
       assert.is_not_nil(Vibing.adapter)
     end)
 
@@ -684,6 +689,10 @@ describe("vibing.init", function()
 
       assert.is_true(config_setup_called)
       assert.is_true(chat_setup_called)
+      -- Adapter creation is deferred via vim.schedule (see setup); drain it.
+      vim.wait(1000, function()
+        return Vibing.adapter ~= nil
+      end)
       assert.is_not_nil(Vibing.adapter)
       -- Should have at least 8 commands
       assert.is_true(commands_registered >= 8)
