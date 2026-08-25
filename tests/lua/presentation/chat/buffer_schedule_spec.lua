@@ -83,27 +83,36 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
   --- Build a ChatBuffer whose `:write` deterministically fails, WITHOUT changing its directory
   --- from tmp_root. This matters: the helper looks up the active limit via
   --- `LimitState.get_active(fnamemodify(chat_file_path, ":h"))`, and every test in this file
-  --- records the limit under `tmp_root`. An earlier version of this fixture pointed the buffer at
-  --- `tmp_root .. "/no-such-subdir/chat.md"` to force a write failure, which silently broke that
-  --- lookup (dirname became `tmp_root/no-such-subdir`, a different, empty store) — the helper then
-  --- returned false at the earlier "no active limit" guard, never reaching the save/arm code the
-  --- test claimed to cover. Pre-creating the target path itself as a directory reproduces a real
-  --- `:write` failure (can't write a file where a directory already exists) while keeping the
-  --- buffer's dirname exactly `tmp_root`, so the lookup still lines up.
+  --- records the limit under `tmp_root`. Get the path wrong and the helper returns false at the
+  --- earlier "no active limit" guard, never reaching the save/arm code the test claims to cover —
+  --- a vacuous pass. Two filesystem tricks were tried and both did exactly that:
+  ---
+  ---  1. Naming the buffer `tmp_root .. "/no-such-subdir/chat.md"`. The dirname became
+  ---     `tmp_root/no-such-subdir`, a different and empty store.
+  ---  2. Pre-creating `tmp_root/chat.md` as a *directory*, so a real `:write` cannot create a file
+  ---     there. But `nvim_buf_set_name` on a path that exists as a directory hands back a name
+  ---     with a **trailing slash** (`.../chat.md/`), so `:h` yields `.../chat.md` rather than
+  ---     `tmp_root` — the same mismatch by a different route. This is what the sanity assertion in
+  ---     the test below actually caught.
+  ---
+  --- So the write is failed at the buffer instead of at the filesystem: `:write` refuses a
+  --- buffer with 'readonly' set (E45, and the helper writes without `!`), which leaves `modified`
+  --- set — the exact signal the helper reads. The file name never has to exist or be special, so
+  --- the dirname stays `tmp_root` verbatim. It is also the only variant that holds when the suite
+  --- runs as root, which both chmod-based alternatives silently lose.
   --- @param message string
   --- @return table chat_buffer, string chat_path
   local function make_unwritable_buffer(message)
-    local chat_path = tmp_root .. "/chat.md"
-    vim.fn.mkdir(chat_path, "p")
-
     local bufnr = vim.api.nvim_create_buf(false, false)
     table.insert(created_bufs, bufnr)
-    vim.api.nvim_buf_set_name(bufnr, chat_path)
+    vim.api.nvim_buf_set_name(bufnr, tmp_root .. "/chat.md")
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
       "## User <!-- unsent -->",
       message,
     })
-    chat_path = vim.api.nvim_buf_get_name(bufnr)
+    vim.bo[bufnr].readonly = true
+
+    local chat_path = vim.api.nvim_buf_get_name(bufnr)
     table.insert(created_chat_paths, chat_path)
     local instance = setmetatable({ buf = bufnr, _pending_approval = nil }, ChatBuffer)
     return instance, chat_path
