@@ -281,13 +281,38 @@ function M._build_summary_prompt(conversation)
 end
 
 ---チャット履歴からサマリーを生成してバッファに挿入
+---
+---`opts.on_done` は成否にかかわらず必ず1回だけ呼ばれる。同期的な早期リターン（ストリーミング
+---中・会話が空・adapter 無し）でも呼ぶのが要点で、呼ばれない経路が1つでもあると連鎖する
+---呼び出し側は「まだ来ていない」と「もう来ない」を区別できず待ち続ける。`err` は原則として
+---ユーザーに通知したのと同じ文言。挿入失敗だけは例外で、詳しい理由は `SummaryInserter` が
+---通知するため `err` は粗い文言になる。
 ---@param chat_buffer Vibing.ChatBuffer
-function M.generate_and_insert_summary(chat_buffer)
+---@param opts? {on_done?: fun(ok: boolean, err: string?)}
+function M.generate_and_insert_summary(chat_buffer, opts)
   local notify = require("vibing.core.utils.notify")
+  local on_done = opts and opts.on_done
+
+  local finished = false
+  local function finish(ok, err)
+    if finished then
+      return
+    end
+    finished = true
+    if on_done then
+      -- on_done は利用側（dotfiles 等）が書くコールバックで、非同期パスでは CLI の完了
+      -- ハンドラの中から呼ばれる。素通しにすると luv のコールバック内で例外になるので、
+      -- ここで捕まえて通知に落とす。
+      local ok_call, call_err = pcall(on_done, ok, err)
+      if not ok_call then
+        notify.error("Summary completion callback failed: " .. tostring(call_err))
+      end
+    end
+  end
 
   if not chat_buffer or not chat_buffer.buf or not vim.api.nvim_buf_is_valid(chat_buffer.buf) then
     notify.error("No valid chat buffer")
-    return
+    return finish(false, "No valid chat buffer")
   end
 
   -- set_file_title と同じ理由でストリーミング中は断る。summary は `# Vibing Chat` の直下へ
@@ -295,14 +320,14 @@ function M.generate_and_insert_summary(chat_buffer)
   -- 加えて、途中状態の会話から要約を作ることにもなる。
   if chat_buffer:is_sending() then
     notify.warn("Cannot summarize while a response is streaming")
-    return
+    return finish(false, "Cannot summarize while a response is streaming")
   end
 
   local conversation = chat_buffer:extract_conversation()
 
   if #conversation == 0 or not has_conversation_content(conversation) then
     notify.warn("No conversation content to summarize")
-    return
+    return finish(false, "No conversation content to summarize")
   end
 
   local vibing = require("vibing")
@@ -310,13 +335,13 @@ function M.generate_and_insert_summary(chat_buffer)
 
   if not adapter then
     notify.error("No adapter configured")
-    return
+    return finish(false, "No adapter configured")
   end
 
   local full_prompt, err = M._build_summary_prompt(conversation)
   if err then
     notify.error("Failed to load summary prompt: " .. err)
-    return
+    return finish(false, "Failed to load summary prompt: " .. err)
   end
 
   notify.info("Generating summary...")
@@ -330,29 +355,34 @@ function M.generate_and_insert_summary(chat_buffer)
     -- Re-validate buffer in async callback (buffer may be deleted during AI processing)
     if not buf or not vim.api.nvim_buf_is_valid(buf) then
       notify.warn("Chat buffer was closed during summary generation")
-      return
+      return finish(false, "Chat buffer was closed during summary generation")
     end
 
     if not response then
       notify.error("No response received from AI")
-      return
+      return finish(false, "No response received from AI")
     end
 
     if response.error then
       notify.error(string.format("Summarization failed: %s", response.error))
-      return
+      return finish(false, string.format("Summarization failed: %s", response.error))
     end
 
     local summary = response.content
     if not summary or type(summary) ~= "string" or summary == "" then
       notify.warn("AI returned empty summary")
-      return
+      return finish(false, "AI returned empty summary")
     end
 
     local SummaryInserter = require("vibing.presentation.chat.modules.summary_inserter")
-    if SummaryInserter.insert_or_update(buf, summary) then
-      notify.info("Summary written to chat buffer")
+    -- 失敗の内訳（バッファ無効・`## summary` で始まらない等）は Inserter 側が通知済みなので、
+    -- ここでは連鎖する呼び出し側に成否だけを渡す。
+    if not SummaryInserter.insert_or_update(buf, summary) then
+      return finish(false, "Failed to insert summary into chat buffer")
     end
+
+    notify.info("Summary written to chat buffer")
+    finish(true)
   end)
 end
 

@@ -159,9 +159,15 @@ section is not kept in sync field by field.
     response is streaming.
 
                                                            *:VibingSummarize*
-:VibingSummarize
+:VibingSummarize [--with-title]
     Summarise the conversation so far and insert it into the buffer. Refused
     while a response is streaming.
+
+    With `--with-title`, run |:VibingSetFileTitle| once the summary is in the
+    buffer, so the title is generated from the summary rather than from a
+    conversation excerpt. The title step is skipped when summarising failed:
+    it would otherwise fall back to the excerpt and spend a second request
+    the user did not ask for. Run |:VibingSetFileTitle| by hand for that.
 
                                                          *:VibingDeleteChats*
 :VibingDeleteChats [--unrenamed]
@@ -346,7 +352,18 @@ require("vibing").get_adapter()                        *vibing.get_adapter()*
 require("vibing").get_config()                          *vibing.get_config()*
     The merged, validated configuration table.
 
-Everything under `lua/vibing/` beyond these three functions is internal and
+                                        *vibing.generate_and_insert_summary()*
+require("vibing.application.chat.use_case")
+        .generate_and_insert_summary({chat_buffer}, {opts})
+    The body of |:VibingSummarize|. {opts.on_done} is a
+    `fun(ok: boolean, err: string?)` called exactly once, whether the summary
+    succeeded or not — the synchronous refusals (streaming, empty
+    conversation, no adapter) included, so a caller chaining on it never has
+    to tell "not yet" from "never". An error raised inside it is caught and
+    reported rather than propagated into the CLI's completion handler. See
+    `doc/api-reference.md` for the full contract.
+
+Everything under `lua/vibing/` beyond these four entry points is internal and
 may change without notice.
 
 ==============================================================================

@@ -89,8 +89,24 @@ function M.handle_set_file_title()
   handler({}, current_view)
 end
 
+---`:VibingSummarize` の引数をパースする（未知の引数は警告して要約自体は続行）
+---@param args string?
+---@return boolean with_title
+local function parse_summarize_flags(args)
+  local with_title = false
+  for arg in (args or ""):gmatch("%S+") do
+    if arg == "--with-title" then
+      with_title = true
+    else
+      notify.warn("Unknown argument: " .. arg)
+    end
+  end
+  return with_title
+end
+
 ---チャット履歴からサマリーを生成してバッファに挿入
-function M.handle_summarize()
+---@param args string? 引数文字列（`--with-title` で続けてタイトル生成まで行う）
+function M.handle_summarize(args)
   local view = require("vibing.presentation.chat.view")
   local current_view = view.get_current()
 
@@ -99,8 +115,22 @@ function M.handle_summarize()
     return
   end
 
+  local with_title = parse_summarize_flags(args)
+
   local use_case = require("vibing.application.chat.use_case")
-  use_case.generate_and_insert_summary(current_view)
+  use_case.generate_and_insert_summary(current_view, {
+    on_done = with_title and function(ok)
+      -- 失敗時は通知済みなので追わない。summary が無いまま走らせるとタイトル生成は抜粋に
+      -- フォールバックし、ユーザーが頼んでいない API 呼び出しが1回余分に走る。
+      if not ok then
+        return
+      end
+      -- `M.handle_set_file_title()` ではなくハンドラを直接呼び、最初に掴んだバッファを渡す。
+      -- 要約は非同期なので、完了時点のカレントバッファは別のチャット（あるいは非チャット）に
+      -- なっていることがある。
+      require("vibing.application.chat.handlers.set_file_title")({}, current_view)
+    end or nil,
+  })
 end
 
 ---チャットをフォーク
