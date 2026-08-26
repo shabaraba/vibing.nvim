@@ -1,6 +1,6 @@
 {
   "name": "vibing-nvim",
-  "version": "5.5.0",
+  "version": "5.5.1",
   "description": "Neovim plugin that runs an AI chat inside Neovim via the claude or codex CLI",
   "keywords": [
     "neovim",

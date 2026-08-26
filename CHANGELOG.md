@@ -30,6 +30,15 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 5.5.1 (2026-08-26)
+
+## What's Changed
+* fix: stop gx URL extraction at Japanese punctuation by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/612
+* fix: bound and clean the input to :VibingSummarize by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/614
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.5.0...v5.5.1
+
 ## 5.5.0 (2026-08-25)
 
 ## What's Changed
