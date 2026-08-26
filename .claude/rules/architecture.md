@@ -348,12 +348,12 @@ via `/model` slash command.
 `effort` is the second cost/quality knob, passed to the CLI as `--effort`. Unlike `model` it is
 **omitted unless configured**: with no `agent.default_effort` vibing.nvim passes no flag and the
 CLI applies its own default, which Anthropic tunes over time — pinning a level here would freeze
-it. Set it per chat with `/effort`. Lightweight calls (title generation, `/summarize`, daily
-summary) use `agent.utility_effort` (default `low`) instead. It does **not** pair with a cheap
-model: `utility_model` defaults to `sonnet`, because those calls summarize a noisy chat transcript
-and haiku measurably picks the wrong subject. Low effort on a capable model is the trade actually
-being made here. An unrecognised level is dropped with a warning rather than passed
-through: the CLI accepts unknown levels silently and then ignores them.
+it. Set it per chat with `/effort`. Lightweight calls (title generation, `/summarize`,
+`:VibingSummarize`, daily summary) use `agent.utility_effort` (default `low`) instead. It does
+**not** pair with a cheap model: `utility_model` defaults to `sonnet`, because those calls
+summarize a noisy chat transcript and haiku measurably picks the wrong subject. Low effort on a
+capable model is the trade actually being made here. An unrecognised level is dropped with a
+warning rather than passed through: the CLI accepts unknown levels silently and then ignores them.
 
 **Lightweight calls are restricted differently per backend, because the CLIs differ in kind.**
 Claude removes the tools outright with `--tools ""`. Codex cannot: probing its config schema with
