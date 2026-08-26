@@ -354,9 +354,12 @@ injection an unreviewed `.claude/skills/` allows, and it is why Claude Code gate
 `.mcp.json` behind approval. The convenience was preferred; `agent.plugins.project_dir = false`
 is the opt-out.
 
-**A worktree falls back to the project root.** `.vibing/` is git-ignored, so a worktree checkout
-has no `.vibing/plugins` of its own — resolution reads the worktree's copy when present and the
-Neovim root's otherwise, mirroring `project_system_prompt.read_for_cwd`.
+**A worktree reads both its own `.vibing/plugins` and the project root's.** `.vibing/` is
+git-ignored, so a worktree checkout usually has none of its own. This is a union with per-name
+precedence, not the strict fallback `project_system_prompt.read_for_cwd` applies to
+`.vibing/system-prompt.md`: that one picks a single file and so has to choose, while a _set_ of
+plugins does not, and a worktree adding one experimental plugin should not lose every plugin the
+project already had. Reusing a root plugin's name is still how a worktree overrides it.
 
 **Accepted:** a plain `claude` session started outside Neovim no longer sees the `nvim_*` tools.
 Reaching a running Neovim was the entire point of them, so no opt-in was added.

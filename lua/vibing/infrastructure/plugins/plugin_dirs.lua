@@ -138,8 +138,13 @@ local function candidates(cwd, nvim_root, plugins)
   if type(project_dir) == "string" and project_dir ~= "" then
     vim.list_extend(dirs, glob_plugin_dirs(cwd, project_dir))
     -- `.vibing/` is git-ignored, so a worktree checkout has no `.vibing/plugins` of its own.
-    -- Fall back to the root Neovim was started in, where the user actually puts them --
-    -- `project_system_prompt.read_for_cwd` resolves `.vibing/system-prompt.md` the same way.
+    -- Also offer the root Neovim was started in, where the user actually puts them.
+    --
+    -- This is a union with per-name precedence, not the strict fallback
+    -- `project_system_prompt.read_for_cwd` does for `.vibing/system-prompt.md`. That one picks a
+    -- single file so it has to choose; a *set* of plugins does not. A worktree adding one
+    -- experimental plugin should not lose every plugin the project already had, and the
+    -- deduplication below still lets it override one of them by reusing its name.
     if cwd ~= nvim_root then
       vim.list_extend(dirs, glob_plugin_dirs(nvim_root, project_dir))
     end
@@ -162,14 +167,25 @@ end
 --- @param config Vibing.Config
 --- @return Vibing.PluginDirEntry[]
 function M.resolve_entries(cwd, config)
-  local nvim_root = vim.fn.getcwd()
+  -- The *global* cwd, not `getcwd()`. "The root Neovim was started in" is a property of the
+  -- session, and `:lcd`/`:tcd` set a per-window view of it rather than a different project.
+  -- Reading the window-local one would also disagree with the completion providers, which key
+  -- their own caches on the global cwd: under `:lcd` the two would differ, `cwd ~= nvim_root`
+  -- would hold spuriously, and `.vibing/plugins` would be globbed twice for the same project.
+  local nvim_root = vim.fn.getcwd(-1, -1)
   local effective = (cwd and cwd ~= "") and cwd or nvim_root
 
   if cache[effective] then
     return cache[effective]
   end
 
-  local plugins = (config.agent and config.agent.plugins) or {}
+  -- A non-table `agent.plugins` reads as "unset" rather than reaching `candidates()`, where
+  -- `plugins.self` on a boolean or a string raises. The builder runs under `pcall`, so that
+  -- surfaced as an unexplained "failed to build command" instead of naming the bad config.
+  local plugins = config.agent and config.agent.plugins
+  if type(plugins) ~= "table" then
+    plugins = {}
+  end
   local entries = {}
   local seen_names = {}
   local seen_paths = {}

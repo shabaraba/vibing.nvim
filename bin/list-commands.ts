@@ -128,11 +128,17 @@ async function listCommands() {
     const sessionPlugins = await resolveSessionPluginDirs(process.argv.slice(2));
     const installedPlugins = await resolveInstalledPlugins();
 
-    const seen = new Set(sessionPlugins.map((plugin) => pluginShortName(plugin.id)));
-    const plugins = [
-      ...sessionPlugins,
-      ...installedPlugins.filter((plugin) => !seen.has(pluginShortName(plugin.id))),
-    ];
+    // First occurrence of a plugin name wins, across both lists. The Lua side already
+    // deduplicates the directories it passes, but this is also a standalone binary taking a
+    // caller's argv, and listing a skill the CLI would not load offers a `/` entry that silently
+    // does nothing.
+    const seen = new Set<string>();
+    const plugins = [...sessionPlugins, ...installedPlugins].filter((plugin) => {
+      const name = pluginShortName(plugin.id);
+      if (seen.has(name)) return false;
+      seen.add(name);
+      return true;
+    });
 
     const pluginSkillLists = await Promise.all(
       plugins.map((plugin) => scanPluginSkills(plugin.path, pluginShortName(plugin.id)))

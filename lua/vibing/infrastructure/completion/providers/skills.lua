@@ -257,8 +257,9 @@ local function start_async_load()
   -- Do NOT use stdout_buffered=true: Neovim caps its internal buffer at 65536 bytes,
   -- which truncates large outputs (e.g. >64KB plugin skill lists) and breaks JSON parsing.
   -- Instead, stream chunks and reconstruct lines manually.
-  local job_id = vim.fn.jobstart(
-    vim.list_extend({ executable, script_path }, plugin_dirs), {
+  local argv = vim.list_extend({ executable, script_path }, plugin_dirs)
+
+  local job_id = vim.fn.jobstart(argv, {
     cwd = cwd,
     on_stdout = function(_, data, _)
       if type(data) ~= "table" or #data == 0 then

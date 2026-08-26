@@ -247,9 +247,10 @@ you.
 same plugin name the CLI keeps the first and ignores the rest, so a project plugin cannot shadow
 vibing.nvim's own by taking its name.
 
-**Worktrees fall back to the project root.** `.vibing/` is git-ignored, so a worktree checkout
-has no `.vibing/plugins` of its own; a chat whose `working_dir` is a worktree reads the worktree's
-copy if there is one and the root's otherwise, the same way `.vibing/system-prompt.md` resolves.
+**Worktrees read both locations.** `.vibing/` is git-ignored, so a worktree checkout usually has
+no `.vibing/plugins` of its own. A chat whose `working_dir` is a worktree gets the worktree's
+plugins _and_ the root's, with the worktree winning where both declare the same plugin name —
+so a worktree can add or override a plugin without losing the rest.
 
 **A broken plugin is reported.** `--plugin-dir` ignores a directory with no manifest, an
 unparseable manifest or a nonexistent path in complete silence, which makes "I put it there and

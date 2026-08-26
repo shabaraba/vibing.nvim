@@ -189,6 +189,20 @@ describe("plugin_dirs", function()
       assert.equals(project_root .. "/.vibing/plugins/shared", dirs[2])
     end)
 
+    -- Deliberately a union, not the strict fallback `.vibing/system-prompt.md` gets: a worktree
+    -- that adds one plugin should not lose the ones the project already had.
+    it("keeps both when the worktree and the root declare different plugins", function()
+      write_plugin(project_root .. "/.vibing/plugins/from-root", "from-root")
+      local worktree = project_root .. "/.vibing/worktrees/feature"
+      write_plugin(worktree .. "/.vibing/plugins/from-worktree", "from-worktree")
+
+      local dirs = PluginDirs.resolve(worktree, config)
+
+      assert.equals(3, #dirs)
+      assert.equals(worktree .. "/.vibing/plugins/from-worktree", dirs[2])
+      assert.equals(project_root .. "/.vibing/plugins/from-root", dirs[3])
+    end)
+
     it("prefers the worktree's own copy when both declare the same plugin name", function()
       write_plugin(project_root .. "/.vibing/plugins/shared", "shared")
       local worktree = project_root .. "/.vibing/worktrees/feature"
@@ -245,6 +259,19 @@ describe("plugin_dirs", function()
       })
 
       assert.same({}, notifications)
+    end)
+  end)
+
+  describe("malformed config", function()
+    -- `candidates()` indexes `plugins.self`, so a truthy non-table raised. The builder runs under
+    -- pcall, which turned a config typo into an unexplained "failed to build command".
+    it("treats a non-table agent.plugins as unset instead of raising", function()
+      for _, bad in ipairs({ true, "yes", 42 }) do
+        local ok, dirs = pcall(PluginDirs.resolve, nil, { agent = { plugins = bad } })
+        PluginDirs.clear_cache()
+        assert.is_true(ok, vim.inspect(bad))
+        assert.same({ own_plugin_dir() }, dirs)
+      end
     end)
   end)
 
