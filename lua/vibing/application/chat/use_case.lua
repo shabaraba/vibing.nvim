@@ -143,27 +143,124 @@ local function has_conversation_content(conversation)
 end
 
 ---Maximum number of messages to include in summary (to avoid token limits)
-local MAX_MESSAGES_FOR_SUMMARY = 50
+M.MAX_MESSAGES_FOR_SUMMARY = 50
+
+---1メッセージあたりの上限（文字数）。
+---
+---件数の上限だけでは効かない。実測したチャットは43通で `MAX_MESSAGES_FOR_SUMMARY` に
+---掛からないまま261,741文字あり、うち1通が76,026バイトだった。1通ぶんを縛らないと、
+---会話全体の上限を掛けても「巨大な1通だけが残る」形になる。
+M.MAX_MESSAGE_CHARS = 3000
+
+---会話全体の上限（文字数）。
+---
+---`title_generator` が抜粋を6,000文字に縛っているのと同じ理由で、こちらにも上限が要る。
+---要約は決定と却下理由が本体なので抜粋よりずっと厚く取るが、上限そのものは要る:
+---長すぎるとモデルが `prompts/chat_summary.md` の出力形式を守れなくなり、先頭行が
+---`## summary` にならない応答を `summary_inserter` が丸ごと捨てる（= 課金だけされて
+---何も挿入されない）。
+M.MAX_TOTAL_CHARS = 60000
+
+---中略したことを明示するマーカー。黙って落とすと、要約が会話の一部しか見ていないことが
+---読む側にもモデルにも分からない。
+M.OMISSION_MARKER = "(… 古いメッセージは省略 …)"
+
+---長すぎるメッセージを中略する。前半と後半の両方を残すのは、assistant の応答では
+---「何をしようとしたか」が冒頭に、「何が決まったか」が末尾に来るため。末尾を捨てると
+---要約の本体である決定事項がそのまま落ちる。
+---@param text string
+---@param max_chars integer
+---@return string
+local function elide_middle(text, max_chars)
+  local len = vim.fn.strchars(text)
+  if len <= max_chars then
+    return text
+  end
+
+  local head = math.floor(max_chars * 2 / 3)
+  local tail = max_chars - head
+  return vim.fn.strcharpart(text, 0, head)
+    .. "\n(… 中略 …)\n"
+    .. vim.fn.strcharpart(text, len - tail, tail)
+end
+
+---要約に渡すメッセージを選ぶ。
+---
+---ここが `:VibingSummarize` と `title_generator` の分かれ目になる。タイトル生成は
+---`chat_excerpt.build` をそのまま使えるが、要約は使えない: `build` は assistant を冒頭2通・
+---各400文字しか残さない設計で、要約の本体である「何を決め、何を却下したか」が
+---ちょうど落ちる。そこで `chat_excerpt` からはノイズ除去（`clean` / `clean_user`）だけを
+---借りて、件数と文字数の制限は要約用に別途かける。
+---@param conversation {role: string, content: string}[]
+---@return {role: string, content: string}[] messages 新しい順ではなく時系列順
+---@return boolean omitted 落としたメッセージがあるか
+function M._select_messages_for_summary(conversation)
+  local ChatExcerpt = require("vibing.core.utils.chat_excerpt")
+
+  local cleaned = {}
+  for _, msg in ipairs(conversation or {}) do
+    local text = msg.role == "user" and ChatExcerpt.clean_user(msg.content) or ChatExcerpt.clean(msg.content)
+    -- クリーニングで全部消える会話（応答がフェンス済みコードブロックだけ等）は実在する。
+    -- 空の <conversation> を送るより、生のテキストを中略して送るほうがまだ要約になる。
+    if text == "" then
+      text = msg.content or ""
+    end
+    if vim.trim(text) ~= "" then
+      cleaned[#cleaned + 1] = { role = msg.role, content = elide_middle(text, M.MAX_MESSAGE_CHARS) }
+    end
+  end
+
+  if #cleaned == 0 then
+    return {}, false
+  end
+
+  -- 新しい側から詰める。引き継ぎ要約の読者が知りたいのは「どこまで進んだか」なので、
+  -- 予算が足りないときに落とすのは古いほうが正しい。
+  local selected = {}
+  local budget = M.MAX_TOTAL_CHARS
+  for i = #cleaned, 1, -1 do
+    if #selected >= M.MAX_MESSAGES_FOR_SUMMARY then
+      break
+    end
+    local cost = vim.fn.strchars(cleaned[i].content)
+    if budget - cost < 0 and #selected > 0 then
+      break
+    end
+    budget = budget - cost
+    table.insert(selected, 1, cleaned[i])
+  end
+
+  local omitted = #selected < #cleaned
+
+  -- 会話の主題は最初の依頼にある。予算で落ちたときだけ先頭に戻す。1通は中略済みなので
+  -- 超過は高々 MAX_MESSAGE_CHARS で、これは上限を緩めるのではなく上限の外の固定費。
+  if omitted and selected[1] ~= cleaned[1] then
+    table.insert(selected, 1, cleaned[1])
+  end
+
+  return selected, omitted
+end
 
 ---Format conversation for summary prompt with XML protection
 ---@param conversation table[]
 ---@return string
 local function format_conversation_for_prompt(conversation)
-  -- Trim to last N messages if conversation is too long
-  local messages = conversation
-  if #conversation > MAX_MESSAGES_FOR_SUMMARY then
-    messages = {}
-    local start_idx = #conversation - MAX_MESSAGES_FOR_SUMMARY + 1
-    for i = start_idx, #conversation do
-      table.insert(messages, conversation[i])
-    end
-  end
+  local messages, omitted = M._select_messages_for_summary(conversation)
 
   local parts = {}
-  for _, msg in ipairs(messages) do
+  for i, msg in ipairs(messages) do
+    -- 省略マーカーは先頭の依頼の直後に置く。先頭は主題の固定用に戻したものなので、
+    -- そこと次のメッセージのあいだが実際に飛んでいる箇所になる。
+    if omitted and i == 2 then
+      parts[#parts + 1] = M.OMISSION_MARKER
+    end
     -- Wrap in XML tags to prevent prompt injection
     table.insert(parts, string.format("<message role=\"%s\">\n%s\n</message>", msg.role, msg.content))
   end
+  if omitted and #messages < 2 then
+    parts[#parts + 1] = M.OMISSION_MARKER
+  end
+
   return "<conversation>\n" .. table.concat(parts, "\n") .. "\n</conversation>"
 end
 
@@ -227,7 +324,9 @@ function M.generate_and_insert_summary(chat_buffer)
   -- Capture buffer reference for async callback validation
   local buf = chat_buffer.buf
 
-  adapter:stream(full_prompt, {}, function(_) end, function(response)
+  -- 要約はタイトル生成と同じ軽量ユーティリティ呼び出し: ツールも CLAUDE.md も
+  -- ユーザーの MCP サーバーも要らず、載せた分だけコンテキストを食う。
+  adapter:stream(full_prompt, { lightweight = true }, function(_) end, function(response)
     -- Re-validate buffer in async callback (buffer may be deleted during AI processing)
     if not buf or not vim.api.nvim_buf_is_valid(buf) then
       notify.warn("Chat buffer was closed during summary generation")

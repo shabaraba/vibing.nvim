@@ -242,3 +242,91 @@ describe("chat_excerpt.build", function()
     assert.is_true(vim.fn.strchars(excerpt) <= 6001)
   end)
 end)
+
+describe("chat_excerpt.clean heredoc bodies in tool headers", function()
+  it("does not count parens inside a heredoc body", function()
+    -- 本文はシェルのコードではなくデータ。python の複数行文字列のように釣り合わない括弧を
+    -- 含むと、数えたとたんブロックの終端を見失って中身が地の文として残る。
+    local text = table.concat({
+      "計測します。",
+      "💻 Bash(python3 - <<'PY'",
+      'p = pathlib.Path("plan.md")',
+      's = s.replace("""## リスク',
+      "",
+      '## リスク""")',
+      "PY",
+      "wc -l plan.md)",
+      "計測しました。",
+    }, "\n")
+
+    assert.equals("計測します。\n計測しました。", chat_excerpt.clean(text))
+  end)
+
+  it("ends the block on a terminator carrying the render's own closing paren", function()
+    -- 描画は `<marker> Tool(<command>)` なので、コマンドが heredoc で終わると最後の行は
+    -- `PY)` になる。`PY` だけを探すと終端を見つけられない。
+    local text = "💻 Bash(python3 - <<'PY'\nprint(1)\nPY)\n実測しました。"
+
+    assert.equals("実測しました。", chat_excerpt.clean(text))
+  end)
+
+  it("does not end a heredoc on a word that merely starts with the delimiter", function()
+    local text = table.concat({
+      "💻 Bash(cat <<'PY'",
+      "PYTHON",
+      "PY)",
+      "書きました。",
+    }, "\n")
+
+    assert.equals("書きました。", chat_excerpt.clean(text))
+  end)
+
+  it("treats a herestring as an ordinary argument, not a heredoc", function()
+    -- `<<<` は heredoc ではない。デリミタとして拾うと終端が永遠に来ず、
+    -- 続く地の文まで落としてしまう。
+    local text = "💻 Bash(grep x <<< \"$y\")\n見つかりました。"
+
+    assert.equals("見つかりました。", chat_excerpt.clean(text))
+  end)
+end)
+
+describe("chat_excerpt.clean tool headers spanning blank lines", function()
+  it("follows a heredoc command past its blank lines to the closing paren", function()
+    -- 描画は `<marker> Tool(<command>)` の1ブロックで、command は生文字列なので heredoc の
+    -- 空行がそのまま入る。空行で打ち切ると heredoc の中身が地の文として残り、書き込んだ
+    -- markdown やスクリプトが要約・タイトルの入力に混ざる。
+    local text = table.concat({
+      "適用結果を追記します。",
+      "💻 Bash(cat >> report.md <<'MD'",
+      "",
+      "## 適用結果",
+      "",
+      "判定表どおりに移動した。",
+      "MD",
+      "wc -l report.md)",
+      "追記しました。",
+    }, "\n")
+
+    assert.equals("適用結果を追記します。\n追記しました。", chat_excerpt.clean(text))
+  end)
+
+  it("still stops at a blank line when the parens never balance", function()
+    -- `case x)` のように釣り合わないコマンドでは、上限まで走ったあと最初の空行に戻る。
+    -- 食べ過ぎるより食べ足りないほうがまし、という以前からの判断のまま。
+    local text = table.concat({
+      "💻 Bash(case $x in",
+      "  echo ((",
+      "",
+      "この後の説明は残す",
+    }, "\n")
+
+    assert.equals("この後の説明は残す", chat_excerpt.clean(text))
+  end)
+
+  it("keeps the prose when an unbalanced command has no blank line to stop at", function()
+    -- 旧実装はここで残り全部を食べていた。地の文を残すほうが安全側に倒れる。
+    local text = "💻 Bash(echo ((\nこの説明は残す"
+
+    assert.equals("この説明は残す", chat_excerpt.clean(text))
+  end)
+end)

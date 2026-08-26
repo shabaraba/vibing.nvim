@@ -121,6 +121,94 @@ local function paren_balance(s)
   return opens - closes
 end
 
+-- ツールヘッダーの引数を追う行数の上限。ここまでに括弧の釣り合いが取れなければ、
+-- 空行での打ち切り（保守的な旧挙動）にフォールバックする。
+local MAX_TOOL_HEADER_LINES = 500
+
+---行が開く heredoc の終端デリミタを集める。
+---
+---heredoc の本文はシェルのコードではなく**データ**なので、そこの括弧を数えてはいけない。
+---実測したチャットでは `python3 - <<'PY'` の本文にある `s.replace("""..."""` のような
+---複数行文字列が釣り合いを崩し、ブロックの終端を見失って heredoc の中身（書き込む markdown や
+---スクリプト）が地の文として残っていた。
+---@param line string
+---@param pending string[] 見つけたデリミタの追記先
+local function collect_heredoc_delimiters(line, pending)
+  -- herestring (`<<<`) は heredoc ではないので先に潰す
+  local s = line:gsub("<<<", "  ")
+  for name in s:gmatch("<<%-?%s*'([%a_][%w_]*)'") do
+    pending[#pending + 1] = name
+  end
+  for name in s:gmatch('<<%-?%s*"([%a_][%w_]*)"') do
+    pending[#pending + 1] = name
+  end
+  -- 引用符なしの `<<EOF`。上2つの形は `<<` の次が引用符なのでここには落ちてこない。
+  -- 先頭を `[%a_]` に限るのは `x << 2`（シフト）を拾わないため。
+  for name in s:gmatch("<<%-?%s*([%a_][%w_]*)") do
+    pending[#pending + 1] = name
+  end
+end
+
+---ツールヘッダーの引数ブロックが終わった次の行番号を返す。
+---
+---描画形式は `\n<marker> <Tool>(<input>)\n` の1ブロックで、`<input>` は
+---`tool_input.command` の生文字列なので heredoc のように**空行を含む複数行**になりうる。
+---だから空行では打ち切れない。打ち切ると heredoc の中身（書き込む markdown や python
+---スクリプト）がそのまま地の文として残り、タイトル生成にも `:VibingSummarize` の入力にも
+---入り込む。実測では1つのチャットでこれが数万文字を占めていた。
+---
+---とはいえ括弧の釣り合いだけに頼ると `case x)` のような釣り合わないコマンドで後続の地の文を
+---丸ごと食べる。そこで2段構えにしてある: 上限行数までに釣り合いが取れればそこで終端し、
+---取れなければ最初の空行で打ち切る。後者は以前からの挙動そのもので、「食べ過ぎるより
+---食べ足りないほうがまし」という判断は変えていない。
+---@param lines string[]
+---@param start integer ヘッダー行の行番号
+---@return integer next 次に処理する行番号
+local function tool_header_end(lines, start)
+  local pending = {}
+  local balance = paren_balance(lines[start])
+  collect_heredoc_delimiters(lines[start], pending)
+
+  if balance <= 0 and #pending == 0 then
+    return start + 1
+  end
+
+  local first_blank
+  local limit = math.min(#lines, start + MAX_TOOL_HEADER_LINES)
+  for i = start + 1, limit do
+    if #pending > 0 then
+      -- heredoc 本文。括弧も空行も見ない（本文の空行で打ち切るのがまさに漏れの原因だった）
+      --
+      -- 終端行は `PY` だけとは限らない。描画は `<marker> Tool(<command>)` なので、
+      -- コマンドが heredoc で終わっていると最後の行は `PY)` になる。閉じ括弧はデリミタの
+      -- 一部ではなく描画側のものなので、そこだけ数に入れる。
+      local closing = vim.trim(lines[i]):match("^" .. vim.pesc(pending[1]) .. "(%)*)$")
+      if closing then
+        table.remove(pending, 1)
+        if #pending == 0 then
+          balance = balance + paren_balance(closing)
+          if balance <= 0 then
+            return i + 1
+          end
+        end
+      end
+    else
+      balance = balance + paren_balance(lines[i])
+      if balance <= 0 then
+        return i + 1
+      end
+      collect_heredoc_delimiters(lines[i], pending)
+      if not first_blank and vim.trim(lines[i]) == "" then
+        first_blank = i
+      end
+    end
+  end
+
+  -- 上限まで釣り合わなかった。空行が無ければヘッダー1行だけ落とす: 残り全部を食べる
+  -- 旧挙動より、地の文を残すほうが安全側に倒れる。
+  return first_blank or (start + 1)
+end
+
 ---@param text string
 ---@param glyphs string[]
 ---@param allow_glyph_prefix boolean マーカーで始まるだけの行もツール実況として落とすか（assistant のみ）
@@ -161,15 +249,7 @@ local function clean_with(text, glyphs, allow_glyph_prefix)
       end
       i = i + 1
     elseif is_tool_header(trimmed, glyphs, allow_glyph_prefix) then
-      -- ヘッダーの引数は複数行になりうる（Bashの複数行コマンド等）。括弧の釣り合いで終端を探す。
-      -- 空行でも打ち切るのは、`case x)` のように釣り合わない括弧を含むコマンドで
-      -- 後続の地の文まで丸ごと食べてしまわないため。
-      local balance = paren_balance(line)
-      i = i + 1
-      while i <= #lines and balance > 0 and vim.trim(lines[i]) ~= "" do
-        balance = balance + paren_balance(lines[i])
-        i = i + 1
-      end
+      i = tool_header_end(lines, i)
     elseif
       trimmed:match("^@file:")
       or trimmed:match("^Context:")
