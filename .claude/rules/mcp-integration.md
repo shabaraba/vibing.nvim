@@ -5,8 +5,9 @@ instance without deadlocks: an async RPC server (`lua/vibing/infrastructure/rpc/
 `vim.loop` TCP,
 `vim.schedule()` for safe API calls) is queried by the Node MCP server
 (`claude-plugin/mcp-server/`) acting as a TCP client, so both buffer reads and writes are possible.
-Installation is handled by `build.sh` (installs the `vibing-nvim` Claude Code plugin, user
-scope) — see
+Nothing is installed: `build.sh` builds the server, and the plugin that carries it is handed to
+the CLI per session with `--plugin-dir` (`architecture.md` → "Self-Hosted Claude Code Plugin").
+See
 `claude-plugin/mcp-server/README.md` and `handbook/lazy-setup-example.lua` for setup details;
 don't duplicate them here.
 
@@ -26,14 +27,21 @@ than restating the reasoning — a skill is loaded on its own, so a bare cross-r
 the rule unstated.
 
 **The prefix depends on how the server was registered.** `mcp__vibing-nvim__<tool>` for a plain
-user-level entry, `mcp__plugin_<marketplace>_vibing-nvim__<tool>` for a plugin install.
-`VIBING_NVIM_MCP_TOOL_PATTERNS` (`core/constants/tools.lua`) enumerates the prefixes for
-`--allowedTools`, which accepts nothing but literals — so it must be updated by hand on a
-marketplace rename. It silently went stale once when the marketplace became `vibing`;
-`tests/lua/core/constants/tools_spec.lua` now reads the name out of
-`.claude-plugin/marketplace.json` and fails if the matching entry is missing. The grant still
-works while that list is stale, because the hook's suffix match is what actually decides — which
-is exactly why nothing noticed.
+user-level entry, `mcp__plugin_vibing-nvim_vibing-nvim__<tool>` when it arrives inside the plugin
+— which is the normal case, since vibing.nvim self-hosts that plugin with `--plugin-dir`.
+
+Note what builds that second form: the **plugin** name and the MCP server name, both from
+`claude-plugin/.claude-plugin/plugin.json`. The marketplace name never appears in it. This rule
+used to be written down as `mcp__plugin_<marketplace>_…`, and
+`tests/lua/core/constants/tools_spec.lua` read `marketplace.json` to enforce it — so after the
+marketplace was renamed to `vibing`, the list carried an `mcp__plugin_vibing_vibing-nvim__*` entry
+the CLI has never once emitted, and a test defended it. Both are gone; the spec reads `plugin.json`
+now.
+
+`VIBING_NVIM_MCP_TOOL_PATTERNS` (`core/constants/tools.lua`) still has to be maintained by hand,
+because `--allowedTools` accepts nothing but literals. A stale entry there does not break chats:
+the hook's suffix match is what actually decides, which is exactly why nothing noticed the dead
+one for so long.
 
 **The port has to be named explicitly**, and a subagent does not inherit the chat's. The system
 prompt therefore tells the model both to pass its own `rpc_port` and to forward it in any task

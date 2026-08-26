@@ -1,11 +1,11 @@
 -- Lazy.nvim setup example for vibing.nvim
 -- Place this in ~/.config/nvim/lua/plugins/vibing.lua
 --
--- MCP server registration is exclusively via the Claude Code plugin marketplace
--- (`claude plugin install vibing-nvim@vibing`), which build.sh installs automatically.
--- There is no separate ~/.claude.json registration path: that route can only ever hardcode a
--- single default RPC port, so it silently targets the wrong Neovim instance whenever more than
--- one is running.
+-- The MCP server reaches Claude Code as part of vibing.nvim's own bundled plugin, which is
+-- handed to the CLI per session with `--plugin-dir` -- nothing is installed, and build.sh only
+-- builds it. There is no separate ~/.claude.json registration path: that route can only ever
+-- hardcode a single default RPC port, so it silently targets the wrong Neovim instance whenever
+-- more than one is running.
 
 return {
   {
@@ -14,7 +14,7 @@ return {
       -- Add any dependencies here
     },
 
-    -- Build the MCP server and install the Claude Code plugin on install/update
+    -- Build the bundled MCP server on install/update
     build = "./build.sh",
 
     -- Use a custom Node.js executable during build:

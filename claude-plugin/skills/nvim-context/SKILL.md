@@ -17,10 +17,10 @@ Two things decide whether a `vibing-nvim` tool call reaches the editor the user 
 Both apply to every skill and subagent in this plugin, so they are stated once here.
 
 **Which name.** Tools are written below as `mcp__vibing-nvim__<tool>`, which is the plain
-user-level MCP server registration. A Claude Code plugin install exposes them as
-`mcp__plugin_<marketplace>_vibing-nvim__<tool>` instead, where `<marketplace>` is fixed at
-`claude plugin marketplace add` time. If the plain prefix is not available, look for a tool whose
-name **ends** in the one you need rather than assuming it is missing.
+user-level MCP server registration. Loaded as a Claude Code plugin — which is how vibing.nvim
+itself provides them, handing the CLI this directory with `--plugin-dir` — they appear as
+`mcp__plugin_vibing-nvim_vibing-nvim__<tool>` instead. If the plain prefix is not available, look
+for a tool whose name **ends** in the one you need rather than assuming it is missing.
 
 **Which instance.** Every tool takes an `rpc_port` naming the target Neovim.
 
@@ -28,9 +28,9 @@ name **ends** in the one you need rather than assuming it is missing.
   value on every call.
 - A subagent does **not** inherit it. Take it from your task prompt, and if it isn't there, call
   `nvim_list_instances` and use the port it reports.
-- Anywhere else (an ordinary Claude Code session — this MCP server installs at user scope, so it
-  is visible in sessions that have nothing to do with vibing.nvim), `nvim_list_instances` is the
-  only way to know. If it lists more than one, say which you found and ask rather than guessing.
+- Anywhere else (an ordinary Claude Code session that loaded this plugin some other way — a
+  `--plugin-dir` of your own, or a leftover install), `nvim_list_instances` is the only way to
+  know. If it lists more than one, say which you found and ask rather than guessing.
 
 Omitting `rpc_port` works only while exactly one Neovim is live: reads fall back to the instance
 registry, and writes refuse outright. Worktrees and concurrent chats make more than one the normal

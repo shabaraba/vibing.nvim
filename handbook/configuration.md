@@ -36,6 +36,7 @@ require("vibing").setup({
     auto_resume_on_limit = { enabled = false, max_retries = 1 },
     scheduled_requests = { enabled = true, max_retries = 3 },
     codex_provider_notice = { enabled = true },
+    plugins = { self = true, project_dir = ".vibing/plugins", extra = {} },
   },
   chat = {
     window = {
@@ -185,8 +186,66 @@ agent = {
                             -- off by default. Turn it off to stop the `codex doctor --json`
                             -- probe it needs. Codex backend only.
   },
+
+  plugins = {               -- Claude Code plugins loaded for the session with --plugin-dir.
+                            -- Claude backend only. See "Plugin Directories" below.
+    self = true,            -- vibing.nvim's own claude-plugin/ — the nvim_* MCP tools and
+                            -- every bundled skill. Turning this off removes all of them;
+                            -- it is a debugging escape hatch, not a normal setting.
+    project_dir = ".vibing/plugins",
+                            -- Directories under this (relative to the project) are each
+                            -- loaded as a plugin. false disables the whole convention.
+    extra = {},             -- Additional paths: absolute, ~-relative, or relative to the
+                            -- request's working directory.
+  },
 }
 ```
+
+### Plugin Directories
+
+vibing.nvim does not install anything into Claude Code's global state. Its own `claude-plugin/`
+— the `vibing-nvim` MCP server, the bundled skills, the `nvim-navigator` subagent — is handed to
+the CLI per request with `--plugin-dir`, which loads a plugin for that session only. So the MCP
+server is always the one belonging to the checkout that spawned it, worktrees included, and there
+is no install, update or uninstall step to keep in sync.
+
+The same flag carries your own project plugins. A directory under `.vibing/plugins/` that
+contains a `.claude-plugin/plugin.json` is loaded for chats in that project:
+
+```text
+.vibing/plugins/
+└── my-tooling/
+    ├── .claude-plugin/plugin.json   # { "name": "my-tooling", ... }
+    └── skills/
+        └── deploy/SKILL.md
+```
+
+Run `:VibingReloadCommands` after adding, removing or fixing one — resolution is cached per
+working directory, and that command is what drops the cache.
+
+**Order matters, and it is `self` → `project_dir` → `extra`.** When two directories declare the
+same plugin name the CLI keeps the first and ignores the rest, so a project plugin cannot shadow
+vibing.nvim's own by taking its name.
+
+**Worktrees fall back to the project root.** `.vibing/` is git-ignored, so a worktree checkout
+has no `.vibing/plugins` of its own; a chat whose `working_dir` is a worktree reads the worktree's
+copy if there is one and the root's otherwise, the same way `.vibing/system-prompt.md` resolves.
+
+**A broken plugin is reported.** `--plugin-dir` ignores a directory with no manifest, an
+unparseable manifest or a nonexistent path in complete silence, which makes "I put it there and
+nothing happened" impossible to diagnose. vibing.nvim checks first and warns once per working
+directory instead.
+
+**Lightweight calls get none of this.** Title generation, `/summarize` and the daily summary run
+with no tools and no project config; loading plugins there would only spend prompt tokens on
+skill descriptions nothing can invoke.
+
+> **Trust.** A plugin may declare `mcpServers`, so `.vibing/plugins/` in a repository you cloned
+> can start a process on your machine on the first message you send. This is a stronger thing
+> than the instructions an unreviewed `.claude/skills/` can inject, and it is the reason Claude
+> Code gates a project's own `.mcp.json` behind approval. vibing.nvim reads the directory by
+> default anyway, on convenience grounds — set `project_dir = false` for repositories you do not
+> trust.
 
 ### Codex Provider Notice
 

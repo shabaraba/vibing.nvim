@@ -108,7 +108,7 @@ they compose well.
   dependencies = {
     "stevearc/oil.nvim",  -- Optional: file browser integration
   },
-  build = "./build.sh",  -- Builds the MCP server and registers the Claude Code plugin
+  build = "./build.sh",  -- Builds the bundled MCP server
   config = function()
     require("vibing").setup()
   end,
@@ -131,36 +131,37 @@ use {
 
 ### Claude Code Plugin (MCP + Skills + Agents)
 
-vibing.nvim is also distributed as a [Claude Code plugin](https://code.claude.com/docs/en/plugins),
-which bundles the `vibing-nvim` MCP server together with Neovim-aware skills and a read-only
-navigation subagent — no manual `~/.claude.json` editing required.
+vibing.nvim ships a [Claude Code plugin](https://code.claude.com/docs/en/plugins) that bundles the
+`vibing-nvim` MCP server together with Neovim-aware skills and a read-only navigation subagent.
 
-**Automatic:** if you install with `build = "./build.sh"` (as above) and have the `claude` CLI on
-your `PATH`, `build.sh` runs `claude plugin marketplace add` + `claude plugin install ... --scope
-user` for you on every build — nothing else to do.
+**Nothing to install.** The plugin is not registered into Claude Code's global state at all —
+vibing.nvim hands the CLI its own `claude-plugin/` directory per session with `--plugin-dir`, so
+whichever checkout is running is the one that serves you. `build.sh` only builds the MCP server
+(and, once, cleans up an install from an older version of vibing.nvim).
 
-**Manual:** to install it yourself (e.g. without running `build.sh`, or on a different machine):
-
-```text
-/plugin marketplace add shabaraba/vibing.nvim
-/plugin install vibing-nvim@vibing
-```
-
-Either way, this registers the `vibing-nvim` MCP server (buffer/window/cursor access, Ex commands,
-and LSP queries against the running Neovim instance, as `mcp__vibing-nvim__*` tools), the bundled
-skills (`nvim-context`, `nvim-lsp-navigation`, `vibing-chat-recall`, `vibing-chat-search`, and the
+That gives you `mcp__plugin_vibing-nvim_vibing-nvim__*` tools (buffer/window/cursor access, Ex
+commands, and LSP queries against the running Neovim instance), the bundled skills
+(`nvim-context`, `nvim-lsp-navigation`, `vibing-chat-recall`, `vibing-chat-search`, and the
 `vibing-worktree-{list,create,attach,run,finish}` worktree workflow), and the `nvim-navigator`
 subagent (read-only code navigation via `@vibing-nvim:nvim-navigator`).
 
-The bundled MCP server builds itself on first launch (and whenever its sources change), so no
-separate build step is needed for the MCP server itself. You still need Neovim running with
-`mcp = { enabled = true }` (the default) for the MCP tools to have anything to connect to.
+You still need Neovim running with `mcp = { enabled = true }` (the default) for the MCP tools to
+have anything to connect to. The one trade-off is that a plain `claude` session started outside
+Neovim no longer sees these tools; that was never a supported way to use them.
 
-**Uninstalling:**
+**Your own project plugins.** Anything you drop into `.vibing/plugins/<name>/` (with a
+`.claude-plugin/plugin.json`) is loaded the same way, for chats in that project only. Run
+`:VibingReloadCommands` after adding one. Note that a plugin may declare `mcpServers`, so a plugin
+in a repository you cloned can start a process on your machine — set
+`agent.plugins.project_dir = false` for repositories you do not trust. See
+[handbook/configuration.md](handbook/configuration.md) for `agent.plugins`.
+
+**Upgrading from an older vibing.nvim:** `build.sh` removes the user-scope install and its
+marketplace entry for you. To do it by hand:
 
 ```text
 /plugin uninstall vibing-nvim@vibing
-/plugin marketplace remove vibing-nvim
+/plugin marketplace remove vibing
 ```
 
 ## 🚀 Quick Start

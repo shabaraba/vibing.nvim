@@ -106,7 +106,7 @@ vibing.nvim は補完プラグイン(Copilot、Codeium)や他のチャットプ�
   dependencies = {
     "stevearc/oil.nvim",  -- オプション: ファイルブラウザ統合
   },
-  build = "./build.sh",  -- MCP サーバーのビルドと Claude Code プラグインの登録
+  build = "./build.sh",  -- 同梱 MCP サーバーのビルド
   config = function()
     require("vibing").setup()
   end,
@@ -129,37 +129,40 @@ use {
 
 ### Claude Code プラグイン(MCP + スキル + エージェント)
 
-vibing.nvim は [Claude Code プラグイン](https://code.claude.com/docs/en/plugins)としても配布
-されており、`vibing-nvim` MCP サーバー・Neovim 対応スキル・読み取り専用ナビゲーション
-サブエージェントが同梱されます。`~/.claude.json` の手動編集は不要です。
+vibing.nvim は [Claude Code プラグイン](https://code.claude.com/docs/en/plugins)を同梱して
+おり、`vibing-nvim` MCP サーバー・Neovim 対応スキル・読み取り専用ナビゲーション
+サブエージェントが含まれます。
 
-**自動:** 上記のように `build = "./build.sh"` でインストールし、`claude` CLI が `PATH` に
-あれば、ビルドのたびに `build.sh` が `claude plugin marketplace add` +
-`claude plugin install ... --scope user` を実行します。追加作業はありません。
+**インストール作業はありません。** このプラグインは Claude Code のグローバル状態には一切
+登録されません。vibing.nvim が自分の `claude-plugin/` ディレクトリをセッションごとに
+`--plugin-dir` で CLI に渡すため、いま動いている checkout がそのまま使われます(worktree を
+含む)。`build.sh` がやるのは MCP サーバーのビルドと、旧バージョンのインストールが残っている
+場合の一度きりの後片付けだけです。
 
-**手動:** 自分でインストールする場合(`build.sh` を実行しない場合や別マシンなど):
+これにより `mcp__plugin_vibing-nvim_vibing-nvim__*` ツール(実行中の Neovim へのバッファ/
+ウィンドウ/カーソルアクセス・Ex コマンド・LSP クエリ)、同梱スキル(`nvim-context`、
+`nvim-lsp-navigation`、`vibing-chat-recall`、`vibing-chat-search`、および worktree
+ワークフローの `vibing-worktree-{list,create,attach,run,finish}`)、`nvim-navigator`
+サブエージェント(`@vibing-nvim:nvim-navigator` による読み取り専用コードナビゲーション)が
+利用できます。
 
-```text
-/plugin marketplace add shabaraba/vibing.nvim
-/plugin install vibing-nvim@vibing
-```
+MCP ツールの接続先として、`mcp = { enabled = true }`(デフォルト)の Neovim が起動している
+必要があります。引き換えに、Neovim の外で起動した素の `claude` セッションからはこれらの
+ツールが見えなくなります。もともと想定された使い方ではありません。
 
-いずれの方法でも、`vibing-nvim` MCP サーバー(実行中の Neovim へのバッファ/ウィンドウ/
-カーソルアクセス・Ex コマンド・LSP クエリを `mcp__vibing-nvim__*` ツールとして提供)、
-同梱スキル(`nvim-context`、`nvim-lsp-navigation`、`vibing-chat-recall`、
-`vibing-chat-search`、および worktree ワークフローの
-`vibing-worktree-{list,create,attach,run,finish}`)、`nvim-navigator` サブエージェント
-(`@vibing-nvim:nvim-navigator` による読み取り専用コードナビゲーション)が登録されます。
+**プロジェクト固有のプラグイン。** `.vibing/plugins/<name>/`(`.claude-plugin/plugin.json`
+付き)に置いたものは同じ仕組みで読み込まれ、そのプロジェクトのチャットにだけ効きます。追加
+したら `:VibingReloadCommands` を実行してください。なお、プラグインは `mcpServers` を宣言
+できるため、クローンしたリポジトリに仕込まれたプラグインが手元でプロセスを起動しうる点には
+注意してください。信用できないリポジトリでは `agent.plugins.project_dir = false` にします。
+`agent.plugins` の詳細は [handbook/configuration.md](handbook/configuration.md) を参照。
 
-同梱 MCP サーバーは初回起動時(およびソース変更時)に自動でビルドされるため、MCP サーバー
-自体の個別ビルドは不要です。MCP ツールの接続先として、`mcp = { enabled = true }`(デフォルト)
-の Neovim が起動している必要があります。
-
-**アンインストール:**
+**旧バージョンからの移行:** `build.sh` が user scope のインストールとマーケットプレイス
+登録を削除します。手動でやる場合:
 
 ```text
 /plugin uninstall vibing-nvim@vibing
-/plugin marketplace remove vibing-nvim
+/plugin marketplace remove vibing
 ```
 
 ## 🚀 クイックスタート

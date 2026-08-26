@@ -32,13 +32,16 @@ local function get_node_executable()
   return node_cmd
 end
 
----Build the message guiding the user to register vibing-nvim as a Claude Code plugin
----@param plugin_root string
+---What to tell the user once the MCP server is built.
+---
+---There is nothing left for them to run: since #618 vibing.nvim hands its own `claude-plugin/`
+---to the CLI per session with `--plugin-dir` rather than installing it into Claude Code's user
+---scope, so the MCP tools and the bundled skills are available as soon as the build lands. This
+---used to print a `claude plugin marketplace add ... && claude plugin install ...` hint.
 ---@return string
-local function plugin_install_message(plugin_root)
-  return "Register vibing-nvim as a Claude Code plugin by running: claude plugin marketplace add "
-    .. plugin_root
-    .. " && claude plugin install vibing-nvim@vibing --scope user"
+local function plugin_ready_message()
+  return "The vibing-nvim Claude Code plugin is loaded per session from this checkout; "
+    .. "no `claude plugin install` step is needed."
 end
 
 ---Check if command exists
@@ -85,7 +88,6 @@ end
 ---Build MCP server (synchronous)
 ---@return boolean success
 function M.build()
-  local plugin_root = get_plugin_root()
   local mcp_dir = get_mcp_dir()
 
   print_build("Building MCP server...")
@@ -141,7 +143,7 @@ function M.build()
   local dist_index = get_dist_entry()
   if vim.fn.filereadable(dist_index) == 1 then
     print_build("✓ MCP server built successfully")
-    print_build(plugin_install_message(plugin_root))
+    print_build(plugin_ready_message())
 
     return true
   else
@@ -153,7 +155,6 @@ end
 ---Build MCP server (async with callback)
 ---@param callback? function Callback function called with success status
 function M.build_async(callback)
-  local plugin_root = get_plugin_root()
   local mcp_dir = get_mcp_dir()
 
   print_build("Building MCP server...")
@@ -200,7 +201,7 @@ function M.build_async(callback)
         if vim.fn.filereadable(dist_index) == 1 then
           vim.schedule(function()
             print_build("✓ MCP server built successfully")
-            print_build(plugin_install_message(plugin_root))
+            print_build(plugin_ready_message())
             if callback then
               callback(true)
             end

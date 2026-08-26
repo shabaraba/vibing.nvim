@@ -156,6 +156,30 @@ local function resolve_list_commands()
   return executable, script_path
 end
 
+---Plugin directories vibing.nvim self-hosts via `--plugin-dir`, so their skills show up in
+---completion too. `list-commands` only knows about `~/.claude/plugins/installed_plugins.json`,
+---and teaching it the `.vibing/plugins` convention would mean writing the same cwd handling in
+---two languages; passing the already-resolved paths keeps the convention defined in one place.
+---
+---Resolved against the same global cwd the rest of this module keys on, not a chat's
+---`working_dir`: completion is a property of the editor, not of whichever chat buffer happens to
+---be focused. Passing it explicitly is what lets `_bundled_cache_cwd` stand in as this list's
+---staleness key too -- `plugin_dirs` caches per cwd, so with the cwd unchanged the list cannot
+---change underneath us except via `plugin_dirs.clear_cache()`, and the only caller of that
+---(`:VibingReloadCommands`) clears this module's cache in the same breath.
+---@return string[]
+local function resolve_plugin_dirs()
+  local ok, PluginDirs = pcall(require, "vibing.infrastructure.plugins.plugin_dirs")
+  if not ok then
+    return {}
+  end
+  local config_ok, Config = pcall(require, "vibing.config")
+  if not config_ok then
+    return {}
+  end
+  return PluginDirs.resolve(vim.fn.getcwd(-1, -1), Config.get())
+end
+
 ---Parse raw JSON output from list-commands into completion items
 ---@param stdout string
 ---@return Vibing.CompletionItem[]
@@ -221,6 +245,7 @@ local function start_async_load()
   end
 
   local cwd = vim.fn.getcwd(-1, -1)
+  local plugin_dirs = resolve_plugin_dirs()
   _loading = true
   _bundled_cache_cwd = cwd
   _bundled_cache_script_mtime = vim.fn.getftime(script_path)
@@ -232,7 +257,8 @@ local function start_async_load()
   -- Do NOT use stdout_buffered=true: Neovim caps its internal buffer at 65536 bytes,
   -- which truncates large outputs (e.g. >64KB plugin skill lists) and breaks JSON parsing.
   -- Instead, stream chunks and reconstruct lines manually.
-  local job_id = vim.fn.jobstart({ executable, script_path }, {
+  local job_id = vim.fn.jobstart(
+    vim.list_extend({ executable, script_path }, plugin_dirs), {
     cwd = cwd,
     on_stdout = function(_, data, _)
       if type(data) ~= "table" or #data == 0 then
@@ -283,7 +309,6 @@ local function invalidate_if_stale()
   local script_stale = script_path
     and _bundled_cache_script_mtime
     and vim.fn.getftime(script_path) ~= _bundled_cache_script_mtime
-
   if _bundled_cache_cwd == current_cwd and not script_stale then
     return
   end

@@ -14,7 +14,7 @@
 import { readdir, readFile } from 'fs/promises';
 import { join } from 'path';
 import { safeJsonStringify } from './lib/utils.js';
-import { resolveInstalledPlugins } from './lib/plugin-loader.js';
+import { resolveInstalledPlugins, resolveSessionPluginDirs } from './lib/plugin-loader.js';
 
 interface CommandEntry {
   name: string;
@@ -121,7 +121,18 @@ async function scanPluginSkills(pluginPath: string, pluginName: string): Promise
 
 async function listCommands() {
   try {
-    const plugins = await resolveInstalledPlugins();
+    // Argv is a list of absolute plugin directories vibing.nvim self-hosts for the session via
+    // the CLI's `--plugin-dir`, already resolved by the Lua side. They go first because that is
+    // the precedence the CLI itself applies to a duplicate plugin name: the earlier
+    // `--plugin-dir` wins, and an installed plugin of the same name never loads.
+    const sessionPlugins = await resolveSessionPluginDirs(process.argv.slice(2));
+    const installedPlugins = await resolveInstalledPlugins();
+
+    const seen = new Set(sessionPlugins.map((plugin) => pluginShortName(plugin.id)));
+    const plugins = [
+      ...sessionPlugins,
+      ...installedPlugins.filter((plugin) => !seen.has(pluginShortName(plugin.id))),
+    ];
 
     const pluginSkillLists = await Promise.all(
       plugins.map((plugin) => scanPluginSkills(plugin.path, pluginShortName(plugin.id)))

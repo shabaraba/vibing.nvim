@@ -479,8 +479,14 @@ function M._register_commands()
     local commands = require("vibing.application.chat.commands")
     local completion = require("vibing.application.completion")
     local skills = require("vibing.infrastructure.completion.providers.skills")
+    local plugin_dirs = require("vibing.infrastructure.plugins.plugin_dirs")
 
     commands.reload_custom()
+
+    -- Before the provider caches, not after: the skill and agent providers both re-resolve
+    -- from this one, so clearing it second would refill them from the list being discarded.
+    -- This is also what makes a plugin newly dropped into `.vibing/plugins` take effect.
+    plugin_dirs.clear_cache()
 
     completion.clear_cache()
     skills.preload()

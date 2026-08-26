@@ -86,13 +86,18 @@ jobs:
           test -d bin && echo "OK: bin/ directory exists"
           test -f lua/vibing/init.lua && echo "OK: lua/vibing/init.lua exists"
 
-      # Four files independently assert where the Claude Code plugin lives —
+      # Five files independently assert where the Claude Code plugin lives —
       # marketplace.json's `source`, build.sh's PLUGIN_SRC_DIR, install.lua's
-      # get_mcp_dir(), and plugin.json's ${CLAUDE_PLUGIN_ROOT}-relative args.
-      # They cannot share a constant (JSON / bash / Lua), and nothing else in CI
-      # runs build.sh or installs the plugin, so a rename that updates only some
-      # of them goes green here and surfaces as "MCP server directory not found"
-      # on a user's next build. Resolve `source` and check the rest against it.
+      # get_mcp_dir(), plugin_dirs.lua's `--plugin-dir` target, and plugin.json's
+      # ${CLAUDE_PLUGIN_ROOT}-relative args. They cannot share a constant
+      # (JSON / bash / Lua), and nothing else in CI runs build.sh or loads the
+      # plugin, so a rename that updates only some of them goes green here and
+      # surfaces as "MCP server directory not found" on a user's next build.
+      # Resolve `source` and check the rest against it.
+      #
+      # plugin_dirs.lua is the load-bearing one since #618: the plugin is handed
+      # to the CLI per session with `--plugin-dir` instead of being installed, so
+      # that path is what actually decides whether the MCP tools exist at all.
       - name: Check Claude Code plugin layout
         run: |
           SRC="$(node -e "
@@ -102,14 +107,11 @@ jobs:
             process.stdout.write(p.source.replace(/^\.\//, '').replace(/\/\$/, ''));
           ")"
           echo "marketplace.json source: $SRC"
-          # build.sh keeps its own copy of the marketplace *name*, which decides the plugin id it
-          # installs and updates. A rename that misses it leaves build.sh operating on a
-          # marketplace that no longer exists. (The matching copy in core/constants/tools.lua is
-          # checked by tests/lua/core/constants/tools_spec.lua, which reads the same manifest.)
-          NAME="$(node -e "process.stdout.write(require('./.claude-plugin/marketplace.json').name)")"
-          echo "marketplace.json name: $NAME"
-          grep -q "MARKETPLACE_NAME=\"$NAME\"" build.sh \
-            && echo "OK: build.sh MARKETPLACE_NAME matches"
+          # The marketplace name is deliberately not cross-checked against build.sh any more.
+          # build.sh no longer installs through a marketplace, and the MCP tool prefix never
+          # depended on that name in the first place — it is built from plugin.json's `name`,
+          # which tests/lua/core/constants/tools_spec.lua checks against
+          # core/constants/tools.lua.
           test -f "$SRC/.claude-plugin/plugin.json" && echo "OK: $SRC/.claude-plugin/plugin.json exists"
           test -d "$SRC/mcp-server" && echo "OK: $SRC/mcp-server/ exists"
           test -d "$SRC/agents" && echo "OK: $SRC/agents/ exists"
@@ -118,6 +120,8 @@ jobs:
             && echo "OK: build.sh PLUGIN_SRC_DIR matches"
           grep -q "\"/$SRC/mcp-server\"" lua/vibing/install.lua \
             && echo "OK: install.lua MCP dir matches"
+          grep -q "\"/$SRC\"" lua/vibing/infrastructure/plugins/plugin_dirs.lua \
+            && echo "OK: plugin_dirs.lua --plugin-dir target matches"
 
   format-and-lint:
     runs-on: ubuntu-latest

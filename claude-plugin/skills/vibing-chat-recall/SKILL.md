@@ -43,7 +43,7 @@ Pass this turn's `rpc_port` (also in the system prompt) on both calls below — 
 inside a vibing.nvim chat, so the port is always there and `nvim_list_instances` is never the
 route. If the
 `mcp__vibing-nvim__` prefix is unavailable, look for a tool name **ending** in the one you need —
-a plugin install registers them as `mcp__plugin_<marketplace>_vibing-nvim__<tool>`. The
+loaded as a plugin they are `mcp__plugin_vibing-nvim_vibing-nvim__<tool>`. The
 `nvim-context` skill explains both in full.
 
 1. Call `mcp__vibing-nvim__nvim_get_buffer` with the `bufnr` from the system prompt to fetch the

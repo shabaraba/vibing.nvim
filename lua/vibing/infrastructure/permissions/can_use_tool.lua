@@ -46,7 +46,7 @@ local ONCE_SUFFIX = ":once"
 ---
 --- The leading `_` is the whole reason this is not a bare suffix match. Both registration styles
 --- put a separator directly before the server name — `mcp__vibing-nvim__` and
---- `mcp__plugin_<marketplace>_vibing-nvim__` — so requiring one rejects a server whose name merely
+--- `mcp__plugin_<plugin>_vibing-nvim__` — so requiring one rejects a server whose name merely
 --- *ends* with it (`mcp__my-vibing-nvim__nvim_get_buffer`). What it cannot reject is a third-party
 --- server actually named `vibing-nvim` exposing `nvim_*` tools: nothing in the tool name says who
 --- registered it. That call is granted, which matters because this decision bypasses the CLI's own
@@ -245,11 +245,11 @@ function M.can_use_tool(tool_name, input, config)
       return allow(input)
     end
 
-    -- Handle vibing-nvim MCP tools. The vibing-nvim MCP server may be registered either as a
-    -- plain user-level MCP server (mcp__vibing-nvim__<tool>) or as a Claude Code plugin
-    -- (mcp__plugin_<marketplace>_<plugin>__<tool>, e.g. mcp__plugin_vibing_vibing-nvim__<tool>).
-    -- Match on suffix so both registration styles are recognized identically, regardless of
-    -- marketplace name.
+    -- Handle vibing-nvim MCP tools. The vibing-nvim MCP server may reach the CLI either as a
+    -- plain user-level MCP server (mcp__vibing-nvim__<tool>) or inside a Claude Code plugin
+    -- (mcp__plugin_<plugin>_<server>__<tool>, i.e. mcp__plugin_vibing-nvim_vibing-nvim__<tool>) --
+    -- which is the normal case, since vibing.nvim self-hosts that plugin with --plugin-dir.
+    -- Match on suffix so both are recognized identically, whatever the plugin is called.
     if M.is_vibing_nvim_mcp_tool(tool_name) then
       if config.mcp_enabled then
         return allow(input)
