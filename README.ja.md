@@ -183,7 +183,7 @@ AI は同じバッファ内に応答します。`<C-c>` で実行中のリクエ
 | `:VibingChatFork [position]`          | 現在のチャットをフォーク(会話を分岐)                                                               |
 | `:VibingSlashCommands`                | スラッシュコマンドピッカーを表示                                                                   |
 | `:VibingSetFileTitle`                 | AI がタイトルを生成しチャットファイルをリネーム                                                    |
-| `:VibingSummarize`                    | チャット履歴の AI 要約を生成してバッファに挿入                                                     |
+| `:VibingSummarize [--with-title]`     | チャット履歴の AI 要約を生成してバッファに挿入(--with-title で続けて要約からリネーム)              |
 | `:VibingDeleteChats [--unrenamed]`    | チャットファイルを削除(--unrenamed で未リネームのファイルを一括削除)                               |
 | `:VibingContext [path]`               | コンテキスト追加: oil.nvim のエントリ、ビジュアル選択(range)、パス引数、引数なしなら現在のバッファ |
 | `:VibingClearContext`                 | コンテキストを全クリア                                                                             |

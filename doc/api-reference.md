@@ -7,6 +7,7 @@ vibing.nvim が公開している API のリファレンス。設定項目その
 
 - [Core API](#core-api)
 - [Adapter API](#adapter-api)
+- [Chat API](#chat-api)
 - [Internal Modules](#internal-modules)
 - [Types](#types)
 
@@ -236,10 +237,55 @@ OpenAI の `codex` CLI（`codex exec --json`）を使用するアダプター。
 
 **Implementation:** `lua/vibing/infrastructure/adapter/codex_cli.lua`
 
+## Chat API
+
+### `use_case.generate_and_insert_summary(chat_buffer, opts?)`
+
+`:VibingSummarize` の本体。会話を要約して `# Vibing Chat` の直下に `## summary` として
+書き込む。
+
+```lua
+---@param chat_buffer Vibing.ChatBuffer
+---@param opts? {on_done?: fun(ok: boolean, err: string?)}
+```
+
+`opts.on_done` は成否にかかわらず**必ず1回だけ**呼ばれる。ストリーミング中・会話が空・
+adapter 無しといった同期的な早期リターンでも呼ぶので、呼び出し側は「まだ来ていない」と
+「もう来ない」を区別する必要がない。
+
+`err` は原則としてユーザーに通知したのと同じ文言だが、バッファへの挿入に失敗したときだけは
+例外。理由（`Invalid summary format: must start with '## summary'` など）は
+`SummaryInserter` が通知するので、`err` には `Failed to insert summary into chat buffer`
+という粗い文言が入る。
+
+要約とタイトル生成には本質的な順序依存がある（タイトル生成はバッファの `## summary` を
+入力に使う）。この2つを繋ぐだけなら `:VibingSummarize --with-title` で足りるので、
+コールバックはそれ以外の連携先向け。
+
+```lua
+local use_case = require("vibing.application.chat.use_case")
+local view = require("vibing.presentation.chat.view")
+
+local chat_buffer = view.get_current()
+use_case.generate_and_insert_summary(chat_buffer, {
+  on_done = function(ok, err)
+    if not ok then
+      vim.notify("summary failed: " .. tostring(err), vim.log.levels.WARN)
+      return
+    end
+    -- 非同期なので、完了時点のカレントバッファは別のチャットになっていることがある。
+    -- 連鎖先には最初に掴んだバッファをそのまま渡す。
+    require("vibing.application.chat.handlers.set_file_title")({}, chat_buffer)
+  end,
+})
+```
+
+**Implementation:** `lua/vibing/application/chat/use_case.lua`
+
 ## Internal Modules
 
-`vibing.setup()` / `vibing.get_adapter()` / `vibing.get_config()` と、上のアダプター
-インターフェース以外は内部実装であり、予告なく変わる。
+`vibing.setup()` / `vibing.get_adapter()` / `vibing.get_config()`、上のアダプター
+インターフェースと Chat API 以外は内部実装であり、予告なく変わる。
 
 現在のモジュール構成は `.claude/rules/architecture.md` の "Module Structure" を参照。
 

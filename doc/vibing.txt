@@ -159,9 +159,15 @@ section is not kept in sync field by field.
     response is streaming.
 
                                                            *:VibingSummarize*
-:VibingSummarize
+:VibingSummarize [--with-title]
     Summarise the conversation so far and insert it into the buffer. Refused
     while a response is streaming.
+
+    With `--with-title`, run |:VibingSetFileTitle| once the summary is in the
+    buffer, so the title is generated from the summary rather than from a
+    conversation excerpt. The title step is skipped when summarising failed:
+    it would otherwise fall back to the excerpt and spend a second request
+    the user did not ask for. Run |:VibingSetFileTitle| by hand for that.
 
                                                          *:VibingDeleteChats*
 :VibingDeleteChats [--unrenamed]

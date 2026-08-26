@@ -212,9 +212,21 @@ function M._register_commands()
     require("vibing.presentation.chat.controller").handle_set_file_title()
   end, { desc = "Generate AI title and rename chat file" })
 
-  vim.api.nvim_create_user_command("VibingSummarize", function()
-    require("vibing.presentation.chat.controller").handle_summarize()
-  end, { desc = "Generate and insert summary from chat history" })
+  vim.api.nvim_create_user_command("VibingSummarize", function(opts)
+    require("vibing.presentation.chat.controller").handle_summarize(opts.args)
+  end, {
+    nargs = "?",
+    desc = "Generate and insert summary from chat history (--with-title also renames the file)",
+    complete = function(arg_lead)
+      local matches = {}
+      for _, flag in ipairs({ "--with-title" }) do
+        if flag:find("^" .. vim.pesc(arg_lead)) then
+          table.insert(matches, flag)
+        end
+      end
+      return matches
+    end,
+  })
 
   vim.api.nvim_create_user_command("VibingDeleteChats", function(opts)
     require("vibing.presentation.chat.deletion_controller").handle_delete_command(opts, M.config)
