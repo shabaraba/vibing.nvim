@@ -9,6 +9,7 @@ local CLIEventProcessor = require("vibing.infrastructure.adapter.modules.cli_eve
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
 local SettingsGenerator = require("vibing.infrastructure.hooks.settings_generator")
+local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
 
 ---@class Vibing.ClaudeCLIAdapter : Vibing.Adapter
@@ -70,6 +71,11 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   local cwd = opts.cwd or vim.fn.getcwd()
   local settings_path = nil
   if not opts.lightweight then
+    -- Seeding rides along with the hook settings because both are "this project is now using
+    -- vibing.nvim" side effects, and this is the one place a real request passes through. Doing
+    -- it in setup() would create `.vibing/` in every directory Neovim is ever started in.
+    pcall(PluginScaffold.ensure, cwd, self.config)
+
     local ok
     ok, settings_path = pcall(SettingsGenerator.ensure, cwd)
     if not ok then

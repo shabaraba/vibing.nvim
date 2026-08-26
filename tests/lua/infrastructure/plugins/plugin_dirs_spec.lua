@@ -225,6 +225,29 @@ describe("plugin_dirs", function()
   -- claude 2.1.231 by giving two same-named copies of a skill different marker words and reading
   -- back which one the model saw). Deduplicating the same way means the returned list is what
   -- actually loads, and that a project plugin cannot shadow vibing.nvim's own by taking its name.
+  describe("underscore-prefixed directories", function()
+    it("are not loaded, which is what parks a plugin without deleting it", function()
+      write_plugin(project_root .. "/.vibing/plugins/_template", "template")
+      write_plugin(project_root .. "/.vibing/plugins/live", "live")
+
+      local dirs = PluginDirs.resolve(nil, {
+        agent = { plugins = { self = false, project_dir = ".vibing/plugins" } },
+      })
+
+      assert.same({ project_root .. "/.vibing/plugins/live" }, dirs)
+    end)
+
+    it("are skipped silently, since they are parked on purpose", function()
+      vim.fn.mkdir(project_root .. "/.vibing/plugins/_broken", "p")
+
+      PluginDirs.resolve(nil, {
+        agent = { plugins = { self = false, project_dir = ".vibing/plugins" } },
+      })
+
+      assert.same({}, notifications)
+    end)
+  end)
+
   describe("duplicate plugin names", function()
     it("keeps the first and drops the rest", function()
       write_plugin(project_root .. "/.vibing/plugins/impostor", "vibing-nvim")

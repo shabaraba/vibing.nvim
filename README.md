@@ -151,7 +151,8 @@ Neovim no longer sees these tools; that was never a supported way to use them.
 
 **Your own project plugins.** Anything you drop into `.vibing/plugins/<name>/` (with a
 `.claude-plugin/plugin.json`) is loaded the same way, for chats in that project only. Run
-`:VibingReloadCommands` after adding one. Note that a plugin may declare `mcpServers`, so a plugin
+`:VibingReloadCommands` after adding one, or `:VibingCreatePlugin <name>` to write a working
+skeleton in the first place. Note that a plugin may declare `mcpServers`, so a plugin
 in a repository you cloned can start a process on your machine — set
 `agent.plugins.project_dir = false` for repositories you do not trust. See
 [handbook/configuration.md](handbook/configuration.md) for `agent.plugins`.
@@ -199,6 +200,7 @@ help tags.
 | `:VibingPendingResumes`               | List chats waiting on a usage limit reset or a scheduled send                                                                         |
 | `:VibingCancelResume [all]`           | Cancel the pending auto-resume/scheduled send for this chat (or every one with `all`); also clears the project's recorded usage limit |
 | `:VibingReloadCommands`               | Reload custom slash commands and completion candidates                                                                                |
+| `:VibingCreatePlugin [name]`          | Create a project-local Claude Code plugin under `.vibing/plugins/`                                                                    |
 | `:VibingCopyUnsentUserHeader`         | Copy `## User <!-- unsent -->` to clipboard                                                                                           |
 | `:VibingDailySummary [YYYY-MM-DD]`    | Generate daily summary from project chat files (default: today)                                                                       |
 | `:VibingDailySummaryAll [YYYY-MM-DD]` | Generate daily summary from all chat files (default: today)                                                                           |

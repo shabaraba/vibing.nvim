@@ -76,6 +76,11 @@ local function read_manifest(dir)
 end
 
 --- Directories directly under `root .. "/" .. rel`, sorted, or `{}` when there are none.
+---
+--- A leading underscore means "present but not loaded". The scaffolded `_template` relies on it,
+--- and it doubles as the way to park a plugin: renaming `my-plugin` to `_my-plugin` takes it out
+--- of the session without deleting it. Since this resolution is what the skill and agent
+--- completion providers read, an excluded directory disappears from the `/` picker too.
 --- @param root string
 --- @param rel string
 --- @return string[]
@@ -88,7 +93,7 @@ local function glob_plugin_dirs(root, rel)
   local found = vim.fn.glob(base .. "/*", false, true)
   local dirs = {}
   for _, path in ipairs(found) do
-    if vim.fn.isdirectory(path) == 1 then
+    if vim.fn.isdirectory(path) == 1 and not vim.fs.basename(path):match("^_") then
       table.insert(dirs, path)
     end
   end

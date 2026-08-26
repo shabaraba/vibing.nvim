@@ -152,7 +152,7 @@ MCP ツールの接続先として、`mcp = { enabled = true }`(デフォルト)
 
 **プロジェクト固有のプラグイン。** `.vibing/plugins/<name>/`(`.claude-plugin/plugin.json`
 付き)に置いたものは同じ仕組みで読み込まれ、そのプロジェクトのチャットにだけ効きます。追加
-したら `:VibingReloadCommands` を実行してください。なお、プラグインは `mcpServers` を宣言
+したら `:VibingReloadCommands` を実行してください。雛形は `:VibingCreatePlugin <name>` で作れます。なお、プラグインは `mcpServers` を宣言
 できるため、クローンしたリポジトリに仕込まれたプラグインが手元でプロセスを起動しうる点には
 注意してください。信用できないリポジトリでは `agent.plugins.project_dir = false` にします。
 `agent.plugins` の詳細は [handbook/configuration.md](handbook/configuration.md) を参照。
@@ -192,6 +192,7 @@ AI は同じバッファ内に応答します。`<C-c>` で実行中のリクエ
 | `:VibingClearContext`                 | コンテキストを全クリア                                                                             |
 | `:VibingCancel`                       | 実行中のリクエストをキャンセル                                                                     |
 | `:VibingReloadCommands`               | カスタムスラッシュコマンドと補完候補を再読み込み                                                   |
+| `:VibingCreatePlugin [name]`          | `.vibing/plugins/` にプロジェクト固有のClaude Codeプラグインを作成                                 |
 | `:VibingCopyUnsentUserHeader`         | `## User <!-- unsent -->` をクリップボードにコピー                                                 |
 | `:VibingDailySummary [YYYY-MM-DD]`    | プロジェクトのチャットから日報を生成(デフォルト: 今日)                                             |
 | `:VibingDailySummaryAll [YYYY-MM-DD]` | すべてのチャットから日報を生成(デフォルト: 今日)                                                   |

@@ -214,14 +214,34 @@ contains a `.claude-plugin/plugin.json` is loaded for chats in that project:
 
 ```text
 .vibing/plugins/
+├── _template/                      # inactive skeleton, written on the first chat
 └── my-tooling/
-    ├── .claude-plugin/plugin.json   # { "name": "my-tooling", ... }
-    └── skills/
-        └── deploy/SKILL.md
+    ├── .claude-plugin/plugin.json  # { "name": "my-tooling", ... }
+    ├── skills/
+    │   └── deploy/SKILL.md         # offered as `my-tooling:deploy` in the `/` picker
+    └── agents/
+        └── reviewer.md             # offered as a subagent
 ```
 
+`:VibingCreatePlugin my-tooling` writes that skeleton and opens its example skill. Without an
+argument it prompts for the name. Names are lowercase letters, digits, `-` and `_`, because a
+skill is namespaced as `<plugin>:<skill>` and the directory is passed to a shell-invoked CLI.
+
+The directory is created on the first chat in a project, holding `_template/` alone. That is a
+complete plugin, kept inactive because **a directory whose name starts with `_` is skipped**: an
+example skill that loaded by default would spend prompt tokens in every request of every project
+and sit in the `/` picker. Copy it to a plain name, or use the command, to turn it on.
+
+The same rule parks a plugin you are not using: rename `my-tooling` to `_my-tooling` and it stops
+loading without being deleted. Parked directories are skipped silently — unlike a broken manifest,
+they are inactive on purpose.
+
+Claude Code also honours `commands/` and `hooks/` inside a plugin. They work; they just do not
+appear in vibing.nvim's `/` completion, which lists skills and subagents.
+
 Run `:VibingReloadCommands` after adding, removing or fixing one — resolution is cached per
-working directory, and that command is what drops the cache.
+working directory, and that command is what drops the cache. `:VibingCreatePlugin` drops it for
+you.
 
 **Order matters, and it is `self` → `project_dir` → `extra`.** When two directories declare the
 same plugin name the CLI keeps the first and ignores the rest, so a project plugin cannot shadow

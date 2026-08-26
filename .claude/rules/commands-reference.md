@@ -24,6 +24,7 @@
 | `:VibingPendingResumes`               | List chats waiting on a usage limit reset or a scheduled send                                                                                                 |
 | `:VibingCancelResume [all]`           | Cancel the pending auto-resume/scheduled send for this chat (or every one with `all`); also clears the project's recorded usage limit for that chat's backend |
 | `:VibingReloadCommands`               | Reload custom slash commands                                                                                                                                  |
+| `:VibingCreatePlugin [name]`          | Scaffold a project-local Claude Code plugin under `.vibing/plugins/` and open its example skill                                                               |
 | `:VibingCopyUnsentUserHeader`         | Copy `## User <!-- unsent -->` to clipboard                                                                                                                   |
 | `:VibingDailySummary [YYYY-MM-DD]`    | Generate daily summary from project chat files (default: today)                                                                                               |
 | `:VibingDailySummaryAll [YYYY-MM-DD]` | Generate daily summary from all chat files (default: today)                                                                                                   |
@@ -77,6 +78,12 @@ requests backed by the `vibing-worktree-{list,create,attach,run,finish}` Claude 
 bundled with this plugin (`claude-plugin/skills/`), not by chat slash commands. See
 `claude-plugin/skills/vibing-worktree-list/SKILL.md` and its sibling `-create`, `-attach`,
 `-run`, `-finish` skills.
+
+`:VibingCreatePlugin` writes into `.vibing/plugins/<name>/`, the per-project plugin directory
+`--plugin-dir` loads (`architecture.md` → "Self-Hosted Claude Code Plugin"). Without an argument
+it prompts. A directory whose name starts with `_` is skipped by `plugin_dirs`, which is what
+keeps the seeded `_template/` out of both the request and the `/` picker, and what lets a plugin
+be parked by renaming rather than deleting.
 
 Running several tasks in parallel across worker chats is the same story: ask for it in natural
 language ("並行でやって"), and the bundled `vibing-orchestrate` skill
