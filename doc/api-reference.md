@@ -258,6 +258,9 @@ adapter 無しといった同期的な早期リターンでも呼ぶので、呼
 `SummaryInserter` が通知するので、`err` には `Failed to insert summary into chat buffer`
 という粗い文言が入る。
 
+`on_done` の中で投げられたエラーは `pcall` で捕まえて通知に落とす。非同期パスでは CLI の
+完了ハンドラ（luv のコールバック内）から呼ばれるので、素通しにするとそこで例外になる。
+
 要約とタイトル生成には本質的な順序依存がある（タイトル生成はバッファの `## summary` を
 入力に使う）。この2つを繋ぐだけなら `:VibingSummarize --with-title` で足りるので、
 コールバックはそれ以外の連携先向け。

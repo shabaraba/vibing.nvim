@@ -176,6 +176,21 @@ describe("generate_and_insert_summary on_done", function()
     assert.is_truthy(SummaryInserter.extract(buffer.buf))
   end)
 
+  it("contains an error thrown by the callback", function()
+    -- on_done は利用側が書くコールバックで、非同期パスでは CLI の完了ハンドラの中から
+    -- 呼ばれる。そこまで例外が届くと luv のコールバック内でのエラーになるので、
+    -- `generate_and_insert_summary` の側で捕まえる。
+    stub_vibing({ error = "usage limit reached" })
+
+    assert.has_no.errors(function()
+      use_case.generate_and_insert_summary(chat_buffer(), {
+        on_done = function()
+          error("callback blew up")
+        end,
+      })
+    end)
+  end)
+
   it("still works without an on_done callback", function()
     stub_vibing({ content = "## summary\n\n- 決めたこと" })
 

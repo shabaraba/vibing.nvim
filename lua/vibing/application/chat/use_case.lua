@@ -300,7 +300,13 @@ function M.generate_and_insert_summary(chat_buffer, opts)
     end
     finished = true
     if on_done then
-      on_done(ok, err)
+      -- on_done は利用側（dotfiles 等）が書くコールバックで、非同期パスでは CLI の完了
+      -- ハンドラの中から呼ばれる。素通しにすると luv のコールバック内で例外になるので、
+      -- ここで捕まえて通知に落とす。
+      local ok_call, call_err = pcall(on_done, ok, err)
+      if not ok_call then
+        notify.error("Summary completion callback failed: " .. tostring(call_err))
+      end
     end
   end
 
