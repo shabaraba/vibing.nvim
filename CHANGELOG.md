@@ -30,6 +30,18 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 5.6.0 (2026-08-27)
+
+## What's Changed
+* feat: expose a completion callback for :VibingSummarize by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/616
+* feat: self-host the Claude Code plugin via --plugin-dir by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/619
+* fix: read a block scalar description in skill and agent completion by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/620
+* fix: split multi-line values before writing chat buffer lines by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/621
+* fix: schedule a continuation prompt when a limit interrupts a turn mid-flight by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/622
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.5.1...v5.6.0
+
 ## 5.5.1 (2026-08-26)
 
 ## What's Changed
