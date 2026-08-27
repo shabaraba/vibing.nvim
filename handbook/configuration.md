@@ -367,10 +367,10 @@ resumes with `:VibingPendingResumes` and `:VibingCancelResume`.
 ### Scheduled Requests
 
 Any chat message can be parked to send later as a **scheduled request** — unlike auto-resume's
-fixed continuation prompt, it resends the chat's own message, unedited, at the chosen time. This
-is not limited to usage-limit recovery: `:VibingSchedule 18:30` works with no limit ever having
-been hit. Two of the three ways a scheduled request gets created, described below, are
-specifically about usage limits.
+fixed continuation prompt, it usually resends the chat's own message, unedited, at the chosen time
+(the exception is a turn the limit interrupted mid-flight; see below). This is not limited to
+usage-limit recovery: `:VibingSchedule 18:30` works with no limit ever having been hit. Two of the
+three ways a scheduled request gets created, described below, are specifically about usage limits.
 
 ```lua
 require("vibing").setup({
@@ -391,6 +391,20 @@ active, unless the message is a slash command or a reply to a pending approval p
 always send immediately); and a turn the limit actually rejected, whose message is written back
 into a fresh unsent `## User` section instead of being discarded. `:VibingSchedule` always works;
 the other two are governed by `scheduled_requests.enabled`.
+
+**A rejected turn that got somewhere parks a continuation, not its own message.** The first two
+routes park a message that never ran, so the message is what should be sent. The third does not:
+a limit can land part-way through a turn, after the model has already answered, edited files, or
+run tools. Both that work and the request that asked for it are in the resumed session's
+transcript, so re-sending the same text hands the model the same request a second time and invites
+it to redo what it already did. When the rejected turn produced any output, vibing.nvim therefore
+parks `auto_resume_on_limit.prompt` (default `"Continue from where you left off."`) instead — the
+same sentence auto-resume uses, since it means the same thing. A turn the limit rejected at the
+door, with nothing streamed and no file touched, still parks its own message unchanged. The
+sentence lands in the unsent `## User` section like any other scheduled body, so it is visible and
+editable while parked; the original request stays in the transcript above it. Note that
+`auto_resume_on_limit.prompt` is read for its value alone — this works whether or not
+`auto_resume_on_limit.enabled` is set.
 
 **Where the body lives.** The scheduled message is never copied into the pending-resume store — it
 stays in the chat buffer's unsent `## User` section, visible and editable while parked. Deleting

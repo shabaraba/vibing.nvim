@@ -328,7 +328,8 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
 
   -- 使用量リミットで弾かれた場合の扱い:
   --   1. プロジェクト単位のリセット時刻を記録し、次の送信を事前に予約へ回せるようにする
-  --   2. 弾かれた本文を未送信Userセクションとして書き戻し、リセット後に再送する予約を張る
+  --   2. 弾かれたターンの本文（何も出力せず弾かれた場合）か継続文言（途中まで進んでいた場合）を
+  --      未送信Userセクションとして書き戻し、リセット後に送る予約を張る
   --   3. 予約に回せなかった場合だけ、従来の auto_resume（固定プロンプト）にフォールバックする
   -- リミット以外で正常終了したときはリトライ budget とリセット時刻の記録をクリアする。
   local AutoResume = require("vibing.application.chat.auto_resume")
@@ -348,7 +349,8 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
       chat_file_path,
       response._rate_limit_info,
       message,
-      config
+      config,
+      M._turn_progressed(response, modified_file_paths)
     )
     if ok then
       rescheduled = result
@@ -493,6 +495,26 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
 end
 
+---弾かれたターンが途中まで進んでいたか
+---
+---進んでいたなら、そのユーザーメッセージも部分的な作業もセッションのtranscriptに残っている。
+---同じ本文を送り直すとモデルは同じ依頼を2回受け取り、済んだ作業をやり直しかねないので、
+---呼び出し側はここがtrueのときだけ継続文言に切り替える。
+---
+---判定は「モデルが何か出力したか」だけを見る。content にはテキストdeltaとツール結果の表示が
+---入る（cli_event_processor）ので、非空ならAPI呼び出しは通っている。空ならリミットは
+---ターンの入口で弾いたということなので、本文を送り直す従来の挙動が正しい。
+---@param response table
+---@param modified_file_paths table<string, boolean>|nil
+---@return boolean
+function M._turn_progressed(response, modified_file_paths)
+  if next(modified_file_paths or {}) ~= nil then
+    return true
+  end
+  local content = response and response.content
+  return type(content) == "string" and vim.trim(content) ~= ""
+end
+
 ---リミットで弾かれたメッセージを、リセット後に再送する予約に切り替える
 ---
 ---本文はバッファの未送信Userセクションが唯一の置き場所なので、ここではJSONに複製せず
@@ -504,8 +526,9 @@ end
 ---@param info Vibing.RateLimitInfo
 ---@param message string|nil 弾かれたユーザーメッセージ
 ---@param config table
+---@param progressed boolean|nil 弾かれたターンが途中まで進んでいたか（M._turn_progressed）
 ---@return boolean rescheduled 予約に切り替えられたか
-function M._reschedule_rejected_message(callbacks, chat_file_path, info, message, config)
+function M._reschedule_rejected_message(callbacks, chat_file_path, info, message, config, progressed)
   local opts = (config.agent and config.agent.scheduled_requests) or {}
   if not opts.enabled then
     return false
@@ -560,8 +583,25 @@ function M._reschedule_rejected_message(callbacks, chat_file_path, info, message
     return false
   end
 
-  callbacks.set_pending_user_text(message)
+  callbacks.set_pending_user_text(progressed and M._continuation_prompt(config) or message)
   return true
+end
+
+---途中まで進んだターンを再開させる一言
+---
+---auto_resume_on_limit.prompt を流用する。意味が「リミット後にセッションを続けるための一言」で
+---同じであり、既定値の置き場所を1つに保つため。auto_resume が無効でも値そのものは読める。
+---@param config table
+---@return string
+function M._continuation_prompt(config)
+  local prompt = config
+    and config.agent
+    and config.agent.auto_resume_on_limit
+    and config.agent.auto_resume_on_limit.prompt
+  if type(prompt) == "string" and vim.trim(prompt) ~= "" then
+    return prompt
+  end
+  return "Continue from where you left off."
 end
 
 ---moteの変更ファイル結果とツールイベントのパスを絶対パスに正規化して統合する

@@ -168,6 +168,41 @@ describe("send_message._reschedule_rejected_message", function()
     assert.equals("auto_resume", PendingResume.get(chat_path, tmp_root).kind)
   end)
 
+  it("schedules the continuation prompt instead when the rejected turn had already progressed", function()
+    -- The turn's own user message and its partial work are both in the session transcript, so
+    -- re-sending the same body would hand the model the same request twice.
+    local captured = {}
+    local config = make_config(true, 3)
+    config.agent.auto_resume_on_limit = { prompt = "Keep going." }
+
+    local ok = SendMessage._reschedule_rejected_message(
+      make_callbacks(captured),
+      chat_path,
+      { resets_at = os.time() + 3600, limit_type = "five_hour" },
+      "refactor the whole permission layer",
+      config,
+      true
+    )
+
+    assert.is_true(ok)
+    assert.equals("Keep going.", captured.text)
+  end)
+
+  it("falls back to the built-in continuation prompt when none is configured", function()
+    local captured = {}
+    local ok = SendMessage._reschedule_rejected_message(
+      make_callbacks(captured),
+      chat_path,
+      { resets_at = os.time() + 3600, limit_type = "five_hour" },
+      "refactor the whole permission layer",
+      make_config(true, 3),
+      true
+    )
+
+    assert.is_true(ok)
+    assert.equals("Continue from where you left off.", captured.text)
+  end)
+
   it("still re-schedules a scheduled request that was rejected again", function()
     -- The documented fire -> rejected -> re-schedule loop, which the guard above must not break.
     local PendingResume = require("vibing.infrastructure.storage.pending_resume")
@@ -190,5 +225,23 @@ describe("send_message._reschedule_rejected_message", function()
 
     assert.is_true(ok)
     assert.equals("my own message", captured.text)
+  end)
+end)
+
+describe("send_message._turn_progressed", function()
+  it("is false for a turn that produced nothing", function()
+    assert.is_false(SendMessage._turn_progressed({ content = "", error = "usage limit" }, {}))
+    assert.is_false(SendMessage._turn_progressed({ content = "  \n " }, nil))
+    assert.is_false(SendMessage._turn_progressed({}, {}))
+  end)
+
+  it("is true once the model has emitted text or a tool result", function()
+    assert.is_true(SendMessage._turn_progressed({ content = "Looking at the file..." }, {}))
+  end)
+
+  it("is true when a file was modified even with no streamed text", function()
+    -- Belt and braces: `content` is the primary signal, but a turn that only wrote files must
+    -- never be mistaken for one the limit rejected at the door.
+    assert.is_true(SendMessage._turn_progressed({ content = "" }, { ["/tmp/a.lua"] = true }))
   end)
 end)

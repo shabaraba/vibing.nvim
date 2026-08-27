@@ -78,13 +78,14 @@
 ---使用量リミットで応答が弾かれたとき、リセット時刻を待って自動で継続リクエストを送る
 ---@field enabled boolean リミット時に自動で継続リクエストを送るか（デフォルト: false、無人でトークンを消費するため）
 ---@field max_retries number 1回のリミットヒットにつき許可する自動再送の回数（再送がまたリミットに当たった時点で打ち切り）
----@field prompt string 再送する継続プロンプト（セッションはresumeされるので文脈の再説明は不要）
+---@field prompt string 再送する継続プロンプト（セッションはresumeされるので文脈の再説明は不要）。予約リクエスト（Vibing.ScheduledRequestsConfig）が途中まで進んだターンを再開するときも同じ文言を使う
 ---@field fallback_delay_sec number リセット時刻が取得できなかった場合の待ち時間（秒）
 ---@field grace_sec number リセット時刻からの上乗せ秒数（境界ぴったりで再送して弾かれるのを防ぐ）
 
 ---@class Vibing.ScheduledRequestsConfig
 ---予約リクエスト設定
 ---使用量リミット中に送信しようとしたリクエストを、リセット後に送る予約に切り替える
+---途中まで進んだターンが弾かれた場合だけは本文ではなく継続文言（auto_resume_on_limit.prompt）を予約する
 ---@field enabled boolean リミット中のリクエストを予約に切り替えるか（デフォルト: true、リミット中のリクエストはどのみち失敗するため）
 ---@field max_retries number 予約したリクエストがまた弾かれたときに許可する再予約の回数
 
@@ -265,6 +266,7 @@ M.defaults = {
       -- 再送がまたリミットに当たった時点で打ち切られる。
       max_retries = 1,
       -- 再送する継続プロンプト。セッションはresumeされるので文脈の再説明は不要。
+      -- scheduled_requests 側も、途中まで進んだターンを再開するときはこの文言を使う。
       prompt = "Continue from where you left off.",
       -- リセット時刻が取得できなかった場合の待ち時間（秒）。
       fallback_delay_sec = 300,
@@ -274,6 +276,10 @@ M.defaults = {
     -- 使用量リミット中に送信しようとしたリクエストを、リセット後に送る予約に切り替える。
     -- リミット中のリクエストはどのみち失敗するため既定で有効。
     -- :VibingSchedule による明示的な予約はこのフラグに関係なく常に動く。
+    --
+    -- 予約する本文は、弾かれたターンが何も出力せず終わったなら元の本文、途中まで進んでいたなら
+    -- auto_resume_on_limit.prompt。進んでいた分はセッションのtranscriptに残っているので、
+    -- 同じ依頼を送り直すと済んだ作業をやり直させることになる。
     scheduled_requests = {
       enabled = true,
       -- 予約したリクエストがまた弾かれたときに許可する再予約の回数。
