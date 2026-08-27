@@ -3,6 +3,8 @@
 ---@module "vibing.infrastructure.completion.providers.agents"
 local M = {}
 
+local YamlFrontmatter = require("vibing.core.utils.yaml_frontmatter")
+
 ---@type Vibing.CompletionItem[]?
 local _cache = nil
 
@@ -20,38 +22,21 @@ local function parse_agent(file_path, plugin_name)
     return nil
   end
 
-  -- Check for YAML frontmatter
-  if lines[1] ~= "---" then
-    return nil
-  end
-
-  local name = nil
-  local description = nil
-
-  for i = 2, #lines do
-    local line = lines[i]
-    if line == "---" then
-      break
-    end
-
-    local key, value = line:match("^(%w+):%s*(.+)$")
-    if key == "name" then
-      name = value
-    elseif key == "description" then
-      description = value
-    end
-  end
-
+  local name = YamlFrontmatter.read(lines, "name")
   if not name then
     return nil
   end
 
   return {
     name = name,
-    description = description or name,
+    description = YamlFrontmatter.read(lines, "description") or name,
     full_name = plugin_name .. ":" .. name,
   }
 end
+
+---Exposed for tests: everything above this reads a real plugin tree out of `installed_plugins.json`
+---or `plugin_dirs`, so the frontmatter parsing has no other reachable seam.
+M._parse_agent = parse_agent
 
 ---Load installed plugins from ~/.claude/plugins/installed_plugins.json
 ---@return {plugin_name: string, install_path: string}[]
