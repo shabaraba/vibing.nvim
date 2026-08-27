@@ -154,7 +154,12 @@ function M.create_plugin(name)
   require("vibing.application.completion").clear_cache()
 
   notify.info(string.format("created %s", path), "CreatePlugin")
-  vim.cmd.edit(vim.fn.fnameescape(path .. "/skills/example/SKILL.md"))
+
+  -- 雛形はすでにディスク上にあるので、`:edit`の失敗（壊れたShaDa、autocmdのエラー）で作成を失敗扱いにしない
+  local ok, err = pcall(vim.cmd.edit, vim.fn.fnameescape(path .. "/skills/example/SKILL.md"))
+  if not ok then
+    notify.warn(string.format("could not open the example skill: %s", err), "CreatePlugin")
+  end
 end
 
 ---Neovimユーザーコマンドを登録
