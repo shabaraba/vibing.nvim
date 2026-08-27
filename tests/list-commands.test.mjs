@@ -63,6 +63,73 @@ test('list-commands surfaces skills from a directory passed on argv', async () =
   }
 });
 
+test('a block scalar description is read, not its `>-` header', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'vibing-list-commands-'));
+  try {
+    const home = join(root, 'home');
+    await mkdir(home, { recursive: true });
+    const plugin = join(root, 'my-plugin');
+    await mkdir(join(plugin, '.claude-plugin'), { recursive: true });
+    await writeFile(join(plugin, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'p' }));
+    await mkdir(join(plugin, 'skills', 'folded'), { recursive: true });
+    // Wrapping a long description in a folded block is ordinary YAML, and reading the line the
+    // key is on gave ">-" as the whole description in the `/` picker.
+    await writeFile(
+      join(plugin, 'skills', 'folded', 'SKILL.md'),
+      [
+        '---',
+        'name: folded',
+        'description: >-',
+        '  First line of the description.',
+        '  TRIGGER: second line.',
+        'user-invocable: true',
+        '---',
+        '',
+        'Body.',
+        '',
+      ].join('\n')
+    );
+
+    const commands = await listCommands(home, [plugin]);
+    const entry = commands.find((c) => c.name === 'p:folded');
+
+    assert.ok(entry, 'skill with a folded description is missing');
+    assert.equal(entry.description, 'First line of the description. TRIGGER: second line.');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a block scalar does not swallow the keys after it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'vibing-list-commands-'));
+  try {
+    const home = join(root, 'home');
+    await mkdir(home, { recursive: true });
+    const plugin = join(root, 'my-plugin');
+    await mkdir(join(plugin, '.claude-plugin'), { recursive: true });
+    await writeFile(join(plugin, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'p' }));
+    await mkdir(join(plugin, 'skills', 'hidden'), { recursive: true });
+    await writeFile(
+      join(plugin, 'skills', 'hidden', 'SKILL.md'),
+      [
+        '---',
+        'description: |',
+        '  Literal block.',
+        'user-invocable: false',
+        'name: hidden',
+        '---',
+        '',
+      ].join('\n')
+    );
+
+    const commands = await listCommands(home, [plugin]);
+
+    assert.ok(!commands.some((c) => c.name === 'p:hidden'), 'user-invocable: false was not seen');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('list-commands namespaces by the manifest name, not the directory name', async () => {
   const root = await mkdtemp(join(tmpdir(), 'vibing-list-commands-'));
   try {

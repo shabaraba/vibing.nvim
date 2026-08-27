@@ -52,6 +52,39 @@ const BUILTIN_COMMANDS: CommandEntry[] = [
   },
 ];
 
+/** A YAML block scalar header: `|` or `>` plus an optional indent and chomping indicator. */
+const BLOCK_SCALAR_HEADER = /^[|>](?:\d[-+]?|[-+]\d?)?$/;
+
+/**
+ * Read one top-level frontmatter key, following a YAML block scalar onto its indented
+ * continuation lines.
+ *
+ * A line-anchored `^key:\s*(.+)$` captures the block scalar's own header, so a skill written
+ * with `description: >-` had ">-" as its entire description in the `/` picker. Continuation
+ * lines are joined with a space for `|` as well as `>`, because the one consumer of this value
+ * is a completion menu — `omnifunc`'s `menu` field is a single line, so a literal block's
+ * newlines have nowhere to go.
+ *
+ * @returns the value, or null when the key is absent.
+ */
+function readFrontmatterScalar(lines: string[], key: string): string | null {
+  const prefix = `${key}:`;
+  const index = lines.findIndex((line) => line.startsWith(prefix));
+  if (index === -1) return null;
+
+  const inline = lines[index].slice(prefix.length).trim();
+  if (!BLOCK_SCALAR_HEADER.test(inline)) return inline;
+
+  const continued: string[] = [];
+  for (const line of lines.slice(index + 1)) {
+    if (line.trim() === '') continue;
+    // Back at column 0 is the next top-level key, which ends the block.
+    if (!/^\s/.test(line)) break;
+    continued.push(line.trim());
+  }
+  return continued.join(' ');
+}
+
 /** Parse a SKILL.md file's YAML frontmatter for name/description/user-invocable. */
 async function parseSkillFrontmatter(
   skillMdPath: string
@@ -66,17 +99,17 @@ async function parseSkillFrontmatter(
   const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
   if (!frontmatterMatch) return null;
 
-  const nameMatch = frontmatterMatch[1].match(/^name:\s*(.+)$/m);
-  if (!nameMatch) return null;
-  const descMatch = frontmatterMatch[1].match(/^description:\s*(.+)$/m);
+  const lines = frontmatterMatch[1].split('\n');
+  const name = readFrontmatterScalar(lines, 'name');
+  if (!name) return null;
   // Default true, matching Claude Code CLI's own opt-out convention: skills are
   // visible in the slash menu unless they explicitly declare `user-invocable: false`.
-  const userInvocableMatch = frontmatterMatch[1].match(/^user-invocable:\s*(.+)$/m);
+  const userInvocable = readFrontmatterScalar(lines, 'user-invocable');
 
   return {
-    name: nameMatch[1].trim(),
-    description: descMatch ? descMatch[1].trim() : '',
-    userInvocable: userInvocableMatch ? userInvocableMatch[1].trim() !== 'false' : true,
+    name,
+    description: readFrontmatterScalar(lines, 'description') ?? '',
+    userInvocable: userInvocable === null ? true : userInvocable !== 'false',
   };
 }
 

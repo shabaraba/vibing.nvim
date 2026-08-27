@@ -3,6 +3,8 @@
 ---@module "vibing.infrastructure.completion.providers.skills"
 local M = {}
 
+local YamlFrontmatter = require("vibing.core.utils.yaml_frontmatter")
+
 ---@type Vibing.CompletionItem[]?
 local _cache = nil
 
@@ -21,29 +23,13 @@ local _bundled_cache_cwd = nil
 ---@type number?
 local _bundled_cache_script_mtime = nil
 
----Check if SKILL.md frontmatter opts out of slash-menu visibility via `user-invocable: false`.
----Matches Claude Code CLI's own convention: skills are visible in the `/` menu by default.
----@param lines string[]
----@return boolean
-local function is_user_invocable(lines)
-  local in_frontmatter = false
-  for _, line in ipairs(lines) do
-    if line == "---" then
-      if in_frontmatter then
-        break
-      end
-      in_frontmatter = true
-    elseif in_frontmatter then
-      local value = line:match("^user%-invocable:%s*(%S+)")
-      if value == "false" then
-        return false
-      end
-    end
-  end
-  return true
-end
-
 ---Parse SKILL.md to extract name and description
+---
+---The description comes from frontmatter, the same key `list-commands` reads for plugin skills.
+---This used to take the body's first `# heading` instead, which meant one `/` menu showed two
+---different things depending only on where a skill happened to live -- and no amount of editing
+---`description:` changed what a local skill displayed. The heading survives as a fallback for a
+---skill that declares no description at all.
 ---@param file_path string
 ---@return {name: string, description: string}?
 local function parse_skill(file_path)
@@ -56,23 +42,30 @@ local function parse_skill(file_path)
     return nil
   end
 
-  if not is_user_invocable(lines) then
+  -- Skills are visible in the `/` menu unless they opt out, matching the CLI's own convention.
+  if YamlFrontmatter.read(lines, "user-invocable") == "false" then
     return nil
   end
 
   local dir_name = vim.fn.fnamemodify(vim.fn.fnamemodify(file_path, ":h"), ":t")
-  local description = dir_name
+  local description = YamlFrontmatter.read(lines, "description")
 
-  for _, line in ipairs(lines) do
-    local match = line:match("^#%s+(.+)$")
-    if match then
-      description = match
-      break
+  if not description then
+    for _, line in ipairs(lines) do
+      local heading = line:match("^#%s+(.+)$")
+      if heading then
+        description = heading
+        break
+      end
     end
   end
 
-  return { name = dir_name, description = description }
+  return { name = dir_name, description = description or dir_name }
 end
+
+---Exposed for tests: the callers above it walk real skill directories, so the parsing has no
+---other reachable seam.
+M._parse_skill = parse_skill
 
 ---Get hardcoded bundled skills (Claude Code built-in skills)
 ---These are not available via supportedCommands() API
