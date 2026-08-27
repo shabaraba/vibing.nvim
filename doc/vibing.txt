@@ -78,12 +78,29 @@ Using packer.nvim: >lua
       end,
     }
 <
-`build.sh` builds the MCP server and, when the `claude` CLI is on your PATH,
-registers vibing.nvim as a Claude Code plugin (user scope). That plugin ships
-the `vibing-nvim` MCP server, the bundled skills and the `nvim-navigator`
-subagent. To install it by hand instead: >
-    /plugin marketplace add shabaraba/vibing.nvim
-    /plugin install vibing-nvim@vibing
+`build.sh` builds the bundled MCP server. There is no plugin to install:
+vibing.nvim hands the `claude` CLI its own `claude-plugin/` directory per
+session with `--plugin-dir`, so the MCP server, the bundled skills and the
+`nvim-navigator` subagent always come from the checkout that is running.
+
+Anything you put in `.vibing/plugins/<name>/` (carrying a
+`.claude-plugin/plugin.json`) is loaded the same way, for that project only;
+run |:VibingReloadCommands| after adding one. Use |:VibingCreatePlugin| to
+write a working skeleton rather than assembling one by hand.
+
+The directory is created on the first chat in a project, holding an inactive
+`_template/` copy of that skeleton. Directories whose name starts with `_` are
+skipped, so the template costs no context and never reaches the `/` picker.
+Renaming a plugin to `_name` is also how you park one without deleting it.
+
+A plugin may declare `mcpServers`, so one committed to a repository you cloned
+can start a process on your machine — set `agent.plugins.project_dir = false`
+for repositories you do not trust.
+
+Upgrading from a version that installed itself into Claude Code's user scope:
+`build.sh` removes that install for you. By hand: >
+    /plugin uninstall vibing-nvim@vibing
+    /plugin marketplace remove vibing
 <
 ==============================================================================
 4. CONFIGURATION                                        *vibing-configuration*
@@ -227,6 +244,12 @@ Scheduled requests:~
                                                       *:VibingReloadCommands*
 :VibingReloadCommands
     Reload custom slash commands and completion candidates.
+
+                                                        *:VibingCreatePlugin*
+:VibingCreatePlugin [{name}]
+    Create a project-local Claude Code plugin in `.vibing/plugins/{name}/`
+    and open its example skill. Prompts for the name when given none. The
+    plugin applies to this project only and takes effect immediately.
 
                                                 *:VibingCopyUnsentUserHeader*
 :VibingCopyUnsentUserHeader

@@ -18,7 +18,7 @@ prompt; whoever delegates to you is expected to pass it along. If it isn't there
 say which ones you found and ask rather than guessing.
 
 _Which prefix._ The tools below are written as `mcp__vibing-nvim__<tool>`, but a plugin-scoped
-install exposes them as `mcp__plugin_<marketplace>_vibing-nvim__<tool>` instead. If the plain
+plugin load exposes them as `mcp__plugin_vibing-nvim_vibing-nvim__<tool>` instead. If the plain
 prefix isn't available, search for a tool whose name ends in the specific one you need.
 
 Given a navigation or analysis question:

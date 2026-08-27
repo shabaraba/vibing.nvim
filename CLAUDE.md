@@ -82,6 +82,11 @@ Claude Code に配布されるものは**すべて `claude-plugin/` 配下**に�
 marketplace root（`.claude-plugin/marketplace.json` があるディレクトリ）で、plugin root は
 その1階層下という関係になっている。
 
+ただし通常の経路はもう marketplace ではない。`claude-plugin/` は
+`cli_command_builder` が `--plugin-dir` でセッションごとに CLI に渡す（#618、
+`.claude/rules/architecture.md` →「Self-Hosted Claude Code Plugin」）。marketplace.json は
+手動 `claude plugin install` のために残してあるだけ。
+
 | 場所                                       | 中身                                                   |
 | ------------------------------------------ | ------------------------------------------------------ |
 | `.claude-plugin/marketplace.json`          | marketplace 定義。`source` が `./claude-plugin` を指す |
@@ -90,7 +95,7 @@ marketplace root（`.claude-plugin/marketplace.json` があるディレクトリ
 | `claude-plugin/mcp-server/`                | 配布される MCP サーバー                                |
 | `.claude/{skills,commands,rules}/`         | **このリポジトリを開発するため**のもの。配布されない   |
 
-`claude-plugin/` に置いたものは `claude plugin install` でユーザーに届き、`.claude/` に置いた
+`claude-plugin/` に置いたものは `--plugin-dir` 経由でユーザーに届き、`.claude/` に置いた
 ものは届かない。スキルを追加するときはどちらの読者向けかで置き場所を決める。
 
 ディレクトリ名が `plugin/` でないのは Neovim の予約名だからで、`plugin/**/*.lua` は

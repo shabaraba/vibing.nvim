@@ -234,3 +234,43 @@ export async function resolveInstalledPlugins(): Promise<ResolvedPlugin[]> {
 
   return plugins;
 }
+
+/**
+ * Resolve plugin directories that vibing.nvim self-hosts for the session via the `claude` CLI's
+ * `--plugin-dir` flag (its own `claude-plugin/`, plus anything under `.vibing/plugins/`).
+ *
+ * These never appear in installed_plugins.json — nothing was installed — so completion would
+ * otherwise be blind to skills the CLI itself loads perfectly well. The directories arrive
+ * already resolved from the Lua side (`infrastructure/plugins/plugin_dirs.lua`) rather than
+ * being rediscovered here: the convention depends on a chat's working directory, and writing
+ * that lookup in two languages is how the two copies drift apart.
+ *
+ * The id is the plugin's declared `name`, because that is what Claude Code namespaces its
+ * skills under — `<name>:<skill>` — regardless of the directory's own basename.
+ *
+ * @param dirs Absolute plugin directory paths.
+ * @returns Entries for directories carrying a readable `.claude-plugin/plugin.json`.
+ *   Anything else is skipped silently, mirroring the CLI's own handling of a broken plugin
+ *   directory (the Lua side is what warns about it, once per working directory).
+ */
+export async function resolveSessionPluginDirs(dirs: string[]): Promise<ResolvedPlugin[]> {
+  const resolved = await Promise.all(
+    dirs.map(async (dir): Promise<ResolvedPlugin | null> => {
+      try {
+        const manifest = JSON.parse(
+          await readFile(join(dir, '.claude-plugin', 'plugin.json'), 'utf8')
+        ) as { name?: unknown };
+        if (typeof manifest.name !== 'string' || manifest.name === '') {
+          debugLog(`Session plugin dir has no name: ${dir}`);
+          return null;
+        }
+        return { id: manifest.name, path: dir };
+      } catch (error) {
+        debugLog(`Could not read session plugin dir: ${dir}`, error);
+        return null;
+      }
+    })
+  );
+
+  return resolved.filter((plugin): plugin is ResolvedPlugin => plugin !== null);
+}

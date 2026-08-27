@@ -94,30 +94,32 @@ M.INTERNAL_TOOLS = {
 M.INTERNAL_TOOLS_MAP = to_map(M.INTERNAL_TOOLS)
 
 ---vibing-nvim自身が提供するMCPツールの許可パターン。プレーンなユーザーレベルMCPサーバー登録
----（mcp__vibing-nvim__*）と、Claude Codeプラグイン登録（mcp__plugin_<marketplace>_vibing-nvim__*）の
+---（mcp__vibing-nvim__*）と、Claude Codeプラグインとしての登録（mcp__plugin_<plugin>_<server>__*）の
 ---両方に対応する。
 ---
----プラグイン側の接頭辞は`mcp__plugin_<marketplace>_vibing-nvim__`で、マーケットプレイス名は
----`claude plugin marketplace add`が実際に登録した名前で決まる。現行は`vibing`
----（`claude plugin list --json`のidが`vibing-nvim@vibing`であることで確認済み）。`vibing-nvim`は
----改名前の名前で、build.shの移行処理を通していない既存インストールがまだそちらの接頭辞でツールを
----配るため残してある。
+---**プラグイン側の接頭辞を決めるのはプラグイン名であって、マーケットプレイス名ではない。**
+---plugin.jsonの`name`（vibing-nvim）とmcpServersのキー（vibing-nvim）が並ぶので
+---`mcp__plugin_vibing-nvim_vibing-nvim__`になる。マーケットプレイスが`vibing`に改名されても
+---ツール名は一度も変わっていない。以前ここには`mcp__plugin_vibing_vibing-nvim__*`も並んでいたが、
+---それは実際には一度も生成されないプレフィックスで、tools_spec.luaがmarketplace.jsonの`name`を
+---読んで存在を要求していたため、使われない経路をテストが守り続けていた。
+---
+---#618以降、プラグインはユーザースコープにインストールされず`--plugin-dir`でセッション限りに
+---読み込まれる。接頭辞はそれでも同一（claude 2.1.231で実測）。読み込み方ではなくplugin.jsonの
+---`name`で決まるため。
 ---
 ---**この列挙は手で追従させるしかない。** --allowedToolsは具体的なプレフィックスしか受け付けない。
----tools_spec.luaが.claude-plugin/marketplace.jsonの`name`を読んで対応する要素の存在を検証するので、
----次に改名する人はテストで気づく。build.shの`MARKETPLACE_NAME`も同じ名前を別に持っているので、
----そちらはCIの"Check Claude Code plugin layout"が突き合わせる。
+---tools_spec.luaがclaude-plugin/.claude-plugin/plugin.jsonの`name`とmcpServersのキーを読んで
+---対応する要素の存在を検証するので、次に改名する人はテストで気づく。
 ---
 ---**ただしここがずれても通常のチャットは止まらない。** PreToolUseフックが
----can_use_tool.M.is_vibing_nvim_mcp_tool（サフィックスマッチなのでマーケットプレイス名に依存しない）
----で明示的なallowを返し、CLIは自前のゲートをスキップするため。実際`vibing`への改名後もここは
----`vibing-nvim`のままだったが、誰も気づかないまま動いていた。この列挙が効くのはフックの手前、
+---can_use_tool.M.is_vibing_nvim_mcp_tool（サフィックスマッチなのでプラグイン名に依存しない）
+---で明示的なallowを返し、CLIは自前のゲートをスキップするため。この列挙が効くのはフックの手前、
 ---CLIが最初に見る関門としてであって、最終的な担保ではない。
 ---#564以前は逆で、フックが黙って通す実装だったためここのずれがそのまま拒否になっていた。
 ---@type string[]
 M.VIBING_NVIM_MCP_TOOL_PATTERNS = {
   "mcp__vibing-nvim__*",
-  "mcp__plugin_vibing_vibing-nvim__*",
   "mcp__plugin_vibing-nvim_vibing-nvim__*",
 }
 

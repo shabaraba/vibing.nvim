@@ -57,9 +57,9 @@ Granting everything would override the user's `settings.json` deny rules, which
 `--setting-sources user,project,local` still pulls in.
 
 Those MCP tools are the exception because `--allowedTools` cannot express them reliably: it takes
-literal prefixes, and the plugin-scoped one is `mcp__plugin_<marketplace>_vibing-nvim__`, a name
-fixed when `claude plugin marketplace add` ran. `can_use_tool.is_vibing_nvim_mcp_tool` matches on
-the suffix instead, so the grant survives a rename that `VIBING_NVIM_MCP_TOOL_PATTERNS` would not.
+literal prefixes, and the plugin-scoped one is `mcp__plugin_<plugin>_<server>__`, built from
+`claude-plugin/.claude-plugin/plugin.json`. `can_use_tool.is_vibing_nvim_mcp_tool` matches on the
+suffix instead, so the grant survives a rename that `VIBING_NVIM_MCP_TOOL_PATTERNS` would not.
 Before #564 every allowed call took the silent path, so under any mode but `bypassPermissions` the
 CLI refused those tools while vibing.nvim's own log said "allow".
 
@@ -283,6 +283,88 @@ Tests:
 - tests/*.test.mjs             - Node.js tests
 - tests/e2e/*.spec.lua         - E2E tests against a spawned Neovim instance
 ```
+
+## Self-Hosted Claude Code Plugin (`--plugin-dir`)
+
+vibing.nvim's own Claude Code plugin — the `vibing-nvim` MCP server, the bundled skills, the
+`nvim-navigator` agent — is **not installed**. `cli_command_builder` passes
+`--plugin-dir <path>` once per directory resolved by
+`infrastructure/plugins/plugin_dirs.lua`, which loads a plugin for that CLI invocation only and
+writes nothing to Claude Code's global state.
+
+The resolved list is `self` → `.vibing/plugins/*/` → `agent.plugins.extra`, and it is the single
+definition of "which plugin directories apply here": the argv, the skill completion provider and
+the agent completion provider all read it rather than each re-deriving the convention.
+
+**What this bought.** `build.sh` used to run `claude plugin marketplace add` and
+`claude plugin install ... --scope user`, which produced #480/#482 (hanging `claude plugin` calls
+needing a bespoke watchdog), #450, #557, and a standing marketplace-rename migration. It also
+copied `claude-plugin/` into a per-version cache, so ~90 lines of rsync plus a
+`mcp-server/{node_modules,dist}` symlink-back existed purely to keep that copy in step with the
+checkout. All of it is gone. The structural win is the third one: the MCP server no longer
+updates independently of the Neovim plugin it serves, so a worktree runs the server it contains
+rather than whatever the user last installed globally.
+
+**Measured against claude 2.1.231**, because none of it is documented:
+
+| Question                                 | Answer                                                                        |
+| ---------------------------------------- | ----------------------------------------------------------------------------- |
+| Tool name under `--plugin-dir`           | `mcp__plugin_vibing-nvim_vibing-nvim__<tool>` — identical to the install      |
+| What decides that prefix                 | `plugin.json`'s `name` and the `mcpServers` key. **Not** the marketplace name |
+| Same-named plugin in two `--plugin-dir`s | The **earlier flag wins**; the later one's skills never load                  |
+| How many `--plugin-dir` flags            | No cap found: 30 loaded, all 30 skills visible to the model                   |
+| Broken / missing / absent manifest       | **Silently ignored**, exit 0, no warning                                      |
+| `--strict-mcp-config`                    | Blocks the plugin's MCP servers (0 connection log lines)                      |
+| Coexisting with a user-scope install     | Inline wins, no duplication, no error                                         |
+
+Two of those rows drive design decisions rather than being trivia.
+
+**First-wins is why the order is fixed at self → project → extra.** A `.vibing/plugins/` entry
+that names itself `vibing-nvim` cannot displace the real one. `plugin_dirs.resolve_entries`
+deduplicates by plugin name the same way, so the list it returns is what actually loads rather
+than what the CLI was offered — which is also what lets the completion providers reuse it.
+
+**Silent-ignore is why there is a manifest check at all.** `--plugin-dir` gives no signal
+whatsoever for a directory it declines, so "I dropped a plugin in and nothing happened" would
+have no explanation anywhere. `plugin_dirs` reads each candidate's `.claude-plugin/plugin.json`
+first and warns about the ones it drops. The per-cwd cache is what keeps that to one notification
+instead of one per request; a separate warned-once flag would be redundant with it, and would
+have to survive `clear_cache()` to mean anything — silencing the warning on exactly the
+`:VibingReloadCommands` the user runs after trying to fix the plugin.
+
+**Not passed on the lightweight path**, per `core/types.lua`. `--strict-mcp-config` already
+blocks the MCP servers there, but skill descriptions still cost prompt tokens on a call that has
+`--tools ""` and so nothing to invoke them with.
+
+**Completion needs the same list, and gets it by argv rather than by rediscovery.**
+`bin/list-commands.ts` only knew `~/.claude/plugins/installed_plugins.json`, where a
+`--plugin-dir` plugin cannot appear. Teaching it the `.vibing/plugins` convention would mean
+writing the same working-directory handling in Lua and TypeScript, so `skills.lua` appends the
+already-resolved paths to the `jobstart` argv and `resolveSessionPluginDirs` scans them. The
+agent provider (`completion/providers/agents.lua`) merges the same entries ahead of the installed
+ones — without it `nvim-navigator` would load in the CLI and never appear in completion.
+
+**`:VibingReloadCommands` clears `plugin_dirs` first**, before the provider caches: both
+re-resolve from it, so clearing it second would refill them from the list being discarded.
+
+**`.vibing/plugins/` is read by default, and that is a security decision, not an oversight.** A
+plugin may declare `mcpServers`, so a directory committed to a cloned repository can start a
+process on the user's machine on the first message. That is a stronger thing than the instruction
+injection an unreviewed `.claude/skills/` allows, and it is why Claude Code gates a project's own
+`.mcp.json` behind approval. The convenience was preferred; `agent.plugins.project_dir = false`
+is the opt-out.
+
+**A worktree reads both its own `.vibing/plugins` and the project root's.** `.vibing/` is
+git-ignored, so a worktree checkout usually has none of its own. This is a union with per-name
+precedence, not the strict fallback `project_system_prompt.read_for_cwd` applies to
+`.vibing/system-prompt.md`: that one picks a single file and so has to choose, while a _set_ of
+plugins does not, and a worktree adding one experimental plugin should not lose every plugin the
+project already had. Reusing a root plugin's name is still how a worktree overrides it.
+
+**Accepted:** a plain `claude` session started outside Neovim no longer sees the `nvim_*` tools.
+Reaching a running Neovim was the entire point of them, so no opt-in was added.
+`.claude-plugin/marketplace.json` is kept — a manual `claude plugin install` still works, and
+deleting it can happen later.
 
 ## Startup Cost
 

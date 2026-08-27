@@ -101,6 +101,18 @@
 ---@field auto_resume_on_limit Vibing.AutoResumeOnLimitConfig 使用量リミット自動継続設定
 ---@field scheduled_requests Vibing.ScheduledRequestsConfig 予約リクエスト設定
 ---@field codex_provider_notice Vibing.CodexProviderNoticeConfig codex軽量呼び出しのプロバイダ警告設定
+---@field plugins Vibing.PluginsConfig? `--plugin-dir`で読み込むClaude Codeプラグインの設定
+
+---@class Vibing.PluginsConfig
+---セッション限りで読み込むClaude Codeプラグインのディレクトリ設定（claudeバックエンドのみ）
+---`--plugin-dir`はユーザーのグローバル状態に何も書かずにプラグインを読む。vibing.nvim自身の
+---`claude-plugin/`もこれで渡すため、MCPサーバーとバンドルskillは常に「いま動いているcheckout」の
+---ものになる（worktreeを含む）。
+---@field self boolean? falseでvibing.nvim自身のclaude-plugin/を渡さなくなる。nvim_*のMCPツールと
+---  バンドルskillが全て消えるのでデバッグ用の逃げ道であり、通常は触らない（デフォルト: true）
+---@field project_dir string|false? プロジェクトルートからの相対パス。この直下の各ディレクトリを
+---  プラグインとして渡す。falseで無効化（デフォルト: ".vibing/plugins"）
+---@field extra string[]? 任意の追加パス。絶対パス、`~`始まり、またはリクエストのcwd相対（デフォルト: {}）
 
 ---@class Vibing.CodexProviderNoticeConfig
 ---codexの軽量呼び出し（タイトル生成・要約等）が設定済みプロバイダから外れることを警告するか
@@ -277,6 +289,20 @@ M.defaults = {
     -- フラグが無いためプロバイダへの到達性通信も付いてくる。それを避けたい場合はfalseにする。
     codex_provider_notice = {
       enabled = true,
+    },
+    -- `--plugin-dir` で読み込むプラグイン。self → project_dir → extra の順で渡す。
+    --
+    -- 順序は意味を持つ。同名プラグインを複数渡すと**先に渡した方が勝つ**（claude 2.1.231で実測）。
+    -- self を先頭に置いているので、プロジェクト側のプラグインが名前を合わせて vibing.nvim 自身を
+    -- 乗っ取ることはできない。
+    --
+    -- project_dir を既定で読むのは利便性を取った判断で、リスクは受容している。プラグインは
+    -- mcpServers を宣言できるため、クローンしたリポジトリに仕込まれた `.vibing/plugins/` は
+    -- 最初のチャット送信時に任意のプロセスを起動しうる。信用できないリポジトリでは false にする。
+    plugins = {
+      self = true,
+      project_dir = ".vibing/plugins",
+      extra = {},
     },
   },
   chat = {

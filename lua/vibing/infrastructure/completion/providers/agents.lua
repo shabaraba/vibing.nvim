@@ -90,11 +90,45 @@ local function load_installed_plugins()
   return result
 end
 
+---Plugin directories vibing.nvim self-hosts via `--plugin-dir`, prepended to the installed ones.
+---
+---These are invisible to `installed_plugins.json` by construction — nothing was installed — so
+---without this the plugin's own bundled agents (`nvim-navigator`) would load in the CLI and yet
+---never appear in completion. Prepended rather than appended because the CLI resolves a
+---duplicate plugin name in favour of the first `--plugin-dir`, and the dedup below follows suit.
+---@return {plugin_name: string, install_path: string}[]
+local function load_self_hosted_plugins()
+  local ok, PluginDirs = pcall(require, "vibing.infrastructure.plugins.plugin_dirs")
+  if not ok then
+    return {}
+  end
+  local config_ok, Config = pcall(require, "vibing.config")
+  if not config_ok then
+    return {}
+  end
+
+  local result = {}
+  for _, entry in ipairs(PluginDirs.resolve_entries(nil, Config.get())) do
+    table.insert(result, { plugin_name = entry.name, install_path = entry.path })
+  end
+  return result
+end
+
 ---Scan all plugin directories for agents
 ---@return Vibing.CompletionItem[]
 local function scan_agents()
   local items = {}
-  local plugins = load_installed_plugins()
+  local plugins = load_self_hosted_plugins()
+  local seen = {}
+  for _, plugin in ipairs(plugins) do
+    seen[plugin.plugin_name] = true
+  end
+  for _, plugin in ipairs(load_installed_plugins()) do
+    if not seen[plugin.plugin_name] then
+      seen[plugin.plugin_name] = true
+      table.insert(plugins, plugin)
+    end
+  end
 
   for _, plugin in ipairs(plugins) do
     local agents_dir = plugin.install_path .. "/agents/"

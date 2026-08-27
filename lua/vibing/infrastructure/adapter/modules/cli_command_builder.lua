@@ -4,6 +4,7 @@
 
 local tools_constants = require("vibing.core.constants.tools")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
+local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 local worktree_constants = require("vibing.core.constants.worktree")
 
 local M = {}
@@ -220,6 +221,21 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
     local subagent = config.agent and config.agent.subagent
     if subagent and subagent.enabled then
       table.insert(cmd, "--forward-subagent-text")
+    end
+
+    -- vibing.nvim's own plugin (the nvim_* MCP tools and the bundled skills) is loaded for this
+    -- session only, from this checkout, instead of being installed into Claude Code's user
+    -- scope. That is what keeps the MCP server from drifting away from the Neovim plugin it
+    -- serves -- a worktree now runs its own copy rather than the globally installed one.
+    -- `.vibing/plugins/*/` rides along on the same flag.
+    --
+    -- Not passed on the lightweight path: `core/types.lua` obliges utility calls to load no
+    -- tools and no project config. `--strict-mcp-config` already blocks the MCP servers there
+    -- (verified: zero connection log lines), but a plugin's skill descriptions still cost prompt
+    -- tokens, and lightweight has no tools to invoke them with anyway.
+    for _, plugin_dir in ipairs(PluginDirs.resolve(opts.cwd, config)) do
+      table.insert(cmd, "--plugin-dir")
+      table.insert(cmd, plugin_dir)
     end
   end
 

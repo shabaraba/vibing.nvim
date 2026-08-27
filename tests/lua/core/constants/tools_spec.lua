@@ -1,29 +1,37 @@
 local Tools = require("vibing.core.constants.tools")
 
----Read the marketplace name the plugin is actually published under.
----@return string
-local function marketplace_name()
+---Read the bundled plugin's own manifest — the one `--plugin-dir` loads.
+---@return table
+local function plugin_manifest()
   local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h:h:h")
-  local path = root .. "/.claude-plugin/marketplace.json"
-  assert.equals(1, vim.fn.filereadable(path), "marketplace.json not found at " .. path)
-  local manifest = vim.json.decode(table.concat(vim.fn.readfile(path), "\n"))
-  assert.is_string(manifest.name)
-  return manifest.name
+  local path = root .. "/claude-plugin/.claude-plugin/plugin.json"
+  assert.equals(1, vim.fn.filereadable(path), "plugin.json not found at " .. path)
+  return vim.json.decode(table.concat(vim.fn.readfile(path), "\n"))
 end
 
 describe("tools constants", function()
   describe("VIBING_NVIM_MCP_TOOL_PATTERNS", function()
-    -- `--allowedTools` takes literal prefixes, so this list cannot be derived from the
-    -- marketplace name at runtime — it has to be maintained by hand. It fell out of date
-    -- exactly once already: marketplace.json was renamed to "vibing" and this list kept
-    -- saying "vibing-nvim", so the pre-approval silently matched nothing. Nothing caught it,
-    -- because the PreToolUse hook's suffix match kept ordinary chats working.
-    it("covers the marketplace name the plugin is currently published under", function()
-      local expected = ("mcp__plugin_%s_vibing-nvim__*"):format(marketplace_name())
-      assert.is_true(
-        vim.tbl_contains(Tools.VIBING_NVIM_MCP_TOOL_PATTERNS, expected),
-        ("%s is missing; add it when renaming the marketplace"):format(expected)
-      )
+    -- `--allowedTools` takes literal prefixes, so this list cannot be derived from the plugin
+    -- manifest at runtime — it has to be maintained by hand, and this is what catches a rename.
+    --
+    -- It reads plugin.json, not marketplace.json, because the prefix is built from the *plugin*
+    -- name and the MCP server name; the marketplace name never appears in it. This spec used to
+    -- assert the marketplace form (`mcp__plugin_vibing_vibing-nvim__*`) and so guarded a prefix
+    -- the CLI has never once emitted. Since #618 the plugin is not installed through a
+    -- marketplace at all — it is loaded per session with `--plugin-dir` — and the prefix is
+    -- unchanged, because how the plugin is loaded was never what decided it.
+    it("covers the prefix built from the bundled plugin's name and MCP server name", function()
+      local manifest = plugin_manifest()
+      assert.is_string(manifest.name)
+      assert.is_table(manifest.mcpServers)
+
+      for server_name in pairs(manifest.mcpServers) do
+        local expected = ("mcp__plugin_%s_%s__*"):format(manifest.name, server_name)
+        assert.is_true(
+          vim.tbl_contains(Tools.VIBING_NVIM_MCP_TOOL_PATTERNS, expected),
+          ("%s is missing; add it when renaming the plugin or its MCP server"):format(expected)
+        )
+      end
     end)
 
     it("covers the plain user-level MCP server registration", function()

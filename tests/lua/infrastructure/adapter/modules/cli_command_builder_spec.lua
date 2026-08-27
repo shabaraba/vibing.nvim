@@ -1,10 +1,13 @@
 local cli_command_builder = require("vibing.infrastructure.adapter.modules.cli_command_builder")
+local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 
 describe("cli_command_builder", function()
   local original_exepath
 
   before_each(function()
     cli_command_builder._reset_path_cache()
+    -- Keyed by cwd, and several describe blocks below stub getcwd to a fresh tempdir.
+    PluginDirs.clear_cache()
     original_exepath = vim.fn.exepath
     vim.fn.exepath = function(name)
       if name == "claude" then
@@ -17,6 +20,7 @@ describe("cli_command_builder", function()
   after_each(function()
     vim.fn.exepath = original_exepath
     cli_command_builder._reset_path_cache()
+    PluginDirs.clear_cache()
   end)
 
   local function find_flag(cmd, flag)
@@ -499,6 +503,58 @@ describe("cli_command_builder", function()
       local config = { agent = { subagent = { enabled = true } } }
       local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, config, nil)
       assert.is_nil(find_flag(cmd, "--forward-subagent-text"))
+    end)
+  end)
+
+  describe("--plugin-dir", function()
+    local function plugin_dirs(cmd)
+      local dirs = {}
+      for i, arg in ipairs(cmd) do
+        if arg == "--plugin-dir" then
+          table.insert(dirs, cmd[i + 1])
+        end
+      end
+      return dirs
+    end
+
+    -- This is what makes the nvim_* MCP tools and the bundled skills exist at all, now that the
+    -- plugin is no longer installed into Claude Code's user scope.
+    it("passes vibing.nvim's own claude-plugin/ on an ordinary request", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local dirs = plugin_dirs(cmd)
+
+      assert.equals(1, #dirs)
+      assert.is_true(dirs[1]:find("/claude-plugin", 1, true) ~= nil)
+      assert.equals(1, vim.fn.filereadable(dirs[1] .. "/.claude-plugin/plugin.json"))
+    end)
+
+    -- `core/types.lua` obliges a lightweight call to load no tools and no project config. The MCP
+    -- servers are already blocked there by --strict-mcp-config, but a plugin's skill descriptions
+    -- still cost prompt tokens on a call that has no tools to invoke them with.
+    it("passes none on a lightweight call", function()
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, {}, nil)
+      assert.same({}, plugin_dirs(cmd))
+    end)
+
+    it("passes one flag per directory", function()
+      local project_root = vim.fn.tempname()
+      vim.fn.mkdir(project_root .. "/plugins/extra1/.claude-plugin", "p")
+      vim.fn.writefile(
+        { vim.json.encode({ name = "extra1" }) },
+        project_root .. "/plugins/extra1/.claude-plugin/plugin.json"
+      )
+
+      local config = { agent = { plugins = { extra = { project_root .. "/plugins/extra1" } } } }
+      local dirs = plugin_dirs(cli_command_builder.build("hello", {}, nil, config, nil))
+
+      assert.equals(2, #dirs)
+      assert.equals(project_root .. "/plugins/extra1", dirs[2])
+      vim.fn.delete(project_root, "rf")
+    end)
+
+    it("passes none when the whole feature is turned off", function()
+      local config = { agent = { plugins = { self = false, project_dir = false } } }
+      assert.same({}, plugin_dirs(cli_command_builder.build("hello", {}, nil, config, nil)))
     end)
   end)
 end)

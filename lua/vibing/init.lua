@@ -138,6 +138,30 @@ local function complete_positions(arg_lead)
   return matches
 end
 
+---プロジェクト固有のClaude Codeプラグインの雛形を作成する
+---作成後は`--plugin-dir`の解決結果を捨てて、再起動なしで読み込めるようにする
+---@param name string プラグイン名
+function M.create_plugin(name)
+  local scaffold = require("vibing.infrastructure.plugins.scaffold")
+  local path, problem = scaffold.create(name)
+
+  if not path then
+    notify.error(problem or "failed to create plugin", "CreatePlugin")
+    return
+  end
+
+  require("vibing.infrastructure.plugins.plugin_dirs").clear_cache()
+  require("vibing.application.completion").clear_cache()
+
+  notify.info(string.format("created %s", path), "CreatePlugin")
+
+  -- 雛形はすでにディスク上にあるので、`:edit`の失敗（壊れたShaDa、autocmdのエラー）で作成を失敗扱いにしない
+  local ok, err = pcall(vim.cmd.edit, vim.fn.fnameescape(path .. "/skills/example/SKILL.md"))
+  if not ok then
+    notify.warn(string.format("could not open the example skill: %s", err), "CreatePlugin")
+  end
+end
+
 ---Neovimユーザーコマンドを登録
 ---VibingChat, VibingContext等の全コマンドを登録
 ---チャット操作、コンテキスト管理を含む
@@ -479,14 +503,36 @@ function M._register_commands()
     local commands = require("vibing.application.chat.commands")
     local completion = require("vibing.application.completion")
     local skills = require("vibing.infrastructure.completion.providers.skills")
+    local plugin_dirs = require("vibing.infrastructure.plugins.plugin_dirs")
 
     commands.reload_custom()
+
+    -- Before the provider caches, not after: the skill and agent providers both re-resolve
+    -- from this one, so clearing it second would refill them from the list being discarded.
+    -- This is also what makes a plugin newly dropped into `.vibing/plugins` take effect.
+    plugin_dirs.clear_cache()
 
     completion.clear_cache()
     skills.preload()
 
     notify.info("Commands and completions reloading...")
   end, { desc = "Reload custom slash commands and completion candidates" })
+
+  vim.api.nvim_create_user_command("VibingCreatePlugin", function(opts)
+    local name = vim.trim(opts.args)
+    if name == "" then
+      vim.ui.input({ prompt = "Plugin name: " }, function(input)
+        if input and vim.trim(input) ~= "" then
+          M.create_plugin(vim.trim(input))
+        end
+      end)
+      return
+    end
+    M.create_plugin(name)
+  end, {
+    nargs = "?",
+    desc = "Create a project-local Claude Code plugin under .vibing/plugins/",
+  })
 
   vim.api.nvim_create_user_command("VibingCopyUnsentUserHeader", function()
     local timestamp = require("vibing.core.utils.timestamp")

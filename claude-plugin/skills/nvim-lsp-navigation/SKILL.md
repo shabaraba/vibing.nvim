@@ -14,8 +14,8 @@ available and the target filetype has an LSP client attached, prefer LSP-backed 
 prompt inside a vibing.nvim chat, or from your task prompt if you are a subagent. Only when
 neither supplies one, call `nvim_list_instances`; if that reports more than one instance, say
 which you found and ask rather than picking one. And if the `mcp__vibing-nvim__` prefix below is
-unavailable, look for a tool name **ending** in the one you need — a plugin install registers them
-as `mcp__plugin_<marketplace>_vibing-nvim__<tool>`. The `nvim-context` skill explains both in full.
+unavailable, look for a tool name **ending** in the one you need — loaded as a plugin they are
+`mcp__plugin_vibing-nvim_vibing-nvim__<tool>`. The `nvim-context` skill explains both in full.
 
 ## Tool mapping
 

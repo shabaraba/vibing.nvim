@@ -29,28 +29,28 @@ This MCP server enables Claude Code to interact with a running Neovim instance t
 
 ## Installation
 
-### Option 0: Claude Code Plugin (recommended)
+### Option 0: vibing.nvim's own bundled plugin (the default — nothing to install)
 
-Install this MCP server, plus Neovim-aware skills and a `nvim-navigator` subagent, as a single
-[Claude Code plugin](https://code.claude.com/docs/en/plugins) — no manual `~/.claude.json` editing
-and no separate build step (the server builds itself on first launch).
+This MCP server ships inside vibing.nvim's [Claude Code plugin](https://code.claude.com/docs/en/plugins),
+alongside Neovim-aware skills and an `nvim-navigator` subagent. vibing.nvim hands the plugin
+directory to the `claude` CLI per session with `--plugin-dir`, so it is never installed into
+Claude Code's global state and never has to be kept in sync with anything: the server that runs
+is always the one in the checkout that spawned it — a git worktree included.
 
-`../../build.sh` does this automatically (`claude plugin marketplace add` + `claude plugin install
-... --scope user`) whenever the `claude` CLI is on `PATH`. To do it yourself instead:
+`../../build.sh` builds it; there is no registration step. The tools arrive as
+`mcp__plugin_vibing-nvim_vibing-nvim__*`, the same names a marketplace install produced, because
+the prefix comes from `../.claude-plugin/plugin.json`'s `name` rather than from how the plugin
+was loaded.
 
-```text
-/plugin marketplace add shabaraba/vibing.nvim
-/plugin install vibing-nvim@vibing
-```
+The consequence worth knowing: a `claude` session started outside Neovim does not get these
+tools. Reaching a running Neovim was always the point of them, so there is no opt-in for it.
 
-See the plugin manifest at `../.claude-plugin/plugin.json`. The manual steps below remain useful
-for development or if you need a non-default RPC port/timeout.
+The manual options below remain useful for development, for a non-default RPC port/timeout, or
+for a backend other than Claude (`codex mcp add` / `copilot mcp add`, which `build.sh` still
+does — those CLIs have no plugin system).
 
-**Trust note:** installing this as a "directory"-source plugin runs `npm ci`/`npm run build` from
-that checkout on first launch. Only add the marketplace from a source you trust (the official repo,
-or your own fork/clone).
-
-To uninstall:
+**Upgrading:** if an older vibing.nvim installed this as a user-scope plugin, `build.sh` removes
+it. By hand:
 
 ```text
 /plugin uninstall vibing-nvim@vibing

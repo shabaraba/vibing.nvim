@@ -5,7 +5,12 @@
 -- all. Pointing the child at minimal_init left it with no commands, which is why every spec's
 -- first `:VibingChat` did nothing.
 
-vim.opt.runtimepath:append(vim.fn.getcwd())
+-- Derived from this file's own location rather than from the child's cwd, because a spec may
+-- start the child in a throwaway project directory (plugin_dir_spec does, to get a
+-- `.vibing/plugins/` that is not the developer's real one). `getcwd()` would then add the wrong
+-- directory and no `:Vibing*` command would exist.
+local repo_root = vim.fs.root(debug.getinfo(1, "S").source:sub(2), "package.json") or vim.fn.getcwd()
+vim.opt.runtimepath:append(repo_root)
 
 vim.opt.swapfile = false
 vim.opt.backup = false
