@@ -3,6 +3,23 @@ local Context = require("vibing.application.context.manager")
 
 local M = {}
 
+---nvim_buf_set_lines は改行を含む要素を拒否するため、行配列を1行1要素に平坦化する
+---@param entries string[]
+---@return string[]
+local function flatten_lines(entries)
+  local result = {}
+  for _, entry in ipairs(entries) do
+    if entry:find("[\r\n]") then
+      for _, line in ipairs(vim.split(entry, "\r?\n", { trimempty = false })) do
+        table.insert(result, (line:gsub("\r", "")))
+      end
+    else
+      table.insert(result, entry)
+    end
+  end
+  return result
+end
+
 ---バッファを初期化（フロントマター + 初期コンテンツ）
 ---@param buf number バッファ番号
 ---@param session? Vibing.ChatSession セッション（指定時はそのfrontmatterを使用）
@@ -164,7 +181,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_mes
   end
 
   table.insert(newLines, "")
-  vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, newLines)
+  vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, flatten_lines(newLines))
 
   if pendingChoices then
     local choiceLines = {}
@@ -199,7 +216,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_mes
 
     local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local insertPos = #currentLines
-    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, choiceLines)
+    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, flatten_lines(choiceLines))
   end
 
   if pendingApproval then
@@ -247,7 +264,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_mes
 
     local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local insertPos = #currentLines
-    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, approvalLines)
+    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, flatten_lines(approvalLines))
   end
 
   if win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == buf then

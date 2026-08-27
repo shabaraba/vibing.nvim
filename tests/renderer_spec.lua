@@ -221,6 +221,32 @@ describe("vibing.presentation.chat.modules.renderer", function()
       end)
     end)
 
+    describe("with pendingApproval", function()
+      it("should split a multi-line command into separate lines", function()
+        local pendingApproval = {
+          tool = "Bash",
+          input = { command = "cat <<'EOF' > f.txt\nline1\nline2\nEOF" },
+          options = { { label = "allow_once" }, { label = "deny_once" } },
+        }
+
+        Renderer.addUserSection(mock_buf, mock_win, nil, pendingApproval)
+
+        local lines = vim.api.nvim_buf_get_lines(mock_buf, 0, -1, false)
+        local joined = table.concat(lines, "\n")
+
+        assert.is_truthy(joined:find("Command: cat <<'EOF' > f.txt", 1, true))
+        for _, line in ipairs(lines) do
+          assert.is_nil(line:find("\n", 1, true), "No buffer line may contain a newline")
+        end
+
+        local hasLine2 = false
+        for _, line in ipairs(lines) do
+          if line == "line2" then hasLine2 = true end
+        end
+        assert.is_true(hasLine2, "Continuation lines should be rendered as their own lines")
+      end)
+    end)
+
     describe("without pendingChoices", function()
       it("should create user section without choices", function()
         -- Execute
