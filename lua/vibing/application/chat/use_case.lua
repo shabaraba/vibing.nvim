@@ -264,6 +264,44 @@ local function format_conversation_for_prompt(conversation)
   return "<conversation>\n" .. table.concat(parts, "\n") .. "\n</conversation>"
 end
 
+---URL が分からない旨をモデルに伝える一文。空文字にはしない: 指示ごと消えると、モデルは
+---代わりにもっともらしい URL を組み立てるほうへ倒れる。
+local UNKNOWN_ISSUE_URL = "会話に URL が現れていない番号は素のまま書くこと。"
+
+---要約に issue リンクを書かせるための一文を作る
+---
+---要約は `lightweight` 呼び出しでツールを持たないので、モデルは自分で remote を見に行けない。
+---リポジトリ URL をここで解決して渡さないと、`#123` は永久に素のテキストのままになる。
+---
+---URL の組み立てを許すのは github.com だけ。issue の URL 形は forge ごとに違い（GitLab は
+---`/-/issues/`）、`to_web_url` はドットを含む任意のホストを通すので、`/issues/` を例に出すと
+---他 forge では存在しないリンクをチャットファイルに書き込むことになる。分からない forge では
+---URL だけ渡して番号は素のままにさせる — テンプレートの「URL を推測して組み立てない」を、
+---こちらが例文で上書きしないため。
+---@param cwd string|nil
+---@return string
+local function build_repository_instruction(cwd)
+  local repo_url = require("vibing.core.utils.repo_url").get(cwd)
+  if not repo_url then
+    return "このチャットのリポジトリ URL は不明である。" .. UNKNOWN_ISSUE_URL
+  end
+
+  local prefix = string.format("このチャットのリポジトリは %s である。", repo_url)
+
+  if not repo_url:match("^https://github%.com/") then
+    return prefix .. "issue の URL 形式は不明である。" .. UNKNOWN_ISSUE_URL
+  end
+
+  -- 数字に限るのは、rule 6 が `ABC-456` のような他システムのチケット番号も表記として
+  -- 認めているため。そちらをこのリポジトリの issue URL に流し込ませない
+  return prefix
+    .. string.format(
+      "数字だけの issue / PR 番号はここから URL を組み立ててよい（例: `[#123](%s/issues/123)`）。"
+        .. "`ABC-456` のような他システムのチケット番号は URL を組み立てず素のまま書くこと。",
+      repo_url
+    )
+end
+
 ---会話からサマリープロンプトを組み立てる
 ---
 ---`daily_summary` の `_build_summary_prompt` と同じ理由で切り出してある: プロンプトの組み立ては
@@ -271,12 +309,14 @@ end
 ---合っているかを確かめる手段が他にない。`substitute_variables` は未知の `{{...}}` を黙って
 ---残すため、変数名を間違えると空の会話とリテラルの `{{conversation}}` がモデルに渡る。
 ---@param conversation table[]
+---@param cwd? string リポジトリ URL の解決に使う作業ディレクトリ
 ---@return string|nil prompt
 ---@return string|nil error
-function M._build_summary_prompt(conversation)
+function M._build_summary_prompt(conversation, cwd)
   local PromptLoader = require("vibing.core.utils.prompt_loader")
   return PromptLoader.load("chat_summary", {
     conversation = format_conversation_for_prompt(conversation),
+    repository_instruction = build_repository_instruction(cwd),
   })
 end
 
@@ -338,7 +378,7 @@ function M.generate_and_insert_summary(chat_buffer, opts)
     return finish(false, "No adapter configured")
   end
 
-  local full_prompt, err = M._build_summary_prompt(conversation)
+  local full_prompt, err = M._build_summary_prompt(conversation, chat_buffer:get_cwd())
   if err then
     notify.error("Failed to load summary prompt: " .. err)
     return finish(false, "Failed to load summary prompt: " .. err)

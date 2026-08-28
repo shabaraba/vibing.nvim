@@ -10,7 +10,7 @@
 
 local use_case = require("vibing.application.chat.use_case")
 
----@param opts? {is_sending?: boolean, conversation?: table[]}
+---@param opts? {is_sending?: boolean, conversation?: table[], cwd?: string}
 ---@return table
 local function chat_buffer(opts)
   opts = opts or {}
@@ -21,6 +21,11 @@ local function chat_buffer(opts)
     end,
     extract_conversation = function()
       return opts.conversation or { { role = "user", content = "レイヤー構成を整理して" } }
+    end,
+    -- 要約プロンプトはリポジトリ URL の解決にチャットの作業ディレクトリを使う。
+    -- 実物の ChatBuffer は必ず持つメソッドなので、代役側にも置く。
+    get_cwd = function()
+      return opts.cwd
     end,
   }
 end

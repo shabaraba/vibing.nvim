@@ -153,6 +153,9 @@ describe("summary call options", function()
       extract_conversation = function()
         return { { role = "user", content = "hi" } }
       end,
+      get_cwd = function()
+        return nil
+      end,
     })
 
     assert.is_true(captured_opts.lightweight)

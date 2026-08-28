@@ -37,6 +37,51 @@ describe("chat_summary prompt", function()
     assert.is_nil(prompt:find("{{", 1, true), "an unsubstituted {{variable}} reached the prompt")
   end)
 
+  -- 要約は lightweight 呼び出しでツールを持たないので、リポジトリ URL はプロンプトに載って
+  -- いなければモデルには手に入らない。載らなければ issue 番号は素のテキストのままになる。
+  --
+  -- リポジトリはどれも作り物の remote にする。テンプレートの例文（`org/repo`）や、このリポジトリ
+  -- 自身の origin を当てにすると、置換が丸ごと壊れてもテストは通ってしまう。
+  ---@param remote string|nil nil なら remote 無しの git リポジトリ
+  ---@return string prompt
+  local function prompt_for_remote(remote)
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, "p")
+    vim.system({ "git", "init", "-q", dir }):wait()
+    if remote then
+      vim.system({ "git", "-C", dir, "remote", "add", "origin", remote }):wait()
+    end
+
+    local prompt = assert(use_case._build_summary_prompt({ { role = "user", content = "hello" } }, dir))
+    vim.fn.delete(dir, "rf")
+
+    assert.is_nil(prompt:find("{{", 1, true), "an unsubstituted {{variable}} reached the prompt")
+    return prompt
+  end
+
+  it("hands the model the repository url an issue link needs", function()
+    local prompt = prompt_for_remote("git@github.com:acme/thing.git")
+
+    assert.is_truthy(prompt:find("[#123](https://github.com/acme/thing/issues/123)", 1, true))
+  end)
+
+  -- issue の URL 形は forge ごとに違う（GitLab は `/-/issues/`）。知らない forge で `/issues/` を
+  -- 例に出すと、開けないリンクがチャットファイルに残る。
+  it("does not invent an issue url shape for a forge it does not know", function()
+    local prompt = prompt_for_remote("git@gitlab.example.com:acme/thing.git")
+
+    assert.is_truthy(prompt:find("https://gitlab.example.com/acme/thing", 1, true))
+    -- テンプレート側の例文にも `/issues/123` はあるので、ホストまで込みで見ないと空振りする
+    assert.is_nil(prompt:find("gitlab.example.com/acme/thing/issues", 1, true))
+    assert.is_truthy(prompt:find("issue の URL 形式は不明", 1, true))
+  end)
+
+  it("says the repository is unknown rather than dropping the instruction", function()
+    local prompt = prompt_for_remote(nil)
+
+    assert.is_truthy(prompt:find("リポジトリ URL は不明", 1, true))
+  end)
+
   it("demonstrates an example the summary inserter keeps whole across a re-run", function()
     assert.is_truthy(example, "no ```markdown example block found in the template")
 
