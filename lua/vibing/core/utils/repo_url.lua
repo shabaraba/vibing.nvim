@@ -43,7 +43,10 @@ function M.to_web_url(remote)
     return nil
   end
 
-  return "https://" .. host .. "/" .. path
+  -- ホスト名だけ小文字に畳む。`git@GitHub.com:...` は有効な remote だが、そのまま返すと
+  -- 呼び出し側のホスト判定（`use_case` の github.com 判定）が外れてリンクが出なくなる。
+  -- パスは畳まない: GitHub も GitLab も org/repo 名の大文字小文字を保持する
+  return "https://" .. host:lower() .. "/" .. path
 end
 
 ---`origin` の URL を取得して正規化する

@@ -34,6 +34,12 @@ describe("repo_url.to_web_url", function()
     assert.is_nil(RepoUrl.to_web_url(""))
   end)
 
+  -- ホスト判定（`use_case` の github.com 判定）が外れると、リンクが黙って出なくなる
+  it("folds the host to lower case but leaves the path alone", function()
+    assert.equals("https://github.com/Acme/Thing", RepoUrl.to_web_url("git@GitHub.com:Acme/Thing.git"))
+    assert.equals("https://github.com/Acme/Thing", RepoUrl.to_web_url("https://GitHub.COM/Acme/Thing"))
+  end)
+
   it("strips .git even behind a trailing slash", function()
     assert.equals("https://github.com/org/repo", RepoUrl.to_web_url("https://github.com/org/repo.git/"))
   end)

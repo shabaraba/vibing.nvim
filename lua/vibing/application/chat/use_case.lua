@@ -292,12 +292,14 @@ local function build_repository_instruction(cwd)
     return prefix .. "issue の URL 形式は不明である。" .. UNKNOWN_ISSUE_URL
   end
 
-  -- 数字に限るのは、rule 6 が `ABC-456` のような他システムのチケット番号も表記として
-  -- 認めているため。そちらをこのリポジトリの issue URL に流し込ませない
+  -- 組み立てを許すのは「このリポジトリの番号」だけ。rule 6 は `ABC-456`（他システム）も
+  -- `org/repo#123`（別リポジトリ）も表記として認めているので、どちらもこのリポジトリの
+  -- issue URL に流し込ませない。後者は特に、開くと無関係な issue に飛ぶリンクになる
   return prefix
     .. string.format(
-      "数字だけの issue / PR 番号はここから URL を組み立ててよい（例: `[#123](%s/issues/123)`）。"
-        .. "`ABC-456` のような他システムのチケット番号は URL を組み立てず素のまま書くこと。",
+      "`#123` のようにリポジトリ名の付かない issue / PR 番号は、ここから URL を組み立ててよい"
+        .. "（例: `[#123](%s/issues/123)`）。`ABC-456` のような他システムのチケット番号と、"
+        .. "`org/repo#123` のように別リポジトリを明示した参照は、URL を組み立てず素のまま書くこと。",
       repo_url
     )
 end

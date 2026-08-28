@@ -29,35 +29,43 @@ describe("chat_summary prompt", function()
     return n
   end
 
-  it("binds the template's variable to what the caller passes", function()
-    local prompt, err = use_case._build_summary_prompt({ { role = "user", content = "hello" } })
-
-    assert.is_nil(err)
-    assert.is_truthy(prompt:find('<message role="user">\nhello\n</message>', 1, true))
-    assert.is_nil(prompt:find("{{", 1, true), "an unsubstituted {{variable}} reached the prompt")
-  end)
-
-  -- 要約は lightweight 呼び出しでツールを持たないので、リポジトリ URL はプロンプトに載って
-  -- いなければモデルには手に入らない。載らなければ issue 番号は素のテキストのままになる。
-  --
   -- リポジトリはどれも作り物の remote にする。テンプレートの例文（`org/repo`）や、このリポジトリ
-  -- 自身の origin を当てにすると、置換が丸ごと壊れてもテストは通ってしまう。
+  -- 自身の origin を当てにすると、置換が丸ごと壊れてもテストは通ってしまう。cwd を渡さない
+  -- 呼び方をテストに残さないのも同じ理由で、そちらは実行環境の本物の origin を読みに行く。
   ---@param remote string|nil nil なら remote 無しの git リポジトリ
-  ---@return string prompt
-  local function prompt_for_remote(remote)
+  ---@return string dir 使い終わったら呼び出し側が消す
+  local function scratch_repo(remote)
     local dir = vim.fn.tempname()
     vim.fn.mkdir(dir, "p")
     vim.system({ "git", "init", "-q", dir }):wait()
     if remote then
       vim.system({ "git", "-C", dir, "remote", "add", "origin", remote }):wait()
     end
+    return dir
+  end
 
+  -- 要約は lightweight 呼び出しでツールを持たないので、リポジトリ URL はプロンプトに載って
+  -- いなければモデルには手に入らない。載らなければ issue 番号は素のテキストのままになる。
+  ---@param remote string|nil
+  ---@return string prompt
+  local function prompt_for_remote(remote)
+    local dir = scratch_repo(remote)
     local prompt = assert(use_case._build_summary_prompt({ { role = "user", content = "hello" } }, dir))
     vim.fn.delete(dir, "rf")
 
     assert.is_nil(prompt:find("{{", 1, true), "an unsubstituted {{variable}} reached the prompt")
     return prompt
   end
+
+  it("binds the template's variable to what the caller passes", function()
+    local dir = scratch_repo(nil)
+    local prompt, err = use_case._build_summary_prompt({ { role = "user", content = "hello" } }, dir)
+    vim.fn.delete(dir, "rf")
+
+    assert.is_nil(err)
+    assert.is_truthy(prompt:find('<message role="user">\nhello\n</message>', 1, true))
+    assert.is_nil(prompt:find("{{", 1, true), "an unsubstituted {{variable}} reached the prompt")
+  end)
 
   it("hands the model the repository url an issue link needs", function()
     local prompt = prompt_for_remote("git@github.com:acme/thing.git")
