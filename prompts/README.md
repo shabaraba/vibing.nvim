@@ -45,11 +45,19 @@ header, between `# Vibing Chat` and the first `---`.
 
 - `{{conversation}}` - The chat's User/Assistant messages, each wrapped in `<message role="...">`
   inside a single `<conversation>` element
+- `{{repository_instruction}}` - One sentence naming the repository's web URL, so the model can turn
+  an issue number into a link. Resolved from `origin` by `core/utils/repo_url.lua`, against the
+  chat's own `working_dir`. Never empty: with no resolvable remote it says so explicitly, because a
+  missing instruction makes the model invent a plausible URL instead
 
 **Usage:**
 Loaded by `use_case._build_summary_prompt`, reached from `:VibingSummarize`. The `/summarize` slash
 command is a different path with its own inline prompt (`application/chat/handlers/summarize.lua`)
 and is unaffected by this file.
+
+The summary is a `lightweight` call — no tools — so the model cannot run `git remote` itself. Anything
+it should be able to link has to arrive in the prompt; that is the whole reason
+`{{repository_instruction}}` exists rather than a rule telling the model to look the URL up.
 
 **Customization:**
 The section headings, their emojis, and the output language are part of the template, so editing this

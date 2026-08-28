@@ -29,12 +29,65 @@ describe("chat_summary prompt", function()
     return n
   end
 
+  -- リポジトリはどれも作り物の remote にする。テンプレートの例文（`org/repo`）や、このリポジトリ
+  -- 自身の origin を当てにすると、置換が丸ごと壊れてもテストは通ってしまう。cwd を渡さない
+  -- 呼び方をテストに残さないのも同じ理由で、そちらは実行環境の本物の origin を読みに行く。
+  ---@param remote string|nil nil なら remote 無しの git リポジトリ
+  ---@return string dir 使い終わったら呼び出し側が消す
+  local function scratch_repo(remote)
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, "p")
+    vim.system({ "git", "init", "-q", dir }):wait()
+    if remote then
+      vim.system({ "git", "-C", dir, "remote", "add", "origin", remote }):wait()
+    end
+    return dir
+  end
+
+  -- 要約は lightweight 呼び出しでツールを持たないので、リポジトリ URL はプロンプトに載って
+  -- いなければモデルには手に入らない。載らなければ issue 番号は素のテキストのままになる。
+  ---@param remote string|nil
+  ---@return string prompt
+  local function prompt_for_remote(remote)
+    local dir = scratch_repo(remote)
+    local prompt = assert(use_case._build_summary_prompt({ { role = "user", content = "hello" } }, dir))
+    vim.fn.delete(dir, "rf")
+
+    assert.is_nil(prompt:find("{{", 1, true), "an unsubstituted {{variable}} reached the prompt")
+    return prompt
+  end
+
   it("binds the template's variable to what the caller passes", function()
-    local prompt, err = use_case._build_summary_prompt({ { role = "user", content = "hello" } })
+    local dir = scratch_repo(nil)
+    local prompt, err = use_case._build_summary_prompt({ { role = "user", content = "hello" } }, dir)
+    vim.fn.delete(dir, "rf")
 
     assert.is_nil(err)
     assert.is_truthy(prompt:find('<message role="user">\nhello\n</message>', 1, true))
     assert.is_nil(prompt:find("{{", 1, true), "an unsubstituted {{variable}} reached the prompt")
+  end)
+
+  it("hands the model the repository url an issue link needs", function()
+    local prompt = prompt_for_remote("git@github.com:acme/thing.git")
+
+    assert.is_truthy(prompt:find("[#123](https://github.com/acme/thing/issues/123)", 1, true))
+  end)
+
+  -- issue の URL 形は forge ごとに違う（GitLab は `/-/issues/`）。知らない forge で `/issues/` を
+  -- 例に出すと、開けないリンクがチャットファイルに残る。
+  it("does not invent an issue url shape for a forge it does not know", function()
+    local prompt = prompt_for_remote("git@gitlab.example.com:acme/thing.git")
+
+    assert.is_truthy(prompt:find("https://gitlab.example.com/acme/thing", 1, true))
+    -- テンプレート側の例文にも `/issues/123` はあるので、ホストまで込みで見ないと空振りする
+    assert.is_nil(prompt:find("gitlab.example.com/acme/thing/issues", 1, true))
+    assert.is_truthy(prompt:find("issue の URL 形式は不明", 1, true))
+  end)
+
+  it("says the repository is unknown rather than dropping the instruction", function()
+    local prompt = prompt_for_remote(nil)
+
+    assert.is_truthy(prompt:find("リポジトリ URL は不明", 1, true))
   end)
 
   it("demonstrates an example the summary inserter keeps whole across a re-run", function()

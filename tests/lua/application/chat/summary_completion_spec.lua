@@ -10,7 +10,12 @@
 
 local use_case = require("vibing.application.chat.use_case")
 
----@param opts? {is_sending?: boolean, conversation?: table[]}
+-- git 管理外の空ディレクトリ。`repo_url` がここで origin を探して見つけられないことに
+-- 依存している
+local scratch_dir = vim.fn.tempname()
+vim.fn.mkdir(scratch_dir, "p")
+
+---@param opts? {is_sending?: boolean, conversation?: table[], cwd?: string}
 ---@return table
 local function chat_buffer(opts)
   opts = opts or {}
@@ -21,6 +26,13 @@ local function chat_buffer(opts)
     end,
     extract_conversation = function()
       return opts.conversation or { { role = "user", content = "レイヤー構成を整理して" } }
+    end,
+    -- 要約プロンプトはリポジトリ URL の解決にチャットの作業ディレクトリを使う。実物の
+    -- ChatBuffer は必ず持つメソッドなので、代役側にも置く。既定を空の一時ディレクトリに
+    -- するのは、nil を返すとテスト実行環境の本物の origin を読みに行くため — このテストの
+    -- 主題（完了コールバックの契約）と関係のない副作用になる。
+    get_cwd = function()
+      return opts.cwd or scratch_dir
     end,
   }
 end
