@@ -367,6 +367,142 @@ describe("send_message", function()
     end)
   end)
 
+  describe("choosing between the snapshot and the fallback", function()
+    -- 経路選択は2つの重なり信号の **OR** で、どちらの信号も単体では
+    -- git_snapshot_spec / active_stream_registry_spec 側で手厚くテストされている。
+    -- テストが無かったのは、その2つを結ぶ send_message 側の条件式そのもの。
+    -- ここを `and` に書き違えても条件を反転させても、他のspecは全部通ってしまう。
+    local ASR = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+
+    local saved = {}
+    local original_find
+    local called
+
+    ---@param opts { root: string|nil, had_overlap: boolean, other_stream: boolean }
+    ---@return "snapshot"|"fallback"|"neither" どちらの generate が呼ばれたか
+    local function route(opts)
+      called = {}
+
+      saved["vibing.core.utils.git_snapshot"] = package.loaded["vibing.core.utils.git_snapshot"]
+      package.loaded["vibing.core.utils.git_snapshot"] = {
+        get_root = function()
+          return opts.root
+        end,
+        had_overlap = function()
+          return opts.had_overlap
+        end,
+        worktree_root = function()
+          return opts.root
+        end,
+        generate = function()
+          called.snapshot = true
+          -- 差分が取れた体で返す。取れなかった場合の分岐は別のdescribeが持っている
+          return { "a.lua" }, { "/repo/a.lua" }, nil, true
+        end,
+        clear = function() end,
+      }
+
+      saved["vibing.core.utils.request_diff"] = package.loaded["vibing.core.utils.request_diff"]
+      package.loaded["vibing.core.utils.request_diff"] = {
+        generate = function()
+          called.fallback = true
+          return { "a.lua" }, { "/repo/a.lua" }, nil
+        end,
+        clear = function() end,
+        capture = function() end,
+      }
+
+      -- ActiveStreamRegistry は send_message のトップレベルでrequireされている（upvalue）ので、
+      -- package.loaded を差し替えても届かない。実物のテーブルの関数だけ差し替える
+      original_find = ASR.find_other_active_for_worktree
+      ASR.find_other_active_for_worktree = function()
+        return opts.other_stream and { handle_id = "other" } or nil
+      end
+
+      local buf = vim.api.nvim_create_buf(false, true)
+      local callbacks = {
+        clear_sending = function() end,
+        get_bufnr = function()
+          return buf
+        end,
+        get_session_id = function()
+          return nil
+        end,
+        update_session_id = function(_) end,
+        append_chunk = function(_) end,
+        add_user_section = function() end,
+        get_cwd = function()
+          return opts.root
+        end,
+      }
+      local adapter = {
+        supports = function(_, _feature)
+          return false
+        end,
+      }
+
+      -- ツールイベントが1件ある状態にする。フォールバック側はこれが空だと
+      -- 「変更なし」分岐に落ちて generate まで届かない
+      SendMessage._handle_response(
+        { content = "done" },
+        callbacks,
+        adapter,
+        {},
+        { ["/repo/a.lua"] = true },
+        "msg"
+      )
+      vim.api.nvim_buf_delete(buf, { force = true })
+
+      if called.snapshot then
+        return "snapshot"
+      elseif called.fallback then
+        return "fallback"
+      end
+      return "neither"
+    end
+
+    after_each(function()
+      if original_find then
+        ASR.find_other_active_for_worktree = original_find
+        original_find = nil
+      end
+      for name, module in pairs(saved) do
+        package.loaded[name] = module
+      end
+      saved = {}
+    end)
+
+    it("takes the snapshot when neither signal reports an overlap", function()
+      assert.equals(
+        "snapshot",
+        route({ root = "/repo", had_overlap = false, other_stream = false })
+      )
+    end)
+
+    it("falls back when the baseline recorded an overlapping window", function()
+      -- 相手が先に終わっていてレジストリには何も残っていない、という一番効く形
+      assert.equals(
+        "fallback",
+        route({ root = "/repo", had_overlap = true, other_stream = false })
+      )
+    end)
+
+    it("falls back when a stream without a baseline is writing in the same worktree", function()
+      assert.equals(
+        "fallback",
+        route({ root = "/repo", had_overlap = false, other_stream = true })
+      )
+    end)
+
+    it("falls back when both signals fire", function()
+      assert.equals("fallback", route({ root = "/repo", had_overlap = true, other_stream = true }))
+    end)
+
+    it("falls back outside a git repository, without asking either signal", function()
+      assert.equals("fallback", route({ root = nil, had_overlap = false, other_stream = false }))
+    end)
+  end)
+
   describe("_warn_removed_frontmatter", function()
     local messages
     local original_notify
