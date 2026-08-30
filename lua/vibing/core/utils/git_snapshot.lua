@@ -284,11 +284,38 @@ local function sweep_refs(root)
   end
 end
 
----TTL超過した放置セッションを破棄
+---そのリクエストがまだ走っているか
+---
+---全アダプタがstream開始で `ActiveStreamRegistry` にregisterし、`wrapped_on_done` で
+---unregisterする。つまりレジストリは「この実行がもう終わったか」を知っている唯一の場所で、
+---`ChatBuffer:is_responding()` も同じ根拠で判断している（architecture.md参照）。
+---@param handle_id string
+---@return boolean
+local function request_still_running(handle_id)
+  local ok, registry =
+    pcall(require, "vibing.infrastructure.adapter.modules.active_stream_registry")
+  if not ok then
+    return false
+  end
+  local found_ok, entry = pcall(registry.get, handle_id)
+  return found_ok and entry ~= nil
+end
+
+---clearされずに放置されたセッション（キャンセル・クラッシュ）を破棄する
+---
+---**年齢だけで刈ってはいけない。** これは新しい `handle_id` で `ensure_baseline` が呼ばれる
+---たびに走る＝同じNeovim内の **別チャット** が新しいターンを始めるたびに走るので、1時間を
+---超える長いターン（エージェントの長時間作業では普通に起きる）のセッションが、まだ実行中の
+---まま消される。消えると次のツールで `sessions[handle_id]` が空になり、**その時点のツリーで
+---ベースラインを取り直してしまう** — スイープより前の変更が、警告もフォールバックもなしに
+---diffから落ちる。この仕組みが無くそうとしている失敗そのもの。
+---
+---なので `sweep_refs` と同じ二段構えにする: 実行中かをレジストリに聞き、TTLはテーブルが
+---際限なく育たないための外枠として残す（registerされなかったストリームはこちらで回収される）。
 local function sweep_stale()
   local now = os.time()
   for handle_id, s in pairs(sessions) do
-    if now - s.created > SESSION_TTL_SEC then
+    if now - s.created > SESSION_TTL_SEC and not request_still_running(handle_id) then
       if s.ref then
         git({ "git", "update-ref", "-d", s.ref }, s.root)
       end
@@ -557,6 +584,13 @@ function M.sweep(cwd)
   end
   swept_roots[root] = true
   sweep_refs(root)
+end
+
+---テスト用: セッションの内部状態を参照する（`created` を古くしてTTLを試すため）
+---@param handle_id string
+---@return Vibing.GitSnapshot.Session|nil
+function M._session(handle_id)
+  return sessions[handle_id]
 end
 
 ---テスト用: キャッシュとセッション状態を捨てる

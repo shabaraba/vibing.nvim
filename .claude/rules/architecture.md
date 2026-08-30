@@ -790,6 +790,16 @@ process crashed here earlier" would mean writing that identity down somewhere, w
 its own. Multiple instances are a normal setup here, so this is worth revisiting rather than
 forgetting.
 
+**The in-memory session table is swept the same way, and for the same reason.** `sweep_stale` runs
+on every `ensure_baseline` for a new handle — that is, every time _another_ chat in this Neovim
+starts a turn — so reaping purely by age would drop the session of a turn still running past the
+TTL, which a long agent run reaches routinely. The next tool of that turn would then find no
+session and re-baseline against the tree as it stands, so everything it changed before the sweep
+falls out of the diff with no warning and no fallback: the silent loss again, through a third door.
+It therefore asks `ActiveStreamRegistry` whether the request is still running — the same registry
+that tells `ChatBuffer:is_responding()` a run is over — and keeps the TTL only as the outer bound
+that stops the table growing when a stream never registered.
+
 **Ref cleanup does cross that boundary, and has to**, because deleting a ref another process is
 relying on is an action rather than a misreading. `sweep_refs` guards twice. It first asks the
 instance registry whether another live Neovim sits on this root and skips the sweep entirely if so

@@ -294,7 +294,7 @@ function M._register_commands()
         ),
         vim.log.levels.WARN
       )
-    end, { nargs = "?", desc = "Removed: mote integration (see :help vibing-diff)" })
+    end, { nargs = "?", desc = "Removed: mote integration (see :help vibing-configuration)" })
   end
 
   -- コンテキスト関連コマンド

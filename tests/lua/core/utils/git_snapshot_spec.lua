@@ -517,6 +517,74 @@ describe("git_snapshot", function()
     end)
   end)
 
+  describe("the TTL sweep of abandoned sessions", function()
+    -- スイープは新しい handle_id で ensure_baseline が呼ばれるたびに走る＝同じNeovim内の
+    -- 別チャットが新しいターンを始めるたびに走る。年齢だけで刈ると、1時間を超える長い
+    -- ターンのセッションが実行中のまま消え、次のツールでベースラインを取り直してしまう。
+    local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+
+    ---セッションを「TTLを超えて古い」状態にする
+    local function age(handle)
+      local session = GitSnapshot._session(handle)
+      assert.is_not_nil(session)
+      session.created = os.time() - 7 * 24 * 3600
+    end
+
+    it("keeps an old session whose request is still running", function()
+      local live = next_handle()
+      GitSnapshot.ensure_baseline(live, repo, "Bash")
+      registry.register({ handle_id = live, adapter = {} })
+      age(live)
+
+      -- 別チャットが新しいターンを始める（これがスイープを起こす）
+      GitSnapshot.ensure_baseline(next_handle(), repo, "Bash")
+
+      assert.is_true(GitSnapshot.has_baseline(live))
+      registry.unregister(live)
+    end)
+
+    it("reaps an old session whose request is over", function()
+      local abandoned = next_handle()
+      GitSnapshot.ensure_baseline(abandoned, repo, "Bash")
+      age(abandoned)
+      -- レジストリに居ない = そのストリームは終わっている（clear されなかった残骸）
+
+      GitSnapshot.ensure_baseline(next_handle(), repo, "Bash")
+
+      assert.is_false(GitSnapshot.has_baseline(abandoned))
+    end)
+
+    it("does not touch a session that is merely recent", function()
+      local recent = next_handle()
+      GitSnapshot.ensure_baseline(recent, repo, "Bash")
+
+      GitSnapshot.ensure_baseline(next_handle(), repo, "Bash")
+
+      assert.is_true(GitSnapshot.has_baseline(recent))
+    end)
+
+    it("keeps the baseline of a long turn stable across another chat's turn", function()
+      -- 刈られると次のツールでベースラインを取り直し、それ以前の変更がdiffから落ちる。
+      -- 実際に「ベースラインが動かない」ことを見る
+      local live = next_handle()
+      GitSnapshot.ensure_baseline(live, repo, "Bash")
+      registry.register({ handle_id = live, adapter = {} })
+      age(live)
+      local base_before = GitSnapshot._session(live).base
+
+      write(repo .. "/tracked.txt", "changed early in the long turn\n")
+      GitSnapshot.ensure_baseline(next_handle(), repo, "Bash")
+      -- 長いターンの次のツール呼び出し
+      GitSnapshot.ensure_baseline(live, repo, "Write")
+
+      assert.equals(base_before, GitSnapshot._session(live).base)
+
+      local files = GitSnapshot.generate(live, nil)
+      assert.same({ "tracked.txt" }, files)
+      registry.unregister(live)
+    end)
+  end)
+
   describe("clear and sweep", function()
     it("removes the ref it created", function()
       local handle = next_handle()
