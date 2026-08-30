@@ -198,6 +198,85 @@ describe("send_message", function()
     end)
   end)
 
+  describe("_finalize_snapshot_diff", function()
+    -- スナップショット経路が差分を出せなかったとき、呼び出し側は request_diff に退避できないと
+    -- いけない。そのため「出力した」か「取れなかった」かを戻り値で返す契約になっている。
+    local original
+
+    local function stub_git_snapshot(generate)
+      original = package.loaded["vibing.core.utils.git_snapshot"]
+      package.loaded["vibing.core.utils.git_snapshot"] = {
+        get_root = function()
+          return "/repo"
+        end,
+        generate = generate,
+        clear = function() end,
+      }
+    end
+
+    after_each(function()
+      package.loaded["vibing.core.utils.git_snapshot"] = original
+      original = nil
+    end)
+
+    ---@return table appended append_chunkで書かれた断片
+    ---@return table state add_user_sectionが呼ばれたか
+    local function callbacks_recording(appended, state)
+      return {
+        append_chunk = function(chunk)
+          table.insert(appended, chunk)
+        end,
+        add_user_section = function()
+          state.user_section = true
+        end,
+        get_cwd = function()
+          return nil
+        end,
+      }
+    end
+
+    it("reports failure and writes nothing when the snapshot could not be taken", function()
+      stub_git_snapshot(function()
+        return {}, {}, nil, false
+      end)
+      local appended, state = {}, {}
+
+      local handled =
+        SendMessage._finalize_snapshot_diff(callbacks_recording(appended, state), "h1", {})
+
+      assert.is_false(handled)
+      assert.same({}, appended)
+      assert.is_nil(state.user_section)
+    end)
+
+    it("reports success for a turn that genuinely changed nothing", function()
+      -- 「変更なし」は失敗ではない。ここでフォールバックすると二重に出力してしまう
+      stub_git_snapshot(function()
+        return {}, {}, nil, true
+      end)
+      local appended, state = {}, {}
+
+      local handled =
+        SendMessage._finalize_snapshot_diff(callbacks_recording(appended, state), "h2", {})
+
+      assert.is_true(handled)
+      assert.same({}, appended)
+    end)
+
+    it("writes the file list when the snapshot succeeded", function()
+      stub_git_snapshot(function()
+        return { "src/a.lua" }, { "/repo/src/a.lua" }, nil, true
+      end)
+      local appended, state = {}, {}
+
+      local handled =
+        SendMessage._finalize_snapshot_diff(callbacks_recording(appended, state), "h3", {})
+
+      assert.is_true(handled)
+      assert.is_truthy(table.concat(appended, ""):find("src/a.lua", 1, true))
+    end)
+  end)
+
   describe("_warn_removed_frontmatter", function()
     local messages
     local original_notify

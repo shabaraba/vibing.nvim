@@ -701,6 +701,10 @@ Three details are not interchangeable:
   files would cost new-file detection, which is half the point.
 - **`-c core.quotePath=false`** on both diff calls, or a non-ASCII path comes back octal-escaped
   and the file list stops matching the file on disk.
+- **`-M` on both diff calls too**, not just the patch. Without it on `--name-only`, a user who has
+  set `diff.renames=false` gets a pure rename split two ways — one `rename` entry in the patch, two
+  entries (the delete and the add) in the file list — and the vanished path is then handed to
+  `BufferReload`. Reproduced against git before fixing.
 - **The file list is a second `git diff --name-only`, not something parsed out of the patch.**
   Reading `+++ b/…` misses three kinds of change outright, because git emits no such line for
   them — a binary file (`GIT binary patch`), a pure rename (`rename from`/`rename to`), or a
@@ -716,6 +720,13 @@ Three details are not interchangeable:
   turn would list the conversation log as its own output and put the whole transcript in the patch.
   The removed mote integration excluded the same directory through `.moteignore`. The exclusion is
   on the diff calls (where it matters) and on `git add -A` (where it saves hashing).
+
+**The fallback's backups are dropped only once the snapshot path has actually produced output.**
+`generate` therefore reports "could not tell" separately from "nothing changed" — a second
+snapshot or diff that fails (a worktree removed mid-turn, a permission or disk error) returns
+`ok = false`, and `_handle_response` routes to `request_diff` instead, whose backups are still
+there. Clearing them first would mean a failure at that one point silently produced a turn with no
+diff and no warning, which is the failure this whole mechanism exists to remove.
 
 **`request_diff.lua` stays** as the fallback for the two cases a snapshot cannot serve, decided in
 `_handle_response`:

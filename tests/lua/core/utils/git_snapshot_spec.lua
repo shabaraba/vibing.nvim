@@ -236,6 +236,30 @@ describe("git_snapshot", function()
       assert.equals("# vibing-request-diff base: " .. repo, turn.patch:match("^[^\n]+"))
     end)
 
+    it("reports success separately from emptiness", function()
+      -- 「変更なし」と「取れなかった」は呼び出し側が区別できないといけない。前者はそのまま
+      -- 出力、後者は request_diff のバックアップに退避する必要がある
+      local handle = next_handle()
+      GitSnapshot.ensure_baseline(handle, repo, "Bash")
+      local _, _, _, ok = GitSnapshot.generate(handle, nil)
+
+      assert.is_true(ok)
+    end)
+
+    it("reports failure when the second snapshot cannot be taken", function()
+      local handle = next_handle()
+      GitSnapshot.ensure_baseline(handle, repo, "Bash")
+      write(repo .. "/tracked.txt", "after\n")
+      -- worktreeがターンの途中で消えた（権限やディスクでも同じ経路）
+      vim.fn.delete(repo, "rf")
+
+      local files, _, patch, ok = GitSnapshot.generate(handle, nil)
+
+      assert.is_false(ok)
+      assert.same({}, files)
+      assert.is_nil(patch)
+    end)
+
     it("returns no patch when nothing changed", function()
       local turn = run_turn(function() end)
 
@@ -274,6 +298,22 @@ describe("git_snapshot", function()
       assert.same({ "img.bin" }, turn.files)
       assert.is_truthy(turn.patch:find("GIT binary patch", 1, true))
       assert.is_nil(turn.patch:find("+++ b/img.bin", 1, true))
+    end)
+
+    it("lists a rename once even when the user turned rename detection off", function()
+      -- 一覧側にも `-M` を付けていないと、`diff.renames=false` の環境で patch は rename 1件、
+      -- 一覧は delete+add の2件に割れる。消えた側のパスはリロード対象にもなってしまう
+      git_ok({ "config", "diff.renames", "false" })
+      write(repo .. "/renameme.txt", string.rep("content line\n", 20))
+      git_ok({ "add", "." })
+      git_ok({ "commit", "-q", "-m", "add file to rename" })
+
+      local turn = run_turn(function()
+        git_ok({ "mv", "renameme.txt", "renamed.txt" })
+      end)
+
+      assert.same({ "renamed.txt" }, turn.files)
+      assert.is_truthy(turn.patch:find("rename to renamed.txt", 1, true))
     end)
 
     it("lists a pure rename, which has no +++ line in the patch", function()

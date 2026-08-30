@@ -365,11 +365,15 @@ end
 ---@return string[] files 変更ファイルの相対パス一覧（表示用、worktreeルート相対）
 ---@return string[] abs_files 絶対パス一覧（バッファリロード用）
 ---@return string|nil patch_content
+---@return boolean ok 差分を取れたか。falseは「変更が無かった」ではなく「**分からなかった**」で、
+---  2回目のスナップショットやdiff呼び出しが失敗した場合。呼び出し側はこれを見て request_diff の
+---  バックアップに退避できる（そちらはこの時点ではまだ捨てられていない）
 function M.generate(handle_id, extra_paths)
   local files = {}
   local abs_files = {}
   local patch_content = nil
   local seen = {}
+  local ok = false
 
   local s = handle_id and sessions[handle_id] or nil
   if s then
@@ -390,7 +394,8 @@ function M.generate(handle_id, extra_paths)
         ".",
         EXCLUDE_VIBING_DIR,
       }, s.root)
-      if diff and diff.code == 0 then
+      ok = diff ~= nil and diff.code == 0
+      if ok then
         local out = diff.stdout or ""
         if vim.trim(out) ~= "" then
           -- 先頭のbase行は既存の `gd` フォールバック（patch_viewer）との互換のため。
@@ -428,6 +433,10 @@ function M.generate(handle_id, extra_paths)
           "core.quotePath=false",
           "diff",
           "--name-only",
+          -- patch本文側と同じ `-M` を付ける。付けないと、`diff.renames=false` を設定している
+          -- ユーザーの環境で純粋なリネームが「patchでは1件(rename)、一覧では2件(delete+add)」に
+          -- 割れる（実測）。一覧に載った消えた側のパスはリロード対象にもなってしまう
+          "-M",
           s.base,
           after,
           "--",
@@ -466,7 +475,7 @@ function M.generate(handle_id, extra_paths)
     end
   end
 
-  return files, abs_files, patch_content
+  return files, abs_files, patch_content, ok
 end
 
 ---refとセッション状態を破棄する（レスポンス処理の最後に必ず呼ぶ）

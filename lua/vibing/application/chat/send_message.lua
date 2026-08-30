@@ -285,6 +285,12 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
 
   -- Lua側タイムアウトによるセッション破損検出
   if response._session_corrupted then
+    -- このターンの差分は出さずに抜けるので、両経路のベースラインもここで捨てる
+    -- （どちらも「レスポンス処理の最後に必ずclearする」契約になっている）
+    RequestDiff.clear(incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id()))
+    require("vibing.core.utils.git_snapshot").clear(
+      incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
+    )
     callbacks.update_session_id(nil)
     callbacks.append_chunk("\n\n**Session Timeout:** The previous session could not be resumed.")
     callbacks.append_chunk("\n*Session has been reset. Your next message will start a new session.*")
@@ -389,9 +395,12 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   -- ターンではここも空振りしない。
   local has_file_changes = next(modified_file_paths or {}) ~= nil
 
-  if use_snapshot then
+  -- フォールバックのバックアップは、スナップショット経路が **実際に差分を出せてから** 捨てる。
+  -- 先に捨ててしまうと、2回目のスナップショットやdiff呼び出しが失敗した（権限・ディスク・
+  -- 途中でworktreeが消えた等）ときに退避先が無く、そのターンの変更が何の通知もなく消える。
+  -- それはこの置き換えが無くそうとしている失敗そのものなので、順序を逆にはできない。
+  if use_snapshot and M._finalize_snapshot_diff(callbacks, handle_id_for_diff, modified_file_paths) then
     RequestDiff.clear(handle_id_for_diff)
-    M._finalize_snapshot_diff(callbacks, handle_id_for_diff, modified_file_paths)
   elseif has_file_changes then
     -- フォールバック: PreToolUseフックで退避した変更前内容からpatchを生成。
     -- 外部プロセスを使わず、触ったファイル数分のvim.diff()だけで完結する。
@@ -568,14 +577,21 @@ end
 ---@param callbacks Vibing.ChatCallbacks
 ---@param handle_id string|nil リクエストのハンドルID
 ---@param modified_file_paths table<string, boolean> ツールイベントで検知した変更ファイル
+---@return boolean handled 差分を出力できたか。falseなら何も書いていないので、呼び出し側が
+---  request_diff にフォールバックする（「変更が無かった」ではなく「取れなかった」の意味）
 function M._finalize_snapshot_diff(callbacks, handle_id, modified_file_paths)
   local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
   local base_dir = GitSnapshot.get_root(handle_id) or vim.fn.getcwd()
-  local files, abs_files, patch_content = GitSnapshot.generate(handle_id, modified_file_paths)
+  local files, abs_files, patch_content, ok = GitSnapshot.generate(handle_id, modified_file_paths)
   GitSnapshot.clear(handle_id)
 
+  if not ok then
+    return false
+  end
+
   M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, handle_id)
+  return true
 end
 
 ---リクエスト単位diff（フォールバック経路）のModified Files出力とpatch生成
