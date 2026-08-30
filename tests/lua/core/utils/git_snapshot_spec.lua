@@ -214,6 +214,22 @@ describe("git_snapshot", function()
       assert.is_nil(turn.patch)
     end)
 
+    it("still reports a tracked file that matches an ignore pattern", function()
+      -- `.gitignore` が決めるのは「addされるかどうか」だけで、既にトラッキング済みの
+      -- ファイルはパターンに一致しても変更が出続ける。architecture.md がこの区別を
+      -- 「実測」と書いているので、実測のまま固定しておく
+      write(repo .. "/keep.log", "before\n")
+      git_ok({ "add", "-f", "keep.log" })
+      git_ok({ "commit", "-q", "-m", "track an ignored path" })
+
+      local turn = run_turn(function()
+        write(repo .. "/keep.log", "after\n")
+      end)
+
+      assert.same({ "keep.log" }, turn.files)
+      assert.is_truthy(turn.patch:find("+after", 1, true))
+    end)
+
     it("ignores vibing.nvim's own state directory even when it is not gitignored", function()
       -- .vibing/ にはチャットファイルとpatchが入り、ターン中にも書き換わる。gitignoreしていない
       -- ユーザーでも会話ログ自身がdiffに載らないこと

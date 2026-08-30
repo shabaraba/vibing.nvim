@@ -492,14 +492,16 @@ function M.generate(handle_id, extra_paths)
       -- リポジトリで patch本文が3ms、この呼び出しは2ms、対して支配項の `git add -A` は1回20ms
       -- （ターンあたり2回）。全体の4%程度にしかならない。
       --
-      -- 何も変わらなかったターンでは、そのpatch本文が空であること自体が「変更ファイル0件」の
-      -- 十分な答えなので、2回目は丸ごと省く。`Bash("ls")` のように「変更しうるツールが動いたが
-      -- 何も書かなかった」ターンは普通に起きる。
+      -- 2回目を省くのは2ケース。1つは、何も変わらなかったターン — patch本文が空であること
+      -- 自体が「変更ファイル0件」の十分な答えで、`Bash("ls")` のように「変更しうるツールが
+      -- 動いたが何も書かなかった」ターンは普通に起きる。もう1つは、1回目が失敗しているとき
+      -- （worktreeが消えた等）。2回目も成功する見込みが無く、成功したとしても呼び出し側は
+      -- `ok = false` を見てフォールバックするので結果は捨てられる。無駄なプロセスを1つ
+      -- 起動しないよう `ok` もガードに入れる。
       -- `cond and nil or git(...)` とは書けない。Luaでは真の枝がnilになると or 側が評価され、
       -- 省いたつもりの呼び出しが必ず走る
       local names = nil
-      local nothing_changed = patch_content == nil and diff ~= nil and diff.code == 0
-      if not nothing_changed then
+      if ok and patch_content ~= nil then
         names = git({
           "git",
           "-c",
