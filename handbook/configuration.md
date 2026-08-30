@@ -567,8 +567,10 @@ written.
 
 Two cases fall back to a lighter mechanism that only backs up the files a write tool named
 (so Bash-driven changes are missed there): a `working_dir` that is not inside a git repository,
-and a turn that overlaps another chat streaming in the same worktree — the tree is shared, so a
-snapshot could not tell whose change was whose.
+and a turn whose write window overlapped another chat's in the same worktree — the tree is shared,
+so a snapshot could not tell whose change was whose. **Both** overlapping turns fall back, not just
+one, so a Bash-driven change made while two chats were working in the same worktree is missed by
+both of their diffs. It is still on disk; `git status` shows it.
 
 ```lua
 diff = {
