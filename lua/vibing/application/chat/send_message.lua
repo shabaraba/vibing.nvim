@@ -167,7 +167,12 @@ function M.execute(adapter, callbacks, message, config)
     cwd = session_cwd,
     -- ツリースナップショット差分の帰属判定に使う。アダプタはこれをそのまま
     -- ActiveStreamRegistry に載せるだけで、git を呼ばない（`stream()` は同期I/Oを
-    -- 増やさない）。解決は git_snapshot 側でcwd単位にキャッシュされる
+    -- 増やさない）。
+    --
+    -- ここは `rev-parse --show-toplevel` 1回ぶんメインループを止める。architecture.md の
+    -- 「Startup Cost」が同期I/Oに神経質なのに対して意図的に許容している箇所で、根拠は
+    -- 呼ばれる回数のほう: git_snapshot 側でcwd単位にキャッシュされるので、1つのcwdにつき
+    -- 最初の送信の1回だけで、以降はゼロ。setup() と違ってNeovim起動時には走らない
     _worktree_root = require("vibing.core.utils.git_snapshot").worktree_root(session_cwd),
     on_tool_use = function(tool, file_path, _command)
       if (tool == "Write" or tool == "Edit" or tool == "MultiEdit" or tool == "NotebookEdit") and file_path then

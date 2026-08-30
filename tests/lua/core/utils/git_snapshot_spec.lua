@@ -601,6 +601,91 @@ describe("git_snapshot", function()
     end)
   end)
 
+  describe("the list of tools that need no baseline", function()
+    -- NON_MUTATING_TOOLS は tools.lua の INTERNAL_TOOLS から「書き込みうる5つ」を
+    -- 引いて作られる。危ないのは足し忘れの方向で、tools.lua に書き込む内部ツールが
+    -- 増えたとき、ここを更新しないとそれは黙って「ベースライン不要」に落ちる ——
+    -- ツールは動き、diffは出ず、警告も出ない。この機構が消そうとしている失敗そのもの。
+    local Tools = require("vibing.core.constants.tools")
+
+    it("excludes only tools that tools.lua actually lists as internal", function()
+      -- INTERNAL_TOOLS に無い名前を除外リストに書いても何も起きない（除外する対象が
+      -- 無い）。害は無いが、書いた人は効いているつもりでいる
+      local internal = {}
+      for _, name in ipairs(Tools.INTERNAL_TOOLS) do
+        internal[name] = true
+      end
+
+      for name in pairs(GitSnapshot._INTERNAL_TOOLS_THAT_MUTATE) do
+        assert.is_true(
+          internal[name] == true,
+          name .. " is excluded as a mutating internal tool but tools.lua does not list it"
+        )
+      end
+    end)
+
+    it("treats every internal tool as non-mutating unless it is named as mutating", function()
+      for _, name in ipairs(Tools.INTERNAL_TOOLS) do
+        local expected = not GitSnapshot._INTERNAL_TOOLS_THAT_MUTATE[name]
+        assert.equals(
+          expected,
+          GitSnapshot._NON_MUTATING_TOOLS[name] == true,
+          name .. " is on the wrong side of the baseline decision"
+        )
+      end
+    end)
+
+    it("pins which internal tools are treated as needing no baseline", function()
+      -- 固定するのは **除外リストの側ではなく、判定の結果** の方。除外リストを固定しても
+      -- tools.lua が増えたときには落ちない（あちらが増えてもこちらは変わらない）ので、
+      -- 肝心の「書き込む内部ツールが足された」ケースを素通りさせてしまう。
+      -- tools.lua に内部ツールが増えると、それは既定でこの一覧に現れて、ここが落ちる。
+      -- 増やすこと自体は正しい変更なので、落ちたら「これは書き込むか?」を判断したうえで、
+      -- 書き込まないならこのリストに、書き込むなら INTERNAL_TOOLS_THAT_MUTATE に足す
+      local skipped = {}
+      for _, name in ipairs(Tools.INTERNAL_TOOLS) do
+        if GitSnapshot._NON_MUTATING_TOOLS[name] then
+          table.insert(skipped, name)
+        end
+      end
+      table.sort(skipped)
+
+      assert.same({
+        "EnterPlanMode",
+        "ExitPlanMode",
+        "Monitor",
+        "ReportFindings",
+        "ScheduleWakeup",
+        "SendMessage",
+        "TaskCreate",
+        "TaskGet",
+        "TaskList",
+        "TaskOutput",
+        "TaskStop",
+        "TaskUpdate",
+        "TodoWrite",
+        "ToolSearch",
+      }, skipped)
+    end)
+
+    it("still takes a baseline for a tool it has never heard of", function()
+      -- 除外リスト方式の本体。名前から性質が分からないMCPツールは書き込む側に倒れる
+      assert.is_nil(GitSnapshot._NON_MUTATING_TOOLS["mcp__something__unknown_tool"])
+
+      local handle = next_handle()
+      GitSnapshot.ensure_baseline(handle, repo, "mcp__something__unknown_tool")
+
+      assert.is_true(GitSnapshot.has_baseline(handle))
+    end)
+
+    it("takes no baseline for a read-only tool", function()
+      local handle = next_handle()
+      GitSnapshot.ensure_baseline(handle, repo, "Read")
+
+      assert.is_false(GitSnapshot.has_baseline(handle))
+    end)
+  end)
+
   describe("clear and sweep", function()
     it("removes the ref it created", function()
       local handle = next_handle()
