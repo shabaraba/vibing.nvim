@@ -27,7 +27,6 @@ local Fs = require("vibing.core.utils.fs")
 ---@field _session_allow table セッションレベルの許可リスト
 ---@field _session_deny table セッションレベルの拒否リスト
 ---@field _once_tools table? 一時許可/拒否ツールのトラッキング（次のメッセージでクリア）
----@field _mote_id string? mote用の永続ID（session_idとは独立）
 local ChatBuffer = {}
 ChatBuffer.__index = ChatBuffer
 
@@ -51,7 +50,6 @@ function ChatBuffer:new(config)
   instance._session_allow = {}
   instance._session_deny = {}
   instance._once_tools = nil
-  instance._mote_id = nil
   return instance
 end
 
@@ -150,10 +148,10 @@ end
 ---実行中かどうかはActiveStreamRegistryが唯一の答えを持っている: 全アダプタがstream開始で
 ---registerし、on_doneでunregisterする。
 ---
----既知の隙間: `diff.tool = "mote"` のときだけ、_handle_responseがmoteの非同期コールバックから
----`### Modified Files`と次の`## User`を書き終える前にidleを返す。応答本文はこの時点で完成して
----いるのでdiff脚注だけの話で、既定のgitパスは同期なので起きない。旧実装はこの窓も
----"responding"にできていたが、それは1ターン目以降ずっとtrueだったからで、代償が大きすぎた。
+---既知の隙間: _handle_responseは`### Modified Files`と次の`## User`をvim.schedule越しに
+---書くので、その1ティックのあいだidleを返す。応答本文はこの時点で完成しているのでdiff脚注
+---だけの話。旧実装はこの窓も"responding"にできていたが、それは1ターン目以降ずっとtrueだった
+---からで、代償が大きすぎた。
 ---@return boolean
 function ChatBuffer:is_responding()
   if self:is_sending() then
@@ -300,17 +298,6 @@ end
 ---@return string?
 function ChatBuffer:get_session_id()
   return self.session_id
-end
-
----mote用IDを取得（なければ生成して保存）
----session_idとは独立で、chat buffer生存期間中は同じIDを使用
----@return string
-function ChatBuffer:get_mote_id()
-  if not self._mote_id then
-    -- bufnrベースのIDを生成（同じバッファなら同じID）
-    self._mote_id = "_buffer_" .. tostring(self.buf)
-  end
-  return self._mote_id
 end
 
 ---会話履歴全体を抽出
@@ -568,9 +555,6 @@ function ChatBuffer:send_message()
     end,
     get_session_id = function()
       return self:get_session_id()
-    end,
-    get_mote_id = function()
-      return self:get_mote_id()
     end,
     update_session_id = function(session_id)
       return self:update_session_id(session_id)

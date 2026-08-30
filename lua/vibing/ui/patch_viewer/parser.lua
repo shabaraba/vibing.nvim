@@ -42,6 +42,8 @@ function M.extract_files(patch_content)
   local cwd_without_slash = cwd:sub(2)
 
   for line in patch_content:gmatch("[^\r\n]+") do
+    -- `diff --mote` は削除されたmote統合が書いたpatchのヘッダ。保存済みチャットの
+    -- `<!-- patch: ... -->` から今も開かれうるので、表示できるよう読めるままにしておく
     local file = line:match("^diff %-%-git a/(.+) b/") or line:match("^diff %-%-mote a/(.+) b/")
     if file then
       file = normalize_file_path(file, cwd, cwd_without_slash)
@@ -91,27 +93,11 @@ function M.extract_file_diff(patch_content, target_file)
   return table.concat(result, "\n")
 end
 
----request_diff.luaが生成したpatchの基準ディレクトリを抽出
+---vibing.nvimが生成したpatchの基準ディレクトリ（`git apply -p1` を回すcwd）を抽出
 ---@param patch_content string
 ---@return string?
 function M.extract_base_dir(patch_content)
   return patch_content:match("^# vibing%-request%-diff base: ([^\n]+)")
-end
-
----@param patch_content string
----@return string?
-function M.extract_snapshot_id(patch_content)
-  local first_line = patch_content:match("^([^\n]+)")
-  if not first_line then
-    return nil
-  end
-  return first_line:match("^Comparing (%w+) %-> working directory")
-end
-
----@param patch_path string
----@return string?
-function M.extract_context_dir(patch_path)
-  return patch_path:match("(.+)/patches/")
 end
 
 return M

@@ -3,31 +3,7 @@ local M = {}
 
 local parser = require("vibing.ui.patch_viewer.parser")
 
----@param context_dir string
----@param snapshot_id string
----@param file string
----@return boolean success
----@return string? error_message
-local function restore_file(context_dir, snapshot_id, file)
-  local Binary = require("vibing.core.utils.mote.binary")
-  local mote_bin = Binary.get_path()
-
-  local cmd = string.format(
-    "%s -d %s snap restore -f %s %s",
-    vim.fn.shellescape(mote_bin),
-    vim.fn.shellescape(context_dir),
-    vim.fn.shellescape(file),
-    vim.fn.shellescape(snapshot_id)
-  )
-
-  local result = vim.fn.system({ "sh", "-c", cmd })
-  if vim.v.shell_error ~= 0 then
-    return false, vim.trim(result or "")
-  end
-  return true, nil
-end
-
----request_diff形式のpatch（git形式）の1ファイル分diffをリバース適用して変更を取り消す
+---vibing.nvim形式のpatch（git形式）の1ファイル分diffをリバース適用して変更を取り消す
 ---@param base_dir string patch内パスの基準ディレクトリ
 ---@param file_diff string 対象ファイルのdiffセクション
 ---@return boolean success
@@ -56,10 +32,7 @@ local function reverse_apply(base_dir, file_diff)
 end
 
 ---@class Vibing.PatchViewer.RevertContext
----@field kind "mote"|"request_diff"
----@field snapshot_id string? moteスナップショットID（kind="mote"）
----@field context_dir string? moteコンテキストディレクトリ（kind="mote"）
----@field base_dir string? patch基準ディレクトリ（kind="request_diff"）
+---@field base_dir string patch基準ディレクトリ（`git apply -p1` を回すcwd）
 ---@field patch_content string
 
 ---@param patch_filename string
@@ -76,55 +49,40 @@ local function prepare_revert(patch_filename)
     return nil, "Failed to read patch file: " .. patch_filename
   end
 
-  -- request_diff形式（git形式patch + baseヘッダ）: git applyでリバース適用できる
+  -- git形式patch + baseヘッダ: git applyでリバース適用できる
   local base_dir = parser.extract_base_dir(patch_content)
   if base_dir then
-    return { kind = "request_diff", base_dir = base_dir, patch_content = patch_content }, nil
+    return { base_dir = base_dir, patch_content = patch_content }, nil
   end
 
-  -- mote形式: スナップショットからrestoreする
-  local snapshot_id = parser.extract_snapshot_id(patch_content)
-  if not snapshot_id then
-    return nil, "Failed to extract snapshot ID from patch"
-  end
-
-  local context_dir = parser.extract_context_dir(patch_path)
-  if not context_dir then
-    return nil, "Failed to extract context directory from patch path"
-  end
-
-  local Binary = require("vibing.core.utils.mote.binary")
-  if not Binary.is_available() then
-    return nil, "mote binary not found. Cannot revert patch."
-  end
-
-  return { kind = "mote", snapshot_id = snapshot_id, context_dir = context_dir, patch_content = patch_content }, nil
+  -- baseヘッダが無いのは、削除されたmote統合が書いた古いpatchファイル。中身はスナップショット
+  -- からのrestore前提で、逆適用できる自己完結したdiffではないので、明示的に断る
+  return nil,
+    "This patch was written by the removed mote integration and can no longer be reverted. "
+      .. "Use git to undo the change instead."
 end
 
----patch形式に応じて1ファイルを差し戻す
+---1ファイルを差し戻す
 ---@param ctx Vibing.PatchViewer.RevertContext
 ---@param file string
 ---@return boolean success
 ---@return string? error_message
 local function revert_one(ctx, file)
-  if ctx.kind == "request_diff" then
-    local file_diff = parser.extract_file_diff(ctx.patch_content, file)
-    if not file_diff then
-      return false, "No diff found in patch for: " .. file
-    end
-    return reverse_apply(ctx.base_dir, file_diff)
+  local file_diff = parser.extract_file_diff(ctx.patch_content, file)
+  if not file_diff then
+    return false, "No diff found in patch for: " .. file
   end
-  return restore_file(ctx.context_dir, ctx.snapshot_id, file)
+  return reverse_apply(ctx.base_dir, file_diff)
 end
 
 ---patch内の相対パスをバッファリロード用に解決する
----request_diff形式のpatchはbase_dir相対（git applyがcwd=base_dirで動くため）なので、
+---patch内のパスはbase_dir相対（git applyがcwd=base_dirで動くため）なので、
 ---Neovimのcwdと異なっていても正しいファイルをリロードできるよう絶対パスに直す
 ---@param ctx Vibing.PatchViewer.RevertContext
 ---@param file string patch内の相対パス
 ---@return string リロードに使うパス
 local function resolve_reload_path(ctx, file)
-  if ctx.kind == "request_diff" and ctx.base_dir and file:sub(1, 1) ~= "/" then
+  if ctx.base_dir and file:sub(1, 1) ~= "/" then
     return ctx.base_dir .. "/" .. file
   end
   return file

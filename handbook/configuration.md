@@ -70,10 +70,6 @@ require("vibing").setup({
   },
   diff = {
     tool = "auto",
-    mote = {
-      project = nil,
-      context_prefix = "vibing",
-    },
   },
   permissions = {
     mode = "acceptEdits",
@@ -549,32 +545,43 @@ keymaps = {
 
 ## Diff
 
-How diffs work by default (regardless of `diff.tool`): when a write tool (Write / Edit /
-MultiEdit / NotebookEdit) is approved, the target file's pre-edit content is backed up at
-PreToolUse-hook time; when the response completes, a git-style patch is generated in-process
-with `vim.diff()` (no external commands, no tree scanning) and stored under `.vibing/patches/`.
-`gd` on a changed file shows that patch first.
+Each turn that runs a tool capable of touching a file takes a snapshot of the working tree as a
+git tree object, and compares it against a second snapshot once the response completes. The
+resulting patch is stored under `.vibing/patches/` and listed in the chat as
+`### Modified Files`; `gd` on one of those paths shows it.
 
-`diff.tool` controls two things: whether mote snapshots are also taken, and what `gd` falls
-back to when no patch file exists for the file (e.g. changes made via Bash, or reopening an
-old chat):
+Because the comparison is between two states of the whole tree, it does not matter which tool
+made the change — **a `sed -i`, a `mv`, or a formatter run through Bash shows up the same way an
+`Edit` does**. Files matched by `.gitignore` are excluded (that is what keeps the cost down);
+one that a write tool reported anyway is still listed under `### Modified Files`, just without a
+patch section. vibing.nvim's own `.vibing/` directory is always excluded, whether or not you have
+git-ignored it — the chat files live there and would otherwise report themselves as your changes.
+
+Your index and working tree are never touched: the snapshot is built with `git add -A` against a
+temporary index (`GIT_INDEX_FILE`), so it takes no `.git/index.lock` and cannot collide with git
+commands you run yourself. Nothing is committed to any branch — the snapshot commits are held by
+a short-lived `refs/worktree/vibing/<request>` ref that is deleted as soon as the turn's patch is
+written.
+
+Two cases fall back to a lighter mechanism that only backs up the files a write tool named
+(so Bash-driven changes are missed there): a `working_dir` that is not inside a git repository,
+and a turn that overlaps another chat streaming in the same worktree — the tree is shared, so a
+snapshot could not tell whose change was whose.
 
 ```lua
 diff = {
-  tool = "auto",  -- "auto" / "git": no mote; fallback viewer is `git diff`
-                  --                 (these two currently behave the same)
-                  -- "mote": take mote snapshots and fall back to mote diff
-                  --         (catches Bash-driven file changes too)
-  mote = {
-    project = nil,              -- Project name (nil = auto-detect from git repo name)
-    context_prefix = "vibing",  -- Prefix for mote context names
-  },
+  tool = "auto",  -- "auto" / "git" — currently the same thing. Kept as a hook for
+                  -- future backends; `gd` falls back to a plain `git diff` when a
+                  -- turn has no patch file (e.g. an old chat reopened).
 }
 ```
 
-mote is **opt-in**: it runs only when `tool = "mote"` is set explicitly, or when a chat has
-`mote_dirs` in its frontmatter (added via `:VibingMoteDir` — those directories use mote
-regardless of `tool`). See [MIGRATION_MOTE.md](./MIGRATION_MOTE.md) for mote setup details.
+> **The opt-in `mote` backend has been removed**, along with `diff.mote`, `diff.tool = "mote"`,
+> the `mote_dirs` / `mote_cwd` frontmatter keys, `:VibingMoteDir` and `:VibingCleanMote`. The
+> snapshot path above covers what mote was there for (Bash-driven changes) without an external
+> binary or any setup step. Nothing stops working if you leave the old settings in place — each
+> warns once and is ignored, and `diff.tool = "mote"` behaves as `"git"` — so you can delete them
+> whenever you get to it.
 
 ## Permissions
 

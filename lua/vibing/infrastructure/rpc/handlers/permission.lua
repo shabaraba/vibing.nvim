@@ -264,9 +264,13 @@ function M.check_tool_permission(params)
   local result = can_use_tool_mod.can_use_tool(tool_name, tool_input, perm_config)
 
   if result.behavior == "allow" then
-    -- ツールが実行される前（=レスポンスを書いてフックのブロックを解く前）に、
-    -- 対象ファイルの「変更前」内容を退避する。リクエスト単位diffのベースラインになる。
-    -- 退避の失敗が許可判断を壊さないよう pcall で保護する。
+    -- ツールが実行される前（=レスポンスを書いてフックのブロックを解く前）に、リクエスト単位
+    -- diffのベースラインを取る。ここがターン中で唯一「まだ何も変更されていない」と保証できる
+    -- 地点なので、2つの経路のベースラインはどちらもここで作る。
+    --   - git snapshot（主経路）: ワーキングツリー全体を1つのツリーオブジェクトに固める。
+    --     Bash由来の変更もここに乗る。最初の「変更しうるツール」でだけ走る
+    --   - request_diff（フォールバック）: 対象ファイルの「変更前」内容だけを退避する
+    -- どちらの失敗も許可判断を壊さないよう pcall で保護する。
     pcall(function()
       local effective_handle = handle_id
       if not effective_handle then
@@ -275,6 +279,13 @@ function M.check_tool_permission(params)
         effective_handle = stream and stream.handle_id
       end
       require("vibing.core.utils.request_diff").capture(effective_handle, tool_name, tool_input)
+      -- 経路の選択は _handle_response が行う。ここは無条件にベースラインを取っておき、
+      -- 使われなければ clear() で捨てられるだけ
+      require("vibing.core.utils.git_snapshot").ensure_baseline(
+        effective_handle,
+        active_opts and active_opts.cwd or nil,
+        tool_name
+      )
     end)
     -- Only vibing-nvim's own MCP tools are granted outright; everything else defers to the CLI's
     -- gate, which is still where the user's own settings.json rules are enforced. The distinction

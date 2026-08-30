@@ -106,7 +106,7 @@ describe("send_message", function()
         end,
       }
 
-      SendMessage._handle_response(response, callbacks, adapter, {}, {}, {}, "do the thing")
+      SendMessage._handle_response(response, callbacks, adapter, {}, {}, "do the thing")
 
       vim.api.nvim_buf_delete(buf, { force = true })
       return chat_path
@@ -198,52 +198,44 @@ describe("send_message", function()
     end)
   end)
 
-  describe("_merge_modified_files", function()
-    it("resolves mote-relative paths against each batch's own base", function()
-      local result = SendMessage._merge_modified_files({
-        { base = "/repo/workspaces/app-a", files = { "src/main.lua" } },
-        { base = "/repo/workspaces/app-b", files = { "src/main.lua" } },
-      }, nil)
+  describe("_warn_removed_frontmatter", function()
+    local messages
+    local original_notify
 
-      -- 別mote_dirsの同名相対パスが衝突せず両方残ること
-      assert.same({
-        "/repo/workspaces/app-a/src/main.lua",
-        "/repo/workspaces/app-b/src/main.lua",
-      }, result)
+    before_each(function()
+      SendMessage._reset_removed_frontmatter_warnings()
+      messages = {}
+      original_notify = vim.notify
+      vim.notify = function(msg, level)
+        table.insert(messages, { msg = msg, level = level })
+      end
     end)
 
-    it("keeps absolute mote paths as-is", function()
-      local result = SendMessage._merge_modified_files({
-        { base = "/repo", files = { "/repo/src/a.lua", "src/b.lua" } },
-      }, nil)
-
-      assert.same({ "/repo/src/a.lua", "/repo/src/b.lua" }, result)
+    after_each(function()
+      vim.notify = original_notify
+      SendMessage._reset_removed_frontmatter_warnings()
     end)
 
-    it("unions tool-event paths and dedupes against mote results", function()
-      local result = SendMessage._merge_modified_files({
-        { base = "/repo", files = { "src/a.lua" } },
-      }, {
-        ["/repo/src/a.lua"] = true,
-        ["/repo/src/only-tool-event.lua"] = true,
-      })
+    it("says nothing for frontmatter that carries no removed key", function()
+      SendMessage._warn_removed_frontmatter({ model = "sonnet" })
 
-      assert.equals(2, #result)
-      assert.equals("/repo/src/a.lua", result[1])
-      assert.equals("/repo/src/only-tool-event.lua", result[2])
+      assert.equals(0, #messages)
     end)
 
-    it("handles empty inputs", function()
-      assert.same({}, SendMessage._merge_modified_files({}, nil))
-      assert.same({}, SendMessage._merge_modified_files(nil, {}))
+    it("names every removed key it found, once", function()
+      SendMessage._warn_removed_frontmatter({ mote_dirs = { "/repo" }, mote_cwd = "/repo" })
+      SendMessage._warn_removed_frontmatter({ mote_dirs = { "/repo" }, mote_cwd = "/repo" })
+
+      assert.equals(1, #messages)
+      assert.is_truthy(messages[1].msg:find("mote_dirs", 1, true))
+      assert.is_truthy(messages[1].msg:find("mote_cwd", 1, true))
+      assert.equals(vim.log.levels.WARN, messages[1].level)
     end)
 
-    it("strips trailing slashes from batch bases", function()
-      local result = SendMessage._merge_modified_files({
-        { base = "/repo/dir/", files = { "x.lua" } },
-      }, nil)
+    it("tolerates a missing frontmatter table", function()
+      SendMessage._warn_removed_frontmatter(nil)
 
-      assert.same({ "/repo/dir/x.lua" }, result)
+      assert.equals(0, #messages)
     end)
   end)
 end)

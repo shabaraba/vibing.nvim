@@ -27,7 +27,7 @@ function M.render(session, position, opts)
   local chat_buf = ChatBuffer:new(config.chat)
 
   -- M._current_buffer は「ユーザーが最後に開いたチャット」を指すシングルトンで、
-  -- :VibingCancel / :VibingToggleChat / :VibingMoteDir がカーソルがチャット外にあるときの
+  -- :VibingCancel / :VibingToggleChat がカーソルがチャット外にあるときの
   -- フォールバックに使う。nvim_chat_createのワーカーはユーザーが開いたものではないので
   -- ここを奪ってはいけない。奪うと:VibingCancelがユーザーの実行中リクエストではなくワーカーを
   -- 止め、backのワーカーにはウィンドウが無いのでis_open()がfalseになり:VibingToggleChatが
@@ -273,11 +273,6 @@ function M._apply_chat_buffer_settings(bufnr)
       end
       -- アタッチ済みバッファからクリーンアップ
       M._attached_buffers[bufnr] = nil
-      -- moteスナップショットIDをクリア（bufnr再利用時の誤ったベースライン防止）
-      local ok_sm, send_message = pcall(require, "vibing.application.chat.send_message")
-      if ok_sm then
-        send_message.cleanup_snapshots(bufnr)
-      end
     end,
     desc = "Cancel running CLI process on buffer unload",
   })

@@ -130,6 +130,7 @@ function CopilotCLI:stream(prompt, opts, on_chunk, on_done)
   -- (see rpc/handlers/permission.lua and ActiveStreamRegistry).
   ActiveStreamRegistry.register({
     handle_id = handle_id,
+    worktree_root = opts._worktree_root,
     adapter = self,
     on_insert_choices = opts.on_insert_choices,
     on_approval_required = opts.on_approval_required,

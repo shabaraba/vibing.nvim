@@ -18,22 +18,20 @@ end
 ---@param save_dir string
 ---@param config table
 ---@param unrenamed_only boolean|nil
----@param mode string|nil "delete" | "clean_mote" (default: "delete")
-function M.show(save_dir, config, unrenamed_only, mode)
+function M.show(save_dir, config, unrenamed_only)
   local has_telescope = pcall(require, "telescope")
   if not has_telescope then
-    M._show_native(save_dir, config, unrenamed_only, mode)
+    M._show_native(save_dir, config, unrenamed_only)
     return
   end
 
-  M._show_telescope(save_dir, config, unrenamed_only, mode)
+  M._show_telescope(save_dir, config, unrenamed_only)
 end
 
 ---@param save_dir string
 ---@param config table
 ---@param unrenamed_only boolean|nil
----@param mode string|nil
-function M._show_telescope(save_dir, config, unrenamed_only, mode)
+function M._show_telescope(save_dir, config, unrenamed_only)
   local pickers = require("telescope.pickers")
   local finders = require("telescope.finders")
   local conf = require("telescope.config").values
@@ -57,15 +55,8 @@ function M._show_telescope(save_dir, config, unrenamed_only, mode)
     },
   })
 
-  local is_clean_mote = mode == "clean_mote"
-  local prompt_title
-  if is_clean_mote then
-    prompt_title = unrenamed_only and "Clean Mote (Unrenamed) (<Tab> to select, <CR> to clean)"
-      or "Clean Mote Objects (<Tab> to select, <CR> to clean)"
-  else
-    prompt_title = unrenamed_only and "Delete Unrenamed Chats (<Tab> to select, <CR> to delete)"
-      or "Delete Chats (<Tab> to select, <CR> to delete)"
-  end
+  local prompt_title = unrenamed_only and "Delete Unrenamed Chats (<Tab> to select, <CR> to delete)"
+    or "Delete Chats (<Tab> to select, <CR> to delete)"
 
   local picker = pickers.new({}, {
     prompt_title = prompt_title,
@@ -122,11 +113,7 @@ function M._show_telescope(save_dir, config, unrenamed_only, mode)
 
         local selected_entities = vim.tbl_map(function(s) return s.value end, selections)
 
-        if is_clean_mote then
-          DeleteChatsUseCase.clean_mote_selected(selected_entities, config, notify_result)
-        else
-          DeleteChatsUseCase.delete_selected(selected_entities, config, notify_result)
-        end
+        DeleteChatsUseCase.delete_selected(selected_entities, config, notify_result)
       end)
 
       return true
@@ -139,9 +126,7 @@ end
 ---@param save_dir string
 ---@param config table
 ---@param unrenamed_only boolean|nil
----@param mode string|nil
-function M._show_native(save_dir, config, unrenamed_only, mode)
-  local is_clean_mote = mode == "clean_mote"
+function M._show_native(save_dir, config, unrenamed_only)
   local entities = unrenamed_only and DeleteChatsUseCase.list_unrenamed_files(save_dir)
     or DeleteChatsUseCase.list_all_files(save_dir)
 
@@ -150,12 +135,7 @@ function M._show_native(save_dir, config, unrenamed_only, mode)
     return
   end
 
-  local prompt
-  if is_clean_mote then
-    prompt = unrenamed_only and "Select unrenamed chat to clean mote:" or "Select chat to clean mote:"
-  else
-    prompt = unrenamed_only and "Select unrenamed chat to delete:" or "Select chat to delete:"
-  end
+  local prompt = unrenamed_only and "Select unrenamed chat to delete:" or "Select chat to delete:"
 
   vim.ui.select(entities, {
     prompt = prompt,
@@ -167,11 +147,7 @@ function M._show_native(save_dir, config, unrenamed_only, mode)
       return
     end
 
-    if is_clean_mote then
-      DeleteChatsUseCase.clean_mote_selected({ choice }, config, notify_result)
-    else
-      DeleteChatsUseCase.delete_selected({ choice }, config, notify_result)
-    end
+    DeleteChatsUseCase.delete_selected({ choice }, config, notify_result)
   end)
 end
 

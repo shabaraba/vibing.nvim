@@ -99,7 +99,6 @@ These are the seams that stop backend identity leaking into shared code. The rul
 
   The three are separate because backends disagree at three different levels, and the order
   matters — each step feeds the next:
-
   1. `normalize_payload` — the hook payload's own key names. Claude sends
      `tool_name`/`tool_input`; grok sends `toolName`/`toolInput`. Read straight through, the
      handler sees a nil tool name, so the two steps below get nothing to work on, every rule
@@ -136,7 +135,6 @@ These are the seams that stop backend identity leaking into shared code. The rul
 
   Three things about copilot's hook contract were captured from copilot 1.0.78 rather than read
   off its docs, and each one silently disables the gate if got wrong:
-
   1. **Its schema is not Claude's.** The event is lowercase `preToolUse`, the command goes under
      `bash`, and the timeout is `timeoutSec`. A matcher in a camelCase event is compiled as a
      regex, so Claude's `*` is rejected — `~/.copilot/logs` reports "Invalid matcher regex … hook
@@ -187,7 +185,7 @@ The tree is layered (`domain` / `application` / `infrastructure` / `presentation
 - `lua/vibing/config.lua` - Configuration defaults with type annotations
 - `lua/vibing/core/constants/` - `agents.lua` (backend registry), `tools.lua` (VALID_TOOLS),
   `modes.lua`, `worktree.lua`
-- `lua/vibing/core/utils/` - timestamp, language, git, mote, rate_limit, request_diff, ...
+- `lua/vibing/core/utils/` - timestamp, language, git, git_snapshot, rate_limit, request_diff, ...
 
 **Adapter (`lua/vibing/infrastructure/adapter/`):**
 
@@ -618,8 +616,9 @@ files keep working, but it is no longer completed and should not be written.
 
 **Working directory persistence:** The `working_dir` field stores the working directory as a relative
 path from git root (e.g., `.vibing/worktrees/<branch>`). When a chat is reopened, the agent
-and mote commands are executed in this directory. This ensures consistent file operations across
-sessions, even when using a worktree or a custom directory.
+runs in this directory, and it is also the worktree that the per-request diff snapshots. This
+ensures consistent file operations across sessions, even when using a worktree or a custom
+directory.
 
 `Git.resolve_working_dir` **bounds it to the git root**, symmetrically with `get_relative_path`:
 a value resolving outside (`../../etc`, or a symlink inside the repo pointing out of it) is
@@ -639,6 +638,81 @@ is `/private/tmp/...` for anything under `/tmp`, so comparing it against an unre
 would reject directories that are genuinely inside. The boundary is decided on the resolved
 form, but the string handed back is the plain `git_root .. "/" .. working_dir` — a chat whose
 `working_dir` goes through a symlink keeps seeing the path it wrote.
+
+## Per-Request Diffs
+
+Each turn's `### Modified Files` list and its `.vibing/patches/*.patch` come from **two git tree
+snapshots of the working tree**, taken before and after the turn and compared with `git diff`
+(`core/utils/git_snapshot.lua`).
+
+The point of that shape is what it does _not_ need to know: which tool made the change. The
+mechanism it replaced (`request_diff.lua`) backed up the file named in a Write/Edit tool's
+arguments, so `sed -i`, `mv`, a formatter, or anything else run through Bash produced no diff
+section at all — the change simply did not exist as far as the chat was concerned. This is #625.
+
+**The baseline is lazy, and that is what keeps it cheap.** It is taken at the PreToolUse hook for
+the first tool of the turn that could write, not at the start of the request, so a read-only turn
+spends no git process at all. The trigger is an **exclusion** list (`Read`/`Glob`/`Grep`/
+`WebFetch`/`WebSearch` plus the side-effect-free `INTERNAL_TOOLS`), not an allow list: an MCP tool
+whose name says nothing about its behaviour has to count as a writer, and the cost of guessing
+wrong that way is one wasted snapshot rather than a silently missing diff. Note that
+`INTERNAL_TOOLS` is _not_ a read-only list — it deliberately carries `NotebookEdit`, `Agent`/`Task`
+and `EnterWorktree` — so those are put back on the mutating side by name.
+
+**The user's index is never touched.** `git add -A` runs against a copy of the real index handed
+over as `GIT_INDEX_FILE`, so it takes a `<tmp>.lock` rather than `.git/index.lock` and cannot
+collide with a `git commit` the user runs mid-turn. The copy exists only to inherit the stat
+cache; a failed copy just means a slower first snapshot. `commit-tree` then wraps the tree, with
+`HEAD` as parent when there is one — a repository with no commits at all works, parentless.
+
+Three details are not interchangeable:
+
+- **Every git call takes the same `cwd`,** normalized through `rev-parse --show-toplevel` first.
+  `get_cwd()` can point at a subdirectory, and in a linked worktree the whole scope — which index,
+  which refs — is decided by that directory. `rev-parse --git-path index` is what finds the index
+  at all, since a worktree's lives under `.git/worktrees/<name>/`.
+- **`refs/worktree/vibing/<handle>` is a per-worktree namespace** (git 2.23+), so removing a
+  worktree takes its leftover refs with it instead of leaving them in the common ref store. The
+  ref is only a guard against a `git gc` landing mid-turn, so an `update-ref` that fails (an older
+  git) is swallowed and the turn proceeds — freshly written objects are not pruned by gc's
+  two-week default either way. `clear()` deletes the ref and nothing else: **no `git gc`**, since
+  the unreferenced objects are collected by the user's own `gc --auto` in due course.
+  `M.sweep()` at startup clears the whole namespace, which is safe because no request can be in
+  flight then.
+- **`-c core.quotePath=false`** on both diff calls, or a non-ASCII path comes back octal-escaped
+  and the file list stops matching the file on disk.
+- **`.vibing/` is excluded by pathspec**, not left to `.gitignore`. It holds the chat files and the
+  patches themselves and changes during the turn, so for anyone who has not git-ignored it every
+  turn would list the conversation log as its own output and put the whole transcript in the patch.
+  The removed mote integration excluded the same directory through `.moteignore`. The exclusion is
+  on the diff calls (where it matters) and on `git add -A` (where it saves hashing).
+
+**`request_diff.lua` stays** as the fallback for the two cases a snapshot cannot serve, decided in
+`_handle_response`:
+
+| Condition                                          | Path           |
+| -------------------------------------------------- | -------------- |
+| `working_dir` is not inside a git repository       | `request_diff` |
+| Another stream is active in the same worktree root | `request_diff` |
+| Otherwise                                          | `git_snapshot` |
+
+The second row is the one worth stating plainly: the tree is shared state, and nothing in it
+records _whose_ `sed -i` ran. A snapshot diff taken while a second chat is editing the same
+worktree would report that chat's work as this turn's. Missing the Bash-driven changes of one
+overlapping turn is the less wrong answer, so `ActiveStreamRegistry.find_other_active_for_worktree`
+decides it at response time. That predicate excludes by **handle_id**, not by `chat_bufnr` the way
+`find_other_active_for_session` does — codex and grok register no `chat_bufnr` (see `features.md`),
+so two of those would compare `nil` against `nil` and never see each other.
+
+The registry entry's `worktree_root` is resolved by `send_message` and passed down as
+`opts._worktree_root`; the adapters copy it into the entry the same way they copy `chat_bufnr`.
+Resolving it inside `stream()` instead would put a synchronous `git rev-parse` on every stream
+start, including the utility calls that produce no diff at all.
+
+**`.gitignore`d changes are invisible to the snapshot**, which is the trade that keeps `git add -A`
+cheap. A build artifact a Write tool reported anyway still reaches `### Modified Files` through
+`extra_paths` — listed, with no patch section, matching what `request_diff.generate` already did
+for files it could not back up.
 
 ## Concurrent Execution Support
 
@@ -832,12 +906,10 @@ one answer an orchestrator's polling loop can never recover from. So the second 
 `unregister` in `wrapped_on_done`, which makes the registry the only place that knows a run is
 over without also being the place that has to remember how to kill it.
 
-One window stays uncovered, and only under `diff.tool = "mote"`: `_handle_response` clears
-`_is_sending` before mote's asynchronous callbacks write `### Modified Files` and the next
-`## User`, so a poll landing in between reads `idle` while the buffer is still growing. The reply
-itself is already complete by then — what is pending is the diff footer — and the default git path
-finalizes synchronously, so it cannot happen there. The old boolean check did cover this window,
-but only as a side effect of being true forever.
+One window stays uncovered: `_handle_response` clears `_is_sending` before the `vim.schedule` that
+appends the next `## User`, so a poll landing in that tick reads `idle` while the buffer is still
+growing. The reply itself is already complete by then — what is pending is the diff footer. The old
+boolean check did cover this window, but only as a side effect of being true forever.
 
 The flag is opt-in rather than a new return shape because the MCP server installs at Claude
 Code's _user_ scope and updates independently of the plugin: without a parameter to key on, a

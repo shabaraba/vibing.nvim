@@ -18,6 +18,31 @@
   action picker/preview UI, and the `language.inline` configuration option have
   been removed. Use the chat interface (`:VibingChat`) for code assistance instead.
 
+### Changed
+
+- **Per-request diffs now come from a git tree snapshot, and mote is gone.** Every turn that runs a
+  tool capable of writing snapshots the working tree as a git tree object and diffs it against a
+  second snapshot when the response completes, so a change made through Bash (`sed -i`, `mv`, a
+  formatter) is now tracked exactly like an `Edit` — which the previous mechanism could not do,
+  because it only backed up the file a write tool named in its arguments. Your index and working
+  tree are never touched (`git add -A` runs against a temporary `GIT_INDEX_FILE`, so it takes no
+  `.git/index.lock`), and nothing is committed to a branch.
+
+  That covers what the opt-in mote backend was there for, without an external binary or a setup
+  step, so mote is removed along with `diff.mote`, `diff.tool = "mote"`, the `mote_dirs` /
+  `mote_cwd` frontmatter keys, `:VibingMoteDir`, `:VibingCleanMote`, and the bundled binaries and
+  their download step in `build.sh`. **Nothing you have configured stops working:**
+  `diff.tool = "mote"` warns once at `setup()` and behaves as `"git"`; `diff.mote` and the
+  frontmatter keys each warn once and are ignored; the two commands survive as stubs that explain
+  the replacement. Deleting the settings is all there is to do, whenever you get to it.
+
+  Two things do change in kind. `.gitignore`d files no longer appear in a patch (they are still
+  listed under `### Modified Files` when a write tool reported them; `.vibing/` itself is always
+  excluded, git-ignored or not), and a turn that overlaps another chat streaming in the same
+  worktree falls back to the old per-tool backups for that turn — the tree is shared, and a
+  snapshot cannot tell whose change was whose. Patch files written by mote can still be viewed but
+  no longer reverted; use git to undo those.
+
 ### Added
 
 - **Codex: warn when lightweight calls leave your configured provider.** On the first lightweight
