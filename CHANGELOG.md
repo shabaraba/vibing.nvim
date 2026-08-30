@@ -20,28 +20,33 @@
 
 ### Changed
 
-- **Per-request diffs now come from a git tree snapshot, and mote is gone.** Every turn that runs a
-  tool capable of writing snapshots the working tree as a git tree object and diffs it against a
-  second snapshot when the response completes, so a change made through Bash (`sed -i`, `mv`, a
-  formatter) is now tracked exactly like an `Edit` — which the previous mechanism could not do,
-  because it only backed up the file a write tool named in its arguments. Your index and working
+- **Per-request diffs now come from a git tree snapshot, and mote is gone.** In a git working
+  directory, a turn that runs a tool capable of writing snapshots the working tree as a git tree
+  object and diffs it against a second snapshot when the response completes, so a change made
+  through Bash (`sed -i`, `mv`, a formatter) is now tracked exactly like an `Edit` — which the
+  previous mechanism could not do, because it only backed up the file a write tool named in its
+  arguments. A turn that only reads takes no snapshot at all. Your index and working
   tree are never touched (`git add -A` runs against a temporary `GIT_INDEX_FILE`, so it takes no
   `.git/index.lock`), and nothing is committed to a branch.
 
   That covers what the opt-in mote backend was there for, without an external binary or a setup
   step, so mote is removed along with `diff.mote`, `diff.tool = "mote"`, the `mote_dirs` /
   `mote_cwd` frontmatter keys, `:VibingMoteDir`, `:VibingCleanMote`, and the bundled binaries and
-  their download step in `build.sh`. **Nothing you have configured stops working:**
-  `diff.tool = "mote"` warns once at `setup()` and behaves as `"git"`; `diff.mote` and the
-  frontmatter keys each warn once and are ignored; the two commands survive as stubs that explain
-  the replacement. Deleting the settings is all there is to do, whenever you get to it.
+  their download step in `build.sh`. The mote backend itself is of course gone, but **nothing errors
+  and nothing has to change before you upgrade:** a config carrying the old settings still loads,
+  warns once, and runs on the snapshot path instead — `diff.tool = "mote"` behaves as `"git"`,
+  while `diff.mote` and the frontmatter keys are ignored, and the two commands survive as stubs
+  that explain the replacement. Deleting the settings is all there is to do, whenever you get to
+  it.
 
-  Two things do change in kind. `.gitignore`d files no longer appear in a patch (they are still
-  listed under `### Modified Files` when a write tool reported them; `.vibing/` itself is always
-  excluded, git-ignored or not), and a turn that overlaps another chat streaming in the same
-  worktree falls back to the old per-tool backups for that turn — the tree is shared, and a
-  snapshot cannot tell whose change was whose. Patch files written by mote can still be viewed but
-  no longer reverted; use git to undo those.
+  Two things do change in kind. **Untracked** files matched by `.gitignore` no longer appear in a
+  patch — a tracked file still does, even if it matches an ignore pattern, since `.gitignore` only
+  governs what gets added — and an excluded one is still listed under `### Modified Files` when a
+  write tool reported it (`.vibing/` itself is always excluded, git-ignored or not). And two cases
+  keep the old per-tool backups for that turn: a working directory outside any git repository, and
+  a turn whose write window overlapped another chat's in the same worktree, where a shared tree
+  cannot say whose change was whose. Patch files written by mote can still be viewed but no longer
+  reverted; use git to undo those.
 
 ### Added
 

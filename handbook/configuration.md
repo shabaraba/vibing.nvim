@@ -546,15 +546,17 @@ keymaps = {
 ## Diff
 
 Each turn that runs a tool capable of touching a file takes a snapshot of the working tree as a
-git tree object, and compares it against a second snapshot once the response completes. The
+git tree object, and compares it against a second snapshot once the response completes. A turn
+that only reads takes no snapshot, and the two fallback cases below use a lighter mechanism. The
 resulting patch is stored under `.vibing/patches/` and listed in the chat as
 `### Modified Files`; `gd` on one of those paths shows it.
 
 Because the comparison is between two states of the whole tree, it does not matter which tool
 made the change — **a `sed -i`, a `mv`, or a formatter run through Bash shows up the same way an
-`Edit` does**. Files matched by `.gitignore` are excluded (that is what keeps the cost down);
-one that a write tool reported anyway is still listed under `### Modified Files`, just without a
-patch section. vibing.nvim's own `.vibing/` directory is always excluded, whether or not you have
+`Edit` does**. Untracked files matched by `.gitignore` are excluded (that is what keeps the cost
+down) — a file that is already tracked still shows its changes even if it matches an ignore
+pattern, because `.gitignore` only governs what gets added. An excluded file that a write tool
+reported anyway is still listed under `### Modified Files`, just without a patch section. vibing.nvim's own `.vibing/` directory is always excluded, whether or not you have
 git-ignored it — the chat files live there and would otherwise report themselves as your changes.
 
 Your index and working tree are never touched: the snapshot is built with `git add -A` against a

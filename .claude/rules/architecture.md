@@ -616,7 +616,7 @@ files keep working, but it is no longer completed and should not be written.
 
 **Working directory persistence:** The `working_dir` field stores the working directory as a relative
 path from git root (e.g., `.vibing/worktrees/<branch>`). When a chat is reopened, the agent
-runs in this directory, and it is also the worktree that the per-request diff snapshots. This
+runs in this directory, and it is also the worktree that per-request diff snapshots use. This
 ensures consistent file operations across sessions, even when using a worktree or a custom
 directory.
 
@@ -643,7 +643,8 @@ form, but the string handed back is the plain `git_root .. "/" .. working_dir` �
 
 Each turn's `### Modified Files` list and its `.vibing/patches/*.patch` come from **two git tree
 snapshots of the working tree**, taken before and after the turn and compared with `git diff`
-(`core/utils/git_snapshot.lua`).
+(`core/utils/git_snapshot.lua`). That is the main path, not the only one: a read-only turn takes
+no snapshot at all, and the two cases in the table below fall back to `request_diff.lua`.
 
 The point of that shape is what it does _not_ need to know: which tool made the change. The
 mechanism it replaced (`request_diff.lua`) backed up the file named in a Write/Edit tool's
@@ -750,10 +751,13 @@ The registry entry's `worktree_root` is resolved by `send_message` and passed do
 Resolving it inside `stream()` instead would put a synchronous `git rev-parse` on every stream
 start, including the utility calls that produce no diff at all.
 
-**`.gitignore`d changes are invisible to the snapshot**, which is the trade that keeps `git add -A`
-cheap. A build artifact a Write tool reported anyway still reaches `### Modified Files` through
-`extra_paths` — listed, with no patch section, matching what `request_diff.generate` already did
-for files it could not back up.
+**Changes to `.gitignore`d files are invisible to the snapshot only while they are untracked**,
+which is the trade that keeps `git add -A` cheap. The distinction is git's, not ours: `.gitignore`
+governs what gets _added_, so a file that is already tracked keeps showing its modifications even
+when it matches an ignore pattern — verified by committing a file with `add -f` and watching the
+next snapshot diff report it. A genuinely untracked build artifact a Write tool reported anyway
+still reaches `### Modified Files` through `extra_paths` — listed, with no patch section, matching
+what `request_diff.generate` already did for files it could not back up.
 
 ## Concurrent Execution Support
 
