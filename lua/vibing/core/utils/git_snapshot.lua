@@ -210,15 +210,29 @@ local function snapshot(root)
   return sha ~= "" and sha or nil
 end
 
----`refs/worktree/vibing/` 配下の残留refを消す
+---`refs/worktree/vibing/` 配下の **十分に古い** 残留refを消す
+---
+---年齢で足切りするのは、この名前空間がプロセス間で共有されているから。`sessions` も
+---`ActiveStreamRegistry` もNeovimプロセス内のテーブルなので、同じworktreeを別のNeovimが
+---開いていても、その実行中のリクエストのrefはこちらからは「見覚えのないref」にしか見えない。
+---無条件に消すと、走っている他プロセスのgc保険を外してしまう。
+---
+---実行中のrefは作られてから数秒〜数分で、クラッシュの置き土産はセッションを跨いだ古いもの、
+---という差で分ける。閾値はメモリ上のセッションTTLと同じにしてある。読めない日付は消さない
+---（安全側）。
 ---@param root string worktreeルート
 local function sweep_refs(root)
-  local listed = git({ "git", "for-each-ref", "--format=%(refname)", REF_PREFIX }, root)
+  local listed = git(
+    { "git", "for-each-ref", "--format=%(refname) %(committerdate:unix)", REF_PREFIX },
+    root
+  )
   if not listed or listed.code ~= 0 then
     return
   end
-  for _, ref in ipairs(vim.split(listed.stdout or "", "\n", { trimempty = true })) do
-    if ref:sub(1, #REF_PREFIX) == REF_PREFIX then
+  local now = os.time()
+  for _, line in ipairs(vim.split(listed.stdout or "", "\n", { trimempty = true })) do
+    local ref, created = line:match("^(%S+)%s+(%d+)$")
+    if ref and ref:sub(1, #REF_PREFIX) == REF_PREFIX and now - tonumber(created) > SESSION_TTL_SEC then
       git({ "git", "update-ref", "-d", ref }, root)
     end
   end
@@ -268,9 +282,10 @@ function M.ensure_baseline(handle_id, cwd, tool_name)
   -- `.vibing/worktrees/<branch>/` で走るのが普通の運用なので、そこでクラッシュした分のrefは
   -- 起動時掃除では永久に残る。そのworktreeで最初にベースラインを取るときに一度だけ掃除する。
   --
-  -- 実行中のrefを巻き込まないかは、フラグを立てる順序で保証している。掃除が走るのはその
-  -- rootで **最初の** ベースラインのときだけで、その時点でそのrootに生きているセッションは
-  -- 定義上まだ1つも無い（2つ目以降はここを素通りする）。だから残すべきrefの選別は要らない。
+  -- 掃除が走るのはそのrootで最初のベースラインのときだけ。同一プロセス内では、その時点で
+  -- そのrootに生きているセッションは定義上まだ無い（2つ目以降はここを素通りする）。
+  -- 別プロセスのNeovimが同じworktreeで走っている場合はその限りではないので、sweep_refs側で
+  -- 年齢による足切りをしている。
   if not swept_roots[root] then
     swept_roots[root] = true
     sweep_refs(root)

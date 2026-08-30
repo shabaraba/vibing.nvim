@@ -653,7 +653,10 @@ section at all — the change simply did not exist as far as the chat was concer
 
 **The baseline is lazy, and that is what keeps it cheap.** It is taken at the PreToolUse hook for
 the first tool of the turn that could write, not at the start of the request, so a read-only turn
-spends no git process at all. The trigger is an **exclusion** list (`Read`/`Glob`/`Grep`/
+takes no snapshot. It is not literally free of git: `send_message` resolves `_worktree_root` when
+it builds the request's opts, which is one `rev-parse --show-toplevel` — cached per working
+directory, so it costs one process the first time a chat sends in a given directory and nothing
+after that. The trigger is an **exclusion** list (`Read`/`Glob`/`Grep`/
 `WebFetch`/`WebSearch` plus the side-effect-free `INTERNAL_TOOLS`), not an allow list: an MCP tool
 whose name says nothing about its behaviour has to count as a writer, and the cost of guessing
 wrong that way is one wasted snapshot rather than a silently missing diff. Note that
@@ -686,9 +689,10 @@ Three details are not interchangeable:
   `.git/worktrees/<name>/refs/`). So `M.sweep()` at startup only reaches Neovim's own cwd, and a
   crash during a turn in `.vibing/worktrees/<branch>/` — the project's normal way of working —
   would leave its ref there forever. `ensure_baseline` therefore sweeps a root the first time it
-  takes a baseline in it. Nothing live needs excluding, and the ordering is what guarantees it:
-  the sweep runs only on the _first_ baseline for a root, when by definition no session on that
-  root exists yet.
+  takes a baseline in it, deleting only refs older than the session TTL — the ordering rules out a
+  live ref of this process (the sweep runs on a root's _first_ baseline, when no session on that
+  root exists yet), and the age bound rules out a live one belonging to another Neovim, which no
+  in-memory table can see.
 - **Untracked files that the turn never touched are still hashed into the object database**, since
   that is what `git add -A` does and what makes a new file show up as a diff at all. They are
   written to the local `.git/objects` only, become unreachable the moment `clear()` drops the ref,
@@ -742,7 +746,23 @@ what makes the fallback symmetric — the second turn still knows, long after th
 
 `ActiveStreamRegistry.find_other_active_for_worktree` is kept as the second signal, for a stream
 that is writing without a session of its own to be seen through (a `write-tree` that failed on a
-conflicted index, say). It excludes by **handle_id**, not by `chat_bufnr` the way
+conflicted index, say).
+
+**Both signals are process-local, so two Neovim instances on one worktree are out of scope.**
+`sessions` and the registry are module tables, so a chat running in a second Neovim is invisible to
+the first: both would take the snapshot path and each would report the other's Bash-driven changes
+as its own. That is the same misattribution the in-process guard exists to prevent, across a
+boundary neither table spans. Accepted rather than solved — closing it needs a cross-process signal
+with liveness, which is a design of its own: the ref namespace is shared, but a ref alone cannot
+tell a live request in another process from a crash leftover, so it would have to carry the owning
+pid and be checked against it the way the instance registry filters. Multiple instances are a
+normal setup here, so this is worth revisiting rather than forgetting.
+
+The shared namespace is also why `sweep_refs` deletes only refs older than the session TTL. A sweep
+that took "no request can be in flight" literally — true within one process, since it runs on a
+root's first baseline — would drop a _concurrently running other Neovim's_ ref. Only the gc guard
+is lost, but there is no reason to spend it: a live ref is seconds old and a crash leftover is from
+an earlier session, so age separates them. It excludes by **handle_id**, not by `chat_bufnr` the way
 `find_other_active_for_session` does — codex and grok register no `chat_bufnr` (see `features.md`),
 so two of those would compare `nil` against `nil` and never see each other.
 

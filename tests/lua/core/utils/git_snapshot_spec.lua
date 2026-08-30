@@ -473,16 +473,48 @@ describe("git_snapshot", function()
       assert.is_false(GitSnapshot.has_baseline(handle))
     end)
 
-    it("deletes every leftover ref under the namespace", function()
-      GitSnapshot.ensure_baseline(next_handle(), repo, "Bash")
-      GitSnapshot.ensure_baseline(next_handle(), repo, "Bash")
-      -- クラッシュ相当: clear() を経ずにセッション状態だけ失う
-      GitSnapshot._reset()
-      assert.is_truthy(git_ok({ "for-each-ref", "--format=%(refname)", GitSnapshot._REF_PREFIX }):find("vibing"))
+    ---前のセッションが残していった想定の、十分に古いrefを作る
+    ---@param name string
+    local function stale_ref(name, cwd)
+      local old_date = os.date("!%Y-%m-%dT%H:%M:%S", os.time() - 7 * 24 * 3600) .. "+0000"
+      local commit = vim
+        .system({ "git", "commit-tree", "HEAD^{tree}", "-m", "stale" }, {
+          cwd = cwd or repo,
+          text = true,
+          env = {
+            GIT_AUTHOR_NAME = "t",
+            GIT_AUTHOR_EMAIL = "t@l",
+            GIT_COMMITTER_NAME = "t",
+            GIT_COMMITTER_EMAIL = "t@l",
+            GIT_COMMITTER_DATE = old_date,
+            GIT_AUTHOR_DATE = old_date,
+          },
+        })
+        :wait()
+      assert.equals(0, commit.code, commit.stderr)
+      git_ok({ "update-ref", GitSnapshot._REF_PREFIX .. name, vim.trim(commit.stdout) }, cwd)
+    end
+
+    it("deletes leftover refs from an earlier session", function()
+      stale_ref("crashed1")
+      stale_ref("crashed2")
+      assert.is_truthy(git_ok({ "for-each-ref", "--format=%(refname)", GitSnapshot._REF_PREFIX }):find("crashed"))
 
       GitSnapshot.sweep(repo)
 
       assert.equals("", git_ok({ "for-each-ref", "--format=%(refname)", GitSnapshot._REF_PREFIX }))
+    end)
+
+    it("leaves a fresh ref alone, which may belong to another Neovim process", function()
+      -- この名前空間はプロセス間で共有されている。`sessions` はプロセスローカルなので、
+      -- 別プロセスの実行中のrefは「見覚えのないref」としか見えない。年齢で守る
+      GitSnapshot.ensure_baseline(next_handle(), repo, "Bash")
+      git_ok({ "update-ref", GitSnapshot._REF_PREFIX .. "otherprocess", "HEAD" })
+
+      GitSnapshot.sweep(repo)
+
+      local remaining = git_ok({ "for-each-ref", "--format=%(refname)", GitSnapshot._REF_PREFIX })
+      assert.is_truthy(remaining:find("otherprocess", 1, true))
     end)
 
     it("sweeps a linked worktree that startup cleanup cannot reach", function()
@@ -491,7 +523,7 @@ describe("git_snapshot", function()
       -- 次にベースラインを取るときに掃除される必要がある
       local wt = repo .. "-wt"
       git_ok({ "worktree", "add", "-q", "-b", "side", wt })
-      git_ok({ "update-ref", GitSnapshot._REF_PREFIX .. "crashed", "HEAD" }, wt)
+      stale_ref("crashed", wt)
 
       -- メインworktreeからのsweepでは届かないことをまず確認する
       GitSnapshot.sweep(repo)
