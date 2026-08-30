@@ -210,6 +210,40 @@ local function snapshot(root)
   return sha ~= "" and sha or nil
 end
 
+---同じworktreeで、自分以外の生きているNeovimインスタンスが動いているか
+---
+---`sessions` はプロセスローカルなので、他プロセスの実行中のrefは「見覚えのないref」にしか
+---見えない。インスタンスレジストリはPIDの生死でフィルタ済みの一覧を持っており、
+---`hook_cleanup.cleanup_stale_dirs` が他プロセスの `.req`/`.res` を消さないために使っている
+---のと同じ仕組み。掃除もそれに倣う。
+---
+---レジストリが持つのは各インスタンスのNeovim cwdなので、そのインスタンスがどのworktreeで
+---チャットを走らせているかまでは分からない。取りこぼす方向（別のworking_dirで動いている）は
+---sweep_refsの年齢足切りが受け止め、余分に一致する方向は掃除を見送るだけで無害。
+---
+---core が infrastructure を参照するのは層としては逆向きだが、`diff_selector` などに先例が
+---あり、遅延requireで依存を局所化する形も同じ。
+---@param root string
+---@return boolean
+local function other_live_instance_on(root)
+  local ok, registry = pcall(require, "vibing.infrastructure.rpc.registry")
+  if not ok then
+    return false
+  end
+  local listed_ok, instances = pcall(registry.list)
+  if not listed_ok or type(instances) ~= "table" then
+    return false
+  end
+
+  local self_pid = vim.fn.getpid()
+  for _, instance in ipairs(instances) do
+    if instance.pid ~= self_pid and instance.cwd and M.worktree_root(instance.cwd) == root then
+      return true
+    end
+  end
+  return false
+end
+
 ---`refs/worktree/vibing/` 配下の **十分に古い** 残留refを消す
 ---
 ---年齢で足切りするのは、この名前空間がプロセス間で共有されているから。`sessions` も
@@ -222,6 +256,13 @@ end
 ---（安全側）。
 ---@param root string worktreeルート
 local function sweep_refs(root)
+  -- 他プロセスが同じworktreeで動いているなら、掃除そのものを見送る。年齢足切りだけだと、
+  -- 1時間を超える長いターン（エージェントの長時間作業では普通に起きる）のrefが「古い」側に
+  -- 回ってしまい、実行中なのに消される
+  if other_live_instance_on(root) then
+    return
+  end
+
   local listed = git(
     { "git", "for-each-ref", "--format=%(refname) %(committerdate:unix)", REF_PREFIX },
     root

@@ -545,6 +545,48 @@ describe("git_snapshot", function()
       assert.equals("", git_ok({ "for-each-ref", "--format=%(refname)", GitSnapshot._REF_PREFIX }))
     end)
 
+    it("skips the sweep entirely while another Neovim is live in the same worktree", function()
+      -- 年齢足切りだけだと、1時間を超える長いターンのrefが「古い」側に回って消される。
+      -- インスタンスレジストリ（PIDの生死でフィルタ済み）を hook_cleanup と同じように見る
+      local instances_dir = vim.fn.tempname()
+      vim.fn.mkdir(instances_dir, "p")
+      local original = vim.env.VIBING_INSTANCES_DIR
+      vim.env.VIBING_INSTANCES_DIR = instances_dir
+      -- pid 1 は常に生きている。cwd を同じworktreeにして「別インスタンスが稼働中」を作る
+      vim.fn.writefile(
+        { vim.json.encode({ pid = 1, port = 9999, cwd = repo, started_at = os.time() }) },
+        instances_dir .. "/1.json"
+      )
+      stale_ref("crashed")
+
+      GitSnapshot.sweep(repo)
+
+      local remaining = git_ok({ "for-each-ref", "--format=%(refname)", GitSnapshot._REF_PREFIX })
+      assert.is_truthy(remaining:find("crashed", 1, true))
+
+      vim.env.VIBING_INSTANCES_DIR = original
+      vim.fn.delete(instances_dir, "rf")
+    end)
+
+    it("still sweeps when the only registered instance is this one", function()
+      local instances_dir = vim.fn.tempname()
+      vim.fn.mkdir(instances_dir, "p")
+      local original = vim.env.VIBING_INSTANCES_DIR
+      vim.env.VIBING_INSTANCES_DIR = instances_dir
+      vim.fn.writefile(
+        { vim.json.encode({ pid = vim.fn.getpid(), port = 9999, cwd = repo, started_at = os.time() }) },
+        instances_dir .. "/" .. vim.fn.getpid() .. ".json"
+      )
+      stale_ref("crashed")
+
+      GitSnapshot.sweep(repo)
+
+      assert.equals("", git_ok({ "for-each-ref", "--format=%(refname)", GitSnapshot._REF_PREFIX }))
+
+      vim.env.VIBING_INSTANCES_DIR = original
+      vim.fn.delete(instances_dir, "rf")
+    end)
+
     it("leaves a fresh ref alone, which may belong to another Neovim process", function()
       -- この名前空間はプロセス間で共有されている。`sessions` はプロセスローカルなので、
       -- 別プロセスの実行中のrefは「見覚えのないref」としか見えない。年齢で守る

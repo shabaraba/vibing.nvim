@@ -673,6 +673,11 @@ snapshot rather than a broken one. `commit-tree` then wraps the tree, with
 
 Three details are not interchangeable:
 
+- **The git calls block the main loop** (`vim.system():wait()`) — the baseline inside the
+  synchronous PreToolUse hook, the diff at response time. Measured at 20ms per `git add -A` on a
+  9k-file tree and 63ms on an 80k one, which is why it is accepted; but the cost scales with the
+  tree, so a very large monorepo or a worktree on a network filesystem is where this would be felt
+  first and is worth revisiting if anyone reports it.
 - **Every git call takes the same `cwd`,** normalized through `rev-parse --show-toplevel` first.
   `get_cwd()` can point at a subdirectory, and in a linked worktree the whole scope — which index,
   which refs — is decided by that directory. `rev-parse --git-path index` is what finds the index
@@ -757,25 +762,29 @@ what makes the fallback symmetric — the second turn still knows, long after th
 
 `ActiveStreamRegistry.find_other_active_for_worktree` is kept as the second signal, for a stream
 that is writing without a session of its own to be seen through (a `write-tree` that failed on a
-conflicted index, say).
-
-**Both signals are process-local, so two Neovim instances on one worktree are out of scope.**
-`sessions` and the registry are module tables, so a chat running in a second Neovim is invisible to
-the first: both would take the snapshot path and each would report the other's Bash-driven changes
-as its own. That is the same misattribution the in-process guard exists to prevent, across a
-boundary neither table spans. Accepted rather than solved — closing it needs a cross-process signal
-with liveness, which is a design of its own: the ref namespace is shared, but a ref alone cannot
-tell a live request in another process from a crash leftover, so it would have to carry the owning
-pid and be checked against it the way the instance registry filters. Multiple instances are a
-normal setup here, so this is worth revisiting rather than forgetting.
-
-The shared namespace is also why `sweep_refs` deletes only refs older than the session TTL. A sweep
-that took "no request can be in flight" literally — true within one process, since it runs on a
-root's first baseline — would drop a _concurrently running other Neovim's_ ref. Only the gc guard
-is lost, but there is no reason to spend it: a live ref is seconds old and a crash leftover is from
-an earlier session, so age separates them. It excludes by **handle_id**, not by `chat_bufnr` the way
+conflicted index, say). It excludes by **handle_id**, not by `chat_bufnr` the way
 `find_other_active_for_session` does — codex and grok register no `chat_bufnr` (see `features.md`),
 so two of those would compare `nil` against `nil` and never see each other.
+
+**Both overlap signals are process-local, so two Neovim instances on one worktree are out of
+scope.** `sessions` and `ActiveStreamRegistry` are module tables, so a chat running in a second
+Neovim is invisible to the first: both would take the snapshot path and each would report the
+other's Bash-driven changes as its own. That is the same misattribution the in-process guard exists
+to prevent, across a boundary neither table spans. Accepted rather than solved — a _turn_ has no
+cross-process identity to compare, so telling "another process is mid-turn in my window" from "a
+process crashed here earlier" would mean writing that identity down somewhere, which is a design of
+its own. Multiple instances are a normal setup here, so this is worth revisiting rather than
+forgetting.
+
+**Ref cleanup does cross that boundary, and has to**, because deleting a ref another process is
+relying on is an action rather than a misreading. `sweep_refs` guards twice. It first asks the
+instance registry whether another live Neovim sits on this root and skips the sweep entirely if so
+— the same PID-filtered `registry.list()` that `hook_cleanup` uses to avoid deleting another
+process's in-flight `.req`/`.res`. What the registry knows is each instance's own cwd, not which
+worktree its chats run in, so it can under-match; the second guard is age, deleting only refs older
+than the session TTL. Age alone was not enough — a turn running longer than the TTL, ordinary for a
+long agent session, would age into the "leftover" bucket while still live — and the registry alone
+is not either, hence both.
 
 The registry entry's `worktree_root` is resolved by `send_message` and passed down as
 `opts._worktree_root`; the adapters copy it into the entry the same way they copy `chat_bufnr`.
