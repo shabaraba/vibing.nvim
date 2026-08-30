@@ -75,8 +75,10 @@ function M.setup(opts)
     end)
   end)
 
-  -- 前回クラッシュ・強制終了で残ったリクエストdiffのrefを掃除する。起動時点でアクティブな
-  -- リクエストは存在しないので、refs/worktree/vibing/ 配下は無条件に消してよい。
+  -- 前回クラッシュ・強制終了で残ったリクエストdiffのrefを掃除する。ここで「アクティブな
+  -- リクエストは無い」と言えるのは自プロセスについてだけで、同じworktreeを別のNeovimが既に
+  -- 開いていることはある。消してよいrefの判断は sweep 側（sweep_refs）が持っているので、
+  -- ここは「起動したので声をかける」以上のことはしない。
   -- git呼び出しを2つ伴うので、hook cleanupと同じく起動パスからは外す。
   vim.schedule(function()
     pcall(function()
