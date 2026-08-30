@@ -339,6 +339,70 @@ describe("git_snapshot", function()
     end)
   end)
 
+  describe("overlapping requests in one worktree", function()
+    -- ツリーは共有状態なので、2つのターンの書き込みウィンドウが重なると、どちらの差分にも
+    -- 相手の変更が入る。重なりは **ベースラインを取った時点で** 記録する必要がある。差分生成時に
+    -- 「今まだ動いている相手がいるか」を見るだけだと、先に終わった側しか相手を見つけられず、
+    -- 相手の変更を実際に取り込んでしまう「後に終わった側」が素通りしてしまう。
+
+    it("marks both requests when their windows overlap", function()
+      local a = next_handle()
+      local b = next_handle()
+
+      GitSnapshot.ensure_baseline(a, repo, "Bash")
+      GitSnapshot.ensure_baseline(b, repo, "Bash")
+
+      assert.is_true(GitSnapshot.had_overlap(a))
+      assert.is_true(GitSnapshot.had_overlap(b))
+    end)
+
+    it("still reports the overlap to the request that finishes second", function()
+      -- これが一時点チェックだけでは落ちるケース。Aが先に差分を取り終えて片付いたあとでも、
+      -- Bのウィンドウ（Bのベースライン〜今）にはAの変更が入っているので、Bも倒れないといけない
+      local a = next_handle()
+      local b = next_handle()
+
+      GitSnapshot.ensure_baseline(a, repo, "Bash")
+      GitSnapshot.ensure_baseline(b, repo, "Bash")
+      GitSnapshot.clear(a)
+
+      assert.is_true(GitSnapshot.had_overlap(b))
+    end)
+
+    it("does not mark requests that ran one after the other", function()
+      local a = next_handle()
+      GitSnapshot.ensure_baseline(a, repo, "Bash")
+      GitSnapshot.clear(a)
+
+      local b = next_handle()
+      GitSnapshot.ensure_baseline(b, repo, "Bash")
+
+      assert.is_false(GitSnapshot.had_overlap(b))
+    end)
+
+    it("does not mark requests running in different worktrees", function()
+      local wt = repo .. "-wt"
+      git_ok({ "worktree", "add", "-q", "-b", "side", wt })
+
+      local a = next_handle()
+      local b = next_handle()
+      GitSnapshot.ensure_baseline(a, repo, "Bash")
+      GitSnapshot.ensure_baseline(b, wt, "Bash")
+
+      assert.is_false(GitSnapshot.had_overlap(a))
+      assert.is_false(GitSnapshot.had_overlap(b))
+
+      GitSnapshot.clear(a)
+      GitSnapshot.clear(b)
+      git_ok({ "worktree", "remove", "--force", wt })
+    end)
+
+    it("reports no overlap for a request that never took a baseline", function()
+      assert.is_false(GitSnapshot.had_overlap(next_handle()))
+      assert.is_false(GitSnapshot.had_overlap(nil))
+    end)
+  end)
+
   describe("clear and sweep", function()
     it("removes the ref it created", function()
       local handle = next_handle()

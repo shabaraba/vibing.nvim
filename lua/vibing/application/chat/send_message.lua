@@ -364,15 +364,25 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
 
   -- 経路の選択:
   --   1. PreToolUseでツリースナップショットのベースラインが取れていて、
-  --   2. そのworktreeで別のストリームが走っていない
+  --   2. そのworktreeで他のターンと重なっていない
   -- なら git snapshot（Bash由来の変更も拾える）。どちらか欠ければ request_diff に落ちる。
   --
   -- 2つ目の条件が要るのは、ツリーが共有状態だからで、同じworktreeで並行して走っている
   -- 別チャットのBash変更をこのターンの成果として書いてしまうため。取りこぼす方がまだ正確。
+  --
+  -- 重なりの判定は2つ必要で、片方だけでは足りない:
+  --   - `had_overlap` は、ベースラインを取った時点で開いていた他リクエストのウィンドウを
+  --     記録したもの。ここでレジストリを見るだけだと、先に終わった側しか相手を見つけられず、
+  --     後に終わった側（相手の変更を実際に取り込んでしまう側）が素通りする
+  --   - レジストリ照会は、ベースラインを取れなかった（スナップショット失敗など）ために
+  --     git_snapshot からは見えないストリームを拾う保険
   local snapshot_root = GitSnapshot.get_root(handle_id_for_diff)
   local overlapping = snapshot_root
-    and ActiveStreamRegistry.find_other_active_for_worktree(snapshot_root, handle_id_for_diff)
-  local use_snapshot = snapshot_root ~= nil and overlapping == nil
+    and (
+      GitSnapshot.had_overlap(handle_id_for_diff)
+      or ActiveStreamRegistry.find_other_active_for_worktree(snapshot_root, handle_id_for_diff) ~= nil
+    )
+  local use_snapshot = snapshot_root ~= nil and not overlapping
 
   -- ツールイベントが1つも無くてもスナップショットは差分を持ちうる（Bashで書き換えた場合）。
   -- ベースラインは「変更しうるツール」が動いたときにしか取られないので、読み取りだけの

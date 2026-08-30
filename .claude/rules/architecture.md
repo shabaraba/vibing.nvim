@@ -690,17 +690,33 @@ Three details are not interchangeable:
 **`request_diff.lua` stays** as the fallback for the two cases a snapshot cannot serve, decided in
 `_handle_response`:
 
-| Condition                                          | Path           |
-| -------------------------------------------------- | -------------- |
-| `working_dir` is not inside a git repository       | `request_diff` |
-| Another stream is active in the same worktree root | `request_diff` |
-| Otherwise                                          | `git_snapshot` |
+| Condition                                       | Path           |
+| ----------------------------------------------- | -------------- |
+| `working_dir` is not inside a git repository    | `request_diff` |
+| Another turn's write window overlapped this one | `request_diff` |
+| Otherwise                                       | `git_snapshot` |
 
 The second row is the one worth stating plainly: the tree is shared state, and nothing in it
-records _whose_ `sed -i` ran. A snapshot diff taken while a second chat is editing the same
-worktree would report that chat's work as this turn's. Missing the Bash-driven changes of one
-overlapping turn is the less wrong answer, so `ActiveStreamRegistry.find_other_active_for_worktree`
-decides it at response time. That predicate excludes by **handle_id**, not by `chat_bufnr` the way
+records _whose_ `sed -i` ran. A snapshot diff spanning a window in which a second chat was also
+editing the same worktree would report that chat's work as this turn's. Missing the Bash-driven
+changes of one overlapping turn is the less wrong answer.
+
+**The overlap has to be recorded when the baseline is taken, not asked about at response time**,
+and getting that wrong makes the guard protect the wrong side. A point-in-time
+`find_other_active_for_worktree` at response time is only answered honestly for the turn that
+finishes _first_ — by the time the second one asks, the first has already unregistered, so it reads
+"no overlap" and takes the snapshot path. But its window (its own baseline → its own diff) is
+precisely the one that contains the other turn's changes, so the misattribution lands on exactly
+the turn the check waved through. It is structural, not a race: it happens on every overlap.
+
+So `ensure_baseline` walks the sessions already open on the same root, marks itself and marks each
+of them (`had_overlap`). A session lives from its baseline to its `clear()`, which is the interval
+the diff covers, so two open sessions on one root _are_ two overlapping windows. Marking both is
+what makes the fallback symmetric — the second turn still knows, long after the first has gone.
+
+`ActiveStreamRegistry.find_other_active_for_worktree` is kept as the second signal, for a stream
+that is writing without a session of its own to be seen through (a `write-tree` that failed on a
+conflicted index, say). It excludes by **handle_id**, not by `chat_bufnr` the way
 `find_other_active_for_session` does — codex and grok register no `chat_bufnr` (see `features.md`),
 so two of those would compare `nil` against `nil` and never see each other.
 

@@ -77,6 +77,8 @@ end
 ---@field base string ベースラインのcommit SHA
 ---@field ref string|nil 作成できたrefの完全名（作成できなかった場合nil）
 ---@field created number セッション作成時刻（os.time）
+---@field overlapped boolean 自分の書き込みウィンドウ中に、同じworktreeで別のリクエストの
+---  ウィンドウが開いていたか（差分の帰属ができないので、記録した側は両方フォールバックする）
 
 ---@type table<string, Vibing.GitSnapshot.Session>
 local sessions = {}
@@ -256,7 +258,32 @@ function M.ensure_baseline(handle_id, cwd, tool_name)
     ref = nil
   end
 
-  sessions[handle_id] = { root = root, base = base, ref = ref, created = os.time() }
+  -- 「同じworktreeで別のリクエストが走っていたか」は、**この時点で** 記録しなければならない。
+  --
+  -- 判定を差分生成時のレジストリ照会だけに任せると、片側しか安全に倒れない。2つのターンが
+  -- 重なったとき、先に終わった方は相手をまだactiveとして見つけてフォールバックできるが、
+  -- 後に終わった方が見るころには相手はunregister済みで「重なりは無かった」と読んでしまう。
+  -- ところが後者のウィンドウ（自分のベースライン〜自分の差分生成）にはまさに相手の変更が
+  -- 入っているので、他人の`sed -i`を自分のターンの成果として書くのはむしろこちら側になる。
+  --
+  -- セッションはベースライン取得からclear()まで生きており、それは差分が対象とする区間そのもの
+  -- なので、ここで「今開いている同じrootのセッション」を見れば区間の重なりが分かる。見つけた
+  -- 相手にも印を付けることで、相手が先に終わっていても対称に倒れる。
+  local overlapped = false
+  for _, other in pairs(sessions) do
+    if other.root == root then
+      overlapped = true
+      other.overlapped = true
+    end
+  end
+
+  sessions[handle_id] = {
+    root = root,
+    base = base,
+    ref = ref,
+    created = os.time(),
+    overlapped = overlapped,
+  }
 end
 
 ---このリクエストでスナップショットのベースラインを取得済みか
@@ -264,6 +291,17 @@ end
 ---@return boolean
 function M.has_baseline(handle_id)
   return handle_id ~= nil and sessions[handle_id] ~= nil
+end
+
+---このリクエストの書き込みウィンドウが、同じworktreeの別のリクエストと重なっていたか
+---
+---trueなら、ツリー差分はどちらのターンの成果か区別できない。相手がすでに終わっていても
+---trueのままなので、重なった2つのターンは両方ともフォールバックする。
+---@param handle_id string|nil
+---@return boolean
+function M.had_overlap(handle_id)
+  local s = handle_id and sessions[handle_id] or nil
+  return s ~= nil and s.overlapped == true
 end
 
 ---ベースラインを取ったworktreeルート
