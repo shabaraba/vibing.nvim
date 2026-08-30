@@ -485,6 +485,44 @@ describe("git_snapshot", function()
       assert.equals("", git_ok({ "for-each-ref", "--format=%(refname)", GitSnapshot._REF_PREFIX }))
     end)
 
+    it("sweeps a linked worktree that startup cleanup cannot reach", function()
+      -- `refs/worktree/` はper-worktree名前空間なので、メインworktreeからの起動時sweepでは
+      -- linked worktree側のrefは列挙すらされない。そこでクラッシュした分は、そのworktreeで
+      -- 次にベースラインを取るときに掃除される必要がある
+      local wt = repo .. "-wt"
+      git_ok({ "worktree", "add", "-q", "-b", "side", wt })
+      git_ok({ "update-ref", GitSnapshot._REF_PREFIX .. "crashed", "HEAD" }, wt)
+
+      -- メインworktreeからのsweepでは届かないことをまず確認する
+      GitSnapshot.sweep(repo)
+      assert.equals(
+        GitSnapshot._REF_PREFIX .. "crashed",
+        git_ok({ "for-each-ref", "--format=%(refname)", GitSnapshot._REF_PREFIX }, wt)
+      )
+
+      local handle = next_handle()
+      GitSnapshot.ensure_baseline(handle, wt, "Bash")
+
+      local remaining = git_ok({ "for-each-ref", "--format=%(refname)", GitSnapshot._REF_PREFIX }, wt)
+      assert.is_nil(remaining:find("crashed", 1, true))
+
+      GitSnapshot.clear(handle)
+      git_ok({ "worktree", "remove", "--force", wt })
+    end)
+
+    it("does not re-sweep a worktree it has already swept", function()
+      -- 掃除はrootごとに1回。2つ目以降のリクエストがここを通ると、先行リクエストの生きたrefを
+      -- 消してしまう（この順序が、消してよいrefの選別を不要にしている）
+      local live = next_handle()
+      GitSnapshot.ensure_baseline(live, repo, "Bash")
+
+      local other = next_handle()
+      GitSnapshot.ensure_baseline(other, repo, "Bash")
+
+      assert.equals(0, git({ "rev-parse", "--verify", GitSnapshot._REF_PREFIX .. live }).code)
+      assert.equals(0, git({ "rev-parse", "--verify", GitSnapshot._REF_PREFIX .. other }).code)
+    end)
+
     it("is a no-op outside a git repository", function()
       local outside = vim.fn.tempname()
       vim.fn.mkdir(outside, "p")

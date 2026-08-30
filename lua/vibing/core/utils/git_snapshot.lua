@@ -88,6 +88,10 @@ local sessions = {}
 ---@type table<string, string>
 local root_cache = {}
 
+---残留ref掃除を済ませたworktreeルート（Neovimセッション内で1 rootにつき1回）
+---@type table<string, boolean>
+local swept_roots = {}
+
 ---@param cmd string[]
 ---@param root string
 ---@return vim.SystemCompleted|nil
@@ -206,6 +210,20 @@ local function snapshot(root)
   return sha ~= "" and sha or nil
 end
 
+---`refs/worktree/vibing/` 配下の残留refを消す
+---@param root string worktreeルート
+local function sweep_refs(root)
+  local listed = git({ "git", "for-each-ref", "--format=%(refname)", REF_PREFIX }, root)
+  if not listed or listed.code ~= 0 then
+    return
+  end
+  for _, ref in ipairs(vim.split(listed.stdout or "", "\n", { trimempty = true })) do
+    if ref:sub(1, #REF_PREFIX) == REF_PREFIX then
+      git({ "git", "update-ref", "-d", ref }, root)
+    end
+  end
+end
+
 ---TTL超過した放置セッションを破棄
 local function sweep_stale()
   local now = os.time()
@@ -243,6 +261,20 @@ function M.ensure_baseline(handle_id, cwd, tool_name)
   end
 
   sweep_stale()
+
+  -- `refs/worktree/` はgitのper-worktree名前空間なので、起動時の `M.sweep(nil)` はNeovimの
+  -- cwdがあるworktreeしか掃除できない（実測: メインworktreeで `for-each-ref` してもlinked
+  -- worktree側のrefは列挙されず、実体も `.git/worktrees/<name>/refs/` にある）。チャットは
+  -- `.vibing/worktrees/<branch>/` で走るのが普通の運用なので、そこでクラッシュした分のrefは
+  -- 起動時掃除では永久に残る。そのworktreeで最初にベースラインを取るときに一度だけ掃除する。
+  --
+  -- 実行中のrefを巻き込まないかは、フラグを立てる順序で保証している。掃除が走るのはその
+  -- rootで **最初の** ベースラインのときだけで、その時点でそのrootに生きているセッションは
+  -- 定義上まだ1つも無い（2つ目以降はここを素通りする）。だから残すべきrefの選別は要らない。
+  if not swept_roots[root] then
+    swept_roots[root] = true
+    sweep_refs(root)
+  end
 
   local base = snapshot(root)
   if not base then
@@ -449,21 +481,15 @@ function M.sweep(cwd)
   if not root then
     return
   end
-  local listed = git({ "git", "for-each-ref", "--format=%(refname)", REF_PREFIX }, root)
-  if not listed or listed.code ~= 0 then
-    return
-  end
-  for _, ref in ipairs(vim.split(listed.stdout or "", "\n", { trimempty = true })) do
-    if ref:sub(1, #REF_PREFIX) == REF_PREFIX then
-      git({ "git", "update-ref", "-d", ref }, root)
-    end
-  end
+  swept_roots[root] = true
+  sweep_refs(root)
 end
 
 ---テスト用: キャッシュとセッション状態を捨てる
 function M._reset()
   sessions = {}
   root_cache = {}
+  swept_roots = {}
 end
 
 M._REF_PREFIX = REF_PREFIX

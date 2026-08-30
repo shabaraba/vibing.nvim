@@ -679,8 +679,21 @@ Three details are not interchangeable:
   git) is swallowed and the turn proceeds — freshly written objects are not pruned by gc's
   two-week default either way. `clear()` deletes the ref and nothing else: **no `git gc`**, since
   the unreferenced objects are collected by the user's own `gc --auto` in due course.
-  `M.sweep()` at startup clears the whole namespace, which is safe because no request can be in
-  flight then.
+- **Leftover refs are swept per worktree, not once at startup**, and that is a consequence of the
+  namespace above rather than belt-and-braces: verified against git, a `for-each-ref` in the main
+  worktree does not enumerate a linked worktree's `refs/worktree/` at all (they live under
+  `.git/worktrees/<name>/refs/`). So `M.sweep()` at startup only reaches Neovim's own cwd, and a
+  crash during a turn in `.vibing/worktrees/<branch>/` — the project's normal way of working —
+  would leave its ref there forever. `ensure_baseline` therefore sweeps a root the first time it
+  takes a baseline in it. Nothing live needs excluding, and the ordering is what guarantees it:
+  the sweep runs only on the _first_ baseline for a root, when by definition no session on that
+  root exists yet.
+- **Untracked files that the turn never touched are still hashed into the object database**, since
+  that is what `git add -A` does and what makes a new file show up as a diff at all. They are
+  written to the local `.git/objects` only, become unreachable the moment `clear()` drops the ref,
+  and are never pushed — `git push` sends what is reachable from the refs being pushed, and a
+  snapshot commit is an ancestor of no branch. Accepted rather than solved: excluding untracked
+  files would cost new-file detection, which is half the point.
 - **`-c core.quotePath=false`** on both diff calls, or a non-ASCII path comes back octal-escaped
   and the file list stops matching the file on disk.
 - **The file list is a second `git diff --name-only`, not something parsed out of the patch.**
