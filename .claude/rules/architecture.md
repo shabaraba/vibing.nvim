@@ -697,10 +697,12 @@ Three details are not interchangeable:
   `.git/worktrees/<name>/refs/`). So `M.sweep()` at startup only reaches Neovim's own cwd, and a
   crash during a turn in `.vibing/worktrees/<branch>/` — the project's normal way of working —
   would leave its ref there forever. `ensure_baseline` therefore sweeps a root the first time it
-  takes a baseline in it, deleting only refs older than the session TTL — the ordering rules out a
-  live ref of this process (the sweep runs on a root's _first_ baseline, when no session on that
-  root exists yet), and the age bound rules out a live one belonging to another Neovim, which no
-  in-memory table can see.
+  takes a baseline in it, deleting only refs older than the session TTL. Only the first of its two
+  guards is exact: the ordering rules out a live ref of _this_ process, since the sweep runs on a
+  root's _first_ baseline, when no session on that root exists yet. Against another Neovim the pair
+  is best-effort — the registry can under-match (it knows an instance's own cwd, not which worktree
+  its chats run in) and a turn can outlive the TTL, which is precisely what `sweep_stale` had to
+  stop assuming. What is lost when they both miss is one gc guard, not the diff.
 - **Untracked files that the turn never touched are still hashed into the object database**, since
   that is what `git add -A` does and what makes a new file show up as a diff at all. They are
   written to the local `.git/objects` only, become unreachable the moment `clear()` drops the ref,
@@ -747,14 +749,19 @@ snapshot or diff that fails (a worktree removed mid-turn, a permission or disk e
 there. Clearing them first would mean a failure at that one point silently produced a turn with no
 diff and no warning, which is the failure this whole mechanism exists to remove.
 
-**`request_diff.lua` stays** as the fallback for the two cases a snapshot cannot serve, decided in
+**`request_diff.lua` stays** as the fallback for the cases a snapshot cannot serve, decided in
 `_handle_response`:
 
-| Condition                                       | Path           |
-| ----------------------------------------------- | -------------- |
-| `working_dir` is not inside a git repository    | `request_diff` |
-| Another turn's write window overlapped this one | `request_diff` |
-| Otherwise                                       | `git_snapshot` |
+| Condition                                        | Path                      |
+| ------------------------------------------------ | ------------------------- |
+| `working_dir` is not inside a git repository     | `request_diff`            |
+| Another turn's write window overlapped this one  | `request_diff`            |
+| The snapshot was attempted and could not be read | `request_diff`, else warn |
+| Otherwise                                        | `git_snapshot`            |
+
+The third row is the recovery path rather than a routing decision: the snapshot was the right
+mechanism and simply failed, so the turn takes whatever the fallback backed up — and when that is
+empty too (a Bash-only turn), it warns instead of rendering as a turn that changed nothing.
 
 The second row is the one worth stating plainly: the tree is shared state, and nothing in it
 records _whose_ `sed -i` ran. A snapshot diff spanning a window in which a second chat was also

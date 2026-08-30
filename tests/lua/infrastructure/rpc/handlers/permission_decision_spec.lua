@@ -97,15 +97,20 @@ describe("permission handler hook decision", function()
     -- フォールバック(request_diff)の例外が主経路(git snapshot)を道連れにする。
     -- `Fs.ensure_dir` は競合以外の失敗を再raiseする契約なので、capture が投げる経路は実在する。
     local originals = {}
+    -- 「元々ロードされていなかった」を表す番兵。`originals[name] = nil` はキーを作らないので、
+    -- そのまま入れるとpairsが飛ばし、投げるスタブがpackage.loadedに残り続ける。ここでスタブ
+    -- するモジュールは `_capture_baselines` の中で遅延requireされる＝このspecが先に走ると
+    -- 未ロードなので、実際に起こりうる
+    local ABSENT = {}
 
     local function stub(name, module)
-      originals[name] = package.loaded[name]
+      originals[name] = package.loaded[name] or ABSENT
       package.loaded[name] = module
     end
 
     after_each(function()
-      for name, module in pairs(originals) do
-        package.loaded[name] = module
+      for name, saved in pairs(originals) do
+        package.loaded[name] = saved ~= ABSENT and saved or nil
       end
       originals = {}
     end)

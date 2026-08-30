@@ -572,6 +572,11 @@ so a snapshot could not tell whose change was whose. **Both** overlapping turns 
 one, so a Bash-driven change made while two chats were working in the same worktree is missed by
 both of their diffs. It is still on disk; `git status` shows it.
 
+There is a third route, for failure rather than routing: if the snapshot itself cannot be read —
+a worktree removed mid-turn, a permission or disk error — the turn falls back to the same lighter
+mechanism, so a Bash-driven change may be missing from that turn's diff even in a git worktree.
+When the fallback has nothing either, vibing.nvim says so rather than showing an empty result.
+
 ```lua
 diff = {
   tool = "auto",  -- "auto" / "git" — currently the same thing. Kept as a hook for
