@@ -729,6 +729,17 @@ Three details are not interchangeable:
   The removed mote integration excluded the same directory through `.moteignore`. The exclusion is
   on the diff calls (where it matters) and on `git add -A` (where it saves hashing).
 
+**The two baselines are taken under separate `pcall`s** (`permission._capture_baselines`). Sharing
+one would let the fallback take the main path down with it: `request_diff.capture` builds its
+backup directory through `Fs.ensure_dir`, which re-raises everything that is not the
+concurrent-creation race, so a throw there would skip `ensure_baseline` and leave a turn with
+neither baseline. Both stay guarded, because neither may break the permission decision.
+
+**When both come up empty, the turn says so.** A snapshot that could not be read plus no tool
+event at all is indistinguishable from "nothing changed" — and for a turn that worked only through
+Bash, that is precisely the silent loss this mechanism exists to remove. `_handle_response` warns
+in that one case rather than appending an empty section.
+
 **The fallback's backups are dropped only once the snapshot path has actually produced output.**
 `generate` therefore reports "could not tell" separately from "nothing changed" — a second
 snapshot or diff that fails (a worktree removed mid-turn, a permission or disk error) returns

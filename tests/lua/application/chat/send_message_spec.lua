@@ -277,6 +277,96 @@ describe("send_message", function()
     end)
   end)
 
+  describe("a turn whose snapshot could not be read", function()
+    -- スナップショットが取れず、ツールイベントも無いターンは、退避先が両方とも空になる。
+    -- Bashだけで完結したターンではこれが起こりうる。そのままだと「変更なし」と区別が
+    -- つかない = Bash由来の変更が黙って消える。この仕組みが無くそうとしている失敗そのもの。
+    local original_git_snapshot
+    local messages
+    local original_notify
+
+    before_each(function()
+      messages = {}
+      original_notify = vim.notify
+      vim.notify = function(msg, level)
+        table.insert(messages, { msg = msg, level = level })
+      end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+      package.loaded["vibing.core.utils.git_snapshot"] = original_git_snapshot
+      original_git_snapshot = nil
+    end)
+
+    ---@param generate_ok boolean generate が差分を取れたと答えるか
+    ---@param root string|nil ベースラインを取れた worktree ルート（nilなら経路に乗らない）
+    local function run_turn(generate_ok, root)
+      original_git_snapshot = package.loaded["vibing.core.utils.git_snapshot"]
+      package.loaded["vibing.core.utils.git_snapshot"] = {
+        get_root = function()
+          return root
+        end,
+        had_overlap = function()
+          return false
+        end,
+        worktree_root = function()
+          return root
+        end,
+        generate = function()
+          return {}, {}, nil, generate_ok
+        end,
+        clear = function() end,
+      }
+
+      local buf = vim.api.nvim_create_buf(false, true)
+      local callbacks = {
+        clear_sending = function() end,
+        get_bufnr = function()
+          return buf
+        end,
+        get_session_id = function()
+          return nil
+        end,
+        update_session_id = function(_) end,
+        append_chunk = function(_) end,
+        add_user_section = function() end,
+        get_cwd = function()
+          return nil
+        end,
+      }
+      local adapter = {
+        supports = function(_, _feature)
+          return false
+        end,
+      }
+
+      SendMessage._handle_response({ content = "done" }, callbacks, adapter, {}, {}, "msg")
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end
+
+    it("warns rather than reading as an unchanged turn", function()
+      run_turn(false, "/repo")
+
+      assert.equals(1, #messages)
+      assert.equals(vim.log.levels.WARN, messages[1].level)
+      assert.is_truthy(messages[1].msg:find("snapshot failed", 1, true))
+    end)
+
+    it("stays quiet for a turn that genuinely changed nothing", function()
+      run_turn(true, "/repo")
+
+      assert.equals(0, #messages)
+    end)
+
+    it("stays quiet when the snapshot path was never taken", function()
+      -- git管理外のworking_dir。スナップショットを試してすらいないので、警告する材料が無い
+      run_turn(false, nil)
+
+      assert.equals(0, #messages)
+    end)
+  end)
+
   describe("_warn_removed_frontmatter", function()
     local messages
     local original_notify

@@ -399,20 +399,38 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   -- 先に捨ててしまうと、2回目のスナップショットやdiff呼び出しが失敗した（権限・ディスク・
   -- 途中でworktreeが消えた等）ときに退避先が無く、そのターンの変更が何の通知もなく消える。
   -- それはこの置き換えが無くそうとしている失敗そのものなので、順序を逆にはできない。
-  if use_snapshot and M._finalize_snapshot_diff(callbacks, handle_id_for_diff, modified_file_paths) then
-    RequestDiff.clear(handle_id_for_diff)
-  elseif has_file_changes then
-    -- フォールバック: PreToolUseフックで退避した変更前内容からpatchを生成。
-    -- 外部プロセスを使わず、触ったファイル数分のvim.diff()だけで完結する。
-    --
+  local handled = false
+  if use_snapshot then
+    handled = M._finalize_snapshot_diff(callbacks, handle_id_for_diff, modified_file_paths)
+    if handled then
+      RequestDiff.clear(handle_id_for_diff)
+    end
+  end
+
+  if not handled then
     -- ここのclearは、スナップショット経路を通らなかった場合（git管理外・重なり検出）のための
     -- もの。上のfinalizeがfalseを返して落ちてきた場合は既にclear済みだが、clearは冪等
     GitSnapshot.clear(handle_id_for_diff)
-    M._finalize_request_diff(callbacks, handle_id_for_diff, modified_file_paths)
-  else
-    RequestDiff.clear(handle_id_for_diff)
-    GitSnapshot.clear(handle_id_for_diff)
-    callbacks.add_user_section()
+
+    if has_file_changes then
+      -- フォールバック: PreToolUseフックで退避した変更前内容からpatchを生成。
+      -- 外部プロセスを使わず、触ったファイル数分のvim.diff()だけで完結する。
+      M._finalize_request_diff(callbacks, handle_id_for_diff, modified_file_paths)
+    else
+      -- スナップショットを試したのに取れず、しかもツールイベントも1つも無かった場合は、
+      -- 退避先が両方とも空になる。Bashだけで完結したターンではこれが起こりうる。そのときは
+      -- 「変更なし」と見分けがつかない — Bash由来の変更が黙って消えるという、この仕組みが
+      -- 無くそうとしている失敗そのものになる。頻度は低いが、黙るわけにはいかないので通知する。
+      if use_snapshot then
+        vim.notify(
+          "[vibing] Could not read this turn's changes: the working tree snapshot failed, "
+            .. "and no tool reported a file. Check `git status` — any changes are still on disk.",
+          vim.log.levels.WARN
+        )
+      end
+      RequestDiff.clear(handle_id_for_diff)
+      callbacks.add_user_section()
+    end
   end
 
   -- NOTE: clear_handle_id() は呼ばない
