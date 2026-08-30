@@ -662,7 +662,9 @@ and `EnterWorktree` — so those are put back on the mutating side by name.
 **The user's index is never touched.** `git add -A` runs against a copy of the real index handed
 over as `GIT_INDEX_FILE`, so it takes a `<tmp>.lock` rather than `.git/index.lock` and cannot
 collide with a `git commit` the user runs mid-turn. The copy exists only to inherit the stat
-cache; a failed copy just means a slower first snapshot. `commit-tree` then wraps the tree, with
+cache, and that is worth more than it looks: measured on an 80k-file tree, a snapshot takes 63ms
+with the copied index and 210ms starting from an empty one, so a failed copy means a slower first
+snapshot rather than a broken one. `commit-tree` then wraps the tree, with
 `HEAD` as parent when there is one — a repository with no commits at all works, parentless.
 
 Three details are not interchangeable:
@@ -681,6 +683,16 @@ Three details are not interchangeable:
   flight then.
 - **`-c core.quotePath=false`** on both diff calls, or a non-ASCII path comes back octal-escaped
   and the file list stops matching the file on disk.
+- **The file list is a second `git diff --name-only`, not something parsed out of the patch.**
+  Reading `+++ b/…` misses three kinds of change outright, because git emits no such line for
+  them — a binary file (`GIT binary patch`), a pure rename (`rename from`/`rename to`), or a
+  mode-only change (`old mode`/`new mode`); reading the `diff --git a/X b/Y` header instead cannot
+  split a path containing a space, which is the weakness `ui/patch_viewer/parser.lua`'s regex
+  already has. Both failures are the silent-omission shape this whole mechanism exists to remove.
+  The duplication is also small: this compares two **tree objects**, not the worktree, and
+  `--name-only` generates no hunks — measured on a 9k-file repository at 3ms for the patch and 2ms
+  here, against 20ms per `git add -A` (twice a turn). A turn whose patch came back empty skips it
+  entirely, since an empty patch already answers "no files changed".
 - **`.vibing/` is excluded by pathspec**, not left to `.gitignore`. It holds the chat files and the
   patches themselves and changes during the turn, so for anyone who has not git-ignored it every
   turn would list the conversation log as its own output and put the whole transcript in the patch.

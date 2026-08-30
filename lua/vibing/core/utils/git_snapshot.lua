@@ -353,18 +353,41 @@ function M.generate(handle_id, extra_paths)
         end
       end
 
-      local names = git({
-        "git",
-        "-c",
-        "core.quotePath=false",
-        "diff",
-        "--name-only",
-        s.base,
-        after,
-        "--",
-        ".",
-        EXCLUDE_VIBING_DIR,
-      }, s.root)
+      -- ファイル名を **patch本文から抜かずに** もう一度gitに聞くのは、意図的な2回目の呼び出し。
+      --
+      -- patch本文をparseする案は安く見えて成立しない。`+++ b/…` 行を読む方式は、バイナリ・
+      -- リネームのみ・モード変更のみの3種類で **その行自体が出力されない** ので、変更を静かに
+      -- 落とす（実測: `GIT binary patch` / `rename from|to` / `old mode|new mode` のいずれも
+      -- `---`/`+++` を伴わない）。`diff --git a/X b/Y` 行を読む方式は、パスに空白があると
+      -- 区切りが一意に決まらない（`ui/patch_viewer/parser.lua` の正規表現が持つ弱点そのもの）。
+      -- どちらも「Modified Files から静かに消える」という、この機構が無くそうとしている失敗の形。
+      --
+      -- そして重複コストは小さい。ここで比較しているのは2つの **ツリーオブジェクト** で、
+      -- ワーキングツリーの走査ではないうえ、`--name-only` はhunk生成をしない。9000ファイルの
+      -- リポジトリで patch本文が3ms、この呼び出しは2ms、対して支配項の `git add -A` は1回20ms
+      -- （ターンあたり2回）。全体の4%程度にしかならない。
+      --
+      -- 何も変わらなかったターンでは、そのpatch本文が空であること自体が「変更ファイル0件」の
+      -- 十分な答えなので、2回目は丸ごと省く。`Bash("ls")` のように「変更しうるツールが動いたが
+      -- 何も書かなかった」ターンは普通に起きる。
+      -- `cond and nil or git(...)` とは書けない。Luaでは真の枝がnilになると or 側が評価され、
+      -- 省いたつもりの呼び出しが必ず走る
+      local names = nil
+      local nothing_changed = patch_content == nil and diff ~= nil and diff.code == 0
+      if not nothing_changed then
+        names = git({
+          "git",
+          "-c",
+          "core.quotePath=false",
+          "diff",
+          "--name-only",
+          s.base,
+          after,
+          "--",
+          ".",
+          EXCLUDE_VIBING_DIR,
+        }, s.root)
+      end
       if names and names.code == 0 then
         for _, rel in ipairs(vim.split(names.stdout or "", "\n", { trimempty = true })) do
           if rel ~= "" and not seen[rel] then

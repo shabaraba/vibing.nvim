@@ -257,6 +257,64 @@ describe("git_snapshot", function()
     end)
   end)
 
+  describe("the file list", function()
+    -- 一覧は `git diff --name-only` に聞いており、patch本文からは抜いていない。ここはその
+    -- 判断を固定するためのケース: 下の3種類はpatchに `+++ b/…` 行を **持たない** ので、
+    -- 本文をparseする実装だと Modified Files から静かに消える。
+
+    it("lists a binary file, which has no +++ line in the patch", function()
+      write(repo .. "/img.bin", "\0\1before")
+      git_ok({ "add", "." })
+      git_ok({ "commit", "-q", "-m", "add binary" })
+
+      local turn = run_turn(function()
+        write(repo .. "/img.bin", "\0\2after")
+      end)
+
+      assert.same({ "img.bin" }, turn.files)
+      assert.is_truthy(turn.patch:find("GIT binary patch", 1, true))
+      assert.is_nil(turn.patch:find("+++ b/img.bin", 1, true))
+    end)
+
+    it("lists a pure rename, which has no +++ line in the patch", function()
+      write(repo .. "/tomove.txt", "unchanged content\n")
+      git_ok({ "add", "." })
+      git_ok({ "commit", "-q", "-m", "add file to move" })
+
+      local turn = run_turn(function()
+        git_ok({ "mv", "tomove.txt", "moved.txt" })
+      end)
+
+      assert.same({ "moved.txt" }, turn.files)
+      assert.is_truthy(turn.patch:find("rename to moved.txt", 1, true))
+      assert.is_nil(turn.patch:find("+++ b/", 1, true))
+    end)
+
+    it("lists a mode-only change, which has no hunk in the patch at all", function()
+      write(repo .. "/script.sh", "#!/bin/sh\n")
+      git_ok({ "add", "." })
+      git_ok({ "commit", "-q", "-m", "add script" })
+
+      local turn = run_turn(function()
+        vim.fn.setfperm(repo .. "/script.sh", "rwxr-xr-x")
+      end)
+
+      assert.same({ "script.sh" }, turn.files)
+      assert.is_truthy(turn.patch:find("new mode 100755", 1, true))
+      assert.is_nil(turn.patch:find("@@", 1, true))
+    end)
+
+    it("keeps a path containing a space in one piece", function()
+      -- `diff --git a/X b/Y` を正規表現で割る実装が壊れる形
+      local turn = run_turn(function()
+        write(repo .. "/a file.txt", "spaced\n")
+      end)
+
+      assert.same({ "a file.txt" }, turn.files)
+      assert.same({ repo .. "/a file.txt" }, turn.abs_files)
+    end)
+  end)
+
   describe("the patch it writes", function()
     ---patchを書き出して `git apply --reverse` で戻す
     local function reverse_apply(patch)
