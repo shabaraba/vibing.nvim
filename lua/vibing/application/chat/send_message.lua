@@ -404,6 +404,9 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   elseif has_file_changes then
     -- フォールバック: PreToolUseフックで退避した変更前内容からpatchを生成。
     -- 外部プロセスを使わず、触ったファイル数分のvim.diff()だけで完結する。
+    --
+    -- ここのclearは、スナップショット経路を通らなかった場合（git管理外・重なり検出）のための
+    -- もの。上のfinalizeがfalseを返して落ちてきた場合は既にclear済みだが、clearは冪等
     GitSnapshot.clear(handle_id_for_diff)
     M._finalize_request_diff(callbacks, handle_id_for_diff, modified_file_paths)
   else

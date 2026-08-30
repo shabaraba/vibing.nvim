@@ -654,9 +654,12 @@ section at all — the change simply did not exist as far as the chat was concer
 **The baseline is lazy, and that is what keeps it cheap.** It is taken at the PreToolUse hook for
 the first tool of the turn that could write, not at the start of the request, so a read-only turn
 takes no snapshot. It is not literally free of git: `send_message` resolves `_worktree_root` when
-it builds the request's opts, which is one `rev-parse --show-toplevel` — cached per working
-directory, so it costs one process the first time a chat sends in a given directory and nothing
-after that. The trigger is an **exclusion** list (`Read`/`Glob`/`Grep`/
+it builds the request's opts, which is one `rev-parse --show-toplevel`. That is cached per working
+directory, so inside a repository it costs one process the first time a chat sends from a given
+directory and nothing after. **Only successes are cached**, so a working directory that is not in a
+repository re-resolves on every send — deliberate, since remembering "not a repo" would leave a
+directory that later becomes one (or gains a worktree) permanently misjudged, and the miss is a
+`rev-parse` that fails fast. The trigger is an **exclusion** list (`Read`/`Glob`/`Grep`/
 `WebFetch`/`WebSearch` plus the side-effect-free `INTERNAL_TOOLS`), not an allow list: an MCP tool
 whose name says nothing about its behaviour has to count as a writer, and the cost of guessing
 wrong that way is one wasted snapshot rather than a silently missing diff. Note that

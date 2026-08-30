@@ -132,6 +132,22 @@ describe("git_snapshot", function()
       assert.equals(first, git_ok({ "rev-parse", GitSnapshot._REF_PREFIX .. handle }))
     end)
 
+    it("names the ref after the handle id verbatim, so two requests cannot collide", function()
+      -- ref名はhandle_idをサニタイズして作る。文字を落とす以上、原理的には2つのhandle_idが
+      -- 同じref名に潰れて先行セッションのbaselineを上書きしうる。実際の生成元が出すのは
+      -- 16進数と `_` だけなので潰れない、という前提をここで固定する（形式が変わったら落ちる）
+      local handle = require("vibing.infrastructure.adapter.modules.cli_runtime").new_handle_id()
+      GitSnapshot.ensure_baseline(handle, repo, "Bash")
+
+      assert.equals(
+        0,
+        git({ "rev-parse", "--verify", GitSnapshot._REF_PREFIX .. handle }).code,
+        "ref name should be the handle id unchanged"
+      )
+
+      GitSnapshot.clear(handle)
+    end)
+
     it("takes no baseline outside a git repository", function()
       local outside = vim.fn.tempname()
       vim.fn.mkdir(outside, "p")
