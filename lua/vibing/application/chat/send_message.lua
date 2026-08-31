@@ -150,10 +150,29 @@ function M.execute(adapter, callbacks, message, config)
   -- レスポンス中にWrite/Editで変更されたファイルパスを追跡
   local modified_file_paths = {}
 
+  -- このチャットに指示を出したチャットのバッファ番号。frontmatter がパスを持つのは
+  -- それが唯一セッションを越えて意味を保つ形だからだが、`nvim_chat_send_message` が取るのは
+  -- bufnr なので、モデルに渡すにはここで引き直す必要がある。
+  --
+  -- 通知が無効なら解決自体を行わない。ワーカーがオーケストレーターに話しかけられても
+  -- 相手を起こす経路が無いので、プロンプトのトークンを払う理由がない。
+  local orchestrator_bufnrs = nil
+  local chat_notifications = config.agent and config.agent.chat_notifications
+  if chat_notifications and chat_notifications.enabled then
+    local ok, resolved = pcall(
+      require("vibing.application.chat.orchestration_link").resolve_bufnrs,
+      frontmatter.orchestrated_by
+    )
+    if ok and #resolved > 0 then
+      orchestrator_bufnrs = resolved
+    end
+  end
+
   local opts = {
     streaming = true,
     action_type = "chat",
     chat_bufnr = vim.api.nvim_buf_is_valid(bufnr) and bufnr or nil,
+    orchestrator_bufnrs = orchestrator_bufnrs,
     mode = M._validate_frontmatter_mode(frontmatter.mode),
     model = frontmatter.model,
     effort = frontmatter.effort,

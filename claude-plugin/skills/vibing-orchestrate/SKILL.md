@@ -65,23 +65,29 @@ request, not the files already discussed, not the decisions already made. Write 
 someone who just walked in — goal, the files or directories involved, the constraints, and what
 "done" looks like. A brief that says "do the refactor we discussed" produces nothing useful.
 
-Say in the brief that the worker should report its result in its own chat and stop; workers cannot
-message you back.
+Say in the brief that the worker should report its result in its own chat and stop. Add that if it
+gets stuck or the brief turns out to be ambiguous, it should ask you rather than guess — a worker
+you passed `from_bufnr` to is told your buffer number and can call `nvim_chat_send_message` back.
+A question costs one turn; a worker guessing wrong costs the whole task.
 
-## 4. Hand control back to the user
+## 4. End your turn — you will be woken
 
 Do **not** loop on `nvim_get_buffer` waiting for workers to finish. A turn spent polling burns
 tokens, blocks this chat, and will hit the turn limit long before a real task completes.
 
-Once every brief is sent, end the turn with the worker list and an explicit handle:
+Once every brief is sent, end the turn with the worker list:
 
-> 3件のワーカーチャットにタスクを配りました（bufnr 12 / 14 / 16）。進捗を見たいときは「進捗は?」
-> と聞いてください。
+> 3件のワーカーチャットにタスクを配りました（bufnr 12 / 14 / 16）。終わり次第ここに戻ります。
 
-## 5. Report progress when asked
+If completion notifications are enabled (`agent.chat_notifications.enabled`), each worker you
+messaged wakes this chat with a new turn when it stops, naming the buffer to read. If they are
+not, nothing wakes you — say "進捗は?と聞いてください" instead and wait for the user.
 
-When the user asks, read each worker with `nvim_get_buffer({ rpc_port, bufnr })`. Alongside the
-transcript the result carries a chat-status line:
+## 5. Read the chat the notification named
+
+A notification tells you which buffer(s) stopped. Read those with
+`nvim_get_buffer({ rpc_port, bufnr })` — not every worker. Alongside the transcript the result
+carries a chat-status line:
 
 - `status: responding` — a reply is still being streamed in. Whatever you just read is partial;
   report it as in progress and do not summarize its conclusion.
@@ -92,8 +98,17 @@ Note that `idle` means "not currently running", not "succeeded" — a worker tha
 stopped to ask the user something, or that is waiting on a tool approval prompt is also idle. Read
 the tail of the transcript before calling a task done.
 
-Report per worker: task, state, and the one-line outcome. Then either hand control back again
-(some still running) or move to aggregation.
+**One notification is one turn, so three workers wake you three times.** If workers you dispatched
+are still running, do not start aggregating: say in one or two lines what this one produced, and
+end the turn. Aggregate only on the last one. An orchestrator that writes a full summary each time
+produces three contradictory summaries and pays for all of them.
+
+Track which workers are still outstanding by writing the list into your reply each time — that
+text is the only place the count survives between turns.
+
+A worker may also message you directly with a question instead of finishing. Answer it with
+`nvim_chat_send_message` (passing `from_bufnr` again, so its reply comes back to you) and end the
+turn.
 
 ## 6. Aggregate and clean up
 

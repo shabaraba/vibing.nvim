@@ -207,6 +207,11 @@ function ChatBuffer:_setup_keymaps()
 
   local callbacks = {
     send_message = function()
+      -- 手動送信は通知チェーンの起点なので、ここで深さをリセットする。
+      -- `ChatBuffer:send_message()` 本体ではなくこのキーマップ側に置くのは、通知の配達自身が
+      -- `ProgrammaticSender` 経由で同じ関数を通るため。本体でリセットすると配達のたびに 0 に
+      -- 戻り、`max_hops` が一切効かなくなる
+      require("vibing.application.chat.completion_notifier").reset_depth(self.buf)
       self:send_message()
     end,
     cancel = function()
@@ -391,10 +396,15 @@ function ChatBuffer:_try_schedule_instead_of_send(message)
 end
 
 ---メッセージを送信
+---
+---戻り値は「このメッセージがリクエストとして扱われたか」。予約に回った場合も、未送信Userとして
+---残りリセット後に送られるのでtrueを返す。falseは黙って何もしなかったことを意味し、
+---`ProgrammaticSender` はこれを見て呼び出し元に成否を返す
+---@return boolean handled
 function ChatBuffer:send_message()
   -- 送信処理中はEnter連打による重複送信を無視する
   if self._is_sending then
-    return
+    return false
   end
 
   -- 前のリクエストが実行中ならキャンセル（ゾンビプロセス対策）
@@ -432,14 +442,14 @@ function ChatBuffer:send_message()
   if not message then
     vim.notify("[vibing] No message to send", vim.log.levels.WARN)
     self._is_sending = false
-    return
+    return false
   end
 
   -- リミット中と分かっているならコミットせずに予約へ回す。commit_user_message を通さないので
   -- `## User <!-- unsent -->` がそのまま残り、それが発火時に送られる本文になる。
   if self:_try_schedule_instead_of_send(message) then
     self._is_sending = false
-    return
+    return true
   end
 
   ConversationExtractor.commit_user_message(self.buf)
@@ -453,7 +463,7 @@ function ChatBuffer:send_message()
       else
         self:add_user_section()
         self._is_sending = false
-        return
+        return false
       end
     end
   end
@@ -475,7 +485,7 @@ function ChatBuffer:send_message()
           vim.log.levels.ERROR
         )
         self._is_sending = false
-        return
+        return false
       end
 
       -- Hook-based approval: update session state, then fall through to normal message flow
@@ -528,7 +538,7 @@ function ChatBuffer:send_message()
         vim.log.levels.WARN
       )
       self._is_sending = false
-      return
+      return false
     end
   end
 
@@ -560,7 +570,21 @@ function ChatBuffer:send_message()
       return self:update_session_id(session_id)
     end,
     add_user_section = function()
-      return self:add_user_section()
+      self:add_user_section()
+      -- 応答が完全に終わった唯一の合流点。`_handle_response` の完了経路は4つある
+      -- （セッション破損 / mote finalize / ファイル変更なし / git patch finalize、うち2つは
+      -- `vim.schedule` の中）が、すべてこのコールバックに合流する。しかも handle_id 不一致
+      -- による早期returnより後なので、キャンセル済みの古いターンが遅れて完了しても飛ばない。
+      --
+      -- `ChatBuffer:add_user_section()` 本体に置いてはいけない: そちらはスラッシュコマンド
+      -- 経路からも呼ばれるので、AIターンが1回も走っていないのに完了が飛ぶ。
+      --
+      -- autocmd を挟むのは、ユーザーが自分の設定からも拾えるようにするため。
+      -- `CompletionNotifier` 自身もこの経路で購読している
+      vim.api.nvim_exec_autocmds("User", {
+        pattern = "VibingResponseDone",
+        data = { bufnr = self.buf },
+      })
     end,
     get_bufnr = function()
       return self.buf
@@ -610,6 +634,8 @@ function ChatBuffer:send_message()
   if self:is_open() then
     Renderer.moveCursorToEnd(self.win, self.buf)
   end
+
+  return true
 end
 
 ---アシスタントの応答を追加開始

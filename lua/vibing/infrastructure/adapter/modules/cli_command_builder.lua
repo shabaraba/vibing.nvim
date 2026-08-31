@@ -324,6 +324,26 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
       table.insert(system_prompt_lines, "Current vibing.nvim chat buffer number: " .. tostring(opts.chat_bufnr))
     end
 
+    -- Which chat dispatched this one, resolved from the `orchestrated_by` frontmatter list.
+    -- Only a worker gets this, and the frontmatter it comes from is written once at creation, so
+    -- in the ordinary case the line stays byte-stable across turns and the cached system prefix
+    -- (#469) survives. It is not a guarantee: the value is a *resolution* of that frontmatter to
+    -- currently-open buffers, so closing and reopening the orchestrator, or toggling
+    -- `chat_notifications.enabled` mid-session, changes the line and costs one cache miss.
+    -- `orchestrated` is deliberately not exposed: an orchestrator's list grows with every
+    -- dispatch, so it would move the prefix on a normal turn rather than an unusual one — and the
+    -- completion notification already names the buffer it wants read.
+    if opts.orchestrator_bufnrs and #opts.orchestrator_bufnrs > 0 then
+      table.insert(
+        system_prompt_lines,
+        "This chat was started by vibing.nvim chat buffer "
+          .. table.concat(vim.tbl_map(tostring, opts.orchestrator_bufnrs), ", ")
+          .. ". If you need to ask it something, or want to report back before you finish, call "
+          .. "nvim_chat_send_message with that bufnr and your own chat buffer number as from_bufnr. "
+          .. "Otherwise just do the work and report in this chat — it is told when you stop."
+      )
+    end
+
     -- Project-local instructions from .vibing/system-prompt.md. Read fresh on every
     -- request, so an edit takes effect from the next message onward; that edit is also
     -- the only thing that invalidates the cached system prefix (see #469 note above).

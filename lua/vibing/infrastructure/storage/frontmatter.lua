@@ -132,6 +132,23 @@ function M.parse(content)
   return parsed, body
 end
 
+---リストフィールドの値を配列として読む
+---
+---パーサが同じフィールドに対して3つの形を返しうるので、その規則はパーサの隣に置く。
+---値なしの `key:` は**真値の空table**（`if not value` では弾けない）、手書きの
+---`key: path.md` は**文字列**、通常のブロックリストだけが配列になる
+---@param value any
+---@return string[]
+function M.as_list(value)
+  if type(value) == "string" and value ~= "" then
+    return { value }
+  end
+  if type(value) ~= "table" then
+    return {}
+  end
+  return value
+end
+
 local function serialize_value(value)
   if type(value) == "boolean" then
     return value and "true" or "false"
@@ -142,32 +159,41 @@ local function serialize_value(value)
   end
 end
 
+---frontmatterに書き出すキーの順序。**並びそのもの**が定義なので、キーを挿入するときは
+---この配列の狙った位置に足すだけでよい（連番を振り直す必要がなく、番号の重複も表現できない）。
+---ここに無いキーは後ろにまとめてアルファベット順で並ぶ。
+---
+---`forked_from` / `subagent_id` / `orchestrated*` が設定値より前にあるのは、どれも
+---「このチャットが他のどのチャットと繋がっているか」を答えるフィールドだから。
+local KEY_ORDER = {
+  "vibing.nvim",
+  "session_id",
+  "created_at",
+  "forked_from",
+  "subagent_id",
+  "orchestrated",
+  "orchestrated_by",
+  "working_dir",
+  "agent",
+  "model",
+  "effort",
+  "permission_mode",
+  "permissions_allow",
+  "permissions_deny",
+  "permissions_ask",
+  "language",
+}
+
+local priority = {}
+for index, key in ipairs(KEY_ORDER) do
+  priority[key] = index
+end
+
 local function get_sorted_keys(tbl)
   local keys = {}
   for k in pairs(tbl) do
     table.insert(keys, k)
   end
-
-  local priority = {
-    ["vibing.nvim"] = 1,
-    session_id = 2,
-    created_at = 3,
-    forked_from = 4,
-    subagent_id = 5,
-    -- 出自を示すフィールド(forked_from / subagent_id)の直後。どれも「このチャットが
-    -- 他のどのチャットと繋がっているか」を答えるものなので、まとめて先頭側に置く
-    orchestrated = 6,
-    orchestrated_by = 7,
-    working_dir = 8,
-    agent = 9,
-    model = 10,
-    effort = 11,
-    permission_mode = 12,
-    permissions_allow = 13,
-    permissions_deny = 14,
-    permissions_ask = 15,
-    language = 16,
-  }
 
   table.sort(keys, function(a, b)
     local pa = priority[a] or 100

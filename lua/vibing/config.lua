@@ -83,6 +83,13 @@
 ---@field enabled boolean リミット中のリクエストを予約に切り替えるか（デフォルト: true、リミット中のリクエストはどのみち失敗するため）
 ---@field max_retries number 予約したリクエストがまた弾かれたときに許可する再予約の回数
 
+---@class Vibing.ChatNotificationsConfig
+---チャット間の完了通知設定
+---別チャットに送ったリクエストの完了を、送信元のチャットに通知する
+---通知は送信元の新しいターンとして届くため、無人でトークンを消費する
+---@field enabled boolean 完了通知を配達するか（デフォルト: false、無人でトークンを消費するため）
+---@field max_hops number 通知が連鎖して自走するのを止める上限。手動送信（<CR>）でリセットされる
+
 ---@class Vibing.AgentConfig
 ---エージェント設定
 ---Claudeのモード（code/plan/explore）とモデル（sonnet/opus/haiku/fable）を指定
@@ -95,6 +102,7 @@
 ---@field subagent Vibing.SubagentConfig? subagent（Task/Agentツール）の出力表示設定
 ---@field auto_resume_on_limit Vibing.AutoResumeOnLimitConfig 使用量リミット自動継続設定
 ---@field scheduled_requests Vibing.ScheduledRequestsConfig 予約リクエスト設定
+---@field chat_notifications Vibing.ChatNotificationsConfig チャット間の完了通知設定
 ---@field codex_provider_notice Vibing.CodexProviderNoticeConfig codex軽量呼び出しのプロバイダ警告設定
 ---@field plugins Vibing.PluginsConfig? `--plugin-dir`で読み込むClaude Codeプラグインの設定
 
@@ -277,6 +285,20 @@ M.defaults = {
       -- 予約したリクエストがまた弾かれたときに許可する再予約の回数。
       -- これがループの唯一の歯止めなので 0 未満にはしない。
       max_retries = 3,
+    },
+    -- 別チャットに送ったリクエストの完了を、送信元のチャットに通知する。
+    -- 通知は送信元の新しいターンとして届くため無人でトークンを消費する。既定は無効で、
+    -- これは subagent / auto_resume_on_limit / dap と同じ基準（トークンを使う機能は既定で切る）。
+    -- scheduled_requests や codex_provider_notice が既定で有効なのはトークンを使わないからで、
+    -- こちらには当てはまらない。
+    --
+    -- 無効でも `orchestrated` / `orchestrated_by` の記録自体は行われる。止まるのは通知の配達と、
+    -- ワーカーに「誰に報告すればいいか」を伝えるシステムプロンプトの1行だけ。
+    chat_notifications = {
+      enabled = false,
+      -- 通知が連鎖して自走するのを止める上限。A→B→A→B の往復は正当なユースケース
+      -- （Bの質問にAが答える）なので循環検出ではなく深さで止める。<CR>による手動送信で0に戻る。
+      max_hops = 8,
     },
     -- codexの軽量呼び出しは --ignore-user-config で走るので、ユーザーの model_provider が落ちて
     -- 既定のOpenAIエンドポイントに向く。それを1セッション1回だけ警告する。

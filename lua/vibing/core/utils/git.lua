@@ -257,4 +257,29 @@ function M.to_display_path(abs_path)
   return abs_path
 end
 
+---`to_display_path` の逆。frontmatter に記録された表示パスを絶対パスへ戻す
+---
+---`git_root` を渡せるのは、多数のファイルを走査する呼び出し元（リンクスキャナー）が
+---`get_root()` の `git rev-parse` を1回に抑えられるようにするため。
+---
+---3値であることに意味がある: `nil` は「渡されていない（引き直せ）」、`false` は
+---「gitリポジトリの外だと分かっている」。`false` を `nil` に潰すと、リポジトリ外では
+---キャッシュが一切効かず、1ファイルのリンク要素ごとに `git rev-parse` が起動する
+---@param value string
+---@param git_root string|false|nil 解決済みのgitルート / 不在が確定 / 未指定
+---@return string
+function M.from_display_path(value, git_root)
+  if git_root == nil then
+    git_root = M.get_root()
+  end
+
+  -- `~` と絶対パスは、gitルートの外にあるチャット（`save_location_type = "user"` 等）が
+  -- 取る形。gitルート相対と取り違えるとルート配下の存在しないパスになる
+  if git_root and not value:match("^[/~]") then
+    return vim.fs.joinpath(git_root, value)
+  end
+
+  return vim.fn.fnamemodify(vim.fn.expand(value), ":p")
+end
+
 return M

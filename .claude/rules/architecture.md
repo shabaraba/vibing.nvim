@@ -1133,10 +1133,67 @@ works from whichever side did get written. Fork and subagent chats do **not** in
 — `inherited_frontmatter.from_source` is an explicit whitelist, and a fork claiming its parent's
 relationships would be claiming work it was never given.
 
-**Out of scope, deliberately:** workers cannot message the orchestrator back, there is no
-event-driven completion notification, and the orchestrator does not poll inside its own turn — it
-hands control back to the user and reports when asked. All three would need a channel that does
-not exist yet; the MVP is "distribute, observe, report".
+**Completion is pushed, not polled** — `agent.chat_notifications.enabled`, default `false` because
+it spends tokens unattended. The whole mechanism is that **the send is the subscription**: when
+`nvim_chat_create` / `nvim_chat_send_message` receive `from_bufnr`, `completion_notifier.subscribe`
+records an A←B edge, and when B's turn ends A is given a new turn saying "B stopped, go read it".
+A worker asking its orchestrator a question is the same path in reverse — it just calls
+`nvim_chat_send_message` itself.
+
+There is no waiting anywhere, and there cannot be: the CLI process dies when its turn ends, so the
+only way to deliver anything to a chat is to _start a new turn on it_.
+
+The completion event fires from the `callbacks.add_user_section` wrapper in `buffer.lua`, and
+every word of that placement is load-bearing:
+
+- **The four completion paths in `_handle_response`** (session corruption, mote `finalize`,
+  no-file-change, git patch `finalize` — two of them inside `vim.schedule`) all converge on that
+  one callback. Nothing else does.
+- **Not `ChatBuffer:add_user_section()` itself**, which the slash-command path also calls — that
+  would report a completion for a turn the model never ran.
+- **Not next to `clear_sending()`**, which under `diff.tool = "mote"` runs before `finalize()`
+  writes `### Modified Files`. A reader woken there would see an unfinished transcript, the same
+  window `chat_status` documents.
+- **After the handle_id mismatch guard**, so a cancelled turn completing late fires nothing.
+
+It goes out as a `User VibingResponseDone` autocmd rather than a direct call so a user's own config
+can hook it too — before this there was no `nvim_exec_autocmds` anywhere in `lua/`.
+
+**Delivery refuses a busy buffer, and that is the sharpest edge in the feature.**
+`ChatBuffer:send_message()` cancels the in-flight request before starting a new one, so delivering
+into a responding chat would kill the turn it is in the middle of; and its `_is_sending` guard
+returns _silently_, so `ProgrammaticSender` used to report success for a message it never sent —
+leaving an orphan `## User` section that became the body of the user's next `<CR>`. A dispatched
+chat normally keeps working after dispatching, so the shorter the worker's task the more likely
+this window is. So `ProgrammaticSender` now refuses before appending (rather than appending and
+rolling back), and the notifier queues instead, flushing on the recipient's own completion event.
+Queued notifications coalesce into one message: three workers finishing while the orchestrator is
+busy is one turn, not three.
+
+Two smaller rules. Edges are **one-shot** — delivering consumes them, so a worker completing again
+without a fresh send is silent, and A messaging B three times still notifies once. And the chain is
+bounded by **hops, not cycle detection**: A→B→A→B is a legitimate question-and-answer, so
+`max_hops` (default 8) counts how many times a chat has been woken without a human `<CR>`, and
+exceeding it warns rather than declining in silence. The reset lives in the `<CR>` keymap callback
+rather than in `send_message()`, because delivery itself goes through `send_message()` — resetting
+there would zero the counter on every hop and disable the limit entirely.
+
+**The notification says "stopped", never "succeeded".** `idle` is also what a failed turn, a
+pending tool approval, and an `nvim_ask_user_question` look like, so judging outcomes from the
+event would repeat `chat_status`'s mistake. The message carries the bufnr and an instruction to
+read the transcript's tail — not the worker's text, which would pull B's context into A for no
+reason.
+
+A worker learns its orchestrator's bufnr from a system-prompt line built by resolving its
+`orchestrated_by` frontmatter to live buffers. Only that direction is exposed: a worker's list is
+written once at creation and stays byte-stable across turns (#469), while an orchestrator's
+`orchestrated` grows with each dispatch and would move the cached prefix mid-conversation.
+
+**Out of scope, deliberately:** the orchestrator still does not poll inside its own turn, and
+nothing is persisted — the subscription table and the delivery queue are in memory only, since
+Neovim dying takes the worker chats with it. Backends other than claude can be _notified_ (the
+event is backend-agnostic) but cannot _subscribe_: `nvim_chat_send_message` is an MCP tool, and
+codex/grok reach no MCP server, the same constraint `features.md` records for AskUserQuestion.
 
 ## Key Patterns
 
