@@ -32,6 +32,36 @@ export function validateBufferParams(params: BufferParams): void {
   }
 }
 
+export interface ChatTargetParams {
+  bufnr?: number;
+  file_path?: string;
+}
+
+/**
+ * Check how a tool that accepts `bufnr` **or** `file_path` was pointed at a chat (#641).
+ *
+ * Refuse rather than pick: two names for one target is a sign the caller is confused about which
+ * chat it means, and quietly preferring one reaches a chat nobody intended with nothing saying so.
+ *
+ * `required` is the only thing the two tools disagree about — `nvim_get_buffer` falls back to the
+ * current buffer when given neither, `nvim_chat_send_message` has nothing to fall back to. The
+ * rule itself lives here rather than in each handler so the two cannot drift, which is what
+ * `handlers/bufnr.lua`'s `resolve_chat_target` is on the Lua side of the wire.
+ */
+export function validateChatTarget(params: ChatTargetParams, opts: { required?: boolean } = {}) {
+  // `!= null` on purpose: a model that spells an unused optional argument as an explicit `null`
+  // would otherwise be told it named the target twice for a call that named it once.
+  const hasBufnr = params?.bufnr != null;
+  const hasFilePath = params?.file_path != null;
+
+  if (hasBufnr && hasFilePath) {
+    throw new ValidationError('Pass either bufnr or file_path, not both');
+  }
+  if (opts.required && !hasBufnr && !hasFilePath) {
+    throw new ValidationError('Pass either bufnr or file_path');
+  }
+}
+
 export function validateWindowParams(params: WindowParams): void {
   if (params.winnr !== undefined) {
     if (typeof params.winnr !== 'number') {

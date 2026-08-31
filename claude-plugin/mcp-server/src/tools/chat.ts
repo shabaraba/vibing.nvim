@@ -55,13 +55,26 @@ export const chatTools: Tool[] = [
     name: 'nvim_chat_send_message',
     description:
       'Programmatically send a message to a chat buffer and trigger AI request. ' +
-      'Useful for multi-agent workflows where one Claude instance sends messages to another.',
+      'Useful for multi-agent workflows where one Claude instance sends messages to another. ' +
+      'Name the target with either file_path or bufnr, not both. Prefer file_path: a buffer ' +
+      'number only means anything in the Neovim session that issued it, while the chat file ' +
+      'path is what the chats record in their own frontmatter, so it still reaches the right ' +
+      'chat after a restart — and a chat that is not open is opened for you.',
     inputSchema: {
       type: 'object',
       properties: withRpcPort({
+        file_path: {
+          type: 'string',
+          description:
+            'Chat file of the target chat, as returned by nvim_chat_create or written in ' +
+            'frontmatter (git-root-relative, absolute, or ~-prefixed). Opened in the background ' +
+            'if it is not already open. Must name a vibing.nvim chat file.',
+        },
         bufnr: {
           type: 'number',
-          description: 'Buffer number of the target chat buffer',
+          description:
+            'Buffer number of the target chat buffer. Only valid within this Neovim session — ' +
+            'use file_path instead when you have one.',
         },
         message: {
           type: 'string',
@@ -80,7 +93,11 @@ export const chatTools: Tool[] = [
             'relationship in both chat files, which survives renames and restarts.',
         },
       }),
-      required: requireRpcPort(['bufnr', 'message']),
+      // Neither bufnr nor file_path is required on its own; the handler enforces that exactly one
+      // arrives. JSON Schema could say that with oneOf, but the advertised schema is flattened
+      // into the model's tool list, and a required-list of two mutually exclusive keys reads as
+      // "pass both".
+      required: requireRpcPort(['message']),
     },
   },
   {

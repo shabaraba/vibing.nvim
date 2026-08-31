@@ -82,6 +82,38 @@ describe("cli_command_builder", function()
       assert.is_nil(prompt_text:find("Current vibing.nvim chat buffer number:", 1, true))
     end)
 
+    -- `opts.orchestrators` is written by `send_message.lua` and read only here, so nothing but
+    -- these three assertions holds the key name and the line's shape together. Renaming one side
+    -- alone would drop the whole orchestrator line with the suite still green (#641).
+    it("names the orchestrator by path, with its current bufnr alongside", function()
+      local cmd = cli_command_builder.build(
+        "hello",
+        { orchestrators = { { path = ".vibing/chat/boss.md", bufnr = 12 } } },
+        nil,
+        {},
+        nil
+      )
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_true(prompt_text:find(".vibing/chat/boss.md (currently buffer 12)", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("nvim_chat_send_message with that file_path", 1, true) ~= nil)
+    end)
+
+    it("still names an orchestrator whose chat is closed", function()
+      -- The restart case #641 exists for: the path is all there is, and dropping the line would
+      -- leave the worker with no way to reach back.
+      local cmd =
+        cli_command_builder.build("hello", { orchestrators = { { path = ".vibing/chat/boss.md" } } }, nil, {}, nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_true(prompt_text:find("started by vibing.nvim chat .vibing/chat/boss.md", 1, true) ~= nil)
+      assert.is_nil(prompt_text:find("currently buffer", 1, true))
+    end)
+
+    it("omits the orchestrator line when there is none", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_nil(prompt_text:find("This chat was started by", 1, true))
+    end)
+
     it("keeps the system prompt byte-identical when only the chat file path changes", function()
       local before = cli_command_builder.build("hello", { chat_bufnr = 12, chat_file_path = "/tmp/a.md" }, nil, {}, nil)
       local after = cli_command_builder.build(

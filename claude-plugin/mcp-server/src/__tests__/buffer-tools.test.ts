@@ -22,9 +22,56 @@ describe('nvim_get_buffer chat status', () => {
 
     expect(rpc.callNeovim).toHaveBeenCalledWith(
       'buf_get_lines',
-      { bufnr: 3, include_chat_status: true },
+      { bufnr: 3, file_path: undefined, include_chat_status: true },
       9878
     );
+  });
+
+  it('forwards a file_path so a chat can be read without knowing its bufnr', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ lines: ['a'], bufnr: 21, chat_status: 'idle' });
+
+    await handlers.nvim_get_buffer({ file_path: '.vibing/chat/worker.md', rpc_port: 9878 });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'buf_get_lines',
+      { bufnr: undefined, file_path: '.vibing/chat/worker.md', include_chat_status: true },
+      9878
+    );
+  });
+
+  it('refuses a call that names the target twice instead of picking one', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ lines: ['a'] });
+
+    await expect(
+      handlers.nvim_get_buffer({ bufnr: 3, file_path: '.vibing/chat/worker.md', rpc_port: 9878 })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
+  it('treats an explicit null alongside a real target as absent, not as a second target', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ lines: ['a'], bufnr: 3, chat_status: 'idle' });
+
+    await handlers.nvim_get_buffer({ bufnr: 3, file_path: null, rpc_port: 9878 });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'buf_get_lines',
+      { bufnr: 3, file_path: undefined, include_chat_status: true },
+      9878
+    );
+  });
+
+  it('refuses to pass off the current buffer as the chat a too-old Neovim could not address', async () => {
+    // A Neovim that predates file_path ignores it and answers for `bufnr or 0` — the current
+    // buffer — which reads as a healthy transcript of the chat that was asked for, reported idle.
+    // Only a Neovim that understands the argument reports the buffer it read.
+    vi.mocked(rpc.callNeovim).mockResolvedValue({
+      lines: ['someone elses buffer'],
+      chat_status: 'idle',
+    });
+
+    await expect(
+      handlers.nvim_get_buffer({ file_path: '.vibing/chat/worker.md', rpc_port: 9878 })
+    ).rejects.toThrow(/too old/);
   });
 
   it('returns only the buffer text for a non-chat buffer', async () => {

@@ -15,6 +15,10 @@ import { allTools } from '../tools/index.js';
  */
 const READ_ONLY_TOOLS = [
   'nvim_diagnostics',
+  // Stays a read despite `file_path` opening a chat buffer that was closed (#641). The rule
+  // exists so a state change cannot land on an instance the caller did not name, and this one
+  // cannot: the registry fallback answers only when exactly one Neovim is live. What it leaves
+  // behind is a buffer for a chat file the user already has on disk.
   'nvim_get_buffer',
   'nvim_get_cursor',
   'nvim_get_info',

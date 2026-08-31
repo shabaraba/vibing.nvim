@@ -9,6 +9,7 @@ local Message = require("vibing.infrastructure.rpc.handlers.message")
 local Config = require("vibing.config")
 local view = require("vibing.presentation.chat.view")
 local OrchestrationLink = require("vibing.application.chat.orchestration_link")
+local ChatLocator = require("vibing.application.chat.chat_locator")
 
 describe("rpc handlers.message.send_message", function()
   local Notifier
@@ -29,6 +30,7 @@ describe("rpc handlers.message.send_message", function()
     originals.get = Config.get
     originals.get_chat_buffer = view.get_chat_buffer
     originals.link = OrchestrationLink.link
+    originals.open = ChatLocator.open
 
     buffers, chats = {}, {}
 
@@ -66,6 +68,7 @@ describe("rpc handlers.message.send_message", function()
     Config.get = originals.get
     view.get_chat_buffer = originals.get_chat_buffer
     OrchestrationLink.link = originals.link
+    ChatLocator.open = originals.open
 
     for _, bufnr in ipairs(buffers) do
       if vim.api.nvim_buf_is_valid(bufnr) then
@@ -112,6 +115,71 @@ describe("rpc handlers.message.send_message", function()
     local to = make_chat()
 
     local result = Message.send_message({ bufnr = to, message = "do the thing" })
+
+    assert.is_true(result.success)
+    assert.equals(1, chats[to].sends)
+  end)
+
+  it("addresses the target by file_path", function()
+    local to = make_chat()
+    ChatLocator.open = function(file_path)
+      assert.equals(".vibing/chat/worker.md", file_path)
+      return to
+    end
+
+    local result = Message.send_message({ file_path = ".vibing/chat/worker.md", message = "do the thing" })
+
+    assert.is_true(result.success)
+    assert.equals(to, result.bufnr)
+    assert.equals(1, chats[to].sends)
+  end)
+
+  it("subscribes the sender when the target was named by file_path", function()
+    -- 購読は解決後の bufnr で張る。パスのまま渡すと `completion_notifier` は
+    -- 「number ではない」で黙って false を返し、通知が来ない理由がどこにも残らない
+    local from, to = make_chat(), make_chat()
+    ChatLocator.open = function()
+      return to
+    end
+
+    Message.send_message({ file_path = "worker.md", message = "do the thing", from_bufnr = from })
+    Notifier.on_response_done(to)
+
+    assert.equals(1, chats[from].sends)
+  end)
+
+  it("refuses a call that names the target twice instead of picking one", function()
+    local to = make_chat()
+    ChatLocator.open = function()
+      error("should not resolve a path when bufnr was given too")
+    end
+
+    assert.has_error(function()
+      Message.send_message({ bufnr = to, file_path = "worker.md", message = "do the thing" })
+    end)
+    assert.equals(0, chats[to].sends)
+  end)
+
+  it("refuses a call that names no target at all", function()
+    assert.has_error(function()
+      Message.send_message({ message = "do the thing" })
+    end)
+  end)
+
+  it("refuses bufnr 0 rather than sending into whichever chat the user is looking at", function()
+    -- `nvim_get_buffer` advertises 0 as "the current buffer", so a model will try it here too.
+    -- Resolving it would append a `## User` and start a turn in the chat that happens to be
+    -- focused — the same misdelivery the both-arguments refusal exists to prevent.
+    assert.has_error(function()
+      Message.send_message({ bufnr = 0, message = "do the thing" })
+    end)
+  end)
+
+  it("treats an explicit null file_path as absent, not as a second target", function()
+    -- `vim.json.decode` turns a JSON null into `vim.NIL`, which is truthy in Lua
+    local to = make_chat()
+
+    local result = Message.send_message({ bufnr = to, file_path = vim.NIL, message = "do the thing" })
 
     assert.is_true(result.success)
     assert.equals(1, chats[to].sends)

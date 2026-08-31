@@ -6,13 +6,21 @@ export const bufferTools = [
     description:
       'Get current buffer content. For a vibing.nvim chat buffer the result also reports ' +
       'whether a reply is being streamed into it right now — poll this to tell whether a ' +
-      'worker chat has finished.',
+      'worker chat has finished. Read a chat by file_path rather than bufnr when you have one: ' +
+      'the path keeps working after a restart, and a chat that is not open is opened for you.',
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({
         bufnr: {
           type: 'number' as const,
           description: 'Buffer number (0 for current buffer)',
+        },
+        file_path: {
+          type: 'string' as const,
+          description:
+            'vibing.nvim chat file to read instead of a bufnr (git-root-relative, absolute, or ' +
+            '~-prefixed). Opened in the background if it is not already open. Chat files only — ' +
+            'use nvim_load_buffer for an ordinary file. Mutually exclusive with bufnr.',
         },
       }),
       required: [],
