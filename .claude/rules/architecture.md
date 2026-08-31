@@ -1165,9 +1165,69 @@ returns _silently_, so `ProgrammaticSender` used to report success for a message
 leaving an orphan `## User` section that became the body of the user's next `<CR>`. A dispatched
 chat normally keeps working after dispatching, so the shorter the worker's task the more likely
 this window is. So `ProgrammaticSender` now refuses before appending (rather than appending and
-rolling back), and the notifier queues instead, flushing on the recipient's own completion event.
-Queued notifications coalesce into one message: three workers finishing while the orchestrator is
-busy is one turn, not three.
+rolling back), and `application/chat/message_queue.lua` queues instead, flushing on the
+recipient's own completion event. Queued items coalesce into one message: three workers finishing
+while the orchestrator is busy is one turn, not three.
+
+**That queue carries bodies as well as notices**, which is what `nvim_chat_send_message`'s
+`queue_if_busy` is (#642). Both kinds need the same wait — the only way to deliver anything is to
+start a turn, and a turn can only be started on a chat that is not responding — so they share one
+queue and one flush, and a turn woken by it can carry both. An item with a `body` is a relayed
+message and one without is a completion notice — there is no separate kind flag, because a
+derivable one goes stale. `application/chat/delivery_message.lua` renders the coalesced turn and
+keeps the notice-only case byte-identical to what it was, since that is still the common shape;
+splitting it out keeps prompt wording out of the queue's state machine.
+
+Four things about it are not incidental:
+
+- **`queue_if_busy` is not gated on `chat_notifications.enabled`, and the drain is not either.**
+  That flag decides whether vibing.nvim volunteers a watchdog wake-up; a queued message is a
+  delivery the caller explicitly asked for. Gating it would mean a worker's report vanishing in
+  silence on the default config. So `on_response_done` drains first and unconditionally, and only
+  the `edges` half below it reads the flag.
+- **It is off by default on the tool, in both directions of version skew.** An older Neovim
+  ignores the key and refuses a busy chat exactly as before, which is what a caller that did not
+  ask to queue already expects; an older MCP server never sends it. It also only covers
+  `"responding"` — an invalid buffer or an empty message is not something waiting fixes, so those
+  still error. That is why `ProgrammaticSender` grew a `is_responding` predicate rather than the
+  caller matching on the error _text_ `validate` raises, which would stop working the day the
+  wording changed, silently.
+- **The orchestration link is written just before delivery, not when the message is queued.**
+  `update_frontmatter_list` edits the recipient's buffer, and the precondition for queueing is
+  that the recipient is streaming — so the usual "link before the send" ordering has to be kept by
+  moving both, not by writing early. Flush only ever delivers into an idle chat, which makes that
+  the one safe moment. A message whose recipient is deleted before delivery therefore leaves no
+  record of an exchange that never happened.
+- **The queue is capped per buffer (20) and a message past the cap is refused, not dropped.** A
+  notice can be deduplicated by the bufnr it is about; a body cannot, so a worker in a retry loop
+  would otherwise pile up without bound. The refusal is returned to the sender as an error, which
+  is the whole point — a report that disappears quietly is the failure this mechanism exists to
+  remove. The one case that cannot be reported back is a _notification_ arriving at a full queue,
+  since its edge is already consumed by then; that one warns.
+
+**A message the sender delivered itself silences the watchdog for one stop.** A send is one event
+with two opposite consequences, so `completion_notifier.on_sent(from, to)` performs both rather
+than leaving the pairing to each caller: it records `edges[to][from]` (the send _is_ the
+subscription), and marks `edges[from][to]` as already-reported, dropping any notice about `from`
+already sitting in `to`'s queue. "B stopped, go and read it" is the same errand as B's own report,
+and A does not need waking twice for it. The reversed indices are the reason it is one function:
+written out at a call site, `subscribe(a, b)` next to a suppression of `edges[a][b]` reads like a
+typo.
+
+**It is a mark and not a deletion, and that distinction is the whole of #638 again.** Nothing at
+send time can tell a final report from a progress note — and in a tree the middle node's first
+message is _always_ a progress note, because it stops once to wait for its own worker and only
+writes the real answer after that worker reports. Deleting the edge there would lose the
+orchestrator's subscription permanently, defeating the hold this PR's base branch added. So the
+mark suppresses exactly one stop: `on_response_done` clears it when the drain restarts the chat
+(the report was not final after all), and otherwise consumes the subscription silently, since the
+one-shot edge was spent on a delivery the subscriber already received.
+
+**Queued messages do not spend hop budget.** A direct send to an idle chat has never counted
+against `max_hops` — it just starts a turn — and `queue_if_busy` is that same send arriving late.
+Only notices carry a `depth`, and the queue treats it as an opaque number it hands back on delivery
+so the notifier can raise its counter; the queue itself never interprets it. Bounding A⇄B
+ping-pong through direct sends is #644's pair-wise counter, not this.
 
 **A chat drains its own queue before it notifies anyone, and a turn that drained is not reported as
 a completion at all.** `on_response_done` tries `flush(bufnr)` first and returns leaving

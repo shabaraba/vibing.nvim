@@ -7,6 +7,7 @@ describe("CompletionNotifier", function()
   ---モジュールレベルの購読テーブルはspec間で共有されるので、毎回requireし直して捨てる。
   ---本番側にリセット用のAPIを生やすより、追加した状態が自動的にリセット対象になる
   local Notifier
+  local MessageQueue
   local originals = {}
   local buffers = {}
   local responding = {}
@@ -71,8 +72,12 @@ describe("CompletionNotifier", function()
 
     configure()
 
+    -- 配達キューは別モジュールに分かれていて、そちらもモジュールレベルの状態を持つ。
+    -- notifier だけ捨てても、キャッシュされたキューの滞留がspec間で持ち越される
+    package.loaded["vibing.application.chat.message_queue"] = nil
     package.loaded["vibing.application.chat.completion_notifier"] = nil
     Notifier = require("vibing.application.chat.completion_notifier")
+    MessageQueue = require("vibing.application.chat.message_queue")
   end)
 
   after_each(function()
@@ -407,6 +412,149 @@ describe("CompletionNotifier", function()
     -- 深さ0で張られた c のエッジがここで配達されても、カウンタは戻らない
     Notifier.on_response_done(c)
     assert.is_false(Notifier.subscribe(a, b))
+  end)
+
+  it("drains a queued message even when watchdog notifications are disabled", function()
+    -- `chat_notifications.enabled` が gate するのは「読みに行け」を自動で飛ばすかどうか。
+    -- `queue_if_busy` は呼び出し側が明示的に出した配達要求なので、設定に従わせると
+    -- 通知を切っている環境でワーカーの報告が黙って消える
+    configure({ enabled = false })
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    assert.is_true(MessageQueue.enqueue_message(a, b, "the migration is done"))
+    responding[a] = false
+    Notifier.on_response_done(a)
+
+    assert.equals(1, #sends)
+    assert.equals(a, sends[1].bufnr)
+    assert.is_truthy(sends[1].message:find("the migration is done", 1, true))
+  end)
+
+  it("carries the sender's body rather than telling the reader to go and fetch it", function()
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    MessageQueue.enqueue_message(a, b, "found the leak in parser.lua")
+    responding[a] = false
+    Notifier.on_response_done(a)
+
+    assert.is_truthy(sends[1].message:find("found the leak in parser.lua", 1, true))
+    assert.is_truthy(sends[1].message:find("chat buffer " .. b, 1, true))
+  end)
+
+  it("coalesces queued messages and completion notices into one turn", function()
+    local a, b, c = make_chat(), make_chat(), make_chat()
+    responding[a] = true
+
+    Notifier.subscribe(a, c)
+    Notifier.on_response_done(c)
+    MessageQueue.enqueue_message(a, b, "worker b reporting in")
+
+    responding[a] = false
+    Notifier.on_response_done(a)
+
+    assert.equals(1, #sends)
+    assert.is_truthy(sends[1].message:find("worker b reporting in", 1, true))
+    assert.is_truthy(sends[1].message:find("chat buffer " .. c, 1, true))
+  end)
+
+  it("drops the watchdog edge once the watched chat has reported for itself", function()
+    -- B が A に自分から送った以上、「B が止まった、読みに行け」は同じ用件の二度目になる
+    local a, b = make_chat(), make_chat()
+
+    Notifier.subscribe(a, b)
+    Notifier.on_sent(b, a)
+    Notifier.on_response_done(b)
+
+    assert.equals(0, #sends)
+
+    -- A が改めて B に送れば張り直される
+    assert.is_true(Notifier.subscribe(a, b))
+    Notifier.on_response_done(b)
+    assert.equals(1, #sends)
+  end)
+
+  it("drops a completion notice already queued about the chat that then reported", function()
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    Notifier.subscribe(a, b)
+    Notifier.on_response_done(b)
+
+    MessageQueue.enqueue_message(a, b, "here is what I found")
+    Notifier.on_sent(b, a)
+
+    responding[a] = false
+    Notifier.on_response_done(a)
+
+    assert.equals(1, #sends)
+    assert.is_truthy(sends[1].message:find("here is what I found", 1, true))
+    assert.is_falsy(sends[1].message:find("finished responding", 1, true))
+  end)
+
+  it("keeps the subscription alive when the report turns out to be an intermediate one", function()
+    -- A → B → C。B が「C に投げた、待つ」を A に伝えてから、C の報告で再稼働する。
+    -- 送信の時点では、それが最終報告か途中経過かは機構には分からない。エッジを消してしまうと
+    -- B の本命の報告が終わっても A には二度と通知が来ない（#638 が直したのと同じ取りこぼし）
+    local a, b, c = make_chat(), make_chat(), make_chat()
+
+    Notifier.subscribe(a, b)
+    Notifier.subscribe(b, c)
+
+    -- B が A に途中経過を送る（A は応答中なので積まれるだけ）
+    responding[a] = true
+    Notifier.on_sent(b, a)
+    MessageQueue.enqueue_message(a, b, "dispatched to C, waiting")
+
+    -- C が先に終わり、B のキューに滞留する
+    responding[b] = true
+    Notifier.on_response_done(c)
+
+    -- B の中間ターンが終わる: 自分のキューで再稼働するので A には知らせない
+    responding[b] = false
+    Notifier.on_response_done(b)
+    assert.equals(b, sends[#sends].bufnr, "only B's own queue drains; A is not woken mid-flight")
+
+    -- B の本命の報告ターンが終わる。購読は生きていなければならない
+    responding[a] = false
+    responding[b] = false
+    Notifier.on_response_done(b)
+
+    -- A には B の途中経過と「B が止まった」が1ターンにまとまって届く
+    assert.equals(a, sends[#sends].bufnr)
+    assert.is_truthy(sends[#sends].message:find("dispatched to C, waiting", 1, true))
+    assert.is_truthy(sends[#sends].message:find("chat buffer " .. b, 1, true))
+  end)
+
+  it("suppresses only the one stop that follows the report", function()
+    local a, b = make_chat(), make_chat()
+
+    Notifier.subscribe(a, b)
+    Notifier.on_sent(b, a)
+
+    Notifier.on_response_done(b)
+    assert.equals(0, #sends, "A heard from B directly, so the watchdog is redundant")
+
+    -- 購読は使い切られている。改めて送らなければ次の完了でも黙ったまま
+    Notifier.on_response_done(b)
+    assert.equals(0, #sends)
+  end)
+
+  it("does not raise the hop count for a queued message", function()
+    -- 直接送信は今も hop 予算の対象外で、`queue_if_busy` はその同じ送信が遅れて届くだけ。
+    -- ペア単位の往復カウンタは #644 の担当
+    configure({ max_hops = 1 })
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    MessageQueue.enqueue_message(a, b, "a report")
+    responding[a] = false
+    Notifier.on_response_done(a)
+    assert.equals(1, #sends)
+
+    responding[a] = false
+    assert.is_true(Notifier.subscribe(a, b), "the delivery must not have spent A's hop budget")
   end)
 
   describe("setup", function()

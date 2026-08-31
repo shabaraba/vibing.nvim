@@ -60,6 +60,7 @@ describe("rpc handlers.message.send_message", function()
       return true, nil
     end
 
+    package.loaded["vibing.application.chat.message_queue"] = nil
     package.loaded["vibing.application.chat.completion_notifier"] = nil
     Notifier = require("vibing.application.chat.completion_notifier")
   end)
@@ -183,5 +184,98 @@ describe("rpc handlers.message.send_message", function()
 
     assert.is_true(result.success)
     assert.equals(1, chats[to].sends)
+  end)
+
+  it("queues instead of refusing when the target is busy and the caller asked for it", function()
+    local from, to = make_chat(), make_chat()
+    chats[to].responding = true
+
+    local result =
+      Message.send_message({ bufnr = to, message = "my report", from_bufnr = from, queue_if_busy = true })
+
+    assert.is_true(result.success)
+    assert.is_true(result.queued)
+    assert.equals(0, chats[to].sends, "nothing may be appended while the target is streaming")
+
+    chats[to].responding = false
+    Notifier.on_response_done(to)
+
+    assert.equals(1, chats[to].sends)
+  end)
+
+  it("subscribes on the queued path too, so the sender still hears the target stop", function()
+    local from, to = make_chat(), make_chat()
+    chats[to].responding = true
+
+    Message.send_message({ bufnr = to, message = "my report", from_bufnr = from, queue_if_busy = true })
+
+    chats[to].responding = false
+    Notifier.on_response_done(to)
+
+    assert.equals(1, chats[from].sends)
+  end)
+
+  it("queues a target that was named by file_path", function()
+    -- 宛先の解決は `queue_if_busy` の判定より前。パスのまま積むと、キューは配達先を
+    -- 引けないバッファ番号として持つことになる
+    local from, to = make_chat(), make_chat()
+    chats[to].responding = true
+    ChatLocator.open = function()
+      return to
+    end
+
+    local result = Message.send_message({
+      file_path = "worker.md",
+      message = "my report",
+      from_bufnr = from,
+      queue_if_busy = true,
+    })
+
+    assert.is_true(result.queued)
+    assert.equals(to, result.bufnr)
+
+    chats[to].responding = false
+    Notifier.on_response_done(to)
+
+    assert.equals(1, chats[to].sends)
+  end)
+
+  it("still refuses a target that waiting cannot make sendable", function()
+    -- `queue_if_busy` が引き受けるのは「応答中」だけ。空メッセージや実在しないバッファは
+    -- いくら待っても解けないので、従来どおりのエラーにする
+    local to = make_chat()
+
+    assert.has_error(function()
+      Message.send_message({ bufnr = to, message = "  ", queue_if_busy = true })
+    end)
+  end)
+
+  it("refuses a chat queueing a message to itself", function()
+    -- `validate` は応答中を理由に断っていたので、この経路ができるまでは起こりえなかった。
+    -- 積むと自分の配達で自分が再稼働し、hop 予算の抑止も効かない
+    local a = make_chat()
+    chats[a].responding = true
+
+    assert.has_error(function()
+      Message.send_message({ bufnr = a, message = "note to self", from_bufnr = a, queue_if_busy = true })
+    end)
+
+    chats[a].responding = false
+    Notifier.on_response_done(a)
+
+    assert.equals(0, chats[a].sends)
+  end)
+
+  it("does not wake a chat twice when the answer it was waiting for already arrived", function()
+    -- B が A に質問し、A が答える。答えが届いた以上「A が止まった、読みに行け」は同じ用件の二度目
+    local a, b = make_chat(), make_chat()
+
+    Message.send_message({ bufnr = a, message = "which schema?", from_bufnr = b })
+    Message.send_message({ bufnr = b, message = "use the second one", from_bufnr = a })
+    local delivered = chats[b].sends
+
+    Notifier.on_response_done(a)
+
+    assert.equals(delivered, chats[b].sends)
   end)
 end)
