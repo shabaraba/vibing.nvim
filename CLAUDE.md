@@ -16,7 +16,7 @@ A Codex CLI backend is also supported. See
 # Install dependencies
 npm install
 
-# Build the MCP server (and download the mote binaries)
+# Build the MCP server
 ./build.sh
 
 # Run Lua tests (requires Neovim with plenary.nvim)
