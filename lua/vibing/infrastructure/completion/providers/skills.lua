@@ -3,13 +3,14 @@
 ---@module "vibing.infrastructure.completion.providers.skills"
 local M = {}
 
+local CliCommandList = require("vibing.infrastructure.completion.cli_command_list")
 local YamlFrontmatter = require("vibing.core.utils.yaml_frontmatter")
 
 ---@type Vibing.CompletionItem[]?
 local _cache = nil
 
 ---@type Vibing.CompletionItem[]?
-local _bundled_cache = nil
+local _cli_cache = nil
 
 ---@type boolean
 local _loading = false
@@ -18,10 +19,51 @@ local _loading = false
 local _load_generation = 0
 
 ---@type string?
-local _bundled_cache_cwd = nil
+local _cli_cache_cwd = nil
 
----@type number?
-local _bundled_cache_script_mtime = nil
+---Loop time (ms) before which a new probe must not start.
+---
+---Nothing is cached when the probe fails, and `get_all()` is on the completion path -- so without
+---this, a CLI that answers wrongly (or not at all) would have a fresh `claude` spawned per
+---keystroke, each living until its own timeout. The retry is deliberately kept, just rate-limited:
+---the usual failure is transient, and giving up until `:VibingReloadCommands` would leave the `/`
+---menu quietly missing every skill.
+---@type number
+local _retry_after = 0
+
+---@type integer
+local FAILURE_COOLDOWN_MS = 30000
+
+---Commands the CLI offers that act on its interactive terminal session, and so cannot do
+---anything from a chat buffer. They are dropped rather than shown, because the `/` menu is
+---fuzzy-searched and a third of it being inert entries makes the real skills harder to find.
+---
+---This is a denylist, and the difference from the allowlist it replaces is the whole point:
+---when the CLI grows a command nobody here has heard of, a stale allowlist hides it (which is
+---how `/design`, `/dataviz` and `/code-review` were missing) while a stale denylist merely shows
+---one extra entry.
+---@type table<string, boolean>
+local TERMINAL_ONLY_COMMANDS = {
+  agents = true,
+  ["auto-mode-setup"] = true,
+  autocompact = true,
+  color = true,
+  config = true,
+  ["extra-usage"] = true,
+  fast = true,
+  heapdump = true,
+  import = true,
+  insights = true,
+  ["list-agents"] = true,
+  mcp = true,
+  recap = true,
+  ["reload-skills"] = true,
+  rename = true,
+  ["team-onboarding"] = true,
+  usage = true,
+  ["usage-credits"] = true,
+  ["workflow-launch-exec"] = true,
+}
 
 ---Parse SKILL.md to extract name and description
 ---
@@ -67,96 +109,13 @@ end
 ---other reachable seam.
 M._parse_skill = parse_skill
 
----Get hardcoded bundled skills (Claude Code built-in skills)
----These are not available via supportedCommands() API
----@return Vibing.CompletionItem[]
-local function get_hardcoded_bundled_skills()
-  return {
-    {
-      word = "simplify",
-      label = "/simplify",
-      kind = "Skill",
-      description = "Reviews recently changed files for code reuse, quality, and efficiency issues, then fixes them",
-      detail = "bundled",
-      source = "bundled",
-      filterText = "simplify",
-    },
-    {
-      word = "batch",
-      label = "/batch",
-      kind = "Skill",
-      description = "Orchestrates large-scale changes across a codebase in parallel",
-      detail = "bundled",
-      source = "bundled",
-      filterText = "batch",
-    },
-    {
-      word = "debug",
-      label = "/debug",
-      kind = "Skill",
-      description = "Troubleshoots your current Claude Code session by reading the session debug log",
-      detail = "bundled",
-      source = "bundled",
-      filterText = "debug",
-    },
-    {
-      word = "claude-api",
-      label = "/claude-api",
-      kind = "Skill",
-      description = "Loads Claude API reference material for your project's language",
-      detail = "bundled",
-      source = "bundled",
-      filterText = "claude-api",
-    },
-  }
-end
-
----Resolve executable and script path for list-commands
----@return string?, string? executable, script_path (nil if not resolvable)
-local function resolve_list_commands()
-  local current_file = debug.getinfo(1, "S").source:sub(2)
-  local plugin_dir = vim.fs.root(current_file, "package.json")
-  if not plugin_dir then
-    return nil, nil
-  end
-
-  local ok, Config = pcall(require, "vibing.config")
-  if not ok then
-    return nil, nil
-  end
-
-  local config = Config.get()
-
-  -- Always use compiled JS + node for list-commands: running list-commands.ts via
-  -- bun causes the process to hang indefinitely due to SDK async operations not
-  -- resolving under bun.
-  local script_path = plugin_dir .. "/dist/bin/list-commands.js"
-  if vim.fn.filereadable(script_path) ~= 1 then
-    return nil, nil
-  end
-
-  local configured = config.node and config.node.executable
-  local executable
-  if configured and configured ~= "auto" then
-    executable = configured
-  else
-    executable = vim.fn.exepath("node")
-    if executable == "" then
-      executable = "node"
-    end
-  end
-
-  return executable, script_path
-end
-
----Plugin directories vibing.nvim self-hosts via `--plugin-dir`, so their skills show up in
----completion too. `list-commands` only knows about `~/.claude/plugins/installed_plugins.json`,
----and teaching it the `.vibing/plugins` convention would mean writing the same cwd handling in
----two languages; passing the already-resolved paths keeps the convention defined in one place.
+---Plugin directories vibing.nvim self-hosts via `--plugin-dir`. The CLI is asked for its command
+---list with the very same flags a chat gets, so their skills are namespaced and reported by the
+---CLI itself rather than being rediscovered here.
 ---
 ---Resolved against the same global cwd the rest of this module keys on, not a chat's
 ---`working_dir`: completion is a property of the editor, not of whichever chat buffer happens to
----be focused. Passing it explicitly is what lets `_bundled_cache_cwd` stand in as this list's
+---be focused. Passing it explicitly is what lets `_cli_cache_cwd` stand in as this list's
 ---staleness key too -- `plugin_dirs` caches per cwd, so with the cwd unchanged the list cannot
 ---change underneath us except via `plugin_dirs.clear_cache()`, and the only caller of that
 ---(`:VibingReloadCommands`) clears this module's cache in the same breath.
@@ -173,181 +132,132 @@ local function resolve_plugin_dirs()
   return PluginDirs.resolve(vim.fn.getcwd(-1, -1), Config.get())
 end
 
----Parse raw JSON output from list-commands into completion items
----@param stdout string
----@return Vibing.CompletionItem[]
-local function parse_commands_output(stdout)
-  local ok, commands = pcall(vim.fn.json_decode, stdout)
-  if not ok or type(commands) ~= "table" then
-    return {}
+---Where a command came from, for the menu's second column.
+---
+---A plugin skill is namespaced in its own name (`vibing-nvim:vibing-code-tour`), which is also
+---how it has to be typed. User and project skills carry a `(user)` / `(project)` marker the CLI
+---appends to the description. Everything else is the CLI's own -- a built-in command or one of
+---the skills bundled inside the binary.
+---@param name string
+---@param description string
+---@return string source, string detail
+local function classify(name, description)
+  local plugin = name:match("^([^:]+):")
+  if plugin then
+    return "plugin", plugin
   end
+  if description:match("%(user%)%s*$") then
+    return "user", "user"
+  end
+  if description:match("%(project%)%s*$") then
+    return "project", "project"
+  end
+  return "bundled", "bundled"
+end
 
+---Turn the CLI's command list into completion items.
+---@param commands Vibing.CliCommand[]
+---@return Vibing.CompletionItem[]
+local function to_items(commands)
   local items = {}
   for _, cmd in ipairs(commands) do
-    if type(cmd) == "table" and type(cmd.name) == "string" and cmd.name ~= "" then
+    local name = type(cmd) == "table" and cmd.name or nil
+    -- A `__`-prefixed name is the CLI's own internal plumbing (`__remote-workflow`); it is not
+    -- meant to be typed at all, which is why it is dropped rather than listed as terminal-only.
+    if
+      type(name) == "string"
+      and name ~= ""
+      and not name:match("^__")
+      and not TERMINAL_ONLY_COMMANDS[name]
+    then
       local description = type(cmd.description) == "string" and cmd.description or ""
-      local source = "custom"
-      if description:match("%(plugin:") then
-        source = "plugin"
-      elseif description:match("%(user%)") then
-        source = "user"
-      elseif description:match("%(project%)") then
-        source = "project"
-      end
-
-      local detail = source
-      if source == "plugin" then
-        detail = description:match("%(plugin:([^@%)]+)") or "plugin"
-      end
-
-      -- For plugin skills without a namespace (no ":" in name), prepend the plugin name.
-      -- Native Claude Code invokes these as "plugin:skill" (e.g. "wt-sessions:start").
-      -- Skip if detail looks like a git hash (all hex chars, >= 8 chars).
-      local word = cmd.name
-      if source == "plugin" and not cmd.name:find(":") then
-        local is_hash = detail:match("^[0-9a-f]+$") and #detail >= 8
-        if not is_hash then
-          word = detail .. ":" .. cmd.name
-        end
-      end
-
+      local source, detail = classify(name, description)
       table.insert(items, {
-        word = word,
-        label = "/" .. word,
+        word = name,
+        label = "/" .. name,
         kind = "Skill",
         description = description,
         detail = detail,
         source = source,
-        filterText = word,
+        filterText = name,
       })
     end
   end
   return items
 end
 
----Start async load of dynamic skills from the CLI
----Loads in background; sets _bundled_cache when done and invalidates _cache
+M._to_items = to_items
+
+---Start the background probe of the CLI's command list.
+---Sets _cli_cache when it answers and invalidates _cache.
 local function start_async_load()
-  if _loading or _bundled_cache then
+  if _loading or _cli_cache or vim.uv.now() < _retry_after then
     return
   end
 
-  local executable, script_path = resolve_list_commands()
-  if not executable or not script_path then
+  local config_ok, Config = pcall(require, "vibing.config")
+  if not config_ok then
     return
   end
 
   local cwd = vim.fn.getcwd(-1, -1)
-  local plugin_dirs = resolve_plugin_dirs()
-  _loading = true
-  _bundled_cache_cwd = cwd
-  _bundled_cache_script_mtime = vim.fn.getftime(script_path)
   local load_generation = _load_generation
-  -- Accumulate streaming chunks correctly: last element of each on_stdout call
-  -- is a partial line continued by the first element of the next call.
-  local stdout_lines = { "" }
+  _loading = true
+  _cli_cache_cwd = cwd
 
-  -- Do NOT use stdout_buffered=true: Neovim caps its internal buffer at 65536 bytes,
-  -- which truncates large outputs (e.g. >64KB plugin skill lists) and breaks JSON parsing.
-  -- Instead, stream chunks and reconstruct lines manually.
-  local argv = vim.list_extend({ executable, script_path }, plugin_dirs)
-
-  local job_id = vim.fn.jobstart(argv, {
+  local started = CliCommandList.fetch({
     cwd = cwd,
-    on_stdout = function(_, data, _)
-      if type(data) ~= "table" or #data == 0 then
-        return
-      end
-      -- data[1] continues the partial line from the previous call
-      stdout_lines[#stdout_lines] = stdout_lines[#stdout_lines] .. (data[1] or "")
-      for i = 2, #data do
-        table.insert(stdout_lines, data[i])
-      end
-    end,
-    on_exit = vim.schedule_wrap(function(_, code, _)
-      if load_generation ~= _load_generation then
-        return
-      end
-      _loading = false
-      if code ~= 0 then
-        -- Failed: allow retry on next completion trigger
-        return
-      end
-      if vim.fn.getcwd(-1, -1) ~= cwd then
-        -- cwd changed: retry will happen on next trigger with correct cwd
-        return
-      end
-      local stdout = table.concat(stdout_lines, "\n")
-      local items = parse_commands_output(stdout)
-      _bundled_cache = items
-      _cache = nil
-    end),
-  })
-
-  if type(job_id) ~= "number" or job_id <= 0 then
+    config = Config.get(),
+    plugin_dirs = resolve_plugin_dirs(),
+  }, function(commands)
+    if load_generation ~= _load_generation then
+      return
+    end
     _loading = false
-    _bundled_cache_cwd = nil
-    _bundled_cache_script_mtime = nil
+    -- Nothing is cached on failure, so a later completion trigger retries. Same for a cwd that
+    -- moved while the probe was in flight -- the answer describes the directory it was asked in.
+    if not commands or vim.fn.getcwd(-1, -1) ~= cwd then
+      _retry_after = vim.uv.now() + FAILURE_COOLDOWN_MS
+      return
+    end
+    _cli_cache = to_items(commands)
+    _cache = nil
+  end)
+
+  if not started then
+    _loading = false
+    _cli_cache_cwd = nil
+    _retry_after = vim.uv.now() + FAILURE_COOLDOWN_MS
   end
 end
 
----Invalidate the bundled/top-level caches if cwd changed or dist/bin/list-commands.js
----was rebuilt (e.g. by build.sh) since the cache was populated.
+---Invalidate the CLI/top-level caches when the cwd moved: project skills, project settings and
+---`.vibing/plugins` are all resolved from it, so the previous answer describes another directory.
 local function invalidate_if_stale()
-  if not _bundled_cache then
+  -- A nil cwd means no probe has ever been started, which is not staleness: bumping the
+  -- generation here would cancel the one `preload()` fires a moment before the first `/`.
+  if _cli_cache_cwd == nil or _cli_cache_cwd == vim.fn.getcwd(-1, -1) then
     return
   end
 
-  local current_cwd = vim.fn.getcwd(-1, -1)
-  local _, script_path = resolve_list_commands()
-  local script_stale = script_path
-    and _bundled_cache_script_mtime
-    and vim.fn.getftime(script_path) ~= _bundled_cache_script_mtime
-  if _bundled_cache_cwd == current_cwd and not script_stale then
-    return
-  end
-
-  _bundled_cache = nil
-  _bundled_cache_cwd = nil
-  _bundled_cache_script_mtime = nil
+  _cli_cache = nil
+  _cli_cache_cwd = nil
   _loading = false
   _load_generation = _load_generation + 1
   _cache = nil
+  -- A new directory is a different question, so it does not wait out the old one's cooldown.
+  _retry_after = 0
 end
 
----Get dynamic skills from the CLI (custom commands + plugin skills)
----Returns cached result immediately; starts async load if not yet cached
+---Commands the CLI reports for this directory.
+---Returns the cached answer immediately; starts the probe if there is none yet.
 ---@return Vibing.CompletionItem[]
-local function get_dynamic_cli_skills()
-  if _bundled_cache then
-    return _bundled_cache
+local function get_cli_commands()
+  if _cli_cache then
+    return _cli_cache
   end
   start_async_load()
   return {}
-end
-
----Get all bundled skills (hardcoded + dynamic SDK skills)
----@return Vibing.CompletionItem[]
-local function get_bundled_skills()
-  local hardcoded = get_hardcoded_bundled_skills()
-  local dynamic = get_dynamic_cli_skills()
-
-  -- Merge without duplicates
-  local seen = {}
-  local merged = {}
-
-  for _, item in ipairs(hardcoded) do
-    seen[item.word] = true
-    table.insert(merged, item)
-  end
-
-  for _, item in ipairs(dynamic) do
-    if not seen[item.word] then
-      table.insert(merged, item)
-    end
-  end
-
-  return merged
 end
 
 ---Scan skill directories
@@ -355,8 +265,9 @@ end
 local function scan_skills()
   local items = {}
 
-  -- Add bundled skills first
-  for _, skill in ipairs(get_bundled_skills()) do
+  -- The CLI's own answer goes first, so its description and namespacing win the dedup below
+  -- over the directory scan's -- the same skill, described the way the CLI describes it.
+  for _, skill in ipairs(get_cli_commands()) do
     table.insert(items, skill)
   end
 
@@ -418,34 +329,35 @@ function M.get_all()
     return _cache
   end
   local items = scan_skills()
-  -- Only cache when dynamic load is complete; avoid caching incomplete results
+  -- Only cache when the CLI probe is complete; avoid caching incomplete results
   if not M.is_preloading() then
     _cache = items
   end
   return items
 end
 
----Preload dynamic skills in background (call at setup time to warm the cache)
+---Preload the CLI's command list in background (call at setup time to warm the cache)
 function M.preload()
   invalidate_if_stale()
   start_async_load()
 end
 
----Check if dynamic skills (SDK/plugin skills) are still loading
----Returns true before the first async load completes; false once _bundled_cache is populated
+---Check if the CLI's command list is still being fetched
+---Returns true before the first probe answers; false once _cli_cache is populated
 ---@return boolean
 function M.is_preloading()
-  return _loading or _bundled_cache == nil
+  return _loading or _cli_cache == nil
 end
 
 ---Clear cache (call when skills change)
 function M.clear_cache()
   _load_generation = _load_generation + 1
   _cache = nil
-  _bundled_cache = nil
-  _bundled_cache_cwd = nil
-  _bundled_cache_script_mtime = nil
+  _cli_cache = nil
+  _cli_cache_cwd = nil
   _loading = false
+  -- `:VibingReloadCommands` is the user asking for a retry now, cooldown or not.
+  _retry_after = 0
 end
 
 return M

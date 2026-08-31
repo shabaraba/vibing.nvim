@@ -27,10 +27,8 @@
   },
   "homepage": "https://github.com/shabaraba/vibing.nvim#readme",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "build:watch": "node scripts/build.mjs --watch",
     "test": "npm run test:lua && npm run test:node",
-    "test:node": "npm run build && find tests -name '*.test.mjs' -exec node --test {} +",
+    "test:node": "find tests -name '*.test.mjs' -exec node --test {} +",
     "test:lua": "nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }\"",
     "test:e2e": "VIBING_E2E=1 nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/e2e/ { minimal_init = 'tests/minimal_init.lua' }\"",
     "test:eval": "nvim --headless -u tests/minimal_init.lua -l tests/evals/run.lua",
@@ -51,7 +49,6 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.1.1",
-    "esbuild": "^0.28.1",
     "eslint": "^10.7.0",
     "markdownlint-cli": "^0.49.0",
     "prettier": "^3.9.5",

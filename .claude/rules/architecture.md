@@ -271,7 +271,6 @@ Lua Plugin:
 Node.js side (no agent wrapper — only these):
 - bin/hooks/pre-tool-use.sh    - PreToolUse hook → RPC
 - bin/hooks/stop-failure.sh    - StopFailure hook → RPC
-- bin/list-commands.ts         - Slash command/skill enumeration for completion
 - claude-plugin/mcp-server/src/index.ts      - MCP server entry point
 - claude-plugin/mcp-server/src/tools/        - MCP tool implementations (buffer, lsp, window, chat)
 
@@ -334,13 +333,12 @@ have to survive `clear_cache()` to mean anything — silencing the warning on ex
 blocks the MCP servers there, but skill descriptions still cost prompt tokens on a call that has
 `--tools ""` and so nothing to invoke them with.
 
-**Completion needs the same list, and gets it by argv rather than by rediscovery.**
-`bin/list-commands.ts` only knew `~/.claude/plugins/installed_plugins.json`, where a
-`--plugin-dir` plugin cannot appear. Teaching it the `.vibing/plugins` convention would mean
-writing the same working-directory handling in Lua and TypeScript, so `skills.lua` appends the
-already-resolved paths to the `jobstart` argv and `resolveSessionPluginDirs` scans them. The
-agent provider (`completion/providers/agents.lua`) merges the same entries ahead of the installed
-ones — without it `nvim-navigator` would load in the CLI and never appear in completion.
+**Completion passes the same list to the CLI rather than rediscovering it.**
+`completion/cli_command_list.lua` repeats these `--plugin-dir` flags on its probe, so the CLI
+namespaces those skills (`vibing-nvim:vibing-code-tour`) and reports them itself — see "Slash
+Command Discovery" below. The agent provider (`completion/providers/agents.lua`) still scans the
+directories itself, since no CLI query answers "which subagents are loaded"; without it
+`nvim-navigator` would load in the CLI and never appear in completion.
 
 **`:VibingReloadCommands` clears `plugin_dirs` first**, before the provider caches: both
 re-resolve from it, so clearing it second would refill them from the list being discarded.
@@ -363,6 +361,57 @@ project already had. Reusing a root plugin's name is still how a worktree overri
 Reaching a running Neovim was the entire point of them, so no opt-in was added.
 `.claude-plugin/marketplace.json` is kept — a manual `claude plugin install` still works, and
 deleting it can happen later.
+
+## Slash Command Discovery
+
+The `/` menu's skills and built-in commands come from the CLI itself, asked once per working
+directory: `completion/cli_command_list.lua` spawns `claude` with `--input-format stream-json`,
+writes a single `control_request` line of subtype `initialize`, reads the one-line
+`control_response`, and kills the process. `completion/providers/skills.lua` shapes the answer
+into completion items and caches it.
+
+The point is that **built-in skills are inside the binary**. `/design`, `/dataviz`,
+`/code-review`, `/loop`, `/run` and the rest are backed by no file anywhere, so the filesystem
+scan this replaced could only ever offer a hand-written list — one in `skills.lua`, another in
+`bin/list-commands.ts` — and both went stale on every CLI release. What is hand-maintained now is
+`TERMINAL_ONLY_COMMANDS`, a **deny**list of commands that act on the interactive terminal session
+(`/color`, `/usage`, `/rename`, ...). The inversion is the whole gain: a stale allowlist hides a
+new skill, a stale denylist shows one extra entry.
+
+**Measured against claude 2.1.231**, since none of the protocol is documented:
+
+| Question                           | Answer                                                                   |
+| ---------------------------------- | ------------------------------------------------------------------------ |
+| Cost of the probe                  | None. No turn starts, so no request is made                              |
+| Latency / size                     | ~800ms, 67 commands, one ~24KB line                                      |
+| Does the CLI enumerate this?       | No `claude` subcommand lists skills; `--help` does not either            |
+| `--max-turns 0` as a cheaper probe | Runs the turn anyway — measured at $0.16                                 |
+| The `system`/`init` event instead  | Same list under `slash_commands`, but names only, and only mid-turn      |
+| Plugin skills                      | Present and namespaced, when the same `--plugin-dir` flags are passed    |
+| Disabled installed plugins         | Absent, which the filesystem scan got wrong in the other direction       |
+| An unknown `subtype`               | `control_response` with `subtype: "error"`, no enumeration of valid ones |
+
+Three of those rows are why the code looks the way it does.
+
+**The response is checked layer by layer, and every stdout line is tried.** An undocumented
+protocol that changes shape should produce no completions rather than a partial list, so a failed
+check returns `nil` and the next `/` retries the probe. Reading only the first line would let
+anything the CLI decides to print ahead of the answer discard it.
+
+**`--strict-mcp-config` is passed even though the command list is identical without it.** The
+process is killed the moment it answers; launching the user's MCP servers only to orphan them a
+second later buys nothing.
+
+**`--setting-sources` matches what a chat gets**, via `cli_command_builder.resolve_setting_sources`.
+A narrower list on the probe than on the chat would hide project skills the chat can actually run.
+
+The old route was `node dist/bin/list-commands.js`, which scanned `installed_plugins.json` and
+each plugin's `skills/` directory. It is gone, and with it `bin/lib/plugin-loader.ts`,
+`scripts/build.mjs` and the root `npm run build` step — the root bundle had nothing else in it.
+Two behaviours changed with it, both toward what the CLI actually loads: an installed plugin the
+user has disabled no longer appears (the scan's `enabledPlugins` check treated an all-disabled map
+as "no filter"), and a skill is described by the CLI's own description rather than by a second
+frontmatter reader.
 
 ## Startup Cost
 

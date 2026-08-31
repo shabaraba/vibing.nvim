@@ -19,9 +19,13 @@ local binary_path = CommonBuilder.binary_resolver(
 
 --- Resolve the `--setting-sources` list, falling back to the default when config
 --- is missing, malformed, or contains entries outside `user`/`project`/`local`.
+---
+--- Public because `completion/cli_command_list.lua` asks the same CLI which slash commands it
+--- would load, and the answer depends on this flag: a narrowed list there and a wider one here
+--- would offer commands the chat itself never sees.
 --- @param config Vibing.Config
 --- @return string[]
-local function resolve_setting_sources(config)
+function M.resolve_setting_sources(config)
   local setting_sources = config.agent and config.agent.setting_sources
   if type(setting_sources) ~= "table" or #setting_sources == 0 then
     return DEFAULT_SETTING_SOURCES
@@ -348,7 +352,7 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
     table.insert(cmd, "--mcp-config")
     table.insert(cmd, '{"mcpServers":{}}')
   else
-    table.insert(cmd, table.concat(resolve_setting_sources(config), ","))
+    table.insert(cmd, table.concat(M.resolve_setting_sources(config), ","))
   end
 
   -- Build prompt with context prefix (only for new sessions, not resume)
