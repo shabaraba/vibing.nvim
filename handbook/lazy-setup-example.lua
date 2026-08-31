@@ -24,11 +24,6 @@ return {
       require("vibing").setup({
         adapter = "claude",
 
-        -- Node.js実行ファイル設定（ランタイム）
-        node = {
-          executable = "auto",  -- "auto" or "/usr/local/bin/bun"
-        },
-
         -- MCP統合設定
         mcp = {
           enabled = true,   -- MCP統合を有効化
@@ -67,9 +62,6 @@ return {
 
     config = function()
       require("vibing").setup({
-        node = {
-          executable = "auto",
-        },
         mcp = {
           enabled = true,
           rpc_port = 9876,

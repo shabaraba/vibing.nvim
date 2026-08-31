@@ -39,7 +39,6 @@
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
 ---@field diff Vibing.DiffConfig diff表示設定（使用ツール）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
----@field node Vibing.NodeConfig Node.js実行ファイル設定（バイナリパス）
 ---@field grok Vibing.GrokConfig Grok Build CLI設定（バイナリパス）
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
 ---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
@@ -127,12 +126,6 @@
 ---Grok Build CLI設定
 ---`adapter = "grok"`（またはfrontmatterの`agent: grok`）のときだけ参照される。
 ---@field executable string|"auto" grokバイナリのパス（"auto": PATHから自動検出、文字列: 明示的なパス指定）
-
----@class Vibing.NodeConfig
----Node.js実行ファイル設定
----スラッシュコマンド補完（bin/list-commands.ts）の実行に使うNode.jsのパス。
----MCPサーバーのビルドは`VIBING_NODE_EXECUTABLE`を見るのでこの設定を使わない点に注意。
----@field executable string|"auto" Node.js実行ファイルのパス ("auto": PATHから自動検出、文字列: 明示的なパス指定)
 
 ---@class Vibing.McpConfig
 ---MCP統合設定
@@ -353,9 +346,6 @@ M.defaults = {
     ask = {},
     rules = {},
     default_deny_rules = true,
-  },
-  node = {
-    executable = "auto",
   },
   grok = {
     executable = "auto",
@@ -623,28 +613,10 @@ function M.setup(opts)
     end
   end
 
-  if M.options.node and M.options.node.executable then
-    local executable = M.options.node.executable
-    if type(executable) ~= "string" or (executable ~= "auto" and executable == "") then
-      notify.warn(string.format(
-        "Invalid node.executable value '%s'. Must be 'auto' or a valid file path. Resetting to 'auto'.",
-        tostring(executable)
-      ))
-      M.options.node.executable = "auto"
-    elseif executable ~= "auto" and vim.fn.executable(executable) == 0 then
-      notify.warn(string.format(
-        "Node.js executable not found at '%s'. Resetting to 'auto'.",
-        executable
-      ))
-      M.options.node.executable = "auto"
-    end
-  end
-
   -- grok_command_builder tells the user to "set config.grok.executable" when the binary is
-  -- missing, so a bad value here has to be caught the same way node.executable's is -- otherwise
-  -- the advice leads to a setting nothing validates. Unlike node this is NOT reset to "auto" on a
-  -- missing binary: `adapter = "grok"` with a wrong path should say so, not quietly fall back to
-  -- whatever `grok` happens to be on PATH.
+  -- missing, so a bad value here has to be validated -- otherwise the advice leads to a setting
+  -- nothing checks. A missing binary is NOT reset to "auto": `adapter = "grok"` with a wrong path
+  -- should say so, not quietly fall back to whatever `grok` happens to be on PATH.
   if M.options.grok and M.options.grok.executable then
     local executable = M.options.grok.executable
     if type(executable) ~= "string" or executable == "" then

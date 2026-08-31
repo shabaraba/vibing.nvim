@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 vibing.nvim is a Neovim plugin that provides a Claude chat inside Neovim by spawning the `claude`
 CLI directly (`claude -p --output-format stream-json`) and parsing its stream. There is no
-Node.js agent wrapper process; the Node side is only the MCP server, two hook scripts, and a
-slash-command lister. A Codex CLI backend is also supported. See
+Node.js agent wrapper process; the Node side is only the MCP server and two hook scripts.
+A Codex CLI backend is also supported. See
 `.claude/rules/architecture.md`.
 
 ## Commands
@@ -16,11 +16,8 @@ slash-command lister. A Codex CLI backend is also supported. See
 # Install dependencies
 npm install
 
-# Build the Node.js side (MCP server + bin/list-commands.ts) into dist/
-npm run build
-
-# Build with watch mode (for development)
-npm run build:watch
+# Build the MCP server
+./build.sh
 
 # Run Lua tests (requires Neovim with plenary.nvim)
 npm run test:lua

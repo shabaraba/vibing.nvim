@@ -78,9 +78,6 @@ require("vibing").setup({
     ask = {},
     rules = {},
   },
-  node = {
-    executable = "auto",
-  },
   mcp = {
     enabled = true,
     rpc_port = 9876,
@@ -120,9 +117,9 @@ grok = {
 }
 ```
 
-Only read when `adapter = "grok"` (or a chat's `agent: grok` frontmatter). Unlike
-`node.executable`, a path that does not exist is **not** reset to `"auto"`: having asked for a
-specific binary, silently falling back to whatever `grok` is on PATH would be worse than failing.
+Only read when `adapter = "grok"` (or a chat's `agent: grok` frontmatter). A path that does not
+exist is **not** reset to `"auto"`: having asked for a specific binary, silently falling back to
+whatever `grok` is on PATH would be worse than failing.
 vibing.nvim also refuses a `grok` that is not the official xAI Grok Build CLI, since the name is
 shared with unrelated tools.
 
@@ -752,16 +749,8 @@ mcp = {
 
 ## Node.js Executable
 
-```lua
-node = {
-  executable = "auto",  -- "auto": detect from PATH (default)
-                        -- or an explicit path, e.g. "/usr/local/bin/node"
-                        -- (bun and other Node-compatible runtimes work too)
-}
-```
-
-During plugin installation (`build.sh`), the `VIBING_NODE_EXECUTABLE` environment variable
-controls which binary is used for the build:
+Node is only needed to build the MCP server at install time; nothing vibing.nvim does at runtime
+spawns it. `VIBING_NODE_EXECUTABLE` picks the binary `build.sh` uses:
 
 ```bash
 VIBING_NODE_EXECUTABLE=/usr/local/bin/bun ./build.sh
@@ -773,11 +762,6 @@ Or in your lazy.nvim spec:
 {
   "shabaraba/vibing.nvim",
   build = "VIBING_NODE_EXECUTABLE=/usr/local/bin/bun ./build.sh",
-  config = function()
-    require("vibing").setup({
-      node = { executable = "/usr/local/bin/bun" },
-    })
-  end,
 }
 ```
 

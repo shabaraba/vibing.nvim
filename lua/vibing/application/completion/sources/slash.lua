@@ -67,7 +67,18 @@ function M.get_candidates(context, callback)
     return
   end
 
-  local items = vim.list_extend(commands_provider.get_all(), skills_provider.get_all())
+  -- vibing.nvim's own commands first, and one entry per name: the CLI reports `/context`,
+  -- `/clear`, `/model` and `/effort` too, but in a chat buffer those are handled here and never
+  -- reach the CLI, so listing both would offer the same word twice with two different meanings.
+  local items = {}
+  local seen = {}
+  for _, item in ipairs(vim.list_extend(commands_provider.get_all(), skills_provider.get_all())) do
+    if not seen[item.word] then
+      seen[item.word] = true
+      table.insert(items, item)
+    end
+  end
+
   items = filter_items(items, context.query)
 
   table.sort(items, function(a, b)

@@ -123,14 +123,11 @@ fi
 # empty-value guard is needed around it.
 echo "$(command -v "$NODE_EXECUTABLE")" > "${MCP_DIR}/bin/.node-path"
 
-# Install root dependencies (Agent SDK, etc.)
+# Install root dependencies. Nothing at the root is bundled any more -- the only build left is
+# the MCP server's, below -- but the MCP server imports `zod` from here.
 echo "[vibing.nvim] Installing root dependencies..."
 cd "$SCRIPT_DIR"
 npm install --silent
-
-# Build bin/ files (bundle and minify .mjs/.ts files)
-echo "[vibing.nvim] Building bin/ files..."
-npm run build
 
 # One-shot cleanup for checkouts that predate the mote removal. The integration is
 # gone (diffs come from a per-request git tree snapshot now), so these downloaded
