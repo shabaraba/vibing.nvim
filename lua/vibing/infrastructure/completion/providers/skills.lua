@@ -67,11 +67,14 @@ local TERMINAL_ONLY_COMMANDS = {
 
 ---Parse SKILL.md to extract name and description
 ---
----The description comes from frontmatter, the same key `list-commands` reads for plugin skills.
----This used to take the body's first `# heading` instead, which meant one `/` menu showed two
----different things depending only on where a skill happened to live -- and no amount of editing
----`description:` changed what a local skill displayed. The heading survives as a fallback for a
----skill that declares no description at all.
+---The description comes from frontmatter, the same key the CLI itself reports. This used to take
+---the body's first `# heading` instead, which meant one `/` menu showed two different things
+---depending only on where a skill happened to live -- and no amount of editing `description:`
+---changed what a local skill displayed. The heading survives as a fallback for a skill that
+---declares no description at all.
+---
+---This scan only fills gaps now: a skill the CLI already reported wins the dedup in
+---`scan_skills`, so what is left is a directory the CLI declined or had not reloaded yet.
 ---@param file_path string
 ---@return {name: string, description: string}?
 local function parse_skill(file_path)
