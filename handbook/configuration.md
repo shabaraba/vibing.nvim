@@ -556,8 +556,9 @@ made the change — **a `sed -i`, a `mv`, or a formatter run through Bash shows 
 `Edit` does**. Untracked files matched by `.gitignore` are excluded (that is what keeps the cost
 down) — a file that is already tracked still shows its changes even if it matches an ignore
 pattern, because `.gitignore` only governs what gets added. An excluded file that a write tool
-reported anyway is still listed under `### Modified Files`, just without a patch section. vibing.nvim's own `.vibing/` directory is always excluded, whether or not you have
-git-ignored it — the chat files live there and would otherwise report themselves as your changes.
+reported anyway is still listed under `### Modified Files`, just without a patch section.
+vibing.nvim's own `.vibing/` directory is always excluded, whether or not you have git-ignored it —
+the chat files live there and would otherwise report themselves as your changes.
 
 Your index and working tree are never touched: the snapshot is built with `git add -A` against a
 temporary index (`GIT_INDEX_FILE`), so it takes no `.git/index.lock` and cannot collide with git
@@ -571,6 +572,15 @@ and a turn whose write window overlapped another chat's in the same worktree —
 so a snapshot could not tell whose change was whose. **Both** overlapping turns fall back, not just
 one, so a Bash-driven change made while two chats were working in the same worktree is missed by
 both of their diffs. It is still on disk; `git status` shows it.
+
+That overlap check only sees chats **inside one Neovim**. Two Neovim instances open on the same
+worktree cannot see each other's turns, so each takes the snapshot path and may report the other's
+changes as its own — all of them, not only the Bash-driven ones, because a tree comparison carries
+every change made in that window whatever produced it. Note the asymmetry with the ref cleanup,
+which does check for other live instances: deleting a ref another process is relying on is an
+action, while this is a misreading, and a turn has no cross-process identity to compare in the
+first place. This is accepted rather than solved; run concurrent chats in separate worktrees,
+which is what `working_dir` and the `vibing-worktree-*` skills are for.
 
 There is a third route, for failure rather than routing: if the snapshot itself cannot be read —
 a worktree removed mid-turn, a permission or disk error — the turn falls back to the same lighter

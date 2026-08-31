@@ -790,8 +790,11 @@ so two of those would compare `nil` against `nil` and never see each other.
 **Both overlap signals are process-local, so two Neovim instances on one worktree are out of
 scope.** `sessions` and `ActiveStreamRegistry` are module tables, so a chat running in a second
 Neovim is invisible to the first: both would take the snapshot path and each would report the
-other's Bash-driven changes as its own. That is the same misattribution the in-process guard exists
-to prevent, across a boundary neither table spans. Accepted rather than solved — a _turn_ has no
+other's changes as its own — **all** of them, not just the Bash-driven ones, since a tree diff
+carries every change made in the window whatever produced it. So it is the same misattribution the
+in-process guard exists to prevent, across a boundary neither table spans — but wider than that
+guard's own case, and wider than anything `request_diff` could produce, since that only ever backed
+up files this turn's own tools named. Accepted rather than solved — a _turn_ has no
 cross-process identity to compare, so telling "another process is mid-turn in my window" from "a
 process crashed here earlier" would mean writing that identity down somewhere, which is a design of
 its own. Multiple instances are a normal setup here, so this is worth revisiting rather than
