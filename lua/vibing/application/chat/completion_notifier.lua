@@ -62,6 +62,17 @@ local function build_message(queue)
   }, "\n")
 end
 
+---積まれた通知のうち done_bufnr についてのものを落とす
+---@param queue {bufnr: number, depth: number}[]
+---@param done_bufnr number
+local function drop_queued(queue, done_bufnr)
+  for i = #queue, 1, -1 do
+    if queue[i].bufnr == done_bufnr then
+      table.remove(queue, i)
+    end
+  end
+end
+
 ---@param from_bufnr number
 ---@param done_bufnr number
 ---@param edge_depth number
@@ -148,6 +159,40 @@ local function flush(from_bufnr)
   return false
 end
 
+---bufnr が誰かの完了を待っているか
+---
+---`edges[*][bufnr]` は「bufnr が送信した相手が、まだ完了を返していない」を意味する。
+---残っているあいだ bufnr は待ち合わせ中で、そのターン終了は完了ではなく中間停止。
+---
+---逆引きの索引は持たずに走査する。エッジ数はチャット数と同じオーダーで、`forget()` も
+---同じ走査をしている。二重管理を増やすほうが、ここでは高くつく
+---@param bufnr number
+---@return boolean
+local function is_waiting_on_others(bufnr)
+  for _, subscribers in pairs(edges) do
+    if subscribers[bufnr] ~= nil then
+      return true
+    end
+  end
+  return false
+end
+
+---子待ちを押しのけて親に知らせるべき止まり方か
+---
+---ワーカーのバッファは誰も見ていないので、質問・承認待ち・エラーで止まったまま保留すると
+---誰も対応できない。
+---
+---読むのは `ChatBuffer:get_stop_reason()` そのもので、`chat_status` の語彙ではない。
+---あちらは `responding` / `idle` を混ぜた MCP 向けの合成なので、経由すると「この2つには
+---一致してはいけない」という知識をここに持つことになり、停止理由が増えたときに黙って
+---「対応不要」に分類する。理由が非nilかどうかだけを見れば、増えた理由は自動的に発火側に入る
+---@param bufnr number
+---@return boolean
+local function stopped_needing_attention(bufnr)
+  local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(bufnr)
+  return chat_buf ~= nil and chat_buf:get_stop_reason() ~= nil
+end
+
 ---A が B に送ったことを購読として記録する
 ---@param from_bufnr number 送信元（通知を受け取る側）
 ---@param to_bufnr number 送信先（完了を監視される側）
@@ -198,7 +243,40 @@ function M.subscribe(from_bufnr, to_bufnr)
   return true
 end
 
+---A が B にメッセージを送った。購読を張り、逆向きの watchdog エッジを消費する
+---
+---1つの呼び出しにまとめてあるのは、「送信は購読であると同時に報告でもある」が1つの事実
+---だから。2手に分けると呼び出し側が対で呼ぶ規約を負ううえ、引数の意味が2つの呼び出しで
+---反転する（`subscribe` の第1引数は通知を受ける側、消費側の第1引数は監視される側）。
+---
+---消費する理由: B が A に本文そのものを届けたのだから、そのうえ「B が止まった、読みに行け」
+---を配ると同じ完了で A を二度起こす。これで watchdog（`on_response_done` の分岐3・例外）が
+---届くのは「B が報告せずに止まった」場合だけになる。キューに積まれた未配達の watchdog も
+---同じ理由で落とす。
+---
+---作成時（`nvim_chat_create`）は `subscribe` だけを呼ぶ。まだ何も送っていないので、
+---消費すべき報告が無い
+---@param from_bufnr number 送信元（通知を受け取る側）
+---@param to_bufnr number 送信先（完了を監視される側）
+function M.on_message_sent(from_bufnr, to_bufnr)
+  M.subscribe(from_bufnr, to_bufnr)
+
+  local subscribers = edges[from_bufnr]
+  if subscribers then
+    subscribers[to_bufnr] = nil
+  end
+  if pending[to_bufnr] then
+    drop_queued(pending[to_bufnr], from_bufnr)
+  end
+end
+
 ---応答完了。自分宛キューの drain と、購読者への配達を行う
+---
+---発火判定は3分岐（#639 / #640）:
+---  1. 自分宛キューを流せた → この tick で自分が再稼働する → 配達もエッジ消費もしない
+---  2. 自分が張った未消費のエッジが残っている → 子待ちでの停止 → 親への配達を保留
+---  3. どちらでもない → 本当に止まった → watchdog として購読者へ配達
+---2 の例外は `stopped_needing_attention`
 ---@param bufnr number
 function M.on_response_done(bufnr)
   if not settings().enabled then
@@ -207,10 +285,16 @@ function M.on_response_done(bufnr)
 
   -- 自分宛キューの drain が先。配達できた = bufnr はこのターンでは終わっておらず、続きの
   -- ターンが控えている（リミット中なら予約として）ということなので、この完了は購読者に見せない。
-  -- 順序を逆にしても防げない理由と、この規則が拾えない側の順序は
-  -- architecture.md → Multi-Agent Orchestration（#638）
+  -- 順序を逆にしても防げない理由は architecture.md → Multi-Agent Orchestration（#638）
   if flush(bufnr) then
     -- edges[bufnr] は消費せずに残す。bufnr が本当に止まったときの完了で配達される
+    return
+  end
+
+  -- 分岐2。エッジテーブルは親子を区別しないので、判定の意味は「誰かの返事を待っている」。
+  -- 親へ報告を送った直後もここに入るが、その報告が `on_message_delivered` でエッジを
+  -- 消費済みなので、保留するものはもう残っていない
+  if is_waiting_on_others(bufnr) and not stopped_needing_attention(bufnr) then
     return
   end
 
@@ -253,11 +337,7 @@ function M.forget(bufnr)
     subscribers[bufnr] = nil
   end
   for _, queue in pairs(pending) do
-    for i = #queue, 1, -1 do
-      if queue[i].bufnr == bufnr then
-        table.remove(queue, i)
-      end
-    end
+    drop_queued(queue, bufnr)
   end
 end
 

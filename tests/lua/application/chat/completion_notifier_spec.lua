@@ -11,6 +11,7 @@ describe("CompletionNotifier", function()
   local buffers = {}
   local responding = {}
   local drafts = {}
+  local stop_reasons = {}
   local sends = {}
   local warnings = {}
   local send_result = { success = true }
@@ -37,6 +38,7 @@ describe("CompletionNotifier", function()
     originals.warn = notify.warn
 
     buffers, responding, drafts, sends, warnings = {}, {}, {}, {}, {}
+    stop_reasons = {}
     send_result = { success = true }
 
     view.get_chat_buffer = function(bufnr)
@@ -49,6 +51,11 @@ describe("CompletionNotifier", function()
         end,
         extract_user_message = function()
           return drafts[bufnr]
+        end,
+        -- 分岐2の例外（質問・承認待ち・エラー）は `chat_status` 経由で読まれる。
+        -- そちらは実物を通すので、材料になるこのメソッドだけ差し替える
+        get_stop_reason = function()
+          return stop_reasons[bufnr]
         end,
       }
     end
@@ -388,6 +395,108 @@ describe("CompletionNotifier", function()
 
     assert.equals(1, #sends)
     assert.equals(a, sends[1].bufnr)
+  end)
+
+  describe("holding the edge while a chat waits on the chats it messaged", function()
+    it("holds the parent's notification for the whole dispatch-and-wait window", function()
+      -- #638 が拾えなかった側の順序。末端 C が中間 B のディスパッチターンより**後**に
+      -- 終わるのが通常（ディスパッチは数秒、末端の作業は数分）で、そのとき B のキューは
+      -- 空なので分岐1では止まらない。分岐2 が見るのは `edges[c][b]` の存在そのもの
+      local a, b, c = make_chat(), make_chat(), make_chat()
+
+      Notifier.subscribe(a, b)
+      Notifier.subscribe(b, c)
+
+      Notifier.on_response_done(b) -- B のディスパッチターンが終わる。C はまだ走っている
+      assert.equals(0, #sends, "A is not woken mid-chain")
+
+      Notifier.on_response_done(c) -- C 完了 → B へ配達、B 再稼働
+      assert.equals(1, #sends)
+      assert.equals(b, sends[1].bufnr)
+
+      responding[b] = false
+      Notifier.on_response_done(b) -- B が本当に止まる
+      assert.equals(2, #sends)
+      assert.equals(a, sends[2].bufnr, "the edge survived to B's real completion")
+    end)
+
+    -- ワーカーのバッファは誰も見ていないので、保留したままだと誰も対応できない。
+    -- 判定は「停止理由が非nilか」なので、理由が増えれば自動的にこちら側に入る
+    for _, reason in ipairs({ "asked_question", "waiting_approval", "error" }) do
+      it("fires anyway when the waiting chat stopped on " .. reason, function()
+        local a, b, c = make_chat(), make_chat(), make_chat()
+
+        Notifier.subscribe(a, b)
+        Notifier.subscribe(b, c)
+        stop_reasons[b] = reason
+
+        Notifier.on_response_done(b)
+
+        assert.equals(1, #sends)
+        assert.equals(a, sends[1].bufnr)
+      end)
+    end
+  end)
+
+  describe("a sent message consumes the watchdog edge pointing the other way", function()
+    it("does not also wake the recipient with a watchdog for the sender", function()
+      -- B が A に報告したあと B のターンが終わると、A は報告と watchdog で二度起こされる
+      local a, b = make_chat(), make_chat()
+
+      Notifier.subscribe(a, b) -- A→B のブリーフ: B が止まったら A に知らせる
+      Notifier.on_message_sent(b, a) -- B→A の報告
+
+      Notifier.on_response_done(b)
+
+      assert.equals(0, #sends, "A already has B's own report")
+    end)
+
+    it("still subscribes the sender to the chat it messaged", function()
+      local a, b = make_chat(), make_chat()
+
+      Notifier.on_message_sent(a, b)
+      Notifier.on_response_done(b)
+
+      assert.equals(1, #sends)
+      assert.equals(a, sends[1].bufnr)
+    end)
+
+    it("drops a watchdog that was queued but not yet delivered", function()
+      local a, b = make_chat(), make_chat()
+      responding[a] = true
+
+      Notifier.subscribe(a, b)
+      Notifier.on_response_done(b) -- A が応答中なので積まれるだけ
+      assert.equals(0, #sends)
+
+      Notifier.on_message_sent(b, a) -- B 自身の報告が A に届いたので、積んである分は用済み
+
+      responding[a] = false
+      Notifier.on_response_done(a)
+
+      -- A 自身の完了は B に配達される（B が A に送った＝B は返事を待っている）。
+      -- 落ちているべきなのは「A を B について起こす」ほうだけ
+      for _, sent in ipairs(sends) do
+        assert.not_equals(a, sent.bufnr)
+      end
+    end)
+
+    it("leaves another chat's subscription to the same sender alone", function()
+      local a1, a2, b = make_chat(), make_chat(), make_chat()
+
+      Notifier.subscribe(a1, b)
+      Notifier.subscribe(a2, b)
+      Notifier.on_message_sent(b, a1) -- A1 のエッジだけが消費される
+
+      Notifier.on_response_done(a1) -- A1 が応じて B の待ち合わせが解ける
+      responding[b] = false
+      sends = {}
+
+      Notifier.on_response_done(b)
+
+      assert.equals(1, #sends)
+      assert.equals(a2, sends[1].bufnr)
+    end)
   end)
 
   it("never lowers the hop count when a shallow edge is delivered late", function()

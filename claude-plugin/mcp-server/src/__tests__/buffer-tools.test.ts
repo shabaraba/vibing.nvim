@@ -61,6 +61,36 @@ describe('nvim_get_buffer chat status', () => {
     expect(result.content[1].text).toContain('idle');
   });
 
+  it.each(['waiting_approval', 'asked_question', 'error'])(
+    'explains the %s status rather than dropping it',
+    async (status) => {
+      vi.mocked(rpc.callNeovim).mockResolvedValue({
+        lines: ['## Assistant', 'stopped'],
+        chat_status: status,
+      });
+
+      const result = await handlers.nvim_get_buffer({ bufnr: 3, rpc_port: 9878 });
+
+      expect(result.content).toHaveLength(2);
+      expect(result.content[1].text).toContain(status);
+    }
+  );
+
+  it('names a status it has no wording for instead of rendering nothing', async () => {
+    // This server is versioned separately from the Lua side, so it can be handed a status added
+    // after it shipped. Silence would read as a healthy chat — the same silent-ignore failure the
+    // plugin-manifest check exists to prevent.
+    vi.mocked(rpc.callNeovim).mockResolvedValue({
+      lines: ['## Assistant', 'stopped'],
+      chat_status: 'some_future_state',
+    });
+
+    const result = await handlers.nvim_get_buffer({ bufnr: 3, rpc_port: 9878 });
+
+    expect(result.content).toHaveLength(2);
+    expect(result.content[1].text).toContain('some_future_state');
+  });
+
   it('still works against a Neovim old enough to answer with a bare line array', async () => {
     // The MCP server is installed at Claude Code's user scope and updates independently of the
     // plugin, so it can outrun the Lua side that knows about include_chat_status.

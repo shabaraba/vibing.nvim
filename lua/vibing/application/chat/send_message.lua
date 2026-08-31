@@ -26,6 +26,7 @@ local Fs = require("vibing.core.utils.fs")
 ---@field set_handle_id fun(handle_id: string) handle_idを設定
 ---@field get_handle_id fun(): string|nil handle_idを取得
 ---@field clear_sending fun() 送信中フラグを解除
+---@field mark_turn_error fun()? このターンがエラーで終わったことを記録（chat_statusのerror判定用）
 ---@field get_cwd fun(): string|nil worktreeのcwdを取得
 
 ---綴り間違いの警告済み集合。executeは1メッセージごとに走るので、これがないと同じ誤字の
@@ -204,9 +205,12 @@ function M.execute(adapter, callbacks, message, config)
       end
     end,
     on_insert_choices = function(questions)
-      -- permission.lua から呼ばれるためすでにメインスレッド上（on_approval_required と同じ）
-      -- 二重 vim.schedule を避けることで _pending_choices が add_user_section より確実に先に設定される。
-      -- 挟むと cancel() が積んだ _handle_response が先に走り、選択肢が nil のまま消費される（#649）
+      -- `on_approval_required` と同じ理由で vim.schedule を挟まない。呼び出し元
+      -- （permission.lua の `cancel_and_deny` / `M.ask_user_question`）はすでにメインスレッド上で、
+      -- **その直前に cancel を済ませている**。cancel は `wrapped_on_done` を同期で呼ぶので、
+      -- ここで一段スケジュールすると `_handle_response` が `vim.schedule` した
+      -- `add_user_section` の後ろに並ぶ。そうなると選択肢はそのターンのユーザーセクションに
+      -- 描画されず、`_stop_reason` も `VibingResponseDone` に間に合わない
       callbacks.insert_choices(questions)
     end,
     on_session_corrupted = function(old_session_id)
@@ -316,6 +320,9 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     require("vibing.core.utils.git_snapshot").clear(
       incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
     )
+    if callbacks.mark_turn_error then
+      callbacks.mark_turn_error()
+    end
     callbacks.update_session_id(nil)
     callbacks.append_chunk("\n\n**Session Timeout:** The previous session could not be resumed.")
     callbacks.append_chunk("\n*Session has been reset. Your next message will start a new session.*")
@@ -368,6 +375,12 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   end
 
   if response.error and not response._cancelled then
+    -- キャンセルを除くのは意図的。質問（`nvim_ask_user_question`）と `ask` の承認要求はどちらも
+    -- ターンをkillして `_cancelled` で戻るので、そこを error と呼ぶと「待っている」が
+    -- 「壊れた」に化ける
+    if callbacks.mark_turn_error then
+      callbacks.mark_turn_error()
+    end
     callbacks.append_chunk("\n\n**Error:** " .. response.error)
 
     if is_session_error(tostring(response.error)) and callbacks.get_session_id() then
