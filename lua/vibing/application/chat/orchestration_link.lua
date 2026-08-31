@@ -94,19 +94,28 @@ function M.link(from_bufnr, to_bufnr)
   -- 戻り値を捨ててはいけない。`update_frontmatter_list` は frontmatter の閉じ `---` が
   -- 先頭100行に収まらないと false を返す（長い permission 配列を持つチャットで現実に起きる）。
   -- 捨てると、このモジュールが防ぐために存在している「黙って関係が残らない」がそのまま起きる
-  if not from_chat:update_frontmatter_list("orchestrated", forward, "add") then
-    return false, "Could not record the worker in the orchestrator's frontmatter"
-  end
-  if not to_chat:update_frontmatter_list("orchestrated_by", backward, "add") then
-    return false, "Could not record the orchestrator in the worker's frontmatter"
-  end
+  local wrote_forward = from_chat:update_frontmatter_list("orchestrated", forward, "add")
+  local wrote_back = to_chat:update_frontmatter_list("orchestrated_by", backward, "add")
 
   -- `update_frontmatter_list` はバッファにしか書かない。リネーム同期はディスクを読むので、
   -- ここで保存しないとリンクは「次に何かの理由で保存されるまで」存在しないことになる。
   -- 送信元は `:VibingChat` の性質上まだ一度も保存されていないことがあり、その窓がいちばん
   -- 長い（＝1ターン目に投げた相手が改名されるとリンクが片方向に腐る）
+  -- 保存は書き込みの成否を見る**前**に、無条件で行う。片方だけ書けた状態でも、書けた側は
+  -- ディスクに残さなければならない（片肺でもリネーム同期は残った側で動く、というのが
+  -- このモジュールの設計方針）。成否チェックで先に return すると、書き込みに成功した
+  -- バッファが modified のまま一度も保存されず、呼び出し元は警告するだけで続行するので
+  -- 誰も気づかない
   local saved_from = FileManager.save_buffer(from_bufnr)
   local saved_to = FileManager.save_buffer(to_bufnr)
+
+  if not (wrote_forward and wrote_back) then
+    return false,
+      string.format(
+        "Could not record the orchestration link (%s side)",
+        not wrote_forward and "orchestrator" or "worker"
+      )
+  end
   if not (saved_from and saved_to) then
     return false, "Wrote the orchestration link but could not save both chat files"
   end
