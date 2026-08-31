@@ -266,6 +266,88 @@ function M.is_vibing_chat(content)
   return data["vibing.nvim"] == true
 end
 
+-- The closing `---` is looked for lazily instead of by reading a fixed window of
+-- lines: a chat's frontmatter has no length bound (permission and orchestration
+-- lists grow with use), and a fixed window silently reports everything past it as
+-- a non-chat. That is how the original 50-line window broke codex chats, and
+-- raising it to 200 only moved the cliff.
+--
+-- This ceiling is not that limit brought back. It is a runaway guard for a file
+-- that opens with `---` and never closes it — a chat still being streamed, or an
+-- unrelated file whose first line happens to match — so it sits far above any
+-- frontmatter a chat can produce, and a real chat never reaches it.
+--
+-- What reaching it costs, since `is_vibing_chat_buffer` runs from `BufEnter` and
+-- caches only positive results (measured over 2000 calls on a 5000-line buffer):
+-- a file that opens with `---` and never closes takes 0.49ms per call against the
+-- 0.05ms the old 200-line read took. A file whose frontmatter does close — every
+-- ordinary Markdown article with YAML frontmatter — stops at its closing `---`
+-- and takes 0.011ms, half what the fixed read cost, because the read is now
+-- proportional to the frontmatter rather than to the window.
+local FRONTMATTER_SCAN_CEILING = 2000
+
+---frontmatter領域を先頭から閉じ`---`まで読む
+---@param next_line fun(): string? 1行ずつ返すイテレータ(末尾でnil)
+---@return string[]? lines 開始`---`から閉じ`---`まで(両端を含む)。閉じていなければnil
+local function read_region(next_line)
+  local first = next_line()
+  if first == nil or trim(first) ~= FRONTMATTER_START then
+    return nil
+  end
+
+  local region = { first }
+  for _ = 2, FRONTMATTER_SCAN_CEILING do
+    local line = next_line()
+    if line == nil then
+      return nil
+    end
+    table.insert(region, line)
+    if trim(line) == FRONTMATTER_END then
+      return region
+    end
+  end
+
+  return nil
+end
+
+---バッファを一定行ずつ読む行イテレータを作る
+---frontmatterを見るだけの用途でバッファ全体をコピーしないためにチャンク化する。
+---チャットバッファは数千行に育つが、frontmatterは先頭の数十行しかない
+---@param bufnr number
+---@return fun(): string?
+local function buffer_line_iterator(bufnr)
+  local CHUNK_SIZE = 64
+  local chunk, chunk_index, next_start = {}, 0, 0
+
+  return function()
+    chunk_index = chunk_index + 1
+    if chunk_index > #chunk then
+      chunk = vim.api.nvim_buf_get_lines(bufnr, next_start, next_start + CHUNK_SIZE, false)
+      if #chunk == 0 then
+        return nil
+      end
+      next_start = next_start + #chunk
+      chunk_index = 1
+    end
+    return chunk[chunk_index]
+  end
+end
+
+---バッファ先頭のfrontmatter領域を返す
+---
+---戻り値のindexはバッファの行番号(1始まり)とそのまま一致し、末尾要素が閉じ`---`になる。
+---frontmatterを行単位で編集する側（`presentation/chat/modules/frontmatter_handler`）が
+---固定行数を読むのをやめられるように公開している
+---@param bufnr number バッファ番号
+---@return string[]? lines 閉じ`---`まで(両端を含む)。frontmatterが無い/閉じていなければnil
+function M.buffer_region(bufnr)
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+    return nil
+  end
+
+  return read_region(buffer_line_iterator(bufnr))
+end
+
 ---ファイルパスからvibing.nvimチャットファイルかどうかを判定
 ---@param file_path string ファイルパス
 ---@return boolean
@@ -278,24 +360,21 @@ function M.is_vibing_chat_file(file_path)
     return false
   end
 
-  -- Scan lines until frontmatter close to handle any frontmatter length
-  local MAX_FRONTMATTER_LINES = 200
-  local lines = vim.fn.readfile(file_path, "", MAX_FRONTMATTER_LINES)
-  if #lines < 2 or trim(lines[1]) ~= FRONTMATTER_START then
+  -- `readfile()` cannot stop at a predicate — it takes a line count — so the file
+  -- is read line by line and abandoned at the closing `---`.
+  local file = io.open(file_path, "r")
+  if not file then
     return false
   end
 
-  local found_vibing = false
-  for i = 2, #lines do
-    if trim(lines[i]) == FRONTMATTER_END then
-      return found_vibing
-    end
-    if lines[i]:match("^vibing%.nvim:%s*true") then
-      found_vibing = true
-    end
+  local ok, region = pcall(read_region, file:lines())
+  file:close()
+
+  if not ok or not region then
+    return false
   end
 
-  return false
+  return M.is_vibing_chat(table.concat(region, "\n"))
 end
 
 ---ファイルパスがvibing.nvimのチャット保存ディレクトリ配下かどうかを判定
@@ -346,13 +425,11 @@ function M.is_vibing_chat_buffer(bufnr)
     return true
   end
 
-  -- Read enough lines to cover the whole frontmatter, matching is_vibing_chat_file.
-  -- 50 lines was not enough for chats with long permission arrays (e.g. codex
-  -- sessions), where the closing `---` can sit well past line 50.
-  local MAX_FRONTMATTER_LINES = 200
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, MAX_FRONTMATTER_LINES, false)
-  local content = table.concat(lines, "\n")
-  local is_chat = M.is_vibing_chat(content)
+  -- Same rule as is_vibing_chat_file: read exactly the frontmatter, then let the
+  -- parser answer. Deciding it with a regex here instead would give the two
+  -- functions two different notions of what makes a file a chat.
+  local region = M.buffer_region(bufnr)
+  local is_chat = region ~= nil and M.is_vibing_chat(table.concat(region, "\n"))
 
   -- Only cache a positive result. Caching `false` would stick permanently while
   -- a buffer is still being streamed/written (incomplete frontmatter), because

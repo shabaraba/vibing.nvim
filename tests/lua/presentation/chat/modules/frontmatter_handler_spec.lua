@@ -162,3 +162,116 @@ describe("frontmatter_handler.update_list", function()
     assert.is_false(handler.update_list(buf, "orchestrated", "chat/a.md", "add"))
   end)
 end)
+
+describe("frontmatter_handler reads to the closing delimiter", function()
+  -- Each of these functions used to read a fixed window (100 lines, and 10 for
+  -- update_session_id) and fail silently past it. A chat's frontmatter has no
+  -- length bound: permission and orchestration lists grow with use.
+  local buf
+
+  ---frontmatterの前半を150行のリストで埋め、`tail`を窓の外に押し出す
+  ---@param tail string[]
+  local function open_with_long_head(tail)
+    local lines = { "---", "permissions_allow:" }
+    for i = 1, 150 do
+      table.insert(lines, "  - perm" .. i)
+    end
+    vim.list_extend(lines, tail)
+    table.insert(lines, "---")
+    table.insert(lines, "# Vibing Chat")
+
+    buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    return buf
+  end
+
+  ---埋め草(`  - permN`)と`updated_at`を除いたfrontmatterの中身
+  ---@return string[]
+  local function significant_lines()
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local out = {}
+    for i = 2, #lines do
+      if lines[i] == "---" then
+        break
+      end
+      if not lines[i]:match("^  %- perm%d+$") and not lines[i]:match("^updated_at:") then
+        table.insert(out, lines[i])
+      end
+    end
+    return out
+  end
+
+  after_each(function()
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end
+  end)
+
+  it("update_session_id rewrites a line far past the old 10-line window", function()
+    open_with_long_head({ "session_id: old" })
+
+    handler.update_session_id(buf, "new-session")
+    assert.same({ "permissions_allow:", "session_id: new-session" }, significant_lines())
+  end)
+
+  it("update_field replaces a key far past the old window", function()
+    open_with_long_head({ "permission_mode: default" })
+
+    assert.is_true(handler.update_field(buf, "permission_mode", "plan", false))
+    assert.same({ "permissions_allow:", "permission_mode: plan" }, significant_lines())
+  end)
+
+  it("update_field appends into a frontmatter longer than the old window", function()
+    open_with_long_head({ "session_id: abc" })
+
+    assert.is_true(handler.update_field(buf, "model", "opus", false))
+    assert.same({ "permissions_allow:", "session_id: abc", "model: opus" }, significant_lines())
+  end)
+
+  it("update_list appends to a list far past the old window", function()
+    open_with_long_head({ "orchestrated:", "  - chat/a.md" })
+
+    assert.is_true(handler.update_list(buf, "orchestrated", "chat/b.md", "add"))
+    assert.same({
+      "permissions_allow:",
+      "orchestrated:",
+      "  - chat/a.md",
+      "  - chat/b.md",
+    }, significant_lines())
+  end)
+
+  it("update_list keeps the long list it is not targeting intact", function()
+    -- The filler *is* a list here, so a mis-scoped rewrite would eat it.
+    open_with_long_head({ "session_id: abc" })
+
+    assert.is_true(handler.update_list(buf, "orchestrated", "chat/a.md", "add"))
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local perms = 0
+    for _, line in ipairs(lines) do
+      if line:match("^  %- perm%d+$") then
+        perms = perms + 1
+      end
+    end
+    assert.equals(150, perms)
+  end)
+
+  it("parse reads a key far past the old window", function()
+    open_with_long_head({ "model: opus", "language: ja" })
+
+    local parsed = handler.parse(buf)
+    assert.equals("opus", parsed.model)
+    assert.equals("ja", parsed.language)
+    assert.equals(150, #parsed.permissions_allow)
+  end)
+
+  it("does nothing when the frontmatter never closes", function()
+    buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "---", "session_id: old" })
+
+    handler.update_session_id(buf, "new-session")
+    assert.is_false(handler.update_field(buf, "model", "opus", false))
+    assert.is_false(handler.update_list(buf, "orchestrated", "chat/a.md", "add"))
+    assert.same({}, handler.parse(buf))
+    assert.same({ "---", "session_id: old" }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+  end)
+end)

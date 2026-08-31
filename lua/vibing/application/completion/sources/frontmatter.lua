@@ -6,23 +6,22 @@ local M = {}
 M.name = "frontmatter"
 
 local frontmatter_provider = require("vibing.infrastructure.completion.providers.frontmatter")
+local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 
 ---Read the "agent:" value from the current buffer's frontmatter
 ---@return string? "claude" | "codex" | "copilot" | nil
 function M._read_frontmatter_agent()
-  local bufnr = vim.api.nvim_get_current_buf()
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, 30, false)
-  local in_frontmatter = false
-  for i, line in ipairs(lines) do
-    if i == 1 and line:match("^%-%-%-") then
-      in_frontmatter = true
-    elseif in_frontmatter and line:match("^%-%-%-") then
-      break
-    elseif in_frontmatter then
-      local v = line:match("^agent:%s*(.+)$")
-      if v then
-        return vim.trim(v)
-      end
+  -- 固定行数ではなく閉じ`---`まで読む。`agent:`はserializerのキー順で上の方に来るが、
+  -- 上に並ぶpermission/orchestrationのリストが伸びれば窓の外に出て補完が黙って壊れる
+  local region = Frontmatter.buffer_region(vim.api.nvim_get_current_buf())
+  if not region then
+    return nil
+  end
+
+  for i = 2, #region - 1 do
+    local v = region[i]:match("^agent:%s*(.+)$")
+    if v then
+      return vim.trim(v)
     end
   end
   return nil
