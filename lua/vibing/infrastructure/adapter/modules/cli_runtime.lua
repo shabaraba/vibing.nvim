@@ -60,11 +60,27 @@ kill_descendants() {
   done
 }
 kill_descendants %d
-]], pid)
-  vim.system({ "sh", "-c", script }, {}, function() end)
-  pcall(function()
-    handle:kill(9)
+kill -9 %d 2>/dev/null
+]], pid, pid)
+  vim.system({ "sh", "-c", script }, {}, function()
+    pcall(function()
+      handle:kill(9)
+    end)
   end)
+end
+
+--- Run the stream completion callback without letting one failed callback stop later cancels.
+--- @param handle table
+local function complete_cancel(handle)
+  if not handle.on_cancel then
+    return
+  end
+  local ok, err = pcall(handle.on_cancel)
+  if not ok then
+    vim.schedule(function()
+      vim.notify("[vibing] Cancel cleanup failed: " .. tostring(err), vim.log.levels.WARN)
+    end)
+  end
 end
 
 --- Wrap vim.system's handle with the extra metadata cancel() needs while preserving the small
@@ -220,9 +236,7 @@ function M.install(Class, features)
       if handle then
         self._handles[handle_id] = nil
         M.kill_tree(handle)
-        if handle.on_cancel then
-          handle.on_cancel()
-        end
+        complete_cancel(handle)
       end
       return
     end
@@ -230,9 +244,7 @@ function M.install(Class, features)
     for id, handle in pairs(self._handles) do
       self._handles[id] = nil
       M.kill_tree(handle)
-      if handle.on_cancel then
-        handle.on_cancel()
-      end
+      complete_cancel(handle)
     end
   end
 

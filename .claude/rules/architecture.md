@@ -213,20 +213,19 @@ genuinely disagree on the child environment. `cli_runtime` covers the pieces ins
 repeat.
 
 Two behaviours were unified rather than parameterised while extracting them, because the split
-was drift rather than intent. `cancel()` now kills the CLI's children before the parent on every
-backend; claude killed only the parent, so the shells its tools spawned kept the stdout pipe open
-and `vim.system()`'s exit handler — which waits for that pipe to close — never fired, leaving the
-chat UI frozen. And `execute()` now cancels a run that outlives its timeout instead of returning
-and leaving the process alive; only grok did that. `cli_runtime_spec.lua` runs both over every
-backend.
+was drift rather than intent. `cancel()` now kills the CLI's descendants before the parent on every
+backend; killing only the parent lets shells or MCP servers spawned by tools keep the stdout pipe
+open, and `vim.system()`'s exit handler waits for that pipe to close. And `execute()` now cancels
+a run that outlives its timeout instead of returning and leaving the process alive; only grok did
+that. `cli_runtime_spec.lua` runs both over every backend.
 
-The pkill is asynchronous (`vim.system`, grok's form) rather than blocking (`vim.fn.system`, what
-codex and copilot used), because `cancel()` can be reached from a `vim.schedule` callback and
-should not stall the main loop there. The cost is that the parent's `kill(9)` is not sequenced
-after the children's: signal delivery is effectively immediate, so an orphan is theoretical rather
-than observed, but it is a real ordering change and not something a test can pin while the call is
-fire-and-forget. Revisit by chaining the parent kill onto the pkill's `on_exit` if orphans ever
-show up.
+The descendant walk is asynchronous (`vim.system`) rather than blocking (`vim.fn.system`), because
+`cancel()` can be reached from a `vim.schedule` callback and should not stall the main loop there.
+The shell script walks descendants with `pgrep -P`, kills them deepest-first, then kills the
+parent; `handle:kill(9)` is only a fallback chained to the shell's `on_exit`, preserving that
+ordering. Separately, `cancel()` calls the adapter's wrapped `on_done` path immediately after
+starting termination, so registry cleanup, permission-opt cleanup, timers, and chat UI state do
+not depend on the process exit callback ever arriving.
 
 **Chat (presentation + application):**
 
