@@ -47,7 +47,12 @@ function M.create_chat(params)
 
     -- 作成でも購読を張る。送信だけを登録にすると、ブリーフに `from_bufnr` を渡し忘れたときに
     -- 「黙って通知が来ない」で終わる。作ってメッセージを送らないケースは無いので、
-    -- 早い方に寄せておくほうが渡し忘れに強い
+    -- 早い方に寄せておくほうが渡し忘れに強い。
+    --
+    -- リンクの書き込みが失敗しても購読は張る（意図的な非対称）。frontmatter が書けないと
+    -- ワーカーは「誰に報告すればいいか」の行を得られない（`send_message` が
+    -- `orchestrated_by` を読むため）が、オーケストレーター側が完了を知る手段まで一緒に
+    -- 失う理由はない。通知はインメモリで、frontmatter を必要としない
     require("vibing.application.chat.completion_notifier").subscribe(params.from_bufnr, chat_buf.buf)
   end
 

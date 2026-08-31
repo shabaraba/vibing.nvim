@@ -214,6 +214,24 @@ describe("CompletionNotifier", function()
     assert.equals("Chat Notifications", warnings[1].title)
   end)
 
+  it("does not warn about an edge it already holds when at the hop limit", function()
+    -- 同じワーカーに複数回ブリーフを送るのは通常の手順。既に張ってあるエッジは生きていて
+    -- 通知も届くので、上限に当たったからといって「購読しなかった」と警告するのは事実に反する
+    configure({ max_hops = 0 })
+    local a, b = make_chat(), make_chat()
+
+    -- 上限0でも、既存エッジがあれば黙って成功を返す
+    Notifier.subscribe(a, b)
+    assert.equals(1, #warnings, "the first subscribe is genuinely refused")
+
+    configure({ max_hops = 8 })
+    assert.is_true(Notifier.subscribe(a, b))
+    configure({ max_hops = 0 })
+
+    assert.is_true(Notifier.subscribe(a, b))
+    assert.equals(1, #warnings, "re-sending to an already-subscribed chat must not warn")
+  end)
+
   it("resets the hop count on a manual send", function()
     configure({ max_hops = 1 })
     local a, b = make_chat(), make_chat()

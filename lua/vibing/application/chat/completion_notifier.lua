@@ -155,6 +155,16 @@ function M.subscribe(from_bufnr, to_bufnr)
     return false
   end
 
+  edges[to_bufnr] = edges[to_bufnr] or {}
+
+  -- 同じ (A, B) への複数送信は1本に畳む。A が B に3回送っても通知は1回。
+  -- この判定を hop 上限より**前**に置く: 既に張ってあるエッジは生きていて通知も届くのに、
+  -- 上限に当たったという理由で「購読しなかった」と警告するのは事実に反する。
+  -- 同じワーカーに複数回ブリーフを送るのは `vibing-orchestrate` の通常の手順
+  if edges[to_bufnr][from_bufnr] ~= nil then
+    return true
+  end
+
   local current = depth[from_bufnr] or 0
   local max_hops = cfg.max_hops or DEFAULT_MAX_HOPS
   if current >= max_hops then
@@ -173,11 +183,7 @@ function M.subscribe(from_bufnr, to_bufnr)
     return false
   end
 
-  edges[to_bufnr] = edges[to_bufnr] or {}
-  -- 同じ (A, B) への複数送信は1本に畳む。A が B に3回送っても通知は1回
-  if edges[to_bufnr][from_bufnr] == nil then
-    edges[to_bufnr][from_bufnr] = current
-  end
+  edges[to_bufnr][from_bufnr] = current
 
   return true
 end
