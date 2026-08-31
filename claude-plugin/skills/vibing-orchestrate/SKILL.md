@@ -26,22 +26,39 @@ five chats for a job that was really one is expensive and the user has to clean 
 ## 2. Create one worker chat per task
 
 ```text
-nvim_chat_create({ rpc_port, position: "back" })
-nvim_chat_create({ rpc_port, position: "back", working_dir: ".vibing/worktrees/fix-auth" })
+nvim_chat_create({ rpc_port, position: "back", from_bufnr: <this chat's bufnr> })
+nvim_chat_create({
+  rpc_port,
+  position: "back",
+  from_bufnr: <this chat's bufnr>,
+  working_dir: ".vibing/worktrees/fix-auth",
+})
 ```
 
 - `position: "back"` (the default) creates the buffer without opening a window, so the user's
   layout is untouched. Don't use a split position for workers unless the user asked to watch them.
 - `working_dir` is relative to the git root and must already exist — create the worktree first.
+- **Always pass `from_bufnr`**: the exact "Current vibing.nvim chat buffer number" from your
+  system prompt. It records the relationship in both chat files' frontmatter (`orchestrated` here,
+  `orchestrated_by` on the worker), which is what makes it survive a rename or a restart.
 - Keep the returned `bufnr` **and** `file_path` for every worker, and write them into your reply
-  in this chat. That list is the only record of which worker owns which task; if the conversation
-  is resumed later, the transcript is where you will read it back from.
+  in this chat. `from_bufnr` records the relationship, but not which worker owns which task — that
+  mapping only exists in what you write here, and the transcript is where you read it back from if
+  the conversation is resumed later.
 
 ## 3. Send each worker a self-contained brief
 
 ```text
-nvim_chat_send_message({ rpc_port, bufnr: <worker bufnr>, message: "<the whole task>" })
+nvim_chat_send_message({
+  rpc_port,
+  bufnr: <worker bufnr>,
+  from_bufnr: <this chat's bufnr>,
+  message: "<the whole task>",
+})
 ```
+
+Pass `from_bufnr` here too. It is the same value as in step 2, and sending is what registers the
+relationship for a worker you did not create yourself.
 
 A worker chat starts empty. It has none of this conversation's context: not the user's original
 request, not the files already discussed, not the decisions already made. Write the brief as if to

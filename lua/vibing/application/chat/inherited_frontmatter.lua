@@ -2,7 +2,12 @@
 ---親チャットから新しいチャットへ引き継ぐfrontmatterの共通部分。
 ---forkとsubagent chatはここが完全に一致し、違うのは出自を示す1フィールド
 ---（`forked_from` / `subagent_id`）だけなので、引き継ぎ範囲は片方に足してもう片方に
----足し忘れないようここに一本化する
+---足し忘れないようここに一本化する。
+---
+---`orchestrated` / `orchestrated_by` は**意図的に**含めない。ここは明示的なホワイトリスト
+---なので既に落ちているが、足してはいけないことを記録しておく: forkもsubagent chatも自分では
+---誰とも関係を結んでいないのに、親の関係を自分のものとして主張することになる
+---（`SubagentMarker.strip` がforkでマーカーを剥がすのと同じ理由）
 local M = {}
 
 local Modes = require("vibing.core.constants.modes")

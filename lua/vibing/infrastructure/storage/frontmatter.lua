@@ -154,15 +154,19 @@ local function get_sorted_keys(tbl)
     created_at = 3,
     forked_from = 4,
     subagent_id = 5,
-    working_dir = 6,
-    agent = 7,
-    model = 8,
-    effort = 9,
-    permission_mode = 10,
-    permissions_allow = 11,
-    permissions_deny = 12,
-    permissions_ask = 13,
-    language = 14,
+    -- 出自を示すフィールド(forked_from / subagent_id)の直後。どれも「このチャットが
+    -- 他のどのチャットと繋がっているか」を答えるものなので、まとめて先頭側に置く
+    orchestrated = 6,
+    orchestrated_by = 7,
+    working_dir = 8,
+    agent = 9,
+    model = 10,
+    effort = 11,
+    permission_mode = 12,
+    permissions_allow = 13,
+    permissions_deny = 14,
+    permissions_ask = 15,
+    language = 16,
   }
 
   table.sort(keys, function(a, b)

@@ -99,10 +99,16 @@ at roughly the right place beats refusing to point.
 
 ## Orchestration
 
-`nvim_chat_create({ rpc_port, position?, working_dir? })` creates a chat buffer and returns
-`{ bufnr, file_path, working_dir, position, saved }` as JSON, so one chat can spawn worker chats,
-brief each with `nvim_chat_send_message`, and poll them with `nvim_get_buffer` — which reports a
-chat buffer's `responding` / `idle` status as a second content block.
+`nvim_chat_create({ rpc_port, position?, working_dir?, from_bufnr? })` creates a chat buffer and
+returns `{ bufnr, file_path, working_dir, position, saved }` as JSON, so one chat can spawn worker
+chats, brief each with `nvim_chat_send_message`, and poll them with `nvim_get_buffer` — which
+reports a chat buffer's `responding` / `idle` status as a second content block.
+
+Both tools take an optional `from_bufnr`, the caller's own chat buffer number, which records the
+relationship in both chat files' frontmatter (`orchestrated` / `orchestrated_by`) instead of
+leaving it in prose that a rename or a restart invalidates. Why it stays optional, why the write
+happens before the send, and why the list field needs its own scanner: `architecture.md` →
+"Multi-Agent Orchestration".
 
 The workflow is the bundled `vibing-orchestrate` skill. Why `position` defaults to `back`, why the
 chat file is written at creation, why the status is a field rather than a text heuristic, and what

@@ -5,6 +5,7 @@ import { CHAT_POSITIONS } from '../tools/chat.js';
 const chatCreateArgsSchema = z.object({
   position: z.enum(CHAT_POSITIONS).optional(),
   working_dir: z.string().optional(),
+  from_bufnr: z.number().optional(),
   rpc_port: z.number(),
 });
 
@@ -18,11 +19,16 @@ const chatCreateArgsSchema = z.object({
  * The chat file is written to disk by the Lua handler at creation time, so `file_path` names a
  * file that actually exists; `saved: false` means that write failed and the chat lives only in
  * the buffer.
+ *
+ * `from_bufnr` is optional and records the caller as this chat's orchestrator in both chat files'
+ * frontmatter. It stays optional deliberately: making it required would break every existing
+ * caller that omits it, and there is no protocol version on the wire — an older Neovim simply
+ * ignores the extra key, and an older server never sends it.
  */
 export async function handleChatCreate(args: any): Promise<any> {
-  const { position, working_dir, rpc_port } = chatCreateArgsSchema.parse(args);
+  const { position, working_dir, from_bufnr, rpc_port } = chatCreateArgsSchema.parse(args);
 
-  const result = await callNeovim('create_chat', { position, working_dir }, rpc_port);
+  const result = await callNeovim('create_chat', { position, working_dir, from_bufnr }, rpc_port);
 
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -35,18 +41,24 @@ const chatSendMessageArgsSchema = z.object({
   bufnr: z.number(),
   message: z.string(),
   sender: z.string().optional(),
+  from_bufnr: z.number().optional(),
   rpc_port: z.number(),
 });
 
 /**
  * Handler for nvim_chat_send_message
  * Programmatically sends a message to a chat buffer and triggers AI request
+ *
+ * `from_bufnr` names the calling chat and records the orchestration relationship in both chat
+ * files' frontmatter, so it outlives the buffer numbers and the file names it was built from.
+ * It is optional for compatibility in both directions of Lua/Node version skew: an older Neovim
+ * ignores the extra key, an older server never sends it, and neither breaks the send.
  */
 export async function handleChatSendMessage(args: any): Promise<any> {
   // Zod schema already validates required fields and types
-  const { bufnr, message, sender, rpc_port } = chatSendMessageArgsSchema.parse(args);
+  const { bufnr, message, sender, from_bufnr, rpc_port } = chatSendMessageArgsSchema.parse(args);
 
-  await callNeovim('send_message', { bufnr, message, sender }, rpc_port);
+  await callNeovim('send_message', { bufnr, message, sender, from_bufnr }, rpc_port);
 
   return {
     content: [{ type: 'text', text: 'Message sent and AI request initiated in chat buffer' }],

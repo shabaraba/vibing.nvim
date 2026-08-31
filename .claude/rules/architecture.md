@@ -453,6 +453,10 @@ Chat files are saved as Markdown with YAML frontmatter:
 vibing.nvim: true
 session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
+orchestrated: # Optional: chats this one drives (see "Multi-Agent Orchestration")
+  - .vibing/chat/worker-auth.md
+orchestrated_by: # Optional: the chat driving this one
+  - .vibing/chat/orchestrator.md
 working_dir: .vibing/worktrees/fix-auth-session # Optional: relative path from git root for working directory
 model: sonnet # sonnet, opus, haiku, or fable (from config.agent.default_model)
 effort: xhigh # Optional: low, medium, high, xhigh, max (from config.agent.default_effort)
@@ -1088,6 +1092,46 @@ Node side accepts either shape.
 `idle` means "no request in flight", not "succeeded": a worker that failed, that is waiting on a
 tool-approval prompt, or that asked a question is idle too. The skill says so, because the
 distinction is not something the status can carry.
+
+**The relationship is recorded in frontmatter, not in the transcript.** `orchestrated` on the
+orchestrator, `orchestrated_by` on the worker, both git-root-relative path lists written by
+`application/chat/orchestration_link.lua` when `nvim_chat_create` or `nvim_chat_send_message` is
+given an optional `from_bufnr`. `infrastructure/link/orchestration_chat_scanner.lua` keeps them in
+step through `:VibingSetFileTitle`, alongside `ForkedChatScanner`.
+
+Before this, the only record was prose the skill told the orchestrator to write into its own
+reply, and it decayed two ways: **bufnrs are per-session** (a restart makes the number point at
+some unrelated buffer) and **file paths get renamed out from under it** by `:VibingSetFileTitle`.
+Frontmatter plus a rename scanner is how `forked_from` already solves exactly this, so the shape
+is borrowed rather than invented.
+
+Four details are load-bearing:
+
+- **`from_bufnr` is optional, in both directions of version skew.** The wire format carries no
+  protocol version, so an older Neovim ignores the extra key and an older MCP server never sends
+  it. Requiring it would turn a forgotten argument into a refused send — a worse failure than a
+  missing link, and one that would break every existing caller at once.
+- **The link is written before the message is sent.** `update_frontmatter_list` edits the buffer
+  directly, so writing after the worker's reply starts would race its streaming.
+- **`update_frontmatter_list` writes to the buffer, not to disk**, and the rename scanner reads
+  disk. So `orchestration_link` saves both files itself. The sender is the one that needs it:
+  `:VibingChat` holds the first write until the first response, so an orchestrator that dispatches
+  on its opening turn has no file for a scanner to find.
+- **One scanner reads both keys.** Splitting it per direction would double the full-file reads and
+  the `git rev-parse` calls over the same directory, and a rename has to update whichever side
+  names the old path anyway.
+
+Copying `ForkedChatScanner` wholesale is the trap here. `forked_from` is a scalar, so its
+`update_link` hands the whole key to `Frontmatter.update`; doing that to a list drops every other
+element. `OrchestrationChatScanner` replaces the matching element and dedupes afterwards, since a
+rename can collide with an entry the list already had. Two parser behaviours bite the same way: an
+empty list parses to a **truthy** `{}`, and a hand-written `orchestrated: path.md` parses to a
+**string** rather than a list.
+
+A one-sided write warns rather than failing the send: the link is a record, and rename sync still
+works from whichever side did get written. Fork and subagent chats do **not** inherit these fields
+— `inherited_frontmatter.from_source` is an explicit whitelist, and a fork claiming its parent's
+relationships would be claiming work it was never given.
 
 **Out of scope, deliberately:** workers cannot message the orchestrator back, there is no
 event-driven completion notification, and the orchestrator does not poll inside its own turn — it
