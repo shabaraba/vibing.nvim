@@ -40,6 +40,13 @@ export const chatTools: Tool[] = [
             '(e.g. ".vibing/worktrees/fix-auth"). Must already exist. Omit to use the ' +
             "Neovim instance's own working directory.",
         },
+        from_bufnr: {
+          type: 'number',
+          description:
+            'Your own chat: the exact "Current vibing.nvim chat buffer number" from your ' +
+            'system prompt. Pass it whenever you create a worker — it records the ' +
+            'relationship in both chat files, which survives renames and restarts.',
+        },
       }),
       required: requireRpcPort([]),
     },
@@ -64,6 +71,13 @@ export const chatTools: Tool[] = [
           type: 'string',
           description:
             'Optional sender identifier (default: "User"). Future: supports "Alpha", "Bravo", etc.',
+        },
+        from_bufnr: {
+          type: 'number',
+          description:
+            'Your own chat: the exact "Current vibing.nvim chat buffer number" from your ' +
+            'system prompt. Pass it whenever you drive another chat — it records the ' +
+            'relationship in both chat files, which survives renames and restarts.',
         },
       }),
       required: requireRpcPort(['bufnr', 'message']),

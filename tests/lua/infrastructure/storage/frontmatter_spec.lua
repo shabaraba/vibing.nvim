@@ -111,6 +111,44 @@ session_id: abc
       end
       assert.same({ "session_id", "permission_mode", "permissions_allow", "language" }, order)
     end)
+
+    it("should serialize the orchestration links beside the other origin fields", function()
+      -- `forked_from` / `subagent_id` と同じく「このチャットが他のどれと繋がっているか」を
+      -- 答えるフィールドなので、設定値より前にまとまって並ぶ
+      local serialized = frontmatter.serialize({
+        language = "ja",
+        orchestrated_by = { "chat/a.md" },
+        working_dir = ".vibing/worktrees/x",
+        orchestrated = { "chat/b.md" },
+        forked_from = "chat/c.md",
+        session_id = "abc",
+      })
+      local order = {}
+      for _, line in ipairs(vim.split(serialized, "\n", { plain = true })) do
+        local key = line:match("^([%w_%.]+):")
+        if key then
+          table.insert(order, key)
+        end
+      end
+      assert.same({
+        "session_id",
+        "forked_from",
+        "orchestrated",
+        "orchestrated_by",
+        "working_dir",
+        "language",
+      }, order)
+    end)
+
+    it("should round-trip an empty list as a truthy but empty table", function()
+      -- 空リストは値なしの `orchestrated:` 行になり、パースすると `{}` に戻る。真値なので
+      -- `if not value` では弾けず、読む側は `#value == 0` を見る必要がある
+      local serialized = frontmatter.serialize({ ["vibing.nvim"] = true, orchestrated = {} })
+      local parsed = frontmatter.parse(serialized)
+
+      assert.is_table(parsed.orchestrated)
+      assert.equals(0, #parsed.orchestrated)
+    end)
   end)
 
   describe("handle invalid YAML (UT-FM-003)", function()

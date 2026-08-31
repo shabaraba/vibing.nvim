@@ -122,6 +122,66 @@ describe('chat tools (worktree redesign)', () => {
     expect(inputSchema.required).toContain('rpc_port');
   });
 
+  it('offers from_bufnr on both chat tools but never requires it', () => {
+    for (const name of ['nvim_chat_send_message', 'nvim_chat_create']) {
+      const tool = allTools.find((t) => t.name === name);
+      const inputSchema = tool?.inputSchema as {
+        required?: string[];
+        properties: Record<string, unknown>;
+      };
+      expect(inputSchema.properties.from_bufnr).toBeDefined();
+      // Requiring it would break every existing caller that omits it, and the failure would be a
+      // refused send rather than a missing link.
+      expect(inputSchema.required).not.toContain('from_bufnr');
+    }
+  });
+
+  it('nvim_chat_send_message forwards from_bufnr so Neovim can record the link', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 14 });
+
+    await handlers.nvim_chat_send_message({
+      rpc_port: 9878,
+      bufnr: 14,
+      message: 'do the thing',
+      from_bufnr: 12,
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'send_message',
+      { bufnr: 14, message: 'do the thing', sender: undefined, from_bufnr: 12 },
+      9878
+    );
+  });
+
+  it('nvim_chat_send_message still sends when from_bufnr is omitted', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 14 });
+
+    const result = await handlers.nvim_chat_send_message({
+      rpc_port: 9878,
+      bufnr: 14,
+      message: 'do the thing',
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'send_message',
+      { bufnr: 14, message: 'do the thing', sender: undefined, from_bufnr: undefined },
+      9878
+    );
+    expect(result.isError).toBeUndefined();
+  });
+
+  it('nvim_chat_create forwards from_bufnr so a worker is linked at creation', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 14, file_path: '/tmp/worker.md' });
+
+    await handlers.nvim_chat_create({ rpc_port: 9878, from_bufnr: 12 });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'create_chat',
+      { position: undefined, working_dir: undefined, from_bufnr: 12 },
+      9878
+    );
+  });
+
   it('has a handler for nvim_ask_user_question', () => {
     expect(handlers.nvim_ask_user_question).toBeDefined();
     expect(typeof handlers.nvim_ask_user_question).toBe('function');

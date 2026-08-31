@@ -218,10 +218,19 @@ The MCP server exposes the following tools to Claude:
 
 ### Chat
 
+- **nvim_chat_create** - Create a worker chat buffer and return its `bufnr` and `file_path`
+  - `position` (optional): Window position, defaults to `back` (buffer only, no window)
+  - `working_dir` (optional): Git-root-relative directory the chat runs in; must already exist
+  - `from_bufnr` (optional): The calling chat's buffer number, recorded as this chat's
+    orchestrator in both files' frontmatter
+
 - **nvim_chat_send_message** - Send a message to a chat buffer and start an AI request
   - `bufnr` (required): Chat buffer number
   - `message` (required): Message text
   - `sender` (optional): Sender label, defaults to "User"
+  - `from_bufnr` (optional): The calling chat's buffer number. Records the orchestration
+    relationship in both chat files' frontmatter (`orchestrated` / `orchestrated_by`), so it
+    outlives the buffer numbers and file names it was built from
 
 - **nvim_ask_user_question** - Render a multiple-choice question in the chat buffer. This cancels
   the in-flight turn; the user's answer arrives as the next turn's message

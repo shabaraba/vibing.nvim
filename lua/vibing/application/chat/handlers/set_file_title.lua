@@ -5,6 +5,7 @@ local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local SyncManager = require("vibing.application.link.sync_manager")
 local DailySummaryScanner = require("vibing.infrastructure.link.daily_summary_scanner")
 local ForkedChatScanner = require("vibing.infrastructure.link.forked_chat_scanner")
+local OrchestrationChatScanner = require("vibing.infrastructure.link.orchestration_chat_scanner")
 local SummaryInserter = require("vibing.presentation.chat.modules.summary_inserter")
 local Fs = require("vibing.core.utils.fs")
 
@@ -214,13 +215,17 @@ return function(_, chat_buffer)
         old_file_path, new_file_path, { DailySummaryScanner.new() }, daily_base_dir
       )
 
-      -- フォーク元リンクの更新（チャット保存ディレクトリを検索）
-      local fork_result = SyncManager.sync_links(
-        old_file_path, new_file_path, { ForkedChatScanner.new() }, save_dir
+      -- チャット間リンクの更新（チャット保存ディレクトリを検索）。
+      -- daily summary と違ってベースディレクトリが同じなので、1回の呼び出しにまとめられる
+      local chat_result = SyncManager.sync_links(
+        old_file_path,
+        new_file_path,
+        { ForkedChatScanner.new(), OrchestrationChatScanner.new() },
+        save_dir
       )
 
-      local total_updated = daily_result.updated + fork_result.updated
-      local total_failed = daily_result.failed + fork_result.failed
+      local total_updated = daily_result.updated + chat_result.updated
+      local total_failed = daily_result.failed + chat_result.failed
 
       if total_updated > 0 then
         notify.info(string.format("Updated %d linked file(s)", total_updated), "Link Sync")

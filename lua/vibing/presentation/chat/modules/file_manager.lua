@@ -57,6 +57,26 @@ function M.load_from_file(buf, file_path)
   return true
 end
 
+---チャットバッファをその場でディスクに書き出す
+---
+---`:VibingChat`は最初の応答が返るまでファイルを書かない（buffer.lua:update_session_id）ので、
+---ディスク上のファイルを前提にする処理（呼び出し元へのパス返却、リンクのリネーム同期）は
+---自分で保存を済ませる必要がある。
+---`write`はエラーを黙って飲むことがあるので、pcallの成否だけでなくmodifiedも確認する
+---@param buf number バッファ番号
+---@return boolean saved
+function M.save_buffer(buf)
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return false
+  end
+
+  local ok = pcall(vim.api.nvim_buf_call, buf, function()
+    vim.cmd.write({ bang = true })
+  end)
+
+  return ok and not vim.bo[buf].modified
+end
+
 ---メッセージからファイル名を更新
 ---@param buf number バッファ番号
 ---@param current_path string? 現在のファイルパス
