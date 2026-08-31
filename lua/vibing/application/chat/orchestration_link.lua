@@ -18,16 +18,29 @@ local FileManager = require("vibing.presentation.chat.modules.file_manager")
 ---`git rev-parse` を起動する。`resolve_bufnrs` はワーカーチャットの**送信のたび**に呼ばれるので、
 ---そのままではユーザーの `<CR>` の前でメインスレッドがプロセス起動1回分ブロックする。
 ---値はcwdごとに固定なので、cwdをキーに覚える
----@type table<string, string|false>
+---@type table<string, string>
 local git_root_by_cwd = {}
 
+---**成功だけを覚える。** 「gitリポジトリではない」を覚えると、あとから `git init` された
+---（あるいはworktreeが生えた）ディレクトリが、そのNeovimが生きている限り誤判定のままになる。
+---外したときのコストは fail-fast な `rev-parse` 1回だけ。
+---`core/utils/git_snapshot.lua` の `root_cache` と同じ方針で、architecture.md にも明文化がある。
+---
+---`infrastructure/link/scanner.lua` の `git_root()` が `false` をキャッシュしてよいのは、
+---あちらのインスタンス寿命が1回の同期スイープに限られるため。こちらはモジュールレベルで
+---セッションを通して生きるので、同じ形には見えても扱いが違う
 ---@return string|false
 local function cached_git_root()
   local cwd = vim.fn.getcwd()
-  if git_root_by_cwd[cwd] == nil then
-    git_root_by_cwd[cwd] = Git.get_root() or false
+  if git_root_by_cwd[cwd] then
+    return git_root_by_cwd[cwd]
   end
-  return git_root_by_cwd[cwd]
+
+  local root = Git.get_root()
+  if root then
+    git_root_by_cwd[cwd] = root
+  end
+  return root or false
 end
 
 ---@param bufnr number
