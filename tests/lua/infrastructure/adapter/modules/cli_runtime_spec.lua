@@ -1,5 +1,6 @@
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
 local helper = require("tests.helpers.adapter_stream")
+local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
 
 describe("cli_runtime", function()
   describe("new_handle_id", function()
@@ -24,13 +25,15 @@ describe("cli_runtime", function()
   end)
 
   describe("kill_tree", function()
-    local original_system, spawned
+    local original_system, spawned, exit_callbacks
 
     before_each(function()
       spawned = {}
+      exit_callbacks = {}
       original_system = vim.system
-      vim.system = function(cmd)
+      vim.system = function(cmd, _, on_exit)
         table.insert(spawned, table.concat(cmd, " "))
+        table.insert(exit_callbacks, on_exit)
         return { pid = 1, kill = function() end }
       end
     end)
@@ -49,13 +52,19 @@ describe("cli_runtime", function()
       })
 
       assert.equals(1, #spawned)
-      assert.is_truthy(spawned[1]:find("pkill -9 -P 4242", 1, true))
+      assert.is_truthy(spawned[1]:find("kill_descendants 4242", 1, true))
+      assert.is_truthy(spawned[1]:find("pgrep -P", 1, true))
+      assert.is_truthy(spawned[1]:find("kill -9 4242", 1, true))
+      assert.is_true(spawned[1]:find("kill_descendants 4242", 1, true) < spawned[1]:find("kill -9 4242", 1, true))
+      assert.is_nil(killed)
+
+      exit_callbacks[1]({ code = 0 })
       assert.equals(9, killed)
     end)
 
     it("uses vim.system, not vim.fn.system, so the main loop is not blocked", function()
-      -- cancel() can be reached from a vim.schedule callback; a blocking pkill there stalls
-      -- Neovim for as long as it takes.
+      -- cancel() can be reached from a vim.schedule callback; a blocking descendant walk there
+      -- stalls Neovim for as long as it takes.
       local blocking = false
       local original_fn_system = vim.fn.system
       vim.fn.system = function(...)
@@ -85,6 +94,7 @@ describe("cli_runtime", function()
             error("already gone")
           end,
         })
+        exit_callbacks[1]({ code = 0 })
       end)
     end)
   end)
@@ -157,7 +167,8 @@ describe("cli_runtime", function()
       end)
 
       assert.is_true(started)
-      assert.equals(handle, handles.h1)
+      assert.equals(handle, handles.h1.process)
+      assert.equals(handle.pid, handles.h1.pid)
       assert.is_false(reported)
     end)
 
@@ -226,17 +237,35 @@ for _, backend in ipairs(helper.adapters()) do
       local before = #system.calls
       adapter:cancel()
 
-      local pkill = nil
+      local descendant_kill = nil
+      local descendant_kill_on_exit = nil
       for i = before + 1, #system.calls do
         local cmd = table.concat(system.calls[i].cmd, " ")
-        if cmd:find("pkill", 1, true) then
-          pkill = cmd
+        if cmd:find("kill_descendants", 1, true) then
+          descendant_kill = cmd
+          descendant_kill_on_exit = system.calls[i].on_exit
         end
       end
 
-      assert.is_truthy(pkill, "no pkill issued: the exit handler would never fire")
-      assert.is_truthy(pkill:find("-P " .. tostring(handle.pid), 1, true))
+      assert.is_truthy(descendant_kill, "no descendant kill issued: the exit handler would never fire")
+      assert.is_truthy(descendant_kill:find("kill_descendants " .. tostring(handle.pid), 1, true))
+      assert.is_false(killed)
+      descendant_kill_on_exit({ code = 0 })
       assert.is_true(killed)
+    end)
+
+    it("cancel completes the stream even if the process never reports exit", function()
+      local result = helper.run_stream(adapter)
+
+      adapter:cancel(result.handle_id)
+      vim.wait(200, function()
+        return #result.done_responses > 0
+      end)
+
+      assert.equals(1, #result.done_responses)
+      assert.is_true(result.done_responses[1]._cancelled)
+      assert.equals("Cancelled", result.done_responses[1].error)
+      assert.is_nil(ActiveStreamRegistry.get(result.handle_id))
     end)
 
     it("cancel forgets the handle so a later cancel is a no-op", function()
@@ -245,6 +274,41 @@ for _, backend in ipairs(helper.adapters()) do
       assert.has_no.errors(function()
         adapter:cancel()
       end)
+    end)
+
+    it("cancel all keeps cancelling when one completion callback throws", function()
+      local completed = {}
+      adapter._handles = {
+        h1 = {
+          pid = 9001,
+          kill = function() end,
+          on_cancel = function()
+            completed.h1 = true
+            error("cleanup failed")
+          end,
+        },
+        h2 = {
+          pid = 9002,
+          kill = function() end,
+          on_cancel = function()
+            completed.h2 = true
+          end,
+        },
+      }
+
+      local original_notify = vim.notify
+      vim.notify = function() end
+      local ok, err = pcall(function()
+        adapter:cancel()
+      end)
+      vim.wait(20)
+      vim.notify = original_notify
+      assert.is_true(ok, tostring(err))
+
+      assert.is_true(completed.h1)
+      assert.is_true(completed.h2)
+      assert.is_nil(adapter._handles.h1)
+      assert.is_nil(adapter._handles.h2)
     end)
 
     it("execute cancels a run that never finishes rather than leaving it alive", function()

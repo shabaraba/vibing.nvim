@@ -30,14 +30,15 @@ function M.new_handle_id()
   return string.format("%016x_%x", vim.loop.hrtime(), math.random(100000))
 end
 
---- Kill a spawned CLI along with the children holding its stdout pipe open.
+--- Kill a spawned CLI along with the descendants holding its stdout pipe open.
 ---
 --- Killing only the parent is not enough: the CLI's tool execution spawns shells (and MCP
 --- servers) that inherit the pipe, so `vim.system()`'s exit handler -- which waits for stdout to
---- close -- never fires. The animation never stops and the chat UI stays frozen.
+--- close -- never fires. A single `pkill -P` is not enough either when a backend leaves the pipe
+--- in a grandchild. Kill descendants deepest-first, then the process handle itself.
 ---
---- The pkill is fire-and-forget rather than `vim.fn.system`, because cancel can be reached from a
---- `vim.schedule` callback and blocking Neovim's main loop on it is avoidable.
+--- The descendant walk is fire-and-forget rather than `vim.fn.system`, because cancel can be
+--- reached from a `vim.schedule` callback and blocking Neovim's main loop on it is avoidable.
 ---
 --- @param handle table? a vim.system handle
 function M.kill_tree(handle)
@@ -50,10 +51,52 @@ function M.kill_tree(handle)
     return
   end
 
-  vim.system({ "sh", "-c", string.format("pkill -9 -P %d 2>/dev/null", pid) }, {}, function() end)
-  pcall(function()
-    handle:kill(9)
+  local script = string.format([[
+kill_descendants() {
+  parent="$1"
+  for child in $(pgrep -P "$parent" 2>/dev/null); do
+    kill_descendants "$child"
+    kill -9 "$child" 2>/dev/null
+  done
+}
+kill_descendants %d
+kill -9 %d 2>/dev/null
+]], pid, pid)
+  vim.system({ "sh", "-c", script }, {}, function()
+    pcall(function()
+      handle:kill(9)
+    end)
   end)
+end
+
+--- Run the stream completion callback without letting one failed callback stop later cancels.
+--- @param handle table
+local function complete_cancel(handle)
+  if not handle.on_cancel then
+    return
+  end
+  local ok, err = pcall(handle.on_cancel)
+  if not ok then
+    vim.schedule(function()
+      vim.notify("[vibing] Cancel cleanup failed: " .. tostring(err), vim.log.levels.WARN)
+    end)
+  end
+end
+
+--- Wrap vim.system's handle with the extra metadata cancel() needs while preserving the small
+--- handle surface the rest of the adapters use (`pid` and `:kill()`).
+--- @param process table vim.system handle
+--- @param on_cancel fun()
+--- @return table
+local function stream_handle(process, on_cancel)
+  return {
+    process = process,
+    pid = process.pid,
+    kill = function(_, signal)
+      process:kill(signal)
+    end,
+    on_cancel = on_cancel,
+  }
 end
 
 --- An error message with its `file.lua:123:` prefix removed.
@@ -140,7 +183,9 @@ function M.spawn(handles, handle_id, cmd, sys_opts, on_exit, on_done)
     return false
   end
 
-  handles[handle_id] = handle_or_err
+  handles[handle_id] = stream_handle(handle_or_err, function()
+    on_done({ content = "", error = "Cancelled", _handle_id = handle_id, _cancelled = true })
+  end)
   return true
 end
 
@@ -178,7 +223,7 @@ function M.install(Class, features)
     -- Three of the four adapters used to return here and leave the process running.
     if not done then
       self:cancel(handle_id)
-      result.error = result.error or "Execution timeout"
+      result.error = "Execution timeout"
     end
     return result
   end
@@ -189,15 +234,17 @@ function M.install(Class, features)
     if handle_id then
       local handle = self._handles[handle_id]
       if handle then
-        M.kill_tree(handle)
         self._handles[handle_id] = nil
+        M.kill_tree(handle)
+        complete_cancel(handle)
       end
       return
     end
 
     for id, handle in pairs(self._handles) do
-      M.kill_tree(handle)
       self._handles[id] = nil
+      M.kill_tree(handle)
+      complete_cancel(handle)
     end
   end
 
