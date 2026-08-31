@@ -80,4 +80,58 @@ describe("vibing.config", function()
       assert.equals("plan", result.agent.default_mode)
     end)
   end)
+  describe("removed mote settings", function()
+    local messages
+    local original_notify
+
+    before_each(function()
+      messages = {}
+      original_notify = vim.notify
+      vim.notify = function(msg, level)
+        table.insert(messages, { msg = msg, level = level })
+      end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+    end)
+
+    it("treats diff.tool = 'mote' as 'git' and says so", function()
+      config.setup({ diff = { tool = "mote" } })
+
+      assert.equals("git", config.get().diff.tool)
+      assert.equals(1, #messages)
+      assert.is_truthy(messages[1].msg:find("mote", 1, true))
+    end)
+
+    it("drops diff.mote and says so", function()
+      config.setup({ diff = { mote = { context_prefix = "vibing" } } })
+
+      assert.is_nil(config.get().diff.mote)
+      assert.equals(1, #messages)
+      assert.is_truthy(messages[1].msg:find("diff.mote", 1, true))
+    end)
+
+    it("warns only once even when setup() runs again", function()
+      -- 正規化した値は M.options にしか書かないので、ユーザーの opts には古い設定が残る。
+      -- ガードが無いと setup() を呼ぶたびに同じ警告が出る
+      local opts = { diff = { tool = "mote", mote = { context_prefix = "vibing" } } }
+      config.setup(opts)
+      local after_first = #messages
+
+      config.setup(opts)
+
+      assert.equals(2, after_first)
+      assert.equals(after_first, #messages)
+      assert.equals("git", config.get().diff.tool)
+      assert.is_nil(config.get().diff.mote)
+    end)
+
+    it("says nothing for a config that never mentioned mote", function()
+      config.setup({ diff = { tool = "auto" } })
+
+      assert.equals(0, #messages)
+    end)
+  end)
+
 end)

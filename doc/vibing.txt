@@ -38,7 +38,8 @@ Features:~
   • Per-chat model, language and tool permissions
   • Tool approval and multiple-choice questions rendered in the buffer
   • An MCP server that lets the CLI read and drive the running Neovim
-  • Per-request diffs, viewable with `gd` on a file path in the chat
+  • Per-request diffs (a git tree snapshot per turn, so `sed -i` and
+    formatters count too), viewable with `gd` on a file path in the chat
 
 ==============================================================================
 2. REQUIREMENTS                                          *vibing-requirements*
@@ -191,10 +192,6 @@ section is not kept in sync field by field.
     Pick chat files to delete. With `--unrenamed`, delete every chat that
     still has its generated filename.
 
-                                                           *:VibingCleanMote*
-:VibingCleanMote
-    Drop mote objects belonging to chat files, keeping the chats themselves.
-
                                                              *:VibingContext*
 :[range]VibingContext [{path}]
     Add a file to the context. With no argument, uses the current buffer — or
@@ -235,11 +232,6 @@ Scheduled requests:~
     same way: the message stays in the chat's own unsent `## User`
     section rather than being copied elsewhere, so it is still visible
     and editable while parked, and deleting it cancels the send.
-
-                                                              *:VibingMoteDir*
-:VibingMoteDir [{dir}]
-    Add a directory to this chat's mote tracking list (defaults to the
-    current working directory).
 
                                                       *:VibingReloadCommands*
 :VibingReloadCommands

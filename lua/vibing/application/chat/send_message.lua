@@ -2,16 +2,6 @@
 ---メッセージ送信ユースケース
 local M = {}
 
--- bufnrをキーに、セッション開始時のスナップショットIDを保持
--- 並行セッション間でのmote差分混入を防ぐためのベースライン管理
-local session_snapshots = {}
-
----バッファのセッションスナップショットをクリア（BufUnload時に呼ぶ）
----@param bufnr number
-function M.cleanup_snapshots(bufnr)
-  session_snapshots[bufnr] = nil
-end
-
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local GradientAnimation = require("vibing.ui.gradient_animation")
 local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
@@ -95,7 +85,6 @@ function M.execute(adapter, callbacks, message, config)
   end
 
   local bufnr = callbacks.get_bufnr()
-  local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
   local frontmatter = callbacks.parse_frontmatter()
 
   -- A subagent chat shares its parent's session_id for good, so two buffers can now be pointed at
@@ -118,161 +107,143 @@ function M.execute(adapter, callbacks, message, config)
     return
   end
 
-  -- mote_dirs (array) が優先。後方互換として mote_cwd (string) も読む
-  local mote_dirs = frontmatter and frontmatter.mote_dirs
-  if type(mote_dirs) == "string" then
-    mote_dirs = { mote_dirs }
-  end
-  if (not mote_dirs or #mote_dirs == 0) and frontmatter and frontmatter.mote_cwd then
-    mote_dirs = { frontmatter.mote_cwd }
-  end
-  -- moteはopt-in: diff.tool = "mote" 明示か、mote_dirs指定時のみスナップショットを取る。
-  -- デフォルトはPreToolUseフックで変更前ファイルだけを退避する軽量なリクエスト単位diff
-  -- （request_diff.lua）を使うため、全ツリースキャンやmoteプロセスは発生しない。
-  local use_mote = (config.diff and config.diff.tool == "mote") or (mote_dirs and #mote_dirs > 0)
-  local mote_configs = {}
-  if use_mote then
-    mote_configs = M._create_session_mote_configs(config, callbacks.get_session_id(), bufnr, session_cwd, mote_dirs)
+  M._warn_removed_frontmatter(frontmatter)
+
+  local formatted_prompt = message
+  -- system promptにも同じ指示を入れているが、こちらはターンごとのメッセージなので
+  -- プロンプトキャッシュの前方一致を壊さない。効かなかったときの保険として重ねておく
+  local bound_agent = frontmatter and frontmatter.subagent_id
+  if bound_agent then
+    formatted_prompt = string.format("[Continuing subagent %s] %s", bound_agent, message)
   end
 
-  -- 実際のメッセージ送信処理（mote初期化後に呼び出される）
-  local function do_send()
-    local formatted_prompt = message
-    -- system promptにも同じ指示を入れているが、こちらはターンごとのメッセージなので
-    -- プロンプトキャッシュの前方一致を壊さない。効かなかったときの保険として重ねておく
-    local bound_agent = frontmatter and frontmatter.subagent_id
-    if bound_agent then
-      formatted_prompt = string.format("[Continuing subagent %s] %s", bound_agent, message)
-    end
+  local conversation = callbacks.extract_conversation()
+  if #conversation == 0 then
+    callbacks.update_filename_from_message(message)
+  end
 
-    local conversation = callbacks.extract_conversation()
-    if #conversation == 0 then
-      callbacks.update_filename_from_message(message)
-    end
+  callbacks.start_response()
 
-    callbacks.start_response()
+  -- Start gradient animation
+  local buf = callbacks.get_bufnr()
+  if buf and vim.api.nvim_buf_is_valid(buf) then
+    GradientAnimation.start(buf)
+  end
 
-    -- Start gradient animation
-    local buf = callbacks.get_bufnr()
-    if buf and vim.api.nvim_buf_is_valid(buf) then
-      GradientAnimation.start(buf)
-    end
+  -- start_response() がバッファに書いた後の状態で読み直す
+  frontmatter = callbacks.parse_frontmatter()
 
-    local frontmatter = callbacks.parse_frontmatter()
+  -- Get language code: frontmatter > config
+  local language_utils = require("vibing.core.utils.language")
+  local lang_code = frontmatter.language
+  if not lang_code then
+    lang_code = language_utils.get_language_code(config.language, "chat")
+  end
 
-    -- Get language code: frontmatter > config
-    local language_utils = require("vibing.core.utils.language")
-    local lang_code = frontmatter.language
-    if not lang_code then
-      lang_code = language_utils.get_language_code(config.language, "chat")
-    end
+  -- Get cwd from frontmatter working_dir
+  local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
 
-    -- Get cwd from frontmatter working_dir
-    local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
+  -- Get session-level permissions from buffer
+  local session_allow = callbacks.get_session_allow()
+  local session_deny = callbacks.get_session_deny()
 
-    -- Get session-level permissions from buffer
-    local session_allow = callbacks.get_session_allow()
-    local session_deny = callbacks.get_session_deny()
+  -- レスポンス中にWrite/Editで変更されたファイルパスを追跡
+  local modified_file_paths = {}
 
-    -- レスポンス中にWrite/Editで変更されたファイルパスを追跡
-    local modified_file_paths = {}
-
-    local opts = {
-      streaming = true,
-      action_type = "chat",
-      chat_bufnr = vim.api.nvim_buf_is_valid(bufnr) and bufnr or nil,
-      mode = M._validate_frontmatter_mode(frontmatter.mode),
-      model = frontmatter.model,
-      effort = frontmatter.effort,
-      permissions_allow = frontmatter.permissions_allow,
-      permissions_deny = frontmatter.permissions_deny,
-      permissions_ask = frontmatter.permissions_ask,
-      permissions_session_allow = session_allow,
-      permissions_session_deny = session_deny,
-      permission_mode = frontmatter.permission_mode,
-      language = lang_code,
-      cwd = session_cwd,
-      on_tool_use = function(tool, file_path, _command)
-        if (tool == "Write" or tool == "Edit" or tool == "MultiEdit" or tool == "NotebookEdit") and file_path then
-          modified_file_paths[file_path] = true
-        elseif tool == "FileChange" and file_path then
-          -- Codex adapter reports comma-joined paths
-          for path in file_path:gmatch("[^,]+") do
-            modified_file_paths[vim.trim(path)] = true
-          end
+  local opts = {
+    streaming = true,
+    action_type = "chat",
+    chat_bufnr = vim.api.nvim_buf_is_valid(bufnr) and bufnr or nil,
+    mode = M._validate_frontmatter_mode(frontmatter.mode),
+    model = frontmatter.model,
+    effort = frontmatter.effort,
+    permissions_allow = frontmatter.permissions_allow,
+    permissions_deny = frontmatter.permissions_deny,
+    permissions_ask = frontmatter.permissions_ask,
+    permissions_session_allow = session_allow,
+    permissions_session_deny = session_deny,
+    permission_mode = frontmatter.permission_mode,
+    language = lang_code,
+    cwd = session_cwd,
+    -- ツリースナップショット差分の帰属判定に使う。アダプタはこれをそのまま
+    -- ActiveStreamRegistry に載せるだけで、git を呼ばない（`stream()` は同期I/Oを
+    -- 増やさない）。
+    --
+    -- ここは `rev-parse --show-toplevel` 1回ぶんメインループを止める。architecture.md の
+    -- 「Startup Cost」が同期I/Oに神経質なのに対して意図的に許容している箇所で、根拠は
+    -- 呼ばれる回数のほう: git_snapshot 側でcwd単位にキャッシュされるので、1つのcwdにつき
+    -- 最初の送信の1回だけで、以降はゼロ。setup() と違ってNeovim起動時には走らない
+    _worktree_root = require("vibing.core.utils.git_snapshot").worktree_root(session_cwd),
+    on_tool_use = function(tool, file_path, _command)
+      if (tool == "Write" or tool == "Edit" or tool == "MultiEdit" or tool == "NotebookEdit") and file_path then
+        modified_file_paths[file_path] = true
+      elseif tool == "FileChange" and file_path then
+        -- Codex adapter reports comma-joined paths
+        for path in file_path:gmatch("[^,]+") do
+          modified_file_paths[vim.trim(path)] = true
         end
-      end,
-      on_insert_choices = function(questions)
-        vim.schedule(function()
-          callbacks.insert_choices(questions)
-        end)
-      end,
-      on_session_corrupted = function(old_session_id)
-        vim.schedule(function()
-          callbacks.update_session_id(nil)
-          -- Safely handle nil old_session_id
-          local session_display = old_session_id and tostring(old_session_id):sub(1, 8) or "unknown"
-          vim.notify(
-            string.format(
-              "[vibing.nvim] Previous session (%s) was corrupted. Starting fresh session.",
-              session_display
-            ),
-            vim.log.levels.INFO
-          )
-        end)
-      end,
-      on_approval_required = function(tool, input, options, hook_request_id)
-        -- permission.lua の vim.schedule 内から呼ばれるためすでにメインスレッド上
-        -- 二重 vim.schedule を避けることで _pending_approval が add_user_section より確実に先に設定される
-        callbacks.insert_approval_request(tool, input, options, hook_request_id)
-        -- cancel は permission.lua 側で実行済み（hook-based / agent-wrapper 共通）
-        -- add_user_section は on_done 経由で呼ばれる
-      end,
-    }
-
-    if adapter:supports("session") then
-      adapter:cleanup_stale_sessions()
-      opts._session_id = callbacks.get_session_id()
-      opts._session_id_explicit = true
-
-      -- forkは新しいsession_idへ分岐させるが、subagentチャットは分岐させてはいけない。
-      -- subagentのtranscriptは親のsession_idのディレクトリにあり、--fork-sessionを付けると
-      -- SendMessageが "No transcript found for agent ID" で失敗する（実CLIで確認済み）
-      if frontmatter.subagent_id then
-        opts._subagent_id = frontmatter.subagent_id
-      elseif frontmatter.forked_from then
-        opts._is_fork = true
       end
-    end
-
-    if adapter:supports("streaming") then
-      local handle_id = adapter:stream(formatted_prompt, opts, function(chunk, chunk_handle_id)
-        vim.schedule(function()
-          callbacks.append_chunk(chunk, chunk_handle_id)
-        end)
-      end, function(response)
-        vim.schedule(function()
-          M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths, message)
-        end)
+    end,
+    on_insert_choices = function(questions)
+      vim.schedule(function()
+        callbacks.insert_choices(questions)
       end)
-      -- handle_idをコールバックで設定（キャンセル用）
-      if handle_id and callbacks.set_handle_id then
-        callbacks.set_handle_id(handle_id)
-      end
-    else
-      local response = adapter:execute(formatted_prompt, opts)
-      M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths, message)
+    end,
+    on_session_corrupted = function(old_session_id)
+      vim.schedule(function()
+        callbacks.update_session_id(nil)
+        -- Safely handle nil old_session_id
+        local session_display = old_session_id and tostring(old_session_id):sub(1, 8) or "unknown"
+        vim.notify(
+          string.format(
+            "[vibing.nvim] Previous session (%s) was corrupted. Starting fresh session.",
+            session_display
+          ),
+          vim.log.levels.INFO
+        )
+      end)
+    end,
+    on_approval_required = function(tool, input, options, hook_request_id)
+      -- permission.lua の vim.schedule 内から呼ばれるためすでにメインスレッド上
+      -- 二重 vim.schedule を避けることで _pending_approval が add_user_section より確実に先に設定される
+      callbacks.insert_approval_request(tool, input, options, hook_request_id)
+      -- cancel は permission.lua 側で実行済み（hook-based / agent-wrapper 共通）
+      -- add_user_section は on_done 経由で呼ばれる
+    end,
+  }
+
+  if adapter:supports("session") then
+    adapter:cleanup_stale_sessions()
+    opts._session_id = callbacks.get_session_id()
+    opts._session_id_explicit = true
+
+    -- forkは新しいsession_idへ分岐させるが、subagentチャットは分岐させてはいけない。
+    -- subagentのtranscriptは親のsession_idのディレクトリにあり、--fork-sessionを付けると
+    -- SendMessageが "No transcript found for agent ID" で失敗する（実CLIで確認済み）
+    if frontmatter.subagent_id then
+      opts._subagent_id = frontmatter.subagent_id
+    elseif frontmatter.forked_from then
+      opts._is_fork = true
     end
   end
 
-  -- mote統合が有効な場合は初期化とsnapshotを待ってから送信
-  -- 無効な場合は即座に送信
-  if mote_configs and #mote_configs > 0 then
-    M._ensure_mote_initialized_and_snapshot(mote_configs, bufnr, function()
-      vim.schedule(do_send)
+  if adapter:supports("streaming") then
+    local handle_id = adapter:stream(formatted_prompt, opts, function(chunk, chunk_handle_id)
+      vim.schedule(function()
+        callbacks.append_chunk(chunk, chunk_handle_id)
+      end)
+    end, function(response)
+      vim.schedule(function()
+        M._handle_response(response, callbacks, adapter, config, modified_file_paths, message)
+      end)
     end)
+    -- handle_idをコールバックで設定（キャンセル用）
+    if handle_id and callbacks.set_handle_id then
+      callbacks.set_handle_id(handle_id)
+    end
   else
-    do_send()
+    local response = adapter:execute(formatted_prompt, opts)
+    M._handle_response(response, callbacks, adapter, config, modified_file_paths, message)
   end
 end
 
@@ -289,10 +260,9 @@ end
 ---@param callbacks Vibing.ChatCallbacks
 ---@param adapter table アダプター
 ---@param config table 設定
----@param mote_configs table[] セッション固有のmote設定配列
 ---@param modified_file_paths table<string, boolean> ツールイベントで検知した変更ファイル
 ---@param message string|nil 送信したユーザーメッセージ（リミットで弾かれた場合の再予約に使う）
-function M._handle_response(response, callbacks, adapter, config, mote_configs, modified_file_paths, message)
+function M._handle_response(response, callbacks, adapter, config, modified_file_paths, message)
   -- キャンセル済みの古いリクエストが遅れて完了した場合、現在アクティブなハンドルIDと
   -- 一致しないレスポンスは無視する（新しいリクエストの結果を上書きさせない）
   local incoming_handle_id = response._handle_id
@@ -300,8 +270,10 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
   if incoming_handle_id and callbacks.get_handle_id then
     local current_handle_id = callbacks.get_handle_id()
     if current_handle_id and incoming_handle_id ~= current_handle_id then
-      -- このリクエストは破棄されるので、対応するバックアップも破棄
+      -- このリクエストは破棄されるので、両経路のベースラインも破棄する
+      -- （どちらが使われるかはここまで来ないと決まらない）
       RequestDiff.clear(incoming_handle_id)
+      require("vibing.core.utils.git_snapshot").clear(incoming_handle_id)
       return
     end
   end
@@ -318,6 +290,12 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
 
   -- Lua側タイムアウトによるセッション破損検出
   if response._session_corrupted then
+    -- このターンの差分は出さずに抜けるので、両経路のベースラインもここで捨てる
+    -- （どちらも「レスポンス処理の最後に必ずclearする」契約になっている）
+    RequestDiff.clear(incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id()))
+    require("vibing.core.utils.git_snapshot").clear(
+      incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
+    )
     callbacks.update_session_id(nil)
     callbacks.append_chunk("\n\n**Session Timeout:** The previous session could not be resumed.")
     callbacks.append_chunk("\n*Session has been reset. Your next message will start a new session.*")
@@ -391,104 +369,73 @@ function M._handle_response(response, callbacks, adapter, config, mote_configs, 
     callbacks.clear_forked_from()
   end
 
-  -- mote統合（opt-in時のみ）: 有効なconfigが1つでもあればModified Files出力とpatch生成
-  local MoteDiff = require("vibing.core.utils.mote_diff")
+  local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
-  -- セッション開始時のスナップショットIDをベースラインとして各configに設定
-  local active_configs = {}
-  local snapshots_by_ctx = session_snapshots[bufnr] or {}
-  for _, mc in ipairs(mote_configs or {}) do
-    if MoteDiff.is_initialized(mc.project, mc.context, mc.cwd) then
-      local cfg = vim.deepcopy(mc)
-      cfg.baseline_snapshot_id = snapshots_by_ctx[mc.context]
-      table.insert(active_configs, cfg)
+  local handle_id_for_diff = incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
+
+  -- 経路の選択:
+  --   1. PreToolUseでツリースナップショットのベースラインが取れていて、
+  --   2. そのworktreeで他のターンと重なっていない
+  -- なら git snapshot（Bash由来の変更も拾える）。どちらか欠ければ request_diff に落ちる。
+  --
+  -- 2つ目の条件が要るのは、ツリーが共有状態だからで、同じworktreeで並行して走っている
+  -- 別チャットのBash変更をこのターンの成果として書いてしまうため。取りこぼす方がまだ正確。
+  --
+  -- 重なりの判定は2つ必要で、片方だけでは足りない:
+  --   - `had_overlap` は、ベースラインを取った時点で開いていた他リクエストのウィンドウを
+  --     記録したもの。ここでレジストリを見るだけだと、先に終わった側しか相手を見つけられず、
+  --     後に終わった側（相手の変更を実際に取り込んでしまう側）が素通りする
+  --   - レジストリ照会は、ベースラインを取れなかった（スナップショット失敗など）ために
+  --     git_snapshot からは見えないストリームを拾う保険
+  local snapshot_root = GitSnapshot.get_root(handle_id_for_diff)
+  local overlapping = snapshot_root
+    and (
+      GitSnapshot.had_overlap(handle_id_for_diff)
+      or ActiveStreamRegistry.find_other_active_for_worktree(snapshot_root, handle_id_for_diff) ~= nil
+    )
+  local use_snapshot = snapshot_root ~= nil and not overlapping
+
+  -- ツールイベントが1つも無くてもスナップショットは差分を持ちうる（Bashで書き換えた場合）。
+  -- ベースラインは「変更しうるツール」が動いたときにしか取られないので、読み取りだけの
+  -- ターンではここも空振りしない。
+  local has_file_changes = next(modified_file_paths or {}) ~= nil
+
+  -- フォールバックのバックアップは、スナップショット経路が **実際に差分を出せてから** 捨てる。
+  -- 先に捨ててしまうと、2回目のスナップショットやdiff呼び出しが失敗した（権限・ディスク・
+  -- 途中でworktreeが消えた等）ときに退避先が無く、そのターンの変更が何の通知もなく消える。
+  -- それはこの置き換えが無くそうとしている失敗そのものなので、順序を逆にはできない。
+  local handled = false
+  if use_snapshot then
+    handled = M._finalize_snapshot_diff(callbacks, handle_id_for_diff, modified_file_paths)
+    if handled then
+      RequestDiff.clear(handle_id_for_diff)
     end
   end
 
-  -- Write/Editで実際にファイルが変更された場合のみdiff処理を実行
-  local has_file_changes = next(modified_file_paths or {}) ~= nil
-  local handle_id_for_diff = incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
+  if not handled then
+    -- ここのclearは、スナップショット経路を通らなかった場合（git管理外・重なり検出）のための
+    -- もの。上のfinalizeがfalseを返して落ちてきた場合は既にclear済みだが、clearは冪等
+    GitSnapshot.clear(handle_id_for_diff)
 
-  if #active_configs > 0 and has_file_changes then
-    -- 各configの変更ファイルを収集し、finalizeで絶対パスに正規化・重複排除して出力
-    local mote_batches = {}
-    local patch_paths = {}
-    local remaining = #active_configs
-    local timestamp = os.date("%Y%m%d_%H%M%S")
-    local diff_finalized = false
-    local diff_timeout_timer = nil
-
-    local function finalize()
-      if diff_finalized then return end
-      diff_finalized = true
-      if diff_timeout_timer then
-        vim.fn.timer_stop(diff_timeout_timer)
-        diff_timeout_timer = nil
+    if has_file_changes then
+      -- フォールバック: PreToolUseフックで退避した変更前内容からpatchを生成。
+      -- 外部プロセスを使わず、触ったファイル数分のvim.diff()だけで完結する。
+      M._finalize_request_diff(callbacks, handle_id_for_diff, modified_file_paths)
+    else
+      -- スナップショットを試したのに取れず、しかもツールイベントも1つも無かった場合は、
+      -- 退避先が両方とも空になる。Bashだけで完結したターンではこれが起こりうる。そのときは
+      -- 「変更なし」と見分けがつかない — Bash由来の変更が黙って消えるという、この仕組みが
+      -- 無くそうとしている失敗そのものになる。頻度は低いが、黙るわけにはいかないので通知する。
+      if use_snapshot then
+        vim.notify(
+          "[vibing] Could not read this turn's changes: the working tree snapshot failed, "
+            .. "and no tool reported a file. Check `git status` — any changes are still on disk.",
+          vim.log.levels.WARN
+        )
       end
       RequestDiff.clear(handle_id_for_diff)
-      -- moteの結果（mc.cwd相対）とツールイベントのパスを絶対パスに正規化して統合。
-      -- 別mote_dirsの同名相対パスの衝突や、Neovim cwdと異なる作業ディレクトリでの
-      -- 誤ったバッファリロードを防ぐ。moteのignore設定等でdiffから漏れたファイルも
-      -- ツールイベントで検知した分は必ず一覧に載る
-      local all_files = M._merge_modified_files(mote_batches, modified_file_paths)
-      if #all_files > 0 then
-        BufferReload.reload_files(all_files)
-        local MAX_DISPLAY = 50
-        local file_lines = {}
-        for i = 1, math.min(#all_files, MAX_DISPLAY) do
-          -- 表示はNeovim cwd相対（cwd外なら絶対パスのまま）、リロードは絶対パス
-          table.insert(file_lines, vim.fn.fnamemodify(all_files[i], ":."))
-        end
-        if #all_files > MAX_DISPLAY then
-          table.insert(file_lines, string.format("... (%d more)", #all_files - MAX_DISPLAY))
-        end
-        callbacks.append_chunk("\n\n### Modified Files\n\n" .. table.concat(file_lines, "\n") .. "\n")
-      end
-      for _, pp in ipairs(patch_paths) do
-        callbacks.append_chunk("\n<!-- patch: " .. pp .. " -->\n")
-      end
-      vim.schedule(function()
-        callbacks.add_user_section()
-      end)
+      callbacks.add_user_section()
     end
-
-    -- mote diffに時間がかかる場合でもUserセクションを即座に表示するタイムアウト
-    diff_timeout_timer = vim.fn.timer_start(5000, vim.schedule_wrap(finalize))
-
-    for _, mc in ipairs(active_configs) do
-      MoteDiff.get_changed_files(mc, function(success, files, err)
-        if success and files then
-          table.insert(mote_batches, { base = mc.cwd or vim.fn.getcwd(), files = files })
-        elseif not success then
-          vim.notify("[vibing] Failed to get changed files: " .. (err or "Unknown error"), vim.log.levels.WARN)
-        end
-
-        if #(files or {}) > 0 then
-          local context_dir = MoteDiff.build_context_dir_path(mc.project, mc.context, mc.cwd)
-          if context_dir then
-            local patch_path = string.format("%s/patches/%s.patch", context_dir, timestamp)
-            MoteDiff.generate_patch(mc, patch_path, function(patch_success, patch_error)
-              if not patch_success then
-                vim.notify("[vibing] Patch generation failed: " .. (patch_error or "Unknown error"), vim.log.levels.WARN)
-              end
-            end)
-            table.insert(patch_paths, patch_path)
-          end
-        end
-
-        remaining = remaining - 1
-        if remaining == 0 then
-          finalize()
-        end
-      end)
-    end
-  elseif has_file_changes then
-    -- 軽量パス（デフォルト）: PreToolUseフックで退避した変更前内容からpatchを生成。
-    -- 外部プロセスを使わず、触ったファイル数分のvim.diff()だけで完結する。
-    M._finalize_request_diff(callbacks, handle_id_for_diff, modified_file_paths)
-  else
-    RequestDiff.clear(handle_id_for_diff)
-    callbacks.add_user_section()
   end
 
   -- NOTE: clear_handle_id() は呼ばない
@@ -519,8 +466,8 @@ end
 ---
 ---本文はバッファの未送信Userセクションが唯一の置き場所なので、ここではJSONに複製せず
 ---set_pending_user_textで次のセクションに差し込むよう予約するだけにする。
----セクション生成は_handle_response内の3経路（うち2つはvim.schedule/moteコールバック内）
----から行われるため、直接書き込むとどれが走るかで競合する。
+---セクション生成は_handle_response内の3経路から行われ、いずれもvim.schedule越しなので、
+---直接書き込むとどれが走るかで競合する。
 ---@param callbacks Vibing.ChatCallbacks
 ---@param chat_file_path string|nil
 ---@param info Vibing.RateLimitInfo
@@ -604,55 +551,17 @@ function M._continuation_prompt(config)
   return "Continue from where you left off."
 end
 
----moteの変更ファイル結果とツールイベントのパスを絶対パスに正規化して統合する
----moteは各configのcwd相対パスを返すため、そのまま扱うと別mote_dirsの同名ファイルが
----重複排除で潰れたり、Neovim cwd基準の誤ったリロードが起きる
----@param mote_batches {base: string, files: string[]}[] mote configごとの結果（baseはそのconfigのcwd）
----@param modified_file_paths table<string, boolean>|nil ツールイベントで検知した変更ファイル
----@return string[] 重複排除済みの絶対パス一覧
-function M._merge_modified_files(mote_batches, modified_file_paths)
-  local seen = {}
-  local out = {}
-  local function add(abs)
-    if not seen[abs] then
-      seen[abs] = true
-      table.insert(out, abs)
-    end
-  end
-
-  for _, batch in ipairs(mote_batches or {}) do
-    local base = vim.fn.fnamemodify(batch.base, ":p"):gsub("/$", "")
-    for _, f in ipairs(batch.files or {}) do
-      if f:sub(1, 1) == "/" then
-        add(f)
-      else
-        add(base .. "/" .. f)
-      end
-    end
-  end
-
-  for path in pairs(modified_file_paths or {}) do
-    add(vim.fn.fnamemodify(path, ":p"))
-  end
-
-  return out
-end
-
----リクエスト単位diff（軽量パス）のModified Files出力とpatch生成
+---変更ファイル一覧とpatchをチャットに書き出す
+---
+---2つのdiff経路（git snapshot / request_diff）の共通の出口。どちらも「repoルート相対の
+---表示用パス」「絶対パス」「patch本文」の3つに畳んでからここに来る。
 ---@param callbacks Vibing.ChatCallbacks
----@param handle_id string|nil リクエストのハンドルID
----@param modified_file_paths table<string, boolean> ツールイベントで検知した変更ファイル
-function M._finalize_request_diff(callbacks, handle_id, modified_file_paths)
-  local RequestDiff = require("vibing.core.utils.request_diff")
-  local Git = require("vibing.core.utils.git")
-
-  local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
-  local base_dir = session_cwd or Git.get_root(nil) or vim.fn.getcwd()
-  base_dir = vim.fn.fnamemodify(base_dir, ":p"):gsub("/$", "")
-
-  local files, abs_files, patch_content = RequestDiff.generate(handle_id, base_dir, modified_file_paths)
-  RequestDiff.clear(handle_id)
-
+---@param base_dir string patch内パスの基準ディレクトリ（絶対パス）
+---@param files string[] 表示用の相対パス一覧
+---@param abs_files string[] バッファリロード用の絶対パス一覧
+---@param patch_content string|nil patch本文
+---@param handle_id string|nil patchファイル名に使うハンドルID
+function M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, handle_id)
   if #files > 0 then
     BufferReload.reload_files(abs_files)
     local MAX_DISPLAY = 50
@@ -686,135 +595,90 @@ function M._finalize_request_diff(callbacks, handle_id, modified_file_paths)
   end)
 end
 
----セッション固有のmote設定を作成（単一dir用）
----@param config table 全体設定
----@param session_cwd string|nil worktreeのcwd
----@param mote_dir string|nil 追跡ディレクトリ（絶対パス）。nilの場合はworktree自動検出
----@return table|nil
-function M._create_session_mote_config(config, session_cwd, mote_dir)
-  if not config.diff or not config.diff.mote then
-    return nil
+---ツリースナップショット差分（主経路）のModified Files出力とpatch生成
+---
+---request_diffと違い、Bashで書き換えられたファイルもここに載る。差分は
+---「リクエスト前のツリー」と「今のツリー」の2つのgitオブジェクトの比較なので、
+---どのツールが変更したかを一切知らなくてよい。
+---@param callbacks Vibing.ChatCallbacks
+---@param handle_id string|nil リクエストのハンドルID
+---@param modified_file_paths table<string, boolean> ツールイベントで検知した変更ファイル
+---@return boolean handled 差分を出力できたか。falseなら何も書いていないので、呼び出し側が
+---  request_diff にフォールバックする（「変更が無かった」ではなく「取れなかった」の意味）
+function M._finalize_snapshot_diff(callbacks, handle_id, modified_file_paths)
+  local GitSnapshot = require("vibing.core.utils.git_snapshot")
+
+  local base_dir = GitSnapshot.get_root(handle_id) or vim.fn.getcwd()
+  local files, abs_files, patch_content, ok = GitSnapshot.generate(handle_id, modified_file_paths)
+  GitSnapshot.clear(handle_id)
+
+  if not ok then
+    return false
   end
 
-  local MoteDiff = require("vibing.core.utils.mote_diff")
-  local mote_config = vim.deepcopy(config.diff.mote)
-  local effective_cwd = mote_dir or session_cwd
-
-  mote_config.project = mote_config.project or MoteDiff.get_project_name(effective_cwd)
-  local context_prefix = mote_config.context_prefix or "vibing"
-
-  if mote_dir then
-    mote_config.context = MoteDiff.build_context_name_from_path(context_prefix, mote_dir)
-    mote_config.cwd = mote_dir
-  else
-    mote_config.context = MoteDiff.build_context_name(context_prefix, session_cwd)
-    if session_cwd then
-      mote_config.cwd = session_cwd
-    end
-  end
-
-  return mote_config
+  M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, handle_id)
+  return true
 end
 
----複数のmote_dirsに対してmote設定の配列を作成
----@param config table 全体設定
----@param session_id string|nil セッションID（将来の拡張用）
----@param bufnr number|nil バッファ番号（将来の拡張用）
----@param session_cwd string|nil worktreeのcwd
----@param mote_dirs string[]|nil VibingMoteDirで指定された追跡ディレクトリ一覧
----@return table[] mote設定の配列（空の場合はempty table）
-function M._create_session_mote_configs(config, session_id, bufnr, session_cwd, mote_dirs)
-  if mote_dirs and #mote_dirs > 0 then
-    local configs = {}
-    for _, dir in ipairs(mote_dirs) do
-      local cfg = M._create_session_mote_config(config, session_cwd, dir)
-      if cfg then
-        table.insert(configs, cfg)
-      end
-    end
-    return configs
-  end
+---リクエスト単位diff（フォールバック経路）のModified Files出力とpatch生成
+---git管理外のworking_dirと、同じworktreeで並行実行中のターンで使う。
+---@param callbacks Vibing.ChatCallbacks
+---@param handle_id string|nil リクエストのハンドルID
+---@param modified_file_paths table<string, boolean> ツールイベントで検知した変更ファイル
+function M._finalize_request_diff(callbacks, handle_id, modified_file_paths)
+  local RequestDiff = require("vibing.core.utils.request_diff")
+  local Git = require("vibing.core.utils.git")
 
-  -- mote_dirs未指定: worktree自動検出（従来の動作）
-  local cfg = M._create_session_mote_config(config, session_cwd, nil)
-  return cfg and { cfg } or {}
+  local session_cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
+  local base_dir = session_cwd or Git.get_root(nil) or vim.fn.getcwd()
+  base_dir = vim.fn.fnamemodify(base_dir, ":p"):gsub("/$", "")
+
+  local files, abs_files, patch_content = RequestDiff.generate(handle_id, base_dir, modified_file_paths)
+  RequestDiff.clear(handle_id)
+
+  M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, handle_id)
 end
 
--- Mote initialization timeout (10 seconds)
-local MOTE_INIT_TIMEOUT_MS = 10000
+---廃止されたfrontmatterキーを一度だけ警告する
+---
+---`mote_dirs` / `mote_cwd` は削除されたmote統合の設定で、今はどこからも読まれない。
+---executeは1通ごとに走るので、warned_modesと同じく現れたキーの組み合わせごとに「一度だけ」
+---出す。送信のたびに同じ警告を出さないための措置。
+---@type table<string, boolean>
+local warned_removed_frontmatter = {}
 
----mote storageの初期化を確認し、スナップショットを作成（複数configs対応）
----全configの初期化+snapshot完了後に on_complete を呼ぶ
----@param mote_configs table[] セッション固有のmote設定配列
----@param bufnr number|nil バッファ番号（スナップショットID保存先キー）
----@param on_complete fun() 完了時のコールバック
-function M._ensure_mote_initialized_and_snapshot(mote_configs, bufnr, on_complete)
-  local MoteDiff = require("vibing.core.utils.mote_diff")
-  if not MoteDiff.is_available() or #mote_configs == 0 then
-    on_complete()
+---テスト用: 警告済み集合をリセットする
+function M._reset_removed_frontmatter_warnings()
+  warned_removed_frontmatter = {}
+end
+
+---@param frontmatter table|nil
+function M._warn_removed_frontmatter(frontmatter)
+  if type(frontmatter) ~= "table" then
+    return
+  end
+  local found = {}
+  for _, key in ipairs({ "mote_dirs", "mote_cwd" }) do
+    if frontmatter[key] ~= nil then
+      table.insert(found, key)
+    end
+  end
+  if #found == 0 then
     return
   end
 
-  local completed = false
-  local timeout_timer = nil
-  local remaining = #mote_configs
-
-  local function complete_once()
-    if completed then return end
-    completed = true
-    if timeout_timer then
-      vim.fn.timer_stop(timeout_timer)
-      timeout_timer = nil
-    end
-    on_complete()
+  local shown = table.concat(found, ", ")
+  if warned_removed_frontmatter[shown] then
+    return
   end
-
-  local function on_one_done()
-    remaining = remaining - 1
-    if remaining == 0 then
-      complete_once()
-    end
-  end
-
-  timeout_timer = vim.fn.timer_start(MOTE_INIT_TIMEOUT_MS, function()
-    if not completed then
-      vim.notify("[vibing] mote initialization timeout - proceeding without mote", vim.log.levels.WARN)
-      complete_once()
-    end
-  end)
-
-  for _, mote_config in ipairs(mote_configs) do
-    local mc = mote_config  -- ループ変数のキャプチャ
-
-    local function create_snapshot()
-      MoteDiff.create_snapshot(mc, "Before request", function(success, snapshot_id, err)
-        if not success and err and not err:match("No changes to snapshot") then
-          vim.notify("[vibing] Snapshot creation failed: " .. err, vim.log.levels.WARN)
-        end
-        if snapshot_id and bufnr then
-          if not session_snapshots[bufnr] then
-            session_snapshots[bufnr] = {}
-          end
-          session_snapshots[bufnr][mc.context] = snapshot_id
-        end
-        on_one_done()
-      end)
-    end
-
-    if MoteDiff.is_initialized(mc.project, mc.context, mc.cwd) then
-      create_snapshot()
-    else
-      MoteDiff.initialize(mc, function(init_success, init_error)
-        if completed then return end
-        if not init_success then
-          vim.notify("[vibing] mote initialization failed: " .. (init_error or "Unknown error"), vim.log.levels.WARN)
-          on_one_done()
-          return
-        end
-        create_snapshot()
-      end)
-    end
-  end
+  warned_removed_frontmatter[shown] = true
+  vim.notify(
+    string.format(
+      "[vibing] Frontmatter '%s' is no longer used and can be removed — diffs now come from a git tree snapshot of the working directory, which also catches Bash-driven changes.",
+      shown
+    ),
+    vim.log.levels.WARN
+  )
 end
 
 ---フロントマターのagentフィールドに基づいてアダプターを解決

@@ -56,9 +56,9 @@ CLI バックエンドと MCP 統合を通じて、AI に**実行中の Neovim �
 - **🛡️ きめ細かい権限制御** — ツールごとの allow/deny/ask リスト、機密ファイル向けの
   パスベースルール、Bash コマンドパターン、対話的な Permission Builder UI
 - **📊 diff ビューア** — 変更ファイル上で `gd` を押すと before/after の diff を表示。
-  デフォルトはリクエスト単位のパッチ追跡で、opt-in の [mote](https://github.com/shabaraba/mote)
-  スナップショットバックエンド(`diff.tool = "mote"` または `:VibingMoteDir`)を使うと
-  Bash 経由のファイル変更も捕捉できる
+  ターンごとにワーキングツリーを git ツリーオブジェクトとしてスナップショットするので、
+  Bash 経由の `sed -i` / `mv` / フォーマッタ実行も `Edit` と同じように追跡される。
+  外部ツールもセットアップも不要で、ユーザーの index には触らない
 - **🎯 スマートコンテキスト** — 手動追加、oil.nvim、ビジュアル選択からファイルをコンテキストへ
 - **🌍 多言語対応** — AI 応答の言語をチャットごとに設定可能
 
@@ -196,8 +196,6 @@ AI は同じバッファ内に応答します。`<C-c>` で実行中のリクエ
 | `:VibingCopyUnsentUserHeader`         | `## User <!-- unsent -->` をクリップボードにコピー                                                 |
 | `:VibingDailySummary [YYYY-MM-DD]`    | プロジェクトのチャットから日報を生成(デフォルト: 今日)                                             |
 | `:VibingDailySummaryAll [YYYY-MM-DD]` | すべてのチャットから日報を生成(デフォルト: 今日)                                                   |
-| `:VibingCleanMote`                    | チャットを削除せずに mote オブジェクトをクリーンアップ                                             |
-| `:VibingMoteDir [dir]`                | チャットの mote 追跡対象ディレクトリを追加(`mote_dirs` frontmatter。デフォルト: cwd)               |
 
 **コマンドの補足:**
 

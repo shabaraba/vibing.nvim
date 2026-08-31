@@ -54,9 +54,9 @@ access to your Neovim instance** through CLI backends and MCP integration.
   while another is still processing
 - **🛡️ Granular permissions** — allow/deny/ask lists per tool, path-based rules for sensitive
   files, Bash command patterns, and an interactive Permission Builder UI
-- **📊 Diff viewer** — `gd` on a changed file shows a before/after diff; per-request patch
-  tracking by default, with an opt-in [mote](https://github.com/shabaraba/mote) snapshot
-  backend (`diff.tool = "mote"` or `:VibingMoteDir`) that also catches Bash-driven changes
+- **📊 Diff viewer** — `gd` on a changed file shows a before/after diff. Each turn is snapshotted
+  as a git tree object, so a `sed -i`, a `mv` or a formatter run through Bash is tracked exactly
+  like an `Edit` — with no external tool and no setup, and without touching your index
 - **🎯 Smart context** — add files manually, from oil.nvim, or from a visual selection
 - **⏳ Usage-limit scheduling** — while a usage limit is in force, `<CR>` parks your message
   instead of burning a doomed request, and sends it verbatim once the limit resets;
@@ -204,8 +204,6 @@ help tags.
 | `:VibingCopyUnsentUserHeader`         | Copy `## User <!-- unsent -->` to clipboard                                                                                           |
 | `:VibingDailySummary [YYYY-MM-DD]`    | Generate daily summary from project chat files (default: today)                                                                       |
 | `:VibingDailySummaryAll [YYYY-MM-DD]` | Generate daily summary from all chat files (default: today)                                                                           |
-| `:VibingCleanMote`                    | Clean mote objects for chat files without deleting the chats                                                                          |
-| `:VibingMoteDir [dir]`                | Add a directory to the chat's mote tracking (`mote_dirs` frontmatter; default: cwd)                                                   |
 
 **Command Semantics:**
 

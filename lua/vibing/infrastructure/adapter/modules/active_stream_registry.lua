@@ -12,6 +12,10 @@ local M = {}
 --- @field session_id? string CLI session this stream is resuming. Two chat buffers can be bound to
 ---   the same session (a subagent chat shares its parent's), and two processes resuming one session
 ---   would write the same transcript concurrently — this is what lets a send be refused.
+--- @field worktree_root? string Git worktree root this stream runs in, when it runs in one. The
+---   tree is shared state, so a snapshot diff taken while another stream is mutating the same
+---   worktree would attribute that stream's changes to this one — this is what lets the turn fall
+---   back to the per-tool `request_diff` path instead (see core/utils/git_snapshot.lua).
 --- @field adapter table ClaudeCLI adapter reference
 --- @field on_insert_choices? fun(questions: table)
 --- @field on_approval_required? fun(tool: string, input: table, options: table, hook_request_id?: string)
@@ -82,6 +86,30 @@ function M.find_other_active_for_session(session_id, exclude_chat_bufnr)
   end
   for _, entry in pairs(streams) do
     if entry.session_id == session_id and entry.chat_bufnr ~= exclude_chat_bufnr then
+      return entry
+    end
+  end
+  return nil
+end
+
+--- Find another buffer's in-flight stream running in the same git worktree.
+---
+--- Unlike find_other_active_for_session this is not a conflict to refuse — the two chats are
+--- perfectly allowed to work in one tree. It only decides which diff mechanism can honestly
+--- attribute the changes: a whole-tree snapshot cannot tell whose `sed -i` ran, so a turn that
+--- overlaps another one in the same tree falls back to the per-tool backups.
+--- Excluded by handle_id rather than by chat_bufnr, unlike find_other_active_for_session: the
+--- backends that register no chat_bufnr at all (codex, grok — see features.md) would otherwise
+--- compare nil against nil and never recognise each other as an overlap.
+--- @param worktree_root string|nil
+--- @param exclude_handle_id string|nil the stream asking; it is not an overlap with itself
+--- @return ActiveStreamEntry|nil
+function M.find_other_active_for_worktree(worktree_root, exclude_handle_id)
+  if not worktree_root or worktree_root == "" then
+    return nil
+  end
+  for handle_id, entry in pairs(streams) do
+    if entry.worktree_root == worktree_root and handle_id ~= exclude_handle_id then
       return entry
     end
   end

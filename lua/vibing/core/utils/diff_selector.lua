@@ -69,72 +69,20 @@ local function show_git_diff(file_path)
   show_diff_buffer(output)
 end
 
----file_pathを含むmote_dirを探す
----ファイルパス（gdの対象）を想定しており、mote_dirそのものを指すパスは
----配下のファイルではないため意図的にマッチさせない
----@param file_path string 絶対パス
----@param mote_dirs string[]|nil チャットのmote_dirs frontmatter
----@return string|nil マッチした追跡ディレクトリ（絶対パス）
-local function find_mote_dir(file_path, mote_dirs)
-  local abs = vim.fn.fnamemodify(file_path, ":p")
-  for _, dir in ipairs(mote_dirs or {}) do
-    local base = vim.fn.fnamemodify(dir, ":p"):gsub("/$", "")
-    if abs:sub(1, #base + 1) == base .. "/" then
-      return base
-    end
-  end
-  return nil
-end
-
 -- テスト用エクスポート
-M._find_mote_dir = find_mote_dir
 M._show_git_diff = function(file_path)
   return show_git_diff(file_path)
 end
 
 ---ファイルのdiffを表示
----patchファイルが見つからない場合のフォールバック。送信時のバックエンド選択と同じ規則で、
----diff.tool = "mote" またはチャットのmote_dirsが対象ファイルをカバーする場合はmote、
----それ以外（"auto" / "git"）はgit diffで表示する。
+---
+---リクエストごとのpatchファイルが見つからなかったときのフォールバック。patchはターン単位の
+---差分だが、こちらはHEAD（またはindex）との差分なので、そのターンだけの変更とは限らない。
 ---@param file_path string ファイルパス（絶対パス）
 ---@param session_id? string セッションID（未使用、互換性のため保持）
----@param cwd? string 作業ディレクトリ（frontmatterのworking_dirから算出、worktree判定用）
----@param mote_dirs? string[] チャットのmote_dirs frontmatter（VibingMoteDirで指定）
-function M.show_diff(file_path, session_id, cwd, mote_dirs)
-  local config = require("vibing.config").get()
-  local tool = config.diff and config.diff.tool or "auto"
-
-  local matched_mote_dir = find_mote_dir(file_path, mote_dirs)
-  if tool ~= "mote" and not matched_mote_dir then
-    show_git_diff(file_path)
-    return
-  end
-
-  local MoteDiff = require("vibing.core.utils.mote_diff")
-  local mote_config = vim.deepcopy(config.diff.mote)
-  local context_prefix = mote_config.context_prefix or "vibing"
-
-  if matched_mote_dir then
-    -- VibingMoteDirで指定されたディレクトリ配下: 送信時（_create_session_mote_configs）は
-    -- diff.toolの値に関係なくmote_dirs優先でディレクトリ単位コンテキストにスナップショットを
-    -- 書くため、表示側も同じコンテキストを使う（tool = "mote" 併用時も含む）
-    mote_config.project = mote_config.project or MoteDiff.get_project_name(matched_mote_dir)
-    mote_config.context = MoteDiff.build_context_name_from_path(context_prefix, matched_mote_dir)
-    mote_config.cwd = matched_mote_dir
-  else
-    -- Normalize cwd to absolute path
-    local abs_cwd = cwd and vim.fn.fnamemodify(cwd, ":p") or nil
-
-    -- mote v0.2.4: --project/--context APIを使用
-    mote_config.project = mote_config.project or MoteDiff.get_project_name(abs_cwd)
-    mote_config.context = MoteDiff.build_context_name(context_prefix, abs_cwd)
-
-    if abs_cwd then
-      mote_config.cwd = abs_cwd
-    end
-  end
-
-  MoteDiff.show_diff(file_path, mote_config)
+---@param cwd? string 作業ディレクトリ（未使用、互換性のため保持）
+function M.show_diff(file_path, session_id, cwd)
+  show_git_diff(file_path)
 end
 
 return M

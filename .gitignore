@@ -59,9 +59,6 @@ build/
 *.min.js
 *.min.css
 
-# Downloaded binaries
-bin/mote-*
-
 # Debug
 # ルート直下のdebug/だけを対象にする。パターンだけだと
 # lua/vibing/application/debug/ のような正規のソースまで飲み込む

@@ -1,14 +1,9 @@
----@class Vibing.MoteConfig
----mote統合設定
----fine-grainedスナップショット管理ツールmoteとの統合を制御（mote v0.2.4対応）
----@field project string? プロジェクト名（省略時はリポジトリ名を自動検出）
----@field context_prefix string コンテキスト名のプレフィックス（デフォルト: "vibing"）
-
 ---@class Vibing.DiffConfig
 ---diff表示設定
 ---ファイル変更のdiff表示に使用するツールを制御
----@field tool "git"|"mote"|"auto" 使用するdiffツール（"auto"/"git": リクエスト単位パッチのgit diff表示、"mote": mote diff。moteはopt-inで、"mote"明示またはチャットのmote_dirs指定時のみ使用）
----@field mote Vibing.MoteConfig mote固有の設定
+---@field tool "git"|"auto" 使用するdiffツール（現在は同義。リクエストごとにワーキングツリーの
+---  gitツリースナップショットを取り、その差分をパッチとして保存する。`gd` はそのパッチを、
+---  無ければ通常の git diff を表示する）
 
 ---@class Vibing.GradientConfig
 ---グラデーションアニメーション設定
@@ -42,7 +37,7 @@
 ---@field chat Vibing.ChatConfig チャットウィンドウ設定（位置、サイズ、自動コンテキスト、保存先）
 ---@field ui Vibing.UiConfig UI設定（wrap等）
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
----@field diff Vibing.DiffConfig diff表示設定（使用ツール、mote設定）
+---@field diff Vibing.DiffConfig diff表示設定（使用ツール）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
 ---@field node Vibing.NodeConfig Node.js実行ファイル設定（バイナリパス）
 ---@field grok Vibing.GrokConfig Grok Build CLI設定（バイナリパス）
@@ -195,6 +190,10 @@
 ---@field file_finder_strategy? Vibing.FileFinderStrategy ファイル検索戦略（"auto": 最適なツールを自動選択、"fd": fd使用、"find": find使用、"locate": locate/plocate使用、"ripgrep": rg使用）
 
 local notify = require("vibing.core.utils.notify")
+
+---削除された`diff.*`設定について警告済みか。setup()は複数回呼ばれうるので、設定ごとに1回だけ出す
+---@type table<string, boolean>
+local warned_removed_diff = {}
 local tools_const = require("vibing.core.constants.tools")
 local language_utils = require("vibing.core.utils.language")
 
@@ -346,10 +345,6 @@ M.defaults = {
   },
   diff = {
     tool = "auto",
-    mote = {
-      project = nil,  -- nil = auto-detect from git repo name
-      context_prefix = "vibing",
-    },
   },
   permissions = {
     mode = "acceptEdits",
@@ -515,9 +510,34 @@ function M.setup(opts)
   end
 
   if M.options.diff then
+    -- mote統合は削除された。`"mote"` を弾いてデフォルトに戻すと、明示的にmoteを選んで
+    -- いたユーザーが「なぜか設定が無視される」状態になるので、名指しで案内して "git" に倒す。
+    --
+    -- 正規化した値は `M.options` にしか書かないので、ユーザーの `opts` テーブルには古い設定が
+    -- 残ったまま。setup()を2回以上呼ぶ構成（設定の再読み込み等）だと、そのたびに同じ警告が
+    -- 出ることになる。警告は一度だけという方針（send_message.luaの`warned_modes`と同じ）に
+    -- 合わせて、設定ごとに出したかを覚えておく。
+    if M.options.diff.tool == "mote" then
+      if not warned_removed_diff.tool then
+        warned_removed_diff.tool = true
+        notify.warn(
+          "diff.tool = \"mote\" is no longer supported and is being treated as \"git\". "
+            .. "mote integration was removed: diffs now come from a git tree snapshot taken per "
+            .. "request, which also catches Bash-driven file changes. Remove the setting."
+        )
+      end
+      M.options.diff.tool = "git"
+    end
+    if M.options.diff.mote ~= nil then
+      if not warned_removed_diff.mote then
+        warned_removed_diff.mote = true
+        notify.warn("diff.mote is no longer used and can be removed from your setup() call.")
+      end
+      M.options.diff.mote = nil
+    end
     M.options.diff.tool = validate_enum(
       M.options.diff.tool,
-      { git = true, mote = true, auto = true },
+      { git = true, auto = true },
       "diff.tool",
       "auto"
     )

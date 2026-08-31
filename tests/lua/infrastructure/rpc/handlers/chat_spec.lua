@@ -44,7 +44,7 @@ describe("rpc handlers: create_chat", function()
   end)
 
   it("leaves the user's own chat as the current one", function()
-    -- view._current_buffer is the fallback :VibingCancel, :VibingToggleChat and :VibingMoteDir
+    -- view._current_buffer is the fallback :VibingCancel and :VibingToggleChat
     -- use when the cursor is outside a chat buffer. A worker created in the background is not
     -- the chat the user opened: letting it take that slot made :VibingCancel stop the worker
     -- instead of the user's in-flight request, and made :VibingToggleChat report the (windowless)

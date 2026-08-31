@@ -162,6 +162,37 @@ local function write_hook_response(request_id, decision, reason)
   end
 end
 
+--- Take both diff mechanisms' baselines, just before the tool runs.
+---
+--- This is the only point in a turn where "nothing has been changed yet" is guaranteed, so both
+--- paths are seeded here:
+---   - git snapshot (the main path) freezes the whole working tree as one tree object, which is
+---     what catches a Bash-driven change. It only does work on the first tool that could write.
+---   - request_diff (the fallback) backs up the pre-edit content of the file a tool named.
+---
+--- **Two pcalls, not one.** Sharing one would let the fallback take the main path down with it:
+--- `request_diff.capture` creates its backup directory through `Fs.ensure_dir`, which re-raises
+--- everything that is not the concurrent-creation race (a read-only filesystem, a permission
+--- denial, a file where the directory should be). A throw there would skip `ensure_baseline`
+--- entirely, and a turn whose only writing tool hit it would end with neither baseline and no
+--- diff at all — the silent omission this whole mechanism exists to remove.
+---
+--- Neither failure may break the permission decision, which is why both are guarded at all.
+--- @param effective_handle string|nil
+--- @param cwd string|nil
+--- @param tool_name string
+--- @param tool_input table
+function M._capture_baselines(effective_handle, cwd, tool_name, tool_input)
+  pcall(function()
+    -- 経路の選択は _handle_response が行う。ここは無条件にベースラインを取っておき、
+    -- 使われなければ clear() で捨てられるだけ
+    require("vibing.core.utils.git_snapshot").ensure_baseline(effective_handle, cwd, tool_name)
+  end)
+  pcall(function()
+    require("vibing.core.utils.request_diff").capture(effective_handle, tool_name, tool_input)
+  end)
+end
+
 --- Handle check_tool_permission RPC request
 --- @param params {request_id: string, handle_id: string?}
 --- @return table RPC response
@@ -264,18 +295,18 @@ function M.check_tool_permission(params)
   local result = can_use_tool_mod.can_use_tool(tool_name, tool_input, perm_config)
 
   if result.behavior == "allow" then
-    -- ツールが実行される前（=レスポンスを書いてフックのブロックを解く前）に、
-    -- 対象ファイルの「変更前」内容を退避する。リクエスト単位diffのベースラインになる。
-    -- 退避の失敗が許可判断を壊さないよう pcall で保護する。
-    pcall(function()
-      local effective_handle = handle_id
-      if not effective_handle then
-        local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+    -- ツールが実行される前（=レスポンスを書いてフックのブロックを解く前）にベースラインを取る。
+    -- 詳細と、pcallを2つに分けている理由は M._capture_baselines を参照
+    local effective_handle = handle_id
+    if not effective_handle then
+      local ok_registry, registry =
+        pcall(require, "vibing.infrastructure.adapter.modules.active_stream_registry")
+      if ok_registry then
         local stream = registry.get(nil)
         effective_handle = stream and stream.handle_id
       end
-      require("vibing.core.utils.request_diff").capture(effective_handle, tool_name, tool_input)
-    end)
+    end
+    M._capture_baselines(effective_handle, active_opts and active_opts.cwd or nil, tool_name, tool_input)
     -- Only vibing-nvim's own MCP tools are granted outright; everything else defers to the CLI's
     -- gate, which is still where the user's own settings.json rules are enforced. The distinction
     -- is not cosmetic: --allowedTools needs a literal prefix, and the plugin's is

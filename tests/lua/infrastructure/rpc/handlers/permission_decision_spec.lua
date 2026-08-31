@@ -92,4 +92,81 @@ describe("permission handler hook decision", function()
     assert.equals("deny", output.permissionDecision)
     assert.is_truthy(output.permissionDecisionReason)
   end)
+  describe("_capture_baselines", function()
+    -- 2つのdiff機構のベースラインは独立していなければいけない。1つのpcallにまとめると、
+    -- フォールバック(request_diff)の例外が主経路(git snapshot)を道連れにする。
+    -- `Fs.ensure_dir` は競合以外の失敗を再raiseする契約なので、capture が投げる経路は実在する。
+    local originals = {}
+    -- 「元々ロードされていなかった」を表す番兵。`originals[name] = nil` はキーを作らないので、
+    -- そのまま入れるとpairsが飛ばし、投げるスタブがpackage.loadedに残り続ける。ここでスタブ
+    -- するモジュールは `_capture_baselines` の中で遅延requireされる＝このspecが先に走ると
+    -- 未ロードなので、実際に起こりうる
+    local ABSENT = {}
+
+    local function stub(name, module)
+      originals[name] = package.loaded[name] or ABSENT
+      package.loaded[name] = module
+    end
+
+    after_each(function()
+      for name, saved in pairs(originals) do
+        package.loaded[name] = saved ~= ABSENT and saved or nil
+      end
+      originals = {}
+    end)
+
+    it("still takes the snapshot baseline when the fallback capture throws", function()
+      local called = {}
+      stub("vibing.core.utils.request_diff", {
+        capture = function()
+          error("read-only file system")
+        end,
+      })
+      stub("vibing.core.utils.git_snapshot", {
+        ensure_baseline = function()
+          called.snapshot = true
+        end,
+      })
+
+      permission._capture_baselines("h1", "/repo", "Bash", {})
+
+      assert.is_true(called.snapshot)
+    end)
+
+    it("still takes the fallback capture when the snapshot baseline throws", function()
+      local called = {}
+      stub("vibing.core.utils.git_snapshot", {
+        ensure_baseline = function()
+          error("git exploded")
+        end,
+      })
+      stub("vibing.core.utils.request_diff", {
+        capture = function()
+          called.capture = true
+        end,
+      })
+
+      permission._capture_baselines("h2", "/repo", "Bash", {})
+
+      assert.is_true(called.capture)
+    end)
+
+    it("never lets either failure escape to the permission decision", function()
+      stub("vibing.core.utils.git_snapshot", {
+        ensure_baseline = function()
+          error("boom")
+        end,
+      })
+      stub("vibing.core.utils.request_diff", {
+        capture = function()
+          error("boom")
+        end,
+      })
+
+      assert.has_no.errors(function()
+        permission._capture_baselines("h3", "/repo", "Bash", {})
+      end)
+    end)
+  end)
+
 end)

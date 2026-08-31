@@ -2,9 +2,7 @@
 local M = {}
 
 local ChatRepository = require("vibing.infrastructure.storage.chat_repository")
-local MoteCleaner = require("vibing.infrastructure.storage.mote_cleaner")
 local DeletionService = require("vibing.domain.chat.deletion_service")
-local MoteContext = require("vibing.core.utils.mote.context")
 local ConfirmationDialog = require("vibing.ui.confirmation_dialog")
 
 ---@param save_dir string
@@ -45,32 +43,15 @@ function M.delete_selected(entities, config, on_complete)
   })
 end
 
----@param config table
----@return table
-function M._build_mote_config(config)
-  return {
-    project = (config.diff and config.diff.mote and config.diff.mote.project) or vim.fn.fnamemodify(vim.fn.getcwd(), ":t"),
-    context = MoteContext.build_name(nil),
-    cwd = vim.fn.getcwd(),
-  }
-end
-
 ---@param entities Vibing.Domain.Chat.FileEntity[]
----@param config table
+---@param _config table
 ---@param on_complete fun(success: boolean, message: string)
-function M._execute_deletion(entities, config, on_complete)
-  local mote_config = M._build_mote_config(config)
+function M._execute_deletion(entities, _config, on_complete)
+  local delete_result = ChatRepository.delete_batch(entities)
 
-  MoteCleaner.clean_batch(entities, mote_config, function(_, mote_failed, mote_errors)
-    local delete_result = ChatRepository.delete_batch(entities)
-
-    local total_success = delete_result.success_count
-    local total_failed = delete_result.failed_count + mote_failed
-    local all_errors = vim.list_extend(delete_result.errors, mote_errors)
-
-    local message = M._build_result_message(total_success, total_failed, all_errors)
-    on_complete(total_failed == 0, message)
-  end)
+  local message =
+    M._build_result_message(delete_result.success_count, delete_result.failed_count, delete_result.errors)
+  on_complete(delete_result.failed_count == 0, message)
 end
 
 ---@param success_count number
@@ -98,20 +79,6 @@ function M._build_result_message(success_count, failed_count, errors, success_la
   end
 
   return table.concat(parts, ". ")
-end
-
----@param entities Vibing.Domain.Chat.FileEntity[]
----@param config table
----@param on_complete fun(success: boolean, message: string)
-function M.clean_mote_selected(entities, config, on_complete)
-  if not entities or #entities == 0 then
-    on_complete(false, "No files selected")
-    return
-  end
-
-  MoteCleaner.clean_batch(entities, M._build_mote_config(config), function(success_count, failed_count, errors)
-    on_complete(failed_count == 0, M._build_result_message(success_count, failed_count, errors, "Cleaned mote objects for"))
-  end)
 end
 
 ---@param save_dir string

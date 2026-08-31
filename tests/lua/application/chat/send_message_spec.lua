@@ -106,7 +106,7 @@ describe("send_message", function()
         end,
       }
 
-      SendMessage._handle_response(response, callbacks, adapter, {}, {}, {}, "do the thing")
+      SendMessage._handle_response(response, callbacks, adapter, {}, {}, "do the thing")
 
       vim.api.nvim_buf_delete(buf, { force = true })
       return chat_path
@@ -198,52 +198,349 @@ describe("send_message", function()
     end)
   end)
 
-  describe("_merge_modified_files", function()
-    it("resolves mote-relative paths against each batch's own base", function()
-      local result = SendMessage._merge_modified_files({
-        { base = "/repo/workspaces/app-a", files = { "src/main.lua" } },
-        { base = "/repo/workspaces/app-b", files = { "src/main.lua" } },
-      }, nil)
+  describe("_finalize_snapshot_diff", function()
+    -- スナップショット経路が差分を出せなかったとき、呼び出し側は request_diff に退避できないと
+    -- いけない。そのため「出力した」か「取れなかった」かを戻り値で返す契約になっている。
+    local original
 
-      -- 別mote_dirsの同名相対パスが衝突せず両方残ること
-      assert.same({
-        "/repo/workspaces/app-a/src/main.lua",
-        "/repo/workspaces/app-b/src/main.lua",
-      }, result)
+    local function stub_git_snapshot(generate)
+      original = package.loaded["vibing.core.utils.git_snapshot"]
+      package.loaded["vibing.core.utils.git_snapshot"] = {
+        get_root = function()
+          return "/repo"
+        end,
+        generate = generate,
+        clear = function() end,
+      }
+    end
+
+    after_each(function()
+      package.loaded["vibing.core.utils.git_snapshot"] = original
+      original = nil
     end)
 
-    it("keeps absolute mote paths as-is", function()
-      local result = SendMessage._merge_modified_files({
-        { base = "/repo", files = { "/repo/src/a.lua", "src/b.lua" } },
-      }, nil)
+    ---@return table appended append_chunkで書かれた断片
+    ---@return table state add_user_sectionが呼ばれたか
+    local function callbacks_recording(appended, state)
+      return {
+        append_chunk = function(chunk)
+          table.insert(appended, chunk)
+        end,
+        add_user_section = function()
+          state.user_section = true
+        end,
+        get_cwd = function()
+          return nil
+        end,
+      }
+    end
 
-      assert.same({ "/repo/src/a.lua", "/repo/src/b.lua" }, result)
+    it("reports failure and writes nothing when the snapshot could not be taken", function()
+      stub_git_snapshot(function()
+        return {}, {}, nil, false
+      end)
+      local appended, state = {}, {}
+
+      local handled =
+        SendMessage._finalize_snapshot_diff(callbacks_recording(appended, state), "h1", {})
+
+      assert.is_false(handled)
+      assert.same({}, appended)
+      assert.is_nil(state.user_section)
     end)
 
-    it("unions tool-event paths and dedupes against mote results", function()
-      local result = SendMessage._merge_modified_files({
-        { base = "/repo", files = { "src/a.lua" } },
-      }, {
-        ["/repo/src/a.lua"] = true,
-        ["/repo/src/only-tool-event.lua"] = true,
-      })
+    it("reports success for a turn that genuinely changed nothing", function()
+      -- 「変更なし」は失敗ではない。ここでフォールバックすると二重に出力してしまう
+      stub_git_snapshot(function()
+        return {}, {}, nil, true
+      end)
+      local appended, state = {}, {}
 
-      assert.equals(2, #result)
-      assert.equals("/repo/src/a.lua", result[1])
-      assert.equals("/repo/src/only-tool-event.lua", result[2])
+      local handled =
+        SendMessage._finalize_snapshot_diff(callbacks_recording(appended, state), "h2", {})
+
+      assert.is_true(handled)
+      assert.same({}, appended)
     end)
 
-    it("handles empty inputs", function()
-      assert.same({}, SendMessage._merge_modified_files({}, nil))
-      assert.same({}, SendMessage._merge_modified_files(nil, {}))
+    it("writes the file list when the snapshot succeeded", function()
+      stub_git_snapshot(function()
+        return { "src/a.lua" }, { "/repo/src/a.lua" }, nil, true
+      end)
+      local appended, state = {}, {}
+
+      local handled =
+        SendMessage._finalize_snapshot_diff(callbacks_recording(appended, state), "h3", {})
+
+      assert.is_true(handled)
+      assert.is_truthy(table.concat(appended, ""):find("src/a.lua", 1, true))
+    end)
+  end)
+
+  describe("a turn whose snapshot could not be read", function()
+    -- スナップショットが取れず、ツールイベントも無いターンは、退避先が両方とも空になる。
+    -- Bashだけで完結したターンではこれが起こりうる。そのままだと「変更なし」と区別が
+    -- つかない = Bash由来の変更が黙って消える。この仕組みが無くそうとしている失敗そのもの。
+    local original_git_snapshot
+    local messages
+    local original_notify
+
+    before_each(function()
+      messages = {}
+      original_notify = vim.notify
+      vim.notify = function(msg, level)
+        table.insert(messages, { msg = msg, level = level })
+      end
     end)
 
-    it("strips trailing slashes from batch bases", function()
-      local result = SendMessage._merge_modified_files({
-        { base = "/repo/dir/", files = { "x.lua" } },
-      }, nil)
+    after_each(function()
+      vim.notify = original_notify
+      package.loaded["vibing.core.utils.git_snapshot"] = original_git_snapshot
+      original_git_snapshot = nil
+    end)
 
-      assert.same({ "/repo/dir/x.lua" }, result)
+    ---@param generate_ok boolean generate が差分を取れたと答えるか
+    ---@param root string|nil ベースラインを取れた worktree ルート（nilなら経路に乗らない）
+    local function run_turn(generate_ok, root)
+      original_git_snapshot = package.loaded["vibing.core.utils.git_snapshot"]
+      package.loaded["vibing.core.utils.git_snapshot"] = {
+        get_root = function()
+          return root
+        end,
+        had_overlap = function()
+          return false
+        end,
+        worktree_root = function()
+          return root
+        end,
+        generate = function()
+          return {}, {}, nil, generate_ok
+        end,
+        clear = function() end,
+      }
+
+      local buf = vim.api.nvim_create_buf(false, true)
+      local callbacks = {
+        clear_sending = function() end,
+        get_bufnr = function()
+          return buf
+        end,
+        get_session_id = function()
+          return nil
+        end,
+        update_session_id = function(_) end,
+        append_chunk = function(_) end,
+        add_user_section = function() end,
+        get_cwd = function()
+          return nil
+        end,
+      }
+      local adapter = {
+        supports = function(_, _feature)
+          return false
+        end,
+      }
+
+      SendMessage._handle_response({ content = "done" }, callbacks, adapter, {}, {}, "msg")
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end
+
+    it("warns rather than reading as an unchanged turn", function()
+      run_turn(false, "/repo")
+
+      assert.equals(1, #messages)
+      assert.equals(vim.log.levels.WARN, messages[1].level)
+      assert.is_truthy(messages[1].msg:find("snapshot failed", 1, true))
+    end)
+
+    it("stays quiet for a turn that genuinely changed nothing", function()
+      run_turn(true, "/repo")
+
+      assert.equals(0, #messages)
+    end)
+
+    it("stays quiet when the snapshot path was never taken", function()
+      -- git管理外のworking_dir。スナップショットを試してすらいないので、警告する材料が無い
+      run_turn(false, nil)
+
+      assert.equals(0, #messages)
+    end)
+  end)
+
+  describe("choosing between the snapshot and the fallback", function()
+    -- 経路選択は2つの重なり信号の **OR** で、どちらの信号も単体では
+    -- git_snapshot_spec / active_stream_registry_spec 側で手厚くテストされている。
+    -- テストが無かったのは、その2つを結ぶ send_message 側の条件式そのもの。
+    -- ここを `and` に書き違えても条件を反転させても、他のspecは全部通ってしまう。
+    local ASR = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+
+    local saved = {}
+    local original_find
+    local called
+
+    ---@param opts { root: string|nil, had_overlap: boolean, other_stream: boolean }
+    ---@return "snapshot"|"fallback"|"neither" どちらの generate が呼ばれたか
+    local function route(opts)
+      called = {}
+
+      saved["vibing.core.utils.git_snapshot"] = package.loaded["vibing.core.utils.git_snapshot"]
+      package.loaded["vibing.core.utils.git_snapshot"] = {
+        get_root = function()
+          return opts.root
+        end,
+        had_overlap = function()
+          return opts.had_overlap
+        end,
+        worktree_root = function()
+          return opts.root
+        end,
+        generate = function()
+          called.snapshot = true
+          -- 差分が取れた体で返す。取れなかった場合の分岐は別のdescribeが持っている
+          return { "a.lua" }, { "/repo/a.lua" }, nil, true
+        end,
+        clear = function() end,
+      }
+
+      saved["vibing.core.utils.request_diff"] = package.loaded["vibing.core.utils.request_diff"]
+      package.loaded["vibing.core.utils.request_diff"] = {
+        generate = function()
+          called.fallback = true
+          return { "a.lua" }, { "/repo/a.lua" }, nil
+        end,
+        clear = function() end,
+        capture = function() end,
+      }
+
+      -- ActiveStreamRegistry は send_message のトップレベルでrequireされている（upvalue）ので、
+      -- package.loaded を差し替えても届かない。実物のテーブルの関数だけ差し替える
+      original_find = ASR.find_other_active_for_worktree
+      ASR.find_other_active_for_worktree = function()
+        return opts.other_stream and { handle_id = "other" } or nil
+      end
+
+      local buf = vim.api.nvim_create_buf(false, true)
+      local callbacks = {
+        clear_sending = function() end,
+        get_bufnr = function()
+          return buf
+        end,
+        get_session_id = function()
+          return nil
+        end,
+        update_session_id = function(_) end,
+        append_chunk = function(_) end,
+        add_user_section = function() end,
+        get_cwd = function()
+          return opts.root
+        end,
+      }
+      local adapter = {
+        supports = function(_, _feature)
+          return false
+        end,
+      }
+
+      -- ツールイベントが1件ある状態にする。フォールバック側はこれが空だと
+      -- 「変更なし」分岐に落ちて generate まで届かない
+      SendMessage._handle_response(
+        { content = "done" },
+        callbacks,
+        adapter,
+        {},
+        { ["/repo/a.lua"] = true },
+        "msg"
+      )
+      vim.api.nvim_buf_delete(buf, { force = true })
+
+      if called.snapshot then
+        return "snapshot"
+      elseif called.fallback then
+        return "fallback"
+      end
+      return "neither"
+    end
+
+    after_each(function()
+      if original_find then
+        ASR.find_other_active_for_worktree = original_find
+        original_find = nil
+      end
+      for name, module in pairs(saved) do
+        package.loaded[name] = module
+      end
+      saved = {}
+    end)
+
+    it("takes the snapshot when neither signal reports an overlap", function()
+      assert.equals(
+        "snapshot",
+        route({ root = "/repo", had_overlap = false, other_stream = false })
+      )
+    end)
+
+    it("falls back when the baseline recorded an overlapping window", function()
+      -- 相手が先に終わっていてレジストリには何も残っていない、という一番効く形
+      assert.equals(
+        "fallback",
+        route({ root = "/repo", had_overlap = true, other_stream = false })
+      )
+    end)
+
+    it("falls back when a stream without a baseline is writing in the same worktree", function()
+      assert.equals(
+        "fallback",
+        route({ root = "/repo", had_overlap = false, other_stream = true })
+      )
+    end)
+
+    it("falls back when both signals fire", function()
+      assert.equals("fallback", route({ root = "/repo", had_overlap = true, other_stream = true }))
+    end)
+
+    it("falls back outside a git repository, without asking either signal", function()
+      assert.equals("fallback", route({ root = nil, had_overlap = false, other_stream = false }))
+    end)
+  end)
+
+  describe("_warn_removed_frontmatter", function()
+    local messages
+    local original_notify
+
+    before_each(function()
+      SendMessage._reset_removed_frontmatter_warnings()
+      messages = {}
+      original_notify = vim.notify
+      vim.notify = function(msg, level)
+        table.insert(messages, { msg = msg, level = level })
+      end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+      SendMessage._reset_removed_frontmatter_warnings()
+    end)
+
+    it("says nothing for frontmatter that carries no removed key", function()
+      SendMessage._warn_removed_frontmatter({ model = "sonnet" })
+
+      assert.equals(0, #messages)
+    end)
+
+    it("names every removed key it found, once", function()
+      SendMessage._warn_removed_frontmatter({ mote_dirs = { "/repo" }, mote_cwd = "/repo" })
+      SendMessage._warn_removed_frontmatter({ mote_dirs = { "/repo" }, mote_cwd = "/repo" })
+
+      assert.equals(1, #messages)
+      assert.is_truthy(messages[1].msg:find("mote_dirs", 1, true))
+      assert.is_truthy(messages[1].msg:find("mote_cwd", 1, true))
+      assert.equals(vim.log.levels.WARN, messages[1].level)
+    end)
+
+    it("tolerates a missing frontmatter table", function()
+      SendMessage._warn_removed_frontmatter(nil)
+
+      assert.equals(0, #messages)
     end)
   end)
 end)

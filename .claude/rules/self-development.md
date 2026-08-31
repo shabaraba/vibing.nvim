@@ -41,8 +41,9 @@ built-in workflows.
 - ✅ Correct: `git worktree add -b feature-branch .vibing/worktrees/feature-branch` (what the
   `vibing-worktree-create` skill does), then update the chat's `working_dir` frontmatter to match
 - Why: `.vibing/worktrees/` is the convention every vibing.nvim chat is told about via its system
-  prompt, and it's already covered by the `.vibing/` mote-ignore rule; a worktree placed elsewhere
-  won't be picked up by that convention and needs its own ignore handling
+  prompt, and `.vibing/` is already git-ignored so the per-request diff snapshot skips it; a
+  worktree placed elsewhere won't be picked up by that convention, and its whole checkout would
+  show up in the parent worktree's `### Modified Files`
 
 **Mistake 2: Using Serena LSP tools instead of vibing-nvim MCP tools**
 

@@ -132,17 +132,10 @@ npm install --silent
 echo "[vibing.nvim] Building bin/ files..."
 npm run build
 
-# Clean up old mote binaries (version mismatch prevention)
-echo "[vibing.nvim] Cleaning up old mote binaries..."
+# One-shot cleanup for checkouts that predate the mote removal. The integration is
+# gone (diffs come from a per-request git tree snapshot now), so these downloaded
+# binaries are dead weight -- and they are git-ignored, so nothing else deletes them.
 rm -f bin/mote-darwin-arm64 bin/mote-darwin-x64 bin/mote-linux-arm64 bin/mote-linux-x64
-
-# Download mote binaries for all platforms
-echo "[vibing.nvim] Downloading mote binaries..."
-if ! "$NODE_EXECUTABLE" scripts/download-mote.mjs; then
-    echo "[vibing.nvim] ⚠ Warning: mote binary download failed"
-    echo "[vibing.nvim] mote integration will not be available"
-    echo "[vibing.nvim] You can manually download by running: $NODE_EXECUTABLE scripts/download-mote.mjs"
-fi
 
 # Build MCP server
 cd "$MCP_DIR"

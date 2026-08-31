@@ -75,6 +75,17 @@ function M.setup(opts)
     end)
   end)
 
+  -- 前回クラッシュ・強制終了で残ったリクエストdiffのrefを掃除する。ここで「アクティブな
+  -- リクエストは無い」と言えるのは自プロセスについてだけで、同じworktreeを別のNeovimが既に
+  -- 開いていることはある。消してよいrefの判断は sweep 側（sweep_refs）が持っているので、
+  -- ここは「起動したので声をかける」以上のことはしない。
+  -- git呼び出しを2つ伴うので、hook cleanupと同じく起動パスからは外す。
+  vim.schedule(function()
+    pcall(function()
+      require("vibing.core.utils.git_snapshot").sweep(nil)
+    end)
+  end)
+
   -- 使用量リミット待ちのチャットのタイマーを張り直す。
   -- 5時間/週次リミットのリセットはNeovimの再起動を跨ぐことが多いため、
   -- .vibing/pending-resume.json から復元する。VimEnter後に遅延させて起動を妨げない。
@@ -269,9 +280,22 @@ function M._register_commands()
     end,
   })
 
-  vim.api.nvim_create_user_command("VibingCleanMote", function()
-    require("vibing.presentation.chat.deletion_controller").handle_clean_mote_command(M.config)
-  end, { desc = "Clean mote objects for chat files without deleting chats" })
+  -- mote統合（と :VibingCleanMote / :VibingMoteDir）は削除された。設定を残したまま
+  -- アップデートした人がコマンドの消失に戸惑わないよう、代わりに何を見ればよいかを返す
+  -- スタブだけ残す。
+  for _, removed in ipairs({ "VibingCleanMote", "VibingMoteDir" }) do
+    vim.api.nvim_create_user_command(removed, function()
+      vim.notify(
+        string.format(
+          "[vibing] :%s was removed with the mote integration. Diffs now come from a git tree "
+            .. "snapshot taken per request, which needs no setup and also catches Bash-driven "
+            .. "changes. Use `gd` on a file path in the chat as before.",
+          removed
+        ),
+        vim.log.levels.WARN
+      )
+    end, { nargs = "?", desc = "Removed: mote integration (see :help vibing-configuration)" })
+  end
 
   -- コンテキスト関連コマンド
   vim.api.nvim_create_user_command("VibingContext", function(opts)
@@ -467,36 +491,6 @@ function M._register_commands()
       return { "all" }
     end,
     desc = "Cancel this chat's pending auto-resume or scheduled request (or 'all')",
-  })
-
-  vim.api.nvim_create_user_command("VibingMoteDir", function(opts)
-    local view = require("vibing.presentation.chat.view")
-    local chat_buffer = view.get_current() or view._current_buffer
-    if not chat_buffer then
-      vim.notify("[vibing] No chat buffer active", vim.log.levels.ERROR)
-      return
-    end
-
-    local path = opts.args ~= "" and opts.args or vim.fn.getcwd()
-    path = vim.fn.fnamemodify(path, ":p"):gsub("/$", "")
-
-    local success = chat_buffer:update_frontmatter_list("mote_dirs", path, "add")
-    if success then
-      vim.schedule(function()
-        if vim.api.nvim_buf_is_valid(chat_buffer.buf) and chat_buffer.file_path then
-          vim.api.nvim_buf_call(chat_buffer.buf, function()
-            vim.cmd.write({ bang = true })
-          end)
-        end
-      end)
-      vim.notify("[vibing] Added mote tracking directory: " .. path, vim.log.levels.INFO)
-    else
-      vim.notify("[vibing] Failed to add mote tracking directory", vim.log.levels.ERROR)
-    end
-  end, {
-    nargs = "?",
-    desc = "Set mote tracking directory for current chat session",
-    complete = "dir",
   })
 
   vim.api.nvim_create_user_command("VibingReloadCommands", function()
