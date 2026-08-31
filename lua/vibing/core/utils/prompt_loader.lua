@@ -21,14 +21,31 @@ local function substitute_variables(template, replacements)
   return result
 end
 
+---`prompts/` を持つプラグインルートを返す
+---
+---このモジュール自身の位置から辿る。runtimepath を「`vibing.nvim` という名前のディレクトリ」で
+---探す方法も取れるが、それはチェックアウトのディレクトリ名に依存する: git worktree
+---（`.vibing/worktrees/<branch>/`）、任意の名前でのclone、プラグインマネージャによっては
+---付くサフィックスのいずれでも外れ、`prompts/` が読めずに要約とタイトル生成が丸ごと失敗する。
+---モジュールのパスはインストール方法に依らない。
 ---@return string|nil
 local function get_plugin_root()
-  local runtime_paths = vim.api.nvim_list_runtime_paths()
-  for _, path in ipairs(runtime_paths) do
-    if path:match("vibing%.nvim/?$") then
+  local source = debug.getinfo(1, "S").source
+  if source:sub(1, 1) == "@" then
+    -- <root>/lua/vibing/core/utils/prompt_loader.lua から <root> まで5階層
+    local root = vim.fn.fnamemodify(source:sub(2), ":p:h:h:h:h:h")
+    if vim.fn.isdirectory(root .. "/prompts") == 1 then
+      return root
+    end
+  end
+
+  -- 素の `require` ではなく文字列から読み込まれた場合（source が "@path" でない）に備えた保険
+  for _, path in ipairs(vim.api.nvim_list_runtime_paths()) do
+    if vim.fn.isdirectory(path .. "/prompts") == 1 and vim.fn.isdirectory(path .. "/lua/vibing") == 1 then
       return path
     end
   end
+
   return nil
 end
 
