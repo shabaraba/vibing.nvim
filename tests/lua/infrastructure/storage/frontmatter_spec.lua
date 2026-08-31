@@ -281,6 +281,19 @@ no closing delimiter]]
     it("rejects a missing file", function()
       assert.is_false(frontmatter.is_vibing_chat_file(tmpdir .. "/absent.md"))
     end)
+
+    it("reads a CRLF file", function()
+      -- `readfile()` strips a trailing CR; Lua's `file:lines()` does not. The
+      -- delimiter comparison and the value parse both go through `trim`, so the
+      -- CR is absorbed -- pinned here because the two readers differ.
+      local path = tmpdir .. "/crlf.md"
+      local handle = assert(io.open(path, "wb"))
+      handle:write("---\r\nvibing.nvim: true\r\nmodel: opus\r\n---\r\n# Vibing Chat\r\n")
+      handle:close()
+      table.insert(created, path)
+
+      assert.is_true(frontmatter.is_vibing_chat_file(path))
+    end)
   end)
 
   describe("buffer_region", function()
