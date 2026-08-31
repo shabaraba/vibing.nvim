@@ -204,9 +204,10 @@ function M.execute(adapter, callbacks, message, config)
       end
     end,
     on_insert_choices = function(questions)
-      vim.schedule(function()
-        callbacks.insert_choices(questions)
-      end)
+      -- permission.lua から呼ばれるためすでにメインスレッド上（on_approval_required と同じ）
+      -- 二重 vim.schedule を避けることで _pending_choices が add_user_section より確実に先に設定される。
+      -- 挟むと cancel() が積んだ _handle_response が先に走り、選択肢が nil のまま消費される（#649）
+      callbacks.insert_choices(questions)
     end,
     on_session_corrupted = function(old_session_id)
       vim.schedule(function()

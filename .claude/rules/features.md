@@ -215,6 +215,18 @@ in-flight turn and renders the choice list via `on_insert_choices`. Because the 
 the tool's return value never reaches the model — the user's answer arrives as the next `--resume`d
 turn's user message, so no Promise/state handling is required.
 
+**The choice list is only staged, so the staging has to be synchronous.** `on_insert_choices`
+writes `_pending_choices` and nothing else; the one thing that renders it is `add_user_section()`
+at the end of `_handle_response`. But `cancel()` runs the adapter's wrapped `on_done`, and that is
+what queues the completion — so a staging deferred by its own `vim.schedule` lands one tick too
+late, the completion consumes a nil, and the turn ends cut short with nothing in the buffer to
+answer (#649). Neither this callback nor `on_approval_required` may add an inner `vim.schedule`:
+both are already on the main thread when `permission.lua` calls them. `on_approval_required` had
+always obeyed that rule; `on_insert_choices` was the one that did not.
+
+Rendering from `insert_choices` itself is not the alternative — `### Modified Files` and the patch
+comment are appended _before_ the User section, so the diff would land underneath the choices.
+
 Native `AskUserQuestion` is unavailable in headless `claude -p` mode and is opaque to vibing.nvim,
 so the PreToolUse hook intercepts and denies it, rendering the same UI as a fallback.
 
