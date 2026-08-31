@@ -13,29 +13,43 @@ local _send_locks = {}
 ---@param message string Message content to send
 ---@param sender? string Sender identifier (default: "User", future: "Alpha", "Bravo", etc.)
 ---@return {success: boolean, bufnr: number}
-function M.send(bufnr, message, sender)
-  sender = sender or "User"
-
-  -- Validate buffer
+---送信できる状態かを確かめ、対象のChatBufferを返す（送れないなら error）
+---
+---`send`から切り出してあるのは、送信の前に別の副作用を済ませたい呼び出し元があるため。
+---`nvim_chat_send_message`はfrontmatterへのリンク書き込みを送信より前に行う必要がある
+---（バッファを直接触るので、応答が始まってから書くとストリーミングと競合する）ので、
+---「書いたあとに送信が弾かれ、行われなかったやり取りの関係だけが残る」のを避けるには
+---先にここを通す必要がある
+---@param bufnr number
+---@param message string
+---@return table chat_buf
+function M.validate(bufnr, message)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     error("Invalid buffer number")
   end
 
-  -- Validate message content
   if not message or vim.trim(message) == "" then
     error("Empty message")
   end
 
-  -- Get ChatBuffer instance via public API
   local chat_buf = view.get_chat_buffer(bufnr)
   if not chat_buf then
     error("Buffer is not a vibing chat buffer")
   end
 
-  -- Acquire lock to prevent concurrent sends
   if _send_locks[bufnr] then
     error("Another send operation is in progress for this buffer")
   end
+
+  return chat_buf
+end
+
+function M.send(bufnr, message, sender)
+  sender = sender or "User"
+
+  local chat_buf = M.validate(bufnr, message)
+
+  -- Acquire lock to prevent concurrent sends
   _send_locks[bufnr] = true
 
   local success, err = pcall(function()

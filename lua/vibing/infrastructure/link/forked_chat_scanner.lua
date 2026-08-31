@@ -81,16 +81,11 @@ function ForkedChatScanner:update_link(file_path, old_path, new_path)
 
   local new_forked_from = Git.to_display_path(new_path)
 
-  -- frontmatterを更新
-  local updated_text = Frontmatter.update(text, { forked_from = new_forked_from })
-  local updated_lines = vim.split(updated_text, "\n", { plain = true })
-
-  local result = vim.fn.writefile(updated_lines, file_path)
-  if result ~= 0 then
-    return false, string.format("Failed to write file: %s", vim.v.errmsg or "unknown")
-  end
-
-  return true, nil
+  -- 開かれているバッファがあればそちら経由で書く。ディスクを直接書くと、そのバッファの
+  -- 次の保存が同期した内容を巻き戻すか、確認プロンプトでNeovimを止める
+  -- （infrastructure/storage/frontmatter_file.lua のコメント参照）
+  local FrontmatterFile = require("vibing.infrastructure.storage.frontmatter_file")
+  return FrontmatterFile.update(file_path, { forked_from = new_forked_from })
 end
 
 return ForkedChatScanner

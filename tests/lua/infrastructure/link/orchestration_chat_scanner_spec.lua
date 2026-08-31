@@ -158,6 +158,51 @@ describe("OrchestrationChatScanner", function()
       assert.is_true(frontmatter["vibing.nvim"])
     end)
 
+    it("writes through a loaded buffer instead of behind its back", function()
+      -- オーケストレーションのリンクはbufnr起点で張られるので、同期の相手は常に開いている。
+      -- ディスクを直接書くと、そのバッファの次の保存が同期内容を巻き戻すか、
+      -- 「読み込み後にファイルが変わった」プロンプトでNeovimを止める
+      local orchestrator = write_chat(dir, "orchestrator.md", { orchestrated = { "worker.md" } })
+      local bufnr = vim.fn.bufadd(orchestrator)
+      vim.fn.bufload(bufnr)
+
+      local ok = OrchestrationChatScanner.new():update_link(orchestrator, dir .. "/worker.md", dir .. "/renamed.md")
+
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      local modified = vim.bo[bufnr].modified
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+
+      assert.is_true(ok)
+      assert.is_truthy(table.concat(lines, "\n"):find("renamed.md", 1, true), "buffer should carry the new link")
+      assert.is_false(modified, "the buffer should be saved, not left dirty")
+      -- ディスク側も追随している
+      assert.same({ "renamed.md" }, read_frontmatter(orchestrator).orchestrated)
+    end)
+
+    it("leaves the body of a loaded buffer alone", function()
+      -- ストリーミング中のチャットを丸ごと書き換えると応答が壊れる。触るのはfrontmatterだけ
+      local orchestrator = dir .. "/orchestrator.md"
+      local body = "## User\n\nhello\n\n## Assistant\n\npartial reply"
+      vim.fn.writefile(
+        vim.split(
+          Frontmatter.serialize({ ["vibing.nvim"] = true, orchestrated = { "worker.md" } }, body),
+          "\n",
+          { plain = true }
+        ),
+        orchestrator
+      )
+      local bufnr = vim.fn.bufadd(orchestrator)
+      vim.fn.bufload(bufnr)
+
+      OrchestrationChatScanner.new():update_link(orchestrator, dir .. "/worker.md", dir .. "/renamed.md")
+
+      local text = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+
+      assert.is_truthy(text:find("partial reply", 1, true), "the body must survive")
+      assert.is_truthy(text:find("renamed.md", 1, true))
+    end)
+
     it("reports a failure when the file has no matching link", function()
       local other = write_chat(dir, "other.md", { orchestrated = { "alpha.md" } })
 

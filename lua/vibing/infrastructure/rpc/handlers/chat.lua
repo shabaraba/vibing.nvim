@@ -32,7 +32,7 @@ function M.create_chat(params)
   -- `:VibingChat`は最初の応答が返るまでファイルを書かない（buffer.lua:update_session_id）。
   -- 呼び出し元にファイルパスを返す以上、そのパスが存在しないのは嘘なので、forkと同じく
   -- 作成時点で保存する
-  local saved = FileManager.save_buffer(chat_buf.buf)
+  FileManager.save_buffer(chat_buf.buf)
 
   -- 作成した時点でリンクを張る。送信を待つ形でも記録はできるが、`from_bufnr` の渡し忘れが
   -- 「黙って関係が残らない」失敗になるので、関係が確定する最も早い時点で書く
@@ -51,7 +51,9 @@ function M.create_chat(params)
     file_path = chat_buf.file_path,
     working_dir = session.working_dir,
     position = position,
-    saved = saved,
+    -- リンク書き込みはバッファを変更して保存し直すので、`saved` はその**後**に見る。
+    -- 先にスナップショットすると、リンクの無いディスク上のコピーに対して true を返しうる
+    saved = not vim.bo[chat_buf.buf].modified,
   }
 end
 

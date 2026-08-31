@@ -49,8 +49,11 @@ function M.link(from_bufnr, to_bufnr)
     return false, "Both chats must have a file name"
   end
 
-  from_chat:update_frontmatter_list("orchestrated", Git.to_display_path(to_path), "add")
-  to_chat:update_frontmatter_list("orchestrated_by", Git.to_display_path(from_path), "add")
+  -- 戻り値を捨ててはいけない。`update_frontmatter_list` は frontmatter の閉じ `---` が
+  -- 先頭100行に収まらないと false を返す（長い permission 配列を持つチャットで現実に起きる）。
+  -- 捨てると、このモジュールが防ぐために存在している「黙って関係が残らない」がそのまま起きる
+  local wrote_forward = from_chat:update_frontmatter_list("orchestrated", Git.to_display_path(to_path), "add")
+  local wrote_back = to_chat:update_frontmatter_list("orchestrated_by", Git.to_display_path(from_path), "add")
 
   -- `update_frontmatter_list` はバッファにしか書かない。リネーム同期はディスクを読むので、
   -- ここで保存しないとリンクは「次に何かの理由で保存されるまで」存在しないことになる。
@@ -59,6 +62,9 @@ function M.link(from_bufnr, to_bufnr)
   local saved_from = FileManager.save_buffer(from_bufnr)
   local saved_to = FileManager.save_buffer(to_bufnr)
 
+  if not (wrote_forward and wrote_back) then
+    return false, "Could not write the orchestration link into both chats' frontmatter"
+  end
   if not (saved_from and saved_to) then
     return false, "Wrote the orchestration link but could not save both chat files"
   end

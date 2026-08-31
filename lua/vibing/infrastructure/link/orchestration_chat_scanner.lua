@@ -10,6 +10,7 @@ OrchestrationChatScanner.__index = OrchestrationChatScanner
 
 local Scanner = require("vibing.infrastructure.link.scanner")
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
+local FrontmatterFile = require("vibing.infrastructure.storage.frontmatter_file")
 local Git = require("vibing.core.utils.git")
 
 setmetatable(OrchestrationChatScanner, { __index = Scanner })
@@ -166,13 +167,9 @@ function OrchestrationChatScanner:update_link(file_path, old_path, new_path)
     return false, "No orchestration link to update"
   end
 
-  local updated_text = Frontmatter.update(text, updates)
-  local result = vim.fn.writefile(vim.split(updated_text, "\n", { plain = true }), file_path)
-  if result ~= 0 then
-    return false, string.format("Failed to write file: %s", vim.v.errmsg or "unknown")
-  end
-
-  return true, nil
+  -- ディスクに直接書かない。オーケストレーションのリンクはbufnr起点で張られるので、相手側の
+  -- チャットはほぼ必ず開いている（FrontmatterFile のコメント参照）
+  return FrontmatterFile.update(file_path, updates)
 end
 
 return OrchestrationChatScanner
