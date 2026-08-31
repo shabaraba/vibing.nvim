@@ -76,6 +76,7 @@ describe("send_message", function()
     ---  how the handler tells which backend ran. `before` seeds a store once the chat's path is
     ---  known but before the turn runs.
     ---@return string chat_path The buffer's name, which is the key both stores use.
+    ---@return string[] appended chunks written to the chat buffer
     local function handle_turn(response, opts)
       opts = opts or {}
       local buf = vim.api.nvim_create_buf(false, true)
@@ -87,6 +88,7 @@ describe("send_message", function()
         opts.before(chat_path)
       end
 
+      local appended = {}
       local callbacks = {
         clear_sending = function() end,
         get_bufnr = function()
@@ -96,7 +98,9 @@ describe("send_message", function()
           return nil
         end,
         update_session_id = function(_) end,
-        append_chunk = function(_) end,
+        append_chunk = function(chunk)
+          table.insert(appended, chunk)
+        end,
         add_user_section = function() end,
       }
       local adapter = {
@@ -109,7 +113,7 @@ describe("send_message", function()
       SendMessage._handle_response(response, callbacks, adapter, {}, {}, "do the thing")
 
       vim.api.nvim_buf_delete(buf, { force = true })
-      return chat_path
+      return chat_path, appended
     end
 
     describe("pending-entry cleanup", function()
@@ -195,6 +199,12 @@ describe("send_message", function()
 
         assert.is_nil(LimitState.load(chat_dir))
       end)
+    end)
+
+    it("does not render an explicit cancellation as a chat error", function()
+      local _, appended = handle_turn({ error = "Cancelled", _cancelled = true, _handle_id = "h-cancel" })
+
+      assert.is_nil(table.concat(appended, ""):find("**Error:** Cancelled", 1, true))
     end)
   end)
 

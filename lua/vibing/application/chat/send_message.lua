@@ -366,7 +366,7 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     pcall(AutoResume.discard_scheduled, chat_file_path)
   end
 
-  if response.error then
+  if response.error and not response._cancelled then
     callbacks.append_chunk("\n\n**Error:** " .. response.error)
 
     if is_session_error(tostring(response.error)) and callbacks.get_session_id() then
