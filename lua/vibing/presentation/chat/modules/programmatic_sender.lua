@@ -8,11 +8,6 @@ local Renderer = require("vibing.presentation.chat.modules.renderer")
 -- Per-buffer send locks to prevent concurrent sends
 local _send_locks = {}
 
----Programmatically send a message to a chat buffer
----@param bufnr number Buffer number
----@param message string Message content to send
----@param sender? string Sender identifier (default: "User", future: "Alpha", "Bravo", etc.)
----@return {success: boolean, bufnr: number}
 ---送信できる状態かを確かめ、対象のChatBufferを返す（送れないなら error）
 ---
 ---`send`から切り出してあるのは、送信の前に別の副作用を済ませたい呼び出し元があるため。
@@ -37,6 +32,17 @@ function M.validate(bufnr, message)
     error("Buffer is not a vibing chat buffer")
   end
 
+  -- 応答中のバッファには積まない。`ChatBuffer:send_message()` は `_is_sending` を見て
+  -- **黙って return** するので、先に `addUserSection` してしまうと送られない `## User`
+  -- セクションがバッファに残り、次にユーザーが<CR>したときの本文に化ける。さらにその手前で
+  -- 「前のリクエストが実行中ならキャンセル」が走るため、進行中のターンごと殺しうる。
+  -- 追加してから巻き戻すのではなく、追加する前に断る。
+  --
+  -- `send` 本体ではなくここに置くことで、リンク書き込みの前に呼ぶ事前検証でも同じ判定が効く
+  if chat_buf:is_responding() then
+    error("Chat buffer is already responding")
+  end
+
   if _send_locks[bufnr] then
     error("Another send operation is in progress for this buffer")
   end
@@ -52,6 +58,7 @@ function M.send(bufnr, message, sender)
   -- Acquire lock to prevent concurrent sends
   _send_locks[bufnr] = true
 
+  local sent = false
   local success, err = pcall(function()
     -- Save and restore cursor position
     local saved_win = vim.api.nvim_get_current_win()
@@ -61,7 +68,7 @@ function M.send(bufnr, message, sender)
 
     -- Add user section and send
     Renderer.addUserSection(bufnr, nil, nil, nil, message)
-    chat_buf:send_message()
+    sent = chat_buf:send_message()
 
     -- Restore cursor
     if saved_cursor and vim.api.nvim_win_is_valid(saved_win) then
@@ -76,7 +83,7 @@ function M.send(bufnr, message, sender)
     error(string.format("Failed to send message: %s", tostring(err)))
   end
 
-  return { success = true, bufnr = bufnr }
+  return { success = sent, bufnr = bufnr }
 end
 
 return M

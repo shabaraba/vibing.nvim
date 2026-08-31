@@ -44,6 +44,11 @@ function M.create_chat(params)
         "Orchestration"
       )
     end
+
+    -- 作成でも購読を張る。送信だけを登録にすると、ブリーフに `from_bufnr` を渡し忘れたときに
+    -- 「黙って通知が来ない」で終わる。作ってメッセージを送らないケースは無いので、
+    -- 早い方に寄せておくほうが渡し忘れに強い
+    require("vibing.application.chat.completion_notifier").subscribe(params.from_bufnr, chat_buf.buf)
   end
 
   return {

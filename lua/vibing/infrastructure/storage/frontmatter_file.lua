@@ -14,25 +14,23 @@
 local M = {}
 
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
-
----比較は両側ともシンボリックリンクを解決した形で行う。`nvim_buf_get_name` は解決済みの
----パスを返すので（macOSでは `/var/...` が `/private/var/...` になる）、`:p` を付けただけの
----候補と突き合わせると、同じファイルなのに一致しない
----@param path string
----@return string
-local function physical(path)
-  return vim.fn.resolve(vim.fn.fnamemodify(path, ":p"))
-end
+local PathSanitizer = require("vibing.domain.security.path_sanitizer")
 
 ---@param file_path string
 ---@return number? bufnr
 local function loaded_buffer(file_path)
-  local target = physical(file_path)
+  -- 比較は両側ともシンボリックリンクを解決した形で行う。`nvim_buf_get_name` は解決済みの
+  -- パスを返すので（macOSでは `/var/...` が `/private/var/...` になる）、`:p` だけでは
+  -- 同じファイルが一致しない。`PathSanitizer.normalize` が expand→`:p`→resolve をまとめている
+  local target = PathSanitizer.normalize(file_path)
+  if not target then
+    return nil
+  end
 
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(bufnr) then
       local name = vim.api.nvim_buf_get_name(bufnr)
-      if name ~= "" and physical(name) == target then
+      if name ~= "" and PathSanitizer.normalize(name) == target then
         return bufnr
       end
     end
@@ -70,10 +68,7 @@ local function update_buffer(bufnr, updates)
 
   -- ここで保存しないと、同期したと報告した内容がディスクに無いままになる。
   -- バッファ側を真として書いているので、`write!` でガードを踏み越えても失うものはない
-  local ok = pcall(vim.api.nvim_buf_call, bufnr, function()
-    vim.cmd.write({ bang = true })
-  end)
-  if not ok or vim.bo[bufnr].modified then
+  if not require("vibing.presentation.chat.modules.file_manager").save_buffer(bufnr) then
     return false, "Updated the buffer but could not save it"
   end
 

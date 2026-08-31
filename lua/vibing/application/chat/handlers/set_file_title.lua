@@ -52,18 +52,6 @@ local function first_user_line(conversation)
   return nil
 end
 
----@param buf number
----@return boolean ok
----@return string? error
-local function save_buffer(buf)
-  local ok, err = pcall(function()
-    vim.api.nvim_buf_call(buf, function()
-      vim.cmd.write({ bang = true })  -- Force overwrite with :write!
-    end)
-  end)
-  return ok, err
-end
-
 ---@param _ string[]
 ---@param chat_buffer Vibing.ChatBuffer
 ---@return boolean
@@ -143,7 +131,7 @@ return function(_, chat_buffer)
     local new_file_path = get_unique_file_path(save_dir, new_filename)
 
     if is_existing_file then
-      local ok, save_err = save_buffer(chat_buffer.buf)
+      local ok, save_err = FileManager.save_buffer(chat_buffer.buf)
       if not ok then
         notify.error(string.format("Failed to save: %s", save_err))
         return
@@ -192,7 +180,7 @@ return function(_, chat_buffer)
     end
 
     if not is_existing_file then
-      local ok, save_err = save_buffer(chat_buffer.buf)
+      local ok, save_err = FileManager.save_buffer(chat_buffer.buf)
       if not ok then
         notify.error(string.format("Failed to save: %s", save_err))
         return

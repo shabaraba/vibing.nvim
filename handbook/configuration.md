@@ -172,6 +172,14 @@ agent = {
     grace_sec = 10,         -- Added to the reset time to avoid firing on the boundary
   },
 
+  chat_notifications = {    -- Tell a chat when a chat it messaged finishes responding
+    enabled = false,        -- Opt-in: the notification arrives as a new turn, so it spends
+                            -- tokens with nobody watching
+    max_hops = 8,           -- How many times a chat may be woken without a manual <CR>.
+                            -- A→B→A→B is legitimate (B asks, A answers), so the chain is
+                            -- bounded by depth rather than refused as a cycle
+  },
+
   codex_provider_notice = {
     enabled = true,         -- Warn when a Codex lightweight call leaves your model_provider.
                             -- On by default, unlike the toggles above: it spends no tokens,

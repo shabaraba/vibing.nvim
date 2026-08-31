@@ -32,7 +32,23 @@ function M.send_message(params)
   end
 
   -- ProgrammaticSender.send already validates parameters
-  return ProgrammaticSender.send(params.bufnr, params.message, params.sender)
+  local result = ProgrammaticSender.send(params.bufnr, params.message, params.sender)
+
+  -- 送ったという事実そのものを購読の登録として扱う。宛先が応答を終えたら送信元に
+  -- 「読みに行け」とだけ伝わる（application/chat/completion_notifier.lua）。
+  --
+  -- 送信の**後**に張るのが要点。上の `validate` は「応答中」を弾くが、その判定とここの間には
+  -- リンク書き込み（バッファ編集と2ファイルの保存）が挟まるので状態は変わりうるし、
+  -- `send_message()` が false を返す経路もある。先に張ると、送っていないメッセージについて
+  -- 「相手が終わった、読みに行け」だけが後から届く。
+  --
+  -- 遅すぎることはない: CLIの起動は非同期で、宛先の完了は `vim.schedule` 経由なので
+  -- この関数が返るより先には走らない
+  if params.from_bufnr and result and result.success then
+    require("vibing.application.chat.completion_notifier").subscribe(params.from_bufnr, params.bufnr)
+  end
+
+  return result
 end
 
 return M

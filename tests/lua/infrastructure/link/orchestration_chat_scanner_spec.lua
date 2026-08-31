@@ -1,26 +1,7 @@
 local OrchestrationChatScanner = require("vibing.infrastructure.link.orchestration_chat_scanner")
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
+local ChatFiles = require("tests.helpers.chat_files")
 local Git = require("vibing.core.utils.git")
-
----@param dir string
----@param name string
----@param frontmatter table
----@return string path
-local function write_chat(dir, name, frontmatter)
-  local path = dir .. "/" .. name
-  local defaults = { ["vibing.nvim"] = true, session_id = "session-" .. name }
-  for k, v in pairs(frontmatter) do
-    defaults[k] = v
-  end
-  vim.fn.writefile(vim.split(Frontmatter.serialize(defaults, "## User\n"), "\n", { plain = true }), path)
-  return path
-end
-
----@param path string
----@return table
-local function read_frontmatter(path)
-  return (Frontmatter.parse(table.concat(vim.fn.readfile(path), "\n")))
-end
 
 describe("OrchestrationChatScanner", function()
   local dir
@@ -46,14 +27,14 @@ describe("OrchestrationChatScanner", function()
   describe("contains_link", function()
     it("finds a chat that names the renamed file in orchestrated", function()
       local worker = dir .. "/worker.md"
-      local orchestrator = write_chat(dir, "orchestrator.md", { orchestrated = { "worker.md" } })
+      local orchestrator = ChatFiles.write(dir, "orchestrator.md", { orchestrated = { "worker.md" } })
 
       assert.is_true(OrchestrationChatScanner.new():contains_link(orchestrator, worker))
     end)
 
     it("finds a chat that names the renamed file in orchestrated_by", function()
       local orchestrator = dir .. "/orchestrator.md"
-      local worker = write_chat(dir, "worker.md", { orchestrated_by = { "orchestrator.md" } })
+      local worker = ChatFiles.write(dir, "worker.md", { orchestrated_by = { "orchestrator.md" } })
 
       assert.is_true(OrchestrationChatScanner.new():contains_link(worker, orchestrator))
     end)
@@ -69,7 +50,7 @@ describe("OrchestrationChatScanner", function()
       local home_dir = vim.fn.expand("~") .. "/.vibing-orchestration-spec-" .. vim.fn.getpid()
       vim.fn.mkdir(home_dir, "p")
       local worker = home_dir .. "/worker.md"
-      local orchestrator = write_chat(home_dir, "orchestrator.md", {
+      local orchestrator = ChatFiles.write(home_dir, "orchestrator.md", {
         orchestrated = { vim.fn.fnamemodify(worker, ":~") },
       })
 
@@ -82,20 +63,20 @@ describe("OrchestrationChatScanner", function()
     it("reads a hand-written scalar link instead of erroring on it", function()
       -- `orchestrated: worker.md` と1行で書かれると table ではなく文字列でパースされる
       local worker = dir .. "/worker.md"
-      local orchestrator = write_chat(dir, "orchestrator.md", { orchestrated = "worker.md" })
+      local orchestrator = ChatFiles.write(dir, "orchestrator.md", { orchestrated = "worker.md" })
 
       assert.is_true(OrchestrationChatScanner.new():contains_link(orchestrator, worker))
     end)
 
     it("ignores a chat with no orchestration links", function()
-      local other = write_chat(dir, "other.md", { forked_from = "worker.md" })
+      local other = ChatFiles.write(dir, "other.md", { forked_from = "worker.md" })
 
       assert.is_false(OrchestrationChatScanner.new():contains_link(other, dir .. "/worker.md"))
     end)
 
     it("ignores an empty link list rather than treating it as a match", function()
       -- 空リストは真値の table としてパースされるので、存在チェックだけでは弾けない
-      local orchestrator = write_chat(dir, "orchestrator.md", { orchestrated = {} })
+      local orchestrator = ChatFiles.write(dir, "orchestrator.md", { orchestrated = {} })
 
       assert.is_false(OrchestrationChatScanner.new():contains_link(orchestrator, dir .. "/worker.md"))
     end)
@@ -112,39 +93,39 @@ describe("OrchestrationChatScanner", function()
     it("replaces only the matching element and keeps the rest of the list", function()
       -- `ForkedChatScanner` をそのままコピーすると落ちる箇所。`forked_from` はスカラーなので
       -- キーごと差し替えられるが、リストで同じことをすると他の要素が消える
-      local orchestrator = write_chat(dir, "orchestrator.md", {
+      local orchestrator = ChatFiles.write(dir, "orchestrator.md", {
         orchestrated = { "alpha.md", "worker.md", "bravo.md" },
       })
 
       local ok = OrchestrationChatScanner.new():update_link(orchestrator, dir .. "/worker.md", dir .. "/renamed.md")
 
       assert.is_true(ok)
-      assert.same({ "alpha.md", "renamed.md", "bravo.md" }, read_frontmatter(orchestrator).orchestrated)
+      assert.same({ "alpha.md", "renamed.md", "bravo.md" }, ChatFiles.read_frontmatter(orchestrator).orchestrated)
     end)
 
     it("updates orchestrated_by as well as orchestrated", function()
-      local worker = write_chat(dir, "worker.md", { orchestrated_by = { "orchestrator.md" } })
+      local worker = ChatFiles.write(dir, "worker.md", { orchestrated_by = { "orchestrator.md" } })
 
       local ok =
         OrchestrationChatScanner.new():update_link(worker, dir .. "/orchestrator.md", dir .. "/renamed.md")
 
       assert.is_true(ok)
-      assert.same({ "renamed.md" }, read_frontmatter(worker).orchestrated_by)
+      assert.same({ "renamed.md" }, ChatFiles.read_frontmatter(worker).orchestrated_by)
     end)
 
     it("does not leave a duplicate when the new name is already in the list", function()
-      local orchestrator = write_chat(dir, "orchestrator.md", {
+      local orchestrator = ChatFiles.write(dir, "orchestrator.md", {
         orchestrated = { "worker.md", "renamed.md" },
       })
 
       local ok = OrchestrationChatScanner.new():update_link(orchestrator, dir .. "/worker.md", dir .. "/renamed.md")
 
       assert.is_true(ok)
-      assert.same({ "renamed.md" }, read_frontmatter(orchestrator).orchestrated)
+      assert.same({ "renamed.md" }, ChatFiles.read_frontmatter(orchestrator).orchestrated)
     end)
 
     it("leaves other frontmatter keys untouched", function()
-      local orchestrator = write_chat(dir, "orchestrator.md", {
+      local orchestrator = ChatFiles.write(dir, "orchestrator.md", {
         orchestrated = { "worker.md" },
         permissions_allow = { "Read", "Edit" },
         model = "sonnet",
@@ -152,7 +133,7 @@ describe("OrchestrationChatScanner", function()
 
       OrchestrationChatScanner.new():update_link(orchestrator, dir .. "/worker.md", dir .. "/renamed.md")
 
-      local frontmatter = read_frontmatter(orchestrator)
+      local frontmatter = ChatFiles.read_frontmatter(orchestrator)
       assert.same({ "Read", "Edit" }, frontmatter.permissions_allow)
       assert.equals("sonnet", frontmatter.model)
       assert.is_true(frontmatter["vibing.nvim"])
@@ -162,7 +143,7 @@ describe("OrchestrationChatScanner", function()
       -- オーケストレーションのリンクはbufnr起点で張られるので、同期の相手は常に開いている。
       -- ディスクを直接書くと、そのバッファの次の保存が同期内容を巻き戻すか、
       -- 「読み込み後にファイルが変わった」プロンプトでNeovimを止める
-      local orchestrator = write_chat(dir, "orchestrator.md", { orchestrated = { "worker.md" } })
+      local orchestrator = ChatFiles.write(dir, "orchestrator.md", { orchestrated = { "worker.md" } })
       local bufnr = vim.fn.bufadd(orchestrator)
       vim.fn.bufload(bufnr)
 
@@ -176,7 +157,7 @@ describe("OrchestrationChatScanner", function()
       assert.is_truthy(table.concat(lines, "\n"):find("renamed.md", 1, true), "buffer should carry the new link")
       assert.is_false(modified, "the buffer should be saved, not left dirty")
       -- ディスク側も追随している
-      assert.same({ "renamed.md" }, read_frontmatter(orchestrator).orchestrated)
+      assert.same({ "renamed.md" }, ChatFiles.read_frontmatter(orchestrator).orchestrated)
     end)
 
     it("leaves the body of a loaded buffer alone", function()
@@ -204,7 +185,7 @@ describe("OrchestrationChatScanner", function()
     end)
 
     it("reports a failure when the file has no matching link", function()
-      local other = write_chat(dir, "other.md", { orchestrated = { "alpha.md" } })
+      local other = ChatFiles.write(dir, "other.md", { orchestrated = { "alpha.md" } })
 
       local ok, err = OrchestrationChatScanner.new():update_link(other, dir .. "/worker.md", dir .. "/renamed.md")
 
@@ -219,8 +200,8 @@ describe("OrchestrationChatScanner", function()
     end)
 
     it("finds both .md and .vibing chat files", function()
-      write_chat(dir, "a.md", {})
-      write_chat(dir, "b.vibing", {})
+      ChatFiles.write(dir, "a.md", {})
+      ChatFiles.write(dir, "b.vibing", {})
 
       local files = OrchestrationChatScanner.new():find_target_files(dir .. "/")
 

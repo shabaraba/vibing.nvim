@@ -86,6 +86,14 @@ function M.setup(opts)
     end)
   end)
 
+  -- チャット間の完了通知のautocmdを張る（設定に関わらず張る理由は completion_notifier.setup()
+  -- のコメント参照）。最初のリクエストまで何も発火しないので、起動パスから外す
+  vim.schedule(function()
+    pcall(function()
+      require("vibing.application.chat.completion_notifier").setup()
+    end)
+  end)
+
   -- 使用量リミット待ちのチャットのタイマーを張り直す。
   -- 5時間/週次リミットのリセットはNeovimの再起動を跨ぐことが多いため、
   -- .vibing/pending-resume.json から復元する。VimEnter後に遅延させて起動を妨げない。

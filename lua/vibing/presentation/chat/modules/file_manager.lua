@@ -65,16 +65,23 @@ end
 ---`write`はエラーを黙って飲むことがあるので、pcallの成否だけでなくmodifiedも確認する
 ---@param buf number バッファ番号
 ---@return boolean saved
+---@return string? error
 function M.save_buffer(buf)
   if not buf or not vim.api.nvim_buf_is_valid(buf) then
-    return false
+    return false, "Invalid buffer"
   end
 
-  local ok = pcall(vim.api.nvim_buf_call, buf, function()
+  local ok, err = pcall(vim.api.nvim_buf_call, buf, function()
     vim.cmd.write({ bang = true })
   end)
+  if not ok then
+    return false, tostring(err)
+  end
+  if vim.bo[buf].modified then
+    return false, "Buffer is still modified after writing"
+  end
 
-  return ok and not vim.bo[buf].modified
+  return true, nil
 end
 
 ---メッセージからファイル名を更新

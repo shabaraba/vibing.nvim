@@ -8,6 +8,10 @@
 local Harness = require("vibing.testing.eval_harness")
 local Worktree = require("vibing.core.constants.worktree")
 
+--- from_bufnr のタスクで system prompt に載せる chat_bufnr。実在しないバッファ番号でよく、
+--- 「system promptに書かれた番号をそのまま写したか」だけを見るための固定値
+local ORCHESTRATOR_BUFNR = 4242
+
 ---@param record Vibing.Eval.Record
 ---@param substring string
 ---@return string? command 部分文字列を含む最初のBashコマンド
@@ -54,6 +58,36 @@ return {
       end
       if tonumber(input.rpc_port) ~= expected then
         return false, string.format("passed rpc_port=%s, expected %s", tostring(input.rpc_port), tostring(expected))
+      end
+      return true
+    end,
+  },
+
+  {
+    id = "orchestrate/passes_from_bufnr",
+    description = "ワーカーを作るとき from_bufnr に自分のchat_bufnrを渡す（渡し忘れは"
+      .. "「黙って関係が残らない・通知が来ない」で終わるので、表明が効いているかを測る）",
+    prompt = "Create one worker chat with the vibing.nvim chat tool so I can hand it a task later. "
+      .. "Just create it; do not send it anything yet.",
+    -- system prompt の "Current vibing.nvim chat buffer number" がこの値で入るので、
+    -- モデルがそれをそのまま from_bufnr に写したかを厳密に見られる。
+    -- 副作用として実際にワーカーチャットが1つ作られる（`back` なのでウィンドウは開かない）。
+    opts = { chat_bufnr = ORCHESTRATOR_BUFNR },
+    check = function(record)
+      local input = Harness.find_mcp_call(record, "nvim_chat_create")
+      if not input then
+        return false, "no nvim_chat_create call to inspect"
+      end
+      if not input.from_bufnr then
+        return false, "omitted from_bufnr, so nothing records which chat owns this worker"
+      end
+      if tonumber(input.from_bufnr) ~= ORCHESTRATOR_BUFNR then
+        return false,
+          string.format(
+            "passed from_bufnr=%s, expected %d (the chat buffer number in its own system prompt)",
+            tostring(input.from_bufnr),
+            ORCHESTRATOR_BUFNR
+          )
       end
       return true
     end,
