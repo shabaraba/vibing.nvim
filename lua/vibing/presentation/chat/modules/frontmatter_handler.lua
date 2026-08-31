@@ -2,33 +2,35 @@ local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 
 local M = {}
 
-local FRONTMATTER_SCAN_LINES = 100
+-- Every function here reads `Frontmatter.buffer_region`, which follows the
+-- frontmatter to its closing `---`, rather than a fixed number of lines. A window
+-- is the wrong shape for this: a chat's frontmatter grows with its permission and
+-- orchestration lists, and each of these functions fails *silently* past the
+-- window — `parse` returns an empty table, `update_field`/`update_list` report
+-- false, and `update_session_id` simply writes nothing, losing the session id.
 
 ---フロントマターをパース
 ---@param buf number バッファ番号
 ---@return table<string, string|string[]|number|boolean>
 function M.parse(buf)
-  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+  local region = Frontmatter.buffer_region(buf)
+  if not region then
     return {}
   end
 
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, FRONTMATTER_SCAN_LINES, false)
-  local content = table.concat(lines, "\n")
-  local parsed = Frontmatter.parse(content)
-
-  return parsed or {}
+  return Frontmatter.parse(table.concat(region, "\n")) or {}
 end
 
 ---session_idを更新
 ---@param buf number バッファ番号
 ---@param session_id string セッションID
 function M.update_session_id(buf, session_id)
-  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+  local region = Frontmatter.buffer_region(buf)
+  if not region then
     return
   end
 
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, 10, false)
-  for i, line in ipairs(lines) do
+  for i, line in ipairs(region) do
     if line:match("^session_id:") then
       vim.api.nvim_buf_set_lines(buf, i - 1, i, false, { "session_id: " .. session_id })
       return
@@ -71,30 +73,24 @@ function M.update_field(buf, key, value, update_timestamp)
     end
   end
 
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, FRONTMATTER_SCAN_LINES, false)
-  local frontmatter_end = 0
+  local region = Frontmatter.buffer_region(buf)
+  if not region then
+    return false
+  end
+
+  -- 領域の末尾要素が閉じ`---`
+  local frontmatter_end = #region
   -- 正式キーと旧綴りの行を全部拾う。旧バージョンが両方の行を書いてしまったファイルが実在しうる
   -- ので、1本だけ残して残りは消さないと重複が永久に残る。
   local matched_lines = {}
 
-  for i, line in ipairs(lines) do
-    if i == 1 and line == "---" then
-      -- frontmatter開始
-    elseif line == "---" then
-      frontmatter_end = i
-      break
-    else
-      for _, pattern in ipairs(key_patterns) do
-        if line:match(pattern) then
-          table.insert(matched_lines, i)
-          break
-        end
+  for i = 2, frontmatter_end - 1 do
+    for _, pattern in ipairs(key_patterns) do
+      if region[i]:match(pattern) then
+        table.insert(matched_lines, i)
+        break
       end
     end
-  end
-
-  if frontmatter_end == 0 then
-    return false
   end
 
   -- 後ろから消して、先頭の1本（なければ挿入位置）だけを書き換え対象に残す
@@ -143,43 +139,38 @@ function M.update_list(buf, key, value, action)
     return false
   end
 
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, FRONTMATTER_SCAN_LINES, false)
+  local region = Frontmatter.buffer_region(buf)
+  if not region then
+    return false
+  end
 
-  local frontmatter_end = 0
+  -- 領域の末尾要素が閉じ`---`
+  local frontmatter_end = #region
   local key_start = nil
   local key_end = nil
   local current_items = {}
 
-  local in_frontmatter = false
   local in_target_list = false
 
-  for i, line in ipairs(lines) do
-    if i == 1 and line == "---" then
-      in_frontmatter = true
-    elseif in_frontmatter and line == "---" then
-      frontmatter_end = i
-      if in_target_list then
+  for i = 2, frontmatter_end - 1 do
+    local line = region[i]
+    if line:sub(1, #key + 1) == key .. ":" then
+      key_start = i
+      in_target_list = true
+    elseif in_target_list then
+      local item = line:match("^  %- (.+)$")
+      if item then
+        table.insert(current_items, item)
+      else
         key_end = i - 1
-      end
-      break
-    elseif in_frontmatter then
-      if line:sub(1, #key + 1) == key .. ":" then
-        key_start = i
-        in_target_list = true
-      elseif in_target_list then
-        local item = line:match("^  %- (.+)$")
-        if item then
-          table.insert(current_items, item)
-        else
-          key_end = i - 1
-          in_target_list = false
-        end
+        in_target_list = false
       end
     end
   end
 
-  if frontmatter_end == 0 then
-    return false
+  -- リストが閉じ`---`まで続いていた場合、その直前が終端
+  if in_target_list then
+    key_end = frontmatter_end - 1
   end
 
   -- リストを更新

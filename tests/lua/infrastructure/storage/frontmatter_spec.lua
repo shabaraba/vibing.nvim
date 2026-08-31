@@ -214,6 +214,121 @@ no closing delimiter]]
     end)
   end)
 
+  -- Build a chat frontmatter whose closing `---` sits after `filler` array items.
+  local function chat_lines(filler)
+    local lines = { "---", "vibing.nvim: true", "permissions_allow:" }
+    for i = 1, filler do
+      table.insert(lines, "  - perm" .. i)
+    end
+    table.insert(lines, "---")
+    table.insert(lines, "# Vibing Chat")
+    return lines
+  end
+
+  describe("is_vibing_chat_file", function()
+    local tmpdir
+    local created = {}
+
+    before_each(function()
+      tmpdir = vim.fn.tempname()
+      vim.fn.mkdir(tmpdir, "p")
+    end)
+
+    after_each(function()
+      for _, path in ipairs(created) do
+        vim.fn.delete(path)
+      end
+      created = {}
+      vim.fn.delete(tmpdir, "rf")
+    end)
+
+    local function write_file(lines)
+      local path = tmpdir .. "/" .. tostring(#created) .. ".md"
+      vim.fn.writefile(lines, path)
+      table.insert(created, path)
+      return path
+    end
+
+    it("detects a chat whose frontmatter closes past any fixed window", function()
+      -- The scan follows the frontmatter to its close, so no line count -- 50,
+      -- 200, or otherwise -- is the boundary between chat and not-a-chat.
+      assert.is_true(frontmatter.is_vibing_chat_file(write_file(chat_lines(400))))
+    end)
+
+    it("detects an ordinary short chat", function()
+      assert.is_true(frontmatter.is_vibing_chat_file(write_file({ "---", "vibing.nvim: true", "---", "body" })))
+    end)
+
+    it("rejects a frontmatter that never closes", function()
+      assert.is_false(frontmatter.is_vibing_chat_file(write_file({ "---", "vibing.nvim: true" })))
+    end)
+
+    it("rejects a file whose frontmatter lacks the marker", function()
+      assert.is_false(frontmatter.is_vibing_chat_file(write_file({ "---", "title: notes", "---", "body" })))
+    end)
+
+    it("rejects a file that does not open with a frontmatter", function()
+      assert.is_false(frontmatter.is_vibing_chat_file(write_file({ "# notes", "vibing.nvim: true" })))
+    end)
+
+    it("does not read the marker from the body", function()
+      -- Past the closing `---` the file is prose, and prose that happens to name
+      -- the key is not a chat.
+      local path = write_file({ "---", "title: notes", "---", "vibing.nvim: true" })
+      assert.is_false(frontmatter.is_vibing_chat_file(path))
+    end)
+
+    it("rejects a missing file", function()
+      assert.is_false(frontmatter.is_vibing_chat_file(tmpdir .. "/absent.md"))
+    end)
+  end)
+
+  describe("buffer_region", function()
+    local function make_buf(lines)
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      return buf
+    end
+
+    it("returns the frontmatter with both delimiters and nothing else", function()
+      -- The index of each returned line is its buffer line number, which is what
+      -- lets frontmatter_handler edit lines by that index.
+      local region = frontmatter.buffer_region(make_buf({
+        "---",
+        "vibing.nvim: true",
+        "---",
+        "# Vibing Chat",
+        "---",
+      }))
+
+      assert.same({ "---", "vibing.nvim: true", "---" }, region)
+    end)
+
+    it("follows a frontmatter longer than any fixed window", function()
+      local region = frontmatter.buffer_region(make_buf(chat_lines(400)))
+
+      assert.equals(404, #region)
+      assert.equals("---", region[#region])
+    end)
+
+    it("returns nil when the frontmatter never closes", function()
+      assert.is_nil(frontmatter.buffer_region(make_buf({ "---", "vibing.nvim: true" })))
+    end)
+
+    it("returns nil when the buffer does not open with a frontmatter", function()
+      assert.is_nil(frontmatter.buffer_region(make_buf({ "# notes", "---", "key: value", "---" })))
+    end)
+
+    it("returns nil for an empty buffer", function()
+      assert.is_nil(frontmatter.buffer_region(make_buf({})))
+    end)
+
+    it("returns nil for an invalid buffer", function()
+      assert.is_nil(frontmatter.buffer_region(999999))
+      assert.is_nil(frontmatter.buffer_region(nil))
+    end)
+  end)
+
   describe("is_vibing_chat_buffer (UT-FM-005)", function()
     local function make_buf(lines)
       local buf = vim.api.nvim_create_buf(false, true)
@@ -224,15 +339,20 @@ no closing delimiter]]
     it("detects a chat buffer whose frontmatter closes past line 50", function()
       -- Long permission arrays (e.g. codex sessions) push the closing `---`
       -- well past line 50; the buffer check must still recognize it.
-      local lines = { "---", "vibing.nvim: true", "permissions_allow:" }
-      for i = 1, 80 do
-        table.insert(lines, "  - perm" .. i)
-      end
-      table.insert(lines, "---")
-      table.insert(lines, "# Vibing Chat")
-
-      local buf = make_buf(lines)
+      local buf = make_buf(chat_lines(80))
       assert.is_true(frontmatter.is_vibing_chat_buffer(buf))
+    end)
+
+    it("detects a chat buffer whose frontmatter closes past any fixed window", function()
+      assert.is_true(frontmatter.is_vibing_chat_buffer(make_buf(chat_lines(400))))
+    end)
+
+    it("reads across chunk boundaries", function()
+      -- The buffer is fed to the scanner in fixed-size chunks; a closing `---`
+      -- landing on or next to a boundary must not be skipped or re-read.
+      for _, filler in ipairs({ 60, 61, 62, 63, 64, 65, 126, 127, 128, 129 }) do
+        assert.is_true(frontmatter.is_vibing_chat_buffer(make_buf(chat_lines(filler))))
+      end
     end)
 
     it("does not stick a negative result while content is still incomplete", function()
