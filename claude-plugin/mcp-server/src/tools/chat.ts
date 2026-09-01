@@ -92,6 +92,16 @@ export const chatTools: Tool[] = [
             'system prompt. Pass it whenever you drive another chat — it records the ' +
             'relationship in both chat files, which survives renames and restarts.',
         },
+        queue_if_busy: {
+          type: 'boolean',
+          description:
+            'Queue the message instead of failing when the target chat is already responding ' +
+            '(default false, which reports an error). A queued message is delivered as a new ' +
+            'turn the moment that chat stops, and several queued messages arrive coalesced ' +
+            'into one turn. Use it for anything the other chat must receive whether or not it ' +
+            'happens to be busy right now — a completion report to your orchestrator, an ' +
+            'answer to a question it asked you.',
+        },
       }),
       // Neither bufnr nor file_path is required on its own; the handler enforces that exactly one
       // arrives. JSON Schema could say that with oneOf, but the advertised schema is flattened

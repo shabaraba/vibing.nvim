@@ -8,6 +8,25 @@ local Renderer = require("vibing.presentation.chat.modules.renderer")
 -- Per-buffer send locks to prevent concurrent sends
 local _send_locks = {}
 
+---いま新しいメッセージを受け付けられない状態か
+---
+---`validate` の一部を述語として切り出したのではなく、**別の問い**を立てている。呼び出し元が
+---知りたいのは「待てば送れるようになるか」で、その答えが yes なのは応答中のときだけ。
+---無効なバッファも空メッセージも待って解けるものではないので、それらは `validate` の
+---エラーのままでよい（`nvim_chat_send_message` の `queue_if_busy`）。
+---
+---エラーメッセージの文字列一致で代用させないために公開している。文言を直した日に、
+---キューが黙って効かなくなる
+---@param bufnr number
+---@return boolean
+function M.is_responding(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return false
+  end
+  local chat_buf = view.get_chat_buffer(bufnr)
+  return chat_buf ~= nil and chat_buf:is_responding()
+end
+
 ---送信できる状態かを確かめ、対象のChatBufferを返す（送れないなら error）
 ---
 ---`send`から切り出してあるのは、送信の前に別の副作用を済ませたい呼び出し元があるため。

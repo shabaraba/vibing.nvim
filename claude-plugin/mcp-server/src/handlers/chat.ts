@@ -48,6 +48,7 @@ const chatSendMessageArgsSchema = z.object({
   message: z.string(),
   sender: z.string().optional(),
   from_bufnr: z.number().optional(),
+  queue_if_busy: z.boolean().optional(),
   rpc_port: z.number(),
 });
 
@@ -65,11 +66,17 @@ const chatSendMessageArgsSchema = z.object({
  * files' frontmatter, so it outlives the buffer numbers and the file names it was built from.
  * It is optional for compatibility in both directions of Lua/Node version skew: an older Neovim
  * ignores the extra key, an older server never sends it, and neither breaks the send.
+ *
+ * `queue_if_busy` is optional for the same reason, and defaults to off on both sides: an older
+ * Neovim ignores it and refuses a busy chat exactly as before, which is the behaviour a caller
+ * that did not ask to queue already expects. The reply distinguishes the two outcomes, because
+ * "queued" means no turn has started yet — an orchestrator that read it as "sent" would go on to
+ * poll a transcript that has not moved.
  */
 export async function handleChatSendMessage(args: any): Promise<any> {
   // Zod schema already validates required fields and types
   const parsed = chatSendMessageArgsSchema.parse(args);
-  const { message, sender, from_bufnr, rpc_port } = parsed;
+  const { message, sender, from_bufnr, queue_if_busy, rpc_port } = parsed;
   // Collapse an explicit null to "not given" once, here, so nothing downstream has to know the
   // difference — including the Lua side, where a JSON null decodes to the truthy vim.NIL.
   const bufnr = parsed.bufnr ?? undefined;
@@ -80,15 +87,25 @@ export async function handleChatSendMessage(args: any): Promise<any> {
 
   const result = await callNeovim(
     'send_message',
-    { bufnr, file_path, message, sender, from_bufnr },
+    { bufnr, file_path, message, sender, from_bufnr, queue_if_busy },
     rpc_port
   );
 
+  const queued = result?.queued === true;
+
   return {
-    content: [{ type: 'text', text: 'Message sent and AI request initiated in chat buffer' }],
+    content: [
+      {
+        type: 'text',
+        text: queued
+          ? 'That chat is responding right now, so the message was queued. It will be delivered ' +
+            'as a new turn as soon as that chat stops — no request has started yet.'
+          : 'Message sent and AI request initiated in chat buffer',
+      },
+    ],
     // The Lua side resolved file_path to a buffer, so report what it actually reached rather than
     // echoing an argument that may have been a path.
-    _meta: { bufnr: result?.bufnr ?? bufnr, sender: sender || 'User' },
+    _meta: { bufnr: result?.bufnr ?? bufnr, sender: sender || 'User', queued },
   };
 }
 

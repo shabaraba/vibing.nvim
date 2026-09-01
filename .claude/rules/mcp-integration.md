@@ -117,6 +117,14 @@ refuse a call that passes the pair rather than preferring one of them. Why the p
 the number, why it opens chat files and refuses everything else, and why `from_bufnr` stays a
 bufnr while these do not: `architecture.md` → "Multi-Agent Orchestration" → "Addressing a chat".
 
+`nvim_chat_send_message` also takes `queue_if_busy` (default `false`). A chat that is responding
+normally refuses the send; with the flag the message is queued instead and delivered as a new turn
+the moment that chat stops, with several queued items coalesced into one turn. The reply says which
+happened, and "queued" means no request has started yet — an orchestrator that read it as "sent"
+would poll a transcript that has not moved. Why it is not gated on `chat_notifications`, why the
+frontmatter link is written at delivery rather than when the message is queued, and why the queue
+is capped: `architecture.md` → "Multi-Agent Orchestration".
+
 The workflow is the bundled `vibing-orchestrate` skill. Why `position` defaults to `back`, why the
 chat file is written at creation, why the status is a field rather than a text heuristic, and what
 is deliberately out of scope: `architecture.md` → "Multi-Agent Orchestration".

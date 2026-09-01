@@ -94,4 +94,23 @@ function M.link(from_bufnr, to_bufnr)
   return true, nil
 end
 
+---`link` を呼び、失敗しても警告だけして続行する
+---
+---「リンクは記録であって、失敗が送信を止める理由にはならない」は送信経路2つ（即配達と
+---キュー配達）に共通の方針だったので、方針と文言をここに1つ置く。2箇所に散らしておくと、
+---片方だけ直した日に食い違う。`rpc/handlers/chat.lua` は作成時点の別文言を使うので通さない
+---@param from_bufnr number
+---@param to_bufnr number
+---@return boolean success
+function M.link_or_warn(from_bufnr, to_bufnr)
+  local ok, err = M.link(from_bufnr, to_bufnr)
+  if not ok then
+    require("vibing.core.utils.notify").warn(
+      string.format("Could not link chats %d -> %d: %s", from_bufnr, to_bufnr, err or "unknown"),
+      "Orchestration"
+    )
+  end
+  return ok
+end
+
 return M
