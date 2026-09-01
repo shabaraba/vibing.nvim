@@ -88,7 +88,8 @@
 ---別チャットに送ったリクエストの完了を、送信元のチャットに通知する
 ---通知は送信元の新しいターンとして届くため、無人でトークンを消費する
 ---@field enabled boolean 完了通知を配達するか（デフォルト: false、無人でトークンを消費するため）
----@field max_hops number 通知が連鎖して自走するのを止める上限。手動送信（<CR>）でリセットされる
+---@field max_round_trips number 2チャット間（無向ペア）で連続して配達してよい通知の数。手動送信（<CR>）でリセットされる
+---@field max_wakes number 手動送信を挟まずに配達してよい通知の総数。ツリー全体の暴走に対する最終防壁
 
 ---@class Vibing.AgentConfig
 ---エージェント設定
@@ -192,9 +193,6 @@
 
 local notify = require("vibing.core.utils.notify")
 
----削除された`diff.*`設定について警告済みか。setup()は複数回呼ばれうるので、設定ごとに1回だけ出す
----@type table<string, boolean>
-local warned_removed_diff = {}
 local tools_const = require("vibing.core.constants.tools")
 local language_utils = require("vibing.core.utils.language")
 
@@ -296,9 +294,17 @@ M.defaults = {
     -- ワーカーに「誰に報告すればいいか」を伝えるシステムプロンプトの1行だけ。
     chat_notifications = {
       enabled = false,
-      -- 通知が連鎖して自走するのを止める上限。A→B→A→B の往復は正当なユースケース
-      -- （Bの質問にAが答える）なので循環検出ではなく深さで止める。<CR>による手動送信で0に戻る。
-      max_hops = 8,
+      -- 通知が連鎖して自走するのを止める上限は2段。A→B→A→B の往復は正当なユースケース
+      -- （Bの質問にAが答える）なので、循環検出ではなく回数で止める。どちらも<CR>による
+      -- 手動送信で0に戻る。
+      --
+      -- 上限を「起こされた回数」のグローバルカウンタから (A,B) ペア単位に変えたのは、
+      -- 止めたいのが A⇄B の無限往復であって扇状の受信数ではないため。子N人からの完了通知を
+      -- 受けるだけで上限に当たるのは、正当なオーケストレータを止めていた（#644）。
+      max_round_trips = 8,
+      -- 配達が多くのペアに散ってペア上限に当たらない形（扇、長い循環）への最終防壁なので、
+      -- 通常の運用では届かない大きさにしてある。
+      max_wakes = 50,
     },
     -- codexの軽量呼び出しは --ignore-user-config で走るので、ユーザーの model_provider が落ちて
     -- 既定のOpenAIエンドポイントに向く。それを1セッション1回だけ警告する。
@@ -527,24 +533,18 @@ function M.setup(opts)
     --
     -- 正規化した値は `M.options` にしか書かないので、ユーザーの `opts` テーブルには古い設定が
     -- 残ったまま。setup()を2回以上呼ぶ構成（設定の再読み込み等）だと、そのたびに同じ警告が
-    -- 出ることになる。警告は一度だけという方針（send_message.luaの`warned_modes`と同じ）に
-    -- 合わせて、設定ごとに出したかを覚えておく。
+    -- 出ることになる。削除された設定の案内はどれも `notify.warn_once` に乗せて1回に抑える。
     if M.options.diff.tool == "mote" then
-      if not warned_removed_diff.tool then
-        warned_removed_diff.tool = true
-        notify.warn(
-          "diff.tool = \"mote\" is no longer supported and is being treated as \"git\". "
-            .. "mote integration was removed: diffs now come from a git tree snapshot taken per "
-            .. "request, which also catches Bash-driven file changes. Remove the setting."
-        )
-      end
+      notify.warn_once(
+        "config.diff.tool",
+        "diff.tool = \"mote\" is no longer supported and is being treated as \"git\". "
+          .. "mote integration was removed: diffs now come from a git tree snapshot taken per "
+          .. "request, which also catches Bash-driven file changes. Remove the setting."
+      )
       M.options.diff.tool = "git"
     end
     if M.options.diff.mote ~= nil then
-      if not warned_removed_diff.mote then
-        warned_removed_diff.mote = true
-        notify.warn("diff.mote is no longer used and can be removed from your setup() call.")
-      end
+      notify.warn_once("config.diff.mote", "diff.mote is no longer used and can be removed from your setup() call.")
       M.options.diff.mote = nil
     end
     M.options.diff.tool = validate_enum(
@@ -556,6 +556,24 @@ function M.setup(opts)
   end
 
   if M.options.agent then
+    -- `max_hops`（起こされた回数のグローバルカウンタ）は (A,B) ペアの往復カウンタと
+    -- 全体予算に置き換わった。黙って無視すると「上限を下げたはずなのに効いていない」に
+    -- 気づけないので、`diff.tool = "mote"` と同じく名指しで案内する
+    -- 型を見るのは、`chat_notifications = true` のような壊れた設定でも `setup()` を落とさない
+    -- ため。`vim.tbl_deep_extend("force", ...)` は非テーブルで既定値ごと置き換えるので、素朴に
+    -- 索引すると boolean を index して落ちる。この経路は今回追加したものなので、少なくとも
+    -- 変更前より壊れやすくはしない
+    local notifications = M.options.agent.chat_notifications
+    if type(notifications) == "table" and notifications.max_hops ~= nil then
+      notify.warn_once(
+        "config.agent.chat_notifications.max_hops",
+        "agent.chat_notifications.max_hops is no longer used and is being ignored. "
+          .. "The chain is now bounded per chat pair by max_round_trips (default 8), with "
+          .. "max_wakes (default 50) as a whole-tree budget. Remove the setting."
+      )
+      notifications.max_hops = nil
+    end
+
     local modes = require("vibing.core.constants.modes")
     local valid_agent_modes = {}
     for _, mode in ipairs(modes.AGENT_MODES) do

@@ -14,9 +14,9 @@ local ProgrammaticSender = require("vibing.presentation.chat.modules.programmati
 ---@return {success: boolean, queued: boolean, bufnr: number}
 local function queue_for_later(bufnr, params)
   -- 自分自身への送信を弾く。`validate` は応答中を理由に断っていたので、この経路が
-  -- できるまでは起こりえなかった。積むと自分の配達で自分が再稼働し、`depth` を持たない
-  -- ぶん `max_hops` の抑止も効かない。`subscribe` と `orchestration_link.link` の
-  -- 同じガードに揃える
+  -- できるまでは起こりえなかった。積むと自分の配達で自分が再稼働し、しかも相手が自分なので
+  -- ペアが作れず `max_round_trips` の抑止も効かない（止められるのは全体予算だけになる）。
+  -- `subscribe` と `orchestration_link.link` の同じガードに揃える
   if params.from_bufnr and params.from_bufnr == bufnr then
     error("A chat cannot queue a message to itself")
   end
