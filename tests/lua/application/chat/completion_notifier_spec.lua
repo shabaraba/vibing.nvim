@@ -57,6 +57,12 @@ describe("CompletionNotifier", function()
       if send_result.throws then
         error("boom")
       end
+      -- 実物と同じく、送信が通ればその場でターンが走り出す。`send_result.starts_turn = false` が
+      -- リミット中の予約や `SendMessage.execute` の早期returnで、受理はされたがターンは
+      -- 始まらなかった場合
+      if send_result.success and send_result.starts_turn ~= false then
+        responding[bufnr] = true
+      end
       return { success = send_result.success, bufnr = bufnr }
     end
     notify.warn = function(message, title)
@@ -319,6 +325,71 @@ describe("CompletionNotifier", function()
     assert.equals(1, #sends)
   end)
 
+  it("holds the edge through a turn that only exists to restart the chat", function()
+    -- A → B → C の2段。C の完了通知が B に滞留している間に、B の中間ターン（「C に送った、
+    -- 待つ」だけのターン）が終わるケース
+    local a, b, c = make_chat(), make_chat(), make_chat()
+
+    Notifier.subscribe(a, b)
+    Notifier.subscribe(b, c)
+
+    responding[b] = true
+    Notifier.on_response_done(c)
+    assert.equals(0, #sends, "B is responding, so C's completion stays queued")
+
+    responding[b] = false
+    Notifier.on_response_done(b)
+
+    assert.equals(1, #sends, "only B's own queue drains; A is not woken mid-flight")
+    assert.equals(b, sends[1].bufnr)
+
+    -- B の2ターン目（本命の報告）が終わって初めて A に配達される
+    Notifier.on_response_done(b)
+
+    assert.equals(2, #sends)
+    assert.equals(a, sends[2].bufnr)
+  end)
+
+  it("does not hold the edge for a delivery that started no turn", function()
+    -- `ChatBuffer:send_message()` は「リクエストとして扱ったか」を返すので、リミット中の予約でも
+    -- `SendMessage.execute` がアダプタ未設定・セッション競合で降りた場合でも true になる。
+    -- 後者はストリームを張らず `VibingResponseDone` も来ないので、これを再稼働と読むと
+    -- エッジは二度と配達されずに残る
+    local a, b, c = make_chat(), make_chat(), make_chat()
+
+    Notifier.subscribe(a, b)
+    Notifier.subscribe(b, c)
+
+    responding[b] = true
+    Notifier.on_response_done(c)
+
+    responding[b] = false
+    send_result = { success = true, starts_turn = false }
+    Notifier.on_response_done(b)
+
+    assert.equals(2, #sends, "B's queue drains, and A is told because B did not restart")
+    assert.equals(b, sends[1].bufnr)
+    assert.equals(a, sends[2].bufnr)
+  end)
+
+  it("still notifies subscribers when the queued delivery was refused", function()
+    -- 配達が拒否された = そのバッファは再稼働しないので、購読者への配達を見送る理由がない
+    local a, b, c = make_chat(), make_chat(), make_chat()
+
+    Notifier.subscribe(a, b)
+    Notifier.subscribe(b, c)
+
+    responding[b] = true
+    Notifier.on_response_done(c)
+
+    responding[b] = false
+    drafts[b] = "the user is typing in the middle chat"
+    Notifier.on_response_done(b)
+
+    assert.equals(1, #sends)
+    assert.equals(a, sends[1].bufnr)
+  end)
+
   it("never lowers the hop count when a shallow edge is delivered late", function()
     configure({ max_hops = 2 })
     local a, b, c = make_chat(), make_chat(), make_chat()
@@ -328,8 +399,10 @@ describe("CompletionNotifier", function()
 
     Notifier.subscribe(a, b)
     Notifier.on_response_done(b) -- depth[a] = 1
+    responding[a] = false -- 起こされた A のターンが終わる
     Notifier.subscribe(a, b)
     Notifier.on_response_done(b) -- depth[a] = 2
+    responding[a] = false
 
     -- 深さ0で張られた c のエッジがここで配達されても、カウンタは戻らない
     Notifier.on_response_done(c)

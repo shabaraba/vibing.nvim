@@ -83,25 +83,26 @@ end
 ---A が B に投げたあと A 自身のターンが続くのは普通なので、短いタスクほどこの窓に入る。
 ---積んだままにしておけば、A 自身の VibingResponseDone でここが呼び直される。
 ---@param from_bufnr number
+---@return boolean restarted 配達の結果 from_bufnr が新しいターンを走らせた
 local function flush(from_bufnr)
   local queue = pending[from_bufnr]
   if not queue or #queue == 0 then
-    return
+    return false
   end
 
   if not vim.api.nvim_buf_is_valid(from_bufnr) then
     pending[from_bufnr] = nil
-    return
+    return false
   end
 
   local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(from_bufnr)
   if not chat_buf then
     pending[from_bufnr] = nil
-    return
+    return false
   end
 
   if chat_buf:is_responding() then
-    return
+    return false
   end
 
   -- ユーザーが書きかけの `## User` を残しているなら触らない。配達は新しいセクションを足すので、
@@ -111,7 +112,7 @@ local function flush(from_bufnr)
   if chat_buf.extract_user_message then
     local draft = chat_buf:extract_user_message()
     if draft and vim.trim(draft) ~= "" then
-      return
+      return false
     end
   end
 
@@ -130,12 +131,21 @@ local function flush(from_bufnr)
     -- 下げてはいけない。深く連鎖したチャットが、浅い時点で張られたエッジの配達を受けたときに
     -- カウンタが戻ると、max_hops が連鎖を止められなくなる
     depth[from_bufnr] = math.max(depth[from_bufnr] or 0, deepest + 1)
-  else
-    notify.warn(
-      string.format("Could not notify chat %d: %s", from_bufnr, ok and "the chat refused the message" or tostring(result)),
-      "Chat Notifications"
-    )
+
+    -- 送信が受理されたことと、ターンが始まったことは別。`ChatBuffer:send_message()` が返すのは
+    -- 「リクエストとして扱ったか」で、リミット中の予約（`_try_schedule_instead_of_send`）でも、
+    -- `SendMessage.execute` がアダプタ未設定・セッション競合で降りた場合でも true になる。
+    -- 後者はストリームを張らないので `VibingResponseDone` が来ず、呼び出し元がこれを再稼働と
+    -- 読むとエッジが宙に浮く。始まっていないターンを購読者の待ち先にはできないので、
+    -- 送信結果ではなく相手の状態を返す
+    return chat_buf:is_responding()
   end
+
+  notify.warn(
+    string.format("Could not notify chat %d: %s", from_bufnr, ok and "the chat refused the message" or tostring(result)),
+    "Chat Notifications"
+  )
+  return false
 end
 
 ---A が B に送ったことを購読として記録する
@@ -188,15 +198,22 @@ function M.subscribe(from_bufnr, to_bufnr)
   return true
 end
 
----応答完了。購読者への配達と、自分宛キューの drain を行う
+---応答完了。自分宛キューの drain と、購読者への配達を行う
 ---@param bufnr number
 function M.on_response_done(bufnr)
   if not settings().enabled then
     return
   end
 
-  -- 購読者への配達が先。自分のキューを先に流すと bufnr が新しいターンを始めてしまい、
-  -- 「bufnr は終わった、読め」という通知を、走り出した直後の bufnr について配ることになる
+  -- 自分宛キューの drain が先。配達できた = bufnr はこのターンでは終わっておらず、続きの
+  -- ターンが控えている（リミット中なら予約として）ということなので、この完了は購読者に見せない。
+  -- 順序を逆にしても防げない理由と、この規則が拾えない側の順序は
+  -- architecture.md → Multi-Agent Orchestration（#638）
+  if flush(bufnr) then
+    -- edges[bufnr] は消費せずに残す。bufnr が本当に止まったときの完了で配達される
+    return
+  end
+
   local subscribers = edges[bufnr]
   if subscribers then
     -- 配達した時点で購読は消える（one-shot）。B が次に完了しても、A が改めて送っていなければ
@@ -211,8 +228,6 @@ function M.on_response_done(bufnr)
       flush(from_bufnr)
     end
   end
-
-  flush(bufnr)
 end
 
 ---ユーザーが手動送信したので通知チェーンの深さをリセットする

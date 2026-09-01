@@ -1169,6 +1169,48 @@ rolling back), and the notifier queues instead, flushing on the recipient's own 
 Queued notifications coalesce into one message: three workers finishing while the orchestrator is
 busy is one turn, not three.
 
+**A chat drains its own queue before it notifies anyone, and a turn that drained is not reported as
+a completion at all.** `on_response_done` tries `flush(bufnr)` first and returns leaving
+`edges[bufnr]` intact when it delivered, because a delivery _is_ a restart — so the turn that just
+ended was an intermediate one, and the real answer is still being written.
+
+The order used to be the reverse, on the reasoning that draining first would let a subscriber be
+told "B stopped" about a B that had already started again. It does not prevent that. The order
+fixes only who is _sent to_ first within one tick, and a subscriber is a separate CLI process that
+reads seconds later — by which time the synchronous drain has long since restarted B. The edge is
+one-shot, so B's actual report, the turn after the restart, then had nothing left to notify
+through. In a tree of chats where a middle node waits on a leaf this happens every time rather than
+sometimes: "B's queue is non-empty" _means_ "B is about to restart" (#638).
+
+A drain the recipient **refuses** — it is responding, or the user has a draft in it — restarts
+nothing, so subscribers are notified exactly as before.
+
+Three limits are worth writing down, because the rule reads more general than it is.
+
+- **The mirror ordering is untouched.** When the leaf finishes _after_ the middle chat's dispatch
+  turn rather than before — the commoner case, since dispatching takes seconds and the leaf takes
+  minutes — that turn's queue is empty, so A is woken and the edge consumed exactly as before, and
+  B's later report has nothing left to notify through. The signal that would catch it is already
+  live: `edges[c][b]` exists from B's send until C completes and means "B is waiting on a chat that
+  has not finished". Acting on it would also stop A hearing anything at all mid-chain, which is a
+  behaviour change rather than a fix, so it is left open.
+- **The hold is gated on a turn actually starting, not on the send being accepted.**
+  `send_message()` returns "treated as a request", which is also true for a message _parked_ behind
+  a usage limit (`_try_schedule_instead_of_send`) and for one `SendMessage.execute` drops at its
+  no-adapter or shared-session guards — both `clear_sending()` and return without a stream, so no
+  `VibingResponseDone` is ever coming. `flush` therefore reports the recipient's `is_responding()`
+  rather than the send's own result: a turn that never began cannot be the one a subscriber waits
+  for, and notifying now is exactly what the old order did.
+- **A held edge still has no exit but `BufDelete`.** Every edge used to be consumed on the
+  subscribed chat's next completion; one that waits on a follow-up turn is stranded silently if
+  that turn dies before reaching the `add_user_section` wrapper. The gate above removes the routes
+  that never started a turn at all, but not a turn that starts and then vanishes. This is the one
+  case where the new behaviour is worse than the old, and it is accepted for the same reason the
+  module holds no timers.
+
+None of that promises B's next turn is a report for A rather than a reply to the leaf either. Under
+a one-shot edge, "when B next stops" is simply the best moment available.
+
 Two smaller rules. Edges are **one-shot** — delivering consumes them, so a worker completing again
 without a fresh send is silent, and A messaging B three times still notifies once. And the chain is
 bounded by **hops, not cycle detection**: A→B→A→B is a legitimate question-and-answer, so
