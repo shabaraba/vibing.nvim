@@ -120,6 +120,12 @@ function M.on_sent(from_bufnr, to_bufnr)
     return
   end
 
+  -- 抑止マークは `edges` のためだけにある。無効ならエッジは張られないので、溜めても無駄なうえ、
+  -- セッション中に有効化されたときに、無効だった間の送信が新しいエッジを誤って黙らせる
+  if not settings().enabled then
+    return
+  end
+
   M.subscribe(from_bufnr, to_bufnr)
 
   -- **エッジそのものは消さない。** 消すと、from が「作業中の途中経過」を送っただけの場合にも

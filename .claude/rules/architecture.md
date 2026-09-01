@@ -1203,7 +1203,10 @@ Four things about it are not incidental:
   would otherwise pile up without bound. The refusal is returned to the sender as an error, which
   is the whole point — a report that disappears quietly is the failure this mechanism exists to
   remove. The one case that cannot be reported back is a _notification_ arriving at a full queue,
-  since its edge is already consumed by then; that one warns.
+  since its edge is already consumed by then; that one warns. `forget` follows the same rule when
+  a chat is deleted: a notice _about_ that chat has lost its subject and goes, but a queued body
+  whose **sender** was the deleted chat is still deliverable, so it loses only the sender's name
+  and arrives anonymously.
 
 **A message the sender delivered itself silences the watchdog for one stop.** A send is one event
 with two opposite consequences, so `completion_notifier.on_sent(from, to)` performs both rather

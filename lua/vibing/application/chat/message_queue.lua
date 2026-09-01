@@ -218,7 +218,16 @@ function M.flush(to_bufnr)
   return false
 end
 
----バッファが消えたので、その宛先のキューと、他のキューに残る言及を捨てる
+---バッファが消えたので、その宛先のキューと、他のキューに残る言及を始末する
+---
+---`item.bufnr` は2つの意味を持つので、扱いも2つに分かれる。
+---
+---- **通知**では「止まったチャット」。それが消えた以上「読みに行け」は宛先を失うので捨てる
+---- **本文**では送信元の記録にすぎない。表示とリンクのためのメタデータで、本文そのものの
+---  届け先とは無関係なので、送信元が消えても配達はできる。ここで捨てると「報告が黙って
+---  消える」— このモジュールが防ぐために存在しているものそのものになる。名前だけ落として
+---  匿名の本文として残す（`delivery_message` は送信元なしの形を元から扱える）。
+---  同時に、消えたバッファへの `link_or_warn` が配達のたびに警告するのも防げる
 ---
 ---`BufDelete` はパターン無しで張られていて、エディタ内のどのバッファを閉じても走る。
 ---既定（この機能は未使用）では空振りなので、自分の状態が空なら何もしない
@@ -230,9 +239,15 @@ function M.forget(bufnr)
 
   pending[bufnr] = nil
 
-  for to_bufnr in pairs(pending) do
+  for to_bufnr, queue in pairs(pending) do
+    for _, item in ipairs(queue) do
+      if item.body and item.bufnr == bufnr then
+        item.bufnr = nil
+      end
+    end
+
     remove_where(to_bufnr, function(item)
-      return item.bufnr == bufnr
+      return not item.body and item.bufnr == bufnr
     end)
   end
 end

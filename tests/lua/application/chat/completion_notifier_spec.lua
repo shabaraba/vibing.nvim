@@ -527,6 +527,22 @@ describe("CompletionNotifier", function()
     assert.is_truthy(sends[#sends].message:find("chat buffer " .. b, 1, true))
   end)
 
+  it("records no suppression while the feature is disabled", function()
+    -- 無効な間はエッジが張られないので印は無駄なうえ、途中で有効化されたときに
+    -- 無効だった間の送信が新しいエッジを誤って黙らせる
+    configure({ enabled = false })
+    local a, b = make_chat(), make_chat()
+
+    Notifier.on_sent(b, a)
+
+    configure({ enabled = true })
+    Notifier.subscribe(a, b)
+    Notifier.on_response_done(b)
+
+    assert.equals(1, #sends)
+    assert.equals(a, sends[1].bufnr)
+  end)
+
   it("suppresses only the one stop that follows the report", function()
     local a, b = make_chat(), make_chat()
 

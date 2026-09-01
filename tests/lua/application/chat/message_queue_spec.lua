@@ -182,21 +182,50 @@ describe("MessageQueue", function()
     assert.equals(1, count)
   end)
 
-  it("forgets a deleted buffer as a recipient and as a sender", function()
-    local a, b, c = make_chat(), make_chat(), make_chat()
+  it("drops the queue of a deleted recipient", function()
+    local a, b = make_chat(), make_chat()
     responding[a] = true
-    responding[c] = true
 
-    Queue.enqueue_message(a, b, "from b")
-    Queue.enqueue_message(c, b, "also from b")
+    Queue.enqueue_message(a, b, "for a")
+    Queue.forget(a)
 
-    Queue.forget(b)
-
-    responding[a], responding[c] = false, false
+    responding[a] = false
     Queue.flush(a)
-    Queue.flush(c)
 
     assert.equals(0, #sends)
+  end)
+
+  it("drops a completion notice about a chat that no longer exists", function()
+    -- 「あれが止まった、読みに行け」は、読みに行く先が消えた時点で意味を失う
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    Queue.enqueue_notification(a, b, 0)
+    Queue.forget(b)
+
+    responding[a] = false
+    Queue.flush(a)
+
+    assert.equals(0, #sends)
+  end)
+
+  it("still delivers a body whose sender was deleted, anonymously", function()
+    -- 送信元の記録は表示とリンクのためのメタデータで、本文の届け先とは無関係。
+    -- 送信元のバッファが閉じられただけで報告を捨てると、このモジュールが防ぐために
+    -- 存在している「黙って消える」がそのまま起きる
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    Queue.enqueue_message(a, b, "the last thing B said")
+    Queue.forget(b)
+
+    responding[a] = false
+    Queue.flush(a)
+
+    assert.equals(1, #sends)
+    assert.is_truthy(sends[1].message:find("the last thing B said", 1, true))
+    assert.is_falsy(sends[1].message:find("chat buffer " .. b, 1, true))
+    assert.equals(0, #links, "a chat that is gone must not be linked, nor warned about")
   end)
 
   it("counts messages rather than claiming that many chats sent them", function()
