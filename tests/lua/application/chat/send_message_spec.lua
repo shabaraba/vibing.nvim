@@ -50,6 +50,63 @@ describe("send_message", function()
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)
+
+    -- The choice list is only staged here; add_user_section() at the end of _handle_response is
+    -- what renders it, and cancel() queues that completion. Deferring the staging by one tick put
+    -- it after that completion, so the questions were consumed as nil and the turn ended with the
+    -- reply cut short and nothing to answer (#649).
+    it("stages AskUserQuestion choices synchronously rather than a tick later", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. ".md")
+
+      local staged
+      local callbacks = {
+        get_bufnr = function()
+          return buf
+        end,
+        get_session_id = function()
+          return "test-session"
+        end,
+        parse_frontmatter = function()
+          return {}
+        end,
+        extract_conversation = function()
+          return {}
+        end,
+        update_filename_from_message = function(_) end,
+        start_response = function() end,
+        get_session_allow = function()
+          return {}
+        end,
+        get_session_deny = function()
+          return {}
+        end,
+        add_user_section = function() end,
+        insert_choices = function(questions)
+          staged = questions
+        end,
+      }
+
+      local captured = {}
+      local adapter = {
+        supports = function(_, _feature)
+          return false
+        end,
+        execute = function(_, _prompt, opts)
+          captured.opts = opts
+          return { content = "ok" }
+        end,
+      }
+
+      SendMessage.execute(adapter, callbacks, "hello", {})
+
+      local questions = { { question = "Which one?", options = { { label = "a" } } } }
+      captured.opts.on_insert_choices(questions)
+      -- Asserted without running the event loop: a vim.schedule here would leave this nil.
+      assert.same(questions, staged)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
   end)
 
   describe("_handle_response", function()
