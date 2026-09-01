@@ -14,35 +14,6 @@ local M = {}
 local Git = require("vibing.core.utils.git")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 
----`Git.get_root()` はキャッシュを持たず、毎回 `vim.system():wait()` で同期的に
----`git rev-parse` を起動する。`resolve_bufnrs` はワーカーチャットの**送信のたび**に呼ばれるので、
----そのままではユーザーの `<CR>` の前でメインスレッドがプロセス起動1回分ブロックする。
----値はcwdごとに固定なので、cwdをキーに覚える
----@type table<string, string>
-local git_root_by_cwd = {}
-
----**成功だけを覚える。** 「gitリポジトリではない」を覚えると、あとから `git init` された
----（あるいはworktreeが生えた）ディレクトリが、そのNeovimが生きている限り誤判定のままになる。
----外したときのコストは fail-fast な `rev-parse` 1回だけ。
----`core/utils/git_snapshot.lua` の `root_cache` と同じ方針で、architecture.md にも明文化がある。
----
----`infrastructure/link/scanner.lua` の `git_root()` が `false` をキャッシュしてよいのは、
----あちらのインスタンス寿命が1回の同期スイープに限られるため。こちらはモジュールレベルで
----セッションを通して生きるので、同じ形には見えても扱いが違う
----@return string|false
-local function cached_git_root()
-  local cwd = vim.fn.getcwd()
-  if git_root_by_cwd[cwd] then
-    return git_root_by_cwd[cwd]
-  end
-
-  local root = Git.get_root()
-  if root then
-    git_root_by_cwd[cwd] = root
-  end
-  return root or false
-end
-
 ---@param bufnr number
 ---@return table? chat_buf
 local function resolve_chat(bufnr)
@@ -121,48 +92,6 @@ function M.link(from_bufnr, to_bufnr)
   end
 
   return true, nil
-end
-
----frontmatter に記録された表示パスを、いま開いているチャットバッファ番号に解決する
----
----frontmatter がパスを持つのはそれが唯一セッションを越えて意味を保つ形だからだが、
----`nvim_chat_send_message` が受け取るのは bufnr なので、モデルに渡すにはここで引き直す
----必要がある。開かれていないチャットは番号を持たないので単に落ちる
----@param display_paths string[]?
----@return number[]
-function M.resolve_bufnrs(display_paths)
-  -- 手で `orchestrated_by: path.md` と1行で書かれると文字列としてパースされる形も含めて、
-  -- リストフィールドの3つの形は `Frontmatter.as_list` が吸収する
-  local paths = require("vibing.infrastructure.storage.frontmatter").as_list(display_paths)
-  if #paths == 0 then
-    return {}
-  end
-
-  -- 比較は両側ともシンボリックリンクを解決した形で行う。`nvim_buf_get_name` は解決済みの
-  -- パスを返すので（macOSでは `/var/...` が `/private/var/...` になる）、`:p` だけでは
-  -- 同じファイルが一致しない
-  local PathSanitizer = require("vibing.domain.security.path_sanitizer")
-
-  local git_root = cached_git_root()
-  local wanted = {}
-  for _, path in ipairs(paths) do
-    if type(path) == "string" and path ~= "" then
-      wanted[PathSanitizer.normalize(Git.from_display_path(path, git_root))] = true
-    end
-  end
-
-  local resolved = {}
-  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_is_valid(bufnr) then
-      local name = vim.api.nvim_buf_get_name(bufnr)
-      if name ~= "" and wanted[PathSanitizer.normalize(name)] then
-        table.insert(resolved, bufnr)
-      end
-    end
-  end
-
-  table.sort(resolved)
-  return resolved
 end
 
 return M

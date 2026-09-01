@@ -1,5 +1,10 @@
 import { callNeovim } from '../rpc.js';
-import { validateBufferParams, validateFilePath, validateRequired } from '../validation/schema.js';
+import {
+  validateBufferParams,
+  validateChatTarget,
+  validateFilePath,
+  validateRequired,
+} from '../validation/schema.js';
 
 const CHAT_STATUS_TEXT: Record<string, string> = {
   responding:
@@ -21,17 +26,28 @@ const CHAT_STATUS_TEXT: Record<string, string> = {
  * It is a separate content block rather than a line appended to the transcript so it can never
  * be mistaken for something the buffer actually contains.
  *
- * @param args - An object with `bufnr`, the buffer number to retrieve, and optional `rpc_port`.
+ * A chat can be named by `file_path` instead — the form that survives a Neovim restart, since a
+ * bufnr only means anything in the session that issued it. The Lua side opens the chat if it is
+ * closed (`application/chat/chat_locator.lua`).
+ *
+ * @param args - An object with `bufnr` or `file_path` naming what to retrieve, and optional
+ *   `rpc_port`.
  * @returns An object with `content` containing the buffer's contents (lines joined with `\n`),
  *   plus a chat-status node when the buffer is a vibing.nvim chat.
  */
 export async function handleGetBuffer(args: any) {
-  if (args?.bufnr !== undefined) {
-    validateBufferParams({ bufnr: args.bufnr });
+  // Collapse an explicit null to "not given", matching nvim_chat_send_message.
+  const bufnr = args?.bufnr ?? undefined;
+  const file_path = args?.file_path ?? undefined;
+
+  if (bufnr !== undefined) {
+    validateBufferParams({ bufnr });
   }
+  // Neither is fine here — it falls back to the current buffer, unlike a send.
+  validateChatTarget({ bufnr, file_path });
   const result = await callNeovim(
     'buf_get_lines',
-    { bufnr: args?.bufnr, include_chat_status: true },
+    { bufnr, file_path, include_chat_status: true },
     args?.rpc_port
   );
 
@@ -39,6 +55,17 @@ export async function handleGetBuffer(args: any) {
   // bare line array this tool used to get.
   const lines: string[] = Array.isArray(result) ? result : result.lines;
   const state: string | undefined = Array.isArray(result) ? undefined : result.chat_status;
+
+  // Refuse rather than hand back the wrong buffer's text. A Neovim too old to know `file_path`
+  // ignores it and answers for `bufnr or 0` — the current buffer — which reads as a perfectly
+  // healthy transcript of the chat that was asked for, reported `idle`. Only a Neovim that
+  // understands the argument reports which buffer it read, so its absence is the signal.
+  if (file_path !== undefined && (Array.isArray(result) || result?.bufnr === undefined)) {
+    throw new Error(
+      'This Neovim is too old to address a chat by file_path — it answered without saying which ' +
+        'buffer it read. Update vibing.nvim, or pass bufnr instead.'
+    );
+  }
 
   const content = [{ type: 'text', text: lines.join('\n') }];
   if (state && CHAT_STATUS_TEXT[state]) {

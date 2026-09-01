@@ -324,22 +324,37 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
       table.insert(system_prompt_lines, "Current vibing.nvim chat buffer number: " .. tostring(opts.chat_bufnr))
     end
 
-    -- Which chat dispatched this one, resolved from the `orchestrated_by` frontmatter list.
-    -- Only a worker gets this, and the frontmatter it comes from is written once at creation, so
-    -- in the ordinary case the line stays byte-stable across turns and the cached system prefix
-    -- (#469) survives. It is not a guarantee: the value is a *resolution* of that frontmatter to
-    -- currently-open buffers, so closing and reopening the orchestrator, or toggling
-    -- `chat_notifications.enabled` mid-session, changes the line and costs one cache miss.
+    -- Which chat dispatched this one, taken from the `orchestrated_by` frontmatter list.
+    --
+    -- The **path** is what the model is told to address, because that is the only form that
+    -- survives a Neovim restart: a bufnr from a previous session points at some unrelated buffer,
+    -- so a worker resumed the next morning could never reach its orchestrator again (#641). The
+    -- bufnr is appended as the current resolution only, and a worker whose orchestrator is closed
+    -- still gets the line — `nvim_chat_send_message` opens the chat file itself.
+    --
+    -- The frontmatter is written once at creation, so in the ordinary case the line stays
+    -- byte-stable across turns and the cached system prefix (#469) survives. It is not a
+    -- guarantee, and the bufnr half is the weaker one: closing or reopening the orchestrator
+    -- changes it, as does `:VibingSetFileTitle` renaming the orchestrator (which moves the path
+    -- too, via `OrchestrationChatScanner`). Each costs one cache miss.
+    --
     -- `orchestrated` is deliberately not exposed: an orchestrator's list grows with every
     -- dispatch, so it would move the prefix on a normal turn rather than an unusual one — and the
-    -- completion notification already names the buffer it wants read.
-    if opts.orchestrator_bufnrs and #opts.orchestrator_bufnrs > 0 then
+    -- completion notification already names the chat it wants read.
+    if opts.orchestrators and #opts.orchestrators > 0 then
+      local named = vim.tbl_map(function(orchestrator)
+        return orchestrator.bufnr
+            and string.format("%s (currently buffer %d)", orchestrator.path, orchestrator.bufnr)
+          or orchestrator.path
+      end, opts.orchestrators)
       table.insert(
         system_prompt_lines,
-        "This chat was started by vibing.nvim chat buffer "
-          .. table.concat(vim.tbl_map(tostring, opts.orchestrator_bufnrs), ", ")
+        "This chat was started by vibing.nvim chat "
+          .. table.concat(named, ", ")
           .. ". If you need to ask it something, or want to report back before you finish, call "
-          .. "nvim_chat_send_message with that bufnr and your own chat buffer number as from_bufnr. "
+          .. "nvim_chat_send_message with that file_path and your own chat buffer number as "
+          .. "from_bufnr. Address it by file_path rather than by buffer number: the path keeps "
+          .. "working after a restart, and the chat is opened for you if it is closed. "
           .. "Otherwise just do the work and report in this chat — it is told when you stop."
       )
     end

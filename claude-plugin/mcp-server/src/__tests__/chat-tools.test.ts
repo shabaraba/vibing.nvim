@@ -148,7 +148,13 @@ describe('chat tools (worktree redesign)', () => {
 
     expect(rpc.callNeovim).toHaveBeenCalledWith(
       'send_message',
-      { bufnr: 14, message: 'do the thing', sender: undefined, from_bufnr: 12 },
+      {
+        bufnr: 14,
+        file_path: undefined,
+        message: 'do the thing',
+        sender: undefined,
+        from_bufnr: 12,
+      },
       9878
     );
   });
@@ -164,10 +170,78 @@ describe('chat tools (worktree redesign)', () => {
 
     expect(rpc.callNeovim).toHaveBeenCalledWith(
       'send_message',
-      { bufnr: 14, message: 'do the thing', sender: undefined, from_bufnr: undefined },
+      {
+        bufnr: 14,
+        file_path: undefined,
+        message: 'do the thing',
+        sender: undefined,
+        from_bufnr: undefined,
+      },
       9878
     );
     expect(result.isError).toBeUndefined();
+  });
+
+  it('nvim_chat_send_message accepts a file_path instead of a bufnr', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 21 });
+
+    const result = await handlers.nvim_chat_send_message({
+      rpc_port: 9878,
+      file_path: '.vibing/chat/worker.md',
+      message: 'do the thing',
+      from_bufnr: 12,
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'send_message',
+      {
+        bufnr: undefined,
+        file_path: '.vibing/chat/worker.md',
+        message: 'do the thing',
+        sender: undefined,
+        from_bufnr: 12,
+      },
+      9878
+    );
+    // The caller passed a path, so the bufnr it gets back has to be the one Neovim resolved.
+    expect(result._meta.bufnr).toBe(21);
+  });
+
+  it('nvim_chat_send_message refuses a call that names the target twice', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 14 });
+
+    await expect(
+      handlers.nvim_chat_send_message({
+        rpc_port: 9878,
+        bufnr: 14,
+        file_path: '.vibing/chat/worker.md',
+        message: 'do the thing',
+      })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
+  it('nvim_chat_send_message refuses a call that names no target at all', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 14 });
+
+    await expect(
+      handlers.nvim_chat_send_message({ rpc_port: 9878, message: 'do the thing' })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
+  it('requires neither bufnr nor file_path in the advertised schema, since exactly one goes', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_send_message');
+    const inputSchema = tool?.inputSchema as {
+      required?: string[];
+      properties: Record<string, unknown>;
+    };
+    expect(inputSchema.properties.file_path).toBeDefined();
+    // A required list naming both mutually exclusive keys reads as "pass both"; the handler is
+    // what enforces the choice.
+    expect(inputSchema.required).not.toContain('bufnr');
+    expect(inputSchema.required).not.toContain('file_path');
+    expect(inputSchema.required).toContain('message');
   });
 
   it('nvim_chat_create forwards from_bufnr so a worker is linked at creation', async () => {

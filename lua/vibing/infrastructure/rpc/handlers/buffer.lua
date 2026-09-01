@@ -5,14 +5,24 @@ local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 -- Retrieve all lines from the specified buffer.
 -- @param params? Table with optional fields.
 -- @param params.bufnr? number Buffer number to read from; defaults to 0 (current buffer).
+-- @param params.file_path? string Chat file to read instead, opened in the background if it is
+--   not already (see `application/chat/chat_locator.lua`). Mutually exclusive with `bufnr`, and
+--   chat files only — an ordinary file has `nvim_load_buffer`, and this path opens and attaches
+--   a chat buffer, which is not what reading a source file should do.
 -- @param params.include_chat_status? boolean Wrap the result and attach the buffer's chat status.
--- @return string[]|table Bare line array by default; `{ lines, chat_status }` when
+-- @return string[]|table Bare line array by default; `{ lines, bufnr, chat_status }` when
 --   `include_chat_status` is set (`chat_status` is "responding"/"idle", or absent for a buffer
 --   that is not a vibing.nvim chat). The shape stays opt-in because the MCP server and this
 --   plugin are installed separately and can be at different versions: an older MCP server sends
 --   no flag and must keep receiving the array it calls `.join()` on.
+--
+--   `bufnr` is what makes the *other* direction of that skew safe. A `file_path` reaching a
+--   Neovim too old to know the argument would be ignored, and the caller would be handed the
+--   current buffer's text as though it were the chat it named — silently, and reported `idle`.
+--   Answering with the buffer actually read lets the server tell that case apart. The send path
+--   needs no equivalent: it errors outright when it can find no target.
 function M.buf_get_lines(params)
-  local bufnr = params and params.bufnr or 0
+  local bufnr = require("vibing.infrastructure.rpc.handlers.bufnr").resolve_chat_target(params) or 0
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 
   if not (params and params.include_chat_status) then
@@ -20,7 +30,11 @@ function M.buf_get_lines(params)
   end
 
   local ChatStatus = require("vibing.presentation.chat.modules.chat_status")
-  return { lines = lines, chat_status = ChatStatus.get(bufnr) }
+  return {
+    lines = lines,
+    bufnr = bufnr == 0 and vim.api.nvim_get_current_buf() or bufnr,
+    chat_status = ChatStatus.get(bufnr),
+  }
 end
 
 -- Replace the entire contents of a buffer with the provided lines.

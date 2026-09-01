@@ -41,9 +41,10 @@ local function build_message(queue)
   for _, item in ipairs(queue) do
     local name = vim.api.nvim_buf_is_valid(item.bufnr) and vim.api.nvim_buf_get_name(item.bufnr) or ""
     -- frontmatter の `orchestrated` と同じ表示形式にする。モデルが読みに行く先を、
-    -- 記録と別の形で名指ししない
+    -- 記録と別の形で名指ししない。パスを先に置くのはシステムプロンプトの orchestrator 行と
+    -- 同じ理由で、再起動を跨いで意味を保つのはパスのほうだから（#641）
     local display = name ~= "" and require("vibing.core.utils.git").to_display_path(name) or "unnamed"
-    table.insert(lines, string.format("- chat buffer %d (%s)", item.bufnr, display))
+    table.insert(lines, string.format("- %s (chat buffer %d)", display, item.bufnr))
   end
 
   return table.concat({
@@ -51,7 +52,7 @@ local function build_message(queue)
     "",
     table.concat(lines, "\n"),
     "",
-    "Read each one with nvim_get_buffer({ rpc_port, bufnr }) and decide what to do next.",
+    "Read each one with nvim_get_buffer({ rpc_port, file_path }) and decide what to do next.",
     "",
     '"Finished" only means no request is in flight. A chat may have failed, stopped to ask the',
     "user something, or be waiting on a tool approval. Read the tail of the transcript before",
