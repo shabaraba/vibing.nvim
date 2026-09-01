@@ -1224,7 +1224,10 @@ writes the real answer after that worker reports. Deleting the edge there would 
 orchestrator's subscription permanently, defeating the hold this PR's base branch added. So the
 mark suppresses exactly one stop: `on_response_done` clears it when the drain restarts the chat
 (the report was not final after all), and otherwise consumes the subscription silently, since the
-one-shot edge was spent on a delivery the subscriber already received.
+one-shot edge was spent on a delivery the subscriber already received. That consumption happens
+**before** the `enabled` gate, not after — a mark is a one-stop temporary, so a completion the
+gate declines to act on still has to spend it, or a spell of the feature being off leaves a stale
+mark that silences the first genuine edge after it is turned back on.
 
 **Queued messages do not spend hop budget.** A direct send to an idle chat has never counted
 against `max_hops` — it just starts a turn — and `queue_if_busy` is that same send arriving late.

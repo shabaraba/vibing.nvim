@@ -543,6 +543,29 @@ describe("CompletionNotifier", function()
     assert.equals(a, sends[1].bufnr)
   end)
 
+  it("does not carry a suppression mark across a spell of the feature being disabled", function()
+    -- マークは「次の停止1回ぶん」の一時状態。無効化を挟んだ完了で使い切らないと残り、
+    -- 有効化後に張り直された正当なエッジを黙って落とす — このリポジトリが繰り返し
+    -- 防いでいる「黙って消える」そのものになる
+    local a, b = make_chat(), make_chat()
+
+    Notifier.subscribe(a, b)
+    Notifier.on_sent(b, a)
+
+    -- B が止まる前に無効化される。完了は購読者に配らないが、印はここで使い切られる
+    configure({ enabled = false })
+    Notifier.on_response_done(b)
+    assert.equals(0, #sends)
+
+    -- 有効化して改めて購読を張り直す。古い印に黙らされてはいけない
+    configure({ enabled = true })
+    Notifier.subscribe(a, b)
+    Notifier.on_response_done(b)
+
+    assert.equals(1, #sends)
+    assert.equals(a, sends[1].bufnr)
+  end)
+
   it("suppresses only the one stop that follows the report", function()
     local a, b = make_chat(), make_chat()
 

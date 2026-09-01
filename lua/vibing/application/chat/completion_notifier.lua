@@ -155,13 +155,18 @@ function M.on_response_done(bufnr)
     return
   end
 
+  -- 抑止マークの消費は `enabled` の判定より**前**。マークは「次の停止1回ぶん」の一時状態なので、
+  -- 完了を見送るときも一緒に使い切らないと、無効化を挟んだ間のマークが残り、有効化後に張り直された
+  -- 正当なエッジを黙って落とす。`on_sent` が無効時にマークを立てないのと対になる配慮で、
+  -- `setup()` の「実行中に設定を変えた場合も追従する」はこの経路のこと
+  local suppressed = reported[bufnr] or {}
+  reported[bufnr] = nil
+
   if not settings().enabled then
     return
   end
 
   local subscribers = edges[bufnr]
-  local suppressed = reported[bufnr] or {}
-  reported[bufnr] = nil
 
   if subscribers then
     -- 配達した時点で購読は消える（one-shot）。B が次に完了しても、A が改めて送っていなければ

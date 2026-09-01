@@ -191,6 +191,11 @@ function M.flush(to_bufnr)
     end
   end
 
+  -- 送信の成否を待たずに書く。順序は即配達経路と同じ（リンクが先、送信が後）で、理由も同じ:
+  -- `addUserSection` が走ったあとに frontmatter を触ると、始まったストリーミングと競合する。
+  -- 送信が失敗したときはキューが残って再試行されるので、いずれ辻褄は合う。恒久的に失敗し続ける
+  -- 相手についてだけは「一度も届いていない関係」が記録に残るが、`link` は重複を弾くので
+  -- 増えはしないし、リンクは記録であって配達の証明ではない
   write_links(queue, to_bufnr)
 
   local ProgrammaticSender = require("vibing.presentation.chat.modules.programmatic_sender")
