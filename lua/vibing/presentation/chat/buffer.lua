@@ -207,11 +207,11 @@ function ChatBuffer:_setup_keymaps()
 
   local callbacks = {
     send_message = function()
-      -- 手動送信は通知チェーンの起点なので、ここで深さをリセットする。
+      -- 手動送信は通知チェーンの起点なので、ここで往復カウンタをリセットする。
       -- `ChatBuffer:send_message()` 本体ではなくこのキーマップ側に置くのは、通知の配達自身が
       -- `ProgrammaticSender` 経由で同じ関数を通るため。本体でリセットすると配達のたびに 0 に
-      -- 戻り、`max_hops` が一切効かなくなる
-      require("vibing.application.chat.completion_notifier").reset_depth(self.buf)
+      -- 戻り、上限が一切効かなくなる
+      require("vibing.application.chat.completion_notifier").on_manual_send(self.buf)
       self:send_message()
     end,
     cancel = function()

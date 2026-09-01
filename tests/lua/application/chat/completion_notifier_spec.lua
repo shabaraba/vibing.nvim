@@ -27,7 +27,15 @@ describe("CompletionNotifier", function()
   ---@param opts table?
   local function configure(opts)
     Config.get = function()
-      return { agent = { chat_notifications = vim.tbl_extend("force", { enabled = true, max_hops = 8 }, opts or {}) } }
+      return {
+        agent = {
+          chat_notifications = vim.tbl_extend(
+            "force",
+            { enabled = true, max_round_trips = 8, max_wakes = 50 },
+            opts or {}
+          ),
+        },
+      }
     end
   end
 
@@ -210,50 +218,116 @@ describe("CompletionNotifier", function()
     assert.is_false(Notifier.subscribe(a, a))
   end)
 
-  it("stops the chain at max_hops and says so instead of going quiet", function()
-    configure({ max_hops = 1 })
+  it("stops a pair at max_round_trips and says so instead of going quiet", function()
+    configure({ max_round_trips = 1 })
     local a, b = make_chat(), make_chat()
 
-    -- 1ホップ目: 購読して配達されると、A の深さが 1 になる
+    -- 1往復目: 購読して配達されると、(a, b) のカウンタが 1 になる
     assert.is_true(Notifier.subscribe(a, b))
     Notifier.on_response_done(b)
     assert.equals(1, #sends)
 
-    -- 2ホップ目は上限に当たる。黙って張らないと通知が来ない理由がどこにも残らない
+    -- 2往復目は上限に当たる。黙って張らないと通知が来ない理由がどこにも残らない
     assert.is_false(Notifier.subscribe(a, b))
     assert.equals(1, #warnings)
     assert.equals("Chat Notifications", warnings[1].title)
   end)
 
-  it("does not warn about an edge it already holds when at the hop limit", function()
+  it("counts a pair in both directions as one counter", function()
+    -- 止めたいのは A⇄B の往復そのもの。方向ごとに分けると A→B と B→A が別々の予算を持ち、
+    -- 上限が実質2倍になる
+    configure({ max_round_trips = 1 })
+    local a, b = make_chat(), make_chat()
+
+    Notifier.subscribe(a, b)
+    Notifier.on_response_done(b)
+    assert.equals(1, #sends)
+
+    -- B が A に投げ返す向きも、同じペアの予算を見る
+    assert.is_false(Notifier.subscribe(b, a))
+  end)
+
+  it("does not stop an orchestrator receiving from many workers", function()
+    -- #644 の本題。旧実装は「起こされた回数」のグローバルカウンタだったので、子N人からの
+    -- 完了通知を受けるだけで正当なオーケストレータが上限に当たっていた
+    configure({ max_round_trips = 1 })
+    local a = make_chat()
+    local workers = {}
+
+    for i = 1, 5 do
+      workers[i] = make_chat()
+      assert.is_true(Notifier.subscribe(a, workers[i]), "worker " .. i .. " must be subscribable")
+      Notifier.on_response_done(workers[i])
+      responding[a] = false
+    end
+
+    assert.equals(5, #sends)
+    assert.equals(0, #warnings)
+  end)
+
+  it("stops a fan that never repeats a pair at max_wakes", function()
+    -- ペア上限をすり抜ける形（毎回違う相手に配り続ける）に効く最終防壁
+    configure({ max_round_trips = 8, max_wakes = 2 })
+    local a = make_chat()
+
+    for _ = 1, 2 do
+      local worker = make_chat()
+      assert.is_true(Notifier.subscribe(a, worker))
+      Notifier.on_response_done(worker)
+      responding[a] = false
+    end
+    assert.equals(2, #sends)
+
+    assert.is_false(Notifier.subscribe(a, make_chat()))
+    assert.equals(1, #warnings)
+    assert.equals("Chat Notifications", warnings[1].title)
+  end)
+
+  it("does not warn about an edge it already holds when at the limit", function()
     -- 同じワーカーに複数回ブリーフを送るのは通常の手順。既に張ってあるエッジは生きていて
     -- 通知も届くので、上限に当たったからといって「購読しなかった」と警告するのは事実に反する
-    configure({ max_hops = 0 })
+    configure({ max_round_trips = 0 })
     local a, b = make_chat(), make_chat()
 
     -- 上限0でも、既存エッジがあれば黙って成功を返す
     Notifier.subscribe(a, b)
     assert.equals(1, #warnings, "the first subscribe is genuinely refused")
 
-    configure({ max_hops = 8 })
+    configure({ max_round_trips = 8 })
     assert.is_true(Notifier.subscribe(a, b))
-    configure({ max_hops = 0 })
+    configure({ max_round_trips = 0 })
 
     assert.is_true(Notifier.subscribe(a, b))
     assert.equals(1, #warnings, "re-sending to an already-subscribed chat must not warn")
   end)
 
-  it("resets the hop count on a manual send", function()
-    configure({ max_hops = 1 })
+  it("resets the pair counter on a manual send", function()
+    configure({ max_round_trips = 1 })
     local a, b = make_chat(), make_chat()
 
     Notifier.subscribe(a, b)
     Notifier.on_response_done(b)
     assert.is_false(Notifier.subscribe(a, b))
 
-    Notifier.reset_depth(a)
+    Notifier.on_manual_send(a)
 
     assert.is_true(Notifier.subscribe(a, b))
+  end)
+
+  it("resets the whole-tree budget on a manual send too", function()
+    -- 全体予算は「無人で走り続けている」ことへの防壁なので、人間が連鎖のどこかに入れば
+    -- その前提が切れる。手動送信したのが予算を使い切ったチャットである必要はない
+    configure({ max_wakes = 1 })
+    local a, b, other = make_chat(), make_chat(), make_chat()
+
+    Notifier.subscribe(a, b)
+    Notifier.on_response_done(b)
+    responding[a] = false
+    assert.is_false(Notifier.subscribe(a, make_chat()))
+
+    Notifier.on_manual_send(other)
+
+    assert.is_true(Notifier.subscribe(a, make_chat()))
   end)
 
   it("forgets a buffer's edges and queue in both directions", function()
@@ -395,23 +469,19 @@ describe("CompletionNotifier", function()
     assert.equals(a, sends[1].bufnr)
   end)
 
-  it("never lowers the hop count when a shallow edge is delivered late", function()
-    configure({ max_hops = 2 })
-    local a, b, c = make_chat(), make_chat(), make_chat()
-
-    -- 先に浅い時点のエッジを張っておき、配達だけ遅らせる
-    Notifier.subscribe(a, c)
+  it("drops a deleted buffer's pair counters", function()
+    -- Neovim は閉じたバッファの番号を別のバッファに使い回す。残しておくと、無関係な新しい
+    -- チャットが最初の送信でいきなり上限に当たる
+    configure({ max_round_trips = 1 })
+    local a, b = make_chat(), make_chat()
 
     Notifier.subscribe(a, b)
-    Notifier.on_response_done(b) -- depth[a] = 1
-    responding[a] = false -- 起こされた A のターンが終わる
-    Notifier.subscribe(a, b)
-    Notifier.on_response_done(b) -- depth[a] = 2
-    responding[a] = false
-
-    -- 深さ0で張られた c のエッジがここで配達されても、カウンタは戻らない
-    Notifier.on_response_done(c)
+    Notifier.on_response_done(b)
     assert.is_false(Notifier.subscribe(a, b))
+
+    Notifier.forget(b)
+
+    assert.is_true(Notifier.subscribe(a, b))
   end)
 
   it("drains a queued message even when watchdog notifications are disabled", function()
@@ -580,10 +650,11 @@ describe("CompletionNotifier", function()
     assert.equals(0, #sends)
   end)
 
-  it("does not raise the hop count for a queued message", function()
-    -- 直接送信は今も hop 予算の対象外で、`queue_if_busy` はその同じ送信が遅れて届くだけ。
-    -- ペア単位の往復カウンタは #644 の担当
-    configure({ max_hops = 1 })
+  it("does not advance the pair counter for a queued message", function()
+    -- ペアカウンタが数えるのは watchdog 通知の配達。本文は送信元のモデルが明示的に送った
+    -- もので、`on_sent` 経由で `subscribe` の判定を既に通っている。しかも即配達の経路は
+    -- キューを通らないので、ここで数えると「宛先がたまたま応答中だったか」で消費が変わる
+    configure({ max_round_trips = 1 })
     local a, b = make_chat(), make_chat()
     responding[a] = true
 
@@ -593,7 +664,44 @@ describe("CompletionNotifier", function()
     assert.equals(1, #sends)
 
     responding[a] = false
-    assert.is_true(Notifier.subscribe(a, b), "the delivery must not have spent A's hop budget")
+    assert.is_true(Notifier.subscribe(a, b), "the delivery must not have spent the pair's budget")
+  end)
+
+  it("spends the tree-wide budget for a queued message even so", function()
+    -- ペアには乗らないが起床は起きている。全体予算が数えるのは「無人でターンが1本走った」
+    -- ことなので、本文だけの配達もここには乗る
+    configure({ max_wakes = 1 })
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    MessageQueue.enqueue_message(a, b, "a report")
+    responding[a] = false
+    Notifier.on_response_done(a)
+    assert.equals(1, #sends)
+
+    assert.is_false(Notifier.subscribe(a, make_chat()))
+  end)
+
+  it("still delivers an edge that was authorized before the budget ran out", function()
+    -- 上限は購読の時点でしか見ない。認可済みの通知を配達時に落とすと、オーケストレータは
+    -- ワーカーの完了を黙って取りこぼす — このモジュールが避けるために存在している失敗そのもの。
+    -- 代償として、上限は「その時点で生きているエッジの数」ぶんだけ超過しうる
+    configure({ max_wakes = 1 })
+    local a, b, c = make_chat(), make_chat(), make_chat()
+
+    -- 予算が残っているうちに2本張る
+    assert.is_true(Notifier.subscribe(a, b))
+    assert.is_true(Notifier.subscribe(a, c))
+
+    Notifier.on_response_done(b)
+    responding[a] = false
+    Notifier.on_response_done(c)
+
+    assert.equals(2, #sends, "both authorized edges deliver, even though the budget allowed one")
+
+    -- 超過しても連鎖は止まる: 以降の購読は拒否される
+    responding[a] = false
+    assert.is_false(Notifier.subscribe(a, make_chat()))
   end)
 
   describe("setup", function()

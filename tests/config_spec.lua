@@ -4,7 +4,10 @@ describe("vibing.config", function()
   local config
 
   before_each(function()
-    -- Reload module before each test
+    -- Reload module before each test.
+    -- `notify` も一緒に捨てるのは、削除設定の案内が `notify.warn_once` の memo に載っている
+    -- ため。configだけ作り直しても、前のテストが立てたフラグが残って警告が出なくなる
+    package.loaded["vibing.core.utils.notify"] = nil
     package.loaded["vibing.config"] = nil
     config = require("vibing.config")
   end)
@@ -134,4 +137,52 @@ describe("vibing.config", function()
     end)
   end)
 
+  describe("removed chat_notifications.max_hops", function()
+    local messages
+    local original_notify
+
+    before_each(function()
+      messages = {}
+      original_notify = vim.notify
+      vim.notify = function(msg, level)
+        table.insert(messages, { msg = msg, level = level })
+      end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+    end)
+
+    it("drops it and names the settings that replaced it", function()
+      -- 黙って無視すると「上限を下げたはずなのに効いていない」に気づけない
+      config.setup({ agent = { chat_notifications = { enabled = true, max_hops = 2 } } })
+
+      assert.is_nil(config.get().agent.chat_notifications.max_hops)
+      assert.equals(1, #messages)
+      assert.is_truthy(messages[1].msg:find("max_round_trips", 1, true))
+      assert.is_truthy(messages[1].msg:find("max_wakes", 1, true))
+    end)
+
+    it("keeps the replacement defaults when the removed key was set", function()
+      config.setup({ agent = { chat_notifications = { enabled = true, max_hops = 2 } } })
+
+      local notifications = config.get().agent.chat_notifications
+      assert.equals(8, notifications.max_round_trips)
+      assert.equals(50, notifications.max_wakes)
+    end)
+
+    it("warns only once even when setup() runs again", function()
+      local opts = { agent = { chat_notifications = { enabled = true, max_hops = 2 } } }
+      config.setup(opts)
+      config.setup(opts)
+
+      assert.equals(1, #messages)
+    end)
+
+    it("says nothing for a config that never mentioned max_hops", function()
+      config.setup({ agent = { chat_notifications = { enabled = true } } })
+
+      assert.equals(0, #messages)
+    end)
+  end)
 end)
