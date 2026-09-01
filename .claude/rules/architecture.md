@@ -1108,8 +1108,19 @@ ordering rule that only a comment enforces is one a later edit silently breaks. 
 clears the field, which is the one piece of bookkeeping left: a turn that dies before its next send
 must not leave its reason describing the following turn.
 
-`mark_turn_error` deliberately skips `_cancelled` turns, because a question and an approval prompt
-both stop the turn _by cancelling it_ — calling those `error` would turn "waiting" into "broken".
+`mark_turn_error` skips two kinds of turn, and both exclusions are load-bearing rather than tidy:
+what `chat_status` calls `error` is what branch 2's exception wakes the parent for, so anything
+that is really still _waiting_ must stay out of it.
+
+- **`_cancelled`** — a question and an approval prompt both stop the turn _by cancelling it_, and
+  the reason was already written by `insert_choices` / `insert_approval_request`.
+- **`_rate_limit_info`** — the limit branch above has already parked the turn as a scheduled send
+  or an auto-resume, so it will restart on its own. `response.error` still holds the limit text
+  (`RateLimit.merge` reads it as one of its inputs and does not clear it), so without this guard
+  _every_ parked turn reports `error` and an orchestrator reads a healthy worker as failed.
+
+A parked turn is therefore `idle`, which is the pre-#640 behaviour: distinguishing "waiting on a
+reset" would be a fourth stop reason, and that was deliberately left out of this change.
 
 A status the MCP server has no wording for is **named rather than dropped**. `CHAT_STATUS_TEXT` is
 a lookup table, and rendering nothing for `error` or `waiting_approval` would read as a healthy

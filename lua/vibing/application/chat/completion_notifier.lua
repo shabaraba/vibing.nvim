@@ -189,6 +189,10 @@ end
 ---「対応不要」に分類する。理由が非nilかどうかだけを見れば、増えた理由は自動的に発火側に入る
 ---@param bufnr number
 ---@return boolean
+---バッファが取れない場合は false（＝保留のまま）でよい。そこに至るのは既に消えたバッファで、
+---`forget()` が `BufDelete` でエッジごと落としているので保留するものが残っていない
+---@param bufnr number
+---@return boolean
 local function stopped_needing_attention(bufnr)
   local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(bufnr)
   return chat_buf ~= nil and chat_buf:get_stop_reason() ~= nil
@@ -293,7 +297,7 @@ function M.on_response_done(bufnr)
   end
 
   -- 分岐2。エッジテーブルは親子を区別しないので、判定の意味は「誰かの返事を待っている」。
-  -- 親へ報告を送った直後もここに入るが、その報告が `on_message_delivered` でエッジを
+  -- 親へ報告を送った直後もここに入るが、その報告が `on_message_sent` でエッジを
   -- 消費済みなので、保留するものはもう残っていない
   if is_waiting_on_others(bufnr) and not stopped_needing_attention(bufnr) then
     return

@@ -374,10 +374,18 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   end
 
   if response.error and not response._cancelled then
-    -- キャンセルを除くのは意図的。質問（`nvim_ask_user_question`）と `ask` の承認要求はどちらも
-    -- ターンをkillして `_cancelled` で戻るので、そこを error と呼ぶと「待っている」が
-    -- 「壊れた」に化ける
-    if callbacks.mark_turn_error then
+    -- 停止理由を error と書くのは、この2つを除いた場合だけ。どちらも「待っている」のであって
+    -- 「壊れた」ではなく、`chat_status` がそう報告すると `completion_notifier` の分岐2が
+    -- 例外扱いして親を起こし、オーケストレーターは動いているワーカーを失敗と読む:
+    --
+    --   * `_cancelled` — 質問（`nvim_ask_user_question`）と `ask` の承認要求はどちらも
+    --     ターンをkillして戻る。理由はその時点で `insert_choices` /
+    --     `insert_approval_request` が書いている
+    --   * `_rate_limit_info` — リミットで弾かれたターン。上の分岐が予約や auto_resume に
+    --     回しているので、これは自動で再開する「待ち」。`response.error` はリミットの本文が
+    --     入ったまま残る（`RateLimit.merge` はそれを入力に使うだけでクリアしない）ので、
+    --     ここで除外しないと必ず error になる
+    if callbacks.mark_turn_error and not response._rate_limit_info then
       callbacks.mark_turn_error()
     end
     callbacks.append_chunk("\n\n**Error:** " .. response.error)

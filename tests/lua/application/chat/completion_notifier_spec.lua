@@ -52,8 +52,9 @@ describe("CompletionNotifier", function()
         extract_user_message = function()
           return drafts[bufnr]
         end,
-        -- 分岐2の例外（質問・承認待ち・エラー）は `chat_status` 経由で読まれる。
-        -- そちらは実物を通すので、材料になるこのメソッドだけ差し替える
+        -- 分岐2の例外（質問・承認待ち・エラー）は、`chat_status` の語彙を経由せず
+        -- これを直接読む（`stopped_needing_attention`）。停止理由が増えたときに
+        -- 分類漏れで黙って「対応不要」になるのを避けるため
         get_stop_reason = function()
           return stop_reasons[bufnr]
         end,

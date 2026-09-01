@@ -134,6 +134,7 @@ describe("send_message", function()
     ---  known but before the turn runs.
     ---@return string chat_path The buffer's name, which is the key both stores use.
     ---@return string[] appended chunks written to the chat buffer
+    ---@return boolean marked_error whether the turn was recorded as having ended in an error
     local function handle_turn(response, opts)
       opts = opts or {}
       local buf = vim.api.nvim_create_buf(false, true)
@@ -146,7 +147,11 @@ describe("send_message", function()
       end
 
       local appended = {}
+      local marked_error = false
       local callbacks = {
+        mark_turn_error = function()
+          marked_error = true
+        end,
         clear_sending = function() end,
         get_bufnr = function()
           return buf
@@ -170,8 +175,38 @@ describe("send_message", function()
       SendMessage._handle_response(response, callbacks, adapter, {}, {}, "do the thing")
 
       vim.api.nvim_buf_delete(buf, { force = true })
-      return chat_path, appended
+      return chat_path, appended, marked_error
     end
+
+    describe("recording why the turn stopped", function()
+      -- `chat_status` reports this as `error`, and `completion_notifier` treats that as a stop
+      -- worth waking the parent for. Anything that is really still *waiting* must stay out of it.
+
+      it("marks a turn that ended with an ordinary error", function()
+        local _, _, marked_error = handle_turn({ error = "boom" })
+
+        assert.is_true(marked_error)
+      end)
+
+      it("does not mark a turn the usage limit rejected", function()
+        -- The limit branch has already parked this turn (scheduled send or auto-resume), so it is
+        -- a "waiting" state, not a failure. `response.error` still carries the limit text —
+        -- `RateLimit.merge` reads it and does not clear it — so without the guard every parked
+        -- turn reports `error` and the orchestrator reads a healthy worker as failed.
+        local _, _, marked_error = handle_turn({
+          error = "Claude AI usage limit reached",
+          _rate_limit_info = { rejected = true, resets_at = os.time() + 3600 },
+        })
+
+        assert.is_false(marked_error)
+      end)
+
+      it("does not mark a turn that was cancelled to ask or to request approval", function()
+        local _, _, marked_error = handle_turn({ error = "Cancelled", _cancelled = true })
+
+        assert.is_false(marked_error)
+      end)
+    end)
 
     describe("pending-entry cleanup", function()
       --- Store `entry` for a chat, then run a turn on it that ends with a plain error: not a usage

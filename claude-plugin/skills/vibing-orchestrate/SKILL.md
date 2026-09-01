@@ -128,10 +128,11 @@ turn.
 ## 6. Aggregate and clean up
 
 When no worker is still running, summarize the results together — what changed, what failed, what
-still needs the user. "Not running" includes the blocked statuses above: a worker sitting on
-`asked_question` or `waiting_approval` will never reach `idle` on its own, so waiting for it is
-waiting forever. Report it as blocked and say what it needs. Point at each worker's `file_path` so the user can open the
-full transcript.
+still needs the user. Point at each worker's `file_path` so the user can open the full transcript.
+
+"Not running" includes the blocked statuses above: a worker sitting on `asked_question` or
+`waiting_approval` will never reach `idle` on its own, so waiting for it is waiting forever.
+Report it as blocked and say what it needs.
 
 If you used worktrees, offer the `vibing-worktree-finish` skill for each branch once its work has
 been merged or abandoned. Don't remove a worktree on your own initiative; unmerged work lives
