@@ -35,7 +35,7 @@ describe("rpc handlers.message.send_message", function()
     buffers, chats = {}, {}
 
     Config.get = function()
-      return { agent = { chat_notifications = { enabled = true, max_hops = 8 } } }
+      return { agent = { chat_notifications = { enabled = true, max_round_trips = 8, max_wakes = 50 } } }
     end
     view.get_chat_buffer = function(bufnr)
       local chat = chats[bufnr]

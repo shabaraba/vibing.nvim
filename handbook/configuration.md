@@ -175,9 +175,17 @@ agent = {
   chat_notifications = {    -- Tell a chat when a chat it messaged finishes responding
     enabled = false,        -- Opt-in: the notification arrives as a new turn, so it spends
                             -- tokens with nobody watching
-    max_hops = 8,           -- How many times a chat may be woken without a manual <CR>.
-                            -- A→B→A→B is legitimate (B asks, A answers), so the chain is
-                            -- bounded by depth rather than refused as a cycle
+    max_round_trips = 8,    -- Notifications delivered between one pair of chats without a
+                            -- manual <CR>. A→B→A→B is legitimate (B asks, A answers), so the
+                            -- chain is bounded by count rather than refused as a cycle. The
+                            -- pair is undirected, so a worker's question and the answer to it
+                            -- spend two of these, while an orchestrator waking on a worker's
+                            -- completion spends one
+    max_wakes = 50,         -- Whole-tree budget: notifications delivered without a manual <CR>,
+                            -- counted across the editor. A last resort for shapes that spread
+                            -- over many pairs and so stay under the limit above — an unbounded
+                            -- fan reaches it, and so does a long enough cycle (a 3-chat one is
+                            -- caught by max_round_trips first, at these defaults)
   },
 
   codex_provider_notice = {

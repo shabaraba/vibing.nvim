@@ -26,7 +26,6 @@ local WARN_TITLE = "Chat Delivery"
 ---@class Vibing.Application.MessageQueue.Item
 ---@field bufnr number? 相手のチャット。通知なら応答を終えた側、本文なら送信元（本文では任意）
 ---@field body string? 配達する本文。**これがあるかどうかが種別**で、別途フラグは持たない
----@field depth number? 通知が購読を張った時点の深さ。運ぶだけで解釈はしない
 
 ---@type table<number, Vibing.Application.MessageQueue.Item[]>
 local pending = {}
@@ -77,8 +76,7 @@ end
 ---伝えるべきことは「止まった、読みに行け」の1回きり
 ---@param to_bufnr number
 ---@param done_bufnr number
----@param depth number?
-function M.enqueue_notification(to_bufnr, done_bufnr, depth)
+function M.enqueue_notification(to_bufnr, done_bufnr)
   local queue = pending[to_bufnr] or {}
   for _, item in ipairs(queue) do
     if not item.body and item.bufnr == done_bufnr then
@@ -100,7 +98,7 @@ function M.enqueue_notification(to_bufnr, done_bufnr, depth)
     return
   end
 
-  table.insert(queue, { bufnr = done_bufnr, depth = depth })
+  table.insert(queue, { bufnr = done_bufnr })
   pending[to_bufnr] = queue
 end
 
@@ -151,7 +149,9 @@ end
 ---積んだままにしておけば、相手自身の `VibingResponseDone` でここが呼び直される。
 ---@param to_bufnr number
 ---@return boolean restarted 配達の結果 to_bufnr が新しいターンを走らせた
----@return number? deepest 配達した通知が運んでいた最大の深さ
+---@return number[]? delivered 配達できたとき、その中の通知が指していたチャットの一覧。
+---  **配達したかどうかの signal も兼ねる**ので、本文だけを配ったときも空tableで返る（nilは
+---  「配達しなかった」）。呼び出し元はこれで暴走抑止のカウンタを進める
 function M.flush(to_bufnr)
   local queue = pending[to_bufnr]
   if not queue or #queue == 0 then
@@ -184,10 +184,10 @@ function M.flush(to_bufnr)
     end
   end
 
-  local deepest
+  local delivered = {}
   for _, item in ipairs(queue) do
-    if item.depth then
-      deepest = math.max(deepest or 0, item.depth)
+    if not item.body and item.bufnr then
+      table.insert(delivered, item.bufnr)
     end
   end
 
@@ -213,7 +213,7 @@ function M.flush(to_bufnr)
     -- 後者はストリームを張らないので `VibingResponseDone` が来ず、呼び出し元がこれを再稼働と
     -- 読むとエッジが宙に浮く。始まっていないターンを購読者の待ち先にはできないので、
     -- 送信結果ではなく相手の状態を返す
-    return chat_buf:is_responding(), deepest
+    return chat_buf:is_responding(), delivered
   end
 
   notify.warn(

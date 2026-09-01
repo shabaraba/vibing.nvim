@@ -1277,13 +1277,84 @@ Three limits are worth writing down, because the rule reads more general than it
 None of that promises B's next turn is a report for A rather than a reply to the leaf either. Under
 a one-shot edge, "when B next stops" is simply the best moment available.
 
-Two smaller rules. Edges are **one-shot** — delivering consumes them, so a worker completing again
-without a fresh send is silent, and A messaging B three times still notifies once. And the chain is
-bounded by **hops, not cycle detection**: A→B→A→B is a legitimate question-and-answer, so
-`max_hops` (default 8) counts how many times a chat has been woken without a human `<CR>`, and
-exceeding it warns rather than declining in silence. The reset lives in the `<CR>` keymap callback
-rather than in `send_message()`, because delivery itself goes through `send_message()` — resetting
-there would zero the counter on every hop and disable the limit entirely.
+Edges are **one-shot** — delivering consumes them, so a worker completing again without a fresh
+send is silent, and A messaging B three times still notifies once.
+
+**The chain is bounded per chat pair, not per chat.** A→B→A→B is a legitimate question-and-answer,
+so this counts rather than detecting cycles: `max_round_trips` (default 8) is how many
+notifications may be delivered between one pair of chats without a human `<CR>`, and `subscribe`
+refuses once the pair is spent — with a warning, rather than declining in silence.
+
+The pair is **undirected**. What is bounded is the A⇄B ping-pong, and a worker asking its
+orchestrator a question arrives as `subscribe(B, A)` while the orchestrator's brief was
+`subscribe(A, B)`. Two directional counters would give one conversation two budgets and put the
+real ceiling at twice the configured one. The cost of that choice is that the unit is a
+_delivery_, not a full exchange: an orchestrator waking on its worker's completion spends one,
+but a worker's question and the orchestrator's answer spend two.
+
+It used to be one counter per chat — `depth[bufnr]`, how many times that chat had been woken —
+and in a tree that stopped the wrong thing (#644). An orchestrator is woken once per worker
+completion, so five workers reporting in spent five of its eight hops before any ping-pong
+happened at all: the limit fired on fan-in, which is the normal shape of the feature, and left
+A⇄B free until that same shared budget happened to run out. Keyed by pair, fan-in costs each pair
+one and only the ping-pong accumulates.
+
+Moving to pairs also removed machinery, and the removal reaches across the module boundary. The
+old counter had to be monotonic across a chain, so each edge carried the depth it was created at,
+every queued item carried it onward as `Item.depth`, `MessageQueue.flush` returned the deepest of
+them, and delivery raised the recipient to `max(current, deepest + 1)` — all of that to stop an
+edge subscribed early and delivered late from lowering the count. A pair counter is incremented
+from the delivery's own `(from, done)`, which _is_ the pair, so the queue stops carrying a number
+it never interpreted. `flush` now reports **which** chats the delivered notifications were about
+instead, and that list doubles as the "did anything go out" signal the wake budget needs — an
+empty table for a turn that carried only queued bodies, `nil` for no delivery at all.
+
+`max_wakes` (default 50) is the second bound: notifications delivered without a human `<CR>`,
+counted across the whole editor. It exists for the shapes a pair counter is bad at, which are the
+ones that spread deliveries over many pairs — an unbounded fan that never reaches the same chat
+twice, and a long cycle (A→B→C→A advances three counters by one per lap). Which of the two limits
+fires first depends on the shape and the configured values; at the defaults a 3-chat cycle is
+still caught by `max_round_trips` first, at 24 deliveries, well under the budget.
+
+It is deliberately **not** scoped to a connected component, and the reason is sharper than "more
+work". The budget is checked in `subscribe`, and the escape it exists to catch — a fan reaching
+chats never contacted before — has no `round_trips` entry at that moment, so component membership
+is precisely unknowable for the case it guards. `edges` cannot supply it either: edges are
+one-shot and consumed on delivery, so the live set is a transient slice rather than the chat
+graph. The accepted cost is that two unrelated orchestrations share one budget — either can
+exhaust it for the other, and a `<CR>` in either refills both.
+
+Both reset on a manual `<CR>`, through `on_manual_send(bufnr)`. It is named for the event rather
+than for the buffer, matching `on_response_done`, because it is not "clear this chat's state": it
+is "a human acted", and what that implies is the module's to decide. So it drops every pair that
+chat belongs to _and_ zeroes the tree-wide budget — a human typing anywhere breaks the "running
+unattended" premise that budget guards, and keeping it would leave a chain the user is actively
+steering unable to notify anyone until Neovim restarts.
+
+The reset lives in the `<CR>` keymap callback rather than in `send_message()`, because delivery
+itself goes through `send_message()` — resetting there would zero the counters on every hop and
+disable the limits entirely.
+
+**Both limits are checked only when the subscription is created, never again at delivery.** An
+edge that was authorized while budget remained is still delivered after other edges have spent it,
+so either limit can be exceeded by however many edges were live at that moment. Checking again in
+`flush` was rejected: it would drop an already-authorized completion notice, and an orchestrator
+silently never hearing that its worker finished is the exact failure this whole mechanism exists to
+remove — worse than a one-off bounded overshoot, after which every further `subscribe` is refused
+and the chain stops anyway.
+
+A deleted buffer's pair counters go with it (`forget`), since Neovim reuses buffer numbers and a
+stale entry would throttle an unrelated new chat on its first send. Emptied inner tables are
+dropped along with the entry, in `round_trips`, `edges` and `reported` alike: `forget` runs from a
+pattern-less `BufDelete` and short-circuits on `next()` over those three, so a table left holding
+zero entries would disarm that fast path for the rest of the session and put a full scan back on
+every ordinary buffer close.
+
+The removed `max_hops` is not silently ignored: `config.lua` drops it and warns through
+`notify.warn_once`, so the message appears once per Neovim session rather than once per `setup()`
+— a config that calls `setup()` again does not repeat it. That is the same treatment
+`diff.tool = "mote"` gets, and the three of them share the mechanism rather than each keeping a
+flag. A limit that reads as configured while doing nothing is worse than one that was never set.
 
 **The notification says "stopped", never "succeeded".** `idle` is also what a failed turn, a
 pending tool approval, and an `nvim_ask_user_question` look like, so judging outcomes from the
