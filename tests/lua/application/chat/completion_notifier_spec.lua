@@ -352,15 +352,16 @@ describe("CompletionNotifier", function()
     assert.equals(0, #sends)
   end)
 
-  it("tells the sender that finishing is not the same as succeeding", function()
+  it("tells the sender that stopping is not the same as succeeding", function()
     -- `idle` はエラー終了でも、質問でターンが死んだときでも、ツール承認待ちでも通る。
-    -- 成否の判定を通知側でやると chat_status と同じ罠を踏むので、判断は受け取り側に委ねる
+    -- 成否の判定を通知側でやると chat_status と同じ罠を踏むので、判断は受け取り側に委ねる。
+    -- 規約（#643）ではワーカーは終わったら自分から報告するので、ここに載るのは報告なしの停止
     local a, b = make_chat(), make_chat()
 
     Notifier.subscribe(a, b)
     Notifier.on_response_done(b)
 
-    assert.is_truthy(sends[1].message:find("no request is in flight", 1, true))
+    assert.is_truthy(sends[1].message:find("do not treat its task as done", 1, true))
     assert.is_truthy(sends[1].message:find("do not start aggregating yet", 1, true))
   end)
 
@@ -633,7 +634,7 @@ describe("CompletionNotifier", function()
 
     assert.equals(1, #sends)
     assert.is_truthy(sends[1].message:find("here is what I found", 1, true))
-    assert.is_falsy(sends[1].message:find("finished responding", 1, true))
+    assert.is_falsy(sends[1].message:find("stopped without reporting back", 1, true))
   end)
 
   it("keeps the subscription alive when the report turns out to be an intermediate one", function()

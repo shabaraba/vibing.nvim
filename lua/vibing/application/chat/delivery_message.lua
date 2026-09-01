@@ -36,19 +36,22 @@ local function notification_section(items, cache)
     table.insert(lines, string.format("- %s (chat buffer %d)", display_path(item.bufnr, cache), item.bufnr))
   end
 
+  -- 文面が「止まった、読みに行け」から「報告なしで止まった」に変わったのは #643。規約では
+  -- ワーカーは終わったら自分から報告し、`on_sent` の抑止マークがその直後の停止1回ぶんの
+  -- watchdog を落とす。つまりここに載るのは「報告せずに止まった」チャットで、それは規約から
+  -- 外れた止まり方 — 失敗・質問・承認待ちのどれか — である可能性のほうが高い
   return table.concat({
-    "The following chat(s) you sent a message to have finished responding:",
+    "The following chat(s) you sent a message to have stopped without reporting back:",
     "",
     table.concat(lines, "\n"),
     "",
-    "Read each one with nvim_get_buffer({ rpc_port, file_path }) and decide what to do next.",
+    "A chat that finishes its task is expected to report the result to you itself, so a stop with",
+    "no report is more likely to be something else: it failed, it stopped to ask a question, or it",
+    "is waiting on a tool approval. Read each one with nvim_get_buffer({ rpc_port, file_path }),",
+    "look at the tail of the transcript, and decide what to do — do not treat its task as done.",
     "",
-    '"Finished" only means no request is in flight. A chat may have failed, stopped to ask the',
-    "user something, or be waiting on a tool approval. Read the tail of the transcript before",
-    "treating its task as done.",
-    "",
-    "If other chats you dispatched are still running, do not start aggregating yet — say what",
-    "this one produced and end the turn. You will be woken again when the next one finishes.",
+    "If other chats you dispatched are still running, do not start aggregating yet — say what you",
+    "found and end the turn. You will be woken again when the next one stops.",
   }, "\n")
 end
 
