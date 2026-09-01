@@ -4,14 +4,44 @@ local M = {}
 
 local ProgrammaticSender = require("vibing.presentation.chat.modules.programmatic_sender")
 
+---宛先が応答中なのでキューに積む（`queue_if_busy`）
+---
+---リンク（`orchestrated` / `orchestrated_by`）はここでは書かない。積む条件が「宛先が応答中」で、
+---`update_frontmatter_list` はその宛先バッファを直接編集するため、いま書くとストリーミングと
+---競合する。実際に配達される直前、宛先が idle になった時点で `message_queue` が書く
+---@param bufnr number 解決済みの宛先
+---@param params {message: string, from_bufnr?: number}
+---@return {success: boolean, queued: boolean, bufnr: number}
+local function queue_for_later(bufnr, params)
+  -- 自分自身への送信を弾く。`validate` は応答中を理由に断っていたので、この経路が
+  -- できるまでは起こりえなかった。積むと自分の配達で自分が再稼働し、`depth` を持たない
+  -- ぶん `max_hops` の抑止も効かない。`subscribe` と `orchestration_link.link` の
+  -- 同じガードに揃える
+  if params.from_bufnr and params.from_bufnr == bufnr then
+    error("A chat cannot queue a message to itself")
+  end
+
+  local ok, err =
+    require("vibing.application.chat.message_queue").enqueue_message(bufnr, params.from_bufnr, params.message)
+  if not ok then
+    error(err)
+  end
+
+  if params.from_bufnr then
+    require("vibing.application.chat.completion_notifier").on_sent(params.from_bufnr, bufnr)
+  end
+
+  return { success = true, queued = true, bufnr = bufnr }
+end
+
 ---Send message to chat buffer
 ---
 ---宛先は `bufnr` か `file_path` のどちらか一方で指す。パスで指せることが要点で、bufnr は
 ---Neovim を再起動すれば別のバッファを指すのに対し、frontmatter が記録するパスは残る（#641）。
 ---閉じているチャットは `chat_locator.open` が背景で開くので、再起動後も frontmatter の
 ---パスからそのまま繋ぎ直せる
----@param params {bufnr?: number, file_path?: string, message: string, sender?: string, from_bufnr?: number}
----@return {success: boolean, bufnr: number}
+---@param params {bufnr?: number, file_path?: string, message: string, sender?: string, from_bufnr?: number, queue_if_busy?: boolean}
+---@return {success: boolean, bufnr: number, queued?: boolean}
 function M.send_message(params)
   if not params then
     error("Missing parameters")
@@ -24,6 +54,13 @@ function M.send_message(params)
     error("Missing bufnr or file_path parameter")
   end
 
+  -- `queue_if_busy` は明示指定したときだけ効く。既定でキューに積むと、弾かれたことを検知して
+  -- 待ち直すつもりだった既存の呼び出し元が、成功したものとして先に進む。
+  -- 引き受けるのは「応答中」だけ: 無効なバッファや空メッセージは待っても解けない
+  if params.queue_if_busy and ProgrammaticSender.is_responding(bufnr) then
+    return queue_for_later(bufnr, params)
+  end
+
   -- `from_bufnr` は任意。必須にすると渡し忘れで送信そのものが失敗し、既存の
   -- オーケストレーション経路が壊れる。渡されなければリンクを張らないだけ（＝従来の動作）
   if params.from_bufnr then
@@ -32,15 +69,7 @@ function M.send_message(params)
     -- 行われなかったやり取りの関係だけが永久に残るので、先に送信可能かを確かめる
     ProgrammaticSender.validate(bufnr, params.message)
 
-    local ok, err = require("vibing.application.chat.orchestration_link").link(params.from_bufnr, bufnr)
-    -- リンクは記録であって、失敗が送信を止める理由にはならない。片方だけ書けた状態でも
-    -- リネーム同期は残った側で動く
-    if not ok then
-      require("vibing.core.utils.notify").warn(
-        string.format("Could not link chats %d -> %d: %s", params.from_bufnr, bufnr, err or "unknown"),
-        "Orchestration"
-      )
-    end
+    require("vibing.application.chat.orchestration_link").link_or_warn(params.from_bufnr, bufnr)
   end
 
   -- ProgrammaticSender.send already validates parameters
@@ -58,8 +87,7 @@ function M.send_message(params)
   -- 遅すぎることはない: CLIの起動は非同期で、宛先の完了は `vim.schedule` 経由なので
   -- この関数が返るより先には走らない
   if params.from_bufnr and result and result.success then
-    -- 宛先は解決済みの `bufnr`。`params.bufnr` は `file_path` で指された場合 nil になる
-    require("vibing.application.chat.completion_notifier").on_message_sent(params.from_bufnr, bufnr)
+    require("vibing.application.chat.completion_notifier").on_sent(params.from_bufnr, bufnr)
   end
 
   return result

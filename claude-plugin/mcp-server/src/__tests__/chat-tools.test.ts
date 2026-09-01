@@ -182,6 +182,50 @@ describe('chat tools (worktree redesign)', () => {
     expect(result.isError).toBeUndefined();
   });
 
+  it('nvim_chat_send_message forwards queue_if_busy and reports that the message was queued', async () => {
+    // The tool's own description promises the caller can tell "queued" from "sent", and only this
+    // layer decides the wording the model reads. A queued reply read as "sent" makes an
+    // orchestrator poll a transcript that has not moved.
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, queued: true, bufnr: 14 });
+
+    const result = await handlers.nvim_chat_send_message({
+      rpc_port: 9878,
+      bufnr: 14,
+      message: 'my report',
+      queue_if_busy: true,
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'send_message',
+      {
+        bufnr: 14,
+        file_path: undefined,
+        message: 'my report',
+        sender: undefined,
+        from_bufnr: undefined,
+        queue_if_busy: true,
+      },
+      9878
+    );
+    expect(result._meta.queued).toBe(true);
+    expect(result.content[0].text).toContain('queued');
+    expect(result.content[0].text).not.toContain('AI request initiated');
+  });
+
+  it('nvim_chat_send_message reports an ordinary send when nothing was queued', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 14 });
+
+    const result = await handlers.nvim_chat_send_message({
+      rpc_port: 9878,
+      bufnr: 14,
+      message: 'do the thing',
+      queue_if_busy: true,
+    });
+
+    expect(result._meta.queued).toBe(false);
+    expect(result.content[0].text).toContain('AI request initiated');
+  });
+
   it('nvim_chat_send_message accepts a file_path instead of a bufnr', async () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 21 });
 

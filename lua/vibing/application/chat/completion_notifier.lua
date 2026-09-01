@@ -6,11 +6,13 @@
 ---「A に新しいターンを起こす」しかなく、それがこの設計。B から A への質問も、B が A に
 ---`nvim_chat_send_message` を呼ぶだけで同じ経路に乗る。
 ---
----購読テーブルもキューも**インメモリのみ**。Neovim が落ちればワーカーチャットも道連れなので、
+---**配達そのものは `message_queue.lua` が持つ。** ここが持つのは購読（`edges`）と暴走抑止
+---（`depth`）だけで、どちらもインメモリのみ。Neovim が落ちればワーカーチャットも道連れなので、
 ---`pending-resume.json` のような永続化に意味がない。
 local M = {}
 
 local notify = require("vibing.core.utils.notify")
+local MessageQueue = require("vibing.application.chat.message_queue")
 
 local AUGROUP = "VibingCompletionNotifier"
 local DEFAULT_MAX_HOPS = 8
@@ -20,13 +22,14 @@ local DEFAULT_MAX_HOPS = 8
 ---@type table<number, table<number, number>>
 local edges = {}
 
----配達先が応答中だったために積んだ通知。from_bufnr 自身の完了で流す
----@type table<number, {bufnr: number, depth: number}[]>
-local pending = {}
-
 ---通知チェーンで何回起こされたか。手動送信で 0 に戻る
 ---@type table<number, number>
 local depth = {}
+
+---reported[from_bufnr][to_bufnr] = from が to に自分から送った。
+---「次に from が止まったときの watchdog は冗長」を表す、エッジとは別の一時マーク
+---@type table<number, table<number, boolean>>
+local reported = {}
 
 ---@return {enabled: boolean, max_hops: number?}
 local function settings()
@@ -34,144 +37,41 @@ local function settings()
   return (config.agent and config.agent.chat_notifications) or { enabled = false }
 end
 
----@param queue {bufnr: number, depth: number}[]
----@return string
-local function build_message(queue)
-  local lines = {}
-  for _, item in ipairs(queue) do
-    local name = vim.api.nvim_buf_is_valid(item.bufnr) and vim.api.nvim_buf_get_name(item.bufnr) or ""
-    -- frontmatter の `orchestrated` と同じ表示形式にする。モデルが読みに行く先を、
-    -- 記録と別の形で名指ししない。パスを先に置くのはシステムプロンプトの orchestrator 行と
-    -- 同じ理由で、再起動を跨いで意味を保つのはパスのほうだから（#641）
-    local display = name ~= "" and require("vibing.core.utils.git").to_display_path(name) or "unnamed"
-    table.insert(lines, string.format("- %s (chat buffer %d)", display, item.bufnr))
-  end
-
-  return table.concat({
-    "The following chat(s) you sent a message to have finished responding:",
-    "",
-    table.concat(lines, "\n"),
-    "",
-    "Read each one with nvim_get_buffer({ rpc_port, file_path }) and decide what to do next.",
-    "",
-    '"Finished" only means no request is in flight. A chat may have failed, stopped to ask the',
-    "user something, or be waiting on a tool approval. Read the tail of the transcript before",
-    "treating its task as done.",
-    "",
-    "If other chats you dispatched are still running, do not start aggregating yet — say what",
-    "this one produced and end the turn. You will be woken again when the next one finishes.",
-  }, "\n")
-end
-
----積まれた通知のうち done_bufnr についてのものを落とす
----@param queue {bufnr: number, depth: number}[]
----@param done_bufnr number
-local function drop_queued(queue, done_bufnr)
-  for i = #queue, 1, -1 do
-    if queue[i].bufnr == done_bufnr then
-      table.remove(queue, i)
-    end
-  end
-end
-
----@param from_bufnr number
----@param done_bufnr number
----@param edge_depth number
-local function enqueue(from_bufnr, done_bufnr, edge_depth)
-  local queue = pending[from_bufnr] or {}
-  for _, item in ipairs(queue) do
-    if item.bufnr == done_bufnr then
-      return
-    end
-  end
-  table.insert(queue, { bufnr = done_bufnr, depth = edge_depth })
-  pending[from_bufnr] = queue
-end
-
----積まれた通知を1通にまとめて配達する
+---自分宛キューを流し、配達できた通知の深さぶんだけ hop カウンタを上げる
 ---
----相手が応答中なら**何もしない**。応答中のバッファに送ると `ChatBuffer:send_message()` が
----進行中のターンを kill する（buffer.lua の「前のリクエストが実行中ならキャンセル」）。
----A が B に投げたあと A 自身のターンが続くのは普通なので、短いタスクほどこの窓に入る。
----積んだままにしておけば、A 自身の VibingResponseDone でここが呼び直される。
----@param from_bufnr number
----@return boolean restarted 配達の結果 from_bufnr が新しいターンを走らせた
-local function flush(from_bufnr)
-  local queue = pending[from_bufnr]
-  if not queue or #queue == 0 then
-    return false
-  end
-
-  if not vim.api.nvim_buf_is_valid(from_bufnr) then
-    pending[from_bufnr] = nil
-    return false
-  end
-
-  local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(from_bufnr)
-  if not chat_buf then
-    pending[from_bufnr] = nil
-    return false
-  end
-
-  if chat_buf:is_responding() then
-    return false
-  end
-
-  -- ユーザーが書きかけの `## User` を残しているなら触らない。配達は新しいセクションを足すので、
-  -- 下書きは送られないまま宙に浮き、次の<CR>は空のヘッダを読んで「No message to send」になる。
-  -- auto_resume が未送信セクションを上書きしないのと同じ扱い。
-  -- ユーザーがその下書きを送れば、そのターンの完了でここが呼び直されるので取りこぼさない
-  if chat_buf.extract_user_message then
-    local draft = chat_buf:extract_user_message()
-    if draft and vim.trim(draft) ~= "" then
-      return false
-    end
-  end
-
-  local deepest = 0
-  for _, item in ipairs(queue) do
-    deepest = math.max(deepest, item.depth)
-  end
-
-  local ProgrammaticSender = require("vibing.presentation.chat.modules.programmatic_sender")
-  local ok, result = pcall(ProgrammaticSender.send, from_bufnr, build_message(queue))
-
-  -- 配達できて初めてキューを空ける。エッジは既に消費済みなので、先に捨てると失敗した通知は
-  -- 二度と再現しない。残しておけば次の完了イベントで作り直しなしに再試行できる
-  if ok and result and result.success then
-    pending[from_bufnr] = nil
+---「配達したら上げる」を関数にしてあるのは、`on_response_done` に呼び出し箇所が2つあるため。
+---どちらかで書き忘れると `max_hops` が黙って連鎖を止められなくなる
+---@param bufnr number
+---@return boolean restarted
+local function drain(bufnr)
+  local restarted, deepest = MessageQueue.flush(bufnr)
+  if deepest then
     -- 下げてはいけない。深く連鎖したチャットが、浅い時点で張られたエッジの配達を受けたときに
     -- カウンタが戻ると、max_hops が連鎖を止められなくなる
-    depth[from_bufnr] = math.max(depth[from_bufnr] or 0, deepest + 1)
-
-    -- 送信が受理されたことと、ターンが始まったことは別。`ChatBuffer:send_message()` が返すのは
-    -- 「リクエストとして扱ったか」で、リミット中の予約（`_try_schedule_instead_of_send`）でも、
-    -- `SendMessage.execute` がアダプタ未設定・セッション競合で降りた場合でも true になる。
-    -- 後者はストリームを張らないので `VibingResponseDone` が来ず、呼び出し元がこれを再稼働と
-    -- 読むとエッジが宙に浮く。始まっていないターンを購読者の待ち先にはできないので、
-    -- 送信結果ではなく相手の状態を返す
-    return chat_buf:is_responding()
+    depth[bufnr] = math.max(depth[bufnr] or 0, deepest + 1)
   end
-
-  notify.warn(
-    string.format("Could not notify chat %d: %s", from_bufnr, ok and "the chat refused the message" or tostring(result)),
-    "Chat Notifications"
-  )
-  return false
+  return restarted
 end
 
----bufnr が誰かの完了を待っているか
+---bufnr が「自分の完了を待っている相手」以外の誰かの完了を待っているか
 ---
 ---`edges[*][bufnr]` は「bufnr が送信した相手が、まだ完了を返していない」を意味する。
 ---残っているあいだ bufnr は待ち合わせ中で、そのターン終了は完了ではなく中間停止。
+---
+---**自分の購読者を除くのが要点。** `on_sent` は送信のたびに送信者を受信者の購読者にするので、
+---B が親 A に報告しただけでも `edges[a][b]` ができ、素直に数えると B は「A 待ち」になる。
+---A は B の完了を待っているのだから、そこで B の完了を保留すると互いに待ち合って永久に
+---止まる。機構は送信が報告か依頼かを区別できない（#651）が、「相手が自分の完了を待っている」
+---なら少なくとも自分の停止を伝えるべき相手ではある、という向きだけは分かる。
 ---
 ---逆引きの索引は持たずに走査する。エッジ数はチャット数と同じオーダーで、`forget()` も
 ---同じ走査をしている。二重管理を増やすほうが、ここでは高くつく
 ---@param bufnr number
 ---@return boolean
 local function is_waiting_on_others(bufnr)
-  for _, subscribers in pairs(edges) do
-    if subscribers[bufnr] ~= nil then
+  local my_subscribers = edges[bufnr] or {}
+  for to_bufnr, subscribers in pairs(edges) do
+    if subscribers[bufnr] ~= nil and my_subscribers[to_bufnr] == nil then
       return true
     end
   end
@@ -186,9 +86,8 @@ end
 ---読むのは `ChatBuffer:get_stop_reason()` そのもので、`chat_status` の語彙ではない。
 ---あちらは `responding` / `idle` を混ぜた MCP 向けの合成なので、経由すると「この2つには
 ---一致してはいけない」という知識をここに持つことになり、停止理由が増えたときに黙って
----「対応不要」に分類する。理由が非nilかどうかだけを見れば、増えた理由は自動的に発火側に入る
----@param bufnr number
----@return boolean
+---「対応不要」に分類する。理由が非nilかどうかだけを見れば、増えた理由は自動的に発火側に入る。
+---
 ---バッファが取れない場合は false（＝保留のまま）でよい。そこに至るのは既に消えたバッファで、
 ---`forget()` が `BufDelete` でエッジごと落としているので保留するものが残っていない
 ---@param bufnr number
@@ -248,31 +147,40 @@ function M.subscribe(from_bufnr, to_bufnr)
   return true
 end
 
----A が B にメッセージを送った。購読を張り、逆向きの watchdog エッジを消費する
+---`from_bufnr` が `to_bufnr` に送った（即配達でもキュー投入でも）ことを記録する
 ---
----1つの呼び出しにまとめてあるのは、「送信は購読であると同時に報告でもある」が1つの事実
----だから。2手に分けると呼び出し側が対で呼ぶ規約を負ううえ、引数の意味が2つの呼び出しで
----反転する（`subscribe` の第1引数は通知を受ける側、消費側の第1引数は監視される側）。
+---1つの出来事に対して2つの向きの後始末が要るので、呼び出し元に両方を覚えさせない。
 ---
----消費する理由: B が A に本文そのものを届けたのだから、そのうえ「B が止まった、読みに行け」
----を配ると同じ完了で A を二度起こす。これで watchdog（`on_response_done` の分岐3・例外）が
----届くのは「B が報告せずに止まった」場合だけになる。キューに積まれた未配達の watchdog も
----同じ理由で落とす。
+---- **購読**: 「to が止まったら from に知らせる」を張る（送ったこと自体が購読の登録）
+---- **watchdog の退役**: 「from が止まったら to に知らせる」を落とす。from 自身が口を開いた
+---  以上それは同じ用件の二度目で、残すと to は同じことで二度起こされる。`to → from` の送信が
+---  あればそこで張り直される
 ---
----作成時（`nvim_chat_create`）は `subscribe` だけを呼ぶ。まだ何も送っていないので、
----消費すべき報告が無い
----@param from_bufnr number 送信元（通知を受け取る側）
----@param to_bufnr number 送信先（完了を監視される側）
-function M.on_message_sent(from_bufnr, to_bufnr)
+---向きが逆なことに注意: 張るのは `edges[to][from]`、抑止するのは `edges[from][to]`
+---@param from_bufnr number
+---@param to_bufnr number
+function M.on_sent(from_bufnr, to_bufnr)
+  if type(from_bufnr) ~= "number" or type(to_bufnr) ~= "number" then
+    return
+  end
+
+  -- 抑止マークは `edges` のためだけにある。無効ならエッジは張られないので、溜めても無駄なうえ、
+  -- セッション中に有効化されたときに、無効だった間の送信が新しいエッジを誤って黙らせる
+  if not settings().enabled then
+    return
+  end
+
   M.subscribe(from_bufnr, to_bufnr)
 
-  local subscribers = edges[from_bufnr]
-  if subscribers then
-    subscribers[to_bufnr] = nil
-  end
-  if pending[to_bufnr] then
-    drop_queued(pending[to_bufnr], from_bufnr)
-  end
+  -- **エッジそのものは消さない。** 消すと、from が「作業中の途中経過」を送っただけの場合にも
+  -- 購読が永久に失われる。ツリー状のチャット網ではそれが常態で、中間ノードは子を待つ間に
+  -- 一度停止し、子の報告で再稼働してから本命の報告を書く（#638）。送信の時点では、その
+  -- メッセージが最終報告なのか途中経過なのかは機構には分からない。
+  -- 代わりに「次の停止1回ぶんだけ黙らせる」印を置き、再稼働したらその印を捨てる
+  reported[from_bufnr] = reported[from_bufnr] or {}
+  reported[from_bufnr][to_bufnr] = true
+
+  MessageQueue.drop_notification(to_bufnr, from_bufnr)
 end
 
 ---応答完了。自分宛キューの drain と、購読者への配達を行う
@@ -284,37 +192,52 @@ end
 ---2 の例外は `stopped_needing_attention`
 ---@param bufnr number
 function M.on_response_done(bufnr)
-  if not settings().enabled then
-    return
-  end
-
-  -- 自分宛キューの drain が先。配達できた = bufnr はこのターンでは終わっておらず、続きの
-  -- ターンが控えている（リミット中なら予約として）ということなので、この完了は購読者に見せない。
-  -- 順序を逆にしても防げない理由は architecture.md → Multi-Agent Orchestration（#638）
-  if flush(bufnr) then
-    -- edges[bufnr] は消費せずに残す。bufnr が本当に止まったときの完了で配達される
+  -- 自分宛キューの drain が先で、しかも設定に関わらず行う。`queue_if_busy` で積まれた本文は
+  -- watchdog 通知を切っている環境でも届かなければならない。
+  --
+  -- 配達できた = bufnr はこのターンでは終わっておらず、続きのターンが控えているということなので、
+  -- この完了は購読者に見せない。順序を逆にしても防げない理由と、この規則が拾えない側の順序は
+  -- architecture.md → Multi-Agent Orchestration（#638）
+  if drain(bufnr) then
+    -- edges[bufnr] は消費せずに残す。bufnr が本当に止まったときの完了で配達される。
+    -- 再稼働した以上、直前に送ったものは最終報告ではなかったので、抑止の印も捨てる
+    reported[bufnr] = nil
     return
   end
 
   -- 分岐2。エッジテーブルは親子を区別しないので、判定の意味は「誰かの返事を待っている」。
-  -- 親へ報告を送った直後もここに入るが、その報告が `on_message_sent` でエッジを
-  -- 消費済みなので、保留するものはもう残っていない
+  --
+  -- 抑止マーク（`reported`）はここでは**使い切らない**。マークが黙らせるのは停止そのものでは
+  -- なく watchdog の配達1回ぶんで、保留した停止は誰にも配達していない。ここで捨てると、
+  -- 本当に止まったときの配達で「もう自分から報告した相手」を二度起こすことになる
   if is_waiting_on_others(bufnr) and not stopped_needing_attention(bufnr) then
     return
   end
 
+  -- 抑止マークの消費は `enabled` の判定より**前**。マークは「次の停止1回ぶん」の一時状態なので、
+  -- 完了を見送るときも一緒に使い切らないと、無効化を挟んだ間のマークが残り、有効化後に張り直された
+  -- 正当なエッジを黙って落とす。`on_sent` が無効時にマークを立てないのと対になる配慮で、
+  -- `setup()` の「実行中に設定を変えた場合も追従する」はこの経路のこと
+  local suppressed = reported[bufnr] or {}
+  reported[bufnr] = nil
+
+  if not settings().enabled then
+    return
+  end
+
   local subscribers = edges[bufnr]
+
   if subscribers then
     -- 配達した時点で購読は消える（one-shot）。B が次に完了しても、A が改めて送っていなければ
-    -- 通知は飛ばない
+    -- 通知は飛ばない。自分から報告済みの相手も、購読は同じように使い切る — 用件は届いている
     edges[bufnr] = nil
     for from_bufnr, edge_depth in pairs(subscribers) do
-      if vim.api.nvim_buf_is_valid(from_bufnr) then
-        enqueue(from_bufnr, bufnr, edge_depth)
+      if not suppressed[from_bufnr] and vim.api.nvim_buf_is_valid(from_bufnr) then
+        MessageQueue.enqueue_notification(from_bufnr, bufnr, edge_depth)
       end
     end
     for from_bufnr in pairs(subscribers) do
-      flush(from_bufnr)
+      drain(from_bufnr)
     end
   end
 end
@@ -328,21 +251,24 @@ end
 ---バッファが消えたので関連する購読・キューを捨てる
 ---@param bufnr number
 function M.forget(bufnr)
+  MessageQueue.forget(bufnr)
+
   -- autocmdはパターン無しで登録しているので、エディタ内のどのバッファを閉じても走る。
-  -- 既定（無効）では状態が空のまま、全テーブルの走査だけが通常の編集操作ごとに起きる
-  if not (next(edges) or next(pending) or next(depth)) then
+  -- 既定（無効）では状態が空のまま、全テーブルの走査だけが通常の編集操作ごとに起きる。
+  -- キューは自分の空振りを自分で弾くので、ここで見るのは自分の状態だけ
+  if not (next(edges) or next(depth) or next(reported)) then
     return
   end
 
   edges[bufnr] = nil
-  pending[bufnr] = nil
   depth[bufnr] = nil
+  reported[bufnr] = nil
 
   for _, subscribers in pairs(edges) do
     subscribers[bufnr] = nil
   end
-  for _, queue in pairs(pending) do
-    drop_queued(queue, bufnr)
+  for _, targets in pairs(reported) do
+    targets[bufnr] = nil
   end
 end
 
