@@ -108,6 +108,50 @@ local function drain(bufnr)
   return restarted
 end
 
+---bufnr が「自分の完了を待っている相手」以外の誰かの完了を待っているか
+---
+---`edges[*][bufnr]` は「bufnr が送信した相手が、まだ完了を返していない」を意味する。
+---残っているあいだ bufnr は待ち合わせ中で、そのターン終了は完了ではなく中間停止。
+---
+---**自分の購読者を除くのが要点。** `on_sent` は送信のたびに送信者を受信者の購読者にするので、
+---B が親 A に報告しただけでも `edges[a][b]` ができ、素直に数えると B は「A 待ち」になる。
+---A は B の完了を待っているのだから、そこで B の完了を保留すると互いに待ち合って永久に
+---止まる。機構は送信が報告か依頼かを区別できない（#651）が、「相手が自分の完了を待っている」
+---なら少なくとも自分の停止を伝えるべき相手ではある、という向きだけは分かる。
+---
+---逆引きの索引は持たずに走査する。エッジ数はチャット数と同じオーダーで、`forget()` も
+---同じ走査をしている。二重管理を増やすほうが、ここでは高くつく
+---@param bufnr number
+---@return boolean
+local function is_waiting_on_others(bufnr)
+  local my_subscribers = edges[bufnr] or {}
+  for to_bufnr, subscribers in pairs(edges) do
+    if subscribers[bufnr] ~= nil and my_subscribers[to_bufnr] == nil then
+      return true
+    end
+  end
+  return false
+end
+
+---子待ちを押しのけて親に知らせるべき止まり方か
+---
+---ワーカーのバッファは誰も見ていないので、質問・承認待ち・エラーで止まったまま保留すると
+---誰も対応できない。
+---
+---読むのは `ChatBuffer:get_stop_reason()` そのもので、`chat_status` の語彙ではない。
+---あちらは `responding` / `idle` を混ぜた MCP 向けの合成なので、経由すると「この2つには
+---一致してはいけない」という知識をここに持つことになり、停止理由が増えたときに黙って
+---「対応不要」に分類する。理由が非nilかどうかだけを見れば、増えた理由は自動的に発火側に入る。
+---
+---バッファが取れない場合は false（＝保留のまま）でよい。そこに至るのは既に消えたバッファで、
+---`forget()` が `BufDelete` でエッジごと落としているので保留するものが残っていない
+---@param bufnr number
+---@return boolean
+local function stopped_needing_attention(bufnr)
+  local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(bufnr)
+  return chat_buf ~= nil and chat_buf:get_stop_reason() ~= nil
+end
+
 ---A が B に送ったことを購読として記録する
 ---@param from_bufnr number 送信元（通知を受け取る側）
 ---@param to_bufnr number 送信先（完了を監視される側）
@@ -219,6 +263,12 @@ function M.on_sent(from_bufnr, to_bufnr)
 end
 
 ---応答完了。自分宛キューの drain と、購読者への配達を行う
+---
+---発火判定は3分岐（#639 / #640）:
+---  1. 自分宛キューを流せた → この tick で自分が再稼働する → 配達もエッジ消費もしない
+---  2. 自分が張った未消費のエッジが残っている → 子待ちでの停止 → 親への配達を保留
+---  3. どちらでもない → 本当に止まった → watchdog として購読者へ配達
+---2 の例外は `stopped_needing_attention`
 ---@param bufnr number
 function M.on_response_done(bufnr)
   -- 自分宛キューの drain が先で、しかも設定に関わらず行う。`queue_if_busy` で積まれた本文は
@@ -231,6 +281,15 @@ function M.on_response_done(bufnr)
     -- edges[bufnr] は消費せずに残す。bufnr が本当に止まったときの完了で配達される。
     -- 再稼働した以上、直前に送ったものは最終報告ではなかったので、抑止の印も捨てる
     reported[bufnr] = nil
+    return
+  end
+
+  -- 分岐2。エッジテーブルは親子を区別しないので、判定の意味は「誰かの返事を待っている」。
+  --
+  -- 抑止マーク（`reported`）はここでは**使い切らない**。マークが黙らせるのは停止そのものでは
+  -- なく watchdog の配達1回ぶんで、保留した停止は誰にも配達していない。ここで捨てると、
+  -- 本当に止まったときの配達で「もう自分から報告した相手」を二度起こすことになる
+  if is_waiting_on_others(bufnr) and not stopped_needing_attention(bufnr) then
     return
   end
 

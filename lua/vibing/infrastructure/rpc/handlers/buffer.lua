@@ -11,8 +11,10 @@ local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 --   a chat buffer, which is not what reading a source file should do.
 -- @param params.include_chat_status? boolean Wrap the result and attach the buffer's chat status.
 -- @return string[]|table Bare line array by default; `{ lines, bufnr, chat_status }` when
---   `include_chat_status` is set (`chat_status` is "responding"/"idle", or absent for a buffer
---   that is not a vibing.nvim chat). The shape stays opt-in because the MCP server and this
+--   `include_chat_status` is set (`chat_status` is "responding"/"idle"/"waiting_approval"/
+--   "asked_question"/"error", or absent for a buffer that is not a vibing.nvim chat). An MCP
+--   server older than a value names it rather than dropping it, so a status added later reads as
+--   "go look" instead of as silence. The shape stays opt-in because the MCP server and this
 --   plugin are installed separately and can be at different versions: an older MCP server sends
 --   no flag and must keep receiving the array it calls `.join()` on.
 --

@@ -100,10 +100,18 @@ carries a chat-status line:
   report it as in progress and do not summarize its conclusion.
 - `status: idle` — nothing is in flight. The transcript is complete as far as that worker got, so
   read its last Assistant section for the outcome.
+- `status: asked_question` — the worker stopped to ask something and is waiting for an answer.
+  Read the question and reply with `nvim_chat_send_message` (passing `from_bufnr`), or put it to
+  the user if only they can decide. It will not move until someone answers.
+- `status: waiting_approval` — the worker stopped on a tool-approval prompt. Only the user can
+  clear that one; say which worker is blocked and on what.
+- `status: error` — the last turn ended with an error. Read the tail of the transcript for the
+  message and decide whether to re-brief the worker or report the failure.
 
-Note that `idle` means "not currently running", not "succeeded" — a worker that failed, that
-stopped to ask the user something, or that is waiting on a tool approval prompt is also idle. Read
-the tail of the transcript before calling a task done.
+Note that `idle` still means "not currently running", not "succeeded": a worker that did half its
+brief and stopped is `idle` too. Read the tail of the transcript before calling a task done. The
+three statuses above are the cases that used to hide inside `idle`; a status this server has no
+wording for is reported by name, and means the same thing — go read the transcript.
 
 **One notification is one turn, so three workers wake you three times.** If workers you dispatched
 are still running, do not start aggregating: say in one or two lines what this one produced, and
@@ -119,9 +127,12 @@ turn.
 
 ## 6. Aggregate and clean up
 
-When every worker is idle and finished, summarize the results together — what changed, what
-failed, what still needs the user. Point at each worker's `file_path` so the user can open the
-full transcript.
+When no worker is still running, summarize the results together — what changed, what failed, what
+still needs the user. Point at each worker's `file_path` so the user can open the full transcript.
+
+"Not running" includes the blocked statuses above: a worker sitting on `asked_question` or
+`waiting_approval` will never reach `idle` on its own, so waiting for it is waiting forever.
+Report it as blocked and say what it needs.
 
 If you used worktrees, offer the `vibing-worktree-finish` skill for each branch once its work has
 been merged or abandoned. Don't remove a worktree on your own initiative; unmerged work lives

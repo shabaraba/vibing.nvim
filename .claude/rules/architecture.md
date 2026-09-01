@@ -1063,9 +1063,11 @@ reference and `config.window` stays the same table.
 
 **Completion detection is a status field, not a text heuristic.** `nvim_get_buffer` passes
 `include_chat_status` to `buf_get_lines`, which attaches `presentation/chat/modules/chat_status`'s
-verdict: `"responding"` when `ChatBuffer:is_responding()`, `"idle"` otherwise, and nothing at all
-for a buffer that is not a chat. Reading the transcript's shape instead would call a turn that died
-on an error, or one part-way through silent tool calls, complete.
+verdict: `"responding"` when `ChatBuffer:is_responding()`, one of `"waiting_approval"` /
+`"asked_question"` / `"error"` when the last turn stopped for a reason worth naming, `"idle"`
+otherwise, and nothing at all for a buffer that is not a chat. Reading the transcript's shape
+instead would call a turn that died on an error, or one part-way through silent tool calls,
+complete.
 
 `is_responding()` needs two signals, and the second one is **not** `_current_handle_id`'s
 existence. `_is_sending` covers `<CR>` until the adapter spawns the CLI; after that the handle id
@@ -1088,9 +1090,43 @@ newer Neovim answering an older server would hand it an object where it calls `.
 directions of that skew are covered — the Lua side returns the bare array unless asked, and the
 Node side accepts either shape.
 
-`idle` means "no request in flight", not "succeeded": a worker that failed, that is waiting on a
-tool-approval prompt, or that asked a question is idle too. The skill says so, because the
-distinction is not something the status can carry.
+`idle` means "no request in flight", not "succeeded". The three named stops carve out the cases
+that used to hide inside it — a turn that ended on an error, one holding a tool-approval prompt,
+one that asked a question — but what is left is still only "nothing is running": a worker that
+finished half its brief and stopped is `idle` too. Whether the _task_ is done is something only the
+worker's own report can say, which is why the notification below never claims it.
+
+The reason lives on `ChatBuffer._stop_reason`, and **each of its three writers sets it at the moment
+the fact becomes true** rather than a single pass reconstructing it at the end:
+`insert_choices` writes `asked_question`, `insert_approval_request` writes `waiting_approval`, and
+`mark_turn_error` — a callback `_handle_response` fires on its two failure paths — writes `error`.
+Last write wins, which is right because each of those events is itself where the turn stops.
+
+Deriving it at the end instead is the version that looks tidier and is worse: `add_user_section()`
+clears `_pending_choices`, so the derivation would have to be ordered ahead of that call, and an
+ordering rule that only a comment enforces is one a later edit silently breaks. `send_message()`
+clears the field, which is the one piece of bookkeeping left: a turn that dies before its next send
+must not leave its reason describing the following turn.
+
+`mark_turn_error` skips two kinds of turn, and both exclusions are load-bearing rather than tidy:
+what `chat_status` calls `error` is what branch 2's exception wakes the parent for, so anything
+that is really still _waiting_ must stay out of it.
+
+- **`_cancelled`** — a question and an approval prompt both stop the turn _by cancelling it_, and
+  the reason was already written by `insert_choices` / `insert_approval_request`.
+- **`_rate_limit_info`** — the limit branch above has already parked the turn as a scheduled send
+  or an auto-resume, so it will restart on its own. `response.error` still holds the limit text
+  (`RateLimit.merge` reads it as one of its inputs and does not clear it), so without this guard
+  _every_ parked turn reports `error` and an orchestrator reads a healthy worker as failed.
+
+A parked turn is therefore `idle`, which is the pre-#640 behaviour: distinguishing "waiting on a
+reset" would be a fourth stop reason, and that was deliberately left out of this change.
+
+A status the MCP server has no wording for is **named rather than dropped**. `CHAT_STATUS_TEXT` is
+a lookup table, and rendering nothing for `error` or `waiting_approval` would read as a healthy
+chat — the same silent-ignore failure `plugin_dirs`' manifest check exists to prevent — so a miss
+falls back to a line carrying the raw status. That matters because the server is versioned
+separately from the Lua side and can be handed a value added after it shipped.
 
 **The relationship is recorded in frontmatter, not in the transcript.** `orchestrated` on the
 orchestrator, `orchestrated_by` on the worker, both git-root-relative path lists written by
@@ -1251,15 +1287,44 @@ sometimes: "B's queue is non-empty" _means_ "B is about to restart" (#638).
 A drain the recipient **refuses** — it is responding, or the user has a draft in it — restarts
 nothing, so subscribers are notified exactly as before.
 
-Three limits are worth writing down, because the rule reads more general than it is.
+**The mirror ordering is covered by a second branch, which is #640.** When the leaf finishes
+_after_ the middle chat's dispatch turn rather than before — the commoner case, since dispatching
+takes seconds and the leaf takes minutes — that turn's queue is empty, so the drain above catches
+nothing. The signal that does catch it was already in the table: `edges[c][b]` exists from B's send
+until C completes and means "B is waiting on a chat that has not finished". So `on_response_done`
+now reads as three branches, tried in order:
 
-- **The mirror ordering is untouched.** When the leaf finishes _after_ the middle chat's dispatch
-  turn rather than before — the commoner case, since dispatching takes seconds and the leaf takes
-  minutes — that turn's queue is empty, so A is woken and the edge consumed exactly as before, and
-  B's later report has nothing left to notify through. The signal that would catch it is already
-  live: `edges[c][b]` exists from B's send until C completes and means "B is waiting on a chat that
-  has not finished". Acting on it would also stop A hearing anything at all mid-chain, which is a
-  behaviour change rather than a fix, so it is left open.
+1. **The queue drained** — B restarts in this tick, so nothing is delivered and `edges[b]` is kept.
+2. **B is waiting on chats it messaged** — the turn that just ended was B parking on a barrier, so
+   the parent's notification is held and `edges[b]` is kept.
+3. **Neither** — B has really stopped, so subscribers are notified and the edges consumed. This is
+   the watchdog.
+
+Branch 2 has one exception, and it is what stops the barrier becoming a trap: a chat that stopped
+to **ask a question, wait on a tool approval, or fail** fires to its parent anyway. Nobody is
+looking at a worker's buffer, so holding those would leave the whole tree waiting on an answer no
+one can give.
+
+The predicate reads `ChatBuffer:get_stop_reason()` directly and asks only whether it is non-nil —
+**not** `chat_status`. Going through that vocabulary would mean encoding "must not match
+`responding` or `idle`" here, so a stop reason added later would be classified as "needs no
+attention" by omission, in silence. Testing the primitive puts a new reason on the firing side by
+default, which is the safe direction. `chat_status` stays what it is: the presentation join of
+`is_responding()` and the reason, for the MCP field.
+
+**Branch 2 excludes edges pointing back at its own subscribers, and that exclusion is what keeps
+it from deadlocking.** `on_sent` makes every send a subscription in both senses — B reporting to A
+subscribes B to A's completion — so counting edges naively, a worker that reports to its
+orchestrator is "waiting on" that orchestrator. Holding B's completion for A while A waits for B's
+completion is a standoff neither side leaves. Nothing in the table says which send was a report
+and which was a request, but the direction that _is_ readable is "this chat is waiting on my
+completion", and someone waiting on you is not someone to hold your stop from.
+
+What remains, after that exclusion, is the shape branch 2 is actually for: B is waiting on a chat
+that is not waiting on B — a leaf it dispatched to.
+
+Two limits are worth writing down, because the rules read more general than they are.
+
 - **The hold is gated on a turn actually starting, not on the send being accepted.**
   `send_message()` returns "treated as a request", which is also true for a message _parked_ behind
   a usage limit (`_try_schedule_instead_of_send`) and for one `SendMessage.execute` drops at its
@@ -1267,12 +1332,24 @@ Three limits are worth writing down, because the rule reads more general than it
   `VibingResponseDone` is ever coming. `flush` therefore reports the recipient's `is_responding()`
   rather than the send's own result: a turn that never began cannot be the one a subscriber waits
   for, and notifying now is exactly what the old order did.
-- **A held edge still has no exit but `BufDelete`.** Every edge used to be consumed on the
-  subscribed chat's next completion; one that waits on a follow-up turn is stranded silently if
-  that turn dies before reaching the `add_user_section` wrapper. The gate above removes the routes
-  that never started a turn at all, but not a turn that starts and then vanishes. This is the one
-  case where the new behaviour is worse than the old, and it is accepted for the same reason the
-  module holds no timers.
+- **A held edge still has no exit but `BufDelete`, and branch 2 widens the window.** Every edge
+  used to be consumed on the subscribed chat's next completion; one that waits on a follow-up turn
+  is stranded silently if that turn dies before reaching the `add_user_section` wrapper. Branch 2
+  extends that from "until B's next turn" to "until every chat B messaged has completed", so a
+  leaf whose Neovim-side turn vanishes without firing `VibingResponseDone` leaves its parent
+  waiting for good. A leaf that merely _fails_ is fine — the failure path still reaches the
+  wrapper, which is exactly what the `error` exception is there to convert into a notification.
+  What is left uncovered is the process dying under it, and the recovery for that is the same one
+  #639 names for a Neovim restart: a human sends a message in the stalled chat, which re-creates
+  the edges. Accepted for the reason the module holds no timers.
+- **A chat created and never briefed is an edge that never resolves.** `nvim_chat_create`
+  subscribes at creation rather than at the first send, deliberately — so a forgotten `from_bufnr`
+  on the brief cannot silently cost the notification. Branch 2 now reads that same edge as "the
+  creator is waiting on this chat", and a worker that is created and then never messaged runs no
+  turn, so nothing ever consumes it. Its creator holds its own parent's notification indefinitely.
+  Harmless at the top of a tree (the user is the parent), and the normal flow — create, brief,
+  worker completes — clears it. Narrow enough to accept rather than key the barrier off a second
+  "has been messaged" table.
 
 None of that promises B's next turn is a report for A rather than a reply to the leaf either. Under
 a one-shot edge, "when B next stops" is simply the best moment available.

@@ -24,6 +24,7 @@ local Fs = require("vibing.core.utils.fs")
 ---@field _current_handle_id string? 実行中のリクエストのハンドルID
 ---@field _current_adapter table? per-chatアダプター（フロントマターagent指定時）
 ---@field _is_sending boolean 送信処理中かどうか（Enter連打による重複送信防止）
+---@field _stop_reason "waiting_approval"|"asked_question"|"error"|nil 直前のターンが止まった理由
 ---@field _session_allow table セッションレベルの許可リスト
 ---@field _session_deny table セッションレベルの拒否リスト
 ---@field _once_tools table? 一時許可/拒否ツールのトラッキング（次のメッセージでクリア）
@@ -47,6 +48,7 @@ function ChatBuffer:new(config)
   instance._current_handle_id = nil
   instance._current_adapter = nil
   instance._is_sending = false
+  instance._stop_reason = nil
   instance._session_allow = {}
   instance._session_deny = {}
   instance._once_tools = nil
@@ -161,6 +163,27 @@ function ChatBuffer:is_responding()
     return false
   end
   return ActiveStreamRegistry.get(self._current_handle_id) ~= nil
+end
+
+---このターンがエラーで終わったことを記録する
+---
+---`send_message.lua` の `_handle_response` から呼ばれる。ターンが終わったこと自体は
+---`add_user_section` ラッパーで分かるが、**なぜ**止まったかはそこからは見えない
+function ChatBuffer:mark_turn_error()
+  self._stop_reason = "error"
+end
+
+---直前のターンが止まった理由。実行中かどうかは含まない（`chat_status` が先に
+---`is_responding()` を見る）
+---
+---3つの書き込み口（ここに挙げた `mark_turn_error` と、`insert_choices` /
+---`insert_approval_request`）はいずれも**その事実が起きた時点で**書く。ターン終了時に
+---まとめて判定する形にすると、`add_user_section()` が `_pending_choices` を消すより先に
+---走らせるという順序の制約を、呼び出し側に守らせることになる。
+---後勝ちで問題ないのは、質問も承認要求もそこでターンが止まるから
+---@return "waiting_approval"|"asked_question"|"error"|nil
+function ChatBuffer:get_stop_reason()
+  return self._stop_reason
 end
 
 ---バッファを作成
@@ -620,6 +643,9 @@ function ChatBuffer:send_message()
     clear_sending = function()
       self._is_sending = false
     end,
+    mark_turn_error = function()
+      self:mark_turn_error()
+    end,
     get_cwd = function()
       return self:get_cwd()
     end,
@@ -627,6 +653,12 @@ function ChatBuffer:send_message()
       self:update_frontmatter("forked_from", nil)
     end,
   }
+
+  -- 停止理由は「直前のターンがなぜ止まったか」なので、次のターンが実際に走り出すここで捨てる。
+  -- `send_message()` の先頭ではない: 本文が空、スラッシュコマンド、承認応答のパース失敗などで
+  -- 途中 return する経路がいくつもあり、そこで消すと「まだ承認を待っている」チャットの理由が
+  -- 消えて idle に化ける
+  self._stop_reason = nil
 
   -- リクエストを送信（handle_idはコールバックで設定される）
   SendMessage.execute(adapter, callbacks, message, config)
@@ -704,6 +736,7 @@ end
 ---@param questions table CLIから受け取った質問構造
 function ChatBuffer:insert_choices(questions)
   self._pending_choices = questions
+  self._stop_reason = "asked_question"
 end
 
 ---次のユーザーセクションに差し込む本文を保存
@@ -749,6 +782,7 @@ function ChatBuffer:insert_approval_request(tool, input, options, hook_request_i
     options = options,
     hook_request_id = hook_request_id,
   }
+  self._stop_reason = "waiting_approval"
 end
 
 ---リストに値をユニークに追加

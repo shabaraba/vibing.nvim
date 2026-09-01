@@ -12,6 +12,7 @@ describe("CompletionNotifier", function()
   local buffers = {}
   local responding = {}
   local drafts = {}
+  local stop_reasons = {}
   local sends = {}
   local warnings = {}
   local send_result = { success = true }
@@ -46,6 +47,7 @@ describe("CompletionNotifier", function()
     originals.warn = notify.warn
 
     buffers, responding, drafts, sends, warnings = {}, {}, {}, {}, {}
+    stop_reasons = {}
     send_result = { success = true }
 
     view.get_chat_buffer = function(bufnr)
@@ -58,6 +60,12 @@ describe("CompletionNotifier", function()
         end,
         extract_user_message = function()
           return drafts[bufnr]
+        end,
+        -- 分岐2の例外（質問・承認待ち・エラー）は、`chat_status` の語彙を経由せず
+        -- これを直接読む（`stopped_needing_attention`）。停止理由が増えたときに
+        -- 分類漏れで黙って「対応不要」になるのを避けるため
+        get_stop_reason = function()
+          return stop_reasons[bufnr]
         end,
       }
     end
@@ -467,6 +475,71 @@ describe("CompletionNotifier", function()
 
     assert.equals(1, #sends)
     assert.equals(a, sends[1].bufnr)
+  end)
+
+  describe("holding the edge while a chat waits on the chats it messaged", function()
+    it("holds the parent's notification for the whole dispatch-and-wait window", function()
+      -- #638 が拾えなかった側の順序。末端 C が中間 B のディスパッチターンより**後**に
+      -- 終わるのが通常（ディスパッチは数秒、末端の作業は数分）で、そのとき B のキューは
+      -- 空なので分岐1では止まらない。分岐2 が見るのは `edges[c][b]` の存在そのもの
+      local a, b, c = make_chat(), make_chat(), make_chat()
+
+      Notifier.subscribe(a, b)
+      Notifier.subscribe(b, c)
+
+      Notifier.on_response_done(b) -- B のディスパッチターンが終わる。C はまだ走っている
+      assert.equals(0, #sends, "A is not woken mid-chain")
+
+      Notifier.on_response_done(c) -- C 完了 → B へ配達、B 再稼働
+      assert.equals(1, #sends)
+      assert.equals(b, sends[1].bufnr)
+
+      responding[b] = false
+      Notifier.on_response_done(b) -- B が本当に止まる
+      assert.equals(2, #sends)
+      assert.equals(a, sends[2].bufnr, "the edge survived to B's real completion")
+    end)
+
+    -- ワーカーのバッファは誰も見ていないので、保留したままだと誰も対応できない。
+    -- 判定は「停止理由が非nilか」なので、理由が増えれば自動的にこちら側に入る
+    for _, reason in ipairs({ "asked_question", "waiting_approval", "error" }) do
+      it("fires anyway when the waiting chat stopped on " .. reason, function()
+        local a, b, c = make_chat(), make_chat(), make_chat()
+
+        Notifier.subscribe(a, b)
+        Notifier.subscribe(b, c)
+        stop_reasons[b] = reason
+
+        Notifier.on_response_done(b)
+
+        assert.equals(1, #sends)
+        assert.equals(a, sends[1].bufnr)
+      end)
+    end
+
+    it("keeps the report suppression mark across a held completion", function()
+      -- 抑止マークが黙らせるのは watchdog の配達1回ぶんで、停止1回ぶんではない。保留は
+      -- 誰にも配達していないので、ここで使い切ると B が本当に止まったときに、既に自分から
+      -- 報告済みの A を二度起こす
+      local a, b, c = make_chat(), make_chat(), make_chat()
+
+      Notifier.subscribe(a, b) -- A→B のブリーフ
+      Notifier.subscribe(b, c) -- B→C のディスパッチ。B は C 待ちになる
+      Notifier.on_sent(b, a) -- B が A に自分から報告した
+
+      Notifier.on_response_done(b) -- 分岐2で保留。マークは温存される
+      assert.equals(0, #sends)
+
+      Notifier.on_response_done(c) -- C 完了で B の待ち合わせが解ける
+      responding[b] = false
+      sends = {}
+
+      Notifier.on_response_done(b) -- B が本当に止まる
+
+      for _, sent in ipairs(sends) do
+        assert.not_equals(a, sent.bufnr, "A already had B's own report")
+      end
+    end)
   end)
 
   it("drops a deleted buffer's pair counters", function()

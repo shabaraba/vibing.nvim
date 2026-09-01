@@ -12,6 +12,15 @@ const CHAT_STATUS_TEXT: Record<string, string> = {
     'right now, so what you just read is incomplete. Read it again later to see the finished ' +
     'response.',
   idle: 'vibing.nvim chat buffer status: idle. No request is in flight for this buffer, so what you just read is the complete transcript so far.',
+  waiting_approval:
+    'vibing.nvim chat buffer status: waiting_approval. The chat stopped on a tool-approval ' +
+    'prompt and will not continue until someone answers it. Its task is not done.',
+  asked_question:
+    'vibing.nvim chat buffer status: asked_question. The chat stopped to ask a question and ' +
+    'is waiting for an answer. Its task is not done.',
+  error:
+    'vibing.nvim chat buffer status: error. The last turn ended with an error. Read the tail ' +
+    'of the transcript for the message before treating its task as done.',
 };
 
 /**
@@ -68,8 +77,17 @@ export async function handleGetBuffer(args: any) {
   }
 
   const content = [{ type: 'text', text: lines.join('\n') }];
-  if (state && CHAT_STATUS_TEXT[state]) {
-    content.push({ type: 'text', text: CHAT_STATUS_TEXT[state] });
+  if (state) {
+    // A status this server has no wording for still gets a line. Rendering nothing is the worst
+    // available answer for `error` or `waiting_approval` — silence reads as a healthy chat, which
+    // is the same silent-ignore failure the plugin-manifest check exists to prevent.
+    content.push({
+      type: 'text',
+      text:
+        CHAT_STATUS_TEXT[state] ??
+        `vibing.nvim chat buffer status: ${state}. This server has no description for that ` +
+          `status; read the tail of the transcript before treating the chat's task as done.`,
+    });
   }
   return { content };
 }
