@@ -51,7 +51,8 @@ prompt it hands a subagent.
 
 Prefix with `mcp__vibing-nvim__`:
 
-- **Buffer**: `nvim_get_buffer`, `nvim_set_buffer`, `nvim_list_buffers`, `nvim_get_info`,
+- **Buffer**: `nvim_get_buffer` (a chat can be named by `file_path` instead of `bufnr` — see
+  "Orchestration" below), `nvim_set_buffer`, `nvim_list_buffers`, `nvim_get_info`,
   `nvim_load_buffer`
 - **Cursor/Selection**: `nvim_get_cursor`, `nvim_set_cursor`, `nvim_get_visual_selection`
 - **Window/Pane**: `nvim_list_windows`, `nvim_get_window_info`, `nvim_get_window_view`,
@@ -110,6 +111,12 @@ relationship in both chat files' frontmatter (`orchestrated` / `orchestrated_by`
 leaving it in prose that a rename or a restart invalidates. Why it stays optional, why the write
 happens before the send, and why the list field needs its own scanner: `architecture.md` →
 "Multi-Agent Orchestration".
+
+**The target chat is named by `file_path` or `bufnr`, and the path is the primary form.**
+`nvim_chat_send_message` and `nvim_get_buffer` both accept either, open a chat that is closed, and
+refuse a call that passes the pair rather than preferring one of them. Why the path rather than
+the number, why it opens chat files and refuses everything else, and why `from_bufnr` stays a
+bufnr while these do not: `architecture.md` → "Multi-Agent Orchestration" → "Addressing a chat".
 
 The workflow is the bundled `vibing-orchestrate` skill. Why `position` defaults to `back`, why the
 chat file is written at creation, why the status is a field rather than a text heuristic, and what

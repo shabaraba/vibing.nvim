@@ -1,6 +1,7 @@
 import { callNeovim } from '../rpc.js';
 import { z } from 'zod';
 import { CHAT_POSITIONS } from '../tools/chat.js';
+import { validateChatTarget } from '../validation/schema.js';
 
 const chatCreateArgsSchema = z.object({
   position: z.enum(CHAT_POSITIONS).optional(),
@@ -37,8 +38,13 @@ export async function handleChatCreate(args: any): Promise<any> {
 }
 
 // Zod schemas for validation
+//
+// `nullish` rather than `optional` on the two target arguments: a model that spells the one it is
+// not using as an explicit `null` should get the ordinary "name it once" handling from
+// validateChatTarget, not a type error naming a field it deliberately left empty.
 const chatSendMessageArgsSchema = z.object({
-  bufnr: z.number(),
+  bufnr: z.number().nullish(),
+  file_path: z.string().nullish(),
   message: z.string(),
   sender: z.string().optional(),
   from_bufnr: z.number().optional(),
@@ -49,6 +55,12 @@ const chatSendMessageArgsSchema = z.object({
  * Handler for nvim_chat_send_message
  * Programmatically sends a message to a chat buffer and triggers AI request
  *
+ * The target is named by `file_path` or `bufnr`. `file_path` is the one that survives a Neovim
+ * restart — a bufnr from a previous session points at some unrelated buffer, while the path is
+ * what the chats record in their own frontmatter — and the Lua side opens the chat if it is
+ * closed (see `application/chat/chat_locator.lua`). `bufnr` stays accepted: it is what an
+ * orchestrator already has in hand for a worker it created this session.
+ *
  * `from_bufnr` names the calling chat and records the orchestration relationship in both chat
  * files' frontmatter, so it outlives the buffer numbers and the file names it was built from.
  * It is optional for compatibility in both directions of Lua/Node version skew: an older Neovim
@@ -56,13 +68,27 @@ const chatSendMessageArgsSchema = z.object({
  */
 export async function handleChatSendMessage(args: any): Promise<any> {
   // Zod schema already validates required fields and types
-  const { bufnr, message, sender, from_bufnr, rpc_port } = chatSendMessageArgsSchema.parse(args);
+  const parsed = chatSendMessageArgsSchema.parse(args);
+  const { message, sender, from_bufnr, rpc_port } = parsed;
+  // Collapse an explicit null to "not given" once, here, so nothing downstream has to know the
+  // difference — including the Lua side, where a JSON null decodes to the truthy vim.NIL.
+  const bufnr = parsed.bufnr ?? undefined;
+  const file_path = parsed.file_path ?? undefined;
 
-  await callNeovim('send_message', { bufnr, message, sender, from_bufnr }, rpc_port);
+  // Sending starts a turn in someone else's chat, so unlike a read it has nothing to fall back to.
+  validateChatTarget({ bufnr, file_path }, { required: true });
+
+  const result = await callNeovim(
+    'send_message',
+    { bufnr, file_path, message, sender, from_bufnr },
+    rpc_port
+  );
 
   return {
     content: [{ type: 'text', text: 'Message sent and AI request initiated in chat buffer' }],
-    _meta: { bufnr, sender: sender || 'User' },
+    // The Lua side resolved file_path to a buffer, so report what it actually reached rather than
+    // echoing an argument that may have been a path.
+    _meta: { bufnr: result?.bufnr ?? bufnr, sender: sender || 'User' },
   };
 }
 

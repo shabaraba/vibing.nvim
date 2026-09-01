@@ -133,6 +133,9 @@ The MCP server exposes the following tools to Claude:
 
 - **nvim_get_buffer** - Get current buffer content
   - `bufnr` (optional): Buffer number (0 for current)
+  - `file_path` (optional): A vibing.nvim chat file to read instead, opened in the background if
+    it is not already open. Mutually exclusive with `bufnr`; chat files only (use
+    **nvim_load_buffer** for an ordinary file)
 
 - **nvim_set_buffer** - Replace buffer content
   - `lines` (required): New content (newline-separated string)
@@ -225,7 +228,10 @@ The MCP server exposes the following tools to Claude:
     orchestrator in both files' frontmatter
 
 - **nvim_chat_send_message** - Send a message to a chat buffer and start an AI request
-  - `bufnr` (required): Chat buffer number
+  - `file_path` / `bufnr` (exactly one): The target chat. `file_path` is the form that survives a
+    Neovim restart — a buffer number only means anything in the session that issued it, while the
+    path is what the chats record in their own frontmatter — and a chat that is not open is
+    opened in the background. Passing both is an error rather than a silent preference
   - `message` (required): Message text
   - `sender` (optional): Sender label, defaults to "User"
   - `from_bufnr` (optional): The calling chat's buffer number. Records the orchestration

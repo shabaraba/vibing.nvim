@@ -41,17 +41,23 @@ nvim_chat_create({
 - **Always pass `from_bufnr`**: the exact "Current vibing.nvim chat buffer number" from your
   system prompt. It records the relationship in both chat files' frontmatter (`orchestrated` here,
   `orchestrated_by` on the worker), which is what makes it survive a rename or a restart.
-- Keep the returned `bufnr` **and** `file_path` for every worker, and write them into your reply
+- Keep the returned `file_path` **and** `bufnr` for every worker, and write them into your reply
   in this chat. `from_bufnr` records the relationship, but not which worker owns which task — that
   mapping only exists in what you write here, and the transcript is where you read it back from if
   the conversation is resumed later.
+- **Address a worker by `file_path`, not `bufnr`.** Both `nvim_chat_send_message` and
+  `nvim_get_buffer` take either, but a buffer number only means something in the Neovim session
+  that issued it — after a restart the same number points at some unrelated buffer, so a
+  conversation resumed the next morning would drive the wrong buffer. The path keeps working, and
+  a worker chat that is no longer open is opened for you. Pass one or the other; passing both is
+  an error.
 
 ## 3. Send each worker a self-contained brief
 
 ```text
 nvim_chat_send_message({
   rpc_port,
-  bufnr: <worker bufnr>,
+  file_path: "<worker file_path>",
   from_bufnr: <this chat's bufnr>,
   message: "<the whole task>",
 })
@@ -77,7 +83,8 @@ tokens, blocks this chat, and will hit the turn limit long before a real task co
 
 Once every brief is sent, end the turn with the worker list:
 
-> 3件のワーカーチャットにタスクを配りました（bufnr 12 / 14 / 16）。終わり次第ここに戻ります。
+> 3件のワーカーチャットにタスクを配りました（`.vibing/chat/a.md` / `b.md` / `c.md`）。
+> 終わり次第ここに戻ります。
 
 If completion notifications are enabled (`agent.chat_notifications.enabled`), each worker you
 messaged wakes this chat with a new turn when it stops, naming the buffer to read. If they are
@@ -85,8 +92,8 @@ not, nothing wakes you — say "進捗は?と聞いてください" instead and 
 
 ## 5. Read the chat the notification named
 
-A notification tells you which buffer(s) stopped. Read those with
-`nvim_get_buffer({ rpc_port, bufnr })` — not every worker. Alongside the transcript the result
+A notification tells you which chat(s) stopped, by path. Read those with
+`nvim_get_buffer({ rpc_port, file_path })` — not every worker. Alongside the transcript the result
 carries a chat-status line:
 
 - `status: responding` — a reply is still being streamed in. Whatever you just read is partial;

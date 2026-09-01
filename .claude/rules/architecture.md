@@ -1298,20 +1298,81 @@ there would zero the counter on every hop and disable the limit entirely.
 
 **The notification says "stopped", never "succeeded".** `idle` is also what a failed turn, a
 pending tool approval, and an `nvim_ask_user_question` look like, so judging outcomes from the
-event would repeat `chat_status`'s mistake. The message carries the bufnr and an instruction to
-read the transcript's tail — not the worker's text, which would pull B's context into A for no
-reason.
+event would repeat `chat_status`'s mistake. The message names each finished chat by path (with its
+current bufnr in parentheses) and instructs A to read the transcript's tail — not the worker's
+text, which would pull B's context into A for no reason.
 
-A worker learns its orchestrator's bufnr from a system-prompt line built by resolving its
-`orchestrated_by` frontmatter to live buffers. Only that direction is exposed: a worker's list is
-written once at creation and stays byte-stable across turns (#469), while an orchestrator's
-`orchestrated` grows with each dispatch and would move the cached prefix mid-conversation.
+A worker learns its orchestrator from a system-prompt line built out of its `orchestrated_by`
+frontmatter. Only that direction is exposed: a worker's list is written once at creation and stays
+byte-stable across turns (#469), while an orchestrator's `orchestrated` grows with each dispatch
+and would move the cached prefix mid-conversation.
 
 **Out of scope, deliberately:** the orchestrator still does not poll inside its own turn, and
 nothing is persisted — the subscription table and the delivery queue are in memory only, since
 Neovim dying takes the worker chats with it. Backends other than claude can be _notified_ (the
 event is backend-agnostic) but cannot _subscribe_: `nvim_chat_send_message` is an MCP tool, and
 codex/grok reach no MCP server, the same constraint `features.md` records for AskUserQuestion.
+
+### Addressing a chat
+
+**The chat file path is the identifier; the bufnr is a per-session resolution of it** (#641).
+`nvim_chat_send_message` and `nvim_get_buffer` both take `file_path` or `bufnr`, and the system
+prompt's orchestrator line leads with the path — `.vibing/chat/x.md (currently buffer 12)`.
+
+The problem it fixes is that the durable layer was already right and only the volatile one was
+being spoken. `orchestrated` / `orchestrated_by` hold paths, `OrchestrationChatScanner` keeps them
+correct across renames, and none of that reached the model: a bufnr means nothing in a Neovim other
+than the one that issued it, so a chat network resumed the next morning pointed every edge at some
+unrelated buffer. Recovery is by design "a human kicks a node" (see #639), and a kicked node can
+only re-attach if what its frontmatter records is also what it can address.
+
+Five details are load-bearing:
+
+- **A path that names no open chat is opened, not refused.** `application/chat/chat_locator.lua`
+  does `bufadd` + `bufload` + `view.attach_to_buffer` — the same three steps `auto_resume` already
+  used for exactly this case — and sets `buflisted`, matching what a `back` chat gets. Refusing
+  instead would leave the restart case unreachable, which is the whole point.
+- **It opens chat files and nothing else.** The check runs on the file's own content _before_ a
+  buffer is created, so a rejected call leaves nothing behind. This is not fussiness about scope:
+  a `file_path` that reaches `send_message` gets a `## User` section written into it, so accepting
+  an ordinary source file would make sending a destructive edit of the user's work.
+  `nvim_load_buffer` remains the way to read anything else.
+- **Passing both `bufnr` and `file_path` is an error, on both sides of the wire.** Two names for
+  one target is a sign the caller is confused about which chat it means, and quietly preferring
+  one delivers into a chat nobody intended with nothing saying so. The advertised JSON Schema
+  requires neither, since a `required` list naming two mutually exclusive keys reads as "pass
+  both". `handlers/bufnr.lua`'s `resolve_chat_target` enforces it on the Lua side and
+  `validation/schema.ts`'s `validateChatTarget` on the Node side — one function per side rather
+  than one per tool, since the two tools disagree only about whether _neither_ is allowed
+  (`nvim_get_buffer` falls back to the current buffer; a send has nothing to fall back to).
+- **`from_bufnr` stays a bufnr**, and the asymmetry is deliberate: it names the _calling_ chat,
+  whose number the system prompt restates every turn, so it is never stale.
+- **The bufnr half of the prompt line is the cache-unstable half.** Closing or reopening the
+  orchestrator changes it; so does `:VibingSetFileTitle`, which moves the path too. Each costs one
+  #469 cache miss, accepted for a line that now survives a restart at all.
+
+`ChatLocator.resolve_all` keeps an entry for a path it could not resolve, with no `bufnr`. Its
+predecessor (`orchestration_link.resolve_bufnrs`) dropped those, which meant a worker whose
+orchestrator was merely closed lost the prompt line entirely — the one case the path form exists
+to serve.
+
+**`bufnr` is a `0` that stays `0` on the send path.** `handlers/bufnr.lua` has two resolvers and
+they differ in exactly this: `resolve` maps `0` to the current buffer, which is what the
+annotation and highlight tools want, while `resolve_chat_target` hands it through. A send appends
+a `## User` and starts a turn, so reading `0` as "whichever chat the user is sitting in" is the
+same misdelivery the both-arguments refusal exists to prevent — and `nvim_get_buffer` advertises
+`0` as the current buffer, so a model will try it here too. Passed through, `nvim_buf_get_lines`
+still reads it as the current buffer while `view.get_chat_buffer(0)` refuses the send. Both
+resolvers also treat an explicit JSON `null` as absent: `vim.json.decode` turns it into the truthy
+`vim.NIL`, so a model spelling the unused argument as `null` would otherwise be told it named the
+target twice.
+
+**Under Lua/Node skew the read path now fails loudly**, which is the one place this differs from
+`include_chat_status`. A Neovim too old to know `file_path` ignores it and answers for `bufnr or
+0` — the current buffer — and that reads as a perfectly healthy transcript of the chat that was
+asked for, reported `idle`. So `buf_get_lines` reports the buffer it actually read, and the MCP
+handler refuses an answer that omits it whenever a `file_path` was passed. The send path needs no
+equivalent: it errors outright when it can find no target.
 
 ## Key Patterns
 
