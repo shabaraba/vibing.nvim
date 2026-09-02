@@ -19,6 +19,8 @@ local M = {}
 local TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 -- タイムスタンプパターン（正規表現）
 local TIMESTAMP_PATTERN = "%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d"
+-- ヘッダーのコメント内を丸ごと照合する形。パース1回ごとに連結し直さないよう先に組んでおく
+local TIMESTAMP_ANCHORED = "^" .. TIMESTAMP_PATTERN .. "$"
 -- レガシーヘッダーパターン（タイムスタンプなし）
 local LEGACY_HEADER_PATTERN = "^## (%w+)"
 
@@ -69,7 +71,7 @@ function M.parse_header(line)
     return {
       kind = kind,
       unsent = unsent,
-      timestamp = (not unsent and stamp:match("^" .. TIMESTAMP_PATTERN .. "$")) and stamp or nil,
+      timestamp = (not unsent and stamp:match(TIMESTAMP_ANCHORED)) and stamp or nil,
       from = from,
     }
   end
@@ -101,34 +103,19 @@ function M.is_header(line)
   return M.parse_header(line) ~= nil
 end
 
----未送信ユーザーヘッダーを作成
----送信前の一時的なマーカーとして使用され、送信時にタイムスタンプ付きヘッダーに置き換えられる
----@return string header 未送信ユーザーヘッダー（例: "## User <!-- unsent -->"）
-function M.create_unsent_user_header()
-  return "## User <!-- unsent -->"
-end
-
----タイムスタンプ付きユーザーヘッダーを作成（HTMLコメント形式）
----@param timestamp? string オプションのタイムスタンプ（省略時は現在時刻）
----@return string header タイムスタンプ付きヘッダー（例: "## User <!-- 2025-12-29 14:30:55 -->"）
-function M.create_user_header_with_timestamp(timestamp)
-  timestamp = timestamp or M.now()
-  return string.format("## User <!-- %s -->", timestamp)
-end
-
----配達セクションのヘッダーを作成
+---セクションヘッダーを組み立てる（`parse_header` と対になる唯一の書き手）
 ---
 ---`stamp` を渡し分ける形にしてあるのは、配達も `## User` と同じ「未送信で書いて、送信時に
 ---コミットする」流れに乗るため。リミット中の予約（`auto_resume`）は未送信セクションが
 ---そのまま残っていることを前提にしているので、そこだけ直接タイムスタンプを書くわけには
 ---いかない
----@param kind string "Request" | "Report" | "Notice"
----@param from string? 送信元チャットの表示パス（合流した配達など、特定できないときは nil）
+---@param kind string "User" | "Request" | "Report" | "Notice"
 ---@param stamp string? タイムスタンプ（省略時は `unsent`）
+---@param from string? 送信元チャットの表示パス（合流した配達など、特定できないときは nil）
 ---@return string header
-function M.create_delivery_header(kind, from, stamp)
-  if not DELIVERY_KINDS[kind] then
-    error(string.format("Unknown delivery kind: %s", tostring(kind)))
+function M.create_header(kind, stamp, from)
+  if kind ~= "User" and not DELIVERY_KINDS[kind] then
+    error(string.format("Unknown section kind: %s", tostring(kind)))
   end
 
   local meta = stamp or "unsent"
@@ -138,34 +125,26 @@ function M.create_delivery_header(kind, from, stamp)
   return string.format("## %s <!-- %s -->", kind, meta)
 end
 
+---未送信ユーザーヘッダーを作成
+---送信前の一時的なマーカーとして使用され、送信時にタイムスタンプ付きヘッダーに置き換えられる
+---@return string header 未送信ユーザーヘッダー（例: "## User <!-- unsent -->"）
+function M.create_unsent_user_header()
+  return M.create_header("User")
+end
+
+---タイムスタンプ付きユーザーヘッダーを作成（HTMLコメント形式）
+---@param timestamp? string オプションのタイムスタンプ（省略時は現在時刻）
+---@return string header タイムスタンプ付きヘッダー（例: "## User <!-- 2025-12-29 14:30:55 -->"）
+function M.create_user_header_with_timestamp(timestamp)
+  return M.create_header("User", timestamp or M.now())
+end
+
 ---行が未送信ヘッダー（`## User` / 配達セクションのどちらでも）かどうか
 ---@param line string
 ---@return boolean
 function M.is_unsent_header(line)
   local header = M.parse_header(line)
   return header ~= nil and header.unsent
-end
-
----行が他のチャットからの配達セクションのヘッダーかどうか
----@param line string
----@return boolean
-function M.is_delivery_header(line)
-  local header = M.parse_header(line)
-  return header ~= nil and DELIVERY_KINDS[header.kind] == true
-end
-
----行が未送信ユーザーヘッダーかどうかチェック
----@param line string チェック対象の行
----@return boolean is_unsent 未送信ヘッダーの場合true
-function M.is_unsent_user_header(line)
-  return line:match("^## User <!%-%- unsent %-%->$") ~= nil
-end
-
----行がタイムスタンプ付きユーザーヘッダー（HTMLコメント形式）かどうかチェック
----@param line string チェック対象の行
----@return boolean is_timestamped タイムスタンプ付きヘッダーの場合true
-function M.is_timestamped_user_header(line)
-  return line:match("^## User <!%-%- " .. TIMESTAMP_PATTERN .. " %-%->$") ~= nil
 end
 
 ---ヘッダーからタイムスタンプを抽出（HTMLコメント形式）

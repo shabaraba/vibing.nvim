@@ -1,28 +1,46 @@
 ---@class Vibing.Application.DeliveryMessage
 ---`message_queue` が溜めたものを、受け取るチャットに読ませる1通のテキストにする。
 ---
----キューの状態機械とは別モジュールにしてある。ここにあるのはモデルに読ませる散文であって、
----待ち合わせの規則ではない — 文面の推敲で配達の順序が変わることはないし、その逆もない。
+---キューの状態機械とは別モジュールにしてある。ここが持つのは「配られたものをどう見せるか」
+---— セクションの種別・送信元の名指し・モデルに読ませる散文 — であって、待ち合わせの規則
+---ではない。文面の推敲で配達の順序が変わることはないし、その逆もない。
+---
+---見出しと本文の判断が食い違わないよう、`deliver` が `section_for` → `build` → 送信の順序を
+---所有する。この3つを呼び出し側で並べていたころ、片方の経路だけが送信元を名乗るという
+---食い違いが実際に起きた。
 local M = {}
 
 ---@param bufnr number
 ---@param cache table<number, string>
 ---@return string
-local function display_path(bufnr, cache)
-  if cache[bufnr] then
-    return cache[bufnr]
+---バッファの表示パス。名前を持たないバッファでは nil
+---
+---`to_display_path` は解決を `git rev-parse` に投げ、それはキャッシュを持たない同期の
+---プロセス起動。1通に同じチャットが複数回現れるのは普通（同じ相手からの複数の報告）なので、
+---1通を組み立てる間だけ覚える。バッファ名は改名されうるので、それ以上は持ち越さない
+---@param bufnr number
+---@param cache table<number, string>
+---@return string?
+local function resolve_path(bufnr, cache)
+  local cached = cache[bufnr]
+  if cached ~= nil then
+    return cached ~= false and cached or nil
   end
 
   local name = vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_get_name(bufnr) or ""
   -- frontmatter の `orchestrated` と同じ表示形式にする。モデルが読みに行く先を、
   -- 記録と別の形で名指ししない
-  local path = name ~= "" and require("vibing.core.utils.git").to_display_path(name) or "unnamed"
+  local path = name ~= "" and require("vibing.core.utils.git").to_display_path(name) or nil
 
-  -- `to_display_path` は解決を `git rev-parse` に投げ、それはキャッシュを持たない同期の
-  -- プロセス起動。1通に同じチャットが複数回現れるのは普通（同じ相手からの複数の報告）なので、
-  -- 1通を組み立てる間だけ覚える。バッファ名は改名されうるので、それ以上は持ち越さない
-  cache[bufnr] = path
+  cache[bufnr] = path or false
   return path
+end
+
+---@param bufnr number
+---@param cache table<number, string>
+---@return string
+local function display_path(bufnr, cache)
+  return resolve_path(bufnr, cache) or "unnamed"
 end
 
 ---@param items Vibing.Application.MessageQueue.Item[]
@@ -75,9 +93,11 @@ local function message_section(items, cache, sender_named)
 
   -- 件数はメッセージの数であってチャットの数ではない。1つのワーカーからの2件を
   -- 「2つのチャットから」と言うと、読み手は出どころを取り違える
+  -- 「応答中に届いた」とは言わない。この経路は即配達でも通る（送信元のバッファに名前が
+  -- なければ見出しが名乗れず、ここに落ちる）ので、キューに積まれた前提の文面は嘘になる
   return table.concat({
-    #blocks == 1 and "Another chat sent you this while you were responding:"
-      or string.format("%d messages arrived while you were responding:", #blocks),
+    #blocks == 1 and "Another chat sent you this:"
+      or string.format("%d messages arrived from other chats:", #blocks),
     "",
     table.concat(blocks, "\n\n"),
   }, "\n")
@@ -97,21 +117,15 @@ end
 ---@param queue Vibing.Application.MessageQueue.Item[]
 ---@param to_bufnr number 配達先
 ---@return Vibing.Application.DeliveryMessage.Section
-function M.section_for(queue, to_bufnr)
+function M.section_for(queue, to_bufnr, cache)
   local OrchestrationLink = require("vibing.application.chat.orchestration_link")
 
-  local senders, kind, bodies = {}, nil, 0
+  local kind = nil
   for _, item in ipairs(queue) do
     if item.body then
-      bodies = bodies + 1
-      if item.bufnr then
-        senders[item.bufnr] = true
-        local direction = OrchestrationLink.direction(item.bufnr, to_bufnr)
-        kind = (kind == nil or kind == direction) and direction or "Report"
-      else
-        -- 送信元が消えた本文（`message_queue.forget`）。匿名で配達されるので向きは決められない
-        kind = kind or "Report"
-      end
+      -- 送信元が消えた本文（`message_queue.forget`）は匿名で配達されるので向きを決められない
+      local direction = item.bufnr and OrchestrationLink.direction(item.bufnr, to_bufnr) or "Report"
+      kind = (kind == nil or kind == direction) and direction or "Report"
     end
   end
 
@@ -119,23 +133,15 @@ function M.section_for(queue, to_bufnr)
     return { kind = "Notice" }
   end
 
-  local sender_count, only_sender = 0, nil
-  for bufnr in pairs(senders) do
-    sender_count, only_sender = sender_count + 1, bufnr
-  end
-
   -- 見出しが送信元を名乗れるのは、この配達が「1つのチャットからの本文1通」のときだけ。
   -- 通知が混ざっていれば通知は別のチャットについての話だし、本文が複数あれば出どころも
-  -- 複数ありうる。どちらも見出しで片方だけを名指しすると、残りの出どころが消える
-  if sender_count ~= 1 or bodies ~= 1 or #queue ~= 1 then
+  -- 複数ありうる。どちらも見出しで片方だけを名指しすると、残りの出どころが消える。
+  -- キューが1件で `kind` が決まっているなら、その1件は必ず本文なので添字で取れる
+  if #queue ~= 1 or not queue[1].bufnr then
     return { kind = kind }
   end
 
-  local name = vim.api.nvim_buf_is_valid(only_sender) and vim.api.nvim_buf_get_name(only_sender) or ""
-  return {
-    kind = kind,
-    from = name ~= "" and require("vibing.core.utils.git").to_display_path(name) or nil,
-  }
+  return { kind = kind, from = resolve_path(queue[1].bufnr, cache or {}) }
 end
 
 ---溜まったものを1通にまとめる
@@ -144,14 +150,15 @@ end
 ---**依頼**で、通知は「読みに行け」という副次情報だから
 ---@param queue Vibing.Application.MessageQueue.Item[]
 ---@param section Vibing.Application.DeliveryMessage.Section? `section_for` の結果
+---@param cache table<number, string>? 表示パスの使い回し（`section_for` と共有する）
 ---@return string
-function M.build(queue, section)
+function M.build(queue, section, cache)
   local notifications, messages = {}, {}
   for _, item in ipairs(queue) do
     table.insert(item.body and messages or notifications, item)
   end
 
-  local cache = {}
+  cache = cache or {}
   local sections = {}
   if #messages > 0 then
     table.insert(sections, message_section(messages, cache, section ~= nil and section.from ~= nil))
@@ -161,6 +168,22 @@ function M.build(queue, section)
   end
 
   return table.concat(sections, "\n\n")
+end
+
+---1通にまとめて、宛先のチャットに新しいターンとして配達する
+---
+---`section_for` → `build` → 送信の順序をここが所有する。呼び出し側に並べさせていたころ、
+---即配達経路が `section` を渡さずに送っていたせいで、同じ報告が相手の状態によって別の形に
+---見えていた。3手のうち1つを渡し忘れても文法上は成立してしまうので、手順ごと1箇所に置く
+---@param queue Vibing.Application.MessageQueue.Item[]
+---@param to_bufnr number
+---@param sender string?
+---@return {success: boolean, bufnr: number}
+function M.deliver(queue, to_bufnr, sender)
+  local cache = {}
+  local section = M.section_for(queue, to_bufnr, cache)
+  local text = M.build(queue, section, cache)
+  return require("vibing.presentation.chat.modules.programmatic_sender").send(to_bufnr, text, sender, section)
 end
 
 return M

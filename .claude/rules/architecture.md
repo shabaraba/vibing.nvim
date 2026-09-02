@@ -1505,7 +1505,8 @@ anything saying so. Its `grep -E` prefilter still names the kinds, which is the 
 is repeated, and deliberately: it only decides which lines are handed to the shared parser.
 
 **Both delivery paths build the same text.** `handlers/message.lua` (immediate) and
-`message_queue.flush` (queued) call `delivery_message.section_for` then `build`. They used to
+`message_queue.flush` (queued) both go through `delivery_message.deliver`, which owns the
+`section_for` → `build` → send ordering. Leaving those three at each call site is what let them
 diverge — the queue wrapped each body in a `### From` heading and the direct send passed the raw
 text through — so the same worker's report looked different depending on whether its orchestrator
 happened to be mid-turn when it arrived. `section_for` names the sender in the section header only

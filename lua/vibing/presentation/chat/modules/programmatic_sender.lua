@@ -83,25 +83,21 @@ end
 local function drop_empty_trailing_section(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
-  local last_header = nil
-  for i = #lines, 1, -1 do
-    if Timestamp.is_header(lines[i]) then
-      last_header = i
-      break
-    end
+  -- 末尾から空行を飛ばして最初に当たった行がヘッダーなら、それが最後のセクションで、かつ
+  -- 中身は空。ヘッダー行が空行であることはないので、この1走査が「最後のヘッダー」と
+  -- 「その下は空」の両方を同時に確かめている
+  local last = #lines
+  while last > 0 and vim.trim(lines[last]) == "" do
+    last = last - 1
   end
 
-  if not last_header or not Timestamp.is_unsent_header(lines[last_header]) then
+  if last == 0 or not Timestamp.is_unsent_header(lines[last]) then
     return
   end
 
-  for i = last_header + 1, #lines do
-    if vim.trim(lines[i]) ~= "" then
-      return
-    end
-  end
-
-  local first = last_header
+  -- ヘッダーの手前の空行も一緒に落とす。残しても `addUserSection` が末尾の空行を畳むが、
+  -- 畳む対象を残したまま返すと「何を消したか」が2箇所に分かれる
+  local first = last
   while first > 1 and vim.trim(lines[first - 1]) == "" do
     first = first - 1
   end
@@ -130,7 +126,7 @@ function M.send(bufnr, message, sender, delivery)
       or nil
 
     -- Add user section and send
-    local header = delivery and Timestamp.create_delivery_header(delivery.kind, delivery.from) or nil
+    local header = delivery and Timestamp.create_header(delivery.kind, nil, delivery.from) or nil
     drop_empty_trailing_section(bufnr)
     Renderer.addUserSection(bufnr, nil, nil, nil, message, header)
     sent = chat_buf:send_message()

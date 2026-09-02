@@ -117,9 +117,7 @@ function M.commit_user_message(buf)
     return
   end
 
-  local committed = last_unsent_header.kind == "User"
-      and Timestamp.create_user_header_with_timestamp()
-    or Timestamp.create_delivery_header(last_unsent_header.kind, last_unsent_header.from, Timestamp.now())
+  local committed = Timestamp.create_header(last_unsent_header.kind, Timestamp.now(), last_unsent_header.from)
   vim.api.nvim_buf_set_lines(buf, last_unsent_line - 1, last_unsent_line, false, { committed })
 end
 

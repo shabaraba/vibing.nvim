@@ -3,6 +3,7 @@
 ---Available on macOS/Linux environments
 
 local Base = require("vibing.infrastructure.section_parser.base")
+local Timestamp = require("vibing.core.utils.timestamp")
 
 local GrepParser = setmetatable({}, { __index = Base })
 GrepParser.__index = GrepParser
@@ -37,15 +38,12 @@ local function parse_grep_line(grep_line)
   end
 
   local line_number = tonumber(line_num_str)
-  local role = nil
-  local timestamp = nil
-
   -- ヘッダの文法は `core/utils/timestamp.lua` が唯一の定義元。ここで書き直すと、
   -- 配達セクション（`## Request` / `## Report` / `## Notice`）がデイリーサマリから
   -- 黙って抜け落ちる
-  local Timestamp = require("vibing.core.utils.timestamp")
-  role = Timestamp.extract_role(content)
-  timestamp = Timestamp.extract_timestamp_from_comment(content)
+  local header = Timestamp.parse_header(content)
+  local role = header and (header.kind == "Assistant" and "assistant" or "user") or nil
+  local timestamp = header and header.kind ~= "Assistant" and header.timestamp or nil
 
   if not role then
     return nil
@@ -137,7 +135,7 @@ local function parse_message_content(lines)
   local current_role = nil
 
   for _, line in ipairs(lines) do
-    local line_role = require("vibing.core.utils.timestamp").extract_role(line)
+    local line_role = Timestamp.extract_role(line)
     if line_role then
       current_role = line_role
     elseif current_role and not line:match("^---") and not line:match("^Context:") then
@@ -171,9 +169,10 @@ function GrepParser:extract_messages(file_path, target_date)
   -- Step 1: Get all headers with line numbers using grep
   local grep_cmd = {
     "grep", "-n",
-    -- `timestamp.lua` が受け付ける種別と揃えること。ここは grep に渡す前段の絞り込みで、
-    -- 行の解釈そのものは `parse_header_line` が同じモジュールに任せている
-    "-E", "^## (User|Assistant|Request|Report|Notice)",
+    -- 種別を列挙しない。ここは grep に渡す前段の絞り込みでしかなく、行が本当にヘッダーかは
+    -- `parse_grep_line` が `timestamp.parse_header` に任せて弾く。列挙すると文法の写しが
+    -- もう1つでき、種別が増えた日にデイリーサマリから黙って抜け落ちる
+    "-E", "^## ",
     file_path,
   }
 

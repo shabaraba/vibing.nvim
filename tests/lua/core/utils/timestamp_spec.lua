@@ -21,26 +21,31 @@ describe("Timestamp header grammar", function()
     -- セクションの中身はそのまま CLI へ送るプロンプトなので、別ロールにすると
     -- `extract_user_message` が拾わず、配達されたターンが送信されないまま消える
     for _, kind in ipairs({ "Request", "Report", "Notice" }) do
-      local line = Timestamp.create_delivery_header(kind, ".vibing/chat/x.md")
+      local line = Timestamp.create_header(kind, nil, ".vibing/chat/x.md")
       assert.equals("user", Timestamp.extract_role(line), line)
-      assert.is_true(Timestamp.is_delivery_header(line))
+      assert.equals(kind, Timestamp.parse_header(line).kind)
       assert.is_true(Timestamp.is_unsent_header(line))
     end
   end)
 
   it("round-trips what it writes", function()
-    local unsent = Timestamp.create_delivery_header("Request", ".vibing/chat/boss.md")
+    local unsent = Timestamp.create_header("Request", nil, ".vibing/chat/boss.md")
     assert.equals("## Request <!-- unsent from .vibing/chat/boss.md -->", unsent)
 
-    local sent = Timestamp.create_delivery_header("Report", nil, "2026-09-02 08:14:07")
+    local sent = Timestamp.create_header("Report", "2026-09-02 08:14:07")
     assert.equals("## Report <!-- 2026-09-02 08:14:07 -->", sent)
     assert.is_nil(Timestamp.parse_header(sent).from)
     assert.equals("2026-09-02 08:14:07", Timestamp.extract_timestamp_from_comment(sent))
   end)
 
+  it("writes the plain User header through the same constructor", function()
+    assert.equals("## User <!-- unsent -->", Timestamp.create_unsent_user_header())
+    assert.equals("## User <!-- 2026-09-02 08:13:11 -->", Timestamp.create_user_header_with_timestamp("2026-09-02 08:13:11"))
+  end)
+
   it("refuses to write a kind nothing can read back", function()
     assert.has_error(function()
-      Timestamp.create_delivery_header("Whatever", nil)
+      Timestamp.create_header("Whatever")
     end)
   end)
 
