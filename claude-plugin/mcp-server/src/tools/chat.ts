@@ -44,8 +44,10 @@ export const chatTools: Tool[] = [
           type: 'number',
           description:
             'Your own chat: the exact "Current vibing.nvim chat buffer number" from your ' +
-            'system prompt. Pass it whenever you create a worker — it records the ' +
-            'relationship in both chat files, which survives renames and restarts.',
+            'system prompt THIS turn — never a number remembered from earlier in the ' +
+            'conversation, which a Neovim restart silently invalidates. Pass it whenever you ' +
+            'create a worker — it records the relationship in both chat files, which survives ' +
+            'renames and restarts. A number that names no chat buffer fails the call.',
         },
       }),
       required: requireRpcPort([]),
@@ -89,8 +91,10 @@ export const chatTools: Tool[] = [
           type: 'number',
           description:
             'Your own chat: the exact "Current vibing.nvim chat buffer number" from your ' +
-            'system prompt. Pass it whenever you drive another chat — it records the ' +
-            'relationship in both chat files, which survives renames and restarts.',
+            'system prompt THIS turn — never a number remembered from earlier in the ' +
+            'conversation, which a Neovim restart silently invalidates. Pass it whenever you ' +
+            'drive another chat — it records the relationship in both chat files, which ' +
+            'survives renames and restarts. A number that names no chat buffer fails the call.',
         },
         queue_if_busy: {
           type: 'boolean',

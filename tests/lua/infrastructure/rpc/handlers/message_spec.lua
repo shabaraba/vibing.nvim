@@ -186,6 +186,51 @@ describe("rpc handlers.message.send_message", function()
     assert.equals(1, chats[to].sends)
   end)
 
+  it("refuses a from_bufnr that names no buffer instead of silently dropping the link", function()
+    -- 典型は Neovim 再起動を跨いで会話履歴から使い回された番号（#661）。黙って流すと
+    -- リンクも購読も無いまま送信だけが成功し、訂正できる唯一の相手（呼び出し元）に何も伝わらない
+    local to = make_chat()
+
+    assert.has_error(function()
+      Message.send_message({ bufnr = to, message = "do the thing", from_bufnr = 99999 })
+    end)
+    assert.equals(0, chats[to].sends)
+  end)
+
+  it("refuses a from_bufnr that names a buffer that is not a chat", function()
+    local to = make_chat()
+    local plain = vim.api.nvim_create_buf(false, true)
+    table.insert(buffers, plain)
+
+    assert.has_error(function()
+      Message.send_message({ bufnr = to, message = "do the thing", from_bufnr = plain })
+    end)
+    assert.equals(0, chats[to].sends)
+  end)
+
+  it("refuses a stale from_bufnr before queueing, not after", function()
+    local to = make_chat()
+    chats[to].responding = true
+
+    assert.has_error(function()
+      Message.send_message({ bufnr = to, message = "report", from_bufnr = 99999, queue_if_busy = true })
+    end)
+
+    -- 積まれていないことまで確かめる: 宛先が完了してもこのメッセージは配達されない
+    chats[to].responding = false
+    Notifier.on_response_done(to)
+    assert.equals(0, chats[to].sends)
+  end)
+
+  it("treats an explicit null from_bufnr as absent, not as a stale number", function()
+    local to = make_chat()
+
+    local result = Message.send_message({ bufnr = to, message = "do the thing", from_bufnr = vim.NIL })
+
+    assert.is_true(result.success)
+    assert.equals(1, chats[to].sends)
+  end)
+
   it("queues instead of refusing when the target is busy and the caller asked for it", function()
     local from, to = make_chat(), make_chat()
     chats[to].responding = true

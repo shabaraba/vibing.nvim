@@ -78,6 +78,31 @@ describe("rpc handlers: create_chat", function()
     end
   end)
 
+  it("rejects a from_bufnr that names no chat buffer, before creating anything", function()
+    -- 典型は Neovim 再起動を跨いで会話履歴から使い回された番号（#661）。作成後に弾くと、
+    -- 拒否されたのに空のワーカーチャットとそのファイルだけが残る
+    local bufs_before = #vim.api.nvim_list_bufs()
+
+    assert.has_error(function()
+      handler.create_chat({ from_bufnr = 99999 })
+    end)
+    assert.equals(bufs_before, #vim.api.nvim_list_bufs())
+  end)
+
+  it("accepts a from_bufnr that names a real chat", function()
+    local orchestrator = handler.create_chat({})
+
+    local worker = handler.create_chat({ from_bufnr = orchestrator.bufnr })
+
+    assert.is_true(vim.api.nvim_buf_is_valid(worker.bufnr))
+  end)
+
+  it("treats an explicit null from_bufnr as absent", function()
+    local result = handler.create_chat({ from_bufnr = vim.NIL })
+
+    assert.is_true(vim.api.nvim_buf_is_valid(result.bufnr))
+  end)
+
   it("rejects a working_dir that does not exist", function()
     local ok, err = pcall(handler.create_chat, { working_dir = "nope/not/here" })
 
