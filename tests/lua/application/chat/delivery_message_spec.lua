@@ -1,0 +1,101 @@
+describe("DeliveryMessage.section_for", function()
+  local DeliveryMessage
+  local original_link
+  local direction_answers
+  local buffers
+
+  ---@param name string?
+  ---@return number
+  local function make_buf(name)
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    if name then
+      vim.api.nvim_buf_set_name(bufnr, vim.fn.tempname() .. "-" .. name)
+    end
+    table.insert(buffers, bufnr)
+    return bufnr
+  end
+
+  before_each(function()
+    buffers = {}
+    direction_answers = {}
+    original_link = package.loaded["vibing.application.chat.orchestration_link"]
+    package.loaded["vibing.application.chat.orchestration_link"] = {
+      direction = function(from_bufnr, _)
+        return direction_answers[from_bufnr] or "Request"
+      end,
+    }
+    package.loaded["vibing.application.chat.delivery_message"] = nil
+    DeliveryMessage = require("vibing.application.chat.delivery_message")
+  end)
+
+  after_each(function()
+    package.loaded["vibing.application.chat.orchestration_link"] = original_link
+    package.loaded["vibing.application.chat.delivery_message"] = nil
+    for _, bufnr in ipairs(buffers) do
+      if vim.api.nvim_buf_is_valid(bufnr) then
+        vim.api.nvim_buf_delete(bufnr, { force = true })
+      end
+    end
+  end)
+
+  it("names the sender when one chat sent one message", function()
+    local sender, recipient = make_buf("worker.md"), make_buf()
+    direction_answers[sender] = "Report"
+
+    local section = DeliveryMessage.section_for({ { bufnr = sender, body = "done" } }, recipient)
+
+    assert.equals("Report", section.kind)
+    assert.is_true(section.from:find("worker.md", 1, true) ~= nil, tostring(section.from))
+  end)
+
+  it("drops the redundant From heading once the section header carries it", function()
+    local sender, recipient = make_buf("worker.md"), make_buf()
+    local queue = { { bufnr = sender, body = "done" } }
+    local section = DeliveryMessage.section_for(queue, recipient)
+
+    assert.equals("done", DeliveryMessage.build(queue, section))
+  end)
+
+  it("keeps the From headings when several senders coalesce", function()
+    local a, b, recipient = make_buf("a.md"), make_buf("b.md"), make_buf()
+    direction_answers[a], direction_answers[b] = "Report", "Report"
+    local queue = { { bufnr = a, body = "one" }, { bufnr = b, body = "two" } }
+
+    local section = DeliveryMessage.section_for(queue, recipient)
+    assert.equals("Report", section.kind)
+    assert.is_nil(section.from, "no single sender to name")
+
+    local text = DeliveryMessage.build(queue, section)
+    assert.is_true(text:find("### From", 1, true) ~= nil, text)
+  end)
+
+  it("calls a watchdog-only delivery a Notice", function()
+    local about, recipient = make_buf("worker.md"), make_buf()
+
+    local section = DeliveryMessage.section_for({ { bufnr = about } }, recipient)
+
+    assert.equals("Notice", section.kind)
+    assert.is_nil(section.from)
+  end)
+
+  it("does not name a sender when a notice rides along with the message", function()
+    -- 通知は別のチャットについての話なので、見出しが本文の送信元だけを名指しすると
+    -- 通知が指しているチャットの出どころが消える
+    local sender, about, recipient = make_buf("worker.md"), make_buf("other.md"), make_buf()
+    direction_answers[sender] = "Report"
+
+    local section = DeliveryMessage.section_for({ { bufnr = sender, body = "done" }, { bufnr = about } }, recipient)
+
+    assert.equals("Report", section.kind)
+    assert.is_nil(section.from)
+  end)
+
+  it("falls back to Report when a coalesced delivery mixes directions", function()
+    local a, b, recipient = make_buf("a.md"), make_buf("b.md"), make_buf()
+    direction_answers[a], direction_answers[b] = "Request", "Report"
+
+    local section = DeliveryMessage.section_for({ { bufnr = a, body = "x" }, { bufnr = b, body = "y" } }, recipient)
+
+    assert.equals("Report", section.kind)
+  end)
+end)

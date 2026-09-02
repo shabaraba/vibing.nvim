@@ -158,7 +158,10 @@ M.move_cursor_to_end = M.moveCursorToEnd
 ---@param pendingChoices table? Pending choices
 ---@param pendingApproval table? Pending tool approval request
 ---@param initial_message string? Initial message content (for programmatic send)
-function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_message)
+---@param header string? Section header to use instead of the plain unsent `## User` one.
+---  Delivered chat-to-chat messages pass their own (`## Request` / `## Report` / `## Notice`);
+---  it must still be an unsent header, since `commit_user_message` is what stamps it at send
+function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_message, header)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
   while #lines > 0 and lines[#lines] == "" do
@@ -168,7 +171,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_mes
 
   local newLines = {
     "",
-    Timestamp.create_unsent_user_header(),
+    header or Timestamp.create_unsent_user_header(),
     "",
   }
 

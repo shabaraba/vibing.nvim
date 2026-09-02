@@ -57,8 +57,15 @@ end
 
 ---@param items Vibing.Application.MessageQueue.Item[]
 ---@param cache table<number, string>
+---@param sender_named boolean セクション見出しが送信元を既に名指ししているか
 ---@return string
-local function message_section(items, cache)
+local function message_section(items, cache, sender_named)
+  -- 送信元が1つに定まる配達では、セクション見出し（`## Report <!-- ts from path -->`）が
+  -- 既に名前を持っている。ここでも `### From` を出すと同じことを2行離れて2回言うことになる
+  if sender_named and #items == 1 then
+    return items[1].body
+  end
+
   local blocks = {}
   for _, item in ipairs(items) do
     local from = item.bufnr and string.format("%s (chat buffer %d)", display_path(item.bufnr, cache), item.bufnr)
@@ -76,13 +83,69 @@ local function message_section(items, cache)
   }, "\n")
 end
 
+---@class Vibing.Application.DeliveryMessage.Section
+---@field kind "Request"|"Report"|"Notice" 配達セクションの種別
+---@field from string? 送信元の表示パス（1つに定まらない配達では nil）
+
+---この配達をどのセクションとして書くかを決める
+---
+---見出しと本文で判断が食い違わないよう、種別と送信元はここ1箇所で決めて `build` に渡す。
+---
+---向きは `orchestration_link.direction` に聞く（記録済みの関係から決まる）。合流した配達で
+---向きが混ざる場合は `Report` に倒す: 複数のワーカーからの報告が1ターンに合流するのが
+---この機構の通常の形で、依頼が同時に混ざるのは例外的だから
+---@param queue Vibing.Application.MessageQueue.Item[]
+---@param to_bufnr number 配達先
+---@return Vibing.Application.DeliveryMessage.Section
+function M.section_for(queue, to_bufnr)
+  local OrchestrationLink = require("vibing.application.chat.orchestration_link")
+
+  local senders, kind, bodies = {}, nil, 0
+  for _, item in ipairs(queue) do
+    if item.body then
+      bodies = bodies + 1
+      if item.bufnr then
+        senders[item.bufnr] = true
+        local direction = OrchestrationLink.direction(item.bufnr, to_bufnr)
+        kind = (kind == nil or kind == direction) and direction or "Report"
+      else
+        -- 送信元が消えた本文（`message_queue.forget`）。匿名で配達されるので向きは決められない
+        kind = kind or "Report"
+      end
+    end
+  end
+
+  if not kind then
+    return { kind = "Notice" }
+  end
+
+  local sender_count, only_sender = 0, nil
+  for bufnr in pairs(senders) do
+    sender_count, only_sender = sender_count + 1, bufnr
+  end
+
+  -- 見出しが送信元を名乗れるのは、この配達が「1つのチャットからの本文1通」のときだけ。
+  -- 通知が混ざっていれば通知は別のチャットについての話だし、本文が複数あれば出どころも
+  -- 複数ありうる。どちらも見出しで片方だけを名指しすると、残りの出どころが消える
+  if sender_count ~= 1 or bodies ~= 1 or #queue ~= 1 then
+    return { kind = kind }
+  end
+
+  local name = vim.api.nvim_buf_is_valid(only_sender) and vim.api.nvim_buf_get_name(only_sender) or ""
+  return {
+    kind = kind,
+    from = name ~= "" and require("vibing.core.utils.git").to_display_path(name) or nil,
+  }
+end
+
 ---溜まったものを1通にまとめる
 ---
 ---通知だけのときは通知セクションだけを出す。混在時に本文を先に置くのは、そちらが相手の
 ---**依頼**で、通知は「読みに行け」という副次情報だから
 ---@param queue Vibing.Application.MessageQueue.Item[]
+---@param section Vibing.Application.DeliveryMessage.Section? `section_for` の結果
 ---@return string
-function M.build(queue)
+function M.build(queue, section)
   local notifications, messages = {}, {}
   for _, item in ipairs(queue) do
     table.insert(item.body and messages or notifications, item)
@@ -91,7 +154,7 @@ function M.build(queue)
   local cache = {}
   local sections = {}
   if #messages > 0 then
-    table.insert(sections, message_section(messages, cache))
+    table.insert(sections, message_section(messages, cache, section ~= nil and section.from ~= nil))
   end
   if #notifications > 0 then
     table.insert(sections, notification_section(notifications, cache))

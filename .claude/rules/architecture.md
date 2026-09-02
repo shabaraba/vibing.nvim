@@ -1483,6 +1483,49 @@ Neovim dying takes the worker chats with it. Backends other than claude can be _
 event is backend-agnostic) but cannot _subscribe_: `nvim_chat_send_message` is an MCP tool, and
 codex/grok reach no MCP server, the same constraint `features.md` records for AskUserQuestion.
 
+### Delivered sections
+
+A message that arrived from another chat is written as its own section kind — `## Request`,
+`## Report` or `## Notice` — instead of the `## User` a human types into. The grammar and the
+three kinds are in `features.md` → "Message Timestamps"; what belongs here is why the seams are
+where they are.
+
+**`extract_role` answers `user` for all three, and that is the whole safety argument.** A
+section's body _is_ the prompt handed to the CLI (`conversation_extractor.extract_user_message`
+takes everything under the last `user` header), so a genuinely separate role would have to be
+taught to the send path, the conversation extractor, `commit_user_message`, both daily-summary
+parsers and the jump commands — and forgetting any one of them fails toward a delivered turn that
+is never sent, which is the silent-loss shape this whole area exists to remove. Only the display
+needed splitting, so only the display splits: callers that care read `parse_header().kind`.
+
+**The header grammar has one home.** `timestamp.lua` writes and reads it; `grep_parser` used to
+carry its own `^## User` patterns and now calls `extract_role`, because a second reader is a
+reader that goes stale — delivered turns would have dropped out of the daily summary without
+anything saying so. Its `grep -E` prefilter still names the kinds, which is the one place the list
+is repeated, and deliberately: it only decides which lines are handed to the shared parser.
+
+**Both delivery paths build the same text.** `handlers/message.lua` (immediate) and
+`message_queue.flush` (queued) call `delivery_message.section_for` then `build`. They used to
+diverge — the queue wrapped each body in a `### From` heading and the direct send passed the raw
+text through — so the same worker's report looked different depending on whether its orchestrator
+happened to be mid-turn when it arrived. `section_for` names the sender in the section header only
+when the delivery is exactly one body from one chat; `build` then drops the `### From` that would
+otherwise repeat it two lines later. A coalesced delivery keeps the per-item headings and leaves
+the section header unnamed.
+
+**A delivery fills the empty unsent section rather than appending below it.** Every turn ends with
+`add_user_section()` writing `## User <!-- unsent -->`; a human types into it, but
+`ProgrammaticSender` appended a second section, so each delivered turn left a stranded empty
+`## User` above it — one per turn, visible in any orchestrated transcript. It now drops a trailing
+unsent section that is empty. Only empty: the approval prompt and the question list are rendered
+into that same section, and dropping those would delete what the user was about to answer.
+
+**The unsent-then-commit dance is kept for delivered sections too.** Writing the timestamp
+directly at delivery would be simpler, but a send that lands under a usage limit is parked as an
+unsent section and fired later (`auto_resume`), so the unsent form has to exist for these as well.
+`commit_user_message` therefore stamps whatever kind it finds and preserves the `from`, instead of
+replacing the header with a `## User`.
+
 ### Addressing a chat
 
 **The chat file path is the identifier; the bufnr is a per-session resolution of it** (#641).

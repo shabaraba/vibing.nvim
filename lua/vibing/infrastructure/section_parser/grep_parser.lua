@@ -40,16 +40,12 @@ local function parse_grep_line(grep_line)
   local role = nil
   local timestamp = nil
 
-  -- Check for User header with timestamp (allow trailing whitespace)
-  local ts = content:match("^## User <!%-%- (%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d) %-%->%s*$")
-  if ts then
-    role = "user"
-    timestamp = ts
-  elseif content:match("^## User") then
-    role = "user"
-  elseif content:match("^## Assistant") then
-    role = "assistant"
-  end
+  -- ヘッダの文法は `core/utils/timestamp.lua` が唯一の定義元。ここで書き直すと、
+  -- 配達セクション（`## Request` / `## Report` / `## Notice`）がデイリーサマリから
+  -- 黙って抜け落ちる
+  local Timestamp = require("vibing.core.utils.timestamp")
+  role = Timestamp.extract_role(content)
+  timestamp = Timestamp.extract_timestamp_from_comment(content)
 
   if not role then
     return nil
@@ -141,10 +137,9 @@ local function parse_message_content(lines)
   local current_role = nil
 
   for _, line in ipairs(lines) do
-    if line:match("^## User") then
-      current_role = "user"
-    elseif line:match("^## Assistant") then
-      current_role = "assistant"
+    local line_role = require("vibing.core.utils.timestamp").extract_role(line)
+    if line_role then
+      current_role = line_role
     elseif current_role and not line:match("^---") and not line:match("^Context:") then
       if current_role == "user" then
         table.insert(user_lines, line)
@@ -176,7 +171,9 @@ function GrepParser:extract_messages(file_path, target_date)
   -- Step 1: Get all headers with line numbers using grep
   local grep_cmd = {
     "grep", "-n",
-    "-E", "^## (User|Assistant)",
+    -- `timestamp.lua` が受け付ける種別と揃えること。ここは grep に渡す前段の絞り込みで、
+    -- 行の解釈そのものは `parse_header_line` が同じモジュールに任せている
+    "-E", "^## (User|Assistant|Request|Report|Notice)",
     file_path,
   }
 

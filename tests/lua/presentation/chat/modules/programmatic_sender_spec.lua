@@ -47,6 +47,46 @@ describe("ProgrammaticSender.send", function()
     return count
   end
 
+  ---@return string[]
+  local function buffer_lines()
+    return vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  end
+
+  it("writes the delivery header it was handed instead of a plain User section", function()
+    ProgrammaticSender.send(bufnr, "done", nil, { kind = "Report", from = ".vibing/chat/worker.md" })
+
+    local lines = buffer_lines()
+    assert.is_true(
+      vim.tbl_contains(lines, "## Report <!-- unsent from .vibing/chat/worker.md -->"),
+      table.concat(lines, "\n")
+    )
+  end)
+
+  it("fills the empty unsent section a finished turn left behind", function()
+    -- ターンが終わるたび `add_user_section()` が空の未送信セクションを置く。人間はそこに
+    -- 打ち込むが、配達はその下にもう1つ足していたので、配達されたターンの上に空の
+    -- `## User` が毎回取り残されていた
+    vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { "## User <!-- unsent -->", "", "" })
+
+    ProgrammaticSender.send(bufnr, "hello", nil, { kind = "Request" })
+
+    local headers = vim.tbl_filter(function(line)
+      return line:match("^## ")
+    end, buffer_lines())
+    assert.same({ "## Request <!-- unsent -->" }, headers)
+  end)
+
+  it("keeps a trailing section that still has something in it", function()
+    -- 承認プロンプトや質問の選択肢は同じ未送信セクションに描かれる。空でないものを
+    -- 落とすと、ユーザーが答えようとしていた選択肢が配達のたびに消える
+    vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { "## User <!-- unsent -->", "", "1. PostgreSQL", "" })
+
+    ProgrammaticSender.send(bufnr, "hello", nil, { kind = "Request" })
+
+    local lines = buffer_lines()
+    assert.is_true(vim.tbl_contains(lines, "1. PostgreSQL"), table.concat(lines, "\n"))
+  end)
+
   it("refuses a chat that is already responding, before touching the buffer", function()
     -- 追加してから巻き戻すのではなく追加する前に断る。`ChatBuffer:send_message()` は
     -- 応答中なら黙って return するので、先に append すると送られない `## User` が残り、
