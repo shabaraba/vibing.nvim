@@ -79,8 +79,12 @@ end
 ---
 ---開かれていないチャットは番号を持たないので `bufnr` が `nil` のまま返る — **落とさない**のが
 ---以前の `resolve_bufnrs` との違いで、パスだけでも相手を名指しできるのが #641 の要点
+---
+---`abs` も返す。開いていないチャットのfrontmatterを読む側（`orchestration_tree`）が必要とし、
+---ここは既に git ルートのキャッシュを持っているので、呼び出し元に解決をやり直させると
+---同じ変換が2回走る
 ---@param display_paths string[]|string|nil
----@return {path: string, bufnr: number?}[]
+---@return {path: string, abs: string, bufnr: number?}[]
 function M.resolve_all(display_paths)
   -- 手で `orchestrated_by: path.md` と1行で書かれると文字列としてパースされる形も含めて、
   -- リストフィールドの3つの形は `Frontmatter.as_list` が吸収する
@@ -95,7 +99,8 @@ function M.resolve_all(display_paths)
   local entries = {}
   for _, path in ipairs(paths) do
     if type(path) == "string" and vim.trim(path) ~= "" then
-      table.insert(entries, { path = path, bufnr = open_buffers[to_abs(path, git_root)] })
+      local abs = to_abs(path, git_root)
+      table.insert(entries, { path = path, abs = abs, bufnr = open_buffers[abs] })
     end
   end
 

@@ -188,6 +188,16 @@ agent = {
                             -- caught by max_round_trips first, at these defaults)
   },
 
+  orchestration = {         -- How the chat network is allowed to run
+    max_concurrent = 0,     -- How many chats may be responding at once. 0 is no limit, which
+                            -- is the default: switching it on changes the order in which an
+                            -- existing orchestration's messages arrive. Only machine-started
+                            -- sends are held (nvim_chat_send_message and queued deliveries) —
+                            -- your own <CR> never waits. A send that hits the limit is refused
+                            -- unless it passed queue_if_busy, in which case it is queued and
+                            -- delivered the moment one of the running chats finishes
+  },
+
   codex_provider_notice = {
     enabled = true,         -- Warn when a Codex lightweight call leaves your model_provider.
                             -- On by default, unlike the toggles above: it spends no tokens,

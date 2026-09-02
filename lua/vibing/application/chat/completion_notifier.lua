@@ -38,6 +38,14 @@ local round_trips = {}
 ---@type number
 local wakes = 0
 
+---並列度上限のせいで配達を見送った宛先。枠が空いたときに配り直す対象そのもの。
+---
+---「キューが空でない宛先」で代用してはいけない。配達が断られる理由は上限のほかにもあり
+---（送信が失敗した、ユーザーが下書きを書いている）、それらを同じイベントで即座に試し直すのは
+---ただの二度打ちになる。上限だけは「他のターンが終われば解ける」ので、その1つだけを覚える
+---@type table<number, boolean>
+local held_by_limit = {}
+
 ---@return {enabled: boolean, max_round_trips: number?, max_wakes: number?}
 local function settings()
   local config = require("vibing.config").get()
@@ -92,9 +100,20 @@ end
 ---
 ---「配達したら上げる」を関数にしてあるのは、`on_response_done` に呼び出し箇所が2つあるため。
 ---どちらかで書き忘れると上限が黙って連鎖を止められなくなる
+---
+---並列度上限はここで見る。配達は新しいターンを起こすことそのものなので、機械が始める送信の
+---うち「本数を増やす」のはこれと `nvim_chat_send_message` の2つしかない。見送っても捨てないので、
+---キューはそのまま残り `retry_held` が枠の空いた瞬間に配り直す
 ---@param bufnr number
 ---@return boolean restarted
+---@return boolean held 並列度上限のため配達を見送った（＝まだ用件を抱えている）
 local function drain(bufnr)
+  if MessageQueue.has_pending(bufnr) and require("vibing.application.chat.concurrency").at_capacity() then
+    held_by_limit[bufnr] = true
+    return false, true
+  end
+  held_by_limit[bufnr] = nil
+
   local restarted, delivered = MessageQueue.flush(bufnr)
   if delivered then
     -- 配られた通知1件ごとに、そのペアの往復が1回進む。全体予算のほうは「起床」の数なので、
@@ -105,7 +124,27 @@ local function drain(bufnr)
     end
     wakes = wakes + 1
   end
-  return restarted
+  return restarted, false
+end
+
+---並列度上限で見送られたキューを配り直す
+---
+---上限を解くのはターンの終了だけなので、完了イベントがそのまま「枠が空いた」の合図になる。
+---別の合図（タイマー等）を持たないのはそのため。
+---
+---上限を使っていなければ `held_by_limit` は空のままなので、既定では `next()` 1回で終わる。
+---反復中に `drain` が触るのは、いま見ているキー自身の削除か再設定だけ（新しいキーは増えない）
+---@param except_bufnr number この tick で自分の分は既に試したので飛ばす
+local function retry_held(except_bufnr)
+  for to_bufnr in pairs(held_by_limit) do
+    if to_bufnr ~= except_bufnr then
+      -- 配達できた相手は再稼働したので、直前に自分から送ったものは最終報告ではなかった。
+      -- `on_response_done` の分岐1と同じ後始末
+      if drain(to_bufnr) then
+        reported[to_bufnr] = nil
+      end
+    end
+  end
 end
 
 ---bufnr が「自分の完了を待っている相手」以外の誰かの完了を待っているか
@@ -150,6 +189,16 @@ end
 local function stopped_needing_attention(bufnr)
   local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(bufnr)
   return chat_buf ~= nil and chat_buf:get_stop_reason() ~= nil
+end
+
+---並列度上限のせいで積まれた本文を、枠が空いたときの配り直し対象にする
+---
+---`drain` が自分で見送った分は自分で覚えるが、`queue_if_busy` は配達を試す前に積むので
+---ここを通らない。しかも積まれた理由が上限のときの宛先は **idle でありうる** — 自分の完了
+---イベントは二度と来ないので、誰かが配り直さなければその本文は永久に届かない
+---@param bufnr number
+function M.hold_for_capacity(bufnr)
+  held_by_limit[bufnr] = true
 end
 
 ---A が B に送ったことを購読として記録する
@@ -262,25 +311,27 @@ function M.on_sent(from_bufnr, to_bufnr)
   MessageQueue.drop_notification(to_bufnr, from_bufnr)
 end
 
----応答完了。自分宛キューの drain と、購読者への配達を行う
----
----発火判定は3分岐（#639 / #640）:
----  1. 自分宛キューを流せた → この tick で自分が再稼働する → 配達もエッジ消費もしない
----  2. 自分が張った未消費のエッジが残っている → 子待ちでの停止 → 親への配達を保留
----  3. どちらでもない → 本当に止まった → watchdog として購読者へ配達
----2 の例外は `stopped_needing_attention`
+---発火判定の本体。分岐は `M.on_response_done` に書いてある
 ---@param bufnr number
-function M.on_response_done(bufnr)
+local function process_done(bufnr)
   -- 自分宛キューの drain が先で、しかも設定に関わらず行う。`queue_if_busy` で積まれた本文は
   -- watchdog 通知を切っている環境でも届かなければならない。
   --
   -- 配達できた = bufnr はこのターンでは終わっておらず、続きのターンが控えているということなので、
   -- この完了は購読者に見せない。順序を逆にしても防げない理由と、この規則が拾えない側の順序は
   -- architecture.md → Multi-Agent Orchestration（#638）
-  if drain(bufnr) then
+  local restarted, held = drain(bufnr)
+  if restarted then
     -- edges[bufnr] は消費せずに残す。bufnr が本当に止まったときの完了で配達される。
     -- 再稼働した以上、直前に送ったものは最終報告ではなかったので、抑止の印も捨てる
     reported[bufnr] = nil
+    return
+  end
+
+  -- 並列度上限で見送っただけなら、このチャットはまだ配達待ちを抱えている。停止とは呼べないので
+  -- 分岐2と同じく親への配達を保留し、エッジも温存する。枠が空いた完了イベントで配り直され、
+  -- そのとき再稼働するので、上の分岐が改めて答えを出す
+  if held then
     return
   end
 
@@ -321,6 +372,22 @@ function M.on_response_done(bufnr)
   end
 end
 
+---応答完了。自分宛キューの drain と、購読者への配達を行う
+---
+---発火判定は3分岐（#639 / #640）:
+---  1. 自分宛キューを流せた → この tick で自分が再稼働する → 配達もエッジ消費もしない
+---  2. 自分が張った未消費のエッジが残っている → 子待ちでの停止 → 親への配達を保留
+---  3. どちらでもない → 本当に止まった → watchdog として購読者へ配達
+---2 の例外は `stopped_needing_attention`
+---
+---そのあとに `retry_held`。このターンが終わったことで並列度の枠が1つ空いたので、上限で
+---見送られていた配達をここで拾う。順序が逆だと、空いた枠を他所に先に取られる
+---@param bufnr number
+function M.on_response_done(bufnr)
+  process_done(bufnr)
+  retry_held(bufnr)
+end
+
 ---人間が手動送信した。上限カウンタにとってはこれが起点になる
 ---
 ---`on_response_done` と対になるイベント入口で、名前もそちらに合わせてある。「bufnr の状態を
@@ -347,12 +414,13 @@ function M.forget(bufnr)
   -- autocmdはパターン無しで登録しているので、エディタ内のどのバッファを閉じても走る。
   -- 既定（無効）では状態が空のまま、全テーブルの走査だけが通常の編集操作ごとに起きる。
   -- キューは自分の空振りを自分で弾くので、ここで見るのは自分の状態だけ
-  if not (next(edges) or next(round_trips) or next(reported)) then
+  if not (next(edges) or next(round_trips) or next(reported) or next(held_by_limit)) then
     return
   end
 
   edges[bufnr] = nil
   reported[bufnr] = nil
+  held_by_limit[bufnr] = nil
   drop_pairs_of(bufnr)
 
   -- 空になった内側のテーブルはキーごと消す。残すと `next(edges)` / `next(reported)` が真のまま

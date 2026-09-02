@@ -26,7 +26,8 @@ describe("CompletionNotifier", function()
   end
 
   ---@param opts table?
-  local function configure(opts)
+  ---@param orchestration table? 並列度上限（既定は無制限で、既存の挙動と同じ）
+  local function configure(opts, orchestration)
     Config.get = function()
       return {
         agent = {
@@ -35,6 +36,7 @@ describe("CompletionNotifier", function()
             { enabled = true, max_round_trips = 8, max_wakes = 50 },
             opts or {}
           ),
+          orchestration = orchestration or { max_concurrent = 0 },
         },
       }
     end
@@ -45,6 +47,7 @@ describe("CompletionNotifier", function()
     originals.get_chat_buffer = view.get_chat_buffer
     originals.send = ProgrammaticSender.send
     originals.warn = notify.warn
+    originals.list_chat_buffers = view.list_chat_buffers
 
     buffers, responding, drafts, sends, warnings = {}, {}, {}, {}, {}
     stop_reasons = {}
@@ -85,6 +88,16 @@ describe("CompletionNotifier", function()
     notify.warn = function(message, title)
       table.insert(warnings, { message = message, title = title })
     end
+    -- 並列度上限が「いま何本走っているか」を数える先。上限を設定しないspecでは参照されない
+    view.list_chat_buffers = function()
+      local chats = {}
+      for _, bufnr in ipairs(buffers) do
+        if vim.api.nvim_buf_is_valid(bufnr) then
+          chats[bufnr] = view.get_chat_buffer(bufnr)
+        end
+      end
+      return chats
+    end
 
     configure()
 
@@ -101,6 +114,7 @@ describe("CompletionNotifier", function()
     view.get_chat_buffer = originals.get_chat_buffer
     ProgrammaticSender.send = originals.send
     notify.warn = originals.warn
+    view.list_chat_buffers = originals.list_chat_buffers
 
     for _, bufnr in ipairs(buffers) do
       if vim.api.nvim_buf_is_valid(bufnr) then
@@ -776,6 +790,64 @@ describe("CompletionNotifier", function()
     -- 超過しても連鎖は止まる: 以降の購読は拒否される
     responding[a] = false
     assert.is_false(Notifier.subscribe(a, make_chat()))
+  end)
+
+  describe("the concurrency limit", function()
+    it("holds a delivery while the editor is at capacity and retries when a slot frees", function()
+      configure(nil, { max_concurrent = 1 })
+      local a, b, busy = make_chat(), make_chat(), make_chat()
+      responding[busy] = true
+
+      MessageQueue.enqueue_message(a, b, "carry on")
+      Notifier.on_response_done(a)
+
+      assert.equals(0, #sends, "the one slot is taken")
+
+      responding[busy] = false
+      Notifier.on_response_done(busy)
+
+      assert.equals(1, #sends, "the freed slot is what retries the held delivery")
+      assert.equals(a, sends[1].bufnr)
+    end)
+
+    it("does not report a chat as stopped while its own delivery is held", function()
+      -- 上限で見送っただけのチャットはまだ用件を抱えている。停止として扱うと、親は
+      -- 「ワーカーが止まった」と起こされ、そのあとワーカーは配達で勝手に走り出す
+      configure(nil, { max_concurrent = 1 })
+      local parent, a, b, busy = make_chat(), make_chat(), make_chat(), make_chat()
+      responding[busy] = true
+
+      Notifier.subscribe(parent, a)
+      MessageQueue.enqueue_message(a, b, "carry on")
+
+      Notifier.on_response_done(a)
+      assert.equals(0, #sends)
+
+      responding[busy] = false
+      Notifier.on_response_done(busy)
+      assert.equals(1, #sends)
+      assert.equals(a, sends[1].bufnr)
+
+      -- 購読は温存されているので、a が本当に止まったときに親へ届く
+      responding[a] = false
+      Notifier.on_response_done(a)
+
+      assert.equals(2, #sends)
+      assert.equals(parent, sends[2].bufnr)
+    end)
+
+    it("retries nothing when no limit is configured, so one refusal is not tried twice", function()
+      -- 配達が断られる理由は上限のほかにもある（送信の失敗、ユーザーの下書き）。それらを
+      -- 同じイベントで即座に試し直すのはただの二度打ちで、警告も2回出る
+      local a, b = make_chat(), make_chat()
+      send_result = { success = false }
+
+      Notifier.subscribe(a, b)
+      Notifier.on_response_done(b)
+
+      assert.equals(1, #sends)
+      assert.equals(1, #warnings)
+    end)
   end)
 
   describe("setup", function()

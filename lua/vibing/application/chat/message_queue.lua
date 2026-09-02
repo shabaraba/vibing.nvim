@@ -142,6 +142,18 @@ function M.drop_notification(to_bufnr, about_bufnr)
   end)
 end
 
+---配達待ちを抱えているか
+---
+---並列度上限の判定を配達より**前**に置くために要る。上限に当たっているかを先に見て、
+---キューが空なら見送りとして数えない — 空のキューは「上限で待たされている」ではないので、
+---枠が空くたびに配り直す対象に入ってしまう
+---@param to_bufnr number
+---@return boolean
+function M.has_pending(to_bufnr)
+  local queue = pending[to_bufnr]
+  return queue ~= nil and #queue > 0
+end
+
 ---溜まったものを1ターンにまとめて配達する
 ---
 ---相手が応答中なら**何もしない**。応答中のバッファに送ると `ChatBuffer:send_message()` が

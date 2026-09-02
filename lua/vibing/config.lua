@@ -91,6 +91,11 @@
 ---@field max_round_trips number 2チャット間（無向ペア）で連続して配達してよい通知の数。手動送信（<CR>）でリセットされる
 ---@field max_wakes number 手動送信を挟まずに配達してよい通知の総数。ツリー全体の暴走に対する最終防壁
 
+---@class Vibing.OrchestrationConfig
+---チャット網の走らせ方に関する設定
+---@field max_concurrent number 同時に応答中にできるチャットの本数。0で無制限（デフォルト: 0）。
+---  見るのは機械が始める送信（`nvim_chat_send_message`とキューの配達）だけで、人間の<CR>は止めない
+
 ---@class Vibing.AgentConfig
 ---エージェント設定
 ---Claudeのモード（code/plan/explore）とモデル（sonnet/opus/haiku/fable）を指定
@@ -104,6 +109,7 @@
 ---@field auto_resume_on_limit Vibing.AutoResumeOnLimitConfig 使用量リミット自動継続設定
 ---@field scheduled_requests Vibing.ScheduledRequestsConfig 予約リクエスト設定
 ---@field chat_notifications Vibing.ChatNotificationsConfig チャット間の完了通知設定
+---@field orchestration Vibing.OrchestrationConfig チャット網の並列度設定
 ---@field codex_provider_notice Vibing.CodexProviderNoticeConfig codex軽量呼び出しのプロバイダ警告設定
 ---@field plugins Vibing.PluginsConfig? `--plugin-dir`で読み込むClaude Codeプラグインの設定
 
@@ -305,6 +311,15 @@ M.defaults = {
       -- 配達が多くのペアに散ってペア上限に当たらない形（扇、長い循環）への最終防壁なので、
       -- 通常の運用では届かない大きさにしてある。
       max_wakes = 50,
+    },
+    orchestration = {
+      -- 同時に応答中にできるチャットの本数。0は無制限で、既定で無効なのは、有効にすると
+      -- 既存のオーケストレーションの配達順が黙って変わるため。扇の幅がレート制限に
+      -- 当たるようになったら締めるつまみ（application/chat/concurrency.lua）。
+      --
+      -- 上限に当たった送信は捨てられずキューに残り、枠が空いた完了イベントで配り直される。
+      -- 人間の<CR>はこの上限を見ない。
+      max_concurrent = 0,
     },
     -- codexの軽量呼び出しは --ignore-user-config で走るので、ユーザーの model_provider が落ちて
     -- 既定のOpenAIエンドポイントに向く。それを1セッション1回だけ警告する。

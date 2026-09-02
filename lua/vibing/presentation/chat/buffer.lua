@@ -93,17 +93,33 @@ function ChatBuffer:open()
   end
 end
 
+---実行中のリクエストを止める
+---
+---`adapter:cancel` は `wrapped_on_done` を同期で呼ぶので、ハンドルの後始末（`_current_handle_id`
+---を落とす）はここではしない。`_handle_response` の handle_id 一致判定より先に消すと、
+---キャンセルした当のターンの後始末が「別のターンの応答」として捨てられる。
+---捨てたい呼び出し元（`close` / `send_message`）が、戻ってきてから自分で消す
+---@return boolean cancelled 止めるものがあったか
+function ChatBuffer:cancel_request()
+  if not self._current_handle_id then
+    return false
+  end
+
+  local adapter = self:_get_active_adapter()
+  if not adapter then
+    return false
+  end
+
+  adapter:cancel(self._current_handle_id)
+  return true
+end
+
 ---チャットウィンドウを閉じる
 function ChatBuffer:close()
   -- 実行中のリクエストをキャンセル
-  if self._current_handle_id then
-    local adapter = self:_get_active_adapter()
-    if adapter then
-      adapter:cancel(self._current_handle_id)
-    end
-    self._current_handle_id = nil
-    self._current_adapter = nil
-  end
+  self:cancel_request()
+  self._current_handle_id = nil
+  self._current_adapter = nil
 
   if self._chunk_timer then
     vim.fn.timer_stop(self._chunk_timer)
@@ -238,10 +254,7 @@ function ChatBuffer:_setup_keymaps()
       self:send_message()
     end,
     cancel = function()
-      local adapter = self:_get_active_adapter()
-      if adapter and self._current_handle_id then
-        adapter:cancel(self._current_handle_id)
-      end
+      self:cancel_request()
     end,
     update_context_line = function()
       Renderer.updateContextLine(self.buf)
@@ -431,14 +444,9 @@ function ChatBuffer:send_message()
   end
 
   -- 前のリクエストが実行中ならキャンセル（ゾンビプロセス対策）
-  if self._current_handle_id then
-    local adapter = self:_get_active_adapter()
-    if adapter then
-      adapter:cancel(self._current_handle_id)
-    end
-    self._current_handle_id = nil
-    self._current_adapter = nil
-  end
+  self:cancel_request()
+  self._current_handle_id = nil
+  self._current_adapter = nil
 
   self._is_sending = true
 

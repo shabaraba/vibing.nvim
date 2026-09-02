@@ -11,8 +11,9 @@ local ProgrammaticSender = require("vibing.presentation.chat.modules.programmati
 ---競合する。実際に配達される直前、宛先が idle になった時点で `message_queue` が書く
 ---@param bufnr number 解決済みの宛先
 ---@param params {message: string, from_bufnr?: number}
+---@param at_capacity boolean 積んだ理由に並列度上限が含まれるか
 ---@return {success: boolean, queued: boolean, bufnr: number}
-local function queue_for_later(bufnr, params)
+local function queue_for_later(bufnr, params, at_capacity)
   -- 自分自身への送信を弾く。`validate` は応答中を理由に断っていたので、この経路が
   -- できるまでは起こりえなかった。積むと自分の配達で自分が再稼働し、しかも相手が自分なので
   -- ペアが作れず `max_round_trips` の抑止も効かない（止められるのは全体予算だけになる）。
@@ -27,8 +28,16 @@ local function queue_for_later(bufnr, params)
     error(err)
   end
 
+  local Notifier = require("vibing.application.chat.completion_notifier")
   if params.from_bufnr then
-    require("vibing.application.chat.completion_notifier").on_sent(params.from_bufnr, bufnr)
+    Notifier.on_sent(params.from_bufnr, bufnr)
+  end
+
+  -- 宛先が応答中で積んだのなら、その宛先自身の完了イベントが配達の合図になる。上限で積んだ
+  -- 場合の宛先は idle でありうるので、待っていても自分のイベントは来ない。枠が空いたときに
+  -- 配り直してもらう側に登録しておく
+  if at_capacity then
+    Notifier.hold_for_capacity(bufnr)
   end
 
   return { success = true, queued = true, bufnr = bufnr }
@@ -56,9 +65,19 @@ function M.send_message(params)
 
   -- `queue_if_busy` は明示指定したときだけ効く。既定でキューに積むと、弾かれたことを検知して
   -- 待ち直すつもりだった既存の呼び出し元が、成功したものとして先に進む。
-  -- 引き受けるのは「応答中」だけ: 無効なバッファや空メッセージは待っても解けない
-  if params.queue_if_busy and ProgrammaticSender.is_responding(bufnr) then
-    return queue_for_later(bufnr, params)
+  -- 引き受けるのは「待てば解ける」2つだけ: 宛先が応答中と、編集全体が並列度上限に達している。
+  -- 無効なバッファや空メッセージは待っても解けないので、これまで通りエラーのまま
+  local Concurrency = require("vibing.application.chat.concurrency")
+  local at_capacity = Concurrency.at_capacity()
+
+  if params.queue_if_busy and (ProgrammaticSender.is_responding(bufnr) or at_capacity) then
+    return queue_for_later(bufnr, params, at_capacity)
+  end
+
+  -- 上限に当たったのに待つ気がない呼び出しは、黙って通さない。人間の<CR>はこの経路を通らない
+  -- ので、止まるのは機械が始める送信だけ
+  if at_capacity then
+    error(Concurrency.at_capacity_message())
   end
 
   -- `from_bufnr` は任意。必須にすると渡し忘れで送信そのものが失敗し、既存の

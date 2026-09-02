@@ -47,7 +47,12 @@ describe("ChatLocator.resolve_all", function()
     end
     local bufnr = open_buffer("worker.md")
 
-    assert.same({ { path = "worker.md", bufnr = bufnr } }, ChatLocator.resolve_all({ "worker.md" }))
+    -- `abs` も返る。開いていないチャットの frontmatter を読む側（`orchestration_tree`）が
+    -- 必要とし、ここは既にgitルートのキャッシュを持っている
+    assert.same(
+      { { path = "worker.md", abs = dir .. "/worker.md", bufnr = bufnr } },
+      ChatLocator.resolve_all({ "worker.md" })
+    )
   end)
 
   it("accepts the hand-written scalar form", function()
@@ -56,7 +61,10 @@ describe("ChatLocator.resolve_all", function()
     end
     local bufnr = open_buffer("worker.md")
 
-    assert.same({ { path = "worker.md", bufnr = bufnr } }, ChatLocator.resolve_all("worker.md"))
+    assert.same(
+      { { path = "worker.md", abs = dir .. "/worker.md", bufnr = bufnr } },
+      ChatLocator.resolve_all("worker.md")
+    )
   end)
 
   it("keeps a path that is not open, with no bufnr", function()
@@ -66,7 +74,7 @@ describe("ChatLocator.resolve_all", function()
       return dir
     end
 
-    assert.same({ { path = "worker.md" } }, ChatLocator.resolve_all({ "worker.md" }))
+    assert.same({ { path = "worker.md", abs = dir .. "/worker.md" } }, ChatLocator.resolve_all({ "worker.md" }))
   end)
 
   it("returns nothing for an absent or empty list", function()

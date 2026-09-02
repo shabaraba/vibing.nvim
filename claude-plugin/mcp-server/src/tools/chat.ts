@@ -95,8 +95,10 @@ export const chatTools: Tool[] = [
         queue_if_busy: {
           type: 'boolean',
           description:
-            'Queue the message instead of failing when the target chat is already responding ' +
-            '(default false, which reports an error). A queued message is delivered as a new ' +
+            'Queue the message instead of failing when it cannot be delivered right now — the ' +
+            'target chat is already responding, or the editor is at its configured limit on how ' +
+            'many chats may respond at once (default false, which reports an error). A queued ' +
+            'message is delivered as a new ' +
             'turn the moment that chat stops, and several queued messages arrive coalesced ' +
             'into one turn. Use it for anything the other chat must receive whether or not it ' +
             'happens to be busy right now — a completion report to your orchestrator, an ' +
