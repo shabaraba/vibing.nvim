@@ -9,6 +9,17 @@ local HANDLE_ID = "decision-spec-handle"
 
 local comm_dir
 
+---`active_opts.cwd` に渡す、gitの外のディレクトリ
+---
+---許可された決定はどれも `_capture_baselines` を通り、そこで本当にベースラインを取る。
+---`cwd` を渡さないと `git_snapshot` は Neovim のカレントディレクトリ — つまり開発中の
+---リポジトリそのもの — を対象にしてしまい、テストを走らせるだけで実リポジトリに
+---`refs/worktree/vibing/decision-spec-handle` とスナップショットのオブジェクトが残る。
+---#664 で `git add` が通るようになって初めて表面化した（それまでは `git add` が exit 1 で
+---落ちていたので、何も起きていなかった）。
+---gitの外を指しておけば `worktree_root` が nil を返し、スナップショットは試みられない。
+local sandbox_cwd
+
 local function write_request(request_id, tool_name, tool_input)
   local f = assert(io.open(comm_dir .. "/" .. request_id .. ".req", "w"))
   f:write(vim.json.encode({ tool_name = tool_name, tool_input = tool_input or {} }))
@@ -34,17 +45,37 @@ describe("permission handler hook decision", function()
     comm_dir = vim.fn.tempname()
     vim.fn.mkdir(comm_dir, "p")
     vim.env.VIBING_HOOK_COMM_DIR = comm_dir
+    sandbox_cwd = vim.fn.tempname()
+    vim.fn.mkdir(sandbox_cwd, "p")
     permission.set_active_opts(HANDLE_ID, {
       permissions_allow = { "Read" },
       permissions_deny = { "Bash" },
       permission_mode = "acceptEdits",
+      cwd = sandbox_cwd,
     })
   end)
 
   after_each(function()
     permission.clear_active_opts(HANDLE_ID)
+    -- sandbox_cwd がgitの外である限りセッションは作られないが、ここは「作られていたら
+    -- 実リポジトリのrefを残さずに片付ける」ための保険。clearは冪等。
+    -- 下の `_capture_baselines` describe は git_snapshot を丸ごと差し替えるので、その復元より
+    -- こちらが先に走ると `clear` が存在しない。保険をspecの失敗にはしない
+    local GitSnapshot = require("vibing.core.utils.git_snapshot")
+    if GitSnapshot.clear then
+      GitSnapshot.clear(HANDLE_ID)
+    end
     vim.env.VIBING_HOOK_COMM_DIR = original_comm_dir
     vim.fn.delete(comm_dir, "rf")
+    vim.fn.delete(sandbox_cwd, "rf")
+  end)
+
+  it("takes no working-tree snapshot of the repository the suite runs in", function()
+    -- 決定パスを通しても、このspecがスナップショットを取らないことを固定する。`cwd` を
+    -- 実リポジトリに向け直すと、ここが落ちる
+    decide("req-no-snapshot", "Edit", { file_path = sandbox_cwd .. "/x.txt" })
+
+    assert.is_false(require("vibing.core.utils.git_snapshot").has_baseline(HANDLE_ID))
   end)
 
   it("grants vibing-nvim's own MCP tools outright", function()
