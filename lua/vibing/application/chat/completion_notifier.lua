@@ -9,6 +9,14 @@
 ---**配達そのものは `message_queue.lua` が持つ。** ここが持つのは購読（`edges`）と暴走抑止
 ---（`round_trips` / `wakes`）だけで、どれもインメモリのみ。Neovim が落ちればワーカーチャットも
 ---道連れなので、`pending-resume.json` のような永続化に意味がない。
+---
+---**`chat_notifications.enabled` が塞ぐのは watchdog だけ。** 質問・承認待ち・エラーで止まった
+---チャットは自分では報告できない（ターンごと kill されるか失敗して終わるので、規約どおり
+---`nvim_chat_send_message` を呼ぶ機会が無い）うえ、外から誰かが動かさないかぎり二度と走らない。
+---その通知までオプトインの裏に置くと、既定の設定ではワーカーが承認プロンプトに座った瞬間に
+---ツリーが黙って止まる。だからその止まり方だけは設定に依らず配る。設定が決めるのは
+---「普通に止まっただけのチャットについて vibing.nvim が自発的に声をかけるか」で、そちらは
+---トークンを無断で使うのでオプトインのまま。
 local M = {}
 
 local notify = require("vibing.core.utils.notify")
@@ -172,23 +180,28 @@ local function is_waiting_on_others(bufnr)
   return false
 end
 
----子待ちを押しのけて親に知らせるべき止まり方か
+---自力では抜けられない止まり方をしたか。したならその理由
 ---
----ワーカーのバッファは誰も見ていないので、質問・承認待ち・エラーで止まったまま保留すると
----誰も対応できない。
+---ワーカーのバッファは誰も見ていない。質問・承認待ち・エラーで止まったチャットは、外から
+---誰かが動かさないかぎり二度と走らない — しかも**そのチャット自身は報告できない**。3つとも
+---ターンが kill されるか失敗して終わるので、規約どおり `nvim_chat_send_message` で報告する
+---機会がそもそも無い。だからこの止まり方だけは、親に届く経路が watchdog しかない。
 ---
 ---読むのは `ChatBuffer:get_stop_reason()` そのもので、`chat_status` の語彙ではない。
 ---あちらは `responding` / `idle` を混ぜた MCP 向けの合成なので、経由すると「この2つには
 ---一致してはいけない」という知識をここに持つことになり、停止理由が増えたときに黙って
 ---「対応不要」に分類する。理由が非nilかどうかだけを見れば、増えた理由は自動的に発火側に入る。
 ---
----バッファが取れない場合は false（＝保留のまま）でよい。そこに至るのは既に消えたバッファで、
----`forget()` が `BufDelete` でエッジごと落としているので保留するものが残っていない
+---バッファが取れない場合は nil でよい。そこに至るのは既に消えたバッファで、`forget()` が
+---`BufDelete` でエッジごと落としているので保留するものが残っていない
 ---@param bufnr number
----@return boolean
-local function stopped_needing_attention(bufnr)
+---@return string? reason `ChatBuffer:get_stop_reason()` の値
+local function stop_reason_of(bufnr)
   local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(bufnr)
-  return chat_buf ~= nil and chat_buf:get_stop_reason() ~= nil
+  if not chat_buf then
+    return nil
+  end
+  return chat_buf:get_stop_reason()
 end
 
 ---並列度上限のせいで積まれた本文を、枠が空いたときの配り直し対象にする
@@ -202,14 +215,17 @@ function M.hold_for_capacity(bufnr)
 end
 
 ---A が B に送ったことを購読として記録する
+---
+---**`enabled` はここでは見ない。** エッジは配達の前提であって配達そのものではなく、
+---`chat_notifications.enabled` が決めるのは「普通に止まっただけのチャットについて
+---vibing.nvim が自発的に通知を出すか」だけ。自力では抜けられない止まり方（質問・承認待ち・
+---エラー）の通知は `queue_if_busy` の本文と同じく設定に依らず配られるので、無効な環境でも
+---エッジは張っておく必要がある。配るかどうかの判断は `process_done` が持つ
 ---@param from_bufnr number 送信元（通知を受け取る側）
 ---@param to_bufnr number 送信先（完了を監視される側）
 ---@return boolean subscribed ペアの往復上限・全体予算などで張らなかった場合 false
 function M.subscribe(from_bufnr, to_bufnr)
   local cfg = settings()
-  if not cfg.enabled then
-    return false
-  end
 
   if type(from_bufnr) ~= "number" or type(to_bufnr) ~= "number" or from_bufnr == to_bufnr then
     return false
@@ -292,12 +308,6 @@ function M.on_sent(from_bufnr, to_bufnr)
     return
   end
 
-  -- 抑止マークは `edges` のためだけにある。無効ならエッジは張られないので、溜めても無駄なうえ、
-  -- セッション中に有効化されたときに、無効だった間の送信が新しいエッジを誤って黙らせる
-  if not settings().enabled then
-    return
-  end
-
   M.subscribe(from_bufnr, to_bufnr)
 
   -- **エッジそのものは消さない。** 消すと、from が「作業中の途中経過」を送っただけの場合にも
@@ -328,47 +338,66 @@ local function process_done(bufnr)
     return
   end
 
-  -- 並列度上限で見送っただけなら、このチャットはまだ配達待ちを抱えている。停止とは呼べないので
-  -- 分岐2と同じく親への配達を保留し、エッジも温存する。枠が空いた完了イベントで配り直され、
-  -- そのとき再稼働するので、上の分岐が改めて答えを出す
-  if held then
-    return
-  end
+  -- 停止理由は1回だけ読んで、以降の判断すべてに使う。この関数の中で理由が書き換わることは
+  -- ないので、2度読んで食い違う心配はない
+  local stop_reason = stop_reason_of(bufnr)
 
-  -- 分岐2。エッジテーブルは親子を区別しないので、判定の意味は「誰かの返事を待っている」。
+  -- 分岐2。まだ待ち合わせ中で、この完了は中間停止でしかない。理由は2つあるが帰結は同じなので
+  -- 1つの述語にまとめてある:
+  --
+  -- - 並列度上限で配達を見送った（`held`）— このチャットはまだ用件を抱えていて、枠が空いた
+  --   完了イベントで配り直され、そのとき再稼働する
+  -- - 自分が送った相手がまだ完了を返していない（`is_waiting_on_others`）— エッジテーブルは
+  --   親子を区別しないので、判定の意味は「誰かの返事を待っている」
+  --
+  -- 例外も共通で、自力では抜けられない止まり方をしていたら保留しない。承認待ちも質問も未送信の
+  -- `## User` セクションとして残るので、枠が空いて配り直しても `flush` は「下書きあり」として
+  -- 断る。そのチャットは二度と走らず完了イベントも二度と来ないので、ここで保留すると親は
+  -- 詰まったことを永久に知らない。
   --
   -- 抑止マーク（`reported`）はここでは**使い切らない**。マークが黙らせるのは停止そのものでは
   -- なく watchdog の配達1回ぶんで、保留した停止は誰にも配達していない。ここで捨てると、
   -- 本当に止まったときの配達で「もう自分から報告した相手」を二度起こすことになる
-  if is_waiting_on_others(bufnr) and not stopped_needing_attention(bufnr) then
+  if not stop_reason and (held or is_waiting_on_others(bufnr)) then
     return
   end
 
-  -- 抑止マークの消費は `enabled` の判定より**前**。マークは「次の停止1回ぶん」の一時状態なので、
-  -- 完了を見送るときも一緒に使い切らないと、無効化を挟んだ間のマークが残り、有効化後に張り直された
-  -- 正当なエッジを黙って落とす。`on_sent` が無効時にマークを立てないのと対になる配慮で、
-  -- `setup()` の「実行中に設定を変えた場合も追従する」はこの経路のこと
+  -- 抑止マークの消費は配達判定より**前**。マークは「次の停止1回ぶん」の一時状態なので、
+  -- 配達を見送るときも一緒に使い切らないと、見送っていた間のマークが残り、あとで張り直された
+  -- 正当なエッジを黙って落とす
   local suppressed = reported[bufnr] or {}
   reported[bufnr] = nil
 
-  if not settings().enabled then
+  local subscribers = edges[bufnr]
+  if not subscribers then
     return
   end
 
-  local subscribers = edges[bufnr]
+  -- 配達した時点で購読は消える（one-shot）。B が次に完了しても、A が改めて送っていなければ
+  -- 通知は飛ばない。自分から報告済みの相手も、購読は同じように使い切る — 用件は届いている。
+  -- 配らない場合も消費するのは、one-shot の意味を「配達したら」ではなく「本当に止まったら」に
+  -- 揃えるため。設定の on/off でエッジの寿命が変わると、有効にした瞬間に古い購読が一斉に
+  -- 発火することになる
+  edges[bufnr] = nil
 
-  if subscribers then
-    -- 配達した時点で購読は消える（one-shot）。B が次に完了しても、A が改めて送っていなければ
-    -- 通知は飛ばない。自分から報告済みの相手も、購読は同じように使い切る — 用件は届いている
-    edges[bufnr] = nil
-    for from_bufnr in pairs(subscribers) do
-      if not suppressed[from_bufnr] and vim.api.nvim_buf_is_valid(from_bufnr) then
-        MessageQueue.enqueue_notification(from_bufnr, bufnr)
-      end
+  -- **`enabled` が決めるのは watchdog だけ。** 質問・承認待ち・エラーで止まったチャットは
+  -- 自分では報告できず（`stop_reason_of` を参照）、外から誰かが動かさないかぎり二度と走らない。
+  -- そこへの唯一の経路をオプトインの裏に置くと、既定の設定ではツリーが黙って止まる。
+  -- `queue_if_busy` の本文と drain を `enabled` で塞がないのと同じ理由
+  if not (settings().enabled or stop_reason) then
+    return
+  end
+
+  for from_bufnr in pairs(subscribers) do
+    -- 抑止マークは「同じ用件を自分から報告済み」を意味するが、その報告のあとで承認待ちや
+    -- エラーに落ちたのなら、それは報告に載っていない新しい事実。分岐2が同じ例外を持つのと
+    -- 揃える
+    if (stop_reason or not suppressed[from_bufnr]) and vim.api.nvim_buf_is_valid(from_bufnr) then
+      MessageQueue.enqueue_notification(from_bufnr, bufnr, stop_reason)
     end
-    for from_bufnr in pairs(subscribers) do
-      drain(from_bufnr)
-    end
+  end
+  for from_bufnr in pairs(subscribers) do
+    drain(from_bufnr)
   end
 end
 
@@ -376,9 +405,12 @@ end
 ---
 ---発火判定は3分岐（#639 / #640）:
 ---  1. 自分宛キューを流せた → この tick で自分が再稼働する → 配達もエッジ消費もしない
----  2. 自分が張った未消費のエッジが残っている → 子待ちでの停止 → 親への配達を保留
----  3. どちらでもない → 本当に止まった → watchdog として購読者へ配達
----2 の例外は `stopped_needing_attention`
+---  2. 並列度上限で配達を見送った、または自分が張った未消費のエッジが残っている → まだ
+---     待ち合わせ中の停止 → 親への配達を保留
+---  3. どちらでもない → 本当に止まった → 購読者へ配達
+---2 の例外は `stop_reason_of` が非nilのとき（自力では抜けられない止まり方）で、上限による
+---保留にも同じ例外がかかる。3 で `chat_notifications.enabled` を見るのも同じ例外つきで、
+---無効でもその止まり方だけは配る
 ---
 ---そのあとに `retry_held`。このターンが終わったことで並列度の枠が1つ空いたので、上限で
 ---見送られていた配達をここで拾う。順序が逆だと、空いた枠を他所に先に取られる

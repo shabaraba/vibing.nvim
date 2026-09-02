@@ -26,6 +26,10 @@ local WARN_TITLE = "Chat Delivery"
 ---@class Vibing.Application.MessageQueue.Item
 ---@field bufnr number? 相手のチャット。通知なら応答を終えた側、本文なら送信元（本文では任意）
 ---@field body string? 配達する本文。**これがあるかどうかが種別**で、別途フラグは持たない
+---@field reason string? 通知のみ。自力では抜けられない止まり方をしたならその理由
+---  （`ChatBuffer:get_stop_reason()`）。読み手が `nvim_get_buffer` を1往復せずに
+---  「答えれば動く」のか「ユーザーにしか外せない」のかを判断できるようにするためで、
+---  普通に止まっただけの watchdog 通知では nil
 
 ---@type table<number, Vibing.Application.MessageQueue.Item[]>
 local pending = {}
@@ -73,13 +77,17 @@ end
 ---「done_bufnr が止まった」という通知を積む
 ---
 ---同じチャットについて二重には積まない。宛先が忙しい間に同じワーカーが2度止まっても、
----伝えるべきことは「止まった、読みに行け」の1回きり
+---伝えるべきことは「止まった、読みに行け」の1回きり。ただし**理由は後勝ちで上書きする**:
+---2度目が承認待ちなら、そちらが宛先の見るべき現在の状態で、1度目の（理由なしの）通知に
+---合流させると「読みに行け」だけが残って何で詰まっているかが落ちる
 ---@param to_bufnr number
 ---@param done_bufnr number
-function M.enqueue_notification(to_bufnr, done_bufnr)
+---@param reason string? 自力では抜けられない止まり方をしたならその理由
+function M.enqueue_notification(to_bufnr, done_bufnr, reason)
   local queue = pending[to_bufnr] or {}
   for _, item in ipairs(queue) do
     if not item.body and item.bufnr == done_bufnr then
+      item.reason = reason or item.reason
       return
     end
   end
@@ -98,7 +106,7 @@ function M.enqueue_notification(to_bufnr, done_bufnr)
     return
   end
 
-  table.insert(queue, { bufnr = done_bufnr })
+  table.insert(queue, { bufnr = done_bufnr, reason = reason })
   pending[to_bufnr] = queue
 end
 

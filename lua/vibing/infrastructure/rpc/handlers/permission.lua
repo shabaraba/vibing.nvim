@@ -6,16 +6,17 @@ local Config = require("vibing.config")
 
 local M = {}
 
---- Session-level permission state (shared across all hook invocations)
---- @type {allowed: string[], denied: string[]}
-local session_state = {
-  allowed = {},
-  denied = {},
-}
-
 --- Active chat frontmatter overrides, keyed by handle_id (set by stream start). A single shared
 --- slot would let one chat buffer's opts silently apply to another's permission checks whenever
 --- two chats stream concurrently (see ActiveStreamRegistry for the same class of bug).
+---
+--- The session-level allow/deny lists an approval answer produces live in here too, for exactly
+--- that reason (#667). They used to sit in a module-level table instead, so a `deny_once` answered
+--- in a worker chat was consumed by whichever chat called that tool next, and an
+--- `allow_for_session` granted in a throwaway worker silently applied to every chat in the editor
+--- — bypassing each one's own `permissions_ask`. The per-chat lists were already plumbed this far
+--- as `permissions_session_allow` / `permissions_session_deny` (`send_message.lua`); only
+--- `build_permission_config` was still reading the shared table.
 --- @type table<string, table>
 local active_opts_by_handle = {}
 
@@ -86,8 +87,13 @@ local function build_permission_config(handle_id)
     allowed_tools = o.permissions_allow or perms.allow or {},
     denied_tools = o.permissions_deny or perms.deny or {},
     asked_tools = o.permissions_ask or perms.ask or {},
-    session_allowed_tools = session_state.allowed,
-    session_denied_tools = session_state.denied,
+    -- 承認の答えはそのチャットのセッションに属する。`o` から読むことで、あるチャットで出した
+    -- 判断が別のチャットの判定に混ざらない（#667）。`o` が引けないとき（handle_id が不明で、かつ
+    -- 複数チャットが走っている）は空になるが、`for_session` の許可/拒否は frontmatter にも
+    -- 書かれていて `permissions_allow` / `permissions_deny` として上の行から入るので、
+    -- ここで落ちるのはメモリ上にしか無い `:once` だけになる
+    session_allowed_tools = o.permissions_session_allow or {},
+    session_denied_tools = o.permissions_session_deny or {},
     permission_rules = M._resolve_permission_rules(perms),
     permission_mode = o.permission_mode or perms.mode or "default",
     mcp_enabled = config.mcp and config.mcp.enabled or false,
@@ -372,27 +378,6 @@ function M.ask_user_question(params)
   end
 
   return { status = "ok" }
-end
-
---- Add tool to session allow list
-function M.add_session_allow(tool_pattern, once)
-  can_use_tool_mod.add_session_allow(session_state.allowed, tool_pattern, once)
-end
-
---- Add tool to session deny list
-function M.add_session_deny(tool_pattern, once)
-  can_use_tool_mod.add_session_deny(session_state.denied, tool_pattern, once)
-end
-
---- Reset session state
-function M.reset_session()
-  session_state.allowed = {}
-  session_state.denied = {}
-end
-
---- Get current session state
-function M.get_session_state()
-  return vim.deepcopy(session_state)
 end
 
 return M

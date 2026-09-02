@@ -65,7 +65,7 @@ describe("CompletionNotifier", function()
           return drafts[bufnr]
         end,
         -- 分岐2の例外（質問・承認待ち・エラー）は、`chat_status` の語彙を経由せず
-        -- これを直接読む（`stopped_needing_attention`）。停止理由が増えたときに
+        -- これを直接読む（`stop_reason_of`）。停止理由が増えたときに
         -- 分類漏れで黙って「対応不要」になるのを避けるため
         get_stop_reason = function()
           return stop_reasons[bufnr]
@@ -224,14 +224,52 @@ describe("CompletionNotifier", function()
     assert.equals(0, #sends)
   end)
 
-  it("neither subscribes nor delivers when the feature is disabled", function()
+  it("subscribes but delivers nothing for an ordinary stop when the feature is disabled", function()
+    -- エッジは配達の前提であって配達そのものではない。無効な環境でも張っておかないと、
+    -- 自力では抜けられない止まり方（下のテスト群）を伝える先が無くなる
     configure({ enabled = false })
     local a, b = make_chat(), make_chat()
 
-    assert.is_false(Notifier.subscribe(a, b))
+    assert.is_true(Notifier.subscribe(a, b))
     Notifier.on_response_done(b)
 
     assert.equals(0, #sends)
+  end)
+
+  -- 質問・承認待ち・エラーで止まったチャットは、ターンごと kill されるか失敗して終わるので
+  -- 自分では報告できない。外から誰かが動かさないかぎり二度と走らないのに、唯一の経路が
+  -- オプトインの裏にあると、既定の設定ではツリーが黙って止まる
+  for _, reason in ipairs({ "asked_question", "waiting_approval", "error" }) do
+    it("delivers a " .. reason .. " stop even when the feature is disabled", function()
+      configure({ enabled = false })
+      local a, b = make_chat(), make_chat()
+
+      Notifier.subscribe(a, b)
+      stop_reasons[b] = reason
+      Notifier.on_response_done(b)
+
+      assert.equals(1, #sends)
+      assert.equals(a, sends[1].bufnr)
+      assert.is_truthy(
+        sends[1].message:find("status: " .. reason, 1, true),
+        "the notice names what the chat is stuck on: " .. sends[1].message
+      )
+    end)
+  end
+
+  it("ignores the report suppression mark when the stop needs attention", function()
+    -- 抑止マークは「同じ用件を自分から報告済み」を意味するが、報告のあとで承認待ちに落ちたのなら
+    -- それは報告に載っていない新しい事実。分岐2の例外と揃える
+    local a, b = make_chat(), make_chat()
+
+    Notifier.subscribe(a, b)
+    Notifier.on_sent(b, a)
+    stop_reasons[b] = "waiting_approval"
+
+    Notifier.on_response_done(b)
+
+    assert.equals(1, #sends)
+    assert.equals(a, sends[1].bufnr)
   end)
 
   it("refuses a chat subscribing to itself", function()
@@ -685,9 +723,9 @@ describe("CompletionNotifier", function()
     assert.is_truthy(sends[#sends].message:find("chat buffer " .. b, 1, true))
   end)
 
-  it("records no suppression while the feature is disabled", function()
-    -- 無効な間はエッジが張られないので印は無駄なうえ、途中で有効化されたときに
-    -- 無効だった間の送信が新しいエッジを誤って黙らせる
+  it("records the suppression mark while the feature is disabled", function()
+    -- 本文の配達は設定に依らないので、無効な間の `on_sent` も「A は B から直接聞いた」という
+    -- 事実そのもの。印を立てないと、有効化したあとの最初の停止で A が同じ用件で二度起こされる
     configure({ enabled = false })
     local a, b = make_chat(), make_chat()
 
@@ -697,8 +735,7 @@ describe("CompletionNotifier", function()
     Notifier.subscribe(a, b)
     Notifier.on_response_done(b)
 
-    assert.equals(1, #sends)
-    assert.equals(a, sends[1].bufnr)
+    assert.equals(0, #sends)
   end)
 
   it("does not carry a suppression mark across a spell of the feature being disabled", function()
@@ -834,6 +871,33 @@ describe("CompletionNotifier", function()
 
       assert.equals(2, #sends)
       assert.equals(parent, sends[2].bufnr)
+    end)
+
+    it("reports a held chat anyway when it stopped on a reason it cannot leave", function()
+      -- 保留の例外。承認待ちは未送信の `## User` セクションとして残るので、枠が空いて
+      -- 配り直しても `flush` は下書きありとして断る。そのチャットは二度と走らず完了イベントも
+      -- 二度と来ないので、上限を理由に黙ると親は詰まったことを永久に知らない
+      configure(nil, { max_concurrent = 1 })
+      local parent, a, b, busy = make_chat(), make_chat(), make_chat(), make_chat()
+      responding[busy] = true
+
+      Notifier.subscribe(parent, a)
+      MessageQueue.enqueue_message(a, b, "carry on")
+      stop_reasons[a] = "waiting_approval"
+      drafts[a] = "承認待ちのプロンプトが未送信セクションに残っている"
+
+      Notifier.on_response_done(a)
+
+      -- 枠が空くまでは誰にも配れない。届く先が用意されたかどうかがここでの争点
+      responding[busy] = false
+      Notifier.on_response_done(busy)
+
+      local woke_parent = false
+      for _, sent in ipairs(sends) do
+        assert.not_equals(a, sent.bufnr, "a is blocked on its draft, so nothing can restart it")
+        woke_parent = woke_parent or sent.bufnr == parent
+      end
+      assert.is_true(woke_parent, "the parent is told even though a's own delivery was held")
     end)
 
     it("retries nothing when no limit is configured, so one refusal is not tried twice", function()

@@ -120,6 +120,21 @@ The user deletes unwanted options with standard Vim commands (`dd`, etc.) and se
 one with `<CR>`. `allow_once`/`deny_once` apply to this call only; `allow_for_session`/
 `deny_for_session` persist for the rest of the chat session.
 
+**An answer belongs to the chat that was asked, and to no other** (#667). The four decisions are
+recorded on that `ChatBuffer` (`update_session_permissions`), handed to the next request as
+`permissions_session_allow` / `permissions_session_deny`, and reach the hook through
+`set_active_opts`, which is keyed by handle_id. They used to be written to a second, module-level
+table in `permission.lua` as well — keyed by nothing — so a `deny_once` answered in a worker chat
+was consumed by whichever chat called that tool next, and an `allow_for_session` granted in a
+throwaway worker applied to every chat in the editor, walking past each one's own
+`permissions_ask`. Orchestration makes concurrent chats the normal case, so this was reachable in
+ordinary use rather than in a corner.
+
+`build_permission_config` was the only reader of that table: the per-chat lists were already
+plumbed all the way to it and then dropped. Note that a `:once` grant is consumed by
+`table.remove` on the list it matched in, so sharing that list is what made the grant land on the
+wrong chat — being per-chat is a correctness property here, not only an isolation one.
+
 **Implementation notes:**
 
 - The PreToolUse hook (`bin/hooks/pre-tool-use.sh`) posts to the RPC server, which dispatches to

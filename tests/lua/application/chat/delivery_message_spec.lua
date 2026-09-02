@@ -99,3 +99,61 @@ describe("DeliveryMessage.section_for", function()
     assert.equals("Report", section.kind)
   end)
 end)
+
+describe("DeliveryMessage.build (blocked chats)", function()
+  local DeliveryMessage
+  local buffers
+
+  local function make_buf(name)
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    if name then
+      vim.api.nvim_buf_set_name(bufnr, vim.fn.tempname() .. "-" .. name)
+    end
+    table.insert(buffers, bufnr)
+    return bufnr
+  end
+
+  before_each(function()
+    buffers = {}
+    package.loaded["vibing.application.chat.delivery_message"] = nil
+    DeliveryMessage = require("vibing.application.chat.delivery_message")
+  end)
+
+  after_each(function()
+    package.loaded["vibing.application.chat.delivery_message"] = nil
+    for _, bufnr in ipairs(buffers) do
+      if vim.api.nvim_buf_is_valid(bufnr) then
+        vim.api.nvim_buf_delete(bufnr, { force = true })
+      end
+    end
+  end)
+
+  it("names the status so the reader can tell 'answer it' from 'only the user can'", function()
+    local about = make_buf("worker.md")
+
+    local text = DeliveryMessage.build({ { bufnr = about, reason = "waiting_approval" } })
+
+    assert.is_truthy(text:find("status: waiting_approval", 1, true))
+    assert.is_truthy(text:find("cannot continue on their own", 1, true))
+    -- 状態が判っているものについて「報告せずに止まった」と言うのは推測。事実のほうを言う
+    assert.is_falsy(text:find("have stopped without reporting back", 1, true))
+  end)
+
+  it("keeps the watchdog wording when no status is known", function()
+    local about = make_buf("worker.md")
+
+    local text = DeliveryMessage.build({ { bufnr = about } })
+
+    assert.is_truthy(text:find("have stopped without reporting back", 1, true))
+    assert.is_falsy(text:find("status:", 1, true))
+  end)
+
+  it("explains both kinds when a blocked chat and a silent one arrive together", function()
+    local blocked, silent = make_buf("blocked.md"), make_buf("silent.md")
+
+    local text = DeliveryMessage.build({ { bufnr = blocked, reason = "asked_question" }, { bufnr = silent } })
+
+    assert.is_truthy(text:find("status: asked_question", 1, true))
+    assert.is_truthy(text:find("A chat listed without a status", 1, true))
+  end)
+end)

@@ -310,22 +310,4 @@ function M.can_use_tool(tool_name, input, config)
   return result
 end
 
---- Add tool to session allow list
---- @param session_allowed_tools string[]
---- @param tool_pattern string
---- @param once boolean
-function M.add_session_allow(session_allowed_tools, tool_pattern, once)
-  local pattern = once and (tool_pattern .. ONCE_SUFFIX) or tool_pattern
-  table.insert(session_allowed_tools, pattern)
-end
-
---- Add tool to session deny list
---- @param session_denied_tools string[]
---- @param tool_pattern string
---- @param once boolean
-function M.add_session_deny(session_denied_tools, tool_pattern, once)
-  local pattern = once and (tool_pattern .. ONCE_SUFFIX) or tool_pattern
-  table.insert(session_denied_tools, pattern)
-end
-
 return M

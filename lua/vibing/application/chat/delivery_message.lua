@@ -50,23 +50,58 @@ local function notification_section(items, cache)
   -- パスを先に置くのはシステムプロンプトの orchestrator 行と同じ理由で、再起動を跨いで
   -- 意味を保つのはパスのほうだから（#641）
   local lines = {}
+  local any_blocked = false
   for _, item in ipairs(items) do
-    table.insert(lines, string.format("- %s (chat buffer %d)", display_path(item.bufnr, cache), item.bufnr))
+    local path = display_path(item.bufnr, cache)
+    if item.reason then
+      any_blocked = true
+      -- 状態を名指しするのは、読み手が「答えれば動く」のか「ユーザーにしか外せない」のかを
+      -- `nvim_get_buffer` の1往復なしで分けられるようにするため。語彙は `chat_status` と同じ
+      table.insert(lines, string.format("- %s (chat buffer %d) — status: %s", path, item.bufnr, item.reason))
+    else
+      table.insert(lines, string.format("- %s (chat buffer %d)", path, item.bufnr))
+    end
   end
 
   -- 文面が「止まった、読みに行け」から「報告なしで止まった」に変わったのは #643。規約では
   -- ワーカーは終わったら自分から報告し、`on_sent` の抑止マークがその直後の停止1回ぶんの
   -- watchdog を落とす。つまりここに載るのは「報告せずに止まった」チャットで、それは規約から
-  -- 外れた止まり方 — 失敗・質問・承認待ちのどれか — である可能性のほうが高い
+  -- 外れた止まり方 — 失敗・質問・承認待ちのどれか — である可能性のほうが高い。
+  --
+  -- 状態が判っている分はそう言い切る。そちらは推測ではなく、そのチャットが自力では
+  -- 抜けられないことが確定しているので、文面も「読みに行け」ではなく「動かしに行け」になる
+  local lead = any_blocked
+      and "The following chat(s) you sent a message to have stopped and cannot continue on their own:"
+    or "The following chat(s) you sent a message to have stopped without reporting back:"
+
+  local explanation = any_blocked
+      and {
+        "A chat with a status above will not move again until someone acts on it:",
+        "",
+        "- asked_question — it is waiting for an answer. Read the question with",
+        "  nvim_get_buffer({ rpc_port, file_path }) and answer it with nvim_chat_send_message",
+        "  (passing from_bufnr), or put it to the user if only they can decide.",
+        "- waiting_approval — it is sitting on a tool-approval prompt. Only the user can clear that",
+        "  one, so say which chat is blocked and on what.",
+        "- error — its last turn failed. Read the tail of the transcript and decide whether to",
+        "  re-brief it or report the failure.",
+        "",
+        "A chat listed without a status stopped without reporting back; read it the same way and do",
+        "not treat its task as done.",
+      }
+    or {
+      "A chat that finishes its task is expected to report the result to you itself, so a stop with",
+      "no report is more likely to be something else: it failed, it stopped to ask a question, or it",
+      "is waiting on a tool approval. Read each one with nvim_get_buffer({ rpc_port, file_path }),",
+      "look at the tail of the transcript, and decide what to do — do not treat its task as done.",
+    }
+
   return table.concat({
-    "The following chat(s) you sent a message to have stopped without reporting back:",
+    lead,
     "",
     table.concat(lines, "\n"),
     "",
-    "A chat that finishes its task is expected to report the result to you itself, so a stop with",
-    "no report is more likely to be something else: it failed, it stopped to ask a question, or it",
-    "is waiting on a tool approval. Read each one with nvim_get_buffer({ rpc_port, file_path }),",
-    "look at the tail of the transcript, and decide what to do — do not treat its task as done.",
+    table.concat(explanation, "\n"),
     "",
     "If other chats you dispatched are still running, do not start aggregating yet — say what you",
     "found and end the turn. You will be woken again when the next one stops.",
