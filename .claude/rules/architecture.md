@@ -1211,6 +1211,35 @@ A worker asking its orchestrator a question is the same path in reverse — it j
 There is no waiting anywhere, and there cannot be: the CLI process dies when its turn ends, so the
 only way to deliver anything to a chat is to _start a new turn on it_.
 
+**What that flag gates is narrower than it reads.** It governs the
+watchdog — the notice vibing.nvim volunteers about a chat that stopped normally. It does **not**
+gate a stop the chat cannot leave on its own: `asked_question`, `waiting_approval` and `error` are
+delivered to every subscriber whatever the setting is. Three facts make that the only coherent
+line. Each of those three ends the turn by killing it or failing it, so the chat has no
+opportunity to call `nvim_chat_send_message` — the report convention, which is ungated, cannot
+cover them by construction. None of them clears without someone outside acting. And a worker's
+buffer is a windowless `back` chat nobody is looking at. Put together, gating them behind an
+opt-in meant that on the default configuration a worker hitting its first tool-approval prompt
+stopped the whole tree in silence, which is the failure this module exists to remove.
+
+So `subscribe` no longer refuses while the flag is off — the edge is the _precondition_ for a
+delivery, not the delivery — and `process_done` reads the flag only after establishing that the
+stop carries no reason. The edge is still consumed on a real stop either way, so switching the
+flag on does not fire a backlog of old subscriptions. `max_round_trips` and `max_wakes` bound both
+kinds of delivery, since a runaway is a runaway.
+
+The same correction applies to the worker's system-prompt orchestrator line, which
+`send_message.lua` also used to skip while the flag was off, on the reasoning that "there is no
+route to wake the orchestrator anyway". That reasoning was wrong in the same way: a worker's
+report is an ordinary `nvim_chat_send_message`, and both the direct send and `queue_if_busy` have
+always been ungated. The default configuration was therefore running workers that had never been
+told who to report to — disabling the _primary_ path in order to disable the watchdog.
+
+`enqueue_notification` carries the reason through to the delivered text, so the notice reads
+`- .vibing/chat/w.md (chat buffer 12) — status: waiting_approval` and says which of the three it
+is. A repeat notice about the same chat still coalesces into one line, but the **newer** reason
+wins: what the reader needs is that chat's current state, not the first thing it was.
+
 The completion event fires from the `callbacks.add_user_section` wrapper in `buffer.lua`, and
 every word of that placement is load-bearing:
 
@@ -1252,8 +1281,9 @@ Four things about it are not incidental:
 - **`queue_if_busy` is not gated on `chat_notifications.enabled`, and the drain is not either.**
   That flag decides whether vibing.nvim volunteers a watchdog wake-up; a queued message is a
   delivery the caller explicitly asked for. Gating it would mean a worker's report vanishing in
-  silence on the default config. So `on_response_done` drains first and unconditionally, and only
-  the `edges` half below it reads the flag.
+  silence on the default config. So `on_response_done` drains first and unconditionally, and the
+  `edges` half below it reads the flag only for a chat that stopped with no reason attached
+  (see the flag's own note above).
 - **It is off by default on the tool, in both directions of version skew.** An older Neovim
   ignores the key and refuses a busy chat exactly as before, which is what a caller that did not
   ask to queue already expects; an older MCP server never sends it. It also only covers
@@ -1490,6 +1520,13 @@ question or an approval prompt than a finished task. `delivery_message.lua` says
 words, and the skill's step 5 splits the two wake-ups on that line: a report is read as text, a
 watchdog notice sends the orchestrator to the transcript.
 
+The suppression mark has the same exception branch 2 does, and for the same reason: a report is
+only redundant with a stop that says nothing new. A worker that reports and _then_ falls into
+`waiting_approval` has produced a fact its report does not carry, so that stop is delivered even
+to the chat it just reported to. Where a reason is known, `delivery_message` drops the "stopped
+without reporting back" wording — that phrasing is an inference about a silent stop, and stating
+it about a chat whose state is established would be a guess printed over a fact.
+
 **Fan-in is a convention, not a barrier.** A chat that is both a worker and an orchestrator holds
 its own report until every worker of its own has reported — stated in `vibing-orchestrate` step 7,
 enforced by nothing. A barrier in the mechanism would have to answer "what if a child never
@@ -1499,9 +1536,10 @@ stops on `asked_question` / `waiting_approval` / `error` — the same three exce
 already makes. Worth revisiting if a middle node forgetting turns out to cost anything in practice.
 
 A worker learns its orchestrator from a system-prompt line built out of its `orchestrated_by`
-frontmatter. Only that direction is exposed: a worker's list is written once at creation and stays
-byte-stable across turns (#469), while an orchestrator's `orchestrated` grows with each dispatch
-and would move the cached prefix mid-conversation.
+frontmatter, on every turn regardless of `chat_notifications.enabled` (see above; the report
+path that line describes was never gated). Only that direction is exposed: a worker's list
+is written once at creation and stays byte-stable across turns (#469), while an orchestrator's
+`orchestrated` grows with each dispatch and would move the cached prefix mid-conversation.
 
 **Out of scope, deliberately:** the orchestrator still does not poll inside its own turn, and
 nothing is persisted — the subscription table and the delivery queue are in memory only, since

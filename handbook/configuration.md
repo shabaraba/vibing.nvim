@@ -174,7 +174,13 @@ agent = {
 
   chat_notifications = {    -- Tell a chat when a chat it messaged finishes responding
     enabled = false,        -- Opt-in: the notification arrives as a new turn, so it spends
-                            -- tokens with nobody watching
+                            -- tokens with nobody watching. This governs the WATCHDOG only —
+                            -- the volunteered "that chat stopped, go and read it" for a chat
+                            -- that stopped normally. A chat that stopped on a question, a
+                            -- tool-approval prompt, or an error is reported to whoever
+                            -- messaged it whatever this is set to: those three kill the turn,
+                            -- so the chat cannot report for itself, and it will not run again
+                            -- until someone acts on it
     max_round_trips = 8,    -- Notifications delivered between one pair of chats without a
                             -- manual <CR>. A→B→A→B is legitimate (B asks, A answers), so the
                             -- chain is bounded by count rather than refused as a cycle. The

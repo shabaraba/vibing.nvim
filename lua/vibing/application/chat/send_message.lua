@@ -156,16 +156,16 @@ function M.execute(adapter, callbacks, message, config)
   -- bufnr は「いまの解決結果」として併記されるだけで、相手が開かれていなければ落ちる。
   -- 落ちても行は消えない — パスなら `nvim_chat_send_message` が開き直せる。
   --
-  -- 通知が無効なら解決自体を行わない。ワーカーがオーケストレーターに話しかけられても
-  -- 相手を起こす経路が無いので、プロンプトのトークンを払う理由がない。
+  -- **`chat_notifications.enabled` では止めない。** かつてはここで切っていて、理由は
+  -- 「通知が無効なら相手を起こす経路が無い」だったが、それが誤り。ワーカーからの
+  -- 報告は `nvim_chat_send_message` そのもので、即配達も `queue_if_busy` も設定に依らず動く
+  -- ——「報告はワーカーの仕事、通知は watchdog」という規約の、主経路のほうを塞いでいた。
+  -- 結果として既定の設定では、ワーカーは報告先を1つも知らないまま走っていた。
   local orchestrators = nil
-  local chat_notifications = config.agent and config.agent.chat_notifications
-  if chat_notifications and chat_notifications.enabled then
-    local ok, resolved =
-      pcall(require("vibing.application.chat.chat_locator").resolve_all, frontmatter.orchestrated_by)
-    if ok and #resolved > 0 then
-      orchestrators = resolved
-    end
+  local ok_orchestrators, resolved =
+    pcall(require("vibing.application.chat.chat_locator").resolve_all, frontmatter.orchestrated_by)
+  if ok_orchestrators and #resolved > 0 then
+    orchestrators = resolved
   end
 
   local opts = {

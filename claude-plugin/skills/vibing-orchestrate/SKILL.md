@@ -128,8 +128,14 @@ several arriving together are coalesced into one turn. This works regardless of
 notification vibing.nvim volunteers.
 
 That setting governs the **watchdog** instead: with it enabled, a worker that stops _without_
-reporting wakes you anyway (step 5). With it disabled, a worker that never reports is silent — say
-"進捗は?と聞いてください" and wait for the user.
+reporting wakes you anyway (step 5). With it disabled, a worker that stopped normally and simply
+never reported is silent — say "進捗は?と聞いてください" and wait for the user.
+
+**A blocked worker always wakes you, whatever that setting is.** A worker that stopped to ask a
+question, that is sitting on a tool-approval prompt, or whose turn failed cannot report: all three
+kill its turn before it could call `nvim_chat_send_message`, and it will not run again until
+someone acts on it. Those three are delivered to you regardless of
+`agent.chat_notifications.enabled`, and the notice names the status.
 
 ## 5. Read what arrived
 
@@ -139,11 +145,18 @@ You get woken in two ways, and they do not mean the same thing.
 summary is meant to be enough on its own. Do not call `nvim_get_buffer` on that worker unless the
 summary actually leaves something open.
 
-**A watchdog notice** — "the following chat(s) you sent a message to have stopped without reporting
-back". Under the convention above a finished worker reports, so a stop with no report is more
-likely a worker that failed, stopped to ask something, or is sitting on a tool approval. Read those
-with `nvim_get_buffer({ rpc_port, file_path })` — not every worker. Alongside the transcript the
-result carries a chat-status line:
+**A watchdog notice** — the turn names one or more chats you messaged and says they stopped. Two
+shapes, and the difference is whether the notice carries a `status:`.
+
+- **With a status** ("have stopped and cannot continue on their own", each chat listed as
+  `— status: asked_question` / `waiting_approval` / `error`) the state is already established:
+  that chat is stuck and will not move until someone acts. Act on it from the list; you only need
+  `nvim_get_buffer` to read _what_ it is stuck on.
+- **Without one** ("have stopped without reporting back") the worker simply stopped without
+  reporting, which under the convention above is itself suspect. Read those with
+  `nvim_get_buffer({ rpc_port, file_path })` — not every worker.
+
+Alongside the transcript the result carries a chat-status line, in the same vocabulary:
 
 - `status: responding` — a reply is still being streamed in. Whatever you just read is partial;
   report it as in progress and do not summarize its conclusion.

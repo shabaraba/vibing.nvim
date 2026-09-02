@@ -161,10 +161,27 @@ describe("MessageQueue", function()
     for _ = 1, 20 do
       Queue.enqueue_message(a, nil, "filler")
     end
-    Queue.enqueue_notification(a, b, 0)
+    Queue.enqueue_notification(a, b)
 
     assert.equals(1, #warnings)
     assert.equals("Chat Delivery", warnings[1].title)
+  end)
+
+  it("upgrades a repeat notice to the newer stop reason", function()
+    -- 合流させて1件にするのは正しいが、理由まで最初の1件に揃えると「読みに行け」だけが残り、
+    -- 何で詰まっているかが落ちる。宛先が見るべきなのは現在の状態のほう
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    Queue.enqueue_notification(a, b)
+    Queue.enqueue_notification(a, b, "waiting_approval")
+
+    responding[a] = false
+    Queue.flush(a)
+
+    assert.is_truthy(sends[1].message:find("status: waiting_approval", 1, true))
+    local _, count = sends[1].message:gsub("chat buffer " .. b, "")
+    assert.equals(1, count)
   end)
 
   it("does not count a repeat notice about the same chat against the cap", function()
@@ -172,8 +189,8 @@ describe("MessageQueue", function()
     local a, b = make_chat(), make_chat()
     responding[a] = true
 
-    Queue.enqueue_notification(a, b, 0)
-    Queue.enqueue_notification(a, b, 0)
+    Queue.enqueue_notification(a, b)
+    Queue.enqueue_notification(a, b)
 
     responding[a] = false
     Queue.flush(a)
@@ -200,7 +217,7 @@ describe("MessageQueue", function()
     local a, b = make_chat(), make_chat()
     responding[a] = true
 
-    Queue.enqueue_notification(a, b, 0)
+    Queue.enqueue_notification(a, b)
     Queue.forget(b)
 
     responding[a] = false
