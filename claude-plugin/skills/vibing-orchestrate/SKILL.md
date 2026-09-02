@@ -81,10 +81,13 @@ carries three things beyond the task:
 2. **How to report** — `nvim_chat_send_message` with the worker's own chat buffer number as
    `from_bufnr` and **`queue_if_busy: true`**. Without that flag the send is refused outright
    whenever you happen to be mid-turn, and the report is simply lost.
-3. **What to report** — a summary that stands on its own: what changed, what failed, what is left.
-   "Done, read my chat" costs you a `nvim_get_buffer` and pulls that worker's entire transcript
-   into this conversation, once per worker. Avoiding that is the whole reason reporting is pushed
-   rather than polled.
+3. **What to report** — the conclusion, what failed, and what needs your action, **briefly**. The
+   summary must stand on its own — "Done, read my chat" costs you a `nvim_get_buffer` and pulls
+   that worker's entire transcript into this conversation, once per worker — but the opposite
+   failure wastes tokens twice: a report that replays the whole working log is paid for once when
+   the worker writes it and again when you read it, while that log already sits in the worker's
+   transcript for free. Tell the worker to keep the report to the points you will act on; read its
+   transcript yourself on the rare occasion you need the detail.
 
 Add that if it gets stuck or the brief turns out to be ambiguous, it should ask you the same way
 rather than guess. A question costs one turn; a worker guessing wrong costs the whole task.
@@ -103,6 +106,8 @@ A closing paragraph you can paste into a brief:
   })
 
 要約だけで判断できる内容にしてください（何を変えたか・何が失敗したか・何が残っているか）。
+作業過程の詳細は書かず、要点だけを短く。詳細が必要なときはこちらからあなたの transcript を
+読みに行きます。
 詰まったとき、ブリーフが曖昧なときも、推測せず同じ方法で聞いてください。
 ```
 
