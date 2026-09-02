@@ -80,4 +80,40 @@ function M.resolve_chat_target(params)
   return bufnr
 end
 
+--- Validate an optional `from_bufnr` argument — the calling chat's own buffer number.
+---
+--- Absent (nil / JSON `null`) stays fine: the orchestration link is optional by design, and a
+--- forgotten argument must not refuse the call (version skew, older MCP servers). But a value
+--- that is present and names no chat buffer is an error rather than a warning. The typical way
+--- to get here is a number carried over from before a Neovim restart; proceeding would drop the
+--- `orchestrated`/`orchestrated_by` link and the completion subscription in silence, while the
+--- MCP caller — the one party able to correct the number — is told the call succeeded (#661).
+--- @param value any
+--- @return number|nil
+function M.resolve_from_bufnr(value)
+  value = present(value)
+  if value == nil then
+    return nil
+  end
+  if type(value) ~= "number" then
+    error("from_bufnr must be a number")
+  end
+  if
+    not (
+      vim.api.nvim_buf_is_valid(value)
+      and require("vibing.presentation.chat.view").get_chat_buffer(value) ~= nil
+    )
+  then
+    error(
+      string.format(
+        "from_bufnr %d does not name a chat buffer in this Neovim session "
+          .. "(buffer numbers do not survive a restart). Pass the exact chat buffer number "
+          .. "from your current system prompt, or omit from_bufnr",
+        value
+      )
+    )
+  end
+  return value
+end
+
 return M

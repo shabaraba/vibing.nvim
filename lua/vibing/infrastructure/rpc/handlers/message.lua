@@ -49,10 +49,16 @@ function M.send_message(params)
 
   -- 宛先の解決は他の副作用より先に済ませる。パスは未オープンのチャットを開く経路を通るので、
   -- ここで失敗するならリンクも購読も張られていない状態で止まってほしい
-  local bufnr = require("vibing.infrastructure.rpc.handlers.bufnr").resolve_chat_target(params)
+  local Bufnr = require("vibing.infrastructure.rpc.handlers.bufnr")
+  local bufnr = Bufnr.resolve_chat_target(params)
   if not bufnr then
     error("Missing bufnr or file_path parameter")
   end
+
+  -- `from_bufnr` も送信・キュー・リンクのどれより先に検証する。古い番号（典型は Neovim 再起動を
+  -- 跨いで使い回された値）を黙って流すと、リンクも購読も無いまま送信だけが成功し、
+  -- 訂正できる唯一の相手である呼び出し元に何も伝わらない
+  params.from_bufnr = Bufnr.resolve_from_bufnr(params.from_bufnr)
 
   -- `queue_if_busy` は明示指定したときだけ効く。既定でキューに積むと、弾かれたことを検知して
   -- 待ち直すつもりだった既存の呼び出し元が、成功したものとして先に進む。

@@ -22,6 +22,10 @@ function M.create_chat(params)
     )
   end
 
+  -- チャットを作る**前**に検証する。作ったあとに弾くと、拒否されたのに空のワーカーチャットと
+  -- そのファイルだけが残る
+  local from_bufnr = require("vibing.infrastructure.rpc.handlers.bufnr").resolve_from_bufnr(params.from_bufnr)
+
   local session = require("vibing.application.chat.use_cases.create_chat").execute({
     working_dir = params.working_dir,
   })
@@ -36,8 +40,8 @@ function M.create_chat(params)
 
   -- 作成した時点でリンクを張る。送信を待つ形でも記録はできるが、`from_bufnr` の渡し忘れが
   -- 「黙って関係が残らない」失敗になるので、関係が確定する最も早い時点で書く
-  if params.from_bufnr then
-    local ok, err = require("vibing.application.chat.orchestration_link").link(params.from_bufnr, chat_buf.buf)
+  if from_bufnr then
+    local ok, err = require("vibing.application.chat.orchestration_link").link(from_bufnr, chat_buf.buf)
     if not ok then
       require("vibing.core.utils.notify").warn(
         string.format("Created chat %d but could not link it: %s", chat_buf.buf, err or "unknown"),
@@ -53,7 +57,7 @@ function M.create_chat(params)
     -- ワーカーは「誰に報告すればいいか」の行を得られない（`send_message` が
     -- `orchestrated_by` を読むため）が、オーケストレーター側が完了を知る手段まで一緒に
     -- 失う理由はない。通知はインメモリで、frontmatter を必要としない
-    require("vibing.application.chat.completion_notifier").subscribe(params.from_bufnr, chat_buf.buf)
+    require("vibing.application.chat.completion_notifier").subscribe(from_bufnr, chat_buf.buf)
   end
 
   return {

@@ -1145,7 +1145,12 @@ Four details are load-bearing:
 - **`from_bufnr` is optional, in both directions of version skew.** The wire format carries no
   protocol version, so an older Neovim ignores the extra key and an older MCP server never sends
   it. Requiring it would turn a forgotten argument into a refused send — a worse failure than a
-  missing link, and one that would break every existing caller at once.
+  missing link, and one that would break every existing caller at once. Present-but-wrong is the
+  opposite case and errors the call (`bufnr.resolve_from_bufnr`, #661): a number that names no
+  chat buffer — typically one remembered from before a Neovim restart — used to drop the link
+  _and_ the completion subscription in silence while the caller was told the call succeeded, and
+  the MCP caller is the one party that can correct it. The check runs before any side effect, so
+  a refused `nvim_chat_create` leaves no orphaned worker chat behind.
 - **The link is written before the message is sent.** `update_frontmatter_list` edits the buffer
   directly, so writing after the worker's reply starts would race its streaming.
 - **`update_frontmatter_list` writes to the buffer, not to disk**, and the rename scanner reads
