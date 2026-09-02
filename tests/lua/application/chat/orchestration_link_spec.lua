@@ -114,4 +114,38 @@ describe("OrchestrationLink.link", function()
 
     assert.same({ "worker.md" }, frontmatter_on_disk(dir .. "/orchestrator.md").orchestrated)
   end)
+
+  it("does not record the reverse direction when the worker reports back", function()
+    -- 押し出し型の報告（#643）は、配布とは逆向きの `nvim_chat_send_message` として届く。
+    -- そのまま書くと親の `orchestrated_by` に自分のワーカーが入り、システムプロンプトが
+    -- 親に「終わったら自分のワーカーに報告しろ」と指示するようになる
+    local orchestrator, worker = open_chat("orchestrator.md"), open_chat("worker.md")
+    assert.is_true(OrchestrationLink.link(orchestrator, worker))
+
+    assert.is_true(OrchestrationLink.link(worker, orchestrator))
+
+    local on_orchestrator = frontmatter_on_disk(dir .. "/orchestrator.md")
+    local on_worker = frontmatter_on_disk(dir .. "/worker.md")
+    assert.same({ "worker.md" }, on_orchestrator.orchestrated)
+    assert.is_nil(on_orchestrator.orchestrated_by)
+    assert.same({ "orchestrator.md" }, on_worker.orchestrated_by)
+    assert.is_nil(on_worker.orchestrated)
+  end)
+
+  it("treats a one-sided reverse record as enough to call it a report", function()
+    -- `link` は片側だけ書けた状態を許して続行する（保存できた側でリネーム同期は動く）ので、
+    -- 両側が揃っていることを前提にすると、その状態のチャットで逆向きが書かれてしまう
+    local orchestrator, worker = open_chat("orchestrator.md"), open_chat("worker.md")
+    refuse_writes_for = worker
+    OrchestrationLink.link(orchestrator, worker)
+    refuse_writes_for = nil
+
+    assert.same({ "worker.md" }, frontmatter_on_disk(dir .. "/orchestrator.md").orchestrated)
+    assert.is_nil(frontmatter_on_disk(dir .. "/worker.md").orchestrated_by)
+
+    assert.is_true(OrchestrationLink.link(worker, orchestrator))
+
+    assert.is_nil(frontmatter_on_disk(dir .. "/worker.md").orchestrated)
+    assert.is_nil(frontmatter_on_disk(dir .. "/orchestrator.md").orchestrated_by)
+  end)
 end)

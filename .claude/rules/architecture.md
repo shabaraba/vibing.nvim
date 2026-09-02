@@ -1163,6 +1163,17 @@ rename can collide with an entry the list already had. Two parser behaviours bit
 empty list parses to a **truthy** `{}`, and a hand-written `orchestrated: path.md` parses to a
 **string** rather than a list.
 
+**A send whose reverse is already recorded writes no link**, and that is what keeps the record a
+tree rather than a set of pairs. A push report (#643) is a `nvim_chat_send_message` in the opposite
+direction from the dispatch, so writing it as a new relationship put each worker into its
+orchestrator's `orchestrated_by` — and `cli_command_builder` builds the worker prompt out of that
+key, so the orchestrator was then told to report to its own worker. Reproduced across three chats
+before fixing. The mechanism still cannot tell a report from a request at send time, which is the
+constraint `completion_notifier` documents; what it can read is whether the recipient is already
+this chat's orchestrator, and that answers the direction question on its own. One side recording it
+is enough, since `link` tolerates a half-written pair. The cost is that a genuine A⇄B mutual
+orchestration cannot be recorded — a cycle, and not a shape worth supporting.
+
 A one-sided write warns rather than failing the send: the link is a record, and rename sync still
 works from whichever side did get written. Fork and subagent chats do **not** inherit these fields
 — `inherited_frontmatter.from_source` is an explicit whitelist, and a fork claiming its parent's
@@ -1438,6 +1449,28 @@ pending tool approval, and an `nvim_ask_user_question` look like, so judging out
 event would repeat `chat_status`'s mistake. The message names each finished chat by path (with its
 current bufnr in parentheses) and instructs A to read the transcript's tail — not the worker's
 text, which would pull B's context into A for no reason.
+
+**Reporting is the worker's job; the notification is a watchdog** (#643). A worker is told — by the
+system-prompt line below, and again by the brief `vibing-orchestrate` has the orchestrator write —
+to finish by calling `nvim_chat_send_message` on its orchestrator's path with `queue_if_busy: true`
+and a summary that stands on its own. That is the path a healthy fan-out takes, and it needs
+nothing from `chat_notifications`: `queue_if_busy` and the drain are ungated, so a report is
+delivered whether or not the watchdog is switched on.
+
+Which is what lets the notice be worded as a warning rather than a status line. `on_sent`'s
+suppression mark drops the watchdog for the stop that follows a worker's own report, so a chat that
+reaches `enqueue_notification` is one that stopped **without** reporting — likelier a failure, a
+question or an approval prompt than a finished task. `delivery_message.lua` says so in as many
+words, and the skill's step 5 splits the two wake-ups on that line: a report is read as text, a
+watchdog notice sends the orchestrator to the transcript.
+
+**Fan-in is a convention, not a barrier.** A chat that is both a worker and an orchestrator holds
+its own report until every worker of its own has reported — stated in `vibing-orchestrate` step 7,
+enforced by nothing. A barrier in the mechanism would have to answer "what if a child never
+reports", and both honest answers are bad: a timeout, or a tree that stalls for good. The
+convention instead tells the middle node to report early, naming the stuck child, when a child
+stops on `asked_question` / `waiting_approval` / `error` — the same three exceptions branch 2
+already makes. Worth revisiting if a middle node forgetting turns out to cost anything in practice.
 
 A worker learns its orchestrator from a system-prompt line built out of its `orchestrated_by`
 frontmatter. Only that direction is exposed: a worker's list is written once at creation and stays

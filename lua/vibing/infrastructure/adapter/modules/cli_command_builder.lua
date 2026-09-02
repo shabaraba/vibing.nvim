@@ -341,6 +341,12 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
     -- `orchestrated` is deliberately not exposed: an orchestrator's list grows with every
     -- dispatch, so it would move the prefix on a normal turn rather than an unusual one — and the
     -- completion notification already names the chat it wants read.
+    --
+    -- Reporting back is stated as an obligation rather than an option (#643). The brief the
+    -- orchestrator writes says the same thing, but a brief is prose the worker may skim; this
+    -- line is the one place the rule is always present. It is also what the watchdog notice now
+    -- assumes — a stop with no report reads as a failure, a question, or an approval prompt, so a
+    -- worker that finishes silently is reported to its orchestrator as suspect.
     if opts.orchestrators and #opts.orchestrators > 0 then
       local named = vim.tbl_map(function(orchestrator)
         return orchestrator.bufnr
@@ -351,11 +357,13 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
         system_prompt_lines,
         "This chat was started by vibing.nvim chat "
           .. table.concat(named, ", ")
-          .. ". If you need to ask it something, or want to report back before you finish, call "
-          .. "nvim_chat_send_message with that file_path and your own chat buffer number as "
-          .. "from_bufnr. Address it by file_path rather than by buffer number: the path keeps "
-          .. "working after a restart, and the chat is opened for you if it is closed. "
-          .. "Otherwise just do the work and report in this chat — it is told when you stop."
+          .. ". When your task is done, report the result to it by calling nvim_chat_send_message "
+          .. "with that file_path, your own chat buffer number as from_bufnr, queue_if_busy: true, "
+          .. "and a summary that stands on its own — it should not have to read this transcript to "
+          .. "learn what happened. Ask it the same way if the brief turns out to be ambiguous or "
+          .. "you get stuck, rather than guessing. Address it by file_path rather than by buffer "
+          .. "number: the path keeps working after a restart, and the chat is opened for you if it "
+          .. "is closed."
       )
     end
 

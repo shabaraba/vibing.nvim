@@ -72,7 +72,7 @@ describe("E2E: chat completion notification", function()
       local text = exec(
         string.format("return table.concat(vim.api.nvim_buf_get_lines(%d, 0, -1, false), '\\n')", orchestrator)
       )
-      notified = text:find("finished responding", 1, true) ~= nil
+      notified = text:find("stopped without reporting back", 1, true) ~= nil
     end
 
     assert.is_true(notified, "orchestrator should be told the worker stopped")

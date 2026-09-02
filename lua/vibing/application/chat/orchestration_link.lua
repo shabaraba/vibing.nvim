@@ -62,6 +62,25 @@ function M.link(from_bufnr, to_bufnr)
     return true, nil
   end
 
+  -- 逆向きの関係が既にあるなら、この送信は**報告か返答**であって新しい配下関係ではない。
+  --
+  -- 「送信が報告か依頼か」を機構は判別できない（`completion_notifier` の同じ制約）が、
+  -- 「相手が既に自分のオーケストレータとして記録されている」なら向きだけは分かる。それが
+  -- 無いと、押し出し型の報告（#643）が届くたびにここが逆向きのリンクを書き、親の
+  -- `orchestrated_by` に自分のワーカーが並ぶ。frontmatter は木ではなくペアの二重記録になり、
+  -- `cli_command_builder` はその `orchestrated_by` からシステムプロンプトを組むので、親が
+  -- 「終わったら自分のワーカーに報告しろ」と指示される。実際に3チャットで再現したもの。
+  --
+  -- 片側だけでも逆向きが記録されていれば報告と見なす（`link` は片肺の書き込みを許すので、
+  -- 両側揃うことを前提にはできない）。代償として A⇄B の相互オーケストレーションは
+  -- 記録できないが、それは循環であって支持する形ではない
+  if
+    vim.tbl_contains(from_chat:get_frontmatter_list("orchestrated_by"), forward)
+    or vim.tbl_contains(to_chat:get_frontmatter_list("orchestrated"), backward)
+  then
+    return true, nil
+  end
+
   -- 戻り値を捨ててはいけない。`update_frontmatter_list` は frontmatter の閉じ `---` が
   -- 先頭100行に収まらないと false を返す（長い permission 配列を持つチャットで現実に起きる）。
   -- 捨てると、このモジュールが防ぐために存在している「黙って関係が残らない」がそのまま起きる

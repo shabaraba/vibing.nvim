@@ -71,12 +71,42 @@ request, not the files already discussed, not the decisions already made. Write 
 someone who just walked in — goal, the files or directories involved, the constraints, and what
 "done" looks like. A brief that says "do the refactor we discussed" produces nothing useful.
 
-Say in the brief that the worker should report its result in its own chat and stop. Add that if it
-gets stuck or the brief turns out to be ambiguous, it should ask you rather than guess — a worker
-you passed `from_bufnr` to is told your buffer number and can call `nvim_chat_send_message` back.
-A question costs one turn; a worker guessing wrong costs the whole task.
+### The brief must tell the worker to report back
 
-## 4. End your turn — you will be woken
+This is not optional decoration — it is how the fan-out finishes without you polling. Every brief
+carries three things beyond the task:
+
+1. **Where to report** — this chat's `file_path`. The worker is told it in its own system prompt
+   too, but a brief is read on its own and should not depend on that.
+2. **How to report** — `nvim_chat_send_message` with the worker's own chat buffer number as
+   `from_bufnr` and **`queue_if_busy: true`**. Without that flag the send is refused outright
+   whenever you happen to be mid-turn, and the report is simply lost.
+3. **What to report** — a summary that stands on its own: what changed, what failed, what is left.
+   "Done, read my chat" costs you a `nvim_get_buffer` and pulls that worker's entire transcript
+   into this conversation, once per worker. Avoiding that is the whole reason reporting is pushed
+   rather than polled.
+
+Add that if it gets stuck or the brief turns out to be ambiguous, it should ask you the same way
+rather than guess. A question costs one turn; a worker guessing wrong costs the whole task.
+
+A closing paragraph you can paste into a brief:
+
+```text
+終わったら、次の呼び出しで報告してから止まってください。
+
+  nvim_chat_send_message({
+    rpc_port,
+    file_path: "<このチャットの file_path>",
+    from_bufnr: <あなた自身の chat buffer 番号>,
+    queue_if_busy: true,
+    message: "<結果の要約>",
+  })
+
+要約だけで判断できる内容にしてください（何を変えたか・何が失敗したか・何が残っているか）。
+詰まったとき、ブリーフが曖昧なときも、推測せず同じ方法で聞いてください。
+```
+
+## 4. End your turn — the workers come back to you
 
 Do **not** loop on `nvim_get_buffer` waiting for workers to finish. A turn spent polling burns
 tokens, blocks this chat, and will hit the turn limit long before a real task completes.
@@ -86,15 +116,29 @@ Once every brief is sent, end the turn with the worker list:
 > 3件のワーカーチャットにタスクを配りました（`.vibing/chat/a.md` / `b.md` / `c.md`）。
 > 終わり次第ここに戻ります。
 
-If completion notifications are enabled (`agent.chat_notifications.enabled`), each worker you
-messaged wakes this chat with a new turn when it stops, naming the buffer to read. If they are
-not, nothing wakes you — say "進捗は?と聞いてください" instead and wait for the user.
+Each worker's own report is what wakes you. `queue_if_busy: true` makes that delivery reliable: a
+report that arrives while you are mid-turn waits and starts a new turn the moment you stop, and
+several arriving together are coalesced into one turn. This works regardless of
+`agent.chat_notifications.enabled` — the report is a message the worker chose to send you, not a
+notification vibing.nvim volunteers.
 
-## 5. Read the chat the notification named
+That setting governs the **watchdog** instead: with it enabled, a worker that stops _without_
+reporting wakes you anyway (step 5). With it disabled, a worker that never reports is silent — say
+"進捗は?と聞いてください" and wait for the user.
 
-A notification tells you which chat(s) stopped, by path. Read those with
-`nvim_get_buffer({ rpc_port, file_path })` — not every worker. Alongside the transcript the result
-carries a chat-status line:
+## 5. Read what arrived
+
+You get woken in two ways, and they do not mean the same thing.
+
+**A worker's report** — the turn carries its summary as text. This is the normal path, and the
+summary is meant to be enough on its own. Do not call `nvim_get_buffer` on that worker unless the
+summary actually leaves something open.
+
+**A watchdog notice** — "the following chat(s) you sent a message to have stopped without reporting
+back". Under the convention above a finished worker reports, so a stop with no report is more
+likely a worker that failed, stopped to ask something, or is sitting on a tool approval. Read those
+with `nvim_get_buffer({ rpc_port, file_path })` — not every worker. Alongside the transcript the
+result carries a chat-status line:
 
 - `status: responding` — a reply is still being streamed in. Whatever you just read is partial;
   report it as in progress and do not summarize its conclusion.
@@ -113,9 +157,9 @@ brief and stopped is `idle` too. Read the tail of the transcript before calling 
 three statuses above are the cases that used to hide inside `idle`; a status this server has no
 wording for is reported by name, and means the same thing — go read the transcript.
 
-**One notification is one turn, so three workers wake you three times.** If workers you dispatched
-are still running, do not start aggregating: say in one or two lines what this one produced, and
-end the turn. Aggregate only on the last one. An orchestrator that writes a full summary each time
+**One report is one turn, so three workers wake you three times.** If workers you dispatched are
+still running, do not start aggregating: say in one or two lines what this one produced, and end
+the turn. Aggregate only on the last one. An orchestrator that writes a full summary each time
 produces three contradictory summaries and pays for all of them.
 
 Track which workers are still outstanding by writing the list into your reply each time — that
@@ -137,3 +181,25 @@ Report it as blocked and say what it needs.
 If you used worktrees, offer the `vibing-worktree-finish` skill for each branch once its work has
 been merged or abandoned. Don't remove a worktree on your own initiative; unmerged work lives
 there.
+
+## 7. If you are also someone else's worker
+
+A chat can be a worker and an orchestrator at once: briefed by a parent, and splitting its own task
+across workers of its own. Everything above still applies — plus one rule.
+
+**Report to your parent only once every worker of yours has reported.** Nothing enforces this;
+there is no barrier in vibing.nvim, and a message sent early is delivered normally. The whole
+fan-in is this convention, so keeping it is on you.
+
+- While workers are outstanding, end each turn with a line naming which ones you are still waiting
+  on. That text is the only place the count survives — you are a fresh process every turn, and
+  the wake-up that brings a report carries no tally.
+- Report to your parent when the last one is in. One report, summarizing all of them, not one per
+  worker: your parent's job is the same as yours, and forwarding raw worker output makes it pay for
+  a transcript twice.
+- **Do not wait forever.** A worker that stops `asked_question`, `waiting_approval` or `error` is
+  not going to report on its own. Deal with it if you can (answer the question, re-brief it); if
+  you cannot, report to your parent now with that worker's state named, rather than holding the
+  whole tree open for something only the user can clear.
+- If your own brief turns out to be ambiguous, ask your parent before dispatching. Splitting a
+  misunderstood task fans the misunderstanding out across several chats.
