@@ -1581,6 +1581,15 @@ the design:
   held against an _idle_ recipient registers via `hold_for_capacity`, since no completion event
   of the recipient's own is ever coming to trigger the retry.
 
+  It inherits branch 2's exception as well, and that is not decoration. A chat holding an
+  approval prompt or a question keeps it in the unsent `## User` section, so when the slot frees
+  the retry is refused as a draft — the same refusal that makes `flush` safe. That chat runs no
+  further turn and fires no further completion event, so a hold decided **before** the stop
+  reason was read stranded the parent for good, on exactly the stops this mechanism exists to
+  surface. `process_done` therefore reads `stop_reason_of` ahead of the hold, and a held chat
+  with a reason notifies its subscribers like any other blocked one. Reachable only with
+  `max_concurrent` set, since the default `0` never holds anything.
+
 ### Delivered sections
 
 A message that arrived from another chat is written as its own section kind — `## Request`,

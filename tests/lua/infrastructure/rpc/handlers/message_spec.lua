@@ -60,6 +60,9 @@ describe("rpc handlers.message.send_message", function()
         extract_user_message = function()
           return nil
         end,
+        get_stop_reason = function()
+          return chat.stop_reason
+        end,
         send_message = function()
           chat.sends = chat.sends + 1
           return chat.accepts

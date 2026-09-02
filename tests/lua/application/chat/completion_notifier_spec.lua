@@ -873,6 +873,33 @@ describe("CompletionNotifier", function()
       assert.equals(parent, sends[2].bufnr)
     end)
 
+    it("reports a held chat anyway when it stopped on a reason it cannot leave", function()
+      -- 保留の例外。承認待ちは未送信の `## User` セクションとして残るので、枠が空いて
+      -- 配り直しても `flush` は下書きありとして断る。そのチャットは二度と走らず完了イベントも
+      -- 二度と来ないので、上限を理由に黙ると親は詰まったことを永久に知らない
+      configure(nil, { max_concurrent = 1 })
+      local parent, a, b, busy = make_chat(), make_chat(), make_chat(), make_chat()
+      responding[busy] = true
+
+      Notifier.subscribe(parent, a)
+      MessageQueue.enqueue_message(a, b, "carry on")
+      stop_reasons[a] = "waiting_approval"
+      drafts[a] = "承認待ちのプロンプトが未送信セクションに残っている"
+
+      Notifier.on_response_done(a)
+
+      -- 枠が空くまでは誰にも配れない。届く先が用意されたかどうかがここでの争点
+      responding[busy] = false
+      Notifier.on_response_done(busy)
+
+      local woke_parent = false
+      for _, sent in ipairs(sends) do
+        assert.not_equals(a, sent.bufnr, "a is blocked on its draft, so nothing can restart it")
+        woke_parent = woke_parent or sent.bufnr == parent
+      end
+      assert.is_true(woke_parent, "the parent is told even though a's own delivery was held")
+    end)
+
     it("retries nothing when no limit is configured, so one refusal is not tried twice", function()
       -- 配達が断られる理由は上限のほかにもある（送信の失敗、ユーザーの下書き）。それらを
       -- 同じイベントで即座に試し直すのはただの二度打ちで、警告も2回出る
