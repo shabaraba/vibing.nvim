@@ -519,23 +519,17 @@ function ChatBuffer:send_message()
         return false
       end
 
-      -- Hook-based approval: update session state, then fall through to normal message flow
+      -- Hook-based approval: fall through to normal message flow
       -- (process was already cancelled and hook was denied in permission.lua)
-      local hook_request_id = self._pending_approval.hook_request_id
-      if hook_request_id then
-        local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
-        local tool = self._pending_approval.tool
-        if tool then
-          if approval.action == "allow_for_session" then
-            perm_handler.add_session_allow(tool, false)
-          elseif approval.action == "deny_for_session" then
-            perm_handler.add_session_deny(tool, false)
-          elseif approval.action == "allow_once" then
-            perm_handler.add_session_allow(tool, true)
-          elseif approval.action == "deny_once" then
-            perm_handler.add_session_deny(tool, true)
-          end
-        end
+      --
+      -- `update_session_permissions` の上の呼び出しが唯一の記録先。以前はここで
+      -- `permission.lua` のモジュールレベルの共有テーブルにも同じ判断を書いており、
+      -- そちらはチャットでも handle_id でもキーされていなかったので、あるチャットで出した
+      -- 承認がエディタ上の全チャットに効いていた（#667）。チャット単位のリストは
+      -- `send_message` が `permissions_session_allow` / `permissions_session_deny` として
+      -- リクエストの opts に載せ、`set_active_opts` が handle_id 単位で持つので、二重に
+      -- 書く必要はそもそも無かった。
+      if self._pending_approval.hook_request_id then
         -- hook_request_id を nil にしてこのフィールドを消費済みとしてマーク。
         -- hook denial は cancel_and_deny() で既に送信済みのため、再送を防ぐ。
         -- _pending_approval 全体は tool/input 参照後に nil にする。

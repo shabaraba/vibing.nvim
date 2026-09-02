@@ -147,6 +147,100 @@ describe("permission handler hook decision", function()
     assert.equals("deny", output.permissionDecision)
     assert.is_truthy(output.permissionDecisionReason)
   end)
+
+  describe("session permissions belong to one chat", function()
+    -- 承認UIで出した答えは、答えたチャットのセッションに属する。以前はこれが
+    -- `permission.lua` のモジュールレベルのテーブルに入っていて、チャットでも handle_id でも
+    -- キーされていなかったので、使い捨てワーカーで一度 `allow_for_session` を出すと
+    -- エディタ上の全チャットに効き、各チャット自身の `permissions_ask` を迂回していた（#667）。
+    --
+    -- 2つのハンドルを同時に登録するのが要点。1つしか登録していないと
+    -- `get_active_opts` のフォールバック（唯一のエントリを返す）が働いてしまい、
+    -- 共有テーブルに戻しても落ちないテストになる
+    local OTHER_HANDLE_ID = "decision-spec-other-handle"
+
+    ---@param handle_id string
+    ---@param opts table
+    local function activate_as(handle_id, opts)
+      permission.set_active_opts(handle_id, vim.tbl_extend("force", { cwd = sandbox_cwd }, opts))
+    end
+
+    --- 承認を求める決定（`ask`）は `.res` を書かない。CLIプロセスを kill してから承認UIを
+    --- 出す経路で、このspecには kill する実ストリームが無いためそこで止まる。観測できるのは
+    --- RPCの戻り値のほうなので、`status` と `.res` の両方を返して呼び出し側に選ばせる
+    ---@return {status: string, decision: string?}
+    local function decide_as(handle_id, request_id, tool_name, tool_input)
+      write_request(request_id, tool_name, tool_input)
+      local rpc = permission.check_tool_permission({ request_id = request_id, handle_id = handle_id })
+
+      local decision
+      local f = io.open(comm_dir .. "/" .. request_id .. ".res", "r")
+      if f then
+        local content = f:read("*a")
+        f:close()
+        decision = vim.json.decode(content).hookSpecificOutput.permissionDecision
+      end
+      return { status = rpc.status, decision = decision }
+    end
+
+    after_each(function()
+      permission.clear_active_opts(OTHER_HANDLE_ID)
+    end)
+
+    -- `permissions_deny` は必ず明示する。省くと `build_permission_config` が
+    -- `config.permissions.deny`（既定で `{ "Bash" }`）に落ち、step 4 の deny が
+    -- セッション判定より先に効いてしまう — 何を確かめているのか分からないテストになる
+    ---@param session table
+    local function chat_opts(session)
+      return vim.tbl_extend("force", {
+        permissions_allow = { "Read" },
+        permissions_deny = {},
+        permissions_ask = { "Bash" },
+        permission_mode = "default",
+      }, session)
+    end
+
+    it("does not let one chat's session allow reach another chat", function()
+      -- A だけが Bash を承認済み。B は自分の設定どおり Bash を聞く側のまま
+      activate_as(HANDLE_ID, chat_opts({ permissions_session_allow = { "Bash" } }))
+      activate_as(OTHER_HANDLE_ID, chat_opts({}))
+
+      -- 許可された非MCPツールは "allow" ではなく "defer"（CLI自身のゲートに委ねる）
+      local a = decide_as(HANDLE_ID, "req-a-allow", "Bash", { command = "echo hi" })
+      assert.equals("allowed", a.status)
+      assert.equals("defer", a.decision)
+
+      -- B は承認を出していないので、自分の `permissions_ask` どおり承認待ちになる
+      assert.equals("pending", decide_as(OTHER_HANDLE_ID, "req-b-allow", "Bash", { command = "echo hi" }).status)
+    end)
+
+    it("does not let one chat's session deny reach another chat", function()
+      activate_as(
+        HANDLE_ID,
+        chat_opts({ permissions_allow = { "Read", "Bash" }, permissions_ask = {}, permissions_session_deny = { "Bash" } })
+      )
+      activate_as(OTHER_HANDLE_ID, chat_opts({ permissions_allow = { "Read", "Bash" }, permissions_ask = {} }))
+
+      assert.equals("deny", decide_as(HANDLE_ID, "req-a-deny", "Bash", { command = "echo hi" }).decision)
+
+      assert.equals("defer", decide_as(OTHER_HANDLE_ID, "req-b-deny", "Bash", { command = "echo hi" }).decision)
+    end)
+
+    it("spends a :once grant on the chat that was given it, not on whoever calls first", function()
+      -- `:once` は最初にマッチしたところで消費される。共有テーブルだと、承認を出していない
+      -- 別のチャットがそれを食べてしまう — PR #666 の実機確認で踏んだのがこの形
+      activate_as(HANDLE_ID, chat_opts({ permissions_session_allow = { "Bash:once" } }))
+      activate_as(OTHER_HANDLE_ID, chat_opts({}))
+
+      -- B が先に呼んでも A の1回分は減らない
+      assert.equals("pending", decide_as(OTHER_HANDLE_ID, "req-b-once", "Bash", { command = "echo hi" }).status)
+
+      assert.equals("defer", decide_as(HANDLE_ID, "req-a-once-1", "Bash", { command = "echo hi" }).decision)
+      -- 使い切ったので2回目は承認待ちに戻る
+      assert.equals("pending", decide_as(HANDLE_ID, "req-a-once-2", "Bash", { command = "echo hi" }).status)
+    end)
+  end)
+
   describe("_capture_baselines", function()
     -- 2つのdiff機構のベースラインは独立していなければいけない。1つのpcallにまとめると、
     -- フォールバック(request_diff)の例外が主経路(git snapshot)を道連れにする。
