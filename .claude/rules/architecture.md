@@ -1163,6 +1163,17 @@ rename can collide with an entry the list already had. Two parser behaviours bit
 empty list parses to a **truthy** `{}`, and a hand-written `orchestrated: path.md` parses to a
 **string** rather than a list.
 
+**A send whose reverse is already recorded writes no link**, and that is what keeps the record a
+tree rather than a set of pairs. A push report (#643) is a `nvim_chat_send_message` in the opposite
+direction from the dispatch, so writing it as a new relationship put each worker into its
+orchestrator's `orchestrated_by` — and `cli_command_builder` builds the worker prompt out of that
+key, so the orchestrator was then told to report to its own worker. Reproduced across three chats
+before fixing. The mechanism still cannot tell a report from a request at send time, which is the
+constraint `completion_notifier` documents; what it can read is whether the recipient is already
+this chat's orchestrator, and that answers the direction question on its own. One side recording it
+is enough, since `link` tolerates a half-written pair. The cost is that a genuine A⇄B mutual
+orchestration cannot be recorded — a cycle, and not a shape worth supporting.
+
 A one-sided write warns rather than failing the send: the link is a record, and rename sync still
 works from whichever side did get written. Fork and subagent chats do **not** inherit these fields
 — `inherited_frontmatter.from_source` is an explicit whitelist, and a fork claiming its parent's
