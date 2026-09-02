@@ -1458,7 +1458,11 @@ text, which would pull B's context into A for no reason.
 **Reporting is the worker's job; the notification is a watchdog** (#643). A worker is told — by the
 system-prompt line below, and again by the brief `vibing-orchestrate` has the orchestrator write —
 to finish by calling `nvim_chat_send_message` on its orchestrator's path with `queue_if_busy: true`
-and a summary that stands on its own. That is the path a healthy fan-out takes, and it needs
+and a summary that stands on its own — and stays brief: the conclusion, failures, and what needs
+the orchestrator's action. The working detail is deliberately left in the worker's transcript,
+which already exists for free — a report that replays it is paid for twice, once written and once
+read, for context the orchestrator can fetch on the rare occasion it wants it. That is the path a
+healthy fan-out takes, and it needs
 nothing from `chat_notifications`: `queue_if_busy` and the drain are ungated, so a report is
 delivered whether or not the watchdog is switched on.
 
