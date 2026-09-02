@@ -380,5 +380,4 @@ function M.ask_user_question(params)
   return { status = "ok" }
 end
 
-
 return M
