@@ -206,6 +206,22 @@ section is not kept in sync field by field.
 :VibingCancel
     Cancel the request in flight.
 
+                                                    *:VibingOrchestrationTree*
+:VibingOrchestrationTree [{path}]
+    Draw the orchestration tree this chat belongs to, read from the
+    `orchestrated` / `orchestrated_by` frontmatter, with each chat's status
+    (`responding`, `idle`, `waiting_approval`, `asked_question`, `error`, or
+    `not open`). Always drawn from the root of the tree, with `←` marking
+    the chat it was run from. With no argument, uses the current chat.
+
+                                                           *:VibingCancelTree*
+:VibingCancelTree [{path}]
+    Cancel the running turn of this chat and of every chat below it in the
+    tree — a worker created with no window cannot be reached with
+    |:VibingCancel| otherwise. Chats above it are left alone. Queued
+    deliveries for the subtree are dropped first, so cancelling does not
+    immediately restart a chat with a message waiting for it.
+
                                                              *:VibingSchedule*
 :VibingSchedule [{when}]
     Schedule this chat's unsent message to send later instead of now.

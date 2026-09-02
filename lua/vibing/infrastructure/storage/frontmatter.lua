@@ -348,29 +348,41 @@ function M.buffer_region(bufnr)
   return read_region(buffer_line_iterator(bufnr))
 end
 
----ファイルパスからvibing.nvimチャットファイルかどうかを判定
+---ファイル先頭のfrontmatter領域を返す
+---
+---`M.buffer_region` のファイル版。開いていないチャットのfrontmatterを読む必要がある側
+---（`application/chat/orchestration_tree`）のために公開している。開いているものと同じ
+---「領域を読んで `M.parse` に渡す」形に揃うので、読み手が2種類の経路を覚えずに済む
 ---@param file_path string ファイルパス
----@return boolean
-function M.is_vibing_chat_file(file_path)
+---@return string[]? lines 開始`---`から閉じ`---`まで(両端を含む)。閉じていなければnil
+function M.file_region(file_path)
   if not file_path or file_path == "" then
-    return false
+    return nil
   end
 
   if vim.fn.filereadable(file_path) ~= 1 then
-    return false
+    return nil
   end
 
   -- `readfile()` cannot stop at a predicate — it takes a line count — so the file
   -- is read line by line and abandoned at the closing `---`.
   local file = io.open(file_path, "r")
   if not file then
-    return false
+    return nil
   end
 
   local ok, region = pcall(read_region, file:lines())
   file:close()
 
-  if not ok or not region then
+  return ok and region or nil
+end
+
+---ファイルパスからvibing.nvimチャットファイルかどうかを判定
+---@param file_path string ファイルパス
+---@return boolean
+function M.is_vibing_chat_file(file_path)
+  local region = M.file_region(file_path)
+  if not region then
     return false
   end
 

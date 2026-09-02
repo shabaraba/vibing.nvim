@@ -287,6 +287,22 @@ function M._apply_chat_buffer_settings(bufnr)
   end
 end
 
+---生きているチャットバッファを列挙する
+---
+---`_attached_buffers` は `render` と `attach_to_buffer` の両方が埋めるので、`back` で作られた
+---窓なしのワーカーも入る。`_current_buffer` はそのうちの1つを指すシングルトンにすぎないので、
+---「いま何本走っているか」を数えるにはこちらしかない（`application/chat/concurrency`）
+---@return table<number, Vibing.ChatBuffer>
+function M.list_chat_buffers()
+  local buffers = {}
+  for bufnr, chat_buf in pairs(M._attached_buffers) do
+    if vim.api.nvim_buf_is_valid(bufnr) then
+      buffers[bufnr] = chat_buf
+    end
+  end
+  return buffers
+end
+
 ---アタッチ済みバッファをクリーンアップ
 function M.cleanup_attached_buffers()
   for bufnr, _ in pairs(M._attached_buffers) do

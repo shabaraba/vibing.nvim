@@ -338,6 +338,22 @@ function M._register_commands()
     end
   end, { desc = "Cancel current Vibing request" })
 
+  vim.api.nvim_create_user_command("VibingOrchestrationTree", function(opts)
+    require("vibing.presentation.chat.orchestration_controller").handle_tree(opts.args)
+  end, {
+    nargs = "?",
+    complete = "file",
+    desc = "Show the orchestration tree this chat belongs to, with each chat's status",
+  })
+
+  vim.api.nvim_create_user_command("VibingCancelTree", function(opts)
+    require("vibing.presentation.chat.orchestration_controller").handle_cancel_tree(opts.args)
+  end, {
+    nargs = "?",
+    complete = "file",
+    desc = "Cancel the running turn of this chat and every chat it orchestrates",
+  })
+
   vim.api.nvim_create_user_command("VibingClearAnnotations", function()
     -- Reaches into the RPC handler rather than a presentation controller, unlike the commands
     -- around it. There is no presentation state to own here: annotations live entirely in an

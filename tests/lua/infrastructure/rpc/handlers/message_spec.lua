@@ -26,17 +26,28 @@ describe("rpc handlers.message.send_message", function()
     return bufnr
   end
 
+  ---@param max_concurrent number 0で無制限（既定）
+  local function configure(max_concurrent)
+    Config.get = function()
+      return {
+        agent = {
+          chat_notifications = { enabled = true, max_round_trips = 8, max_wakes = 50 },
+          orchestration = { max_concurrent = max_concurrent },
+        },
+      }
+    end
+  end
+
   before_each(function()
     originals.get = Config.get
     originals.get_chat_buffer = view.get_chat_buffer
+    originals.list_chat_buffers = view.list_chat_buffers
     originals.link = OrchestrationLink.link
     originals.open = ChatLocator.open
 
     buffers, chats = {}, {}
 
-    Config.get = function()
-      return { agent = { chat_notifications = { enabled = true, max_round_trips = 8, max_wakes = 50 } } }
-    end
+    configure(0)
     view.get_chat_buffer = function(bufnr)
       local chat = chats[bufnr]
       if not chat then
@@ -55,6 +66,13 @@ describe("rpc handlers.message.send_message", function()
         end,
       }
     end
+    view.list_chat_buffers = function()
+      local open = {}
+      for _, bufnr in ipairs(buffers) do
+        open[bufnr] = view.get_chat_buffer(bufnr)
+      end
+      return open
+    end
     -- リンクの書き込みはこのspecの主題ではない（ディスクに触るのも避ける）
     OrchestrationLink.link = function()
       return true, nil
@@ -68,6 +86,7 @@ describe("rpc handlers.message.send_message", function()
   after_each(function()
     Config.get = originals.get
     view.get_chat_buffer = originals.get_chat_buffer
+    view.list_chat_buffers = originals.list_chat_buffers
     OrchestrationLink.link = originals.link
     ChatLocator.open = originals.open
 
@@ -309,6 +328,40 @@ describe("rpc handlers.message.send_message", function()
     Notifier.on_response_done(a)
 
     assert.equals(0, chats[a].sends)
+  end)
+
+  it("refuses a send that would exceed the concurrency limit, naming the escape hatch", function()
+    configure(1)
+    local from, to, busy = make_chat(), make_chat(), make_chat()
+    chats[busy].responding = true
+
+    local ok, err = pcall(Message.send_message, { bufnr = to, message = "do the thing", from_bufnr = from })
+
+    assert.is_false(ok)
+    assert.is_truthy(tostring(err):find("queue_if_busy", 1, true))
+    assert.equals(0, chats[to].sends)
+  end)
+
+  it("queues instead of refusing when the limit is reached and queue_if_busy was passed", function()
+    -- 宛先自身は idle。待てば解けるのは「宛先が応答中」だけではない
+    configure(1)
+    local from, to, busy = make_chat(), make_chat(), make_chat()
+    chats[busy].responding = true
+
+    local result = Message.send_message({
+      bufnr = to,
+      message = "do the thing",
+      from_bufnr = from,
+      queue_if_busy = true,
+    })
+
+    assert.is_true(result.queued)
+    assert.equals(0, chats[to].sends)
+
+    chats[busy].responding = false
+    Notifier.on_response_done(busy)
+
+    assert.equals(1, chats[to].sends, "the freed slot is what delivers it")
   end)
 
   it("does not wake a chat twice when the answer it was waiting for already arrived", function()

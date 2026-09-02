@@ -17,6 +17,8 @@
 | `:VibingContext [path]`               | Add file to context (or from oil.nvim if no path)                                                                                                             |
 | `:VibingClearContext`                 | Clear all context                                                                                                                                             |
 | `:VibingCancel`                       | Cancel current request                                                                                                                                        |
+| `:VibingCancelTree [path]`            | Cancel this chat's running turn and every chat below it in the orchestration tree                                                                             |
+| `:VibingOrchestrationTree [path]`     | Draw the orchestration tree this chat belongs to, with each chat's status                                                                                     |
 | `:VibingSchedule [when]`              | Schedule this chat's unsent message (default: the recorded limit reset; or `30m`, `18:30`, …)                                                                 |
 | `:VibingClearAnnotations`             | Remove inline review annotations from every buffer                                                                                                            |
 | `:VibingDebugAnalyze`                 | Ask the agent to analyze the stopped debug session (needs nvim-dap)                                                                                           |
