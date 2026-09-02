@@ -193,9 +193,11 @@ agent = {
                             -- is the default: switching it on changes the order in which an
                             -- existing orchestration's messages arrive. Only machine-started
                             -- sends are held (nvim_chat_send_message and queued deliveries) —
-                            -- your own <CR> never waits. A send that hits the limit is refused
-                            -- unless it passed queue_if_busy, in which case it is queued and
-                            -- delivered the moment one of the running chats finishes
+                            -- your own <CR> never waits. The count does include chats you are
+                            -- driving by hand, so one long manual turn occupies a slot. A send
+                            -- that hits the limit is refused unless it passed queue_if_busy,
+                            -- in which case it is queued and delivered the moment one of the
+                            -- running chats finishes
   },
 
   codex_provider_notice = {

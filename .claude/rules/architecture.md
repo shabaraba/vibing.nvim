@@ -1483,6 +1483,40 @@ Neovim dying takes the worker chats with it. Backends other than claude can be _
 event is backend-agnostic) but cannot _subscribe_: `nvim_chat_send_message` is an MCP tool, and
 codex/grok reach no MCP server, the same constraint `features.md` records for AskUserQuestion.
 
+### Tree operations
+
+`:VibingOrchestrationTree [path]` draws the tree a chat belongs to with each node's status,
+`:VibingCancelTree [path]` stops a subtree, and `agent.orchestration.max_concurrent` (default
+`0` = unlimited) caps how many chats may be responding at once (#645). Three decisions carry
+the design:
+
+- **The tree is read from frontmatter, buffer-first.** `orchestration_tree.lua` resolves each
+  node through the open buffer when there is one and the file on disk otherwise. Most nodes are
+  windowless `back` workers, and an orchestrator appends to `orchestrated` on every dispatch, so
+  either source alone silently truncates the tree. Reading frontmatter is also what makes the
+  tree survive a restart; the _status_ half does not — it lives only on attached buffers, so a
+  chat running in another Neovim renders as `[not open]`. Rendering always starts from the root
+  (`root_of` follows the first `orchestrated_by` entry when a hand-edited file lists several —
+  picking one beats refusing to draw), and a cycle is cut with `(shown above)` rather than
+  followed.
+- **`:VibingCancelTree` drops every target's queue and subscriptions before the first cancel**
+  (`use_cases/cancel_tree.lua`). `cancel()` runs `wrapped_on_done` synchronously, which drains
+  the queue — cancelling in order with the queues intact restarts nodes as fast as they are
+  stopped. Dropping the edges also keeps the watchdog quiet about these stops: the human asked
+  for them, so "this chat stopped without reporting" would be false. The subtree is computed
+  from the same frontmatter as the visualization, so a hand-written cycle makes "descendants"
+  reach ancestors — a cancel inside such a loop stops chats above the named node. The loop is
+  visible in the tree beforehand; accepted rather than special-cased.
+- **The concurrency cap gates machine-started sends only** (`concurrency.lua`, enforced in the
+  RPC send handler and the queue drain, never in `ChatBuffer:send_message()` — a human `<CR>`
+  always goes through). The count includes every responding chat, the user's own manual turns
+  included, so one long hand-driven turn occupies a slot. A send held by the limit is **not** a
+  stop: the hold is treated like branch 2 above (edges kept, no notification), redelivery when a
+  slot frees is limited to `held_by_limit` entries — retrying every non-empty queue on each
+  completion re-delivers refused messages, which a spec pins — and a `queue_if_busy` message
+  held against an _idle_ recipient registers via `hold_for_capacity`, since no completion event
+  of the recipient's own is ever coming to trigger the retry.
+
 ### Delivered sections
 
 A message that arrived from another chat is written as its own section kind — `## Request`,
