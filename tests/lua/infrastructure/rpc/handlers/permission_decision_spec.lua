@@ -9,6 +9,28 @@ local HANDLE_ID = "decision-spec-handle"
 
 local comm_dir
 
+---`active_opts.cwd` に渡す、gitの外のディレクトリ
+---
+---許可された決定はどれも `_capture_baselines` を通り、そこで本当にベースラインを取る。
+---`cwd` を渡さないと `git_snapshot` は Neovim のカレントディレクトリ — つまり開発中の
+---リポジトリそのもの — を対象にしてしまい、テストを走らせるだけで実リポジトリに
+---`refs/worktree/vibing/decision-spec-handle` とスナップショットのオブジェクトが残る。
+---#664 で `git add` が通るようになって初めて表面化した（それまでは `git add` が exit 1 で
+---落ちていたので、何も起きていなかった）。
+---gitの外を指しておけば `worktree_root` が nil を返し、スナップショットは試みられない。
+local sandbox_cwd
+
+---`active_opts` を差し替える唯一の入口
+---
+---`set_active_opts` は渡したテーブルで **丸ごと置き換える** ので、権限だけを差し替えたい
+---テストが `cwd` を書き忘れると、そのテストだけが実リポジトリをスナップショットしてしまう。
+---before_each で1度渡すだけでは足りず、実際に1件見落としていた（#665 のレビュー指摘）。
+---入口を1つにしておけば、テストを足すときに `cwd` を意識する必要がなくなる。
+---@param opts table
+local function activate(opts)
+  permission.set_active_opts(HANDLE_ID, vim.tbl_extend("force", { cwd = sandbox_cwd }, opts))
+end
+
 local function write_request(request_id, tool_name, tool_input)
   local f = assert(io.open(comm_dir .. "/" .. request_id .. ".req", "w"))
   f:write(vim.json.encode({ tool_name = tool_name, tool_input = tool_input or {} }))
@@ -34,7 +56,9 @@ describe("permission handler hook decision", function()
     comm_dir = vim.fn.tempname()
     vim.fn.mkdir(comm_dir, "p")
     vim.env.VIBING_HOOK_COMM_DIR = comm_dir
-    permission.set_active_opts(HANDLE_ID, {
+    sandbox_cwd = vim.fn.tempname()
+    vim.fn.mkdir(sandbox_cwd, "p")
+    activate({
       permissions_allow = { "Read" },
       permissions_deny = { "Bash" },
       permission_mode = "acceptEdits",
@@ -43,8 +67,39 @@ describe("permission handler hook decision", function()
 
   after_each(function()
     permission.clear_active_opts(HANDLE_ID)
+    -- 「このspecはスナップショットを取らない」を全テストに効く不変条件として毎回見る。
+    -- `activate` を入口に1つ用意しても、それを通さない `set_active_opts` を直に呼ぶテストが
+    -- 足されれば `cwd` は落ちる（#665 のレビューで実在した見落とし）。ここで見ておけば、
+    -- あとから足したテストも書き手が意識せずに守られる — `after_each` の失敗は
+    -- PlenaryBustedDirectory の終了コードに乗るので、CIのゲートに届く（実測）。
+    --
+    -- clearを先に済ませてからassertするのは、落ちた場合でも実リポジトリにrefを残さないため。
+    -- 下の `_capture_baselines` describe は git_snapshot を丸ごと差し替えるので、その復元より
+    -- こちらが先に走ることがある。差し替え中は見ない
+    local GitSnapshot = require("vibing.core.utils.git_snapshot")
+    if GitSnapshot.has_baseline and GitSnapshot.clear then
+      local snapshotted = GitSnapshot.has_baseline(HANDLE_ID)
+      GitSnapshot.clear(HANDLE_ID)
+      assert.is_false(snapshotted)
+    end
     vim.env.VIBING_HOOK_COMM_DIR = original_comm_dir
     vim.fn.delete(comm_dir, "rf")
+    vim.fn.delete(sandbox_cwd, "rf")
+  end)
+
+  it("takes no working-tree snapshot of the repository the suite runs in", function()
+    -- 決定パスを通しても、このspecがスナップショットを取らないことを固定する。`cwd` を
+    -- 実リポジトリに向け直すと、ここが落ちる
+    local GitSnapshot = require("vibing.core.utils.git_snapshot")
+
+    decide("req-no-snapshot", "Edit", { file_path = sandbox_cwd .. "/x.txt" })
+    assert.is_false(GitSnapshot.has_baseline(HANDLE_ID))
+
+    -- 権限を差し替えたあとも同じであること。`set_active_opts` を直に呼ぶと `cwd` が落ちるので、
+    -- `activate` を経由しない再設定が入ったらここが落ちる
+    activate({ permissions_allow = { "Edit" }, permission_mode = "acceptEdits" })
+    decide("req-no-snapshot-2", "Edit", { file_path = sandbox_cwd .. "/y.txt" })
+    assert.is_false(GitSnapshot.has_baseline(HANDLE_ID))
   end)
 
   it("grants vibing-nvim's own MCP tools outright", function()
@@ -68,7 +123,7 @@ describe("permission handler hook decision", function()
     -- gets. "allow" would hand an unrelated MCP server the same bypass of the user's own
     -- settings.json that vibing-nvim's own tools get.
     local LOOKALIKE = "mcp__my-vibing-nvim__nvim_get_buffer"
-    permission.set_active_opts(HANDLE_ID, {
+    activate({
       permissions_allow = { LOOKALIKE },
       permission_mode = "acceptEdits",
     })
