@@ -9,6 +9,4 @@ return {
   matchers = matchers,
   rule_checker = rule_checker,
   can_use_tool = can_use_tool.can_use_tool,
-  add_session_allow = can_use_tool.add_session_allow,
-  add_session_deny = can_use_tool.add_session_deny,
 }
