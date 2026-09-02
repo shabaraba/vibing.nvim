@@ -198,9 +198,8 @@ function M.flush(to_bufnr)
   -- 増えはしないし、リンクは記録であって配達の証明ではない
   write_links(queue, to_bufnr)
 
-  local ProgrammaticSender = require("vibing.presentation.chat.modules.programmatic_sender")
-  local text = require("vibing.application.chat.delivery_message").build(queue)
-  local ok, result = pcall(ProgrammaticSender.send, to_bufnr, text)
+  local DeliveryMessage = require("vibing.application.chat.delivery_message")
+  local ok, result = pcall(DeliveryMessage.deliver, queue, to_bufnr)
 
   -- 配達できて初めてキューを空ける。通知側はエッジを既に消費しているので、先に捨てると
   -- 失敗した配達は二度と再現しない。残しておけば次の完了イベントで作り直しなしに再試行できる

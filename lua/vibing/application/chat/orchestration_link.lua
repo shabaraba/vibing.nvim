@@ -23,6 +23,67 @@ local function resolve_chat(bufnr)
   return require("vibing.presentation.chat.view").get_chat_buffer(bufnr)
 end
 
+---2つのチャットの関係を読むのに必要なものを揃える（どちらかがチャットでなければ nil）
+---@param from_bufnr number
+---@param to_bufnr number
+---@return table? from_chat
+---@return table? to_chat
+---@return string? forward 送信先の表示パス
+---@return string? backward 送信元の表示パス
+local function relation(from_bufnr, to_bufnr)
+  local from_chat, to_chat = resolve_chat(from_bufnr), resolve_chat(to_bufnr)
+  if not from_chat or not to_chat then
+    return nil
+  end
+
+  local from_path, to_path = vim.api.nvim_buf_get_name(from_bufnr), vim.api.nvim_buf_get_name(to_bufnr)
+  if from_path == "" or to_path == "" then
+    return nil
+  end
+
+  -- gitルートは1回だけ引く。`to_display_path` は既定で `get_root()` を呼び、それは
+  -- キャッシュを持たない同期の `git rev-parse` 起動なので、2つのパスで2プロセスになる
+  local git_root = Git.get_root()
+  return from_chat, to_chat, Git.to_display_path(to_path, git_root), Git.to_display_path(from_path, git_root)
+end
+
+---逆向きの関係が既に記録されているか（＝この送信は報告・返答か）
+---
+---解決済みの4つを受け取る形にしてあるのは、`link` が同じものを手元に持っているため。
+---公開の `M.direction` から呼ぶと `relation` がもう一度走り、`git rev-parse` が余分に起きる
+---@param from_chat table
+---@param to_chat table
+---@param forward string 送信先の表示パス
+---@param backward string 送信元の表示パス
+---@return "Request"|"Report"
+local function direction_from(from_chat, to_chat, forward, backward)
+  if
+    vim.tbl_contains(from_chat:get_frontmatter_list("orchestrated_by"), forward)
+    or vim.tbl_contains(to_chat:get_frontmatter_list("orchestrated"), backward)
+  then
+    return "Report"
+  end
+  return "Request"
+end
+
+---この送信が配布か、報告・返答かを、記録済みの関係から決める
+---
+---「送信が報告か依頼か」を機構は判別できない（`completion_notifier` の同じ制約）が、
+---「相手が既に自分のオーケストレータとして記録されている」なら向きだけは分かる。それが
+---`link` の逆向きガードであり、配達セクションの見出し（`## Request` / `## Report`）が
+---どちらになるかでもある。片側だけの記録でも報告と見なすのは `link` と同じ理由で、
+---`link` は片肺の書き込みを許すため
+---@param from_bufnr number
+---@param to_bufnr number
+---@return "Request"|"Report"
+function M.direction(from_bufnr, to_bufnr)
+  local from_chat, to_chat, forward, backward = relation(from_bufnr, to_bufnr)
+  if not from_chat then
+    return "Request"
+  end
+  return direction_from(from_chat, to_chat, forward, backward)
+end
+
 ---A が B に指示を出した関係を両者の frontmatter に書く
 ---
 ---呼び出しは `ProgrammaticSender.send` より**前**に済ませること。
@@ -37,20 +98,12 @@ function M.link(from_bufnr, to_bufnr)
     return false, "A chat cannot orchestrate itself"
   end
 
-  local from_chat = resolve_chat(from_bufnr)
-  local to_chat = resolve_chat(to_bufnr)
-  if not from_chat or not to_chat then
-    return false, "Both buffers must be vibing chat buffers"
+  local from_chat, to_chat, forward, backward = relation(from_bufnr, to_bufnr)
+  if not from_chat then
+    -- 2つの理由（チャットバッファでない／ファイル名がない）を1つのメッセージに畳んである。
+    -- 呼び出し元はどちらでも「リンクを記録できなかった」と警告するだけで、分岐はしない
+    return false, "Both buffers must be vibing chat buffers with a file name"
   end
-
-  local from_path = vim.api.nvim_buf_get_name(from_bufnr)
-  local to_path = vim.api.nvim_buf_get_name(to_bufnr)
-  if from_path == "" or to_path == "" then
-    return false, "Both chats must have a file name"
-  end
-
-  local forward = Git.to_display_path(to_path)
-  local backward = Git.to_display_path(from_path)
 
   -- スキルは `nvim_chat_create` と続く `nvim_chat_send_message` の両方に `from_bufnr` を渡すので、
   -- 同じリンクが2回書かれる。`update_frontmatter_list` は要素としては重複を弾くが、行の書き換えと
@@ -74,10 +127,7 @@ function M.link(from_bufnr, to_bufnr)
   -- 片側だけでも逆向きが記録されていれば報告と見なす（`link` は片肺の書き込みを許すので、
   -- 両側揃うことを前提にはできない）。代償として A⇄B の相互オーケストレーションは
   -- 記録できないが、それは循環であって支持する形ではない
-  if
-    vim.tbl_contains(from_chat:get_frontmatter_list("orchestrated_by"), forward)
-    or vim.tbl_contains(to_chat:get_frontmatter_list("orchestrated"), backward)
-  then
+  if direction_from(from_chat, to_chat, forward, backward) == "Report" then
     return true, nil
   end
 

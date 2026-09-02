@@ -4,6 +4,7 @@ local M = {}
 
 local view = require("vibing.presentation.chat.view")
 local Renderer = require("vibing.presentation.chat.modules.renderer")
+local Timestamp = require("vibing.core.utils.timestamp")
 
 -- Per-buffer send locks to prevent concurrent sends
 local _send_locks = {}
@@ -69,7 +70,46 @@ function M.validate(bufnr, message)
   return chat_buf
 end
 
-function M.send(bufnr, message, sender)
+---末尾の空の未送信セクションを落とす
+---
+---ターンが終わるたび `add_user_section()` が空の `## User <!-- unsent -->` を置く。人間はそこに
+---打ち込むのでセクションは1つのままだが、配達はその下に**もう1つ**足していたので、配達された
+---ターンの上には毎回空の User セクションが取り残されていた（実際のオーケストレーションで
+---1ターンにつき1つ増えるのを確認）。
+---
+---落とすのは中身が空のときだけ。承認プロンプトや質問の選択肢は同じ未送信セクションに
+---描かれるので、それらは「空でない」として残る
+---@param buf number
+local function drop_empty_trailing_section(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+
+  -- 末尾から空行を飛ばして最初に当たった行がヘッダーなら、それが最後のセクションで、かつ
+  -- 中身は空。ヘッダー行が空行であることはないので、この1走査が「最後のヘッダー」と
+  -- 「その下は空」の両方を同時に確かめている
+  local last = #lines
+  while last > 0 and vim.trim(lines[last]) == "" do
+    last = last - 1
+  end
+
+  if last == 0 or not Timestamp.is_unsent_header(lines[last]) then
+    return
+  end
+
+  -- ヘッダーの手前の空行も一緒に落とす。残しても `addUserSection` が末尾の空行を畳むが、
+  -- 畳む対象を残したまま返すと「何を消したか」が2箇所に分かれる
+  local first = last
+  while first > 1 and vim.trim(lines[first - 1]) == "" do
+    first = first - 1
+  end
+  vim.api.nvim_buf_set_lines(buf, first - 1, #lines, false, {})
+end
+
+---@param bufnr number
+---@param message string
+---@param sender string?
+---@param delivery Vibing.Application.DeliveryMessage.Section? 他のチャットからの配達なら、
+---  そのセクション見出しに使う種別と送信元。省略すると通常の `## User` セクションになる
+function M.send(bufnr, message, sender, delivery)
   sender = sender or "User"
 
   local chat_buf = M.validate(bufnr, message)
@@ -86,7 +126,9 @@ function M.send(bufnr, message, sender)
       or nil
 
     -- Add user section and send
-    Renderer.addUserSection(bufnr, nil, nil, nil, message)
+    local header = delivery and Timestamp.create_header(delivery.kind, nil, delivery.from) or nil
+    drop_empty_trailing_section(bufnr)
+    Renderer.addUserSection(bufnr, nil, nil, nil, message, header)
     sent = chat_buf:send_message()
 
     -- Restore cursor

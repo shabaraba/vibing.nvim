@@ -92,6 +92,10 @@ function M.extract_user_message(buf)
 end
 
 ---未送信ヘッダーをタイムスタンプ付きヘッダーに置き換える
+---
+---種別と送信元を保ったまま時刻だけ入れる。`## User` に決め打つと、配達セクション
+---（`## Request` / `## Report` / `## Notice`）が送信の瞬間にただの User に化けて、
+---誰から届いたものかがバッファから消える
 ---@param buf number バッファ番号
 function M.commit_user_message(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
@@ -99,27 +103,22 @@ function M.commit_user_message(buf)
   end
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  local last_unsent_user_line = nil
+  local last_unsent_line, last_unsent_header = nil, nil
 
   for i = #lines, 1, -1 do
-    if Timestamp.is_unsent_user_header(lines[i]) then
-      last_unsent_user_line = i
+    local header = Timestamp.parse_header(lines[i])
+    if header and header.unsent then
+      last_unsent_line, last_unsent_header = i, header
       break
     end
   end
 
-  if not last_unsent_user_line then
+  if not last_unsent_line then
     return
   end
 
-  local timestamped_header = Timestamp.create_user_header_with_timestamp()
-  vim.api.nvim_buf_set_lines(
-    buf,
-    last_unsent_user_line - 1,
-    last_unsent_user_line,
-    false,
-    { timestamped_header }
-  )
+  local committed = Timestamp.create_header(last_unsent_header.kind, Timestamp.now(), last_unsent_header.from)
+  vim.api.nvim_buf_set_lines(buf, last_unsent_line - 1, last_unsent_line, false, { committed })
 end
 
 return M

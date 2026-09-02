@@ -63,17 +63,27 @@ function M.send_message(params)
 
   -- `from_bufnr` は任意。必須にすると渡し忘れで送信そのものが失敗し、既存の
   -- オーケストレーション経路が壊れる。渡されなければリンクを張らないだけ（＝従来の動作）
+  -- 即配達もキュー配達とまったく同じ組み立てを通す。経路が2本あったころは、相手がたまたま
+  -- 応答中だったかどうかで同じ報告の見え方が変わっていた（キュー経由だけが送信元を名乗る）
+  local result
   if params.from_bufnr then
     -- リンクは送信より前に書く必要がある（`update_frontmatter_list` はバッファを直接触るので、
     -- 宛先の応答が始まってから書くとストリーミングと競合する）。ただし送信が弾かれると
     -- 行われなかったやり取りの関係だけが永久に残るので、先に送信可能かを確かめる
     ProgrammaticSender.validate(bufnr, params.message)
-
     require("vibing.application.chat.orchestration_link").link_or_warn(params.from_bufnr, bufnr)
-  end
 
-  -- ProgrammaticSender.send already validates parameters
-  local result = ProgrammaticSender.send(bufnr, params.message, params.sender)
+    -- 向きの判定は `link_or_warn` の**後**でよい: 配布ならリンクは今書かれたばかりで
+    -- `direction` は Request を返し、報告なら `link` は逆向きガードで何も書かずに戻る
+    result = require("vibing.application.chat.delivery_message").deliver(
+      { { bufnr = params.from_bufnr, body = params.message } },
+      bufnr,
+      params.sender
+    )
+  else
+    -- ProgrammaticSender.send already validates parameters
+    result = ProgrammaticSender.send(bufnr, params.message, params.sender)
+  end
 
   -- 送ったという事実そのものを購読の登録として扱う。宛先が応答を終えたら送信元に
   -- 「読みに行け」とだけ伝わる（application/chat/completion_notifier.lua）。同時に、逆向きの

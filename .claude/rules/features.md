@@ -181,6 +181,24 @@ timestamps are recorded when the message is sent (`<CR>`); Assistant timestamps 
 the response begins (`on_done` callback). Timestamps use the local system timezone (Lua's
 `os.date()`).
 
+A message another chat delivered gets its own section kind rather than a `## User`, so a
+transcript says who wrote what:
+
+```markdown
+## Request <!-- 2026-09-02 08:13:11 from .vibing/chat/orchestrator.md -->
+
+## Report <!-- 2026-09-02 08:14:07 from .vibing/chat/worker-a.md -->
+
+## Notice <!-- 2026-09-02 08:14:16 -->
+```
+
+`Request` is a dispatch, `Report` a reply or a completion report, `Notice` a watchdog wake-up
+vibing.nvim generated itself. Which of the first two applies is decided by
+`orchestration_link.direction`, not guessed from the text. The grammar is
+`## <Kind> <!-- <unsent|timestamp>[ from <path>] -->` and lives only in `timestamp.lua`;
+`parse_header` is what every reader goes through. Why `extract_role` still answers `user` for all
+three: `architecture.md` → "Multi-Agent Orchestration" → "Delivered sections".
+
 Implemented in `lua/vibing/utils/timestamp.lua`: `create_header(role, timestamp)`,
 `extract_role(line)`, `has_timestamp(line)`, `extract_timestamp(line)`, `is_header(line)`.
 

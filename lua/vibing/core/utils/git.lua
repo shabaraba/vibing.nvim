@@ -37,8 +37,9 @@ end
 ---絶対パスからgitルートからの相対パスを取得
 ---@param abs_path string 絶対パス
 ---@return string|nil 相対パス（gitルートそのものの場合は"."、Git管理外の場合はnil）
-function M.get_relative_path(abs_path)
-  local git_root = M.get_root()
+---@param git_root string? 解決済みのgitルート。省略すると `get_root()` を呼ぶ（`git rev-parse` の起動1回）
+function M.get_relative_path(abs_path, git_root)
+  git_root = git_root or M.get_root()
   if not git_root then
     return nil
   end
@@ -243,8 +244,9 @@ end
 ---絶対パスをGit相対パスまたはチルダ短縮パスに変換
 ---@param abs_path string
 ---@return string
-function M.to_display_path(abs_path)
-  local relative = M.get_relative_path(abs_path)
+---@param git_root string? 解決済みのgitルート。1回の処理で複数のパスを表示形式にするときに渡す
+function M.to_display_path(abs_path, git_root)
+  local relative = M.get_relative_path(abs_path, git_root)
   if relative then
     return relative
   end
