@@ -31,6 +31,34 @@ local SESSION_TTL_SEC = 3600
 ---@type string
 local EXCLUDE_VIBING_DIR = ":(exclude).vibing"
 
+---`git add` の pathspec。`.vibing` が既に無視されているworktreeでは exclude を **付けない**
+---
+---`git add` は「無視対象のパスを明示的に指定した」と判断すると exit 1 を返す。これは
+---`:(exclude)` のネガティブ pathspec でも起きる — git はネガティブ側の要素も
+---「明示的に指定されたパス」として無視判定にかけるため、`.vibing/` を `.gitignore` に
+---入れているプロジェクト（このプラグインがドキュメントで勧めている構成そのもの）では
+---`git add -A -- . ':(exclude).vibing'` が必ず失敗する。
+---
+---厄介なのは **失敗しているのは終了コードだけ** という点。ステージングは正常に完了し
+---`write-tree` も通るが、`snapshot()` は `added.code ~= 0` で nil を返すので、
+---ベースラインが1度も作られず、スナップショット経路が丸ごと死ぬ。実測（git 2.50.1）:
+---
+---    git add -A -- . ':(exclude).vibing'          -> 1  ("paths are ignored by .gitignore")
+---    git add -A -- . ':(exclude).vibing/'         -> 1
+---    git add -A --ignore-errors -- . ':(exclude)…'-> 1
+---    git add -A -- .                              -> 0
+---
+---`add` 側の exclude はそもそも「`.vibing/` 配下をハッシュ計算しない」ための節約でしかない
+---（本命は `git diff` 側で、そちらは常に付ける）。無視されているなら git がどうせ飛ばすので、
+---外しても何も失われない。逆に無視されていないプロジェクトでは exclude が必要で、そちらでは
+---git は文句を言わない。だから「無視されているか」を1度聞いて分岐するのが両方成立する形。
+---
+---判定できなかったときは exclude を **付ける** 側に倒す。付けて壊れるのは無視されている
+---場合だけで、外して壊れるのは `.vibing/worktrees/` を丸ごとpatchに入れてしまう場合なので、
+---不明なときの被害が小さいのは前者。
+---@type table<string, string[]>
+local add_pathspec_cache = {}
+
 ---commit-treeはcommitterのidentityを要求する。ユーザーが `user.email` を設定していない環境
 ---（CI・素のコンテナ）でスナップショットだけ失敗するのを避けるため、この呼び出しにだけ効く
 ---identityを渡す。ユーザーのgit設定は読みも書きもしない。
@@ -103,6 +131,22 @@ local function git(cmd, root, env)
     return nil
   end
   return result
+end
+
+---`git add` に渡す pathspec を決める（rootにつき1回だけgitに聞く）
+---理由は `add_pathspec_cache` のコメント参照
+---@param root string worktreeルート
+---@return string[] pathspec
+local function add_pathspec(root)
+  local cached = add_pathspec_cache[root]
+  if cached then
+    return cached
+  end
+  -- check-ignore は 0=無視されている / 1=されていない / 128=エラー
+  local ignored = git({ "git", "check-ignore", "-q", ".vibing" }, root)
+  local spec = (ignored and ignored.code == 0) and { "." } or { ".", EXCLUDE_VIBING_DIR }
+  add_pathspec_cache[root] = spec
+  return spec
 end
 
 ---worktreeルートを解決する
@@ -182,7 +226,9 @@ local function snapshot(root)
 
   local env = vim.tbl_extend("force", { GIT_INDEX_FILE = tmp_index }, GIT_ENV)
 
-  local added = git({ "git", "add", "-A", "--", ".", EXCLUDE_VIBING_DIR }, root, env)
+  local add_cmd = { "git", "add", "-A", "--" }
+  vim.list_extend(add_cmd, add_pathspec(root))
+  local added = git(add_cmd, root, env)
   if not added or added.code ~= 0 then
     vim.fn.delete(tmp_index)
     return nil
@@ -600,6 +646,7 @@ function M._reset()
   sessions = {}
   root_cache = {}
   swept_roots = {}
+  add_pathspec_cache = {}
 end
 
 M._REF_PREFIX = REF_PREFIX

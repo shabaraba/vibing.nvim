@@ -242,6 +242,35 @@ describe("git_snapshot", function()
       assert.is_nil(turn.patch:find(".vibing", 1, true))
     end)
 
+    it("still snapshots when .vibing itself is gitignored", function()
+      -- `git add` は「無視対象のパスを明示的に指定した」と判断すると exit 1 を返し、それは
+      -- `:(exclude)` のネガティブ pathspec でも起きる。つまり `.vibing/` を `.gitignore` に
+      -- 入れている構成 — このプラグインが勧めている構成そのもの — では
+      -- `git add -A -- . ':(exclude).vibing'` が必ず失敗し、ベースラインが1度も作られず
+      -- スナップショット経路が丸ごと死ぬ。ステージング自体は成功していて終了コードだけが
+      -- 1 なので、何の警告も出ないまま毎ターン request_diff にフォールバックしていた。
+      --
+      -- 上の「gitignoreしていない場合」のケースだけがテストされていたのが見逃した理由なので、
+      -- 両方を並べて固定する。
+      write(repo .. "/.gitignore", "ignored/\n*.log\n.vibing/\n")
+      git_ok({ "add", ".gitignore" })
+      git_ok({ "commit", "-q", "-m", "ignore .vibing" })
+      write(repo .. "/.vibing/chat/2026-01-01.md", "## User\nhello\n")
+      GitSnapshot._reset()
+
+      local handle = next_handle()
+      GitSnapshot.ensure_baseline(handle, repo, "Bash")
+      assert.is_true(GitSnapshot.has_baseline(handle))
+
+      write(repo .. "/tracked.txt", "after\n")
+      local files, _, patch, ok = GitSnapshot.generate(handle, nil)
+
+      assert.is_true(ok)
+      assert.same({ "tracked.txt" }, files)
+      assert.is_truthy(patch:find("+after", 1, true))
+      assert.is_nil(patch:find(".vibing", 1, true))
+    end)
+
     it("lists a tool-event path that git does not see, without a patch section", function()
       -- .gitignore対象でもツール引数で分かっている分は一覧には載せる（patchは作らない）
       local turn = run_turn(function()

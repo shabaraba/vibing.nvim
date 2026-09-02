@@ -781,7 +781,24 @@ Three details are not interchangeable:
   patches themselves and changes during the turn, so for anyone who has not git-ignored it every
   turn would list the conversation log as its own output and put the whole transcript in the patch.
   The removed mote integration excluded the same directory through `.moteignore`. The exclusion is
-  on the diff calls (where it matters) and on `git add -A` (where it saves hashing).
+  unconditional on the diff calls (where it matters) and **conditional on `git add -A`**, where it
+  only ever saved hashing — because naming it there is what killed the whole mechanism until #664.
+  `git add` exits 1 when a pathspec explicitly names an ignored path, and it applies that to a
+  **negative** pathspec too, so in any project that git-ignores `.vibing/` — the setup this
+  plugin's own docs recommend, and this repository's own `.gitignore` —
+  `git add -A -- . ':(exclude).vibing'` always failed. Only the exit code failed: staging completed
+  and `write-tree` succeeded, but `snapshot()` reads the code, so no baseline was ever taken and
+  every turn fell silently back to `request_diff` — losing exactly the Bash-driven changes #625 was
+  filed about. `add_pathspec` therefore asks `git check-ignore -q .vibing` once per worktree root
+  and drops the exclude when git is already skipping the directory. An undecidable answer keeps the
+  exclude, since keeping it wrongly costs only the one case above while dropping it wrongly puts a
+  whole `.vibing/worktrees/` checkout in the patch. Measured against git 2.50.1: `--ignore-errors`
+  and every `:(exclude...)` spelling exit 1 alike, and plain `-- .` exits 0.
+
+  The spec that missed this is worth naming, because the gap was in the fixture rather than in the
+  assertions: its `.gitignore` held `ignored/` and `*.log` only, so `.vibing/` was never ignored in
+  any test, and the one case pinned for this directory was literally the working one — "even when
+  it is not gitignored". Both are pinned now.
 
 **The two baselines are taken under separate `pcall`s** (`permission._capture_baselines`). Sharing
 one would let the fallback take the main path down with it: `request_diff.capture` builds its
