@@ -78,7 +78,9 @@ end
 --- @param n number
 --- @return string
 local function humanize(n)
-  if n >= 1000000 then
+  -- The boundary is where the k form *rounds* to 1000k, not where the number reaches 1M: the
+  -- branch below rounds half-up, so 999,999 would otherwise print as "1000k".
+  if n >= 999500 then
     return string.format("%.1fM", n / 1000000)
   end
   if n >= 1000 then

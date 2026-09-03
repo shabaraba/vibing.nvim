@@ -410,7 +410,13 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   end
 
   -- 差分セクションより前に出す。finalize系が `### Modified Files` を書いてから
-  -- `add_user_section()` まで進むので、ここを逃すと差分の下に潜り込む
+  -- `add_user_section()` まで進むので、ここを逃すと差分の下に潜り込む。
+  --
+  -- 上の `_session_corrupted` 分岐がここより先に return するが、そちらに章が要らないのは
+  -- 意図的で、かつ何も失われない。あのタイムアウトは「最初のsystemイベント」で解除される
+  -- （cli_event_processor の handle_system_event）ので、発火したということはCLIがinitすら
+  -- 出していないということ。assistantメッセージが1本も無いので `requests` は0で、
+  -- `TokenUsage.format` はどのみち nil を返す
   pcall(M._report_token_usage, response, callbacks, config)
 
   local GitSnapshot = require("vibing.core.utils.git_snapshot")

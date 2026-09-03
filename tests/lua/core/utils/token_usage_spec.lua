@@ -100,6 +100,12 @@ describe("token_usage", function()
       assert.equals("205k", TokenUsage._humanize(205000))
       assert.equals("2.4M", TokenUsage._humanize(2400000))
     end)
+
+    it("switches to M where the k form would round to 1000k", function()
+      assert.equals("999k", TokenUsage._humanize(999499))
+      assert.equals("1.0M", TokenUsage._humanize(999500))
+      assert.equals("1.0M", TokenUsage._humanize(1000000))
+    end)
   end)
 
   describe("section", function()
