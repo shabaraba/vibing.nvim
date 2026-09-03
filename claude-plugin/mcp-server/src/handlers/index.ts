@@ -53,6 +53,7 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_chat_create: chat.handleChatCreate,
   nvim_chat_send_message: chat.handleChatSendMessage,
   nvim_ask_user_question: chat.handleAskUserQuestion,
+  nvim_chat_answer_approval: chat.handleChatAnswerApproval,
 
   // Highlighting
   nvim_highlight_range: highlight.handleHighlightRange,

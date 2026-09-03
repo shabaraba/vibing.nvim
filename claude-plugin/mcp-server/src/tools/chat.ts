@@ -12,6 +12,18 @@ import { withRpcPort, requireRpcPort } from './common.js';
  */
 export const CHAT_POSITIONS = ['back', 'current', 'right', 'left', 'top', 'bottom'] as const;
 
+/**
+ * The four answers a tool-approval prompt accepts, mirroring `APPROVAL_OPTIONS` in
+ * `lua/vibing/infrastructure/rpc/handlers/permission.lua` and the vocabulary
+ * `presentation/chat/modules/approval_parser.lua` reads back out of the buffer.
+ */
+export const APPROVAL_ACTIONS = [
+  'allow_once',
+  'deny_once',
+  'allow_for_session',
+  'deny_for_session',
+] as const;
+
 export const chatTools: Tool[] = [
   {
     name: 'nvim_chat_create',
@@ -178,6 +190,59 @@ export const chatTools: Tool[] = [
         },
       }),
       required: requireRpcPort(['chat_bufnr', 'questions']),
+    },
+  },
+  {
+    name: 'nvim_chat_answer_approval',
+    description:
+      "Answer another chat's pending tool-approval prompt — the one that leaves it stuck at " +
+      'status waiting_approval, unable to continue or even to report back. Read what it is ' +
+      'stuck on with nvim_get_buffer first; the prompt names the tool and its input. ' +
+      'This is off unless the user turned it on ' +
+      '(agent.orchestration.delegated_approval), and the call fails with an explanation when it ' +
+      'is off — then the only thing to do is tell the user which chat is blocked and on what. ' +
+      'When it is on, you are standing in for the user on a decision they asked to be consulted ' +
+      'about: answer only when the tool is plainly within the task you briefed that chat with, ' +
+      'and put anything else to the user instead. Your answer is recorded in that chat as coming ' +
+      'from you. It can only be answered once, and only while it is pending.',
+    inputSchema: {
+      type: 'object',
+      properties: withRpcPort({
+        file_path: {
+          type: 'string',
+          description:
+            'Chat file of the blocked chat (git-root-relative, absolute, or ~-prefixed). ' +
+            'Opened in the background if it is not already open. Prefer this over bufnr.',
+        },
+        bufnr: {
+          type: 'number',
+          description:
+            'Buffer number of the blocked chat. Only valid within this Neovim session — use ' +
+            'file_path instead when you have one.',
+        },
+        action: {
+          type: 'string',
+          enum: [...APPROVAL_ACTIONS],
+          description:
+            'Which of the four options to choose. The "_once" pair applies to this one call; ' +
+            'the "_for_session" pair is written into that chat\'s frontmatter and applies to ' +
+            'every later call in it, so prefer allow_once unless the chat will clearly need the ' +
+            'tool repeatedly.',
+        },
+        from_bufnr: {
+          type: 'number',
+          description:
+            'Your own chat: the exact "Current vibing.nvim chat buffer number" from your ' +
+            'system prompt THIS turn — never a number remembered from earlier in the ' +
+            'conversation, which a Neovim restart silently invalidates. Required here (unlike ' +
+            'on the other chat tools): answering an approval is recorded as your decision, and ' +
+            'a call that cannot say whose decision it was is refused.',
+        },
+      }),
+      // bufnr/file_path stay out of the required list for the same reason as on
+      // nvim_chat_send_message: the handler enforces that exactly one arrives, and listing both
+      // as required would read as "pass both".
+      required: requireRpcPort(['action', 'from_bufnr']),
     },
   },
 ];

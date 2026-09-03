@@ -165,8 +165,10 @@ Alongside the transcript the result carries a chat-status line, in the same voca
 - `status: asked_question` — the worker stopped to ask something and is waiting for an answer.
   Read the question and reply with `nvim_chat_send_message` (passing `from_bufnr`), or put it to
   the user if only they can decide. It will not move until someone answers.
-- `status: waiting_approval` — the worker stopped on a tool-approval prompt. Only the user can
-  clear that one; say which worker is blocked and on what.
+- `status: waiting_approval` — the worker stopped on a tool-approval prompt. By default only the
+  user can clear that one: say which worker is blocked and on what. If the user turned on
+  `agent.orchestration.delegated_approval`, you can answer it yourself — see "Answering a worker's
+  tool approval" below.
 - `status: error` — the last turn ended with an error. Read the tail of the transcript for the
   message and decide whether to re-brief the worker or report the failure.
 
@@ -196,6 +198,43 @@ still needs the user. Point at each worker's `file_path` so the user can open th
 `waiting_approval` will never reach `idle` on its own, so waiting for it is waiting forever.
 Report it as blocked and say what it needs.
 
+### Answering a worker's tool approval
+
+A worker that reaches a tool in its `ask` list has its turn killed and the approval prompt drawn
+into its own buffer. It cannot continue and cannot report that it is stuck. **By default the only
+one who can clear that is the user** — name the worker and the tool in your reply and end the turn.
+
+If the user set `agent.orchestration.delegated_approval`, you can answer it instead:
+
+```text
+nvim_get_buffer({ rpc_port, file_path: "<worker file_path>" })    # read what it is stuck on
+nvim_chat_answer_approval({
+  rpc_port,
+  file_path: "<worker file_path>",
+  action: "allow_once",
+  from_bufnr: <this chat's bufnr>,
+})
+```
+
+Four things about it:
+
+- **You are standing in for the user on a decision they asked to be consulted about.** Answer only
+  when the tool and its input are plainly within the brief you wrote for that worker. Anything
+  else — a command touching files outside the task, anything destructive, anything you cannot
+  place — goes to the user, with the worker and the tool named.
+- **Read the prompt before answering.** The buffer names the tool and its input. Approving a tool
+  you have not looked at is not delegation, it is a rubber stamp.
+- **Prefer `allow_once`.** `allow_for_session` is written into that worker's frontmatter and
+  applies to every later call in it, so it outlives the one call you actually judged. Use it only
+  when the brief obviously needs the tool repeatedly. `deny_once` / `deny_for_session` are the
+  other two; a denial sends the worker back with "use a different approach", so say why in a
+  follow-up message if the reason matters.
+- **The call fails with an explanation when the setting is off.** Read it and put the approval to
+  the user; don't call it again to check.
+
+Answering starts a new turn in that worker, so it will come back to you when it stops — exactly
+like a brief. Do not poll it.
+
 If you used worktrees, offer the `vibing-worktree-finish` skill for each branch once its work has
 been merged or abandoned. Don't remove a worktree on your own initiative; unmerged work lives
 there.
@@ -216,8 +255,9 @@ fan-in is this convention, so keeping it is on you.
   worker: your parent's job is the same as yours, and forwarding raw worker output makes it pay for
   a transcript twice.
 - **Do not wait forever.** A worker that stops `asked_question`, `waiting_approval` or `error` is
-  not going to report on its own. Deal with it if you can (answer the question, re-brief it); if
-  you cannot, report to your parent now with that worker's state named, rather than holding the
-  whole tree open for something only the user can clear.
+  not going to report on its own. Deal with it if you can (answer the question, answer the tool
+  approval if that is enabled, re-brief it); if you cannot, report to your parent now with that
+  worker's state named, rather than holding the whole tree open for something only the user can
+  clear.
 - If your own brief turns out to be ambiguous, ask your parent before dispatching. Splitting a
   misunderstood task fans the misunderstanding out across several chats.

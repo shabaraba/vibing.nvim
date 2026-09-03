@@ -97,6 +97,10 @@
 ---チャット網の走らせ方に関する設定
 ---@field max_concurrent number 同時に応答中にできるチャットの本数。0で無制限（デフォルト: 0）。
 ---  見るのは機械が始める送信（`nvim_chat_send_message`とキューの配達）だけで、人間の<CR>は止めない
+---@field delegated_approval boolean? 別のチャットが`nvim_chat_answer_approval`でツール承認
+---  プロンプトに代理で答えられるようにするか（デフォルト: false）。承認ゲートはユーザーのために
+---  あるので、エージェントが別のエージェントのゲートを外せる状態は権限モデルそのものの変更であり、
+---  既定にはしない
 
 ---@class Vibing.AgentConfig
 ---エージェント設定
@@ -336,6 +340,17 @@ M.defaults = {
       -- 上限に当たった送信は捨てられずキューに残り、枠が空いた完了イベントで配り直される。
       -- 人間の<CR>はこの上限を見ない。
       max_concurrent = 0,
+      -- ワーカーが `ask` 対象のツールに当たると、そのチャットは `waiting_approval` で止まり、
+      -- 自力では抜けられない。既定ではそれを外せるのはユーザーだけで、オーケストレーターは
+      -- 「どのチャットが何で止まっているか」を言うところまでしかできない。
+      --
+      -- true にすると、オーケストレーターは `nvim_chat_answer_approval` で4択
+      -- （allow_once / deny_once / allow_for_session / deny_for_session）に代理で答えられる。
+      -- 扇の全員が同じ承認で止まる運用ではこれが唯一の現実解だが、買っているのは
+      -- 「エージェントが別のエージェントの承認ゲートを外せる」状態そのものなので、
+      -- opt-in にしてある。答えは配達セクション（`## Request <!-- ... from ... -->`）として
+      -- ワーカーのtranscriptに残るので、誰が許可したかは後から読める。
+      delegated_approval = false,
     },
     -- codexの軽量呼び出しは --ignore-user-config で走るので、ユーザーの model_provider が落ちて
     -- 既定のOpenAIエンドポイントに向く。それを1セッション1回だけ警告する。

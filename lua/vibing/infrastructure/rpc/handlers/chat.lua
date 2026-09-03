@@ -71,4 +71,33 @@ function M.create_chat(params)
   }
 end
 
+---別のチャットのツール承認プロンプトに代理で答える（MCP tool `nvim_chat_answer_approval`）
+---
+---宛先の指し方は `nvim_chat_send_message` と同じ（`file_path` か `bufnr` のどちらか一方）。
+---違うのは `from_bufnr` が**必須**なこと: 承認ゲートを外す呼び出しなので、誰が外したのかを
+---記録できない形は通さない。互換のために任意にしておく理由も無い — このRPCメソッドを持たない
+---古いNeovimは、呼び出しそのものが届かない
+---@param params {bufnr?: number, file_path?: string, action: string, from_bufnr: number}
+---@return {success: boolean, bufnr: number, tool: string, action: string}
+function M.answer_approval(params)
+  params = params or {}
+
+  local Bufnr = require("vibing.infrastructure.rpc.handlers.bufnr")
+  local bufnr = Bufnr.resolve_chat_target(params)
+  if not bufnr then
+    error("Missing bufnr or file_path parameter")
+  end
+
+  local from_bufnr = Bufnr.resolve_from_bufnr(params.from_bufnr)
+  if not from_bufnr then
+    error("Missing from_bufnr parameter (the chat answering the prompt must name itself)")
+  end
+
+  return require("vibing.application.chat.approval_delegate").answer({
+    bufnr = bufnr,
+    action = params.action,
+    from_bufnr = from_bufnr,
+  })
+end
+
 return M

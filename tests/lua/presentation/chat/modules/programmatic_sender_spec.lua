@@ -87,6 +87,48 @@ describe("ProgrammaticSender.send", function()
     assert.is_true(vim.tbl_contains(lines, "1. PostgreSQL"), table.concat(lines, "\n"))
   end)
 
+  it("replaces a trailing section with something in it when asked to", function()
+    -- 承認への代理応答（`approval_delegate`）だけがこれを渡す。そこでは承認プロンプトそのものが
+    -- 「答える対象」なので、残すと答え終わったプロンプトがバッファに永久に居座る
+    vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, {
+      "## User <!-- unsent -->",
+      "",
+      "⚠️  Tool approval required",
+      "",
+      "1. allow_once - Allow this execution only",
+      "",
+    })
+
+    ProgrammaticSender.send(bufnr, "1. allow_once - Allow this execution only", nil, {
+      kind = "Request",
+      from = ".vibing/chat/orchestrator.md",
+    }, { replace_unsent = true })
+
+    local lines = buffer_lines()
+    assert.is_false(vim.tbl_contains(lines, "⚠️  Tool approval required"), table.concat(lines, "\n"))
+
+    local headers = vim.tbl_filter(function(line)
+      return line:match("^## ")
+    end, lines)
+    assert.same({ "## Request <!-- unsent from .vibing/chat/orchestrator.md -->" }, headers)
+  end)
+
+  it("leaves an already-committed trailing section alone even with replace_unsent", function()
+    -- 「未送信ヘッダーが見つかるまで遡る」実装だと、送信済みセクションを飛び越えて上のほうの
+    -- 未送信セクションを消しうる。末尾から最初に当たったヘッダーだけを見る
+    vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, {
+      "## User <!-- 2026-09-03 10:00:00 -->",
+      "",
+      "already sent",
+      "",
+    })
+
+    ProgrammaticSender.send(bufnr, "hello", nil, { kind = "Request" }, { replace_unsent = true })
+
+    local lines = buffer_lines()
+    assert.is_true(vim.tbl_contains(lines, "already sent"), table.concat(lines, "\n"))
+  end)
+
   it("refuses a chat that is already responding, before touching the buffer", function()
     -- 追加してから巻き戻すのではなく追加する前に断る。`ChatBuffer:send_message()` は
     -- 応答中なら黙って return するので、先に append すると送られない `## User` が残り、

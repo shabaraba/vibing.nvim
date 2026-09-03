@@ -238,6 +238,18 @@ The MCP server exposes the following tools to Claude:
     relationship in both chat files' frontmatter (`orchestrated` / `orchestrated_by`), so it
     outlives the buffer numbers and file names it was built from
 
+- **nvim_chat_answer_approval** - Answer another chat's pending tool-approval prompt, the stop
+  that leaves it at status `waiting_approval` unable to continue or report. **Refused unless the
+  user set `agent.orchestration.delegated_approval`** — by default only the user can clear that
+  prompt, and the error says so
+  - `file_path` / `bufnr` (exactly one): The blocked chat, addressed as above
+  - `action` (required): `allow_once` / `deny_once` / `allow_for_session` / `deny_for_session` —
+    the same four options the prompt offers the user. The `_for_session` pair is written into that
+    chat's frontmatter and applies to every later call in it
+  - `from_bufnr` (**required**, unlike on the two tools above): The answering chat's buffer
+    number. The answer is recorded in the blocked chat as coming from it, so a call that cannot
+    say whose decision it was is refused
+
 - **nvim_ask_user_question** - Render a multiple-choice question in the chat buffer. This cancels
   the in-flight turn; the user's answer arrives as the next turn's message
   - `chat_bufnr` (required): Chat buffer number

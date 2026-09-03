@@ -63,7 +63,8 @@ Prefix with `mcp__vibing-nvim__`:
 - **Highlighting**: `nvim_highlight_range`, `nvim_clear_highlight` (see "Showing Code" below)
 - **Annotations**: `nvim_annotate`, `nvim_clear_annotations` (see "Inline Review Notes" below)
 - **Chat**: `nvim_ask_user_question` (renders a choice list in the chat buffer — see
-  `features.md`), `nvim_chat_send_message`, `nvim_chat_create` (see "Orchestration" below)
+  `features.md`), `nvim_chat_send_message`, `nvim_chat_create`, `nvim_chat_answer_approval`
+  (see "Orchestration" below)
 - **Instances**: `nvim_list_instances`
 - **Quickfix**: `nvim_set_qflist` (pushes a new list; the previous one survives under `:colder`)
 - **Debugger**: `nvim_dap_get_state`, `nvim_dap_get_stack_trace`, `nvim_dap_get_variables`,
@@ -126,6 +127,15 @@ happened, and "queued" means no request has started yet — an orchestrator that
 would poll a transcript that has not moved. Why it is not gated on `chat_notifications`, why the
 frontmatter link is written at delivery rather than when the message is queued, and why the queue
 is capped: `handbook/architecture/orchestration.md`.
+
+`nvim_chat_answer_approval({ rpc_port, file_path|bufnr, action, from_bufnr })` answers another
+chat's pending tool-approval prompt with one of `allow_once` / `deny_once` / `allow_for_session` /
+`deny_for_session`. **It is refused unless `agent.orchestration.delegated_approval` is set**, since
+what it buys is one agent clearing another agent's permission gate; `from_bufnr` is required here
+(unlike on the other two) so the answer is always recorded as somebody's decision. Why it writes
+the chosen option line into the worker's buffer instead of applying the decision directly, and why
+the watchdog's `waiting_approval` wording changes with the setting:
+`handbook/architecture/orchestration.md` → "Answering a worker's tool approval".
 
 The workflow is the bundled `vibing-orchestrate` skill. Why `position` defaults to `back`, why the
 chat file is written at creation, why the status is a field rather than a text heuristic, and what

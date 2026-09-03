@@ -70,7 +70,7 @@ function M.validate(bufnr, message)
   return chat_buf
 end
 
----末尾の空の未送信セクションを落とす
+---末尾の未送信セクションを落とす（既定では中身が空のときだけ）
 ---
 ---ターンが終わるたび `add_user_section()` が空の `## User <!-- unsent -->` を置く。人間はそこに
 ---打ち込むのでセクションは1つのままだが、配達はその下に**もう1つ**足していたので、配達された
@@ -78,9 +78,13 @@ end
 ---1ターンにつき1つ増えるのを確認）。
 ---
 ---落とすのは中身が空のときだけ。承認プロンプトや質問の選択肢は同じ未送信セクションに
----描かれるので、それらは「空でない」として残る
+---描かれるので、それらは「空でない」として残る（`replace_unsent` を渡した呼び出しを除く）。
+---
 ---@param buf number
-local function drop_empty_trailing_section(buf)
+---@param replace_unsent boolean? true なら中身があっても末尾の未送信セクションを落とす。
+---  承認への代理応答（`approval_delegate`）専用で、そこでは承認プロンプトそのものが
+---  「置き換える対象」になる。残すと、答え終わったプロンプトがバッファに永久に居座る
+local function drop_trailing_unsent_section(buf, replace_unsent)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
   -- 末尾から空行を飛ばして最初に当たった行がヘッダーなら、それが最後のセクションで、かつ
@@ -91,8 +95,23 @@ local function drop_empty_trailing_section(buf)
     last = last - 1
   end
 
-  if last == 0 or not Timestamp.is_unsent_header(lines[last]) then
+  if last == 0 then
     return
+  end
+
+  if not Timestamp.is_unsent_header(lines[last]) then
+    if not replace_unsent then
+      return
+    end
+    -- 中身のある未送信セクションを落とす経路。末尾から**最初に当たったヘッダー**まで戻り、
+    -- それが未送信でなければ何もしない。「未送信ヘッダーを見つけるまで遡る」にすると、
+    -- 送信済みセクションを飛び越えて上のほうの未送信セクションを消しうる
+    repeat
+      last = last - 1
+    until last == 0 or Timestamp.is_header(lines[last])
+    if last == 0 or not Timestamp.is_unsent_header(lines[last]) then
+      return
+    end
   end
 
   -- ヘッダーの手前の空行も一緒に落とす。残しても `addUserSection` が末尾の空行を畳むが、
@@ -109,8 +128,11 @@ end
 ---@param sender string?
 ---@param delivery Vibing.Application.DeliveryMessage.Section? 他のチャットからの配達なら、
 ---  そのセクション見出しに使う種別と送信元。省略すると通常の `## User` セクションになる
-function M.send(bufnr, message, sender, delivery)
+---@param opts {replace_unsent: boolean?}? `replace_unsent` で、中身のある末尾の未送信
+---  セクションも落としてから書く（承認プロンプトへの代理応答）
+function M.send(bufnr, message, sender, delivery, opts)
   sender = sender or "User"
+  opts = opts or {}
 
   local chat_buf = M.validate(bufnr, message)
 
@@ -127,7 +149,7 @@ function M.send(bufnr, message, sender, delivery)
 
     -- Add user section and send
     local header = delivery and Timestamp.create_header(delivery.kind, nil, delivery.from) or nil
-    drop_empty_trailing_section(bufnr)
+    drop_trailing_unsent_section(bufnr, opts.replace_unsent)
     Renderer.addUserSection(bufnr, nil, nil, nil, message, header)
     sent = chat_buf:send_message()
 
