@@ -29,7 +29,7 @@ end
 --- "Stale" means the owning Neovim is gone: this instance's own directory is only swept of
 --- leftover files, and a directory belonging to another *running* instance is left completely
 --- alone. Deleting those would destroy in-flight hook requests of a healthy concurrent session
---- (see "Concurrent Execution Support" in architecture.md).
+--- (see handbook/architecture/cli-integration.md).
 function M.cleanup_stale_dirs()
   local CommDir = require("vibing.infrastructure.rpc.comm_dir")
   local current_dir = CommDir.path()

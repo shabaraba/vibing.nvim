@@ -1,6 +1,6 @@
 --- Copilot.s tool vocabulary: its own tool names and permission-rule syntax, in one place instead
 --- of spread across the display, permission and command-building code, where the two directions
---- had already drifted from each other. See architecture.md.
+--- had already drifted from each other. See handbook/architecture/cli-integration.md.
 --- @module vibing.infrastructure.adapter.modules.copilot_tool_vocabulary
 
 local M = {}

@@ -334,7 +334,7 @@ end
 ---
 ---全アダプタがstream開始で `ActiveStreamRegistry` にregisterし、`wrapped_on_done` で
 ---unregisterする。つまりレジストリは「この実行がもう終わったか」を知っている唯一の場所で、
----`ChatBuffer:is_responding()` も同じ根拠で判断している（architecture.md参照）。
+---`ChatBuffer:is_responding()` も同じ根拠で判断している（handbook/architecture/per-request-diffs.md 参照）。
 ---@param handle_id string
 ---@return boolean
 local function request_still_running(handle_id)

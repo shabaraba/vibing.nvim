@@ -35,9 +35,9 @@
 `left`, `top`, `bottom` (splits sized by `config.chat.window.width`/`height`), or `back`
 (buffer-only, no window). `:VibingChat <file>` opens a saved chat file instead of creating a new
 one. Fork's session/frontmatter mechanics (`forked_from`, session inheritance via `forkSession`)
-are documented in `architecture.md` → "Chat Fork" — not duplicated here. `:VibingSubagentChat`
-takes the same position argument; why it shares the parent's `session_id` and never forks is in
-`architecture.md` → "Subagent Chat".
+are documented in `handbook/architecture/chat-lineage.md` — not duplicated here.
+`:VibingSubagentChat` takes the same position argument; why it shares the parent's `session_id`
+and never forks is in that same file.
 
 The two jump commands ship without a keymap. They take a count
 (`:3VibingChatJumpNextUser`) and clamp to the last section rather than refusing to move, and they
@@ -82,7 +82,8 @@ bundled with this plugin (`claude-plugin/skills/`), not by chat slash commands. 
 `-run`, `-finish` skills.
 
 `:VibingCreatePlugin` writes into `.vibing/plugins/<name>/`, the per-project plugin directory
-`--plugin-dir` loads (`architecture.md` → "Self-Hosted Claude Code Plugin"). Without an argument
+`--plugin-dir` loads (`architecture.md` → "Plugin Loading, Command Discovery and Startup Cost").
+Without an argument
 it prompts. A directory whose name starts with `_` is skipped by `plugin_dirs`, which is what
 keeps the seeded `_template/` out of both the request and the `/` picker, and what lets a plugin
 be parked by renaming rather than deleting.
@@ -91,4 +92,4 @@ Running several tasks in parallel across worker chats is the same story: ask for
 language ("並行でやって"), and the bundled `vibing-orchestrate` skill
 (`claude-plugin/skills/vibing-orchestrate/SKILL.md`) drives it through the `nvim_chat_create` /
 `nvim_chat_send_message` / `nvim_get_buffer` MCP tools. There is no `:Vibing*` command for it —
-see `architecture.md` → "Multi-Agent Orchestration".
+see `handbook/architecture/orchestration.md`.

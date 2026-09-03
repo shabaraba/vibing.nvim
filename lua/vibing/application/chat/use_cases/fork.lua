@@ -112,7 +112,7 @@ function M.execute(chat_buffer)
 
   -- subagentマーカーは持ち込まない。forkは初回送信で別のsession_idへ分岐するが、
   -- subagentのtranscriptは元のsession配下にあるので、分岐後のバッファからそのagentを
-  -- 選ばせても "No transcript found for agent ID" になるだけ（architecture.md「Subagent Chat」）
+  -- 選ばせても "No transcript found for agent ID" になるだけ（handbook/architecture/chat-lineage.md）
   local fork_body = SubagentMarker.strip(body or "")
 
   local fork_content = Frontmatter.serialize(fork_frontmatter, fork_body)

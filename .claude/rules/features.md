@@ -197,7 +197,7 @@ vibing.nvim generated itself. Which of the first two applies is decided by
 `orchestration_link.direction`, not guessed from the text. The grammar is
 `## <Kind> <!-- <unsent|timestamp>[ from <path>] -->` and lives only in `timestamp.lua`;
 `parse_header` is what every reader goes through. Why `extract_role` still answers `user` for all
-three: `architecture.md` → "Multi-Agent Orchestration" → "Delivered sections".
+three: `handbook/architecture/orchestration.md` → "Delivered sections".
 
 Implemented in `lua/vibing/utils/timestamp.lua`: `create_header(role, timestamp)`,
 `extract_role(line)`, `has_timestamp(line)`, `extract_timestamp(line)`, `is_header(line)`.

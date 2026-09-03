@@ -216,7 +216,7 @@ describe("git_snapshot", function()
 
     it("still reports a tracked file that matches an ignore pattern", function()
       -- `.gitignore` が決めるのは「addされるかどうか」だけで、既にトラッキング済みの
-      -- ファイルはパターンに一致しても変更が出続ける。architecture.md がこの区別を
+      -- ファイルはパターンに一致しても変更が出続ける。handbook/architecture/per-request-diffs.md がこの区別を
       -- 「実測」と書いているので、実測のまま固定しておく
       write(repo .. "/keep.log", "before\n")
       git_ok({ "add", "-f", "keep.log" })

@@ -28,8 +28,8 @@ tools permitted; an empty allow list permits everything except denied tools.
 
 Available tools: Read, Edit, Write, Bash, Glob, Grep, WebSearch, WebFetch, Skill, Task/Agent.
 `Task` and `Agent` are the same subagent launcher under the CLI's old and new names — allow
-one of them if you want chats to be able to spawn subagents at all (see `architecture.md` →
-"Subagent Chat").
+one of them if you want chats to be able to spawn subagents at all (see
+`handbook/architecture/chat-lineage.md`).
 
 ## Granular Permission Rules
 
