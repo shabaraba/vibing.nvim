@@ -1,9 +1,9 @@
 # Plugin Loading and Command Discovery
 
-Detail behind `.claude/rules/architecture.md` → "Self-Hosted Claude Code Plugin". vibing.nvim's
-own Claude Code plugin is never installed; it is handed to the CLI per session with
-`--plugin-dir`. Everything below was measured against claude 2.1.231, because none of it is
-documented.
+Detail behind `.claude/rules/architecture.md` → "Plugin Loading, Command Discovery and
+Startup Cost". vibing.nvim's own Claude Code plugin is never installed; it is handed to the CLI
+per session with `--plugin-dir`. Everything below was measured against claude 2.1.231, because
+none of it is documented.
 
 ## Self-Hosted Claude Code Plugin (`--plugin-dir`)
 

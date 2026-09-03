@@ -17,8 +17,8 @@ One chat can create and drive other chats: `nvim_chat_create` (MCP) →
 whole feature is three MCP calls and a skill.
 
 Nothing new was needed to keep the workers apart. Each chat buffer already owns its own session
-id and handle id (see "Concurrent Execution Support"), so parallel workers are the existing
-concurrency guarantee being used rather than extended.
+id and handle id (see `handbook/architecture/chat-lineage.md`), so parallel workers are the
+existing concurrency guarantee being used rather than extended.
 
 The use case is the fork/subagent shape: it returns a `ChatSession` and touches no presentation
 code, and the RPC handler is what renders it. That is also why position validation sits in the

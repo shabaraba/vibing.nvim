@@ -1,7 +1,7 @@
 # Chat Lineage: Concurrency, Forks and Subagent Chats
 
-Detail behind `.claude/rules/architecture.md` → "Concurrent Execution Support", "Chat Fork" and
-"Subagent Chat". These three share one substrate: every chat buffer owns its own session id and
+Detail behind `.claude/rules/architecture.md` → "Concurrent Execution, Chat Fork and
+Subagent Chat". These three share one substrate: every chat buffer owns its own session id and
 handle id, and what varies is whether a new chat diverges from that session (a fork), shares it
 permanently (a subagent chat), or is simply independent.
 
