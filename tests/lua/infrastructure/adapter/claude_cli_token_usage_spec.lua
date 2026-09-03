@@ -120,7 +120,7 @@ describe("claude_cli token usage wiring", function()
 
   it("counts both turns when one process emits two result events", function()
     -- `SendMessage` resumes a subagent in the background, so one request can produce two `result`
-    -- events in a single CLI process (architecture.md → "Subagent Chat"). Both turns' requests
+    -- events in a single CLI process (handbook/architecture/chat-lineage.md). Both turns' requests
     -- were paid for, so both belong in the totals -- and neither may be counted twice.
     local response = run_turn({
       assistant_line(5000, 100000, 200),
