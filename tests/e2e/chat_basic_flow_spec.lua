@@ -66,15 +66,23 @@ describe("E2E: Chat basic flow", function()
     vim.wait(TIMEOUTS.CURSOR_MOVE)
 
     -- Insert modeでメッセージ入力
-    helper.send_keys(nvim_instance, 'i')
+    helper.send_keys(nvim_instance, "i")
     helper.send_keys(nvim_instance, 'Say "test"')
     helper.send_keys(nvim_instance, "<Esc>")
 
     -- <CR>でメッセージ送信
     helper.send_keys(nvim_instance, "<CR>")
 
-    -- Assistantレスポンス待機
-    ok = helper.wait_for_buffer_content(nvim_instance, "## .* Assistant", TIMEOUTS.ASSISTANT_RESPONSE)
-    assert.is_true(ok, "Assistant response should appear within timeout")
+    -- 「ターンが1本走って、しかも失敗しなかった」を待つ。`wait_for_buffer_content` で
+    -- `## .* Assistant` を待っていたころは、CLIが即座に失敗したターンでも見出しは書かれるので
+    -- このspecは緑のままだった（root環境で `--dangerously-skip-permissions` が拒否される
+    -- ケースで実際に起きた）。
+    --
+    -- マーカー語を頼んでそれを待つ形は採らない。モデルが従うことに賭ける必要があるうえ、
+    -- バッファ全体を見る待ち方だとプロンプトに書いたマーカーが `## User` セクションで
+    -- 即座に一致してしまい、同じ穴が別の形で開く
+    local reason
+    ok, reason = helper.wait_for_assistant_turns(nvim_instance, 1, TIMEOUTS.ASSISTANT_RESPONSE)
+    assert.is_true(ok, reason or "Assistant response should appear within timeout")
   end)
 end)

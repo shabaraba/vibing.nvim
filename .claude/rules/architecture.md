@@ -372,6 +372,10 @@ there is no command and no scheduler.
 - **Reporting is the worker's job; the notification is a watchdog.** `agent.chat_notifications`
   gates only the watchdog — a stop the chat cannot leave on its own (`asked_question`,
   `waiting_approval`, `error`) is delivered whatever the setting is.
+- **A worker's tool-approval prompt is the user's to clear, unless the user says otherwise.**
+  `agent.orchestration.delegated_approval` (default `false`) is what lets the orchestrator answer
+  it with `nvim_chat_answer_approval`; the answer takes the human path
+  (`ChatBuffer:send_message()`) rather than a second implementation of what an approval means.
 - **A message delivered from another chat gets its own section kind** — `## Request`, `## Report`
   or `## Notice`. `extract_role` still answers `user` for all three; only the display splits.
 

@@ -1,9 +1,10 @@
 # Multi-Agent Orchestration
 
 Detail behind `.claude/rules/architecture.md` → "Multi-Agent Orchestration". One chat can create
-and drive other chats. The whole feature is three MCP calls and a skill; nothing new was needed
-to keep the workers apart, since parallel workers are the existing concurrency guarantee being
-used rather than extended.
+and drive other chats. The whole feature is three MCP calls and a skill — plus a fourth call,
+off unless the user opts in, that answers a worker's tool-approval prompt ("Answering a worker's
+tool approval", last section). Nothing new was needed to keep the workers apart, since parallel
+workers are the existing concurrency guarantee being used rather than extended.
 
 The long middle of this file is the completion-notification machinery, and it is long because
 almost every rule in it exists to stop a specific silent failure — a worker that stopped and told
@@ -13,8 +14,7 @@ One chat can create and drive other chats: `nvim_chat_create` (MCP) →
 `infrastructure/rpc/handlers/chat.lua` → `application/chat/use_cases/create_chat.lua` →
 `view.render`. The orchestrator briefs each worker with `nvim_chat_send_message` and polls it with
 `nvim_get_buffer`. The workflow is the bundled
-`claude-plugin/skills/vibing-orchestrate/SKILL.md`; there is no command and no scheduler — the
-whole feature is three MCP calls and a skill.
+`claude-plugin/skills/vibing-orchestrate/SKILL.md`; there is no command and no scheduler.
 
 Nothing new was needed to keep the workers apart. Each chat buffer already owns its own session
 id and handle id (see `handbook/architecture/chat-lineage.md`), so parallel workers are the
@@ -666,3 +666,57 @@ target twice.
 asked for, reported `idle`. So `buf_get_lines` reports the buffer it actually read, and the MCP
 handler refuses an answer that omits it whenever a `file_path` was passed. The send path needs no
 equivalent: it errors outright when it can find no target.
+
+## Answering a worker's tool approval
+
+A worker that reaches a tool in its `ask` list is the one stop in this machine that nothing in it
+can clear. `cancel_and_deny` kills the turn before drawing the prompt (`rpc/handlers/permission.lua`),
+so the worker cannot continue and cannot report; the watchdog delivers `status: waiting_approval`
+to whoever messaged it, and — by default — the only thing that orchestrator can do with that is
+name the worker and the tool and hand it to the user. With a fan of five workers all hitting the
+same `Bash` prompt, that is five buffers the user has to find by hand.
+
+`agent.orchestration.delegated_approval` (default `false`) lets the orchestrator answer instead,
+through the MCP tool `nvim_chat_answer_approval` →`rpc/handlers/chat.lua:answer_approval` →
+`application/chat/approval_delegate.lua`.
+
+**The default is off for what it buys, not for what it costs to build.** The `ask` list is the
+user asking to be consulted; an agent that can clear it for another agent has changed the
+permission model, and that is a decision to make once, deliberately, in `setup()` — not something
+to acquire by installing an update. The refusal is worded for the model that will read it: it says
+what to do instead (name the blocked chat and the tool) and names the setting, so a chat running
+without it does not spend a turn probing.
+
+Four things about the implementation:
+
+- **The answer takes exactly the human path.** `approval_delegate` writes the chosen option line —
+  the same `1. allow_once - Allow this execution only` the renderer drew — into the worker's
+  buffer and calls `ChatBuffer:send_message()`. Everything that decides what an approval _means_
+  (`update_session_permissions`, the `:once` bookkeeping, dropping `_pending_approval`, the
+  substitution to `I approved the Bash tool (command: …)`) stays in the one block that already
+  did it. A second implementation of that, reachable only through orchestration, is precisely the
+  kind of divergence that shows up as "the delegated grant did not survive the retry" months
+  later.
+- **The prompt is replaced, not left behind.** `ProgrammaticSender.send` normally drops the
+  trailing unsent section only when it is empty, because that section is also where the approval
+  prompt and the question list are drawn. Delegated answers pass `replace_unsent`, the one case
+  where that section _is_ the thing being answered; without it an answered prompt sits in the
+  transcript forever and every later `extract_conversation` re-sends it to the CLI.
+- **The section header is what records who granted it.** A delegated answer lands as
+  `## Request <!-- <ts> from .vibing/chat/orchestrator.md -->`, so the substituted first-person
+  body ("I approved the Bash tool") resolves to the chat the header names. That is also why
+  `from_bufnr` is **required** on this tool while it stays optional on `nvim_chat_create` and
+  `nvim_chat_send_message`: a call that cannot say whose decision it was should not be made, and
+  the compatibility argument does not apply to an RPC method older Neovims do not have at all.
+- **The watchdog's wording follows the setting.** `delivery_message.notification_section` asks
+  `approval_delegate.enabled()` and swaps the `waiting_approval` bullet between "only the user can
+  clear that one" and "answer it with `nvim_chat_answer_approval` when the tool is plainly within
+  the brief". Telling the model to answer while the setting is off would buy one guaranteed failed
+  call per blocked worker before it did the right thing anyway.
+
+What it deliberately does not do: decide on the orchestrator's behalf. Nothing inspects the tool
+input, and there is no allow list of "safe" tools to delegate — the judgement lives in the skill's
+prose (`vibing-orchestrate` → "Answering a worker's tool approval"), which tells the orchestrator
+to read the prompt, answer only what its own brief plainly covers, and prefer `allow_once` over
+the frontmatter-persisting `allow_for_session`. A mechanical rule here would have to guess at the
+task, which is the one thing the orchestrator knows and this module does not.

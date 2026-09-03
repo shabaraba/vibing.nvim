@@ -205,6 +205,18 @@ agent = {
                             -- that hits the limit is refused unless it passed queue_if_busy,
                             -- in which case it is queued and delivered the moment one of the
                             -- running chats finishes
+    delegated_approval = false,
+                            -- Let one chat answer another chat's tool-approval prompt. A worker
+                            -- that hits a tool in its `ask` list has its turn killed and the
+                            -- prompt drawn into its own buffer: it cannot continue and cannot
+                            -- report that it is stuck, so with this off you have to find each
+                            -- blocked worker and answer it yourself. On, the orchestrator
+                            -- answers instead (nvim_chat_answer_approval), choosing among the
+                            -- same four options you would. Off by default because that is an
+                            -- agent clearing another agent's permission gate — a change to the
+                            -- permission model, not a convenience. The answer is written into
+                            -- the worker's transcript as `## Request ... from <that chat>`, so
+                            -- who granted what is readable afterwards
   },
 
   codex_provider_notice = {

@@ -56,6 +56,7 @@ M.clear_annotations = annotations.clear_annotations
 M.send_message = message.send_message
 
 M.create_chat = chat.create_chat
+M.answer_approval = chat.answer_approval
 
 M.check_tool_permission = permission.check_tool_permission
 M.ask_user_question = permission.ask_user_question

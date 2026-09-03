@@ -1,6 +1,6 @@
 import { callNeovim } from '../rpc.js';
 import { z } from 'zod';
-import { CHAT_POSITIONS } from '../tools/chat.js';
+import { APPROVAL_ACTIONS, CHAT_POSITIONS } from '../tools/chat.js';
 import { validateChatTarget } from '../validation/schema.js';
 
 const chatCreateArgsSchema = z.object({
@@ -154,5 +154,58 @@ export async function handleAskUserQuestion(args: any): Promise<any> {
 
   return {
     content: [{ type: 'text', text: 'Question presented to the user in the chat buffer.' }],
+  };
+}
+
+const chatAnswerApprovalArgsSchema = z.object({
+  bufnr: z.number().nullish(),
+  file_path: z.string().nullish(),
+  action: z.enum(APPROVAL_ACTIONS),
+  from_bufnr: z.number(),
+  rpc_port: z.number(),
+});
+
+/**
+ * Handler for nvim_chat_answer_approval
+ *
+ * A chat that hit a tool in its `ask` list has had its turn killed and the approval prompt drawn
+ * into its buffer (`rpc/handlers/permission.lua`). It cannot continue, and it cannot report that
+ * it is stuck — so until someone answers, it simply never moves again. By default that someone is
+ * the user; `agent.orchestration.delegated_approval` lets an orchestrator stand in.
+ *
+ * The gate lives on the Lua side rather than here, so the model gets one answer whichever route
+ * it takes and the setting cannot be read stale by a server process that started before it
+ * changed. That is also why a disabled call comes back as an error with the wording the model
+ * should act on ("tell the user which chat is blocked") instead of a bare refusal.
+ *
+ * `from_bufnr` is required here although the other chat tools keep it optional: this call removes
+ * a permission gate, and one that cannot record whose decision it was should not be made at all.
+ * Version skew is not an argument for softening it — a Neovim without the `answer_approval` RPC
+ * method rejects the call outright.
+ */
+export async function handleChatAnswerApproval(args: any): Promise<any> {
+  const parsed = chatAnswerApprovalArgsSchema.parse(args);
+  const { action, from_bufnr, rpc_port } = parsed;
+  const bufnr = parsed.bufnr ?? undefined;
+  const file_path = parsed.file_path ?? undefined;
+
+  validateChatTarget({ bufnr, file_path }, { required: true });
+
+  const result = await callNeovim(
+    'answer_approval',
+    { bufnr, file_path, action, from_bufnr },
+    rpc_port
+  );
+
+  return {
+    content: [
+      {
+        type: 'text',
+        text:
+          `Answered ${result?.tool ?? 'the'} tool approval with ${action}. That chat has started ` +
+          'a new turn; it will come back to you when it stops.',
+      },
+    ],
+    _meta: { bufnr: result?.bufnr ?? bufnr, tool: result?.tool, action },
   };
 }

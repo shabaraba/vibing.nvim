@@ -120,6 +120,21 @@ The user deletes unwanted options with standard Vim commands (`dd`, etc.) and se
 one with `<CR>`. `allow_once`/`deny_once` apply to this call only; `allow_for_session`/
 `deny_for_session` persist for the rest of the chat session.
 
+**Another chat can answer it only when the user opted in.** A worker chat that hits this prompt is
+`waiting_approval`: its turn was killed, so it can neither continue nor report that it is stuck,
+and in an orchestration run the user has to find each blocked worker by hand. With
+`agent.orchestration.delegated_approval = true` the orchestrator answers instead, via the MCP tool
+`nvim_chat_answer_approval` → `application/chat/approval_delegate.lua`. The default is off because
+what it buys is an agent clearing another agent's permission gate, not because of anything in the
+implementation.
+
+The delegated answer takes **exactly the human path**: it writes the chosen option line into the
+worker's pending unsent section (replacing the prompt) and calls `ChatBuffer:send_message()`, so
+`update_session_permissions`, the `:once` bookkeeping and the retry-message substitution all run
+once, in one place. A second implementation of "what an approval means" is the failure this shape
+exists to prevent. What differs is the section header — `## Request <!-- … from <orchestrator> -->`
+— which is how the worker's transcript records who granted it.
+
 **An answer belongs to the chat that was asked, and to no other** (#667). The four decisions are
 recorded on that `ChatBuffer` (`update_session_permissions`), handed to the next request as
 `permissions_session_allow` / `permissions_session_deny`, and reach the hook through

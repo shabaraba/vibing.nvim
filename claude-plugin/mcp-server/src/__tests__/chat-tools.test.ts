@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { allTools } from '../tools/index.js';
-import { CHAT_POSITIONS } from '../tools/chat.js';
+import { APPROVAL_ACTIONS, CHAT_POSITIONS } from '../tools/chat.js';
 import { handlers } from '../handlers/index.js';
 import * as rpc from '../rpc.js';
 
@@ -286,6 +286,102 @@ describe('chat tools (worktree redesign)', () => {
     expect(inputSchema.required).not.toContain('bufnr');
     expect(inputSchema.required).not.toContain('file_path');
     expect(inputSchema.required).toContain('message');
+  });
+
+  it('registers nvim_chat_answer_approval with action and from_bufnr required', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_answer_approval');
+    const inputSchema = tool?.inputSchema as {
+      required?: string[];
+      properties: Record<string, any>;
+    };
+
+    expect(tool).toBeDefined();
+    expect(inputSchema.required).toContain('rpc_port');
+    expect(inputSchema.required).toContain('action');
+    // Unlike the other two chat tools, this one cannot be called anonymously: it removes a
+    // permission gate, so the answer has to be attributable to a chat.
+    expect(inputSchema.required).toContain('from_bufnr');
+    // Same "name the target once" rule as nvim_chat_send_message.
+    expect(inputSchema.required).not.toContain('bufnr');
+    expect(inputSchema.required).not.toContain('file_path');
+    expect(inputSchema.properties.action.enum).toEqual([...APPROVAL_ACTIONS]);
+  });
+
+  it('nvim_chat_answer_approval forwards the action and reports the tool it answered', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({
+      success: true,
+      bufnr: 21,
+      tool: 'Bash',
+      action: 'allow_once',
+    });
+
+    const result = await handlers.nvim_chat_answer_approval({
+      rpc_port: 9878,
+      file_path: '.vibing/chat/worker.md',
+      action: 'allow_once',
+      from_bufnr: 12,
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'answer_approval',
+      {
+        bufnr: undefined,
+        file_path: '.vibing/chat/worker.md',
+        action: 'allow_once',
+        from_bufnr: 12,
+      },
+      9878
+    );
+    expect(result.content[0].text).toContain('Bash');
+    expect(result._meta.bufnr).toBe(21);
+  });
+
+  it('nvim_chat_answer_approval refuses an action outside the four the prompt offers', async () => {
+    await expect(
+      handlers.nvim_chat_answer_approval({
+        rpc_port: 9878,
+        bufnr: 21,
+        action: 'allow',
+        from_bufnr: 12,
+      })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
+  it('nvim_chat_answer_approval refuses a call that names no chat as the answerer', async () => {
+    await expect(
+      handlers.nvim_chat_answer_approval({ rpc_port: 9878, bufnr: 21, action: 'allow_once' })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
+  it('nvim_chat_answer_approval refuses a call that names the target twice, or not at all', async () => {
+    await expect(
+      handlers.nvim_chat_answer_approval({
+        rpc_port: 9878,
+        bufnr: 21,
+        file_path: '.vibing/chat/worker.md',
+        action: 'allow_once',
+        from_bufnr: 12,
+      })
+    ).rejects.toThrow();
+
+    await expect(
+      handlers.nvim_chat_answer_approval({ rpc_port: 9878, action: 'allow_once', from_bufnr: 12 })
+    ).rejects.toThrow();
+
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
+  it('tells the model the delegated-approval gate exists, so a refusal is not a surprise', () => {
+    // The Lua side refuses unless agent.orchestration.delegated_approval is on. A description
+    // that does not say so turns every blocked worker into one wasted call before the model does
+    // the right thing anyway.
+    const description =
+      allTools.find((t) => t.name === 'nvim_chat_answer_approval')?.description ?? '';
+
+    expect(description).toContain('delegated_approval');
+    expect(description).toContain('waiting_approval');
   });
 
   it('nvim_chat_create forwards from_bufnr so a worker is linked at creation', async () => {

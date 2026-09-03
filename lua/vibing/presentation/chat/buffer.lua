@@ -868,6 +868,19 @@ function ChatBuffer:update_session_permissions(approval)
   end
 end
 
+---いま答えを待っているツール承認要求（無ければ nil）
+---
+---コピーを返す。呼び出し側（`approval_delegate`）が必要とするのは「何について止まっているか」
+---を読むことだけで、`_pending_approval` を消してよいのは承認が実際に消費されたときだけ
+---（`send_message` の承認ブロック）。参照を渡すと、その1箇所という保証が外から崩せてしまう
+---@return {tool: string, input: table?, options: table?}?
+function ChatBuffer:get_pending_approval()
+  if not self._pending_approval then
+    return nil
+  end
+  return vim.deepcopy(self._pending_approval)
+end
+
 ---セッションレベルの許可リストを取得
 ---@return table
 function ChatBuffer:get_session_allow()
