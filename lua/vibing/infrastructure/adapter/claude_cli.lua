@@ -119,6 +119,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     opts = opts,
     output = output,
     errorOutput = error_output,
+    tokenUsage = require("vibing.core.utils.token_usage").new(),
     onFirstResponse = cancel_timeout,
     onChunk = function(chunk)
       cancel_timeout()
@@ -178,6 +179,10 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
       if merged and merged.rejected then
         response._rate_limit_info = merged
       end
+
+      -- Attached even on a failed turn: the requests it made were still paid for, and a turn that
+      -- died at 600k is exactly the one worth reporting.
+      response._token_usage = event_context.tokenUsage
 
       on_done(response)
     end

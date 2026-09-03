@@ -36,6 +36,7 @@ require("vibing").setup({
     auto_resume_on_limit = { enabled = false, max_retries = 1 },
     scheduled_requests = { enabled = true, max_retries = 3 },
     codex_provider_notice = { enabled = true },
+    token_usage = { enabled = true, warn_context = 150000 },
     plugins = { self = true, project_dir = ".vibing/plugins", extra = {} },
   },
   chat = {
@@ -214,6 +215,16 @@ agent = {
                             -- probe it needs. Codex backend only.
   },
 
+  token_usage = {           -- Per-turn token breakdown in the chat, plus a warning when the
+                            -- conversation has grown. On by default for the same reason as
+                            -- codex_provider_notice: it spends no tokens, and a chat growing
+                            -- unnoticed is exactly what it exists to prevent.
+    enabled = true,
+    warn_context = 150000,  -- Above this, every turn's summary line gains a warning underneath
+                            -- it. Written into the buffer rather than notified, and repeated
+                            -- each turn, so it is present at the moment the cost is read.
+  },
+
   plugins = {               -- Claude Code plugins loaded for the session with --plugin-dir.
                             -- Claude backend only. See "Plugin Directories" below.
     self = true,            -- vibing.nvim's own claude-plugin/ — the nvim_* MCP tools and
@@ -317,6 +328,90 @@ Turn it off if you would rather Neovim never spawn the extra process. `codex doc
 run a single check, so the probe also makes one reachability request to the active provider's
 endpoint. That is also why an unreachable local provider gets its warning late: the probe waits out
 its 10-second timeout first.
+
+### Token Usage
+
+Every turn ends with a section naming what it cost, alongside `### Modified Files`:
+
+```markdown
+### Tokens
+
+context 205k · 12 requests · read 2.4M · new 12k
+```
+
+The reason it reports those four numbers rather than a total is that the cost of a turn is
+**requests × context size**, and neither factor is visible otherwise. Each tool call is another
+API request, and every request re-reads the whole conversation — so a turn with twelve tool calls
+in a 205k chat reads 2.4M tokens whether the reply was one line or fifty. `context` is the largest
+prompt the turn sent, which is the conversation's current size; a subagent's requests are counted
+separately and deliberately left out of it, because a subagent runs in its own much smaller
+context (measured at 83k against a main chain's 208k) and so says nothing about how big this chat
+has grown.
+
+Claude backend only, for now: the numbers come from the `usage` object on the CLI's stream, and
+the other backends do not report one. On those the line is simply absent rather than zeroed.
+
+**`warn_context` is where a chat is worth splitting**, and the default comes from measurement
+rather than taste. Over 30 days of session logs, the rate at which a request fails to reuse the
+cached prefix — and then re-writes a byte-identical prefix at cache-creation price, 12.5× the read
+price — tracks context size directly:
+
+| Context   | Requests | Rewrite rate | Cache created per request |
+| --------- | -------- | ------------ | ------------------------- |
+| under 30k | 1,158    | 0%           | 6,070                     |
+| 30–80k    | 6,553    | 1.1%         | 6,146                     |
+| 80–150k   | 7,218    | 4.8%         | 6,952                     |
+| over 150k | 10,230   | 6.9%         | 20,334                    |
+
+Past 150k both factors turn against you at once, which is what the threshold marks. Above it the
+section gains a warning under the metrics:
+
+```markdown
+### Tokens
+
+context 205k · 12 requests · read 2.4M · new 12k
+
+> ⚠️ **Context is 205k.** Every tool call re-reads all of it, and above 150k a request grows
+> likelier to re-pay for a prefix it had already cached. Consider `/compact`, a new
+> chat for unrelated work, or handing the exploring to a subagent.
+```
+
+It is written into the buffer, not raised with `vim.notify`, and it repeats on every turn that
+stays above the threshold. A notification is gone by the time the next turn is read, which leaves
+the one moment the cost is actually being looked at — the section right above it — saying nothing.
+Repetition is what makes it a gauge rather than an announcement; keeping it to three lines is what
+keeps it from being noise.
+
+**Auto-compaction does not remove the need for this.** It does run under `claude -p` — verified in
+this project's own logs — but it fires near the model's context ceiling, measured at ~930k. It is
+a mechanism for not overflowing, not for controlling cost: every request on the way up to 930k was
+already billed at the size it had reached. In one such session, the 452 requests made above 300k
+accounted for 84% of its cost while being 62% of its requests. Running the same work at 80k would
+have cost 42% less on cache reads alone.
+
+**Manual `/compact` does**, and it is what the warning names. It reaches the CLI because an
+unrecognised slash command falls through from the chat as prompt text; measured against claude
+2.1.231 in headless `-p` mode, the turn emits a `compact_boundary`, produces no reply text, and
+the session carries on afterwards under the same id.
+
+It is not free, though, and the number is worth knowing before reaching for it: compaction
+replaces the conversation with a summary, so the whole prefix changes and the next request is a
+cold start. Measured on a small session, the turn after `/compact` wrote 79,783 tokens of new
+cache. That pays for itself on a chat carrying hundreds of thousands of tokens of history and does
+not on one that has barely grown — which is another way of saying the same thing the table above
+says.
+
+`/summarize` is **not** the tool for this, despite the name. It opens a summary in a floating
+window and never touches the session, so the turn after it re-reads exactly as much as the turn
+before.
+
+One more thing the numbers depend on: **a chat has a floor it can never go below**, made of the
+system prompt, the tool schemas, and whatever `CLAUDE.md` and `.claude/rules/` the project loads.
+Measured in this repository, that floor is about 110k — so `warn_context = 150000` leaves only
+~40k of conversation before the warning appears. In a project with a small `CLAUDE.md` the same
+threshold is a long way up. If the warning fires constantly, that is what to raise it against.
+
+Set `enabled = false` if you would rather not see any of it.
 
 ### Subagent Output
 

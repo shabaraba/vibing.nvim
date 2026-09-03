@@ -409,6 +409,10 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     callbacks.clear_forked_from()
   end
 
+  -- 差分セクションより前に出す。finalize系が `### Modified Files` を書いてから
+  -- `add_user_section()` まで進むので、ここを逃すと差分の下に潜り込む
+  pcall(M._report_token_usage, response, callbacks, config)
+
   local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
   local handle_id_for_diff = incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
@@ -480,6 +484,36 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
 
   -- NOTE: clear_handle_id() は呼ばない
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
+end
+
+---このターンのトークン内訳をチャットに出し、コンテキストが育っていれば直下に警告を添える
+---
+---出すのは「返答の長さ」ではなく「リクエスト数 × コンテキストサイズ」。ツール1回ごとに
+---APIリクエストが1本増え、そのたびに会話全体を読み直すので、200kのチャットでツールを10回
+---呼べばそのターンだけで2Mトークン読んでいる。自動コンパクトはコンテキスト上限の手前
+---（実測で約93万）でしか動かないため、ここまで育つ過程は誰も止めない。
+---
+---使用量を報告しないバックエンド（codex等）では `_token_usage` が無く、`format` が nil を
+---返して何も出ない。呼び出し側は pcall しているので、ここでの失敗がターンを壊すことはない。
+---@param response table
+---@param callbacks table
+---@param config Vibing.Config|nil
+function M._report_token_usage(response, callbacks, config)
+  local settings = config and config.agent and config.agent.token_usage or nil
+  if settings and settings.enabled == false then
+    return
+  end
+
+  local TokenUsage = require("vibing.core.utils.token_usage")
+  local warn_context = (settings and tonumber(settings.warn_context)) or TokenUsage.DEFAULT_WARN_CONTEXT
+
+  -- 警告は章の中に含まれる。通知ではなくバッファに残すのは、`vim.notify` は次のターンを
+  -- 読む頃には消えていて、読み手がコストを実際に見ている唯一の瞬間（この章）に何も
+  -- 無いことになるため
+  local section = TokenUsage.section(response._token_usage, warn_context)
+  if section then
+    callbacks.append_chunk("\n\n" .. section)
+  end
 end
 
 ---弾かれたターンが途中まで進んでいたか
