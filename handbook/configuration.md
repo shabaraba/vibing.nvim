@@ -220,9 +220,10 @@ agent = {
                             -- codex_provider_notice: it spends no tokens, and a chat growing
                             -- unnoticed is exactly what it exists to prevent.
     enabled = true,
-    warn_context = 150000,  -- Above this, every turn's summary line gains a warning underneath
-                            -- it. Written into the buffer rather than notified, and repeated
-                            -- each turn, so it is present at the moment the cost is read.
+    warn_context = 150000,  -- At or above this, every turn's section gains a warning under the
+                            -- metrics. Written into the buffer rather than notified, and
+                            -- repeated each turn, so it is present when the cost is read.
+                            -- 0 keeps the metrics and never warns.
   },
 
   plugins = {               -- Claude Code plugins loaded for the session with --plugin-dir.
@@ -363,8 +364,8 @@ price — tracks context size directly:
 | 80–150k   | 7,218    | 4.8%         | 6,952                     |
 | over 150k | 10,230   | 6.9%         | 20,334                    |
 
-Past 150k both factors turn against you at once, which is what the threshold marks. Above it the
-section gains a warning under the metrics:
+Past 150k both factors turn against you at once, which is what the threshold marks. At or above
+it the section gains a warning under the metrics:
 
 ```markdown
 ### Tokens
@@ -411,7 +412,9 @@ Measured in this repository, that floor is about 110k — so `warn_context = 150
 ~40k of conversation before the warning appears. In a project with a small `CLAUDE.md` the same
 threshold is a long way up. If the warning fires constantly, that is what to raise it against.
 
-Set `enabled = false` if you would rather not see any of it.
+`warn_context = 0` is the middle setting: the metrics stay, the warning never appears. Use it if
+the numbers are what you wanted and the nudge is not. `enabled = false` removes the section
+entirely.
 
 ### Subagent Output
 

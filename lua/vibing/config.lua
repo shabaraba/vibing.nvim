@@ -213,6 +213,7 @@ local notify = require("vibing.core.utils.notify")
 
 local tools_const = require("vibing.core.constants.tools")
 local language_utils = require("vibing.core.utils.language")
+local token_usage = require("vibing.core.utils.token_usage")
 
 local M = {}
 
@@ -353,12 +354,16 @@ M.defaults = {
     -- 実測して約93万トークン）で、そこまで登る間の全リクエストは育ったサイズのまま課金される。
     -- つまりコンパクトは溢れないための救命装置であって、コスト対策ではない。
     --
-    -- 既定値の150000は実測から取った。プレフィックスキャッシュを引き当てられず同じ内容を
-    -- 作成価格で書き直す率が、30k未満で0%、30〜80kで1.1%、80〜150kで4.8%、150k超で6.9%。
-    -- この境目から先は読取量と書き直しの確率が両方効いてくる。
+    -- 既定値は実測から取った。プレフィックスキャッシュを引き当てられず同じ内容を作成価格で
+    -- 書き直す率が、30k未満で0%、30〜80kで1.1%、80〜150kで4.8%、150k超で6.9%。この境目から
+    -- 先は読取量と書き直しの確率が両方効いてくる。
+    --
+    -- 値そのものは token_usage 側から借りる。`config` が未設定のとき（テストや手組みの
+    -- config テーブル）に使われるフォールバックが同じモジュールにあり、2箇所に同じ数字を
+    -- 置くと片方だけ動かして既定値が食い違う
     token_usage = {
       enabled = true,
-      warn_context = 150000,
+      warn_context = token_usage.DEFAULT_WARN_CONTEXT,
     },
     -- `--plugin-dir` で読み込むプラグイン。self → project_dir → extra の順で渡す。
     --

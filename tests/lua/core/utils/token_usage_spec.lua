@@ -19,7 +19,9 @@ describe("token_usage", function()
       assert.equals(2, acc.requests)
       assert.equals(1500, acc.write)
       assert.equals(101000, acc.read)
-      assert.equals(420, acc.output)
+      -- Output tokens are not accumulated: ~11% of the bill, and showing them beside the
+      -- numbers that do move the total would invite shortening replies to save nothing.
+      assert.is_nil(acc.output)
     end)
 
     it("reports the largest prompt as the context size", function()

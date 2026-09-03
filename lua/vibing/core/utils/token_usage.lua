@@ -26,7 +26,11 @@ M.DEFAULT_WARN_CONTEXT = 150000
 --- @field context number largest main-chain prompt seen this turn -- the chat's current size
 --- @field read number cache_read tokens, summed
 --- @field write number cache_creation tokens, summed
---- @field output number output tokens, summed
+---
+--- Output tokens are deliberately not accumulated. They are ~11% of the bill against the input
+--- side's ~89% (measured over 30 days of this project's logs), so putting them next to the
+--- numbers that do move the total would invite shortening replies -- which is the one economy
+--- here that does not pay.
 
 --- @return Vibing.TokenUsage
 function M.new()
@@ -36,7 +40,6 @@ function M.new()
     context = 0,
     read = 0,
     write = 0,
-    output = 0,
   }
 end
 
@@ -58,7 +61,6 @@ function M.record(acc, usage, is_subagent)
 
   acc.read = acc.read + read
   acc.write = acc.write + write
-  acc.output = acc.output + (tonumber(usage.output_tokens) or 0)
 
   -- A subagent runs in its own, much smaller context (measured at 83k against the main chain's
   -- 208k), so its prompt size says nothing about how big *this* chat has grown. Its tokens are
