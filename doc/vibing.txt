@@ -98,6 +98,11 @@ A plugin may declare `mcpServers`, so one committed to a repository you cloned
 can start a process on your machine — set `agent.plugins.project_dir = false`
 for repositories you do not trust.
 
+The codex backend loads the same plugins without a `--plugin-dir`: each MCP
+server is passed as a `-c mcp_servers.<name>.*` override (tools appear as
+`mcp__vibing-nvim__*`) and each skill is listed for the model in
+`developer_instructions`. Subagents (`agents/`) do not carry over to codex.
+
 Upgrading from a version that installed itself into Claude Code's user scope:
 `build.sh` removes that install for you. By hand: >
     /plugin uninstall vibing-nvim@vibing

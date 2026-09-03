@@ -46,8 +46,10 @@ The consequence worth knowing: a `claude` session started outside Neovim does no
 tools. Reaching a running Neovim was always the point of them, so there is no opt-in for it.
 
 The manual options below remain useful for development, for a non-default RPC port/timeout, or
-for a backend other than Claude (`codex mcp add` / `copilot mcp add`, which `build.sh` still
-does — those CLIs have no plugin system).
+for copilot (`copilot mcp add`, which `build.sh` still does — that CLI has no plugin system).
+Codex is handed the server per session too, as `-c mcp_servers.vibing-nvim.*` overrides, so a
+global `codex mcp add` entry is only needed for codex sessions started outside Neovim
+(`handbook/architecture/plugin-and-commands.md` → "Codex").
 
 **Upgrading:** if an older vibing.nvim installed this as a user-scope plugin, `build.sh` removes
 it. By hand:

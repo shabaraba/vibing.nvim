@@ -86,6 +86,91 @@ Reaching a running Neovim was the entire point of them, so no opt-in was added.
 `.claude-plugin/marketplace.json` is kept — a manual `claude plugin install` still works, and
 deleting it can happen later.
 
+## Codex: the Same Plugins Without `--plugin-dir`
+
+The codex backend loads the same resolved list — `plugin_dirs.resolve_entries`, same order, same
+manifest check — but codex 0.153 has nothing that takes a plugin directory for one run, so the
+plugin travels in two halves. `infrastructure/plugins/plugin_contents.lua` reads them and
+`adapter/modules/codex_plugin_config.lua` renders them as `-c` overrides on the `codex exec`
+argv; the builder appends them on every ordinary call, resumed or not, and never on a
+lightweight one (`core/types.lua`).
+
+**Measured against codex 0.153.0** (`codex debug prompt-input` renders the model-visible prompt
+without calling the model; `codex exec --strict-config --ignore-user-config` rejects unknown
+config keys before doing anything else, so a probe never spends a token):
+
+| Question                                            | Answer                                                                                                        |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| A `--plugin-dir` equivalent                         | None. `codex plugin add <plugin>@<marketplace>` copies into `$CODEX_HOME` and edits `config.toml`             |
+| `<repo>/.agents/plugins/marketplace.json`           | Not discovered from the cwd; only `~/.agents/plugins/marketplace.json` is implicit                            |
+| `-c plugins.<id>.enabled=true`                      | Accepted (`PluginConfig`), does nothing for a plugin that was never installed                                 |
+| Skill roots                                         | `$CODEX_HOME/skills`, its `.system`, and `.agents/skills` walking up from the cwd. No config adds one         |
+| `-c skills.config=[{path,enabled}]`                 | Toggles a discovered skill; a path outside the roots is ignored                                               |
+| Manifest forms codex itself reads                   | `.codex-plugin/`, `.claude-plugin/` and `.cursor-plugin/plugin.json`                                          |
+| `-c mcp_servers.<name>.{command,args,env}`          | Starts the server in `exec` before the model call, with the `env` map applied                                 |
+| `-c mcp_servers.<name>.default_tools_approval_mode` | One of `auto`, `prompt`, `writes`, `approve`                                                                  |
+| `-c developer_instructions="…"`                     | Becomes the first `developer` message, ahead of codex's own; `additional_developer_instructions` is not a key |
+| Quoting in the `-c` key path                        | Not parsed: `mcp_servers."a-b".command` registers a server named `"a-b"`, quotes included                     |
+| Value escaping                                      | A TOML basic string round-trips `"`, `\`, `\n`, `\t` and multibyte text                                       |
+
+The argv `codex_plugin_config` emits for the bundled plugin was then fed to
+`codex exec --strict-config --ignore-user-config` as-is: every key was accepted, and codex spawned
+`mcp-server/bin/run.sh` with the manifest's `env` applied and completed `initialize` and
+`tools/list` before the model call. One thing that is not a codex property but cost an hour: a
+`CODEX_HOME` whose previous codex was killed mid-run can leave sqlite state that stalls every
+later MCP-configured start before the banner, with nothing on stderr. Probe from a fresh one.
+
+Four of those rows decide the shape.
+
+**MCP servers go through `-c mcp_servers.<name>.*`, with `default_tools_approval_mode="approve"`.**
+Headless `codex exec` cancels an MCP call at its own approval prompt — stdin is closed, so EOF
+reads as a denial ([openai/codex#24135](https://github.com/openai/codex/issues/24135)) — and
+`approve` is the only one of the four values that never reaches that prompt. It is per server,
+so nothing else in the user's `config.toml` changes, and the decision that matters stays with
+vibing.nvim's own PreToolUse hook, exactly as it does for every other tool. `${CLAUDE_PLUGIN_ROOT}`
+is expanded to the plugin directory in `command`, `args` and `env` alike, the same substitution
+Claude Code performs, and the `"mcpServers": "./.mcp.json"` file form is followed. Servers are
+deduplicated by name with the first plugin winning, which is `--plugin-dir`'s precedence for a
+duplicate plugin name: a project plugin cannot put its own command behind `mcp__vibing-nvim__*`.
+The tools appear under the plain `mcp__vibing-nvim__<tool>` prefix, which
+`can_use_tool.is_vibing_nvim_mcp_tool` already accepts.
+
+**Skills go through `developer_instructions`, because there is no skill root to add.** The roots
+codex scans are the user's own; `skills.config` only toggles skills codex already found. So the
+skills are listed in the developer message in the same shape codex uses for its own list — name,
+description and the absolute `SKILL.md` to read — and the model reads the file with its shell,
+which the sandbox allows. The same message names the tool prefix and the `rpc_port`, replacing
+the paragraph the claude system prompt carries. It is byte-stable across the turns of one chat
+(entries in `plugin_dirs` order, skills in sorted-glob order, the port fixed for the Neovim
+session), because codex's prompt cache matches on a prefix like Anthropic's (#469).
+
+The cost is that `-c` **replaces** a `developer_instructions` the user set in their own
+`config.toml`, for vibing.nvim chats only. Accepted: codex has no additive key, and the
+alternative — prepending the list to the user prompt — would carry it in every turn's message.
+
+**A server name the key path cannot carry is refused, once.** The dotted path is split on `.` and
+each segment taken literally, so `a.b` is unreachable and `"a.b"` is a different server. Such a
+manifest is skipped with one warning per working directory, and `:VibingReloadCommands` clears
+that memo along with `plugin_dirs`' cache.
+
+**What does not travel.** `agents/` — codex has no subagent-definition format. `hooks/` and
+`commands/` inside a plugin, which claude honours and vibing.nvim never listed. And nothing
+about the way the CLI itself discovers skills changes: `.agents/skills` in the project is still
+read, alongside what vibing.nvim adds.
+
+**`build.sh` no longer registers the server with codex.** It used to run `codex mcp add
+vibing-nvim`, a global entry in `config.toml` — the install `--plugin-dir` was adopted to avoid.
+An entry an older build left behind is reported and left alone: the per-session override
+deep-merges over it inside vibing.nvim, and a plain `codex` session outside Neovim may rely on it.
+
+**Not verified here, and worth knowing.** Whether codex's PreToolUse hook fires for MCP tool
+calls — and therefore whether the user's `ask`/`deny` lists gate a plugin's MCP tools on this
+backend — could not be measured without a model turn. `developer_instructions` and
+`default_tools_approval_mode` are not on `--strict-config`'s path in an ordinary chat, so a
+future codex that renames either degrades silently: the skills vanish from the prompt, or MCP
+calls start being cancelled. The silent-ignore of `--plugin-dir` has the same shape, and is why
+`plugin_dirs` checks manifests itself.
+
 ## Slash Command Discovery
 
 The `/` menu's skills and built-in commands come from the CLI itself, asked once per working

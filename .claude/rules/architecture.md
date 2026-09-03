@@ -98,6 +98,12 @@ that CLI invocation only and writes nothing to Claude Code's global state.
 - **`:VibingReloadCommands` clears `plugin_dirs` first**, before the provider caches: both
   re-resolve from it, so clearing it second refills them from the list being discarded.
 - **Not passed on the lightweight path**, per `core/types.lua`.
+- **Codex loads the same list, in two halves.** Codex 0.153 has no per-run plugin flag, so
+  `adapter/modules/codex_plugin_config.lua` turns each plugin's `mcpServers` into
+  `-c mcp_servers.<name>.*` overrides (`default_tools_approval_mode="approve"`, or headless exec
+  cancels every call) and lists its `skills/` in `-c developer_instructions`. `agents/` does not
+  travel. Server names must be bare TOML keys — the `-c` key path is never unquoted. Details and
+  the measurements: `handbook/architecture/plugin-and-commands.md` → "Codex".
 - **The `/` menu's skills come from the CLI, not the filesystem** — built-in skills live inside
   the binary. `completion/cli_command_list.lua` asks it once per working directory. What is
   hand-maintained is `TERMINAL_ONLY_COMMANDS`, a **deny**list: a stale allowlist hides a new

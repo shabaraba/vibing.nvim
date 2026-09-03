@@ -79,7 +79,10 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
   -- The builder raises when the codex binary is missing. send_message.lua does not wrap stream()
   -- in pcall, so without this the chat buffer would show a raw Lua stack trace instead of an
   -- actionable message. Matches copilot_cli.lua.
-  local build_ok, cmd = pcall(CodexCommandBuilder.build, prompt, opts, session_id, self.config, hook_args)
+  local rpc_server = require("vibing.infrastructure.rpc.server")
+  local rpc_port = rpc_server.get_port()
+
+  local build_ok, cmd = pcall(CodexCommandBuilder.build, prompt, opts, session_id, self.config, hook_args, rpc_port)
   if not build_ok then
     CliRuntime.report_build_failure(handle_id, cmd, on_done)
     return handle_id
@@ -114,8 +117,6 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
 
   local env = vim.fn.environ()
 
-  local rpc_server = require("vibing.infrastructure.rpc.server")
-  local rpc_port = rpc_server.get_port()
   if rpc_port then
     local port_str = tostring(rpc_port)
     env.VIBING_NVIM_RPC_PORT = port_str
@@ -127,12 +128,13 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
   env.VIBING_HANDLE_ID = handle_id
 
   -- No chat_bufnr here, unlike claude_cli: it only exists to route nvim_ask_user_question back to
-  -- the right chat buffer, and Codex has no way to call that tool. Codex takes no system prompt,
-  -- so there is nowhere to tell the model the value, and registering the MCP server via
-  -- `-c mcp_servers.*` does not help either — headless `codex exec` auto-cancels MCP tool calls
-  -- on the approval prompt unless run with --dangerously-bypass-approvals-and-sandbox
-  -- (openai/codex#24135), which vibing.nvim only passes in bypassPermissions mode. Registering a
-  -- value nothing can consume would just look like a working route. See #532.
+  -- the right chat buffer, and that route is not wired for codex. The two reasons it originally
+  -- could not be (#532) are gone as of codex 0.153 -- `-c developer_instructions` is a system
+  -- prompt seam, and `-c mcp_servers.<name>.default_tools_approval_mode="approve"` is what lets
+  -- a headless MCP call past the approval prompt (openai/codex#24135), which is how the bundled
+  -- server now reaches codex at all (codex_plugin_config). The choice-list UI itself is still
+  -- untested on this backend, so the developer message tells the model not to call the tool,
+  -- and registering a value nothing consumes would only look like a working route.
   ActiveStreamRegistry.register({
     handle_id = handle_id,
     worktree_root = opts._worktree_root,

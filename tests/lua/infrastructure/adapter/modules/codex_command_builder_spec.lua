@@ -156,6 +156,73 @@ describe("codex_command_builder", function()
     end)
   end)
 
+  -- Codex has no `--plugin-dir`; the plugins ride along as `-c` overrides instead
+  -- (codex_plugin_config). What is pinned here is *where* they go: on every ordinary call,
+  -- resumed or not, and never on a lightweight one.
+  describe("plugins", function()
+    local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
+    local no_project = { agent = { plugins = { project_dir = false } } }
+
+    local function has_override(cmd, prefix)
+      for _, item in ipairs(config_overrides(cmd)) do
+        if vim.startswith(item, prefix) then
+          return true
+        end
+      end
+      return false
+    end
+
+    before_each(function()
+      PluginDirs.clear_cache()
+    end)
+
+    after_each(function()
+      PluginDirs.clear_cache()
+    end)
+
+    it("registers vibing.nvim's own MCP server and skills on an ordinary request", function()
+      local cmd = codex_command_builder.build("hello", {}, nil, no_project, nil)
+      assert.is_true(has_override(cmd, "mcp_servers.vibing-nvim.command="))
+      assert.is_true(has_override(cmd, "developer_instructions="))
+    end)
+
+    it("keeps them on a resumed session, since config is per process", function()
+      local cmd = codex_command_builder.build("hello", {}, "thread-1", no_project, nil)
+      assert.is_true(has_override(cmd, "mcp_servers.vibing-nvim.command="))
+      assert.is_true(has_override(cmd, "developer_instructions="))
+    end)
+
+    it("passes the rpc_port into the developer message", function()
+      local cmd = codex_command_builder.build("hello", {}, nil, no_project, nil, 4321)
+      local found = false
+      for _, item in ipairs(config_overrides(cmd)) do
+        if vim.startswith(item, "developer_instructions=") and item:find("rpc_port for this turn is 4321", 1, true) then
+          found = true
+        end
+      end
+      assert.is_true(found)
+    end)
+
+    -- A utility call owes "no tools, no user MCP servers" (core/types.lua); the bundled server
+    -- and a skill list are both.
+    it("loads none of it on a lightweight call", function()
+      local cmd = codex_command_builder.build("hello", { lightweight = true }, nil, no_project, nil, 4321)
+      assert.is_false(has_override(cmd, "mcp_servers."))
+      assert.is_false(has_override(cmd, "developer_instructions="))
+    end)
+
+    it("loads none of it when agent.plugins.self is off and no project plugin exists", function()
+      local cmd = codex_command_builder.build("hello", {}, nil, { agent = { plugins = { self = false, project_dir = false } } }, nil)
+      assert.is_false(has_override(cmd, "mcp_servers."))
+      assert.is_false(has_override(cmd, "developer_instructions="))
+    end)
+
+    it("keeps the prompt as the last argument", function()
+      local cmd = codex_command_builder.build("hello", {}, nil, no_project, nil)
+      assert.equals("hello", cmd[#cmd])
+    end)
+  end)
+
   -- Checked structurally rather than on one fixture, because the risk is a *future* build that
   -- sends --strict-config down a path where --ignore-user-config is gated more narrowly. Alone,
   -- --strict-config also strictifies the user's own config.toml, so one unrecognised field of

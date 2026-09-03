@@ -149,6 +149,10 @@ You still need Neovim running with `mcp = { enabled = true }` (the default) for 
 have anything to connect to. The one trade-off is that a plain `claude` session started outside
 Neovim no longer sees these tools; that was never a supported way to use them.
 
+The Codex backend gets the same plugins without a `--plugin-dir` of its own: the MCP server is
+registered per run as `-c mcp_servers.vibing-nvim.*` (tools named `mcp__vibing-nvim__*`) and the
+skills are listed for the model in `developer_instructions`. Subagents do not carry over.
+
 **Your own project plugins.** Anything you drop into `.vibing/plugins/<name>/` (with a
 `.claude-plugin/plugin.json`) is loaded the same way, for chats in that project only. Run
 `:VibingReloadCommands` after adding one, or `:VibingCreatePlugin <name>` to write a working

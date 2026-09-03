@@ -29,7 +29,9 @@ the rule unstated.
 
 **The prefix depends on how the server was registered.** `mcp__vibing-nvim__<tool>` for a plain
 user-level entry, `mcp__plugin_vibing-nvim_vibing-nvim__<tool>` when it arrives inside the plugin
-— which is the normal case, since vibing.nvim self-hosts that plugin with `--plugin-dir`.
+— which is the normal case on claude, since vibing.nvim self-hosts that plugin with `--plugin-dir`.
+On codex the server is registered per run with `-c mcp_servers.vibing-nvim.*` instead, so the
+plain form is what that backend sees.
 
 Note what builds that second form: the **plugin** name and the MCP server name, both from
 `claude-plugin/.claude-plugin/plugin.json`. The marketplace name never appears in it. This rule

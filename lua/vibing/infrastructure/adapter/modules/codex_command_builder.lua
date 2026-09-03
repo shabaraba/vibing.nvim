@@ -4,6 +4,7 @@
 
 local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
+local CodexPluginConfig = require("vibing.infrastructure.adapter.modules.codex_plugin_config")
 
 local M = {}
 
@@ -37,8 +38,10 @@ end
 --- @param session_id string|nil Thread ID for session resumption
 --- @param config Vibing.Config Plugin config
 --- @param hook_args string[]|nil Optional -c flag pair for PreToolUse hook injection
+--- @param rpc_port number|nil This Neovim instance's RPC server port, told to the model alongside
+---   the bundled MCP server so it can name the right Neovim on every tool call
 --- @return string[] Command array for vim.system()
-function M.build(prompt, opts, session_id, config, hook_args)
+function M.build(prompt, opts, session_id, config, hook_args, rpc_port)
   local cmd = { binary_path.resolve(), "exec" }
 
   if session_id then
@@ -137,6 +140,19 @@ function M.build(prompt, opts, session_id, config, hook_args)
         table.insert(cmd, sandbox)
       end
     end
+  end
+
+  -- The plugins `--plugin-dir` would carry on the claude path: vibing.nvim's own MCP server and
+  -- skills, plus `.vibing/plugins/*/`, as `-c mcp_servers.*` and `-c developer_instructions`
+  -- overrides (see codex_plugin_config). Applied on resume too -- config is per process, and a
+  -- resumed thread that lost its tools would be a different chat.
+  --
+  -- Not on the lightweight path, for the same reason claude passes no `--plugin-dir` there: a
+  -- utility call owes "no tools, no user MCP servers" (`core/types.lua`), and these would be both.
+  -- `--ignore-user-config --strict-config` above would also reject nothing here, since every key
+  -- is one codex knows -- the fence is this branch, not the flags.
+  if not opts.lightweight then
+    vim.list_extend(cmd, CodexPluginConfig.args(opts.cwd, config, rpc_port))
   end
 
   -- Build prompt with context prefix and language instruction

@@ -37,7 +37,8 @@ end
 --- Returns nil for English (the CLIs' own default) and for a code with no display name, so the
 --- caller never has to repeat those two guards. Where the sentence goes is the caller's business:
 --- claude and grok put it at the top of the system prompt, codex and copilot prepend it to the
---- user prompt, because those two take no system prompt.
+--- user prompt -- copilot takes no system prompt, and codex's `developer_instructions` is reserved
+--- for the plugin material (`codex_plugin_config`), which has to stay byte-stable across turns.
 ---
 --- @param opts Vibing.AdapterOpts
 --- @param config Vibing.Config

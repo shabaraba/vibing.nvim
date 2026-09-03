@@ -226,8 +226,8 @@ agent = {
                             -- 0 keeps the metrics and never warns.
   },
 
-  plugins = {               -- Claude Code plugins loaded for the session with --plugin-dir.
-                            -- Claude backend only. See "Plugin Directories" below.
+  plugins = {               -- Claude Code plugins loaded for the session with --plugin-dir
+                            -- (claude) or as -c overrides (codex). See "Plugin Directories".
     self = true,            -- vibing.nvim's own claude-plugin/ — the nvim_* MCP tools and
                             -- every bundled skill. Turning this off removes all of them;
                             -- it is a debugging escape hatch, not a normal setting.
@@ -299,6 +299,19 @@ directory instead.
 **Lightweight calls get none of this.** Title generation, `/summarize` and the daily summary run
 with no tools and no project config; loading plugins there would only spend prompt tokens on
 skill descriptions nothing can invoke.
+
+**Codex gets the same plugins, minus subagents.** The Codex CLI has no `--plugin-dir`; its plugins
+are installed globally with `codex plugin add`, which is what this convention exists to avoid. So
+for a codex chat vibing.nvim reads each resolved plugin itself and passes the two halves that
+codex can take per run: every `mcpServers` entry becomes a `-c mcp_servers.<name>.*` override
+(pre-approved at codex's own gate, because headless `codex exec` cancels an MCP call it would
+have prompted for; vibing.nvim's permission hook still decides), and every `skills/<name>/SKILL.md`
+is listed for the model in `-c developer_instructions` with its path, in the same shape codex
+uses for its own skills. The MCP tools are named `mcp__vibing-nvim__<tool>` there, and codex's
+own `.agents/skills` discovery is unaffected. `agents/` has no codex equivalent and is not passed.
+A server whose name contains `.` or a space cannot be expressed on the codex command line and is
+skipped with a warning. One more cost: a `developer_instructions` you set in codex's own
+`config.toml` is replaced for vibing.nvim chats, since codex offers no additive form.
 
 > **Trust.** A plugin may declare `mcpServers`, so `.vibing/plugins/` in a repository you cloned
 > can start a process on your machine on the first message you send. This is a stronger thing
