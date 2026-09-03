@@ -12,7 +12,7 @@
 --- through a profile and matches one in an inactive section, and a warning that is wrong in either
 --- direction is worse than none, because its silence reads as "you are fine". The rest of the
 --- reasoning, including why the provider is announced rather than restored, is in
---- `.claude/rules/architecture.md` -> "Session Persistence".
+--- `handbook/architecture/lightweight-calls.md`.
 ---
 --- @module vibing.infrastructure.adapter.modules.codex_provider_notice
 

@@ -6,7 +6,8 @@ instance without deadlocks: an async RPC server (`lua/vibing/infrastructure/rpc/
 `vim.schedule()` for safe API calls) is queried by the Node MCP server
 (`claude-plugin/mcp-server/`) acting as a TCP client, so both buffer reads and writes are possible.
 Nothing is installed: `build.sh` builds the server, and the plugin that carries it is handed to
-the CLI per session with `--plugin-dir` (`architecture.md` → "Self-Hosted Claude Code Plugin").
+the CLI per session with `--plugin-dir` (`architecture.md` →
+"Plugin Loading, Command Discovery and Startup Cost").
 See
 `claude-plugin/mcp-server/README.md` and `handbook/lazy-setup-example.lua` for setup details;
 don't duplicate them here.
@@ -109,14 +110,14 @@ status as a second content block.
 Both tools take an optional `from_bufnr`, the caller's own chat buffer number, which records the
 relationship in both chat files' frontmatter (`orchestrated` / `orchestrated_by`) instead of
 leaving it in prose that a rename or a restart invalidates. Why it stays optional, why the write
-happens before the send, and why the list field needs its own scanner: `architecture.md` →
-"Multi-Agent Orchestration".
+happens before the send, and why the list field needs its own scanner:
+`handbook/architecture/orchestration.md`.
 
 **The target chat is named by `file_path` or `bufnr`, and the path is the primary form.**
 `nvim_chat_send_message` and `nvim_get_buffer` both accept either, open a chat that is closed, and
 refuse a call that passes the pair rather than preferring one of them. Why the path rather than
 the number, why it opens chat files and refuses everything else, and why `from_bufnr` stays a
-bufnr while these do not: `architecture.md` → "Multi-Agent Orchestration" → "Addressing a chat".
+bufnr while these do not: `handbook/architecture/orchestration.md` → "Addressing a chat".
 
 `nvim_chat_send_message` also takes `queue_if_busy` (default `false`). A chat that is responding
 normally refuses the send; with the flag the message is queued instead and delivered as a new turn
@@ -124,11 +125,11 @@ the moment that chat stops, with several queued items coalesced into one turn. T
 happened, and "queued" means no request has started yet — an orchestrator that read it as "sent"
 would poll a transcript that has not moved. Why it is not gated on `chat_notifications`, why the
 frontmatter link is written at delivery rather than when the message is queued, and why the queue
-is capped: `architecture.md` → "Multi-Agent Orchestration".
+is capped: `handbook/architecture/orchestration.md`.
 
 The workflow is the bundled `vibing-orchestrate` skill. Why `position` defaults to `back`, why the
 chat file is written at creation, why the status is a field rather than a text heuristic, and what
-is deliberately out of scope: `architecture.md` → "Multi-Agent Orchestration".
+is deliberately out of scope: `handbook/architecture/orchestration.md`.
 
 ## Inline Review Notes
 

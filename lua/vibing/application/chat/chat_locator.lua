@@ -23,7 +23,7 @@ local git_root_by_cwd = {}
 ---**成功だけを覚える。** 「gitリポジトリではない」を覚えると、あとから `git init` された
 ---（あるいはworktreeが生えた）ディレクトリが、そのNeovimが生きている限り誤判定のままになる。
 ---外したときのコストは fail-fast な `rev-parse` 1回だけ。
----`core/utils/git_snapshot.lua` の `root_cache` と同じ方針で、architecture.md にも明文化がある。
+---`core/utils/git_snapshot.lua` の `root_cache` と同じ方針で、handbook/architecture/per-request-diffs.md にも明文化がある。
 ---
 ---3値を保つのは `Git.from_display_path` の契約に合わせるため。`false`（リポジトリ外だと
 ---分かっている）を `nil`（未指定＝引き直せ）に潰すと、リポジトリ外ではキャッシュが一切効かず、

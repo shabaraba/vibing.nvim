@@ -1,5 +1,5 @@
 ---@class Vibing.Core.AgentsConstants
----バックエンド（エージェント）定義の単一ソース。派生先と経緯は architecture.md を参照。
+---バックエンド（エージェント）定義の単一ソース。派生先と経緯は handbook/architecture/cli-integration.md を参照。
 ---
 ---このモジュールは意図的に何も require しない。派生先がここを require する一方向の依存に
 ---しておくことで、循環 require が構造的に起きないようにしている。

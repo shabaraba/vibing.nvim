@@ -59,19 +59,32 @@ For Neovim testing, load the plugin and run `:VibingChat`.
 
 Detailed documentation is organized in `.claude/rules/`:
 
-| File                    | Contents                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------- |
-| `architecture.md`       | Communication flow, module structure, session persistence, concurrent execution |
-| `mcp-integration.md`    | MCP tools, usage examples, setup instructions                                   |
-| `permissions.md`        | Permission system, granular rules, Tool Approval UI                             |
-| `self-development.md`   | Guidelines for developing vibing.nvim with vibing.nvim                          |
-| `self-testing.md`       | E2E testing procedures, 3-try auto-fix rule, test helper reference              |
-| `features.md`           | Auto-resume on usage limit, message timestamps, AskUserQuestion support         |
-| `configuration.md`      | Full configuration examples, window positions, daily summary                    |
-| `commands-reference.md` | User commands, slash commands                                                   |
-| `web-workflow.md`       | Claude Code on the Web git push requirements                                    |
+| File                    | Contents                                                                   |
+| ----------------------- | -------------------------------------------------------------------------- |
+| `architecture.md`       | 不変条件とモジュール地図。詳細は `handbook/architecture/` に外出し（下表） |
+| `mcp-integration.md`    | MCP tools, usage examples, setup instructions                              |
+| `permissions.md`        | Permission system, granular rules, Tool Approval UI                        |
+| `self-development.md`   | Guidelines for developing vibing.nvim with vibing.nvim                     |
+| `self-testing.md`       | E2E testing procedures, 3-try auto-fix rule, test helper reference         |
+| `features.md`           | Auto-resume on usage limit, message timestamps, AskUserQuestion support    |
+| `configuration.md`      | Full configuration examples, window positions, daily summary               |
+| `commands-reference.md` | User commands, slash commands                                              |
+| `web-workflow.md`       | Claude Code on the Web git push requirements                               |
 
-All `.md` files in `.claude/rules/` are automatically loaded into Claude Code's context.
+All `.md` files in `.claude/rules/` are automatically loaded into Claude Code's context. **だから
+`.claude/rules/` に置くのは「放っておくと破る不変条件」と「どこに何があるかの地図」だけにする。**
+理由・実測値・却下した代替案は必要になったときに読めばよいので、`handbook/architecture/` に置いて
+ルール側からは1行で指す。
+
+| 深掘り用（自動ロードされない）                 | Contents                                                |
+| ---------------------------------------------- | ------------------------------------------------------- |
+| `handbook/architecture/cli-integration.md`     | フックの protocol、バックエンド seams、各 CLI での実測  |
+| `handbook/architecture/lightweight-calls.md`   | 軽量呼び出しをバックエンド別にどう制限しているか        |
+| `handbook/architecture/plugin-and-commands.md` | `--plugin-dir`、スラッシュコマンド探索、起動コスト      |
+| `handbook/architecture/per-request-diffs.md`   | git tree snapshot の詳細、overlap ガード、fallback 経路 |
+| `handbook/architecture/chat-lineage.md`        | 並行実行、fork、subagent chat のセッション設計          |
+| `handbook/architecture/orchestration.md`       | 完了通知の状態機械、キュー、round-trip 上限、tree 操作  |
+| `handbook/architecture/session-persistence.md` | `working_dir` の git root 境界チェック                  |
 
 ## Repository Layout
 
@@ -81,8 +94,8 @@ marketplace root（`.claude-plugin/marketplace.json` があるディレクトリ
 
 ただし通常の経路はもう marketplace ではない。`claude-plugin/` は
 `cli_command_builder` が `--plugin-dir` でセッションごとに CLI に渡す（#618、
-`.claude/rules/architecture.md` →「Self-Hosted Claude Code Plugin」）。marketplace.json は
-手動 `claude plugin install` のために残してあるだけ。
+`.claude/rules/architecture.md` →「Plugin Loading, Command Discovery and Startup Cost」）。
+marketplace.json は手動 `claude plugin install` のために残してあるだけ。
 
 | 場所                                       | 中身                                                   |
 | ------------------------------------------ | ------------------------------------------------------ |

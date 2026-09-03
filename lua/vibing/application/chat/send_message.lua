@@ -188,7 +188,7 @@ function M.execute(adapter, callbacks, message, config)
     -- ActiveStreamRegistry に載せるだけで、git を呼ばない（`stream()` は同期I/Oを
     -- 増やさない）。
     --
-    -- ここは `rev-parse --show-toplevel` 1回ぶんメインループを止める。architecture.md の
+    -- ここは `rev-parse --show-toplevel` 1回ぶんメインループを止める。handbook/architecture/per-request-diffs.md の
     -- 「Startup Cost」が同期I/Oに神経質なのに対して意図的に許容している箇所で、根拠は
     -- 呼ばれる回数のほう: git_snapshot 側でcwd単位にキャッシュされるので、1つのcwdにつき
     -- 最初の送信の1回だけで、以降はゼロ。setup() と違ってNeovim起動時には走らない

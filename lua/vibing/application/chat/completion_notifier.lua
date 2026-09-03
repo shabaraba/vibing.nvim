@@ -329,7 +329,7 @@ local function process_done(bufnr)
   --
   -- 配達できた = bufnr はこのターンでは終わっておらず、続きのターンが控えているということなので、
   -- この完了は購読者に見せない。順序を逆にしても防げない理由と、この規則が拾えない側の順序は
-  -- architecture.md → Multi-Agent Orchestration（#638）
+  -- handbook/architecture/orchestration.md（#638）
   local restarted, held = drain(bufnr)
   if restarted then
     -- edges[bufnr] は消費せずに残す。bufnr が本当に止まったときの完了で配達される。
