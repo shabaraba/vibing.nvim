@@ -108,6 +108,21 @@ describe("send_message._report_token_usage", function()
     assert.truthy(written(state):find("80k", 1, true))
   end)
 
+  it("keeps the metrics but drops the warning when the threshold is zero", function()
+    local state, callbacks = harness()
+
+    -- 0 is truthy in Lua, so it reaches `TokenUsage.warning` rather than being replaced by the
+    -- default -- which is what makes it usable as "show the numbers, never nag".
+    SendMessage._report_token_usage(
+      { _token_usage = usage_of(900000, 30) },
+      callbacks,
+      { agent = { token_usage = { warn_context = 0 } } }
+    )
+
+    assert.truthy(written(state):find("context 900k", 1, true))
+    assert.is_nil(written(state):find("⚠️", 1, true))
+  end)
+
   describe("configured through setup()", function()
     local Config = require("vibing.config")
 

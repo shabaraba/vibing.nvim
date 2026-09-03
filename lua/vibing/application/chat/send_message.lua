@@ -505,6 +505,9 @@ function M._report_token_usage(response, callbacks, config)
   end
 
   local TokenUsage = require("vibing.core.utils.token_usage")
+  -- Luaでは 0 が truthy なので、`warn_context = 0` はここで既定値に差し替えられずそのまま
+  -- 通る。それが意図で、`TokenUsage.warning` 側の `warn_context <= 0` が「警告だけ止めて
+  -- 内訳は出す」という指定として受ける。`or` が拾うのは未設定と数値でない値だけ
   local warn_context = (settings and tonumber(settings.warn_context)) or TokenUsage.DEFAULT_WARN_CONTEXT
 
   -- 警告は章の中に含まれる。通知ではなくバッファに残すのは、`vim.notify` は次のターンを

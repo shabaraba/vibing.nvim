@@ -28,7 +28,20 @@ describe("claude_cli token usage wiring", function()
   --- @return table response
   local function run_turn(lines)
     local original_spawn = CliRuntime.spawn
+    local original_exepath = vim.fn.exepath
     local response = nil
+
+    -- The argv builder resolves the `claude` binary and raises when PATH has none, which sends
+    -- the turn down the build-failure path with no stream and no usage. CI installs Neovim and
+    -- Lua but not Claude Code, so without this the spec passes on a developer's machine and
+    -- fails there -- which is exactly what it did. Any real executable will do: nothing is ever
+    -- spawned, because `CliRuntime.spawn` is faked below.
+    vim.fn.exepath = function(name)
+      if name == "claude" then
+        return original_exepath("sh")
+      end
+      return original_exepath(name)
+    end
 
     CliRuntime.spawn = function(handles, handle_id, _cmd, sys_opts, on_exit, _on_done)
       -- The real spawn registers the handle, and the stdout handler reads its absence as "this
@@ -61,9 +74,13 @@ describe("claude_cli token usage wiring", function()
       return response ~= nil
     end)
     CliRuntime.spawn = original_spawn
+    vim.fn.exepath = original_exepath
 
     assert.is_true(ok, tostring(err))
     assert.is_not_nil(response)
+    -- Named explicitly so a future build failure reports itself rather than surfacing three
+    -- assertions down as "attempt to index field '_token_usage' (a nil value)".
+    assert.is_nil(response.error, "the turn did not reach the stream: " .. tostring(response.error))
     return response
   end
 
@@ -99,6 +116,23 @@ describe("claude_cli token usage wiring", function()
     assert.equals(1, response._token_usage.requests)
     assert.equals(1, response._token_usage.subagent_requests)
     assert.equals(200002, response._token_usage.context)
+  end)
+
+  it("counts both turns when one process emits two result events", function()
+    -- `SendMessage` resumes a subagent in the background, so one request can produce two `result`
+    -- events in a single CLI process (architecture.md → "Subagent Chat"). Both turns' requests
+    -- were paid for, so both belong in the totals -- and neither may be counted twice.
+    local response = run_turn({
+      assistant_line(5000, 100000, 200),
+      vim.json.encode({ type = "result", subtype = "success" }) .. "\n",
+      assistant_line(800, 106000, 150),
+      vim.json.encode({ type = "result", subtype = "success" }) .. "\n",
+    })
+
+    assert.equals(2, response._token_usage.requests)
+    assert.equals(206000, response._token_usage.read)
+    assert.equals(5800, response._token_usage.write)
+    assert.equals(106802, response._token_usage.context)
   end)
 
   it("still answers for a turn whose stream carried no usage at all", function()
