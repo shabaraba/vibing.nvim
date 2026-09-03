@@ -60,6 +60,39 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 5.7.0 (2026-09-03)
+
+## What's Changed
+* feat: add a linked issue section to the chat summary by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/623
+* feat: replace mote with per-request git tree snapshots by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/626
+* feat: discover slash commands from the CLI instead of a hardcoded list by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/633
+* fix: locate the prompts directory without relying on the checkout being named vibing.nvim by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/634
+* feat: link related chat buffers via frontmatter and keep the links in sync on rename by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/629
+* feat: notify the sender chat when a chat it messaged finishes responding by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/631
+* fix: stop the test suite reading and writing ShaDa by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/635
+* fix: complete CLI cancellation without exit callback by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/636
+* fix: read chat frontmatter to its closing delimiter instead of a fixed window by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/637
+* fix: stage AskUserQuestion choices synchronously so the question renders by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/650
+* fix: hold the completion edge through a chat's intermediate turn by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/647
+* feat: address chats by file path in MCP tools and system prompts by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/648
+* feat: generalize the notification queue into a message queue with queue_if_busy delivery by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/651
+* feat: replace the global wake counter with per-pair round-trip counters by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/655
+* feat: fire completion notifications only when a chat has truly stopped by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/652
+* feat: revise vibing-orchestrate for push-style reporting and the fan-in convention by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/657
+* feat: give messages delivered from another chat their own section by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/658
+* fix: reject a from_bufnr that names no chat buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/662
+* feat: orchestration tree visualization, tree-wide cancel, and a concurrency limit by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/660
+* feat: instruct workers to keep push reports brief by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/663
+* fix: stop naming gitignored .vibing in the snapshot's git add pathspec by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/664
+* test: stop the permission decision spec snapshotting the developer's repository by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/665
+* fix: tell the orchestrator when a worker stops on a question or an approval by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/666
+* test: cover the notifier wiring the unit spec has to fake by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/668
+* feat: report each turn's token cost in the chat by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/669
+* docs: split architecture.md into always-loaded invariants and handbook detail by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/670
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.6.0...v5.7.0
+
 ## 5.6.0 (2026-08-27)
 
 ## What's Changed
