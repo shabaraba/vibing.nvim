@@ -116,9 +116,13 @@ config keys before doing anything else, so a probe never spends a token):
 The argv `codex_plugin_config` emits for the bundled plugin was then fed to
 `codex exec --strict-config --ignore-user-config` as-is: every key was accepted, and codex spawned
 `mcp-server/bin/run.sh` with the manifest's `env` applied and completed `initialize` and
-`tools/list` before the model call. One thing that is not a codex property but cost an hour: a
-`CODEX_HOME` whose previous codex was killed mid-run can leave sqlite state that stalls every
-later MCP-configured start before the banner, with nothing on stderr. Probe from a fresh one.
+`tools/list` before the model call. One thing that is not a property of the overrides but cost
+an hour of probing: in the container this was measured in (no bubblewrap on `PATH`, codex using
+its bundled one), `codex exec` with _any_ `mcp_servers` entry — a three-line echo server
+included — stalled on most runs before spawning the server, with nothing on stderr and the
+banner never printed, and started normally on others, with the same arguments, a fresh
+`CODEX_HOME`, and the network refused. It never correlated with which overrides were passed.
+A start that looks dead is worth one retry before it is read as a config problem.
 
 Four of those rows decide the shape.
 
