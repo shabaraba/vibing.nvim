@@ -373,8 +373,9 @@ it the section gains a warning under the metrics:
 context 205k · 12 requests · read 2.4M · new 12k
 
 > ⚠️ **Context is 205k.** Every tool call re-reads all of it, and above 150k a request grows
-> likelier to re-pay for a prefix it had already cached. Consider `/compact`, a new
-> chat for unrelated work, or handing the exploring to a subagent.
+> likelier to re-pay for a prefix it had already cached. Consider `/compact`,
+> `:VibingChatHandoff` to continue in a new chat from a summary, or handing the
+> exploring to a subagent.
 ```
 
 It is written into the buffer, not raised with `vim.notify`, and it repeats on every turn that
@@ -401,6 +402,16 @@ cold start. Measured on a small session, the turn after `/compact` wrote 79,783 
 cache. That pays for itself on a chat carrying hundreds of thousands of tokens of history and does
 not on one that has barely grown — which is another way of saying the same thing the table above
 says.
+
+**`:VibingChatHandoff` is the other exit, and the cheaper one once the cache is cold.** It
+summarizes the chat and opens a new one whose first message carries the summary, so the next
+request costs the floor plus a few thousand tokens, and every request after that reads the same.
+`/compact` wins while the cache is warm (it reads the conversation at cache-read price and rewrites
+only floor + summary), but after the 1-hour TTL a `/compact` has to re-read the whole conversation
+at creation price before it can summarize anything — on a 200k chat that is roughly 280k written
+against roughly 115k for a handoff. The summary is put in the message rather than left for the
+model to `Read`, because a tool call is one more request over the whole context and the file
+would then stay in every later one. See `handbook/architecture/chat-lineage.md` → "Handoff Chat".
 
 `/summarize` is **not** the tool for this, despite the name. It opens a summary in a floating
 window and never touches the session, so the turn after it re-reads exactly as much as the turn

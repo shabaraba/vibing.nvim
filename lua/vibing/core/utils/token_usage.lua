@@ -122,9 +122,12 @@ end
 --- actually looking at the cost -- the lines above this one -- would say nothing. Repetition is
 --- what makes it a gauge; keeping it to three lines is what keeps it from being noise.
 ---
---- It names `/compact` and deliberately not `/summarize`. `/summarize` shows a summary in a
---- floating window and never touches the session, so the turn after it re-reads exactly as much
---- as the turn before. The CLI's own `/compact` does shrink the conversation, and it is reachable
+--- It names `/compact` and `:VibingChatHandoff`, and deliberately not `/summarize`. `/summarize`
+--- shows a summary in a floating window and never touches the session, so the turn after it
+--- re-reads exactly as much as the turn before. `:VibingChatHandoff` starts a new chat carrying
+--- only the summary, which is the cheaper of the two once the cache has gone cold (a cold
+--- `/compact` re-reads the whole conversation at creation price before it can summarize it).
+--- The CLI's own `/compact` does shrink the conversation, and it is reachable
 --- from a chat because an unrecognised slash command falls through as prompt text -- verified
 --- against claude 2.1.231 in headless `-p` mode, which emits a `compact_boundary` and carries the
 --- same session on afterwards.
@@ -138,8 +141,9 @@ function M.warning(context, warn_context)
 
   return string.format(
     "> ⚠️ **Context is %s.** Every tool call re-reads all of it, and above %s a request grows\n"
-      .. "> likelier to re-pay for a prefix it had already cached. Consider `/compact`, a new\n"
-      .. "> chat for unrelated work, or handing the exploring to a subagent.",
+      .. "> likelier to re-pay for a prefix it had already cached. Consider `/compact`,\n"
+      .. "> `:VibingChatHandoff` to continue in a new chat from a summary, or handing the\n"
+      .. "> exploring to a subagent.",
     humanize(context),
     humanize(warn_context)
   )

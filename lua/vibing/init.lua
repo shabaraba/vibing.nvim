@@ -144,7 +144,7 @@ function M.setup(opts)
   require("vibing.application.completion").setup()
 end
 
----位置指定を取るコマンド（VibingChat/VibingChatFork/VibingSubagentChat）の補完候補
+---位置指定を取るコマンド（VibingChat/VibingChatFork/VibingChatHandoff/VibingSubagentChat）の補完候補
 ---@param arg_lead string
 ---@return string[]
 local function complete_positions(arg_lead)
@@ -222,6 +222,16 @@ function M._register_commands()
   end, {
     nargs = "?",
     desc = "Fork current vibing chat with optional position (current|right|left|top|bottom|back)",
+    complete = function(arg_lead)
+      return complete_positions(arg_lead)
+    end,
+  })
+
+  vim.api.nvim_create_user_command("VibingChatHandoff", function(opts)
+    require("vibing.presentation.chat.controller").handle_handoff(opts.args)
+  end, {
+    nargs = "?",
+    desc = "Summarize this chat and start a new one from that summary (current|right|left|top|bottom|back)",
     complete = function(arg_lead)
       return complete_positions(arg_lead)
     end,

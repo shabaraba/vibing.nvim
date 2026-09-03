@@ -164,6 +164,21 @@ section is not kept in sync field by field.
     Branch a new chat off the current one. The fork inherits the source
     session and diverges from its first message onward.
 
+                                                         *:VibingChatHandoff*
+:VibingChatHandoff [{position}]
+    Summarise the current chat (as |:VibingSummarize| does, leaving the
+    `## summary` in this buffer too) and open a new chat whose first, still
+    unsent User message carries that summary. Type the next instruction under
+    it and send. The new chat starts a fresh session with the source's model,
+    effort, permissions, working directory and language, and records where it
+    came from in `continued_from`.
+
+    This is the cheap way to continue a long conversation: the new chat
+    starts from the fixed floor (system prompt, tools, `CLAUDE.md`) plus a
+    few thousand tokens of summary, instead of re-reading the whole history
+    on every request. Prefer it over `/compact` once the prompt cache has
+    gone cold. Refused while a response is streaming.
+
                                                        *:VibingSlashCommands*
 :VibingSlashCommands
     Open the slash-command picker for the current chat.
@@ -335,6 +350,7 @@ with YAML frontmatter: >
       - .vibing/chat/worker-auth.md
     orchestrated_by:                         # optional: who drives this
       - .vibing/chat/orchestrator.md
+    continued_from: .vibing/chat/long.md     # optional: handed off from
     working_dir: .vibing/worktrees/fix-auth   # optional, relative to git root
     agent: claude
     mode: code                                # code | plan | explore
@@ -357,9 +373,10 @@ a chat with |:VibingChat| {file} or plain |:edit| — the session resumes from
 `orchestrated` and `orchestrated_by` record which chat drove which. They are
 written when one chat creates or messages another through the vibing-nvim MCP
 tools, as git-root-relative paths, and are rewritten on both sides when
-|:VibingSetFileTitle| renames a chat file. Buffer numbers do not survive a
-restart and file names do not survive a rename, so the frontmatter is the only
-place the relationship keeps meaning.
+|:VibingSetFileTitle| renames a chat file. `continued_from` names the chat a
+|:VibingChatHandoff| was made from and is kept in step the same way. Buffer
+numbers do not survive a restart and file names do not survive a rename, so
+the frontmatter is the only place the relationship keeps meaning.
 
 ==============================================================================
 9. BACKENDS                                                  *vibing-backends*

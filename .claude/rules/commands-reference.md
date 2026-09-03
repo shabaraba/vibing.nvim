@@ -7,6 +7,7 @@
 | `:VibingChat [position\|file]`        | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file                                                           |
 | `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                                                                                                   |
 | `:VibingChatFork [position]`          | Fork current chat (create branch from current conversation)                                                                                                   |
+| `:VibingChatHandoff [position]`       | Summarize this chat and start a new one whose first unsent message carries the summary; records `continued_from`                                              |
 | `:VibingSubagentChat [position]`      | Continue a subagent this chat started, in its own buffer                                                                                                      |
 | `:VibingChatJumpNextUser [count]`     | Move the cursor to the next User section in the chat buffer                                                                                                   |
 | `:VibingChatJumpPrevUser [count]`     | Move the cursor to the previous User section in the chat buffer                                                                                               |
@@ -37,7 +38,9 @@
 one. Fork's session/frontmatter mechanics (`forked_from`, session inheritance via `forkSession`)
 are documented in `handbook/architecture/chat-lineage.md` — not duplicated here.
 `:VibingSubagentChat` takes the same position argument; why it shares the parent's `session_id`
-and never forks is in that same file.
+and never forks is in that same file. `:VibingChatHandoff` is the third relative: it inherits the
+same frontmatter as a fork but **no** `session_id`, and puts the summary in the first User
+message rather than having the model `Read` the old chat — the reasoning is in that file too.
 
 The two jump commands ship without a keymap. They take a count
 (`:3VibingChatJumpNextUser`) and clamp to the last section rather than refusing to move, and they
