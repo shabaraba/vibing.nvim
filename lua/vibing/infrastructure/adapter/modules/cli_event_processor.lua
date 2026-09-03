@@ -8,6 +8,7 @@ local SessionManagerModule = require("vibing.infrastructure.adapter.modules.sess
 local ToolDisplay = require("vibing.infrastructure.adapter.modules.tool_display")
 local SubagentDisplay = require("vibing.infrastructure.adapter.modules.subagent_display")
 local SubagentMarker = require("vibing.infrastructure.adapter.modules.subagent_marker")
+local TokenUsage = require("vibing.core.utils.token_usage")
 
 --- Extract brief summary from tool input for display
 --- @param tool_name string
@@ -198,6 +199,11 @@ local function handle_assistant_event(msg, context)
   end
 
   local subagent_of = parent_tool_use_id(msg)
+
+  -- Recorded before the subagent bail-out below, because a subagent's requests cost real tokens
+  -- even though its context is its own. TokenUsage keeps the two apart.
+  TokenUsage.record(context.tokenUsage, message.usage, subagent_of ~= nil)
+
   if subagent_of then
     return buffer_subagent_text(message, subagent_of, context)
   end

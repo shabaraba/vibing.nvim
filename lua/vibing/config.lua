@@ -113,7 +113,17 @@
 ---@field chat_notifications Vibing.ChatNotificationsConfig チャット間の完了通知設定
 ---@field orchestration Vibing.OrchestrationConfig チャット網の並列度設定
 ---@field codex_provider_notice Vibing.CodexProviderNoticeConfig codex軽量呼び出しのプロバイダ警告設定
+---@field token_usage Vibing.TokenUsageConfig ターンごとのトークン内訳表示とコンテキスト肥大警告の設定
 ---@field plugins Vibing.PluginsConfig? `--plugin-dir`で読み込むClaude Codeプラグインの設定
+
+---@class Vibing.TokenUsageConfig
+---ターンごとのトークン内訳（コンテキストサイズ・リクエスト数・キャッシュ読取/作成）をチャットに
+---出し、コンテキストが育ったら警告する。
+---
+---codex_provider_notice と同じ理由で既定で有効: トークンを一切使わず、無効だと当の問題
+---（チャットが育っていることに気づけない）がそのまま残る通知だから。
+---@field enabled boolean? falseで表示と警告を止める（デフォルト: true）
+---@field warn_context number? この値を超えている間、各ターンの内訳行の直下に警告を書く（デフォルト: 150000）
 
 ---@class Vibing.PluginsConfig
 ---セッション限りで読み込むClaude Codeプラグインのディレクトリ設定（claudeバックエンドのみ）
@@ -203,6 +213,7 @@ local notify = require("vibing.core.utils.notify")
 
 local tools_const = require("vibing.core.constants.tools")
 local language_utils = require("vibing.core.utils.language")
+local token_usage = require("vibing.core.utils.token_usage")
 
 local M = {}
 
@@ -335,6 +346,24 @@ M.defaults = {
     -- フラグが無いためプロバイダへの到達性通信も付いてくる。それを避けたい場合はfalseにする。
     codex_provider_notice = {
       enabled = true,
+    },
+    -- ターンのコストは「返答の長さ」ではなく「リクエスト数 × コンテキストサイズ」で決まる。
+    -- ツール1回ごとにAPIリクエストが1本増え、そのたびに会話全体を読み直すため。
+    --
+    -- 自動コンパクトはこれを救わない。発火はコンテキスト上限の手前（このリポジトリのログで
+    -- 実測して約93万トークン）で、そこまで登る間の全リクエストは育ったサイズのまま課金される。
+    -- つまりコンパクトは溢れないための救命装置であって、コスト対策ではない。
+    --
+    -- 既定値は実測から取った。プレフィックスキャッシュを引き当てられず同じ内容を作成価格で
+    -- 書き直す率が、30k未満で0%、30〜80kで1.1%、80〜150kで4.8%、150k超で6.9%。この境目から
+    -- 先は読取量と書き直しの確率が両方効いてくる。
+    --
+    -- 値そのものは token_usage 側から借りる。`config` が未設定のとき（テストや手組みの
+    -- config テーブル）に使われるフォールバックが同じモジュールにあり、2箇所に同じ数字を
+    -- 置くと片方だけ動かして既定値が食い違う
+    token_usage = {
+      enabled = true,
+      warn_context = token_usage.DEFAULT_WARN_CONTEXT,
     },
     -- `--plugin-dir` で読み込むプラグイン。self → project_dir → extra の順で渡す。
     --
