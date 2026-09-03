@@ -143,16 +143,87 @@ local function wait_for(instance, pattern, timeout, label, read)
   return false
 end
 
+---現在のバッファの本文を1回読む。`wait_for` の `read` と同じ形（job_id, bufnr）
+---@param job_id number
+---@param bufnr number
+---@return boolean ok
+---@return string text_or_error
+local function read_content(job_id, bufnr)
+  local ok, lines = pcall(vim.fn.rpcrequest, job_id, "nvim_buf_get_lines", bufnr, 0, -1, false)
+  return ok, ok and table.concat(lines, "\n") or lines
+end
+
 ---バッファ「本文」が条件に一致するまで待機
 ---@param instance table インスタンスハンドル
 ---@param pattern string パターン（Luaパターン）
 ---@param timeout number タイムアウト（ミリ秒）
 ---@return boolean 成功したかどうか
 function M.wait_for_buffer_content(instance, pattern, timeout)
-  return wait_for(instance, pattern, timeout, "content", function(job_id, bufnr)
-    local ok, lines = pcall(vim.fn.rpcrequest, job_id, "nvim_buf_get_lines", bufnr, 0, -1, false)
-    return ok, ok and table.concat(lines, "\n") or lines
-  end)
+  return wait_for(instance, pattern, timeout, "content", read_content)
+end
+
+---失敗したターンがチャットに書く行（`application/chat/send_message.lua`）。
+---
+---パターンをここに1つだけ置いてあるのは、これが「ターンが動いたか」を判定する唯一の手掛かり
+---だから。specごとに書くと、文言が変わった日にすべてのspecが黙って「エラーなし」に倒れる
+local TURN_ERROR_PATTERN = "%*%*Error:%*%* [^\n]*"
+
+---モデルの応答を待つ。**ターンがエラーで終わったらそこで待つのをやめる。**
+---
+---`wait_for_buffer_content` との違いはそこだけだが、差は大きい。`## .* Assistant` のような
+---構造だけを待つと、CLIが即座に失敗したターンでも見出しは書かれるので spec は緑になる
+---（このリポジトリで実際にそうなっていた）。かといってモデルの実出力を待つようにすると、
+---今度はターンが失敗したときに「モデルがマーカーを返さなかった」という**嘘の診断**で
+---タイムアウトまで待つことになる。
+---
+---だから待つのは実出力にし、`**Error:**` が出た時点で理由ごと打ち切る。呼び出し側は
+---第2返り値をそのままアサーションメッセージに渡せばよい
+---@param instance table インスタンスハンドル
+---@param pattern string 応答本文に期待するLuaパターン
+---@param timeout number タイムアウト（ミリ秒）
+---@return boolean ok
+---@return string? reason 失敗した理由（成功時は nil）
+function M.wait_for_response(instance, pattern, timeout)
+  if not instance or not instance.job_id then
+    return false, "Invalid instance: instance or job_id is nil"
+  end
+
+  local deadline = vim.loop.hrtime() + timeout * 1000000
+  local last_seen = ""
+
+  while vim.loop.hrtime() < deadline do
+    local ok, bufnr = pcall(vim.fn.rpcrequest, instance.job_id, "nvim_get_current_buf")
+    if not ok then
+      return false, string.format("RPC failed to get buffer: %s", tostring(bufnr))
+    end
+
+    local ok2, text = read_content(instance.job_id, bufnr)
+    if not ok2 then
+      return false, string.format("RPC failed to read buffer: %s", tostring(text))
+    end
+
+    last_seen = text or ""
+    if last_seen:match(pattern) then
+      return true
+    end
+
+    -- エラーの判定はパターン一致の**後**。エラー行と期待した出力が同じターンに並ぶことは
+    -- 原理的にありうるので、先に見ると成功を失敗として報告しうる
+    local turn_error = last_seen:match(TURN_ERROR_PATTERN)
+    if turn_error then
+      return false, string.format("The turn failed before producing '%s': %s", pattern, turn_error)
+    end
+
+    vim.loop.sleep(100)
+  end
+
+  return false,
+    string.format(
+      "Timed out after %dms waiting for '%s'. Last 500 chars of the chat:\n%s",
+      timeout,
+      pattern,
+      last_seen:sub(-500)
+    )
 end
 
 ---バッファ「名」が条件に一致するまで待機

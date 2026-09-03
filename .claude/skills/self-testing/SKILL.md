@@ -1,6 +1,6 @@
 ---
 name: self-testing
-description: E2E self-testing workflow for vibing.nvim using a separate Neovim instance controlled over RPC. Use when writing or debugging E2E tests, running `npm run test:e2e`, or executing the 3-try auto-fix rule after implementing a feature. Covers the spawn_nvim_instance/send_keys/wait_for_buffer_content/cleanup_instance helper API, test scenario checklist, and troubleshooting for hangs, "Job not found", and cross-test state pollution.
+description: E2E self-testing workflow for vibing.nvim using a separate Neovim instance controlled over RPC. Use when writing or debugging E2E tests, running `npm run test:e2e`, or executing the 3-try auto-fix rule after implementing a feature. Covers the spawn_nvim_instance/send_keys/wait_for_buffer_content/wait_for_response/cleanup_instance helper API, test scenario checklist, and troubleshooting for hangs, "Job not found", and cross-test state pollution.
 ---
 
 # Self-Testing for vibing.nvim
@@ -16,6 +16,8 @@ Test Runner (Current Nvim)
   │   ├─ spawn_nvim_instance()  - Launch child Nvim via jobstart(rpc=true)
   │   ├─ send_keys()             - Send key input via rpcrequest
   │   ├─ wait_for_buffer_content() - Poll buffer TEXT until pattern matches
+  │   ├─ wait_for_response()      - Same, but for output only a real turn produces:
+  │   │                             aborts with the reason when the turn errors
   │   ├─ wait_for_buffer_name()    - Poll buffer NAME (use this for a filename)
   │   └─ cleanup_instance()      - Stop job
   │
@@ -100,11 +102,40 @@ Send a key sequence via `rpcrequest`, e.g. `":VibingChat<CR>"`, `"G"`, `"iHello<
 ### `wait_for_buffer_content(instance, pattern, timeout)`
 
 Poll buffer content until `pattern` (Lua pattern) matches or `timeout` (ms) elapses. Returns
-`true`/`false`.
+`true`/`false`. Use it for buffer state vibing.nvim writes on its own — frontmatter, a rendered
+prompt, a slash command's confirmation. **Not** for anything that depends on a CLI turn.
+
+### `wait_for_response(instance, pattern, timeout)`
+
+The one to use when a real turn has to have run. Returns `ok, reason`; pass `reason` straight into
+the assertion message.
+
+```lua
+local ok, reason = helper.wait_for_response(nvim_instance, MARKER, 30000)
+assert.is_true(ok, reason or "the model should have answered")
+```
+
+Two things it does that `wait_for_buffer_content` does not:
+
+- It gives up as soon as the turn writes `**Error:**`, with that line as `reason`. Without it a
+  failed turn burns the whole budget and then reports whatever the spec happened to be waiting
+  for — `plugin_dir_spec` blamed `--plugin-dir` for a CLI that never started.
+- It makes you name what the model produced. Waiting for `## .* Assistant` asserts nothing: that
+  header is written above the error text too, so the spec passes with the CLI broken.
+
+Ask the prompt for a marker word the model cannot produce otherwise, and wait for that.
 
 ### `cleanup_instance(instance)`
 
 Stop the Neovim instance job. Always call this in `after_each()`.
+
+## Budget: a spec cannot outlast its harness
+
+plenary joins each spec **file** with one timeout — `timeout = 240000` in the `test:e2e` script.
+A spec still inside a `vim.wait` when that expires is killed mid-wait and prints **nothing**: no
+summary, no failure, no test count. So the sum of every wait a file can perform has to fit inside
+that budget, and `tests/e2e-timeout-gate.test.mjs` fails the build when it does not. Raise the
+script's `timeout` rather than trimming a wait that a real turn needs.
 
 ## Test Scenarios to Cover
 
@@ -171,12 +202,12 @@ it("should export chat to markdown file via /export", function()
 
   helper.send_keys(nvim_instance, "G")
   helper.send_keys(nvim_instance, "i")
-  helper.send_keys(nvim_instance, "Test message")
+  helper.send_keys(nvim_instance, "Reply with ONLY the word " .. MARKER .. ".")
   helper.send_keys(nvim_instance, "<Esc>")
   helper.send_keys(nvim_instance, "<CR>")
 
-  local ok = helper.wait_for_buffer_content(nvim_instance, "## .* Assistant", 30000)
-  assert.is_true(ok, "Assistant should respond")
+  local ok, reason = helper.wait_for_response(nvim_instance, MARKER, 30000)
+  assert.is_true(ok, reason or "Assistant should respond")
 
   helper.send_keys(nvim_instance, "G")
   helper.send_keys(nvim_instance, "i")

@@ -54,6 +54,39 @@ The one case neither the exit code nor a summary count catches is a spec file th
 tests (a `describe` that stopped being reached): plenary exits 0 without printing a summary, which
 is also how the E2E specs opt out via `should_run()`.
 
+## A Spec Cannot Outlast Its Harness
+
+`PlenaryBustedDirectory` runs one child Neovim per spec **file** and joins it with a single
+timeout — 50000ms unless the invocation says otherwise. A spec still inside a `vim.wait` when that
+expires is killed mid-wait: no summary, no failure, no test count. Only the exit code moves, which
+is the zero-tests shape above arriving by a different route.
+
+Three E2E specs sat in exactly that state, each budgeting `ASSISTANT_RESPONSE = 60000` against the
+50000ms default: they died at 50.2s every run and printed nothing at all. `test:e2e` now passes
+`timeout = 240000`, and `tests/e2e-timeout-gate.test.mjs` keeps the two numbers in agreement — it
+reads the budget out of the `test:e2e` command itself (so it cannot pass against a command the
+project no longer runs) and sums every wait each spec file can perform. The sum is deliberately an
+over-estimate; over-counting only ever asks for a larger budget, and an exact model is what would
+let the silent case back in. The bound is **per file**, not per test, because the timeout is on
+the job.
+
+## An Assertion That a Failed Turn Satisfies Is Not an Assertion
+
+`## .* Assistant` is written into the buffer whether the turn produced an answer or died on the
+first line — `send_message.lua` appends `**Error:** …` under the same header. So a spec waiting
+for that header passes with the CLI never having worked, which is what `chat_basic_flow_spec`'s
+"should send message and receive response" was doing.
+
+Anything asserting a turn ran uses `helper.wait_for_response`, not `wait_for_buffer_content`. It
+waits for text only the model can produce (a marker word the prompt asks for) and **gives up the
+moment `**Error:**` appears**, returning the reason as a second value for the assertion message.
+Both halves matter: waiting on real output stops a dead turn from passing, and aborting on the
+error stops a dead turn from being misreported — `plugin_dir_spec` would otherwise spend its full
+budget and then blame `--plugin-dir` for a failure that was the CLI refusing to start.
+
+The error pattern lives once, in `e2e_helper.lua`. Copied into each spec, the day that wording
+changes is the day every spec quietly decides no turn ever fails.
+
 ## Vim Help Verification
 
 `npm run check:doc` (`scripts/check-help.lua`, run by the "Verify Vim help files" CI step) is the

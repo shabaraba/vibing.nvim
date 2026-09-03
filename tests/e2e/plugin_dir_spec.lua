@@ -85,10 +85,14 @@ describe("E2E: .vibing/plugins is loaded via --plugin-dir", function()
     helper.send_keys(nvim_instance, "<Esc>")
     helper.send_keys(nvim_instance, "<CR>")
 
-    ok = helper.wait_for_buffer_content(nvim_instance, MARKER, TIMEOUTS.ASSISTANT_RESPONSE)
+    -- 失敗したターンで打ち切る。そうしないと、ターンがCLIのエラーで死んだだけの場合にも
+    -- 「skillが読まれなかった」という嘘の診断が60秒後に出る（`reason` がそれを言い分ける）
+    local reason
+    ok, reason = helper.wait_for_response(nvim_instance, MARKER, TIMEOUTS.ASSISTANT_RESPONSE)
     assert.is_true(
       ok,
-      "The probe skill's description never reached the model — `--plugin-dir` did not load "
+      (reason or "")
+        .. "\nThe probe skill's description never reached the model — `--plugin-dir` did not load "
         .. project_root
         .. "/.vibing/plugins/"
         .. PLUGIN_NAME

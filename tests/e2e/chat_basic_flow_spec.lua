@@ -8,6 +8,10 @@ if not helper.should_run() then
 end
 
 -- Timeout constants
+-- プロンプトにしか現れない語。モデルが本当に答えたときにしかバッファに現れないので、
+-- 「応答が来た」と「ターンの見出しが書かれた」を取り違えずに済む
+local MARKER = "VBGXKQ"
+
 local TIMEOUTS = {
   CHAT_CREATION = 2000, -- Time for chat buffer creation and rendering
   BUFFER_READY = 5000, -- Time for buffer to be ready with .md extension
@@ -66,15 +70,19 @@ describe("E2E: Chat basic flow", function()
     vim.wait(TIMEOUTS.CURSOR_MOVE)
 
     -- Insert modeでメッセージ入力
-    helper.send_keys(nvim_instance, 'i')
-    helper.send_keys(nvim_instance, 'Say "test"')
+    helper.send_keys(nvim_instance, "i")
+    helper.send_keys(nvim_instance, "Reply with ONLY the word " .. MARKER .. ". Do not use any tools.")
     helper.send_keys(nvim_instance, "<Esc>")
 
     -- <CR>でメッセージ送信
     helper.send_keys(nvim_instance, "<CR>")
 
-    -- Assistantレスポンス待機
-    ok = helper.wait_for_buffer_content(nvim_instance, "## .* Assistant", TIMEOUTS.ASSISTANT_RESPONSE)
-    assert.is_true(ok, "Assistant response should appear within timeout")
+    -- **モデルが実際に答えたこと**を待つ。`## .* Assistant` の見出しだけを待っていたころは、
+    -- CLIが即座に失敗したターンでも見出しは書かれるのでこのspecは緑のままだった
+    -- （root環境で `--dangerously-skip-permissions` が拒否されるケースで実際に起きた）。
+    -- マーカーはプロンプトからしか出てこない語にしてある
+    local reason
+    ok, reason = helper.wait_for_response(nvim_instance, MARKER, TIMEOUTS.ASSISTANT_RESPONSE)
+    assert.is_true(ok, reason or "Assistant response should appear within timeout")
   end)
 end)
