@@ -69,7 +69,7 @@ Detailed documentation is organized in `.claude/rules/`:
 | `features.md`           | Auto-resume on usage limit, message timestamps, AskUserQuestion support    |
 | `configuration.md`      | Full configuration examples, window positions, daily summary               |
 | `commands-reference.md` | User commands, slash commands                                              |
-| `web-workflow.md`       | Claude Code on the Web git push requirements                               |
+| `web-workflow.md`       | Claude Code on the Web: SessionStart env setup, git push reqs              |
 
 All `.md` files in `.claude/rules/` are automatically loaded into Claude Code's context. **だから
 `.claude/rules/` に置くのは「放っておくと破る不変条件」と「どこに何があるかの地図」だけにする。**
