@@ -16,6 +16,7 @@ import zlib
 
 
 def read_png(path):
+    """Decode an 8-bit RGB/RGBA PNG to (width, height, channels, rows-as-bytes)."""
     data = open(path, "rb").read()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         sys.exit(f"{path}: not a PNG")
@@ -65,7 +66,33 @@ def read_png(path):
     return width, height, channels, rows
 
 
+def background_colour(width, height, channels, rows):
+    """The page background, taken as the most common colour along the image border.
+
+    The page ansi2html.py renders carries padding on all four sides, so its outermost pixels are
+    background whatever the terminal drew. Reading a single pixel instead — the earlier version
+    sampled one at the right edge, half way down — inverts the whole measurement the moment that
+    pixel lands on something painted, such as a full-width statusline in a two-pane layout: the
+    tool then reports the background as the painted region and can call a clipped capture fine,
+    which is the one answer it must never give.
+    """
+    counts = {}
+
+    def tally(x, y):
+        key = bytes(rows[y][x * channels : x * channels + 3])
+        counts[key] = counts.get(key, 0) + 1
+
+    for x in range(width):
+        tally(x, 0)
+        tally(x, height - 1)
+    for y in range(height):
+        tally(0, y)
+        tally(width - 1, y)
+    return tuple(max(counts, key=counts.get))
+
+
 def main():
+    """Report the painted bounding box, and fail if --expect-height is not reached."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("png")
     ap.add_argument("--tolerance", type=int, default=12,
@@ -75,9 +102,7 @@ def main():
     a = ap.parse_args()
 
     width, height, channels, rows = read_png(a.png)
-    # Sample the background from a far corner rather than assuming a constant: the page
-    # background is whatever the captured terminal's default was.
-    bg = tuple(rows[height // 2][(width - 2) * channels : (width - 2) * channels + 3])
+    bg = background_colour(width, height, channels, rows)
 
     x0, y0, x1, y1, painted = width, height, -1, -1, 0
     for y, row in enumerate(rows):

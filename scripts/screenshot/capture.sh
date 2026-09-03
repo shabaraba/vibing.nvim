@@ -63,10 +63,18 @@ cmd_start() {
   need nvim
   mkdir -p "$WORK"
   tmux kill-session -t "$SESSION" 2>/dev/null || true
+  # tmux takes a *shell command string*, so every argument has to be quoted into it: an
+  # unquoted "$*" splits a path containing a space into two filenames, and an apostrophe in one
+  # ends the quoting early and runs the remainder as shell.
+  local cmd
+  cmd="TERM=xterm-256color nvim -u $(printf '%q' "$HERE/nvim_init.lua")"
+  local arg
+  for arg in "$@"; do
+    cmd+=" $(printf '%q' "$arg")"
+  done
   # A dedicated init so the screenshot shows vibing.nvim actually set up (`:Vibing*` commands
   # present), rather than the plugin merely on runtimepath.
-  tmux new-session -d -s "$SESSION" -x "$COLS" -y "$ROWS" -c "$REPO_ROOT" \
-    "TERM=xterm-256color nvim -u '$HERE/nvim_init.lua' $*"
+  tmux new-session -d -s "$SESSION" -x "$COLS" -y "$ROWS" -c "$REPO_ROOT" "$cmd"
   printf '%s %s\n' "$COLS" "$ROWS" > "$(geometry_path)"
   # Neovim needs to finish drawing before the first capture; a capture taken too early shows a
   # blank pane, which looks exactly like a broken renderer.
@@ -91,9 +99,13 @@ cmd_shoot() {
     read -r COLS ROWS < "$(geometry_path)"
   fi
 
+  # Ask the renderer for the viewport rather than recomputing it. The character advance used to
+  # be hardcoded here as well as in ansi2html.py, so changing one left the screenshot sized for
+  # a page of a different width — the same silent-clipping class of bug as the browser trap.
   local width height
-  width=$(python3 -c "print(round($COLS * $FONT_PX * 0.6023) + 2*$PAD_PX)")
-  height=$(python3 -c "print($ROWS * $LINE_PX + 2*$PAD_PX)")
+  read -r width height < <(python3 "$HERE/ansi2html.py" --print-size \
+    --cols "$COLS" --rows "$ROWS" --font-px "$FONT_PX" \
+    --line-px "$LINE_PX" --pad-px "$PAD_PX")
 
   tmux capture-pane -e -p -t "$SESSION" > "$WORK/pane.ansi"
   python3 "$HERE/ansi2html.py" --cols "$COLS" --font-px "$FONT_PX" \

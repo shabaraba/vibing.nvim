@@ -71,3 +71,16 @@ two, makes the grid exact by construction.
 `tmux`, `nvim` (installed by `.claude/hooks/session-start.sh`), `python3`, DejaVu Sans Mono plus
 a CJK monospace fallback, and Playwright's Chromium under `/opt/pw-browsers`. Override the
 browser with `VIBING_SHOT_BROWSER` and the scratch directory with `VIBING_SHOT_DIR`.
+
+## What is tested, and what is not
+
+No repository gate reads `.py` or `.sh`: `check` compiles `lua/` only, eslint matches
+`js`/`mjs`/`ts`, and prettier matches `js`/`ts`/`json`/`md`/`yml`. So the two Python tools carry
+their own regression tests in `tests/screenshot-tools.test.mjs`, which `npm run test:node` picks
+up — the SGR parser, the wide-character grid, the explicit cell height, and pxbox's five PNG row
+filters and clipping verdict. They shell out to `python3`, which is therefore a requirement of
+`test:node` as well.
+
+`capture.sh` itself is not covered: driving it means starting tmux and a browser, which is the
+whole environment it exists for. Verify a change to it by taking a screenshot and running
+`pxbox.py` on the result.

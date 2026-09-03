@@ -44,6 +44,7 @@ def xterm256(n):
 
 
 def css_rgb(t):
+    """An (r, g, b) triple as a CSS hex colour."""
     return "#%02x%02x%02x" % t
 
 
@@ -64,12 +65,14 @@ class Pen:
         self.reverse = False
 
     def copy(self):
+        """A snapshot of this pen, since one Pen is mutated across a whole line."""
         p = Pen.__new__(Pen)
         for s in Pen.__slots__:
             setattr(p, s, getattr(self, s))
         return p
 
     def apply(self, params):
+        """Fold one SGR sequence's parameters into this pen. Unknown codes are ignored."""
         if not params:
             params = [0]
         i = 0
@@ -116,6 +119,7 @@ class Pen:
             i += 1
 
     def style(self):
+        """This pen as an inline CSS declaration, omitting anything left at its default."""
         fg, bg = self.fg or FG_DEFAULT, self.bg or BG_DEFAULT
         if self.reverse:
             fg, bg = bg, fg
@@ -172,7 +176,19 @@ def cells(line):
     return out
 
 
+def page_size(cols, rows, font_px, line_px, pad_px):
+    """The browser viewport this grid needs, in CSS pixels.
+
+    `render` and `--print-size` both go through here so the caller sizing the screenshot
+    cannot disagree with the page it is screenshotting. capture.sh used to compute the same
+    formula itself, which put CHAR_ADVANCE in two places — and a mismatch there is precisely
+    the silent clipping pxbox.py exists to catch.
+    """
+    return round(cols * font_px * CHAR_ADVANCE) + 2 * pad_px, rows * line_px + 2 * pad_px
+
+
 def render(text, cols, font_px, line_px, pad_px):
+    """The whole capture as a standalone HTML page, one positioned element per painted cell."""
     cw = font_px * CHAR_ADVANCE
     lines = text.rstrip("\n").split("\n")
     rows = len(lines)
@@ -200,12 +216,23 @@ def render(text, cols, font_px, line_px, pad_px):
 
 
 def main():
+    """Render stdin, or answer --print-size."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--cols", type=int, required=True, help="pane width the dump was taken at")
     ap.add_argument("--font-px", type=int, default=15)
     ap.add_argument("--line-px", type=int, default=21)
     ap.add_argument("--pad-px", type=int, default=14)
+    ap.add_argument("--print-size", action="store_true",
+                    help="print '<width> <height>' for --window-size and exit, reading no input")
+    ap.add_argument("--rows", type=int, help="pane height; required by --print-size")
     a = ap.parse_args()
+
+    if a.print_size:
+        if a.rows is None:
+            ap.error("--print-size requires --rows")
+        print("%d %d" % page_size(a.cols, a.rows, a.font_px, a.line_px, a.pad_px))
+        return
+
     sys.stdout.write(render(sys.stdin.read(), a.cols, a.font_px, a.line_px, a.pad_px))
 
 
