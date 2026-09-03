@@ -1,6 +1,6 @@
 ---
 name: self-testing
-description: E2E self-testing workflow for vibing.nvim using a separate Neovim instance controlled over RPC. Use when writing or debugging E2E tests, running `npm run test:e2e`, or executing the 3-try auto-fix rule after implementing a feature. Covers the spawn_nvim_instance/send_keys/wait_for_buffer_content/wait_for_response/cleanup_instance helper API, test scenario checklist, and troubleshooting for hangs, "Job not found", and cross-test state pollution.
+description: E2E self-testing workflow for vibing.nvim using a separate Neovim instance controlled over RPC. Use when writing or debugging E2E tests, running `npm run test:e2e`, or executing the 3-try auto-fix rule after implementing a feature. Covers the spawn_nvim_instance/send_keys/wait_for_buffer_content/wait_for_assistant_turns/cleanup_instance helper API, test scenario checklist, and troubleshooting for hangs, "Job not found", and cross-test state pollution.
 ---
 
 # Self-Testing for vibing.nvim
@@ -16,8 +16,9 @@ Test Runner (Current Nvim)
   │   ├─ spawn_nvim_instance()  - Launch child Nvim via jobstart(rpc=true)
   │   ├─ send_keys()             - Send key input via rpcrequest
   │   ├─ wait_for_buffer_content() - Poll buffer TEXT until pattern matches
-  │   ├─ wait_for_response()      - Same, but for output only a real turn produces:
-  │   │                             aborts with the reason when the turn errors
+  │   ├─ wait_for_assistant_turns() - A turn ran and did not fail (start here)
+  │   ├─ wait_for_assistant_text()  - Output only the model could produce
+  │   ├─ wait_for_response()        - Whole buffer, but aborts when the turn errors
   │   ├─ wait_for_buffer_name()    - Poll buffer NAME (use this for a filename)
   │   └─ cleanup_instance()      - Stop job
   │
@@ -105,29 +106,49 @@ Poll buffer content until `pattern` (Lua pattern) matches or `timeout` (ms) elap
 `true`/`false`. Use it for buffer state vibing.nvim writes on its own — frontmatter, a rendered
 prompt, a slash command's confirmation. **Not** for anything that depends on a CLI turn.
 
-### `wait_for_response(instance, pattern, timeout)`
+### Waits that depend on a CLI turn
 
-The one to use when a real turn has to have run. Returns `ok, reason`; pass `reason` straight into
-the assertion message.
+Three helpers, all returning `ok, reason` — pass `reason` straight into the assertion message —
+and all giving up the moment the turn writes `**Error:**`. Never use `wait_for_buffer_content`
+for something a turn has to produce: that error text lands under a normal `## … Assistant`
+header, so waiting for the header asserts nothing at all.
+
+#### `wait_for_assistant_turns(instance, count, timeout)`
+
+"A turn ran and did not fail." **Start here.** It does not depend on the model choosing to say any
+particular thing, so it cannot go flaky on a rewording.
 
 ```lua
-local ok, reason = helper.wait_for_response(nvim_instance, MARKER, 30000)
-assert.is_true(ok, reason or "the model should have answered")
+local ok, reason = helper.wait_for_assistant_turns(nvim_instance, 1, 30000)
+assert.is_true(ok, reason or "the assistant should have answered")
 ```
 
-Two things it does that `wait_for_buffer_content` does not:
+#### `wait_for_assistant_text(instance, pattern, timeout)`
 
-- It gives up as soon as the turn writes `**Error:**`, with that line as `reason`. Without it a
-  failed turn burns the whole budget and then reports whatever the spec happened to be waiting
-  for — `plugin_dir_spec` blamed `--plugin-dir` for a CLI that never started.
-- It makes you name what the model produced. Waiting for `## .* Assistant` asserts nothing: that
-  header is written above the error text too, so the spec passes with the CLI broken.
+For content only the model could have produced — the marker word in `plugin_dir_spec`, proving a
+skill's description reached it. Matches **only the text after the last `## … Assistant` header**.
 
-Ask the prompt for a marker word the model cannot produce otherwise, and wait for that.
+That scoping is the whole point. Match the whole buffer instead and a marker word your own prompt
+asks for is satisfied by the `## User` section, so the spec passes with the turn never having
+returned a byte. Put the marker somewhere the prompt does not repeat — a skill description, a
+file the model has to read.
+
+#### `wait_for_response(instance, pattern, timeout)`
+
+Whole buffer, for what the chat UI renders into the **user** section as a result of a turn: the
+tool-approval prompt, the `nvim_ask_user_question` choice list.
 
 ### `cleanup_instance(instance)`
 
 Stop the Neovim instance job. Always call this in `after_each()`.
+
+### Running as root
+
+`spawn_nvim_instance` sets `IS_SANDBOX=1` for the child when `getuid()` is 0. The E2E init pins
+`permissions.mode = "bypassPermissions"`, which becomes `--dangerously-skip-permissions`, and the
+CLI refuses that under root — so in a container every spec needing a real turn fails without it.
+It is gated on uid rather than set unconditionally: on a developer's own machine there is no root
+check to clear, only a safety check to lose.
 
 ## Budget: a spec cannot outlast its harness
 
@@ -202,11 +223,11 @@ it("should export chat to markdown file via /export", function()
 
   helper.send_keys(nvim_instance, "G")
   helper.send_keys(nvim_instance, "i")
-  helper.send_keys(nvim_instance, "Reply with ONLY the word " .. MARKER .. ".")
+  helper.send_keys(nvim_instance, "Test message")
   helper.send_keys(nvim_instance, "<Esc>")
   helper.send_keys(nvim_instance, "<CR>")
 
-  local ok, reason = helper.wait_for_response(nvim_instance, MARKER, 30000)
+  local ok, reason = helper.wait_for_assistant_turns(nvim_instance, 1, 30000)
   assert.is_true(ok, reason or "Assistant should respond")
 
   helper.send_keys(nvim_instance, "G")

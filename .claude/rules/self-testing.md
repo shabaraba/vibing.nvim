@@ -73,19 +73,45 @@ the job.
 ## An Assertion That a Failed Turn Satisfies Is Not an Assertion
 
 `## .* Assistant` is written into the buffer whether the turn produced an answer or died on the
-first line — `send_message.lua` appends `**Error:** …` under the same header. So a spec waiting
-for that header passes with the CLI never having worked, which is what `chat_basic_flow_spec`'s
-"should send message and receive response" was doing.
+first line — `send_message.lua` appends `**Error:** …` under that same header. So a spec waiting
+for it passes with the CLI never having worked, which is what `chat_basic_flow_spec`'s "should
+send message and receive response" was doing.
 
-Anything asserting a turn ran uses `helper.wait_for_response`, not `wait_for_buffer_content`. It
-waits for text only the model can produce (a marker word the prompt asks for) and **gives up the
-moment `**Error:**` appears**, returning the reason as a second value for the assertion message.
-Both halves matter: waiting on real output stops a dead turn from passing, and aborting on the
-error stops a dead turn from being misreported — `plugin_dir_spec` would otherwise spend its full
-budget and then blame `--plugin-dir` for a failure that was the CLI refusing to start.
+Anything that depends on a turn goes through one of three helpers, never `wait_for_buffer_content`.
+All three abort the moment `**Error:**` appears and hand the reason back as a second value for the
+assertion message — without that, a dead turn is not just missed but **misreported**:
+`plugin_dir_spec` used to spend its whole budget and then blame `--plugin-dir` for a CLI that had
+refused to start.
+
+- `wait_for_assistant_turns(instance, n, timeout)` — "a turn ran and did not fail". The right
+  default, because it does not depend on the model choosing to say any particular thing.
+- `wait_for_assistant_text(instance, pattern, timeout)` — for content only the model could have
+  produced. Matches **only after the last `## … Assistant` header**, which is the half that is
+  easy to get wrong: a whole-buffer match lets a marker word the prompt itself asks for satisfy
+  the assertion from the `## User` section, with the turn never having returned a byte. That
+  mistake was made and caught here.
+- `wait_for_response(instance, pattern, timeout)` — whole buffer, for what the chat UI renders
+  into the _user_ section as a result of a turn: the approval prompt, the question choice list.
 
 The error pattern lives once, in `e2e_helper.lua`. Copied into each spec, the day that wording
 changes is the day every spec quietly decides no turn ever fails.
+
+## The Child CLI Cannot Run as Root Without Being Told It Is Sandboxed
+
+`tests/e2e_init.lua` pins `permissions.mode = "bypassPermissions"`, and it has to — under
+`acceptEdits` the CLI refuses vibing.nvim's own MCP tool and `--allowedTools` does not clear it
+(see that file). But the CLI turns that mode into `--dangerously-skip-permissions`, which it
+refuses outright when the process is running as root:
+
+```text
+--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons
+```
+
+Containers — CI, Claude Code on the web, devcontainers — are uid 0, so every spec that needs a
+real turn failed there and nowhere else. `spawn_nvim_instance` sets `IS_SANDBOX=1` in the child's
+environment, which is the CLI's own escape hatch for that check, **only when `getuid()` is 0**.
+Setting it unconditionally would silently drop a safety check on a developer's own machine, where
+there is nothing to drop in the first place.
 
 ## Vim Help Verification
 

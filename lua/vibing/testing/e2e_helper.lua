@@ -13,6 +13,32 @@ function M.should_run()
   return vim.env.VIBING_E2E == "1"
 end
 
+---子Neovim（とそれが起動するCLI）に渡す環境変数
+---
+---`tests/e2e_init.lua` は `permissions.mode = "bypassPermissions"` を決め打ちしており、
+---それ自体は必要（同ファイルのコメント参照: acceptEdits ではCLIが vibing-nvim の MCP ツールを
+---拒否し、`--allowedTools` でも解けない）。ところがそのモードは CLI 内部で
+---`--dangerously-skip-permissions` になり、**root で走っているとCLIが起動を拒否する**：
+---
+---  --dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons
+---
+---コンテナ（CI、Claude Code on the web、devcontainer）は uid 0 で走るのが普通なので、そこでは
+---実ターンに依存するE2Eが1本も通らない。`IS_SANDBOX=1` はCLIが用意しているそのための逃げ道で、
+---root チェックだけを外す。
+---
+---**uid 0 のときにしか渡さない。** 無条件に立てると、開発者が自分のマシンで
+---`npm run test:e2e` を叩いたときにも安全確認を1つ黙って外すことになる。そこでは root で
+---走っていないので、そもそも外すものが無い
+---@param chat_dir string
+---@return table<string, string>
+local function child_env(chat_dir)
+  local env = { VIBING_E2E_CHAT_DIR = chat_dir }
+  if vim.loop.getuid and vim.loop.getuid() == 0 then
+    env.IS_SANDBOX = "1"
+  end
+  return env
+end
+
 ---別Neovimインスタンスを起動
 ---@param config? { headless?: boolean, init_script?: string, cwd?: string }
 ---@return table インスタンスハンドル { job_id: number, chat_dir: string }
@@ -45,7 +71,7 @@ function M.spawn_nvim_instance(config)
     job_id = vim.fn.jobstart(cmd, {
       cwd = config.cwd or vim.fn.getcwd(),
       rpc = true,
-      env = { VIBING_E2E_CHAT_DIR = chat_dir },
+      env = child_env(chat_dir),
       on_exit = function(_, code)
         if code ~= 0 then
           vim.notify("[E2E] Nvim instance exited with code: " .. code, vim.log.levels.WARN)
@@ -168,22 +194,23 @@ end
 ---だから。specごとに書くと、文言が変わった日にすべてのspecが黙って「エラーなし」に倒れる
 local TURN_ERROR_PATTERN = "%*%*Error:%*%* [^\n]*"
 
----モデルの応答を待つ。**ターンがエラーで終わったらそこで待つのをやめる。**
+---Assistantセクションの見出し（タイムスタンプ付き・レガシーの両方）
+local ASSISTANT_HEADER_PATTERN = "\n## [^\n]*Assistant[^\n]*"
+
+---チャット本文を条件が満たされるまでポーリングする。**ターンがエラーで書いた行を見つけたら
+---そこで打ち切る。**
 ---
----`wait_for_buffer_content` との違いはそこだけだが、差は大きい。`## .* Assistant` のような
----構造だけを待つと、CLIが即座に失敗したターンでも見出しは書かれるので spec は緑になる
----（このリポジトリで実際にそうなっていた）。かといってモデルの実出力を待つようにすると、
----今度はターンが失敗したときに「モデルがマーカーを返さなかった」という**嘘の診断**で
----タイムアウトまで待つことになる。
----
----だから待つのは実出力にし、`**Error:**` が出た時点で理由ごと打ち切る。呼び出し側は
----第2返り値をそのままアサーションメッセージに渡せばよい
+---打ち切りが要点。待つ対象を「モデルが実際に出したもの」にすると、ターンが失敗したときに
+---「モデルが期待した出力を返さなかった」という**嘘の診断**でタイムアウトまで待つことになる
+---（`plugin_dir_spec` が実際に、CLIが起動を拒否しただけの失敗を `--plugin-dir` のせいだと
+---60秒かけて報告していた）。
 ---@param instance table インスタンスハンドル
----@param pattern string 応答本文に期待するLuaパターン
 ---@param timeout number タイムアウト（ミリ秒）
+---@param done fun(text: string): boolean 本文を見て満たされたか
+---@param what string タイムアウトメッセージでの呼び名
 ---@return boolean ok
 ---@return string? reason 失敗した理由（成功時は nil）
-function M.wait_for_response(instance, pattern, timeout)
+local function poll_chat(instance, timeout, done, what)
   if not instance or not instance.job_id then
     return false, "Invalid instance: instance or job_id is nil"
   end
@@ -203,15 +230,15 @@ function M.wait_for_response(instance, pattern, timeout)
     end
 
     last_seen = text or ""
-    if last_seen:match(pattern) then
+    -- 条件の判定はエラー判定の**前**。エラー行と期待した出力が同じ本文に並ぶことは原理的に
+    -- ありうるので、逆にすると成功を失敗として報告しうる
+    if done(last_seen) then
       return true
     end
 
-    -- エラーの判定はパターン一致の**後**。エラー行と期待した出力が同じターンに並ぶことは
-    -- 原理的にありうるので、先に見ると成功を失敗として報告しうる
     local turn_error = last_seen:match(TURN_ERROR_PATTERN)
     if turn_error then
-      return false, string.format("The turn failed before producing '%s': %s", pattern, turn_error)
+      return false, string.format("The turn failed before producing %s: %s", what, turn_error)
     end
 
     vim.loop.sleep(100)
@@ -219,11 +246,91 @@ function M.wait_for_response(instance, pattern, timeout)
 
   return false,
     string.format(
-      "Timed out after %dms waiting for '%s'. Last 500 chars of the chat:\n%s",
+      "Timed out after %dms waiting for %s. Last 500 chars of the chat:\n%s",
       timeout,
-      pattern,
+      what,
       last_seen:sub(-500)
     )
+end
+
+---最後の `## ... Assistant` 見出しより後ろ（＝直近の応答本文）
+---@param text string
+---@return string? nil なら応答がまだ1つも無い
+local function assistant_tail(text)
+  local last_end, from = nil, 1
+  while true do
+    local s, e = text:find(ASSISTANT_HEADER_PATTERN, from)
+    if not s then
+      break
+    end
+    last_end, from = e, e + 1
+  end
+  return last_end and text:sub(last_end + 1) or nil
+end
+
+---@param text string
+---@return number
+local function count_assistant_headers(text)
+  local count, from = 0, 1
+  while true do
+    local s, e = text:find(ASSISTANT_HEADER_PATTERN, from)
+    if not s then
+      return count
+    end
+    count, from = count + 1, e + 1
+  end
+end
+
+---**モデルが実際に出した文字列**を待つ。ターンがエラーで死んだら理由ごと打ち切る。
+---
+---照合するのは最後の `## ... Assistant` 見出しより後ろだけで、バッファ全体ではない。
+---全体を見ると、プロンプトに書いた語がそのまま `## User` セクションで一致してしまい、
+---ターンが1バイトも返していなくても spec が緑になる（マーカー語を頼む書き方をした瞬間に
+---そうなる）。
+---
+---逆に、チャットUIがユーザーセクションに描くもの（承認プロンプト、質問の選択肢）を待つのは
+---`wait_for_response` のほう
+---@param instance table インスタンスハンドル
+---@param pattern string 応答本文に期待するLuaパターン
+---@param timeout number タイムアウト（ミリ秒）
+---@return boolean ok
+---@return string? reason
+function M.wait_for_assistant_text(instance, pattern, timeout)
+  return poll_chat(instance, timeout, function(text)
+    local tail = assistant_tail(text)
+    return tail ~= nil and tail:match(pattern) ~= nil
+  end, string.format("assistant output matching '%s'", pattern))
+end
+
+---ターンが走った結果としてバッファに現れるものを待つ。ターンがエラーで死んだら打ち切る。
+---
+---`wait_for_buffer_content` との違いは打ち切りだけ。CLIが失敗したターンでも
+---`## ... Assistant` の見出しは書かれるので、ターンに依存する待ちは全部こちらを通す
+---@param instance table インスタンスハンドル
+---@param pattern string Luaパターン（バッファ全体に対して）
+---@param timeout number タイムアウト（ミリ秒）
+---@return boolean ok
+---@return string? reason
+function M.wait_for_response(instance, pattern, timeout)
+  return poll_chat(instance, timeout, function(text)
+    return text:match(pattern) ~= nil
+  end, string.format("'%s'", pattern))
+end
+
+---Assistantの応答が `count` 本になるまで待つ。
+---
+---「ターンが1本走って、しかも失敗しなかった」を言うのに、モデルが特定の語を返してくれることに
+---賭けずに済む形。`## .* Assistant` を `wait_for_buffer_content` で待つのとは違い、
+---エラーで死んだターンはここで打ち切られる
+---@param instance table インスタンスハンドル
+---@param count number 期待する応答の本数
+---@param timeout number タイムアウト（ミリ秒）
+---@return boolean ok
+---@return string? reason
+function M.wait_for_assistant_turns(instance, count, timeout)
+  return poll_chat(instance, timeout, function(text)
+    return count_assistant_headers(text) >= count
+  end, string.format("%d assistant turn(s)", count))
 end
 
 ---バッファ「名」が条件に一致するまで待機

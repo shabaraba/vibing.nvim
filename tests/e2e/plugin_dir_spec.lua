@@ -88,7 +88,7 @@ describe("E2E: .vibing/plugins is loaded via --plugin-dir", function()
     -- 失敗したターンで打ち切る。そうしないと、ターンがCLIのエラーで死んだだけの場合にも
     -- 「skillが読まれなかった」という嘘の診断が60秒後に出る（`reason` がそれを言い分ける）
     local reason
-    ok, reason = helper.wait_for_response(nvim_instance, MARKER, TIMEOUTS.ASSISTANT_RESPONSE)
+    ok, reason = helper.wait_for_assistant_text(nvim_instance, MARKER, TIMEOUTS.ASSISTANT_RESPONSE)
     assert.is_true(
       ok,
       (reason or "")

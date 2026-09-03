@@ -106,13 +106,9 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
     -- Send an answer by pressing <CR> (all options remain — Claude understands)
     helper.send_keys(nvim_instance, "<CR>")
 
-    -- 答えを送った**あとの**応答を待つ。`## .* Assistant` の見出し数で待つのは、質問を出した
-    -- 1本目のターンの見出しが既にあるので最初から一致してしまう。2本目の見出しが増えることを
-    -- 待ち、かつターンがエラーで死んだらそこで打ち切る
-    -- Luaパターンの `.` は改行にも一致するので、これは「Assistantの見出しが2つある」
-    -- という意味になる
-    ok, reason =
-      helper.wait_for_response(nvim_instance, "## .* Assistant.*## .* Assistant", TIMEOUTS.ASSISTANT_RESPONSE)
+    -- 答えを送った**あとの**応答を待つ。`## .* Assistant` を待つのでは、質問を出した1本目の
+    -- 見出しが既にあるので最初から一致してしまい、何も待っていないのと同じだった
+    ok, reason = helper.wait_for_assistant_turns(nvim_instance, 2, TIMEOUTS.ASSISTANT_RESPONSE)
     assert.is_true(ok, reason or "Claude should respond after the answer is sent")
 
     -- Verify prompt still appears only once (not re-inserted after answering)
