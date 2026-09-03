@@ -170,6 +170,7 @@ not depend on the process exit callback ever arriving.
   approval_parser, keymap_handler, ...
 - `application/chat/send_message.lua` - Request orchestration (opts, callbacks, diffs)
 - `application/chat/use_cases/fork.lua` - Chat fork
+- `application/chat/use_cases/handoff.lua` - Summary-carrying new chat (`:VibingChatHandoff`)
 - `application/chat/auto_resume.lua` - Usage-limit auto-resume scheduler
 
 **RPC / hooks:**

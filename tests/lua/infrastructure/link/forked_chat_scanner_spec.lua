@@ -49,6 +49,21 @@ describe("ForkedChatScanner", function()
     assert.equals("renamed.md", ChatFiles.read_frontmatter(fork).forked_from)
   end)
 
+  it("follows another scalar path field when told to", function()
+    -- `:VibingChatHandoff` の `continued_from` は forked_from と同じ形なので同じスキャナーで追う
+    local handoff = ChatFiles.write(dir, "handoff.md", { continued_from = "source.md" })
+    local scanner = ForkedChatScanner.new("continued_from")
+
+    assert.is_true(scanner:contains_link(handoff, dir .. "/source.md"))
+    -- 既定のスキャナーは forked_from しか見ない
+    assert.is_false(ForkedChatScanner.new():contains_link(handoff, dir .. "/source.md"))
+
+    assert.is_true(scanner:update_link(handoff, dir .. "/source.md", dir .. "/renamed.md"))
+    local frontmatter = ChatFiles.read_frontmatter(handoff)
+    assert.equals("renamed.md", frontmatter.continued_from)
+    assert.is_nil(frontmatter.forked_from)
+  end)
+
   it("replaces the whole key, which is why a list field needs its own scanner", function()
     -- `forked_from` はスカラーなので `Frontmatter.update` にキーごと渡して問題ない。
     -- 同じ実装をリスト（orchestrated / orchestrated_by）に流用すると他の要素が消えるため、

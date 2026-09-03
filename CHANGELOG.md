@@ -50,6 +50,17 @@
 
 ### Added
 
+- **`:VibingChatHandoff [position]` — continue a long chat in a new one that carries only its
+  summary.** The current chat is summarized (the `## summary` stays in it, as with
+  `:VibingSummarize`), and a new chat opens whose first, still unsent User message starts with
+  that summary; type the next instruction under it and send. The new chat inherits the source's
+  model, effort, permissions, working directory and language, starts a fresh session, and records
+  the source in `continued_from` (kept in step with renames). The summary is placed in the message
+  rather than read back with a tool, because a tool call re-reads the whole context and the file
+  would then stay in every later request. This is the cheap way out of a chat the `### Tokens`
+  warning flags, and the cheaper one once the prompt cache has gone cold — a cold `/compact`
+  re-reads the whole conversation at creation price first. The warning now names it.
+
 - **Codex: warn when lightweight calls leave your configured provider.** On the first lightweight
   Codex call of a Neovim session, vibing.nvim asks Codex itself which provider is configured
   (`codex doctor --json`, which reports the _resolved_ `model_provider` — no `config.toml` parsing,

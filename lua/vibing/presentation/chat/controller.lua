@@ -157,6 +157,40 @@ function M.handle_fork(args)
   end
 end
 
+---要約を引き継いだ新規チャットを作る（`:VibingChatHandoff`）
+---
+---要約の生成は非同期なので、完了時のカレントバッファは別のチャットになっていることがある。
+---`handle_summarize` と同じく、開始時に掴んだバッファを最後まで使う。
+---@param args string? 引数文字列（位置指定のみ）
+function M.handle_handoff(args)
+  local view = require("vibing.presentation.chat.view")
+  local current_view = view.get_current()
+
+  if not current_view then
+    notify.error("Not in a vibing chat buffer")
+    return
+  end
+
+  local position = parse_position(args)
+
+  local handoff = require("vibing.application.chat.use_cases.handoff")
+  handoff.execute(current_view, {
+    on_done = function(session)
+      -- 失敗の内訳は use case 側が通知済み
+      if not session then
+        return
+      end
+      local chat_buf = view.render(session, position)
+      -- 未送信 User セクションの末尾（要約の下）に置く。ユーザーはそこに続きの指示を書く。
+      -- `back` にはウィンドウが無いので、その場合は何もしない
+      if chat_buf then
+        require("vibing.presentation.chat.modules.renderer").moveCursorToEnd(chat_buf.win, chat_buf.buf)
+      end
+      notify.info("Handed off to " .. vim.fn.fnamemodify(session:get_file_path() or "", ":t"))
+    end,
+  })
+end
+
 ---このチャットが起動したsubagentとの継続対話を開く
 ---@param args string? 引数文字列（位置指定のみ）
 function M.handle_subagent_chat(args)
