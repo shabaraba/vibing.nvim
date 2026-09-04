@@ -32,9 +32,15 @@ local M = {}
 
 local AUGROUP = "VibingAutoCompact"
 
---- Chats whose in-flight turn is an inserted compaction, so the body parked in
---- `_pending_user_text` still has to be sent when it finishes.
---- @type table<number, boolean>
+--- Chats whose in-flight turn is an inserted compaction, mapped to the message that still has to
+--- be sent when it finishes.
+---
+--- The body is held here rather than handed to `ChatBuffer:set_pending_user_text`, which was the
+--- obvious seam and the wrong one: `addUserSection` renders the pending text, the question list
+--- and the approval prompt into the **same** unsent section. A compaction that somehow stopped
+--- for an approval would leave the user looking at their own message concatenated with the option
+--- list, and `<CR>` on that parses as neither.
+--- @type table<number, string>
 local pending = {}
 
 --- Chats that just ran an inserted compaction. Consumed by the next manual send.
@@ -195,11 +201,7 @@ function M.before_manual_send(chat_buf)
     return false
   end
 
-  -- The body is not copied to disk anywhere: `add_user_section()` renders `_pending_user_text`
-  -- into the unsent section the compaction turn leaves behind, which is the same seam a
-  -- rate-limited turn uses to write its message back.
-  chat_buf:set_pending_user_text(body)
-  pending[bufnr] = true
+  pending[bufnr] = body
   cooldown[bufnr] = true
 
   vim.notify(
@@ -212,42 +214,58 @@ function M.before_manual_send(chat_buf)
   return true
 end
 
---- Send the parked message once an inserted compaction finishes.
+--- Whether a finished turn is the moment to release the parked message.
 ---
---- Runs whether or not the compaction succeeded. A failed compaction is a reason to have wasted a
---- turn, not a reason to swallow the message the user actually typed -- and the message is still
---- sitting in the unsent section either way, so the alternative is a chat that looks like it is
---- waiting for a `<CR>` that was already pressed.
+--- `wait` keeps the message parked: the chat stopped on something only the user can clear, and its
+--- unsent section is occupied by the prompt they have to answer. Writing the message in there
+--- would concatenate the two. The parked entry survives, so answering the prompt ends another
+--- turn and brings this decision round again.
+--- @param stop_reason string|nil `ChatBuffer:get_stop_reason()`
+--- @return "send"|"wait"
+function M.resume_decision(stop_reason)
+  if stop_reason == "waiting_approval" or stop_reason == "asked_question" then
+    return "wait"
+  end
+  -- Anything else releases it, `error` included. A compaction that failed is a reason to have
+  -- wasted a turn, not a reason to swallow the message the user actually typed.
+  return "send"
+end
+
+--- Write the parked message into the chat and send it, once the compaction finishes.
 --- @param bufnr number
 function M.on_response_done(bufnr)
-  if not pending[bufnr] then
+  local body = pending[bufnr]
+  if not body then
     return
   end
-  pending[bufnr] = nil
 
   if not vim.api.nvim_buf_is_valid(bufnr) then
+    pending[bufnr] = nil
     return
   end
 
   local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(bufnr)
   if not chat_buf then
+    pending[bufnr] = nil
     return
   end
 
-  -- An approval prompt or a question list is rendered into the *same* unsent section as the
-  -- parked body, so sending now would submit both at once and the answer would not parse. Both
-  -- stops are the user's to clear, and the body is visible under them when they do.
-  local stop_reason = chat_buf:get_stop_reason()
-  if stop_reason == "waiting_approval" or stop_reason == "asked_question" then
+  if M.resume_decision(chat_buf:get_stop_reason()) == "wait" then
     vim.notify(
-      "[vibing] /compact finished but the chat needs an answer first; your message is waiting below it.",
+      "[vibing] /compact finished but the chat needs an answer first; your message goes out after it.",
       vim.log.levels.WARN
     )
     return
   end
 
+  pending[bufnr] = nil
+
   vim.schedule(function()
     if not vim.api.nvim_buf_is_valid(bufnr) or chat_buf:is_sending() or chat_buf:is_responding() then
+      return
+    end
+    if not rewrite_unsent_body(bufnr, body) then
+      vim.notify("[vibing] /compact finished but your message could not be written back", vim.log.levels.WARN)
       return
     end
     -- `ChatBuffer:send_message()` rather than the keymap's wrapper: this send must not be
@@ -298,6 +316,9 @@ function M.compact_now(focus)
   -- cooldown the very next `<CR>` would compact a chat that was just compacted.
   cooldown[bufnr] = true
 
+  -- A manual send, so it resets the orchestration round-trip counter the same way `<CR>` does.
+  -- Skipping it would let a notification chain run out of budget early.
+  require("vibing.application.chat.completion_notifier").on_manual_send(bufnr)
   chat_buf:send_message()
 end
 

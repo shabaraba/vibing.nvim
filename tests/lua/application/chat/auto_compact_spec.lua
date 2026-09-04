@@ -108,6 +108,26 @@ describe("auto_compact", function()
     end)
   end)
 
+  -- The parked message is written back by `on_response_done`, not handed to
+  -- `set_pending_user_text` -- `addUserSection` renders pending text, question lists and approval
+  -- prompts into the same unsent section, so a stop the user has to clear must hold the message
+  -- back rather than land next to the prompt.
+  describe("resume_decision", function()
+    it("releases the message on an ordinary finish", function()
+      assert.equals("send", AutoCompact.resume_decision(nil))
+    end)
+
+    -- A wasted turn is not a reason to swallow what the user typed.
+    it("releases it after a failed compaction too", function()
+      assert.equals("send", AutoCompact.resume_decision("error"))
+    end)
+
+    it("holds it while the chat is waiting on the user", function()
+      assert.equals("wait", AutoCompact.resume_decision("waiting_approval"))
+      assert.equals("wait", AutoCompact.resume_decision("asked_question"))
+    end)
+  end)
+
   describe("compact_prompt", function()
     it("sends the bare command when no focus is configured", function()
       assert.equals("/compact", AutoCompact.compact_prompt(nil))
