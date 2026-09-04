@@ -525,6 +525,10 @@ takes effect on the **very next turn** — interactive mode holds the copy it st
 `/clear` or `/compact`. In a repository where those files are edited often, that is a rewrite the
 reader has no reason to suspect.
 
+The second row is two checks rather than one, so a turn that changed both the model and the effort
+lists them on separate lines. The rows are the kinds of cause, not a bound on how many lines a
+single turn can produce.
+
 A turn where none of the five applies says `No likely cause found` rather than picking one, and the
 first turn of a session is never flagged: it writes its whole prefix by definition, because that is
 the cache being filled rather than missed.
