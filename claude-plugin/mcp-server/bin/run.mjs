@@ -31,10 +31,12 @@ const fingerprintFile = fingerprintFilePath(mcpDir);
 // Claude Code gives a plugin's MCP server 30s to come up, and this launcher
 // spends that budget before the server is even spawned. `npm ci` defaults to an
 // audit request and a funding request against the registry, and revalidates
-// package metadata it already has cached — measured against a warm cache on
-// macOS, that is the entire cost of the step: 31s with these flags off, 1.3s
-// with them on. So the default makes every self-build here miss the deadline,
-// and the whole vibing-nvim tool set silently disappears from the session.
+// package metadata it already has cached — so how long it takes depends on the
+// registry rather than on this machine. Measured against the same warm cache on
+// macOS, plain `npm ci` ran 31.1s once and ~1.5s hours later; these flags held
+// it at ~1.3s throughout. The point is not the average, it is that without them
+// the step can exceed the deadline at a moment nothing here controls, and the
+// whole vibing-nvim tool set then silently disappears from the session.
 // (A genuinely cold cache still fetches tarballs and still takes minutes; only
 // `./build.sh`, which is under no such deadline, can fix that case.)
 const OFFLINE_FIRST_FLAGS = ['--prefer-offline', '--no-audit', '--no-fund'];

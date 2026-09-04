@@ -181,24 +181,32 @@ session while the skills and the `nvim-navigator` agent — which come from the 
 `--plugin-dir` and need no process — load normally. Nothing logs, and the model is left to
 conclude the tools do not exist.
 
-Measured on macOS with node 22, against the tree as of TypeScript 7:
+The compile is not the cost and never was — `typescript@7` is the native compiler, and
+`npm run build` is 0.19s. The whole budget goes to `npm ci`, and **what it costs is not a
+constant**. Measured on macOS with node 22, against the tree as of TypeScript 7:
 
-| Step                          | Wall time | CPU  |
-| ----------------------------- | --------- | ---- |
-| `npm ci --silent`, warm cache | 31.1s     | 9%   |
-| `+ --prefer-offline`          | 5.0s      | 58%  |
-| `+ --no-audit --no-fund`      | 1.3s      | 212% |
-| `npm ci --silent`, cold cache | 7m 01s    | 0%   |
-| `npm run build` (`tsc`)       | 0.19s     | 259% |
+| `npm ci --silent` under                      | Wall time | CPU   |
+| -------------------------------------------- | --------- | ----- |
+| a cold cache (right after a dependency bump) | 7m 01s    | 0%    |
+| a warm cache, registry slow                  | 31.1s     | 9%    |
+| a warm cache, registry responsive            | ~1.5s     | ~200% |
 
-So the compile is not the cost and never was — `typescript@7` is the native compiler. The cost is
-npm's registry chatter: an audit request, a funding request, and metadata revalidation, none of
-which say anything about whether the install worked. At the default that is 31s against a 30s
-deadline, which is why the self-build failed **every** time rather than intermittently.
-`OFFLINE_FIRST_FLAGS` in `run.mjs` turns all three off, and
-`tests/mcp-server-launcher.test.mjs` runs the real launcher against a fake `npm` to keep them
+The spread is npm's registry chatter — an audit request, a funding request, and metadata
+revalidation, none of which say anything about whether the install worked. The 31.1s and the
+~1.5s rows are the _same command on the same tree_, hours apart; the flags were A/B'd against
+each other within that slow window (`--prefer-offline` alone 5.0s, `--no-audit --no-fund` alone
+1.3s) and again later, when plain `npm ci` had become as fast as the flagged form.
+
+So `OFFLINE_FIRST_FLAGS` does not remove a fixed 31s. What it removes is **the dependency on
+registry latency inside a deadline that cannot absorb it**: with the flags the step is bounded by
+local work, and end-to-end `run.sh` → `initialize` measures 1.8–2.2s from a stale fingerprint.
+`tests/mcp-server-launcher.test.mjs` runs the real launcher against a fake `npm` to keep the flags
 there.
 
-A cold cache is still minutes, and no flag fixes that — the tarballs genuinely have to arrive.
-`./build.sh` is the escape hatch: it runs the same install under no deadline and stamps the
-fingerprint (`bin/write-fingerprint.mjs`), so the next launch skips the build entirely.
+**A cold cache is the case this does not fix**, and it is the one that most likely caused the
+incident that prompted the change (#679 bumped typescript, vitest and @types/node together, so
+the next launch had to fetch everything). 7 minutes is so far past 30s that every turn's build was
+killed partway, leaving a half-installed `node_modules` and no fingerprint — so the next turn
+tried again from the same place. `./build.sh` is the escape hatch: it runs the same install under
+no deadline and stamps the fingerprint (`bin/write-fingerprint.mjs`), so the next launch skips the
+build entirely. Run it after a dependency bump.
