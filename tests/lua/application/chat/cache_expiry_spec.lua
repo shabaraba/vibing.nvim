@@ -115,6 +115,25 @@ describe("cache_expiry", function()
       assert.is_nil(CacheExpiry.read_last_turn(chat.buf))
     end)
 
+    it("does not read a sentence in the reply as the turn's context", function()
+      -- The humanized fallback matches any line starting with `context <number>`, and a reply is
+      -- free to contain one. Reading it would suppress the prompt on a genuinely large chat.
+      local lines = {
+        string.format("## User <!-- %s -->", stamp(5060)),
+        "how big is it?",
+        string.format("## Assistant <!-- %s -->", stamp(5000)),
+        "",
+        "context 8 items were dropped, so the window is smaller now.",
+        "",
+      }
+      vim.list_extend(lines, tokens_section(205000))
+      vim.list_extend(lines, { "## User <!-- unsent -->", "next" })
+
+      local _, context = CacheExpiry.read_last_turn(make_buffer(lines).buf)
+
+      assert.equals(205000, context)
+    end)
+
     it("does not borrow a Tokens section from an earlier turn", function()
       -- A backend that reports no usage (codex/grok) must not read as "still 205k".
       local lines = {

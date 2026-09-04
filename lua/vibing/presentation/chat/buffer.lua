@@ -611,11 +611,14 @@ function ChatBuffer:send_message()
     end,
     add_user_section = function()
       -- アシスタントヘッダーへの終了時刻はここで入れる。AIターンが走ったことが確かなのは
-      -- この合流点だけで、`ChatBuffer:add_user_section()` 本体はスラッシュコマンド経路も
-      -- 通る。`add_user_section` より前なのは、次の User セクションが足されると末尾の
-      -- ヘッダーがそちらに変わって対象を見失うため
-      StreamingHandler.stamp_response_end(self.buf)
+      -- この合流点だけで、`ChatBuffer:add_user_section()` 本体はスラッシュコマンド経路も通る
+      StreamingHandler.stamp_response_end(self.buf, self._assistant_header_line)
+      self._assistant_header_line = nil
       self:add_user_section()
+      -- ターンの締めくくり（終了時刻と `### Tokens`）が入ったあとに保存する。
+      -- `update_session_id` の自動保存はこれより前に走るので、それだけに任せると
+      -- ディスク上のチャットは常に1ターン遅れ、期限切れ判定が読むのは前のターンの数字になる
+      self:save_after_turn()
       -- 応答が完全に終わった唯一の合流点。`_handle_response` の完了経路は4つある
       -- （セッション破損 / mote finalize / ファイル変更なし / git patch finalize、うち2つは
       -- `vim.schedule` の中）が、すべてこのコールバックに合流する。しかも handle_id 不一致
@@ -692,9 +695,25 @@ function ChatBuffer:send_message()
   return true
 end
 
+---ターンの締めくくりが書き終わったチャットをディスクに落とす
+---
+---`vim.schedule` するのは、`add_user_section` が続けて走らせる描画（Context 行の更新）が
+---終わってから書くため。名前の無いバッファや書き込めない場所は静かに諦める: 保存できない
+---ことでターンの表示まで壊すほうが害が大きい
+function ChatBuffer:save_after_turn()
+  local buf = self.buf
+  vim.schedule(function()
+    if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_get_name(buf) ~= "" then
+      FileManager.save_buffer(buf)
+    end
+  end)
+end
+
 ---アシスタントの応答を追加開始
 function ChatBuffer:start_response()
-  StreamingHandler.start_response(self.buf)
+  -- 書いたヘッダーの行番号を覚えておく。ターン完了時に終了時刻を入れるのはこの行で、
+  -- 探し直すと本文中の `## Assistant` を拾う（`streaming_handler.stamp_response_end`）
+  self._assistant_header_line = StreamingHandler.start_response(self.buf)
 end
 
 ---バッファリングされたチャンクをフラッシュ

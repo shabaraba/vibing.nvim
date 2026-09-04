@@ -8,6 +8,7 @@ local M = {}
 ---あるのは最後のAPIリクエストが飛んだ時刻＝ターンの終わりなので、それは
 ---`M.stamp_response_end` が完了時に書き込む
 ---@param buf number バッファ番号
+---@return number header_line 書いた `## Assistant` の行番号（1始まり）
 function M.start_response(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
@@ -22,6 +23,7 @@ function M.start_response(buf)
     "",
   }
   vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, new_lines)
+  return #lines + 2
 end
 
 ---ターン完了時に `## Assistant` へ終了時刻を書き込む
@@ -29,26 +31,27 @@ end
 ---これがプロンプトキャッシュの生死を判定する唯一の材料になる（`application/chat/cache_expiry`）。
 ---直前の `## User` の時刻ではターンの所要時間ぶん古く、長いターンほどずれが大きい。
 ---
----触るのは**バッファ末尾のヘッダーが時刻なしの `## Assistant` のときだけ**。ターン完了の
----合流点（`ChatBuffer:add_user_section`）はスラッシュコマンドのようにアシスタントセクションを
----作らない経路も通るので、条件を緩めると前のターンのヘッダーを現在時刻で塗り替えてしまう
+---触るのは `start_response` が返した行だけ。ターン中に足されるものはすべて末尾への追記なので
+---この行番号は動かない。**末尾から「ヘッダーに見える行」を探してはいけない**: `parse_header`
+---のレガシー分岐は列0の素の `## Assistant` をどこでも拾うので、チャット書式そのものを説明した
+---返答（このリポジトリの README がまさにそう）が本文に書いた行を書き換えてしまい、transcript
+---を壊したうえで本物のヘッダーには時刻が入らない。
+---
+---行が範囲外だったり素の `## Assistant` でなくなっていたら何もしない。時刻が入らなければ
+---期限切れ判定が出なくなるだけで、transcript を壊すよりはるかに軽い
 ---@param buf number バッファ番号
-function M.stamp_response_end(buf)
-  if not vim.api.nvim_buf_is_valid(buf) then
+---@param header_line number? `start_response` が返した行番号（1始まり）
+function M.stamp_response_end(buf, header_line)
+  if not vim.api.nvim_buf_is_valid(buf) or type(header_line) ~= "number" then
     return
   end
 
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  for i = #lines, 1, -1 do
-    local header = Timestamp.parse_header(lines[i])
-    if header then
-      if header.kind == "Assistant" and not header.timestamp then
-        local stamped = Timestamp.create_header("Assistant", Timestamp.now())
-        vim.api.nvim_buf_set_lines(buf, i - 1, i, false, { stamped })
-      end
-      return
-    end
+  if vim.api.nvim_buf_get_lines(buf, header_line - 1, header_line, false)[1] ~= "## Assistant" then
+    return
   end
+
+  local stamped = Timestamp.create_header("Assistant", Timestamp.now())
+  vim.api.nvim_buf_set_lines(buf, header_line - 1, header_line, false, { stamped })
 end
 
 ---バッファリングされたチャンクをフラッシュ

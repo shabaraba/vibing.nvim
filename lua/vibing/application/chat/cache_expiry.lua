@@ -48,16 +48,31 @@ function M.read_last_turn(buf)
     return nil
   end
 
-  -- context はそのターンの `### Tokens` からしか取らない。バッファ全体から最後の1つを
-  -- 拾うと、トークンを報告しないバックエンド（codex/grok）のターンが挟まったときに、
-  -- 何ターンも前の数字を「直近のサイズ」として読むことになる
+  -- context はそのターンの `### Tokens` 見出しから下だけで探す。返答の本文にも
+  -- `parse_context` のフォールバック（`context <数字>` で始まる行）に当たる文は普通に現れる
+  -- ので、範囲を切らずに読むとモデルの散文が「このチャットのサイズ」として通ってしまう。
+  --
+  -- ターンを跨がないのも同じ理由の別側面で、トークンを報告しないバックエンド（codex/grok）の
+  -- ターンが挟まったときに、何ターンも前の数字を直近のサイズとして読まないため
+  local in_tokens = false
   for i = start + 1, #lines do
     if Timestamp.is_header(lines[i]) then
       return nil
     end
-    local context = TokenUsage.parse_context(lines[i])
-    if context then
-      return epoch, context
+    if in_tokens then
+      if lines[i] ~= "" then
+        local context = TokenUsage.parse_context(lines[i])
+        if not context then
+          return nil
+        end
+        return epoch, context
+      end
+    elseif lines[i]:match("^###%s+Tokens") then
+      in_tokens = true
+      local exact = TokenUsage.parse_context(lines[i])
+      if exact then
+        return epoch, exact
+      end
     end
   end
 

@@ -458,8 +458,14 @@ cache was last written, and a long turn's start time can be twenty minutes earli
 figure comes from the marker on that turn's own `### Tokens` heading
 (`### Tokens <!-- context=205431 -->`), which carries the exact number the rounded metrics line
 below it cannot: `149,600` displays as `150k`, and reading _that_ back would fire the prompt on a
-chat sitting just under the threshold. Both survive a Neovim restart, and neither is borrowed from
-an older turn — a backend that reports no usage simply produces no prompt.
+chat sitting just under the threshold. Neither is borrowed from an older turn — a backend that
+reports no usage simply produces no prompt — and the context figure is read only from inside that
+turn's `### Tokens` section, since a reply is free to contain a sentence starting `context 8 …`.
+
+Both survive a Neovim restart because the chat file is now saved **after** the turn's footer is
+written. The existing auto-save runs when the session id is recorded, which is earlier in the same
+turn, so on its own it left the file one turn behind — and the most recent turn, the one this
+check is about, never on disk at all.
 
 "Continue in a new chat" writes a new chat that inherits this one's model, effort, permissions and
 `working_dir`, moves the unsent message into its first `## User` section, and leaves the source
