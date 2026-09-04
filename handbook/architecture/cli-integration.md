@@ -53,6 +53,76 @@ it is accepted rather than solved.
 its owning Neovim is gone: it cross-checks `registry.list()`, which already filters to live PIDs,
 so a concurrent instance's in-flight `.req`/`.res` files are never deleted.
 
+## What the System Prompt May Not Contain
+
+vibing.nvim starts a fresh CLI process for every turn and re-attaches it to the session with
+`--resume`. That is the one structural difference from every other way the CLI is run, and it has
+a consequence that only shows up on the bill: **anything the CLI computes once at process start
+and places in the system prompt is re-computed on every turn.** The system prompt is the first
+thing in the prefix, so a value that moves invalidates the cache for it _and_ the whole
+conversation behind it — floor plus history, re-written at cache-creation price, which is 12.5× the
+read price. A long-lived process pays that once per session; here it is once per change.
+
+`agent.git_instructions` is the case that was found (#681). The CLI embeds a block like
+
+```text
+This is the git status at the start of the conversation. ...
+Current branch: ...
+Status: <git status --short>
+Recent commits: <git log --oneline -10>
+```
+
+computed once per session id and cached in memory (`refreshReason: "session_start"`). One edit,
+one commit or one untracked file changes those bytes. Measured against 2.1.231 on a 128k-token
+session, the turn following a one-line edit reports `new=128,456 / read=144,076` with the block on
+and `new=9 / read=272,424` with it off — the same input volume, 6.4× the input cost. The
+fixed prefix ahead of the block stays cached, so what misses is exactly the conversation, which is
+why the loss grows with `context` (`handbook/configuration.md` → "Token Usage").
+
+Read out of the 2.1.231 binary, the gate is:
+
+```js
+function () {
+  let e = process.env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS
+  if (isTruthy(e)) return false
+  if (isFalsy(e)) return true
+  return settings().includeGitInstructions ?? true
+}
+// ... and at the call site:
+let n = env.CLAUDE_CODE_REMOTE || !includeGitInstructions() ? null : await gitStatus(e)
+```
+
+So Claude Code on the web has never carried the block at all — its process is long-lived, and the
+block was still judged not worth it. `claude_cli.lua` therefore sets
+`CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS=1` in the child environment by default. Three things about
+that shape:
+
+- **The environment, not the `--settings` file.** `includeGitInstructions` is a real settings key,
+  but `--settings` is written per cwd by `settings_generator.lua` and is skipped entirely on the
+  lightweight path, which would leave title generation and `/summarize` carrying a block that
+  changes under them. The environment is the one channel every call goes through.
+- **Both settings write the variable**, because the CLI reads it as a tri-state: `"1"` suppresses,
+  `"0"` forces on, unset defers to `includeGitInstructions` — which
+  `--setting-sources user,project,local` still loads. So `agent.git_instructions = true` writes
+  `"0"` rather than nothing; writing nothing would leave the opt-in unable to deliver what it
+  promises to a user who has that key set to `false`. Verified against the CLI: `0` and `false`
+  both put the block back, `1` removes it.
+- **A value already in the environment wins over both.** Setting `CLAUDE_CODE_REMOTE` instead is
+  not an option: it changes other behaviour (this repository's own `SessionStart` hook keys on
+  it), and a variable that means "you are in a container" is not a variable to lie about.
+- **What is lost is small and recoverable.** The model no longer starts a turn knowing the branch,
+  the recent commits or the changed files, and the CLI's built-in "match the style of recent
+  commits" instruction goes with them. One `git status` or `git log` call buys that back, and one
+  tool call is orders of magnitude cheaper than re-writing the prefix. Commit-message conventions
+  belong in `.claude/rules/` or `.vibing/system-prompt.md`, where they are part of the stable
+  prefix rather than re-derived.
+
+The invariant generalises past this one block: **a per-turn process makes every startup-time
+computation a prefix variable.** The CLI version string, the date and the cache-breaker phrase are
+the other candidates; none has been measured moving, and #674's re-write detection is what is meant
+to catch the next one rather than a hand-maintained list here. vibing.nvim's own
+`--append-system-prompt` was byte-stabilised for the same reason in #469.
+
 ## Backend Seams
 
 These are the seams that stop backend identity leaking into shared code. The rule they encode:
