@@ -37,7 +37,7 @@ require("vibing").setup({
     auto_resume_on_limit = { enabled = false, max_retries = 1 },
     scheduled_requests = { enabled = true, max_retries = 3 },
     codex_provider_notice = { enabled = true },
-    token_usage = { enabled = true, warn_context = 150000 },
+    token_usage = { enabled = true, warn_context = 150000, cache_ttl_sec = 3300 },
     plugins = { self = true, project_dir = ".vibing/plugins", extra = {} },
   },
   chat = {
@@ -468,6 +468,58 @@ equivalents here, so it would take about five such calls per turn to give the sa
 The same shape can come from anything else startup-computed; the invariant to apply when touching
 this path is in `handbook/architecture/cli-integration.md` → "What the System Prompt May Not
 Contain".
+
+#### Warning before a send that rewrites an expired cache
+
+`cache_ttl_sec` is the time half of the same story: it catches that cold-cache case _before_ the
+send rather than after. On a 205k chat, resuming after lunch costs more in one send than starting
+two new chats would, and vibing.nvim already has both facts on hand, so `<CR>` asks once:
+
+```text
+This chat's prompt cache has likely expired: the last turn ended 1h23m ago,
+so sending now rewrites ~205k tokens.
+
+1. Send anyway
+2. Continue in a new chat (moves this message there)
+3. Cancel
+```
+
+Both conditions have to hold. Either one alone would make the prompt routine noise: a large chat
+answered promptly still has its cache, and a small chat left overnight rewrites almost nothing.
+The default is 3300 seconds (55 minutes) rather than a full hour because the TTL is not reported
+anywhere in the response and can only be inferred from the clock, so the check leans towards
+catching a send that lands just inside it. Set `cache_ttl_sec = 0` to turn the prompt off; a
+`warn_context = 0` turns it off too, since that already means "show the metrics, skip the
+advice".
+
+The elapsed time is measured from the **`## Assistant` header of the last completed turn**, which
+is stamped when the turn ends for exactly this reason — the last API request of a turn is when the
+cache was last written, and a long turn's start time can be twenty minutes earlier. The context
+figure comes from the marker on that turn's own `### Tokens` heading
+(`### Tokens <!-- context=205431 -->`), which carries the exact number the rounded metrics line
+below it cannot: `149,600` displays as `150k`, and reading _that_ back would fire the prompt on a
+chat sitting just under the threshold. Neither is borrowed from an older turn — a backend that
+reports no usage simply produces no prompt — and the context figure is read only from inside that
+turn's `### Tokens` section, since a reply is free to contain a sentence starting `context 8 …`.
+
+Both survive a Neovim restart because the chat file is now saved **after** the turn's footer is
+written. The existing auto-save runs when the session id is recorded, which is earlier in the same
+turn, so on its own it left the file one turn behind — and the most recent turn, the one this
+check is about, never on disk at all.
+
+"Continue in a new chat" writes a new chat that inherits this one's model, effort, permissions and
+`working_dir`, moves the unsent message into its first `## User` section, and leaves the source
+chat where it was. It deliberately does **not** summarize first: generating a summary is itself a
+request that reads the whole conversation at the price this prompt exists to avoid. When the
+context is worth carrying, `:VibingChatHandoff` is the command that does it, and the warning above
+already names it.
+
+The prompt appears only for a `<CR>` a person typed. A scheduled request firing, an auto-resume,
+a message delivered from another chat, and an orchestrator's delegated approval all reach the same
+send path, and none of them can answer a picker — so the gate lives in the chat buffer's keymap
+rather than in `send_message()`. Slash commands and replies to a pending tool-approval prompt are
+excluded for the same reason `scheduled_requests` excludes them: neither has any reason to be
+delayed. Anything that fails inside the check sends the message rather than blocking it.
 
 One more thing the numbers depend on: **a chat has a floor it can never go below**, made of the
 system prompt, the tool schemas, and whatever `CLAUDE.md` and `.claude/rules/` the project loads.

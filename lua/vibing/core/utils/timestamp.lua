@@ -109,12 +109,15 @@ end
 ---コミットする」流れに乗るため。リミット中の予約（`auto_resume`）は未送信セクションが
 ---そのまま残っていることを前提にしているので、そこだけ直接タイムスタンプを書くわけには
 ---いかない
----@param kind string "User" | "Request" | "Report" | "Notice"
+---`Assistant` に `stamp` を渡せるのは、応答の**終わり**を記録するため（`streaming_handler`
+---の `stamp_response_end`）。ヘッダー自体はターンの開始時に立つので、書き手はそこでは時刻を
+---持たず、完了時にこの関数で書き直す。`parse_header` は最初からこの形を受理していた
+---@param kind string "User" | "Assistant" | "Request" | "Report" | "Notice"
 ---@param stamp string? タイムスタンプ（省略時は `unsent`）
 ---@param from string? 送信元チャットの表示パス（合流した配達など、特定できないときは nil）
 ---@return string header
 function M.create_header(kind, stamp, from)
-  if kind ~= "User" and not DELIVERY_KINDS[kind] then
+  if kind ~= "User" and kind ~= "Assistant" and not DELIVERY_KINDS[kind] then
     error(string.format("Unknown section kind: %s", tostring(kind)))
   end
 
@@ -148,14 +151,41 @@ function M.is_unsent_header(line)
 end
 
 ---ヘッダーからタイムスタンプを抽出（HTMLコメント形式）
+---
+---`Assistant` を弾いていた時期がある。当時アシスタントヘッダーは時刻を持たなかったので
+---害は無かったが、ターン終了時刻を書くようになった以上、文法モジュールの中に役割別の
+---例外を残すと「ヘッダーの時刻を読む」名前の関数が黙って nil を返すことになる。
+---「User の時刻だけ」が要るのは日次サマリ側の都合なので、絞り込みは role を知っている
+---`section_parser` の呼び出し側でやる
 ---@param line string タイムスタンプ付きヘッダー行
 ---@return string? timestamp タイムスタンプ文字列（存在しない場合はnil）
 function M.extract_timestamp_from_comment(line)
   local header = M.parse_header(line)
-  if not header or header.kind == "Assistant" then
+  return header and header.timestamp or nil
+end
+
+---ヘッダーのタイムスタンプ文字列をエポック秒に戻す（`M.now` と対のローカル時刻解釈）
+---
+---ヘッダーはゾーンオフセットを持たないので、`os.date` が書いたのと同じローカル時刻として
+---読み戻すしかない。`isdst` を渡さないのは意図で、mktime に夏時間の判定を任せる
+---@param stamp string?
+---@return number? epoch 読めなければ nil
+function M.to_epoch(stamp)
+  if type(stamp) ~= "string" then
     return nil
   end
-  return header.timestamp
+  local year, month, day, hour, min, sec = stamp:match("^(%d%d%d%d)%-(%d%d)%-(%d%d) (%d%d):(%d%d):(%d%d)$")
+  if not year then
+    return nil
+  end
+  return os.time({
+    year = tonumber(year),
+    month = tonumber(month),
+    day = tonumber(day),
+    hour = tonumber(hour),
+    min = tonumber(min),
+    sec = tonumber(sec),
+  })
 end
 
 return M

@@ -133,6 +133,8 @@
 ---（チャットが育っていることに気づけない）がそのまま残る通知だから。
 ---@field enabled boolean? falseで表示と警告を止める（デフォルト: true）
 ---@field warn_context number? この値を超えている間、各ターンの内訳行の直下に警告を書く（デフォルト: 150000）
+---@field cache_ttl_sec number? 最終ターンからこの秒数以上空いた手動送信で、送信前に確認を出す。
+---  0で無効。`warn_context` 未満のチャットでは出ない（デフォルト: 3300 = 55分）
 
 ---@class Vibing.PluginsConfig
 ---セッション限りで読み込むClaude Codeプラグインのディレクトリ設定（claudeバックエンドのみ）
@@ -386,9 +388,13 @@ M.defaults = {
     -- 値そのものは token_usage 側から借りる。`config` が未設定のとき（テストや手組みの
     -- config テーブル）に使われるフォールバックが同じモジュールにあり、2箇所に同じ数字を
     -- 置くと片方だけ動かして既定値が食い違う
+    --
+    -- cache_ttl_sec は同じ話の「時間」側で、warn_context と AND を取る。片方だけで出すと、
+    -- 小さいチャットの再開や連続した送信のたびに確認が挟まって邪魔になる。
     token_usage = {
       enabled = true,
       warn_context = token_usage.DEFAULT_WARN_CONTEXT,
+      cache_ttl_sec = token_usage.DEFAULT_CACHE_TTL_SEC,
     },
     -- `--plugin-dir` で読み込むプラグイン。self → project_dir → extra の順で渡す。
     --

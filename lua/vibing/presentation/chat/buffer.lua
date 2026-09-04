@@ -251,7 +251,12 @@ function ChatBuffer:_setup_keymaps()
       -- `ProgrammaticSender` 経由で同じ関数を通るため。本体でリセットすると配達のたびに 0 に
       -- 戻り、上限が一切効かなくなる
       require("vibing.application.chat.completion_notifier").on_manual_send(self.buf)
-      self:send_message()
+      -- 期限切れキャッシュの確認もここにしか置けない。`ChatBuffer:send_message()` は予約の
+      -- 発火・auto_resume・チャット間の配達も通る合流点なので、そちらに置くと無人送信が
+      -- `vim.ui.select` の前で止まったまま進まなくなる
+      require("vibing.presentation.chat.modules.cache_expiry_prompt").guard(self, function()
+        self:send_message()
+      end)
     end,
     cancel = function()
       self:cancel_request()
@@ -353,10 +358,31 @@ function ChatBuffer:extract_user_message()
   return ConversationExtractor.extract_user_message(self.buf)
 end
 
----リミット中の送信を予約に切り替える
+---送信の直前に割り込んでよいメッセージか
 ---
----スラッシュコマンドと承認応答は対象外: 前者はローカル処理で完結し、後者は待っている
----セッションに届かないと意味がないため、どちらも遅らせる理由がない。
+---スラッシュコマンドはローカル処理で完結し、承認応答は待っているセッションに届かないと
+---意味がないため、どちらも遅らせる理由がない。
+---
+---`<CR>` の手前には割り込みが2つあり（リミット中の予約への切り替えと、期限切れキャッシュの
+---確認）、両方が同じ判断をする。同じ条件を2箇所に書くと、3つ目の除外を足したときに片方だけ
+---直してスラッシュコマンドや承認応答が黙って飲み込まれる
+---@param message string
+---@return boolean
+function ChatBuffer:can_defer_send(message)
+  local commands = require("vibing.application.chat.commands")
+  if commands.is_command(message) then
+    return false
+  end
+
+  local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
+  if self._pending_approval and ApprovalParser.is_approval_response(message) then
+    return false
+  end
+
+  return true
+end
+
+---リミット中の送信を予約に切り替える
 ---@param message string
 ---@return boolean scheduled 予約に切り替えたか
 function ChatBuffer:_try_schedule_instead_of_send(message)
@@ -366,13 +392,7 @@ function ChatBuffer:_try_schedule_instead_of_send(message)
     return false
   end
 
-  local commands = require("vibing.application.chat.commands")
-  if commands.is_command(message) then
-    return false
-  end
-
-  local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-  if self._pending_approval and ApprovalParser.is_approval_response(message) then
+  if not self:can_defer_send(message) then
     return false
   end
 
@@ -590,7 +610,15 @@ function ChatBuffer:send_message()
       return self:update_session_id(session_id)
     end,
     add_user_section = function()
+      -- アシスタントヘッダーへの終了時刻はここで入れる。AIターンが走ったことが確かなのは
+      -- この合流点だけで、`ChatBuffer:add_user_section()` 本体はスラッシュコマンド経路も通る
+      StreamingHandler.stamp_response_end(self.buf, self._assistant_header_line)
+      self._assistant_header_line = nil
       self:add_user_section()
+      -- ターンの締めくくり（終了時刻と `### Tokens`）が入ったあとに保存する。
+      -- `update_session_id` の自動保存はこれより前に走るので、それだけに任せると
+      -- ディスク上のチャットは常に1ターン遅れ、期限切れ判定が読むのは前のターンの数字になる
+      self:save_after_turn()
       -- 応答が完全に終わった唯一の合流点。`_handle_response` の完了経路は4つある
       -- （セッション破損 / mote finalize / ファイル変更なし / git patch finalize、うち2つは
       -- `vim.schedule` の中）が、すべてこのコールバックに合流する。しかも handle_id 不一致
@@ -667,9 +695,25 @@ function ChatBuffer:send_message()
   return true
 end
 
+---ターンの締めくくりが書き終わったチャットをディスクに落とす
+---
+---`vim.schedule` するのは、`add_user_section` が続けて走らせる描画（Context 行の更新）が
+---終わってから書くため。名前の無いバッファや書き込めない場所は静かに諦める: 保存できない
+---ことでターンの表示まで壊すほうが害が大きい
+function ChatBuffer:save_after_turn()
+  local buf = self.buf
+  vim.schedule(function()
+    if vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_buf_get_name(buf) ~= "" then
+      FileManager.save_buffer(buf)
+    end
+  end)
+end
+
 ---アシスタントの応答を追加開始
 function ChatBuffer:start_response()
-  StreamingHandler.start_response(self.buf)
+  -- 書いたヘッダーの行番号を覚えておく。ターン完了時に終了時刻を入れるのはこの行で、
+  -- 探し直すと本文中の `## Assistant` を拾う（`streaming_handler.stamp_response_end`）
+  self._assistant_header_line = StreamingHandler.start_response(self.buf)
 end
 
 ---バッファリングされたチャンクをフラッシュ

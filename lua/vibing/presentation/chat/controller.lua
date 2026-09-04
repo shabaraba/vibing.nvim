@@ -157,6 +157,26 @@ function M.handle_fork(args)
   end
 end
 
+---引き継ぎ先のチャットを開き、カーソルを未送信セクションの末尾に置く
+---
+---未送信 User セクションの末尾（持ってきた本文の下）に置く。ユーザーはそこに続きの指示を書く。
+---`back` にはウィンドウが無いので、その場合はカーソルを動かさない。
+---handoff と期限切れキャッシュの「新しいチャットで続ける」は開き方まで同じなので、
+---位置指定の扱いが片方だけ落ちないようここに一本化する
+---@param session Vibing.ChatSession
+---@param position string?
+---@param notice string 通知に出す文言（ファイル名が後ろに付く）
+---@return Vibing.ChatBuffer?
+function M.open_continuation(session, position, notice)
+  local view = require("vibing.presentation.chat.view")
+  local chat_buf = view.render(session, position)
+  if chat_buf then
+    require("vibing.presentation.chat.modules.renderer").moveCursorToEnd(chat_buf.win, chat_buf.buf)
+  end
+  notify.info(notice .. " " .. vim.fn.fnamemodify(session:get_file_path() or "", ":t"))
+  return chat_buf
+end
+
 ---要約を引き継いだ新規チャットを作る（`:VibingChatHandoff`）
 ---
 ---要約の生成は非同期なので、完了時のカレントバッファは別のチャットになっていることがある。
@@ -180,13 +200,7 @@ function M.handle_handoff(args)
       if not session then
         return
       end
-      local chat_buf = view.render(session, position)
-      -- 未送信 User セクションの末尾（要約の下）に置く。ユーザーはそこに続きの指示を書く。
-      -- `back` にはウィンドウが無いので、その場合は何もしない
-      if chat_buf then
-        require("vibing.presentation.chat.modules.renderer").moveCursorToEnd(chat_buf.win, chat_buf.buf)
-      end
-      notify.info("Handed off to " .. vim.fn.fnamemodify(session:get_file_path() or "", ":t"))
+      M.open_continuation(session, position, "Handed off to")
     end,
   })
 end

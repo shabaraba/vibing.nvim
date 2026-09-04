@@ -374,6 +374,16 @@ In a chat buffer:~
     gx          Open the URL on the current line in a browser
     q           Close the chat window
 
+`<CR>` asks before sending in two cases, and sends normally otherwise. While
+the project has a usage limit on record it offers to park the message until
+the reset (see |:VibingSchedule|). And when the chat has been idle past
+`agent.token_usage.cache_ttl_sec` (default 55 minutes) *and* its last turn
+reported a context at or above `warn_context`, the prompt cache has expired,
+so sending rewrites the whole conversation at cache-creation price: it offers
+to send anyway, to move the message into a new chat, or to cancel. Set
+`cache_ttl_sec = 0` to turn that off. Only a `<CR>` you typed is affected —
+scheduled sends, auto-resume and chat-to-chat delivery never prompt.
+
 Everything except `q` is configurable: >lua
     require("vibing").setup({
       keymaps = {
