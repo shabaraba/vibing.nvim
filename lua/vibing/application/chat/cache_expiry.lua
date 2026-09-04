@@ -13,6 +13,19 @@ local M = {}
 local Timestamp = require("vibing.core.utils.timestamp")
 local TokenUsage = require("vibing.core.utils.token_usage")
 
+---vibing.nvim が実際に書いたセクションヘッダーか（見た目がそう見えるだけの行ではなく）
+---
+---`parse_header` のレガシー分岐は列0の素の `## User` / `## Assistant` をどこでも受け付ける。
+---チャット書式を説明した返答（このリポジトリの README がまさにその形）は本文にその行を書くので、
+---ヘッダーらしさだけで区切ると走査が返答の途中で止まる。書き手が出すヘッダーは必ず
+---`<!-- ... -->` を持ち、中身は時刻か `unsent` のどちらかになる
+---@param line string
+---@return boolean
+local function is_written_header(line)
+  local header = Timestamp.parse_header(line)
+  return header ~= nil and (header.timestamp ~= nil or header.unsent)
+end
+
 ---@class Vibing.CacheExpiry.Decision
 ---@field elapsed_sec number 最終ターンの終わりからの経過秒
 ---@field context number 直近ターンのコンテキストサイズ
@@ -34,7 +47,10 @@ function M.read_last_turn(buf)
   local start, header
   for i = #lines, 1, -1 do
     header = Timestamp.parse_header(lines[i])
-    if header and header.kind == "Assistant" then
+    -- 時刻の入ったヘッダーだけを拾う。`parse_header` のレガシー分岐は列0の素の
+    -- `## Assistant` をどこでも拾うので、チャット書式を引用した返答の本文が本物のヘッダーより
+    -- 先に見つかり、そこで打ち切ると判定が永久に出なくなる
+    if header and header.kind == "Assistant" and header.timestamp then
       start = i
       break
     end
@@ -56,7 +72,7 @@ function M.read_last_turn(buf)
   -- ターンが挟まったときに、何ターンも前の数字を直近のサイズとして読まないため
   local in_tokens = false
   for i = start + 1, #lines do
-    if Timestamp.is_header(lines[i]) then
+    if is_written_header(lines[i]) then
       return nil
     end
     if in_tokens then

@@ -115,6 +115,28 @@ describe("cache_expiry", function()
       assert.is_nil(CacheExpiry.read_last_turn(chat.buf))
     end)
 
+    it("looks past a reply that quotes a bare `## Assistant` line", function()
+      -- `parse_header`'s legacy branch matches it anywhere at column 0, so stopping at the first
+      -- Assistant-looking line from the end would find the quote, get no timestamp, and give up.
+      local lines = {
+        string.format("## User <!-- %s -->", stamp(5060)),
+        "explain the format",
+        string.format("## Assistant <!-- %s -->", stamp(5000)),
+        "",
+        "Sections look like this:",
+        "",
+        "## Assistant",
+        "",
+      }
+      vim.list_extend(lines, tokens_section(205000))
+      vim.list_extend(lines, { "## User <!-- unsent -->", "next" })
+
+      local epoch, context = CacheExpiry.read_last_turn(make_buffer(lines).buf)
+
+      assert.is_number(epoch)
+      assert.equals(205000, context)
+    end)
+
     it("does not read a sentence in the reply as the turn's context", function()
       -- The humanized fallback matches any line starting with `context <number>`, and a reply is
       -- free to contain one. Reading it would suppress the prompt on a genuinely large chat.

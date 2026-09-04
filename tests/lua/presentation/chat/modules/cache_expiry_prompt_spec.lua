@@ -119,6 +119,38 @@ describe("cache_expiry_prompt.guard", function()
     assert.is_not_nil(opened)
   end)
 
+  it("sends rather than blocking when showing the prompt raises", function()
+    stub_evaluate(EXPIRED)
+    vim.ui.select = function()
+      error("no picker here")
+    end
+
+    local sends = 0
+    Prompt.guard({}, function()
+      sends = sends + 1
+    end)
+
+    assert.equals(1, sends)
+  end)
+
+  it("does not re-send when the chosen action itself raises", function()
+    -- `vim.ui.select`'s default implementation calls on_choice inline, so a failure after the
+    -- answer is inside the same pcall as the prompt setup.
+    stub_evaluate(EXPIRED)
+    vim.ui.select = function(items, _, on_choice)
+      on_choice(items[1])
+      error("something after the callback")
+    end
+
+    local sends = 0
+    Prompt.guard({}, function()
+      sends = sends + 1
+      error("boom from proceed")
+    end)
+
+    assert.equals(1, sends)
+  end)
+
   it("sends rather than blocking when the check itself raises", function()
     CacheExpiry.evaluate = function()
       error("boom")

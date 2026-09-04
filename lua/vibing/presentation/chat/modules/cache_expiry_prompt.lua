@@ -57,22 +57,34 @@ function M.guard(chat_buffer, proceed)
     { label = "Cancel", action = "cancel" },
   }
 
-  vim.ui.select(choices, {
-    prompt = format_prompt(decision),
-    format_item = function(choice)
-      return choice.label
-    end,
-  }, function(choice)
-    -- 選ばずに閉じた場合は Cancel と同じ。未送信本文はバッファに残るので、何もしないのが
-    -- 「やめた」の正しい姿になる
-    if not choice or choice.action == "cancel" then
-      return
-    end
-    if choice.action == "send" then
-      return proceed()
-    end
-    continue_in_new_chat(chat_buffer)
+  -- 文面の組み立てとピッカーの提示も pcall の中に入れる。ここで例外が出ると `proceed` が
+  -- 呼ばれないまま関数を抜け、ユーザーが打った送信が黙って消える。
+  -- `answered` を見てから送り直すのは、`vim.ui.select` の既定実装が同期で `on_choice` を
+  -- 呼ぶため: 選択後の処理が失敗した場合に握り直すと二重送信になる
+  local answered = false
+  local shown = pcall(function()
+    vim.ui.select(choices, {
+      prompt = format_prompt(decision),
+      format_item = function(choice)
+        return choice.label
+      end,
+    }, function(choice)
+      answered = true
+      -- 選ばずに閉じた場合は Cancel と同じ。未送信本文はバッファに残るので、何もしないのが
+      -- 「やめた」の正しい姿になる
+      if not choice or choice.action == "cancel" then
+        return
+      end
+      if choice.action == "send" then
+        return proceed()
+      end
+      continue_in_new_chat(chat_buffer)
+    end)
   end)
+
+  if not shown and not answered then
+    proceed()
+  end
 end
 
 return M
