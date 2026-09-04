@@ -167,3 +167,38 @@ Two pieces were therefore moved off that path, taking a measured ~32ms `setup()`
 
 A scan moved to first use also reads `vim.fn.getcwd()` at first use, which is the more accurate
 cwd for picking up a project's `.claude/commands/` anyway.
+
+### The MCP server's own startup budget is 30 seconds, and the launcher spends it first
+
+That is a different clock from `setup()`: it starts when the CLI spawns
+`claude-plugin/mcp-server/bin/run.sh` for a turn, and it runs out before the server has said
+anything. `run.mjs` sits inside it, and rebuilds whenever the source fingerprint moved — which is
+every first turn after a `git pull` that touched `src/`.
+
+Overrunning it does not look like a failure. The server simply never connects, so
+`mcp__plugin_vibing-nvim_vibing-nvim__*` is absent from the model's tool list for the whole
+session while the skills and the `nvim-navigator` agent — which come from the same
+`--plugin-dir` and need no process — load normally. Nothing logs, and the model is left to
+conclude the tools do not exist.
+
+Measured on macOS with node 22, against the tree as of TypeScript 7:
+
+| Step                          | Wall time | CPU  |
+| ----------------------------- | --------- | ---- |
+| `npm ci --silent`, warm cache | 31.1s     | 9%   |
+| `+ --prefer-offline`          | 5.0s      | 58%  |
+| `+ --no-audit --no-fund`      | 1.3s      | 212% |
+| `npm ci --silent`, cold cache | 7m 01s    | 0%   |
+| `npm run build` (`tsc`)       | 0.19s     | 259% |
+
+So the compile is not the cost and never was — `typescript@7` is the native compiler. The cost is
+npm's registry chatter: an audit request, a funding request, and metadata revalidation, none of
+which say anything about whether the install worked. At the default that is 31s against a 30s
+deadline, which is why the self-build failed **every** time rather than intermittently.
+`OFFLINE_FIRST_FLAGS` in `run.mjs` turns all three off, and
+`tests/mcp-server-launcher.test.mjs` runs the real launcher against a fake `npm` to keep them
+there.
+
+A cold cache is still minutes, and no flag fixes that — the tarballs genuinely have to arrive.
+`./build.sh` is the escape hatch: it runs the same install under no deadline and stamps the
+fingerprint (`bin/write-fingerprint.mjs`), so the next launch skips the build entirely.

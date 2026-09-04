@@ -28,6 +28,17 @@ const distEntry = join(mcpDir, 'dist', 'index.js');
 const nodeModulesDir = join(mcpDir, 'node_modules');
 const fingerprintFile = fingerprintFilePath(mcpDir);
 
+// Claude Code gives a plugin's MCP server 30s to come up, and this launcher
+// spends that budget before the server is even spawned. `npm ci` defaults to an
+// audit request and a funding request against the registry, and revalidates
+// package metadata it already has cached — measured against a warm cache on
+// macOS, that is the entire cost of the step: 31s with these flags off, 1.3s
+// with them on. So the default makes every self-build here miss the deadline,
+// and the whole vibing-nvim tool set silently disappears from the session.
+// (A genuinely cold cache still fetches tarballs and still takes minutes; only
+// `./build.sh`, which is under no such deadline, can fix that case.)
+const OFFLINE_FIRST_FLAGS = ['--prefer-offline', '--no-audit', '--no-fund'];
+
 function isBuildStale(fingerprint) {
   if (!existsSync(distEntry) || !existsSync(nodeModulesDir) || !existsSync(fingerprintFile)) {
     return true;
@@ -56,7 +67,7 @@ if (isBuildStale(fingerprint)) {
   // stale fingerprint behind that would make a later, unrelated source
   // state look "already built" against a corrupted dist/.
   rmSync(fingerprintFile, { force: true });
-  run('npm', ['ci', '--silent']);
+  run('npm', ['ci', ...OFFLINE_FIRST_FLAGS, '--silent']);
   run('npm', ['run', 'build', '--silent']);
   writeFileSync(fingerprintFile, fingerprint);
 }
