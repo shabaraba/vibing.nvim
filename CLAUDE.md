@@ -1,138 +1,111 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 
 vibing.nvim is a Neovim plugin that provides a Claude chat inside Neovim by spawning the `claude`
-CLI directly (`claude -p --output-format stream-json`) and parsing its stream. There is no
-Node.js agent wrapper process; the Node side is only the MCP server and two hook scripts.
-A Codex CLI backend is also supported. See
-`.claude/rules/architecture.md`.
+CLI directly (`claude -p --output-format stream-json`) and parsing its stream. There is no Node.js
+agent wrapper process; the Node side is only the MCP server and two hook scripts. Codex, Copilot
+and Grok CLI backends are also supported. See `.claude/rules/architecture.md`.
 
 ## Commands
 
 ```bash
-# Install dependencies
-npm install
-
-# Build the MCP server
-./build.sh
-
-# Run Lua tests (requires Neovim with plenary.nvim)
-npm run test:lua
-
-# Run Node.js tests (tests/**/*.test.mjs)
-npm run test:node
-
-# Run E2E tests
-npm run test:e2e
-
-# Run agent behavior evals (spends real tokens — see tests/evals/README.md)
-npm run test:eval
-
-# Validate Lua syntax
-npm run check
-
-# Verify doc/*.txt (helptags, 78-column limit, CONTENTS/tag agreement)
-npm run check:doc
-
-# Lint TypeScript/JavaScript
-npm run lint
-
-# Fix lint issues
-npm run lint:fix
-
-# Format code
-npm run format
-
-# Check formatting
-npm run format:check
-
-# Lint Markdown files
-npm run lint:md
+npm install && ./build.sh   # dependencies, then the MCP server
+npm test                    # test:lua + test:node
+npm run check               # Lua syntax   (check:doc for doc/*.txt)
+npm run lint                # TS/JS        (lint:md, format, format:check)
 ```
 
-For Neovim testing, load the plugin and run `:VibingChat`.
+`test:e2e` and `test:eval` spend real tokens and are deliberately outside `npm test`. Every script
+is in `package.json`; for manual testing, load the plugin and run `:VibingChat`.
 
-## Documentation Structure
+## Where Documentation Lives
 
-Detailed documentation is organized in `.claude/rules/`:
+**`.claude/rules/*.md` is loaded into every request.** So it holds only two kinds of thing:
+invariants you would otherwise break, and this map. Reasons, measurements and rejected
+alternatives belong in `handbook/`; procedures belong in a skill. Both are read on demand.
+If you add a paragraph to `.claude/rules/` explaining _why_, it is in the wrong file.
 
-| File                    | Contents                                                                   |
-| ----------------------- | -------------------------------------------------------------------------- |
-| `architecture.md`       | 不変条件とモジュール地図。詳細は `handbook/architecture/` に外出し（下表） |
-| `mcp-integration.md`    | MCP tools, usage examples, setup instructions                              |
-| `permissions.md`        | Permission system, granular rules, Tool Approval UI                        |
-| `self-development.md`   | Guidelines for developing vibing.nvim with vibing.nvim                     |
-| `self-testing.md`       | E2E testing procedures, 3-try auto-fix rule, test helper reference         |
-| `features.md`           | Auto-resume on usage limit, message timestamps, AskUserQuestion support    |
-| `configuration.md`      | Full configuration examples, window positions, daily summary               |
-| `commands-reference.md` | User commands, slash commands                                              |
-| `web-workflow.md`       | Claude Code on the Web: SessionStart env setup, git push reqs              |
+| `.claude/rules/`      | Invariants for                                                      |
+| --------------------- | ------------------------------------------------------------------- |
+| `architecture.md`     | CLI/hook protocol, backend seams, plugin dirs, diffs, orchestration |
+| `permissions.md`      | Evaluation order, per-chat approval state, delegated approval       |
+| `mcp-integration.md`  | Tool prefixes, `rpc_port`, window/chat addressing                   |
+| `features.md`         | Usage limits, subagent output, AskUserQuestion, timestamps, dap     |
+| `configuration.md`    | Pointer to the option reference                                     |
+| `self-development.md` | Three mistakes made repeatedly when developing this repo            |
+| `self-testing.md`     | What only `test:e2e` may run; the 3-try rule                        |
+| `web-workflow.md`     | Branch naming and push retry on Claude Code for the web             |
 
-All `.md` files in `.claude/rules/` are automatically loaded into Claude Code's context. **だから
-`.claude/rules/` に置くのは「放っておくと破る不変条件」と「どこに何があるかの地図」だけにする。**
-理由・実測値・却下した代替案は必要になったときに読めばよいので、`handbook/architecture/` に置いて
-ルール側からは1行で指す。
+| `handbook/` (on demand)               | Contents                                                |
+| ------------------------------------- | ------------------------------------------------------- |
+| `configuration.md`                    | Every `setup()` field, defaults, granular rule examples |
+| `architecture/module-map.md`          | Per-directory listing, key entry points, adapter split  |
+| `architecture/cli-integration.md`     | Hook protocol, backend seams, per-CLI measurements      |
+| `architecture/permissions.md`         | Evaluation order, Permission Builder, approval UI, #667 |
+| `architecture/lightweight-calls.md`   | How each backend restricts utility calls                |
+| `architecture/plugin-and-commands.md` | `--plugin-dir`, slash command discovery, startup cost   |
+| `architecture/per-request-diffs.md`   | git tree snapshot, overlap guard, fallback routing      |
+| `architecture/chat-lineage.md`        | Concurrency, fork, handoff, subagent chat               |
+| `architecture/orchestration.md`       | Notification state machine, queue, tree operations      |
+| `architecture/session-persistence.md` | The `working_dir` git-root boundary                     |
+| `features/usage-limits.md`            | Auto-resume, scheduled requests, retry budget           |
+| `features/chat-ui.md`                 | Subagent output, timestamps, AskUserQuestion            |
+| `features/editor-integration.md`      | Code Tour, nvim-dap analysis                            |
+| `mcp-tools.md`                        | The MCP tool catalogue and its non-obvious behaviour    |
+| `web-container-setup.md`              | The `SessionStart` hook for Claude Code on the web      |
 
-| 深掘り用（自動ロードされない）                 | Contents                                                |
-| ---------------------------------------------- | ------------------------------------------------------- |
-| `handbook/architecture/cli-integration.md`     | フックの protocol、バックエンド seams、各 CLI での実測  |
-| `handbook/architecture/lightweight-calls.md`   | 軽量呼び出しをバックエンド別にどう制限しているか        |
-| `handbook/architecture/plugin-and-commands.md` | `--plugin-dir`、スラッシュコマンド探索、起動コスト      |
-| `handbook/architecture/per-request-diffs.md`   | git tree snapshot の詳細、overlap ガード、fallback 経路 |
-| `handbook/architecture/chat-lineage.md`        | 並行実行、fork、subagent chat のセッション設計          |
-| `handbook/architecture/orchestration.md`       | 完了通知の状態機械、キュー、round-trip 上限、tree 操作  |
-| `handbook/architecture/session-persistence.md` | `working_dir` の git root 境界チェック                  |
+| `.claude/skills/` (on demand)   | Invoke when                                         |
+| ------------------------------- | --------------------------------------------------- |
+| `self-testing`                  | Writing or debugging an E2E spec                    |
+| `test-design`                   | Designing scenarios before writing tests            |
+| `ci-gates`                      | Touching package.json scripts, CI, or a gate's test |
+| `github-flow-for-claude-on-web` | Any GitHub operation from the web container         |
+| `remote-screenshot`             | Showing a UI change from the web container          |
+
+User-facing command, slash command and keybinding documentation is `doc/vibing.txt` — the one
+place, kept honest by `npm run check:doc`. Do not restate it in `.claude/rules/`.
 
 ## Repository Layout
 
-Claude Code に配布されるものは**すべて `claude-plugin/` 配下**にある。リポジトリルートは
-marketplace root（`.claude-plugin/marketplace.json` があるディレクトリ）で、plugin root は
-その1階層下という関係になっている。
+Everything distributed to Claude Code lives under **`claude-plugin/`**. The repository root is the
+marketplace root; the plugin root is one level below it. The normal path is no longer the
+marketplace, though: `cli_command_builder` passes `claude-plugin/` to the CLI per session with
+`--plugin-dir` (#618). `marketplace.json` remains only for a manual `claude plugin install`.
 
-ただし通常の経路はもう marketplace ではない。`claude-plugin/` は
-`cli_command_builder` が `--plugin-dir` でセッションごとに CLI に渡す（#618、
-`.claude/rules/architecture.md` →「Plugin Loading, Command Discovery and Startup Cost」）。
-marketplace.json は手動 `claude plugin install` のために残してあるだけ。
+| Path                                       | Contents                                          |
+| ------------------------------------------ | ------------------------------------------------- |
+| `.claude-plugin/marketplace.json`          | marketplace definition, `source: ./claude-plugin` |
+| `claude-plugin/.claude-plugin/plugin.json` | plugin definition; `${CLAUDE_PLUGIN_ROOT}` parent |
+| `claude-plugin/{agents,skills}/`           | **distributed** subagents and skills              |
+| `claude-plugin/mcp-server/`                | the distributed MCP server                        |
+| `.claude/{skills,commands,rules}/`         | **for developing this repo**; not distributed     |
 
-| 場所                                       | 中身                                                   |
-| ------------------------------------------ | ------------------------------------------------------ |
-| `.claude-plugin/marketplace.json`          | marketplace 定義。`source` が `./claude-plugin` を指す |
-| `claude-plugin/.claude-plugin/plugin.json` | plugin 定義。`${CLAUDE_PLUGIN_ROOT}` はここの親        |
-| `claude-plugin/{agents,skills}/`           | **配布される** サブエージェント・スキル                |
-| `claude-plugin/mcp-server/`                | 配布される MCP サーバー                                |
-| `.claude/{skills,commands,rules}/`         | **このリポジトリを開発するため**のもの。配布されない   |
-
-`claude-plugin/` に置いたものは `--plugin-dir` 経由でユーザーに届き、`.claude/` に置いた
-ものは届かない。スキルを追加するときはどちらの読者向けかで置き場所を決める。
-
-ディレクトリ名が `plugin/` でないのは Neovim の予約名だからで、`plugin/**/*.lua` は
-runtimepath 上で毎起動時に自動 source される（`:h load-plugins`）。`node_modules` を含む
-ツリーをそこに置くと起動のたびに全走査される。
+When adding a skill, the directory is decided by which reader it is for. The directory is not named
+`plugin/` because that is a Neovim reserved name: `plugin/**/*.lua` on the runtimepath is sourced
+at every startup (`:h load-plugins`), so a tree containing `node_modules` there is walked every
+time Neovim starts.
 
 ## Development Rules
 
-- **テストフィクスチャ・スキャフォルド**: ルートディレクトリに置かない。`tests/` 配下に配置すること
-  - ✅ `tests/fixtures/`, `tests/e2e/`, `tests/lua/` など
-  - ❌ `test-*/`, `test-xxx/` をリポジトリルートに作成しない
+- **Test fixtures and scaffolds go under `tests/`** (`tests/fixtures/`, `tests/e2e/`,
+  `tests/lua/`), never as `test-*/` at the repository root.
 
 ## Key Constants
 
-`lua/vibing/core/constants/tools.lua` がツール名の唯一の定義元。`lua/vibing/config.lua` と
-`can_use_tool.lua` は値を再列挙せずここを参照する。
+`lua/vibing/core/constants/tools.lua` is the single definition of tool names. `config.lua` and
+`can_use_tool.lua` reference it rather than re-listing values.
 
-- **`VALID_TOOLS`**: 権限設定に書けるツール名の一覧。権限バリデーション（未知ツール名の警告）に使う
-- **`DEFAULT_ALLOWED_TOOLS`**: `permissions.allow` の既定値。`VALID_TOOLS` からの差集合としては
-  導出しない（理由は同ファイルのコメント参照）
-- **`ALWAYS_ALLOWED_TOOLS`**: `allow` の内容に関わらず（`ask` / `deny` に無い限り）常に許可される
-  下限。`DEFAULT_ALLOWED_TOOLS` から外しても、こちらに残っていれば許可されたままになる。基準は
-  「ファイルを作成・更新・削除しない読み取り専用のビルトインツール」（`Read` / `Glob` / `Grep` など）。
-  ユーザーが `ask` / `deny` で上書きできる点が下の `INTERNAL_TOOLS` との違い
-- **`INTERNAL_TOOLS`**: `ToolSearch` / `TodoWrite` / `ReportFindings` / `ScheduleWakeup` など、
-  Claude Code ハーネス内部の副作用なし制御ツール。`ask` / `deny` すら通さず常に許可される
-  （`can_use_tool.lua` の評価順で `ALWAYS_ALLOWED_TOOLS` より前）。`VALID_TOOLS` への登録は不要。
-  定義は `tools.lua`（判定は `INTERNAL_TOOLS_MAP` を参照）
-- 新しいツールを追加するとき: 既定で許可するなら `VALID_TOOLS` と `DEFAULT_ALLOWED_TOOLS` の
-  両方に、Bash のように既定では許可しないなら `VALID_TOOLS` にのみ足す
+- **`VALID_TOOLS`** — names writable in permission settings; used to warn about unknown ones.
+- **`DEFAULT_ALLOWED_TOOLS`** — the default `permissions.allow`. Not derived as a difference from
+  `VALID_TOOLS` (see the comment in that file).
+- **`ALWAYS_ALLOWED_TOOLS`** — the floor that stays allowed regardless of `allow`, unless the user
+  puts the tool in `ask` / `deny`. The criterion is "read-only built-in that creates, updates or
+  deletes no file" (`Read` / `Glob` / `Grep`). Removing one from `DEFAULT_ALLOWED_TOOLS` does not
+  disallow it while it is still here.
+- **`INTERNAL_TOOLS`** — harness-internal, side-effect-free control tools (`ToolSearch`,
+  `TodoWrite`, `ReportFindings`, `ScheduleWakeup`). Always allowed, ahead of `ALWAYS_ALLOWED_TOOLS`
+  in `can_use_tool.lua`, so not even `ask` / `deny` applies. No `VALID_TOOLS` entry needed; the
+  check reads `INTERNAL_TOOLS_MAP`.
+- Adding a tool: allowed by default → both `VALID_TOOLS` and `DEFAULT_ALLOWED_TOOLS`; not allowed
+  by default (like `Bash`) → `VALID_TOOLS` only.

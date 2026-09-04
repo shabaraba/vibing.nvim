@@ -42,6 +42,23 @@ VIBING_E2E=1 nvim --headless -u tests/minimal_init.lua \
   -c "PlenaryBustedFile tests/e2e/chat_jump_user_spec.lua"
 ```
 
+## Three Things the Child Neovim Needs
+
+Each of these silently produced a dead spec before — a spec that ran, printed nothing useful and
+was never fixed because nothing said it had failed.
+
+- **`--embed`.** `spawn_nvim_instance` starts the child with it, because `jobstart{ rpc = true }`
+  talks msgpack-RPC to its stdio. Without it every `rpcrequest` fails and the spec never gets past
+  its first wait — which is the state all four specs were in.
+- **`tests/e2e_init.lua`, not `tests/minimal_init.lua`.** The latter is the _parent's_ init (it
+  wires up plenary); a child started with it has vibing.nvim on `runtimepath` but never calls
+  `setup()`, so no `:Vibing*` command exists and `:VibingChat` does nothing. `e2e_init.lua` also
+  points `chat.save_dir` at a per-child temp directory, so running the suite stops writing real
+  chat files into the repository.
+- **`wait_for_buffer_name`, not `wait_for_buffer_content`, for a filename.** The latter matches
+  against buffer _text_, so `wait_for_buffer_content(inst, "%.md")` can never match. That one line,
+  repeated at six sites, is what every spec was actually failing on.
+
 ## Writing a Test
 
 Place files in `tests/e2e/` with a `_spec.lua` suffix:
@@ -157,6 +174,16 @@ A spec still inside a `vim.wait` when that expires is killed mid-wait and prints
 summary, no failure, no test count. So the sum of every wait a file can perform has to fit inside
 that budget, and `tests/e2e-timeout-gate.test.mjs` fails the build when it does not. Raise the
 script's `timeout` rather than trimming a wait that a real turn needs.
+
+## 3-Try Auto-Fix Rule
+
+After implementing a feature, run `pnpm run test:e2e`. If it fails: analyze the failure, apply a
+targeted fix (implementation or test), and re-run — up to 3 attempts, each based on new analysis of
+the latest failure. If it still fails after 3, stop and report to the user: the error, the 3 fixes
+tried, the suspected cause, and a suggested next step.
+
+**Do not proceed to code review while E2E tests are failing** — either fix them via the rule above
+or escalate.
 
 ## Test Scenarios to Cover
 

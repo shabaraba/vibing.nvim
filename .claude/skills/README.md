@@ -1,122 +1,34 @@
-# Claude Code Skills
+# Claude Code Skills (development-only)
 
-This directory contains skills for Claude Code to provide specialized knowledge and workflows.
+Skills in this directory are for **developing this repository**. They are not distributed —
+the ones users get are `claude-plugin/skills/`. Each is read on demand, so put procedures and
+long-form reasoning here rather than in `.claude/rules/`, which is loaded into every request.
 
-## Available Skills
+| Skill                           | Invoke when                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------- |
+| `self-testing`                  | Writing or debugging an E2E spec; the helper API and the child-Neovim traps     |
+| `test-design`                   | Designing scenarios before writing tests                                        |
+| `ci-gates`                      | Touching `package.json` scripts, CI, `scripts/check-help.lua`, or a gate's test |
+| `github-flow-for-claude-on-web` | Any GitHub operation from the web container (REST API, never `gh`)              |
+| `remote-screenshot`             | Showing what a UI change looks like from the web container                      |
 
-### neovim-remote-control
+## Structure
 
-**Location:** `.claude/skills/neovim-remote-control/SKILL.md`
-
-Control remote Neovim instances via Unix socket for testing, development, and automation:
-
-- **Socket Detection:** Auto-detect from `$NVIM` environment variable
-- **Command Execution:** Send commands, evaluate expressions, get buffer state
-- **E2E Testing:** Automate Neovim operations for testing workflows
-- **Natural Language Control:** Respond to user requests like "open this file in Neovim"
-- **Troubleshooting:** Common socket and communication issues
-
-**When activated:** When user requests Neovim control or socket path is available
-
-**Allowed tools:** Bash, Read
-
-**Coverage:**
-
-- `nvim --server --remote-send` for sending commands
-- `nvim --server --remote-expr` for evaluating expressions
-- Buffer content retrieval and manipulation
-- Status checking (mode, buffer, cursor position)
-- E2E testing workflows
-
-### git-remote-workflow
-
-**Location:** `.claude/skills/git-remote-workflow/SKILL.md`
-
-Comprehensive Git workflow for Claude Code on the web environment with:
-
-- **Branch Management:** Naming validation (`claude/*-<sessionId>` pattern), branch conversion
-- **Push Operations:** Automatic retry with exponential backoff, force push handling
-- **PR Creation:** GitHub API integration (no `gh` CLI dependency), multiple PR creation
-- **Complete Workflows:** Feature development, review comment resolution, multi-PR workflows
-- **Troubleshooting:** Common issues and solutions
-- **Environment Detection:** Automatic detection of remote environment
-
-**When activated:** Automatically when working with Git in Claude Code on the web (`CLAUDE_CODE_REMOTE=true`)
-
-**Allowed tools:** Bash, Read, Grep
-
-**Coverage:**
-
-- Git push with retry logic
-- Pull request creation via GitHub API
-- Branch naming compliance
-- Multi-PR workflows
-- Error handling and debugging
-
-## How Skills Work
-
-Skills are directories containing a `SKILL.md` file with YAML frontmatter:
+A skill is a directory holding `SKILL.md` with YAML frontmatter:
 
 ```yaml
 ---
-name: skill-name
-description: What this skill does and when to use it
-allowed-tools: Bash, Read, Grep # Optional
+name: skill-name # lowercase, digits, hyphens; max 64 chars
+description: What it does and when to use it # max 1024 chars — this is what Claude matches on
+allowed-tools: Bash, Read, Grep # optional
 ---
-# Skill Instructions
-
-Clear, step-by-step guidance...
 ```
 
-**Key components:**
+The `description` is the only part loaded up front, so it has to say **when** to reach for the
+skill, not just what it contains. Support files (`reference.md`, `scripts/`) sit beside `SKILL.md`
+and are read only if the skill says to.
 
-- `name`: Lowercase, numbers, hyphens only (max 64 chars)
-- `description`: Brief description for Claude to discover when to use (max 1024 chars)
-- `allowed-tools`: Optional list of tools this skill can use without asking permission
+When adding one, decide first which reader it is for: `claude-plugin/skills/` reaches users via
+`--plugin-dir`, `.claude/skills/` does not leave this repository. Then add a row above.
 
-Skills are activated automatically by Claude based on:
-
-- Environment detection (`CLAUDE_CODE_REMOTE=true`)
-- User requests matching the description
-- Current task context
-
-## Creating New Skills
-
-To create a new skill:
-
-1. Create a directory in `.claude/skills/`:
-
-   ```bash
-   mkdir -p .claude/skills/my-skill
-   ```
-
-2. Create `SKILL.md` with YAML frontmatter:
-
-   ```yaml
-   ---
-   name: my-skill
-   description: What it does and when to use it
-   ---
-
-   # My Skill
-
-   ## Instructions
-   Step-by-step guidance for Claude
-
-   ## Examples
-   Concrete usage examples
-   ```
-
-3. Optionally add support files:
-
-   ```text
-   my-skill/
-   ├── SKILL.md (required)
-   ├── reference.md (optional)
-   └── scripts/
-       └── helper.py (optional)
-   ```
-
-4. Update this README with the new skill
-
-For detailed guidance, see [Claude Code Skills Documentation](https://docs.claude.com/ja/docs/agents-and-tools/agent-skills).
+See [Agent Skills](https://docs.claude.com/ja/docs/agents-and-tools/agent-skills).

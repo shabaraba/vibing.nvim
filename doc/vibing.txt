@@ -179,6 +179,31 @@ section is not kept in sync field by field.
     on every request. Prefer it over `/compact` once the prompt cache has
     gone cold. Refused while a response is streaming.
 
+                                                        *:VibingSubagentChat*
+:VibingSubagentChat [{position}]
+    Continue a subagent this chat started, in its own buffer. The new chat
+    shares the parent's session permanently rather than forking it: a
+    subagent's transcript lives under the parent session's directory, and
+    forking makes the CLI lose it. Because two buffers then resume one
+    session, a send is refused while the other one is streaming.
+
+                                                    *:VibingChatJumpNextUser*
+:[count]VibingChatJumpNextUser
+                                                    *:VibingChatJumpPrevUser*
+:[count]VibingChatJumpPrevUser
+    Move the cursor to the next or previous User section of the chat buffer.
+    A [count] jumps that many sections and clamps to the last one rather
+    than refusing to move. The starting position is pushed onto the
+    jumplist, so `<C-o>` comes back.
+
+    Neither ships with a mapping. To bind them as `]`/`[` motions, forward
+    the count explicitly — the command cannot read `v:count` itself, since
+    on the command line that variable still holds the count of the last
+    Normal-mode command: >lua
+        vim.keymap.set("n", "]u", function()
+          vim.cmd(vim.v.count1 .. "VibingChatJumpNextUser")
+        end, { desc = "Next User section" })
+<
                                                        *:VibingSlashCommands*
 :VibingSlashCommands
     Open the slash-command picker for the current chat.
@@ -278,6 +303,21 @@ Scheduled requests:~
 :VibingCopyUnsentUserHeader
     Copy `## User <!-- unsent -->` to the clipboard.
 
+                                                    *:VibingClearAnnotations*
+:VibingClearAnnotations
+    Remove the inline review notes the agent left with `nvim_annotate` from
+    every buffer. The notes are virtual text only — no file is modified, and
+    unloading a buffer clears its own notes anyway.
+
+                                                        *:VibingDebugAnalyze*
+:VibingDebugAnalyze
+                                                           *:VibingDebugHelp*
+:VibingDebugHelp
+    Ask the agent about the stopped debug session — `Analyze` for what went
+    wrong, `Help` for what to check next. Both send only the request; the
+    agent fetches the stack, scopes and variables itself through the MCP
+    debugger tools. Requires nvim-dap and a stopped session.
+
                                                         *:VibingDailySummary*
 :VibingDailySummary [{YYYY-MM-DD}]
     Summarise this project's chat files for a day (default: today).
@@ -296,6 +336,7 @@ Type these on their own line in a chat buffer and send with `<CR>`:
 /save                   Save the current chat
 /summarize              Summarise the conversation
 /model <model>          Set the model (sonnet|opus|haiku|fable)
+/effort <level>         Set the reasoning effort (low|medium|high|xhigh|max)
 /help                   List the available slash commands
 /permissions, /perm     Interactive permission builder
 /allow [tool]           Add to the allow list, or show it
