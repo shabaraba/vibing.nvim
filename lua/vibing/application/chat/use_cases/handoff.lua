@@ -9,6 +9,11 @@
 ---（`handbook/configuration.md` → "Token Usage"）。
 ---
 ---要約は `:VibingSummarize` と同じ経路（`use_case.generate_and_insert_summary`）で作る。
+---ただし**バッファに既に `## summary` があるならそれを使い、生成は省く**。要約の生成は
+---会話全体を読ませる1リクエストで、引き継ぎで削りたいコストそのものだから、直前に
+---`:VibingSummarize` を走らせたユーザーに同じ請求を二度させる理由がない。古い要約を
+---引き継ぎたくない場合は `:VibingSummarize` で更新してから実行すればよい（更新は
+---`insert_or_update` が同じセクションを上書きする）。
 ---元チャットにも `## summary` が残るので、あとから `:VibingSetFileTitle` がそれを入力に使える。
 ---要約を新しいチャットの**未送信 User セクションに直接書く**のは、モデルに Read で元ファイルを
 ---読ませるより安いから: ツール呼び出しは1回ごとに全コンテキストを再読し、読んだファイルの
@@ -184,6 +189,7 @@ end
 ---
 ---`opts.on_done` は成功なら session、失敗なら nil と理由で**必ず1回**呼ばれる。
 ---要約の生成に失敗した場合、その内訳は `generate_and_insert_summary` 側が通知済み。
+---既に `## summary` があるチャットでは生成を飛ばすので、この関数は同期的に完了しうる。
 ---@param chat_buffer Vibing.ChatBuffer
 ---@param opts {on_done: fun(session: Vibing.ChatSession?, err: string?)}
 function M.execute(chat_buffer, opts)
@@ -198,6 +204,27 @@ function M.execute(chat_buffer, opts)
     return on_done(nil, "This chat has no file to hand off from")
   end
 
+  local SummaryInserter = require("vibing.presentation.chat.modules.summary_inserter")
+
+  ---要約が手元にある状態からの後半。生成した場合も再利用した場合もここを通る。
+  ---@param summary string
+  local function hand_off_with(summary)
+    save_source(chat_buffer)
+
+    local session, create_err = M.create_session(chat_buffer, summary)
+    if not session then
+      notify.error(create_err or "Failed to create handoff chat")
+      return on_done(nil, create_err)
+    end
+    on_done(session)
+  end
+
+  local existing = SummaryInserter.extract(chat_buffer.buf)
+  if existing then
+    notify.info("Reusing this chat's ## summary (run :VibingSummarize first to refresh it)")
+    return hand_off_with(existing)
+  end
+
   local UseCase = require("vibing.application.chat.use_case")
   UseCase.generate_and_insert_summary(chat_buffer, {
     on_done = function(ok, err)
@@ -205,21 +232,13 @@ function M.execute(chat_buffer, opts)
         return on_done(nil, err or "Summary generation failed")
       end
 
-      local SummaryInserter = require("vibing.presentation.chat.modules.summary_inserter")
       local summary = SummaryInserter.extract(chat_buffer.buf)
       if not summary then
         notify.error("Summary was generated but could not be read back from the chat buffer")
         return on_done(nil, "Summary could not be read back from the chat buffer")
       end
 
-      save_source(chat_buffer)
-
-      local session, create_err = M.create_session(chat_buffer, summary)
-      if not session then
-        notify.error(create_err or "Failed to create handoff chat")
-        return on_done(nil, create_err)
-      end
-      on_done(session)
+      hand_off_with(summary)
     end,
   })
 end

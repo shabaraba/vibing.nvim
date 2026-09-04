@@ -218,9 +218,13 @@ describe("Handoff use case", function()
   end)
 
   describe("execute", function()
+    local summarize_calls
+
     local function stub_summarize(ok, summary)
+      summarize_calls = 0
       package.loaded["vibing.application.chat.use_case"] = {
         generate_and_insert_summary = function(chat_buffer, opts)
+          summarize_calls = summarize_calls + 1
           if ok then
             local SummaryInserter = require("vibing.presentation.chat.modules.summary_inserter")
             assert.is_true(SummaryInserter.insert_or_update(chat_buffer.buf, summary or SUMMARY))
@@ -248,6 +252,61 @@ describe("Handoff use case", function()
       -- 元チャットにも `## summary` が残り、ディスクに保存されている
       local source = table.concat(vim.fn.readfile(chat_buffer.file_path), "\n")
       assert.truthy(source:find("## summary", 1, true))
+    end)
+
+    -- 要約の生成は会話全体を読ませる1リクエストで、引き継ぎで削りたいコストそのもの。
+    -- 直前に `:VibingSummarize` を走らせたユーザーに二度払わせない。
+    it("reuses an existing ## summary instead of generating one", function()
+      stub_summarize(true, "## summary\n\n- 生成された要約")
+      local chat_buffer = make_chat_buffer({
+        body = table.concat({
+          "",
+          "# Vibing Chat",
+          "",
+          "## summary",
+          "",
+          "- 既にある要約",
+          "",
+          "---",
+          "",
+          "## 2025-01-01 00:00:00 User",
+          "",
+          "Hello",
+          "",
+        }, "\n"),
+      })
+      local got_session
+
+      Handoff.execute(chat_buffer, {
+        on_done = function(session)
+          got_session = session
+        end,
+      })
+
+      assert.equals(0, summarize_calls)
+      assert.is_not_nil(got_session)
+      local handoff = table.concat(vim.fn.readfile(got_session:get_file_path()), "\n")
+      assert.truthy(handoff:find("- 既にある要約", 1, true))
+      assert.is_nil(handoff:find("- 生成された要約", 1, true))
+    end)
+
+    -- 見出しだけで本文が無いセクションは `extract` が nil を返す。生成を飛ばすと
+    -- 「Summary is empty」で引き継ぎごと落ちるので、ここは生成しなければならない。
+    it("still generates when the existing summary section is empty", function()
+      stub_summarize(true)
+      local chat_buffer = make_chat_buffer({
+        body = "\n# Vibing Chat\n\n## summary\n\n---\n\n## 2025-01-01 00:00:00 User\n\nHello\n",
+      })
+      local got_session
+
+      Handoff.execute(chat_buffer, {
+        on_done = function(session)
+          got_session = session
+        end,
+      })
+
+      assert.equals(1, summarize_calls)
+      assert.is_not_nil(got_session)
     end)
 
     it("reports a failed summary without creating anything", function()
