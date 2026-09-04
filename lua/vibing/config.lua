@@ -111,6 +111,11 @@
 ---@field default_effort ("low"|"medium"|"high"|"xhigh"|"max")? 推論量の既定値（未指定ならCLIの既定に任せる）
 ---@field utility_effort ("low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）
+---@field git_instructions boolean? trueでClaude CLI組み込みのgitステータスブロック（ブランチ名・
+---  直近コミット・`git status --short`）とcommit/PRワークフロー指示をsystem promptに載せる
+---  （デフォルト: false）。どちらの値でも`CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS`を明示的に書く
+---  （true→"0"、false→"1"）ので settings.json の`includeGitInstructions`より優先される。
+---  ただしユーザーが既に環境変数を立てている場合はそちらを尊重して触らない
 ---@field subagent Vibing.SubagentConfig? subagent（Task/Agentツール）の出力表示設定
 ---@field auto_resume_on_limit Vibing.AutoResumeOnLimitConfig 使用量リミット自動継続設定
 ---@field scheduled_requests Vibing.ScheduledRequestsConfig 予約リクエスト設定
@@ -275,6 +280,11 @@ M.defaults = {
     default_effort = nil,
     utility_effort = "low",
     setting_sources = { "user", "project", "local" },
+    -- CLIはプロセス起動ごとにgitステータスブロックを1回計算してsystem promptの先頭に埋める。
+    -- vibing.nvimはターンごとにCLIを起動し直すので、tree を触ったターンの次はそのバイト列が
+    -- 変わり、system prompt以降＝全履歴がキャッシュミスになる。既定でoffにする理由はそれで、
+    -- ブランチ名や直近コミットが要るときはモデルに `git status` / `git log` を1回呼ばせれば済む。
+    git_instructions = false,
     subagent = {
       enabled = false,
       show_prefix = false,
