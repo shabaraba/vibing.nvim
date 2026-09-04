@@ -251,7 +251,12 @@ function ChatBuffer:_setup_keymaps()
       -- `ProgrammaticSender` 経由で同じ関数を通るため。本体でリセットすると配達のたびに 0 に
       -- 戻り、上限が一切効かなくなる
       require("vibing.application.chat.completion_notifier").on_manual_send(self.buf)
-      self:send_message()
+      -- 期限切れキャッシュの確認もここにしか置けない。`ChatBuffer:send_message()` は予約の
+      -- 発火・auto_resume・チャット間の配達も通る合流点なので、そちらに置くと無人送信が
+      -- `vim.ui.select` の前で止まったまま進まなくなる
+      require("vibing.presentation.chat.modules.cache_expiry_prompt").guard(self, function()
+        self:send_message()
+      end)
     end,
     cancel = function()
       self:cancel_request()
@@ -353,10 +358,31 @@ function ChatBuffer:extract_user_message()
   return ConversationExtractor.extract_user_message(self.buf)
 end
 
----リミット中の送信を予約に切り替える
+---送信の直前に割り込んでよいメッセージか
 ---
----スラッシュコマンドと承認応答は対象外: 前者はローカル処理で完結し、後者は待っている
----セッションに届かないと意味がないため、どちらも遅らせる理由がない。
+---スラッシュコマンドはローカル処理で完結し、承認応答は待っているセッションに届かないと
+---意味がないため、どちらも遅らせる理由がない。
+---
+---`<CR>` の手前には割り込みが2つあり（リミット中の予約への切り替えと、期限切れキャッシュの
+---確認）、両方が同じ判断をする。同じ条件を2箇所に書くと、3つ目の除外を足したときに片方だけ
+---直してスラッシュコマンドや承認応答が黙って飲み込まれる
+---@param message string
+---@return boolean
+function ChatBuffer:can_defer_send(message)
+  local commands = require("vibing.application.chat.commands")
+  if commands.is_command(message) then
+    return false
+  end
+
+  local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
+  if self._pending_approval and ApprovalParser.is_approval_response(message) then
+    return false
+  end
+
+  return true
+end
+
+---リミット中の送信を予約に切り替える
 ---@param message string
 ---@return boolean scheduled 予約に切り替えたか
 function ChatBuffer:_try_schedule_instead_of_send(message)
@@ -366,13 +392,7 @@ function ChatBuffer:_try_schedule_instead_of_send(message)
     return false
   end
 
-  local commands = require("vibing.application.chat.commands")
-  if commands.is_command(message) then
-    return false
-  end
-
-  local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-  if self._pending_approval and ApprovalParser.is_approval_response(message) then
+  if not self:can_defer_send(message) then
     return false
   end
 
@@ -590,6 +610,11 @@ function ChatBuffer:send_message()
       return self:update_session_id(session_id)
     end,
     add_user_section = function()
+      -- アシスタントヘッダーへの終了時刻はここで入れる。AIターンが走ったことが確かなのは
+      -- この合流点だけで、`ChatBuffer:add_user_section()` 本体はスラッシュコマンド経路も
+      -- 通る。`add_user_section` より前なのは、次の User セクションが足されると末尾の
+      -- ヘッダーがそちらに変わって対象を見失うため
+      StreamingHandler.stamp_response_end(self.buf)
       self:add_user_section()
       -- 応答が完全に終わった唯一の合流点。`_handle_response` の完了経路は4つある
       -- （セッション破損 / mote finalize / ファイル変更なし / git patch finalize、うち2つは

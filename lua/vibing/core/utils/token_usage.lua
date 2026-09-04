@@ -20,6 +20,15 @@ local M = {}
 --- you, so this is where doing something about the size starts paying for itself.
 M.DEFAULT_WARN_CONTEXT = 150000
 
+--- Age at which a chat's prompt cache is treated as gone.
+---
+--- Claude Code's prompt cache lives for one hour on a subscription plan, so a chat resumed after
+--- lunch rewrites everything from the system prompt to the transcript at cache-creation price --
+--- 12.5x the read price, against an input side that is ~89% of the bill. The default is 55
+--- minutes rather than 60 so a send that lands just inside the hour is still caught; the TTL is
+--- not published in the response, so it can only be inferred from the clock.
+M.DEFAULT_CACHE_TTL_SEC = 3300
+
 --- @class Vibing.TokenUsage
 --- @field requests number main-chain API requests this turn (one per tool-call round trip)
 --- @field subagent_requests number requests made by subagents, which carry their own context
@@ -91,7 +100,48 @@ local function humanize(n)
   return tostring(math.floor(n))
 end
 
+M.humanize = humanize
+
+--- @deprecated Use `M.humanize`; kept so existing callers keep working.
 M._humanize = humanize
+
+--- Read the `context` figure back out of a written `### Tokens` section.
+---
+--- The accumulator is thrown away when the turn ends, so the section text is the only record of
+--- how big the chat was -- and it has to survive a Neovim restart, which rules out keeping the
+--- number in memory. The heading therefore carries the exact figure in a marker comment, the
+--- same trick the section headers already use (`## User <!-- ... -->`), and that is what this
+--- reads.
+---
+--- The humanized metrics line is accepted as a fallback so chats written before the marker
+--- existed still answer. That path is lossy in `humanize`'s own direction -- it rounds half-up,
+--- so a chat at 149,600 reads back as exactly 150k -- which is precisely why the marker exists
+--- rather than being the only form.
+--- @param line string a `### Tokens` heading, or its metrics line
+--- @return number|nil
+function M.parse_context(line)
+  if type(line) ~= "string" then
+    return nil
+  end
+
+  local exact = line:match("^###%s+Tokens%s+<!%-%-%s*context=(%d+)%s*%-%->")
+  if exact then
+    return tonumber(exact)
+  end
+
+  local digits, suffix = line:match("^%s*context ([%d%.]+)([kM]?)")
+  local value = digits and tonumber(digits)
+  if not value then
+    return nil
+  end
+
+  if suffix == "k" then
+    value = value * 1000
+  elseif suffix == "M" then
+    value = value * 1000000
+  end
+  return math.floor(value)
+end
 
 --- The metrics themselves, as one line, or nil when there is nothing to report.
 --- @param acc Vibing.TokenUsage|nil
@@ -154,6 +204,11 @@ end
 --- A section rather than a stray italic line so it sits at the same level as `### Modified Files`
 --- -- the two are the same kind of thing, a per-turn footer about what the turn did, and a reader
 --- scanning headings should find the cost as readily as the file list.
+---
+--- The heading carries the exact context size in a marker comment. The visible line is rounded
+--- for reading, and the pre-send cache gate (`application/chat/cache_expiry`) needs to compare
+--- the real figure against a threshold after a restart, when nothing but this text is left.
+--- Renaming or reordering the visible metrics is therefore safe; dropping the marker is not.
 --- @param acc Vibing.TokenUsage|nil
 --- @param warn_context number|nil
 --- @return string|nil
@@ -164,7 +219,10 @@ function M.section(acc, warn_context)
   end
 
   local warning = M.warning(acc.context, warn_context)
-  return "### Tokens\n\n" .. line .. "\n" .. (warning and ("\n" .. warning .. "\n") or "")
+  return string.format("### Tokens <!-- context=%d -->\n\n", acc.context)
+    .. line
+    .. "\n"
+    .. (warning and ("\n" .. warning .. "\n") or "")
 end
 
 return M
