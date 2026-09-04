@@ -396,6 +396,50 @@ the one moment the cost is actually being looked at — the section right above 
 Repetition is what makes it a gauge rather than an announcement; keeping it to three lines is what
 keeps it from being noise.
 
+#### When a turn re-paid for its prefix
+
+The table above is about the odds of a rewrite. When one actually happens, the section says so and
+names what caused it:
+
+```markdown
+### Tokens
+
+context 205k · 3 requests · read 410k · new 198k
+
+> ↻ **Prefix rewritten (198k).** Likely cause: 1h12m since the last turn (the prompt cache TTL
+> is 1h).
+```
+
+The fact was already in the numbers — `new` sitting close to `context` — but only for a reader who
+knew to compare them. A turn counts as a rewrite when it writes at least half its context. That
+ratio is not configurable, unlike `warn_context`: it is a claim about what happened rather than a
+taste about how noisy to be, and an ordinary turn appending to a warm prefix writes a few percent.
+
+Five causes are checked, in this order, and every one that applies is listed:
+
+| Cause                                                                      | How it is established                         |
+| -------------------------------------------------------------------------- | --------------------------------------------- |
+| The 1-hour cache TTL expired                                               | Elapsed time since the previous turn          |
+| The model or the effort changed                                            | Compared against the previous turn's values   |
+| `CLAUDE.md`, `.claude/rules/*.md` or `.vibing/system-prompt.md` was edited | File mtimes, project and `~/.claude` alike    |
+| The previous turn compacted the conversation                               | Its `compact_boundary` stream event           |
+| Claude Code was updated                                                    | The `claude_code_version` in the `init` event |
+
+The third one is the one worth knowing about, because it behaves differently here than in the
+terminal. `claude -p` starts a fresh process every turn, so an edit to `CLAUDE.md` or a rules file
+takes effect on the **very next turn** — interactive mode holds the copy it started with until
+`/clear` or `/compact`. In a repository where those files are edited often, that is a rewrite the
+reader has no reason to suspect.
+
+A turn where none of the five applies says `No likely cause found` rather than picking one, and the
+first turn of a session is never flagged: it writes its whole prefix by definition, because that is
+the cache being filled rather than missed.
+
+Comparing against the previous turn needs three facts that die with the CLI process — the model it
+resolved, its version, and whether it compacted — so they are kept in `.vibing/turn-state.json`,
+one record per chat, swept of anything older than 30 days. Deleting that file costs one turn of
+`No likely cause found` and nothing else.
+
 **Auto-compaction does not remove the need for this.** It does run under `claude -p` — verified in
 this project's own logs — but it fires near the model's context ceiling, measured at ~930k. It is
 a mechanism for not overflowing, not for controlling cost: every request on the way up to 930k was
@@ -431,9 +475,17 @@ before.
 
 One more thing the numbers depend on: **a chat has a floor it can never go below**, made of the
 system prompt, the tool schemas, and whatever `CLAUDE.md` and `.claude/rules/` the project loads.
-Measured in this repository, that floor is about 110k — so `warn_context = 150000` leaves only
-~40k of conversation before the warning appears. In a project with a small `CLAUDE.md` the same
-threshold is a long way up. If the warning fires constantly, that is what to raise it against.
+The first turn of a session reports it, since that is the one turn whose context _is_ the floor:
+
+```markdown
+context 112k · 2 requests · read 112k · new 112k
+floor ~112k (322 tools, 23 MCP servers)
+```
+
+The two counts come from the CLI's `init` event, which is the only thing that states them. In this
+repository the floor is about 110k — so `warn_context = 150000` leaves only ~40k of conversation
+before the warning appears. In a project with a small `CLAUDE.md` the same threshold is a long way
+up. If the warning fires constantly, that is what to raise it against.
 
 `warn_context = 0` is the middle setting: the metrics stay, the warning never appears. Use it if
 the numbers are what you wanted and the nudge is not. `enabled = false` removes the section

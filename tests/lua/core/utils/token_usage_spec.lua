@@ -49,6 +49,31 @@ describe("token_usage", function()
       assert.equals(1500, acc.write)
     end)
 
+    it("keeps the opening request's split apart from the running totals", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, usage(2, 1200, 108000, 300))
+      TokenUsage.record(acc, usage(2, 6000, 109200, 200))
+      TokenUsage.record(acc, usage(2, 7000, 115200, 200))
+
+      -- Whether the cache was hit is a fact about the request that looked for the prefix. The
+      -- sums cannot answer it: each later request writes its own increment, so a long turn
+      -- accumulates more `write` than its `context` while hitting the cache every time.
+      assert.equals(109202, acc.first_context)
+      assert.equals(1200, acc.first_write)
+      assert.equals(14200, acc.write)
+    end)
+
+    it("takes the opening request from the main chain, not from a subagent", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, usage(2, 500, 80000, 20), true)
+      TokenUsage.record(acc, usage(2, 1200, 108000, 300), false)
+
+      -- A subagent can be the first `assistant` event of a turn, and its prompt is not this
+      -- chat's prefix -- reading it as the opening request would judge the wrong conversation.
+      assert.equals(109202, acc.first_context)
+      assert.equals(1200, acc.first_write)
+    end)
+
     it("ignores a usage payload of an unexpected shape instead of erroring", function()
       local acc = TokenUsage.new()
       TokenUsage.record(acc, nil)
@@ -97,16 +122,16 @@ describe("token_usage", function()
     end)
 
     it("uses one unit per magnitude so the line stays scannable", function()
-      assert.equals("999", TokenUsage._humanize(999))
-      assert.equals("1k", TokenUsage._humanize(1000))
-      assert.equals("205k", TokenUsage._humanize(205000))
-      assert.equals("2.4M", TokenUsage._humanize(2400000))
+      assert.equals("999", TokenUsage.humanize(999))
+      assert.equals("1k", TokenUsage.humanize(1000))
+      assert.equals("205k", TokenUsage.humanize(205000))
+      assert.equals("2.4M", TokenUsage.humanize(2400000))
     end)
 
     it("switches to M where the k form would round to 1000k", function()
-      assert.equals("999k", TokenUsage._humanize(999499))
-      assert.equals("1.0M", TokenUsage._humanize(999500))
-      assert.equals("1.0M", TokenUsage._humanize(1000000))
+      assert.equals("999k", TokenUsage.humanize(999499))
+      assert.equals("1.0M", TokenUsage.humanize(999500))
+      assert.equals("1.0M", TokenUsage.humanize(1000000))
     end)
   end)
 
@@ -144,6 +169,55 @@ describe("token_usage", function()
     it("writes no section at all for a turn with nothing to report", function()
       assert.is_nil(TokenUsage.section(TokenUsage.new(), 150000))
       assert.is_nil(TokenUsage.section(nil, 150000))
+    end)
+
+    it("puts the floor on the line under the metrics", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, usage(2, 110000, 0, 400))
+
+      local lines = vim.split(TokenUsage.section(acc, 150000, { floor = "floor ~110k (322 tools)" }), "\n")
+
+      assert.truthy(lines[3]:find("context 110k", 1, true))
+      assert.equals("floor ~110k (322 tools)", lines[4])
+    end)
+
+    it("puts the rewrite note above the context warning", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, usage(2, 200000, 5000, 900))
+
+      local section = TokenUsage.section(acc, 150000, { rewrite = "> ↻ rewritten" })
+      local metrics_at = section:find("context 205k", 1, true)
+      local rewrite_at = section:find("↻", 1, true)
+      local warning_at = section:find("⚠️", 1, true)
+
+      -- What this turn did comes before standing advice that repeats on every large turn.
+      assert.is_true(metrics_at < rewrite_at)
+      assert.is_true(rewrite_at < warning_at)
+    end)
+
+    it("is unchanged by an absent extras table", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, usage(2, 6000, 82000, 400))
+
+      assert.equals(TokenUsage.section(acc, 150000), TokenUsage.section(acc, 150000, {}))
+    end)
+  end)
+
+  describe("floor", function()
+    it("reports the first turn's prompt as the floor, with what fills it", function()
+      assert.equals("floor ~110k (322 tools, 23 MCP servers)", TokenUsage.floor(110000, { tools = 322, mcp_servers = 23 }))
+    end)
+
+    it("names only the counts the CLI actually reported", function()
+      assert.equals("floor ~110k (322 tools)", TokenUsage.floor(110000, { tools = 322 }))
+      assert.equals("floor ~110k (23 MCP servers)", TokenUsage.floor(110000, { mcp_servers = 23 }))
+    end)
+
+    it("says nothing when the init event told it nothing", function()
+      -- The counts are the whole point of the line: `#669` could already show the context size.
+      assert.is_nil(TokenUsage.floor(110000, {}))
+      assert.is_nil(TokenUsage.floor(110000, nil))
+      assert.is_nil(TokenUsage.floor(0, { tools = 322 }))
     end)
   end)
 

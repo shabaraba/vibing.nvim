@@ -120,6 +120,9 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     output = output,
     errorOutput = error_output,
     tokenUsage = require("vibing.core.utils.token_usage").new(),
+    -- Created empty rather than on the `init` event: `compact_boundary` arrives mid-stream and
+    -- must have somewhere to land even on a turn whose init line was missed or malformed.
+    cliInfo = {},
     onFirstResponse = cancel_timeout,
     onChunk = function(chunk)
       cancel_timeout()
@@ -183,6 +186,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
       -- Attached even on a failed turn: the requests it made were still paid for, and a turn that
       -- died at 600k is exactly the one worth reporting.
       response._token_usage = event_context.tokenUsage
+      response._cli_info = event_context.cliInfo
 
       on_done(response)
     end

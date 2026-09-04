@@ -26,11 +26,20 @@ M.DEFAULT_WARN_CONTEXT = 150000
 --- @field context number largest main-chain prompt seen this turn -- the chat's current size
 --- @field read number cache_read tokens, summed
 --- @field write number cache_creation tokens, summed
+--- @field first_context number prompt size of the turn's first main-chain request
+--- @field first_write number cache_creation on that same request
 ---
 --- Output tokens are deliberately not accumulated. They are ~11% of the bill against the input
 --- side's ~89% (measured over 30 days of this project's logs), so putting them next to the
 --- numbers that do move the total would invite shortening replies -- which is the one economy
 --- here that does not pay.
+---
+--- The two `first_` fields exist for `prefix_rewrite.lua` and are not displayed. Whether the turn
+--- reused the cache is a fact about its **opening** request -- the one that either found the
+--- conversation's prefix or did not. The summed `write` cannot answer it: every later request in
+--- the turn writes its own increment, so a turn with a dozen tool calls accumulates more `write`
+--- than its `context` while hitting the cache every single time. Measured on a real first turn
+--- here: context 99k, 9 requests, write 146k.
 
 --- @return Vibing.TokenUsage
 function M.new()
@@ -40,6 +49,8 @@ function M.new()
     context = 0,
     read = 0,
     write = 0,
+    first_context = 0,
+    first_write = 0,
   }
 end
 
@@ -75,6 +86,11 @@ function M.record(acc, usage, is_subagent)
   if context > acc.context then
     acc.context = context
   end
+
+  if acc.requests == 1 then
+    acc.first_context = context
+    acc.first_write = write
+  end
 end
 
 --- @param n number
@@ -91,7 +107,10 @@ local function humanize(n)
   return tostring(math.floor(n))
 end
 
-M._humanize = humanize
+--- Token counts in the short form the chat renders them in ("205k", "2.4M").
+--- @param n number
+--- @return string
+M.humanize = humanize
 
 --- The metrics themselves, as one line, or nil when there is nothing to report.
 --- @param acc Vibing.TokenUsage|nil
@@ -149,22 +168,69 @@ function M.warning(context, warn_context)
   )
 end
 
+--- The floor this chat starts every turn from, or nil when the CLI did not say.
+---
+--- Shown once, on a session's first turn, because that is the one turn whose context *is* the
+--- floor: nothing has been said yet, so the prompt is the system prompt, the tool schemas and
+--- the memory files and nothing else. #669 could only put a number on it by hand.
+--- @param context number size of the first turn's prompt
+--- @param cli_info { tools: number|nil, mcp_servers: number|nil }|nil
+--- @return string|nil
+function M.floor(context, cli_info)
+  if type(cli_info) ~= "table" or (context or 0) <= 0 then
+    return nil
+  end
+
+  local parts = {}
+  if type(cli_info.tools) == "number" then
+    table.insert(parts, string.format("%d tools", cli_info.tools))
+  end
+  if type(cli_info.mcp_servers) == "number" then
+    table.insert(parts, string.format("%d MCP servers", cli_info.mcp_servers))
+  end
+  if #parts == 0 then
+    return nil
+  end
+
+  return string.format("floor ~%s (%s)", humanize(context), table.concat(parts, ", "))
+end
+
 --- The whole `### Tokens` section for the chat buffer, or nil for a turn with nothing to report.
 ---
 --- A section rather than a stray italic line so it sits at the same level as `### Modified Files`
 --- -- the two are the same kind of thing, a per-turn footer about what the turn did, and a reader
 --- scanning headings should find the cost as readily as the file list.
+---
+--- The rewrite note comes before the context warning: it says what this turn actually did, while
+--- the warning is standing advice that repeats on every large turn.
 --- @param acc Vibing.TokenUsage|nil
 --- @param warn_context number|nil
+--- @param extras { floor: string|nil, rewrite: string|nil }|nil
 --- @return string|nil
-function M.section(acc, warn_context)
+function M.section(acc, warn_context, extras)
   local line = M.format(acc)
   if not line then
     return nil
   end
 
+  extras = extras or {}
+  if extras.floor then
+    line = line .. "\n" .. extras.floor
+  end
+
+  -- Appended one at a time rather than collected into a list and iterated: a nil rewrite note
+  -- would leave a hole at index 1, and `ipairs` stops at the first one -- silently dropping the
+  -- context warning on every turn that did not also rewrite its prefix.
+  local section = "### Tokens\n\n" .. line .. "\n"
+  if extras.rewrite then
+    section = section .. "\n" .. extras.rewrite .. "\n"
+  end
   local warning = M.warning(acc.context, warn_context)
-  return "### Tokens\n\n" .. line .. "\n" .. (warning and ("\n" .. warning .. "\n") or "")
+  if warning then
+    section = section .. "\n" .. warning .. "\n"
+  end
+
+  return section
 end
 
 return M

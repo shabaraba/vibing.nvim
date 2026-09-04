@@ -98,9 +98,34 @@ local function store_session(msg, context)
   end
 end
 
+--- @param value any
+--- @return number|nil
+local function count_of(value)
+  return type(value) == "table" and #value or nil
+end
+
 --- Handle "system" event (init, hook events)
+---
+--- Two subtypes are recorded for the prefix-rewrite diagnosis (`core/utils/prefix_rewrite.lua`).
+--- `init` is the only place the CLI states its own version and how many tools and MCP servers it
+--- loaded, and `compact_boundary` is the only signal that the conversation was compacted -- both
+--- die with the process, so they are copied onto `cliInfo` for the response to carry out.
+--- Everything read here is optional: an unrecognised subtype leaves the table as it was.
 local function handle_system_event(msg, context)
   store_session(msg, context)
+
+  local info = context.cliInfo
+  if info then
+    if msg.subtype == "init" then
+      info.version = type(msg.claude_code_version) == "string" and msg.claude_code_version or info.version
+      info.model = type(msg.model) == "string" and msg.model or info.model
+      info.tools = count_of(msg.tools) or info.tools
+      info.mcp_servers = count_of(msg.mcp_servers) or info.mcp_servers
+    elseif msg.subtype == "compact_boundary" then
+      info.compacted = true
+    end
+  end
+
   -- Cancel timeout on first system event (proves CLI is alive)
   if context.onFirstResponse then
     context.onFirstResponse()
