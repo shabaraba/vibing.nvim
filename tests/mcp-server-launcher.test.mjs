@@ -80,7 +80,7 @@ test('the self-build keeps npm off the registry', async () => {
   const dir = await makeTree();
   try {
     const { calls } = runLauncher(dir);
-    const install = calls.find((call) => call.startsWith('ci'));
+    const install = calls.find((call) => call.startsWith('ci '));
     assert.ok(install, `no \`npm ci\` was run; calls were ${JSON.stringify(calls)}`);
     for (const flag of ['--prefer-offline', '--no-audit', '--no-fund']) {
       assert.ok(
@@ -113,7 +113,11 @@ test('a tree already built for this source is launched without touching npm', as
     // create it, so without this the second run would rebuild for a reason unrelated to the
     // fingerprint.
     await mkdir(join(dir, 'mcp/node_modules'), { recursive: true });
-    runLauncher(dir);
+    // Assert the priming run worked. A first run that died leaves no dist/ and no fingerprint,
+    // so the second run would rebuild — and this test would then report "spent a build it did
+    // not need" for a build it did need, blaming the fingerprint for a broken launcher.
+    const primed = runLauncher(dir);
+    assert.equal(primed.code, 0, `priming run failed: ${primed.stderr}`);
     await rm(join(dir, 'npm.log'));
 
     const { code, calls } = runLauncher(dir);
