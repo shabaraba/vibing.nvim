@@ -190,9 +190,10 @@ describe("E2E: Scheduled requests", function()
 
     -- Proof of delivery, not merely of dispatch: the answer has to come back under the Assistant
     -- header. `[^#]*` keeps the match inside that one section, and the prompt is trivial enough
-    -- that the reply is the word itself.
+    -- that the reply is the word itself. The header is bare while the turn streams and carries a
+    -- `<!-- ... -->` stamp once it completes, so the pattern must tolerate both.
     assert.is_true(
-      helper.wait_for_buffer_content(nvim_instance, "## Assistant\n[^#]*[Ss]cheduled", TIMEOUTS.SCHEDULED_SEND),
+      helper.wait_for_buffer_content(nvim_instance, "## Assistant[^\n]*\n[^#]*[Ss]cheduled", TIMEOUTS.SCHEDULED_SEND),
       "The scheduled request should have been sent and answered"
     )
 

@@ -6,58 +6,60 @@ describe("auto_compact", function()
 
   describe("should_compact", function()
     it("inserts a compaction once the last turn reached the threshold", function()
-      assert.is_true(AutoCompact.should_compact(ON, "claude", 200000, "keep going", false))
-      assert.is_true(AutoCompact.should_compact(ON, "claude", 310000, "keep going", false))
+      assert.is_true(AutoCompact.should_compact(ON, "claude", 200000, false))
+      assert.is_true(AutoCompact.should_compact(ON, "claude", 310000, false))
     end)
 
     it("does nothing below it", function()
-      assert.is_false(AutoCompact.should_compact(ON, "claude", 199999, "keep going", false))
+      assert.is_false(AutoCompact.should_compact(ON, "claude", 199999, false))
     end)
 
     it("is off by default", function()
-      assert.is_false(AutoCompact.should_compact({}, "claude", 310000, "keep going", false))
-      assert.is_false(AutoCompact.should_compact({ enabled = false, at = 200000 }, "claude", 310000, "x", false))
+      assert.is_false(AutoCompact.should_compact({}, "claude", 310000, false))
+      assert.is_false(AutoCompact.should_compact({ enabled = false, at = 200000 }, "claude", 310000, false))
     end)
 
     it("skips the send right after a compaction, so a compaction that did not shrink cannot loop", function()
-      assert.is_false(AutoCompact.should_compact(ON, "claude", 310000, "keep going", true))
+      assert.is_false(AutoCompact.should_compact(ON, "claude", 310000, true))
     end)
 
     -- `/compact` is a Claude CLI command. Everywhere else it would arrive as a line of prose.
     it("only applies to the claude backend", function()
       for _, agent in ipairs({ "codex", "copilot", "grok" }) do
-        assert.is_false(AutoCompact.should_compact(ON, agent, 310000, "keep going", false))
+        assert.is_false(AutoCompact.should_compact(ON, agent, 310000, false))
       end
-    end)
-
-    it("leaves slash commands and approval answers alone", function()
-      assert.is_false(AutoCompact.should_compact(ON, "claude", 310000, "/model opus", false))
-      local answer = "1. allow_once - Allow this execution only"
-      assert.is_false(AutoCompact.should_compact(ON, "claude", 310000, answer, false))
-    end)
-
-    it("needs a message to send", function()
-      assert.is_false(AutoCompact.should_compact(ON, "claude", 310000, "", false))
-      assert.is_false(AutoCompact.should_compact(ON, "claude", 310000, "   \n  ", false))
     end)
 
     -- A chat that has never reported a turn has no size on record; guessing one would be worse
     -- than waiting for the first `### Tokens` section.
     it("waits for a measurement rather than assuming one", function()
-      assert.is_false(AutoCompact.should_compact(ON, "claude", nil, "keep going", false))
+      assert.is_false(AutoCompact.should_compact(ON, "claude", nil, false))
     end)
 
     it("treats at <= 0 as off, matching how warn_context = 0 silences the warning", function()
-      assert.is_false(AutoCompact.should_compact({ enabled = true, at = 0 }, "claude", 900000, "x", false))
-      assert.is_false(AutoCompact.should_compact({ enabled = true, at = -1 }, "claude", 900000, "x", false))
+      assert.is_false(AutoCompact.should_compact({ enabled = true, at = 0 }, "claude", 900000, false))
+      assert.is_false(AutoCompact.should_compact({ enabled = true, at = -1 }, "claude", 900000, false))
     end)
 
     it("falls back to the shared default when at is unset", function()
       local TokenUsage = require("vibing.core.utils.token_usage")
       local opts = { enabled = true }
 
-      assert.is_true(AutoCompact.should_compact(opts, "claude", TokenUsage.DEFAULT_AUTO_COMPACT_AT, "x", false))
-      assert.is_false(AutoCompact.should_compact(opts, "claude", TokenUsage.DEFAULT_AUTO_COMPACT_AT - 1, "x", false))
+      assert.is_true(AutoCompact.should_compact(opts, "claude", TokenUsage.DEFAULT_AUTO_COMPACT_AT, false))
+      assert.is_false(AutoCompact.should_compact(opts, "claude", TokenUsage.DEFAULT_AUTO_COMPACT_AT - 1, false))
+    end)
+
+    -- The slash-command and approval-answer exclusions live in `ChatBuffer:can_defer_send`, which
+    -- `before_manual_send` consults. Three interceptions now share the `<CR>` path and all three
+    -- need that same judgement; a second copy here is how one of them stops agreeing.
+    it("leaves the message-shaped exclusions to can_defer_send", function()
+      local buf = vim.api.nvim_create_buf(false, true)
+      local chat = setmetatable({ buf = buf }, { __index = require("vibing.presentation.chat.buffer") })
+
+      assert.is_false(chat:can_defer_send("/model opus"))
+      assert.is_true(chat:can_defer_send("keep going"))
+
+      vim.api.nvim_buf_delete(buf, { force = true })
     end)
   end)
 

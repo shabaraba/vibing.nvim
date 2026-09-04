@@ -18,7 +18,9 @@
 ---   * opt-in (`agent.token_usage.auto_compact.enabled`, default false)
 ---   * **manual sends only.** Never a scheduled request, an auto-resume, or a message delivered
 ---     from another chat. That is why the hook is on the `<CR>` keymap rather than inside
----     `ChatBuffer:send_message()`, which every one of those paths also goes through.
+---     `ChatBuffer:send_message()`, which every one of those paths also goes through. It runs
+---     inside `cache_expiry_prompt.guard`'s callback, so a send the user calls off at that
+---     prompt does not leave a rewritten `/compact` behind.
 ---   * **claude only.** On the other backends `/compact` is not a command, so it would arrive as
 ---     a line of prose and be answered as one.
 ---   * **at most every other manual send.** If a compaction fails to shrink the conversation,
@@ -93,32 +95,17 @@ M._rewrite_unsent_body = rewrite_unsent_body
 ---
 --- Split out from `before_manual_send` so the rules are testable without a live chat buffer and
 --- without a `/compact` turn actually going out.
+--- The message-shaped exclusions (slash commands, approval answers) are **not** here: they are
+--- `ChatBuffer:can_defer_send`, which the caller consults. This is the third interception on the
+--- `<CR>` path and the third to need exactly that judgement, so re-deriving it here is how one of
+--- the three silently stops excluding an approval answer.
 --- @param opts table `agent.token_usage.auto_compact`
 --- @param agent string The backend this chat resolves to
 --- @param context number|nil The last reported context size, if any
---- @param body string The unsent message about to be sent
 --- @param on_cooldown boolean Whether the previous manual send already inserted a compaction
 --- @return boolean
-function M.should_compact(opts, agent, context, body, on_cooldown)
+function M.should_compact(opts, agent, context, on_cooldown)
   if not opts.enabled or on_cooldown or agent ~= "claude" then
-    return false
-  end
-
-  if type(body) ~= "string" or vim.trim(body) == "" then
-    return false
-  end
-
-  -- Same two exclusions as the limit-aware `<CR>` interception, for the same reasons: a slash
-  -- command is handled locally or is itself a directive to the CLI, and an approval response is
-  -- only meaningful to the session that is waiting for it. `is_approval_response` is consulted
-  -- without first checking that an approval is pending -- a false positive costs one skipped
-  -- compaction, while reaching into another module's private state to rule it out costs more.
-  local commands = require("vibing.application.chat.commands")
-  if commands.is_command(body) then
-    return false
-  end
-  local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-  if ApprovalParser.is_approval_response(body) then
     return false
   end
 
@@ -166,7 +153,7 @@ function M.before_manual_send(chat_buf)
 
   -- This runs on every `<CR>` in every chat, and the feature is off by default, so the disabled
   -- path must not touch the buffer. Everything below reads it: `extract_user_message` and
-  -- `parse_frontmatter` each scan it, and `last_context` copies the whole thing into Lua.
+  -- `parse_frontmatter` each scan it, and `read_last_turn` copies the whole thing into Lua.
   local opts = options()
   if not opts.enabled then
     return false
@@ -176,14 +163,22 @@ function M.before_manual_send(chat_buf)
   cooldown[bufnr] = nil
 
   local body = chat_buf:extract_user_message()
+  if not body or vim.trim(body) == "" or not chat_buf:can_defer_send(body) then
+    return false
+  end
 
   local Modes = require("vibing.core.constants.modes")
   local TokenUsage = require("vibing.core.utils.token_usage")
   local config = require("vibing.config").get()
   local agent = Modes.resolve_agent(chat_buf:parse_frontmatter(), config)
-  local context = TokenUsage.last_context(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
 
-  if not M.should_compact(opts, agent, context, body, on_cooldown) then
+  -- The chat's size is read the same way the cache gate reads it, and from the same helper: the
+  -- `### Tokens` section of the **last assistant turn only**. Scanning the whole buffer for the
+  -- last heading is the trap `read_last_turn` exists to avoid -- `parse_context`'s humanized
+  -- fallback matches any line starting `context <number>`, which ordinary prose produces.
+  local _, context = require("vibing.application.chat.cache_expiry").read_last_turn(bufnr)
+
+  if not M.should_compact(opts, agent, context, on_cooldown) then
     return false
   end
 
@@ -210,7 +205,7 @@ function M.before_manual_send(chat_buf)
   vim.notify(
     string.format(
       "[vibing] Context is %s - running /compact first, then sending your message.",
-      TokenUsage._humanize(context)
+      TokenUsage.humanize(context)
     ),
     vim.log.levels.INFO
   )

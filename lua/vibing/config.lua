@@ -111,6 +111,11 @@
 ---@field default_effort ("low"|"medium"|"high"|"xhigh"|"max")? 推論量の既定値（未指定ならCLIの既定に任せる）
 ---@field utility_effort ("low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）
+---@field git_instructions boolean? trueでClaude CLI組み込みのgitステータスブロック（ブランチ名・
+---  直近コミット・`git status --short`）とcommit/PRワークフロー指示をsystem promptに載せる
+---  （デフォルト: false）。どちらの値でも`CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS`を明示的に書く
+---  （true→"0"、false→"1"）ので settings.json の`includeGitInstructions`より優先される。
+---  ただしユーザーが既に環境変数を立てている場合はそちらを尊重して触らない
 ---@field subagent Vibing.SubagentConfig? subagent（Task/Agentツール）の出力表示設定
 ---@field auto_resume_on_limit Vibing.AutoResumeOnLimitConfig 使用量リミット自動継続設定
 ---@field scheduled_requests Vibing.ScheduledRequestsConfig 予約リクエスト設定
@@ -128,6 +133,8 @@
 ---（チャットが育っていることに気づけない）がそのまま残る通知だから。
 ---@field enabled boolean? falseで表示と警告を止める（デフォルト: true）
 ---@field warn_context number? この値を超えている間、各ターンの内訳行の直下に警告を書く（デフォルト: 150000）
+---@field cache_ttl_sec number? 最終ターンからこの秒数以上空いた手動送信で、送信前に確認を出す。
+---  0で無効。`warn_context` 未満のチャットでは出ない（デフォルト: 3300 = 55分）
 ---@field auto_compact Vibing.AutoCompactConfig? 閾値超過時に`/compact`を自動で挟む設定
 
 ---@class Vibing.AutoCompactConfig
@@ -286,6 +293,11 @@ M.defaults = {
     default_effort = nil,
     utility_effort = "low",
     setting_sources = { "user", "project", "local" },
+    -- CLIはプロセス起動ごとにgitステータスブロックを1回計算してsystem promptの先頭に埋める。
+    -- vibing.nvimはターンごとにCLIを起動し直すので、tree を触ったターンの次はそのバイト列が
+    -- 変わり、system prompt以降＝全履歴がキャッシュミスになる。既定でoffにする理由はそれで、
+    -- ブランチ名や直近コミットが要るときはモデルに `git status` / `git log` を1回呼ばせれば済む。
+    git_instructions = false,
     subagent = {
       enabled = false,
       show_prefix = false,
@@ -387,9 +399,13 @@ M.defaults = {
     -- 値そのものは token_usage 側から借りる。`config` が未設定のとき（テストや手組みの
     -- config テーブル）に使われるフォールバックが同じモジュールにあり、2箇所に同じ数字を
     -- 置くと片方だけ動かして既定値が食い違う
+    --
+    -- cache_ttl_sec は同じ話の「時間」側で、warn_context と AND を取る。片方だけで出すと、
+    -- 小さいチャットの再開や連続した送信のたびに確認が挟まって邪魔になる。
     token_usage = {
       enabled = true,
       warn_context = token_usage.DEFAULT_WARN_CONTEXT,
+      cache_ttl_sec = token_usage.DEFAULT_CACHE_TTL_SEC,
       -- 既定で無効。警告（warn_context）は読み手に判断を渡すもので、こちらは判断を代行して
       -- ターンを1本使う。`at` を warn_context より上に置いてあるのは、警告を見て自分で
       -- `/compact` や `:VibingChatHandoff` を選ぶ余地を先に残すため

@@ -117,8 +117,19 @@ describe("token_usage", function()
 
       local section = TokenUsage.section(acc, 150000)
 
-      assert.equals("### Tokens", vim.split(section, "\n")[1])
+      assert.equals("### Tokens <!-- context=88002 -->", vim.split(section, "\n")[1])
       assert.truthy(section:find("context 88k", 1, true))
+    end)
+
+    it("carries the exact context in the heading, since the visible line is rounded", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, usage(2, 600, 149000, 0))
+
+      local heading = vim.split(TokenUsage.section(acc, 150000), "\n")[1]
+
+      -- 149,602 rounds to "150k" for reading, which would read back as exactly the threshold
+      assert.equals(149602, TokenUsage.parse_context(heading))
+      assert.truthy(TokenUsage.section(acc, 150000):find("context 150k", 1, true))
     end)
 
     it("carries the warning inside the section once the chat is large", function()
@@ -176,50 +187,33 @@ describe("token_usage", function()
     end)
   end)
 
-  describe("last_context", function()
-    --- The section as `_report_token_usage` appends it: a blank line, the heading, a blank line,
-    --- then the metrics.
-    local function section(acc)
-      local lines = { "" }
-      for line in vim.gsplit(TokenUsage.section(acc, 150000), "\n") do
-        table.insert(lines, line)
-      end
-      return lines
-    end
-
-    local function turn(context)
+  describe("parse_context", function()
+    it("reads the exact figure out of the heading marker", function()
       local acc = TokenUsage.new()
-      TokenUsage.record(acc, usage(0, 0, context, 10))
-      return section(acc)
-    end
+      TokenUsage.record(acc, { input_tokens = 200000, cache_read_input_tokens = 5431 })
 
-    it("reads back what section() wrote, which is the only place the number is kept", function()
-      assert.equals(205000, TokenUsage.last_context(turn(205000)))
+      local heading = vim.split(TokenUsage.section(acc, 150000), "\n")[1]
+
+      assert.equals(205431, TokenUsage.parse_context(heading))
     end)
 
-    it("reads the last section, not the first: an older one describes a chat that has changed", function()
-      local lines = turn(310000)
-      vim.list_extend(lines, { "some reply text", "" })
-      vim.list_extend(lines, turn(84000))
+    it("falls back to the metrics line, for chats written before the marker", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, { input_tokens = 200000, cache_read_input_tokens = 5000 })
 
-      assert.equals(84000, TokenUsage.last_context(lines))
+      assert.equals(205000, TokenUsage.parse_context(TokenUsage.format(acc)))
     end)
 
-    it("answers nil rather than reaching further back when the latest section is unreadable", function()
-      local lines = turn(310000)
-      vim.list_extend(lines, { "", "### Tokens", "", "context ???? · 1 request", "" })
-
-      assert.is_nil(TokenUsage.last_context(lines))
+    it("reads every magnitude the humanized form uses", function()
+      assert.equals(940, TokenUsage.parse_context("context 940 · 1 request · read 0 · new 940"))
+      assert.equals(205000, TokenUsage.parse_context("context 205k · 12 requests · read 2.4M · new 12k"))
+      assert.equals(1200000, TokenUsage.parse_context("context 1.2M · 30 requests · read 9.9M · new 40k"))
     end)
 
-    it("answers nil for a chat that has never reported a turn", function()
-      assert.is_nil(TokenUsage.last_context({ "## User", "", "hello", "" }))
-      assert.is_nil(TokenUsage.last_context({}))
-    end)
-
-    it("understands every magnitude humanize can print", function()
-      assert.equals(512, TokenUsage.last_context(turn(512)))
-      assert.equals(1200000, TokenUsage._dehumanize("1.2M"))
+    it("returns nothing for a line that is not a metrics line", function()
+      assert.is_nil(TokenUsage.parse_context("### Tokens"))
+      assert.is_nil(TokenUsage.parse_context("the context was large"))
+      assert.is_nil(TokenUsage.parse_context(nil))
     end)
   end)
 end)

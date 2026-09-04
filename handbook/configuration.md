@@ -32,6 +32,7 @@ require("vibing").setup({
     default_model = "sonnet",
     utility_model = "sonnet",
     setting_sources = { "user", "project", "local" },
+    git_instructions = false,
     subagent = { enabled = false, show_prefix = false },
     auto_resume_on_limit = { enabled = false, max_retries = 1 },
     scheduled_requests = { enabled = true, max_retries = 3 },
@@ -39,6 +40,7 @@ require("vibing").setup({
     token_usage = {
       enabled = true,
       warn_context = 150000,
+      cache_ttl_sec = 3300,
       auto_compact = { enabled = false, at = 200000 },
     },
     plugins = { self = true, project_dir = ".vibing/plugins", extra = {} },
@@ -161,6 +163,15 @@ agent = {
                             -- Drop "user" to skip loading your global CLAUDE.md on
                             -- every chat, reducing fixed per-session token cost.
                             -- Note: does not affect MCP server loading.
+
+  git_instructions = false, -- Claude backend only. The CLI's own git status block (branch,
+                            -- `git status --short`, recent commits) plus its built-in commit/PR
+                            -- workflow instructions. Off because the CLI computes that block
+                            -- once per process and vibing.nvim starts one per turn — see
+                            -- "Token Usage" below. Set true to get the old behaviour back —
+                            -- which also overrides includeGitInstructions in your settings.json,
+                            -- since both values are written through the CLI's env var.
+                            -- An already-set CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS wins either way.
 
   subagent = {              -- What a subagent (Task/Agent tool) says in the chat
     enabled = false,        -- Opt-in: passes --forward-subagent-text to the CLI so the
@@ -445,6 +456,88 @@ would then stay in every later one. See `handbook/architecture/chat-lineage.md` 
 window and never touches the session, so the turn after it re-reads exactly as much as the turn
 before.
 
+**A re-write is not always the conversation's fault.** The prefix starts with the system prompt,
+so anything the CLI computes _at process start_ and puts there is re-computed on every turn —
+vibing.nvim restarts the CLI per turn, where an interactive session or Claude Code on the web keeps
+one process for the whole conversation. If that value changes, the miss is total: floor plus the
+entire history, at creation price. The known case is the CLI's git status block (branch,
+`git status --short`, recent commits), which is why `agent.git_instructions` defaults to `false`
+(#681).
+
+Measured on a 128k-token session, comparing the turn right after a one-line edit to `README.md`:
+
+| `git_instructions` | `new`   | `read`  |
+| ------------------ | ------- | ------- |
+| `true`             | 128,456 | 144,076 |
+| `false`            | 9       | 272,424 |
+
+The turn processes the same ~272k of input either way; what moves is the **price tier** it is
+processed at. Priced in base-input-token equivalents (creation 1.25×, read 0.10×) that turn costs
+174,978 against 27,254 — the block-on turn pays 6.4× as much for the same conversation. Note that
+the CLI's fixed system prefix (the 144,076 read in both rows) stays cached: the block sits between
+it and the conversation, so what misses is everything the chat has accumulated. That is what makes
+the loss proportional to `context`.
+
+The saving applies only to a turn that changed the tree, and one `git status` the model runs
+because the block is gone costs one extra request over the whole context at read price — 27k
+equivalents here, so it would take about five such calls per turn to give the saving back.
+
+The same shape can come from anything else startup-computed; the invariant to apply when touching
+this path is in `handbook/architecture/cli-integration.md` → "What the System Prompt May Not
+Contain".
+
+#### Warning before a send that rewrites an expired cache
+
+`cache_ttl_sec` is the time half of the same story: it catches that cold-cache case _before_ the
+send rather than after. On a 205k chat, resuming after lunch costs more in one send than starting
+two new chats would, and vibing.nvim already has both facts on hand, so `<CR>` asks once:
+
+```text
+This chat's prompt cache has likely expired: the last turn ended 1h23m ago,
+so sending now rewrites ~205k tokens.
+
+1. Send anyway
+2. Continue in a new chat (moves this message there)
+3. Cancel
+```
+
+Both conditions have to hold. Either one alone would make the prompt routine noise: a large chat
+answered promptly still has its cache, and a small chat left overnight rewrites almost nothing.
+The default is 3300 seconds (55 minutes) rather than a full hour because the TTL is not reported
+anywhere in the response and can only be inferred from the clock, so the check leans towards
+catching a send that lands just inside it. Set `cache_ttl_sec = 0` to turn the prompt off; a
+`warn_context = 0` turns it off too, since that already means "show the metrics, skip the
+advice".
+
+The elapsed time is measured from the **`## Assistant` header of the last completed turn**, which
+is stamped when the turn ends for exactly this reason — the last API request of a turn is when the
+cache was last written, and a long turn's start time can be twenty minutes earlier. The context
+figure comes from the marker on that turn's own `### Tokens` heading
+(`### Tokens <!-- context=205431 -->`), which carries the exact number the rounded metrics line
+below it cannot: `149,600` displays as `150k`, and reading _that_ back would fire the prompt on a
+chat sitting just under the threshold. Neither is borrowed from an older turn — a backend that
+reports no usage simply produces no prompt — and the context figure is read only from inside that
+turn's `### Tokens` section, since a reply is free to contain a sentence starting `context 8 …`.
+
+Both survive a Neovim restart because the chat file is now saved **after** the turn's footer is
+written. The existing auto-save runs when the session id is recorded, which is earlier in the same
+turn, so on its own it left the file one turn behind — and the most recent turn, the one this
+check is about, never on disk at all.
+
+"Continue in a new chat" writes a new chat that inherits this one's model, effort, permissions and
+`working_dir`, moves the unsent message into its first `## User` section, and leaves the source
+chat where it was. It deliberately does **not** summarize first: generating a summary is itself a
+request that reads the whole conversation at the price this prompt exists to avoid. When the
+context is worth carrying, `:VibingChatHandoff` is the command that does it, and the warning above
+already names it.
+
+The prompt appears only for a `<CR>` a person typed. A scheduled request firing, an auto-resume,
+a message delivered from another chat, and an orchestrator's delegated approval all reach the same
+send path, and none of them can answer a picker — so the gate lives in the chat buffer's keymap
+rather than in `send_message()`. Slash commands and replies to a pending tool-approval prompt are
+excluded for the same reason `scheduled_requests` excludes them: neither has any reason to be
+delayed. Anything that fails inside the check sends the message rather than blocking it.
+
 One more thing the numbers depend on: **a chat has a floor it can never go below**, made of the
 system prompt, the tool schemas, and whatever `CLAUDE.md` and `.claude/rules/` the project loads.
 Measured in this repository, that floor is about 110k — so `warn_context = 150000` leaves only
@@ -484,6 +577,11 @@ at the same place would take that choice away at the moment it is being offered.
 CLI's own default summary is general. There is no default here because a wrong one would shape
 every summary without ever announcing itself.
 
+The size it compares against is the same figure the cache prompt above uses: the marker on the
+**last completed turn's** `### Tokens` heading, read through the same helper. It is deliberately
+not a fresh scan for the last heading anywhere in the buffer — the rounded fallback matches any
+line beginning `context <number>`, which a reply is free to write.
+
 Four limits, each of which is the feature refusing to spend tokens you did not ask it to:
 
 - **Off by default.** It adds a turn nobody requested.
@@ -495,9 +593,18 @@ Four limits, each of which is the feature refusing to spend tokens you did not a
 - **At most every other manual send.** If a compaction fails to shrink the conversation, the next
   send goes out on its own rather than compacting again — otherwise every send from then on would
   cost two turns.
+- **Not while a usage limit is on record for this chat's backend.** A limit would reject the
+  compaction turn, and a rejected turn writes its own message back into the unsent section —
+  over the message being parked there.
 
-A send whose message is a slash command or an answer to a pending approval prompt is left alone,
-the same two exclusions the limit-aware `<CR>` makes.
+A send whose message is a slash command or an answer to a pending approval prompt is left alone.
+That judgement is not re-derived here: all three interceptions on the `<CR>` path — the
+limit-aware reschedule, the expired-cache prompt, and this — ask `can_defer_send`.
+
+**Order on the `<CR>` path: the expired-cache prompt first, the compaction second.** If you call
+the send off at that prompt, nothing has been rewritten yet. It also means a cold cache is
+reported at its real size — the figure that makes "continue in a new chat" the cheaper answer —
+before a compaction can shrink it.
 
 `:VibingCompact [focus]` is the manual version: one `/compact` turn, now, with an optional focus.
 It refuses while an unsent message is waiting — the automatic path parks your message because you
