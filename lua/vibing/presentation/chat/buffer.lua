@@ -255,6 +255,14 @@ function ChatBuffer:_setup_keymaps()
       -- 発火・auto_resume・チャット間の配達も通る合流点なので、そちらに置くと無人送信が
       -- `vim.ui.select` の前で止まったまま進まなくなる
       require("vibing.presentation.chat.modules.cache_expiry_prompt").guard(self, function()
+        -- 自動 `/compact` は**キャッシュ確認を通ったあと**に挟む。順序は入れ替えられない:
+        -- 先に挟むと、ユーザーが確認ダイアログで取りやめた送信のために未送信セクションを
+        -- `/compact` に書き換えたまま残すことになる。
+        -- 置き場所がここ（`ChatBuffer:send_message()` 本体ではない）なのは上と同じ理由で、
+        -- 無人送信に余分なターンを足さないため。差し替わるのは未送信セクションの中身だけ
+        pcall(function()
+          require("vibing.application.chat.auto_compact").before_manual_send(self)
+        end)
         self:send_message()
       end)
     end,

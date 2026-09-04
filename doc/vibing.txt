@@ -279,6 +279,18 @@ section is not kept in sync field by field.
     argument, uses the project's recorded usage limit reset time, and
     errors if none is on record.
 
+                                                              *:VibingCompact*
+:VibingCompact [{focus}]
+    Run one `/compact` turn on this chat now, replacing the conversation
+    with a summary so later turns re-read less. {focus} is passed through
+    as `/compact {focus}` and says what the summary should keep, e.g.
+    `:VibingCompact the open tasks and the files changed so far`.
+
+    Claude backend only — `/compact` is the CLI's own command. Refuses
+    while an unsent message is waiting, since this command means exactly
+    one turn; to compact and then send, see
+    `agent.token_usage.auto_compact` in |vibing-configuration|.
+
                                                        *:VibingPendingResumes*
 :VibingPendingResumes
     List chats parked until a usage limit resets or a scheduled send fires.

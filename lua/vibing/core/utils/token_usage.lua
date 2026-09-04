@@ -20,6 +20,14 @@ local M = {}
 --- you, so this is where doing something about the size starts paying for itself.
 M.DEFAULT_WARN_CONTEXT = 150000
 
+--- Context size at or above which an opt-in `/compact` is worth paying for.
+---
+--- Above `DEFAULT_WARN_CONTEXT` on purpose. The warning is the reader's own decision point, and
+--- compaction is not free: the turn after it re-writes the whole prefix (measured at 79,783
+--- tokens of new cache on a small session), so a threshold that fired at the same place the
+--- warning appears would take that decision away at the exact moment it is being offered.
+M.DEFAULT_AUTO_COMPACT_AT = 200000
+
 --- Age at which a chat's prompt cache is treated as gone.
 ---
 --- Claude Code's prompt cache lives for one hour on a subscription plan, so a chat resumed after
