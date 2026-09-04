@@ -165,13 +165,17 @@ function M.before_manual_send(chat_buf)
     return false
   end
 
-  local on_cooldown = cooldown[bufnr] == true
-  cooldown[bufnr] = nil
-
   local body = chat_buf:extract_user_message()
   if not body or vim.trim(body) == "" or not chat_buf:can_defer_send(body) then
     return false
   end
+
+  -- The cooldown is spent only by the kind of send it exists to skip. Clearing it above this
+  -- guard let an empty `<CR>`, a `/model` or an approval answer consume it, and the next real
+  -- message would then compact again off the compaction turn's own `### Tokens` -- which reports
+  -- the size of the request that carried the whole conversation, i.e. the pre-compaction figure.
+  local on_cooldown = cooldown[bufnr] == true
+  cooldown[bufnr] = nil
 
   local Modes = require("vibing.core.constants.modes")
   local TokenUsage = require("vibing.core.utils.token_usage")
@@ -189,10 +193,10 @@ function M.before_manual_send(chat_buf)
   end
 
   -- Not while the backend's usage limit is on record. `ChatBuffer:_try_schedule_instead_of_send`
-  -- parks a message rather than sending it, but it exempts slash commands -- so the `/compact`
-  -- would go out, be rejected, and `_reschedule_rejected_message` would write *it* into
-  -- `_pending_user_text`, overwriting the body parked below and losing the user's message. A
-  -- limit is also the worst moment to spend a turn on compaction.
+  -- parks a message rather than sending it, but it exempts slash commands, so the `/compact`
+  -- would go out and be rejected -- and `_reschedule_rejected_message` then writes *its* text
+  -- back into the unsent section and arms a timer to send it. Two writers would be aiming at one
+  -- section. A limit is also the worst moment to spend a turn on compaction.
   if M._limit_active(bufnr, agent) then
     return false
   end
