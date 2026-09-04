@@ -167,3 +167,46 @@ Two pieces were therefore moved off that path, taking a measured ~32ms `setup()`
 
 A scan moved to first use also reads `vim.fn.getcwd()` at first use, which is the more accurate
 cwd for picking up a project's `.claude/commands/` anyway.
+
+### The MCP server's own startup budget is 30 seconds, and the launcher spends it first
+
+That is a different clock from `setup()`: it starts when the CLI spawns
+`claude-plugin/mcp-server/bin/run.sh` for a turn, and it runs out before the server has said
+anything. `run.mjs` sits inside it, and rebuilds whenever the source fingerprint moved — which is
+every first turn after a `git pull` that touched `src/`.
+
+Overrunning it does not look like a failure. The server simply never connects, so
+`mcp__plugin_vibing-nvim_vibing-nvim__*` is absent from the model's tool list for the whole
+session while the skills and the `nvim-navigator` agent — which come from the same
+`--plugin-dir` and need no process — load normally. Nothing logs, and the model is left to
+conclude the tools do not exist.
+
+The compile is not the cost and never was — `typescript@7` is the native compiler, and
+`npm run build` is 0.19s. The whole budget goes to `npm ci`, and **what it costs is not a
+constant**. Measured on macOS with node 22, against the tree as of TypeScript 7:
+
+| `npm ci --silent` under                      | Wall time | CPU   |
+| -------------------------------------------- | --------- | ----- |
+| a cold cache (right after a dependency bump) | 7m 01s    | 0%    |
+| a warm cache, registry slow                  | 31.1s     | 9%    |
+| a warm cache, registry responsive            | ~1.5s     | ~200% |
+
+The spread is npm's registry chatter — an audit request, a funding request, and metadata
+revalidation, none of which say anything about whether the install worked. The 31.1s and the
+~1.5s rows are the _same command on the same tree_, hours apart; the flags were A/B'd against
+each other within that slow window (`--prefer-offline` alone 5.0s, `--no-audit --no-fund` alone
+1.3s) and again later, when plain `npm ci` had become as fast as the flagged form.
+
+So `OFFLINE_FIRST_FLAGS` does not remove a fixed 31s. What it removes is **the dependency on
+registry latency inside a deadline that cannot absorb it**: with the flags the step is bounded by
+local work, and end-to-end `run.sh` → `initialize` measures 1.8–2.2s from a stale fingerprint.
+`tests/mcp-server-launcher.test.mjs` runs the real launcher against a fake `npm` to keep the flags
+there.
+
+**A cold cache is the case this does not fix**, and it is the one that most likely caused the
+incident that prompted the change (#679 bumped typescript, vitest and @types/node together, so
+the next launch had to fetch everything). 7 minutes is so far past 30s that every turn's build was
+killed partway, leaving a half-installed `node_modules` and no fingerprint — so the next turn
+tried again from the same place. `./build.sh` is the escape hatch: it runs the same install under
+no deadline and stamps the fingerprint (`bin/write-fingerprint.mjs`), so the next launch skips the
+build entirely. Run it after a dependency bump.
