@@ -20,6 +20,23 @@ local M = {}
 --- you, so this is where doing something about the size starts paying for itself.
 M.DEFAULT_WARN_CONTEXT = 150000
 
+--- Context size at or above which an opt-in `/compact` is worth paying for.
+---
+--- Above `DEFAULT_WARN_CONTEXT` on purpose. The warning is the reader's own decision point, and
+--- compaction is not free: the turn after it re-writes the whole prefix (measured at 79,783
+--- tokens of new cache on a small session), so a threshold that fired at the same place the
+--- warning appears would take that decision away at the exact moment it is being offered.
+M.DEFAULT_AUTO_COMPACT_AT = 200000
+
+--- Age at which a chat's prompt cache is treated as gone.
+---
+--- Claude Code's prompt cache lives for one hour on a subscription plan, so a chat resumed after
+--- lunch rewrites everything from the system prompt to the transcript at cache-creation price --
+--- 12.5x the read price, against an input side that is ~89% of the bill. The default is 55
+--- minutes rather than 60 so a send that lands just inside the hour is still caught; the TTL is
+--- not published in the response, so it can only be inferred from the clock.
+M.DEFAULT_CACHE_TTL_SEC = 3300
+
 --- @class Vibing.TokenUsage
 --- @field requests number main-chain API requests this turn (one per tool-call round trip)
 --- @field subagent_requests number requests made by subagents, which carry their own context
@@ -112,6 +129,47 @@ end
 --- @return string
 M.humanize = humanize
 
+--- @deprecated Use `M.humanize`; kept so existing callers keep working.
+M._humanize = humanize
+
+--- Read the `context` figure back out of a written `### Tokens` section.
+---
+--- The accumulator is thrown away when the turn ends, so the section text is the only record of
+--- how big the chat was -- and it has to survive a Neovim restart, which rules out keeping the
+--- number in memory. The heading therefore carries the exact figure in a marker comment, the
+--- same trick the section headers already use (`## User <!-- ... -->`), and that is what this
+--- reads.
+---
+--- The humanized metrics line is accepted as a fallback so chats written before the marker
+--- existed still answer. That path is lossy in `humanize`'s own direction -- it rounds half-up,
+--- so a chat at 149,600 reads back as exactly 150k -- which is precisely why the marker exists
+--- rather than being the only form.
+--- @param line string a `### Tokens` heading, or its metrics line
+--- @return number|nil
+function M.parse_context(line)
+  if type(line) ~= "string" then
+    return nil
+  end
+
+  local exact = line:match("^###%s+Tokens%s+<!%-%-%s*context=(%d+)%s*%-%->")
+  if exact then
+    return tonumber(exact)
+  end
+
+  local digits, suffix = line:match("^%s*context ([%d%.]+)([kM]?)")
+  local value = digits and tonumber(digits)
+  if not value then
+    return nil
+  end
+
+  if suffix == "k" then
+    value = value * 1000
+  elseif suffix == "M" then
+    value = value * 1000000
+  end
+  return math.floor(value)
+end
+
 --- The metrics themselves, as one line, or nil when there is nothing to report.
 --- @param acc Vibing.TokenUsage|nil
 --- @return string|nil
@@ -201,6 +259,13 @@ end
 --- -- the two are the same kind of thing, a per-turn footer about what the turn did, and a reader
 --- scanning headings should find the cost as readily as the file list.
 ---
+--- The heading carries the exact context size in a marker comment. The visible line is rounded
+--- for reading, and the pre-send cache gate (`application/chat/cache_expiry`) and the auto-compact
+--- gate (`application/chat/auto_compact`) both need to compare the real figure against a threshold
+--- after a restart, when nothing but this text is left. Renaming or reordering the visible metrics
+--- -- or adding a line under them, as `extras` does -- is therefore safe; dropping the marker is
+--- not, and neither is putting anything ahead of the heading.
+---
 --- The rewrite note comes before the context warning: it says what this turn actually did, while
 --- the warning is standing advice that repeats on every large turn.
 --- @param acc Vibing.TokenUsage|nil
@@ -221,7 +286,7 @@ function M.section(acc, warn_context, extras)
   -- Appended one at a time rather than collected into a list and iterated: a nil rewrite note
   -- would leave a hole at index 1, and `ipairs` stops at the first one -- silently dropping the
   -- context warning on every turn that did not also rewrite its prefix.
-  local section = "### Tokens\n\n" .. line .. "\n"
+  local section = string.format("### Tokens <!-- context=%d -->\n\n", acc.context) .. line .. "\n"
   if extras.rewrite then
     section = section .. "\n" .. extras.rewrite .. "\n"
   end

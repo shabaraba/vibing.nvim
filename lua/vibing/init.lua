@@ -94,6 +94,14 @@ function M.setup(opts)
     end)
   end)
 
+  -- 自動 `/compact` の完了待ち受け。completion_notifier と同じく設定に関わらず張る
+  -- （理由は auto_compact.setup() のコメント参照）
+  vim.schedule(function()
+    pcall(function()
+      require("vibing.application.chat.auto_compact").setup()
+    end)
+  end)
+
   -- 使用量リミット待ちのチャットのタイマーを張り直す。
   -- 5時間/週次リミットのリセットはNeovimの再起動を跨ぐことが多いため、
   -- .vibing/pending-resume.json から復元する。VimEnter後に遅延させて起動を妨げない。
@@ -379,6 +387,16 @@ function M._register_commands()
       notify.info(string.format("Cleared annotations in %d buffer(s)", count))
     end
   end, { desc = "Clear vibing.nvim inline review annotations from all buffers" })
+  -- `/compact` は未登録のスラッシュコマンドとして素通しでCLIに届く経路が元からあるが、
+  -- それだと `/help` の一覧にも補完にも出ず、知っている人しか使えない。コマンドにすると
+  -- 「未送信本文があるなら断る」「claude以外なら断る」を一箇所で言える
+  vim.api.nvim_create_user_command("VibingCompact", function(opts)
+    require("vibing.application.chat.auto_compact").compact_now(opts.args)
+  end, {
+    nargs = "?",
+    desc = "Send `/compact` to shrink this chat's conversation (optional focus for the summary)",
+  })
+
   vim.api.nvim_create_user_command("VibingSchedule", function(opts)
     local view = require("vibing.presentation.chat.view")
     local chat_buffer = view.get_current()

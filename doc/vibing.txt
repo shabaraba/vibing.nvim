@@ -173,12 +173,45 @@ section is not kept in sync field by field.
     effort, permissions, working directory and language, and records where it
     came from in `continued_from`.
 
+    When the buffer already holds a `## summary` section, it is reused and no
+    summary is generated — that generation is a request that reads the whole
+    conversation, which is the cost the handoff exists to shed. Run
+    |:VibingSummarize| first if the existing summary is out of date; it
+    overwrites the same section.
+
     This is the cheap way to continue a long conversation: the new chat
     starts from the fixed floor (system prompt, tools, `CLAUDE.md`) plus a
     few thousand tokens of summary, instead of re-reading the whole history
     on every request. Prefer it over `/compact` once the prompt cache has
     gone cold. Refused while a response is streaming.
 
+                                                        *:VibingSubagentChat*
+:VibingSubagentChat [{position}]
+    Continue a subagent this chat started, in its own buffer. The new chat
+    shares the parent's session permanently rather than forking it: a
+    subagent's transcript lives under the parent session's directory, and
+    forking makes the CLI lose it. Because two buffers then resume one
+    session, a send is refused while the other one is streaming.
+
+                                                    *:VibingChatJumpNextUser*
+:[count]VibingChatJumpNextUser
+                                                    *:VibingChatJumpPrevUser*
+:[count]VibingChatJumpPrevUser
+    Move the cursor to the next or previous User section of the chat buffer.
+    A [count] larger than the number of sections left in that direction
+    lands on the last one rather than refusing to move. When there is no
+    section left at all, the command reports it and the cursor stays put.
+    The starting position is pushed onto the jumplist, so `<C-o>` comes
+    back.
+
+    Neither ships with a mapping. To bind them as `]`/`[` motions, forward
+    the count explicitly — the command cannot read `v:count` itself, since
+    on the command line that variable still holds the count of the last
+    Normal-mode command: >lua
+        vim.keymap.set("n", "]u", function()
+          vim.cmd(vim.v.count1 .. "VibingChatJumpNextUser")
+        end, { desc = "Next User section" })
+<
                                                        *:VibingSlashCommands*
 :VibingSlashCommands
     Open the slash-command picker for the current chat.
@@ -246,6 +279,18 @@ section is not kept in sync field by field.
     argument, uses the project's recorded usage limit reset time, and
     errors if none is on record.
 
+                                                              *:VibingCompact*
+:VibingCompact [{focus}]
+    Run one `/compact` turn on this chat now, replacing the conversation
+    with a summary so later turns re-read less. {focus} is passed through
+    as `/compact {focus}` and says what the summary should keep, e.g.
+    `:VibingCompact the open tasks and the files changed so far`.
+
+    Claude backend only — `/compact` is the CLI's own command. Refuses
+    while an unsent message is waiting, since this command means exactly
+    one turn; to compact and then send, see
+    `agent.token_usage.auto_compact` in |vibing-configuration|.
+
                                                        *:VibingPendingResumes*
 :VibingPendingResumes
     List chats parked until a usage limit resets or a scheduled send fires.
@@ -278,6 +323,21 @@ Scheduled requests:~
 :VibingCopyUnsentUserHeader
     Copy `## User <!-- unsent -->` to the clipboard.
 
+                                                    *:VibingClearAnnotations*
+:VibingClearAnnotations
+    Remove the inline review notes the agent left with `nvim_annotate` from
+    every buffer. The notes are virtual text only — no file is modified, and
+    unloading a buffer clears its own notes anyway.
+
+                                                        *:VibingDebugAnalyze*
+:VibingDebugAnalyze
+                                                           *:VibingDebugHelp*
+:VibingDebugHelp
+    Ask the agent about the stopped debug session — `Analyze` for what went
+    wrong, `Help` for what to check next. Both send only the request; the
+    agent fetches the stack, scopes and variables itself through the MCP
+    debugger tools. Requires nvim-dap and a stopped session.
+
                                                         *:VibingDailySummary*
 :VibingDailySummary [{YYYY-MM-DD}]
     Summarise this project's chat files for a day (default: today).
@@ -296,6 +356,7 @@ Type these on their own line in a chat buffer and send with `<CR>`:
 /save                   Save the current chat
 /summarize              Summarise the conversation
 /model <model>          Set the model (sonnet|opus|haiku|fable)
+/effort <level>         Set the reasoning effort (low|medium|high|xhigh|max)
 /help                   List the available slash commands
 /permissions, /perm     Interactive permission builder
 /allow [tool]           Add to the allow list, or show it
@@ -324,6 +385,16 @@ In a chat buffer:~
     gf          Open the file path under the cursor
     gx          Open the URL on the current line in a browser
     q           Close the chat window
+
+`<CR>` asks before sending in two cases, and sends normally otherwise. While
+the project has a usage limit on record it offers to park the message until
+the reset (see |:VibingSchedule|). And when the chat has been idle past
+`agent.token_usage.cache_ttl_sec` (default 55 minutes) *and* its last turn
+reported a context at or above `warn_context`, the prompt cache has expired,
+so sending rewrites the whole conversation at cache-creation price: it offers
+to send anyway, to move the message into a new chat, or to cancel. Set
+`cache_ttl_sec = 0` to turn that off. Only a `<CR>` you typed is affected —
+scheduled sends, auto-resume and chat-to-chat delivery never prompt.
 
 Everything except `q` is configurable: >lua
     require("vibing").setup({

@@ -579,6 +579,10 @@ function M._turn_diagnosis(acc, response, callbacks, started_fresh_session)
   local frontmatter = callbacks.parse_frontmatter and callbacks.parse_frontmatter() or {}
   local current = {
     at = os.time(),
+    -- ターンの開始時刻。`at`（終了時刻）とは別に持つのは、TTL の経過時間が「前ターンの終わり
+    -- →このターンの最初のリクエスト」で、`at` 同士で引くとこのターン自身の所要時間が
+    -- 上乗せされ、長いターンほど TTL 切れを誤って主張する方向に偏るため
+    started_at = type(cli_info.started_at) == "number" and cli_info.started_at or nil,
     -- model はCLIが `init` で報告した値だけを採る。frontmatter に落とさないのは、片方が
     -- `claude-opus-5` でもう片方が `opus` という別の語彙で、init を1ターン取りこぼしただけで
     -- 「モデルが変わった」と嘘をつくため。init が無ければ nil のまま、この原因は主張しない
@@ -593,7 +597,13 @@ function M._turn_diagnosis(acc, response, callbacks, started_fresh_session)
   -- `PrefixRewrite.detect` が前ターン無しを弾くのと同じ理由でここでも黙る。前ターン記録は
   -- 更新する — 次のターンはこのターンと比べるのが正しい
   if not started_fresh_session then
-    local cwd = callbacks.get_cwd and callbacks.get_cwd() or nil
+    -- `get_cwd()` が答えるのは frontmatter に `working_dir` があるチャット（worktree 運用）
+    -- だけで、通常の `:VibingChat` では nil。そのまま渡すとプロジェクト層
+    -- （`CLAUDE.md` / `.claude/rules/*.md` / `.vibing/system-prompt.md`）の走査が丸ごと飛び、
+    -- 一番気付きにくい原因が一番普通の運用で黙る。CLI が実際に走るディレクトリ＝プロンプト
+    -- ソースが実際に読まれる場所まで落とす（差分の基準ディレクトリと同じ解決順）
+    local Git = require("vibing.core.utils.git")
+    local cwd = (callbacks.get_cwd and callbacks.get_cwd()) or Git.get_root(nil) or vim.fn.getcwd()
     extras.rewrite = PrefixRewrite.note(PrefixRewrite.detect(acc, TurnState.load(chat_path), current, cwd))
   end
 

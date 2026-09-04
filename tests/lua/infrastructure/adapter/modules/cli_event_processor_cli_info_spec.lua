@@ -36,6 +36,19 @@ describe("cli_event_processor cli info", function()
     assert.equals(2, context.cliInfo.mcp_servers)
   end)
 
+  it("stamps when the turn began, and only the first time", function()
+    local context = new_context()
+
+    processor.processLine(init(), context)
+    local first = context.cliInfo.started_at
+    processor.processLine(init(), context)
+
+    -- The cache gap is measured to this moment rather than to the turn's end. A second `init`
+    -- moving it forward would shrink the gap by however long the turn had already run.
+    assert.is_number(first)
+    assert.equals(first, context.cliInfo.started_at)
+  end)
+
   it("records a compaction, whenever in the stream it lands", function()
     local context = new_context()
 

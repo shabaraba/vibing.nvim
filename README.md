@@ -215,7 +215,8 @@ help tags.
 - **`:VibingChatHandoff`** — continue a long conversation in a fresh chat: the current chat is
   summarized, and the new chat's first message starts with that summary. Unlike a fork it does
   not carry the history, so every later request reads a few thousand tokens of summary instead of
-  the whole transcript (accepts the same positions).
+  the whole transcript (accepts the same positions). An existing `## summary` section is reused
+  as-is; run `/summarize` first if it is out of date.
 - **`:VibingToggleChat`** — show/hide your current conversation, preserving its state.
 - **Worktree lifecycle** — handled by the bundled `vibing-worktree-{list,create,attach,run,finish}`
   Claude Code skills entirely via natural language ("split this off into a worktree"), not by

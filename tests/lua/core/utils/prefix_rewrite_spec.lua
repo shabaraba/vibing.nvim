@@ -102,6 +102,21 @@ describe("prefix_rewrite", function()
       assert.same({}, PrefixRewrite.causes(facts(), facts({ at = BASE + 3599 }), {}))
     end)
 
+    it("measures the gap to the turn's start when the CLI reported one", function()
+      -- `at` is when a turn *ended*, so a turn that spent an hour in tool calls looks an hour
+      -- further from the previous one than the cache ever sat idle.
+      local long_turn = facts({ at = BASE + 7200, started_at = BASE + 1800 })
+
+      assert.same({}, PrefixRewrite.causes(facts(), long_turn, {}))
+    end)
+
+    it("falls back to the end time when it was never told the start", function()
+      local causes = PrefixRewrite.causes(facts(), facts({ at = BASE + 7200, started_at = nil }), {})
+
+      assert.equals(1, #causes)
+      assert.truthy(causes[1]:find("TTL", 1, true))
+    end)
+
     it("names a model change with both values", function()
       local causes = PrefixRewrite.causes(facts(), facts({ at = BASE + 60, model = "claude-sonnet-5" }), {})
 

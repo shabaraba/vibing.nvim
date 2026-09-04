@@ -146,6 +146,7 @@ end
 
 --- @class Vibing.TurnFacts
 --- @field at number Unix seconds the turn finished
+--- @field started_at number|nil Unix seconds the turn began, when the CLI's `init` said so
 --- @field model string|nil model the CLI reported for the turn
 --- @field effort string|nil reasoning effort in force
 --- @field version string|nil Claude Code version that ran it
@@ -163,7 +164,10 @@ end
 function M.causes(prev, current, edited)
   local causes = {}
 
-  local elapsed = (current.at or 0) - (prev.at or 0)
+  -- The gap the cache actually sat idle: the previous turn's end to *this* turn's start. Falling
+  -- back to `current.at` costs accuracy in one direction only -- it adds this turn's own duration
+  -- to the gap -- so the fallback is used solely when the CLI never said when it started.
+  local elapsed = (current.started_at or current.at or 0) - (prev.at or 0)
   if elapsed >= M.CACHE_TTL_SECONDS then
     -- The TTL is spelled out rather than passed through `format_duration`, which would render
     -- the round hour as "1h00m".

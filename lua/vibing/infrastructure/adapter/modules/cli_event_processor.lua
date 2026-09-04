@@ -121,6 +121,12 @@ local function handle_system_event(msg, context)
       info.model = type(msg.model) == "string" and msg.model or info.model
       info.tools = count_of(msg.tools) or info.tools
       info.mcp_servers = count_of(msg.mcp_servers) or info.mcp_servers
+      -- When the turn *began*, which is not when it ends. The cache TTL is measured from the last
+      -- turn's end to this turn's first request, so timing this at the end would add the turn's
+      -- own duration to the gap and let a long turn read as an expiry that never happened.
+      -- `init` is emitted before the first request, which is as close to that moment as the
+      -- stream gets. Set once, so a mid-turn `init` cannot move it later.
+      info.started_at = info.started_at or os.time()
     elseif msg.subtype == "compact_boundary" then
       info.compacted = true
     end

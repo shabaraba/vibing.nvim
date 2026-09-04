@@ -63,4 +63,25 @@ describe("Timestamp header grammar", function()
     assert.is_nil(header.timestamp)
     assert.is_false(header.unsent)
   end)
+
+  it("builds a stamped Assistant header, which is what records a turn's end", function()
+    local header = Timestamp.create_header("Assistant", "2026-09-04 10:05:00")
+
+    assert.equals("## Assistant <!-- 2026-09-04 10:05:00 -->", header)
+    assert.equals("2026-09-04 10:05:00", Timestamp.parse_header(header).timestamp)
+    assert.equals("assistant", Timestamp.extract_role(header))
+  end)
+
+  it("reads a stamp back as the local time `now` wrote it as", function()
+    local now = os.time()
+    local stamp = os.date("%Y-%m-%d %H:%M:%S", now)
+
+    assert.equals(now, Timestamp.to_epoch(stamp))
+  end)
+
+  it("returns nothing for anything that is not a full stamp", function()
+    assert.is_nil(Timestamp.to_epoch("unsent"))
+    assert.is_nil(Timestamp.to_epoch("2026-09-04 10:05"))
+    assert.is_nil(Timestamp.to_epoch(nil))
+  end)
 end)

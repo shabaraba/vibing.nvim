@@ -132,6 +132,46 @@ describe("send_message prefix-rewrite reporting", function()
     assert.truthy(unwrapped():find(".claude/rules/architecture.md edited since the last turn", 1, true))
   end)
 
+  it("names an edited rules file in a chat with no working_dir either", function()
+    -- `get_cwd()` only answers for a chat whose frontmatter carries `working_dir`, which is
+    -- written by the worktree path and by nothing else -- so an ordinary `:VibingChat` returns
+    -- nil here. Passing that straight through skipped the project layer entirely, which meant the
+    -- one cause a reader is least likely to guess was dead in the most common setup.
+    local last_turn = os.time() - 60
+    TurnState.record(chat_path, { at = last_turn, model = "claude-opus-5", version = "2.1.231" })
+    vim.fn.mkdir(dir .. "/.claude/rules", "p")
+    vim.fn.writefile({ "rule" }, dir .. "/.claude/rules/architecture.md")
+    vim.uv.fs_utime(dir .. "/.claude/rules/architecture.md", last_turn + 30, last_turn + 30)
+
+    callbacks.get_cwd = function()
+      return nil
+    end
+    local previous_cwd = vim.fn.getcwd()
+    vim.fn.chdir(dir)
+    local ok, err = pcall(SendMessage._report_token_usage, rewriting_turn(), callbacks, {})
+    vim.fn.chdir(previous_cwd)
+    assert.is_true(ok, tostring(err))
+
+    assert.truthy(unwrapped():find(".claude/rules/architecture.md edited since the last turn", 1, true))
+  end)
+
+  it("measures the cache gap from the turn's start, not its end", function()
+    -- Both recorded moments are turn *ends*. A turn that spent 20 minutes in tool calls would
+    -- otherwise add all 20 to the gap and claim a TTL expiry on a chat resumed 45 minutes ago.
+    local turn_start = os.time() - 1800
+    TurnState.record(chat_path, { at = turn_start - 1800, model = "claude-opus-5", version = "2.1.231" })
+
+    SendMessage._report_token_usage(
+      rewriting_turn({ model = "claude-opus-5", version = "2.1.231", started_at = turn_start }),
+      callbacks,
+      {}
+    )
+
+    -- 1h00m apart end-to-end, 30m apart from the moment that matters.
+    assert.truthy(written():find("↻", 1, true))
+    assert.is_nil(unwrapped():find("TTL", 1, true))
+  end)
+
   it("adds nothing to a turn that reused its prefix", function()
     TurnState.record(chat_path, { at = os.time() - 7200, model = "claude-opus-5", version = "2.1.231" })
 

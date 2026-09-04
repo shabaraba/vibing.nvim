@@ -64,6 +64,15 @@ it. By hand:
 `dist/.build-fingerprint` (or the whole `dist/` directory) and relaunch, or just run
 `npm ci && npm run build` directly in this directory.
 
+That rebuild happens inside the 30 seconds Claude Code allows a plugin's MCP server to start, so
+the install runs with `--prefer-offline --no-audit --no-fund`. npm's registry round-trips are not
+a fixed cost — the same `npm ci` on the same warm cache was measured at 31.1s once and ~1.5s hours
+later — and blowing the deadline leaves the tools silently absent from the session, so the flags
+are there to keep the step bounded by local work rather than by registry latency. A **cold** cache
+still takes minutes and no flag helps; run `./build.sh` once after a dependency bump, which does
+the same install under no deadline and stamps the fingerprint so the next launch skips the build.
+See `handbook/architecture/plugin-and-commands.md` → "The MCP server's own startup budget".
+
 ### 1. Build the MCP Server
 
 **Option 1: Using build script (simplest)**
