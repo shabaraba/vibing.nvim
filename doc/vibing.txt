@@ -173,6 +173,12 @@ section is not kept in sync field by field.
     effort, permissions, working directory and language, and records where it
     came from in `continued_from`.
 
+    When the buffer already holds a `## summary` section, it is reused and no
+    summary is generated — that generation is a request that reads the whole
+    conversation, which is the cost the handoff exists to shed. Run
+    |:VibingSummarize| first if the existing summary is out of date; it
+    overwrites the same section.
+
     This is the cheap way to continue a long conversation: the new chat
     starts from the fixed floor (system prompt, tools, `CLAUDE.md`) plus a
     few thousand tokens of summary, instead of re-reading the whole history
