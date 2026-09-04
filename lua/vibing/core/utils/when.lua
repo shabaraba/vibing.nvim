@@ -96,4 +96,21 @@ function M.parse(spec, now)
   return nil, string.format("could not parse '%s' (try 30m, 2h, 1h30m, 18:30 or 2026-08-14T07:05)", spec)
 end
 
+--- Format a second count as a short human-readable duration.
+---
+--- The inverse of the relative half of `M.parse`, and deliberately its neighbour: `1h30m` reads
+--- back as the same spec the user would have typed.
+--- @param seconds number
+--- @return string
+function M.format_duration(seconds)
+  if seconds < 60 then
+    return seconds .. "s"
+  end
+  local minutes = math.floor(seconds / 60)
+  if minutes < 60 then
+    return minutes .. "m"
+  end
+  return string.format("%dh%02dm", math.floor(minutes / 60), minutes % 60)
+end
+
 return M

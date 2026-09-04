@@ -15,6 +15,7 @@
 local PendingResume = require("vibing.infrastructure.storage.pending_resume")
 local RateLimit = require("vibing.core.utils.rate_limit")
 local LimitState = require("vibing.infrastructure.storage.limit_state")
+local When = require("vibing.core.utils.when")
 
 local M = {}
 
@@ -441,17 +442,14 @@ function M.schedule_request(chat_file_path, fire_at, opts)
 end
 
 --- Format a second count as a short human-readable duration
+---
+--- Kept as a name on this module because `init.lua` and `buffer.lua` reach for it here; the
+--- implementation moved to `core/utils/when.lua` so `core/` callers can share it without
+--- requiring an application module.
 --- @param seconds number
 --- @return string
 function M.format_duration(seconds)
-  if seconds < 60 then
-    return seconds .. "s"
-  end
-  local minutes = math.floor(seconds / 60)
-  if minutes < 60 then
-    return minutes .. "m"
-  end
-  return string.format("%dh%02dm", math.floor(minutes / 60), minutes % 60)
+  return When.format_duration(seconds)
 end
 
 --- Called when a response comes back rejected by a usage limit.
