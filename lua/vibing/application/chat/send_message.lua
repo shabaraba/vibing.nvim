@@ -567,7 +567,11 @@ function M._turn_diagnosis(acc, response, callbacks, started_fresh_session)
   local extras = {}
 
   if started_fresh_session then
-    extras.floor = TokenUsage.floor(acc.context, cli_info)
+    -- `first_context` であって `context` ではない。`context` はターン中に見た最大値なので、
+    -- 初回ターンでもツール呼び出しが1回でも挟まれば2回目以降のリクエストにツール結果が積まれ、
+    -- そのターン自身が生んだ会話内容が床に混ざる。床は「システムプロンプト＋ツールスキーマ＋
+    -- メモリファイルだけ」で、それが載っているのは何も喋る前の最初のリクエストだけ
+    extras.floor = TokenUsage.floor(acc.first_context, cli_info)
   end
 
   local bufnr = callbacks.get_bufnr and callbacks.get_bufnr()

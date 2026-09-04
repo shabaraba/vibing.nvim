@@ -231,7 +231,14 @@ end
 --- Shown once, on a session's first turn, because that is the one turn whose context *is* the
 --- floor: nothing has been said yet, so the prompt is the system prompt, the tool schemas and
 --- the memory files and nothing else. #669 could only put a number on it by hand.
---- @param context number size of the first turn's prompt
+---
+--- The caller must pass `acc.first_context`, not `acc.context`. Only the turn's **opening**
+--- request carries nothing but the floor; the moment that turn calls a tool, every request after
+--- it also carries the tool results the turn itself produced, and `acc.context` is the largest of
+--- those. A first turn of two requests is ordinary, so reading the maximum would overstate the
+--- floor on most sessions -- and the number would still look plausible, which is what makes it
+--- worth naming here.
+--- @param context number the opening request's prompt size (`Vibing.TokenUsage.first_context`)
 --- @param cli_info { tools: number|nil, mcp_servers: number|nil }|nil
 --- @return string|nil
 function M.floor(context, cli_info)

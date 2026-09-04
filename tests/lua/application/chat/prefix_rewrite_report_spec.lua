@@ -265,6 +265,19 @@ describe("send_message prefix-rewrite reporting", function()
 
       assert.is_nil(written():find("floor", 1, true))
     end)
+
+    it("measures the floor on the opening request, not on the turn's largest", function()
+      local turn = first_turn()
+      -- The turn called a tool, so its second request also carries the tool result -- content the
+      -- turn produced itself, which is not the floor. Both fixtures above set the two figures
+      -- equal, which is exactly why reading `acc.context` here went unnoticed.
+      turn._token_usage.context = 168000
+
+      SendMessage._report_token_usage(turn, callbacks, {}, true)
+
+      assert.truthy(written():find("floor ~112k (322 tools, 23 MCP servers)", 1, true))
+      assert.is_nil(written():find("floor ~168k", 1, true))
+    end)
   end)
 
   it("still writes the breakdown when the diagnosis cannot run", function()
