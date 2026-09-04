@@ -251,6 +251,13 @@ function ChatBuffer:_setup_keymaps()
       -- `ProgrammaticSender` 経由で同じ関数を通るため。本体でリセットすると配達のたびに 0 に
       -- 戻り、上限が一切効かなくなる
       require("vibing.application.chat.completion_notifier").on_manual_send(self.buf)
+      -- 自動 `/compact` を挟むならここ。理由は上と同じで、無人送信（予約・auto_resume・
+      -- 他チャットからの配達）はすべて `ChatBuffer:send_message()` を通るので、本体に置くと
+      -- 「人がいる送信にだけ余分なターンを足す」という条件が守れない。
+      -- ここで差し替わるのは未送信セクションの中身だけなので、この後の送信経路は何も変わらない
+      pcall(function()
+        require("vibing.application.chat.auto_compact").before_manual_send(self)
+      end)
       self:send_message()
     end,
     cancel = function()

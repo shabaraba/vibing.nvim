@@ -36,7 +36,11 @@ require("vibing").setup({
     auto_resume_on_limit = { enabled = false, max_retries = 1 },
     scheduled_requests = { enabled = true, max_retries = 3 },
     codex_provider_notice = { enabled = true },
-    token_usage = { enabled = true, warn_context = 150000 },
+    token_usage = {
+      enabled = true,
+      warn_context = 150000,
+      auto_compact = { enabled = false, at = 200000 },
+    },
     plugins = { self = true, project_dir = ".vibing/plugins", extra = {} },
   },
   chat = {
@@ -236,6 +240,18 @@ agent = {
                             -- metrics. Written into the buffer rather than notified, and
                             -- repeated each turn, so it is present when the cost is read.
                             -- 0 keeps the metrics and never warns.
+
+    auto_compact = {        -- Run `/compact` for you once the chat has grown. Off by default:
+                            -- it spends a turn nobody asked for, and the turn after it
+                            -- rewrites the whole prefix. See "Automatic /compact" below.
+      enabled = false,
+      at = 200000,          -- Compact before the next manual send when the last turn's
+                            -- context was at or above this. Above warn_context on purpose,
+                            -- so the warning gets to be your decision first. 0 disables.
+      focus = nil,          -- Appended as `/compact <focus>` — what the summary should keep,
+                            -- e.g. "the open tasks and the files changed so far". No default,
+                            -- because a wrong one would quietly shape every summary.
+    },
   },
 
   plugins = {               -- Claude Code plugins loaded for the session with --plugin-dir.
@@ -438,6 +454,55 @@ threshold is a long way up. If the warning fires constantly, that is what to rai
 `warn_context = 0` is the middle setting: the metrics stay, the warning never appears. Use it if
 the numbers are what you wanted and the nudge is not. `enabled = false` removes the section
 entirely.
+
+### Automatic `/compact`
+
+`agent.token_usage.auto_compact` runs the `/compact` above for you once the chat has grown past
+`at`:
+
+```lua
+token_usage = {
+  auto_compact = {
+    enabled = true,
+    at = 200000,
+    focus = "the open tasks and the files changed so far",
+  },
+}
+```
+
+**The compaction is inserted before your next manual send, not right after the turn that crossed
+the threshold.** The turn following a compaction re-writes the whole prefix, so crossing 200k and
+then moving to a fresh chat would have paid ~80k for nothing. Waiting until you actually type
+again is what ties the spend to the intent to keep going. What you see is two turns: `/compact`,
+then your message, whose `### Tokens` reports the smaller context.
+
+`at` sits above `warn_context` deliberately. The warning is where you get to choose between
+`/compact`, `:VibingChatHandoff` and handing the exploring to a subagent; a threshold that fired
+at the same place would take that choice away at the moment it is being offered.
+
+`focus` is worth setting. What the summary keeps decides how well every later turn goes, and the
+CLI's own default summary is general. There is no default here because a wrong one would shape
+every summary without ever announcing itself.
+
+Four limits, each of which is the feature refusing to spend tokens you did not ask it to:
+
+- **Off by default.** It adds a turn nobody requested.
+- **Manual sends only.** A scheduled request, an auto-resume, and a message delivered from
+  another chat all send without you present; none of them triggers a compaction. This matches how
+  the rest of the unattended paths are bounded.
+- **Claude only.** `/compact` is the Claude CLI's own command. On codex, copilot or grok it would
+  arrive as a line of prose and be answered as one.
+- **At most every other manual send.** If a compaction fails to shrink the conversation, the next
+  send goes out on its own rather than compacting again — otherwise every send from then on would
+  cost two turns.
+
+A send whose message is a slash command or an answer to a pending approval prompt is left alone,
+the same two exclusions the limit-aware `<CR>` makes.
+
+`:VibingCompact [focus]` is the manual version: one `/compact` turn, now, with an optional focus.
+It refuses while an unsent message is waiting — the automatic path parks your message because you
+asked to send _that message_, whereas this command was typed on its own and should mean exactly
+one turn.
 
 ### Subagent Output
 

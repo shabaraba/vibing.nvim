@@ -20,6 +20,14 @@ local M = {}
 --- you, so this is where doing something about the size starts paying for itself.
 M.DEFAULT_WARN_CONTEXT = 150000
 
+--- Context size at or above which an opt-in `/compact` is worth paying for.
+---
+--- Above `DEFAULT_WARN_CONTEXT` on purpose. The warning is the reader's own decision point, and
+--- compaction is not free: the turn after it re-writes the whole prefix (measured at 79,783
+--- tokens of new cache on a small session), so a threshold that fired at the same place the
+--- warning appears would take that decision away at the exact moment it is being offered.
+M.DEFAULT_AUTO_COMPACT_AT = 200000
+
 --- @class Vibing.TokenUsage
 --- @field requests number main-chain API requests this turn (one per tool-call round trip)
 --- @field subagent_requests number requests made by subagents, which carry their own context
@@ -92,6 +100,58 @@ local function humanize(n)
 end
 
 M._humanize = humanize
+
+--- @param text string
+--- @return number|nil
+local function dehumanize(text)
+  local num, suffix = tostring(text):match("^(%d+%.?%d*)([kM]?)$")
+  local n = num and tonumber(num)
+  if not n then
+    return nil
+  end
+  if suffix == "k" then
+    return math.floor(n * 1000)
+  end
+  if suffix == "M" then
+    return math.floor(n * 1000000)
+  end
+  return math.floor(n)
+end
+
+M._dehumanize = dehumanize
+
+--- The context size the most recent reported turn saw, read back out of a chat buffer.
+---
+--- The `### Tokens` section is the **only** place this number is kept. `_report_token_usage`
+--- writes it and nothing holds on to it, so reading it back is what lets a decision about the
+--- chat's size outlive both the turn that measured it and the Neovim session that ran it -- a
+--- reopened chat knows how big it is without a new field in frontmatter or a second store.
+---
+--- Reading it back is why the section's grammar lives here next to `format`: two modules
+--- disagreeing about that line is a mistake nothing would report.
+---
+--- Precision is the 1k the section prints, which is three orders of magnitude finer than any
+--- threshold worth setting against it.
+---
+--- Only the last section counts. An older one describes a chat that has since grown or been
+--- compacted, so an unparseable latest section reads as "unknown" rather than sending the caller
+--- further back.
+--- @param lines string[]
+--- @return number|nil
+function M.last_context(lines)
+  for i = #lines, 1, -1 do
+    if lines[i]:match("^###%s+Tokens%s*$") then
+      for j = i + 1, math.min(i + 4, #lines) do
+        local value = lines[j]:match("^context%s+(%S+)%s+·")
+        if value then
+          return dehumanize(value)
+        end
+      end
+      return nil
+    end
+  end
+  return nil
+end
 
 --- The metrics themselves, as one line, or nil when there is nothing to report.
 --- @param acc Vibing.TokenUsage|nil

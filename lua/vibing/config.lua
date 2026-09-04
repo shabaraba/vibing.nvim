@@ -128,6 +128,17 @@
 ---（チャットが育っていることに気づけない）がそのまま残る通知だから。
 ---@field enabled boolean? falseで表示と警告を止める（デフォルト: true）
 ---@field warn_context number? この値を超えている間、各ターンの内訳行の直下に警告を書く（デフォルト: 150000）
+---@field auto_compact Vibing.AutoCompactConfig? 閾値超過時に`/compact`を自動で挟む設定
+
+---@class Vibing.AutoCompactConfig
+---直近ターンのcontextが`at`以上なら、**次の手動送信の前に**`/compact`を1ターン挟み、
+---完了後にユーザーの本文を送る。
+---
+---既定で無効: ユーザーが頼んでいないターンを1本増やし、その次のターンでプレフィックスを
+---丸ごと書き直す（実測 79,783 トークン）ため。適用は手動送信・claudeバックエンドに限る。
+---@field enabled boolean? trueで有効（デフォルト: false）
+---@field at number? 直近ターンのcontextがこの値以上なら挟む。0以下で無効（デフォルト: 200000）
+---@field focus string? `/compact <focus>`として渡す、要約に何を残すかの指示（デフォルト: 無し）
 
 ---@class Vibing.PluginsConfig
 ---セッション限りで読み込むClaude Codeプラグインのディレクトリ設定（claudeバックエンドのみ）
@@ -379,6 +390,15 @@ M.defaults = {
     token_usage = {
       enabled = true,
       warn_context = token_usage.DEFAULT_WARN_CONTEXT,
+      -- 既定で無効。警告（warn_context）は読み手に判断を渡すもので、こちらは判断を代行して
+      -- ターンを1本使う。`at` を warn_context より上に置いてあるのは、警告を見て自分で
+      -- `/compact` や `:VibingChatHandoff` を選ぶ余地を先に残すため
+      auto_compact = {
+        enabled = false,
+        at = token_usage.DEFAULT_AUTO_COMPACT_AT,
+        -- focus は未設定が既定。`/compact <focus>` に何を書くかで次ターン以降の質は変わるが、
+        -- 何を残すべきかはプロジェクトごとに違うので、既定文を置くと外れたときに黙って効く
+      },
     },
     -- `--plugin-dir` で読み込むプラグイン。self → project_dir → extra の順で渡す。
     --
