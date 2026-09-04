@@ -32,6 +32,7 @@ require("vibing").setup({
     default_model = "sonnet",
     utility_model = "sonnet",
     setting_sources = { "user", "project", "local" },
+    git_instructions = false,
     subagent = { enabled = false, show_prefix = false },
     auto_resume_on_limit = { enabled = false, max_retries = 1 },
     scheduled_requests = { enabled = true, max_retries = 3 },
@@ -157,6 +158,15 @@ agent = {
                             -- Drop "user" to skip loading your global CLAUDE.md on
                             -- every chat, reducing fixed per-session token cost.
                             -- Note: does not affect MCP server loading.
+
+  git_instructions = false, -- Claude backend only. The CLI's own git status block (branch,
+                            -- `git status --short`, recent commits) plus its built-in commit/PR
+                            -- workflow instructions. Off because the CLI computes that block
+                            -- once per process and vibing.nvim starts one per turn — see
+                            -- "Token Usage" below. Set true to get the old behaviour back —
+                            -- which also overrides includeGitInstructions in your settings.json,
+                            -- since both values are written through the CLI's env var.
+                            -- An already-set CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS wins either way.
 
   subagent = {              -- What a subagent (Task/Agent tool) says in the chat
     enabled = false,        -- Opt-in: passes --forward-subagent-text to the CLI so the
@@ -429,6 +439,36 @@ would then stay in every later one. See `handbook/architecture/chat-lineage.md` 
 window and never touches the session, so the turn after it re-reads exactly as much as the turn
 before.
 
+**A re-write is not always the conversation's fault.** The prefix starts with the system prompt,
+so anything the CLI computes _at process start_ and puts there is re-computed on every turn —
+vibing.nvim restarts the CLI per turn, where an interactive session or Claude Code on the web keeps
+one process for the whole conversation. If that value changes, the miss is total: floor plus the
+entire history, at creation price. The known case is the CLI's git status block (branch,
+`git status --short`, recent commits), which is why `agent.git_instructions` defaults to `false`
+(#681).
+
+Measured on a 128k-token session, comparing the turn right after a one-line edit to `README.md`:
+
+| `git_instructions` | `new`   | `read`  |
+| ------------------ | ------- | ------- |
+| `true`             | 128,456 | 144,076 |
+| `false`            | 9       | 272,424 |
+
+The turn processes the same ~272k of input either way; what moves is the **price tier** it is
+processed at. Priced in base-input-token equivalents (creation 1.25×, read 0.10×) that turn costs
+174,978 against 27,254 — the block-on turn pays 6.4× as much for the same conversation. Note that
+the CLI's fixed system prefix (the 144,076 read in both rows) stays cached: the block sits between
+it and the conversation, so what misses is everything the chat has accumulated. That is what makes
+the loss proportional to `context`.
+
+The saving applies only to a turn that changed the tree, and one `git status` the model runs
+because the block is gone costs one extra request over the whole context at read price — 27k
+equivalents here, so it would take about five such calls per turn to give the saving back.
+
+The same shape can come from anything else startup-computed; the invariant to apply when touching
+this path is in `handbook/architecture/cli-integration.md` → "What the System Prompt May Not
+Contain".
+
 #### Warning before a send that rewrites an expired cache
 
 `cache_ttl_sec` is the time half of the same story: it catches that cold-cache case _before_ the
@@ -436,8 +476,8 @@ send rather than after. On a 205k chat, resuming after lunch costs more in one s
 two new chats would, and vibing.nvim already has both facts on hand, so `<CR>` asks once:
 
 ```text
-This chat's prompt cache has likely expired (last turn 1h23m ago, context 205k).
-Sending now rewrites ~205k tokens.
+This chat's prompt cache has likely expired: the last turn ended 1h23m ago,
+so sending now rewrites ~205k tokens.
 
 1. Send anyway
 2. Continue in a new chat (moves this message there)
