@@ -198,9 +198,11 @@ section is not kept in sync field by field.
                                                     *:VibingChatJumpPrevUser*
 :[count]VibingChatJumpPrevUser
     Move the cursor to the next or previous User section of the chat buffer.
-    A [count] jumps that many sections and clamps to the last one rather
-    than refusing to move. The starting position is pushed onto the
-    jumplist, so `<C-o>` comes back.
+    A [count] larger than the number of sections left in that direction
+    lands on the last one rather than refusing to move. When there is no
+    section left at all, the command reports it and the cursor stays put.
+    The starting position is pushed onto the jumplist, so `<C-o>` comes
+    back.
 
     Neither ships with a mapping. To bind them as `]`/`[` motions, forward
     the count explicitly — the command cannot read `v:count` itself, since

@@ -28,9 +28,10 @@ replay the whole path in `cli_event_processor_subagent_spec.lua`.
 
 ## Message Timestamps
 
-Chat messages include timestamps in their headers (`## 2025-12-28 14:30:00 User`) for chronology
-and search — `/2025-12-28` in Neovim, or `grep "## 2025-12-28" .vibing/chat/*.md` across chat
-files. Legacy headers without timestamps (`## User`, `## Assistant`) remain fully supported. User
+Chat messages include timestamps in their headers (`## User <!-- 2025-12-28 14:30:00 -->`) for
+chronology and search — `/2025-12-28` in Neovim, or `grep "<!-- 2025-12-28" .vibing/chat/*.md`
+across chat files. Legacy headers without timestamps (`## User`, `## Assistant`) are still
+parsed, via `LEGACY_HEADER_PATTERN`. User
 timestamps are recorded when the message is sent (`<CR>`); Assistant timestamps are recorded when
 the response begins (`on_done` callback). Timestamps use the local system timezone (Lua's
 `os.date()`).

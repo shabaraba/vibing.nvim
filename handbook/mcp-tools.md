@@ -52,7 +52,9 @@ prompt it hands a subagent.
 
 ## Available Tools
 
-Prefix with `mcp__vibing-nvim__`:
+Prefix each with whichever form matches how the server was registered (see above):
+`mcp__plugin_vibing-nvim_vibing-nvim__` in the normal self-hosted case,
+`mcp__vibing-nvim__` for a plain user-level entry.
 
 - **Buffer**: `nvim_get_buffer` (a chat can be named by `file_path` instead of `bufnr`),
   `nvim_set_buffer`, `nvim_list_buffers`, `nvim_get_info`, `nvim_load_buffer`

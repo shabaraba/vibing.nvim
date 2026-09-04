@@ -12,8 +12,8 @@ and Grok CLI backends are also supported. See `.claude/rules/architecture.md`.
 ```bash
 npm install && ./build.sh   # dependencies, then the MCP server
 npm test                    # test:lua + test:node
-npm run check               # Lua syntax   (check:doc for doc/*.txt)
-npm run lint                # TS/JS        (lint:md, format, format:check)
+npm run check               # Lua syntax; see also check:doc for doc/*.txt
+npm run lint                # eslint only; lint:md, format and format:check are separate
 ```
 
 `test:e2e` and `test:eval` spend real tokens and are deliberately outside `npm test`. Every script

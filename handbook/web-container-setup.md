@@ -58,8 +58,9 @@ changing it, rather than looking for a spec that does not exist.
 backoff (2s, 4s, 8s, 16s), up to 4 attempts.
 
 ```bash
-# Create compliant branch
-git checkout -b "claude/my-feature-${CLAUDE_SESSION_ID:-9GOGf}"
+# Create compliant branch. No fallback: a made-up suffix does not match the
+# session, so the push would fail with 403 rather than land somewhere odd.
+git checkout -b "claude/my-feature-${CLAUDE_SESSION_ID:?CLAUDE_SESSION_ID is required}"
 
 # Push with retry
 for i in 0 1 2 3; do

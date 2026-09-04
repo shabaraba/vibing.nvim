@@ -90,4 +90,4 @@ command the project no longer runs.
 `test:lua` sweeps `tests/` including `tests/e2e/`, so every E2E spec self-skips unless
 `VIBING_E2E=1` — which only `test:e2e` sets (`helper.should_run()`). Do not remove that guard to
 "make E2E part of the normal suite": those specs drive full turns against the CLI, so that is a
-per-run API bill on `pnpm run test`. Writing or debugging them is the `self-testing` skill.
+per-run API bill on `npm test`. Writing or debugging them is the `self-testing` skill.

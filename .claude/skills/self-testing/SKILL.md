@@ -177,7 +177,7 @@ script's `timeout` rather than trimming a wait that a real turn needs.
 
 ## 3-Try Auto-Fix Rule
 
-After implementing a feature, run `pnpm run test:e2e`. If it fails: analyze the failure, apply a
+After implementing a feature, run `npm run test:e2e`. If it fails: analyze the failure, apply a
 targeted fix (implementation or test), and re-run — up to 3 attempts, each based on new analysis of
 the latest failure. If it still fails after 3, stop and report to the user: the error, the 3 fixes
 tried, the suspected cause, and a suggested next step.
