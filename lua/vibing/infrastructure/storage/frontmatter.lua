@@ -182,6 +182,7 @@ local KEY_ORDER = {
   "permissions_allow",
   "permissions_deny",
   "permissions_ask",
+  "delegated_scope",
   "language",
 }
 

@@ -108,11 +108,11 @@ at roughly the right place beats refusing to point.
 
 ## Orchestration Tools
 
-`nvim_chat_create({ rpc_port, position?, working_dir?, from_bufnr?, task? })` creates a chat buffer
-and returns `{ bufnr, file_path, working_dir, position, saved }` as JSON, so one chat can spawn
-worker chats, brief each with `nvim_chat_send_message`, and poll them with `nvim_get_buffer` —
-which reports a chat buffer's `responding` / `idle` / `waiting_approval` / `asked_question` /
-`error` status as a second content block.
+`nvim_chat_create({ rpc_port, position?, working_dir?, from_bufnr?, task?, delegated_scope? })`
+creates a chat buffer and returns `{ bufnr, file_path, working_dir, position, saved }` as JSON, so
+one chat can spawn worker chats, brief each with `nvim_chat_send_message`, and poll them with
+`nvim_get_buffer` — which reports a chat buffer's `responding` / `idle` / `waiting_approval` /
+`asked_question` / `error` status as a second content block.
 
 Both tools take an optional `from_bufnr`, the caller's own chat buffer number, which records the
 relationship in both chat files' frontmatter (`orchestrated` / `orchestrated_by`) instead of
@@ -130,6 +130,14 @@ compaction (#692's postmortem). `task` requires `from_bufnr` — with none, ther
 entry to write it into, and it is dropped with a warning. On `nvim_chat_send_message`, a later call
 with a new `task` replaces the recorded assignment ("the latest instruction wins"); omitting it (the
 normal case — a status check, an approval, "go ahead") leaves the existing one untouched.
+
+**`delegated_scope` (`nvim_chat_create` only) is the opposite of `task`: it is written onto the
+NEW chat's own `delegated_scope` frontmatter**, a list of tool/command patterns using the same
+syntax as `permissions_allow` (e.g. `"Bash(npm:*)"`). It has no effect unless
+`agent.orchestration.delegated_approval` is `"scoped"`, in which case it is what
+`nvim_chat_answer_approval` checks an `allow_once`/`allow_for_session` answer against for that
+chat — see below and `handbook/architecture/orchestration.md` → "Answering a worker's tool
+approval".
 
 **The target chat is named by `file_path` or `bufnr`, and the path is the primary form.**
 `nvim_chat_send_message` and `nvim_get_buffer` both accept either, open a chat that is closed, and
@@ -151,9 +159,11 @@ written at delivery rather than when the message is queued, and why the queue is
 chat's pending tool-approval prompt with one of `allow_once` / `deny_once` / `allow_for_session` /
 `deny_for_session`. **It is refused unless `agent.orchestration.delegated_approval` is set**, since
 what it buys is one agent clearing another agent's permission gate; `from_bufnr` is required here
-(unlike on the other two) so the answer is always recorded as somebody's decision. Why it writes
-the chosen option line into the worker's buffer instead of applying the decision directly, and why
-the watchdog's `waiting_approval` wording changes with the setting:
+(unlike on the other two) so the answer is always recorded as somebody's decision. When the setting
+is `"scoped"` rather than `true`, an `allow_once`/`allow_for_session` call additionally fails unless
+the tool matches the target chat's own `delegated_scope` frontmatter — a denial always succeeds
+either way. Why it writes the chosen option line into the worker's buffer instead of applying the
+decision directly, and why the watchdog's `waiting_approval` wording changes with the setting:
 `handbook/architecture/orchestration.md` → "Answering a worker's tool approval".
 
 `nvim_chat_list({ rpc_port? })` reports every chat buffer open in this Neovim session in one call —

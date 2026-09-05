@@ -127,6 +127,26 @@ describe("rpc handlers: create_chat", function()
     assert.is_nil(content:find("\ntask:", 1, true))
   end)
 
+  it("writes delegated_scope into the NEW chat's own frontmatter (opposite of task)", function()
+    -- approval_delegate's "scoped" mode reads the answering chat's own declaration, not
+    -- whoever created it -- see rpc/handlers/chat.lua and approval_delegate_spec.lua.
+    local result = handler.create_chat({ delegated_scope = { "Bash(npm:*)", "Read" } })
+
+    local content = table.concat(vim.fn.readfile(result.file_path), "\n")
+    assert.is_truthy(content:find("delegated_scope:", 1, true))
+    assert.is_truthy(content:find("Bash(npm:*)", 1, true))
+    assert.is_truthy(content:find("- Read", 1, true))
+  end)
+
+  it("ignores a non-table delegated_scope instead of erroring", function()
+    local ok, result = pcall(handler.create_chat, { delegated_scope = "Bash(npm:*)" })
+
+    assert.is_true(ok)
+    assert.is_true(vim.api.nvim_buf_is_valid(result.bufnr))
+    local content = table.concat(vim.fn.readfile(result.file_path), "\n")
+    assert.is_nil(content:find("delegated_scope:", 1, true))
+  end)
+
   it("warns and drops task when given without from_bufnr, instead of losing it silently", function()
     local notify = require("vibing.core.utils.notify")
     local original_warn = notify.warn

@@ -18,6 +18,7 @@ const chatCreateArgsSchema = z.object({
   working_dir: z.string().optional(),
   from_bufnr: z.number().optional(),
   task: taskSchema,
+  delegated_scope: z.array(z.string()).optional(),
   rpc_port: z.number(),
 });
 
@@ -40,13 +41,20 @@ const chatCreateArgsSchema = z.object({
  * `task` is written on the CALLER's own frontmatter (next to the `from_bufnr` link), not on the
  * new chat — see `orchestrated_entry.lua`. Passing `task` without `from_bufnr` has nowhere to go
  * and the Lua side drops it with a warning rather than silently discarding it.
+ *
+ * `delegated_scope` is the opposite of `task`: it is written on the NEW chat's OWN frontmatter
+ * (`delegated_scope`, same pattern syntax as `permissions_allow`), because it is
+ * `approval_delegate.lua`'s "scoped" mode reading the answering chat's own declaration, not
+ * something that belongs to whoever created it. It has no effect unless
+ * `agent.orchestration.delegated_approval` is `"scoped"`.
  */
 export async function handleChatCreate(args: any): Promise<any> {
-  const { position, working_dir, from_bufnr, task, rpc_port } = chatCreateArgsSchema.parse(args);
+  const { position, working_dir, from_bufnr, task, delegated_scope, rpc_port } =
+    chatCreateArgsSchema.parse(args);
 
   const result = await callNeovim(
     'create_chat',
-    { position, working_dir, from_bufnr, task },
+    { position, working_dir, from_bufnr, task, delegated_scope },
     rpc_port
   );
 
@@ -196,12 +204,15 @@ const chatAnswerApprovalArgsSchema = z.object({
  * A chat that hit a tool in its `ask` list has had its turn killed and the approval prompt drawn
  * into its buffer (`rpc/handlers/permission.lua`). It cannot continue, and it cannot report that
  * it is stuck — so until someone answers, it simply never moves again. By default that someone is
- * the user; `agent.orchestration.delegated_approval` lets an orchestrator stand in.
+ * the user; `agent.orchestration.delegated_approval` lets an orchestrator stand in — fully when
+ * it is `true`, or only for tools within the target chat's own declared `delegated_scope` when
+ * it is `"scoped"` (a denial always goes through either way).
  *
  * The gate lives on the Lua side rather than here, so the model gets one answer whichever route
  * it takes and the setting cannot be read stale by a server process that started before it
- * changed. That is also why a disabled call comes back as an error with the wording the model
- * should act on ("tell the user which chat is blocked") instead of a bare refusal.
+ * changed. That is also why a disabled or out-of-scope call comes back as an error with the
+ * wording the model should act on ("tell the user which chat is blocked") instead of a bare
+ * refusal.
  *
  * `from_bufnr` is required here although the other chat tools keep it optional: this call removes
  * a permission gate, and one that cannot record whose decision it was should not be made at all.

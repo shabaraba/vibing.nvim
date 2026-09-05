@@ -222,7 +222,7 @@ end
 ---@return string[] items
 function M.get_list(buf, key)
   local frontmatter = M.parse(buf)
-  return frontmatter[key] or {}
+  return Frontmatter.as_list(frontmatter[key])
 end
 
 return M
