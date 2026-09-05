@@ -2,12 +2,12 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [labeled]
 
 jobs:
   claude-review:
-    # Only run for PRs created by shabaraba
-    if: github.event.pull_request.user.login == 'shabaraba'
+    # Only run when shabaraba attaches the "review" label to the PR
+    if: github.event.label.name == 'review' && github.event.sender.login == 'shabaraba'
 
     runs-on: ubuntu-latest
     permissions:
@@ -33,18 +33,33 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Please review this pull request and provide feedback on:
+            Review this pull request. Use the repository's CLAUDE.md for guidance on style and
+            conventions, and check for:
             - Code quality and best practices
             - Potential bugs or issues
             - Performance considerations
             - Security concerns
             - Test coverage
 
-            Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
+            ## Output format
+            Classify every finding into exactly one of these priority levels and group the
+            comment body under a heading per level, most severe first. Omit a heading entirely
+            if it has no findings; if there are no findings at all, say so briefly instead of
+            posting empty headings.
+            - ## Critical
+            - ## High
+            - ## Medium
+            - ## Low
 
-            Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
+            Post the ENTIRE review as a SINGLE PR comment: call `gh pr comment` exactly once.
+            Do not split the review across multiple comments.
 
-            IMPORTANT: All responses MUST be in Japanese.
+            After the comment is posted, remove the "review" label so this workflow does not
+            fire again until it is re-attached:
+            gh pr edit ${{ github.event.pull_request.number }} --remove-label review
 
-          # Minimum required tools for code review
-          claude_args: '--allowed-tools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"'
+            IMPORTANT: All prose MUST be in Japanese. Keep the priority headings themselves in
+            English (Critical/High/Medium/Low) so they match the repository's priority scheme.
+
+          # Minimum required tools for code review + removing the trigger label
+          claude_args: '--allowed-tools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr edit:*)"'
