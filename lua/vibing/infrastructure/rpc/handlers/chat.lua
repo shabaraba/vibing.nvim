@@ -36,6 +36,21 @@ function M.create_chat(params)
     )
   end
 
+  -- delegated_scopeも他の許可リストと同じ`tools.validate_tool()`を通す。パターン構文を
+  -- `permissions_allow`と揃えるだけでなく、フロントマターの行として書けない値（改行を含む
+  -- 文字列など）をチャットを作る**前**に弾く。無効な要素は`from_bufnr`の無いtaskと同じく、
+  -- 落とすだけでチャット作成自体は続ける（非table全体を無視するのと同じ寛容さ）
+  local delegated_scope = {}
+  if type(params.delegated_scope) == "table" then
+    local tools = require("vibing.core.constants.tools")
+    for _, pattern in ipairs(params.delegated_scope) do
+      local valid_pattern = type(pattern) == "string" and pattern ~= "" and tools.validate_tool(pattern)
+      if valid_pattern then
+        table.insert(delegated_scope, valid_pattern)
+      end
+    end
+  end
+
   local session = require("vibing.application.chat.use_cases.create_chat").execute({
     working_dir = params.working_dir,
   })
@@ -46,12 +61,8 @@ function M.create_chat(params)
   -- delegated_scopeはこの新しいチャット**自身**のfrontmatterに書く（taskとは逆）。
   -- `approval_delegate`が"scoped"モードで照らすのは答えるワーカー自身の宣言であって、
   -- 誰が作ったかではないため
-  if type(params.delegated_scope) == "table" then
-    for _, pattern in ipairs(params.delegated_scope) do
-      if type(pattern) == "string" and pattern ~= "" then
-        chat_buf:update_frontmatter_list("delegated_scope", pattern, "add")
-      end
-    end
+  for _, pattern in ipairs(delegated_scope) do
+    chat_buf:update_frontmatter_list("delegated_scope", pattern, "add")
   end
 
   -- `:VibingChat`は最初の応答が返るまでファイルを書かない（buffer.lua:update_session_id）。

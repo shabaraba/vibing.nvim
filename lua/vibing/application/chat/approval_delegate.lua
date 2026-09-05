@@ -72,11 +72,17 @@ local function is_deny_action(action)
   return action == "deny_once" or action == "deny_for_session"
 end
 
----`"scoped"` モードで、このワーカーの `delegated_scope` が保留中のツール呼び出しを許すか
+---`"scoped"` モードで、この答えを代理で送ってよいか。deny系は範囲を問わず常に通す
+---（拒否は権限を広げないため）— この判断を呼び出し側と分けないのは、範囲チェックを
+---要る場所すべてがdeny系の特別扱いを自分で足し忘れない・落とし忘れないための一箇所
 ---@param chat_buf table ワーカーの ChatBuffer
 ---@param pending {tool: string, input: table}
+---@param action string
 ---@return boolean
-local function matches_declared_scope(chat_buf, pending)
+local function is_allowed_by_scope(chat_buf, pending, action)
+  if is_deny_action(action) then
+    return true
+  end
   local scope = chat_buf:get_frontmatter_list("delegated_scope")
   local matchers = require("vibing.infrastructure.permissions.matchers")
   for _, pattern in ipairs(scope) do
@@ -167,10 +173,10 @@ function M.answer(params)
     )
   end
 
-  -- "scoped" では allow 系の答えだけを `delegated_scope` に照らす。deny 系は権限を広げないので
-  -- 範囲を問わず通す — これが無いと、範囲外のツールを止める（＝安全側に倒す）ことすら
-  -- ユーザー待ちになり、この機能が解決したい待ち時間をかえって増やす
-  if mode == "scoped" and not is_deny_action(params.action) and not matches_declared_scope(chat_buf, pending) then
+  -- "scoped" では allow 系の答えだけを `delegated_scope` に照らす（deny系の特別扱いは
+  -- `is_allowed_by_scope` の中）。これが無いと、範囲外のツールを止める（＝安全側に倒す）
+  -- ことすらユーザー待ちになり、この機能が解決したい待ち時間をかえって増やす
+  if mode == "scoped" and not is_allowed_by_scope(chat_buf, pending, params.action) then
     error(
       string.format(
         "This chat's declared delegated_scope does not cover the %s tool with this input, so "
