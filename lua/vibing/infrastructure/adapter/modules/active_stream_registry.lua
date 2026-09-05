@@ -19,6 +19,9 @@ local M = {}
 --- @field adapter table ClaudeCLI adapter reference
 --- @field on_insert_choices? fun(questions: table)
 --- @field on_approval_required? fun(tool: string, input: table, options: table, hook_request_id?: string)
+--- @field subagent_count? number Task/Agent tool calls this stream has launched and not yet gotten
+---   a tool_result for. Set to 0 by `M.register`; mutated only through `M.increment_subagent_count`
+---   / `M.decrement_subagent_count`.
 
 --- Keyed by handle_id so concurrent chat buffers each resolve to their own stream instead of
 --- one buffer's PreToolUse hook silently grabbing another buffer's callbacks.
@@ -28,6 +31,7 @@ local streams = {}
 --- Register an active stream's callbacks
 --- @param entry ActiveStreamEntry
 function M.register(entry)
+  entry.subagent_count = entry.subagent_count or 0
   streams[entry.handle_id] = entry
 end
 
@@ -35,6 +39,39 @@ end
 --- @param handle_id string
 function M.unregister(handle_id)
   streams[handle_id] = nil
+end
+
+--- Record a Task/Agent tool_use starting in this stream's own transcript (never one nested inside
+--- a subagent's transcript -- `cli_event_processor.lua` only reaches this for the parent's own
+--- tool calls). A stream ending unregisters the whole entry, so a subagent still in flight when
+--- its turn dies is not leaked as a permanent count.
+--- @param handle_id string|nil
+function M.increment_subagent_count(handle_id)
+  local entry = streams[handle_id]
+  if entry then
+    entry.subagent_count = entry.subagent_count + 1
+  end
+end
+
+--- Record that Task/Agent tool call's result landing.
+--- @param handle_id string|nil
+function M.decrement_subagent_count(handle_id)
+  local entry = streams[handle_id]
+  if entry and entry.subagent_count > 0 then
+    entry.subagent_count = entry.subagent_count - 1
+  end
+end
+
+--- Subagents in flight across every active stream, for `application/chat/concurrency.lua`'s
+--- `at_capacity()` -- five chats within their own limit can still be twenty processes deep if each
+--- fans out four subagents (#701).
+--- @return number
+function M.total_subagent_count()
+  local total = 0
+  for _, entry in pairs(streams) do
+    total = total + entry.subagent_count
+  end
+  return total
 end
 
 --- Get an active stream entry by handle_id.

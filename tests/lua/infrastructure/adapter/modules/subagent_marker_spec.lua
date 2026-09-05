@@ -35,6 +35,18 @@ describe("subagent_marker", function()
     assert.equals("", marker.for_tool_result("Agent", {}, 42))
   end)
 
+  describe("is_subagent_tool", function()
+    it("recognizes both names the CLI has used for the launcher", function()
+      assert.is_true(marker.is_subagent_tool("Task"))
+      assert.is_true(marker.is_subagent_tool("Agent"))
+    end)
+
+    it("rejects ordinary tools and nil", function()
+      assert.is_false(marker.is_subagent_tool("Bash"))
+      assert.is_false(marker.is_subagent_tool(nil))
+    end)
+  end)
+
   describe("strip", function()
     it("removes the markers so a fork does not offer agents it cannot reach", function()
       local body = "## User\n\nhi\n<!-- subagent: aaa111 type=general-purpose -->\n## Assistant\n"

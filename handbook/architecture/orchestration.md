@@ -600,7 +600,14 @@ the design:
 - **The concurrency cap gates machine-started sends only** (`concurrency.lua`, enforced in the
   RPC send handler and the queue drain, never in `ChatBuffer:send_message()` — a human `<CR>`
   always goes through). The count includes every responding chat, the user's own manual turns
-  included, so one long hand-driven turn occupies a slot. A send held by the limit is **not** a
+  included, so one long hand-driven turn occupies a slot. It also includes every chat's in-flight
+  subagents (Task/Agent tool calls with no `tool_result` yet, tallied on
+  `active_stream_registry.lua`'s per-stream entry as `cli_event_processor.lua` sees the tool_use
+  and its result go by) — otherwise five chats safely under `max_concurrent` can still fan out to
+  twenty real CLI-equivalent processes, which is exactly the shape that hit a session limit in
+  #692. `max_concurrent_subagents` is a second, independent cap on that subagent count alone, for
+  throttling fan-out without also limiting how many chats may run. A send held by the limit is
+  **not** a
   stop: the hold is treated like branch 2 above (edges kept, no notification), redelivery when a
   slot frees is limited to `held_by_limit` entries — retrying every non-empty queue on each
   completion re-delivers refused messages, which a spec pins — and a `queue_if_busy` message

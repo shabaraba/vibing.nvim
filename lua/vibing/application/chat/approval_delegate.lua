@@ -204,11 +204,13 @@ function M.answer(params)
   if Concurrency.at_capacity() then
     error(
       string.format(
-        "%d chats are already responding, which is the configured limit "
-          .. "(agent.orchestration.max_concurrent = %d). The approval prompt is still pending — "
-          .. "answer it again once one of them finishes.",
+        "%d chats and %d of their subagents are already in flight, at or above the configured "
+          .. "limit (agent.orchestration.max_concurrent = %d, max_concurrent_subagents = %d). "
+          .. "The approval prompt is still pending — answer it again once one of them finishes.",
         Concurrency.responding_count(),
-        Concurrency.limit()
+        Concurrency.subagent_count(),
+        Concurrency.limit(),
+        Concurrency.subagent_limit()
       )
     )
   end
