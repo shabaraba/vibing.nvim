@@ -734,12 +734,12 @@ same `Bash` prompt, that is five buffers the user has to find by hand.
 through the MCP tool `nvim_chat_answer_approval` →`rpc/handlers/chat.lua:answer_approval` →
 `application/chat/approval_delegate.lua`. Set to `true` it delegates unconditionally; set to
 `"scoped"` (#703) it delegates only `allow_once`/`allow_for_session` answers whose tool and input
-match a pattern the *worker itself* declared in its own `delegated_scope` frontmatter (same
+match a pattern the _worker itself_ declared in its own `delegated_scope` frontmatter (same
 pattern syntax as `permissions_allow`, checked with the same `matchers.matches_permission` every
 other allow/deny list uses) — a denial always goes through, since denying cannot grant anything a
 scope would need to bound. `delegated_scope` is declared at `nvim_chat_create` time (or later, by
 editing the worker's frontmatter directly) and lives on the worker's own file, not the
-orchestrator's `orchestrated` entry: `approval_delegate` is answering on behalf of *that chat*, and
+orchestrator's `orchestrated` entry: `approval_delegate` is answering on behalf of _that chat_, and
 what it may auto-approve is that chat's own property, independent of which chat happens to be
 driving it this turn.
 
@@ -787,7 +787,7 @@ skill's prose (`vibing-orchestrate` → "Answering a worker's tool approval"), w
 orchestrator to read the prompt, answer only what its own brief plainly covers, and prefer
 `allow_once` over the frontmatter-persisting `allow_for_session`. A mechanical rule here would have
 to guess at the task, which is the one thing the orchestrator knows and this module does not.
-`"scoped"` mode exists for the opposite case: when the orchestrator *can* state the bound up front
+`"scoped"` mode exists for the opposite case: when the orchestrator _can_ state the bound up front
 (at `nvim_chat_create` time, as part of the brief) rather than judge each prompt as it arrives, a
 mechanical check is strictly safer than a fresh judgement call every time a fan of workers hits the
 same prompt.

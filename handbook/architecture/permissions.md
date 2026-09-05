@@ -166,7 +166,7 @@ what it buys is an agent clearing another agent's permission gate, not because o
 implementation.
 
 Set to `"scoped"` instead of `true` (#703), the same call only succeeds for `allow_once` /
-`allow_for_session` when the tool and input match a pattern in the *worker's own*
+`allow_for_session` when the tool and input match a pattern in the _worker's own_
 `delegated_scope` frontmatter list — matched with the same `matchers.matches_permission` every
 other allow/deny/ask list uses, so there is no second pattern language to learn. A denial always
 goes through regardless of scope, since it cannot grant anything the scope would need to bound.

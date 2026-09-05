@@ -242,7 +242,7 @@ export const chatTools: Tool[] = [
       'for the user on a decision they asked to be consulted about: answer only when the tool ' +
       'is plainly within the task you briefed that chat with, and put anything else to the ' +
       'user instead. When it is set to "scoped", the call itself enforces this: an allow_once ' +
-      'or allow_for_session answer only succeeds if the tool matches that chat\'s declared ' +
+      "or allow_for_session answer only succeeds if the tool matches that chat's declared " +
       'delegated_scope (see nvim_chat_create), so it is fine to just try it — a denial ' +
       '(deny_once/deny_for_session) always succeeds either way. Your answer is recorded in ' +
       'that chat as coming from you. It can only be answered once, and only while it is pending.',

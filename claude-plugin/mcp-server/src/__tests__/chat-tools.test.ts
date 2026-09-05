@@ -509,7 +509,9 @@ describe('chat tools (worktree redesign)', () => {
 
   it('tells the model delegated_scope only matters in "scoped" mode', () => {
     const tool = allTools.find((t) => t.name === 'nvim_chat_create');
-    const inputSchema = tool?.inputSchema as { properties: Record<string, { description: string }> };
+    const inputSchema = tool?.inputSchema as {
+      properties: Record<string, { description: string }>;
+    };
 
     expect(inputSchema.properties.delegated_scope.description).toContain('scoped');
   });
