@@ -122,4 +122,52 @@ describe("rpc handlers.buffer.buf_get_lines target resolution", function()
       assert.same({ "x" }, BufferHandler.buf_get_lines({ bufnr = target }))
     end)
   end)
+
+  describe("tail_lines / last_section / total_lines (#694)", function()
+    it("windows to the last N lines and reports the buffer's real total", function()
+      local target = make_buffer({ "1", "2", "3", "4", "5" })
+
+      local result = BufferHandler.buf_get_lines({
+        bufnr = target,
+        include_chat_status = true,
+        tail_lines = 2,
+      })
+
+      assert.same({ "4", "5" }, result.lines)
+      assert.equals(5, result.total_lines)
+    end)
+
+    it("windows to the last '## ...' section", function()
+      local target = make_buffer({
+        "## User <!-- 2026-01-01 00:00:00 -->",
+        "first",
+        "## Assistant <!-- 2026-01-01 00:00:01 -->",
+        "second",
+      })
+
+      local result = BufferHandler.buf_get_lines({
+        bufnr = target,
+        include_chat_status = true,
+        last_section = true,
+      })
+
+      assert.same({ "## Assistant <!-- 2026-01-01 00:00:01 -->", "second" }, result.lines)
+      assert.equals(4, result.total_lines)
+    end)
+
+    it("reports total_lines even when the whole buffer was read", function()
+      local target = make_buffer({ "a", "b" })
+
+      local result = BufferHandler.buf_get_lines({ bufnr = target, include_chat_status = true })
+
+      assert.same({ "a", "b" }, result.lines)
+      assert.equals(2, result.total_lines)
+    end)
+
+    it("ignores tail_lines/last_section in the bare-array shape an older MCP server asks for", function()
+      local target = make_buffer({ "1", "2", "3" })
+
+      assert.same({ "1", "2", "3" }, BufferHandler.buf_get_lines({ bufnr = target, tail_lines = 1 }))
+    end)
+  end)
 end)

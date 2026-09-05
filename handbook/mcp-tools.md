@@ -56,8 +56,10 @@ Prefix each with whichever form matches how the server was registered (see above
 `mcp__plugin_vibing-nvim_vibing-nvim__` in the normal self-hosted case,
 `mcp__vibing-nvim__` for a plain user-level entry.
 
-- **Buffer**: `nvim_get_buffer` (a chat can be named by `file_path` instead of `bufnr`),
-  `nvim_set_buffer`, `nvim_list_buffers`, `nvim_get_info`, `nvim_load_buffer`
+- **Buffer**: `nvim_get_buffer` (a chat can be named by `file_path` instead of `bufnr`; `tail_lines`
+  and/or `last_section` window a buffer too large to read in full, and the result always reports
+  the buffer's real total line count — #694), `nvim_set_buffer`, `nvim_list_buffers`,
+  `nvim_get_info`, `nvim_load_buffer`
 - **Cursor/Selection**: `nvim_get_cursor`, `nvim_set_cursor`, `nvim_get_visual_selection`
 - **Window/Pane**: `nvim_list_windows`, `nvim_get_window_info`, `nvim_get_window_view`,
   `nvim_list_tabpages`, `nvim_set_window_size`, `nvim_focus_window`, `nvim_win_set_buf`,

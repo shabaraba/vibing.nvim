@@ -149,3 +149,59 @@ describe('nvim_get_buffer chat status', () => {
     expect(result.content[0].text).toBe('old\nshape');
   });
 });
+
+/**
+ * tail_lines / last_section (#694): a chat buffer can run to hundreds of thousands of lines, and
+ * reading it all is the same as reading none of it. These let a caller ask for just the tail or
+ * just the last section, and the result still reports the buffer's real size.
+ */
+describe('nvim_get_buffer tail_lines / last_section', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('forwards tail_lines and last_section to Neovim', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ lines: ['b'], total_lines: 2, chat_status: 'idle' });
+
+    await handlers.nvim_get_buffer({ bufnr: 3, tail_lines: 1, last_section: true, rpc_port: 9878 });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'buf_get_lines',
+      { bufnr: 3, file_path: undefined, include_chat_status: true, tail_lines: 1, last_section: true },
+      9878
+    );
+  });
+
+  it('rejects a non-integer tail_lines before calling Neovim', async () => {
+    await expect(
+      handlers.nvim_get_buffer({ bufnr: 3, tail_lines: 'all', rpc_port: 9878 })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
+  it('reports the total line count alongside a windowed result', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({
+      lines: ['line 400000'],
+      total_lines: 400000,
+      chat_status: 'idle',
+    });
+
+    const result = await handlers.nvim_get_buffer({ bufnr: 3, tail_lines: 1, rpc_port: 9878 });
+
+    expect(result.content.map((c: { text: string }) => c.text)).toEqual(
+      expect.arrayContaining([expect.stringContaining('1 of 400000 total lines')])
+    );
+  });
+
+  it('does not add a total-lines node for a full, unwindowed read', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({
+      lines: ['a', 'b'],
+      total_lines: 2,
+      chat_status: 'idle',
+    });
+
+    const result = await handlers.nvim_get_buffer({ bufnr: 3, rpc_port: 9878 });
+
+    expect(result.content).toHaveLength(2); // lines + chat status, no total-lines node
+  });
+});
