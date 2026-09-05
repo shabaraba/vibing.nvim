@@ -630,4 +630,49 @@ describe('chat tools (worktree redesign)', () => {
     expect(rpc.callNeovim).toHaveBeenCalledWith('list_chats', {}, undefined);
     expect(result.isError).toBeUndefined();
   });
+
+  it('registers nvim_chat_conflicts as a read, with no required arguments', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_conflicts');
+    expect(tool).toBeDefined();
+    const inputSchema = tool?.inputSchema as {
+      required?: string[];
+      properties: Record<string, unknown>;
+    };
+    expect(inputSchema.required).toEqual([]);
+    expect(inputSchema.properties.rpc_port).toBeDefined();
+  });
+
+  it('has a handler for nvim_chat_conflicts', () => {
+    expect(handlers.nvim_chat_conflicts).toBeDefined();
+    expect(typeof handlers.nvim_chat_conflicts).toBe('function');
+  });
+
+  it('nvim_chat_conflicts forwards rpc_port and returns the conflict list as JSON text', async () => {
+    const conflicts = [
+      {
+        file: 'lua/vibing/core/utils/token_usage.lua',
+        chats: [
+          { bufnr: 12, file_path: '/tmp/a.md', task: 'PR #686' },
+          { bufnr: 15, file_path: '/tmp/b.md', task: 'PR #688' },
+        ],
+      },
+    ];
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ conflicts });
+
+    const result = await handlers.nvim_chat_conflicts({ rpc_port: 9878 });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith('chat_conflicts', {}, 9878);
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.conflicts).toEqual(conflicts);
+  });
+
+  it('nvim_chat_conflicts works without rpc_port, falling back to the instance registry', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ conflicts: [] });
+
+    const result = await handlers.nvim_chat_conflicts({});
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith('chat_conflicts', {}, undefined);
+    expect(result.isError).toBeUndefined();
+  });
 });

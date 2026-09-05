@@ -76,6 +76,12 @@ the same files, either merge them into one task or give each its own worktree wi
 `vibing-worktree-create` skill (`git worktree add -b <branch> .vibing/worktrees/<branch>`) — two
 chats editing one working tree will overwrite each other, and nothing in vibing.nvim prevents it.
 
+Separate worktrees stop the overwriting, not the overlap: two branches can still change the same
+file in ways that only collide at merge time. Once workers are running, call
+`nvim_chat_conflicts({ rpc_port })` — it diffs every live chat's `working_dir` worktree against
+`main` and names the files two or more of them touch. It warns, it does not block; call it before
+you merge anything, and read the overlapping files in both branches yourself.
+
 If the split isn't obvious, ask with `nvim_ask_user_question` before creating anything. Creating
 five chats for a job that was really one is expensive and the user has to clean them up.
 
