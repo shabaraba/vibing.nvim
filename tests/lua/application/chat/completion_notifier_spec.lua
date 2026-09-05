@@ -627,6 +627,25 @@ describe("CompletionNotifier", function()
     assert.is_truthy(sends[1].message:find("the migration is done", 1, true))
   end)
 
+  it("keeps and delivers a queued message when the recipient's own turn ends abnormally (#697)", function()
+    -- send_message.lua's rate-limit (and plain error) branches still fall through to
+    -- add_user_section(), so VibingResponseDone fires exactly as it would for an ordinary stop.
+    -- queue_if_busy's contract is "wait and it resolves"; the entry must not be lost just because
+    -- the turn that finally frees the recipient ended abnormally rather than successfully.
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    assert.is_true(MessageQueue.enqueue_message(a, b, "queued while A was busy"))
+
+    responding[a] = false
+    stop_reasons[a] = "error"
+    Notifier.on_response_done(a)
+
+    assert.equals(1, #sends)
+    assert.equals(a, sends[1].bufnr)
+    assert.is_truthy(sends[1].message:find("queued while A was busy", 1, true))
+  end)
+
   it("carries the sender's body rather than telling the reader to go and fetch it", function()
     local a, b = make_chat(), make_chat()
     responding[a] = true

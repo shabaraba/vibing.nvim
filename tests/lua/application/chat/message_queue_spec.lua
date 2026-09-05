@@ -270,3 +270,138 @@ describe("MessageQueue", function()
     assert.is_truthy(err)
   end)
 end)
+
+-- 名前を持つ（=保存先を持つ）チャットに限った永続化の面。無名バッファは
+-- `file_path_of` が nil を返すので上の describe は一切ディスクに触らない。
+describe("MessageQueue persistence (#697)", function()
+  local Store = require("vibing.infrastructure.storage.message_queue_store")
+  local Queue
+  local originals = {}
+  local tmp_root
+  local buffers = {}
+  local responding = {}
+  local sends = {}
+
+  ---@param filename string
+  ---@return number bufnr, string path
+  local function make_named_chat(filename)
+    local path = tmp_root .. "/" .. filename
+    vim.fn.writefile({ "## User <!-- unsent -->", "" }, path)
+    local bufnr = vim.fn.bufadd(path)
+    vim.fn.bufload(bufnr)
+    table.insert(buffers, bufnr)
+    return bufnr, path
+  end
+
+  ---@return number bufnr
+  local function make_chat()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    table.insert(buffers, bufnr)
+    return bufnr
+  end
+
+  before_each(function()
+    tmp_root = vim.fn.tempname()
+    vim.fn.mkdir(tmp_root, "p")
+    Store.clear_cache()
+
+    originals.get_chat_buffer = view.get_chat_buffer
+    originals.send = ProgrammaticSender.send
+    originals.link = OrchestrationLink.link
+
+    buffers, responding, sends = {}, {}, {}
+
+    view.get_chat_buffer = function(bufnr)
+      if not vim.api.nvim_buf_is_valid(bufnr) then
+        return nil
+      end
+      return {
+        is_responding = function()
+          return responding[bufnr] == true
+        end,
+        extract_user_message = function()
+          return nil
+        end,
+      }
+    end
+    ProgrammaticSender.send = function(bufnr, message)
+      table.insert(sends, { bufnr = bufnr, message = message })
+      return { success = true, bufnr = bufnr }
+    end
+    OrchestrationLink.link = function()
+      return true, nil
+    end
+
+    package.loaded["vibing.application.chat.message_queue"] = nil
+    Queue = require("vibing.application.chat.message_queue")
+  end)
+
+  after_each(function()
+    view.get_chat_buffer = originals.get_chat_buffer
+    ProgrammaticSender.send = originals.send
+    OrchestrationLink.link = originals.link
+
+    for _, bufnr in ipairs(buffers) do
+      if vim.api.nvim_buf_is_valid(bufnr) then
+        vim.api.nvim_buf_delete(bufnr, { force = true })
+      end
+    end
+    if tmp_root then
+      vim.fn.delete(tmp_root, "rf")
+    end
+    Store.clear_cache()
+  end)
+
+  it("writes a queued message to disk as soon as it is queued", function()
+    local a, a_path = make_named_chat("a.md")
+    responding[a] = true
+
+    Queue.enqueue_message(a, nil, "queued while busy")
+
+    local stored = Store.load(tmp_root)[a_path]
+    assert.is_not_nil(stored)
+    assert.equals("queued while busy", stored[1].body)
+  end)
+
+  it("clears the disk entry once the queue is actually delivered", function()
+    local a, a_path = make_named_chat("a.md")
+    responding[a] = true
+
+    Queue.enqueue_message(a, nil, "queued while busy")
+    responding[a] = false
+    Queue.flush(a)
+
+    assert.is_nil(Store.load(tmp_root)[a_path])
+  end)
+
+  it("restores a queue that outlived a Neovim restart and delivers it once idle", function()
+    local a, a_path = make_named_chat("a.md")
+    responding[a] = true
+
+    assert.is_true(Queue.enqueue_message(a, nil, "queued while A was busy"))
+    assert.is_not_nil(Store.load(tmp_root)[a_path], "must be on disk before the simulated restart")
+
+    -- Simulate a Neovim restart: the module-level `pending` table is gone, but the chat file (and
+    -- with it, message-queue.json) is still on disk. Nothing is "responding" any more either, since
+    -- a restart kills every CLI process along with it.
+    package.loaded["vibing.application.chat.message_queue"] = nil
+    Queue = require("vibing.application.chat.message_queue")
+    responding[a] = false
+
+    Queue.restore(tmp_root)
+
+    assert.equals(1, #sends)
+    assert.equals(a, sends[1].bufnr)
+    assert.is_truthy(sends[1].message:find("queued while A was busy", 1, true))
+    assert.is_nil(Store.load(tmp_root)[a_path], "delivered — must not be replayed on the next restart")
+  end)
+
+  it("does not persist a queue addressed to an unnamed (unsaved) chat", function()
+    local a = make_chat()
+    responding[a] = true
+
+    Queue.enqueue_message(a, nil, "queued before the chat was ever saved")
+
+    assert.same({}, Store.load(tmp_root))
+  end)
+end)
