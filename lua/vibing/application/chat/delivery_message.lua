@@ -78,17 +78,31 @@ local function notification_section(items, cache)
   -- 「誰が何で止まっているか言え」で終わりだが、`delegated_approval` が有効なら
   -- 読み手自身が答えられる。無効なまま「答えろ」と書くと、モデルは必ず失敗する呼び出しを
   -- 1回してからユーザーに回すことになる（`approval_delegate.answer` が断る）
-  local waiting_approval_lines = require("vibing.application.chat.approval_delegate").enabled()
-      and {
-        "- waiting_approval — it is sitting on a tool-approval prompt. Read what it is stuck on",
-        "  with nvim_get_buffer, then answer it with nvim_chat_answer_approval({ rpc_port,",
-        "  file_path, action, from_bufnr }) if the tool is plainly within the task you briefed it",
-        "  with. If it is not, say which chat is blocked and on what, and let the user decide.",
-      }
-    or {
+  local delegation_mode = require("vibing.application.chat.approval_delegate").mode()
+  local waiting_approval_lines
+  if delegation_mode == true then
+    waiting_approval_lines = {
+      "- waiting_approval — it is sitting on a tool-approval prompt. Read what it is stuck on",
+      "  with nvim_get_buffer, then answer it with nvim_chat_answer_approval({ rpc_port,",
+      "  file_path, action, from_bufnr }) if the tool is plainly within the task you briefed it",
+      "  with. If it is not, say which chat is blocked and on what, and let the user decide.",
+    }
+  elseif delegation_mode == "scoped" then
+    -- scoped では判断を憶測せずに呼んでよい: 範囲外なら `approval_delegate.answer` 自身が
+    -- 機械的に断るので、失敗しても1回の無駄な呼び出しで済む（無効時のように必ず失敗するのとは違う）
+    waiting_approval_lines = {
+      "- waiting_approval — it is sitting on a tool-approval prompt. Read what it is stuck on",
+      "  with nvim_get_buffer, then try nvim_chat_answer_approval({ rpc_port, file_path, action,",
+      "  from_bufnr }). It only succeeds if the tool matches that chat's declared delegated_scope",
+      "  (deny_once/deny_for_session always succeed). If it fails, say which chat is blocked and",
+      "  on what, and let the user decide.",
+    }
+  else
+    waiting_approval_lines = {
       "- waiting_approval — it is sitting on a tool-approval prompt. Only the user can clear that",
       "  one, so say which chat is blocked and on what.",
     }
+  end
 
   local blocked_explanation = {
     "A chat with a status above will not move again until someone acts on it:",
