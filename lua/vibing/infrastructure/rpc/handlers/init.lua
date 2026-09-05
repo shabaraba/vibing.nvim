@@ -58,6 +58,7 @@ M.send_message = message.send_message
 M.create_chat = chat.create_chat
 M.answer_approval = chat.answer_approval
 M.list_chats = chat.list_chats
+M.chat_conflicts = chat.chat_conflicts
 
 M.check_tool_permission = permission.check_tool_permission
 M.ask_user_question = permission.ask_user_question
