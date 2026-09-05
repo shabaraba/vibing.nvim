@@ -108,6 +108,13 @@ jobs:
                don't depend on each other's findings — this is a single unattended run with no
                back-and-forth, so parallel investigation up front is cheaper than discovering a
                constraint after half the implementation is written.
+
+               This is a single unattended batch run, not an interactive session: when it ends,
+               the process exits and nothing wakes it again. Any subagent you dispatch MUST be
+               awaited synchronously within this same turn before you act on its result. Do not
+               end a turn saying you'll "wait" or "be notified" for a background agent to finish —
+               there is no later turn here to receive that notification, so the run would exit
+               with no commit pushed and no PR created, and no comment explaining why.
             3. Plan the implementation. When more than one reasonable approach exists, do not ask
                which one to take — nobody is watching this run. Pick the one you judge best by the
                codebase's own existing conventions (mirror the nearest similar pattern already in
