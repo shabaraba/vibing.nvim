@@ -164,10 +164,19 @@ describe("rpc handlers.buffer.buf_get_lines target resolution", function()
       assert.equals(2, result.total_lines)
     end)
 
-    it("ignores tail_lines/last_section in the bare-array shape an older MCP server asks for", function()
+    it("windows even in the bare-array shape, since only the response shape is opt-in", function()
+      -- include_chat_status and tail_lines/last_section are independent: an older MCP server
+      -- that never sends tail_lines is unaffected, but a caller that does ask for a window gets
+      -- one whether or not it also asked to be wrapped with chat status.
       local target = make_buffer({ "1", "2", "3" })
 
-      assert.same({ "1", "2", "3" }, BufferHandler.buf_get_lines({ bufnr = target, tail_lines = 1 }))
+      assert.same({ "3" }, BufferHandler.buf_get_lines({ bufnr = target, tail_lines = 1 }))
+    end)
+
+    it("still returns the untouched bare array when no window was asked for", function()
+      local target = make_buffer({ "1", "2", "3" })
+
+      assert.same({ "1", "2", "3" }, BufferHandler.buf_get_lines({ bufnr = target }))
     end)
   end)
 end)

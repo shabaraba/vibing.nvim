@@ -32,19 +32,14 @@ end
 function M.slice(lines, opts)
   local total_lines = #lines
   opts = opts or {}
-  local windowed = lines
 
-  if opts.last_section then
-    local start = last_section_start(windowed)
-    if start > 1 then
-      windowed = vim.list_slice(windowed, start, #windowed)
-    end
+  local start = opts.last_section and last_section_start(lines) or 1
+  local section_length = total_lines - start + 1
+  if type(opts.tail_lines) == "number" and opts.tail_lines >= 0 and opts.tail_lines < section_length then
+    start = total_lines - opts.tail_lines + 1
   end
 
-  if type(opts.tail_lines) == "number" and opts.tail_lines >= 0 and opts.tail_lines < #windowed then
-    windowed = vim.list_slice(windowed, #windowed - opts.tail_lines + 1, #windowed)
-  end
-
+  local windowed = start == 1 and lines or vim.list_slice(lines, start, total_lines)
   return windowed, total_lines
 end
 

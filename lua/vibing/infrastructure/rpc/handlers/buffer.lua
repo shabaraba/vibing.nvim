@@ -9,39 +9,51 @@ local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 --   not already (see `application/chat/chat_locator.lua`). Mutually exclusive with `bufnr`, and
 --   chat files only — an ordinary file has `nvim_load_buffer`, and this path opens and attaches
 --   a chat buffer, which is not what reading a source file should do.
--- @param params.include_chat_status? boolean Wrap the result and attach the buffer's chat status.
+-- @param params.include_chat_status? boolean Wrap the result and attach the buffer's chat status
+--   and its real total line count. Independent of `tail_lines`/`last_section` below — those
+--   window the lines either shape returns, so a caller that wants only a tail read and not the
+--   chat-status wrapper still gets one.
 -- @param params.tail_lines? number Keep only the last N lines of the (possibly `last_section`-cut)
---   result. Only applied inside the wrapped shape — see below.
+--   result.
 -- @param params.last_section? boolean Keep only the buffer's last `## ...` section (header
---   boundaries from `core/utils/timestamp.lua`). Only applied inside the wrapped shape.
+--   boundaries from `core/utils/timestamp.lua`).
 -- @return string[]|table Bare line array by default; `{ lines, total_lines, bufnr, chat_status }`
 --   when `include_chat_status` is set (`chat_status` is "responding"/"idle"/"waiting_approval"/
 --   "asked_question"/"error", or absent for a buffer that is not a vibing.nvim chat). An MCP
 --   server older than a value names it rather than dropping it, so a status added later reads as
 --   "go look" instead of as silence. The shape stays opt-in because the MCP server and this
 --   plugin are installed separately and can be at different versions: an older MCP server sends
---   no flag and must keep receiving the array it calls `.join()` on — which is also why
---   `tail_lines`/`last_section` are windows on that same wrapped shape rather than a third one:
---   a caller new enough to ask for a window is new enough to have sent `include_chat_status`.
+--   no flag and must keep receiving the array it calls `.join()` on. `total_lines` cannot be
+--   reported in that bare shape, which is exactly why it lives inside the wrapped one instead of
+--   next to the windowed lines themselves.
 --
 --   `bufnr` is what makes the *other* direction of that skew safe. A `file_path` reaching a
 --   Neovim too old to know the argument would be ignored, and the caller would be handed the
 --   current buffer's text as though it were the chat it named — silently, and reported `idle`.
 --   Answering with the buffer actually read lets the server tell that case apart. The send path
 --   needs no equivalent: it errors outright when it can find no target.
---
---   `total_lines` is the buffer's real line count, not the windowed one — the point of asking for
---   only the tail is to still learn the overall scale (#694).
 function M.buf_get_lines(params)
   local bufnr = require("vibing.infrastructure.rpc.handlers.bufnr").resolve_chat_target(params) or 0
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local tail_lines = params and params.tail_lines
+  local last_section = params and params.last_section
 
-  if not (params and params.include_chat_status) then
-    return lines
+  local windowed, total_lines
+  if type(tail_lines) == "number" and not last_section then
+    -- Read only the requested tail instead of the whole buffer: the entire point of asking for
+    -- the last 40 lines of a 400k-line chat is to not pay for reading the other 399,960 (#694).
+    total_lines = vim.api.nvim_buf_line_count(bufnr)
+    local n = math.max(0, tail_lines)
+    local from = n < total_lines and (total_lines - n) or 0
+    windowed = vim.api.nvim_buf_get_lines(bufnr, from, total_lines, false)
+  else
+    local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local BufferWindow = require("vibing.domain.chat.buffer_window")
+    windowed, total_lines = BufferWindow.slice(all_lines, { tail_lines = tail_lines, last_section = last_section })
   end
 
-  local BufferWindow = require("vibing.domain.chat.buffer_window")
-  local windowed, total_lines = BufferWindow.slice(lines, params)
+  if not (params and params.include_chat_status) then
+    return windowed
+  end
 
   local ChatStatus = require("vibing.presentation.chat.modules.chat_status")
   return {
