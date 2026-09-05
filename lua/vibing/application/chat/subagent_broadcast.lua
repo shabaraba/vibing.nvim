@@ -15,17 +15,22 @@ local Commands = require("vibing.application.chat.commands")
 local DEFAULT_WINDOW_SEC = 30
 
 ---送信元bufnrとコマンド名ごとの、直近の時間窓に送った宛先の集合
----@type table<string, {targets: table<number, boolean>, last_seen: number, warned: boolean}>
+---@type table<string, {targets: table<number, boolean>, first_seen: number, warned: boolean}>
 local recent = {}
 
----@return string[]
-local function configured_commands()
+---@return table
+local function orchestration_config()
   local config = require("vibing.config").get()
   local orchestration = config.agent and config.agent.orchestration
   if type(orchestration) ~= "table" then
     return {}
   end
-  local list = orchestration.subagent_spawning_commands
+  return orchestration
+end
+
+---@return string[]
+local function configured_commands()
+  local list = orchestration_config().subagent_spawning_commands
   if type(list) ~= "table" then
     return {}
   end
@@ -34,12 +39,7 @@ end
 
 ---@return number
 local function window_sec()
-  local config = require("vibing.config").get()
-  local orchestration = config.agent and config.agent.orchestration
-  if type(orchestration) ~= "table" then
-    return DEFAULT_WINDOW_SEC
-  end
-  local window = orchestration.broadcast_warn_window_sec
+  local window = orchestration_config().broadcast_warn_window_sec
   if type(window) ~= "number" or window < 0 then
     return DEFAULT_WINDOW_SEC
   end
@@ -62,11 +62,11 @@ end
 ---
 ---宛先が実際に送信・キュー・拒否のどれになったかには関わらない — 同報の意図は呼び出しの
 ---時点で決まっているため、結果を待たずに判定してよい
----@param from_bufnr number? 送信元（省略時はコマンド名だけで束ねる）
+---@param from_bufnr number? 送信元。省略時は呼び出し元の同一性を確認できないので束ねずに戻る
 ---@param to_bufnr number 宛先
 ---@param message string
 function M.check(from_bufnr, to_bufnr, message)
-  if type(message) ~= "string" then
+  if type(message) ~= "string" or from_bufnr == nil then
     return
   end
 
@@ -80,17 +80,16 @@ function M.check(from_bufnr, to_bufnr, message)
     return
   end
 
-  local key = string.format("%s:%s", tostring(from_bufnr or "?"), command_name)
+  local key = string.format("%s:%s", tostring(from_bufnr), command_name)
   local now = os.time()
   local entry = recent[key]
-  if entry and now - entry.last_seen > window then
+  if entry and now - entry.first_seen > window then
     entry = nil
   end
   if not entry then
-    entry = { targets = {}, last_seen = now, warned = false }
+    entry = { targets = {}, first_seen = now, warned = false }
     recent[key] = entry
   end
-  entry.last_seen = now
 
   if entry.targets[to_bufnr] then
     return

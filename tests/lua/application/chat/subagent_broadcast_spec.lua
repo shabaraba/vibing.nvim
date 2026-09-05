@@ -33,7 +33,19 @@ describe("SubagentBroadcast", function()
   after_each(function()
     Config.get = originals.get
     require("vibing.core.utils.notify").warn = originals.warn
+    if originals.time then
+      os.time = originals.time
+      originals.time = nil
+    end
   end)
+
+  ---@param seconds number
+  local function at(seconds)
+    originals.time = originals.time or os.time
+    os.time = function()
+      return seconds
+    end
+  end
 
   it("does not warn on a single target", function()
     Broadcast.check(1, 10, "/simplify")
@@ -86,6 +98,34 @@ describe("SubagentBroadcast", function()
     Broadcast.check(2, 11, "/simplify")
 
     assert.equals(0, #warnings)
+  end)
+
+  it("does not track a send with no from_bufnr, so unrelated anonymous callers never collide", function()
+    Broadcast.check(nil, 10, "/simplify")
+    Broadcast.check(nil, 11, "/simplify")
+
+    assert.equals(0, #warnings)
+  end)
+
+  it("expires the window from the first send, not from whichever send is most recent", function()
+    configure({ subagent_spawning_commands = { "simplify" }, broadcast_warn_window_sec = 30 })
+
+    at(0)
+    Broadcast.check(1, 10, "/simplify")
+    at(5)
+    Broadcast.check(1, 11, "/simplify") -- 2nd distinct target inside the window: warns once
+    at(20)
+    Broadcast.check(1, 10, "/simplify") -- repeat traffic; must not push the window out further
+
+    -- Past first_seen + window: a fresh window starts, so this is only its 1st distinct target
+    at(40)
+    Broadcast.check(1, 12, "/simplify")
+    -- ...and this is its 2nd distinct target, which must warn again on its own new window
+    -- rather than staying silent because the earlier window's `warned` flag never expired.
+    at(41)
+    Broadcast.check(1, 13, "/simplify")
+
+    assert.equals(2, #warnings)
   end)
 
   it("is silent when the window is disabled", function()
