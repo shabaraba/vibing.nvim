@@ -50,6 +50,14 @@
 
 ### Added
 
+- **`nvim_get_buffer` (MCP): `tail_lines` and `last_section` read only part of a buffer.** A
+  vibing.nvim chat can run to hundreds of thousands of lines, and reading it all is effectively
+  the same as not being able to read it at all. `tail_lines: N` returns only the last N lines;
+  `last_section: true` cuts at the last `## User` / `## Assistant` / `## Request` / `## Report` /
+  `## Notice` heading; the two combine to take the last N lines of the last section. The result
+  reports the buffer's real total line count whenever the window actually truncated it, so a
+  caller that only saw the tail still learns the overall scale.
+
 - **`:VibingChatHandoff [position]` — continue a long chat in a new one that carries only its
   summary.** The current chat is summarized (the `## summary` stays in it, as with
   `:VibingSummarize`), and a new chat opens whose first, still unsent User message starts with
