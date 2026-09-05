@@ -55,6 +55,7 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_ask_user_question: chat.handleAskUserQuestion,
   nvim_chat_answer_approval: chat.handleChatAnswerApproval,
   nvim_chat_list: chat.handleChatList,
+  nvim_chat_conflicts: chat.handleChatConflicts,
 
   // Highlighting
   nvim_highlight_range: highlight.handleHighlightRange,

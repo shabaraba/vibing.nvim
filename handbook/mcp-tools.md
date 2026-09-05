@@ -70,7 +70,7 @@ Prefix each with whichever form matches how the server was registered (see above
 - **Annotations**: `nvim_annotate`, `nvim_clear_annotations`
 - **Chat**: `nvim_ask_user_question` (renders a choice list in the chat buffer — see
   `handbook/features/chat-ui.md`), `nvim_chat_send_message`, `nvim_chat_create`,
-  `nvim_chat_answer_approval`, `nvim_chat_list`
+  `nvim_chat_answer_approval`, `nvim_chat_list`, `nvim_chat_conflicts`
 - **Instances**: `nvim_list_instances`
 - **Quickfix**: `nvim_set_qflist` (pushes a new list; the previous one survives under `:colder`)
 - **Debugger**: `nvim_dap_get_state`, `nvim_dap_get_stack_trace`, `nvim_dap_get_variables`,
@@ -165,6 +165,17 @@ only when that orchestrator is _also_ open in this session, since the handler ne
 just to look up a task). Use it instead of polling several worker chats one at a time with
 `nvim_get_buffer`. It is a read like `nvim_list_buffers`, so `rpc_port` stays optional; it only
 lists chats attached in this session — a chat file nobody has opened yet does not appear.
+
+`nvim_chat_conflicts({ rpc_port? })` warns (never blocks) about files that 2+ live chats have
+modified on their own branch — the mechanical version of what #692's postmortem found only because
+a human happened to be looking at both diffs at once (one PR renamed a marker a second PR still
+parsed by the old name; that PR's own tests used a fixture, so nothing caught it). It is a read like
+`nvim_chat_list`. Only chats with their own `working_dir` (a worktree/branch) are compared — a chat
+using the instance's own working directory has nothing of its own to diff — and each one's worktree
+is diffed against `main` or `master` (three-dot, against `HEAD`, so no branch name has to be known).
+File-level only (v1); `task` is projected the same way `nvim_chat_list` does. Returns
+`{ conflicts: [{ file, chats: [{ bufnr, file_path, task? }] }] }`, empty when nothing collides or
+when the repository has neither a `main` nor a `master` branch to diff against.
 
 The workflow is the bundled `vibing-orchestrate` skill. Why `position` defaults to `back`, why the
 chat file is written at creation, why the status is a field rather than a text heuristic, and what

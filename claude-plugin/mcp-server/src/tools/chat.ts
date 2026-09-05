@@ -291,4 +291,24 @@ export const chatTools: Tool[] = [
       required: [],
     },
   },
+  {
+    name: 'nvim_chat_conflicts',
+    description:
+      'Warn about files that 2+ live chats have modified on their own branch/worktree — a ' +
+      'quiet way for a change in one worker to break an assumption another worker already ' +
+      "relied on, without either one's own tests catching it (e.g. one PR renames a marker a " +
+      'second PR still parses by the old name). For each contested file, reports the chats ' +
+      'that touched it (bufnr, file_path, and task if its orchestrator is open this session). ' +
+      'File-level only (no hunk detail) and warning-only — nothing here blocks a merge; use it ' +
+      'to decide whether to look closer before merging or briefing further work. Only chats ' +
+      'open in this Neovim session are compared, and only those with their own working_dir ' +
+      "(worktree/branch) — a chat using the instance's own working directory has nothing of " +
+      "its own to diff against the base branch. Diffs each chat's worktree against main/master " +
+      '(three-dot, against HEAD), so it needs no branch name of its own.',
+    inputSchema: {
+      type: 'object',
+      properties: withRpcPort({}),
+      required: [],
+    },
+  },
 ];

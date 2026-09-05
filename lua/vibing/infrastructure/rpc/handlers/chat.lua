@@ -147,6 +147,36 @@ local function read_context_size(bufnr)
   end
 end
 
+---taskはチャット自身のfrontmatterではなく、それを頼んだ親の`orchestrated`エントリにしか
+---無い（#696フォローアップ）。今このセッションで開いている全チャットの`orchestrated`を
+---展開し、一致するbufnrの行（`by_absolute_path`）に投影する — 対象は既に読み込み済みのチャット
+---だけなので、このためだけに追加でファイルを開いたりバッファ全文を読んだりはしない。
+---`list_chats` と `chat_conflicts` の両方が使うので、ここで共有する
+---@param buffers table<number, Vibing.ChatBuffer>
+---@param bufnrs number[]
+---@param by_absolute_path table<string, {task: string?}> 絶対パス→投影先エントリ
+---@param git_root string? 呼び出し元が既に持っているなら渡す（`git rev-parse`の起動を1回省く）
+local function project_tasks(buffers, bufnrs, by_absolute_path, git_root)
+  local OrchestratedEntry = require("vibing.application.chat.orchestrated_entry")
+  local Git = require("vibing.core.utils.git")
+  for _, bufnr in ipairs(bufnrs) do
+    local orchestrated = buffers[bufnr]:get_frontmatter_list("orchestrated")
+    if #orchestrated > 0 then
+      git_root = git_root or Git.get_root()
+      for _, item in ipairs(orchestrated) do
+        local path, task = OrchestratedEntry.decode(item)
+        if task then
+          local abs = vim.fn.fnamemodify(Git.from_display_path(path, git_root), ":p")
+          local target = by_absolute_path[abs]
+          if target then
+            target.task = task
+          end
+        end
+      end
+    end
+  end
+end
+
 ---生きているチャットバッファをすべて列挙する（MCP tool `nvim_chat_list`）
 ---
 ---1チャットずつ `nvim_get_buffer` を叩くとNチャットでN往復かかる（#692の実走ではPythonの
@@ -185,31 +215,116 @@ function M.list_chats(_)
     end
   end
 
-  -- taskはチャット自身のfrontmatterではなく、それを頼んだ親の`orchestrated`エントリにしか
-  -- 無い（#696フォローアップ）。今このセッションで開いている全チャットの`orchestrated`を
-  -- 展開し、一致するbufnrの行に投影する — 対象は既に読み込み済みのチャットだけなので、
-  -- このためだけに追加でファイルを開いたりバッファ全文を読んだりはしない
-  local OrchestratedEntry = require("vibing.application.chat.orchestrated_entry")
+  project_tasks(buffers, bufnrs, by_absolute_path)
+
+  return { chats = chats }
+end
+
+---mainリポジトリで解決できる基準ブランチ名を返す。全worktreeでrefは共有されるので、
+---1回だけ解決してすべてのチャットのdiffに使い回す。どちらも無ければnil（#699はwarnのみで
+---ブロックしないので、呼び出し元は黙って`conflicts = {}`にする）
+---@param git_root string
+---@return string?
+local function resolve_base_branch(git_root)
+  for _, name in ipairs({ "main", "master" }) do
+    local ok, result = pcall(function()
+      return vim.system({ "git", "rev-parse", "--verify", "--quiet", name }, { cwd = git_root, text = true }):wait()
+    end)
+    if ok and result and result.code == 0 then
+      return name
+    end
+  end
+  return nil
+end
+
+---あるチャットのworktreeが`base`から変更したファイル名一覧を返す。`.vibing/`（worktree自体を
+---含む）は除外する。gitが失敗する場合はnil（そのチャットは比較対象から静かに外れる）
+---@param worktree string 絶対パス
+---@param base string
+---@return string[]?
+local function diff_against_base(worktree, base)
+  local ok, result = pcall(function()
+    return vim.system(
+      { "git", "diff", "--name-only", base .. "...HEAD", "--", ".", ":(exclude).vibing" },
+      { cwd = worktree, text = true }
+    ):wait()
+  end)
+  if not ok or not result or result.code ~= 0 then
+    return nil
+  end
+
+  local files = {}
+  for line in (result.stdout or ""):gmatch("[^\n]+") do
+    table.insert(files, line)
+  end
+  return files
+end
+
+---生きているチャットのうち、2本以上のworking_dirブランチが同じファイルを触っていないか
+---警告する（MCP tool `nvim_chat_conflicts`, #699）。#692の事後分析で実際に起きた事故——
+---2つのPRが同じ見出しフォーマットの前提を別々に変え、片方のテストは自前フィクスチャなので
+---気づかれなかった——をORCHESTRATORが自分でファイル名を突き合わせなくても検出できるようにする。
+---
+---警告のみでブロックしない。v1はファイル単位（hunk単位はやらない）。`working_dir`を持たない
+---チャット（Neovimインスタンス自身のcwdを使う）は比較対象にしない — 比較基準そのものが
+---mainなので、自分自身との差分は意味を持たない
+---@return {conflicts: {file: string, chats: {bufnr: number, file_path: string?, task: string?}[]}[]}
+function M.chat_conflicts(_)
+  local view = require("vibing.presentation.chat.view")
   local Git = require("vibing.core.utils.git")
-  local git_root
+
+  local git_root = Git.get_root()
+  local base = git_root and resolve_base_branch(git_root)
+  if not base then
+    return { conflicts = {} }
+  end
+
+  local buffers = view.list_chat_buffers()
+  local bufnrs = {}
+  for bufnr in pairs(buffers) do
+    table.insert(bufnrs, bufnr)
+  end
+  table.sort(bufnrs)
+
+  ---@type table<string, table[]>
+  local contributors_by_file = {}
+  local by_absolute_path = {}
   for _, bufnr in ipairs(bufnrs) do
-    local orchestrated = buffers[bufnr]:get_frontmatter_list("orchestrated")
-    if #orchestrated > 0 then
-      git_root = git_root or Git.get_root()
-      for _, item in ipairs(orchestrated) do
-        local path, task = OrchestratedEntry.decode(item)
-        if task then
-          local abs = vim.fn.fnamemodify(Git.from_display_path(path, git_root), ":p")
-          local target = by_absolute_path[abs]
-          if target then
-            target.task = task
-          end
+    local chat_buf = buffers[bufnr]
+    local frontmatter = chat_buf:parse_frontmatter()
+    local worktree = Git.resolve_working_dir(frontmatter.working_dir)
+    if worktree then
+      local files = diff_against_base(worktree, base)
+      if files then
+        local entry = { bufnr = bufnr, file_path = chat_buf.file_path }
+        if chat_buf.file_path then
+          by_absolute_path[vim.fn.fnamemodify(chat_buf.file_path, ":p")] = entry
+        end
+        for _, file in ipairs(files) do
+          contributors_by_file[file] = contributors_by_file[file] or {}
+          table.insert(contributors_by_file[file], entry)
         end
       end
     end
   end
 
-  return { chats = chats }
+  project_tasks(buffers, bufnrs, by_absolute_path, git_root)
+
+  local files_sorted = {}
+  for file in pairs(contributors_by_file) do
+    table.insert(files_sorted, file)
+  end
+  table.sort(files_sorted)
+
+  local conflicts = {}
+  for _, file in ipairs(files_sorted) do
+    local chats = contributors_by_file[file]
+    if #chats >= 2 then
+      table.insert(conflicts, { file = file, chats = chats })
+    end
+  end
+
+  return { conflicts = conflicts }
 end
 
 return M

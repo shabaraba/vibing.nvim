@@ -573,6 +573,44 @@ Neovim dying takes the worker chats with it. Backends other than claude can be _
 event is backend-agnostic) but cannot _subscribe_: `nvim_chat_send_message` is an MCP tool, and
 codex/grok reach no MCP server, the same constraint `features.md` records for AskUserQuestion.
 
+## Branch conflict warning (`nvim_chat_conflicts`, #699)
+
+`nvim_chat_conflicts` (`rpc/handlers/chat.lua`'s `chat_conflicts`) answers one question: do any two
+live chats' branches touch the same file? It exists because of a real incident in #692's
+postmortem — one PR renamed a marker (`### Tokens` → `### Tokens <!-- context=N -->`) that a
+second, concurrently-running PR's code still parsed by the old, fixed pattern. Both PRs' own tests
+stayed green (the second PR's test used its own fixture), so nothing caught the collision until a
+human happened to be holding both diffs in mind at once — the orchestrator. This tool does that
+comparison mechanically instead of relying on a human noticing.
+
+**Warning only; it never blocks anything**, and v1 is file-level — it reports that two chats
+touched the same file, not that their hunks actually conflict. Whether and how to act on a
+reported collision (look closer before merging, re-brief one of the workers) is left to whoever
+reads the result.
+
+**Only chats with their own `working_dir` are compared.** A chat with no `working_dir` uses the
+Neovim instance's own working directory rather than a worktree of its own, so there is nothing
+meaningful to diff against the base branch — comparing it would either always be empty (if the
+instance itself sits on the base branch) or attribute someone else's edits to "the chat using the
+main worktree," which is not a chat's own change. Excluding it is a deliberate v1 choice, not an
+oversight; the same limitation as `nvim_chat_list`'s `task` projection applies here too — only
+chats attached in _this_ Neovim session are visible, so a worker chat that was never opened this
+session cannot be compared even if its branch exists on disk.
+
+**Each worktree is diffed against `main`/`master` with three-dot notation against `HEAD`**
+(`git diff --name-only <base>...HEAD`), not against a literal branch name — refs are shared across
+all worktrees of one repository, so `HEAD` inside a given worktree already names the right commit
+without needing a `git branch --show-current` round trip. The base branch name is resolved once
+per call (`git rev-parse --verify --quiet main`, falling back to `master`), not once per chat,
+since it is a repository-wide fact; a repository with neither returns `conflicts: []` rather than
+erroring, consistent with this being a warning feature that must never be the reason a call fails.
+`.vibing/` is excluded from the diff the same way `git_snapshot.lua`'s pathspec excludes it from a
+turn's own diff — a worktree never legitimately has anything of its own to report there.
+
+**`task` is projected the same way `nvim_chat_list` projects it** — from each contributing chat's
+orchestrator's own `orchestrated` entry, sharing the same `project_tasks` helper so the two RPC
+methods do not each re-implement the git-root lookup and the `orchestrated_entry.decode` loop.
+
 ## Tree operations
 
 `:VibingOrchestrationTree [path]` draws the tree a chat belongs to with each node's status,

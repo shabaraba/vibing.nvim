@@ -249,3 +249,18 @@ export async function handleChatList(args: any): Promise<any> {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
   };
 }
+
+/**
+ * Handler for nvim_chat_conflicts
+ *
+ * A read, like nvim_chat_list: rpc_port stays optional and falls back to the instance registry.
+ * The Lua side (`chat_conflicts` in `rpc/handlers/chat.lua`) does all the work — enumerating
+ * live chats, resolving each one's `working_dir` to a worktree, diffing it against main/master,
+ * and grouping the results by file. This handler only forwards the call and the JSON back.
+ */
+export async function handleChatConflicts(args: any): Promise<any> {
+  const result = await callNeovim('chat_conflicts', {}, args?.rpc_port);
+  return {
+    content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+  };
+}
