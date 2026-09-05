@@ -138,6 +138,12 @@ export function validateString(value: unknown, name: string): void {
   }
 }
 
+export function validateBoolean(value: unknown, name: string): void {
+  if (typeof value !== 'boolean') {
+    throw new ValidationError(`${name} must be a boolean`);
+  }
+}
+
 export function validateRequired<T>(value: T | undefined | null, name: string): asserts value is T {
   if (value === undefined || value === null) {
     throw new ValidationError(`${name} is required`);

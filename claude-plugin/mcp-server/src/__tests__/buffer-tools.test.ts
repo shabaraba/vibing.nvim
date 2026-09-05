@@ -189,6 +189,15 @@ describe('nvim_get_buffer tail_lines / last_section', () => {
     expect(rpc.callNeovim).not.toHaveBeenCalled();
   });
 
+  it('rejects a non-boolean last_section before calling Neovim', async () => {
+    // A review on PR #707 noted this was unvalidated: since Lua treats anything but nil/false as
+    // truthy, a string like "false" would silently take the last_section branch instead of erroring.
+    await expect(
+      handlers.nvim_get_buffer({ bufnr: 3, last_section: 'false', rpc_port: 9878 })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
   it('reports the total line count alongside a windowed result', async () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({
       lines: ['line 400000'],

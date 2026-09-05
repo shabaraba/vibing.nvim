@@ -155,6 +155,54 @@ describe("rpc handlers.buffer.buf_get_lines target resolution", function()
       assert.equals(4, result.total_lines)
     end)
 
+    it("finds a last_section header beyond the first backward-scan chunk by doubling", function()
+      -- last_section alone used to fall back to reading the whole buffer (a review finding on PR
+      -- #707); this pins the chunked backward scan that replaced it. The header sits far enough
+      -- back that the first 500-line chunk misses it and a second, doubled read is required.
+      local lines = {}
+      for i = 1, 599 do
+        lines[i] = "filler " .. i
+      end
+      lines[600] = "## Assistant <!-- 2026-01-01 00:00:00 -->"
+      for i = 601, 1200 do
+        lines[i] = "reply " .. i
+      end
+      local target = make_buffer(lines)
+
+      local result = BufferHandler.buf_get_lines({
+        bufnr = target,
+        include_chat_status = true,
+        last_section = true,
+      })
+
+      assert.equals(1200, result.total_lines)
+      assert.equals(601, #result.lines)
+      assert.equals("## Assistant <!-- 2026-01-01 00:00:00 -->", result.lines[1])
+      assert.equals("reply 1200", result.lines[#result.lines])
+    end)
+
+    it("combines a doubled last_section scan with tail_lines", function()
+      local lines = {}
+      for i = 1, 599 do
+        lines[i] = "filler " .. i
+      end
+      lines[600] = "## Assistant <!-- 2026-01-01 00:00:00 -->"
+      for i = 601, 1200 do
+        lines[i] = "reply " .. i
+      end
+      local target = make_buffer(lines)
+
+      local result = BufferHandler.buf_get_lines({
+        bufnr = target,
+        include_chat_status = true,
+        last_section = true,
+        tail_lines = 2,
+      })
+
+      assert.same({ "reply 1199", "reply 1200" }, result.lines)
+      assert.equals(1200, result.total_lines)
+    end)
+
     it("reports total_lines even when the whole buffer was read", function()
       local target = make_buffer({ "a", "b" })
 

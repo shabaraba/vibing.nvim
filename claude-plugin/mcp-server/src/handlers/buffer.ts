@@ -1,5 +1,6 @@
 import { callNeovim } from '../rpc.js';
 import {
+  validateBoolean,
   validateBufferParams,
   validateChatTarget,
   validateFilePath,
@@ -64,6 +65,9 @@ export async function handleGetBuffer(args: any) {
   }
   if (tail_lines !== undefined) {
     validatePositiveInteger(tail_lines, 'tail_lines');
+  }
+  if (last_section !== undefined) {
+    validateBoolean(last_section, 'last_section');
   }
   // Neither is fine here — it falls back to the current buffer, unlike a send.
   validateChatTarget({ bufnr, file_path });

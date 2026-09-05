@@ -6,17 +6,28 @@ local M = {}
 
 local Timestamp = require("vibing.core.utils.timestamp")
 
----1-indexed start of the last section (the last `## <Kind> <!-- ... -->` header found scanning
----from the end), or 1 when the buffer has no header at all — the whole buffer is one section.
+---1-indexed index of the last `## <Kind> <!-- ... -->` header in `lines`, scanning from the end,
+---or nil if `lines` has none. Exported (unlike the section-start helper below, which folds "none"
+---into 1) so a caller reading a buffer incrementally — a suffix chunk, say — can tell "no header
+---in what I've read so far" apart from "the header is the first line I read", and keep reading
+---further back only in the first case (`infrastructure/rpc/handlers/buffer.lua`'s chunked scan).
 ---@param lines string[]
----@return integer
-local function last_section_start(lines)
+---@return integer?
+function M.find_last_header(lines)
   for i = #lines, 1, -1 do
     if Timestamp.is_header(lines[i]) then
       return i
     end
   end
-  return 1
+  return nil
+end
+
+---1-indexed start of the last section, or 1 when `lines` has no header at all — the whole thing
+---is one section.
+---@param lines string[]
+---@return integer
+local function last_section_start(lines)
+  return M.find_last_header(lines) or 1
 end
 
 ---Normalize a `tail_lines` argument to a non-negative integer, or nil for "not given"/unusable.

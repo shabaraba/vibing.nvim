@@ -109,4 +109,23 @@ describe("BufferWindow.slice", function()
       assert.equals(nil, BufferWindow.normalize_tail_lines(nil))
     end)
   end)
+
+  describe("find_last_header", function()
+    it("returns nil rather than 1 when there is no header, unlike the section-start fallback", function()
+      -- The chunked backward scan in infrastructure/rpc/handlers/buffer.lua needs to tell "no
+      -- header in what I've read so far, keep reading further back" apart from "the header is
+      -- right here" — a plain index can't carry that distinction when the header sits at index 1.
+      assert.equals(nil, BufferWindow.find_last_header({ "plain", "text" }))
+    end)
+
+    it("returns 1 when the header is the very first line, not nil", function()
+      assert.equals(1, BufferWindow.find_last_header({ "## Assistant", "reply" }))
+    end)
+
+    it("returns the last header's index when there are several", function()
+      local lines = { "## User <!-- 2026-01-01 00:00:00 -->", "a", "## Assistant <!-- 2026-01-01 00:00:01 -->", "b" }
+
+      assert.equals(3, BufferWindow.find_last_header(lines))
+    end)
+  end)
 end)
