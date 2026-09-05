@@ -71,45 +71,17 @@ request, not the files already discussed, not the decisions already made. Write 
 someone who just walked in — goal, the files or directories involved, the constraints, and what
 "done" looks like. A brief that says "do the refactor we discussed" produces nothing useful.
 
-### The brief must tell the worker to report back
+### The brief does not need to teach the worker to report back
 
-This is not optional decoration — it is how the fan-out finishes without you polling. Every brief
-carries three things beyond the task:
-
-1. **Where to report** — this chat's `file_path`. The worker is told it in its own system prompt
-   too, but a brief is read on its own and should not depend on that.
-2. **How to report** — `nvim_chat_send_message` with the worker's own chat buffer number as
-   `from_bufnr` and **`queue_if_busy: true`**. Without that flag the send is refused outright
-   whenever you happen to be mid-turn, and the report is simply lost.
-3. **What to report** — the conclusion, what failed, and what needs your action, **briefly**. The
-   summary must stand on its own — "Done, read my chat" costs you a `nvim_get_buffer` and pulls
-   that worker's entire transcript into this conversation, once per worker — but the opposite
-   failure wastes tokens twice: a report that replays the whole working log is paid for once when
-   the worker writes it and again when you read it, while that log already sits in the worker's
-   transcript for free. Tell the worker to keep the report to the points you will act on; read its
-   transcript yourself on the rare occasion you need the detail.
-
-Add that if it gets stuck or the brief turns out to be ambiguous, it should ask you the same way
-rather than guess. A question costs one turn; a worker guessing wrong costs the whole task.
-
-A closing paragraph you can paste into a brief:
-
-```text
-終わったら、次の呼び出しで報告してから止まってください。
-
-  nvim_chat_send_message({
-    rpc_port,
-    file_path: "<このチャットの file_path>",
-    from_bufnr: <あなた自身の chat buffer 番号>,
-    queue_if_busy: true,
-    message: "<結果の要約>",
-  })
-
-要約だけで判断できる内容にしてください（何を変えたか・何が失敗したか・何が残っているか）。
-作業過程の詳細は書かず、要点だけを短く。詳細が必要なときはこちらからあなたの transcript を
-読みに行きます。
-詰まったとき、ブリーフが曖昧なときも、推測せず同じ方法で聞いてください。
-```
+That used to be your job to write into every brief; it is not anymore (#706). Creating the worker
+with `from_bufnr` records `orchestrated_by` on it, and vibing.nvim reads that frontmatter on every
+turn to inject the report protocol into the worker's own system prompt — this chat's `file_path`
+already resolved in, the call shape (`nvim_chat_send_message`, `from_bufnr`, `queue_if_busy: true`),
+the report shape (conclusion → what changed → what's unresolved → what's needed next), and what not
+to do. The full version is the `vibing-worker` skill, bundled for exactly this purpose. Your brief
+only needs to be the task itself, as below — writing the reporting instructions into it too is
+redundant, not more reliable, since the injected line does not depend on the worker having read the
+brief carefully or at all.
 
 ## 4. End your turn — the workers come back to you
 
@@ -242,7 +214,9 @@ there.
 ## 7. If you are also someone else's worker
 
 A chat can be a worker and an orchestrator at once: briefed by a parent, and splitting its own task
-across workers of its own. Everything above still applies — plus one rule.
+across workers of its own. Your own reporting duty to that parent is the injected line in your
+system prompt plus the `vibing-worker` skill it points to — read that for the report protocol.
+Everything above still applies to how you run your own workers — plus one rule.
 
 **Report to your parent only once every worker of yours has reported.** Nothing enforces this;
 there is no barrier in vibing.nvim, and a message sent early is delivered normally. The whole
