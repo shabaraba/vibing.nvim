@@ -223,4 +223,69 @@ describe("active_stream_registry", function()
       assert.is_nil(registry.find_other_active_for_worktree("", "b"))
     end)
   end)
+
+  describe("subagent count (#701)", function()
+    it("starts a newly registered stream at zero", function()
+      local registry = fresh_registry()
+      registry.register({ handle_id = "a", adapter = {} })
+
+      assert.equals(0, registry.total_subagent_count())
+    end)
+
+    it("sums subagents across every active stream", function()
+      local registry = fresh_registry()
+      registry.register({ handle_id = "a", adapter = {} })
+      registry.register({ handle_id = "b", adapter = {} })
+
+      registry.increment_subagent_count("a")
+      registry.increment_subagent_count("a")
+      registry.increment_subagent_count("b")
+
+      assert.equals(3, registry.total_subagent_count())
+    end)
+
+    it("decrements only the named stream's count", function()
+      local registry = fresh_registry()
+      registry.register({ handle_id = "a", adapter = {} })
+      registry.increment_subagent_count("a")
+      registry.increment_subagent_count("a")
+
+      registry.decrement_subagent_count("a")
+
+      assert.equals(1, registry.total_subagent_count())
+    end)
+
+    it("never goes negative on an unmatched decrement", function()
+      local registry = fresh_registry()
+      registry.register({ handle_id = "a", adapter = {} })
+
+      registry.decrement_subagent_count("a")
+      registry.decrement_subagent_count("a")
+
+      assert.equals(0, registry.total_subagent_count())
+    end)
+
+    it("ignores an unknown or nil handle_id rather than erroring", function()
+      local registry = fresh_registry()
+
+      registry.increment_subagent_count("unknown")
+      registry.increment_subagent_count(nil)
+      registry.decrement_subagent_count("unknown")
+      registry.decrement_subagent_count(nil)
+
+      assert.equals(0, registry.total_subagent_count())
+    end)
+
+    it("drops a stream's count entirely once it is unregistered", function()
+      -- A turn that dies with a subagent still running must not leak that count forever —
+      -- there is no SubagentStop-equivalent event to decrement it on that path.
+      local registry = fresh_registry()
+      registry.register({ handle_id = "a", adapter = {} })
+      registry.increment_subagent_count("a")
+
+      registry.unregister("a")
+
+      assert.equals(0, registry.total_subagent_count())
+    end)
+  end)
 end)

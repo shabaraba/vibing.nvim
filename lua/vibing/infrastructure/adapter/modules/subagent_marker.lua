@@ -22,12 +22,22 @@ function M.format(agent_id, subagent_type)
   return string.format("\n<!-- subagent: %s type=%s -->\n", agent_id, subagent_type or "unknown")
 end
 
+--- Whether a tool call is a subagent launcher (`Task`/`Agent`, across every backend's tool
+--- vocabulary normalization). Shared by the marker below and by in-flight subagent counting
+--- (`cli_event_processor.lua`, `active_stream_registry.lua`), so the two never drift apart on
+--- what counts as a subagent.
+--- @param tool_name string|nil
+--- @return boolean
+function M.is_subagent_tool(tool_name)
+  return tool_name == "Task" or tool_name == "Agent"
+end
+
 --- @param tool_name string|nil
 --- @param tool_input table
 --- @param result_text string raw tool result, before display truncation drops the tail
 --- @return string marker Empty when this result did not come from a resumable subagent
 function M.for_tool_result(tool_name, tool_input, result_text)
-  if tool_name ~= "Task" and tool_name ~= "Agent" then
+  if not M.is_subagent_tool(tool_name) then
     return ""
   end
   if type(result_text) ~= "string" then
