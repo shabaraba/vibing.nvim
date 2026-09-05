@@ -19,6 +19,24 @@ local function last_section_start(lines)
   return 1
 end
 
+---Normalize a `tail_lines` argument to a non-negative integer, or nil for "not given"/unusable.
+---
+---The MCP layer already rejects a negative or fractional value before it reaches Neovim
+---(`validatePositiveInteger` in `schema.ts`), but this primitive exists precisely so a future
+---direct Lua caller (#693) can skip that layer — so it has to defend the same ground itself
+---rather than silently misbehaving when handed a negative or fractional number (a caller asking
+---for a fractional tail is a bug in the caller, and a floor makes it a harmless one).
+---@param value any
+---@return integer?
+local function normalize_tail_lines(value)
+  if type(value) ~= "number" then
+    return nil
+  end
+  return math.max(0, math.floor(value))
+end
+
+M.normalize_tail_lines = normalize_tail_lines
+
 ---@class Vibing.Domain.Chat.BufferWindow.Opts
 ---@field tail_lines number? Keep only the last N lines (applied after `last_section`, if both given).
 ---@field last_section boolean? Keep only the buffer's last `## ...` section.
@@ -32,11 +50,12 @@ end
 function M.slice(lines, opts)
   local total_lines = #lines
   opts = opts or {}
+  local tail_lines = normalize_tail_lines(opts.tail_lines)
 
   local start = opts.last_section and last_section_start(lines) or 1
   local section_length = total_lines - start + 1
-  if type(opts.tail_lines) == "number" and opts.tail_lines >= 0 and opts.tail_lines < section_length then
-    start = total_lines - opts.tail_lines + 1
+  if tail_lines and tail_lines < section_length then
+    start = total_lines - tail_lines + 1
   end
 
   local windowed = start == 1 and lines or vim.list_slice(lines, start, total_lines)

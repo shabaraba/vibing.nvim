@@ -34,20 +34,21 @@ local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
 --   needs no equivalent: it errors outright when it can find no target.
 function M.buf_get_lines(params)
   local bufnr = require("vibing.infrastructure.rpc.handlers.bufnr").resolve_chat_target(params) or 0
-  local tail_lines = params and params.tail_lines
+  local BufferWindow = require("vibing.domain.chat.buffer_window")
+  -- Normalized once, through the same primitive `BufferWindow.slice` uses below, so a negative or
+  -- fractional value cannot be read one way on this fast path and a different way on that one.
+  local tail_lines = BufferWindow.normalize_tail_lines(params and params.tail_lines)
   local last_section = params and params.last_section
 
   local windowed, total_lines
-  if type(tail_lines) == "number" and not last_section then
+  if tail_lines and not last_section then
     -- Read only the requested tail instead of the whole buffer: the entire point of asking for
     -- the last 40 lines of a 400k-line chat is to not pay for reading the other 399,960 (#694).
     total_lines = vim.api.nvim_buf_line_count(bufnr)
-    local n = math.max(0, tail_lines)
-    local from = n < total_lines and (total_lines - n) or 0
+    local from = tail_lines < total_lines and (total_lines - tail_lines) or 0
     windowed = vim.api.nvim_buf_get_lines(bufnr, from, total_lines, false)
   else
     local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-    local BufferWindow = require("vibing.domain.chat.buffer_window")
     windowed, total_lines = BufferWindow.slice(all_lines, { tail_lines = tail_lines, last_section = last_section })
   end
 

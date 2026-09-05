@@ -84,4 +84,29 @@ describe("BufferWindow.slice", function()
 
     assert.same({ "a", "b", "c" }, lines)
   end)
+
+  describe("normalize_tail_lines (a defensive-coding review finding on PR #707)", function()
+    it("clamps a negative tail_lines to zero rather than ignoring it", function()
+      -- Unreachable through the MCP layer (validated non-negative there), but this primitive is
+      -- meant to be called directly by a future Lua caller (#693) that skips that validation.
+      assert.same({}, BufferWindow.slice({ "a", "b" }, { tail_lines = -1 }))
+    end)
+
+    it("clamps a negative tail_lines the same way whether or not last_section is also given", function()
+      local lines = { "## User <!-- 2026-01-01 00:00:00 -->", "one", "two" }
+
+      assert.same({}, BufferWindow.slice(lines, { tail_lines = -1, last_section = true }))
+    end)
+
+    it("floors a fractional tail_lines instead of producing a fractional slice bound", function()
+      local windowed = BufferWindow.slice({ "a", "b", "c" }, { tail_lines = 1.9 })
+
+      assert.same({ "c" }, windowed)
+    end)
+
+    it("treats a non-number tail_lines as not given", function()
+      assert.equals(nil, BufferWindow.normalize_tail_lines("3"))
+      assert.equals(nil, BufferWindow.normalize_tail_lines(nil))
+    end)
+  end)
 end)

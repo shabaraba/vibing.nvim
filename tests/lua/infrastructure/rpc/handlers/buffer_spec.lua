@@ -178,5 +178,15 @@ describe("rpc handlers.buffer.buf_get_lines target resolution", function()
 
       assert.same({ "1", "2", "3" }, BufferHandler.buf_get_lines({ bufnr = target }))
     end)
+
+    it("clamps a negative tail_lines the same way on the fast path and the last_section path", function()
+      -- A PR #707 review caught these two branches disagreeing on a negative tail_lines: the fast
+      -- path (no last_section) clamped to an empty result, the other silently ignored tail_lines
+      -- and returned the whole buffer. Both now clamp through BufferWindow.normalize_tail_lines.
+      local target = make_buffer({ "1", "2", "3" })
+
+      assert.same({}, BufferHandler.buf_get_lines({ bufnr = target, tail_lines = -1 }))
+      assert.same({}, BufferHandler.buf_get_lines({ bufnr = target, tail_lines = -1, last_section = true }))
+    end)
   end)
 end)
