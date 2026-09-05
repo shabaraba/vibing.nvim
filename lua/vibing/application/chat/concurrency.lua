@@ -16,18 +16,19 @@ local M = {}
 ---つまみで、締めていないことが問題になる環境ばかりではない
 local UNLIMITED = 0
 
+---`orchestration`テーブルの数値フィールドを読む。型を見るのは `orchestration = true` のような
+---壊れた設定で `setup()` 後の送信ごとに落ちないため。`chat_notifications` を読む側と同じ配慮
+---@param field_name string
 ---@return number limit 0なら無制限
-function M.limit()
+local function read_orchestration_limit(field_name)
   local config = require("vibing.config").get()
   local orchestration = config.agent and config.agent.orchestration
 
-  -- 型を見るのは `orchestration = true` のような壊れた設定で `setup()` 後の送信ごとに
-  -- 落ちないため。`chat_notifications` を読む側と同じ配慮
   if type(orchestration) ~= "table" then
     return UNLIMITED
   end
 
-  local limit = orchestration.max_concurrent
+  local limit = orchestration[field_name]
   if type(limit) ~= "number" or limit < 0 then
     return UNLIMITED
   end
@@ -35,19 +36,13 @@ function M.limit()
 end
 
 ---@return number limit 0なら無制限
+function M.limit()
+  return read_orchestration_limit("max_concurrent")
+end
+
+---@return number limit 0なら無制限
 function M.subagent_limit()
-  local config = require("vibing.config").get()
-  local orchestration = config.agent and config.agent.orchestration
-
-  if type(orchestration) ~= "table" then
-    return UNLIMITED
-  end
-
-  local limit = orchestration.max_concurrent_subagents
-  if type(limit) ~= "number" or limit < 0 then
-    return UNLIMITED
-  end
-  return limit
+  return read_orchestration_limit("max_concurrent_subagents")
 end
 
 ---いま応答中のチャットの本数

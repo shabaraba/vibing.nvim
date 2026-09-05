@@ -16,7 +16,7 @@ local TokenUsage = require("vibing.core.utils.token_usage")
 --- @param tool_input table
 --- @return string
 local function extract_input_summary(tool_name, tool_input)
-  if tool_name == "Task" or tool_name == "Agent" then
+  if SubagentMarker.is_subagent_tool(tool_name) then
     if tool_input.subagent_type and tool_input.subagent_type ~= "" then
       return tool_input.subagent_type
     end
