@@ -51,8 +51,8 @@ describe("MessageQueue", function()
       return { success = true, bufnr = bufnr }
     end
     -- 本物はディスクに触るので差し替える。順序の観測だけがここの目的
-    OrchestrationLink.link = function(from, to)
-      table.insert(links, { from = from, to = to, sends_so_far = #sends })
+    OrchestrationLink.link = function(from, to, task)
+      table.insert(links, { from = from, to = to, task = task, sends_so_far = #sends })
       return true, nil
     end
     notify.warn = function(message, title)
@@ -103,6 +103,33 @@ describe("MessageQueue", function()
     Queue.flush(a)
 
     assert.equals(1, #links)
+  end)
+
+  it("forwards a queued task to OrchestrationLink.link (#696 follow-up)", function()
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    Queue.enqueue_message(a, b, "brief", "PR #688 -- review")
+
+    responding[a] = false
+    Queue.flush(a)
+
+    assert.equals(1, #links)
+    assert.equals("PR #688 -- review", links[1].task)
+  end)
+
+  it("uses the last queued task from the same sender, not the first (latest instruction wins)", function()
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    Queue.enqueue_message(a, b, "first", "first task")
+    Queue.enqueue_message(a, b, "second", "second task")
+
+    responding[a] = false
+    Queue.flush(a)
+
+    assert.equals(1, #links)
+    assert.equals("second task", links[1].task)
   end)
 
   it("writes no link for a message that named no sender", function()
@@ -396,6 +423,32 @@ describe("MessageQueue persistence (#697)", function()
     assert.equals(a, sends[1].bufnr)
     assert.is_truthy(sends[1].message:find("queued while A was busy", 1, true))
     assert.is_nil(Store.load(tmp_root)[a_path], "delivered — must not be replayed on the next restart")
+  end)
+
+  it("carries a queued task through a simulated restart (#696 follow-up)", function()
+    -- #697's persistence landed after #696's task field, so the round trip needs its own
+    -- coverage: persist()/restore() must not silently drop `task` the way they would if only
+    -- body/reason/from_file_path were serialized.
+    local a, a_path = make_named_chat("a.md")
+    local b = make_named_chat("b.md")
+    responding[a] = true
+
+    assert.is_true(Queue.enqueue_message(a, b, "brief", "PR #688 -- review, then update docs"))
+    assert.is_not_nil(Store.load(tmp_root)[a_path])
+
+    package.loaded["vibing.application.chat.message_queue"] = nil
+    Queue = require("vibing.application.chat.message_queue")
+    responding[a] = false
+
+    local captured_task
+    OrchestrationLink.link = function(_, _, task)
+      captured_task = task
+      return true, nil
+    end
+
+    Queue.restore(tmp_root)
+
+    assert.equals("PR #688 -- review, then update docs", captured_task)
   end)
 
   it(

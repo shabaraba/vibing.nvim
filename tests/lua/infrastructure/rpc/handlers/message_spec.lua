@@ -143,6 +143,19 @@ describe("rpc handlers.message.send_message", function()
     assert.equals(1, chats[to].sends)
   end)
 
+  it("forwards task to OrchestrationLink.link for the immediate delivery path (#696 follow-up)", function()
+    local from, to = make_chat(), make_chat()
+    local captured
+    OrchestrationLink.link = function(f, t, task)
+      captured = { from = f, to = t, task = task }
+      return true, nil
+    end
+
+    Message.send_message({ bufnr = to, message = "do the thing", from_bufnr = from, task = "PR #688 -- review" })
+
+    assert.same({ from = from, to = to, task = "PR #688 -- review" }, captured)
+  end)
+
   it("addresses the target by file_path", function()
     local to = make_chat()
     ChatLocator.open = function(file_path)

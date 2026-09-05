@@ -22,8 +22,12 @@ local function queue_for_later(bufnr, params, at_capacity)
     error("A chat cannot queue a message to itself")
   end
 
-  local ok, err =
-    require("vibing.application.chat.message_queue").enqueue_message(bufnr, params.from_bufnr, params.message)
+  local ok, err = require("vibing.application.chat.message_queue").enqueue_message(
+    bufnr,
+    params.from_bufnr,
+    params.message,
+    params.task
+  )
   if not ok then
     error(err)
   end
@@ -49,7 +53,7 @@ end
 ---Neovim を再起動すれば別のバッファを指すのに対し、frontmatter が記録するパスは残る（#641）。
 ---閉じているチャットは `chat_locator.open` が背景で開くので、再起動後も frontmatter の
 ---パスからそのまま繋ぎ直せる
----@param params {bufnr?: number, file_path?: string, message: string, sender?: string, from_bufnr?: number, queue_if_busy?: boolean}
+---@param params {bufnr?: number, file_path?: string, message: string, sender?: string, from_bufnr?: number, queue_if_busy?: boolean, task?: string}
 ---@return {success: boolean, bufnr: number, queued?: boolean}
 function M.send_message(params)
   if not params then
@@ -96,7 +100,7 @@ function M.send_message(params)
     -- 宛先の応答が始まってから書くとストリーミングと競合する）。ただし送信が弾かれると
     -- 行われなかったやり取りの関係だけが永久に残るので、先に送信可能かを確かめる
     ProgrammaticSender.validate(bufnr, params.message)
-    require("vibing.application.chat.orchestration_link").link_or_warn(params.from_bufnr, bufnr)
+    require("vibing.application.chat.orchestration_link").link_or_warn(params.from_bufnr, bufnr, params.task)
 
     -- 向きの判定は `link_or_warn` の**後**でよい: 配布ならリンクは今書かれたばかりで
     -- `direction` は Request を返し、報告なら `link` は逆向きガードで何も書かずに戻る

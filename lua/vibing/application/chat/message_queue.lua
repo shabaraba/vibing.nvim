@@ -35,6 +35,8 @@ local WARN_TITLE = "Chat Delivery"
 ---  （`ChatBuffer:get_stop_reason()`）。読み手が `nvim_get_buffer` を1往復せずに
 ---  「答えれば動く」のか「ユーザーにしか外せない」のかを判断できるようにするためで、
 ---  普通に止まっただけの watchdog 通知では nil
+---@field task string? 本文のみ。この送信元が指す`task`の更新（#696）。同じ送信元から複数
+---  積まれている場合は`write_links`が最後の値を採用する（＝最新の指示が勝つ）
 
 ---@type table<number, Vibing.Application.MessageQueue.Item[]>
 local pending = {}
@@ -68,7 +70,10 @@ local function persist(to_bufnr)
 
   local items = {}
   for _, item in ipairs(queue) do
-    table.insert(items, { body = item.body, reason = item.reason, from_file_path = file_path_of(item.bufnr) })
+    table.insert(
+      items,
+      { body = item.body, reason = item.reason, task = item.task, from_file_path = file_path_of(item.bufnr) }
+    )
   end
   Store.put(to_path, items)
 end
@@ -143,13 +148,25 @@ end
 local function write_links(queue, to_bufnr)
   local OrchestrationLink = require("vibing.application.chat.orchestration_link")
   local seen = {}
+  local senders = {}
+  local last_task = {}
   for _, item in ipairs(queue) do
-    -- 同じ送信元からの複数の本文はリンク1本。`link` 自身も重複を弾くが、そこに至るまでに
-    -- frontmatter を2回パースするので手前で止める（orchestration_link.lua の早期returnを参照）
-    if item.body and item.bufnr and not seen[item.bufnr] then
-      seen[item.bufnr] = true
-      OrchestrationLink.link_or_warn(item.bufnr, to_bufnr)
+    if item.body and item.bufnr then
+      -- 同じ送信元からの複数の本文はリンク1本。`link` 自身も重複を弾くが、そこに至るまでに
+      -- frontmatter を2回パースするので手前で止める（orchestration_link.lua の早期returnを参照）
+      if not seen[item.bufnr] then
+        seen[item.bufnr] = true
+        table.insert(senders, item.bufnr)
+      end
+      -- taskは「最後に積まれた値」を採用する。同じ相手に複数回積まれるうちの最新の指示が
+      -- 勝つべきで、先に積まれた分に上書きされてはいけない
+      if item.task and item.task ~= "" then
+        last_task[item.bufnr] = item.task
+      end
     end
+  end
+  for _, from_bufnr in ipairs(senders) do
+    OrchestrationLink.link_or_warn(from_bufnr, to_bufnr, last_task[from_bufnr])
   end
 end
 
@@ -195,9 +212,10 @@ end
 ---@param to_bufnr number
 ---@param from_bufnr number?
 ---@param body string
+---@param task string? #696: 送信元の`orchestrated`エントリを更新する新しい指示
 ---@return boolean ok
 ---@return string? err 積まなかった理由。送信元に返して伝える
-function M.enqueue_message(to_bufnr, from_bufnr, body)
+function M.enqueue_message(to_bufnr, from_bufnr, body, task)
   -- 空の本文は待っても送れるようにならない。積めば `ProgrammaticSender` が配達時に弾き、
   -- そのときにはもう送信元に伝える先がない
   if type(body) ~= "string" or vim.trim(body) == "" then
@@ -215,7 +233,7 @@ function M.enqueue_message(to_bufnr, from_bufnr, body)
       )
   end
 
-  table.insert(queue, { bufnr = from_bufnr, body = body })
+  table.insert(queue, { bufnr = from_bufnr, body = body, task = task })
   pending[to_bufnr] = queue
   persist(to_bufnr)
   return true
@@ -420,6 +438,7 @@ function M.restore(cwd)
               table.insert(queue, {
                 bufnr = stored.from_file_path and resolve_bufnr(stored.from_file_path) or nil,
                 body = stored.body,
+                task = stored.task,
               })
             else
               local about_bufnr = stored.from_file_path and resolve_bufnr(stored.from_file_path) or nil

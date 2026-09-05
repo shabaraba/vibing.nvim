@@ -3,10 +3,21 @@ import { z } from 'zod';
 import { APPROVAL_ACTIONS, CHAT_POSITIONS } from '../tools/chat.js';
 import { validateChatTarget } from '../validation/schema.js';
 
+// `task` is written into the caller's own `orchestrated` entry as `<path>|<task>`
+// (orchestrated_entry.lua). A newline would let the value smuggle extra frontmatter lines past
+// the encoding on any write path that is not guarded by nvim_buf_set_lines' own line-break
+// rejection (the disk-direct rename-sync path in frontmatter_file.lua is not) -- reject it here,
+// at the boundary, rather than relying on that guard alone.
+const taskSchema = z
+  .string()
+  .refine((value) => !/[\r\n]/.test(value), { message: 'task must not contain line breaks' })
+  .optional();
+
 const chatCreateArgsSchema = z.object({
   position: z.enum(CHAT_POSITIONS).optional(),
   working_dir: z.string().optional(),
   from_bufnr: z.number().optional(),
+  task: taskSchema,
   rpc_port: z.number(),
 });
 
@@ -25,11 +36,19 @@ const chatCreateArgsSchema = z.object({
  * frontmatter. It stays optional deliberately: making it required would break every existing
  * caller that omits it, and there is no protocol version on the wire — an older Neovim simply
  * ignores the extra key, and an older server never sends it.
+ *
+ * `task` is written on the CALLER's own frontmatter (next to the `from_bufnr` link), not on the
+ * new chat — see `orchestrated_entry.lua`. Passing `task` without `from_bufnr` has nowhere to go
+ * and the Lua side drops it with a warning rather than silently discarding it.
  */
 export async function handleChatCreate(args: any): Promise<any> {
-  const { position, working_dir, from_bufnr, rpc_port } = chatCreateArgsSchema.parse(args);
+  const { position, working_dir, from_bufnr, task, rpc_port } = chatCreateArgsSchema.parse(args);
 
-  const result = await callNeovim('create_chat', { position, working_dir, from_bufnr }, rpc_port);
+  const result = await callNeovim(
+    'create_chat',
+    { position, working_dir, from_bufnr, task },
+    rpc_port
+  );
 
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -49,6 +68,7 @@ const chatSendMessageArgsSchema = z.object({
   sender: z.string().optional(),
   from_bufnr: z.number().optional(),
   queue_if_busy: z.boolean().optional(),
+  task: taskSchema,
   rpc_port: z.number(),
 });
 
@@ -72,11 +92,16 @@ const chatSendMessageArgsSchema = z.object({
  * that did not ask to queue already expects. The reply distinguishes the two outcomes, because
  * "queued" means no turn has started yet — an orchestrator that read it as "sent" would go on to
  * poll a transcript that has not moved.
+ *
+ * `task` replaces the one-line assignment recorded on the CALLER's own frontmatter for this
+ * target (see `nvim_chat_create`'s `task`), so an orchestrator can keep that summary current as
+ * the work evolves. Same `from_bufnr` requirement as `nvim_chat_create`'s `task`; omitted, an
+ * ordinary follow-up leaves the existing assignment untouched.
  */
 export async function handleChatSendMessage(args: any): Promise<any> {
   // Zod schema already validates required fields and types
   const parsed = chatSendMessageArgsSchema.parse(args);
-  const { message, sender, from_bufnr, queue_if_busy, rpc_port } = parsed;
+  const { message, sender, from_bufnr, queue_if_busy, task, rpc_port } = parsed;
   // Collapse an explicit null to "not given" once, here, so nothing downstream has to know the
   // difference — including the Lua side, where a JSON null decodes to the truthy vim.NIL.
   const bufnr = parsed.bufnr ?? undefined;
@@ -87,7 +112,7 @@ export async function handleChatSendMessage(args: any): Promise<any> {
 
   const result = await callNeovim(
     'send_message',
-    { bufnr, file_path, message, sender, from_bufnr, queue_if_busy },
+    { bufnr, file_path, message, sender, from_bufnr, queue_if_busy, task },
     rpc_port
   );
 

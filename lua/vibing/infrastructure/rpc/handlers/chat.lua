@@ -6,7 +6,7 @@ local ChatConstants = require("vibing.core.constants.chat")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 
 ---新しいチャットバッファを作成する
----@param params {position?: string, working_dir?: string, from_bufnr?: number}
+---@param params {position?: string, working_dir?: string, from_bufnr?: number, task?: string}
 ---@return {bufnr: number, file_path: string, working_dir: string?, position: string, saved: boolean}
 function M.create_chat(params)
   params = params or {}
@@ -26,6 +26,16 @@ function M.create_chat(params)
   -- そのファイルだけが残る
   local from_bufnr = require("vibing.infrastructure.rpc.handlers.bufnr").resolve_from_bufnr(params.from_bufnr)
 
+  -- taskは新しいチャット自身のfrontmatterには書かない。`from_bufnr`（親）の`orchestrated`
+  -- エントリにのみ記録する（#696フォローアップ）ので、`from_bufnr`が無ければ書き込み先が無く、
+  -- 黙って捨てるより先に伝える
+  if params.task and params.task ~= "" and not from_bufnr then
+    require("vibing.core.utils.notify").warn(
+      "task was given without from_bufnr, so there is nowhere to record it; ignoring",
+      "Orchestration"
+    )
+  end
+
   local session = require("vibing.application.chat.use_cases.create_chat").execute({
     working_dir = params.working_dir,
   })
@@ -41,7 +51,7 @@ function M.create_chat(params)
   -- 作成した時点でリンクを張る。送信を待つ形でも記録はできるが、`from_bufnr` の渡し忘れが
   -- 「黙って関係が残らない」失敗になるので、関係が確定する最も早い時点で書く
   if from_bufnr then
-    local ok, err = require("vibing.application.chat.orchestration_link").link(from_bufnr, chat_buf.buf)
+    local ok, err = require("vibing.application.chat.orchestration_link").link(from_bufnr, chat_buf.buf, params.task)
     if not ok then
       require("vibing.core.utils.notify").warn(
         string.format("Created chat %d but could not link it: %s", chat_buf.buf, err or "unknown"),
@@ -143,7 +153,7 @@ end
 ---RPCポーラーで迂回した）。列挙元は `view.list_chat_buffers()` 一択 — 「いま何本開いているか」
 ---を知る手段はそれしかない（`application/chat/concurrency.lua` も同じものを読む）ので、
 ---閉じたまま残っているチャットファイルはここには載らない
----@return {chats: {bufnr: number, file_path: string?, chat_status: string?, context_size: number?, updated_at: string?, orchestrated_by: string[], task: string?, assignment: string?}[]}
+---@return {chats: {bufnr: number, file_path: string?, chat_status: string?, context_size: number?, updated_at: string?, orchestrated_by: string[], task: string?}[]}
 function M.list_chats(_)
   local view = require("vibing.presentation.chat.view")
   local ChatStatus = require("vibing.presentation.chat.modules.chat_status")
@@ -156,22 +166,47 @@ function M.list_chats(_)
   table.sort(bufnrs)
 
   local chats = {}
+  local by_absolute_path = {}
   for _, bufnr in ipairs(bufnrs) do
     local chat_buf = buffers[bufnr]
     local frontmatter = chat_buf:parse_frontmatter()
 
-    table.insert(chats, {
+    local entry = {
       bufnr = bufnr,
       file_path = chat_buf.file_path,
       chat_status = ChatStatus.get(bufnr),
       context_size = read_context_size(bufnr),
       updated_at = frontmatter.updated_at,
       orchestrated_by = chat_buf:get_frontmatter_list("orchestrated_by"),
-      -- #692 3.8がfrontmatterに書くようになるまでは常にnil。防御的に読むだけにしておけば、
-      -- そちらが着地した時点でここは自動で値を持つ
-      task = frontmatter.task,
-      assignment = frontmatter.assignment,
-    })
+    }
+    table.insert(chats, entry)
+    if chat_buf.file_path then
+      by_absolute_path[vim.fn.fnamemodify(chat_buf.file_path, ":p")] = entry
+    end
+  end
+
+  -- taskはチャット自身のfrontmatterではなく、それを頼んだ親の`orchestrated`エントリにしか
+  -- 無い（#696フォローアップ）。今このセッションで開いている全チャットの`orchestrated`を
+  -- 展開し、一致するbufnrの行に投影する — 対象は既に読み込み済みのチャットだけなので、
+  -- このためだけに追加でファイルを開いたりバッファ全文を読んだりはしない
+  local OrchestratedEntry = require("vibing.application.chat.orchestrated_entry")
+  local Git = require("vibing.core.utils.git")
+  local git_root
+  for _, bufnr in ipairs(bufnrs) do
+    local orchestrated = buffers[bufnr]:get_frontmatter_list("orchestrated")
+    if #orchestrated > 0 then
+      git_root = git_root or Git.get_root()
+      for _, item in ipairs(orchestrated) do
+        local path, task = OrchestratedEntry.decode(item)
+        if task then
+          local abs = vim.fn.fnamemodify(Git.from_display_path(path, git_root), ":p")
+          local target = by_absolute_path[abs]
+          if target then
+            target.task = task
+          end
+        end
+      end
+    end
   end
 
   return { chats = chats }
