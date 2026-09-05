@@ -171,6 +171,12 @@ One chat can create and drive others: `nvim_chat_create` (MCP) → `rpc/handlers
 - **Reporting is the worker's job; the notification is a watchdog.** `agent.chat_notifications`
   gates only the watchdog — a stop the chat cannot leave on its own (`asked_question`,
   `waiting_approval`, `error`) is delivered whatever the setting is.
+- **The report protocol is injected, not left to the brief or to skill auto-trigger** (#706). A
+  chat with `orchestrated_by` gets the orchestrator's `file_path` and the report protocol appended
+  to its system prompt on every turn (`cli_command_builder.lua`), pointing at the
+  `claude-plugin/skills/vibing-worker/SKILL.md` skill for the rest. Skill discovery by description
+  match is probabilistic, so this line — not the orchestrator's brief text — is the one place a
+  worker is guaranteed to be told where and how to report.
 - **A worker's tool-approval prompt is the user's to clear unless the user says otherwise**
   (`agent.orchestration.delegated_approval`, default `false`).
 - **A message delivered from another chat gets its own section kind** — `## Request`, `## Report`

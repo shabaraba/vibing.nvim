@@ -342,30 +342,45 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
     -- dispatch, so it would move the prefix on a normal turn rather than an unusual one — and the
     -- completion notification already names the chat it wants read.
     --
-    -- Reporting back is stated as an obligation rather than an option (#643). The brief the
-    -- orchestrator writes says the same thing, but a brief is prose the worker may skim; this
-    -- line is the one place the rule is always present. It is also what the watchdog notice now
+    -- Reporting back is stated as an obligation rather than an option (#643, #706). The brief the
+    -- orchestrator writes no longer has to spell this out — see #706 — because a worker cannot be
+    -- trusted to have loaded the vibing-worker skill on its own (skill auto-trigger is
+    -- probabilistic); this line is the one place the report protocol is always present, with the
+    -- orchestrator's file_path already resolved into it. It is also what the watchdog notice
     -- assumes — a stop with no report reads as a failure, a question, or an approval prompt, so a
-    -- worker that finishes silently is reported to its orchestrator as suspect.
+    -- worker that finishes silently is reported to its orchestrator as suspect. The line stays
+    -- short by design: it states the target, the call shape and the report shape, and points at
+    -- the vibing-worker skill for everything else (full "don't"s, the fan-in rule, examples)
+    -- rather than inlining it and growing this cached prefix.
     if opts.orchestrators and #opts.orchestrators > 0 then
       local named = vim.tbl_map(function(orchestrator)
         return orchestrator.bufnr
             and string.format("%s (currently buffer %d)", orchestrator.path, orchestrator.bufnr)
           or orchestrator.path
       end, opts.orchestrators)
+      -- Usually one path, but `orchestrated_by` is a list: a second chat that later messages this
+      -- one via nvim_chat_send_message is appended too (orchestration_link.lua), so a worker can
+      -- have more than one orchestrator to report to. nvim_chat_send_message addresses exactly one
+      -- file_path per call, so "that file_path" (singular) only holds for the one-name case.
+      local target_clause = #named == 1
+          and ("This chat was started by vibing.nvim chat " .. named[1] .. ". Report to it")
+        or (
+          "This chat was started by more than one vibing.nvim chat: "
+          .. table.concat(named, ", ")
+          .. ". Report to each of them separately, once per file_path"
+        )
       table.insert(
         system_prompt_lines,
-        "This chat was started by vibing.nvim chat "
-          .. table.concat(named, ", ")
-          .. ". When your task is done, report the result to it by calling nvim_chat_send_message "
-          .. "with that file_path, your own chat buffer number as from_bufnr, queue_if_busy: true, "
-          .. "and a summary that stands on its own — it should not have to read this transcript to "
-          .. "learn what happened. Keep it brief: the conclusion, anything that failed, and "
-          .. "anything that needs its action. Leave the working detail in this transcript, which "
-          .. "it can read when it wants more. Ask it the same way if the brief turns out to be ambiguous or "
-          .. "you get stuck, rather than guessing. Address it by file_path rather than by buffer "
-          .. "number: the path keeps working after a restart, and the chat is opened for you if it "
-          .. "is closed."
+        target_clause
+          .. " — when the task is done, before you act on something you expect will need "
+          .. "approval, and the moment you find you cannot proceed — by calling "
+          .. "nvim_chat_send_message with that file_path, your own chat buffer number as "
+          .. "from_bufnr, this turn's rpc_port, and queue_if_busy: true. State the conclusion, "
+          .. "what changed, what is unresolved, and what input you need next, briefly: it can "
+          .. "read this transcript for the rest, and can be asked the same way if the brief is "
+          .. "ambiguous or you get stuck. Do not stop with only a prose report in your own chat "
+          .. "buffer — that report is never read unless you also send it. See the vibing-worker "
+          .. "skill for the full protocol, including what not to touch."
       )
     end
 
