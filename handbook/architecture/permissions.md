@@ -165,6 +165,14 @@ it is stuck, and in an orchestration run the user has to find each blocked worke
 what it buys is an agent clearing another agent's permission gate, not because of anything in the
 implementation.
 
+Set to `"scoped"` instead of `true` (#703), the same call only succeeds for `allow_once` /
+`allow_for_session` when the tool and input match a pattern in the *worker's own*
+`delegated_scope` frontmatter list — matched with the same `matchers.matches_permission` every
+other allow/deny/ask list uses, so there is no second pattern language to learn. A denial always
+goes through regardless of scope, since it cannot grant anything the scope would need to bound.
+This still requires the same opt-in in `setup()`; it narrows what a `true` delegation would have
+allowed, it does not create a new way to reach delegation without one.
+
 The delegated answer takes **exactly the human path**: it writes the chosen option line into the
 worker's pending unsent section (replacing the prompt) and calls `ChatBuffer:send_message()`, so
 `update_session_permissions`, the `:once` bookkeeping and the retry-message substitution all run

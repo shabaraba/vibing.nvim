@@ -479,6 +479,49 @@ describe('chat tools (worktree redesign)', () => {
     );
   });
 
+  it('registers a delegated_scope property on nvim_chat_create', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_create');
+    const inputSchema = tool?.inputSchema as { properties: Record<string, unknown> };
+    expect(inputSchema.properties.delegated_scope).toBeDefined();
+  });
+
+  it('nvim_chat_create forwards delegated_scope to the create_chat RPC call', async () => {
+    // Unlike task (recorded on the CALLER's frontmatter), delegated_scope lands on the NEW
+    // chat's own frontmatter -- a Lua-side concern (rpc/handlers/chat.lua). This handler only
+    // has to forward the argument.
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 14, file_path: '/tmp/worker.md' });
+
+    await handlers.nvim_chat_create({
+      rpc_port: 9878,
+      delegated_scope: ['Bash(npm:*)', 'Read'],
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'create_chat',
+      {
+        position: undefined,
+        working_dir: undefined,
+        delegated_scope: ['Bash(npm:*)', 'Read'],
+      },
+      9878
+    );
+  });
+
+  it('tells the model delegated_scope only matters in "scoped" mode', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_create');
+    const inputSchema = tool?.inputSchema as { properties: Record<string, { description: string }> };
+
+    expect(inputSchema.properties.delegated_scope.description).toContain('scoped');
+  });
+
+  it('tells the model nvim_chat_answer_approval enforces scope automatically in "scoped" mode', () => {
+    const description =
+      allTools.find((t) => t.name === 'nvim_chat_answer_approval')?.description ?? '';
+
+    expect(description).toContain('scoped');
+    expect(description).toContain('delegated_scope');
+  });
+
   it('has a handler for nvim_ask_user_question', () => {
     expect(handlers.nvim_ask_user_question).toBeDefined();
     expect(typeof handlers.nvim_ask_user_question).toBe('function');

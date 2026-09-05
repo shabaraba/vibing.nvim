@@ -31,7 +31,7 @@ describe("delegated approval, end to end", function()
   local chats
   local requests
 
-  ---@param enabled boolean
+  ---@param enabled boolean|"scoped"
   local function configure(enabled)
     local cfg = vim.tbl_deep_extend("force", vim.deepcopy(Config.defaults), {
       chat = { save_location_type = "custom", save_dir = save_dir },
@@ -166,5 +166,42 @@ describe("delegated approval, end to end", function()
     end)
 
     assert.equals(1, #requests)
+  end)
+
+  describe('"scoped" mode, against a real frontmatter delegated_scope', function()
+    before_each(function()
+      configure("scoped")
+    end)
+
+    it("consumes the approval when the tool matches the worker's own delegated_scope", function()
+      local orchestrator, worker = open_chat(), blocked_worker()
+      worker:update_frontmatter_list("delegated_scope", "Bash(npm:*)", "add")
+
+      ApprovalDelegate.answer({ bufnr = worker.buf, action = "allow_once", from_bufnr = orchestrator.buf })
+
+      assert.is_nil(worker:get_pending_approval())
+      assert.equals(1, #requests)
+    end)
+
+    it("leaves the prompt untouched when the tool is outside the declared scope", function()
+      local orchestrator, worker = open_chat(), blocked_worker()
+      worker:update_frontmatter_list("delegated_scope", "Bash(rm:*)", "add")
+
+      assert.has_error(function()
+        ApprovalDelegate.answer({ bufnr = worker.buf, action = "allow_once", from_bufnr = orchestrator.buf })
+      end)
+
+      assert.is_truthy(worker:get_pending_approval())
+      assert.equals(0, #requests)
+    end)
+
+    it("consumes a denial even though the worker declared no scope at all", function()
+      local orchestrator, worker = open_chat(), blocked_worker()
+
+      ApprovalDelegate.answer({ bufnr = worker.buf, action = "deny_once", from_bufnr = orchestrator.buf })
+
+      assert.is_nil(worker:get_pending_approval())
+      assert.equals(1, #requests)
+    end)
   end)
 end)

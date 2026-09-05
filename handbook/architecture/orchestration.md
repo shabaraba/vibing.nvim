@@ -732,14 +732,25 @@ same `Bash` prompt, that is five buffers the user has to find by hand.
 
 `agent.orchestration.delegated_approval` (default `false`) lets the orchestrator answer instead,
 through the MCP tool `nvim_chat_answer_approval` →`rpc/handlers/chat.lua:answer_approval` →
-`application/chat/approval_delegate.lua`.
+`application/chat/approval_delegate.lua`. Set to `true` it delegates unconditionally; set to
+`"scoped"` (#703) it delegates only `allow_once`/`allow_for_session` answers whose tool and input
+match a pattern the *worker itself* declared in its own `delegated_scope` frontmatter (same
+pattern syntax as `permissions_allow`, checked with the same `matchers.matches_permission` every
+other allow/deny list uses) — a denial always goes through, since denying cannot grant anything a
+scope would need to bound. `delegated_scope` is declared at `nvim_chat_create` time (or later, by
+editing the worker's frontmatter directly) and lives on the worker's own file, not the
+orchestrator's `orchestrated` entry: `approval_delegate` is answering on behalf of *that chat*, and
+what it may auto-approve is that chat's own property, independent of which chat happens to be
+driving it this turn.
 
 **The default is off for what it buys, not for what it costs to build.** The `ask` list is the
 user asking to be consulted; an agent that can clear it for another agent has changed the
 permission model, and that is a decision to make once, deliberately, in `setup()` — not something
-to acquire by installing an update. The refusal is worded for the model that will read it: it says
-what to do instead (name the blocked chat and the tool) and names the setting, so a chat running
-without it does not spend a turn probing.
+to acquire by installing an update. `"scoped"` narrows the blast radius of that decision but does
+not remove it: nothing can auto-approve anything unless a human first sets
+`delegated_approval` to `true` or `"scoped"`. The refusal is worded for the model that will read
+it: it says what to do instead (name the blocked chat and the tool) and names the setting, so a
+chat running without it does not spend a turn probing.
 
 Four things about the implementation:
 
@@ -763,14 +774,20 @@ Four things about the implementation:
   `nvim_chat_send_message`: a call that cannot say whose decision it was should not be made, and
   the compatibility argument does not apply to an RPC method older Neovims do not have at all.
 - **The watchdog's wording follows the setting.** `delivery_message.notification_section` asks
-  `approval_delegate.enabled()` and swaps the `waiting_approval` bullet between "only the user can
-  clear that one" and "answer it with `nvim_chat_answer_approval` when the tool is plainly within
-  the brief". Telling the model to answer while the setting is off would buy one guaranteed failed
-  call per blocked worker before it did the right thing anyway.
+  `approval_delegate.mode()` and picks one of three `waiting_approval` bullets: "only the user can
+  clear that one" (off), "answer it ... when the tool is plainly within the brief" (`true`), or
+  "try it — it only succeeds if the tool matches the declared scope" (`"scoped"`). Telling the
+  model to answer while the setting is off would buy one guaranteed failed call per blocked worker
+  before it did the right thing anyway; `"scoped"` is the one case where trying first is cheap,
+  because the call itself is the judge.
 
-What it deliberately does not do: decide on the orchestrator's behalf. Nothing inspects the tool
-input, and there is no allow list of "safe" tools to delegate — the judgement lives in the skill's
-prose (`vibing-orchestrate` → "Answering a worker's tool approval"), which tells the orchestrator
-to read the prompt, answer only what its own brief plainly covers, and prefer `allow_once` over
-the frontmatter-persisting `allow_for_session`. A mechanical rule here would have to guess at the
-task, which is the one thing the orchestrator knows and this module does not.
+What `true` mode deliberately does not do: decide on the orchestrator's behalf. Nothing inspects
+the tool input, and there is no allow list of "safe" tools to delegate — the judgement lives in the
+skill's prose (`vibing-orchestrate` → "Answering a worker's tool approval"), which tells the
+orchestrator to read the prompt, answer only what its own brief plainly covers, and prefer
+`allow_once` over the frontmatter-persisting `allow_for_session`. A mechanical rule here would have
+to guess at the task, which is the one thing the orchestrator knows and this module does not.
+`"scoped"` mode exists for the opposite case: when the orchestrator *can* state the bound up front
+(at `nvim_chat_create` time, as part of the brief) rather than judge each prompt as it arrives, a
+mechanical check is strictly safer than a fresh judgement call every time a fan of workers hits the
+same prompt.

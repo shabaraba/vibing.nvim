@@ -7,9 +7,15 @@
 ---「どのチャットが何で止まっているか」を言うところまでしかできない
 ---（`delivery_message.lua` の `waiting_approval` の説明文）。
 ---
----`agent.orchestration.delegated_approval` を true にすると、オーケストレーターが4択に代理で
----答えられるようになる。**opt-in なのは、買っているのが「エージェントが別のエージェントの
+---`agent.orchestration.delegated_approval` を true にすると、オーケストレーターが4択に無条件で
+---代理で答えられるようになる。**opt-in なのは、買っているのが「エージェントが別のエージェントの
 ---承認ゲートを外せる」状態そのものだから**で、実装上の都合ではない。
+---
+---`"scoped"` はその中間で、答えるワーカー自身の frontmatter `delegated_scope`
+---（`permissions_allow` と同じパターン構文の文字列リスト、`nvim_chat_create` の
+---`delegated_scope` 引数で宣言する）に一致する allow 系の答えだけを通す。deny 系の答えは
+---範囲を問わず常に通す — 拒否は権限を広げないので、機械的に判断してよい。判断は
+---`matchers.matches_permission` に委ねる。承認ルールの構文を2つ持たないための形。
 ---
 ---答えは人間の `<CR>` とまったく同じ経路を通る。選んだ選択肢の行をワーカーのバッファに
 ---書いてから `ChatBuffer:send_message()` を呼ぶだけで、承認の消費
@@ -35,18 +41,50 @@ local function is_valid_action(action)
   return type(action) == "string" and vim.tbl_contains(M.ACTIONS, action)
 end
 
----この機能が有効か
+---`agent.orchestration.delegated_approval` の実効値
 ---
 ---`concurrency.limit()` と同じ理由で型を見る: `orchestration = true` のような壊れた設定で、
 ---`setup()` 後のあらゆる代理応答が落ちるのではなく「無効」に倒れてほしい
----@return boolean
-function M.enabled()
+---@return boolean|"scoped"
+function M.mode()
   local config = require("vibing.config").get()
   local orchestration = config.agent and config.agent.orchestration
   if type(orchestration) ~= "table" then
     return false
   end
-  return orchestration.delegated_approval == true
+  local value = orchestration.delegated_approval
+  if value == true or value == "scoped" then
+    return value
+  end
+  return false
+end
+
+---この機能が(全面的にでも、範囲付きでも)有効か
+---@return boolean
+function M.enabled()
+  return M.mode() ~= false
+end
+
+---deny系の答えか（deny系は範囲を問わず常に委任できる — 拒否は権限を広げないため）
+---@param action string
+---@return boolean
+local function is_deny_action(action)
+  return action == "deny_once" or action == "deny_for_session"
+end
+
+---`"scoped"` モードで、このワーカーの `delegated_scope` が保留中のツール呼び出しを許すか
+---@param chat_buf table ワーカーの ChatBuffer
+---@param pending {tool: string, input: table}
+---@return boolean
+local function matches_declared_scope(chat_buf, pending)
+  local scope = chat_buf:get_frontmatter_list("delegated_scope")
+  local matchers = require("vibing.infrastructure.permissions.matchers")
+  for _, pattern in ipairs(scope) do
+    if matchers.matches_permission(pending.tool, pending.input or {}, pattern) then
+      return true
+    end
+  end
+  return false
 end
 
 ---承認プロンプトに描かれたのと同じ行を組み立てる
@@ -80,12 +118,14 @@ end
 ---@param params {bufnr: number, action: string, from_bufnr: number}
 ---@return {success: boolean, bufnr: number, tool: string, action: string}
 function M.answer(params)
-  if not M.enabled() then
+  local mode = M.mode()
+  if mode == false then
     error(
       "Delegated tool approval is disabled. Only the user can answer this chat's tool-approval "
         .. "prompt: say which chat is blocked and on which tool, and let the user answer it in "
         .. "that chat. (The user can enable it with "
-        .. "agent.orchestration.delegated_approval = true in their vibing.nvim setup.)"
+        .. "agent.orchestration.delegated_approval = true (or \"scoped\") in their vibing.nvim "
+        .. "setup.)"
     )
   end
 
@@ -123,6 +163,21 @@ function M.answer(params)
         "That chat is not waiting on a tool approval (status: %s). "
           .. "A tool-approval prompt can only be answered once, and only while it is pending.",
         status
+      )
+    )
+  end
+
+  -- "scoped" では allow 系の答えだけを `delegated_scope` に照らす。deny 系は権限を広げないので
+  -- 範囲を問わず通す — これが無いと、範囲外のツールを止める（＝安全側に倒す）ことすら
+  -- ユーザー待ちになり、この機能が解決したい待ち時間をかえって増やす
+  if mode == "scoped" and not is_deny_action(params.action) and not matches_declared_scope(chat_buf, pending) then
+    error(
+      string.format(
+        "This chat's declared delegated_scope does not cover the %s tool with this input, so "
+          .. "only the user can allow it. Say which chat is blocked and on what, and let the "
+          .. "user answer it (or widen delegated_scope in that chat's frontmatter). "
+          .. "A deny_once/deny_for_session answer is always allowed regardless of scope.",
+        tostring(pending.tool)
       )
     )
   end

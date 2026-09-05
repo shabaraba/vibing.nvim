@@ -6,7 +6,7 @@ local ChatConstants = require("vibing.core.constants.chat")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 
 ---新しいチャットバッファを作成する
----@param params {position?: string, working_dir?: string, from_bufnr?: number, task?: string}
+---@param params {position?: string, working_dir?: string, from_bufnr?: number, task?: string, delegated_scope?: string[]}
 ---@return {bufnr: number, file_path: string, working_dir: string?, position: string, saved: boolean}
 function M.create_chat(params)
   params = params or {}
@@ -42,6 +42,17 @@ function M.create_chat(params)
   -- background: ワーカーはユーザーが開いたチャットではないので、`view._current_buffer`
   -- （:VibingCancel などのフォールバック先）を奪わない
   local chat_buf = require("vibing.presentation.chat.view").render(session, position, { background = true })
+
+  -- delegated_scopeはこの新しいチャット**自身**のfrontmatterに書く（taskとは逆）。
+  -- `approval_delegate`が"scoped"モードで照らすのは答えるワーカー自身の宣言であって、
+  -- 誰が作ったかではないため
+  if type(params.delegated_scope) == "table" then
+    for _, pattern in ipairs(params.delegated_scope) do
+      if type(pattern) == "string" and pattern ~= "" then
+        chat_buf:update_frontmatter_list("delegated_scope", pattern, "add")
+      end
+    end
+  end
 
   -- `:VibingChat`は最初の応答が返るまでファイルを書かない（buffer.lua:update_session_id）。
   -- 呼び出し元にファイルパスを返す以上、そのパスが存在しないのは嘘なので、forkと同じく
