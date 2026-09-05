@@ -215,11 +215,22 @@ agent = {
                             -- is the default: switching it on changes the order in which an
                             -- existing orchestration's messages arrive. Only machine-started
                             -- sends are held (nvim_chat_send_message and queued deliveries) —
-                            -- your own <CR> never waits. The count does include chats you are
+                            -- your own <CR> never waits. The total also counts subagents
+                            -- (Task/Agent tool calls) each responding chat has launched and not
+                            -- yet gotten a result for — five chats within this limit can still be
+                            -- twenty processes deep if each fans out four subagents (#701). The
+                            -- count does include chats you are
                             -- driving by hand, so one long manual turn occupies a slot. A send
                             -- that hits the limit is refused unless it passed queue_if_busy,
                             -- in which case it is queued and delivered the moment one of the
                             -- running chats finishes
+    max_concurrent_subagents = 0,
+                            -- How many subagents (Task/Agent tool calls) may be in flight at
+                            -- once, summed across every chat. 0 is no limit, which is the
+                            -- default. Unlike max_concurrent, which folds subagents into the
+                            -- same total as responding chats, this throttles subagent fan-out on
+                            -- its own — useful when chats themselves are not the bottleneck but
+                            -- an unbounded number of subagents is
     delegated_approval = false,
                             -- Let one chat answer another chat's tool-approval prompt. A worker
                             -- that hits a tool in its `ask` list has its turn killed and the
