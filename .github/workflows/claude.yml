@@ -6,7 +6,7 @@ on:
   pull_request_review_comment:
     types: [created]
   issues:
-    types: [opened]
+    types: [labeled]
   pull_request_review:
     types: [submitted]
 
@@ -18,7 +18,7 @@ jobs:
         (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
         (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
         (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-        (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+        (github.event_name == 'issues' && github.event.label.name == 'claude:in-progress')
       )
     runs-on: ubuntu-latest
     permissions:
@@ -49,6 +49,7 @@ jobs:
             EVENT_TYPE: ${{ github.event_name }}
             ISSUE_NUMBER: ${{ github.event.issue.number }}
             PR_NUMBER: ${{ github.event.pull_request.number }}
+            LABEL_NAME: ${{ github.event.label.name }}
 
             ## FIRST STEP: Gather Context
             Before starting any work, you MUST gather complete context by running the appropriate commands:
@@ -75,6 +76,12 @@ jobs:
                - Create a descriptive PR title in English using semantic commit format
                - Write the PR body in Japanese with clear description of changes
                - Include "fixes #<issue-number>" if there's a related issue
+            5. If EVENT_TYPE is "issues" (LABEL_NAME is set), remove the triggering label from the
+               issue once you are done — whether you succeeded in opening a PR or have to stop and
+               report a blocker instead — so the label stops showing the issue as being processed:
+               ```bash
+               gh issue edit $ISSUE_NUMBER --remove-label "$LABEL_NAME"
+               ```
 
           # Allow file operations and git/gh commands for implementation tasks
           claude_args: '--allowed-tools "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(npm:*)"'
