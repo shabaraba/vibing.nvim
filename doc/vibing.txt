@@ -421,6 +421,7 @@ with YAML frontmatter: >
       - .vibing/chat/worker-auth.md
     orchestrated_by:                         # optional: who drives this
       - .vibing/chat/orchestrator.md
+    task: PR #688 — review, merge, cleanup    # optional: what this chat does
     continued_from: .vibing/chat/long.md     # optional: handed off from
     working_dir: .vibing/worktrees/fix-auth   # optional, relative to git root
     agent: claude
@@ -448,6 +449,14 @@ tools, as git-root-relative paths, and are rewritten on both sides when
 |:VibingChatHandoff| was made from and is kept in step the same way. Buffer
 numbers do not survive a restart and file names do not survive a rename, so
 the frontmatter is the only place the relationship keeps meaning.
+
+`task` is a free-text single line describing what the chat was asked to do
+(e.g. `PR #688 — review fixes, merge, cleanup`). It is set once, at creation,
+via `nvim_chat_create`'s `task` argument, and is not rewritten afterwards.
+`nvim_chat_list` reports it back, so an orchestrator driving several worker
+chats can reconstruct the bufnr <-> PR/issue <-> assignment mapping after a
+restart or a context compaction instead of keeping it only in its own
+context.
 
 ==============================================================================
 9. BACKENDS                                                  *vibing-backends*

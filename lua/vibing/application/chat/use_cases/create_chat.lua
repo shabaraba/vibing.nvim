@@ -9,15 +9,17 @@ local M = {}
 local Git = require("vibing.core.utils.git")
 
 ---新しいチャットセッションを作成する
----@param opts? {working_dir?: string} working_dirはgitルートからの相対パス
+---@param opts? {working_dir?: string, task?: string} working_dirはgitルートからの相対パス。
+---taskは自由テキスト1行（#696）
 ---@return Vibing.ChatSession
 ---@throws working_dirがgit管理外、または存在しないディレクトリを指している場合
 function M.execute(opts)
   opts = opts or {}
   local working_dir = opts.working_dir
+  local task = opts.task
 
   if not working_dir or working_dir == "" then
-    return require("vibing.application.chat.use_case").create_new()
+    return require("vibing.application.chat.use_case").create_new({ task = task })
   end
 
   -- 存在しないディレクトリを受け入れると、チャットは作れてしまうのに最初のリクエストで
@@ -30,7 +32,7 @@ function M.execute(opts)
     error("working_dir does not exist: " .. working_dir .. " (resolved to " .. absolute .. ")")
   end
 
-  return require("vibing.application.chat.use_case").create_new({ working_dir = working_dir })
+  return require("vibing.application.chat.use_case").create_new({ working_dir = working_dir, task = task })
 end
 
 return M

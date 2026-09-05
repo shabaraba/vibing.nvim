@@ -7,6 +7,7 @@ const chatCreateArgsSchema = z.object({
   position: z.enum(CHAT_POSITIONS).optional(),
   working_dir: z.string().optional(),
   from_bufnr: z.number().optional(),
+  task: z.string().optional(),
   rpc_port: z.number(),
 });
 
@@ -27,9 +28,13 @@ const chatCreateArgsSchema = z.object({
  * ignores the extra key, and an older server never sends it.
  */
 export async function handleChatCreate(args: any): Promise<any> {
-  const { position, working_dir, from_bufnr, rpc_port } = chatCreateArgsSchema.parse(args);
+  const { position, working_dir, from_bufnr, task, rpc_port } = chatCreateArgsSchema.parse(args);
 
-  const result = await callNeovim('create_chat', { position, working_dir, from_bufnr }, rpc_port);
+  const result = await callNeovim(
+    'create_chat',
+    { position, working_dir, from_bufnr, task },
+    rpc_port
+  );
 
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],

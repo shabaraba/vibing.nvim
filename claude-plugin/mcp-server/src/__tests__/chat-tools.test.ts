@@ -396,6 +396,31 @@ describe('chat tools (worktree redesign)', () => {
     );
   });
 
+  it('registers a task property on nvim_chat_create', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_create');
+    const inputSchema = tool?.inputSchema as { properties: Record<string, unknown> };
+    expect(inputSchema.properties.task).toBeDefined();
+  });
+
+  it('nvim_chat_create forwards task so it lands in the new chat frontmatter (#696)', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 14, file_path: '/tmp/worker.md' });
+
+    await handlers.nvim_chat_create({
+      rpc_port: 9878,
+      task: 'PR #688 — review fixes, merge, cleanup',
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'create_chat',
+      {
+        position: undefined,
+        working_dir: undefined,
+        task: 'PR #688 — review fixes, merge, cleanup',
+      },
+      9878
+    );
+  });
+
   it('has a handler for nvim_ask_user_question', () => {
     expect(handlers.nvim_ask_user_question).toBeDefined();
     expect(typeof handlers.nvim_ask_user_question).toBe('function');

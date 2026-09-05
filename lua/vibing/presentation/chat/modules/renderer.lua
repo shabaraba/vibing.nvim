@@ -42,6 +42,11 @@ function M.init_content(buf, session)
     table.insert(lines, "working_dir: " .. frontmatter.working_dir)
   end
 
+  -- task（#696: 何を頼まれたチャットかを1行で残す）
+  if frontmatter.task then
+    table.insert(lines, "task: " .. frontmatter.task)
+  end
+
   -- agent
   local agent = frontmatter.agent or (config.adapter or "claude")
   table.insert(lines, "agent: " .. agent)

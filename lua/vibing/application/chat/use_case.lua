@@ -37,7 +37,8 @@ local function create_default_frontmatter(config)
 end
 
 ---新しいチャットセッションを作成
----@param opts? {working_dir?: string} working_dirはgitルートからの相対パス（省略時はcwdから算出）
+---@param opts? {working_dir?: string, task?: string} working_dirはgitルートからの相対パス
+---（省略時はcwdから算出）。taskは自由テキスト1行（#696）
 ---@return Vibing.ChatSession
 function M.create_new(opts)
   local vibing = require("vibing")
@@ -57,6 +58,12 @@ function M.create_new(opts)
   local frontmatter = create_default_frontmatter(config)
   if working_dir then
     frontmatter.working_dir = working_dir
+  end
+  -- working_dirと同じ理由で空文字を弾く: 空のtaskを書くと `task:` が値なしで残り、
+  -- nvim_chat_list（#695）はそれを「タスクあり」と区別できない
+  local task = opts and opts.task
+  if task and task ~= "" then
+    frontmatter.task = task
   end
 
   local session = ChatSession:new({

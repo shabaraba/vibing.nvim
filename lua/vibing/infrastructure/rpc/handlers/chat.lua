@@ -6,7 +6,7 @@ local ChatConstants = require("vibing.core.constants.chat")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 
 ---新しいチャットバッファを作成する
----@param params {position?: string, working_dir?: string, from_bufnr?: number}
+---@param params {position?: string, working_dir?: string, from_bufnr?: number, task?: string}
 ---@return {bufnr: number, file_path: string, working_dir: string?, position: string, saved: boolean}
 function M.create_chat(params)
   params = params or {}
@@ -28,6 +28,7 @@ function M.create_chat(params)
 
   local session = require("vibing.application.chat.use_cases.create_chat").execute({
     working_dir = params.working_dir,
+    task = params.task,
   })
   -- background: ワーカーはユーザーが開いたチャットではないので、`view._current_buffer`
   -- （:VibingCancel などのフォールバック先）を奪わない
@@ -143,7 +144,7 @@ end
 ---RPCポーラーで迂回した）。列挙元は `view.list_chat_buffers()` 一択 — 「いま何本開いているか」
 ---を知る手段はそれしかない（`application/chat/concurrency.lua` も同じものを読む）ので、
 ---閉じたまま残っているチャットファイルはここには載らない
----@return {chats: {bufnr: number, file_path: string?, chat_status: string?, context_size: number?, updated_at: string?, orchestrated_by: string[], task: string?, assignment: string?}[]}
+---@return {chats: {bufnr: number, file_path: string?, chat_status: string?, context_size: number?, updated_at: string?, orchestrated_by: string[], task: string?}[]}
 function M.list_chats(_)
   local view = require("vibing.presentation.chat.view")
   local ChatStatus = require("vibing.presentation.chat.modules.chat_status")
@@ -167,10 +168,8 @@ function M.list_chats(_)
       context_size = read_context_size(bufnr),
       updated_at = frontmatter.updated_at,
       orchestrated_by = chat_buf:get_frontmatter_list("orchestrated_by"),
-      -- #692 3.8がfrontmatterに書くようになるまでは常にnil。防御的に読むだけにしておけば、
-      -- そちらが着地した時点でここは自動で値を持つ
+      -- nvim_chat_createのtask引数（#696）が書いた値。付けずに作られたチャットではnil
       task = frontmatter.task,
-      assignment = frontmatter.assignment,
     })
   end
 

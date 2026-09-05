@@ -45,6 +45,23 @@ describe("rpc handlers: list_chats", function()
     assert.equals(created.bufnr, result.chats[1].bufnr)
   end)
 
+  it("reports the task a chat was created with (#696)", function()
+    local created = handler.create_chat({ task = "PR #688 — review fixes, merge, cleanup" })
+
+    local result = handler.list_chats({})
+
+    assert.equals(created.bufnr, result.chats[1].bufnr)
+    assert.equals("PR #688 — review fixes, merge, cleanup", result.chats[1].task)
+  end)
+
+  it("reports no task for a chat created without one", function()
+    handler.create_chat({})
+
+    local result = handler.list_chats({})
+
+    assert.is_nil(result.chats[1].task)
+  end)
+
   it("reports no context_size for a chat that has not completed a turn", function()
     handler.create_chat({})
 

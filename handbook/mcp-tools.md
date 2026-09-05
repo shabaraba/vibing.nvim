@@ -108,11 +108,15 @@ at roughly the right place beats refusing to point.
 
 ## Orchestration Tools
 
-`nvim_chat_create({ rpc_port, position?, working_dir?, from_bufnr? })` creates a chat buffer and
-returns `{ bufnr, file_path, working_dir, position, saved }` as JSON, so one chat can spawn worker
-chats, brief each with `nvim_chat_send_message`, and poll them with `nvim_get_buffer` — which
-reports a chat buffer's `responding` / `idle` / `waiting_approval` / `asked_question` / `error`
-status as a second content block.
+`nvim_chat_create({ rpc_port, position?, working_dir?, from_bufnr?, task? })` creates a chat buffer
+and returns `{ bufnr, file_path, working_dir, position, saved }` as JSON, so one chat can spawn
+worker chats, brief each with `nvim_chat_send_message`, and poll them with `nvim_get_buffer` —
+which reports a chat buffer's `responding` / `idle` / `waiting_approval` / `asked_question` /
+`error` status as a second content block. `task` is one free-text line recording what the chat was
+asked to do (e.g. `"PR #688 — review fixes, merge, cleanup"`), written once into frontmatter at
+creation and never rewritten; `nvim_chat_list` reads it back so a restart or a context compaction
+does not lose the bufnr ↔ PR/issue ↔ assignment mapping that would otherwise live only in the
+orchestrator's own context (#692's postmortem).
 
 Both tools take an optional `from_bufnr`, the caller's own chat buffer number, which records the
 relationship in both chat files' frontmatter (`orchestrated` / `orchestrated_by`) instead of
@@ -146,10 +150,11 @@ the watchdog's `waiting_approval` wording changes with the setting:
 `nvim_chat_list({ rpc_port? })` reports every chat buffer open in this Neovim session in one call —
 `bufnr`, `file_path`, `chat_status`, `context_size` (the last measured context in tokens, from the
 last turn's own `### Tokens` marker; absent until a turn has completed), `updated_at` (frontmatter
-timestamp; absent until something has written to frontmatter), and `orchestrated_by`. Use it
-instead of polling several worker chats one at a time with `nvim_get_buffer`. It is a read like
-`nvim_list_buffers`, so `rpc_port` stays optional; it only lists chats attached in this session —
-a chat file nobody has opened yet does not appear.
+timestamp; absent until something has written to frontmatter), `orchestrated_by`, and `task` (the
+line `nvim_chat_create` was given, absent if none was set). Use it instead of polling several
+worker chats one at a time with `nvim_get_buffer`. It is a read like `nvim_list_buffers`, so
+`rpc_port` stays optional; it only lists chats attached in this session — a chat file nobody has
+opened yet does not appear.
 
 The workflow is the bundled `vibing-orchestrate` skill. Why `position` defaults to `back`, why the
 chat file is written at creation, why the status is a field rather than a text heuristic, and what

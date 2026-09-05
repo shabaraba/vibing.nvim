@@ -115,6 +115,20 @@ describe("rpc handlers: create_chat", function()
 
     assert.is_true(vim.api.nvim_buf_is_valid(result.bufnr))
   end)
+
+  it("writes an explicit task into the new chat's frontmatter (#696)", function()
+    local result = handler.create_chat({ task = "PR #688 — review fixes, merge, cleanup" })
+
+    local content = table.concat(vim.fn.readfile(result.file_path), "\n")
+    assert.is_truthy(content:find("task: PR #688 — review fixes, merge, cleanup", 1, true))
+  end)
+
+  it("leaves task out of the frontmatter when omitted", function()
+    local result = handler.create_chat({})
+
+    local content = table.concat(vim.fn.readfile(result.file_path), "\n")
+    assert.is_nil(content:find("\ntask:", 1, true))
+  end)
 end)
 
 describe("rpc handlers: create_chat with working_dir", function()

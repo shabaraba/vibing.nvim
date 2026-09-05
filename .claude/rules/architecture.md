@@ -96,8 +96,8 @@ backend still has to write (`new()` and `stream()`, and why `stream()` stayed pe
 ## Session Persistence
 
 Chat files are Markdown with YAML frontmatter (`session_id`, `working_dir`, `model`, `effort`,
-`permission_mode`, `permissions_allow` / `_deny`, `language`, `orchestrated` / `orchestrated_by`).
-The full field list is `doc/vibing.txt` → "CHAT FILE FORMAT".
+`permission_mode`, `permissions_allow` / `_deny`, `language`, `orchestrated` / `orchestrated_by`,
+`task`). The full field list is `doc/vibing.txt` → "CHAT FILE FORMAT".
 
 - **The key is singular `permission_mode`.** The legacy plural `permissions_mode` is migrated on
   parse (`infrastructure/storage/frontmatter.lua`) so old files keep working, but it is no longer

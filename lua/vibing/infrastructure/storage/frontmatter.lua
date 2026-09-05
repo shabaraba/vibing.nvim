@@ -163,8 +163,9 @@ end
 ---この配列の狙った位置に足すだけでよい（連番を振り直す必要がなく、番号の重複も表現できない）。
 ---ここに無いキーは後ろにまとめてアルファベット順で並ぶ。
 ---
----`forked_from` / `continued_from` / `subagent_id` / `orchestrated*` が設定値より前にあるのは、
----どれも「このチャットが他のどのチャットと繋がっているか」を答えるフィールドだから。
+---`forked_from` / `continued_from` / `subagent_id` / `orchestrated*` / `task` が設定値より前に
+---あるのは、どれも「このチャットが他のどのチャットと繋がっていて、何を頼まれたか」を答える
+---フィールドだから。
 local KEY_ORDER = {
   "vibing.nvim",
   "session_id",
@@ -174,6 +175,7 @@ local KEY_ORDER = {
   "subagent_id",
   "orchestrated",
   "orchestrated_by",
+  "task",
   "working_dir",
   "agent",
   "model",

@@ -61,6 +61,14 @@ export const chatTools: Tool[] = [
             'create a worker — it records the relationship in both chat files, which survives ' +
             'renames and restarts. A number that names no chat buffer fails the call.',
         },
+        task: {
+          type: 'string',
+          description:
+            'One free-text line describing what this chat was asked to do, e.g. ' +
+            '"PR #688 — review fixes, merge, cleanup". Written into the chat file\'s ' +
+            'frontmatter and returned by nvim_chat_list, so a restart or context compaction ' +
+            'does not lose the bufnr ↔ PR/issue ↔ assignment mapping. Omit to leave it unset.',
+        },
       }),
       required: requireRpcPort([]),
     },
@@ -252,9 +260,9 @@ export const chatTools: Tool[] = [
       'each with nvim_get_buffer one at a time. For each chat, reports bufnr, file_path, ' +
       'chat_status (responding/idle/waiting_approval/asked_question/error), context_size (the ' +
       "chat's last measured context size in tokens, or omitted if it has not completed a turn " +
-      'yet), updated_at (frontmatter timestamp of the last write), and orchestrated_by (the ' +
-      "chat file paths of this chat's orchestrator(s), if any). Use this to check on several " +
-      'worker chats at once in a multi-agent workflow (see the vibing-orchestrate skill). Only ' +
+      'yet), updated_at (frontmatter timestamp of the last write), orchestrated_by (the ' +
+      "chat file paths of this chat's orchestrator(s), if any), and task (the free-text line " +
+      'nvim_chat_create was given, or omitted if none was set). Use this to check on several ' +
       'chats currently open in this Neovim session are listed — a chat file that was never ' +
       'opened this session is not included.',
     inputSchema: {
