@@ -94,12 +94,22 @@ end
 ---@param to_bufnr number 送信先（ワーカー側）
 ---@param task string? 何を頼んだか（自由テキスト1行、#696）。`from_chat`の`orchestrated`
 ---エントリにのみ書く — 子側には複製しない。既にリンクが張られている状態でも、渡された値が
----今の値と違えば「最新の指示」として書き換える
+---今の値と違えば「最新の指示」として書き換える。改行を含む値は`|`区切りの前提を壊す
+---（`update_file`のディスク直書き経路には`nvim_buf_set_lines`の改行拒否が効かない）ので、
+---警告して黙って落とす — リンクそのものの成否とは無関係な理由でsendを止めたくない
 ---@return boolean success
 ---@return string? error
 function M.link(from_bufnr, to_bufnr, task)
   if from_bufnr == to_bufnr then
     return false, "A chat cannot orchestrate itself"
+  end
+
+  if task and task:find("[\r\n]") then
+    require("vibing.core.utils.notify").warn(
+      "task must not contain line breaks; ignoring it and keeping any existing assignment",
+      "Orchestration"
+    )
+    task = nil
   end
 
   local from_chat, to_chat, forward, backward = relation(from_bufnr, to_bufnr)
@@ -113,14 +123,30 @@ function M.link(from_bufnr, to_bufnr, task)
   -- 同じリンクが2回書かれる。`update_frontmatter_list` は要素としては重複を弾くが、行の書き換えと
   -- `updated_at` の更新でバッファを modified にするため、そのあと両チャットの全文が書き直される
   local existing_entry, existing_task = OrchestratedEntry.find(from_chat:get_frontmatter_list("orchestrated"), forward)
-  if existing_entry and vim.tbl_contains(to_chat:get_frontmatter_list("orchestrated_by"), backward) then
-    -- 既にリンク済み。taskが新しく渡され、今の値と違うなら置き換える（「最新の指示」）。
-    -- 正本はこの1エントリだけなので、書き換えもここ1箇所で完結する
+  if existing_entry then
+    -- forward側は既にある。backwardが欠けていても（片肺の書き込みで起こりうる）taskの
+    -- 更新はここで行う — 「両方揃っている時だけ更新」にすると、片肺状態での更新が下の
+    -- 「未リンク」経路に落ち、同じforward pathに対して新旧2エントリが残ってしまう
+    -- （#712レビュー指摘）
     if task and task ~= "" and task ~= existing_task then
       from_chat:update_frontmatter_list("orchestrated", existing_entry, "remove")
-      if from_chat:update_frontmatter_list("orchestrated", OrchestratedEntry.encode(forward, task), "add") then
-        FileManager.save_buffer(from_bufnr)
-      end
+      from_chat:update_frontmatter_list("orchestrated", OrchestratedEntry.encode(forward, task), "add")
+    end
+
+    if vim.tbl_contains(to_chat:get_frontmatter_list("orchestrated_by"), backward) then
+      FileManager.save_buffer(from_bufnr)
+      return true, nil
+    end
+
+    -- backwardだけ欠けている片肺状態を直す
+    local wrote_back = to_chat:update_frontmatter_list("orchestrated_by", backward, "add")
+    local saved_from = FileManager.save_buffer(from_bufnr)
+    local saved_to = FileManager.save_buffer(to_bufnr)
+    if not wrote_back then
+      return false, "Could not record the orchestration link (worker side)"
+    end
+    if not (saved_from and saved_to) then
+      return false, "Wrote the orchestration link but could not save both chat files"
     end
     return true, nil
   end

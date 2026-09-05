@@ -114,9 +114,12 @@ function OrchestrationChatScanner:update_link(file_path, old_path, new_path)
         replaced = true
       end
       -- 差し替え先が既にリストに載っていれば重複になる。リネーム先の衝突は
-      -- `set_file_title` が避けるが、このメソッド自体は任意の new_path で呼べる
-      if not seen[value] then
-        seen[value] = true
+      -- `set_file_title` が避けるが、このメソッド自体は任意の new_path で呼べる。
+      -- キーは符号化前のpathで取る — `value`そのもの（task込み）で比較すると、
+      -- 同じpathにtaskの違う2エントリが残ってしまう（#712レビュー指摘）
+      local identity = item_path(value)
+      if not seen[identity] then
+        seen[identity] = true
         table.insert(next_items, value)
       end
     end

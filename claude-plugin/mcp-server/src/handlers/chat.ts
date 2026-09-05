@@ -3,11 +3,21 @@ import { z } from 'zod';
 import { APPROVAL_ACTIONS, CHAT_POSITIONS } from '../tools/chat.js';
 import { validateChatTarget } from '../validation/schema.js';
 
+// `task` is written into the caller's own `orchestrated` entry as `<path>|<task>`
+// (orchestrated_entry.lua). A newline would let the value smuggle extra frontmatter lines past
+// the encoding on any write path that is not guarded by nvim_buf_set_lines' own line-break
+// rejection (the disk-direct rename-sync path in frontmatter_file.lua is not) -- reject it here,
+// at the boundary, rather than relying on that guard alone.
+const taskSchema = z
+  .string()
+  .refine((value) => !/[\r\n]/.test(value), { message: 'task must not contain line breaks' })
+  .optional();
+
 const chatCreateArgsSchema = z.object({
   position: z.enum(CHAT_POSITIONS).optional(),
   working_dir: z.string().optional(),
   from_bufnr: z.number().optional(),
-  task: z.string().optional(),
+  task: taskSchema,
   rpc_port: z.number(),
 });
 
@@ -58,7 +68,7 @@ const chatSendMessageArgsSchema = z.object({
   sender: z.string().optional(),
   from_bufnr: z.number().optional(),
   queue_if_busy: z.boolean().optional(),
-  task: z.string().optional(),
+  task: taskSchema,
   rpc_port: z.number(),
 });
 

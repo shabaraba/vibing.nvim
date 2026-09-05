@@ -142,6 +142,31 @@ describe("OrchestrationLink.link", function()
     assert.same({ "orchestrator.md" }, frontmatter_on_disk(dir .. "/worker.md").orchestrated_by)
   end)
 
+  it("drops a task containing a line break rather than corrupting the encoded entry (PR #712 review)", function()
+    local from, to = open_chat("orchestrator.md"), open_chat("worker.md")
+
+    assert.is_true(OrchestrationLink.link(from, to, "line one\nline two"))
+
+    assert.same({ "worker.md" }, frontmatter_on_disk(dir .. "/orchestrator.md").orchestrated)
+  end)
+
+  it(
+    "repairs a missing backward link and updates the task in place, without duplicating the forward entry (PR #712 review)",
+    function()
+      local from, to = open_chat("orchestrator.md"), open_chat("worker.md")
+      -- Simulate an earlier partial write: forward succeeded, backward never did (e.g. the
+      -- worker side failed to save). `existing_entry` must still be found and updated in place
+      -- rather than falling through to the "not yet linked" path, which would `add` a second,
+      -- differently-encoded entry for the same worker path.
+      FrontmatterHandler.update_list(from, "orchestrated", "worker.md|first task", "add")
+
+      assert.is_true(OrchestrationLink.link(from, to, "second task"))
+
+      assert.same({ "worker.md|second task" }, frontmatter_on_disk(dir .. "/orchestrator.md").orchestrated)
+      assert.same({ "orchestrator.md" }, frontmatter_on_disk(dir .. "/worker.md").orchestrated_by)
+    end
+  )
+
   it("replaces the task on an existing link when a different one is given (latest instruction wins)", function()
     local from, to = open_chat("orchestrator.md"), open_chat("worker.md")
     assert.is_true(OrchestrationLink.link(from, to, "first task"))

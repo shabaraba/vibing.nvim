@@ -126,6 +126,24 @@ describe("OrchestrationChatScanner", function()
       )
     end)
 
+    it(
+      "collapses a rename collision to one entry instead of keeping conflicting tasks for the same path (PR #712 review)",
+      function()
+        -- Renaming "worker.md" to "renamed.md" while "renamed.md" is already a separate
+        -- orchestrated entry (with its own, different task) must not leave both encoded strings
+        -- in the list -- nvim_chat_list would then have two conflicting assignments to project
+        -- onto the same worker path.
+        local orchestrator = ChatFiles.write(dir, "orchestrator.md", {
+          orchestrated = { "worker.md|old task", "renamed.md|other task" },
+        })
+
+        local ok = OrchestrationChatScanner.new():update_link(orchestrator, dir .. "/worker.md", dir .. "/renamed.md")
+
+        assert.is_true(ok)
+        assert.equals(1, #ChatFiles.read_frontmatter(orchestrator).orchestrated)
+      end
+    )
+
     it("updates orchestrated_by as well as orchestrated", function()
       local worker = ChatFiles.write(dir, "worker.md", { orchestrated_by = { "orchestrator.md" } })
 

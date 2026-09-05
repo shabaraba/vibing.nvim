@@ -116,6 +116,15 @@ describe('chat tools (worktree redesign)', () => {
     expect(rpc.callNeovim).not.toHaveBeenCalled();
   });
 
+  it('nvim_chat_create rejects a task containing a line break instead of forwarding it', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 7 });
+
+    await expect(
+      handlers.nvim_chat_create({ rpc_port: 9878, task: 'PR #688\n-- review' })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
   it('registers nvim_chat_send_message with rpc_port required', () => {
     const tool = allTools.find((t) => t.name === 'nvim_chat_send_message');
     const inputSchema = tool?.inputSchema as { required?: string[] };
@@ -189,6 +198,21 @@ describe('chat tools (worktree redesign)', () => {
       },
       9878
     );
+  });
+
+  it('nvim_chat_send_message rejects a task containing a line break instead of forwarding it', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 14 });
+
+    await expect(
+      handlers.nvim_chat_send_message({
+        rpc_port: 9878,
+        bufnr: 14,
+        message: 'do the thing',
+        from_bufnr: 12,
+        task: 'line one\nline two',
+      })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
   });
 
   it('nvim_chat_send_message still sends when from_bufnr is omitted', async () => {
