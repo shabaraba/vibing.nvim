@@ -33,6 +33,29 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve the issue/PR number for this thread
+        id: thread
+        run: |
+          echo "number=${{ github.event.issue.number || github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+
+      # Finds the session_id this same job stored in a previous run on this thread (see
+      # "Persist the session id" below), so a follow-up "@claude ..." comment continues that
+      # conversation with --resume instead of starting from a blank one every time. Only a
+      # marker posted by this workflow's own token counts, so a comment from anyone else cannot
+      # forge one and redirect --resume at an unrelated session.
+      - name: Look up a previous Claude session for this thread
+        id: lookup-session
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # --paginate concatenates one JSON array per page to stdout; -s (slurp) folds all of
+          # those into one array-of-arrays so `.[][]` and `last` see every page as a single list
+          # instead of picking the last match of whichever page happened to contain one.
+          SESSION_ID="$(gh api "repos/${{ github.repository }}/issues/${{ steps.thread.outputs.number }}/comments" --paginate \
+            | jq -sr '[.[][] | select(.user.login == "github-actions[bot]" and (.body | test("<!-- claude-session-id: ")))] | (last // {}) | .body // empty' \
+            | sed -n 's/.*<!-- claude-session-id: \([a-zA-Z0-9_-]*\) -->.*/\1/p')"
+          echo "session_id=$SESSION_ID" >> "$GITHUB_OUTPUT"
+
       - name: Run Claude Code
         id: claude
         # Pin to specific commit SHA for security (v1.0.216)
@@ -76,8 +99,11 @@ jobs:
                - Write the PR body in Japanese with clear description of changes
                - Include "fixes #<issue-number>" if there's a related issue
 
-          # Allow file operations and git/gh commands for implementation tasks
-          claude_args: '--allowed-tools "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(npm:*)"'
+          # Allow file operations and git/gh commands for implementation tasks. --resume is
+          # appended when lookup-session found a prior session_id for this thread.
+          claude_args: >-
+            --allowed-tools "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(npm:*)"
+            ${{ steps.lookup-session.outputs.session_id != '' && format('--resume {0}', steps.lookup-session.outputs.session_id) || '' }}
 
           # Show full output for debugging
           show_full_output: true
@@ -95,4 +121,17 @@ jobs:
           else
             gh issue edit "${{ github.event.issue.number }}" -R "${{ github.repository }}" \
               --remove-label "claude:in-progress" --add-label "claude:failed"
+          fi
+
+      # Runs regardless of outcome: a failed run can still be worth resuming from where it
+      # stopped, and this is what "Look up a previous Claude session" reads back next time.
+      - name: Persist the session id for future --resume
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SESSION_ID="${{ steps.claude.outputs.session_id }}"
+          if [ -n "$SESSION_ID" ]; then
+            gh api "repos/${{ github.repository }}/issues/${{ steps.thread.outputs.number }}/comments" \
+              -f body="<!-- claude-session-id: ${SESSION_ID} -->" >/dev/null
           fi
