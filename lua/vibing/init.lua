@@ -111,6 +111,14 @@ function M.setup(opts)
     end)
   end)
 
+  -- 同じ理由で、そのあいだに積まれたままだったチャット間キューも .vibing/message-queue.json
+  -- から作り直す。インメモリの pending は上のリセット待ちと同じく Neovim の再起動を跨げない
+  vim.schedule(function()
+    pcall(function()
+      require("vibing.application.chat.message_queue").restore()
+    end)
+  end)
+
   -- nvim-dapの停止イベントを購読する。nvim-dapがまだロードされていない可能性があるので
   -- VimEnter後に遅らせる（未インストールならsetup側がfalseを返して何もしない）
   if M.config.dap and M.config.dap.enabled then
