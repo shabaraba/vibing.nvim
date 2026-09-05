@@ -6,8 +6,8 @@ on:
 
 jobs:
   claude-review:
-    # Only run when shabaraba attaches the "review" label to the PR
-    if: github.event.label.name == 'review' && github.event.sender.login == 'shabaraba'
+    # Only run when shabaraba attaches the "claude:in-review" label to the PR
+    if: github.event.label.name == 'claude:in-review' && github.event.sender.login == 'shabaraba'
 
     runs-on: ubuntu-latest
     permissions:
@@ -54,12 +54,24 @@ jobs:
             Post the ENTIRE review as a SINGLE PR comment: call `gh pr comment` exactly once.
             Do not split the review across multiple comments.
 
-            After the comment is posted, remove the "review" label so this workflow does not
-            fire again until it is re-attached:
-            gh pr edit ${{ github.event.pull_request.number }} --remove-label review
-
             IMPORTANT: All prose MUST be in Japanese. Keep the priority headings themselves in
             English (Critical/High/Medium/Low) so they match the repository's priority scheme.
 
-          # Minimum required tools for code review + removing the trigger label
-          claude_args: '--allowed-tools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr edit:*)"'
+          # Minimum required tools for code review; label transitions are handled by the workflow
+          # step below, not by Claude, so no gh-edit access is needed here.
+          claude_args: '--allowed-tools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"'
+
+      # Runs regardless of whether the step above succeeded, so a crashed or timed-out run still
+      # gets reflected on the PR instead of leaving "claude:in-review" stuck forever.
+      - name: Reflect the run outcome on the PR label
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ steps.claude-review.outcome }}" = "success" ] && [ "${{ steps.claude-review.outputs.conclusion }}" = "success" ]; then
+            gh pr edit "${{ github.event.pull_request.number }}" -R "${{ github.repository }}" \
+              --remove-label "claude:in-review"
+          else
+            gh pr edit "${{ github.event.pull_request.number }}" -R "${{ github.repository }}" \
+              --remove-label "claude:in-review" --add-label "claude:failed"
+          fi
