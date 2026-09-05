@@ -27,6 +27,14 @@ jobs:
       issues: write
       id-token: write
       actions: read
+      # GitHub refuses to push a *new* branch ref whose tree contains any .github/workflows/*
+      # file without this scope -- even one this run never touched -- because ref creation has
+      # no prior remote state to diff against, so every blob in the new ref reads as "new" to
+      # that check. This repo always has workflow files in its tree, so every `gh pr create` /
+      # `git push -u origin <new-branch>` this job's Claude Code run does needs it. Without it,
+      # the run can still edit files and commit locally, but push and PR creation fail silently
+      # from the workflow's own summary -- which is exactly what happened on #705.
+      workflows: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
