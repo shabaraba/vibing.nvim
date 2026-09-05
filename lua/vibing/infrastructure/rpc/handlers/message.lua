@@ -73,6 +73,10 @@ function M.send_message(params)
   -- 訂正できる唯一の相手である呼び出し元に何も伝わらない
   params.from_bufnr = Bufnr.resolve_from_bufnr(params.from_bufnr)
 
+  -- サブエージェントを起動しうるコマンド（`/simplify`等）の同報を検知する（#700）。
+  -- 送信が実際に成立するかには関わらないので、上限・キューの判定より先でよい
+  require("vibing.application.chat.subagent_broadcast").check(params.from_bufnr, bufnr, params.message)
+
   -- `queue_if_busy` は明示指定したときだけ効く。既定でキューに積むと、弾かれたことを検知して
   -- 待ち直すつもりだった既存の呼び出し元が、成功したものとして先に進む。
   -- 引き受けるのは「待てば解ける」2つだけ: 宛先が応答中と、編集全体が並列度上限に達している。

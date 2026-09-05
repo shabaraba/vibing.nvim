@@ -54,6 +54,9 @@ chats to get parallelism** — a chat's floor is ownership, not concurrency.
   the plugin injects it from `orchestrated_by` every turn (#706). Keep the brief to the task itself.
 - **Don't broadcast a subagent-spawning command** (`/simplify`, `/code-review`, …) **to more than one
   worker at a time.** Each broadcast multiplies concurrency by that command's own subagent count.
+  `nvim_chat_send_message` warns (not refuses) once it sees the same such command land on a second
+  chat within `agent.orchestration.broadcast_warn_window_sec` — treat that warning as the signal you
+  picked the wrong unit; send it to one chat and let subagents fan out inside it instead.
 - **Parallelize the implementation step; serialize anything that touches `main`** (merges, cleanup).
 - **Write the assignment table (who owns what) to a file**, not only into your own context — it has
   to survive a restart or compaction.

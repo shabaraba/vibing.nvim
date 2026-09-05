@@ -616,6 +616,22 @@ the design:
   with a reason notifies its subscribers like any other blocked one. Reachable only with
   `max_concurrent` set, since the default `0` never holds anything.
 
+`max_concurrent` counts chats, not subagents — a `/simplify` broadcast to five chats-in-limit still
+spawns five times that command's own subagent count, which is how a postmortem (#692) hit the
+session limit at only two responding chats. `application/chat/subagent_broadcast.lua` catches the
+cheap version of that: `agent.orchestration.subagent_spawning_commands` (default `{"simplify",
+"code-review"}`) names commands assumed to fan out internally, and `message.lua`'s `send_message`
+calls `.check(from_bufnr, to_bufnr, message)` on every RPC send, keyed by `from_bufnr` + the parsed
+command name (`application/chat/commands.lua`'s `parse`, reused only for its `/word` extraction —
+neither command is in `Commands.commands`, since both are Claude CLI's own built-in skills, invisible
+to that registry). The first time a second distinct `to_bufnr` shows up for that key inside
+`broadcast_warn_window_sec` (default 30s) it warns once and stays quiet for the rest of that window,
+naming the #692 principle directly: parallelism *inside* work that already has a chat belongs to
+subagents, not more chats. It is a warning, not a refusal — counting real in-flight subagents to
+justify a refusal is out of scope, left for a later issue — and the in-memory table is never pruned
+by bufnr, since the state is tiny (one entry per sender × configured command) and a stale key only
+ever delays the next warning, never sends the wrong one.
+
 ## Delivered sections
 
 A message that arrived from another chat is written as its own section kind — `## Request`,

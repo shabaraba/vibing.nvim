@@ -101,6 +101,12 @@
 ---  プロンプトに代理で答えられるようにするか（デフォルト: false）。承認ゲートはユーザーのために
 ---  あるので、エージェントが別のエージェントのゲートを外せる状態は権限モデルそのものの変更であり、
 ---  既定にはしない
+---@field subagent_spawning_commands string[]? サブエージェントを起動しうるコマンド名（先頭の`/`
+---  なし）のリスト。このコマンドを含むメッセージが`broadcast_warn_window_sec`秒以内に複数の
+---  異なるチャットへ送られたら警告する（デフォルト: {"simplify", "code-review"}）。実際に
+---  起動されたサブエージェントの数は数えず、コマンド名の一致だけで判定する（#700）
+---@field broadcast_warn_window_sec number? 上記の判定に使う時間窓（秒）。0で警告そのものを無効化
+---  （デフォルト: 30）
 
 ---@class Vibing.AgentConfig
 ---エージェント設定
@@ -374,6 +380,12 @@ M.defaults = {
       -- opt-in にしてある。答えは配達セクション（`## Request <!-- ... from ... -->`）として
       -- ワーカーのtranscriptに残るので、誰が許可したかは後から読める。
       delegated_approval = false,
+      -- `/simplify` や `/code-review` はチャット1本あたり複数のサブエージェントを起動するので、
+      -- 同じコマンドを複数チャットに同報すると「チャット数×サブエージェント数」の並列度になり、
+      -- セッション上限に当たりやすい（#692の事後分析）。実際のサブエージェント数は数えず、
+      -- コマンド名の一致と直近の送信先だけで警告する（application/chat/subagent_broadcast.lua）
+      subagent_spawning_commands = { "simplify", "code-review" },
+      broadcast_warn_window_sec = 30,
     },
     -- codexの軽量呼び出しは --ignore-user-config で走るので、ユーザーの model_provider が落ちて
     -- 既定のOpenAIエンドポイントに向く。それを1セッション1回だけ警告する。

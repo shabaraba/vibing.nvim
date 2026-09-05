@@ -232,6 +232,16 @@ agent = {
                             -- permission model, not a convenience. The answer is written into
                             -- the worker's transcript as `## Request ... from <that chat>`, so
                             -- who granted what is readable afterwards
+    subagent_spawning_commands = { "simplify", "code-review" },
+                            -- Command names (no leading `/`) that spawn their own subagents.
+                            -- Broadcasting one of these to several chats multiplies concurrency
+                            -- by that many chats — a 5-chat broadcast of a 4-subagent command is
+                            -- ~20 parallel runs, which is how a postmortem (#692) hit the session
+                            -- limit. Only the command name is matched; the real subagent count is
+                            -- not tracked (that is a separate, more expensive feature)
+    broadcast_warn_window_sec = 30,
+                            -- How many seconds count as "the same broadcast" for the check above.
+                            -- 0 disables the warning entirely
   },
 
   codex_provider_notice = {
