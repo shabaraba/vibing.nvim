@@ -38,6 +38,12 @@ jobs:
         id: claude-review
         # Pin to specific commit SHA for security (v1.0.216)
         uses: anthropics/claude-code-action@d75b94d5ad426cb8546e6628b6f5f19b84e5cce1
+        # Without this, the `gh pr comment`/`gh pr diff`/`gh pr view` calls the prompt tells
+        # Claude to make inside the sandbox have no credentials and fail silently -- the run
+        # still reports success, but step 2 of the prompt (post the review comment) never
+        # happens. claude.yml's equivalent step sets the same env for the same reason.
+        env:
+          GH_TOKEN: ${{ github.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
