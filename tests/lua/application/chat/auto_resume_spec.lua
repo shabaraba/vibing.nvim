@@ -322,6 +322,66 @@ describe("auto_resume", function()
       assert.equals(1, #calls)
       assert.equals("parent.md", calls[1].file_path)
     end)
+
+    it("writes its own line via fire() too when it has no orchestrator to tell", function()
+      -- The "no orchestrator" case above only exercised on_rate_limited(). announce_gave_up is a
+      -- function shared by both give-up paths, but sharing it is not itself a test: this pins
+      -- fire()'s own defence-in-depth branch reaches the no-parents early return too.
+      local worker_bufnr, worker_path = open_chat("stale-solo.md", {})
+
+      local entry = {
+        chat_file_path = worker_path,
+        resets_at = os.time() - 10,
+        retry_count = 1,
+        recorded_at = os.time(),
+        state = "waiting",
+      }
+      PendingResume.put(entry)
+
+      assert.has_no.errors(function()
+        AutoResume._fire(worker_path, entry)
+      end)
+
+      local lines = vim.api.nvim_buf_get_lines(worker_bufnr, 0, -1, false)
+      assert.is_true(
+        vim.tbl_contains(lines, EXPECTED_MESSAGE),
+        "expected the notice line from fire() with no orchestrator; got: " .. vim.inspect(lines)
+      )
+    end)
+
+    it("warns, rather than silently doing nothing, when the chat buffer cannot be resolved", function()
+      -- Regression guard for the review finding on #713: resolve_chat_buffer's error reason used
+      -- to be discarded here, which reproduced the exact "gave up and nobody was told" failure
+      -- #698 exists to fix — just one layer further in, for a chat file deleted out from under a
+      -- parked entry.
+      local missing_path = dir .. "/does-not-exist.md"
+      PendingResume.put({
+        chat_file_path = missing_path,
+        resets_at = os.time() + 60,
+        retry_count = 1,
+        recorded_at = os.time(),
+        state = "in_flight",
+      })
+
+      local original_notify = vim.notify
+      local messages = {}
+      vim.notify = function(msg, ...)
+        table.insert(messages, msg)
+      end
+
+      local ok, err =
+        pcall(AutoResume.on_rate_limited, missing_path, { rejected = true, resets_at = os.time() + 3600, source = "test" })
+      vim.notify = original_notify
+      assert.is_true(ok, err)
+
+      local found = false
+      for _, msg in ipairs(messages) do
+        if msg:match("Could not write the auto%-resume give%-up notice") then
+          found = true
+        end
+      end
+      assert.is_true(found, "expected a warning naming the unresolved chat; got: " .. vim.inspect(messages))
+    end)
   end)
 
   describe("format_duration", function()

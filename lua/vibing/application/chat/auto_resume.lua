@@ -173,8 +173,19 @@ end
 --- @param chat_file_path string
 --- @param max_retries number
 local function announce_gave_up(chat_file_path, max_retries)
-  local chat_buf = resolve_chat_buffer(chat_file_path)
+  local chat_buf, err = resolve_chat_buffer(chat_file_path)
   if not chat_buf then
+    -- The one place in this module that gave up silently before #698's own fix — a chat file
+    -- deleted out from under a parked entry, or a buffer that failed to attach, would otherwise
+    -- leave no notice anywhere, which is exactly the failure this function exists to remove.
+    vim.notify(
+      string.format(
+        "[vibing] Could not write the auto-resume give-up notice for %s: %s",
+        vim.fn.fnamemodify(chat_file_path, ":t"),
+        err
+      ),
+      vim.log.levels.WARN
+    )
     return
   end
 
@@ -185,7 +196,13 @@ local function announce_gave_up(chat_file_path, max_retries)
 
   local bufnr = chat_buf:get_buffer()
   append_gave_up_notice(bufnr, message)
-  require("vibing.presentation.chat.modules.file_manager").save_buffer(bufnr)
+  local saved, save_err = require("vibing.presentation.chat.modules.file_manager").save_buffer(bufnr)
+  if not saved then
+    vim.notify(
+      string.format("[vibing] Auto-resume give-up notice written but not saved: %s", save_err),
+      vim.log.levels.WARN
+    )
+  end
 
   local parents = chat_buf:get_frontmatter_list("orchestrated_by")
   if not parents or #parents == 0 then
