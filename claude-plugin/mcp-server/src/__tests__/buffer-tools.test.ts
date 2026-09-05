@@ -214,4 +214,29 @@ describe('nvim_get_buffer tail_lines / last_section', () => {
 
     expect(result.content).toHaveLength(2); // lines + chat status, no total-lines node
   });
+
+  it('forwards last_section alone and reports the total for it too', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({
+      lines: ['## Assistant', 'reply'],
+      total_lines: 500,
+      chat_status: 'idle',
+    });
+
+    const result = await handlers.nvim_get_buffer({ bufnr: 3, last_section: true, rpc_port: 9878 });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'buf_get_lines',
+      {
+        bufnr: 3,
+        file_path: undefined,
+        include_chat_status: true,
+        tail_lines: undefined,
+        last_section: true,
+      },
+      9878
+    );
+    expect(result.content.map((c: { text: string }) => c.text)).toEqual(
+      expect.arrayContaining([expect.stringContaining('2 of 500 total lines')])
+    );
+  });
 });
