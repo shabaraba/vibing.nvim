@@ -70,7 +70,7 @@ Prefix each with whichever form matches how the server was registered (see above
 - **Annotations**: `nvim_annotate`, `nvim_clear_annotations`
 - **Chat**: `nvim_ask_user_question` (renders a choice list in the chat buffer — see
   `handbook/features/chat-ui.md`), `nvim_chat_send_message`, `nvim_chat_create`,
-  `nvim_chat_answer_approval`
+  `nvim_chat_answer_approval`, `nvim_chat_list`
 - **Instances**: `nvim_list_instances`
 - **Quickfix**: `nvim_set_qflist` (pushes a new list; the previous one survives under `:colder`)
 - **Debugger**: `nvim_dap_get_state`, `nvim_dap_get_stack_trace`, `nvim_dap_get_variables`,
@@ -142,6 +142,14 @@ what it buys is one agent clearing another agent's permission gate; `from_bufnr`
 the chosen option line into the worker's buffer instead of applying the decision directly, and why
 the watchdog's `waiting_approval` wording changes with the setting:
 `handbook/architecture/orchestration.md` → "Answering a worker's tool approval".
+
+`nvim_chat_list({ rpc_port? })` reports every chat buffer open in this Neovim session in one call —
+`bufnr`, `file_path`, `chat_status`, `context_size` (the last measured context in tokens, from the
+last turn's own `### Tokens` marker; absent until a turn has completed), `updated_at` (frontmatter
+timestamp; absent until something has written to frontmatter), and `orchestrated_by`. Use it
+instead of polling several worker chats one at a time with `nvim_get_buffer`. It is a read like
+`nvim_list_buffers`, so `rpc_port` stays optional; it only lists chats attached in this session —
+a chat file nobody has opened yet does not appear.
 
 The workflow is the bundled `vibing-orchestrate` skill. Why `position` defaults to `back`, why the
 chat file is written at creation, why the status is a field rather than a text heuristic, and what

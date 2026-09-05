@@ -100,4 +100,48 @@ function M.answer_approval(params)
   })
 end
 
+---生きているチャットバッファをすべて列挙する（MCP tool `nvim_chat_list`）
+---
+---1チャットずつ `nvim_get_buffer` を叩くとNチャットでN往復かかる（#692の実走ではPythonの
+---RPCポーラーで迂回した）。列挙元は `view.list_chat_buffers()` 一択 — 「いま何本開いているか」
+---を知る手段はそれしかない（`application/chat/concurrency.lua` も同じものを読む）ので、
+---閉じたまま残っているチャットファイルはここには載らない
+---@return {chats: {bufnr: number, file_path: string?, chat_status: string?, context_size: number?, updated_at: string?, orchestrated_by: string[], task: string?, assignment: string?}[]}
+function M.list_chats(_)
+  local view = require("vibing.presentation.chat.view")
+  local ChatStatus = require("vibing.presentation.chat.modules.chat_status")
+  local CacheExpiry = require("vibing.application.chat.cache_expiry")
+
+  local buffers = view.list_chat_buffers()
+  local bufnrs = {}
+  for bufnr in pairs(buffers) do
+    table.insert(bufnrs, bufnr)
+  end
+  table.sort(bufnrs)
+
+  local chats = {}
+  for _, bufnr in ipairs(bufnrs) do
+    local chat_buf = buffers[bufnr]
+    local frontmatter = chat_buf:parse_frontmatter()
+    -- ターンの内訳（accumulator）はターンが終わると捨てられるので、直近ターンのサイズは
+    -- 書かれた `### Tokens` 見出しから読み戻すしかない（`token_usage.lua` のコメント参照）
+    local _, context_size = CacheExpiry.read_last_turn(bufnr)
+
+    table.insert(chats, {
+      bufnr = bufnr,
+      file_path = chat_buf.file_path,
+      chat_status = ChatStatus.get(bufnr),
+      context_size = context_size,
+      updated_at = frontmatter.updated_at,
+      orchestrated_by = chat_buf:get_frontmatter_list("orchestrated_by"),
+      -- #692 3.8がfrontmatterに書くようになるまでは常にnil。防御的に読むだけにしておけば、
+      -- そちらが着地した時点でここは自動で値を持つ
+      task = frontmatter.task,
+      assignment = frontmatter.assignment,
+    })
+  end
+
+  return { chats = chats }
+end
+
 return M

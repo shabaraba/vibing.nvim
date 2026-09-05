@@ -455,4 +455,46 @@ describe('chat tools (worktree redesign)', () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toBe('no active chat');
   });
+
+  it('registers nvim_chat_list as a read, with no required arguments', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_list');
+    expect(tool).toBeDefined();
+    const inputSchema = tool?.inputSchema as {
+      required?: string[];
+      properties: Record<string, unknown>;
+    };
+    // A read, like nvim_list_buffers: rpc_port falls back to the instance registry rather than
+    // being required (see requireRpcPort's doc comment in ../tools/common.ts).
+    expect(inputSchema.required).toEqual([]);
+    expect(inputSchema.properties.rpc_port).toBeDefined();
+  });
+
+  it('has a handler for nvim_chat_list', () => {
+    expect(handlers.nvim_chat_list).toBeDefined();
+    expect(typeof handlers.nvim_chat_list).toBe('function');
+  });
+
+  it('nvim_chat_list forwards rpc_port and returns the chat list as JSON text', async () => {
+    const chats = [
+      { bufnr: 3, file_path: '/tmp/a.md', chat_status: 'idle', orchestrated_by: [] },
+      { bufnr: 7, file_path: '/tmp/b.md', chat_status: 'responding', orchestrated_by: ['/tmp/a.md'] },
+    ];
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ chats });
+
+    const result = await handlers.nvim_chat_list({ rpc_port: 9878 });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith('list_chats', {}, 9878);
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.chats).toEqual(chats);
+  });
+
+  it('nvim_chat_list works without rpc_port, falling back to the instance registry', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ chats: [] });
+
+    const result = await handlers.nvim_chat_list({});
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith('list_chats', {}, undefined);
+    expect(result.isError).toBeUndefined();
+  });
 });
