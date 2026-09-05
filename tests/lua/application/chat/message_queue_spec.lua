@@ -306,6 +306,7 @@ describe("MessageQueue persistence (#697)", function()
     Store.clear_cache()
 
     originals.get_chat_buffer = view.get_chat_buffer
+    originals.attach_to_buffer = view.attach_to_buffer
     originals.send = ProgrammaticSender.send
     originals.link = OrchestrationLink.link
 
@@ -338,6 +339,7 @@ describe("MessageQueue persistence (#697)", function()
 
   after_each(function()
     view.get_chat_buffer = originals.get_chat_buffer
+    view.attach_to_buffer = originals.attach_to_buffer
     ProgrammaticSender.send = originals.send
     OrchestrationLink.link = originals.link
 
@@ -394,6 +396,85 @@ describe("MessageQueue persistence (#697)", function()
     assert.equals(a, sends[1].bufnr)
     assert.is_truthy(sends[1].message:find("queued while A was busy", 1, true))
     assert.is_nil(Store.load(tmp_root)[a_path], "delivered — must not be replayed on the next restart")
+  end)
+
+  it(
+    "drops a restored notification whose stopped-chat file is gone, rather than corrupting the whole queue",
+    function()
+      -- A notification's bufnr identifies "the chat that stopped" and, unlike a message's sender,
+      -- cannot be delivered anonymously. Restoring it as nil used to make every later flush()
+      -- attempt fail (delivery_message tries to display a nil bufnr), taking every other item
+      -- queued for the same recipient down with it.
+      local a = make_named_chat("a.md")
+      local b, b_path = make_named_chat("b.md")
+      responding[a] = true
+
+      Queue.enqueue_notification(a, b, "waiting_approval")
+      Queue.enqueue_message(a, nil, "still deliverable")
+
+      -- b's chat file is gone by the time we "restart" (deleted, or moved elsewhere).
+      vim.fn.delete(b_path)
+
+      package.loaded["vibing.application.chat.message_queue"] = nil
+      Queue = require("vibing.application.chat.message_queue")
+      responding[a] = false
+
+      Queue.restore(tmp_root)
+
+      assert.equals(1, #sends)
+      assert.is_truthy(sends[1].message:find("still deliverable", 1, true))
+    end
+  )
+
+  it(
+    "keeps the disk entry when a restored buffer fails to attach, rather than deleting it",
+    function()
+      -- resolve_bufnr failing to attach (corrupt frontmatter, etc.) must read as "could not
+      -- resolve this time," not "resolved to nothing." Treating it as resolved used to make
+      -- restore() hand flush() an untracked bufnr, which warns and then deletes the disk entry —
+      -- turning a one-time attach failure into a permanent loss.
+      local a, a_path = make_named_chat("a.md")
+      responding[a] = true
+
+      assert.is_true(Queue.enqueue_message(a, nil, "queued while busy"))
+      assert.is_not_nil(Store.load(tmp_root)[a_path])
+
+      package.loaded["vibing.application.chat.message_queue"] = nil
+      Queue = require("vibing.application.chat.message_queue")
+      responding[a] = false
+      view.get_chat_buffer = function()
+        return nil
+      end
+      view.attach_to_buffer = function()
+        return nil
+      end
+
+      Queue.restore(tmp_root)
+
+      assert.equals(0, #sends)
+      assert.is_not_nil(Store.load(tmp_root)[a_path], "must survive to be retried on the next restart")
+    end
+  )
+
+  it("purges a restored entry whose destination chat file no longer exists on disk", function()
+    local a_path = tmp_root .. "/gone.md"
+    vim.fn.writefile({ "## User <!-- unsent -->", "" }, a_path)
+    local a = vim.fn.bufadd(a_path)
+    vim.fn.bufload(a)
+    table.insert(buffers, a)
+    responding[a] = true
+    Queue.enqueue_message(a, nil, "orphaned")
+    responding[a] = false
+
+    vim.fn.delete(a_path)
+
+    package.loaded["vibing.application.chat.message_queue"] = nil
+    Queue = require("vibing.application.chat.message_queue")
+
+    Queue.restore(tmp_root)
+
+    assert.equals(0, #sends)
+    assert.is_nil(Store.load(tmp_root)[a_path], "the chat file is gone for good; stop carrying it forward")
   end)
 
   it("does not persist a queue addressed to an unnamed (unsaved) chat", function()

@@ -54,15 +54,6 @@ function M.get_path(cwd)
   return root .. "/.vibing/message-queue.json"
 end
 
---- Resolve the store that owns a given chat file — same anchoring reason as
---- `pending_resume.get_path_for_chat`: a `:cd` between queueing and restore must not land on a
---- different project's store.
---- @param chat_file_path string
---- @return string
-function M.get_path_for_chat(chat_file_path)
-  return M.get_path(vim.fn.fnamemodify(chat_file_path, ":h"))
-end
-
 --- Read the whole store for a project.
 --- A missing or corrupt file yields an empty table: entries that cannot be read are entries that
 --- silently do not restore, which is the safe direction — the in-memory queue is still the

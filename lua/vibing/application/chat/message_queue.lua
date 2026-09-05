@@ -98,7 +98,15 @@ local function resolve_bufnr(file_path)
 
   local view = require("vibing.presentation.chat.view")
   if not view.get_chat_buffer(bufnr) then
-    pcall(view.attach_to_buffer, bufnr, file_path)
+    -- 戻り値を見ないと、attach が失敗した（壊れた frontmatter で parse が例外を投げた等）
+    -- バッファも「解決できた」ことになる。呼び出し元の `restore()` はそれを配達可能と誤認し、
+    -- 直後の `flush()` が「追跡されていないチャットバッファ」に落ちて警告つきでキューを
+    -- 消す — 本来は「今回は無理だったので次回また試す」であるべき場面で、実際にディスク上の
+    -- エントリまで失う
+    local ok, attached = pcall(view.attach_to_buffer, bufnr, file_path)
+    if not ok or not attached then
+      return nil
+    end
   end
 
   return vim.api.nvim_buf_is_valid(bufnr) and bufnr or nil
@@ -379,7 +387,16 @@ end
 ---再起動を跨いで残っていた配達待ちを、いま開いているプロジェクトぶん読み込み直す
 ---
 ---宛先だけを見る。積んだ本文の送信元が復元できなくても本文そのものは届けられる（`forget` が
----送信元だけ匿名化するのと同じ理由）が、宛先が復元できないキューは配る場所が無いので諦める。
+---送信元だけ匿名化するのと同じ理由）が、宛先が復元できないキューは配る場所が無いので諦める —
+---そのチャットファイルごと消えている（削除・リネーム）なら、次回起動でも変わらないので
+---ディスクからも落とす。attach 失敗などの一時的な理由（`resolve_bufnr` 参照）とは区別する。
+---
+---**通知アイテムは送信元の匿名化ができない。** `bufnr` は本文では「送信元」（無くても配達できる）
+---だが、通知では「止まったチャット」そのものを指す必須フィールド（`enqueue_notification` 参照）。
+---解決できないまま `bufnr = nil` で積むと、`delivery_message.lua` がそれを表示しようとして
+---`vim.api.nvim_buf_is_valid(nil)` 等で失敗し、`flush` は毎回失敗として扱う——同じ宛先に
+---積まれた他のメッセージ・通知まで巻き込んで二度と配れなくなる。解決できない通知はここで
+---捨てる（`forget` が消えた相手の通知を捨てるのと同じ扱い）。
 ---
 ---復元した宛先はこの時点でまだ何のターンも走っていないので、その場で `flush` を試す。
 ---ためておいて次の完了イベントを待つだけだと、再起動直後に誰の完了イベントも来なければ
@@ -399,17 +416,25 @@ function M.restore(cwd)
         local queue = {}
         for _, stored in ipairs(items) do
           if type(stored) == "table" then
-            table.insert(queue, {
-              bufnr = stored.from_file_path and resolve_bufnr(stored.from_file_path) or nil,
-              body = stored.body,
-              reason = stored.reason,
-            })
+            if stored.body then
+              table.insert(queue, {
+                bufnr = stored.from_file_path and resolve_bufnr(stored.from_file_path) or nil,
+                body = stored.body,
+              })
+            else
+              local about_bufnr = stored.from_file_path and resolve_bufnr(stored.from_file_path) or nil
+              if about_bufnr then
+                table.insert(queue, { bufnr = about_bufnr, reason = stored.reason })
+              end
+            end
           end
         end
         if #queue > 0 then
           pending[to_bufnr] = queue
           table.insert(restored, to_bufnr)
         end
+      elseif vim.fn.filereadable(to_path) == 0 then
+        Store.put(to_path, nil, cwd)
       end
     end
   end
