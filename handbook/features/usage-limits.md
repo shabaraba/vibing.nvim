@@ -21,6 +21,32 @@ limit hit, never overwriting an unsent `## User` message, and an 8-day sanity ce
 timestamp. Concurrently parked chats all fire at once by design. See `handbook/configuration.md` →
 "Auto-Resume on Usage Limit".
 
+### Giving Up
+
+Before #698, a chat whose retry budget ran out just vanished from `.vibing/pending-resume.json`
+with a `vim.notify` nobody was watching — the only way to learn why it had stopped was to go read
+that file by hand (#692's postmortem hit this in a live parallel run: a chat sat with an unsent
+message and no timer, and nothing in the buffer said so).
+
+Both places that give up (`on_rate_limited`'s normal gate, and `fire()`'s defence-in-depth check
+for a stale entry that outlives a restart) now call `auto_resume.announce_gave_up`, which:
+
+- Appends `> auto-resume: retry budget exhausted (max_retries=N). Not resuming automatically.`
+  directly into the chat's buffer, right before its trailing header, and saves the file. This is
+  **not** a new request — nothing here calls `ChatBuffer:send_message()`, since that would spend
+  a token exactly where the retry budget exists to stop that.
+- Reads the chat's `orchestrated_by` frontmatter and, for each entry, forwards the identical line
+  to that chat by path through `infrastructure/rpc/handlers/message.lua`'s `send_message`
+  (`from_bufnr` = the gave-up chat, `queue_if_busy = true`), the same function
+  `nvim_chat_send_message` uses. That forwarded delivery **does** start a turn on the orchestrator,
+  deliberately: a chat that has given up on its own resume will never restart itself, which is the
+  same "cannot leave this stop on its own" shape `completion_notifier` already delivers
+  unconditionally for `asked_question` / `waiting_approval` / `error` — gating it behind
+  `chat_notifications.enabled` would leave an orchestrated worker parked forever with nothing
+  saying so. A chat with no `orchestrated_by` entries only gets its own buffer line.
+- Fails soft per orchestrator: an unreachable parent path warns rather than raising, so one bad
+  entry does not stop the chat's own notice line from being written.
+
 **Implementation:** `application/chat/auto_resume.lua` (scheduler),
 `infrastructure/storage/pending_resume.lua` (persistence),
 `infrastructure/rpc/handlers/rate_limit.lua` (StopFailure receiver), `bin/hooks/stop-failure.sh`.

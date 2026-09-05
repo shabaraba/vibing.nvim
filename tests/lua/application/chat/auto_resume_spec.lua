@@ -175,6 +175,215 @@ describe("auto_resume", function()
     end)
   end)
 
+  describe("announce_gave_up (#698)", function()
+    local AutoResume = require("vibing.application.chat.auto_resume")
+    local Config = require("vibing.config")
+    local ChatFiles = require("tests.helpers.chat_files")
+    local view = require("vibing.presentation.chat.view")
+    local original_get
+    local original_send_message
+    local dir
+    local buffers
+
+    local EXPECTED_MESSAGE = "> auto-resume: retry budget exhausted (max_retries=1). Not resuming automatically."
+
+    ---@param name string
+    ---@param frontmatter table?
+    ---@return number bufnr
+    ---@return string path
+    local function open_chat(name, frontmatter)
+      local path = ChatFiles.write(dir, name, frontmatter)
+      local bufnr = vim.fn.bufadd(path)
+      vim.fn.bufload(bufnr)
+      if not view.get_chat_buffer(bufnr) then
+        view.attach_to_buffer(bufnr, path)
+      end
+      table.insert(buffers, bufnr)
+      return bufnr, path
+    end
+
+    before_each(function()
+      original_get = Config.get
+      Config.get = function()
+        return { agent = { auto_resume_on_limit = { enabled = true, max_retries = 1 } } }
+      end
+
+      -- Symlink-resolved, matching the pattern orchestration_link_spec.lua uses: nvim_buf_get_name
+      -- returns a resolved path, and comparing against an unresolved tempname would leave
+      -- vim.fn.bufnr(chat_file_path) unable to find the buffer this test just opened.
+      dir = vim.fn.resolve(vim.fn.tempname())
+      vim.fn.mkdir(dir, "p")
+      buffers = {}
+      original_send_message = nil
+    end)
+
+    after_each(function()
+      Config.get = original_get
+      if original_send_message then
+        require("vibing.infrastructure.rpc.handlers.message").send_message = original_send_message
+      end
+      for _, bufnr in ipairs(buffers) do
+        if vim.api.nvim_buf_is_valid(bufnr) then
+          vim.api.nvim_buf_delete(bufnr, { force = true })
+        end
+      end
+      vim.fn.delete(dir, "rf")
+    end)
+
+    it("appends one line to the chat and forwards it to the orchestrator", function()
+      local worker_bufnr, worker_path = open_chat("worker.md", { orchestrated_by = { "parent.md" } })
+
+      PendingResume.put({
+        chat_file_path = worker_path,
+        resets_at = os.time() + 60,
+        retry_count = 1,
+        recorded_at = os.time(),
+        state = "in_flight",
+      })
+
+      -- Stubbed rather than exercised for real: a real send would spawn the `claude` CLI. What
+      -- this test owns is that auto_resume asks the right module for the right delivery, not
+      -- whether that module can actually deliver it (message_handler_spec.lua covers that).
+      local MessageHandler = require("vibing.infrastructure.rpc.handlers.message")
+      original_send_message = MessageHandler.send_message
+      local calls = {}
+      MessageHandler.send_message = function(params)
+        table.insert(calls, params)
+        return { success = true, bufnr = 0 }
+      end
+
+      AutoResume.on_rate_limited(worker_path, { rejected = true, resets_at = os.time() + 3600, source = "test" })
+
+      local lines = vim.api.nvim_buf_get_lines(worker_bufnr, 0, -1, false)
+      assert.is_true(
+        vim.tbl_contains(lines, EXPECTED_MESSAGE),
+        "expected the notice line in the worker buffer; got: " .. vim.inspect(lines)
+      )
+      assert.is_false(vim.bo[worker_bufnr].modified, "the notice must be saved to disk, not left as an edit")
+
+      assert.equals(1, #calls)
+      assert.equals("parent.md", calls[1].file_path)
+      assert.equals(EXPECTED_MESSAGE, calls[1].message)
+      assert.equals(worker_bufnr, calls[1].from_bufnr)
+      assert.is_true(calls[1].queue_if_busy)
+    end)
+
+    it("writes its own line even when it has no orchestrator to tell", function()
+      local worker_bufnr, worker_path = open_chat("solo.md", {})
+
+      PendingResume.put({
+        chat_file_path = worker_path,
+        resets_at = os.time() + 60,
+        retry_count = 1,
+        recorded_at = os.time(),
+        state = "in_flight",
+      })
+
+      assert.has_no.errors(function()
+        AutoResume.on_rate_limited(worker_path, { rejected = true, resets_at = os.time() + 3600, source = "test" })
+      end)
+
+      local lines = vim.api.nvim_buf_get_lines(worker_bufnr, 0, -1, false)
+      assert.is_true(
+        vim.tbl_contains(lines, EXPECTED_MESSAGE),
+        "expected the notice line even with no orchestrator; got: " .. vim.inspect(lines)
+      )
+    end)
+
+    it("also fires from fire()'s defence-in-depth budget check", function()
+      -- The usual gate is on_rate_limited(); this covers the second guard inside fire(), reached
+      -- when a stale entry outlives a restart (M._fire is the documented test seam for it).
+      local worker_bufnr, worker_path = open_chat("stale.md", { orchestrated_by = { "parent.md" } })
+
+      local MessageHandler = require("vibing.infrastructure.rpc.handlers.message")
+      original_send_message = MessageHandler.send_message
+      local calls = {}
+      MessageHandler.send_message = function(params)
+        table.insert(calls, params)
+        return { success = true, bufnr = 0 }
+      end
+
+      local entry = {
+        chat_file_path = worker_path,
+        resets_at = os.time() - 10,
+        retry_count = 1,
+        recorded_at = os.time(),
+        state = "waiting",
+      }
+      PendingResume.put(entry)
+
+      AutoResume._fire(worker_path, entry)
+
+      local lines = vim.api.nvim_buf_get_lines(worker_bufnr, 0, -1, false)
+      assert.is_true(
+        vim.tbl_contains(lines, EXPECTED_MESSAGE),
+        "expected the notice line from fire()'s own budget check; got: " .. vim.inspect(lines)
+      )
+      assert.equals(1, #calls)
+      assert.equals("parent.md", calls[1].file_path)
+    end)
+
+    it("writes its own line via fire() too when it has no orchestrator to tell", function()
+      -- The "no orchestrator" case above only exercised on_rate_limited(). announce_gave_up is a
+      -- function shared by both give-up paths, but sharing it is not itself a test: this pins
+      -- fire()'s own defence-in-depth branch reaches the no-parents early return too.
+      local worker_bufnr, worker_path = open_chat("stale-solo.md", {})
+
+      local entry = {
+        chat_file_path = worker_path,
+        resets_at = os.time() - 10,
+        retry_count = 1,
+        recorded_at = os.time(),
+        state = "waiting",
+      }
+      PendingResume.put(entry)
+
+      assert.has_no.errors(function()
+        AutoResume._fire(worker_path, entry)
+      end)
+
+      local lines = vim.api.nvim_buf_get_lines(worker_bufnr, 0, -1, false)
+      assert.is_true(
+        vim.tbl_contains(lines, EXPECTED_MESSAGE),
+        "expected the notice line from fire() with no orchestrator; got: " .. vim.inspect(lines)
+      )
+    end)
+
+    it("warns, rather than silently doing nothing, when the chat buffer cannot be resolved", function()
+      -- Regression guard for the review finding on #713: resolve_chat_buffer's error reason used
+      -- to be discarded here, which reproduced the exact "gave up and nobody was told" failure
+      -- #698 exists to fix — just one layer further in, for a chat file deleted out from under a
+      -- parked entry.
+      local missing_path = dir .. "/does-not-exist.md"
+      PendingResume.put({
+        chat_file_path = missing_path,
+        resets_at = os.time() + 60,
+        retry_count = 1,
+        recorded_at = os.time(),
+        state = "in_flight",
+      })
+
+      local original_notify = vim.notify
+      local messages = {}
+      vim.notify = function(msg, ...)
+        table.insert(messages, msg)
+      end
+
+      local ok, err =
+        pcall(AutoResume.on_rate_limited, missing_path, { rejected = true, resets_at = os.time() + 3600, source = "test" })
+      vim.notify = original_notify
+      assert.is_true(ok, err)
+
+      local found = false
+      for _, msg in ipairs(messages) do
+        if msg:match("Could not write the auto%-resume give%-up notice") then
+          found = true
+        end
+      end
+      assert.is_true(found, "expected a warning naming the unresolved chat; got: " .. vim.inspect(messages))
+    end)
+  end)
+
   describe("format_duration", function()
     local AutoResume = require("vibing.application.chat.auto_resume")
 
