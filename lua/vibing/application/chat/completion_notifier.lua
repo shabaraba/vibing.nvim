@@ -21,10 +21,17 @@ local M = {}
 
 local notify = require("vibing.core.utils.notify")
 local MessageQueue = require("vibing.application.chat.message_queue")
+local BufferTail = require("vibing.application.chat.buffer_tail")
+local BufferWindow = require("vibing.domain.chat.buffer_window")
 
 local AUGROUP = "VibingCompletionNotifier"
 local DEFAULT_MAX_ROUND_TRIPS = 8
 local DEFAULT_MAX_WAKES = 50
+
+---親に届く「報告なしで停止しました」通知に載せる、ワーカー最終セクションの末尾行数（#693）。
+---親は毎回 `nvim_get_buffer` を1往復せずに何が起きたか判断できる必要がある一方、
+---#692 の実走ではワーカーのバッファが400〜500kまで育ったので、全文を載せる選択肢はない
+local NOTIFICATION_TAIL_LINES = 25
 
 ---edges[to_bufnr][from_bufnr] = true。
 ---「to_bufnr が終わったら from_bufnr に知らせる」を表す
@@ -202,6 +209,24 @@ local function stop_reason_of(bufnr)
     return nil
   end
   return chat_buf:get_stop_reason()
+end
+
+---bufnr の最終セクションの末尾 `NOTIFICATION_TAIL_LINES` 行。読めなければ nil
+---
+---親が「読みに行け」通知だけで何が起きたか見当を付けられるようにするための抜粋で、
+---全文は読まない（誰も見ていないワーカーのバッファは #692 の実走で400〜500kまで育った）。
+---`BufferTail` は `nvim_get_buffer` の `last_section`/`tail_lines` と同じ後方チャンク読みを使うので、
+---「最終セクションの末尾」の意味がこの通知とMCPツールで食い違うことはない
+---@param bufnr number
+---@return string?
+local function tail_excerpt_of(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return nil
+  end
+
+  local windowed = BufferTail.read_last_section(bufnr, BufferWindow.normalize_tail_lines(NOTIFICATION_TAIL_LINES))
+  local text = table.concat(windowed, "\n")
+  return vim.trim(text) ~= "" and text or nil
 end
 
 ---並列度上限のせいで積まれた本文を、枠が空いたときの配り直し対象にする
@@ -388,12 +413,15 @@ local function process_done(bufnr)
     return
   end
 
+  -- 全購読者に同じ抜粋を配るので、購読者ごとに読み直さず1回だけ読む
+  local tail = tail_excerpt_of(bufnr)
+
   for from_bufnr in pairs(subscribers) do
     -- 抑止マークは「同じ用件を自分から報告済み」を意味するが、その報告のあとで承認待ちや
     -- エラーに落ちたのなら、それは報告に載っていない新しい事実。分岐2が同じ例外を持つのと
     -- 揃える
     if (stop_reason or not suppressed[from_bufnr]) and vim.api.nvim_buf_is_valid(from_bufnr) then
-      MessageQueue.enqueue_notification(from_bufnr, bufnr, stop_reason)
+      MessageQueue.enqueue_notification(from_bufnr, bufnr, stop_reason, tail)
     end
   end
   for from_bufnr in pairs(subscribers) do

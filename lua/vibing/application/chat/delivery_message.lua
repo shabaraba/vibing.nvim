@@ -61,6 +61,17 @@ local function notification_section(items, cache)
     else
       table.insert(lines, string.format("- %s (chat buffer %d)", path, item.bufnr))
     end
+
+    -- 最終セクションの末尾を添えるのが #693 の主題そのもの。ここが空なら
+    -- `nvim_get_buffer` を1往復するしかなかった
+    if item.tail then
+      table.insert(lines, "  last lines:")
+      table.insert(lines, "  ```")
+      for _, tail_line in ipairs(vim.split(item.tail, "\n", { plain = true })) do
+        table.insert(lines, "  " .. tail_line)
+      end
+      table.insert(lines, "  ```")
+    end
   end
 
   -- 文面が「止まった、読みに行け」から「報告なしで止まった」に変わったのは #643。規約では

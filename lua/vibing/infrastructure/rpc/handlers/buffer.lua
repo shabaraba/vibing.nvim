@@ -1,31 +1,7 @@
 local M = {}
 
 local BufferIdentifier = require("vibing.core.utils.buffer_identifier")
-
--- Read only the buffer's last `## ...` section, by growing a backward-read chunk until a header
--- turns up (or the chunk covers the whole buffer) — the `last_section` counterpart to the
--- tail_lines-only fast path below. Doubling from a few hundred lines means an ordinary single
--- turn (the overwhelmingly common case) is found in one or two reads instead of the full 400k
--- lines a chat can run to (#694 follow-up flagged by review on PR #707).
--- @param bufnr number
--- @param tail_lines integer? Already normalized by `BufferWindow.normalize_tail_lines`.
--- @return string[] windowed
--- @return integer total_lines
-local function read_last_section(bufnr, tail_lines)
-  local BufferWindow = require("vibing.domain.chat.buffer_window")
-  local total_lines = vim.api.nvim_buf_line_count(bufnr)
-  local chunk_size = 500
-  local chunk, from
-
-  repeat
-    from = math.max(0, total_lines - chunk_size)
-    chunk = vim.api.nvim_buf_get_lines(bufnr, from, total_lines, false)
-    chunk_size = chunk_size * 2
-  until BufferWindow.find_last_header(chunk) or from == 0
-
-  local windowed = BufferWindow.slice(chunk, { tail_lines = tail_lines, last_section = true })
-  return windowed, total_lines
-end
+local BufferTail = require("vibing.application.chat.buffer_tail")
 
 -- Retrieve all lines from the specified buffer.
 -- @param params? Table with optional fields.
@@ -67,7 +43,7 @@ function M.buf_get_lines(params)
 
   local windowed, total_lines
   if last_section then
-    windowed, total_lines = read_last_section(bufnr, tail_lines)
+    windowed, total_lines = BufferTail.read_last_section(bufnr, tail_lines)
   elseif tail_lines then
     -- Read only the requested tail instead of the whole buffer: the entire point of asking for
     -- the last 40 lines of a 400k-line chat is to not pay for reading the other 399,960 (#694).

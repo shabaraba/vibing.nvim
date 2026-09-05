@@ -184,6 +184,47 @@ describe("MessageQueue", function()
     assert.equals(1, count)
   end)
 
+  it("carries a notification's tail excerpt through to delivery", function()
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    Queue.enqueue_notification(a, b, nil, "## Assistant\nlast thing it printed")
+
+    responding[a] = false
+    Queue.flush(a)
+
+    assert.is_truthy(sends[1].message:find("last thing it printed", 1, true))
+  end)
+
+  it("upgrades a repeat notice's tail excerpt the same way it upgrades the stop reason", function()
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    Queue.enqueue_notification(a, b, nil, "stale excerpt")
+    Queue.enqueue_notification(a, b, "waiting_approval", "fresh excerpt")
+
+    responding[a] = false
+    Queue.flush(a)
+
+    assert.is_truthy(sends[1].message:find("fresh excerpt", 1, true))
+    assert.is_falsy(sends[1].message:find("stale excerpt", 1, true))
+  end)
+
+  it("keeps an earlier tail excerpt when a repeat notice carries none", function()
+    -- a later stop that could not be read (buffer gone, empty) must not blank out the excerpt
+    -- an earlier stop already captured
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    Queue.enqueue_notification(a, b, nil, "kept excerpt")
+    Queue.enqueue_notification(a, b, "error", nil)
+
+    responding[a] = false
+    Queue.flush(a)
+
+    assert.is_truthy(sends[1].message:find("kept excerpt", 1, true))
+  end)
+
   it("does not count a repeat notice about the same chat against the cap", function()
     -- 「止まった、読みに行け」は同じ相手について何度あっても伝えることは1つ
     local a, b = make_chat(), make_chat()
