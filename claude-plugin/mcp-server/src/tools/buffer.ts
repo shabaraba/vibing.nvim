@@ -8,8 +8,9 @@ export const bufferTools = [
       'whether a reply is being streamed into it right now — poll this to tell whether a ' +
       'worker chat has finished. Read a chat by file_path rather than bufnr when you have one: ' +
       'the path keeps working after a restart, and a chat that is not open is opened for you. ' +
-      'For a large buffer, use tail_lines or last_section instead of reading it all — the result ' +
-      "always reports the buffer's total line count so you know what you did not see.",
+      'For a large buffer, use tail_lines or last_section instead of reading it all — when that ' +
+      "actually truncates the result, it also reports the buffer's total line count so you know " +
+      'what you did not see.',
     inputSchema: {
       type: 'object' as const,
       properties: withRpcPort({
@@ -26,6 +27,7 @@ export const bufferTools = [
         },
         tail_lines: {
           type: 'number' as const,
+          minimum: 0,
           description:
             'Return only the last N lines instead of the whole buffer. Combine with ' +
             'last_section to take the last N lines of the last section rather than of the ' +
