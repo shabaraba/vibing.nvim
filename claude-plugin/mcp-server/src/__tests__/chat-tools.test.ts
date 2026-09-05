@@ -477,7 +477,12 @@ describe('chat tools (worktree redesign)', () => {
   it('nvim_chat_list forwards rpc_port and returns the chat list as JSON text', async () => {
     const chats = [
       { bufnr: 3, file_path: '/tmp/a.md', chat_status: 'idle', orchestrated_by: [] },
-      { bufnr: 7, file_path: '/tmp/b.md', chat_status: 'responding', orchestrated_by: ['/tmp/a.md'] },
+      {
+        bufnr: 7,
+        file_path: '/tmp/b.md',
+        chat_status: 'responding',
+        orchestrated_by: ['/tmp/a.md'],
+      },
     ];
     vi.mocked(rpc.callNeovim).mockResolvedValue({ chats });
 
