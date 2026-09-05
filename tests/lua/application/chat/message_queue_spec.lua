@@ -425,6 +425,32 @@ describe("MessageQueue persistence (#697)", function()
     assert.is_nil(Store.load(tmp_root)[a_path], "delivered — must not be replayed on the next restart")
   end)
 
+  it("carries a queued task through a simulated restart (#696 follow-up)", function()
+    -- #697's persistence landed after #696's task field, so the round trip needs its own
+    -- coverage: persist()/restore() must not silently drop `task` the way they would if only
+    -- body/reason/from_file_path were serialized.
+    local a, a_path = make_named_chat("a.md")
+    local b = make_named_chat("b.md")
+    responding[a] = true
+
+    assert.is_true(Queue.enqueue_message(a, b, "brief", "PR #688 -- review, then update docs"))
+    assert.is_not_nil(Store.load(tmp_root)[a_path])
+
+    package.loaded["vibing.application.chat.message_queue"] = nil
+    Queue = require("vibing.application.chat.message_queue")
+    responding[a] = false
+
+    local captured_task
+    OrchestrationLink.link = function(_, _, task)
+      captured_task = task
+      return true, nil
+    end
+
+    Queue.restore(tmp_root)
+
+    assert.equals("PR #688 -- review, then update docs", captured_task)
+  end)
+
   it(
     "drops a restored notification whose stopped-chat file is gone, rather than corrupting the whole queue",
     function()

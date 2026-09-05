@@ -19,6 +19,8 @@ local M = {}
 --- @class Vibing.MessageQueueStore.Item
 --- @field body string|nil Present for a message item; absent for a notification item
 --- @field reason string|nil Notification items only (`ChatBuffer:get_stop_reason()`)
+--- @field task string|nil Message items only: the task assignment update this item carries
+---   (#696), applied to the sender's `orchestrated` entry when the queue is flushed.
 --- @field from_file_path string|nil Sender's chat file path. Absent when the sender had no
 ---   file (unnamed buffer) or, for a message item, when its sender was later forgotten.
 

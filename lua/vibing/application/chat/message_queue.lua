@@ -70,7 +70,10 @@ local function persist(to_bufnr)
 
   local items = {}
   for _, item in ipairs(queue) do
-    table.insert(items, { body = item.body, reason = item.reason, from_file_path = file_path_of(item.bufnr) })
+    table.insert(
+      items,
+      { body = item.body, reason = item.reason, task = item.task, from_file_path = file_path_of(item.bufnr) }
+    )
   end
   Store.put(to_path, items)
 end
@@ -435,6 +438,7 @@ function M.restore(cwd)
               table.insert(queue, {
                 bufnr = stored.from_file_path and resolve_bufnr(stored.from_file_path) or nil,
                 body = stored.body,
+                task = stored.task,
               })
             else
               local about_bufnr = stored.from_file_path and resolve_bufnr(stored.from_file_path) or nil
