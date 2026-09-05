@@ -66,6 +66,15 @@ it. By hand:
 `dist/.build-fingerprint` (or the whole `dist/` directory) and relaunch, or just run
 `npm ci && npm run build` directly in this directory.
 
+That rebuild happens inside the 30 seconds Claude Code allows a plugin's MCP server to start, so
+the install runs with `--prefer-offline --no-audit --no-fund`. npm's registry round-trips are not
+a fixed cost — the same `npm ci` on the same warm cache was measured at 31.1s once and ~1.5s hours
+later — and blowing the deadline leaves the tools silently absent from the session, so the flags
+are there to keep the step bounded by local work rather than by registry latency. A **cold** cache
+still takes minutes and no flag helps; run `./build.sh` once after a dependency bump, which does
+the same install under no deadline and stamps the fingerprint so the next launch skips the build.
+See `handbook/architecture/plugin-and-commands.md` → "The MCP server's own startup budget".
+
 ### 1. Build the MCP Server
 
 **Option 1: Using build script (simplest)**
@@ -239,6 +248,18 @@ The MCP server exposes the following tools to Claude:
   - `from_bufnr` (optional): The calling chat's buffer number. Records the orchestration
     relationship in both chat files' frontmatter (`orchestrated` / `orchestrated_by`), so it
     outlives the buffer numbers and file names it was built from
+
+- **nvim_chat_answer_approval** - Answer another chat's pending tool-approval prompt, the stop
+  that leaves it at status `waiting_approval` unable to continue or report. **Refused unless the
+  user set `agent.orchestration.delegated_approval`** — by default only the user can clear that
+  prompt, and the error says so
+  - `file_path` / `bufnr` (exactly one): The blocked chat, addressed as above
+  - `action` (required): `allow_once` / `deny_once` / `allow_for_session` / `deny_for_session` —
+    the same four options the prompt offers the user. The `_for_session` pair is written into that
+    chat's frontmatter and applies to every later call in it
+  - `from_bufnr` (**required**, unlike on the two tools above): The answering chat's buffer
+    number. The answer is recorded in the blocked chat as coming from it, so a call that cannot
+    say whose decision it was is refused
 
 - **nvim_ask_user_question** - Render a multiple-choice question in the chat buffer. This cancels
   the in-flight turn; the user's answer arrives as the next turn's message

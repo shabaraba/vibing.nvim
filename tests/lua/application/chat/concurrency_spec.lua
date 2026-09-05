@@ -3,6 +3,7 @@
 
 local Config = require("vibing.config")
 local view = require("vibing.presentation.chat.view")
+local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
 local Concurrency = require("vibing.application.chat.concurrency")
 
 describe("Concurrency", function()
@@ -19,7 +20,11 @@ describe("Concurrency", function()
   before_each(function()
     originals.get = Config.get
     originals.list = view.list_chat_buffers
+    originals.total_subagent_count = registry.total_subagent_count
     responding = {}
+    registry.total_subagent_count = function()
+      return 0
+    end
 
     view.list_chat_buffers = function()
       local buffers = {}
@@ -37,6 +42,7 @@ describe("Concurrency", function()
   after_each(function()
     Config.get = originals.get
     view.list_chat_buffers = originals.list
+    registry.total_subagent_count = originals.total_subagent_count
   end)
 
   it("is unlimited by default, so nothing that works today starts waiting", function()
@@ -86,5 +92,64 @@ describe("Concurrency", function()
     local message = Concurrency.at_capacity_message()
     assert.is_truthy(message:find("queue_if_busy", 1, true))
     assert.is_truthy(message:find("max_concurrent = 1", 1, true))
+  end)
+
+  describe("subagents (#701)", function()
+    it("folds in-flight subagents into the same total as responding chats", function()
+      -- 5 chats within max_concurrent, but 2 of them together have 4 subagents running: the
+      -- real fan-out is 6, not 2, and #692 hit a session limit at exactly this shape.
+      configure({ orchestration = { max_concurrent = 5 } })
+      responding = { [1] = true, [2] = true }
+      registry.total_subagent_count = function()
+        return 4
+      end
+
+      assert.equals(4, Concurrency.subagent_count())
+      assert.is_true(Concurrency.at_capacity())
+    end)
+
+    it("does not count subagents when none are in flight", function()
+      configure({ orchestration = { max_concurrent = 3 } })
+      responding = { [1] = true, [2] = true }
+      registry.total_subagent_count = function()
+        return 0
+      end
+
+      assert.is_false(Concurrency.at_capacity())
+    end)
+
+    it("caps on subagent count alone via max_concurrent_subagents, independent of chats", function()
+      configure({ orchestration = { max_concurrent_subagents = 2 } })
+      responding = {}
+      registry.total_subagent_count = function()
+        return 2
+      end
+
+      assert.equals(0, Concurrency.limit())
+      assert.equals(2, Concurrency.subagent_limit())
+      assert.is_true(Concurrency.at_capacity())
+    end)
+
+    it("treats a negative subagent limit as no limit", function()
+      configure({ orchestration = { max_concurrent_subagents = -1 } })
+      registry.total_subagent_count = function()
+        return 100
+      end
+
+      assert.equals(0, Concurrency.subagent_limit())
+      assert.is_false(Concurrency.at_capacity())
+    end)
+
+    it("names the subagent count alongside the chat count when refusing", function()
+      configure({ orchestration = { max_concurrent = 2 } })
+      responding = { [1] = true }
+      registry.total_subagent_count = function()
+        return 3
+      end
+
+      local message = Concurrency.at_capacity_message()
+      assert.is_truthy(message:find("3", 1, true))
+      assert.is_truthy(message:find("max_concurrent = 2", 1, true))
+    end)
   end)
 end)

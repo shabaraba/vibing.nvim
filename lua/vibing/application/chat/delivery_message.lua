@@ -74,21 +74,39 @@ local function notification_section(items, cache)
       and "The following chat(s) you sent a message to have stopped and cannot continue on their own:"
     or "The following chat(s) you sent a message to have stopped without reporting back:"
 
-  local explanation = any_blocked
+  -- `waiting_approval` の行だけ設定で変わる。既定では外せるのはユーザーだけなので
+  -- 「誰が何で止まっているか言え」で終わりだが、`delegated_approval` が有効なら
+  -- 読み手自身が答えられる。無効なまま「答えろ」と書くと、モデルは必ず失敗する呼び出しを
+  -- 1回してからユーザーに回すことになる（`approval_delegate.answer` が断る）
+  local waiting_approval_lines = require("vibing.application.chat.approval_delegate").enabled()
       and {
-        "A chat with a status above will not move again until someone acts on it:",
-        "",
-        "- asked_question — it is waiting for an answer. Read the question with",
-        "  nvim_get_buffer({ rpc_port, file_path }) and answer it with nvim_chat_send_message",
-        "  (passing from_bufnr), or put it to the user if only they can decide.",
-        "- waiting_approval — it is sitting on a tool-approval prompt. Only the user can clear that",
-        "  one, so say which chat is blocked and on what.",
-        "- error — its last turn failed. Read the tail of the transcript and decide whether to",
-        "  re-brief it or report the failure.",
-        "",
-        "A chat listed without a status stopped without reporting back; read it the same way and do",
-        "not treat its task as done.",
+        "- waiting_approval — it is sitting on a tool-approval prompt. Read what it is stuck on",
+        "  with nvim_get_buffer, then answer it with nvim_chat_answer_approval({ rpc_port,",
+        "  file_path, action, from_bufnr }) if the tool is plainly within the task you briefed it",
+        "  with. If it is not, say which chat is blocked and on what, and let the user decide.",
       }
+    or {
+      "- waiting_approval — it is sitting on a tool-approval prompt. Only the user can clear that",
+      "  one, so say which chat is blocked and on what.",
+    }
+
+  local blocked_explanation = {
+    "A chat with a status above will not move again until someone acts on it:",
+    "",
+    "- asked_question — it is waiting for an answer. Read the question with",
+    "  nvim_get_buffer({ rpc_port, file_path }) and answer it with nvim_chat_send_message",
+    "  (passing from_bufnr), or put it to the user if only they can decide.",
+  }
+  vim.list_extend(blocked_explanation, waiting_approval_lines)
+  vim.list_extend(blocked_explanation, {
+    "- error — its last turn failed. Read the tail of the transcript and decide whether to",
+    "  re-brief it or report the failure.",
+    "",
+    "A chat listed without a status stopped without reporting back; read it the same way and do",
+    "not treat its task as done.",
+  })
+
+  local explanation = any_blocked and blocked_explanation
     or {
       "A chat that finishes its task is expected to report the result to you itself, so a stop with",
       "no report is more likely to be something else: it failed, it stopped to ask a question, or it",

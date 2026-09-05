@@ -13,6 +13,62 @@ Every MCP call here takes `rpc_port`, the value in this chat's system prompt. Wi
 server falls back to the instance registry, which only answers when exactly one Neovim is live —
 and orchestration is precisely the case where several are.
 
+## Chat or subagent?
+
+A chat is a unit of **ownership**; a subagent is a unit of **delegated work inside one turn**. The
+most expensive mistake a postmortem (#692) found was broadcasting `/simplify` to five worker
+chats — each spawns its own subagents, so that's the chat count times the subagent count, and it
+was one of two runs that hit the session limit. Decide this before creating anything.
+
+|                        | Subagent                                         | Orchestrated chat                                   |
+| ---------------------- | ------------------------------------------------ | --------------------------------------------------- |
+| Lifetime               | Dies with the parent turn                        | Survives restarts                                   |
+| Output                 | One final text blob                              | Its own transcript                                  |
+| Visibility             | None                                             | Buffer can be opened and read, mid-task             |
+| Approval prompts       | Can't clear one (turn just fails)                | Can handle questions and approvals                  |
+| Owns a branch/worktree | No                                               | Yes, via `working_dir` frontmatter                  |
+| Survives a rate limit  | No                                               | Yes (auto_resume / scheduled resend)                |
+| Spin-up cost           | Low, no protocol                                 | Floor ~61k tokens + report contract + notifications |
+| Coordination can fail  | No — the return value is structurally guaranteed | Yes — this run failed 9 of 18 dispatches            |
+
+**A subagent is enough only if all five hold** — one exception and it's a chat:
+
+1. It finishes in one round trip, with a definable output, no mid-task change of direction
+2. Nobody needs to watch it run
+3. It doesn't own a branch or worktree — it stays inside the parent's own working tree
+4. It's unlikely to hit an approval prompt (read-heavy, or the parent's session permissions cover it)
+5. You would not want to reread its transcript tomorrow
+
+**Use a chat if any one of these holds:** it spans multiple turns (implement → wait on CI → address
+review → fix → merge); it owns a branch/worktree a later turn still needs; it will hit an approval
+prompt only a human should clear; a human wants to open it mid-task and steer it; it might need
+re-briefing after a partial failure; it has to survive a rate limit; or its transcript is itself the
+record you'll want later.
+
+**General rule: parallelism inside work that already has a chat belongs to subagents. Don't add
+chats to get parallelism** — a chat's floor is ownership, not concurrency.
+
+## Operator rules
+
+- **Don't write the report protocol into a brief.** Creating a worker with `from_bufnr` is enough —
+  the plugin injects it from `orchestrated_by` every turn (#706). Keep the brief to the task itself.
+- **Don't broadcast a subagent-spawning command** (`/simplify`, `/code-review`, …) **to more than one
+  worker at a time.** Each broadcast multiplies concurrency by that command's own subagent count.
+- **Parallelize the implementation step; serialize anything that touches `main`** (merges, cleanup).
+- **Write the assignment table (who owns what) to a file**, not only into your own context — it has
+  to survive a restart or compaction.
+- **Don't take a review finding at face value.** Verify before acting on it; a finding can itself be
+  wrong.
+
+## Environment notes
+
+- **macOS's `nc` cannot hold a conversation with this RPC server.** It closes on stdin EOF before the
+  response comes back over `vim.schedule`. Use Python's `socket.create_connection(...)` with
+  `makefile("rwb")` instead if you need to talk to it directly.
+- **Claude Code's built-in sensitive-file guard refuses `Edit`/`Write` on `.claude/rules/**`,**
+  independent of this project's own permission rules. Don't brief a worker to edit rules files —
+  either do it yourself as the orchestrator, or write the brief assuming a human will clear it.
+
 ## 1. Split the work
 
 Break the request into tasks that can run without waiting on each other. If two tasks would edit
@@ -71,45 +127,17 @@ request, not the files already discussed, not the decisions already made. Write 
 someone who just walked in — goal, the files or directories involved, the constraints, and what
 "done" looks like. A brief that says "do the refactor we discussed" produces nothing useful.
 
-### The brief must tell the worker to report back
+### The brief does not need to teach the worker to report back
 
-This is not optional decoration — it is how the fan-out finishes without you polling. Every brief
-carries three things beyond the task:
-
-1. **Where to report** — this chat's `file_path`. The worker is told it in its own system prompt
-   too, but a brief is read on its own and should not depend on that.
-2. **How to report** — `nvim_chat_send_message` with the worker's own chat buffer number as
-   `from_bufnr` and **`queue_if_busy: true`**. Without that flag the send is refused outright
-   whenever you happen to be mid-turn, and the report is simply lost.
-3. **What to report** — the conclusion, what failed, and what needs your action, **briefly**. The
-   summary must stand on its own — "Done, read my chat" costs you a `nvim_get_buffer` and pulls
-   that worker's entire transcript into this conversation, once per worker — but the opposite
-   failure wastes tokens twice: a report that replays the whole working log is paid for once when
-   the worker writes it and again when you read it, while that log already sits in the worker's
-   transcript for free. Tell the worker to keep the report to the points you will act on; read its
-   transcript yourself on the rare occasion you need the detail.
-
-Add that if it gets stuck or the brief turns out to be ambiguous, it should ask you the same way
-rather than guess. A question costs one turn; a worker guessing wrong costs the whole task.
-
-A closing paragraph you can paste into a brief:
-
-```text
-終わったら、次の呼び出しで報告してから止まってください。
-
-  nvim_chat_send_message({
-    rpc_port,
-    file_path: "<このチャットの file_path>",
-    from_bufnr: <あなた自身の chat buffer 番号>,
-    queue_if_busy: true,
-    message: "<結果の要約>",
-  })
-
-要約だけで判断できる内容にしてください（何を変えたか・何が失敗したか・何が残っているか）。
-作業過程の詳細は書かず、要点だけを短く。詳細が必要なときはこちらからあなたの transcript を
-読みに行きます。
-詰まったとき、ブリーフが曖昧なときも、推測せず同じ方法で聞いてください。
-```
+That used to be your job to write into every brief; it is not anymore (#706). Creating the worker
+with `from_bufnr` records `orchestrated_by` on it, and vibing.nvim reads that frontmatter on every
+turn to inject the report protocol into the worker's own system prompt — this chat's `file_path`
+already resolved in, the call shape (`nvim_chat_send_message`, `from_bufnr`, `queue_if_busy: true`),
+the report shape (conclusion → what changed → what's unresolved → what's needed next), and what not
+to do. The full version is the `vibing-worker` skill, bundled for exactly this purpose. Your brief
+only needs to be the task itself, as below — writing the reporting instructions into it too is
+redundant, not more reliable, since the injected line does not depend on the worker having read the
+brief carefully or at all.
 
 ## 4. End your turn — the workers come back to you
 
@@ -154,7 +182,12 @@ shapes, and the difference is whether the notice carries a `status:`.
   `nvim_get_buffer` to read _what_ it is stuck on.
 - **Without one** ("have stopped without reporting back") the worker simply stopped without
   reporting, which under the convention above is itself suspect. Read those with
-  `nvim_get_buffer({ rpc_port, file_path })` — not every worker.
+  `nvim_get_buffer({ rpc_port, file_path, last_section: true, tail_lines: 25 })` — not every
+  worker, and not a plain `nvim_get_buffer` call: a worker chat can run to hundreds of thousands
+  of lines, and reading it in full pulls that whole transcript into this conversation for the
+  rest of it. `last_section` + `tail_lines` gets you the end of its last turn, which is normally
+  enough to tell "it finished but forgot to report" from "it crashed mid-task"; go back for more
+  only if that tail leaves it unclear.
 
 Alongside the transcript the result carries a chat-status line, in the same vocabulary:
 
@@ -165,8 +198,10 @@ Alongside the transcript the result carries a chat-status line, in the same voca
 - `status: asked_question` — the worker stopped to ask something and is waiting for an answer.
   Read the question and reply with `nvim_chat_send_message` (passing `from_bufnr`), or put it to
   the user if only they can decide. It will not move until someone answers.
-- `status: waiting_approval` — the worker stopped on a tool-approval prompt. Only the user can
-  clear that one; say which worker is blocked and on what.
+- `status: waiting_approval` — the worker stopped on a tool-approval prompt. By default only the
+  user can clear that one: say which worker is blocked and on what. If the user turned on
+  `agent.orchestration.delegated_approval`, you can answer it yourself — see "Answering a worker's
+  tool approval" below.
 - `status: error` — the last turn ended with an error. Read the tail of the transcript for the
   message and decide whether to re-brief the worker or report the failure.
 
@@ -196,6 +231,43 @@ still needs the user. Point at each worker's `file_path` so the user can open th
 `waiting_approval` will never reach `idle` on its own, so waiting for it is waiting forever.
 Report it as blocked and say what it needs.
 
+### Answering a worker's tool approval
+
+A worker that reaches a tool in its `ask` list has its turn killed and the approval prompt drawn
+into its own buffer. It cannot continue and cannot report that it is stuck. **By default the only
+one who can clear that is the user** — name the worker and the tool in your reply and end the turn.
+
+If the user set `agent.orchestration.delegated_approval`, you can answer it instead:
+
+```text
+nvim_get_buffer({ rpc_port, file_path: "<worker file_path>" })    # read what it is stuck on
+nvim_chat_answer_approval({
+  rpc_port,
+  file_path: "<worker file_path>",
+  action: "allow_once",
+  from_bufnr: <this chat's bufnr>,
+})
+```
+
+Four things about it:
+
+- **You are standing in for the user on a decision they asked to be consulted about.** Answer only
+  when the tool and its input are plainly within the brief you wrote for that worker. Anything
+  else — a command touching files outside the task, anything destructive, anything you cannot
+  place — goes to the user, with the worker and the tool named.
+- **Read the prompt before answering.** The buffer names the tool and its input. Approving a tool
+  you have not looked at is not delegation, it is a rubber stamp.
+- **Prefer `allow_once`.** `allow_for_session` is written into that worker's frontmatter and
+  applies to every later call in it, so it outlives the one call you actually judged. Use it only
+  when the brief obviously needs the tool repeatedly. `deny_once` / `deny_for_session` are the
+  other two; a denial sends the worker back with "use a different approach", so say why in a
+  follow-up message if the reason matters.
+- **The call fails with an explanation when the setting is off.** Read it and put the approval to
+  the user; don't call it again to check.
+
+Answering starts a new turn in that worker, so it will come back to you when it stops — exactly
+like a brief. Do not poll it.
+
 If you used worktrees, offer the `vibing-worktree-finish` skill for each branch once its work has
 been merged or abandoned. Don't remove a worktree on your own initiative; unmerged work lives
 there.
@@ -203,11 +275,16 @@ there.
 ## 7. If you are also someone else's worker
 
 A chat can be a worker and an orchestrator at once: briefed by a parent, and splitting its own task
-across workers of its own. Everything above still applies — plus one rule.
+across workers of its own. Your own reporting duty to that parent is the injected line in your
+system prompt plus the `vibing-worker` skill it points to — read that for the report protocol.
+Everything above still applies to how you run your own workers — plus one rule.
 
-**Report to your parent only once every worker of yours has reported.** Nothing enforces this;
-there is no barrier in vibing.nvim, and a message sent early is delivered normally. The whole
-fan-in is this convention, so keeping it is on you.
+**Report your own completion to your parent only once every worker of yours has reported.**
+Nothing enforces this; there is no barrier in vibing.nvim, and a message sent early is delivered
+normally. The whole fan-in is this convention, so keeping it is on you. It covers only the
+completion report — the immediate reports the `vibing-worker` skill obligates you to send your own
+parent (a heads-up before an approval-prone action, or the moment you find you yourself cannot
+proceed) still fire right away, whether or not your own workers have finished.
 
 - While workers are outstanding, end each turn with a line naming which ones you are still waiting
   on. That text is the only place the count survives — you are a fresh process every turn, and
@@ -216,8 +293,9 @@ fan-in is this convention, so keeping it is on you.
   worker: your parent's job is the same as yours, and forwarding raw worker output makes it pay for
   a transcript twice.
 - **Do not wait forever.** A worker that stops `asked_question`, `waiting_approval` or `error` is
-  not going to report on its own. Deal with it if you can (answer the question, re-brief it); if
-  you cannot, report to your parent now with that worker's state named, rather than holding the
-  whole tree open for something only the user can clear.
+  not going to report on its own. Deal with it if you can (answer the question, answer the tool
+  approval if that is enabled, re-brief it); if you cannot, report to your parent now with that
+  worker's state named, rather than holding the whole tree open for something only the user can
+  clear.
 - If your own brief turns out to be ambiguous, ask your parent before dispatching. Splitting a
   misunderstood task fans the misunderstanding out across several chats.

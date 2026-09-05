@@ -96,7 +96,16 @@
 ---@class Vibing.OrchestrationConfig
 ---チャット網の走らせ方に関する設定
 ---@field max_concurrent number 同時に応答中にできるチャットの本数。0で無制限（デフォルト: 0）。
----  見るのは機械が始める送信（`nvim_chat_send_message`とキューの配達）だけで、人間の<CR>は止めない
+---  見るのは機械が始める送信（`nvim_chat_send_message`とキューの配達）だけで、人間の<CR>は止めない。
+---  各チャットが内部で起動しているサブエージェント数もこの合計に含まれる（#701）
+---@field max_concurrent_subagents number 全チャット合計で同時に起動していてよいサブエージェント
+---  （Task/Agentツール呼び出し）の本数。0で無制限（デフォルト: 0）。`max_concurrent`が
+---  「チャット+サブエージェントの合計」を見るのに対し、こちらはサブエージェントの本数単独を
+---  締めるつまみ
+---@field delegated_approval boolean? 別のチャットが`nvim_chat_answer_approval`でツール承認
+---  プロンプトに代理で答えられるようにするか（デフォルト: false）。承認ゲートはユーザーのために
+---  あるので、エージェントが別のエージェントのゲートを外せる状態は権限モデルそのものの変更であり、
+---  既定にはしない
 
 ---@class Vibing.AgentConfig
 ---エージェント設定
@@ -107,6 +116,11 @@
 ---@field default_effort ("low"|"medium"|"high"|"xhigh"|"max")? 推論量の既定値（未指定ならCLIの既定に任せる）
 ---@field utility_effort ("low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）
+---@field git_instructions boolean? trueでClaude CLI組み込みのgitステータスブロック（ブランチ名・
+---  直近コミット・`git status --short`）とcommit/PRワークフロー指示をsystem promptに載せる
+---  （デフォルト: false）。どちらの値でも`CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS`を明示的に書く
+---  （true→"0"、false→"1"）ので settings.json の`includeGitInstructions`より優先される。
+---  ただしユーザーが既に環境変数を立てている場合はそちらを尊重して触らない
 ---@field subagent Vibing.SubagentConfig? subagent（Task/Agentツール）の出力表示設定
 ---@field auto_resume_on_limit Vibing.AutoResumeOnLimitConfig 使用量リミット自動継続設定
 ---@field scheduled_requests Vibing.ScheduledRequestsConfig 予約リクエスト設定
@@ -124,6 +138,19 @@
 ---（チャットが育っていることに気づけない）がそのまま残る通知だから。
 ---@field enabled boolean? falseで表示と警告を止める（デフォルト: true）
 ---@field warn_context number? この値を超えている間、各ターンの内訳行の直下に警告を書く（デフォルト: 150000）
+---@field cache_ttl_sec number? 最終ターンからこの秒数以上空いた手動送信で、送信前に確認を出す。
+---  0で無効。`warn_context` 未満のチャットでは出ない（デフォルト: 3300 = 55分）
+---@field auto_compact Vibing.AutoCompactConfig? 閾値超過時に`/compact`を自動で挟む設定
+
+---@class Vibing.AutoCompactConfig
+---直近ターンのcontextが`at`以上なら、**次の手動送信の前に**`/compact`を1ターン挟み、
+---完了後にユーザーの本文を送る。
+---
+---既定で無効: ユーザーが頼んでいないターンを1本増やし、その次のターンでプレフィックスを
+---丸ごと書き直す（実測 79,783 トークン）ため。適用は手動送信・claudeバックエンドに限る。
+---@field enabled boolean? trueで有効（デフォルト: false）
+---@field at number? 直近ターンのcontextがこの値以上なら挟む。0以下で無効（デフォルト: 200000）
+---@field focus string? `/compact <focus>`として渡す、要約に何を残すかの指示（デフォルト: 無し）
 
 ---@class Vibing.PluginsConfig
 ---セッション限りで読み込むClaude Codeプラグインのディレクトリ設定
@@ -273,6 +300,11 @@ M.defaults = {
     default_effort = nil,
     utility_effort = "low",
     setting_sources = { "user", "project", "local" },
+    -- CLIはプロセス起動ごとにgitステータスブロックを1回計算してsystem promptの先頭に埋める。
+    -- vibing.nvimはターンごとにCLIを起動し直すので、tree を触ったターンの次はそのバイト列が
+    -- 変わり、system prompt以降＝全履歴がキャッシュミスになる。既定でoffにする理由はそれで、
+    -- ブランチ名や直近コミットが要るときはモデルに `git status` / `git log` を1回呼ばせれば済む。
+    git_instructions = false,
     subagent = {
       enabled = false,
       show_prefix = false,
@@ -337,7 +369,23 @@ M.defaults = {
       --
       -- 上限に当たった送信は捨てられずキューに残り、枠が空いた完了イベントで配り直される。
       -- 人間の<CR>はこの上限を見ない。
+      -- 各チャットが内部で起動しているサブエージェント（Task/Agentツール）もこの合計に含まれる。
       max_concurrent = 0,
+      -- 全チャット合計で同時に起動していてよいサブエージェントの本数。0は無制限（既定）。
+      -- `max_concurrent`が「チャット+サブエージェントの合計」を見るのに対し、こちらは
+      -- サブエージェントの本数だけを単独で締めるつまみ（application/chat/concurrency.lua）。
+      max_concurrent_subagents = 0,
+      -- ワーカーが `ask` 対象のツールに当たると、そのチャットは `waiting_approval` で止まり、
+      -- 自力では抜けられない。既定ではそれを外せるのはユーザーだけで、オーケストレーターは
+      -- 「どのチャットが何で止まっているか」を言うところまでしかできない。
+      --
+      -- true にすると、オーケストレーターは `nvim_chat_answer_approval` で4択
+      -- （allow_once / deny_once / allow_for_session / deny_for_session）に代理で答えられる。
+      -- 扇の全員が同じ承認で止まる運用ではこれが唯一の現実解だが、買っているのは
+      -- 「エージェントが別のエージェントの承認ゲートを外せる」状態そのものなので、
+      -- opt-in にしてある。答えは配達セクション（`## Request <!-- ... from ... -->`）として
+      -- ワーカーのtranscriptに残るので、誰が許可したかは後から読める。
+      delegated_approval = false,
     },
     -- codexの軽量呼び出しは --ignore-user-config で走るので、ユーザーの model_provider が落ちて
     -- 既定のOpenAIエンドポイントに向く。それを1セッション1回だけ警告する。
@@ -363,9 +411,22 @@ M.defaults = {
     -- 値そのものは token_usage 側から借りる。`config` が未設定のとき（テストや手組みの
     -- config テーブル）に使われるフォールバックが同じモジュールにあり、2箇所に同じ数字を
     -- 置くと片方だけ動かして既定値が食い違う
+    --
+    -- cache_ttl_sec は同じ話の「時間」側で、warn_context と AND を取る。片方だけで出すと、
+    -- 小さいチャットの再開や連続した送信のたびに確認が挟まって邪魔になる。
     token_usage = {
       enabled = true,
       warn_context = token_usage.DEFAULT_WARN_CONTEXT,
+      cache_ttl_sec = token_usage.DEFAULT_CACHE_TTL_SEC,
+      -- 既定で無効。警告（warn_context）は読み手に判断を渡すもので、こちらは判断を代行して
+      -- ターンを1本使う。`at` を warn_context より上に置いてあるのは、警告を見て自分で
+      -- `/compact` や `:VibingChatHandoff` を選ぶ余地を先に残すため
+      auto_compact = {
+        enabled = false,
+        at = token_usage.DEFAULT_AUTO_COMPACT_AT,
+        -- focus は未設定が既定。`/compact <focus>` に何を書くかで次ターン以降の質は変わるが、
+        -- 何を残すべきかはプロジェクトごとに違うので、既定文を置くと外れたときに黙って効く
+      },
     },
     -- `--plugin-dir` で読み込むプラグイン。self → project_dir → extra の順で渡す。
     --

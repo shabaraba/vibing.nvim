@@ -306,6 +306,10 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     callbacks.clear_sending()
   end
 
+  -- 「このターンがセッション最初のターンか」は、下の `update_session_id` が走る前にしか
+  -- 分からない。トークン章の `floor` 行はこれを見て出す（会話ゼロ時のプロンプトサイズ＝床）
+  local started_fresh_session = callbacks.get_session_id and callbacks.get_session_id() == nil
+
   -- Stop gradient animation
   local bufnr = callbacks.get_bufnr()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
@@ -418,7 +422,7 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   -- （cli_event_processor の handle_system_event）ので、発火したということはCLIがinitすら
   -- 出していないということ。assistantメッセージが1本も無いので `requests` は0で、
   -- `TokenUsage.format` はどのみち nil を返す
-  pcall(M._report_token_usage, response, callbacks, config)
+  pcall(M._report_token_usage, response, callbacks, config, started_fresh_session)
 
   local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
@@ -505,7 +509,8 @@ end
 ---@param response table
 ---@param callbacks table
 ---@param config Vibing.Config|nil
-function M._report_token_usage(response, callbacks, config)
+---@param started_fresh_session boolean|nil ターン開始時点で session_id が無かったか
+function M._report_token_usage(response, callbacks, config, started_fresh_session)
   local settings = config and config.agent and config.agent.token_usage or nil
   if settings and settings.enabled == false then
     return
@@ -517,13 +522,97 @@ function M._report_token_usage(response, callbacks, config)
   -- 内訳は出す」という指定として受ける。`or` が拾うのは未設定と数値でない値だけ
   local warn_context = (settings and tonumber(settings.warn_context)) or TokenUsage.DEFAULT_WARN_CONTEXT
 
+  local acc = response._token_usage
+  if not TokenUsage.format(acc) then
+    -- 報告できるものが無いターン。前ターン記録も更新しない — 更新すると、次のターンが
+    -- 「何も起きなかった時刻」との差でTTLを判定してしまう
+    return
+  end
+
+  -- 診断が落ちても章そのものは出す。トークン内訳は #669 のまま有用で、原因の1行のために
+  -- 全部を落とすのは割に合わない
+  local diagnosed, extras = pcall(M._turn_diagnosis, acc, response, callbacks, started_fresh_session)
+  if not diagnosed then
+    extras = {}
+  end
+
   -- 警告は章の中に含まれる。通知ではなくバッファに残すのは、`vim.notify` は次のターンを
   -- 読む頃には消えていて、読み手がコストを実際に見ている唯一の瞬間（この章）に何も
   -- 無いことになるため
-  local section = TokenUsage.section(response._token_usage, warn_context)
+  local section = TokenUsage.section(acc, warn_context, extras)
   if section then
     callbacks.append_chunk("\n\n" .. section)
   end
+end
+
+---このターンに添える `floor` 行と rewrite 注記を作り、次ターン用に今回の状態を記録する
+---
+---原因判定に要る「前ターンのmodel・version・compactedか」はCLIプロセスと共に消えるので、
+---`.vibing/turn-state.json` に持ち越す。frontmatter ではなくそちらなのは、これが会話ではなく
+---計測用メタデータで、ユーザーが読む・編集する意味が無いため。
+---
+---失敗しても章そのものは出す: 診断が欠けたトークン内訳は #669 の表示のままで、有用性が
+---落ちるだけで壊れてはいない。
+---@param acc table
+---@param response table
+---@param callbacks table
+---@param started_fresh_session boolean|nil
+---@return table extras `TokenUsage.section` の第3引数
+function M._turn_diagnosis(acc, response, callbacks, started_fresh_session)
+  local TokenUsage = require("vibing.core.utils.token_usage")
+  local PrefixRewrite = require("vibing.core.utils.prefix_rewrite")
+  local TurnState = require("vibing.infrastructure.storage.turn_state")
+
+  local cli_info = type(response._cli_info) == "table" and response._cli_info or {}
+  local extras = {}
+
+  if started_fresh_session then
+    -- `first_context` であって `context` ではない。`context` はターン中に見た最大値なので、
+    -- 初回ターンでもツール呼び出しが1回でも挟まれば2回目以降のリクエストにツール結果が積まれ、
+    -- そのターン自身が生んだ会話内容が床に混ざる。床は「システムプロンプト＋ツールスキーマ＋
+    -- メモリファイルだけ」で、それが載っているのは何も喋る前の最初のリクエストだけ
+    extras.floor = TokenUsage.floor(acc.first_context, cli_info)
+  end
+
+  local bufnr = callbacks.get_bufnr and callbacks.get_bufnr()
+  local chat_path = bufnr and vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_get_name(bufnr) or nil
+  if not chat_path or chat_path == "" then
+    return extras
+  end
+
+  local frontmatter = callbacks.parse_frontmatter and callbacks.parse_frontmatter() or {}
+  local current = {
+    at = os.time(),
+    -- ターンの開始時刻。`at`（終了時刻）とは別に持つのは、TTL の経過時間が「前ターンの終わり
+    -- →このターンの最初のリクエスト」で、`at` 同士で引くとこのターン自身の所要時間が
+    -- 上乗せされ、長いターンほど TTL 切れを誤って主張する方向に偏るため
+    started_at = type(cli_info.started_at) == "number" and cli_info.started_at or nil,
+    -- model はCLIが `init` で報告した値だけを採る。frontmatter に落とさないのは、片方が
+    -- `claude-opus-5` でもう片方が `opus` という別の語彙で、init を1ターン取りこぼしただけで
+    -- 「モデルが変わった」と嘘をつくため。init が無ければ nil のまま、この原因は主張しない
+    model = cli_info.model,
+    effort = frontmatter.effort,
+    version = cli_info.version,
+    compacted = cli_info.compacted == true,
+  }
+
+  -- 新しいセッションの初回ターンは、そのチャットに履歴があっても（`/new-session` 直後など）
+  -- プレフィックスを丸ごと書く。それはキャッシュを埋めているのであって取り逃しではないので、
+  -- `PrefixRewrite.detect` が前ターン無しを弾くのと同じ理由でここでも黙る。前ターン記録は
+  -- 更新する — 次のターンはこのターンと比べるのが正しい
+  if not started_fresh_session then
+    -- `get_cwd()` が答えるのは frontmatter に `working_dir` があるチャット（worktree 運用）
+    -- だけで、通常の `:VibingChat` では nil。そのまま渡すとプロジェクト層
+    -- （`CLAUDE.md` / `.claude/rules/*.md` / `.vibing/system-prompt.md`）の走査が丸ごと飛び、
+    -- 一番気付きにくい原因が一番普通の運用で黙る。CLI が実際に走るディレクトリ＝プロンプト
+    -- ソースが実際に読まれる場所まで落とす（差分の基準ディレクトリと同じ解決順）
+    local Git = require("vibing.core.utils.git")
+    local cwd = (callbacks.get_cwd and callbacks.get_cwd()) or Git.get_root(nil) or vim.fn.getcwd()
+    extras.rewrite = PrefixRewrite.note(PrefixRewrite.detect(acc, TurnState.load(chat_path), current, cwd))
+  end
+
+  TurnState.record(chat_path, current)
+  return extras
 end
 
 ---弾かれたターンが途中まで進んでいたか

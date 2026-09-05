@@ -120,6 +120,9 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     output = output,
     errorOutput = error_output,
     tokenUsage = require("vibing.core.utils.token_usage").new(),
+    -- Created empty rather than on the `init` event: `compact_boundary` arrives mid-stream and
+    -- must have somewhere to land even on a turn whose init line was missed or malformed.
+    cliInfo = {},
     onFirstResponse = cancel_timeout,
     onChunk = function(chunk)
       cancel_timeout()
@@ -142,6 +145,23 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   -- Lets the PreToolUse hook identify which chat buffer's stream it belongs to, so concurrent
   -- chats don't cross-wire each other's AskUserQuestion/approval UI (see ActiveStreamRegistry).
   env.VIBING_HANDLE_ID = handle_id
+
+  -- The CLI computes a git status block (branch, `git status --short`, recent commits) once per
+  -- process and puts it at the top of the system prompt, ahead of the whole conversation. A
+  -- long-lived process pays for that once; vibing.nvim starts a new one every turn, so any turn
+  -- that touched the tree changes those bytes and the entire prefix is re-written at
+  -- cache-creation price. The CLI drops the block itself under CLAUDE_CODE_REMOTE for the same
+  -- reason.
+  --
+  -- Both settings write the variable, because the CLI reads it as a tri-state: "1" suppresses the
+  -- block, "0" forces it on, and unset falls through to `includeGitInstructions` in the user's
+  -- settings.json — which `--setting-sources user,project,local` still loads. Writing nothing on
+  -- the opt-in path would leave `git_instructions = true` unable to deliver what it promises for
+  -- a user who has that key set to false. A value already in the environment wins over both.
+  if env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS == nil then
+    local git_instructions = self.config.agent and self.config.agent.git_instructions
+    env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS = git_instructions and "0" or "1"
+  end
 
   ActiveStreamRegistry.register({
     handle_id = handle_id,
@@ -183,6 +203,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
       -- Attached even on a failed turn: the requests it made were still paid for, and a turn that
       -- died at 600k is exactly the one worth reporting.
       response._token_usage = event_context.tokenUsage
+      response._cli_info = event_context.cliInfo
 
       on_done(response)
     end

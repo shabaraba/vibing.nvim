@@ -1,9 +1,10 @@
 # Multi-Agent Orchestration
 
 Detail behind `.claude/rules/architecture.md` → "Multi-Agent Orchestration". One chat can create
-and drive other chats. The whole feature is three MCP calls and a skill; nothing new was needed
-to keep the workers apart, since parallel workers are the existing concurrency guarantee being
-used rather than extended.
+and drive other chats. The whole feature is three MCP calls and a skill — plus a fourth call,
+off unless the user opts in, that answers a worker's tool-approval prompt ("Answering a worker's
+tool approval", last section). Nothing new was needed to keep the workers apart, since parallel
+workers are the existing concurrency guarantee being used rather than extended.
 
 The long middle of this file is the completion-notification machinery, and it is long because
 almost every rule in it exists to stop a specific silent failure — a worker that stopped and told
@@ -13,8 +14,7 @@ One chat can create and drive other chats: `nvim_chat_create` (MCP) →
 `infrastructure/rpc/handlers/chat.lua` → `application/chat/use_cases/create_chat.lua` →
 `view.render`. The orchestrator briefs each worker with `nvim_chat_send_message` and polls it with
 `nvim_get_buffer`. The workflow is the bundled
-`claude-plugin/skills/vibing-orchestrate/SKILL.md`; there is no command and no scheduler — the
-whole feature is three MCP calls and a skill.
+`claude-plugin/skills/vibing-orchestrate/SKILL.md`; there is no command and no scheduler.
 
 Nothing new was needed to keep the workers apart. Each chat buffer already owns its own session
 id and handle id (see `handbook/architecture/chat-lineage.md`), so parallel workers are the
@@ -40,6 +40,60 @@ Four things it does differently from `:VibingChat`, each for a reason:
   `vibing-worktree-create`, which only rewrites an existing chat's frontmatter. (The pre-existing
   and never-called `use_case.create_new_in_directory` does the opposite; `create_new` takes an
   optional `working_dir` instead.)
+
+## Task assignment (`orchestrated`'s `task`, #696)
+
+`nvim_chat_create` and `nvim_chat_send_message` both take an optional `task`: one free-text line
+naming what the orchestrator is asking that chat to do (`"PR #688 — review fixes, merge,
+cleanup"`). It exists because #692's postmortem lost exactly this — a 5-chat orchestration run
+tracked "which worker does what" only in the orchestrator's own context, and after a restart or a
+context compaction there was no way to rebuild the bufnr ↔ PR/issue ↔ assignment table.
+
+**It is written on the orchestrator's own `orchestrated` entry, never on the driven chat's own
+frontmatter.** An `orchestrated` list item is `<path>` or `<path>|<task>`
+(`application/chat/orchestrated_entry.lua`'s `encode`/`decode`/`find`); `orchestrated_by` never
+carries the suffix, since the assignment belongs to whoever gave it, not whoever received it.
+`nvim_chat_list` (`rpc/handlers/chat.lua`'s `list_chats`) expands every open chat's `orchestrated`
+list and projects each decoded task onto the matching bufnr's row — so an orchestrator reconstructs
+every worker's assignment from **its own frontmatter alone**, no per-worker file to open and no
+transcript to re-read.
+
+Two designs were rejected on the way here:
+
+- **A `task` field on the driven chat's own frontmatter** (the first shape this feature shipped
+  with). Once the orchestrator's `orchestrated` list became the thing a caller actually reads back
+  (to answer "what is each of my workers doing"), a copy on the worker's own file was a second
+  source of truth for the same fact with no reader that needed it — the worker already depends on
+  `orchestrated_by` to know who to report to, so depending on it to recall its own assignment is no
+  new cost. Removed once `orchestrated` could carry the task itself.
+- **A nested map per `orchestrated` entry** (`- path: ... / task: ...`), which is what a real YAML
+  document would look like. `infrastructure/storage/frontmatter.lua`'s hand-rolled parser only
+  reads a list item as one opaque scalar string (`parse_yaml_simple`'s `^%s+%-%s*(.*)$`), so nested
+  maps would need real parser and serializer work, plus the rename scanner. Encoding `<path>|<task>`
+  into that one scalar reuses the existing flat-list machinery untouched — `update_list`'s
+  `"remove"` then `"add"` is how a task gets replaced — at the cost of a scanner that now has to
+  split the task suffix off before comparing paths (`orchestration_chat_scanner.lua`'s
+  `item_path`/`item_with_path`).
+
+**Why `|` as the separator, specifically:** a chat file path never contains one, so splitting at the
+first `|` always isolates the path cleanly regardless of what the task text contains (`#`, `:`,
+`--`, anything). More importantly, Vim's default `'isfname'` does **not** include `|`, while it does
+include `-` and `#` — so placing the cursor anywhere in an `orchestrated` line's path and pressing
+`gf` stops exactly at the pipe and never reads into the task text, confirmed by driving a real
+Neovim (`gf` on `.../worker.md|PR #688 ...` from any column of the path jumps correctly; from inside
+the task text it fails harmlessly rather than mis-resolving a path).
+
+**The assignment is mutable: "the latest instruction wins."** Both call sites go through
+`OrchestrationLink.link(from_bufnr, to_bufnr, task)`. If the link already exists and `task` is
+given and differs from what is currently recorded, `link` removes the old encoded entry and adds
+the new one; a call with no `task` (the ordinary case — a status check, an approval, "go ahead")
+leaves the existing assignment untouched, so a plain follow-up can never blank out a good one-line
+summary. `nvim_chat_send_message`'s queued path (`message_queue.lua`'s `write_links`) applies the
+same rule across everything queued for one sender before the single deferred `link_or_warn` call:
+the **last** queued `task` for that sender wins, not the first.
+
+`task` without `from_bufnr` has nowhere to be recorded — there is no `orchestrated` entry to write
+it into — so the RPC handler warns and drops it rather than silently discarding it.
 
 `view.render` now returns its `ChatBuffer` and replaces the `window` table before applying a
 one-off `position`. It used to assign straight into `chat_buf.config.window.position`, and
@@ -546,7 +600,14 @@ the design:
 - **The concurrency cap gates machine-started sends only** (`concurrency.lua`, enforced in the
   RPC send handler and the queue drain, never in `ChatBuffer:send_message()` — a human `<CR>`
   always goes through). The count includes every responding chat, the user's own manual turns
-  included, so one long hand-driven turn occupies a slot. A send held by the limit is **not** a
+  included, so one long hand-driven turn occupies a slot. It also includes every chat's in-flight
+  subagents (Task/Agent tool calls with no `tool_result` yet, tallied on
+  `active_stream_registry.lua`'s per-stream entry as `cli_event_processor.lua` sees the tool_use
+  and its result go by) — otherwise five chats safely under `max_concurrent` can still fan out to
+  twenty real CLI-equivalent processes, which is exactly the shape that hit a session limit in
+  #692. `max_concurrent_subagents` is a second, independent cap on that subagent count alone, for
+  throttling fan-out without also limiting how many chats may run. A send held by the limit is
+  **not** a
   stop: the hold is treated like branch 2 above (edges kept, no notification), redelivery when a
   slot frees is limited to `held_by_limit` entries — retrying every non-empty queue on each
   completion re-delivers refused messages, which a spec pins — and a `queue_if_busy` message
@@ -666,3 +727,57 @@ target twice.
 asked for, reported `idle`. So `buf_get_lines` reports the buffer it actually read, and the MCP
 handler refuses an answer that omits it whenever a `file_path` was passed. The send path needs no
 equivalent: it errors outright when it can find no target.
+
+## Answering a worker's tool approval
+
+A worker that reaches a tool in its `ask` list is the one stop in this machine that nothing in it
+can clear. `cancel_and_deny` kills the turn before drawing the prompt (`rpc/handlers/permission.lua`),
+so the worker cannot continue and cannot report; the watchdog delivers `status: waiting_approval`
+to whoever messaged it, and — by default — the only thing that orchestrator can do with that is
+name the worker and the tool and hand it to the user. With a fan of five workers all hitting the
+same `Bash` prompt, that is five buffers the user has to find by hand.
+
+`agent.orchestration.delegated_approval` (default `false`) lets the orchestrator answer instead,
+through the MCP tool `nvim_chat_answer_approval` →`rpc/handlers/chat.lua:answer_approval` →
+`application/chat/approval_delegate.lua`.
+
+**The default is off for what it buys, not for what it costs to build.** The `ask` list is the
+user asking to be consulted; an agent that can clear it for another agent has changed the
+permission model, and that is a decision to make once, deliberately, in `setup()` — not something
+to acquire by installing an update. The refusal is worded for the model that will read it: it says
+what to do instead (name the blocked chat and the tool) and names the setting, so a chat running
+without it does not spend a turn probing.
+
+Four things about the implementation:
+
+- **The answer takes exactly the human path.** `approval_delegate` writes the chosen option line —
+  the same `1. allow_once - Allow this execution only` the renderer drew — into the worker's
+  buffer and calls `ChatBuffer:send_message()`. Everything that decides what an approval _means_
+  (`update_session_permissions`, the `:once` bookkeeping, dropping `_pending_approval`, the
+  substitution to `I approved the Bash tool (command: …)`) stays in the one block that already
+  did it. A second implementation of that, reachable only through orchestration, is precisely the
+  kind of divergence that shows up as "the delegated grant did not survive the retry" months
+  later.
+- **The prompt is replaced, not left behind.** `ProgrammaticSender.send` normally drops the
+  trailing unsent section only when it is empty, because that section is also where the approval
+  prompt and the question list are drawn. Delegated answers pass `replace_unsent`, the one case
+  where that section _is_ the thing being answered; without it an answered prompt sits in the
+  transcript forever and every later `extract_conversation` re-sends it to the CLI.
+- **The section header is what records who granted it.** A delegated answer lands as
+  `## Request <!-- <ts> from .vibing/chat/orchestrator.md -->`, so the substituted first-person
+  body ("I approved the Bash tool") resolves to the chat the header names. That is also why
+  `from_bufnr` is **required** on this tool while it stays optional on `nvim_chat_create` and
+  `nvim_chat_send_message`: a call that cannot say whose decision it was should not be made, and
+  the compatibility argument does not apply to an RPC method older Neovims do not have at all.
+- **The watchdog's wording follows the setting.** `delivery_message.notification_section` asks
+  `approval_delegate.enabled()` and swaps the `waiting_approval` bullet between "only the user can
+  clear that one" and "answer it with `nvim_chat_answer_approval` when the tool is plainly within
+  the brief". Telling the model to answer while the setting is off would buy one guaranteed failed
+  call per blocked worker before it did the right thing anyway.
+
+What it deliberately does not do: decide on the orchestrator's behalf. Nothing inspects the tool
+input, and there is no allow list of "safe" tools to delegate — the judgement lives in the skill's
+prose (`vibing-orchestrate` → "Answering a worker's tool approval"), which tells the orchestrator
+to read the prompt, answer only what its own brief plainly covers, and prefer `allow_once` over
+the frontmatter-persisting `allow_for_session`. A mechanical rule here would have to guess at the
+task, which is the one thing the orchestrator knows and this module does not.

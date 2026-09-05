@@ -1,12 +1,23 @@
 import { callNeovim } from '../rpc.js';
 import { z } from 'zod';
-import { CHAT_POSITIONS } from '../tools/chat.js';
+import { APPROVAL_ACTIONS, CHAT_POSITIONS } from '../tools/chat.js';
 import { validateChatTarget } from '../validation/schema.js';
+
+// `task` is written into the caller's own `orchestrated` entry as `<path>|<task>`
+// (orchestrated_entry.lua). A newline would let the value smuggle extra frontmatter lines past
+// the encoding on any write path that is not guarded by nvim_buf_set_lines' own line-break
+// rejection (the disk-direct rename-sync path in frontmatter_file.lua is not) -- reject it here,
+// at the boundary, rather than relying on that guard alone.
+const taskSchema = z
+  .string()
+  .refine((value) => !/[\r\n]/.test(value), { message: 'task must not contain line breaks' })
+  .optional();
 
 const chatCreateArgsSchema = z.object({
   position: z.enum(CHAT_POSITIONS).optional(),
   working_dir: z.string().optional(),
   from_bufnr: z.number().optional(),
+  task: taskSchema,
   rpc_port: z.number(),
 });
 
@@ -25,11 +36,19 @@ const chatCreateArgsSchema = z.object({
  * frontmatter. It stays optional deliberately: making it required would break every existing
  * caller that omits it, and there is no protocol version on the wire — an older Neovim simply
  * ignores the extra key, and an older server never sends it.
+ *
+ * `task` is written on the CALLER's own frontmatter (next to the `from_bufnr` link), not on the
+ * new chat — see `orchestrated_entry.lua`. Passing `task` without `from_bufnr` has nowhere to go
+ * and the Lua side drops it with a warning rather than silently discarding it.
  */
 export async function handleChatCreate(args: any): Promise<any> {
-  const { position, working_dir, from_bufnr, rpc_port } = chatCreateArgsSchema.parse(args);
+  const { position, working_dir, from_bufnr, task, rpc_port } = chatCreateArgsSchema.parse(args);
 
-  const result = await callNeovim('create_chat', { position, working_dir, from_bufnr }, rpc_port);
+  const result = await callNeovim(
+    'create_chat',
+    { position, working_dir, from_bufnr, task },
+    rpc_port
+  );
 
   return {
     content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -49,6 +68,7 @@ const chatSendMessageArgsSchema = z.object({
   sender: z.string().optional(),
   from_bufnr: z.number().optional(),
   queue_if_busy: z.boolean().optional(),
+  task: taskSchema,
   rpc_port: z.number(),
 });
 
@@ -72,11 +92,16 @@ const chatSendMessageArgsSchema = z.object({
  * that did not ask to queue already expects. The reply distinguishes the two outcomes, because
  * "queued" means no turn has started yet — an orchestrator that read it as "sent" would go on to
  * poll a transcript that has not moved.
+ *
+ * `task` replaces the one-line assignment recorded on the CALLER's own frontmatter for this
+ * target (see `nvim_chat_create`'s `task`), so an orchestrator can keep that summary current as
+ * the work evolves. Same `from_bufnr` requirement as `nvim_chat_create`'s `task`; omitted, an
+ * ordinary follow-up leaves the existing assignment untouched.
  */
 export async function handleChatSendMessage(args: any): Promise<any> {
   // Zod schema already validates required fields and types
   const parsed = chatSendMessageArgsSchema.parse(args);
-  const { message, sender, from_bufnr, queue_if_busy, rpc_port } = parsed;
+  const { message, sender, from_bufnr, queue_if_busy, task, rpc_port } = parsed;
   // Collapse an explicit null to "not given" once, here, so nothing downstream has to know the
   // difference — including the Lua side, where a JSON null decodes to the truthy vim.NIL.
   const bufnr = parsed.bufnr ?? undefined;
@@ -87,7 +112,7 @@ export async function handleChatSendMessage(args: any): Promise<any> {
 
   const result = await callNeovim(
     'send_message',
-    { bufnr, file_path, message, sender, from_bufnr, queue_if_busy },
+    { bufnr, file_path, message, sender, from_bufnr, queue_if_busy, task },
     rpc_port
   );
 
@@ -154,5 +179,73 @@ export async function handleAskUserQuestion(args: any): Promise<any> {
 
   return {
     content: [{ type: 'text', text: 'Question presented to the user in the chat buffer.' }],
+  };
+}
+
+const chatAnswerApprovalArgsSchema = z.object({
+  bufnr: z.number().nullish(),
+  file_path: z.string().nullish(),
+  action: z.enum(APPROVAL_ACTIONS),
+  from_bufnr: z.number(),
+  rpc_port: z.number(),
+});
+
+/**
+ * Handler for nvim_chat_answer_approval
+ *
+ * A chat that hit a tool in its `ask` list has had its turn killed and the approval prompt drawn
+ * into its buffer (`rpc/handlers/permission.lua`). It cannot continue, and it cannot report that
+ * it is stuck — so until someone answers, it simply never moves again. By default that someone is
+ * the user; `agent.orchestration.delegated_approval` lets an orchestrator stand in.
+ *
+ * The gate lives on the Lua side rather than here, so the model gets one answer whichever route
+ * it takes and the setting cannot be read stale by a server process that started before it
+ * changed. That is also why a disabled call comes back as an error with the wording the model
+ * should act on ("tell the user which chat is blocked") instead of a bare refusal.
+ *
+ * `from_bufnr` is required here although the other chat tools keep it optional: this call removes
+ * a permission gate, and one that cannot record whose decision it was should not be made at all.
+ * Version skew is not an argument for softening it — a Neovim without the `answer_approval` RPC
+ * method rejects the call outright.
+ */
+export async function handleChatAnswerApproval(args: any): Promise<any> {
+  const parsed = chatAnswerApprovalArgsSchema.parse(args);
+  const { action, from_bufnr, rpc_port } = parsed;
+  const bufnr = parsed.bufnr ?? undefined;
+  const file_path = parsed.file_path ?? undefined;
+
+  validateChatTarget({ bufnr, file_path }, { required: true });
+
+  const result = await callNeovim(
+    'answer_approval',
+    { bufnr, file_path, action, from_bufnr },
+    rpc_port
+  );
+
+  return {
+    content: [
+      {
+        type: 'text',
+        text:
+          `Answered ${result?.tool ?? 'the'} tool approval with ${action}. That chat has started ` +
+          'a new turn; it will come back to you when it stops.',
+      },
+    ],
+    _meta: { bufnr: result?.bufnr ?? bufnr, tool: result?.tool, action },
+  };
+}
+
+/**
+ * Handler for nvim_chat_list
+ *
+ * Enumerates every chat buffer `view.list_chat_buffers()` knows about on the Lua side — the same
+ * source `application/chat/concurrency.lua` reads to answer "how many chats are responding right
+ * now" — and reports each one's status in a single round trip. A read, so `rpc_port` stays
+ * optional and falls back to the instance registry like `nvim_list_buffers`.
+ */
+export async function handleChatList(args: any): Promise<any> {
+  const result = await callNeovim('list_chats', {}, args?.rpc_port);
+  return {
+    content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
   };
 }

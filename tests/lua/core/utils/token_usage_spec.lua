@@ -49,6 +49,31 @@ describe("token_usage", function()
       assert.equals(1500, acc.write)
     end)
 
+    it("keeps the opening request's split apart from the running totals", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, usage(2, 1200, 108000, 300))
+      TokenUsage.record(acc, usage(2, 6000, 109200, 200))
+      TokenUsage.record(acc, usage(2, 7000, 115200, 200))
+
+      -- Whether the cache was hit is a fact about the request that looked for the prefix. The
+      -- sums cannot answer it: each later request writes its own increment, so a long turn
+      -- accumulates more `write` than its `context` while hitting the cache every time.
+      assert.equals(109202, acc.first_context)
+      assert.equals(1200, acc.first_write)
+      assert.equals(14200, acc.write)
+    end)
+
+    it("takes the opening request from the main chain, not from a subagent", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, usage(2, 500, 80000, 20), true)
+      TokenUsage.record(acc, usage(2, 1200, 108000, 300), false)
+
+      -- A subagent can be the first `assistant` event of a turn, and its prompt is not this
+      -- chat's prefix -- reading it as the opening request would judge the wrong conversation.
+      assert.equals(109202, acc.first_context)
+      assert.equals(1200, acc.first_write)
+    end)
+
     it("ignores a usage payload of an unexpected shape instead of erroring", function()
       local acc = TokenUsage.new()
       TokenUsage.record(acc, nil)
@@ -97,16 +122,16 @@ describe("token_usage", function()
     end)
 
     it("uses one unit per magnitude so the line stays scannable", function()
-      assert.equals("999", TokenUsage._humanize(999))
-      assert.equals("1k", TokenUsage._humanize(1000))
-      assert.equals("205k", TokenUsage._humanize(205000))
-      assert.equals("2.4M", TokenUsage._humanize(2400000))
+      assert.equals("999", TokenUsage.humanize(999))
+      assert.equals("1k", TokenUsage.humanize(1000))
+      assert.equals("205k", TokenUsage.humanize(205000))
+      assert.equals("2.4M", TokenUsage.humanize(2400000))
     end)
 
     it("switches to M where the k form would round to 1000k", function()
-      assert.equals("999k", TokenUsage._humanize(999499))
-      assert.equals("1.0M", TokenUsage._humanize(999500))
-      assert.equals("1.0M", TokenUsage._humanize(1000000))
+      assert.equals("999k", TokenUsage.humanize(999499))
+      assert.equals("1.0M", TokenUsage.humanize(999500))
+      assert.equals("1.0M", TokenUsage.humanize(1000000))
     end)
   end)
 
@@ -117,8 +142,19 @@ describe("token_usage", function()
 
       local section = TokenUsage.section(acc, 150000)
 
-      assert.equals("### Tokens", vim.split(section, "\n")[1])
+      assert.equals("### Tokens <!-- context=88002 -->", vim.split(section, "\n")[1])
       assert.truthy(section:find("context 88k", 1, true))
+    end)
+
+    it("carries the exact context in the heading, since the visible line is rounded", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, usage(2, 600, 149000, 0))
+
+      local heading = vim.split(TokenUsage.section(acc, 150000), "\n")[1]
+
+      -- 149,602 rounds to "150k" for reading, which would read back as exactly the threshold
+      assert.equals(149602, TokenUsage.parse_context(heading))
+      assert.truthy(TokenUsage.section(acc, 150000):find("context 150k", 1, true))
     end)
 
     it("carries the warning inside the section once the chat is large", function()
@@ -144,6 +180,70 @@ describe("token_usage", function()
     it("writes no section at all for a turn with nothing to report", function()
       assert.is_nil(TokenUsage.section(TokenUsage.new(), 150000))
       assert.is_nil(TokenUsage.section(nil, 150000))
+    end)
+
+    it("puts the floor on the line under the metrics", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, usage(2, 110000, 0, 400))
+
+      local lines = vim.split(TokenUsage.section(acc, 150000, { floor = "floor ~110k (322 tools)" }), "\n")
+
+      assert.truthy(lines[3]:find("context 110k", 1, true))
+      assert.equals("floor ~110k (322 tools)", lines[4])
+    end)
+
+    it("puts the rewrite note above the context warning", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, usage(2, 200000, 5000, 900))
+
+      local section = TokenUsage.section(acc, 150000, { rewrite = "> ↻ rewritten" })
+      local metrics_at = section:find("context 205k", 1, true)
+      local rewrite_at = section:find("↻", 1, true)
+      local warning_at = section:find("⚠️", 1, true)
+
+      -- What this turn did comes before standing advice that repeats on every large turn.
+      assert.is_true(metrics_at < rewrite_at)
+      assert.is_true(rewrite_at < warning_at)
+    end)
+
+    it("keeps the heading marker readable back whatever extras it carries", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, usage(2, 200000, 5000, 900))
+
+      -- `cache_expiry` and `auto_compact` both recover the size by reading this one line back out
+      -- of a written chat file. A section that grew a `floor` line or a rewrite note but lost the
+      -- marker would leave both features silently never firing, with every test here still green.
+      local section = TokenUsage.section(acc, 150000, {
+        floor = "floor ~205k (322 tools, 23 MCP servers)",
+        rewrite = "> ↻ **Prefix rewritten (198k).**",
+      })
+
+      assert.equals(acc.context, TokenUsage.parse_context(vim.split(section, "\n")[1]))
+    end)
+
+    it("is unchanged by an absent extras table", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, usage(2, 6000, 82000, 400))
+
+      assert.equals(TokenUsage.section(acc, 150000), TokenUsage.section(acc, 150000, {}))
+    end)
+  end)
+
+  describe("floor", function()
+    it("reports the first turn's prompt as the floor, with what fills it", function()
+      assert.equals("floor ~110k (322 tools, 23 MCP servers)", TokenUsage.floor(110000, { tools = 322, mcp_servers = 23 }))
+    end)
+
+    it("names only the counts the CLI actually reported", function()
+      assert.equals("floor ~110k (322 tools)", TokenUsage.floor(110000, { tools = 322 }))
+      assert.equals("floor ~110k (23 MCP servers)", TokenUsage.floor(110000, { mcp_servers = 23 }))
+    end)
+
+    it("says nothing when the init event told it nothing", function()
+      -- The counts are the whole point of the line: `#669` could already show the context size.
+      assert.is_nil(TokenUsage.floor(110000, {}))
+      assert.is_nil(TokenUsage.floor(110000, nil))
+      assert.is_nil(TokenUsage.floor(0, { tools = 322 }))
     end)
   end)
 
@@ -173,6 +273,36 @@ describe("token_usage", function()
     it("stays quiet when the threshold is disabled", function()
       assert.is_nil(TokenUsage.warning(900000, 0))
       assert.is_nil(TokenUsage.warning(900000, nil))
+    end)
+  end)
+
+  describe("parse_context", function()
+    it("reads the exact figure out of the heading marker", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, { input_tokens = 200000, cache_read_input_tokens = 5431 })
+
+      local heading = vim.split(TokenUsage.section(acc, 150000), "\n")[1]
+
+      assert.equals(205431, TokenUsage.parse_context(heading))
+    end)
+
+    it("falls back to the metrics line, for chats written before the marker", function()
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, { input_tokens = 200000, cache_read_input_tokens = 5000 })
+
+      assert.equals(205000, TokenUsage.parse_context(TokenUsage.format(acc)))
+    end)
+
+    it("reads every magnitude the humanized form uses", function()
+      assert.equals(940, TokenUsage.parse_context("context 940 · 1 request · read 0 · new 940"))
+      assert.equals(205000, TokenUsage.parse_context("context 205k · 12 requests · read 2.4M · new 12k"))
+      assert.equals(1200000, TokenUsage.parse_context("context 1.2M · 30 requests · read 9.9M · new 40k"))
+    end)
+
+    it("returns nothing for a line that is not a metrics line", function()
+      assert.is_nil(TokenUsage.parse_context("### Tokens"))
+      assert.is_nil(TokenUsage.parse_context("the context was large"))
+      assert.is_nil(TokenUsage.parse_context(nil))
     end)
   end)
 end)

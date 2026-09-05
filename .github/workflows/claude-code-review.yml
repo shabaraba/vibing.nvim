@@ -2,49 +2,115 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [labeled]
 
 jobs:
   claude-review:
-    # Only run for PRs created by shabaraba
-    if: github.event.pull_request.user.login == 'shabaraba'
+    # Only run when shabaraba attaches the "claude:in-review" label to the PR
+    if: github.event.label.name == 'claude:in-review' && github.event.sender.login == 'shabaraba'
 
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
       issues: read
       id-token: write
       actions: read
 
     steps:
-      - name: Checkout repository
+      # Checks out the PR's own head branch (not the ephemeral merge ref actions/checkout would
+      # otherwise use for `pull_request` events), so a fix the review applies can be committed
+      # and pushed straight back onto it.
+      - name: Checkout PR head branch
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
+
+      # `git commit` needs an identity; the runner has none configured by default. Attributed to
+      # github-actions[bot], the same identity the label-reflection step below already pushes as.
+      - name: Configure git identity for auto-fix commits
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Run Claude Code Review
         id: claude-review
-        # Pin to specific commit SHA for security (v1.0.171)
-        uses: anthropics/claude-code-action@e90deca47693f9457b72f2b53c17d7c445a87342
+        # Pin to specific commit SHA for security (v1.0.216)
+        uses: anthropics/claude-code-action@d75b94d5ad426cb8546e6628b6f5f19b84e5cce1
+        # Without this, the `gh pr comment`/`gh pr diff`/`gh pr view` calls the prompt tells
+        # Claude to make inside the sandbox have no credentials and fail silently -- the run
+        # still reports success, but step 2 of the prompt (post the review comment) never
+        # happens. claude.yml's equivalent step sets the same env for the same reason.
+        env:
+          GH_TOKEN: ${{ github.token }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Please review this pull request and provide feedback on:
-            - Code quality and best practices
-            - Potential bugs or issues
-            - Performance considerations
-            - Security concerns
-            - Test coverage
+            Run the `/code-review` skill against PR #${{ github.event.pull_request.number }} at
+            effort "high", passing `--fix` so every CONFIRMED finding is applied to the working
+            tree (already checked out on the PR's own branch).
 
-            Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
+            This is a single unattended batch run, not an interactive session: when it ends, the
+            process exits and nothing wakes it again. Any subagent the skill dispatches (the
+            per-dimension review fan-out, the verify pass) MUST be awaited synchronously within
+            this same turn before you act on its result. Do not end a turn saying you'll "wait" or
+            "be notified" for a background agent to finish — there is no later turn here to
+            receive that notification, so the run would exit with nothing posted and no comment
+            explaining why, exactly like a run that hit `permission_denials`.
 
-            Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
+            Do not run `npm run test:e2e` or `npm run test:eval` — they spend real tokens and are
+            never run unattended. `npm test`, `npm run check` and `npm run lint` are fine to
+            validate a fix before pushing it.
 
-            IMPORTANT: All responses MUST be in Japanese.
+            After the skill finishes:
+            1. If it changed any files, stage and commit them (English summary, one commit) and
+               `git push` to this same branch. Do not create a new branch, rebase, or
+               force-push.
+            2. Post the review as a SINGLE PR comment (`gh pr comment`, called exactly once) in
+               Japanese, covering:
+               - which CONFIRMED findings were auto-fixed and pushed (file:line)
+               - which findings are PLAUSIBLE or were left alone, with file:line, so a human can
+                 judge them
+               - if nothing was found, say so briefly instead of posting empty sections
 
-          # Minimum required tools for code review
-          claude_args: '--allowed-tools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"'
+          # Temporarily on: two silent-failure incidents in a row (missing GH_TOKEN, then a
+          # denied-tool stall) were only diagnosable from the raw job log, not this action's own
+          # summarized output. Flip back to false once the review is reliably posting comments.
+          show_full_output: true
+          # Enough to run /code-review's own tool-use (read/edit the tree, verify with the repo's
+          # test/lint scripts) plus commit, push and comment. Label transitions are handled by the
+          # workflow step below, not by Claude, so no gh-edit access is needed here.
+          #
+          # ToolSearch, TodoWrite, ReportFindings and ScheduleWakeup are this repo's own
+          # INTERNAL_TOOLS set (core/constants/tools.lua): harness-internal, side-effect-free
+          # control tools Claude Code invokes habitually regardless of task. Omitting any one of
+          # them doesn't error, it just gets silently denied every time -- which is what the
+          # previous run's permission_denials_count: 5 (with 0 comments posted and 0 commits
+          # pushed despite a real ~2.5 minute, $2 run) points to. Allow the whole set rather than
+          # whack-a-mole one at a time.
+          #
+          # Agent lets /code-review fan out subagents per review dimension and adversarially
+          # verify each finding, which is the whole point of asking for effort "high" -- without
+          # it the skill silently degrades to a single-pass, unverified review.
+          claude_args: >-
+            --allowed-tools
+            "Read,Edit,Write,Glob,Grep,Agent,ToolSearch,TodoWrite,ReportFindings,ScheduleWakeup,Bash(git:*),Bash(npm test:*),Bash(npm run check:*),Bash(npm run lint:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+
+      # Runs regardless of whether the step above succeeded, so a crashed or timed-out run still
+      # gets reflected on the PR instead of leaving "claude:in-review" stuck forever.
+      - name: Reflect the run outcome on the PR label
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ steps.claude-review.outcome }}" = "success" ] && [ "${{ steps.claude-review.outputs.conclusion }}" = "success" ]; then
+            gh pr edit "${{ github.event.pull_request.number }}" -R "${{ github.repository }}" \
+              --remove-label "claude:in-review"
+          else
+            gh pr edit "${{ github.event.pull_request.number }}" -R "${{ github.repository }}" \
+              --remove-label "claude:in-review" --add-label "claude:failed"
+          fi

@@ -191,6 +191,7 @@ help tags.
 | `:VibingChat [position\|file]`        | Create new chat with optional position (current\|right\|left\|top\|bottom\|back) or open saved file                                   |
 | `:VibingToggleChat`                   | Toggle existing chat window (preserve current conversation)                                                                           |
 | `:VibingChatFork [position]`          | Fork current chat (create branch from current conversation)                                                                           |
+| `:VibingChatHandoff [position]`       | Summarize this chat and start a new one whose first message carries the summary (cheap continuation of a long chat)                   |
 | `:VibingChatJumpNextUser [count]`     | Move the cursor to the next User section in the chat buffer                                                                           |
 | `:VibingChatJumpPrevUser [count]`     | Move the cursor to the previous User section in the chat buffer                                                                       |
 | `:VibingSlashCommands`                | Show slash command picker in chat                                                                                                     |
@@ -215,6 +216,11 @@ help tags.
   (`current` / `right` / `left` / `top` / `bottom` / `back`) or a saved chat file path to reopen it.
 - **`:VibingChatFork`** — fork the current conversation to branch in a different direction
   (accepts the same positions).
+- **`:VibingChatHandoff`** — continue a long conversation in a fresh chat: the current chat is
+  summarized, and the new chat's first message starts with that summary. Unlike a fork it does
+  not carry the history, so every later request reads a few thousand tokens of summary instead of
+  the whole transcript (accepts the same positions). An existing `## summary` section is reused
+  as-is; run `/summarize` first if it is out of date.
 - **`:VibingToggleChat`** — show/hide your current conversation, preserving its state.
 - **Worktree lifecycle** — handled by the bundled `vibing-worktree-{list,create,attach,run,finish}`
   Claude Code skills entirely via natural language ("split this off into a worktree"), not by

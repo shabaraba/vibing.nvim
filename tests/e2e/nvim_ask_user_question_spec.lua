@@ -71,8 +71,9 @@ describe("E2E: nvim_ask_user_question MCP tool", function()
     helper.send_keys(nvim_instance, "<CR>")
 
     -- Wait for question prompt (same UI as AskUserQuestion)
-    ok = helper.wait_for_buffer_content(nvim_instance, "\n1%. A\n", TIMEOUTS.ASSISTANT_RESPONSE)
-    assert.is_true(ok, "Choice-list prompt should appear")
+    local reason
+    ok, reason = helper.wait_for_response(nvim_instance, "\n1%. A\n", TIMEOUTS.ASSISTANT_RESPONSE)
+    assert.is_true(ok, reason or "Choice-list prompt should appear")
 
     local count = count_lines_matching(nvim_instance, "^1%. A$")
     assert.equals(1, count, "The question must be rendered exactly once — no duplicate UI insertion")

@@ -123,11 +123,17 @@ fi
 # empty-value guard is needed around it.
 echo "$(command -v "$NODE_EXECUTABLE")" > "${MCP_DIR}/bin/.node-path"
 
+# npm's audit and funding requests are pure registry round-trips that say nothing about whether
+# the install succeeded, and against a warm cache they are most of what `npm install` spends here.
+# claude-plugin/mcp-server/bin/run.mjs turns them off for the same reason, where it matters far
+# more: that path runs under Claude Code's 30s MCP startup deadline.
+readonly NPM_QUIET_FLAGS=(--no-audit --no-fund --silent)
+
 # Install root dependencies. Nothing at the root is bundled any more -- the only build left is
 # the MCP server's, below -- but the MCP server imports `zod` from here.
 echo "[vibing.nvim] Installing root dependencies..."
 cd "$SCRIPT_DIR"
-npm install --silent
+npm install "${NPM_QUIET_FLAGS[@]}"
 
 # One-shot cleanup for checkouts that predate the mote removal. The integration is
 # gone (diffs come from a per-request git tree snapshot now), so these downloaded
@@ -138,7 +144,7 @@ rm -f bin/mote-darwin-arm64 bin/mote-darwin-x64 bin/mote-linux-arm64 bin/mote-li
 cd "$MCP_DIR"
 
 echo "[vibing.nvim] Installing MCP server dependencies..."
-npm install --silent
+npm install "${NPM_QUIET_FLAGS[@]}"
 
 echo "[vibing.nvim] Building TypeScript..."
 npm run build --silent

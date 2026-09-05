@@ -69,9 +69,12 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
     helper.send_keys(nvim_instance, "<Esc>")
     helper.send_keys(nvim_instance, "<CR>")
 
-    -- Wait for question prompt
-    ok = helper.wait_for_buffer_content(nvim_instance, "\n1%. A\n", TIMEOUTS.ASSISTANT_RESPONSE)
-    assert.is_true(ok, "Choice list should be rendered into the buffer")
+    -- Wait for question prompt. `wait_for_response` gives up as soon as the turn writes an
+    -- error, so a CLI that never ran reports itself instead of looking like a model that
+    -- declined to use the tool
+    local reason
+    ok, reason = helper.wait_for_response(nvim_instance, "\n1%. A\n", TIMEOUTS.ASSISTANT_RESPONSE)
+    assert.is_true(ok, reason or "Choice list should be rendered into the buffer")
 
     -- Verify prompt appears exactly once (regression: was duplicated before the fix)
     local count = count_lines_matching(nvim_instance, "^1%. A$")
@@ -96,15 +99,17 @@ describe("E2E: AskUserQuestion - no repeated questions", function()
     helper.send_keys(nvim_instance, "<CR>")
 
     -- Wait for question prompt to appear
-    ok = helper.wait_for_buffer_content(nvim_instance, "\n1%. Red\n", TIMEOUTS.ASSISTANT_RESPONSE)
-    assert.is_true(ok, "Choice list should be rendered into the buffer")
+    local reason
+    ok, reason = helper.wait_for_response(nvim_instance, "\n1%. Red\n", TIMEOUTS.ASSISTANT_RESPONSE)
+    assert.is_true(ok, reason or "Choice list should be rendered into the buffer")
 
     -- Send an answer by pressing <CR> (all options remain — Claude understands)
     helper.send_keys(nvim_instance, "<CR>")
 
-    -- Wait for Claude to process the answer and produce a follow-up response
-    ok = helper.wait_for_buffer_content(nvim_instance, "## .* Assistant", TIMEOUTS.ASSISTANT_RESPONSE)
-    assert.is_true(ok, "Claude should respond after the answer is sent")
+    -- 答えを送った**あとの**応答を待つ。`## .* Assistant` を待つのでは、質問を出した1本目の
+    -- 見出しが既にあるので最初から一致してしまい、何も待っていないのと同じだった
+    ok, reason = helper.wait_for_assistant_turns(nvim_instance, 2, TIMEOUTS.ASSISTANT_RESPONSE)
+    assert.is_true(ok, reason or "Claude should respond after the answer is sent")
 
     -- Verify prompt still appears only once (not re-inserted after answering)
     local count = count_lines_matching(nvim_instance, "^1%. Red$")

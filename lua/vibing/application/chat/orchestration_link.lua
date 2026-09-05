@@ -13,6 +13,7 @@ local M = {}
 
 local Git = require("vibing.core.utils.git")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
+local OrchestratedEntry = require("vibing.application.chat.orchestrated_entry")
 
 ---@param bufnr number
 ---@return table? chat_buf
@@ -59,7 +60,7 @@ end
 local function direction_from(from_chat, to_chat, forward, backward)
   if
     vim.tbl_contains(from_chat:get_frontmatter_list("orchestrated_by"), forward)
-    or vim.tbl_contains(to_chat:get_frontmatter_list("orchestrated"), backward)
+    or OrchestratedEntry.find(to_chat:get_frontmatter_list("orchestrated"), backward)
   then
     return "Report"
   end
@@ -91,11 +92,24 @@ end
 ---ストリーミングと競合する。
 ---@param from_bufnr number 送信元（オーケストレーター側）
 ---@param to_bufnr number 送信先（ワーカー側）
+---@param task string? 何を頼んだか（自由テキスト1行、#696）。`from_chat`の`orchestrated`
+---エントリにのみ書く — 子側には複製しない。既にリンクが張られている状態でも、渡された値が
+---今の値と違えば「最新の指示」として書き換える。改行を含む値は`|`区切りの前提を壊す
+---（`update_file`のディスク直書き経路には`nvim_buf_set_lines`の改行拒否が効かない）ので、
+---警告して黙って落とす — リンクそのものの成否とは無関係な理由でsendを止めたくない
 ---@return boolean success
 ---@return string? error
-function M.link(from_bufnr, to_bufnr)
+function M.link(from_bufnr, to_bufnr, task)
   if from_bufnr == to_bufnr then
     return false, "A chat cannot orchestrate itself"
+  end
+
+  if task and task:find("[\r\n]") then
+    require("vibing.core.utils.notify").warn(
+      "task must not contain line breaks; ignoring it and keeping any existing assignment",
+      "Orchestration"
+    )
+    task = nil
   end
 
   local from_chat, to_chat, forward, backward = relation(from_bufnr, to_bufnr)
@@ -108,10 +122,32 @@ function M.link(from_bufnr, to_bufnr)
   -- スキルは `nvim_chat_create` と続く `nvim_chat_send_message` の両方に `from_bufnr` を渡すので、
   -- 同じリンクが2回書かれる。`update_frontmatter_list` は要素としては重複を弾くが、行の書き換えと
   -- `updated_at` の更新でバッファを modified にするため、そのあと両チャットの全文が書き直される
-  if
-    vim.tbl_contains(from_chat:get_frontmatter_list("orchestrated"), forward)
-    and vim.tbl_contains(to_chat:get_frontmatter_list("orchestrated_by"), backward)
-  then
+  local existing_entry, existing_task = OrchestratedEntry.find(from_chat:get_frontmatter_list("orchestrated"), forward)
+  if existing_entry then
+    -- forward側は既にある。backwardが欠けていても（片肺の書き込みで起こりうる）taskの
+    -- 更新はここで行う — 「両方揃っている時だけ更新」にすると、片肺状態での更新が下の
+    -- 「未リンク」経路に落ち、同じforward pathに対して新旧2エントリが残ってしまう
+    -- （#712レビュー指摘）
+    if task and task ~= "" and task ~= existing_task then
+      from_chat:update_frontmatter_list("orchestrated", existing_entry, "remove")
+      from_chat:update_frontmatter_list("orchestrated", OrchestratedEntry.encode(forward, task), "add")
+    end
+
+    if vim.tbl_contains(to_chat:get_frontmatter_list("orchestrated_by"), backward) then
+      FileManager.save_buffer(from_bufnr)
+      return true, nil
+    end
+
+    -- backwardだけ欠けている片肺状態を直す
+    local wrote_back = to_chat:update_frontmatter_list("orchestrated_by", backward, "add")
+    local saved_from = FileManager.save_buffer(from_bufnr)
+    local saved_to = FileManager.save_buffer(to_bufnr)
+    if not wrote_back then
+      return false, "Could not record the orchestration link (worker side)"
+    end
+    if not (saved_from and saved_to) then
+      return false, "Wrote the orchestration link but could not save both chat files"
+    end
     return true, nil
   end
 
@@ -134,7 +170,7 @@ function M.link(from_bufnr, to_bufnr)
   -- 戻り値を捨ててはいけない。`update_frontmatter_list` は frontmatter の閉じ `---` が
   -- 先頭100行に収まらないと false を返す（長い permission 配列を持つチャットで現実に起きる）。
   -- 捨てると、このモジュールが防ぐために存在している「黙って関係が残らない」がそのまま起きる
-  local wrote_forward = from_chat:update_frontmatter_list("orchestrated", forward, "add")
+  local wrote_forward = from_chat:update_frontmatter_list("orchestrated", OrchestratedEntry.encode(forward, task), "add")
   local wrote_back = to_chat:update_frontmatter_list("orchestrated_by", backward, "add")
 
   -- `update_frontmatter_list` はバッファにしか書かない。リネーム同期はディスクを読むので、
@@ -170,9 +206,10 @@ end
 ---片方だけ直した日に食い違う。`rpc/handlers/chat.lua` は作成時点の別文言を使うので通さない
 ---@param from_bufnr number
 ---@param to_bufnr number
+---@param task string?
 ---@return boolean success
-function M.link_or_warn(from_bufnr, to_bufnr)
-  local ok, err = M.link(from_bufnr, to_bufnr)
+function M.link_or_warn(from_bufnr, to_bufnr, task)
+  local ok, err = M.link(from_bufnr, to_bufnr, task)
   if not ok then
     require("vibing.core.utils.notify").warn(
       string.format("Could not link chats %d -> %d: %s", from_bufnr, to_bufnr, err or "unknown"),

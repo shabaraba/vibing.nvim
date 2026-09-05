@@ -50,6 +50,25 @@
 
 ### Added
 
+- **`nvim_get_buffer` (MCP): `tail_lines` and `last_section` read only part of a buffer.** A
+  vibing.nvim chat can run to hundreds of thousands of lines, and reading it all is effectively
+  the same as not being able to read it at all. `tail_lines: N` returns only the last N lines;
+  `last_section: true` cuts at the last `## User` / `## Assistant` / `## Request` / `## Report` /
+  `## Notice` heading; the two combine to take the last N lines of the last section. The result
+  reports the buffer's real total line count whenever the window actually truncated it, so a
+  caller that only saw the tail still learns the overall scale.
+
+- **`:VibingChatHandoff [position]` — continue a long chat in a new one that carries only its
+  summary.** The current chat is summarized (the `## summary` stays in it, as with
+  `:VibingSummarize`), and a new chat opens whose first, still unsent User message starts with
+  that summary; type the next instruction under it and send. The new chat inherits the source's
+  model, effort, permissions, working directory and language, starts a fresh session, and records
+  the source in `continued_from` (kept in step with renames). The summary is placed in the message
+  rather than read back with a tool, because a tool call re-reads the whole context and the file
+  would then stay in every later request. This is the cheap way out of a chat the `### Tokens`
+  warning flags, and the cheaper one once the prompt cache has gone cold — a cold `/compact`
+  re-reads the whole conversation at creation price first. The warning now names it.
+
 - **Codex: warn when lightweight calls leave your configured provider.** On the first lightweight
   Codex call of a Neovim session, vibing.nvim asks Codex itself which provider is configured
   (`codex doctor --json`, which reports the _resolved_ `model_provider` — no `config.toml` parsing,

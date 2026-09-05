@@ -208,7 +208,7 @@ return function(_, chat_buffer)
       local chat_result = SyncManager.sync_links(
         old_file_path,
         new_file_path,
-        { ForkedChatScanner.new(), OrchestrationChatScanner.new() },
+        { ForkedChatScanner.new(), ForkedChatScanner.new("continued_from"), OrchestrationChatScanner.new() },
         save_dir
       )
 

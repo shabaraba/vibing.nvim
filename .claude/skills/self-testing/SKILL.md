@@ -1,6 +1,6 @@
 ---
 name: self-testing
-description: E2E self-testing workflow for vibing.nvim using a separate Neovim instance controlled over RPC. Use when writing or debugging E2E tests, running `npm run test:e2e`, or executing the 3-try auto-fix rule after implementing a feature. Covers the spawn_nvim_instance/send_keys/wait_for_buffer_content/cleanup_instance helper API, test scenario checklist, and troubleshooting for hangs, "Job not found", and cross-test state pollution.
+description: E2E self-testing workflow for vibing.nvim using a separate Neovim instance controlled over RPC. Use when writing or debugging E2E tests, running `npm run test:e2e`, or executing the 3-try auto-fix rule after implementing a feature. Covers the spawn_nvim_instance/send_keys/wait_for_buffer_content/wait_for_assistant_turns/cleanup_instance helper API, test scenario checklist, and troubleshooting for hangs, "Job not found", and cross-test state pollution.
 ---
 
 # Self-Testing for vibing.nvim
@@ -16,6 +16,9 @@ Test Runner (Current Nvim)
   │   ├─ spawn_nvim_instance()  - Launch child Nvim via jobstart(rpc=true)
   │   ├─ send_keys()             - Send key input via rpcrequest
   │   ├─ wait_for_buffer_content() - Poll buffer TEXT until pattern matches
+  │   ├─ wait_for_assistant_turns() - A turn ran and did not fail (start here)
+  │   ├─ wait_for_assistant_text()  - Output only the model could produce
+  │   ├─ wait_for_response()        - Whole buffer, but aborts when the turn errors
   │   ├─ wait_for_buffer_name()    - Poll buffer NAME (use this for a filename)
   │   └─ cleanup_instance()      - Stop job
   │
@@ -38,6 +41,23 @@ npm test           # unit only (test:lua + test:node) — E2E is deliberately no
 VIBING_E2E=1 nvim --headless -u tests/minimal_init.lua \
   -c "PlenaryBustedFile tests/e2e/chat_jump_user_spec.lua"
 ```
+
+## Three Things the Child Neovim Needs
+
+Each of these silently produced a dead spec before — a spec that ran, printed nothing useful and
+was never fixed because nothing said it had failed.
+
+- **`--embed`.** `spawn_nvim_instance` starts the child with it, because `jobstart{ rpc = true }`
+  talks msgpack-RPC to its stdio. Without it every `rpcrequest` fails and the spec never gets past
+  its first wait — which is the state all four specs were in.
+- **`tests/e2e_init.lua`, not `tests/minimal_init.lua`.** The latter is the _parent's_ init (it
+  wires up plenary); a child started with it has vibing.nvim on `runtimepath` but never calls
+  `setup()`, so no `:Vibing*` command exists and `:VibingChat` does nothing. `e2e_init.lua` also
+  points `chat.save_dir` at a per-child temp directory, so running the suite stops writing real
+  chat files into the repository.
+- **`wait_for_buffer_name`, not `wait_for_buffer_content`, for a filename.** The latter matches
+  against buffer _text_, so `wait_for_buffer_content(inst, "%.md")` can never match. That one line,
+  repeated at six sites, is what every spec was actually failing on.
 
 ## Writing a Test
 
@@ -100,11 +120,70 @@ Send a key sequence via `rpcrequest`, e.g. `":VibingChat<CR>"`, `"G"`, `"iHello<
 ### `wait_for_buffer_content(instance, pattern, timeout)`
 
 Poll buffer content until `pattern` (Lua pattern) matches or `timeout` (ms) elapses. Returns
-`true`/`false`.
+`true`/`false`. Use it for buffer state vibing.nvim writes on its own — frontmatter, a rendered
+prompt, a slash command's confirmation. **Not** for anything that depends on a CLI turn.
+
+### Waits that depend on a CLI turn
+
+Three helpers, all returning `ok, reason` — pass `reason` straight into the assertion message —
+and all giving up the moment the turn writes `**Error:**`. Never use `wait_for_buffer_content`
+for something a turn has to produce: that error text lands under a normal `## … Assistant`
+header, so waiting for the header asserts nothing at all.
+
+#### `wait_for_assistant_turns(instance, count, timeout)`
+
+"A turn ran and did not fail." **Start here.** It does not depend on the model choosing to say any
+particular thing, so it cannot go flaky on a rewording.
+
+```lua
+local ok, reason = helper.wait_for_assistant_turns(nvim_instance, 1, 30000)
+assert.is_true(ok, reason or "the assistant should have answered")
+```
+
+#### `wait_for_assistant_text(instance, pattern, timeout)`
+
+For content only the model could have produced — the marker word in `plugin_dir_spec`, proving a
+skill's description reached it. Matches **only the text after the last `## … Assistant` header**.
+
+That scoping is the whole point. Match the whole buffer instead and a marker word your own prompt
+asks for is satisfied by the `## User` section, so the spec passes with the turn never having
+returned a byte. Put the marker somewhere the prompt does not repeat — a skill description, a
+file the model has to read.
+
+#### `wait_for_response(instance, pattern, timeout)`
+
+Whole buffer, for what the chat UI renders into the **user** section as a result of a turn: the
+tool-approval prompt, the `nvim_ask_user_question` choice list.
 
 ### `cleanup_instance(instance)`
 
 Stop the Neovim instance job. Always call this in `after_each()`.
+
+### Running as root
+
+`spawn_nvim_instance` sets `IS_SANDBOX=1` for the child when `getuid()` is 0. The E2E init pins
+`permissions.mode = "bypassPermissions"`, which becomes `--dangerously-skip-permissions`, and the
+CLI refuses that under root — so in a container every spec needing a real turn fails without it.
+It is gated on uid rather than set unconditionally: on a developer's own machine there is no root
+check to clear, only a safety check to lose.
+
+## Budget: a spec cannot outlast its harness
+
+plenary joins each spec **file** with one timeout — `timeout = 240000` in the `test:e2e` script.
+A spec still inside a `vim.wait` when that expires is killed mid-wait and prints **nothing**: no
+summary, no failure, no test count. So the sum of every wait a file can perform has to fit inside
+that budget, and `tests/e2e-timeout-gate.test.mjs` fails the build when it does not. Raise the
+script's `timeout` rather than trimming a wait that a real turn needs.
+
+## 3-Try Auto-Fix Rule
+
+After implementing a feature, run `npm run test:e2e`. If it fails: analyze the failure, apply a
+targeted fix (implementation or test), and re-run — up to 3 attempts, each based on new analysis of
+the latest failure. If it still fails after 3, stop and report to the user: the error, the 3 fixes
+tried, the suspected cause, and a suggested next step.
+
+**Do not proceed to code review while E2E tests are failing** — either fix them via the rule above
+or escalate.
 
 ## Test Scenarios to Cover
 
@@ -175,8 +254,8 @@ it("should export chat to markdown file via /export", function()
   helper.send_keys(nvim_instance, "<Esc>")
   helper.send_keys(nvim_instance, "<CR>")
 
-  local ok = helper.wait_for_buffer_content(nvim_instance, "## .* Assistant", 30000)
-  assert.is_true(ok, "Assistant should respond")
+  local ok, reason = helper.wait_for_assistant_turns(nvim_instance, 1, 30000)
+  assert.is_true(ok, reason or "Assistant should respond")
 
   helper.send_keys(nvim_instance, "G")
   helper.send_keys(nvim_instance, "i")

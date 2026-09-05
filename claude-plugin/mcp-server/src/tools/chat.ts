@@ -12,6 +12,18 @@ import { withRpcPort, requireRpcPort } from './common.js';
  */
 export const CHAT_POSITIONS = ['back', 'current', 'right', 'left', 'top', 'bottom'] as const;
 
+/**
+ * The four answers a tool-approval prompt accepts, mirroring `APPROVAL_OPTIONS` in
+ * `lua/vibing/infrastructure/rpc/handlers/permission.lua` and the vocabulary
+ * `presentation/chat/modules/approval_parser.lua` reads back out of the buffer.
+ */
+export const APPROVAL_ACTIONS = [
+  'allow_once',
+  'deny_once',
+  'allow_for_session',
+  'deny_for_session',
+] as const;
+
 export const chatTools: Tool[] = [
   {
     name: 'nvim_chat_create',
@@ -19,6 +31,9 @@ export const chatTools: Tool[] = [
       'Create a new vibing.nvim chat buffer and return its bufnr and chat file path. ' +
       'Use it to spawn worker chats you then drive with nvim_chat_send_message — the ' +
       'multi-agent orchestration workflow (see the vibing-orchestrate skill). ' +
+      'A chat is for work that must survive a turn, own a branch/worktree, or take a human ' +
+      "approval — one-shot delegated work inside your own turn is a subagent's job instead " +
+      '(see "Chat or subagent?" in the vibing-orchestrate skill). ' +
       'Leave position at its "back" default for workers: that creates the buffer without ' +
       "opening a window, so the user's layout is untouched. " +
       'The new chat starts empty and shares nothing with yours, so every message you send it ' +
@@ -48,6 +63,18 @@ export const chatTools: Tool[] = [
             'conversation, which a Neovim restart silently invalidates. Pass it whenever you ' +
             'create a worker — it records the relationship in both chat files, which survives ' +
             'renames and restarts. A number that names no chat buffer fails the call.',
+        },
+        task: {
+          type: 'string',
+          description:
+            'One free-text line describing what you are asking this new chat to do, e.g. ' +
+            '"PR #688 — review fixes, merge, cleanup". Recorded on YOUR OWN chat\'s frontmatter ' +
+            '(next to the new link this call creates), not on the new chat itself, and returned ' +
+            'by nvim_chat_list — so a restart or context compaction does not lose the ' +
+            'bufnr ↔ PR/issue ↔ assignment mapping for every worker you drive. ' +
+            'Requires from_bufnr: with no from_bufnr there is nowhere to record it and it is ' +
+            'dropped with a warning. Use the task argument on nvim_chat_send_message instead of ' +
+            'repeating this call to update the assignment later.',
         },
       }),
       required: requireRpcPort([]),
@@ -107,6 +134,16 @@ export const chatTools: Tool[] = [
             'into one turn. Use it for anything the other chat must receive whether or not it ' +
             'happens to be busy right now — a completion report to your orchestrator, an ' +
             'answer to a question it asked you.',
+        },
+        task: {
+          type: 'string',
+          description:
+            'Replace the one-line task you recorded for this chat when you created or last ' +
+            "briefed it (see nvim_chat_create's task argument) with the latest instruction — " +
+            'e.g. "PR #688 — now also update the docs". Recorded on YOUR OWN chat\'s frontmatter, ' +
+            'next to the link for this target, and requires from_bufnr for the same reason. Omit ' +
+            'it for an ordinary follow-up (a status check, an approval, "go ahead") so it does ' +
+            'not overwrite a good assignment summary with something that is not one.',
         },
       }),
       // Neither bufnr nor file_path is required on its own; the handler enforces that exactly one
@@ -178,6 +215,80 @@ export const chatTools: Tool[] = [
         },
       }),
       required: requireRpcPort(['chat_bufnr', 'questions']),
+    },
+  },
+  {
+    name: 'nvim_chat_answer_approval',
+    description:
+      "Answer another chat's pending tool-approval prompt — the one that leaves it stuck at " +
+      'status waiting_approval, unable to continue or even to report back. Read what it is ' +
+      'stuck on with nvim_get_buffer first; the prompt names the tool and its input. ' +
+      'This is off unless the user turned it on ' +
+      '(agent.orchestration.delegated_approval), and the call fails with an explanation when it ' +
+      'is off — then the only thing to do is tell the user which chat is blocked and on what. ' +
+      'When it is on, you are standing in for the user on a decision they asked to be consulted ' +
+      'about: answer only when the tool is plainly within the task you briefed that chat with, ' +
+      'and put anything else to the user instead. Your answer is recorded in that chat as coming ' +
+      'from you. It can only be answered once, and only while it is pending.',
+    inputSchema: {
+      type: 'object',
+      properties: withRpcPort({
+        file_path: {
+          type: 'string',
+          description:
+            'Chat file of the blocked chat (git-root-relative, absolute, or ~-prefixed). ' +
+            'Opened in the background if it is not already open. Prefer this over bufnr.',
+        },
+        bufnr: {
+          type: 'number',
+          description:
+            'Buffer number of the blocked chat. Only valid within this Neovim session — use ' +
+            'file_path instead when you have one.',
+        },
+        action: {
+          type: 'string',
+          enum: [...APPROVAL_ACTIONS],
+          description:
+            'Which of the four options to choose. The "_once" pair applies to this one call; ' +
+            'the "_for_session" pair is written into that chat\'s frontmatter and applies to ' +
+            'every later call in it, so prefer allow_once unless the chat will clearly need the ' +
+            'tool repeatedly.',
+        },
+        from_bufnr: {
+          type: 'number',
+          description:
+            'Your own chat: the exact "Current vibing.nvim chat buffer number" from your ' +
+            'system prompt THIS turn — never a number remembered from earlier in the ' +
+            'conversation, which a Neovim restart silently invalidates. Required here (unlike ' +
+            'on the other chat tools): answering an approval is recorded as your decision, and ' +
+            'a call that cannot say whose decision it was is refused.',
+        },
+      }),
+      // bufnr/file_path stay out of the required list for the same reason as on
+      // nvim_chat_send_message: the handler enforces that exactly one arrives, and listing both
+      // as required would read as "pass both".
+      required: requireRpcPort(['action', 'from_bufnr']),
+    },
+  },
+  {
+    name: 'nvim_chat_list',
+    description:
+      'List every open vibing.nvim chat buffer with its status in one call, instead of polling ' +
+      'each with nvim_get_buffer one at a time. For each chat, reports bufnr, file_path, ' +
+      'chat_status (responding/idle/waiting_approval/asked_question/error), context_size (the ' +
+      "chat's last measured context size in tokens, or omitted if it has not completed a turn " +
+      'yet), updated_at (frontmatter timestamp of the last write), orchestrated_by (the ' +
+      "chat file paths of this chat's orchestrator(s), if any), and task (the one-line " +
+      "assignment its orchestrator gave it via nvim_chat_create/nvim_chat_send_message's task " +
+      "argument, projected from the orchestrator's own frontmatter — present only when that " +
+      'orchestrator is also open in this session, omitted otherwise). Use this to check on ' +
+      'several worker chats at once in a multi-agent workflow (see the vibing-orchestrate ' +
+      'skill). Only chats currently open in this Neovim session are listed — a chat file that ' +
+      'was never opened this session is not included.',
+    inputSchema: {
+      type: 'object',
+      properties: withRpcPort({}),
+      required: [],
     },
   },
 ];

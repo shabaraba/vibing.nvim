@@ -25,6 +25,7 @@ const READ_ONLY_TOOLS = [
   'nvim_get_visual_selection',
   'nvim_get_window_info',
   'nvim_get_window_view',
+  'nvim_chat_list',
   'nvim_list_buffers',
   'nvim_list_tabpages',
   'nvim_list_windows',

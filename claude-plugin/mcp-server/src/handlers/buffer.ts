@@ -1,8 +1,10 @@
 import { callNeovim } from '../rpc.js';
 import {
+  validateBoolean,
   validateBufferParams,
   validateChatTarget,
   validateFilePath,
+  validatePositiveInteger,
   validateRequired,
 } from '../validation/schema.js';
 
@@ -39,31 +41,48 @@ const CHAT_STATUS_TEXT: Record<string, string> = {
  * bufnr only means anything in the session that issued it. The Lua side opens the chat if it is
  * closed (`application/chat/chat_locator.lua`).
  *
- * @param args - An object with `bufnr` or `file_path` naming what to retrieve, and optional
- *   `rpc_port`.
+ * A large buffer (a long-running chat, easily hundreds of thousands of lines) can be read as just
+ * its tail (`tail_lines`) or just its last section (`last_section`, cut at the last `## ...`
+ * heading) instead of in full — reading "all of it" is the same as "none of it" once it no longer
+ * fits (#694). Whichever way it was asked for, the result reports the buffer's real total line
+ * count so the caller still learns the overall scale even when it only saw the tail.
+ *
+ * @param args - An object with `bufnr` or `file_path` naming what to retrieve, optional
+ *   `tail_lines` / `last_section` to window a large buffer, and optional `rpc_port`.
  * @returns An object with `content` containing the buffer's contents (lines joined with `\n`),
- *   plus a chat-status node when the buffer is a vibing.nvim chat.
+ *   plus a chat-status node when the buffer is a vibing.nvim chat, plus a total-line-count node
+ *   when the result was windowed down from the buffer's full size.
  */
 export async function handleGetBuffer(args: any) {
   // Collapse an explicit null to "not given", matching nvim_chat_send_message.
   const bufnr = args?.bufnr ?? undefined;
   const file_path = args?.file_path ?? undefined;
+  const tail_lines = args?.tail_lines ?? undefined;
+  const last_section = args?.last_section ?? undefined;
 
   if (bufnr !== undefined) {
     validateBufferParams({ bufnr });
+  }
+  if (tail_lines !== undefined) {
+    validatePositiveInteger(tail_lines, 'tail_lines');
+  }
+  if (last_section !== undefined) {
+    validateBoolean(last_section, 'last_section');
   }
   // Neither is fine here — it falls back to the current buffer, unlike a send.
   validateChatTarget({ bufnr, file_path });
   const result = await callNeovim(
     'buf_get_lines',
-    { bufnr, file_path, include_chat_status: true },
+    { bufnr, file_path, include_chat_status: true, tail_lines, last_section },
     args?.rpc_port
   );
 
-  // A Neovim running an older plugin version ignores include_chat_status and answers with the
-  // bare line array this tool used to get.
+  // A Neovim running an older plugin version ignores include_chat_status (and, with it,
+  // tail_lines/last_section/total_lines) and answers with the bare line array this tool used to
+  // get.
   const lines: string[] = Array.isArray(result) ? result : result.lines;
   const state: string | undefined = Array.isArray(result) ? undefined : result.chat_status;
+  const totalLines: number | undefined = Array.isArray(result) ? undefined : result.total_lines;
 
   // Refuse rather than hand back the wrong buffer's text. A Neovim too old to know `file_path`
   // ignores it and answers for `bufnr or 0` — the current buffer — which reads as a perfectly
@@ -77,6 +96,14 @@ export async function handleGetBuffer(args: any) {
   }
 
   const content = [{ type: 'text', text: lines.join('\n') }];
+  if (totalLines !== undefined && totalLines !== lines.length) {
+    // Only reported when the result was actually windowed down — a full read already says its
+    // own size, and repeating it would just be noise.
+    content.push({
+      type: 'text',
+      text: `Showing ${lines.length} of ${totalLines} total lines in this buffer.`,
+    });
+  }
   if (state) {
     // A status this server has no wording for still gets a line. Rendering nothing is the worst
     // available answer for `error` or `waiting_approval` — silence reads as a healthy chat, which

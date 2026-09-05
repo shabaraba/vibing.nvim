@@ -15,6 +15,7 @@
 local PendingResume = require("vibing.infrastructure.storage.pending_resume")
 local RateLimit = require("vibing.core.utils.rate_limit")
 local LimitState = require("vibing.infrastructure.storage.limit_state")
+local When = require("vibing.core.utils.when")
 
 local M = {}
 
@@ -139,6 +140,92 @@ local function trim_empty_trailing_user_section(bufnr)
   vim.api.nvim_buf_set_lines(bufnr, header_idx - 1, -1, false, {})
 end
 
+--- Append one line noting that auto-resume gave up, placed right before the trailing header so
+--- whatever that section already holds (an empty draft, or a parked continuation) is untouched.
+--- Not a new request: this only edits the buffer text, since starting a turn here would be
+--- exactly the unattended token spend the retry budget exists to bound (#698).
+--- @param bufnr number
+--- @param text string
+local function append_gave_up_notice(bufnr, text)
+  local Timestamp = require("vibing.core.utils.timestamp")
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+
+  local header_idx = nil
+  for i = #lines, 1, -1 do
+    if Timestamp.is_header(lines[i]) then
+      header_idx = i
+      break
+    end
+  end
+
+  local insert_at = header_idx and (header_idx - 1) or #lines
+  vim.api.nvim_buf_set_lines(bufnr, insert_at, insert_at, false, { "", text, "" })
+end
+
+--- Tell a chat, and its orchestrator if it has one, that auto-resume gave up on it (#698).
+---
+--- The chat's own line is the buffer edit above, not a new request. The orchestrator side does
+--- start a turn on it, and deliberately so: a chat auto-resume has given up on will never resume
+--- itself, which is the same "cannot leave this stop on its own" shape `completion_notifier`
+--- already delivers unconditionally for `asked_question` / `waiting_approval` / `error` — holding
+--- it behind `chat_notifications.enabled` would leave an orchestrated worker parked forever with
+--- nothing saying so.
+--- @param chat_file_path string
+--- @param max_retries number
+local function announce_gave_up(chat_file_path, max_retries)
+  local chat_buf, err = resolve_chat_buffer(chat_file_path)
+  if not chat_buf then
+    -- The one place in this module that gave up silently before #698's own fix — a chat file
+    -- deleted out from under a parked entry, or a buffer that failed to attach, would otherwise
+    -- leave no notice anywhere, which is exactly the failure this function exists to remove.
+    vim.notify(
+      string.format(
+        "[vibing] Could not write the auto-resume give-up notice for %s: %s",
+        vim.fn.fnamemodify(chat_file_path, ":t"),
+        err
+      ),
+      vim.log.levels.WARN
+    )
+    return
+  end
+
+  local message = string.format(
+    "> auto-resume: retry budget exhausted (max_retries=%d). Not resuming automatically.",
+    max_retries
+  )
+
+  local bufnr = chat_buf:get_buffer()
+  append_gave_up_notice(bufnr, message)
+  local saved, save_err = require("vibing.presentation.chat.modules.file_manager").save_buffer(bufnr)
+  if not saved then
+    vim.notify(
+      string.format("[vibing] Auto-resume give-up notice written but not saved: %s", save_err),
+      vim.log.levels.WARN
+    )
+  end
+
+  local parents = chat_buf:get_frontmatter_list("orchestrated_by")
+  if not parents or #parents == 0 then
+    return
+  end
+
+  local MessageHandler = require("vibing.infrastructure.rpc.handlers.message")
+  for _, parent_path in ipairs(parents) do
+    local ok, err = pcall(MessageHandler.send_message, {
+      file_path = parent_path,
+      message = message,
+      from_bufnr = bufnr,
+      queue_if_busy = true,
+    })
+    if not ok then
+      vim.notify(
+        string.format("[vibing] Could not notify orchestrator %s: %s", parent_path, tostring(err)),
+        vim.log.levels.WARN
+      )
+    end
+  end
+end
+
 --- Whether a due scheduled request should actually go out.
 --- Split from fire_scheduled so the rules are testable without a live chat buffer.
 --- @param body string|nil The chat's unsent `## User` body
@@ -254,6 +341,7 @@ local function fire(chat_file_path, entry)
   -- here straight from restore(), which never consults it.
   if (current.retry_count or 0) >= (opts.max_retries or 1) then
     PendingResume.remove(chat_file_path)
+    announce_gave_up(chat_file_path, opts.max_retries or 1)
     return
   end
 
@@ -441,17 +529,14 @@ function M.schedule_request(chat_file_path, fire_at, opts)
 end
 
 --- Format a second count as a short human-readable duration
+---
+--- Kept as a name on this module because `init.lua` and `buffer.lua` reach for it here; the
+--- implementation moved to `core/utils/when.lua` so `core/` callers can share it without
+--- requiring an application module.
 --- @param seconds number
 --- @return string
 function M.format_duration(seconds)
-  if seconds < 60 then
-    return seconds .. "s"
-  end
-  local minutes = math.floor(seconds / 60)
-  if minutes < 60 then
-    return minutes .. "m"
-  end
-  return string.format("%dh%02dm", math.floor(minutes / 60), minutes % 60)
+  return When.format_duration(seconds)
 end
 
 --- Called when a response comes back rejected by a usage limit.
@@ -486,6 +571,7 @@ function M.on_rate_limited(chat_file_path, info)
       ),
       vim.log.levels.WARN
     )
+    announce_gave_up(chat_file_path, max_retries)
     return
   end
 

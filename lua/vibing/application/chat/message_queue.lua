@@ -12,10 +12,15 @@
 ---- 通知 — 「あのチャットが止まった、読みに行け」（`completion_notifier` の watchdog）
 ---- 本文 — 送信元のテキストそのもの（`nvim_chat_send_message` の `queue_if_busy`）
 ---
----キューは**インメモリのみ**。Neovim が落ちればワーカーチャットも道連れなので、永続化に意味がない。
+---生きた待ち合わせはインメモリの `pending` が唯一の実体。ただし宛先が使用量リミットで
+---数時間パークされている間（`pending_resume.lua` が前提にしている状況そのもの）に Neovim が
+---再起動されると、このテーブルは道連れで消える。`message_queue_store` へは変更のたびに
+---書き出し、`M.restore()` が起動時にそこから作り直す — キューが「待てば解ける」契約を
+---Neovim の寿命ではなく相手チャットの寿命に合わせるための、後付けの複製でしかない
 local M = {}
 
 local notify = require("vibing.core.utils.notify")
+local Store = require("vibing.infrastructure.storage.message_queue_store")
 
 ---1バッファに溜められる上限。超えたら**捨てずに拒否する**: 捨てると報告が黙って消え、
 ---それはこのモジュールが防ぐために存在しているものそのものになる
@@ -30,9 +35,87 @@ local WARN_TITLE = "Chat Delivery"
 ---  （`ChatBuffer:get_stop_reason()`）。読み手が `nvim_get_buffer` を1往復せずに
 ---  「答えれば動く」のか「ユーザーにしか外せない」のかを判断できるようにするためで、
 ---  普通に止まっただけの watchdog 通知では nil
+---@field task string? 本文のみ。この送信元が指す`task`の更新（#696）。同じ送信元から複数
+---  積まれている場合は`write_links`が最後の値を採用する（＝最新の指示が勝つ）
 
 ---@type table<number, Vibing.Application.MessageQueue.Item[]>
 local pending = {}
+
+---@param bufnr number?
+---@return string?
+local function file_path_of(bufnr)
+  if not (type(bufnr) == "number" and vim.api.nvim_buf_is_valid(bufnr)) then
+    return nil
+  end
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  return name ~= "" and name or nil
+end
+
+---`to_bufnr` のキューをディスクに書く（空/nilなら消す）
+---
+---宛先に名前が無ければ書けない（再起動後に開き直す先が無い）。それは即配達できるチャット
+---（`:VibingChat` で作った直後、まだ保存前）が普通に持つ状態なので、警告はしない
+---@param to_bufnr number
+local function persist(to_bufnr)
+  local to_path = file_path_of(to_bufnr)
+  if not to_path then
+    return
+  end
+
+  local queue = pending[to_bufnr]
+  if not queue or #queue == 0 then
+    Store.put(to_path, nil)
+    return
+  end
+
+  local items = {}
+  for _, item in ipairs(queue) do
+    table.insert(
+      items,
+      { body = item.body, reason = item.reason, task = item.task, from_file_path = file_path_of(item.bufnr) }
+    )
+  end
+  Store.put(to_path, items)
+end
+
+---ファイルパスから、この Neovim の中でのバッファ番号を取り戻す
+---
+---`resolve_chat_buffer`（`auto_resume.lua`）と同じ手順: 開いていなければ読み込み、
+---chat buffer として登録されていなければ attach する。宛先の解決に失敗したら復元自体を諦めるが、
+---送信元の解決に失敗しても本文は届けられる（`forget` が送信元を落とすのと同じ扱いで、
+---呼び出し側が nil を匿名として受け取る）
+---@param file_path string
+---@return number? bufnr
+local function resolve_bufnr(file_path)
+  if vim.fn.filereadable(file_path) == 0 then
+    return nil
+  end
+
+  local bufnr = vim.fn.bufnr(file_path)
+  if bufnr == -1 then
+    local ok, added = pcall(vim.fn.bufadd, file_path)
+    if not ok or not added or added == 0 then
+      return nil
+    end
+    bufnr = added
+  end
+  pcall(vim.fn.bufload, bufnr)
+
+  local view = require("vibing.presentation.chat.view")
+  if not view.get_chat_buffer(bufnr) then
+    -- 戻り値を見ないと、attach が失敗した（壊れた frontmatter で parse が例外を投げた等）
+    -- バッファも「解決できた」ことになる。呼び出し元の `restore()` はそれを配達可能と誤認し、
+    -- 直後の `flush()` が「追跡されていないチャットバッファ」に落ちて警告つきでキューを
+    -- 消す — 本来は「今回は無理だったので次回また試す」であるべき場面で、実際にディスク上の
+    -- エントリまで失う
+    local ok, attached = pcall(view.attach_to_buffer, bufnr, file_path)
+    if not ok or not attached then
+      return nil
+    end
+  end
+
+  return vim.api.nvim_buf_is_valid(bufnr) and bufnr or nil
+end
 
 ---@param to_bufnr number
 ---@param predicate fun(item: Vibing.Application.MessageQueue.Item): boolean
@@ -51,6 +134,7 @@ local function remove_where(to_bufnr, predicate)
   if #queue == 0 then
     pending[to_bufnr] = nil
   end
+  persist(to_bufnr)
 end
 
 ---配達される本文について、オーケストレーション関係を frontmatter に書く
@@ -64,13 +148,25 @@ end
 local function write_links(queue, to_bufnr)
   local OrchestrationLink = require("vibing.application.chat.orchestration_link")
   local seen = {}
+  local senders = {}
+  local last_task = {}
   for _, item in ipairs(queue) do
-    -- 同じ送信元からの複数の本文はリンク1本。`link` 自身も重複を弾くが、そこに至るまでに
-    -- frontmatter を2回パースするので手前で止める（orchestration_link.lua の早期returnを参照）
-    if item.body and item.bufnr and not seen[item.bufnr] then
-      seen[item.bufnr] = true
-      OrchestrationLink.link_or_warn(item.bufnr, to_bufnr)
+    if item.body and item.bufnr then
+      -- 同じ送信元からの複数の本文はリンク1本。`link` 自身も重複を弾くが、そこに至るまでに
+      -- frontmatter を2回パースするので手前で止める（orchestration_link.lua の早期returnを参照）
+      if not seen[item.bufnr] then
+        seen[item.bufnr] = true
+        table.insert(senders, item.bufnr)
+      end
+      -- taskは「最後に積まれた値」を採用する。同じ相手に複数回積まれるうちの最新の指示が
+      -- 勝つべきで、先に積まれた分に上書きされてはいけない
+      if item.task and item.task ~= "" then
+        last_task[item.bufnr] = item.task
+      end
     end
+  end
+  for _, from_bufnr in ipairs(senders) do
+    OrchestrationLink.link_or_warn(from_bufnr, to_bufnr, last_task[from_bufnr])
   end
 end
 
@@ -88,6 +184,7 @@ function M.enqueue_notification(to_bufnr, done_bufnr, reason)
   for _, item in ipairs(queue) do
     if not item.body and item.bufnr == done_bufnr then
       item.reason = reason or item.reason
+      persist(to_bufnr)
       return
     end
   end
@@ -108,15 +205,17 @@ function M.enqueue_notification(to_bufnr, done_bufnr, reason)
 
   table.insert(queue, { bufnr = done_bufnr, reason = reason })
   pending[to_bufnr] = queue
+  persist(to_bufnr)
 end
 
 ---本文を積む
 ---@param to_bufnr number
 ---@param from_bufnr number?
 ---@param body string
+---@param task string? #696: 送信元の`orchestrated`エントリを更新する新しい指示
 ---@return boolean ok
 ---@return string? err 積まなかった理由。送信元に返して伝える
-function M.enqueue_message(to_bufnr, from_bufnr, body)
+function M.enqueue_message(to_bufnr, from_bufnr, body, task)
   -- 空の本文は待っても送れるようにならない。積めば `ProgrammaticSender` が配達時に弾き、
   -- そのときにはもう送信元に伝える先がない
   if type(body) ~= "string" or vim.trim(body) == "" then
@@ -134,8 +233,9 @@ function M.enqueue_message(to_bufnr, from_bufnr, body)
       )
   end
 
-  table.insert(queue, { bufnr = from_bufnr, body = body })
+  table.insert(queue, { bufnr = from_bufnr, body = body, task = task })
   pending[to_bufnr] = queue
+  persist(to_bufnr)
   return true
 end
 
@@ -179,13 +279,29 @@ function M.flush(to_bufnr)
   end
 
   if not vim.api.nvim_buf_is_valid(to_bufnr) then
+    -- 通常はここより先に `BufDelete`/`BufWipeout` の `forget` がキューごと落としている。
+    -- それでも到達したなら想定外の消え方なので、他の上限落ちと同じく黙らせない
+    notify.warn(
+      string.format("Chat %d vanished without a BufDelete event; dropping %d queued item(s) for it", to_bufnr, #queue),
+      WARN_TITLE
+    )
     pending[to_bufnr] = nil
+    persist(to_bufnr)
     return false
   end
 
   local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(to_bufnr)
   if not chat_buf then
+    notify.warn(
+      string.format(
+        "Chat %d is not a tracked chat buffer; dropping %d queued item(s) for it",
+        to_bufnr,
+        #queue
+      ),
+      WARN_TITLE
+    )
     pending[to_bufnr] = nil
+    persist(to_bufnr)
     return false
   end
 
@@ -225,6 +341,7 @@ function M.flush(to_bufnr)
   -- 失敗した配達は二度と再現しない。残しておけば次の完了イベントで作り直しなしに再試行できる
   if ok and result and result.success then
     pending[to_bufnr] = nil
+    persist(to_bufnr)
 
     -- 送信が受理されたことと、ターンが始まったことは別。`ChatBuffer:send_message()` が返すのは
     -- 「リクエストとして扱ったか」で、リミット中の予約（`_try_schedule_instead_of_send`）でも、
@@ -261,7 +378,14 @@ function M.forget(bufnr)
     return
   end
 
+  -- パスは消える前につかむ。`BufWipeout` まで進んだあとでは名前が取れず、そうなると
+  -- ディスク上の実体だけが取り残されて次回起動で作り直る（実害は小さい: チャットファイル
+  -- 自体は消えていないので、単にこのバッファを閉じた事実より1つ古い状態が復元されるだけ）
+  local forgotten_path = file_path_of(bufnr)
   pending[bufnr] = nil
+  if forgotten_path then
+    Store.put(forgotten_path, nil)
+  end
 
   for to_bufnr, queue in pairs(pending) do
     for _, item in ipairs(queue) do
@@ -270,9 +394,72 @@ function M.forget(bufnr)
       end
     end
 
+    -- `item.bufnr` の匿名化も含めて、この時点の queue をまとめてディスクに書き直す
+    -- （`remove_where` 自身が persist する）
     remove_where(to_bufnr, function(item)
       return not item.body and item.bufnr == bufnr
     end)
+  end
+end
+
+---再起動を跨いで残っていた配達待ちを、いま開いているプロジェクトぶん読み込み直す
+---
+---宛先だけを見る。積んだ本文の送信元が復元できなくても本文そのものは届けられる（`forget` が
+---送信元だけ匿名化するのと同じ理由）が、宛先が復元できないキューは配る場所が無いので諦める —
+---そのチャットファイルごと消えている（削除・リネーム）なら、次回起動でも変わらないので
+---ディスクからも落とす。attach 失敗などの一時的な理由（`resolve_bufnr` 参照）とは区別する。
+---
+---**通知アイテムは送信元の匿名化ができない。** `bufnr` は本文では「送信元」（無くても配達できる）
+---だが、通知では「止まったチャット」そのものを指す必須フィールド（`enqueue_notification` 参照）。
+---解決できないまま `bufnr = nil` で積むと、`delivery_message.lua` がそれを表示しようとして
+---`vim.api.nvim_buf_is_valid(nil)` 等で失敗し、`flush` は毎回失敗として扱う——同じ宛先に
+---積まれた他のメッセージ・通知まで巻き込んで二度と配れなくなる。解決できない通知はここで
+---捨てる（`forget` が消えた相手の通知を捨てるのと同じ扱い）。
+---
+---復元した宛先はこの時点でまだ何のターンも走っていないので、その場で `flush` を試す。
+---ためておいて次の完了イベントを待つだけだと、再起動直後に誰の完了イベントも来なければ
+---二度と試されない
+---@param cwd string? テスト用。省略時は現在のプロジェクト（`pending_resume.lua` の enumerate 系と同じ）
+function M.restore(cwd)
+  local entries = Store.load(cwd)
+  if next(entries) == nil then
+    return
+  end
+
+  local restored = {}
+  for to_path, items in pairs(entries) do
+    if type(items) == "table" and #items > 0 then
+      local to_bufnr = resolve_bufnr(to_path)
+      if to_bufnr then
+        local queue = {}
+        for _, stored in ipairs(items) do
+          if type(stored) == "table" then
+            if stored.body then
+              table.insert(queue, {
+                bufnr = stored.from_file_path and resolve_bufnr(stored.from_file_path) or nil,
+                body = stored.body,
+                task = stored.task,
+              })
+            else
+              local about_bufnr = stored.from_file_path and resolve_bufnr(stored.from_file_path) or nil
+              if about_bufnr then
+                table.insert(queue, { bufnr = about_bufnr, reason = stored.reason })
+              end
+            end
+          end
+        end
+        if #queue > 0 then
+          pending[to_bufnr] = queue
+          table.insert(restored, to_bufnr)
+        end
+      elseif vim.fn.filereadable(to_path) == 0 then
+        Store.put(to_path, nil, cwd)
+      end
+    end
+  end
+
+  for _, to_bufnr in ipairs(restored) do
+    M.flush(to_bufnr)
   end
 end
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { allTools } from '../tools/index.js';
-import { CHAT_POSITIONS } from '../tools/chat.js';
+import { APPROVAL_ACTIONS, CHAT_POSITIONS } from '../tools/chat.js';
 import { handlers } from '../handlers/index.js';
 import * as rpc from '../rpc.js';
 
@@ -116,6 +116,15 @@ describe('chat tools (worktree redesign)', () => {
     expect(rpc.callNeovim).not.toHaveBeenCalled();
   });
 
+  it('nvim_chat_create rejects a task containing a line break instead of forwarding it', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 7 });
+
+    await expect(
+      handlers.nvim_chat_create({ rpc_port: 9878, task: 'PR #688\n-- review' })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
   it('registers nvim_chat_send_message with rpc_port required', () => {
     const tool = allTools.find((t) => t.name === 'nvim_chat_send_message');
     const inputSchema = tool?.inputSchema as { required?: string[] };
@@ -157,6 +166,53 @@ describe('chat tools (worktree redesign)', () => {
       },
       9878
     );
+  });
+
+  it('registers a task property on nvim_chat_send_message (#696 follow-up)', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_send_message');
+    const inputSchema = tool?.inputSchema as { properties: Record<string, unknown> };
+    expect(inputSchema.properties.task).toBeDefined();
+  });
+
+  it('nvim_chat_send_message forwards task to the send_message RPC call (#696 follow-up)', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 14 });
+
+    await handlers.nvim_chat_send_message({
+      rpc_port: 9878,
+      bufnr: 14,
+      message: 'now also update the docs',
+      from_bufnr: 12,
+      task: 'PR #688 -- now also update the docs',
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'send_message',
+      {
+        bufnr: 14,
+        file_path: undefined,
+        message: 'now also update the docs',
+        sender: undefined,
+        from_bufnr: 12,
+        queue_if_busy: undefined,
+        task: 'PR #688 -- now also update the docs',
+      },
+      9878
+    );
+  });
+
+  it('nvim_chat_send_message rejects a task containing a line break instead of forwarding it', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 14 });
+
+    await expect(
+      handlers.nvim_chat_send_message({
+        rpc_port: 9878,
+        bufnr: 14,
+        message: 'do the thing',
+        from_bufnr: 12,
+        task: 'line one\nline two',
+      })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
   });
 
   it('nvim_chat_send_message still sends when from_bufnr is omitted', async () => {
@@ -288,6 +344,102 @@ describe('chat tools (worktree redesign)', () => {
     expect(inputSchema.required).toContain('message');
   });
 
+  it('registers nvim_chat_answer_approval with action and from_bufnr required', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_answer_approval');
+    const inputSchema = tool?.inputSchema as {
+      required?: string[];
+      properties: Record<string, any>;
+    };
+
+    expect(tool).toBeDefined();
+    expect(inputSchema.required).toContain('rpc_port');
+    expect(inputSchema.required).toContain('action');
+    // Unlike the other two chat tools, this one cannot be called anonymously: it removes a
+    // permission gate, so the answer has to be attributable to a chat.
+    expect(inputSchema.required).toContain('from_bufnr');
+    // Same "name the target once" rule as nvim_chat_send_message.
+    expect(inputSchema.required).not.toContain('bufnr');
+    expect(inputSchema.required).not.toContain('file_path');
+    expect(inputSchema.properties.action.enum).toEqual([...APPROVAL_ACTIONS]);
+  });
+
+  it('nvim_chat_answer_approval forwards the action and reports the tool it answered', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({
+      success: true,
+      bufnr: 21,
+      tool: 'Bash',
+      action: 'allow_once',
+    });
+
+    const result = await handlers.nvim_chat_answer_approval({
+      rpc_port: 9878,
+      file_path: '.vibing/chat/worker.md',
+      action: 'allow_once',
+      from_bufnr: 12,
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'answer_approval',
+      {
+        bufnr: undefined,
+        file_path: '.vibing/chat/worker.md',
+        action: 'allow_once',
+        from_bufnr: 12,
+      },
+      9878
+    );
+    expect(result.content[0].text).toContain('Bash');
+    expect(result._meta.bufnr).toBe(21);
+  });
+
+  it('nvim_chat_answer_approval refuses an action outside the four the prompt offers', async () => {
+    await expect(
+      handlers.nvim_chat_answer_approval({
+        rpc_port: 9878,
+        bufnr: 21,
+        action: 'allow',
+        from_bufnr: 12,
+      })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
+  it('nvim_chat_answer_approval refuses a call that names no chat as the answerer', async () => {
+    await expect(
+      handlers.nvim_chat_answer_approval({ rpc_port: 9878, bufnr: 21, action: 'allow_once' })
+    ).rejects.toThrow();
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
+  it('nvim_chat_answer_approval refuses a call that names the target twice, or not at all', async () => {
+    await expect(
+      handlers.nvim_chat_answer_approval({
+        rpc_port: 9878,
+        bufnr: 21,
+        file_path: '.vibing/chat/worker.md',
+        action: 'allow_once',
+        from_bufnr: 12,
+      })
+    ).rejects.toThrow();
+
+    await expect(
+      handlers.nvim_chat_answer_approval({ rpc_port: 9878, action: 'allow_once', from_bufnr: 12 })
+    ).rejects.toThrow();
+
+    expect(rpc.callNeovim).not.toHaveBeenCalled();
+  });
+
+  it('tells the model the delegated-approval gate exists, so a refusal is not a surprise', () => {
+    // The Lua side refuses unless agent.orchestration.delegated_approval is on. A description
+    // that does not say so turns every blocked worker into one wasted call before the model does
+    // the right thing anyway.
+    const description =
+      allTools.find((t) => t.name === 'nvim_chat_answer_approval')?.description ?? '';
+
+    expect(description).toContain('delegated_approval');
+    expect(description).toContain('waiting_approval');
+  });
+
   it('nvim_chat_create forwards from_bufnr so a worker is linked at creation', async () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 14, file_path: '/tmp/worker.md' });
 
@@ -296,6 +448,33 @@ describe('chat tools (worktree redesign)', () => {
     expect(rpc.callNeovim).toHaveBeenCalledWith(
       'create_chat',
       { position: undefined, working_dir: undefined, from_bufnr: 12 },
+      9878
+    );
+  });
+
+  it('registers a task property on nvim_chat_create', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_create');
+    const inputSchema = tool?.inputSchema as { properties: Record<string, unknown> };
+    expect(inputSchema.properties.task).toBeDefined();
+  });
+
+  it('nvim_chat_create forwards task to the create_chat RPC call (#696)', async () => {
+    // Where task actually lands (the caller's own orchestrated entry, not the new chat) is a
+    // Lua-side concern (orchestrated_entry.lua) -- this handler only has to forward the argument.
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 14, file_path: '/tmp/worker.md' });
+
+    await handlers.nvim_chat_create({
+      rpc_port: 9878,
+      task: 'PR #688 — review fixes, merge, cleanup',
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'create_chat',
+      {
+        position: undefined,
+        working_dir: undefined,
+        task: 'PR #688 — review fixes, merge, cleanup',
+      },
       9878
     );
   });
@@ -358,5 +537,52 @@ describe('chat tools (worktree redesign)', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toBe('no active chat');
+  });
+
+  it('registers nvim_chat_list as a read, with no required arguments', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_list');
+    expect(tool).toBeDefined();
+    const inputSchema = tool?.inputSchema as {
+      required?: string[];
+      properties: Record<string, unknown>;
+    };
+    // A read, like nvim_list_buffers: rpc_port falls back to the instance registry rather than
+    // being required (see requireRpcPort's doc comment in ../tools/common.ts).
+    expect(inputSchema.required).toEqual([]);
+    expect(inputSchema.properties.rpc_port).toBeDefined();
+  });
+
+  it('has a handler for nvim_chat_list', () => {
+    expect(handlers.nvim_chat_list).toBeDefined();
+    expect(typeof handlers.nvim_chat_list).toBe('function');
+  });
+
+  it('nvim_chat_list forwards rpc_port and returns the chat list as JSON text', async () => {
+    const chats = [
+      { bufnr: 3, file_path: '/tmp/a.md', chat_status: 'idle', orchestrated_by: [] },
+      {
+        bufnr: 7,
+        file_path: '/tmp/b.md',
+        chat_status: 'responding',
+        orchestrated_by: ['/tmp/a.md'],
+      },
+    ];
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ chats });
+
+    const result = await handlers.nvim_chat_list({ rpc_port: 9878 });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith('list_chats', {}, 9878);
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.chats).toEqual(chats);
+  });
+
+  it('nvim_chat_list works without rpc_port, falling back to the instance registry', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ chats: [] });
+
+    const result = await handlers.nvim_chat_list({});
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith('list_chats', {}, undefined);
+    expect(result.isError).toBeUndefined();
   });
 });
