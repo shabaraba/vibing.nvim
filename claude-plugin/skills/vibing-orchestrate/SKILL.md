@@ -20,16 +20,16 @@ most expensive mistake a postmortem (#692) found was broadcasting `/simplify` to
 chats — each spawns its own subagents, so that's the chat count times the subagent count, and it
 was one of two runs that hit the session limit. Decide this before creating anything.
 
-| | Subagent | Orchestrated chat |
-| --- | --- | --- |
-| Lifetime | Dies with the parent turn | Survives restarts |
-| Output | One final text blob | Its own transcript |
-| Visibility | None | Buffer can be opened and read, mid-task |
-| Approval prompts | Can't clear one (turn just fails) | Can handle questions and approvals |
-| Owns a branch/worktree | No | Yes, via `working_dir` frontmatter |
-| Survives a rate limit | No | Yes (auto_resume / scheduled resend) |
-| Spin-up cost | Low, no protocol | Floor ~61k tokens + report contract + notifications |
-| Coordination can fail | No — the return value is structurally guaranteed | Yes — this run failed 9 of 18 dispatches |
+|                        | Subagent                                         | Orchestrated chat                                   |
+| ---------------------- | ------------------------------------------------ | --------------------------------------------------- |
+| Lifetime               | Dies with the parent turn                        | Survives restarts                                   |
+| Output                 | One final text blob                              | Its own transcript                                  |
+| Visibility             | None                                             | Buffer can be opened and read, mid-task             |
+| Approval prompts       | Can't clear one (turn just fails)                | Can handle questions and approvals                  |
+| Owns a branch/worktree | No                                               | Yes, via `working_dir` frontmatter                  |
+| Survives a rate limit  | No                                               | Yes (auto_resume / scheduled resend)                |
+| Spin-up cost           | Low, no protocol                                 | Floor ~61k tokens + report contract + notifications |
+| Coordination can fail  | No — the return value is structurally guaranteed | Yes — this run failed 9 of 18 dispatches            |
 
 **A subagent is enough only if all five hold** — one exception and it's a chat:
 
