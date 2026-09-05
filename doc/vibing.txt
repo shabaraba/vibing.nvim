@@ -418,10 +418,9 @@ with YAML frontmatter: >
     session_id: <cli-session-id>
     created_at: 2026-01-01T12:00:00
     orchestrated:                            # optional: chats this drives
-      - .vibing/chat/worker-auth.md
+      - .vibing/chat/worker-auth.md|PR #688 — review, merge, cleanup
     orchestrated_by:                         # optional: who drives this
       - .vibing/chat/orchestrator.md
-    task: PR #688 — review, merge, cleanup    # optional: what this chat does
     continued_from: .vibing/chat/long.md     # optional: handed off from
     working_dir: .vibing/worktrees/fix-auth   # optional, relative to git root
     agent: claude
@@ -450,13 +449,17 @@ tools, as git-root-relative paths, and are rewritten on both sides when
 numbers do not survive a restart and file names do not survive a rename, so
 the frontmatter is the only place the relationship keeps meaning.
 
-`task` is a free-text single line describing what the chat was asked to do
-(e.g. `PR #688 — review fixes, merge, cleanup`). It is set once, at creation,
-via `nvim_chat_create`'s `task` argument, and is not rewritten afterwards.
-`nvim_chat_list` reports it back, so an orchestrator driving several worker
-chats can reconstruct the bufnr <-> PR/issue <-> assignment mapping after a
-restart or a context compaction instead of keeping it only in its own
-context.
+An `orchestrated` entry is a plain path, or `<path>|<task>` when the
+orchestrator gave that chat a one-line assignment via `nvim_chat_create`'s or
+`nvim_chat_send_message`'s `task` argument (e.g. `PR #688 — review, merge,
+cleanup`). The task is recorded only on the orchestrator's own `orchestrated`
+entry, never on the driven chat's file, so `nvim_chat_list` can report every
+worker's assignment by reading just the orchestrator's frontmatter — no
+transcript to re-read after a restart or a context compaction. Sending that
+chat a later message with a new `task` replaces the entry; an ordinary
+message with no `task` leaves it as is. `orchestrated_by` never carries a
+task suffix, since the assignment belongs to the chat that gave it, not the
+one that received it.
 
 ==============================================================================
 9. BACKENDS                                                  *vibing-backends*

@@ -96,8 +96,8 @@ backend still has to write (`new()` and `stream()`, and why `stream()` stayed pe
 ## Session Persistence
 
 Chat files are Markdown with YAML frontmatter (`session_id`, `working_dir`, `model`, `effort`,
-`permission_mode`, `permissions_allow` / `_deny`, `language`, `orchestrated` / `orchestrated_by`,
-`task`). The full field list is `doc/vibing.txt` → "CHAT FILE FORMAT".
+`permission_mode`, `permissions_allow` / `_deny`, `language`, `orchestrated` / `orchestrated_by`).
+The full field list is `doc/vibing.txt` → "CHAT FILE FORMAT".
 
 - **The key is singular `permission_mode`.** The legacy plural `permissions_mode` is migrated on
   parse (`infrastructure/storage/frontmatter.lua`) so old files keep working, but it is no longer
@@ -164,6 +164,11 @@ One chat can create and drive others: `nvim_chat_create` (MCP) → `rpc/handlers
   that passes both**. `from_bufnr` stays a bufnr, since it names the calling chat.
 - **The relationship is recorded in frontmatter, not in the transcript** — `orchestrated` /
   `orchestrated_by`, kept in step across renames by `link/orchestration_chat_scanner.lua`.
+- **An `orchestrated` element is `<path>` or `<path>|<task>` (#696), encoded/decoded only through
+  `orchestrated_entry.lua`.** The task an orchestrator gave a chat lives there — on the
+  orchestrator's own entry — and nowhere on the driven chat's own frontmatter; `orchestrated_by`
+  never carries the suffix. Comparing or replacing an `orchestrated` item as a bare string instead
+  of going through `OrchestratedEntry.find`/`encode` silently breaks on any entry that has a task.
 - **Completion detection is a status field, not a text heuristic**, and `idle` means "no request
   in flight", **not** "succeeded".
 - **Completion is pushed, not polled, and the send is the subscription.** The CLI process dies

@@ -40,24 +40,6 @@ describe("chat use_case.create_new", function()
     assert.equals(Git.get_relative_path(vim.fn.getcwd()), session.working_dir)
     assert.are_not.equal("", session.working_dir)
   end)
-
-  it("records an explicit task in the frontmatter (#696)", function()
-    local session = use_case.create_new({ task = "PR #688 — review fixes, merge, cleanup" })
-
-    assert.equals("PR #688 — review fixes, merge, cleanup", session.frontmatter.task)
-  end)
-
-  it("leaves task unset when omitted", function()
-    local session = use_case.create_new()
-
-    assert.is_nil(session.frontmatter.task)
-  end)
-
-  it("treats an empty task as absent, like working_dir", function()
-    local session = use_case.create_new({ task = "" })
-
-    assert.is_nil(session.frontmatter.task)
-  end)
 end)
 
 describe("chat use_case.generate_and_insert_summary", function()

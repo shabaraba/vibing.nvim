@@ -15,6 +15,15 @@ describe("rpc handlers: list_chats", function()
 
   after_each(ChatBuffers.reset)
 
+  local function find_chat(chats, bufnr)
+    for _, chat in ipairs(chats) do
+      if chat.bufnr == bufnr then
+        return chat
+      end
+    end
+    return nil
+  end
+
   it("returns an empty list when no chat is open", function()
     local result = handler.list_chats({})
 
@@ -45,21 +54,39 @@ describe("rpc handlers: list_chats", function()
     assert.equals(created.bufnr, result.chats[1].bufnr)
   end)
 
-  it("reports the task a chat was created with (#696)", function()
-    local created = handler.create_chat({ task = "PR #688 — review fixes, merge, cleanup" })
+  it("projects a worker's task from its orchestrator's `orchestrated` entry (#696 follow-up)", function()
+    local orchestrator = handler.create_chat({})
+    local worker = handler.create_chat({ from_bufnr = orchestrator.bufnr, task = "PR #688 -- review fixes, merge" })
 
     local result = handler.list_chats({})
 
-    assert.equals(created.bufnr, result.chats[1].bufnr)
-    assert.equals("PR #688 — review fixes, merge, cleanup", result.chats[1].task)
+    assert.equals(2, #result.chats)
+    assert.equals("PR #688 -- review fixes, merge", find_chat(result.chats, worker.bufnr).task)
+    -- The orchestrator carries no task of its own -- the field lives only on the edge that
+    -- points *at* a given chat, not on the chat that owns the edge.
+    assert.is_nil(find_chat(result.chats, orchestrator.bufnr).task)
   end)
 
-  it("reports no task for a chat created without one", function()
+  it("reports no task for a chat with no orchestrator", function()
     handler.create_chat({})
 
     local result = handler.list_chats({})
 
-    assert.is_nil(result.chats[1].task)
+    for _, chat in ipairs(result.chats) do
+      assert.is_nil(chat.task)
+    end
+  end)
+
+  it("maps each of several workers to its own task in one call (#692's postmortem ask)", function()
+    local orchestrator = handler.create_chat({})
+    local pr688 = handler.create_chat({ from_bufnr = orchestrator.bufnr, task = "PR #688 -- review, merge" })
+    local issue696 = handler.create_chat({ from_bufnr = orchestrator.bufnr, task = "Issue #696 -- task frontmatter" })
+
+    local result = handler.list_chats({})
+
+    assert.equals(3, #result.chats)
+    assert.equals("PR #688 -- review, merge", find_chat(result.chats, pr688.bufnr).task)
+    assert.equals("Issue #696 -- task frontmatter", find_chat(result.chats, issue696.bufnr).task)
   end)
 
   it("reports no context_size for a chat that has not completed a turn", function()

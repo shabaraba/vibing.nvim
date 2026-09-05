@@ -13,6 +13,7 @@ local M = {}
 
 local Git = require("vibing.core.utils.git")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
+local OrchestratedEntry = require("vibing.application.chat.orchestrated_entry")
 
 ---@param bufnr number
 ---@return table? chat_buf
@@ -59,7 +60,7 @@ end
 local function direction_from(from_chat, to_chat, forward, backward)
   if
     vim.tbl_contains(from_chat:get_frontmatter_list("orchestrated_by"), forward)
-    or vim.tbl_contains(to_chat:get_frontmatter_list("orchestrated"), backward)
+    or OrchestratedEntry.find(to_chat:get_frontmatter_list("orchestrated"), backward)
   then
     return "Report"
   end
@@ -91,9 +92,12 @@ end
 ---ストリーミングと競合する。
 ---@param from_bufnr number 送信元（オーケストレーター側）
 ---@param to_bufnr number 送信先（ワーカー側）
+---@param task string? 何を頼んだか（自由テキスト1行、#696）。`from_chat`の`orchestrated`
+---エントリにのみ書く — 子側には複製しない。既にリンクが張られている状態でも、渡された値が
+---今の値と違えば「最新の指示」として書き換える
 ---@return boolean success
 ---@return string? error
-function M.link(from_bufnr, to_bufnr)
+function M.link(from_bufnr, to_bufnr, task)
   if from_bufnr == to_bufnr then
     return false, "A chat cannot orchestrate itself"
   end
@@ -108,10 +112,16 @@ function M.link(from_bufnr, to_bufnr)
   -- スキルは `nvim_chat_create` と続く `nvim_chat_send_message` の両方に `from_bufnr` を渡すので、
   -- 同じリンクが2回書かれる。`update_frontmatter_list` は要素としては重複を弾くが、行の書き換えと
   -- `updated_at` の更新でバッファを modified にするため、そのあと両チャットの全文が書き直される
-  if
-    vim.tbl_contains(from_chat:get_frontmatter_list("orchestrated"), forward)
-    and vim.tbl_contains(to_chat:get_frontmatter_list("orchestrated_by"), backward)
-  then
+  local existing_entry, existing_task = OrchestratedEntry.find(from_chat:get_frontmatter_list("orchestrated"), forward)
+  if existing_entry and vim.tbl_contains(to_chat:get_frontmatter_list("orchestrated_by"), backward) then
+    -- 既にリンク済み。taskが新しく渡され、今の値と違うなら置き換える（「最新の指示」）。
+    -- 正本はこの1エントリだけなので、書き換えもここ1箇所で完結する
+    if task and task ~= "" and task ~= existing_task then
+      from_chat:update_frontmatter_list("orchestrated", existing_entry, "remove")
+      if from_chat:update_frontmatter_list("orchestrated", OrchestratedEntry.encode(forward, task), "add") then
+        FileManager.save_buffer(from_bufnr)
+      end
+    end
     return true, nil
   end
 
@@ -134,7 +144,7 @@ function M.link(from_bufnr, to_bufnr)
   -- 戻り値を捨ててはいけない。`update_frontmatter_list` は frontmatter の閉じ `---` が
   -- 先頭100行に収まらないと false を返す（長い permission 配列を持つチャットで現実に起きる）。
   -- 捨てると、このモジュールが防ぐために存在している「黙って関係が残らない」がそのまま起きる
-  local wrote_forward = from_chat:update_frontmatter_list("orchestrated", forward, "add")
+  local wrote_forward = from_chat:update_frontmatter_list("orchestrated", OrchestratedEntry.encode(forward, task), "add")
   local wrote_back = to_chat:update_frontmatter_list("orchestrated_by", backward, "add")
 
   -- `update_frontmatter_list` はバッファにしか書かない。リネーム同期はディスクを読むので、
@@ -170,9 +180,10 @@ end
 ---片方だけ直した日に食い違う。`rpc/handlers/chat.lua` は作成時点の別文言を使うので通さない
 ---@param from_bufnr number
 ---@param to_bufnr number
+---@param task string?
 ---@return boolean success
-function M.link_or_warn(from_bufnr, to_bufnr)
-  local ok, err = M.link(from_bufnr, to_bufnr)
+function M.link_or_warn(from_bufnr, to_bufnr, task)
+  local ok, err = M.link(from_bufnr, to_bufnr, task)
   if not ok then
     require("vibing.core.utils.notify").warn(
       string.format("Could not link chats %d -> %d: %s", from_bufnr, to_bufnr, err or "unknown"),

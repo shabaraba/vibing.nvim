@@ -41,6 +41,60 @@ Four things it does differently from `:VibingChat`, each for a reason:
   and never-called `use_case.create_new_in_directory` does the opposite; `create_new` takes an
   optional `working_dir` instead.)
 
+## Task assignment (`orchestrated`'s `task`, #696)
+
+`nvim_chat_create` and `nvim_chat_send_message` both take an optional `task`: one free-text line
+naming what the orchestrator is asking that chat to do (`"PR #688 — review fixes, merge,
+cleanup"`). It exists because #692's postmortem lost exactly this — a 5-chat orchestration run
+tracked "which worker does what" only in the orchestrator's own context, and after a restart or a
+context compaction there was no way to rebuild the bufnr ↔ PR/issue ↔ assignment table.
+
+**It is written on the orchestrator's own `orchestrated` entry, never on the driven chat's own
+frontmatter.** An `orchestrated` list item is `<path>` or `<path>|<task>`
+(`application/chat/orchestrated_entry.lua`'s `encode`/`decode`/`find`); `orchestrated_by` never
+carries the suffix, since the assignment belongs to whoever gave it, not whoever received it.
+`nvim_chat_list` (`rpc/handlers/chat.lua`'s `list_chats`) expands every open chat's `orchestrated`
+list and projects each decoded task onto the matching bufnr's row — so an orchestrator reconstructs
+every worker's assignment from **its own frontmatter alone**, no per-worker file to open and no
+transcript to re-read.
+
+Two designs were rejected on the way here:
+
+- **A `task` field on the driven chat's own frontmatter** (the first shape this feature shipped
+  with). Once the orchestrator's `orchestrated` list became the thing a caller actually reads back
+  (to answer "what is each of my workers doing"), a copy on the worker's own file was a second
+  source of truth for the same fact with no reader that needed it — the worker already depends on
+  `orchestrated_by` to know who to report to, so depending on it to recall its own assignment is no
+  new cost. Removed once `orchestrated` could carry the task itself.
+- **A nested map per `orchestrated` entry** (`- path: ... / task: ...`), which is what a real YAML
+  document would look like. `infrastructure/storage/frontmatter.lua`'s hand-rolled parser only
+  reads a list item as one opaque scalar string (`parse_yaml_simple`'s `^%s+%-%s*(.*)$`), so nested
+  maps would need real parser and serializer work, plus the rename scanner. Encoding `<path>|<task>`
+  into that one scalar reuses the existing flat-list machinery untouched — `update_list`'s
+  `"remove"` then `"add"` is how a task gets replaced — at the cost of a scanner that now has to
+  split the task suffix off before comparing paths (`orchestration_chat_scanner.lua`'s
+  `item_path`/`item_with_path`).
+
+**Why `|` as the separator, specifically:** a chat file path never contains one, so splitting at the
+first `|` always isolates the path cleanly regardless of what the task text contains (`#`, `:`,
+`--`, anything). More importantly, Vim's default `'isfname'` does **not** include `|`, while it does
+include `-` and `#` — so placing the cursor anywhere in an `orchestrated` line's path and pressing
+`gf` stops exactly at the pipe and never reads into the task text, confirmed by driving a real
+Neovim (`gf` on `.../worker.md|PR #688 ...` from any column of the path jumps correctly; from inside
+the task text it fails harmlessly rather than mis-resolving a path).
+
+**The assignment is mutable: "the latest instruction wins."** Both call sites go through
+`OrchestrationLink.link(from_bufnr, to_bufnr, task)`. If the link already exists and `task` is
+given and differs from what is currently recorded, `link` removes the old encoded entry and adds
+the new one; a call with no `task` (the ordinary case — a status check, an approval, "go ahead")
+leaves the existing assignment untouched, so a plain follow-up can never blank out a good one-line
+summary. `nvim_chat_send_message`'s queued path (`message_queue.lua`'s `write_links`) applies the
+same rule across everything queued for one sender before the single deferred `link_or_warn` call:
+the **last** queued `task` for that sender wins, not the first.
+
+`task` without `from_bufnr` has nowhere to be recorded — there is no `orchestrated` entry to write
+it into — so the RPC handler warns and drops it rather than silently discarding it.
+
 `view.render` now returns its `ChatBuffer` and replaces the `window` table before applying a
 one-off `position`. It used to assign straight into `chat_buf.config.window.position`, and
 `ChatBuffer` holds a reference to the live `config.chat` table — so a single `back` render changed

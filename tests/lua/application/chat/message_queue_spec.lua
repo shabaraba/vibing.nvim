@@ -51,8 +51,8 @@ describe("MessageQueue", function()
       return { success = true, bufnr = bufnr }
     end
     -- 本物はディスクに触るので差し替える。順序の観測だけがここの目的
-    OrchestrationLink.link = function(from, to)
-      table.insert(links, { from = from, to = to, sends_so_far = #sends })
+    OrchestrationLink.link = function(from, to, task)
+      table.insert(links, { from = from, to = to, task = task, sends_so_far = #sends })
       return true, nil
     end
     notify.warn = function(message, title)
@@ -103,6 +103,33 @@ describe("MessageQueue", function()
     Queue.flush(a)
 
     assert.equals(1, #links)
+  end)
+
+  it("forwards a queued task to OrchestrationLink.link (#696 follow-up)", function()
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    Queue.enqueue_message(a, b, "brief", "PR #688 -- review")
+
+    responding[a] = false
+    Queue.flush(a)
+
+    assert.equals(1, #links)
+    assert.equals("PR #688 -- review", links[1].task)
+  end)
+
+  it("uses the last queued task from the same sender, not the first (latest instruction wins)", function()
+    local a, b = make_chat(), make_chat()
+    responding[a] = true
+
+    Queue.enqueue_message(a, b, "first", "first task")
+    Queue.enqueue_message(a, b, "second", "second task")
+
+    responding[a] = false
+    Queue.flush(a)
+
+    assert.equals(1, #links)
+    assert.equals("second task", links[1].task)
   end)
 
   it("writes no link for a message that named no sender", function()

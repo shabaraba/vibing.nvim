@@ -132,6 +132,36 @@ describe("OrchestrationLink.link", function()
     assert.is_nil(on_worker.orchestrated)
   end)
 
+  it("encodes an explicit task into the orchestrator's `orchestrated` entry only (#696 follow-up)", function()
+    local from, to = open_chat("orchestrator.md"), open_chat("worker.md")
+
+    assert.is_true(OrchestrationLink.link(from, to, "PR #688 -- review fixes, merge"))
+
+    assert.same({ "worker.md|PR #688 -- review fixes, merge" }, frontmatter_on_disk(dir .. "/orchestrator.md").orchestrated)
+    -- The worker's own file never carries a `task` -- see orchestrated_entry.lua for why.
+    assert.same({ "orchestrator.md" }, frontmatter_on_disk(dir .. "/worker.md").orchestrated_by)
+  end)
+
+  it("replaces the task on an existing link when a different one is given (latest instruction wins)", function()
+    local from, to = open_chat("orchestrator.md"), open_chat("worker.md")
+    assert.is_true(OrchestrationLink.link(from, to, "first task"))
+
+    assert.is_true(OrchestrationLink.link(from, to, "second task"))
+
+    assert.same({ "worker.md|second task" }, frontmatter_on_disk(dir .. "/orchestrator.md").orchestrated)
+  end)
+
+  it("keeps the existing task when a later link call omits it", function()
+    -- `nvim_chat_send_message` calls without `task` for an ordinary follow-up must not blank out
+    -- a good one-line assignment.
+    local from, to = open_chat("orchestrator.md"), open_chat("worker.md")
+    assert.is_true(OrchestrationLink.link(from, to, "keep me"))
+
+    assert.is_true(OrchestrationLink.link(from, to))
+
+    assert.same({ "worker.md|keep me" }, frontmatter_on_disk(dir .. "/orchestrator.md").orchestrated)
+  end)
+
   it("treats a one-sided reverse record as enough to call it a report", function()
     -- `link` は片側だけ書けた状態を許して続行する（保存できた側でリネーム同期は動く）ので、
     -- 両側が揃っていることを前提にすると、その状態のチャットで逆向きが書かれてしまう

@@ -12,6 +12,7 @@ local Scanner = require("vibing.infrastructure.link.scanner")
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 local FrontmatterFile = require("vibing.infrastructure.storage.frontmatter_file")
 local Git = require("vibing.core.utils.git")
+local OrchestratedEntry = require("vibing.application.chat.orchestrated_entry")
 
 setmetatable(OrchestrationChatScanner, { __index = Scanner })
 
@@ -19,6 +20,31 @@ setmetatable(OrchestrationChatScanner, { __index = Scanner })
 ---この2キーのどちらかに old_path を持っているので、スキャナーを分ける理由がない。
 ---分ければ全ファイルの読み込みと `git rev-parse` が二重になるだけになる
 local LINK_KEYS = { "orchestrated", "orchestrated_by" }
+
+---`orchestrated`だけ要素が`<path>`または`<path>|<task>`(#696)。`orchestrated_by`は
+---今まで通りpathそのものなので、このモジュールが両キーを同じループで扱うために
+---「要素からpath部分を取り出す/差し替える」をキーごとに切り替える
+---@param key string
+---@param item string
+---@return string path
+local function item_path(key, item)
+  if key == "orchestrated" then
+    return (OrchestratedEntry.decode(item))
+  end
+  return item
+end
+
+---@param key string
+---@param item string 元の要素（taskの有無を保つため必要）
+---@param new_path string
+---@return string
+local function item_with_path(key, item, new_path)
+  if key == "orchestrated" then
+    local _, task = OrchestratedEntry.decode(item)
+    return OrchestratedEntry.encode(new_path, task)
+  end
+  return new_path
+end
 
 ---@return Vibing.Infrastructure.Link.OrchestrationChatScanner
 function OrchestrationChatScanner.new()
@@ -59,7 +85,7 @@ function OrchestrationChatScanner:contains_link(file_path, target_path)
 
   for _, key in ipairs(LINK_KEYS) do
     for _, item in ipairs(Frontmatter.as_list(frontmatter[key])) do
-      if self:_to_absolute(item) == target_abs then
+      if self:_to_absolute(item_path(key, item)) == target_abs then
         return true
       end
     end
@@ -90,8 +116,8 @@ function OrchestrationChatScanner:update_link(file_path, old_path, new_path)
 
     for _, item in ipairs(Frontmatter.as_list(frontmatter[key])) do
       local value = item
-      if self:_to_absolute(item) == old_abs then
-        value = new_display
+      if self:_to_absolute(item_path(key, item)) == old_abs then
+        value = item_with_path(key, item, new_display)
         replaced = true
       end
       -- 差し替え先が既にリストに載っていれば重複になる。リネーム先の衝突は

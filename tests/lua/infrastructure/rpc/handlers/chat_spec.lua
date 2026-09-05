@@ -116,18 +116,32 @@ describe("rpc handlers: create_chat", function()
     assert.is_true(vim.api.nvim_buf_is_valid(result.bufnr))
   end)
 
-  it("writes an explicit task into the new chat's frontmatter (#696)", function()
-    local result = handler.create_chat({ task = "PR #688 — review fixes, merge, cleanup" })
+  it("does not write task into the new chat's own frontmatter (#696 follow-up)", function()
+    -- task's only home is the *orchestrator's* `orchestrated` entry (orchestration_link.lua),
+    -- never the created chat's own file — see orchestration_link_spec.lua for where it lands.
+    local orchestrator = handler.create_chat({})
 
-    local content = table.concat(vim.fn.readfile(result.file_path), "\n")
-    assert.is_truthy(content:find("task: PR #688 — review fixes, merge, cleanup", 1, true))
-  end)
-
-  it("leaves task out of the frontmatter when omitted", function()
-    local result = handler.create_chat({})
+    local result = handler.create_chat({ from_bufnr = orchestrator.bufnr, task = "PR #688 -- review" })
 
     local content = table.concat(vim.fn.readfile(result.file_path), "\n")
     assert.is_nil(content:find("\ntask:", 1, true))
+  end)
+
+  it("warns and drops task when given without from_bufnr, instead of losing it silently", function()
+    local notify = require("vibing.core.utils.notify")
+    local original_warn = notify.warn
+    local warned = false
+    notify.warn = function(message)
+      warned = true
+      assert.is_truthy(tostring(message):find("from_bufnr", 1, true))
+    end
+
+    local ok, result = pcall(handler.create_chat, { task = "PR #688 -- review" })
+    notify.warn = original_warn
+
+    assert.is_true(ok)
+    assert.is_true(vim.api.nvim_buf_is_valid(result.bufnr))
+    assert.is_true(warned)
   end)
 end)
 

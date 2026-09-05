@@ -60,6 +60,15 @@ describe("OrchestrationChatScanner", function()
       assert.is_true(found)
     end)
 
+    it("finds a task-bearing orchestrated entry by its path portion (#696 follow-up)", function()
+      local worker = dir .. "/worker.md"
+      local orchestrator = ChatFiles.write(dir, "orchestrator.md", {
+        orchestrated = { "worker.md|PR #688 -- review fixes, merge" },
+      })
+
+      assert.is_true(OrchestrationChatScanner.new():contains_link(orchestrator, worker))
+    end)
+
     it("reads a hand-written scalar link instead of erroring on it", function()
       -- `orchestrated: worker.md` と1行で書かれると table ではなく文字列でパースされる
       local worker = dir .. "/worker.md"
@@ -101,6 +110,20 @@ describe("OrchestrationChatScanner", function()
 
       assert.is_true(ok)
       assert.same({ "alpha.md", "renamed.md", "bravo.md" }, ChatFiles.read_frontmatter(orchestrator).orchestrated)
+    end)
+
+    it("keeps the task suffix when renaming a task-bearing orchestrated entry (#696 follow-up)", function()
+      local orchestrator = ChatFiles.write(dir, "orchestrator.md", {
+        orchestrated = { "worker.md|PR #688 -- review fixes, merge" },
+      })
+
+      local ok = OrchestrationChatScanner.new():update_link(orchestrator, dir .. "/worker.md", dir .. "/renamed.md")
+
+      assert.is_true(ok)
+      assert.same(
+        { "renamed.md|PR #688 -- review fixes, merge" },
+        ChatFiles.read_frontmatter(orchestrator).orchestrated
+      )
     end)
 
     it("updates orchestrated_by as well as orchestrated", function()

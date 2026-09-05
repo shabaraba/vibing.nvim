@@ -159,6 +159,38 @@ describe('chat tools (worktree redesign)', () => {
     );
   });
 
+  it('registers a task property on nvim_chat_send_message (#696 follow-up)', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_send_message');
+    const inputSchema = tool?.inputSchema as { properties: Record<string, unknown> };
+    expect(inputSchema.properties.task).toBeDefined();
+  });
+
+  it('nvim_chat_send_message forwards task to the send_message RPC call (#696 follow-up)', async () => {
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 14 });
+
+    await handlers.nvim_chat_send_message({
+      rpc_port: 9878,
+      bufnr: 14,
+      message: 'now also update the docs',
+      from_bufnr: 12,
+      task: 'PR #688 -- now also update the docs',
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'send_message',
+      {
+        bufnr: 14,
+        file_path: undefined,
+        message: 'now also update the docs',
+        sender: undefined,
+        from_bufnr: 12,
+        queue_if_busy: undefined,
+        task: 'PR #688 -- now also update the docs',
+      },
+      9878
+    );
+  });
+
   it('nvim_chat_send_message still sends when from_bufnr is omitted', async () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 14 });
 
@@ -402,7 +434,9 @@ describe('chat tools (worktree redesign)', () => {
     expect(inputSchema.properties.task).toBeDefined();
   });
 
-  it('nvim_chat_create forwards task so it lands in the new chat frontmatter (#696)', async () => {
+  it('nvim_chat_create forwards task to the create_chat RPC call (#696)', async () => {
+    // Where task actually lands (the caller's own orchestrated entry, not the new chat) is a
+    // Lua-side concern (orchestrated_entry.lua) -- this handler only has to forward the argument.
     vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 14, file_path: '/tmp/worker.md' });
 
     await handlers.nvim_chat_create({
