@@ -79,6 +79,42 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 5.8.0 (2026-09-05)
+
+## What's Changed
+* chore: add SessionStart hook so web sessions can run the test suite by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/671
+* feat: add :VibingChatHandoff to continue a long chat from its summary by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/680
+* feat(orchestration): let an orchestrator answer a worker's tool approval by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/679
+* feat(chat): reuse an existing summary in :VibingChatHandoff by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/684
+* fix(agent): disable the CLI's per-process git status block by default by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/683
+* fix(mcp-server): keep the self-build inside Claude Code's MCP startup deadline by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/687
+* docs: shrink CLAUDE.md and .claude/rules from 100KB to 32KB by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/685
+* feat(chat): warn before a send that rewrites an expired prompt cache by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/689
+* feat(token-usage): opt-in automatic /compact when context exceeds a threshold by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/686
+* feat: flag a prefix rewrite in the `### Tokens` section and name its likely cause by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/688
+* feat(mcp): add tail_lines / last_section to nvim_get_buffer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/707
+* Trigger Claude Code Review by review label instead of every push by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/708
+* feat(notifier): include the worker's last section tail in the stopped-without-report notice by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/709
+* feat(mcp): add nvim_chat_list to enumerate all open chats in one call by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/711
+* feat(orchestration): inject a vibing-worker skill into orchestrated_by chats by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/710
+* Replace @claude-mention issue trigger with claude:in-progress label by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/714
+* fix(auto-resume): write one line to the chat when max_retries is exhausted by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/713
+* fix(queue): persist message_queue and never silently drop it (#697) by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/715
+* ci: run /code-review with --fix in the PR review Action by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/716
+* fix(ci): give Claude Code Review's gh commands a token by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/718
+* fix(ci): Claude Code Review's silent no-comment failures by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/719
+* docs(skill): add chat-vs-subagent criteria and operator rules to vibing-orchestrate by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/720
+* feat(mcp): record task/assignment in frontmatter at nvim_chat_create by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/712
+* fix(ci): remove invalid workflows:write permission that broke claude.yml entirely by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/721
+* chore(e2e): ignore stray pnpm-lock.yaml in claude-plugin/mcp-server by @claude[bot] in https://github.com/shabaraba/vibing.nvim/pull/722
+* feat(concurrency): count in-flight subagents in at_capacity() by @claude[bot] in https://github.com/shabaraba/vibing.nvim/pull/724
+* feat(permissions): scope delegated_approval to declared tool patterns by @claude[bot] in https://github.com/shabaraba/vibing.nvim/pull/726
+* feat(orchestration): warn when live chat branches touch the same files by @claude[bot] in https://github.com/shabaraba/vibing.nvim/pull/725
+* feat(codex): load plugin_dirs plugins into codex without --plugin-dir by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/682
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.7.0...v5.8.0
+
 ## 5.7.0 (2026-09-03)
 
 ## What's Changed
