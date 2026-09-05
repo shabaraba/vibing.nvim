@@ -21,29 +21,22 @@ setmetatable(OrchestrationChatScanner, { __index = Scanner })
 ---分ければ全ファイルの読み込みと `git rev-parse` が二重になるだけになる
 local LINK_KEYS = { "orchestrated", "orchestrated_by" }
 
----`orchestrated`だけ要素が`<path>`または`<path>|<task>`(#696)。`orchestrated_by`は
----今まで通りpathそのものなので、このモジュールが両キーを同じループで扱うために
----「要素からpath部分を取り出す/差し替える」をキーごとに切り替える
----@param key string
+---`orchestrated`の要素だけが`<path>`または`<path>|<task>`（#696）で、`orchestrated_by`は
+---常にpathそのもの — だがキーで分岐する必要はない。`OrchestratedEntry.decode`は`|`を含まない
+---文字列に対しては元の文字列をそのまま返す恒等操作なので、`orchestrated_by`の要素に通しても
+---安全。両キーとも同じ関数で扱える
 ---@param item string
 ---@return string path
-local function item_path(key, item)
-  if key == "orchestrated" then
-    return (OrchestratedEntry.decode(item))
-  end
-  return item
+local function item_path(item)
+  return (OrchestratedEntry.decode(item))
 end
 
----@param key string
 ---@param item string 元の要素（taskの有無を保つため必要）
 ---@param new_path string
 ---@return string
-local function item_with_path(key, item, new_path)
-  if key == "orchestrated" then
-    local _, task = OrchestratedEntry.decode(item)
-    return OrchestratedEntry.encode(new_path, task)
-  end
-  return new_path
+local function item_with_path(item, new_path)
+  local _, task = OrchestratedEntry.decode(item)
+  return OrchestratedEntry.encode(new_path, task)
 end
 
 ---@return Vibing.Infrastructure.Link.OrchestrationChatScanner
@@ -85,7 +78,7 @@ function OrchestrationChatScanner:contains_link(file_path, target_path)
 
   for _, key in ipairs(LINK_KEYS) do
     for _, item in ipairs(Frontmatter.as_list(frontmatter[key])) do
-      if self:_to_absolute(item_path(key, item)) == target_abs then
+      if self:_to_absolute(item_path(item)) == target_abs then
         return true
       end
     end
@@ -116,8 +109,8 @@ function OrchestrationChatScanner:update_link(file_path, old_path, new_path)
 
     for _, item in ipairs(Frontmatter.as_list(frontmatter[key])) do
       local value = item
-      if self:_to_absolute(item_path(key, item)) == old_abs then
-        value = item_with_path(key, item, new_display)
+      if self:_to_absolute(item_path(item)) == old_abs then
+        value = item_with_path(item, new_display)
         replaced = true
       end
       -- 差し替え先が既にリストに載っていれば重複になる。リネーム先の衝突は
