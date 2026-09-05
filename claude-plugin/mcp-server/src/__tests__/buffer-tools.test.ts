@@ -161,13 +161,23 @@ describe('nvim_get_buffer tail_lines / last_section', () => {
   });
 
   it('forwards tail_lines and last_section to Neovim', async () => {
-    vi.mocked(rpc.callNeovim).mockResolvedValue({ lines: ['b'], total_lines: 2, chat_status: 'idle' });
+    vi.mocked(rpc.callNeovim).mockResolvedValue({
+      lines: ['b'],
+      total_lines: 2,
+      chat_status: 'idle',
+    });
 
     await handlers.nvim_get_buffer({ bufnr: 3, tail_lines: 1, last_section: true, rpc_port: 9878 });
 
     expect(rpc.callNeovim).toHaveBeenCalledWith(
       'buf_get_lines',
-      { bufnr: 3, file_path: undefined, include_chat_status: true, tail_lines: 1, last_section: true },
+      {
+        bufnr: 3,
+        file_path: undefined,
+        include_chat_status: true,
+        tail_lines: 1,
+        last_section: true,
+      },
       9878
     );
   });
