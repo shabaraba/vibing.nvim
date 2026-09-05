@@ -122,4 +122,119 @@ describe("rpc handlers.buffer.buf_get_lines target resolution", function()
       assert.same({ "x" }, BufferHandler.buf_get_lines({ bufnr = target }))
     end)
   end)
+
+  describe("tail_lines / last_section / total_lines (#694)", function()
+    it("windows to the last N lines and reports the buffer's real total", function()
+      local target = make_buffer({ "1", "2", "3", "4", "5" })
+
+      local result = BufferHandler.buf_get_lines({
+        bufnr = target,
+        include_chat_status = true,
+        tail_lines = 2,
+      })
+
+      assert.same({ "4", "5" }, result.lines)
+      assert.equals(5, result.total_lines)
+    end)
+
+    it("windows to the last '## ...' section", function()
+      local target = make_buffer({
+        "## User <!-- 2026-01-01 00:00:00 -->",
+        "first",
+        "## Assistant <!-- 2026-01-01 00:00:01 -->",
+        "second",
+      })
+
+      local result = BufferHandler.buf_get_lines({
+        bufnr = target,
+        include_chat_status = true,
+        last_section = true,
+      })
+
+      assert.same({ "## Assistant <!-- 2026-01-01 00:00:01 -->", "second" }, result.lines)
+      assert.equals(4, result.total_lines)
+    end)
+
+    it("finds a last_section header beyond the first backward-scan chunk by doubling", function()
+      -- last_section alone used to fall back to reading the whole buffer (a review finding on PR
+      -- #707); this pins the chunked backward scan that replaced it. The header sits far enough
+      -- back that the first 500-line chunk misses it and a second, doubled read is required.
+      local lines = {}
+      for i = 1, 599 do
+        lines[i] = "filler " .. i
+      end
+      lines[600] = "## Assistant <!-- 2026-01-01 00:00:00 -->"
+      for i = 601, 1200 do
+        lines[i] = "reply " .. i
+      end
+      local target = make_buffer(lines)
+
+      local result = BufferHandler.buf_get_lines({
+        bufnr = target,
+        include_chat_status = true,
+        last_section = true,
+      })
+
+      assert.equals(1200, result.total_lines)
+      assert.equals(601, #result.lines)
+      assert.equals("## Assistant <!-- 2026-01-01 00:00:00 -->", result.lines[1])
+      assert.equals("reply 1200", result.lines[#result.lines])
+    end)
+
+    it("combines a doubled last_section scan with tail_lines", function()
+      local lines = {}
+      for i = 1, 599 do
+        lines[i] = "filler " .. i
+      end
+      lines[600] = "## Assistant <!-- 2026-01-01 00:00:00 -->"
+      for i = 601, 1200 do
+        lines[i] = "reply " .. i
+      end
+      local target = make_buffer(lines)
+
+      local result = BufferHandler.buf_get_lines({
+        bufnr = target,
+        include_chat_status = true,
+        last_section = true,
+        tail_lines = 2,
+      })
+
+      assert.same({ "reply 1199", "reply 1200" }, result.lines)
+      assert.equals(1200, result.total_lines)
+    end)
+
+    it("reports total_lines even when the whole buffer was read", function()
+      local target = make_buffer({ "a", "b" })
+
+      local result = BufferHandler.buf_get_lines({ bufnr = target, include_chat_status = true })
+
+      assert.same({ "a", "b" }, result.lines)
+      assert.equals(2, result.total_lines)
+    end)
+
+    it("windows even in the bare-array shape, since only the response shape is opt-in", function()
+      -- include_chat_status and tail_lines/last_section are independent: an older MCP server
+      -- that never sends tail_lines is unaffected, but a caller that does ask for a window gets
+      -- one whether or not it also asked to be wrapped with chat status.
+      local target = make_buffer({ "1", "2", "3" })
+
+      assert.same({ "3" }, BufferHandler.buf_get_lines({ bufnr = target, tail_lines = 1 }))
+    end)
+
+    it("still returns the untouched bare array when no window was asked for", function()
+      local target = make_buffer({ "1", "2", "3" })
+
+      assert.same({ "1", "2", "3" }, BufferHandler.buf_get_lines({ bufnr = target }))
+    end)
+
+    it("clamps a negative tail_lines the same way on the fast path and the last_section path", function()
+      -- A PR #707 review caught these two branches disagreeing on a negative tail_lines: the fast
+      -- path (no last_section) clamped to an empty result, the other silently ignored tail_lines
+      -- and returned the whole buffer. Both now clamp through BufferWindow.normalize_tail_lines.
+      local target = make_buffer({ "1", "2", "3" })
+
+      assert.same({}, BufferHandler.buf_get_lines({ bufnr = target, tail_lines = -1 }))
+      assert.same({}, BufferHandler.buf_get_lines({ bufnr = target, tail_lines = -1, last_section = true }))
+    end)
+  end)
 end)
