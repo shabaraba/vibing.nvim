@@ -69,12 +69,28 @@ jobs:
                  judge them
                - if nothing was found, say so briefly instead of posting empty sections
 
+          # Temporarily on: two silent-failure incidents in a row (missing GH_TOKEN, then a
+          # denied-tool stall) were only diagnosable from the raw job log, not this action's own
+          # summarized output. Flip back to false once the review is reliably posting comments.
+          show_full_output: true
           # Enough to run /code-review's own tool-use (read/edit the tree, verify with the repo's
           # test/lint scripts) plus commit, push and comment. Label transitions are handled by the
           # workflow step below, not by Claude, so no gh-edit access is needed here.
+          #
+          # ToolSearch, TodoWrite, ReportFindings and ScheduleWakeup are this repo's own
+          # INTERNAL_TOOLS set (core/constants/tools.lua): harness-internal, side-effect-free
+          # control tools Claude Code invokes habitually regardless of task. Omitting any one of
+          # them doesn't error, it just gets silently denied every time -- which is what the
+          # previous run's permission_denials_count: 5 (with 0 comments posted and 0 commits
+          # pushed despite a real ~2.5 minute, $2 run) points to. Allow the whole set rather than
+          # whack-a-mole one at a time.
+          #
+          # Agent lets /code-review fan out subagents per review dimension and adversarially
+          # verify each finding, which is the whole point of asking for effort "high" -- without
+          # it the skill silently degrades to a single-pass, unverified review.
           claude_args: >-
             --allowed-tools
-            "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(npm test:*),Bash(npm run check:*),Bash(npm run lint:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            "Read,Edit,Write,Glob,Grep,Agent,ToolSearch,TodoWrite,ReportFindings,ScheduleWakeup,Bash(git:*),Bash(npm test:*),Bash(npm run check:*),Bash(npm run lint:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
 
       # Runs regardless of whether the step above succeeded, so a crashed or timed-out run still
       # gets reflected on the PR instead of leaving "claude:in-review" stuck forever.
