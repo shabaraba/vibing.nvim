@@ -209,3 +209,18 @@ export async function handleChatAnswerApproval(args: any): Promise<any> {
     _meta: { bufnr: result?.bufnr ?? bufnr, tool: result?.tool, action },
   };
 }
+
+/**
+ * Handler for nvim_chat_list
+ *
+ * Enumerates every chat buffer `view.list_chat_buffers()` knows about on the Lua side — the same
+ * source `application/chat/concurrency.lua` reads to answer "how many chats are responding right
+ * now" — and reports each one's status in a single round trip. A read, so `rpc_port` stays
+ * optional and falls back to the instance registry like `nvim_list_buffers`.
+ */
+export async function handleChatList(args: any): Promise<any> {
+  const result = await callNeovim('list_chats', {}, args?.rpc_port);
+  return {
+    content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+  };
+}

@@ -245,4 +245,22 @@ export const chatTools: Tool[] = [
       required: requireRpcPort(['action', 'from_bufnr']),
     },
   },
+  {
+    name: 'nvim_chat_list',
+    description:
+      'List every open vibing.nvim chat buffer with its status in one call, instead of polling ' +
+      'each with nvim_get_buffer one at a time. For each chat, reports bufnr, file_path, ' +
+      'chat_status (responding/idle/waiting_approval/asked_question/error), context_size (the ' +
+      "chat's last measured context size in tokens, or omitted if it has not completed a turn " +
+      'yet), updated_at (frontmatter timestamp of the last write), and orchestrated_by (the ' +
+      "chat file paths of this chat's orchestrator(s), if any). Use this to check on several " +
+      'worker chats at once in a multi-agent workflow (see the vibing-orchestrate skill). Only ' +
+      'chats currently open in this Neovim session are listed — a chat file that was never ' +
+      'opened this session is not included.',
+    inputSchema: {
+      type: 'object',
+      properties: withRpcPort({}),
+      required: [],
+    },
+  },
 ];
