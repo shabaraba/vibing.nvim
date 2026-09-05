@@ -100,6 +100,43 @@ function M.answer_approval(params)
   })
 end
 
+---直近ターンの `### Tokens <!-- context=N --> ` からcontextを読む
+---
+---`cache_expiry.read_last_turn` は `nvim_buf_get_lines(buf, 0, -1, false)` でバッファ全文を
+---Luaテーブルにコピーしてから末尾を探す。1チャットの送信時に1回だけ呼ぶ分にはそれで良いが、
+---`list_chats` は開いている全チャットぶんこれを呼ぶ — 「複数チャットを高頻度にポーリングする」
+---という新しい負荷パターンで、長いトランスクリプトのチャットが何本もあるとメインループを
+---縛る（`architecture.md` の git スナップショット実測値が示す同種の懸念）。
+---
+---末尾から倍々にチャンクを広げて読む手口は `infrastructure/rpc/handlers/buffer.lua` の
+---`read_last_section` と同じ。マーカーの完全一致だけを見て、`parse_context` のあいまい
+---フォールバック（`context 150k` のような地の文にも一致しうる）は使わない — こちらは
+---「直近ターンの範囲内」という境界を持たないので、あいまい一致まで許すと本文の引用に
+---誤って反応しかねない
+---@param bufnr number
+---@return number? context_size
+local function read_context_size(bufnr)
+  local TokenUsage = require("vibing.core.utils.token_usage")
+  local total_lines = vim.api.nvim_buf_line_count(bufnr)
+  local chunk_size = 500
+
+  while true do
+    local from = math.max(0, total_lines - chunk_size)
+    local chunk = vim.api.nvim_buf_get_lines(bufnr, from, total_lines, false)
+
+    for i = #chunk, 1, -1 do
+      if chunk[i]:match("^###%s+Tokens") then
+        return TokenUsage.parse_context(chunk[i])
+      end
+    end
+
+    if from == 0 then
+      return nil
+    end
+    chunk_size = chunk_size * 2
+  end
+end
+
 ---生きているチャットバッファをすべて列挙する（MCP tool `nvim_chat_list`）
 ---
 ---1チャットずつ `nvim_get_buffer` を叩くとNチャットでN往復かかる（#692の実走ではPythonの
@@ -110,7 +147,6 @@ end
 function M.list_chats(_)
   local view = require("vibing.presentation.chat.view")
   local ChatStatus = require("vibing.presentation.chat.modules.chat_status")
-  local CacheExpiry = require("vibing.application.chat.cache_expiry")
 
   local buffers = view.list_chat_buffers()
   local bufnrs = {}
@@ -123,15 +159,12 @@ function M.list_chats(_)
   for _, bufnr in ipairs(bufnrs) do
     local chat_buf = buffers[bufnr]
     local frontmatter = chat_buf:parse_frontmatter()
-    -- ターンの内訳（accumulator）はターンが終わると捨てられるので、直近ターンのサイズは
-    -- 書かれた `### Tokens` 見出しから読み戻すしかない（`token_usage.lua` のコメント参照）
-    local _, context_size = CacheExpiry.read_last_turn(bufnr)
 
     table.insert(chats, {
       bufnr = bufnr,
       file_path = chat_buf.file_path,
       chat_status = ChatStatus.get(bufnr),
-      context_size = context_size,
+      context_size = read_context_size(bufnr),
       updated_at = frontmatter.updated_at,
       orchestrated_by = chat_buf:get_frontmatter_list("orchestrated_by"),
       -- #692 3.8がfrontmatterに書くようになるまでは常にnil。防御的に読むだけにしておけば、

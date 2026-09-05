@@ -53,6 +53,39 @@ describe("rpc handlers: list_chats", function()
     assert.is_nil(result.chats[1].context_size)
   end)
 
+  it("reads context_size back from a written ### Tokens marker", function()
+    local created = handler.create_chat({})
+    vim.api.nvim_buf_set_lines(created.bufnr, -1, -1, false, {
+      "### Tokens <!-- context=12345 -->",
+      "",
+      "context 12.3k · 1 request · read 10k · new 2k",
+    })
+
+    local result = handler.list_chats({})
+
+    assert.equals(12345, result.chats[1].context_size)
+  end)
+
+  it("finds the marker even when the first (smallest) tail chunk misses it", function()
+    -- The chunked backward scan (#711 review) starts at a 500-line tail and doubles until it
+    -- finds the marker or covers the whole buffer -- it must not stop after the first miss.
+    local created = handler.create_chat({})
+    vim.api.nvim_buf_set_lines(created.bufnr, -1, -1, false, {
+      "### Tokens <!-- context=99999 -->",
+      "",
+      "context 100k · 1 request · read 90k · new 10k",
+    })
+    local filler = {}
+    for i = 1, 600 do
+      filler[i] = "filler line " .. i
+    end
+    vim.api.nvim_buf_set_lines(created.bufnr, -1, -1, false, filler)
+
+    local result = handler.list_chats({})
+
+    assert.equals(99999, result.chats[1].context_size)
+  end)
+
   it("reports the updated_at frontmatter timestamp once something has written it", function()
     -- A bare create_chat() writes only vibing.nvim/session_id/created_at (renderer.lua) --
     -- updated_at is stamped the first time any field actually updates (frontmatter_handler.lua),
