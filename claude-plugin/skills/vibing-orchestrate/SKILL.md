@@ -13,6 +13,62 @@ Every MCP call here takes `rpc_port`, the value in this chat's system prompt. Wi
 server falls back to the instance registry, which only answers when exactly one Neovim is live —
 and orchestration is precisely the case where several are.
 
+## Chat or subagent?
+
+A chat is a unit of **ownership**; a subagent is a unit of **delegated work inside one turn**. The
+most expensive mistake a postmortem (#692) found was broadcasting `/simplify` to five worker
+chats — each spawns its own subagents, so that's the chat count times the subagent count, and it
+was one of two runs that hit the session limit. Decide this before creating anything.
+
+|                        | Subagent                                         | Orchestrated chat                                   |
+| ---------------------- | ------------------------------------------------ | --------------------------------------------------- |
+| Lifetime               | Dies with the parent turn                        | Survives restarts                                   |
+| Output                 | One final text blob                              | Its own transcript                                  |
+| Visibility             | None                                             | Buffer can be opened and read, mid-task             |
+| Approval prompts       | Can't clear one (turn just fails)                | Can handle questions and approvals                  |
+| Owns a branch/worktree | No                                               | Yes, via `working_dir` frontmatter                  |
+| Survives a rate limit  | No                                               | Yes (auto_resume / scheduled resend)                |
+| Spin-up cost           | Low, no protocol                                 | Floor ~61k tokens + report contract + notifications |
+| Coordination can fail  | No — the return value is structurally guaranteed | Yes — this run failed 9 of 18 dispatches            |
+
+**A subagent is enough only if all five hold** — one exception and it's a chat:
+
+1. It finishes in one round trip, with a definable output, no mid-task change of direction
+2. Nobody needs to watch it run
+3. It doesn't own a branch or worktree — it stays inside the parent's own working tree
+4. It's unlikely to hit an approval prompt (read-heavy, or the parent's session permissions cover it)
+5. You would not want to reread its transcript tomorrow
+
+**Use a chat if any one of these holds:** it spans multiple turns (implement → wait on CI → address
+review → fix → merge); it owns a branch/worktree a later turn still needs; it will hit an approval
+prompt only a human should clear; a human wants to open it mid-task and steer it; it might need
+re-briefing after a partial failure; it has to survive a rate limit; or its transcript is itself the
+record you'll want later.
+
+**General rule: parallelism inside work that already has a chat belongs to subagents. Don't add
+chats to get parallelism** — a chat's floor is ownership, not concurrency.
+
+## Operator rules
+
+- **Don't write the report protocol into a brief.** Creating a worker with `from_bufnr` is enough —
+  the plugin injects it from `orchestrated_by` every turn (#706). Keep the brief to the task itself.
+- **Don't broadcast a subagent-spawning command** (`/simplify`, `/code-review`, …) **to more than one
+  worker at a time.** Each broadcast multiplies concurrency by that command's own subagent count.
+- **Parallelize the implementation step; serialize anything that touches `main`** (merges, cleanup).
+- **Write the assignment table (who owns what) to a file**, not only into your own context — it has
+  to survive a restart or compaction.
+- **Don't take a review finding at face value.** Verify before acting on it; a finding can itself be
+  wrong.
+
+## Environment notes
+
+- **macOS's `nc` cannot hold a conversation with this RPC server.** It closes on stdin EOF before the
+  response comes back over `vim.schedule`. Use Python's `socket.create_connection(...)` with
+  `makefile("rwb")` instead if you need to talk to it directly.
+- **Claude Code's built-in sensitive-file guard refuses `Edit`/`Write` on `.claude/rules/**`,**
+  independent of this project's own permission rules. Don't brief a worker to edit rules files —
+  either do it yourself as the orchestrator, or write the brief assuming a human will clear it.
+
 ## 1. Split the work
 
 Break the request into tasks that can run without waiting on each other. If two tasks would edit
