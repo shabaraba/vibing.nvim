@@ -103,21 +103,23 @@ comment are appended _before_ the User section, so the diff would land underneat
 Native `AskUserQuestion` is unavailable in headless `claude -p` mode and is opaque to vibing.nvim,
 so the PreToolUse hook intercepts and denies it, rendering the same UI as a fallback.
 
-### Codex backend: not available
+### Codex backend: not wired
 
-Codex sessions cannot reach this UI, so `codex_cli.lua` deliberately omits `chat_bufnr` when
-registering with `ActiveStreamRegistry`. Two things block it, and neither is fixable from this
-side:
+`codex_cli.lua` deliberately omits `chat_bufnr` when registering with `ActiveStreamRegistry`, and
+the developer message tells the model not to call the tool. The two things that originally made
+this impossible (#532) are gone as of codex 0.153, which is worth recording so the next reader does
+not rediscover them:
 
-- Codex takes no system prompt (context and language are prepended to the user prompt instead), so
-  there is no place to hand the model the `chat_bufnr` the tool needs.
-- Registering the MCP server per run via `-c mcp_servers.*` would not help. Headless `codex exec`
-  auto-cancels MCP tool calls at the approval prompt — stdin is closed, so EOF reads as a denial —
-  unless it runs with `--dangerously-bypass-approvals-and-sandbox`, which vibing.nvim only passes
-  in `bypassPermissions` mode. See [openai/codex#24135][codex-24135].
+- Codex now takes a system prompt seam: `-c developer_instructions` becomes the first `developer`
+  message. Context and language are still prepended to the user prompt.
+- Headless `codex exec` still auto-cancels an MCP call at its own approval prompt — stdin is
+  closed, so EOF reads as a denial ([openai/codex#24135][codex-24135]) — but
+  `-c mcp_servers.<name>.default_tools_approval_mode="approve"` is a per-server answer to it, and
+  is how the bundled server reaches codex at all (`handbook/architecture/plugin-and-commands.md` →
+  "Codex").
 
-What still works on Codex is the ordinary tool-approval flow (the `ask` permission list): it routes
-on `handle_id`, not `chat_bufnr`. Only the question-list UI is missing. Revisit if the upstream
-issue is resolved.
+What remains untested is the UI itself on this backend, so the route stays unwired rather than
+registered and looking like it works. What does work on Codex is the ordinary tool-approval flow
+(the `ask` permission list): it routes on `handle_id`, not `chat_bufnr`.
 
 [codex-24135]: https://github.com/openai/codex/issues/24135

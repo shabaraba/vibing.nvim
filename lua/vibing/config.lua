@@ -156,10 +156,12 @@
 ---@field focus string? `/compact <focus>`として渡す、要約に何を残すかの指示（デフォルト: 無し）
 
 ---@class Vibing.PluginsConfig
----セッション限りで読み込むClaude Codeプラグインのディレクトリ設定（claudeバックエンドのみ）
+---セッション限りで読み込むClaude Codeプラグインのディレクトリ設定
 ---`--plugin-dir`はユーザーのグローバル状態に何も書かずにプラグインを読む。vibing.nvim自身の
 ---`claude-plugin/`もこれで渡すため、MCPサーバーとバンドルskillは常に「いま動いているcheckout」の
----ものになる（worktreeを含む）。
+---ものになる（worktreeを含む）。codexバックエンドには`--plugin-dir`がないので、同じ解決結果を
+---`-c mcp_servers.*`（MCPサーバー）と`-c developer_instructions`（skill一覧）で渡す。`agents/`は
+---codexに相当物がなく渡らない（handbook/architecture/plugin-and-commands.md → "Codex"）。
 ---@field self boolean? falseでvibing.nvim自身のclaude-plugin/を渡さなくなる。nvim_*のMCPツールと
 ---  バンドルskillが全て消えるのでデバッグ用の逃げ道であり、通常は触らない（デフォルト: true）
 ---@field project_dir string|false? プロジェクトルートからの相対パス。この直下の各ディレクトリを

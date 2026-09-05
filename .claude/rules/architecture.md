@@ -80,6 +80,12 @@ vibing.nvim's own Claude Code plugin is **not installed**: `cli_command_builder`
 - **Not passed on the lightweight path**, per `core/types.lua`.
 - **`TERMINAL_ONLY_COMMANDS` is a denylist, not an allowlist**: built-in skills live inside the
   binary, and a stale allowlist would hide a new one.
+- **Codex loads the same list, in two halves.** Codex 0.153 has no per-run plugin flag, so
+  `adapter/modules/codex_plugin_config.lua` turns each plugin's `mcpServers` into
+  `-c mcp_servers.<name>.*` overrides (`default_tools_approval_mode="approve"`, or headless exec
+  cancels every call) and lists its `skills/` in `-c developer_instructions`. `agents/` does not
+  travel. Server names must be bare TOML keys — the `-c` key path is never unquoted.
+  `handbook/architecture/plugin-and-commands.md` → "Codex".
 - **`setup()` runs on the user's startup path**, so synchronous I/O there is the cost that
   matters. Custom slash commands are scanned on first use, with the already-loaded guard set
   **before** the scan.

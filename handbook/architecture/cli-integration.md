@@ -148,10 +148,11 @@ These are the seams that stop backend identity leaking into shared code. The rul
 
   All three shapes were captured from the real CLIs, not read off their docs.
 
-- **No MCP on every backend.** Grok, like codex, registers no `chat_bufnr` and reaches no
-  vibing-nvim MCP server, so `grok_command_builder` deliberately keeps `--rules` to the
-  backend-agnostic conventions. Naming `nvim_ask_user_question` there would hand the model a tool
-  it cannot call — see `features.md` → AskUserQuestion Support.
+- **No MCP on every backend.** Grok registers no `chat_bufnr` and reaches no vibing-nvim MCP
+  server, so `grok_command_builder` deliberately keeps `--rules` to the backend-agnostic
+  conventions. Naming `nvim_ask_user_question` there would hand the model a tool it cannot call —
+  see `features.md` → AskUserQuestion Support. Codex reaches the server since
+  `codex_plugin_config` (`plugin-and-commands.md` → "Codex") but still registers no `chat_bufnr`.
 
 - **Grok's hooks need a git repository.** `grok_settings_generator.lua` writes
   `<cwd>/.grok/hooks/` and marks the cwd trusted in `<$GROK_HOME|~/.grok>/trusted_folders.toml`,

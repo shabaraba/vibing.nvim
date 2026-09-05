@@ -6,8 +6,9 @@
 --- project-local personal plugin drop (`.vibing/plugins/*/`).
 ---
 --- The resolved list is the single definition of "which plugin directories apply here": the CLI
---- argv (`cli_command_builder`), the skill completion provider and the agent completion provider
---- all read it, rather than each re-deriving the convention.
+--- argv (`cli_command_builder`, and `codex_plugin_config` for the backend that has no
+--- `--plugin-dir`), the skill completion provider and the agent completion provider all read it,
+--- rather than each re-deriving the convention.
 --- @module vibing.infrastructure.plugins.plugin_dirs
 
 local Notify = require("vibing.core.utils.notify")
@@ -112,6 +113,14 @@ local function absolutise(path, base)
   -- through turns the caller's `table.insert(dirs, absolutise(...))` into the three-argument
   -- positional form, which then rejects the path as a non-numeric index.
   return (vim.fn.fnamemodify(vim.fn.expand(path), ":p"):gsub("/$", ""))
+end
+
+--- The bundled plugin's directory, for a caller that has to tell it apart from a project plugin
+--- of the same name -- by path, since the name is exactly what a look-alike would copy.
+--- @return string|nil
+function M.self_plugin_dir()
+  local own = self_plugin_dir()
+  return own and (vim.fn.fnamemodify(own, ":p"):gsub("/$", "")) or nil
 end
 
 --- Candidate directories in the order the CLI should see them.

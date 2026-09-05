@@ -12,10 +12,11 @@ The tool catalogue, the orchestration tools, annotations and background LSP anal
 
 - **The prefix depends on how the server was registered**: `mcp__vibing-nvim__<tool>` for a plain
   user-level entry, `mcp__plugin_vibing-nvim_vibing-nvim__<tool>` when it arrives inside the
-  plugin — which is the normal case. That second form is built from the **plugin** name and the
-  MCP server name, both from `claude-plugin/.claude-plugin/plugin.json`. The marketplace name
-  never appears in it, and `tests/lua/core/constants/tools_spec.lua` reads `plugin.json` for
-  exactly that reason.
+  plugin — which is the normal case on claude. That second form is built from the **plugin** name
+  and the MCP server name, both from `claude-plugin/.claude-plugin/plugin.json`. The marketplace
+  name never appears in it, and `tests/lua/core/constants/tools_spec.lua` reads `plugin.json` for
+  exactly that reason. On codex the server is registered per run with
+  `-c mcp_servers.vibing-nvim.*` instead, so the plain form is what that backend sees.
 - **`VIBING_NVIM_MCP_TOOL_PATTERNS` (`core/constants/tools.lua`) is hand-maintained**, because
   `--allowedTools` accepts nothing but literals. A stale entry does not break chats — the hook's
   suffix match is what decides — which is why a dead one went unnoticed for so long.

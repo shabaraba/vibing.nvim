@@ -212,7 +212,7 @@ if [ -f "dist/index.js" ]; then
     MANUAL_MCP_ARGS="$(printf '%q %q' "$NODE_EXECUTABLE" "$MCP_SERVER_PATH")"
 
     # Register the built MCP server with a CLI that speaks `<cli> mcp add`.
-    # Both codex and copilot exit 1 when the name already exists, so an existing entry is
+    # Copilot exits 1 when the name already exists, so an existing entry is
     # detected first and left untouched — re-running build.sh must not report a false failure,
     # and a hand-edited config must never be clobbered.
     #
@@ -248,7 +248,19 @@ if [ -f "dist/index.js" ]; then
         fi
     }
 
-    register_mcp_server codex
+    # Not codex: since the codex backend loads the plugin per session the way claude does --
+    # `-c mcp_servers.vibing-nvim.*` and `-c developer_instructions` overrides assembled in
+    # lua/vibing/infrastructure/adapter/modules/codex_plugin_config.lua, because codex has no
+    # `--plugin-dir` -- a global `codex mcp add` entry is no longer needed. One this script made
+    # earlier is left alone rather than removed: the per-session override deep-merges over it,
+    # so it is inert inside vibing.nvim, and it may be what a plain `codex` session outside
+    # Neovim relies on.
+    if command -v codex &> /dev/null &&
+        codex mcp list 2>/dev/null | grep -qE '^[[:space:]]*vibing-nvim[[:space:]]'; then
+        echo "[vibing.nvim] ℹ vibing-nvim is still registered globally with codex; vibing.nvim now"
+        echo "[vibing.nvim]   passes it per session, so that entry is only needed for codex sessions"
+        echo "[vibing.nvim]   started outside Neovim. Remove it with: codex mcp remove vibing-nvim"
+    fi
     register_mcp_server copilot
 
     exit 0
