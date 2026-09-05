@@ -174,6 +174,7 @@ describe("codex_command_builder", function()
 
     before_each(function()
       PluginDirs.clear_cache()
+      require("vibing.infrastructure.adapter.modules.codex_plugin_config").clear_cache()
     end)
 
     after_each(function()

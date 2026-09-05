@@ -93,7 +93,10 @@ manifest check — but codex 0.153 has nothing that takes a plugin directory for
 plugin travels in two halves. `infrastructure/plugins/plugin_contents.lua` reads them and
 `adapter/modules/codex_plugin_config.lua` renders them as `-c` overrides on the `codex exec`
 argv; the builder appends them on every ordinary call, resumed or not, and never on a
-lightweight one (`core/types.lua`).
+lightweight one (`core/types.lua`). Rendering means reading every manifest and the frontmatter of
+every `SKILL.md` — synchronous file I/O on the main loop, on every message — so `codex_plugin_config`
+memoizes the finished argv, keyed by the resolved directory list and the port, and
+`:VibingReloadCommands` drops that memo together with `plugin_dirs`' own cache.
 
 **Measured against codex 0.153.0** (`codex debug prompt-input` renders the model-visible prompt
 without calling the model; `codex exec --strict-config --ignore-user-config` rejects unknown

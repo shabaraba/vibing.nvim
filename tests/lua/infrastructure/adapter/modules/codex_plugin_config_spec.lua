@@ -197,6 +197,50 @@ describe("codex_plugin_config", function()
     assert.same({}, args)
   end)
 
+  -- `args` runs on every non-lightweight codex request, and building it is synchronous file I/O
+  -- (every manifest, every SKILL.md frontmatter) on the main loop. Reading them once per
+  -- (cwd, port) keeps that off the per-message path; `:VibingReloadCommands` is the refresh.
+  it("reads the plugins once per plugin list and port until clear_cache", function()
+    local root = write_plugin("tooling", { name = "tooling", mcpServers = { a = { command = "c" } } })
+
+    local first = CodexPluginConfig.args(nil, config, 1)
+    vim.fn.writefile(
+      { vim.json.encode({ name = "tooling", mcpServers = { a = { command = "c" }, b = { command = "d" } } }) },
+      root .. "/.claude-plugin/plugin.json"
+    )
+    PluginDirs.clear_cache()
+    local cached = CodexPluginConfig.args(nil, config, 1)
+    assert.same(first, cached)
+    assert.is_nil(override(cached, "mcp_servers.b.command"))
+
+    CodexPluginConfig.clear_cache()
+    local fresh = CodexPluginConfig.args(nil, config, 1)
+    assert.equals('"d"', override(fresh, "mcp_servers.b.command"))
+  end)
+
+  it("does not serve one plugin list's argv for another", function()
+    write_plugin("tooling", { name = "tooling", mcpServers = { a = { command = "c" } } })
+
+    local with_plugins = CodexPluginConfig.args(nil, config, 1)
+    -- plugin_dirs memoizes by cwd alone and documents that a different `agent.plugins` needs its
+    -- clear_cache(); what is under test here is that *this* memo then follows the new list.
+    PluginDirs.clear_cache()
+    local without = CodexPluginConfig.args(nil, { agent = { plugins = { self = false, project_dir = false } } }, 1)
+
+    assert.is_not_nil(override(with_plugins, "mcp_servers.a.command"))
+    assert.same({}, without)
+  end)
+
+  it("hands each caller its own copy, so mutating the argv cannot poison the memo", function()
+    write_plugin("tooling", { name = "tooling", mcpServers = { a = { command = "c" } } })
+
+    local first = CodexPluginConfig.args(nil, config, 1)
+    table.insert(first, "--mutated")
+    local second = CodexPluginConfig.args(nil, config, 1)
+
+    assert.is_false(vim.tbl_contains(second, "--mutated"))
+  end)
+
   -- Codex's prompt cache matches on a prefix, so the developer message must not change from one
   -- turn of a chat to the next (#469).
   it("produces byte-identical output on repeated calls", function()

@@ -52,6 +52,26 @@ describe("plugin_contents", function()
       assert.is_nil(servers[1].url)
     end)
 
+    it("expands into a root whose path contains %, which a string replacement would misread", function()
+      -- `gsub` treats `%` in a *string* replacement as an escape, so a plugin living under a
+      -- directory with one in its path (a URL-encoded branch name, say) used to error on every
+      -- manifest read. The root here is such a directory.
+      local odd_dir = plugin_dir .. "/feat%2Fodd"
+      vim.fn.mkdir(odd_dir .. "/.claude-plugin", "p")
+      vim.fn.writefile({
+        vim.json.encode({
+          name = "p",
+          mcpServers = { srv = { command = "${CLAUDE_PLUGIN_ROOT}/bin/node", args = { "plain" } } },
+        }),
+      }, odd_dir .. "/.claude-plugin/plugin.json")
+
+      local servers = PluginContents.mcp_servers(odd_dir)
+
+      assert.equals(1, #servers)
+      assert.equals(odd_dir .. "/bin/node", servers[1].command)
+      assert.same({ "plain" }, servers[1].args)
+    end)
+
     it("returns servers sorted by name", function()
       write_plugin({
         [".claude-plugin/plugin.json"] = vim.json.encode({

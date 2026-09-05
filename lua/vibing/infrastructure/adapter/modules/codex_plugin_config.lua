@@ -51,9 +51,21 @@ local function warn_once(cwd, problems)
   )
 end
 
---- Forget which problems were reported. Reached from `:VibingReloadCommands`.
+--- Memo of the finished argv, keyed by the plugin directories it was built from plus the port.
+--- Building it reads every plugin's manifest and the frontmatter of every SKILL.md -- synchronous
+--- file I/O on the main loop -- and `args` runs on every non-lightweight request, so without this
+--- the codex backend paid that on every message. The key is the resolved directory list rather
+--- than the cwd so that a different `agent.plugins` (or a `plugin_dirs` refresh that changed the
+--- list) is a different entry; the port is fixed for the Neovim session.
+--- @type table<string, string[]>
+local cache = {}
+
+--- Forget the built argv and which problems were reported. Reached from
+--- `:VibingReloadCommands`, which also clears `plugin_dirs` -- what the user runs after adding or
+--- fixing a plugin.
 function M.clear_cache()
   warned = {}
+  cache = {}
 end
 
 --- @param args string[]
@@ -152,6 +164,16 @@ end
 --- @param rpc_port number|nil this Neovim's RPC port, told to the model when the bundled server loads
 --- @return string[] argv fragment, empty when no plugin applies
 function M.args(cwd, config, rpc_port)
+  local entries = PluginDirs.resolve_entries(cwd, config)
+  local key_parts = { tostring(rpc_port) }
+  for _, entry in ipairs(entries) do
+    table.insert(key_parts, entry.path)
+  end
+  local cache_key = table.concat(key_parts, "\n")
+  if cache[cache_key] then
+    return vim.deepcopy(cache[cache_key])
+  end
+
   local args = {}
   local seen = {}
   local skills = {}
@@ -161,7 +183,7 @@ function M.args(cwd, config, rpc_port)
   -- name, and the developer message would then describe its server as the bundled one.
   local self_dir = PluginDirs.self_plugin_dir()
 
-  for _, entry in ipairs(PluginDirs.resolve_entries(cwd, config)) do
+  for _, entry in ipairs(entries) do
     for _, server in ipairs(PluginContents.mcp_servers(entry.path)) do
       if not Toml.is_bare_key(server.name) then
         table.insert(problems, string.format("%s (server %q)", entry.name, server.name))
@@ -190,7 +212,8 @@ function M.args(cwd, config, rpc_port)
     override(args, "developer_instructions", Toml.string(instructions))
   end
 
-  return args
+  cache[cache_key] = args
+  return vim.deepcopy(args)
 end
 
 return M

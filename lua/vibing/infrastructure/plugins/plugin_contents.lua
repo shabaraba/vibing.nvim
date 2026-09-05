@@ -59,7 +59,13 @@ end
 --- @return any
 local function expand(value, root)
   if type(value) == "string" then
-    return (value:gsub(PLUGIN_ROOT_VAR:gsub("%p", "%%%0"), root))
+    -- The replacement is a function, not `root` itself: a string replacement has `gsub` read
+    -- `%` in it as an escape, so a plugin under a directory whose path contains one (a branch
+    -- name with a URL-encoded character, say) errored on every manifest read -- for every
+    -- plugin, `${CLAUDE_PLUGIN_ROOT}` or not, since every string value passes through here.
+    return (value:gsub(PLUGIN_ROOT_VAR:gsub("%p", "%%%0"), function()
+      return root
+    end))
   end
   if type(value) == "table" then
     local out = {}

@@ -566,8 +566,8 @@ function M._register_commands()
     -- from this one, so clearing it second would refill them from the list being discarded.
     -- This is also what makes a plugin newly dropped into `.vibing/plugins` take effect.
     plugin_dirs.clear_cache()
-    -- Codex reads the same list per request; only its warned-once memo needs dropping, so a
-    -- manifest fixed after the warning is reported again if it is still wrong.
+    -- Codex memoizes the argv it builds from that list, plus which manifests it already warned
+    -- about; both go, so a plugin added or fixed after the warning is read again.
     codex_plugin_config.clear_cache()
 
     completion.clear_cache()
