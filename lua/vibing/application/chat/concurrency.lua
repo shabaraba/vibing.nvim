@@ -16,22 +16,33 @@ local M = {}
 ---つまみで、締めていないことが問題になる環境ばかりではない
 local UNLIMITED = 0
 
+---`orchestration`テーブルの数値フィールドを読む。型を見るのは `orchestration = true` のような
+---壊れた設定で `setup()` 後の送信ごとに落ちないため。`chat_notifications` を読む側と同じ配慮
+---@param field_name string
 ---@return number limit 0なら無制限
-function M.limit()
+local function read_orchestration_limit(field_name)
   local config = require("vibing.config").get()
   local orchestration = config.agent and config.agent.orchestration
 
-  -- 型を見るのは `orchestration = true` のような壊れた設定で `setup()` 後の送信ごとに
-  -- 落ちないため。`chat_notifications` を読む側と同じ配慮
   if type(orchestration) ~= "table" then
     return UNLIMITED
   end
 
-  local limit = orchestration.max_concurrent
+  local limit = orchestration[field_name]
   if type(limit) ~= "number" or limit < 0 then
     return UNLIMITED
   end
   return limit
+end
+
+---@return number limit 0なら無制限
+function M.limit()
+  return read_orchestration_limit("max_concurrent")
+end
+
+---@return number limit 0なら無制限
+function M.subagent_limit()
+  return read_orchestration_limit("max_concurrent_subagents")
 end
 
 ---いま応答中のチャットの本数
@@ -46,14 +57,33 @@ function M.responding_count()
   return count
 end
 
+---いま起動中の（Task/Agentツールの結果がまだ返っていない）サブエージェントの合計本数。
+---チャット本数だけを見ると、5チャットが上限内でも各自が4つ起動すれば実際は20並列になる（#701）
+---@return number
+function M.subagent_count()
+  return require("vibing.infrastructure.adapter.modules.active_stream_registry").total_subagent_count()
+end
+
 ---新しいターンを1本増やせない状態か
+---
+---チャット本数だけでなく、既存チャットが内部で起動しているサブエージェントも合計に含める。
+---`max_concurrent_subagents` はそれとは別に、サブエージェントの本数だけを単独で締めるつまみ
 ---@return boolean
 function M.at_capacity()
   local limit = M.limit()
-  if limit <= UNLIMITED then
+  local sub_limit = M.subagent_limit()
+  if limit <= UNLIMITED and sub_limit <= UNLIMITED then
     return false
   end
-  return M.responding_count() >= limit
+
+  local subagents = M.subagent_count()
+  if sub_limit > UNLIMITED and subagents >= sub_limit then
+    return true
+  end
+  if limit > UNLIMITED and (M.responding_count() + subagents) >= limit then
+    return true
+  end
+  return false
 end
 
 ---上限に当たったことを送信元に返す文言
@@ -63,11 +93,13 @@ end
 ---@return string
 function M.at_capacity_message()
   return string.format(
-    "%d chats are already responding, which is the configured limit "
-      .. "(agent.orchestration.max_concurrent = %d). Pass queue_if_busy so the message is "
-      .. "delivered when one of them finishes.",
+    "%d chats and %d of their subagents are already in flight, at or above the configured limit "
+      .. "(agent.orchestration.max_concurrent = %d, max_concurrent_subagents = %d). Pass "
+      .. "queue_if_busy so the message is delivered when one of them finishes.",
     M.responding_count(),
-    M.limit()
+    M.subagent_count(),
+    M.limit(),
+    M.subagent_limit()
   )
 end
 

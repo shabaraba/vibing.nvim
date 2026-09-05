@@ -8,6 +8,7 @@ local SessionManagerModule = require("vibing.infrastructure.adapter.modules.sess
 local ToolDisplay = require("vibing.infrastructure.adapter.modules.tool_display")
 local SubagentDisplay = require("vibing.infrastructure.adapter.modules.subagent_display")
 local SubagentMarker = require("vibing.infrastructure.adapter.modules.subagent_marker")
+local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
 local TokenUsage = require("vibing.core.utils.token_usage")
 
 --- Extract brief summary from tool input for display
@@ -15,7 +16,7 @@ local TokenUsage = require("vibing.core.utils.token_usage")
 --- @param tool_input table
 --- @return string
 local function extract_input_summary(tool_name, tool_input)
-  if tool_name == "Task" or tool_name == "Agent" then
+  if SubagentMarker.is_subagent_tool(tool_name) then
     if tool_input.subagent_type and tool_input.subagent_type ~= "" then
       return tool_input.subagent_type
     end
@@ -47,6 +48,10 @@ local function emit_tool_result(block, tool_map, context)
   local tool_name = tool_info.name
   local tool_input = tool_info.input or {}
   local input_summary = extract_input_summary(tool_name, tool_input)
+
+  if SubagentMarker.is_subagent_tool(tool_name) then
+    ActiveStreamRegistry.decrement_subagent_count(context.handleId)
+  end
 
   local marker = ToolDisplay.resolve_marker(tool_name, ToolDisplay.get_cached_markers(context))
   local header = string.format("\n%s %s(%s)\n", marker, tool_name, input_summary)
@@ -255,6 +260,14 @@ local function handle_assistant_event(msg, context)
           name = block.name,
           input = block.input or {},
         }
+      end
+
+      -- Counted once per tool_use id, independent of whether a chat wired on_tool_use — unlike
+      -- `emitted` below, which only exists to dedupe that callback and stays empty without it.
+      context._subagent_started = context._subagent_started or {}
+      if SubagentMarker.is_subagent_tool(tool_map[block.id].name) and not context._subagent_started[block.id] then
+        context._subagent_started[block.id] = true
+        ActiveStreamRegistry.increment_subagent_count(context.handleId)
       end
 
       -- Emit the tool callbacks with complete input (deferred from content_block_start).
