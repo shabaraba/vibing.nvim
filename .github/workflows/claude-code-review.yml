@@ -54,6 +54,14 @@ jobs:
             effort "high", passing `--fix` so every CONFIRMED finding is applied to the working
             tree (already checked out on the PR's own branch).
 
+            This is a single unattended batch run, not an interactive session: when it ends, the
+            process exits and nothing wakes it again. Any subagent the skill dispatches (the
+            per-dimension review fan-out, the verify pass) MUST be awaited synchronously within
+            this same turn before you act on its result. Do not end a turn saying you'll "wait" or
+            "be notified" for a background agent to finish — there is no later turn here to
+            receive that notification, so the run would exit with nothing posted and no comment
+            explaining why, exactly like a run that hit `permission_denials`.
+
             Do not run `npm run test:e2e` or `npm run test:eval` — they spend real tokens and are
             never run unattended. `npm test`, `npm run check` and `npm run lint` are fine to
             validate a fix before pushing it.
