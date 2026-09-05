@@ -247,10 +247,13 @@ local function resolve_base_branch(git_root)
 end
 
 ---あるチャットのworktreeが`base`から変更したファイル名一覧を返す。`.vibing/`（worktree自体を
----含む）は除外する。gitが失敗する場合はnil（そのチャットは比較対象から静かに外れる）
+---含む）は除外する。gitが失敗したら（`base`との merge base が無い、worktreeが消えている）
+---nilとその理由を返す。呼び出し元はそのチャットを`skipped`に載せる — 黙って外すと
+---`conflicts = {}`が「衝突なし」に読めてしまい、この道具が要る場面でこそ嘘をつく
 ---@param worktree string 絶対パス
 ---@param base string
----@return string[]?
+---@return string[]? files
+---@return string? reason gitの言い分。filesがnilのときだけ
 local function diff_against_base(worktree, base)
   local ok, result = pcall(function()
     return vim.system({
@@ -265,11 +268,18 @@ local function diff_against_base(worktree, base)
       ":(exclude).vibing",
     }, { cwd = worktree, text = true }):wait()
   end)
-  if not ok or not result or result.code ~= 0 then
-    return nil
+  if not ok then
+    return nil, tostring(result)
+  end
+  if not result or result.code ~= 0 then
+    local reason = result and vim.trim(result.stderr or "") or ""
+    if reason == "" then
+      reason = "git exited with code " .. tostring(result and result.code)
+    end
+    return nil, reason
   end
 
-  return vim.split(result.stdout or "", "\n", { trimempty = true })
+  return vim.split(result.stdout or "", "\n", { trimempty = true }), nil
 end
 
 ---生きているチャットのうち、2本以上のworking_dirブランチが同じファイルを触っていないか
@@ -279,16 +289,27 @@ end
 ---
 ---警告のみでブロックしない。v1はファイル単位（hunk単位はやらない）。`working_dir`を持たない
 ---チャット（Neovimインスタンス自身のcwdを使う）は比較対象にしない — 比較基準そのものが
----mainなので、自分自身との差分は意味を持たない
----@return {conflicts: {file: string, chats: {bufnr: number, file_path: string?, task: string?}[]}[]}
+---mainなので、自分自身との差分は意味を持たない。
+---
+---比較できなかったものは黙って落とさない: diffに失敗したチャットは`skipped`にgitの理由付きで
+---載せ、基準ブランチが無ければ`warning`を返す。空の`conflicts`は「衝突なし」に読まれるので、
+---「見ていない」をそれと区別できる形で返す
+---@return {base: string?, conflicts: {file: string, chats: {bufnr: number, file_path: string?, task: string?}[]}[], skipped: {bufnr: number, file_path: string?, working_dir: string?, reason: string}[], warning: string?}
 function M.chat_conflicts(_)
   local view = require("vibing.presentation.chat.view")
   local Git = require("vibing.core.utils.git")
 
   local git_root = Git.get_root()
-  local base = git_root and resolve_base_branch(git_root)
+  if not git_root then
+    return { conflicts = {}, skipped = {}, warning = "Not inside a git repository, so no chat was compared." }
+  end
+  local base = resolve_base_branch(git_root)
   if not base then
-    return { conflicts = {} }
+    return {
+      conflicts = {},
+      skipped = {},
+      warning = string.format("Neither main nor master resolves in %s, so no chat was compared.", git_root),
+    }
   end
 
   local buffers = view.list_chat_buffers()
@@ -297,6 +318,7 @@ function M.chat_conflicts(_)
   ---@type table<string, table[]>
   local contributors_by_file = {}
   local by_absolute_path = {}
+  local skipped = {}
   for _, bufnr in ipairs(bufnrs) do
     local chat_buf = buffers[bufnr]
     local frontmatter = chat_buf:parse_frontmatter()
@@ -306,7 +328,7 @@ function M.chat_conflicts(_)
     -- worktree of its own, so it gets the same exclusion as no working_dir at all (see the
     -- docstring above)
     if worktree and worktree ~= git_root then
-      local files = diff_against_base(worktree, base)
+      local files, reason = diff_against_base(worktree, base)
       if files then
         local entry = { bufnr = bufnr, file_path = chat_buf.file_path }
         if chat_buf.file_path then
@@ -316,6 +338,13 @@ function M.chat_conflicts(_)
           contributors_by_file[file] = contributors_by_file[file] or {}
           table.insert(contributors_by_file[file], entry)
         end
+      else
+        table.insert(skipped, {
+          bufnr = bufnr,
+          file_path = chat_buf.file_path,
+          working_dir = frontmatter.working_dir,
+          reason = reason,
+        })
       end
     end
   end
@@ -336,7 +365,7 @@ function M.chat_conflicts(_)
     end
   end
 
-  return { conflicts = conflicts }
+  return { base = base, conflicts = conflicts, skipped = skipped }
 end
 
 return M

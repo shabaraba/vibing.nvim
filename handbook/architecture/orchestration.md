@@ -588,6 +588,15 @@ touched the same file, not that their hunks actually conflict. Whether and how t
 reported collision (look closer before merging, re-brief one of the workers) is left to whoever
 reads the result.
 
+**A chat that could not be compared is reported, never dropped.** `diff_against_base` fails when a
+worktree has no merge base with the base branch (an orphan branch, a shallow clone whose local
+`main` is stale) or has been removed from disk; that chat goes under `skipped` with git's own
+message, and a repository with neither `main` nor `master` returns a `warning`. The first cut
+excluded such chats silently, and the first real run of the tool — in a shallow container clone —
+answered `conflicts = {}` for two worktrees that both touched `README.md`. An empty list is exactly
+the answer an orchestrator acts on ("nothing collides, merge"), so "not compared" has to look
+different from "compared and clean".
+
 **Only chats with their own `working_dir` are compared.** A chat with no `working_dir` uses the
 Neovim instance's own working directory rather than a worktree of its own, so there is nothing
 meaningful to diff against the base branch — comparing it would either always be empty (if the

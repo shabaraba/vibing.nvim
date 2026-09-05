@@ -304,7 +304,9 @@ export const chatTools: Tool[] = [
       'open in this Neovim session are compared, and only those with their own working_dir ' +
       "(worktree/branch) — a chat using the instance's own working directory has nothing of " +
       "its own to diff against the base branch. Diffs each chat's worktree against main/master " +
-      '(three-dot, against HEAD), so it needs no branch name of its own.',
+      '(three-dot, against HEAD), so it needs no branch name of its own. A chat whose worktree ' +
+      "could not be diffed is listed under `skipped` with git's reason, and a repository with " +
+      'neither main nor master returns a `warning` — an empty `conflicts` never means "not compared".',
     inputSchema: {
       type: 'object',
       properties: withRpcPort({}),

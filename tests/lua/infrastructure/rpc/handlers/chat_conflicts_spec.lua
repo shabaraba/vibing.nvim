@@ -120,6 +120,8 @@ describe("rpc handlers: chat_conflicts", function()
 
     local result = handler.chat_conflicts({})
 
+    assert.equals("main", result.base)
+    assert.same({}, result.skipped)
     assert.equals(1, #result.conflicts)
     local conflict = find_conflict(result.conflicts, "shared.txt")
     assert.is_not_nil(conflict)
@@ -167,9 +169,42 @@ describe("rpc handlers: chat_conflicts", function()
     end
   end)
 
-  it("returns no conflicts when the repository has neither a main nor a master branch", function()
-    -- resolve_base_branch finds nothing to diff against; the handler degrades to an empty
-    -- result rather than erroring, consistent with #699 being warn-only.
+  it("lists a chat whose worktree git cannot diff under skipped, with git's reason", function()
+    -- An orphan branch has no merge base with main, so `main...HEAD` fails. Dropping that chat
+    -- silently would leave `conflicts = {}` reading as "nothing collides" -- the one answer this
+    -- tool must never give by accident.
+    add_worktree("branchA", "shared.txt", "from A\n")
+    git_ok({ "worktree", "add", "--detach", "orphaned" }, repo)
+    git_ok({ "checkout", "-q", "--orphan", "unrelated" }, repo .. "/orphaned")
+    write(repo .. "/orphaned/only.txt", "x\n")
+    git_ok({ "add", "." }, repo .. "/orphaned")
+    git_ok({ "commit", "-q", "-m", "orphan" }, repo .. "/orphaned")
+    handler.create_chat({ working_dir = "branchA" })
+    local orphan = handler.create_chat({ working_dir = "orphaned" })
+
+    local result = handler.chat_conflicts({})
+
+    assert.same({}, result.conflicts)
+    assert.equals(1, #result.skipped)
+    assert.equals(orphan.bufnr, result.skipped[1].bufnr)
+    assert.equals("orphaned", result.skipped[1].working_dir)
+    assert.is_truthy(result.skipped[1].reason:find("no merge base", 1, true))
+  end)
+
+  it("warns instead of returning a bare empty list when there is no base branch to diff against", function()
+    -- resolve_base_branch finds nothing to diff against; the handler degrades rather than
+    -- erroring, consistent with #699 being warn-only -- but says so, since an empty `conflicts`
+    -- would otherwise read as "nothing collides".
+    git_ok({ "branch", "-m", "main", "trunk" }, repo)
+
+    local result = handler.chat_conflicts({})
+
+    assert.same({}, result.conflicts)
+    assert.is_nil(result.base)
+    assert.is_truthy(result.warning:find("main", 1, true))
+  end)
+
+  it("warns when the instance is not inside a git repository at all", function()
     Git.get_root = function()
       return nil
     end
@@ -177,5 +212,6 @@ describe("rpc handlers: chat_conflicts", function()
     local result = handler.chat_conflicts({})
 
     assert.same({}, result.conflicts)
+    assert.is_truthy(result.warning:find("git repository", 1, true))
   end)
 end)

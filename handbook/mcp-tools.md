@@ -174,8 +174,10 @@ parsed by the old name; that PR's own tests used a fixture, so nothing caught it
 using the instance's own working directory has nothing of its own to diff — and each one's worktree
 is diffed against `main` or `master` (three-dot, against `HEAD`, so no branch name has to be known).
 File-level only (v1); `task` is projected the same way `nvim_chat_list` does. Returns
-`{ conflicts: [{ file, chats: [{ bufnr, file_path, task? }] }] }`, empty when nothing collides or
-when the repository has neither a `main` nor a `master` branch to diff against.
+`{ base, conflicts: [{ file, chats: [{ bufnr, file_path, task? }] }], skipped: [{ bufnr, file_path, working_dir, reason }] }`.
+A chat whose worktree git could not diff (no merge base with `base`, a removed worktree) is listed
+under `skipped` with git's own message rather than dropped, and a repository with neither `main` nor
+`master` returns a `warning` — either way an empty `conflicts` never stands in for "not compared".
 
 The workflow is the bundled `vibing-orchestrate` skill. Why `position` defaults to `back`, why the
 chat file is written at creation, why the status is a field rather than a text heuristic, and what
