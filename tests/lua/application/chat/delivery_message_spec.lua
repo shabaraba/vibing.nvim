@@ -156,23 +156,4 @@ describe("DeliveryMessage.build (blocked chats)", function()
     assert.is_truthy(text:find("status: asked_question", 1, true))
     assert.is_truthy(text:find("A chat listed without a status", 1, true))
   end)
-
-  it("includes the worker's tail excerpt so the reader need not fetch it separately (#693)", function()
-    local about = make_buf("worker.md")
-
-    local text = DeliveryMessage.build({
-      { bufnr = about, tail = "## Assistant <!-- 2026-01-01 00:00:00 -->\nran the migration\nlooks done" },
-    })
-
-    assert.is_truthy(text:find("ran the migration", 1, true))
-    assert.is_truthy(text:find("looks done", 1, true))
-  end)
-
-  it("says nothing extra when a notification carries no tail excerpt", function()
-    local about = make_buf("worker.md")
-
-    local text = DeliveryMessage.build({ { bufnr = about } })
-
-    assert.is_falsy(text:find("last lines:", 1, true))
-  end)
 end)

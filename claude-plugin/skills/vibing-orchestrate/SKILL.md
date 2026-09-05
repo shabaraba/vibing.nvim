@@ -154,7 +154,12 @@ shapes, and the difference is whether the notice carries a `status:`.
   `nvim_get_buffer` to read _what_ it is stuck on.
 - **Without one** ("have stopped without reporting back") the worker simply stopped without
   reporting, which under the convention above is itself suspect. Read those with
-  `nvim_get_buffer({ rpc_port, file_path })` — not every worker.
+  `nvim_get_buffer({ rpc_port, file_path, last_section: true, tail_lines: 25 })` — not every
+  worker, and not a plain `nvim_get_buffer` call: a worker chat can run to hundreds of thousands
+  of lines, and reading it in full pulls that whole transcript into this conversation for the
+  rest of it. `last_section` + `tail_lines` gets you the end of its last turn, which is normally
+  enough to tell "it finished but forgot to report" from "it crashed mid-task"; go back for more
+  only if that tail leaves it unclear.
 
 Alongside the transcript the result carries a chat-status line, in the same vocabulary:
 

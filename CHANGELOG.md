@@ -50,14 +50,6 @@
 
 ### Added
 
-- **The "stopped without reporting back" orchestration notice now carries the worker's last 25
-  lines.** Previously an orchestrator had to call `nvim_get_buffer` itself to see what a stopped
-  worker actually did, and a postmortem run found that happening on 9 of 18 dispatches, against
-  worker buffers that had grown to 400-500k lines — a full read was not realistic. The notice now
-  includes the tail of the worker's last `## ...` section directly, read the same way
-  `nvim_get_buffer`'s `tail_lines` / `last_section` do, so the two cannot drift on what "the tail"
-  means.
-
 - **`nvim_get_buffer` (MCP): `tail_lines` and `last_section` read only part of a buffer.** A
   vibing.nvim chat can run to hundreds of thousands of lines, and reading it all is effectively
   the same as not being able to read it at all. `tail_lines: N` returns only the last N lines;

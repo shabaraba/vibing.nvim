@@ -404,33 +404,6 @@ describe("CompletionNotifier", function()
     assert.equals(0, #sends)
   end)
 
-  it("includes the tail of the worker's last section so the parent need not fetch it (#693)", function()
-    -- #692's postmortem: 9 of 18 dispatches stopped without reporting, and the worker buffers had
-    -- grown to 400-500k lines, so a full `nvim_get_buffer` round trip was not realistic. The
-    -- notification itself should carry enough to judge what happened.
-    local a, b = make_chat(), make_chat()
-    vim.api.nvim_buf_set_lines(b, 0, -1, false, {
-      "## Assistant <!-- 2026-01-01 00:00:00 -->",
-      "ran the migration script",
-      "looks like it finished cleanly",
-    })
-
-    Notifier.subscribe(a, b)
-    Notifier.on_response_done(b)
-
-    assert.is_truthy(sends[1].message:find("ran the migration script", 1, true))
-    assert.is_truthy(sends[1].message:find("looks like it finished cleanly", 1, true))
-  end)
-
-  it("adds no excerpt for a worker buffer with no content to show", function()
-    local a, b = make_chat(), make_chat()
-
-    Notifier.subscribe(a, b)
-    Notifier.on_response_done(b)
-
-    assert.is_falsy(sends[1].message:find("last lines:", 1, true))
-  end)
-
   it("tells the sender that stopping is not the same as succeeding", function()
     -- `idle` はエラー終了でも、質問でターンが死んだときでも、ツール承認待ちでも通る。
     -- 成否の判定を通知側でやると chat_status と同じ罠を踏むので、判断は受け取り側に委ねる。

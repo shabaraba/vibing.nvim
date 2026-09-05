@@ -30,8 +30,6 @@ local WARN_TITLE = "Chat Delivery"
 ---  （`ChatBuffer:get_stop_reason()`）。読み手が `nvim_get_buffer` を1往復せずに
 ---  「答えれば動く」のか「ユーザーにしか外せない」のかを判断できるようにするためで、
 ---  普通に止まっただけの watchdog 通知では nil
----@field tail string? 通知のみ。done_bufnr の最終セクションの末尾数十行（#693）。読めなかった、
----  または空だった場合は nil
 
 ---@type table<number, Vibing.Application.MessageQueue.Item[]>
 local pending = {}
@@ -85,15 +83,11 @@ end
 ---@param to_bufnr number
 ---@param done_bufnr number
 ---@param reason string? 自力では抜けられない止まり方をしたならその理由
----@param tail string? done_bufnr の最終セクションの末尾数十行（#693）
-function M.enqueue_notification(to_bufnr, done_bufnr, reason, tail)
+function M.enqueue_notification(to_bufnr, done_bufnr, reason)
   local queue = pending[to_bufnr] or {}
   for _, item in ipairs(queue) do
     if not item.body and item.bufnr == done_bufnr then
       item.reason = reason or item.reason
-      -- 抜粋も後勝ちにする。同じ理由で `reason` を上書きするのと同じ理由: 2度目のほうが
-      -- そのチャットの現在の状態に近い
-      item.tail = tail or item.tail
       return
     end
   end
@@ -112,7 +106,7 @@ function M.enqueue_notification(to_bufnr, done_bufnr, reason, tail)
     return
   end
 
-  table.insert(queue, { bufnr = done_bufnr, reason = reason, tail = tail })
+  table.insert(queue, { bufnr = done_bufnr, reason = reason })
   pending[to_bufnr] = queue
 end
 
