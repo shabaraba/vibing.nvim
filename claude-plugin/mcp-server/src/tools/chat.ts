@@ -31,6 +31,9 @@ export const chatTools: Tool[] = [
       'Create a new vibing.nvim chat buffer and return its bufnr and chat file path. ' +
       'Use it to spawn worker chats you then drive with nvim_chat_send_message — the ' +
       'multi-agent orchestration workflow (see the vibing-orchestrate skill). ' +
+      'A chat is for work that must survive a turn, own a branch/worktree, or take a human ' +
+      "approval — one-shot delegated work inside your own turn is a subagent's job instead " +
+      '(see "Chat or subagent?" in the vibing-orchestrate skill). ' +
       'Leave position at its "back" default for workers: that creates the buffer without ' +
       "opening a window, so the user's layout is untouched. " +
       'The new chat starts empty and shares nothing with yours, so every message you send it ' +
