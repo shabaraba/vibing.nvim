@@ -90,19 +90,48 @@ jobs:
             This will show you the PR title, body, ALL comments, AND the code changes.
 
             ## Task Instructions
-            After gathering the full context above:
-            1. Read and understand ALL comments and discussions
-            2. For PRs, review the code changes in the diff
-            3. Execute the requested task based on the complete context
-            4. When you complete an implementation task, create a pull request using `gh pr create` command
+            After gathering the full context above, work it like a feature-dev flow:
+
+            1. Read and understand ALL comments and discussions; for PRs, also review the code
+               changes in the diff.
+            2. Investigate the codebase before writing anything. Use the Agent tool to fan out
+               independent, read-only investigation (e.g. "how does module X already do Y",
+               "what other callers exist") when there is more than one thing to check and they
+               don't depend on each other's findings — this is a single unattended run with no
+               back-and-forth, so parallel investigation up front is cheaper than discovering a
+               constraint after half the implementation is written.
+            3. Plan the implementation. When more than one reasonable approach exists, do not ask
+               which one to take — nobody is watching this run. Pick the one you judge best by the
+               codebase's own existing conventions (mirror the nearest similar pattern already in
+               the repo) and proceed; state the choice and why in the PR description so a human can
+               override it later if needed. Only stop short of implementing if the request itself
+               is too ambiguous to act on at all (not merely "which of two valid designs"): in that
+               case, report the ambiguity as a PR comment or issue comment instead of guessing at
+               the task itself.
+            4. Implement the change.
+            5. Verify before creating the PR: run the project's own fast checks relevant to what
+               changed (`npm test`, `npm run check`, `npm run lint` as applicable). Do not run
+               `npm run test:e2e` or `npm run test:eval` — they spend real tokens and are never run
+               unattended.
+            6. When you complete an implementation task, create a pull request using `gh pr create` command
                - Create a descriptive PR title in English using semantic commit format
                - Write the PR body in Japanese with clear description of changes
                - Include "fixes #<issue-number>" if there's a related issue
 
-          # Allow file operations and git/gh commands for implementation tasks. --resume is
-          # appended when lookup-session found a prior session_id for this thread.
+          # Allow file operations, git/gh commands and subagents for implementation tasks.
+          # --resume is appended when lookup-session found a prior session_id for this thread.
+          #
+          # Agent lets this flow fan out independent, read-only investigation before implementing
+          # (see the prompt's step 2) instead of discovering a codebase constraint mid-implementation.
+          #
+          # ToolSearch, TodoWrite, ReportFindings and ScheduleWakeup are this repo's own
+          # INTERNAL_TOOLS set (core/constants/tools.lua): harness-internal, side-effect-free
+          # control tools Claude Code invokes habitually regardless of task. Omitting any one of
+          # them doesn't error, it just gets silently denied every time, which is what stalled the
+          # claude-code-review.yml run before #719 fixed the same gap there -- allow the whole set
+          # here too rather than whack-a-mole one at a time.
           claude_args: >-
-            --allowed-tools "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(npm:*)"
+            --allowed-tools "Read,Edit,Write,Glob,Grep,Agent,ToolSearch,TodoWrite,ReportFindings,ScheduleWakeup,Bash(git:*),Bash(gh:*),Bash(npm:*)"
             ${{ steps.lookup-session.outputs.session_id != '' && format('--resume {0}', steps.lookup-session.outputs.session_id) || '' }}
 
           # Show full output for debugging
