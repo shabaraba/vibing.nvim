@@ -358,19 +358,29 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
             and string.format("%s (currently buffer %d)", orchestrator.path, orchestrator.bufnr)
           or orchestrator.path
       end, opts.orchestrators)
+      -- Usually one path, but `orchestrated_by` is a list: a second chat that later messages this
+      -- one via nvim_chat_send_message is appended too (orchestration_link.lua), so a worker can
+      -- have more than one orchestrator to report to. nvim_chat_send_message addresses exactly one
+      -- file_path per call, so "that file_path" (singular) only holds for the one-name case.
+      local target_clause = #named == 1
+          and ("This chat was started by vibing.nvim chat " .. named[1] .. ". Report to it")
+        or (
+          "This chat was started by more than one vibing.nvim chat: "
+          .. table.concat(named, ", ")
+          .. ". Report to each of them separately, once per file_path"
+        )
       table.insert(
         system_prompt_lines,
-        "This chat was started by vibing.nvim chat "
-          .. table.concat(named, ", ")
-          .. ". Report to it — when the task is done, before you act on something you expect will "
-          .. "need approval, and the moment you find you cannot proceed — by calling "
+        target_clause
+          .. " — when the task is done, before you act on something you expect will need "
+          .. "approval, and the moment you find you cannot proceed — by calling "
           .. "nvim_chat_send_message with that file_path, your own chat buffer number as "
-          .. "from_bufnr, and queue_if_busy: true. State the conclusion, what changed, what is "
-          .. "unresolved, and what input you need next, briefly: it can read this transcript for "
-          .. "the rest, and can be asked the same way if the brief is ambiguous or you get stuck. "
-          .. "Do not stop with only a prose report in your own chat buffer — that report is never "
-          .. "read unless you also send it. See the vibing-worker skill for the full protocol, "
-          .. "including what not to touch."
+          .. "from_bufnr, this turn's rpc_port, and queue_if_busy: true. State the conclusion, "
+          .. "what changed, what is unresolved, and what input you need next, briefly: it can "
+          .. "read this transcript for the rest, and can be asked the same way if the brief is "
+          .. "ambiguous or you get stuck. Do not stop with only a prose report in your own chat "
+          .. "buffer — that report is never read unless you also send it. See the vibing-worker "
+          .. "skill for the full protocol, including what not to touch."
       )
     end
 

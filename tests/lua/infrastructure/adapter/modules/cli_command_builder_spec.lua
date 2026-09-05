@@ -114,6 +114,23 @@ describe("cli_command_builder", function()
       assert.is_nil(prompt_text:find("This chat was started by", 1, true))
     end)
 
+    it("tells the model to report to each orchestrator separately when there is more than one", function()
+      -- A worker's `orchestrated_by` can gain a second entry when another chat later messages it
+      -- (orchestration_link.lua) — one nvim_chat_send_message call only reaches one file_path, so
+      -- "that file_path" (singular) would be wrong here.
+      local cmd = cli_command_builder.build(
+        "hello",
+        { orchestrators = { { path = ".vibing/chat/boss.md" }, { path = ".vibing/chat/other.md" } } },
+        nil,
+        {},
+        nil
+      )
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_true(prompt_text:find(".vibing/chat/boss.md", 1, true) ~= nil)
+      assert.is_true(prompt_text:find(".vibing/chat/other.md", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("Report to each of them separately", 1, true) ~= nil)
+    end)
+
     it("keeps the system prompt byte-identical when only the chat file path changes", function()
       local before = cli_command_builder.build("hello", { chat_bufnr = 12, chat_file_path = "/tmp/a.md" }, nil, {}, nil)
       local after = cli_command_builder.build(

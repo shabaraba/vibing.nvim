@@ -218,9 +218,12 @@ across workers of its own. Your own reporting duty to that parent is the injecte
 system prompt plus the `vibing-worker` skill it points to — read that for the report protocol.
 Everything above still applies to how you run your own workers — plus one rule.
 
-**Report to your parent only once every worker of yours has reported.** Nothing enforces this;
-there is no barrier in vibing.nvim, and a message sent early is delivered normally. The whole
-fan-in is this convention, so keeping it is on you.
+**Report your own completion to your parent only once every worker of yours has reported.**
+Nothing enforces this; there is no barrier in vibing.nvim, and a message sent early is delivered
+normally. The whole fan-in is this convention, so keeping it is on you. It covers only the
+completion report — the immediate reports the `vibing-worker` skill obligates you to send your own
+parent (a heads-up before an approval-prone action, or the moment you find you yourself cannot
+proceed) still fire right away, whether or not your own workers have finished.
 
 - While workers are outstanding, end each turn with a line naming which ones you are still waiting
   on. That text is the only place the count survives — you are a fresh process every turn, and

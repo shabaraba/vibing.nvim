@@ -15,7 +15,11 @@ system-prompt line wins: it is generated fresh for this turn, this file can go s
 
 Call `nvim_chat_send_message` with:
 
-- `file_path`: the orchestrator's path, exactly as given in your system prompt.
+- `rpc_port`: this turn's value, exactly as given in your system prompt — required on every
+  vibing-nvim MCP call, not just this one (see the `nvim-context` skill).
+- `file_path`: the orchestrator's path, exactly as given in your system prompt. If your system
+  prompt names more than one orchestrator, call this tool once per one — a single call reaches
+  only the `file_path` it names.
 - `from_bufnr`: your own chat buffer number, also given in your system prompt.
 - `queue_if_busy: true`. Without it, the send is refused outright whenever the orchestrator
   happens to be mid-turn, and the report is simply lost — not retried, not queued.
@@ -67,5 +71,8 @@ transcript for free.
 - **Forward your own subagent- or worker-launch calls to the orchestrator as if they were your
   report.** If you dispatch a subagent or create worker chats of your own (see `vibing-orchestrate`
   for that case), "I launched X" is not an outcome — it tells the orchestrator what you did, not
-  what happened. Wait for the outcome and report that, holding your own report until your own
-  workers have reported back to you.
+  what happened. Wait for the outcome and report that, holding your own **completion** report
+  until your own workers have reported back to you. That hold applies only to the completion
+  report — a heads-up before an approval-prone action, or a report that you yourself are blocked,
+  still goes out immediately under "When to report" above, whether or not your own workers have
+  finished.
