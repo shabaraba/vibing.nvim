@@ -60,13 +60,14 @@ end
 ---working_dir（gitルートからの相対パス）から絶対パスを算出
 ---gitルート外を指す値は無視してnilを返す（get_relative_pathの境界チェックと対称）
 ---@param working_dir string|nil 相対パス（"."はgitルートを表す）
+---@param git_root string? 呼び出し元が既に持っているなら渡す（`git rev-parse`の起動を1回省く）
 ---@return string|nil 絶対パス（working_dirがnil・Git管理外・gitルート外の場合はnil）
-function M.resolve_working_dir(working_dir)
+function M.resolve_working_dir(working_dir, git_root)
   if not working_dir or working_dir == "" or working_dir == "~" then
     return nil
   end
 
-  local git_root = M.get_root()
+  git_root = git_root or M.get_root()
   if not git_root then
     return nil
   end

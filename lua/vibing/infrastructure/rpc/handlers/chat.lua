@@ -147,6 +147,19 @@ local function read_context_size(bufnr)
   end
 end
 
+---`view.list_chat_buffers()`が返すbufnrをソート済みの配列にする。`list_chats`と
+---`chat_conflicts`の両方が「毎回同じ順序で列挙する」ために同じ手順を踏むので、ここで共有する
+---@param buffers table<number, Vibing.ChatBuffer>
+---@return number[]
+local function sorted_bufnrs(buffers)
+  local bufnrs = {}
+  for bufnr in pairs(buffers) do
+    table.insert(bufnrs, bufnr)
+  end
+  table.sort(bufnrs)
+  return bufnrs
+end
+
 ---taskはチャット自身のfrontmatterではなく、それを頼んだ親の`orchestrated`エントリにしか
 ---無い（#696フォローアップ）。今このセッションで開いている全チャットの`orchestrated`を
 ---展開し、一致するbufnrの行（`by_absolute_path`）に投影する — 対象は既に読み込み済みのチャット
@@ -189,11 +202,7 @@ function M.list_chats(_)
   local ChatStatus = require("vibing.presentation.chat.modules.chat_status")
 
   local buffers = view.list_chat_buffers()
-  local bufnrs = {}
-  for bufnr in pairs(buffers) do
-    table.insert(bufnrs, bufnr)
-  end
-  table.sort(bufnrs)
+  local bufnrs = sorted_bufnrs(buffers)
 
   local chats = {}
   local by_absolute_path = {}
@@ -244,20 +253,23 @@ end
 ---@return string[]?
 local function diff_against_base(worktree, base)
   local ok, result = pcall(function()
-    return vim.system(
-      { "git", "diff", "--name-only", base .. "...HEAD", "--", ".", ":(exclude).vibing" },
-      { cwd = worktree, text = true }
-    ):wait()
+    return vim.system({
+      "git",
+      "-c",
+      "core.quotePath=false",
+      "diff",
+      "--name-only",
+      base .. "...HEAD",
+      "--",
+      ".",
+      ":(exclude).vibing",
+    }, { cwd = worktree, text = true }):wait()
   end)
   if not ok or not result or result.code ~= 0 then
     return nil
   end
 
-  local files = {}
-  for line in (result.stdout or ""):gmatch("[^\n]+") do
-    table.insert(files, line)
-  end
-  return files
+  return vim.split(result.stdout or "", "\n", { trimempty = true })
 end
 
 ---生きているチャットのうち、2本以上のworking_dirブランチが同じファイルを触っていないか
@@ -280,11 +292,7 @@ function M.chat_conflicts(_)
   end
 
   local buffers = view.list_chat_buffers()
-  local bufnrs = {}
-  for bufnr in pairs(buffers) do
-    table.insert(bufnrs, bufnr)
-  end
-  table.sort(bufnrs)
+  local bufnrs = sorted_bufnrs(buffers)
 
   ---@type table<string, table[]>
   local contributors_by_file = {}
@@ -292,8 +300,12 @@ function M.chat_conflicts(_)
   for _, bufnr in ipairs(bufnrs) do
     local chat_buf = buffers[bufnr]
     local frontmatter = chat_buf:parse_frontmatter()
-    local worktree = Git.resolve_working_dir(frontmatter.working_dir)
-    if worktree then
+    local worktree = Git.resolve_working_dir(frontmatter.working_dir, git_root)
+    -- working_dir == "." resolves to git_root itself (a documented `resolve_working_dir`
+    -- behavior other callers rely on) -- that is the instance's own working directory, not a
+    -- worktree of its own, so it gets the same exclusion as no working_dir at all (see the
+    -- docstring above)
+    if worktree and worktree ~= git_root then
       local files = diff_against_base(worktree, base)
       if files then
         local entry = { bufnr = bufnr, file_path = chat_buf.file_path }
