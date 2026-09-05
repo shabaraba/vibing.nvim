@@ -434,6 +434,8 @@ with YAML frontmatter: >
       - Bash
     permissions_ask:
       - Bash
+    delegated_scope:                          # optional: see below
+      - Bash(npm:*)
     language: ja                              # optional
     ---
 <
@@ -460,6 +462,16 @@ chat a later message with a new `task` replaces the entry; an ordinary
 message with no `task` leaves it as is. `orchestrated_by` never carries a
 task suffix, since the assignment belongs to the chat that gave it, not the
 one that received it.
+
+`delegated_scope` lists tool/command patterns (same syntax as
+`permissions_allow`, e.g. `Bash(npm:*)`) that an orchestrator may auto-approve
+on this chat's behalf via `nvim_chat_answer_approval`, when
+`agent.orchestration.delegated_approval = "scoped"`. It is declared with
+`nvim_chat_create`'s `delegated_scope` argument and written on the chat's own
+frontmatter (not the orchestrator's). A denial can always be delegated
+regardless of scope, since denying grants nothing; only `allow_once` /
+`allow_for_session` answers are checked against it. See the
+vibing-orchestrate skill for how to declare it.
 
 ==============================================================================
 9. BACKENDS                                                  *vibing-backends*

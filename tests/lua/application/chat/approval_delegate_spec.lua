@@ -33,11 +33,12 @@ describe("ApprovalDelegate", function()
   local sends
   local pending
   local stop_reason
+  local worker_scope
 
-  ---@param enabled boolean
-  local function configure(enabled)
+  ---@param mode boolean|"scoped"
+  local function configure(mode)
     local cfg = vim.tbl_deep_extend("force", vim.deepcopy(Config.defaults), {
-      agent = { orchestration = { delegated_approval = enabled } },
+      agent = { orchestration = { delegated_approval = mode } },
     })
     Config.get = function()
       return cfg
@@ -60,6 +61,7 @@ describe("ApprovalDelegate", function()
     sends = {}
     pending = { tool = "Bash", input = { command = "npm install" }, options = OPTIONS }
     stop_reason = "waiting_approval"
+    worker_scope = {}
 
     configure(true)
 
@@ -76,6 +78,12 @@ describe("ApprovalDelegate", function()
         end,
         get_stop_reason = function()
           return stop_reason
+        end,
+        get_frontmatter_list = function(_, key)
+          if key == "delegated_scope" then
+            return worker_scope
+          end
+          return {}
         end,
       }
     end
@@ -209,5 +217,55 @@ describe("ApprovalDelegate", function()
     assert.equals("Bash", result.tool)
     assert.equals("deny_for_session", result.action)
     assert.is_true(result.success)
+  end)
+
+  describe('"scoped" mode', function()
+    before_each(function()
+      configure("scoped")
+    end)
+
+    it("refuses an allow answer the worker's delegated_scope does not cover", function()
+      worker_scope = { "Bash(rm:*)" }
+
+      local ok, err = pcall(answer, "allow_once")
+
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):match("delegated_scope"), tostring(err))
+      assert.equals(0, #sends)
+    end)
+
+    it("allows an allow answer that matches the worker's delegated_scope", function()
+      worker_scope = { "Bash(npm:*)" }
+
+      answer("allow_once")
+
+      assert.equals(1, #sends)
+    end)
+
+    it("allows a bare tool-name scope entry with no command pattern", function()
+      worker_scope = { "Bash" }
+
+      answer("allow_for_session")
+
+      assert.equals(1, #sends)
+    end)
+
+    it("always allows a denial, even with an empty or non-matching scope", function()
+      worker_scope = {}
+
+      answer("deny_once")
+      answer("deny_for_session")
+
+      assert.equals(2, #sends)
+    end)
+
+    it("treats an empty scope as covering nothing", function()
+      worker_scope = {}
+
+      local ok = pcall(answer, "allow_once")
+
+      assert.is_false(ok)
+      assert.equals(0, #sends)
+    end)
   end)
 end)

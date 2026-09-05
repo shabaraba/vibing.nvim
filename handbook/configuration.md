@@ -236,13 +236,23 @@ agent = {
                             -- that hits a tool in its `ask` list has its turn killed and the
                             -- prompt drawn into its own buffer: it cannot continue and cannot
                             -- report that it is stuck, so with this off you have to find each
-                            -- blocked worker and answer it yourself. On, the orchestrator
-                            -- answers instead (nvim_chat_answer_approval), choosing among the
-                            -- same four options you would. Off by default because that is an
-                            -- agent clearing another agent's permission gate — a change to the
-                            -- permission model, not a convenience. The answer is written into
-                            -- the worker's transcript as `## Request ... from <that chat>`, so
-                            -- who granted what is readable afterwards
+                            -- blocked worker and answer it yourself.
+                            --
+                            -- true: the orchestrator answers instead (nvim_chat_answer_approval),
+                            -- choosing among the same four options you would, for any tool.
+                            --
+                            -- "scoped": the same call, but an allow_once/allow_for_session answer
+                            -- only succeeds if the tool matches a pattern in the WORKER'S OWN
+                            -- `delegated_scope` frontmatter (declared via nvim_chat_create's
+                            -- delegated_scope argument, same syntax as permissions_allow, e.g.
+                            -- "Bash(npm:*)"). A denial always succeeds regardless of scope, since
+                            -- denying grants nothing.
+                            --
+                            -- Off by default either way, because this is an agent clearing
+                            -- another agent's permission gate — a change to the permission model,
+                            -- not a convenience. The answer is written into the worker's
+                            -- transcript as `## Request ... from <that chat>`, so who granted
+                            -- what is readable afterwards
   },
 
   codex_provider_notice = {

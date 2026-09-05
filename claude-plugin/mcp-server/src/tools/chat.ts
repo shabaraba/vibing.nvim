@@ -76,6 +76,19 @@ export const chatTools: Tool[] = [
             'dropped with a warning. Use the task argument on nvim_chat_send_message instead of ' +
             'repeating this call to update the assignment later.',
         },
+        delegated_scope: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Tool/command patterns (same syntax as the permissions_allow frontmatter field, ' +
+            'e.g. "Bash(npm:*)", "Read") that you may auto-approve on this new chat\'s behalf ' +
+            'with nvim_chat_answer_approval, once agent.orchestration.delegated_approval is set ' +
+            'to "scoped". Recorded on the NEW chat\'s own frontmatter as delegated_scope — it is ' +
+            'what is being asked, not who is allowed to answer for it, which stays a config ' +
+            'decision. Denials are always answerable regardless of this list; only allow_once / ' +
+            'allow_for_session answers are checked against it. Has no effect unless ' +
+            'delegated_approval is "scoped" (and none at all if it is unset or true/false).',
+        },
       }),
       required: requireRpcPort([]),
     },
@@ -223,13 +236,16 @@ export const chatTools: Tool[] = [
       "Answer another chat's pending tool-approval prompt — the one that leaves it stuck at " +
       'status waiting_approval, unable to continue or even to report back. Read what it is ' +
       'stuck on with nvim_get_buffer first; the prompt names the tool and its input. ' +
-      'This is off unless the user turned it on ' +
-      '(agent.orchestration.delegated_approval), and the call fails with an explanation when it ' +
-      'is off — then the only thing to do is tell the user which chat is blocked and on what. ' +
-      'When it is on, you are standing in for the user on a decision they asked to be consulted ' +
-      'about: answer only when the tool is plainly within the task you briefed that chat with, ' +
-      'and put anything else to the user instead. Your answer is recorded in that chat as coming ' +
-      'from you. It can only be answered once, and only while it is pending.',
+      'This is off unless the user turned it on (agent.orchestration.delegated_approval), and ' +
+      'the call fails with an explanation when it is off — then the only thing to do is tell ' +
+      'the user which chat is blocked and on what. When it is set to true, you are standing in ' +
+      'for the user on a decision they asked to be consulted about: answer only when the tool ' +
+      'is plainly within the task you briefed that chat with, and put anything else to the ' +
+      'user instead. When it is set to "scoped", the call itself enforces this: an allow_once ' +
+      "or allow_for_session answer only succeeds if the tool matches that chat's declared " +
+      'delegated_scope (see nvim_chat_create), so it is fine to just try it — a denial ' +
+      '(deny_once/deny_for_session) always succeeds either way. Your answer is recorded in ' +
+      'that chat as coming from you. It can only be answered once, and only while it is pending.',
     inputSchema: {
       type: 'object',
       properties: withRpcPort({

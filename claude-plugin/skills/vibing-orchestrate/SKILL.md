@@ -113,6 +113,11 @@ nvim_chat_create({
   conversation resumed the next morning would drive the wrong buffer. The path keeps working, and
   a worker chat that is no longer open is opened for you. Pass one or the other; passing both is
   an error.
+- If `agent.orchestration.delegated_approval` is `"scoped"`, declare what this worker may need
+  approved up front with `delegated_scope` (same pattern syntax as `permissions_allow`, e.g.
+  `delegated_scope: ["Bash(npm:*)"]`). It is written on the worker's own frontmatter, and is what
+  makes "Answering a worker's tool approval" below a safe machine check instead of a judgment call
+  each time. Skip it under `true` (everything is already delegated) or `false` (nothing is).
 
 ## 3. Send each worker a self-contained brief
 
@@ -206,8 +211,8 @@ Alongside the transcript the result carries a chat-status line, in the same voca
   the user if only they can decide. It will not move until someone answers.
 - `status: waiting_approval` — the worker stopped on a tool-approval prompt. By default only the
   user can clear that one: say which worker is blocked and on what. If the user turned on
-  `agent.orchestration.delegated_approval`, you can answer it yourself — see "Answering a worker's
-  tool approval" below.
+  `agent.orchestration.delegated_approval` (`true` or `"scoped"`), you can answer it yourself — see
+  "Answering a worker's tool approval" below.
 - `status: error` — the last turn ended with an error. Read the tail of the transcript for the
   message and decide whether to re-brief the worker or report the failure.
 
@@ -243,7 +248,8 @@ A worker that reaches a tool in its `ask` list has its turn killed and the appro
 into its own buffer. It cannot continue and cannot report that it is stuck. **By default the only
 one who can clear that is the user** — name the worker and the tool in your reply and end the turn.
 
-If the user set `agent.orchestration.delegated_approval`, you can answer it instead:
+If the user set `agent.orchestration.delegated_approval` to `true` or `"scoped"`, you can answer it
+instead:
 
 ```text
 nvim_get_buffer({ rpc_port, file_path: "<worker file_path>" })    # read what it is stuck on
@@ -255,12 +261,22 @@ nvim_chat_answer_approval({
 })
 ```
 
-Four things about it:
+The two modes differ in who judges the prompt:
 
-- **You are standing in for the user on a decision they asked to be consulted about.** Answer only
-  when the tool and its input are plainly within the brief you wrote for that worker. Anything
-  else — a command touching files outside the task, anything destructive, anything you cannot
-  place — goes to the user, with the worker and the tool named.
+- **`true`: you judge it, every time.** You are standing in for the user on a decision they asked
+  to be consulted about. Answer only when the tool and its input are plainly within the brief you
+  wrote for that worker. Anything else — a command touching files outside the task, anything
+  destructive, anything you cannot place — goes to the user, with the worker and the tool named.
+- **`"scoped"`: the call judges it, against that worker's own `delegated_scope` frontmatter**
+  (declared when you created it — see step 2). An `allow_once`/`allow_for_session` answer only
+  succeeds if the tool matches a pattern you declared up front; a `deny_once`/`deny_for_session`
+  answer always succeeds. This means you can just try `allow_once` first — a failure means it is
+  out of the scope you declared, so fall back to naming the worker and the tool to the user, the
+  same as when the setting is off. Don't try to widen the scope yourself to force a match; that
+  defeats the point of having declared it up front.
+
+Regardless of mode:
+
 - **Read the prompt before answering.** The buffer names the tool and its input. Approving a tool
   you have not looked at is not delegation, it is a rubber stamp.
 - **Prefer `allow_once`.** `allow_for_session` is written into that worker's frontmatter and
@@ -268,8 +284,8 @@ Four things about it:
   when the brief obviously needs the tool repeatedly. `deny_once` / `deny_for_session` are the
   other two; a denial sends the worker back with "use a different approach", so say why in a
   follow-up message if the reason matters.
-- **The call fails with an explanation when the setting is off.** Read it and put the approval to
-  the user; don't call it again to check.
+- **The call fails with an explanation when the setting is off, or when a `"scoped"` call misses.**
+  Read it and put the approval to the user; don't call it again to check.
 
 Answering starts a new turn in that worker, so it will come back to you when it stops — exactly
 like a brief. Do not poll it.

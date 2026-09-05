@@ -102,10 +102,13 @@
 ---  （Task/Agentツール呼び出し）の本数。0で無制限（デフォルト: 0）。`max_concurrent`が
 ---  「チャット+サブエージェントの合計」を見るのに対し、こちらはサブエージェントの本数単独を
 ---  締めるつまみ
----@field delegated_approval boolean? 別のチャットが`nvim_chat_answer_approval`でツール承認
+---@field delegated_approval (boolean|"scoped")? 別のチャットが`nvim_chat_answer_approval`でツール承認
 ---  プロンプトに代理で答えられるようにするか（デフォルト: false）。承認ゲートはユーザーのために
 ---  あるので、エージェントが別のエージェントのゲートを外せる状態は権限モデルそのものの変更であり、
----  既定にはしない
+---  既定にはしない。`true`は無条件で全権委任、`"scoped"`はワーカーのfrontmatterの
+---  `delegated_scope`（`permissions_allow`と同じパターン構文の文字列リスト）に一致する許可
+---  （allow_once/allow_for_session）だけを通す — 拒否は範囲を問わず常に委任できる（権限を
+---  広げない）。`delegated_scope`は`nvim_chat_create`の同名引数で宣言する
 
 ---@class Vibing.AgentConfig
 ---エージェント設定
@@ -378,8 +381,11 @@ M.defaults = {
       -- 「どのチャットが何で止まっているか」を言うところまでしかできない。
       --
       -- true にすると、オーケストレーターは `nvim_chat_answer_approval` で4択
-      -- （allow_once / deny_once / allow_for_session / deny_for_session）に代理で答えられる。
-      -- 扇の全員が同じ承認で止まる運用ではこれが唯一の現実解だが、買っているのは
+      -- （allow_once / deny_once / allow_for_session / deny_for_session）に無条件で代理で答えられる。
+      -- "scoped" にすると、そのワーカーが`nvim_chat_create`の`delegated_scope`引数で宣言した
+      -- パターン（frontmatterの`delegated_scope`、`permissions_allow`と同じ構文）に一致する
+      -- allow系の答えだけを通す。拒否は範囲を問わず常に通す — 拒否は権限を広げないため。
+      -- 扇の全員が同じ承認で止まる運用では `true` が唯一の現実解だが、買っているのは
       -- 「エージェントが別のエージェントの承認ゲートを外せる」状態そのものなので、
       -- opt-in にしてある。答えは配達セクション（`## Request <!-- ... from ... -->`）として
       -- ワーカーのtranscriptに残るので、誰が許可したかは後から読める。
