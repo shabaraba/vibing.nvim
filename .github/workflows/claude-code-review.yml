@@ -11,17 +11,28 @@ jobs:
 
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
       issues: read
       id-token: write
       actions: read
 
     steps:
-      - name: Checkout repository
+      # Checks out the PR's own head branch (not the ephemeral merge ref actions/checkout would
+      # otherwise use for `pull_request` events), so a fix the review applies can be committed
+      # and pushed straight back onto it.
+      - name: Checkout PR head branch
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
+
+      # `git commit` needs an identity; the runner has none configured by default. Attributed to
+      # github-actions[bot], the same identity the label-reflection step below already pushes as.
+      - name: Configure git identity for auto-fix commits
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Run Claude Code Review
         id: claude-review
@@ -33,33 +44,31 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Review this pull request. Use the repository's CLAUDE.md for guidance on style and
-            conventions, and check for:
-            - Code quality and best practices
-            - Potential bugs or issues
-            - Performance considerations
-            - Security concerns
-            - Test coverage
+            Run the `/code-review` skill against PR #${{ github.event.pull_request.number }} at
+            effort "high", passing `--fix` so every CONFIRMED finding is applied to the working
+            tree (already checked out on the PR's own branch).
 
-            ## Output format
-            Classify every finding into exactly one of these priority levels and group the
-            comment body under a heading per level, most severe first. Omit a heading entirely
-            if it has no findings; if there are no findings at all, say so briefly instead of
-            posting empty headings.
-            - ## Critical
-            - ## High
-            - ## Medium
-            - ## Low
+            Do not run `npm run test:e2e` or `npm run test:eval` — they spend real tokens and are
+            never run unattended. `npm test`, `npm run check` and `npm run lint` are fine to
+            validate a fix before pushing it.
 
-            Post the ENTIRE review as a SINGLE PR comment: call `gh pr comment` exactly once.
-            Do not split the review across multiple comments.
+            After the skill finishes:
+            1. If it changed any files, stage and commit them (English summary, one commit) and
+               `git push` to this same branch. Do not create a new branch, rebase, or
+               force-push.
+            2. Post the review as a SINGLE PR comment (`gh pr comment`, called exactly once) in
+               Japanese, covering:
+               - which CONFIRMED findings were auto-fixed and pushed (file:line)
+               - which findings are PLAUSIBLE or were left alone, with file:line, so a human can
+                 judge them
+               - if nothing was found, say so briefly instead of posting empty sections
 
-            IMPORTANT: All prose MUST be in Japanese. Keep the priority headings themselves in
-            English (Critical/High/Medium/Low) so they match the repository's priority scheme.
-
-          # Minimum required tools for code review; label transitions are handled by the workflow
-          # step below, not by Claude, so no gh-edit access is needed here.
-          claude_args: '--allowed-tools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"'
+          # Enough to run /code-review's own tool-use (read/edit the tree, verify with the repo's
+          # test/lint scripts) plus commit, push and comment. Label transitions are handled by the
+          # workflow step below, not by Claude, so no gh-edit access is needed here.
+          claude_args: >-
+            --allowed-tools
+            "Read,Edit,Write,Glob,Grep,Bash(git:*),Bash(npm test:*),Bash(npm run check:*),Bash(npm run lint:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
 
       # Runs regardless of whether the step above succeeded, so a crashed or timed-out run still
       # gets reflected on the PR instead of leaving "claude:in-review" stuck forever.
