@@ -154,6 +154,12 @@ describe("codex_command_builder", function()
       local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
       assert.equals("gpt-5-codex", cmd[find_flag(cmd, "-m") + 1])
     end)
+
+    it("prefer the frontmatter model passed through opts", function()
+      local config = { agent = { default_model = "gpt-5.5" } }
+      local cmd = codex_command_builder.build("hi", { model = "gpt-5.6-terra" }, nil, config, nil)
+      assert.equals("gpt-5.6-terra", cmd[find_flag(cmd, "-m") + 1])
+    end)
   end)
 
   -- Codex has no `--plugin-dir`; the plugins ride along as `-c` overrides instead

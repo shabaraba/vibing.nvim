@@ -72,11 +72,11 @@ require("vibing").setup()
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",  -- "claude" | "codex"
+  adapter = "claude",  -- "claude" | "codex" | "copilot" | "grok"
 
   -- エージェント設定
   agent = {
-    default_model = "sonnet",  -- "sonnet" | "opus" | "haiku" | "fable"
+    default_model = "sonnet",  -- backend のモデルID。例: "sonnet" / "gpt-5.6-terra"
   },
 
   -- チャットウィンドウ設定

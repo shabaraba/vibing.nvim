@@ -16,11 +16,11 @@ function M.get_trigger_context(line, col)
   local before_cursor = line:sub(1, col)
 
   -- Pattern 1: "/command arg" - completing argument
-  local cmd_with_arg = before_cursor:match("^%s*/([%w_:-]+)%s+([%w_-]*)$")
+  local cmd_with_arg = before_cursor:match("^%s*/([%w_:-]+)%s+([%w_.%-]*)$")
   if cmd_with_arg then
     local command_name = before_cursor:match("^%s*/([%w_:-]+)%s+")
-    local arg_query = before_cursor:match("%s+([%w_-]*)$") or ""
-    local arg_start = before_cursor:find("%s+[%w_-]*$")
+    local arg_query = before_cursor:match("%s+([%w_.%-]*)$") or ""
+    local arg_start = before_cursor:find("%s+[%w_.%-]*$")
 
     return {
       trigger = "argument",

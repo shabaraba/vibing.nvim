@@ -234,7 +234,7 @@ help tags.
 | `/clear`                  | Clear context                                                                 |
 | `/save`                   | Save current chat                                                             |
 | `/summarize`              | Summarize conversation                                                        |
-| `/model <model>`          | Set AI model (haiku/sonnet/opus/fable)                                        |
+| `/model <model>`          | Set AI model for the current backend                                          |
 | `/effort <level>`         | Set reasoning effort (low/medium/high/xhigh/max)                              |
 | `/help`                   | Show available slash commands                                                 |
 | `/permissions` or `/perm` | Interactive permission builder - configure tool allow/deny rules              |
@@ -277,7 +277,7 @@ require("vibing").setup({
     save_location_type = "project", -- "project" | "user" | "custom"
   },
   agent = {
-    default_model = "sonnet",      -- "sonnet" | "opus" | "haiku" | "fable"
+    default_model = "sonnet",      -- backend model id, e.g. "sonnet" or "gpt-5.6-terra"
     scheduled_requests = {
       enabled = true,              -- during a usage limit, <CR> schedules instead of sending
     },
@@ -311,7 +311,7 @@ created_at: 2024-01-01T12:00:00
 working_dir: .vibing/worktrees/feature-x  # Optional: working directory (relative to git root)
 agent: claude  # claude | codex | copilot (overrides global adapter setting for this chat)
 mode: code  # code | plan | explore
-model: sonnet  # sonnet | opus | haiku | fable
+model: sonnet  # Backend model id, e.g. sonnet or gpt-5.6-terra
 permission_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk | auto
 permissions_allow:
   - Read

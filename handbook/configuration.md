@@ -146,11 +146,9 @@ agent = {
                             -- outside the three values warns and falls back to "code";
                             -- an invalid frontmatter `mode` warns and is dropped.
 
-  default_model = "sonnet", -- Default model for new chats
-                            -- "sonnet": Balanced (recommended)
-                            -- "opus": Most capable
-                            -- "haiku": Fastest
-                            -- "fable": Claude Fable
+  default_model = "sonnet", -- Default backend model id for new chats
+                            -- Claude examples: "sonnet", "opus", "haiku", "fable"
+                            -- Codex example: "gpt-5.6-terra"
 
   utility_model = "sonnet", -- Model used for lightweight utility calls
                             -- (AI title generation, chat summaries, daily summaries).

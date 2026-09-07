@@ -41,11 +41,13 @@ M.AGENTS = {
     export_name = "CodexCLIAdapter",
     description = "Codex CLI (OpenAI)",
     models = {
-      { value = "gpt-5.5", description = "GPT-5.5 (default)" },
-      { value = "gpt-5.4", description = "gpt-5.4" },
-      { value = "gpt-5.4-mini", description = "GPT-5.4-Mini" },
-      { value = "gpt-5.3-codex", description = "gpt-5.3-codex" },
-      { value = "gpt-5.2", description = "gpt-5.2" },
+      { value = "gpt-6-astra", description = "GPT-6 Astra (strongest Codex work)" },
+      { value = "gpt-5.6-sol", description = "GPT-5.6 Sol (deep reasoning)" },
+      { value = "gpt-5.6-terra", description = "GPT-5.6 Terra (everyday Codex work)" },
+      { value = "gpt-5.6-luna", description = "GPT-5.6 Luna (fast, narrow tasks)" },
+      { value = "gpt-5.5", description = "GPT-5.5 (previous generation)" },
+      { value = "gpt-5-codex", description = "GPT-5 Codex (API-key auth / Responses API)" },
+      { value = "gpt-5.3-codex-spark", description = "GPT-5.3 Codex Spark (preview, when available)" },
     },
   },
   copilot = {
@@ -108,6 +110,27 @@ end
 ---@return Vibing.AgentDefinition 未知のidならDEFAULTの定義
 function M.get(id)
   return M.AGENTS[id] or M.AGENTS[M.DEFAULT]
+end
+
+---@param id string?
+---@return Vibing.AgentModelCandidate[]
+function M.models_for(id)
+  return M.get(id).models
+end
+
+---@return string[] all known model candidate values, keeping backend order and removing duplicates
+function M.all_model_values()
+  local values = {}
+  local seen = {}
+  for _, def in ipairs(M.list()) do
+    for _, model in ipairs(def.models) do
+      if not seen[model.value] then
+        seen[model.value] = true
+        table.insert(values, model.value)
+      end
+    end
+  end
+  return values
 end
 
 return M

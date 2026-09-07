@@ -74,6 +74,17 @@ describe("Frontmatter completion", function()
       assert.are.equal("Enum", items[1].kind)
     end)
 
+    it("should get current codex model values via get_model_values", function()
+      local items = frontmatter_provider.get_model_values("codex")
+      local values = vim.tbl_map(function(item)
+        return item.word
+      end, items)
+
+      assert.is_true(vim.tbl_contains(values, "gpt-6-astra"))
+      assert.is_true(vim.tbl_contains(values, "gpt-5.6-terra"))
+      assert.is_true(vim.tbl_contains(values, "gpt-5-codex"))
+    end)
+
     it("should fall back to claude models for an unknown agent", function()
       local items = frontmatter_provider.get_model_values("nonexistent")
       assert.are.equal(4, #items)
@@ -344,6 +355,56 @@ describe("Frontmatter completion", function()
     it("does not read an agent line from the body", function()
       open({ "---", "session_id: abc", "---", "agent: codex" })
       assert.is_nil(frontmatter_source._read_frontmatter_agent())
+    end)
+  end)
+
+  describe("model completion agent resolution", function()
+    local buf
+    local previous_buf
+    local config
+    local previous_options
+
+    local function open(lines)
+      previous_buf = vim.api.nvim_get_current_buf()
+      buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      vim.api.nvim_set_current_buf(buf)
+    end
+
+    before_each(function()
+      config = require("vibing.config")
+      previous_options = config.options
+    end)
+
+    after_each(function()
+      config.options = previous_options
+      if previous_buf and vim.api.nvim_buf_is_valid(previous_buf) then
+        vim.api.nvim_set_current_buf(previous_buf)
+      end
+      if buf and vim.api.nvim_buf_is_valid(buf) then
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end
+    end)
+
+    it("uses config.adapter for model candidates when frontmatter has no agent", function()
+      config.setup({ adapter = "codex" })
+      open({ "---", "model: gpt", "---", "# Vibing Chat" })
+
+      local ctx = frontmatter_source.get_trigger_context("model: gpt", 10)
+      assert.are.equal("codex", ctx.agent)
+
+      local values = vim.tbl_map(function(item)
+        return item.word
+      end, frontmatter_source.get_candidates_sync(ctx))
+      assert.is_true(vim.tbl_contains(values, "gpt-5.6-terra"))
+    end)
+
+    it("falls back to config.adapter when frontmatter agent is invalid", function()
+      config.setup({ adapter = "codex" })
+      open({ "---", "agent: cdoex", "model: gpt", "---", "# Vibing Chat" })
+
+      local ctx = frontmatter_source.get_trigger_context("model: gpt", 10)
+      assert.are.equal("codex", ctx.agent)
     end)
   end)
 end)

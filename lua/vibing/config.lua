@@ -112,10 +112,10 @@
 
 ---@class Vibing.AgentConfig
 ---エージェント設定
----Claudeのモード（code/plan/explore）とモデル（sonnet/opus/haiku/fable）を指定
+---チャットのモード（code/plan/explore）と、各CLI backendへ渡すモデルIDを指定
 ---@field default_mode "code"|"plan"|"explore" 新規チャットのfrontmatterに記録される`mode`の既定値（意味は core/constants/modes.lua の M.AGENT_MODES 参照）
----@field default_model "sonnet"|"opus"|"haiku"|"fable" デフォルトモデル（"sonnet": バランス、"opus": 高性能、"haiku": 高速、"fable": Claude Fable）
----@field utility_model "sonnet"|"opus"|"haiku"|"fable" タイトル生成・要約等の軽量ユーティリティ呼び出し専用モデル（デフォルト: "sonnet"）
+---@field default_model string デフォルトモデル。Claude短縮名（sonnet/opus/haiku/fable）または選択中backendのモデルID
+---@field utility_model string タイトル生成・要約等の軽量ユーティリティ呼び出し専用モデル（デフォルト: "sonnet"）
 ---@field default_effort ("low"|"medium"|"high"|"xhigh"|"max")? 推論量の既定値（未指定ならCLIの既定に任せる）
 ---@field utility_effort ("low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）

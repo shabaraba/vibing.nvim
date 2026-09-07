@@ -84,7 +84,7 @@ end
 ---@param agent string? "claude" | "codex" | "copilot" (defaults to "claude")
 ---@return Vibing.CompletionItem[]
 function M.get_model_values(agent)
-  local models = MODELS_BY_AGENT[agent] or MODELS_BY_AGENT[Agents.DEFAULT]
+  local models = MODELS_BY_AGENT[agent] or Agents.models_for(Agents.DEFAULT)
   local items = {}
   for _, m in ipairs(models) do
     table.insert(items, {
