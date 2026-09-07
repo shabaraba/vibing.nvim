@@ -1,10 +1,36 @@
 ---
 name: nvim-context
-description: Use when working on a project that has a running Neovim instance via vibing.nvim (the vibing-nvim MCP server is connected). Reads live buffer, window, cursor, and selection state through vibing-nvim MCP tools before editing or answering, instead of relying on stale file reads or guesses about what the user currently has open or selected.
+description: Use only when the user's request depends on live Neovim state, such as the current buffer, cursor, visual selection, unsaved edits, windows, tabs, or an explicit request to use nvim tools. Do not use for ordinary questions or tasks that do not reference the active editor.
 user-invocable: false
 ---
 
 # Neovim Live Context
+
+## Activation gate
+
+Run this gate before calling any vibing-nvim MCP tool. The presence of a running Neovim
+instance or an available MCP server is not, by itself, a reason to activate this skill.
+
+Activate this skill only when the user's request depends on live editor state, including:
+
+- the current or open file, buffer, window, tab, or split
+- the cursor position, a visual selection, or code "here"
+- unsaved edits in Neovim
+- opening, focusing, jumping to, highlighting, or resizing editor windows
+- executing a Neovim command or querying the live Neovim instance
+- an explicit request to use nvim, vibing-nvim, or Neovim tools
+
+Do not activate this skill for:
+
+- ordinary questions, explanations, or meta questions about this skill or plugin
+- general programming questions that do not depend on the active editor
+- repository tasks that can be handled from on-disk files without live editor state
+- requests that merely happen inside a vibing.nvim chat
+
+If the request does not clearly match an activation case, do not call an nvim tool, do not
+perform a live-state preflight, and do not announce one.
+
+## Active workflow
 
 When the `vibing-nvim` MCP server is available, a real Neovim instance is running and its
 in-memory state (open buffers, splits, cursor position, unsaved edits) is the ground truth —
@@ -30,7 +56,7 @@ already know. If several remain plausible, say which you found and ask rather th
 unbound server answers reads against a single live instance but refuses anything that changes
 state until you name the port, so pass the one `nvim_list_instances` reported.
 
-## Workflow
+## Workflow after activation
 
 1. **Ground yourself first.** Call `mcp__vibing-nvim__nvim_get_info` for the active file and
    `mcp__vibing-nvim__nvim_list_windows` / `mcp__vibing-nvim__nvim_list_buffers` to see everything

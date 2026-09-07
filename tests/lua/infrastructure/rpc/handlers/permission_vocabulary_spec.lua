@@ -110,7 +110,32 @@ describe("permission handler tool vocabulary", function()
   it("is the table codex_cli actually hands over", function()
     local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
     assert.equals("Edit", vocabulary.to_canonical("apply_patch"))
+    assert.equals(
+      "mcp__vibing-nvim__nvim_list_windows",
+      vocabulary.to_canonical("mcp__vibing_nvim__nvim_list_windows")
+    )
+    assert.is_nil(vocabulary.to_canonical("mcp__my_vibing_nvim__nvim_list_windows"))
     assert.is_nil(vocabulary.to_canonical("Read"))
+  end)
+
+  it("pre-approves Codex's normalized name for the bundled vibing-nvim MCP server", function()
+    local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
+    permission.set_active_opts(HANDLE_ID, {
+      cwd = comm_dir,
+      permissions_allow = {},
+      permissions_deny = {},
+      permissions_ask = {},
+      permission_mode = "default",
+      mcp_enabled = true,
+      _tool_vocabulary = vocabulary,
+    })
+
+    write_request("req-codex-mcp", "mcp__vibing_nvim__nvim_list_windows", {})
+    local result = permission.check_tool_permission({ request_id = "req-codex-mcp", handle_id = HANDLE_ID })
+    local response = read_response("req-codex-mcp")
+
+    assert.equals("allowed", result.status)
+    assert.equals("allow", response.hookSpecificOutput.permissionDecision)
   end)
 
   it("normalizes a payload whose keys are not Claude's before reading the tool name", function()

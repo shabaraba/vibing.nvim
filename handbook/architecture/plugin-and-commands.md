@@ -138,9 +138,11 @@ vibing.nvim's own PreToolUse hook, exactly as it does for every other tool. `${C
 is expanded to the plugin directory in `command`, `args` and `env` alike, the same substitution
 Claude Code performs, and the `"mcpServers": "./.mcp.json"` file form is followed. Servers are
 deduplicated by name with the first plugin winning, which is `--plugin-dir`'s precedence for a
-duplicate plugin name: a project plugin cannot put its own command behind `mcp__vibing-nvim__*`.
-The tools appear under the plain `mcp__vibing-nvim__<tool>` prefix, which
-`can_use_tool.is_vibing_nvim_mcp_tool` already accepts.
+duplicate plugin name: a project plugin cannot put its own command behind `mcp__vibing_nvim__*`.
+Codex normalizes the server label when it builds tool names, so they appear under the plain
+`mcp__vibing_nvim__<tool>` prefix. `codex_tool_vocabulary` restores the canonical
+`mcp__vibing-nvim__<tool>` spelling before the shared permission check; without that step the
+bundled tools fall through to the ordinary approval path on every new chat.
 
 **Skills go through `developer_instructions`, because there is no skill root to add.** The roots
 codex scans are the user's own; `skills.config` only toggles skills codex already found. So the
@@ -170,13 +172,14 @@ vibing-nvim`, a global entry in `config.toml` — the install `--plugin-dir` was
 An entry an older build left behind is reported and left alone: the per-session override
 deep-merges over it inside vibing.nvim, and a plain `codex` session outside Neovim may rely on it.
 
-**Not verified here, and worth knowing.** Whether codex's PreToolUse hook fires for MCP tool
-calls — and therefore whether the user's `ask`/`deny` lists gate a plugin's MCP tools on this
-backend — could not be measured without a model turn. `developer_instructions` and
-`default_tools_approval_mode` are not on `--strict-config`'s path in an ordinary chat, so a
-future codex that renames either degrades silently: the skills vanish from the prompt, or MCP
-calls start being cancelled. The silent-ignore of `--plugin-dir` has the same shape, and is why
-`plugin_dirs` checks manifests itself.
+**Verified against codex 0.153.4.** PreToolUse fires for MCP calls, so the user's `ask`/`deny`
+lists do gate plugin tools on this backend. Its payload normalizes `vibing-nvim` to
+`mcp__vibing_nvim__...`; the vocabulary conversion above is therefore part of the permission
+boundary, not just display cleanup. `developer_instructions` and `default_tools_approval_mode`
+are not on `--strict-config`'s path in an ordinary chat, so a future codex that renames either
+degrades silently: the skills vanish from the prompt, or MCP calls start being cancelled. The
+silent-ignore of `--plugin-dir` has the same shape, and is why `plugin_dirs` checks manifests
+itself.
 
 ## Slash Command Discovery
 

@@ -140,7 +140,7 @@ local function developer_instructions(skills, self_server)
         "The vibing-nvim MCP tools are registered as mcp__%s__<tool>; they read and edit the running "
           .. "Neovim instance the user is looking at. Do not call nvim_ask_user_question here -- the "
           .. "choice UI is not wired to this chat, so ask in plain text instead.",
-        self_server
+        self_server:gsub("%-", "_")
       )
     )
   end
