@@ -13,11 +13,6 @@ local AGENT_ENUM = vim.tbl_map(function(def)
   return { value = def.id, description = def.description }
 end, Agents.list())
 
-local MODELS_BY_AGENT = {}
-for _, def in ipairs(Agents.list()) do
-  MODELS_BY_AGENT[def.id] = def.models
-end
-
 ---Enum values for frontmatter fields
 local ENUMS = {
   agent = AGENT_ENUM,
@@ -84,7 +79,7 @@ end
 ---@param agent string? "claude" | "codex" | "copilot" (defaults to "claude")
 ---@return Vibing.CompletionItem[]
 function M.get_model_values(agent)
-  local models = MODELS_BY_AGENT[agent] or Agents.models_for(Agents.DEFAULT)
+  local models = Agents.models_for(agent)
   local items = {}
   for _, m in ipairs(models) do
     table.insert(items, {

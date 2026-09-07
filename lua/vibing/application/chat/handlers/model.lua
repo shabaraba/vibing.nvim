@@ -1,4 +1,5 @@
 local notify = require("vibing.core.utils.notify")
+local Agents = require("vibing.core.constants.agents")
 
 ---@param args string[]
 ---@param chat_buffer Vibing.ChatBuffer
@@ -12,6 +13,11 @@ return function(args, chat_buffer)
   local model = args[1]
   if model == "" then
     notify.warn("/model <model>", "Usage")
+    return false
+  end
+
+  if not vim.tbl_contains(Agents.all_model_values(), model) then
+    notify.error(string.format("Invalid model: %s (valid: %s)", model, table.concat(Agents.all_model_values(), ", ")))
     return false
   end
 

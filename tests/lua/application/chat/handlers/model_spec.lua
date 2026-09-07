@@ -30,4 +30,17 @@ describe("model handler", function()
     assert.is_true(handler({ "gpt-5.6-terra" }, chat_buffer))
     assert.same({ key = "model", value = "gpt-5.6-terra" }, written)
   end)
+
+  it("rejects a model id that belongs to no backend", function()
+    local written
+    local chat_buffer = {
+      update_frontmatter = function(_, key, value)
+        written = { key = key, value = value }
+        return true
+      end,
+    }
+
+    assert.is_false(handler({ "sonett" }, chat_buffer))
+    assert.is_nil(written)
+  end)
 end)
