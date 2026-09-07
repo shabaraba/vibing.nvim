@@ -107,6 +107,14 @@ Three details are not interchangeable:
   whole `.vibing/worktrees/` checkout in the patch. Measured against git 2.50.1: `--ignore-errors`
   and every `:(exclude...)` spelling exit 1 alike, and plain `-- .` exits 0.
 
+  The pathspec is not the last word: tool events are merged afterwards through `extra_paths` so a
+  reported change ignored by git can still appear in `### Modified Files`. That completion step
+  must exclude `.vibing/` too, in both `git_snapshot.generate` and the `request_diff.generate`
+  fallback, or it adds the internal path straight back to the left pane. The predicate runs on the
+  path relative to the current base, not on the absolute path: a managed worktree normally lives
+  at `<main>/.vibing/worktrees/<branch>`, and `lua/plugin.lua` inside that worktree is an ordinary
+  user change when the worktree itself is the current base.
+
   The spec that missed this is worth naming, because the gap was in the fixture rather than in the
   assertions: its `.gitignore` held `ignored/` and `*.log` only, so `.vibing/` was never ignored in
   any test, and the one case pinned for this directory was literally the working one — "even when

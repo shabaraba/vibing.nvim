@@ -8,9 +8,18 @@
 
 local M = {}
 
+--- Captured from real codex 0.153.4 PreToolUse payloads, which vibing.nvim could not see until the
+--- hook was registered under the key codex actually reads (`codex_settings_generator`):
+---
+---   shell:       {"tool_name":"Bash","tool_input":{"command":"echo hi"}}
+---   file edit:   {"tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n…"}}
+---
+--- So codex already speaks Claude's name for its shell tool and needs no entry for it. `shell` is
+--- mapped anyway because it is what older codex sent and the mapping costs nothing.
 --- @type table<string, string>
 local NATIVE_TO_CANONICAL = {
   apply_patch = "Edit", -- Codex's file patch tool maps to Claude's Edit
+  shell = "Bash",
 }
 
 --- @param native_tool_name string
@@ -18,5 +27,30 @@ local NATIVE_TO_CANONICAL = {
 function M.to_canonical(native_tool_name)
   return NATIVE_TO_CANONICAL[native_tool_name]
 end
+
+--- **Deliberately absent: `normalize_input`.** Known gap, not an oversight.
+---
+--- Codex does not put the edited path in a sibling key the way grok (`target_file`) and copilot
+--- (`path`) do -- there is no path in `tool_input` at all. It is inside the `command` string, as an
+--- apply_patch envelope that may name several files at once:
+---
+---   *** Begin Patch
+---   *** Update File: a.lua
+---   *** Add File: b.lua
+---   *** End Patch
+---
+--- Two consequences, both pre-existing and neither introduced by registering the hook (before that
+--- fix no codex tool call reached this module at all):
+---
+---   - granular `paths` rules never match a codex edit, because `matchers.lua` reads a single
+---     `input.file_path`;
+---   - `request_diff.capture` backs nothing up, because it reads `tool_input.file_path`. Harmless
+---     today: the git-snapshot path is the primary one and needs no path, only the baseline.
+---
+--- The reason this is not a two-line fix is the multi-file case. Filling `file_path` with the
+--- *first* path parsed would read as working while letting a deny rule be evaded by patch
+--- ordering, which is worse than not matching at all. Doing it properly means teaching the paths
+--- matcher about a set of paths, and that is a change to shared permission code rather than to
+--- this backend's seam.
 
 return M

@@ -281,6 +281,20 @@ describe("git_snapshot", function()
       assert.is_nil(turn.patch)
     end)
 
+    it("does not let tool-event fallback add .vibing paths back to the file list", function()
+      -- The git diff already excludes `.vibing`, but FileChange events are merged in afterwards.
+      -- Without the same boundary here, a path under another managed worktree reappears in the
+      -- left pane even though it was correctly absent from the patch.
+      local internal = repo .. "/.vibing/worktrees/other/lua/plugin.lua"
+      local turn = run_turn(function()
+        write(internal, "return {}\n")
+      end, { [internal] = true })
+
+      assert.same({}, turn.files)
+      assert.same({}, turn.abs_files)
+      assert.is_nil(turn.patch)
+    end)
+
     it("does not list a tool-event path twice when git saw it too", function()
       local turn = run_turn(function()
         write(repo .. "/tracked.txt", "after\n")

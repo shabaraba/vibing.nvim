@@ -134,6 +134,40 @@ describe("request_diff", function()
       assert.is_falsy(patch:find("bash-touched.txt", 1, true))
     end)
 
+    it("excludes .vibing paths from both captures and event fallback", function()
+      local internal = tmp_dir .. "/.vibing/worktrees/other/lua/plugin.lua"
+      vim.fn.mkdir(vim.fn.fnamemodify(internal, ":h"), "p")
+      write_file(internal, "before\n")
+      RequestDiff.capture(handle_id, "Edit", { file_path = internal })
+      write_file(internal, "after\n")
+
+      local files, abs_files, patch = RequestDiff.generate(
+        handle_id,
+        tmp_dir,
+        { [internal] = true }
+      )
+
+      assert.same({}, files)
+      assert.same({}, abs_files)
+      assert.is_nil(patch)
+    end)
+
+    it("keeps normal files when the base directory itself is inside .vibing", function()
+      local worktree = tmp_dir .. "/.vibing/worktrees/feature"
+      vim.fn.mkdir(worktree, "p")
+      local file = worktree .. "/lua/plugin.lua"
+      vim.fn.mkdir(vim.fn.fnamemodify(file, ":h"), "p")
+      write_file(file, "before\n")
+      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      write_file(file, "after\n")
+
+      local files, abs_files, patch = RequestDiff.generate(handle_id, worktree, nil)
+
+      assert.same({ "lua/plugin.lua" }, files)
+      assert.same({ file }, abs_files)
+      assert.is_truthy(patch:find("diff --git a/lua/plugin.lua", 1, true))
+    end)
+
     it("keeps requests isolated per handle_id", function()
       local other_handle = handle_id .. "-other"
       local file_a = tmp_dir .. "/a.txt"

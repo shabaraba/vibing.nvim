@@ -72,6 +72,15 @@ local function to_rel(abs, base)
   return abs, false
 end
 
+---Whether a base-relative path belongs to vibing.nvim's own state directory.
+---Only the first component counts. A worktree can itself be located below an outer `.vibing/`,
+---but its normal files are user-visible changes relative to that worktree's own base.
+---@param rel string
+---@return boolean
+local function is_vibing_state_path(rel)
+  return rel == ".vibing" or rel:sub(1, 8) == ".vibing/"
+end
+
 ---TTL超過した放置セッション（キャンセルされたリクエスト等）を破棄
 local function sweep_stale()
   local now = os.time()
@@ -229,8 +238,9 @@ function M.generate(handle_id, base_dir, extra_paths)
       local changed = (before or "") ~= (after or "")
       -- base_dir外のファイルはgit apply（cwd=base_dir、-p1）で復元できるpatchにならないため、
       -- 一覧にのみ載せてdiffセクションは作らない（バイナリも同様、build_file_section内で除外）
-      local section = under_base and build_file_section(rel, entry, abs, before, after) or nil
-      if section or changed then
+      local internal = under_base and is_vibing_state_path(rel)
+      local section = not internal and under_base and build_file_section(rel, entry, abs, before, after) or nil
+      if not internal and (section or changed) then
         seen[abs] = true
         table.insert(files, rel)
         table.insert(abs_files, abs)
@@ -244,9 +254,10 @@ function M.generate(handle_id, base_dir, extra_paths)
   -- フックを通らなかった変更ファイル（退避なし）も一覧にだけは載せる
   for path in pairs(extra_paths or {}) do
     local abs = vim.fn.fnamemodify(path, ":p")
-    if not seen[abs] and not (s and s.files[abs]) then
+    local rel, under_base = to_rel(abs, base_dir)
+    local internal = under_base and is_vibing_state_path(rel)
+    if not internal and not seen[abs] and not (s and s.files[abs]) then
       seen[abs] = true
-      local rel = to_rel(abs, base_dir)
       table.insert(files, rel)
       table.insert(abs_files, abs)
     end

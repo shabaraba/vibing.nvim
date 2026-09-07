@@ -213,3 +213,79 @@ These are the seams that stop backend identity leaking into shared code. The rul
   every adapter to register no hooks for utility calls). And installing it is allowed to fail:
   the generator runs under `pcall`, and a failure warns and falls back to the static
   `--deny-tool` flags rather than taking the turn down.
+
+- **Codex's hook needs a PascalCase key and an explicit trust bypass.** Codex has no per-run hook
+  file, so `codex_settings_generator.lua` passes the hook as a `-c` override. Two things about
+  that, both captured from codex 0.153.4, and both of which fail **silently**:
+
+  1. **The key is `hooks.PreToolUse`, not `hooks.pre_tool_use`**, and the handler must sit inside a
+     matcher group: `[{hooks=[{type="command",command=…,timeout=…}]}]`. A flat
+     `[{command=…}]` parses as a group with no handlers. Anything codex does not recognise here is
+     dropped without a warning, an error, or an entry in `hooks/list` — it is valid TOML, so
+     nothing complains.
+
+     vibing.nvim shipped the snake_case key with the flat shape, so **no PreToolUse hook fired on
+     codex at all**. That took two things with it, neither of which looks like a hook problem from
+     the outside: the permission gate (every tool ran ungated, `deny` rules included), and the
+     git-snapshot diff baseline — which is taken in the hook, so `### Modified Files` fell back to
+     tool-event paths, `.vibing/patches/*.patch` stopped being written, and `gd` stopped opening
+     the patch float because `patch_finder` had no `<!-- patch: … -->` to find.
+
+     `hooks/list` on the app-server is the cheap oracle for this, and the one to reach for before
+     believing a hook is registered — it resolves the same config the agent would and reports
+     `warnings`/`errors`, without starting a turn or spending a token:
+
+     ```sh
+     { printf '%s\n' \
+         '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"p","title":"p","version":"0.0.0"}}}' \
+         '{"jsonrpc":"2.0","method":"initialized","params":{}}' \
+         '{"jsonrpc":"2.0","id":3,"method":"hooks/list","params":{}}'; sleep 6; } \
+       | codex app-server -c 'hooks.PreToolUse=[{hooks=[{type="command",command="/x",timeout=1}]}]'
+     ```
+
+     `hooks.PreToolUse` → one resolved hook; `hooks.pre_tool_use` → `hooks: []`, no warnings, no
+     errors. Only `$CODEX_HOME/hooks.json` and plugins are read as hook _files_: a project-local
+     `.codex/hooks.json`, `.codex/hooks/hooks.json` and `-c hooks.managed_dir` were all measured to
+     resolve nothing, including with the project marked trusted.
+
+  2. **`--dangerously-bypass-hook-trust` is not optional, it is part of registering the hook.**
+     Codex 0.153 gates hooks on trust: a resolved hook is reported enabled but `untrusted` until
+     the user reviews it in the TUI, which persists a
+     `trusted_hash` into their real `config.toml`. A session layer cannot grant its own trust —
+     `-c hooks.state.<key>.trusted_hash=<currentHash>` leaves `trustStatus` at `untrusted`
+     (measured, with the hash `hooks/list` itself reported), which is the right call, since
+     otherwise the flag would defeat the mechanism.
+
+     With the key corrected and the flag absent, `codex exec` does not merely skip the hook — it
+     **blocks** waiting for a review that has no terminal to happen in (measured: no output, no
+     tool call, killed at 180s). So the generator returns the flag together with the `-c` pair
+     rather than as a separate option: one without the other either does nothing (old key) or
+     hangs the turn (new key). The honest cost is that for that one invocation it also un-gates the
+     user's own `~/.codex/hooks.json` entries that they added and never reviewed; ones they did
+     review are already trusted and unaffected.
+
+  3. **The command has to name a script inside the turn's writable roots.** A hook pointing at the
+     plugin installation outside the target working directory makes sandboxed `codex exec` block
+     without reporting a spawn error. `codex_settings_generator.ensure()` therefore copies the
+     shared `pre-tool-use.sh` to `<cwd>/.vibing/codex-pre-tool-use.sh`, marks the temporary copy
+     executable, and atomically renames it into place before building argv. It refreshes the copy
+     every turn so a plugin update cannot leave old permission logic behind. If any staging step
+     fails, `codex_cli.lua` warns and omits the hook; registering a command that cannot execute is
+     the hanging outcome.
+
+     This registration also stays present in `bypassPermissions`. The permission handler honors
+     that mode and allows every call, while the same PreToolUse round trip takes the git-snapshot
+     baseline. Skipping the hook would bypass observation along with approval and recreate the
+     missing patch/`gd` failure specifically for users of that mode. Claude's adapter likewise
+     keeps its hook settings in bypass mode.
+
+  The payload codex sends is Claude-compatible (`tool_name`/`tool_input`, deny by exit 2 +
+  stderr), so `pre-tool-use.sh` needs no codex argument. Its shell tool already arrives as
+  `Bash`; a file edit arrives as `apply_patch` with **no path in `tool_input` at all** — the paths
+  are inside the `command` string as an apply_patch envelope, which is why
+  `codex_tool_vocabulary.lua` has no `normalize_input` and says so at length. Consequence, stated
+  there and repeated here because it is a permission gap rather than a cosmetic one: granular
+  `paths` rules never match a codex edit, and `request_diff.capture` backs nothing up for one.
+  Filling `file_path` with the first path a multi-file patch names would read as working while
+  letting a deny rule be evaded by patch ordering, so fixing it properly means teaching
+  `matchers.lua` about a set of paths.

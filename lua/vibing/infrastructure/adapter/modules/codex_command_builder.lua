@@ -37,7 +37,9 @@ end
 --- @param opts Vibing.AdapterOpts Adapter options
 --- @param session_id string|nil Thread ID for session resumption
 --- @param config Vibing.Config Plugin config
---- @param hook_args string[]|nil Optional -c flag pair for PreToolUse hook injection
+--- @param hook_args string[]|nil Optional argv fragment for PreToolUse hook injection. Opaque
+---   here on purpose: `codex_settings_generator` decides what a registered hook needs, and it
+---   needs more than the `-c` pair (see its TRUST_FLAG comment). Appended verbatim.
 --- @return string[] Command array for vim.system()
 function M.build(prompt, opts, session_id, config, hook_args)
   local cmd = { binary_path.resolve(), "exec" }
