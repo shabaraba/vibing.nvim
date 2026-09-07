@@ -5,6 +5,7 @@ describe("codex_plugin_config", function()
   local project_root
   local original_getcwd
   local original_notify
+  local original_self_plugin_dir
   local notifications
   local config = { agent = { plugins = { project_dir = ".vibing/plugins" } } }
 
@@ -61,6 +62,7 @@ describe("codex_plugin_config", function()
     vim.fn.getcwd = function()
       return project_root
     end
+    original_self_plugin_dir = PluginDirs.self_plugin_dir
     notifications = {}
     original_notify = vim.notify
     vim.notify = function(msg, level)
@@ -69,6 +71,7 @@ describe("codex_plugin_config", function()
   end)
 
   after_each(function()
+    PluginDirs.self_plugin_dir = original_self_plugin_dir
     vim.notify = original_notify
     vim.fn.getcwd = original_getcwd
     vim.fn.delete(project_root, "rf")
@@ -90,6 +93,26 @@ describe("codex_plugin_config", function()
         '["VIBING_NVIM_RPC_PORT"]',
         override(args, "mcp_servers.vibing-nvim.env_vars")
       )
+    end)
+
+    -- Only the first of its servers is named in the developer message, but every one of them
+    -- talks to this Neovim, so every one has to be handed the port.
+    it("forwards the port to every server it declares, not only the first", function()
+      local root = write_plugin("bundled-stub", {
+        name = "bundled-stub",
+        mcpServers = {
+          ["vibing-nvim"] = { command = "first" },
+          ["vibing-nvim-lsp"] = { command = "second" },
+        },
+      })
+      PluginDirs.self_plugin_dir = function()
+        return root
+      end
+
+      local args = CodexPluginConfig.args(nil, { agent = { plugins = { self = false, project_dir = ".vibing/plugins" } } })
+
+      assert.equals('["VIBING_NVIM_RPC_PORT"]', override(args, "mcp_servers.vibing-nvim.env_vars"))
+      assert.equals('["VIBING_NVIM_RPC_PORT"]', override(args, "mcp_servers.vibing-nvim-lsp.env_vars"))
     end)
 
     -- Headless `codex exec` cancels an MCP call at its own approval prompt (openai/codex#24135);
@@ -134,6 +157,8 @@ describe("codex_plugin_config", function()
       assert.equals('["--port", "1"]', override(args, "mcp_servers.deploybot.args"))
       assert.equals('"approve"', override(args, "mcp_servers.deploybot.default_tools_approval_mode"))
       assert.is_nil(override(args, "mcp_servers.deploybot.env"))
+      -- A third party's server has no business knowing this Neovim's RPC port.
+      assert.is_nil(override(args, "mcp_servers.deploybot.env_vars"))
     end)
 
     it("register a streamable HTTP server by url", function()

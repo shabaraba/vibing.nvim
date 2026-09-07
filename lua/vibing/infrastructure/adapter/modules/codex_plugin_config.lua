@@ -185,11 +185,13 @@ function M.args(cwd, config)
         table.insert(problems, string.format("%s (server %q)", entry.name, server.name))
       elseif not seen[server.name] then
         seen[server.name] = true
-        local is_self_server = entry.path == self_dir and not self_server
-        append_server(args, server, is_self_server)
+        -- Every server the self plugin declares talks to this Neovim, so every one of them gets
+        -- the port forwarded -- not just the first, which is all the developer message names.
+        local is_self_plugin = entry.path == self_dir
+        append_server(args, server, is_self_plugin)
         -- The bundled server's name is read from its manifest rather than hard-coded, so a
         -- rename there cannot leave the model told about a server that is not registered.
-        if is_self_server then
+        if is_self_plugin and not self_server then
           self_server = server.name
         end
       end
