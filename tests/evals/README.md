@@ -18,7 +18,7 @@ description, the permission flags, or the model.
 Only one thing: **which tools were called, with what arguments.** Scoring never reads the response
 prose — a check that asserted on wording would fail every time the model rephrased itself, which
 teaches you to ignore the suite. `on_tool_use_full` on the adapter delivers the raw tool input, so
-a check can assert on `rpc_port`, a full Bash command, or a file path.
+a check can assert on `chat_bufnr`, a full Bash command, or a file path.
 
 Non-determinism is handled with pass@k rather than by loosening the checks: a task passes if any
 attempt passes, and the report says which attempt it took.

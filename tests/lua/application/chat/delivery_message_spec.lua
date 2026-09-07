@@ -103,6 +103,8 @@ end)
 describe("DeliveryMessage.build (blocked chats)", function()
   local DeliveryMessage
   local buffers
+  local original_approval_delegate
+  local approval_mode
 
   local function make_buf(name)
     local bufnr = vim.api.nvim_create_buf(false, true)
@@ -115,11 +117,19 @@ describe("DeliveryMessage.build (blocked chats)", function()
 
   before_each(function()
     buffers = {}
+    approval_mode = false
+    original_approval_delegate = package.loaded["vibing.application.chat.approval_delegate"]
+    package.loaded["vibing.application.chat.approval_delegate"] = {
+      mode = function()
+        return approval_mode
+      end,
+    }
     package.loaded["vibing.application.chat.delivery_message"] = nil
     DeliveryMessage = require("vibing.application.chat.delivery_message")
   end)
 
   after_each(function()
+    package.loaded["vibing.application.chat.approval_delegate"] = original_approval_delegate
     package.loaded["vibing.application.chat.delivery_message"] = nil
     for _, bufnr in ipairs(buffers) do
       if vim.api.nvim_buf_is_valid(bufnr) then
@@ -146,6 +156,19 @@ describe("DeliveryMessage.build (blocked chats)", function()
 
     assert.is_truthy(text:find("have stopped without reporting back", 1, true))
     assert.is_falsy(text:find("status:", 1, true))
+    assert.is_falsy(text:find("rpc_port", 1, true))
+  end)
+
+  it("never asks the model to echo routing data when delegated approval is enabled", function()
+    local about = make_buf("worker.md")
+
+    for _, mode in ipairs({ true, "scoped" }) do
+      approval_mode = mode
+      local text = DeliveryMessage.build({ { bufnr = about, reason = "waiting_approval" } })
+
+      assert.is_truthy(text:find("nvim_chat_answer_approval({ file_path, action,", 1, true))
+      assert.is_falsy(text:find("rpc_port", 1, true))
+    end
   end)
 
   it("explains both kinds when a blocked chat and a silent one arrive together", function()

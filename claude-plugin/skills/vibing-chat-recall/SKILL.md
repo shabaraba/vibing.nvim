@@ -39,9 +39,7 @@ and stop.
 
 ## Reading the buffer
 
-Pass this turn's `rpc_port` (also in the system prompt) on both calls below — this skill only runs
-inside a vibing.nvim chat, so the port is always there and `nvim_list_instances` is never the
-route. If the
+The MCP server is already bound to this chat's Neovim, so omit `rpc_port` on both calls below. If the
 `mcp__vibing-nvim__` prefix is unavailable, look for a tool name **ending** in the one you need —
 loaded as a plugin they are `mcp__plugin_vibing-nvim_vibing-nvim__<tool>`. The
 `nvim-context` skill explains both in full.

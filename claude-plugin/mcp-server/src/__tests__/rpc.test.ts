@@ -32,12 +32,56 @@ async function startFakeNeovim(result: unknown): Promise<{ port: number; close: 
 }
 
 describe('callNeovim port resolution', () => {
+  const originalRpcPort = process.env.VIBING_NVIM_RPC_PORT;
+
   beforeEach(() => {
     vi.mocked(listLiveInstances).mockReset();
+    delete process.env.VIBING_NVIM_RPC_PORT;
   });
 
   afterEach(() => {
     closeSocket();
+    if (originalRpcPort === undefined) {
+      delete process.env.VIBING_NVIM_RPC_PORT;
+    } else {
+      process.env.VIBING_NVIM_RPC_PORT = originalRpcPort;
+    }
+  });
+
+  it('uses the process-bound port without consulting the registry', async () => {
+    const nvim = await startFakeNeovim('from-process-environment');
+    process.env.VIBING_NVIM_RPC_PORT = String(nvim.port);
+
+    try {
+      await expect(callNeovim('get_current_file', {})).resolves.toBe('from-process-environment');
+      expect(vi.mocked(listLiveInstances)).not.toHaveBeenCalled();
+    } finally {
+      nvim.close();
+    }
+  });
+
+  it('keeps the process binding authoritative over a legacy tool argument', async () => {
+    const bound = await startFakeNeovim('from-bound-port');
+    const requested = await startFakeNeovim('from-requested-port');
+    process.env.VIBING_NVIM_RPC_PORT = String(bound.port);
+
+    try {
+      await expect(callNeovim('get_current_file', {}, requested.port)).resolves.toBe(
+        'from-bound-port'
+      );
+    } finally {
+      bound.close();
+      requested.close();
+    }
+  });
+
+  it('fails closed when the process binding is invalid', async () => {
+    process.env.VIBING_NVIM_RPC_PORT = 'not-a-port';
+
+    await expect(callNeovim('get_current_file', {}, 9876)).rejects.toThrow(
+      /VIBING_NVIM_RPC_PORT must be an integer from 1 to 65535/
+    );
+    expect(vi.mocked(listLiveInstances)).not.toHaveBeenCalled();
   });
 
   it('uses the given port without consulting the registry', async () => {
@@ -58,6 +102,41 @@ describe('callNeovim port resolution', () => {
 
     try {
       await expect(callNeovim('get_current_file', {})).resolves.toBe('from-registry');
+    } finally {
+      nvim.close();
+    }
+  });
+
+  // The pre-#730 `requireRpcPort` schema guard, moved to where the port is resolved: a session
+  // that was never launched by vibing.nvim has neither source, and a guessed instance would let
+  // it drive whichever editor the user happens to have open.
+  it('refuses to guess an instance for a call that changes state', async () => {
+    vi.mocked(listLiveInstances).mockResolvedValue([{ pid: 111, port: 9876, cwd: '/repo' }]);
+
+    await expect(callNeovim('execute', { command: 'qa!' })).rejects.toThrow(
+      /changes Neovim state, so it is not pointed at a guessed instance/
+    );
+  });
+
+  it('runs the same state-changing call once the process is bound', async () => {
+    const nvim = await startFakeNeovim('executed');
+    process.env.VIBING_NVIM_RPC_PORT = String(nvim.port);
+
+    try {
+      await expect(callNeovim('execute', { command: 'echo 1' })).resolves.toBe('executed');
+      expect(vi.mocked(listLiveInstances)).not.toHaveBeenCalled();
+    } finally {
+      nvim.close();
+    }
+  });
+
+  it('runs the same state-changing call when a port is passed explicitly', async () => {
+    const nvim = await startFakeNeovim('executed');
+
+    try {
+      await expect(callNeovim('execute', { command: 'echo 1' }, nvim.port)).resolves.toBe(
+        'executed'
+      );
     } finally {
       nvim.close();
     }

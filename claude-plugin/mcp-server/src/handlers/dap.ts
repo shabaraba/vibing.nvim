@@ -10,8 +10,8 @@ import { z } from 'zod';
  * This layer only rejects arguments that could not work at all, before touching Neovim.
  */
 
-// Every dap tool targets exactly one debug session, so rpc_port is the one shared requirement.
-const baseArgsSchema = z.object({ rpc_port: z.number() });
+// The MCP process is already bound to one Neovim; rpc_port remains a legacy optional override.
+const baseArgsSchema = z.object({ rpc_port: z.number().optional() });
 
 const stackTraceArgsSchema = baseArgsSchema.extend({ thread_id: z.number().int().optional() });
 const variablesArgsSchema = baseArgsSchema.extend({ frame_id: z.number().int().optional() });

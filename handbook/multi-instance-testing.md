@@ -8,6 +8,12 @@ The multi-instance feature allows Claude Code to interact with multiple running 
 Each instance runs its own RPC server on a different port (9876-9925).
 Instances are tracked in a registry for discovery and management.
 
+The ownership unit is a **Neovim process**, not a chat buffer. All chat buffers in one Neovim
+share that process's port. For a normal vibing.nvim chat, each Claude Code/Codex process receives
+its owning port through `VIBING_NVIM_RPC_PORT`, and its MCP server is bound before any tool call.
+The explicit `rpc_port` examples below exercise the compatibility path for a manually launched,
+unbound MCP server.
+
 ## Architecture Diagrams
 
 ### Before: Single Instance Only (Problem)

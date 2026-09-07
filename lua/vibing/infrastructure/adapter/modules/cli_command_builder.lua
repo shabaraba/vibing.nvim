@@ -167,13 +167,8 @@ end
 --- @param session_id string|nil Session ID for resumption
 --- @param config Vibing.Config Plugin config
 --- @param settings_path string|nil Path to hook settings file
---- @param rpc_port number|nil This Neovim instance's RPC server port, embedded in the system
----   prompt so the model can echo it back on every vibing-nvim MCP tool call. The MCP server
----   cannot read it from its own environment (MCP clients forward only a fixed env whitelist),
----   and without it the server falls back to the instance registry — which refuses to choose
----   once more than one Neovim is live, the normal case with worktrees and concurrent chats.
 --- @return string[] Command array for vim.system()
-function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
+function M.build(prompt, opts, session_id, config, settings_path)
   local cmd = { binary_path.resolve() }
 
   table.insert(cmd, "-p")
@@ -291,18 +286,6 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
         .. "and the count, and mention that :VibingClearAnnotations removes the notes."
     )
 
-    if rpc_port then
-      table.insert(
-        system_prompt_lines,
-        "Your rpc_port for this turn is "
-          .. tostring(rpc_port)
-          .. ". You MUST pass this exact value as the rpc_port argument on every vibing-nvim MCP tool "
-          .. "call — never omit it or guess, since other unrelated Neovim instances may be running and "
-          .. "reachable on other ports. A subagent does not inherit this system prompt, so when you "
-          .. "delegate work that will touch Neovim, state the rpc_port in the task prompt you hand it."
-      )
-    end
-
     -- Constant for this buffer's whole life, so it does not churn the cached prefix across the
     -- buffer's own turns (#469). Switching between the parent chat and this one still re-diverges
     -- the shared session's cache — unavoidable while both resume one session_id.
@@ -375,7 +358,7 @@ function M.build(prompt, opts, session_id, config, settings_path, rpc_port)
           .. " — when the task is done, before you act on something you expect will need "
           .. "approval, and the moment you find you cannot proceed — by calling "
           .. "nvim_chat_send_message with that file_path, your own chat buffer number as "
-          .. "from_bufnr, this turn's rpc_port, and queue_if_busy: true. State the conclusion, "
+          .. "from_bufnr and queue_if_busy: true. State the conclusion, "
           .. "what changed, what is unresolved, and what input you need next, briefly: it can "
           .. "read this transcript for the rest, and can be asked the same way if the brief is "
           .. "ambiguous or you get stuck. Do not stop with only a prose report in your own chat "

@@ -199,21 +199,20 @@ describe("codex_command_builder", function()
       assert.is_true(has_override(cmd, "developer_instructions="))
     end)
 
-    it("passes the rpc_port into the developer message", function()
-      local cmd = codex_command_builder.build("hello", {}, nil, no_project, nil, 4321)
-      local found = false
+    it("keeps the runtime rpc_port out of the developer message", function()
+      local cmd = codex_command_builder.build("hello", {}, nil, no_project, nil)
       for _, item in ipairs(config_overrides(cmd)) do
-        if vim.startswith(item, "developer_instructions=") and item:find("rpc_port for this turn is 4321", 1, true) then
-          found = true
+        if vim.startswith(item, "developer_instructions=") then
+          assert.is_nil(item:find("rpc_port for this turn", 1, true))
         end
       end
-      assert.is_true(found)
+      assert.is_true(has_override(cmd, "mcp_servers.vibing-nvim.env_vars="))
     end)
 
     -- A utility call owes "no tools, no user MCP servers" (core/types.lua); the bundled server
     -- and a skill list are both.
     it("loads none of it on a lightweight call", function()
-      local cmd = codex_command_builder.build("hello", { lightweight = true }, nil, no_project, nil, 4321)
+      local cmd = codex_command_builder.build("hello", { lightweight = true }, nil, no_project, nil)
       assert.is_false(has_override(cmd, "mcp_servers."))
       assert.is_false(has_override(cmd, "developer_instructions="))
     end)

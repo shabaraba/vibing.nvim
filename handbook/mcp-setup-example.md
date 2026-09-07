@@ -71,7 +71,7 @@ Create or update `~/.claude.json`:
       "command": "node",
       "args": ["/absolute/path/to/vibing.nvim/claude-plugin/mcp-server/dist/index.js"],
       "env": {
-        "VIBING_RPC_PORT": "9876"
+        "VIBING_NVIM_RPC_PORT": "9876"
       }
     }
   }
@@ -183,7 +183,7 @@ Claude uses `nvim_get_info` to get filename, filetype, etc.
 
 **Solutions:**
 
-1. Verify `~/.claude.json` has correct `VIBING_RPC_PORT`
+1. Verify `~/.claude.json` has correct `VIBING_NVIM_RPC_PORT`
 2. Verify Neovim config has matching `mcp.rpc_port`
 3. Restart both Neovim and Claude Code
 
@@ -251,7 +251,7 @@ require("vibing").setup({
       "command": "node",
       "args": ["/path/to/vibing.nvim/claude-plugin/mcp-server/dist/index.js"],
       "env": {
-        "VIBING_RPC_PORT": "8888"
+        "VIBING_NVIM_RPC_PORT": "8888"
       }
     }
   }
@@ -278,12 +278,12 @@ Configure separate MCP servers in `~/.claude.json`:
     "vibing-nvim-1": {
       "command": "node",
       "args": ["/path/to/vibing.nvim/claude-plugin/mcp-server/dist/index.js"],
-      "env": { "VIBING_RPC_PORT": "9876" }
+      "env": { "VIBING_NVIM_RPC_PORT": "9876" }
     },
     "vibing-nvim-2": {
       "command": "node",
       "args": ["/path/to/vibing.nvim/claude-plugin/mcp-server/dist/index.js"],
-      "env": { "VIBING_RPC_PORT": "9877" }
+      "env": { "VIBING_NVIM_RPC_PORT": "9877" }
     }
   }
 }

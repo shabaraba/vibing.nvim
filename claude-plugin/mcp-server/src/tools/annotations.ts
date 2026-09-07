@@ -1,4 +1,4 @@
-import { withRpcPort, requireRpcPort } from './common.js';
+import { withRpcPort } from './common.js';
 
 export const annotationTools = [
   {
@@ -27,7 +27,7 @@ export const annotationTools = [
           description: 'Colours the note (default "info")',
         },
       }),
-      required: requireRpcPort(['bufnr', 'line', 'text']),
+      required: ['bufnr', 'line', 'text'],
     },
   },
   {
@@ -41,7 +41,7 @@ export const annotationTools = [
           description: 'Buffer number (0 for current). Omit to clear every buffer.',
         },
       }),
-      required: requireRpcPort(),
+      required: [],
     },
   },
 ];

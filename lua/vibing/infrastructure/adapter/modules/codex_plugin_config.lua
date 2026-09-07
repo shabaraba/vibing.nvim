@@ -26,6 +26,7 @@
 
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 local PluginContents = require("vibing.infrastructure.plugins.plugin_contents")
+local RpcEnvironment = require("vibing.infrastructure.adapter.modules.rpc_environment")
 local Toml = require("vibing.core.utils.toml")
 local Notify = require("vibing.core.utils.notify")
 
@@ -51,12 +52,12 @@ local function warn_once(cwd, problems)
   )
 end
 
---- Memo of the finished argv, keyed by the plugin directories it was built from plus the port.
+--- Memo of the finished argv, keyed by the plugin directories it was built from.
 --- Building it reads every plugin's manifest and the frontmatter of every SKILL.md -- synchronous
 --- file I/O on the main loop -- and `args` runs on every non-lightweight request, so without this
 --- the codex backend paid that on every message. The key is the resolved directory list rather
 --- than the cwd so that a different `agent.plugins` (or a `plugin_dirs` refresh that changed the
---- list) is a different entry; the port is fixed for the Neovim session.
+--- list) is a different entry.
 --- @type table<string, string[]>
 local cache = {}
 
@@ -79,13 +80,20 @@ end
 --- The `-c` overrides for one MCP server.
 --- @param args string[]
 --- @param server Vibing.PluginMcpServer
-local function append_server(args, server)
+--- @param forward_rpc_port boolean whether to forward the caller's bound Neovim port
+local function append_server(args, server, forward_rpc_port)
   local prefix = "mcp_servers." .. server.name
   if server.command then
     override(args, prefix .. ".command", Toml.string(server.command))
     override(args, prefix .. ".args", Toml.string_array(server.args))
     if next(server.env) then
       override(args, prefix .. ".env", Toml.string_table(server.env))
+    end
+    if forward_rpc_port then
+      -- `env_vars` names a host-process variable for codex to copy into the MCP subprocess.
+      -- The name is fixed, so changing Neovim's actual port changes only the process environment,
+      -- not argv, tool definitions, or any model-visible prompt prefix.
+      override(args, prefix .. ".env_vars", Toml.string_array({ RpcEnvironment.PORT_VAR }))
     end
   else
     override(args, prefix .. ".url", Toml.string(server.url))
@@ -99,14 +107,13 @@ end
 --- The developer message that stands in for `--plugin-dir`'s skill loading and for the claude
 --- system prompt's MCP paragraph.
 ---
---- Byte-stable across the turns of one chat: the entries come in `plugin_dirs` order, the skills
---- in sorted-glob order, and the port is fixed for the Neovim session. Codex's prompt cache
---- matches on a prefix, so any per-turn value here would invalidate it every turn (#469).
+--- Byte-stable across the turns of one chat: the entries come in `plugin_dirs` order and the
+--- skills in sorted-glob order. Codex's prompt cache matches on a prefix, so runtime values such
+--- as the Neovim RPC port must travel out-of-band through the MCP process environment (#469).
 --- @param skills {plugin: string, skill: Vibing.PluginSkill}[]
 --- @param self_server string|nil registered name of the bundled server, nil when it is not loaded
---- @param rpc_port number|nil
 --- @return string|nil
-local function developer_instructions(skills, self_server, rpc_port)
+local function developer_instructions(skills, self_server)
   local lines = {}
 
   if #skills > 0 then
@@ -136,16 +143,6 @@ local function developer_instructions(skills, self_server, rpc_port)
         self_server
       )
     )
-    if rpc_port then
-      table.insert(
-        lines,
-        "Your rpc_port for this turn is "
-          .. tostring(rpc_port)
-          .. ". You MUST pass this exact value as the rpc_port argument on every vibing-nvim MCP tool "
-          .. "call -- never omit it or guess, since other unrelated Neovim instances may be running and "
-          .. "reachable on other ports."
-      )
-    end
   end
 
   if #lines == 0 then
@@ -161,11 +158,10 @@ end
 --- `vibing-nvim` server by declaring one of its own.
 --- @param cwd string|nil the chat's `working_dir`; nil means Neovim's own cwd
 --- @param config Vibing.Config
---- @param rpc_port number|nil this Neovim's RPC port, told to the model when the bundled server loads
 --- @return string[] argv fragment, empty when no plugin applies
-function M.args(cwd, config, rpc_port)
+function M.args(cwd, config)
   local entries = PluginDirs.resolve_entries(cwd, config)
-  local key_parts = { tostring(rpc_port) }
+  local key_parts = {}
   for _, entry in ipairs(entries) do
     table.insert(key_parts, entry.path)
   end
@@ -189,10 +185,13 @@ function M.args(cwd, config, rpc_port)
         table.insert(problems, string.format("%s (server %q)", entry.name, server.name))
       elseif not seen[server.name] then
         seen[server.name] = true
-        append_server(args, server)
+        -- Every server the self plugin declares talks to this Neovim, so every one of them gets
+        -- the port forwarded -- not just the first, which is all the developer message names.
+        local is_self_plugin = entry.path == self_dir
+        append_server(args, server, is_self_plugin)
         -- The bundled server's name is read from its manifest rather than hard-coded, so a
         -- rename there cannot leave the model told about a server that is not registered.
-        if entry.path == self_dir and not self_server then
+        if is_self_plugin and not self_server then
           self_server = server.name
         end
       end
@@ -204,7 +203,7 @@ function M.args(cwd, config, rpc_port)
 
   warn_once(cwd, problems)
 
-  local instructions = developer_instructions(skills, self_server, rpc_port)
+  local instructions = developer_instructions(skills, self_server)
   if instructions then
     -- One override, one flag: `-c` replaces a `developer_instructions` the user set in their own
     -- config.toml for the duration of the run. Accepted -- codex offers no additive form

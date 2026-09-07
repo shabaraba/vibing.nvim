@@ -11,11 +11,10 @@ vibing-nvim MCP server, not static file reads.
 **Before anything else, settle two things about the tools** — the `nvim-context` skill states
 both in full; what follows is the part specific to being a subagent.
 
-_Which port._ Every vibing-nvim tool takes an `rpc_port` naming the Neovim instance to talk to,
-and you do **not** inherit the value the chat that spawned you was given. Take it from your task
-prompt; whoever delegates to you is expected to pass it along. If it isn't there, call
-`nvim_list_instances` once and use the port it reports — and if that lists more than one instance,
-say which ones you found and ask rather than guessing.
+_Which instance._ The MCP server process is already bound to the Neovim that launched the parent
+chat, and subagents share that connection. Omit the optional legacy `rpc_port` argument. Only a
+manually started, unbound server should need `nvim_list_instances`; if several instances remain
+plausible there, do not guess — tell the parent what you found and ask it to disambiguate.
 
 _Which prefix._ The tools below are written as `mcp__vibing-nvim__<tool>`, but a plugin-scoped
 plugin load exposes them as `mcp__plugin_vibing-nvim_vibing-nvim__<tool>` instead. If the plain

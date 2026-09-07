@@ -9,9 +9,8 @@ This chat becomes the orchestrator: it splits the work, creates one worker chat 
 each worker a brief, and later reports back. It does **not** babysit the workers — see "Hand
 control back" below, which is the part that most needs following.
 
-Every MCP call here takes `rpc_port`, the value in this chat's system prompt. Without it the
-server falls back to the instance registry, which only answers when exactly one Neovim is live —
-and orchestration is precisely the case where several are.
+The MCP server process is already bound to this chat's Neovim. Omit the optional legacy
+`rpc_port` argument from every call below.
 
 ## Chat or subagent?
 
@@ -78,7 +77,7 @@ chats editing one working tree will overwrite each other, and nothing in vibing.
 
 Separate worktrees stop the overwriting, not the overlap: two branches can still change the same
 file in ways that only collide at merge time. Once workers are running, call
-`nvim_chat_conflicts({ rpc_port })` — it diffs every live chat's `working_dir` worktree against
+`nvim_chat_conflicts({})` — it diffs every live chat's `working_dir` worktree against
 `main` and names the files two or more of them touch. It warns, it does not block; call it before
 you merge anything, and read the overlapping files in both branches yourself.
 
@@ -88,9 +87,8 @@ five chats for a job that was really one is expensive and the user has to clean 
 ## 2. Create one worker chat per task
 
 ```text
-nvim_chat_create({ rpc_port, position: "back", from_bufnr: <this chat's bufnr> })
+nvim_chat_create({ position: "back", from_bufnr: <this chat's bufnr> })
 nvim_chat_create({
-  rpc_port,
   position: "back",
   from_bufnr: <this chat's bufnr>,
   working_dir: ".vibing/worktrees/fix-auth",
@@ -123,7 +121,6 @@ nvim_chat_create({
 
 ```text
 nvim_chat_send_message({
-  rpc_port,
   file_path: "<worker file_path>",
   from_bufnr: <this chat's bufnr>,
   message: "<the whole task>",
@@ -193,7 +190,7 @@ shapes, and the difference is whether the notice carries a `status:`.
   `nvim_get_buffer` to read _what_ it is stuck on.
 - **Without one** ("have stopped without reporting back") the worker simply stopped without
   reporting, which under the convention above is itself suspect. Read those with
-  `nvim_get_buffer({ rpc_port, file_path, last_section: true, tail_lines: 25 })` — not every
+  `nvim_get_buffer({ file_path, last_section: true, tail_lines: 25 })` — not every
   worker, and not a plain `nvim_get_buffer` call: a worker chat can run to hundreds of thousands
   of lines, and reading it in full pulls that whole transcript into this conversation for the
   rest of it. `last_section` + `tail_lines` gets you the end of its last turn, which is normally
@@ -252,9 +249,8 @@ If the user set `agent.orchestration.delegated_approval` to `true` or `"scoped"`
 instead:
 
 ```text
-nvim_get_buffer({ rpc_port, file_path: "<worker file_path>" })    # read what it is stuck on
+nvim_get_buffer({ file_path: "<worker file_path>" })    # read what it is stuck on
 nvim_chat_answer_approval({
-  rpc_port,
   file_path: "<worker file_path>",
   action: "allow_once",
   from_bufnr: <this chat's bufnr>,

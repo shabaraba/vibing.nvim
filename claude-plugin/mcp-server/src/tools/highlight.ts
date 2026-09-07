@@ -1,4 +1,4 @@
-import { withRpcPort, requireRpcPort } from './common.js';
+import { withRpcPort } from './common.js';
 
 export const highlightTools = [
   {
@@ -28,7 +28,7 @@ export const highlightTools = [
             'until the next highlight or nvim_clear_highlight.',
         },
       }),
-      required: requireRpcPort(['bufnr', 'start_line']),
+      required: ['bufnr', 'start_line'],
     },
   },
   {
@@ -42,7 +42,7 @@ export const highlightTools = [
           description: 'Buffer number (0 for current buffer)',
         },
       }),
-      required: requireRpcPort(['bufnr']),
+      required: ['bufnr'],
     },
   },
 ];

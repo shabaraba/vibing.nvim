@@ -20,9 +20,16 @@ The tool catalogue, the orchestration tools, annotations and background LSP anal
 - **`VIBING_NVIM_MCP_TOOL_PATTERNS` (`core/constants/tools.lua`) is hand-maintained**, because
   `--allowedTools` accepts nothing but literals. A stale entry does not break chats — the hook's
   suffix match is what decides — which is why a dead one went unnoticed for so long.
-- **`rpc_port` has to be named explicitly on every call, and a subagent does not inherit it.** The
-  system prompt tells the model to pass its own and to forward it in any task prompt it hands a
-  subagent. The one home for both this and the prefix rule is
+- **The instance is bound out-of-band, so `rpc_port` is omitted.** Both CLI adapters export
+  `VIBING_NVIM_RPC_PORT` (`adapter/modules/rpc_environment.lua`); claude hands the launching
+  environment to plugin MCP servers and codex is told to copy that one variable by name, so a
+  subagent shares the already-bound connection. The numeric port must never re-enter a prompt, a
+  task brief or a tool call — it changes on every Neovim restart, which is what invalidated the
+  cached prefix (#730). **The registry fallback for an unbound server is reads-only**
+  (`mcp-server/src/read-only-methods.ts`, an allowlist — a new method is a writer until it is
+  classified), since the server can also be registered at user scope where an unrelated session
+  would otherwise get `nvim_execute` against whichever Neovim is live. The one home for both this
+  and the prefix rule is
   `claude-plugin/skills/nvim-context/SKILL.md` → "Calling the tools"; other skills state it in a
   line and point there, because a skill is loaded on its own.
 - **Never assume `winnr: 0`.** `nvim_get_window_info({ winnr: 0 })` returns the _active_ window,

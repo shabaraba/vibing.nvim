@@ -44,20 +44,16 @@ return {
   },
 
   {
-    id = "ask_user_question/passes_rpc_port",
-    description = "MCPツール呼び出しにこのターンのrpc_portを渡す",
+    id = "ask_user_question/omits_rpc_port",
+    description = "MCPプロセスがNeovimに束縛済みなのでrpc_portをツール引数に重複させない",
     prompt = "Ask me whether to use tabs or spaces. Use the vibing.nvim question tool.",
     check = function(record)
       local input = Harness.find_mcp_call(record, "nvim_ask_user_question")
       if not input then
         return false, "no MCP call to inspect"
       end
-      local expected = require("vibing.infrastructure.rpc.server").get_port()
-      if not input.rpc_port then
-        return false, "omitted rpc_port, so the call would target whichever instance answers"
-      end
-      if tonumber(input.rpc_port) ~= expected then
-        return false, string.format("passed rpc_port=%s, expected %s", tostring(input.rpc_port), tostring(expected))
+      if input.rpc_port ~= nil then
+        return false, "passed rpc_port even though the MCP process is already bound"
       end
       return true
     end,

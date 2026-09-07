@@ -5,8 +5,8 @@
 --- goes into `vim.system`'s options, who gets registered, which timer is armed. Stubbing
 --- `vim.system` exposes all of that without a CLI on the machine.
 ---
---- Shared across the three adapters on purpose. Per-adapter mocks would drift, and the point of
---- these tests is that the three behave the same.
+--- Shared across every adapter on purpose. Per-adapter mocks would drift, and the point of these
+--- tests is that they behave the same.
 --- @module tests.helpers.adapter_stream
 
 local M = {}

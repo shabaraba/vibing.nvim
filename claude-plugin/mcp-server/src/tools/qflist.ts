@@ -1,5 +1,5 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { withRpcPort, requireRpcPort } from './common.js';
+import { withRpcPort } from './common.js';
 
 export const qflistTools: Tool[] = [
   {
@@ -43,7 +43,7 @@ export const qflistTools: Tool[] = [
           description: 'Open the quickfix window too. Focus stays where it is.',
         },
       }),
-      required: requireRpcPort(['items']),
+      required: ['items'],
     },
   },
 ];

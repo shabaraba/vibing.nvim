@@ -15,8 +15,6 @@ system-prompt line wins: it is generated fresh for this turn, this file can go s
 
 Call `nvim_chat_send_message` with:
 
-- `rpc_port`: this turn's value, exactly as given in your system prompt — required on every
-  vibing-nvim MCP call, not just this one (see the `nvim-context` skill).
 - `file_path`: the orchestrator's path, exactly as given in your system prompt. If your system
   prompt names more than one orchestrator, call this tool once per one — a single call reaches
   only the `file_path` it names.

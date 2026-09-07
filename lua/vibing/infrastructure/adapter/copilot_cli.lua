@@ -4,6 +4,7 @@
 
 local Base = require("vibing.infrastructure.adapter.base")
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
+local RpcEnvironment = require("vibing.infrastructure.adapter.modules.rpc_environment")
 local CopilotCommandBuilder = require("vibing.infrastructure.adapter.modules.copilot_command_builder")
 local CopilotEventProcessor = require("vibing.infrastructure.adapter.modules.copilot_event_processor")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
@@ -116,14 +117,7 @@ function CopilotCLI:stream(prompt, opts, on_chunk, on_done)
 
   local env = vim.fn.environ()
 
-  local rpc_server = require("vibing.infrastructure.rpc.server")
-  local rpc_port = rpc_server.get_port()
-  if rpc_port then
-    local port_str = tostring(rpc_port)
-    env.VIBING_NVIM_RPC_PORT = port_str
-    env.VIBING_RPC_PORT = port_str
-    env.VIBING_NVIM_CONTEXT = "true"
-  end
+  RpcEnvironment.bind(env)
   env.VIBING_HANDLE_ID = handle_id
 
   -- Required so nvim_ask_user_question can resolve this stream's chat callbacks

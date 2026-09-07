@@ -46,9 +46,30 @@ because `--allowedTools` accepts nothing but literals. A stale entry there does 
 the hook's suffix match is what actually decides, which is exactly why nothing noticed the dead
 one for so long.
 
-**The port has to be named explicitly**, and a subagent does not inherit the chat's. The system
-prompt therefore tells the model both to pass its own `rpc_port` and to forward it in any task
-prompt it hands a subagent.
+**The instance is bound outside the prompt.** Both CLI adapters put the current port in
+`VIBING_NVIM_RPC_PORT`; Claude Code exposes the launching environment to plugin MCP servers, and
+Codex is told to forward that variable by name. The Node server resolves it before the optional
+legacy `rpc_port` argument. Consequently the numeric value never enters the system/developer
+prompt or tool calls, and subagents share the already-bound MCP connection.
+
+That claude forwards the launching environment is the load-bearing assumption, so it was measured
+rather than assumed: against **claude 2.1.236**, a throwaway `--plugin-dir` whose one MCP server
+was a shell script dumping `env` received `VIBING_NVIM_RPC_PORT` from the parent process
+unchanged, alongside the registration's own static `env` block. The two are additive — the static
+block does not replace the inherited environment. Re-measure this the same way if a claude release
+starts sandboxing plugin server environments; the symptom would be silent, since the Node server
+then falls through to the registry and keeps working whenever exactly one Neovim is live.
+
+When the server is launched manually rather than by vibing.nvim, `rpc_port` remains available as
+an optional compatibility override. With neither source present, **only reads fall back to the
+registry**, and then only when exactly one Neovim instance is live; a call that changes state
+refuses instead of guessing. That is the rule the per-tool `requireRpcPort` schema guard used to
+enforce, moved to where the port is resolved (`read-only-methods.ts`) because the schemas no
+longer name the port: this server can be registered at Claude Code's _user_ scope, where a
+session that has nothing to do with vibing.nvim sees these tools unbound, and guessing there
+would hand it `nvim_execute` / `nvim_set_buffer` / `nvim_chat_send_message` against whichever
+editor is open. The list is an allowlist, so a newly added method counts as a writer until it is
+classified.
 
 ## Available Tools
 
@@ -108,7 +129,7 @@ at roughly the right place beats refusing to point.
 
 ## Orchestration Tools
 
-`nvim_chat_create({ rpc_port, position?, working_dir?, from_bufnr?, task?, delegated_scope? })`
+`nvim_chat_create({ position?, working_dir?, from_bufnr?, task?, delegated_scope? })`
 creates a chat buffer and returns `{ bufnr, file_path, working_dir, position, saved }` as JSON, so
 one chat can spawn worker chats, brief each with `nvim_chat_send_message`, and poll them with
 `nvim_get_buffer` — which reports a chat buffer's `responding` / `idle` / `waiting_approval` /
@@ -155,7 +176,7 @@ flush time, same as the immediate path; if several queued messages from the same
 written at delivery rather than when the message is queued, and why the queue is capped:
 `handbook/architecture/orchestration.md`.
 
-`nvim_chat_answer_approval({ rpc_port, file_path|bufnr, action, from_bufnr })` answers another
+`nvim_chat_answer_approval({ file_path|bufnr, action, from_bufnr })` answers another
 chat's pending tool-approval prompt with one of `allow_once` / `deny_once` / `allow_for_session` /
 `deny_for_session`. **It is refused unless `agent.orchestration.delegated_approval` is set**, since
 what it buys is one agent clearing another agent's permission gate; `from_bufnr` is required here
@@ -166,17 +187,17 @@ either way. Why it writes the chosen option line into the worker's buffer instea
 decision directly, and why the watchdog's `waiting_approval` wording changes with the setting:
 `handbook/architecture/orchestration.md` → "Answering a worker's tool approval".
 
-`nvim_chat_list({ rpc_port? })` reports every chat buffer open in this Neovim session in one call —
+`nvim_chat_list({})` reports every chat buffer open in this Neovim session in one call —
 `bufnr`, `file_path`, `chat_status`, `context_size` (the last measured context in tokens, from the
 last turn's own `### Tokens` marker; absent until a turn has completed), `updated_at` (frontmatter
 timestamp; absent until something has written to frontmatter), `orchestrated_by`, and `task` (that
 chat's one-line assignment, projected from its orchestrator's own `orchestrated` entry — present
 only when that orchestrator is _also_ open in this session, since the handler never opens a file
 just to look up a task). Use it instead of polling several worker chats one at a time with
-`nvim_get_buffer`. It is a read like `nvim_list_buffers`, so `rpc_port` stays optional; it only
-lists chats attached in this session — a chat file nobody has opened yet does not appear.
+`nvim_get_buffer`. It only lists chats attached in this session — a chat file nobody has opened
+yet does not appear.
 
-`nvim_chat_conflicts({ rpc_port? })` warns (never blocks) about files that 2+ live chats have
+`nvim_chat_conflicts({})` warns (never blocks) about files that 2+ live chats have
 modified on their own branch — the mechanical version of what #692's postmortem found only because
 a human happened to be looking at both diffs at once (one PR renamed a marker a second PR still
 parsed by the old name; that PR's own tests used a fixture, so nothing caught it). It is a read like

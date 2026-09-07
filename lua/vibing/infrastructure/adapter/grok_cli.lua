@@ -4,6 +4,7 @@
 
 local Base = require("vibing.infrastructure.adapter.base")
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
+local RpcEnvironment = require("vibing.infrastructure.adapter.modules.rpc_environment")
 local GrokCommandBuilder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
 local GrokEventProcessor = require("vibing.infrastructure.adapter.modules.grok_event_processor")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
@@ -69,9 +70,6 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
     )
   end
 
-  local rpc_server = require("vibing.infrastructure.rpc.server")
-  local rpc_port = rpc_server.get_port()
-
   local cwd = opts.cwd or vim.fn.getcwd()
 
   -- Install project PreToolUse hook (reuses bin/hooks/pre-tool-use.sh) unless fully bypassed.
@@ -94,7 +92,7 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
   -- The builder raises when the grok binary is missing. send_message.lua does not wrap stream()
   -- in pcall, so without this the chat buffer would show a raw Lua stack trace instead of an
   -- actionable message. Matches claude_cli.lua and copilot_cli.lua.
-  local build_ok, cmd = pcall(GrokCommandBuilder.build, prompt, opts, session_id, self.config, handle_id, rpc_port)
+  local build_ok, cmd = pcall(GrokCommandBuilder.build, prompt, opts, session_id, self.config)
   if not build_ok then
     CliRuntime.report_build_failure(handle_id, cmd, on_done)
     return handle_id
@@ -130,12 +128,7 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
 
   -- Lets PreToolUse hook identify which chat buffer's stream it belongs to (see ActiveStreamRegistry).
   local env = vim.tbl_extend("force", self._base_env, { VIBING_HANDLE_ID = handle_id })
-  if rpc_port then
-    local port_str = tostring(rpc_port)
-    env.VIBING_NVIM_RPC_PORT = port_str
-    env.VIBING_RPC_PORT = port_str
-    env.VIBING_NVIM_CONTEXT = "true"
-  end
+  RpcEnvironment.bind(env)
 
   ActiveStreamRegistry.register({
     handle_id = handle_id,

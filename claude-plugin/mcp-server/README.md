@@ -112,7 +112,7 @@ Add to `~/.claude.json`:
       "command": "node",
       "args": ["/path/to/vibing.nvim/claude-plugin/mcp-server/dist/index.js"],
       "env": {
-        "VIBING_RPC_PORT": "9876",
+        "VIBING_NVIM_RPC_PORT": "9876",
         "VIBING_RPC_TIMEOUT": "30000"
       }
     }
@@ -122,7 +122,8 @@ Add to `~/.claude.json`:
 
 **Environment Variables:**
 
-- `VIBING_RPC_PORT`: RPC server port (default: 9876)
+- `VIBING_NVIM_RPC_PORT`: Neovim RPC server port. vibing.nvim supplies this automatically;
+  configure it only when launching the MCP server manually.
 - `VIBING_RPC_TIMEOUT`: Request timeout in milliseconds (default: 30000 = 30 seconds)
 
 ### 3. Enable MCP in vibing.nvim
@@ -478,7 +479,7 @@ The server uses a simple JSON-RPC protocol over TCP:
 
 - Ensure Neovim is running with MCP enabled
 - Check that RPC server port (9876) is not in use
-- Verify `VIBING_RPC_PORT` environment variable matches config
+- Verify `VIBING_NVIM_RPC_PORT` environment variable matches config
 
 ### Request Timeout
 
@@ -486,7 +487,7 @@ The server uses a simple JSON-RPC protocol over TCP:
 - For heavy LSP operations (e.g., call hierarchy in large projects), consider increasing timeout:
   ```json
   "env": {
-    "VIBING_RPC_PORT": "9876",
+    "VIBING_NVIM_RPC_PORT": "9876",
     "VIBING_RPC_TIMEOUT": "60000"
   }
   ```
