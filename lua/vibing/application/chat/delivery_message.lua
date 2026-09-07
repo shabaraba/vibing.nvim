@@ -83,8 +83,8 @@ local function notification_section(items, cache)
   if delegation_mode == true then
     waiting_approval_lines = {
       "- waiting_approval — it is sitting on a tool-approval prompt. Read what it is stuck on",
-      "  with nvim_get_buffer, then answer it with nvim_chat_answer_approval({ rpc_port,",
-      "  file_path, action, from_bufnr }) if the tool is plainly within the task you briefed it",
+      "  with nvim_get_buffer, then answer it with nvim_chat_answer_approval({ file_path, action,",
+      "  from_bufnr }) if the tool is plainly within the task you briefed it",
       "  with. If it is not, say which chat is blocked and on what, and let the user decide.",
     }
   elseif delegation_mode == "scoped" then
@@ -92,7 +92,7 @@ local function notification_section(items, cache)
     -- 機械的に断るので、失敗しても1回の無駄な呼び出しで済む（無効時のように必ず失敗するのとは違う）
     waiting_approval_lines = {
       "- waiting_approval — it is sitting on a tool-approval prompt. Read what it is stuck on",
-      "  with nvim_get_buffer, then try nvim_chat_answer_approval({ rpc_port, file_path, action,",
+      "  with nvim_get_buffer, then try nvim_chat_answer_approval({ file_path, action,",
       "  from_bufnr }). It only succeeds if the tool matches that chat's declared delegated_scope",
       "  (deny_once/deny_for_session always succeed). If it fails, say which chat is blocked and",
       "  on what, and let the user decide.",
@@ -108,7 +108,7 @@ local function notification_section(items, cache)
     "A chat with a status above will not move again until someone acts on it:",
     "",
     "- asked_question — it is waiting for an answer. Read the question with",
-    "  nvim_get_buffer({ rpc_port, file_path }) and answer it with nvim_chat_send_message",
+    "  nvim_get_buffer({ file_path }) and answer it with nvim_chat_send_message",
     "  (passing from_bufnr), or put it to the user if only they can decide.",
   }
   vim.list_extend(blocked_explanation, waiting_approval_lines)
@@ -124,7 +124,7 @@ local function notification_section(items, cache)
     or {
       "A chat that finishes its task is expected to report the result to you itself, so a stop with",
       "no report is more likely to be something else: it failed, it stopped to ask a question, or it",
-      "is waiting on a tool approval. Read each one with nvim_get_buffer({ rpc_port, file_path }),",
+      "is waiting on a tool approval. Read each one with nvim_get_buffer({ file_path }),",
       "look at the tail of the transcript, and decide what to do — do not treat its task as done.",
     }
 
