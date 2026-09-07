@@ -27,6 +27,16 @@ function M._read_frontmatter_agent()
   return nil
 end
 
+---Resolve the agent whose model candidates should be shown for `model:`.
+---Runtime uses `agent` frontmatter first and then config.adapter; completion should mirror that.
+---@return string "claude" | "codex" | "copilot" | "grok"
+function M._resolve_model_completion_agent()
+  local explicit = M._read_frontmatter_agent()
+  local ok_config, config_module = pcall(require, "vibing.config")
+  local config = ok_config and config_module.get and config_module.get() or nil
+  return require("vibing.core.constants.modes").resolve_agent({ agent = explicit }, config)
+end
+
 ---Detect trigger context for frontmatter fields
 ---@param line string Current line content
 ---@param col number Cursor column (0-indexed)
@@ -48,7 +58,7 @@ function M.get_trigger_context(line, col)
       }
       -- For model field, read the agent value from the buffer frontmatter
       if field_name == "model" then
-        ctx.agent = M._read_frontmatter_agent()
+        ctx.agent = M._resolve_model_completion_agent()
       end
       return ctx
     end

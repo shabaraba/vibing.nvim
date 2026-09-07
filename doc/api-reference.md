@@ -28,7 +28,7 @@ require("vibing").setup({
   adapter = "claude",  -- "claude" | "codex" | "copilot"
   agent = {
     default_mode = "code",     -- "code" | "plan" | "explore"
-    default_model = "sonnet",  -- "sonnet" | "opus" | "haiku" | "fable"
+    default_model = "sonnet",  -- backend model id, e.g. "sonnet" or "gpt-5.6-terra"
   },
   chat = {
     window = {
@@ -198,7 +198,7 @@ end
 {
   adapter = "claude",
   agent = {
-    default_model = "sonnet",  -- "sonnet" | "opus" | "haiku" | "fable"
+    default_model = "sonnet",  -- backend model id, e.g. "sonnet" or "gpt-5.6-terra"
   },
 }
 ```

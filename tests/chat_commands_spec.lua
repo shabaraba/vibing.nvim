@@ -157,6 +157,16 @@ describe("vibing.application.chat.commands", function()
       assert.is_false(result)
     end)
 
+    it("should offer model completions for every registered backend", function()
+      local completions = Commands.get_argument_completions("model")
+
+      assert.is_true(vim.tbl_contains(completions, "sonnet"))
+      assert.is_true(vim.tbl_contains(completions, "gpt-5.6-terra"))
+      assert.is_true(vim.tbl_contains(completions, "gpt-5-codex"))
+      assert.is_true(vim.tbl_contains(completions, "claude-sonnet-5"))
+      assert.is_true(vim.tbl_contains(completions, "grok-4.5"))
+    end)
+
     it("should execute registered command handler", function()
       local handler_called = false
       local handler_args = nil

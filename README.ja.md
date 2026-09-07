@@ -216,7 +216,7 @@ AI は同じバッファ内に応答します。`<C-c>` で実行中のリクエ
 | `/clear`                  | コンテキストをクリア                                                       |
 | `/save`                   | 現在のチャットを保存                                                       |
 | `/summarize`              | 会話を要約                                                                 |
-| `/model <model>`          | AI モデルを設定(haiku/sonnet/opus/fable)                                   |
+| `/model <model>`          | 現在の backend に渡す AI モデルを設定                                      |
 | `/effort <level>`         | 推論量を設定(low/medium/high/xhigh/max)                                    |
 | `/help`                   | 利用可能なスラッシュコマンドを表示                                         |
 | `/permissions` or `/perm` | 対話的 Permission Builder — ツールの allow/deny ルールを設定               |
@@ -259,7 +259,7 @@ require("vibing").setup({
     save_location_type = "project", -- "project" | "user" | "custom"
   },
   agent = {
-    default_model = "sonnet",      -- "sonnet" | "opus" | "haiku" | "fable"
+    default_model = "sonnet",      -- backend のモデルID。例: "sonnet" / "gpt-5.6-terra"
   },
   permissions = {
     mode = "acceptEdits",          -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"
@@ -291,7 +291,7 @@ created_at: 2024-01-01T12:00:00
 working_dir: .vibing/worktrees/feature-x  # オプション: 作業ディレクトリ(git ルートからの相対パス)
 agent: claude  # claude | codex | copilot(このチャットに限りグローバルの adapter 設定を上書き)
 mode: code  # code | plan | explore
-model: sonnet  # sonnet | opus | haiku | fable
+model: sonnet  # backend のモデルID。例: sonnet / gpt-5.6-terra
 permission_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk | auto
 permissions_allow:
   - Read

@@ -126,7 +126,7 @@ describe("vibing.application.chat.init", function()
         clear = "Clear context",
         save = "Save current chat",
         summarize = "Summarize conversation",
-        model = string.format("Set AI model: /model <%s>", table.concat(Modes.VALID_MODELS, "|")),
+        model = "Set AI model: /model <model>",
         effort = string.format("Set reasoning effort: /effort <%s>", table.concat(Modes.EFFORT_LEVELS, "|")),
       }
 

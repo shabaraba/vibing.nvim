@@ -360,7 +360,8 @@ Type these on their own line in a chat buffer and send with `<CR>`:
 /clear                  Clear the context
 /save                   Save the current chat
 /summarize              Summarise the conversation
-/model <model>          Set the model (sonnet|opus|haiku|fable)
+/model <model>          Set the model for the current backend
+                        (e.g. sonnet or gpt-5.6-terra)
 /effort <level>         Set the reasoning effort (low|medium|high|xhigh|max)
 /help                   List the available slash commands
 /permissions, /perm     Interactive permission builder
