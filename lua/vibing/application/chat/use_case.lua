@@ -268,16 +268,16 @@ end
 ---代わりにもっともらしい URL を組み立てるほうへ倒れる。
 local UNKNOWN_ISSUE_URL = "会話に URL が現れていない番号は素のまま書くこと。"
 
----要約に issue リンクを書かせるための一文を作る
+---要約に issue / PR リンクを書かせるための一文を作る
 ---
 ---要約は `lightweight` 呼び出しでツールを持たないので、モデルは自分で remote を見に行けない。
 ---リポジトリ URL をここで解決して渡さないと、`#123` は永久に素のテキストのままになる。
 ---
----URL の組み立てを許すのは github.com だけ。issue の URL 形は forge ごとに違い（GitLab は
----`/-/issues/`）、`to_web_url` はドットを含む任意のホストを通すので、`/issues/` を例に出すと
----他 forge では存在しないリンクをチャットファイルに書き込むことになる。分からない forge では
----URL だけ渡して番号は素のままにさせる — テンプレートの「URL を推測して組み立てない」を、
----こちらが例文で上書きしないため。
+---URL の組み立てを許すのは github.com だけ。issue / PR の URL 形は forge ごとに違い（GitLab は
+---`/-/issues/` と `/-/merge_requests/`）、`to_web_url` はドットを含む任意のホストを通すので、
+---`/issues/` や `/pull/` を例に出すと他 forge では存在しないリンクをチャットファイルに書き込む
+---ことになる。分からない forge では URL だけ渡して番号は素のままにさせる — テンプレートの
+---「URL を推測して組み立てない」を、こちらが例文で上書きしないため。
 ---@param cwd string|nil
 ---@return string
 local function build_repository_instruction(cwd)
@@ -289,17 +289,19 @@ local function build_repository_instruction(cwd)
   local prefix = string.format("このチャットのリポジトリは %s である。", repo_url)
 
   if not repo_url:match("^https://github%.com/") then
-    return prefix .. "issue の URL 形式は不明である。" .. UNKNOWN_ISSUE_URL
+    return prefix .. "issue / PR の URL 形式は不明である。" .. UNKNOWN_ISSUE_URL
   end
 
   -- 組み立てを許すのは「このリポジトリの番号」だけ。rule 6 は `ABC-456`（他システム）も
   -- `org/repo#123`（別リポジトリ）も表記として認めているので、どちらもこのリポジトリの
-  -- issue URL に流し込ませない。後者は特に、開くと無関係な issue に飛ぶリンクになる
+  -- issue / PR URL に流し込ませない。後者は特に、開くと無関係な issue に飛ぶリンクになる
   return prefix
     .. string.format(
       "`#123` のようにリポジトリ名の付かない issue / PR 番号は、ここから URL を組み立ててよい"
-        .. "（例: `[#123](%s/issues/123)`）。`ABC-456` のような他システムのチケット番号と、"
+        .. "（issue: `[#123](%s/issues/123)`、PR: `[#456](%s/pull/456)`）。"
+        .. "`ABC-456` のような他システムのチケット番号と、"
         .. "`org/repo#123` のように別リポジトリを明示した参照は、URL を組み立てず素のまま書くこと。",
+      repo_url,
       repo_url
     )
 end

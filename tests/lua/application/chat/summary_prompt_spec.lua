@@ -73,15 +73,24 @@ describe("chat_summary prompt", function()
     assert.is_truthy(prompt:find("[#123](https://github.com/acme/thing/issues/123)", 1, true))
   end)
 
-  -- issue の URL 形は forge ごとに違う（GitLab は `/-/issues/`）。知らない forge で `/issues/` を
-  -- 例に出すと、開けないリンクがチャットファイルに残る。
+  -- 対応 issue / PR の章は PR も載せる。PR の URL 形は `/issues/` ではないので、issue の例文だけ
+  -- 渡すとモデルは PR 番号をそちらに流し込むか、素のテキストのままにする。
+  it("hands the model the repository url a pull request link needs", function()
+    local prompt = prompt_for_remote("git@github.com:acme/thing.git")
+
+    assert.is_truthy(prompt:find("[#456](https://github.com/acme/thing/pull/456)", 1, true))
+  end)
+
+  -- issue / PR の URL 形は forge ごとに違う（GitLab は `/-/issues/`、`/-/merge_requests/`）。
+  -- 知らない forge で `/issues/` や `/pull/` を例に出すと、開けないリンクがチャットファイルに残る。
   it("does not invent an issue url shape for a forge it does not know", function()
     local prompt = prompt_for_remote("git@gitlab.example.com:acme/thing.git")
 
     assert.is_truthy(prompt:find("https://gitlab.example.com/acme/thing", 1, true))
-    -- テンプレート側の例文にも `/issues/123` はあるので、ホストまで込みで見ないと空振りする
+    -- テンプレート側の例文にも `/issues/123` `/pull/456` はあるので、ホストまで込みで見ないと空振りする
     assert.is_nil(prompt:find("gitlab.example.com/acme/thing/issues", 1, true))
-    assert.is_truthy(prompt:find("issue の URL 形式は不明", 1, true))
+    assert.is_nil(prompt:find("gitlab.example.com/acme/thing/pull", 1, true))
+    assert.is_truthy(prompt:find("issue / PR の URL 形式は不明", 1, true))
   end)
 
   it("says the repository is unknown rather than dropping the instruction", function()
