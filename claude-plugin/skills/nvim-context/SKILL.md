@@ -26,7 +26,9 @@ for a tool whose name **ends** in the one you need rather than assuming it is mi
 bound to the Neovim that launched the chat, and subagents share that connection. The optional
 argument exists only for a server started manually outside vibing.nvim. In that standalone case,
 call `nvim_list_instances` first; use the sole result, or match an explicit cwd/project clue you
-already know. If several remain plausible, say which you found and ask rather than guessing.
+already know. If several remain plausible, say which you found and ask rather than guessing. An
+unbound server answers reads against a single live instance but refuses anything that changes
+state until you name the port, so pass the one `nvim_list_instances` reported.
 
 ## Workflow
 

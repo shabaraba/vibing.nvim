@@ -52,9 +52,24 @@ Codex is told to forward that variable by name. The Node server resolves it befo
 legacy `rpc_port` argument. Consequently the numeric value never enters the system/developer
 prompt or tool calls, and subagents share the already-bound MCP connection.
 
+That claude forwards the launching environment is the load-bearing assumption, so it was measured
+rather than assumed: against **claude 2.1.236**, a throwaway `--plugin-dir` whose one MCP server
+was a shell script dumping `env` received `VIBING_NVIM_RPC_PORT` from the parent process
+unchanged, alongside the registration's own static `env` block. The two are additive — the static
+block does not replace the inherited environment. Re-measure this the same way if a claude release
+starts sandboxing plugin server environments; the symptom would be silent, since the Node server
+then falls through to the registry and keeps working whenever exactly one Neovim is live.
+
 When the server is launched manually rather than by vibing.nvim, `rpc_port` remains available as
-an optional compatibility override. With neither source present, the registry fallback still
-works only when exactly one Neovim instance is live.
+an optional compatibility override. With neither source present, **only reads fall back to the
+registry**, and then only when exactly one Neovim instance is live; a call that changes state
+refuses instead of guessing. That is the rule the per-tool `requireRpcPort` schema guard used to
+enforce, moved to where the port is resolved (`read-only-methods.ts`) because the schemas no
+longer name the port: this server can be registered at Claude Code's _user_ scope, where a
+session that has nothing to do with vibing.nvim sees these tools unbound, and guessing there
+would hand it `nvim_execute` / `nvim_set_buffer` / `nvim_chat_send_message` against whichever
+editor is open. The list is an allowlist, so a newly added method counts as a writer until it is
+classified.
 
 ## Available Tools
 

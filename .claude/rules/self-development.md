@@ -15,11 +15,11 @@ query the **running** Neovim with its live LSP servers; generic tools analyze se
 and miss runtime state. Same for buffer and window operations (`nvim_get_buffer`,
 `nvim_set_buffer`, `nvim_list_windows`, `nvim_load_buffer`).
 
-**Omitting `rpc_port`.** Pass the value from your system prompt on every MCP call. Worktrees and
-concurrent chats make several live Neovim instances the normal case, and omitting it falls back to
-the instance registry, which only answers when exactly one is live. `process.env.VIBING_NVIM_RPC_PORT`
-is **not** a substitute: MCP clients forward only a fixed whitelist of variables plus the server
-registration's static `env` block, so it never reaches the MCP server process.
+**Naming an `rpc_port` on an MCP call.** Omit it. The MCP server process is bound to the Neovim
+that launched the chat through `VIBING_NVIM_RPC_PORT`, and a subagent shares that already-bound
+connection. The argument survives only as a compatibility override for a server started manually
+outside vibing.nvim. Putting the numeric port back into a prompt, a task brief or a tool call is
+what #730 removed: it changes on every Neovim restart, so it breaks the cached prompt prefix.
 
 Context is managed with `:VibingContext <file>` / `:VibingClearContext`. Inside a vibing.nvim
 session `VIBING_NVIM_CONTEXT=true` and `VIBING_NVIM_RPC_PORT=<port>` are set.
