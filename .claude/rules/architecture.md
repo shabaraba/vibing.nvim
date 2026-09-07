@@ -59,6 +59,22 @@ Claude-only (`handbook/features/chat-ui.md`).
 - **Grok discovers project hooks only inside a git repository** (outside one the gate would
   silently allow everything, so `ensure()` warns), and **copilot's hook is injected as a throwaway
   plugin** under `.vibing/copilot-plugin/` via `--plugin-dir`, with a schema that is not claude's.
+- **Codex's hook key is `hooks.PreToolUse` and it travels with
+  `--dangerously-bypass-hook-trust`.** Both halves fail silently on their own: codex drops an
+  unrecognised `hooks.*` key without a warning (the snake_case spelling meant no hook fired at all
+  — no permission gate, and no diff baseline, so no `.vibing/patches/*.patch` and no `gd` float),
+  and a registered-but-untrusted hook makes `codex exec` **hang** rather than skip. So
+  `codex_settings_generator.get_hook_args()` returns the flag and the `-c` pair as one fragment;
+  do not split them. Verify with `hooks/list` on `codex app-server`, never by eye.
+- **The Codex hook script is copied to `<cwd>/.vibing/codex-pre-tool-use.sh` before launch.** A
+  hook command outside that turn's writable roots makes sandboxed `codex exec` hang instead of
+  reporting a spawn error. Keep staging synchronous and atomic; if it fails, omit the hook rather
+  than registering a command that cannot run. Keep the hook in `bypassPermissions`: that mode
+  bypasses the decision, not the git-snapshot baseline carried by the same PreToolUse round trip.
+- **`codex_tool_vocabulary.lua` has no `normalize_input`, deliberately.** A codex edit carries no
+  path in `tool_input` — the paths are inside the apply_patch envelope in `command`, and there may
+  be several. So granular `paths` rules do not match codex edits. Filling `file_path` from the
+  first path would let a deny rule be evaded by patch ordering; the fix belongs in `matchers.lua`.
 
 Why each seam exists and which CLI version each shape was captured from:
 `handbook/architecture/cli-integration.md` → "Backend Seams".
@@ -133,7 +149,10 @@ or a formatter run through Bash still shows up (#625).
   behaviour has to count as a writer.
 - **`.vibing/` is excluded by pathspec on the diff calls, and only conditionally on `git add -A`**
   — `git add` exits 1 when a pathspec explicitly names an ignored path, including a _negative_
-  one, which silently disabled the whole mechanism until #664.
+  one, which silently disabled the whole mechanism until #664. The same exclusion must also be
+  applied when `extra_paths` is merged into either diff implementation, or tool events add the
+  directory back after git excluded it. Test the path relative to the current worktree root — a
+  worktree itself normally lives below an outer `.vibing/worktrees/`.
 - **The git calls block the main loop** (`vim.system():wait()`): 20ms per `git add -A` on a 9k-file
   tree, 63ms on an 80k one.
 - **`request_diff.lua` stays as the fallback**, and a turn where both come up empty **warns**

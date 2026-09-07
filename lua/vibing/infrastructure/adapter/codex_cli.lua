@@ -68,13 +68,37 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
     )
   end
 
-  local permission_mode = opts.permission_mode or "default"
   local hook_args = nil
   -- Lightweight calls skip hook registration, matching claude_cli.lua. The builder fences them
   -- into a read-only sandbox instead, and routing a title-generation tool call into the chat's
   -- approval UI would prompt the user about a request they never made.
-  if permission_mode ~= "bypassPermissions" and not opts.lightweight then
-    hook_args = CodexSettingsGenerator.get_hook_args()
+  if not opts.lightweight then
+    -- The cwd is not optional here: the generator stages the hook script *inside* it, because
+    -- codex refuses to execute one from outside the sandbox's writable roots and hangs the turn
+    -- rather than reporting it. See CodexSettingsGenerator.ensure.
+    --
+    -- Keep the hook in bypassPermissions too. The permission handler honors that mode and allows
+    -- every call, but the same PreToolUse round trip is also where git_snapshot takes the turn's
+    -- baseline. Removing the hook would bypass observation as well as approval, leaving this mode
+    -- with no patch and therefore no `gd` preview. Claude's adapter keeps the hook for the same
+    -- reason.
+    --
+    -- Guarded like copilot's, and for a sharper reason: if staging fails there is no script for
+    -- codex to run, and registering the hook anyway is exactly the case that hangs. So a failure
+    -- warns and drops the hook -- the turn runs ungated, which is bad, but it runs.
+    local ok_hook, args_or_err =
+      pcall(CodexSettingsGenerator.get_hook_args, opts.cwd or vim.fn.getcwd())
+    if ok_hook then
+      hook_args = args_or_err
+    else
+      vim.notify(
+        string.format(
+          "[vibing:codex] Failed to install the PreToolUse hook, so this turn is not gated by vibing.nvim: %s",
+          tostring(args_or_err)
+        ),
+        vim.log.levels.WARN
+      )
+    end
   end
 
   -- The builder raises when the codex binary is missing. send_message.lua does not wrap stream()

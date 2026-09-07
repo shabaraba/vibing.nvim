@@ -971,10 +971,11 @@ Because the comparison is between two states of the whole tree, it does not matt
 made the change — **a `sed -i`, a `mv`, or a formatter run through Bash shows up the same way an
 `Edit` does**. Untracked files matched by `.gitignore` are excluded (that is what keeps the cost
 down) — a file that is already tracked still shows its changes even if it matches an ignore
-pattern, because `.gitignore` only governs what gets added. An excluded file that a write tool
+pattern, because `.gitignore` only governs what gets added. An ignored file that a write tool
 reported anyway is still listed under `### Modified Files`, just without a patch section.
-vibing.nvim's own `.vibing/` directory is always excluded, whether or not you have git-ignored it —
-the chat files live there and would otherwise report themselves as your changes.
+vibing.nvim's own `.vibing/` directory is the exception: it is excluded from both the snapshot and
+the tool-event completion, whether or not you have git-ignored it — the chat files live there and
+would otherwise report themselves as your changes.
 
 Your index and working tree are never touched: the snapshot is built with `git add -A` against a
 temporary index (`GIT_INDEX_FILE`), so it takes no `.git/index.lock` and cannot collide with git

@@ -11,10 +11,19 @@ local notice = require("vibing.infrastructure.adapter.modules.codex_provider_not
 
 local CONFIG = { agent = { default_model = "sonnet" } }
 
---- Whether the argv carries a `-c hooks.pre_tool_use=...` pair.
+--- Whether the argv carries the hook's `-c` pair.
+---
+--- The key is read from the generator rather than written out here on purpose. Hardcoding it once
+--- already cost us: this helper spelled `hooks.pre_tool_use`, and when that turned out to be a key
+--- codex ignores, the helper would have kept answering "hook registered" for a corrected argv --
+--- inverting every assertion below while the suite stayed green. What this spec is for is whether
+--- the adapter emits the hook at all, not how the generator spells it.
+local HOOK_EVENT_KEY =
+  require("vibing.infrastructure.hooks.codex_settings_generator")._HOOK_EVENT_KEY
+
 local function registers_hook(cmd)
   for index, arg in ipairs(cmd) do
-    if arg == "-c" and type(cmd[index + 1]) == "string" and cmd[index + 1]:find("hooks.pre_tool_use", 1, true) then
+    if arg == "-c" and type(cmd[index + 1]) == "string" and cmd[index + 1]:find(HOOK_EVENT_KEY, 1, true) then
       return true
     end
   end
@@ -47,9 +56,11 @@ describe("codex_cli hook registration", function()
     assert.is_false(registers_hook(system.cli_call().cmd))
   end)
 
-  it("skips it in bypassPermissions, as before", function()
+  it("keeps it in bypassPermissions so diff capture is not bypassed too", function()
     helper.run_stream(adapter, { permission_mode = "bypassPermissions" })
-    assert.is_false(registers_hook(system.cli_call().cmd))
+    local cmd = system.cli_call().cmd
+    assert.is_true(registers_hook(cmd))
+    assert.is_true(vim.tbl_contains(cmd, "--dangerously-bypass-approvals-and-sandbox"))
   end)
 
   it("still fences the lightweight call even with the hook gone", function()

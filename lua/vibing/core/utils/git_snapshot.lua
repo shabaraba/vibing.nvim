@@ -31,6 +31,16 @@ local SESSION_TTL_SEC = 3600
 ---@type string
 local EXCLUDE_VIBING_DIR = ":(exclude).vibing"
 
+---Whether a worktree-relative path belongs to vibing.nvim's own state directory.
+---Match the first component only: a worktree itself commonly lives under
+---`<main>/.vibing/worktrees/<branch>`, and its ordinary files must remain visible when that
+---worktree is the current root.
+---@param rel string
+---@return boolean
+local function is_vibing_state_path(rel)
+  return rel == ".vibing" or rel:sub(1, 8) == ".vibing/"
+end
+
 ---`git add` の pathspec。`.vibing` が既に無視されているworktreeでは exclude を **付けない**
 ---
 ---`git add` は「無視対象のパスを明示的に指定した」と判断すると exit 1 を返す。これは
@@ -589,7 +599,7 @@ function M.generate(handle_id, extra_paths)
         rel = abs:sub(#prefix + 1)
       end
     end
-    if not seen[rel] then
+    if not is_vibing_state_path(rel) and not seen[rel] then
       seen[rel] = true
       table.insert(files, rel)
       table.insert(abs_files, abs)
