@@ -1,4 +1,4 @@
-import { withRpcPort, requireRpcPort } from './common.js';
+import { withRpcPort } from './common.js';
 
 export const cursorTools = [
   {
@@ -33,7 +33,7 @@ export const cursorTools = [
             'Window to move the cursor in, as returned by nvim_list_windows. Defaults to the currently active window.',
         },
       }),
-      required: requireRpcPort(['line']),
+      required: ['line'],
     },
   },
   {

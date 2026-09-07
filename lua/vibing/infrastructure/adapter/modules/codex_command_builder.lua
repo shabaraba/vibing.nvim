@@ -38,10 +38,8 @@ end
 --- @param session_id string|nil Thread ID for session resumption
 --- @param config Vibing.Config Plugin config
 --- @param hook_args string[]|nil Optional -c flag pair for PreToolUse hook injection
---- @param rpc_port number|nil This Neovim instance's RPC server port, told to the model alongside
----   the bundled MCP server so it can name the right Neovim on every tool call
 --- @return string[] Command array for vim.system()
-function M.build(prompt, opts, session_id, config, hook_args, rpc_port)
+function M.build(prompt, opts, session_id, config, hook_args)
   local cmd = { binary_path.resolve(), "exec" }
 
   if session_id then
@@ -152,7 +150,7 @@ function M.build(prompt, opts, session_id, config, hook_args, rpc_port)
   -- `--ignore-user-config --strict-config` above would also reject nothing here, since every key
   -- is one codex knows -- the fence is this branch, not the flags.
   if not opts.lightweight then
-    vim.list_extend(cmd, CodexPluginConfig.args(opts.cwd, config, rpc_port))
+    vim.list_extend(cmd, CodexPluginConfig.args(opts.cwd, config))
   end
 
   -- Build prompt with context prefix and language instruction

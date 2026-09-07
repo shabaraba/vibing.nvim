@@ -27,11 +27,14 @@ describe('dap tools', () => {
       expect(typeof handlers[name]).toBe('function');
     });
 
-    it.each(DAP_TOOLS)('%s requires rpc_port — it targets one debug session', (name) => {
-      const tool = allTools.find((t) => t.name === name);
-      const schema = tool?.inputSchema as { required?: string[] };
-      expect(schema.required).toContain('rpc_port');
-    });
+    it.each(DAP_TOOLS)(
+      '%s leaves rpc_port optional because the server is already bound',
+      (name) => {
+        const tool = allTools.find((t) => t.name === name);
+        const schema = tool?.inputSchema as { required?: string[] };
+        expect(schema.required).not.toContain('rpc_port');
+      }
+    );
 
     it('requires file and line to set a breakpoint', () => {
       const tool = allTools.find((t) => t.name === 'nvim_dap_set_breakpoint');
@@ -86,7 +89,6 @@ describe('dap tools', () => {
 
   describe('rejects before touching Neovim', () => {
     const rejected: Array<[string, string, Record<string, unknown>]> = [
-      ['no rpc_port', 'nvim_dap_get_state', {}],
       ['an empty expression', 'nvim_dap_evaluate', { expression: '', rpc_port: 9876 }],
       ['no expression at all', 'nvim_dap_evaluate', { rpc_port: 9876 }],
       ['no line', 'nvim_dap_set_breakpoint', { file: 'a.py', rpc_port: 9876 }],
@@ -98,6 +100,11 @@ describe('dap tools', () => {
         { file: '../../../etc/passwd', line: 1, rpc_port: 9876 },
       ],
     ];
+
+    it('accepts no rpc_port and lets callNeovim use the process binding', async () => {
+      await handlers.nvim_dap_get_state({});
+      expect(rpc.callNeovim).toHaveBeenCalledWith('dap_get_state', {}, undefined);
+    });
 
     it.each(rejected)('rejects %s', async (_label, name, args) => {
       await expect(handlers[name](args)).rejects.toThrow();

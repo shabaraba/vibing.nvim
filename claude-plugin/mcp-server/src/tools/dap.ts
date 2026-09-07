@@ -1,5 +1,5 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { withRpcPort, requireRpcPort } from './common.js';
+import { withRpcPort } from './common.js';
 
 export const dapTools: Tool[] = [
   {
@@ -10,7 +10,7 @@ export const dapTools: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: withRpcPort({}),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -24,7 +24,7 @@ export const dapTools: Tool[] = [
           description: 'Defaults to the thread that is stopped.',
         },
       }),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -40,7 +40,7 @@ export const dapTools: Tool[] = [
           description: 'Defaults to the frame the debugger is currently stopped in.',
         },
       }),
-      required: requireRpcPort(),
+      required: [],
     },
   },
   {
@@ -58,7 +58,7 @@ export const dapTools: Tool[] = [
           description: 'Optional expression; the program only stops when it is true.',
         },
       }),
-      required: requireRpcPort(['file', 'line']),
+      required: ['file', 'line'],
     },
   },
   {
@@ -75,7 +75,7 @@ export const dapTools: Tool[] = [
           description: 'Defaults to the frame the debugger is currently stopped in.',
         },
       }),
-      required: requireRpcPort(['expression']),
+      required: ['expression'],
     },
   },
 ];

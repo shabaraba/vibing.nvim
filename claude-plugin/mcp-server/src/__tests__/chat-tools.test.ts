@@ -32,7 +32,7 @@ describe('chat tools (worktree redesign)', () => {
     expect(typeof handlers.nvim_chat_send_message).toBe('function');
   });
 
-  it('registers nvim_ask_user_question with chat_bufnr, rpc_port, and questions all required', () => {
+  it('registers nvim_ask_user_question with chat_bufnr and questions required', () => {
     const tool = allTools.find((t) => t.name === 'nvim_ask_user_question');
     expect(tool).toBeDefined();
     const inputSchema = tool?.inputSchema as {
@@ -40,25 +40,21 @@ describe('chat tools (worktree redesign)', () => {
       properties: Record<string, unknown>;
     };
     expect(inputSchema.required).toContain('chat_bufnr');
-    // Still required despite the registry fallback added for read-only tools: this one cancels
-    // the in-flight turn, and every Claude Code session on the machine can see it.
-    expect(inputSchema.required).toContain('rpc_port');
+    expect(inputSchema.required).not.toContain('rpc_port');
     expect(inputSchema.required).toContain('questions');
     expect(inputSchema.properties.chat_bufnr).toBeDefined();
     expect(inputSchema.properties.rpc_port).toBeDefined();
     expect(inputSchema.properties.questions).toBeDefined();
   });
 
-  it('registers nvim_chat_create with rpc_port required and everything else optional', () => {
+  it('registers nvim_chat_create with every argument optional', () => {
     const tool = allTools.find((t) => t.name === 'nvim_chat_create');
     expect(tool).toBeDefined();
     const inputSchema = tool?.inputSchema as {
       required?: string[];
       properties: Record<string, any>;
     };
-    // It creates a buffer, so it is a write: it must name its instance rather than fall back to
-    // the registry (see requireRpcPort in ../tools/common.ts).
-    expect(inputSchema.required).toEqual(['rpc_port']);
+    expect(inputSchema.required).toEqual([]);
     expect(inputSchema.properties.position.enum).toEqual([...CHAT_POSITIONS]);
     expect(inputSchema.properties.working_dir).toBeDefined();
   });
@@ -100,11 +96,21 @@ describe('chat tools (worktree redesign)', () => {
     expect(result.content[0].text).toContain('"bufnr": 12');
   });
 
-  it('nvim_chat_create rejects a call missing rpc_port instead of guessing an instance', async () => {
+  it('nvim_chat_create lets callNeovim use the process binding when rpc_port is omitted', async () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ bufnr: 7 });
 
-    await expect(handlers.nvim_chat_create({ position: 'back' })).rejects.toThrow();
-    expect(rpc.callNeovim).not.toHaveBeenCalled();
+    await handlers.nvim_chat_create({ position: 'back' });
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'create_chat',
+      {
+        position: 'back',
+        working_dir: undefined,
+        from_bufnr: undefined,
+        task: undefined,
+        delegated_scope: undefined,
+      },
+      undefined
+    );
   });
 
   it('nvim_chat_create rejects a position the Lua handler would refuse anyway', async () => {
@@ -125,10 +131,10 @@ describe('chat tools (worktree redesign)', () => {
     expect(rpc.callNeovim).not.toHaveBeenCalled();
   });
 
-  it('registers nvim_chat_send_message with rpc_port required', () => {
+  it('registers nvim_chat_send_message with rpc_port optional', () => {
     const tool = allTools.find((t) => t.name === 'nvim_chat_send_message');
     const inputSchema = tool?.inputSchema as { required?: string[] };
-    expect(inputSchema.required).toContain('rpc_port');
+    expect(inputSchema.required).not.toContain('rpc_port');
   });
 
   it('offers from_bufnr on both chat tools but never requires it', () => {
@@ -352,7 +358,7 @@ describe('chat tools (worktree redesign)', () => {
     };
 
     expect(tool).toBeDefined();
-    expect(inputSchema.required).toContain('rpc_port');
+    expect(inputSchema.required).not.toContain('rpc_port');
     expect(inputSchema.required).toContain('action');
     // Unlike the other two chat tools, this one cannot be called anonymously: it removes a
     // permission gate, so the answer has to be attributable to a chat.
@@ -559,16 +565,16 @@ describe('chat tools (worktree redesign)', () => {
     expect(rpc.callNeovim).not.toHaveBeenCalled();
   });
 
-  it('nvim_ask_user_question rejects a call missing rpc_port instead of falling back to the registry', async () => {
+  it('nvim_ask_user_question lets callNeovim use the process binding when rpc_port is omitted', async () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ status: 'ok' });
 
-    await expect(
-      handlers.nvim_ask_user_question({
-        chat_bufnr: 12,
-        questions: [{ question: 'Which?', options: [{ label: 'A' }] }],
-      })
-    ).rejects.toThrow();
-    expect(rpc.callNeovim).not.toHaveBeenCalled();
+    const questions = [{ question: 'Which?', options: [{ label: 'A' }] }];
+    await handlers.nvim_ask_user_question({ chat_bufnr: 12, questions });
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'ask_user_question',
+      { chat_bufnr: 12, questions },
+      undefined
+    );
   });
 
   it('nvim_ask_user_question surfaces an error result when the RPC call fails to find a stream', async () => {
@@ -591,8 +597,6 @@ describe('chat tools (worktree redesign)', () => {
       required?: string[];
       properties: Record<string, unknown>;
     };
-    // A read, like nvim_list_buffers: rpc_port falls back to the instance registry rather than
-    // being required (see requireRpcPort's doc comment in ../tools/common.ts).
     expect(inputSchema.required).toEqual([]);
     expect(inputSchema.properties.rpc_port).toBeDefined();
   });
@@ -622,7 +626,7 @@ describe('chat tools (worktree redesign)', () => {
     expect(parsed.chats).toEqual(chats);
   });
 
-  it('nvim_chat_list works without rpc_port, falling back to the instance registry', async () => {
+  it('nvim_chat_list lets the central resolver choose the bound instance', async () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ chats: [] });
 
     const result = await handlers.nvim_chat_list({});
@@ -667,7 +671,7 @@ describe('chat tools (worktree redesign)', () => {
     expect(parsed.conflicts).toEqual(conflicts);
   });
 
-  it('nvim_chat_conflicts works without rpc_port, falling back to the instance registry', async () => {
+  it('nvim_chat_conflicts lets the central resolver choose the bound instance', async () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ conflicts: [] });
 
     const result = await handlers.nvim_chat_conflicts({});

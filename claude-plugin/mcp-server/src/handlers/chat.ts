@@ -19,7 +19,7 @@ const chatCreateArgsSchema = z.object({
   from_bufnr: z.number().optional(),
   task: taskSchema,
   delegated_scope: z.array(z.string()).optional(),
-  rpc_port: z.number(),
+  rpc_port: z.number().optional(),
 });
 
 /**
@@ -77,7 +77,7 @@ const chatSendMessageArgsSchema = z.object({
   from_bufnr: z.number().optional(),
   queue_if_busy: z.boolean().optional(),
   task: taskSchema,
-  rpc_port: z.number(),
+  rpc_port: z.number().optional(),
 });
 
 /**
@@ -145,7 +145,7 @@ export async function handleChatSendMessage(args: any): Promise<any> {
 const askUserQuestionArgsSchema = z.object({
   chat_bufnr: z.number(),
   questions: z.array(z.any()),
-  rpc_port: z.number(),
+  rpc_port: z.number().optional(),
 });
 
 /**
@@ -158,12 +158,9 @@ const askUserQuestionArgsSchema = z.object({
  * so this handler's return value is never actually seen by the model. The user's next message in
  * that buffer (a fresh `--resume`d turn) IS the answer to this call.
  *
- * `chat_bufnr` and `rpc_port` correlate the call to the right chat buffer/Neovim instance when
- * multiple are active concurrently. They are tool arguments rather than env lookups because env
- * can't carry them here — see `resolveRpcPort` in `../rpc.ts`. Both stay required: this tool kills
- * the in-flight turn, so it is one of the write-side tools that must name its target rather than
- * fall back to the registry (see `requireRpcPort` in `../tools/common.ts`).
- * `chat_bufnr` (unlike a per-turn handle_id) is stable across turns of the same conversation,
+ * `chat_bufnr` correlates the call to the right chat buffer when several are active concurrently;
+ * `rpc.ts` binds the MCP process to the right Neovim through its environment. The buffer number
+ * (unlike a per-turn handle_id) is stable across turns of the same conversation,
  * so it doesn't defeat Anthropic's prompt cache — see issue #469. It is the buffer number rather
  * than the chat file path because `:VibingSetFileTitle` renames the file mid-conversation, which
  * would change the system prompt and invalidate that cache — see issue #489.
@@ -195,7 +192,7 @@ const chatAnswerApprovalArgsSchema = z.object({
   file_path: z.string().nullish(),
   action: z.enum(APPROVAL_ACTIONS),
   from_bufnr: z.number(),
-  rpc_port: z.number(),
+  rpc_port: z.number().optional(),
 });
 
 /**
@@ -251,8 +248,7 @@ export async function handleChatAnswerApproval(args: any): Promise<any> {
  *
  * Enumerates every chat buffer `view.list_chat_buffers()` knows about on the Lua side — the same
  * source `application/chat/concurrency.lua` reads to answer "how many chats are responding right
- * now" — and reports each one's status in a single round trip. A read, so `rpc_port` stays
- * optional and falls back to the instance registry like `nvim_list_buffers`.
+ * now" — and reports each one's status in a single round trip.
  */
 export async function handleChatList(args: any): Promise<any> {
   const result = await callNeovim('list_chats', {}, args?.rpc_port);
@@ -264,7 +260,6 @@ export async function handleChatList(args: any): Promise<any> {
 /**
  * Handler for nvim_chat_conflicts
  *
- * A read, like nvim_chat_list: rpc_port stays optional and falls back to the instance registry.
  * The Lua side (`chat_conflicts` in `rpc/handlers/chat.lua`) does all the work — enumerating
  * live chats, resolving each one's `working_dir` to a worktree, diffing it against main/master,
  * and grouping the results by file. This handler only forwards the call and the JSON back.

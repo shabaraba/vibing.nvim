@@ -20,7 +20,7 @@ describe('nvim_set_qflist', () => {
   });
 
   describe('registration', () => {
-    it('is registered as a tool with items and rpc_port required', () => {
+    it('is registered as a tool with items required and rpc_port optional', () => {
       const tool = allTools.find((t) => t.name === 'nvim_set_qflist');
       expect(tool).toBeDefined();
       const inputSchema = tool?.inputSchema as {
@@ -28,7 +28,7 @@ describe('nvim_set_qflist', () => {
         properties: Record<string, unknown>;
       };
       expect(inputSchema.required).toContain('items');
-      expect(inputSchema.required).toContain('rpc_port');
+      expect(inputSchema.required).not.toContain('rpc_port');
       expect(inputSchema.properties.title).toBeDefined();
       expect(inputSchema.properties.open).toBeDefined();
     });
@@ -86,7 +86,6 @@ describe('nvim_set_qflist', () => {
     // Each of these would otherwise reach the editor and produce a quickfix list with dead
     // entries, which the user only discovers when :cnext lands nowhere.
     const rejected: Array<[string, Record<string, unknown>]> = [
-      ['no rpc_port, which would leave the target instance ambiguous', { items: [VALID_ITEM] }],
       ['an empty route', { items: [], rpc_port: 9876 }],
       ['a stop with no filename', { items: [{ lnum: 1 }], rpc_port: 9876 }],
       ['a stop with no lnum', { items: [{ filename: 'a.lua' }], rpc_port: 9876 }],
@@ -99,6 +98,15 @@ describe('nvim_set_qflist', () => {
         { items: [{ filename: '../../../etc/passwd', lnum: 1 }], rpc_port: 9876 },
       ],
     ];
+
+    it('accepts no rpc_port and lets callNeovim use the process binding', async () => {
+      await call({ items: [VALID_ITEM] });
+      expect(rpc.callNeovim).toHaveBeenCalledWith(
+        'set_qflist',
+        { items: [VALID_ITEM], title: undefined, open: undefined },
+        undefined
+      );
+    });
 
     it.each(rejected)('rejects %s', async (_label, args) => {
       await expect(call(args)).rejects.toThrow();

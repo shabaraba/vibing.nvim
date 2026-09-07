@@ -22,19 +22,11 @@ itself provides them, handing the CLI this directory with `--plugin-dir` — the
 `mcp__plugin_vibing-nvim_vibing-nvim__<tool>` instead. If the plain prefix is not available, look
 for a tool whose name **ends** in the one you need rather than assuming it is missing.
 
-**Which instance.** Every tool takes an `rpc_port` naming the target Neovim.
-
-- Inside a vibing.nvim chat, the port is in your system prompt for the turn — pass that exact
-  value on every call.
-- A subagent does **not** inherit it. Take it from your task prompt, and if it isn't there, call
-  `nvim_list_instances` and use the port it reports.
-- Anywhere else (an ordinary Claude Code session that loaded this plugin some other way — a
-  `--plugin-dir` of your own, or a leftover install), `nvim_list_instances` is the only way to
-  know. If it lists more than one, say which you found and ask rather than guessing.
-
-Omitting `rpc_port` works only while exactly one Neovim is live: reads fall back to the instance
-registry, and writes refuse outright. Worktrees and concurrent chats make more than one the normal
-case, so treat the fallback as a diagnostic, not a default.
+**Which instance.** Inside a vibing.nvim chat, omit `rpc_port`: the MCP server process is already
+bound to the Neovim that launched the chat, and subagents share that connection. The optional
+argument exists only for a server started manually outside vibing.nvim. In that standalone case,
+call `nvim_list_instances` first; use the sole result, or match an explicit cwd/project clue you
+already know. If several remain plausible, say which you found and ask rather than guessing.
 
 ## Workflow
 

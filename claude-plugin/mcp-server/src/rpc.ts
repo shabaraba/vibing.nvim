@@ -2,6 +2,7 @@ import * as net from 'net';
 import { listLiveInstances } from './instance-registry.js';
 
 const NVIM_RPC_TIMEOUT = parseInt(process.env.VIBING_RPC_TIMEOUT || '30000', 10); // Default 30 seconds
+const RPC_PORT_ENV = 'VIBING_NVIM_RPC_PORT';
 
 let requestId = 0;
 
@@ -111,19 +112,35 @@ function getSocket(port: number): Promise<net.Socket> {
 }
 
 /**
- * Work out which Neovim to talk to when the caller did not name a port.
+ * Work out which Neovim to talk to.
  *
- * The MCP server cannot learn the port from its environment: MCP clients forward only a fixed
- * whitelist of variables (HOME, PATH, SHELL, ...) plus the static `env` block in the server's
- * registration, so `VIBING_NVIM_RPC_PORT` — which vibing.nvim does set on the `claude` process —
- * never reaches this process. The instance registry is the one source that does work, and it is
- * only unambiguous when a single Neovim is live.
+ * A server launched by vibing.nvim is bound out-of-band through `VIBING_NVIM_RPC_PORT`. Keeping
+ * that runtime value in the process environment instead of every tool schema and system prompt
+ * preserves the model's cached prefix when Neovim restarts on another port. The explicit argument
+ * remains a compatibility fallback for manually launched clients, followed by the registry when
+ * exactly one instance is live.
  *
  * @param method - RPC method name, used only to make the error message actionable
- * @returns The port of the single live instance
+ * @param requestedPort - Legacy port supplied by a tool caller
+ * @returns The bound, requested, or sole live port
  * @throws When no instance is live, or when more than one is and the caller must disambiguate
  */
-async function resolveRpcPort(method: string): Promise<number> {
+async function resolveRpcPort(method: string, requestedPort?: number): Promise<number> {
+  const configured = process.env[RPC_PORT_ENV];
+  if (configured !== undefined && configured.trim() !== '') {
+    const port = Number(configured);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error(
+        `callNeovim('${method}'): ${RPC_PORT_ENV} must be an integer from 1 to 65535, got ${JSON.stringify(configured)}.`
+      );
+    }
+    return port;
+  }
+
+  if (requestedPort !== undefined) {
+    return requestedPort;
+  }
+
   const instances = await listLiveInstances();
 
   if (instances.length === 0) {
@@ -149,11 +166,11 @@ async function resolveRpcPort(method: string): Promise<number> {
  *
  * @param method - The RPC method name to call on the Neovim server
  * @param params - Parameters to include with the RPC call
- * @param port - RPC port to connect to. When omitted, `resolveRpcPort` works it out.
+ * @param port - Legacy RPC port override used only when the process is not already bound.
  * @returns The `result` value from the RPC response. The promise is rejected with the RPC `error` if the response contains one, and is also rejected if the socket closes or the request times out.
  */
 export async function callNeovim(method: string, params: any = {}, port?: number): Promise<any> {
-  const resolvedPort = port ?? (await resolveRpcPort(method));
+  const resolvedPort = await resolveRpcPort(method, port);
   const sock = await getSocket(resolvedPort);
   const id = ++requestId;
 

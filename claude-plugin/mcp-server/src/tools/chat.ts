@@ -1,5 +1,5 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import { withRpcPort, requireRpcPort } from './common.js';
+import { withRpcPort } from './common.js';
 
 /**
  * Chat-related MCP tools
@@ -90,7 +90,7 @@ export const chatTools: Tool[] = [
             'delegated_approval is "scoped" (and none at all if it is unset or true/false).',
         },
       }),
-      required: requireRpcPort([]),
+      required: [],
     },
   },
   {
@@ -163,7 +163,7 @@ export const chatTools: Tool[] = [
       // arrives. JSON Schema could say that with oneOf, but the advertised schema is flattened
       // into the model's tool list, and a required-list of two mutually exclusive keys reads as
       // "pass both".
-      required: requireRpcPort(['message']),
+      required: ['message'],
     },
   },
   {
@@ -227,7 +227,7 @@ export const chatTools: Tool[] = [
           },
         },
       }),
-      required: requireRpcPort(['chat_bufnr', 'questions']),
+      required: ['chat_bufnr', 'questions'],
     },
   },
   {
@@ -283,7 +283,7 @@ export const chatTools: Tool[] = [
       // bufnr/file_path stay out of the required list for the same reason as on
       // nvim_chat_send_message: the handler enforces that exactly one arrives, and listing both
       // as required would read as "pass both".
-      required: requireRpcPort(['action', 'from_bufnr']),
+      required: ['action', 'from_bufnr'],
     },
   },
   {

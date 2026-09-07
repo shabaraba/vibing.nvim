@@ -78,7 +78,7 @@ describe("codex_plugin_config", function()
 
   describe("the bundled plugin", function()
     it("registers the vibing-nvim MCP server from its manifest, root expanded", function()
-      local args = CodexPluginConfig.args(nil, config, nil)
+      local args = CodexPluginConfig.args(nil, config)
 
       assert.equals('"sh"', override(args, "mcp_servers.vibing-nvim.command"))
       assert.equals(
@@ -86,36 +86,35 @@ describe("codex_plugin_config", function()
         override(args, "mcp_servers.vibing-nvim.args")
       )
       assert.equals('{ VIBING_RPC_TIMEOUT = "30000" }', override(args, "mcp_servers.vibing-nvim.env"))
+      assert.equals(
+        '["VIBING_NVIM_RPC_PORT"]',
+        override(args, "mcp_servers.vibing-nvim.env_vars")
+      )
     end)
 
     -- Headless `codex exec` cancels an MCP call at its own approval prompt (openai/codex#24135);
     -- `approve` is the only value of the four that never reaches that prompt.
     it("pre-approves its tools at codex's own gate, leaving the decision to the hook", function()
-      local args = CodexPluginConfig.args(nil, config, nil)
+      local args = CodexPluginConfig.args(nil, config)
       assert.equals('"approve"', override(args, "mcp_servers.vibing-nvim.default_tools_approval_mode"))
     end)
 
     it("lists its skills, with the SKILL.md to read, in developer_instructions", function()
-      local instructions = override(CodexPluginConfig.args(nil, config, nil), "developer_instructions")
+      local instructions = override(CodexPluginConfig.args(nil, config), "developer_instructions")
 
       assert.is_truthy(instructions:find("- vibing-nvim:vibing-code-tour: ", 1, true))
       assert.is_truthy(instructions:find(own_plugin_dir() .. "/skills/vibing-code-tour/SKILL.md", 1, true))
     end)
 
-    it("tells the model the tool prefix and its rpc_port", function()
-      local instructions = override(CodexPluginConfig.args(nil, config, 4321), "developer_instructions")
+    it("tells the model the tool prefix without exposing its runtime port", function()
+      local instructions = override(CodexPluginConfig.args(nil, config), "developer_instructions")
 
       assert.is_truthy(instructions:find("mcp__vibing-nvim__<tool>", 1, true))
-      assert.is_truthy(instructions:find("rpc_port for this turn is 4321", 1, true))
-    end)
-
-    it("omits the rpc_port line when there is no port", function()
-      local instructions = override(CodexPluginConfig.args(nil, config, nil), "developer_instructions")
       assert.is_nil(instructions:find("rpc_port for this turn", 1, true))
     end)
 
     it("puts the overrides in -c pairs only", function()
-      local args = CodexPluginConfig.args(nil, config, nil)
+      local args = CodexPluginConfig.args(nil, config)
       for i = 1, #args, 2 do
         assert.equals("-c", args[i])
       end
@@ -129,7 +128,7 @@ describe("codex_plugin_config", function()
         mcpServers = { deploybot = { command = "${CLAUDE_PLUGIN_ROOT}/bin/serve", args = { "--port", "1" } } },
       })
 
-      local args = CodexPluginConfig.args(nil, config, nil)
+      local args = CodexPluginConfig.args(nil, config)
 
       assert.equals('"' .. root .. '/bin/serve"', override(args, "mcp_servers.deploybot.command"))
       assert.equals('["--port", "1"]', override(args, "mcp_servers.deploybot.args"))
@@ -140,7 +139,7 @@ describe("codex_plugin_config", function()
     it("register a streamable HTTP server by url", function()
       write_plugin("remote", { name = "remote", mcpServers = { hosted = { url = "https://x.test/mcp" } } })
 
-      local args = CodexPluginConfig.args(nil, config, nil)
+      local args = CodexPluginConfig.args(nil, config)
 
       assert.equals('"https://x.test/mcp"', override(args, "mcp_servers.hosted.url"))
       assert.is_nil(override(args, "mcp_servers.hosted.command"))
@@ -151,7 +150,7 @@ describe("codex_plugin_config", function()
         deploy = "---\nname: deploy\ndescription: Ship it.\n---\n",
       })
 
-      local instructions = override(CodexPluginConfig.args(nil, config, nil), "developer_instructions")
+      local instructions = override(CodexPluginConfig.args(nil, config), "developer_instructions")
 
       -- The value is the TOML rendering, so the newline between the two lines is the escape.
       assert.is_truthy(
@@ -164,7 +163,7 @@ describe("codex_plugin_config", function()
     it("cannot redeclare the bundled server", function()
       write_plugin("impostor", { name = "impostor", mcpServers = { ["vibing-nvim"] = { command = "evil" } } })
 
-      local args = CodexPluginConfig.args(nil, config, nil)
+      local args = CodexPluginConfig.args(nil, config)
 
       assert.equals('"sh"', override(args, "mcp_servers.vibing-nvim.command"))
       local count = 0
@@ -181,8 +180,8 @@ describe("codex_plugin_config", function()
     it("skip a server whose name the -c key path cannot carry, and warn once", function()
       write_plugin("dotted", { name = "dotted", mcpServers = { ["a.b"] = { command = "c" } } })
 
-      local args = CodexPluginConfig.args(nil, config, nil)
-      CodexPluginConfig.args(nil, config, nil)
+      local args = CodexPluginConfig.args(nil, config)
+      CodexPluginConfig.args(nil, config)
 
       for _, item in ipairs(overrides(args)) do
         assert.is_nil(item:find("a.b", 1, true), item)
@@ -193,39 +192,39 @@ describe("codex_plugin_config", function()
   end)
 
   it("is empty when no plugin applies", function()
-    local args = CodexPluginConfig.args(nil, { agent = { plugins = { self = false, project_dir = false } } }, 99)
+    local args = CodexPluginConfig.args(nil, { agent = { plugins = { self = false, project_dir = false } } })
     assert.same({}, args)
   end)
 
   -- `args` runs on every non-lightweight codex request, and building it is synchronous file I/O
-  -- (every manifest, every SKILL.md frontmatter) on the main loop. Reading them once per
-  -- (cwd, port) keeps that off the per-message path; `:VibingReloadCommands` is the refresh.
-  it("reads the plugins once per plugin list and port until clear_cache", function()
+  -- (every manifest, every SKILL.md frontmatter) on the main loop. Reading them once per plugin
+  -- list keeps that off the per-message path; `:VibingReloadCommands` is the refresh.
+  it("reads the plugins once per plugin list until clear_cache", function()
     local root = write_plugin("tooling", { name = "tooling", mcpServers = { a = { command = "c" } } })
 
-    local first = CodexPluginConfig.args(nil, config, 1)
+    local first = CodexPluginConfig.args(nil, config)
     vim.fn.writefile(
       { vim.json.encode({ name = "tooling", mcpServers = { a = { command = "c" }, b = { command = "d" } } }) },
       root .. "/.claude-plugin/plugin.json"
     )
     PluginDirs.clear_cache()
-    local cached = CodexPluginConfig.args(nil, config, 1)
+    local cached = CodexPluginConfig.args(nil, config)
     assert.same(first, cached)
     assert.is_nil(override(cached, "mcp_servers.b.command"))
 
     CodexPluginConfig.clear_cache()
-    local fresh = CodexPluginConfig.args(nil, config, 1)
+    local fresh = CodexPluginConfig.args(nil, config)
     assert.equals('"d"', override(fresh, "mcp_servers.b.command"))
   end)
 
   it("does not serve one plugin list's argv for another", function()
     write_plugin("tooling", { name = "tooling", mcpServers = { a = { command = "c" } } })
 
-    local with_plugins = CodexPluginConfig.args(nil, config, 1)
+    local with_plugins = CodexPluginConfig.args(nil, config)
     -- plugin_dirs memoizes by cwd alone and documents that a different `agent.plugins` needs its
     -- clear_cache(); what is under test here is that *this* memo then follows the new list.
     PluginDirs.clear_cache()
-    local without = CodexPluginConfig.args(nil, { agent = { plugins = { self = false, project_dir = false } } }, 1)
+    local without = CodexPluginConfig.args(nil, { agent = { plugins = { self = false, project_dir = false } } })
 
     assert.is_not_nil(override(with_plugins, "mcp_servers.a.command"))
     assert.same({}, without)
@@ -234,24 +233,36 @@ describe("codex_plugin_config", function()
   it("hands each caller its own copy, so mutating the argv cannot poison the memo", function()
     write_plugin("tooling", { name = "tooling", mcpServers = { a = { command = "c" } } })
 
-    local first = CodexPluginConfig.args(nil, config, 1)
+    local first = CodexPluginConfig.args(nil, config)
     table.insert(first, "--mutated")
-    local second = CodexPluginConfig.args(nil, config, 1)
+    local second = CodexPluginConfig.args(nil, config)
 
     assert.is_false(vim.tbl_contains(second, "--mutated"))
   end)
 
+  it("produces byte-identical output for a worktree that uses the root plugin set", function()
+    write_plugin("tooling", { name = "tooling", mcpServers = { a = { command = "c" } } })
+    local worktree_root = project_root .. "/.vibing/worktrees/feature-x"
+    vim.fn.mkdir(worktree_root, "p")
+
+    local root = CodexPluginConfig.args(nil, config)
+    local worktree = CodexPluginConfig.args(worktree_root, config)
+
+    assert.same(root, worktree)
+  end)
+
   -- Codex's prompt cache matches on a prefix, so the developer message must not change from one
   -- turn of a chat to the next (#469).
-  it("produces byte-identical output on repeated calls", function()
+  it("produces byte-identical output after the reload caches are cleared", function()
     write_plugin("tooling", { name = "tooling", mcpServers = { a = { command = "c", env = { Z = "1", A = "2" } } } }, {
       one = "---\nname: one\ndescription: First.\n---\n",
       two = "---\nname: two\ndescription: Second.\n---\n",
     })
 
-    local first = CodexPluginConfig.args(nil, config, 1)
+    local first = CodexPluginConfig.args(nil, config)
     PluginDirs.clear_cache()
-    local second = CodexPluginConfig.args(nil, config, 1)
+    CodexPluginConfig.clear_cache()
+    local second = CodexPluginConfig.args(nil, config)
 
     assert.same(first, second)
   end)

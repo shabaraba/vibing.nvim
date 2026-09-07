@@ -13,7 +13,7 @@ const setQflistArgsSchema = z.object({
   items: z.array(qflistItemSchema).min(1),
   title: z.string().optional(),
   open: z.boolean().optional(),
-  rpc_port: z.number(),
+  rpc_port: z.number().optional(),
 });
 
 /**

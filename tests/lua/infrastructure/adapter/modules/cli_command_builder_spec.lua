@@ -157,8 +157,8 @@ describe("cli_command_builder", function()
 
     it("never embeds a handle_id, so the same conversation's system prompt is byte-identical across turns", function()
       local opts = { chat_bufnr = 12 }
-      local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil, 9878)
-      local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil, 9878)
+      local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil)
+      local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil)
       local idx1 = find_flag(cmd1, "--append-system-prompt")
       local idx2 = find_flag(cmd2, "--append-system-prompt")
       assert.equals(cmd1[idx1 + 1], cmd2[idx2 + 1])
@@ -174,31 +174,20 @@ describe("cli_command_builder", function()
       assert.is_true(prompt_text:find("mcp__plugin_<marketplace>_vibing%-nvim__<tool>") ~= nil)
     end)
 
-    it("embeds the rpc_port and instructs the model to echo it back on every vibing-nvim MCP call", function()
-      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil, 9878)
+    it("keeps the runtime rpc_port out of the model-visible system prompt", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
       local idx = find_flag(cmd, "--append-system-prompt")
       assert.is_not_nil(idx)
       local prompt_text = cmd[idx + 1]
-      assert.is_true(prompt_text:find("Your rpc_port for this turn is 9878", 1, true) ~= nil)
+      assert.is_nil(prompt_text:find("rpc_port for this turn", 1, true))
       assert.is_true(prompt_text:find("mcp__vibing-nvim__", 1, true) ~= nil)
       assert.is_true(prompt_text:find("mcp__plugin_<marketplace>_vibing-nvim__", 1, true) ~= nil)
     end)
 
-    -- A subagent gets its own system prompt, so the port never reaches it on its own. Without
-    -- this half the bundled nvim-navigator agent falls back to nvim_list_instances, which only
-    -- resolves while exactly one Neovim is live.
-    it("tells the model to forward the rpc_port when it delegates to a subagent", function()
-      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil, 9878)
-      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
-      assert.is_true(prompt_text:find("subagent does not inherit this system prompt", 1, true) ~= nil)
-      assert.is_true(prompt_text:find("state the rpc_port in the task prompt", 1, true) ~= nil)
-    end)
-
-    it("omits the rpc_port line when rpc_port is not provided", function()
+    it("does not ask the model to forward runtime routing data to a subagent", function()
       local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
-      local idx = find_flag(cmd, "--append-system-prompt")
-      local prompt_text = cmd[idx + 1]
-      assert.is_nil(prompt_text:find("Your rpc_port for this turn is", 1, true))
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_nil(prompt_text:find("rpc_port", 1, true))
     end)
   end)
 
@@ -260,8 +249,8 @@ describe("cli_command_builder", function()
       write_project_prompt({ "Project rule: always run the linter." })
 
       local opts = { chat_bufnr = 12 }
-      local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil, 9878)
-      local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil, 9878)
+      local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil)
+      local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil)
 
       assert.equals(cmd1[find_flag(cmd1, "--append-system-prompt") + 1], cmd2[find_flag(cmd2, "--append-system-prompt") + 1])
     end)
@@ -316,10 +305,13 @@ describe("cli_command_builder", function()
       it("falls back to the project root when the worktree has no file", function()
         write_project_prompt({ "Root rule." })
 
+        local root_cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
         local cmd = cli_command_builder.build("hello", { cwd = worktree_root }, nil, {}, nil)
+        local root_prompt = root_cmd[find_flag(root_cmd, "--append-system-prompt") + 1]
         local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
 
         assert.is_true(prompt_text:find("Root rule.", 1, true) ~= nil)
+        assert.equals(root_prompt, prompt_text)
       end)
 
       it("falls back to the project root when the worktree file is empty", function()
@@ -413,7 +405,7 @@ describe("cli_command_builder", function()
       assert.equals("opus", cmd[idx + 1])
     end)
 
-    it("omits the worktree/ask_user_question/rpc_port tool instructions from the system prompt", function()
+    it("omits the worktree and ask_user_question tool instructions from the system prompt", function()
       local cmd = cli_command_builder.build(
         "hello",
         { lightweight = true, chat_bufnr = 12 },

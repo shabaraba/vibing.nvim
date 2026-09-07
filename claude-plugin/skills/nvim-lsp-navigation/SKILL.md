@@ -10,10 +10,10 @@ Text search (`Grep`/`Glob`) finds string matches; a language server understands 
 overloads, generics, and cross-file symbol resolution. When `vibing-nvim` MCP tools are
 available and the target filetype has an LSP client attached, prefer LSP-backed answers.
 
-**Before calling anything:** pass `rpc_port` on every tool call — the exact value from your system
-prompt inside a vibing.nvim chat, or from your task prompt if you are a subagent. Only when
-neither supplies one, call `nvim_list_instances`; if that reports more than one instance, say
-which you found and ask rather than picking one. And if the `mcp__vibing-nvim__` prefix below is
+**Before calling anything:** inside a vibing.nvim chat, omit `rpc_port`; the MCP server is already
+bound to the Neovim that launched it. Only a manually started, unbound server should need
+`nvim_list_instances`; if that reports more than one instance, say which you found and ask rather
+than picking one. And if the `mcp__vibing-nvim__` prefix below is
 unavailable, look for a tool name **ending** in the one you need — loaded as a plugin they are
 `mcp__plugin_vibing-nvim_vibing-nvim__<tool>`. The `nvim-context` skill explains both in full.
 

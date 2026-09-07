@@ -82,7 +82,7 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
   local rpc_server = require("vibing.infrastructure.rpc.server")
   local rpc_port = rpc_server.get_port()
 
-  local build_ok, cmd = pcall(CodexCommandBuilder.build, prompt, opts, session_id, self.config, hook_args, rpc_port)
+  local build_ok, cmd = pcall(CodexCommandBuilder.build, prompt, opts, session_id, self.config, hook_args)
   if not build_ok then
     CliRuntime.report_build_failure(handle_id, cmd, on_done)
     return handle_id

@@ -1,4 +1,4 @@
-import { withRpcPort, requireRpcPort } from './common.js';
+import { withRpcPort } from './common.js';
 
 export const executeTools = [
   {
@@ -12,7 +12,7 @@ export const executeTools = [
           description: 'Neovim command to execute',
         },
       }),
-      required: requireRpcPort(['command']),
+      required: ['command'],
     },
   },
 ];

@@ -93,7 +93,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   -- The builder raises when the claude binary is missing. send_message.lua does not wrap stream()
   -- in pcall, so without this the chat buffer would show a raw Lua stack trace instead of an
   -- actionable message. Matches copilot_cli.lua.
-  local build_ok, cmd = pcall(CLICommandBuilder.build, prompt, opts, session_id, self.config, settings_path, rpc_port)
+  local build_ok, cmd = pcall(CLICommandBuilder.build, prompt, opts, session_id, self.config, settings_path)
   if not build_ok then
     CliRuntime.report_build_failure(handle_id, cmd, on_done)
     return handle_id
@@ -135,11 +135,9 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   env.CLAUDECODE = nil
 
   if rpc_port then
-    -- The MCP server subprocess gets its own rpc_port from the model echoing back the
-    -- system-prompt-embedded value as a tool argument (see cli_command_builder.lua), not from
-    -- env — an MCP client only forwards a fixed env whitelist plus the server's static
-    -- registration config, never the CLI process's own env.
-    env.VIBING_NVIM_RPC_PORT = tostring(rpc_port) -- for hook script
+    -- Claude Code forwards the launching process's environment to plugin MCP servers. The
+    -- server binds to this value directly, keeping the numeric port out of the cached prompt.
+    env.VIBING_NVIM_RPC_PORT = tostring(rpc_port)
     env.VIBING_NVIM_CONTEXT = "true" -- indicates running inside vibing.nvim
   end
   -- Lets the PreToolUse hook identify which chat buffer's stream it belongs to, so concurrent

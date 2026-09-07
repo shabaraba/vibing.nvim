@@ -87,8 +87,8 @@ describe("cli_command_builder subagent chat", function()
     it("stays byte-identical across turns of the same buffer", function()
       -- A per-turn value here would invalidate the cached system prefix on every message (#469).
       local opts = { _subagent_id = AGENT_ID, chat_bufnr = 7 }
-      local first = system_prompt(cli_command_builder.build("hi", opts, nil, {}, nil, 9878))
-      local second = system_prompt(cli_command_builder.build("again", opts, "session-1", {}, nil, 9878))
+      local first = system_prompt(cli_command_builder.build("hi", opts, nil, {}, nil))
+      local second = system_prompt(cli_command_builder.build("again", opts, "session-1", {}, nil))
 
       assert.equals(first, second)
     end)
