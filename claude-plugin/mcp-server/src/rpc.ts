@@ -1,5 +1,6 @@
 import * as net from 'net';
 import { listLiveInstances } from './instance-registry.js';
+import { READ_ONLY_METHODS } from './read-only-methods.js';
 
 const NVIM_RPC_TIMEOUT = parseInt(process.env.VIBING_RPC_TIMEOUT || '30000', 10); // Default 30 seconds
 const RPC_PORT_ENV = 'VIBING_NVIM_RPC_PORT';
@@ -117,8 +118,9 @@ function getSocket(port: number): Promise<net.Socket> {
  * A server launched by vibing.nvim is bound out-of-band through `VIBING_NVIM_RPC_PORT`. Keeping
  * that runtime value in the process environment instead of every tool schema and system prompt
  * preserves the model's cached prefix when Neovim restarts on another port. The explicit argument
- * remains a compatibility fallback for manually launched clients, followed by the registry when
- * exactly one instance is live.
+ * remains a compatibility fallback for manually launched clients, followed -- for reads only --
+ * by the registry when exactly one instance is live. A call that changes state is never pointed
+ * at a guessed instance; see `read-only-methods.ts`.
  *
  * @param method - RPC method name, used only to make the error message actionable
  * @param requestedPort - Legacy port supplied by a tool caller
@@ -127,6 +129,9 @@ function getSocket(port: number): Promise<net.Socket> {
  */
 async function resolveRpcPort(method: string, requestedPort?: number): Promise<number> {
   const configured = process.env[RPC_PORT_ENV];
+  // Blank reads as unset rather than as an error: vibing.nvim only ever writes a real port here,
+  // but a manual `~/.claude.json` env block is hand-edited, and `"VIBING_NVIM_RPC_PORT": ""`
+  // should fall through to `rpc_port` instead of failing every call in the session.
   if (configured !== undefined && configured.trim() !== '') {
     const port = Number(configured);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -147,6 +152,14 @@ async function resolveRpcPort(method: string, requestedPort?: number): Promise<n
     throw new Error(
       `callNeovim('${method}'): no running vibing.nvim Neovim instance found. Start Neovim with ` +
         'vibing.nvim loaded, or pass rpc_port explicitly.'
+    );
+  }
+
+  if (!READ_ONLY_METHODS.has(method)) {
+    throw new Error(
+      `callNeovim('${method}'): this call changes Neovim state, so it is not pointed at a guessed ` +
+        `instance. Launch the server from vibing.nvim (which sets ${RPC_PORT_ENV}), set that ` +
+        'variable yourself, or pass rpc_port — call nvim_list_instances to pick one.'
     );
   }
 

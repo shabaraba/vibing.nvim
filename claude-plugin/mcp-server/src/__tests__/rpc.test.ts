@@ -107,6 +107,41 @@ describe('callNeovim port resolution', () => {
     }
   });
 
+  // The pre-#730 `requireRpcPort` schema guard, moved to where the port is resolved: a session
+  // that was never launched by vibing.nvim has neither source, and a guessed instance would let
+  // it drive whichever editor the user happens to have open.
+  it('refuses to guess an instance for a call that changes state', async () => {
+    vi.mocked(listLiveInstances).mockResolvedValue([{ pid: 111, port: 9876, cwd: '/repo' }]);
+
+    await expect(callNeovim('execute', { command: 'qa!' })).rejects.toThrow(
+      /changes Neovim state, so it is not pointed at a guessed instance/
+    );
+  });
+
+  it('runs the same state-changing call once the process is bound', async () => {
+    const nvim = await startFakeNeovim('executed');
+    process.env.VIBING_NVIM_RPC_PORT = String(nvim.port);
+
+    try {
+      await expect(callNeovim('execute', { command: 'echo 1' })).resolves.toBe('executed');
+      expect(vi.mocked(listLiveInstances)).not.toHaveBeenCalled();
+    } finally {
+      nvim.close();
+    }
+  });
+
+  it('runs the same state-changing call when a port is passed explicitly', async () => {
+    const nvim = await startFakeNeovim('executed');
+
+    try {
+      await expect(callNeovim('execute', { command: 'echo 1' }, nvim.port)).resolves.toBe(
+        'executed'
+      );
+    } finally {
+      nvim.close();
+    }
+  });
+
   it('rejects rather than guessing a port when nothing is running', async () => {
     vi.mocked(listLiveInstances).mockResolvedValue([]);
 
