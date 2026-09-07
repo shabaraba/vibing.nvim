@@ -225,5 +225,22 @@ describe("plugin_contents", function()
       assert.equals(own_plugin_dir() .. "/skills/vibing-code-tour/SKILL.md", names["vibing-code-tour"])
       assert.is_truthy(names["nvim-context"])
     end)
+
+    it("keeps nvim-context behind a live-state activation gate", function()
+      local path
+      for _, skill in ipairs(PluginContents.skills(own_plugin_dir())) do
+        if skill.name == "nvim-context" then
+          path = skill.path
+          break
+        end
+      end
+
+      assert.is_truthy(path)
+      local content = table.concat(vim.fn.readfile(path), "\n")
+
+      assert.is_truthy(content:find("## Activation gate", 1, true))
+      assert.is_truthy(content:find("If the request does not clearly match an activation case", 1, true))
+      assert.is_nil(content:find("before editing or answering", 1, true))
+    end)
   end)
 end)
