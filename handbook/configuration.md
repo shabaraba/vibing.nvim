@@ -365,8 +365,11 @@ codex can take per run: every `mcpServers` entry becomes a `-c mcp_servers.<name
 (pre-approved at codex's own gate, because headless `codex exec` cancels an MCP call it would
 have prompted for; vibing.nvim's permission hook still decides), and every `skills/<name>/SKILL.md`
 is listed for the model in `-c developer_instructions` with its path, in the same shape codex
-uses for its own skills. The MCP tools are named `mcp__vibing-nvim__<tool>` there, and codex's
-own `.agents/skills` discovery is unaffected. `agents/` has no codex equivalent and is not passed.
+uses for its own skills. Codex normalizes a hyphenated server label to underscores when it builds
+tool names, so the bundled server's tools reach the model — and its own PreToolUse hook — as
+`mcp__vibing_nvim__<tool>`; `codex_tool_vocabulary` restores the canonical `mcp__vibing-nvim__<tool>`
+spelling before the shared permission check runs. Codex's own `.agents/skills` discovery is
+unaffected. `agents/` has no codex equivalent and is not passed.
 A server whose name contains `.` or a space cannot be expressed on the codex command line and is
 skipped with a warning. One more cost: a `developer_instructions` you set in codex's own
 `config.toml` is replaced for vibing.nvim chats, since codex offers no additive form.

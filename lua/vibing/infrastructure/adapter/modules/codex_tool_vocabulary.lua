@@ -6,6 +6,8 @@
 --- given. See #516.
 --- @module vibing.infrastructure.adapter.modules.codex_tool_vocabulary
 
+local tools_constants = require("vibing.core.constants.tools")
+
 local M = {}
 
 --- Captured from real codex 0.153.4 PreToolUse payloads, which vibing.nvim could not see until the
@@ -27,8 +29,14 @@ local NATIVE_TO_CANONICAL = {
 -- permission layer deliberately speaks the canonical (Claude-compatible) spelling, so restore
 -- only this exact server prefix here. Keeping the match anchored avoids granting the special
 -- bundled-server bypass to a lookalike such as `mcp__my_vibing_nvim__...`.
-local CODEX_VIBING_MCP_PREFIX = "mcp__vibing_nvim__"
-local CANONICAL_VIBING_MCP_PREFIX = "mcp__vibing-nvim__"
+--
+-- Derived from `tools_constants.VIBING_NVIM_MCP_TOOL_PATTERNS`, the single definition of the
+-- bundled server's tool-name prefix, instead of a second hardcoded literal: `tools_spec.lua`
+-- reads `claude-plugin/.claude-plugin/plugin.json` and fails if that constant drifts from the
+-- manifest, and this ties the codex-only copy to the same guard rather than leaving one more
+-- string that a manifest rename would silently strand.
+local CANONICAL_VIBING_MCP_PREFIX = (tools_constants.VIBING_NVIM_MCP_TOOL_PATTERNS[1]):gsub("%*$", "")
+local CODEX_VIBING_MCP_PREFIX = (CANONICAL_VIBING_MCP_PREFIX:gsub("%-", "_"))
 
 --- @param native_tool_name string
 --- @return string|nil canonical name, or nil when there is no mapping
