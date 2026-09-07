@@ -294,7 +294,7 @@ local function build_repository_instruction(cwd)
 
   -- 組み立てを許すのは「このリポジトリの番号」だけ。rule 6 は `ABC-456`（他システム）も
   -- `org/repo#123`（別リポジトリ）も表記として認めているので、どちらもこのリポジトリの
-  -- issue URL に流し込ませない。後者は特に、開くと無関係な issue に飛ぶリンクになる
+  -- issue / PR URL に流し込ませない。後者は特に、開くと無関係な issue に飛ぶリンクになる
   return prefix
     .. string.format(
       "`#123` のようにリポジトリ名の付かない issue / PR 番号は、ここから URL を組み立ててよい"
