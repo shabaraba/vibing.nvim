@@ -12,7 +12,6 @@ function M.bind(env)
 
   local value = tostring(port)
   env[M.PORT_VAR] = value
-  env.VIBING_RPC_PORT = value -- Legacy CLI and hook configurations.
   env.VIBING_NVIM_CONTEXT = "true"
 end
 
