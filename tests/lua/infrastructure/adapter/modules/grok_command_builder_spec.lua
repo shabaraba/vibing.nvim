@@ -128,7 +128,7 @@ describe("grok_command_builder", function()
     it("names no MCP tool, because Grok cannot reach the vibing-nvim MCP server", function()
       -- Grok registers no MCP server and no chat_bufnr, so an instruction to call
       -- nvim_ask_user_question would name a tool it has no way to invoke. Same position as codex.
-      local cmd = grok_command_builder.build("hello", { chat_bufnr = 12 }, nil, {}, "abc123_456", 9878)
+      local cmd = grok_command_builder.build("hello", { chat_bufnr = 12 }, nil, {})
       local rules_text = cmd[find_flag(cmd, "--rules") + 1]
 
       assert.is_nil(rules_text:find("nvim_ask_user_question", 1, true))
@@ -138,8 +138,8 @@ describe("grok_command_builder", function()
 
     it("embeds no handle_id, so the rules stay byte-identical across turns", function()
       -- A per-turn value here would invalidate the cached prompt prefix on every message (#469).
-      local first = grok_command_builder.build("hello", {}, nil, {}, "handle-1", 9878)
-      local second = grok_command_builder.build("again", {}, "session-1", {}, "handle-2", 9878)
+      local first = grok_command_builder.build("hello", {}, nil, {})
+      local second = grok_command_builder.build("again", {}, "session-1", {})
 
       local a = first[find_flag(first, "--rules") + 1]
       local b = second[find_flag(second, "--rules") + 1]

@@ -4,6 +4,7 @@
 
 local Base = require("vibing.infrastructure.adapter.base")
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
+local RpcEnvironment = require("vibing.infrastructure.adapter.modules.rpc_environment")
 local CodexCommandBuilder = require("vibing.infrastructure.adapter.modules.codex_command_builder")
 local CodexProviderNotice = require("vibing.infrastructure.adapter.modules.codex_provider_notice")
 local CodexEventProcessor = require("vibing.infrastructure.adapter.modules.codex_event_processor")
@@ -79,9 +80,6 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
   -- The builder raises when the codex binary is missing. send_message.lua does not wrap stream()
   -- in pcall, so without this the chat buffer would show a raw Lua stack trace instead of an
   -- actionable message. Matches copilot_cli.lua.
-  local rpc_server = require("vibing.infrastructure.rpc.server")
-  local rpc_port = rpc_server.get_port()
-
   local build_ok, cmd = pcall(CodexCommandBuilder.build, prompt, opts, session_id, self.config, hook_args)
   if not build_ok then
     CliRuntime.report_build_failure(handle_id, cmd, on_done)
@@ -117,12 +115,7 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
 
   local env = vim.fn.environ()
 
-  if rpc_port then
-    local port_str = tostring(rpc_port)
-    env.VIBING_NVIM_RPC_PORT = port_str
-    env.VIBING_RPC_PORT = port_str
-    env.VIBING_NVIM_CONTEXT = "true"
-  end
+  RpcEnvironment.bind(env)
   -- Lets the PreToolUse hook identify which chat buffer's stream it belongs to, so concurrent
   -- chats don't cross-wire each other's approval UI (see ActiveStreamRegistry).
   env.VIBING_HANDLE_ID = handle_id

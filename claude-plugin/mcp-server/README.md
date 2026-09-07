@@ -479,7 +479,7 @@ The server uses a simple JSON-RPC protocol over TCP:
 
 - Ensure Neovim is running with MCP enabled
 - Check that RPC server port (9876) is not in use
-- Verify `VIBING_RPC_PORT` environment variable matches config
+- Verify `VIBING_NVIM_RPC_PORT` environment variable matches config
 
 ### Request Timeout
 
@@ -487,7 +487,7 @@ The server uses a simple JSON-RPC protocol over TCP:
 - For heavy LSP operations (e.g., call hierarchy in large projects), consider increasing timeout:
   ```json
   "env": {
-    "VIBING_RPC_PORT": "9876",
+    "VIBING_NVIM_RPC_PORT": "9876",
     "VIBING_RPC_TIMEOUT": "60000"
   }
   ```

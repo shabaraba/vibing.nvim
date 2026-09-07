@@ -4,6 +4,7 @@
 
 local Base = require("vibing.infrastructure.adapter.base")
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
+local RpcEnvironment = require("vibing.infrastructure.adapter.modules.rpc_environment")
 local CLICommandBuilder = require("vibing.infrastructure.adapter.modules.cli_command_builder")
 local CLIEventProcessor = require("vibing.infrastructure.adapter.modules.cli_event_processor")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
@@ -87,9 +88,6 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
     end
   end
 
-  local rpc_server = require("vibing.infrastructure.rpc.server")
-  local rpc_port = rpc_server.get_port()
-
   -- The builder raises when the claude binary is missing. send_message.lua does not wrap stream()
   -- in pcall, so without this the chat buffer would show a raw Lua stack trace instead of an
   -- actionable message. Matches copilot_cli.lua.
@@ -134,12 +132,9 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   -- Remove CLAUDECODE to allow nested invocation
   env.CLAUDECODE = nil
 
-  if rpc_port then
-    -- Claude Code forwards the launching process's environment to plugin MCP servers. The
-    -- server binds to this value directly, keeping the numeric port out of the cached prompt.
-    env.VIBING_NVIM_RPC_PORT = tostring(rpc_port)
-    env.VIBING_NVIM_CONTEXT = "true" -- indicates running inside vibing.nvim
-  end
+  -- Claude Code forwards this environment to plugin MCP servers, so the numeric port stays out
+  -- of the cached prompt.
+  RpcEnvironment.bind(env)
   -- Lets the PreToolUse hook identify which chat buffer's stream it belongs to, so concurrent
   -- chats don't cross-wire each other's AskUserQuestion/approval UI (see ActiveStreamRegistry).
   env.VIBING_HANDLE_ID = handle_id

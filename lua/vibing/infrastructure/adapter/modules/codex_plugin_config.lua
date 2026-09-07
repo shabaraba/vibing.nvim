@@ -26,6 +26,7 @@
 
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 local PluginContents = require("vibing.infrastructure.plugins.plugin_contents")
+local RpcEnvironment = require("vibing.infrastructure.adapter.modules.rpc_environment")
 local Toml = require("vibing.core.utils.toml")
 local Notify = require("vibing.core.utils.notify")
 
@@ -92,7 +93,7 @@ local function append_server(args, server, forward_rpc_port)
       -- `env_vars` names a host-process variable for codex to copy into the MCP subprocess.
       -- The name is fixed, so changing Neovim's actual port changes only the process environment,
       -- not argv, tool definitions, or any model-visible prompt prefix.
-      override(args, prefix .. ".env_vars", Toml.string_array({ "VIBING_NVIM_RPC_PORT" }))
+      override(args, prefix .. ".env_vars", Toml.string_array({ RpcEnvironment.PORT_VAR }))
     end
   else
     override(args, prefix .. ".url", Toml.string(server.url))
