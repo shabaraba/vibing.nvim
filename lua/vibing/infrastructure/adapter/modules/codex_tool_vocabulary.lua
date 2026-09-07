@@ -22,9 +22,20 @@ local NATIVE_TO_CANONICAL = {
   shell = "Bash",
 }
 
+-- MCP server labels are normalized before Codex exposes them as tool names. In particular, the
+-- bundled `vibing-nvim` server reaches PreToolUse as `mcp__vibing_nvim__...`. The shared
+-- permission layer deliberately speaks the canonical (Claude-compatible) spelling, so restore
+-- only this exact server prefix here. Keeping the match anchored avoids granting the special
+-- bundled-server bypass to a lookalike such as `mcp__my_vibing_nvim__...`.
+local CODEX_VIBING_MCP_PREFIX = "mcp__vibing_nvim__"
+local CANONICAL_VIBING_MCP_PREFIX = "mcp__vibing-nvim__"
+
 --- @param native_tool_name string
 --- @return string|nil canonical name, or nil when there is no mapping
 function M.to_canonical(native_tool_name)
+  if native_tool_name:sub(1, #CODEX_VIBING_MCP_PREFIX) == CODEX_VIBING_MCP_PREFIX then
+    return CANONICAL_VIBING_MCP_PREFIX .. native_tool_name:sub(#CODEX_VIBING_MCP_PREFIX + 1)
+  end
   return NATIVE_TO_CANONICAL[native_tool_name]
 end
 

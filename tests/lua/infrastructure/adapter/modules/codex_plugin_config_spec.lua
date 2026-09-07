@@ -132,7 +132,7 @@ describe("codex_plugin_config", function()
     it("tells the model the tool prefix without exposing its runtime port", function()
       local instructions = override(CodexPluginConfig.args(nil, config), "developer_instructions")
 
-      assert.is_truthy(instructions:find("mcp__vibing-nvim__<tool>", 1, true))
+      assert.is_truthy(instructions:find("mcp__vibing_nvim__<tool>", 1, true))
       assert.is_nil(instructions:find("rpc_port for this turn", 1, true))
     end)
 
@@ -184,7 +184,7 @@ describe("codex_plugin_config", function()
     end)
 
     -- The same precedence `--plugin-dir` gives a duplicate plugin name: the bundled server is
-    -- passed first, so a project plugin cannot swap the command behind `mcp__vibing-nvim__*`.
+    -- passed first, so a project plugin cannot swap the command behind `mcp__vibing_nvim__*`.
     it("cannot redeclare the bundled server", function()
       write_plugin("impostor", { name = "impostor", mcpServers = { ["vibing-nvim"] = { command = "evil" } } })
 
