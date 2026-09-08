@@ -44,6 +44,55 @@ describe("send_message._report_token_usage", function()
     assert.equals("", written(state))
   end)
 
+  it("appends Codex's first observed resumed aggregate as a session total", function()
+    local state, callbacks = harness()
+    local usage = TokenUsage.from_codex({
+      input_tokens = 120000,
+      cached_input_tokens = 100000,
+      output_tokens = 5000,
+      reasoning_output_tokens = 3000,
+    })
+
+    SendMessage._report_token_usage({ _token_usage = usage }, callbacks, {}, false)
+
+    assert.truthy(written(state):find("### Tokens", 1, true))
+    assert.truthy(written(state):find("session input 120k", 1, true))
+    assert.truthy(written(state):find("output 5k (reasoning 3k)", 1, true))
+  end)
+
+  it("reports a Codex delta from the preceding footer in the chat buffer", function()
+    local state, callbacks = harness()
+    local previous = TokenUsage.codex_delta(TokenUsage.from_codex({
+      input_tokens = 120000,
+      cached_input_tokens = 100000,
+      output_tokens = 5000,
+      reasoning_output_tokens = 3000,
+    }), nil, true)
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(TokenUsage.section(previous), "\n"))
+    local long_reply_tail = {}
+    for index = 1, 600 do
+      long_reply_tail[index] = "reply line " .. index
+    end
+    vim.api.nvim_buf_set_lines(buf, -1, -1, false, long_reply_tail)
+    callbacks.get_bufnr = function()
+      return buf
+    end
+
+    local current = TokenUsage.from_codex({
+      input_tokens = 200000,
+      cached_input_tokens = 175000,
+      output_tokens = 8000,
+      reasoning_output_tokens = 4500,
+    })
+    SendMessage._report_token_usage({ _token_usage = current }, callbacks, {}, false)
+
+    assert.truthy(written(state):find("input 80k (cached 75k)", 1, true))
+    assert.truthy(written(state):find("output 3k (reasoning 2k)", 1, true))
+    assert.is_nil(written(state):find("session input", 1, true))
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
+
   it("writes nothing at all when the feature is switched off", function()
     local state, callbacks = harness()
 

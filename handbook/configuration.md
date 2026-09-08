@@ -261,26 +261,27 @@ agent = {
                             -- probe it needs. Codex backend only.
   },
 
-  token_usage = {           -- Per-turn token breakdown in the chat, plus a warning when the
-                            -- conversation has grown. On by default for the same reason as
-                            -- codex_provider_notice: it spends no tokens, and a chat growing
-                            -- unnoticed is exactly what it exists to prevent.
+  token_usage = {           -- Per-turn token breakdown in the chat. Claude also warns when the
+                            -- conversation has grown; Codex's stream has no context-fill figure.
+                            -- On by default for the same reason as codex_provider_notice: it
+                            -- spends no tokens, and hidden usage is exactly what it prevents.
     enabled = true,
-    warn_context = 150000,  -- At or above this, every turn's section gains a warning under the
-                            -- metrics. Written into the buffer rather than notified, and
-                            -- repeated each turn, so it is present when the cost is read.
-                            -- 0 keeps the metrics and never warns.
+    warn_context = 150000,  -- Claude: at or above this, every turn's section gains a warning
+                            -- under the metrics. Written into the buffer rather than notified,
+                            -- and repeated each turn, so it is present when the cost is read.
+                            -- 0 keeps the metrics and never warns. Not applied to Codex.
 
-    auto_compact = {        -- Run `/compact` for you once the chat has grown. Off by default:
-                            -- it spends a turn nobody asked for, and the turn after it
-                            -- rewrites the whole prefix. See "Automatic /compact" below.
+    auto_compact = {        -- Compact a grown chat using the active backend's own mechanism.
+                            -- Claude inserts `/compact`; Codex configures its native threshold.
+                            -- Off by default. See "Automatic compaction" below.
       enabled = false,
-      at = 200000,          -- Compact before the next manual send when the last turn's
-                            -- context was at or above this. Above warn_context on purpose,
-                            -- so the warning gets to be your decision first. 0 disables.
+      at = 200000,          -- Context size at which to compact. On Claude, this is checked
+                            -- before the next manual send. On Codex it is passed as
+                            -- model_auto_compact_token_limit. 0 disables the override.
       focus = nil,          -- Appended as `/compact <focus>` — what the summary should keep,
                             -- e.g. "the open tasks and the files changed so far". No default,
                             -- because a wrong one would quietly shape every summary.
+                            -- Claude only; Codex uses only enabled and at.
     },
   },
 
@@ -406,7 +407,8 @@ its 10-second timeout first.
 
 ### Token Usage
 
-Every turn ends with a section naming what it cost, alongside `### Modified Files`:
+Every Claude and Codex turn ends with a section naming what it cost, alongside
+`### Modified Files`. Claude exposes the request-level split:
 
 ```markdown
 ### Tokens
@@ -423,13 +425,29 @@ separately and deliberately left out of it, because a subagent runs in its own m
 context (measured at 83k against a main chain's 208k) and so says nothing about how big this chat
 has grown.
 
-Claude backend only, for now: the numbers come from the `usage` object on the CLI's stream, and
-the other backends do not report one. On those the line is simply absent rather than zeroed.
+Codex exposes a different aggregate, so its section uses the counters the CLI can establish:
 
-**`warn_context` is where a chat is worth splitting**, and the default comes from measurement
-rather than taste. Over 30 days of session logs, the rate at which a request fails to reuse the
-cached prefix — and then re-writes a byte-identical prefix at cache-creation price, 12.5× the read
-price — tracks context size directly:
+```markdown
+### Tokens
+
+input 80k (cached 75k) · output 3k (reasoning 2k)
+```
+
+On a resumed Codex thread, `turn.completed.usage` is cumulative for the session. The heading keeps
+those exact cumulative counters in an HTML comment, and vibing.nvim subtracts the preceding Codex
+footer before rendering the visible line. With the default always-on display this is the current
+turn. If no baseline exists — most notably the first reply after upgrading in an existing thread —
+the line is labelled `session input ...` and says that per-turn deltas begin with the next reply.
+
+Codex's JSONL does not expose the latest request's prompt size or the current context-window fill,
+so its section cannot honestly show Claude's `context`, request count, prefix-rewrite diagnosis, or
+`warn_context` warning. The input/cached/output/reasoning totals remain exact. Backends that expose
+neither usage shape leave the section absent rather than printing zeros.
+
+For Claude, **`warn_context` is where a chat is worth splitting**, and the default comes from
+measurement rather than taste. Over 30 days of session logs, the rate at which a request fails to
+reuse the cached prefix — and then re-writes a byte-identical prefix at cache-creation price,
+12.5× the read price — tracks context size directly:
 
 | Context   | Requests | Rewrite rate | Cache created per request |
 | --------- | -------- | ------------ | ------------------------- |
@@ -458,12 +476,13 @@ the one moment the cost is actually being looked at — the section right above 
 Repetition is what makes it a gauge rather than an announcement; keeping it to three lines is what
 keeps it from being noise.
 
-**Auto-compaction does not remove the need for this.** It does run under `claude -p` — verified in
-this project's own logs — but it fires near the model's context ceiling, measured at ~930k. It is
-a mechanism for not overflowing, not for controlling cost: every request on the way up to 930k was
-already billed at the size it had reached. In one such session, the 452 requests made above 300k
-accounted for 84% of its cost while being 62% of its requests. Running the same work at 80k would
-have cost 42% less on cache reads alone.
+**A CLI's default auto-compaction does not remove the need for this.** Claude's does run under
+`claude -p` — verified in this project's own logs — but it fires near the model's context ceiling,
+measured at ~930k. It is a mechanism for not overflowing, not for controlling cost: every request
+on the way up to 930k was already billed at the size it had reached. In one such session, the 452
+requests made above 300k accounted for 84% of its cost while being 62% of its requests. Running the
+same work at 80k would have cost 42% less on cache reads alone. The configured Codex path below
+exists for the same reason: it brings Codex's native trigger forward to the chosen threshold.
 
 **Manual `/compact` does**, and it is what the warning names. It reaches the CLI because an
 unrecognised slash command falls through from the chat as prompt text; measured against claude
@@ -643,10 +662,9 @@ up. If the warning fires constantly, that is what to raise it against.
 the numbers are what you wanted and the nudge is not. `enabled = false` removes the section
 entirely.
 
-### Automatic `/compact`
+### Automatic compaction
 
-`agent.token_usage.auto_compact` runs the `/compact` above for you once the chat has grown past
-`at`:
+`agent.token_usage.auto_compact` uses one setting for the two backends that expose compaction:
 
 ```lua
 token_usage = {
@@ -658,33 +676,44 @@ token_usage = {
 }
 ```
 
-**The compaction is inserted before your next manual send, not right after the turn that crossed
-the threshold.** The turn following a compaction re-writes the whole prefix, so crossing 200k and
-then moving to a fresh chat would have paid ~80k for nothing. Waiting until you actually type
-again is what ties the spend to the intent to keep going. What you see is two turns: `/compact`,
-then your message, whose `### Tokens` reports the smaller context.
+On **Claude**, the compaction is inserted before your next manual send, not right after the turn
+that crossed the threshold. The turn following a compaction re-writes the whole prefix, so
+crossing 200k and then moving to a fresh chat would have paid ~80k for nothing. Waiting until you
+actually type again is what ties the spend to the intent to keep going. What you see is two turns:
+`/compact`, then your message, whose `### Tokens` reports the smaller context.
 
-`at` sits above `warn_context` deliberately. The warning is where you get to choose between
-`/compact`, `:VibingChatHandoff` and handing the exploring to a subagent; a threshold that fired
-at the same place would take that choice away at the moment it is being offered.
+On **Codex**, every ordinary `codex exec` invocation, both new and resumed, gets
+`-c model_auto_compact_token_limit=<at>`. Codex tracks its own context and compacts inside the
+normal turn when that threshold is reached. There is no preliminary prompt turn, and the trigger
+still works even though Codex's JSONL stream does not expose the current context figure needed for
+`warn_context`. Lightweight utility calls such as title generation and `/summarize` do not inherit
+the chat threshold.
 
-`focus` is worth setting. What the summary keeps decides how well every later turn goes, and the
-CLI's own default summary is general. There is no default here because a wrong one would shape
-every summary without ever announcing itself.
+`enabled = false` means vibing.nvim supplies no override. It does not disable either CLI's own
+default near-limit compaction. `at <= 0` likewise disables vibing.nvim's trigger/override.
 
-The size it compares against is the same figure the cache prompt above uses: the marker on the
-**last completed turn's** `### Tokens` heading, read through the same helper. It is deliberately
-not a fresh scan for the last heading anywhere in the buffer — the rounded fallback matches any
-line beginning `context <number>`, which a reply is free to write.
+For Claude, `at` sits above `warn_context` deliberately. The warning is where you get to choose
+between `/compact`, `:VibingChatHandoff` and handing the exploring to a subagent; a threshold that
+fired at the same place would take that choice away at the moment it is being offered. Codex does
+not currently produce that warning because its stream does not report current context fill.
 
-Four limits, each of which is the feature refusing to spend tokens you did not ask it to:
+`focus` is Claude-only and is worth setting there. What the summary keeps decides how well every
+later turn goes, and the CLI's own default summary is general. There is no default here because a
+wrong one would shape every summary without ever announcing itself. Codex uses `enabled` and `at`;
+vibing.nvim does not translate `focus` into a Codex compaction prompt.
 
-- **Off by default.** It adds a turn nobody requested.
+Claude compares against the same figure the cache prompt above uses: the marker on the **last
+completed turn's** `### Tokens` heading, read through the same helper. It is deliberately not a
+fresh scan for the last heading anywhere in the buffer — the rounded fallback matches any line
+beginning `context <number>`, which a reply is free to write. Codex performs this comparison
+internally against its live context instead.
+
+The Claude insertion has three additional limits, each of which refuses to spend tokens you did not
+ask it to:
+
 - **Manual sends only.** A scheduled request, an auto-resume, and a message delivered from
   another chat all send without you present; none of them triggers a compaction. This matches how
   the rest of the unattended paths are bounded.
-- **Claude only.** `/compact` is the Claude CLI's own command. On codex, copilot or grok it would
-  arrive as a line of prose and be answered as one.
 - **At most every other manual send.** If a compaction fails to shrink the conversation, the next
   send goes out on its own rather than compacting again — otherwise every send from then on would
   cost two turns.
@@ -696,15 +725,16 @@ A send whose message is a slash command or an answer to a pending approval promp
 That judgement is not re-derived here: all three interceptions on the `<CR>` path — the
 limit-aware reschedule, the expired-cache prompt, and this — ask `can_defer_send`.
 
-**Order on the `<CR>` path: the expired-cache prompt first, the compaction second.** If you call
-the send off at that prompt, nothing has been rewritten yet. It also means a cold cache is
+On Claude, the expired-cache prompt comes first on the `<CR>` path and compaction second. If you
+call the send off at that prompt, nothing has been rewritten yet. It also means a cold cache is
 reported at its real size — the figure that makes "continue in a new chat" the cheaper answer —
 before a compaction can shrink it.
 
 `:VibingCompact [focus]` is the manual version: one `/compact` turn, now, with an optional focus.
 It refuses while an unsent message is waiting — the automatic path parks your message because you
 asked to send _that message_, whereas this command was typed on its own and should mean exactly
-one turn.
+one turn. The command remains Claude-only; Codex exposes automatic compaction here, not a matching
+manual slash command.
 
 ### Subagent Output
 

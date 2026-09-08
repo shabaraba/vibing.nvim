@@ -118,6 +118,12 @@ describe("codex_command_builder", function()
       local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, config, nil)
       assert.is_nil(find_flag(cmd, "-m"))
     end)
+
+    it("does not apply the chat's auto-compaction threshold", function()
+      local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 300000 } } } }
+      local cmd = codex_command_builder.build("hi", { lightweight = true }, nil, config, nil)
+      assert.is_false(vim.tbl_contains(config_overrides(cmd), "model_auto_compact_token_limit=300000"))
+    end)
   end)
 
   describe("ordinary calls", function()
@@ -159,6 +165,40 @@ describe("codex_command_builder", function()
       local config = { agent = { default_model = "gpt-5.5" } }
       local cmd = codex_command_builder.build("hi", { model = "gpt-5.6-terra" }, nil, config, nil)
       assert.equals("gpt-5.6-terra", cmd[find_flag(cmd, "-m") + 1])
+    end)
+
+    it("maps the shared auto_compact threshold to Codex's native setting", function()
+      local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 300000 } } } }
+      local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), "model_auto_compact_token_limit=300000"))
+    end)
+
+    it("keeps the native threshold on resumed threads", function()
+      local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 300000 } } } }
+      local cmd = codex_command_builder.build("hi", {}, "thread-1", config, nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), "model_auto_compact_token_limit=300000"))
+    end)
+
+    it("uses the shared default when auto_compact.at is omitted", function()
+      local config = { agent = { token_usage = { auto_compact = { enabled = true } } } }
+      local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
+      local expected = "model_auto_compact_token_limit="
+        .. require("vibing.core.utils.token_usage").DEFAULT_AUTO_COMPACT_AT
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), expected))
+    end)
+
+    it("does not override Codex when auto_compact is disabled or its threshold is non-positive", function()
+      for _, auto_compact in ipairs({
+        { enabled = false, at = 300000 },
+        { enabled = true, at = 0 },
+        { enabled = true, at = -1 },
+      }) do
+        local config = { agent = { token_usage = { auto_compact = auto_compact } } }
+        local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
+        for _, override in ipairs(config_overrides(cmd)) do
+          assert.is_false(vim.startswith(override, "model_auto_compact_token_limit="))
+        end
+      end
     end)
   end)
 

@@ -134,8 +134,9 @@
 ---@field plugins Vibing.PluginsConfig? `--plugin-dir`で読み込むClaude Codeプラグインの設定
 
 ---@class Vibing.TokenUsageConfig
----ターンごとのトークン内訳（コンテキストサイズ・リクエスト数・キャッシュ読取/作成）をチャットに
----出し、コンテキストが育ったら警告する。
+---ターンごとのトークン内訳をチャットに出す。Claudeではコンテキストサイズ・リクエスト数・
+---キャッシュ読取/作成を出し、コンテキストが育ったら警告する。CodexではCLIが返す
+---input/cached/output/reasoningの累計差分を出す（現行JSONLにcontext使用量は無い）。
 ---
 ---codex_provider_notice と同じ理由で既定で有効: トークンを一切使わず、無効だと当の問題
 ---（チャットが育っていることに気づけない）がそのまま残る通知だから。
@@ -143,17 +144,18 @@
 ---@field warn_context number? この値を超えている間、各ターンの内訳行の直下に警告を書く（デフォルト: 150000）
 ---@field cache_ttl_sec number? 最終ターンからこの秒数以上空いた手動送信で、送信前に確認を出す。
 ---  0で無効。`warn_context` 未満のチャットでは出ない（デフォルト: 3300 = 55分）
----@field auto_compact Vibing.AutoCompactConfig? 閾値超過時に`/compact`を自動で挟む設定
+---@field auto_compact Vibing.AutoCompactConfig? 閾値を超えた会話をバックエンド固有の方法で自動圧縮する設定
 
 ---@class Vibing.AutoCompactConfig
----直近ターンのcontextが`at`以上なら、**次の手動送信の前に**`/compact`を1ターン挟み、
----完了後にユーザーの本文を送る。
+---Claudeでは直近ターンのcontextが`at`以上なら次の手動送信前に`/compact`を1ターン挟む。
+---Codexでは通常の`codex exec`と`resume`に`model_auto_compact_token_limit=at`を渡し、CLI自身に
+---圧縮のタイミングを管理させる（CodexのJSONLはcontext使用量をvibing.nvimへ返さないため）。
 ---
----既定で無効: ユーザーが頼んでいないターンを1本増やし、その次のターンでプレフィックスを
----丸ごと書き直す（実測 79,783 トークン）ため。適用は手動送信・claudeバックエンドに限る。
+---既定で無効。無効時はバックエンド自身の既定の自動圧縮を止めず、vibing.nvimから閾値を
+---上書きしない。copilot/grokには適用しない。
 ---@field enabled boolean? trueで有効（デフォルト: false）
----@field at number? 直近ターンのcontextがこの値以上なら挟む。0以下で無効（デフォルト: 200000）
----@field focus string? `/compact <focus>`として渡す、要約に何を残すかの指示（デフォルト: 無し）
+---@field at number? 圧縮を始めるcontextのトークン数。0以下で無効（デフォルト: 200000）
+---@field focus string? Claudeで`/compact <focus>`として渡す指示。Codexでは未使用（デフォルト: 無し）
 
 ---@class Vibing.PluginsConfig
 ---セッション限りで読み込むClaude Codeプラグインのディレクトリ設定
@@ -424,14 +426,14 @@ M.defaults = {
       enabled = true,
       warn_context = token_usage.DEFAULT_WARN_CONTEXT,
       cache_ttl_sec = token_usage.DEFAULT_CACHE_TTL_SEC,
-      -- 既定で無効。警告（warn_context）は読み手に判断を渡すもので、こちらは判断を代行して
-      -- ターンを1本使う。`at` を warn_context より上に置いてあるのは、警告を見て自分で
-      -- `/compact` や `:VibingChatHandoff` を選ぶ余地を先に残すため
+      -- 既定で無効。Claudeではターンを1本使い、CodexではCLI固有の閾値を上書きする。
+      -- `at` を warn_context より上に置いてあるのは、Claudeで警告を見て自分で`/compact`や
+      -- `:VibingChatHandoff`を選ぶ余地を先に残すため。無効でもCLI自身の既定の圧縮は止めない。
       auto_compact = {
         enabled = false,
         at = token_usage.DEFAULT_AUTO_COMPACT_AT,
-        -- focus は未設定が既定。`/compact <focus>` に何を書くかで次ターン以降の質は変わるが、
-        -- 何を残すべきかはプロジェクトごとに違うので、既定文を置くと外れたときに黙って効く
+        -- focus はClaude専用で未設定が既定。何を残すべきかはプロジェクトごとに違うので、
+        -- 既定文を置くと外れたときに黙って効く
       },
     },
     -- `--plugin-dir` で読み込むプラグイン。self → project_dir → extra の順で渡す。

@@ -1,4 +1,4 @@
---- Opt-in `/compact` once a chat has grown past a threshold.
+--- Claude's opt-in `/compact` insertion once a chat has grown past a threshold.
 ---
 --- `/compact` is the Claude CLI's own command and it reaches the CLI from a chat because an
 --- unrecognised slash command falls through as prompt text. It replaces the conversation with a
@@ -21,8 +21,9 @@
 ---     `ChatBuffer:send_message()`, which every one of those paths also goes through. It runs
 ---     inside `cache_expiry_prompt.guard`'s callback, so a send the user calls off at that
 ---     prompt does not leave a rewritten `/compact` behind.
----   * **claude only.** On the other backends `/compact` is not a command, so it would arrive as
----     a line of prose and be answered as one.
+---   * **claude only.** Codex maps the same config to its native
+---     `model_auto_compact_token_limit` in `codex_command_builder`; on the remaining backends
+---     `/compact` would arrive as a line of prose and be answered as one.
 ---   * **at most every other manual send.** If a compaction fails to shrink the conversation,
 ---     the cooldown is what stops every subsequent send from costing two turns.
 ---

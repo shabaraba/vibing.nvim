@@ -81,6 +81,36 @@ describe("codex_cli hook registration", function()
     assert.are.equal(1, #system.calls)
   end)
 
+  it("carries turn.completed usage onto the response", function()
+    local run = helper.run_stream(adapter, { permission_mode = "default" })
+    local call = system.cli_call()
+    call.opts.stdout(nil, vim.json.encode({
+      type = "turn.completed",
+      usage = {
+        input_tokens = 120000,
+        cached_input_tokens = 100000,
+        cache_write_input_tokens = 500,
+        output_tokens = 5000,
+        reasoning_output_tokens = 3000,
+      },
+    }) .. "\n")
+    vim.wait(200, function()
+      return false
+    end)
+    call.on_exit({ code = 0, signal = 0 })
+    vim.wait(1000, function()
+      return #run.done_responses == 1
+    end)
+
+    local usage = assert(run.done_responses[1])._token_usage
+    assert.equals("codex", usage.backend)
+    assert.equals(120000, usage.totals.input)
+    assert.equals(100000, usage.totals.cached)
+    assert.equals(500, usage.totals.cache_write)
+    assert.equals(5000, usage.totals.output)
+    assert.equals(3000, usage.totals.reasoning)
+  end)
+
   -- The prompt is the last element of the argv, so the flag scan alone would match a message
   -- that happens to be exactly that flag and warn about a loss this call never took.
   it("does not probe because the prompt looks like the flag", function()

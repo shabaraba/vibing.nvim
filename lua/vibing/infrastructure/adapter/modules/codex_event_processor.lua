@@ -6,6 +6,7 @@ local M = {}
 
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
 local ItemDisplay = require("vibing.infrastructure.adapter.modules.codex_item_display")
+local TokenUsage = require("vibing.core.utils.token_usage")
 
 --- Emit formatted text to output and onChunk callback
 --- @param text string
@@ -124,7 +125,11 @@ local event_handlers = {
     handle_item_started(msg, context)
     return true
   end,
-  ["turn.completed"] = function()
+  ["turn.completed"] = function(msg, context)
+    -- Codex emits its only token report on the terminal event. Keep it tagged as Codex usage:
+    -- resumed threads report cumulative session counters, so treating this like one Claude
+    -- request would overstate every later turn and invent a context size the event does not have.
+    context.tokenUsage = TokenUsage.from_codex(msg.usage)
     return true
   end,
   ["turn.failed"] = function(msg, context)

@@ -68,8 +68,9 @@ function M.read_last_turn(buf)
   -- `parse_context` のフォールバック（`context <数字>` で始まる行）に当たる文は普通に現れる
   -- ので、範囲を切らずに読むとモデルの散文が「このチャットのサイズ」として通ってしまう。
   --
-  -- ターンを跨がないのも同じ理由の別側面で、トークンを報告しないバックエンド（codex/grok）の
-  -- ターンが挟まったときに、何ターンも前の数字を直近のサイズとして読まないため
+  -- ターンを跨がないのも同じ理由の別側面で、contextを報告しないバックエンド（Codex/Grok）
+  -- のターンが挟まったときに、何ターンも前の数字を直近のサイズとして読まないため。Codexは
+  -- Tokens章そのものは書くが、その見出しにcontextマーカーを持たないので同じくnilになる
   local in_tokens = false
   for i = start + 1, #lines do
     if is_written_header(lines[i]) then

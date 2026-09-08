@@ -50,6 +50,20 @@
 
 ### Added
 
+- **Codex replies now end with a `### Tokens` section too.** The adapter consumes
+  `turn.completed.usage` and shows input, cached input, output and reasoning output. Because Codex
+  reports cumulative session counters on resume, each heading retains the exact totals and the
+  next reply displays their delta. The first observed reply in an existing session is explicitly
+  labelled as a session total; Codex does not expose current context fill, so the section does not
+  fabricate Claude's context gauge or warning.
+
+- **`agent.token_usage.auto_compact` now also controls Codex's native compaction.** With the
+  option enabled, ordinary `codex exec` calls — new and resumed alike — receive
+  `model_auto_compact_token_limit=<at>` as a per-process config override. Codex owns the trigger
+  because its JSONL stream does not expose the context figure to vibing.nvim; no extra prompt turn
+  is inserted. Lightweight calls do not inherit the chat threshold, and disabling the option
+  leaves Codex's own default compaction behavior untouched. `focus` remains Claude-only.
+
 - **`nvim_get_buffer` (MCP): `tail_lines` and `last_section` read only part of a buffer.** A
   vibing.nvim chat can run to hundreds of thousands of lines, and reading it all is effectively
   the same as not being able to read it at all. `tail_lines: N` returns only the last N lines;

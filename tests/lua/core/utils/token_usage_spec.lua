@@ -135,6 +135,96 @@ describe("token_usage", function()
     end)
   end)
 
+  describe("Codex usage", function()
+    local function codex_usage(input, cached, output, reasoning, cache_write)
+      return TokenUsage.from_codex({
+        input_tokens = input,
+        cached_input_tokens = cached,
+        cache_write_input_tokens = cache_write,
+        output_tokens = output,
+        reasoning_output_tokens = reasoning,
+      })
+    end
+
+    it("renders a fresh thread's aggregate as this turn", function()
+      local resolved = TokenUsage.codex_delta(codex_usage(42000, 38000, 2000, 1200, 500), nil, true)
+      local line = TokenUsage.format(resolved)
+
+      assert.equals("turn", resolved.scope)
+      assert.truthy(line:find("input 42k (cached 38k)", 1, true))
+      assert.truthy(line:find("output 2k (reasoning 1k)", 1, true))
+      assert.truthy(line:find("cache write 500", 1, true))
+      assert.is_nil(line:find("session", 1, true))
+    end)
+
+    it("subtracts the preceding cumulative marker on a resumed thread", function()
+      local previous = { input = 42000, cached = 38000, cache_write = 500, output = 2000, reasoning = 1200 }
+      local resolved = TokenUsage.codex_delta(codex_usage(100000, 91000, 3200, 1800, 800), previous, false)
+
+      assert.equals("turn", resolved.scope)
+      assert.equals(58000, resolved.input)
+      assert.equals(53000, resolved.cached)
+      assert.equals(300, resolved.cache_write)
+      assert.equals(1200, resolved.output)
+      assert.equals(600, resolved.reasoning)
+    end)
+
+    it("labels the first observed resumed aggregate as a session total", function()
+      local resolved = TokenUsage.codex_delta(codex_usage(100000, 91000, 3200, 1800), nil, false)
+      local section = TokenUsage.section(resolved)
+
+      assert.equals("session", resolved.scope)
+      assert.truthy(section:find("session input 100k", 1, true))
+      assert.truthy(section:find("Session total", 1, true))
+    end)
+
+    it("falls back to the session total when a stale marker moves backwards", function()
+      local stale = { input = 42000, cached = 38000, cache_write = 500, output = 2000, reasoning = 1200 }
+      local resolved = TokenUsage.codex_delta(codex_usage(10000, 9000, 500, 200, 100), stale, false)
+
+      assert.equals("session", resolved.scope)
+      assert.equals(10000, resolved.input)
+      assert.equals(9000, resolved.cached)
+    end)
+
+    it("round-trips exact cumulative counters through the heading marker", function()
+      local resolved = TokenUsage.codex_delta(codex_usage(100001, 91002, 3203, 1804, 805), nil, true)
+      local heading = vim.split(TokenUsage.section(resolved), "\n")[1]
+
+      assert.are.same(resolved.totals, TokenUsage.parse_codex_totals(heading))
+      assert.is_nil(TokenUsage.parse_context(heading))
+    end)
+
+    it("finds the newest Codex marker while ignoring ordinary Tokens headings", function()
+      local first = TokenUsage.codex_delta(codex_usage(100, 80, 20, 10), nil, true)
+      local second = TokenUsage.codex_delta(codex_usage(250, 200, 40, 20), first.totals, false)
+      local lines = {
+        vim.split(TokenUsage.section(first), "\n")[1],
+        "### Tokens",
+        vim.split(TokenUsage.section(second), "\n")[1],
+        "### Tokens from the model's prose",
+      }
+
+      assert.are.same(second.totals, TokenUsage.find_last_codex_totals(lines))
+    end)
+
+    it("degrades malformed optional counters to zero", function()
+      local usage = TokenUsage.from_codex({
+        input_tokens = "42",
+        cached_input_tokens = -1,
+        output_tokens = 2 / 0,
+        reasoning_output_tokens = "unknown",
+      })
+
+      assert.equals(42, usage.totals.input)
+      assert.equals(0, usage.totals.cached)
+      assert.equals(0, usage.totals.cache_write)
+      assert.equals(0, usage.totals.output)
+      assert.equals(0, usage.totals.reasoning)
+      assert.is_nil(TokenUsage.from_codex(nil))
+    end)
+  end)
+
   describe("section", function()
     it("is a heading at the same level as ### Modified Files", function()
       local acc = TokenUsage.new()

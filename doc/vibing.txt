@@ -293,8 +293,9 @@ section is not kept in sync field by field.
 
     Claude backend only — `/compact` is the CLI's own command. Refuses
     while an unsent message is waiting, since this command means exactly
-    one turn; to compact and then send, see
-    `agent.token_usage.auto_compact` in |vibing-configuration|.
+    one turn. `agent.token_usage.auto_compact` in |vibing-configuration|
+    also supports Codex by configuring its native automatic compaction;
+    that does not make this manual command available on Codex.
 
                                                        *:VibingPendingResumes*
 :VibingPendingResumes
