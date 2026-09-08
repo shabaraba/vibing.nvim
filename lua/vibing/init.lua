@@ -1,5 +1,6 @@
 local Config = require("vibing.config")
 local notify = require("vibing.core.utils.notify")
+local ProjectCodexPermissions = require("vibing.core.utils.project_codex_permissions")
 
 ---@class Vibing
 ---vibing.nvimプラグインのメインモジュール
@@ -20,6 +21,14 @@ M.adapter = nil
 function M.setup(opts)
   Config.setup(opts)
   M.config = Config.get()
+
+  -- Projects created by older vibing.nvim versions already have `.vibing/` but not the Codex
+  -- profile introduced later. Backfill it on setup without creating `.vibing/` in unrelated
+  -- directories, and never replace a file the user already owns.
+  local ok_profile, profile_error = pcall(ProjectCodexPermissions.ensure_existing, vim.fn.getcwd())
+  if not ok_profile then
+    notify.warn("Could not initialize .vibing/codex-permissions.toml: " .. tostring(profile_error))
+  end
 
   -- vibing filetype 専用の treesitter パーサは存在しないため markdown を割り当てる。
   -- これがないと vibing バッファで treesitter ハイライトも

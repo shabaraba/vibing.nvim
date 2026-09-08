@@ -1,4 +1,6 @@
 local Fs = require("vibing.core.utils.fs")
+local ProjectCodexPermissions = require("vibing.core.utils.project_codex_permissions")
+local ProjectSystemPrompt = require("vibing.core.utils.project_system_prompt")
 
 local M = {}
 
@@ -11,11 +13,12 @@ function M.generate_unique_filename()
   return string.format("chat-%s-%s-%s.md", timestamp, hrtime, random_id)
 end
 
----プロジェクト固有のsystem-prompt.mdを初期化
----中身は cli_command_builder が --append-system-prompt に連結する
+---プロジェクト固有の `.vibing/` と初期設定ファイルを作成
 ---@param project_root string プロジェクトルート
-local function ensure_system_prompt(project_root)
-  require("vibing.core.utils.project_system_prompt").ensure(project_root)
+function M.ensure_project_files(project_root)
+  project_root = project_root:gsub("/+$", "")
+  ProjectSystemPrompt.ensure(project_root)
+  ProjectCodexPermissions.ensure(project_root)
 end
 
 ---保存ディレクトリを取得
@@ -26,7 +29,7 @@ function M.get_save_directory(config)
 
   if location_type == "project" then
     local project_root = vim.fn.getcwd()
-    ensure_system_prompt(project_root)
+    M.ensure_project_files(project_root)
     return project_root .. "/.vibing/chat/"
   elseif location_type == "user" then
     return vim.fn.stdpath("data") .. "/vibing/chats/"
@@ -38,7 +41,7 @@ function M.get_save_directory(config)
     return custom_path
   else
     local project_root = vim.fn.getcwd()
-    ensure_system_prompt(project_root)
+    M.ensure_project_files(project_root)
     return project_root .. "/.vibing/chat/"
   end
 end
@@ -103,7 +106,7 @@ function M.update_filename_from_message(buf, current_path, message)
   local base_filename = filename_util.generate_from_message(message)
 
   local project_root = vim.fn.getcwd()
-  ensure_system_prompt(project_root)
+  M.ensure_project_files(project_root)
   local chat_dir = project_root .. "/.vibing/chat/"
   Fs.ensure_dir(chat_dir)
 

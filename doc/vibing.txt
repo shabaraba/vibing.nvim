@@ -135,7 +135,8 @@ actually tend to change: >lua
         mode = "acceptEdits",
         -- omit allow/deny to keep the shipped defaults
         deny = { "Bash" },
-        -- Codex only; false disables the project-local permission profile
+        -- Codex only; auto-generated with Git writes
+        -- false disables loading it
         codex_profile_file = ".vibing/codex-permissions.toml",
       },
       -- "ja", or { default = "ja", chat = "ja" }

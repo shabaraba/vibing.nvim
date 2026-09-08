@@ -1071,14 +1071,16 @@ Codex normally discovers project configuration only at `.codex/config.toml`; it 
 at an arbitrary config file. vibing.nvim bridges that gap for permissions: when
 `permissions.codex_profile_file` exists, it reads the file and passes its effective values as
 per-run `-c` overrides to both a new `codex exec` session and every `resume`. The default path is
-`.vibing/codex-permissions.toml`, relative to the request working directory. A worktree without its
-own copy falls back to the project root where Neovim started only when both paths belong to the same
-Git repository. That shares one ignored policy across the project's worktrees without leaking it
-into an unrelated project.
+`.vibing/codex-permissions.toml`, relative to the request working directory. vibing.nvim creates
+that file when it initializes the project's `.vibing/` directory, and also backfills it when the
+directory already exists but the file does not. Existing files, including empty ones, are never
+overwritten. A worktree without its own copy falls back to the project root where Neovim started
+only when both paths belong to the same Git repository. That shares one ignored policy across the
+project's worktrees without leaking it into an unrelated project.
 
 The file uses Codex's normal permission-profile table form. Values must be single-line TOML
-scalars; this covers the current permission schema while keeping the loader permission-only. For
-example, this allows normal workspace edits, Git metadata writes, and network access:
+scalars; this covers the current permission schema while keeping the loader permission-only. The
+generated default allows normal workspace edits and Git metadata writes:
 
 ```toml
 default_permissions = "vibing-project"
@@ -1089,16 +1091,22 @@ extends = ":workspace"
 
 [permissions.vibing-project.filesystem.":workspace_roots"]
 ".git" = "write"
+```
 
+Network access remains disabled by default. Add this when the project needs it:
+
+```toml
 [permissions.vibing-project.network]
 enabled = true
 ```
 
 The loader accepts only `default_permissions`, `[permissions.*]`, and
 `features.network_proxy`. It rejects `:danger-full-access`; select `bypassPermissions` explicitly
-when full access is genuinely intended. An empty or missing file preserves the previous Codex
-behavior (`workspace-write` for a new ordinary session). `plan` and lightweight utility calls stay
-read-only, while explicit `bypassPermissions` still wins over the project profile.
+when full access is genuinely intended. Deleting the generated file causes it to be recreated on
+the next project initialization; leave it empty to preserve the previous Codex behavior
+(`workspace-write` for a new ordinary session), or set `codex_profile_file = false` to disable
+loading it. `plan` and lightweight utility calls stay read-only, while explicit
+`bypassPermissions` still wins over the project profile.
 
 In a linked Git worktree, `.git` is a file that points outside the checkout. When the selected
 profile grants `.git = "write"`, vibing.nvim resolves Git's common metadata directory and adds the

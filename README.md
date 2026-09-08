@@ -286,7 +286,7 @@ require("vibing").setup({
     mode = "acceptEdits",          -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"
     allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput" },
     deny = { "Bash" },
-    codex_profile_file = ".vibing/codex-permissions.toml", -- false disables project Codex profiles
+    codex_profile_file = ".vibing/codex-permissions.toml", -- false disables loading the generated profile
   },
   language = nil,                  -- e.g. "ja", or { default = "ja", chat = "ja" }
 })
@@ -295,8 +295,9 @@ require("vibing").setup({
 The default permissions shown above are used as a **template** when creating new chat files; each
 chat file's frontmatter carries its own permissions, which are what's enforced at runtime.
 
-For the Codex backend, an optional `.vibing/codex-permissions.toml` can narrow or extend the OS
-sandbox for that project (for example, permit writes to `.git` without using full bypass mode).
+For the Codex backend, vibing.nvim creates `.vibing/codex-permissions.toml` when it initializes a
+project. Its default profile permits workspace and Git metadata writes without using full bypass
+mode; edit the file to narrow or extend the OS sandbox. Existing files are never overwritten.
 See [Project-local Codex permission profiles](./handbook/configuration.md#project-local-codex-permission-profiles).
 
 **Full reference:** every option (window details, UI/gradient/tool markers, diff backends,
