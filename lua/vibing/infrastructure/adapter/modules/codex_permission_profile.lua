@@ -544,6 +544,10 @@ end
 local function is_git_tracked(path)
   local absolute = vim.fn.fnamemodify(path, ":p")
   local directory = vim.fn.fnamemodify(absolute, ":h")
+  if #vim.fs.find(".git", { path = directory, upward = true }) == 0 then
+    return false
+  end
+
   local ok_system, process = pcall(vim.system, {
     "git",
     "ls-files",
@@ -552,12 +556,30 @@ local function is_git_tracked(path)
     absolute,
   }, { cwd = directory, text = true })
   if not ok_system then
-    return false
+    error(path .. ": could not verify whether the Codex permission profile is Git-tracked", 0)
   end
   local ok_wait, result = pcall(function()
     return process:wait()
   end)
-  return ok_wait and type(result) == "table" and result.code == 0
+  if not ok_wait or type(result) ~= "table" or type(result.code) ~= "number" then
+    error(path .. ": could not verify whether the Codex permission profile is Git-tracked", 0)
+  end
+  if result.code == 0 then
+    return true
+  end
+  if result.code == 1 then
+    return false
+  end
+  local detail = trim(result.stderr)
+  error(
+    string.format(
+      "%s: could not verify whether the Codex permission profile is Git-tracked (git exited %d%s)",
+      path,
+      result.code,
+      detail == "" and "" or ": " .. detail
+    ),
+    0
+  )
 end
 
 --- Locate the project file. A worktree-local file wins; because `.vibing/` is normally ignored

@@ -310,6 +310,19 @@ extends = ":workspace"
     assert.same({ "-c", 'default_permissions=":read-only"' }, profile.args(root, config))
   end)
 
+  it("fails closed when Git cannot classify a profile inside a repository", function()
+    config.permissions.codex_allow_tracked_profile = false
+    write_at(root, 'default_permissions = ":read-only"')
+    vim.fn.mkdir(root .. "/.git", "p")
+    vim.system = function()
+      error("git unavailable")
+    end
+
+    expect_error("could not verify whether the Codex permission profile is Git-tracked", function()
+      profile.args(root, config)
+    end)
+  end)
+
   it("accepts a safe built-in profile without a custom definition", function()
     write_at(root, 'default_permissions = ":read-only"')
     assert.same({ "-c", 'default_permissions=":read-only"' }, profile.args(root, config))
