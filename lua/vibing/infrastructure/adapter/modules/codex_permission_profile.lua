@@ -19,8 +19,9 @@ local M = {}
 local MAX_BYTES = 64 * 1024
 local git_common_dir_cache = {}
 
---- Memo of the last compiled result per resolved path, so unchanged content is not re-parsed by
---- the hand-rolled TOML parser and does not re-spawn `git rev-parse` on every ordinary turn
+--- Memo of the last compiled result per resolved path and request cwd, so unchanged content is not
+--- re-parsed by the hand-rolled TOML parser and does not re-spawn `git rev-parse` on every ordinary
+--- turn
 --- (`M.args` runs on every one, new session and resume alike). The file is still read every call
 --- -- keyed on file *content*, not mtime/size: mtime has only second resolution, and two edits
 --- within the same second that happen to leave the byte count unchanged (`"write"` -> `"deny"`)
@@ -504,25 +505,25 @@ end
 --- and absent from worktrees, fall back to the root Neovim was started in when it belongs to the
 --- same Git repository.
 ---
---- Returns the directory the file was actually found relative to, alongside the path itself: a
---- nil/empty `cwd` (an ordinary chat with no `working_dir` frontmatter) is substituted with
---- `nvim_root` here, and the caller needs that same substituted value -- not the original nil --
---- to resolve `.git` write access to the right worktree later.
+--- Returns the effective command cwd alongside the path. It may differ from the directory holding
+--- the file when a worktree inherits the Neovim root's profile, and must remain the worktree so
+--- `.git` write access is remapped to its shared Git directory. A nil/empty cwd is replaced by the
+--- Neovim root.
 --- @param cwd string|nil
 --- @param configured_path string
 --- @return string|nil path
 --- @return string|nil effective_cwd
 local function resolve_path(cwd, configured_path)
+  local nvim_root = vim.fn.getcwd(-1, -1)
+  local effective = cwd and cwd ~= "" and cwd or nvim_root
   if configured_path:sub(1, 1) == "/" or configured_path:match("^~") then
     local absolute = vim.fn.expand(configured_path)
     if vim.fn.filereadable(absolute) == 1 then
-      return absolute, cwd
+      return absolute, effective
     end
-    return nil, cwd
+    return nil, effective
   end
 
-  local nvim_root = vim.fn.getcwd(-1, -1)
-  local effective = cwd and cwd ~= "" and cwd or nvim_root
   local local_path = join(effective, configured_path)
   if vim.fn.filereadable(local_path) == 1 then
     return local_path, effective
@@ -536,7 +537,7 @@ local function resolve_path(cwd, configured_path)
       and git_common_dir(effective) ~= nil
       and git_common_dir(effective) == git_common_dir(nvim_root)
     then
-      return root_path, nvim_root
+      return root_path, effective
     end
   end
   return nil, effective
@@ -566,14 +567,17 @@ function M.args(cwd, config)
     error(path .. ": could not read Codex permission profile", 0)
   end
 
-  local cached = file_cache[path]
+  -- Compilation may add a cwd-specific absolute Git common-directory rule. A path-only cache
+  -- would let whichever worktree called first leak its rendered permissions into every other cwd.
+  local cache_key = path .. "\0" .. effective_cwd
+  local cached = file_cache[cache_key]
   if cached and vim.deep_equal(cached.lines, lines) then
     return vim.deepcopy(cached.args)
   end
 
   local root, has_content = parse(lines, path)
   if not has_content then
-    file_cache[path] = { lines = lines, args = {} }
+    file_cache[cache_key] = { lines = lines, args = {} }
     return {}
   end
   -- effective_cwd, not the raw `cwd` argument: a chat with no `working_dir` frontmatter passes
@@ -581,7 +585,7 @@ function M.args(cwd, config)
   -- found in. Passing `cwd` through unchanged would make the `.git` worktree remap below silently
   -- no-op for exactly that (common) case.
   local args = compile(root, path, effective_cwd)
-  file_cache[path] = { lines = lines, args = args }
+  file_cache[cache_key] = { lines = lines, args = args }
   return vim.deepcopy(args)
 end
 

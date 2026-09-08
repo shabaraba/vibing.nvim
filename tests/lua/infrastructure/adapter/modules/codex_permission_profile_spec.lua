@@ -189,6 +189,31 @@ extends = "git-base"
     )
   end)
 
+  it("does not reuse a main-checkout cache entry for a linked worktree", function()
+    local worktree = root .. "/.vibing/worktrees/feature-x"
+    vim.fn.mkdir(worktree, "p")
+    write_at(root, [[
+default_permissions = "project-edit"
+[permissions.project-edit]
+extends = ":workspace"
+[permissions.project-edit.filesystem.":workspace_roots"]
+".git" = "write"
+]])
+    vim.system = function(_, _)
+      return {
+        wait = function()
+          return { code = 0, stdout = root .. "/.git\n" }
+        end,
+      }
+    end
+
+    local main_permissions = override_map(profile.args(root, config)).permissions
+    assert.is_nil(main_permissions:find('"' .. root .. '/.git"', 1, true))
+
+    local worktree_permissions = override_map(profile.args(worktree, config)).permissions
+    assert.is_not_nil(worktree_permissions:find('"' .. root .. '/.git" = "write"', 1, true))
+  end)
+
   it("does nothing when the file is absent, empty, or disabled", function()
     assert.same({}, profile.args(root, config))
     write_at(root, "# no profile yet")
