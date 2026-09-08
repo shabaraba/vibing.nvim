@@ -1079,6 +1079,12 @@ permissions = {
   ask = {},              -- Tools requiring confirmation before each use
 
   rules = {},            -- Granular rules — see next section
+
+  codex_profile_file = ".vibing/codex-permissions.toml",
+                         -- Codex only: project-local OS sandbox profile.
+                         -- Set false to disable it.
+  codex_allow_tracked_profile = false,
+                         -- Set true only after reviewing a Git-tracked profile.
 }
 ```
 
@@ -1091,6 +1097,72 @@ Two built-in behaviors to be aware of:
 - `Read`, `Skill`, and `StructuredOutput` are **always allowed** regardless of the allow list
   (they can still be blocked via `deny`).
 - `Skill` is automatically appended to `allow` unless you put it in `deny` or `ask`.
+
+### Project-local Codex permission profiles
+
+Codex normally discovers project configuration only at `.codex/config.toml`; it cannot be pointed
+at an arbitrary config file. vibing.nvim bridges that gap for permissions: when
+`permissions.codex_profile_file` exists, it reads the file and passes its effective values as
+per-run `-c` overrides to both a new `codex exec` session and every `resume`. The default path is
+`.vibing/codex-permissions.toml`, relative to the request working directory. vibing.nvim creates
+that file when it initializes the project's `.vibing/` directory, and also backfills it when the
+directory already exists but the file does not. Existing files, including empty ones, are never
+overwritten. A worktree without its own copy falls back to the project root where Neovim started
+only when both paths belong to the same Git repository. That shares one ignored policy across the
+project's worktrees without leaking it into an unrelated project.
+
+The file uses Codex's normal permission-profile table form. Values must be single-line TOML
+scalars; this covers the current permission schema while keeping the loader permission-only. The
+generated default allows normal workspace edits and Git metadata writes:
+
+```toml
+default_permissions = "vibing-project"
+
+[permissions.vibing-project]
+description = "Workspace editing with Git metadata access"
+extends = ":workspace"
+
+[permissions.vibing-project.filesystem.":workspace_roots"]
+".git" = "write"
+```
+
+Network access remains disabled by default. Add this when the project needs it:
+
+```toml
+[permissions.vibing-project.network]
+enabled = true
+```
+
+The loader accepts only `default_permissions`, `[permissions.*]`, and
+`features.network_proxy`. It rejects `:danger-full-access`; select `bypassPermissions` explicitly
+when full access is genuinely intended. Deleting the generated file causes it to be recreated on
+the next project initialization; leave it empty to preserve the previous Codex behavior
+(`workspace-write` for a new ordinary session), or set `codex_profile_file = false` to disable
+loading it. `plan` and lightweight utility calls stay read-only, while explicit
+`bypassPermissions` still wins over the project profile.
+
+In a linked Git worktree, `.git` is a file that points outside the checkout. When the selected
+profile grants `.git = "write"`, vibing.nvim resolves Git's common metadata directory and adds the
+same write rule there. This lets `git add`, `commit`, branch and worktree operations behave the same
+in a main checkout and a linked worktree without granting write access to the main working tree.
+
+Permission files are read locally and converted into deterministically sorted command arguments;
+their path and source text are not inserted into the model prompt. Keeping the effective profile
+unchanged therefore keeps the permission portion of the prompt-cache prefix unchanged. Editing
+the effective profile can change that prefix, as it should. The file is read before each ordinary
+turn, so edits take effect without restarting Neovim.
+
+Two boundaries remain separate:
+
+- Do not keep `sandbox_mode` or `sandbox_workspace_write` in any loaded Codex config, because
+  Codex gives those legacy settings precedence over permission profiles.
+- The profile controls Codex's OS sandbox. vibing.nvim's tool permissions still apply, so `Bash`
+  must also be allowed in the chat before Codex can run Git commands.
+
+This file can grant local filesystem and network access. `.vibing/` is normally git-ignored, and
+locally generated, untracked profiles load automatically. A repository can nevertheless force-add
+an ignored file, so Git-tracked profiles fail closed by default. After reviewing one, set
+`permissions.codex_allow_tracked_profile = true` to trust it explicitly.
 
 ## Granular Permission Rules
 

@@ -66,6 +66,8 @@
 ---@field ask string[] 確認が必要なツールリスト（例: {"Bash"}、使用前に承認を要求）
 ---@field rules Vibing.PermissionRule[]? 粒度の細かい権限制御ルール（オプション）
 ---@field default_deny_rules boolean? 破壊的Bashコマンド（`rm -rf /`、`sudo`、`dd`、`chmod -R 777`、main/masterへのforce push等）の同梱denyルールを有効にするか（デフォルト: true）。`core/constants/destructive_commands.lua`を参照
+---@field codex_profile_file string|false? Codexのプロジェクト権限プロファイル。リクエストcwdからの相対パスで、同一Gitリポジトリのworktreeに無ければNeovim起動ルートへフォールバックする（デフォルト: ".vibing/codex-permissions.toml"、falseで無効）
+---@field codex_allow_tracked_profile boolean? Git追跡済みのCodexプロジェクト権限プロファイルを明示的に信頼するか（デフォルト: false）
 
 ---@class Vibing.AutoResumeOnLimitConfig
 ---使用量リミット自動継続設定
@@ -494,6 +496,8 @@ M.defaults = {
     ask = {},
     rules = {},
     default_deny_rules = true,
+    codex_profile_file = ".vibing/codex-permissions.toml",
+    codex_allow_tracked_profile = false,
   },
   grok = {
     executable = "auto",
@@ -568,6 +572,21 @@ function M.setup(opts)
   end
 
   if M.options.permissions then
+    local profile_file = M.options.permissions.codex_profile_file
+    if profile_file ~= false and (type(profile_file) ~= "string" or profile_file == "") then
+      notify.warn(
+        "Invalid permissions.codex_profile_file: expected a non-empty path or false. Resetting to default."
+      )
+      M.options.permissions.codex_profile_file = ".vibing/codex-permissions.toml"
+    end
+
+    if type(M.options.permissions.codex_allow_tracked_profile) ~= "boolean" then
+      notify.warn(
+        "Invalid permissions.codex_allow_tracked_profile: expected a boolean. Resetting to false."
+      )
+      M.options.permissions.codex_allow_tracked_profile = false
+    end
+
     -- Validate permission mode
     local valid_modes = {
       default = true,

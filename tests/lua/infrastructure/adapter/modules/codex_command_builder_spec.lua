@@ -208,6 +208,91 @@ describe("codex_command_builder", function()
     end)
   end)
 
+  describe("project-local Codex permission profile", function()
+    local root
+    local config
+
+    before_each(function()
+      root = vim.fn.tempname()
+      vim.fn.mkdir(root .. "/.vibing", "p")
+      vim.fn.writefile({
+        'default_permissions = "project-edit"',
+        "[permissions.project-edit]",
+        'extends = ":workspace"',
+        '[permissions.project-edit.filesystem.":workspace_roots"]',
+        '".git" = "write"',
+      }, root .. "/.vibing/codex-permissions.toml")
+      config = {
+        permissions = { codex_profile_file = ".vibing/codex-permissions.toml" },
+        agent = { plugins = { self = false, project_dir = false } },
+      }
+    end)
+
+    after_each(function()
+      vim.fn.delete(root, "rf")
+    end)
+
+    it("replaces -s with config overrides on a new session", function()
+      local cmd = codex_command_builder.build("hi", { cwd = root }, nil, config, nil)
+      local overrides = config_overrides(cmd)
+      assert.is_nil(find_flag(cmd, "-s"))
+      assert.is_true(vim.tbl_contains(overrides, 'default_permissions="project-edit"'))
+      assert.is_true(vim.tbl_contains(
+        overrides,
+        'permissions={ project-edit = { extends = ":workspace", filesystem = { ":workspace_roots" = { ".git" = "write" } } } }'
+      ))
+    end)
+
+    it("is repeated unchanged when resuming because config is per process", function()
+      local fresh = codex_command_builder.build("hi", { cwd = root }, nil, config, nil)
+      local resumed = codex_command_builder.build("again", { cwd = root }, "thread-1", config, nil)
+      assert.same(config_overrides(fresh), config_overrides(resumed))
+    end)
+
+    it("does not enter a lightweight utility call", function()
+      local cmd = codex_command_builder.build("hi", { cwd = root, lightweight = true }, nil, config, nil)
+      local overrides = config_overrides(cmd)
+      assert.is_false(vim.tbl_contains(overrides, 'default_permissions="project-edit"'))
+      assert.is_true(vim.tbl_contains(overrides, 'sandbox_mode="read-only"'))
+    end)
+
+    it("does not weaken plan mode", function()
+      local fresh = codex_command_builder.build(
+        "hi",
+        { cwd = root, permission_mode = "plan" },
+        nil,
+        config,
+        nil
+      )
+      assert.equals("read-only", fresh[find_flag(fresh, "-s") + 1])
+      assert.is_false(vim.tbl_contains(config_overrides(fresh), 'default_permissions="project-edit"'))
+
+      local resumed = codex_command_builder.build(
+        "hi",
+        { cwd = root, permission_mode = "plan" },
+        "thread-1",
+        config,
+        nil
+      )
+      assert.is_true(vim.tbl_contains(config_overrides(resumed), 'sandbox_mode="read-only"'))
+      assert.is_false(vim.tbl_contains(config_overrides(resumed), 'default_permissions="project-edit"'))
+    end)
+
+    it("keeps bypassPermissions explicit on new and resumed sessions", function()
+      for _, session_id in ipairs({ false, "thread-1" }) do
+        local cmd = codex_command_builder.build(
+          "hi",
+          { cwd = root, permission_mode = "bypassPermissions" },
+          session_id or nil,
+          config,
+          nil
+        )
+        assert.is_not_nil(find_flag(cmd, "--dangerously-bypass-approvals-and-sandbox"))
+        assert.is_false(vim.tbl_contains(config_overrides(cmd), 'default_permissions="project-edit"'))
+      end
+    end)
+  end)
+
   -- Codex has no `--plugin-dir`; the plugins ride along as `-c` overrides instead
   -- (codex_plugin_config). What is pinned here is *where* they go: on every ordinary call,
   -- resumed or not, and never on a lightweight one.
