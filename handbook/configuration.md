@@ -407,7 +407,8 @@ its 10-second timeout first.
 
 ### Token Usage
 
-Every Claude and Codex turn ends with a section naming what it cost, alongside
+When `token_usage.enabled` is true, every Claude and Codex turn ends with a section naming what
+it cost, alongside
 `### Modified Files`. Claude exposes the request-level split:
 
 ```markdown

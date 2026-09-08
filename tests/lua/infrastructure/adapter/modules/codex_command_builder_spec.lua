@@ -173,6 +173,12 @@ describe("codex_command_builder", function()
       assert.is_true(vim.tbl_contains(config_overrides(cmd), "model_auto_compact_token_limit=300000"))
     end)
 
+    it("clamps a positive fractional auto_compact threshold below one to one token", function()
+      local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 0.5 } } } }
+      local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), "model_auto_compact_token_limit=1"))
+    end)
+
     it("keeps the native threshold on resumed threads", function()
       local config = { agent = { token_usage = { auto_compact = { enabled = true, at = 300000 } } } }
       local cmd = codex_command_builder.build("hi", {}, "thread-1", config, nil)

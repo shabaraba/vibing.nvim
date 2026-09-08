@@ -51,10 +51,7 @@ local function append_auto_compact(cmd, config)
 
   -- Codex expects an integer token count. config.lua documents a number rather than an integer,
   -- so make a fractional value deterministic instead of handing the CLI invalid TOML.
-  at = math.floor(at)
-  if at <= 0 then
-    return
-  end
+  at = math.max(1, math.floor(at))
 
   table.insert(cmd, "-c")
   table.insert(cmd, string.format("model_auto_compact_token_limit=%d", at))
