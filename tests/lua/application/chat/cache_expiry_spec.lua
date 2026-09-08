@@ -115,6 +115,25 @@ describe("cache_expiry", function()
       assert.is_nil(CacheExpiry.read_last_turn(chat.buf))
     end)
 
+    it("does not invent a context size from a Codex Tokens section", function()
+      local usage = TokenUsage.codex_delta(TokenUsage.from_codex({
+        input_tokens = 205000,
+        cached_input_tokens = 180000,
+        output_tokens = 5000,
+        reasoning_output_tokens = 3000,
+      }), nil, true)
+      local lines = {
+        string.format("## User <!-- %s -->", stamp(5060)),
+        "question",
+        string.format("## Assistant <!-- %s -->", stamp(5000)),
+        "answer",
+      }
+      vim.list_extend(lines, vim.split(TokenUsage.section(usage), "\n", { plain = true }))
+      vim.list_extend(lines, { "## User <!-- unsent -->", "next" })
+
+      assert.is_nil(CacheExpiry.read_last_turn(make_buffer(lines).buf))
+    end)
+
     it("looks past a reply that quotes a bare `## Assistant` line", function()
       -- `parse_header`'s legacy branch matches it anywhere at column 0, so stopping at the first
       -- Assistant-looking line from the end would find the quote, get no timestamp, and give up.
@@ -157,7 +176,7 @@ describe("cache_expiry", function()
     end)
 
     it("does not borrow a Tokens section from an earlier turn", function()
-      -- A backend that reports no usage (codex/grok) must not read as "still 205k".
+      -- A backend/turn that reports no context must not read as "still 205k".
       local lines = {
         string.format("## User <!-- %s -->", stamp(9000)),
         "first",

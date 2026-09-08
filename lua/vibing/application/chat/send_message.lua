@@ -497,6 +497,30 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
 end
 
+---バッファ末尾から直近のCodex累計マーカーを読む
+---
+---通常は直前の返答にあるので小さいtailだけで見つかる。返答が長い場合だけ倍々に広げ、巨大な
+---チャット全文を毎ターンLuaテーブルへコピーしない。`chat.lua`のcontext_size走査と同じ形。
+---@param bufnr number|nil
+---@return Vibing.CodexTokenTotals|nil
+local function read_last_codex_totals(bufnr)
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+    return nil
+  end
+
+  local TokenUsage = require("vibing.core.utils.token_usage")
+  local total_lines = vim.api.nvim_buf_line_count(bufnr)
+  local chunk_size = 500
+  while true do
+    local from = math.max(0, total_lines - chunk_size)
+    local totals = TokenUsage.find_last_codex_totals(vim.api.nvim_buf_get_lines(bufnr, from, total_lines, false))
+    if totals or from == 0 then
+      return totals
+    end
+    chunk_size = chunk_size * 2
+  end
+end
+
 ---このターンのトークン内訳をチャットに出し、コンテキストが育っていれば直下に警告を添える
 ---
 ---出すのは「返答の長さ」ではなく「リクエスト数 × コンテキストサイズ」。ツール1回ごとに
@@ -504,8 +528,10 @@ end
 ---呼べばそのターンだけで2Mトークン読んでいる。自動コンパクトはコンテキスト上限の手前
 ---（実測で約93万）でしか動かないため、ここまで育つ過程は誰も止めない。
 ---
----使用量を報告しないバックエンド（codex等）では `_token_usage` が無く、`format` が nil を
----返して何も出ない。呼び出し側は pcall しているので、ここでの失敗がターンを壊すことはない。
+---使用量を報告しないバックエンドでは `_token_usage` が無く、`format` が nil を返して何も
+---出ない。Codexはセッション累計だけを返すため、直前に書いた見出しの正確な累計との差を取り、
+---通常はターン単位に戻してから表示する。呼び出し側はpcallしているので、ここでの失敗が
+---ターンを壊すことはない。
 ---@param response table
 ---@param callbacks table
 ---@param config Vibing.Config|nil
@@ -523,6 +549,18 @@ function M._report_token_usage(response, callbacks, config, started_fresh_sessio
   local warn_context = (settings and tonumber(settings.warn_context)) or TokenUsage.DEFAULT_WARN_CONTEXT
 
   local acc = response._token_usage
+  if type(acc) == "table" and acc.backend == "codex" then
+    local bufnr = callbacks.get_bufnr and callbacks.get_bufnr()
+    local previous = read_last_codex_totals(bufnr)
+    acc = TokenUsage.codex_delta(acc, previous, started_fresh_session)
+
+    local section = TokenUsage.section(acc)
+    if section then
+      callbacks.append_chunk("\n\n" .. section)
+    end
+    return
+  end
+
   if not TokenUsage.format(acc) then
     -- 報告できるものが無いターン。前ターン記録も更新しない — 更新すると、次のターンが
     -- 「何も起きなかった時刻」との差でTTLを判定してしまう

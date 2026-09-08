@@ -132,6 +132,161 @@ M.humanize = humanize
 --- @deprecated Use `M.humanize`; kept so existing callers keep working.
 M._humanize = humanize
 
+---@class Vibing.CodexTokenTotals
+---@field input number cumulative input tokens reported by the Codex thread
+---@field cached number cumulative cached-input tokens reported by the Codex thread
+---@field cache_write number cumulative cache-write tokens reported by the Codex thread
+---@field output number cumulative output tokens reported by the Codex thread
+---@field reasoning number cumulative reasoning-output tokens reported by the Codex thread
+
+---@class Vibing.CodexTokenUsage
+---@field backend "codex"
+---@field totals Vibing.CodexTokenTotals exact cumulative counters carried by `turn.completed`
+---@field input number counters to display (normally the delta from the preceding section)
+---@field cached number
+---@field cache_write number
+---@field output number
+---@field reasoning number
+---@field scope "turn"|"session" whether the displayed counters are a delta or a cumulative total
+
+--- Coerce one counter from an external payload without letting a malformed usage event break the
+--- turn footer. Codex's Rust side emits non-negative integers, but custom providers and older CLI
+--- versions still cross this boundary, so accept numeric strings and make every other shape zero.
+---@param value any
+---@return number
+local function counter(value)
+  local number = tonumber(value)
+  if not number or number < 0 or number ~= number or number == math.huge then
+    return 0
+  end
+  return math.floor(number)
+end
+
+--- Turn Codex's terminal `turn.completed.usage` payload into the common reporter's tagged value.
+---
+--- Unlike Claude's stream, Codex exposes one aggregate after the turn, and on a resumed thread the
+--- aggregate is cumulative for the session. `M.codex_delta` resolves that cumulative value just
+--- before it is written, after the previous footer can be read from the chat buffer.
+---@param usage table|nil
+---@return Vibing.CodexTokenUsage|nil
+function M.from_codex(usage)
+  if type(usage) ~= "table" then
+    return nil
+  end
+
+  local totals = {
+    input = counter(usage.input_tokens),
+    cached = counter(usage.cached_input_tokens),
+    cache_write = counter(usage.cache_write_input_tokens),
+    output = counter(usage.output_tokens),
+    reasoning = counter(usage.reasoning_output_tokens),
+  }
+  return {
+    backend = "codex",
+    totals = totals,
+    input = totals.input,
+    cached = totals.cached,
+    cache_write = totals.cache_write,
+    output = totals.output,
+    reasoning = totals.reasoning,
+    scope = "session",
+  }
+end
+
+--- Read the exact cumulative Codex counters out of a footer heading written by `M.section`.
+--- All fields are required even when zero: accepting a partial marker would make a CLI/schema
+--- change look like a valid delta while silently under-counting one token class.
+---@param line string
+---@return Vibing.CodexTokenTotals|nil
+function M.parse_codex_totals(line)
+  if type(line) ~= "string" or not line:match("^###%s+Tokens%s+<!%-%-") then
+    return nil
+  end
+
+  local input = line:match("codex%-input=(%d+)")
+  local cached = line:match("codex%-cached=(%d+)")
+  local cache_write = line:match("codex%-cache%-write=(%d+)")
+  local output = line:match("codex%-output=(%d+)")
+  local reasoning = line:match("codex%-reasoning=(%d+)")
+  if not input or not cached or not cache_write or not output or not reasoning then
+    return nil
+  end
+
+  return {
+    input = tonumber(input),
+    cached = tonumber(cached),
+    cache_write = tonumber(cache_write),
+    output = tonumber(output),
+    reasoning = tonumber(reasoning),
+  }
+end
+
+--- Find the most recently displayed Codex cumulative counters in a chat.
+---
+--- This deliberately means "last displayed", not "previous assistant turn". If token display was
+--- temporarily disabled, the next difference spans that hidden interval and is still truthful;
+--- calling it the current turn would not be. In the ordinary default-on path the two are the same.
+---@param lines string[]|nil
+---@return Vibing.CodexTokenTotals|nil
+function M.find_last_codex_totals(lines)
+  if type(lines) ~= "table" then
+    return nil
+  end
+  for index = #lines, 1, -1 do
+    local totals = M.parse_codex_totals(lines[index])
+    if totals then
+      return totals
+    end
+  end
+  return nil
+end
+
+--- Resolve cumulative Codex counters to what this footer should display.
+---
+--- A fresh thread starts at zero, so its first aggregate is already this turn's usage. A resumed
+--- thread needs the preceding exact marker. Without one (the first reply after upgrading, for
+--- example), the cumulative values remain useful but are explicitly labelled as a session total.
+--- Any counter moving backwards means the baseline belongs to a different/reset thread, and takes
+--- the same safe cumulative fallback.
+---@param usage Vibing.CodexTokenUsage
+---@param previous Vibing.CodexTokenTotals|nil
+---@param started_fresh_session boolean|nil
+---@return Vibing.CodexTokenUsage
+function M.codex_delta(usage, previous, started_fresh_session)
+  if type(usage) ~= "table" or usage.backend ~= "codex" or type(usage.totals) ~= "table" then
+    return usage
+  end
+
+  local totals = usage.totals
+  local baseline = started_fresh_session == true and {
+    input = 0,
+    cached = 0,
+    cache_write = 0,
+    output = 0,
+    reasoning = 0,
+  } or previous
+
+  local fields = { "input", "cached", "cache_write", "output", "reasoning" }
+  if type(baseline) == "table" then
+    for _, field in ipairs(fields) do
+      if type(baseline[field]) ~= "number" or totals[field] < baseline[field] then
+        baseline = nil
+        break
+      end
+    end
+  end
+
+  local resolved = {
+    backend = "codex",
+    totals = totals,
+    scope = baseline and "turn" or "session",
+  }
+  for _, field in ipairs(fields) do
+    resolved[field] = totals[field] - (baseline and baseline[field] or 0)
+  end
+  return resolved
+end
+
 --- Read the `context` figure back out of a written `### Tokens` section.
 ---
 --- The accumulator is thrown away when the turn ends, so the section text is the only record of
@@ -174,6 +329,21 @@ end
 --- @param acc Vibing.TokenUsage|nil
 --- @return string|nil
 function M.format(acc)
+  if type(acc) == "table" and acc.backend == "codex" then
+    if type(acc.totals) ~= "table" then
+      return nil
+    end
+    local prefix = acc.scope == "session" and "session " or ""
+    local parts = {
+      prefix .. "input " .. humanize(acc.input) .. " (cached " .. humanize(acc.cached) .. ")",
+      "output " .. humanize(acc.output) .. " (reasoning " .. humanize(acc.reasoning) .. ")",
+    }
+    if (acc.cache_write or 0) > 0 then
+      table.insert(parts, "cache write " .. humanize(acc.cache_write))
+    end
+    return table.concat(parts, " · ")
+  end
+
   if type(acc) ~= "table" or (acc.requests or 0) == 0 then
     return nil
   end
@@ -266,16 +436,16 @@ end
 --- -- the two are the same kind of thing, a per-turn footer about what the turn did, and a reader
 --- scanning headings should find the cost as readily as the file list.
 ---
---- The heading carries the exact context size in a marker comment. The visible line is rounded
---- for reading, and the pre-send cache gate (`application/chat/cache_expiry`) and the auto-compact
---- gate (`application/chat/auto_compact`) both need to compare the real figure against a threshold
---- after a restart, when nothing but this text is left. Renaming or reordering the visible metrics
---- -- or adding a line under them, as `extras` does -- is therefore safe; dropping the marker is
---- not, and neither is putting anything ahead of the heading.
+--- Claude's heading carries the exact context size in a marker comment. The visible line is
+--- rounded for reading, and the pre-send cache gate (`application/chat/cache_expiry`) and the
+--- auto-compact gate (`application/chat/auto_compact`) both need to compare the real figure against
+--- a threshold after a restart, when nothing but this text is left. Codex instead carries exact
+--- cumulative counters so the next turn can derive a delta. Renaming or reordering either visible
+--- line is safe; dropping its marker is not, and neither is putting anything ahead of the heading.
 ---
 --- The rewrite note comes before the context warning: it says what this turn actually did, while
 --- the warning is standing advice that repeats on every large turn.
---- @param acc Vibing.TokenUsage|nil
+--- @param acc Vibing.TokenUsage|Vibing.CodexTokenUsage|nil
 --- @param warn_context number|nil
 --- @param extras { floor: string|nil, rewrite: string|nil }|nil
 --- @return string|nil
@@ -283,6 +453,24 @@ function M.section(acc, warn_context, extras)
   local line = M.format(acc)
   if not line then
     return nil
+  end
+
+  if acc.backend == "codex" then
+    local totals = acc.totals
+    local section = string.format(
+      "### Tokens <!-- codex-input=%d codex-cached=%d codex-cache-write=%d codex-output=%d codex-reasoning=%d -->\n\n%s\n",
+      totals.input,
+      totals.cached,
+      totals.cache_write,
+      totals.output,
+      totals.reasoning,
+      line
+    )
+    if acc.scope == "session" then
+      section = section
+        .. "\n> ℹ️ **Session total.** Per-turn deltas start with the next Codex reply.\n"
+    end
+    return section
   end
 
   extras = extras or {}

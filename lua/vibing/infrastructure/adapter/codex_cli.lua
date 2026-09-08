@@ -178,6 +178,9 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
         vim.fn.timer_stop(timeout_timer)
         timeout_timer = nil
       end
+      -- `turn.completed` is Codex's only usage event. Attach it even though the process exit
+      -- builds the response independently, matching the Claude adapter's accumulator handoff.
+      response._token_usage = event_context.tokenUsage
       on_done(response)
     end
   end

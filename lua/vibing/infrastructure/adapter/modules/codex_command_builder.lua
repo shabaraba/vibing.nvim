@@ -6,6 +6,7 @@ local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
 local CodexPluginConfig = require("vibing.infrastructure.adapter.modules.codex_plugin_config")
 local CodexPermissionProfile = require("vibing.infrastructure.adapter.modules.codex_permission_profile")
+local TokenUsage = require("vibing.core.utils.token_usage")
 
 local M = {}
 
@@ -13,6 +14,36 @@ local binary_path = CommonBuilder.binary_resolver(
   "codex",
   "Codex CLI not found in PATH. Please install codex-cli."
 )
+
+--- Apply vibing.nvim's shared auto_compact threshold through Codex's native compaction setting.
+---
+--- Claude needs a separate `/compact` turn because that is the seam its headless CLI exposes.
+--- Codex already owns compaction inside the running turn, including the context accounting that
+--- its JSONL stream does not report to vibing.nvim, so inserting prompt text here would be both
+--- too late and the wrong protocol. A per-process `-c` override reaches new and resumed threads
+--- alike without writing to the user's config.toml.
+--- @param cmd string[]
+--- @param config Vibing.Config|nil
+local function append_auto_compact(cmd, config)
+  local agent = type(config) == "table" and config.agent or nil
+  local token_usage = type(agent) == "table" and agent.token_usage or nil
+  local auto_compact = type(token_usage) == "table" and token_usage.auto_compact or nil
+  if type(auto_compact) ~= "table" or not auto_compact.enabled then
+    return
+  end
+
+  local at = tonumber(auto_compact.at) or TokenUsage.DEFAULT_AUTO_COMPACT_AT
+  if at <= 0 or at ~= at or at == math.huge then
+    return
+  end
+
+  -- Codex expects an integer token count. config.lua documents a number rather than an integer,
+  -- so make a fractional value deterministic instead of handing the CLI invalid TOML.
+  at = math.max(1, math.floor(at))
+
+  table.insert(cmd, "-c")
+  table.insert(cmd, string.format("model_auto_compact_token_limit=%d", at))
+end
 
 --- Forget the resolved binary path. Test seam only: the cache is process-wide, so a spec
 --- exercising the "CLI missing" path has to clear what an earlier spec resolved.
@@ -51,6 +82,12 @@ function M.build(prompt, opts, session_id, config, hook_args)
   if model then
     table.insert(cmd, "-m")
     table.insert(cmd, model)
+  end
+
+  -- Utility calls are deliberately separate from the chat's context. They should neither inherit
+  -- its threshold nor override Codex's compaction setting after --ignore-user-config below.
+  if not opts.lightweight then
+    append_auto_compact(cmd, config)
   end
 
   if opts.lightweight then
