@@ -19,6 +19,16 @@ local M = {}
 local MAX_BYTES = 64 * 1024
 local git_common_dir_cache = {}
 
+--- Memo of the last compiled result per resolved path, so unchanged content is not re-parsed by
+--- the hand-rolled TOML parser and does not re-spawn `git rev-parse` on every ordinary turn
+--- (`M.args` runs on every one, new session and resume alike). The file is still read every call
+--- -- keyed on file *content*, not mtime/size: mtime has only second resolution, and two edits
+--- within the same second that happen to leave the byte count unchanged (`"write"` -> `"deny"`)
+--- would otherwise collide, silently serving stale args and breaking the promise in
+--- handbook/configuration.md that an edit takes effect on the very next turn.
+--- @type table<string, {lines: string[], args: string[]}>
+local file_cache = {}
+
 local function trim(value)
   return vim.trim(value or "")
 end
@@ -27,10 +37,14 @@ local function parse_error(path, line_number, message)
   error(string.format("%s:%d: %s", path, line_number, message), 0)
 end
 
---- Remove a TOML comment while leaving `#` characters inside quoted values alone.
+--- Find the first occurrence of `target` in `line` that is outside any quoted TOML string,
+--- tracking double-quote escapes (`\"`) and treating single-quoted strings as fully literal.
+--- Shared by `strip_comment` (target `#`) and `assignment_equals` (target `=`), which otherwise
+--- differed only in what they did with the index once found.
 --- @param line string
---- @return string
-local function strip_comment(line)
+--- @param target string single character to look for
+--- @return number|nil
+local function find_unquoted_char(line, target)
   local quote = nil
   local escaped = false
 
@@ -50,12 +64,20 @@ local function strip_comment(line)
       end
     elseif char == '"' or char == "'" then
       quote = char
-    elseif char == "#" then
-      return line:sub(1, i - 1)
+    elseif char == target then
+      return i
     end
   end
 
-  return line
+  return nil
+end
+
+--- Remove a TOML comment while leaving `#` characters inside quoted values alone.
+--- @param line string
+--- @return string
+local function strip_comment(line)
+  local index = find_unquoted_char(line, "#")
+  return index and line:sub(1, index - 1) or line
 end
 
 --- Decode one quoted TOML key. Permission paths and domains do not need TOML's multiline or
@@ -149,29 +171,7 @@ end
 --- @param line string
 --- @return number|nil
 local function assignment_equals(line)
-  local quote = nil
-  local escaped = false
-  for i = 1, #line do
-    local char = line:sub(i, i)
-    if quote == '"' then
-      if escaped then
-        escaped = false
-      elseif char == "\\" then
-        escaped = true
-      elseif char == quote then
-        quote = nil
-      end
-    elseif quote == "'" then
-      if char == quote then
-        quote = nil
-      end
-    elseif char == '"' or char == "'" then
-      quote = char
-    elseif char == "=" then
-      return i
-    end
-  end
-  return nil
+  return find_unquoted_char(line, "=")
 end
 
 local function table_node()
@@ -503,20 +503,29 @@ end
 --- Locate the project file. A worktree-local file wins; because `.vibing/` is normally ignored
 --- and absent from worktrees, fall back to the root Neovim was started in when it belongs to the
 --- same Git repository.
+---
+--- Returns the directory the file was actually found relative to, alongside the path itself: a
+--- nil/empty `cwd` (an ordinary chat with no `working_dir` frontmatter) is substituted with
+--- `nvim_root` here, and the caller needs that same substituted value -- not the original nil --
+--- to resolve `.git` write access to the right worktree later.
 --- @param cwd string|nil
 --- @param configured_path string
---- @return string|nil
+--- @return string|nil path
+--- @return string|nil effective_cwd
 local function resolve_path(cwd, configured_path)
   if configured_path:sub(1, 1) == "/" or configured_path:match("^~") then
     local absolute = vim.fn.expand(configured_path)
-    return vim.fn.filereadable(absolute) == 1 and absolute or nil
+    if vim.fn.filereadable(absolute) == 1 then
+      return absolute, cwd
+    end
+    return nil, cwd
   end
 
   local nvim_root = vim.fn.getcwd(-1, -1)
   local effective = cwd and cwd ~= "" and cwd or nvim_root
   local local_path = join(effective, configured_path)
   if vim.fn.filereadable(local_path) == 1 then
-    return local_path
+    return local_path, effective
   end
   if effective ~= nvim_root then
     local root_path = join(nvim_root, configured_path)
@@ -527,10 +536,10 @@ local function resolve_path(cwd, configured_path)
       and git_common_dir(effective) ~= nil
       and git_common_dir(effective) == git_common_dir(nvim_root)
     then
-      return root_path
+      return root_path, nvim_root
     end
   end
-  return nil
+  return nil, effective
 end
 
 --- Build the `-c` argv fragment for one request.
@@ -543,7 +552,7 @@ function M.args(cwd, config)
     return {}
   end
 
-  local path = resolve_path(cwd, configured_path)
+  local path, effective_cwd = resolve_path(cwd, configured_path)
   if not path then
     return {}
   end
@@ -556,16 +565,33 @@ function M.args(cwd, config)
   if not ok or type(lines) ~= "table" then
     error(path .. ": could not read Codex permission profile", 0)
   end
+
+  local cached = file_cache[path]
+  if cached and vim.deep_equal(cached.lines, lines) then
+    return vim.deepcopy(cached.args)
+  end
+
   local root, has_content = parse(lines, path)
   if not has_content then
+    file_cache[path] = { lines = lines, args = {} }
     return {}
   end
-  return compile(root, path, cwd)
+  -- effective_cwd, not the raw `cwd` argument: a chat with no `working_dir` frontmatter passes
+  -- `cwd == nil` here, and resolve_path already substituted the real directory the file was
+  -- found in. Passing `cwd` through unchanged would make the `.git` worktree remap below silently
+  -- no-op for exactly that (common) case.
+  local args = compile(root, path, effective_cwd)
+  file_cache[path] = { lines = lines, args = args }
+  return vim.deepcopy(args)
 end
 
---- Forget git common-directory lookups. Test seam and useful after replacing a worktree in place.
+--- Forget git common-directory lookups and cached compiled profiles. Test seam, and useful after
+--- replacing a worktree in place: `file_cache` invalidates itself on any content change, but a
+--- worktree recreated at the same path with byte-identical profile content would still leave a
+--- stale `git_common_dir_cache` entry that nothing else would refresh before a restart.
 function M.clear_cache()
   git_common_dir_cache = {}
+  file_cache = {}
 end
 
 return M

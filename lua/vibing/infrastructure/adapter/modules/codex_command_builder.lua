@@ -14,19 +14,6 @@ local binary_path = CommonBuilder.binary_resolver(
   "Codex CLI not found in PATH. Please install codex-cli."
 )
 
---- Map vibing permission mode to codex sandbox flag
---- @param permission_mode string|nil
---- @return string|nil sandbox flag value, or nil for default
-local function resolve_sandbox(permission_mode)
-  if permission_mode == "plan" then
-    return "read-only"
-  end
-  if permission_mode == "bypassPermissions" then
-    return nil -- use --dangerously-bypass flag instead
-  end
-  return "workspace-write"
-end
-
 --- Forget the resolved binary path. Test seam only: the cache is process-wide, so a spec
 --- exercising the "CLI missing" path has to clear what an earlier spec resolved.
 function M._reset_path_cache()
@@ -152,9 +139,10 @@ function M.build(prompt, opts, session_id, config, hook_args)
       if #profile_args > 0 then
         vim.list_extend(cmd, profile_args)
       elseif not session_id then
-        local sandbox = resolve_sandbox(permission_mode)
+        -- Only "default"/"acceptEdits"/"auto"/"dontAsk"/nil reach here -- "plan" and
+        -- "bypassPermissions" are both handled above -- so the sandbox is always workspace-write.
         table.insert(cmd, "-s")
-        table.insert(cmd, sandbox)
+        table.insert(cmd, "workspace-write")
       end
     end
   end

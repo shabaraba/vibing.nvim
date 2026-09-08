@@ -559,6 +559,7 @@ function M._register_commands()
     local skills = require("vibing.infrastructure.completion.providers.skills")
     local plugin_dirs = require("vibing.infrastructure.plugins.plugin_dirs")
     local codex_plugin_config = require("vibing.infrastructure.adapter.modules.codex_plugin_config")
+    local codex_permission_profile = require("vibing.infrastructure.adapter.modules.codex_permission_profile")
 
     commands.reload_custom()
 
@@ -569,6 +570,10 @@ function M._register_commands()
     -- Codex memoizes the argv it builds from that list, plus which manifests it already warned
     -- about; both go, so a plugin added or fixed after the warning is read again.
     codex_plugin_config.clear_cache()
+    -- Its git-common-dir lookups are memoized per cwd for the life of the process; a worktree
+    -- removed and recreated at the same path within one Neovim session would otherwise keep
+    -- serving a stale (or stale-missing) result until restart.
+    codex_permission_profile.clear_cache()
 
     completion.clear_cache()
     skills.preload()
