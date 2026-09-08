@@ -96,6 +96,7 @@ function M.create_new_in_directory(directory)
     working_dir = working_dir,
   })
 
+  FileManager.ensure_project_files(normalized_dir)
   local save_path = normalized_dir .. ".vibing/chat/"
   Fs.ensure_dir(save_path)
   local filename = FileManager.generate_unique_filename()

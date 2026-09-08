@@ -1,5 +1,6 @@
 local Config = require("vibing.config")
 local notify = require("vibing.core.utils.notify")
+local ProjectCodexPermissions = require("vibing.core.utils.project_codex_permissions")
 
 ---@class Vibing
 ---vibing.nvimプラグインのメインモジュール
@@ -20,6 +21,14 @@ M.adapter = nil
 function M.setup(opts)
   Config.setup(opts)
   M.config = Config.get()
+
+  -- Projects created by older vibing.nvim versions already have `.vibing/` but not the Codex
+  -- profile introduced later. Backfill it on setup without creating `.vibing/` in unrelated
+  -- directories, and never replace a file the user already owns.
+  local ok_profile, profile_error = pcall(ProjectCodexPermissions.ensure_existing, vim.fn.getcwd())
+  if not ok_profile then
+    notify.warn("Could not initialize .vibing/codex-permissions.toml: " .. tostring(profile_error))
+  end
 
   -- vibing filetype 専用の treesitter パーサは存在しないため markdown を割り当てる。
   -- これがないと vibing バッファで treesitter ハイライトも
@@ -559,6 +568,7 @@ function M._register_commands()
     local skills = require("vibing.infrastructure.completion.providers.skills")
     local plugin_dirs = require("vibing.infrastructure.plugins.plugin_dirs")
     local codex_plugin_config = require("vibing.infrastructure.adapter.modules.codex_plugin_config")
+    local codex_permission_profile = require("vibing.infrastructure.adapter.modules.codex_permission_profile")
 
     commands.reload_custom()
 
@@ -569,6 +579,10 @@ function M._register_commands()
     -- Codex memoizes the argv it builds from that list, plus which manifests it already warned
     -- about; both go, so a plugin added or fixed after the warning is read again.
     codex_plugin_config.clear_cache()
+    -- Its git-common-dir lookups are memoized per cwd for the life of the process; a worktree
+    -- removed and recreated at the same path within one Neovim session would otherwise keep
+    -- serving a stale (or stale-missing) result until restart.
+    codex_permission_profile.clear_cache()
 
     completion.clear_cache()
     skills.preload()
