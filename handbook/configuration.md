@@ -1052,6 +1052,8 @@ permissions = {
   codex_profile_file = ".vibing/codex-permissions.toml",
                          -- Codex only: project-local OS sandbox profile.
                          -- Set false to disable it.
+  codex_allow_tracked_profile = false,
+                         -- Set true only after reviewing a Git-tracked profile.
 }
 ```
 
@@ -1126,8 +1128,10 @@ Two boundaries remain separate:
 - The profile controls Codex's OS sandbox. vibing.nvim's tool permissions still apply, so `Bash`
   must also be allowed in the chat before Codex can run Git commands.
 
-This file can grant local filesystem and network access. `.vibing/` is normally git-ignored; only
-use a permission file you created or reviewed in a project you trust.
+This file can grant local filesystem and network access. `.vibing/` is normally git-ignored, and
+locally generated, untracked profiles load automatically. A repository can nevertheless force-add
+an ignored file, so Git-tracked profiles fail closed by default. After reviewing one, set
+`permissions.codex_allow_tracked_profile = true` to trust it explicitly.
 
 ## Granular Permission Rules
 

@@ -35,6 +35,7 @@ describe("vibing.config", function()
         ".vibing/codex-permissions.toml",
         config.defaults.permissions.codex_profile_file
       )
+      assert.is_false(config.defaults.permissions.codex_allow_tracked_profile)
     end)
 
     it("should have language configuration", function()
@@ -84,6 +85,12 @@ describe("vibing.config", function()
         ".vibing/codex-permissions.toml",
         config.get().permissions.codex_profile_file
       )
+
+      config.setup({ permissions = { codex_allow_tracked_profile = "yes" } })
+      assert.is_false(config.get().permissions.codex_allow_tracked_profile)
+
+      config.setup({ permissions = { codex_allow_tracked_profile = true } })
+      assert.is_true(config.get().permissions.codex_allow_tracked_profile)
     end)
   end)
 

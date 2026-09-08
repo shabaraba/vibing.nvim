@@ -35,7 +35,14 @@ describe("codex_permission_profile", function()
   before_each(function()
     root = vim.fn.tempname()
     vim.fn.mkdir(root, "p")
-    config = { permissions = { codex_profile_file = ".vibing/codex-permissions.toml" } }
+    config = {
+      permissions = {
+        codex_profile_file = ".vibing/codex-permissions.toml",
+        -- Existing parser/remap tests do not exercise repository trust. Keeping this explicit also
+        -- prevents their vim.system git stubs from accidentally standing in for `git ls-files`.
+        codex_allow_tracked_profile = true,
+      },
+    }
     original_getcwd = vim.fn.getcwd
     original_system = vim.system
     vim.fn.getcwd = function()
@@ -189,6 +196,66 @@ extends = "git-base"
     )
   end)
 
+  it("maps scalar workspace-root write access to a linked worktree's common git directory", function()
+    local worktree = root .. "/.vibing/worktrees/feature-x"
+    vim.fn.mkdir(worktree, "p")
+    write_at(root, [[
+default_permissions = "project-edit"
+[permissions.project-edit.filesystem]
+":workspace_roots" = "write"
+]])
+    vim.system = function(_, _)
+      return {
+        wait = function()
+          return { code = 0, stdout = root .. "/.git\n" }
+        end,
+      }
+    end
+
+    local permissions = override_map(profile.args(worktree, config)).permissions
+    assert.is_not_nil(permissions:find('"' .. root .. '/.git" = "write"', 1, true))
+  end)
+
+  it("maps a scoped workspace-root write to a linked worktree's common git directory", function()
+    local worktree = root .. "/.vibing/worktrees/feature-x"
+    vim.fn.mkdir(worktree, "p")
+    write_at(root, [[
+default_permissions = "project-edit"
+[permissions.project-edit.filesystem.":workspace_roots"]
+"." = "write"
+]])
+    vim.system = function(_, _)
+      return {
+        wait = function()
+          return { code = 0, stdout = root .. "/.git\n" }
+        end,
+      }
+    end
+
+    local permissions = override_map(profile.args(worktree, config)).permissions
+    assert.is_not_nil(permissions:find('"' .. root .. '/.git" = "write"', 1, true))
+  end)
+
+  it("does not inherit a parent's .git write after a child makes it read-only", function()
+    local worktree = root .. "/.vibing/worktrees/feature-x"
+    vim.fn.mkdir(worktree, "p")
+    write_at(worktree, [[
+default_permissions = "child"
+[permissions.parent.filesystem.":workspace_roots"]
+".git" = "write"
+[permissions.child]
+extends = "parent"
+[permissions.child.filesystem.":workspace_roots"]
+".git" = "read"
+]])
+    vim.system = function()
+      error("git common-dir lookup must not run for an effective read-only .git rule")
+    end
+
+    local permissions = override_map(profile.args(worktree, config)).permissions
+    assert.is_nil(permissions:find('"' .. root .. '/.git"', 1, true))
+  end)
+
   it("does not reuse a main-checkout cache entry for a linked worktree", function()
     local worktree = root .. "/.vibing/worktrees/feature-x"
     vim.fn.mkdir(worktree, "p")
@@ -220,6 +287,27 @@ extends = ":workspace"
     assert.same({}, profile.args(root, config))
     config.permissions.codex_profile_file = false
     assert.same({}, profile.args(root, config))
+  end)
+
+  it("refuses a Git-tracked profile until the user explicitly trusts it", function()
+    config.permissions.codex_allow_tracked_profile = false
+    write_at(root, 'default_permissions = ":read-only"')
+    assert.same({ "-c", 'default_permissions=":read-only"' }, profile.args(root, config))
+
+    local initialized = original_system({ "git", "init", "-q" }, { cwd = root, text = true }):wait()
+    assert.equals(0, initialized.code, initialized.stderr)
+    local added = original_system(
+      { "git", "add", "-f", ".vibing/codex-permissions.toml" },
+      { cwd = root, text = true }
+    ):wait()
+    assert.equals(0, added.code, added.stderr)
+
+    expect_error("refusing a Git-tracked Codex permission profile", function()
+      profile.args(root, config)
+    end)
+
+    config.permissions.codex_allow_tracked_profile = true
+    assert.same({ "-c", 'default_permissions=":read-only"' }, profile.args(root, config))
   end)
 
   it("accepts a safe built-in profile without a custom definition", function()

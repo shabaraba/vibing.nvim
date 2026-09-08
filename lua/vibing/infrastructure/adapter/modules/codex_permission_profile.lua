@@ -297,6 +297,40 @@ local function table_child(node, key)
   return child and child.kind == "table" and child or nil
 end
 
+--- Resolve whether this profile itself changes the effective access to `.git`. A direct
+--- `:workspace_roots = "write"` and the scoped `"." = "write"` both cover `.git`; an exact
+--- `.git` entry is more specific than `.`. Returning nil means this profile has no matching rule,
+--- so its parent still decides. A non-write match deliberately returns false and stops traversal:
+--- child profiles override matching parent rules, including a parent's explicit `.git = "write"`.
+--- @param profile table
+--- @return boolean|nil
+local function own_git_write_decision(profile)
+  local filesystem = table_child(profile, "filesystem")
+  if not filesystem then
+    return nil
+  end
+  local workspace_rules = filesystem.children[":workspace_roots"]
+  if not workspace_rules then
+    return nil
+  end
+  if workspace_rules.kind == "value" then
+    return decode_string(workspace_rules.raw) == "write"
+  end
+  if workspace_rules.kind ~= "table" then
+    return false
+  end
+
+  local git_rule = workspace_rules.children[".git"]
+  if git_rule then
+    return git_rule.kind == "value" and decode_string(git_rule.raw) == "write"
+  end
+  local root_rule = workspace_rules.children["."]
+  if root_rule then
+    return root_rule.kind == "value" and decode_string(root_rule.raw) == "write"
+  end
+  return nil
+end
+
 --- @param profiles table
 --- @param name string
 --- @param seen table<string, boolean>?
@@ -312,10 +346,9 @@ local function grants_git_write(profiles, name, seen)
   if not profile or profile.kind ~= "table" then
     return false
   end
-  local workspace_rules = table_child(table_child(profile, "filesystem"), ":workspace_roots")
-  local git_rule = workspace_rules and workspace_rules.children[".git"]
-  if git_rule and git_rule.kind == "value" and decode_string(git_rule.raw) == "write" then
-    return true
+  local own_decision = own_git_write_decision(profile)
+  if own_decision ~= nil then
+    return own_decision
   end
 
   local extends = profile.children.extends
@@ -501,6 +534,32 @@ local function join(base, relative)
   return base:gsub("/+$", "") .. "/" .. relative:gsub("^/+", "")
 end
 
+--- Repository-controlled profiles are not an implicit trust boundary. `.vibing/` is normally
+--- ignored, but Git permits a repository to force-add ignored files; a clone could therefore
+--- arrive with a profile that grants filesystem or network access before the user reviews it.
+--- Check on every request (before the compiled-content cache) so `git add -f` takes effect on the
+--- next turn as well.
+--- @param path string
+--- @return boolean
+local function is_git_tracked(path)
+  local absolute = vim.fn.fnamemodify(path, ":p")
+  local directory = vim.fn.fnamemodify(absolute, ":h")
+  local ok_system, process = pcall(vim.system, {
+    "git",
+    "ls-files",
+    "--error-unmatch",
+    "--",
+    absolute,
+  }, { cwd = directory, text = true })
+  if not ok_system then
+    return false
+  end
+  local ok_wait, result = pcall(function()
+    return process:wait()
+  end)
+  return ok_wait and type(result) == "table" and result.code == 0
+end
+
 --- Locate the project file. A worktree-local file wins; because `.vibing/` is normally ignored
 --- and absent from worktrees, fall back to the root Neovim was started in when it belongs to the
 --- same Git repository.
@@ -556,6 +615,13 @@ function M.args(cwd, config)
   local path, effective_cwd = resolve_path(cwd, configured_path)
   if not path then
     return {}
+  end
+  if config.permissions.codex_allow_tracked_profile ~= true and is_git_tracked(path) then
+    error(
+      path
+        .. ": refusing a Git-tracked Codex permission profile; review it, then set permissions.codex_allow_tracked_profile = true to trust it",
+      0
+    )
   end
   local size = vim.fn.getfsize(path)
   if size > MAX_BYTES then

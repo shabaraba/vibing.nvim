@@ -56,7 +56,9 @@
   and Git metadata writes. vibing.nvim converts it to deterministic `-c` overrides for new and
   resumed ordinary turns, keeps plan and utility calls read-only, rejects project-local
   `:danger-full-access`, and maps `.git = "write"` to the common Git directory in linked worktrees.
-  Set `permissions.codex_profile_file = false` to disable loading it.
+  Git-tracked profiles fail closed unless explicitly trusted with
+  `permissions.codex_allow_tracked_profile = true`. Set
+  `permissions.codex_profile_file = false` to disable loading it.
 
 - **`nvim_get_buffer` (MCP): `tail_lines` and `last_section` read only part of a buffer.** A
   vibing.nvim chat can run to hundreds of thousands of lines, and reading it all is effectively
