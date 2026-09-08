@@ -5,6 +5,7 @@
 local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
 local CodexPluginConfig = require("vibing.infrastructure.adapter.modules.codex_plugin_config")
+local CodexPermissionProfile = require("vibing.infrastructure.adapter.modules.codex_permission_profile")
 
 local M = {}
 
@@ -128,14 +129,30 @@ function M.build(prompt, opts, session_id, config, hook_args)
     table.insert(cmd, "-c")
     table.insert(cmd, "project_doc_max_bytes=0")
 
-  -- Permission mapping (only for new sessions; resume does not accept -s)
-  elseif not session_id then
+  -- Permission mapping. A project-local permission profile is a config layer, so unlike `-s` it
+  -- is valid on `codex exec resume` and must be supplied on every process invocation. Keeping the
+  -- rendered overrides byte-stable also keeps the model-visible permission prefix stable for
+  -- prompt caching; the file path and its source location are never added to the prompt.
+  else
     local permission_mode = opts.permission_mode
     if permission_mode == "bypassPermissions" then
       table.insert(cmd, "--dangerously-bypass-approvals-and-sandbox")
+    elseif permission_mode == "plan" then
+      if session_id then
+        -- `resume` does not accept `-s`; the equivalent config override does. It intentionally
+        -- wins over a project profile because plan mode is an explicit read-only request.
+        table.insert(cmd, "-c")
+        table.insert(cmd, 'sandbox_mode="read-only"')
+      else
+        table.insert(cmd, "-s")
+        table.insert(cmd, "read-only")
+      end
     else
-      local sandbox = resolve_sandbox(permission_mode)
-      if sandbox then
+      local profile_args = CodexPermissionProfile.args(opts.cwd, config)
+      if #profile_args > 0 then
+        vim.list_extend(cmd, profile_args)
+      elseif not session_id then
+        local sandbox = resolve_sandbox(permission_mode)
         table.insert(cmd, "-s")
         table.insert(cmd, sandbox)
       end

@@ -50,6 +50,13 @@
 
 ### Added
 
+- **Project-local Codex permission profiles.** Put Codex's permission-profile TOML in
+  `.vibing/codex-permissions.toml` to apply it to new and resumed ordinary Codex turns without
+  changing `~/.codex/config.toml`. vibing.nvim converts the profile to deterministic `-c`
+  overrides, keeps plan and utility calls read-only, rejects project-local
+  `:danger-full-access`, and maps `.git = "write"` to the common Git directory in linked
+  worktrees. Set `permissions.codex_profile_file = false` to disable discovery.
+
 - **`nvim_get_buffer` (MCP): `tail_lines` and `last_section` read only part of a buffer.** A
   vibing.nvim chat can run to hundreds of thousands of lines, and reading it all is effectively
   the same as not being able to read it at all. `tail_lines: N` returns only the last N lines;

@@ -286,6 +286,7 @@ require("vibing").setup({
     mode = "acceptEdits",          -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"
     allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput" },
     deny = { "Bash" },
+    codex_profile_file = ".vibing/codex-permissions.toml", -- false disables project Codex profiles
   },
   language = nil,                  -- e.g. "ja", or { default = "ja", chat = "ja" }
 })
@@ -293,6 +294,10 @@ require("vibing").setup({
 
 The default permissions shown above are used as a **template** when creating new chat files; each
 chat file's frontmatter carries its own permissions, which are what's enforced at runtime.
+
+For the Codex backend, an optional `.vibing/codex-permissions.toml` can narrow or extend the OS
+sandbox for that project (for example, permit writes to `.git` without using full bypass mode).
+See [Project-local Codex permission profiles](./handbook/configuration.md#project-local-codex-permission-profiles).
 
 **Full reference:** every option (window details, UI/gradient/tool markers, diff backends,
 granular permission rules, MCP, Node.js executable, daily summary, ...) is documented in
