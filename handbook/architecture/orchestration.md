@@ -697,9 +697,20 @@ is repeated, and deliberately: it only decides which lines are handed to the sha
 diverge — the queue wrapped each body in a `### From` heading and the direct send passed the raw
 text through — so the same worker's report looked different depending on whether its orchestrator
 happened to be mid-turn when it arrived. `section_for` names the sender in the section header only
-when the delivery is exactly one body from one chat; `build` then drops the `### From` that would
-otherwise repeat it two lines later. A coalesced delivery keeps the per-item headings and leaves
-the section header unnamed.
+when the delivery is exactly one body from one chat; a coalesced delivery keeps the per-item
+`### From` headings and leaves the header unnamed.
+
+**The body names the sender even when the section header already does.** `build` used to drop the
+`### From` heading that would repeat the header two lines later, and that dedup is exactly what
+made a delivered brief indistinguishable from a user-typed message to the receiving model: the
+header exists only in the buffer rendering, while the prompt the CLI receives is the body below it
+(`extract_user_message`). The worker's reporting duty (`cli_command_builder`'s orchestrator line)
+is scoped to turns that open by naming their sending chat — without the body-side sender line a
+worker reported the user's own turns to its orchestrator, waking it for work it never dispatched.
+The buffer-side repetition is the accepted cost. So is the marker being plain text: a user who
+pastes something that happens to open like a delivery makes the worker misread the turn as
+orchestrated, but that failure mode is a spurious report — exactly the pre-change behavior —
+where a structured signal would buy its complexity only to prevent an extra wake-up.
 
 **A delivery fills the empty unsent section rather than appending below it.** Every turn ends with
 `add_user_section()` writing `## User <!-- unsent -->`; a human types into it, but

@@ -142,15 +142,15 @@ end
 
 ---@param items Vibing.Application.MessageQueue.Item[]
 ---@param cache table<number, string>
----@param sender_named boolean セクション見出しが送信元を既に名指ししているか
 ---@return string
-local function message_section(items, cache, sender_named)
-  -- 送信元が1つに定まる配達では、セクション見出し（`## Report <!-- ts from path -->`）が
-  -- 既に名前を持っている。ここでも `### From` を出すと同じことを2行離れて2回言うことになる
-  if sender_named and #items == 1 then
-    return items[1].body
-  end
-
+local function message_section(items, cache)
+  -- 送信元は、セクション見出し（`## Report <!-- ts from path -->`）が名乗る場合でも本文の側で
+  -- **必ず**名乗る。見出しはバッファの描画にしか存在せず、CLIへ渡るプロンプトはヘッダの下の
+  -- 本文だけ（`conversation_extractor.extract_user_message`）なので、本文が名乗らないと
+  -- 受け取ったモデルはそのターンが他チャットからの配達なのかユーザーの直接入力なのか
+  -- 区別できない。ワーカーの報告義務はこの区別を前提に書かれている（`cli_command_builder` の
+  -- orchestrator 行）。バッファ上では見出しと2行離れて同じ名前が並ぶが、それは
+  -- モデルに出自を読ませるための代償
   local blocks = {}
   for _, item in ipairs(items) do
     local from = item.bufnr and string.format("%s (chat buffer %d)", display_path(item.bufnr, cache), item.bufnr)
@@ -160,8 +160,8 @@ local function message_section(items, cache, sender_named)
 
   -- 件数はメッセージの数であってチャットの数ではない。1つのワーカーからの2件を
   -- 「2つのチャットから」と言うと、読み手は出どころを取り違える
-  -- 「応答中に届いた」とは言わない。この経路は即配達でも通る（送信元のバッファに名前が
-  -- なければ見出しが名乗れず、ここに落ちる）ので、キューに積まれた前提の文面は嘘になる
+  -- 「応答中に届いた」とは言わない。この経路は即配達でも通るので、キューに積まれた前提の
+  -- 文面は嘘になる
   return table.concat({
     #blocks == 1 and "Another chat sent you this:"
       or string.format("%d messages arrived from other chats:", #blocks),
@@ -176,7 +176,9 @@ end
 
 ---この配達をどのセクションとして書くかを決める
 ---
----見出しと本文で判断が食い違わないよう、種別と送信元はここ1箇所で決めて `build` に渡す。
+---種別と送信元はここ1箇所で決める。送信元は `deliver` がそのまま `programmatic_sender.send` の
+---見出し描画に渡す — `build` はもう受け取らない。本文側の送信元名乗りは `message_section` が
+---`section_for` を経由せず自分で解決するので、見出しと本文が食い違うことはない。
 ---
 ---向きは `orchestration_link.direction` に聞く（記録済みの関係から決まる）。合流した配達で
 ---向きが混ざる場合は `Report` に倒す: 複数のワーカーからの報告が1ターンに合流するのが
@@ -216,10 +218,9 @@ end
 ---通知だけのときは通知セクションだけを出す。混在時に本文を先に置くのは、そちらが相手の
 ---**依頼**で、通知は「読みに行け」という副次情報だから
 ---@param queue Vibing.Application.MessageQueue.Item[]
----@param section Vibing.Application.DeliveryMessage.Section? `section_for` の結果
 ---@param cache table<number, string>? 表示パスの使い回し（`section_for` と共有する）
 ---@return string
-function M.build(queue, section, cache)
+function M.build(queue, cache)
   local notifications, messages = {}, {}
   for _, item in ipairs(queue) do
     table.insert(item.body and messages or notifications, item)
@@ -228,7 +229,7 @@ function M.build(queue, section, cache)
   cache = cache or {}
   local sections = {}
   if #messages > 0 then
-    table.insert(sections, message_section(messages, cache, section ~= nil and section.from ~= nil))
+    table.insert(sections, message_section(messages, cache))
   end
   if #notifications > 0 then
     table.insert(sections, notification_section(notifications, cache))
@@ -249,7 +250,7 @@ end
 function M.deliver(queue, to_bufnr, sender)
   local cache = {}
   local section = M.section_for(queue, to_bufnr, cache)
-  local text = M.build(queue, section, cache)
+  local text = M.build(queue, cache)
   return require("vibing.presentation.chat.modules.programmatic_sender").send(to_bufnr, text, sender, section)
 end
 

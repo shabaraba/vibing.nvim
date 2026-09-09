@@ -98,6 +98,23 @@ describe("cli_command_builder", function()
       assert.is_true(prompt_text:find("nvim_chat_send_message with that file_path", 1, true) ~= nil)
     end)
 
+    it("scopes the reporting duty to turns delivered from another chat", function()
+      -- The marker the instruction references is the sender line `delivery_message.lua` puts at
+      -- the top of every cross-chat body. Only these two assertions tie the instruction to that
+      -- shape: weaken either side alone and workers report the user's own turns to the
+      -- orchestrator again.
+      local cmd = cli_command_builder.build(
+        "hello",
+        { orchestrators = { { path = ".vibing/chat/boss.md", bufnr = 12 } } },
+        nil,
+        {},
+        nil
+      )
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_true(prompt_text:find("naming the chat that sent it", 1, true) ~= nil)
+      assert.is_true(prompt_text:find("typed directly by the user", 1, true) ~= nil)
+    end)
+
     it("still names an orchestrator whose chat is closed", function()
       -- The restart case #641 exists for: the path is all there is, and dropping the line would
       -- leave the worker with no way to reach back.

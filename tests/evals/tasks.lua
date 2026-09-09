@@ -12,6 +12,17 @@ local Worktree = require("vibing.core.constants.worktree")
 --- 「system promptに書かれた番号をそのまま写したか」だけを見るための固定値
 local ORCHESTRATOR_BUFNR = 4242
 
+--- worker/* タスクで「このチャット自身」として system prompt に載せる chat_bufnr。
+--- ORCHESTRATOR_BUFNR とは別の値にしておくことで、from_bufnr に自分と相手のどちらを
+--- 写したかまで判定できる
+local WORKER_BUFNR = 515
+
+--- worker/* タスクの orchestrators opts。報告義務の行を system prompt に立てるための共通形
+local WORKER_OPTS = {
+  chat_bufnr = WORKER_BUFNR,
+  orchestrators = { { path = ".vibing/chat/orchestrator.md", bufnr = ORCHESTRATOR_BUFNR } },
+}
+
 ---@param record Vibing.Eval.Record
 ---@param substring string
 ---@return string? command 部分文字列を含む最初のBashコマンド
@@ -103,6 +114,48 @@ return {
       end
       if not command:find(Worktree.DIR, 1, true) then
         return false, "created the worktree outside " .. Worktree.DIR .. ": " .. command
+      end
+      return true
+    end,
+  },
+
+  {
+    id = "worker/reports_delivered_work",
+    description = "他チャットから配達されたタスクを終えたら nvim_chat_send_message でそのチャットに報告する",
+    -- 配達本文の先頭には delivery_message.lua が送信元を名乗る行を置く。その形をそのまま再現する
+    prompt = "Another chat sent you this:\n\n"
+      .. "### From .vibing/chat/orchestrator.md (chat buffer 4242)\n\n"
+      .. "Compute 21 * 2 and report the result back to me.",
+    opts = WORKER_OPTS,
+    check = function(record)
+      local input = Harness.find_mcp_call(record, "nvim_chat_send_message")
+      if not input then
+        return false, "finished without calling nvim_chat_send_message, so the report never left this chat"
+      end
+      if not (type(input.file_path) == "string" and input.file_path:find("orchestrator.md", 1, true)) then
+        return false, "reported to " .. tostring(input.file_path) .. " instead of the orchestrator's file_path"
+      end
+      if tonumber(input.from_bufnr) ~= WORKER_BUFNR then
+        return false,
+          string.format(
+            "passed from_bufnr=%s, expected %d (this chat's own buffer number, not the orchestrator's)",
+            tostring(input.from_bufnr),
+            WORKER_BUFNR
+          )
+      end
+      return true
+    end,
+  },
+
+  {
+    id = "worker/no_report_for_a_user_turn",
+    description = "送信元を名乗る行が無い＝ユーザー直接のターンで、タスク無関係の用件なら"
+      .. "オーケストレータへ完了報告を送らない（system promptの出自条件が効いているかを測る）",
+    prompt = "What does the acronym JSON stand for? Just tell me here.",
+    opts = WORKER_OPTS,
+    check = function(record)
+      if Harness.find_mcp_call(record, "nvim_chat_send_message") then
+        return false, "woke the orchestrator for a user-directed turn unrelated to the orchestrated task"
       end
       return true
     end,
