@@ -23,7 +23,7 @@ describe("vibing Tree-sitter parser", function()
       outer_highlights,
       "the outer query is required to activate injected highlighting"
     )
-    assert.equals(0, #outer_highlights.captures, "the outer grammar should not style chat content")
+    assert.same({ "comment" }, outer_highlights.captures)
 
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
@@ -97,8 +97,24 @@ describe("vibing Tree-sitter parser", function()
     end
     assert.is_true(
       has_markdown_highlight,
-      "the empty outer query must preserve injected Markdown highlighting"
+      "the outer query must preserve injected Markdown highlighting"
     )
+
+    local has_tool_highlight = false
+    for _, capture in ipairs(vim.treesitter.get_captures_at_pos(buf, 8, 0)) do
+      if capture.lang == "vibing" and capture.capture == "comment" then
+        has_tool_highlight = true
+        break
+      end
+    end
+    assert.is_true(has_tool_highlight, "rendered tool blocks should remain visibly distinct")
+
+    for _, capture in ipairs(vim.treesitter.get_captures_at_pos(buf, 0, 3)) do
+      assert.is_false(
+        capture.lang == "vibing",
+        "message headers should only be highlighted by injected Markdown"
+      )
+    end
 
     local injection_query = assert(vim.treesitter.query.get("vibing", "injections"))
     local ranges = {}
