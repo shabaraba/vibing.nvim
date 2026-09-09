@@ -135,6 +135,14 @@ return {
       if not (type(input.file_path) == "string" and input.file_path:find("orchestrator.md", 1, true)) then
         return false, "reported to " .. tostring(input.file_path) .. " instead of the orchestrator's file_path"
       end
+      if tonumber(input.from_bufnr) ~= WORKER_BUFNR then
+        return false,
+          string.format(
+            "passed from_bufnr=%s, expected %d (this chat's own buffer number, not the orchestrator's)",
+            tostring(input.from_bufnr),
+            WORKER_BUFNR
+          )
+      end
       return true
     end,
   },
