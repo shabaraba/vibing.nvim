@@ -179,7 +179,9 @@ You get woken in two ways, and they do not mean the same thing.
 
 **A worker's report** — the turn carries its summary as text. This is the normal path, and the
 summary is meant to be enough on its own. Do not call `nvim_get_buffer` on that worker unless the
-summary actually leaves something open.
+summary actually leaves something open. One caveat: the user can type into a worker chat
+directly, and a report may say the work was user-directed. That is a status update about the
+worker's state, not the answer to anything you asked — your own brief may still be unanswered.
 
 **A watchdog notice** — the turn names one or more chats you messaged and says they stopped. Two
 shapes, and the difference is whether the notice carries a `status:`.

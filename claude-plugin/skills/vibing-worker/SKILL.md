@@ -46,6 +46,24 @@ grinding on it silently. A worker that stops normally after writing only "couldn
 own buffer produces no notification at all: `idle` looks identical whether the task succeeded or
 was abandoned halfway.
 
+## When the user speaks to you directly
+
+Not every turn here comes from the orchestrator. A turn delivered from another chat opens by
+naming the chat that sent it ("Another chat sent you this:" with a `### From <path>` line, or a
+watchdog notice listing chats); a turn with no such marker was typed by the user directly into
+this chat buffer.
+
+The reporting duty above is about orchestrated work. For a user-initiated turn:
+
+- If the outcome affects the orchestrated task — its scope, its files, its conclusion — report
+  it, and say explicitly that the user directed it. Without that line the orchestrator reads
+  your report as the answer to its own brief.
+- Otherwise send no completion report. The user who started the turn is already looking at this
+  buffer; waking the orchestrator spends one of its turns on work it never dispatched.
+
+An answer to a question you asked, or to a tool-approval prompt, is not a new task — it resumes
+briefed work, so the ordinary duty applies to whatever that work concludes.
+
 ## Report shape
 
 Conclusion → what changed → what's unresolved → what you need next. Briefly — the orchestrator can

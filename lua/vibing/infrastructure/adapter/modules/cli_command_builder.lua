@@ -335,6 +335,16 @@ function M.build(prompt, opts, session_id, config, settings_path)
     -- short by design: it states the target, the call shape and the report shape, and points at
     -- the vibing-worker skill for everything else (full "don't"s, the fan-in rule, examples)
     -- rather than inlining it and growing this cached prefix.
+    --
+    -- The obligation is scoped by turn provenance, and the model can only read provenance from
+    -- the delivered body: section headers (`## Request` vs `## User`) exist in the buffer
+    -- rendering alone — the prompt the CLI receives is what sits below the header
+    -- (`conversation_extractor.extract_user_message`) — so `delivery_message.lua` names the
+    -- sending chat at the top of every cross-chat body. A turn without that marker is the user
+    -- typing into the worker directly; an unconditional duty made the worker send a routine
+    -- completion report for those too, waking the orchestrator for work it never dispatched.
+    -- The wording stays byte-stable across turns: the condition is evaluated by the model
+    -- against the transcript, not spliced into this cached prefix per turn.
     if opts.orchestrators and #opts.orchestrators > 0 then
       local named = vim.tbl_map(function(orchestrator)
         return orchestrator.bufnr
@@ -362,7 +372,11 @@ function M.build(prompt, opts, session_id, config, settings_path)
           .. "what changed, what is unresolved, and what input you need next, briefly: it can "
           .. "read this transcript for the rest, and can be asked the same way if the brief is "
           .. "ambiguous or you get stuck. Do not stop with only a prose report in your own chat "
-          .. "buffer — that report is never read unless you also send it. See the vibing-worker "
+          .. "buffer — that report is never read unless you also send it. This duty covers "
+          .. "orchestrated work: turns whose message opens by naming the chat that sent it. A "
+          .. "turn without that marker was typed directly by the user into this chat — for "
+          .. "those, report only an outcome that affects the orchestrated task, saying the user "
+          .. "directed it, and otherwise send no report. See the vibing-worker "
           .. "skill for the full protocol, including what not to touch."
       )
     end

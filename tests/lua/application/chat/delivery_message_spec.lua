@@ -48,12 +48,18 @@ describe("DeliveryMessage.section_for", function()
     assert.is_true(section.from:find("worker.md", 1, true) ~= nil, tostring(section.from))
   end)
 
-  it("drops the redundant From heading once the section header carries it", function()
-    local sender, recipient = make_buf("worker.md"), make_buf()
+  it("names the sender in the body even when the section header carries it", function()
+    -- ヘッダはバッファの描画にしか無く、CLIへ渡るのはヘッダの下の本文だけ。本文が名乗らないと
+    -- 受け取るモデルは配達とユーザー直接入力を区別できず、報告義務の出自条件
+    -- （cli_command_builder の orchestrator 行）が判定不能になる
+    local sender = make_buf("worker.md")
     local queue = { { bufnr = sender, body = "done" } }
-    local section = DeliveryMessage.section_for(queue, recipient)
 
-    assert.equals("done", DeliveryMessage.build(queue, section))
+    local text = DeliveryMessage.build(queue)
+
+    assert.is_true(text:find("### From", 1, true) ~= nil, text)
+    assert.is_true(text:find("worker.md", 1, true) ~= nil, text)
+    assert.is_true(text:find("done", 1, true) ~= nil, text)
   end)
 
   it("keeps the From headings when several senders coalesce", function()
@@ -65,7 +71,7 @@ describe("DeliveryMessage.section_for", function()
     assert.equals("Report", section.kind)
     assert.is_nil(section.from, "no single sender to name")
 
-    local text = DeliveryMessage.build(queue, section)
+    local text = DeliveryMessage.build(queue)
     assert.is_true(text:find("### From", 1, true) ~= nil, text)
   end)
 
