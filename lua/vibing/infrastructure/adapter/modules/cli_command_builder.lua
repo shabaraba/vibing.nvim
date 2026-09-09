@@ -373,10 +373,11 @@ function M.build(prompt, opts, session_id, config, settings_path)
           .. "read this transcript for the rest, and can be asked the same way if the brief is "
           .. "ambiguous or you get stuck. Do not stop with only a prose report in your own chat "
           .. "buffer — that report is never read unless you also send it. This duty covers "
-          .. "orchestrated work: turns whose message opens by naming the chat that sent it. A "
-          .. "turn without that marker was typed directly by the user into this chat — for "
-          .. "those, report only an outcome that affects the orchestrated task, saying the user "
-          .. "directed it, and otherwise send no report. See the vibing-worker "
+          .. "orchestrated work: turns whose message opens by naming the chat that sent it, "
+          .. "watchdog notices about chats you messaged, and turns that merely resume such "
+          .. "work. A turn without any such marker was typed directly by the user into this "
+          .. "chat — for those, report only an outcome that affects the orchestrated task, "
+          .. "saying the user directed it, and otherwise send no report. See the vibing-worker "
           .. "skill for the full protocol, including what not to touch."
       )
     end

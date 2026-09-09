@@ -707,7 +707,10 @@ header exists only in the buffer rendering, while the prompt the CLI receives is
 (`extract_user_message`). The worker's reporting duty (`cli_command_builder`'s orchestrator line)
 is scoped to turns that open by naming their sending chat — without the body-side sender line a
 worker reported the user's own turns to its orchestrator, waking it for work it never dispatched.
-The buffer-side repetition is the accepted cost.
+The buffer-side repetition is the accepted cost. So is the marker being plain text: a user who
+pastes something that happens to open like a delivery makes the worker misread the turn as
+orchestrated, but that failure mode is a spurious report — exactly the pre-change behavior —
+where a structured signal would buy its complexity only to prevent an extra wake-up.
 
 **A delivery fills the empty unsent section rather than appending below it.** Every turn ends with
 `add_user_section()` writing `## User <!-- unsent -->`; a human types into it, but

@@ -62,7 +62,11 @@ The reporting duty above is about orchestrated work. For a user-initiated turn:
   buffer; waking the orchestrator spends one of its turns on work it never dispatched.
 
 An answer to a question you asked, or to a tool-approval prompt, is not a new task — it resumes
-briefed work, so the ordinary duty applies to whatever that work concludes.
+briefed work, so the ordinary duty applies to whatever that work concludes. The same goes for an
+automatic continuation after a usage limit ("Continue from where you left off." or similar): it
+carries no sender line, but it merely resumes whatever the interrupted turn was doing, so it
+keeps that work's provenance. When in doubt, ask what started the work the turn is finishing,
+not what started the turn.
 
 ## Report shape
 
