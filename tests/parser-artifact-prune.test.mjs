@@ -1,0 +1,113 @@
+#!/usr/bin/env node
+/**
+ * `vim.treesitter.language.add('vibing')` globs `parser/vibing.*` and loads the *first* match, not
+ * `vibing.so` specifically. So a leftover library in that directory is not inert: one whose name
+ * sorts earlier is loaded instead of the parser build.sh just produced, and the symptom is a
+ * grammar that disagrees with `queries/vibing/*.scm` ("Invalid node type ..."), not a missing
+ * parser. `/parser/` is git-ignored, so such a file never appears in `git status` either.
+ *
+ * Two things keep that from happening, and both are asserted here because both are one careless
+ * edit away from reverting: build.sh prunes the directory before it builds, and its own temporary
+ * file is named so it cannot match the glob in the first place.
+ */
+
+import { strict as assert } from 'assert';
+import { test } from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'path';
+import { tmpdir } from 'os';
+import { fileURLToPath } from 'url';
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+const buildScript = readFileSync(join(repoRoot, 'build.sh'), 'utf8');
+
+/** The shell function under test, lifted out of build.sh so no npm install has to run. */
+function extractPruneFunction() {
+  const match = buildScript.match(/^prune_stale_parser_artifacts\(\) \{\n[\s\S]*?^\}$/m);
+  assert.ok(
+    match,
+    'prune_stale_parser_artifacts() not found in build.sh — if it was renamed, rename it here too ' +
+      'rather than letting this test pass by exercising nothing'
+  );
+  return match[0];
+}
+
+test('the pruner removes every stale vibing parser artifact and keeps the real one', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'vibing-parser-prune-'));
+  try {
+    const strays = [
+      // Interrupted builds' temporary files, pre- and post-fix naming. The pruner treats a
+      // live PID as a build still in progress rather than garbage (see build.sh), so these use
+      // PIDs no real process can hold -- past any kernel's pid_max -- rather than small numbers
+      // that could coincidentally collide with an unrelated live process in a busy CI container.
+      'vibing.so.tmp.999999991',
+      '.vibing.so.tmp.999999992',
+      'vibing.dylib', // sorts before vibing.so, so this one would actually be loaded
+      'vibing.wasm',
+    ];
+    for (const name of [...strays, 'vibing.so', 'markdown.so']) {
+      writeFileSync(join(dir, name), '');
+    }
+
+    execFileSync('bash', ['-c', `${extractPruneFunction()}\nprune_stale_parser_artifacts`], {
+      env: { ...process.env, VIBING_PARSER_OUTPUT_DIR: dir },
+    });
+
+    // markdown.so stands in for a parser the user put here themselves: the sweep is scoped to
+    // vibing's own artifacts, not to everything on the runtime path.
+    assert.deepEqual(readdirSync(dir).sort(), ['markdown.so', 'vibing.so']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the pruner leaves a concurrently running build.sh alone', () => {
+  // A second `./build.sh` invocation runs prune_stale_parser_artifacts before its own compile
+  // step, same as the first. Without a liveness check, that prune would delete the first
+  // invocation's not-yet-renamed temp file out from under it. Node's own PID stands in for the
+  // first invocation's still-running shell -- it is unambiguously alive for the duration of
+  // this test.
+  const dir = mkdtempSync(join(tmpdir(), 'vibing-parser-prune-live-'));
+  try {
+    const liveTmpName = `.vibing.so.tmp.${process.pid}`;
+    writeFileSync(join(dir, liveTmpName), '');
+    writeFileSync(join(dir, 'vibing.so'), '');
+
+    execFileSync('bash', ['-c', `${extractPruneFunction()}\nprune_stale_parser_artifacts`], {
+      env: { ...process.env, VIBING_PARSER_OUTPUT_DIR: dir },
+    });
+
+    assert.deepEqual(readdirSync(dir).sort(), [liveTmpName, 'vibing.so']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("build.sh's temporary parser file cannot match Neovim's parser/vibing.* glob", () => {
+  const assignment = buildScript.match(/^\s*local (parser_tmp="[^"]+")$/m);
+  assert.ok(assignment, 'parser_tmp assignment not found in build.sh');
+
+  // Expanded by bash rather than inspected as text: the pre-fix spelling was
+  // "${parser_output}.tmp.$$", whose hazardous basename only appears once the variables are
+  // resolved. A string comparison would read that as safe.
+  const basename = execFileSync(
+    'bash',
+    [
+      '-c',
+      [
+        'VIBING_PARSER_OUTPUT_DIR=/tmp/vibing-parser-glob-check',
+        'parser_output="${VIBING_PARSER_OUTPUT_DIR}/vibing.so"',
+        assignment[1],
+        'basename "$parser_tmp"',
+      ].join('\n'),
+    ],
+    { encoding: 'utf8' }
+  ).trim();
+
+  assert.ok(
+    !/^vibing\./.test(basename),
+    `parser_tmp resolves to "${basename}", which matches parser/vibing.* and can be loaded ` +
+      'instead of the built parser if the build is killed before it renames the file'
+  );
+});

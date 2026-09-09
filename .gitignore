@@ -56,7 +56,9 @@ logs/
 # Build
 dist/
 build/
-/parser/vibing.*
+# Whole directory, not `/parser/vibing.*`: nothing here is tracked, and the pattern has to cover
+# build.sh's dot-prefixed temporary file too, or an interrupted build leaves a visible stray.
+/parser/
 *.min.js
 *.min.css
 
