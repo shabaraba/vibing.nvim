@@ -18,10 +18,12 @@ describe("vibing Tree-sitter parser", function()
     }, { text = true }):wait()
     assert.equals(0, compile.code, compile.stderr)
     assert.is_true(vim.treesitter.language.add("vibing", { path = parser_library }))
-    assert.is_nil(
-      vim.treesitter.query.get("vibing", "highlights"),
-      "the outer grammar should not override injected Markdown highlighting"
+    local outer_highlights = vim.treesitter.query.get("vibing", "highlights")
+    assert.is_not_nil(
+      outer_highlights,
+      "the outer query is required to activate injected highlighting"
     )
+    assert.equals(0, #outer_highlights.captures, "the outer grammar should not style chat content")
 
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
@@ -84,6 +86,19 @@ describe("vibing Tree-sitter parser", function()
     assert.is_true(found_nested_fence)
     assert.is_true(found_lua_injection)
     assert.is_true(found_multiline_code_span)
+
+    vim.treesitter.start(buf, "vibing")
+    local has_markdown_highlight = false
+    for _, capture in ipairs(vim.treesitter.get_captures_at_pos(buf, 13, 8)) do
+      if capture.lang == "markdown" or capture.lang == "markdown_inline" then
+        has_markdown_highlight = true
+        break
+      end
+    end
+    assert.is_true(
+      has_markdown_highlight,
+      "the empty outer query must preserve injected Markdown highlighting"
+    )
 
     local injection_query = assert(vim.treesitter.query.get("vibing", "injections"))
     local ranges = {}
