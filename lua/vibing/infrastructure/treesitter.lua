@@ -19,12 +19,15 @@ function M.setup()
     outer_parser_available = ok and loaded == true
   end
 
-  if outer_parser_available then
-    -- setup() can be called again in a live session which previously registered the Markdown
-    -- fallback. Explicitly restore the identity mapping in that case.
-    pcall(vim.treesitter.language.register, "vibing", "vibing")
-  else
-    pcall(vim.treesitter.language.register, "markdown", "vibing")
+  local register = language and language.register
+  if register then
+    if outer_parser_available then
+      -- setup() can be called again in a live session which previously registered the Markdown
+      -- fallback. Explicitly restore the identity mapping in that case.
+      pcall(register, "vibing", "vibing")
+    else
+      pcall(register, "markdown", "vibing")
+    end
   end
 
   return outer_parser_available
@@ -49,11 +52,6 @@ function M.apply_filetype(bufnr)
   if type(vim.treesitter.start) == "function" then
     pcall(vim.treesitter.start, bufnr, "vibing")
   end
-end
-
----@return boolean
-function M.is_active()
-  return outer_parser_available
 end
 
 return M

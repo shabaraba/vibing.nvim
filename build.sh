@@ -34,11 +34,18 @@ build_vibing_parser() {
         return 0
     fi
 
-    mkdir -p "$VIBING_PARSER_OUTPUT_DIR"
+    if ! mkdir -p "$VIBING_PARSER_OUTPUT_DIR"; then
+        echo "[vibing.nvim] ⚠ Could not create parser output directory; using Markdown fallback"
+        return 0
+    fi
     if "$compiler" -O2 -shared -fPIC -I"${VIBING_PARSER_DIR}/src" \
         "$parser_source" -o "$parser_tmp"; then
-        mv "$parser_tmp" "$parser_output"
-        echo "[vibing.nvim] ✓ Chat Tree-sitter parser built"
+        if mv "$parser_tmp" "$parser_output"; then
+            echo "[vibing.nvim] ✓ Chat Tree-sitter parser built"
+        else
+            rm -f "$parser_tmp"
+            echo "[vibing.nvim] ⚠ Could not install compiled parser; using Markdown fallback"
+        fi
     else
         rm -f "$parser_tmp"
         echo "[vibing.nvim] ⚠ Chat Tree-sitter parser build failed; using Markdown fallback"
