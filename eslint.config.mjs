@@ -25,4 +25,25 @@ export default [
       'no-var': 'error',
     },
   },
+  {
+    files: ['tree-sitter-vibing/grammar.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        module: 'readonly',
+        grammar: 'readonly',
+        choice: 'readonly',
+        optional: 'readonly',
+        prec: 'readonly',
+        repeat: 'readonly',
+        repeat1: 'readonly',
+        seq: 'readonly',
+        token: 'readonly',
+      },
+    },
+    rules: {
+      'no-control-regex': 'off',
+      'no-regex-spaces': 'off',
+    },
+  },
 ];

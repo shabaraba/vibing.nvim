@@ -2,8 +2,9 @@
 -- Place this in ~/.config/nvim/lua/plugins/vibing.lua
 --
 -- The MCP server reaches Claude Code as part of vibing.nvim's own bundled plugin, which is
--- handed to the CLI per session with `--plugin-dir` -- nothing is installed, and build.sh only
--- builds it. There is no separate ~/.claude.json registration path: that route can only ever
+-- handed to the CLI per session with `--plugin-dir` -- nothing is installed, and build.sh builds
+-- it together with the chat Tree-sitter parser. There is no separate ~/.claude.json registration
+-- path: that route can only ever
 -- hardcode a single default RPC port, so it silently targets the wrong Neovim instance whenever
 -- more than one is running.
 
@@ -14,7 +15,7 @@ return {
       -- Add any dependencies here
     },
 
-    -- Build the bundled MCP server on install/update
+    -- Build the bundled chat parser and MCP server on install/update
     build = "./build.sh",
 
     -- Use a custom Node.js executable during build:

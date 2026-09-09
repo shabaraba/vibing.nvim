@@ -1,0 +1,109 @@
+[
+  {
+    "type": "document",
+    "named": true,
+    "root": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "markdown_chunk",
+          "named": true
+        },
+        {
+          "type": "message_header",
+          "named": true
+        },
+        {
+          "type": "tool_block",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "markdown_chunk",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "markdown_line",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "markdown_line",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "tool_block",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "tool_argument_end",
+          "named": true
+        },
+        {
+          "type": "tool_argument_line",
+          "named": true
+        },
+        {
+          "type": "tool_header",
+          "named": true
+        },
+        {
+          "type": "tool_header_open",
+          "named": true
+        },
+        {
+          "type": "tool_result",
+          "named": true
+        },
+        {
+          "type": "tool_result_continuation",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "message_header",
+    "named": true
+  },
+  {
+    "type": "tool_argument_end",
+    "named": true
+  },
+  {
+    "type": "tool_argument_line",
+    "named": true
+  },
+  {
+    "type": "tool_header",
+    "named": true
+  },
+  {
+    "type": "tool_header_open",
+    "named": true
+  },
+  {
+    "type": "tool_result",
+    "named": true
+  },
+  {
+    "type": "tool_result_continuation",
+    "named": true
+  }
+]

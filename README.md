@@ -108,7 +108,7 @@ they compose well.
   dependencies = {
     "stevearc/oil.nvim",  -- Optional: file browser integration
   },
-  build = "./build.sh",  -- Builds the bundled MCP server
+  build = "./build.sh",  -- Builds the bundled chat parser and MCP server
   config = function()
     require("vibing").setup()
   end,
@@ -136,8 +136,10 @@ vibing.nvim ships a [Claude Code plugin](https://code.claude.com/docs/en/plugins
 
 **Nothing to install.** The plugin is not registered into Claude Code's global state at all —
 vibing.nvim hands the CLI its own `claude-plugin/` directory per session with `--plugin-dir`, so
-whichever checkout is running is the one that serves you. `build.sh` only builds the MCP server
-(and, once, cleans up an install from an older version of vibing.nvim).
+whichever checkout is running is the one that serves you. `build.sh` builds the MCP server and the
+small Tree-sitter parser used for chat boundaries (and, once, cleans up an install from an older
+version of vibing.nvim). If no C compiler is available, the parser build is skipped and chat
+buffers fall back to the previous whole-buffer Markdown parser.
 
 That gives you `mcp__plugin_vibing-nvim_vibing-nvim__*` tools (buffer/window/cursor access, Ex
 commands, and LSP queries against the running Neovim instance), the bundled skills
@@ -176,8 +178,10 @@ marketplace entry for you. To do it by hand:
 ```
 
 Type your message under the `## User` header and press `<CR>` in normal mode to send. The AI
-responds in the same buffer; `<C-c>` cancels a running request. Chats are ordinary Markdown
-buffers — save, search, and edit them like any other file.
+responds in the same buffer; `<C-c>` cancels a running request. Chats remain ordinary Markdown
+files that you can save, search, and edit normally. In Neovim, the small `vibing` Tree-sitter
+parser isolates chat headers and tool output, then injects the standard Markdown parser into each
+message body. Existing Markdown highlighting, including fenced code languages, is preserved.
 
 ## 🚀 Usage
 
