@@ -16,6 +16,24 @@ VIBING_PARSER_OUTPUT_DIR="${SCRIPT_DIR}/parser"
 # Use VIBING_NODE_EXECUTABLE env var if set, otherwise default to "node"
 NODE_EXECUTABLE="${VIBING_NODE_EXECUTABLE:-node}"
 
+# Delete every parser artifact except the one Neovim is meant to load.
+#
+# `vim.treesitter.language.add('vibing')` globs `parser/vibing.*` and loads *the first match*, so a
+# leftover from an interrupted build is not inert -- a name sorting before "vibing.so" is loaded
+# instead of the real parser, and the failure is a wrong grammar rather than a missing one. The
+# directory is git-ignored, so nothing surfaces such a file in `git status` either.
+#
+# This runs before the build, not after, because the run that leaves the garbage behind is by
+# definition the one that does not reach its own cleanup: build.sh is killed by SIGKILL when it
+# exceeds lazy.nvim's build-step timeout (the same hazard run_with_timeout below exists for), and
+# the `rm -f "$parser_tmp"` branches never execute.
+prune_stale_parser_artifacts() {
+    [ -d "$VIBING_PARSER_OUTPUT_DIR" ] || return 0
+    find "$VIBING_PARSER_OUTPUT_DIR" -maxdepth 1 -type f \
+        \( -name 'vibing.*' -o -name '.vibing.so.tmp.*' \) \
+        ! -name 'vibing.so' -exec rm -f {} + 2>/dev/null || true
+}
+
 # The generated parser.c is committed, so building the small chat-boundary parser needs no
 # tree-sitter CLI. A missing compiler is non-fatal: Lua falls back to the previous whole-buffer
 # Markdown parser mapping, leaving vibing.nvim usable on minimal systems.
@@ -23,7 +41,10 @@ build_vibing_parser() {
     local parser_source="${VIBING_PARSER_DIR}/src/parser.c"
     local scanner_source="${VIBING_PARSER_DIR}/src/scanner.c"
     local parser_output="${VIBING_PARSER_OUTPUT_DIR}/vibing.so"
-    local parser_tmp="${parser_output}.tmp.$$"
+    # Deliberately not "${parser_output}.tmp.$$": that name matches the `parser/vibing.*` glob
+    # Neovim loads from. The leading dot keeps the temporary file out of it while staying in the
+    # same directory, which is what makes the `mv` below atomic.
+    local parser_tmp="${VIBING_PARSER_OUTPUT_DIR}/.vibing.so.tmp.$$"
     local compiler="${VIBING_CC:-cc}"
 
     if [ ! -f "$parser_source" ] || [ ! -f "$scanner_source" ]; then
@@ -39,6 +60,7 @@ build_vibing_parser() {
         echo "[vibing.nvim] ⚠ Could not create parser output directory; using Markdown fallback"
         return 0
     fi
+    prune_stale_parser_artifacts
     if "$compiler" -O2 -shared -fPIC -I"${VIBING_PARSER_DIR}/src" \
         "$parser_source" "$scanner_source" -o "$parser_tmp"; then
         if mv "$parser_tmp" "$parser_output"; then
