@@ -1,0 +1,215 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/grammar.schema.json",
+  "name": "vibing",
+  "rules": {
+    "document": {
+      "type": "REPEAT",
+      "content": {
+        "type": "CHOICE",
+        "members": [
+          {
+            "type": "SYMBOL",
+            "name": "message_header"
+          },
+          {
+            "type": "SYMBOL",
+            "name": "fenced_markdown_block"
+          },
+          {
+            "type": "SYMBOL",
+            "name": "tool_block"
+          },
+          {
+            "type": "SYMBOL",
+            "name": "markdown_chunk"
+          }
+        ]
+      }
+    },
+    "message_header": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 4,
+        "content": {
+          "type": "PATTERN",
+          "value": "## ((User|Assistant|Request|Report|Notice|[Ss][Uu][Mm][Mm][Aa][Rr][Yy])( <!-- [^\\r\\n]* -->)?|[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9] (User|Assistant))\\r?\\n"
+        }
+      }
+    },
+    "tool_block": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "tool_header"
+            },
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "SYMBOL",
+                  "name": "tool_header_open"
+                },
+                {
+                  "type": "REPEAT",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "tool_argument_line"
+                  }
+                },
+                {
+                  "type": "SYMBOL",
+                  "name": "tool_argument_end"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "SYMBOL",
+                  "name": "tool_result"
+                },
+                {
+                  "type": "REPEAT",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "tool_result_continuation"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
+        }
+      ]
+    },
+    "tool_header": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 4,
+        "content": {
+          "type": "PATTERN",
+          "value": "[^\\x00-\\x7f\\s][^ \\t\\r\\n]* [A-Za-z_][A-Za-z0-9_.:-]*\\([^\\r\\n]*\\)\\r?\\n"
+        }
+      }
+    },
+    "tool_header_open": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 3,
+        "content": {
+          "type": "PATTERN",
+          "value": "[^\\x00-\\x7f\\s][^ \\t\\r\\n]* [A-Za-z_][A-Za-z0-9_.:-]*\\([^\\r\\n]*\\r?\\n"
+        }
+      }
+    },
+    "tool_argument_line": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 0,
+        "content": {
+          "type": "PATTERN",
+          "value": "[^\\r\\n]*\\r?\\n"
+        }
+      }
+    },
+    "tool_argument_end": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 3,
+        "content": {
+          "type": "PATTERN",
+          "value": "[^\\r\\n]*\\)\\r?\\n"
+        }
+      }
+    },
+    "tool_result": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 3,
+        "content": {
+          "type": "PATTERN",
+          "value": "  ⎿[^\\r\\n]*\\r?\\n"
+        }
+      }
+    },
+    "tool_result_continuation": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 3,
+        "content": {
+          "type": "PATTERN",
+          "value": "     [^\\r\\n]*\\r?\\n"
+        }
+      }
+    },
+    "markdown_chunk": {
+      "type": "PREC_RIGHT",
+      "value": 0,
+      "content": {
+        "type": "REPEAT1",
+        "content": {
+          "type": "SYMBOL",
+          "name": "markdown_line"
+        }
+      }
+    },
+    "markdown_line": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "TOKEN",
+          "content": {
+            "type": "PREC",
+            "value": -1,
+            "content": {
+              "type": "PATTERN",
+              "value": "[^\\r\\n]*\\r?\\n"
+            }
+          }
+        },
+        {
+          "type": "TOKEN",
+          "content": {
+            "type": "PREC",
+            "value": -1,
+            "content": {
+              "type": "PATTERN",
+              "value": "[^\\r\\n]+"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "extras": [],
+  "conflicts": [],
+  "precedences": [],
+  "externals": [
+    {
+      "type": "SYMBOL",
+      "name": "fenced_markdown_block"
+    }
+  ],
+  "inline": [],
+  "supertypes": [],
+  "reserved": {}
+}

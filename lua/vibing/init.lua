@@ -30,11 +30,10 @@ function M.setup(opts)
     notify.warn("Could not initialize .vibing/codex-permissions.toml: " .. tostring(profile_error))
   end
 
-  -- vibing filetype 専用の treesitter パーサは存在しないため markdown を割り当てる。
-  -- これがないと vibing バッファで treesitter ハイライトも
-  -- render-markdown.nvim のレンダリングも一切効かない。
-  -- (vim.bo.syntax = "markdown" は旧来の syntax エンジンにしか効かない)
-  pcall(vim.treesitter.language.register, "markdown", "vibing")
+  -- The small bundled parser isolates each chat section and keeps rendered tool commands out of
+  -- Markdown. Its content nodes inject the user's existing markdown / markdown_inline parsers.
+  -- If the native parser could not be built, this retains the old whole-buffer Markdown behavior.
+  require("vibing.infrastructure.treesitter").setup()
 
   -- チャットファイル自動検知（.md と .vibing の両方をサポート）
   -- フロントマターに vibing.nvim: true が含まれている場合にアタッチ

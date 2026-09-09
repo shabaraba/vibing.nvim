@@ -1,0 +1,92 @@
+==================
+Unclosed Markdown is isolated by chat headers
+==================
+
+## User
+```markdown
+unclosed fence
+
+## Assistant
+# rendered heading
+## User
+next
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line))
+  (message_header)
+  (markdown_chunk
+    (markdown_line)
+    (markdown_line)
+    (markdown_line))
+  (message_header)
+  (markdown_chunk
+    (markdown_line))
+  (message_header)
+  (markdown_chunk
+    (markdown_line)))
+
+==================
+Multiline tool blocks are not Markdown
+==================
+
+intro
+💻 Bash(for wt in $(list); do
+echo "$wt"
+done)
+  ⎿  result $5
+     more
+after `code`
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line)
+    (markdown_line))
+  (tool_block
+    (tool_header_open)
+    (tool_argument_line)
+    (tool_argument_end)
+    (tool_result)
+    (tool_result_continuation))
+  (markdown_chunk
+    (markdown_line)))
+
+==================
+Tool shape avoids ordinary prose
+==================
+
+💻 環境構築で詰まってる
+- fix parse(input)
+✿ SomeTool(arg)
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line)
+    (markdown_line)
+    (markdown_line))
+  (tool_block
+    (tool_header)))
+
+==================
+Fenced Markdown owns tool-shaped lines
+==================
+
+```text
+💻 Bash(echo "$inside")
+```
+after
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line))
+  (fenced_markdown_block)
+  (markdown_chunk
+    (markdown_line)))

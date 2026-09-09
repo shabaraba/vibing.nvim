@@ -195,6 +195,10 @@ end
 ---@param bufnr number バッファ番号
 function M._apply_chat_buffer_settings(bufnr)
   -- バッファローカル設定
+  -- Set the cache before changing filetype: FileType autocmds can synchronously ask whether this
+  -- is a chat buffer (for example render-markdown.nvim integrations).
+  vim.b[bufnr].vibing_is_chat_buffer = true
+  require("vibing.infrastructure.treesitter").apply_filetype(bufnr)
   vim.bo[bufnr].syntax = "markdown"
   vim.bo[bufnr].commentstring = "<!-- %s -->"
   vim.bo[bufnr].textwidth = 0
@@ -226,9 +230,6 @@ function M._apply_chat_buffer_settings(bufnr)
 
     -- 初回適用（force=trueで強制適用、新規作成直後のバッファはまだフロントマターがないため）
     apply_wrap_for_bufnr()
-
-    -- Mark buffer as chat buffer immediately (cache for performance)
-    vim.b[bufnr].vibing_is_chat_buffer = true
 
     -- FileTypeでwrap設定を再適用（ftplugin（markdown.vim等）による上書きを防ぐ）
     -- WinEnterはグローバルイベント（init.lua）で処理するため、ここでは不要

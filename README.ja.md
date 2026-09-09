@@ -106,7 +106,7 @@ vibing.nvim は補完プラグイン(Copilot、Codeium)や他のチャットプ�
   dependencies = {
     "stevearc/oil.nvim",  -- オプション: ファイルブラウザ統合
   },
-  build = "./build.sh",  -- 同梱 MCP サーバーのビルド
+  build = "./build.sh",  -- チャット用パーサーと同梱 MCP サーバーのビルド
   config = function()
     require("vibing").setup()
   end,
@@ -136,8 +136,10 @@ vibing.nvim は [Claude Code プラグイン](https://code.claude.com/docs/en/pl
 **インストール作業はありません。** このプラグインは Claude Code のグローバル状態には一切
 登録されません。vibing.nvim が自分の `claude-plugin/` ディレクトリをセッションごとに
 `--plugin-dir` で CLI に渡すため、いま動いている checkout がそのまま使われます(worktree を
-含む)。`build.sh` がやるのは MCP サーバーのビルドと、旧バージョンのインストールが残っている
-場合の一度きりの後片付けだけです。
+含む)。`build.sh` は MCP サーバーに加え、チャット境界を扱う小さな Tree-sitter パーサーを
+ビルドします。また、旧バージョンのインストールが残っている場合は一度だけ後片付けします。
+C コンパイラがない環境ではパーサーのビルドだけを省略し、従来どおりバッファ全体を Markdown
+として解析します。
 
 これにより `mcp__plugin_vibing-nvim_vibing-nvim__*` ツール(実行中の Neovim へのバッファ/
 ウィンドウ/カーソルアクセス・Ex コマンド・LSP クエリ)、同梱スキル(`nvim-context`、
@@ -173,7 +175,9 @@ MCP ツールの接続先として、`mcp = { enabled = true }`(デフォルト)
 
 `## User` ヘッダの下にメッセージを書き、ノーマルモードで `<CR>` を押すと送信されます。
 AI は同じバッファ内に応答します。`<C-c>` で実行中のリクエストをキャンセルできます。
-チャットは通常の Markdown バッファなので、他のファイルと同様に保存・検索・編集できます。
+チャットは通常の Markdown ファイルとして保存・検索・編集できます。Neovim 上では小さな
+`vibing` Tree-sitter パーサーがチャットヘッダとツール出力を分離し、各メッセージ本文に標準の
+Markdown パーサーを注入します。フェンス内の言語を含む既存の Markdown ハイライトは維持されます。
 
 ## 🚀 使い方
 

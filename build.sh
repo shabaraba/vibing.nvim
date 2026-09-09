@@ -2,7 +2,7 @@
 set -e
 
 # vibing.nvim build script
-# Automatically builds the MCP server on plugin installation
+# Builds the chat parser and MCP server on plugin installation
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Everything shipped to Claude Code lives under claude-plugin/, which is what
@@ -10,9 +10,48 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # *marketplace* root; the plugin root is one level down.
 PLUGIN_SRC_DIR="${SCRIPT_DIR}/claude-plugin"
 MCP_DIR="${PLUGIN_SRC_DIR}/mcp-server"
+VIBING_PARSER_DIR="${SCRIPT_DIR}/tree-sitter-vibing"
+VIBING_PARSER_OUTPUT_DIR="${SCRIPT_DIR}/parser"
 
 # Use VIBING_NODE_EXECUTABLE env var if set, otherwise default to "node"
 NODE_EXECUTABLE="${VIBING_NODE_EXECUTABLE:-node}"
+
+# The generated parser.c is committed, so building the small chat-boundary parser needs no
+# tree-sitter CLI. A missing compiler is non-fatal: Lua falls back to the previous whole-buffer
+# Markdown parser mapping, leaving vibing.nvim usable on minimal systems.
+build_vibing_parser() {
+    local parser_source="${VIBING_PARSER_DIR}/src/parser.c"
+    local scanner_source="${VIBING_PARSER_DIR}/src/scanner.c"
+    local parser_output="${VIBING_PARSER_OUTPUT_DIR}/vibing.so"
+    local parser_tmp="${parser_output}.tmp.$$"
+    local compiler="${VIBING_CC:-cc}"
+
+    if [ ! -f "$parser_source" ] || [ ! -f "$scanner_source" ]; then
+        echo "[vibing.nvim] ⚠ Chat Tree-sitter source is missing; using Markdown fallback"
+        return 0
+    fi
+    if ! command -v "$compiler" &> /dev/null; then
+        echo "[vibing.nvim] ⚠ C compiler '$compiler' not found; using Markdown fallback"
+        return 0
+    fi
+
+    if ! mkdir -p "$VIBING_PARSER_OUTPUT_DIR"; then
+        echo "[vibing.nvim] ⚠ Could not create parser output directory; using Markdown fallback"
+        return 0
+    fi
+    if "$compiler" -O2 -shared -fPIC -I"${VIBING_PARSER_DIR}/src" \
+        "$parser_source" "$scanner_source" -o "$parser_tmp"; then
+        if mv "$parser_tmp" "$parser_output"; then
+            echo "[vibing.nvim] ✓ Chat Tree-sitter parser built"
+        else
+            rm -f "$parser_tmp"
+            echo "[vibing.nvim] ⚠ Could not install compiled parser; using Markdown fallback"
+        fi
+    else
+        rm -f "$parser_tmp"
+        echo "[vibing.nvim] ⚠ Chat Tree-sitter parser build failed; using Markdown fallback"
+    fi
+}
 
 # Timeouts (seconds) for the `claude plugin ...` cleanup calls below. Kept even
 # though vibing.nvim no longer installs itself as a plugin: uninstalling one is
@@ -73,7 +112,8 @@ run_with_timeout() {
     return "$cmd_status"
 }
 
-echo "[vibing.nvim] Building MCP server..."
+echo "[vibing.nvim] Building chat parser and MCP server..."
+build_vibing_parser
 
 # Check if Node.js is installed
 # Handle both absolute paths and PATH lookups

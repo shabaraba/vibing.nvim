@@ -1,0 +1,9 @@
+{
+  "name": "tree-sitter-vibing",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "generate": "tree-sitter generate --abi 14",
+    "test": "tree-sitter test"
+  }
+}
