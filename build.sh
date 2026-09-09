@@ -21,11 +21,12 @@ NODE_EXECUTABLE="${VIBING_NODE_EXECUTABLE:-node}"
 # Markdown parser mapping, leaving vibing.nvim usable on minimal systems.
 build_vibing_parser() {
     local parser_source="${VIBING_PARSER_DIR}/src/parser.c"
+    local scanner_source="${VIBING_PARSER_DIR}/src/scanner.c"
     local parser_output="${VIBING_PARSER_OUTPUT_DIR}/vibing.so"
     local parser_tmp="${parser_output}.tmp.$$"
     local compiler="${VIBING_CC:-cc}"
 
-    if [ ! -f "$parser_source" ]; then
+    if [ ! -f "$parser_source" ] || [ ! -f "$scanner_source" ]; then
         echo "[vibing.nvim] ⚠ Chat Tree-sitter source is missing; using Markdown fallback"
         return 0
     fi
@@ -39,7 +40,7 @@ build_vibing_parser() {
         return 0
     fi
     if "$compiler" -O2 -shared -fPIC -I"${VIBING_PARSER_DIR}/src" \
-        "$parser_source" -o "$parser_tmp"; then
+        "$parser_source" "$scanner_source" -o "$parser_tmp"; then
         if mv "$parser_tmp" "$parser_output"; then
             echo "[vibing.nvim] ✓ Chat Tree-sitter parser built"
         else

@@ -13,6 +13,10 @@
           },
           {
             "type": "SYMBOL",
+            "name": "fenced_markdown_block"
+          },
+          {
+            "type": "SYMBOL",
             "name": "tool_block"
           },
           {
@@ -199,7 +203,12 @@
   "extras": [],
   "conflicts": [],
   "precedences": [],
-  "externals": [],
+  "externals": [
+    {
+      "type": "SYMBOL",
+      "name": "fenced_markdown_block"
+    }
+  ],
   "inline": [],
   "supertypes": [],
   "reserved": {}

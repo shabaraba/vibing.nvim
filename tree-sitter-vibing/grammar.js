@@ -12,8 +12,11 @@ module.exports = grammar({
 
   extras: (_) => [],
 
+  externals: ($) => [$.fenced_markdown_block],
+
   rules: {
-    document: ($) => repeat(choice($.message_header, $.tool_block, $.markdown_chunk)),
+    document: ($) =>
+      repeat(choice($.message_header, $.fenced_markdown_block, $.tool_block, $.markdown_chunk)),
 
     message_header: (_) =>
       token(

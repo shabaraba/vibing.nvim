@@ -5,6 +5,7 @@ describe("vibing Tree-sitter parser", function()
       "generated parser source is missing"
     )
     local include_dir = vim.fn.fnamemodify(parser_source, ":h")
+    local scanner_source = include_dir .. "/scanner.c"
     local parser_library = vim.fn.tempname() .. ".so"
     local compile = vim.system({
       "cc",
@@ -13,6 +14,7 @@ describe("vibing Tree-sitter parser", function()
       "-fPIC",
       "-I" .. include_dir,
       parser_source,
+      scanner_source,
       "-o",
       parser_library,
     }, { text = true }):wait()
@@ -47,6 +49,7 @@ describe("vibing Tree-sitter parser", function()
       "next",
       "````markdown",
       "```lua",
+      '💻 Bash(echo "$inside")',
       "print('nested')",
       "```",
       "````",
@@ -65,9 +68,9 @@ describe("vibing Tree-sitter parser", function()
     local found_lua_injection = false
     local function inspect_node(node)
       local start_row, _, end_row, _ = node:range()
-      if node:type() == "fenced_code_block" and start_row == 18 and end_row == 23 then
+      if node:type() == "fenced_code_block" and start_row == 18 and end_row == 24 then
         found_nested_fence = true
-      elseif node:type() == "code_span" and start_row == 23 and end_row == 24 then
+      elseif node:type() == "code_span" and start_row == 24 and end_row == 25 then
         found_multiline_code_span = true
       end
       for child in node:iter_children() do
@@ -86,6 +89,7 @@ describe("vibing Tree-sitter parser", function()
     assert.is_true(found_nested_fence)
     assert.is_true(found_lua_injection)
     assert.is_true(found_multiline_code_span)
+    assert.is_truthy(root:sexpr():find("fenced_markdown_block", 1, true))
 
     vim.treesitter.start(buf, "vibing")
     local has_markdown_highlight = false
@@ -108,6 +112,13 @@ describe("vibing Tree-sitter parser", function()
       end
     end
     assert.is_true(has_tool_highlight, "rendered tool blocks should remain visibly distinct")
+
+    for _, capture in ipairs(vim.treesitter.get_captures_at_pos(buf, 20, 0)) do
+      assert.is_false(
+        capture.lang == "vibing" and capture.capture == "comment",
+        "tool-shaped code must stay inside the fenced Markdown injection"
+      )
+    end
 
     for _, capture in ipairs(vim.treesitter.get_captures_at_pos(buf, 0, 3)) do
       assert.is_false(

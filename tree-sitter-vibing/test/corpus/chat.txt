@@ -72,3 +72,21 @@ Tool shape avoids ordinary prose
     (markdown_line))
   (tool_block
     (tool_header)))
+
+==================
+Fenced Markdown owns tool-shaped lines
+==================
+
+```text
+💻 Bash(echo "$inside")
+```
+after
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line))
+  (fenced_markdown_block)
+  (markdown_chunk
+    (markdown_line)))

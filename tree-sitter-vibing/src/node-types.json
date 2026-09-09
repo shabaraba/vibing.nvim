@@ -9,6 +9,10 @@
       "required": false,
       "types": [
         {
+          "type": "fenced_markdown_block",
+          "named": true
+        },
+        {
           "type": "markdown_chunk",
           "named": true
         },
@@ -77,6 +81,10 @@
         }
       ]
     }
+  },
+  {
+    "type": "fenced_markdown_block",
+    "named": true
   },
   {
     "type": "message_header",
