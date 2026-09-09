@@ -35,11 +35,19 @@ end
 ---machines where the optional native build was skipped.
 ---@param bufnr number
 function M.apply_filetype(bufnr)
-  if outer_parser_available
-    and vim.api.nvim_buf_is_valid(bufnr)
-    and vim.bo[bufnr].filetype ~= "vibing"
-  then
+  if not outer_parser_available or not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+
+  if vim.bo[bufnr].filetype ~= "vibing" then
     vim.bo[bufnr].filetype = "vibing"
+  end
+
+  -- nvim-treesitter's FileType autocmd may already have run while a .md chat still had the
+  -- markdown filetype. Changing it here does not guarantee that the highlighter is restarted for
+  -- our newly selected language, so explicitly attach it on every chat-buffer setup.
+  if type(vim.treesitter.start) == "function" then
+    pcall(vim.treesitter.start, bufnr, "vibing")
   end
 end
 
