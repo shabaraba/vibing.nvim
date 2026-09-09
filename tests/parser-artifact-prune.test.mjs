@@ -37,8 +37,12 @@ test('the pruner removes every stale vibing parser artifact and keeps the real o
   const dir = mkdtempSync(join(tmpdir(), 'vibing-parser-prune-'));
   try {
     const strays = [
-      'vibing.so.tmp.4242', // an interrupted build's temporary file, pre-fix naming
-      '.vibing.so.tmp.777', // ... and post-fix naming
+      // Interrupted builds' temporary files, pre- and post-fix naming. The pruner treats a
+      // live PID as a build still in progress rather than garbage (see build.sh), so these use
+      // PIDs no real process can hold -- past any kernel's pid_max -- rather than small numbers
+      // that could coincidentally collide with an unrelated live process in a busy CI container.
+      'vibing.so.tmp.999999991',
+      '.vibing.so.tmp.999999992',
       'vibing.dylib', // sorts before vibing.so, so this one would actually be loaded
       'vibing.wasm',
     ];
@@ -53,6 +57,28 @@ test('the pruner removes every stale vibing parser artifact and keeps the real o
     // markdown.so stands in for a parser the user put here themselves: the sweep is scoped to
     // vibing's own artifacts, not to everything on the runtime path.
     assert.deepEqual(readdirSync(dir).sort(), ['markdown.so', 'vibing.so']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the pruner leaves a concurrently running build.sh alone', () => {
+  // A second `./build.sh` invocation runs prune_stale_parser_artifacts before its own compile
+  // step, same as the first. Without a liveness check, that prune would delete the first
+  // invocation's not-yet-renamed temp file out from under it. Node's own PID stands in for the
+  // first invocation's still-running shell -- it is unambiguously alive for the duration of
+  // this test.
+  const dir = mkdtempSync(join(tmpdir(), 'vibing-parser-prune-live-'));
+  try {
+    const liveTmpName = `.vibing.so.tmp.${process.pid}`;
+    writeFileSync(join(dir, liveTmpName), '');
+    writeFileSync(join(dir, 'vibing.so'), '');
+
+    execFileSync('bash', ['-c', `${extractPruneFunction()}\nprune_stale_parser_artifacts`], {
+      env: { ...process.env, VIBING_PARSER_OUTPUT_DIR: dir },
+    });
+
+    assert.deepEqual(readdirSync(dir).sort(), [liveTmpName, 'vibing.so']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

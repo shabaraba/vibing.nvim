@@ -29,9 +29,25 @@ NODE_EXECUTABLE="${VIBING_NODE_EXECUTABLE:-node}"
 # the `rm -f "$parser_tmp"` branches never execute.
 prune_stale_parser_artifacts() {
     [ -d "$VIBING_PARSER_OUTPUT_DIR" ] || return 0
-    find "$VIBING_PARSER_OUTPUT_DIR" -maxdepth 1 -type f \
+    local f pid
+    while IFS= read -r -d '' f; do
+        case "$f" in
+        *.tmp.*)
+            # A concurrently running build.sh (a manual rerun while an automated one is
+            # still compiling) has a live temp file matching this same glob. Only its own
+            # dead runs -- the ones this function exists for -- get pruned; a PID that
+            # still answers `kill -0` is a build in progress, not garbage.
+            pid="${f##*.tmp.}"
+            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                continue
+            fi
+            ;;
+        esac
+        rm -f "$f"
+    done < <(find "$VIBING_PARSER_OUTPUT_DIR" -maxdepth 1 -type f \
         \( -name 'vibing.*' -o -name '.vibing.so.tmp.*' \) \
-        ! -name 'vibing.so' -exec rm -f {} + 2>/dev/null || true
+        ! -name 'vibing.so' -print0 2>/dev/null)
+    return 0
 }
 
 # The generated parser.c is committed, so building the small chat-boundary parser needs no
