@@ -48,6 +48,19 @@ function M.setup()
     desc = "Attach vibing.nvim to chat files with vibing.nvim frontmatter",
   })
 
+  -- `:edit` unloads and reloads the same buffer number. ChatView's BufUnload cleanup correctly
+  -- drops its attachment, so this module's separate cache must do the same; otherwise the
+  -- following BufReadPost is mistaken for an already-attached buffer and Tree-sitter highlighting
+  -- is never restarted.
+  vim.api.nvim_create_autocmd("BufUnload", {
+    pattern = { "*.md", "*.vibing" },
+    group = group,
+    callback = function(ev)
+      attached_bufs[ev.buf] = nil
+    end,
+    desc = "Allow vibing.nvim chat settings to reattach after buffer reload",
+  })
+
   -- バッファ削除時のクリーンアップ
   vim.api.nvim_create_autocmd("BufDelete", {
     pattern = { "*.md", "*.vibing" },
