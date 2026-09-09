@@ -6,7 +6,6 @@
       "scope": "text.vibing",
       "path": ".",
       "file-types": ["vibing"],
-      "highlights": "queries/highlights.scm",
       "injections": "queries/injections.scm",
       "injection-regex": "^vibing$"
     }

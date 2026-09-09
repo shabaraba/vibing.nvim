@@ -18,6 +18,10 @@ describe("vibing Tree-sitter parser", function()
     }, { text = true }):wait()
     assert.equals(0, compile.code, compile.stderr)
     assert.is_true(vim.treesitter.language.add("vibing", { path = parser_library }))
+    assert.is_nil(
+      vim.treesitter.query.get("vibing", "highlights"),
+      "the outer grammar should not override injected Markdown highlighting"
+    )
 
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
