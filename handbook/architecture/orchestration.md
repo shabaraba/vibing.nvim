@@ -50,15 +50,27 @@ tracked "which worker does what" only in the orchestrator's own context, and aft
 context compaction there was no way to rebuild the bufnr ↔ PR/issue ↔ assignment table.
 
 **It is written on the orchestrator's own `orchestrated` entry, never on the driven chat's own
-frontmatter.** An `orchestrated` list item is `<path>` or `<path>|<task>`
-(`application/chat/orchestrated_entry.lua`'s `encode`/`decode`/`find`); `orchestrated_by` never
-carries the suffix, since the assignment belongs to whoever gave it, not whoever received it.
+frontmatter.** An `orchestrated` list item is a bare `<path>` scalar, or a `{path, task}` map
+(`application/chat/orchestrated_entry.lua`'s `encode`/`decode`/`find`/`paths`); `orchestrated_by`
+never carries a task, since the assignment belongs to whoever gave it, not whoever received it.
 `nvim_chat_list` (`rpc/handlers/chat.lua`'s `list_chats`) expands every open chat's `orchestrated`
 list and projects each decoded task onto the matching bufnr's row — so an orchestrator reconstructs
 every worker's assignment from **its own frontmatter alone**, no per-worker file to open and no
 transcript to re-read.
 
-Two designs were rejected on the way here:
+```yaml
+orchestrated:
+  - .vibing/chat/worker-docs.md
+  - path: .vibing/chat/worker-auth.md
+    task: review fixes, then merge
+```
+
+A task is quoted on write only when a plain scalar would change its meaning — a leading `-`, a
+colon-space or a space-`#` inside it, or text that would read back as a boolean or a number.
+`PR #688 -- review` comes out as `task: "PR #688 -- review"`, because a `#` after a space opens a
+comment in plain YAML.
+
+One design was rejected on the way here:
 
 - **A `task` field on the driven chat's own frontmatter** (the first shape this feature shipped
   with). Once the orchestrator's `orchestrated` list became the thing a caller actually reads back
@@ -66,26 +78,24 @@ Two designs were rejected on the way here:
   source of truth for the same fact with no reader that needed it — the worker already depends on
   `orchestrated_by` to know who to report to, so depending on it to recall its own assignment is no
   new cost. Removed once `orchestrated` could carry the task itself.
-- **A nested map per `orchestrated` entry** (`- path: ... / task: ...`), which is what a real YAML
-  document would look like. `infrastructure/storage/frontmatter.lua`'s hand-rolled parser only
-  reads a list item as one opaque scalar string (`parse_yaml_simple`'s `^%s+%-%s*(.*)$`), so nested
-  maps would need real parser and serializer work, plus the rename scanner. Encoding `<path>|<task>`
-  into that one scalar reuses the existing flat-list machinery untouched — `update_list`'s
-  `"remove"` then `"add"` is how a task gets replaced — at the cost of a scanner that now has to
-  split the task suffix off before comparing paths (`orchestration_chat_scanner.lua`'s
-  `item_path`/`item_with_path`).
 
-**Why `|` as the separator, specifically:** a chat file path never contains one, so splitting at the
-first `|` always isolates the path cleanly regardless of what the task text contains (`#`, `:`,
-`--`, anything). More importantly, Vim's default `'isfname'` does **not** include `|`, while it does
-include `-` and `#` — so placing the cursor anywhere in an `orchestrated` line's path and pressing
-`gf` stops exactly at the pipe and never reads into the task text, confirmed by driving a real
-Neovim (`gf` on `.../worker.md|PR #688 ...` from any column of the path jumps correctly; from inside
-the task text it fails harmlessly rather than mis-resolving a path).
+**It was not always a map (#712 → #717).** The first shipped encoding was `<path>|<task>` — one
+opaque scalar — because `infrastructure/storage/frontmatter.lua`'s hand-rolled parser read a list
+item only as `^%s+%-%s*(.*)$` and there was a second, independent line-editing parser in
+`presentation/chat/modules/frontmatter_handler.lua` that had to agree with it. #717 replaced both
+with `core/utils/yaml.lua`, so the entry is now what a real YAML document would look like.
+`decode` still splits a `|` it finds in a scalar, so chats written before #717 keep working; the
+entry is rewritten into map form the next time it is touched (a rename, or a new `task`).
+**`encode` never writes the pipe form again.**
+
+**The `gf` property survived the change.** #712 chose `|` partly because Vim's default `'isfname'`
+excludes it while including `-` and `#`, so `gf` from anywhere in an `orchestrated` path stopped at
+the pipe instead of reading into the task text. With the task on its own line, the path line
+contains nothing but the path, so the structure gives that for free.
 
 **The assignment is mutable: "the latest instruction wins."** Both call sites go through
 `OrchestrationLink.link(from_bufnr, to_bufnr, task)`. If the link already exists and `task` is
-given and differs from what is currently recorded, `link` removes the old encoded entry and adds
+given and differs from what is currently recorded, `link` removes the old entry and adds
 the new one; a call with no `task` (the ordinary case — a status check, an approval, "go ahead")
 leaves the existing assignment untouched, so a plain follow-up can never blank out a good one-line
 summary. `nvim_chat_send_message`'s queued path (`message_queue.lua`'s `write_links`) applies the

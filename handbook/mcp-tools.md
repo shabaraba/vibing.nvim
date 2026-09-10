@@ -147,7 +147,7 @@ happens before the send, and why the list field needs its own scanner:
 
 **`task` (both tools) is one free-text line recording what the caller is asking the target chat to
 do** (e.g. `"PR #688 — review fixes, merge, cleanup"`), written into the **caller's own**
-`orchestrated` entry for that chat (`<path>|<task>`, `orchestrated_entry.lua`) — never onto the
+`orchestrated` entry for that chat (a `{path, task}` element, `orchestrated_entry.lua`) — never onto the
 target's own frontmatter. `nvim_chat_list` projects it back onto the target chat's row, so an
 orchestrator driving several workers reconstructs the whole bufnr ↔ PR/issue ↔ assignment mapping
 by reading its own frontmatter, with no transcript to re-read after a restart or a context

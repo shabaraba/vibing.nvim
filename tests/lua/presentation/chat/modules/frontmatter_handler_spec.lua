@@ -1,4 +1,10 @@
 -- Tests for vibing.presentation.chat.modules.frontmatter_handler
+--
+-- Every write here goes parse -> mutate -> serialize over the whole frontmatter region (#717),
+-- so the result is in `frontmatter.lua`'s KEY_ORDER regardless of how the input was laid out.
+-- That is the point of the unification: the buffer path and the file path can no longer disagree
+-- about what a given frontmatter means. Assertions therefore pin the canonical order, not the
+-- order the fixture happened to be written in.
 
 local handler = require("vibing.presentation.chat.modules.frontmatter_handler")
 
@@ -51,7 +57,7 @@ describe("frontmatter_handler.update_field", function()
     open({ "---", "permissions_mode: default", "session_id: abc", "permission_mode: plan", "---", "" })
 
     assert.is_true(handler.update_field(buf, "permission_mode", "acceptEdits", false))
-    assert.same({ "permission_mode: acceptEdits", "session_id: abc" }, frontmatter_lines())
+    assert.same({ "session_id: abc", "permission_mode: acceptEdits" }, frontmatter_lines())
   end)
 
   it("rewrites a legacy plural line in place instead of adding a duplicate", function()
@@ -161,6 +167,62 @@ describe("frontmatter_handler.update_list", function()
 
     assert.is_false(handler.update_list(buf, "orchestrated", "chat/a.md", "add"))
   end)
+
+  it("writes a map element as a nested block, next to a scalar one", function()
+    -- The whole point of #717: a list element can carry fields of its own.
+    open({ "---", "orchestrated:", "  - chat/a.md", "---", "" })
+
+    assert.is_true(handler.update_list(buf, "orchestrated", { path = "chat/b.md", task = "review PR" }, "add"))
+    assert.same({
+      "orchestrated:",
+      "  - chat/a.md",
+      "  - path: chat/b.md",
+      "    task: review PR",
+    }, frontmatter_lines())
+  end)
+
+  it("reads a map element back as a table", function()
+    open({ "---", "orchestrated:", "  - path: chat/b.md", "    task: review PR", "---", "" })
+
+    assert.same({ { path = "chat/b.md", task = "review PR" } }, handler.get_list(buf, "orchestrated"))
+  end)
+
+  it("compares map elements by value, so a re-add is not a duplicate", function()
+    open({ "---", "orchestrated:", "  - path: chat/b.md", "    task: review PR", "---", "" })
+
+    assert.is_true(handler.update_list(buf, "orchestrated", { path = "chat/b.md", task = "review PR" }, "add"))
+    assert.same({ "orchestrated:", "  - path: chat/b.md", "    task: review PR" }, frontmatter_lines())
+  end)
+
+  it("removes a map element given the same value", function()
+    open({
+      "---",
+      "orchestrated:",
+      "  - path: chat/a.md",
+      "    task: one",
+      "  - path: chat/b.md",
+      "    task: two",
+      "---",
+      "",
+    })
+
+    assert.is_true(handler.update_list(buf, "orchestrated", { path = "chat/a.md", task = "one" }, "remove"))
+    assert.same({ "orchestrated:", "  - path: chat/b.md", "    task: two" }, frontmatter_lines())
+  end)
+
+  it("keeps a task containing a comment marker in one piece", function()
+    -- ` #` opens a comment in plain YAML, so the value has to come back quoted.
+    open({ "---", "session_id: abc", "---", "" })
+
+    assert.is_true(handler.update_list(buf, "orchestrated", { path = "chat/b.md", task = "PR #688 -- merge" }, "add"))
+    assert.same({
+      "session_id: abc",
+      "orchestrated:",
+      "  - path: chat/b.md",
+      '    task: "PR #688 -- merge"',
+    }, frontmatter_lines())
+    assert.same({ { path = "chat/b.md", task = "PR #688 -- merge" } }, handler.get_list(buf, "orchestrated"))
+  end)
 end)
 
 describe("frontmatter_handler reads to the closing delimiter", function()
@@ -211,21 +273,21 @@ describe("frontmatter_handler reads to the closing delimiter", function()
     open_with_long_head({ "session_id: old" })
 
     handler.update_session_id(buf, "new-session")
-    assert.same({ "permissions_allow:", "session_id: new-session" }, significant_lines())
+    assert.same({ "session_id: new-session", "permissions_allow:" }, significant_lines())
   end)
 
   it("update_field replaces a key far past the old window", function()
     open_with_long_head({ "permission_mode: default" })
 
     assert.is_true(handler.update_field(buf, "permission_mode", "plan", false))
-    assert.same({ "permissions_allow:", "permission_mode: plan" }, significant_lines())
+    assert.same({ "permission_mode: plan", "permissions_allow:" }, significant_lines())
   end)
 
   it("update_field appends into a frontmatter longer than the old window", function()
     open_with_long_head({ "session_id: abc" })
 
     assert.is_true(handler.update_field(buf, "model", "opus", false))
-    assert.same({ "permissions_allow:", "session_id: abc", "model: opus" }, significant_lines())
+    assert.same({ "session_id: abc", "model: opus", "permissions_allow:" }, significant_lines())
   end)
 
   it("update_list appends to a list far past the old window", function()
@@ -233,10 +295,10 @@ describe("frontmatter_handler reads to the closing delimiter", function()
 
     assert.is_true(handler.update_list(buf, "orchestrated", "chat/b.md", "add"))
     assert.same({
-      "permissions_allow:",
       "orchestrated:",
       "  - chat/a.md",
       "  - chat/b.md",
+      "permissions_allow:",
     }, significant_lines())
   end)
 

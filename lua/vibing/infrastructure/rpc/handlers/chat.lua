@@ -200,7 +200,7 @@ local function project_tasks(buffers, bufnrs, by_absolute_path, git_root)
       git_root = git_root or Git.get_root()
       for _, item in ipairs(orchestrated) do
         local path, task = OrchestratedEntry.decode(item)
-        if task then
+        if path and task then
           local abs = vim.fn.fnamemodify(Git.from_display_path(path, git_root), ":p")
           local target = by_absolute_path[abs]
           if target then

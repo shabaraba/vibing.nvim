@@ -316,7 +316,7 @@ end
 
 ---フロントマターのリストフィールドを更新（追加/削除）
 ---@param key string フィールド名
----@param value string 追加/削除する値
+---@param value string|table 追加/削除する要素（`orchestrated` はマップ要素になりうる）
 ---@param action "add"|"remove" 操作種別
 ---@return boolean success
 function ChatBuffer:update_frontmatter_list(key, value, action)
@@ -325,7 +325,7 @@ end
 
 ---フロントマターのリストフィールドを取得
 ---@param key string フィールド名
----@return string[] items
+---@return (string|table)[] items
 function ChatBuffer:get_frontmatter_list(key)
   return FrontmatterHandler.get_list(self.buf, key)
 end
