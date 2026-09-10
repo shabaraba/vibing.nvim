@@ -263,18 +263,66 @@ Two pieces were therefore moved off that path, taking a measured ~32ms `setup()`
 A scan moved to first use also reads `vim.fn.getcwd()` at first use, which is the more accurate
 cwd for picking up a project's `.claude/commands/` anyway.
 
-### The MCP server's own startup budget is 30 seconds, and the launcher spends it first
+### The MCP server's own startup budget is 30 seconds, and the launcher no longer spends it
 
 That is a different clock from `setup()`: it starts when the CLI spawns
 `claude-plugin/mcp-server/bin/run.sh` for a turn, and it runs out before the server has said
-anything. `run.mjs` sits inside it, and rebuilds whenever the source fingerprint moved — which is
-every first turn after a `git pull` that touched `src/`.
+anything. `run.mjs` sits inside it.
 
 Overrunning it does not look like a failure. The server simply never connects, so
 `mcp__plugin_vibing-nvim_vibing-nvim__*` is absent from the model's tool list for the whole
 session while the skills and the `nvim-navigator` agent — which come from the same
-`--plugin-dir` and need no process — load normally. Nothing logs, and the model is left to
-conclude the tools do not exist.
+`--plugin-dir` and need no process — load normally. The model is left to conclude the tools do
+not exist. It happened for a full day after #679, and cost half a day to diagnose (#690).
+
+**Nothing about it reaches the user, and that was measured rather than assumed.** A stand-in
+plugin whose MCP server writes one line to stderr and then sleeps, loaded with `--plugin-dir` and
+driven by the token-free `control_request`/`initialize` probe above, put that line in exactly one
+place: `~/Library/Caches/claude-cli-nodejs/<cwd-slug>/mcp-logs-plugin-<plugin>-<server>/*.jsonl`.
+Not the CLI's stdout, not its stderr — and buffered even there, appearing only at
+`Connection timeout triggered after 30002ms (limit: 30000ms)`, 30s late. So `console.error` in the
+launcher is not a channel to anyone. vibing.nvim's own RPC server is: `VIBING_NVIM_RPC_PORT` is
+already in the launcher's environment, and `bin/notify-nvim.mjs` writes one `notify` request to it.
+Delivery goes through a **detached child**, because the launcher's own event loop is about to be
+blocked inside `spawnSync('npm', …)` for exactly as long as the thing being reported.
+
+#### Completeness decides whether to build first, not staleness
+
+`run.mjs` used to rebuild whenever the source fingerprint moved — every first turn after a
+`git pull` that touched `src/` — and the rebuild ran inside the deadline. Now:
+
+| `dist/`                            | What happens                                                  |
+| ---------------------------------- | ------------------------------------------------------------- |
+| a finished build of this source    | launched; nothing else                                        |
+| a finished build of _older_ source | launched anyway, and `bin/rebuild.mjs` runs **detached**      |
+| no finished build (or none at all) | built first, after saying so over RPC — the one deadline case |
+
+The cost is one turn served by the previous server, which is a narrower window than it sounds:
+since #618 the MCP server and the Neovim plugin come from the same checkout, so what is stale is
+one commit of `src/`, and the failure mode is a tool behaving as it did one commit ago. Against
+the alternative — every tool absent, silently, for the whole session — it is not close.
+
+Two properties in `rebuild.mjs` are what make launching an unexamined stale `dist/` safe, and
+neither is optional:
+
+- **`dist/` is replaced, never edited.** The compile writes to `dist.tmp/`, the fingerprint is
+  stamped there, and the finished tree is renamed into place. A rebuild killed partway therefore
+  leaves the _previous_ build intact instead of a half-written one. This is also what lets the
+  fingerprint file's **presence** mean "this was a finished build" and its **contents** mean "of
+  which source" — two questions the old in-place build had to conflate, since it deleted the
+  fingerprint before it started.
+- **One build at a time**, through an `O_EXCL` lock file holding the holder's pid. A lock whose pid
+  no longer answers `kill(pid, 0)` is reclaimed once; obeying it forever would strand the stale
+  server with nothing to explain it.
+
+The background rebuild also waits ~5s before starting, because `npm ci` opens by deleting
+`node_modules` and the server it is rebuilding for was spawned out of that tree moments earlier.
+Node resolves an ES module graph eagerly and the server imports nothing dynamically, so the
+directory stops mattering once it is loaded — but that load and npm's own startup are the same
+order of magnitude. Nothing waits on a detached rebuild, so the margin is free.
+`VIBING_MCP_REBUILD_GRACE_MS` exists so the launcher tests do not sit through it.
+
+#### What the install actually costs
 
 The compile is not the cost and never was — `typescript@7` is the native compiler, and
 `npm run build` is 0.19s. The whole budget goes to `npm ci`, and **what it costs is not a
@@ -293,15 +341,19 @@ each other within that slow window (`--prefer-offline` alone 5.0s, `--no-audit -
 1.3s) and again later, when plain `npm ci` had become as fast as the flagged form.
 
 So `OFFLINE_FIRST_FLAGS` does not remove a fixed 31s. What it removes is **the dependency on
-registry latency inside a deadline that cannot absorb it**: with the flags the step is bounded by
-local work, and end-to-end `run.sh` → `initialize` measures 1.8–2.2s from a stale fingerprint.
-`tests/mcp-server-launcher.test.mjs` runs the real launcher against a fake `npm` to keep the flags
-there.
+registry latency inside a deadline that cannot absorb it**. The flags stay even though the usual
+path no longer runs under the deadline, because the one path that still does — a tree with nothing
+runnable in `dist/` — needs every second.
 
-**A cold cache is the case this does not fix**, and it is the one that most likely caused the
-incident that prompted the change (#679 bumped typescript, vitest and @types/node together, so
-the next launch had to fetch everything). 7 minutes is so far past 30s that every turn's build was
-killed partway, leaving a half-installed `node_modules` and no fingerprint — so the next turn
-tried again from the same place. `./build.sh` is the escape hatch: it runs the same install under
-no deadline and stamps the fingerprint (`bin/write-fingerprint.mjs`), so the next launch skips the
-build entirely. Run it after a dependency bump.
+**A cold cache is the case flags do not fix**, and it is the one that caused #690 (#679 bumped
+typescript, vitest and @types/node together, so the next launch had to fetch everything). 7 minutes
+is so far past 30s that every turn's build was killed partway, leaving a half-installed
+`node_modules` and no fingerprint — so the next turn started from the same place and was killed
+again, forever, until someone ran `./build.sh` by hand. That loop is what the background rebuild
+ends: it is under no deadline, so it finishes, and the session it started in keeps its tools
+throughout. `./build.sh` remains the way to do it deliberately — the same install with no deadline,
+stamping the fingerprint through `bin/write-fingerprint.mjs`. Run it after a dependency bump.
+
+`tests/mcp-server-launcher.test.mjs` runs the real launcher against a fake `npm` first on PATH, so
+it asserts on what the launcher did — the argv it passed, which build it launched, how long it
+took to get there, and what it sent to a stand-in RPC server — rather than on the text of the file.
