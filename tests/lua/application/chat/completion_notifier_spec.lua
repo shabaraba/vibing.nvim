@@ -553,6 +553,48 @@ describe("CompletionNotifier", function()
       assert.equals(a, sends[2].bufnr, "the edge survived to B's real completion")
     end)
 
+    it("survives the whole dispatch-and-wait window on the real send path (#646)", function()
+      -- 上のspecは `subscribe` を直接呼ぶので、実際の `nvim_chat_send_message` が同時に置く
+      -- 抑止マーク（`on_sent` の `reported`）が絡まない。#646 が報告した順序 —— 末端 C が
+      -- 中間 B のディスパッチターンより**後**に終わる —— を、両ホップとも実経路の
+      -- `on_sent` で辿り、B 自身の報告まで含めて通しで確かめる
+      local a, b, c = make_chat(), make_chat(), make_chat()
+
+      Notifier.on_sent(a, b) -- A → B のブリーフ
+      Notifier.on_sent(b, c) -- B → C のディスパッチ
+
+      Notifier.on_response_done(b) -- 「C に送った、待つ」だけの中間ターン
+      assert.equals(0, #sends, "A is not woken by B's intermediate turn")
+
+      Notifier.on_response_done(c) -- C 完了 → B へ配達、B 再稼働
+      assert.equals(1, #sends)
+      assert.equals(b, sends[1].bufnr)
+
+      -- B が C の報告を読み、本命の報告を A に書いて止まる
+      responding[b] = false
+      Notifier.on_sent(b, a)
+      Notifier.on_response_done(b)
+
+      for _, sent in ipairs(sends) do
+        assert.not_equals(a, sent.bufnr, "A already had B's own report; no watchdog on top of it")
+      end
+
+      -- 逆に B が自分から報告しなかった場合は、温存されたエッジが watchdog として発火する
+      local d, e, f = make_chat(), make_chat(), make_chat()
+      sends = {}
+
+      Notifier.on_sent(d, e)
+      Notifier.on_sent(e, f)
+      Notifier.on_response_done(e)
+      Notifier.on_response_done(f)
+      responding[e] = false
+      Notifier.on_response_done(e)
+
+      assert.equals(2, #sends)
+      assert.equals(e, sends[1].bufnr)
+      assert.equals(d, sends[2].bufnr, "the edge was still there when E stopped without reporting")
+    end)
+
     -- ワーカーのバッファは誰も見ていないので、保留したままだと誰も対応できない。
     -- 判定は「停止理由が非nilか」なので、理由が増えれば自動的にこちら側に入る
     for _, reason in ipairs({ "asked_question", "waiting_approval", "error" }) do
