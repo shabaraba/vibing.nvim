@@ -13,7 +13,8 @@ The tree is layered (`domain` / `application` / `infrastructure` / `presentation
 - `lua/vibing/config.lua` - Configuration defaults with type annotations
 - `lua/vibing/core/constants/` - `agents.lua` (backend registry), `tools.lua` (VALID_TOOLS),
   `modes.lua`, `worktree.lua`
-- `lua/vibing/core/utils/` - timestamp, language, git, git_snapshot, rate_limit, request_diff, ...
+- `lua/vibing/core/utils/` - timestamp, language, git, git_snapshot, rate_limit, request_diff,
+  `yaml.lua` (the one YAML-subset codec; see below), ...
 
 ## Adapter (`lua/vibing/infrastructure/adapter/`)
 
@@ -119,6 +120,21 @@ selections.
 
 **Interactive UI:** Permission Builder uses `vim.ui.select()` for picker-based configuration,
 automatically updating chat frontmatter without manual YAML editing.
+
+**One frontmatter codec (#717):** `core/utils/yaml.lua` decodes and encodes the YAML subset a chat
+frontmatter uses — scalars, block maps, block sequences, and sequences whose elements are maps.
+`infrastructure/storage/frontmatter.lua` wraps it with the frontmatter-specific parts (the `---`
+delimiters, legacy key migration, `KEY_ORDER`, region scanning) and is the only public entry point;
+`presentation/chat/modules/frontmatter_handler.lua` edits a **buffer's** frontmatter by going
+through that same pair (parse → mutate → `serialize_lines` → replace the region) rather than by
+splicing lines. Before #717 the buffer path was an independent line-oriented parser with no
+guarantee it agreed with the file path on the same input, and neither could represent a list
+element with fields of its own — which is why `orchestrated`'s `task` was encoded as `<path>|<task>`
+in PR #712. A consequence of the unification: any write through the buffer path re-serializes the
+whole frontmatter region, so keys come back in `KEY_ORDER` regardless of how the file was laid out.
+Not for skill/agent Markdown — `core/utils/yaml_frontmatter.lua` stays separate, because it reads
+two or three known scalars (including block scalars, which `yaml.lua` does not) out of files this
+plugin never writes.
 
 **Diff Viewer:** When Claude edits files, use `gd` (go to diff) on file paths in chat to open a
 vertical split diff view showing changes before/after.
