@@ -1,0 +1,44 @@
+# Dependabot is the half of the dependency survey that sees below the CI threshold (#691).
+#
+# `npm run audit:deps` fails a pull request only at `high` and above, so moderate and low
+# advisories -- and ordinary version drift, which is what lets a high one appear in the first
+# place -- would otherwise never be raised by anything.
+#
+# The repository has two independent npm trees with separate package.json / package-lock.json
+# pairs, so each needs its own `directory`. Adding a third tree means adding it here *and* nothing
+# else: scripts/audit-dependencies.mjs discovers lockfiles on its own, and
+# tests/dependency-audit-gate.test.mjs fails when a discovered lockfile has no entry below.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # release-please reads the commit history, and `chore` releases nothing. A dependency bump
+    # that needs a release is a judgement call for whoever merges it, not something a bot title
+    # should make for them.
+    commit-message:
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
+    groups:
+      # One pull request per weekly sweep instead of one per package. Majors stay ungrouped so
+      # they arrive on their own and can be read on their own.
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: npm
+    directory: /claude-plugin/mcp-server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'chore(deps)'
+      prefix-development: 'chore(deps-dev)'
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
