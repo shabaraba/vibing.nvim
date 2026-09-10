@@ -281,7 +281,10 @@ local function handle_assistant_event(msg, context)
         local input = tool_map[block.id].input or {}
         vim.schedule(function()
           if opts.on_tool_use then
-            opts.on_tool_use(name, input.file_path, input.command)
+            -- NotebookEdit carries its path as notebook_path, not file_path (request_diff.lua's
+            -- own TOOL_PATH_KEYS agrees) — without this fallback modified_file_paths never learns
+            -- about a notebook edit and the gitignored-file patch synthesis has nothing to act on.
+            opts.on_tool_use(name, input.file_path or input.notebook_path, input.command)
           end
           if opts.on_tool_use_full then
             opts.on_tool_use_full(name, input)
