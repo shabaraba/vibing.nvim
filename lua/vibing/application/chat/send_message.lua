@@ -182,6 +182,7 @@ function M.execute(adapter, callbacks, message, config)
     permissions_session_allow = session_allow,
     permissions_session_deny = session_deny,
     permission_mode = frontmatter.permission_mode,
+    env = frontmatter.env,
     language = lang_code,
     cwd = session_cwd,
     -- ツリースナップショット差分の帰属判定に使う。アダプタはこれをそのまま

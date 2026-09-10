@@ -38,6 +38,7 @@
 ---@field permissions_deny string[]?
 ---@field permissions_ask string[]?
 ---@field permission_mode string?
+---@field env string[]? チャットのfrontmatter `env:` に書かれた`KEY=VALUE`の並び。`agent.env`より優先される（`infrastructure/adapter/modules/agent_environment.lua`）
 ---@field cwd string? Effective working directory used for project-local configuration
 ---@field on_tool_use fun(tool: string, file_path: string?)?
 ---@field on_tool_use_full fun(tool: string, input: table)? 表示用に間引かない生のツール入力（eval用）

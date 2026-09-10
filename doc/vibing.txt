@@ -438,6 +438,8 @@ with YAML frontmatter: >
     agent: claude
     mode: code                                # code | plan | explore
     model: sonnet
+    env:                                      # optional: see below
+      - BASH_MAX_OUTPUT_LENGTH=10000
     permission_mode: acceptEdits
     permissions_allow:
       - Read
@@ -484,6 +486,16 @@ frontmatter (not the orchestrator's). A denial can always be delegated
 regardless of scope, since denying grants nothing; only `allow_once` /
 `allow_for_session` answers are checked against it. See the
 vibing-orchestrate skill for how to declare it.
+
+`env` lists `KEY=VALUE` environment variables for this chat's CLI process,
+overriding `agent.env` from |vibing.setup()|. It is for the cost knobs Claude
+Code exposes only through the environment — `BASH_MAX_OUTPUT_LENGTH`,
+`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `CLAUDE_CODE_SUBAGENT_MODEL` — so one chat
+can be tuned without touching the rest. Claude backend only. `CLAUDECODE` and
+any `VIBING_*` name is ignored with a warning: those bind the CLI to this
+Neovim and to this chat. An entry that is not `KEY=VALUE` is ignored the same
+way. The table of what is worth setting is in `handbook/configuration.md` →
+"Claude CLI Environment Variables".
 
 ==============================================================================
 9. BACKENDS                                                  *vibing-backends*
