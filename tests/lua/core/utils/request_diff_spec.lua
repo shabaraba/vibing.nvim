@@ -266,6 +266,73 @@ describe("request_diff", function()
     end)
   end)
 
+  describe("sections_for", function()
+    -- スナップショット経路（git_snapshot）はgitignore対象の変更をツリー差分に出せない（#735）。
+    -- 退避があるファイルだけ、patchに継ぎ足すセクションを合成する
+
+    it("synthesizes a section from the backup for a captured file", function()
+      local file = tmp_dir .. "/ignored.txt"
+      write_file(file, "before\n")
+      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      write_file(file, "after\n")
+
+      local sections, resolved = RequestDiff.sections_for(handle_id, tmp_dir, { file })
+
+      assert.equals(1, #sections)
+      assert.is_truthy(sections[1]:find("diff --git a/ignored.txt b/ignored.txt", 1, true))
+      assert.is_truthy(sections[1]:find("-before", 1, true))
+      assert.is_truthy(sections[1]:find("+after", 1, true))
+      assert.is_true(resolved[file])
+    end)
+
+    it("synthesizes a new-file section for a Write that created the file", function()
+      local file = tmp_dir .. "/created.txt"
+      RequestDiff.capture(handle_id, "Write", { file_path = file })
+      write_file(file, "hello\n")
+
+      local sections, resolved = RequestDiff.sections_for(handle_id, tmp_dir, { file })
+
+      assert.equals(1, #sections)
+      assert.is_truthy(sections[1]:find("--- /dev/null", 1, true))
+      assert.is_true(resolved[file])
+    end)
+
+    it("leaves a path with no backup unresolved so the caller can warn", function()
+      -- Bash由来・codexのapply_patch由来の変更はツールイベントに名前が出ても退避が無い。
+      -- 合成できないことを黙って流すと「一覧に載るのにpatchが無い」が再発する
+      local file = tmp_dir .. "/bash-touched.txt"
+      write_file(file, "x\n")
+
+      local sections, resolved = RequestDiff.sections_for(handle_id, tmp_dir, { file })
+
+      assert.same({}, sections)
+      assert.is_nil(resolved[file])
+    end)
+
+    it("resolves an unchanged captured file without a section", function()
+      -- 変更が無かったことは退避から判断できている。警告対象にしてはいけない
+      local file = tmp_dir .. "/same.txt"
+      write_file(file, "unchanged\n")
+      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+
+      local sections, resolved = RequestDiff.sections_for(handle_id, tmp_dir, { file })
+
+      assert.same({}, sections)
+      assert.is_true(resolved[file])
+    end)
+
+    it("does not consume the backups (clear still owns their lifetime)", function()
+      local file = tmp_dir .. "/keep.txt"
+      write_file(file, "a\n")
+      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      write_file(file, "b\n")
+
+      RequestDiff.sections_for(handle_id, tmp_dir, { file })
+
+      assert.is_true(RequestDiff.has_capture(handle_id, file))
+    end)
+  end)
+
   describe("clear", function()
     it("removes backups for the handle", function()
       local file = tmp_dir .. "/a.txt"

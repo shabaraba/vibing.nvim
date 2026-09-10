@@ -497,6 +497,9 @@ end
 ---@return boolean ok 差分を取れたか。falseは「変更が無かった」ではなく「**分からなかった**」で、
 ---  2回目のスナップショットやdiff呼び出しが失敗した場合。呼び出し側はこれを見て request_diff の
 ---  バックアップに退避できる（そちらはこの時点ではまだ捨てられていない）
+---@return string[] extra_only ツリー差分に現れず extra_paths 由来でのみ一覧に載った絶対パス。
+---  `.gitignore` 対象のWrite/Edit変更はここに来る（#735）。呼び出し側は request_diff の退避から
+---  patchセクションを合成して補える
 function M.generate(handle_id, extra_paths)
   local files = {}
   local abs_files = {}
@@ -588,8 +591,11 @@ function M.generate(handle_id, extra_paths)
   end
 
   -- git差分に現れないのにツールイベントには出ているファイルは `.gitignore` 対象の可能性が高い。
-  -- 一覧にだけ載せてpatchセクションは作らない（request_diff.generateと同じ扱い）
+  -- ツリー差分はこれらのpatchを作れないので extra_only として返し、呼び出し側が request_diff の
+  -- PreToolUse退避からセクションを合成して補う（#735）。退避も無いもの（Bash由来など）は
+  -- 一覧にだけ載る
   local base_dir = s and s.root or nil
+  local extra_only = {}
   for path in pairs(extra_paths or {}) do
     local abs = vim.fn.fnamemodify(path, ":p"):gsub("/$", "")
     local rel = abs
@@ -603,10 +609,11 @@ function M.generate(handle_id, extra_paths)
       seen[rel] = true
       table.insert(files, rel)
       table.insert(abs_files, abs)
+      table.insert(extra_only, abs)
     end
   end
 
-  return files, abs_files, patch_content, ok
+  return files, abs_files, patch_content, ok, extra_only
 end
 
 ---refとセッション状態を破棄する（レスポンス処理の最後に必ず呼ぶ）
