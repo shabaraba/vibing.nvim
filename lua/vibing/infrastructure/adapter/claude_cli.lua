@@ -5,6 +5,7 @@
 local Base = require("vibing.infrastructure.adapter.base")
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
 local RpcEnvironment = require("vibing.infrastructure.adapter.modules.rpc_environment")
+local AgentEnvironment = require("vibing.infrastructure.adapter.modules.agent_environment")
 local CLICommandBuilder = require("vibing.infrastructure.adapter.modules.cli_command_builder")
 local CLIEventProcessor = require("vibing.infrastructure.adapter.modules.cli_event_processor")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
@@ -131,6 +132,11 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
   local env = vim.fn.environ()
   -- Remove CLAUDECODE to allow nested invocation
   env.CLAUDECODE = nil
+
+  -- Ahead of everything below, so a declared variable reads exactly like one the user exported:
+  -- vibing.nvim's own variables still overwrite it, and the git-instructions default below still
+  -- sees "already set, leave it alone".
+  AgentEnvironment.apply(env, self.config, opts)
 
   -- Claude Code forwards this environment to plugin MCP servers, so the numeric port stays out
   -- of the cached prompt.

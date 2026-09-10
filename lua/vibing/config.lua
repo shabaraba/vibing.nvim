@@ -126,6 +126,15 @@
 ---  （デフォルト: false）。どちらの値でも`CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS`を明示的に書く
 ---  （true→"0"、false→"1"）ので settings.json の`includeGitInstructions`より優先される。
 ---  ただしユーザーが既に環境変数を立てている場合はそちらを尊重して触らない
+---@field env table<string, string|number>? Claude backend専用。CLI子プロセスへ渡す追加の環境変数
+---  （デフォルト: `{}`）。Claude Codeにはコスト系のつまみが環境変数でしか触れないものがあり
+---  （`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` / `BASH_MAX_OUTPUT_LENGTH` /
+---  `CLAUDE_CODE_SUBAGENT_MODEL` など。一覧と推奨値は handbook/configuration.md →
+---  "Claude CLI Environment Variables"）、`vim.env`に書くとターミナルの`claude`にも効いて
+---  しまうため、vibing.nvim経由の呼び出しにだけ効かせる口としてここを用意している。
+---  値は文字列化して渡す。チャットのfrontmatter `env:`（`KEY=VALUE`の並び）が個別に上書きする。
+---  `CLAUDECODE`と`VIBING_*`はvibing.nvim自身がフック往復に使うので、書いても無視して警告する。
+---  軽量ユーティリティ呼び出しには渡さない（ツールもresumeも無く効く先が無い）
 ---@field subagent Vibing.SubagentConfig? subagent（Task/Agentツール）の出力表示設定
 ---@field auto_resume_on_limit Vibing.AutoResumeOnLimitConfig 使用量リミット自動継続設定
 ---@field scheduled_requests Vibing.ScheduledRequestsConfig 予約リクエスト設定
@@ -312,6 +321,9 @@ M.defaults = {
     -- 変わり、system prompt以降＝全履歴がキャッシュミスになる。既定でoffにする理由はそれで、
     -- ブランチ名や直近コミットが要るときはモデルに `git status` / `git log` を1回呼ばせれば済む。
     git_instructions = false,
+    -- CLI子プロセスに足す環境変数。空が既定で、空なら子プロセスのenvは従来と1バイトも変わらない。
+    -- 何を入れると効くかは handbook/configuration.md の表を見る。
+    env = {},
     subagent = {
       enabled = false,
       show_prefix = false,

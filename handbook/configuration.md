@@ -171,6 +171,14 @@ agent = {
                             -- since both values are written through the CLI's env var.
                             -- An already-set CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS wins either way.
 
+  env = {},                 -- Claude backend only. Extra environment variables for the CLI child
+                            -- process, so the cost knobs Claude Code exposes only through the
+                            -- environment apply to vibing.nvim's calls and not to the `claude` in
+                            -- your terminal. Values are stringified. See "Claude CLI Environment
+                            -- Variables" below for what is worth setting; a chat's `env:`
+                            -- frontmatter overrides this per chat, CLAUDECODE and VIBING_* are
+                            -- refused, and lightweight utility calls get none of it.
+
   subagent = {              -- What a subagent (Task/Agent tool) says in the chat
     enabled = false,        -- Opt-in: passes --forward-subagent-text to the CLI so the
                             -- subagent's own text reaches vibing.nvim at all. Without it
@@ -736,6 +744,63 @@ It refuses while an unsent message is waiting — the automatic path parks your 
 asked to send _that message_, whereas this command was typed on its own and should mean exactly
 one turn. The command remains Claude-only; Codex exposes automatic compaction here, not a matching
 manual slash command.
+
+### Claude CLI Environment Variables
+
+Several of Claude Code's cost knobs have no flag and no settings key — the environment is the only
+way in ([env vars](https://code.claude.com/docs/en/env-vars.md),
+[costs](https://code.claude.com/docs/en/costs.md#reduce-token-usage)). `vim.env.X = ...` in your
+`init.lua` reaches the CLI child, because the spawn inherits `vim.fn.environ()`, but it also
+reaches every `claude` you start from a terminal in that Neovim, and it cannot differ per chat.
+`agent.env` is the scoped version:
+
+```lua
+agent = {
+  env = {
+    CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "20",
+    BASH_MAX_OUTPUT_LENGTH = "10000",
+  },
+},
+```
+
+| Variable                          | Effect                                                                                          |
+| --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | Percentage of the context window at which the CLI auto-compacts. See below                      |
+| `BASH_MAX_OUTPUT_LENGTH`          | Cap on a `Bash` result, in characters (default 30,000)                                          |
+| `CLAUDE_CODE_SUBAGENT_MODEL`      | Model a `Task`/`Agent` call runs on, e.g. `haiku` for exploration                               |
+| `CLAUDE_CODE_PROMPT_CACHE_TTL`    | Prompt cache TTL                                                                                |
+| `MAX_THINKING_TOKENS`             | Thinking budget on older models. Ignored by adaptive-thinking ones — use `agent.default_effort` |
+
+**`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` is a percentage, so what it means depends on the model.** On a
+1M-context model (`[1m]`) the default fires at roughly 930k tokens (#669), which is far past the
+point where a turn is expensive; `20` brings that to ~200k. On a 200k model the same `20` fires at
+40k, which is almost certainly too eager. Pick the number from the window your `default_model`
+actually has, and re-check it when you change models. vibing.nvim's own
+[`agent.token_usage.auto_compact`](#automatic-compaction) is the backend-independent alternative:
+it is an absolute token count rather than a percentage, and it compacts between turns instead of
+mid-turn.
+
+**`BASH_MAX_OUTPUT_LENGTH` is usually the larger win.** A tool result is re-sent with every later
+request in the conversation, so one 30k-character test run is paid for on every turn after it, not
+once.
+
+Three rules apply to whatever you put here:
+
+- **A chat's `env:` frontmatter wins**, so one chat can lower `BASH_MAX_OUTPUT_LENGTH` without
+  touching the rest. It is a list of `KEY=VALUE` lines — `doc/vibing.txt` → "CHAT FILE FORMAT".
+- **`CLAUDECODE` and `VIBING_*` are refused with a warning.** They carry the RPC port, the handle
+  ID and the nested-invocation escape that the permission hook, the approval UI and the per-request
+  diff baseline all ride on.
+- **Lightweight utility calls get none of it** (title generation, `/summarize`, the daily summary).
+  They run with no tools and no resumed session, so none of these variables has anything to act on.
+
+A variable already present in Neovim's own environment is overwritten by `agent.env` — declaring it
+here is the more specific statement. `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS` is worth naming
+because it also has an option of its own: `agent.env` is merged first and `agent.git_instructions`
+only fills a gap, so writing the variable here wins over that option.
+
+Claude backend only. Codex, Copilot and Grok inherit Neovim's environment as before and read none
+of these names.
 
 ### Subagent Output
 
