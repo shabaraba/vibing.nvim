@@ -3,6 +3,7 @@
 --- @module vibing.infrastructure.adapter.modules.cli_command_builder
 
 local tools_constants = require("vibing.core.constants.tools")
+local CliMcpConfig = require("vibing.infrastructure.adapter.modules.cli_mcp_config")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 local worktree_constants = require("vibing.core.constants.worktree")
@@ -236,6 +237,11 @@ function M.build(prompt, opts, session_id, config, settings_path)
       table.insert(cmd, "--plugin-dir")
       table.insert(cmd, plugin_dir)
     end
+
+    -- `agent.mcp.user_servers = false` only: empty otherwise, so the ordinary turn is untouched.
+    -- It has to follow the `--plugin-dir` flags rather than replace them — the plugins still carry
+    -- their skills and subagents in, and only their MCP half is re-registered by hand.
+    vim.list_extend(cmd, CliMcpConfig.args(opts.cwd, config))
   end
 
   -- System prompt additions (worktree convention + chat file path + optional language). This

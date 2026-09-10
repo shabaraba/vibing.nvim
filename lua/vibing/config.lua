@@ -120,7 +120,8 @@
 ---@field utility_model string タイトル生成・要約等の軽量ユーティリティ呼び出し専用モデル（デフォルト: "sonnet"）
 ---@field default_effort ("low"|"medium"|"high"|"xhigh"|"max")? 推論量の既定値（未指定ならCLIの既定に任せる）
 ---@field utility_effort ("low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
----@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）
+---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）。MCPサーバーの読み込みには影響しない（`agent.mcp`参照）
+---@field mcp Vibing.AgentMcpConfig? 通常のチャットターンにどのMCPサーバーを載せるかの設定
 ---@field git_instructions boolean? trueでClaude CLI組み込みのgitステータスブロック（ブランチ名・
 ---  直近コミット・`git status --short`）とcommit/PRワークフロー指示をsystem promptに載せる
 ---  （デフォルト: false）。どちらの値でも`CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS`を明示的に書く
@@ -158,6 +159,16 @@
 ---@field enabled boolean? trueで有効（デフォルト: false）
 ---@field at number? 圧縮を始めるcontextのトークン数。0以下で無効（デフォルト: 200000）
 ---@field focus string? Claudeで`/compact <focus>`として渡す指示。Codexでは未使用（デフォルト: 無し）
+
+---@class Vibing.AgentMcpConfig
+---通常のチャットターンに載せるMCPサーバーの範囲（claudeバックエンドのみ）
+---`Vibing.McpConfig`（`config.mcp`）とは別物: あちらはvibing.nvim自身のRPCサーバーの設定
+---@field user_servers boolean? falseでCLIに`--strict-mcp-config`を渡し、vibing.nvim自身が
+---  `--plugin-dir`で持ち込んだプラグインのMCPサーバーだけを`--mcp-config`で明示的に載せ直す
+---  （デフォルト: true）。`--strict-mcp-config`はall-or-nothingなので、`~/.claude.json`の
+---  ユーザースコープだけでなくプロジェクトの`.mcp.json`やlocalスコープのサーバーも一緒に落ちる。
+---  残したい外部サーバーは`.vibing/plugins/<name>/.claude-plugin/plugin.json`の`mcpServers`に
+---  書けば載る。codex/copilot/grokには該当する実行時フラグが無いため効かない
 
 ---@class Vibing.PluginsConfig
 ---セッション限りで読み込むClaude Codeプラグインのディレクトリ設定
@@ -307,6 +318,12 @@ M.defaults = {
     default_effort = nil,
     utility_effort = "low",
     setting_sources = { "user", "project", "local" },
+    mcp = {
+      -- 既定はtrue（現状維持）。`--setting-sources user,project,local` が `~/.claude.json` の
+      -- MCPサーバーを全部載せるのは、ユーザーのcommands/skills/subagentをそのまま使えるように
+      -- するための代償であって、意図した設定ではない。切りたい人だけが切る。
+      user_servers = true,
+    },
     -- CLIはプロセス起動ごとにgitステータスブロックを1回計算してsystem promptの先頭に埋める。
     -- vibing.nvimはターンごとにCLIを起動し直すので、tree を触ったターンの次はそのバイト列が
     -- 変わり、system prompt以降＝全履歴がキャッシュミスになる。既定でoffにする理由はそれで、

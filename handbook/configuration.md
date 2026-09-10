@@ -32,6 +32,7 @@ require("vibing").setup({
     default_model = "sonnet",
     utility_model = "sonnet",
     setting_sources = { "user", "project", "local" },
+    mcp = { user_servers = true },
     git_instructions = false,
     subagent = { enabled = false, show_prefix = false },
     auto_resume_on_limit = { enabled = false, max_retries = 1 },
@@ -160,7 +161,19 @@ agent = {
                             -- Passed to the Claude CLI's --setting-sources flag.
                             -- Drop "user" to skip loading your global CLAUDE.md on
                             -- every chat, reducing fixed per-session token cost.
-                            -- Note: does not affect MCP server loading.
+                            -- Note: does not affect MCP server loading — that is
+                            -- agent.mcp.user_servers, right below.
+
+  mcp = {                   -- Which MCP servers an ordinary turn loads. Claude backend only.
+                            -- Not to be confused with the top-level `mcp` block, which
+                            -- configures vibing.nvim's own RPC server.
+    user_servers = true,    -- Keeps today's behaviour: every server in ~/.claude.json is
+                            -- loaded, because --setting-sources also brings in your own
+                            -- commands, skills and subagents. Set false to pass
+                            -- --strict-mcp-config and re-register only the MCP servers the
+                            -- plugins vibing.nvim loads declare — see "Excluding User MCP
+                            -- Servers".
+  },
 
   git_instructions = false, -- Claude backend only. The CLI's own git status block (branch,
                             -- `git status --short`, recent commits) plus its built-in commit/PR
@@ -381,6 +394,53 @@ skipped with a warning. One more cost: a `developer_instructions` you set in cod
 > Code gates a project's own `.mcp.json` behind approval. vibing.nvim reads the directory by
 > default anyway, on convenience grounds — set `project_dir = false` for repositories you do not
 > trust.
+
+### Excluding User MCP Servers
+
+`agent.mcp.user_servers = false` keeps an ordinary turn down to the MCP servers vibing.nvim
+brought itself:
+
+```lua
+agent = { mcp = { user_servers = false } },
+```
+
+The reason it is not the default, and the reason it is one switch rather than a per-server list,
+is `--setting-sources user,project,local`: that flag is what makes your own `.claude/commands/`,
+skills and subagents work inside a chat, and every MCP server in `~/.claude.json` rides along with
+them. The CLI's only counter-switch is `--strict-mcp-config`, which is **all-or-nothing** — it
+drops the servers a `--plugin-dir` plugin declares too. So the option is a pair: the strict flag
+plus an explicit `--mcp-config` re-registering what each loaded plugin declares.
+
+What that costs and saves, measured against claude 2.1.231 in an environment with 23 registered
+servers (9 local stdio, 14 `claude.ai` connectors), one identical one-line prompt per run:
+
+| run                                             | tools | of which MCP | prompt tokens |
+| ----------------------------------------------- | ----: | -----------: | ------------: |
+| default                                         |   204 |          171 |        46,277 |
+| `--strict-mcp-config` alone (drops vibing-nvim) |    30 |            0 |        42,323 |
+| `user_servers = false`                          |    72 |           42 |        43,293 |
+
+**~3k prompt tokens a turn, about 6%.** Small, because Tool Search (on by default from Claude
+4.5) defers the schemas: what survives in the prompt is a bare name per tool, roughly 23 tokens.
+The startup cost does not move either — the servers connect in the background, `duration_ms` was
+~2s in all three runs.
+
+With Tool Search off (`ENABLE_TOOL_SEARCH=0`) the same two runs are 241,510 and 73,344 prompt
+tokens: **168k tokens, 70%.** That is the case this option is really for.
+
+Three consequences worth knowing before switching it on:
+
+- **Project `.mcp.json` and local-scope servers go too**, not just the user-scope ones —
+  `--strict-mcp-config` does not distinguish. An external server you want to keep can be declared
+  in `.vibing/plugins/<name>/.claude-plugin/plugin.json` under `mcpServers`, which is re-registered
+  along with vibing.nvim's own.
+- **The tool prefix changes** from `mcp__plugin_vibing-nvim_vibing-nvim__<tool>` to the plain
+  `mcp__vibing-nvim__<tool>`. Both are already permitted and both are named in the system prompt,
+  so nothing has to be reconfigured — but a hand-written permission rule naming only the plugin
+  form stops matching.
+- **Claude only.** Codex has no per-run switch narrower than `--ignore-user-config`, which also
+  drops `model_provider`; copilot and grok have none at all for ordinary turns. Lightweight calls
+  on every backend already load no MCP servers (`handbook/architecture/lightweight-calls.md`).
 
 ### Codex Provider Notice
 

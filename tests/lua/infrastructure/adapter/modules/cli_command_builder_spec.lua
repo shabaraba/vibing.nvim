@@ -615,4 +615,74 @@ describe("cli_command_builder", function()
       assert.same({}, plugin_dirs(cli_command_builder.build("hello", {}, nil, config, nil)))
     end)
   end)
+
+  describe("agent.mcp.user_servers", function()
+    local function mcp_config(cmd)
+      local idx = find_flag(cmd, "--mcp-config")
+      return idx and cmd[idx + 1] or nil
+    end
+
+    it("leaves an ordinary request untouched by default", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      assert.is_nil(find_flag(cmd, "--strict-mcp-config"))
+      assert.is_nil(find_flag(cmd, "--mcp-config"))
+    end)
+
+    -- --strict-mcp-config also drops the MCP servers a --plugin-dir plugin declares (measured on
+    -- claude 2.1.231: 42 nvim_* tools gone), so the flag is never emitted without the
+    -- re-registration that follows it.
+    it("re-registers the bundled server when user servers are excluded", function()
+      local config = { agent = { mcp = { user_servers = false } } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+
+      assert.is_not_nil(find_flag(cmd, "--strict-mcp-config"))
+      local decoded = vim.json.decode(mcp_config(cmd))
+      assert.is_not_nil(decoded.mcpServers["vibing-nvim"])
+      assert.is_not_nil(decoded.mcpServers["vibing-nvim"].command)
+      assert.equals(1, #vim.tbl_keys(decoded.mcpServers))
+    end)
+
+    -- The plugins still carry their skills and subagents in; only their MCP half is rebuilt.
+    it("keeps the --plugin-dir flags alongside it", function()
+      local config = { agent = { mcp = { user_servers = false } } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      assert.is_not_nil(find_flag(cmd, "--plugin-dir"))
+    end)
+
+    it("registers a project plugin's own server too", function()
+      local project_root = vim.fn.tempname()
+      vim.fn.mkdir(project_root .. "/plugins/extra1/.claude-plugin", "p")
+      vim.fn.writefile({
+        vim.json.encode({
+          name = "extra1",
+          mcpServers = { demo = { command = "sh", args = { "${CLAUDE_PLUGIN_ROOT}/run.sh" } } },
+        }),
+      }, project_root .. "/plugins/extra1/.claude-plugin/plugin.json")
+
+      local config = {
+        agent = { mcp = { user_servers = false }, plugins = { extra = { project_root .. "/plugins/extra1" } } },
+      }
+      local decoded = vim.json.decode(mcp_config(cli_command_builder.build("hello", {}, nil, config, nil)))
+
+      assert.is_not_nil(decoded.mcpServers.demo)
+      assert.same({ project_root .. "/plugins/extra1/run.sh" }, decoded.mcpServers.demo.args)
+      vim.fn.delete(project_root, "rf")
+    end)
+
+    -- With nothing left to register the turn must still run, with no MCP servers at all. An empty
+    -- Lua table encodes as `[]`, which the CLI rejects as an mcpServers map.
+    it("emits an empty object when no plugin declares a server", function()
+      local config = { agent = { mcp = { user_servers = false }, plugins = { self = false, project_dir = false } } }
+      local cmd = cli_command_builder.build("hello", {}, nil, config, nil)
+      assert.equals('{"mcpServers":{}}', mcp_config(cmd))
+    end)
+
+    -- Lightweight already blocks every server with its own empty --mcp-config; the option must not
+    -- turn that into a re-registration of the bundled one.
+    it("does not reach a lightweight call", function()
+      local config = { agent = { mcp = { user_servers = false } } }
+      local cmd = cli_command_builder.build("hello", { lightweight = true }, nil, config, nil)
+      assert.equals('{"mcpServers":{}}', mcp_config(cmd))
+    end)
+  end)
 end)
