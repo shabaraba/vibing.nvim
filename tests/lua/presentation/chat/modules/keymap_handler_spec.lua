@@ -99,6 +99,45 @@ describe("keymap_handler.find_url_on_line", function()
     end
   end)
 
+  describe("opens an inline Markdown link from anywhere in its notation", function()
+    local line = "prefix [a sufficiently long link label](https://example.com/docs) suffix"
+    local label_close = line:find("%]%(")
+
+    local positions = {
+      line:find("%["),
+      line:find("sufficiently"),
+      line:find("label"),
+      label_close,
+      label_close + 1,
+      line:find("example"),
+      line:find("%) suffix"),
+    }
+
+    it("resolves the target from its label and delimiters", function()
+      for _, col in ipairs(positions) do
+        assert.equals("https://example.com/docs", KeymapHandler.find_url_on_line(line, col))
+      end
+    end)
+
+    it("selects the link whose label is under the cursor", function()
+      local two_links = "[first long label](https://example.com/one) and [second long label](https://example.com/two)"
+      local col = two_links:find("second")
+      assert.equals("https://example.com/two", KeymapHandler.find_url_on_line(two_links, col))
+    end)
+
+    it("supports nested brackets in the label", function()
+      local nested = "[outer [inner] label](https://example.com/nested)"
+      local col = nested:find("inner")
+      assert.equals("https://example.com/nested", KeymapHandler.find_url_on_line(nested, col))
+    end)
+
+    it("supports angle-bracket destinations", function()
+      local titled = '[documentation](<https://example.com/a_(b)> "a long title")'
+      local col = titled:find("documentation")
+      assert.equals("https://example.com/a_(b)", KeymapHandler.find_url_on_line(titled, col))
+    end)
+  end)
+
   describe("stops at Japanese punctuation adjoining the URL", function()
     local cases = {
       {
