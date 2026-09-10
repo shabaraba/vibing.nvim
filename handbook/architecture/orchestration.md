@@ -379,7 +379,14 @@ nothing, so subscribers are notified exactly as before.
 **The mirror ordering is covered by a second branch, which is #640.** When the leaf finishes
 _after_ the middle chat's dispatch turn rather than before — the commoner case, since dispatching
 takes seconds and the leaf takes minutes — that turn's queue is empty, so the drain above catches
-nothing. The signal that does catch it was already in the table: `edges[c][b]` exists from B's send
+nothing. #646 reported that same ordering separately, before #640's branch shipped; what it asked
+for is exactly this branch, so the only thing it left to do was pin it on the path an orchestrator
+actually takes. The spec that held it went through `subscribe` directly, which is what
+`nvim_chat_create` calls — the dispatch case is `nvim_chat_send_message` → `on_sent`, which also
+lays down the suppression mark, so branch 2 and that mark have to survive the wait together.
+`completion_notifier_spec.lua`'s `(#646)` case walks both hops through `on_sent` and asserts both
+endings: B reports for itself and the watchdog stays quiet, or B stops silently and the held edge
+fires. The signal that does catch it was already in the table: `edges[c][b]` exists from B's send
 until C completes and means "B is waiting on a chat that has not finished". So `on_response_done`
 now reads as three branches, tried in order:
 
