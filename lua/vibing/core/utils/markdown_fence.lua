@@ -54,6 +54,21 @@ local function looks_like_info_string(rest)
   return rest:match("^[%w_%.%+#-]+$") ~= nil
 end
 
+---`## summary` 境界か（大文字小文字を区別しない）
+---
+---`Timestamp.is_header` は User / Assistant / Request / Report / Notice しか認めないが、
+---`tree-sitter-vibing/grammar.js` の `message_header` と `scanner.c` の `consume_message_header`
+---は `summary` も同じ境界として扱う（`summary_inserter.lua` が書く `## summary` ブロックが
+---フェンスの中身に引きずられて壊れないように）。ここで別チェックにしているのは、
+---`Timestamp.is_header` 自体を緩めると `parse_header` を読む他の全呼び出し側
+---（`extract_role` など）に未知の kind が流れ込むため
+---@param line string
+---@return boolean
+local function is_summary_header(line)
+  return line:match("^## [Ss][Uu][Mm][Mm][Aa][Rr][Yy]$") ~= nil
+    or line:match("^## [Ss][Uu][Mm][Mm][Aa][Rr][Yy] ") ~= nil
+end
+
 ---1行分だけ状態を進める
 ---@param state Vibing.Utils.MarkdownFence.State?
 ---@param line string
@@ -72,7 +87,7 @@ local function step(state, line)
   end
 
   -- チャット境界は未閉のフェンスを打ち切る（スキャナ側の `consume_message_header` と同じ扱い）
-  if Timestamp.is_header(line) then
+  if Timestamp.is_header(line) or is_summary_header(line) then
     return nil
   end
 

@@ -12,9 +12,12 @@ local Timestamp = require("vibing.core.utils.timestamp")
 ---in what I've read so far" apart from "the header is the first line I read", and keep reading
 ---further back only in the first case (`infrastructure/rpc/handlers/buffer.lua`'s chunked scan).
 ---@param lines string[]
+---@param upto integer? Scan `lines[1..upto]` only (default `#lines`), so a caller that already
+---  has the whole buffer but only wants the header for a prefix of it (`streaming_handler.lua`'s
+---  `open_fence`, bounding out the in-progress last line) doesn't have to copy a slice first.
 ---@return integer?
-function M.find_last_header(lines)
-  for i = #lines, 1, -1 do
+function M.find_last_header(lines, upto)
+  for i = upto or #lines, 1, -1 do
     if Timestamp.is_header(lines[i]) then
       return i
     end

@@ -1,3 +1,4 @@
+local BufferWindow = require("vibing.domain.chat.buffer_window")
 local MarkdownFence = require("vibing.core.utils.markdown_fence")
 local Timestamp = require("vibing.core.utils.timestamp")
 
@@ -12,14 +13,7 @@ local M = {}
 ---@param upto number
 ---@return Vibing.Utils.MarkdownFence.State?
 local function open_fence(lines, upto)
-  local section_start = 1
-  for index = upto, 1, -1 do
-    if Timestamp.is_header(lines[index]) then
-      section_start = index
-      break
-    end
-  end
-
+  local section_start = BufferWindow.find_last_header(lines, upto) or 1
   return MarkdownFence.scan(lines, nil, section_start, upto)
 end
 

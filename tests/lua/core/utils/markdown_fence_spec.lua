@@ -79,6 +79,25 @@ describe("markdown_fence.normalize", function()
     }, result)
   end)
 
+  it("stops an unfinished fence at a bare `## summary` boundary", function()
+    -- `Timestamp.is_header` doesn't know "summary" as a kind, but
+    -- tree-sitter-vibing/grammar.js's `message_header` and scanner.c's `consume_message_header`
+    -- both treat it as a boundary too, since `summary_inserter.lua` writes exactly this line.
+    local result = normalize({
+      "```lua",
+      "local x = 1",
+      "## summary",
+      "```これは新しいブロックの開始",
+    })
+
+    assert.same({
+      "```lua",
+      "local x = 1",
+      "## summary",
+      "```これは新しいブロックの開始",
+    }, result)
+  end)
+
   it("reports the open fence so the next call can continue", function()
     local _, state = MarkdownFence.normalize({ "```lua", "local x = 1" })
     assert.same({ marker = "`", length = 3 }, state)
