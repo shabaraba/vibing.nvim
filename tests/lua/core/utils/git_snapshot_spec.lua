@@ -54,8 +54,14 @@ describe("git_snapshot", function()
     local handle = next_handle()
     GitSnapshot.ensure_baseline(handle, repo, "Bash")
     mutate()
-    local files, abs_files, patch = GitSnapshot.generate(handle, extra_paths)
-    return { handle = handle, files = files, abs_files = abs_files, patch = patch }
+    local files, abs_files, patch, _, extra_only = GitSnapshot.generate(handle, extra_paths)
+    return {
+      handle = handle,
+      files = files,
+      abs_files = abs_files,
+      patch = patch,
+      extra_only = extra_only,
+    }
   end
 
   local function init_repo(opts)
@@ -272,13 +278,27 @@ describe("git_snapshot", function()
     end)
 
     it("lists a tool-event path that git does not see, without a patch section", function()
-      -- .gitignore対象でもツール引数で分かっている分は一覧には載せる（patchは作らない）
+      -- .gitignore対象でもツール引数で分かっている分は一覧には載せる。ツリー差分からは
+      -- patchを作れないので extra_only として返し、呼び出し側が request_diff の退避から
+      -- セクションを合成する（#735）
       local turn = run_turn(function()
         write(repo .. "/build.log", "noise\n")
       end, { [repo .. "/build.log"] = true })
 
       assert.same({ "build.log" }, turn.files)
       assert.is_nil(turn.patch)
+      assert.same({ repo .. "/build.log" }, turn.extra_only)
+    end)
+
+    it("does not report a git-visible change as extra_only", function()
+      -- extra_only は「ツリー差分に現れなかった」ものだけ。gitが見えている変更まで入れると、
+      -- 呼び出し側の合成でpatchセクションが二重になる
+      local turn = run_turn(function()
+        write(repo .. "/tracked.txt", "after\n")
+      end, { [repo .. "/tracked.txt"] = true })
+
+      assert.same({ "tracked.txt" }, turn.files)
+      assert.same({}, turn.extra_only)
     end)
 
     it("does not let tool-event fallback add .vibing paths back to the file list", function()

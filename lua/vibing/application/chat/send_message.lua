@@ -820,15 +820,73 @@ function M._finalize_snapshot_diff(callbacks, handle_id, modified_file_paths)
   local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
   local base_dir = GitSnapshot.get_root(handle_id) or vim.fn.getcwd()
-  local files, abs_files, patch_content, ok = GitSnapshot.generate(handle_id, modified_file_paths)
+  local files, abs_files, patch_content, ok, extra_only =
+    GitSnapshot.generate(handle_id, modified_file_paths)
   GitSnapshot.clear(handle_id)
 
   if not ok then
     return false
   end
 
+  patch_content = M._supplement_ignored_files(handle_id, base_dir, patch_content, extra_only or {})
+
   M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, handle_id)
   return true
+end
+
+---ツリー差分に現れなかった変更ファイル（`.gitignore` 対象など）のpatchを退避から補う
+---
+---`git add -A` も `git diff` も gitignore 対象を拾わないので、そこで作業したターンは主経路の
+---patchが空になる（#735）。だがツールイベントで名前が出ているファイルは request_diff が
+---PreToolUseで内容を退避している集合と同じなので、退避が捨てられる前にhunkを合成して
+---patchに継ぎ足す。呼び出し側の `RequestDiff.clear()`（_handle_response）より前＝この
+---finalizeの中で呼ぶこと。
+---
+---退避が無く合成できなかったファイル（Bash由来・codexのapply_patchなど）は、一覧に載るのに
+---patchが無い＝「静かに消える」形になるので、黙らず通知する。
+---@param handle_id string|nil リクエストのハンドルID
+---@param base_dir string patch内パスの基準ディレクトリ（絶対パス）
+---@param patch_content string|nil スナップショット経路のpatch本文
+---@param extra_only string[] ツリー差分に現れなかった変更ファイルの絶対パス
+---@return string|nil patch_content 合成分を継ぎ足したpatch本文
+function M._supplement_ignored_files(handle_id, base_dir, patch_content, extra_only)
+  if #extra_only == 0 then
+    return patch_content
+  end
+
+  local RequestDiff = require("vibing.core.utils.request_diff")
+  local sections, resolved = RequestDiff.sections_for(handle_id, base_dir, extra_only)
+
+  if #sections > 0 then
+    local body = table.concat(sections, "\n") .. "\n"
+    if patch_content then
+      patch_content = patch_content .. body
+    else
+      -- 主経路のpatchと同じ先頭行（patch_viewerのbase解決に使われる）
+      patch_content = string.format("# vibing-request-diff base: %s\n%s", base_dir, body)
+    end
+  end
+
+  local missing = {}
+  local prefix = base_dir .. "/"
+  for _, abs in ipairs(extra_only) do
+    if not resolved[abs] then
+      table.insert(missing, abs:sub(1, #prefix) == prefix and abs:sub(#prefix + 1) or abs)
+    end
+  end
+  if #missing > 0 then
+    vim.notify(
+      string.format(
+        "[vibing] No patch could be generated for: %s. "
+          .. "The file(s) are outside the git tree and no PreToolUse backup exists; "
+          .. "the changes themselves are still on disk.",
+        table.concat(missing, ", ")
+      ),
+      vim.log.levels.WARN
+    )
+  end
+
+  return patch_content
 end
 
 ---リクエスト単位diff（フォールバック経路）のModified Files出力とpatch生成

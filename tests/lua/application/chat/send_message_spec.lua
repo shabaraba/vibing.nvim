@@ -305,11 +305,11 @@ describe("send_message", function()
     -- いけない。そのため「出力した」か「取れなかった」かを戻り値で返す契約になっている。
     local original
 
-    local function stub_git_snapshot(generate)
+    local function stub_git_snapshot(generate, root)
       original = package.loaded["vibing.core.utils.git_snapshot"]
       package.loaded["vibing.core.utils.git_snapshot"] = {
         get_root = function()
-          return "/repo"
+          return root or "/repo"
         end,
         generate = generate,
         clear = function() end,
@@ -376,6 +376,128 @@ describe("send_message", function()
 
       assert.is_true(handled)
       assert.is_truthy(table.concat(appended, ""):find("src/a.lua", 1, true))
+    end)
+
+    it("mixes a synthesized section for a gitignored file into the written patch", function()
+      -- gitignore対象のファイルはツリー差分に現れない（#735）。extra_only として返ってきた
+      -- 分を request_diff の退避から合成し、このターンのpatchファイルに載せる
+      local RequestDiff = require("vibing.core.utils.request_diff")
+      local root = vim.fn.fnamemodify(vim.fn.tempname(), ":p"):gsub("/$", "")
+      vim.fn.mkdir(root .. "/ignored", "p")
+      local file = root .. "/ignored/out.txt"
+      local f = assert(io.open(file, "w"))
+      f:write("before\n")
+      f:close()
+      RequestDiff.capture("h4", "Edit", { file_path = file })
+      f = assert(io.open(file, "w"))
+      f:write("after\n")
+      f:close()
+
+      stub_git_snapshot(function()
+        return { "ignored/out.txt" }, { file }, nil, true, { file }
+      end, root)
+      local appended, state = {}, {}
+
+      local handled =
+        SendMessage._finalize_snapshot_diff(callbacks_recording(appended, state), "h4", {})
+      RequestDiff.clear("h4")
+
+      assert.is_true(handled)
+      local out = table.concat(appended, "")
+      local patch_path = out:match("<!%-%- patch: ([^%s]+) %-%->")
+      assert.is_truthy(patch_path, "no patch annotation written: " .. out)
+      local pf = assert(io.open(patch_path, "r"))
+      local content = pf:read("*a")
+      pf:close()
+      assert.is_truthy(content:find("diff --git a/ignored/out.txt b/ignored/out.txt", 1, true))
+      assert.is_truthy(content:find("+after", 1, true))
+      vim.fn.delete(root, "rf")
+    end)
+  end)
+
+  describe("_supplement_ignored_files", function()
+    -- ツリー差分に現れなかった extra_paths 由来のファイル（#735）の扱い。退避があれば
+    -- hunkを合成してpatchに継ぎ足し、退避も無ければ「patchが無い」ことを通知する
+    local RequestDiff = require("vibing.core.utils.request_diff")
+    local tmp_dir
+    local messages
+    local original_notify
+
+    local function write(path, content)
+      vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+      local f = assert(io.open(path, "w"))
+      f:write(content)
+      f:close()
+    end
+
+    before_each(function()
+      tmp_dir = vim.fn.fnamemodify(vim.fn.tempname(), ":p"):gsub("/$", "")
+      vim.fn.mkdir(tmp_dir, "p")
+      messages = {}
+      original_notify = vim.notify
+      vim.notify = function(msg, level)
+        table.insert(messages, { msg = msg, level = level })
+      end
+    end)
+
+    after_each(function()
+      vim.notify = original_notify
+      vim.fn.delete(tmp_dir, "rf")
+    end)
+
+    it("builds a patch from the backup when the snapshot produced none", function()
+      local file = tmp_dir .. "/ignored/gen.txt"
+      write(file, "before\n")
+      RequestDiff.capture("h-sup1", "Edit", { file_path = file })
+      write(file, "after\n")
+
+      local patch = SendMessage._supplement_ignored_files("h-sup1", tmp_dir, nil, { file })
+      RequestDiff.clear("h-sup1")
+
+      assert.is_truthy(patch)
+      assert.equals("# vibing-request-diff base: " .. tmp_dir, patch:match("^[^\n]+"))
+      assert.is_truthy(patch:find("+after", 1, true))
+      assert.equals(0, #messages)
+    end)
+
+    it("appends after the snapshot patch when both exist", function()
+      local file = tmp_dir .. "/ignored/gen.txt"
+      write(file, "before\n")
+      RequestDiff.capture("h-sup2", "Edit", { file_path = file })
+      write(file, "after\n")
+
+      local head = "# vibing-request-diff base: "
+        .. tmp_dir
+        .. "\ndiff --git a/tracked.txt b/tracked.txt\n--- a/tracked.txt\n+++ b/tracked.txt\n@@ -1 +1 @@\n-x\n+y\n"
+      local patch = SendMessage._supplement_ignored_files("h-sup2", tmp_dir, head, { file })
+      RequestDiff.clear("h-sup2")
+
+      local tracked_pos = patch:find("a/tracked.txt", 1, true)
+      local ignored_pos = patch:find("a/ignored/gen.txt", 1, true)
+      assert.is_truthy(tracked_pos)
+      assert.is_truthy(ignored_pos)
+      assert.is_true(tracked_pos < ignored_pos)
+    end)
+
+    it("warns for a listed file whose changes exist nowhere", function()
+      -- Bash由来・codexのapply_patch由来の変更は退避が無く合成できない。黙って流すと
+      -- 「一覧に載るのにpatchが無い」が warning すら無しに再発する
+      local file = tmp_dir .. "/ignored/bash.txt"
+      write(file, "x\n")
+
+      local patch = SendMessage._supplement_ignored_files("h-sup3", tmp_dir, nil, { file })
+
+      assert.is_nil(patch)
+      assert.equals(1, #messages)
+      assert.equals(vim.log.levels.WARN, messages[1].level)
+      assert.is_truthy(messages[1].msg:find("ignored/bash.txt", 1, true))
+    end)
+
+    it("passes the patch through untouched when the tree diff covered everything", function()
+      local patch = SendMessage._supplement_ignored_files("h-sup4", tmp_dir, "existing", {})
+
+      assert.equals("existing", patch)
+      assert.equals(0, #messages)
     end)
   end)
 

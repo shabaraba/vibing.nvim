@@ -275,6 +275,50 @@ function M.generate(handle_id, base_dir, extra_paths)
   return files, abs_files, patch_content
 end
 
+---スナップショット経路のpatchに継ぎ足す差分セクションを、PreToolUseの退避から合成する
+---
+---主経路のツリー差分は `.gitignore` 対象のファイルを拾えない（#735）。だがWrite/Edit系で
+---触ったファイルなら `capture` の退避があるので、「一覧に載るのにpatchが無い」で終わるはず
+---だった変更をpatchセクションとして復元できる。退避を読むので `clear()` より前に呼ぶこと。
+---
+---`resolved` に載らなかったパスは退避そのものが無い（Bash由来・退避失敗など）。その変更内容は
+---どこにも残っていないので、呼び出し側は黙って流さず通知する。
+---@param handle_id string|nil リクエストのハンドルID
+---@param base_dir string patch内パスの基準ディレクトリ（絶対パス）
+---@param abs_paths string[] ツリー差分に現れなかった変更ファイルの絶対パス
+---@return string[] sections 合成できたdiffセクション
+---@return table<string, boolean> resolved 退避があったパス（キーは abs_paths の要素そのまま）。
+---  セクションを作らなかったものも、generate() が意図的に一覧のみにする種類（変更なし・
+---  バイナリ・base_dir外）なら resolved に入る
+function M.sections_for(handle_id, base_dir, abs_paths)
+  local sections = {}
+  local resolved = {}
+  local s = handle_id and sessions[handle_id] or nil
+  if not s then
+    return sections, resolved
+  end
+  for _, path in ipairs(abs_paths) do
+    local abs = vim.fn.fnamemodify(path, ":p")
+    local entry = s.files[abs]
+    if entry then
+      resolved[path] = true
+      local before = nil
+      if entry.existed and entry.backup_path then
+        before = read_file(entry.backup_path)
+      end
+      local after = read_file(abs)
+      local rel, under_base = to_rel(abs, base_dir)
+      if under_base and not is_vibing_state_path(rel) then
+        local section = build_file_section(rel, entry, abs, before, after)
+        if section then
+          table.insert(sections, section)
+        end
+      end
+    end
+  end
+  return sections, resolved
+end
+
 ---リクエストのバックアップを破棄する（レスポンス処理の最後に必ず呼ぶ）
 ---@param handle_id string|nil
 function M.clear(handle_id)

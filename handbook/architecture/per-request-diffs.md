@@ -218,6 +218,25 @@ start, including the utility calls that produce no diff at all.
 which is the trade that keeps `git add -A` cheap. The distinction is git's, not ours: `.gitignore`
 governs what gets _added_, so a file that is already tracked keeps showing its modifications even
 when it matches an ignore pattern — verified by committing a file with `add -f` and watching the
-next snapshot diff report it. A genuinely untracked build artifact a Write tool reported anyway
-still reaches `### Modified Files` through `extra_paths` — listed, with no patch section, matching
-what `request_diff.generate` already did for files it could not back up.
+next snapshot diff report it. Forcing the add instead (`git add -A --force`) is not an option: it
+would pull `node_modules` and every build artifact into each snapshot.
+
+That blind spot used to make the two paths asymmetric in the worst way (#735): a solo turn working
+under a gitignored directory took the snapshot path and produced **no patch at all**, while the
+same work with a second chat running in parallel fell back to `request_diff` and produced one —
+whether the patch existed was decided by the routing, not the work. The repair uses the fact that
+the fallback's backups are still alive at that point: `GitSnapshot.generate` returns the paths
+that reached the file list only through `extra_paths` (i.e. the tree diff never saw them), and
+`_supplement_ignored_files` hands them to `RequestDiff.sections_for`, which synthesizes hunks from
+the PreToolUse backups and splices them into the snapshot's patch. That set is exactly the set the
+hook backed up — a tool event carried the file's name, so `request_diff.capture` saw it too. The
+ordering is the invariant: the supplement runs inside `_finalize_snapshot_diff`, before
+`_handle_response` reaches `RequestDiff.clear`.
+
+What the supplement cannot save is a gitignored file with no backup — changed by Bash alone it
+produces no tool event and no list entry at all, and codex's `apply_patch` carries no path in
+`tool_input` so nothing was captured (see `architecture.md` → codex vocabulary). A file that is
+listed but could not get a section from either source is warned about (`vim.notify`) rather than
+silently rendered as list-only, the same no-silent-loss rule as the empty-turn warning above.
+Deliberate list-only cases — binary content, a path outside the base directory, an unchanged
+file — stay silent, since `request_diff.generate` treats them the same way.
