@@ -1,5 +1,6 @@
 local M = {}
 
+local MarkdownFence = require("vibing.core.utils.markdown_fence")
 local notify = require("vibing.core.utils.notify")
 
 ---Find "# Vibing Chat" line and first "---" separator after it
@@ -75,6 +76,8 @@ local function prepare_summary_lines(summary_content)
   if #lines == 0 or not lines[1]:lower():match("^##%s*summary") then
     return nil
   end
+
+  lines = MarkdownFence.normalize(lines)
 
   table.insert(lines, "")
   return lines

@@ -1,3 +1,4 @@
+local MarkdownFence = require("vibing.core.utils.markdown_fence")
 local Timestamp = require("vibing.core.utils.timestamp")
 local Context = require("vibing.application.context.manager")
 
@@ -177,7 +178,8 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_mes
 
   -- Insert message content if provided (for programmatic send)
   if initial_message and initial_message ~= "" then
-    local message_lines = vim.split(initial_message, "\n", { plain = true })
+    -- 配達された本文もそのままバッファの markdown になるので、閉じフェンスを割っておく
+    local message_lines = MarkdownFence.normalize(vim.split(initial_message, "\n", { plain = true }))
     for _, line in ipairs(message_lines) do
       table.insert(newLines, line)
     end

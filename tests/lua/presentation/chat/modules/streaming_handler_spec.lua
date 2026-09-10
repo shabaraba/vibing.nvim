@@ -75,4 +75,64 @@ describe("streaming_handler.stamp_response_end", function()
 
     assert.equals("## Assistant <!-- 2026-09-04 10:05:00 -->", line_at(bufnr, 1))
   end)
+
+  -- ストリームは行の途中でも切れるので、フェンスの正規化はチャンクの切れ目に依存しては
+  -- いけない。閉じフェンスに文章が続く行を1つでも残すと、そこから下が全部コードとして
+  -- ハイライトされる（tree-sitter-vibing/src/scanner.c）
+  describe("flush_chunks", function()
+    it("splits prose that follows a closing fence", function()
+      local bufnr = scratch({ "## Assistant", "" })
+
+      StreamingHandler.flush_chunks(bufnr, nil, "```lua\nlocal x = 1\n```これで完了です\n")
+
+      assert.same({
+        "## Assistant",
+        "```lua",
+        "local x = 1",
+        "```",
+        "これで完了です",
+        "",
+      }, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
+    end)
+
+    it("splits the same way when the chunk boundary falls inside the line", function()
+      local bufnr = scratch({ "## Assistant", "" })
+
+      StreamingHandler.flush_chunks(bufnr, nil, "```lua\nlocal x = 1\n```これ")
+      StreamingHandler.flush_chunks(bufnr, nil, "で完了です\n")
+
+      assert.same({
+        "## Assistant",
+        "```lua",
+        "local x = 1",
+        "```",
+        "これで完了です",
+        "",
+      }, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
+    end)
+
+    it("keeps a language-name-looking line inside the block", function()
+      local bufnr = scratch({ "## Assistant", "" })
+
+      StreamingHandler.flush_chunks(bufnr, nil, "````markdown\n")
+      StreamingHandler.flush_chunks(bufnr, nil, "```json\n")
+      StreamingHandler.flush_chunks(bufnr, nil, "````\n")
+
+      assert.same({
+        "## Assistant",
+        "````markdown",
+        "```json",
+        "````",
+        "",
+      }, vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
+    end)
+
+    it("does not carry a fence across the message header", function()
+      local bufnr = scratch({ "## User <!-- 2026-09-04 10:00:00 -->", "```lua", "local x = 1", "## Assistant", "" })
+
+      StreamingHandler.flush_chunks(bufnr, nil, "```これは新しいブロックです\n")
+
+      assert.equals("```これは新しいブロックです", line_at(bufnr, 5))
+    end)
+  end)
 end)

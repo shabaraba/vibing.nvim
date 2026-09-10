@@ -57,6 +57,40 @@ three: `handbook/architecture/orchestration.md` → "Delivered sections".
 Implemented in `lua/vibing/core/utils/timestamp.lua`: `create_header(role, timestamp)`,
 `extract_role(line)`, `has_timestamp(line)`, `extract_timestamp(line)`, `is_header(line)`.
 
+## Code Fences Written into the Buffer
+
+A model sometimes ends a code block and keeps writing on the same line:
+
+````text
+```これで完了です
+````
+
+CommonMark does not accept that as a closing fence — a closing fence may be followed by whitespace
+only — and `tree-sitter-vibing/src/scanner.c` implements the same rule, so the block stays open
+until the next `## <Kind>` header and everything in between is highlighted as code. The chat is
+still valid Markdown; it just reads as one long code block.
+
+`core/utils/markdown_fence.lua` splits that line in two as it is written, at the three write paths
+that put model-authored Markdown into the buffer: `streaming_handler.flush_chunks` (the streamed
+reply), `renderer.addUserSection` (a `Request` / `Report` / `Notice` body delivered from another
+chat) and `summary_inserter` (the `## summary` block).
+
+Two decisions inside it:
+
+- **A remainder that looks like an info string is left alone** (` ```json `). Inside a block that
+  is body text to CommonMark too, so splitting it would rewrite a nested Markdown example rather
+  than repair anything. The split happens only when the remainder does not match
+  `^[%w_%.%+#-]+$` — that is, when it contains a space or a non-ASCII character.
+- **Streaming does not wait for the line to be complete.** A chunk boundary can fall anywhere, and
+  splitting early is safe because the rest of the line is appended to the line the split produced;
+  the finished text is identical either way. A prefix of an info-string-looking word is itself
+  info-string-looking, so no split can be triggered early and then turn out wrong.
+
+The open-fence state is recounted from the buffer on every flush, from the last message header
+down, rather than carried across chunks: `flush_chunks` already reads every line, a header
+terminates an unfinished fence anyway, and a recount cannot drift when a stream is interrupted or
+the user edits the buffer mid-turn.
+
 ## AskUserQuestion Support
 
 Multiple-choice questions render as plain markdown in the chat buffer instead of a native prompt,

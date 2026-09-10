@@ -1,6 +1,27 @@
+local MarkdownFence = require("vibing.core.utils.markdown_fence")
 local Timestamp = require("vibing.core.utils.timestamp")
 
 local M = {}
+
+---`upto` 行目までで開いたままになっているコードフェンスを求める
+---
+---状態を持ち回らず毎回数え直すのは、フラッシュのたびにバッファ全行をどのみち読んでいて、
+---走査もヘッダー以降＝今のターンの分で足りるため。持ち回った状態はストリームの中断や
+---バッファの手編集でずれるが、数え直しはずれない
+---@param lines string[]
+---@param upto number
+---@return Vibing.Utils.MarkdownFence.State?
+local function open_fence(lines, upto)
+  local section_start = 1
+  for index = upto, 1, -1 do
+    if Timestamp.is_header(lines[index]) then
+      section_start = index
+      break
+    end
+  end
+
+  return MarkdownFence.scan(lines, nil, section_start, upto)
+end
 
 ---アシスタント応答を開始
 ---
@@ -74,6 +95,10 @@ function M.flush_chunks(buf, win, chunk_buffer)
 
   local chunk_lines = vim.split(chunk_buffer, "\n", { plain = true })
   chunk_lines[1] = last_line .. chunk_lines[1]
+
+  -- 末尾行はまだ途中かもしれないが、ここで割っても続きは割った後の行へ追記されるので、
+  -- 出来上がる本文は同じになる
+  chunk_lines = MarkdownFence.normalize(chunk_lines, open_fence(lines, #lines - 1))
 
   vim.api.nvim_buf_set_lines(buf, #lines - 1, #lines, false, chunk_lines)
 
