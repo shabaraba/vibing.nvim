@@ -86,6 +86,29 @@ Reaching a running Neovim was the entire point of them, so no opt-in was added.
 `.claude-plugin/marketplace.json` is kept — a manual `claude plugin install` still works, and
 deleting it can happen later.
 
+## User MCP servers, and what `--strict-mcp-config` takes with them
+
+`agent.mcp.user_servers = false` (#677) is served by `adapter/modules/cli_mcp_config.lua`. The
+user-facing half — what it costs, what else it drops, the escape hatch — is
+`handbook/configuration.md` → "Excluding User MCP Servers". Two things belong here.
+
+**`--strict-mcp-config` drops a `--plugin-dir` plugin's MCP servers.** The flag's help says it
+ignores "all other MCP configurations", and a plugin manifest is one of them. Measured against
+claude 2.1.231, the `init` event goes from 204 tools (171 MCP) to 30 with zero MCP servers — all
+42 of vibing-nvim's own `nvim_*` tools gone, silently, since the turn still runs. So the flag can
+never be passed on its own: `cli_mcp_config.args` returns the pair, strict flag plus an explicit
+`--mcp-config` built from `plugin_contents.mcp_servers` over the same `plugin_dirs.resolve` list
+the `--plugin-dir` flags came from. The `--plugin-dir` flags stay — only the MCP half of a plugin
+is re-registered by hand; its skills and subagents still arrive through the directory.
+
+**The registered name is the bare manifest one, so the prefix changes** from
+`mcp__plugin_vibing-nvim_vibing-nvim__<tool>` to `mcp__vibing-nvim__<tool>`. Nothing downstream
+had to change, and that is by construction rather than luck:
+`tools.VIBING_NVIM_MCP_TOOL_PATTERNS` already lists both spellings, `can_use_tool`'s hook check
+matches on the suffix, and the system prompt names both forms. That prompt line must stay
+byte-identical whichever path a turn takes (#469), which is why the option is not allowed to
+rewrite it to name only the form that is live.
+
 ## Codex: the Same Plugins Without `--plugin-dir`
 
 The codex backend loads the same resolved list — `plugin_dirs.resolve_entries`, same order, same
