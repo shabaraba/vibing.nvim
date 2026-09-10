@@ -1,6 +1,15 @@
 node_modules/
 dist/
 *.log
+
+# bin/rebuild.mjs builds into dist.tmp/ and renames it over dist/, so that a rebuild killed partway
+# leaves the previous build intact instead of a half-written one. dist.superseded/ is the old tree
+# between the two renames, and .build-lock is the pid file that keeps two rebuilds apart. All three
+# are normally gone within milliseconds; they are listed because a killed rebuild leaves them.
+dist.tmp/
+dist.superseded/
+.build-lock
+
 .DS_Store
 bin/.node-path
 

@@ -2,76 +2,108 @@
 /**
  * Self-building launcher for the vibing-nvim MCP server.
  *
- * Claude Code plugin installation does not run an install/build step, so
- * this wrapper builds mcp-server/dist on first launch before exec'ing the
- * compiled server. Used as the `command` for the plugin's bundled MCP
- * server in .claude-plugin/plugin.json.
+ * Claude Code plugin installation does not run an install/build step, so this wrapper builds
+ * mcp-server/dist before exec'ing the compiled server. Used as the `command` for the plugin's
+ * bundled MCP server in .claude-plugin/plugin.json.
  *
- * For "directory"-source plugin installs, CLAUDE_PLUGIN_ROOT points at the
- * live checkout rather than a per-version cache, so a source update (e.g. a
- * `git pull` outside of build.sh) can leave a stale dist/ behind. A content
- * fingerprint of package.json/package-lock.json/src/ (not just dist/index.js
- * presence) is used to detect that and rebuild.
+ * For "directory"-source plugin installs, CLAUDE_PLUGIN_ROOT points at the live checkout rather
+ * than a per-version cache, so a source update (e.g. a `git pull` outside of build.sh) can leave a
+ * stale dist/ behind. A content fingerprint of package.json/package-lock.json/src/ (not just
+ * dist/index.js presence) is used to detect that.
  *
- * This runs `npm ci`/`npm run build` against whatever is checked out at
- * CLAUDE_PLUGIN_ROOT — only add this plugin's marketplace from a source you
- * trust (see the "Trust note" in mcp-server/README.md).
+ * **The build does not get to spend the startup deadline.** Claude Code gives a plugin's MCP
+ * server 30s to connect, and overrunning it is invisible: the server never connects, so
+ * `mcp__plugin_vibing-nvim_vibing-nvim__*` is absent from the model's tool list for the whole
+ * session, while the skills and the `nvim-navigator` agent -- same `--plugin-dir`, no process
+ * needed -- load normally. Nothing logs anywhere the user looks (measured; see notify-nvim.mjs),
+ * so the model concludes the tools do not exist. A cold `npm ci` takes minutes, which no flag
+ * fixes, and the old in-place build never recovered from being killed: it deleted the fingerprint
+ * up front, so the next turn started over from the same place and was killed again (#690).
+ *
+ * So staleness is not what decides whether to build first. Completeness is:
+ *
+ * - `dist/` is a finished build of this source -> launch it. Nothing to do.
+ * - `dist/` is a finished build of *older* source -> launch it anyway, and rebuild detached. The
+ *   session runs one turn on the previous server rather than none on a missing one, and the next
+ *   launch picks the new build up. rebuild.mjs only ever swaps whole trees into place, which is
+ *   what makes an unexamined stale `dist/` safe to run.
+ * - `dist/` holds no finished build -> there is nothing to launch, so build now and hope it fits.
+ *   Say so first, over RPC, because this is the case that can still end with no tools.
+ *
+ * This runs `npm ci`/`npm run build` against whatever is checked out at CLAUDE_PLUGIN_ROOT -- only
+ * add this plugin's marketplace from a source you trust (see the "Trust note" in
+ * mcp-server/README.md).
  */
-import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
-import { spawnSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { computeFingerprint, fingerprintFilePath } from './build-fingerprint.mjs';
+import { computeFingerprint } from './build-fingerprint.mjs';
+import { builtFingerprint, hasCompleteBuild, rebuild } from './rebuild.mjs';
+import { notifyNvim } from './notify-nvim.mjs';
 
 const mcpDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const distEntry = join(mcpDir, 'dist', 'index.js');
-const nodeModulesDir = join(mcpDir, 'node_modules');
-const fingerprintFile = fingerprintFilePath(mcpDir);
+const rebuildScript = join(mcpDir, 'bin', 'rebuild.mjs');
 
-// Claude Code gives a plugin's MCP server 30s to come up, and this launcher
-// spends that budget before the server is even spawned. `npm ci` defaults to an
-// audit request and a funding request against the registry, and revalidates
-// package metadata it already has cached — so how long it takes depends on the
-// registry rather than on this machine. Measured against the same warm cache on
-// macOS, plain `npm ci` ran 31.1s once and ~1.5s hours later; these flags held
-// it at ~1.3s throughout. The point is not the average, it is that without them
-// the step can exceed the deadline at a moment nothing here controls, and the
-// whole vibing-nvim tool set then silently disappears from the session.
-// (A genuinely cold cache still fetches tarballs and still takes minutes; only
-// `./build.sh`, which is under no such deadline, can fix that case.)
-const OFFLINE_FIRST_FLAGS = ['--prefer-offline', '--no-audit', '--no-fund'];
+/**
+ * How long the blocking build may wait for a rebuild already in flight.
+ *
+ * Reached only with nothing to launch, where the alternative to waiting is two `npm ci` runs
+ * writing the same `node_modules`. Kept well inside the 30s deadline: the other process finishing
+ * hands us a `dist/` for free, and if it does not, spending the remainder on our own build is
+ * still better than exiting with none.
+ */
+const BUILD_LOCK_WAIT_MS = 10_000;
 
-function isBuildStale(fingerprint) {
-  if (!existsSync(distEntry) || !existsSync(nodeModulesDir) || !existsSync(fingerprintFile)) {
-    return true;
-  }
-  return readFileSync(fingerprintFile, 'utf8').trim() !== fingerprint;
-}
-
-function run(command, args) {
-  const result = spawnSync(command, args, { cwd: mcpDir, stdio: 'inherit' });
-  const label = `${command} ${args.join(' ')}`;
-  if (result.error) {
-    console.error(`[vibing-nvim] Failed to run: ${label}`);
-    throw result.error;
-  }
-  if (result.status !== 0) {
-    console.error(`[vibing-nvim] Command failed (exit ${result.status}): ${label}`);
-    process.exit(result.status ?? 1);
-  }
-}
-
-const fingerprint = computeFingerprint(mcpDir);
-if (isBuildStale(fingerprint)) {
+function buildBeforeLaunch() {
+  notifyNvim(
+    'warn',
+    'Building the MCP server, with no previous build to fall back on. Claude Code allows 30s; ' +
+      'past that the vibing-nvim tools are missing for this session. Run ./build.sh to build it ' +
+      'without a deadline.'
+  );
   console.error('[vibing-nvim] Building MCP server...');
-  // Drop any existing fingerprint up front so a build that fails partway
-  // (tsc can emit partial output despite reporting errors) never leaves a
-  // stale fingerprint behind that would make a later, unrelated source
-  // state look "already built" against a corrupted dist/.
-  rmSync(fingerprintFile, { force: true });
-  run('npm', ['ci', ...OFFLINE_FIRST_FLAGS, '--silent']);
-  run('npm', ['run', 'build', '--silent']);
-  writeFileSync(fingerprintFile, fingerprint);
+
+  const result = rebuild(mcpDir, { lockWaitMs: BUILD_LOCK_WAIT_MS });
+  // A skipped build means another process holds the lock and may have finished in the meantime;
+  // only its failure to produce anything runnable is fatal here.
+  if (!result.ok && !result.skipped) {
+    console.error(`[vibing-nvim] Build failed: ${result.error}`);
+    notifyNvim('error', `MCP server build failed (${result.error}). Run ./build.sh.`);
+    process.exit(1);
+  }
+  if (!hasCompleteBuild(mcpDir)) {
+    console.error('[vibing-nvim] Build produced no runnable server');
+    notifyNvim('error', 'MCP server build produced nothing runnable. Run ./build.sh.');
+    process.exit(1);
+  }
+}
+
+function rebuildInBackground() {
+  notifyNvim(
+    'info',
+    'MCP server source changed since it was built. This session uses the previous build while a ' +
+      'new one is built in the background.'
+  );
+  console.error('[vibing-nvim] Rebuilding MCP server in the background...');
+
+  try {
+    spawn(process.execPath, [rebuildScript], {
+      cwd: mcpDir,
+      detached: true,
+      stdio: 'ignore',
+      env: process.env,
+    }).unref();
+  } catch (error) {
+    // The launch itself is unaffected: the server about to start is a working one, just older.
+    console.error(`[vibing-nvim] Could not start the background rebuild: ${error.message}`);
+  }
+}
+
+if (!hasCompleteBuild(mcpDir)) {
+  buildBeforeLaunch();
+} else if (builtFingerprint(mcpDir) !== computeFingerprint(mcpDir)) {
+  rebuildInBackground();
 }
 
 const child = spawn(process.execPath, [distEntry], { stdio: 'inherit', env: process.env });

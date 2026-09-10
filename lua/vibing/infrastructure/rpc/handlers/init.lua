@@ -14,6 +14,7 @@ local permission = require("vibing.infrastructure.rpc.handlers.permission")
 local rate_limit = require("vibing.infrastructure.rpc.handlers.rate_limit")
 local qflist = require("vibing.infrastructure.rpc.handlers.qflist")
 local dap = require("vibing.infrastructure.rpc.handlers.dap")
+local notify = require("vibing.infrastructure.rpc.handlers.notify")
 
 -- Export all handlers
 M.buf_get_lines = buffer.buf_get_lines
@@ -72,5 +73,7 @@ M.dap_get_stack_trace = dap.dap_get_stack_trace
 M.dap_get_variables = dap.dap_get_variables
 M.dap_set_breakpoint = dap.dap_set_breakpoint
 M.dap_evaluate = dap.dap_evaluate
+
+M.notify = notify.notify
 
 return M

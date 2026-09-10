@@ -61,18 +61,29 @@ it. By hand:
 
 **Auto-build mechanism:** `mcp-server/bin/run.mjs` hashes `package.json`, `package-lock.json`,
 `tsconfig.json`, and everything under `src/` into a fingerprint stored at
-`dist/.build-fingerprint`, and rebuilds whenever that fingerprint changes (or `dist/`/
-`node_modules` are missing) rather than only on first launch. To force a rebuild manually, delete
+`dist/.build-fingerprint`, and compares it on every launch. To force a rebuild manually, delete
 `dist/.build-fingerprint` (or the whole `dist/` directory) and relaunch, or just run
 `npm ci && npm run build` directly in this directory.
 
-That rebuild happens inside the 30 seconds Claude Code allows a plugin's MCP server to start, so
-the install runs with `--prefer-offline --no-audit --no-fund`. npm's registry round-trips are not
-a fixed cost — the same `npm ci` on the same warm cache was measured at 31.1s once and ~1.5s hours
-later — and blowing the deadline leaves the tools silently absent from the session, so the flags
-are there to keep the step bounded by local work rather than by registry latency. A **cold** cache
-still takes minutes and no flag helps; run `./build.sh` once after a dependency bump, which does
-the same install under no deadline and stamps the fingerprint so the next launch skips the build.
+What it does about a mismatch depends on whether there is anything runnable to fall back on, and
+that distinction is the whole point. Claude Code allows a plugin's MCP server 30 seconds to start;
+a build that overruns it leaves the tools **silently** absent from the session — no error anywhere
+the user looks, while the plugin's skills load normally.
+
+- `dist/` holds a finished build of **older** source → it is launched as-is, and
+  `bin/rebuild.mjs` runs **detached**, outside the deadline. The session runs one turn on the
+  previous server instead of none on a missing one, and the next launch picks up the new build.
+- `dist/` holds **no finished build** → there is nothing to launch, so the build runs first. This
+  is the only path still inside the deadline, and the only one that can still end with no tools, so
+  it says so first — over vibing.nvim's RPC server, which reaches `vim.notify`. The launcher's
+  `stderr` does not reach the user (it is captured into Claude Code's own MCP log, and only when
+  the connection times out).
+
+The install runs with `--prefer-offline --no-audit --no-fund` throughout: npm's registry
+round-trips are not a fixed cost — the same `npm ci` on the same warm cache was measured at 31.1s
+once and ~1.5s hours later. A **cold** cache still takes minutes and no flag helps; the background
+rebuild is what absorbs that now. Run `./build.sh` after a dependency bump to do it deliberately —
+the same install under no deadline, stamping the fingerprint so the next launch skips the build.
 See `handbook/architecture/plugin-and-commands.md` → "The MCP server's own startup budget".
 
 ### 1. Build the MCP Server
