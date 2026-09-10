@@ -6,6 +6,7 @@ local Base = require("vibing.infrastructure.adapter.base")
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
 local RpcEnvironment = require("vibing.infrastructure.adapter.modules.rpc_environment")
 local GrokCommandBuilder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
+local GrokLightweight = require("vibing.infrastructure.adapter.modules.grok_lightweight")
 local GrokEventProcessor = require("vibing.infrastructure.adapter.modules.grok_event_processor")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
@@ -70,14 +71,19 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
     )
   end
 
-  local cwd = opts.cwd or vim.fn.getcwd()
+  -- Shared with the command builder, so the `--cwd` flag and the process the flag describes
+  -- cannot disagree. For a lightweight call both are the scratch directory.
+  local cwd = GrokLightweight.resolve_cwd(opts) or vim.fn.getcwd()
 
   -- Install project PreToolUse hook (reuses bin/hooks/pre-tool-use.sh) unless fully bypassed.
   -- Grok discovers <cwd>/.grok/hooks/*.json when the folder is trusted.
   --
   -- Lightweight calls skip it too, matching claude_cli and codex_cli. The builder takes their
   -- tools away instead, and routing a title-generation tool call into the chat's approval UI
-  -- would prompt the user about a request they never made.
+  -- would prompt the user about a request they never made. Skipping the write is no longer the
+  -- whole of it: a lightweight call also runs from a directory that has no `.grok/hooks/` to
+  -- discover, so the hook a previous ordinary chat left in the project can no longer be picked up
+  -- (#588).
   local permission_mode = opts.permission_mode or "default"
   if permission_mode ~= "bypassPermissions" and not opts.lightweight then
     local ok_hook, hook_err = pcall(GrokSettingsGenerator.ensure, cwd)
@@ -129,6 +135,13 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
   -- Lets PreToolUse hook identify which chat buffer's stream it belongs to (see ActiveStreamRegistry).
   local env = vim.tbl_extend("force", self._base_env, { VIBING_HANDLE_ID = handle_id })
   RpcEnvironment.bind(env)
+
+  -- The half of the lightweight restriction that is not expressible as a flag: grok's
+  -- `[compat.<vendor>]` cells resolve env var first, so this is the per-invocation switch #588 was
+  -- filed for the absence of. Only the child's environment moves; the user's config is untouched.
+  if opts.lightweight then
+    GrokLightweight.apply_env(env)
+  end
 
   ActiveStreamRegistry.register({
     handle_id = handle_id,

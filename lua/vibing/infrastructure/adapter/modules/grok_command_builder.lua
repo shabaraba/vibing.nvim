@@ -4,6 +4,7 @@
 
 local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
+local GrokLightweight = require("vibing.infrastructure.adapter.modules.grok_lightweight")
 local worktree_constants = require("vibing.core.constants.worktree")
 
 local M = {}
@@ -14,52 +15,6 @@ local M = {}
 local GROK_PERMISSION_MODE_FALLBACK = {
   auto = "default",
 }
-
---- The tool allowlist a lightweight utility call runs under.
----
---- Grok's `--tools` is an allowlist ("only the listed tools will be available; all others are
---- removed"), but it **fails open** on anything it cannot map to a real tool id. Verified against
---- grok 0.2.101 via `--debug-file`: `--tools "none"` logs
---- `tools allowlist had unmappable entries; keeping full grok toolset` and leaves every tool in
---- place, and `--tools ""` is ignored outright — the advertised tool count is unchanged from a
---- plain run either way. So the copilot trick of naming nothing is exactly wrong here; the list
---- has to name a tool grok actually has.
----
---- `todo_write` is that tool. Of grok's built-ins (`run_terminal_cmd`, `grep`, `read_file`,
---- `search_replace`, `list_dir`, `web_search`, `web_fetch`, `todo_write`, `task`) it is the only
---- one that touches no file, no shell and no network — it writes an in-session todo list and
---- nothing else. With it the run logs `tools allowlist applied allowed=["todo_write"]` and the
---- toolset drops from 26 to 3 (the tool plus grok's two always-on MCP meta-tools).
-local LIGHTWEIGHT_TOOLS = "todo_write"
-
---- Deny rule covering every MCP tool, in the `MCPTool(server__tool)` form grok's permission
---- rules require -- an `mcp__server__tool` pattern never matches.
----
---- Needed because `--tools` filters grok's *built-in* tools only; the tools its MCP servers
---- expose are added on top regardless, and grok offers no per-run way to turn those servers off.
---- The allowlist cannot reach them, so execution is denied instead. This is weaker than claude's
---- empty `--mcp-config`, which stops them being offered at all.
----
---- Not redundant with the `dontAsk` mode below, which is the tempting reading. grok's own docs
---- say `dontAsk` stops short of auto-denying while always-approve is on, and grok imports the
---- user's `settings.json` permission rules -- so an allow rule there could pre-approve an MCP
---- tool. An explicit deny is what survives both: grok evaluates `deny` > `ask` > `allow`,
---- "regardless of order or source".
----
---- Both halves of that were measured against grok 0.2.101 rather than trusted to the docs:
----
---- 1. The rule *form* is recognised. Loading it from a `.grok/config.toml` moves
----    `grok inspect`'s permission count from 1 to 2, while an invented kind
----    (`TotallyBogusKind(*)`) leaves it at 1 -- and is reported as "0 skipped", so an
----    unrecognised rule vanishes without a word. A wildcard that silently did nothing would look
----    exactly like one that worked.
---- 2. The rule is *enforced*, through this flag, against a real MCP call. Same prompt and flags
----    twice, `--deny` the only difference: without it the model reports the tool called
----    successfully; with it, "denied by a permission policy", and the debug log records
----    `deny rule matched (enforced before YOLO) tool="mcp:vibing-nvim__nvim_list_instances"`.
----    Both runs passed `--always-approve`, so "enforced before YOLO" is also the precedence
----    claim above, confirmed rather than assumed.
-local LIGHTWEIGHT_MCP_DENY = "MCPTool(*)"
 
 local cached_grok_path = nil
 local cached_configured_executable = nil
@@ -214,25 +169,6 @@ local function build_rules(opts, config)
   return table.concat(lines, "\n")
 end
 
---- Append the flags a lightweight utility call (title generation, /summarize, daily summary) runs
---- under, in place of the chat's permission mode.
----
---- Takes no `opts` on purpose: "the utility call does not inherit the chat's permission mode,
---- `bypassPermissions` included" is then enforced by the signature rather than by a comment. The
---- user put the *chat* in that mode, and a title generated behind their back is not the call they
---- made.
---- @param cmd string[]
-local function append_lightweight_flags(cmd)
-  table.insert(cmd, "--tools")
-  table.insert(cmd, LIGHTWEIGHT_TOOLS)
-  table.insert(cmd, "--deny")
-  table.insert(cmd, LIGHTWEIGHT_MCP_DENY)
-  -- codex's `approval_policy="never"`, in grok's vocabulary. grok_cli registers no hook for a
-  -- lightweight call, so a mode that prompts would stall on an approval nothing can answer.
-  table.insert(cmd, "--permission-mode")
-  table.insert(cmd, "dontAsk")
-end
-
 --- Forget the resolved binary path. Test seam only: the cache is process-wide, so a spec that
 --- wants to exercise the "CLI missing" path has to clear what an earlier spec resolved.
 function M._reset_path_cache()
@@ -274,16 +210,20 @@ function M.build(prompt, opts, session_id, config)
   end
 
   if opts.lightweight then
-    append_lightweight_flags(cmd)
+    GrokLightweight.append_flags(cmd)
   elseif opts.permission_mode then
     local mode = GROK_PERMISSION_MODE_FALLBACK[opts.permission_mode] or opts.permission_mode
     table.insert(cmd, "--permission-mode")
     table.insert(cmd, mode)
   end
 
-  if opts.cwd and opts.cwd ~= "" then
+  -- For a lightweight call this is the scratch directory, which is how grok is kept from reading
+  -- the project's AGENTS.md/CLAUDE.md and its `.grok/hooks/`: there is no flag for either, but
+  -- `--cwd` decides which project it is looking at.
+  local cwd = GrokLightweight.resolve_cwd(opts)
+  if cwd and cwd ~= "" then
     table.insert(cmd, "--cwd")
-    table.insert(cmd, opts.cwd)
+    table.insert(cmd, cwd)
   end
 
   local rules = build_rules(opts, config)
