@@ -70,6 +70,17 @@ colon-space or a space-`#` inside it, or text that would read back as a boolean 
 `PR #688 -- review` comes out as `task: "PR #688 -- review"`, because a `#` after a space opens a
 comment in plain YAML.
 
+**The projection matches on a canonicalized path, and it has to.** Decoding the entry correctly is
+only half of it — the two sides of the match are spelled by different code: an `orchestrated` entry
+is written from `nvim_buf_get_name`, where Vim has already followed any symlink, while the row it
+must land on is keyed by the path `create_chat` assembled. Reach the chat directory through a link
+and one file has two spellings, the string match misses, and the only symptom is a `task` that is
+silently absent, which reads as "never assigned" rather than as a failure. `project_tasks` and both
+of its callers therefore go through one `canonical_path` (`resolve` ∘ `:p`, the same normalization
+`turn_state.lua` uses to key a chat), and a spec pointing `save_dir` at a symlink pins it — a
+developer on macOS hits it through `$TMPDIR` (`/var` → `/private/var`) while Linux CI stays green,
+so the platform that shows the bug is not the one that gates it.
+
 One design was rejected on the way here:
 
 - **A `task` field on the driven chat's own frontmatter** (the first shape this feature shipped
@@ -343,6 +354,35 @@ Four things about it are not incidental:
   whose **sender** was the deleted chat is still deliverable, so it loses only the sender's name
   and arrives anonymously.
 
+**The queue is written to disk on every change, because "wait and it resolves" outlived the
+process** (#697). `queue_if_busy` promises the sender that a message refused for being untimely is
+still going to arrive; the recipient it is waiting on is very often parked on a usage limit, which
+is a wait measured in hours and the exact window `pending_resume.lua` was built for — so a Neovim
+restart across it took the whole in-memory `pending` table with it, and the report the sender was
+told was safe was gone with nothing on disk to show it had existed. The live queue is still the
+in-memory table; `infrastructure/storage/message_queue_store.lua` is a mirror written by `persist()`
+after every mutation and read back by `M.restore()`, deferred with `vim.schedule` out of `setup()`
+in `init.lua` next to `auto_resume.restore()`, for the same reason and off the startup path.
+
+Three consequences of it being a mirror rather than the primary copy:
+
+- **The store is keyed by chat _file path_, not bufnr**, since a bufnr is only meaningful inside the
+  process that issued it. `restore` resolves each path back to a buffer the way `auto_resume` does
+  (load it, attach it if it is not a tracked chat buffer yet), and delivery is attempted immediately
+  via `flush`. An entry whose **destination file no longer exists** is deleted from the store; one
+  that merely fails to resolve this time is left alone, so a transient failure retries on the next
+  start rather than discarding the message.
+- **A destination with no file name is not persisted at all** and does not warn. A chat created by
+  `:VibingChat` and not yet saved has no path to reopen after a restart, and that state is ordinary
+  rather than exceptional — but such a chat is also reachable right now, so the in-memory queue is
+  the only copy that was ever going to matter for it.
+- **A corrupt or unreadable `message-queue.json` yields an empty table**, saying so once per read
+  and never raising. Failing
+  toward "nothing restored" is the safe direction while the in-memory copy is authoritative; failing
+  loudly at startup would break every chat in the session over a file that only matters after a
+  crash. `save` writes an explicit `{}` for an empty store, because `vim.json.encode` renders an
+  empty Lua table as `[]` and that decodes back as a list, breaking every keyed lookup afterwards.
+
 **A message the sender delivered itself silences the watchdog for one stop.** A send is one event
 with two opposite consequences, so `completion_notifier.on_sent(from, to)` performs both rather
 than leaving the pairing to each caller: it records `edges[to][from]` (the send _is_ the
@@ -584,9 +624,12 @@ path that line describes was never gated). Only that direction is exposed: a wor
 is written once at creation and stays byte-stable across turns (#469), while an orchestrator's
 `orchestrated` grows with each dispatch and would move the cached prefix mid-conversation.
 
-**Out of scope, deliberately:** the orchestrator still does not poll inside its own turn, and
-nothing is persisted — the subscription table and the delivery queue are in memory only, since
-Neovim dying takes the worker chats with it. Backends other than claude can be _notified_ (the
+**Out of scope, deliberately:** the orchestrator still does not poll inside its own turn, and the
+subscription table stays in memory only. The delivery queue no longer does (#697, above), and the
+split is the point: a queued message is a promise made to a sender that must outlive the wait, while
+an `edges` entry is a one-shot subscription to a _stop event_ — and the turn whose stop it was
+waiting for died with the process, so restoring it would arm a wake-up that can never fire.
+Backends other than claude can be _notified_ (the
 event is backend-agnostic) but cannot _subscribe_: `nvim_chat_send_message` is an MCP tool, and
 codex/grok reach no MCP server, the same constraint `features.md` records for AskUserQuestion.
 

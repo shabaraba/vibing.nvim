@@ -89,6 +89,33 @@ describe("rpc handlers: list_chats", function()
     assert.equals("Issue #696 -- task frontmatter", find_chat(result.chats, issue696.bufnr).task)
   end)
 
+  it("projects the task when the chat directory is reached through a symlink", function()
+    -- The two sides of the projection are spelled by different code: the parent's `orchestrated`
+    -- entry comes from `nvim_buf_get_name` (Vim has already followed the link), the row it has to
+    -- land on comes from the path `create_chat` assembled. Point `save_dir` at a symlink and the
+    -- two spellings differ for every chat -- which is what macOS's `$TMPDIR` (`/var` ->
+    -- `/private/var`) does to this spec's own fixtures on a developer machine while CI stays green.
+    local real_dir = vim.fn.resolve(vim.fn.tempname()) .. "_real/"
+    vim.fn.mkdir(real_dir, "p")
+    local link_dir = vim.fn.resolve(vim.fn.tempname()) .. "_link"
+    vim.fn.system({ "ln", "-s", real_dir, link_dir })
+    if vim.v.shell_error ~= 0 then
+      -- A platform without symlinks cannot exhibit the bug either
+      return
+    end
+    require("vibing").setup({ chat = { save_location_type = "custom", save_dir = link_dir .. "/" } })
+
+    local orchestrator = handler.create_chat({})
+    local worker = handler.create_chat({ from_bufnr = orchestrator.bufnr, task = "PR #688 -- merge" })
+
+    local result = handler.list_chats({})
+
+    assert.equals("PR #688 -- merge", find_chat(result.chats, worker.bufnr).task)
+
+    vim.fn.delete(link_dir)
+    vim.fn.delete(real_dir, "rf")
+  end)
+
   it("reports no context_size for a chat that has not completed a turn", function()
     handler.create_chat({})
 
