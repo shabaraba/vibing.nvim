@@ -90,8 +90,18 @@ local function trim_url(url)
   return url
 end
 
+---URL の直前が Markdown のインラインリンクなら、ラベルの開始位置を返す。
+---`%b[]` はネストした角括弧にも対応する。
+---@param line string
+---@param url_start number URL の 1-indexed byte position
+---@return number|nil
+local function markdown_link_start(line, url_start)
+  return line:sub(1, url_start - 1):match("()%b[]%(%s*<?$")
+end
+
 ---行内からカーソル位置（1-indexed）に対応する URL を探す。
----カーソルが URL 上にあればそれを、なければ最も近い URL を（max_dist 以内で）返す。
+---カーソルが Markdown リンク記法内か URL 上にあればそれを、なければ最も近い URL を
+---（max_dist 以内で）返す。
 ---@param line string 行全体
 ---@param col number カーソルの 1-indexed カラム
 ---@return string|nil
@@ -110,6 +120,10 @@ function M.find_url_on_line(line, col)
     url = trim_url(truncate_at_non_ascii_punct(url))
     local url_end = url_start + #url - 1
 
+    local link_start = markdown_link_start(line, url_start)
+    if link_start and col >= link_start and col <= url_end then
+      return url
+    end
     if col >= url_start and col <= url_end then
       return url
     end
