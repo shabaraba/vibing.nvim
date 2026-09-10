@@ -127,5 +127,19 @@ describe("BufferWindow.slice", function()
 
       assert.equals(3, BufferWindow.find_last_header(lines))
     end)
+
+    it("scans only up to the given bound, ignoring a later header", function()
+      -- streaming_handler.lua's open_fence bounds this out to the second-to-last line, so a
+      -- streamed line that happens to look like a header doesn't count until it is complete.
+      local lines = { "## User <!-- 2026-01-01 00:00:00 -->", "a", "## Assistant <!-- 2026-01-01 00:00:01 -->", "b" }
+
+      assert.equals(1, BufferWindow.find_last_header(lines, 2))
+    end)
+
+    it("returns nil when the bound is before any header", function()
+      local lines = { "a", "## Assistant", "b" }
+
+      assert.equals(nil, BufferWindow.find_last_header(lines, 1))
+    end)
   end)
 end)
