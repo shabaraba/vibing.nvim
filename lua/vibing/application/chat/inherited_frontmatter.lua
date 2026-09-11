@@ -27,8 +27,8 @@ function M.from_source(source, config)
     -- 二重に通知しても意味がない
     mode = Modes.coerce_agent_mode(source.mode) or (config.agent and config.agent.default_mode or "code"),
     model = source.model or (config.agent and config.agent.default_model or "sonnet"),
-    -- effortは設定がなければ渡さない（CLI側の既定に委ねる）ので、fallbackもnilで正しい
-    effort = source.effort or (config.agent and config.agent.default_effort),
+    -- 古いチャットにeffortが無くても、引き継ぎ先では従来のCLI既定を明示する。
+    effort = source.effort or (config.agent and config.agent.default_effort) or Modes.DEFAULT_EFFORT,
     -- envもmodel/effortと同じ「このチャットのCLIをどう起動するか」なので引き継ぐ。
     -- config.agent.envは全チャットに効くのでfallbackは不要
     env = source.env,

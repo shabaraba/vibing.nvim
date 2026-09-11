@@ -11,6 +11,7 @@ local ChatSession = require("vibing.domain.chat.session")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
 local Git = require("vibing.core.utils.git")
 local Fs = require("vibing.core.utils.fs")
+local Modes = require("vibing.core.constants.modes")
 
 ---@deprecated このグローバル状態は複数チャットウィンドウで問題を起こすため廃止予定
 ---セッションはChatBufferインスタンスの.sessionプロパティを使用すること
@@ -27,9 +28,8 @@ local function create_default_frontmatter(config)
     agent = config.adapter or "claude",
     mode = config.agent and config.agent.default_mode or "code",
     model = config.agent and config.agent.default_model or "sonnet",
-    -- nil when default_effort is unset, which leaves the key out of the frontmatter entirely and
-    -- lets the CLI apply its own default.
-    effort = config.agent and config.agent.default_effort,
+    -- Keep the old no-flag behaviour explicit and editable in every new chat.
+    effort = (config.agent and config.agent.default_effort) or Modes.DEFAULT_EFFORT,
     permission_mode = config.permissions and config.permissions.mode or "acceptEdits",
     permissions_allow = config.permissions and config.permissions.allow or {},
     permissions_deny = config.permissions and config.permissions.deny or {},

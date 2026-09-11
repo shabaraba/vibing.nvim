@@ -36,9 +36,15 @@ function M.resolve(opts, config)
     return nil
   end
 
+  -- `default` makes the legacy "no effort setting" behaviour visible in frontmatter without
+  -- freezing a backend/model-specific default into vibing.nvim.
+  if effort == Modes.DEFAULT_EFFORT then
+    return nil
+  end
+
   if not Modes.is_valid_effort(effort) then
     require("vibing.core.utils.notify").warn(
-      string.format("Ignoring unknown effort %s (valid: %s)", tostring(effort), table.concat(Modes.EFFORT_LEVELS, ", "))
+      string.format("Ignoring unknown effort %s (valid: %s)", tostring(effort), table.concat(Modes.EFFORT_VALUES, ", "))
     )
     return nil
   end

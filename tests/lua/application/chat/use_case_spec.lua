@@ -40,6 +40,20 @@ describe("chat use_case.create_new", function()
     assert.equals(Git.get_relative_path(vim.fn.getcwd()), session.working_dir)
     assert.are_not.equal("", session.working_dir)
   end)
+
+  it("records effort: default while preserving the legacy no-override behaviour", function()
+    local session = use_case.create_new()
+
+    assert.equals("default", session.frontmatter.effort)
+  end)
+
+  it("records a configured default effort in a new chat", function()
+    require("vibing").setup({ agent = { default_effort = "high" } })
+
+    local session = use_case.create_new()
+
+    assert.equals("high", session.frontmatter.effort)
+  end)
 end)
 
 describe("chat use_case.generate_and_insert_summary", function()

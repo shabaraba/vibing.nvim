@@ -58,6 +58,13 @@ describe("codex_command_builder", function()
       end
     end)
 
+    it("leaves the Codex default alone for effort: default", function()
+      local cmd = codex_command_builder.build("hi", { effort = "default" }, nil, {}, nil)
+      for _, override in ipairs(config_overrides(cmd)) do
+        assert.is_false(vim.startswith(override, "model_reasoning_effort="))
+      end
+    end)
+
     it("uses utility_effort for lightweight calls instead of the chat effort", function()
       local config = { agent = { default_effort = "high", utility_effort = "low" } }
       local cmd = codex_command_builder.build("hi", { lightweight = true, effort = "max" }, nil, config, nil)

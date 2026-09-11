@@ -282,7 +282,7 @@ require("vibing").setup({
   },
   agent = {
     default_model = "sonnet",      -- backend model id, e.g. "sonnet" or "gpt-5.6-terra"
-    default_effort = nil,           -- "low" | "medium" | "high" | "xhigh" | "max"
+    default_effort = "default",     -- "default" | "low" | "medium" | "high" | "xhigh" | "max"
     scheduled_requests = {
       enabled = true,              -- during a usage limit, <CR> schedules instead of sending
     },
@@ -326,7 +326,7 @@ working_dir: .vibing/worktrees/feature-x  # Optional: working directory (relativ
 agent: claude  # claude | codex | copilot | grok (overrides global adapter setting for this chat)
 mode: code  # code | plan | explore
 model: sonnet  # Backend model id, e.g. sonnet or gpt-5.6-terra
-effort: high  # Optional: Claude/Codex/Grok reasoning effort
+effort: default  # CLI/model default | low | medium | high | xhigh | max
 permission_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk | auto
 permissions_allow:
   - Read
@@ -407,7 +407,9 @@ graph TB
 Switch globally with `adapter = "claude"|"codex"|"copilot"|"grok"` in setup, or per-chat by adding
 `agent: claude`, `agent: codex`, `agent: copilot`, or `agent: grok` to a chat file's YAML
 frontmatter. `effort: low|medium|high|xhigh|max` controls reasoning for Claude, Codex, and Grok when
-the selected model supports that level; omit it to keep that CLI's own default.
+the selected model supports that level. New chats use `effort: default`, which passes no override
+and therefore preserves the same CLI/model default used before effort was configurable. Omitting
+the field has the same runtime behaviour for existing chats.
 
 > **Note:** on the Copilot backend, `permissions.mode`, `permissions.ask` and the in-chat Tool
 > Approval UI are enforced through a generated Copilot plugin (`.vibing/copilot-plugin/`) that

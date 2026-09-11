@@ -125,9 +125,10 @@ The full field list is `doc/vibing.txt` → "CHAT FILE FORMAT".
   parse (`infrastructure/storage/frontmatter.lua`) so old files keep working, but it is no longer
   completed and must not be written.
 - **`effort` is backend-neutral frontmatter.** Claude and Grok receive `--effort`; Codex receives
-  `-c model_reasoning_effort=...`. With no `agent.default_effort` vibing.nvim passes no override
-  and the CLI applies its own default; pinning a level would freeze it. An unrecognised level is
-  dropped with a warning, because some CLIs accept unknown levels silently and ignore them.
+  `-c model_reasoning_effort=...`. New chats write `effort: default`; that reserved value (and a
+  missing field in old chats) passes no override, so the CLI/model applies the same default it did
+  before this setting existed. An unrecognised level is dropped with a warning, because some CLIs
+  accept unknown levels silently and ignore them.
 - **`Git.resolve_working_dir` bounds `working_dir` to the git root.** A value resolving outside is
   warned about once and treated as unset (`nil` already means "no chat-specific cwd" at every call
   site), which is what lets `create_chat.lua` reject an out-of-bounds request outright.

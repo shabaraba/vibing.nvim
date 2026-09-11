@@ -33,7 +33,7 @@
 ---@field action_type "chat"?
 ---@field mode string?
 ---@field model string?
----@field effort ("low"|"medium"|"high"|"xhigh"|"max")?
+---@field effort ("default"|"low"|"medium"|"high"|"xhigh"|"max")?
 ---@field tools string[]?
 ---@field permissions_allow string[]?
 ---@field permissions_deny string[]?

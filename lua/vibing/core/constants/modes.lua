@@ -24,10 +24,18 @@ M.VALID_AGENTS = Agents.ORDER
 ---@type string[]
 M.AGENT_MODES = { "code", "plan", "explore" }
 
----推論量のレベル。Claude・Codex・Grokで共通に扱うfrontmatterの値。
----一部CLIは未知の値を弾かず黙って無視するので、各backendへ渡す前にここで検証する。
+---CLIへ渡せる推論量のレベル。
 --- string[]
 M.EFFORT_LEVELS = { "low", "medium", "high", "xhigh", "max" }
+
+---CLIの従来の既定値に任せるfrontmatter上の予約値。
+M.DEFAULT_EFFORT = "default"
+
+---Claude・Codex・Grokで共通に扱うfrontmatterの値。
+---`default`はCLIへoverrideを渡さず、それ以外はbackend固有の形式へ変換する。
+---一部CLIは未知の値を弾かず黙って無視するので、各backendへ渡す前にここで検証する。
+---@type string[]
+M.EFFORT_VALUES = vim.list_extend({ M.DEFAULT_EFFORT }, M.EFFORT_LEVELS)
 
 ---モデルが有効かチェック
 ---@param model string
@@ -57,7 +65,7 @@ end
 --- effort string
 --- boolean
 function M.is_valid_effort(effort)
-  return vim.tbl_contains(M.EFFORT_LEVELS, effort)
+  return vim.tbl_contains(M.EFFORT_VALUES, effort)
 end
 
 function M.is_valid_agent_mode(mode)

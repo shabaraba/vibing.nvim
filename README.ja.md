@@ -264,7 +264,7 @@ require("vibing").setup({
   },
   agent = {
     default_model = "sonnet",      -- backend のモデルID。例: "sonnet" / "gpt-5.6-terra"
-    default_effort = nil,           -- "low" | "medium" | "high" | "xhigh" | "max"
+    default_effort = "default",     -- "default" | "low" | "medium" | "high" | "xhigh" | "max"
   },
   permissions = {
     mode = "acceptEdits",          -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"
@@ -297,7 +297,7 @@ working_dir: .vibing/worktrees/feature-x  # オプション: 作業ディレク�
 agent: claude  # claude | codex | copilot | grok(チャット単位で adapter 設定を上書き)
 mode: code  # code | plan | explore
 model: sonnet  # backend のモデルID。例: sonnet / gpt-5.6-terra
-effort: high  # オプション: Claude/Codex/Grok の推論量
+effort: default  # CLI・モデル既定値 | low | medium | high | xhigh | max
 permission_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk | auto
 permissions_allow:
   - Read
@@ -378,8 +378,9 @@ graph TB
 setup の `adapter = "claude"|"codex"|"copilot"|"grok"` でグローバルに、チャットファイルの
 frontmatter に `agent: claude` / `agent: codex` / `agent: copilot` / `agent: grok` を書けば
 チャット単位で切り替えられます。`effort: low|medium|high|xhigh|max` は、選択したモデルがその
-レベルに対応している場合に Claude・Codex・Grok の推論量を制御します。省略時は各 CLI の
-既定値を使います。
+レベルに対応している場合に Claude・Codex・Grok の推論量を制御します。新規チャットは
+`effort: default` になり、CLIへoverrideを渡さないため、effort対応前と同じCLI・モデル既定値を
+使います。既存チャットでフィールドを省略した場合も実行時の挙動は同じです。
 
 > **注意:** Copilot バックエンドでは、`permissions.mode`・`permissions.ask`・チャット内のツール
 > 承認 UI を、vibing.nvim が生成する Copilot プラグイン(`.vibing/copilot-plugin/`)経由で適用

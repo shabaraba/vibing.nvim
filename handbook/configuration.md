@@ -31,7 +31,7 @@ require("vibing").setup({
     default_mode = "code",
     default_model = "sonnet",
     utility_model = "sonnet",
-    default_effort = nil,
+    default_effort = "default",
     utility_effort = "low",
     setting_sources = { "user", "project", "local" },
     mcp = { user_servers = true },
@@ -159,11 +159,13 @@ agent = {
                             -- Set to "haiku" for the cheapest option: it costs less but
                             -- picks the wrong subject noticeably more often.
 
-  default_effort = nil,     -- Reasoning effort recorded in new chat frontmatter.
-                            -- "low" | "medium" | "high" | "xhigh" | "max".
+  default_effort = "default",
+                            -- Reasoning effort recorded in new chat frontmatter.
+                            -- "default" | "low" | "medium" | "high" | "xhigh" | "max".
                             -- Claude receives --effort, Codex receives a
                             -- model_reasoning_effort config override, and Grok
-                            -- receives --effort. nil leaves each CLI's default intact.
+                            -- receives --effort. "default" passes no override,
+                            -- preserving the pre-effort CLI/model default.
                             -- The selected model may support only a subset of the levels.
 
   utility_effort = "low",  -- Effort for lightweight utility calls. Takes priority

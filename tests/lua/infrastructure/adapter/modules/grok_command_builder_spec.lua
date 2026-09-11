@@ -194,6 +194,11 @@ describe("grok_command_builder", function()
       assert.is_nil(find_flag(cmd, "--effort"))
     end)
 
+    it("leaves the Grok default alone for effort: default", function()
+      local cmd = grok_command_builder.build("hello", { effort = "default" }, nil, {})
+      assert.is_nil(find_flag(cmd, "--effort"))
+    end)
+
     it("uses utility_effort for lightweight calls instead of the chat effort", function()
       local config = { agent = { default_effort = "high", utility_effort = "low" } }
       local cmd = grok_command_builder.build("hello", { lightweight = true, effort = "max" }, nil, config)

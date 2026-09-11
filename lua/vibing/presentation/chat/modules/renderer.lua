@@ -1,6 +1,7 @@
 local MarkdownFence = require("vibing.core.utils.markdown_fence")
 local Timestamp = require("vibing.core.utils.timestamp")
 local Context = require("vibing.application.context.manager")
+local Modes = require("vibing.core.constants.modes")
 
 local M = {}
 
@@ -52,6 +53,11 @@ function M.init_content(buf, session)
   if model then
     table.insert(lines, "model: " .. model)
   end
+
+  -- Always show the effective choice. `default` deliberately produces no CLI override, which is
+  -- the exact behaviour chats had before effort became configurable.
+  local effort = frontmatter.effort or (config.agent and config.agent.default_effort) or Modes.DEFAULT_EFFORT
+  table.insert(lines, "effort: " .. effort)
 
   -- permission_mode
   local permission_mode = frontmatter.permission_mode or (config.permissions and config.permissions.mode)

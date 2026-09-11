@@ -6,14 +6,14 @@ local Modes = require("vibing.core.constants.modes")
 ---@return boolean
 return function(args, chat_buffer)
   if #args == 0 then
-    notify.warn("/effort <" .. table.concat(Modes.EFFORT_LEVELS, "|") .. ">", "Usage")
+    notify.warn("/effort <" .. table.concat(Modes.EFFORT_VALUES, "|") .. ">", "Usage")
     return false
   end
 
   local effort = args[1]
 
   if not Modes.is_valid_effort(effort) then
-    notify.error(string.format("Invalid effort: %s (valid: %s)", effort, table.concat(Modes.EFFORT_LEVELS, ", ")))
+    notify.error(string.format("Invalid effort: %s (valid: %s)", effort, table.concat(Modes.EFFORT_VALUES, ", ")))
     return false
   end
 

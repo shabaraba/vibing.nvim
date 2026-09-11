@@ -17,6 +17,7 @@ end, Agents.list())
 local ENUMS = {
   agent = AGENT_ENUM,
   effort = {
+    { value = "default", description = "Use the selected CLI and model's default reasoning effort" },
     { value = "low", description = "Least reasoning, fastest and cheapest" },
     { value = "medium", description = "Moderate reasoning" },
     { value = "high", description = "More reasoning for intelligence-sensitive work" },
