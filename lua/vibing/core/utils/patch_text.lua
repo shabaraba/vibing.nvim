@@ -59,9 +59,12 @@ function M.before_lines(base_dir, rel_path, file_diff)
     vim.fn.delete(patch_path)
   end
 
-  if not Fs.ensure_dir(vim.fn.fnamemodify(target, ":h")) then
+  -- `Fs.ensure_dir` は失敗時にfalseではなくLuaのerrorを投げる。呼び出し元は誰もpcallしないので、
+  -- ここで受け止めないと `gd` が生のトレースバックで落ちる（本来はpatch_viewerへフォールバック）
+  local dir_ok, dir_err = pcall(Fs.ensure_dir, vim.fn.fnamemodify(target, ":h"))
+  if not dir_ok then
     cleanup()
-    return nil, "failed to create temp directory"
+    return nil, "failed to create temp directory: " .. tostring(dir_err)
   end
 
   local copied = (vim.uv or vim.loop).fs_copyfile(abs, target)

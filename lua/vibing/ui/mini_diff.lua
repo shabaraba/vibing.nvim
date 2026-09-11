@@ -17,6 +17,17 @@ local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 ---@type table<number, boolean>
 local marked = {}
 
+-- バッファが消えたら追跡もやめる。怠ると、Neovimがバッファ番号を再利用した時に
+-- `:VibingDiffClear` が無関係な別バッファへ `diff.disable` / `minidiff_config` クリアをかける
+-- （`completion_notifier.lua` の `BufDelete`/`BufWipeout` と同じパターン）
+local cleanup_group = vim.api.nvim_create_augroup("VibingMiniDiffCleanup", { clear = true })
+vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
+  group = cleanup_group,
+  callback = function(event)
+    marked[event.buf] = nil
+  end,
+})
+
 ---@return table|nil
 local function mini()
   local ok, m = pcall(require, "mini.diff")
@@ -111,7 +122,12 @@ function M.show(base_dir, patch_content, target_file)
 
   local win = code_window()
   vim.api.nvim_set_current_win(win)
-  vim.cmd.edit(vim.fn.fnameescape(base_dir .. "/" .. rel_path))
+  -- 選ばれたウィンドウのバッファが未保存だと素の `:edit` はE37で落ちる。呼び出し元は
+  -- pcallしないので、ここで受け止めてpatch_viewerへのフォールバックに繋げる
+  local edit_ok = pcall(vim.cmd.edit, vim.fn.fnameescape(base_dir .. "/" .. rel_path))
+  if not edit_ok then
+    return false
+  end
   local buf = vim.api.nvim_get_current_buf()
 
   M._attach(diff, buf, before)
