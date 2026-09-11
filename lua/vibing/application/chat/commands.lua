@@ -233,7 +233,7 @@ function M.get_argument_completions(command_name)
   local completions = {
     permission = Modes.PERMISSION_MODES,
     model = Agents.all_model_values(),
-    effort = Modes.EFFORT_LEVELS,
+    effort = Modes.EFFORT_VALUES,
   }
   return completions[command_name]
 end

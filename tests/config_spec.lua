@@ -23,6 +23,7 @@ describe("vibing.config", function()
       assert.is_not_nil(config.defaults.agent)
       assert.equals("code", config.defaults.agent.default_mode)
       assert.equals("sonnet", config.defaults.agent.default_model)
+      assert.equals("default", config.defaults.agent.default_effort)
     end)
 
     it("should have permissions configuration", function()

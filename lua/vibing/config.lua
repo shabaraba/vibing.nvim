@@ -118,8 +118,8 @@
 ---@field default_mode "code"|"plan"|"explore" 新規チャットのfrontmatterに記録される`mode`の既定値（意味は core/constants/modes.lua の M.AGENT_MODES 参照）
 ---@field default_model string デフォルトモデル。Claude短縮名（sonnet/opus/haiku/fable）または選択中backendのモデルID
 ---@field utility_model string タイトル生成・要約等の軽量ユーティリティ呼び出し専用モデル（デフォルト: "sonnet"）
----@field default_effort ("low"|"medium"|"high"|"xhigh"|"max")? 推論量の既定値（未指定ならCLIの既定に任せる）
----@field utility_effort ("low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
+---@field default_effort ("default"|"low"|"medium"|"high"|"xhigh"|"max")? 推論量の既定値（"default"ならCLIの既定に任せる）
+---@field utility_effort ("default"|"low"|"medium"|"high"|"xhigh"|"max")? タイトル生成・要約等の軽量呼び出しの推論量（デフォルト: "low"）
 ---@field setting_sources string[]? Claude CLIの`--setting-sources`に渡す設定読み込み元リスト（例: {"project", "local"}、デフォルト: {"user", "project", "local"}）。MCPサーバーの読み込みには影響しない（`agent.mcp`参照）
 ---@field mcp Vibing.AgentMcpConfig? 通常のチャットターンにどのMCPサーバーを載せるかの設定
 ---@field git_instructions boolean? trueでClaude CLI組み込みのgitステータスブロック（ブランチ名・
@@ -322,9 +322,9 @@ M.defaults = {
     -- commands that ran). The inputs are a few thousand tokens and the calls are on-demand, so
     -- the extra cost is small. Set it back to "haiku" if you want the cheapest possible.
     utility_model = "sonnet",
-    -- default_effort is deliberately nil: without it vibing.nvim passes no --effort and the CLI
-    -- applies its own default, which moves as Anthropic tunes it. Set it to pin a level.
-    default_effort = nil,
+    -- `default` is written to new chat frontmatter but passed to no CLI. This preserves the exact
+    -- pre-effort behaviour while making the choice visible and editable per chat.
+    default_effort = "default",
     utility_effort = "low",
     setting_sources = { "user", "project", "local" },
     mcp = {

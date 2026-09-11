@@ -12,12 +12,13 @@ local function find_flag(cmd, flag)
 end
 
 describe("effort levels", function()
-  it("matches what claude --effort accepts", function()
-    -- Verified against claude CLI 2.1.220: --effort <level> (low, medium, high, xhigh, max).
+  it("separates CLI levels from the backend-neutral frontmatter values", function()
     assert.same({ "low", "medium", "high", "xhigh", "max" }, Modes.EFFORT_LEVELS)
+    assert.same({ "default", "low", "medium", "high", "xhigh", "max" }, Modes.EFFORT_VALUES)
   end)
 
   it("validates a level", function()
+    assert.is_true(Modes.is_valid_effort("default"))
     assert.is_true(Modes.is_valid_effort("xhigh"))
     assert.is_false(Modes.is_valid_effort("extreme"))
     assert.is_false(Modes.is_valid_effort(nil))
@@ -48,6 +49,11 @@ describe("cli_command_builder --effort", function()
   it("passes nothing when no effort is configured", function()
     -- The CLI's own default applies, and that default moves as Anthropic tunes it.
     local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+    assert.is_nil(find_flag(cmd, "--effort"))
+  end)
+
+  it("passes nothing for the visible default sentinel", function()
+    local cmd = cli_command_builder.build("hello", { effort = "default" }, nil, {}, nil)
     assert.is_nil(find_flag(cmd, "--effort"))
   end)
 

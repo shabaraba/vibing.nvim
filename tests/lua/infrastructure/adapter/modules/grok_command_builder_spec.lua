@@ -177,6 +177,40 @@ describe("grok_command_builder", function()
     end)
   end)
 
+  describe("--effort", function()
+    it("passes the frontmatter effort", function()
+      local cmd = grok_command_builder.build("hello", { effort = "xhigh" }, nil, {})
+      assert.equals("xhigh", value_after(cmd, "--effort"))
+    end)
+
+    it("falls back to agent.default_effort", function()
+      local config = { agent = { default_effort = "high" } }
+      local cmd = grok_command_builder.build("hello", {}, nil, config)
+      assert.equals("high", value_after(cmd, "--effort"))
+    end)
+
+    it("leaves the Grok default alone when no effort is configured", function()
+      local cmd = grok_command_builder.build("hello", {}, nil, {})
+      assert.is_nil(find_flag(cmd, "--effort"))
+    end)
+
+    it("leaves the Grok default alone for effort: default", function()
+      local cmd = grok_command_builder.build("hello", { effort = "default" }, nil, {})
+      assert.is_nil(find_flag(cmd, "--effort"))
+    end)
+
+    it("uses utility_effort for lightweight calls instead of the chat effort", function()
+      local config = { agent = { default_effort = "high", utility_effort = "low" } }
+      local cmd = grok_command_builder.build("hello", { lightweight = true, effort = "max" }, nil, config)
+      assert.equals("low", value_after(cmd, "--effort"))
+    end)
+
+    it("keeps the effort on resumed sessions", function()
+      local cmd = grok_command_builder.build("hello", { effort = "medium" }, "session-abc", {})
+      assert.equals("medium", value_after(cmd, "--effort"))
+    end)
+  end)
+
   describe("--permission-mode", function()
     it("passes vibing permission modes straight through when Grok supports them natively", function()
       for _, mode in ipairs({ "default", "acceptEdits", "bypassPermissions", "plan", "dontAsk" }) do

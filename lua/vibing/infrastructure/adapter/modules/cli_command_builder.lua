@@ -6,6 +6,7 @@ local tools_constants = require("vibing.core.constants.tools")
 local CliMcpConfig = require("vibing.infrastructure.adapter.modules.cli_mcp_config")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
+local ReasoningEffort = require("vibing.infrastructure.adapter.modules.reasoning_effort")
 local worktree_constants = require("vibing.core.constants.worktree")
 
 local M = {}
@@ -52,41 +53,6 @@ local function resolve_model(opts, config)
     return (config.agent and config.agent.utility_model) or "sonnet"
   end
   return opts.model or (config.agent and config.agent.default_model)
-end
-
---- Resolve the reasoning effort level for this call.
---- Lightweight calls (title generation, summarize, daily summary) use config.agent.utility_effort.
---- It is not paired with a cheap model: utility_model defaults to sonnet because those calls
---- summarize a noisy transcript. Low effort on a capable model is the trade being made.
---- Returns nil when nothing is configured, so no --effort is passed and the CLI's own default
---- applies — that default moves as Anthropic tunes it, and pinning it here would freeze it.
---- Invalid values are dropped with a warning: the CLI accepts an unknown level without complaint
---- and then ignores it, so a typo would otherwise be silent.
---- @param opts Vibing.AdapterOpts
---- @param config Vibing.Config
---- @return string|nil
-local function resolve_effort(opts, config)
-  local agent = config.agent or {}
-  local effort
-  if opts.lightweight then
-    effort = agent.utility_effort
-  else
-    effort = opts.effort or agent.default_effort
-  end
-
-  if effort == nil then
-    return nil
-  end
-
-  local Modes = require("vibing.core.constants.modes")
-  if not Modes.is_valid_effort(effort) then
-    require("vibing.core.utils.notify").warn(
-      string.format("Ignoring unknown effort %s (valid: %s)", tostring(effort), table.concat(Modes.EFFORT_LEVELS, ", "))
-    )
-    return nil
-  end
-
-  return effort
 end
 
 --- Append tools that are not in the list yet, preserving the user's own ordering
@@ -179,7 +145,7 @@ function M.build(prompt, opts, session_id, config, settings_path)
   table.insert(cmd, "--include-partial-messages")
 
   add_flag_if_present(cmd, "--model", resolve_model(opts, config))
-  add_flag_if_present(cmd, "--effort", resolve_effort(opts, config))
+  add_flag_if_present(cmd, "--effort", ReasoningEffort.resolve(opts, config))
 
   if session_id then
     table.insert(cmd, "--resume")
