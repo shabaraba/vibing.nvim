@@ -21,6 +21,10 @@ vibing.nvim invokes the `claude` CLI with `--setting-sources user,project,local`
 `.claude/commands/` project slash commands, `.claude/skills/`, and global settings/subagents are
 all available inside vibing.nvim sessions automatically — no extra configuration needed.
 
+The MCP half of that is the one part with an off switch: `agent.mcp.user_servers = false` keeps a
+turn down to the servers vibing.nvim's own plugins declare. What it saves and what else it drops:
+`handbook/configuration.md` → "Excluding User MCP Servers".
+
 ## Naming the Tool and the Instance
 
 Two facts decide whether a call reaches the editor the user is looking at, and both have one home
@@ -143,7 +147,7 @@ happens before the send, and why the list field needs its own scanner:
 
 **`task` (both tools) is one free-text line recording what the caller is asking the target chat to
 do** (e.g. `"PR #688 — review fixes, merge, cleanup"`), written into the **caller's own**
-`orchestrated` entry for that chat (`<path>|<task>`, `orchestrated_entry.lua`) — never onto the
+`orchestrated` entry for that chat (a `{path, task}` element, `orchestrated_entry.lua`) — never onto the
 target's own frontmatter. `nvim_chat_list` projects it back onto the target chat's row, so an
 orchestrator driving several workers reconstructs the whole bufnr ↔ PR/issue ↔ assignment mapping
 by reading its own frontmatter, with no transcript to re-read after a restart or a context

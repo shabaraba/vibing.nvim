@@ -60,7 +60,16 @@ describe("OrchestrationChatScanner", function()
       assert.is_true(found)
     end)
 
-    it("finds a task-bearing orchestrated entry by its path portion (#696 follow-up)", function()
+    it("finds a task-bearing orchestrated entry by its path (#696 follow-up)", function()
+      local worker = dir .. "/worker.md"
+      local orchestrator = ChatFiles.write(dir, "orchestrator.md", {
+        orchestrated = { { path = "worker.md", task = "PR #688 -- review fixes, merge" } },
+      })
+
+      assert.is_true(OrchestrationChatScanner.new():contains_link(orchestrator, worker))
+    end)
+
+    it("still finds a legacy pipe-encoded entry by its path portion (#717)", function()
       local worker = dir .. "/worker.md"
       local orchestrator = ChatFiles.write(dir, "orchestrator.md", {
         orchestrated = { "worker.md|PR #688 -- review fixes, merge" },
@@ -112,7 +121,23 @@ describe("OrchestrationChatScanner", function()
       assert.same({ "alpha.md", "renamed.md", "bravo.md" }, ChatFiles.read_frontmatter(orchestrator).orchestrated)
     end)
 
-    it("keeps the task suffix when renaming a task-bearing orchestrated entry (#696 follow-up)", function()
+    it("keeps the task when renaming a task-bearing orchestrated entry (#696 follow-up)", function()
+      local orchestrator = ChatFiles.write(dir, "orchestrator.md", {
+        orchestrated = { { path = "worker.md", task = "PR #688 -- review fixes, merge" } },
+      })
+
+      local ok = OrchestrationChatScanner.new():update_link(orchestrator, dir .. "/worker.md", dir .. "/renamed.md")
+
+      assert.is_true(ok)
+      assert.same(
+        { { path = "renamed.md", task = "PR #688 -- review fixes, merge" } },
+        ChatFiles.read_frontmatter(orchestrator).orchestrated
+      )
+    end)
+
+    it("migrates a legacy pipe-encoded entry to a map while renaming it (#717)", function()
+      -- Chat files written before #717 carry `<path>|<task>`. A rename is the moment the entry
+      -- gets rewritten, so it is also the moment it stops being encoded into one scalar.
       local orchestrator = ChatFiles.write(dir, "orchestrator.md", {
         orchestrated = { "worker.md|PR #688 -- review fixes, merge" },
       })
@@ -121,7 +146,7 @@ describe("OrchestrationChatScanner", function()
 
       assert.is_true(ok)
       assert.same(
-        { "renamed.md|PR #688 -- review fixes, merge" },
+        { { path = "renamed.md", task = "PR #688 -- review fixes, merge" } },
         ChatFiles.read_frontmatter(orchestrator).orchestrated
       )
     end)
@@ -130,11 +155,14 @@ describe("OrchestrationChatScanner", function()
       "collapses a rename collision to one entry instead of keeping conflicting tasks for the same path (PR #712 review)",
       function()
         -- Renaming "worker.md" to "renamed.md" while "renamed.md" is already a separate
-        -- orchestrated entry (with its own, different task) must not leave both encoded strings
-        -- in the list -- nvim_chat_list would then have two conflicting assignments to project
-        -- onto the same worker path.
+        -- orchestrated entry (with its own, different task) must not leave both entries in the
+        -- list -- nvim_chat_list would then have two conflicting assignments to project onto
+        -- the same worker path.
         local orchestrator = ChatFiles.write(dir, "orchestrator.md", {
-          orchestrated = { "worker.md|old task", "renamed.md|other task" },
+          orchestrated = {
+            { path = "worker.md", task = "old task" },
+            { path = "renamed.md", task = "other task" },
+          },
         })
 
         local ok = OrchestrationChatScanner.new():update_link(orchestrator, dir .. "/worker.md", dir .. "/renamed.md")

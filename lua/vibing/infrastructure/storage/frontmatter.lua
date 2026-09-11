@@ -1,4 +1,13 @@
+---@class Vibing.Infrastructure.Storage.Frontmatter
+---チャットファイルのfrontmatterを読み書きする唯一の入口。
+---
+---YAMLそのものの解釈は `core/utils/yaml.lua` にあり、ここが持つのはfrontmatter固有の話
+---（開始/終了の`---`、旧キー名の移行、キーの並び順、領域の走査）だけ。バッファ上の
+---frontmatterを編集する `presentation/chat/modules/frontmatter_handler` も同じ2つの関数
+---（`parse` / `serialize_lines`）を通るので、同じ入力に対する答えは1つしかない（#717）
 local M = {}
+
+local Yaml = require("vibing.core.utils.yaml")
 
 local FRONTMATTER_START = "---"
 local FRONTMATTER_END = "---"
@@ -7,81 +16,20 @@ local function trim(s)
   return s:match("^%s*(.-)%s*$")
 end
 
-local function parse_yaml_value(value)
-  if value == nil or value == "" then
-    return nil
-  end
-
-  value = trim(value)
-
-  if value == "true" then
-    return true
-  elseif value == "false" then
-    return false
-  elseif value:match("^%d+$") then
-    return tonumber(value)
-  else
-    return value
-  end
-end
-
-local function parse_yaml_simple(yaml_str)
-  local result = {}
-  local lines = vim.split(yaml_str, "\n", { plain = true })
-  local current_array_key = nil
-  local current_array = nil
-
-  for _, line in ipairs(lines) do
-    if line:match("^%s*$") then
-      goto continue
-    end
-
-    local array_item = line:match("^%s+%-%s*(.*)$")
-    if array_item and current_array_key then
-      table.insert(current_array, trim(array_item))
-      goto continue
-    end
-
-    local key, value = line:match("^([%w%.%_%-]+):%s*(.*)$")
-    if key then
-      if current_array_key then
-        result[current_array_key] = current_array
-        current_array_key = nil
-        current_array = nil
-      end
-
-      -- Handle empty array notation: []
-      if value == "[]" then
-        result[key] = {}
-      elseif value == "" or value == nil then
-        current_array_key = key
-        current_array = {}
-      else
-        result[key] = parse_yaml_value(value)
-      end
-    end
-
-    ::continue::
-  end
-
-  if current_array_key then
-    result[current_array_key] = current_array
-  end
-
-  return result
-end
-
 ---旧frontmatterキー名 → 実行時キー名。`permissions_mode`(複数形)は過去のREADMEが案内していた
 ---綴りで、実行時に読まれるのは`permission_mode`(単数形)だった。
+---
+---`parse` を通れば旧綴りは消えて正式なキーだけが残り、`serialize` は正式なキーしか書かない。
+---読み書きが両方ここを通るようになった今、移行はこの1箇所で閉じている（#717）
 ---@type table<string, string>
-M.LEGACY_KEY_ALIASES = {
+local LEGACY_KEY_ALIASES = {
   permissions_mode = "permission_mode",
 }
 
 ---旧キー名を実行時キー名へ寄せる(正式なキーが既にあればそちらを優先)
 ---@param parsed table
 local function normalize_legacy_keys(parsed)
-  for legacy, canonical in pairs(M.LEGACY_KEY_ALIASES) do
+  for legacy, canonical in pairs(LEGACY_KEY_ALIASES) do
     if parsed[legacy] ~= nil then
       if parsed[canonical] == nil then
         parsed[canonical] = parsed[legacy]
@@ -126,7 +74,7 @@ function M.parse(content)
   end
   local body = table.concat(body_lines, "\n")
 
-  local parsed = parse_yaml_simple(yaml_str)
+  local parsed = Yaml.decode(yaml_str)
   normalize_legacy_keys(parsed)
 
   return parsed, body
@@ -136,9 +84,10 @@ end
 ---
 ---パーサが同じフィールドに対して3つの形を返しうるので、その規則はパーサの隣に置く。
 ---値なしの `key:` は**真値の空table**（`if not value` では弾けない）、手書きの
----`key: path.md` は**文字列**、通常のブロックリストだけが配列になる
+---`key: path.md` は**文字列**、通常のブロックリストだけが配列になる。
+---要素そのものはスカラーとは限らない — `orchestrated` はマップの配列になる（#717）
 ---@param value any
----@return string[]
+---@return (string|table)[]
 function M.as_list(value)
   if type(value) == "string" and value ~= "" then
     return { value }
@@ -147,16 +96,6 @@ function M.as_list(value)
     return {}
   end
   return value
-end
-
-local function serialize_value(value)
-  if type(value) == "boolean" then
-    return value and "true" or "false"
-  elseif type(value) == "number" then
-    return tostring(value)
-  else
-    return tostring(value)
-  end
 end
 
 ---frontmatterに書き出すキーの順序。**並びそのもの**が定義なので、キーを挿入するときは
@@ -178,6 +117,7 @@ local KEY_ORDER = {
   "agent",
   "model",
   "effort",
+  "env",
   "permission_mode",
   "permissions_allow",
   "permissions_deny",
@@ -186,47 +126,21 @@ local KEY_ORDER = {
   "language",
 }
 
-local priority = {}
-for index, key in ipairs(KEY_ORDER) do
-  priority[key] = index
-end
-
-local function get_sorted_keys(tbl)
-  local keys = {}
-  for k in pairs(tbl) do
-    table.insert(keys, k)
-  end
-
-  table.sort(keys, function(a, b)
-    local pa = priority[a] or 100
-    local pb = priority[b] or 100
-    if pa ~= pb then
-      return pa < pb
-    end
-    return a < b
-  end)
-
-  return keys
+---frontmatter領域を行の配列として書き出す（両端の`---`を含む）
+---
+---バッファ上のfrontmatterを丸ごと差し替える側（`frontmatter_handler`）が、
+---`serialize` の文字列を splitし直さずに済むように公開している
+---@param data table
+---@return string[] lines
+function M.serialize_lines(data)
+  local lines = { FRONTMATTER_START }
+  vim.list_extend(lines, Yaml.encode(data, KEY_ORDER))
+  table.insert(lines, FRONTMATTER_END)
+  return lines
 end
 
 function M.serialize(data, body)
-  local lines = { FRONTMATTER_START }
-
-  local sorted_keys = get_sorted_keys(data)
-
-  for _, key in ipairs(sorted_keys) do
-    local value = data[key]
-    if type(value) == "table" then
-      table.insert(lines, key .. ":")
-      for _, item in ipairs(value) do
-        table.insert(lines, "  - " .. tostring(item))
-      end
-    else
-      table.insert(lines, key .. ": " .. serialize_value(value))
-    end
-  end
-
-  table.insert(lines, FRONTMATTER_END)
+  local lines = M.serialize_lines(data)
 
   if body and body ~= "" then
     table.insert(lines, body)

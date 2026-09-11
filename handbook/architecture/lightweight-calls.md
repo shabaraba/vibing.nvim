@@ -79,7 +79,7 @@ and copilot ignores it, leaving all 62 tools — so the flag reads as working wh
 allowlist, but an entry it cannot map to a real tool id makes it discard the whole restriction:
 `--debug-file` on grok 0.2.101 records
 `tools allowlist had unmappable entries; keeping full grok toolset` for `--tools "none"`, and
-`--tools ""` is ignored the same way copilot's empty list is. So `grok_command_builder` names a
+`--tools ""` is ignored the same way copilot's empty list is. So `grok_lightweight.lua` names a
 real tool — `todo_write`, the only built-in reaching no file, shell or network — and the run logs
 `tools allowlist applied` with the toolset down from 26 to 3. `--permission-mode dontAsk` stands
 in for codex's `approval_policy="never"`.
@@ -90,7 +90,8 @@ genuinely leaves the run hookless. Grok discovers `<cwd>/.grok/hooks/` instead, 
 `GrokSettingsGenerator.ensure` writes once per cwd and nothing ever removes — so `grok_cli`
 skipping `ensure` for a lightweight call only skips _rewriting_ it. Any project that has had one
 ordinary grok chat still has the hook on disk, and a utility call is by definition something that
-happens after a chat.
+happens after a chat. **What closes it is `--cwd`** (below): the run happens somewhere that has no
+`.grok/hooks/` to discover.
 
 **Copilot does not have grok's problem**, despite also writing its hook into the project tree. The
 generated plugin under `<cwd>/.vibing/copilot-plugin/` is reachable only through `--plugin-dir`,
@@ -107,8 +108,7 @@ lightweight call registers none, so a title generation would have died silently 
 its own allowlist leaves it. Deleting the hook file instead was rejected: the cwd is shared with
 every concurrent chat, which still needs it.
 
-**Grok is the one backend that cannot keep the whole `lightweight` bargain,** and that is a
-property of its CLI rather than something left undone here. `--tools` filters built-ins only —
+**Grok's remaining gap is the MCP tools, and only those.** `--tools` filters built-ins only —
 MCP tools are added on top regardless (the advertised count stays ~254 higher either way) and
 grok 0.2.101 has no per-run flag to disable MCP servers, so the builder can only deny their
 _execution_ with `--deny "MCPTool(*)"`, in the `MCPTool(server__tool)` form grok's rules require.
@@ -122,11 +122,65 @@ with it, "denied by a permission policy", and the debug log records
 `deny rule matched (enforced before YOLO) tool="mcp:vibing-nvim__nvim_list_instances"`. Both runs
 passed `--always-approve`, so "before YOLO" is where the `deny` > `ask` > `allow` precedence gets
 confirmed too — which is what makes this not redundant with `dontAsk`.
-Project instructions have no escape hatch at all: grok reads `AGENTS.md`/`CLAUDE.md` from the repo
-and the home directory, and the only switches (`[compat.claude]`, `[mcp_servers]`) are persistent
-config, not per-invocation. `--sandbox read-only` was considered and rejected — grok's own docs
-say its network blocking is a no-op on macOS, and resuming a session under a sandbox profile is
-constrained, which `/summarize` always is.
+`--sandbox read-only` was considered and rejected — grok's own docs say its network blocking is a
+no-op on macOS, and resuming a session under a sandbox profile is constrained, which `/summarize`
+always is.
+
+**`GROK_CLAUDE_MCPS_ENABLED=0` looks like the missing switch and is not.** With it, `grok inspect`
+marks all nine of this machine's servers `[disabled]` — and the run is byte-for-byte the same
+shape: the same eight `MCP handshake succeeded` lines in `--debug-file`, the same
+`tool_count=230` on the turn. `grok inspect` is answering about discovery, not about the session,
+and the two disagree. It is therefore deliberately **not** in `grok_lightweight.lua`'s
+`COMPAT_ENV`: setting it would read as having closed this gap while closing nothing, which is
+`-c mcp_servers={}` (#574) again in a different CLI. That `inspect` and the session can disagree
+is also why nothing below is measured with `inspect` alone.
+
+## What #588 turned out to be
+
+The issue recorded project instructions and project hooks as unreachable on grok, on the grounds
+that `[compat.claude]` and `[mcp_servers]` are persistent `config.toml` keys rather than
+per-invocation ones. That was true of the keys and false of the mechanism: **every `[compat.*]`
+cell also has an environment variable, and env resolves ahead of `config.toml`** ("env var >
+config.toml > remote setting > default"). The environment is per-invocation by definition, so
+`grok_cli` hands `GROK_CLAUDE_RULES_ENABLED=0`, `GROK_CLAUDE_AGENTS_ENABLED=0`,
+`GROK_CLAUDE_SKILLS_ENABLED=0`, `GROK_CLAUDE_HOOKS_ENABLED=0` and their `GROK_CURSOR_*` twins to
+`vim.system()` for the lightweight call only. Nothing the user sees in an ordinary chat moves.
+`[compat.codex]` has only a `sessions` cell — grok's own docs call the rest "reserved and
+currently inert" — so no `GROK_CODEX_*` variable is set.
+
+The other half is `--cwd`. Grok discovers project instructions by walking from the git root down
+to the working directory, and project hooks at `<cwd>/.grok/hooks/`; neither has an off switch,
+but **an empty directory outside any repository is a project with nothing in it**. A lightweight
+call therefore runs from `stdpath("cache")/vibing/grok-lightweight`. One fixed directory rather
+than a fresh `mktemp` one, because grok keys its session store by working directory
+(`~/.grok/sessions/<url-encoded cwd>/`) and a new directory per call would leave one session
+directory per title generated.
+
+Both halves were measured against grok 0.2.101 through the session's own `prompt_context.json`,
+which records the `agents_md_files` grok actually injected — the model-visible answer rather than
+a discovery report, and free, because it is written during session setup before the model is
+called:
+
+| run                                    | injected project instructions                          |
+| -------------------------------------- | ------------------------------------------------------ |
+| unfenced, in this repository           | 10 files, 38,549 chars                                 |
+| `GROK_CLAUDE_{RULES,AGENTS}_ENABLED=0` | 1 file, 7,546 chars — the repo's own `Claude.md`       |
+| `--cwd <empty dir outside a repo>`     | 1 file, 1,531 chars — home-level `~/.claude/Claude.md` |
+| both                                   | **0 files**                                            |
+
+Each half leaves exactly what the other removes, which is why both are needed: the repo's
+`Claude.md` is a _native_ grok project-rules filename and so belongs to no compat cell, while
+`~/.claude/Claude.md` is found from the home directory and so survives any `--cwd`. `skills` is
+in the list because grok advertises skills as slash commands — 47 → 27 in the same run.
+
+Resuming across working directories is what makes this usable on the `/summarize` path, and it was
+checked rather than assumed: grok answers
+`Session <id> found locally (originally in <dir>)` and continues.
+
+Two residues are known and left: grok's _global_ rules (`~/.grok/`) have no switch of any kind,
+and hooks contributed by the user's own grok plugins are per-run unreachable (`--plugin-dir`
+exists only on the `grok agent` subcommand). Both are things the user configured for every grok
+run on the machine, not something the project imposed on a utility call.
 
 The model half of that lives in `modules/non_claude_model.lua`, shared by codex, copilot and grok.
 It was three byte-identical private copies before, and #537 was filed against codex alone — so

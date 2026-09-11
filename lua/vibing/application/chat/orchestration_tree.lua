@@ -13,6 +13,7 @@ local M = {}
 
 local ChatLocator = require("vibing.application.chat.chat_locator")
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
+local OrchestratedEntry = require("vibing.application.chat.orchestrated_entry")
 
 ---親を遡るときの上限。`orchestrated_by` は手で書ける frontmatter なので、循環していなくても
 ---異常に深い鎖はありうる。`seen` で循環は止まるが、深さの歯止めはこれとは別に要る
@@ -44,11 +45,15 @@ local function frontmatter_of(entry)
   return (Frontmatter.parse(table.concat(region, "\n"))) or {}
 end
 
+---`orchestrated` の要素はtaskを持つマップになりうる（#717）ので、パスを取り出してから
+---`resolve_all` に渡す。要素をそのまま渡すと、マップは文字列でないので落ち、#712 以前の
+---`<path>|<task>` 形式は task 込みの1本のパスとして解決されて存在しない子になる
 ---@param entry {path: string, abs: string, bufnr: number?}
 ---@param key "orchestrated"|"orchestrated_by"
 ---@return {path: string, abs: string, bufnr: number?}[]
 local function linked(entry, key)
-  return ChatLocator.resolve_all(frontmatter_of(entry)[key])
+  local items = Frontmatter.as_list(frontmatter_of(entry)[key])
+  return ChatLocator.resolve_all(OrchestratedEntry.paths(items))
 end
 
 ---@param display_path string

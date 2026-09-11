@@ -21,19 +21,19 @@ setmetatable(OrchestrationChatScanner, { __index = Scanner })
 ---分ければ全ファイルの読み込みと `git rev-parse` が二重になるだけになる
 local LINK_KEYS = { "orchestrated", "orchestrated_by" }
 
----`orchestrated`の要素だけが`<path>`または`<path>|<task>`（#696）で、`orchestrated_by`は
----常にpathそのもの — だがキーで分岐する必要はない。`OrchestratedEntry.decode`は`|`を含まない
----文字列に対しては元の文字列をそのまま返す恒等操作なので、`orchestrated_by`の要素に通しても
----安全。両キーとも同じ関数で扱える
----@param item string
----@return string path
+---`orchestrated`の要素だけが`path`と`task`を持つマップになりうる（#696、#717）。
+---`orchestrated_by`は常にpathそのもの — だがキーで分岐する必要はない。
+---`OrchestratedEntry.decode`は素の文字列をそのまま返すので、`orchestrated_by`の要素に
+---通しても安全。両キーとも同じ関数で扱える
+---@param item Vibing.OrchestratedEntry
+---@return string? path
 local function item_path(item)
   return (OrchestratedEntry.decode(item))
 end
 
----@param item string 元の要素（taskの有無を保つため必要）
+---@param item Vibing.OrchestratedEntry 元の要素（taskの有無を保つため必要）
 ---@param new_path string
----@return string
+---@return Vibing.OrchestratedEntry
 local function item_with_path(item, new_path)
   local _, task = OrchestratedEntry.decode(item)
   return OrchestratedEntry.encode(new_path, task)
@@ -78,7 +78,8 @@ function OrchestrationChatScanner:contains_link(file_path, target_path)
 
   for _, key in ipairs(LINK_KEYS) do
     for _, item in ipairs(Frontmatter.as_list(frontmatter[key])) do
-      if self:_to_absolute(item_path(item)) == target_abs then
+      local path = item_path(item)
+      if path and self:_to_absolute(path) == target_abs then
         return true
       end
     end
@@ -109,7 +110,8 @@ function OrchestrationChatScanner:update_link(file_path, old_path, new_path)
 
     for _, item in ipairs(Frontmatter.as_list(frontmatter[key])) do
       local value = item
-      if self:_to_absolute(item_path(item)) == old_abs then
+      local path = item_path(item)
+      if path and self:_to_absolute(path) == old_abs then
         value = item_with_path(item, new_display)
         replaced = true
       end
@@ -118,7 +120,7 @@ function OrchestrationChatScanner:update_link(file_path, old_path, new_path)
       -- キーは符号化前のpathで取る — `value`そのもの（task込み）で比較すると、
       -- 同じpathにtaskの違う2エントリが残ってしまう（#712レビュー指摘）
       local identity = item_path(value)
-      if not seen[identity] then
+      if identity and not seen[identity] then
         seen[identity] = true
         table.insert(next_items, value)
       end

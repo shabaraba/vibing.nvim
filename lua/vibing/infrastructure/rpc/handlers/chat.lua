@@ -182,6 +182,20 @@ local function sorted_bufnrs(buffers)
   return bufnrs
 end
 
+---`by_absolute_path`の鍵。**両側を必ずこれに通す**
+---
+---投影は「親の`orchestrated`が書いたパス」と「開いているチャットの`file_path`」の文字列一致で
+---決まるが、この2つは出どころが違う: 前者は`nvim_buf_get_name`（Vimがシンボリックリンクを
+---解決したあとの綴り）から、後者はチャット作成時に組み立てたパスから来る。macOSの`$TMPDIR`
+---（`/var` → `/private/var`）のように途中にリンクがあると、同じ1つのファイルが2通りに綴られ、
+---一致が黙って外れる — 失敗は「taskが出ない」だけなので、誤りではなく「頼まれていない」に見える。
+---`turn_state.lua`がチャットパスを鍵にするときと同じ正規化を使う
+---@param path string
+---@return string
+local function canonical_path(path)
+  return vim.fn.resolve(vim.fn.fnamemodify(path, ":p"))
+end
+
 ---taskはチャット自身のfrontmatterではなく、それを頼んだ親の`orchestrated`エントリにしか
 ---無い（#696フォローアップ）。今このセッションで開いている全チャットの`orchestrated`を
 ---展開し、一致するbufnrの行（`by_absolute_path`）に投影する — 対象は既に読み込み済みのチャット
@@ -200,9 +214,8 @@ local function project_tasks(buffers, bufnrs, by_absolute_path, git_root)
       git_root = git_root or Git.get_root()
       for _, item in ipairs(orchestrated) do
         local path, task = OrchestratedEntry.decode(item)
-        if task then
-          local abs = vim.fn.fnamemodify(Git.from_display_path(path, git_root), ":p")
-          local target = by_absolute_path[abs]
+        if path and task then
+          local target = by_absolute_path[canonical_path(Git.from_display_path(path, git_root))]
           if target then
             target.task = task
           end
@@ -242,7 +255,7 @@ function M.list_chats(_)
     }
     table.insert(chats, entry)
     if chat_buf.file_path then
-      by_absolute_path[vim.fn.fnamemodify(chat_buf.file_path, ":p")] = entry
+      by_absolute_path[canonical_path(chat_buf.file_path)] = entry
     end
   end
 
@@ -354,7 +367,7 @@ function M.chat_conflicts(_)
       if files then
         local entry = { bufnr = bufnr, file_path = chat_buf.file_path }
         if chat_buf.file_path then
-          by_absolute_path[vim.fn.fnamemodify(chat_buf.file_path, ":p")] = entry
+          by_absolute_path[canonical_path(chat_buf.file_path)] = entry
         end
         for _, file in ipairs(files) do
           contributors_by_file[file] = contributors_by_file[file] or {}

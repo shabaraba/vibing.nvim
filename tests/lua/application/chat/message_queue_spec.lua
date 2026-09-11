@@ -328,7 +328,11 @@ describe("MessageQueue persistence (#697)", function()
   end
 
   before_each(function()
-    tmp_root = vim.fn.tempname()
+    -- `resolve` は他の一時ディレクトリを使う spec と同じ理由: macOS の `$TMPDIR` は
+    -- `/var` → `/private/var` のリンク下にあり、`bufadd` したバッファの名前は解決後の綴りに
+    -- なる。ストアの鍵はその名前（`file_path_of`）なので、解決前の綴りで組み立てた
+    -- `tmp_root .. "/a.md"` とは一致しない
+    tmp_root = vim.fn.resolve(vim.fn.tempname())
     vim.fn.mkdir(tmp_root, "p")
     Store.clear_cache()
 

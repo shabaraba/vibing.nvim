@@ -5,11 +5,24 @@ describe("grok_command_builder", function()
   local original_exepath
   local original_executable
   local original_system
+  local original_stdpath
+  local cache_root
 
   before_each(function()
     original_exepath = vim.fn.exepath
     original_executable = vim.fn.executable
     original_system = vim.fn.system
+    original_stdpath = vim.fn.stdpath
+    -- The lightweight scratch directory is resolved once per process and cached, so it is stubbed
+    -- (and its module reloaded) here rather than left pointing at the developer's real cache.
+    cache_root = vim.fn.tempname()
+    vim.fn.stdpath = function(what)
+      if what == "cache" then
+        return cache_root
+      end
+      return original_stdpath(what)
+    end
+    package.loaded["vibing.infrastructure.adapter.modules.grok_lightweight"] = nil
     vim.fn.exepath = function(name)
       if name == "grok" then
         return "/usr/local/bin/grok"
@@ -40,6 +53,8 @@ describe("grok_command_builder", function()
     vim.fn.exepath = original_exepath
     vim.fn.executable = original_executable
     vim.fn.system = original_system
+    vim.fn.stdpath = original_stdpath
+    vim.fn.delete(cache_root, "rf")
   end)
 
   local function find_flag(cmd, flag)
@@ -431,6 +446,24 @@ describe("grok_command_builder", function()
       local config = { agent = { default_model = "grok-4", utility_model = "grok-3-mini" } }
       local cmd = grok_command_builder.build("hi", { lightweight = true }, nil, config)
       assert.equals("grok-3-mini", value_after(cmd, "--model"))
+    end)
+
+    it("runs from the scratch directory rather than the chat's project (#588)", function()
+      -- Grok has no flag for "ignore this project's AGENTS.md/CLAUDE.md" and none for
+      -- "ignore <cwd>/.grok/hooks/". `--cwd` at an empty directory outside any repository is what
+      -- stands in for both: there is nothing there to discover.
+      local cmd = grok_command_builder.build("hi", { lightweight = true, cwd = "/repo" }, nil, {})
+      assert.equals(cache_root .. "/vibing/grok-lightweight", value_after(cmd, "--cwd"))
+    end)
+
+    it("still fences a resumed session, which /summarize always is", function()
+      local cmd = grok_command_builder.build("hi", { lightweight = true, cwd = "/repo" }, "sess-1", {})
+      assert.equals(cache_root .. "/vibing/grok-lightweight", value_after(cmd, "--cwd"))
+    end)
+
+    it("leaves an ordinary call in the chat's working directory", function()
+      local cmd = grok_command_builder.build("hi", { cwd = "/repo" }, nil, {})
+      assert.equals("/repo", value_after(cmd, "--cwd"))
     end)
   end)
 end)

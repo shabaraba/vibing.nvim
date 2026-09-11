@@ -148,3 +148,34 @@ jobs:
       - name: Lint Markdown files
         run: npm run lint:md
         continue-on-error: true
+
+  # Nothing surveyed npm dependencies for vulnerabilities until #691: there is no scheduled scan,
+  # `npm audit` runs on request only, and both build paths (build.sh, mcp-server/bin/run.mjs) pass
+  # `--silent`, which suppresses the post-install advisory summary. Seven advisories -- four of
+  # them high -- had been open in claude-plugin/mcp-server without ever being printed to anyone.
+  #
+  # No `npm ci` here on purpose. `npm audit` resolves advisories straight from the lockfile, so
+  # this job is two registry round trips rather than two installs, and it cannot be knocked out by
+  # an install failure that has nothing to do with dependency health.
+  #
+  # The directories are not listed in this file. scripts/audit-dependencies.mjs discovers every
+  # committed package-lock.json with `git ls-files`, which is what keeps a newly added third tree
+  # from being skipped here in silence; tests/dependency-audit-gate.test.mjs pins that behaviour
+  # and the `--audit-level` the script passes. A run finding no lockfile at all fails.
+  #
+  # This gate only fires on a push or a pull request. An advisory published while the tree is
+  # quiet is Dependabot's job (.github/dependabot.yml, plus the repository's Dependabot alerts).
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Audit every committed lockfile
+        run: npm run audit:deps

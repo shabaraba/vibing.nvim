@@ -34,6 +34,7 @@ require("vibing").setup({
     default_effort = nil,
     utility_effort = "low",
     setting_sources = { "user", "project", "local" },
+    mcp = { user_servers = true },
     git_instructions = false,
     subagent = { enabled = false, show_prefix = false },
     auto_resume_on_limit = { enabled = false, max_retries = 1 },
@@ -172,7 +173,19 @@ agent = {
                             -- Passed to the Claude CLI's --setting-sources flag.
                             -- Drop "user" to skip loading your global CLAUDE.md on
                             -- every chat, reducing fixed per-session token cost.
-                            -- Note: does not affect MCP server loading.
+                            -- Note: does not affect MCP server loading — that is
+                            -- agent.mcp.user_servers, right below.
+
+  mcp = {                   -- Which MCP servers an ordinary turn loads. Claude backend only.
+                            -- Not to be confused with the top-level `mcp` block, which
+                            -- configures vibing.nvim's own RPC server.
+    user_servers = true,    -- Keeps today's behaviour: every server in ~/.claude.json is
+                            -- loaded, because --setting-sources also brings in your own
+                            -- commands, skills and subagents. Set false to pass
+                            -- --strict-mcp-config and re-register only the MCP servers the
+                            -- plugins vibing.nvim loads declare — see "Excluding User MCP
+                            -- Servers".
+  },
 
   git_instructions = false, -- Claude backend only. The CLI's own git status block (branch,
                             -- `git status --short`, recent commits) plus its built-in commit/PR
@@ -182,6 +195,14 @@ agent = {
                             -- which also overrides includeGitInstructions in your settings.json,
                             -- since both values are written through the CLI's env var.
                             -- An already-set CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS wins either way.
+
+  env = {},                 -- Claude backend only. Extra environment variables for the CLI child
+                            -- process, so the cost knobs Claude Code exposes only through the
+                            -- environment apply to vibing.nvim's calls and not to the `claude` in
+                            -- your terminal. Values are stringified. See "Claude CLI Environment
+                            -- Variables" below for what is worth setting; a chat's `env:`
+                            -- frontmatter overrides this per chat, CLAUDECODE and VIBING_* are
+                            -- refused, and lightweight utility calls get none of it.
 
   subagent = {              -- What a subagent (Task/Agent tool) says in the chat
     enabled = false,        -- Opt-in: passes --forward-subagent-text to the CLI so the
@@ -393,6 +414,53 @@ skipped with a warning. One more cost: a `developer_instructions` you set in cod
 > Code gates a project's own `.mcp.json` behind approval. vibing.nvim reads the directory by
 > default anyway, on convenience grounds — set `project_dir = false` for repositories you do not
 > trust.
+
+### Excluding User MCP Servers
+
+`agent.mcp.user_servers = false` keeps an ordinary turn down to the MCP servers vibing.nvim
+brought itself:
+
+```lua
+agent = { mcp = { user_servers = false } },
+```
+
+The reason it is not the default, and the reason it is one switch rather than a per-server list,
+is `--setting-sources user,project,local`: that flag is what makes your own `.claude/commands/`,
+skills and subagents work inside a chat, and every MCP server in `~/.claude.json` rides along with
+them. The CLI's only counter-switch is `--strict-mcp-config`, which is **all-or-nothing** — it
+drops the servers a `--plugin-dir` plugin declares too. So the option is a pair: the strict flag
+plus an explicit `--mcp-config` re-registering what each loaded plugin declares.
+
+What that costs and saves, measured against claude 2.1.231 in an environment with 23 registered
+servers (9 local stdio, 14 `claude.ai` connectors), one identical one-line prompt per run:
+
+| run                                             | tools | of which MCP | prompt tokens |
+| ----------------------------------------------- | ----: | -----------: | ------------: |
+| default                                         |   204 |          171 |        46,277 |
+| `--strict-mcp-config` alone (drops vibing-nvim) |    30 |            0 |        42,323 |
+| `user_servers = false`                          |    72 |           42 |        43,293 |
+
+**~3k prompt tokens a turn, about 6%.** Small, because Tool Search (on by default from Claude
+4.5) defers the schemas: what survives in the prompt is a bare name per tool, roughly 23 tokens.
+The startup cost does not move either — the servers connect in the background, `duration_ms` was
+~2s in all three runs.
+
+With Tool Search off (`ENABLE_TOOL_SEARCH=0`) the same two runs are 241,510 and 73,344 prompt
+tokens: **168k tokens, 70%.** That is the case this option is really for.
+
+Three consequences worth knowing before switching it on:
+
+- **Project `.mcp.json` and local-scope servers go too**, not just the user-scope ones —
+  `--strict-mcp-config` does not distinguish. An external server you want to keep can be declared
+  in `.vibing/plugins/<name>/.claude-plugin/plugin.json` under `mcpServers`, which is re-registered
+  along with vibing.nvim's own.
+- **The tool prefix changes** from `mcp__plugin_vibing-nvim_vibing-nvim__<tool>` to the plain
+  `mcp__vibing-nvim__<tool>`. Both are already permitted and both are named in the system prompt,
+  so nothing has to be reconfigured — but a hand-written permission rule naming only the plugin
+  form stops matching.
+- **Claude only.** Codex has no per-run switch narrower than `--ignore-user-config`, which also
+  drops `model_provider`; copilot and grok have none at all for ordinary turns. Lightweight calls
+  on every backend already load no MCP servers (`handbook/architecture/lightweight-calls.md`).
 
 ### Codex Provider Notice
 
@@ -748,6 +816,63 @@ It refuses while an unsent message is waiting — the automatic path parks your 
 asked to send _that message_, whereas this command was typed on its own and should mean exactly
 one turn. The command remains Claude-only; Codex exposes automatic compaction here, not a matching
 manual slash command.
+
+### Claude CLI Environment Variables
+
+Several of Claude Code's cost knobs have no flag and no settings key — the environment is the only
+way in ([env vars](https://code.claude.com/docs/en/env-vars.md),
+[costs](https://code.claude.com/docs/en/costs.md#reduce-token-usage)). `vim.env.X = ...` in your
+`init.lua` reaches the CLI child, because the spawn inherits `vim.fn.environ()`, but it also
+reaches every `claude` you start from a terminal in that Neovim, and it cannot differ per chat.
+`agent.env` is the scoped version:
+
+```lua
+agent = {
+  env = {
+    CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "20",
+    BASH_MAX_OUTPUT_LENGTH = "10000",
+  },
+},
+```
+
+| Variable                          | Effect                                                                                          |
+| --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` | Percentage of the context window at which the CLI auto-compacts. See below                      |
+| `BASH_MAX_OUTPUT_LENGTH`          | Cap on a `Bash` result, in characters (default 30,000)                                          |
+| `CLAUDE_CODE_SUBAGENT_MODEL`      | Model a `Task`/`Agent` call runs on, e.g. `haiku` for exploration                               |
+| `CLAUDE_CODE_PROMPT_CACHE_TTL`    | Prompt cache TTL                                                                                |
+| `MAX_THINKING_TOKENS`             | Thinking budget on older models. Ignored by adaptive-thinking ones — use `agent.default_effort` |
+
+**`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` is a percentage, so what it means depends on the model.** On a
+1M-context model (`[1m]`) the default fires at roughly 930k tokens (#669), which is far past the
+point where a turn is expensive; `20` brings that to ~200k. On a 200k model the same `20` fires at
+40k, which is almost certainly too eager. Pick the number from the window your `default_model`
+actually has, and re-check it when you change models. vibing.nvim's own
+[`agent.token_usage.auto_compact`](#automatic-compaction) is the backend-independent alternative:
+it is an absolute token count rather than a percentage, and it compacts between turns instead of
+mid-turn.
+
+**`BASH_MAX_OUTPUT_LENGTH` is usually the larger win.** A tool result is re-sent with every later
+request in the conversation, so one 30k-character test run is paid for on every turn after it, not
+once.
+
+Three rules apply to whatever you put here:
+
+- **A chat's `env:` frontmatter wins**, so one chat can lower `BASH_MAX_OUTPUT_LENGTH` without
+  touching the rest. It is a list of `KEY=VALUE` lines — `doc/vibing.txt` → "CHAT FILE FORMAT".
+- **`CLAUDECODE` and `VIBING_*` are refused with a warning.** They carry the RPC port, the handle
+  ID and the nested-invocation escape that the permission hook, the approval UI and the per-request
+  diff baseline all ride on.
+- **Lightweight utility calls get none of it** (title generation, `/summarize`, the daily summary).
+  They run with no tools and no resumed session, so none of these variables has anything to act on.
+
+A variable already present in Neovim's own environment is overwritten by `agent.env` — declaring it
+here is the more specific statement. `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS` is worth naming
+because it also has an option of its own: `agent.env` is merged first and `agent.git_instructions`
+only fills a gap, so writing the variable here wins over that option.
+
+Claude backend only. Codex, Copilot and Grok inherit Neovim's environment as before and read none
+of these names.
 
 ### Subagent Output
 

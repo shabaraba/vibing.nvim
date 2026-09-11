@@ -29,6 +29,9 @@ function M.from_source(source, config)
     model = source.model or (config.agent and config.agent.default_model or "sonnet"),
     -- effortは設定がなければ渡さない（CLI側の既定に委ねる）ので、fallbackもnilで正しい
     effort = source.effort or (config.agent and config.agent.default_effort),
+    -- envもmodel/effortと同じ「このチャットのCLIをどう起動するか」なので引き継ぐ。
+    -- config.agent.envは全チャットに効くのでfallbackは不要
+    env = source.env,
     permission_mode = source.permission_mode or (config.permissions and config.permissions.mode or "acceptEdits"),
     permissions_allow = source.permissions_allow or (config.permissions and config.permissions.allow or {}),
     permissions_deny = source.permissions_deny or (config.permissions and config.permissions.deny or {}),

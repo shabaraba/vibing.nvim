@@ -431,7 +431,9 @@ with YAML frontmatter: >
     session_id: <cli-session-id>
     created_at: 2026-01-01T12:00:00
     orchestrated:                            # optional: chats this drives
-      - .vibing/chat/worker-auth.md|PR #688 — review, merge, cleanup
+      - .vibing/chat/worker-docs.md
+      - path: .vibing/chat/worker-auth.md
+        task: "PR #688 - review, merge, cleanup"
     orchestrated_by:                         # optional: who drives this
       - .vibing/chat/orchestrator.md
     continued_from: .vibing/chat/long.md     # optional: handed off from
@@ -440,6 +442,8 @@ with YAML frontmatter: >
     mode: code                                # code | plan | explore
     model: sonnet
     effort: high                              # optional; Claude/Codex/Grok
+    env:                                      # optional: see below
+      - BASH_MAX_OUTPUT_LENGTH=10000
     permission_mode: acceptEdits
     permissions_allow:
       - Read
@@ -470,7 +474,7 @@ tools, as git-root-relative paths, and are rewritten on both sides when
 numbers do not survive a restart and file names do not survive a rename, so
 the frontmatter is the only place the relationship keeps meaning.
 
-An `orchestrated` entry is a plain path, or `<path>|<task>` when the
+An `orchestrated` entry is a plain path, or a `path:` / `task:` pair when the
 orchestrator gave that chat a one-line assignment via `nvim_chat_create`'s or
 `nvim_chat_send_message`'s `task` argument (e.g. `PR #688 — review, merge,
 cleanup`). The task is recorded only on the orchestrator's own `orchestrated`
@@ -479,8 +483,15 @@ worker's assignment by reading just the orchestrator's frontmatter — no
 transcript to re-read after a restart or a context compaction. Sending that
 chat a later message with a new `task` replaces the entry; an ordinary
 message with no `task` leaves it as is. `orchestrated_by` never carries a
-task suffix, since the assignment belongs to the chat that gave it, not the
-one that received it.
+task, since the assignment belongs to the chat that gave it, not the one that
+received it.
+
+A task is quoted only when it has to be — text containing ` #`, `: `, or a
+leading `-` would otherwise change meaning as plain YAML.
+
+Chats written before this form used `<path>|<task>` on one line. They are
+still read, and are rewritten into the two-line form the next time the entry
+is touched; nothing writes the pipe form any more.
 
 `delegated_scope` lists tool/command patterns (same syntax as
 `permissions_allow`, e.g. `Bash(npm:*)`) that an orchestrator may auto-approve
@@ -491,6 +502,16 @@ frontmatter (not the orchestrator's). A denial can always be delegated
 regardless of scope, since denying grants nothing; only `allow_once` /
 `allow_for_session` answers are checked against it. See the
 vibing-orchestrate skill for how to declare it.
+
+`env` lists `KEY=VALUE` environment variables for this chat's CLI process,
+overriding `agent.env` from |vibing.setup()|. It is for the cost knobs Claude
+Code exposes only through the environment — `BASH_MAX_OUTPUT_LENGTH`,
+`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, `CLAUDE_CODE_SUBAGENT_MODEL` — so one chat
+can be tuned without touching the rest. Claude backend only. `CLAUDECODE` and
+any `VIBING_*` name is ignored with a warning: those bind the CLI to this
+Neovim and to this chat. An entry that is not `KEY=VALUE` is ignored the same
+way. The table of what is worth setting is in `handbook/configuration.md` →
+"Claude CLI Environment Variables".
 
 ==============================================================================
 9. BACKENDS                                                  *vibing-backends*

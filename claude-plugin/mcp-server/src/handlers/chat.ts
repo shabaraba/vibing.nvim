@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { APPROVAL_ACTIONS, CHAT_POSITIONS } from '../tools/chat.js';
 import { validateChatTarget } from '../validation/schema.js';
 
-// `task` is written into the caller's own `orchestrated` entry as `<path>|<task>`
-// (orchestrated_entry.lua). A newline would let the value smuggle extra frontmatter lines past
-// the encoding on any write path that is not guarded by nvim_buf_set_lines' own line-break
+// `task` is written into the caller's own `orchestrated` entry as a `{path, task}` map
+// (orchestrated_entry.lua), one YAML line per field. A newline would let the value smuggle extra
+// frontmatter lines past that on any write path not guarded by nvim_buf_set_lines' own line-break
 // rejection (the disk-direct rename-sync path in frontmatter_file.lua is not) -- reject it here,
 // at the boundary, rather than relying on that guard alone.
 const taskSchema = z
