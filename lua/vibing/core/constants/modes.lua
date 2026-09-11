@@ -24,8 +24,8 @@ M.VALID_AGENTS = Agents.ORDER
 ---@type string[]
 M.AGENT_MODES = { "code", "plan", "explore" }
 
----推論量のレベル。claude CLI の `--effort` がそのまま受け取る値。
----CLI は未知の値を弾かず黙って無視するので、渡す前にここで検証する。
+---推論量のレベル。Claude・Codex・Grokで共通に扱うfrontmatterの値。
+---一部CLIは未知の値を弾かず黙って無視するので、各backendへ渡す前にここで検証する。
 --- string[]
 M.EFFORT_LEVELS = { "low", "medium", "high", "xhigh", "max" }
 

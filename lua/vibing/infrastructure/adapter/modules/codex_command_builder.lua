@@ -6,6 +6,7 @@ local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
 local CodexPluginConfig = require("vibing.infrastructure.adapter.modules.codex_plugin_config")
 local CodexPermissionProfile = require("vibing.infrastructure.adapter.modules.codex_permission_profile")
+local ReasoningEffort = require("vibing.infrastructure.adapter.modules.reasoning_effort")
 local TokenUsage = require("vibing.core.utils.token_usage")
 
 local M = {}
@@ -82,6 +83,14 @@ function M.build(prompt, opts, session_id, config, hook_args)
   if model then
     table.insert(cmd, "-m")
     table.insert(cmd, model)
+  end
+
+  -- Codex has no dedicated exec flag for this setting. A per-process config override applies to
+  -- both fresh and resumed threads without changing the user's config.toml.
+  local effort = ReasoningEffort.resolve(opts, config)
+  if effort then
+    table.insert(cmd, "-c")
+    table.insert(cmd, string.format('model_reasoning_effort="%s"', effort))
   end
 
   -- Utility calls are deliberately separate from the chat's context. They should neither inherit

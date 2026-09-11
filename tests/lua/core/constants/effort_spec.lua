@@ -12,8 +12,7 @@ local function find_flag(cmd, flag)
 end
 
 describe("effort levels", function()
-  it("matches what claude --effort accepts", function()
-    -- Verified against claude CLI 2.1.220: --effort <level> (low, medium, high, xhigh, max).
+  it("defines the backend-neutral frontmatter values", function()
     assert.same({ "low", "medium", "high", "xhigh", "max" }, Modes.EFFORT_LEVELS)
   end)
 

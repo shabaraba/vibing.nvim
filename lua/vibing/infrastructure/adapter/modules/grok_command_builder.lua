@@ -4,6 +4,7 @@
 
 local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
+local ReasoningEffort = require("vibing.infrastructure.adapter.modules.reasoning_effort")
 local worktree_constants = require("vibing.core.constants.worktree")
 
 local M = {}
@@ -263,6 +264,12 @@ function M.build(prompt, opts, session_id, config)
   if model then
     table.insert(cmd, "--model")
     table.insert(cmd, model)
+  end
+
+  local effort = ReasoningEffort.resolve(opts, config)
+  if effort then
+    table.insert(cmd, "--effort")
+    table.insert(cmd, effort)
   end
 
   if session_id then

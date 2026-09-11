@@ -272,7 +272,7 @@ In chat buffers (all except `q` are configurable via `keymaps` — see
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",              -- "claude" | "codex" | "copilot"
+  adapter = "claude",              -- "claude" | "codex" | "copilot" | "grok"
   chat = {
     window = {
       position = "current",        -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
@@ -282,6 +282,7 @@ require("vibing").setup({
   },
   agent = {
     default_model = "sonnet",      -- backend model id, e.g. "sonnet" or "gpt-5.6-terra"
+    default_effort = nil,           -- "low" | "medium" | "high" | "xhigh" | "max"
     scheduled_requests = {
       enabled = true,              -- during a usage limit, <CR> schedules instead of sending
     },
@@ -322,9 +323,10 @@ vibing.nvim: true
 session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
 working_dir: .vibing/worktrees/feature-x  # Optional: working directory (relative to git root)
-agent: claude  # claude | codex | copilot (overrides global adapter setting for this chat)
+agent: claude  # claude | codex | copilot | grok (overrides global adapter setting for this chat)
 mode: code  # code | plan | explore
 model: sonnet  # Backend model id, e.g. sonnet or gpt-5.6-terra
+effort: high  # Optional: Claude/Codex/Grok reasoning effort
 permission_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk | auto
 permissions_allow:
   - Read
@@ -403,7 +405,9 @@ graph TB
 - **Grok Build CLI** (`grok --single --output-format streaming-json`) — xAI Grok backend
 
 Switch globally with `adapter = "claude"|"codex"|"copilot"|"grok"` in setup, or per-chat by adding
-`agent: claude`, `agent: codex`, or `agent: copilot` to a chat file's YAML frontmatter.
+`agent: claude`, `agent: codex`, `agent: copilot`, or `agent: grok` to a chat file's YAML
+frontmatter. `effort: low|medium|high|xhigh|max` controls reasoning for Claude, Codex, and Grok when
+the selected model supports that level; omit it to keep that CLI's own default.
 
 > **Note:** on the Copilot backend, `permissions.mode`, `permissions.ask` and the in-chat Tool
 > Approval UI are enforced through a generated Copilot plugin (`.vibing/copilot-plugin/`) that

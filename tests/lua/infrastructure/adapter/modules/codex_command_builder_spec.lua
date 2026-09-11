@@ -39,6 +39,38 @@ describe("codex_command_builder", function()
     return overrides
   end
 
+  describe("reasoning effort", function()
+    it("maps the frontmatter effort to a per-run Codex config override", function()
+      local cmd = codex_command_builder.build("hi", { effort = "xhigh" }, nil, {}, nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), 'model_reasoning_effort="xhigh"'))
+    end)
+
+    it("falls back to agent.default_effort", function()
+      local config = { agent = { default_effort = "high" } }
+      local cmd = codex_command_builder.build("hi", {}, nil, config, nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), 'model_reasoning_effort="high"'))
+    end)
+
+    it("leaves the Codex default alone when no effort is configured", function()
+      local cmd = codex_command_builder.build("hi", {}, nil, {}, nil)
+      for _, override in ipairs(config_overrides(cmd)) do
+        assert.is_false(vim.startswith(override, "model_reasoning_effort="))
+      end
+    end)
+
+    it("uses utility_effort for lightweight calls instead of the chat effort", function()
+      local config = { agent = { default_effort = "high", utility_effort = "low" } }
+      local cmd = codex_command_builder.build("hi", { lightweight = true, effort = "max" }, nil, config, nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), 'model_reasoning_effort="low"'))
+      assert.is_false(vim.tbl_contains(config_overrides(cmd), 'model_reasoning_effort="max"'))
+    end)
+
+    it("keeps the override on resumed threads", function()
+      local cmd = codex_command_builder.build("hi", { effort = "medium" }, "thread-1", {}, nil)
+      assert.is_true(vim.tbl_contains(config_overrides(cmd), 'model_reasoning_effort="medium"'))
+    end)
+  end)
+
   describe("lightweight mode", function()
     -- Codex offers no `--tools ""` equivalent: probing the schema with `--strict-config` against
     -- codex 0.147 rejects tools.shell / tools.apply_patch / tools.view_image / tools.plan_tool /

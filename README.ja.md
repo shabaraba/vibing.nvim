@@ -254,7 +254,7 @@ Markdown パーサーを注入します。フェンス内の言語を含む既�
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",              -- "claude" | "codex" | "copilot"
+  adapter = "claude",              -- "claude" | "codex" | "copilot" | "grok"
   chat = {
     window = {
       position = "current",        -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
@@ -264,6 +264,7 @@ require("vibing").setup({
   },
   agent = {
     default_model = "sonnet",      -- backend のモデルID。例: "sonnet" / "gpt-5.6-terra"
+    default_effort = nil,           -- "low" | "medium" | "high" | "xhigh" | "max"
   },
   permissions = {
     mode = "acceptEdits",          -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"
@@ -293,9 +294,10 @@ vibing.nvim: true
 session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
 working_dir: .vibing/worktrees/feature-x  # オプション: 作業ディレクトリ(git ルートからの相対パス)
-agent: claude  # claude | codex | copilot(このチャットに限りグローバルの adapter 設定を上書き)
+agent: claude  # claude | codex | copilot | grok(チャット単位で adapter 設定を上書き)
 mode: code  # code | plan | explore
 model: sonnet  # backend のモデルID。例: sonnet / gpt-5.6-terra
+effort: high  # オプション: Claude/Codex/Grok の推論量
 permission_mode: acceptEdits  # default | acceptEdits | bypassPermissions | plan | dontAsk | auto
 permissions_allow:
   - Read
@@ -373,8 +375,11 @@ graph TB
 - **GitHub Copilot CLI**(`copilot -p --output-format json`)— GitHub Copilot バックエンド
 - **Grok Build CLI**(`grok --single --output-format streaming-json`)— xAI Grok バックエンド
 
-setup の `adapter = "claude"|"codex"|"copilot"` でグローバルに、チャットファイルの frontmatter に
-`agent: claude` / `agent: codex` / `agent: copilot` を書けばチャット単位で切り替えられます。
+setup の `adapter = "claude"|"codex"|"copilot"|"grok"` でグローバルに、チャットファイルの
+frontmatter に `agent: claude` / `agent: codex` / `agent: copilot` / `agent: grok` を書けば
+チャット単位で切り替えられます。`effort: low|medium|high|xhigh|max` は、選択したモデルがその
+レベルに対応している場合に Claude・Codex・Grok の推論量を制御します。省略時は各 CLI の
+既定値を使います。
 
 > **注意:** Copilot バックエンドでは、`permissions.mode`・`permissions.ask`・チャット内のツール
 > 承認 UI を、vibing.nvim が生成する Copilot プラグイン(`.vibing/copilot-plugin/`)経由で適用

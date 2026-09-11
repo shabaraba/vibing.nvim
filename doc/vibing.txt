@@ -368,7 +368,8 @@ Type these on their own line in a chat buffer and send with `<CR>`:
 /summarize              Summarise the conversation
 /model <model>          Set the model for the current backend
                         (e.g. sonnet or gpt-5.6-terra)
-/effort <level>         Set the reasoning effort (low|medium|high|xhigh|max)
+/effort <level>         Set Claude/Codex/Grok reasoning effort
+                        (low|medium|high|xhigh|max)
 /help                   List the available slash commands
 /permissions, /perm     Interactive permission builder
 /allow [tool]           Add to the allow list, or show it
@@ -438,6 +439,7 @@ with YAML frontmatter: >
     agent: claude
     mode: code                                # code | plan | explore
     model: sonnet
+    effort: high                              # optional; Claude/Codex/Grok
     permission_mode: acceptEdits
     permissions_allow:
       - Read
@@ -454,6 +456,11 @@ with YAML frontmatter: >
 Note the singular `permission_mode`; the permissions lists are plural. Reopen
 a chat with |:VibingChat| {file} or plain |:edit| — the session resumes from
 `session_id`, and `working_dir` decides where the CLI runs.
+
+`effort` is translated to Claude's `--effort`, Codex's
+`model_reasoning_effort` config override, or Grok's `--effort`. Omit it to use
+the selected CLI's own default. Available levels can depend on the selected
+model. |/effort| updates this frontmatter field.
 
 `orchestrated` and `orchestrated_by` record which chat drove which. They are
 written when one chat creates or messages another through the vibing-nvim MCP

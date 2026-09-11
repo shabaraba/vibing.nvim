@@ -302,8 +302,8 @@ M.defaults = {
     -- commands that ran). The inputs are a few thousand tokens and the calls are on-demand, so
     -- the extra cost is small. Set it back to "haiku" if you want the cheapest possible.
     utility_model = "sonnet",
-    -- default_effort is deliberately nil: without it vibing.nvim passes no --effort and the CLI
-    -- applies its own default, which moves as Anthropic tunes it. Set it to pin a level.
+    -- default_effort is deliberately nil: without it vibing.nvim passes no effort override and
+    -- the selected CLI applies its own default. Set it to pin a level across supported backends.
     default_effort = nil,
     utility_effort = "low",
     setting_sources = { "user", "project", "local" },
