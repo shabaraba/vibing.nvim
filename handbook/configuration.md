@@ -1165,11 +1165,39 @@ When the fallback has nothing either, vibing.nvim says so rather than showing an
 
 ```lua
 diff = {
-  tool = "auto",  -- "auto" / "git" — currently the same thing. Kept as a hook for
-                  -- future backends; `gd` falls back to a plain `git diff` when a
-                  -- turn has no patch file (e.g. an old chat reopened).
+  tool = "auto",    -- "auto" / "git" — currently the same thing. Kept as a hook for
+                    -- future backends; `gd` falls back to a plain `git diff` when a
+                    -- turn has no patch file (e.g. an old chat reopened).
+  viewer = "auto",  -- "auto" / "mini" / "patch" — how `gd` renders that patch.
 }
 ```
+
+### How `gd` renders a patch
+
+`viewer = "patch"` is the built-in float: the turn's files on the left, a diff preview on the
+right, `r` to revert the selected file and `R` to revert the whole patch.
+
+`viewer = "mini"` needs [mini.diff](https://github.com/nvim-mini/mini.diff). It opens the real
+file instead and hands mini.diff the pre-turn text as that buffer's reference, so the change is
+shown on the file you actually edit. mini.diff's own mappings then apply — `[h` / `]h` to move
+between hunks, `gH` to reset one. That reset **is** a per-hunk revert of the agent's change, which
+the float cannot do: mini.diff defines reset as "replace this range with the reference text", with
+no involvement from its source. `:VibingDiffClear` takes the reference back off.
+
+The pre-turn text is recovered by reverse-applying the patch to a throwaway copy of the file
+(`core/utils/patch_text.lua`); the working tree and your index are never touched. Three cases
+cannot produce one and fall back to the float: a binary diff, a file edited since the turn (the
+reverse apply no longer matches its context — this is a real answer, not a bug, since the
+displayed base would otherwise be wrong), and the pre-`base:` header patches the removed mote
+integration wrote.
+
+vibing.nvim never calls `require("mini.diff").setup()` for you. If mini.diff's default Git source
+is active, configure it per buffer or globally as you like — vibing pins `source` to
+`gen_source.none()` on the buffers it touches, and only those, so its reference text cannot be
+overwritten by the next `.git/index` change.
+
+`viewer = "auto"` picks `"mini"` when mini.diff is installed and `"patch"` otherwise. Asking for
+`"mini"` without mini.diff warns once and uses the float.
 
 > **The opt-in `mote` backend has been removed**, along with `diff.mote`, `diff.tool = "mote"`,
 > the `mote_dirs` / `mote_cwd` frontmatter keys, `:VibingMoteDir` and `:VibingCleanMote`. The
