@@ -1,8 +1,10 @@
 local Git = require("vibing.core.utils.git")
+local uv = vim.uv or vim.loop
 
 describe("Neovim-owned background jobs", function()
   local Manager
   local original_system
+  local original_uv_kill
   local original_get_root
   local original_queue
   local tmp_root
@@ -37,7 +39,7 @@ describe("Neovim-owned background jobs", function()
 
     spawn, spawns = {}, {}
     vim.system = function(command, opts, on_exit)
-      spawn = { command = command, opts = opts, on_exit = on_exit, kills = {} }
+      spawn = { command = command, opts = opts, on_exit = on_exit, kills = {}, group_kills = {} }
       table.insert(spawns, spawn)
       return {
         pid = 4242,
@@ -45,6 +47,13 @@ describe("Neovim-owned background jobs", function()
           table.insert(spawn.kills, signal)
         end,
       }
+    end
+    -- A stop addresses the process group first (negative pid), so record that path too; the
+    -- leader-only handle:kill above is only the fallback when the group is already gone.
+    original_uv_kill = uv.kill
+    uv.kill = function(pid, signal)
+      table.insert(spawn.group_kills, { pid = pid, signal = signal })
+      return true
     end
 
     package.loaded["vibing.application.job.manager"] = nil
@@ -56,6 +65,7 @@ describe("Neovim-owned background jobs", function()
       Manager._reset()
     end
     vim.system = original_system
+    uv.kill = original_uv_kill
     Git.get_root = original_get_root
     package.loaded["vibing.application.chat.message_queue"] = original_queue
     package.loaded["vibing.application.job.manager"] = nil
@@ -161,7 +171,10 @@ describe("Neovim-owned background jobs", function()
   it("marks a readiness timeout without pretending the still-running process exited", function()
     local started = start({ ready_pattern = "never printed", ready_timeout_ms = 10, notify = "never" })
 
-    assert.is_true(vim.wait(1000, function()
+    -- Normally satisfied in ~10ms. The bound is generous because `test:lua` starts every spec
+    -- file at once, and on a 4-core box this process can be starved past one second before its
+    -- timer callback is scheduled — which read as a failure of the timeout logic (it was not).
+    assert.is_true(vim.wait(5000, function()
       return Manager.status({ job_id = started.id }).readiness == "timed_out"
     end))
     local status = Manager.status({ job_id = started.id })
@@ -232,9 +245,10 @@ describe("Neovim-owned background jobs", function()
 
     local stopping = Manager.stop({ job_id = started.id })
     assert.equals("running", stopping.status)
-    assert.same({ 15 }, spawn.kills)
+    assert.same({ { pid = -4242, signal = 15 } }, spawn.group_kills, "SIGTERM goes to the whole process group")
+    assert.same({}, spawn.kills, "the leader is not signalled twice when the group kill succeeds")
     Manager.stop({ job_id = started.id })
-    assert.same({ 15 }, spawn.kills, "repeated stop must be idempotent")
+    assert.same({ { pid = -4242, signal = 15 } }, spawn.group_kills, "repeated stop must be idempotent")
 
     spawn.on_exit({ code = 0, signal = 15 })
     assert.is_true(vim.wait(1000, function()
