@@ -124,7 +124,8 @@ such processes. While MCP integration is enabled, the PreToolUse hook also rejec
 
 Neovim keeps a bounded in-memory output tail and writes the complete merged stdout/stderr stream
 plus metadata under `<git-root>/.vibing/jobs/`. `nvim_job_status` reads one job with an output tail,
-`nvim_job_list` lists the jobs owned by this Neovim instance, `nvim_job_stop` requests SIGTERM, and
+`nvim_job_list` lists the jobs owned by this Neovim instance, `nvim_job_stop` sends SIGTERM to the job's
+process group (the job is its own group leader, so a server behind `npm run dev` or `sh -c` stops too), and
 `nvim_job_wait` waits for exit or readiness for at most 25 seconds without killing the job on
 timeout. Readiness is a separate `pending` / `ready` / `timed_out` state driven by a plain-text
 output substring; a live process is never reported ready merely because it was spawned.

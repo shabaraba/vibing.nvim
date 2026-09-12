@@ -189,6 +189,25 @@ local function append_output(job, data)
   end
 end
 
+---Deliver a signal to the whole job, then to the leader.
+---
+---The job is spawned as a process group leader (`detach = true`), so the negative pid addresses
+---every process it started. That is the only way a stop reaches a server behind a wrapper such as
+---`npm run dev` or `sh -c`. `uv.kill` refuses a group that is already gone (or a fake pid in a
+---unit test), and the leader-only `handle:kill` then keeps the old behaviour.
+---@param job Vibing.BackgroundJob
+---@param signal number
+local function signal_job(job, signal)
+  local pid = job.pid
+  if type(pid) == "number" and pid > 0 then
+    local ok = pcall(uv.kill, -pid, signal)
+    if ok then
+      return
+    end
+  end
+  job.handle:kill(signal)
+end
+
 ---@param job Vibing.BackgroundJob
 ---@return boolean
 local function should_notify(job)
@@ -366,6 +385,11 @@ function M.start(params)
   local ok, handle_or_err = pcall(vim.system, command, {
     cwd = cwd,
     env = env,
+    -- Own process group. `nvim_job_stop` has to reach the whole tree, not only the leader:
+    -- `sh -c '...; sleep 60'` or `npm run dev` (npm → node) keeps the stdout pipe open in a
+    -- grandchild, so killing the leader alone leaves the server running and the job reported
+    -- `running` until that grandchild exits on its own (observed in E2E).
+    detach = true,
     text = true,
     stdout = function(err, data)
       if err then
@@ -473,9 +497,7 @@ function M.stop(params)
     return snapshot(job)
   end
   job.stop_requested = true
-  local ok, err = pcall(function()
-    job.handle:kill(15)
-  end)
+  local ok, err = pcall(signal_job, job, 15)
   if not ok then
     job.stop_requested = false
     error("Could not stop background job: " .. tostring(err))
@@ -518,9 +540,7 @@ function M.shutdown()
     if job.status == "running" or job.status == "starting" then
       job.suppress_notification = true
       job.stop_requested = true
-      pcall(function()
-        job.handle:kill(15)
-      end)
+      pcall(signal_job, job, 15)
     end
   end
 end
