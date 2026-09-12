@@ -45,6 +45,13 @@ describe("diff_selector", function()
 
     after_each(function()
       vim.notify = original_notify
+      -- diffはフロートで開くので、先に閉じないと `only` がE5601で落ちる
+      -- （通常ウィンドウを全部閉じるとフロートだけが残る、という状態は作れない）
+      for _, win in ipairs(vim.api.nvim_list_wins()) do
+        if vim.api.nvim_win_get_config(win).relative ~= "" then
+          pcall(vim.api.nvim_win_close, win, true)
+        end
+      end
       vim.cmd("only")
       vim.fn.delete(repo_dir, "rf")
     end)
@@ -62,6 +69,19 @@ describe("diff_selector", function()
       assert.is_truthy(text)
       assert.is_truthy(text:find("-before", 1, true))
       assert.is_truthy(text:find("+after", 1, true))
+    end)
+
+    it("opens in a float, like the other gd viewers", function()
+      -- 通常ウィンドウに出すと、patchの有無で同じキーがレイアウトごと違う結果を返す
+      local file = repo_dir .. "/tracked.txt"
+      write_file(file, "before\n")
+      git({ "add", "." })
+      git({ "commit", "-q", "-m", "init" })
+      write_file(file, "after\n")
+
+      DiffSelector._show_git_diff(file)
+
+      assert.is_not.equals("", vim.api.nvim_win_get_config(0).relative)
     end)
 
     it("shows the whole file as new for an untracked file", function()

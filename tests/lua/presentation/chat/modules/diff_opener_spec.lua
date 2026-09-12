@@ -26,8 +26,16 @@ describe("diff_opener", function()
   end)
 
   describe("resolve_viewer", function()
-    it('uses mini.diff when "auto" and it is installed', function()
+    it('uses the float even when "auto" and mini.diff is installed', function()
+      -- 既定はフロート。mini.diffが入っているだけでインラインに倒れると、ファイル一覧も
+      -- side-by-sideも見られないまま `view.style` 任せの表示になる
       Config.options.diff.viewer = "auto"
+      with_mini(true)
+      assert.equals("patch", DiffOpener.resolve_viewer())
+    end)
+
+    it('uses mini.diff only when it is asked for by name', function()
+      Config.options.diff.viewer = "mini"
       with_mini(true)
       assert.equals("mini", DiffOpener.resolve_viewer())
     end)
@@ -54,7 +62,7 @@ describe("diff_opener", function()
     it('defaults to "auto" behaviour when the option is absent', function()
       Config.options.diff.viewer = nil
       with_mini(true)
-      assert.equals("mini", DiffOpener.resolve_viewer())
+      assert.equals("patch", DiffOpener.resolve_viewer())
     end)
   end)
 

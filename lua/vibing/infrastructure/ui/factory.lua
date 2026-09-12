@@ -94,6 +94,12 @@ function M.create_float(config, bufnr)
     zindex = config.zindex,
   }
 
+  -- `style = "none"` は「styleを指定しない」。`minimal` は 'number' も 'signcolumn' も
+  -- 'foldcolumn' も落とすので、diffモードやサイン表示を出すフロートでは使えない
+  if config.style == "none" then
+    win_config.style = nil
+  end
+
   if config.title then
     win_config.title = " " .. config.title .. " "
     win_config.title_pos = config.title_pos or "center"

@@ -17,11 +17,23 @@ local function show_diff_buffer(output)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
 
-  vim.cmd("vsplit")
-  vim.api.nvim_win_set_buf(0, buf)
+  -- `patch_viewer` と同じフロート。`gd` が patch の有無で通常ウィンドウと
+  -- フロートに分かれると、同じキーの結果としてレイアウトごと変わって見える
+  local win = Factory.create_float({
+    width = 0.8,
+    height = 0.8,
+    border = "rounded",
+    title = "Diff (HEAD)",
+    enter = true,
+  }, buf)
 
   vim.keymap.set("n", "q", function()
-    vim.api.nvim_buf_delete(buf, { force = true })
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_close, win, true)
+    end
+    if vim.api.nvim_buf_is_valid(buf) then
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
   end, {
     buffer = buf,
     noremap = true,

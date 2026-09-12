@@ -30,6 +30,13 @@ function M.is_cursor_on_file_path(buf)
     return nil
   end
 
+  -- `### Modified Files` の1行サマリ（`3 files changed: a.lua, b.lua`）。パスではないので、
+  -- ここで弾かないと `<cwd>/3 files changed: ...` という存在しないパスを返してしまう。
+  -- 弾いた結果 `gf` は `<cfile>` 経路に回り、サマリ内のファイル名の上なら普通に開ける
+  if trimmed_line:match("^%d+ files? changed: ") then
+    return nil
+  end
+
   -- 後方に "### Modified Files" ヘッダーを探す
   local found_modified_files_header = false
   for i = row - 1, 1, -1 do

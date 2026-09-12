@@ -1,11 +1,13 @@
 -- mini_diff.lua は `gd` のインライン表示。mini.diff は **任意依存** なので、テストは本物を
 -- 要求せずスタブで代用する（CI にも開発者の環境にも入っているとは限らない）。
 --
--- ここで固定したいのは2つ:
+-- ここで固定したいのは3つ:
 --   1. patch内の生パスの解決 — base_dir が Neovim の cwd と一致しない（worktree、working_dir）
 --      環境でも、一時ツリーにファイルを置く位置を間違えないこと
---   2. `_attach` の呼び出し順 — disable → minidiff_config → set_ref_text。この順でないと
+--   2. `_attach` の呼び出し順 — disable → minidiff_config → enable。この順でないと
 --      sourceが張り替わらず、次の `.git/index` 変更で参照テキストが黙って消える
+--   3. 参照テキストが **source経由** で張られること。mini.diffは `:edit` のたびに
+--      disable → 再enableするので、`set_ref_text` を直接呼ぶだけでは一度きりの表示になる
 local MiniDiff = require("vibing.ui.mini_diff")
 
 describe("mini_diff", function()
@@ -58,45 +60,84 @@ describe("mini_diff", function()
       end
     end)
 
-    ---呼び出し順を記録するmini.diffのスタブ
+    ---呼び出し順を記録するmini.diffのスタブ。enable → sourceのattach → set_ref_text という
+    ---本物の順序を再現する（`H.cache` に当たるのが `data`）
     local function stub(calls)
-      return {
-        gen_source = {
-          none = function()
-            return { name = "none", attach = function() end }
-          end,
-        },
-        disable = function()
-          table.insert(calls, "disable")
-        end,
-        set_ref_text = function()
-          table.insert(calls, "set_ref_text")
-        end,
-        get_buf_data = function()
-          return { overlay = false }
-        end,
-        toggle_overlay = function()
-          table.insert(calls, "toggle_overlay")
+      local s = {}
+      s.data = nil
+      s.gen_source = {
+        none = function()
+          return { name = "none", attach = function() end }
         end,
       }
+      s.disable = function()
+        table.insert(calls, "disable")
+        s.data = nil
+      end
+      s.enable = function(target)
+        table.insert(calls, "enable")
+        s.data = { overlay = false }
+        if vim.b[target].minidiff_config.source.attach(target) == false then
+          s.data = nil
+        end
+      end
+      s.set_ref_text = function(_, text)
+        table.insert(calls, "set_ref_text")
+        s.data.ref_text = text
+      end
+      s.get_buf_data = function()
+        return s.data
+      end
+      s.toggle_overlay = function()
+        table.insert(calls, "toggle_overlay")
+        s.data.overlay = not s.data.overlay
+      end
+      return s
     end
 
-    it("disables the buffer before setting reference text", function()
+    it("disables the buffer before enabling it with the vibing source", function()
       local calls = {}
       MiniDiff._attach(stub(calls), buf, { "before" })
 
       -- sourceのattachはenable時にしか起きないので、disableが先でなければ
-      -- `minidiff_config` に書いた `source = none` は効かない
+      -- `minidiff_config` に書いた source は効かない
       assert.equals("disable", calls[1])
-      assert.equals("set_ref_text", calls[2])
+      assert.equals("enable", calls[2])
+      assert.equals("set_ref_text", calls[3])
     end)
 
-    it("pins the buffer source to none", function()
+    it("pins the buffer source to vibing's own", function()
       MiniDiff._attach(stub({}), buf, { "before" })
 
       local config = vim.b[buf].minidiff_config
       assert.is_table(config)
-      assert.equals("none", config.source.name)
+      assert.equals("vibing", config.source.name)
+    end)
+
+    it("restores the reference text when mini.diff re-enables the buffer", function()
+      -- `:edit` は on_detach → disable → auto-enable を起こす。参照テキストがsourceから
+      -- 戻らないと、ファイルを開き直しただけでターンの差分が消える
+      local calls = {}
+      local diff = stub(calls)
+      MiniDiff._attach(diff, buf, { "before" })
+
+      diff.disable(buf)
+      diff.enable(buf)
+
+      assert.is_table(diff.get_buf_data(buf))
+      assert.same({ "before" }, diff.get_buf_data(buf).ref_text)
+    end)
+
+    it("declines to attach once the buffer has been cleared", function()
+      local diff = stub({})
+      MiniDiff._attach(diff, buf, { "before" })
+      local source = vim.b[buf].minidiff_config.source
+
+      MiniDiff.clear(buf)
+
+      -- `:VibingDiffClear` 後に auto-enable が走っても、消したはずの差分が戻らないこと
+      assert.is_false(source.attach(buf))
+      assert.is_nil(vim.b[buf].minidiff_config)
     end)
 
     it("turns the overlay on so deleted lines are visible", function()
@@ -104,6 +145,16 @@ describe("mini_diff", function()
       MiniDiff._attach(stub(calls), buf, { "before" })
 
       assert.is_truthy(vim.tbl_contains(calls, "toggle_overlay"))
+    end)
+
+    it("reports failure when mini.diff refuses the buffer", function()
+      -- `vim.b.minidiff_disable` のケース。ここでtrueを返すと、呼び出し側は何も映って
+      -- いないのにフォールバックしない
+      local diff = stub({})
+      diff.enable = function() end
+
+      assert.is_false(MiniDiff._attach(diff, buf, { "before" }))
+      assert.is_falsy(vim.tbl_contains(MiniDiff._marked(), buf))
     end)
 
     it("records the buffer so VibingDiffClear can find it", function()

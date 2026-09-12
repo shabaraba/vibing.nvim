@@ -763,6 +763,27 @@ function M._continuation_prompt(config)
   return "Continue from where you left off."
 end
 
+---変更ファイルを1行にまとめる
+---
+---全ファイルを並べていた頃の名残でこの節が縦に伸び、`patch_viewer` のファイル一覧と完全に
+---重複していた。差分を見る導線は `gd`（フロート）1本なので、チャットに残すのは「何件、
+---だいたい何を触ったか」だけでよい。
+---@param files string[] 表示用の相対パス一覧
+---@return string
+function M._summary_line(files)
+  local NAMED = 3
+  local shown = {}
+  for i = 1, math.min(#files, NAMED) do
+    table.insert(shown, files[i])
+  end
+
+  local line = string.format("%d %s changed: %s", #files, #files == 1 and "file" or "files", table.concat(shown, ", "))
+  if #files > NAMED then
+    line = line .. string.format(", +%d more", #files - NAMED)
+  end
+  return line
+end
+
 ---変更ファイル一覧とpatchをチャットに書き出す
 ---
 ---2つのdiff経路（git snapshot / request_diff）の共通の出口。どちらも「repoルート相対の
@@ -776,15 +797,7 @@ end
 function M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, handle_id)
   if #files > 0 then
     BufferReload.reload_files(abs_files)
-    local MAX_DISPLAY = 50
-    local file_lines = {}
-    for i = 1, math.min(#files, MAX_DISPLAY) do
-      table.insert(file_lines, files[i])
-    end
-    if #files > MAX_DISPLAY then
-      table.insert(file_lines, string.format("... (%d more)", #files - MAX_DISPLAY))
-    end
-    callbacks.append_chunk("\n\n### Modified Files\n\n" .. table.concat(file_lines, "\n") .. "\n")
+    callbacks.append_chunk("\n\n### Modified Files\n\n" .. M._summary_line(files) .. "\n")
   end
 
   if patch_content then

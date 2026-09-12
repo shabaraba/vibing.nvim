@@ -1,12 +1,19 @@
 ---@class Vibing.UI.PatchViewer
+---ターンのpatchを開くフロート。組み立てと後片付けだけを持ち、キーが呼ぶ操作は `actions.lua`。
 local M = {}
 
 local state = require("vibing.ui.patch_viewer.state")
 local parser = require("vibing.ui.patch_viewer.parser")
 local window = require("vibing.ui.patch_viewer.window")
-local ui = require("vibing.ui.patch_viewer.ui")
+local diff_mode = require("vibing.ui.patch_viewer.diff_mode")
 local keymaps = require("vibing.ui.patch_viewer.keymaps")
+local actions = require("vibing.ui.patch_viewer.actions")
 local revert = require("vibing.ui.patch_viewer.revert")
+
+---今開いているビューアのコールバック。Afterペインのキーは選択のたびに張り直すので、
+---`show` の時に作ったものをここで持ち回る
+---@type table|nil
+local callbacks = nil
 
 ---@param session_id string
 ---@param patch_filename string
@@ -33,8 +40,11 @@ function M.show(session_id, patch_filename, target_file)
   state.session_id = session_id
   state.patch_filename = patch_filename
   state.patch_content = patch_content
+  state.base_dir = parser.extract_base_dir(patch_content)
   state.files = files
+  state.stats = parser.all_stats(patch_content, files)
   state.selected_idx = 1
+  state.layout = actions.initial_layout()
 
   if target_file then
     local normalized_target = vim.fn.fnamemodify(target_file, ":.")
@@ -47,113 +57,76 @@ function M.show(session_id, patch_filename, target_file)
   end
 
   window.create_layout(state)
-  ui.render_all(state)
-  keymaps.setup(state, M._create_callbacks())
+  callbacks = M._create_callbacks()
+  keymaps.setup(state, callbacks)
+  actions.refresh(state, callbacks)
 end
 
 ---@return table
 function M._create_callbacks()
-  return {
+  local cb
+  cb = {
     select_file = function(direction)
-      M._select_file(direction)
+      actions.select_file(state, cb, direction)
     end,
     select_from_cursor = function()
-      M._select_file_from_cursor()
+      actions.select_from_cursor(state, cb)
+    end,
+    open_file = function()
+      actions.open_selected_file(state, M._close)
+    end,
+    toggle_layout = function()
+      actions.toggle_layout(state, cb)
     end,
     cycle_window = function(direction)
       window.cycle_window(state, direction)
     end,
     revert = function()
-      M._on_revert()
+      actions.revert_selected(state, M._close)
     end,
     revert_all = function()
-      M._on_revert_all()
+      actions.revert_all(state, M._close)
     end,
     close = function()
       M._close()
     end,
   }
-end
-
----@param direction number
-function M._select_file(direction)
-  local new_idx = state.selected_idx + direction
-  if new_idx < 1 then
-    new_idx = #state.files
-  elseif new_idx > #state.files then
-    new_idx = 1
-  end
-  state.selected_idx = new_idx
-  ui.render_all(state)
-end
-
-function M._select_file_from_cursor()
-  if not state.win_files or not vim.api.nvim_win_is_valid(state.win_files) then
-    return
-  end
-  local cursor = vim.api.nvim_win_get_cursor(state.win_files)
-  local file_idx = cursor[1] - 2
-  if file_idx >= 1 and file_idx <= #state.files then
-    state.selected_idx = file_idx
-    ui.render_all(state)
-  end
-end
-
-function M._on_revert()
-  if not state.session_id or not state.patch_filename then
-    vim.notify("No patch to revert", vim.log.levels.WARN)
-    return
-  end
-  if not state.files or #state.files == 0 or not state.files[state.selected_idx] then
-    vim.notify("No file selected", vim.log.levels.WARN)
-    return
-  end
-  local selected_file = state.files[state.selected_idx]
-  local success = revert.revert_single_file(state.session_id, state.patch_filename, selected_file)
-  if success then
-    M._close()
-  end
-end
-
-function M._on_revert_all()
-  if not state.session_id or not state.patch_filename then
-    vim.notify("No patch to revert", vim.log.levels.WARN)
-    return
-  end
-  local file_count = #state.files
-  local choice = vim.fn.confirm(
-    string.format("Revert all %d file(s) in this patch?", file_count),
-    "&Yes\n&No",
-    2
-  )
-  if choice ~= 1 then
-    return
-  end
-  local success = revert.revert_all_files(state.session_id, state.patch_filename)
-  if success then
-    M._close()
-  end
+  return cb
 end
 
 function M._close()
+  -- 実ファイルのバッファに焼いたキーを先に外す。ウィンドウを閉じてからでは
+  -- `state.after_mapped` ごとresetされて外し損ねる
+  keymaps.clear_after(state)
+  diff_mode.leave(state)
   window.close_windows(state)
   state.reset()
+  callbacks = nil
 end
 
--- Public API compatibility
+-- テストと既存の呼び出し元が使う薄い入口
+function M._select_file(direction)
+  actions.select_file(state, callbacks or M._create_callbacks(), direction)
+end
+
+function M._select_file_from_cursor()
+  actions.select_from_cursor(state, callbacks or M._create_callbacks())
+end
+
+function M._toggle_layout()
+  actions.toggle_layout(state, callbacks or M._create_callbacks())
+end
+
 M.revert_single_file = function(session_id, patch_filename)
-  local s = require("vibing.ui.patch_viewer.state")
-  if not s.files or #s.files == 0 or not s.files[s.selected_idx] then
+  if not state.files or #state.files == 0 or not state.files[state.selected_idx] then
     vim.notify("No file selected", vim.log.levels.WARN)
     return false
   end
-  return revert.revert_single_file(session_id, patch_filename, s.files[s.selected_idx])
+  return revert.revert_single_file(session_id, patch_filename, state.files[state.selected_idx])
 end
 
 M.revert_all_files = revert.revert_all_files
-
 M.extract_file_diff = parser.extract_file_diff
-
 M._extract_files_from_patch = parser.extract_files
 
 return M
