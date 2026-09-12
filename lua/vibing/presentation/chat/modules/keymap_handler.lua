@@ -177,34 +177,7 @@ function M.setup(buf, callbacks, keymaps)
     end, { buffer = buf, desc = "Add context" })
 
     vim.keymap.set("n", keymaps.open_diff, function()
-      local FilePath = require("vibing.core.utils.file_path")
-      local PatchFinder = require("vibing.presentation.chat.modules.patch_finder")
-      local PatchViewer = require("vibing.ui.patch_viewer")
-      local view = require("vibing.presentation.chat.view")
-
-      local file_path = FilePath.is_cursor_on_file_path(buf)
-      if not file_path then
-        vim.notify("No file path under cursor", vim.log.levels.INFO)
-        return
-      end
-
-      -- patchファイル方式で表示を試みる
-      local session_id = PatchFinder.get_session_id(buf)
-      local patch_filename = PatchFinder.find_nearest_patch(buf)
-
-      if session_id and patch_filename then
-        -- patchファイルから該当ファイルのdiffを表示
-        PatchViewer.show(session_id, patch_filename, file_path)
-      else
-        -- patchがない場合はHEAD（無ければindex）との git diff にフォールバックする
-        local DiffSelector = require("vibing.core.utils.diff_selector")
-        local cwd = nil
-        local chat_buf = view.get_chat_buffer(buf)
-        if chat_buf then
-          cwd = chat_buf:get_cwd()
-        end
-        DiffSelector.show_diff(file_path, session_id, cwd)
-      end
+      require("vibing.presentation.chat.modules.diff_opener").open(buf)
     end, { buffer = buf, desc = "Open diff for file under cursor" })
 
     vim.keymap.set("n", keymaps.open_file, function()

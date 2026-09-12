@@ -4,6 +4,10 @@
 ---@field tool "git"|"auto" 使用するdiffツール（現在は同義。リクエストごとにワーキングツリーの
 ---  gitツリースナップショットを取り、その差分をパッチとして保存する。`gd` はそのパッチを、
 ---  無ければ通常の git diff を表示する）
+---@field viewer "auto"|"patch"|"mini" `gd` の表示方法。"patch" は従来のフロート（ファイル一覧＋
+---  diffプレビュー、`r`/`R` でrevert）。"mini" は mini.diff で実ファイル上にインライン表示する
+---  （`gH` がhunk単位のrevert、`[h`/`]h` で移動）。"auto" は mini.diff があれば "mini"、
+---  無ければ "patch"
 
 ---@class Vibing.GradientConfig
 ---グラデーションアニメーション設定
@@ -517,6 +521,7 @@ M.defaults = {
   },
   diff = {
     tool = "auto",
+    viewer = "auto",
   },
   permissions = {
     mode = "acceptEdits",
@@ -719,6 +724,12 @@ function M.setup(opts)
       M.options.diff.tool,
       { git = true, auto = true },
       "diff.tool",
+      "auto"
+    )
+    M.options.diff.viewer = validate_enum(
+      M.options.diff.viewer,
+      { auto = true, patch = true, mini = true },
+      "diff.viewer",
       "auto"
     )
   end
