@@ -142,6 +142,10 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = augroup,
     callback = function()
+      -- Neovimが所有する長時間ジョブを先に止める。終了通知はshutdown中には新しいLLMターンを
+      -- 起こさない（job.managerが抑止する）。
+      require("vibing.application.job.manager").shutdown()
+
       -- CLIプロセスを全てキャンセル
       if M.adapter then
         M.adapter:cancel()

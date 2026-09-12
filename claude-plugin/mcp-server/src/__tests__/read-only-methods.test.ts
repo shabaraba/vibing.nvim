@@ -59,6 +59,8 @@ const STATE_CHANGING_METHODS = [
   'execute',
   'focus_window',
   'highlight_range',
+  'job_start',
+  'job_stop',
   'load_buffer',
   'send_message',
   'set_cursor_position',

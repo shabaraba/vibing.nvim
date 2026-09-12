@@ -27,6 +27,7 @@ describe("MessageQueue", function()
   before_each(function()
     originals.get_chat_buffer = view.get_chat_buffer
     originals.send = ProgrammaticSender.send
+    originals.append_notice = ProgrammaticSender.append_notice
     originals.link = OrchestrationLink.link
     originals.warn = notify.warn
 
@@ -45,9 +46,13 @@ describe("MessageQueue", function()
         end,
       }
     end
-    ProgrammaticSender.send = function(bufnr, message)
-      table.insert(sends, { bufnr = bufnr, message = message })
+    ProgrammaticSender.send = function(bufnr, message, _, section)
+      table.insert(sends, { bufnr = bufnr, message = message, section = section })
       responding[bufnr] = true
+      return { success = true, bufnr = bufnr }
+    end
+    ProgrammaticSender.append_notice = function(bufnr, message)
+      table.insert(sends, { bufnr = bufnr, message = message, passive = true })
       return { success = true, bufnr = bufnr }
     end
     -- 本物はディスクに触るので差し替える。順序の観測だけがここの目的
@@ -66,6 +71,7 @@ describe("MessageQueue", function()
   after_each(function()
     view.get_chat_buffer = originals.get_chat_buffer
     ProgrammaticSender.send = originals.send
+    ProgrammaticSender.append_notice = originals.append_notice
     OrchestrationLink.link = originals.link
     notify.warn = originals.warn
 
@@ -178,6 +184,45 @@ describe("MessageQueue", function()
     responding[a] = false
     assert.is_true(Queue.flush(a))
     assert.equals(1, #sends)
+  end)
+
+  it("wakes an idle chat with a Notice when a background job finishes", function()
+    local a = make_chat()
+
+    assert.is_true(Queue.enqueue_notice(a, "Background job `build` exited with code 0."))
+    assert.is_true(Queue.flush(a))
+
+    assert.equals(1, #sends)
+    assert.is_truthy(sends[1].message:find("Background job `build`", 1, true))
+    assert.equals("Notice", sends[1].section.kind)
+    assert.equals(0, #links, "a system notice must not create an orchestration relationship")
+  end)
+
+  it("holds a job notice until the source chat becomes idle", function()
+    local a = make_chat()
+    responding[a] = true
+
+    assert.is_true(Queue.enqueue_notice(a, "JOB-DONE"))
+    assert.is_false(Queue.flush(a))
+    assert.equals(0, #sends)
+
+    responding[a] = false
+    assert.is_true(Queue.flush(a))
+    assert.equals(1, #sends)
+    assert.is_truthy(sends[1].message:find("JOB-DONE", 1, true))
+  end)
+
+  it("appends a passive job notice without starting an LLM turn", function()
+    local a = make_chat()
+
+    assert.is_true(Queue.enqueue_notice(a, "PASSIVE-JOB-DONE", true))
+    local restarted, delivered = Queue.flush(a)
+
+    assert.is_false(restarted)
+    assert.same({}, delivered)
+    assert.equals(1, #sends)
+    assert.is_true(sends[1].passive)
+    assert.is_truthy(sends[1].message:find("PASSIVE-JOB-DONE", 1, true))
   end)
 
   it("warns rather than silently dropping a completion notice past the cap", function()
@@ -339,6 +384,7 @@ describe("MessageQueue persistence (#697)", function()
     originals.get_chat_buffer = view.get_chat_buffer
     originals.attach_to_buffer = view.attach_to_buffer
     originals.send = ProgrammaticSender.send
+    originals.append_notice = ProgrammaticSender.append_notice
     originals.link = OrchestrationLink.link
 
     buffers, responding, sends = {}, {}, {}
@@ -360,6 +406,10 @@ describe("MessageQueue persistence (#697)", function()
       table.insert(sends, { bufnr = bufnr, message = message })
       return { success = true, bufnr = bufnr }
     end
+    ProgrammaticSender.append_notice = function(bufnr, message)
+      table.insert(sends, { bufnr = bufnr, message = message, passive = true })
+      return { success = true, bufnr = bufnr }
+    end
     OrchestrationLink.link = function()
       return true, nil
     end
@@ -372,6 +422,7 @@ describe("MessageQueue persistence (#697)", function()
     view.get_chat_buffer = originals.get_chat_buffer
     view.attach_to_buffer = originals.attach_to_buffer
     ProgrammaticSender.send = originals.send
+    ProgrammaticSender.append_notice = originals.append_notice
     OrchestrationLink.link = originals.link
 
     for _, bufnr in ipairs(buffers) do
@@ -394,6 +445,24 @@ describe("MessageQueue persistence (#697)", function()
     local stored = Store.load(tmp_root)[a_path]
     assert.is_not_nil(stored)
     assert.equals("queued while busy", stored[1].body)
+  end)
+
+  it("preserves a system notice's kind across a simulated restart", function()
+    local a, a_path = make_named_chat("a.md")
+    responding[a] = true
+
+    assert.is_true(Queue.enqueue_notice(a, "JOB-FINISHED"))
+    local stored = Store.load(tmp_root)[a_path]
+    assert.equals("notice", stored[1].kind)
+
+    package.loaded["vibing.application.chat.message_queue"] = nil
+    Queue = require("vibing.application.chat.message_queue")
+    responding[a] = false
+    Queue.restore(tmp_root)
+
+    assert.equals(1, #sends)
+    assert.is_truthy(sends[1].message:find("JOB-FINISHED", 1, true))
+    assert.is_falsy(sends[1].message:find("### From", 1, true))
   end)
 
   it("clears the disk entry once the queue is actually delivered", function()

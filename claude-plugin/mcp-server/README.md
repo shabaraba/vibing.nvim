@@ -227,6 +227,28 @@ The MCP server exposes the following tools to Claude:
 - **nvim_execute** - Execute Neovim command
   - `command` (required): Neovim command string (e.g., "write", "edit foo.txt")
 
+### Background Jobs
+
+- **nvim_job_start** - Start an argv command as a Neovim-owned process that survives the current
+  Claude/Codex CLI turn. Use this for development servers, watchers, and long scripts instead of
+  shell `&`, `nohup`, or `setsid`
+  - `command` (required): Executable followed by arguments, e.g. `["npm", "run", "dev"]`
+  - `from_bufnr` (required): Calling chat buffer to notify when the job exits
+  - `name` / `cwd` / `env` (optional): Display name, working directory inside the calling Git
+    root, and string environment overrides
+  - `ready_pattern` / `ready_timeout_ms` (optional): Plain output substring that changes readiness
+    from `pending` to `ready`, and its timeout; process existence alone is never readiness
+  - `notify` (optional): `always` (default), `on_failure`, `passive` (append without an LLM turn),
+    or `never`
+- **nvim_job_status** - Read one job and a bounded output tail
+- **nvim_job_list** - List jobs owned by this Neovim instance
+- **nvim_job_stop** - Request graceful termination of a job
+- **nvim_job_wait** - Wait up to 25 seconds for exit or readiness without stopping on timeout
+
+Full logs and metadata are kept under `<git-root>/.vibing/jobs/`. With notifications enabled, a
+completed job is delivered to the originating chat as a new `## Notice` turn once that chat is
+idle.
+
 ### Highlighting
 
 - **nvim_highlight_range** - Temporarily highlight a line range so the user can see which code you

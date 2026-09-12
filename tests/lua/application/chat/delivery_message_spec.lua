@@ -84,6 +84,18 @@ describe("DeliveryMessage.section_for", function()
     assert.is_nil(section.from)
   end)
 
+  it("delivers a system notice as a Notice without inventing a chat sender", function()
+    local recipient = make_buf()
+    local queue = { { kind = "notice", body = "Background job `dev` exited." } }
+
+    local section = DeliveryMessage.section_for(queue, recipient)
+    local text = DeliveryMessage.build(queue)
+
+    assert.equals("Notice", section.kind)
+    assert.is_nil(section.from)
+    assert.equals("Background job `dev` exited.", text)
+  end)
+
   it("does not name a sender when a notice rides along with the message", function()
     -- 通知は別のチャットについての話なので、見出しが本文の送信元だけを名指しすると
     -- 通知が指しているチャットの出どころが消える

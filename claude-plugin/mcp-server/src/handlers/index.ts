@@ -9,6 +9,7 @@ import * as highlight from './highlight.js';
 import * as annotations from './annotations.js';
 import * as qflist from './qflist.js';
 import * as dap from './dap.js';
+import * as jobs from './jobs.js';
 
 export const handlers: Record<string, (args: any) => Promise<any>> = {
   // Buffer operations
@@ -73,4 +74,11 @@ export const handlers: Record<string, (args: any) => Promise<any>> = {
   nvim_dap_get_variables: dap.handleDapGetVariables,
   nvim_dap_set_breakpoint: dap.handleDapSetBreakpoint,
   nvim_dap_evaluate: dap.handleDapEvaluate,
+
+  // Neovim-owned background jobs
+  nvim_job_start: jobs.handleJobStart,
+  nvim_job_status: jobs.handleJobStatus,
+  nvim_job_list: jobs.handleJobList,
+  nvim_job_stop: jobs.handleJobStop,
+  nvim_job_wait: jobs.handleJobWait,
 };

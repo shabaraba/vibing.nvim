@@ -10,6 +10,10 @@
 ---食い違いが実際に起きた。
 local M = {}
 
+local function is_system_notice(item)
+  return item.kind == "notice" or item.kind == "passive_notice"
+end
+
 ---@param bufnr number
 ---@param cache table<number, string>
 ---@return string
@@ -170,6 +174,16 @@ local function message_section(items, cache)
   }, "\n")
 end
 
+---@param items Vibing.Application.MessageQueue.Item[]
+---@return string
+local function notice_body_section(items)
+  local bodies = {}
+  for _, item in ipairs(items) do
+    table.insert(bodies, item.body)
+  end
+  return table.concat(bodies, "\n\n")
+end
+
 ---@class Vibing.Application.DeliveryMessage.Section
 ---@field kind "Request"|"Report"|"Notice" 配達セクションの種別
 ---@field from string? 送信元の表示パス（1つに定まらない配達では nil）
@@ -191,7 +205,7 @@ function M.section_for(queue, to_bufnr, cache)
 
   local kind = nil
   for _, item in ipairs(queue) do
-    if item.body then
+    if item.body and not is_system_notice(item) then
       -- 送信元が消えた本文（`message_queue.forget`）は匿名で配達されるので向きを決められない
       local direction = item.bufnr and OrchestrationLink.direction(item.bufnr, to_bufnr) or "Report"
       kind = (kind == nil or kind == direction) and direction or "Report"
@@ -221,9 +235,15 @@ end
 ---@param cache table<number, string>? 表示パスの使い回し（`section_for` と共有する）
 ---@return string
 function M.build(queue, cache)
-  local notifications, messages = {}, {}
+  local notifications, messages, notices = {}, {}, {}
   for _, item in ipairs(queue) do
-    table.insert(item.body and messages or notifications, item)
+    if is_system_notice(item) then
+      table.insert(notices, item)
+    elseif item.body then
+      table.insert(messages, item)
+    else
+      table.insert(notifications, item)
+    end
   end
 
   cache = cache or {}
@@ -233,6 +253,9 @@ function M.build(queue, cache)
   end
   if #notifications > 0 then
     table.insert(sections, notification_section(notifications, cache))
+  end
+  if #notices > 0 then
+    table.insert(sections, notice_body_section(notices))
   end
 
   return table.concat(sections, "\n\n")
