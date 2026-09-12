@@ -103,6 +103,41 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 5.9.0 (2026-09-12)
+
+## What's Changed
+* feat(summary): list PRs handled in the chat under the issue section by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/727
+* feat: support backend model frontmatter completion by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/729
+* fix(mcp): keep RPC routing out of cached prompts by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/730
+* fix(codex): restore per-turn patches and diff previews by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/731
+* fix(codex): recognize bundled MCP tool names by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/732
+* feat(codex): load project-local permission profiles by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/734
+* feat(codex): show token usage and configure auto-compaction by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/733
+* feat(chat): add boundary-aware Tree-sitter parser by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/736
+* fix(orchestration): stop workers reporting user-initiated turns to the orchestrator by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/737
+* fix(build): prune stale Tree-sitter parser artifacts by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/738
+* fix(diff): synthesize patches for gitignored files from PreToolUse backups by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/739
+* fix(chat): split prose that follows a closing code fence by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/740
+* fix(chat): open markdown links from label text by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/741
+* test(orchestration): cover the held completion edge on the on_sent dispatch path by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/742
+* feat(agent): pass cost-related environment variables to the Claude CLI by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/743
+* feat(mcp): add agent.mcp.user_servers to exclude user-level MCP servers by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/745
+* refactor(frontmatter): unify the frontmatter parsers behind one YAML codec by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/746
+* feat(grok): fence lightweight calls from project instructions and hooks by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/748
+* chore(deps): audit both npm trees in CI and clear the open advisories by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/747
+* fix(orchestration): canonicalize chat paths in task projection and close out the #692 postmortem by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/744
+* fix(mcp): rebuild the server in the background instead of missing its startup deadline by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/750
+* chore(deps-dev): bump vitest from 4.1.11 to 5.0.0 in /claude-plugin/mcp-server by @dependabot[bot] in https://github.com/shabaraba/vibing.nvim/pull/749
+* feat(adapter): support frontmatter effort across backends by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/751
+* feat(diff): render the turn diff inline with mini.diff by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/752
+* feat(mcp): manage Neovim-owned background jobs by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/757
+* feat(mcp): manage Neovim-owned background jobs by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/756
+
+## New Contributors
+* @dependabot[bot] made their first contribution in https://github.com/shabaraba/vibing.nvim/pull/749
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.8.0...v5.9.0
+
 ## 5.8.0 (2026-09-05)
 
 ## What's Changed
