@@ -105,7 +105,7 @@ describe("Neovim-owned background jobs", function()
     assert.is_truthy(notices[1].body:find("Inspect the result and continue", 1, true))
     assert.equals(1, flushes)
     assert.equals(1, vim.fn.filereadable(started.log_path))
-    assert.equals(1, vim.fn.filereadable(started.log_path:gsub("%.log$", ".json")))
+    assert.equals(1, vim.fn.filereadable((started.log_path:gsub("%.log$", ".json"))))
   end)
 
   it("supports on-failure notifications without waking for success", function()
