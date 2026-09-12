@@ -80,7 +80,7 @@ jobs:
         uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          permission-profile: ":workspace"
+          permission-profile: ':workspace'
           effort: high
           output-file: .codex-result.json
           output-schema: |
