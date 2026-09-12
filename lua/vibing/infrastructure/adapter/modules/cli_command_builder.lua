@@ -234,6 +234,14 @@ function M.build(prompt, opts, session_id, config, settings_path)
     )
     table.insert(
       system_prompt_lines,
+      "When starting a development server, watcher, long-running script, or any process intended "
+        .. "to outlive the current model turn, you MUST use the vibing-nvim nvim_job_start MCP tool. "
+        .. "Do not use shell backgrounding such as &, nohup, or setsid for these processes. Use "
+        .. "nvim_job_status, nvim_job_wait, and nvim_job_stop to manage them. If nvim_job_start is "
+        .. "unavailable, say so instead of silently substituting shell backgrounding."
+    )
+    table.insert(
+      system_prompt_lines,
       "When you need the user to choose among options (single or multi-select), always call the "
         .. "mcp__vibing-nvim__nvim_ask_user_question tool instead of asking in free text. Do not use "
         .. "the native AskUserQuestion tool for this — it is unavailable in this environment. Pass "

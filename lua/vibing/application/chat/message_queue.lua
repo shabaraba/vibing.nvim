@@ -37,6 +37,8 @@ local WARN_TITLE = "Chat Delivery"
 ---  普通に止まっただけの watchdog 通知では nil
 ---@field task string? 本文のみ。この送信元が指す`task`の更新（#696）。同じ送信元から複数
 ---  積まれている場合は`write_links`が最後の値を採用する（＝最新の指示が勝つ）
+---@field kind "notice"|"passive_notice"? vibing.nvim自身が生成した本文つきNotice。
+---  `passive_notice`だけの配達はLLMターンを開始せず、チャットファイルへの追記だけを行う
 
 ---@type table<number, Vibing.Application.MessageQueue.Item[]>
 local pending = {}
@@ -72,7 +74,13 @@ local function persist(to_bufnr)
   for _, item in ipairs(queue) do
     table.insert(
       items,
-      { body = item.body, reason = item.reason, task = item.task, from_file_path = file_path_of(item.bufnr) }
+      {
+        body = item.body,
+        reason = item.reason,
+        task = item.task,
+        kind = item.kind,
+        from_file_path = file_path_of(item.bufnr),
+      }
     )
   end
   Store.put(to_path, items)
@@ -151,7 +159,7 @@ local function write_links(queue, to_bufnr)
   local senders = {}
   local last_task = {}
   for _, item in ipairs(queue) do
-    if item.body and item.bufnr then
+    if item.body and item.kind ~= "notice" and item.kind ~= "passive_notice" and item.bufnr then
       -- 同じ送信元からの複数の本文はリンク1本。`link` 自身も重複を弾くが、そこに至るまでに
       -- frontmatter を2回パースするので手前で止める（orchestration_link.lua の早期returnを参照）
       if not seen[item.bufnr] then
@@ -234,6 +242,33 @@ function M.enqueue_message(to_bufnr, from_bufnr, body, task)
   end
 
   table.insert(queue, { bufnr = from_bufnr, body = body, task = task })
+  pending[to_bufnr] = queue
+  persist(to_bufnr)
+  return true
+end
+
+---vibing.nvim自身からの本文つきNoticeを積む。
+---ジョブ完了のように「別チャットからの本文」ではないイベントを、同じ永続キューとbusy判定に
+---乗せるための入口。通知watchdog（bodyなし）とも区別する。
+---@param to_bufnr number
+---@param body string
+---@param passive boolean? trueならLLMターンを開始せずチャットへ追記する
+---@return boolean ok
+---@return string? err
+function M.enqueue_notice(to_bufnr, body, passive)
+  if type(body) ~= "string" or vim.trim(body) == "" then
+    return false, "Empty notice"
+  end
+  local queue = pending[to_bufnr] or {}
+  if #queue >= MAX_QUEUED then
+    return false,
+      string.format(
+        "Chat buffer %d already has %d messages waiting for it; not queueing another.",
+        to_bufnr,
+        #queue
+      )
+  end
+  table.insert(queue, { body = body, kind = passive and "passive_notice" or "notice" })
   pending[to_bufnr] = queue
   persist(to_bufnr)
   return true
@@ -335,7 +370,21 @@ function M.flush(to_bufnr)
   write_links(queue, to_bufnr)
 
   local DeliveryMessage = require("vibing.application.chat.delivery_message")
-  local ok, result = pcall(DeliveryMessage.deliver, queue, to_bufnr)
+  local has_active_item = false
+  for _, item in ipairs(queue) do
+    if item.kind ~= "passive_notice" then
+      has_active_item = true
+      break
+    end
+  end
+
+  local ok, result
+  if has_active_item then
+    ok, result = pcall(DeliveryMessage.deliver, queue, to_bufnr)
+  else
+    local ProgrammaticSender = require("vibing.presentation.chat.modules.programmatic_sender")
+    ok, result = pcall(ProgrammaticSender.append_notice, to_bufnr, DeliveryMessage.build(queue))
+  end
 
   -- 配達できて初めてキューを空ける。通知側はエッジを既に消費しているので、先に捨てると
   -- 失敗した配達は二度と再現しない。残しておけば次の完了イベントで作り直しなしに再試行できる
@@ -349,7 +398,7 @@ function M.flush(to_bufnr)
     -- 後者はストリームを張らないので `VibingResponseDone` が来ず、呼び出し元がこれを再稼働と
     -- 読むとエッジが宙に浮く。始まっていないターンを購読者の待ち先にはできないので、
     -- 送信結果ではなく相手の状態を返す
-    return chat_buf:is_responding(), delivered
+    return has_active_item and chat_buf:is_responding() or false, delivered
   end
 
   notify.warn(
@@ -439,6 +488,7 @@ function M.restore(cwd)
                 bufnr = stored.from_file_path and resolve_bufnr(stored.from_file_path) or nil,
                 body = stored.body,
                 task = stored.task,
+                kind = stored.kind,
               })
             else
               local about_bufnr = stored.from_file_path and resolve_bufnr(stored.from_file_path) or nil

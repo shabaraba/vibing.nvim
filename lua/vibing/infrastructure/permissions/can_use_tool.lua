@@ -2,19 +2,20 @@
 --- Main permission evaluation logic for control_request handling
 ---
 --- Permission evaluation order (highest to lowest priority):
---- 1. Session-level deny list (immediate block)
---- 2. Internal tools (always allowed, e.g. ToolSearch, Agent)
---- 3. bypassPermissions mode (bypasses deny list too)
---- 4. Deny list (deny takes precedence over allow)
---- 4.5. Deny rules (path/command/pattern/domain based) — before any mode shortcut or session
+--- 1. Neovim-owned background-job policy (when MCP is enabled)
+--- 2. Session-level deny list (immediate block)
+--- 3. Internal tools (always allowed, e.g. ToolSearch, Agent)
+--- 4. bypassPermissions mode (bypasses the configurable deny list too)
+--- 5. Deny list (deny takes precedence over allow)
+--- 5.5. Deny rules (path/command/pattern/domain based) — before any mode shortcut or session
 ---      grant, so the bundled destructive-command rules hold under `auto` mode, for
 ---      always-allowed tools, and after an "allow_for_session" approval
---- 5. Session-level allow list (auto-approve)
---- 6. Always-allowed tools (bypass allow list; deny/ask still respected)
---- 7. Permission modes (auto, acceptEdits, default; dontAsk changes ask→deny below)
---- 8. Allow list (with pattern matching support)
---- 9. Ask list (granular patterns override broader allow list permissions)
---- 10. Granular allow rules (path/command/pattern/domain based)
+--- 6. Session-level allow list (auto-approve)
+--- 7. Always-allowed tools (bypass allow list; deny/ask still respected)
+--- 8. Permission modes (auto, acceptEdits, default; dontAsk changes ask→deny below)
+--- 9. Allow list (with pattern matching support)
+--- 10. Ask list (granular patterns override broader allow list permissions)
+--- 11. Granular allow rules (path/command/pattern/domain based)
 ---
 --- @module vibing.infrastructure.permissions.can_use_tool
 
@@ -25,6 +26,10 @@ local tools_constants = require("vibing.core.constants.tools")
 local M = {}
 
 local ONCE_SUFFIX = ":once"
+
+local BACKGROUND_JOB_MESSAGE = "Shell backgrounding is disabled in vibing.nvim because the process "
+  .. "can be killed when this CLI turn exits. Use nvim_job_start instead, then manage it with "
+  .. "nvim_job_status, nvim_job_wait, or nvim_job_stop."
 
 --- @class CanUseToolResult
 --- @field behavior "allow"|"deny"|"ask"
@@ -77,6 +82,100 @@ end
 --- @return CanUseToolResult
 local function ask()
   return { behavior = "ask" }
+end
+
+--- Replace quoted/escaped bytes with spaces, leaving shell control operators visible. This is not
+--- a shell parser; it deliberately recognizes only the unambiguous forms the policy blocks and
+--- leaves ordinary foreground commands alone.
+--- @param command string
+--- @return string
+local function unquoted_shell(command)
+  local out = {}
+  local quote = nil
+  local i = 1
+  while i <= #command do
+    local char = command:sub(i, i)
+    if quote then
+      if char == quote then
+        quote = nil
+      elseif char == "\\" and quote == '"' then
+        i = i + 1
+      end
+      table.insert(out, " ")
+    elseif char == "'" or char == '"' then
+      quote = char
+      table.insert(out, " ")
+    elseif char == "\\" then
+      table.insert(out, " ")
+      i = i + 1
+      table.insert(out, " ")
+    else
+      table.insert(out, char)
+    end
+    i = i + 1
+  end
+  return table.concat(out)
+end
+
+--- Whether a canonical Bash call is trying to detach work from the current turn.
+--- @param input table<string, any>
+--- @return boolean
+function M.uses_shell_backgrounding(input)
+  if input.run_in_background == true then
+    return true
+  end
+  if type(input.command) ~= "string" then
+    return false
+  end
+
+  local command = unquoted_shell(input.command)
+  for i = 1, #command do
+    if command:sub(i, i) == "&" then
+      local previous = i > 1 and command:sub(i - 1, i - 1) or ""
+      local following = i < #command and command:sub(i + 1, i + 1) or ""
+      -- Exclude && and file-descriptor redirections such as 2>&1 and &>file.
+      if
+        previous ~= "&"
+        and following ~= "&"
+        and previous ~= ">"
+        and previous ~= "<"
+        and following ~= ">"
+      then
+        return true
+      end
+    end
+  end
+
+  -- nohup/setsid/disown can detach even without a trailing ampersand. Inspect only command
+  -- positions (start or immediately after a shell control operator) to avoid blocking prose such
+  -- as `printf 'use nohup carefully'`.
+  for segment in command:gmatch("[^;|&\n]+") do
+    local rest = vim.trim(segment):gsub("^%(*%s*", "")
+    local saw_wrapper = false
+    while rest ~= "" do
+      local word = rest:match("^(%S+)")
+      local basename = word and word:match("([^/]+)$") or nil
+      if basename == "nohup" or basename == "setsid" or basename == "disown" then
+        return true
+      end
+      local is_wrapper = basename == "sudo"
+        or basename == "command"
+        or basename == "env"
+        or (word and word:match("^[%a_][%w_]*="))
+      if is_wrapper then
+        saw_wrapper = true
+        rest = rest:match("^%S+%s+(.+)$") or ""
+      elseif saw_wrapper then
+        -- Once a wrapper (sudo/env/command/VAR=) has been seen, keep scanning past its own
+        -- flags and arguments (e.g. `sudo -u user`) rather than stopping at the first one, or
+        -- setsid/nohup/disown placed after them would never be reached.
+        rest = rest:match("^%S+%s+(.+)$") or ""
+      else
+        break
+      end
+    end
+  end
+  return false
 end
 
 --- Check session permission list and handle one-time permissions
@@ -175,25 +274,32 @@ end
 --- @return CanUseToolResult
 function M.can_use_tool(tool_name, input, config)
   local ok, result = pcall(function()
-    -- 1. Session-level deny list (highest priority)
+    -- 1. This is a lifecycle invariant, not a configurable permission preference. Keep it ahead
+    -- of bypassPermissions so even unattended turns cannot accidentally create a process Neovim
+    -- does not own. It applies only when the replacement MCP tool is actually enabled.
+    if tool_name == "Bash" and config.mcp_enabled and M.uses_shell_backgrounding(input) then
+      return deny(BACKGROUND_JOB_MESSAGE)
+    end
+
+    -- 2. Session-level deny list (highest configurable priority)
     local session_deny_result = check_session_list(tool_name, input, config.session_denied_tools, "deny")
     if session_deny_result then
       return session_deny_result
     end
 
-    -- 2. Always allow Claude Code internal tools
+    -- 3. Always allow Claude Code internal tools
     if tools_constants.INTERNAL_TOOLS_MAP[tool_name] then
       return allow(input)
     end
 
     local mode = config.permission_mode
 
-    -- 3. bypassPermissions: truly bypass all operations including deny list
+    -- 4. bypassPermissions: bypass configurable permissions, but not lifecycle invariants above
     if mode == "bypassPermissions" then
       return allow(input)
     end
 
-    -- 4. Check deny list (deny takes precedence over allow)
+    -- 5. Check deny list (deny takes precedence over allow)
     if config.denied_tools and #config.denied_tools > 0 then
       for _, pattern in ipairs(config.denied_tools) do
         if matchers.matches_permission(tool_name, input, pattern) then
@@ -202,7 +308,7 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 4.5. Deny rules, before any mode shortcut or session grant can allow the call. The rules'
+    -- 5.5. Deny rules, before any mode shortcut or session grant can allow the call. The rules'
     -- documented semantics are "deny is checked first", and the bundled destructive-command rules
     -- are only a real boundary if `auto` mode, always-allowed tools and a session grant cannot
     -- walk past them. bypassPermissions (handled above) remains the one deliberate way out.
@@ -214,7 +320,7 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 5. Session-level allow list. Deliberately after the deny checks: "allow_for_session" on a
+    -- 6. Session-level allow list. Deliberately after the deny checks: "allow_for_session" on a
     -- Bash approval records the bare tool name, so it matches every later Bash call regardless of
     -- its command. Approving `npm install` for the session must not thereby approve
     -- `sudo rm -rf /`.
@@ -223,7 +329,7 @@ function M.can_use_tool(tool_name, input, config)
       return session_allow_result
     end
 
-    -- 6. Always-allowed tools: bypass allow list, but respect deny (checked above) and ask
+    -- 7. Always-allowed tools: bypass allow list, but respect deny (checked above) and ask
     if tools_constants.ALWAYS_ALLOWED_TOOLS_MAP[tool_name] then
       for _, pattern in ipairs(config.asked_tools) do
         if matchers.matches_permission(tool_name, input, pattern) then
@@ -236,7 +342,7 @@ function M.can_use_tool(tool_name, input, config)
       return allow(input)
     end
 
-    -- 7. Permission modes
+    -- 8. Permission modes
     if mode == "auto" then
       return allow(input)
     end
@@ -257,7 +363,7 @@ function M.can_use_tool(tool_name, input, config)
       return deny("vibing.nvim MCP integration is disabled. Enable it in config: mcp.enabled = true")
     end
 
-    -- 8. Check allow list (with pattern support)
+    -- 9. Check allow list (with pattern support)
     if #config.allowed_tools > 0 then
       local is_allowed = false
       for _, pattern in ipairs(config.allowed_tools) do
@@ -274,7 +380,7 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 9. Check ask list (AFTER allow list - granular patterns override broader permissions)
+    -- 10. Check ask list (AFTER allow list - granular patterns override broader permissions)
     for _, pattern in ipairs(config.asked_tools) do
       if matchers.matches_permission(tool_name, input, pattern) then
         if mode == "dontAsk" then
@@ -284,7 +390,7 @@ function M.can_use_tool(tool_name, input, config)
       end
     end
 
-    -- 10. Check granular allow rules (deny rules already ran at step 4.5)
+    -- 11. Check granular allow rules (deny rules already ran at step 5.5)
     if config.permission_rules and #config.permission_rules > 0 then
       for _, rule in ipairs(config.permission_rules) do
         if rule.action ~= "deny" and rule_checker.check_rule(rule, tool_name, input) == "allow" then

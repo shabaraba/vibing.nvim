@@ -136,6 +136,14 @@ describe("codex_plugin_config", function()
       assert.is_nil(instructions:find("rpc_port for this turn", 1, true))
     end)
 
+    it("requires Neovim-owned jobs for processes that outlive the turn", function()
+      local instructions = override(CodexPluginConfig.args(nil, config), "developer_instructions")
+
+      assert.is_truthy(instructions:find("MUST use the vibing-nvim nvim_job_start", 1, true))
+      assert.is_truthy(instructions:find("Do not use shell backgrounding", 1, true))
+      assert.is_truthy(instructions:find("nohup", 1, true))
+    end)
+
     it("puts the overrides in -c pairs only", function()
       local args = CodexPluginConfig.args(nil, config)
       for i = 1, #args, 2 do

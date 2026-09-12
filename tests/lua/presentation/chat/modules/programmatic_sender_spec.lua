@@ -158,6 +158,25 @@ describe("ProgrammaticSender.send", function()
       ProgrammaticSender.send(bufnr + 9999, "hello")
     end)
   end)
+
+  it("appends a timestamped Notice without sending an LLM request", function()
+    local path = vim.fn.tempname() .. ".md"
+    vim.api.nvim_buf_set_name(bufnr, path)
+    vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { "## User <!-- unsent -->", "", "" })
+
+    local result = ProgrammaticSender.append_notice(bufnr, "background work finished")
+
+    assert.is_true(result.success)
+    assert.equals(0, fake.sends)
+    local lines = buffer_lines()
+    assert.is_true(vim.tbl_contains(lines, "background work finished"), table.concat(lines, "\n"))
+    assert.is_true(vim.tbl_contains(lines, "## User <!-- unsent -->"), table.concat(lines, "\n"))
+    local notices = vim.tbl_filter(function(line)
+      return line:match("^## Notice <!%-%- %d%d%d%d%-%d%d%-%d%d")
+    end, lines)
+    assert.equals(1, #notices, table.concat(lines, "\n"))
+    vim.fn.delete(path)
+  end)
 end)
 
 describe("ChatBuffer:add_user_section", function()

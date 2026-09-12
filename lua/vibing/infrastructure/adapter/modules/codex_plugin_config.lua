@@ -143,6 +143,14 @@ local function developer_instructions(skills, self_server)
         self_server:gsub("%-", "_")
       )
     )
+    table.insert(
+      lines,
+      "When starting a development server, watcher, long-running script, or any process intended "
+        .. "to outlive the current model turn, you MUST use the vibing-nvim nvim_job_start MCP tool. "
+        .. "Do not use shell backgrounding such as &, nohup, or setsid for these processes. Use "
+        .. "nvim_job_status, nvim_job_wait, and nvim_job_stop to manage them. If nvim_job_start is "
+        .. "unavailable, say so instead of silently substituting shell backgrounding."
+    )
   end
 
   if #lines == 0 then

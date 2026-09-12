@@ -169,4 +169,33 @@ function M.send(bufnr, message, sender, delivery, opts)
   return { success = sent, bufnr = bufnr }
 end
 
+---Append a timestamped Notice without starting an LLM turn.
+---The caller must wait until the chat is idle; this guard keeps a completion event from editing
+---the same buffer while streaming output is still arriving.
+---@param bufnr number
+---@param message string
+---@return {success: boolean, bufnr: number}
+function M.append_notice(bufnr, message)
+  local chat_buf = M.validate(bufnr, message)
+  _send_locks[bufnr] = true
+
+  local success, err = pcall(function()
+    drop_trailing_unsent_section(bufnr)
+    Renderer.addUserSection(bufnr, nil, nil, nil, message, Timestamp.create_header("Notice", Timestamp.now()))
+    Renderer.addUserSection(bufnr)
+    vim.api.nvim_buf_call(bufnr, function()
+      vim.cmd("silent! write")
+    end)
+    if vim.bo[bufnr].modified then
+      error("the chat buffer could not be saved")
+    end
+  end)
+  _send_locks[bufnr] = nil
+
+  if not success then
+    error(string.format("Failed to append notice: %s", tostring(err)))
+  end
+  return { success = true, bufnr = bufnr }
+end
+
 return M

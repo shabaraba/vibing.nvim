@@ -49,6 +49,14 @@ describe("cli_command_builder", function()
       assert.is_true(prompt_text:find("nvim_set_cursor", 1, true) ~= nil)
     end)
 
+    it("requires Neovim-owned jobs for processes that outlive the turn", function()
+      local cmd = cli_command_builder.build("hello", {}, nil, {}, nil)
+      local prompt_text = cmd[find_flag(cmd, "--append-system-prompt") + 1]
+      assert.is_truthy(prompt_text:find("MUST use the vibing-nvim nvim_job_start", 1, true))
+      assert.is_truthy(prompt_text:find("Do not use shell backgrounding", 1, true))
+      assert.is_truthy(prompt_text:find("nohup", 1, true))
+    end)
+
     it("combines the language instruction and worktree instruction into a single flag", function()
       local config = { language = "ja" }
       local cmd = cli_command_builder.build("hello", {}, nil, config, nil)

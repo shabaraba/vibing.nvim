@@ -91,6 +91,8 @@ Prefix each with whichever form matches how the server was registered (see above
   `nvim_list_tabpages`, `nvim_set_window_size`, `nvim_focus_window`, `nvim_win_set_buf`,
   `nvim_win_open_file`
 - **Commands**: `nvim_execute`
+- **Background jobs**: `nvim_job_start`, `nvim_job_status`, `nvim_job_list`, `nvim_job_stop`,
+  `nvim_job_wait`
 - **Highlighting**: `nvim_highlight_range`, `nvim_clear_highlight`
 - **Annotations**: `nvim_annotate`, `nvim_clear_annotations`
 - **Chat**: `nvim_ask_user_question` (renders a choice list in the chat buffer — see
@@ -104,6 +106,36 @@ Prefix each with whichever form matches how the server was registered (see above
 - **LSP**: `nvim_lsp_definition`, `nvim_lsp_references`, `nvim_lsp_hover`, `nvim_diagnostics`,
   `nvim_lsp_document_symbols`, `nvim_lsp_type_definition`, `nvim_lsp_call_hierarchy_incoming`,
   `nvim_lsp_call_hierarchy_outgoing`
+
+## Background Jobs
+
+`nvim_job_start({ command, from_bufnr, name?, cwd?, env?, notify?, ready_pattern?,
+ready_timeout_ms? })` starts a process owned by Neovim,
+not by the short-lived `claude -p` / `codex exec` process. Use it for development servers,
+watchers, and scripts that must continue after the current model turn ends; shell backgrounding
+with `&`, `nohup`, or `setsid` remains tied to the CLI process tree and can be killed when that
+turn closes. `command` is an argv array rather than a shell string, and `cwd` must stay within the
+calling CLI's Git root.
+
+For non-lightweight Claude and Codex turns, the system/developer prompt requires this tool for
+such processes. While MCP integration is enabled, the PreToolUse hook also rejects Bash's native
+`run_in_background` option and unambiguous shell detachment with `&`, `nohup`, `setsid`, or
+`disown`, returning guidance to retry with `nvim_job_start`.
+
+Neovim keeps a bounded in-memory output tail and writes the complete merged stdout/stderr stream
+plus metadata under `<git-root>/.vibing/jobs/`. `nvim_job_status` reads one job with an output tail,
+`nvim_job_list` lists the jobs owned by this Neovim instance, `nvim_job_stop` sends SIGTERM to the job's
+process group (the job is its own group leader, so a server behind `npm run dev` or `sh -c` stops too), and
+`nvim_job_wait` waits for exit or readiness for at most 25 seconds without killing the job on
+timeout. Readiness is a separate `pending` / `ready` / `timed_out` state driven by a plain-text
+output substring; a live process is never reported ready merely because it was spawned.
+
+The default `notify: "always"` queues a `## Notice` to `from_bufnr` when the process exits. The
+queue waits while that chat is responding, persists across a Neovim restart, then starts a fresh
+LLM turn with the exit status and last output once the chat is idle. `"on_failure"` wakes only for
+a non-zero exit or signal (useful for long-lived servers), `"passive"` appends a timestamped Notice
+without starting an LLM turn, and `"never"` leaves status polling to the caller. Exiting Neovim
+terminates its still-running jobs and suppresses completion notices.
 
 **Window identification (important):** `nvim_get_window_info({ winnr: 0 })` returns the
 **currently active** window, not necessarily the one the user is visually looking at (e.g. the
