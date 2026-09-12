@@ -120,6 +120,28 @@ return {
   },
 
   {
+    id = "background_job/uses_neovim_owner",
+    description = "ターンをまたぐバックグラウンド処理はBashの&ではなくnvim_job_startへ渡す",
+    prompt = "Start `sleep 1` as a background task that may outlive this turn. Start it now and "
+      .. "return once it has been launched; do not wait for completion.",
+    opts = { chat_bufnr = ORCHESTRATOR_BUFNR },
+    check = function(record)
+      local input = Harness.find_mcp_call(record, "nvim_job_start")
+      if not input then
+        local command = find_bash_command(record, "sleep 1")
+        if command then
+          return false, "used Bash instead of nvim_job_start: " .. command
+        end
+        return false, "did not call nvim_job_start"
+      end
+      if tonumber(input.from_bufnr) ~= ORCHESTRATOR_BUFNR then
+        return false, "nvim_job_start did not use the current chat buffer as from_bufnr"
+      end
+      return true
+    end,
+  },
+
+  {
     id = "worker/reports_delivered_work",
     description = "他チャットから配達されたタスクを終えたら nvim_chat_send_message でそのチャットに報告する",
     -- 配達本文の先頭には delivery_message.lua が送信元を名乗る行を置く。その形をそのまま再現する
