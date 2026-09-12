@@ -584,7 +584,8 @@ MCP tools cannot find the right Neovim:~
     than guessing.
 
 A server or long script started by the agent disappears when its turn ends:~
-    `claude -p` and `codex exec` are short-lived processes, so children started
+    `claude -p` and `codex exec` are short-lived processes, so their child
+    processes started
     with shell `&`, `nohup`, or `setsid` can be killed with their CLI process
     tree. The bundled agent instructions use `nvim_job_start` instead. Neovim
     owns that process, keeps its log under `.vibing/jobs/`, and starts a fresh
