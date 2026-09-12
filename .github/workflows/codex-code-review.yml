@@ -1,0 +1,160 @@
+name: Codex Code Review
+
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: codex-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    if: >-
+      github.event.label.name == 'codex:in-review' &&
+      github.event.sender.login == 'shabaraba' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout PR head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare pull request context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+          gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json number,title,body,author,baseRefName,headRefName,comments,reviews \
+            > .codex-pr-context.json
+          gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --remove-label "codex:failed" 2>/dev/null || true
+
+      - name: Run Codex review
+        id: codex_review
+        # v1.12; pin the full commit SHA so a tag move cannot change executable code.
+        uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          permission-profile: ":workspace"
+          effort: high
+          output-file: .codex-review-result.json
+          output-schema: |
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "status": { "type": "string", "enum": ["clean", "fixed", "blocked"] },
+                "commit_title": { "type": "string" },
+                "comment": { "type": "string" }
+              },
+              "required": ["status", "commit_title", "comment"]
+            }
+          prompt: |
+            You are the unattended code-review agent for PR
+            #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+
+            Read .codex-pr-context.json, CLAUDE.md, and relevant project guidance. Review only the
+            changes in origin/${{ github.event.pull_request.base.ref }}...HEAD. Focus on concrete
+            correctness, regression, security, concurrency, compatibility, and missing-test risks;
+            avoid subjective style findings.
+
+            Apply a fix directly to the working tree only for findings you have confirmed with
+            high confidence. Add or update tests and run relevant fast checks. Never run npm run
+            test:e2e or npm run test:eval because they spend real model tokens. Do not commit,
+            push, post GitHub comments, or modify .codex-pr-context.json; the workflow handles
+            those operations after you exit.
+
+            This is one non-interactive run. If you delegate review dimensions or verification,
+            await every delegated task before returning. Never leave a background task running or
+            promise to wait for a later notification, because there is no later turn.
+
+            All human-facing output must be Japanese. Set status to "fixed" when you changed files,
+            "clean" when no high-confidence fix is required, or "blocked" when review cannot be
+            completed. commit_title must be an English Conventional Commit-style summary for any
+            fixes (and a harmless placeholder when there are none). comment must be the complete,
+            single Markdown PR review comment: list confirmed findings and fixes with file:line,
+            any plausible unresolved concerns, and checks run; if nothing was found, say so briefly.
+
+      - name: Push fixes and post one review comment
+        id: publish
+        if: steps.codex_review.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          test -s .codex-review-result.json
+          STATUS="$(jq -r '.status' .codex-review-result.json)"
+          TITLE="$(jq -r '.commit_title' .codex-review-result.json)"
+          COMMENT_FILE="$(mktemp)"
+          jq -r '.comment' .codex-review-result.json > "$COMMENT_FILE"
+          rm -f .codex-pr-context.json .codex-review-result.json
+
+          if [ "$STATUS" = "blocked" ]; then
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$COMMENT_FILE"
+            echo "status=blocked" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "$TITLE"
+            git push origin HEAD
+            STATUS="fixed"
+          elif [ "$STATUS" = "fixed" ]; then
+            STATUS="clean"
+          fi
+
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$COMMENT_FILE"
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      - name: Report an automation failure
+        if: >-
+          always() &&
+          (steps.codex_review.outcome != 'success' || steps.publish.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "Codex のレビュー処理に失敗しました。ログ: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Reflect the run outcome on the PR label
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh label create "codex:failed" --repo "$GITHUB_REPOSITORY" --force \
+            --color "D73A4A" --description "The latest Codex run failed or needs input"
+          if [ "${{ steps.codex_review.outcome }}" = "success" ] \
+            && [ "${{ steps.publish.outcome }}" = "success" ] \
+            && [ "${{ steps.publish.outputs.status }}" != "blocked" ]; then
+            gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --remove-label "codex:in-review"
+            gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --remove-label "codex:failed" 2>/dev/null || true
+          else
+            gh pr edit "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --remove-label "codex:in-review" --add-label "codex:failed"
+          fi

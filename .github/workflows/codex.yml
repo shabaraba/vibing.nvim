@@ -1,0 +1,192 @@
+name: Codex Implementation
+
+on:
+  issues:
+    types: [labeled]
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/codex.yml
+      - .github/workflows/codex-code-review.yml
+  workflow_dispatch:
+
+concurrency:
+  group: codex-implementation-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  setup-labels:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Create Codex labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create "codex:in-progress" --repo "$GITHUB_REPOSITORY" --force \
+            --color "1D76DB" --description "Codex is implementing this issue"
+          gh label create "codex:in-review" --repo "$GITHUB_REPOSITORY" --force \
+            --color "5319E7" --description "Codex is reviewing this pull request"
+          gh label create "codex:failed" --repo "$GITHUB_REPOSITORY" --force \
+            --color "D73A4A" --description "The latest Codex run failed or needs input"
+
+  implement:
+    if: >-
+      github.event_name == 'issues' &&
+      github.event.label.name == 'codex:in-progress' &&
+      github.event.sender.login == 'shabaraba'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Codex runs without network access under :workspace, so install dependencies first.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare branch and issue context
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          BRANCH="codex/issue-${ISSUE_NUMBER}-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json number,title,body,author,labels,comments > .codex-issue-context.json
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --remove-label "codex:failed" 2>/dev/null || true
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Run Codex
+        id: codex
+        # v1.12; pin the full commit SHA so a tag move cannot change executable code.
+        uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          permission-profile: ":workspace"
+          effort: high
+          output-file: .codex-result.json
+          output-schema: |
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "status": { "type": "string", "enum": ["completed", "blocked"] },
+                "pr_title": { "type": "string" },
+                "pr_body": { "type": "string" },
+                "report": { "type": "string" }
+              },
+              "required": ["status", "pr_title", "pr_body", "report"]
+            }
+          prompt: |
+            You are the unattended implementation agent for issue
+            #${{ github.event.issue.number }} in ${{ github.repository }}.
+
+            All human-facing text in your final structured result must be Japanese. Read
+            .codex-issue-context.json first; it contains the issue title, body, labels, and every
+            comment. Then read CLAUDE.md and the project documentation it points to as repository
+            guidance, while following Codex's own runtime and safety rules.
+
+            Investigate the existing implementation before changing it. Implement the complete
+            issue using the nearest established patterns, add or update tests, and run the relevant
+            fast checks. Never run npm run test:e2e or npm run test:eval because they spend real
+            model tokens. Do not commit, push, create a pull request, use GitHub, or modify
+            .codex-issue-context.json; the workflow handles those operations after you exit.
+
+            This is one non-interactive run. If you delegate investigation, await every delegated
+            task before acting on it. Do not finish by saying that a background task is still
+            running or that you will wait for a notification: there is no later turn. When more
+            than one sound implementation exists, choose the one most consistent with this
+            codebase and explain the choice in pr_body. Use status "blocked" only when the request
+            is genuinely impossible to implement without missing information or authority.
+
+            pr_title must be an English Conventional Commit-style PR title. pr_body must be a
+            Japanese Markdown PR description with Summary and Testing sections. report must be a
+            concise Japanese issue comment explaining the result and checks run.
+
+      - name: Commit, push, and create pull request
+        id: publish
+        if: steps.codex.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          BRANCH: ${{ steps.prepare.outputs.branch }}
+        run: |
+          test -s .codex-result.json
+          STATUS="$(jq -r '.status' .codex-result.json)"
+          TITLE="$(jq -r '.pr_title' .codex-result.json)"
+          BODY_FILE="$(mktemp)"
+          REPORT_FILE="$(mktemp)"
+          jq -r '.pr_body' .codex-result.json > "$BODY_FILE"
+          jq -r '.report' .codex-result.json > "$REPORT_FILE"
+          rm -f .codex-issue-context.json .codex-result.json
+
+          if [ "$STATUS" = "blocked" ]; then
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$REPORT_FILE"
+            echo "status=blocked" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z "$(git status --porcelain)" ]; then
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$REPORT_FILE"
+            echo "status=no-changes" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          printf '\n\nFixes #%s\n' "$ISSUE_NUMBER" >> "$BODY_FILE"
+          git add -A
+          git commit -m "$TITLE"
+          git push --set-upstream origin "$BRANCH"
+          PR_URL="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" \
+            --title "$TITLE" --body-file "$BODY_FILE")"
+          printf '\n\n実装PR: %s\n' "$PR_URL" >> "$REPORT_FILE"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$REPORT_FILE"
+          echo "status=completed" >> "$GITHUB_OUTPUT"
+
+      - name: Report an automation failure
+        if: >-
+          always() &&
+          (steps.codex.outcome != 'success' || steps.publish.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "Codex の実装処理に失敗しました。ログ: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Reflect the run outcome on the issue label
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh label create "codex:failed" --repo "$GITHUB_REPOSITORY" --force \
+            --color "D73A4A" --description "The latest Codex run failed or needs input"
+          if [ "${{ steps.codex.outcome }}" = "success" ] \
+            && [ "${{ steps.publish.outcome }}" = "success" ] \
+            && [ "${{ steps.publish.outputs.status }}" != "blocked" ]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --remove-label "codex:in-progress"
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --remove-label "codex:failed" 2>/dev/null || true
+          else
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --remove-label "codex:in-progress" --add-label "codex:failed"
+          fi
