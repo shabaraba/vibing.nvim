@@ -36,6 +36,8 @@ describe("vibing.config", function()
         ".vibing/codex-permissions.toml",
         config.defaults.permissions.codex_profile_file
       )
+      assert.matches("%[permissions%.vibing%-project%.network%]", config.defaults.permissions.codex_profile_content)
+      assert.matches("enabled = true", config.defaults.permissions.codex_profile_content)
       assert.is_false(config.defaults.permissions.codex_allow_tracked_profile)
     end)
 
@@ -92,6 +94,12 @@ describe("vibing.config", function()
 
       config.setup({ permissions = { codex_allow_tracked_profile = true } })
       assert.is_true(config.get().permissions.codex_allow_tracked_profile)
+
+      config.setup({ permissions = { codex_profile_content = false } })
+      assert.equals(
+        config.defaults.permissions.codex_profile_content,
+        config.get().permissions.codex_profile_content
+      )
     end)
   end)
 

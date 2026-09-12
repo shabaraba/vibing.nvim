@@ -25,7 +25,8 @@ function M.setup(opts)
   -- Projects created by older vibing.nvim versions already have `.vibing/` but not the Codex
   -- profile introduced later. Backfill it on setup without creating `.vibing/` in unrelated
   -- directories, and never replace a file the user already owns.
-  local ok_profile, profile_error = pcall(ProjectCodexPermissions.ensure_existing, vim.fn.getcwd())
+  local ok_profile, profile_error =
+    pcall(ProjectCodexPermissions.ensure_existing, vim.fn.getcwd(), M.config.permissions.codex_profile_content)
   if not ok_profile then
     notify.warn("Could not initialize .vibing/codex-permissions.toml: " .. tostring(profile_error))
   end
