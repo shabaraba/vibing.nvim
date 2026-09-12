@@ -249,6 +249,11 @@ Full logs and metadata are kept under `<git-root>/.vibing/jobs/`. With notificat
 completed job is delivered to the originating chat as a new `## Notice` turn once that chat is
 idle.
 
+Claude and Codex receive a per-session instruction requiring `nvim_job_start` for work that must
+outlive a turn. As a deterministic fallback, vibing.nvim's PreToolUse hook rejects Bash native
+background mode and shell detachment (`&`, `nohup`, `setsid`, or `disown`) while MCP integration
+is enabled, and directs the agent back to `nvim_job_start`.
+
 ### Highlighting
 
 - **nvim_highlight_range** - Temporarily highlight a line range so the user can see which code you

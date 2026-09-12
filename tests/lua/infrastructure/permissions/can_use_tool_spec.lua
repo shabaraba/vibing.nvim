@@ -17,6 +17,38 @@ local function make_config(overrides)
 end
 
 describe("can_use_tool", function()
+  describe("Neovim-owned background-job policy", function()
+    local function decision(input, overrides)
+      return can_use_tool.can_use_tool("Bash", input, make_config(vim.tbl_extend("force", {
+        mcp_enabled = true,
+        permission_mode = "bypassPermissions",
+      }, overrides or {})))
+    end
+
+    it("denies the Bash tool's native background mode even under bypassPermissions", function()
+      local result = decision({ command = "npm run dev", run_in_background = true })
+      assert.equals("deny", result.behavior)
+      assert.is_truthy(result.message:find("nvim_job_start", 1, true))
+    end)
+
+    for _, command in ipairs({ "npm run dev &", "nohup npm run dev", "setsid npm run dev", "sleep 1&" }) do
+      it("denies detached shell command: " .. command, function()
+        assert.equals("deny", decision({ command = command }).behavior)
+      end)
+    end
+
+    local foreground_commands = { "npm test", "echo a && echo b", "echo x 2>&1", "printf 'a & b'", "printf nohup" }
+    for _, command in ipairs(foreground_commands) do
+      it("allows foreground shell command: " .. command, function()
+        assert.equals("allow", decision({ command = command }).behavior)
+      end)
+    end
+
+    it("does not require an unavailable MCP replacement", function()
+      assert.equals("allow", decision({ command = "sleep 1 &" }, { mcp_enabled = false }).behavior)
+    end)
+  end)
+
   describe("ALWAYS_ALLOWED_TOOLS (UT-PERM-010)", function()
     local always_allowed = { "Read", "Glob", "Grep", "Skill", "StructuredOutput" }
 

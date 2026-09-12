@@ -117,6 +117,11 @@ with `&`, `nohup`, or `setsid` remains tied to the CLI process tree and can be k
 turn closes. `command` is an argv array rather than a shell string, and `cwd` must stay within the
 calling CLI's Git root.
 
+For non-lightweight Claude and Codex turns, the system/developer prompt requires this tool for
+such processes. While MCP integration is enabled, the PreToolUse hook also rejects Bash's native
+`run_in_background` option and unambiguous shell detachment with `&`, `nohup`, `setsid`, or
+`disown`, returning guidance to retry with `nvim_job_start`.
+
 Neovim keeps a bounded in-memory output tail and writes the complete merged stdout/stderr stream
 plus metadata under `<git-root>/.vibing/jobs/`. `nvim_job_status` reads one job with an output tail,
 `nvim_job_list` lists the jobs owned by this Neovim instance, `nvim_job_stop` requests SIGTERM, and
