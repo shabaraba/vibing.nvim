@@ -132,7 +132,8 @@ describe("Neovim-owned background jobs", function()
       notify = "never",
     })
 
-    assert.same({ PORT = "4321" }, spawn.opts.env)
+    assert.equals("4321", spawn.opts.env.PORT)
+    assert.is_not_nil(spawn.opts.env.PATH)
     assert.equals("pending", started.readiness)
     assert.equals("running", started.status)
 
@@ -147,6 +148,14 @@ describe("Neovim-owned background jobs", function()
     assert.is_true(vim.wait(1000, function()
       return Manager.status({ job_id = started.id }).status == "exited"
     end))
+  end)
+
+  it("refuses until=ready for a job started without ready_pattern", function()
+    local started = start()
+    assert.has_error(function()
+      Manager.wait({ job_id = started.id, ["until"] = "ready" })
+    end)
+    spawn.on_exit({ code = 0, signal = 0 })
   end)
 
   it("marks a readiness timeout without pretending the still-running process exited", function()

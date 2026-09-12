@@ -298,16 +298,23 @@ function M.start(params)
   if type(params.from_bufnr) ~= "number" then
     error("from_bufnr must name the chat starting this job")
   end
-  local env = params.env
-  if env ~= nil then
-    if type(env) ~= "table" then
+  local env_overrides = params.env
+  if env_overrides ~= nil then
+    if type(env_overrides) ~= "table" then
       error("env must be an object of string values")
     end
-    for key, value in pairs(env) do
+    for key, value in pairs(env_overrides) do
       require_non_empty_string(key, "env key")
       if type(value) ~= "string" or value:find("%z") then
         error("env values must be strings without NUL bytes")
       end
+    end
+  end
+  local env
+  if env_overrides ~= nil then
+    env = vim.fn.environ()
+    for key, value in pairs(env_overrides) do
+      env[key] = value
     end
   end
   local ready_pattern = params.ready_pattern
@@ -488,6 +495,9 @@ function M.wait(params)
   local until_event = params["until"] or "exit"
   if until_event ~= "exit" and until_event ~= "ready" then
     error("until must be one of: exit, ready")
+  end
+  if until_event == "ready" and job.readiness == "not_requested" then
+    error("until=ready requires the job to have been started with ready_pattern")
   end
   local function reached()
     local exited = job.status ~= "running" and job.status ~= "starting"

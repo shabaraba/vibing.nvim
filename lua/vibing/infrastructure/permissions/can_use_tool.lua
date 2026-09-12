@@ -151,18 +151,24 @@ function M.uses_shell_backgrounding(input)
   -- as `printf 'use nohup carefully'`.
   for segment in command:gmatch("[^;|&\n]+") do
     local rest = vim.trim(segment):gsub("^%(*%s*", "")
+    local saw_wrapper = false
     while rest ~= "" do
       local word = rest:match("^(%S+)")
       local basename = word and word:match("([^/]+)$") or nil
       if basename == "nohup" or basename == "setsid" or basename == "disown" then
         return true
       end
-      if
-        basename == "sudo"
+      local is_wrapper = basename == "sudo"
         or basename == "command"
         or basename == "env"
         or (word and word:match("^[%a_][%w_]*="))
-      then
+      if is_wrapper then
+        saw_wrapper = true
+        rest = rest:match("^%S+%s+(.+)$") or ""
+      elseif saw_wrapper then
+        -- Once a wrapper (sudo/env/command/VAR=) has been seen, keep scanning past its own
+        -- flags and arguments (e.g. `sudo -u user`) rather than stopping at the first one, or
+        -- setsid/nohup/disown placed after them would never be reached.
         rest = rest:match("^%S+%s+(.+)$") or ""
       else
         break

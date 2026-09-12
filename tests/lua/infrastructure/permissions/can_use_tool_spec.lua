@@ -31,7 +31,14 @@ describe("can_use_tool", function()
       assert.is_truthy(result.message:find("nvim_job_start", 1, true))
     end)
 
-    for _, command in ipairs({ "npm run dev &", "nohup npm run dev", "setsid npm run dev", "sleep 1&" }) do
+    for _, command in ipairs({
+      "npm run dev &",
+      "nohup npm run dev",
+      "setsid npm run dev",
+      "sleep 1&",
+      "sudo -u www-data setsid npm run dev",
+      "sudo --preserve-env=PATH env FOO=bar nohup npm run dev",
+    }) do
       it("denies detached shell command: " .. command, function()
         assert.equals("deny", decision({ command = command }).behavior)
       end)
