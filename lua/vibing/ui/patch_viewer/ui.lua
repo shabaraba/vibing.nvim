@@ -5,6 +5,7 @@ local parser = require("vibing.ui.patch_viewer.parser")
 local window = require("vibing.ui.patch_viewer.window")
 local diff_mode = require("vibing.ui.patch_viewer.diff_mode")
 local files_panel = require("vibing.ui.patch_viewer.files_panel")
+local unified = require("vibing.ui.patch_viewer.unified")
 local PatchText = require("vibing.core.utils.patch_text")
 
 ---@param state Vibing.PatchViewer.State
@@ -63,6 +64,9 @@ end
 ---@param abs string
 function M._render_side_by_side(state, before, abs)
   diff_mode.leave(state)
+  -- 直前に unified を出していた時のために戻す。`win_after` は使い回されるので、
+  -- 残すと実ファイルの上に統一diffの行番号が出たままになる
+  unified.reset_window(state.win_after)
 
   local after_buf = vim.fn.bufadd(abs)
   vim.fn.bufload(after_buf)
@@ -89,25 +93,13 @@ end
 function M._render_unified(state, display, file_diff)
   diff_mode.leave(state)
 
-  local Factory = require("vibing.infrastructure.ui.factory")
-  local buf = Factory.create_buffer({
-    buftype = "nofile",
-    bufhidden = "wipe",
-    filetype = "diff",
-    modifiable = true,
-  })
-
-  local lines
-  if file_diff and file_diff ~= "" then
-    lines = vim.split(file_diff, "\n", { plain = true })
+  if ((require("vibing.config").options or {}).diff or {}).highlights == false then
+    state.buf_after = unified.render_plain(state.win_after, file_diff, display)
   else
-    lines = { "No changes for " .. display }
+    -- filetypeは拡張子だけで決まるので、ターンで削除されて実体が無いファイルでも当たる
+    local _, abs = M._resolve_selected(state)
+    state.buf_after = unified.render(state.win_after, abs or display, file_diff, display)
   end
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable = false
-
-  vim.api.nvim_win_set_buf(state.win_after, buf)
-  state.buf_after = buf
 
   -- unified を選んでいる時はBeforeペインがそもそも無い。ここに来るのは side-by-side の
   -- つもりで開けなかった時だけなので、その理由を左に書く

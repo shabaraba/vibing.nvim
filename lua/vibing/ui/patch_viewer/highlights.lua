@@ -20,6 +20,10 @@ local LINE_ALPHA = 0.16
 local TEXT_ALPHA = 0.40
 ---穴埋めの斜線。「ここには何も無い」を示すだけなので色は付けず、地に沈める
 local FILLER_ALPHA = 0.22
+---unifiedの行番号と `@@` の行。読めるが目を引かない程度に地へ寄せる
+local GUTTER_ALPHA = 0.45
+local HUNK_FG_ALPHA = 0.55
+local HUNK_BG_ALPHA = 0.07
 
 local FALLBACK = {
   bg_dark = 0x1E1E1E,
@@ -71,6 +75,16 @@ function M.define()
   vim.api.nvim_set_hl(0, "VibingDiffDelLine", { bg = M.blend(del, base, LINE_ALPHA) })
   vim.api.nvim_set_hl(0, "VibingDiffDelText", { bg = M.blend(del, base, TEXT_ALPHA) })
   vim.api.nvim_set_hl(0, "VibingDiffFiller", { bg = base, fg = M.blend(text, base, FILLER_ALPHA) })
+
+  -- unified専用。`+` / `-` はバッファから落として 'statuscolumn' に出すので、記号そのものは
+  -- 薄めずアクセントの色をそのまま使う。ここだけが「何が起きた行か」を示している
+  vim.api.nvim_set_hl(0, "VibingDiffAddSign", { fg = add })
+  vim.api.nvim_set_hl(0, "VibingDiffDelSign", { fg = del })
+  vim.api.nvim_set_hl(0, "VibingDiffGutter", { fg = M.blend(text, base, GUTTER_ALPHA) })
+  vim.api.nvim_set_hl(0, "VibingDiffHunk", {
+    fg = M.blend(text, base, HUNK_FG_ALPHA),
+    bg = M.blend(text, base, HUNK_BG_ALPHA),
+  })
 end
 
 ---@param side "before"|"after"

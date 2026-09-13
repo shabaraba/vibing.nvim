@@ -137,11 +137,28 @@ describe("patch_viewer float", function()
 
     assert.equals("unified", state.layout)
     assert.is_nil(state.win_before)
-    -- 統一diffはdiffモードではなく `filetype=diff` のテキスト1枚
+    -- 統一diffはdiffモードではなくテキスト1枚
     assert.is_false(vim.wo[state.win_after].diff)
-    assert.equals("diff", vim.bo[state.buf_after].filetype)
     assert.is_true(vim.api.nvim_win_get_width(state.win_after) > split_width)
-    assert.is_truthy(vim.api.nvim_buf_get_lines(state.buf_after, 0, 1, false)[1]:find("diff --git", 1, true))
+
+    -- 行頭の `+` / `-` はサイン列へ移してあり、バッファには素のコードだけが入る。
+    -- 残っていると、その行はもうその言語として壊れていて構文ハイライトが当たらない
+    assert.equals("text", vim.bo[state.buf_after].filetype)
+    assert.same(
+      { "@@ -1,3 +1,4 @@", "one", "two", "TWO", "three", "four" },
+      vim.api.nvim_buf_get_lines(state.buf_after, 0, -1, false)
+    )
+    assert.is_truthy(vim.wo[state.win_after].statuscolumn:find("statuscolumn()", 1, true))
+  end)
+
+  it("puts the window's own gutter back when it leaves unified", function()
+    open_split()
+    PatchViewer._toggle_layout()
+    PatchViewer._toggle_layout()
+
+    -- side-by-side は行番号も折り畳み列も要る。戻し忘れると実ファイルの上に
+    -- 統一diffの行番号が出たままになる
+    assert.equals("", vim.wo[state.win_after].statuscolumn)
   end)
 
   it("puts the real file back when it switches to side-by-side again", function()

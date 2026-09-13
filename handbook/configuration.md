@@ -1192,7 +1192,8 @@ diff = {
   layout = "split", -- "split" / "unified" — which view the float opens on.
                     -- `s` toggles it; the choice sticks until Neovim exits.
   highlights = true,-- Colour the float's diff panes instead of using the
-                    -- colourscheme's DiffAdd/DiffChange/DiffText.
+                    -- colourscheme's DiffAdd/DiffChange/DiffText. `false` also
+                    -- puts the unified view back to plain `filetype=diff` text.
   fill_char = "╱",  -- What fills deleted lines in the float's diff panes.
                     -- "" turns it off; anything longer than one character is
                     -- refused with a warning ('fillchars' would reject it).
@@ -1208,14 +1209,29 @@ scratch buffer has no name to infer it from), `]c` / `[c` move between changes, 
 are a per-hunk revert. `r` reverts the selected file, `R` the whole patch, `<CR>` / `o` in the
 file list opens the real file in a normal window and closes the float.
 
-`s` switches to a **unified** view: the Before pane is closed and one `filetype=diff` buffer takes
-both panes' width, with the file list unchanged beside it. Nothing is in diff mode there, so `]c`,
-`do` and the folds do not apply — the Files pane's help list reflects that, and its `s` line names
-what pressing it will switch _to_ rather than what you are looking at now. The choice is a view
-preference, so it is remembered for the rest of the Neovim session rather than reset on each open;
-`diff.layout` picks the starting side. An entry the float cannot show side by side falls back to
-the same unified text without changing the layout, which is why the Before pane then explains
-itself instead of disappearing.
+`s` switches to a **unified** view: the Before pane is closed and one buffer takes both panes'
+width, with the file list unchanged beside it. Nothing is in diff mode there, so `]c`, `do` and the
+folds do not apply — the Files pane's help list reflects that, and its `s` line names what pressing
+it will switch _to_ rather than what you are looking at now. The choice is a view preference, so it
+is remembered for the rest of the Neovim session rather than reset on each open; `diff.layout`
+picks the starting side. An entry the float cannot show side by side falls back to the same unified
+text without changing the layout, which is why the Before pane then explains itself instead of
+disappearing.
+
+The unified buffer holds **the source with its `+` / `-` column removed**, not the patch text. A
+line carrying a leading `+` is no longer valid in its own language, so nothing would highlight it;
+stripping the column lets the real file's `filetype` be set and the code read as code. The markers
+move to a `'statuscolumn'` that also carries each line's number in the file it belongs to —
+deletions numbered from before the turn, everything else from after. Added and removed lines then
+get the same background tint as the side-by-side panes, and the changed characters inside them the
+stronger one. Nothing here touches `.vibing/patches/*.patch`; `r` and `R` still hand the file on
+disk to `git apply --reverse`, and the `Patch:` line in the chat still points at a real patch.
+
+Side by side gets its per-character spans from `'diffopt'`'s `inline:char`, which needs two windows
+and so cannot run here. `char_diff.lua` produces the same thing by handing `vim.diff()` a string
+with one character per line. It only runs where a run of deleted lines is followed by an equally
+long run of added ones: pairing runs of different lengths off the top matches unrelated lines
+against each other and paints confident, wrong spans, so those lines keep the line tint alone.
 
 The right pane holds the **real file buffer**, not a copy — that is what makes `do` and editing
 work. Two consequences are deliberate. The viewer's keys (`q`, `<Esc>`, `<Tab>`) are attached to
@@ -1244,7 +1260,9 @@ own diff groups usually cannot do this job. Most set a **foreground** on `DiffAd
 which flattens every changed line to one colour and throws the syntax highlighting away — the
 opposite of what a diff viewer wants. vibing defines background-only groups blended from the
 colourscheme's own `Normal` background and its `Added` / `Removed` accents (line at 16%, changed
-characters at 40%), so the result still belongs to your theme.
+characters at 40%), so the result still belongs to your theme. Both views use the same groups, and
+setting it to `false` returns each to its colourscheme: side by side to the theme's diff groups,
+unified to plain `filetype=diff` patch text.
 
 Vim's diff mode has no colour for "a deleted line": a line present in only one of the two buffers
 is `DiffAdd` in **both** windows, and `DiffDelete` is only ever the filler. `winhighlight` is

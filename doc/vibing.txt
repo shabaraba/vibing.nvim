@@ -422,13 +422,20 @@ spanning both panes; the file list stays either way. The side you pick is
 remembered until Neovim exits, and `diff.layout` (`"split"` / `"unified"`)
 sets which one a fresh Neovim starts on.
 
+The unified view shows the source itself, not the patch text: the `+` / `-`
+column moves into the gutter, beside the line's number in the file it belongs
+to, so the code is syntax highlighted and tinted the same way the side-by-side
+panes are. The patch file on disk is unchanged, so `r` / `R` and `git apply`
+still work off it.
+
 While the float is open, `diff.fill_char` (default `"╱"`) replaces the `-`
 Neovim otherwise fills deleted lines with, and `diff.highlights` (default
-`true`) colours the two panes itself: background only, so syntax highlighting
-survives, with the left pane red and the right pane green. Both are scoped to
+`true`) colours the panes itself: background only, so syntax highlighting
+survives, with removed lines red and added ones green. Both are scoped to
 the float's own windows; your colourscheme is never written to. Set
 `diff.highlights = false` to use the colourscheme's own `DiffAdd` /
-`DiffChange` / `DiffText`. |vibing-config| has the rest.
+`DiffChange` / `DiffText`, and to show the unified view as plain patch text.
+|vibing-config| has the rest.
 
 Below `### Modified Files` each turn also writes a `Patch: <path>` line naming
 the patch file it saved. `gd` anywhere in the section opens it; `gf` with the
