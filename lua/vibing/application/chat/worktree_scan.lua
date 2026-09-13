@@ -21,10 +21,11 @@ function M.list(cwd)
   for line in (result.stdout or ""):gmatch("[^\r\n]+") do
     local path = line:match("^worktree (.+)$")
     if path then
-      -- `Git.resolve_working_dir`（`unbind`が比較する側）はシンボリックリンクを
-      -- 実体パスに解決してから比べる。ここも同じ基準で正規化しないと、リポジトリが
-      -- シンボリックリンク越しに見えている環境で一致しない
-      paths[vim.fn.resolve(path)] = true
+      -- 正規化はしない。`git worktree list` も `git rev-parse --show-toplevel` も
+      -- シンボリックリンク越しに呼ばれても実体パスを返すので、`unbind` が比べる
+      -- 「gitルート + working_dir」とはこのまま揃う（`Git.resolve_working_dir` は
+      -- 境界判定にだけ実体パスを使い、返り値は連結したままの文字列）
+      paths[path] = true
     end
   end
   return paths
