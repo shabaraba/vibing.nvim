@@ -117,7 +117,20 @@ function M.set_after_title(state, path)
   local title = path or "After (working tree)"
   local room = vim.api.nvim_win_get_width(state.win_after) - 4
   if room > 1 and vim.fn.strwidth(title) > room then
-    title = "…" .. vim.fn.strcharpart(title, vim.fn.strchars(title) - (room - 1))
+    -- 文字数ではなく表示幅で切る。CJKなど幅2の文字が混じると文字数と表示幅がずれ、
+    -- 文字数だけで数えると`room`列に収まらなかったり、strcharpartへ渡す開始位置が
+    -- 負になって「末尾から数える」Vimの挙動に化けたりする
+    local budget = room - 1
+    local chars = vim.fn.split(title, "\\zs")
+    local tail, width = {}, 0
+    for i = #chars, 1, -1 do
+      width = width + vim.fn.strwidth(chars[i])
+      if width > budget then
+        break
+      end
+      table.insert(tail, 1, chars[i])
+    end
+    title = "…" .. table.concat(tail)
   end
 
   pcall(vim.api.nvim_win_set_config, state.win_after, { title = " " .. title .. " ", title_pos = "center" })

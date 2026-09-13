@@ -1240,8 +1240,8 @@ is something you want while reading the diff and not only from the file list; an
 An entry with no real file to show — a file the turn deleted, a binary diff, or a pre-`base:`
 header patch — falls back to the unified diff text in the right pane.
 
-Three panes need width. Below roughly 120 columns the two diff panes get cramped; `viewer =
-"mini"` is the better fit on a narrow screen. The file list adapts by showing the basename only —
+Three panes need width. Below roughly 120 columns the two diff panes get cramped; toggle to
+unified (`s`) for a narrow screen. The file list adapts by showing the basename only —
 the full path moves to the right pane's title, truncated from the left so the filename survives.
 
 #### What the float does to diff options

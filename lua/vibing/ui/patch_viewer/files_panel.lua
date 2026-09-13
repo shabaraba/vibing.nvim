@@ -97,7 +97,19 @@ function M._entry(state, idx, width)
   local name = vim.fn.fnamemodify(path, ":t")
   local room = math.max(1, width - lead_width - tail_width - 1)
   if vim.fn.strwidth(name) > room then
-    name = vim.fn.strcharpart(name, 0, math.max(1, room - 1)) .. "…"
+    -- 文字数ではなく表示幅で切る。CJKなど幅2の文字が混じる名前は文字数のほうが少ないので、
+    -- 文字数で切ると`room`列に収まらないまま "…" が足されて行がペイン幅からはみ出す
+    local budget = math.max(1, room - 1)
+    local chars = vim.fn.split(name, "\\zs")
+    local head, w = {}, 0
+    for _, char in ipairs(chars) do
+      w = w + vim.fn.strwidth(char)
+      if w > budget then
+        break
+      end
+      table.insert(head, char)
+    end
+    name = table.concat(head) .. "…"
   end
 
   local segments = {}

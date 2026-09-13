@@ -21,7 +21,10 @@ function M.list(cwd)
   for line in (result.stdout or ""):gmatch("[^\r\n]+") do
     local path = line:match("^worktree (.+)$")
     if path then
-      paths[path] = true
+      -- `Git.resolve_working_dir`（`unbind`が比較する側）はシンボリックリンクを
+      -- 実体パスに解決してから比べる。ここも同じ基準で正規化しないと、リポジトリが
+      -- シンボリックリンク越しに見えている環境で一致しない
+      paths[vim.fn.resolve(path)] = true
     end
   end
   return paths

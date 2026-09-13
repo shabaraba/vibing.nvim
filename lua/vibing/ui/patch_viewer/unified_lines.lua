@@ -97,17 +97,15 @@ function M.build(file_diff)
     elseif line:sub(1, 1) == "-" then
       table.insert(out, { text = line:sub(2), kind = "del", lnum = old_lnum })
       old_lnum = old_lnum + 1
+    elseif line == "" then
+      -- patch末尾の改行が生む空行。文脈行は必ず先頭に空白がつくので、これは中身ではなく
+      -- 分割の余り（`sub(2)` すると本物の空文脈行 " " も "" になり見分けがつかなくなる）
     else
       -- 文脈行。空行が本当に空で来ることがあるので `sub(2)` に任せる
       table.insert(out, { text = line:sub(2), kind = "context", lnum = new_lnum })
       old_lnum = old_lnum + 1
       new_lnum = new_lnum + 1
     end
-  end
-
-  -- patch末尾の改行が空の文脈行になって、最後に1行余る
-  if #out > 0 and out[#out].kind == "context" and out[#out].text == "" then
-    table.remove(out)
   end
 
   pair_runs(out)

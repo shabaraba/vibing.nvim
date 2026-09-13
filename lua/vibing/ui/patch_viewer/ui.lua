@@ -14,8 +14,6 @@ function M.render_all(state)
   M.render_diff_panes(state)
 end
 
-M.render_files_panel = files_panel.render
-
 ---選択中のファイルについて、patchが指す絶対パスと生のパスを解決する
 ---@param state Vibing.PatchViewer.State
 ---@return string? raw patch内表記
