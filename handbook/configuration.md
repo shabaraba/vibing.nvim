@@ -1139,7 +1139,11 @@ git tree object, and compares it against a second snapshot once the response com
 that only reads takes no snapshot, and the two fallback cases below use a lighter mechanism. The
 resulting patch is stored under `.vibing/patches/` and summarised in the chat as a one-line
 `### Modified Files` section (`3 files changed: a.lua, b.lua, c.lua`); `gd` anywhere in that
-section opens the patch viewer, whose own file list is where you pick between them.
+section opens the patch viewer, whose own file list is where you pick between them. Under it, a
+plain `Patch: <path>` line names the patch file the turn saved. It used to be an HTML comment;
+it is visible now because the patch is something to reach for, not an implementation detail. Old
+chats keep the hidden form and are still read — `patch_finder.lua` accepts both, and is the only
+place either spelling is defined.
 
 Because the comparison is between two states of the whole tree, it does not matter which tool
 made the change — **a `sed -i`, a `mv`, or a formatter run through Bash shows up the same way an
@@ -1187,6 +1191,8 @@ diff = {
                     -- "auto" is the float; "mini" is the inline view.
   layout = "split", -- "split" / "unified" — which view the float opens on.
                     -- `s` toggles it; the choice sticks until Neovim exits.
+  highlights = true,-- Colour the float's diff panes instead of using the
+                    -- colourscheme's DiffAdd/DiffChange/DiffText.
   fill_char = "╱",  -- What fills deleted lines in the float's diff panes.
                     -- "" turns it off; anything longer than one character is
                     -- refused with a warning ('fillchars' would reject it).
@@ -1232,6 +1238,22 @@ you would align them by hand, `indent-heuristic`, and `inline:char` so the chang
 line is highlighted rather than the whole line. Keys the list does not name — `iwhite`, `context`,
 anything else you set — are carried through unchanged, and each key is applied separately so an
 older Neovim that rejects one still gets the rest.
+
+`diff.highlights` (default `true`) then colours the two panes itself, because the colourscheme's
+own diff groups usually cannot do this job. Most set a **foreground** on `DiffAdd` / `DiffChange`,
+which flattens every changed line to one colour and throws the syntax highlighting away — the
+opposite of what a diff viewer wants. vibing defines background-only groups blended from the
+colourscheme's own `Normal` background and its `Added` / `Removed` accents (line at 16%, changed
+characters at 40%), so the result still belongs to your theme.
+
+Vim's diff mode has no colour for "a deleted line": a line present in only one of the two buffers
+is `DiffAdd` in **both** windows, and `DiffDelete` is only ever the filler. `winhighlight` is
+window-local, which is what makes the VSCode look reachable — the Before pane points `DiffAdd`,
+`DiffChange` and `DiffText` at the red set and the After pane at the green set, so the same diff
+group reads as "removed" on the left and "added" on the right. `DiffTextAdd` (Neovim 0.11, the
+inline span that exists on only one side) must be remapped alongside `DiffText`, or that one span
+keeps the colourscheme's colour and stands out wrongly. Because it all travels through
+`winhighlight`, your colourscheme is never written to and closing the float leaves nothing behind.
 
 `'diffopt'` is a **global** option, so this is a real mutation of your session: the original string
 is saved when the first pane enters diff mode and written back when the float closes. Nothing else

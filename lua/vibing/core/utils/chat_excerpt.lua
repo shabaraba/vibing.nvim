@@ -216,6 +216,8 @@ end
 local function clean_with(text, glyphs, allow_glyph_prefix)
   -- HTMLコメントは複数行にまたがりうるので行分割の前に落とす
   text = text:gsub("<!%-%-.-%-%->", "")
+  -- patch行は隠しコメントをやめて素の行になった。落とさないとタイトルがパスになる
+  text = text:gsub("\n?Patch:%s+[^%s\n]+%.patch%s*", "\n")
 
   local out = {}
   local lines = vim.split(text, "\n", { plain = true })
@@ -276,7 +278,7 @@ end
 
 ---1メッセージ分の描画テキストから、タイトル生成に意味のある地の文だけを残す。
 ---落とすもの: ツール呼び出しヘッダーとその複数行引数、ツール結果ブロック、フェンス済みコードブロック、
----HTMLコメント（patch/subagent マーカー等）、`@file:` コンテキスト行、
+---HTMLコメント（subagent マーカー等）、`Patch:` 行、`@file:` コンテキスト行、
 ---レート制限などのシステム通知、ツール承認UIのブロック。
 ---
 ---assistant の描画テキスト向け。user の発言には `M.clean_user` を使う。

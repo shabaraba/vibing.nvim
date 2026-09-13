@@ -809,7 +809,9 @@ function M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_conten
     if f then
       f:write(patch_content)
       f:close()
-      callbacks.append_chunk("\n<!-- patch: " .. patch_path .. " -->\n")
+      -- HTMLコメントではなく素の行で出す。patchはこれから前面に出る扱いなので、
+      -- 読み手に見えている必要がある。旧形式の `<!-- patch: ... -->` も読めるままにしてある
+      callbacks.append_chunk("\nPatch: " .. patch_path .. "\n")
     else
       vim.notify("[vibing] Failed to write patch file: " .. patch_path, vim.log.levels.WARN)
     end

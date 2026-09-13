@@ -423,8 +423,16 @@ remembered until Neovim exits, and `diff.layout` (`"split"` / `"unified"`)
 sets which one a fresh Neovim starts on.
 
 While the float is open, `diff.fill_char` (default `"╱"`) replaces the `-`
-Neovim otherwise fills deleted lines with. Set it to `""` to turn it off, or
-to any single character. |vibing-config| has the rest.
+Neovim otherwise fills deleted lines with, and `diff.highlights` (default
+`true`) colours the two panes itself: background only, so syntax highlighting
+survives, with the left pane red and the right pane green. Both are scoped to
+the float's own windows; your colourscheme is never written to. Set
+`diff.highlights = false` to use the colourscheme's own `DiffAdd` /
+`DiffChange` / `DiffText`. |vibing-config| has the rest.
+
+Below `### Modified Files` each turn also writes a `Patch: <path>` line naming
+the patch file it saved. `gd` anywhere in the section opens it; `gf` with the
+cursor on the path opens the patch file itself.
 
 `diff.viewer = "mini"` uses mini.diff instead: no extra window, the turn's
 changes drawn on the real file, with `[h` / `]h` and `gH` to reset a hunk.

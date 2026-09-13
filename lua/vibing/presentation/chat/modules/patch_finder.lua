@@ -2,7 +2,24 @@
 local M = {}
 
 local MODIFIED_FILES_PATTERN = "^###? Modified Files"
-local PATCH_COMMENT_PATTERN = "<!%-%- patch: ([^%s]+) %-%-?>"
+---patch行は素の `Patch: <path>` で書かれる。`<!-- patch: ... -->` は隠していた頃の形で、
+---保存済みのチャットから今も開かれるので読めるままにしておく
+local PATCH_PATTERNS = {
+  "^Patch:%s+([^%s]+)%s*$",
+  "<!%-%- patch: ([^%s]+) %-%-?>",
+}
+
+---@param line string
+---@return string?
+function M.parse_patch_line(line)
+  for _, pattern in ipairs(PATCH_PATTERNS) do
+    local path = line:match(pattern)
+    if path then
+      return path
+    end
+  end
+  return nil
+end
 local NEXT_ASSISTANT_PATTERN = "^## %d%d%d%d%-%d%d%-%d%d .* Assistant"
 local HEADER_PATTERN = "^##[^#]"
 
@@ -43,7 +60,7 @@ function M.find_nearest_patch(buf)
 
   for i = section_start, #lines do
     local line = lines[i]
-    local patch_filename = line:match(PATCH_COMMENT_PATTERN)
+    local patch_filename = M.parse_patch_line(line)
     if patch_filename then
       return patch_filename
     end
@@ -78,33 +95,6 @@ function M.get_session_id(buf)
   end
 
   return nil
-end
-
----@param buf number
----@return string[]
-function M.get_modified_files_in_section(buf)
-  local lines = get_buffer_lines(buf)
-  if #lines == 0 then return {} end
-
-  local cursor_line = vim.api.nvim_win_get_cursor(0)[1]
-  local section_start = find_modified_files_section(lines, cursor_line)
-  if not section_start then return {} end
-
-  local files = {}
-  for i = section_start + 1, #lines do
-    local line = lines[i]
-    if line:match(HEADER_PATTERN) or line:match("^# ") then
-      break
-    end
-    if not line:match("<!%-%-") then
-      local trimmed = vim.trim(line)
-      if trimmed ~= "" and not trimmed:match("^%-%-") and not trimmed:match("^%.%.%.") then
-        table.insert(files, trimmed)
-      end
-    end
-  end
-
-  return files
 end
 
 return M

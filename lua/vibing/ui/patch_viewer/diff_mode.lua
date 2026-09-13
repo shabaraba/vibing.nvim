@@ -8,6 +8,8 @@
 ---`fillchars` は window-local なので、ペインに直接置けば外へ漏れない。
 local M = {}
 
+local highlights = require("vibing.ui.patch_viewer.highlights")
+
 ---差し替えるキー。古いNeovimが知らないものは 'E474' になるので1つずつ足す
 ---（`inline:char` は 0.11以降、`linematch` は 0.9以降）
 local OVERRIDES = {
@@ -85,13 +87,27 @@ function M.enter(state)
     state.saved_diffopt = M.apply()
   end
 
-  local fill_char = (((require("vibing.config").options or {}).diff or {}).fill_char) or "╱"
+  local diff_config = ((require("vibing.config").options or {}).diff or {})
+  local fill_char = diff_config.fill_char or "╱"
+  local recolor = diff_config.highlights ~= false
 
-  for _, win in ipairs(panes(state)) do
-    vim.api.nvim_win_call(win, function()
-      vim.cmd("diffthis")
-    end)
-    M.set_fill_char(win, fill_char)
+  if recolor then
+    -- 開くたびに引き直す。こうしておけば `ColorScheme` を監視しなくても今の配色に追従する
+    highlights.define()
+  end
+
+  -- 割り当てが左右で違うので、どちらのペインかを持ったまま回す
+  for _, pane in ipairs({ { state.win_before, "before" }, { state.win_after, "after" } }) do
+    local win, side = pane[1], pane[2]
+    if win and vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_call(win, function()
+        vim.cmd("diffthis")
+      end)
+      M.set_fill_char(win, fill_char)
+      if recolor then
+        highlights.apply(win, side)
+      end
+    end
   end
 end
 

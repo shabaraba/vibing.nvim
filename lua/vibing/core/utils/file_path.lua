@@ -37,6 +37,12 @@ function M.is_cursor_on_file_path(buf)
     return nil
   end
 
+  -- `Patch: /path/to.patch` も同様。行そのものはパスではないので弾き、`<cfile>` 経路に回す。
+  -- そうするとパスの上で `gf` を押せばpatchファイルが普通に開く
+  if trimmed_line:match("^Patch:%s") then
+    return nil
+  end
+
   -- 後方に "### Modified Files" ヘッダーを探す
   local found_modified_files_header = false
   for i = row - 1, 1, -1 do

@@ -12,6 +12,10 @@
 ---  切り替えた側がそのNeovimのあいだ覚えられる
 ---@field fill_char string diffモードで削除行を埋める文字（既定: "╱"）。Neovimの既定は "-" で
 ---  画面が横線で埋まる。フォントに無ければ "" で無効化するか好きな1文字に変える
+---@field highlights boolean フロートのdiffペインを独自配色にする（既定: true）。前景色を触らず
+---  背景だけを着色するので構文ハイライトが残り、左が赤・右が緑になる。`winhighlight` で
+---  ペインにだけ当てるため、カラースキームには影響しない。false でカラースキームの
+---  `DiffAdd` / `DiffChange` / `DiffText` をそのまま使う
 
 ---@class Vibing.GradientConfig
 ---グラデーションアニメーション設定
@@ -528,6 +532,7 @@ M.defaults = {
     viewer = "auto",
     layout = "split",
     fill_char = "╱",
+    highlights = true,
   },
   permissions = {
     mode = "acceptEdits",
