@@ -12,6 +12,12 @@ package-lock.json.backup
 # (the Claude equivalent lives under .vibing/, already ignored above)
 .grok/
 
+# Machine-local mirrors of CLAUDE.md / .claude/ generated for other CLIs. `.codex/hooks.json`
+# hard-codes an absolute path to this checkout, so none of it is portable.
+AGENTS.md
+.agents/
+.codex/
+
 # Serena MCP memory
 .serena/
 
