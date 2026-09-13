@@ -116,4 +116,35 @@ describe("patch_viewer.unified_lines", function()
     assert.same({}, UnifiedLines.build(nil))
     assert.same({}, UnifiedLines.build(""))
   end)
+
+  it("keeps a hunk's last context line when that line is blank", function()
+    local rows = UnifiedLines.build(table.concat({
+      "@@ -1,3 +1,3 @@",
+      "-old",
+      "+new",
+      " keep",
+      " ",
+    }, "\n"))
+
+    -- `readfile` がpatch末尾の改行を落とすので、最後の空文脈行を「分割の余り」として
+    -- 捨てると、空行で終わるファイルの最終行がそのまま消える
+    assert.same({ "hunk", "del", "add", "context", "context" }, kinds(rows))
+    assert.equals("", rows[5].text)
+    assert.equals(3, rows[5].lnum)
+  end)
+
+  it("counts a blank context line that arrived with its trailing space stripped", function()
+    local rows = UnifiedLines.build(table.concat({
+      "@@ -1,4 +1,4 @@",
+      " keep",
+      "",
+      "-old",
+      "+new",
+    }, "\n"))
+
+    -- 捨てると以降の行番号が1つずれる
+    assert.same({ "hunk", "context", "context", "del", "add" }, kinds(rows))
+    assert.equals(3, rows[4].lnum)
+    assert.equals(3, rows[5].lnum)
+  end)
 end)
