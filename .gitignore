@@ -11,6 +11,7 @@ package-lock.json.backup
 # Generated Grok PreToolUse hook, written by grok_settings_generator at request time
 # (the Claude equivalent lives under .vibing/, already ignored above)
 .grok/
+.codex/
 
 # Serena MCP memory
 .serena/
