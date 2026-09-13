@@ -39,7 +39,7 @@ Features:~
   • Tool approval and multiple-choice questions rendered in the buffer
   • An MCP server that lets the CLI read and drive the running Neovim
   • Per-request diffs (a git tree snapshot per turn, so `sed -i` and
-    formatters count too), viewable with `gd` on a file path in the chat
+    formatters count too), viewable with `gd` in the chat
 
 ==============================================================================
 2. REQUIREMENTS                                          *vibing-requirements*
@@ -340,13 +340,6 @@ Scheduled requests:~
     every buffer. The notes are virtual text only — no file is modified, and
     unloading a buffer clears its own notes anyway.
 
-                                                          *:VibingDiffClear*
-:VibingDiffClear
-    Remove the inline turn diffs `gd` set with mini.diff from every buffer.
-    Nothing is written: the diff is reference text held against the buffer,
-    so clearing it only stops the highlighting. `:edit` on the file does the
-    same thing as a side effect of reloading it.
-
                                                         *:VibingDebugAnalyze*
 :VibingDebugAnalyze
                                                            *:VibingDebugHelp*
@@ -406,15 +399,43 @@ In a chat buffer:~
     gx          Open the URL on the current line in a browser
     q           Close the chat window
 
-`gd` has two viewers, chosen by `diff.viewer` (default `"auto"`). With
-mini.diff installed it opens the real file and shows that turn's changes on
-it, so mini.diff's own mappings apply: `[h` / `]h` to move between hunks and
-`gH` to reset one, which is a per-hunk revert of what the agent did. Clear it
-with |:VibingDiffClear|. Without mini.diff — or with `diff.viewer = "patch"`
-— it opens a float listing the turn's files with a diff preview, where `r`
-reverts the selected file and `R` the whole patch. When no patch exists for
-the turn at all, both fall back to a plain `git diff` against HEAD, which is
-not limited to that turn's changes.
+`gd` opens a float with three panes: the turn's files on the left, with each
+one's icon and `+N -M`, and that file's before/after side by side in Neovim's
+own diff mode. Both sides are syntax highlighted, `]c` / `[c` move between
+changes, `zo` / `zc` open and close the folds over unchanged code, and
+`do` / `dp` are a per-hunk revert of what the agent did. The right pane is
+the real file, so editing there edits the file; `r` reverts the selected
+file, `R` the whole patch, and `<CR>` or `o` in the file list opens the real
+file in a normal window. The diff lives on the float's windows only, so
+closing it leaves no trace.
+
+`s` in the float switches between the side-by-side view and one unified diff
+spanning both panes; the file list stays either way. The side you pick is
+remembered until Neovim exits, and `diff.layout` (`"split"` / `"unified"`)
+sets which one a fresh Neovim starts on.
+
+The unified view shows the source itself, not the patch text: the `+` / `-`
+column moves into the gutter, beside the line's number in the file it belongs
+to, so the code is syntax highlighted and tinted the same way the side-by-side
+panes are. The patch file on disk is unchanged, so `r` / `R` and `git apply`
+still work off it.
+
+While the float is open, `diff.fill_char` (default `"╱"`) replaces the `-`
+Neovim otherwise fills deleted lines with, and `diff.highlights` (default
+`true`) colours the panes itself: background only, so syntax highlighting
+survives, with removed lines red and added ones green. Both are scoped to
+the float's own windows; your colourscheme is never written to. Set
+`diff.highlights = false` to use the colourscheme's own `DiffAdd` /
+`DiffChange` / `DiffText`, and to show the unified view as plain patch text.
+|vibing-config| has the rest.
+
+Below `### Modified Files` a turn that saved a patch also writes a
+`Patch: <path>` line naming it. `gd` anywhere in the section opens it; `gf`
+with the cursor on the path opens the patch file itself.
+
+When no patch exists for the turn at all, `gd` shows the diff against HEAD
+instead, which is not limited to that turn's changes — it says so when it
+does.
 
 `<CR>` asks before sending in two cases, and sends normally otherwise. While
 the project has a usage limit on record it offers to park the message until

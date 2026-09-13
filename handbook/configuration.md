@@ -1137,15 +1137,20 @@ keymaps = {
 Each turn that runs a tool capable of touching a file takes a snapshot of the working tree as a
 git tree object, and compares it against a second snapshot once the response completes. A turn
 that only reads takes no snapshot, and the two fallback cases below use a lighter mechanism. The
-resulting patch is stored under `.vibing/patches/` and listed in the chat as
-`### Modified Files`; `gd` on one of those paths shows it.
+resulting patch is stored under `.vibing/patches/` and summarised in the chat as a one-line
+`### Modified Files` section (`3 files changed: a.lua, b.lua, c.lua`); `gd` anywhere in that
+section opens the patch viewer, whose own file list is where you pick between them. Under it, a
+plain `Patch: <path>` line names the patch file the turn saved. It used to be an HTML comment;
+it is visible now because the patch is something to reach for, not an implementation detail. Old
+chats keep the hidden form and are still read — `patch_finder.lua` accepts both, and is the only
+place either spelling is defined.
 
 Because the comparison is between two states of the whole tree, it does not matter which tool
 made the change — **a `sed -i`, a `mv`, or a formatter run through Bash shows up the same way an
 `Edit` does**. Untracked files matched by `.gitignore` are excluded (that is what keeps the cost
 down) — a file that is already tracked still shows its changes even if it matches an ignore
 pattern, because `.gitignore` only governs what gets added. An ignored file that a write tool
-reported anyway is still listed under `### Modified Files`, just without a patch section.
+reported anyway is still counted in `### Modified Files`, just without a patch section.
 vibing.nvim's own `.vibing/` directory is the exception: it is excluded from both the snapshot and
 the tool-event completion, whether or not you have git-ignored it — the chat files live there and
 would otherwise report themselves as your changes.
@@ -1180,38 +1185,113 @@ When the fallback has nothing either, vibing.nvim says so rather than showing an
 ```lua
 diff = {
   tool = "auto",    -- "auto" / "git" — currently the same thing. Kept as a hook for
-                    -- future backends; `gd` falls back to a plain `git diff` when a
-                    -- turn has no patch file (e.g. an old chat reopened).
-  viewer = "auto",  -- "auto" / "mini" / "patch" — how `gd` renders that patch.
+                    -- future backends; `gd` shows the diff against HEAD when a turn
+                    -- has no patch file (e.g. an old chat reopened), and says so.
+  layout = "split", -- "split" / "unified" — which view the float opens on.
+                    -- `s` toggles it; the choice sticks until Neovim exits.
+  highlights = true,-- Colour the float's diff panes instead of using the
+                    -- colourscheme's DiffAdd/DiffChange/DiffText. `false` also
+                    -- puts the unified view back to plain `filetype=diff` text.
+  fill_char = "╱",  -- What fills deleted lines in the float's diff panes.
+                    -- "" turns it off; anything longer than one character is
+                    -- refused with a warning ('fillchars' would reject it).
 }
 ```
 
 ### How `gd` renders a patch
 
-`viewer = "patch"` is the built-in float: the turn's files on the left, a diff preview on the
-right, `r` to revert the selected file and `R` to revert the whole patch.
+`gd` opens the built-in float. Three panes: the turn's files on the
+left, then that file's pre-turn text and the real file side by side in Neovim's own diff mode.
+Both sides are syntax highlighted (the left pane borrows the right one's `filetype`, since a
+scratch buffer has no name to infer it from), `]c` / `[c` move between changes, and `do` / `dp`
+are a per-hunk revert. `r` reverts the selected file, `R` the whole patch, `<CR>` / `o` in the
+file list opens the real file in a normal window and closes the float.
 
-`viewer = "mini"` needs [mini.diff](https://github.com/nvim-mini/mini.diff). It opens the real
-file instead and hands mini.diff the pre-turn text as that buffer's reference, so the change is
-shown on the file you actually edit. mini.diff's own mappings then apply — `[h` / `]h` to move
-between hunks, `gH` to reset one. That reset **is** a per-hunk revert of the agent's change, which
-the float cannot do: mini.diff defines reset as "replace this range with the reference text", with
-no involvement from its source. `:VibingDiffClear` takes the reference back off.
+`s` switches to a **unified** view: the Before pane is closed and one buffer takes both panes'
+width, with the file list unchanged beside it. Nothing is in diff mode there, so `]c`, `do` and the
+folds do not apply — the Files pane's help list reflects that, and its `s` line names what pressing
+it will switch _to_ rather than what you are looking at now. The choice is a view preference, so it
+is remembered for the rest of the Neovim session rather than reset on each open; `diff.layout`
+picks the starting side. An entry the float cannot show side by side falls back to the same unified
+text without changing the layout, which is why the Before pane then explains itself instead of
+disappearing.
 
-The pre-turn text is recovered by reverse-applying the patch to a throwaway copy of the file
+The unified buffer holds **the source with its `+` / `-` column removed**, not the patch text. A
+line carrying a leading `+` is no longer valid in its own language, so nothing would highlight it;
+stripping the column lets the real file's `filetype` be set and the code read as code. The markers
+move to a `'statuscolumn'` that also carries each line's number in the file it belongs to —
+deletions numbered from before the turn, everything else from after. Added and removed lines then
+get the same background tint as the side-by-side panes, and the changed characters inside them the
+stronger one. Nothing here touches `.vibing/patches/*.patch`; `r` and `R` still hand the file on
+disk to `git apply --reverse`, and the `Patch:` line in the chat still points at a real patch.
+
+Side by side gets its per-character spans from `'diffopt'`'s `inline:char`, which needs two windows
+and so cannot run here. `char_diff.lua` produces the same thing by handing `vim.diff()` a string
+with one character per line. It only runs where a run of deleted lines is followed by an equally
+long run of added ones: pairing runs of different lengths off the top matches unrelated lines
+against each other and paints confident, wrong spans, so those lines keep the line tint alone.
+
+The right pane holds the **real file buffer**, not a copy — that is what makes `do` and editing
+work. Two consequences are deliberate. The viewer's keys (`q`, `<Esc>`, `<Tab>`) are attached to
+that buffer while the float is open and removed when it closes, so `q` is not left shadowed — `s`
+is on that list too, the one single-letter key deliberately taken there, because switching views
+is something you want while reading the diff and not only from the file list; and
+`diff` is window-local, so closing the float leaves the file with no trace of having been viewed.
+An entry with no real file to show — a file the turn deleted, a binary diff, or a pre-`base:`
+header patch — falls back to the unified diff text in the right pane.
+
+Three panes need width. Below roughly 120 columns the two diff panes get cramped; `viewer =
+"mini"` is the better fit on a narrow screen. The file list adapts by showing the basename only —
+the full path moves to the right pane's title, truncated from the left so the filename survives.
+
+#### What the float does to diff options
+
+Neovim's built-in diff is legible or not almost entirely because of `'diffopt'`, so the float sets
+its own while it is open: `algorithm:histogram` and `linematch:60` for hunks that line up the way
+you would align them by hand, `indent-heuristic`, and `inline:char` so the changed span inside a
+line is highlighted rather than the whole line. Keys the list does not name — `iwhite`, `context`,
+anything else you set — are carried through unchanged, and each key is applied separately so an
+older Neovim that rejects one still gets the rest.
+
+`diff.highlights` (default `true`) then colours the two panes itself, because the colourscheme's
+own diff groups usually cannot do this job. Most set a **foreground** on `DiffAdd` / `DiffChange`,
+which flattens every changed line to one colour and throws the syntax highlighting away — the
+opposite of what a diff viewer wants. vibing defines background-only groups blended from the
+colourscheme's own `Normal` background and its `Added` / `Removed` accents (line at 16%, changed
+characters at 40%), so the result still belongs to your theme. Both views use the same groups, and
+setting it to `false` returns each to its colourscheme: side by side to the theme's diff groups,
+unified to plain `filetype=diff` patch text.
+
+Vim's diff mode has no colour for "a deleted line": a line present in only one of the two buffers
+is `DiffAdd` in **both** windows, and `DiffDelete` is only ever the filler. `winhighlight` is
+window-local, which is what makes the VSCode look reachable — the Before pane points `DiffAdd`,
+`DiffChange` and `DiffText` at the red set and the After pane at the green set, so the same diff
+group reads as "removed" on the left and "added" on the right. `DiffTextAdd` (Neovim 0.11, the
+inline span that exists on only one side) must be remapped alongside `DiffText`, or that one span
+keeps the colourscheme's colour and stands out wrongly. Because it all travels through
+`winhighlight`, your colourscheme is never written to and closing the float leaves nothing behind.
+
+`'diffopt'` is a **global** option, so this is a real mutation of your session: the original string
+is saved when the first pane enters diff mode and written back when the float closes. Nothing else
+here is global. `diff.fill_char` goes on `'fillchars'`, which is window-local, so it reaches only
+the two panes; the default `-` fills a deleted region with a wall of dashes, and `╱` reads as
+absence instead. Folding over unchanged code is not configured at all — setting `'diff'` gives a
+window `foldmethod=diff` on its own, and `'diffopt'`'s own `context` (6 by default) decides how
+much context survives around each change.
+
+The Before pane's text is recovered by reverse-applying the patch to a throwaway copy of the file
 (`core/utils/patch_text.lua`); the working tree and your index are never touched. Three cases
-cannot produce one and fall back to the float: a binary diff, a file edited since the turn (the
-reverse apply no longer matches its context — this is a real answer, not a bug, since the
-displayed base would otherwise be wrong), and the pre-`base:` header patches the removed mote
-integration wrote.
+cannot produce one, and the float shows the unified view instead of a side-by-side that would have
+nothing on its left: a binary diff, a file edited since the turn (the reverse apply no longer
+matches its context — this is a real answer, not a bug, since the displayed base would otherwise
+be wrong), and the pre-`base:` header patches the removed mote integration wrote.
 
-vibing.nvim never calls `require("mini.diff").setup()` for you. If mini.diff's default Git source
-is active, configure it per buffer or globally as you like — vibing pins `source` to
-`gen_source.none()` on the buffers it touches, and only those, so its reference text cannot be
-overwritten by the next `.git/index` change.
-
-`viewer = "auto"` picks `"mini"` when mini.diff is installed and `"patch"` otherwise. Asking for
-`"mini"` without mini.diff warns once and uses the float.
+> **The `mini.diff` inline viewer has been removed**, along with `diff.viewer` and
+> `:VibingDiffClear`. `gd` always opens the float, which shows the whole turn at once and controls
+> its own window options; the inline view was at the mercy of mini.diff's `view.style` (with
+> `style = "number"` and a sign column already taken by gitsigns, a large change was hard to read),
+> and mini.diff is no longer a dependency, optional or otherwise. A leftover `diff.viewer` in
+> `setup()` warns once and is ignored.
 
 > **The opt-in `mote` backend has been removed**, along with `diff.mote`, `diff.tool = "mote"`,
 > the `mote_dirs` / `mote_cwd` frontmatter keys, `:VibingMoteDir` and `:VibingCleanMote`. The

@@ -408,17 +408,6 @@ function M._register_commands()
     end
   end, { desc = "Clear vibing.nvim inline review annotations from all buffers" })
 
-  vim.api.nvim_create_user_command("VibingDiffClear", function()
-    -- `gd` のインライン表示は実ファイルのバッファに mini.diff の参照テキストを差すだけなので、
-    -- 閉じるウィンドウが無い。`:edit` でも戻せるが、それはファイルの再読み込みでもあるので、
-    -- 参照テキストだけを外す入口を用意する。
-    local count = require("vibing.ui.mini_diff").clear_all()
-    if count == 0 then
-      notify.info("No inline diffs to clear")
-    else
-      notify.info(string.format("Cleared inline diff in %d buffer(s)", count))
-    end
-  end, { desc = "Clear vibing.nvim inline turn diffs (gd) from all buffers" })
   -- `/compact` は未登録のスラッシュコマンドとして素通しでCLIに届く経路が元からあるが、
   -- それだと `/help` の一覧にも補完にも出ず、知っている人しか使えない。コマンドにすると
   -- 「未送信本文があるなら断る」「claude以外なら断る」を一箇所で言える

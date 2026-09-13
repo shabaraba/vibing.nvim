@@ -8,9 +8,11 @@ package-lock.json.backup
 # vibing.nvim data
 .vibing/
 
-# Generated Grok PreToolUse hook, written by grok_settings_generator at request time
+# Generated hook registrations for the non-Claude backends, written at request time. Both
+# hard-code an absolute path to the checkout that wrote them, so neither is portable.
 # (the Claude equivalent lives under .vibing/, already ignored above)
 .grok/
+.codex/
 
 # Serena MCP memory
 .serena/

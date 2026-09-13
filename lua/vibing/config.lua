@@ -4,10 +4,15 @@
 ---@field tool "git"|"auto" 使用するdiffツール（現在は同義。リクエストごとにワーキングツリーの
 ---  gitツリースナップショットを取り、その差分をパッチとして保存する。`gd` はそのパッチを、
 ---  無ければ通常の git diff を表示する）
----@field viewer "auto"|"patch"|"mini" `gd` の表示方法。"patch" は従来のフロート（ファイル一覧＋
----  diffプレビュー、`r`/`R` でrevert）。"mini" は mini.diff で実ファイル上にインライン表示する
----  （`gH` がhunk単位のrevert、`[h`/`]h` で移動）。"auto" は mini.diff があれば "mini"、
----  無ければ "patch"
+---@field layout "split"|"unified" フロートを開いた時の表示形式（既定: "split"）。"split" は
+---  Before/After を並べる。"unified" は統一diff1枚。フロート内の `s` で切り替えられ、
+---  切り替えた側がそのNeovimのあいだ覚えられる
+---@field fill_char string diffモードで削除行を埋める文字（既定: "╱"）。Neovimの既定は "-" で
+---  画面が横線で埋まる。フォントに無ければ "" で無効化するか好きな1文字に変える
+---@field highlights boolean フロートのdiffペインを独自配色にする（既定: true）。前景色を触らず
+---  背景だけを着色するので構文ハイライトが残り、左が赤・右が緑になる。`winhighlight` で
+---  ペインにだけ当てるため、カラースキームには影響しない。false でカラースキームの
+---  `DiffAdd` / `DiffChange` / `DiffText` をそのまま使う
 
 ---@class Vibing.GradientConfig
 ---グラデーションアニメーション設定
@@ -521,7 +526,9 @@ M.defaults = {
   },
   diff = {
     tool = "auto",
-    viewer = "auto",
+    layout = "split",
+    fill_char = "╱",
+    highlights = true,
   },
   permissions = {
     mode = "acceptEdits",
@@ -726,12 +733,29 @@ function M.setup(opts)
       "diff.tool",
       "auto"
     )
-    M.options.diff.viewer = validate_enum(
-      M.options.diff.viewer,
-      { auto = true, patch = true, mini = true },
-      "diff.viewer",
-      "auto"
+    if M.options.diff.viewer ~= nil then
+      notify.warn_once(
+        "config.diff.viewer",
+        "diff.viewer is no longer used: the mini.diff inline view was removed and `gd` always "
+          .. "opens the patch viewer. Remove the setting."
+      )
+      M.options.diff.viewer = nil
+    end
+    M.options.diff.layout = validate_enum(
+      M.options.diff.layout,
+      { split = true, unified = true },
+      "diff.layout",
+      "split"
     )
+    -- 'fillchars' の `diff:` は1文字しか受け付けない。2文字以上だと 'E474' で
+    -- ペインの設定が丸ごと失敗するので、ここで既定に戻す
+    local fill_char = M.options.diff.fill_char
+    if type(fill_char) ~= "string" or vim.fn.strchars(fill_char) > 1 then
+      if fill_char ~= nil then
+        notify.warn_once("config.diff.fill_char", "diff.fill_char must be a single character or \"\". Using the default.")
+      end
+      M.options.diff.fill_char = "╱"
+    end
   end
 
   if M.options.agent then

@@ -299,6 +299,7 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
       -- （どちらが使われるかはここまで来ないと決まらない）
       RequestDiff.clear(incoming_handle_id)
       require("vibing.core.utils.git_snapshot").clear(incoming_handle_id)
+      require("vibing.application.chat.worktree_binding").clear(incoming_handle_id)
       return
     end
   end
@@ -323,6 +324,9 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     -- （どちらも「レスポンス処理の最後に必ずclearする」契約になっている）
     RequestDiff.clear(incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id()))
     require("vibing.core.utils.git_snapshot").clear(
+      incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
+    )
+    require("vibing.application.chat.worktree_binding").clear(
       incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
     )
     if callbacks.mark_turn_error then
@@ -493,6 +497,13 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
       callbacks.add_user_section()
     end
   end
+
+  -- worktreeへ入ったターンなら `working_dir` を書く。**差分を出し終えたあと** でなければ
+  -- ならない: フォールバック経路の `base_dir` はfrontmatterを今読むので、先に書き換えると
+  -- このターンの退避（旧cwd基準）と基準ディレクトリ（新cwd）が食い違う
+  pcall(function()
+    require("vibing.application.chat.worktree_binding").resolve(handle_id_for_diff, bufnr)
+  end)
 
   -- NOTE: clear_handle_id() は呼ばない
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
@@ -763,6 +774,27 @@ function M._continuation_prompt(config)
   return "Continue from where you left off."
 end
 
+---変更ファイルを1行にまとめる
+---
+---全ファイルを並べていた頃の名残でこの節が縦に伸び、`patch_viewer` のファイル一覧と完全に
+---重複していた。差分を見る導線は `gd`（フロート）1本なので、チャットに残すのは「何件、
+---だいたい何を触ったか」だけでよい。
+---@param files string[] 表示用の相対パス一覧
+---@return string
+function M._summary_line(files)
+  local NAMED = 3
+  local shown = {}
+  for i = 1, math.min(#files, NAMED) do
+    table.insert(shown, files[i])
+  end
+
+  local line = string.format("%d %s changed: %s", #files, #files == 1 and "file" or "files", table.concat(shown, ", "))
+  if #files > NAMED then
+    line = line .. string.format(", +%d more", #files - NAMED)
+  end
+  return line
+end
+
 ---変更ファイル一覧とpatchをチャットに書き出す
 ---
 ---2つのdiff経路（git snapshot / request_diff）の共通の出口。どちらも「repoルート相対の
@@ -776,15 +808,7 @@ end
 function M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, handle_id)
   if #files > 0 then
     BufferReload.reload_files(abs_files)
-    local MAX_DISPLAY = 50
-    local file_lines = {}
-    for i = 1, math.min(#files, MAX_DISPLAY) do
-      table.insert(file_lines, files[i])
-    end
-    if #files > MAX_DISPLAY then
-      table.insert(file_lines, string.format("... (%d more)", #files - MAX_DISPLAY))
-    end
-    callbacks.append_chunk("\n\n### Modified Files\n\n" .. table.concat(file_lines, "\n") .. "\n")
+    callbacks.append_chunk("\n\n### Modified Files\n\n" .. M._summary_line(files) .. "\n")
   end
 
   if patch_content then
@@ -796,7 +820,9 @@ function M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_conten
     if f then
       f:write(patch_content)
       f:close()
-      callbacks.append_chunk("\n<!-- patch: " .. patch_path .. " -->\n")
+      -- HTMLコメントではなく素の行で出す。patchはこれから前面に出る扱いなので、
+      -- 読み手に見えている必要がある。旧形式の `<!-- patch: ... -->` も読めるままにしてある
+      callbacks.append_chunk("\nPatch: " .. patch_path .. "\n")
     else
       vim.notify("[vibing] Failed to write patch file: " .. patch_path, vim.log.levels.WARN)
     end
