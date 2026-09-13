@@ -299,6 +299,7 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
       -- （どちらが使われるかはここまで来ないと決まらない）
       RequestDiff.clear(incoming_handle_id)
       require("vibing.core.utils.git_snapshot").clear(incoming_handle_id)
+      require("vibing.application.chat.worktree_binding").clear(incoming_handle_id)
       return
     end
   end
@@ -323,6 +324,9 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     -- （どちらも「レスポンス処理の最後に必ずclearする」契約になっている）
     RequestDiff.clear(incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id()))
     require("vibing.core.utils.git_snapshot").clear(
+      incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
+    )
+    require("vibing.application.chat.worktree_binding").clear(
       incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
     )
     if callbacks.mark_turn_error then
@@ -493,6 +497,13 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
       callbacks.add_user_section()
     end
   end
+
+  -- worktreeへ入ったターンなら `working_dir` を書く。**差分を出し終えたあと** でなければ
+  -- ならない: フォールバック経路の `base_dir` はfrontmatterを今読むので、先に書き換えると
+  -- このターンの退避（旧cwd基準）と基準ディレクトリ（新cwd）が食い違う
+  pcall(function()
+    require("vibing.application.chat.worktree_binding").resolve(handle_id_for_diff, bufnr)
+  end)
 
   -- NOTE: clear_handle_id() は呼ばない
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
