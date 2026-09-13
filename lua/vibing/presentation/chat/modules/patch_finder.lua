@@ -4,9 +4,13 @@ local M = {}
 local MODIFIED_FILES_PATTERN = "^###? Modified Files"
 ---patch行は素の `Patch: <path>` で書かれる。`<!-- patch: ... -->` は隠していた頃の形で、
 ---保存済みのチャットから今も開かれるので読めるままにしておく
+---パスは空白を含みうる（ワークスペース名やworktree名に空白が入る）。`[^%s]+` で切ると
+---`gd` がそのターンのpatchを見つけられず、黙ってHEAD差分に落ちる。
+---空白を許すかわりに末尾の `.patch` を必須にする — これが無いと "Patch: applied two files"
+---のような地の文まで拾ってしまう。書き手（`send_message.lua`）は常に `.patch` を付ける
 local PATCH_PATTERNS = {
-  "^Patch:%s+([^%s]+)%s*$",
-  "<!%-%- patch: ([^%s]+) %-%-?>",
+  "^Patch:%s+(.-%.patch)%s*$",
+  "<!%-%- patch: (.-%.patch) %-%-?>",
 }
 
 ---@param line string

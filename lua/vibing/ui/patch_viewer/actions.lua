@@ -93,8 +93,17 @@ function M.open_selected_file(state, close)
     return
   end
 
+  -- 閉じるのは開けてから。`:edit` は未保存バッファのウィンドウを選んだ時にE37で弾かれるので、
+  -- 先に閉じると差分ごと消えたうえ理由も出ない
+  local from = vim.api.nvim_get_current_win()
+  if not require("vibing.ui.code_window").open_file(abs) then
+    if vim.api.nvim_win_is_valid(from) then
+      vim.api.nvim_set_current_win(from)
+    end
+    vim.notify("Could not open " .. abs, vim.log.levels.WARN)
+    return
+  end
   close()
-  require("vibing.ui.code_window").open_file(abs)
 end
 
 ---@param state Vibing.PatchViewer.State

@@ -101,7 +101,11 @@ end
 ---統一diffの行番号が出たままになる
 ---@param win number?
 function M.reset(win)
-  local saved = win and M._saved[win]
+  -- `M._saved[nil] = nil` はLuaのエラー（table index is nil）なので、先に弾く
+  if not win then
+    return
+  end
+  local saved = M._saved[win]
   M._saved[win] = nil
   if not saved or not vim.api.nvim_win_is_valid(win) then
     return

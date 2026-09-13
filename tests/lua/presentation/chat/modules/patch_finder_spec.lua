@@ -32,6 +32,16 @@ describe("patch_finder", function()
       assert.equals("/tmp/b.patch", PatchFinder.parse_patch_line("Patch:   /tmp/b.patch  "))
     end)
 
+    it("reads a path that contains spaces", function()
+      -- ワークスペース名やworktree名に空白が入ることはある。ここで切ると `gd` はそのターンの
+      -- patchを見つけられず、黙ってHEAD差分に落ちる
+      assert.equals(
+        "/tmp/My Project/.vibing/patches/x.patch",
+        PatchFinder.parse_patch_line("Patch: /tmp/My Project/.vibing/patches/x.patch")
+      )
+      assert.equals("/tmp/My Old/x.patch", PatchFinder.parse_patch_line("<!-- patch: /tmp/My Old/x.patch -->"))
+    end)
+
     it("declines the one-line summary and a bare path", function()
       assert.is_nil(PatchFinder.parse_patch_line("3 files changed: a.lua, b.lua"))
       assert.is_nil(PatchFinder.parse_patch_line("lua/vibing/init.lua"))

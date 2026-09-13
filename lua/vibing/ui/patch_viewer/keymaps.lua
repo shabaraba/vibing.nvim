@@ -47,6 +47,26 @@ end
 ---`s` だけは例外で、差分を読んでいる最中に表示を切り替えたくなるのはこのペインだから
 local AFTER_KEYS = { "<Tab>", "<S-Tab>", "s", "q", "<Esc>" }
 
+---Afterペインに張る前から **そのバッファに在った** マッピングを控える。
+---ftpluginやユーザーのバッファローカル定義が `q` や `s` を使っていることはあり、
+---外すだけでは戻らない（フロートを閉じた後も消えたままになる）
+---@param buf number
+---@return table[] `vim.fn.mapset` に渡せる形のまま
+local function take_over(buf)
+  local wanted = {}
+  for _, lhs in ipairs(AFTER_KEYS) do
+    wanted[vim.keycode(lhs)] = true
+  end
+
+  local saved = {}
+  for _, map in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
+    if wanted[vim.keycode(map.lhs)] then
+      table.insert(saved, map)
+    end
+  end
+  return saved
+end
+
 ---Afterペインは選択のたびに実ファイルのバッファへ差し替わるので、キーもその都度張り直す
 ---@param state Vibing.PatchViewer.State
 ---@param buf number?
@@ -56,6 +76,8 @@ function M.setup_after(state, buf, callbacks)
   if not (buf and vim.api.nvim_buf_is_valid(buf)) then
     return
   end
+
+  state.after_saved_maps = take_over(buf)
 
   local opts = { buffer = buf, noremap = true, silent = true }
   vim.keymap.set("n", "<Tab>", function()
@@ -80,12 +102,20 @@ end
 ---@param state Vibing.PatchViewer.State
 function M.clear_after(state)
   local buf = state.after_mapped
+  local saved = state.after_saved_maps or {}
   state.after_mapped = nil
+  state.after_saved_maps = nil
   if not (buf and vim.api.nvim_buf_is_valid(buf)) then
     return
   end
   for _, lhs in ipairs(AFTER_KEYS) do
     pcall(vim.keymap.del, "n", lhs, { buffer = buf })
+  end
+  -- `mapset` はカレントバッファに張るので、対象バッファの中で呼ぶ
+  for _, map in ipairs(saved) do
+    pcall(vim.api.nvim_buf_call, buf, function()
+      vim.fn.mapset(map)
+    end)
   end
 end
 

@@ -15,6 +15,7 @@
 ---@field buf_before number?
 ---@field buf_after number? Afterペインに今出ているバッファ。実ファイルのこともある
 ---@field after_mapped number? ビューア用キーを張った実ファイルのバッファ。閉じる時に外す
+---@field after_saved_maps table[]? 張る前からそのバッファに在ったマッピング。閉じる時に戻す
 local M = {
   session_id = nil,
   patch_filename = nil,
@@ -32,6 +33,7 @@ local M = {
   buf_before = nil,
   buf_after = nil,
   after_mapped = nil,
+  after_saved_maps = nil,
 }
 
 ---@return Vibing.PatchViewer.State
@@ -52,6 +54,7 @@ function M.reset()
   M.buf_before = nil
   M.buf_after = nil
   M.after_mapped = nil
+  M.after_saved_maps = nil
   return M
 end
 

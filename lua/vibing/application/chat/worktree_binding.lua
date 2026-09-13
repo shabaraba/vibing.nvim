@@ -49,7 +49,10 @@ function M.observe(handle_id, cwd, tool_name, tool_input)
 
   if kind == "enter" then
     entry.exiting = false
-    entry.enter = path or entry.enter
+    -- 上書きであって `path or entry.enter` ではない。同じターンで `path` 指定の後に `name`
+    -- 指定が来たら、前のパスを引きずると新しく作られた方を無視してしまう。nilに戻せば
+    -- 一覧の前後差が拾う
+    entry.enter = path
   elseif kind == "exit" then
     entry.exiting = true
     entry.enter = nil

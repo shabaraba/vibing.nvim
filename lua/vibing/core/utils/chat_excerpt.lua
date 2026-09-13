@@ -217,7 +217,7 @@ local function clean_with(text, glyphs, allow_glyph_prefix)
   -- HTMLコメントは複数行にまたがりうるので行分割の前に落とす
   text = text:gsub("<!%-%-.-%-%->", "")
   -- patch行は隠しコメントをやめて素の行になった。落とさないとタイトルがパスになる
-  text = text:gsub("\n?Patch:%s+[^%s\n]+%.patch%s*", "\n")
+  text = text:gsub("\n?Patch:%s+[^\n]-%.patch%s*", "\n")
 
   local out = {}
   local lines = vim.split(text, "\n", { plain = true })

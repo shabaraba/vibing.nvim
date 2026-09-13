@@ -104,6 +104,24 @@ describe("patch_viewer float", function()
     assert.is_true(vim.api.nvim_buf_is_valid(real_buf))
   end)
 
+  it("gives the real file back the mappings it already had", function()
+    -- ftpluginやユーザー定義が `q` / `s` を使っていることはある。ビューアはそれを上書きして
+    -- 閉じる時に消すので、控えて戻さないとフロートを閉じた後も消えたままになる
+    local real_buf = vim.fn.bufadd(repo .. "/a.txt")
+    vim.fn.bufload(real_buf)
+    vim.keymap.set("n", "q", "<Cmd>echo 'mine'<CR>", { buffer = real_buf, desc = "user" })
+
+    open_split()
+    assert.equals(real_buf, state.buf_after)
+
+    PatchViewer._close()
+
+    local maps = vim.api.nvim_buf_get_keymap(real_buf, "n")
+    assert.equals(1, #maps)
+    assert.equals("q", maps[1].lhs)
+    assert.equals("user", maps[1].desc)
+  end)
+
   it("lists each file with its own change counts", function()
     open_split()
 

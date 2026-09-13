@@ -429,9 +429,9 @@ the float's own windows; your colourscheme is never written to. Set
 `DiffChange` / `DiffText`, and to show the unified view as plain patch text.
 |vibing-config| has the rest.
 
-Below `### Modified Files` each turn also writes a `Patch: <path>` line naming
-the patch file it saved. `gd` anywhere in the section opens it; `gf` with the
-cursor on the path opens the patch file itself.
+Below `### Modified Files` a turn that saved a patch also writes a
+`Patch: <path>` line naming it. `gd` anywhere in the section opens it; `gf`
+with the cursor on the path opens the patch file itself.
 
 When no patch exists for the turn at all, `gd` shows the diff against HEAD
 instead, which is not limited to that turn's changes — it says so when it

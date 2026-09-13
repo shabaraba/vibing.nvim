@@ -105,13 +105,19 @@ function M.file_stats(patch_content, display_file)
     return stats
   end
 
+  -- ヘッダかどうかは行の形ではなく **最初の `@@` より前か** で決める。`--- a/path` と
+  -- 同じ形の行は本文にも出る: `-- comment` の削除行が patch では `--- comment` になるので、
+  -- 形で弾くとLuaのコメント削除がまるごと数から漏れる（`+++ ` も同様）
+  local in_hunk = false
   for _, line in ipairs(vim.split(file_diff, "\n", { plain = true })) do
-    if line:match("^new file mode") then
-      stats.status = "A"
-    elseif line:match("^deleted file mode") then
-      stats.status = "D"
-    elseif line:match("^%+%+%+ ") or line:match("^%-%-%- ") then
-      -- `+++ b/path` / `--- a/path` はヘッダ。1行目と数え違えやすい
+    if line:match("^@@") then
+      in_hunk = true
+    elseif not in_hunk then
+      if line:match("^new file mode") then
+        stats.status = "A"
+      elseif line:match("^deleted file mode") then
+        stats.status = "D"
+      end
     elseif line:sub(1, 1) == "+" then
       stats.added = stats.added + 1
     elseif line:sub(1, 1) == "-" then

@@ -136,6 +136,19 @@ describe("WorktreeBinding", function()
     assert.equals(".vibing/worktrees/feat", written)
   end)
 
+  it("does not keep an earlier path when a later entry names a new worktree", function()
+    open_chat()
+    git("worktree", "add", "-q", "-b", "old", ".vibing/worktrees/old")
+
+    -- 同じターンで `path` 指定のあとに `name` 指定が来るケース。前のパスを引きずると、
+    -- 新しく作られた方を無視して古いworktreeに結び付けてしまう
+    WorktreeBinding.observe("h1", repo, "EnterWorktree", { path = repo .. "/.vibing/worktrees/old" })
+    WorktreeBinding.observe("h1", repo, "EnterWorktree", { name = "fresh" })
+    git("worktree", "add", "-q", "-b", "fresh", ".vibing/worktrees/fresh")
+
+    assert.equals(".vibing/worktrees/fresh", WorktreeBinding.resolve("h1", bufnr))
+  end)
+
   it("leaves a Bash command that is not a worktree add alone", function()
     open_chat()
 

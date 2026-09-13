@@ -1,5 +1,6 @@
 -- ファイル一覧に出す `A` / `D` / `+N -M`。`+++ b/path` と `--- a/path` はヘッダであって
 -- 変更行ではないので、素朴に先頭1文字で数えると毎ファイル +1 -1 ずれる。
+-- かといって形で弾くのも誤り: `-- comment` の削除行はpatchでは `--- comment` になる。
 local parser = require("vibing.ui.patch_viewer.parser")
 
 local PATCH = table.concat({
@@ -54,6 +55,27 @@ describe("parser.file_stats", function()
     assert.equals("D", stats.status)
     assert.equals(0, stats.added)
     assert.equals(2, stats.removed)
+  end)
+
+  it("counts hunk lines that look like a header", function()
+    -- Luaのコメント削除は日常的に起きる。ヘッダかどうかを行の形で決めていると、
+    -- この3行がまるごと数から落ちる
+    local patch = table.concat({
+      "# vibing-request-diff base: /tmp/repo",
+      "diff --git a/c.lua b/c.lua",
+      "--- a/c.lua",
+      "+++ b/c.lua",
+      "@@ -1,2 +1,2 @@",
+      "--- old comment",
+      "++ plus prefixed",
+      "+++ triple plus",
+      " tail",
+    }, "\n")
+
+    local stats = parser.file_stats(patch, "c.lua")
+
+    assert.equals(2, stats.added)
+    assert.equals(1, stats.removed)
   end)
 
   it("falls back to zero for a file the patch does not mention", function()
