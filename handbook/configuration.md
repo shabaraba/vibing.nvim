@@ -1250,6 +1250,8 @@ permissions = {
   codex_profile_file = ".vibing/codex-permissions.toml",
                          -- Codex only: project-local OS sandbox profile.
                          -- Set false to disable it.
+  -- codex_profile_content = [[...]],
+                         -- Optional initial TOML used only when the profile is first created.
   codex_allow_tracked_profile = false,
                          -- Set true only after reviewing a Git-tracked profile.
 }
@@ -1291,13 +1293,23 @@ extends = ":workspace"
 
 [permissions.vibing-project.filesystem.":workspace_roots"]
 ".git" = "write"
-```
 
-Network access remains disabled by default. Add this when the project needs it:
-
-```toml
 [permissions.vibing-project.network]
 enabled = true
+```
+
+Network access is enabled in the generated default. To customize the complete initial profile,
+set `permissions.codex_profile_content` to a TOML string. It is consulted only when the file is
+created; existing profiles are never overwritten:
+
+```lua
+require("vibing").setup({
+  permissions = {
+    codex_profile_content = [[
+default_permissions = ":read-only"
+]],
+  },
+})
 ```
 
 The loader accepts only `default_permissions`, `[permissions.*]`, and

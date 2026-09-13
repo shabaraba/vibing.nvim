@@ -1,4 +1,5 @@
 local Fs = require("vibing.core.utils.fs")
+local Config = require("vibing.config")
 local ProjectCodexPermissions = require("vibing.core.utils.project_codex_permissions")
 local ProjectSystemPrompt = require("vibing.core.utils.project_system_prompt")
 
@@ -18,7 +19,7 @@ end
 function M.ensure_project_files(project_root)
   project_root = project_root:gsub("/+$", "")
   ProjectSystemPrompt.ensure(project_root)
-  ProjectCodexPermissions.ensure(project_root)
+  ProjectCodexPermissions.ensure(project_root, Config.get().permissions.codex_profile_content)
 end
 
 ---保存ディレクトリを取得

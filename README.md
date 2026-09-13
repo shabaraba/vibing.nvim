@@ -292,6 +292,7 @@ require("vibing").setup({
     allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput" },
     deny = { "Bash" },
     codex_profile_file = ".vibing/codex-permissions.toml", -- false disables loading the generated profile
+    -- codex_profile_content = [[...]], -- initial TOML used only when creating the profile
     codex_allow_tracked_profile = false, -- true explicitly trusts a Git-tracked profile
   },
   language = nil,                  -- e.g. "ja", or { default = "ja", chat = "ja" }

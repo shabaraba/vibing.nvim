@@ -30,15 +30,32 @@ describe("project_codex_permissions", function()
       "",
       '[permissions.vibing-project.filesystem.":workspace_roots"]',
       '".git" = "write"',
+      "",
+      "[permissions.vibing-project.network]",
+      "enabled = true",
     }, vim.fn.readfile(path))
-    assert.same({
-      "-c",
-      'default_permissions="vibing-project"',
-      "-c",
-      'permissions={ vibing-project = { description = "Workspace editing with Git metadata access", extends = ":workspace", filesystem = { ":workspace_roots" = { ".git" = "write" } } } }',
-    }, require("vibing.infrastructure.adapter.modules.codex_permission_profile").args(root, {
-      permissions = { codex_profile_file = ".vibing/codex-permissions.toml" },
-    }))
+    assert.same(
+      {
+        "-c",
+        'default_permissions="vibing-project"',
+        "-c",
+        'permissions={ vibing-project = { description = "Workspace editing with Git metadata access", extends = ":workspace", filesystem = { ":workspace_roots" = { ".git" = "write" } }, network = { enabled = true } } }',
+      },
+      require("vibing.infrastructure.adapter.modules.codex_permission_profile").args(root, {
+        permissions = { codex_profile_file = ".vibing/codex-permissions.toml" },
+      })
+    )
+  end)
+
+  it("uses configured content only when creating a profile", function()
+    local custom = 'default_permissions = ":read-only"\n'
+    local path, created = permissions.ensure(root, custom)
+
+    assert.is_true(created)
+    assert.same({ 'default_permissions = ":read-only"' }, vim.fn.readfile(path))
+
+    permissions.ensure(root, 'default_permissions = ":workspace"\n')
+    assert.same({ 'default_permissions = ":read-only"' }, vim.fn.readfile(path))
   end)
 
   it("backfills an existing .vibing directory when the profile is missing", function()
@@ -69,6 +86,25 @@ describe("project_codex_permissions", function()
 
     assert.equals(root .. "/.vibing/chat/", save_dir)
     assert.equals(1, vim.fn.filereadable(permissions.path(root)))
+  end)
+
+  it("threads a configured codex_profile_content through the chat-directory bootstrap", function()
+    vim.fn.getcwd = function()
+      return root
+    end
+
+    local config = require("vibing.config")
+    local custom = 'default_permissions = ":read-only"\n'
+    config.setup({ permissions = { codex_profile_content = custom } })
+
+    require("vibing.presentation.chat.modules.file_manager").get_save_directory({
+      save_location_type = "project",
+    })
+
+    assert.same({ 'default_permissions = ":read-only"' }, vim.fn.readfile(permissions.path(root)))
+
+    -- Restore the module's own default so later tests in this file are not affected.
+    config.setup({})
   end)
 
   it("never overwrites an existing profile", function()
