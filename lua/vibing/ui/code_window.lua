@@ -1,9 +1,8 @@
 ---@class Vibing.UI.CodeWindow
 ---「チャットを潰さずに実ファイルを開く」を一箇所に置いたもの。
 ---
----`gd` のインライン表示も、patch_viewerの「このファイルを開く」も、同じ問題を持つ:
----呼ばれるのはチャットウィンドウ（かフロート）の中で、そこに `:edit` すると呼び出し元ごと
----消える。どちらも同じ選び方をする必要があるので、実装は1つ。
+---patch_viewerの「このファイルを開く」が呼ばれるのはチャットウィンドウかフロートの中で、
+---そこに `:edit` すると呼び出し元ごと消える。開いてよいウィンドウの選び方を一箇所に置く。
 local M = {}
 
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
@@ -37,8 +36,7 @@ function M.open_file(file_path)
   vim.api.nvim_set_current_win(win)
 
   local abs = vim.fn.fnamemodify(file_path, ":p")
-  -- 既にそのファイルが出ているなら `:edit` しない。素のリロードはmini.diffのバッファ
-  -- watcherをdetachさせ、カーソル位置もundo履歴も捨てる
+  -- 既にそのファイルが出ているなら `:edit` しない。素のリロードはカーソル位置もundo履歴も捨てる
   if vim.api.nvim_buf_get_name(0) == abs then
     return vim.api.nvim_get_current_buf()
   end

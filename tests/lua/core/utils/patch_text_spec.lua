@@ -1,5 +1,5 @@
 -- patch_text.lua は「ターンのpatchから、そのターンが始まる前のファイル内容を復元する」モジュール。
--- mini.diff の参照テキストがこれで作られるので、守りたいのは3つ:
+-- patch_viewerのBeforeペインがこれで作られるので、守りたいのは3つ:
 --   1. 復元した内容が本当にターン前のものであること — 本題
 --   2. 実ワーキングツリーを1バイトも書き換えないこと（revertと違って「読むだけ」）
 --   3. 復元できない場合に、黙って嘘の内容を返すのではなくエラーを返すこと
@@ -97,7 +97,7 @@ describe("patch_text", function()
 
     local before, err = PatchText.before_lines(repo, "new.txt", file_diff)
     assert.is_nil(err)
-    -- nil（失敗）ではなく空テーブル。mini.diff はこれをバッファ全体1つの "add" hunk として描く
+    -- nil（失敗）ではなく空テーブル。Beforeペインが空になり、After側が全行追加として描かれる
     assert.same({}, before)
   end)
 

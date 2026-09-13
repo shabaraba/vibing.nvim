@@ -1187,8 +1187,6 @@ diff = {
   tool = "auto",    -- "auto" / "git" — currently the same thing. Kept as a hook for
                     -- future backends; `gd` shows the diff against HEAD when a turn
                     -- has no patch file (e.g. an old chat reopened), and says so.
-  viewer = "auto",  -- "auto" / "mini" / "patch" — how `gd` renders that patch.
-                    -- "auto" is the float; "mini" is the inline view.
   layout = "split", -- "split" / "unified" — which view the float opens on.
                     -- `s` toggles it; the choice sticks until Neovim exits.
   highlights = true,-- Colour the float's diff panes instead of using the
@@ -1202,7 +1200,7 @@ diff = {
 
 ### How `gd` renders a patch
 
-`viewer = "patch"` is the built-in float, and the default. Three panes: the turn's files on the
+`gd` opens the built-in float. Three panes: the turn's files on the
 left, then that file's pre-turn text and the real file side by side in Neovim's own diff mode.
 Both sides are syntax highlighted (the left pane borrows the right one's `filetype`, since a
 scratch buffer has no name to infer it from), `]c` / `[c` move between changes, and `do` / `dp`
@@ -1281,33 +1279,19 @@ absence instead. Folding over unchanged code is not configured at all — settin
 window `foldmethod=diff` on its own, and `'diffopt'`'s own `context` (6 by default) decides how
 much context survives around each change.
 
-`viewer = "mini"` needs [mini.diff](https://github.com/nvim-mini/mini.diff). It opens the real
-file instead and hands mini.diff the pre-turn text as that buffer's reference, so the change is
-shown on the file you actually edit. mini.diff's own mappings then apply — `[h` / `]h` to move
-between hunks, `gH` to reset one. That reset **is** a per-hunk revert of the agent's change, which
-the float cannot do: mini.diff defines reset as "replace this range with the reference text", with
-no involvement from its source. `:VibingDiffClear` takes the reference back off.
-
-The pre-turn text is recovered by reverse-applying the patch to a throwaway copy of the file
+The Before pane's text is recovered by reverse-applying the patch to a throwaway copy of the file
 (`core/utils/patch_text.lua`); the working tree and your index are never touched. Three cases
-cannot produce one and fall back to the float: a binary diff, a file edited since the turn (the
-reverse apply no longer matches its context — this is a real answer, not a bug, since the
-displayed base would otherwise be wrong), and the pre-`base:` header patches the removed mote
-integration wrote.
+cannot produce one, and the float shows the unified view instead of a side-by-side that would have
+nothing on its left: a binary diff, a file edited since the turn (the reverse apply no longer
+matches its context — this is a real answer, not a bug, since the displayed base would otherwise
+be wrong), and the pre-`base:` header patches the removed mote integration wrote.
 
-vibing.nvim never calls `require("mini.diff").setup()` for you. If mini.diff's default Git source
-is active, configure it per buffer or globally as you like — vibing pins `source` to a source of
-its own on the buffers it touches, and only those, so its reference text cannot be overwritten by
-the next `.git/index` change. That source is not `gen_source.none()`: mini.diff drops a buffer's
-reference text on every `disable`, and `:edit` triggers one through the buffer watcher's
-`on_detach`, so a `none` source meant the turn diff vanished the moment you reopened the file.
-vibing's source re-applies the stored text on each attach instead.
-
-`viewer = "auto"` is `"patch"`, even when mini.diff is installed — the float shows the whole turn
-at once and controls its own window options, where the inline view is at the mercy of mini.diff's
-`view.style` (with `style = "number"` and a sign column already taken by gitsigns, a large change
-is hard to read). Ask for `"mini"` by name to get the inline view; asking for it without mini.diff
-installed warns once and uses the float.
+> **The `mini.diff` inline viewer has been removed**, along with `diff.viewer` and
+> `:VibingDiffClear`. `gd` always opens the float, which shows the whole turn at once and controls
+> its own window options; the inline view was at the mercy of mini.diff's `view.style` (with
+> `style = "number"` and a sign column already taken by gitsigns, a large change was hard to read),
+> and mini.diff is no longer a dependency, optional or otherwise. A leftover `diff.viewer` in
+> `setup()` warns once and is ignored.
 
 > **The opt-in `mote` backend has been removed**, along with `diff.mote`, `diff.tool = "mote"`,
 > the `mote_dirs` / `mote_cwd` frontmatter keys, `:VibingMoteDir` and `:VibingCleanMote`. The

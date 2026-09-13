@@ -91,8 +91,8 @@ function M.before_lines(base_dir, rel_path, file_diff)
     return nil, err ~= "" and err or "git apply --reverse failed"
   end
 
-  -- 逆適用でファイルが消えたなら、そのターンで新規作成されたファイル。参照テキストは空で、
-  -- mini.diff はバッファ全体を1つの "add" hunk として描く（それが事実として正しい）
+  -- 逆適用でファイルが消えたなら、そのターンで新規作成されたファイル。ターン前の内容は空で、
+  -- Before側は空・After側が全行追加として描かれる（それが事実として正しい）
   if vim.fn.filereadable(target) ~= 1 then
     cleanup()
     return {}, nil

@@ -340,13 +340,6 @@ Scheduled requests:~
     every buffer. The notes are virtual text only — no file is modified, and
     unloading a buffer clears its own notes anyway.
 
-                                                          *:VibingDiffClear*
-:VibingDiffClear
-    Remove the inline turn diffs `gd` set with mini.diff from every buffer.
-    Nothing is written: the diff is reference text held against the buffer,
-    so clearing it only stops the highlighting. `:edit` on the file does the
-    same thing as a side effect of reloading it.
-
                                                         *:VibingDebugAnalyze*
 :VibingDebugAnalyze
                                                            *:VibingDebugHelp*
@@ -406,10 +399,9 @@ In a chat buffer:~
     gx          Open the URL on the current line in a browser
     q           Close the chat window
 
-`gd` has two viewers, chosen by `diff.viewer` (default `"auto"`). The default
-is a float with three panes: the turn's files on the left, with each one's
-icon and `+N -M`, and that file's before/after side by side in Neovim's own
-diff mode. Both sides are syntax highlighted, `]c` / `[c` move between
+`gd` opens a float with three panes: the turn's files on the left, with each
+one's icon and `+N -M`, and that file's before/after side by side in Neovim's
+own diff mode. Both sides are syntax highlighted, `]c` / `[c` move between
 changes, `zo` / `zc` open and close the folds over unchanged code, and
 `do` / `dp` are a per-hunk revert of what the agent did. The right pane is
 the real file, so editing there edits the file; `r` reverts the selected
@@ -441,12 +433,9 @@ Below `### Modified Files` each turn also writes a `Patch: <path>` line naming
 the patch file it saved. `gd` anywhere in the section opens it; `gf` with the
 cursor on the path opens the patch file itself.
 
-`diff.viewer = "mini"` uses mini.diff instead: no extra window, the turn's
-changes drawn on the real file, with `[h` / `]h` and `gH` to reset a hunk.
-Clear it with |:VibingDiffClear|. It falls back to the float if mini.diff is
-not installed. When no patch exists for the turn at all, both viewers show
-the diff against HEAD instead, which is not limited to that turn's changes —
-`gd` says so when it does.
+When no patch exists for the turn at all, `gd` shows the diff against HEAD
+instead, which is not limited to that turn's changes — it says so when it
+does.
 
 `<CR>` asks before sending in two cases, and sends normally otherwise. While
 the project has a usage limit on record it offers to park the message until

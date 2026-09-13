@@ -4,9 +4,6 @@
 ---@field tool "git"|"auto" 使用するdiffツール（現在は同義。リクエストごとにワーキングツリーの
 ---  gitツリースナップショットを取り、その差分をパッチとして保存する。`gd` はそのパッチを、
 ---  無ければ通常の git diff を表示する）
----@field viewer "auto"|"patch"|"mini" `gd` の表示方法。"patch" はフロート（ファイル一覧＋
----  Before/After のside-by-side、`r`/`R` でrevert）。"mini" は mini.diff で実ファイル上に
----  インライン表示する（`gH` がhunk単位のrevert、`[h`/`]h` で移動）。"auto" は "patch"
 ---@field layout "split"|"unified" フロートを開いた時の表示形式（既定: "split"）。"split" は
 ---  Before/After を並べる。"unified" は統一diff1枚。フロート内の `s` で切り替えられ、
 ---  切り替えた側がそのNeovimのあいだ覚えられる
@@ -529,7 +526,6 @@ M.defaults = {
   },
   diff = {
     tool = "auto",
-    viewer = "auto",
     layout = "split",
     fill_char = "╱",
     highlights = true,
@@ -737,12 +733,14 @@ function M.setup(opts)
       "diff.tool",
       "auto"
     )
-    M.options.diff.viewer = validate_enum(
-      M.options.diff.viewer,
-      { auto = true, patch = true, mini = true },
-      "diff.viewer",
-      "auto"
-    )
+    if M.options.diff.viewer ~= nil then
+      notify.warn_once(
+        "config.diff.viewer",
+        "diff.viewer is no longer used: the mini.diff inline view was removed and `gd` always "
+          .. "opens the patch viewer. Remove the setting."
+      )
+      M.options.diff.viewer = nil
+    end
     M.options.diff.layout = validate_enum(
       M.options.diff.layout,
       { split = true, unified = true },
