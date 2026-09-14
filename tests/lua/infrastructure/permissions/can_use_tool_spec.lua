@@ -173,6 +173,38 @@ describe("can_use_tool", function()
     end)
   end)
 
+  describe("MCP server labels spelled with `-` or `_` by different backends", function()
+    -- Codex normalizes an MCP server label's `-` to `_` before composing the tool name, so
+    -- `chrome-devtools` reaches the hook as `mcp__chrome_devtools__*` while claude sends it
+    -- verbatim. One allow entry has to cover both, or the rule silently misses on one backend.
+    local function decision(tool_name, overrides)
+      return can_use_tool.can_use_tool(tool_name, {}, make_config(vim.tbl_extend("force", {
+        permission_mode = "default",
+        mcp_enabled = true,
+      }, overrides or {}))).behavior
+    end
+
+    it("matches a hyphenated allow pattern against either spelling", function()
+      local allowed = { allowed_tools = { "mcp__chrome-devtools__*" } }
+      assert.equals("allow", decision("mcp__chrome-devtools__take_snapshot", allowed))
+      assert.equals("allow", decision("mcp__chrome_devtools__take_snapshot", allowed))
+    end)
+
+    it("closes the same gap on the deny side, where a miss falls open", function()
+      local denied = { denied_tools = { "mcp__chrome-devtools__*" } }
+      assert.equals("deny", decision("mcp__chrome-devtools__take_snapshot", denied))
+      assert.equals("deny", decision("mcp__chrome_devtools__take_snapshot", denied))
+    end)
+
+    it("does not widen the match beyond the separator", function()
+      -- Folding `-` onto `_` must not turn the pattern into a looser prefix: a different server
+      -- whose name merely starts the same way stays unmatched.
+      assert.equals("ask", decision("mcp__chrome-devtools-beta__take_snapshot", {
+        allowed_tools = { "mcp__chrome-devtools__*" },
+      }))
+    end)
+  end)
+
   describe("is_vibing_nvim_mcp_tool", function()
     it("matches a specific tool regardless of registration namespace", function()
       assert.is_true(

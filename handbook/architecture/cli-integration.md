@@ -280,12 +280,35 @@ These are the seams that stop backend identity leaking into shared code. The rul
      keeps its hook settings in bypass mode.
 
   The payload codex sends is Claude-compatible (`tool_name`/`tool_input`, deny by exit 2 +
-  stderr), so `pre-tool-use.sh` needs no codex argument. Its shell tool already arrives as
-  `Bash`; a file edit arrives as `apply_patch` with **no path in `tool_input` at all** — the paths
-  are inside the `command` string as an apply_patch envelope, which is why
-  `codex_tool_vocabulary.lua` has no `normalize_input` and says so at length. Consequence, stated
-  there and repeated here because it is a permission gap rather than a cosmetic one: granular
-  `paths` rules never match a codex edit, and `request_diff.capture` backs nothing up for one.
-  Filling `file_path` with the first path a multi-file patch names would read as working while
-  letting a deny rule be evaded by patch ordering, so fixing it properly means teaching
-  `matchers.lua` about a set of paths.
+  stderr), so `pre-tool-use.sh` needs no codex argument.
+
+  **Codex converges on Claude's vocabulary only where it matters.** Read off
+  `codex-rs/core/src/tools/hook_names.rs` at codex 0.154.0: `HookToolName::bash()` is what every
+  shell-like handler reports (`unified_exec` included), `apply_patch()` serializes as
+  `apply_patch` while accepting `Write`/`Edit` as matcher aliases, and `spawn_agent()` accepts
+  `Agent`. Its remaining built-ins are `ToolName::plain` and arrive under their own names. That
+  asymmetry is load-bearing for us in both directions: nothing that writes or executes was ever
+  unmapped, so an incomplete table was never a deny-side hole — but `view_image` and `web_search`
+  are unreachable by a `Read`/`WebSearch` rule without entries, which they now have.
+
+  `view_image` declares one required `path` (`view_image_spec.rs`), so `normalize_input` lifts it
+  to `file_path`. Without that, mapping it onto `Read` would read as covered by a `Read(...)` rule
+  while never matching — and `Read` is in `ALWAYS_ALLOWED_TOOLS`, so a path-scoped deny is the only
+  thing that can stop it.
+
+  A file edit still arrives as `apply_patch` with **no path in `tool_input` at all** — the paths
+  are inside the `command` string as an apply_patch envelope. Consequence, stated in
+  `codex_tool_vocabulary.lua` and repeated here because it is a permission gap rather than a
+  cosmetic one: granular `paths` rules never match a codex edit, and `request_diff.capture` backs
+  nothing up for one. Filling `file_path` with the first path a multi-file patch names would read
+  as working while letting a deny rule be evaded by patch ordering, so fixing it properly means
+  teaching `matchers.lua` about a set of paths.
+
+  **MCP server labels are the other spelling difference.** Codex normalizes `-` to `_` before
+  composing an MCP tool name, so `chrome-devtools` reaches the hook as `mcp__chrome_devtools__*`
+  where claude sends it verbatim. `matchers.lua` folds both sides onto the `_` spelling when both
+  start with `mcp__`, so one allow entry covers every backend. The fold direction is the safe one:
+  nothing in `mcp__a_b__x` says which underscore used to be a hyphen, which is why
+  `codex_tool_vocabulary.lua` can only restore the one prefix it anchors on — and must keep doing
+  so, because `can_use_tool.is_vibing_nvim_mcp_tool` matches the hyphenated spelling directly
+  rather than going through `matchers.lua`.

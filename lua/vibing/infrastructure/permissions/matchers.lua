@@ -162,6 +162,24 @@ function M.matches_permission(tool_name, input, permission_str)
       local perm_tool_name = parsed.tool_name
       local actual_tool_name = tool_name:lower()
 
+      -- Backends disagree on how an MCP server label is spelled in the tool name: codex normalizes
+      -- `-` to `_` before composing it, so `chrome-devtools` arrives as `mcp__chrome_devtools__*`
+      -- while claude sends it verbatim. Comparing both sides in the `_` spelling lets one allow
+      -- entry cover every backend, instead of the user listing each spelling by hand.
+      --
+      -- The `_` direction is the safe one: it folds a pattern *down* onto the name a backend
+      -- actually sends. Restoring `-` in the tool name would be guesswork -- nothing in
+      -- `mcp__a_b__x` says which underscore used to be a hyphen. (`codex_tool_vocabulary` can
+      -- afford that guess only because it anchors on one known prefix.)
+      --
+      -- Scoped to `mcp__` on both sides so no built-in tool name is affected. It does merge two
+      -- servers whose names differ solely by `-` vs `_`, which is the cost of not requiring the
+      -- user to know each backend's spelling rule.
+      if vim.startswith(perm_tool_name, "mcp__") and vim.startswith(actual_tool_name, "mcp__") then
+        perm_tool_name = perm_tool_name:gsub("%-", "_")
+        actual_tool_name = actual_tool_name:gsub("%-", "_")
+      end
+
       if vim.endswith(perm_tool_name, "*") then
         local prefix = perm_tool_name:sub(1, -2)
         return vim.startswith(actual_tool_name, prefix)
