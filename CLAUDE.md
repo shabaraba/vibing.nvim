@@ -80,6 +80,14 @@ marketplace, though: `cli_command_builder` passes `claude-plugin/` to the CLI pe
 | `claude-plugin/{agents,skills}/`           | **distributed** subagents and skills              |
 | `claude-plugin/mcp-server/`                | the distributed MCP server                        |
 | `.claude/{skills,commands,rules}/`         | **for developing this repo**; not distributed     |
+| `AGENTS.md`, `.agents/skills`              | symlinks; see below                               |
+
+`AGENTS.md` is a symlink to this file and `.agents/skills` one to `.claude/skills`, because codex
+and grok look for those names and claude looks for these. There is one copy of each; do not edit
+through the link, and do not let a second copy reappear. Measured on the installed CLIs: claude
+reads `CLAUDE.md` only (an `AGENTS.md` alone reaches it not at all), codex reads `AGENTS.md`, and
+grok reads both but reports the shared content once. `.claude/rules/` has no counterpart — only
+claude loads it automatically, so codex and grok reach those files by following the map above.
 
 When adding a skill, the directory is decided by which reader it is for. The directory is not named
 `plugin/` because that is a Neovim reserved name: `plugin/**/*.lua` on the runtimepath is sourced
