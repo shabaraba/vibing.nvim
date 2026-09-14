@@ -86,14 +86,21 @@ local function parse_dated(rest)
     return nil
   end
 
-  return os.time({
-    year = tonumber(year),
-    month = month_num,
-    day = tonumber(day),
-    hour = hour,
-    min = min,
-    sec = 0,
-  })
+  year, day = tonumber(year), tonumber(day)
+  local at = os.time({ year = year, month = month_num, day = day, hour = hour, min = min, sec = 0 })
+  if not at then
+    return nil
+  end
+
+  -- `os.time` normalizes rather than rejects, so "Sep 31" comes back as October 1 — a moment the
+  -- message never stated. Only the calendar date is compared back: a local time inside a DST gap
+  -- is legitimately shifted by an hour, and refusing that would drop a reset the CLI did state.
+  local normalized = os.date("*t", at)
+  if normalized.year ~= year or normalized.month ~= month_num or normalized.day ~= day then
+    return nil
+  end
+
+  return at
 end
 
 --- A bare clock time, which the formatter uses only for a reset later the same day.

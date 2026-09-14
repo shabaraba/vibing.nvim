@@ -59,6 +59,12 @@ describe("core.utils.rate_limit_text", function()
     assert.is_nil(RateLimitText.parse_reset_at("try again at Sep 15 3:01 PM", NOW))
   end)
 
+  it("returns nil for a day that month does not have", function()
+    -- os.time normalizes rather than rejects, so an unguarded parse would answer October 1 — a
+    -- moment the message never stated.
+    assert.is_nil(RateLimitText.parse_reset_at("try again at Sep 31, 2026 3:01 PM", NOW))
+  end)
+
   it("returns nil on an out-of-range clock", function()
     assert.is_nil(RateLimitText.parse_reset_at("try again at 13:75 PM", NOW))
     assert.is_nil(RateLimitText.parse_reset_at("try again at 25:00", NOW))

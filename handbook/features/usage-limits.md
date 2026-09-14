@@ -10,10 +10,12 @@ and send a single continuation message once the limit resets. Opt-in via
 `agent.auto_resume_on_limit.enabled` (default `false` — it spends tokens unattended).
 
 Detection merges three signals in `lua/vibing/core/utils/rate_limit.lua`: the CLI's
-`rate_limit_event` stream line (the **only** source of `resetsAt`), the `StopFailure` hook filtered
-to `error_type = rate_limit` (confirms the turn died, no timestamp), and the error text as a
-fallback. None of these payload shapes is officially documented, so every field is optional and a
-schema change degrades the feature instead of breaking the stream.
+`rate_limit_event` stream line (the richest, and the primary source of `resetsAt`), the
+`StopFailure` hook filtered to `error_type = rate_limit` (confirms the turn died, never carries a
+timestamp), and the error text as a fallback — which supplies `resetsAt` too when the CLI printed
+one in prose, the only way a backend with no stream event has of reporting it. None of these
+payload shapes is officially documented, so every field is optional and a schema change degrades
+the feature instead of breaking the stream.
 
 ### Which Channel Each Backend Has
 
