@@ -18,10 +18,21 @@ local M = {}
 ---
 --- So codex already speaks Claude's name for its shell tool and needs no entry for it. `shell` is
 --- mapped anyway because it is what older codex sent and the mapping costs nothing.
+---
+--- Codex converges on Claude's vocabulary only for the tools that carry risk: `hook_names.rs` in
+--- codex 0.154.0 serializes shell-likes (including `unified_exec`) as `Bash`, and gives
+--- `apply_patch` the matcher aliases `Write`/`Edit` and `spawn_agent` the alias `Agent`. Its
+--- remaining built-ins reach PreToolUse under their own names (`ToolName::plain`), so a `Read` or
+--- `WebSearch` rule would miss them without the entries below. That asymmetry is also why the gap
+--- was benign rather than a hole: nothing that writes or executes was ever unmapped.
 --- @type table<string, string>
 local NATIVE_TO_CANONICAL = {
   apply_patch = "Edit", -- Codex's file patch tool maps to Claude's Edit
   shell = "Bash",
+  -- Reads an image off disk to attach it. `Read` is in ALWAYS_ALLOWED_TOOLS, so this also stops
+  -- codex prompting for every image the way an unmapped name does.
+  view_image = "Read",
+  web_search = "WebSearch",
 }
 
 -- MCP server labels are normalized before Codex exposes them as tool names. In particular, the
@@ -47,11 +58,26 @@ function M.to_canonical(native_tool_name)
   return NATIVE_TO_CANONICAL[native_tool_name]
 end
 
---- **Deliberately absent: `normalize_input`.** Known gap, not an oversight.
+--- Where codex puts the path a tool is about, for the tools that name one at all. `view_image`
+--- declares a single required `path` (`view_image_spec.rs`), which is the same shape copilot uses,
+--- so a granular `Read(...)` paths rule can reach it. Without this, mapping `view_image` to `Read`
+--- above would read as covered by such a rule while silently never matching.
+--- @param tool_input table
+--- @return table input with `file_path` filled in when codex named it `path`. The original is
+---   never mutated: the same payload is also used to render the approval UI.
+function M.normalize_input(tool_input)
+  if type(tool_input) ~= "table" or tool_input.file_path or not tool_input.path then
+    return tool_input
+  end
+
+  return vim.tbl_extend("force", tool_input, { file_path = tool_input.path })
+end
+
+--- **Still uncovered above: `apply_patch`.** Known gap, not an oversight.
 ---
---- Codex does not put the edited path in a sibling key the way grok (`target_file`) and copilot
---- (`path`) do -- there is no path in `tool_input` at all. It is inside the `command` string, as an
---- apply_patch envelope that may name several files at once:
+--- Codex does not put the *edited* path in a sibling key the way grok (`target_file`) and copilot
+--- (`path`) do -- there is no path in an apply_patch `tool_input` at all. It is inside the
+--- `command` string, as an envelope that may name several files at once:
 ---
 ---   *** Begin Patch
 ---   *** Update File: a.lua

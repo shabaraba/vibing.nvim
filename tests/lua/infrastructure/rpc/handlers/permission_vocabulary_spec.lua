@@ -118,6 +118,45 @@ describe("permission handler tool vocabulary", function()
     assert.is_nil(vocabulary.to_canonical("Read"))
   end)
 
+  it("maps the codex built-ins that reach the hook under their own names", function()
+    -- codex 0.154.0 renames only what carries risk: hook_names.rs serializes shell-likes as
+    -- `Bash` and aliases `apply_patch` to Write/Edit. Its remaining built-ins arrive as
+    -- `ToolName::plain`, so without these a `Read`/`WebSearch` rule never sees them.
+    local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
+    assert.equals("Read", vocabulary.to_canonical("view_image"))
+    assert.equals("WebSearch", vocabulary.to_canonical("web_search"))
+  end)
+
+  it("lifts view_image's `path` so a Read paths rule can reach it", function()
+    -- Mapping view_image onto Read without this would read as covered by `Read(...)` while
+    -- silently never matching: codex declares the argument as `path`, not `file_path`.
+    local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
+    local normalized = vocabulary.normalize_input({ path = "/tmp/project/secret.png" })
+    assert.equals("/tmp/project/secret.png", normalized.file_path)
+  end)
+
+  it("leaves an apply_patch input alone, since it carries no path at all", function()
+    local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
+    local input = { command = "*** Begin Patch\n*** Update File: a.lua\n*** End Patch" }
+    assert.is_nil(vocabulary.normalize_input(input).file_path)
+  end)
+
+  it("denies a codex image read when a path-scoped Read deny covers the file", function()
+    -- The whole chain end to end: view_image -> Read, `path` -> `file_path`, then the glob. Read
+    -- is in ALWAYS_ALLOWED_TOOLS, so only the path-scoped deny can stop it -- and that deny reads
+    -- `file_path`, which nothing but normalize_input puts there.
+    local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
+    permission.set_active_opts(HANDLE_ID, {
+      permissions_deny = { "Read(**/secret.png)" },
+      _tool_vocabulary = vocabulary,
+    })
+
+    write_request("req-view-image", "view_image", { path = "/tmp/project/secret.png" })
+    local result = permission.check_tool_permission({ request_id = "req-view-image", handle_id = HANDLE_ID })
+
+    assert.equals("denied", result.status)
+  end)
+
   it("pre-approves Codex's normalized name for the bundled vibing-nvim MCP server", function()
     local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
     permission.set_active_opts(HANDLE_ID, {
