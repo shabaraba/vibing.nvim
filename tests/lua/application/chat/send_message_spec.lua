@@ -404,7 +404,12 @@ describe("send_message", function()
 
       assert.is_true(handled)
       local out = table.concat(appended, "")
-      local patch_path = out:match("<!%-%- patch: ([^%s]+) %-%->")
+      -- patch行の形は `patch_finder` が唯一の読み手。ここで別に書くと両者が黙ってずれる
+      local PatchFinder = require("vibing.presentation.chat.modules.patch_finder")
+      local patch_path
+      for _, line in ipairs(vim.split(out, "\n", { plain = true })) do
+        patch_path = patch_path or PatchFinder.parse_patch_line(line)
+      end
       assert.is_truthy(patch_path, "no patch annotation written: " .. out)
       local pf = assert(io.open(patch_path, "r"))
       local content = pf:read("*a")

@@ -18,24 +18,9 @@ vim.opt.runtimepath:append(repo_root)
 vim.opt.swapfile = false
 vim.opt.backup = false
 
--- The "number" view style of mini.diff colors line numbers, which needs them shown at all.
+-- The patch viewer draws its own gutter, but the window `gf` / `<CR>` opens a real file in is an
+-- ordinary one, and reading it against the viewer's line numbers needs these shown.
 vim.opt.number = true
-
--- mini.diff is an optional dependency of the diff viewer. lazy.nvim does not run here, so take
--- it from where lazy installed it. Absence is not an error: the viewer is supposed to fall back
--- to the built-in patch viewer in exactly that case, and this init is also how that fallback
--- gets tested (move the directory aside, or just do not install it).
-local mini_diff_path = vim.fn.expand("~/.local/share/nvim/lazy/mini.diff")
-if vim.fn.isdirectory(mini_diff_path) == 1 then
-  vim.opt.runtimepath:append(mini_diff_path)
-  local mini_diff = require("mini.diff")
-  mini_diff.setup({
-    -- Same configuration the plugin documents for this integration: no source of its own, so
-    -- nothing is shown until vibing.nvim sets reference text on a buffer.
-    source = mini_diff.gen_source.none(),
-    view = { style = "number" },
-  })
-end
 
 require("vibing").setup({
   -- The MCP server is a separate build artifact (`./build.sh`) that a fresh worktree does not

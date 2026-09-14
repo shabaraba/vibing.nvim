@@ -1,78 +1,101 @@
--- diff_opener.lua は `gd` の入口。ここで固定したいのは、どのビューアが選ばれるかの分岐だけ。
--- mini.diff は任意依存なので、その有無はスタブで作る。
+-- diff_opener.lua は `gd` の入口。ここで固定したいのは行き先の分岐だけ。
+-- そのターンのpatchがあればpatch_viewer、無ければHEADとの差分、どちらも無理なら何も開かない。
 local DiffOpener = require("vibing.presentation.chat.modules.diff_opener")
-local Config = require("vibing.config")
 
-describe("diff_opener", function()
-  local saved_viewer
-  local saved_mini
+describe("diff_opener.open", function()
+  local saved = {}
+  local calls
 
-  local function with_mini(present)
-    package.loaded["mini.diff"] = present and { gen_source = {} } or nil
+  local function stub(name, module)
+    saved[name] = saved[name] or { value = package.loaded[name], had = package.loaded[name] ~= nil }
+    package.loaded[name] = module
   end
 
   before_each(function()
-    if not Config.options then
-      Config.setup({})
-    end
-    Config.options.diff = Config.options.diff or {}
-    saved_viewer = Config.options.diff.viewer
-    saved_mini = package.loaded["mini.diff"]
+    calls = { patch_viewer = {}, head_diff = {}, notified = {} }
+
+    stub("vibing.ui.patch_viewer", {
+      show = function(session_id, patch_filename, file_path)
+        table.insert(calls.patch_viewer, { session_id, patch_filename, file_path })
+      end,
+    })
+    stub("vibing.core.utils.diff_selector", {
+      show_diff = function(file_path, session_id, cwd)
+        table.insert(calls.head_diff, { file_path, session_id, cwd })
+      end,
+    })
+    stub("vibing.core.utils.notify", {
+      info = function(message)
+        table.insert(calls.notified, message)
+      end,
+    })
+    stub("vibing.presentation.chat.view", {
+      get_chat_buffer = function()
+        return nil
+      end,
+    })
   end)
 
   after_each(function()
-    Config.options.diff.viewer = saved_viewer
-    package.loaded["mini.diff"] = saved_mini
+    for name, entry in pairs(saved) do
+      package.loaded[name] = entry.had and entry.value or nil
+    end
+    saved = {}
   end)
 
-  describe("resolve_viewer", function()
-    it('uses mini.diff when "auto" and it is installed', function()
-      Config.options.diff.viewer = "auto"
-      with_mini(true)
-      assert.equals("mini", DiffOpener.resolve_viewer())
-    end)
+  local function with_cursor(session_id, patch_filename, file_path)
+    stub("vibing.presentation.chat.modules.patch_finder", {
+      get_session_id = function()
+        return session_id
+      end,
+      find_nearest_patch = function()
+        return patch_filename
+      end,
+    })
+    stub("vibing.core.utils.file_path", {
+      is_cursor_on_file_path = function()
+        return file_path
+      end,
+    })
+  end
 
-    it('falls back to the patch viewer when "auto" and it is not installed', function()
-      Config.options.diff.viewer = "auto"
-      with_mini(false)
-      assert.equals("patch", DiffOpener.resolve_viewer())
-    end)
+  it("opens the patch viewer when the turn has a patch", function()
+    with_cursor("sess-1", "/tmp/turn.patch", "lua/a.lua")
 
-    it('never uses mini.diff when "patch" is set, even if installed', function()
-      Config.options.diff.viewer = "patch"
-      with_mini(true)
-      assert.equals("patch", DiffOpener.resolve_viewer())
-    end)
+    DiffOpener.open(1)
 
-    it('falls back rather than failing when "mini" is set but not installed', function()
-      Config.options.diff.viewer = "mini"
-      with_mini(false)
-      -- 設定ミスは警告される（`notify.warn_once`）が、`gd` は必ず何かを表示する
-      assert.equals("patch", DiffOpener.resolve_viewer())
-    end)
-
-    it('defaults to "auto" behaviour when the option is absent', function()
-      Config.options.diff.viewer = nil
-      with_mini(true)
-      assert.equals("mini", DiffOpener.resolve_viewer())
-    end)
+    assert.same({ { "sess-1", "/tmp/turn.patch", "lua/a.lua" } }, calls.patch_viewer)
+    assert.same({}, calls.head_diff)
   end)
 
-  describe("_show_inline", function()
-    it("declines a patch file that does not exist", function()
-      assert.is_false(DiffOpener._show_inline("/nope/missing.patch", "a.lua"))
-    end)
+  it("opens the patch viewer even with no path under the cursor", function()
+    -- 1行サマリの節ではカーソル下に個別のパスが無い。一覧から選べるので、それでも開く
+    with_cursor("sess-1", "/tmp/turn.patch", nil)
 
-    it("declines a patch with no base header", function()
-      -- baseヘッダの無いpatchは削除されたmote統合が書いたもので、逆適用できる自己完結した
-      -- diffではない。patch_viewerなら表示だけはできるので、falseを返して譲る
-      local path = vim.fn.tempname() .. ".patch"
-      vim.fn.writefile({ "diff --git a/a.lua b/a.lua", "@@ -1 +1 @@", "-x", "+y" }, path)
+    DiffOpener.open(1)
 
-      local shown = DiffOpener._show_inline(path, "a.lua")
-      vim.fn.delete(path)
+    assert.same({ { "sess-1", "/tmp/turn.patch", nil } }, calls.patch_viewer)
+  end)
 
-      assert.is_false(shown)
-    end)
+  it("falls back to the diff against HEAD, saying why, when the turn has no patch", function()
+    with_cursor("sess-1", nil, "lua/a.lua")
+
+    DiffOpener.open(1)
+
+    assert.same({}, calls.patch_viewer)
+    assert.same({ { "lua/a.lua", "sess-1", nil } }, calls.head_diff)
+    -- 見た目が同じで意味が違うので、黙って差し替えてはいけない
+    assert.equals(1, #calls.notified)
+    assert.is_truthy(calls.notified[1]:match("HEAD"))
+  end)
+
+  it("opens nothing when there is neither a patch nor a path under the cursor", function()
+    with_cursor(nil, nil, nil)
+
+    DiffOpener.open(1)
+
+    assert.same({}, calls.patch_viewer)
+    assert.same({}, calls.head_diff)
+    assert.same({}, calls.notified)
   end)
 end)

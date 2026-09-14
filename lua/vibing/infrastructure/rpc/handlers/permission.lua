@@ -197,6 +197,16 @@ function M._capture_baselines(effective_handle, cwd, tool_name, tool_input)
   pcall(function()
     require("vibing.core.utils.request_diff").capture(effective_handle, tool_name, tool_input)
   end)
+  pcall(function()
+    -- ここも「ツールが走る前」であることが要る。worktreeを作るコマンドの前後を比べるので、
+    -- 押さえるのは実行前の一覧でなければならない
+    require("vibing.application.chat.worktree_binding").observe(
+      effective_handle,
+      cwd,
+      tool_name,
+      tool_input
+    )
+  end)
 end
 
 --- Handle check_tool_permission RPC request
