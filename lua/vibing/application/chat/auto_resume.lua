@@ -58,10 +58,11 @@ local function compute_delay(entry, opts)
   local now = os.time()
 
   if not entry.resets_at then
-    -- No reset timestamp anywhere in the payload. This is the ordinary path, not a drift guard:
-    -- only claude announces a reset time, so every codex, copilot and grok limit lands here and
-    -- gets a fixed delay bounded by max_retries — which for a multi-hour window will usually be
-    -- rejected again. `schedule()` says so in the notification.
+    -- No reset timestamp anywhere in the payload. This is a real path, not a drift guard: claude
+    -- reports one on its stream event and codex states one in its message, but copilot and grok
+    -- announce nothing, and codex itself falls back to "try again later" when it has no time to
+    -- print. Those get a fixed delay bounded by max_retries — which for a multi-hour window will
+    -- usually be rejected again. `schedule()` says so in the notification.
     return opts.fallback_delay_sec or 300
   end
 

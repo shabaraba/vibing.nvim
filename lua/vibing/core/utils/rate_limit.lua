@@ -4,13 +4,18 @@
 --- officially documented (see anthropics/claude-code#24596). This module normalizes all of them
 --- into a single shape so callers never depend on a particular payload spelling:
 ---
----   1. `rate_limit_event` on the stream-json stdout — the only channel that carries the reset
----      timestamp, so it is the primary source.
+---   1. `rate_limit_event` on the stream-json stdout — the richest channel, and the primary
+---      source of the reset timestamp.
 ---   2. The `StopFailure` hook with `error_type = "rate_limit"` — fires when the turn actually
 ---      died, but carries no reset time.
----   3. The error text of a failed run — last-resort fallback if both of the above change shape.
+---   3. The error text of a failed run — last-resort fallback if both of the above change shape,
+---      and the *only* channel codex has. It carries a reset time when the CLI printed one
+---      (`rate_limit_text.lua`), which is what lets a backend with no stream event still record
+---      the project limit rather than retry blind.
 ---
 --- @module vibing.core.utils.rate_limit
+
+local RateLimitText = require("vibing.core.utils.rate_limit_text")
 
 local M = {}
 
@@ -134,6 +139,9 @@ function M.from_hook(hook_input)
 end
 
 --- Last-resort detection from a free-form error string.
+---
+--- `resets_at` is whatever the message itself stated and nil otherwise, so a CLI that only says
+--- "try again later" degrades exactly as this channel always has.
 --- @param text string|nil
 --- @return Vibing.RateLimitInfo|nil
 function M.from_error_text(text)
@@ -146,7 +154,7 @@ function M.from_error_text(text)
     if lower:find(pattern, 1, true) then
       return {
         rejected = true,
-        resets_at = nil,
+        resets_at = RateLimitText.parse_reset_at(text),
         limit_type = nil,
         status = "error_text",
         source = "error_text",
