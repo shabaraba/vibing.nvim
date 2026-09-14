@@ -100,10 +100,27 @@ describe("rate_limit", function()
       assert.is_not_nil(RateLimit.from_error_text("429 Too Many Requests"))
     end)
 
+    it("detects the snake_case spelling an API error type uses", function()
+      -- What codex puts in its `turn.failed` message: the raw provider envelope, not prose.
+      assert.is_not_nil(
+        RateLimit.from_error_text('{"status":429,"error":{"type":"usage_limit_exceeded"}}')
+      )
+      assert.is_not_nil(RateLimit.from_error_text('{"error":{"type":"rate_limit_exceeded"}}'))
+    end)
+
     it("ignores unrelated errors", function()
       assert.is_nil(RateLimit.from_error_text("ENOENT: no such file"))
       assert.is_nil(RateLimit.from_error_text(""))
       assert.is_nil(RateLimit.from_error_text(nil))
+    end)
+
+    it("ignores exhaustion that never resets", function()
+      -- Credit exhaustion reads like a limit but has no reset time, so a scheduled resume would
+      -- be certain to fail. Grok's own wording.
+      assert.is_nil(RateLimit.from_error_text("You are out of credits or over your spending limit."))
+      assert.is_nil(RateLimit.from_error_text("usage balance exhausted"))
+      -- Also an OS error for a full disk, so it must not read as a provider limit.
+      assert.is_nil(RateLimit.from_error_text("quota exceeded"))
     end)
   end)
 

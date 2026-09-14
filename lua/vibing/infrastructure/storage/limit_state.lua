@@ -28,7 +28,7 @@ local M = {}
 --- @field limit_type string|nil e.g. "five_hour"
 --- @field observed_at number Unix seconds when the limit was observed
 --- @field agent string|nil Backend that hit the limit. Absent in stores written before this
----   field existed, which are read as claude's — the only backend that reports a rate limit.
+---   field existed, which are read as claude's.
 
 --- Memoized `git rev-parse` results, keyed by the directory asked about — the same reason
 --- pending_resume.lua caches: one send/receive cycle resolves the path several times.

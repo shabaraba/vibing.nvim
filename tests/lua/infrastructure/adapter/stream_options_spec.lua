@@ -101,6 +101,37 @@ for _, backend in ipairs(helper.adapters()) do
 
         assert.equals(1, #result.done_responses)
       end)
+
+      it("reports a usage limit so the chat parks instead of erroring out", function()
+        -- Auto-resume was claude-only for as long as this merge was written inline in
+        -- claude_cli.lua. Asserted here, across every registered backend, rather than by grepping
+        -- for the call: a backend that skips it stops at `**Error:**` and never resumes.
+        local result = helper.run_stream(adapter)
+        local call = system.only_call()
+
+        call.opts.stderr(nil, "You have hit your usage limit. Try again later.")
+        call.on_exit({ code = 1, stdout = "", stderr = "" })
+        vim.wait(200, function()
+          return #result.done_responses > 0
+        end)
+
+        local info = result.done_responses[1]._rate_limit_info
+        assert.is_not_nil(info)
+        assert.is_true(info.rejected)
+      end)
+
+      it("leaves an ordinary failure alone", function()
+        local result = helper.run_stream(adapter)
+        local call = system.only_call()
+
+        call.opts.stderr(nil, "ENOENT: no such file or directory")
+        call.on_exit({ code = 1, stdout = "", stderr = "" })
+        vim.wait(200, function()
+          return #result.done_responses > 0
+        end)
+
+        assert.is_nil(result.done_responses[1]._rate_limit_info)
+      end)
     end)
 
     describe("failures before spawn", function()

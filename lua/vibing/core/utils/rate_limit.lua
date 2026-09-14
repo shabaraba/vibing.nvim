@@ -24,8 +24,13 @@ local REJECTED_STATUSES = {
 
 --- Substrings that identify a usage/rate limit in a free-form error message. Matched
 --- case-insensitively against the whole error text.
+---
+--- Every entry must name a *time-windowed* limit, never credit exhaustion or a phrasing something
+--- else also uses; `handbook/features/usage-limits.md` says which and why. Both spellings of each
+--- are listed because `from_error_text` matches plain substrings, not patterns.
 local ERROR_TEXT_PATTERNS = {
   "usage limit",
+  "usage_limit",
   "rate limit",
   "rate_limit",
   "too many requests",

@@ -217,7 +217,8 @@ agent = {
     enabled = false,        -- Opt-in: this spends tokens with nobody watching
     max_retries = 1,        -- Auto-resumes allowed per limit hit
     prompt = "Continue from where you left off.",
-    fallback_delay_sec = 300, -- Used only when no reset timestamp was reported
+    fallback_delay_sec = 300, -- Used when no reset timestamp was reported, which is every codex,
+                            -- copilot and grok limit
     grace_sec = 10,         -- Added to the reset time to avoid firing on the boundary
   },
 

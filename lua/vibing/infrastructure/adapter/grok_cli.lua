@@ -11,6 +11,7 @@ local GrokEventProcessor = require("vibing.infrastructure.adapter.modules.grok_e
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
 local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local RateLimitDetector = require("vibing.infrastructure.adapter.modules.rate_limit_detector")
 local GrokSettingsGenerator = require("vibing.infrastructure.hooks.grok_settings_generator")
 
 ---@class Vibing.GrokCLIAdapter : Vibing.Adapter
@@ -170,6 +171,7 @@ function GrokCLI:stream(prompt, opts, on_chunk, on_done)
         vim.fn.timer_stop(timeout_timer)
         timeout_timer = nil
       end
+      RateLimitDetector.attach(response, handle_id, event_context)
       on_done(response)
     end
   end

@@ -12,6 +12,7 @@ local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_hand
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
 local CodexSettingsGenerator = require("vibing.infrastructure.hooks.codex_settings_generator")
 local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local RateLimitDetector = require("vibing.infrastructure.adapter.modules.rate_limit_detector")
 
 ---@class Vibing.CodexCLIAdapter : Vibing.Adapter
 ---@field _handles table<string, table>
@@ -178,6 +179,8 @@ function CodexCLI:stream(prompt, opts, on_chunk, on_done)
         vim.fn.timer_stop(timeout_timer)
         timeout_timer = nil
       end
+      RateLimitDetector.attach(response, handle_id, event_context)
+
       -- `turn.completed` is Codex's only usage event. Attach it even though the process exit
       -- builds the response independently, matching the Claude adapter's accumulator handoff.
       response._token_usage = event_context.tokenUsage
