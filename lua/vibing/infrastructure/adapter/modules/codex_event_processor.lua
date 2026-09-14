@@ -29,12 +29,19 @@ end
 --- sentence. `errorOutput` is concatenated with no separator, so both copies landed in the chat as
 --- one run-on line ("...try again at 3:01 PM.You've hit your usage limit..."). Only an immediate
 --- repeat is dropped — two genuinely identical failures further apart are still both kept.
+---
+--- The dedup key is `context.last_error_message`, not `context.errorOutput`'s own tail: that array
+--- is the same table `codex_cli.lua`'s stderr callback appends filtered stderr text into
+--- independently, on a separate async pipe with no ordering guarantee against the stdout events
+--- this function reacts to. Comparing against the array's last element would miss the duplicate
+--- whenever a stderr line lands between the two JSON copies.
 --- @param context table
 --- @param message string
 local function record_error(context, message)
-  if context.errorOutput[#context.errorOutput] == message then
+  if context.last_error_message == message then
     return
   end
+  context.last_error_message = message
   table.insert(context.errorOutput, message)
 end
 
