@@ -58,9 +58,10 @@ local function compute_delay(entry, opts)
   local now = os.time()
 
   if not entry.resets_at then
-    -- No reset timestamp anywhere in the payload. Rather than give up (which would make the
-    -- whole feature dead weight if the undocumented event shape changes), fall back to a fixed
-    -- delay — bounded in practice by max_retries.
+    -- No reset timestamp anywhere in the payload. This is the ordinary path, not a drift guard:
+    -- only claude announces a reset time, so every codex, copilot and grok limit lands here and
+    -- gets a fixed delay bounded by max_retries — which for a multi-hour window will usually be
+    -- rejected again. `schedule()` says so in the notification.
     return opts.fallback_delay_sec or 300
   end
 

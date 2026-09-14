@@ -15,6 +15,58 @@ to `error_type = rate_limit` (confirms the turn died, no timestamp), and the err
 fallback. None of these payload shapes is officially documented, so every field is optional and a
 schema change degrades the feature instead of breaking the stream.
 
+### Which Channel Each Backend Has
+
+The merge itself lives in `adapter/modules/rate_limit_detector.lua`, called identically by all four
+adapters. It used to be written inline in `claude_cli.lua`, and that is the whole reason auto-resume
+was a claude-only feature for so long: nothing downstream was claude-specific — the project limit
+record, the scheduled re-send and the retry budget were already scoped per backend — but a codex or
+grok chat that hit its provider's limit produced no `_rate_limit_info`, so `send_message.lua` took
+the ordinary error branch and the chat simply stopped. Keeping detection in one shared module makes
+"does this backend auto-resume?" a question about which channels its CLI offers.
+
+That it stays that way is pinned in `tests/lua/infrastructure/adapter/stream_options_spec.lua`,
+which drives a non-zero exit with limit wording on stderr through every backend `agents.lua`
+registers and asserts `_rate_limit_info` came back. A new adapter joins that check by existing.
+
+| Backend | stream event | `StopFailure` hook | error text | `resets_at`? |
+| ------- | ------------ | ------------------ | ---------- | ------------ |
+| claude  | ✅ yes       | ✅ yes             | ✅ yes     | ✅           |
+| codex   | —            | —                  | ✅ yes     | —            |
+| copilot | —            | —                  | ✅ yes     | —            |
+| grok    | —            | —                  | ✅ yes     | —            |
+
+Codex exec's `ThreadEvent` stream (`thread.started` / `turn.*` / `item.*` / `error`) carries no
+rate-limit event at all — codex 0.154 does have a `TokenCountEvent` with a `rate_limits` snapshot,
+but only on the `app-server` protocol, not on `exec --json`. Neither codex, copilot nor grok
+registers a `StopFailure` hook. So for those three the error text is the whole story, and it works
+because all three exit non-zero when a turn dies (verified against codex 0.154, copilot 1.0.78),
+which is what puts the CLI's own message in `response.error`.
+
+Two consequences follow from the missing `resets_at`, and both are by design rather than gaps worth
+closing with a guess:
+
+- **Resume uses `fallback_delay_sec` (300s), not a real reset time.** `schedule()` says so in the
+  notification (`"no reset time reported; this is a fallback retry"`), and `max_retries` bounds how
+  often it can be wrong. For a five-hour window that retry will almost certainly be rejected again.
+- **`.vibing/limit-state.json` is never written by those backends.** `LimitState.record` ignores a
+  payload with no reset timestamp, since a record that cannot answer "is the limit still active?"
+  would strand every later request. So the "park the _next_ chat pre-emptively" half of the feature
+  stays claude-only; the chat that actually hit the limit still parks and resumes.
+
+Detection is gated on `response.error` rather than on the adapters' accumulated `error_output`.
+`error` is set only when the process exited non-zero (or declared a failure in its result event),
+whereas `error_output` also collects plain stderr — and every one of these CLIs writes harmless
+warnings there. Matching on that instead would park a chat that had just answered fine.
+
+`ERROR_TEXT_PATTERNS` carries both the prose spelling a CLI prints and the snake_case one an API
+error type uses, because codex surfaces the raw provider envelope
+(`{"error":{"type":"usage_limit_exceeded"}}`) as its `turn.failed` message. Every entry must name a
+**time-windowed** limit: credit exhaustion reads similarly (grok says "out of credits" and "usage
+balance exhausted") but never resets on its own, so matching it would schedule a resume guaranteed
+to fail. "quota exceeded" is held out for the same reason — it is also what a filesystem reports
+when a disk is full.
+
 Pending resumes persist to `.vibing/pending-resume.json` and are re-armed on `setup()`, since a
 five-hour reset usually outlives the Neovim session. Safeguards: `max_retries` (default 1) per
 limit hit, never overwriting an unsent `## User` message, and an 8-day sanity ceiling on the reset
@@ -47,7 +99,8 @@ for a stale entry that outlives a restart) now call `auto_resume.announce_gave_u
 - Fails soft per orchestrator: an unreachable parent path warns rather than raising, so one bad
   entry does not stop the chat's own notice line from being written.
 
-**Implementation:** `application/chat/auto_resume.lua` (scheduler),
+**Implementation:** `adapter/modules/rate_limit_detector.lua` (the per-adapter seam),
+`application/chat/auto_resume.lua` (scheduler),
 `infrastructure/storage/pending_resume.lua` (persistence),
 `infrastructure/rpc/handlers/rate_limit.lua` (StopFailure receiver), `bin/hooks/stop-failure.sh`.
 
@@ -110,10 +163,11 @@ user can edit while the turn is in flight. **Reading** it before a request exist
 `Modes.resolve_agent` (frontmatter `agent` > `config.adapter` > claude) — the same precedence
 `send_message._resolve_adapter` applies a moment later.
 
-A record with no `agent` field reads as claude's, since claude is the only backend that reports a
-rate limit (`claude_cli.lua`) and so the only one that could have written one.
-`:VibingCancelResume all` is the one unscoped clear left: it has no chat in hand, and "forget
-everything" is the user saying so by hand.
+A record with no `agent` field reads as claude's. Claude was the only backend detecting a limit
+back when the field did not exist, so it is the only one that can have written such a record — and
+it remains, per the table above, the only backend that reports a reset timestamp and therefore the
+only one that writes this file at all today. `:VibingCancelResume all` is the one unscoped clear
+left: it has no chat in hand, and "forget everything" is the user saying so by hand.
 
 **Implementation:** `infrastructure/storage/limit_state.lua` (project limit record),
 `core/utils/when.lua` (time spec parser), plus the `kind` dispatch in

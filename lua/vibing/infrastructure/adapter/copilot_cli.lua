@@ -10,6 +10,7 @@ local CopilotEventProcessor = require("vibing.infrastructure.adapter.modules.cop
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
 local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local RateLimitDetector = require("vibing.infrastructure.adapter.modules.rate_limit_detector")
 local CopilotSettingsGenerator = require("vibing.infrastructure.hooks.copilot_settings_generator")
 local ToolVocabulary = require("vibing.infrastructure.adapter.modules.copilot_tool_vocabulary")
 
@@ -144,6 +145,7 @@ function CopilotCLI:stream(prompt, opts, on_chunk, on_done)
         vim.fn.timer_stop(timeout_timer)
         timeout_timer = nil
       end
+      RateLimitDetector.attach(response, handle_id, event_context)
       on_done(response)
     end
   end

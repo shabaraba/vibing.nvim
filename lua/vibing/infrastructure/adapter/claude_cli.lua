@@ -13,6 +13,7 @@ local SessionManagerModule = require("vibing.infrastructure.adapter.modules.sess
 local SettingsGenerator = require("vibing.infrastructure.hooks.settings_generator")
 local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local RateLimitDetector = require("vibing.infrastructure.adapter.modules.rate_limit_detector")
 
 ---@class Vibing.ClaudeCLIAdapter : Vibing.Adapter
 ---@field _handles table<string, table>
@@ -185,19 +186,7 @@ function ClaudeCLI:stream(prompt, opts, on_chunk, on_done)
         timeout_timer = nil
       end
 
-      -- Combine every channel that can report a usage limit. Only the stream event carries a
-      -- reset timestamp; the StopFailure hook confirms the turn actually died; the error text is
-      -- the fallback if either payload shape changes. See core/utils/rate_limit.lua.
-      local RateLimit = require("vibing.core.utils.rate_limit")
-      local rate_limit_handler = require("vibing.infrastructure.rpc.handlers.rate_limit")
-      local merged = RateLimit.merge(
-        event_context.rateLimitInfo,
-        rate_limit_handler.take_failure(handle_id),
-        response.error and RateLimit.from_error_text(tostring(response.error)) or nil
-      )
-      if merged and merged.rejected then
-        response._rate_limit_info = merged
-      end
+      RateLimitDetector.attach(response, handle_id, event_context)
 
       -- Attached even on a failed turn: the requests it made were still paid for, and a turn that
       -- died at 600k is exactly the one worth reporting.
