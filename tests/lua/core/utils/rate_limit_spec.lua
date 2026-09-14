@@ -108,6 +108,28 @@ describe("rate_limit", function()
       assert.is_not_nil(RateLimit.from_error_text('{"error":{"type":"rate_limit_exceeded"}}'))
     end)
 
+    it("carries the reset time the message stated", function()
+      -- Codex's own wording, and the only channel it has. Without this the record in
+      -- limit-state.json is never written and sibling chats keep sending into a live limit.
+      local info = RateLimit.from_error_text(
+        "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), "
+          .. "visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 3:01 PM."
+      )
+
+      assert.is_true(info.rejected)
+      assert.is_not_nil(info.resets_at)
+      local when = os.date("*t", info.resets_at)
+      assert.equals(15, when.hour)
+      assert.equals(1, when.min)
+    end)
+
+    it("leaves the reset time nil when the message states none", function()
+      local info = RateLimit.from_error_text("You've hit your usage limit. Try again later.")
+
+      assert.is_true(info.rejected)
+      assert.is_nil(info.resets_at)
+    end)
+
     it("ignores unrelated errors", function()
       assert.is_nil(RateLimit.from_error_text("ENOENT: no such file"))
       assert.is_nil(RateLimit.from_error_text(""))
