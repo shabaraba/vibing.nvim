@@ -23,7 +23,7 @@ into the subagent buffer and silently stops all tool results from rendering. Go 
 `parent_tool_use_id(msg)` helper, which requires a non-empty string.
 
 Only the subagent's assistant text is surfaced; the prompt echo, thinking blocks, and its nested
-tool results stay hidden. `tests/fixtures/subagent_stream.jsonl` is a real captured stream used to
+tool results stay hidden. `tests/fixtures/streams/claude/subagent_forwarding.jsonl` is a real captured stream used to
 replay the whole path in `cli_event_processor_subagent_spec.lua`.
 
 ## Message Timestamps

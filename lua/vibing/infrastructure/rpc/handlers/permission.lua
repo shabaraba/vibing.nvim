@@ -212,6 +212,36 @@ end
 --- Handle check_tool_permission RPC request
 --- @param params {request_id: string, handle_id: string?}
 --- @return table RPC response
+--- The canonical tool name and input for a hook payload, through a backend's vocabulary.
+---
+--- Three steps, in an order that matters because each feeds the next (`cli-integration.md` →
+--- "Backend Seams"): the payload's own key names first (grok sends `toolName`/`toolInput`; read
+--- straight through, the two steps below get nothing to work on), then the tool's name
+--- (`apply_patch` → `Edit`), then where the path lives inside the input (granular `paths` rules
+--- read `file_path`, and a backend that names it `path`/`target_file` would slip past every one
+--- of them). A vocabulary may implement any subset; a backend that speaks the canonical
+--- vocabulary passes none.
+--- @param hook_input table the decoded hook payload
+--- @param vocabulary table|nil
+--- @return string tool_name canonical
+--- @return table tool_input with `file_path` where the backend had a path under another key
+function M.normalize_hook_input(hook_input, vocabulary)
+  if vocabulary and vocabulary.normalize_payload then
+    hook_input = vocabulary.normalize_payload(hook_input)
+  end
+
+  local tool_name = hook_input.tool_name or ""
+  local tool_input = hook_input.tool_input or {}
+
+  if vocabulary and vocabulary.to_canonical then
+    tool_name = vocabulary.to_canonical(tool_name) or tool_name
+  end
+  if vocabulary and vocabulary.normalize_input then
+    tool_input = vocabulary.normalize_input(tool_input)
+  end
+  return tool_name, tool_input
+end
+
 function M.check_tool_permission(params)
   if not params or not params.request_id then
     return { error = "Missing request_id" }
@@ -246,26 +276,7 @@ function M.check_tool_permission(params)
   -- Backends name their tools differently (codex calls an edit "apply_patch"). The adapter
   -- supplies its own translation table as a generic `_tool_vocabulary`, so this handler stays
   -- ignorant of which backend it is serving -- adding a fourth needs no change here (#516).
-  local vocabulary = active_opts and active_opts._tool_vocabulary
-
-  -- Backends also disagree on the payload's own key names, not just the tool names inside it
-  -- (grok sends `toolName`/`toolInput`). Normalize before reading, or the two calls below are
-  -- handed nothing to translate.
-  if vocabulary and vocabulary.normalize_payload then
-    hook_input = vocabulary.normalize_payload(hook_input)
-  end
-
-  local tool_name = hook_input.tool_name or ""
-  local tool_input = hook_input.tool_input or {}
-
-  if vocabulary and vocabulary.to_canonical then
-    tool_name = vocabulary.to_canonical(tool_name) or tool_name
-  end
-  -- Same reasoning for the input: granular `paths` rules read `file_path`, and a backend that
-  -- names it `path`/`target_file` would slip past every one of them.
-  if vocabulary and vocabulary.normalize_input then
-    tool_input = vocabulary.normalize_input(tool_input)
-  end
+  local tool_name, tool_input = M.normalize_hook_input(hook_input, active_opts and active_opts._tool_vocabulary)
 
   -- Kill process first, call UI callback, then write deny response. Used by both
   -- AskUserQuestion and "ask" permission paths. The deny response only reaches the model when

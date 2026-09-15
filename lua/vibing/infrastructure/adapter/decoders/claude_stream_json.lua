@@ -1,7 +1,7 @@
 --- `claude -p --output-format stream-json --include-partial-messages`, as canonical events.
 ---
 --- The reference decoder: what it emits is what every other backend is rendered to look like.
---- Shapes captured from claude 2.1.x; `tests/fixtures/subagent_stream.jsonl` is a real capture.
+--- Shapes captured from claude 2.1.x; `tests/fixtures/streams/claude/` holds real captures.
 --- @module vibing.infrastructure.adapter.decoders.claude_stream_json
 
 local M = {}

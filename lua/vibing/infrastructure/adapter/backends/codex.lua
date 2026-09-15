@@ -34,7 +34,9 @@ local M = {
       { kind = "resume", subcommand = "resume" },
       { kind = "args", "--json" },
       -- The transport's fragment verbatim: the `-c hooks.PreToolUse` pair and the trust bypass.
-      { kind = "hook_arg" },
+      -- Never on a lightweight call, whatever was handed in: the conformance suite passes one to
+      -- prove the request drops it, since a hook nothing can answer is what stalls the turn.
+      { kind = "hook_arg", unless = "lightweight" },
       { kind = "model", flag = "-m", names = "native" },
       -- No dedicated exec flag; a per-process config override applies to fresh and resumed
       -- threads alike without changing the user's config.toml.
