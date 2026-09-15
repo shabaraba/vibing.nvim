@@ -39,15 +39,29 @@ the handlers, the cleanup routine and `bin/hooks/*.sh`.
 
 ## Backends and Their Seams
 
-`claude_cli.lua` (default), `codex_cli.lua`, `copilot_cli.lua` and `grok_cli.lua` implement the
-adapter interface. Implementing it is not the same as feature parity — `AskUserQuestion` is
-Claude-only (`handbook/features/chat-ui.md`).
+There is one adapter, `cli_adapter.lua`, driven by a descriptor per backend
+(`adapter/backends/<id>.lua`, ADR 009). Implementing the descriptor is not the same as feature
+parity — `AskUserQuestion` is Claude-only (`handbook/features/chat-ui.md`). Adding a backend is
+`handbook/ADAPTER_DEVELOPMENT.md`; the Claude backend's behaviour is the contract, pinned by
+`tests/lua/infrastructure/adapter/conformance/` over every registered descriptor.
 
-- **`core/constants/agents.lua` is the single definition of what a backend is** — module path,
-  export name, description, model candidates. `factory.lua`, `modes.lua`,
-  `completion/providers/frontmatter.lua` and `infrastructure/init.lua` all derive from it, so
-  adding a backend is a one-file change. It deliberately requires nothing, which keeps the
+- **`core/constants/agents.lua` is the single definition of what a backend is** — module paths,
+  export name, description, model candidates, and its `config_fields` (what `backends.<id>.*`
+  accepts). `factory.lua`, `modes.lua`, `config.lua`, `completion/providers/frontmatter.lua` and
+  `infrastructure/init.lua` all derive from it. It deliberately requires nothing, which keeps the
   dependency one-way.
+- **A descriptor holds data; a decoder holds no rendering.** `request.parts` is the argv in order,
+  `hook` names a transport and a dialect from `hooks/transports.lua`, and the decoder
+  (`adapter/decoders/`) turns one JSON line into `Vibing.CanonicalEvent`s and stops.
+  `event_renderer.lua` is the one place a tool call's appearance, `on_tool_use` and subagent
+  counting are decided; a decoder that draws its own header reintroduces the per-backend drift
+  P1 removed.
+- **Tool names cross the seam in the CLI's own vocabulary and are canonicalised once.** The
+  renderer and `permission.normalize_hook_input` translate through the same
+  `<backend>_tool_vocabulary.lua`, so a tool is called the same thing in the chat and in a rule.
+- **Nothing outside `adapter/`, `hooks/` and `agents.lua` names a backend.** Usage reporting keys
+  on `TokenUsage.is_cumulative`, per-backend options live under `backends.<id>`, and project
+  files come from the descriptor's `on_project_open` / `on_setup` / `clear_caches`.
 - **A backend name belongs in that backend's own module; shared code takes what it is handed.**
   `rpc/handlers/permission.lua` contains no backend name.
 - **`bin/hooks/pre-tool-use.sh` is the one deliberate exception**: the deny _signalling_
@@ -56,6 +70,7 @@ Claude-only (`handbook/features/chat-ui.md`).
 - **Each `<backend>_tool_vocabulary.lua`'s three normalizations are order-dependent.**
   `normalize_payload` (key names) must run before `to_canonical` (tool name) and `normalize_input`
   (where the path lives), or every rule misses and the turn stalls until the hook fails closed.
+  The order lives once, in `permission.normalize_hook_input`.
 - **Grok discovers project hooks only inside a git repository** (outside one the gate would
   silently allow everything, so `ensure()` warns), and **copilot's hook is injected as a throwaway
   plugin** under `.vibing/copilot-plugin/` via `--plugin-dir`, with a schema that is not claude's.

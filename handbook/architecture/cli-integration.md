@@ -127,7 +127,9 @@ to catch the next one rather than a hand-maintained list here. vibing.nvim's own
 
 These are the seams that stop backend identity leaking into shared code. The rule they encode:
 **a backend name belongs in that backend's own module, and shared code takes what it is handed.**
-`bin/hooks/pre-tool-use.sh` is the one deliberate exception, and the last bullet says why.
+`bin/hooks/pre-tool-use.sh` is the one deliberate exception, and the last bullet says why. Since
+ADR 009 each backend is a descriptor (`adapter/backends/<id>.lua`) that names its hook transport
+and dialect from `hooks/transports.lua`; the four generators described below are those transports.
 
 - **Tool vocabulary.** Backends name their tools differently (codex calls an edit `apply_patch`,
   copilot uses `bash`/`view`/`create`/`edit`/`web_search`, grok `search_replace`/

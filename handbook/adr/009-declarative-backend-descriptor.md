@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed（調査結果と設計案。実装はまだ無い）
+Accepted — 実装済み（P0〜P6、本 ADR と同じ PR）。下の「移行計画」に各フェーズの着地点を記す。
 
 ## Date
 
@@ -422,6 +422,32 @@ Gemini の自前ゲートにどう解釈されるか（`decision` を返さず e
 P0 と P1 が効果の大半で、それだけで固有側 5,700 行のうち `stream()` 4 本（約 950 行）と
 item_display 2 本・event processor の描画部（約 400 行）が消える。P2 は削減量より
 「#537 型の直し忘れが構造的に起きない」ことが目的。
+
+### 着地点（実装後の差分）
+
+計画どおりに進めたうえで、実装時に判断が変わった点だけを記す。
+
+- **P0**: `*_cli.lua` は削除せず 2 行のシムとして残した。require パス・export 名・`adapter.name`
+  を外部（テスト、`doc/api-reference.md`、ユーザーの `get_adapter()`）が握っているため。
+- **P1**: canonical イベントは計画の 11 種そのまま。デコーダはツール名を **CLI の語彙のまま**
+  出し、renderer が `vocabulary` で正規化する形にした（permission ハンドラと同じ表を通すため）。
+  `send_message` の `FileChange` 分岐は消えた。
+- **P2**: フラグ表で表せない部分は `extra` として **既存の `<id>_command_builder.lua` に残し**、
+  記述子の `request.parts` から名前で参照する。builder モジュールの `build()` は記述子の spec を
+  通すシムになり、既存の builder スペック約 175 件がそのまま argv のスナップショットになった。
+- **P3**: generator 4 本はファイルを動かさず `hooks/transports.lua` の 4 エントリとして名前を
+  付けた。方言は各 generator の引数になり、claude は「引数なし」なので既存の settings ファイルは
+  バイト単位で同じ。
+- **P4**: 設定キーは `backends.<id>.*` に移し、旧キー（`permissions.codex_*`、
+  `agent.codex_provider_notice.enabled`、`grok.executable`）は警告付きで読み替える。項目の宣言は
+  `agents.lua` の `config_fields`（純データ）で、`config.lua` はそこから既定値と検証を導く。
+  Tokens フッタのマーカーは `total-*` で書き、旧 `codex-*` も読む。
+- **P5**: conformance suite は `descriptor_shape` / `request` / `hook_payload` /
+  `hook_registration` / `renderer_parity` / `stream_fixtures` の 6 本。`request` が codex の
+  lightweight で hook 断片を落としていない穴を 1 つ見つけ、塞いだ。実 CLI のキャプチャは
+  claude の 1 本だけが手元にあり、他 3 バックエンドは `stream_fixtures` が **pending として
+  報告**する（黙って通さない）。
+- **P6**: `handbook/ADAPTER_DEVELOPMENT.md` を記述子の書き方と「先に測る項目」に書き換えた。
 
 ## Consequences
 
