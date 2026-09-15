@@ -115,8 +115,10 @@ bullet list (`- - -`). The user deletes unwanted options with standard Vim comma
 and sends the remainder with `<CR>`.
 
 **Implementation:** the primary path is vibing.nvim's own MCP tool
-`mcp__vibing-nvim__nvim_ask_user_question` (`claude-plugin/mcp-server/src/tools/chat.ts`), which
-the CLI's system prompt instructs the model to use instead of the native tool. Its handler calls
+`nvim_ask_user_question` (`claude-plugin/mcp-server/src/tools/chat.ts`), which the Claude and Codex
+prompts instruct the model to use instead of the native tool. The backend-specific qualified tool
+names differ, but both prompts use the shared text in
+`adapter/modules/ask_user_question_instructions.lua`. Its handler calls
 `M.ask_user_question()` in `infrastructure/rpc/handlers/permission.lua`, which cancels the
 in-flight turn and renders the choice list via `on_insert_choices`. Because the turn is killed,
 the tool's return value never reaches the model — the user's answer arrives as the next `--resume`d
@@ -137,12 +139,14 @@ comment are appended _before_ the User section, so the diff would land underneat
 Native `AskUserQuestion` is unavailable in headless `claude -p` mode and is opaque to vibing.nvim,
 so the PreToolUse hook intercepts and denies it, rendering the same UI as a fallback.
 
-### Codex backend: not wired
+### Codex backend
 
-`codex_cli.lua` deliberately omits `chat_bufnr` when registering with `ActiveStreamRegistry`, and
-the developer message tells the model not to call the tool. The two things that originally made
-this impossible (#532) are gone as of codex 0.153, which is worth recording so the next reader does
-not rediscover them:
+Codex 0.153 and later use the same choice-list path. `codex_plugin_config.lua` names the normalized
+`mcp__vibing_nvim__nvim_ask_user_question` tool and embeds the stable chat buffer number in
+`developer_instructions`; `codex_cli.lua` puts that same number in `ActiveStreamRegistry`, so the
+shared RPC handler resolves the correct stream even when several chats are active.
+
+The two things that originally made this impossible (#532) were added in Codex 0.153:
 
 - Codex now takes a system prompt seam: `-c developer_instructions` becomes the first `developer`
   message. Context and language are still prepended to the user prompt.
@@ -152,8 +156,8 @@ not rediscover them:
   is how the bundled server reaches codex at all (`handbook/architecture/plugin-and-commands.md` →
   "Codex").
 
-What remains untested is the UI itself on this backend, so the route stays unwired rather than
-registered and looking like it works. What does work on Codex is the ordinary tool-approval flow
-(the `ask` permission list): it routes on `handle_id`, not `chat_bufnr`.
+The UI path is covered by the same E2E spec as Claude. Ordinary tool approval remains a different
+route: the `ask` permission list resolves on `handle_id`, while the model-called question tool
+resolves on the stable `chat_bufnr` to avoid putting a per-turn identifier in the prompt.
 
 [codex-24135]: https://github.com/openai/codex/issues/24135

@@ -29,6 +29,8 @@ local PluginContents = require("vibing.infrastructure.plugins.plugin_contents")
 local RpcEnvironment = require("vibing.infrastructure.adapter.modules.rpc_environment")
 local Toml = require("vibing.core.utils.toml")
 local Notify = require("vibing.core.utils.notify")
+local AskUserQuestionInstructions =
+  require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 
 local M = {}
 
@@ -52,13 +54,17 @@ local function warn_once(cwd, problems)
   )
 end
 
---- Memo of the finished argv, keyed by the plugin directories it was built from.
---- Building it reads every plugin's manifest and the frontmatter of every SKILL.md -- synchronous
---- file I/O on the main loop -- and `args` runs on every non-lightweight request, so without this
---- the codex backend paid that on every message. The key is the resolved directory list rather
---- than the cwd so that a different `agent.plugins` (or a `plugin_dirs` refresh that changed the
---- list) is a different entry.
---- @type table<string, string[]>
+--- @class Vibing.CodexResolvedPluginConfig
+--- @field args string[] Static MCP-server overrides
+--- @field skills {plugin: string, skill: Vibing.PluginSkill}[]
+--- @field self_server string|nil
+
+--- Memo of the static plugin resolution, keyed by the resolved plugin directories. Building it
+--- reads every plugin's manifest and the frontmatter of every SKILL.md -- synchronous file I/O on
+--- the main loop -- and `args` runs on every non-lightweight request, so without this the codex
+--- backend paid that on every message. Chat-specific developer instructions are composed from
+--- this result per call and therefore do not multiply the static memo by the number of buffers.
+--- @type table<string, Vibing.CodexResolvedPluginConfig>
 local cache = {}
 
 --- Forget the built argv and which problems were reported. Reached from
@@ -112,8 +118,9 @@ end
 --- as the Neovim RPC port must travel out-of-band through the MCP process environment (#469).
 --- @param skills {plugin: string, skill: Vibing.PluginSkill}[]
 --- @param self_server string|nil registered name of the bundled server, nil when it is not loaded
+--- @param chat_bufnr number|nil stable identity of the current chat buffer
 --- @return string|nil
-local function developer_instructions(skills, self_server)
+local function developer_instructions(skills, self_server, chat_bufnr)
   local lines = {}
 
   if #skills > 0 then
@@ -138,9 +145,15 @@ local function developer_instructions(skills, self_server)
       lines,
       string.format(
         "The vibing-nvim MCP tools are registered as mcp__%s__<tool>; they read and edit the running "
-          .. "Neovim instance the user is looking at. Do not call nvim_ask_user_question here -- the "
-          .. "choice UI is not wired to this chat, so ask in plain text instead.",
+          .. "Neovim instance the user is looking at.",
         self_server:gsub("%-", "_")
+      )
+    )
+    vim.list_extend(
+      lines,
+      AskUserQuestionInstructions.lines(
+        "mcp__" .. self_server:gsub("%-", "_") .. "__nvim_ask_user_question",
+        chat_bufnr
       )
     )
     table.insert(
@@ -166,52 +179,56 @@ end
 --- `vibing-nvim` server by declaring one of its own.
 --- @param cwd string|nil the chat's `working_dir`; nil means Neovim's own cwd
 --- @param config Vibing.Config
+--- @param chat_bufnr number|nil stable identity of the current chat buffer
 --- @return string[] argv fragment, empty when no plugin applies
-function M.args(cwd, config)
+function M.args(cwd, config, chat_bufnr)
   local entries = PluginDirs.resolve_entries(cwd, config)
   local key_parts = {}
   for _, entry in ipairs(entries) do
     table.insert(key_parts, entry.path)
   end
   local cache_key = table.concat(key_parts, "\n")
-  if cache[cache_key] then
-    return vim.deepcopy(cache[cache_key])
-  end
+  local resolved = cache[cache_key]
 
-  local args = {}
-  local seen = {}
-  local skills = {}
-  local problems = {}
-  local self_server = nil
-  -- By path, not by the name "vibing-nvim": with `self = false` a project plugin could carry that
-  -- name, and the developer message would then describe its server as the bundled one.
-  local self_dir = PluginDirs.self_plugin_dir()
+  if not resolved then
+    local args = {}
+    local seen = {}
+    local skills = {}
+    local problems = {}
+    local self_server = nil
+    -- By path, not by the name "vibing-nvim": with `self = false` a project plugin could carry that
+    -- name, and the developer message would then describe its server as the bundled one.
+    local self_dir = PluginDirs.self_plugin_dir()
 
-  for _, entry in ipairs(entries) do
-    for _, server in ipairs(PluginContents.mcp_servers(entry.path)) do
-      if not Toml.is_bare_key(server.name) then
-        table.insert(problems, string.format("%s (server %q)", entry.name, server.name))
-      elseif not seen[server.name] then
-        seen[server.name] = true
-        -- Every server the self plugin declares talks to this Neovim, so every one of them gets
-        -- the port forwarded -- not just the first, which is all the developer message names.
-        local is_self_plugin = entry.path == self_dir
-        append_server(args, server, is_self_plugin)
-        -- The bundled server's name is read from its manifest rather than hard-coded, so a
-        -- rename there cannot leave the model told about a server that is not registered.
-        if is_self_plugin and not self_server then
-          self_server = server.name
+    for _, entry in ipairs(entries) do
+      for _, server in ipairs(PluginContents.mcp_servers(entry.path)) do
+        if not Toml.is_bare_key(server.name) then
+          table.insert(problems, string.format("%s (server %q)", entry.name, server.name))
+        elseif not seen[server.name] then
+          seen[server.name] = true
+          -- Every server the self plugin declares talks to this Neovim, so every one of them gets
+          -- the port forwarded -- not just the first, which is all the developer message names.
+          local is_self_plugin = entry.path == self_dir
+          append_server(args, server, is_self_plugin)
+          -- The bundled server's name is read from its manifest rather than hard-coded, so a
+          -- rename there cannot leave the model told about a server that is not registered.
+          if is_self_plugin and not self_server then
+            self_server = server.name
+          end
         end
       end
+      for _, skill in ipairs(PluginContents.skills(entry.path)) do
+        table.insert(skills, { plugin = entry.name, skill = skill })
+      end
     end
-    for _, skill in ipairs(PluginContents.skills(entry.path)) do
-      table.insert(skills, { plugin = entry.name, skill = skill })
-    end
+
+    warn_once(cwd, problems)
+    resolved = { args = args, skills = skills, self_server = self_server }
+    cache[cache_key] = resolved
   end
 
-  warn_once(cwd, problems)
-
-  local instructions = developer_instructions(skills, self_server)
+  local args = vim.deepcopy(resolved.args)
+  local instructions = developer_instructions(resolved.skills, resolved.self_server, chat_bufnr)
   if instructions then
     -- One override, one flag: `-c` replaces a `developer_instructions` the user set in their own
     -- config.toml for the duration of the run. Accepted -- codex offers no additive form
@@ -219,8 +236,7 @@ function M.args(cwd, config)
     override(args, "developer_instructions", Toml.string(instructions))
   end
 
-  cache[cache_key] = args
-  return vim.deepcopy(args)
+  return args
 end
 
 return M

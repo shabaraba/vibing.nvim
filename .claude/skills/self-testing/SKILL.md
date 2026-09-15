@@ -111,6 +111,7 @@ Spawn a separate Neovim instance for testing.
   `minimal_init.lua` is the parent's and leaves the child without `setup()`, so no `:Vibing*`
   command exists
 - `config.cwd` (string, optional) - working directory
+- `config.adapter` (`"claude"` or `"codex"`, optional) - child backend; defaults to `"claude"`
 - Returns: `instance` table with a `job_id` field
 
 ### `send_keys(instance, keys)`

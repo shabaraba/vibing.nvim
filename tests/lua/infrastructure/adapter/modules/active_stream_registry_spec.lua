@@ -190,7 +190,7 @@ describe("active_stream_registry", function()
     end)
 
     it("separates two streams that register no chat_bufnr at all", function()
-      -- codex/grok は chat_bufnr を登録しない。bufnr で除外すると nil == nil で
+      -- grok など chat_bufnr を登録しないbackendもある。bufnr で除外すると nil == nil で
       -- 「自分自身」と誤判定され、並行実行を1つも検出できなくなる
       local registry = fresh_registry()
       registry.register({ handle_id = "a", worktree_root = "/repo", adapter = {} })

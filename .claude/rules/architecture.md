@@ -41,9 +41,10 @@ the handlers, the cleanup routine and `bin/hooks/*.sh`.
 
 There is one adapter, `cli_adapter.lua`, driven by a descriptor per backend
 (`adapter/backends/<id>.lua`, ADR 009). Implementing the descriptor is not the same as feature
-parity — `AskUserQuestion` is Claude-only (`handbook/features/chat-ui.md`). Adding a backend is
-`handbook/ADAPTER_DEVELOPMENT.md`; the Claude backend's behaviour is the contract, pinned by
-`tests/lua/infrastructure/adapter/conformance/` over every registered descriptor.
+parity — the `AskUserQuestion` choice-list UI is wired for Claude and Codex, but not Grok
+(`handbook/features/chat-ui.md`). Adding a backend is `handbook/ADAPTER_DEVELOPMENT.md`; the
+Claude backend's behaviour is the contract, pinned by `tests/lua/infrastructure/adapter/conformance/`
+over every registered descriptor.
 
 - **`core/constants/agents.lua` is the single definition of what a backend is** — module paths,
   export name, description, model candidates, and its `config_fields` (what `backends.<id>.*`

@@ -146,7 +146,8 @@ describe("grok_command_builder", function()
 
     it("names no MCP tool, because Grok cannot reach the vibing-nvim MCP server", function()
       -- Grok registers no MCP server and no chat_bufnr, so an instruction to call
-      -- nvim_ask_user_question would name a tool it has no way to invoke. Same position as codex.
+      -- nvim_ask_user_question would name a tool it has no way to invoke. Codex is wired through
+      -- its per-run plugin configuration, but Grok has no matching MCP seam.
       local cmd = grok_command_builder.build("hello", { chat_bufnr = 12 }, nil, {})
       local rules_text = cmd[find_flag(cmd, "--rules") + 1]
 

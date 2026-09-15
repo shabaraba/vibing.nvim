@@ -116,10 +116,11 @@ manifest check — but codex 0.153 has nothing that takes a plugin directory for
 plugin travels in two halves. `infrastructure/plugins/plugin_contents.lua` reads them and
 `adapter/modules/codex_plugin_config.lua` renders them as `-c` overrides on the `codex exec`
 argv; the builder appends them on every ordinary call, resumed or not, and never on a
-lightweight one (`core/types.lua`). Rendering means reading every manifest and the frontmatter of
+lightweight one (`core/types.lua`). Resolving means reading every manifest and the frontmatter of
 every `SKILL.md` — synchronous file I/O on the main loop, on every message — so `codex_plugin_config`
-memoizes the finished argv, keyed by the resolved directory list and the port, and
-`:VibingReloadCommands` drops that memo together with `plugin_dirs`' own cache.
+memoizes the static servers and skills by resolved directory list. It composes the chat-specific
+developer instructions from that memo on each call, so buffers do not duplicate the static data;
+`:VibingReloadCommands` drops the memo together with `plugin_dirs`' own cache.
 
 **Measured against codex 0.153.0** (`codex debug prompt-input` renders the model-visible prompt
 without calling the model; `codex exec --strict-config --ignore-user-config` rejects unknown
@@ -171,10 +172,11 @@ bundled tools fall through to the ordinary approval path on every new chat.
 codex scans are the user's own; `skills.config` only toggles skills codex already found. So the
 skills are listed in the developer message in the same shape codex uses for its own list — name,
 description and the absolute `SKILL.md` to read — and the model reads the file with its shell,
-which the sandbox allows. The same message names the tool prefix and the `rpc_port`, replacing
-the paragraph the claude system prompt carries. It is byte-stable across the turns of one chat
-(entries in `plugin_dirs` order, skills in sorted-glob order, the port fixed for the Neovim
-session), because codex's prompt cache matches on a prefix like Anthropic's (#469).
+which the sandbox allows. The same message names the tool prefix and carries the shared
+`nvim_ask_user_question` instruction plus the stable `chat_bufnr`; the RPC port remains out of
+band in the MCP subprocess environment. It is byte-stable across the turns of one chat because
+the plugin list and buffer number are stable, and codex's prompt cache matches on a prefix like
+Anthropic's (#469).
 
 The cost is that `-c` **replaces** a `developer_instructions` the user set in their own
 `config.toml`, for vibing.nvim chats only. Accepted: codex has no additive key, and the

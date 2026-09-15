@@ -629,9 +629,9 @@ subscription table stays in memory only. The delivery queue no longer does (#697
 split is the point: a queued message is a promise made to a sender that must outlive the wait, while
 an `edges` entry is a one-shot subscription to a _stop event_ — and the turn whose stop it was
 waiting for died with the process, so restoring it would arm a wake-up that can never fire.
-Backends other than claude can be _notified_ (the
-event is backend-agnostic) but cannot _subscribe_: `nvim_chat_send_message` is an MCP tool, and
-codex/grok reach no MCP server, the same constraint `features.md` records for AskUserQuestion.
+Backends other than claude can be _notified_ because the event is backend-agnostic. Codex can also
+_subscribe_ through the bundled MCP server; Grok cannot, because it reaches no MCP server — the
+same constraint `features.md` records for AskUserQuestion.
 
 ## Branch conflict warning (`nvim_chat_conflicts`, #699)
 
