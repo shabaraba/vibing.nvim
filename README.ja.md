@@ -183,23 +183,23 @@ Markdown パーサーを注入します。フェンス内の言語を含む既�
 
 ### ユーザーコマンド
 
-| コマンド                              | 説明                                                                                               |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `:VibingChat [position\|file]`        | 新規チャット作成。位置指定(current\|right\|left\|top\|bottom\|back)または保存済みファイルを開く    |
-| `:VibingToggleChat`                   | 既存チャットウィンドウの表示切り替え(会話を保持)                                                   |
-| `:VibingChatFork [position]`          | 現在のチャットをフォーク(会話を分岐)                                                               |
-| `:VibingSlashCommands`                | スラッシュコマンドピッカーを表示                                                                   |
-| `:VibingSetFileTitle`                 | AI がタイトルを生成しチャットファイルをリネーム                                                    |
-| `:VibingSummarize [--with-title]`     | チャット履歴の AI 要約を生成してバッファに挿入(--with-title で続けて要約からリネーム)              |
-| `:VibingDeleteChats [--unrenamed]`    | チャットファイルを削除(--unrenamed で未リネームのファイルを一括削除)                               |
-| `:VibingContext [path]`               | コンテキスト追加: oil.nvim のエントリ、ビジュアル選択(range)、パス引数、引数なしなら現在のバッファ |
-| `:VibingClearContext`                 | コンテキストを全クリア                                                                             |
-| `:VibingCancel`                       | 実行中のリクエストをキャンセル                                                                     |
-| `:VibingReloadCommands`               | カスタムスラッシュコマンドと補完候補を再読み込み                                                   |
-| `:VibingCreatePlugin [name]`          | `.vibing/plugins/` にプロジェクト固有のClaude Codeプラグインを作成                                 |
-| `:VibingCopyUnsentUserHeader`         | `## User <!-- unsent -->` をクリップボードにコピー                                                 |
-| `:VibingDailySummary [YYYY-MM-DD]`    | プロジェクトのチャットから日報を生成(デフォルト: 今日)                                             |
-| `:VibingDailySummaryAll [YYYY-MM-DD]` | すべてのチャットから日報を生成(デフォルト: 今日)                                                   |
+| コマンド                                     | 説明                                                                                                                                  |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `:VibingChat [position\|file]`               | 新規チャット作成。位置指定(current\|right\|left\|top\|bottom\|back)または保存済みファイルを開く                                       |
+| `:VibingToggleChat`                          | 既存チャットウィンドウの表示切り替え(会話を保持)                                                                                      |
+| `:VibingChatFork [position]`                 | 現在のチャットをフォーク(会話を分岐)                                                                                                  |
+| `:VibingSlashCommands`                       | スラッシュコマンドピッカーを表示                                                                                                      |
+| `:VibingSetFileTitle [--linked]`             | AI がタイトルを生成しチャットファイルをリネーム(--linked でリンク先のチャットも同様に処理)                                            |
+| `:VibingSummarize [--with-title] [--linked]` | チャット履歴の AI 要約を生成してバッファに挿入(--with-title で続けて要約からリネーム、--linked で frontmatter のリンク先にも同じ処理) |
+| `:VibingDeleteChats [--unrenamed]`           | チャットファイルを削除(--unrenamed で未リネームのファイルを一括削除)                                                                  |
+| `:VibingContext [path]`                      | コンテキスト追加: oil.nvim のエントリ、ビジュアル選択(range)、パス引数、引数なしなら現在のバッファ                                    |
+| `:VibingClearContext`                        | コンテキストを全クリア                                                                                                                |
+| `:VibingCancel`                              | 実行中のリクエストをキャンセル                                                                                                        |
+| `:VibingReloadCommands`                      | カスタムスラッシュコマンドと補完候補を再読み込み                                                                                      |
+| `:VibingCreatePlugin [name]`                 | `.vibing/plugins/` にプロジェクト固有のClaude Codeプラグインを作成                                                                    |
+| `:VibingCopyUnsentUserHeader`                | `## User <!-- unsent -->` をクリップボードにコピー                                                                                    |
+| `:VibingDailySummary [YYYY-MM-DD]`           | プロジェクトのチャットから日報を生成(デフォルト: 今日)                                                                                |
+| `:VibingDailySummaryAll [YYYY-MM-DD]`        | すべてのチャットから日報を生成(デフォルト: 今日)                                                                                      |
 
 **コマンドの補足:**
 

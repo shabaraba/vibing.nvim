@@ -49,7 +49,8 @@ function ForkedChatScanner:update_link(file_path, old_path, new_path)
   -- 開かれているバッファがあればそちら経由で書く。ディスクを直接書くと、そのバッファの
   -- 次の保存が同期した内容を巻き戻すか、確認プロンプトでNeovimを止める
   -- （infrastructure/storage/frontmatter_file.lua のコメント参照）
-  return FrontmatterFile.update(file_path, { [self.field] = Git.to_display_path(new_path) })
+  -- gitルートは渡す。省くと書き換える1ファイルごとに `git rev-parse` が1つ起動する
+  return FrontmatterFile.update(file_path, { [self.field] = Git.to_display_path(new_path, self:git_root()) })
 end
 
 return ForkedChatScanner

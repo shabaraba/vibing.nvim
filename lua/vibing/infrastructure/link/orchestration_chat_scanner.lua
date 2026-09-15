@@ -17,9 +17,9 @@ local OrchestratedEntry = require("vibing.application.chat.orchestrated_entry")
 setmetatable(OrchestrationChatScanner, { __index = Scanner })
 
 ---両方向を1本のスキャナーで見る。リネームされたのが A でも B でも、相手側のファイルは
----この2キーのどちらかに old_path を持っているので、スキャナーを分ける理由がない。
+---このどれかのキーに old_path を持っているので、スキャナーを分ける理由がない。
 ---分ければ全ファイルの読み込みと `git rev-parse` が二重になるだけになる
-local LINK_KEYS = { "orchestrated", "orchestrated_by" }
+local LINK_KEYS = require("vibing.core.constants.chat_links").keys_of_shape("list")
 
 ---`orchestrated`の要素だけが`path`と`task`を持つマップになりうる（#696、#717）。
 ---`orchestrated_by`は常にpathそのもの — だがキーで分岐する必要はない。
@@ -100,7 +100,8 @@ function OrchestrationChatScanner:update_link(file_path, old_path, new_path)
   end
 
   local old_abs = vim.fn.fnamemodify(old_path, ":p")
-  local new_display = Git.to_display_path(new_path)
+  -- gitルートは渡す。省くと書き換える1ファイルごとに `git rev-parse` が1つ起動する
+  local new_display = Git.to_display_path(new_path, self:git_root())
 
   local updates = {}
   for _, key in ipairs(LINK_KEYS) do

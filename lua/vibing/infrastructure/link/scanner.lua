@@ -31,7 +31,11 @@ end
 ---
 ---`SyncManager` は同じファイルに対して `contains_link` の直後に `update_link` を呼ぶので、
 ---キャッシュしないとチャットの全文を続けて2回読むことになる。チャットのtranscriptは
----このリポジトリで最も大きいファイル群なので、これは実測できる差になる
+---このリポジトリで最も大きいファイル群なので、これは実測できる差になる。
+---
+---読むのは `Frontmatter.read` で、閉じ `---` で打ち切る。`vim.fn.readfile` で全文を
+---Luaのテーブルにしていた頃は、frontmatterの20行を見るために14MBぶんのチャットを
+---文字列として materialize していた（328ファイルで171ms → 20ms）
 ---@param file_path string
 ---@return table?
 function Scanner:read_frontmatter(file_path)
@@ -42,13 +46,7 @@ function Scanner:read_frontmatter(file_path)
     return cached or nil
   end
 
-  local ok, content = pcall(vim.fn.readfile, file_path)
-  if not ok or not content or #content == 0 then
-    self._frontmatter_cache[file_path] = false
-    return nil
-  end
-
-  local frontmatter = Frontmatter.parse(table.concat(content, "\n"))
+  local frontmatter = Frontmatter.read(file_path, nil)
   self._frontmatter_cache[file_path] = frontmatter or false
   return frontmatter
 end

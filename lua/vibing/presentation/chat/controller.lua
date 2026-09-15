@@ -75,8 +75,25 @@ function M.show_slash_commands()
   require("vibing.ui.command_picker").show()
 end
 
+---フラグだけを取る引数をパースする（未知の引数は警告して処理自体は続行）
+---@param args string?
+---@param known string[] 受け付けるフラグ（`ChatConstants.FLAGS` の並び）
+---@return table<string, boolean> 立っているフラグ。キーはフラグの綴りそのもの
+local function parse_flags(args, known)
+  local flags = {}
+  for arg in (args or ""):gmatch("%S+") do
+    if vim.tbl_contains(known, arg) then
+      flags[arg] = true
+    else
+      notify.warn("Unknown argument: " .. arg)
+    end
+  end
+  return flags
+end
+
 ---チャットファイルにAIタイトルを設定
-function M.handle_set_file_title()
+---@param args string? 引数文字列（`--linked` でリンク先のチャットにも同じ処理をする）
+function M.handle_set_file_title(args)
   local view = require("vibing.presentation.chat.view")
 
   if not view.is_current_buffer_chat() then
@@ -84,28 +101,20 @@ function M.handle_set_file_title()
     return
   end
 
-  local handler = require("vibing.application.chat.handlers.set_file_title")
-  local current_view = view.get_current()
-  handler({}, current_view)
-end
+  local flags = parse_flags(args, ChatConstants.FLAGS.set_file_title)
 
----`:VibingSummarize` の引数をパースする（未知の引数は警告して要約自体は続行）
----@param args string?
----@return boolean with_title
-local function parse_summarize_flags(args)
-  local with_title = false
-  for arg in (args or ""):gmatch("%S+") do
-    if arg == "--with-title" then
-      with_title = true
-    else
-      notify.warn("Unknown argument: " .. arg)
-    end
-  end
-  return with_title
+  require("vibing.application.chat.use_cases.summarize_and_title").run(view.get_current(), {
+    summarize = false,
+    with_title = true,
+    linked = flags["--linked"] == true,
+  })
 end
 
 ---チャット履歴からサマリーを生成してバッファに挿入
----@param args string? 引数文字列（`--with-title` で続けてタイトル生成まで行う）
+---
+---処理対象のバッファは開始時に掴んだものを最後まで使う。要約もタイトル生成も非同期なので、
+---完了時点のカレントバッファは別のチャット（あるいは非チャット）になっていることがある。
+---@param args string? 引数文字列（`--with-title` / `--linked`）
 function M.handle_summarize(args)
   local view = require("vibing.presentation.chat.view")
   local current_view = view.get_current()
@@ -115,21 +124,12 @@ function M.handle_summarize(args)
     return
   end
 
-  local with_title = parse_summarize_flags(args)
+  local flags = parse_flags(args, ChatConstants.FLAGS.summarize)
 
-  local use_case = require("vibing.application.chat.use_case")
-  use_case.generate_and_insert_summary(current_view, {
-    on_done = with_title and function(ok)
-      -- 失敗時は通知済みなので追わない。summary が無いまま走らせるとタイトル生成は抜粋に
-      -- フォールバックし、ユーザーが頼んでいない API 呼び出しが1回余分に走る。
-      if not ok then
-        return
-      end
-      -- `M.handle_set_file_title()` ではなくハンドラを直接呼び、最初に掴んだバッファを渡す。
-      -- 要約は非同期なので、完了時点のカレントバッファは別のチャット（あるいは非チャット）に
-      -- なっていることがある。
-      require("vibing.application.chat.handlers.set_file_title")({}, current_view)
-    end or nil,
+  require("vibing.application.chat.use_cases.summarize_and_title").run(current_view, {
+    summarize = true,
+    with_title = flags["--with-title"] == true,
+    linked = flags["--linked"] == true,
   })
 end
 

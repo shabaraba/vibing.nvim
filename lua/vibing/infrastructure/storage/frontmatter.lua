@@ -293,6 +293,28 @@ function M.file_region(file_path)
   return ok and region or nil
 end
 
+---チャット1つぶんのfrontmatterを読む。開いていればバッファ、そうでなければファイルから
+---
+---バッファを優先するのは、保存前の編集も含めて「いまの状態」を答えるため。オーケストレータは
+---配布のたびに `orchestrated` を書き足すので、保存が追いつく前に読むと新しい子が消える。
+---逆に、木やリンク網のノードの大半は窓なしで作られたワーカーで、1ターン目までディスクに
+---書かれないものもある。どちらか一方しか読まない実装は黙って取りこぼす
+---@param file_path string
+---@param bufnr number? 開いていなければnil
+---@return table? frontmatter パースできなければnil
+function M.read(file_path, bufnr)
+  local region
+  if bufnr and vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_is_loaded(bufnr) then
+    region = M.buffer_region(bufnr)
+  end
+  region = region or M.file_region(file_path)
+  if not region then
+    return nil
+  end
+
+  return M.parse(table.concat(region, "\n"))
+end
+
 ---ファイルパスからvibing.nvimチャットファイルかどうかを判定
 ---@param file_path string ファイルパス
 ---@return boolean

@@ -218,3 +218,66 @@ describe("set_file_title handler - summary as input", function()
     assert.is_nil(passed_opts.summary)
   end)
 end)
+
+-- 改名は「名前を変える」であって「引っ越す」ではない。`--linked` は設定の保存先の外にある
+-- チャット（別プロジェクトのもの）まで辿るので、保存先へ寄せる実装だと会話ファイルが物理的に
+-- 移動し、移動元に残ったリンクは `RenameSync` の走査範囲の外なので誰も直さない。
+describe("set_file_title handler - where the renamed file lands", function()
+  local handler, title_generator, original_generate, tmpdir, synced_dir
+
+  before_each(function()
+    synced_dir = nil
+    -- リンク同期は全走査を伴うので差し替える。ハンドラは `RenameSync` をモジュール先頭で
+    -- 掴むので、**require より前に**入れ替えないと本物が走る
+    package.loaded["vibing.application.link.rename_sync"] = {
+      apply = function(_, _, save_dir)
+        synced_dir = save_dir
+      end,
+    }
+    package.loaded["vibing.application.chat.handlers.set_file_title"] = nil
+    handler = require("vibing.application.chat.handlers.set_file_title")
+    title_generator = require("vibing.core.utils.title_generator")
+    original_generate = title_generator.generate_from_conversation
+    tmpdir = vim.fn.tempname()
+    vim.fn.mkdir(tmpdir, "p")
+  end)
+
+  after_each(function()
+    title_generator.generate_from_conversation = original_generate
+    package.loaded["vibing.application.chat.handlers.set_file_title"] = nil
+    package.loaded["vibing.application.link.rename_sync"] = nil
+    vim.fn.delete(tmpdir, "rf")
+  end)
+
+  it("renames an existing chat inside its own directory, not the configured save dir", function()
+    title_generator.generate_from_conversation = function(_, callback)
+      callback("renamed here")
+    end
+
+    local path = tmpdir .. "/chat-20260101-120000-abc-0001.md"
+    vim.fn.writefile({ "---", "vibing.nvim: true", "---", "# Vibing Chat", "## User", "hi" }, path)
+
+    local buf = vim.fn.bufadd(path)
+    vim.fn.bufload(buf)
+    local chat_buffer = {
+      buf = buf,
+      file_path = path,
+      is_sending = function()
+        return false
+      end,
+      extract_conversation = function()
+        return { { role = "user", content = "hi" } }
+      end,
+      get_session_id = function()
+        return nil
+      end,
+    }
+
+    handler({}, chat_buffer)
+
+    assert.equals(tmpdir, vim.fn.fnamemodify(chat_buffer.file_path, ":h"))
+    assert.equals(0, vim.fn.filereadable(path))
+    assert.equals(1, vim.fn.filereadable(chat_buffer.file_path))
+    assert.equals(tmpdir, synced_dir)
+  end)
+end)

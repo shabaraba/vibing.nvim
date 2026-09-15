@@ -232,15 +232,18 @@ section is not kept in sync field by field.
     Open the slash-command picker for the current chat.
 
                                                         *:VibingSetFileTitle*
-:VibingSetFileTitle
+:VibingSetFileTitle [--linked]
     Generate a title from the conversation and rename the chat file. When the
     buffer already holds a `## summary` section written by |:VibingSummarize|,
     that summary is used as the input instead of a conversation excerpt, which
     keeps long chats from being titled after their last step. Refused while a
     response is streaming.
 
+    With `--linked`, do the same to every chat linked to this one — see
+    |vibing-linked-chats| below.
+
                                                            *:VibingSummarize*
-:VibingSummarize [--with-title]
+:VibingSummarize [--with-title] [--linked]
     Summarise the conversation so far and insert it into the buffer. Refused
     while a response is streaming.
 
@@ -249,6 +252,26 @@ section is not kept in sync field by field.
     conversation excerpt. The title step is skipped when summarising failed:
     it would otherwise fall back to the excerpt and spend a second request
     the user did not ask for. Run |:VibingSetFileTitle| by hand for that.
+
+    With `--linked`, do the same to every chat linked to this one — see
+    |vibing-linked-chats| below. The two flags combine: `--with-title
+    --linked` summarises and renames this chat and every linked one.
+
+                                                        *vibing-linked-chats*
+    `--linked` walks the `forked_from`, `continued_from`, `orchestrated` and
+    `orchestrated_by` frontmatter links and applies the same command to every
+    chat it reaches. The walk is transitive (an orchestrator reaches its
+    workers' workers) and ignores link direction: the chat save directory is
+    scanned so that a chat which was forked *from* this one is reached too,
+    even though only the fork records the relationship.
+
+    Every linked chat is processed, whether or not it has been renamed
+    already; a linked chat that already has a title gets a fresh one. Chats
+    are handled one at a time, not in parallel — each one spends a request.
+    A chat that is closed is opened in the background to be processed; one
+    that is streaming a response is refused, as it would be on its own. A
+    failure on one chat does not stop the rest, and the tally of updated and
+    failed chats is reported when the run finishes.
 
                                                          *:VibingDeleteChats*
 :VibingDeleteChats [--unrenamed]
