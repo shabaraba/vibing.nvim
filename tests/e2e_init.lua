@@ -28,20 +28,7 @@ if not chat_dir or chat_dir == "" then
 end
 vim.fn.mkdir(chat_dir, "p")
 
-require("vibing").setup({
-  chat = {
-    save_location_type = "custom",
-    save_dir = chat_dir,
-  },
-  -- Already the default; stated because nvim_ask_user_question_spec exists to drive that tool and
-  -- a child without the RPC server could never pass it, so this is not safe to "tidy away".
-  -- Concurrent children do not collide — the server walks to the next free port when 9876 is taken.
-  mcp = { enabled = true },
-  -- The child is a throwaway editor in a temp directory, and these specs are about UI plumbing,
-  -- not about permissions. It also has to be bypassPermissions to work at all: under acceptEdits
-  -- the CLI refuses the vibing-nvim MCP tool ("Claude requested permissions to use ..."), and
-  -- listing it in --allowedTools does not change that — verified with the exact tool name, the
-  -- `mcp__<server>__*` form and the bare `mcp__<server>` form. vibing's own PreToolUse hook
-  -- allows it; the CLI's gate is what refuses, and this is the only lever that clears it.
-  permissions = { mode = "bypassPermissions" },
-})
+-- One definition, shared with `e2e_helper.setup_child`: a spec that re-runs setup() to change a
+-- setting has to keep the rest of this, because setup() replaces the whole options table rather
+-- than merging onto what is already there.
+require("vibing").setup(require("vibing.testing.e2e_helper").child_config(chat_dir))

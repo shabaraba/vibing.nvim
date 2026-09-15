@@ -28,7 +28,7 @@ describe("E2E: chat completion notification", function()
       init_script = "tests/e2e_init.lua",
     })
     vim.wait(TIMEOUTS.SETUP)
-    exec("require('vibing').setup({ agent = { chat_notifications = { enabled = true } } })")
+    helper.setup_child(nvim_instance, { agent = { chat_notifications = { enabled = true } } })
   end)
 
   after_each(function()

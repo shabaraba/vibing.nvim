@@ -121,6 +121,12 @@ describe("E2E: Scheduled requests", function()
     vim.wait(800)
     -- minimal_init only puts the plugin on the runtimepath; the user commands under test are
     -- registered by setup(), so the child has to be set up explicitly.
+    --
+    -- Deliberately not `helper.setup_child`, unlike the specs that start from e2e_init.lua: this
+    -- child runs in `tmp` with the default ("project") chat location, so its chats already land in
+    -- `tmp/.vibing/` — the same root `limit-state.json` and `pending-resume.json` resolve to, which
+    -- is what these assertions read. Pointing `save_dir` at a separate throwaway directory would
+    -- split the two apart.
     exec_lua(nvim_instance, "require('vibing').setup({})")
   end)
 

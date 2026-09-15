@@ -2,6 +2,10 @@
 ---E2Eテスト用のヘルパー関数集
 local M = {}
 
+--- This file is `<root>/lua/vibing/testing/e2e_helper.lua`, so three levels up is the plugin root.
+--- Taken from the source path rather than `getcwd()`, which a spec may have pointed elsewhere.
+local PLUGIN_ROOT = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h:h")
+
 ---E2E specを実行してよい環境かどうか
 ---
 ---`test:lua`は`PlenaryBustedDirectory tests/`なので`tests/e2e/`まで巻き込む。E2Eは子Neovimを
@@ -53,8 +57,18 @@ function M.spawn_nvim_instance(config)
     table.insert(cmd, "--headless")
   end
   if config.init_script then
+    -- Resolved against the plugin root, not the process cwd. `-u` is handed to a child whose cwd
+    -- may be a throwaway directory (spawn_backend_instance, plugin_dir_spec, scheduled_request
+    -- _spec all start one there), and a relative path then names a file that does not exist.
+    -- Neovim does not fail on a missing `-u`; it starts with no init at all, so the child comes
+    -- up without vibing.nvim on its runtimepath and the first rpcrequest reports
+    -- "module 'vibing' not found" from somewhere unrelated to the missing file.
+    local script = config.init_script
+    if not vim.startswith(script, "/") then
+      script = PLUGIN_ROOT .. "/" .. script
+    end
     table.insert(cmd, "-u")
-    table.insert(cmd, config.init_script)
+    table.insert(cmd, script)
   end
 
   -- The parent picks where the child writes its chats, rather than the child picking and the
@@ -85,6 +99,78 @@ function M.spawn_nvim_instance(config)
   end
 
   return instance
+end
+
+--- The configuration an E2E child Neovim runs with, in one place.
+---
+--- `tests/e2e_init.lua` applies it at startup and `setup_child` re-applies it whenever a spec
+--- needs to change one setting. Both go through here because **`config.setup()` replaces the whole
+--- options table** — it merges the caller's options onto the defaults, never onto what a previous
+--- call left. So a spec calling `setup({ ... })` directly to flip one flag silently drops
+--- `chat.save_dir` with it, and the run writes real chat files into the repository's own
+--- `.vibing/chat/` — the exact thing the throwaway directory exists to prevent, and invisible
+--- afterwards because `.vibing/` is git-ignored.
+---
+--- @param chat_dir string the throwaway directory this child writes its chats to
+--- @param overrides table? merged on top
+--- @return Vibing.Config
+function M.child_config(chat_dir, overrides)
+  return vim.tbl_deep_extend("force", {
+    chat = {
+      save_location_type = "custom",
+      save_dir = chat_dir,
+    },
+    -- Already the default; stated because nvim_ask_user_question_spec exists to drive that tool
+    -- and a child without the RPC server could never pass it, so this is not safe to "tidy away".
+    -- Concurrent children do not collide — the server walks to the next free port when 9876 is
+    -- taken.
+    mcp = { enabled = true },
+    -- The child is a throwaway editor in a temp directory, and these specs are about UI plumbing,
+    -- not about permissions. It also has to be bypassPermissions to work at all: under acceptEdits
+    -- the CLI refuses the vibing-nvim MCP tool ("Claude requested permissions to use ..."), and
+    -- listing it in --allowedTools does not change that — verified with the exact tool name, the
+    -- `mcp__<server>__*` form and the bare `mcp__<server>` form. vibing's own PreToolUse hook
+    -- allows it; the CLI's gate is what refuses, and this is the only lever that clears it.
+    permissions = { mode = "bypassPermissions" },
+  }, overrides or {})
+end
+
+--- A child Neovim running `backend`, in a throwaway git repository of its own.
+---
+--- The repository matters for more than tidiness: a real turn runs the model's tools in this cwd,
+--- and the per-request diff takes a git snapshot of it. Pointed at the developer's checkout, a
+--- backend-parity spec would be running a CLI with `bypassPermissions` against the working tree it
+--- is meant to be testing.
+---
+--- `cleanup_instance` removes the directory along with the chat directory.
+--- @param backend string an agent id from `core/constants/agents.lua`
+--- @return table instance ハンドル。`repo_dir` にそのリポジトリのパスが入る
+function M.spawn_backend_instance(backend)
+  local repo_dir = vim.fn.tempname() .. "/repo"
+  require("vibing.core.utils.fs").ensure_dir(repo_dir)
+  vim.fn.system({ "git", "-C", repo_dir, "init", "-q" })
+
+  local instance = M.spawn_nvim_instance({
+    headless = true,
+    init_script = "tests/e2e_init.lua",
+    cwd = repo_dir,
+  })
+  instance.repo_dir = repo_dir
+  vim.wait(800)
+  M.setup_child(instance, { adapter = backend })
+  return instance
+end
+
+--- Re-run `setup()` in the child with `overrides` on top of `child_config`.
+--- @param instance table インスタンスハンドル
+--- @param overrides table? settings this spec needs on top of the shared child configuration
+function M.setup_child(instance, overrides)
+  vim.fn.rpcrequest(
+    instance.job_id,
+    "nvim_exec_lua",
+    "require('vibing').setup(...)",
+    { M.child_config(instance.chat_dir, overrides) }
+  )
 end
 
 ---キー入力を送信
@@ -364,6 +450,12 @@ function M.cleanup_instance(instance)
 
   if type(instance.chat_dir) == "string" and instance.chat_dir ~= "" then
     vim.fn.delete(vim.fn.fnamemodify(instance.chat_dir, ":h"), "rf")
+  end
+
+  -- Same reasoning for the throwaway repository `spawn_backend_instance` created: this process
+  -- made the path, so nothing the child said is involved in deciding what to delete.
+  if type(instance.repo_dir) == "string" and instance.repo_dir ~= "" then
+    vim.fn.delete(vim.fn.fnamemodify(instance.repo_dir, ":h"), "rf")
   end
 end
 
