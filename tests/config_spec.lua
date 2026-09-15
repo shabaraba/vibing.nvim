@@ -32,13 +32,18 @@ describe("vibing.config", function()
       assert.is_table(config.defaults.permissions.allow)
       assert.is_not_nil(config.defaults.permissions.rules)
       assert.is_table(config.defaults.permissions.rules)
-      assert.equals(
-        ".vibing/codex-permissions.toml",
-        config.defaults.permissions.codex_profile_file
-      )
-      assert.matches("%[permissions%.vibing%-project%.network%]", config.defaults.permissions.codex_profile_content)
-      assert.matches("enabled = true", config.defaults.permissions.codex_profile_content)
-      assert.is_false(config.defaults.permissions.codex_allow_tracked_profile)
+    end)
+
+    it("should have per-backend configuration declared by the backends themselves", function()
+      -- The fields come from `config_fields` in core/constants/agents.lua, so config.lua names no
+      -- backend (ADR 009).
+      assert.equals(".vibing/codex-permissions.toml", config.defaults.backends.codex.profile_file)
+      assert.matches("%[permissions%.vibing%-project%.network%]", config.defaults.backends.codex.profile_content)
+      assert.matches("enabled = true", config.defaults.backends.codex.profile_content)
+      assert.is_false(config.defaults.backends.codex.allow_tracked_profile)
+      assert.is_true(config.defaults.backends.codex.provider_notice)
+      assert.equals("auto", config.defaults.backends.grok.executable)
+      assert.same({}, config.defaults.backends.claude)
     end)
 
     it("should have language configuration", function()
@@ -79,27 +84,55 @@ describe("vibing.config", function()
       end)
     end)
 
-    it("should validate the Codex permission profile path", function()
-      config.setup({ permissions = { codex_profile_file = false } })
-      assert.is_false(config.get().permissions.codex_profile_file)
+    it("should validate the Codex permission profile options by their declared kind", function()
+      config.setup({ backends = { codex = { profile_file = false } } })
+      assert.is_false(config.get().backends.codex.profile_file)
 
-      config.setup({ permissions = { codex_profile_file = true } })
-      assert.equals(
-        ".vibing/codex-permissions.toml",
-        config.get().permissions.codex_profile_file
-      )
+      config.setup({ backends = { codex = { profile_file = true } } })
+      assert.equals(".vibing/codex-permissions.toml", config.get().backends.codex.profile_file)
 
-      config.setup({ permissions = { codex_allow_tracked_profile = "yes" } })
-      assert.is_false(config.get().permissions.codex_allow_tracked_profile)
+      config.setup({ backends = { codex = { allow_tracked_profile = "yes" } } })
+      assert.is_false(config.get().backends.codex.allow_tracked_profile)
 
-      config.setup({ permissions = { codex_allow_tracked_profile = true } })
-      assert.is_true(config.get().permissions.codex_allow_tracked_profile)
+      config.setup({ backends = { codex = { allow_tracked_profile = true } } })
+      assert.is_true(config.get().backends.codex.allow_tracked_profile)
 
-      config.setup({ permissions = { codex_profile_content = false } })
-      assert.equals(
-        config.defaults.permissions.codex_profile_content,
-        config.get().permissions.codex_profile_content
-      )
+      config.setup({ backends = { codex = { profile_content = false } } })
+      assert.equals(config.defaults.backends.codex.profile_content, config.get().backends.codex.profile_content)
+    end)
+
+    it("should validate the grok executable without resetting a missing path", function()
+      config.setup({ backends = { grok = { executable = "" } } })
+      assert.equals("auto", config.get().backends.grok.executable)
+
+      -- A path that does not exist is kept: the user asked for that binary, and falling back to
+      -- whatever `grok` is on PATH would be worse than failing.
+      config.setup({ backends = { grok = { executable = "/nonexistent/grok" } } })
+      assert.equals("/nonexistent/grok", config.get().backends.grok.executable)
+    end)
+
+    it("should migrate the pre-ADR-009 option locations into backends.<id>", function()
+      config.setup({
+        permissions = { codex_profile_file = false, codex_allow_tracked_profile = true },
+        grok = { executable = "/opt/grok/bin/grok" },
+        agent = { codex_provider_notice = { enabled = false } },
+      })
+      local backends = config.get().backends
+      assert.is_false(backends.codex.profile_file)
+      assert.is_true(backends.codex.allow_tracked_profile)
+      assert.is_false(backends.codex.provider_notice)
+      assert.equals("/opt/grok/bin/grok", backends.grok.executable)
+      -- The stale keys do not survive into a table nothing reads.
+      assert.is_nil(config.get().permissions.codex_profile_file)
+      assert.is_nil(vim.tbl_get(config.get(), "grok", "executable"))
+    end)
+
+    it("prefers the new location when an option is set in both", function()
+      config.setup({
+        permissions = { codex_profile_file = false },
+        backends = { codex = { profile_file = "custom.toml" } },
+      })
+      assert.equals("custom.toml", config.get().backends.codex.profile_file)
     end)
   end)
 

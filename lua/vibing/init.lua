@@ -1,6 +1,5 @@
 local Config = require("vibing.config")
 local notify = require("vibing.core.utils.notify")
-local ProjectCodexPermissions = require("vibing.core.utils.project_codex_permissions")
 
 ---@class Vibing
 ---vibing.nvimプラグインのメインモジュール
@@ -22,14 +21,17 @@ function M.setup(opts)
   Config.setup(opts)
   M.config = Config.get()
 
-  -- Projects created by older vibing.nvim versions already have `.vibing/` but not the Codex
-  -- profile introduced later. Backfill it on setup without creating `.vibing/` in unrelated
-  -- directories, and never replace a file the user already owns.
-  local permissions = M.config.permissions or {}
-  local ok_profile, profile_error =
-    pcall(ProjectCodexPermissions.ensure_existing, vim.fn.getcwd(), permissions.codex_profile_content)
-  if not ok_profile then
-    notify.warn("Could not initialize .vibing/codex-permissions.toml: " .. tostring(profile_error))
+  -- Projects created by older vibing.nvim versions already have `.vibing/` but not every file a
+  -- backend keeps there. Each descriptor backfills its own on setup without creating `.vibing/`
+  -- in unrelated directories, and never replaces a file the user already owns.
+  for _, def in ipairs(require("vibing.core.constants.agents").list()) do
+    local descriptor = require(def.descriptor_module)
+    if descriptor.on_setup then
+      local ok_setup, setup_error = pcall(descriptor.on_setup, vim.fn.getcwd(), M.config)
+      if not ok_setup then
+        notify.warn(string.format("Could not initialize %s project files: %s", def.id, tostring(setup_error)))
+      end
+    end
   end
 
   -- The small bundled parser isolates each chat section and keeps rendered tool commands out of
@@ -573,8 +575,6 @@ function M._register_commands()
     local completion = require("vibing.application.completion")
     local skills = require("vibing.infrastructure.completion.providers.skills")
     local plugin_dirs = require("vibing.infrastructure.plugins.plugin_dirs")
-    local codex_plugin_config = require("vibing.infrastructure.adapter.modules.codex_plugin_config")
-    local codex_permission_profile = require("vibing.infrastructure.adapter.modules.codex_permission_profile")
 
     commands.reload_custom()
 
@@ -582,13 +582,14 @@ function M._register_commands()
     -- from this one, so clearing it second would refill them from the list being discarded.
     -- This is also what makes a plugin newly dropped into `.vibing/plugins` take effect.
     plugin_dirs.clear_cache()
-    -- Codex memoizes the argv it builds from that list, plus which manifests it already warned
-    -- about; both go, so a plugin added or fixed after the warning is read again.
-    codex_plugin_config.clear_cache()
-    -- Its git-common-dir lookups are memoized per cwd for the life of the process; a worktree
-    -- removed and recreated at the same path within one Neovim session would otherwise keep
-    -- serving a stale (or stale-missing) result until restart.
-    codex_permission_profile.clear_cache()
+    -- Whatever a backend memoised from that list or from the cwd (codex: the plugin argv and the
+    -- permission profile) goes with it, so a plugin added or fixed after a warning is read again.
+    for _, def in ipairs(require("vibing.core.constants.agents").list()) do
+      local descriptor = require(def.descriptor_module)
+      if descriptor.clear_caches then
+        descriptor.clear_caches()
+      end
+    end
 
     completion.clear_cache()
     skills.preload()

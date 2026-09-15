@@ -51,6 +51,11 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---  recorded. Returning nil or "" drops it.
 ---@field after_spawn? fun(cmd: string[], cwd: string, opts: Vibing.AdapterOpts, config: Vibing.Config)
 ---  Runs once the process exists (codex fires its provider probe here).
+---@field on_project_open? fun(project_root: string, config: Vibing.Config) Files this backend keeps
+---  in a project's `.vibing/`, written when the directory is created (`file_manager`).
+---@field on_setup? fun(cwd: string, config: Vibing.Config) Backfill for projects whose `.vibing/`
+---  predates those files; runs from `setup()` and must not create `.vibing/` where there is none.
+---@field clear_caches? fun() Memoised state to drop on `:VibingReloadCommands`.
 
 local M = {}
 

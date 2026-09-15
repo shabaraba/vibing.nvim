@@ -5,6 +5,13 @@ local CodexCommandBuilder = require("vibing.infrastructure.adapter.modules.codex
 local CodexEventProcessor = require("vibing.infrastructure.adapter.modules.codex_event_processor")
 local CodexProviderNotice = require("vibing.infrastructure.adapter.modules.codex_provider_notice")
 local ToolVocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
+local ProjectCodexPermissions = require("vibing.core.utils.project_codex_permissions")
+
+--- @param config Vibing.Config|nil
+--- @return string|nil
+local function profile_content(config)
+  return vim.tbl_get(config or {}, "backends", "codex", "profile_content")
+end
 
 ---@type Vibing.BackendDescriptor
 local M = {
@@ -31,6 +38,22 @@ local M = {
   -- patch and therefore no `gd` preview.
   hook = { transport = "config_override", dialect = "claude", keep_in_bypass = true },
 
+  -- The project-local sandbox profile (`.vibing/codex-permissions.toml`) is created with the
+  -- project's `.vibing/` and backfilled on setup for projects created before it existed. Existing
+  -- files, including empty ones, are never overwritten.
+  on_project_open = function(project_root, config)
+    ProjectCodexPermissions.ensure(project_root, profile_content(config))
+  end,
+  on_setup = function(cwd, config)
+    ProjectCodexPermissions.ensure_existing(cwd, profile_content(config))
+  end,
+  -- The plugin argv is memoised per plugin-directory list and the permission profile per cwd;
+  -- `:VibingReloadCommands` is what the user runs after changing either.
+  clear_caches = function()
+    require("vibing.infrastructure.adapter.modules.codex_plugin_config").clear_cache()
+    require("vibing.infrastructure.adapter.modules.codex_permission_profile").clear_cache()
+  end,
+
   vocabulary = ToolVocabulary,
   -- The route is not wired for codex; the developer message tells the model not to call the tool
   -- (see codex_plugin_config), so registering a value nothing consumes would only look like a
@@ -52,9 +75,10 @@ local M = {
   -- last element of `cmd`, and a message consisting of exactly that flag would otherwise match.
   -- Fired after the spawn, since the probe exists to describe that call and must not delay it.
   --
-  -- Absent config reads as enabled, not disabled: the default is on (see config.lua).
+  -- Absent config reads as enabled, not disabled: the default is on (`config_fields` in
+  -- core/constants/agents.lua).
   after_spawn = function(cmd, cwd, opts, config)
-    local notice_enabled = vim.tbl_get(config or {}, "agent", "codex_provider_notice", "enabled") ~= false
+    local notice_enabled = vim.tbl_get(config or {}, "backends", "codex", "provider_notice") ~= false
     if notice_enabled and opts.lightweight and vim.tbl_contains(cmd, "--ignore-user-config") then
       CodexProviderNotice.check(cmd[1], cwd)
     end

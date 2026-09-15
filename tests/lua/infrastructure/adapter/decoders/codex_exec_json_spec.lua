@@ -71,7 +71,7 @@ describe("decoders.codex_exec_json", function()
   it("tags turn.completed usage as a whole-turn accumulator", function()
     local events = decode({}, { type = "turn.completed", usage = { input_tokens = 10, output_tokens = 2 } })
     assert.equals("usage", events[1].kind)
-    assert.equals("codex", events[1].accumulator.backend)
+    assert.equals("cumulative", events[1].accumulator.kind)
     assert.equals(10, events[1].accumulator.totals.input)
   end)
 

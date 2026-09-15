@@ -511,8 +511,8 @@ end
 ---通常は直前の返答にあるので小さいtailだけで見つかる。返答が長い場合だけ倍々に広げ、巨大な
 ---チャット全文を毎ターンLuaテーブルへコピーしない。`chat.lua`のcontext_size走査と同じ形。
 ---@param bufnr number|nil
----@return Vibing.CodexTokenTotals|nil
-local function read_last_codex_totals(bufnr)
+---@return Vibing.CumulativeTokenTotals|nil
+local function read_last_cumulative_totals(bufnr)
   if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
     return nil
   end
@@ -522,7 +522,7 @@ local function read_last_codex_totals(bufnr)
   local chunk_size = 500
   while true do
     local from = math.max(0, total_lines - chunk_size)
-    local totals = TokenUsage.find_last_codex_totals(vim.api.nvim_buf_get_lines(bufnr, from, total_lines, false))
+    local totals = TokenUsage.find_last_cumulative_totals(vim.api.nvim_buf_get_lines(bufnr, from, total_lines, false))
     if totals or from == 0 then
       return totals
     end
@@ -538,8 +538,8 @@ end
 ---（実測で約93万）でしか動かないため、ここまで育つ過程は誰も止めない。
 ---
 ---使用量を報告しないバックエンドでは `_token_usage` が無く、`format` が nil を返して何も
----出ない。Codexはセッション累計だけを返すため、直前に書いた見出しの正確な累計との差を取り、
----通常はターン単位に戻してから表示する。呼び出し側はpcallしているので、ここでの失敗が
+---出ない。セッション累計しか返さないバックエンド（`TokenUsage.cumulative`）では、直前に書いた
+---見出しの正確な累計との差を取り、通常はターン単位に戻してから表示する。呼び出し側はpcallしているので、ここでの失敗が
 ---ターンを壊すことはない。
 ---@param response table
 ---@param callbacks table
@@ -558,10 +558,10 @@ function M._report_token_usage(response, callbacks, config, started_fresh_sessio
   local warn_context = (settings and tonumber(settings.warn_context)) or TokenUsage.DEFAULT_WARN_CONTEXT
 
   local acc = response._token_usage
-  if type(acc) == "table" and acc.backend == "codex" then
+  if TokenUsage.is_cumulative(acc) then
     local bufnr = callbacks.get_bufnr and callbacks.get_bufnr()
-    local previous = read_last_codex_totals(bufnr)
-    acc = TokenUsage.codex_delta(acc, previous, started_fresh_session)
+    local previous = read_last_cumulative_totals(bufnr)
+    acc = TokenUsage.cumulative_delta(acc, previous, started_fresh_session)
 
     local section = TokenUsage.section(acc)
     if section then

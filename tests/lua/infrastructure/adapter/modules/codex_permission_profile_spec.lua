@@ -36,11 +36,13 @@ describe("codex_permission_profile", function()
     root = vim.fn.tempname()
     vim.fn.mkdir(root, "p")
     config = {
-      permissions = {
-        codex_profile_file = ".vibing/codex-permissions.toml",
-        -- Existing parser/remap tests do not exercise repository trust. Keeping this explicit also
-        -- prevents their vim.system git stubs from accidentally standing in for `git ls-files`.
-        codex_allow_tracked_profile = true,
+      backends = {
+        codex = {
+          profile_file = ".vibing/codex-permissions.toml",
+          -- Existing parser/remap tests do not exercise repository trust. Keeping this explicit
+          -- also prevents their vim.system git stubs from standing in for `git ls-files`.
+          allow_tracked_profile = true,
+        },
       },
     }
     original_getcwd = vim.fn.getcwd
@@ -285,12 +287,12 @@ extends = ":workspace"
     assert.same({}, profile.args(root, config))
     write_at(root, "# no profile yet")
     assert.same({}, profile.args(root, config))
-    config.permissions.codex_profile_file = false
+    config.backends.codex.profile_file = false
     assert.same({}, profile.args(root, config))
   end)
 
   it("refuses a Git-tracked profile until the user explicitly trusts it", function()
-    config.permissions.codex_allow_tracked_profile = false
+    config.backends.codex.allow_tracked_profile = false
     write_at(root, 'default_permissions = ":read-only"')
     assert.same({ "-c", 'default_permissions=":read-only"' }, profile.args(root, config))
 
@@ -306,12 +308,12 @@ extends = ":workspace"
       profile.args(root, config)
     end)
 
-    config.permissions.codex_allow_tracked_profile = true
+    config.backends.codex.allow_tracked_profile = true
     assert.same({ "-c", 'default_permissions=":read-only"' }, profile.args(root, config))
   end)
 
   it("fails closed when Git cannot classify a profile inside a repository", function()
-    config.permissions.codex_allow_tracked_profile = false
+    config.backends.codex.allow_tracked_profile = false
     write_at(root, 'default_permissions = ":read-only"')
     vim.fn.mkdir(root .. "/.git", "p")
     vim.system = function()

@@ -97,7 +97,7 @@ they compose well.
 > custom or local provider, **those lightweight calls go to the default OpenAI endpoint instead**.
 > Ordinary chat still uses your provider. vibing.nvim warns once per Neovim session when this
 > applies to you, asking Codex itself (`codex doctor --json`) which provider is configured; it says
-> nothing if Codex cannot answer. Set `agent.codex_provider_notice.enabled = false` to turn the
+> nothing if Codex cannot answer. Set `backends.codex.provider_notice = false` to turn the
 > warning and its probe off.
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
@@ -291,9 +291,14 @@ require("vibing").setup({
     mode = "acceptEdits",          -- "default" | "acceptEdits" | "plan" | "auto" | "dontAsk" | "bypassPermissions"
     allow = { "Read", "Edit", "Write", "Glob", "Grep", "Skill", "StructuredOutput" },
     deny = { "Bash" },
-    codex_profile_file = ".vibing/codex-permissions.toml", -- false disables loading the generated profile
-    -- codex_profile_content = [[...]], -- initial TOML used only when creating the profile
-    codex_allow_tracked_profile = false, -- true explicitly trusts a Git-tracked profile
+  },
+  backends = {
+    codex = {
+      profile_file = ".vibing/codex-permissions.toml", -- false disables loading the generated profile
+      -- profile_content = [[...]], -- initial TOML used only when creating the profile
+      allow_tracked_profile = false, -- true explicitly trusts a Git-tracked profile
+    },
+    grok = { executable = "auto" }, -- or a path to the official Grok Build CLI
   },
   language = nil,                  -- e.g. "ja", or { default = "ja", chat = "ja" }
 })
@@ -305,7 +310,7 @@ chat file's frontmatter carries its own permissions, which are what's enforced a
 For the Codex backend, vibing.nvim creates `.vibing/codex-permissions.toml` when it initializes a
 project. Its default profile permits workspace and Git metadata writes without using full bypass
 mode; edit the file to narrow or extend the OS sandbox. Existing files are never overwritten.
-Git-tracked profiles are rejected unless `codex_allow_tracked_profile = true` explicitly trusts
+Git-tracked profiles are rejected unless `backends.codex.allow_tracked_profile = true` explicitly trusts
 the reviewed file; locally generated, untracked profiles continue to load automatically.
 See [Project-local Codex permission profiles](./handbook/configuration.md#project-local-codex-permission-profiles).
 

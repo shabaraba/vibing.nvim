@@ -181,13 +181,29 @@ by_type["item.completed"] = function(msg, events, state)
   end
 end
 
+--- Codex's `turn.completed.usage`, in the reporter's neutral field names.
+--- @param usage table|nil
+--- @return table|nil
+function M.usage_totals(usage)
+  if type(usage) ~= "table" then
+    return nil
+  end
+  return {
+    input = usage.input_tokens,
+    cached = usage.cached_input_tokens,
+    cache_write = usage.cache_write_input_tokens,
+    output = usage.output_tokens,
+    reasoning = usage.reasoning_output_tokens,
+  }
+end
+
 --- Codex emits its only token report on the terminal event, cumulative for the thread on a
---- resumed session. `TokenUsage.from_codex` tags it so the reporter treats it as a session total
+--- resumed session. `TokenUsage.cumulative` tags it so the reporter treats it as a session total
 --- rather than one request.
 by_type["turn.completed"] = function(msg, events)
-  local accumulator = TokenUsage.from_codex(msg.usage)
-  if accumulator then
-    table.insert(events, { kind = "usage", accumulator = accumulator })
+  local totals = M.usage_totals(msg.usage)
+  if totals then
+    table.insert(events, { kind = "usage", accumulator = TokenUsage.cumulative(totals) })
   end
 end
 

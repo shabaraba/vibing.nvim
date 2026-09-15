@@ -160,7 +160,7 @@ describe("event_renderer", function()
 
     it("replaces the accumulator when a backend reports a whole-turn total", function()
       local context = new_context()
-      local total = { backend = "codex", totals = {} }
+      local total = { kind = "cumulative", totals = {} }
       Renderer.handle({ kind = "usage", accumulator = total }, context)
       assert.equals(total, context.tokenUsage)
     end)

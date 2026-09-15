@@ -47,7 +47,7 @@ local function ensure_official_grok(path)
 
   error(
     "Found a 'grok' binary that does not appear to be the official xAI Grok Build CLI. "
-      .. "Install from https://x.ai/cli or set config.grok.executable to the official binary path."
+      .. "Install from https://x.ai/cli or set backends.grok.executable to the official binary path."
   )
 end
 
@@ -59,7 +59,7 @@ end
 --- ENOENT out of vim.system. Grok keeps its own cache because it resolves a *configurable*
 --- executable and sniffs it for officialness, neither of which the shared resolver does.
 ---
---- What is skipped is a **bare command name**: no `/` at all. `config.grok.executable` accepts one
+--- What is skipped is a **bare command name**: no `/` at all. `backends.grok.executable` accepts one
 --- (`vim.fn.executable("grok")` searches PATH for it), and `fs_stat` would resolve that against
 --- Neovim's cwd and answer nil forever -- defeating the cache on every request, which costs far
 --- more than the lookup: the fallthrough re-runs `ensure_official_grok`, and that blocks the main
@@ -87,7 +87,7 @@ end
 --- @param config Vibing.Config
 --- @return string
 local function resolve_grok_path(config)
-  local configured = config and config.grok and config.grok.executable
+  local configured = vim.tbl_get(config or {}, "backends", "grok", "executable")
 
   if cached_grok_path and cached_configured_executable == configured and still_installed(cached_grok_path) then
     return cached_grok_path
@@ -109,7 +109,7 @@ local function resolve_grok_path(config)
     if found == "" then
       error(
         "Grok CLI not found in PATH. Install the official xAI Grok Build CLI "
-          .. "(curl -fsSL https://x.ai/cli/install.sh | bash) or set config.grok.executable."
+          .. "(curl -fsSL https://x.ai/cli/install.sh | bash) or set backends.grok.executable."
       )
     end
     resolved = found

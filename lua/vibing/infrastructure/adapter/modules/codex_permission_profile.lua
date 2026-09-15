@@ -629,7 +629,8 @@ end
 --- @param config Vibing.Config
 --- @return string[]
 function M.args(cwd, config)
-  local configured_path = config.permissions and config.permissions.codex_profile_file
+  local backend = vim.tbl_get(config, "backends", "codex") or {}
+  local configured_path = backend.profile_file
   if type(configured_path) ~= "string" or configured_path == "" then
     return {}
   end
@@ -638,10 +639,10 @@ function M.args(cwd, config)
   if not path then
     return {}
   end
-  if config.permissions.codex_allow_tracked_profile ~= true and is_git_tracked(path) then
+  if backend.allow_tracked_profile ~= true and is_git_tracked(path) then
     error(
       path
-        .. ": refusing a Git-tracked Codex permission profile; review it, then set permissions.codex_allow_tracked_profile = true to trust it",
+        .. ": refusing a Git-tracked Codex permission profile; review it, then set backends.codex.allow_tracked_profile = true to trust it",
       0
     )
   end

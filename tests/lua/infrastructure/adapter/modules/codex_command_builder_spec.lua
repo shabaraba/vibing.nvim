@@ -262,7 +262,7 @@ describe("codex_command_builder", function()
         '".git" = "write"',
       }, root .. "/.vibing/codex-permissions.toml")
       config = {
-        permissions = { codex_profile_file = ".vibing/codex-permissions.toml" },
+        backends = { codex = { profile_file = ".vibing/codex-permissions.toml" } },
         agent = { plugins = { self = false, project_dir = false } },
       }
     end)
