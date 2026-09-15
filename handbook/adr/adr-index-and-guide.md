@@ -253,6 +253,30 @@ Key findings:
 
 ---
 
+### ADR 009: Declarative Backend Descriptor
+
+**Status:** Proposed
+**Date:** 2026-09-15
+
+Investigates whether a new CLI backend can be added by declaring only how a request is sent and
+what the response stream looks like, with the Claude backend's behaviour (streaming, tool display,
+the hook-based permission gate, lightweight calls, usage limits) as the contract every backend
+must satisfy. Key findings:
+
+- The four `stream()` implementations differ in seven points, each expressible as a descriptor field
+- Event processors mix decoding with rendering, which is where per-backend display drift comes from
+- "How the request is sent" and "the response type" are not enough: the hook transport is the third axis
+- Backend names still leak into `token_usage`, `send_message`, `config.lua` and `init.lua`
+- Adding a CLI that reuses an existing hook transport becomes a descriptor file plus captured fixtures
+
+**Key Files:**
+
+- ADR: [009-declarative-backend-descriptor.md](./009-declarative-backend-descriptor.md)
+- Current seams: `lua/vibing/infrastructure/adapter/`, `lua/vibing/infrastructure/hooks/`
+- Reference behaviour: `handbook/architecture/cli-integration.md`, `handbook/architecture/lightweight-calls.md`
+
+---
+
 ## Creating a New ADR
 
 Use this template when creating a new ADR:
