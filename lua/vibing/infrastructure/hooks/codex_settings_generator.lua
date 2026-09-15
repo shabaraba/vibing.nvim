@@ -133,9 +133,10 @@ end
 --- registering the hook without a script codex can run is the one outcome to avoid, since that is
 --- the shape that hangs rather than the one that merely skips the gate.
 --- @param cwd? string Working directory the codex process will run in
+--- @param dialect? string how the script should phrase its decision (`hooks/transports.lua`)
 --- @return string[] argv fragment: {"--dangerously-bypass-hook-trust", "-c", "hooks.PreToolUse=[...]"}
-function M.get_hook_args(cwd)
-  local script = M.ensure(cwd)
+function M.get_hook_args(cwd, dialect)
+  local script = SettingsGenerator.hook_command(M.ensure(cwd), dialect)
   local escaped = script:gsub("\\", "\\\\"):gsub('"', '\\"')
   return {
     TRUST_FLAG,

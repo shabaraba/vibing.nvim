@@ -23,6 +23,15 @@ describe("settings_generator", function()
     assert.equals(SettingsGenerator.get_hook_script_path(), entry.hooks[1].command)
   end)
 
+  it("appends a non-claude dialect to the command and nothing for claude's", function()
+    -- The dialect is pre-tool-use.sh's first argument. Claude's is the script's default, so a
+    -- settings file a claude user has already seen stays byte-identical.
+    local script = SettingsGenerator.get_hook_script_path()
+    assert.equals(script, SettingsGenerator.generate(nil, "claude").hooks.PreToolUse[1].hooks[1].command)
+    assert.equals(script, SettingsGenerator.generate().hooks.PreToolUse[1].hooks[1].command)
+    assert.equals(script .. " copilot", SettingsGenerator.generate(nil, "copilot").hooks.PreToolUse[1].hooks[1].command)
+  end)
+
   it("registers a StopFailure hook scoped to rate_limit errors", function()
     local settings = SettingsGenerator.generate()
     local entry = settings.hooks.StopFailure[1]

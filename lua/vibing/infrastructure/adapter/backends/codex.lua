@@ -4,7 +4,6 @@
 local CodexCommandBuilder = require("vibing.infrastructure.adapter.modules.codex_command_builder")
 local CodexEventProcessor = require("vibing.infrastructure.adapter.modules.codex_event_processor")
 local CodexProviderNotice = require("vibing.infrastructure.adapter.modules.codex_provider_notice")
-local CodexSettingsGenerator = require("vibing.infrastructure.hooks.codex_settings_generator")
 local ToolVocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
 
 ---@type Vibing.BackendDescriptor
@@ -23,35 +22,14 @@ local M = {
   build = CodexCommandBuilder.build,
   event_processor = CodexEventProcessor,
 
-  -- Lightweight calls skip hook registration, matching claude. The builder fences them into a
-  -- read-only sandbox instead, and routing a title-generation tool call into the chat's approval
-  -- UI would prompt the user about a request they never made.
+  -- A `-c hooks.PreToolUse=[…]` override with the trust bypass, the script staged inside the
+  -- cwd (`codex_settings_generator`). Codex reads claude's hook schema, so the dialect is claude's.
   --
   -- Kept in bypassPermissions: the permission handler honours that mode and allows every call,
   -- but the same PreToolUse round trip is also where git_snapshot takes the turn's baseline.
   -- Removing the hook would bypass observation as well as approval, leaving this mode with no
   -- patch and therefore no `gd` preview.
-  --
-  -- If staging fails there is no script for codex to run, and registering the hook anyway is
-  -- exactly the case that hangs. So a failure warns and drops the hook -- the turn runs ungated,
-  -- which is bad, but it runs. See CodexSettingsGenerator.ensure.
-  prepare_hook = function(cwd, opts)
-    if opts.lightweight then
-      return nil
-    end
-    local ok, args_or_err = pcall(CodexSettingsGenerator.get_hook_args, cwd)
-    if ok then
-      return args_or_err
-    end
-    vim.notify(
-      string.format(
-        "[vibing:codex] Failed to install the PreToolUse hook, so this turn is not gated by vibing.nvim: %s",
-        tostring(args_or_err)
-      ),
-      vim.log.levels.WARN
-    )
-    return nil
-  end,
+  hook = { transport = "config_override", dialect = "claude", keep_in_bypass = true },
 
   vocabulary = ToolVocabulary,
   -- The route is not wired for codex; the developer message tells the model not to call the tool

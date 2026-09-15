@@ -7,8 +7,6 @@
 local CLICommandBuilder = require("vibing.infrastructure.adapter.modules.cli_command_builder")
 local CLIEventProcessor = require("vibing.infrastructure.adapter.modules.cli_event_processor")
 local AgentEnvironment = require("vibing.infrastructure.adapter.modules.agent_environment")
-local SettingsGenerator = require("vibing.infrastructure.hooks.settings_generator")
-local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 local TokenUsage = require("vibing.core.utils.token_usage")
 
 ---@type Vibing.BackendDescriptor
@@ -27,28 +25,11 @@ local M = {
   build = CLICommandBuilder.build,
   event_processor = CLIEventProcessor,
 
-  -- Registered in bypassPermissions too: that mode bypasses the decision, not the git-snapshot
-  -- baseline the same PreToolUse round trip takes. Skipped for a lightweight call, which owes
-  -- "no hooks" (`core/types.lua`).
-  prepare_hook = function(cwd, opts, config)
-    if opts.lightweight then
-      return nil
-    end
-    -- Seeding rides along with the hook settings because both are "this project is now using
-    -- vibing.nvim" side effects, and this is the one place a real request passes through. Doing
-    -- it in setup() would create `.vibing/` in every directory Neovim is ever started in.
-    pcall(PluginScaffold.ensure, cwd, config)
-
-    local ok, settings_path = pcall(SettingsGenerator.ensure, cwd)
-    if not ok then
-      vim.notify(
-        string.format("[vibing:cli] Failed to create hook settings: %s", tostring(settings_path)),
-        vim.log.levels.WARN
-      )
-      return nil
-    end
-    return settings_path
-  end,
+  -- `.vibing/hook-settings.json` handed over with `--settings`, in the script's own (claude)
+  -- dialect. Registered in bypassPermissions too: that mode bypasses the decision, not the
+  -- git-snapshot baseline the same PreToolUse round trip takes.
+  hook = { transport = "settings_file", dialect = "claude", keep_in_bypass = true },
+  seeds_project_plugins = true,
 
   apply_env = function(env, opts, config)
     -- Remove CLAUDECODE to allow nested invocation

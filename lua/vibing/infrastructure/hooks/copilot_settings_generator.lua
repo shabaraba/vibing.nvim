@@ -65,8 +65,10 @@ end
 
 --- Ensure the Copilot plugin directory exists for the given cwd
 --- @param cwd? string Working directory (defaults to vim.fn.getcwd())
+--- @param dialect? string how the script should phrase its decision (`hooks/transports.lua`).
+---   Defaults to `copilot`, the only dialect copilot itself reads.
 --- @return string path Absolute path to the plugin directory, for `--plugin-dir`
-function M.ensure(cwd)
+function M.ensure(cwd, dialect)
   local dir = M.plugin_dir(cwd or vim.fn.getcwd())
   Fs.ensure_dir(dir)
 
@@ -74,7 +76,7 @@ function M.ensure(cwd)
   -- Shell-escaped because Copilot runs this string through a shell, and a plugin path under a
   -- checkout with a space in it would otherwise split into two arguments.
   local script = vim.fn.fnamemodify(SettingsGenerator.get_hook_script_path(), ":p")
-  local hook_command = vim.fn.shellescape(script) .. " copilot"
+  local hook_command = vim.fn.shellescape(script) .. " " .. (dialect or "copilot")
 
   -- Always regenerated: the hook script path moves when the plugin is updated or reinstalled.
   --

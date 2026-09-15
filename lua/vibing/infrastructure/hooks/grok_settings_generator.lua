@@ -123,8 +123,9 @@ end
 
 --- Ensure project PreToolUse hook file exists for the given cwd
 --- @param cwd? string Working directory (defaults to vim.fn.getcwd())
+--- @param dialect? string how the script should phrase its decision (`hooks/transports.lua`)
 --- @return string path Absolute path to the hook JSON file
-function M.ensure(cwd)
+function M.ensure(cwd, dialect)
   cwd = cwd or vim.fn.getcwd()
   local real_cwd = vim.fn.resolve(cwd)
   warn_if_not_git(real_cwd)
@@ -137,7 +138,7 @@ function M.ensure(cwd)
   -- (.grok/hooks/), not the project root — so a relative plugin path would miss
   -- bin/hooks/pre-tool-use.sh. Always write an absolute path.
   local hook_script = vim.fn.fnamemodify(SettingsGenerator.get_hook_script_path(), ":p")
-  local settings = SettingsGenerator.generate(hook_script)
+  local settings = SettingsGenerator.generate(hook_script, dialect)
 
   local json = vim.json.encode(settings)
   local f, err = io.open(hook_path, "w")

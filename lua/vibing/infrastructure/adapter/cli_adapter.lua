@@ -18,6 +18,8 @@ local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_hand
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
 local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
 local RateLimitDetector = require("vibing.infrastructure.adapter.modules.rate_limit_detector")
+local HookTransports = require("vibing.infrastructure.hooks.transports")
+local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 
 ---@class Vibing.BackendDescriptor
 ---@field id string The agent id (`claude`, `codex`, ...). `adapter.name` is `<id>_cli`.
@@ -26,10 +28,13 @@ local RateLimitDetector = require("vibing.infrastructure.adapter.modules.rate_li
 ---  Builds the argv. Raises when the binary is missing; the raise is reported through `on_done`.
 ---@field event_processor { processLine: fun(line: string, context: table): boolean }
 ---  Turns one stdout line into chunk/tool events on the event context.
----@field prepare_hook? fun(cwd: string, opts: Vibing.AdapterOpts, config: Vibing.Config): any
----  Registers the PreToolUse hook for this turn and returns whatever `build` needs to reference it
----  (a settings path, an argv fragment, a plugin dir, or nothing). Runs before `build`. Must not
----  raise: a backend decides for itself whether a failed registration warns and runs ungated.
+---@field hook? Vibing.HookSpec How the PreToolUse hook reaches this CLI (`hooks/transports.lua`).
+---  Installed before `build`, which receives what the transport returned (a settings path, an
+---  argv fragment, a plugin dir). A failed installation warns and the turn runs ungated -- the
+---  alternative, registering a hook nothing can run, is what hangs codex.
+---@field seeds_project_plugins? boolean Seed `.vibing/plugins/` in the project on the first real
+---  request (`plugins/scaffold.lua`), alongside the hook settings: both are "this project is now
+---  using vibing.nvim" side effects, and this is the one place a real request passes through.
 ---@field resolve_cwd? fun(opts: Vibing.AdapterOpts): string? The process cwd, when it is not
 ---  simply `opts.cwd` (a lightweight grok call runs from a scratch directory).
 ---@field apply_env? fun(env: table<string, string>, opts: Vibing.AdapterOpts, config: Vibing.Config)
@@ -134,12 +139,27 @@ function M.define(descriptor)
 
     local cwd = resolve_cwd(descriptor, opts)
 
-    -- The hook is registered before the argv is built because some backends reference it from
-    -- the argv (a settings path, a `-c` fragment, a plugin dir). The descriptor decides whether a
-    -- lightweight or bypassPermissions turn gets one at all, and how a failure is reported.
+    if descriptor.seeds_project_plugins and not opts.lightweight then
+      pcall(PluginScaffold.ensure, cwd, self.config)
+    end
+
+    -- The hook is registered before the argv is built because some transports are referenced
+    -- from the argv (a settings path, a `-c` fragment, a plugin dir).
     local hook_arg = nil
-    if descriptor.prepare_hook then
-      hook_arg = descriptor.prepare_hook(cwd, opts, self.config)
+    if descriptor.hook and HookTransports.wanted(descriptor.hook, opts) then
+      local ok, result = pcall(HookTransports.install, descriptor.hook, cwd)
+      if ok then
+        hook_arg = result
+      else
+        vim.notify(
+          string.format(
+            "%s Failed to install the PreToolUse hook, so this turn is not gated by vibing.nvim: %s",
+            tag,
+            tostring(result)
+          ),
+          vim.log.levels.WARN
+        )
+      end
     end
 
     -- The builder raises when the binary is missing. send_message.lua does not wrap stream() in
