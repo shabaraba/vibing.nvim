@@ -24,6 +24,20 @@ describe("agents registry", function()
     end
   end)
 
+  it("gives every backend a descriptor whose id is its own", function()
+    -- The adapter is one class driven by the descriptor (ADR 009), so a descriptor registered
+    -- under the wrong id would name a different backend in `adapter.name`, limit-state scoping
+    -- and every log line.
+    for _, def in ipairs(Agents.list()) do
+      assert.is_string(def.descriptor_module)
+      local ok, descriptor = pcall(require, def.descriptor_module)
+      assert.is_true(ok, def.descriptor_module .. " does not load")
+      assert.equals(def.id, descriptor.id)
+      assert.is_function(descriptor.build)
+      assert.is_function(descriptor.event_processor.processLine)
+    end
+  end)
+
   it("offers at least one model candidate per backend", function()
     for _, def in ipairs(Agents.list()) do
       assert.is_true(#def.models > 0, def.id .. " has no model candidates")

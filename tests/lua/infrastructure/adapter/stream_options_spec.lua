@@ -59,6 +59,36 @@ for _, backend in ipairs(helper.adapters()) do
       end)
     end)
 
+    describe("callbacks", function()
+      it("passes the handle id to on_chunk so a late chunk can be told from a new turn's", function()
+        -- grok used to call on_chunk(chunk) alone, so a chunk arriving after the user had sent
+        -- something new was appended to the wrong turn. One stream() means one calling convention.
+        -- Every processor emits through context.onChunk, so the context is captured where the
+        -- adapter hands it to the stdout handler rather than by feeding backend-specific JSON.
+        local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
+        local original = StreamHandler.create_stdout_handler
+        local captured = nil
+        StreamHandler.create_stdout_handler = function(processor, context, is_cancelled)
+          captured = context
+          return original(processor, context, is_cancelled)
+        end
+
+        local seen = nil
+        local handle_id = adapter:stream("hello", { permissions_allow = {} }, function(_, chunk_handle_id)
+          seen = chunk_handle_id
+        end, function() end)
+        StreamHandler.create_stdout_handler = original
+
+        captured.onChunk("x")
+        assert.equals(handle_id, seen)
+      end)
+
+      it("registers the session id it is resuming, so a second buffer on that session is refused", function()
+        local result = helper.run_stream(adapter, { _session_id = "sess-shared" })
+        assert.equals("sess-shared", ActiveStreamRegistry.get(result.handle_id).session_id)
+      end)
+    end)
+
     describe("stream registry", function()
       it("registers the handle while the process runs", function()
         local result = helper.run_stream(adapter)

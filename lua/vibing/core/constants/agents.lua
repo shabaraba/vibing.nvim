@@ -11,7 +11,10 @@ local M = {}
 
 ---@class Vibing.AgentDefinition
 ---@field id string エージェント識別子（frontmatter の `agent` フィールドの値）
----@field adapter_module string アダプターの require パス
+---@field adapter_module string アダプターの require パス（`cli_adapter.define` を通す互換シム）
+---@field descriptor_module string バックエンド記述子（`Vibing.BackendDescriptor`）の require パス。
+---  アダプターの実体は `infrastructure/adapter/cli_adapter.lua` 一つで、バックエンドごとの差は
+---  この記述子が持つ（ADR 009）
 ---@field command_builder_module string argv を組み立てるモジュールの require パス。テストが
 ---  バックエンドを一覧するときに使う（列挙を手で並べると新しいバックエンドで更新漏れが起きる）
 ---@field export_name string `infrastructure/init.lua` でのエクスポート名
@@ -24,6 +27,7 @@ M.AGENTS = {
   claude = {
     id = "claude",
     adapter_module = "vibing.infrastructure.adapter.claude_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.claude",
     command_builder_module = "vibing.infrastructure.adapter.modules.cli_command_builder",
     export_name = "ClaudeCLIAdapter",
     description = "Claude CLI (Anthropic)",
@@ -37,6 +41,7 @@ M.AGENTS = {
   codex = {
     id = "codex",
     adapter_module = "vibing.infrastructure.adapter.codex_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.codex",
     command_builder_module = "vibing.infrastructure.adapter.modules.codex_command_builder",
     export_name = "CodexCLIAdapter",
     description = "Codex CLI (OpenAI)",
@@ -53,6 +58,7 @@ M.AGENTS = {
   copilot = {
     id = "copilot",
     adapter_module = "vibing.infrastructure.adapter.copilot_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.copilot",
     command_builder_module = "vibing.infrastructure.adapter.modules.copilot_command_builder",
     export_name = "CopilotCLIAdapter",
     description = "GitHub Copilot CLI",
@@ -73,6 +79,7 @@ M.AGENTS = {
   grok = {
     id = "grok",
     adapter_module = "vibing.infrastructure.adapter.grok_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.grok",
     command_builder_module = "vibing.infrastructure.adapter.modules.grok_command_builder",
     export_name = "GrokCLIAdapter",
     description = "Grok Build CLI (xAI)",
