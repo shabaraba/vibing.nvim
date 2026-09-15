@@ -42,7 +42,7 @@ describe("project_codex_permissions", function()
         'permissions={ vibing-project = { description = "Workspace editing with Git metadata access", extends = ":workspace", filesystem = { ":workspace_roots" = { ".git" = "write" } }, network = { enabled = true } } }',
       },
       require("vibing.infrastructure.adapter.modules.codex_permission_profile").args(root, {
-        permissions = { codex_profile_file = ".vibing/codex-permissions.toml" },
+        backends = { codex = { profile_file = ".vibing/codex-permissions.toml" } },
       })
     )
   end)
@@ -95,7 +95,7 @@ describe("project_codex_permissions", function()
 
     local config = require("vibing.config")
     local custom = 'default_permissions = ":read-only"\n'
-    config.setup({ permissions = { codex_profile_content = custom } })
+    config.setup({ backends = { codex = { profile_content = custom } } })
 
     require("vibing.presentation.chat.modules.file_manager").get_save_directory({
       save_location_type = "project",

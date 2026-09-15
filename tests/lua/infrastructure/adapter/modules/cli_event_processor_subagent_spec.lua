@@ -201,7 +201,7 @@ describe("cli_event_processor subagent text", function()
   end)
 
   it("replays a real CLI stream capture", function()
-    local fixture = vim.fn.getcwd() .. "/tests/fixtures/subagent_stream.jsonl"
+    local fixture = vim.fn.getcwd() .. "/tests/fixtures/streams/claude/subagent_forwarding.jsonl"
     local lines = vim.fn.readfile(fixture)
     assert.is_true(#lines > 0)
 

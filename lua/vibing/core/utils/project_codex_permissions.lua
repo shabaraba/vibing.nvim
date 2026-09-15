@@ -1,7 +1,7 @@
 --- Bootstrap the project-local Codex permission profile.
 ---
 --- Every project `.vibing/` directory gets a writable-workspace profile that also permits Git
---- metadata writes and network access; `permissions.codex_profile_content` overrides this
+--- metadata writes and network access; `backends.codex.profile_content` overrides this
 --- template for newly created profiles. Creation is exclusive, so an existing file -- including an
 --- empty one the user deliberately left there -- is never overwritten by another Neovim instance.
 --- @module vibing.core.utils.project_codex_permissions

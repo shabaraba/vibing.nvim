@@ -1,16 +1,16 @@
---- Copilot CLI command builder for `copilot -p --output-format json` execution
---- Builds the command array for the GitHub Copilot CLI with JSONL output
+--- The parts of the `copilot -p --output-format json` argv a flag table cannot express
+--- (ADR 009 P2).
+---
+--- The request itself is `request` in `backends/copilot.lua`; `request_builder.lua` resolves the
+--- shared values. What stays here is the permission mapping, which is mostly the generated hook
+--- plugin plus a static deny backstop. `build()` remains as the historical entry point.
 --- @module vibing.infrastructure.adapter.modules.copilot_command_builder
 
-local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
-local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
-
-local binary_path = CommonBuilder.binary_resolver(
-  "copilot",
-  "Copilot CLI not found in PATH. Please install GitHub Copilot CLI."
-)
+local RequestBuilder = require("vibing.infrastructure.adapter.modules.request_builder")
 
 local M = {}
+
+M.BINARY = { name = "copilot", missing = "Copilot CLI not found in PATH. Please install GitHub Copilot CLI." }
 
 local ToolVocabulary = require("vibing.infrastructure.adapter.modules.copilot_tool_vocabulary")
 
@@ -29,22 +29,25 @@ local ToolVocabulary = require("vibing.infrastructure.adapter.modules.copilot_to
 --- no-op grok has for `--tools ""`.
 local NO_TOOLS_SENTINEL = "__vibing_no_tools__"
 
---- Append permission flags. copilot's non-interactive mode requires --allow-all-tools, so the
---- real gate is the generated `preToolUse` hook (`--plugin-dir`, see copilot_settings_generator):
---- it is what carries `permission_mode`, the `ask` list and the Tool Approval UI. The static
+--- The permission flags. copilot's non-interactive mode requires --allow-all-tools, so the real
+--- gate is the generated `preToolUse` hook (`--plugin-dir`, see copilot_settings_generator): it is
+--- what carries `permission_mode`, the `ask` list and the Tool Approval UI. The static
 --- `--deny-tool` patterns stay as a backstop that still applies if the plugin fails to load.
 ---
---- A lightweight call never reaches here — it takes the branch below instead, which is what keeps
---- "registers no hooks" true for copilot no matter what the adapter passes.
---- @param cmd string[]
---- @param opts Vibing.AdapterOpts
---- @param plugin_dir string|nil Generated hook plugin directory, nil when hooks are not installed
-local function append_permission_flags(cmd, opts, plugin_dir)
+--- A lightweight call never reaches here -- the request spec conditions this part out and uses
+--- `LIGHTWEIGHT_ARGS` instead, which is what keeps "registers no hooks" true for copilot no matter
+--- what the adapter passes.
+--- @param ctx Vibing.RequestContext `hook_arg` is the generated plugin directory, nil when no
+---   hook was installed
+--- @return string[]
+function M.permission_args(ctx)
+  local opts, plugin_dir = ctx.opts, ctx.hook_arg
+  local cmd = {}
   local permission_mode = opts.permission_mode or "default"
 
   if permission_mode == "bypassPermissions" then
     table.insert(cmd, "--allow-all")
-    return
+    return cmd
   end
 
   if permission_mode == "plan" then
@@ -61,10 +64,11 @@ local function append_permission_flags(cmd, opts, plugin_dir)
     table.insert(cmd, "--deny-tool")
     table.insert(cmd, pattern)
   end
+  return cmd
 end
 
---- Append the flags a lightweight utility call (title generation, /summarize, daily summary)
---- runs under, in place of the permission flags.
+--- The flags a lightweight utility call (title generation, /summarize, daily summary) runs
+--- under, in place of the permission flags.
 ---
 --- This is copilot's half of what `lightweight` promises in `core/types.lua`. Unlike codex,
 --- copilot can genuinely take the tools away, so there is no sandbox to fence anything into:
@@ -76,23 +80,21 @@ end
 --- because anything is left to allow. `permission_mode` is deliberately ignored,
 --- `bypassPermissions` included: the user put the *chat* in that mode, and a title generated
 --- behind their back is not the call they made.
---- @param cmd string[]
-local function append_lightweight_flags(cmd)
-  table.insert(cmd, "--allow-all-tools")
-  table.insert(cmd, "--available-tools=" .. NO_TOOLS_SENTINEL)
-  -- claude's `--setting-sources ""` and codex's `project_doc_max_bytes=0`. Verified on 1.0.78:
-  -- an AGENTS.md sentinel string reaches the prompt twice without this flag and not at all
-  -- with it.
-  table.insert(cmd, "--no-custom-instructions")
-end
+---
+--- `--no-custom-instructions` is claude's `--setting-sources ""` and codex's
+--- `project_doc_max_bytes=0`. Verified on 1.0.78: an AGENTS.md sentinel string reaches the
+--- prompt twice without this flag and not at all with it.
+--- @type string[]
+M.LIGHTWEIGHT_ARGS = { "--allow-all-tools", "--available-tools=" .. NO_TOOLS_SENTINEL, "--no-custom-instructions" }
 
 --- Forget the resolved binary path. Test seam only: the cache is process-wide, so a spec
 --- exercising the "CLI missing" path has to clear what an earlier spec resolved.
 function M._reset_path_cache()
-  binary_path.reset()
+  RequestBuilder.reset_binary(require("vibing.infrastructure.adapter.backends.copilot").request)
 end
 
---- Build the `copilot -p --output-format json` command array
+--- Build the `copilot -p --output-format json` command array from the request spec in
+--- `backends/copilot.lua`.
 --- @param prompt string User prompt
 --- @param opts Vibing.AdapterOpts Adapter options
 --- @param session_id string|nil Session ID for resumption
@@ -100,38 +102,14 @@ end
 --- @param plugin_dir? string Generated hook plugin directory to load with --plugin-dir
 --- @return string[] Command array for vim.system()
 function M.build(prompt, opts, session_id, config, plugin_dir)
-  local cmd = { binary_path.resolve(), "--output-format", "json", "--stream", "on", "--no-color" }
-
-  if session_id then
-    table.insert(cmd, "--resume=" .. session_id)
-  end
-
-  local model = NonClaudeModel.resolve(opts, config)
-  if model then
-    table.insert(cmd, "--model")
-    table.insert(cmd, model)
-  end
-
-  if opts.lightweight then
-    append_lightweight_flags(cmd)
-  else
-    append_permission_flags(cmd, opts, plugin_dir)
-  end
-
-  local full_prompt = prompt
-  if not session_id then
-    full_prompt = CommonBuilder.context_prefix(opts) .. prompt
-  end
-
-  local language_instruction = CommonBuilder.language_instruction(opts, config)
-  if language_instruction then
-    full_prompt = language_instruction .. "\n\n" .. full_prompt
-  end
-
-  table.insert(cmd, "-p")
-  table.insert(cmd, full_prompt)
-
-  return cmd
+  return RequestBuilder.build(
+    require("vibing.infrastructure.adapter.backends.copilot").request,
+    prompt,
+    opts,
+    session_id,
+    config,
+    plugin_dir
+  )
 end
 
 return M

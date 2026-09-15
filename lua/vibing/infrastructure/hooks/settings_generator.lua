@@ -27,13 +27,28 @@ function M.get_stop_failure_script_path()
   return hook_script_path("stop-failure.sh")
 end
 
+--- The command line that runs the PreToolUse script in a given dialect.
+---
+--- `claude` is the script's default and is passed as nothing, so the settings a claude user has
+--- seen so far are byte-identical; any other dialect travels as the script's first argument.
+--- @param script string absolute script path
+--- @param dialect? string
+--- @return string
+function M.hook_command(script, dialect)
+  if dialect and dialect ~= "claude" then
+    return script .. " " .. dialect
+  end
+  return script
+end
+
 --- Generate settings table with hook configuration
 --- @param hook_script_path? string Override for the PreToolUse script path. Grok resolves a
 ---   relative hook command against its own .grok/hooks/ file rather than the project root, so it
 ---   has to pass an absolute path it computed itself.
+--- @param dialect? string how the script should phrase its decision (`hooks/transports.lua`)
 --- @return table
-function M.generate(hook_script_path)
-  local pre_tool_use_script = hook_script_path or M.get_hook_script_path()
+function M.generate(hook_script_path, dialect)
+  local pre_tool_use_script = M.hook_command(hook_script_path or M.get_hook_script_path(), dialect)
 
   return {
     hooks = {
@@ -71,8 +86,9 @@ end
 
 --- Ensure hook settings file exists in .vibing/ of the given cwd
 --- @param cwd? string Working directory (defaults to vim.fn.getcwd())
+--- @param dialect? string see `generate`
 --- @return string path Absolute path to settings file
-function M.ensure(cwd)
+function M.ensure(cwd, dialect)
   cwd = cwd or vim.fn.getcwd()
   local vibing_dir = cwd .. "/.vibing"
   local settings_path = vibing_dir .. "/hook-settings.json"
@@ -80,7 +96,7 @@ function M.ensure(cwd)
   Fs.ensure_dir(vibing_dir)
 
   -- Always regenerate (hook script path may change after plugin update)
-  local settings = M.generate()
+  local settings = M.generate(nil, dialect)
   local json = vim.json.encode(settings)
 
   local f = io.open(settings_path, "w")

@@ -103,7 +103,7 @@ describe("codex_cli hook registration", function()
     end)
 
     local usage = assert(run.done_responses[1])._token_usage
-    assert.equals("codex", usage.backend)
+    assert.equals("cumulative", usage.kind)
     assert.equals(120000, usage.totals.input)
     assert.equals(100000, usage.totals.cached)
     assert.equals(500, usage.totals.cache_write)
@@ -121,7 +121,7 @@ describe("codex_cli hook registration", function()
 
   it("does not probe when the notice is turned off", function()
     local off = codex:new(vim.tbl_deep_extend("force", CONFIG, {
-      agent = { codex_provider_notice = { enabled = false } },
+      backends = { codex = { provider_notice = false } },
     }))
     helper.run_stream(off, { permission_mode = "default", lightweight = true })
     assert.are.equal(1, #system.calls)

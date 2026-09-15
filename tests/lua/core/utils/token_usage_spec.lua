@@ -135,19 +135,19 @@ describe("token_usage", function()
     end)
   end)
 
-  describe("Codex usage", function()
+  describe("cumulative usage", function()
     local function codex_usage(input, cached, output, reasoning, cache_write)
-      return TokenUsage.from_codex({
-        input_tokens = input,
-        cached_input_tokens = cached,
-        cache_write_input_tokens = cache_write,
-        output_tokens = output,
-        reasoning_output_tokens = reasoning,
+      return TokenUsage.cumulative({
+        input = input,
+        cached = cached,
+        cache_write = cache_write,
+        output = output,
+        reasoning = reasoning,
       })
     end
 
     it("renders a fresh thread's aggregate as this turn", function()
-      local resolved = TokenUsage.codex_delta(codex_usage(42000, 38000, 2000, 1200, 500), nil, true)
+      local resolved = TokenUsage.cumulative_delta(codex_usage(42000, 38000, 2000, 1200, 500), nil, true)
       local line = TokenUsage.format(resolved)
 
       assert.equals("turn", resolved.scope)
@@ -159,7 +159,7 @@ describe("token_usage", function()
 
     it("subtracts the preceding cumulative marker on a resumed thread", function()
       local previous = { input = 42000, cached = 38000, cache_write = 500, output = 2000, reasoning = 1200 }
-      local resolved = TokenUsage.codex_delta(codex_usage(100000, 91000, 3200, 1800, 800), previous, false)
+      local resolved = TokenUsage.cumulative_delta(codex_usage(100000, 91000, 3200, 1800, 800), previous, false)
 
       assert.equals("turn", resolved.scope)
       assert.equals(58000, resolved.input)
@@ -170,7 +170,7 @@ describe("token_usage", function()
     end)
 
     it("labels the first observed resumed aggregate as a session total", function()
-      local resolved = TokenUsage.codex_delta(codex_usage(100000, 91000, 3200, 1800), nil, false)
+      local resolved = TokenUsage.cumulative_delta(codex_usage(100000, 91000, 3200, 1800), nil, false)
       local section = TokenUsage.section(resolved)
 
       assert.equals("session", resolved.scope)
@@ -180,7 +180,7 @@ describe("token_usage", function()
 
     it("falls back to the session total when a stale marker moves backwards", function()
       local stale = { input = 42000, cached = 38000, cache_write = 500, output = 2000, reasoning = 1200 }
-      local resolved = TokenUsage.codex_delta(codex_usage(10000, 9000, 500, 200, 100), stale, false)
+      local resolved = TokenUsage.cumulative_delta(codex_usage(10000, 9000, 500, 200, 100), stale, false)
 
       assert.equals("session", resolved.scope)
       assert.equals(10000, resolved.input)
@@ -188,16 +188,16 @@ describe("token_usage", function()
     end)
 
     it("round-trips exact cumulative counters through the heading marker", function()
-      local resolved = TokenUsage.codex_delta(codex_usage(100001, 91002, 3203, 1804, 805), nil, true)
+      local resolved = TokenUsage.cumulative_delta(codex_usage(100001, 91002, 3203, 1804, 805), nil, true)
       local heading = vim.split(TokenUsage.section(resolved), "\n")[1]
 
-      assert.are.same(resolved.totals, TokenUsage.parse_codex_totals(heading))
+      assert.are.same(resolved.totals, TokenUsage.parse_cumulative_totals(heading))
       assert.is_nil(TokenUsage.parse_context(heading))
     end)
 
     it("finds the newest Codex marker while ignoring ordinary Tokens headings", function()
-      local first = TokenUsage.codex_delta(codex_usage(100, 80, 20, 10), nil, true)
-      local second = TokenUsage.codex_delta(codex_usage(250, 200, 40, 20), first.totals, false)
+      local first = TokenUsage.cumulative_delta(codex_usage(100, 80, 20, 10), nil, true)
+      local second = TokenUsage.cumulative_delta(codex_usage(250, 200, 40, 20), first.totals, false)
       local lines = {
         vim.split(TokenUsage.section(first), "\n")[1],
         "### Tokens",
@@ -205,23 +205,33 @@ describe("token_usage", function()
         "### Tokens from the model's prose",
       }
 
-      assert.are.same(second.totals, TokenUsage.find_last_codex_totals(lines))
+      assert.are.same(second.totals, TokenUsage.find_last_cumulative_totals(lines))
     end)
 
     it("degrades malformed optional counters to zero", function()
-      local usage = TokenUsage.from_codex({
-        input_tokens = "42",
-        cached_input_tokens = -1,
-        output_tokens = 2 / 0,
-        reasoning_output_tokens = "unknown",
+      local usage = TokenUsage.cumulative({
+        input = "42",
+        cached = -1,
+        output = 2 / 0,
+        reasoning = "unknown",
       })
 
+      assert.equals("cumulative", usage.kind)
       assert.equals(42, usage.totals.input)
       assert.equals(0, usage.totals.cached)
       assert.equals(0, usage.totals.cache_write)
       assert.equals(0, usage.totals.output)
       assert.equals(0, usage.totals.reasoning)
-      assert.is_nil(TokenUsage.from_codex(nil))
+    end)
+
+    it("still reads the marker keys written while this was codex-only", function()
+      -- Chats written before the neutral `total-*` keys carry `codex-*`; a resumed one must still
+      -- get a delta rather than a session total.
+      local heading = "### Tokens <!-- codex-input=100 codex-cached=80 codex-cache-write=5 codex-output=20 codex-reasoning=10 -->"
+      assert.same(
+        { input = 100, cached = 80, cache_write = 5, output = 20, reasoning = 10 },
+        TokenUsage.parse_cumulative_totals(heading)
+      )
     end)
   end)
 

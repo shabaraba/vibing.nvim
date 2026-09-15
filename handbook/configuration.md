@@ -7,7 +7,7 @@ Complete reference for every `require("vibing").setup()` option. Defaults shown 
 
 - [Defaults at a Glance](#defaults-at-a-glance)
 - [Adapter](#adapter)
-- [Grok CLI](#grok-cli)
+- [Backends](#backends)
 - [Agent](#agent)
 - [Chat](#chat)
 - [UI](#ui)
@@ -39,7 +39,6 @@ require("vibing").setup({
     subagent = { enabled = false, show_prefix = false },
     auto_resume_on_limit = { enabled = false, max_retries = 1 },
     scheduled_requests = { enabled = true, max_retries = 3 },
-    codex_provider_notice = { enabled = true },
     token_usage = {
       enabled = true,
       warn_context = 150000,
@@ -116,20 +115,46 @@ Backends are not feature-equivalent. `AskUserQuestion`'s choice-list UI is Claud
 backend honours `permissions.mode`, the `ask` list and the Tool Approval UI, but each one reaches
 them differently: `copilot` through a generated plugin loaded per run with `--plugin-dir` (written
 to `.vibing/copilot-plugin/`; your own `~/.copilot/` is never modified), and `grok` only inside a
-git repository — see [Grok CLI](#grok-cli).
+git repository — see [Backends](#backends).
 
-## Grok CLI
+## Backends
+
+Options that belong to one backend live under `backends.<id>`. The fields, their defaults and
+their validation are declared next to the backend itself (`config_fields` in
+`lua/vibing/core/constants/agents.lua`), so adding a backend adds its options here without a
+change to `config.lua`. Claude and Copilot declare none.
 
 ```lua
-grok = {
-  executable = "auto",  -- "auto": detect `grok` on PATH (default)
-                        -- or an explicit path, e.g. "~/.grok/bin/grok"
+backends = {
+  codex = {
+    profile_file = ".vibing/codex-permissions.toml",
+                            -- Project-local OS sandbox profile; false disables loading it.
+                            -- See "Project-local Codex permission profiles" below.
+    -- profile_content = [[...]],
+                            -- Optional initial TOML used only when the profile is first created.
+    allow_tracked_profile = false,
+                            -- Set true only after reviewing a Git-tracked profile.
+    provider_notice = true, -- Warn when a Codex lightweight call leaves your model_provider.
+                            -- On by default, unlike the token-spending toggles: it spends no
+                            -- tokens, and a warning about a silent change is useless if it is
+                            -- itself off by default. Turn it off to stop the `codex doctor --json`
+                            -- probe it needs.
+  },
+  grok = {
+    executable = "auto",    -- "auto": detect `grok` on PATH (default)
+                            -- or an explicit path, e.g. "~/.grok/bin/grok"
+  },
 }
 ```
 
-Only read when `adapter = "grok"` (or a chat's `agent: grok` frontmatter). A path that does not
-exist is **not** reset to `"auto"`: having asked for a specific binary, silently falling back to
-whatever `grok` is on PATH would be worse than failing.
+Before these moved here they were `permissions.codex_profile_file`,
+`permissions.codex_profile_content`, `permissions.codex_allow_tracked_profile`,
+`agent.codex_provider_notice.enabled` and `grok.executable`. The old keys are still read, with a
+warning naming the new location, so an existing `setup()` keeps working.
+
+`backends.grok.executable` is only read when `adapter = "grok"` (or a chat's `agent: grok`
+frontmatter). A path that does not exist is **not** reset to `"auto"`: having asked for a specific
+binary, silently falling back to whatever `grok` is on PATH would be worse than failing.
 vibing.nvim also refuses a `grok` that is not the official xAI Grok Build CLI, since the name is
 shared with unrelated tools.
 
@@ -289,17 +314,9 @@ agent = {
                             -- what is readable afterwards
   },
 
-  codex_provider_notice = {
-    enabled = true,         -- Warn when a Codex lightweight call leaves your model_provider.
-                            -- On by default, unlike the toggles above: it spends no tokens,
-                            -- and a warning about a silent change is useless if it is itself
-                            -- off by default. Turn it off to stop the `codex doctor --json`
-                            -- probe it needs. Codex backend only.
-  },
-
   token_usage = {           -- Per-turn token breakdown in the chat. Claude also warns when the
                             -- conversation has grown; Codex's stream has no context-fill figure.
-                            -- On by default for the same reason as codex_provider_notice: it
+                            -- On by default for the same reason as backends.codex.provider_notice: it
                             -- spends no tokens, and hidden usage is exactly what it prevents.
     enabled = true,
     warn_context = 150000,  -- Claude: at or above this, every turn's section gains a warning
@@ -1327,16 +1344,11 @@ permissions = {
   ask = {},              -- Tools requiring confirmation before each use
 
   rules = {},            -- Granular rules — see next section
-
-  codex_profile_file = ".vibing/codex-permissions.toml",
-                         -- Codex only: project-local OS sandbox profile.
-                         -- Set false to disable it.
-  -- codex_profile_content = [[...]],
-                         -- Optional initial TOML used only when the profile is first created.
-  codex_allow_tracked_profile = false,
-                         -- Set true only after reviewing a Git-tracked profile.
 }
 ```
+
+The Codex sandbox profile options that used to sit here are `backends.codex.*` — see
+[Backends](#backends).
 
 Valid tool names: `Read`, `Edit`, `Write`, `Bash`, `Glob`, `Grep`, `WebSearch`, `WebFetch`,
 `Skill`, `StructuredOutput`. Bash command patterns (`Bash(git:*)`) and MCP tool names
@@ -1352,7 +1364,7 @@ Two built-in behaviors to be aware of:
 
 Codex normally discovers project configuration only at `.codex/config.toml`; it cannot be pointed
 at an arbitrary config file. vibing.nvim bridges that gap for permissions: when
-`permissions.codex_profile_file` exists, it reads the file and passes its effective values as
+`backends.codex.profile_file` exists, it reads the file and passes its effective values as
 per-run `-c` overrides to both a new `codex exec` session and every `resume`. The default path is
 `.vibing/codex-permissions.toml`, relative to the request working directory. vibing.nvim creates
 that file when it initializes the project's `.vibing/` directory, and also backfills it when the
@@ -1380,15 +1392,17 @@ enabled = true
 ```
 
 Network access is enabled in the generated default. To customize the complete initial profile,
-set `permissions.codex_profile_content` to a TOML string. It is consulted only when the file is
+set `backends.codex.profile_content` to a TOML string. It is consulted only when the file is
 created; existing profiles are never overwritten:
 
 ```lua
 require("vibing").setup({
-  permissions = {
-    codex_profile_content = [[
+  backends = {
+    codex = {
+      profile_content = [[
 default_permissions = ":read-only"
 ]],
+    },
   },
 })
 ```
@@ -1397,7 +1411,7 @@ The loader accepts only `default_permissions`, `[permissions.*]`, and
 `features.network_proxy`. It rejects `:danger-full-access`; select `bypassPermissions` explicitly
 when full access is genuinely intended. Deleting the generated file causes it to be recreated on
 the next project initialization; leave it empty to preserve the previous Codex behavior
-(`workspace-write` for a new ordinary session), or set `codex_profile_file = false` to disable
+(`workspace-write` for a new ordinary session), or set `backends.codex.profile_file = false` to disable
 loading it. `plan` and lightweight utility calls stay read-only, while explicit
 `bypassPermissions` still wins over the project profile.
 
@@ -1422,7 +1436,7 @@ Two boundaries remain separate:
 This file can grant local filesystem and network access. `.vibing/` is normally git-ignored, and
 locally generated, untracked profiles load automatically. A repository can nevertheless force-add
 an ignored file, so Git-tracked profiles fail closed by default. After reviewing one, set
-`permissions.codex_allow_tracked_profile = true` to trust it explicitly.
+`backends.codex.allow_tracked_profile = true` to trust it explicitly.
 
 ## Granular Permission Rules
 

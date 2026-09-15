@@ -1,6 +1,5 @@
 local Fs = require("vibing.core.utils.fs")
 local Config = require("vibing.config")
-local ProjectCodexPermissions = require("vibing.core.utils.project_codex_permissions")
 local ProjectSystemPrompt = require("vibing.core.utils.project_system_prompt")
 
 local M = {}
@@ -19,7 +18,14 @@ end
 function M.ensure_project_files(project_root)
   project_root = project_root:gsub("/+$", "")
   ProjectSystemPrompt.ensure(project_root)
-  ProjectCodexPermissions.ensure(project_root, Config.get().permissions.codex_profile_content)
+  -- Each backend adds the files it keeps in a project's `.vibing/` (codex: its sandbox profile).
+  local config = Config.get()
+  for _, def in ipairs(require("vibing.core.constants.agents").list()) do
+    local descriptor = require(def.descriptor_module)
+    if descriptor.on_project_open then
+      descriptor.on_project_open(project_root, config)
+    end
+  end
 end
 
 ---保存ディレクトリを取得

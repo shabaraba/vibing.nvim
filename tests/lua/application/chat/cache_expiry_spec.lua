@@ -7,6 +7,10 @@ describe("cache_expiry", function()
   local ChatBuffer = require("vibing.presentation.chat.buffer")
   local Config = require("vibing.config")
   local TokenUsage = require("vibing.core.utils.token_usage")
+--- Codex's `turn.completed.usage`, through the codex decoder's field mapping.
+local function codex_usage(usage)
+  return TokenUsage.cumulative(require("vibing.infrastructure.adapter.decoders.codex_exec_json").usage_totals(usage))
+end
 
   local original_config_get
   local created_bufs
@@ -116,7 +120,7 @@ describe("cache_expiry", function()
     end)
 
     it("does not invent a context size from a Codex Tokens section", function()
-      local usage = TokenUsage.codex_delta(TokenUsage.from_codex({
+      local usage = TokenUsage.cumulative_delta(codex_usage({
         input_tokens = 205000,
         cached_input_tokens = 180000,
         output_tokens = 5000,

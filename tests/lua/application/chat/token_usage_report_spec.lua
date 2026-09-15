@@ -1,5 +1,9 @@
 local SendMessage = require("vibing.application.chat.send_message")
 local TokenUsage = require("vibing.core.utils.token_usage")
+--- Codex's `turn.completed.usage`, through the codex decoder's field mapping.
+local function codex_usage(usage)
+  return TokenUsage.cumulative(require("vibing.infrastructure.adapter.decoders.codex_exec_json").usage_totals(usage))
+end
 
 describe("send_message._report_token_usage", function()
   local function harness()
@@ -46,7 +50,7 @@ describe("send_message._report_token_usage", function()
 
   it("appends Codex's first observed resumed aggregate as a session total", function()
     local state, callbacks = harness()
-    local usage = TokenUsage.from_codex({
+    local usage = codex_usage({
       input_tokens = 120000,
       cached_input_tokens = 100000,
       output_tokens = 5000,
@@ -62,7 +66,7 @@ describe("send_message._report_token_usage", function()
 
   it("reports a Codex delta from the preceding footer in the chat buffer", function()
     local state, callbacks = harness()
-    local previous = TokenUsage.codex_delta(TokenUsage.from_codex({
+    local previous = TokenUsage.cumulative_delta(codex_usage({
       input_tokens = 120000,
       cached_input_tokens = 100000,
       output_tokens = 5000,
@@ -79,7 +83,7 @@ describe("send_message._report_token_usage", function()
       return buf
     end
 
-    local current = TokenUsage.from_codex({
+    local current = codex_usage({
       input_tokens = 200000,
       cached_input_tokens = 175000,
       output_tokens = 8000,

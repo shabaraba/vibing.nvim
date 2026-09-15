@@ -1,0 +1,59 @@
+{"type":"thought","data":"The"}
+{"type":"thought","data":" user"}
+{"type":"thought","data":" wants"}
+{"type":"thought","data":" me"}
+{"type":"thought","data":" to"}
+{"type":"thought","data":" read"}
+{"type":"thought","data":" a"}
+{"type":"thought","data":" file"}
+{"type":"thought","data":" called"}
+{"type":"thought","data":" note"}
+{"type":"thought","data":".txt"}
+{"type":"thought","data":" in"}
+{"type":"thought","data":" the"}
+{"type":"thought","data":" current"}
+{"type":"thought","data":" directory"}
+{"type":"thought","data":" and"}
+{"type":"thought","data":" reply"}
+{"type":"thought","data":" with"}
+{"type":"thought","data":" the"}
+{"type":"thought","data":" number"}
+{"type":"thought","data":" it"}
+{"type":"thought","data":" contains"}
+{"type":"thought","data":"."}
+{"type":"thought","data":" Let"}
+{"type":"thought","data":" me"}
+{"type":"thought","data":" read"}
+{"type":"thought","data":" that"}
+{"type":"thought","data":" file"}
+{"type":"thought","data":"."}
+{"type":"thought","data":"The"}
+{"type":"thought","data":" file"}
+{"type":"thought","data":" contains"}
+{"type":"thought","data":" \""}
+{"type":"thought","data":"The"}
+{"type":"thought","data":" answer"}
+{"type":"thought","data":" to"}
+{"type":"thought","data":" the"}
+{"type":"thought","data":" capture"}
+{"type":"thought","data":" question"}
+{"type":"thought","data":" is"}
+{"type":"thought","data":" "}
+{"type":"thought","data":"42"}
+{"type":"thought","data":".\""}
+{"type":"thought","data":" So"}
+{"type":"thought","data":" the"}
+{"type":"thought","data":" number"}
+{"type":"thought","data":" is"}
+{"type":"thought","data":" "}
+{"type":"thought","data":"42"}
+{"type":"thought","data":"."}
+{"type":"thought","data":" I"}
+{"type":"thought","data":" should"}
+{"type":"thought","data":" reply"}
+{"type":"thought","data":" with"}
+{"type":"thought","data":" that"}
+{"type":"thought","data":" number"}
+{"type":"thought","data":"."}
+{"type":"text","data":"42"}
+{"type":"end","stopReason":"EndTurn","sessionId":"01a0a3b6-4810-7011-818d-3fb46b6435e2","requestId":"b9c936f7-0c03-4a89-b841-dc3a122602be","usage":{"input_tokens":29139,"cache_read_input_tokens":256,"output_tokens":82,"reasoning_tokens":74,"total_tokens":29477},"num_turns":2,"total_cost_usd":0.058898,"total_cost_usd_ticks":588980000,"modelUsage":{"grok-4.6":{"inputTokens":29139,"outputTokens":82,"cacheReadInputTokens":256,"modelCalls":2,"costUSD":0.058898}}}

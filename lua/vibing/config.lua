@@ -48,7 +48,7 @@
 ---@field keymaps Vibing.KeymapConfig キーマップ設定（送信、キャンセル、コンテキスト追加）
 ---@field diff Vibing.DiffConfig diff表示設定（使用ツール）
 ---@field permissions Vibing.PermissionsConfig ツール権限設定（許可/拒否リスト）
----@field grok Vibing.GrokConfig Grok Build CLI設定（バイナリパス）
+---@field backends Vibing.BackendsConfig バックエンドごとの設定（`backends.<id>.*`）
 ---@field mcp Vibing.McpConfig MCP統合設定（RPCポート、自動起動）
 ---@field language? string|Vibing.LanguageConfig AI応答のデフォルト言語（"ja", "en"等、またはLanguageConfig）
 ---@field daily_summary? Vibing.DailySummaryConfig Daily Summary機能設定
@@ -75,9 +75,6 @@
 ---@field ask string[] 確認が必要なツールリスト（例: {"Bash"}、使用前に承認を要求）
 ---@field rules Vibing.PermissionRule[]? 粒度の細かい権限制御ルール（オプション）
 ---@field default_deny_rules boolean? 破壊的Bashコマンド（`rm -rf /`、`sudo`、`dd`、`chmod -R 777`、main/masterへのforce push等）の同梱denyルールを有効にするか（デフォルト: true）。`core/constants/destructive_commands.lua`を参照
----@field codex_profile_file string|false? Codexのプロジェクト権限プロファイル。リクエストcwdからの相対パスで、同一Gitリポジトリのworktreeに無ければNeovim起動ルートへフォールバックする（デフォルト: ".vibing/codex-permissions.toml"、falseで無効）
----@field codex_profile_content string? Codexプロジェクト権限プロファイルを新規作成するときの初期TOML。既存ファイルは上書きしない
----@field codex_allow_tracked_profile boolean? Git追跡済みのCodexプロジェクト権限プロファイルを明示的に信頼するか（デフォルト: false）
 
 ---@class Vibing.AutoResumeOnLimitConfig
 ---使用量リミット自動継続設定
@@ -151,7 +148,6 @@
 ---@field scheduled_requests Vibing.ScheduledRequestsConfig 予約リクエスト設定
 ---@field chat_notifications Vibing.ChatNotificationsConfig チャット間の完了通知設定
 ---@field orchestration Vibing.OrchestrationConfig チャット網の並列度設定
----@field codex_provider_notice Vibing.CodexProviderNoticeConfig codex軽量呼び出しのプロバイダ警告設定
 ---@field token_usage Vibing.TokenUsageConfig ターンごとのトークン内訳表示とコンテキスト肥大警告の設定
 ---@field plugins Vibing.PluginsConfig? `--plugin-dir`で読み込むClaude Codeプラグインの設定
 
@@ -160,7 +156,7 @@
 ---キャッシュ読取/作成を出し、コンテキストが育ったら警告する。CodexではCLIが返す
 ---input/cached/output/reasoningの累計差分を出す（現行JSONLにcontext使用量は無い）。
 ---
----codex_provider_notice と同じ理由で既定で有効: トークンを一切使わず、無効だと当の問題
+---backends.codex.provider_notice と同じ理由で既定で有効: トークンを一切使わず、無効だと当の問題
 ---（チャットが育っていることに気づけない）がそのまま残る通知だから。
 ---@field enabled boolean? falseで表示と警告を止める（デフォルト: true）
 ---@field warn_context number? この値を超えている間、各ターンの内訳行の直下に警告を書く（デフォルト: 150000）
@@ -202,23 +198,18 @@
 ---  プラグインとして渡す。falseで無効化（デフォルト: ".vibing/plugins"）
 ---@field extra string[]? 任意の追加パス。絶対パス、`~`始まり、またはリクエストのcwd相対（デフォルト: {}）
 
----@class Vibing.CodexProviderNoticeConfig
----codexの軽量呼び出し（タイトル生成・要約等）が設定済みプロバイダから外れることを警告するか
----警告のために`codex doctor --json`を1セッション1回だけ起動する。他の多くのトグルと違い既定で
----有効なのは、これがトークンを使う機能ではなく「黙って宛先が変わる」ことを防ぐ安全側の通知で、
----既定で無効ではそもそも気づけないため。probeのプロセス起動自体を避けたい場合に無効化する。
----@field enabled boolean? falseでプロバイダ警告とそのprobeを完全に止める（デフォルト: true）
+---@class Vibing.BackendsConfig
+---バックエンドごとの設定。`backends.<agent id>` の下に、そのバックエンドが
+---`core/constants/agents.lua` の `config_fields` で宣言した項目だけを持つ（ADR 009）。
+---項目と既定値と検証はそこから導かれるので、このファイルはバックエンド名を知らない。
+---@field codex { profile_file: string|false?, profile_content: string?, allow_tracked_profile: boolean?, provider_notice: boolean? }?
+---@field grok { executable: string? }?
 
 ---@class Vibing.SubagentConfig
 ---subagentが喋った内容をチャットに出すかどうかの設定
 ---既定では subagent の中身は隠され、ツール結果だけが見える（従来の挙動）
 ---@field enabled boolean? trueでCLIに`--forward-subagent-text`を渡し、subagentの本文をチャットに表示する（デフォルト: false）
 ---@field show_prefix boolean? 各行に`[subagent_type]`のラベルを付けるか（デフォルト: false）
-
----@class Vibing.GrokConfig
----Grok Build CLI設定
----`adapter = "grok"`（またはfrontmatterの`agent: grok`）のときだけ参照される。
----@field executable string|"auto" grokバイナリのパス（"auto": PATHから自動検出、文字列: 明示的なパス指定）
 
 ---@class Vibing.McpConfig
 ---MCP統合設定
@@ -386,7 +377,7 @@ M.defaults = {
     -- 別チャットに送ったリクエストの完了を、送信元のチャットに通知する。
     -- 通知は送信元の新しいターンとして届くため無人でトークンを消費する。既定は無効で、
     -- これは subagent / auto_resume_on_limit / dap と同じ基準（トークンを使う機能は既定で切る）。
-    -- scheduled_requests や codex_provider_notice が既定で有効なのはトークンを使わないからで、
+    -- scheduled_requests や backends.codex.provider_notice が既定で有効なのはトークンを使わないからで、
     -- こちらには当てはまらない。
     --
     -- 無効でも止まるのは watchdog の配達だけ。`orchestrated` / `orchestrated_by` の記録も、
@@ -435,16 +426,6 @@ M.defaults = {
       -- opt-in にしてある。答えは配達セクション（`## Request <!-- ... from ... -->`）として
       -- ワーカーのtranscriptに残るので、誰が許可したかは後から読める。
       delegated_approval = false,
-    },
-    -- codexの軽量呼び出しは --ignore-user-config で走るので、ユーザーの model_provider が落ちて
-    -- 既定のOpenAIエンドポイントに向く。それを1セッション1回だけ警告する。
-    --
-    -- auto_resume_on_limit や dap と違って既定で有効なのは、これがトークンを使う機能ではなく、
-    -- 黙って宛先が変わることを防ぐ通知だから。既定で無効なら、気づけないという当の問題が残る。
-    -- 代償は `codex doctor --json` の起動が1回入ることで、doctorには単一チェックだけ走らせる
-    -- フラグが無いためプロバイダへの到達性通信も付いてくる。それを避けたい場合はfalseにする。
-    codex_provider_notice = {
-      enabled = true,
     },
     -- ターンのコストは「返答の長さ」ではなく「リクエスト数 × コンテキストサイズ」で決まる。
     -- ツール1回ごとにAPIリクエストが1本増え、そのたびに会話全体を読み直すため。
@@ -538,13 +519,11 @@ M.defaults = {
     ask = {},
     rules = {},
     default_deny_rules = true,
-    codex_profile_file = ".vibing/codex-permissions.toml",
-    codex_profile_content = require("vibing.core.utils.project_codex_permissions").DEFAULT_CONTENT,
-    codex_allow_tracked_profile = false,
   },
-  grok = {
-    executable = "auto",
-  },
+  -- Per-backend options, one table per registered agent id. The fields and their defaults are
+  -- declared next to the backend in `core/constants/agents.lua` (`config_fields`), so this file
+  -- names no backend; `backend_defaults()` below reads them.
+  backends = nil, -- filled in below
   mcp = {
     enabled = true,
     rpc_port = 9876,
@@ -564,6 +543,121 @@ M.defaults = {
   },
 }
 
+--- The defaults for `backends.<id>`, from each agent's declared `config_fields`.
+--- @return table<string, table>
+local function backend_defaults()
+  local Agents = require("vibing.core.constants.agents")
+  local out = {}
+  for _, def in ipairs(Agents.list()) do
+    local fields = {}
+    for name, field in pairs(Agents.config_fields(def.id)) do
+      if field.default_module then
+        fields[name] = require(field.default_module)[field.default_field]
+      else
+        fields[name] = field.default
+      end
+    end
+    out[def.id] = fields
+  end
+  return out
+end
+
+M.defaults.backends = backend_defaults()
+
+--- Move options from where they lived before ADR 009 (`permissions.codex_*`, `grok.executable`)
+--- to `backends.<id>.<field>`, warning once per key so the user updates their setup().
+---
+--- Works on a copy so the caller's table is not edited under them. An option set in both places
+--- keeps the new one.
+--- @param opts table user options
+--- @return table
+local function migrate_legacy_backend_options(opts)
+  local Agents = require("vibing.core.constants.agents")
+  local migrated = vim.deepcopy(opts)
+  for _, def in ipairs(Agents.list()) do
+    for name, field in pairs(Agents.config_fields(def.id)) do
+      if field.legacy then
+        local value = vim.tbl_get(migrated, unpack(field.legacy))
+        if value ~= nil then
+          migrated.backends = migrated.backends or {}
+          migrated.backends[def.id] = migrated.backends[def.id] or {}
+          if migrated.backends[def.id][name] == nil then
+            migrated.backends[def.id][name] = value
+          end
+          -- Removed so the stale key does not survive the merge into a table nothing reads.
+          local parent = vim.tbl_get(migrated, unpack(vim.list_slice(field.legacy, 1, #field.legacy - 1)))
+          if type(parent) == "table" then
+            parent[field.legacy[#field.legacy]] = nil
+          end
+          notify.warn(
+            string.format(
+              "%s moved to backends.%s.%s; update your setup(). The old key still works for now.",
+              table.concat(field.legacy, "."),
+              def.id,
+              name
+            )
+          )
+        end
+      end
+    end
+  end
+  return migrated
+end
+
+--- Validate `backends.<id>.<field>` against its declared kind, resetting what cannot be used.
+--- @param options table the merged options
+local function validate_backend_options(options)
+  local Agents = require("vibing.core.constants.agents")
+  options.backends = type(options.backends) == "table" and options.backends or {}
+  for _, def in ipairs(Agents.list()) do
+    local values = options.backends[def.id]
+    if type(values) ~= "table" then
+      values = {}
+      options.backends[def.id] = values
+    end
+    for name, field in pairs(Agents.config_fields(def.id)) do
+      local default = M.defaults.backends[def.id][name]
+      local value = values[name]
+      local label = string.format("backends.%s.%s", def.id, name)
+      if field.kind == "path_or_false" then
+        if value ~= false and (type(value) ~= "string" or value == "") then
+          notify.warn(string.format("Invalid %s: expected a non-empty path or false. Resetting to default.", label))
+          values[name] = default
+        end
+      elseif field.kind == "string" then
+        if type(value) ~= "string" then
+          notify.warn(string.format("Invalid %s: expected a string. Resetting to default.", label))
+          values[name] = default
+        end
+      elseif field.kind == "boolean" then
+        if type(value) ~= "boolean" then
+          notify.warn(string.format("Invalid %s: expected a boolean. Resetting to %s.", label, tostring(default)))
+          values[name] = default
+        end
+      elseif field.kind == "executable_or_auto" then
+        -- The command builder tells the user to set this option when the binary is missing, so
+        -- a bad value has to be validated -- otherwise the advice leads to a setting nothing
+        -- checks. A missing binary is NOT reset to "auto": having asked for a specific binary,
+        -- silently falling back to whatever is on PATH would be worse than failing.
+        if type(value) ~= "string" or value == "" then
+          notify.warn(
+            string.format(
+              "Invalid %s value '%s'. Must be 'auto' or a path to the binary. Resetting to 'auto'.",
+              label,
+              tostring(value)
+            )
+          )
+          values[name] = "auto"
+        elseif value ~= "auto" and vim.fn.executable(value) == 0 then
+          notify.warn(
+            string.format("%s CLI not found at '%s'. Chats on that backend will fail until this is corrected.", def.id, value)
+          )
+        end
+      end
+    end
+  end
+end
+
 ---@type Vibing.Config?
 M.options = nil
 
@@ -572,7 +666,8 @@ M.options = nil
 ---permissionsで指定されたツール名が有効かチェックし、無効な場合は警告を出力
 ---@param opts? Vibing.Config ユーザー設定オブジェクト（nilの場合はデフォルト設定のみ使用）
 function M.setup(opts)
-  M.options = vim.tbl_deep_extend("force", {}, M.defaults, opts or {})
+  M.options = vim.tbl_deep_extend("force", {}, M.defaults, migrate_legacy_backend_options(opts or {}))
+  validate_backend_options(M.options)
 
   -- Auto-add "Skill" to permissions.allow if not already present and not in deny/ask lists
   if M.options.permissions and M.options.permissions.allow then
@@ -615,28 +710,6 @@ function M.setup(opts)
   end
 
   if M.options.permissions then
-    local profile_file = M.options.permissions.codex_profile_file
-    if profile_file ~= false and (type(profile_file) ~= "string" or profile_file == "") then
-      notify.warn(
-        "Invalid permissions.codex_profile_file: expected a non-empty path or false. Resetting to default."
-      )
-      M.options.permissions.codex_profile_file = ".vibing/codex-permissions.toml"
-    end
-
-    if type(M.options.permissions.codex_profile_content) ~= "string" then
-      notify.warn(
-        "Invalid permissions.codex_profile_content: expected a TOML string. Resetting to default."
-      )
-      M.options.permissions.codex_profile_content = M.defaults.permissions.codex_profile_content
-    end
-
-    if type(M.options.permissions.codex_allow_tracked_profile) ~= "boolean" then
-      notify.warn(
-        "Invalid permissions.codex_allow_tracked_profile: expected a boolean. Resetting to false."
-      )
-      M.options.permissions.codex_allow_tracked_profile = false
-    end
-
     -- Validate permission mode
     local valid_modes = {
       default = true,
@@ -865,26 +938,6 @@ function M.setup(opts)
     end
   end
 
-  -- grok_command_builder tells the user to "set config.grok.executable" when the binary is
-  -- missing, so a bad value here has to be validated -- otherwise the advice leads to a setting
-  -- nothing checks. A missing binary is NOT reset to "auto": `adapter = "grok"` with a wrong path
-  -- should say so, not quietly fall back to whatever `grok` happens to be on PATH.
-  if M.options.grok and M.options.grok.executable then
-    local executable = M.options.grok.executable
-    if type(executable) ~= "string" or executable == "" then
-      notify.warn(
-        string.format(
-          "Invalid grok.executable value '%s'. Must be 'auto' or a path to the grok binary. Resetting to 'auto'.",
-          tostring(executable)
-        )
-      )
-      M.options.grok.executable = "auto"
-    elseif executable ~= "auto" and vim.fn.executable(executable) == 0 then
-      notify.warn(
-        string.format("Grok CLI not found at '%s'. Grok chats will fail until this is corrected.", executable)
-      )
-    end
-  end
 end
 
 ---現在の設定を取得

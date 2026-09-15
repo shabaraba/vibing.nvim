@@ -127,7 +127,9 @@ to catch the next one rather than a hand-maintained list here. vibing.nvim's own
 
 These are the seams that stop backend identity leaking into shared code. The rule they encode:
 **a backend name belongs in that backend's own module, and shared code takes what it is handed.**
-`bin/hooks/pre-tool-use.sh` is the one deliberate exception, and the last bullet says why.
+`bin/hooks/pre-tool-use.sh` is the one deliberate exception, and the last bullet says why. Since
+ADR 009 each backend is a descriptor (`adapter/backends/<id>.lua`) that names its hook transport
+and dialect from `hooks/transports.lua`; the four generators described below are those transports.
 
 - **Tool vocabulary.** Backends name their tools differently (codex calls an edit `apply_patch`,
   copilot uses `bash`/`view`/`create`/`edit`/`web_search`, grok `search_replace`/
@@ -188,11 +190,14 @@ These are the seams that stop backend identity leaking into shared code. The rul
      `timeoutSec` is ignored and the tool proceeds. The generated `timeoutSec` therefore stays
      well above the ~120s that `pre-tool-use.sh` waits before denying.
 
-  The payload differs too — `toolName` with `toolArgs` as a JSON _string_ — which
-  `copilot_tool_vocabulary.normalize_payload` handles, the same seam grok uses. Every name in that
-  table except `powershell` and `rg` was read off a real payload; those two come from GitHub's
-  hooks reference and are kept because a missing alias lets a deny rule fall open, while a
-  never-sent one is inert.
+  The payload differs too — `toolName` with `toolArgs` — which
+  `copilot_tool_vocabulary.normalize_payload` handles, the same seam grok uses. **`toolArgs` has
+  changed shape between releases**: 1.0.78 sent a JSON _string_, 1.0.80 sends an object. Both were
+  read off the CLI, and `normalize_payload` takes either, because dropping the older form would
+  silently disable the gate on a pinned install rather than fail loudly. Every name in that table
+  except `powershell` and `rg` was read off a real payload; those two come from GitHub's hooks
+  reference and are kept because a missing alias lets a deny rule fall open, while a never-sent one
+  is inert.
 
   A subagent's own tool calls reach this hook as well, under their own names (`task` fires, then
   the `bash` the subagent runs) — so the gate covers delegated work, not just the top-level turn.

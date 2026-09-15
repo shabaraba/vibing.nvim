@@ -9,21 +9,37 @@ local M = {}
 ---@field value string モデル識別子
 ---@field description string 補完UIに出す説明
 
+---@class Vibing.AgentConfigField
+---`setup().backends.<id>.<field>` の1項目。`config.lua` が既定値の組み立てと検証をここから導く
+---ので、バックエンド固有の設定キーが共有コードに名前で現れない（ADR 009）
+---@field kind "string"|"boolean"|"path_or_false"|"executable_or_auto" 検証の種類
+---@field default any 既定値。`default_module` があればそちらが優先
+---@field default_module string? 既定値を持つモジュールの require パス（このファイルは何も
+---  require しないので、文字列の既定値を別モジュールから借りるときはこう書く）
+---@field default_field string? `default_module` 内のフィールド名
+---@field legacy string[]? ADR 009 以前にこの項目があった `setup()` 上の位置。設定されていれば
+---  警告付きで `backends.<id>.<field>` へ移す
+
 ---@class Vibing.AgentDefinition
 ---@field id string エージェント識別子（frontmatter の `agent` フィールドの値）
----@field adapter_module string アダプターの require パス
+---@field adapter_module string アダプターの require パス（`cli_adapter.define` を通す互換シム）
+---@field descriptor_module string バックエンド記述子（`Vibing.BackendDescriptor`）の require パス。
+---  アダプターの実体は `infrastructure/adapter/cli_adapter.lua` 一つで、バックエンドごとの差は
+---  この記述子が持つ（ADR 009）
 ---@field command_builder_module string argv を組み立てるモジュールの require パス。テストが
 ---  バックエンドを一覧するときに使う（列挙を手で並べると新しいバックエンドで更新漏れが起きる）
 ---@field export_name string `infrastructure/init.lua` でのエクスポート名
 ---@field description string frontmatter 補完の agent enum に出す説明
 ---@field models Vibing.AgentModelCandidate[] 補完候補。妥当性検証ではない（自由入力を許す
 ---  バックエンドもある）ので、ここに無いモデルを弾く用途には使わないこと
+---@field config_fields table<string, Vibing.AgentConfigField>? `setup().backends.<id>` の項目
 
 ---@type table<string, Vibing.AgentDefinition>
 M.AGENTS = {
   claude = {
     id = "claude",
     adapter_module = "vibing.infrastructure.adapter.claude_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.claude",
     command_builder_module = "vibing.infrastructure.adapter.modules.cli_command_builder",
     export_name = "ClaudeCLIAdapter",
     description = "Claude CLI (Anthropic)",
@@ -37,9 +53,43 @@ M.AGENTS = {
   codex = {
     id = "codex",
     adapter_module = "vibing.infrastructure.adapter.codex_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.codex",
     command_builder_module = "vibing.infrastructure.adapter.modules.codex_command_builder",
     export_name = "CodexCLIAdapter",
     description = "Codex CLI (OpenAI)",
+    config_fields = {
+      -- Project-local OS sandbox profile; `false` disables loading it.
+      profile_file = {
+        kind = "path_or_false",
+        default = ".vibing/codex-permissions.toml",
+        legacy = { "permissions", "codex_profile_file" },
+      },
+      -- Initial TOML, consulted only when the profile file is first created.
+      profile_content = {
+        kind = "string",
+        default_module = "vibing.core.utils.project_codex_permissions",
+        default_field = "DEFAULT_CONTENT",
+        legacy = { "permissions", "codex_profile_content" },
+      },
+      -- A Git-tracked profile is refused until the user says they reviewed it.
+      allow_tracked_profile = {
+        kind = "boolean",
+        default = false,
+        legacy = { "permissions", "codex_allow_tracked_profile" },
+      },
+      -- codex の軽量呼び出しは --ignore-user-config で走るので、ユーザーの model_provider が落ちて
+      -- 既定の OpenAI エンドポイントに向く。それを 1 セッション 1 回だけ警告する。
+      --
+      -- auto_resume_on_limit や dap と違って既定で有効なのは、これがトークンを使う機能ではなく、
+      -- 黙って宛先が変わることを防ぐ通知だから。既定で無効なら、気づけないという当の問題が残る。
+      -- 代償は `codex doctor --json` の起動が 1 回入ることで、doctor には単一チェックだけ走らせる
+      -- フラグが無いためプロバイダへの到達性通信も付いてくる。それを避けたい場合は false にする。
+      provider_notice = {
+        kind = "boolean",
+        default = true,
+        legacy = { "agent", "codex_provider_notice", "enabled" },
+      },
+    },
     models = {
       { value = "gpt-6-astra", description = "GPT-6 Astra (strongest Codex work)" },
       { value = "gpt-5.6-sol", description = "GPT-5.6 Sol (deep reasoning)" },
@@ -53,6 +103,7 @@ M.AGENTS = {
   copilot = {
     id = "copilot",
     adapter_module = "vibing.infrastructure.adapter.copilot_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.copilot",
     command_builder_module = "vibing.infrastructure.adapter.modules.copilot_command_builder",
     export_name = "CopilotCLIAdapter",
     description = "GitHub Copilot CLI",
@@ -73,9 +124,18 @@ M.AGENTS = {
   grok = {
     id = "grok",
     adapter_module = "vibing.infrastructure.adapter.grok_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.grok",
     command_builder_module = "vibing.infrastructure.adapter.modules.grok_command_builder",
     export_name = "GrokCLIAdapter",
     description = "Grok Build CLI (xAI)",
+    config_fields = {
+      -- "auto" looks `grok` up on PATH; a path is used as given and never silently reset.
+      executable = {
+        kind = "executable_or_auto",
+        default = "auto",
+        legacy = { "grok", "executable" },
+      },
+    },
     models = {
       { value = "grok-4.5", description = "Grok 4.5" },
       { value = "grok-composer-2.5-fast", description = "Grok Composer 2.5 Fast" },
@@ -116,6 +176,12 @@ end
 ---@return Vibing.AgentModelCandidate[]
 function M.models_for(id)
   return M.get(id).models
+end
+
+---@param id string
+---@return table<string, Vibing.AgentConfigField>
+function M.config_fields(id)
+  return (M.AGENTS[id] and M.AGENTS[id].config_fields) or {}
 end
 
 ---@return string[] all known model candidate values, keeping backend order and removing duplicates

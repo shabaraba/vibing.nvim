@@ -23,6 +23,10 @@ describe("grok_command_builder", function()
       return original_stdpath(what)
     end
     package.loaded["vibing.infrastructure.adapter.modules.grok_lightweight"] = nil
+    -- The descriptor holds the lightweight module by reference and the builder reads its request
+    -- spec from the descriptor (ADR 009 P2), so a reloaded lightweight module reaches the argv
+    -- only through a reloaded descriptor.
+    package.loaded["vibing.infrastructure.adapter.backends.grok"] = nil
     vim.fn.exepath = function(name)
       if name == "grok" then
         return "/usr/local/bin/grok"
@@ -273,10 +277,10 @@ describe("grok_command_builder", function()
   end)
 
   describe("binary resolution", function()
-    it("uses config.grok.executable when set to an explicit path", function()
+    it("uses backends.grok.executable when set to an explicit path", function()
       -- Force non-executable so sniff is skipped; path is still used in argv
       local cmd = grok_command_builder.build("hello", {}, nil, {
-        grok = { executable = "/opt/custom/grok" },
+        backends = { grok = { executable = "/opt/custom/grok" } },
       })
       assert.equals("/opt/custom/grok", cmd[1])
     end)
@@ -331,7 +335,7 @@ describe("grok_command_builder", function()
 
       package.loaded["vibing.infrastructure.adapter.modules.grok_command_builder"] = nil
       local fresh_builder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
-      local config = { grok = { executable = relative } }
+      local config = { backends = { grok = { executable = relative } } }
       assert.equals(relative, fresh_builder.build("hello", {}, nil, config)[1])
 
       -- Gone. The cached path must not survive it: the user gets the actionable "not found at
@@ -343,7 +347,7 @@ describe("grok_command_builder", function()
     end)
 
     it("still caches a bare command name, which no fs_stat can confirm", function()
-      -- config.grok.executable takes a name off PATH as well as a path, and fs_stat would resolve
+      -- backends.grok.executable takes a name off PATH as well as a path, and fs_stat would resolve
       -- that against Neovim's own cwd and answer nil forever. Losing the cache is not just a
       -- lookup: the fallthrough re-runs the officialness sniff, blocking the main loop on a
       -- `grok --version` subprocess on every single send.
@@ -358,7 +362,7 @@ describe("grok_command_builder", function()
 
       package.loaded["vibing.infrastructure.adapter.modules.grok_command_builder"] = nil
       local fresh_builder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
-      local config = { grok = { executable = "grok" } }
+      local config = { backends = { grok = { executable = "grok" } } }
 
       fresh_builder.build("hello", {}, nil, config)
       fresh_builder.build("hello again", {}, nil, config)
@@ -377,7 +381,7 @@ describe("grok_command_builder", function()
       end
       package.loaded["vibing.infrastructure.adapter.modules.grok_command_builder"] = nil
       local fresh_builder = require("vibing.infrastructure.adapter.modules.grok_command_builder")
-      local config = { grok = { executable = "/opt/custom/grok" } }
+      local config = { backends = { grok = { executable = "/opt/custom/grok" } } }
 
       assert.has_error(function()
         fresh_builder.build("hello", {}, nil, config)

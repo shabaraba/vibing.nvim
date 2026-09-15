@@ -135,11 +135,16 @@ actually tend to change: >lua
         mode = "acceptEdits",
         -- omit allow/deny to keep the shipped defaults
         deny = { "Bash" },
-        -- Codex only; auto-generated with Git writes
-        -- false disables loading it
-        codex_profile_file = ".vibing/codex-permissions.toml",
-        -- true explicitly trusts a Git-tracked profile
-        codex_allow_tracked_profile = false,
+      },
+      -- per-backend options; see handbook/configuration.md
+      backends = {
+        codex = {
+          -- auto-generated sandbox profile; false disables it
+          profile_file = ".vibing/codex-permissions.toml",
+          -- true explicitly trusts a Git-tracked profile
+          allow_tracked_profile = false,
+        },
+        grok = { executable = "auto" },
       },
       -- "ja", or { default = "ja", chat = "ja" }
       language = nil,
