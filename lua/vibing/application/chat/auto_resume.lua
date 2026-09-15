@@ -23,6 +23,12 @@ local M = {}
 --- misread (wrong unit, wrong field), and a timer armed for months is worse than no feature.
 local MAX_DELAY_SEC = 8 * 24 * 60 * 60
 
+--- Floors for a reset that has already elapsed by the time the delay is computed. Which one
+--- applies is decided by whether the reset was still ahead when it was written down:
+--- `handbook/features/usage-limits.md` → "Reading the Reset Time Out of the Message".
+local STALE_RESET_FLOOR_SEC = 3
+local UNTRUSTED_RESET_FLOOR_SEC = 60
+
 --- Active timers keyed by chat file path, so re-parking a chat replaces its timer instead of
 --- stacking a second one that would double-send.
 --- @type table<string, userdata>
@@ -49,7 +55,7 @@ end
 
 --- Seconds to wait before resuming a parked chat.
 --- Exposed as M._compute_delay for tests: it is the pure core of the safety limits (8-day sanity
---- ceiling, fallback delay, past-reset clamp) and would otherwise only be reachable through a
+--- ceiling, fallback delay, elapsed-reset floors) and would otherwise only be reachable through a
 --- libuv timer.
 --- @param entry Vibing.PendingResume
 --- @param opts table
@@ -77,9 +83,13 @@ local function compute_delay(entry, opts)
     end
     return nil, string.format("reset time is %d days away; ignoring as implausible", days)
   end
-  -- Already past (e.g. Neovim was closed across the whole window): resume promptly, not instantly,
-  -- so startup has settled before a request goes out.
-  return math.max(delay, 3)
+
+  -- An elapsed reset means one of two things. It merely went stale while Neovim was closed across
+  -- the window, in which case resume promptly but not instantly, so startup has settled first. Or
+  -- it was already behind the rejection that reported it, which is a statement contradicting
+  -- itself and worth waiting out rather than retrying straight back into.
+  local untrusted = entry.recorded_at ~= nil and entry.resets_at <= entry.recorded_at
+  return math.max(delay, untrusted and UNTRUSTED_RESET_FLOOR_SEC or STALE_RESET_FLOOR_SEC)
 end
 
 --- Locate the ChatBuffer for a chat file, loading the file into a buffer if needed.
