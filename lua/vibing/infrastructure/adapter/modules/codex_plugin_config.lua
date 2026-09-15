@@ -141,20 +141,21 @@ local function developer_instructions(skills, self_server, chat_bufnr)
     if #lines > 0 then
       table.insert(lines, "")
     end
+    -- Codex normalizes an MCP server's hyphens to underscores in the tool names it exposes to the
+    -- model (see codex_tool_vocabulary.lua's CODEX_VIBING_MCP_PREFIX), so both the prose below and
+    -- the qualified tool name handed to AskUserQuestionInstructions must use this same prefix.
+    local mcp_prefix = self_server:gsub("%-", "_")
     table.insert(
       lines,
       string.format(
         "The vibing-nvim MCP tools are registered as mcp__%s__<tool>; they read and edit the running "
           .. "Neovim instance the user is looking at.",
-        self_server:gsub("%-", "_")
+        mcp_prefix
       )
     )
     vim.list_extend(
       lines,
-      AskUserQuestionInstructions.lines(
-        "mcp__" .. self_server:gsub("%-", "_") .. "__nvim_ask_user_question",
-        chat_bufnr
-      )
+      AskUserQuestionInstructions.lines("mcp__" .. mcp_prefix .. "__nvim_ask_user_question", chat_bufnr)
     )
     table.insert(
       lines,

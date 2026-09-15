@@ -138,8 +138,8 @@ end
 --- attribute the changes: a whole-tree snapshot cannot tell whose `sed -i` ran, so a turn that
 --- overlaps another one in the same tree falls back to the per-tool backups.
 --- Excluded by handle_id rather than by chat_bufnr, unlike find_other_active_for_session: the
---- backends that register no chat_bufnr at all (currently grok — see features.md) would otherwise
---- compare nil against nil and never recognise each other as an overlap.
+--- backends that register no chat_bufnr at all (currently grok and copilot — see features.md)
+--- would otherwise compare nil against nil and never recognise each other as an overlap.
 --- @param worktree_root string|nil
 --- @param exclude_handle_id string|nil the stream asking; it is not an overlap with itself
 --- @return ActiveStreamEntry|nil

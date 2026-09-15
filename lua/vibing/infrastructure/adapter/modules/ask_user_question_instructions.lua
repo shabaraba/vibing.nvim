@@ -8,6 +8,8 @@ local CHAT_BUFFER_LABEL = "Current vibing.nvim chat buffer number"
 --- Tell a backend how to invoke the shared choice-list tool and, when available, identify the
 --- chat that should receive it. Keeping the instruction and its value together prevents one
 --- backend from accidentally emitting only half of the routing contract.
+--- The value is the buffer number, not the chat's file path: it survives a rename, keeping this
+--- prefix byte-stable across turns for the provider's prompt cache (#489).
 ---@param tool_name string backend-specific fully qualified MCP tool name
 ---@param chat_bufnr number|nil
 ---@return string[]
