@@ -82,8 +82,7 @@ return function(_, chat_buffer)
   local summary = SummaryInserter.extract(chat_buffer.buf)
 
   local old_file_path = chat_buffer.file_path
-  local vibing = require("vibing")
-  local config = vibing.get_config()
+  local config = require("vibing").get_config()
   local save_dir = FileManager.get_save_directory(config.chat)
   local is_existing_file = old_file_path and vim.fn.filereadable(old_file_path) == 1
 
