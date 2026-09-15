@@ -14,11 +14,12 @@ local Agents = require("vibing.core.constants.agents")
 local permission = require("vibing.infrastructure.rpc.handlers.permission")
 
 --- Per backend: the path-carrying call and the shell call, plus any superseded shape still worth
---- accepting. `canonical` names the expected tool when it is not `Edit`.
+--- accepting. `canonical` names the expected tool when it is not `Edit` -- which is why the key is
+--- `path` and not `edit`: on codex and grok the call that carries a liftable path is a *read*.
 local PAYLOADS = {
   -- claude 2.1.236: the canonical shape, snake_case, nothing to translate.
   claude = {
-    edit = { tool_name = "Edit", tool_input = { file_path = "lua/a.lua", old_string = "a", new_string = "b" } },
+    path = { tool_name = "Edit", tool_input = { file_path = "lua/a.lua", old_string = "a", new_string = "b" } },
     shell = { tool_name = "Bash", tool_input = { command = "ls" } },
   },
   -- codex 0.154.0: shell-likes already arrive as `Bash`. An edit arrives as `apply_patch` with the
@@ -26,16 +27,16 @@ local PAYLOADS = {
   -- for the path case (`codex_tool_vocabulary.lua` says why that is left so); `view_image` is the
   -- codex call whose path is liftable.
   codex = {
-    edit = { tool_name = "view_image", tool_input = { path = "lua/a.lua" }, canonical = "Read" },
+    path = { tool_name = "view_image", tool_input = { path = "lua/a.lua" }, canonical = "Read" },
     shell = { tool_name = "Bash", tool_input = { command = "ls" } },
   },
   -- copilot 1.0.80: camelCase keys with the arguments as an object. 1.0.78 sent those same fields
   -- as a JSON string, which `superseded` keeps accepted -- the vocabulary takes either.
   copilot = {
-    edit = { toolName = "edit", toolArgs = { path = "lua/a.lua", old_str = "a", new_str = "b" } },
+    path = { toolName = "edit", toolArgs = { path = "lua/a.lua", old_str = "a", new_str = "b" } },
     shell = { toolName = "bash", toolArgs = { command = "ls" } },
     superseded = {
-      edit = { toolName = "edit", toolArgs = '{"path":"lua/a.lua","old_str":"a","new_str":"b"}' },
+      path = { toolName = "edit", toolArgs = '{"path":"lua/a.lua","old_str":"a","new_str":"b"}' },
       shell = { toolName = "bash", toolArgs = '{"command":"ls"}' },
     },
   },
@@ -43,24 +44,23 @@ local PAYLOADS = {
   -- because it names the path `target_file`, which is what `PATH_KEYS` exists to lift; grok's own
   -- editing tool (`search_replace`) already sends `file_path` and needs no translation.
   grok = {
-    edit = { toolName = "read_file", toolInput = { target_file = "lua/a.lua" }, canonical = "Read" },
+    path = { toolName = "read_file", toolInput = { target_file = "lua/a.lua" }, canonical = "Read" },
     shell = { toolName = "run_terminal_command", toolInput = { command = "ls" } },
   },
 }
 
---- @param payload table
---- @param descriptor table
---- @param expected_name string
-local function assert_path_call(payload, descriptor, expected_name)
-  local name, input = permission.normalize_hook_input(vim.deepcopy(payload), descriptor.vocabulary)
-  assert.equals(expected_name, name)
+--- @param payload table one of the `path` entries above; its own `canonical` names the expectation
+--- @param vocabulary table? the backend's tool vocabulary, as the handler receives it
+local function assert_path_call(payload, vocabulary)
+  local name, input = permission.normalize_hook_input(vim.deepcopy(payload), vocabulary)
+  assert.equals(payload.canonical or "Edit", name)
   assert.equals("lua/a.lua", input.file_path)
 end
 
 --- @param payload table
---- @param descriptor table
-local function assert_shell_call(payload, descriptor)
-  local name, input = permission.normalize_hook_input(vim.deepcopy(payload), descriptor.vocabulary)
+--- @param vocabulary table?
+local function assert_shell_call(payload, vocabulary)
+  local name, input = permission.normalize_hook_input(vim.deepcopy(payload), vocabulary)
   assert.equals("Bash", name)
   assert.equals("ls", input.command)
 end
@@ -76,19 +76,19 @@ describe("conformance: hook payload normalisation", function()
       end)
 
       it("brings a file path to its canonical name with file_path set", function()
-        assert_path_call(payloads.edit, descriptor, payloads.edit.canonical or "Edit")
+        assert_path_call(payloads.path, descriptor.vocabulary)
       end)
 
       it("brings a shell command to Bash with the command intact", function()
-        assert_shell_call(payloads.shell, descriptor)
+        assert_shell_call(payloads.shell, descriptor.vocabulary)
       end)
 
       -- A CLI that changed its payload shape is still read: an install pinned to the older version
       -- must not lose its permission gate because a newer one was captured here.
       if payloads.superseded then
         it("still reads the shape an older release of this CLI sent", function()
-          assert_path_call(payloads.superseded.edit, descriptor, payloads.superseded.edit.canonical or "Edit")
-          assert_shell_call(payloads.superseded.shell, descriptor)
+          assert_path_call(payloads.superseded.path, descriptor.vocabulary)
+          assert_shell_call(payloads.superseded.shell, descriptor.vocabulary)
         end)
       end
     end)

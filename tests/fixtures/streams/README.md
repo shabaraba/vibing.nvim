@@ -55,3 +55,23 @@ on a terminal that is not there (this is what `descriptor.stdin = ""` handles in
 Then strip what is local to the machine that captured it — a home directory in a skills or
 MCP-server listing is environment, not stream shape — and record the CLI version in the table
 above.
+
+## Taking a hook payload
+
+`tests/lua/infrastructure/adapter/conformance/hook_payload_spec.lua` holds the PreToolUse shapes as
+Lua tables rather than as files here, because what it asserts is the _expectation_ per backend, not
+the bytes. They are still captures, and this is how they were taken — the same recipe, with the
+hook installed through its real transport instead of omitted:
+
+1. Build the argv as above, but call `HookTransports.install(descriptor.hook, cwd)` first and pass
+   what it returns to `descriptor.build` as `hook_arg`. Use `permission_mode = "default"`; under
+   `bypassPermissions` only the backends with `keep_in_bypass` register a hook at all.
+2. Point `VIBING_HOOK_COMM_DIR` at a scratch directory and `VIBING_NVIM_RPC_PORT` at a stand-in TCP
+   server. `bin/hooks/pre-tool-use.sh` writes the CLI's payload to `<comm>/<id>.req` **before** it
+   pings that port, so the payload is recoverable even if nothing answers.
+3. Have the stand-in answer with an explicit `allow` so the turn runs on and later tool calls are
+   captured too. Without an answer the hook fails closed after its poll, which is correct
+   behaviour and a short capture.
+
+Run it in a throwaway git repository: grok discovers `.grok/hooks/` only inside one, and every
+transport writes into the cwd.
