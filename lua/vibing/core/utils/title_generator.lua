@@ -86,18 +86,20 @@ local SUMMARY_LEAD = {
 ---
 ---どちらの場合もセッションの resume/fork は行わない（全履歴を読み込んで context を超過し
 ---"Prompt is too long" になるのを避けるため）。都度フレッシュに送るだけなので session_id は不要。
+---アダプタはグローバル既定（`vibing.get_adapter()`）で、チャットの frontmatter の `agent` は
+---見ない。軽量呼び出し全体でこの解決に揃えてある理由は
+---`handbook/architecture/lightweight-calls.md` → "Adapter resolution"。
 ---@param conversation {role: string, content: string}[] 会話履歴
 ---@param callback fun(title: string?, error: string?) 結果コールバック
----@param adapter table? タイトル生成に使うアダプタ。省略時はグローバル既定を使う。
 ---@param opts {summary: string?}? summary があれば抜粋の代わりにそれを入力にする
-function M.generate_from_conversation(conversation, callback, adapter, opts)
+function M.generate_from_conversation(conversation, callback, opts)
   if not conversation or #conversation == 0 then
     callback(nil, "No conversation to generate title from")
     return
   end
 
   local vibing = require("vibing")
-  adapter = adapter or vibing.get_adapter()
+  local adapter = vibing.get_adapter()
   local config = vibing.get_config()
 
   if not adapter then

@@ -1,19 +1,25 @@
 describe("set_file_title handler - streaming guard", function()
   local handler
+  local title_generator
+  local original_generate
 
   before_each(function()
     package.loaded["vibing.application.chat.handlers.set_file_title"] = nil
     handler = require("vibing.application.chat.handlers.set_file_title")
+    title_generator = require("vibing.core.utils.title_generator")
+    original_generate = title_generator.generate_from_conversation
   end)
 
+  -- 差し替えの復帰は after_each で行う。it の本文末尾に置くと、assert が落ちたときに
+  -- モンキーパッチが後続の spec に漏れて、1件の失敗が無関係な失敗の連鎖になる
   after_each(function()
+    title_generator.generate_from_conversation = original_generate
     package.loaded["vibing.application.chat.handlers.set_file_title"] = nil
   end)
 
   it("returns false and skips title generation while the main response is streaming", function()
     local generate_called = false
-    local original_generate = require("vibing.core.utils.title_generator").generate_from_conversation
-    require("vibing.core.utils.title_generator").generate_from_conversation = function()
+    title_generator.generate_from_conversation = function()
       generate_called = true
     end
 
@@ -32,14 +38,11 @@ describe("set_file_title handler - streaming guard", function()
 
     assert.is_false(ok)
     assert.is_false(generate_called)
-
-    require("vibing.core.utils.title_generator").generate_from_conversation = original_generate
   end)
 
   it("proceeds to title generation when not sending", function()
     local generate_called = false
-    local original_generate = require("vibing.core.utils.title_generator").generate_from_conversation
-    require("vibing.core.utils.title_generator").generate_from_conversation = function()
+    title_generator.generate_from_conversation = function()
       generate_called = true
     end
 
@@ -60,17 +63,18 @@ describe("set_file_title handler - streaming guard", function()
     handler({}, chat_buffer)
 
     assert.is_true(generate_called)
-
-    require("vibing.core.utils.title_generator").generate_from_conversation = original_generate
   end)
 
-  it("resolves the per-chat agent adapter (codex chat -> codex adapter)", function()
+  it("hands the title generator no adapter, so a codex chat still uses the global default", function()
     require("vibing").setup({})
+    -- チャット固有のアダプタ解決は `send_message._resolve_adapter` 経由だった。setup() は
+    -- このモジュールを読み込まないので、「読み込まれていないこと」がその経路を通っていない
+    -- 証拠になる。関数単位の spy と違い、send_message へ入るどの経路でも落ちる
+    package.loaded["vibing.application.chat.send_message"] = nil
 
-    local passed_adapter
-    local original_generate = require("vibing.core.utils.title_generator").generate_from_conversation
-    require("vibing.core.utils.title_generator").generate_from_conversation = function(_, _, adapter)
-      passed_adapter = adapter
+    local third_arg
+    title_generator.generate_from_conversation = function(_, _, opts)
+      third_arg = opts
     end
 
     local buf = vim.api.nvim_create_buf(false, true)
@@ -82,9 +86,6 @@ describe("set_file_title handler - streaming guard", function()
       extract_conversation = function()
         return { { role = "user", content = "hi" } }
       end,
-      get_session_id = function()
-        return "codex-session-123"
-      end,
       parse_frontmatter = function()
         return { agent = "codex" }
       end,
@@ -92,13 +93,9 @@ describe("set_file_title handler - streaming guard", function()
 
     handler({}, chat_buffer)
 
-    -- The lightweight title call must run on the per-chat agent's adapter (codex),
-    -- not the global default (claude). Title generation does not resume, so no
-    -- session_id is threaded through.
-    assert.is_not_nil(passed_adapter)
-    assert.equals("codex_cli", passed_adapter.name)
-
-    require("vibing.core.utils.title_generator").generate_from_conversation = original_generate
+    assert.is_nil(package.loaded["vibing.application.chat.send_message"])
+    -- 第3引数は opts テーブルであってアダプタではない
+    assert.is_nil(third_arg.name)
   end)
 
   it("falls back to a message-based name when title generation fails", function()
@@ -178,7 +175,7 @@ describe("set_file_title handler - summary as input", function()
 
   it("passes the buffer's `## summary` section to the title generator", function()
     local passed_opts
-    title_generator.generate_from_conversation = function(_, _, _, opts)
+    title_generator.generate_from_conversation = function(_, _, opts)
       passed_opts = opts
     end
 
@@ -203,7 +200,7 @@ describe("set_file_title handler - summary as input", function()
 
   it("passes no summary when the buffer has none, so the excerpt path stays the default", function()
     local passed_opts
-    title_generator.generate_from_conversation = function(_, _, _, opts)
+    title_generator.generate_from_conversation = function(_, _, opts)
       passed_opts = opts
     end
 

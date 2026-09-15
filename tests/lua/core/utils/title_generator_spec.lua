@@ -119,7 +119,7 @@ describe("title_generator.generate_from_conversation", function()
 
   describe("summary input", function()
     it("summary が渡されたら抜粋の代わりにそれを送る", function()
-      title_generator.generate_from_conversation(CONVERSATION, function() end, nil, {
+      title_generator.generate_from_conversation(CONVERSATION, function() end, {
         summary = "## summary\n\n### 一行要約\n- タイトル生成の入力を summary 優先にした",
       })
 
@@ -132,7 +132,7 @@ describe("title_generator.generate_from_conversation", function()
     end)
 
     it("summary が無ければ従来どおり抜粋を送る", function()
-      title_generator.generate_from_conversation(CONVERSATION, function() end, nil, {})
+      title_generator.generate_from_conversation(CONVERSATION, function() end, {})
 
       assert.is_truthy(captured_prompt:find("USER REQUESTS", 1, true))
       assert.is_truthy(captured_prompt:find("Hello there", 1, true))
@@ -140,14 +140,14 @@ describe("title_generator.generate_from_conversation", function()
     end)
 
     it("空文字の summary は「無し」として扱う", function()
-      title_generator.generate_from_conversation(CONVERSATION, function() end, nil, { summary = "" })
+      title_generator.generate_from_conversation(CONVERSATION, function() end, { summary = "" })
 
       assert.is_truthy(captured_prompt:find("USER REQUESTS", 1, true))
     end)
 
     it("体裁のルールはどちらの入力でも共通で付く", function()
       for _, opts in ipairs({ {}, { summary = "## summary\n\n- 決めたこと" } }) do
-        title_generator.generate_from_conversation(CONVERSATION, function() end, nil, opts)
+        title_generator.generate_from_conversation(CONVERSATION, function() end, opts)
 
         assert.is_truthy(captured_prompt:find("30 characters maximum", 1, true))
         assert.is_truthy(captured_prompt:find("Respond with ONLY the title", 1, true))
@@ -155,7 +155,7 @@ describe("title_generator.generate_from_conversation", function()
     end)
 
     it("軽量呼び出しのフラグは summary 入力でも立つ", function()
-      title_generator.generate_from_conversation(CONVERSATION, function() end, nil, {
+      title_generator.generate_from_conversation(CONVERSATION, function() end, {
         summary = "## summary\n\n- 決めたこと",
       })
 
