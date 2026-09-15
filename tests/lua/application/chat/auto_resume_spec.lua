@@ -82,6 +82,24 @@ describe("auto_resume", function()
       assert.equals(3, delay)
     end)
 
+    it("keeps the short floor when the reset was still ahead when it was recorded", function()
+      -- Same case as above, stated fully: the timestamp only went stale, it never contradicted
+      -- itself, so recorded_at being present must not move it to the longer floor.
+      local now = os.time()
+      local delay = AutoResume._compute_delay({ resets_at = now - 10000, recorded_at = now - 20000 }, OPTS)
+
+      assert.equals(3, delay)
+    end)
+
+    it("backs off a minute when the reset was already behind the rejection that reported it", function()
+      -- A CLI that rejects the turn and names a moment already past has contradicted itself; a
+      -- 3-second retry would go straight back into a limit that is plainly still in force.
+      local now = os.time()
+      local delay = AutoResume._compute_delay({ resets_at = now - 5, recorded_at = now }, OPTS)
+
+      assert.equals(60, delay)
+    end)
+
     it("refuses an implausible reset more than 8 days out", function()
       local delay, reason = AutoResume._compute_delay({ resets_at = os.time() + 30 * 86400 }, OPTS)
 

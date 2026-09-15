@@ -53,8 +53,22 @@ appends `" or try again at "` plus `%-I:%M %p` when the reset is the same day, o
 `%b %-d, %Y %-I:%M %p` when it is not — and `" or try again later."` when it has nothing to print.
 
 This is a parse, never an inference. A phrasing the module does not recognise, and a dated form
-with no year, both yield nil and leave the caller with exactly the behaviour below. Two rules are
+with no year, both yield nil and leave the caller with exactly the behaviour below. Three rules are
 worth keeping in mind when touching it:
+
+- **A stated minute resolves to its last second**, through the one `stated_minute` helper both
+  formats go through. `%-I:%M` truncates, so "3:13 AM" names the interval `[3:13:00, 3:13:59]` and
+  says only that the reset falls inside it. Reading it as 3:13:00 — which is what the first version
+  did — makes every derived moment up to 59 seconds early. Observed on codex 0.154: a chat parked
+  on "try again at Sep 15th, 2026 3:13 AM" resumed at 03:13:09 (the reset plus the 10-second
+  `grace_sec`), was rejected with the same "3:13 AM", and hit `max_retries = 1` nine seconds later.
+
+  Raising `grace_sec` would not have fixed this, and the reason is worth keeping: **`grace_sec`
+  cannot reach `LimitState.get_active`**, which compares `resets_at > os.time()` with no grace at
+  all. Under `sec = 0` a sibling chat asking "is the limit still live?" at 03:13:30 was told no and
+  sent straight into it. The parse is the only layer both consumers share. It is also the only one
+  that leaves claude alone — its stream event carries exact epoch seconds, so nothing there gets
+  delayed. Erring late costs under a minute; erring early cost the whole retry budget.
 
 - **A bare clock time is never rolled forward to tomorrow.** The CLI chooses that form precisely
   because the reset is today, so a time reading as already past means the limit has just lifted —
@@ -63,6 +77,23 @@ worth keeping in mind when touching it:
   nothing but clock skew.
 - **A time more than 8 days out is dropped**, matching the sanity ceiling `auto_resume.lua` applies
   to what it is handed, so an implausible parse degrades here instead of warning there.
+
+`compute_delay` then gives an already-elapsed reset one of two floors, and `recorded_at` is what
+picks between them. A reset that was still ahead when it was written down has merely gone stale —
+Neovim was closed across the window — and keeps the 3-second floor that lets startup settle. A
+reset at or before its own `recorded_at` is a different thing: the CLI rejected the turn and in the
+same breath named a moment already behind it. That claim contradicts itself, so it gets 60 seconds
+instead of being retried straight back into.
+
+This second floor is defence, not the fix for the incident above — after the parse change, the
+resume in that transcript lands at 03:14:09 and the branch never fires. It covers the residual
+case where a CLI restates a reset the clock has fully passed, which is otherwise a 3-second retry
+loop against a live limit. Two consequences are deliberate rather than overlooked: the floor is not
+scoped to a backend, so a claude entry whose exact `resets_at` reads as past through clock skew
+also waits a minute; and it is not scoped by `kind`, so `:VibingSchedule 2020-01-01T00:00` — the
+one `When.parse` form with no rollover — waits 60 seconds rather than 3. Both are degenerate inputs
+where the extra wait is slower, not wrong, and the `send_message` re-schedule path that most needs
+the backoff is itself a `scheduled` entry, so a `kind` guard would exclude exactly the wrong half.
 
 The same failure arrives twice on the codex stream — once as `error`, once as `turn.failed` — and
 `errorOutput` is concatenated with no separator, so `codex_event_processor.record_error` drops an

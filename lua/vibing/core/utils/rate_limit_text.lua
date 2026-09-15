@@ -38,6 +38,19 @@ local MONTHS = {
 --- it is eventually handed, so an implausible parse is dropped here instead of warning there.
 local MAX_AHEAD_SEC = 8 * 24 * 60 * 60
 
+--- The moment a stated clock time resolves to: the **end** of the minute it names.
+---
+--- The formatter truncates (`%-I:%M`), so "3:13 AM" names `[3:13:00, 3:13:59]` and says only that
+--- the reset falls inside it. Every parse goes through here so that no later format can reintroduce
+--- the start of the minute by writing `sec = 0` — which is the bug, and it fails silently.
+--- `handbook/features/usage-limits.md` → "Reading the Reset Time Out of the Message".
+--- @param parts table Fields for os.time, without `sec`
+--- @return number|nil unix_seconds
+local function stated_minute(parts)
+  parts.sec = 59
+  return os.time(parts)
+end
+
 --- Read a clock time anchored at the start of `s`.
 --- Both the 12-hour form codex prints and a bare 24-hour one are accepted; `s` is already
 --- lowercased by the caller, so the meridiem is matched in that case only.
@@ -87,7 +100,7 @@ local function parse_dated(rest)
   end
 
   year, day = tonumber(year), tonumber(day)
-  local at = os.time({ year = year, month = month_num, day = day, hour = hour, min = min, sec = 0 })
+  local at = stated_minute({ year = year, month = month_num, day = day, hour = hour, min = min })
   if not at then
     return nil
   end
@@ -119,7 +132,7 @@ local function parse_time_of_day(rest, now)
   end
 
   local today = os.date("*t", now)
-  return os.time({ year = today.year, month = today.month, day = today.day, hour = hour, min = min, sec = 0 })
+  return stated_minute({ year = today.year, month = today.month, day = today.day, hour = hour, min = min })
 end
 
 --- The moment a usage-limit message says the limit lifts, or nil if it does not say.
