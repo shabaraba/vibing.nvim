@@ -272,8 +272,11 @@ canonical イベントに翻訳するだけで、描画・`on_tool_use`・subage
 ---| { kind = "turn_failed",  message: string }                    -- result.is_error / turn.failed
 ```
 
-デコーダは `decode(msg, state) -> Vibing.CanonicalEvent[]` の純関数で、状態（Claude の
-`tool_use_map` と `input_json_delta` の連結、grok の thought/text モード）は `state` に閉じる。
+デコーダは `decode(msg, state) -> Vibing.CanonicalEvent[]`。1 行を canonical イベント列に写す
+以外のことをせず、**描画も判断も持たない**。ターンをまたぐ状態（Claude の `tool_use_map` と
+`input_json_delta` の連結、grok の thought/text モード）は呼び出し側が所有する `state`
+テーブルに閉じ、**デコーダはそれを直接更新する**。次状態を戻り値で返す形にはしない
+（後述の「着地点」P1 を参照）。
 grok・copilot のデコーダは今日の event processor から描画を抜いただけの 40〜60 行、codex は
 `item.*` を `tool_start`/`tool_end` に写すだけになる。Claude の subagent 周り
 （`parent_tool_use_id` を **必ず helper 経由で判定する**という `.claude/rules/features.md` の
@@ -288,7 +291,7 @@ grok・copilot のデコーダは今日の event processor から描画を抜い
 **宣言的 JSON パス（`text = "$.event.delta.text"` のような）にはしない。** grok と copilot は
 それで書けるが、Claude の `content_block_start`→`input_json_delta`→`assistant` の 3 段合成と
 `parent_tool_use_id` の `vim.NIL` 罠は式では書けず、2 系統の記述方法を持つほうが悪い。
-「デコーダは 1 モジュールだが、描画も判断も持たない純関数」が線。
+「デコーダは 1 モジュールだが、描画も判断も持たない」が線。
 
 ### 4. リクエストの投げ方は「フラグ表 ＋ 逃げ道」で定義する
 
@@ -333,7 +336,7 @@ shell に残す判断は `handbook/architecture/cli-integration.md` の通り（
 `tests/lua/infrastructure/adapter/conformance/` に、**記述子を全部ループして同じアサーションを
 かけるスペック**を置く。今日すでに `tests/helpers/adapter_stream.lua` の `adapters()` と
 `stream_options_spec.lua`、`binary_cache_spec.lua`、`cli_runtime_spec.lua` がこの形をしており、
-それを契約 C1〜C14 の全項目に広げる:
+それを契約のうち **バックエンドごとに答えが変わりうる項目** に広げる:
 
 | スペック                        | 入力                                                     | アサーション                                                                                           |
 | ------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -348,6 +351,24 @@ shell に残す判断は `handbook/architecture/cli-integration.md` の通り（
 
 新バックエンドは **記述子 1 ファイル ＋ 実 CLI から採取した fixture** を置いた時点でこの全部に
 掛かる。落ちたところが「その CLI で Claude の契約のどこが満たせないか」の一覧になる。
+
+**この表が見るのは C5〜C9 の「入口」だけである。** 上の契約表で述べたとおり C5〜C9 の本体は
+共有インフラであり、記述子をループしても同じコードを何度も通るだけなので、ここでは
+バックエンドが供給する部分——フックの登録（C5）、ペイロードの正規化（C9）、決定の方言（C6）
+——に絞る。本体を担うのは共有スペックの側である:
+
+| 契約 | 本体を担うスペック                                                                                              |
+| ---- | --------------------------------------------------------------------------------------------------------------- |
+| C5   | `hooks/*_settings_generator_spec.lua`（登録の形と、`timeoutSec` が `MAX_WAIT` を上回ること）                    |
+| C6   | `rpc/handlers/permission_decision_spec.lua`（deny / allow / defer の 3 値）                                     |
+| C8   | `core/utils/git_snapshot_spec.lua`                                                                              |
+| C9   | `permissions/can_use_tool_spec.lua`、`permission_rules_spec.lua`、`rpc/handlers/permission_vocabulary_spec.lua` |
+
+**C7（`ask` → CLI を殺す → 承認 UI → 次ターンで再送）だけは記述子ループでは覆えていない。**
+その経路は生きたストリームを必要とし、単体スペックはアクティブなストリームを持たない状態を
+前提に書かれているため、実際に確かめているのは E2E（`tests/e2e/ask_user_question_spec.lua`、
+`nvim_ask_user_question_spec.lua`）である。新バックエンドを足したとき、ここだけは
+conformance が緑でも未検証のまま残る。
 
 `handbook/architecture/cli-integration.md` の「全部実 CLI から採ったものであり、ドキュメントから
 読んだものではない」という方針は fixture に引き継ぐ。**fixture ディレクトリの README に CLI の
@@ -378,11 +399,22 @@ shell に残す判断は `handbook/architecture/cli-integration.md` の通り（
    （`codex_plugin_config`, 226 行）は codex 固有のまま。
 6. **AskUserQuestion の経路。** vibing-nvim の MCP サーバーに届く CLI（claude、条件付きで
    codex）だけが使える。`features.ask_user_question` は宣言であって実装ではない。
+7. **transport が前提にする信頼境界。** 4 つの transport はいずれもフックの登録物
+   （`.vibing/hook-settings.json`、`.vibing/codex-pre-tool-use.sh`、`.vibing/copilot-plugin/`、
+   `.grok/hooks/`）を**作業ディレクトリの中**に置く。`codex-pre-tool-use.sh` は
+   `--dangerously-bypass-hook-trust` 付きで実行されるので、CLI 自身の trust チェックはこれらを
+   守ってくれない。ステージングは pid 付きの一時名 → `setfperm` → `rename(2)` で行うが、それが
+   防ぐのは**途中まで書けたスクリプトが読まれること**であって、書き込み権限を持つ別のプロセスが
+   最終パスを差し替えることではない。つまりこの設計は **「作業ディレクトリに書ける者は信頼
+   できる」を境界として敷いている**。その者はプロジェクトのソース自体を書き換えられ、それは
+   どの CLI もそのまま読んで実行しうるのだから、フックを守っても境界は動かない——という判断で
+   あって、検証を省いた結果ではない。共有された書き込み可能ディレクトリでチャットを開くことは、
+   この前提の外側にある。
 
-したがって正確な言い方は: **「既存 4 CLI のどれかと同じ transport / lightweight 戦略 / prompt
-channel を持つ CLI なら、追加はテーブルと fixture だけ。新しい戦略を持ち込む CLI は、その戦略
-1 モジュールを書く」**。今日は後者のケースでも 1 系統（5〜6 ファイル、1,000〜2,000 行）を
-書いている。
+したがって正確な言い方は: **「既存 4 CLI のどれかと同じ transport / 決定の方言 / lightweight
+戦略 / prompt channel を持ち、デコーダが既存のどれかと同型の CLI なら、追加はテーブルと fixture
+だけ。どれか 1 つでも新しいものを持ち込む CLI は、その 1 モジュールを書く」**。今日は後者の
+ケースでも 1 系統（5〜6 ファイル、1,000〜2,000 行）を書いている。
 
 ## Worked example: Gemini CLI を記述子で書くと
 
@@ -432,6 +464,13 @@ item_display 2 本・event processor の描画部（約 400 行）が消える�
 - **P1**: canonical イベントは計画の 11 種そのまま。デコーダはツール名を **CLI の語彙のまま**
   出し、renderer が `vocabulary` で正規化する形にした（permission ハンドラと同じ表を通すため）。
   `send_message` の `FileChange` 分岐は消えた。
+  **デコーダは「純関数」にならなかった**。当初の計画はそう書いていたが、4 本すべてが渡された
+  `state` を直接更新する（claude は `state.session_id`、codex は `state.started` によるツールの
+  開始・終了の対応付け、copilot は `toolCallId` を送ってこない呼び出しに振る匿名 id）。
+  `decode` が次状態を返す形にすれば署名としては純粋になるが、呼び出し側は結局それを
+  同じ 1 つのイベントコンテキストに書き戻すだけで、「戻り値を書き戻し忘れる」という
+  新しい失敗の仕方が増える。**保証したかったのは無副作用ではなく「描画も判断も持たない」**
+  ことなので、契約はそちらに寄せた。
 - **P2**: フラグ表で表せない部分は `extra` として **既存の `<id>_command_builder.lua` に残し**、
   記述子の `request.parts` から名前で参照する。builder モジュールの `build()` は記述子の spec を
   通すシムになり、既存の builder スペック約 175 件がそのまま argv のスナップショットになった。
@@ -444,9 +483,15 @@ item_display 2 本・event processor の描画部（約 400 行）が消える�
   Tokens フッタのマーカーは `total-*` で書き、旧 `codex-*` も読む。
 - **P5**: conformance suite は `descriptor_shape` / `request` / `hook_payload` /
   `hook_registration` / `renderer_parity` / `stream_fixtures` の 6 本。`request` が codex の
-  lightweight で hook 断片を落としていない穴を 1 つ見つけ、塞いだ。実 CLI のキャプチャは
-  claude の 1 本だけが手元にあり、他 3 バックエンドは `stream_fixtures` が **pending として
-  報告**する（黙って通さない）。
+  lightweight で hook 断片を落としていない穴を 1 つ見つけ、塞いだ。
+  実 CLI のキャプチャは当初 claude の 1 本だけで、他 3 バックエンドは `stream_fixtures` が
+  pending として報告していた。**その後 4 本とも揃い**（codex 0.154.0 / copilot 1.0.80 /
+  grok 0.2.101）、`hook_payload` のペイロードも記述子が組む argv でフックを実際に発火させて
+  採り直した。そこで **記録が実物とずれていた箇所が 2 つ**出た: copilot 1.0.80 は `toolArgs` を
+  JSON 文字列ではなくオブジェクトで送る（`normalize_payload` は両方受けるのでゲートは開いて
+  いなかった）、grok の `search_replace` はパスを `target_file` ではなく `file_path` で送る
+  （`target_file` は `read_file` の形）。fixture を「読んだもの」ではなく「採ったもの」に
+  限る方針が、実際にこの 2 つを見つけたということでもある。
 - **P6**: `handbook/ADAPTER_DEVELOPMENT.md` を記述子の書き方と「先に測る項目」に書き換えた。
 
 ## Consequences
