@@ -54,8 +54,7 @@ describe("E2E: .vibing/plugins is loaded via --plugin-dir", function()
 
     nvim_instance = helper.spawn_nvim_instance({
       headless = true,
-      -- Absolute: the child's cwd is the temp project, so a repo-relative path would not resolve.
-      init_script = vim.fn.getcwd() .. "/tests/e2e_init.lua",
+      init_script = "tests/e2e_init.lua",
       cwd = project_root,
     })
   end)

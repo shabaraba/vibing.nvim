@@ -31,4 +31,10 @@ vim.fn.mkdir(chat_dir, "p")
 -- One definition, shared with `e2e_helper.setup_child`: a spec that re-runs setup() to change a
 -- setting has to keep the rest of this, because setup() replaces the whole options table rather
 -- than merging onto what is already there.
-require("vibing").setup(require("vibing.testing.e2e_helper").child_config(chat_dir))
+--
+-- The backend arrives the same way the chat directory does, so a spec that wants one does not
+-- have to configure this child a second time after it has already started.
+local adapter = vim.env.VIBING_E2E_ADAPTER
+local overrides = (adapter and adapter ~= "") and { adapter = adapter } or nil
+
+require("vibing").setup(require("vibing.testing.e2e_helper").child_config(chat_dir, overrides))

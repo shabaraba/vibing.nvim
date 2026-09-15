@@ -14,10 +14,9 @@ local TIMEOUTS = {
   SCHEDULED_SEND = 90000,
 }
 
--- Resolved from this spec's own path rather than the cwd: the spawned instances run in a
--- throwaway repo, and `init_script` has to be absolute for them to find the plugin at all.
-local PLUGIN_ROOT = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h")
-local INIT_SCRIPT = PLUGIN_ROOT .. "/tests/minimal_init.lua"
+-- Repo-relative: `spawn_nvim_instance` resolves `init_script` against the plugin root, so this
+-- still finds the file from the throwaway repo these instances run in.
+local INIT_SCRIPT = "tests/minimal_init.lua"
 
 ---@param instance table
 ---@param code string

@@ -34,9 +34,18 @@ end
 ---`npm run test:e2e` を叩いたときにも安全確認を1つ黙って外すことになる。そこでは root で
 ---走っていないので、そもそも外すものが無い
 ---@param chat_dir string
+---@param adapter string? backend id the child should run, when a spec asked for one
 ---@return table<string, string>
-local function child_env(chat_dir)
+local function child_env(chat_dir, adapter)
   local env = { VIBING_E2E_CHAT_DIR = chat_dir }
+  -- Handed over the same way as the chat directory, so the child reaches its final configuration
+  -- in the one `setup()` its init already runs. Configuring it afterwards would mean a second
+  -- `setup()` -- which re-runs every descriptor's `on_setup`, the treesitter and chat-detect
+  -- setup, and re-schedules the stale-comm-dir sweep, the git-snapshot sweep and the two JSON
+  -- restores, all of which the first one just did.
+  if adapter then
+    env.VIBING_E2E_ADAPTER = adapter
+  end
   if vim.loop.getuid and vim.loop.getuid() == 0 then
     env.IS_SANDBOX = "1"
   end
@@ -44,7 +53,7 @@ local function child_env(chat_dir)
 end
 
 ---別Neovimインスタンスを起動
----@param config? { headless?: boolean, init_script?: string, cwd?: string }
+---@param config? { headless?: boolean, init_script?: string, cwd?: string, adapter?: string }
 ---@return table インスタンスハンドル { job_id: number, chat_dir: string }
 function M.spawn_nvim_instance(config)
   config = config or {}
@@ -85,7 +94,7 @@ function M.spawn_nvim_instance(config)
     job_id = vim.fn.jobstart(cmd, {
       cwd = config.cwd or vim.fn.getcwd(),
       rpc = true,
-      env = child_env(chat_dir),
+      env = child_env(chat_dir, config.adapter),
       on_exit = function(_, code)
         if code ~= 0 then
           vim.notify("[E2E] Nvim instance exited with code: " .. code, vim.log.levels.WARN)
@@ -154,10 +163,29 @@ function M.spawn_backend_instance(backend)
     headless = true,
     init_script = "tests/e2e_init.lua",
     cwd = repo_dir,
+    adapter = backend,
   })
   instance.repo_dir = repo_dir
-  vim.wait(800)
-  M.setup_child(instance, { adapter = backend })
+
+  -- Asserted, not assumed. The backend is the entire difference between these specs, and every
+  -- assertion they make (a tool header, a completed turn) is satisfied by claude just as well --
+  -- so if the override ever stopped taking, the suite would keep passing while running claude
+  -- three times and paying for it. That is the dead-gate shape `.claude/rules/self-testing.md`
+  -- warns about, in the one suite that spends real tokens.
+  --
+  -- Doubles as the readiness barrier the other specs spell as `vim.wait(800)`: a child started
+  -- with `--embed` serves no RPC request until its `-u` init has finished, so this call returns
+  -- only once `setup()` has run.
+  local resolved = vim.fn.rpcrequest(
+    instance.job_id,
+    "nvim_exec_lua",
+    [[return require("vibing.core.constants.modes").resolve_agent(nil, require("vibing.config").get())]],
+    {}
+  )
+  if resolved ~= backend then
+    error(string.format("child resolved to the %q backend, not %q", tostring(resolved), backend))
+  end
+
   return instance
 end
 
@@ -171,6 +199,28 @@ function M.setup_child(instance, overrides)
     "require('vibing').setup(...)",
     { M.child_config(instance.chat_dir, overrides) }
   )
+end
+
+--- Drive one turn that has to call a tool, and wait for the header the shared renderer writes.
+---
+--- The prompt and the `⏺` marker live here rather than in each backend's spec, so that a change
+--- to either has one definition -- a half-done edit would otherwise leave one backend asserting
+--- the old thing and still passing. `timeout` stays the caller's, because
+--- `tests/e2e-timeout-gate.test.mjs` budgets a spec file by reading the `TIMEOUTS` table in that
+--- file; a wait hidden behind a helper is invisible to it, which is the unsafe direction.
+--- @param instance table インスタンスハンドル
+--- @param timeout number the spec's own wait budget for a real turn
+--- @return boolean ok, string? reason
+function M.expect_shared_tool_header(instance, timeout)
+  M.send_keys(instance, "G")
+  M.send_keys(instance, "i")
+  M.send_keys(instance, "Run the shell command: echo vibing-marker")
+  M.send_keys(instance, "<Esc>")
+  M.send_keys(instance, "<CR>")
+
+  -- `⏺` is what `event_renderer` writes for every backend, and it cannot come from the prompt, so
+  -- matching the assistant section for it is proof the shared renderer ran.
+  return M.wait_for_assistant_text(instance, "⏺ ", timeout)
 end
 
 ---キー入力を送信

@@ -17,7 +17,9 @@ end
 
 local TIMEOUTS = {
   BUFFER_READY = 5000,
-  ASSISTANT_RESPONSE = 120000,
+  -- What every other real-turn spec in this directory budgets. A green run returns as soon as the
+  -- pattern matches, so this only decides how long a turn that hangs rather than erroring costs.
+  ASSISTANT_RESPONSE = 60000,
 }
 
 describe("E2E: copilot renders a tool call in claude's shape", function()
@@ -37,16 +39,8 @@ describe("E2E: copilot renders a tool call in claude's shape", function()
     local ok = helper.wait_for_buffer_name(nvim_instance, "%.md$", TIMEOUTS.BUFFER_READY)
     assert.is_true(ok, "chat buffer should be created")
 
-    helper.send_keys(nvim_instance, "G")
-    helper.send_keys(nvim_instance, "i")
-    helper.send_keys(nvim_instance, "Run the shell command: echo vibing-marker")
-    helper.send_keys(nvim_instance, "<Esc>")
-    helper.send_keys(nvim_instance, "<CR>")
-
-    -- `⏺` is the marker `event_renderer` writes for every backend, and it cannot come from the
-    -- prompt, so matching the assistant section for it is proof the shared renderer ran.
     local reason
-    ok, reason = helper.wait_for_assistant_text(nvim_instance, "⏺ ", TIMEOUTS.ASSISTANT_RESPONSE)
+    ok, reason = helper.expect_shared_tool_header(nvim_instance, TIMEOUTS.ASSISTANT_RESPONSE)
     assert.is_true(ok, reason or "copilot's tool call should be drawn with the shared tool header")
   end)
 end)

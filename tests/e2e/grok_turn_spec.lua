@@ -17,7 +17,9 @@ end
 
 local TIMEOUTS = {
   BUFFER_READY = 5000,
-  ASSISTANT_RESPONSE = 120000,
+  -- What every other real-turn spec in this directory budgets. A green run returns as soon as the
+  -- pattern matches, so this only decides how long a turn that hangs rather than erroring costs.
+  ASSISTANT_RESPONSE = 60000,
 }
 
 describe("E2E: grok completes a turn through the shared adapter", function()
