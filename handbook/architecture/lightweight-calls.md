@@ -1,11 +1,34 @@
 # Lightweight Calls
 
 Detail behind `.claude/rules/architecture.md` → "Session Persistence". Title generation,
-`/summarize`, `:VibingSummarize` and the daily summary run as `lightweight` calls.
-`core/types.lua` states the obligation each adapter owes — no tools, no project config, no hooks,
-`utility_model` — rather than the mechanism any one of them uses, because the four CLIs differ in
-kind rather than in degree. This file is each backend's mechanism, and what happens when the CLI
-silently stops honouring it.
+`/summarize`, `:VibingSummarize`, `:VibingChatHandoff` and the daily summary run as `lightweight`
+calls. `core/types.lua` states the obligation each adapter owes — no tools, no project config, no
+hooks, `utility_model` — rather than the mechanism any one of them uses, because the four CLIs
+differ in kind rather than in degree. This file is each backend's mechanism, and what happens when
+the CLI silently stops honouring it.
+
+## Adapter resolution
+
+**Every one of them resolves the adapter the same way: `vibing.get_adapter()`, the global default
+from `config.adapter`. None of them reads the chat's own `agent` frontmatter.** There are four
+`lightweight = true` sites for five commands — `:VibingChatHandoff` reuses
+`chat/use_case.generate_and_insert_summary`.
+
+Title generation was the one exception. `set_file_title.lua` resolved the per-chat agent through
+`send_message._resolve_adapter`, so a codex chat generated its title on codex while the same
+chat's `:VibingSummarize` and `:VibingChatHandoff` ran on claude — the same utility call landing
+on a different CLI depending on which command reached it. The sites were levelled onto the default
+rather than onto the frontmatter because that is one resolution rather than four copies of one;
+the per-chat form needed a `pcall` around a hand-built `callbacks` table at every site that wanted
+it, and only one site ever had it.
+
+The cost is real and accepted: a codex / copilot / grok chat now generates its title through the
+default CLI. Where that CLI is unusable — not logged in, or parked behind its own usage limit —
+title generation fails, and `set_file_title` falls back to a name built from the first user
+message rather than blocking the rename.
+
+If a per-chat resolution is wanted back, it belongs in one shared resolver that all four sites
+take, not re-added to whichever one prompted the request.
 
 **Lightweight calls are restricted differently per backend, because the CLIs differ in kind.**
 Claude removes the tools outright with `--tools ""`. Codex cannot: probing its config schema with

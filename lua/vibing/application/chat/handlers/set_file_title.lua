@@ -87,28 +87,6 @@ return function(_, chat_buffer)
   local save_dir = FileManager.get_save_directory(config.chat)
   local is_existing_file = old_file_path and vim.fn.filereadable(old_file_path) == 1
 
-  -- Resolve the adapter for THIS chat's agent (frontmatter "agent"), not the
-  -- global default, so the lightweight utility call runs on the right CLI
-  -- (e.g. a codex chat generates its title via the codex adapter, not claude).
-  -- Title generation never resumes/forks the session (it sends a fresh bounded
-  -- excerpt), so no session_id is threaded through here.
-  -- Resolution failure must never block title generation, so fall back to the
-  -- default adapter (nil → title_generator uses vibing.get_adapter()).
-  local title_adapter = nil
-  if chat_buffer.parse_frontmatter then
-    local ok_adapter, resolved = pcall(function()
-      local SendMessage = require("vibing.application.chat.send_message")
-      return SendMessage._resolve_adapter(vibing.get_adapter(), {
-        parse_frontmatter = function()
-          return chat_buffer:parse_frontmatter()
-        end,
-      }, config)
-    end)
-    if ok_adapter then
-      title_adapter = resolved
-    end
-  end
-
   title_generator.generate_from_conversation(conversation, function(title, err)
     if err then
       -- Don't fail the rename just because AI title generation failed (prompt
@@ -222,7 +200,7 @@ return function(_, chat_buffer)
         notify.warn(string.format("Failed to update %d file(s)", total_failed), "Link Sync")
       end
     end
-  end, title_adapter, { summary = summary })
+  end, { summary = summary })
 
   return true
 end

@@ -64,13 +64,23 @@ describe("set_file_title handler - streaming guard", function()
     require("vibing.core.utils.title_generator").generate_from_conversation = original_generate
   end)
 
-  it("resolves the per-chat agent adapter (codex chat -> codex adapter)", function()
+  it("hands the title generator no adapter, so a codex chat still uses the global default", function()
     require("vibing").setup({})
 
-    local passed_adapter
+    local third_arg
     local original_generate = require("vibing.core.utils.title_generator").generate_from_conversation
-    require("vibing.core.utils.title_generator").generate_from_conversation = function(_, _, adapter)
-      passed_adapter = adapter
+    require("vibing.core.utils.title_generator").generate_from_conversation = function(_, _, opts)
+      third_arg = opts
+    end
+
+    -- Resolving the chat's own agent went through this; catching the call is what makes
+    -- the assertion below fail if a per-chat adapter is threaded back in by any route.
+    local SendMessage = require("vibing.application.chat.send_message")
+    local original_resolve = SendMessage._resolve_adapter
+    local resolve_called = false
+    SendMessage._resolve_adapter = function(...)
+      resolve_called = true
+      return original_resolve(...)
     end
 
     local buf = vim.api.nvim_create_buf(false, true)
@@ -92,12 +102,15 @@ describe("set_file_title handler - streaming guard", function()
 
     handler({}, chat_buffer)
 
-    -- The lightweight title call must run on the per-chat agent's adapter (codex),
-    -- not the global default (claude). Title generation does not resume, so no
-    -- session_id is threaded through.
-    assert.is_not_nil(passed_adapter)
-    assert.equals("codex_cli", passed_adapter.name)
+    -- Every lightweight utility call resolves its adapter the same way — through
+    -- `vibing.get_adapter()` inside the generator. The handler must not resolve one of
+    -- its own, so the third argument is the opts table and never carries an adapter.
+    assert.is_false(resolve_called)
+    assert.is_nil(third_arg.adapter)
+    assert.is_nil(third_arg.stream)
+    assert.is_nil(third_arg.name)
 
+    SendMessage._resolve_adapter = original_resolve
     require("vibing.core.utils.title_generator").generate_from_conversation = original_generate
   end)
 
@@ -178,7 +191,7 @@ describe("set_file_title handler - summary as input", function()
 
   it("passes the buffer's `## summary` section to the title generator", function()
     local passed_opts
-    title_generator.generate_from_conversation = function(_, _, _, opts)
+    title_generator.generate_from_conversation = function(_, _, opts)
       passed_opts = opts
     end
 
@@ -203,7 +216,7 @@ describe("set_file_title handler - summary as input", function()
 
   it("passes no summary when the buffer has none, so the excerpt path stays the default", function()
     local passed_opts
-    title_generator.generate_from_conversation = function(_, _, _, opts)
+    title_generator.generate_from_conversation = function(_, _, opts)
       passed_opts = opts
     end
 
