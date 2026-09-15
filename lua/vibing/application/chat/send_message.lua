@@ -195,14 +195,11 @@ function M.execute(adapter, callbacks, message, config)
     -- 呼ばれる回数のほう: git_snapshot 側でcwd単位にキャッシュされるので、1つのcwdにつき
     -- 最初の送信の1回だけで、以降はゼロ。setup() と違ってNeovim起動時には走らない
     _worktree_root = require("vibing.core.utils.git_snapshot").worktree_root(session_cwd),
+    -- Canonical tool names on every backend (event_renderer.lua canonicalises through the
+    -- backend's vocabulary), and one call per file for a tool that touches several.
     on_tool_use = function(tool, file_path, _command)
       if (tool == "Write" or tool == "Edit" or tool == "MultiEdit" or tool == "NotebookEdit") and file_path then
         modified_file_paths[file_path] = true
-      elseif tool == "FileChange" and file_path then
-        -- Codex adapter reports comma-joined paths
-        for path in file_path:gmatch("[^,]+") do
-          modified_file_paths[vim.trim(path)] = true
-        end
       end
     end,
     on_insert_choices = function(questions)
