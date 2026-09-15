@@ -22,6 +22,34 @@ local M = {
     dynamic_permissions = true,
   },
 
+  -- `claude -p`, in the order the CLI has always been given it. The values behind `model`,
+  -- `effort`, `resume` and `prompt` are resolved by request_builder; the extras are the parts
+  -- composed from several sources, named here so they are listed rather than buried.
+  request = {
+    binary = CLICommandBuilder.BINARY,
+    parts = {
+      { kind = "args", "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages" },
+      { kind = "model", flag = "--model", names = "claude" },
+      { kind = "effort", flag = "--effort" },
+      { kind = "resume", flag = "--resume", fork = "--fork-session" },
+      -- Lightweight calls need no tools: --tools "" removes them rather than gating them, which
+      -- is why it works where the alternatives don't (an empty --allowedTools alone does NOT
+      -- block execution, and --permission-mode plan leaks plan-mode meta-commentary into the
+      -- generated title). It names nothing, so unlike a denylist it cannot drift (#488).
+      { kind = "args", "--tools", "", when = "lightweight" },
+      { kind = "extra", fn = CLICommandBuilder.permission_args, unless = "lightweight" },
+      { kind = "hook_arg", flag = "--settings", unless = "lightweight" },
+      -- Without this the CLI swallows everything a subagent says and only its final tool_result
+      -- surfaces. Opt-in because it makes long delegated turns much noisier.
+      { kind = "args", "--forward-subagent-text", unless = "lightweight", when = { config = "agent.subagent.enabled" } },
+      { kind = "extra", fn = CLICommandBuilder.plugin_dir_args, unless = "lightweight" },
+      { kind = "extra", fn = CLICommandBuilder.mcp_config_args, unless = "lightweight" },
+      { kind = "extra", fn = CLICommandBuilder.system_prompt_args },
+      { kind = "extra", fn = CLICommandBuilder.setting_source_args },
+      -- End of options marker, so a prompt starting with `---` is not parsed as flags.
+      { kind = "prompt", terminator = "--" },
+    },
+  },
   build = CLICommandBuilder.build,
   event_processor = CLIEventProcessor,
 

@@ -23,6 +23,10 @@ describe("grok_command_builder", function()
       return original_stdpath(what)
     end
     package.loaded["vibing.infrastructure.adapter.modules.grok_lightweight"] = nil
+    -- The descriptor holds the lightweight module by reference and the builder reads its request
+    -- spec from the descriptor (ADR 009 P2), so a reloaded lightweight module reaches the argv
+    -- only through a reloaded descriptor.
+    package.loaded["vibing.infrastructure.adapter.backends.grok"] = nil
     vim.fn.exepath = function(name)
       if name == "grok" then
         return "/usr/local/bin/grok"

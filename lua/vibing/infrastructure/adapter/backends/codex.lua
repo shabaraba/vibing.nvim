@@ -26,6 +26,30 @@ local M = {
     dynamic_permissions = true,
   },
 
+  -- `codex exec --json`, with `resume <id>` as a subcommand and permissions as `-c` overrides.
+  request = {
+    binary = CodexCommandBuilder.BINARY,
+    parts = {
+      { kind = "args", "exec" },
+      { kind = "resume", subcommand = "resume" },
+      { kind = "args", "--json" },
+      -- The transport's fragment verbatim: the `-c hooks.PreToolUse` pair and the trust bypass.
+      { kind = "hook_arg" },
+      { kind = "model", flag = "-m", names = "native" },
+      -- No dedicated exec flag; a per-process config override applies to fresh and resumed
+      -- threads alike without changing the user's config.toml.
+      { kind = "effort", config = 'model_reasoning_effort="%s"' },
+      -- Utility calls neither inherit the chat's threshold nor override codex's compaction
+      -- setting after --ignore-user-config.
+      { kind = "extra", fn = CodexCommandBuilder.auto_compact_args, unless = "lightweight" },
+      vim.tbl_extend("force", { kind = "args", when = "lightweight" }, CodexCommandBuilder.LIGHTWEIGHT_ARGS),
+      { kind = "extra", fn = CodexCommandBuilder.permission_args, unless = "lightweight" },
+      { kind = "extra", fn = CodexCommandBuilder.plugin_args, unless = "lightweight" },
+      -- Codex's `developer_instructions` is reserved for the plugin material, so the language
+      -- sentence rides on the prompt.
+      { kind = "prompt", language_prefix = true },
+    },
+  },
   build = CodexCommandBuilder.build,
   event_processor = CodexEventProcessor,
 

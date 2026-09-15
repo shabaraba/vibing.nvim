@@ -18,6 +18,20 @@ local M = {
     dynamic_permissions = true,
   },
 
+  -- `copilot -p --output-format json`, prompt last.
+  request = {
+    binary = CopilotCommandBuilder.BINARY,
+    parts = {
+      { kind = "args", "--output-format", "json", "--stream", "on", "--no-color" },
+      { kind = "resume", flag_eq = "--resume=" },
+      { kind = "model", flag = "--model", names = "native" },
+      vim.tbl_extend("force", { kind = "args", when = "lightweight" }, CopilotCommandBuilder.LIGHTWEIGHT_ARGS),
+      -- Reads the generated hook plugin dir from `hook_arg` and adds the static deny backstop.
+      { kind = "extra", fn = CopilotCommandBuilder.permission_args, unless = "lightweight" },
+      -- Copilot takes no system prompt, so the language sentence rides on the prompt.
+      { kind = "prompt", flag = "-p", language_prefix = true },
+    },
+  },
   build = CopilotCommandBuilder.build,
   event_processor = CopilotEventProcessor,
 
