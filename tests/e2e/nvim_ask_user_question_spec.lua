@@ -39,43 +39,63 @@ local function count_lines_matching(nvim_instance, pattern)
   return count
 end
 
-describe("E2E: nvim_ask_user_question MCP tool", function()
-  local nvim_instance
+local function define_backend_case(backend, timeouts)
+  describe("E2E: nvim_ask_user_question MCP tool (" .. backend.name .. ")", function()
+    local nvim_instance
 
-  before_each(function()
-    nvim_instance = helper.spawn_nvim_instance({
-      headless = true,
-      init_script = "tests/e2e_init.lua",
-    })
+    before_each(function()
+      nvim_instance = helper.spawn_nvim_instance({
+        headless = true,
+        init_script = "tests/e2e_init.lua",
+        adapter = backend.name,
+      })
+    end)
+
+    after_each(function()
+      helper.cleanup_instance(nvim_instance)
+    end)
+
+    it("renders the shared choice-list UI exactly once", function()
+      helper.send_keys(nvim_instance, ":VibingChat<CR>")
+      vim.wait(timeouts.CHAT_CREATION)
+
+      local ok = helper.wait_for_buffer_name(nvim_instance, "%.md$", timeouts.BUFFER_READY)
+      assert.is_true(ok, "Chat buffer should be created")
+
+      helper.send_keys(nvim_instance, "G")
+      helper.send_keys(nvim_instance, "i")
+      helper.send_keys(
+        nvim_instance,
+        "Use the " .. backend.tool .. " tool to ask me: 'Which option?' with options A and B."
+      )
+      helper.send_keys(nvim_instance, "<Esc>")
+      helper.send_keys(nvim_instance, "<CR>")
+
+      local reason
+      ok, reason = helper.wait_for_response(nvim_instance, "\n1%. A\n", timeouts.ASSISTANT_RESPONSE)
+      assert.is_true(ok, reason or "Choice-list prompt should appear")
+
+      local count = count_lines_matching(nvim_instance, "^1%. A$")
+      assert.equals(1, count, "The question must be rendered exactly once — no duplicate UI insertion")
+    end)
   end)
+end
 
-  after_each(function()
-    helper.cleanup_instance(nvim_instance)
-  end)
-
-  it("renders the same choice-list UI as AskUserQuestion, exactly once", function()
-    helper.send_keys(nvim_instance, ":VibingChat<CR>")
-    vim.wait(TIMEOUTS.CHAT_CREATION)
-
-    local ok = helper.wait_for_buffer_name(nvim_instance, "%.md$", TIMEOUTS.BUFFER_READY)
-    assert.is_true(ok, "Chat buffer should be created")
-
-    -- Prompt Claude to use the vibing.nvim-dedicated question tool
-    helper.send_keys(nvim_instance, "G")
-    helper.send_keys(nvim_instance, "i")
-    helper.send_keys(
-      nvim_instance,
-      "Use the mcp__vibing-nvim__nvim_ask_user_question tool to ask me: 'Which option?' with options A and B."
-    )
-    helper.send_keys(nvim_instance, "<Esc>")
-    helper.send_keys(nvim_instance, "<CR>")
-
-    -- Wait for question prompt (same UI as AskUserQuestion)
-    local reason
-    ok, reason = helper.wait_for_response(nvim_instance, "\n1%. A\n", TIMEOUTS.ASSISTANT_RESPONSE)
-    assert.is_true(ok, reason or "Choice-list prompt should appear")
-
-    local count = count_lines_matching(nvim_instance, "^1%. A$")
-    assert.equals(1, count, "The question must be rendered exactly once — no duplicate UI insertion")
-  end)
-end)
+-- Keep each backend's TIMEOUTS references explicit. The timeout gate counts those references to
+-- model the file's serial worst case, while define_backend_case keeps the test behaviour shared.
+define_backend_case(
+  { name = "claude", tool = "mcp__vibing-nvim__nvim_ask_user_question" },
+  {
+    CHAT_CREATION = TIMEOUTS.CHAT_CREATION,
+    BUFFER_READY = TIMEOUTS.BUFFER_READY,
+    ASSISTANT_RESPONSE = TIMEOUTS.ASSISTANT_RESPONSE,
+  }
+)
+define_backend_case(
+  { name = "codex", tool = "mcp__vibing_nvim__nvim_ask_user_question" },
+  {
+    CHAT_CREATION = TIMEOUTS.CHAT_CREATION,
+    BUFFER_READY = TIMEOUTS.BUFFER_READY,
+    ASSISTANT_RESPONSE = TIMEOUTS.ASSISTANT_RESPONSE,
+  }
+)

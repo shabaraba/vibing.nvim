@@ -37,15 +37,15 @@ end
 ---@param adapter string? backend id the child should run, when a spec asked for one
 ---@return table<string, string>
 local function child_env(chat_dir, adapter)
-  local env = { VIBING_E2E_CHAT_DIR = chat_dir }
+  local env = {
+    VIBING_E2E_CHAT_DIR = chat_dir,
+    VIBING_E2E_ADAPTER = adapter or "claude",
+  }
   -- Handed over the same way as the chat directory, so the child reaches its final configuration
   -- in the one `setup()` its init already runs. Configuring it afterwards would mean a second
   -- `setup()` -- which re-runs every descriptor's `on_setup`, the treesitter and chat-detect
   -- setup, and re-schedules the stale-comm-dir sweep, the git-snapshot sweep and the two JSON
   -- restores, all of which the first one just did.
-  if adapter then
-    env.VIBING_E2E_ADAPTER = adapter
-  end
   if vim.loop.getuid and vim.loop.getuid() == 0 then
     env.IS_SANDBOX = "1"
   end

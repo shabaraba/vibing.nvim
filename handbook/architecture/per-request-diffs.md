@@ -173,8 +173,9 @@ what makes the fallback symmetric — the second turn still knows, long after th
 `ActiveStreamRegistry.find_other_active_for_worktree` is kept as the second signal, for a stream
 that is writing without a session of its own to be seen through (a `write-tree` that failed on a
 conflicted index, say). It excludes by **handle_id**, not by `chat_bufnr` the way
-`find_other_active_for_session` does — codex and grok register no `chat_bufnr` (see `features.md`),
-so two of those would compare `nil` against `nil` and never see each other.
+`find_other_active_for_session` does — grok and copilot register no `chat_bufnr` (see
+`features.md`), so two streams on either of those backends would compare `nil` against `nil` and
+never see each other.
 
 **Both overlap signals are process-local, so two Neovim instances on one worktree are out of
 scope.** `sessions` and `ActiveStreamRegistry` are module tables, so a chat running in a second

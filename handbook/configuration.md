@@ -111,7 +111,8 @@ adapter = "claude",  -- Global backend adapter
                      -- Overridable per-chat via the "agent" frontmatter field
 ```
 
-Backends are not feature-equivalent. `AskUserQuestion`'s choice-list UI is Claude-only. Every
+Backends are not feature-equivalent. `AskUserQuestion`'s choice-list UI is available on Claude and
+Codex 0.153 or later. Every
 backend honours `permissions.mode`, the `ask` list and the Tool Approval UI, but each one reaches
 them differently: `copilot` through a generated plugin loaded per run with `--plugin-dir` (written
 to `.vibing/copilot-plugin/`; your own `~/.copilot/` is never modified), and `grok` only inside a

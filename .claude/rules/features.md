@@ -41,9 +41,9 @@ Read the linked file before changing that path.
 - **Neither `on_insert_choices` nor `on_approval_required` may add an inner `vim.schedule`.** Both
   are already on the main thread when `permission.lua` calls them, and a deferred staging lands
   after the completion has consumed it — the turn ends with nothing in the buffer to answer (#649).
-- **Codex cannot reach this UI**, so `codex_cli.lua` deliberately omits `chat_bufnr` when
-  registering with `ActiveStreamRegistry`. The ordinary tool-approval flow still works there; it
-  routes on `handle_id`.
+- **Claude and Codex route this UI by `chat_bufnr`.** The same stable buffer number must appear in
+  the model-visible prompt and the adapter's `ActiveStreamRegistry` entry; a per-turn `handle_id`
+  would churn the prompt cache. Grok still cannot reach the MCP tool.
 
 ## Message Timestamps and Delivered Sections
 

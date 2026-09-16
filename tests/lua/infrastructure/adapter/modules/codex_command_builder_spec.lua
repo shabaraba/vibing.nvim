@@ -364,9 +364,23 @@ describe("codex_command_builder", function()
     end)
 
     it("keeps them on a resumed session, since config is per process", function()
-      local cmd = codex_command_builder.build("hello", {}, "thread-1", no_project, nil)
+      local cmd = codex_command_builder.build("hello", { chat_bufnr = 12 }, "thread-1", no_project, nil)
       assert.is_true(has_override(cmd, "mcp_servers.vibing-nvim.command="))
       assert.is_true(has_override(cmd, "developer_instructions="))
+      assert.is_true(table.concat(config_overrides(cmd), "\n"):find(
+        "Current vibing.nvim chat buffer number: 12",
+        1,
+        true
+      ) ~= nil)
+    end)
+
+    it("carries chat_bufnr in the developer instructions on a fresh session", function()
+      local cmd = codex_command_builder.build("hello", { chat_bufnr = 34 }, nil, no_project, nil)
+      assert.is_true(table.concat(config_overrides(cmd), "\n"):find(
+        "Current vibing.nvim chat buffer number: 34",
+        1,
+        true
+      ) ~= nil)
     end)
 
     it("keeps the runtime rpc_port out of the developer message", function()
@@ -382,9 +396,20 @@ describe("codex_command_builder", function()
     -- A utility call owes "no tools, no user MCP servers" (core/types.lua); the bundled server
     -- and a skill list are both.
     it("loads none of it on a lightweight call", function()
-      local cmd = codex_command_builder.build("hello", { lightweight = true }, nil, no_project, nil)
+      local cmd = codex_command_builder.build(
+        "hello",
+        { lightweight = true, chat_bufnr = 12 },
+        nil,
+        no_project,
+        nil
+      )
       assert.is_false(has_override(cmd, "mcp_servers."))
       assert.is_false(has_override(cmd, "developer_instructions="))
+      assert.is_nil(table.concat(config_overrides(cmd), "\n"):find(
+        "Current vibing.nvim chat buffer number:",
+        1,
+        true
+      ))
     end)
 
     it("loads none of it when agent.plugins.self is off and no project plugin exists", function()

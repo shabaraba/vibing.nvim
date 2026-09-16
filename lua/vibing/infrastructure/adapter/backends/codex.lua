@@ -81,10 +81,9 @@ local M = {
   end,
 
   vocabulary = ToolVocabulary,
-  -- The route is not wired for codex; the developer message tells the model not to call the tool
-  -- (see codex_plugin_config), so registering a value nothing consumes would only look like a
-  -- working route.
-  register_chat_bufnr = false,
+  -- The same stable value is placed in developer_instructions by codex_plugin_config, so the
+  -- shared nvim_ask_user_question route can resolve this stream without a per-turn handle_id.
+  register_chat_bufnr = true,
   stdin = "",
 
   -- Codex always emits "Reading additional input from stdin..." to stderr; filter it out so the

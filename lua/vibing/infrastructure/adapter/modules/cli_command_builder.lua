@@ -10,6 +10,8 @@
 local tools_constants = require("vibing.core.constants.tools")
 local CliMcpConfig = require("vibing.infrastructure.adapter.modules.cli_mcp_config")
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
+local AskUserQuestionInstructions =
+  require("vibing.infrastructure.adapter.modules.ask_user_question_instructions")
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 local worktree_constants = require("vibing.core.constants.worktree")
 
@@ -187,13 +189,12 @@ function M.system_prompt_args(ctx)
         .. "nvim_job_status, nvim_job_wait, and nvim_job_stop to manage them. If nvim_job_start is "
         .. "unavailable, say so instead of silently substituting shell backgrounding."
     )
-    table.insert(
+    vim.list_extend(
       system_prompt_lines,
-      "When you need the user to choose among options (single or multi-select), always call the "
-        .. "mcp__vibing-nvim__nvim_ask_user_question tool instead of asking in free text. Do not use "
-        .. "the native AskUserQuestion tool for this — it is unavailable in this environment. Pass "
-        .. 'this turn\'s "Current vibing.nvim chat buffer number" (given elsewhere in this system '
-        .. "prompt) as the chat_bufnr argument."
+      AskUserQuestionInstructions.lines(
+        "mcp__vibing-nvim__nvim_ask_user_question",
+        opts.chat_bufnr
+      )
     )
     table.insert(
       system_prompt_lines,
@@ -227,11 +228,6 @@ function M.system_prompt_args(ctx)
           opts._subagent_id
         )
       )
-    end
-
-    -- Buffer number, not file path: it survives a rename, keeping this prefix byte-stable (#489).
-    if opts.chat_bufnr then
-      table.insert(system_prompt_lines, "Current vibing.nvim chat buffer number: " .. tostring(opts.chat_bufnr))
     end
 
     -- Which chat dispatched this one, taken from the `orchestrated_by` frontmatter list.

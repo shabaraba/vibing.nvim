@@ -147,7 +147,7 @@ end
 --- @param ctx Vibing.RequestContext
 --- @return string[]
 function M.plugin_args(ctx)
-  return CodexPluginConfig.args(ctx.opts.cwd, ctx.config)
+  return CodexPluginConfig.args(ctx.opts.cwd, ctx.config, ctx.opts.chat_bufnr)
 end
 
 --- Build the `codex exec --json` command array from the request spec in `backends/codex.lua`.

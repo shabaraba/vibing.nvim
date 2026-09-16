@@ -7,8 +7,9 @@ local M = {}
 --- @class ActiveStreamEntry
 --- @field handle_id string
 --- @field chat_bufnr? number Stable value (the "Current vibing.nvim chat buffer number" line
----   embedded in the system prompt) used to route nvim_ask_user_question calls without a per-turn
----   handle_id, which would otherwise defeat Anthropic's prompt cache (see issues #469, #489).
+---   embedded in the model-visible provider prompt) used to route nvim_ask_user_question calls
+---   without a per-turn handle_id, which would otherwise defeat provider prompt caching (see
+---   issues #469, #489).
 --- @field session_id? string CLI session this stream is resuming. Two chat buffers can be bound to
 ---   the same session (a subagent chat shares its parent's), and two processes resuming one session
 ---   would write the same transcript concurrently — this is what lets a send be refused.
@@ -16,7 +17,7 @@ local M = {}
 ---   tree is shared state, so a snapshot diff taken while another stream is mutating the same
 ---   worktree would attribute that stream's changes to this one — this is what lets the turn fall
 ---   back to the per-tool `request_diff` path instead (see core/utils/git_snapshot.lua).
---- @field adapter table ClaudeCLI adapter reference
+--- @field adapter table backend adapter reference
 --- @field on_insert_choices? fun(questions: table)
 --- @field on_approval_required? fun(tool: string, input: table, options: table, hook_request_id?: string)
 --- @field subagent_count? number Task/Agent tool calls this stream has launched and not yet gotten
@@ -93,9 +94,10 @@ function M.get(handle_id)
   return nil
 end
 
---- Get an active stream entry by chat buffer number — the stable value embedded in the system
---- prompt (see cli_command_builder.lua), used to route mcp__vibing-nvim__nvim_ask_user_question
---- calls instead of a per-turn handle_id (see the ActiveStreamEntry docstring, issues #469/#489).
+--- Get an active stream entry by chat buffer number — the stable value embedded in the provider
+--- prompt (see the backend command builders), used to route the backend-qualified
+--- nvim_ask_user_question MCP call instead of a per-turn handle_id (see the ActiveStreamEntry
+--- docstring, issues #469/#489).
 --- Unlike M.get(), a non-matching bufnr still falls back to the sole registered stream: `--resume`
 --- replays earlier turns, so the model can read a buffer number from a previous Neovim session and
 --- pass one that no longer exists. With a single stream there is no other candidate to confuse it
@@ -136,8 +138,8 @@ end
 --- attribute the changes: a whole-tree snapshot cannot tell whose `sed -i` ran, so a turn that
 --- overlaps another one in the same tree falls back to the per-tool backups.
 --- Excluded by handle_id rather than by chat_bufnr, unlike find_other_active_for_session: the
---- backends that register no chat_bufnr at all (codex, grok — see features.md) would otherwise
---- compare nil against nil and never recognise each other as an overlap.
+--- backends that register no chat_bufnr at all (currently grok and copilot — see features.md)
+--- would otherwise compare nil against nil and never recognise each other as an overlap.
 --- @param worktree_root string|nil
 --- @param exclude_handle_id string|nil the stream asking; it is not an overlap with itself
 --- @return ActiveStreamEntry|nil
