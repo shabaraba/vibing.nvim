@@ -216,6 +216,39 @@ starting chat's frontmatter therefore reaches an orchestrator's workers (`orches
 outward) and silently misses everything downstream of a fork. So the chat save directory is scanned
 once, every chat's frontmatter is read, and a chat naming the current one counts as an edge too.
 
+**The returned order is the contract, not an accident.** The walk is breadth-first — so each chat's
+parent is the one that reaches it in the fewest hops — but the result is emitted in **pre-order of
+that spanning tree**, each entry carrying its `depth`. Two different things need two different
+orders: BFS picks the parent, pre-order lets the progress float draw box-drawing characters from
+`depth` alone (a child must sit directly under its parent for that to work), and processing follows
+the same order so the displayed tree fills in top to bottom. A chat whose file is gone is walked
+through but not returned, and its children move up to its depth — otherwise the drawn tree grows a
+level with no parent in it. `presentation/common/progress_layout.lua` is the only consumer of
+`depth`; the glyphs themselves stay there.
+
+### Showing the Walk
+
+The run is sequential, so it takes about as long as the number of chats it covers — and the user
+did not choose that number, the walk did. Two questions follow from that ("how long is this going to
+take" and "what did it decide to touch"), and a notification answers neither well: one `notify` per
+chat stacks up N lines, and "which one is it on now" means finding the newest of them.
+`presentation/common/progress.lua` is the answer to both — one box, rewritten in place, listing
+every target as a tree. It is a **presentation** concern layered on top of the walk, not part of it;
+the collector supplies `depth` and nothing else about drawing.
+
+The division of labour with notifications is deliberate: the float carries what is only useful
+_while the run is happening_ (position, current name, per-row outcome) and closes itself; `notify`
+carries what is worth **re-reading afterwards** (the final tally, and a warning line per failed
+chat), because the float does not stay to be re-read. The same rule decides `set_file_title`'s
+`quiet` flag — the float renames its own row as each chat is renamed, so `Renamed to:` would be the
+one duplicated line, and it is suppressed for exactly the chats the float is naming.
+
+Two failure modes the widget has to survive on its own, because the thing driving it cannot be
+relied on to say goodbye: the terminal being resized mid-run (dimensions are re-fitted on every
+draw, growing only via `relabel`), and the caller's callback chain dying somewhere in the middle
+(an exception inside `on_done` is swallowed into a notification, so `finish()` never arrives — the
+spinner tick gives up after `stall_ms` and closes the box rather than spinning forever).
+
 `orchestration_tree.lua` is the other reader of the same fields and deliberately stays separate: it
 answers "what does this tree look like, with its parents and children in place", which is a
 directed question. This one answers "which conversations are related", which is not. What the two

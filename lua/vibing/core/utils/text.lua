@@ -1,7 +1,10 @@
----@class Vibing.PatchViewer.Truncate
+---@class Vibing.Core.Utils.Text
 ---表示幅で切り詰める。`strcharpart` は文字数で数えるので、CJKなど幅2の文字が混じると
 ---切った結果が枠に収まらず、末尾から残す側では開始位置が負になって「末尾から数える」
 ---Vimの挙動に化ける。
+---
+---枠に文字を収める必要のあるUIは patch viewer だけではないので（進捗フロートもここを使う）、
+---`ui/patch_viewer/` ではなく共有の置き場に居る。2つ目の実装を書かないこと。
 local M = {}
 
 ---@param text string

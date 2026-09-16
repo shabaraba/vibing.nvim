@@ -71,12 +71,18 @@ end
 
 ---起点のチャットとリンクで繋がったチャットを、起点を除いて返す
 ---
----幅優先で辿るので、並びは起点に近いものから。リンクは手で書ける frontmatter なので循環
----しうるが、`seen` で止まる。実体の無いパス（消されたチャット）は辺としては辿り、結果には
----入れない — 開いていないだけのチャットと区別できるのはファイルの有無だけになる
+---辿るのは幅優先で、返す並びはそうしてできた**張り木の先行順**。この2つを分けているのは、
+---辿る順と見せる順で要るものが違うから。幅優先は起点からの距離が最短になる親を選ぶので、
+---「どこから繋がっているか」が一番近い関係で決まる。一方、並びのほうは木として描けないと困る
+---（`depth` だけで罫線を組むには、子が親のすぐ下に来ている必要がある）。処理はこの並びで進むので、
+---表示された木は上から順に埋まっていく。
+---
+---リンクは手で書ける frontmatter なので循環しうるが、`seen` で止まる。実体の無いパス
+---（消されたチャット）は辺としては辿り、結果には入れない — 開いていないだけのチャットと
+---区別できるのはファイルの有無だけになる。飛ばしたノードの子は、その深さを引き継いで繰り上がる
 ---@param origin_path string? 起点チャットのファイルパス（未保存なら nil）
 ---@param origin_bufnr number? 起点チャットのバッファ番号
----@return {path: string, abs: string, bufnr: number?}[]
+---@return {path: string, abs: string, bufnr: number?, depth: integer}[] 起点を深さ0としたときの深さ付き
 function M.collect(origin_path, origin_bufnr)
   local origin_abs = origin_path and PathSanitizer.normalize(origin_path)
   if not origin_abs then
@@ -93,7 +99,8 @@ function M.collect(origin_path, origin_bufnr)
 
   local seen = { [origin_abs] = true }
   local queue = { origin_abs }
-  local found = {}
+  ---@type table<string, string[]> 張り木の枝。最初にそのノードへ到達した親にぶら下がる
+  local children = {}
 
   while #queue > 0 do
     local current = table.remove(queue, 1)
@@ -109,14 +116,32 @@ function M.collect(origin_path, origin_bufnr)
       if not seen[neighbour] then
         seen[neighbour] = true
         table.insert(queue, neighbour)
-        if vim.fn.filereadable(neighbour) == 1 then
-          table.insert(found, neighbour)
-        end
+        children[current] = children[current] or {}
+        table.insert(children[current], neighbour)
       end
     end
   end
 
-  return ChatLocator.resolve_all(found)
+  local found, depth_by_abs = {}, {}
+  local function walk(abs, depth)
+    for _, child in ipairs(children[abs] or {}) do
+      local readable = vim.fn.filereadable(child) == 1
+      if readable then
+        table.insert(found, child)
+        depth_by_abs[child] = depth
+      end
+      walk(child, readable and depth + 1 or depth)
+    end
+  end
+  walk(origin_abs, 1)
+
+  -- 実体パスで引く。添字を揃える書き方だと `resolve_all` が1件も落とさないことに頼ることになり、
+  -- あれは空文字列や文字列でない要素を落とす
+  local entries = ChatLocator.resolve_all(found)
+  for _, entry in ipairs(entries) do
+    entry.depth = depth_by_abs[entry.abs]
+  end
+  return entries
 end
 
 return M

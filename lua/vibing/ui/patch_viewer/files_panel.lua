@@ -8,7 +8,7 @@
 local M = {}
 
 local icons = require("vibing.ui.patch_viewer.icons")
-local truncate = require("vibing.ui.patch_viewer.truncate")
+local truncate = require("vibing.core.utils.text")
 
 local NS = vim.api.nvim_create_namespace("vibing_patch_viewer")
 

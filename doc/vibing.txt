@@ -270,8 +270,41 @@ section is not kept in sync field by field.
     are handled one at a time, not in parallel — each one spends a request.
     A chat that is closed is opened in the background to be processed; one
     that is streaming a response is refused, as it would be on its own. A
-    failure on one chat does not stop the rest, and the tally of updated and
-    failed chats is reported when the run finishes.
+    failure on one chat does not stop the rest.
+
+    Because the run is sequential, it takes about as long as the number of
+    chats it covers. A progress window appears at the bottom right for the
+    duration of the run, listing every target as a tree rooted at this chat,
+    with the count in its border: >
+
+        ╭ Linked Chats 2/5 ─────────────────────╮
+        │ ✓ chat-20260916-auth-refactor.md      │
+        │ ✗ ├─ worker-token-cache.md            │
+        │ ⠹ ├─ worker-session-store.md          │
+        │   │  └─ grand-worker-migrations.md    │
+        │   └─ fork-of-auth-refactor.md         │
+        ╰───────────────────────────────────────╯
+<
+    Chats are processed top to bottom, so the markers fill downwards: `✓`
+    done, `✗` failed, a spinner for the one in flight, blank for pending.
+    This chat is the root and is always processed first. The tree is the
+    spanning tree of the walk, so a chat sits under whichever chat the walk
+    reached it from, not necessarily under its orchestrator.
+
+    A renamed chat's line changes to its new name in place, so the tree ends
+    the run showing the names the files now have. The per-chat `Renamed to:`
+    message is suppressed for exactly the chats the window is naming; a plain
+    |:VibingSetFileTitle|, or a `--linked` run that found nothing to link to
+    and so opened no window, still prints it.
+
+    The window never takes focus, and it closes itself shortly after the run
+    finishes. Closing it by hand dismisses it for the rest of the run. When
+    the tree is taller than the window, it scrolls to keep the running chat
+    in view.
+
+    The tally of updated and failed chats is also written to |:messages|,
+    along with a warning line for each chat that failed, since the progress
+    window does not stay around to be re-read.
 
                                                          *:VibingDeleteChats*
 :VibingDeleteChats [--unrenamed]

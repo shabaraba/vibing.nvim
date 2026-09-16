@@ -37,12 +37,22 @@ describe("linked_chats.collect", function()
     vim.fn.delete(tmpdir, "rf")
   end)
 
-  ---@param entries {path: string, abs: string, bufnr: number?}[]
+  ---@param entries {path: string, abs: string, bufnr: number?, depth: integer}[]
   ---@return string[] ファイル名の並び
   local function names(entries)
     local out = {}
     for _, entry in ipairs(entries) do
       table.insert(out, vim.fn.fnamemodify(entry.abs, ":t"))
+    end
+    return out
+  end
+
+  ---@param entries {abs: string, depth: integer}[]
+  ---@return string[] 深さぶん字下げしたファイル名の並び
+  local function shape(entries)
+    local out = {}
+    for _, entry in ipairs(entries) do
+      table.insert(out, string.rep("  ", entry.depth) .. vim.fn.fnamemodify(entry.abs, ":t"))
     end
     return out
   end
@@ -101,5 +111,33 @@ describe("linked_chats.collect", function()
 
   it("returns nothing for a chat that was never saved", function()
     assert.same({}, LinkedChats.collect(nil))
+  end)
+
+  it("orders the result so that each chat follows its parent, with its depth", function()
+    -- 木として描く側は深さしか見ない。子が親のすぐ下に来ていないと、罫線は別の親に繋がる
+    local origin = write_chat("origin.md", {
+      "orchestrated:",
+      "  - " .. tmpdir .. "/worker-a.md",
+      "  - " .. tmpdir .. "/worker-b.md",
+    })
+    write_chat("worker-a.md", { "orchestrated:", "  - " .. tmpdir .. "/grandchild.md" })
+    write_chat("grandchild.md", {})
+    write_chat("worker-b.md", {})
+
+    -- 幅優先で辿ると worker-b が grandchild より先に見つかるが、並びは張り木の先行順になる
+    assert.same({
+      "  worker-a.md",
+      "    grandchild.md",
+      "  worker-b.md",
+    }, shape(LinkedChats.collect(origin)))
+  end)
+
+  it("pulls the children of a deleted link up to its depth", function()
+    -- 消えたチャットは結果に入らない。その子を元の深さのままにすると、描かれる木に
+    -- 親のいない段ができる
+    local origin = write_chat("origin.md", { "orchestrated:", "  - " .. tmpdir .. "/deleted.md" })
+    write_chat("survivor.md", { "orchestrated_by: " .. tmpdir .. "/deleted.md" })
+
+    assert.same({ "  survivor.md" }, shape(LinkedChats.collect(origin)))
   end)
 end)
