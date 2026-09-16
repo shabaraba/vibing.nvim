@@ -103,6 +103,26 @@
   defaults to `true`: it spends no tokens, and a warning about a change you cannot otherwise see is
   useless if it is off until you ask for it. Set it to `false` to stop the warning and its probe.
 
+## 6.0.0 (2026-09-16)
+
+## What's Changed
+* feat: make Codex profile template configurable by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/759
+* chore: update gitignore by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/763
+* feat(diff): rework `gd` into a three-pane patch viewer by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/760
+* chore: point AGENTS.md and .agents/skills at the Claude originals by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/765
+* feat(auto-resume): detect usage limits on every backend by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/764
+* fix(permissions): reach codex's own-named built-ins and MCP spelling by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/766
+* feat(auto-resume): read codex's reset time from its limit message by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/767
+* fix(auto-resume): resolve a stated reset minute to its end, not its start by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/769
+* refactor(adapter): descriptor-based CLI backends (ADR 009, P0–P6) by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/770
+* refactor(lightweight): resolve every utility call's adapter the same way by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/768
+* feat(codex): support choice-list question UI by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/771
+* feat(chat): apply summarize and title to linked chats with --linked by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/772
+* feat(chat): show a progress tree while --linked runs by @shabaraba in https://github.com/shabaraba/vibing.nvim/pull/773
+
+
+**Full Changelog**: https://github.com/shabaraba/vibing.nvim/compare/v5.9.0...v6.0.0
+
 ## 5.9.0 (2026-09-12)
 
 ## What's Changed
