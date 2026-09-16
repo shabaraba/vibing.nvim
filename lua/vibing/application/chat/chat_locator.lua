@@ -50,6 +50,22 @@ local function to_abs(display_path, git_root)
   return PathSanitizer.normalize(Git.from_display_path(vim.trim(display_path), git_root))
 end
 
+---表示パス1つを実体パスへ揃える
+---
+---`resolve_all` に渡すほどではない単発の解決（リンク網を辿るあいだの隣接ノードなど）向け。
+---呼び出し元で `Git.get_root()` を叩き直さずに済むよう、ここのgitルートのキャッシュを通す
+---@param display_path string
+---@return string? abs 空文字列や文字列でない値なら nil
+function M.resolve_abs(display_path)
+  if type(display_path) ~= "string" or vim.trim(display_path) == "" then
+    return nil
+  end
+  -- `PathSanitizer.normalize` は (path, error) を返す。多値のまま返すと `table.insert` の
+  -- 引数に渡ったとき「位置を指定した挿入」に化ける
+  local abs = to_abs(display_path, cached_git_root())
+  return abs
+end
+
 ---いま開いているバッファを、実体パスから引ける形にする
 ---
 ---比較は両側ともシンボリックリンクを解決した形で行う。`nvim_buf_get_name` は解決済みの

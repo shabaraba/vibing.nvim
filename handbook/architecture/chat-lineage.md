@@ -201,3 +201,60 @@ them would offer a binding the CLI cannot resolve.
 `presentation/chat/modules/subagent_finder.lua` (scan),
 `application/chat/use_cases/subagent_chat.lua` (open, with a dedup check so one agent never gets two
 rival buffers), `presentation/chat/controller.lua` → `handle_subagent_chat`.
+
+## Walking the Links: `--linked`
+
+`:VibingSetFileTitle --linked` and `:VibingSummarize --linked` apply the command to every chat
+reachable through the lineage frontmatter. `application/chat/linked_chats.lua` returns that
+connected component; `application/chat/use_cases/summarize_and_title.lua` drives it.
+
+The walk **drops link direction**, and that is the whole reason the module exists rather than being
+a loop over the current chat's own frontmatter. Three of the four fields — `forked_from`,
+`continued_from`, `orchestrated_by` — are written **only on the new chat**. A fork source never
+learns it was forked from; a handoff source never learns it was continued. Reading only the
+starting chat's frontmatter therefore reaches an orchestrator's workers (`orchestrated` points
+outward) and silently misses everything downstream of a fork. So the chat save directory is scanned
+once, every chat's frontmatter is read, and a chat naming the current one counts as an edge too.
+
+`orchestration_tree.lua` is the other reader of the same fields and deliberately stays separate: it
+answers "what does this tree look like, with its parents and children in place", which is a
+directed question. This one answers "which conversations are related", which is not. What the two
+_do_ share is the edge-reading step — `OrchestratedEntry.field_paths` — because `as_list` then
+`paths` is one rule (#717), not two lines that happen to appear together.
+
+**Which fields those are is defined once, in `core/constants/chat_links.lua`**, with each field's
+`shape` (`scalar` / `list`). That is not tidiness: every consumer of the set fails _silently_ when
+a field is missing from it. `application/link/rename_sync.lua` builds its scanners from the list
+(`scalar` → `ForkedChatScanner.new(key)`, all `list` keys → one `OrchestrationChatScanner`), so a
+field with no scanner has its links broken by the next rename with no error; a field missing from
+the walk just yields a smaller component, indistinguishable from "nothing was linked".
+`orchestration_chat_scanner.lua`'s `LINK_KEYS` is derived from the same constant.
+
+Consequences worth keeping in mind:
+
+- The scan reads only each file's frontmatter (`Frontmatter.read` stops at the closing `---`), but
+  it is still one pass over the save directory per invocation. It runs once per command, not per
+  chat processed. `Scanner:read_frontmatter` was switched to the same reader for the same reason:
+  it was loading whole transcripts (14 MB over 328 files, 171 ms) to look at twenty lines, and
+  `--linked` runs it once per renamed chat rather than once per command.
+- The link sync still walks the save directory once per scanner per rename. At ~45 ms a rename that
+  is far below the CLI call it follows, so it is left alone; if that ever changes, the fix is to
+  share one frontmatter cache across the scanners in `SyncManager.sync_links`, not to special-case
+  the `--linked` path.
+- Chats are processed **sequentially**. Each one spends a lightweight request, and renaming rewrites
+  the links recorded in the others — running them concurrently would overlap writes to the same
+  frontmatter.
+- The link set is collected **before** the starting chat is renamed, so the scan never races the
+  link sync that a rename triggers.
+- A failure is per chat. "No conversation to summarize" and "streaming" are facts about one chat,
+  not about the run, so the walk continues and reports a tally at the end.
+- **Every linked chat is saved once it has been changed; the starting chat is not.** Inserting a
+  summary only writes the buffer — the one path that reaches disk is the rename inside
+  `set_file_title`. A background-opened buffer left `modified` means the file the run just reported
+  as updated has not changed, and `:qa` stops on a buffer the user never opened. The starting chat
+  keeps the existing behaviour, because the user is looking at it.
+- **A rename happens inside the chat file's own directory, not the configured save directory.**
+  `--linked` reaches chats outside it (another project's `.vibing/chat/`), and renaming into the
+  configured directory would physically move the conversation, leaving the links recorded beside it
+  dangling — `RenameSync` only scans the directory it is given. Only a chat that has never been
+  saved is placed in the configured save directory.

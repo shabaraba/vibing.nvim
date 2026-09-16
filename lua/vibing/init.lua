@@ -176,18 +176,28 @@ function M.setup(opts)
   require("vibing.application.completion").setup()
 end
 
----位置指定を取るコマンド（VibingChat/VibingChatFork/VibingChatHandoff/VibingSubagentChat）の補完候補
----@param arg_lead string
----@return string[]
-local function complete_positions(arg_lead)
-  local matches = {}
-  for _, pos in ipairs(require("vibing.core.constants.chat").POSITIONS) do
-    if pos:find("^" .. vim.pesc(arg_lead)) then
-      table.insert(matches, pos)
+---決まった候補から前方一致で選ぶ補完関数を作る
+---
+---候補の並びは渡す側が持つ（`ChatConstants.POSITIONS` / `ChatConstants.FLAGS`）。ここに
+---literalを書くと、controller が受け付ける集合との二重定義になる
+---@param candidates string[]|fun(): string[]
+---@return fun(arg_lead: string): string[]
+local function complete_from(candidates)
+  return function(arg_lead)
+    local matches = {}
+    for _, candidate in ipairs(type(candidates) == "function" and candidates() or candidates) do
+      if candidate:find("^" .. vim.pesc(arg_lead)) then
+        table.insert(matches, candidate)
+      end
     end
+    return matches
   end
-  return matches
 end
+
+---位置指定を取るコマンド（VibingChat/VibingChatFork/VibingChatHandoff/VibingSubagentChat）の補完候補
+local complete_positions = complete_from(function()
+  return require("vibing.core.constants.chat").POSITIONS
+end)
 
 ---プロジェクト固有のClaude Codeプラグインの雛形を作成する
 ---作成後は`--plugin-dir`の解決結果を捨てて、再起動なしで読み込めるようにする
@@ -293,24 +303,28 @@ function M._register_commands()
     require("vibing.presentation.chat.controller").show_slash_commands()
   end, { desc = "Show slash command picker" })
 
-  vim.api.nvim_create_user_command("VibingSetFileTitle", function()
-    require("vibing.presentation.chat.controller").handle_set_file_title()
-  end, { desc = "Generate AI title and rename chat file" })
+  ---@param command string `ChatConstants.FLAGS` のキー
+  ---@return fun(arg_lead: string): string[]
+  local function complete_flags(command)
+    return complete_from(function()
+      return require("vibing.core.constants.chat").FLAGS[command]
+    end)
+  end
+
+  vim.api.nvim_create_user_command("VibingSetFileTitle", function(opts)
+    require("vibing.presentation.chat.controller").handle_set_file_title(opts.args)
+  end, {
+    nargs = "*",
+    desc = "Generate AI title and rename chat file (--linked also renames linked chats)",
+    complete = complete_flags("set_file_title"),
+  })
 
   vim.api.nvim_create_user_command("VibingSummarize", function(opts)
     require("vibing.presentation.chat.controller").handle_summarize(opts.args)
   end, {
-    nargs = "?",
+    nargs = "*",
     desc = "Generate and insert summary from chat history (--with-title also renames the file)",
-    complete = function(arg_lead)
-      local matches = {}
-      for _, flag in ipairs({ "--with-title" }) do
-        if flag:find("^" .. vim.pesc(arg_lead)) then
-          table.insert(matches, flag)
-        end
-      end
-      return matches
-    end,
+    complete = complete_flags("summarize"),
   })
 
   vim.api.nvim_create_user_command("VibingDeleteChats", function(opts)
@@ -318,16 +332,7 @@ function M._register_commands()
   end, {
     nargs = "?",
     desc = "Delete chat files (use --unrenamed to delete all unrenamed files)",
-    complete = function(arg_lead, cmd_line, cursor_pos)
-      local flags = { "--unrenamed" }
-      local matches = {}
-      for _, flag in ipairs(flags) do
-        if flag:find("^" .. vim.pesc(arg_lead)) then
-          table.insert(matches, flag)
-        end
-      end
-      return matches
-    end,
+    complete = complete_flags("delete_chats"),
   })
 
   -- mote統合（と :VibingCleanMote / :VibingMoteDir）は削除された。設定を残したまま

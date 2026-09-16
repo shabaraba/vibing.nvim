@@ -2,10 +2,7 @@ local notify = require("vibing.core.utils.notify")
 local title_generator = require("vibing.core.utils.title_generator")
 local filename_util = require("vibing.core.utils.filename")
 local FileManager = require("vibing.presentation.chat.modules.file_manager")
-local SyncManager = require("vibing.application.link.sync_manager")
-local DailySummaryScanner = require("vibing.infrastructure.link.daily_summary_scanner")
-local ForkedChatScanner = require("vibing.infrastructure.link.forked_chat_scanner")
-local OrchestrationChatScanner = require("vibing.infrastructure.link.orchestration_chat_scanner")
+local RenameSync = require("vibing.application.link.rename_sync")
 local SummaryInserter = require("vibing.presentation.chat.modules.summary_inserter")
 local Fs = require("vibing.core.utils.fs")
 
@@ -52,13 +49,56 @@ local function first_user_line(conversation)
   return nil
 end
 
+---改名をLSPクライアントに伝える（旧URIのdidClose、新URIのdidOpen）
+---@param buf number
+---@param old_uri string
+local function notify_lsp_rename(buf, old_uri)
+  for _, client in ipairs(vim.lsp.get_clients({ bufnr = buf })) do
+    if client.server_capabilities.textDocumentSync and client.notify then
+      client.notify("textDocument/didClose", { textDocument = { uri = old_uri } })
+      client.notify("textDocument/didOpen", {
+        textDocument = {
+          uri = vim.uri_from_bufnr(buf),
+          languageId = vim.bo[buf].filetype,
+          version = 0,
+          text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n"),
+        },
+      })
+    end
+  end
+end
+
+---チャットファイルにAI生成のタイトルを付けて改名する
+---
+---`opts.on_done` は成否にかかわらず必ず1回だけ呼ばれる。同期的な早期リターン（ストリーミング
+---中・会話が空）でも呼ぶのが要点で、呼ばれない経路が1つでもあると連鎖する呼び出し側
+---（`:VibingSummarize --linked` の逐次実行）は「まだ来ていない」と「もう来ない」を区別できず
+---待ち続ける。
 ---@param _ string[]
 ---@param chat_buffer Vibing.ChatBuffer
+---@param opts? {on_done?: fun(ok: boolean)}
 ---@return boolean
-return function(_, chat_buffer)
+return function(_, chat_buffer, opts)
+  local on_done = opts and opts.on_done
+  ---`ok` をそのまま返すので、早期リターンは `return finish(false)` と書ける。この形のおかげで
+  ---「全ての出口で1回呼ばれる」がコードを目で追うだけで確かめられる
+  ---@param ok boolean
+  ---@return boolean ok
+  local function finish(ok)
+    if on_done then
+      -- 非同期パスでは CLI の完了ハンドラ（luv のコールバック内）から呼ばれる。素通しにすると
+      -- そこで例外になるので、`generate_and_insert_summary` と同じく捕まえて通知に落とす
+      local ok_call, err = pcall(on_done, ok)
+      if not ok_call then
+        notify.error("Title completion callback failed: " .. tostring(err))
+      end
+    end
+    return ok
+  end
+
   if not chat_buffer or not chat_buffer.buf or not vim.api.nvim_buf_is_valid(chat_buffer.buf) then
     notify.error("No valid chat buffer")
-    return false
+    return finish(false)
   end
 
   -- ストリーミング中はバッファがまだ確定していない。会話は途中状態なのでそこからタイトルを
@@ -67,13 +107,13 @@ return function(_, chat_buffer)
   -- やめた時点で消えている。残っているのは上の2つ。）
   if chat_buffer:is_sending() then
     notify.warn("Cannot generate title while a response is streaming")
-    return false
+    return finish(false)
   end
 
   local conversation = chat_buffer:extract_conversation()
   if #conversation == 0 then
     notify.warn("No conversation to generate title from")
-    return false
+    return finish(false)
   end
 
   -- `:VibingSummarize` が書いた `## summary` があれば、抜粋ではなくそちらを入力にする。
@@ -86,6 +126,12 @@ return function(_, chat_buffer)
   local save_dir = FileManager.get_save_directory(config.chat)
   local is_existing_file = old_file_path and vim.fn.filereadable(old_file_path) == 1
 
+  -- 改名は**そのファイルのあるディレクトリの中**で行う。設定の保存先へ寄せると、別プロジェクトの
+  -- チャットを開いているとき（`--linked` はそこまで辿る）に会話ファイルが物理的に引っ越し、
+  -- 引っ越し元に残ったリンクは `RenameSync` の走査範囲の外なので誰も直さない。
+  -- まだ保存されていないチャットだけが、設定の保存先に置かれる
+  local target_dir = is_existing_file and vim.fn.fnamemodify(old_file_path, ":h") or save_dir
+
   title_generator.generate_from_conversation(conversation, function(title, err)
     if err then
       -- Don't fail the rename just because AI title generation failed (prompt
@@ -97,108 +143,55 @@ return function(_, chat_buffer)
 
     if not chat_buffer.buf or not vim.api.nvim_buf_is_valid(chat_buffer.buf) then
       notify.warn("Buffer was closed before title generation completed")
-      return
+      return finish(false)
     end
 
     local new_filename = filename_util.generate_with_title(title, "chat")
-    local normalized_dir = ensure_trailing_slash(save_dir)
+    Fs.ensure_dir(ensure_trailing_slash(target_dir))
 
-    Fs.ensure_dir(normalized_dir)
-
-    local new_file_path = get_unique_file_path(save_dir, new_filename)
+    local new_file_path = get_unique_file_path(target_dir, new_filename)
 
     if is_existing_file then
       local ok, save_err = FileManager.save_buffer(chat_buffer.buf)
       if not ok then
         notify.error(string.format("Failed to save: %s", save_err))
-        return
+        return finish(false)
       end
 
-      local rename_result = vim.fn.rename(old_file_path, new_file_path)
-      if rename_result ~= 0 then
+      if vim.fn.rename(old_file_path, new_file_path) ~= 0 then
         notify.error("Failed to rename file")
-        return
+        return finish(false)
       end
     end
 
-    -- Notify LSP clients about file rename
     local old_uri = vim.uri_from_bufnr(chat_buffer.buf)
 
     vim.api.nvim_buf_set_name(chat_buffer.buf, new_file_path)
     chat_buffer.file_path = new_file_path
 
-    -- Notify all LSP clients: didClose old URI, didOpen new URI
-    local clients = vim.lsp.get_clients({ bufnr = chat_buffer.buf })
-    for _, client in ipairs(clients) do
-      if client.server_capabilities.textDocumentSync then
-        -- didClose for old URI
-        if client.notify then
-          client.notify("textDocument/didClose", {
-            textDocument = { uri = old_uri }
-          })
-        end
-
-        -- didOpen for new URI
-        local new_uri = vim.uri_from_bufnr(chat_buffer.buf)
-        local buflines = vim.api.nvim_buf_get_lines(chat_buffer.buf, 0, -1, false)
-        local text = table.concat(buflines, "\n")
-
-        if client.notify then
-          client.notify("textDocument/didOpen", {
-            textDocument = {
-              uri = new_uri,
-              languageId = vim.bo[chat_buffer.buf].filetype,
-              version = 0,
-              text = text,
-            }
-          })
-        end
-      end
-    end
+    notify_lsp_rename(chat_buffer.buf, old_uri)
 
     if not is_existing_file then
       local ok, save_err = FileManager.save_buffer(chat_buffer.buf)
       if not ok then
         notify.error(string.format("Failed to save: %s", save_err))
-        return
+        return finish(false)
       end
     end
 
     notify.info(string.format("Renamed to: %s", vim.fn.fnamemodify(new_file_path, ":.")))
 
     if is_existing_file then
-      -- Daily summaryのベースディレクトリを取得
-      local daily_base_dir
-      if config.daily_summary and config.daily_summary.save_dir then
-        daily_base_dir = config.daily_summary.save_dir
-      else
-        daily_base_dir = save_dir
-      end
-
-      -- Daily summaryリンクの更新
-      local daily_result = SyncManager.sync_links(
-        old_file_path, new_file_path, { DailySummaryScanner.new() }, daily_base_dir
-      )
-
-      -- チャット間リンクの更新（チャット保存ディレクトリを検索）。
-      -- daily summary と違ってベースディレクトリが同じなので、1回の呼び出しにまとめられる
-      local chat_result = SyncManager.sync_links(
-        old_file_path,
-        new_file_path,
-        { ForkedChatScanner.new(), ForkedChatScanner.new("continued_from"), OrchestrationChatScanner.new() },
-        save_dir
-      )
-
-      local total_updated = daily_result.updated + chat_result.updated
-      local total_failed = daily_result.failed + chat_result.failed
-
-      if total_updated > 0 then
-        notify.info(string.format("Updated %d linked file(s)", total_updated), "Link Sync")
-      end
-      if total_failed > 0 then
-        notify.warn(string.format("Failed to update %d file(s)", total_failed), "Link Sync")
-      end
+      -- リンクを探すのは改名したチャットと同じディレクトリ。一緒に作られたチャット同士が
+      -- 互いを名指すので、そのチャットを指しているファイルはそこにある。daily summary 側も
+      -- 明示設定が無ければ `target_dir` から辿る — `save_dir` に決め打つと別プロジェクトの
+      -- チャットを改名したとき（上の `target_dir` と同じ理由）、そのプロジェクトの daily
+      -- summary ではなく現在の cwd の daily summary を（誤って）走査してしまう
+      local daily_dir = (config.daily_summary and config.daily_summary.save_dir) or target_dir
+      RenameSync.apply(old_file_path, new_file_path, target_dir, daily_dir)
     end
+
+    finish(true)
   end, { summary = summary })
 
   return true
