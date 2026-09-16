@@ -183,8 +183,11 @@ return function(_, chat_buffer, opts)
 
     if is_existing_file then
       -- リンクを探すのは改名したチャットと同じディレクトリ。一緒に作られたチャット同士が
-      -- 互いを名指すので、そのチャットを指しているファイルはそこにある
-      local daily_dir = (config.daily_summary and config.daily_summary.save_dir) or save_dir
+      -- 互いを名指すので、そのチャットを指しているファイルはそこにある。daily summary 側も
+      -- 明示設定が無ければ `target_dir` から辿る — `save_dir` に決め打つと別プロジェクトの
+      -- チャットを改名したとき（上の `target_dir` と同じ理由）、そのプロジェクトの daily
+      -- summary ではなく現在の cwd の daily summary を（誤って）走査してしまう
+      local daily_dir = (config.daily_summary and config.daily_summary.save_dir) or target_dir
       RenameSync.apply(old_file_path, new_file_path, target_dir, daily_dir)
     end
 

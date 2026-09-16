@@ -8,7 +8,7 @@
 ---向きを落とすのは表示上の都合ではなく、リンクの記録のされ方からの要請になる。
 ---`forked_from` / `continued_from` / `orchestrated_by` は**子から親への一方向にしか書かれない**
 ---（fork 元は自分が fork されたことを知らない）。自分の frontmatter だけを読む実装は、
----そこから派生したチャットを永久に見つけられない。なので保存ディレクトリを1回走査して、
+---そこから派生したチャットを永久に見つけられない。なので起点のあるディレクトリを1回走査して、
 ---自分を指しているチャットも辺として拾う。
 ---
 ---このモジュールが持つのはグラフの組み立てだけで、その下は既にあるものを使う:
@@ -39,20 +39,20 @@ local function outbound(data)
   return abs_paths
 end
 
----保存ディレクトリを1回走査して、辺を両向きぶん組み立てる
----@param save_dir string
+---指定ディレクトリを1回走査して、辺を両向きぶん組み立てる
+---@param base_dir string
 ---@return table<string, string[]> outbound_by_abs 走査できたファイルが名指している先
 ---@return table<string, string[]> inbound_by_abs そのパスを名指しているファイル
-local function scan(save_dir)
+local function scan(base_dir)
   local outbound_by_abs = {}
   local inbound_by_abs = {}
 
-  if save_dir:sub(-1) ~= "/" then
-    save_dir = save_dir .. "/"
+  if base_dir:sub(-1) ~= "/" then
+    base_dir = base_dir .. "/"
   end
   -- 「どの拡張子がチャットファイルか」の定義は `Scanner` にある。`find_target_files` は
   -- selfを見ないので、スキャナーを1つ作らずにそのまま呼べる
-  local files = Scanner.find_target_files(Scanner, save_dir)
+  local files = Scanner.find_target_files(Scanner, base_dir)
 
   -- bufnr の解決は1回にまとめる。`resolve_all` は呼び出しごとに全バッファを走査するので、
   -- ファイルごとに呼ぶと保存ディレクトリのファイル数だけ走査が走る
@@ -83,10 +83,12 @@ function M.collect(origin_path, origin_bufnr)
     return {}
   end
 
-  local FileManager = require("vibing.presentation.chat.modules.file_manager")
-  local outbound_by_abs, inbound_by_abs = scan(FileManager.get_save_directory(require("vibing").get_config().chat))
-  -- 起点は保存ディレクトリの外にありうる（別プロジェクトのチャットを開いている場合）ので、
-  -- 走査に頼らず読み直す。開いているバッファを優先させる意味もある
+  -- 走査するのは起点が実際に置かれているディレクトリ。設定の保存先で決め打つと、別プロジェクトの
+  -- チャットを開いている場合（`set_file_title.lua` の `target_dir` と同じ理由）に、そのディレクトリ
+  -- 内で起点を指している兄弟チャットを永遠に見つけられない
+  local origin_dir = vim.fn.fnamemodify(origin_abs, ":h") .. "/"
+  local outbound_by_abs, inbound_by_abs = scan(origin_dir)
+  -- 走査結果はキャッシュなので、開いているバッファを優先させるために読み直す
   outbound_by_abs[origin_abs] = outbound(Frontmatter.read(origin_abs, origin_bufnr) or {})
 
   local seen = { [origin_abs] = true }
@@ -96,7 +98,7 @@ function M.collect(origin_path, origin_bufnr)
   while #queue > 0 do
     local current = table.remove(queue, 1)
 
-    -- 走査の外から辿り着いたノードはここで読む。起点が保存ディレクトリの外なら、その先も外にある。
+    -- 走査の外から辿り着いたノードはここで読む。起点のディレクトリの外にあるノードなら、その先も外にある。
     -- `neighbours` は必ず新しいテーブルにする — `list_extend` は第1引数を書き換えるので、
     -- `outbound_by_abs[current]` をそのまま渡すと走査結果に inbound 側が混ざる
     local neighbours = {}
