@@ -224,6 +224,7 @@ end)
 -- 移動し、移動元に残ったリンクは `RenameSync` の走査範囲の外なので誰も直さない。
 describe("set_file_title handler - where the renamed file lands", function()
   local handler, title_generator, original_generate, tmpdir, synced_dir
+  local notify = require("vibing.core.utils.notify")
 
   before_each(function()
     synced_dir = nil
@@ -249,17 +250,14 @@ describe("set_file_title handler - where the renamed file lands", function()
     vim.fn.delete(tmpdir, "rf")
   end)
 
-  it("renames an existing chat inside its own directory, not the configured save dir", function()
-    title_generator.generate_from_conversation = function(_, callback)
-      callback("renamed here")
-    end
-
-    local path = tmpdir .. "/chat-20260101-120000-abc-0001.md"
+  ---@param name string
+  ---@return table chat_buffer
+  local function existing_chat(name)
+    local path = tmpdir .. "/" .. name
     vim.fn.writefile({ "---", "vibing.nvim: true", "---", "# Vibing Chat", "## User", "hi" }, path)
-
     local buf = vim.fn.bufadd(path)
     vim.fn.bufload(buf)
-    local chat_buffer = {
+    return {
       buf = buf,
       file_path = path,
       is_sending = function()
@@ -272,6 +270,15 @@ describe("set_file_title handler - where the renamed file lands", function()
         return nil
       end,
     }
+  end
+
+  it("renames an existing chat inside its own directory, not the configured save dir", function()
+    title_generator.generate_from_conversation = function(_, callback)
+      callback("renamed here")
+    end
+
+    local chat_buffer = existing_chat("chat-20260101-120000-abc-0001.md")
+    local path = chat_buffer.file_path
 
     handler({}, chat_buffer)
 
@@ -279,5 +286,30 @@ describe("set_file_title handler - where the renamed file lands", function()
     assert.equals(0, vim.fn.filereadable(path))
     assert.equals(1, vim.fn.filereadable(chat_buffer.file_path))
     assert.equals(tmpdir, synced_dir)
+  end)
+
+  -- `quiet` は「新しい名前は呼び出し側が見せる」の意味。`--linked` の進捗フロートは木の行を
+  -- 新しい名前に差し替えるので、同じ内容を通知でも流すと件数ぶん同じ行が積み上がる
+  it("announces the new name by default, and holds its tongue when asked to", function()
+    title_generator.generate_from_conversation = function(_, callback)
+      callback("renamed here")
+    end
+
+    local said = {}
+    local original_info = notify.info
+    notify.info = function(message)
+      table.insert(said, message)
+    end
+
+    handler({}, existing_chat("chat-20260101-120000-abc-0001.md"))
+    local after_default = #said
+
+    handler({}, existing_chat("chat-20260101-120000-abc-0002.md"), { quiet = true })
+
+    notify.info = original_info
+
+    assert.equals(1, after_default)
+    assert.is_truthy(said[1]:find("Renamed to", 1, true))
+    assert.equals(after_default, #said)
   end)
 end)

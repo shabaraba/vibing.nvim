@@ -7,7 +7,7 @@
 local M = {}
 
 local Factory = require("vibing.infrastructure.ui.factory")
-local truncate = require("vibing.ui.patch_viewer.truncate")
+local truncate = require("vibing.core.utils.text")
 
 ---@param state Vibing.PatchViewer.State
 function M.create_layout(state)

@@ -1,8 +1,8 @@
 -- 切り詰めは **表示幅** で数える。文字数で数えると、CJKなど幅2の文字が混じるパスで
 -- 枠からはみ出したり、末尾を残す側では開始位置が負になってVimの「末尾から数える」挙動に化ける
-local Truncate = require("vibing.ui.patch_viewer.truncate")
+local Truncate = require("vibing.core.utils.text")
 
-describe("patch_viewer.truncate", function()
+describe("text.truncate", function()
   it("leaves a string that already fits untouched", function()
     assert.equals("short.lua", Truncate.head("short.lua", 20))
     assert.equals("short.lua", Truncate.tail("short.lua", 20))

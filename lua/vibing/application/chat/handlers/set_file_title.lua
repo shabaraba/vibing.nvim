@@ -74,12 +74,16 @@ end
 ---中・会話が空）でも呼ぶのが要点で、呼ばれない経路が1つでもあると連鎖する呼び出し側
 ---（`:VibingSummarize --linked` の逐次実行）は「まだ来ていない」と「もう来ない」を区別できず
 ---待ち続ける。
+---`opts.quiet` は「新しい名前は呼び出し側が見せるので、こちらは黙る」の意味。`--linked` の
+---進捗フロートは木の行そのものを新しい名前に差し替えるので、同じことを通知でも流すと、
+---件数ぶん同じ内容が積み上がる。**黙るのは成功したときだけ**で、警告とエラーは常に出す。
 ---@param _ string[]
 ---@param chat_buffer Vibing.ChatBuffer
----@param opts? {on_done?: fun(ok: boolean)}
+---@param opts? {on_done?: fun(ok: boolean), quiet?: boolean}
 ---@return boolean
 return function(_, chat_buffer, opts)
   local on_done = opts and opts.on_done
+  local quiet = opts and opts.quiet
   ---`ok` をそのまま返すので、早期リターンは `return finish(false)` と書ける。この形のおかげで
   ---「全ての出口で1回呼ばれる」がコードを目で追うだけで確かめられる
   ---@param ok boolean
@@ -179,7 +183,9 @@ return function(_, chat_buffer, opts)
       end
     end
 
-    notify.info(string.format("Renamed to: %s", vim.fn.fnamemodify(new_file_path, ":.")))
+    if not quiet then
+      notify.info(string.format("Renamed to: %s", vim.fn.fnamemodify(new_file_path, ":.")))
+    end
 
     if is_existing_file then
       -- リンクを探すのは改名したチャットと同じディレクトリ。一緒に作られたチャット同士が

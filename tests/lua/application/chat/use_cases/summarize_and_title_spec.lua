@@ -1,12 +1,11 @@
 -- `--linked` の逐次実行を固定する。
 --
--- 押さえたいのは3つ: リンク先は起点の**あと**に、1件ずつ、そして1件の失敗で止まらないこと。
--- 並行に投げる実装に戻すと、1コマンドでリンク網ぶんのCLIプロセスが同時に立ち、改名が
--- 書き換えるリンク先の frontmatter への書き込みも重なる。
-
-local use_case = require("vibing.application.chat.use_cases.summarize_and_title")
+-- 押さえたいのは4つ: リンク先は起点の**あと**に、1件ずつ、1件の失敗で止まらないこと、そして
+-- 何件をどこまで処理したかが逐一見えること。並行に投げる実装に戻すと、1コマンドでリンク網ぶんの
+-- CLIプロセスが同時に立ち、改名が書き換えるリンク先の frontmatter への書き込みも重なる。
 
 describe("summarize_and_title", function()
+  local use_case
   local calls
   local summary_results
   local origin
@@ -27,6 +26,41 @@ describe("summarize_and_title", function()
     save_failures = {}
     origin = fake_chat("origin")
     linked = {}
+
+    -- 進捗表示は処理の合間に挟まるので、ops と同じ列に記録して順序ごと見る。
+    -- `notify` はモジュール先頭で掴まれるので、**差し替えたあとに** require する
+    package.loaded["vibing.core.utils.notify"] = {
+      info = function(message)
+        table.insert(calls, { op = "notify", message = message })
+      end,
+      warn = function() end,
+      error = function() end,
+    }
+    package.loaded["vibing.presentation.common.progress"] = {
+      open = function(opts)
+        local shape = {}
+        for _, item in ipairs(opts.items) do
+          table.insert(shape, string.rep("  ", item.depth) .. item.label)
+        end
+        table.insert(calls, { op = "progress.open", message = opts.title, items = shape })
+        return {
+          start = function(_, index)
+            table.insert(calls, { op = "progress.start", message = tostring(index) })
+          end,
+          mark = function(_, index, ok)
+            table.insert(calls, { op = "progress.mark", message = string.format("%d:%s", index, tostring(ok)) })
+          end,
+          relabel = function(_, index, label)
+            table.insert(calls, { op = "progress.relabel", message = string.format("%d:%s", index, label) })
+          end,
+          finish = function(_, message)
+            table.insert(calls, { op = "progress.finish", message = message })
+          end,
+        }
+      end,
+    }
+    package.loaded["vibing.application.chat.use_cases.summarize_and_title"] = nil
+    use_case = require("vibing.application.chat.use_cases.summarize_and_title")
 
     package.loaded["vibing.presentation.chat.modules.file_manager"] = {
       save_buffer = function(buf)
@@ -72,13 +106,19 @@ describe("summarize_and_title", function()
     }
 
     package.loaded["vibing.application.chat.handlers.set_file_title"] = function(_, chat_buffer, opts)
-      table.insert(calls, { op = "title", name = chat_buffer.name })
+      table.insert(calls, { op = "title", name = chat_buffer.name, quiet = opts.quiet })
+      -- 本物は改名の結果を `chat_buffer.file_path` に書き戻す。呼び出し側が新しい名前を
+      -- 知る経路はそこしかないので、スタブも同じことをする
+      chat_buffer.file_path = "/chats/" .. chat_buffer.name .. "-titled.md"
       opts.on_done(true)
       return true
     end
   end)
 
   after_each(function()
+    package.loaded["vibing.core.utils.notify"] = nil
+    package.loaded["vibing.presentation.common.progress"] = nil
+    package.loaded["vibing.application.chat.use_cases.summarize_and_title"] = nil
     package.loaded["vibing.presentation.chat.modules.file_manager"] = nil
     package.loaded["vibing.application.chat.linked_chats"] = nil
     package.loaded["vibing.application.chat.chat_locator"] = nil
@@ -87,15 +127,53 @@ describe("summarize_and_title", function()
     package.loaded["vibing.application.chat.handlers.set_file_title"] = nil
   end)
 
-  ---@return string[] "op:name" の並び（保存は `saves()` で別に見る）
+  ---@return string[] "op:name" の並び（保存は `saves()`、表示は `notices()`/`shown()` で別に見る）
   local function trace()
     local out = {}
     for _, call in ipairs(calls) do
-      if call.op ~= "save" then
+      if call.op == "collect" or call.op == "summary" or call.op == "title" then
         table.insert(out, call.op .. (call.name and (":" .. call.name) or ""))
       end
     end
     return out
+  end
+
+  ---@param op string 拾う操作
+  ---@return string[] その操作の文言の並び
+  local function messages_of(op)
+    local out = {}
+    for _, call in ipairs(calls) do
+      if call.op == op then
+        table.insert(out, call.message)
+      end
+    end
+    return out
+  end
+
+  ---@return string[] 通知された文言の並び
+  local function notices()
+    return messages_of("notify")
+  end
+
+  ---@return string[] 進捗フロートの動きを起きた順に
+  local function shown()
+    local out = {}
+    for _, call in ipairs(calls) do
+      if call.op:find("^progress%.") and call.op ~= "progress.open" then
+        table.insert(out, call.op:gsub("^progress%.", "") .. " " .. call.message)
+      end
+    end
+    return out
+  end
+
+  ---@return string[] フロートに渡った木（深さ2スペースのインデント）
+  local function tree()
+    for _, call in ipairs(calls) do
+      if call.op == "progress.open" then
+        return call.items
+      end
+    end
+    return {}
   end
 
   ---@return string[] 保存されたバッファの並び
@@ -110,7 +188,7 @@ describe("summarize_and_title", function()
   end
 
   it("touches nothing but the origin without the flag", function()
-    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md" } }
+    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md", depth = 1 } }
 
     use_case.run(origin, { summarize = true, with_title = true, linked = false })
 
@@ -119,8 +197,8 @@ describe("summarize_and_title", function()
 
   it("applies the same steps to every linked chat, after the origin", function()
     linked = {
-      { path = "/chats/worker-a.md", abs = "/chats/worker-a.md" },
-      { path = "/chats/worker-b.md", abs = "/chats/worker-b.md" },
+      { path = "/chats/worker-a.md", abs = "/chats/worker-a.md", depth = 1 },
+      { path = "/chats/worker-b.md", abs = "/chats/worker-b.md", depth = 1 },
     }
 
     use_case.run(origin, { summarize = true, with_title = true, linked = true })
@@ -139,19 +217,21 @@ describe("summarize_and_title", function()
   it("collects the link set before the origin is renamed", function()
     -- 改名はリンク先の frontmatter を書き換える。走査を起点の処理より後ろに置くと、
     -- リンクがどちらの名前を指しているかに結果が左右される
-    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md" } }
+    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md", depth = 1 } }
+    local before_rename = origin.file_path
 
     use_case.run(origin, { summarize = false, with_title = true, linked = true })
 
     assert.equals("collect", calls[1].op)
-    assert.equals(origin.file_path, calls[1].path)
+    -- 改名後の名前で走査していたら、ここは `origin.file_path`（もう別の名前）と一致する
+    assert.equals(before_rename, calls[1].path)
     assert.same({ "collect", "title:origin", "title:worker" }, trace())
   end)
 
   it("keeps going when one chat fails", function()
     linked = {
-      { path = "/chats/worker-a.md", abs = "/chats/worker-a.md" },
-      { path = "/chats/worker-b.md", abs = "/chats/worker-b.md" },
+      { path = "/chats/worker-a.md", abs = "/chats/worker-a.md", depth = 1 },
+      { path = "/chats/worker-b.md", abs = "/chats/worker-b.md", depth = 1 },
     }
     summary_results["worker-a"] = false
 
@@ -170,7 +250,7 @@ describe("summarize_and_title", function()
 
   it("keeps going when the origin itself fails", function()
     -- 「要約する会話が無い」はそのチャット固有の事情で、リンク先には当てはまらない
-    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md" } }
+    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md", depth = 1 } }
     summary_results["origin"] = false
 
     use_case.run(origin, { summarize = true, with_title = true, linked = true })
@@ -183,8 +263,8 @@ describe("summarize_and_title", function()
     -- 「更新した」と報告したファイルの中身が変わっておらず、`:qa` も modified で止まる。
     -- 起点はユーザーが見ているバッファなので、単発の `:VibingSummarize` と同じく触らない
     linked = {
-      { path = "/chats/worker-a.md", abs = "/chats/worker-a.md" },
-      { path = "/chats/worker-b.md", abs = "/chats/worker-b.md" },
+      { path = "/chats/worker-a.md", abs = "/chats/worker-a.md", depth = 1 },
+      { path = "/chats/worker-b.md", abs = "/chats/worker-b.md", depth = 1 },
     }
 
     use_case.run(origin, { summarize = true, with_title = false, linked = true })
@@ -193,7 +273,7 @@ describe("summarize_and_title", function()
   end)
 
   it("does not save a chat whose summary failed", function()
-    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md" } }
+    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md", depth = 1 } }
     summary_results["worker"] = false
 
     use_case.run(origin, { summarize = true, with_title = false, linked = true })
@@ -203,8 +283,8 @@ describe("summarize_and_title", function()
 
   it("counts a chat it could not save as failed, and keeps going", function()
     linked = {
-      { path = "/chats/worker-a.md", abs = "/chats/worker-a.md" },
-      { path = "/chats/worker-b.md", abs = "/chats/worker-b.md" },
+      { path = "/chats/worker-a.md", abs = "/chats/worker-a.md", depth = 1 },
+      { path = "/chats/worker-b.md", abs = "/chats/worker-b.md", depth = 1 },
     }
     save_failures["worker-a"] = true
 
@@ -214,10 +294,139 @@ describe("summarize_and_title", function()
     assert.same({ "worker-a", "worker-b" }, saves())
   end)
 
+  it("hands the float the whole target tree, rooted at the origin", function()
+    -- 件数だけでは「何が対象になったのか」が分からない。リンクを辿って集めた集合は
+    -- ユーザーが数え上げたものではないので、対象そのものを見せる
+    linked = {
+      { path = "/chats/worker-a.md", abs = "/chats/worker-a.md", depth = 1 },
+      { path = "/chats/grand.md", abs = "/chats/grand.md", depth = 2 },
+      { path = "/chats/worker-b.md", abs = "/chats/worker-b.md", depth = 1 },
+    }
+
+    use_case.run(origin, { summarize = false, with_title = true, linked = true })
+
+    assert.same({
+      "origin.md",
+      "  worker-a.md",
+      "    grand.md",
+      "  worker-b.md",
+    }, tree())
+  end)
+
+  it("puts the new name on the tree line as each chat is renamed", function()
+    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md", depth = 1 } }
+
+    use_case.run(origin, { summarize = false, with_title = true, linked = true })
+
+    assert.same({
+      "start 1",
+      "relabel 1:origin-titled.md",
+      "mark 1:true",
+      "start 2",
+      "relabel 2:worker-titled.md",
+      "mark 2:true",
+      "finish Done: 2 updated, 0 failed",
+    }, shown())
+  end)
+
+  it("silences the rename notification while the float is carrying the name", function()
+    -- 木の行がそのまま新しい名前になるので、同じ内容を通知でも流すと件数ぶん積み上がる
+    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md", depth = 1 } }
+
+    use_case.run(origin, { summarize = false, with_title = true, linked = true })
+
+    for _, call in ipairs(calls) do
+      if call.op == "title" then
+        assert.is_true(call.quiet)
+      end
+    end
+  end)
+
+  it("leaves the rename notification alone when there is no float to carry the name", function()
+    use_case.run(origin, { summarize = false, with_title = true, linked = false })
+
+    assert.same({ "title:origin" }, trace())
+    assert.is_falsy(calls[1].quiet)
+  end)
+
+  it("marks each chat running, then settles it, in processing order", function()
+    -- 逐次なので所要時間は件数に比例する。どれが済んでどれが残っているかが見えなければ、
+    -- ユーザーにはどれだけ待てばいいのか分からない
+    linked = {
+      { path = "/chats/worker-a.md", abs = "/chats/worker-a.md", depth = 1 },
+      { path = "/chats/worker-b.md", abs = "/chats/worker-b.md", depth = 1 },
+    }
+    summary_results["worker-a"] = false
+
+    use_case.run(origin, { summarize = true, with_title = false, linked = true })
+
+    assert.same({
+      "start 1",
+      "mark 1:true",
+      "start 2",
+      "mark 2:false",
+      "start 3",
+      "mark 3:true",
+      "finish Done: 2 updated, 1 failed",
+    }, shown())
+  end)
+
+  it("opens the float before the origin's own call, not after it", function()
+    -- 表示が起点の処理より後ろにあると、最初のCLI往復のあいだ画面には何も出ない。
+    -- そこが「どれだけ待てばいいのか分からない」の中身だった
+    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md", depth = 1 } }
+
+    use_case.run(origin, { summarize = true, with_title = false, linked = true })
+
+    -- 走査 → 木ごと開く → 1件目に着手 → はじめてCLI呼び出し
+    assert.same({ "collect", "progress.open", "progress.start", "summary" }, {
+      calls[1].op,
+      calls[2].op,
+      calls[3].op,
+      calls[4].op,
+    })
+  end)
+
+  it("counts the origin's own failure in the final tally", function()
+    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md", depth = 1 } }
+    summary_results["origin"] = false
+
+    use_case.run(origin, { summarize = true, with_title = false, linked = true })
+
+    assert.same({ "Done: 1 updated, 1 failed" }, messages_of("progress.finish"))
+  end)
+
+  it("also leaves the tally in the message history, which the float does not keep", function()
+    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md", depth = 1 } }
+
+    use_case.run(origin, { summarize = true, with_title = false, linked = true })
+
+    assert.same({ "Done: 2 updated, 0 failed" }, notices())
+  end)
+
+  it("says there is nothing linked before spending a call on the origin, and opens no float", function()
+    linked = {}
+
+    use_case.run(origin, { summarize = true, with_title = false, linked = true })
+
+    assert.same({ "No linked chats found" }, notices())
+    assert.same({}, messages_of("progress.open"))
+    assert.equals("notify", calls[2].op)
+  end)
+
+  it("shows nothing at all without the flag", function()
+    linked = { { path = "/chats/worker.md", abs = "/chats/worker.md", depth = 1 } }
+
+    use_case.run(origin, { summarize = true, with_title = false, linked = false })
+
+    assert.same({}, notices())
+    assert.same({}, messages_of("progress.open"))
+  end)
+
   it("skips a chat it cannot open and processes the rest", function()
     linked = {
-      { path = "/chats/gone.md", abs = "/chats/gone.md" },
-      { path = "/chats/worker.md", abs = "/chats/worker.md" },
+      { path = "/chats/gone.md", abs = "/chats/gone.md", depth = 1 },
+      { path = "/chats/worker.md", abs = "/chats/worker.md", depth = 1 },
     }
     open_failures["/chats/gone.md"] = true
 
