@@ -969,6 +969,54 @@ function ChatBuffer:mark_approval_expired(request_id)
   return false
 end
 
+---期限切れの説明行の目印。`APPROVAL_REFUSAL_PREFIX` と別なのは、**別の出来事だから**で、
+---互いを消してはいけない。拒否は押すたびに書き直される1件だが、期限切れは承認ごとに1回起きる
+local APPROVAL_EXPIRED_PREFIX = "⏱️  Tool approval expired."
+
+---承認が待ち時間の上限に達した、という事実をチャットに落とす
+---
+---**`pending_approvals.expire` の `on_timeout` はここに来る。** `.res` の deny は既に書かれて
+---いてフックは解放済みなので、ここに残っているのは「ユーザーに知らせる」ことだけ。それを
+---1箇所にまとめてあるのは、印を付けるのと知らせるのが**片方だけ起きてはいけない**から:
+---
+---- 印だけ付けて黙ると、ユーザーは画面に残った選択肢行を答え、`_answer_pending_approval` の
+---  帰属拒否で初めて理由を知る
+---- 知らせるだけで印を付けないと、期限切れの承認が `answerable` に残り、答えると誰も待って
+---  いないフックに向かって `retry_as_new_turn` が走る
+---
+---**行は消さずに積む。** 消して書き直すのは拒否（1件しか意味を持たない）の性質で、期限切れは
+---承認ごとの独立した出来事。並列に立った3件が別々に切れたら3行残るのが正しい
+---@param entry Vibing.PendingApproval 期限に達した保留
+---@return boolean marked このチャットが持っていたプロンプトだったか
+function ChatBuffer:expire_approval(entry)
+  local request_id = entry and entry.request_id
+  if not request_id then
+    return false
+  end
+
+  local marked = self:mark_approval_expired(request_id)
+
+  local waited = require("vibing.infrastructure.hooks.wait_budget").approval_wait_sec()
+  local text = string.format(
+    "%s %s went unanswered for %d seconds, so vibing.nvim denied that one call.",
+    APPROVAL_EXPIRED_PREFIX,
+    entry.tool or "A tool",
+    waited
+  )
+  vim.notify("[vibing] " .. text, vim.log.levels.WARN)
+
+  if not (self.buf and vim.api.nvim_buf_is_valid(self.buf)) then
+    return marked
+  end
+
+  local line_count = vim.api.nvim_buf_line_count(self.buf)
+  vim.api.nvim_buf_set_lines(self.buf, line_count, line_count, false, {
+    text,
+    "   The options for it above no longer need an answer.",
+  })
+  return marked
+end
+
 ---リストに値をユニークに追加
 ---@param list table 対象リスト
 ---@param value any 追加する値

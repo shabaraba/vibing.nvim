@@ -136,6 +136,99 @@ describe("several approval prompts at once", function()
     end)
   end)
 
+  describe("expiry reaching the user", function()
+    local Pending = require("vibing.infrastructure.rpc.pending_approvals")
+    local Permission = require("vibing.infrastructure.rpc.handlers.permission")
+
+    local function buffer_text(chat_buf)
+      return table.concat(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false), "\n")
+    end
+
+    it("marks the prompt and says so in the chat, in one call", function()
+      -- Either half alone is a trap: a silent mark makes the user answer a prompt that will be
+      -- refused, and a notice without the mark leaves the prompt answerable against a hook that is
+      -- no longer waiting.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+
+      assert.is_true(chat_buf:expire_approval({ request_id = "req-1", tool = "Bash" }))
+
+      assert.is_true(chat_buf:get_pending_approvals()[1].expired)
+      local text = buffer_text(chat_buf)
+      assert.is_truthy(text:find("Tool approval expired", 1, true), text)
+      assert.is_truthy(text:find("Bash", 1, true), text)
+    end)
+
+    it("keeps one line per expiry rather than rewriting the last", function()
+      -- Prompts expire independently — three hooks blocking at once is measured, not hypothetical —
+      -- so a second expiry erasing the first would hide one of them.
+      local chat_buf = chat_with({
+        { tool = "Bash", request_id = "req-1" },
+        { tool = "Write", request_id = "req-2" },
+      })
+
+      chat_buf:expire_approval({ request_id = "req-1", tool = "Bash" })
+      chat_buf:expire_approval({ request_id = "req-2", tool = "Write" })
+
+      local text = buffer_text(chat_buf)
+      local _, count = text:gsub("Tool approval expired", "")
+      assert.equals(2, count, text)
+    end)
+
+    it("reaches the chat that was asked, and no other", function()
+      local asked = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      local other = chat_with({ { tool = "Bash", request_id = "req-9" } })
+
+      assert.is_true(Permission._on_approval_expired({
+        request_id = "req-1",
+        tool = "Bash",
+        chat_bufnr = asked.buf,
+      }))
+
+      assert.is_true(asked:get_pending_approvals()[1].expired)
+      assert.is_false(other:get_pending_approvals()[1].expired == true)
+      assert.is_nil(buffer_text(other):find("Tool approval expired", 1, true))
+    end)
+
+    it("says no when the chat is gone", function()
+      assert.is_false(Permission._on_approval_expired({ request_id = "req-1", chat_bufnr = 999999 }))
+      assert.is_false(Permission._on_approval_expired({ request_id = "req-1" }))
+    end)
+
+    it("is what the wait limit actually runs, end to end", function()
+      -- The registry writes the deny itself; this asserts the other half — that the callback the
+      -- `ask` branch hands it is the one that tells the user.
+      local comm_dir = vim.fn.tempname()
+      vim.fn.mkdir(comm_dir, "p")
+      vim.env.VIBING_HOOK_COMM_DIR = comm_dir
+      Pending._reset()
+
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      local ok, err = pcall(function()
+        Pending.open({
+          request_id = "req-1",
+          chat_bufnr = chat_buf.buf,
+          tool = "Bash",
+          on_timeout = Permission._on_approval_expired,
+        })
+
+        assert.is_true(Pending.expire("req-1"))
+
+        local f = assert(io.open(comm_dir .. "/req-1.res", "r"), "the expiring hook was never answered")
+        local decoded = vim.json.decode(f:read("*a"))
+        f:close()
+        assert.equals("deny", decoded.hookSpecificOutput.permissionDecision)
+
+        assert.is_true(chat_buf:get_pending_approvals()[1].expired)
+        assert.is_truthy(buffer_text(chat_buf):find("Tool approval expired", 1, true))
+      end)
+
+      Pending._reset()
+      vim.env.VIBING_HOOK_COMM_DIR = nil
+      vim.fn.delete(comm_dir, "rf")
+      assert.is_true(ok, tostring(err))
+    end)
+  end)
+
   describe("what the buffer shows", function()
     local function rendered(chat_buf)
       chat_buf:add_user_section()

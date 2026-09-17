@@ -325,6 +325,30 @@ function M.release_answered_approval(entry, chat_buf)
   return M._answer_blocked_hook(entry, tool_name, result)
 end
 
+--- What the wait limit does besides denying: tell the chat that asked.
+---
+--- Passed to `pending_approvals.open` as `on_timeout`, so it runs *after* the `.res` deny has been
+--- written and the hook released. **It must not kill anything** — hooks run concurrently (measured:
+--- three overlapping in one turn), so the user is quite likely looking at a different prompt of the
+--- same turn when this one expires, and killing would take the turn they are in the middle of
+--- answering.
+---
+--- The chat is resolved here rather than captured when the approval opened, because the buffer can
+--- be gone by now — in which case `resolve_for_chat` has already answered this entry and the timer
+--- never fires. Returning whether a prompt was found is for the spec; nothing branches on it.
+--- @param entry Vibing.PendingApproval
+--- @return boolean marked
+function M._on_approval_expired(entry)
+  if not (entry and entry.chat_bufnr) then
+    return false
+  end
+  local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(entry.chat_bufnr)
+  if not chat_buf or type(chat_buf.expire_approval) ~= "function" then
+    return false
+  end
+  return chat_buf:expire_approval(entry)
+end
+
 function M.check_tool_permission(params)
   if not params or not params.request_id then
     return { error = "Missing request_id" }
