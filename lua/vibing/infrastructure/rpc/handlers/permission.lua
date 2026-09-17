@@ -234,7 +234,7 @@ function M.normalize_hook_input(hook_input, vocabulary)
   return tool_name, tool_input
 end
 
---- What to write into the `.res` for a tool the user has just approved in place.
+--- Finish the blocked hook's request, for a tool the user has just approved in place.
 ---
 --- **Stub, pending a decision the user owns (#778, "B or C").** The two candidates differ in what
 --- an in-place grant is allowed to skip:
@@ -244,23 +244,35 @@ end
 ---       *why* `can_use_tool` returned `ask`), and the argv cannot change mid-turn — so `defer`
 ---       would have the CLI refuse what the human just approved. The cost is that this one call
 ---       also skips the user's own `settings.json` deny rules.
----   C — write `defer` and fall back to today's kill-and-retry whenever the tool is not already
----       covered, which keeps every existing invariant and makes the feature inert for the common
----       granular-`ask` configuration.
+---   C — write `defer`, and where that would not actually let the call through, **decline** and let
+---       the caller fall back to today's kill-and-retry. Keeps every existing invariant, at the
+---       price of being inert for the common granular-`ask` configuration.
 ---
---- Isolated here so the choice is one function body rather than a shape the rest of the path is
---- built around. Everything above it — spending the approval, refreshing the session lists,
---- re-running `can_use_tool`, taking the diff baseline — is the same either way.
---- @param tool_name string
+--- **It answers by side effect and reports only whether it handled the hook**, rather than
+--- returning a decision string. C is two-stage by nature — write something, then decide whether
+--- that was enough — and a signature shaped around B's single verdict would have to change when
+--- the answer lands. Declining here is not a failure: `_answer_pending_approval` turns it into the
+--- retry-as-a-new-turn path, which is the fallback either way.
+---
+--- Everything around it — spending the approval, refreshing the session lists, re-running
+--- `can_use_tool`, taking the diff baseline — is the same under both.
+--- @param entry Vibing.PendingApproval the hook still waiting on its `.res`
+--- @param tool_name string canonical
 --- @param result CanUseToolResult the re-evaluation after the answer was recorded
---- @return "allow"|"deny"|"defer" decision
---- @return string|nil reason
-function M._decision_for_answered_approval(tool_name, result)
+--- @return boolean handled false to decline, leaving the hook untouched for the caller's fallback
+function M._answer_blocked_hook(entry, tool_name, result)
+  local PendingApprovals = require("vibing.infrastructure.rpc.pending_approvals")
+
   if result.behavior ~= "allow" then
-    return "deny", result.message
+    -- A denial needs no decision: it is the same verdict on every candidate design, and the
+    -- reason is the only way a deny rule's `message` reaches the model.
+    return PendingApprovals.resolve(entry.request_id, "deny", result.message)
   end
-  -- Today's answer, which is also C's: only vibing-nvim's own MCP tools are granted outright.
-  return can_use_tool_mod.is_vibing_nvim_mcp_tool(tool_name) and "allow" or "defer"
+
+  -- Today's answer for an allowed call, which is also C's first stage: only vibing-nvim's own MCP
+  -- tools are granted outright; everything else defers to the CLI's own gate.
+  local decision = can_use_tool_mod.is_vibing_nvim_mcp_tool(tool_name) and "allow" or "defer"
+  return PendingApprovals.resolve(entry.request_id, decision)
 end
 
 --- Release a hook that was blocked on an approval the user has now answered.
@@ -302,14 +314,15 @@ function M.release_answered_approval(entry, chat_buf)
   local tool_name = entry.tool or ""
   local tool_input = entry.input or {}
   local result = can_use_tool_mod.can_use_tool(tool_name, tool_input, build_permission_config(entry.turn_id))
-  local decision, reason = M._decision_for_answered_approval(tool_name, result)
 
-  if decision ~= "deny" then
+  -- Before the hook is released, because this is the last moment at which nothing has been
+  -- changed yet. Taken only for a call that is about to run: a denial changes no files, and a
+  -- baseline filed under a turn that never uses it is never cleared.
+  if result.behavior == "allow" then
     M._capture_baselines(entry.turn_id, opts and opts.cwd or nil, tool_name, tool_input)
   end
 
-  PendingApprovals.resolve(entry.request_id, decision, reason)
-  return true
+  return M._answer_blocked_hook(entry, tool_name, result)
 end
 
 function M.check_tool_permission(params)
