@@ -3,11 +3,24 @@
 # own settings.json deny still apply on the way? (#778, decision 1)
 #
 # Run with:
-#   VIBING_PERF=1 tests/perf/permission_prompt_tool.sh            # arm A, both cells
+#   VIBING_PERF=1 tests/perf/permission_prompt_tool.sh            # arm A (the default)
 #   VIBING_PERF=1 tests/perf/permission_prompt_tool.sh stdio      # arm A only
 #   VIBING_PERF=1 tests/perf/permission_prompt_tool.sh mcp        # arm B only
+#   VIBING_PERF=1 tests/perf/permission_prompt_tool.sh both       # both, unconditionally
 #
-# **This spends real tokens.** Two short turns on haiku per arm.
+# **This spends real tokens**, so the arms are separate commands rather than one run: **arm B is
+# worth a turn only if arm A shows the user's `settings.json` deny running BEFORE the consultation.**
+# If it does not, the third shape is dead there and then — it is B wearing C's clothes — and
+# measuring the same mechanism through its other entrance cannot change an ordering. Run arm A, read
+# its deny cell, and only then decide about arm B.
+#
+# Arm B is the one worth having if it is available: oneshot is the default transport and arm A needs
+# `--input-format stream-json`, so an arm-A-only result makes the third shape duplex-only and leaves
+# the product with two behaviours to keep straight.
+#
+# Cells are conditional and **say so when they are skipped**, because a silently omitted cell reads
+# as one that passed. Per arm: the `allow` cell always runs; `deny` runs only if `allow` was
+# consulted; the negative control runs only if it was not.
 #
 # What is being decided. An approval answered in place has to end as a verdict the CLI acts on, and
 # the `.res` file carries three of them:
