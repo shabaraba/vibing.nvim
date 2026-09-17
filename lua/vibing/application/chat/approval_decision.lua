@@ -86,9 +86,13 @@ end
 --- on, possibly finishing the turn another way. Telling it to proceed can redo work already done,
 --- and telling it to use a different approach describes what it already did.
 ---
---- So the expired pair states the grant and leaves the decision to the model. What that costs or
---- buys in model behaviour is **not measured** — neither wording is; what is knowable without a
---- measurement is only that the original two say something false on this path.
+--- So the expired pair **says only what we know and instructs nothing**: the call was refused by
+--- the limit, the permission is granted now, and the turn went on afterwards. Whether anything
+--- still needs doing is something only the model can see — it is the one that knows what it did
+--- with the refusal. Any wording that decides that for it is asserting a state we did not observe.
+---
+--- What either pair costs or buys in model behaviour is **not measured** — neither wording is. What
+--- is knowable without a measurement is only that the original two say something false here.
 --- @param action string
 --- @param tool string
 --- @param input table
@@ -98,8 +102,9 @@ function M.retry_message(action, tool, input, expired)
   if M.is_allow(action) then
     if expired then
       return string.format(
-        "I approved the %s tool%s, after it had already been denied for going unanswered. "
-          .. "The permission is in place now; redo that step only if it still needs doing.",
+        "I approved the %s tool%s. That call had already been refused for going unanswered, and "
+          .. "the turn carried on afterwards — so check what still needs doing before acting on "
+          .. "this.",
         tool,
         M.input_summary(tool, input)
       )
@@ -112,7 +117,8 @@ function M.retry_message(action, tool, input, expired)
   end
   if expired then
     return string.format(
-      "I denied the %s tool. It was already refused for going unanswered, so nothing needs redoing.",
+      "I denied the %s tool. That call had already been refused for going unanswered, and the turn "
+        .. "carried on afterwards — this records the decision rather than asking for anything.",
       tool
     )
   end

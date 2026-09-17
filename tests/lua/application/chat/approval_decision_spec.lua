@@ -68,6 +68,37 @@ describe("approval_decision", function()
       -- 拒否された操作の中身を復唱すると、モデルはそれを再試行の指示として読む
       assert.is_nil(message:match("npm install"), message)
     end)
+
+    it("stops instructing once the prompt expired, because the turn went on without it", function()
+      -- The two above are written for a turn that stopped *at* the prompt: nothing has happened
+      -- since, so an instruction about what to do next is sound. Past the wait limit the call was
+      -- refused and the turn carried on — it may have taken another route, or finished. Telling it
+      -- to proceed then asks for work that may already be done, and telling it to take another
+      -- route describes what it already did. Both assert a state nobody observed.
+      local allow = ApprovalDecision.retry_message("allow_once", "Bash", { command = "npm install" }, true)
+      local deny = ApprovalDecision.retry_message("deny_for_session", "Bash", { command = "npm install" }, true)
+
+      for _, message in ipairs({ allow, deny }) do
+        assert.is_nil(message:find("Please proceed with the same operation", 1, true), message)
+        assert.is_nil(message:find("Please use a different approach", 1, true), message)
+        -- 我々が知っている事実: 上限で拒否されたこと、そのあともターンが続いたこと
+        assert.is_truthy(message:find("unanswered", 1, true), message)
+        assert.is_truthy(message:find("carried on", 1, true), message)
+      end
+
+      -- The grant still has to be legible as a grant, and a denial as a denial.
+      assert.is_truthy(allow:match("^I approved the Bash tool"), allow)
+      assert.is_truthy(deny:match("^I denied the Bash tool"), deny)
+    end)
+
+    it("does not send the expired wording down the ordinary route", function()
+      -- The pairing is the point: collapsing the two back into one is the mutation this exists to
+      -- catch, in whichever direction it is done.
+      local ordinary = ApprovalDecision.retry_message("allow_once", "Bash", { command = "npm install" })
+
+      assert.is_truthy(ordinary:find("Please proceed with the same operation", 1, true), ordinary)
+      assert.is_nil(ordinary:find("carried on", 1, true), ordinary)
+    end)
   end)
 
   describe("consume, against a real ChatBuffer", function()
