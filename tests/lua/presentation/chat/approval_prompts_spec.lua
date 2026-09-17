@@ -295,6 +295,22 @@ describe("several approval prompts at once", function()
       assert.is_truthy(vim.tbl_contains(chat_buf:get_session_allow(), "Bash:once"))
     end)
 
+    it("does not sweep away the :once grant the answer just created", function()
+      -- The `_once_tools` safety net clears grants left over from the previous turn. Moving the
+      -- answer above `cancel_request()` put it *after* that sweep, so `allow_once` was recorded
+      -- and wiped in the same keypress — visible only by reading the session list, since the send
+      -- itself succeeds.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      chat_buf._session_allow = { "Write:once" }
+      chat_buf._once_tools = { "Write:once" }
+
+      type_and_send(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" })
+
+      local allow = chat_buf:get_session_allow()
+      assert.is_truthy(vim.tbl_contains(allow, "Bash:once"), "the new grant must survive: " .. vim.inspect(allow))
+      assert.is_false(vim.tbl_contains(allow, "Write:once"), "the previous turn's grant must be gone")
+    end)
+
     it("refuses an answer to a prompt that already expired", function()
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       chat_buf:mark_approval_expired("req-1")

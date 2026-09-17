@@ -234,6 +234,84 @@ function M.normalize_hook_input(hook_input, vocabulary)
   return tool_name, tool_input
 end
 
+--- What to write into the `.res` for a tool the user has just approved in place.
+---
+--- **Stub, pending a decision the user owns (#778, "B or C").** The two candidates differ in what
+--- an in-place grant is allowed to skip:
+---
+---   B — write `allow`. The hook prints it and the CLI skips its own gate. Needed because the tool
+---       being asked about is usually one this turn's `--allowedTools` does not cover (that is
+---       *why* `can_use_tool` returned `ask`), and the argv cannot change mid-turn — so `defer`
+---       would have the CLI refuse what the human just approved. The cost is that this one call
+---       also skips the user's own `settings.json` deny rules.
+---   C — write `defer` and fall back to today's kill-and-retry whenever the tool is not already
+---       covered, which keeps every existing invariant and makes the feature inert for the common
+---       granular-`ask` configuration.
+---
+--- Isolated here so the choice is one function body rather than a shape the rest of the path is
+--- built around. Everything above it — spending the approval, refreshing the session lists,
+--- re-running `can_use_tool`, taking the diff baseline — is the same either way.
+--- @param tool_name string
+--- @param result CanUseToolResult the re-evaluation after the answer was recorded
+--- @return "allow"|"deny"|"defer" decision
+--- @return string|nil reason
+function M._decision_for_answered_approval(tool_name, result)
+  if result.behavior ~= "allow" then
+    return "deny", result.message
+  end
+  -- Today's answer, which is also C's: only vibing-nvim's own MCP tools are granted outright.
+  return can_use_tool_mod.is_vibing_nvim_mcp_tool(tool_name) and "allow" or "defer"
+end
+
+--- Release a hook that was blocked on an approval the user has now answered.
+---
+--- The answer has already been *spent* by `approval_decision.consume` — the session lists are
+--- updated and the prompt is gone. What is left is to turn that into a verdict for the hook that
+--- is still sitting inside the CLI, and the only honest way to do that is **to ask the permission
+--- system again**: re-running `can_use_tool` with the updated lists is what consumes the `:once`
+--- grant the answer just created. Deriving the verdict straight from the action instead would
+--- leave that `:once` entry in the list, silently paying for the *next* call of the same tool.
+--- It also means any later change to how permissions are evaluated is followed here for free.
+---
+--- Two things have to be refreshed first, and both were free under the kill-based design because
+--- the next turn re-read them from frontmatter:
+---
+---   - the turn's `active_opts` still holds the session lists as they were when it was sent, so an
+---     `allow_for_session` answered now would not apply to the rest of *this* turn
+---   - the diff baseline has to be taken before the tool runs, and this is the last moment before
+---     the hook is released
+---
+--- @param entry Vibing.PendingApproval
+--- @param chat_buf Vibing.ChatBuffer the chat whose answer this is
+--- @return boolean released
+function M.release_answered_approval(entry, chat_buf)
+  local PendingApprovals = require("vibing.infrastructure.rpc.pending_approvals")
+  if not PendingApprovals.get(entry.request_id) then
+    return false
+  end
+
+  local opts = entry.turn_id and active_opts_by_turn[entry.turn_id]
+  if opts then
+    opts.permissions_session_allow = chat_buf:get_session_allow()
+    opts.permissions_session_deny = chat_buf:get_session_deny()
+    opts.permissions_allow = chat_buf:get_frontmatter_list("permissions_allow")
+    opts.permissions_deny = chat_buf:get_frontmatter_list("permissions_deny")
+    opts.permissions_ask = chat_buf:get_frontmatter_list("permissions_ask")
+  end
+
+  local tool_name = entry.tool or ""
+  local tool_input = entry.input or {}
+  local result = can_use_tool_mod.can_use_tool(tool_name, tool_input, build_permission_config(entry.turn_id))
+  local decision, reason = M._decision_for_answered_approval(tool_name, result)
+
+  if decision ~= "deny" then
+    M._capture_baselines(entry.turn_id, opts and opts.cwd or nil, tool_name, tool_input)
+  end
+
+  PendingApprovals.resolve(entry.request_id, decision, reason)
+  return true
+end
+
 function M.check_tool_permission(params)
   if not params or not params.request_id then
     return { error = "Missing request_id" }

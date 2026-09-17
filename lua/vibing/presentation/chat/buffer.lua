@@ -473,12 +473,152 @@ end
 ---
 ---戻り値は「このメッセージがリクエストとして扱われたか」。予約に回った場合も、未送信Userとして
 ---残りリセット後に送られるのでtrueを返す。falseは黙って何もしなかったことを意味し、
+---前のターンが残した `:once` エントリを掃除する
+---
+---`can_use_tool` の `check_session_list` が使うたびに `table.remove` するのが本筋で、これは
+---その取りこぼしに対する保険。
+---
+---**承認への答えを消費するより前に呼ぶ。** 答えは新しい `:once` を積むので、順序が逆だと
+---積んだ端から掃除される — `<CR>` を押した瞬間に `allow_once` が効かなくなる形で、しかも
+---セッションリストを直接見ないかぎり気づけない
+function ChatBuffer:_sweep_spent_once_tools()
+  if not self._once_tools then
+    return
+  end
+  for _, once_tool in ipairs(self._once_tools) do
+    for i = #self._session_allow, 1, -1 do
+      if self._session_allow[i] == once_tool then
+        table.remove(self._session_allow, i)
+      end
+    end
+    for i = #self._session_deny, 1, -1 do
+      if self._session_deny[i] == once_tool then
+        table.remove(self._session_deny, i)
+      end
+    end
+  end
+  self._once_tools = nil
+end
+
+---@class Vibing.AnsweredApproval
+---@field outcome "answered_in_place"|"refused"|"retry_as_new_turn"
+---@field message string? 再試行として送る本文（`retry_as_new_turn` のときだけ）
+
+---保留中のツール承認への答えを処理する
+---
+---**`send_message` の冒頭、`cancel_request()` より前に呼ばれる。** 承認がプロセスを殺さずに
+---答えられるようになった以上（#778）、答えは「新しいターンの本文」ではなく「いま走っている
+---ターンの続き」で、cancel すると答えた瞬間にそのターンが死ぬ。
+---
+---出口は3つ:
+---
+---- `answered_in_place` — ブロック中のフックに判定を届けた。ターンはそのまま走り続けるので、
+---  送信は起きない
+---- `refused` — 曖昧で帰属できなかった。**何も消費していない**ので、ユーザーは行を直して
+---  押し直せる。待たせる設計だから拒否が安い
+---- `retry_as_new_turn` — 承認は消費したが、そのフックはもう待っていない（今日の kill 経路、
+---  または上限に達して deny 済み）。合成した再試行文を新しいターンとして送る
+---
+---nil は「そもそも承認への答えではない」で、通常の送信がそのまま続く
+---@return Vibing.AnsweredApproval?
+function ChatBuffer:_answer_pending_approval()
+  local pending = self._pending_approvals or {}
+  if #pending == 0 then
+    return nil
+  end
+
+  local message = self:extract_user_message()
+  local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
+  if not message or not ApprovalParser.is_approval_response(message) then
+    return nil
+  end
+
+  local answerable = {}
+  for _, entry in ipairs(pending) do
+    if not entry.expired then
+      table.insert(answerable, entry.request_id)
+    end
+  end
+
+  -- **曖昧なら拒否する。** 消し忘れた行が別の承認への答えとして通る経路を残さない
+  local resolved, errors = ApprovalParser.resolve(message, answerable)
+  if #errors > 0 then
+    vim.notify("[vibing] " .. table.concat(errors, "\n"), vim.log.levels.WARN)
+    return { outcome = "refused" }
+  end
+
+  local approval = resolved[1]
+  if not approval then
+    vim.notify(
+      "[vibing] No pending approval matched that answer. Keep the option line you want, "
+        .. "with its `<!-- vibing:req=... -->` marker, and press <CR> again.",
+      vim.log.levels.WARN
+    )
+    return { outcome = "refused" }
+  end
+
+  -- 判定を届ける前に、フックがまだ待っているかを見ておく。`consume` はプロンプトを消すので、
+  -- 後から聞いても「待っていない」と区別がつかない
+  local PendingApprovals = require("vibing.infrastructure.rpc.pending_approvals")
+  local blocked = PendingApprovals.get(approval.request_id)
+
+  -- 答えが**意味すること**（セッションリストの更新、`:once` の記帳、再試行文）は
+  -- `approval_decision.consume` が1箇所で持つ。ここで書き下すのは
+  -- `.claude/rules/permissions.md` が禁じるドリフトそのもの
+  local ApprovalDecision = require("vibing.application.chat.approval_decision")
+  local consumed, err = ApprovalDecision.consume(self, approval)
+  if not consumed then
+    vim.notify(string.format("[vibing] Failed to update permissions: %s", tostring(err)), vim.log.levels.ERROR)
+    return { outcome = "refused" }
+  end
+
+  if not blocked then
+    -- 今日の経路。プロセスは既に死んでいるので、答えは散文として新しいターンで届く
+    return { outcome = "retry_as_new_turn", message = consumed.retry_message }
+  end
+
+  local Permission = require("vibing.infrastructure.rpc.handlers.permission")
+  local ok, released = pcall(Permission.release_answered_approval, blocked, self)
+  if not (ok and released) then
+    -- フックを解放できないまま黙って戻ると、そのフックは上限まで空回りする。答えは既に
+    -- 消費済みなので、再試行文として新しいターンに載せるのが唯一の通る道
+    vim.notify(
+      string.format(
+        "[vibing] Could not answer the waiting %s hook in place (%s); retrying as a new turn.",
+        tostring(consumed.tool),
+        ok and "it was no longer waiting" or tostring(released)
+      ),
+      vim.log.levels.WARN
+    )
+    return { outcome = "retry_as_new_turn", message = consumed.retry_message }
+  end
+
+  -- 答えた行はそのまま transcript に残す。新しい未送信セクションを足して、走り続けている
+  -- ターンの続きを受け取れる状態に戻す
+  ConversationExtractor.commit_user_message(self.buf)
+  self:add_user_section()
+  return { outcome = "answered_in_place" }
+end
+
 ---`ProgrammaticSender` はこれを見て呼び出し元に成否を返す
 ---@return boolean handled
 function ChatBuffer:send_message()
   -- 送信処理中はEnter連打による重複送信を無視する
   if self._is_sending then
     return false
+  end
+
+  -- 承認の答えを消費する**前**に、前のターンが残した `:once` を落とす。逆順だと、いま積んだ
+  -- 許可をその場で掃除してしまう
+  self:_sweep_spent_once_tools()
+
+  -- **`cancel_request()` より前。** ブロック中のフックへの答えは新しいターンではなく、
+  -- いま走っているターンの続きなので、ここで cancel すると答えた瞬間にそのターンが死ぬ。
+  -- 人間の `<CR>` も代理承認も同じこの関数を通る（`.claude/rules/permissions.md` の
+  -- 「代理承認は人間の経路をそのまま通る」）
+  local answered = self:_answer_pending_approval()
+  if answered and answered.outcome ~= "retry_as_new_turn" then
+    return answered.outcome == "answered_in_place"
   end
 
   -- 前のリクエストが実行中ならキャンセル（ゾンビプロセス対策）
@@ -489,24 +629,6 @@ function ChatBuffer:send_message()
 
   self._is_sending = true
 
-  -- Clean up :once tools (JS side removes during use, but this is a safety net)
-  if self._once_tools then
-    for _, once_tool in ipairs(self._once_tools) do
-      -- Remove from allow list
-      for i = #self._session_allow, 1, -1 do
-        if self._session_allow[i] == once_tool then
-          table.remove(self._session_allow, i)
-        end
-      end
-      -- Remove from deny list
-      for i = #self._session_deny, 1, -1 do
-        if self._session_deny[i] == once_tool then
-          table.remove(self._session_deny, i)
-        end
-      end
-    end
-    self._once_tools = nil
-  end
 
   local message = self:extract_user_message()
   if not message then
@@ -540,66 +662,10 @@ function ChatBuffer:send_message()
 
   -- Check if message is an approval response
   -- Only process if there's a pending approval request
-  local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-  if #(self._pending_approvals or {}) > 0 and ApprovalParser.is_approval_response(message) then
-    local pending_ids = {}
-    for _, entry in ipairs(self._pending_approvals) do
-      if not entry.expired then
-        table.insert(pending_ids, entry.request_id)
-      end
-    end
-
-    -- **曖昧なら拒否する。** 消し忘れた行が別の承認への答えとして通る経路を残さない。
-    -- 拒否は何も消費しないので、フックは待ったまま、ユーザーは行を直して押し直せる
-    local resolved, errors = ApprovalParser.resolve(message, pending_ids)
-    if #errors > 0 then
-      vim.notify("[vibing] " .. table.concat(errors, "\n"), vim.log.levels.WARN)
-      self._is_sending = false
-      return false
-    end
-
-    local approval = resolved[1]
-    if approval then
-      -- What the answer *means* — the permission update, the `:once` bookkeeping and the retry
-      -- text — is `approval_decision.consume`, and this is one of its two callers. Spelling any of
-      -- it out again here is the drift `.claude/rules/permissions.md` forbids.
-      --
-      -- Hook-based approval needs nothing more: the process was already cancelled and the hook
-      -- already denied in permission.lua, and the prompt (hook_request_id included) is dropped
-      -- inside `consume`, which is what marks it spent.
-      --
-      -- `update_session_permissions` が唯一の記録先であることも、そちらが引き受けている。以前は
-      -- ここで `permission.lua` のモジュールレベルの共有テーブルにも同じ判断を書いており、
-      -- そちらはチャットでも turn_id でもキーされていなかったので、あるチャットで出した承認が
-      -- エディタ上の全チャットに効いていた（#667）。
-      local ApprovalDecision = require("vibing.application.chat.approval_decision")
-      local consumed, err = ApprovalDecision.consume(self, approval)
-
-      if not consumed then
-        vim.notify(
-          string.format("[vibing] Failed to update permissions: %s", tostring(err)),
-          vim.log.levels.ERROR
-        )
-        self._is_sending = false
-        return false
-      end
-
-      -- The answer can only reach a killed process as a new turn, so it travels as prose.
-      message = consumed.retry_message
-
-      -- Continue to normal message flow with the replaced message
-    else
-      -- Lines that look like approval options but resolve to nothing. The most common cause is
-      -- answering a prompt whose request already went away, which `resolve` reports as an error;
-      -- reaching here means the lines matched no pending request at all.
-      vim.notify(
-        "[vibing] No pending approval matched that answer. Keep the option line you want, "
-          .. "with its `<!-- vibing:req=... -->` marker, and press <CR> again.",
-        vim.log.levels.WARN
-      )
-      self._is_sending = false
-      return false
-    end
+  -- 承認への答えは `_answer_pending_approval` が `cancel_request()` の手前で処理済み。
+  -- ここに来るのは「新しいターンとして再試行する」経路だけで、本文は差し替え済みの再試行文
+  if answered and answered.message then
+    message = answered.message
   end
 
   local vibing = require("vibing")

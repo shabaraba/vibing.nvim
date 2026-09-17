@@ -19,9 +19,13 @@
 ---
 ---答えは人間の `<CR>` とまったく同じ経路を通る。選んだ選択肢の行をワーカーのバッファに
 ---書いてから `ChatBuffer:send_message()` を呼ぶだけで、承認の消費
----（`update_session_permissions` → `_pending_approval` の破棄 → 再試行文への差し替え）は
----既存の承認ブロックが行う。判断ロジックを2本持たないための形で、代理応答だけが
----`:once` の扱いやセッションリストの更新で人間の経路と食い違う、という壊れ方をしない。
+---（`update_session_permissions` → プロンプトの破棄 → フックへの判定 or 再試行文への差し替え）は
+---`ChatBuffer:_answer_pending_approval` が行う。判断ロジックを2本持たないための形で、代理応答
+---だけが `:once` の扱いやセッションリストの更新で人間の経路と食い違う、という壊れ方をしない。
+---
+---合流点が `send_message` の**冒頭**（`cancel_request()` より前）なのはそのため。承認を kill
+---せずに答えられるようになった以上、答えは新しいターンではなく走っているターンの続きで、
+---人間側だけを直すと代理承認だけが「答えた瞬間にターンが死ぬ」形で壊れる
 ---
 ---人間の経路と違うのは書かれるセクション見出しだけ: 代理応答は
 ---`## Request <!-- <時刻> from .vibing/chat/orchestrator.md -->` として残るので、
@@ -223,13 +227,16 @@ function M.answer(params)
   -- ほしい（`rpc/handlers/message.lua` が同じ順序を取っている理由と同じ）
   ProgrammaticSender.validate(bufnr, line)
 
-  -- 承認に答えると、そのワーカーは新しいターンを始める。並列度の上限は「機械が始める送信」に
-  -- かかるものなので、ここも見る。ただし `at_capacity_message` は使わない — あれは
-  -- `queue_if_busy` を勧める文面で、このツールにその引数は無い。承認は溜めて後で配るような
-  -- ものでもない（プロンプトは1回しか消費できず、待つ側は止まったままでいる）ので、
-  -- 断って呼び直させる
+  -- 承認に答えると、そのワーカーは新しいターンを始める**ことがある**。並列度の上限は「機械が
+  -- 始める送信」にかかるものなので、そのときだけ見る。
+  --
+  -- **その場で答えられる承認では見てはいけない。** フックがブロックしているということは、
+  -- そのワーカーは既に走っていて枠を1つ占有している。ここで断ると、既に数えられている枠を
+  -- 理由に承認を拒否することになり、しかも断られたワーカーは承認待ちのまま — 枠が上限なら、
+  -- 答えることで枠を空けることもできない。ほぼデッドロックになる
+  local starts_new_turn = not require("vibing.infrastructure.rpc.pending_approvals").get(pending.request_id)
   local Concurrency = require("vibing.application.chat.concurrency")
-  if Concurrency.at_capacity() then
+  if starts_new_turn and Concurrency.at_capacity() then
     error(
       string.format(
         "%d chats and %d of their subagents are already in flight, at or above the configured "
