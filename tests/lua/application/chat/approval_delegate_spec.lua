@@ -317,6 +317,21 @@ describe("ApprovalDelegate", function()
       assert.equals("req-1", sends[1].opts.answers_blocked_approval, "the send must claim the same exemption")
     end)
 
+    it("says the prompt expired, rather than that the chat is busy", function()
+      -- An expired prompt stays visible and is reported by `waiting_approvals` with
+      -- `expired = true`, so an orchestrator can and will answer it. On the waiting path the turn
+      -- is still running, so the generic responding guard answers first — and "Chat buffer is
+      -- already responding" sends the reader looking for a busy chat to wait for, when the
+      -- actionable fact is that this particular approval is over. The reader is a model.
+      pending.expired = true
+
+      local ok, err = pcall(answer, "allow_once")
+
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):find("expired", 1, true), tostring(err))
+      assert.equals(0, #sends)
+    end)
+
     it("is still refused when the prompt is drawn but nothing is blocked on it", function()
       -- The guard that must survive, and the reason the exemption asks the registry rather than
       -- the drawn lines: a prompt left over from a killed turn is answered as a *new* turn, so

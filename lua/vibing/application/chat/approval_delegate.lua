@@ -205,6 +205,23 @@ function M.answer(params)
     )
   end
 
+  -- 期限切れは**ここで名指しで断る**。プロンプトは消さずに印を付けて残す方針で、
+  -- `waiting_approvals` も `expired = true` を付けて返すので、オーケストレーターはこれを見て
+  -- 答えに来る。待たせる設計ではそのときターンはまだ走っているので、黙って下流に流すと
+  -- `ProgrammaticSender.validate` の「応答中なので送れない」が先に答えてしまう — 事実だが、
+  -- 読み手（モデル）を「空くのを待つ」に誘導する。実際に起きたのは「この承認はもう終わった」で、
+  -- 待っても変わらない
+  if pending.expired then
+    error(
+      string.format(
+        "That tool-approval prompt (%s) expired before it was answered, so vibing.nvim already "
+          .. "denied that one call. Waiting will not change it. The chat's turn may still be "
+          .. "running; check `waiting_approvals` again for one that is not expired.",
+        tostring(pending.request_id)
+      )
+    )
+  end
+
   -- "scoped" では allow 系の答えだけを `delegated_scope` に照らす（deny系の特別扱いは
   -- `is_allowed_by_scope` の中）。これが無いと、範囲外のツールを止める（＝安全側に倒す）
   -- ことすらユーザー待ちになり、この機能が解決したい待ち時間をかえって増やす
