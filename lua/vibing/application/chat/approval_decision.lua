@@ -79,16 +79,41 @@ end
 --- First person on purpose: on the human path the "I" is the user, and on a delegated one the
 --- section header names the chat that answered, so the pronoun still resolves
 --- (`approval_delegate.lua`).
+--- **`expired` changes what is true, not just the tone.** The two messages below are written for a
+--- turn that stopped *at* the prompt: nothing has happened since, so "proceed with the same
+--- operation" and "use a different approach" are both instructions about what to do next. After the
+--- wait limit those premises are gone — the call was denied, the model saw the refusal and carried
+--- on, possibly finishing the turn another way. Telling it to proceed can redo work already done,
+--- and telling it to use a different approach describes what it already did.
+---
+--- So the expired pair states the grant and leaves the decision to the model. What that costs or
+--- buys in model behaviour is **not measured** — neither wording is; what is knowable without a
+--- measurement is only that the original two say something false on this path.
 --- @param action string
 --- @param tool string
 --- @param input table
+--- @param expired boolean? the prompt had already reached its wait limit when it was answered
 --- @return string
-function M.retry_message(action, tool, input)
+function M.retry_message(action, tool, input, expired)
   if M.is_allow(action) then
+    if expired then
+      return string.format(
+        "I approved the %s tool%s, after it had already been denied for going unanswered. "
+          .. "The permission is in place now; redo that step only if it still needs doing.",
+        tool,
+        M.input_summary(tool, input)
+      )
+    end
     return string.format(
       "I approved the %s tool%s. Please proceed with the same operation.",
       tool,
       M.input_summary(tool, input)
+    )
+  end
+  if expired then
+    return string.format(
+      "I denied the %s tool. It was already refused for going unanswered, so nothing needs redoing.",
+      tool
     )
   end
   return string.format("I denied the %s tool. Please use a different approach.", tool)
@@ -154,7 +179,7 @@ function M.consume(chat_buf, approval)
     tool = tool,
     input = input,
     is_allow = M.is_allow(approval.action),
-    retry_message = M.retry_message(approval.action, tool, input),
+    retry_message = M.retry_message(approval.action, tool, input, pending.expired),
   }, nil
 end
 

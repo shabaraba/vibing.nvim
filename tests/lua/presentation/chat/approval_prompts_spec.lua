@@ -163,6 +163,15 @@ describe("several approval prompts at once", function()
       assert.is_not_nil(consumed, tostring(err))
       assert.is_truthy(vim.tbl_contains(chat_buf:get_session_allow(), "Bash:once"))
       assert.is_truthy(consumed.retry_message, "the answer has to be able to travel as a new turn")
+
+      -- The ordinary retry message tells the model to proceed with the same operation, which is
+      -- written for a turn that stopped *at* the prompt. After the limit the call was denied and
+      -- the model carried on, so that instruction can redo work it already finished another way.
+      assert.is_nil(
+        consumed.retry_message:find("Please proceed with the same operation", 1, true),
+        consumed.retry_message
+      )
+      assert.is_truthy(consumed.retry_message:find("unanswered", 1, true), consumed.retry_message)
     end)
 
     it("never sends an expired answer toward a hook", function()

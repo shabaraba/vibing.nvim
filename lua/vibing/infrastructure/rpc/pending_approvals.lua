@@ -107,6 +107,17 @@ end
 --- The script's own deadline is never reached either, because `wait_budget` keeps this timer
 --- strictly ahead of it. So this is the only expiry path in normal operation.
 ---
+--- **`resolve` before `on_timeout`, and that order carries two things now.** The first is the one
+--- above: release the hook before anything that could take the CLI with it. The second arrived with
+--- the decision that an expired prompt stays answerable — `resolve` drops the entry *before*
+--- `on_timeout` marks the chat's copy `expired`, so there is no window in which a prompt is marked
+--- expired while its registry entry still exists. In such a window an answer would find a live
+--- `blocked` entry and take the in-place route, against a hook whose `.res` already says deny. That
+--- "an expired answer never reaches a hook" is therefore a property of this ordering and of nothing
+--- else; `approval_prompts_spec.lua` pins it, and `approval_decision.consume` deliberately does
+--- **not** re-check it (a second implementation of the same invariant is what made the first one
+--- too wide — see `handbook/architecture/approval-without-kill.md`).
+---
 --- Looked up by id rather than closed over, because the entry under that id may have been resolved
 --- and replaced between the timer being armed and firing.
 --- @param request_id string

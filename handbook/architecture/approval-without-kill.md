@@ -55,10 +55,27 @@ which is byte-for-byte the kill path. Refusing to spend it — the first shape o
 **worse than today for exactly the absence it was meant to survive**, by taking away the user's
 chance to grant the permission at all.
 
-"Do not answer an expired prompt in place" is the part that is real, and it needs no check: the
-hook it was raised for is gone, so there is nothing to route to. A delegated answer is the one
-place that still refuses, and only while the target chat is running — answering starts a new turn
-there, and that would cancel what it is doing.
+"Do not answer an expired prompt in place" is the part that is real, and **it is satisfied by
+ordering rather than by a check**: `expire` calls `resolve` — which drops the registry entry —
+before `on_timeout` marks the chat's copy expired, so no window exists in which a prompt is expired
+and still registered. `_answer_pending_approval` then finds no blocked entry and has nowhere to
+route it. A delegated answer is the one place that still refuses, and only while the target chat is
+running: answering starts a new turn there, and that would cancel what it is doing.
+
+**An invariant implemented twice ends up with one copy too wide.** That is the whole shape of this
+mistake and it is worth keeping: `consume`'s check said the same thing the ordering already said,
+except the check keyed on "expired" where the structure keys on "a hook is waiting". Those coincide
+for the in-place route and diverge for the retry route, so the redundant copy silently took the
+retry route with it — and the retry route was the user's only way back. The surviving test asserts
+the property (`never sends an expired answer toward a hook`) rather than either implementation of
+it, so the next person may move the guarantee without having to keep a particular `if`.
+
+The wait limit also changes what the retry message may claim. The ordinary wording is written for a
+turn that stopped _at_ the prompt, where nothing has happened since; after expiry the call was
+denied and the model carried on, possibly finishing another way, so "proceed with the same
+operation" can ask for work that is already done. `retry_message` takes `expired` and states the
+grant instead of instructing. **Neither wording's effect on a model is measured** — what is known
+without measuring is only that the original one says something false on this path.
 
 ## Why not `--permission-prompt-tool stdio`
 
@@ -336,6 +353,23 @@ should know what the controls are for.
    prompt, so it refuses a tool it has no rule for. "The tool did not run" was the gate's verdict;
    the hook's own behaviour only became visible once `--allowedTools Write` guaranteed the gate
    would say yes.
+
+### Register the reading before the run
+
+Every mistake on this page has the same shape from the outside: a number or an outcome was produced
+first and interpreted afterwards, and the interpretation fitted whatever had appeared. 670 / 950 /
+1700 were read off logs, "the tool did not run" was read off a cell with two possible authors, and
+52 / 384 were read off whatever the last command happened to print.
+
+So the harnesses here print **what was measured and, separately, what it means** — and the mapping
+from one to the other is written into the script before it is ever run.
+`tests/perf/permission_prompt_tool.sh` is the clearest case: it reports three signals
+(did the hook fire, was the prompt tool called, did the tool run) and then prints one of four
+pre-registered readings. Two of those four look identical in a single verdict and answer the
+question in opposite directions, which is exactly the confusion that made the 950s cell wrong.
+
+The cost is a few lines. What it buys is that a surprising result stays surprising instead of
+becoming the reading you would have chosen for it.
 
 And one wrong inference from a source that looked authoritative: the claude binary contains
 `"PreToolUse hook did not respond before its timeout … The tool call was not executed"`, which was
