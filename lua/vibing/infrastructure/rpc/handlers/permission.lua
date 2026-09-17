@@ -140,66 +140,16 @@ local function get_comm_dir()
   return require("vibing.infrastructure.rpc.comm_dir").path()
 end
 
---- Write response file for hook script
+--- Write response file for hook script.
 ---
---- The file is a private protocol between this handler and `bin/hooks/pre-tool-use.sh`, so it
---- carries three decisions where the CLI's own hook schema has two:
----
----   "allow"  — an explicit grant. The hook prints this JSON verbatim on stdout, which makes the
----              CLI skip its own permission gate. Anything less is not a grant: a hook that just
----              exits 0 reads as "no opinion", and in headless `-p` mode the gate it falls
----              through to has no way to prompt, so the tool is refused (#564).
----   "deny"   — the hook exits 2 with the reason on stderr.
----   "defer"  — vibing.nvim permits the call but leaves the CLI's own gate (and with it the
----              user's own settings.json rules) in charge. The hook exits 0 silently.
----
+--- The three decisions this file can carry, and why the middle one is not a grant, are documented
+--- once in `rpc/hook_response.lua`. It moved there because an approval answered without killing
+--- the CLI (#778) writes the same file from a different place and at a different time.
 --- @param request_id string
 --- @param decision "allow"|"deny"|"defer"
---- @param reason? string Surfaced to the model as the tool_result when the underlying process
----   was NOT successfully cancelled (e.g. cancel_and_deny's fallback path). When cancellation
----   does succeed, the process is killed before this response can ever reach the model, so the
----   reason is moot in that case — it only matters for the failure path.
+--- @param reason? string
 local function write_hook_response(request_id, decision, reason)
-  local comm_dir = get_comm_dir()
-  local res_file = comm_dir .. "/" .. request_id .. ".res"
-  local tmp_file = res_file .. ".tmp"
-
-  local output = { hookEventName = "PreToolUse", permissionDecision = decision }
-  if reason then
-    output.permissionDecisionReason = reason
-  end
-  local json = vim.json.encode({
-    hookSpecificOutput = output,
-  })
-
-  local f, err = io.open(tmp_file, "w")
-  if f then
-    f:write(json)
-    f:close()
-    os.rename(tmp_file, res_file)
-  else
-    vim.schedule(function()
-      vim.notify(
-        string.format("[vibing:hook] Failed to write tmp file %s: %s", tmp_file, err or "unknown"),
-        vim.log.levels.ERROR
-      )
-    end)
-    local fallback_f, fallback_err = io.open(res_file, "w")
-    if fallback_f then
-      local deny_json = vim.json.encode({
-        hookSpecificOutput = { hookEventName = "PreToolUse", permissionDecision = "deny" },
-      })
-      fallback_f:write(deny_json)
-      fallback_f:close()
-    else
-      vim.schedule(function()
-        vim.notify(
-          string.format("[vibing:hook] Fallback write also failed %s: %s", res_file, fallback_err or "unknown"),
-          vim.log.levels.ERROR
-        )
-      end)
-    end
-  end
+  require("vibing.infrastructure.rpc.hook_response").write(request_id, decision, reason)
 end
 
 --- Take both diff mechanisms' baselines, just before the tool runs.
