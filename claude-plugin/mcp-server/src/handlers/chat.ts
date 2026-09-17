@@ -210,10 +210,19 @@ const chatAnswerApprovalArgsSchema = z.object({
 /**
  * Handler for nvim_chat_answer_approval
  *
- * A chat that hit a tool in its `ask` list has had its turn killed and the approval prompt drawn
- * into its buffer (`rpc/handlers/permission.lua`). It cannot continue, and it cannot report that
- * it is stuck — so until someone answers, it simply never moves again. By default that someone is
- * the user; `agent.orchestration.delegated_approval` lets an orchestrator stand in — fully when
+ * A chat that hit a tool in its `ask` list has the approval prompt drawn into its buffer
+ * (`rpc/handlers/permission.lua`) and stops there. It cannot continue, and it cannot report that
+ * it is stuck — so until someone answers, it simply never moves again.
+ *
+ * **What it is stopped on differs by backend, and the caller does not have to care.** Where the
+ * CLI has a measured wait floor the turn is still running with its PreToolUse hook blocked (#778),
+ * so the answer reaches that hook and the turn carries on; elsewhere the turn was killed and the
+ * answer arrives as a new one. Both go through the same `ChatBuffer:send_message()`, which is why
+ * there is one call here rather than two. The one visible difference is that a chat of the first
+ * kind reports `waiting_approval` while its turn is technically still in flight — so do not read
+ * `responding` as "it is fine, it is working".
+ *
+ * By default the someone who answers is the user; `agent.orchestration.delegated_approval` lets an orchestrator stand in — fully when
  * it is `true`, or only for tools within the target chat's own declared `delegated_scope` when
  * it is `"scoped"` (a denial always goes through either way).
  *
