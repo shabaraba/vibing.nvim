@@ -141,6 +141,41 @@ available from inside that path: we are simply not asked.
 The PreToolUse hook runs _before_ the gate, so the waiting design has no such hole. It is also
 backend-neutral — nothing about it is claude-specific — where `--permission-prompt-tool` is.
 
+### There is no free way to find out whether the flag value is accepted
+
+The flag is still a live question for decision 1, so `permission_prompt_tool.sh` has to establish
+the argv it was never recorded with. It opened with a pre-flight that was believed to cost nothing:
+with `--input-format stream-json` and stdin at EOF there is no user message, so no request is sent,
+and only the CLI's own argv validation runs. **That check could not fail.** Measured on claude
+2.1.236 with three values — `stdio`, `mcp__probe__approve`, and a deliberate
+`bogus_value_negative_control`:
+
+| invocation          | all three values                                                             |
+| ------------------- | ---------------------------------------------------------------------------- |
+| without `--verbose` | exit 1, `When using --print, --output-format=stream-json requires --verbose` |
+| with `--verbose`    | exit 0, **empty stderr and empty stdout** — not even a `system/init` line    |
+
+The first row is why the check reported success: the error never names the flag, so the pre-flight's
+`grep` for `permission-prompt-tool` matched nothing and it printed "accepted at startup" — **for the
+bogus value too**. It did not fail to reject; it accepted everything.
+
+Adding `--verbose` does not revive it, and **the empty stdout is what settles that**. "No rejection
+message" alone would still read two ways, but a run that does not emit even `system/init` has exited
+before session init — and the prompt tool is resolved at or after session init. So the pre-flight is
+not mis-written, it is structurally unable to reach the code that would reject a value. The only
+place `--permission-prompt-tool`'s argument is validated is inside a real turn.
+
+`--help` cannot answer it either: the flag is undocumented in 2.1.236, and `--help` short-circuits
+before option validation, so a bogus flag exits 0 there as well.
+
+**The negative control is the whole reason this is known rather than suspected**, which is the same
+lesson as "Register the reading before the run" below, applied one step earlier — to the check that
+decides whether the run is needed at all. A cheap check that cannot fail is worse than no check: it
+would have reported both hypotheses confirmed, for free, before a single token was spent. The
+harness now carries the control as a cell on the same code path, run when — and only when — the arm
+reports it was never consulted, which is the one outcome a rejected value and a gate that decided
+first both produce.
+
 ## The ordering invariant, and why every backend needs it
 
 Three numbers, in three different files and two languages, that must stay in this order:

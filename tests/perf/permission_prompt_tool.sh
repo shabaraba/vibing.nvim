@@ -40,8 +40,8 @@
 # **Neither arm's argv is verified.** What differs is only what sits behind it: arm A's answer goes
 # into a round trip that was measured end to end (the recorded `control_request`, with `allow`
 # running the tool), while arm B's whole path is untried. That `stdio` is the value which reaches
-# that round trip is a hypothesis from the binary's string table, exactly like arm B's. The
-# pre-flight below turns both hypotheses into answers before any tokens are spent.
+# that round trip is a hypothesis from the binary's string table, exactly like arm B's. Only a real
+# turn can settle it — see "no free pre-flight" below.
 #
 # Arm A is first because of what is behind it, not because its flag is any better established. Arm
 # B is the one we would rather have, since oneshot is the default transport.
@@ -61,31 +61,34 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 OUT="$ROOT/.vibing/probe/permission-prompt-tool"
 mkdir -p "$OUT"
 
-# --- Pre-flight: is the flag value even accepted? ---------------------------------------------
+# --- There is no free pre-flight. Measured, with a negative control. --------------------------
 #
-# **This costs nothing.** With `--input-format stream-json` and stdin at EOF there is no user
-# message, so no request is ever sent; what runs is the CLI's own argv validation. A rejected value
-# fails here, loudly, instead of after a turn's worth of tokens — and the rejection is informative
-# on its own, because the errors name what the argument is expected to be
-# (`must be an MCP tool`, `not found. Available MCP tools: none`).
+# This script used to open by running the CLI with `--input-format stream-json` and stdin at EOF, on
+# the reasoning that no user message means no request, so argv validation runs for free and a bad
+# value fails loudly. **That check could not fail.** Run against claude 2.1.236 with three values —
+# `stdio`, `mcp__probe__approve`, and `bogus_value_negative_control` — all three behaved identically:
 #
-# It also settles a question `--help` cannot: the flag is undocumented in 2.1.236 and `--help`
-# short-circuits before option validation, so "not in --help" says nothing about whether the flag
-# exists. The reason `stdio` is tried at all is that the binary's string table puts it immediately
-# after `--permission-prompt-tool` — a hypothesis, which this turns into an answer for free.
-preflight() {
-  local value="$1" err
-  err=$(claude -p --input-format stream-json --output-format stream-json \
-    --strict-mcp-config --setting-sources project \
-    --permission-prompt-tool "$value" </dev/null 2>&1 >/dev/null)
-  if printf '%s' "$err" | grep -qi "permission-prompt-tool"; then
-    echo "PREFLIGHT: the CLI refused --permission-prompt-tool $value"
-    printf '%s\n' "$err" | grep -i "permission-prompt-tool" | head -3 | sed 's/^/   /'
-    return 1
-  fi
-  echo "PREFLIGHT: --permission-prompt-tool $value was accepted at startup"
-  return 0
-}
+#   without --verbose:  exit 1, "When using --print, --output-format=stream-json requires --verbose"
+#                       for all three. The error never mentions the flag, so the old grep matched
+#                       nothing and the function returned "accepted at startup" — **for the bogus
+#                       value too.**
+#   with --verbose:     exit 0, empty stderr, and **empty stdout** for all three. Not even a
+#                       `system/init` line is emitted.
+#
+# Empty stdout is the part that settles it: on EOF the CLI exits before session init, and the prompt
+# tool is resolved at or after session init. So the free check is not merely mis-written — it is
+# structurally unable to reach the code that would reject a value. Adding `--verbose` does not
+# revive it.
+#
+# The negative control is why this is known rather than suspected, and it is kept below as a cell
+# rather than deleted: the only place the flag value can be validated is inside a real turn.
+#
+# `--help` cannot answer it either — the flag is undocumented in 2.1.236 and `--help` short-circuits
+# before option validation, so a bogus flag also exits 0 there.
+
+# The value used for the negative-control cell. It must be one no CLI could ever honour, so that any
+# difference between it and a real arm is attributable to the value.
+BOGUS_VALUE="bogus_value_negative_control"
 
 # Exit 0 in silence is `defer` in vibing's own vocabulary and "no opinion" in the CLI's: the hook
 # permits the call and leaves the gate in charge, which is exactly the state an in-place approval
@@ -171,7 +174,19 @@ createInterface({ input: child.stdout }).on('line', (line) => {
   }
 });
 
+// A hard deadline, because the whole subject of this probe is a CLI that may sit waiting for an
+// answer it never recognises. Without it a rejected envelope reads as a hung terminal rather than
+// as a result, and the run has to be killed by hand — which is how the ceiling table got a number
+// that recorded when someone stopped watching.
+const deadlineMs = Number(process.env.DRIVER_TIMEOUT_SEC ?? 180) * 1000;
+const watchdog = setTimeout(() => {
+  log(`DRIVER TIMEOUT after ${deadlineMs / 1000}s -- killing the CLI. This is us stopping it, not the CLI deciding anything.`);
+  child.kill('SIGTERM');
+  setTimeout(() => process.exit(0), 2000);
+}, deadlineMs);
+
 child.on('close', (code) => {
+  clearTimeout(watchdog);
   log(`CLI EXIT ${code}`);
   process.exit(0);
 });
@@ -283,12 +298,15 @@ report() {
   echo "logs: $dir"
 }
 
+# The flag value is a parameter rather than a literal, so the negative control travels the *same*
+# code path as the real arm. A control that differs in any other way answers a different question.
 run_stdio_cell() {
-  local name="$1" deny="$2"
+  local name="$1" deny="$2" value="${3:-stdio}"
   local dir="$OUT/stdio-$name"
   rm -rf "$dir"
   mkdir -p "$dir"
   export HOOK_LOG="$dir/hook.log" DRIVER_LOG="$dir/driver.log" PROBE_CWD="$dir"
+  export DRIVER_TIMEOUT_SEC="${DRIVER_TIMEOUT_SEC:-180}"
   : > "$HOOK_LOG"
   : > "$DRIVER_LOG"
 
@@ -299,17 +317,17 @@ run_stdio_cell() {
 ["-p","--input-format","stream-json","--output-format","stream-json","--verbose",
  "--model","claude-haiku-4-5-20251001","--permission-mode","default",
  "--strict-mcp-config","--setting-sources","project",
- "--permission-prompt-tool","stdio","--allowedTools","Read",
+ "--permission-prompt-tool","$value","--allowedTools","Read",
  "--settings",$(printf '%s' "$settings" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')]
 EOF
 )
-  echo "=== arm A (stdio), cell $name (settings deny: $deny) ==="
+  echo "=== arm A (control channel), cell $name (--permission-prompt-tool $value, settings deny: $deny) ==="
   node "$OUT/stdio_driver.mjs"
   report "$dir" "$(grep -c 'ASKED' "$DRIVER_LOG" || true)"
 }
 
 run_mcp_cell() {
-  local name="$1" deny="$2"
+  local name="$1" deny="$2" value="${3:-mcp__probe__approve}"
   local dir="$OUT/mcp-$name"
   rm -rf "$dir"
   mkdir -p "$dir"
@@ -323,20 +341,46 @@ run_mcp_cell() {
 {"mcpServers":{"probe":{"command":"node","args":["$OUT/prompt_server.mjs"],"env":{"PROMPT_TOOL_LOG":"$PROMPT_TOOL_LOG"}}}}
 EOF
 )
-  echo "=== arm B (MCP tool), cell $name (settings deny: $deny) ==="
+  echo "=== arm B (MCP tool), cell $name (--permission-prompt-tool $value, settings deny: $deny) ==="
   ( cd "$dir" && claude -p \
       --output-format stream-json --verbose \
       --model claude-haiku-4-5-20251001 \
       --permission-mode default \
       --strict-mcp-config --setting-sources project \
       --mcp-config "$mcp" \
-      --permission-prompt-tool "mcp__probe__approve" \
+      --permission-prompt-tool "$value" \
       --allowedTools "Read" \
       --settings "$settings" \
       "Use the Write tool to create probe-out.txt containing exactly: ok. Then stop." \
       > "$dir/stream.jsonl" 2>"$dir/stderr.log" )
   echo "CLI exit=$?"
   report "$dir" "$(grep -c 'CALLED' "$PROMPT_TOOL_LOG" || true)"
+}
+
+# The negative control, and **when it is worth a turn**.
+#
+# It is only needed for one of the three outcomes. If the arm reports `consulted > 0`, the flag value
+# reached the mechanism and there is nothing left to control for. If it reports `consulted = 0`, that
+# has two possible authors — the gate settled it first, or **the value was never a value** and the
+# flag was inert — and those are the two the old pre-flight was supposed to separate. So the control
+# runs exactly then, and says so either way rather than being silently skipped.
+maybe_negative_control() {
+  local arm="$1" consulted="$2"
+  if [ "$consulted" -gt 0 ]; then
+    echo "NEGATIVE CONTROL: not run -- arm $arm was consulted, so the value demonstrably reached the"
+    echo "                  mechanism and there is nothing for a control to separate."
+    return 0
+  fi
+  echo "NEGATIVE CONTROL: running -- arm $arm was never consulted, which a rejected/ignored flag"
+  echo "                  value and a gate that decided first both produce."
+  case "$arm" in
+    A) run_stdio_cell control "[]" "$BOGUS_VALUE" ;;
+    B) run_mcp_cell control "[]" "$BOGUS_VALUE" ;;
+  esac
+  echo "   READING: if this control cell looks IDENTICAL to the real cell above, the flag value"
+  echo "            changed nothing and the arm is unproven -- not refuted by the gate."
+  echo "            If the CLI rejected this value but accepted the real one, the real value is"
+  echo "            recognised and the gate genuinely decided first."
 }
 
 # Cell "allow": nothing in the user's deny list. Expect hook=1, consulted, the tool ran. Anything
@@ -352,22 +396,29 @@ EOF
 #   consulted, tool ran    -> our allow overrode the user's own deny. The third shape is B with
 #                             extra steps, and decision 1 is B.
 if [ "$ARM" = "stdio" ] || [ "$ARM" = "both" ]; then
-  if preflight stdio; then
-    run_stdio_cell allow "[]"
+  run_stdio_cell allow "[]"
+  consulted_a=$(grep -c 'ASKED' "$OUT/stdio-allow/driver.log" || true)
+  # The "allow" cell decides whether the "deny" cell can say anything. Its question is "does our
+  # answer reach the mechanism at all"; the deny cell's question presupposes that it does.
+  if [ "$consulted_a" -gt 0 ]; then
     run_stdio_cell deny '["Write"]'
   else
-    echo '   READING: stdio is not a value this CLI takes, so the control-channel shape is not'
-    echo '            reachable through this flag. Arm B is the only candidate left.'
+    echo "SKIPPED: arm A cell 'deny' -- the allow cell was never consulted, so a deny cell could"
+    echo "         only re-measure that. Run it once the allow cell is consulted."
   fi
+  maybe_negative_control A "$consulted_a"
 fi
 
 if [ "$ARM" = "mcp" ] || [ "$ARM" = "both" ]; then
-  # The MCP tool cannot resolve without its server, so this pre-flight is only meaningful as "the
-  # flag itself is accepted"; a "not found. Available MCP tools: none" here is expected and is not a
-  # refusal of the arm.
-  preflight "mcp__probe__approve" || echo "   (expected without --mcp-config; the cells pass one)"
   run_mcp_cell allow "[]"
-  run_mcp_cell deny '["Write"]'
+  consulted_b=$(grep -c 'CALLED' "$OUT/mcp-allow/prompt-tool.log" || true)
+  if [ "$consulted_b" -gt 0 ]; then
+    run_mcp_cell deny '["Write"]'
+  else
+    echo "SKIPPED: arm B cell 'deny' -- the allow cell was never consulted, so a deny cell could"
+    echo "         only re-measure that. Run it once the allow cell is consulted."
+  fi
+  maybe_negative_control B "$consulted_b"
 fi
 
 exit 0
