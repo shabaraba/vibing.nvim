@@ -414,12 +414,41 @@ describe('chat tools (worktree redesign)', () => {
         bufnr: undefined,
         file_path: '.vibing/chat/worker.md',
         action: 'allow_once',
+        request_id: undefined,
         from_bufnr: 12,
       },
       9878
     );
     expect(result.content[0].text).toContain('Bash');
     expect(result._meta.bufnr).toBe(21);
+  });
+
+  it('nvim_chat_answer_approval forwards request_id, which names one of several prompts', async () => {
+    // A CLI runs its permission hooks in parallel — measured on claude as three starting 0.54s
+    // apart — so a chat can be sitting on more than one prompt and "its pending approval" is not
+    // a single thing. Dropping this argument here would leave the Lua side refusing every call
+    // against such a chat, with no way for the model to comply.
+    vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 21, tool: 'Write' });
+
+    await handlers.nvim_chat_answer_approval({
+      rpc_port: 9878,
+      bufnr: 21,
+      action: 'deny_once',
+      request_id: 'req-2',
+      from_bufnr: 12,
+    });
+
+    expect(rpc.callNeovim).toHaveBeenCalledWith(
+      'answer_approval',
+      expect.objectContaining({ request_id: 'req-2', action: 'deny_once' }),
+      9878
+    );
+  });
+
+  it('advertises request_id on nvim_chat_answer_approval, optional so a lone prompt still works', () => {
+    const tool = allTools.find((t) => t.name === 'nvim_chat_answer_approval');
+    expect(tool?.inputSchema.properties).toHaveProperty('request_id');
+    expect(tool?.inputSchema.required).not.toContain('request_id');
   });
 
   it('nvim_chat_answer_approval refuses an action outside the four the prompt offers', async () => {

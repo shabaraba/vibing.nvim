@@ -57,74 +57,138 @@ describe("vibing.presentation.chat.modules.approval_parser", function()
     end)
   end)
 
-  describe("parse_approval_response", function()
-    it("should parse allow_once action", function()
-      local message = "1. allow_once - Allow this execution only"
-      local result = ApprovalParser.parse_approval_response(message)
-      assert.is_not_nil(result)
-      assert.equals("allow_once", result.action)
+  describe("option_line", function()
+    it("is the only place a prompt line is composed, marker included", function()
+      -- The number is the option's position inside one prompt's list, so with several prompts up
+      -- at once the same "1. allow_once - ..." appears more than once. The marker is what makes an
+      -- answer attributable.
+      local line = ApprovalParser.option_line(2, "deny_once - Deny this execution only", "req-abc")
+      assert.equals("2. deny_once - Deny this execution only <!-- vibing:req=req-abc -->", line)
     end)
 
-    it("should parse deny_once action", function()
-      local message = "2. deny_once - Deny this execution only"
-      local result = ApprovalParser.parse_approval_response(message)
-      assert.is_not_nil(result)
-      assert.equals("deny_once", result.action)
+    it("still reads as an approval response, so the marker cannot break the old pattern", function()
+      local line = ApprovalParser.option_line(1, "allow_once - Allow this execution only", "req-abc")
+      assert.is_true(ApprovalParser.is_approval_response(line))
+      assert.same({ { action = "allow_once", request_id = "req-abc" } }, ApprovalParser.parse_answers(line))
     end)
 
-    it("should parse allow_for_session action", function()
-      local message = "3. allow_for_session - Allow for this session"
-      local result = ApprovalParser.parse_approval_response(message)
-      assert.is_not_nil(result)
-      assert.equals("allow_for_session", result.action)
+    it("omits the marker when there is no request to name", function()
+      assert.equals("1. allow_once - x", ApprovalParser.option_line(1, "allow_once - x"))
+    end)
+  end)
+
+  describe("parse_answers", function()
+    it("reads every option line, not just the first", function()
+      -- "first match wins" is what let a forgotten line answer a different prompt. What is written
+      -- is reported; deciding what it means is `resolve`.
+      local message = table.concat({
+        "1. allow_once - Allow <!-- vibing:req=a -->",
+        "2. deny_once - Deny <!-- vibing:req=b -->",
+      }, "\n")
+      assert.same({
+        { action = "allow_once", request_id = "a" },
+        { action = "deny_once", request_id = "b" },
+      }, ApprovalParser.parse_answers(message))
     end)
 
-    it("should parse deny_for_session action", function()
-      local message = "4. deny_for_session - Deny for this session"
-      local result = ApprovalParser.parse_approval_response(message)
-      assert.is_not_nil(result)
-      assert.equals("deny_for_session", result.action)
+    it("reads a line with no marker as unattributed rather than skipping it", function()
+      assert.same({ { action = "deny_for_session" } }, ApprovalParser.parse_answers("4. deny_for_session - x"))
     end)
 
-    it("should parse with leading whitespace", function()
-      local message = "  1. allow_once - Allow this execution only"
-      local result = ApprovalParser.parse_approval_response(message)
-      assert.is_not_nil(result)
-      assert.equals("allow_once", result.action)
+    it("tolerates quoting and leading whitespace, as the buffer may contain either", function()
+      local answers = ApprovalParser.parse_answers("> 1. allow_once - x <!-- vibing:req=a -->")
+      assert.same({ { action = "allow_once", request_id = "a" } }, answers)
     end)
 
-    it("should parse with quote marker", function()
-      local message = "> 3. allow_for_session - Allow for this session"
-      local result = ApprovalParser.parse_approval_response(message)
-      assert.is_not_nil(result)
-      assert.equals("allow_for_session", result.action)
+    it("returns nothing for prose", function()
+      assert.same({}, ApprovalParser.parse_answers("just a normal message"))
+      assert.same({}, ApprovalParser.parse_answers(""))
+      assert.same({}, ApprovalParser.parse_answers(nil))
+    end)
+  end)
+
+  describe("resolve", function()
+    it("takes the one line left for a request", function()
+      local answers, errors = ApprovalParser.resolve("1. allow_once - x <!-- vibing:req=a -->", { "a" })
+      assert.same({}, errors)
+      assert.same({ { request_id = "a", action = "allow_once" } }, answers)
     end)
 
-    it("should parse multiline message with approval", function()
-      local message = [[
-Some text
-3. allow_for_session - Allow for this session
-More text
-]]
-      local result = ApprovalParser.parse_approval_response(message)
-      assert.is_not_nil(result)
-      assert.equals("allow_for_session", result.action)
+    it("answers several prompts in one send", function()
+      local message = table.concat({
+        "1. allow_once - x <!-- vibing:req=a -->",
+        "2. deny_once - y <!-- vibing:req=b -->",
+      }, "\n")
+      local answers, errors = ApprovalParser.resolve(message, { "a", "b" })
+      assert.same({}, errors)
+      assert.equals(2, #answers)
     end)
 
-    it("should return nil for non-approval message", function()
-      local message = "Please run the tests"
-      local result = ApprovalParser.parse_approval_response(message)
-      assert.is_nil(result)
+    it("leaves an unanswered prompt alone instead of failing the whole send", function()
+      local answers, errors = ApprovalParser.resolve("1. allow_once - x <!-- vibing:req=a -->", { "a", "b" })
+      assert.same({}, errors)
+      assert.same({ { request_id = "a", action = "allow_once" } }, answers)
     end)
 
-    it("should return nil for empty string", function()
-      local result = ApprovalParser.parse_approval_response("")
-      assert.is_nil(result)
+    it("refuses two lines left for the same request", function()
+      -- The footgun this rule removes: pressing <CR> without deleting anything used to take the
+      -- first line, which is always `allow_once`. Doing nothing must not produce a grant.
+      local message = table.concat({
+        "1. allow_once - x <!-- vibing:req=a -->",
+        "2. deny_once - y <!-- vibing:req=a -->",
+      }, "\n")
+      local answers, errors = ApprovalParser.resolve(message, { "a" })
+      assert.same({}, answers, "nothing may be consumed when the answer is ambiguous")
+      assert.equals(1, #errors)
+      assert.is_truthy(errors[1]:find("a", 1, true), errors[1])
     end)
 
-    it("should return nil for nil input", function()
-      local result = ApprovalParser.parse_approval_response(nil)
-      assert.is_nil(result)
+    it("takes an unmarked line only while exactly one approval is waiting", function()
+      local answers, errors = ApprovalParser.resolve("1. allow_once - x", { "a" })
+      assert.same({}, errors)
+      assert.same({ { request_id = "a", action = "allow_once" } }, answers)
+    end)
+
+    it("refuses an unmarked line while several are waiting", function()
+      local answers, errors = ApprovalParser.resolve("1. allow_once - x", { "a", "b" })
+      assert.same({}, answers)
+      assert.equals(1, #errors)
+      assert.is_truthy(errors[1]:find("vibing:req", 1, true), "the message must say how to fix it")
+    end)
+
+    it("refuses a marked and an unmarked line for the same request", function()
+      local message = table.concat({ "1. allow_once - x <!-- vibing:req=a -->", "2. deny_once - y" }, "\n")
+      local answers, errors = ApprovalParser.resolve(message, { "a" })
+      assert.same({}, answers)
+      assert.equals(1, #errors)
+    end)
+
+    it("refuses an answer to a request that is no longer waiting", function()
+      -- Answering a prompt that expired while the user was reading. Dropping it silently reads as
+      -- "I chose and nothing happened".
+      local answers, errors = ApprovalParser.resolve("1. allow_once - x <!-- vibing:req=gone -->", { "a" })
+      assert.same({}, answers)
+      assert.equals(1, #errors)
+      assert.is_truthy(errors[1]:find("gone", 1, true), errors[1])
+    end)
+
+    it("consumes nothing at all when any part is ambiguous", function()
+      -- Applying the good half and reporting the rest would leave the user unable to tell from the
+      -- buffer how far the send got.
+      local message = table.concat({
+        "1. allow_once - x <!-- vibing:req=a -->",
+        "1. allow_once - y <!-- vibing:req=b -->",
+        "2. deny_once - y <!-- vibing:req=b -->",
+      }, "\n")
+      local answers, errors = ApprovalParser.resolve(message, { "a", "b" })
+      assert.same({}, answers)
+      assert.equals(1, #errors)
+    end)
+
+    it("returns nothing for a message with no option lines", function()
+      local answers, errors = ApprovalParser.resolve("never mind", { "a" })
+      assert.same({}, answers)
+      assert.same({}, errors)
     end)
   end)
 

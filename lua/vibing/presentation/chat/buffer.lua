@@ -19,7 +19,9 @@ local Fs = require("vibing.core.utils.fs")
 ---@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
 ---@field _pending_choices table[]? add_user_section()後に挿入する選択肢
----@field _pending_approval table? add_user_section()後に挿入する承認要求UI
+---@field _pending_approvals table[]? add_user_section()後に挿入する承認要求UI。**複数**
+---  なのは、CLIが1ターンに複数のPreToolUseフックを並列に起動するから（実測: claudeで3本が
+---  0.54秒差で立ち上がり、全体が重なる）。表示順に並べる
 ---@field _pending_user_text string? 次のadd_user_section()で本文として差し込むテキスト
 ---@field _current_turn_id string? 待っているターンのID（chunk / response の staleness 判定）
 ---@field _current_process_id string? そのターンを走らせているCLIプロセスのID（kill対象）。
@@ -48,7 +50,7 @@ function ChatBuffer:new(config)
   instance._chunk_buffer = ""
   instance._chunk_timer = nil
   instance._pending_choices = nil
-  instance._pending_approval = nil
+  instance._pending_approvals = {}
   instance._current_turn_id = nil
   instance._current_process_id = nil
   instance._current_adapter = nil
@@ -391,7 +393,7 @@ function ChatBuffer:can_defer_send(message)
   end
 
   local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-  if self._pending_approval and ApprovalParser.is_approval_response(message) then
+  if #(self._pending_approvals or {}) > 0 and ApprovalParser.is_approval_response(message) then
     return false
   end
 
@@ -539,8 +541,24 @@ function ChatBuffer:send_message()
   -- Check if message is an approval response
   -- Only process if there's a pending approval request
   local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
-  if self._pending_approval and ApprovalParser.is_approval_response(message) then
-    local approval = ApprovalParser.parse_approval_response(message)
+  if #(self._pending_approvals or {}) > 0 and ApprovalParser.is_approval_response(message) then
+    local pending_ids = {}
+    for _, entry in ipairs(self._pending_approvals) do
+      if not entry.expired then
+        table.insert(pending_ids, entry.request_id)
+      end
+    end
+
+    -- **曖昧なら拒否する。** 消し忘れた行が別の承認への答えとして通る経路を残さない。
+    -- 拒否は何も消費しないので、フックは待ったまま、ユーザーは行を直して押し直せる
+    local resolved, errors = ApprovalParser.resolve(message, pending_ids)
+    if #errors > 0 then
+      vim.notify("[vibing] " .. table.concat(errors, "\n"), vim.log.levels.WARN)
+      self._is_sending = false
+      return false
+    end
+
+    local approval = resolved[1]
     if approval then
       -- What the answer *means* — the permission update, the `:once` bookkeeping and the retry
       -- text — is `approval_decision.consume`, and this is one of its two callers. Spelling any of
@@ -571,10 +589,12 @@ function ChatBuffer:send_message()
 
       -- Continue to normal message flow with the replaced message
     else
-      -- is_approval_response returned true but parsing failed
+      -- Lines that look like approval options but resolve to nothing. The most common cause is
+      -- answering a prompt whose request already went away, which `resolve` reports as an error;
+      -- reaching here means the lines matched no pending request at all.
       vim.notify(
-        "[vibing] Failed to parse approval response. "
-          .. "Please ensure only ONE option remains (use 'dd' to delete unwanted lines), then press <CR> again.",
+        "[vibing] No pending approval matched that answer. Keep the option line you want, "
+          .. "with its `<!-- vibing:req=... -->` marker, and press <CR> again.",
         vim.log.levels.WARN
       )
       self._is_sending = false
@@ -755,12 +775,12 @@ function ChatBuffer:add_user_section()
   end
   self:_flush_chunks()
 
-  Renderer.addUserSection(self.buf, self.win, self._pending_choices, self._pending_approval, self._pending_user_text)
+  Renderer.addUserSection(self.buf, self.win, self._pending_choices, self._pending_approvals, self._pending_user_text)
   self._pending_choices = nil
   self._pending_user_text = nil
-  -- NOTE: Don't clear _pending_approval here!
-  -- It needs to persist until the user sends their approval response.
-  -- It will be cleared in send_message() after processing the approval.
+  -- NOTE: Don't clear _pending_approvals here!
+  -- They need to persist until the user answers, and each one is dropped individually by
+  -- `approval_decision.consume` when its own answer is spent.
 end
 
 ---@return number?
@@ -792,19 +812,56 @@ function ChatBuffer:set_pending_user_text(text)
 end
 
 ---ツール承認要求UIを保存
+---
+---**追記であって置き換えではない。** 1ターンに複数のフックが並列にブロックするので、2件目が
+---来たときに1件目を捨てると、そのフックは誰にも答えられないまま上限まで待つことになる。
+---`request_id` が同じものが来たら（copilotがフックを切って再実行した場合）、新しい方の内容で
+---更新する — 表示を2つに増やしても答えられるのは1つなので
 ---@param tool string ツール名
 ---@param input table ツール入力
 ---@param options table 承認オプション
 ---@param hook_request_id string? hook-based approval の場合のリクエストID
 function ChatBuffer:insert_approval_request(tool, input, options, hook_request_id)
-  -- Store for later insertion in add_user_section()
-  self._pending_approval = {
+  self._pending_approvals = self._pending_approvals or {}
+
+  local entry = {
     tool = tool,
     input = input,
     options = options,
+    -- 同じ値を2つの名前で持つ。`hook_request_id` は既存の呼び出し側が読んでいる名前で、
+    -- `request_id` は #778 で行に載るようになった identity。片方だけにすると、
+    -- どちらを読むかを知っている場所が増える
     hook_request_id = hook_request_id,
+    request_id = hook_request_id,
   }
+
+  for index, existing in ipairs(self._pending_approvals) do
+    if existing.request_id == entry.request_id then
+      self._pending_approvals[index] = entry
+      self._stop_reason = "waiting_approval"
+      return
+    end
+  end
+
+  table.insert(self._pending_approvals, entry)
   self._stop_reason = "waiting_approval"
+end
+
+---この承認は期限切れになった、と印を付ける
+---
+---**消さない。** ユーザーがいま編集しているバッファから行を取り除くと、その下の全部が
+---足元でずれる。印を付けて答えを拒否すれば、ユーザーは「なぜ自分の答えが通らないのか」を
+---読める。`.res` は既に deny が書かれていて、フックは解放されている
+---@param request_id string
+---@return boolean marked 保留していた承認だったか
+function ChatBuffer:mark_approval_expired(request_id)
+  for _, entry in ipairs(self._pending_approvals or {}) do
+    if entry.request_id == request_id then
+      entry.expired = true
+      return true
+    end
+  end
+  return false
 end
 
 ---リストに値をユニークに追加
@@ -857,7 +914,11 @@ local function handle_session_permission(self, tool, is_allow)
 end
 
 ---セッション許可/拒否を更新（承認レスポンス処理）
----@param approval {action: string, tool: string?} パースされた承認データ
+---
+---ツール名は**引数で受け取る**。以前は `_pending_approval` から読んでいたが、承認が同時に
+---複数あり得るようになった以上「いま保留中のもの」は1つに決まらない。どの承認への答えかを
+---知っているのは `approval_decision.consume` だけなので、そこが名指しする
+---@param approval {action: string, tool: string} パースされた承認データと、その対象ツール
 function ChatBuffer:update_session_permissions(approval)
   local valid_actions = {
     allow_once = true,
@@ -867,15 +928,18 @@ function ChatBuffer:update_session_permissions(approval)
   }
 
   if not approval.action or not valid_actions[approval.action] then
-    local tool_name = self._pending_approval and self._pending_approval.tool or "unknown"
     vim.notify(
-      string.format("[vibing] Invalid approval action: '%s' for tool '%s'", tostring(approval.action), tool_name),
+      string.format(
+        "[vibing] Invalid approval action: '%s' for tool '%s'",
+        tostring(approval.action),
+        tostring(approval.tool or "unknown")
+      ),
       vim.log.levels.ERROR
     )
     return
   end
 
-  local tool = self._pending_approval and self._pending_approval.tool
+  local tool = approval.tool
   if not tool or type(tool) ~= "string" or tool == "" then
     vim.notify("[vibing] Invalid approval: missing or invalid tool name", vim.log.levels.ERROR)
     return
@@ -893,27 +957,55 @@ function ChatBuffer:update_session_permissions(approval)
   end
 end
 
----いま答えを待っているツール承認要求（無ければ nil）
+---いま答えを待っているツール承認要求を、表示順に全部
 ---
----コピーを返す。呼び出し側（`approval_delegate`）が必要とするのは「何について止まっているか」
----を読むことだけで、`_pending_approval` を消してよいのは承認が実際に消費されたときだけ
----（`send_message` の承認ブロック）。参照を渡すと、その1箇所という保証が外から崩せてしまう
----@return {tool: string, input: table?, options: table?}?
-function ChatBuffer:get_pending_approval()
-  if not self._pending_approval then
-    return nil
+---コピーを返す。呼び出し側が必要とするのは「何について止まっているか」を読むことだけで、
+---保留を消してよいのは承認が実際に消費されたときだけ。参照を渡すと、その1箇所という保証が
+---外から崩せてしまう
+---@return {request_id: string?, tool: string, input: table?, options: table?, expired: boolean?}[]
+function ChatBuffer:get_pending_approvals()
+  return vim.deepcopy(self._pending_approvals or {})
+end
+
+---1件だけ取り出す
+---
+---`request_id` を省略できるのは**保留がちょうど1件のときだけ**。複数あるときに「どれか1つ」を
+---返すと、呼び出し側は自分が何に答えているか分からないまま答えることになる
+---@param request_id string?
+---@return {request_id: string?, tool: string, input: table?, options: table?, expired: boolean?}?
+function ChatBuffer:get_pending_approval(request_id)
+  local pending = self._pending_approvals or {}
+  if not request_id then
+    return #pending == 1 and vim.deepcopy(pending[1]) or nil
   end
-  return vim.deepcopy(self._pending_approval)
+  for _, entry in ipairs(pending) do
+    if entry.request_id == request_id then
+      return vim.deepcopy(entry)
+    end
+  end
+  return nil
 end
 
 ---承認要求を消費済みにする
 ---
----`_pending_approval` が消えていることが「その承認は答えられた」の唯一の印なので、これを呼んで
----よいのは `approval_decision.consume` だけ。セッションリストの更新と対で起きなければならず、
----片方だけ起きた状態（許可は記録されたのにプロンプトが残る／プロンプトは消えたのに許可が無い）
----はどちらもエラーを出さずに壊れる
-function ChatBuffer:clear_pending_approval()
-  self._pending_approval = nil
+---その承認がリストから消えていることが「答えられた」の唯一の印なので、これを呼んでよいのは
+---`approval_decision.consume` だけ。セッションリストの更新と対で起きなければならず、片方だけ
+---起きた状態（許可は記録されたのにプロンプトが残る／プロンプトは消えたのに許可が無い）は
+---どちらもエラーを出さずに壊れる
+---
+---**消すのは名指しされた1件だけ。** 全部消すと、同時に出ていた他の承認が答えられないまま
+---フックだけが待ち続ける
+---@param request_id string?
+---@return boolean cleared
+function ChatBuffer:clear_pending_approval(request_id)
+  local pending = self._pending_approvals or {}
+  for index, entry in ipairs(pending) do
+    if entry.request_id == request_id or (not request_id and #pending == 1) then
+      table.remove(pending, index)
+      return true
+    end
+  end
+  return false
 end
 
 ---セッションレベルの許可リストを取得

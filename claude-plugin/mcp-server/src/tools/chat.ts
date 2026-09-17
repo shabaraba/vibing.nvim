@@ -270,6 +270,16 @@ export const chatTools: Tool[] = [
             'every later call in it, so prefer allow_once unless the chat will clearly need the ' +
             'tool repeatedly.',
         },
+        request_id: {
+          type: 'string',
+          description:
+            'Which prompt you are answering. A chat can be sitting on several tool-approval ' +
+            'prompts at once, because a CLI runs its tool calls — and their permission hooks — ' +
+            'in parallel. Omit it only when exactly one is waiting; with more than one the call ' +
+            'is refused rather than guessing, and the error lists the ids. Each option line in ' +
+            'the chat buffer carries its own as `<!-- vibing:req=... -->`, so read the chat with ' +
+            'nvim_get_buffer and copy the id from the prompt you mean.',
+        },
         from_bufnr: {
           type: 'number',
           description:

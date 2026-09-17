@@ -100,28 +100,37 @@ end
 ---`renderer.lua` と揃えてあるのは、バッファに残る行が「ユーザーが選んだ場合に残るはずの行」と
 ---一字一句同じであってほしいため — transcript を読む人間が、代理応答かどうかを見分けるのに
 ---見出し以外の手がかりを要らなくする
----@param options table? `_pending_approval.options`
+---@param options table? 承認プロンプトの `options`
 ---@param action string
+---@param request_id string? 行に載せる identity。複数の承認が同時に出ているとき、番号だけでは
+---  どれへの答えか決まらない
 ---@return string
-function M.option_line(options, action)
+function M.option_line(options, action, request_id)
+  -- 行を組み立てるのは `approval_parser.option_line` **だけ**。ここで自分で `string.format`
+  -- すると、人間が残す行と代理応答の行が別々に進化して、この関数の意図（一字一句同じ）が
+  -- 黙って壊れる
+  local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
+
   local index = 1
   for _, opt in ipairs(options or {}) do
     local label = (opt.label and opt.label ~= "") and opt.label or ""
     if label ~= "" then
       if opt.value == action then
-        return string.format("%d. %s", index, label)
+        return ApprovalParser.option_line(index, label, request_id)
       end
       index = index + 1
     end
   end
 
   -- 選択肢を読み取れなかったときの逃げ道。`- ` の後ろまで含めて書くのは、パターンが
-  -- ハイフンまでを要求するため（`approval_parser.APPROVAL_PATTERNS`）
-  return string.format("1. %s - answered by another chat", action)
+  -- ハイフンまでを要求するため
+  return ApprovalParser.option_line(1, action .. " - answered by another chat", request_id)
 end
 
 ---ワーカーの承認プロンプトに代理で答える
----@param params {bufnr: number, action: string, from_bufnr: number}
+---@param params {bufnr: number, action: string, from_bufnr: number, request_id: string?}
+---  `request_id` は保留が2件以上あるとき必須。CLIは1ターンに複数のフックを並列に起動するので
+---  「そのチャットの承認」は1つに決まらず、省略されたら**どれに答えたつもりか分からない**
 ---@return {success: boolean, bufnr: number, tool: string, action: string}
 function M.answer(params)
   local mode = M.mode()
@@ -159,7 +168,26 @@ function M.answer(params)
     error("Buffer is not a vibing chat buffer")
   end
 
-  local pending = chat_buf:get_pending_approval()
+  -- 2件以上あるのに名指しが無ければ、どれに答えたのか誰にも分からない。推測して1つ選ぶと、
+  -- オーケストレータが意図していない承認が通る
+  local waiting = chat_buf:get_pending_approvals()
+  if #waiting > 1 and not params.request_id then
+    local ids = {}
+    for _, entry in ipairs(waiting) do
+      table.insert(ids, string.format("%s (%s)", tostring(entry.request_id), tostring(entry.tool)))
+    end
+    error(
+      string.format(
+        "That chat has %d tool-approval prompts waiting at once, so `request_id` is required: %s. "
+          .. "Read the chat with nvim_get_buffer — each option line carries its own "
+          .. "`<!-- vibing:req=... -->` marker.",
+        #waiting,
+        table.concat(ids, ", ")
+      )
+    )
+  end
+
+  local pending = chat_buf:get_pending_approval(params.request_id)
   if not pending then
     -- 状態を名乗る。「承認待ちではない」だけだと、呼び出し元は `nvim_get_buffer` を1往復して
     -- 同じことを知りに行くしかない。語彙は watchdog の通知や `nvim_get_buffer` と同じ
@@ -188,7 +216,7 @@ function M.answer(params)
     )
   end
 
-  local line = M.option_line(pending.options, params.action)
+  local line = M.option_line(pending.options, params.action, pending.request_id)
 
   -- 送れる状態かを先に確かめる。この後の `link_or_warn` は宛先のバッファを直接編集し、
   -- `replace_unsent` は承認プロンプトそのものを消すので、送信が弾かれるならその前に止まって

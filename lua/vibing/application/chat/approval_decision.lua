@@ -96,6 +96,7 @@ end
 
 --- @class Vibing.ConsumedApproval
 --- @field action string
+--- @field request_id string? the hook invocation this answers, when it came from one
 --- @field tool string
 --- @field input table the tool input the prompt was raised for, before the prompt was dropped
 --- @field is_allow boolean
@@ -109,31 +110,45 @@ end
 --- the prompt is dropped only once the permission update has actually succeeded — a chat that lost
 --- its grant but kept no way to be asked again is the worse of the two failures.
 --- @param chat_buf Vibing.ChatBuffer
---- @param approval {action: string}
+--- @param approval {action: string, request_id: string?} `request_id` may be omitted only while
+---   exactly one approval is pending; with several waiting at once there is no "the" pending one,
+---   and guessing is how one prompt's answer lands on another's grant.
 --- @return Vibing.ConsumedApproval|nil consumed nil when nothing was spent
 --- @return string|nil error why, when it was not
 function M.consume(chat_buf, approval)
-  local pending = chat_buf:get_pending_approval()
+  local pending = chat_buf:get_pending_approval(approval and approval.request_id)
   if not pending then
     return nil, "no approval is pending on this chat"
+  end
+  if pending.expired then
+    return nil,
+      string.format(
+        "the approval for %s already expired and was denied; its answer cannot be spent",
+        tostring(pending.tool)
+      )
   end
   if not M.is_valid_action(approval and approval.action) then
     return nil, string.format("invalid approval action: %s", tostring(approval and approval.action))
   end
 
+  local tool = pending.tool
+  local input = pending.input or {}
+
+  -- The tool travels with the action now. `update_session_permissions` used to read it back off
+  -- the chat's single pending slot, which stopped being well defined once several approvals can
+  -- be open at once — the caller is the only one that knows which of them is being answered.
   local ok, err = pcall(function()
-    chat_buf:update_session_permissions(approval)
+    chat_buf:update_session_permissions({ action = approval.action, tool = tool })
   end)
   if not ok then
     return nil, tostring(err)
   end
 
-  chat_buf:clear_pending_approval()
+  chat_buf:clear_pending_approval(pending.request_id)
 
-  local tool = pending.tool
-  local input = pending.input or {}
   return {
     action = approval.action,
+    request_id = pending.request_id,
     tool = tool,
     input = input,
     is_allow = M.is_allow(approval.action),

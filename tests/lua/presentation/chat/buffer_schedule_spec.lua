@@ -76,7 +76,7 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
     -- store lookups below must agree on the exact path.
     local chat_path = vim.api.nvim_buf_get_name(bufnr)
     table.insert(created_chat_paths, chat_path)
-    local instance = setmetatable({ buf = bufnr, _pending_approval = nil }, ChatBuffer)
+    local instance = setmetatable({ buf = bufnr, _pending_approvals = {} }, ChatBuffer)
     return instance, chat_path
   end
 
@@ -114,7 +114,7 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
 
     local chat_path = vim.api.nvim_buf_get_name(bufnr)
     table.insert(created_chat_paths, chat_path)
-    local instance = setmetatable({ buf = bufnr, _pending_approval = nil }, ChatBuffer)
+    local instance = setmetatable({ buf = bufnr, _pending_approvals = {} }, ChatBuffer)
     return instance, chat_path
   end
 
@@ -136,7 +136,7 @@ describe("ChatBuffer:_try_schedule_instead_of_send", function()
     it("does not park an approval response, even with an active limit", function()
       local response = "1. allow_once - Allow this execution only"
       local chat_buf, chat_path = make_buffer(response)
-      chat_buf._pending_approval = { tool = "Bash" }
+      chat_buf._pending_approvals = { { tool = "Bash", request_id = "req-1" } }
       LimitState.record({ resets_at = os.time() + 3600, limit_type = "five_hour" }, tmp_root)
 
       local scheduled = chat_buf:_try_schedule_instead_of_send(response)

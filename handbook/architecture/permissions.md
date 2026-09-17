@@ -112,17 +112,44 @@ in headless `claude -p` mode):
 Tool: Bash
 Command: npm install
 
-1. allow_once - Allow this execution only
-2. deny_once - Deny this execution only
-3. allow_for_session - Allow for this session
-4. deny_for_session - Deny for this session
+1. allow_once - Allow this execution only <!-- vibing:req=1789655115-51729-12345 -->
+2. deny_once - Deny this execution only <!-- vibing:req=1789655115-51729-12345 -->
+3. allow_for_session - Allow for this session <!-- vibing:req=1789655115-51729-12345 -->
+4. deny_for_session - Deny for this session <!-- vibing:req=1789655115-51729-12345 -->
 
-Please select and press <CR> to send.
+Delete every option line except the one you want, then press <CR>.
 ```
 
 The user deletes unwanted options with standard Vim commands (`dd`, etc.) and sends the remaining
 one with `<CR>`. `allow_once`/`deny_once` apply to this call only; `allow_for_session`/
 `deny_for_session` persist for the rest of the chat session.
+
+### More than one prompt at a time, and why the lines are marked
+
+A CLI runs its tool calls — and therefore their PreToolUse hooks — **in parallel**. Measured on
+claude 2.1.236, one turn's three `Read`s started three hooks 0.54s apart, all three blocking
+simultaneously (`tests/perf/hook_concurrency.sh`). So once an approval can be answered without
+killing the turn, a chat routinely holds several prompts at once, and every one of them draws the
+same `1. allow_once - …`.
+
+The `<!-- vibing:req=… -->` marker is what makes an answer attributable. Nothing resolves by
+position or by "the topmost one": people answer out of order, and the third prompt is as likely to
+be answered first as the first.
+
+`approval_parser.lua` is the only place that composes that line and the only place that reads it
+back — `approval_delegate.option_line` calls the same encoder, because a delegated answer is meant
+to be byte-identical to the line a human would have left behind.
+
+**An ambiguous answer is refused and consumes nothing.** Two lines left for one request, or an
+unmarked line while several prompts are open, stops the send with a message saying which request
+has how many lines. This does change one long-standing behaviour: pressing `<CR>` with the whole
+block still in place used to take the first match, which is always `allow_once` — a grant produced
+by doing nothing. The refusal is cheap precisely because the hook is still blocked: the user edits
+the lines and presses `<CR>` again, where under the old kill-based design a refusal cost a turn.
+
+An approval that reaches its wait limit is **marked expired in place, not deleted** — removing
+lines from a buffer the user may be editing moves everything under their cursor. The mark is what
+explains why an answer to it is refused.
 
 ### Implementation notes
 

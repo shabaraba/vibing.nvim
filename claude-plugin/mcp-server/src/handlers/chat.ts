@@ -202,6 +202,7 @@ const chatAnswerApprovalArgsSchema = z.object({
   bufnr: z.number().nullish(),
   file_path: z.string().nullish(),
   action: z.enum(APPROVAL_ACTIONS),
+  request_id: z.string().nullish(),
   from_bufnr: z.number(),
   rpc_port: z.number().optional(),
 });
@@ -222,6 +223,11 @@ const chatAnswerApprovalArgsSchema = z.object({
  * wording the model should act on ("tell the user which chat is blocked") instead of a bare
  * refusal.
  *
+ * `request_id` names which prompt is being answered, and is required as soon as the target chat
+ * has more than one waiting. A CLI runs several PreToolUse hooks at once — measured on claude as
+ * three starting 0.54s apart and overlapping — so "the chat's pending approval" stops being a
+ * single thing, and the Lua side refuses to guess rather than spending the wrong grant.
+ *
  * `from_bufnr` is required here although the other chat tools keep it optional: this call removes
  * a permission gate, and one that cannot record whose decision it was should not be made at all.
  * Version skew is not an argument for softening it — a Neovim without the `answer_approval` RPC
@@ -230,6 +236,7 @@ const chatAnswerApprovalArgsSchema = z.object({
 export async function handleChatAnswerApproval(args: any): Promise<any> {
   const parsed = chatAnswerApprovalArgsSchema.parse(args);
   const { action, from_bufnr, rpc_port } = parsed;
+  const request_id = parsed.request_id ?? undefined;
   const bufnr = parsed.bufnr ?? undefined;
   const file_path = parsed.file_path ?? undefined;
 
@@ -237,7 +244,7 @@ export async function handleChatAnswerApproval(args: any): Promise<any> {
 
   const result = await callNeovim(
     'answer_approval',
-    { bufnr, file_path, action, from_bufnr },
+    { bufnr, file_path, action, request_id, from_bufnr },
     rpc_port
   );
 
