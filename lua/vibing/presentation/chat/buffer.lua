@@ -500,6 +500,46 @@ function ChatBuffer:_sweep_spent_once_tools()
   self._once_tools = nil
 end
 
+---拒否の説明行の目印。**文法ではなくリテラルの接頭辞**で、レンダラーが書く
+---`⚠️  Tool approval required` と同じ性質のもの。前回の説明を消して書き直すために要る
+local APPROVAL_REFUSAL_PREFIX = "⚠️  That answer was not applied."
+
+---答えが適用されなかった理由を、ユーザーが読める場所に置く
+---
+---**`vim.notify` とバッファの両方に書く。** 通知は消えるので、見逃すとバッファは押す前と
+---同じ見た目のまま残り、「`<CR>` を押したのに何も起きなかった」に戻る — それはこの拒否が
+---塞ごうとしている状態そのもの。
+---
+---バッファに書いてよいのは、そこが**我々が描いたブロックの中**だから。期限切れの
+---`(expired — ...)` と同じ場所で、承認プロンプトの選択肢行そのものと同じ性質を持つ
+---（どれも `extract_user_message` に載る。実測で確認済み）ので、新しい漏れは生まれない。
+---
+---**前回の説明は消してから書く。** 残すと `<CR>` を押すたびに積み上がる。消すのは末尾の行
+---だけなので、ユーザーが編集している行が足元でずれることはない
+---@param errors string[]
+function ChatBuffer:_show_approval_refusal(errors)
+  local text = APPROVAL_REFUSAL_PREFIX .. " " .. table.concat(errors, " ")
+  -- WARN 以上。情報通知に混ぜると、通知プラグインの設定次第で黙って埋もれる
+  vim.notify("[vibing] " .. text, vim.log.levels.WARN)
+
+  if not (self.buf and vim.api.nvim_buf_is_valid(self.buf)) then
+    return
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
+  local kept = {}
+  for _, line in ipairs(lines) do
+    if not vim.startswith(line, APPROVAL_REFUSAL_PREFIX) then
+      table.insert(kept, line)
+    end
+  end
+  table.insert(kept, APPROVAL_REFUSAL_PREFIX)
+  for _, reason in ipairs(errors) do
+    table.insert(kept, "   " .. reason)
+  end
+  vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, kept)
+end
+
 ---@class Vibing.AnsweredApproval
 ---@field outcome "answered_in_place"|"refused"|"retry_as_new_turn"
 ---@field message string? 再試行として送る本文（`retry_as_new_turn` のときだけ）
@@ -543,17 +583,16 @@ function ChatBuffer:_answer_pending_approval()
   -- **曖昧なら拒否する。** 消し忘れた行が別の承認への答えとして通る経路を残さない
   local resolved, errors = ApprovalParser.resolve(message, answerable)
   if #errors > 0 then
-    vim.notify("[vibing] " .. table.concat(errors, "\n"), vim.log.levels.WARN)
+    self:_show_approval_refusal(errors)
     return { outcome = "refused" }
   end
 
   local approval = resolved[1]
   if not approval then
-    vim.notify(
-      "[vibing] No pending approval matched that answer. Keep the option line you want, "
-        .. "with its `<!-- vibing:req=... -->` marker, and press <CR> again.",
-      vim.log.levels.WARN
-    )
+    self:_show_approval_refusal({
+      "No pending approval matched that answer. Keep the option line you want, with its "
+        .. "`<!-- vibing:req=... -->` marker, and press <CR> again.",
+    })
     return { outcome = "refused" }
   end
 
@@ -568,7 +607,7 @@ function ChatBuffer:_answer_pending_approval()
   local ApprovalDecision = require("vibing.application.chat.approval_decision")
   local consumed, err = ApprovalDecision.consume(self, approval)
   if not consumed then
-    vim.notify(string.format("[vibing] Failed to update permissions: %s", tostring(err)), vim.log.levels.ERROR)
+    self:_show_approval_refusal({ string.format("Failed to update permissions: %s", tostring(err)) })
     return { outcome = "refused" }
   end
 

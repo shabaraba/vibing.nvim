@@ -213,14 +213,25 @@ describe("several approval prompts at once", function()
       local messages = {}
       local original = vim.notify
       ---@diagnostic disable-next-line: duplicate-set-field
-      vim.notify = function(message, ...)
-        table.insert(messages, tostring(message))
-        return original(message, ...)
+      vim.notify = function(message, level, ...)
+        table.insert(messages, { text = tostring(message), level = level })
+        return original(message, level, ...)
       end
       local ok, err = pcall(fn)
       vim.notify = original
       assert.is_true(ok, tostring(err))
-      return messages
+
+      local texts = {}
+      for _, entry in ipairs(messages) do
+        -- At least WARN, always. Mixed in with informational notices, a notification plugin's
+        -- own filtering can drop it — and a dropped refusal is the silent <CR> again.
+        assert.is_true(
+          (entry.level or 0) >= vim.log.levels.WARN,
+          "a refusal must not be an informational notice: " .. entry.text
+        )
+        table.insert(texts, entry.text)
+      end
+      return texts
     end
 
     it("tells the user which request has how many lines left", function()
@@ -240,6 +251,45 @@ describe("several approval prompts at once", function()
       assert.is_truthy(joined:find("req-1", 1, true), "the refusal must name the request: " .. joined)
       assert.is_truthy(joined:find("2 option lines", 1, true), "and how many lines are left: " .. joined)
       assert.is_truthy(joined:find("delete all but", 1, true), "and what to do about it: " .. joined)
+    end)
+
+    it("leaves the explanation in the buffer, where a missed notification cannot hide it", function()
+      -- A notification disappears. If it is the only channel and the user looks away, the buffer
+      -- is byte-identical to before they pressed <CR> — which is the "nothing happened" reading
+      -- the refusal exists to avoid.
+      --
+      -- Writing it there is safe for the same reason the expired marker is: it lands inside the
+      -- block we draw, alongside the option lines, all of which `extract_user_message` already
+      -- returns. Measured, not assumed.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+
+      type_and_send(chat_buf, {
+        "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->",
+        "2. deny_once - Deny this execution only <!-- vibing:req=req-1 -->",
+      })
+
+      local text = table.concat(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false), "\n")
+      assert.is_truthy(text:find("not applied", 1, true), "the buffer must say the answer was refused")
+      assert.is_truthy(text:find("req-1", 1, true), "and which request: " .. text)
+    end)
+
+    it("replaces the previous explanation rather than stacking them up", function()
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      local ambiguous = {
+        "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->",
+        "2. deny_once - Deny this execution only <!-- vibing:req=req-1 -->",
+      }
+
+      type_and_send(chat_buf, ambiguous)
+      type_and_send(chat_buf, ambiguous)
+
+      local count = 0
+      for _, line in ipairs(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)) do
+        if line:find("not applied", 1, true) then
+          count = count + 1
+        end
+      end
+      assert.equals(1, count, "pressing <CR> twice must not leave two explanations")
     end)
 
     it("tells the user to keep a marker when several prompts are open", function()
