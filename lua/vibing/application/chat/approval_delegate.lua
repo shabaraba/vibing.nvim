@@ -225,7 +225,11 @@ function M.answer(params)
   -- 送れる状態かを先に確かめる。この後の `link_or_warn` は宛先のバッファを直接編集し、
   -- `replace_unsent` は承認プロンプトそのものを消すので、送信が弾かれるならその前に止まって
   -- ほしい（`rpc/handlers/message.lua` が同じ順序を取っている理由と同じ）
-  ProgrammaticSender.validate(bufnr, line)
+  -- `answers_blocked_approval` を渡すのは、フックがブロックしているワーカーが
+  -- `is_responding()` のままだから（#778）。渡さないと「応答中なので送れない」で弾かれ、
+  -- 代理承認はその場で答えられる経路でだけ必ず失敗する。例外が効くのは実際に止まっている
+  -- フックへの答えだけで、判定は `programmatic_sender` 側がレジストリに訊く
+  ProgrammaticSender.validate(bufnr, line, { answers_blocked_approval = pending.request_id })
 
   -- 承認に答えると、そのワーカーは新しいターンを始める**ことがある**。並列度の上限は「機械が
   -- 始める送信」にかかるものなので、そのときだけ見る。
@@ -261,7 +265,10 @@ function M.answer(params)
     from = from_name ~= "" and require("vibing.core.utils.git").to_display_path(from_name) or nil,
   }
 
-  local result = ProgrammaticSender.send(bufnr, line, nil, section, { replace_unsent = true })
+  local result = ProgrammaticSender.send(bufnr, line, nil, section, {
+    replace_unsent = true,
+    answers_blocked_approval = pending.request_id,
+  })
 
   -- 送信と同じく、答えたという事実を購読の登録として扱う。代理で答えたなら、その結果として
   -- ワーカーが動き出し、また止まる。止まったことを知りたいのは答えた側

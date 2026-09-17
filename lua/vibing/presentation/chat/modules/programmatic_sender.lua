@@ -35,10 +35,31 @@ end
 ---（バッファを直接触るので、応答が始まってから書くとストリーミングと競合する）ので、
 ---「書いたあとに送信が弾かれ、行われなかったやり取りの関係だけが残る」のを避けるには
 ---先にここを通す必要がある
+---応答中のチャットに1つだけ許される配達: **そのチャットがいま止めているフックへの答え**
+---
+---承認をプロセスを殺さずに答えられるようになった以上（#778）、フックがブロックしているワーカーは
+---`is_responding()` が true を返し続ける。下のガードをそのまま効かせると、そのワーカーへの
+---代理承認（`nvim_chat_answer_approval`）は**この機能が存在する経路でだけ**必ず弾かれる。
+---
+---例外の条件は「プロンプトが描いてある」ではなく「**フックが実際に止まっている**」。描いてある
+---だけのプロンプト（kill されたターンの残りで、答えれば新しいターンになる）に応答中のチャットで
+---答えると、`send_message` は `retry_as_new_turn` に倒れて `cancel_request` を走らせる — つまり
+---いま動いているターンを殺す。このガードが本来防いでいるものそのものになる
+---@param opts table?
+---@return boolean
+local function answers_blocked_approval(opts)
+  local request_id = opts and opts.answers_blocked_approval
+  if type(request_id) ~= "string" or request_id == "" then
+    return false
+  end
+  return require("vibing.infrastructure.rpc.pending_approvals").get(request_id) ~= nil
+end
+
 ---@param bufnr number
 ---@param message string
+---@param opts? {answers_blocked_approval?: string} このメッセージが答えである保留の request_id
 ---@return table chat_buf
-function M.validate(bufnr, message)
+function M.validate(bufnr, message, opts)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     error("Invalid buffer number")
   end
@@ -59,7 +80,7 @@ function M.validate(bufnr, message)
   -- 追加してから巻き戻すのではなく、追加する前に断る。
   --
   -- `send` 本体ではなくここに置くことで、リンク書き込みの前に呼ぶ事前検証でも同じ判定が効く
-  if chat_buf:is_responding() then
+  if chat_buf:is_responding() and not answers_blocked_approval(opts) then
     error("Chat buffer is already responding")
   end
 
@@ -134,7 +155,7 @@ function M.send(bufnr, message, sender, delivery, opts)
   sender = sender or "User"
   opts = opts or {}
 
-  local chat_buf = M.validate(bufnr, message)
+  local chat_buf = M.validate(bufnr, message, opts)
 
   -- Acquire lock to prevent concurrent sends
   _send_locks[bufnr] = true

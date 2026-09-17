@@ -34,6 +34,7 @@ describe("ApprovalDelegate", function()
   local pending
   local stop_reason
   local worker_scope
+  local responding
 
   ---@param mode boolean|"scoped"
   local function configure(mode)
@@ -62,6 +63,9 @@ describe("ApprovalDelegate", function()
     pending = { tool = "Bash", input = { command = "npm install" }, options = OPTIONS, request_id = "req-1" }
     stop_reason = "waiting_approval"
     worker_scope = {}
+    -- Under #778 a worker holding a blocked hook **is** responding: its turn never ended. The
+    -- default here is the kill-design world, which every case written before that was.
+    responding = false
 
     configure(true)
 
@@ -71,7 +75,7 @@ describe("ApprovalDelegate", function()
       end
       return {
         is_responding = function()
-          return false
+          return responding
         end,
         get_pending_approval = function(_, request_id)
           if request_id and pending and pending.request_id ~= request_id then
@@ -281,6 +285,46 @@ describe("ApprovalDelegate", function()
       local ok = pcall(answer, "allow_once")
 
       assert.is_false(ok)
+      assert.equals(0, #sends)
+    end)
+  end)
+
+  describe("a worker whose turn is still open", function()
+    --- The real validator, not the no-op the rest of this file installs. Its "do not push into a
+    --- responding chat" guard is generic and correct for ordinary deliveries — and a worker holding
+    --- a blocked hook is responding by that definition, which is every delegated approval on the
+    --- path the feature exists for (#778).
+    local Pending = require("vibing.infrastructure.rpc.pending_approvals")
+
+    before_each(function()
+      ProgrammaticSender.validate = originals.validate
+      responding = true
+      Pending._reset()
+    end)
+
+    after_each(function()
+      Pending._reset()
+    end)
+
+    it("is answered rather than refused for being busy", function()
+      Pending.open({ request_id = "req-1", chat_bufnr = worker, tool = "Bash" })
+
+      local ok, err = pcall(answer, "allow_once")
+
+      assert.is_true(ok, tostring(err))
+      assert.equals(1, #sends)
+      assert.is_truthy(sends[1].message:find("allow_once", 1, true), sends[1].message)
+      assert.equals("req-1", sends[1].opts.answers_blocked_approval, "the send must claim the same exemption")
+    end)
+
+    it("is still refused when the prompt is drawn but nothing is blocked on it", function()
+      -- The guard that must survive, and the reason the exemption asks the registry rather than
+      -- the drawn lines: a prompt left over from a killed turn is answered as a *new* turn, so
+      -- `send_message` would reach `cancel_request` and kill the turn running right now.
+      local ok, err = pcall(answer, "allow_once")
+
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):find("already responding", 1, true), tostring(err))
       assert.equals(0, #sends)
     end)
   end)
