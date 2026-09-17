@@ -213,8 +213,6 @@ Alongside the transcript the result carries a chat-status line, in the same voca
   `agent.orchestration.delegated_approval` (`true` or `"scoped"`), you can answer it yourself — see
   "Answering a worker's tool approval" below. It is reported as `waiting_approval` whether or not
   its turn is technically still in flight, so never read `responding` as "that one is fine".
-  `nvim_get_buffer` and `nvim_chat_list` also return `waiting_approvals` — the `request_id`s to
-  answer, and which of them have already expired.
 - `status: error` — the last turn ended with an error. Read the tail of the transcript for the
   message and decide whether to re-brief the worker or report the failure.
 
@@ -249,9 +247,15 @@ needs, or answer it, now.
 
 ### Answering a worker's tool approval
 
-A worker that reaches a tool in its `ask` list has its turn killed and the approval prompt drawn
-into its own buffer. It cannot continue and cannot report that it is stuck. **By default the only
+A worker that reaches a tool in its `ask` list has the approval prompt drawn into its own buffer
+and stops there. It cannot continue and cannot report that it is stuck. **By default the only
 one who can clear that is the user** — name the worker and the tool in your reply and end the turn.
+
+`waiting_approvals` on `nvim_get_buffer` / `nvim_chat_list` lists what is open, with the
+`request_id` to answer and whether it has **expired**. An expired one is still answerable — that
+grant is still the user's to give — but answering it starts a **new turn** on that worker rather
+than releasing the call it was raised for, so it only goes through once that worker has stopped.
+Answer the ones that have not expired first.
 
 If the user set `agent.orchestration.delegated_approval` to `true` or `"scoped"`, you can answer it
 instead:
