@@ -162,12 +162,20 @@ has to cover "the user stepped away and is coming back", and every second beyond
   `prefix_rewrite.CACHE_TTL_SECONDS`). A wait that crosses it re-pays the whole prefix on resume.
 - **a resident process is ~200MB of RSS** held for the duration (`duplex-transport.md`).
 
-15 minutes is comfortably inside both, and comfortably inside the measured floors — which is a
-check that the choice is _possible_, not the argument for it.
+15 minutes is comfortably inside both — which is a check that the choice is _possible_, not the
+argument for it.
 
-Copilot's measured floor (670s) is below 900, so the effective limit is clamped per backend rather
-than assumed: the configured value is an upper bound, the same shape as `descriptor.process` being a
-ceiling in `process_model.lua`.
+**One value, for every backend.** A per-backend limit derived from the floors above would be
+recording how long each run happened to be watched, not a difference between the CLIs: claude's
+1080 and copilot's 670 differ because the runs were stopped at different times, and nothing in
+either log says the CLI was the one that stopped. Clamping to a floor bakes a measurement artifact
+into the product and leaves "why is copilot shorter?" with no answer.
+
+What the floors _are_ good for is checking the invariant's precondition, and that check is not
+optional: if `MAX_WAIT` exceeds what a CLI will actually wait, that CLI's timeout fires and the
+table above says the tool then runs ungated. So every backend the feature is enabled for needs a
+measured floor above `approval_wait_sec` plus `MAX_WAIT`'s margin — not a guess that it is probably
+fine.
 
 ## How this was measured wrong twice
 
