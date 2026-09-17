@@ -242,9 +242,13 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
       table.insert(approvalLines, "⚠️  Tool approval required")
       if pendingApproval.expired then
         -- Marked in place rather than deleted. The user may be editing this buffer right now, and
-        -- removing lines under their cursor moves everything below it; a mark they can read is
-        -- what tells them why their answer is being refused.
-        table.insert(approvalLines, "   (expired — vibing.nvim denied this one; no answer needed)")
+        -- removing lines under their cursor moves everything below it.
+        --
+        -- **The options stay too.** Expiry denied the one call that was in flight; it did not
+        -- withdraw the user's chance to grant the permission — somebody back from a long absence
+        -- answers this exactly as before, and the answer travels as a retry instead of reaching a
+        -- hook that is no longer there.
+        table.insert(approvalLines, "   (expired — that call was denied; answering now retries it)")
       end
       table.insert(approvalLines, "")
 
@@ -274,7 +278,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
       -- the line carries its request id. `approval_parser.option_line` is the only place that
       -- composes it, shared with `approval_delegate` so a delegated answer is byte-identical to
       -- the line a human would have left behind.
-      if not pendingApproval.expired then
+      do
         local optionIndex = 1
         for _, opt in ipairs(pendingApproval.options or {}) do
           local label = (opt.label and opt.label ~= "") and opt.label or ""
@@ -290,8 +294,8 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
         -- 止まっていることが読めるようにする。承認プロンプトの下で何も動かない状態は、
         -- ユーザーからは「固まった」と区別がつかない — 待たせる設計ではそれが最大
         -- `permissions.approval_wait_sec` 続く。kill する経路には止めている出力が無いので
-        -- 書かない（`waiting` がそれを言う）
-        if pendingApproval.waiting then
+        -- 書かない（`waiting` がそれを言う）。期限切れならもう何も止めていないので、これも書かない
+        if pendingApproval.waiting and not pendingApproval.expired then
           table.insert(approvalLines, "   (the rest of this turn's output is paused until this is answered)")
           table.insert(approvalLines, "")
         end

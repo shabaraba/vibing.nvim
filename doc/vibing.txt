@@ -482,9 +482,12 @@ one.
 
 An unanswered prompt does not wait forever. After
 `permissions.approval_wait_sec` (default 900) vibing.nvim denies that one tool
-call and says so in the chat. The prompt stays on screen, marked expired,
-rather than disappearing under your cursor. Only that call is refused; the
-turn carries on.
+call and says so in the chat. Only that call is refused; the turn carries on.
+
+The prompt itself stays, with its options, and you can still answer it — come
+back after an hour, or a day, and answering grants the permission and asks the
+agent to retry, exactly as it did before this waiting behaviour existed. What
+expiry takes away is only the ability to answer *the call that was in flight*.
 
 `gd` opens a float with three panes: the turn's files on the left, with each
 one's icon and `+N -M`, and that file's before/after side by side in Neovim's

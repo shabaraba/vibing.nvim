@@ -289,6 +289,18 @@ describe("ApprovalDelegate", function()
     end)
   end)
 
+  it("answers an expired prompt on a chat that has stopped", function()
+    -- The same fact from the other side: expiry denied one call, it did not take away the grant.
+    -- With the worker idle there is no turn to cancel, so the answer goes through and travels as
+    -- a retry — exactly what it does on a backend that never waited at all.
+    pending.expired = true
+
+    answer("allow_once")
+
+    assert.equals(1, #sends)
+    assert.is_truthy(sends[1].message:find("allow_once", 1, true), sends[1].message)
+  end)
+
   describe("a worker whose turn is still open", function()
     --- The real validator, not the no-op the rest of this file installs. Its "do not push into a
     --- responding chat" guard is generic and correct for ordinary deliveries — and a worker holding
@@ -317,18 +329,19 @@ describe("ApprovalDelegate", function()
       assert.equals("req-1", sends[1].opts.answers_blocked_approval, "the send must claim the same exemption")
     end)
 
-    it("says the prompt expired, rather than that the chat is busy", function()
+    it("says why an expired prompt cannot be answered right now, in terms of what changed", function()
       -- An expired prompt stays visible and is reported by `waiting_approvals` with
-      -- `expired = true`, so an orchestrator can and will answer it. On the waiting path the turn
-      -- is still running, so the generic responding guard answers first — and "Chat buffer is
-      -- already responding" sends the reader looking for a busy chat to wait for, when the
-      -- actionable fact is that this particular approval is over. The reader is a model.
+      -- `expired = true`, so an orchestrator can and will answer it. Answering one starts a new
+      -- turn, which would cancel the one still running — and "Chat buffer is already responding"
+      -- sends the reader off to wait for a busy chat without saying that the wait is the point.
+      -- The reader is a model, so the message has to name the next move.
       pending.expired = true
 
       local ok, err = pcall(answer, "allow_once")
 
       assert.is_false(ok)
       assert.is_truthy(tostring(err):find("expired", 1, true), tostring(err))
+      assert.is_truthy(tostring(err):find("NEW turn", 1, true), tostring(err))
       assert.equals(0, #sends)
     end)
 

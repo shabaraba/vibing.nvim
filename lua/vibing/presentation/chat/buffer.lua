@@ -699,11 +699,12 @@ function ChatBuffer:_answer_pending_approval()
     return nil
   end
 
+  -- 期限切れのものも**答えられる対象に含める**。上限が切ったのは飛んでいたその1回で、
+  -- ユーザーが許可を与える機会ではない（`approval_decision.consume` にその理由）。届き方だけが
+  -- 変わり、レジストリにもういないので下の `blocked` が nil になって `retry_as_new_turn` に落ちる
   local answerable = {}
   for _, entry in ipairs(pending) do
-    if not entry.expired then
-      table.insert(answerable, entry.request_id)
-    end
+    table.insert(answerable, entry.request_id)
   end
 
   -- **曖昧なら拒否する。** 消し忘れた行が別の承認への答えとして通る経路を残さない

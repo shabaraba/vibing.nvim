@@ -45,6 +45,21 @@ is quite likely answering a different prompt of the same turn when this one expi
 take the turn they are in the middle of. The hook exits 2, the model sees that one refusal, and the
 turn carries on.
 
+**Expiry denies the call, not the permission.** The question this feature was first asked was
+"what if the user is away for half a day?", and past `approval_wait_sec` the honest answer has to
+stay as good as the kill design's: there, the prompt outlived the turn and answering it any time
+later retried the work. So an expired prompt keeps its option lines and is still spendable — what
+changes is only how the answer travels. The registry entry is gone, so
+`ChatBuffer:_answer_pending_approval` finds no blocked hook and routes it to `retry_as_new_turn`,
+which is byte-for-byte the kill path. Refusing to spend it — the first shape of this — made waiting
+**worse than today for exactly the absence it was meant to survive**, by taking away the user's
+chance to grant the permission at all.
+
+"Do not answer an expired prompt in place" is the part that is real, and it needs no check: the
+hook it was raised for is gone, so there is nothing to route to. A delegated answer is the one
+place that still refuses, and only while the target chat is running — answering starts a new turn
+there, and that would cancel what it is doing.
+
 ## Why not `--permission-prompt-tool stdio`
 
 The issue's original design was to answer the CLI's `control_request {subtype: "can_use_tool"}`

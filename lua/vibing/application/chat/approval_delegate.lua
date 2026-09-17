@@ -205,18 +205,20 @@ function M.answer(params)
     )
   end
 
-  -- 期限切れは**ここで名指しで断る**。プロンプトは消さずに印を付けて残す方針で、
-  -- `waiting_approvals` も `expired = true` を付けて返すので、オーケストレーターはこれを見て
-  -- 答えに来る。待たせる設計ではそのときターンはまだ走っているので、黙って下流に流すと
-  -- `ProgrammaticSender.validate` の「応答中なので送れない」が先に答えてしまう — 事実だが、
-  -- 読み手（モデル）を「空くのを待つ」に誘導する。実際に起きたのは「この承認はもう終わった」で、
-  -- 待っても変わらない
-  if pending.expired then
+  -- 期限切れのプロンプトも答えられる。フックはもういないので**その場では届かず、新しいターン
+  -- としての再試行**に落ちる（kill する経路とまったく同じ）。断るのは、その再試行が
+  -- **いま走っているターンを殺す**場合だけ。
+  --
+  -- 黙って下流に流すと `ProgrammaticSender.validate` の「応答中なので送れない」が先に答える。
+  -- 事実ではあるが、読み手（モデル）を「空くのを待つ」に誘導する — 実際に必要なのは
+  -- 「このチャットが止まってから、もう一度答える」で、理由が違えば次の一手も違う
+  if pending.expired and chat_buf:is_responding() then
     error(
       string.format(
-        "That tool-approval prompt (%s) expired before it was answered, so vibing.nvim already "
-          .. "denied that one call. Waiting will not change it. The chat's turn may still be "
-          .. "running; check `waiting_approvals` again for one that is not expired.",
+        "That tool-approval prompt (%s) expired, so answering it now starts a NEW turn on that "
+          .. "chat rather than releasing the call it was raised for — and that chat is still "
+          .. "running, so the new turn would cancel what it is doing. Answer it once that chat "
+          .. "stops, or answer one of its prompts that has not expired.",
         tostring(pending.request_id)
       )
     )

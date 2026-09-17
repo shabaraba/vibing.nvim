@@ -120,13 +120,15 @@ function M.consume(chat_buf, approval)
   if not pending then
     return nil, "no approval is pending on this chat"
   end
-  if pending.expired then
-    return nil,
-      string.format(
-        "the approval for %s already expired and was denied; its answer cannot be spent",
-        tostring(pending.tool)
-      )
-  end
+  -- **期限切れでも消費する。** 上限が切ったのは「飛んでいたその1回」であって、ユーザーが許可を
+  -- 与える機会ではない。ここで断ると、半日離席して戻った人は**その承認をもう与えられない** —
+  -- kill する設計ではプロンプトがターンより長生きして、いつ答えても再試行できていたので、
+  -- `approval_wait_sec` を境に今日より悪くなる。この機能に最初に出た懸念がそれだった。
+  --
+  -- 「その場で答えてはいけない」は別の話で、そちらは構造で守られている: 期限切れの時点で
+  -- レジストリのエントリは消えているので `_answer_pending_approval` の `blocked` は nil になり、
+  -- 答えは必ず `retry_as_new_turn`（＝今日とまったく同じ経路）に落ちる。ここで断るのは、
+  -- 届かない経路ではなく**届く経路のほう**を塞いでいた
   if not M.is_valid_action(approval and approval.action) then
     return nil, string.format("invalid approval action: %s", tostring(approval and approval.action))
   end

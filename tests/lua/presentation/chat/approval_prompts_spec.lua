@@ -121,18 +121,87 @@ describe("several approval prompts at once", function()
       assert.is_false(chat_with({}):mark_approval_expired("req-1"))
     end)
 
-    it("refuses to spend an expired prompt", function()
-      -- Its `.res` already carries a deny and its hook is released; consuming it now would record
-      -- a grant for a tool call that was already refused.
+    it("can still be answered after it expired, as a retry", function()
+      -- The case this feature was first questioned on: "what if the user is away for half a day?"
+      -- Under the kill design the prompt outlived the turn and answering it any time later retried
+      -- the work. Waiting must not be worse than that past `approval_wait_sec` — expiry denies the
+      -- one call that was in flight, it does not withdraw the user's chance to grant the
+      -- permission.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      chat_buf:add_user_section()
+      chat_buf:mark_approval_expired("req-1")
+
+      local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
+      local header
+      for index = #lines, 1, -1 do
+        if lines[index]:match("^## User") then
+          header = index
+          break
+        end
+      end
+      vim.api.nvim_buf_set_lines(chat_buf.buf, header, -1, false, {
+        "",
+        "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->",
+      })
+
+      local answered = chat_buf:_answer_pending_approval()
+
+      assert.is_not_nil(answered)
+      assert.equals("retry_as_new_turn", answered.outcome, vim.inspect(answered))
+      assert.is_truthy(vim.tbl_contains(chat_buf:get_session_allow(), "Bash:once"))
+    end)
+
+    it("spends an expired prompt, because the grant is still the user's to give", function()
+      -- Expiry denied the one call that was in flight. It did not decide that this permission may
+      -- never be granted — recording the grant is exactly what lets the retry through.
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       chat_buf:mark_approval_expired("req-1")
 
       local ApprovalDecision = require("vibing.application.chat.approval_decision")
       local consumed, err = ApprovalDecision.consume(chat_buf, { action = "allow_once", request_id = "req-1" })
 
-      assert.is_nil(consumed)
-      assert.is_truthy(tostring(err):find("expired", 1, true), tostring(err))
-      assert.same({}, chat_buf:get_session_allow())
+      assert.is_not_nil(consumed, tostring(err))
+      assert.is_truthy(vim.tbl_contains(chat_buf:get_session_allow(), "Bash:once"))
+      assert.is_truthy(consumed.retry_message, "the answer has to be able to travel as a new turn")
+    end)
+
+    it("never sends an expired answer toward a hook", function()
+      -- The half of the old refusal that was right, kept as its own case: the hook that asked is
+      -- gone and its `.res` already carries a deny, so an answer must not be routed to it. That is
+      -- structural rather than a check — expiry removed the registry entry — and this pins it.
+      local Pending = require("vibing.infrastructure.rpc.pending_approvals")
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      chat_buf:add_user_section()
+      chat_buf:mark_approval_expired("req-1")
+      Pending._reset()
+
+      local released = false
+      local Permission = require("vibing.infrastructure.rpc.handlers.permission")
+      local original = Permission.release_answered_approval
+      ---@diagnostic disable-next-line: duplicate-set-field
+      Permission.release_answered_approval = function(...)
+        released = true
+        return original(...)
+      end
+
+      local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
+      local header
+      for index = #lines, 1, -1 do
+        if lines[index]:match("^## User") then
+          header = index
+          break
+        end
+      end
+      vim.api.nvim_buf_set_lines(chat_buf.buf, header, -1, false, {
+        "",
+        "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->",
+      })
+
+      local answered = chat_buf:_answer_pending_approval()
+      Permission.release_answered_approval = original
+
+      assert.equals("retry_as_new_turn", answered.outcome)
+      assert.is_false(released, "there is no hook left to release")
     end)
   end)
 
@@ -247,13 +316,17 @@ describe("several approval prompts at once", function()
       assert.is_truthy(text:find("1. allow_once - Allow this execution only <!-- vibing:req=req-2 -->", 1, true), text)
     end)
 
-    it("says an expired prompt is expired and offers it no options", function()
+    it("says an expired prompt expired, and keeps its options", function()
+      -- Redrawing without the options would take away the only thing there is to answer, for the
+      -- person most likely to need it: somebody back from a long absence, whose prompt expired
+      -- while they were away. The mark says what changed — the answer now retries rather than
+      -- releasing a hook — and the lines they act on stay.
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       chat_buf:mark_approval_expired("req-1")
 
       local text = rendered(chat_buf)
       assert.is_truthy(text:find("expired", 1, true), text)
-      assert.is_nil(text:find("vibing:req=req-1", 1, true), "an expired prompt must not offer an answer")
+      assert.is_truthy(text:find("vibing:req=req-1", 1, true), "an expired prompt is still answerable: " .. text)
     end)
   end)
 
@@ -454,16 +527,19 @@ describe("several approval prompts at once", function()
       assert.is_false(vim.tbl_contains(allow, "Write:once"), "the previous turn's grant must be gone")
     end)
 
-    it("refuses an answer to a prompt that already expired", function()
+    it("answers a prompt that already expired, as a new turn", function()
+      -- End to end through `<CR>`: the grant is recorded and the send goes ahead, which is the
+      -- kill path's behaviour and what makes waiting a superset of it at every point in time
+      -- rather than only for the first `approval_wait_sec`.
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       chat_buf:mark_approval_expired("req-1")
 
-      local sent = type_and_send(chat_buf, {
+      type_and_send(chat_buf, {
         "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->",
       })
 
-      assert.is_false(sent)
-      assert.same({}, chat_buf:get_session_allow())
+      assert.is_truthy(vim.tbl_contains(chat_buf:get_session_allow(), "Bash:once"))
+      assert.is_nil(chat_buf:get_pending_approval("req-1"), "the prompt is spent, not left for a second answer")
     end)
   end)
 
