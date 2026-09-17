@@ -164,12 +164,31 @@ EOF
       > "$dir/stream.jsonl" 2>"$dir/stderr.log" )
   echo "CLI exit=$?"
 
-  echo "hook fired:        $(grep -c 'HOOK DEFER' "$HOOK_LOG" || true)"
-  echo "prompt tool calls: $(grep -c 'CALLED' "$PROMPT_TOOL_LOG" || true)"
-  if [ -f "$dir/probe-out.txt" ]; then
-    echo "VERDICT: the tool RAN"
+  # **Three signals, reported separately and never collapsed into one verdict.** "The prompt tool
+  # was not called AND the tool did not run" and "the prompt tool was called, and the gate denied
+  # afterwards" are different facts with the same-looking outcome, and reading one as the other is
+  # the confound that produced a wrong reading of the 950s copilot cell (the gate's refusal read as
+  # the hook's). Signal 1 is the control: without it the other two say nothing, because the hook
+  # never ran.
+  local hook_fired prompt_calls tool_ran
+  hook_fired=$(grep -c 'HOOK DEFER' "$HOOK_LOG" || true)
+  prompt_calls=$(grep -c 'CALLED' "$PROMPT_TOOL_LOG" || true)
+  if [ -f "$dir/probe-out.txt" ]; then tool_ran=yes; else tool_ran=no; fi
+
+  echo "1. hook wrote defer:      $hook_fired"
+  echo "2. prompt tool called:    $prompt_calls"
+  echo "3. tool ran:              $tool_ran"
+
+  # Say what each combination means here rather than in the reader's head. Nothing below is a
+  # measurement; it is the mapping decided before the run, printed next to what was measured.
+  if [ "$hook_fired" -eq 0 ]; then
+    echo "   READING: measurement failed -- the hook never ran, so 2 and 3 are about something else."
+  elif [ "$prompt_calls" -eq 0 ]; then
+    echo "   READING: the gate settled it before the prompt tool. Whatever denied it ran FIRST."
+  elif [ "$tool_ran" = "no" ]; then
+    echo "   READING: the prompt tool WAS consulted and the call was still refused afterwards."
   else
-    echo "VERDICT: the tool did not run"
+    echo "   READING: the prompt tool was consulted and its allow decided the outcome."
   fi
   echo "logs: $dir"
 }
@@ -180,9 +199,17 @@ if [ "$CELL" = "both" ] || [ "$CELL" = "allow" ]; then
   run_cell allow "[]"
 fi
 
-# Cell 2: the user denies Write. Expect hook=1, prompt tool **not** called, the tool did not run.
-# If the prompt tool is called here, the gate asks before it denies, so answering allow would
-# override the user's own rule -- and the third shape has B's cost after all.
+# Cell 2: the user denies Write. What the four readings mean for decision 1:
+#
+#   hook=0                      -> measurement failed, re-run.
+#   prompt tool not called      -> the deny ran first. **The third shape is safe**: deferring keeps
+#                                  the user's settings.json rules, and only what survives them is
+#                                  ever put to us.
+#   called, tool did not run    -> we are consulted before the deny is applied. Safe here only
+#                                  because we would have answered allow and something else refused
+#                                  it; what an allow does in general still needs its own run.
+#   called, tool ran            -> our allow overrode the user's own deny. The third shape is B
+#                                  with extra steps, and decision 1 is B.
 if [ "$CELL" = "both" ] || [ "$CELL" = "deny" ]; then
   run_cell deny '["Write"]'
 fi
