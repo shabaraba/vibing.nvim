@@ -31,9 +31,14 @@ hook until the script's deadline.
 | the chat goes away    | `resolve_for_chat`                     | the chat's `BufUnload` cleanup, **before** it cancels the CLI |
 | Neovim exits          | `resolve_all`                          | `VimLeavePre`, **before** the CLI is cancelled                |
 
-The two "before" are the same fact stated twice: a killed CLI can no longer be the thing that stops
-waiting, so the release has to happen while the process is still alive. `tests/lua/shutdown_spec.lua`
-and `tests/lua/presentation/chat/view_approval_release_spec.lua` pin each ordering.
+The turn being stopped rather than answered — `:VibingCancel`, or typing a new message instead of
+answering — reaches the third row too, through `ChatBuffer:cancel_request` and **before**
+`stop_turn`.
+
+Those "before"s are one fact stated three times: a killed CLI can no longer be the thing that stops
+waiting, so the release has to happen while the process is still alive. `tests/lua/shutdown_spec.lua`,
+`tests/lua/presentation/chat/view_approval_release_spec.lua` and the cancel cases in
+`approval_prompts_spec.lua` pin each ordering.
 
 **Reaching the limit denies one tool call and kills nothing.** Hooks run concurrently, so the user
 is quite likely answering a different prompt of the same turn when this one expires; killing would

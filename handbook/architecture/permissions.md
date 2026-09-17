@@ -165,18 +165,30 @@ keeps running never reaches that point, so two things moved:
 - **Drawing the prompt closes the assistant section it interrupts**, writing the end timestamp
   `cache_expiry` reads. The turn ending used to be that moment.
 
-**While any prompt is open the chunk buffer stops draining** (`ChatBuffer:append_chunk`). An
-append-only buffer cannot hold an input field and a stream of output at the same time: the prompt
-is an unsent `## User` section at the end and `flush_chunks` appends at the end too, so anything
-flushed under it is read back by `extract_user_message` as the user's next message. What that costs
-is bounded by measurement — claude emits no assistant prose while a hook blocks, so what
+**While a hook is actually blocked the chunk buffer stops draining** (`ChatBuffer:append_chunk`).
+An append-only buffer cannot hold an input field and a stream of output at the same time: the
+prompt is an unsent `## User` section at the end and `flush_chunks` appends at the end too, so
+anything flushed under it is read back by `extract_user_message` as the user's next message. What
+that costs is bounded by measurement — claude emits no assistant prose while a hook blocks, so what
 accumulates is the rendering of tools that ran in parallel.
 
-Answering the **last** prompt opens a `## Assistant` and flushes there; answering one of several
-redraws the rest into a new input section and keeps holding. Opening an input section in the first
-case would put the held output right back under the input. The same answer clears `_stop_reason`,
-which is otherwise only cleared where a new turn starts — and answering in place starts none, so
-the chat would call itself `waiting_approval` until its next send.
+**The condition is `pending_approvals.list_for_chat`, not `#_pending_approvals`**, and the
+difference is not pedantry. The render list keeps its entries after the **kill** path's turn dies —
+they stay answerable as a new turn — so keying the hold on it would let one lingering prompt hold
+every later turn's output, rendering nothing at all. The registry empties the moment an answer
+lands, which is the same property `chat_status` relies on for not reading `_stop_reason`.
+
+Answering the **last** blocked prompt opens a `## Assistant` and flushes there; answering one of
+several redraws the rest into a new input section and keeps holding. Opening an input section in
+the first case would put the held output right back under the input. The same answer clears
+`_stop_reason`, which is otherwise only cleared where a new turn starts — and answering in place
+starts none, so the chat would call itself `waiting_approval` until its next send.
+
+**A turn stopped rather than answered releases its hooks first** (`ChatBuffer:cancel_request` →
+`_release_blocked_approvals`, before `stop_turn`): `:VibingCancel`, closing the chat, and simply
+typing a new message instead of answering all arrive here. The drawn lines are left alone, since on
+the kill path they have always survived; only the cancelled turn's held tail is dropped, because
+the next send has the user's own text in the unsent section and nothing may be appended under it.
 
 ### Implementation notes
 
