@@ -2,9 +2,14 @@
 # How long will each CLI let a PreToolUse hook block, and what does it do when it gives up? (#778)
 #
 # Run with:
-#   VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh claude [seconds]
-#   VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh copilot [seconds]
-#   VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh grok [seconds]
+#   # ceiling: how long will it wait when we ask it to?
+#   VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh claude 1700
+#   # expiry: what does it do when it gives up?  (block 120s against a 30s configured timeout)
+#   VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh copilot 120 30
+#   # the same expiry, with no gate left to fall back on
+#   VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh claude 120 30 bypassPermissions
+#   # expiry with the CLI's own gate pre-set to allow, so the hook is the only decider
+#   VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh claude 120 30 default yes
 #
 # **This spends real tokens, and it is slow by construction** -- the measurement *is* the waiting.
 # It is not part of `npm test` and cannot be: codex and grok need credentials this machine may not
@@ -31,11 +36,42 @@ if [ "${VIBING_PERF:-}" != "1" ]; then
   exit 0
 fi
 
-BACKEND="${1:?usage: hook_wait_ceiling.sh <claude|copilot|grok> [seconds]}"
+BACKEND="${1:?usage: hook_wait_ceiling.sh <claude|copilot|grok> [block_sec] [configured_timeout_sec]}"
 BUDGET="${2:-1700}"
+# Two modes, and the second one is the only way to see the interesting half.
+#
+#   ceiling mode (default): configured timeout ABOVE the block, so the hook is never cut and the
+#     run answers "how long is a CLI willing to wait when we ask it to".
+#   expiry mode: configured timeout BELOW the block, so the timeout is definitely reached and the
+#     run answers "what does the CLI do when it gives up" -- fail closed (the tool is refused) or
+#     fail open (the tool runs ungated). Cheap: a 30s timeout against a 120s block settles it in
+#     two minutes, where waiting out a real ceiling takes half an hour and never reaches expiry.
+CONFIGURED="${3:-$((BUDGET + 100))}"
+# The permission mode the run happens under, because **it changes what expiry means**. Under
+# `bypassPermissions` there is no gate left to refuse a tool whose hook timed out, so the CLI
+# proceeds -- measured, and not evidence about the mode real chats use. `default` is the mode a
+# vibing.nvim chat runs in, so it is the default here too; pass `bypassPermissions` explicitly to
+# measure that half.
+PERMISSION_MODE="${4:-default}"
+# Whether the CLI's **own** gate is pre-set to allow the tool, which decides whether the expiry
+# reading is about the hook at all.
+#
+# In headless `default` mode the gate has nobody to prompt, so it refuses a tool it has no rule
+# for. "The tool did not run" then has two possible authors -- the hook failing closed, or the gate
+# denying something the hook never got a verdict on -- and the run cannot tell them apart. Pre-
+# allowing the tool removes the gate from the experiment: PreToolUse runs *before* it, so with the
+# gate guaranteed to say yes, whatever decides the outcome is the hook.
+#
+# That the hook still fires when the tool is pre-allowed is not assumed; `HOOK START` in the log is
+# the proof, and a run without it measured nothing.
+GATE_PREALLOWED="${5:-no}"
 
+# Absolute, always. The hook runs with the CLI's working directory, not this script's, so a
+# relative path here makes the hook fail on its very first write -- and a hook that errors is a
+# different measurement from a hook that blocks, reported in the same place.
 OUT="${VIBING_PERF_OUT:-$(mktemp -d)}"
 mkdir -p "$OUT"
+OUT="$(cd "$OUT" && pwd -P)"
 HOOK="$OUT/blocking-hook.sh"
 LOG="$OUT/hook-$BACKEND.log"
 : > "$LOG"
@@ -74,15 +110,15 @@ PROMPT="Use the Write tool to create the file $MARKER containing exactly: ok. Th
 stamp_outer() { echo "$(date +%s) $(date +%H:%M:%S) $*" >> "$LOG"; }
 
 run_claude() {
-  # `bypassPermissions` on purpose: that mode bypasses the permission decision but not the hook,
-  # so what is timed is the hook's own ceiling and nothing else.
-  local settings
+  local settings preallow=()
+  [ "$GATE_PREALLOWED" = "yes" ] && preallow=(--allowedTools Write)
   settings=$(printf '{"hooks":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":"%s","timeout":%d}]}]}}' \
-    "$HOOK_CMD" "$((BUDGET + 100))")
+    "$HOOK_CMD" "$CONFIGURED")
   claude -p --output-format stream-json --verbose \
     --strict-mcp-config --setting-sources project \
     --model claude-haiku-4-5-20251001 \
-    --permission-mode bypassPermissions \
+    --permission-mode "$PERMISSION_MODE" \
+    "${preallow[@]}" \
     --settings "$settings" \
     "$PROMPT" > "$OUT/claude-stream.jsonl" 2> "$OUT/claude-stderr.log"
 }
@@ -94,8 +130,14 @@ run_copilot() {
   local plugin="$OUT/copilot-plugin"
   rm -rf "$plugin"; mkdir -p "$plugin"
   printf '{"name":"vibing-hook-wait-probe","description":"measures copilot preToolUse ceiling","version":"1.0.0","hooks":{"preToolUse":[{"type":"command","bash":"%s","timeoutSec":%d}]}}' \
-    "$HOOK_CMD" "$((BUDGET + 100))" > "$plugin/plugin.json"
-  copilot -p "$PROMPT" --allow-all-tools --plugin-dir "$plugin" \
+    "$HOOK_CMD" "$CONFIGURED" > "$plugin/plugin.json"
+  # `--allow-all-tools` is copilot's nearest equivalent of bypassPermissions, so it is applied only
+  # when that mode was asked for; otherwise copilot's own gate stays in place, which is what a
+  # vibing.nvim chat has.
+  local allow=()
+  [ "$PERMISSION_MODE" = "bypassPermissions" ] && allow=(--allow-all-tools)
+  [ "$GATE_PREALLOWED" = "yes" ] && allow=(--allow-tool write)
+  copilot -p "$PROMPT" "${allow[@]}" --plugin-dir "$plugin" \
     > "$OUT/copilot-stream.log" 2>&1
 }
 
@@ -112,14 +154,14 @@ run_grok() {
   printf '[folders."%s"]\ntrusted = true\ndecided_at = %d\n' "$real" "$(date +%s)" \
     > "$GROK_HOME/trusted_folders.toml"
   printf '{"hooks":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":"%s","timeout":%d}]}]}}' \
-    "$HOOK_CMD" "$((BUDGET + 100))" > "$repo/.grok/hooks/vibing-probe.json"
+    "$HOOK_CMD" "$CONFIGURED" > "$repo/.grok/hooks/vibing-probe.json"
   # Proof the hook was registered at all: grok ignores an undiscovered hook in silence, which would
   # otherwise read as a ceiling of zero.
   grok inspect > "$OUT/grok-inspect.log" 2>&1 || true
   (cd "$repo" && grok -p "$PROMPT") > "$OUT/grok-stream.log" 2>&1
 }
 
-stamp_outer "CLI START backend=$BACKEND budget=${BUDGET}s out=$OUT"
+stamp_outer "CLI START backend=$BACKEND block=${BUDGET}s configured_timeout=${CONFIGURED}s mode=$PERMISSION_MODE gate_preallowed=$GATE_PREALLOWED out=$OUT"
 case "$BACKEND" in
   claude) run_claude ;;
   copilot) run_copilot ;;
@@ -135,7 +177,7 @@ else
 fi
 
 echo
-echo "=== $BACKEND, budget ${BUDGET}s ==="
+echo "=== $BACKEND, block ${BUDGET}s, configured timeout ${CONFIGURED}s, mode ${PERMISSION_MODE}, gate preallowed ${GATE_PREALLOWED} ==="
 grep -E "CLI START|HOOK START|CUT BY|REACHED ITS OWN BUDGET|CLI EXIT|VERDICT" "$LOG"
 echo
 echo "Full log: $LOG"
