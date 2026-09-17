@@ -165,7 +165,7 @@ handlers.tool_start = function(event, context)
     context._subagent_started[event.id] = true
     -- Required lazily: specs reload the registry module, and a reference taken at load time
     -- would keep counting into the instance they discarded.
-    require("vibing.infrastructure.adapter.modules.active_stream_registry").increment_subagent_count(context.handleId)
+    require("vibing.infrastructure.adapter.modules.turn_registry").increment_subagent_count(context.turnId)
   end
 
   -- on_tool_use carries only the two fields the chat display needs; on_tool_use_full carries the
@@ -207,7 +207,7 @@ handlers.tool_end = function(event, context)
   local header = string.format("\n%s %s(%s)\n", marker, name, input_summary(name, input))
 
   if SubagentMarker.is_subagent_tool(name) then
-    require("vibing.infrastructure.adapter.modules.active_stream_registry").decrement_subagent_count(context.handleId)
+    require("vibing.infrastructure.adapter.modules.turn_registry").decrement_subagent_count(context.turnId)
   end
 
   -- Anything the subagent said arrived while this tool was running; show it between the header

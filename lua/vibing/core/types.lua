@@ -50,7 +50,7 @@
 ---@class Vibing.AdapterResponse
 ---@field content string?
 ---@field error string?
----@field _handle_id string? このレスポンスが属するターンのID。staleness判定（そのターンをまだ待っているか）はこれで行う
+---@field _turn_id string? このレスポンスが属するターンのID。staleness判定（そのターンをまだ待っているか）はこれで行う
 ---@field _process_id string? そのターンを走らせたCLIプロセスのID。セッションIDの読み戻しはこれで引く（セッションはプロセスが握っているもの）
 
 -- Vibing.WindowConfig and Vibing.ChatConfig are defined in config.lua

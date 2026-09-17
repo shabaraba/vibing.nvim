@@ -27,7 +27,7 @@ describe("conformance: stream fixtures", function()
           local processor = require(def.descriptor_module).event_processor
           local context = {
             sessionManager = SessionManagerModule.new(),
-            handleId = "fixture-turn",
+            turnId = "fixture-turn",
             -- A session is the process's, not the turn's, so the two are distinct here as well: a
             -- decoder that stored it under the turn would pass with one value and break under #774.
             processId = "fixture-process",

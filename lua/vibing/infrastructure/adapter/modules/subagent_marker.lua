@@ -24,7 +24,7 @@ end
 
 --- Whether a tool call is a subagent launcher (`Task`/`Agent`, across every backend's tool
 --- vocabulary normalization). Shared by the marker below and by in-flight subagent counting
---- (`cli_event_processor.lua`, `active_stream_registry.lua`), so the two never drift apart on
+--- (`cli_event_processor.lua`, `turn_registry.lua`), so the two never drift apart on
 --- what counts as a subagent.
 --- @param tool_name string|nil
 --- @return boolean

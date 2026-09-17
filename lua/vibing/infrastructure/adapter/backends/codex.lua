@@ -82,7 +82,7 @@ local M = {
 
   vocabulary = ToolVocabulary,
   -- The same stable value is placed in developer_instructions by codex_plugin_config, so the
-  -- shared nvim_ask_user_question route can resolve this stream without a per-turn handle_id.
+  -- shared nvim_ask_user_question route can resolve this stream without a per-turn identifier.
   register_chat_bufnr = true,
   stdin = "",
 

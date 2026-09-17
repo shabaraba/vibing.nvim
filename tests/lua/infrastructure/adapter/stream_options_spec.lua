@@ -2,7 +2,7 @@
 --- Covers what `stream()` sets up before the process exists, across all three adapters at once.
 --- Previously untested: #510's review flagged it, #514 is the follow-up.
 local helper = require("tests.helpers.adapter_stream")
-local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
 
 local CONFIG = { agent = { default_model = "sonnet" } }
@@ -61,18 +61,18 @@ for _, backend in ipairs(helper.adapters()) do
         local result = helper.run_stream(adapter)
         local env = system.only_call().opts.env
         assert.equals(result.process_id, env.VIBING_PROCESS_ID)
-        assert.is_not.equals(result.handle_id, env.VIBING_PROCESS_ID)
+        assert.is_not.equals(result.turn_id, env.VIBING_PROCESS_ID)
       end)
 
       it("registers the same process id the child was told about", function()
         -- The join the hook depends on: what the shell sends must address the registry entry, or
         -- every permission decision resolves to nil and the turn stalls until the hook fails closed.
         local result = helper.run_stream(adapter)
-        local entry = require("vibing.infrastructure.adapter.modules.active_stream_registry").find_by_process_id(
+        local entry = require("vibing.infrastructure.adapter.modules.turn_registry").of_process(
           system.only_call().opts.env.VIBING_PROCESS_ID
         )
         assert.is_truthy(entry, "the exported process id addresses no registry entry")
-        assert.equals(result.handle_id, entry.handle_id)
+        assert.equals(result.turn_id, entry.turn_id)
       end)
 
       it("inherits the parent environment rather than starting from empty", function()
@@ -82,7 +82,7 @@ for _, backend in ipairs(helper.adapters()) do
     end)
 
     describe("callbacks", function()
-      it("passes the handle id to on_chunk so a late chunk can be told from a new turn's", function()
+      it("passes the turn id to on_chunk so a late chunk can be told from a new turn's", function()
         -- grok used to call on_chunk(chunk) alone, so a chunk arriving after the user had sent
         -- something new was appended to the wrong turn. One stream() means one calling convention.
         -- Every processor emits through context.onChunk, so the context is captured where the
@@ -96,34 +96,35 @@ for _, backend in ipairs(helper.adapters()) do
         end
 
         local seen = nil
-        local handle_id = adapter:stream("hello", { permissions_allow = {} }, function(_, chunk_handle_id)
-          seen = chunk_handle_id
+        local turn_id = adapter:stream("hello", { permissions_allow = {} }, function(_, chunk_turn_id)
+          seen = chunk_turn_id
         end, function() end)
         StreamHandler.create_stdout_handler = original
 
         captured.onChunk("x")
-        assert.equals(handle_id, seen)
+        assert.equals(turn_id, seen)
       end)
 
       it("registers the session id it is resuming, so a second buffer on that session is refused", function()
+        -- On the **process**, not the turn: a process holds its `--resume` between turns.
         local result = helper.run_stream(adapter, { _session_id = "sess-shared" })
-        assert.equals("sess-shared", ActiveStreamRegistry.get(result.handle_id).session_id)
+        assert.equals("sess-shared", TurnRegistry.get(result.turn_id).process.session_id)
       end)
     end)
 
     describe("stream registry", function()
-      it("registers the handle while the process runs", function()
+      it("registers the turn while the process runs", function()
         local result = helper.run_stream(adapter)
-        assert.is_not_nil(ActiveStreamRegistry.get(result.handle_id))
+        assert.is_not_nil(TurnRegistry.get(result.turn_id))
       end)
 
       it("unregisters once the process exits", function()
         local result = helper.run_stream(adapter)
         system.only_call().on_exit({ code = 0, stdout = "", stderr = "" })
         vim.wait(200, function()
-          return ActiveStreamRegistry.get(result.handle_id) == nil
+          return TurnRegistry.get(result.turn_id) == nil
         end)
-        assert.is_nil(ActiveStreamRegistry.get(result.handle_id))
+        assert.is_nil(TurnRegistry.get(result.turn_id))
       end)
 
       it("clears the permission opts once the process exits", function()
@@ -132,9 +133,9 @@ for _, backend in ipairs(helper.adapters()) do
         vim.wait(200, function()
           return perm_handler.get_active_opts_for_test == nil
         end)
-        -- clear_active_opts is what stream() promises to call; re-registering a fresh handle must
+        -- clear_active_opts is what stream() promises to call; opening a fresh turn must
         -- not see the old one's deny list.
-        assert.is_not_nil(result.handle_id)
+        assert.is_not_nil(result.turn_id)
       end)
     end)
 
@@ -207,7 +208,7 @@ for _, backend in ipairs(helper.adapters()) do
       it("reports a spawn that raises, instead of throwing out of stream()", function()
         -- #593's second half. A binary can go missing between the builder resolving it and the
         -- spawn, and libuv answers that with a raw `ENOENT: ... (cmd): '<path>'` that vim.system
-        -- raises. Unguarded, that reaches the user as a Lua stack trace and leaves the handle
+        -- raises. Unguarded, that reaches the user as a Lua stack trace and leaves the turn
         -- registered, because the exit handler that unregisters it never runs.
         vim.system = function()
           error("ENOENT: no such file or directory (cmd): '/gone/cli'")
@@ -223,7 +224,7 @@ for _, backend in ipairs(helper.adapters()) do
         -- routes through it rather than handing libuv's text to the chat.
         local message = result.done_responses[1].error or ""
         assert.is_nil(message:find("ENOENT", 1, true), "raw libuv error leaked: " .. message)
-        assert.is_nil(ActiveStreamRegistry.get(result.handle_id), "the handle outlived the failed spawn")
+        assert.is_nil(TurnRegistry.get(result.turn_id), "the turn outlived the failed spawn")
       end)
 
       it("strips the Lua file:line prefix so the chat shows a message, not a stack location", function()

@@ -3,7 +3,7 @@
 
 local Config = require("vibing.config")
 local view = require("vibing.presentation.chat.view")
-local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local registry = require("vibing.infrastructure.adapter.modules.turn_registry")
 local Concurrency = require("vibing.application.chat.concurrency")
 
 describe("Concurrency", function()

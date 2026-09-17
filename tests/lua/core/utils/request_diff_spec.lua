@@ -2,7 +2,7 @@ local RequestDiff = require("vibing.core.utils.request_diff")
 
 describe("request_diff", function()
   local tmp_dir
-  local handle_id
+  local turn_id
 
   local function write_file(path, content)
     local f = assert(io.open(path, "w"))
@@ -24,11 +24,11 @@ describe("request_diff", function()
     tmp_dir = vim.fn.tempname()
     vim.fn.mkdir(tmp_dir, "p")
     tmp_dir = vim.fn.fnamemodify(tmp_dir, ":p"):gsub("/$", "")
-    handle_id = "test-handle-" .. tostring(math.random(100000))
+    turn_id = "test-handle-" .. tostring(math.random(100000))
   end)
 
   after_each(function()
-    RequestDiff.clear(handle_id)
+    RequestDiff.clear(turn_id)
     vim.fn.delete(tmp_dir, "rf")
   end)
 
@@ -37,22 +37,22 @@ describe("request_diff", function()
       local file = tmp_dir .. "/a.txt"
       write_file(file, "before\n")
 
-      RequestDiff.capture(handle_id, "Edit", { file_path = file })
-      assert.is_true(RequestDiff.has_capture(handle_id, file))
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
+      assert.is_true(RequestDiff.has_capture(turn_id, file))
     end)
 
     it("records non-existent files so Write shows as a new file", function()
       local file = tmp_dir .. "/new.txt"
-      RequestDiff.capture(handle_id, "Write", { file_path = file })
-      assert.is_true(RequestDiff.has_capture(handle_id, file))
+      RequestDiff.capture(turn_id, "Write", { file_path = file })
+      assert.is_true(RequestDiff.has_capture(turn_id, file))
     end)
 
     it("ignores tools that do not modify files", function()
-      RequestDiff.capture(handle_id, "Read", { file_path = tmp_dir .. "/a.txt" })
-      assert.is_false(RequestDiff.has_capture(handle_id, tmp_dir .. "/a.txt"))
+      RequestDiff.capture(turn_id, "Read", { file_path = tmp_dir .. "/a.txt" })
+      assert.is_false(RequestDiff.has_capture(turn_id, tmp_dir .. "/a.txt"))
     end)
 
-    it("ignores missing handle_id", function()
+    it("ignores missing turn_id", function()
       local file = tmp_dir .. "/a.txt"
       write_file(file, "x\n")
       RequestDiff.capture(nil, "Edit", { file_path = file })
@@ -62,13 +62,13 @@ describe("request_diff", function()
     it("keeps the first backup when the same file is edited twice", function()
       local file = tmp_dir .. "/a.txt"
       write_file(file, "original\n")
-      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
 
       write_file(file, "intermediate\n")
-      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
 
       write_file(file, "final\n")
-      local _, _, patch = RequestDiff.generate(handle_id, tmp_dir, nil)
+      local _, _, patch = RequestDiff.generate(turn_id, tmp_dir, nil)
       assert.is_truthy(patch)
       assert.is_truthy(patch:find("-original", 1, true))
       assert.is_truthy(patch:find("+final", 1, true))
@@ -80,10 +80,10 @@ describe("request_diff", function()
     it("produces a git-style patch for a modified file", function()
       local file = tmp_dir .. "/mod.txt"
       write_file(file, "line1\nline2\n")
-      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
       write_file(file, "line1\nchanged\n")
 
-      local files, abs_files, patch = RequestDiff.generate(handle_id, tmp_dir, nil)
+      local files, abs_files, patch = RequestDiff.generate(turn_id, tmp_dir, nil)
 
       assert.same({ "mod.txt" }, files)
       assert.same({ file }, abs_files)
@@ -97,10 +97,10 @@ describe("request_diff", function()
 
     it("produces a /dev/null header for newly created files", function()
       local file = tmp_dir .. "/created.txt"
-      RequestDiff.capture(handle_id, "Write", { file_path = file })
+      RequestDiff.capture(turn_id, "Write", { file_path = file })
       write_file(file, "hello\n")
 
-      local files, _, patch = RequestDiff.generate(handle_id, tmp_dir, nil)
+      local files, _, patch = RequestDiff.generate(turn_id, tmp_dir, nil)
 
       assert.same({ "created.txt" }, files)
       assert.is_truthy(patch:find("--- /dev/null", 1, true))
@@ -111,9 +111,9 @@ describe("request_diff", function()
     it("skips files whose content did not change", function()
       local file = tmp_dir .. "/same.txt"
       write_file(file, "unchanged\n")
-      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
 
-      local files, _, patch = RequestDiff.generate(handle_id, tmp_dir, nil)
+      local files, _, patch = RequestDiff.generate(turn_id, tmp_dir, nil)
       assert.same({}, files)
       assert.is_nil(patch)
     end)
@@ -121,13 +121,13 @@ describe("request_diff", function()
     it("lists uncaptured extra paths without a diff section", function()
       local captured = tmp_dir .. "/captured.txt"
       write_file(captured, "a\n")
-      RequestDiff.capture(handle_id, "Edit", { file_path = captured })
+      RequestDiff.capture(turn_id, "Edit", { file_path = captured })
       write_file(captured, "b\n")
 
       local extra = tmp_dir .. "/bash-touched.txt"
       write_file(extra, "x\n")
 
-      local files, _, patch = RequestDiff.generate(handle_id, tmp_dir, { [extra] = true })
+      local files, _, patch = RequestDiff.generate(turn_id, tmp_dir, { [extra] = true })
 
       assert.same({ "captured.txt", "bash-touched.txt" }, files)
       assert.is_truthy(patch:find("diff --git a/captured.txt", 1, true))
@@ -138,11 +138,11 @@ describe("request_diff", function()
       local internal = tmp_dir .. "/.vibing/worktrees/other/lua/plugin.lua"
       vim.fn.mkdir(vim.fn.fnamemodify(internal, ":h"), "p")
       write_file(internal, "before\n")
-      RequestDiff.capture(handle_id, "Edit", { file_path = internal })
+      RequestDiff.capture(turn_id, "Edit", { file_path = internal })
       write_file(internal, "after\n")
 
       local files, abs_files, patch = RequestDiff.generate(
-        handle_id,
+        turn_id,
         tmp_dir,
         { [internal] = true }
       )
@@ -158,29 +158,29 @@ describe("request_diff", function()
       local file = worktree .. "/lua/plugin.lua"
       vim.fn.mkdir(vim.fn.fnamemodify(file, ":h"), "p")
       write_file(file, "before\n")
-      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
       write_file(file, "after\n")
 
-      local files, abs_files, patch = RequestDiff.generate(handle_id, worktree, nil)
+      local files, abs_files, patch = RequestDiff.generate(turn_id, worktree, nil)
 
       assert.same({ "lua/plugin.lua" }, files)
       assert.same({ file }, abs_files)
       assert.is_truthy(patch:find("diff --git a/lua/plugin.lua", 1, true))
     end)
 
-    it("keeps requests isolated per handle_id", function()
-      local other_handle = handle_id .. "-other"
+    it("keeps requests isolated per turn_id", function()
+      local other_handle = turn_id .. "-other"
       local file_a = tmp_dir .. "/a.txt"
       local file_b = tmp_dir .. "/b.txt"
       write_file(file_a, "a\n")
       write_file(file_b, "b\n")
 
-      RequestDiff.capture(handle_id, "Edit", { file_path = file_a })
+      RequestDiff.capture(turn_id, "Edit", { file_path = file_a })
       RequestDiff.capture(other_handle, "Edit", { file_path = file_b })
       write_file(file_a, "a2\n")
       write_file(file_b, "b2\n")
 
-      local files_a = RequestDiff.generate(handle_id, tmp_dir, nil)
+      local files_a = RequestDiff.generate(turn_id, tmp_dir, nil)
       local files_b = RequestDiff.generate(other_handle, tmp_dir, nil)
 
       assert.same({ "a.txt" }, files_a)
@@ -195,10 +195,10 @@ describe("request_diff", function()
       outside_dir = vim.fn.fnamemodify(outside_dir, ":p"):gsub("/$", "")
       local outside = outside_dir .. "/outside.txt"
       write_file(outside, "a\n")
-      RequestDiff.capture(handle_id, "Edit", { file_path = outside })
+      RequestDiff.capture(turn_id, "Edit", { file_path = outside })
       write_file(outside, "b\n")
 
-      local files, abs_files, patch = RequestDiff.generate(handle_id, tmp_dir, nil)
+      local files, abs_files, patch = RequestDiff.generate(turn_id, tmp_dir, nil)
 
       assert.same({ outside }, files)
       assert.same({ outside }, abs_files)
@@ -210,10 +210,10 @@ describe("request_diff", function()
     it("lists binary files without a diff section", function()
       local file = tmp_dir .. "/bin.dat"
       write_file(file, "a\0b")
-      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
       write_file(file, "c\0d")
 
-      local files, _, patch = RequestDiff.generate(handle_id, tmp_dir, nil)
+      local files, _, patch = RequestDiff.generate(turn_id, tmp_dir, nil)
 
       assert.same({ "bin.dat" }, files)
       assert.is_nil(patch)
@@ -222,10 +222,10 @@ describe("request_diff", function()
     it("handles files without trailing newlines so reverse-apply restores them exactly", function()
       local file = tmp_dir .. "/no-newline.txt"
       write_file(file, "one\ntwo")
-      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
       write_file(file, "one\nTWO")
 
-      local _, _, patch = RequestDiff.generate(handle_id, tmp_dir, nil)
+      local _, _, patch = RequestDiff.generate(turn_id, tmp_dir, nil)
       assert.is_truthy(patch)
       assert.is_truthy(patch:find("No newline at end of file", 1, true))
 
@@ -242,10 +242,10 @@ describe("request_diff", function()
     it("is compatible with the patch viewer parser and git apply --reverse", function()
       local file = tmp_dir .. "/roundtrip.txt"
       write_file(file, "one\ntwo\nthree\n")
-      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
       write_file(file, "one\nTWO\nthree\n")
 
-      local _, _, patch = RequestDiff.generate(handle_id, tmp_dir, nil)
+      local _, _, patch = RequestDiff.generate(turn_id, tmp_dir, nil)
       local parser = require("vibing.ui.patch_viewer.parser")
 
       assert.equals(tmp_dir, parser.extract_base_dir(patch))
@@ -273,10 +273,10 @@ describe("request_diff", function()
     it("synthesizes a section from the backup for a captured file", function()
       local file = tmp_dir .. "/ignored.txt"
       write_file(file, "before\n")
-      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
       write_file(file, "after\n")
 
-      local sections, resolved = RequestDiff.sections_for(handle_id, tmp_dir, { file })
+      local sections, resolved = RequestDiff.sections_for(turn_id, tmp_dir, { file })
 
       assert.equals(1, #sections)
       assert.is_truthy(sections[1]:find("diff --git a/ignored.txt b/ignored.txt", 1, true))
@@ -287,10 +287,10 @@ describe("request_diff", function()
 
     it("synthesizes a new-file section for a Write that created the file", function()
       local file = tmp_dir .. "/created.txt"
-      RequestDiff.capture(handle_id, "Write", { file_path = file })
+      RequestDiff.capture(turn_id, "Write", { file_path = file })
       write_file(file, "hello\n")
 
-      local sections, resolved = RequestDiff.sections_for(handle_id, tmp_dir, { file })
+      local sections, resolved = RequestDiff.sections_for(turn_id, tmp_dir, { file })
 
       assert.equals(1, #sections)
       assert.is_truthy(sections[1]:find("--- /dev/null", 1, true))
@@ -303,7 +303,7 @@ describe("request_diff", function()
       local file = tmp_dir .. "/bash-touched.txt"
       write_file(file, "x\n")
 
-      local sections, resolved = RequestDiff.sections_for(handle_id, tmp_dir, { file })
+      local sections, resolved = RequestDiff.sections_for(turn_id, tmp_dir, { file })
 
       assert.same({}, sections)
       assert.is_nil(resolved[file])
@@ -313,9 +313,9 @@ describe("request_diff", function()
       -- 変更が無かったことは退避から判断できている。警告対象にしてはいけない
       local file = tmp_dir .. "/same.txt"
       write_file(file, "unchanged\n")
-      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
 
-      local sections, resolved = RequestDiff.sections_for(handle_id, tmp_dir, { file })
+      local sections, resolved = RequestDiff.sections_for(turn_id, tmp_dir, { file })
 
       assert.same({}, sections)
       assert.is_true(resolved[file])
@@ -324,12 +324,12 @@ describe("request_diff", function()
     it("does not consume the backups (clear still owns their lifetime)", function()
       local file = tmp_dir .. "/keep.txt"
       write_file(file, "a\n")
-      RequestDiff.capture(handle_id, "Edit", { file_path = file })
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
       write_file(file, "b\n")
 
-      RequestDiff.sections_for(handle_id, tmp_dir, { file })
+      RequestDiff.sections_for(turn_id, tmp_dir, { file })
 
-      assert.is_true(RequestDiff.has_capture(handle_id, file))
+      assert.is_true(RequestDiff.has_capture(turn_id, file))
     end)
   end)
 
@@ -337,9 +337,9 @@ describe("request_diff", function()
     it("removes backups for the handle", function()
       local file = tmp_dir .. "/a.txt"
       write_file(file, "a\n")
-      RequestDiff.capture(handle_id, "Edit", { file_path = file })
-      RequestDiff.clear(handle_id)
-      assert.is_false(RequestDiff.has_capture(handle_id, file))
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
+      RequestDiff.clear(turn_id)
+      assert.is_false(RequestDiff.has_capture(turn_id, file))
     end)
   end)
 end)

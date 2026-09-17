@@ -9,7 +9,7 @@ local M = {}
 
 --- Active chat frontmatter overrides, keyed by **turn id** (set by stream start). A single shared
 --- slot would let one chat buffer's opts silently apply to another's permission checks whenever
---- two chats stream concurrently (see ActiveStreamRegistry for the same class of bug).
+--- two chats stream concurrently (see turn_registry.lua for the same class of bug).
 ---
 --- The session-level allow/deny lists an approval answer produces live in here too, for exactly
 --- that reason (#667). They used to sit in a module-level table instead, so a `deny_once` answered
@@ -27,19 +27,21 @@ local M = {}
 --- @type table<string, table>
 local active_opts_by_turn = {}
 
---- Kill the CLI process serving a registered stream.
+--- Kill the CLI process serving an open turn.
 ---
---- Named by the process, not the turn: killing is something you do to a process, and the turn stops
---- as a consequence. Both places that stop a turn to show UI in its place go through here, so there
---- is one definition of what cancelling a stream means.
---- @param stream ActiveStreamEntry
+--- Killing is done to a process, so it is named by one -- which is why the turn holds a reference to
+--- its process rather than a copy of the adapter. The turn stops as a consequence, which is the
+--- whole mechanism today and the thing #774 replaces with an interrupt. Both places that stop a turn
+--- to show UI in its place go through here, so there is one definition of what cancelling means.
+--- @param turn Vibing.TurnEntry
 --- @return boolean ok false when cancelling raised
-local function cancel_stream(stream)
-  if not (stream.adapter and stream.process_id) then
+local function cancel_turn(turn)
+  local process = turn.process
+  if not (process and process.adapter and process.process_id) then
     return true
   end
   local ok, err = pcall(function()
-    stream.adapter:cancel(stream.process_id)
+    process.adapter:cancel(process.process_id)
   end)
   if not ok then
     vim.notify("[vibing] Failed to cancel stream: " .. tostring(err), vim.log.levels.WARN)
@@ -312,17 +314,17 @@ function M.check_tool_permission(params)
   -- AskUserQuestion and "ask" permission paths. The deny response only reaches the model when
   -- cancellation fails to find a stream (see fallback_reason below) — when the process is
   -- successfully killed, it dies before it could ever process that response.
-  local function cancel_and_deny(on_stream_fn, fallback_reason)
+  local function cancel_and_deny(on_turn_fn, fallback_reason)
     vim.schedule(function()
       -- Re-resolved here rather than reused from `scope` above: the turn can finish between the
       -- synchronous decision and this callback, and firing the approval UI at a stream that has
-      -- already unregistered would leave a prompt in the buffer with nothing left to answer it.
+      -- already closed would leave a prompt in the buffer with nothing left to answer it.
       -- Same policy, because it is the same function -- what differs is only when it is asked.
-      local stream = HookScope.of(params).entry
+      local turn = HookScope.of(params).entry
       local reason = nil
-      if stream then
-        cancel_stream(stream)
-        on_stream_fn(stream)
+      if turn then
+        cancel_turn(turn)
+        on_turn_fn(turn)
       else
         vim.notify("[vibing] cancel_and_deny: no active stream found", vim.log.levels.WARN)
         reason = fallback_reason
@@ -399,18 +401,18 @@ function M.ask_user_question(params)
 
   local chat_bufnr = tonumber(params.chat_bufnr)
 
-  local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
-  local stream = registry.get_by_chat_bufnr(chat_bufnr)
-  if not stream then
+  local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
+  local turn = TurnRegistry.get_by_chat_bufnr(chat_bufnr)
+  if not turn then
     return {
       status = "error",
       reason = "vibing.nvim could not find the chat buffer to show this question in (internal error).",
     }
   end
 
-  cancel_stream(stream)
-  if stream.on_insert_choices then
-    stream.on_insert_choices(params.questions)
+  cancel_turn(turn)
+  if turn.on_insert_choices then
+    turn.on_insert_choices(params.questions)
   end
 
   return { status = "ok" }

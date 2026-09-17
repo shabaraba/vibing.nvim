@@ -1,16 +1,13 @@
 local permission = require("vibing.infrastructure.rpc.handlers.permission")
 
 describe("permission handler ask_user_question routing", function()
-  local registry
+  local processes, turns
 
   before_each(function()
-    package.loaded["vibing.infrastructure.adapter.modules.active_stream_registry"] = nil
-    registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
-  end)
-
-  after_each(function()
-    registry.unregister("chat-a")
-    registry.unregister("chat-b")
+    package.loaded["vibing.infrastructure.adapter.modules.process_registry"] = nil
+    package.loaded["vibing.infrastructure.adapter.modules.turn_registry"] = nil
+    processes = require("vibing.infrastructure.adapter.modules.process_registry")
+    turns = require("vibing.infrastructure.adapter.modules.turn_registry")
   end)
 
   local cancelled, rendered
@@ -18,8 +15,7 @@ describe("permission handler ask_user_question routing", function()
   --- Turn and process are deliberately different values, so the assertion below can tell which one
   --- reached `adapter:cancel` rather than accepting either.
   local function stream(name, chat_bufnr)
-    return {
-      handle_id = name,
+    local process = {
       process_id = name .. "-process",
       chat_bufnr = chat_bufnr,
       adapter = {
@@ -27,6 +23,11 @@ describe("permission handler ask_user_question routing", function()
           table.insert(cancelled, cancelled_id)
         end,
       },
+    }
+    processes.register(process)
+    return {
+      turn_id = name,
+      process = process,
       on_insert_choices = function(questions)
         rendered[name] = questions
       end,
@@ -42,8 +43,8 @@ describe("permission handler ask_user_question routing", function()
   end)
 
   it("cancels and renders only the stream matching chat_bufnr", function()
-    registry.register(stream("chat-a", 11))
-    registry.register(stream("chat-b", 12))
+    turns.open(stream("chat-a", 11))
+    turns.open(stream("chat-b", 12))
 
     local result = permission.ask_user_question({ chat_bufnr = 12, questions = QUESTIONS })
 
@@ -58,7 +59,7 @@ describe("permission handler ask_user_question routing", function()
   it("falls back to the sole stream for a bufnr that no longer exists", function()
     -- `--resume` replays earlier turns, so the model can quote a buffer number from a previous
     -- Neovim session. With one stream there is no other candidate to confuse it with.
-    registry.register(stream("chat-a", 11))
+    turns.open(stream("chat-a", 11))
 
     assert.same({ status = "ok" }, permission.ask_user_question({ chat_bufnr = 999, questions = QUESTIONS }))
     assert.same({ "chat-a-process" }, cancelled)
@@ -66,8 +67,8 @@ describe("permission handler ask_user_question routing", function()
   end)
 
   it("refuses to guess between two streams when the bufnr matches neither", function()
-    registry.register(stream("chat-a", 11))
-    registry.register(stream("chat-b", 12))
+    turns.open(stream("chat-a", 11))
+    turns.open(stream("chat-b", 12))
 
     assert.equals("error", permission.ask_user_question({ chat_bufnr = 999, questions = QUESTIONS }).status)
     assert.same({}, cancelled)

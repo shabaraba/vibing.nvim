@@ -108,7 +108,7 @@ describe("core.utils.identity", function()
       end)
 
       it(script .. " sends the sanitized id under the key the RPC handlers read", function()
-        -- `process_id`, not `handle_id`: an environment variable is fixed at spawn, so it can only
+        -- `process_id`, not `turn_id`: an environment variable is fixed at spawn, so it can only
         -- ever name a process. A stale key here would resolve every hook to nil.
         --
         -- The whole printf is matched, argument order included. Asserting only that the key appears

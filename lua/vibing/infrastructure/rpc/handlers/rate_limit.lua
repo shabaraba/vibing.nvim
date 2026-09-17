@@ -13,7 +13,7 @@ local M = {}
 
 --- Parsed failures awaiting pickup by wrapped_on_done, keyed by **turn id**.
 --- Keyed rather than a single slot so concurrent chats can't consume each other's failure — the
---- same class of bug ActiveStreamRegistry exists to prevent.
+--- same class of bug turn_registry.lua exists to prevent.
 ---
 --- The hook names a process (`VIBING_PROCESS_ID`); the turn is resolved on arrival through
 --- `rpc/hook_scope.lua`, because `wrapped_on_done` is what collects this and it knows the turn it is

@@ -26,7 +26,7 @@ end
 --- Variables vibing.nvim owns in the child environment.
 ---
 --- `CLAUDECODE` is unset so a nested invocation is possible at all, and the `VIBING_*` family
---- carries the RPC port and the handle ID that tie the child back to this Neovim and this chat
+--- carries the RPC port and the process id that tie the child back to this Neovim and this chat
 --- buffer. Letting a config value write either would break the hook round trip — the permission
 --- gate, the diff baseline and the approval UI all ride on it — so they are refused rather than
 --- merged.

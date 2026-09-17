@@ -294,7 +294,7 @@ describe("send_message", function()
     end)
 
     it("does not render an explicit cancellation as a chat error", function()
-      local _, appended = handle_turn({ error = "Cancelled", _cancelled = true, _handle_id = "h-cancel" })
+      local _, appended = handle_turn({ error = "Cancelled", _cancelled = true, _turn_id = "h-cancel" })
 
       assert.is_nil(table.concat(appended, ""):find("**Error:** Cancelled", 1, true))
     end)
@@ -598,10 +598,10 @@ describe("send_message", function()
 
   describe("choosing between the snapshot and the fallback", function()
     -- 経路選択は2つの重なり信号の **OR** で、どちらの信号も単体では
-    -- git_snapshot_spec / active_stream_registry_spec 側で手厚くテストされている。
+    -- git_snapshot_spec / turn_registry_spec 側で手厚くテストされている。
     -- テストが無かったのは、その2つを結ぶ send_message 側の条件式そのもの。
     -- ここを `and` に書き違えても条件を反転させても、他のspecは全部通ってしまう。
-    local ASR = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+    local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
     local saved = {}
     local original_find
@@ -641,11 +641,11 @@ describe("send_message", function()
         capture = function() end,
       }
 
-      -- ActiveStreamRegistry は send_message のトップレベルでrequireされている（upvalue）ので、
+      -- TurnRegistry は send_message のトップレベルでrequireされている（upvalue）ので、
       -- package.loaded を差し替えても届かない。実物のテーブルの関数だけ差し替える
-      original_find = ASR.find_other_active_for_worktree
-      ASR.find_other_active_for_worktree = function()
-        return opts.other_stream and { handle_id = "other" } or nil
+      original_find = TurnRegistry.find_other_writing_in
+      TurnRegistry.find_other_writing_in = function()
+        return opts.other_stream and { turn_id = "other" } or nil
       end
 
       local buf = vim.api.nvim_create_buf(false, true)
@@ -692,7 +692,7 @@ describe("send_message", function()
 
     after_each(function()
       if original_find then
-        ASR.find_other_active_for_worktree = original_find
+        TurnRegistry.find_other_writing_in = original_find
         original_find = nil
       end
       for name, module in pairs(saved) do
@@ -811,8 +811,8 @@ describe("send_message", function()
           return {}
         end,
         add_user_section = function() end,
-        set_handle_id = function(id)
-          recorded.handle_id = id
+        set_turn_id = function(id)
+          recorded.turn_id = id
         end,
         set_process_id = function(id)
           recorded.process_id = id
@@ -829,7 +829,7 @@ describe("send_message", function()
 
       SendMessage.execute(adapter, callbacks, "hello", {})
 
-      assert.equals("turn-1", recorded.handle_id)
+      assert.equals("turn-1", recorded.turn_id)
       assert.equals("process-1", recorded.process_id)
 
       vim.api.nvim_buf_delete(buf, { force = true })
@@ -868,7 +868,7 @@ describe("send_message", function()
       }
 
       SendMessage._handle_response(
-        { content = "done", _handle_id = "turn-1", _process_id = "process-1" },
+        { content = "done", _turn_id = "turn-1", _process_id = "process-1" },
         callbacks,
         adapter,
         {},

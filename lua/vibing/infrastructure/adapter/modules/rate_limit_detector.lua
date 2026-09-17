@@ -19,12 +19,12 @@ local M = {}
 --- every one of these CLIs writes.
 ---
 --- @param response Vibing.Response Mutated in place when a limit is detected
---- @param handle_id string The stream's handle, used to claim a parked StopFailure report
+--- @param turn_id string The turn being completed, used to claim a parked StopFailure report
 --- @param event_context table|nil The adapter's event context, if it tracks stream-level info
-function M.attach(response, handle_id, event_context)
+function M.attach(response, turn_id, event_context)
   local merged = RateLimit.merge(
     event_context and event_context.rateLimitInfo,
-    RateLimitHandler.take_failure(handle_id),
+    RateLimitHandler.take_failure(turn_id),
     response.error and RateLimit.from_error_text(tostring(response.error))
   )
 

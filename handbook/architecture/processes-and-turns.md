@@ -3,7 +3,8 @@
 Detail behind `.claude/rules/architecture.md` → "Concurrent Execution, Fork and Subagent Chat",
 whose session-keying sentence is the invariant this page is the reasoning for. A CLI process and a
 request/response exchange are two things, and until #774 they shared one identifier called
-`handle_id`, because one process served exactly one turn and the two coincided.
+`handle_id`, because one process served exactly one turn and the two coincided. #775 gave them
+separate values; #776 gave them separate names and separate registries.
 
 ## Why they were split before anything needed them apart
 
@@ -29,18 +30,19 @@ SessionManager (`--resume <id>` names a conversation the _process_ holds open); 
 
 **Turn-keyed.** Both diff baselines (`git_snapshot` and the `request_diff` fallback) and the git ref
 `refs/worktree/vibing/<turn_id>`; `worktree_binding`'s pending observation; the
-`.vibing/patches/*.patch` filename suffix; `response._handle_id`, which is what
+`.vibing/patches/*.patch` filename suffix; `response._turn_id`, which is what
 `_handle_response`'s staleness check compares; the chunk staleness filter in `append_chunk`; the
 parked rate-limit failure; the per-turn frontmatter in `permission.lua`'s `active_opts_by_turn`.
 
 The direction of the naming was decided by what a missed site does, not by how many sites there
-are. `handle_id` kept meaning _turn_, which is what most consumers wanted, so a missed site hands a
-turn id to something expecting a process: `_processes[turn_id]` is nil, so a cancel silently does
-nothing and `get_session_id` returns nil, and the next turn starts a new session. Loud. Had
-`handle_id` been redefined as the process instead, a missed site would hand a process id to
-`ensure_baseline`, which early-returns when a session already exists for that key — so turn 2 would
-diff against turn 1's tree and `### Modified Files` would be quietly wrong. That is the silent-loss
-shape `git_snapshot.lua`'s own comments exist to prevent.
+are. During the split `handle_id` kept meaning _turn_, which is what most consumers wanted, so a
+missed site handed a turn id to something expecting a process: `_processes[turn_id]` is nil, so a
+cancel silently does nothing and `get_session_id` returns nil, and the next turn starts a new
+session. Loud. Had `handle_id` been redefined as the process instead, a missed site would have
+handed a process id to `ensure_baseline`, which early-returns when a session already exists for
+that key — so turn 2 would diff against turn 1's tree and `### Modified Files` would be quietly
+wrong. That is the silent-loss shape `git_snapshot.lua`'s own comments exist to prevent. The name
+itself is gone now: every consumer says `turn_id`, and `handle_id` appears nowhere in `lua/`.
 
 The two minters live in `lua/vibing/core/utils/identity.lua` and emit the same shape on purpose:
 nothing may parse an id to learn its kind, because that would be a convention with no invariant
@@ -76,16 +78,47 @@ both tables in the same breath — an accident, not a guarantee — and on one i
 
 `get_active_opts` fell back to the sole registered entry when the id was **present but unmatched**,
 where the registry returned nil for the same input. So a hook arriving late, from a turn that had
-already unregistered, had another chat's `allow` / `deny` / `:once` lists applied to its decision:
+already closed, had another chat's `allow` / `deny` / `:once` lists applied to its decision:
 the #667 failure through a door #667 did not close. `hook_scope.of` now returns nil there, and
 `build_permission_config` falls through to the global config, which is the fail-safer of the two
 answers. A test pins it.
 
 The one guess that survives is for a hook that named **no** process at all, and only when exactly
-one stream is in flight. It is honest today because a registered stream _is_ a running turn — an
-entry exists from `stream()` to `wrapped_on_done` — so "exactly one entry" really does mean "there
-is no other candidate". It is named `sole_active()` rather than open-coded so there is one place to
+one turn is open. It is honest today because a registered process _is_ a running turn — both
+entries exist from `stream()` to `wrapped_on_done` — so "exactly one entry" really does mean "there
+is no other candidate". It is named `sole_open()` rather than open-coded so there is one place to
 delete once a resident transport can name its own turn on its own stdio.
+
+## Two registries, because the split line is the id split
+
+`active_stream_registry.lua` held five things and was really holding two, so #776 cut it where the
+ids were already cut:
+
+- **`process_registry.lua`** — keyed by process. The `--resume` session the process holds, the chat
+  it serves, the adapter that can kill it, and `active_turn_id`.
+- **`turn_registry.lua`** — keyed by turn, each entry holding a _reference_ to its process entry
+  rather than a copy of its fields, so `adapter` / `chat_bufnr` / `session_id` have one home and
+  cannot drift. It requires `process_registry`; the dependency never runs the other way, and
+  `open` / `close` are the only writers of `active_turn_id`.
+
+Two of the five moved sides, and both are bug fixes paid for by the split rather than behaviour
+changes:
+
+- **`find_other_active_for_session` → `process_registry.find_other_holding_session`.** The question
+  is who _holds_ the session, not who is running. A resident process keeps its `--resume <id>`
+  between turns, so asked of turns, a second process could attach to the same transcript the moment
+  the first went idle — the corruption #756 refuses.
+- **`find_other_active_for_worktree` → `turn_registry.find_other_writing_in`.** This one must stay
+  per turn. The window it guards runs from a baseline to its `clear()`, which is a turn's window;
+  asked of processes, two resident processes in one repository would make every chat overlap every
+  other one permanently, every turn would fall back to `request_diff`, and the #625 snapshot
+  mechanism would never be used again.
+
+`turn_registry.get` also lost the nil fallback the old `get` carried; a caller with no id asks
+`sole_open()` and says so. That is what keeps `git_snapshot`'s TTL sweep honest: inheriting the
+fallback would report every stale baseline as still open whenever one turn happened to be running,
+stopping the sweep and leaving `refs/worktree/vibing/` to grow without bound. The one call site
+that could pass nil, `ChatBuffer:is_responding()`, already guarded it.
 
 ## `_capture_baselines` now declines an unresolvable turn
 
@@ -117,10 +150,11 @@ delimits a turn:
   out and making `cancel(process_id)` require its argument removes the special case; it is deferred
   for the same reason, since `init.lua`, `base.lua` and five specs name the nil form.
 
-- **`subagent_count` lives on the registry entry and is cleared by `unregister`.** With one turn per
-  entry that is exactly right. A resident process must reset the count when a new turn starts, or a
-  `Task` whose `tool_result` never lands becomes a permanent contribution to
-  `total_subagent_count()` and throttles every chat through `concurrency.at_capacity()`.
+- **`subagent_count` lives on the turn entry and is dropped by `close`.** With one turn per entry
+  that is exactly right, and it is now on the correct side of the split. A resident process must
+  still reset the count when a new turn starts, or a `Task` whose `tool_result` never lands becomes
+  a permanent contribution to `total_subagent_count()` and throttles every chat through
+  `concurrency.at_capacity()`.
 - **`active_opts_by_turn` is set once per `stream()`.** A resident transport must call
   `set_active_opts` at the top of every turn, or turn N+1 runs under turn N's `permission_mode` and
   ignores the allow entry an approval just produced.

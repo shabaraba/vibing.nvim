@@ -5,7 +5,7 @@ local FrontmatterHandler = require("vibing.presentation.chat.modules.frontmatter
 local Renderer = require("vibing.presentation.chat.modules.renderer")
 local StreamingHandler = require("vibing.presentation.chat.modules.streaming_handler")
 local ConversationExtractor = require("vibing.presentation.chat.modules.conversation_extractor")
-local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 local Fs = require("vibing.core.utils.fs")
 
@@ -21,7 +21,7 @@ local Fs = require("vibing.core.utils.fs")
 ---@field _pending_choices table[]? add_user_section()後に挿入する選択肢
 ---@field _pending_approval table? add_user_section()後に挿入する承認要求UI
 ---@field _pending_user_text string? 次のadd_user_section()で本文として差し込むテキスト
----@field _current_handle_id string? 待っているターンのID（chunk / response の staleness 判定）
+---@field _current_turn_id string? 待っているターンのID（chunk / response の staleness 判定）
 ---@field _current_process_id string? そのターンを走らせているCLIプロセスのID（kill対象）。
 ---  ターンIDとは別に持つ必要がある: `cancel_request` はターンが終わった後にもゾンビ回収として
 ---  呼ばれる（`send_message` 冒頭）ので、その時点ではレジストリにターンのエントリが無く、
@@ -49,7 +49,7 @@ function ChatBuffer:new(config)
   instance._chunk_timer = nil
   instance._pending_choices = nil
   instance._pending_approval = nil
-  instance._current_handle_id = nil
+  instance._current_turn_id = nil
   instance._current_process_id = nil
   instance._current_adapter = nil
   instance._is_sending = false
@@ -100,8 +100,8 @@ end
 
 ---実行中のリクエストを止める
 ---
----`adapter:cancel` は `wrapped_on_done` を同期で呼ぶので、ハンドルの後始末（`_current_handle_id`
----を落とす）はここではしない。`_handle_response` の handle_id 一致判定より先に消すと、
+---`adapter:cancel` は `wrapped_on_done` を同期で呼ぶので、ターンIDの後始末（`_current_turn_id`
+---を落とす）はここではしない。`_handle_response` の turn_id 一致判定より先に消すと、
 ---キャンセルした当のターンの後始末が「別のターンの応答」として捨てられる。
 ---捨てたい呼び出し元（`close` / `send_message`）が、戻ってきてから自分で消す
 ---@return boolean cancelled 止めるものがあったか
@@ -123,7 +123,7 @@ end
 function ChatBuffer:close()
   -- 実行中のリクエストをキャンセル
   self:cancel_request()
-  self._current_handle_id = nil
+  self._current_turn_id = nil
   self._current_process_id = nil
   self._current_adapter = nil
 
@@ -166,11 +166,11 @@ end
 
 ---このチャットがリクエストを実行中か（送信開始からCLI終了まで）
 ---
----`_is_sending`は<CR>からCLI起動までの隙間をカバーする。`_current_handle_id`はその後だが、
+---`_is_sending`は<CR>からCLI起動までの隙間をカバーする。`_current_turn_id`はその後だが、
 ---応答完了時にクリアされない（次のsend_message()でkillしてゾンビプロセスを刈るため意図的に
 ---残している）ので、存在だけを見ると1ターン目以降ずっと"responding"になる。
----実行中かどうかはActiveStreamRegistryが唯一の答えを持っている: 全アダプタがstream開始で
----registerし、on_doneでunregisterする。
+---実行中かどうかはTurnRegistryが唯一の答えを持っている: 全アダプタがstream開始で
+---`open`し、on_doneで`close`する。
 ---
 ---既知の隙間: _handle_responseは`### Modified Files`と次の`## User`をvim.schedule越しに
 ---書くので、その1ティックのあいだidleを返す。応答本文はこの時点で完成しているのでdiff脚注
@@ -181,10 +181,10 @@ function ChatBuffer:is_responding()
   if self:is_sending() then
     return true
   end
-  if not self._current_handle_id then
+  if not self._current_turn_id then
     return false
   end
-  return ActiveStreamRegistry.get(self._current_handle_id) ~= nil
+  return TurnRegistry.get(self._current_turn_id) ~= nil
 end
 
 ---このターンがエラーで終わったことを記録する
@@ -479,7 +479,7 @@ function ChatBuffer:send_message()
 
   -- 前のリクエストが実行中ならキャンセル（ゾンビプロセス対策）
   self:cancel_request()
-  self._current_handle_id = nil
+  self._current_turn_id = nil
   self._current_process_id = nil
   self._current_adapter = nil
 
@@ -560,10 +560,10 @@ function ChatBuffer:send_message()
       --
       -- `update_session_permissions` の上の呼び出しが唯一の記録先。以前はここで
       -- `permission.lua` のモジュールレベルの共有テーブルにも同じ判断を書いており、
-      -- そちらはチャットでも handle_id でもキーされていなかったので、あるチャットで出した
+      -- そちらはチャットでも turn_id でもキーされていなかったので、あるチャットで出した
       -- 承認がエディタ上の全チャットに効いていた（#667）。チャット単位のリストは
       -- `send_message` が `permissions_session_allow` / `permissions_session_deny` として
-      -- リクエストの opts に載せ、`set_active_opts` が handle_id 単位で持つので、二重に
+      -- リクエストの opts に載せ、`set_active_opts` が turn_id 単位で持つので、二重に
       -- 書く必要はそもそも無かった。
 
       -- Get tool name and input for message (before clearing _pending_approval)
@@ -615,8 +615,8 @@ function ChatBuffer:send_message()
     parse_frontmatter = function()
       return self:parse_frontmatter()
     end,
-    append_chunk = function(chunk, handle_id)
-      return self:append_chunk(chunk, handle_id)
+    append_chunk = function(chunk, turn_id)
+      return self:append_chunk(chunk, turn_id)
     end,
     get_session_id = function()
       return self:get_session_id()
@@ -636,7 +636,7 @@ function ChatBuffer:send_message()
       self:save_after_turn()
       -- 応答が完全に終わった唯一の合流点。`_handle_response` の完了経路は4つある
       -- （セッション破損 / mote finalize / ファイル変更なし / git patch finalize、うち2つは
-      -- `vim.schedule` の中）が、すべてこのコールバックに合流する。しかも handle_id 不一致
+      -- `vim.schedule` の中）が、すべてこのコールバックに合流する。しかも turn_id 不一致
       -- による早期returnより後なので、キャンセル済みの古いターンが遅れて完了しても飛ばない。
       --
       -- `ChatBuffer:add_user_section()` 本体に置いてはいけない: そちらはスラッシュコマンド
@@ -667,13 +667,13 @@ function ChatBuffer:send_message()
     get_session_deny = function()
       return self:get_session_deny()
     end,
-    clear_handle_id = function()
-      self._current_handle_id = nil
+    clear_turn_id = function()
+      self._current_turn_id = nil
       self._current_process_id = nil
       self._current_adapter = nil
     end,
-    set_handle_id = function(handle_id)
-      self._current_handle_id = handle_id
+    set_turn_id = function(turn_id)
+      self._current_turn_id = turn_id
     end,
     set_process_id = function(process_id)
       self._current_process_id = process_id
@@ -681,8 +681,8 @@ function ChatBuffer:send_message()
     set_adapter = function(adapter_instance)
       self._current_adapter = adapter_instance
     end,
-    get_handle_id = function()
-      return self._current_handle_id
+    get_turn_id = function()
+      return self._current_turn_id
     end,
     clear_sending = function()
       self._is_sending = false
@@ -704,7 +704,7 @@ function ChatBuffer:send_message()
   -- 消えて idle に化ける
   self._stop_reason = nil
 
-  -- リクエストを送信（handle_idはコールバックで設定される）
+  -- リクエストを送信（turn_idはコールバックで設定される）
   SendMessage.execute(adapter, callbacks, message, config)
 
   if self:is_open() then
@@ -741,12 +741,12 @@ function ChatBuffer:_flush_chunks()
 end
 
 ---ストリーミングチャンクを追加（バッファリング有効）
----キャンセル済みの古いリクエストが遅れて発火したチャンクは、現在アクティブなハンドルIDと
+---キャンセル済みの古いリクエストが遅れて発火したチャンクは、現在アクティブなターンIDと
 ---一致しない限り無視する
 ---@param chunk string
----@param handle_id string?
-function ChatBuffer:append_chunk(chunk, handle_id)
-  if handle_id and self._current_handle_id and handle_id ~= self._current_handle_id then
+---@param turn_id string?
+function ChatBuffer:append_chunk(chunk, turn_id)
+  if turn_id and self._current_turn_id and turn_id ~= self._current_turn_id then
     return
   end
 

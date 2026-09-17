@@ -162,7 +162,7 @@ function M.system_prompt_args(ctx)
   -- System prompt additions (worktree convention + chat file path + optional language). This
   -- entire block must stay byte-for-byte identical across turns of the same conversation —
   -- Anthropic's prompt cache matches on a forward-prefix basis (tools -> system -> messages), so
-  -- any per-turn value here (e.g. a freshly generated handle_id) would invalidate the cached
+  -- any per-turn value here (e.g. a freshly generated turn_id) would invalidate the cached
   -- system+history prefix on every single turn. See issue #469.
   -- Lightweight calls have no tools/MCP servers at all, so tool-usage instructions below would
   -- just be wasted prompt tokens describing capabilities that don't exist.

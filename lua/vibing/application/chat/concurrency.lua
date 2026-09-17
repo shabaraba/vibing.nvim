@@ -61,7 +61,7 @@ end
 ---チャット本数だけを見ると、5チャットが上限内でも各自が4つ起動すれば実際は20並列になる（#701）
 ---@return number
 function M.subagent_count()
-  return require("vibing.infrastructure.adapter.modules.active_stream_registry").total_subagent_count()
+  return require("vibing.infrastructure.adapter.modules.turn_registry").total_subagent_count()
 end
 
 ---新しいターンを1本増やせない状態か

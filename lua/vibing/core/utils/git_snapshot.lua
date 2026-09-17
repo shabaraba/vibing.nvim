@@ -202,10 +202,10 @@ end
 ---（`core/utils/identity.lua` の `%016x_%x`）は16進数と `_` しか出さず、どちらも
 ---この集合に入っているのでここは常に恒等写像になる。その前提は
 ---git_snapshot_spec の「ref名は本物のturn_idそのもの」ケースで固定してある。
----@param handle_id string ターンID
+---@param turn_id string ターンID
 ---@return string
-local function sanitize(handle_id)
-  local safe = tostring(handle_id):gsub("[^%w%-_]", "")
+local function sanitize(turn_id)
+  local safe = tostring(turn_id):gsub("[^%w%-_]", "")
   if safe == "" then
     safe = "anon"
   end
@@ -308,7 +308,7 @@ end
 ---`refs/worktree/vibing/` 配下の **十分に古い** 残留refを消す
 ---
 ---年齢で足切りするのは、この名前空間がプロセス間で共有されているから。`sessions` も
----`ActiveStreamRegistry` もNeovimプロセス内のテーブルなので、同じworktreeを別のNeovimが
+---`TurnRegistry` もNeovimプロセス内のテーブルなので、同じworktreeを別のNeovimが
 ---開いていても、その実行中のリクエストのrefはこちらからは「見覚えのないref」にしか見えない。
 ---無条件に消すと、走っている他プロセスのgc保険を外してしまう。
 ---
@@ -340,29 +340,33 @@ local function sweep_refs(root)
   end
 end
 
----そのリクエストがまだ走っているか
+---そのターンがまだ開いているか
 ---
----全アダプタがstream開始で `ActiveStreamRegistry` にregisterし、`wrapped_on_done` で
----unregisterする。つまりレジストリは「この実行がもう終わったか」を知っている唯一の場所で、
+---全アダプタがstream開始で `TurnRegistry.open` し、`wrapped_on_done` で `close` する。つまり
+---レジストリは「このターンがもう終わったか」を知っている唯一の場所で、
 ---`ChatBuffer:is_responding()` も同じ根拠で判断している（handbook/architecture/per-request-diffs.md 参照）。
----@param handle_id string
+---
+---**プロセス単位で聞いてはいけない。** 常駐プロセス（#774）はターンの合間も生きているので、
+---「プロセスが居るか」で判定すると下のスイープが永久に走らなくなる。`TurnRegistry.get` が
+---sole-openフォールバックを持たないのも同じ理由で、1つでもターンが開いていれば全セッションが
+---「実行中」と報告され、`refs/worktree/vibing/` にゴミが残り続ける。
+---@param turn_id string
 ---@return boolean
-local function request_still_running(handle_id)
-  local ok, registry =
-    pcall(require, "vibing.infrastructure.adapter.modules.active_stream_registry")
+local function turn_still_open(turn_id)
+  local ok, registry = pcall(require, "vibing.infrastructure.adapter.modules.turn_registry")
   if not ok then
     return false
   end
-  local found_ok, entry = pcall(registry.get, handle_id)
+  local found_ok, entry = pcall(registry.get, turn_id)
   return found_ok and entry ~= nil
 end
 
 ---clearされずに放置されたセッション（キャンセル・クラッシュ）を破棄する
 ---
----**年齢だけで刈ってはいけない。** これは新しい `handle_id` で `ensure_baseline` が呼ばれる
+---**年齢だけで刈ってはいけない。** これは新しい `turn_id` で `ensure_baseline` が呼ばれる
 ---たびに走る＝同じNeovim内の **別チャット** が新しいターンを始めるたびに走るので、1時間を
 ---超える長いターン（エージェントの長時間作業では普通に起きる）のセッションが、まだ実行中の
----まま消される。消えると次のツールで `sessions[handle_id]` が空になり、**その時点のツリーで
+---まま消される。消えると次のツールで `sessions[turn_id]` が空になり、**その時点のツリーで
 ---ベースラインを取り直してしまう** — スイープより前の変更が、警告もフォールバックもなしに
 ---diffから落ちる。この仕組みが無くそうとしている失敗そのもの。
 ---
@@ -370,12 +374,12 @@ end
 ---際限なく育たないための外枠として残す（registerされなかったストリームはこちらで回収される）。
 local function sweep_stale()
   local now = os.time()
-  for handle_id, s in pairs(sessions) do
-    if now - s.created > SESSION_TTL_SEC and not request_still_running(handle_id) then
+  for turn_id, s in pairs(sessions) do
+    if now - s.created > SESSION_TTL_SEC and not turn_still_open(turn_id) then
       if s.ref then
         git({ "git", "update-ref", "-d", s.ref }, s.root)
       end
-      sessions[handle_id] = nil
+      sessions[turn_id] = nil
     end
   end
 end
@@ -384,14 +388,14 @@ end
 ---
 ---リクエスト開始時ではなく「最初の変更しうるツール」の時点で取るので、読み取りだけのターンは
 ---コストゼロになる。
----@param handle_id string|nil リクエストのハンドルID
+---@param turn_id string|nil リクエストのターンID
 ---@param cwd string|nil セッションのworking_dir
 ---@param tool_name string ツール名
-function M.ensure_baseline(handle_id, cwd, tool_name)
-  if not handle_id or handle_id == "" then
+function M.ensure_baseline(turn_id, cwd, tool_name)
+  if not turn_id or turn_id == "" then
     return
   end
-  if sessions[handle_id] then
+  if sessions[turn_id] then
     return
   end
   if tool_name and NON_MUTATING_TOOLS[tool_name] then
@@ -428,7 +432,7 @@ function M.ensure_baseline(handle_id, cwd, tool_name)
   -- refは「リクエスト中に `git gc` が走ってもオブジェクトが消えない」ための保険にすぎない。
   -- 作れなくても（refs/worktree/ を知らないgit 2.23未満など）スナップショット自体は成立する
   -- ので、失敗は握りつぶして続行する。作れたときだけclear()の削除対象になる。
-  local ref = REF_PREFIX .. sanitize(handle_id)
+  local ref = REF_PREFIX .. sanitize(turn_id)
   local updated = git({ "git", "update-ref", ref, base }, root)
   if not updated or updated.code ~= 0 then
     ref = nil
@@ -453,7 +457,7 @@ function M.ensure_baseline(handle_id, cwd, tool_name)
     end
   end
 
-  sessions[handle_id] = {
+  sessions[turn_id] = {
     root = root,
     base = base,
     ref = ref,
@@ -463,33 +467,33 @@ function M.ensure_baseline(handle_id, cwd, tool_name)
 end
 
 ---このリクエストでスナップショットのベースラインを取得済みか
----@param handle_id string|nil
+---@param turn_id string|nil
 ---@return boolean
-function M.has_baseline(handle_id)
-  return handle_id ~= nil and sessions[handle_id] ~= nil
+function M.has_baseline(turn_id)
+  return turn_id ~= nil and sessions[turn_id] ~= nil
 end
 
 ---このリクエストの書き込みウィンドウが、同じworktreeの別のリクエストと重なっていたか
 ---
 ---trueなら、ツリー差分はどちらのターンの成果か区別できない。相手がすでに終わっていても
 ---trueのままなので、重なった2つのターンは両方ともフォールバックする。
----@param handle_id string|nil
+---@param turn_id string|nil
 ---@return boolean
-function M.had_overlap(handle_id)
-  local s = handle_id and sessions[handle_id] or nil
+function M.had_overlap(turn_id)
+  local s = turn_id and sessions[turn_id] or nil
   return s ~= nil and s.overlapped == true
 end
 
 ---ベースラインを取ったworktreeルート
----@param handle_id string|nil
+---@param turn_id string|nil
 ---@return string|nil
-function M.get_root(handle_id)
-  local s = handle_id and sessions[handle_id] or nil
+function M.get_root(turn_id)
+  local s = turn_id and sessions[turn_id] or nil
   return s and s.root or nil
 end
 
 ---リクエストの差分を生成する
----@param handle_id string|nil リクエストのハンドルID
+---@param turn_id string|nil リクエストのターンID
 ---@param extra_paths table<string, boolean>|nil ツールイベント由来の変更ファイル（補完用）
 ---@return string[] files 変更ファイルの相対パス一覧（表示用、worktreeルート相対）
 ---@return string[] abs_files 絶対パス一覧（バッファリロード用）
@@ -500,14 +504,14 @@ end
 ---@return string[] extra_only ツリー差分に現れず extra_paths 由来でのみ一覧に載った絶対パス。
 ---  `.gitignore` 対象のWrite/Edit変更はここに来る（#735）。呼び出し側は request_diff の退避から
 ---  patchセクションを合成して補える
-function M.generate(handle_id, extra_paths)
+function M.generate(turn_id, extra_paths)
   local files = {}
   local abs_files = {}
   local patch_content = nil
   local seen = {}
   local ok = false
 
-  local s = handle_id and sessions[handle_id] or nil
+  local s = turn_id and sessions[turn_id] or nil
   if s then
     local after = snapshot(s.root)
     if after then
@@ -620,19 +624,19 @@ end
 ---
 ---`git gc` は実行しない。refを外したオブジェクトはdanglingになり、`gc.pruneExpire`（既定2週間）を
 ---過ぎた時点で通常の `git gc --auto` が回収する。
----@param handle_id string|nil
-function M.clear(handle_id)
-  if not handle_id then
+---@param turn_id string|nil
+function M.clear(turn_id)
+  if not turn_id then
     return
   end
-  local s = sessions[handle_id]
+  local s = sessions[turn_id]
   if not s then
     return
   end
   if s.ref then
     git({ "git", "update-ref", "-d", s.ref }, s.root)
   end
-  sessions[handle_id] = nil
+  sessions[turn_id] = nil
 end
 
 ---プラグイン起動時に、前回クラッシュ等で残ったrefを掃除する
@@ -652,10 +656,10 @@ function M.sweep(cwd)
 end
 
 ---テスト用: セッションの内部状態を参照する（`created` を古くしてTTLを試すため）
----@param handle_id string
+---@param turn_id string
 ---@return Vibing.GitSnapshot.Session|nil
-function M._session(handle_id)
-  return sessions[handle_id]
+function M._session(turn_id)
+  return sessions[turn_id]
 end
 
 ---テスト用: キャッシュとセッション状態を捨てる

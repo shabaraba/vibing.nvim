@@ -1,4 +1,5 @@
-local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local processes = require("vibing.infrastructure.adapter.modules.process_registry")
+local registry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
 describe("rpc.handlers.rate_limit", function()
   ---@return table
@@ -13,14 +14,17 @@ describe("rpc.handlers.rate_limit", function()
   local registered = {}
   local function open_turn(name)
     local chat = { process_id = name .. "-process", turn_id = name .. "-turn" }
-    registry.register({ handle_id = chat.turn_id, process_id = chat.process_id })
-    table.insert(registered, chat.turn_id)
+    local process = { process_id = chat.process_id }
+    processes.register(process)
+    registry.open({ turn_id = chat.turn_id, process = process })
+    table.insert(registered, chat)
     return chat
   end
 
   after_each(function()
-    for _, turn_id in ipairs(registered) do
-      registry.unregister(turn_id)
+    for _, chat in ipairs(registered) do
+      registry.close(chat.turn_id)
+      processes.unregister(chat.process_id)
     end
     registered = {}
   end)

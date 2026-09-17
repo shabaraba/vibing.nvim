@@ -52,8 +52,12 @@ One adapter, driven by a descriptor per backend (ADR 009). Adding a backend is
 - `modules/ask_user_question_instructions.lua` - Shared Claude/Codex choice-list tool instruction
   and stable chat-buffer identity line
 - `modules/session_manager.lua` - CLI sessions, keyed by the **process** that holds one open
-- `modules/active_stream_registry.lua` - In-flight streams, keyed by **turn**, each carrying the
-  process serving it (`processes-and-turns.md`)
+- `modules/process_registry.lua` - Live CLI processes, keyed by **process**. Holds what outlives a
+  turn: the session the process has open on `--resume`, the chat it serves, the adapter that can
+  kill it (`processes-and-turns.md`)
+- `modules/turn_registry.lua` - Open turns, keyed by **turn**, each holding a reference to its
+  process entry. Requires `process_registry` and is the only writer of `active_turn_id`; the
+  dependency never runs the other way
 - `../hooks/transports.lua` - The four hook transports a descriptor can name, over the four
   settings generators beside it
 

@@ -1,6 +1,6 @@
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
 local helper = require("tests.helpers.adapter_stream")
-local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
 -- Deliberately distinct, so a site that uses one where it means the other misses instead of
 -- working by coincidence. The id alphabet itself is tests/lua/core/utils/identity_spec.lua.
@@ -97,7 +97,7 @@ describe("cli_runtime", function()
       -- Both ids, even though no process was ever started: the chat buffer's staleness check reads
       -- the turn and the session read-back reads the process, so a response missing either one is
       -- indistinguishable from someone else's.
-      assert.equals("t1", response._handle_id)
+      assert.equals("t1", response._turn_id)
       assert.equals("p1", response._process_id)
     end)
 
@@ -171,7 +171,7 @@ describe("cli_runtime", function()
       assert.is_truthy(response.error:find("/old/bin/claude", 1, true))
       assert.is_truthy(response.error:find("could not be started", 1, true))
       assert.is_nil(response.error:find("ENOENT", 1, true))
-      assert.equals("t1", response._handle_id)
+      assert.equals("t1", response._turn_id)
       assert.equals("p1", response._process_id)
     end)
 
@@ -256,9 +256,9 @@ for _, backend in ipairs(helper.adapters()) do
       assert.equals("Cancelled", result.done_responses[1].error)
       -- The synthesized response still names its turn, which is what `_handle_response`'s staleness
       -- check compares, and the process, which is what the session read-back reads.
-      assert.equals(result.handle_id, result.done_responses[1]._handle_id)
+      assert.equals(result.turn_id, result.done_responses[1]._turn_id)
       assert.equals(result.process_id, result.done_responses[1]._process_id)
-      assert.is_nil(ActiveStreamRegistry.get(result.handle_id))
+      assert.is_nil(TurnRegistry.get(result.turn_id))
     end)
 
     it("cancel takes a process id and not a turn id", function()
@@ -266,14 +266,14 @@ for _, backend in ipairs(helper.adapters()) do
       -- kill. Under oneshot the two used to be one value, which is what hid every mis-assignment.
       local result = helper.run_stream(adapter)
 
-      adapter:cancel(result.handle_id)
+      adapter:cancel(result.turn_id)
       vim.wait(100, function()
         return #result.done_responses > 0
       end)
 
       assert.equals(0, #result.done_responses, "the turn id cancelled a process")
-      assert.is_not.equals(result.handle_id, result.process_id)
-      assert.is_truthy(ActiveStreamRegistry.get(result.handle_id), "the stream was unregistered")
+      assert.is_not.equals(result.turn_id, result.process_id)
+      assert.is_truthy(TurnRegistry.get(result.turn_id), "the stream was unregistered")
 
       adapter:cancel(result.process_id)
       vim.wait(200, function()

@@ -182,7 +182,7 @@ and `send_message.lua` sets `opts._subagent_id` rather than `opts._is_fork`.
 **The cost of that:** two buffers now resume one `session_id` for good. Two
 `claude --resume <same id>` processes would append to the same transcript concurrently, so
 `send_message.lua` hard-refuses a send while another buffer's stream holds the same session
-(`ActiveStreamRegistry.find_other_active_for_session`), before `start_response()` and without
+(`ProcessRegistry.find_other_holding_session`), before `start_response()` and without
 touching the unsent `## User` line. Switching between the two buffers also re-diverges the shared
 session's prompt cache, since each carries a different system prompt — accepted, not solved.
 

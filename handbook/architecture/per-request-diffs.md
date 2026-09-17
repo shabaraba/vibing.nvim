@@ -159,7 +159,7 @@ changes of one overlapping turn is the less wrong answer.
 
 **The overlap has to be recorded when the baseline is taken, not asked about at response time**,
 and getting that wrong makes the guard protect the wrong side. A point-in-time
-`find_other_active_for_worktree` at response time is only answered honestly for the turn that
+`find_other_writing_in` at response time is only answered honestly for the turn that
 finishes _first_ — by the time the second one asks, the first has already unregistered, so it reads
 "no overlap" and takes the snapshot path. But its window (its own baseline → its own diff) is
 precisely the one that contains the other turn's changes, so the misattribution lands on exactly
@@ -170,10 +170,10 @@ of them (`had_overlap`). A session lives from its baseline to its `clear()`, whi
 the diff covers, so two open sessions on one root _are_ two overlapping windows. Marking both is
 what makes the fallback symmetric — the second turn still knows, long after the first has gone.
 
-`ActiveStreamRegistry.find_other_active_for_worktree` is kept as the second signal, for a stream
+`TurnRegistry.find_other_writing_in` is kept as the second signal, for a stream
 that is writing without a session of its own to be seen through (a `write-tree` that failed on a
 conflicted index, say). It excludes by **turn id**, not by `chat_bufnr` the way
-`find_other_active_for_session` does — grok and copilot register no `chat_bufnr` (see
+`find_other_holding_session` does — grok and copilot register no `chat_bufnr` (see
 `features.md`), so two streams on either of those backends would compare `nil` against `nil` and
 never see each other. The turn is the right scope and not an accident of naming: the window this
 guard is about runs from a baseline to its `clear()`, which is a turn's window, so asking about
@@ -181,7 +181,7 @@ processes would make every chat in a repository overlap with every other one per
 processes outlive turns (`processes-and-turns.md`).
 
 **Both overlap signals are process-local, so two Neovim instances on one worktree are out of
-scope.** `sessions` and `ActiveStreamRegistry` are module tables, so a chat running in a second
+scope.** `sessions` and `TurnRegistry` are module tables, so a chat running in a second
 Neovim is invisible to the first: both would take the snapshot path and each would report the
 other's changes as its own — **all** of them, not just the Bash-driven ones, since a tree diff
 carries every change made in the window whatever produced it. So it is the same misattribution the
@@ -199,7 +199,7 @@ starts a turn — so reaping purely by age would drop the session of a turn stil
 TTL, which a long agent run reaches routinely. The next tool of that turn would then find no
 session and re-baseline against the tree as it stands, so everything it changed before the sweep
 falls out of the diff with no warning and no fallback: the silent loss again, through a third door.
-It therefore asks `ActiveStreamRegistry` whether the request is still running — the same registry
+It therefore asks `TurnRegistry` whether the request is still running — the same registry
 that tells `ChatBuffer:is_responding()` a run is over — and keeps the TTL only as the outer bound
 that stops the table growing when a stream never registered.
 

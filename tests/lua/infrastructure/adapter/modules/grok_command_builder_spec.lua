@@ -156,7 +156,7 @@ describe("grok_command_builder", function()
       assert.is_nil(rules_text:find("Current vibing.nvim chat buffer", 1, true))
     end)
 
-    it("embeds no handle_id, so the rules stay byte-identical across turns", function()
+    it("embeds no turn_id, so the rules stay byte-identical across turns", function()
       -- A per-turn value here would invalidate the cached prompt prefix on every message (#469).
       local first = grok_command_builder.build("hello", {}, nil, {})
       local second = grok_command_builder.build("again", {}, "session-1", {})
@@ -164,7 +164,7 @@ describe("grok_command_builder", function()
       local a = first[find_flag(first, "--rules") + 1]
       local b = second[find_flag(second, "--rules") + 1]
       assert.equals(a, b)
-      assert.is_nil(a:find("handle_id", 1, true))
+      assert.is_nil(a:find("turn_id", 1, true))
     end)
   end)
 

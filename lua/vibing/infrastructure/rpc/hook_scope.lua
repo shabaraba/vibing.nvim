@@ -20,15 +20,16 @@
 ---
 --- @module vibing.infrastructure.rpc.hook_scope
 
-local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
 local M = {}
 
 --- @class Vibing.HookScope
 --- @field process_id string|nil What the hook named, once emptied of the empty string.
 --- @field turn_id string|nil The turn that process has open. nil when the process is unknown.
---- @field entry ActiveStreamEntry|nil The stream serving that turn, when one is registered.
---- @field guessed boolean Whether `turn_id` came from the sole-active fallback rather than from the
+--- @field entry Vibing.TurnEntry|nil The turn itself, when one is open. Its `process` field is the
+---   thing to cancel: killing is done to a process, so it is named by one.
+--- @field guessed boolean Whether `turn_id` came from the sole-open fallback rather than from the
 ---   id the hook supplied. Reported rather than hidden because the two callers want different
 ---   answers: `permission.lua` accepts the guess, `rate_limit.lua` refuses it. Each states its own
 ---   reason at the point it decides.
@@ -45,19 +46,19 @@ function M.of(params)
     process_id = nil
   end
 
-  local entry = ActiveStreamRegistry.find_by_process_id(process_id)
+  local entry = TurnRegistry.of_process(process_id)
   local guessed = false
   if not entry and not process_id then
     -- The hook named no process: either it predates the variable, or the environment lost it. With
-    -- exactly one stream in flight there is no other candidate, so this is a resolution rather than
-    -- a coin flip; with several, `sole_active` returns nil.
-    entry = ActiveStreamRegistry.sole_active()
+    -- exactly one turn open there is no other candidate, so this is a resolution rather than a coin
+    -- flip; with several, `sole_open` returns nil.
+    entry = TurnRegistry.sole_open()
     guessed = entry ~= nil
   end
 
   return {
     process_id = process_id,
-    turn_id = entry and entry.handle_id or nil,
+    turn_id = entry and entry.turn_id or nil,
     entry = entry,
     guessed = guessed,
   }
