@@ -484,6 +484,20 @@ run**, so a stale one silently reverts the file it is written over. Four of the 
 inputs still match HEAD; the rest differ by up to 238 lines. That asymmetry is the whole reason to
 record staleness next to a preserved instrument rather than just its existence.
 
+**Preserving an instrument can remove the accident that was protecting you.** While the snapshots
+sat in `/tmp`, a stale run was going to become a `FileNotFoundError` the next time the OS cleared
+it — and that looked like a reason to leave them there. It is not a safety property: it depends on
+when an unrelated process runs, it does nothing in the window before that, and it fires just as
+readily on the snapshots that are still correct. The fix is not to preserve the accident but to
+make the dangerous operation check itself, so `_guard.py` now compares each snapshot against the
+file it would overwrite and refuses, by name and with the drift. **A safety property that nothing
+states and nothing tests is a coincidence**, and moving files is enough to end it.
+
+The guard's first draft reported ~1312 changed lines where `diff` says 207, because it compared
+positionally and an insertion near the top shifts everything after it. Worth recording only because
+of where it happened: an error message overstating the damage, inside the check written to stop a
+number from being wrong.
+
 **What actually saved these was an audit, not a handover.** The location of the scripts was never
 written down; `/tmp` came up only because the numbers they produced were being re-derived and
 somebody went looking for the cost of re-running them. So "write down where the tool is" is the
