@@ -11,6 +11,8 @@
 ---成功時はcontentに結果、失敗時はerrorにエラーメッセージが格納される
 ---@field content string 応答コンテンツ（Claudeの返答テキスト）
 ---@field error string? エラーメッセージ（実行失敗時のみ設定される）
+---@field _handle_id string? このレスポンスが属するターンのID
+---@field _process_id string? そのターンを走らせたCLIプロセスのID
 
 ---@class Vibing.Adapter
 ---AIバックエンドとの通信を抽象化するアダプター基底クラス

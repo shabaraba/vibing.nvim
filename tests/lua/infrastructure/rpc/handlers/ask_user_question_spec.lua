@@ -13,35 +13,63 @@ describe("permission handler ask_user_question routing", function()
     registry.unregister("chat-b")
   end)
 
-  it("cancels and renders only the stream matching chat_bufnr", function()
-    local cancelled = {}
-    local rendered = {}
-    local function stream(handle_id, chat_bufnr)
-      return {
-        handle_id = handle_id,
-        chat_bufnr = chat_bufnr,
-        adapter = {
-          cancel = function(_, cancelled_handle)
-            table.insert(cancelled, cancelled_handle)
-          end,
-        },
-        on_insert_choices = function(questions)
-          rendered[handle_id] = questions
-        end,
-      }
-    end
+  local cancelled, rendered
 
+  --- Turn and process are deliberately different values, so the assertion below can tell which one
+  --- reached `adapter:cancel` rather than accepting either.
+  local function stream(name, chat_bufnr)
+    return {
+      handle_id = name,
+      process_id = name .. "-process",
+      chat_bufnr = chat_bufnr,
+      adapter = {
+        cancel = function(_, cancelled_id)
+          table.insert(cancelled, cancelled_id)
+        end,
+      },
+      on_insert_choices = function(questions)
+        rendered[name] = questions
+      end,
+    }
+  end
+
+  local QUESTIONS = {
+    { question = "Which option?", options = { { label = "A" }, { label = "B" } } },
+  }
+
+  before_each(function()
+    cancelled, rendered = {}, {}
+  end)
+
+  it("cancels and renders only the stream matching chat_bufnr", function()
     registry.register(stream("chat-a", 11))
     registry.register(stream("chat-b", 12))
 
-    local questions = {
-      { question = "Which option?", options = { { label = "A" }, { label = "B" } } },
-    }
-    local result = permission.ask_user_question({ chat_bufnr = 12, questions = questions })
+    local result = permission.ask_user_question({ chat_bufnr = 12, questions = QUESTIONS })
 
     assert.same({ status = "ok" }, result)
-    assert.same({ "chat-b" }, cancelled)
+    -- Cancelled by the **process**: killing is something done to a process, and the turn stops as a
+    -- consequence. Passing the turn id would address nothing in the adapter's process table.
+    assert.same({ "chat-b-process" }, cancelled)
     assert.is_nil(rendered["chat-a"])
-    assert.same(questions, rendered["chat-b"])
+    assert.same(QUESTIONS, rendered["chat-b"])
+  end)
+
+  it("falls back to the sole stream for a bufnr that no longer exists", function()
+    -- `--resume` replays earlier turns, so the model can quote a buffer number from a previous
+    -- Neovim session. With one stream there is no other candidate to confuse it with.
+    registry.register(stream("chat-a", 11))
+
+    assert.same({ status = "ok" }, permission.ask_user_question({ chat_bufnr = 999, questions = QUESTIONS }))
+    assert.same({ "chat-a-process" }, cancelled)
+    assert.same(QUESTIONS, rendered["chat-a"])
+  end)
+
+  it("refuses to guess between two streams when the bufnr matches neither", function()
+    registry.register(stream("chat-a", 11))
+    registry.register(stream("chat-b", 12))
+
+    assert.equals("error", permission.ask_user_question({ chat_bufnr = 999, questions = QUESTIONS }).status)
+    assert.same({}, cancelled)
   end)
 end)

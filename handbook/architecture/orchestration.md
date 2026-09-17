@@ -17,7 +17,7 @@ One chat can create and drive other chats: `nvim_chat_create` (MCP) →
 `claude-plugin/skills/vibing-orchestrate/SKILL.md`; there is no command and no scheduler.
 
 Nothing new was needed to keep the workers apart. Each chat buffer already owns its own session
-id and handle id (see `handbook/architecture/chat-lineage.md`), so parallel workers are the
+id, CLI process and turn (see `handbook/architecture/chat-lineage.md`), so parallel workers are the
 existing concurrency guarantee being used rather than extended.
 
 The use case is the fork/subagent shape: it returns a `ChatSession` and touches no presentation
@@ -134,12 +134,14 @@ instead would call a turn that died on an error, or one part-way through silent 
 complete.
 
 `is_responding()` needs two signals, and the second one is **not** `_current_handle_id`'s
-existence. `_is_sending` covers `<CR>` until the adapter spawns the CLI; after that the handle id
+existence. `_is_sending` covers `<CR>` until the adapter spawns the CLI; after that the turn id
 is what marks the run — but `send_message.lua` deliberately never clears it on completion, so the
-next `send_message()` can kill a process that outlived its own `result` event. Read as a boolean
+next `send_message()` can kill a process that outlived its own `result` event. (That is also why
+`ChatBuffer` keeps `_current_process_id` next to it: the reaping cancel happens after the turn has
+ended, when the registry can no longer resolve the turn back to a process.) Read as a boolean
 that field therefore reports every chat as `responding` forever after its first turn, which is the
 one answer an orchestrator's polling loop can never recover from. So the second signal is
-`ActiveStreamRegistry.get(handle_id)`: all four adapters `register` when the stream starts and
+`ActiveStreamRegistry.get(turn_id)`: all four adapters `register` when the stream starts and
 `unregister` in `wrapped_on_done`, which makes the registry the only place that knows a run is
 over without also being the place that has to remember how to kill it.
 
@@ -298,7 +300,7 @@ every word of that placement is load-bearing:
 - **Not next to `clear_sending()`**, which under `diff.tool = "mote"` runs before `finalize()`
   writes `### Modified Files`. A reader woken there would see an unfinished transcript, the same
   window `chat_status` documents.
-- **After the handle_id mismatch guard**, so a cancelled turn completing late fires nothing.
+- **After the turn id mismatch guard**, so a cancelled turn completing late fires nothing.
 
 It goes out as a `User VibingResponseDone` autocmd rather than a direct call so a user's own config
 can hook it too — before this there was no `nvim_exec_autocmds` anywhere in `lua/`.

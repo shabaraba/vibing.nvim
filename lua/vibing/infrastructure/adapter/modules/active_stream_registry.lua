@@ -5,7 +5,12 @@
 local M = {}
 
 --- @class ActiveStreamEntry
---- @field handle_id string
+--- @field handle_id string The turn this entry is about, and the key of the table below.
+--- @field process_id string The CLI process serving that turn — the value of the child's
+---   `VIBING_PROCESS_ID`, the key of `adapter._processes`, and the only thing `adapter:cancel()`
+---   accepts. Under the oneshot transport a process serves exactly one turn, so a live entry is
+---   also the whole truth about a live process; that is a property of the transport rather than an
+---   invariant anything here may rely on (#774).
 --- @field chat_bufnr? number Stable value (the "Current vibing.nvim chat buffer number" line
 ---   embedded in the model-visible provider prompt) used to route nvim_ask_user_question calls
 ---   without a per-turn handle_id, which would otherwise defeat provider prompt caching (see
@@ -75,21 +80,58 @@ function M.total_subagent_count()
   return total
 end
 
---- Get an active stream entry by handle_id.
---- @param handle_id string|nil The requesting hook process's handle_id (passed via the
----   VIBING_HANDLE_ID env var). When nil (e.g. a hook process spawned before this env var
----   existed), falls back to the sole registered stream if exactly one is active — safe only
----   because there's no other candidate to confuse it with. With multiple concurrent streams
----   and no handle_id, returns nil rather than guessing which chat buffer triggered the hook.
+--- The sole stream currently in flight, or nil when there is none or more than one.
+---
+--- This is the only guess in the codebase about whose request an inbound hook belongs to, and it is
+--- named rather than open-coded so that there is one place to reason about — and one place to
+--- delete once a resident process can name its own turn on its own stdio (#774).
+---
+--- It is honest today because a registered stream *is* a running turn: an entry exists from
+--- `stream()` to `wrapped_on_done`, so "exactly one entry" really does mean "there is no other
+--- candidate to confuse it with".
+--- @return ActiveStreamEntry|nil
+function M.sole_active()
+  local only_handle_id, only_entry = next(streams)
+  if only_handle_id ~= nil and next(streams, only_handle_id) == nil then
+    return only_entry
+  end
+  return nil
+end
+
+--- Get an active stream entry by the turn it is about.
+---
+--- No hook path reaches this any more — an inbound hook names a process and goes through
+--- `rpc/hook_scope.lua`. What is left is `ChatBuffer:is_responding()`, which passes a turn id that
+--- may be nil for a chat that has never sent, and would then be answered with *another* chat's
+--- stream. That predates this split and is why the nil case is spelled out rather than removed.
+--- @param handle_id string|nil When nil, falls back to `sole_active()`. With several concurrent
+---   streams and no id, returns nil rather than guessing.
 --- @return ActiveStreamEntry|nil
 function M.get(handle_id)
   if handle_id then
     return streams[handle_id]
   end
+  return M.sole_active()
+end
 
-  local only_handle_id, only_entry = next(streams)
-  if only_handle_id ~= nil and next(streams, only_handle_id) == nil then
-    return only_entry
+--- Get an active stream entry by the process serving it.
+---
+--- The inbound path for both shell hooks: `VIBING_PROCESS_ID` is fixed at spawn, so a process is
+--- the only thing a hook can name, and the turn is resolved here rather than travelling on the
+--- wire. **Deliberately strict** — an unmatched id returns nil instead of falling back to
+--- `sole_active()`. The caller decides whether to guess, because the two callers want different
+--- answers: an approval prompt shown in the wrong buffer is recoverable, and a diff baseline opened
+--- under the wrong turn silently mis-attributes another chat's edits.
+--- @param process_id string|nil
+--- @return ActiveStreamEntry|nil
+function M.find_by_process_id(process_id)
+  if not process_id then
+    return nil
+  end
+  for _, entry in pairs(streams) do
+    if entry.process_id == process_id then
+      return entry
+    end
   end
   return nil
 end
@@ -112,7 +154,7 @@ function M.get_by_chat_bufnr(chat_bufnr)
       end
     end
   end
-  return M.get(nil)
+  return M.sole_active()
 end
 
 --- Find another buffer's in-flight stream that is resuming the same session.

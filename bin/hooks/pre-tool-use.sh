@@ -40,13 +40,17 @@ RES_FILE="$COMM_DIR/${REQUEST_ID}.res"
 printf '%s' "$INPUT" > "${REQ_FILE}.tmp"
 mv "${REQ_FILE}.tmp" "$REQ_FILE"
 
-# Identifies which chat buffer's stream this hook invocation belongs to (see
-# ActiveStreamRegistry), so concurrent chats don't cross-wire each other's approval UI.
-# Restricted to [A-Za-z0-9_] since it's interpolated directly into the JSON request below.
-HANDLE_ID="${VIBING_HANDLE_ID//[^A-Za-z0-9_]/}"
+# Identifies the CLI process this hook invocation belongs to. An environment variable is fixed when
+# the child is spawned, so this can only ever name a process; which *turn* is in flight on it is
+# resolved in Neovim by rpc/hook_scope.lua, and that is what keeps concurrent chats from
+# cross-wiring each other's approval UI.
+# Restricted to [A-Za-z0-9_] since it's interpolated directly into the JSON request below. The same
+# character class is asserted against lua/vibing/domain/agent/identity.lua by its spec, so a rename
+# on either side fails the build instead of silently losing attribution.
+PROCESS_ID="${VIBING_PROCESS_ID//[^A-Za-z0-9_]/}"
 
 # Notify Neovim RPC server (fire-and-forget)
-printf '{"method":"check_tool_permission","id":1,"params":{"request_id":"%s","handle_id":"%s"}}\n' "$REQUEST_ID" "$HANDLE_ID" \
+printf '{"method":"check_tool_permission","id":1,"params":{"request_id":"%s","process_id":"%s"}}\n' "$REQUEST_ID" "$PROCESS_ID" \
   | nc -w 1 127.0.0.1 "$PORT" >/dev/null 2>&1
 NC_STATUS=$?
 debug_log "nc status=$NC_STATUS, waiting for $RES_FILE"

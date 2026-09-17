@@ -48,9 +48,31 @@ for _, backend in ipairs(helper.adapters()) do
         assert.equals("true", env.VIBING_NVIM_CONTEXT)
       end)
 
-      it("passes the handle id so concurrent chats do not cross-wire their approval UI", function()
+      it("passes the process id, not the turn id, so a resident process can still be named", function()
+        -- The whole wire contract in one assertion, over every backend: an environment variable is
+        -- fixed at spawn, so it may only ever carry the process. `rpc/hook_scope.lua` resolves the
+        -- turn in-editor, and that is what keeps concurrent chats from cross-wiring their approval
+        -- UI. Carrying the turn id here would work today and break on the first resident process.
+        --
+        -- Deliberately not asserting that `VIBING_HANDLE_ID` is gone: the child environment starts
+        -- from `vim.fn.environ()`, and this repository is normally developed from inside a
+        -- vibing.nvim chat, so the *outer* Neovim's own variable is present here whatever this code
+        -- exports. The assertion would pass or fail on how the suite was launched.
         local result = helper.run_stream(adapter)
-        assert.equals(result.handle_id, system.only_call().opts.env.VIBING_HANDLE_ID)
+        local env = system.only_call().opts.env
+        assert.equals(result.process_id, env.VIBING_PROCESS_ID)
+        assert.is_not.equals(result.handle_id, env.VIBING_PROCESS_ID)
+      end)
+
+      it("registers the same process id the child was told about", function()
+        -- The join the hook depends on: what the shell sends must address the registry entry, or
+        -- every permission decision resolves to nil and the turn stalls until the hook fails closed.
+        local result = helper.run_stream(adapter)
+        local entry = require("vibing.infrastructure.adapter.modules.active_stream_registry").find_by_process_id(
+          system.only_call().opts.env.VIBING_PROCESS_ID
+        )
+        assert.is_truthy(entry, "the exported process id addresses no registry entry")
+        assert.equals(result.handle_id, entry.handle_id)
       end)
 
       it("inherits the parent environment rather than starting from empty", function()

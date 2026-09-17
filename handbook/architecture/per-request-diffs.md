@@ -49,7 +49,7 @@ Three details are not interchangeable:
   `get_cwd()` can point at a subdirectory, and in a linked worktree the whole scope — which index,
   which refs — is decided by that directory. `rev-parse --git-path index` is what finds the index
   at all, since a worktree's lives under `.git/worktrees/<name>/`.
-- **`refs/worktree/vibing/<handle>` is a per-worktree namespace** (git 2.23+), so removing a
+- **`refs/worktree/vibing/<turn_id>` is a per-worktree namespace** (git 2.23+), so removing a
   worktree takes its leftover refs with it instead of leaving them in the common ref store. The
   ref is only a guard against a `git gc` landing mid-turn, so an `update-ref` that fails (an older
   git) is swallowed and the turn proceeds — freshly written objects are not pruned by gc's
@@ -172,10 +172,13 @@ what makes the fallback symmetric — the second turn still knows, long after th
 
 `ActiveStreamRegistry.find_other_active_for_worktree` is kept as the second signal, for a stream
 that is writing without a session of its own to be seen through (a `write-tree` that failed on a
-conflicted index, say). It excludes by **handle_id**, not by `chat_bufnr` the way
+conflicted index, say). It excludes by **turn id**, not by `chat_bufnr` the way
 `find_other_active_for_session` does — grok and copilot register no `chat_bufnr` (see
 `features.md`), so two streams on either of those backends would compare `nil` against `nil` and
-never see each other.
+never see each other. The turn is the right scope and not an accident of naming: the window this
+guard is about runs from a baseline to its `clear()`, which is a turn's window, so asking about
+processes would make every chat in a repository overlap with every other one permanently once
+processes outlive turns (`processes-and-turns.md`).
 
 **Both overlap signals are process-local, so two Neovim instances on one worktree are out of
 scope.** `sessions` and `ActiveStreamRegistry` are module tables, so a chat running in a second

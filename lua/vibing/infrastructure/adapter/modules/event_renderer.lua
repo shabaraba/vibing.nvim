@@ -121,9 +121,12 @@ end
 
 local handlers = {}
 
+-- Stored under the process, not the turn: a CLI session is something the process holds open, and
+-- `send_message._handle_response` reads it back off `response._process_id` to learn what the next
+-- turn should `--resume`.
 handlers.session = function(event, context)
-  if event.session_id and context.sessionManager and context.handleId then
-    SessionManagerModule.store(context.sessionManager, context.handleId, event.session_id)
+  if event.session_id and context.sessionManager and context.processId then
+    SessionManagerModule.store(context.sessionManager, context.processId, event.session_id)
   end
 end
 

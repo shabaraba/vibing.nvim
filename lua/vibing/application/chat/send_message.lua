@@ -22,9 +22,10 @@ local Fs = require("vibing.core.utils.fs")
 ---@field insert_approval_request fun(tool: string, input: table, options: table) ツール承認要求UIを挿入
 ---@field get_session_allow fun(): table セッションレベルの許可リストを取得
 ---@field get_session_deny fun(): table セッションレベルの拒否リストを取得
----@field clear_handle_id fun() handle_idをクリア
----@field set_handle_id fun(handle_id: string) handle_idを設定
----@field get_handle_id fun(): string|nil handle_idを取得
+---@field clear_handle_id fun() handle_id（と process_id）をクリア
+---@field set_handle_id fun(handle_id: string) 待っているターンのIDを設定
+---@field get_handle_id fun(): string|nil 待っているターンのIDを取得
+---@field set_process_id fun(process_id: string)? kill対象のCLIプロセスのIDを設定
 ---@field clear_sending fun() 送信中フラグを解除
 ---@field mark_turn_error fun()? このターンがエラーで終わったことを記録（chat_statusのerror判定用）
 ---@field get_cwd fun(): string|nil worktreeのcwdを取得
@@ -250,7 +251,7 @@ function M.execute(adapter, callbacks, message, config)
   end
 
   if adapter:supports("streaming") then
-    local handle_id = adapter:stream(formatted_prompt, opts, function(chunk, chunk_handle_id)
+    local handle_id, process_id = adapter:stream(formatted_prompt, opts, function(chunk, chunk_handle_id)
       vim.schedule(function()
         callbacks.append_chunk(chunk, chunk_handle_id)
       end)
@@ -259,9 +260,14 @@ function M.execute(adapter, callbacks, message, config)
         M._handle_response(response, callbacks, adapter, config, modified_file_paths, message)
       end)
     end)
-    -- handle_idをコールバックで設定（キャンセル用）
+    -- 2つ別々に記録する。handle_id は「どのターンの結果を待っているか」（chunk と response の
+    -- staleness 判定）、process_id は「何を kill するか」。同じ値だった頃は片方で足りていたが、
+    -- 常駐プロセス（#774）では後者だけがプロセスを指し続ける
     if handle_id and callbacks.set_handle_id then
       callbacks.set_handle_id(handle_id)
+    end
+    if process_id and callbacks.set_process_id then
+      callbacks.set_process_id(process_id)
     end
   else
     local response = adapter:execute(formatted_prompt, opts)
@@ -404,9 +410,11 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     end
   end
 
+  -- セッションIDはプロセスが握っているものなので、プロセスで引く。ターンIDで引いていた頃は
+  -- 両者が同値だったから通っていただけで、常駐プロセス（#774）の2ターン目では nil になる
   local new_session_id = nil
-  if adapter:supports("session") and response._handle_id then
-    new_session_id = adapter:get_session_id(response._handle_id)
+  if adapter:supports("session") and response._process_id then
+    new_session_id = adapter:get_session_id(response._process_id)
     if new_session_id and new_session_id ~= callbacks.get_session_id() then
       callbacks.update_session_id(new_session_id)
     end

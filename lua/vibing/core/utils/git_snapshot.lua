@@ -196,13 +196,13 @@ function M.is_available(cwd)
   return M.worktree_root(cwd) ~= nil
 end
 
----ref名に使えるようhandle_idをサニタイズする
+---ref名に使えるようturn_idをサニタイズする
 ---
----文字を落とすので原理的には2つのhandle_idが同じref名に潰れうるが、実際の生成元
----（`cli_runtime.new_handle_id` の `%016x_%x`）は16進数と `_` しか出さず、どちらも
+---文字を落とすので原理的には2つのturn_idが同じref名に潰れうるが、実際の生成元
+---（`core/utils/identity.lua` の `%016x_%x`）は16進数と `_` しか出さず、どちらも
 ---この集合に入っているのでここは常に恒等写像になる。その前提は
----git_snapshot_spec の「ref名は本物のhandle_idそのもの」ケースで固定してある。
----@param handle_id string
+---git_snapshot_spec の「ref名は本物のturn_idそのもの」ケースで固定してある。
+---@param handle_id string ターンID
 ---@return string
 local function sanitize(handle_id)
   local safe = tostring(handle_id):gsub("[^%w%-_]", "")

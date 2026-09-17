@@ -13,6 +13,7 @@
 
 local Base = require("vibing.infrastructure.adapter.base")
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
+local Identity = require("vibing.core.utils.identity")
 local RpcEnvironment = require("vibing.infrastructure.adapter.modules.rpc_environment")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
@@ -116,9 +117,8 @@ function M.define(descriptor)
     local instance = Base.new(self, config)
     setmetatable(instance, Class)
     instance.name = descriptor.id .. "_cli"
-    instance._handles = {}
+    instance._processes = {}
     instance._session_manager = SessionManagerModule.new()
-    math.randomseed(vim.loop.hrtime())
     return instance
   end
 
@@ -126,18 +126,33 @@ function M.define(descriptor)
   --- @param opts Vibing.AdapterOpts
   --- @param on_chunk fun(chunk: string, handle_id: string)
   --- @param on_done fun(response: Vibing.Response)
-  --- @return string handle_id
+  --- @return string handle_id the turn
+  --- @return string process_id the CLI process serving it
   function Class:stream(prompt, opts, on_chunk, on_done)
     opts = opts or {}
 
     local debug_mode = vim.g.vibing_debug_stream
-    local handle_id = CliRuntime.new_handle_id()
+    -- Two identities, minted together because one process serves one turn here
+    -- (`handbook/architecture/processes-and-turns.md`).
+    local ids = {
+      turn_id = Identity.new_turn_id(),
+      process_id = Identity.new_process_id(),
+    }
+    -- The turn, under the name the rest of the codebase still calls it by until the
+    -- `handle_id` → `turn_id` rename lands. Same value as `ids.turn_id`, never the process.
+    local handle_id = ids.turn_id
     local session_id = opts._session_id
     local tag = "[vibing:" .. descriptor.id .. "]"
 
     if debug_mode then
       vim.notify(
-        string.format("%s Starting stream: handle_id=%s, session_id=%s", tag, handle_id, session_id or "new"),
+        string.format(
+          "%s Starting stream: turn_id=%s, process_id=%s, session_id=%s",
+          tag,
+          ids.turn_id,
+          ids.process_id,
+          session_id or "new"
+        ),
         vim.log.levels.INFO
       )
     end
@@ -172,8 +187,8 @@ function M.define(descriptor)
     -- actionable message.
     local build_ok, cmd = pcall(descriptor.build, prompt, opts, session_id, self.config, hook_arg)
     if not build_ok then
-      CliRuntime.report_build_failure(handle_id, cmd, on_done)
-      return handle_id
+      CliRuntime.report_build_failure(ids, cmd, on_done)
+      return handle_id, ids.process_id
     end
 
     local output = {}
@@ -194,6 +209,9 @@ function M.define(descriptor)
     local event_context = {
       sessionManager = self._session_manager,
       handleId = handle_id,
+      -- The session a `{kind = "session"}` event names belongs to the process that reported it, so
+      -- the renderer stores it under this and not under the turn.
+      processId = ids.process_id,
       opts = opts,
       output = output,
       errorOutput = error_output,
@@ -218,12 +236,15 @@ function M.define(descriptor)
     -- The CLI forwards this environment to the MCP servers it starts, so the numeric port stays
     -- out of the cached prompt (#730).
     RpcEnvironment.bind(env)
-    -- Lets the PreToolUse hook identify which chat buffer's stream it belongs to, so concurrent
-    -- chats don't cross-wire each other's approval UI (see ActiveStreamRegistry).
-    env.VIBING_HANDLE_ID = handle_id
+    -- The process, not the turn: an environment variable is fixed when the child is spawned, so a
+    -- resident process (#774) could not carry a per-turn value here even in principle. The hook
+    -- names this and `rpc/hook_scope.lua` resolves the turn in-editor, which is what keeps
+    -- concurrent chats from cross-wiring each other's approval UI.
+    env.VIBING_PROCESS_ID = ids.process_id
 
     ActiveStreamRegistry.register({
       handle_id = handle_id,
+      process_id = ids.process_id,
       -- Only where the nvim_ask_user_question route is wired: registering a value nothing
       -- consumes would only look like a working route (see features.md → AskUserQuestion).
       chat_bufnr = descriptor.register_chat_bufnr and opts.chat_bufnr or nil,
@@ -267,21 +288,21 @@ function M.define(descriptor)
       on_done(response)
     end
 
-    local started = CliRuntime.spawn(self._handles, handle_id, cmd, {
+    local started = CliRuntime.spawn(self._processes, ids, cmd, {
       text = true,
       stdin = descriptor.stdin,
       cwd = cwd,
       env = env,
       stdout = StreamHandler.create_stdout_handler(descriptor.event_processor, event_context, function()
-        return self._handles[handle_id] == nil
+        return self._processes[ids.process_id] == nil
       end),
       stderr = stderr_handler(descriptor, error_output),
-    }, StreamHandler.create_exit_handler(handle_id, self._handles, output, error_output, wrapped_on_done, function()
+    }, StreamHandler.create_exit_handler(ids, self._processes, output, error_output, wrapped_on_done, function()
       return event_context.resultErrors
     end), wrapped_on_done)
 
     if not started then
-      return handle_id
+      return handle_id, ids.process_id
     end
 
     if descriptor.after_spawn then
@@ -289,7 +310,8 @@ function M.define(descriptor)
     end
 
     if debug_mode then
-      local pid = self._handles[handle_id] and self._handles[handle_id].pid or "unknown"
+      local process = self._processes[ids.process_id]
+      local pid = process and process.pid or "unknown"
       vim.notify(string.format("%s Process started: pid=%s", tag, tostring(pid)), vim.log.levels.INFO)
       vim.notify(string.format("%s Command: %s", tag, table.concat(cmd, " "):sub(1, 200)), vim.log.levels.DEBUG)
     end
@@ -297,14 +319,14 @@ function M.define(descriptor)
     -- Session corruption detection: a resumed session that never answers is killed and reset.
     if session_id then
       timeout_timer = vim.fn.timer_start(INITIAL_RESPONSE_TIMEOUT_MS, function()
-        if not received_first_response and not completed and self._handles[handle_id] then
+        if not received_first_response and not completed and self._processes[ids.process_id] then
           vim.schedule(function()
             if not completed then
               vim.notify(
                 "[vibing] Session resume timeout - killing hung process and resetting session",
                 vim.log.levels.WARN
               )
-              self:cancel(handle_id)
+              self:cancel(ids.process_id)
               wrapped_on_done({
                 error = "Session resume timeout",
                 _session_corrupted = true,
@@ -313,6 +335,7 @@ function M.define(descriptor)
                 -- fires after the user cancelled and sent something new would be treated as the
                 -- new request's result and reset its session id.
                 _handle_id = handle_id,
+                _process_id = ids.process_id,
               })
             end
           end)
@@ -320,7 +343,7 @@ function M.define(descriptor)
       end)
     end
 
-    return handle_id
+    return handle_id, ids.process_id
   end
 
   classes[descriptor.id] = Class

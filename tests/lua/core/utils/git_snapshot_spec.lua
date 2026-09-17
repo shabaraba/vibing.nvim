@@ -138,17 +138,18 @@ describe("git_snapshot", function()
       assert.equals(first, git_ok({ "rev-parse", GitSnapshot._REF_PREFIX .. handle }))
     end)
 
-    it("names the ref after the handle id verbatim, so two requests cannot collide", function()
-      -- ref名はhandle_idをサニタイズして作る。文字を落とす以上、原理的には2つのhandle_idが
+    it("names the ref after the turn id verbatim, so two requests cannot collide", function()
+      -- ref名はturn_idをサニタイズして作る。文字を落とす以上、原理的には2つのturn_idが
       -- 同じref名に潰れて先行セッションのbaselineを上書きしうる。実際の生成元が出すのは
-      -- 16進数と `_` だけなので潰れない、という前提をここで固定する（形式が変わったら落ちる）
-      local handle = require("vibing.infrastructure.adapter.modules.cli_runtime").new_handle_id()
+      -- 16進数と `_` だけなので潰れない、という前提をここで固定する（形式が変わったら落ちる）。
+      -- 文字集合そのものは tests/lua/core/utils/identity_spec.lua が両方の採番について見る
+      local handle = require("vibing.core.utils.identity").new_turn_id()
       GitSnapshot.ensure_baseline(handle, repo, "Bash")
 
       assert.equals(
         0,
         git({ "rev-parse", "--verify", GitSnapshot._REF_PREFIX .. handle }).code,
-        "ref name should be the handle id unchanged"
+        "ref name should be the turn id unchanged"
       )
 
       GitSnapshot.clear(handle)

@@ -143,7 +143,9 @@ one with `<CR>`. `allow_once`/`deny_once` apply to this call only; `allow_for_se
 
 The four decisions are recorded on that `ChatBuffer` (`update_session_permissions`), handed to the
 next request as `permissions_session_allow` / `permissions_session_deny`, and reach the hook
-through `set_active_opts`, which is keyed by handle_id. They used to be written to a second,
+through `set_active_opts`, which is keyed by turn id — per turn rather than per chat because every
+one of these values is re-read from frontmatter on each send, and the lists grow by one entry each
+time an approval is answered (`processes-and-turns.md`). They used to be written to a second,
 module-level table in `permission.lua` as well — keyed by nothing — so a `deny_once` answered in a
 worker chat was consumed by whichever chat called that tool next, and an `allow_for_session`
 granted in a throwaway worker applied to every chat in the editor, walking past each one's own

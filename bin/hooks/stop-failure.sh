@@ -32,11 +32,12 @@ REQ_FILE="$COMM_DIR/${REQUEST_ID}.fail"
 printf '%s' "$INPUT" > "${REQ_FILE}.tmp"
 mv "${REQ_FILE}.tmp" "$REQ_FILE"
 
-# Identifies which chat buffer's stream this failure belongs to (see ActiveStreamRegistry).
+# Identifies the CLI process this failure belongs to; the turn in flight on it is resolved in
+# Neovim by rpc/hook_scope.lua, since an environment variable cannot name a per-turn value.
 # Restricted to [A-Za-z0-9_] since it's interpolated directly into the JSON request below.
-HANDLE_ID="${VIBING_HANDLE_ID//[^A-Za-z0-9_]/}"
+PROCESS_ID="${VIBING_PROCESS_ID//[^A-Za-z0-9_]/}"
 
-printf '{"method":"stop_failure","id":1,"params":{"request_id":"%s","handle_id":"%s"}}\n' "$REQUEST_ID" "$HANDLE_ID" \
+printf '{"method":"stop_failure","id":1,"params":{"request_id":"%s","process_id":"%s"}}\n' "$REQUEST_ID" "$PROCESS_ID" \
   | nc -w 1 127.0.0.1 "$PORT" >/dev/null 2>&1
 debug_log "notified nvim (status=$?), request_id=$REQUEST_ID"
 

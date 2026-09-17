@@ -1,9 +1,9 @@
 # Chat Lineage: Concurrency, Forks and Subagent Chats
 
 Detail behind `.claude/rules/architecture.md` → "Concurrent Execution, Chat Fork and
-Subagent Chat". These three share one substrate: every chat buffer owns its own session id and
-handle id, and what varies is whether a new chat diverges from that session (a fork), shares it
-permanently (a subagent chat), or is simply independent.
+Subagent Chat". These three share one substrate: every chat buffer owns its own session id, CLI
+process and turn (`processes-and-turns.md`), and what varies is whether a new chat diverges from
+that session (a fork), shares it permanently (a subagent chat), or is simply independent.
 
 ## Concurrent Execution Support
 
@@ -12,7 +12,7 @@ vibing.nvim supports running multiple chat sessions simultaneously without inter
 **Multiple Chat Windows:**
 
 - Each chat buffer maintains its own session ID
-- Sessions are managed via unique handle IDs
+- Sessions are keyed by the CLI process that holds them open, turns by their own id
 - Old sessions are automatically cleaned up when starting new messages
 
 **Session Management:**

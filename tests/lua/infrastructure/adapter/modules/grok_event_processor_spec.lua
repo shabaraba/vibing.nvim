@@ -5,7 +5,10 @@ describe("grok_event_processor", function()
   local function make_context()
     return {
       sessionManager = SessionManagerModule.new(),
-      handleId = "handle-1",
+      handleId = "turn-1",
+      -- A session belongs to the process that reported it, so the renderer stores it under this.
+      -- Deliberately a different value from handleId, so reading the wrong one misses.
+      processId = "process-1",
       output = {},
       errorOutput = {},
       chunks = {},
@@ -82,7 +85,7 @@ describe("grok_event_processor", function()
     )
     flush()
 
-    assert.equals("session-xyz", SessionManagerModule.get(context.sessionManager, "handle-1"))
+    assert.equals("session-xyz", SessionManagerModule.get(context.sessionManager, "process-1"))
     assert.equals(0, #context.chunks)
   end)
 

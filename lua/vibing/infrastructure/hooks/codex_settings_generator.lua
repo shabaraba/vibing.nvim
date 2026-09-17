@@ -85,7 +85,7 @@ end
 --- and a rename because every chat open on this cwd rewrites this path just before spawning its own
 --- codex, and a reader catching a truncated script would get a hook that fails in a way none of the
 --- three decisions covers. `rename(2)` is atomic within a directory. One shared path is safe only
---- because the contents are identical for every chat -- per-request identity (`VIBING_HANDLE_ID`,
+--- because the contents are identical for every chat -- per-process identity (`VIBING_PROCESS_ID`,
 --- the RPC port) travels in codex's environment, not in this file.
 --- @param cwd? string Working directory (defaults to vim.fn.getcwd())
 --- @return string path Absolute path to the staged script

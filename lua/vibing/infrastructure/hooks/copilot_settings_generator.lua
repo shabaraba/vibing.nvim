@@ -87,10 +87,10 @@ function M.ensure(cwd, dialect)
   -- rename(2) is atomic within a directory, so a concurrent reader sees either version whole.
   --
   -- What makes one shared path safe at all is that the contents are the same for every chat: the
-  -- per-request identity (`VIBING_HANDLE_ID`, the RPC port) travels in copilot's environment, not
+  -- per-process identity (`VIBING_PROCESS_ID`, the RPC port) travels in copilot's environment, not
   -- in this file. Anything that has to differ per chat therefore belongs in the environment too —
   -- putting it here would make concurrent chats overwrite each other's manifest, and this
-  -- directory would have to become per-handle instead.
+  -- directory would have to become per-process instead.
   local path = dir .. "/plugin.json"
   local tmp_path = string.format("%s.%d.tmp", path, vim.loop.getpid())
   local f, err = io.open(tmp_path, "w")
