@@ -30,8 +30,7 @@ local M = {}
 --- @field tool string|nil what was asked about, for the timeout message
 --- @field opened_at number `vim.loop.now()` when the hook started waiting
 --- @field on_timeout fun(entry: Vibing.PendingApproval)|nil what to do besides denying, when the
----   wait limit is reached: kill the turn and say so in the chat, so the fallback is today's
----   behaviour rather than silence
+---   wait limit is reached. **It must not kill anything** — see `expire`.
 --- @field _timer number|nil
 
 --- @type table<string, Vibing.PendingApproval>
@@ -95,11 +94,18 @@ function M.open(entry)
   return entry
 end
 
---- Reach the wait limit: deny, then let the caller do the rest.
+--- Reach the wait limit: deny that one tool call, and tell the caller so it can say so.
 ---
---- **The deny goes first, and that ordering is the point.** `on_timeout` is where the turn gets
---- killed and the chat gets its explanatory line, and killing the CLI before releasing its hook
---- would leave an orphaned `pre-tool-use.sh` polling for a process that no longer exists.
+--- **Nothing is killed here, and that is the whole shape of it.** Writing `deny` makes the hook
+--- exit 2, which refuses *that tool call* and lets the turn carry on — the model sees the refusal
+--- and decides what to do next. Killing instead would be actively worse than today's behaviour in
+--- the case this path exists for: with two hooks blocked on one chat, the user is looking at
+--- prompt A while B quietly expires, and a kill would take the turn they are in the middle of
+--- answering. "Answer without killing the CLI" cannot have an expiry path that goes back to
+--- killing.
+---
+--- The script's own deadline is never reached either, because `wait_budget` keeps this timer
+--- strictly ahead of it. So this is the only expiry path in normal operation.
 ---
 --- Looked up by id rather than closed over, because the entry under that id may have been resolved
 --- and replaced between the timer being armed and firing.
@@ -124,8 +130,8 @@ function M.expire(request_id)
   )
 
   if entry.on_timeout then
-    -- Guarded: the fallback kills a turn and writes to a buffer, and neither may be allowed to
-    -- take down the timer that every other pending approval also runs on.
+    -- Guarded: it writes to a buffer and drops the prompt from whatever is being displayed, and
+    -- neither may be allowed to take down the timer every other pending approval also runs on.
     local ok, err = pcall(entry.on_timeout, entry)
     if not ok then
       vim.notify(

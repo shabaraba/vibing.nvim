@@ -99,8 +99,9 @@ describe("pending_approvals", function()
         chat_bufnr = 7,
         tool = "Bash",
         on_timeout = function(entry)
-          -- The hook must already have been released by the time the fallback kills the turn, or
-          -- an orphaned pre-tool-use.sh polls for a process that no longer exists.
+          -- The hook is already released by the time the caller is told, so whatever the caller
+          -- does about it (a line in the chat, dropping the prompt from the queue) happens with
+          -- the tool call already refused and the turn still running.
           table.insert(fired, { entry.request_id, decision_of(entry.request_id) })
         end,
       })
