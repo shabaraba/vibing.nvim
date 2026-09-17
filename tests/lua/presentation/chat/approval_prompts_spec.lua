@@ -608,6 +608,36 @@ describe("several approval prompts at once", function()
       end
     end)
 
+    it("stops calling itself waiting once the last prompt is answered", function()
+      -- `_stop_reason` is cleared only where a new turn starts, and answering in place starts
+      -- none. Left set, the chat reports `waiting_approval` from here until its next send —
+      -- including after its turn has finished, with nothing left to answer. That is the
+      -- "pretending to be responding" bug one layer over, in the other direction.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on({ "req-1" })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+      assert.equals("waiting_approval", chat_buf:get_stop_reason())
+
+      assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
+
+      assert.is_nil(chat_buf:get_stop_reason(), "the turn is running again; nothing is waiting")
+    end)
+
+    it("still calls itself waiting while another prompt is open", function()
+      local chat_buf = chat_with({
+        { tool = "Bash", request_id = "req-1" },
+        { tool = "Write", request_id = "req-2" },
+      })
+      blocked_on({ "req-1", "req-2" })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+
+      assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
+
+      assert.equals("waiting_approval", chat_buf:get_stop_reason())
+    end)
+
     it("keeps holding while another prompt is still open", function()
       local chat_buf = chat_with({
         { tool = "Bash", request_id = "req-1" },

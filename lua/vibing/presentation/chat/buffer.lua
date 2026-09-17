@@ -644,6 +644,11 @@ function ChatBuffer:_answer_pending_approval()
     -- 最後の1件だった。ここで**未送信の `## User` を開いてはいけない** — 続きの出力がその下に
     -- 積まれ、アシスタントの文章がユーザーの次のメッセージとして抽出される。開くのは
     -- `## Assistant` のほうで、`append_chunk` が溜めていたものはそこに流す
+    --
+    -- 停止理由もここで捨てる。普段これを捨てるのは**次のターンが走り出す場所**だが、その場で
+    -- 答える経路は新しいターンを始めない。残すと、ターンが終わったあとも次の送信まで
+    -- `waiting_approval` を名乗り続ける — 答えるものが1つも無いのに、である
+    self._stop_reason = nil
     self:start_response()
     self:_flush_chunks()
   end
