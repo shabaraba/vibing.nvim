@@ -457,9 +457,9 @@ somebody tried to use it:
 - the **1090s / 1700s** rows — produced by an ad-hoc `.vibing/probe/hook.sh`, not by the
   `hook_wait_ceiling.sh` this page names as the reproducer, and logging the same events under
   different strings. Quoting one and naming the other makes a re-run look like it failed.
-- the PR's **46 mutations** — the appliers lived in `/tmp`; five were rescued into
-  `.vibing/probe/mutations/` before a reboot would have taken them, and the other nine series were
-  heredocs that never existed as files.
+- the PR's **46 mutations** — the appliers lived in `/tmp`; they and their inputs were rescued into
+  `.vibing/probe/mutations/` before a reboot would have taken them. Eight of the 46 had already
+  lost both, having been applied as inline heredocs that never existed as files.
 
 The pattern is not carelessness about logs — **the logs were all kept.** It is that a measurement's
 evidence is treated as its output, when the thing that decays is the _instrument_. A number whose
@@ -469,3 +469,24 @@ happens to be compared against an old one.
 This compounds with the corollary above: a reproducer is the cheapest claim on a page to check —
 run it — so it is the one nobody checks, and it rots silently. **If a number is worth recording,
 commit the thing that produced it**, or say in the same breath that it is unreproducible.
+
+**An instrument is not the same thing as its script.** The mutation rescue had to be done three
+times before it was real: the scripts alone raised `FileNotFoundError`, because each reads its
+pre-mutation source from a snapshot beside it rather than from the live file; copying the snapshots
+too still left the scripts pointing at `/tmp`, which fails only _later_, and until then reads
+whatever happens to be at that path. A tool's inputs, and the paths it resolves them by, are part
+of it. **The test of a rescue is running the thing, not counting the files** — the version that
+finally worked was confirmed by applying one mutation to a scratch copy and checking it removed
+what it claims to.
+
+And the snapshots decay in a second way that nothing warns about: they are the source **as of the
+run**, so a stale one silently reverts the file it is written over. Four of the nine surviving
+inputs still match HEAD; the rest differ by up to 238 lines. That asymmetry is the whole reason to
+record staleness next to a preserved instrument rather than just its existence.
+
+**What actually saved these was an audit, not a handover.** The location of the scripts was never
+written down; `/tmp` came up only because the numbers they produced were being re-derived and
+somebody went looking for the cost of re-running them. So "write down where the tool is" is the
+wrong lesson to take from this — nobody who had the tool thought of it as something to keep. The
+lesson is the one above: **when a number is recorded, its instrument is part of the record**, and
+the moment to act on that is when the number is written, not when it is questioned.
