@@ -22,6 +22,10 @@ local M = {}
 ---@field keep_in_bypass? boolean Register the hook in bypassPermissions too. The permission handler
 ---  allows every call in that mode, but the same round trip takes the git-snapshot baseline, so a
 ---  backend that drops the hook there also loses `### Modified Files` and `gd`.
+---@field measured_wait_floor_sec? number The longest this CLI was **measured** to let a PreToolUse
+---  hook block without cutting it. A floor, not a ceiling: it says the CLI waited at least this
+---  long, not that it would have stopped after. Absent means unmeasured, which is what decides
+---  whether an approval may be answered without killing the process — see `can_wait_for_approval`.
 
 --- Every transport, in the order the ADR lists them.
 --- @type string[]
@@ -82,6 +86,32 @@ function M.hook_timeout_sec(hook)
     return nil
   end
   return generator.hook_timeout_sec()
+end
+
+--- Whether an approval on this backend may be answered **without killing the CLI** (#778).
+---
+--- Waiting means the hook blocks inside the CLI until a human answers, so it is safe only where the
+--- CLI has been measured to wait at least that long. Past its own timeout every CLI measured fails
+--- **open** — the tool runs with no verdict at all — so a backend that is merely *probably* patient
+--- enough is a permission gate that silently stops applying.
+---
+--- Hence a measured floor rather than a boolean: an opinion is what a boolean records, and the
+--- opinion here has been wrong twice (`handbook/architecture/approval-without-kill.md` → "How this
+--- was measured wrong twice"). Comparing the floor against the deadline the *current* configuration
+--- derives also makes the answer follow `permissions.approval_wait_sec`: raise it past what a CLI
+--- was measured to tolerate and that backend falls back on its own, rather than quietly waiting
+--- longer than the evidence covers.
+---
+--- Absent floor → false. A new backend therefore keeps today's kill-and-retry behaviour until
+--- somebody runs `tests/perf/hook_wait_ceiling.sh` against it, which is the safe default to forget.
+--- @param hook Vibing.HookSpec|nil
+--- @return boolean
+function M.can_wait_for_approval(hook)
+  local floor = hook and hook.measured_wait_floor_sec
+  if type(floor) ~= "number" then
+    return false
+  end
+  return floor > require("vibing.infrastructure.hooks.wait_budget").script_wait_sec()
 end
 
 --- Register the hook for one run.

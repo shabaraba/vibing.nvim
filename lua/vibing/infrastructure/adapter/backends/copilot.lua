@@ -39,7 +39,14 @@ local M = {
   -- flat decision dialect. This is what gives copilot `permission_mode`, the `ask` list and the
   -- Tool Approval UI (#512); a failed install degrades to the static --deny-tool flags.
   -- bypassPermissions asked for no gate at all, so it gets none.
-  hook = { transport = "plugin_dir", dialect = "copilot", keep_in_bypass = false },
+  -- 950s: on copilot 1.0.85 the hook ran its full 950s budget and exited on its own, uncut. An
+  -- earlier 670s reading was a run stopped by hand, not a limit copilot imposed.
+  hook = {
+    transport = "plugin_dir",
+    dialect = "copilot",
+    keep_in_bypass = false,
+    measured_wait_floor_sec = 950,
+  },
 
   vocabulary = ToolVocabulary,
   register_chat_bufnr = false,

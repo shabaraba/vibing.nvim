@@ -139,6 +139,56 @@ describe("hook timeout ordering", function()
     end)
   end)
 
+  describe("which backends may wait for an approval", function()
+    it("refuses a backend with no measured floor", function()
+      -- The default a new backend inherits by writing nothing. Unmeasured must not read as fine:
+      -- past its own timeout every CLI measured fails open, so waiting on a CLI nobody has timed is
+      -- a permission gate that stops applying without saying so.
+      assert.is_false(Transports.can_wait_for_approval({ transport = "settings_file" }))
+      assert.is_false(Transports.can_wait_for_approval(nil))
+    end)
+
+    it("refuses a floor that does not cover the script's deadline", function()
+      assert.is_false(
+        Transports.can_wait_for_approval({ measured_wait_floor_sec = WaitBudget.script_wait_sec() })
+      )
+      assert.is_true(
+        Transports.can_wait_for_approval({ measured_wait_floor_sec = WaitBudget.script_wait_sec() + 1 })
+      )
+    end)
+
+    it("withdraws a backend whose floor the configured wait has outgrown", function()
+      -- Raising `approval_wait_sec` past what a CLI was measured to tolerate must turn the feature
+      -- off for that CLI rather than wait longer than the evidence covers. This is the whole reason
+      -- the descriptor records a measurement instead of a boolean.
+      local claude = require("vibing.infrastructure.adapter.backends.claude")
+      assert.is_true(Transports.can_wait_for_approval(claude.hook))
+
+      local original = Config.get().permissions.approval_wait_sec
+      Config.get().permissions.approval_wait_sec = claude.hook.measured_wait_floor_sec
+      local ok, err = pcall(function()
+        assert.is_false(Transports.can_wait_for_approval(claude.hook))
+      end)
+      Config.get().permissions.approval_wait_sec = original
+      assert.is_true(ok, tostring(err))
+    end)
+
+    it("matches the floors the handbook records, per backend", function()
+      -- Pinned so that adding a number is a deliberate act with a measurement behind it. codex and
+      -- grok are unmeasured, and staying unmeasured has to be visible rather than inferred from an
+      -- absent field nobody looks at.
+      local expected = { claude = true, copilot = true, codex = false, grok = false }
+      for _, def in ipairs(Agents.list()) do
+        local descriptor = require(def.descriptor_module)
+        assert.equals(
+          expected[def.id],
+          Transports.can_wait_for_approval(descriptor.hook),
+          def.id .. " changed whether it may answer an approval in place"
+        )
+      end
+    end)
+  end)
+
   for _, def in ipairs(Agents.list()) do
     local descriptor = require(def.descriptor_module)
 

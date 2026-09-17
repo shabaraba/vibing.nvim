@@ -61,7 +61,14 @@ local M = {
   -- `.vibing/hook-settings.json` handed over with `--settings`, in the script's own (claude)
   -- dialect. Registered in bypassPermissions too: that mode bypasses the decision, not the
   -- git-snapshot baseline the same PreToolUse round trip takes.
-  hook = { transport = "settings_file", dialect = "claude", keep_in_bypass = true },
+  -- 1080s: a hook was measured blocking that long on claude 2.1.236 and was still alive when the
+  -- run was stopped. A floor, so the real ceiling is unknown and deliberately so.
+  hook = {
+    transport = "settings_file",
+    dialect = "claude",
+    keep_in_bypass = true,
+    measured_wait_floor_sec = 1080,
+  },
   seeds_project_plugins = true,
 
   apply_env = function(env, opts, config)
