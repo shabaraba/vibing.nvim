@@ -32,9 +32,9 @@ calls `nvim_get_buffer` on it, which it only does after being told something is 
 **When the task is done.** The ordinary case: finish the work, then send the report before ending
 your turn.
 
-**Before you act on something you expect will need approval.** A tool-approval prompt kills your
-turn on the spot — you cannot report _after_ hitting one, because there is no turn left to send
-from. If you can see one coming (a destructive command, an edit outside what the brief covers),
+**Before you act on something you expect will need approval.** A tool-approval prompt stops you
+inside the tool call — nothing of yours runs again until somebody answers it, so you cannot report
+_while_ one is open. If you can see one coming (a destructive command, an edit outside what the brief covers),
 send a heads-up first, in the same turn, before making that call. The orchestrator (or the user,
 depending on `agent.orchestration.delegated_approval`) is who clears it either way; a heads-up
 just means they aren't finding out from a cold watchdog notice with no context.

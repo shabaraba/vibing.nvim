@@ -211,7 +211,10 @@ Alongside the transcript the result carries a chat-status line, in the same voca
 - `status: waiting_approval` — the worker stopped on a tool-approval prompt. By default only the
   user can clear that one: say which worker is blocked and on what. If the user turned on
   `agent.orchestration.delegated_approval` (`true` or `"scoped"`), you can answer it yourself — see
-  "Answering a worker's tool approval" below.
+  "Answering a worker's tool approval" below. It is reported as `waiting_approval` whether or not
+  its turn is technically still in flight, so never read `responding` as "that one is fine".
+  `nvim_get_buffer` and `nvim_chat_list` also return `waiting_approvals` — the `request_id`s to
+  answer, and which of them have already expired.
 - `status: error` — the last turn ended with an error. Read the tail of the transcript for the
   message and decide whether to re-brief the worker or report the failure.
 
@@ -238,8 +241,11 @@ When no worker is still running, summarize the results together — what changed
 still needs the user. Point at each worker's `file_path` so the user can open the full transcript.
 
 "Not running" includes the blocked statuses above: a worker sitting on `asked_question` or
-`waiting_approval` will never reach `idle` on its own, so waiting for it is waiting forever.
-Report it as blocked and say what it needs.
+`waiting_approval` is not going to move because you waited. `asked_question` never resolves itself
+at all. `waiting_approval` has a limit — once it passes, vibing.nvim **denies that one tool call**
+and the worker carries on without it — so ignoring one does not merely stall the worker, it
+silently decides the question the wrong way. Either way: report it as blocked and say what it
+needs, or answer it, now.
 
 ### Answering a worker's tool approval
 
@@ -312,10 +318,11 @@ proceed) still fire right away, whether or not your own workers have finished.
 - Report to your parent when the last one is in. One report, summarizing all of them, not one per
   worker: your parent's job is the same as yours, and forwarding raw worker output makes it pay for
   a transcript twice.
-- **Do not wait forever.** A worker that stops `asked_question`, `waiting_approval` or `error` is
-  not going to report on its own. Deal with it if you can (answer the question, answer the tool
-  approval if that is enabled, re-brief it); if you cannot, report to your parent now with that
-  worker's state named, rather than holding the whole tree open for something only the user can
-  clear.
+- **Do not wait it out.** A worker that stops `asked_question`, `waiting_approval` or `error` is
+  not going to report because you waited, and an unanswered `waiting_approval` ends as a **denial**
+  of that tool call rather than as an answer. Deal with it if you can (answer the question, answer
+  the tool approval if that is enabled, re-brief it); if you cannot, report to your parent now with
+  that worker's state named, rather than holding the whole tree open for something only the user
+  can clear.
 - If your own brief turns out to be ambiguous, ask your parent before dispatching. Splitting a
   misunderstood task fans the misunderstanding out across several chats.
