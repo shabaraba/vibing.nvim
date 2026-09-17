@@ -58,10 +58,10 @@ backend-neutral — nothing about it is claude-specific — where `--permission-
 
 ## The ordering invariant, and why every backend needs it
 
-Three numbers, in three different files, that must stay in this order:
+Three numbers, in three different files and two languages, that must stay in this order:
 
 ```
-permissions.approval_wait_sec  <  pre-tool-use.sh MAX_WAIT  <  <backend>'s configured hook timeout
+permissions.approval_wait_sec  <  pre-tool-use.sh's own wait  <  <backend>'s configured hook timeout
 ```
 
 **Both CLIs measured fail OPEN when their configured hook timeout expires: the tool runs with no
@@ -73,19 +73,28 @@ The invariant makes that unreachable, twice over:
 1. vibing's own wait limit expires first, and the fallback writes `deny` into the `.res`. The hook
    returns a verdict and exits normally.
 2. If that never happens — Neovim crashed, the RPC server died, the timer was never armed — the
-   hook script reaches its own `MAX_WAIT` and **exits 2 on its own** (`# Timeout - fail closed`).
+   hook script reaches its own deadline and **exits 2 on its own** (`# Timeout - fail closed`).
 
 Only something outside our control (the hook process being SIGKILLed) can reach the CLI's timeout.
 
 `copilot_settings_generator.lua` already stated half of this — "`HOOK_TIMEOUT_SEC` … has to stay
-comfortably above [MAX_WAIT] or a slow approval would turn into a silent allow" — and attributed it
-to copilot's fail-open behaviour. The measurement below shows the same hole in claude, where
-`settings_generator.lua`'s `timeout = 120` and `MAX_WAIT`'s 120s are **equal**, with no margin at
-all. That is a present-tense bug, independent of #778.
+comfortably above [the script's wait] or a slow approval would turn into a silent allow" — and
+attributed it to copilot's fail-open behaviour. The measurement below shows the same hole in claude,
+where `settings_generator.lua`'s `timeout = 120` and the script's own 120s were **equal**, with no
+margin at all — a present-tense bug, independent of #778, which is why it was fixed on its own
+(`fix(hooks): give claude's hook timeout a margin over the script's own deadline`).
+
+Being right about one backend was never the problem; being right about one backend _only_ was.
+`copilot_settings_generator_spec.lua` was the sole place the ordering was checked, so claude, codex
+and grok were free to drift. The check now runs per descriptor over `agents.lua`
+(`hook_timeout_ordering_spec.lua`), and each transport reports the timeout it registers rather than
+the spec re-deriving each generator's schema — claude's `timeout`, copilot's `timeoutSec`, codex's
+`-c` TOML fragment, grok's delegation to claude's generator. A transport that cannot answer fails
+the spec, because "no timeout reported" and "an unsafe timeout" are indistinguishable from outside.
 
 ## Measurements
 
-claude 2.1.236, copilot 1.0.83, macOS. Reproduce with
+claude 2.1.236, copilot 1.0.83 (the 950s re-run: 1.0.85), macOS. Reproduce with
 `VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh <backend> <block_sec> <configured_timeout_sec> [mode] [gate_preallowed]`.
 
 ### How long a hook may block
@@ -110,8 +119,9 @@ stopped by hand at 670s. The two numbers differ by how long each run was watched
 else, which is why a per-backend limit derived from them would be recording the measurement rather
 than the CLI. 950 was chosen because it is the first number that settles the precondition below.
 
-The 120s vibing configures today is **not** a CLI limit. It is a value we chose, and a larger one
-is honoured.
+The 120s vibing configured before this work was **not** a CLI limit. It was a value we chose, and
+both CLIs honour a larger one — which is what makes the 930s the default now derives possible at
+all.
 
 ### What expiry does
 
@@ -133,7 +143,7 @@ does **not** skip PreToolUse. (`HOOK START` in the log is the proof; it is not a
 
 copilot ran the hook **twice** in every expiry cell. A retry is a _new_ `.req` with a new
 `request_id`, so a design that withholds the `.res` can produce **two approval prompts for one tool
-call** — and answering one leaves the other spinning to `MAX_WAIT`. The invariant above means
+call** — and answering one leaves the other spinning to the script's own deadline. The invariant above means
 copilot never times out in normal operation, but the fallback path can still reach this, so it is
 handled rather than assumed away.
 
