@@ -17,6 +17,11 @@ local M = {}
 
 --- A resident process that answers nothing at all is indistinguishable from a hung one, and unlike
 --- the oneshot transport there is no exit to notice. Armed on every turn, not only a resumed one.
+---
+--- **Keep this equal to `cli_runtime.INITIAL_RESPONSE_TIMEOUT_MS`.** The two answer the same
+--- question — how long to wait for the CLI's first byte — and changing one alone would leave the
+--- two transports silently waiting different amounts of time for the same thing. Merging them is
+--- #782.
 M.FIRST_RESPONSE_TIMEOUT_MS = 120000
 
 --- @param params Vibing.DuplexRunParams
