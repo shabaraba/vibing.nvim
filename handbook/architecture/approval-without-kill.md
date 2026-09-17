@@ -501,7 +501,24 @@ states and nothing tests is a coincidence**, and moving files is enough to end i
 The guard's first draft reported ~1312 changed lines where `diff` says 207, because it compared
 positionally and an insertion near the top shifts everything after it. Worth recording only because
 of where it happened: an error message overstating the damage, inside the check written to stop a
-number from being wrong.
+number from being wrong. Most of the errors collected on this page make things look **better** than
+they are — 52/384, "accepted at startup", a reproducer that does not reproduce. This one overstates,
+from the same mechanism, which is worth knowing when deciding how much to trust a surprising number
+in either direction.
+
+**And the guard was verified against the wrong thing first.** The check was exercised by calling
+`require_current` directly and watching it allow two series and refuse three — which tests the
+function, not the scripts. One script writes both production files unconditionally _before_
+deciding what to do, so the guard sat after the damage there: `restore` never reached it, and an
+applied mutation printed `REFUSED` with 318 lines already reverted. Testing a component in place of
+the path it sits in is how a guard passes review while protecting nothing.
+
+Two attempts at the replacement test then passed **vacuously** — a shell quoting slip meant the
+scripts never ran, and the second one printed "production files BYTE-IDENTICAL", which is exactly
+what a working guard prints. What settled it was a **positive control**: forcing the guard off and
+confirming the files really do change by 318 lines. A verification that cannot distinguish "the
+guard held" from "nothing executed" is the same defect as the pre-flight at the top of this page,
+found the same way.
 
 **What actually saved these was an audit, not a handover.** The location of the scripts was never
 written down; `/tmp` came up only because the numbers they produced were being re-derived and
