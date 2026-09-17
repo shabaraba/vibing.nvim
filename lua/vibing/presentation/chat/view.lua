@@ -265,6 +265,21 @@ function M._apply_chat_buffer_settings(bufnr)
     group = cleanup_group,
     buffer = bufnr,
     callback = function()
+      -- **CLIを殺す前に、承認待ちで止めているフックを解放する（#778 の出口3）。** ここで
+      -- キャンセルされるプロセスは `pre-tool-use.sh` の中で `.res` を待って止まっている可能性が
+      -- あり、殺したあとのCLIはもう待つのをやめる主体になれない。順序の理由は `VimLeavePre`
+      -- （`vibing/init.lua` の `_shutdown`）とまったく同じで、違うのは範囲だけ。
+      -- バッファが消えることは答えではないので deny で閉じる。
+      --
+      -- pcall なのは、ここで投げると後続のキャンセルが黙って走らなくなるから。解放に失敗した
+      -- 場合の帰結はフックが自分の締め切りまで空回りすることで、プロセスを取り逃すより軽い
+      pcall(function()
+        require("vibing.infrastructure.rpc.pending_approvals").resolve_for_chat(
+          bufnr,
+          "The chat this approval was asked in went away before it was answered."
+        )
+      end)
+
       local chat_buffer = M._attached_buffers[bufnr] or (M._current_buffer and M._current_buffer.buf == bufnr and M._current_buffer)
       if chat_buffer then
         local adapter = chat_buffer:_get_active_adapter()
