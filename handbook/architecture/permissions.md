@@ -235,8 +235,8 @@ wrong chat — being per-chat is a correctness property here, not only an isolat
 ## Delegated Approval
 
 **Another chat can answer a worker's prompt only when the user opted in.** A worker chat that hits
-this prompt is `waiting_approval`: its turn was killed, so it can neither continue nor report that
-it is stuck, and in an orchestration run the user has to find each blocked worker by hand. With
+this prompt is `waiting_approval`: it can neither continue nor report that it is stuck, and in an
+orchestration run the user has to find each blocked worker by hand. With
 `agent.orchestration.delegated_approval = true` the orchestrator answers instead, via the MCP tool
 `nvim_chat_answer_approval` → `application/chat/approval_delegate.lua`. The default is off because
 what it buys is an agent clearing another agent's permission gate, not because of anything in the
@@ -256,3 +256,14 @@ worker's pending unsent section (replacing the prompt) and calls `ChatBuffer:sen
 once, in one place. A second implementation of "what an approval means" is the failure this shape
 exists to prevent. What differs is the section header — `## Request <!-- … from <orchestrator> -->`
 — which is how the worker's transcript records who granted it.
+
+**A worker holding a blocked hook is `is_responding()`**, because its turn never ended — so
+`ProgrammaticSender`'s generic "do not push into a responding chat" guard would refuse every
+delegated approval on the waiting path, which is the path the feature exists for. The one exemption
+is `opts.answers_blocked_approval`, a `request_id`, and it **asks the registry rather than the
+drawn lines**: a prompt left over from a killed turn is answered as a _new_ turn, so letting that
+through would take `send_message` to `cancel_request` and kill the turn running right now.
+
+That guard's absence was invisible in `approval_delegate_spec.lua` for a while, because the stub
+there answered `false` to `is_responding` and replaced the validator with a no-op — the
+kill-design world, which every case in that file had been written in.
