@@ -460,6 +460,32 @@ In a chat buffer:~
     gx          Open the URL on the current line in a browser
     q           Close the chat window
 
+Answering a tool approval~
+
+When a tool needs your approval the prompt is written into the chat as an
+ordinary unsent `## User` section: a header, what is being asked for, and four
+numbered option lines. Answer it by deleting every option line except the one
+you want (`dd`) and pressing `<CR>`.
+
+Each option line ends with an HTML comment naming the request it belongs to.
+One turn can raise several prompts at once — a CLI runs its tool calls in
+parallel — and every prompt draws the same four options, so the marker is what
+says which one you answered. Keep it on the line you leave behind. If what is
+left is ambiguous, the send is refused and nothing is spent: fix the lines and
+press `<CR>` again.
+
+On backends where the CLI has been measured to wait long enough, answering
+continues the turn that asked instead of starting a new one, and the rest of
+that turn's output is held until you answer — the prompt says so. Elsewhere
+the turn was stopped when the prompt appeared, and your answer starts a new
+one.
+
+An unanswered prompt does not wait forever. After
+`permissions.approval_wait_sec` (default 900) vibing.nvim denies that one tool
+call and says so in the chat. The prompt stays on screen, marked expired,
+rather than disappearing under your cursor. Only that call is refused; the
+turn carries on.
+
 `gd` opens a float with three panes: the turn's files on the left, with each
 one's icon and `+N -M`, and that file's before/after side by side in Neovim's
 own diff mode. Both sides are syntax highlighted, `]c` / `[c` move between
