@@ -28,17 +28,23 @@
 # **Two arms, because they are two different mechanisms with one name**, and which one works decides
 # whether the third shape is available at all:
 #
-#   A. `--permission-prompt-tool stdio` — ask over the stream-json control channel. This is the
-#      shape whose round trip is already recorded. It needs `--input-format stream-json`, which
-#      `backends/claude.lua` passes **only on the duplex transport** while oneshot is the default —
-#      so if only this arm works, the third shape is duplex-only.
+#   A. `--permission-prompt-tool stdio` — ask over the stream-json control channel. It needs
+#      `--input-format stream-json`, which `backends/claude.lua` passes **only on the duplex
+#      transport** while oneshot is the default — so if only this arm works, the third shape is
+#      duplex-only.
 #   B. `--permission-prompt-tool mcp__<server>__<tool>` — ask an MCP tool. The binary's own errors
 #      say the argument must be an MCP tool, and it carries a server name
 #      (`permissionPromptToolServerName`), so this is the ordinary form. It needs no control
-#      channel, so it would work on both transports. **Hypothesis: that this form coexists with a
-#      hook at all.**
+#      channel, so it would work on both transports.
 #
-# Arm A is first because its mechanism is the measured one. Arm B is the one we would rather have.
+# **Neither arm's argv is verified.** What differs is only what sits behind it: arm A's answer goes
+# into a round trip that was measured end to end (the recorded `control_request`, with `allow`
+# running the tool), while arm B's whole path is untried. That `stdio` is the value which reaches
+# that round trip is a hypothesis from the binary's string table, exactly like arm B's. The
+# pre-flight below turns both hypotheses into answers before any tokens are spent.
+#
+# Arm A is first because of what is behind it, not because its flag is any better established. Arm
+# B is the one we would rather have, since oneshot is the default transport.
 #
 # The verdict is the probe file on disk, never what the CLI says about itself: `probe-out.txt`
 # exists iff the Write ran.
