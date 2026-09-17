@@ -100,6 +100,39 @@ function ChatBuffer:open()
   end
 end
 
+---いまこのチャットで、フックが実際にブロックされたまま答えを待っている数
+---
+---**`_pending_approvals` の件数ではない。** あちらは描画リストで、kill する経路では
+---答えたあとも残る（プロセスはとうに死んでいるので、残っていても誰も待っていない）。
+---「待たせているか」を訊く場所はレジストリのほうで、答えが出た瞬間に空になるので古くならない
+---— `chat_status` が `_stop_reason` ではなくこちらを読むのと同じ理由
+---@return number
+function ChatBuffer:_blocked_approval_count()
+  return #require("vibing.infrastructure.rpc.pending_approvals").list_for_chat(self.buf)
+end
+
+---打ち切られたターンが止めていたフックを解放する
+---
+---答えではなくターンの打ち切りなので deny が書かれる。**プロンプトの行は消さない** — kill する
+---経路では答えたあとも残るのが従来の挙動で、ユーザーは後から答えて新しいターンとして再試行
+---できる。ここで消すと、その経路の挙動まで黙って変わる。
+---
+---溜まっていたチャンクだけは捨てる。打ち切られたターンの続きで、書き戻す場所が無い — 次の
+---送信から来たなら未送信セクションにユーザーの本文が入っていて、その下に積むのは
+---`extract_user_message` が拾う壊れ方そのものになる。捨てるのは実際に解放したときだけなので、
+---kill する経路（レジストリに何も無い）は一切触られない
+---@param reason string フックに渡す拒否理由
+function ChatBuffer:_release_blocked_approvals(reason)
+  local released = 0
+  pcall(function()
+    released = require("vibing.infrastructure.rpc.pending_approvals").resolve_for_chat(self.buf, reason)
+  end)
+
+  if released > 0 then
+    self._chunk_buffer = ""
+  end
+end
+
 ---実行中のリクエストを止める
 ---
 ---`adapter:cancel` は `wrapped_on_done` を同期で呼ぶので、ターンIDの後始末（`_current_turn_id`
@@ -108,6 +141,14 @@ end
 ---捨てたい呼び出し元（`close` / `send_message`）が、戻ってきてから自分で消す
 ---@return boolean cancelled 止めるものがあったか
 function ChatBuffer:cancel_request()
+  -- **保留中の承認を先に手放す（#778）。** 止めようとしているターンは、フックの中で `.res` を
+  -- 待って止まっているかもしれない。止めたあとのCLIはもう待つのをやめる主体になれないので、
+  -- 順序は `VimLeavePre` / `BufUnload` と同じ。
+  --
+  -- 早期returnより前に置くのは、止めるプロセスが見つからない場合でも保留が残るのは同じだから。
+  -- 止まっていないのに答えを待たせ続けるほうが、返り値が変わらないことより重い
+  self:_release_blocked_approvals("The turn this approval belonged to was cancelled.")
+
   if not self._current_process_id then
     return false
   end
@@ -636,7 +677,9 @@ function ChatBuffer:_answer_pending_approval()
   -- 戻すことだが、**それが何かは保留が残っているかで変わる**
   ConversationExtractor.commit_user_message(self.buf)
 
-  if #(self._pending_approvals or {}) > 0 then
+  -- 訊くのは「まだフックを止めているか」で、プロンプトの行が残っているかではない。残っていても
+  -- 誰も待っていないなら入力欄を開いたままにする理由は無く、そこに出力を積むと壊れる
+  if self:_blocked_approval_count() > 0 then
     -- まだ答えを待っているものがある。新しい未送信セクションに描き直して入力欄を保つ。
     -- 溜めていた出力は `add_user_section` の中で先に流れるので、順序は時系列のまま
     self:add_user_section()
@@ -900,7 +943,7 @@ function ChatBuffer:append_chunk(chunk, turn_id)
   -- 溜めたものは必ず出る。出口は `_flush_chunks` を呼ぶ側全部 — 最後の承認が答えられたとき
   -- （`_answer_pending_approval`）と、ターンが終わったとき（`add_user_section`）。前者が
   -- 抜けても後者が拾うので、期限切れで承認が消えた場合も置き去りにはならない
-  if #(self._pending_approvals or {}) > 0 then
+  if self:_blocked_approval_count() > 0 then
     return
   end
 

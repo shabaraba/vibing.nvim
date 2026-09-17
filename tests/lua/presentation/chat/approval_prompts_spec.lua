@@ -479,10 +479,14 @@ describe("several approval prompts at once", function()
     --- `retry_as_new_turn`, which starts a real send. That path also opens a `## Assistant` and
     --- returns true, so a case that only checked the return value would be green while testing
     --- something else entirely.
-    local function blocked_on(request_ids)
+    --- `chat_bufnr` is not decoration: "is this chat still holding a hook" is asked of the registry
+    --- by buffer, so an entry filed under no chat holds nothing and this whole describe would pass
+    --- by testing the unheld case.
+    local function blocked_on(chat_buf, request_ids)
       for _, request_id in ipairs(request_ids) do
-        Pending.open({ request_id = request_id, tool = "Bash" })
+        Pending.open({ request_id = request_id, chat_bufnr = chat_buf.buf, tool = "Bash" })
       end
+      assert.equals(#request_ids, #Pending.list_for_chat(chat_buf.buf))
     end
 
     before_each(function()
@@ -546,6 +550,7 @@ describe("several approval prompts at once", function()
 
     it("holds it while a prompt is open", function()
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
       chat_buf:show_approval_prompts()
       chat_buf:append_chunk("a parallel tool's result\n")
@@ -554,10 +559,26 @@ describe("several approval prompts at once", function()
       assert.is_nil(line_index(chat_buf, "a parallel tool's result"), text(chat_buf))
     end)
 
+    it("does not hold for a drawn prompt whose hook is already gone", function()
+      -- The kill path leaves its prompts drawn after the turn dies, and they are still answerable
+      -- as a new turn. Nothing is blocked on them, so holding would mean every later turn rendered
+      -- nothing at all — the hold is keyed on hooks, not on lines.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+      chat_buf:append_chunk("the next turn's output\n")
+
+      vim.wait(300, function()
+        return line_index(chat_buf, "the next turn's output") ~= nil
+      end)
+      assert.is_not_nil(line_index(chat_buf, "the next turn's output"), text(chat_buf))
+    end)
+
     it("puts what arrived before the prompt above it", function()
       -- Held means "not yet", not "dropped": everything up to the moment the prompt is drawn
       -- belongs above it, in the assistant section the prompt interrupts.
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
       chat_buf:append_chunk("said before asking\n")
       chat_buf:show_approval_prompts()
@@ -584,7 +605,7 @@ describe("several approval prompts at once", function()
 
     it("flushes what it held into a new assistant section once the last prompt is answered", function()
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
-      blocked_on({ "req-1" })
+      blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
       chat_buf:show_approval_prompts()
       chat_buf:append_chunk("arrived while waiting\n")
@@ -614,7 +635,7 @@ describe("several approval prompts at once", function()
       -- including after its turn has finished, with nothing left to answer. That is the
       -- "pretending to be responding" bug one layer over, in the other direction.
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
-      blocked_on({ "req-1" })
+      blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
       chat_buf:show_approval_prompts()
       assert.equals("waiting_approval", chat_buf:get_stop_reason())
@@ -629,7 +650,7 @@ describe("several approval prompts at once", function()
         { tool = "Bash", request_id = "req-1" },
         { tool = "Write", request_id = "req-2" },
       })
-      blocked_on({ "req-1", "req-2" })
+      blocked_on(chat_buf, { "req-1", "req-2" })
       chat_buf:start_response()
       chat_buf:show_approval_prompts()
 
@@ -638,12 +659,77 @@ describe("several approval prompts at once", function()
       assert.equals("waiting_approval", chat_buf:get_stop_reason())
     end)
 
+    --- A turn stopped by us rather than answered: `:VibingCancel`, closing the chat, or simply
+    --- typing a new message instead of answering (`send_message` cancels before it sends).
+    --- @param chat_buf Vibing.ChatBuffer
+    --- @param order string[]
+    local function cancellable(chat_buf, order)
+      chat_buf._current_process_id = "cancel-spec-process"
+      chat_buf._get_active_adapter = function()
+        return {
+          stop_turn = function()
+            table.insert(order, "stop")
+          end,
+        }
+      end
+    end
+
+    it("releases the blocked hooks when the turn is cancelled instead of answered", function()
+      local order = {}
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
+      cancellable(chat_buf, order)
+      local original_resolve = Pending.resolve_for_chat
+      ---@diagnostic disable-next-line: duplicate-set-field
+      Pending.resolve_for_chat = function(bufnr, reason)
+        table.insert(order, "release")
+        return original_resolve(bufnr, reason)
+      end
+
+      local ok = pcall(function()
+        chat_buf:cancel_request()
+      end)
+      Pending.resolve_for_chat = original_resolve
+      assert.is_true(ok)
+
+      assert.is_nil(Pending.get("req-1"), "a cancelled turn's hooks must not be left waiting")
+      assert.same({ "release", "stop" }, order, "a stopped CLI can no longer stop waiting")
+    end)
+
+    it("lets the stream flow again after a cancel, rather than holding for a prompt nobody can answer", function()
+      -- The prompts belong to the turn that was cancelled. Left in the list they hold the *next*
+      -- turn's output too, and that turn would render nothing at all.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
+      cancellable(chat_buf, {})
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+      chat_buf:append_chunk("the cancelled turn's tail\n")
+
+      chat_buf:cancel_request()
+
+      -- The drawn prompt stays: on the kill path it always has, and the user can still answer it
+      -- as a new turn. What must not survive is the *hold*, and that is keyed on hooks actually
+      -- blocked rather than on lines still on screen.
+      assert.equals(1, #chat_buf:get_pending_approvals(), "the drawn prompt is not deleted")
+
+      chat_buf:start_response()
+      chat_buf:append_chunk("the next turn's output\n")
+      vim.wait(300, function()
+        return line_index(chat_buf, "the next turn's output") ~= nil
+      end)
+      assert.is_not_nil(line_index(chat_buf, "the next turn's output"), text(chat_buf))
+      -- The held tail belonged to the turn that was cancelled. Flushed now it would be read as the
+      -- opening of the turn the user started instead.
+      assert.is_nil(line_index(chat_buf, "the cancelled turn's tail"), text(chat_buf))
+    end)
+
     it("keeps holding while another prompt is still open", function()
       local chat_buf = chat_with({
         { tool = "Bash", request_id = "req-1" },
         { tool = "Write", request_id = "req-2" },
       })
-      blocked_on({ "req-1", "req-2" })
+      blocked_on(chat_buf, { "req-1", "req-2" })
       chat_buf:start_response()
       chat_buf:show_approval_prompts()
 
