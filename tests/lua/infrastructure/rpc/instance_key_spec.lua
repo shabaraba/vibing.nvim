@@ -48,8 +48,24 @@ describe("instance_key", function()
     assert.is_truthy(InstanceKey.get():match("^" .. InstanceKey.PATTERN .. "$"))
   end)
 
-  it("counts this instance as live even with no registry to read", function()
+  it("counts this instance as live", function()
     assert.is_true(InstanceKey.live()[InstanceKey.get()])
+  end)
+
+  it("answers nil when the registry cannot be read, rather than 'only me'", function()
+    -- "Only me" is the dangerous wrong answer: it makes every other running editor's file look
+    -- like a leftover. An unreadable registry means *unknown*, not *empty*.
+    local Registry = require("vibing.infrastructure.rpc.registry")
+    local original = Registry.list
+    ---@diagnostic disable-next-line: duplicate-set-field
+    Registry.list = function()
+      error("registry unavailable")
+    end
+    local ok, live = pcall(InstanceKey.live)
+    Registry.list = original
+
+    assert.is_true(ok, "live() must not propagate the failure")
+    assert.is_nil(live)
   end)
 
   describe("the generated files", function()
@@ -115,6 +131,58 @@ describe("instance_key", function()
       assert.is_true(ok, tostring(err))
 
       assert.equals(1, vim.fn.filereadable(other))
+    end)
+
+    it("deletes nothing at all when it cannot tell who is running", function()
+      -- The sweep's own doc says it skips rather than guesses, and this is the path where the
+      -- guess would be made for it. With the registry unreadable, every *other* live instance's
+      -- file looks like a leftover — so a sweep that carried on would delete the hook settings of
+      -- every editor open on this project, and each one's next spawn would run with no gate.
+      local others = {
+        vibing_dir() .. "/hook-settings-65535.json",
+        vibing_dir() .. "/hook-settings-65534.json",
+      }
+      for _, path in ipairs(others) do
+        vim.fn.writefile({ "{}" }, path)
+      end
+
+      local Registry = require("vibing.infrastructure.rpc.registry")
+      local original = Registry.list
+      ---@diagnostic disable-next-line: duplicate-set-field
+      Registry.list = function()
+        error("registry unavailable")
+      end
+      local ok, err = pcall(function()
+        SettingsGenerator.ensure(tmp_dir)
+      end)
+      Registry.list = original
+      assert.is_true(ok, tostring(err))
+
+      for _, path in ipairs(others) do
+        assert.equals(1, vim.fn.filereadable(path), path .. " must survive an unreadable registry")
+      end
+    end)
+
+    it("tries again next time rather than marking the directory swept", function()
+      -- Skipping must not be remembered as "done". `ensure` runs on every spawn, so the next one
+      -- is the natural retry; memoizing the skip would leave the leftovers forever.
+      local dead = vibing_dir() .. "/hook-settings-65535.json"
+      vim.fn.writefile({ "{}" }, dead)
+
+      local Registry = require("vibing.infrastructure.rpc.registry")
+      local original = Registry.list
+      ---@diagnostic disable-next-line: duplicate-set-field
+      Registry.list = function()
+        error("registry unavailable")
+      end
+      pcall(function()
+        SettingsGenerator.ensure(tmp_dir)
+      end)
+      Registry.list = original
+      assert.equals(1, vim.fn.filereadable(dead))
+
+      SettingsGenerator.ensure(tmp_dir)
+      assert.equals(0, vim.fn.filereadable(dead), "the retry must actually sweep")
     end)
 
     it("leaves everything else in .vibing/ alone", function()

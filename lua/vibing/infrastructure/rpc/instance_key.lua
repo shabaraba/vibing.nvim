@@ -41,26 +41,35 @@ end
 --- A Lua pattern, not a regex: `-` is a quantifier, so the portless form's literal one is escaped.
 M.PATTERN = "[%d]+%-?[%d]*"
 
---- Every key that currently belongs to a running Neovim, this one included.
+--- Every key that currently belongs to a running Neovim, this one included — or **nil when that
+--- cannot be established**.
 ---
---- Used to decide whether a leftover file is ours to delete. Errs towards *keeping* things: a
---- registry that cannot be read returns only this instance's key, and the sweep that consumes this
---- is written to skip rather than guess.
+--- The nil is the whole point. An unreadable registry is not "no other instances are running"; it
+--- is "we do not know which are". Answering with just this instance's key would make every other
+--- live Neovim's file look like a leftover, and the sweep would delete the hook settings of every
+--- editor open on the project — taking each one's permission gate with it on its next spawn, which
+--- fails open. Cleaning up is a convenience and the gate is not, so there is no version of that
+--- trade worth making.
+---
+--- An **empty** registry is a different answer and a valid one: read successfully, nobody else is
+--- running, sweep away.
 ---
 --- Portless instances are not in the registry at all, so their leftovers are not protected here.
 --- That is the same gap `hook_cleanup` documents for comm directories, and it is harmless for the
 --- same reason: without a port no CLI child of theirs is bound to anything.
---- @return table<string, boolean>
+--- @return table<string, boolean>|nil live nil when the registry could not be read
 function M.live()
-  local live = { [M.get()] = true }
   local ok, instances = pcall(function()
     return require("vibing.infrastructure.rpc.registry").list()
   end)
-  if ok and instances then
-    for _, instance in ipairs(instances) do
-      if instance.port then
-        live[tostring(instance.port)] = true
-      end
+  if not ok or type(instances) ~= "table" then
+    return nil
+  end
+
+  local live = { [M.get()] = true }
+  for _, instance in ipairs(instances) do
+    if instance.port then
+      live[tostring(instance.port)] = true
     end
   end
   return live
@@ -87,6 +96,15 @@ function M.sweep(dir, name_pattern, remove)
   if swept[memo] then
     return
   end
+
+  -- Asked **before** the memo is set, and before the directory is even read. Not knowing who is
+  -- running is not a reason to delete carefully — it is a reason to delete nothing, and to try
+  -- again on the next spawn rather than never. Leftovers surviving a session cost a few kilobytes;
+  -- getting this wrong deletes the hook settings of every editor open on the project.
+  local live = M.live()
+  if not live then
+    return
+  end
   swept[memo] = true
 
   local ok, entries = pcall(vim.fn.readdir, dir)
@@ -94,7 +112,6 @@ function M.sweep(dir, name_pattern, remove)
     return
   end
 
-  local live = M.live()
   for _, name in ipairs(entries) do
     local key = name:match(name_pattern)
     if key and not live[key] then
