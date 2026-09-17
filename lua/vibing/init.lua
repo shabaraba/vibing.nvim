@@ -13,6 +13,49 @@ local M = {}
 ---@type Vibing.Adapter?
 M.adapter = nil
 
+---Neovim終了時の後片付け
+---
+---`VimLeavePre` のコールバック本体。関数として切り出してあるのは**順序が仕様だから**で、
+---インラインのクロージャだと外から確かめる手段が無い。
+---
+---順序:
+---
+---1. Neovimが所有する長時間ジョブを止める。終了通知はshutdown中には新しいLLMターンを起こさない
+---   （job.managerが抑止する）
+---2. **承認待ちで止めているフックを解放する（#778）。** `.res` を書かないまま消えると、フックは
+---   自分の締め切りまで空回りしてから一般的な文言で deny する。3より前でなければならない:
+---   殺したあとのCLIは、もう待つのをやめる主体になれない
+---3. CLIプロセスを全てキャンセルする
+---4. RPCサーバーを止める。2がこれより後だと `.res` のパスを決める `comm_dir` がポートを失う
+---
+---どの段も pcall で包む。終了処理の途中で1つ投げると、残りが黙って走らなくなる
+function M._shutdown()
+  local steps = {
+    function()
+      require("vibing.application.job.manager").shutdown()
+    end,
+    function()
+      require("vibing.infrastructure.rpc.pending_approvals").resolve_all(
+        "Neovim exited while this approval was waiting for an answer."
+      )
+    end,
+    function()
+      if M.adapter then
+        M.adapter:cancel()
+      end
+    end,
+    function()
+      if M.config and M.config.mcp and M.config.mcp.enabled then
+        require("vibing.infrastructure.rpc.server").stop()
+      end
+    end,
+  }
+
+  for _, step in ipairs(steps) do
+    pcall(step)
+  end
+end
+
 ---vibing.nvimプラグインを初期化
 ---設定のマージ、アダプター初期化、チャットシステム初期化、リモート制御初期化、ユーザーコマンド登録を実行
 ---アダプター読み込みに失敗した場合はエラー通知して初期化を中断
@@ -146,20 +189,7 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = augroup,
     callback = function()
-      -- Neovimが所有する長時間ジョブを先に止める。終了通知はshutdown中には新しいLLMターンを
-      -- 起こさない（job.managerが抑止する）。
-      require("vibing.application.job.manager").shutdown()
-
-      -- CLIプロセスを全てキャンセル
-      if M.adapter then
-        M.adapter:cancel()
-      end
-
-      -- RPCサーバー停止
-      if M.config.mcp and M.config.mcp.enabled then
-        local rpc_server = require("vibing.infrastructure.rpc.server")
-        rpc_server.stop()
-      end
+      M._shutdown()
     end,
   })
 
