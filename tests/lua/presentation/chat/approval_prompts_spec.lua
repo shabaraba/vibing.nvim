@@ -738,9 +738,29 @@ describe("several approval prompts at once", function()
       chat_buf:_finish_turn()
 
       assert.is_nil(Pending.get("req-1"), "a finished turn's hooks have nobody left to answer them")
+      -- The prompt was already drawn mid-turn. Closing the turn opens another input section and
+      -- redraws whatever is pending into it, so without care the user is shown the same approval
+      -- twice and only one of the two carries an answerable request.
+      local _, drawn = text(chat_buf):gsub("Tool approval required", "")
+      assert.equals(1, drawn, "the prompt must not be drawn a second time:\n" .. text(chat_buf))
       -- Unlike a cancel, the held tail belongs to *this* turn and the section closing right here is
       -- where it goes.
       assert.is_not_nil(line_index(chat_buf, "what the turn managed to say"), text(chat_buf))
+    end)
+
+    it("keeps what the user typed while the turn was running", function()
+      -- The de-duplication above drops the trailing unsent section before redrawing. It must do so
+      -- only for a section the prompts were drawn into: the same section is where the user types,
+      -- and a turn ending is not a reason to delete their message.
+      local chat_buf = chat_with({})
+      chat_buf:start_response()
+      chat_buf:add_user_section()
+      local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
+      vim.api.nvim_buf_set_lines(chat_buf.buf, #lines, #lines, false, { "half-written question" })
+
+      chat_buf:_finish_turn()
+
+      assert.is_not_nil(line_index(chat_buf, "half-written question"), text(chat_buf))
     end)
 
     it("keeps holding while another prompt is still open", function()

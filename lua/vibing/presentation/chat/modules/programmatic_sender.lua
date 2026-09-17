@@ -5,6 +5,7 @@ local M = {}
 local view = require("vibing.presentation.chat.view")
 local Renderer = require("vibing.presentation.chat.modules.renderer")
 local Timestamp = require("vibing.core.utils.timestamp")
+local ConversationExtractor = require("vibing.presentation.chat.modules.conversation_extractor")
 
 -- Per-buffer send locks to prevent concurrent sends
 local _send_locks = {}
@@ -91,58 +92,6 @@ function M.validate(bufnr, message, opts)
   return chat_buf
 end
 
----末尾の未送信セクションを落とす（既定では中身が空のときだけ）
----
----ターンが終わるたび `add_user_section()` が空の `## User <!-- unsent -->` を置く。人間はそこに
----打ち込むのでセクションは1つのままだが、配達はその下に**もう1つ**足していたので、配達された
----ターンの上には毎回空の User セクションが取り残されていた（実際のオーケストレーションで
----1ターンにつき1つ増えるのを確認）。
----
----落とすのは中身が空のときだけ。承認プロンプトや質問の選択肢は同じ未送信セクションに
----描かれるので、それらは「空でない」として残る（`replace_unsent` を渡した呼び出しを除く）。
----
----@param buf number
----@param replace_unsent boolean? true なら中身があっても末尾の未送信セクションを落とす。
----  承認への代理応答（`approval_delegate`）専用で、そこでは承認プロンプトそのものが
----  「置き換える対象」になる。残すと、答え終わったプロンプトがバッファに永久に居座る
-local function drop_trailing_unsent_section(buf, replace_unsent)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-
-  -- 末尾から空行を飛ばして最初に当たった行がヘッダーなら、それが最後のセクションで、かつ
-  -- 中身は空。ヘッダー行が空行であることはないので、この1走査が「最後のヘッダー」と
-  -- 「その下は空」の両方を同時に確かめている
-  local last = #lines
-  while last > 0 and vim.trim(lines[last]) == "" do
-    last = last - 1
-  end
-
-  if last == 0 then
-    return
-  end
-
-  if not Timestamp.is_unsent_header(lines[last]) then
-    if not replace_unsent then
-      return
-    end
-    -- 中身のある未送信セクションを落とす経路。末尾から**最初に当たったヘッダー**まで戻り、
-    -- それが未送信でなければ何もしない。「未送信ヘッダーを見つけるまで遡る」にすると、
-    -- 送信済みセクションを飛び越えて上のほうの未送信セクションを消しうる
-    repeat
-      last = last - 1
-    until last == 0 or Timestamp.is_header(lines[last])
-    if last == 0 or not Timestamp.is_unsent_header(lines[last]) then
-      return
-    end
-  end
-
-  -- ヘッダーの手前の空行も一緒に落とす。残しても `addUserSection` が末尾の空行を畳むが、
-  -- 畳む対象を残したまま返すと「何を消したか」が2箇所に分かれる
-  local first = last
-  while first > 1 and vim.trim(lines[first - 1]) == "" do
-    first = first - 1
-  end
-  vim.api.nvim_buf_set_lines(buf, first - 1, #lines, false, {})
-end
 
 ---@param bufnr number
 ---@param message string
@@ -170,7 +119,7 @@ function M.send(bufnr, message, sender, delivery, opts)
 
     -- Add user section and send
     local header = delivery and Timestamp.create_header(delivery.kind, nil, delivery.from) or nil
-    drop_trailing_unsent_section(bufnr, opts.replace_unsent)
+    ConversationExtractor.drop_trailing_unsent_section(bufnr, opts.replace_unsent)
     Renderer.addUserSection(bufnr, nil, nil, nil, message, header)
     sent = chat_buf:send_message()
 
@@ -201,7 +150,7 @@ function M.append_notice(bufnr, message)
   _send_locks[bufnr] = true
 
   local success, err = pcall(function()
-    drop_trailing_unsent_section(bufnr)
+    ConversationExtractor.drop_trailing_unsent_section(bufnr)
     Renderer.addUserSection(bufnr, nil, nil, nil, message, Timestamp.create_header("Notice", Timestamp.now()))
     Renderer.addUserSection(bufnr)
     vim.api.nvim_buf_call(bufnr, function()

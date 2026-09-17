@@ -22,6 +22,9 @@ local Fs = require("vibing.core.utils.fs")
 ---@field _pending_approvals table[]? add_user_section()後に挿入する承認要求UI。**複数**
 ---  なのは、CLIが1ターンに複数のPreToolUseフックを並列に起動するから（実測: claudeで3本が
 ---  0.54秒差で立ち上がり、全体が重なる）。表示順に並べる
+---@field _approvals_rendered_unsent boolean? 末尾の未送信セクションに承認プロンプトが描いてある。
+---  ターン途中で描けるようになった（#778）ぶん、ターンの終わりが同じものを描き直して二重に
+---  ならないための印
 ---@field _pending_user_text string? 次のadd_user_section()で本文として差し込むテキスト
 ---@field _current_turn_id string? 待っているターンのID（chunk / response の staleness 判定）
 ---@field _current_process_id string? そのターンを走らせているCLIプロセスのID（kill対象）。
@@ -144,6 +147,15 @@ function ChatBuffer:_finish_turn()
   --
   -- 溜めているチャンクは**捨てない**。このターンの出力で、行き先は直後の `add_user_section`
   self:_release_blocked_approvals("The turn this approval belonged to ended before it was answered.")
+
+  -- プロンプトがターン途中で既に描かれているなら、その未送信セクションごと落とす。下の
+  -- `add_user_section` が同じ保留を描き直すので、残すと同じ承認が2つ並び、答えられるのは
+  -- 片方だけという状態になる。落として描き直すのは、溜まっている出力の行き先を作るためでも
+  -- ある（`_flush_chunks` は末尾に追記するので、入力欄が末尾にあるうちは積めない）
+  if self._approvals_rendered_unsent then
+    ConversationExtractor.drop_trailing_unsent_section(self.buf, true)
+    self._approvals_rendered_unsent = false
+  end
 
   -- アシスタントヘッダーへの終了時刻はここで入れる。AIターンが走ったことが確かなのは
   -- この合流点だけ
@@ -710,6 +722,8 @@ function ChatBuffer:_answer_pending_approval()
   -- 答えた行はそのまま transcript に残す。あとは走り続けているターンの続きを受け取れる状態に
   -- 戻すことだが、**それが何かは保留が残っているかで変わる**
   ConversationExtractor.commit_user_message(self.buf)
+  -- 未送信ではなくなった。以降の描画は「描き直し」ではなく新しいセクションへの描画になる
+  self._approvals_rendered_unsent = false
 
   -- 訊くのは「まだフックを止めているか」で、プロンプトの行が残っているかではない。残っていても
   -- 誰も待っていないなら入力欄を開いたままにする理由は無く、そこに出力を積むと壊れる
@@ -976,6 +990,10 @@ function ChatBuffer:add_user_section()
   Renderer.addUserSection(self.buf, self.win, self._pending_choices, self._pending_approvals, self._pending_user_text)
   self._pending_choices = nil
   self._pending_user_text = nil
+  -- 「いま末尾の未送信セクションに承認プロンプトが描いてある」。ターンの途中で描けるように
+  -- なった以上（#778）、ターンの終わりがもう一度描くと**同じ承認が2つ**出る。どちらの
+  -- プロンプトに答えられるのかは見た目では区別がつかない
+  self._approvals_rendered_unsent = #(self._pending_approvals or {}) > 0
   -- NOTE: Don't clear _pending_approvals here!
   -- They need to persist until the user answers, and each one is dropped individually by
   -- `approval_decision.consume` when its own answer is spent.
