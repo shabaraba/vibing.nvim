@@ -204,6 +204,59 @@ describe("several approval prompts at once", function()
       assert.is_truthy(vim.tbl_contains(chat_buf:get_session_deny(), "Write:once"))
     end)
 
+    --- Refusals reach the user through `vim.notify`, which is what the approval path has always
+    --- used for this. Captured rather than asserted on the buffer: an explanation written into the
+    --- unsent section would be extracted as part of the next message and sent to the model.
+    --- @param fn function
+    --- @return string[] messages
+    local function captured_notifications(fn)
+      local messages = {}
+      local original = vim.notify
+      ---@diagnostic disable-next-line: duplicate-set-field
+      vim.notify = function(message, ...)
+        table.insert(messages, tostring(message))
+        return original(message, ...)
+      end
+      local ok, err = pcall(fn)
+      vim.notify = original
+      assert.is_true(ok, tostring(err))
+      return messages
+    end
+
+    it("tells the user which request has how many lines left", function()
+      -- Half of "refuse when ambiguous" is the refusal; the other half is the user being able to
+      -- read why. Without it the feature is indistinguishable from "<CR> sometimes does nothing",
+      -- which is worse than the behaviour it replaced.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+
+      local messages = captured_notifications(function()
+        type_and_send(chat_buf, {
+          "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->",
+          "2. deny_once - Deny this execution only <!-- vibing:req=req-1 -->",
+        })
+      end)
+
+      local joined = table.concat(messages, "\n")
+      assert.is_truthy(joined:find("req-1", 1, true), "the refusal must name the request: " .. joined)
+      assert.is_truthy(joined:find("2 option lines", 1, true), "and how many lines are left: " .. joined)
+      assert.is_truthy(joined:find("delete all but", 1, true), "and what to do about it: " .. joined)
+    end)
+
+    it("tells the user to keep a marker when several prompts are open", function()
+      local chat_buf = chat_with({
+        { tool = "Bash", request_id = "req-1" },
+        { tool = "Write", request_id = "req-2" },
+      })
+
+      local messages = captured_notifications(function()
+        type_and_send(chat_buf, { "1. allow_once - Allow this execution only" })
+      end)
+
+      local joined = table.concat(messages, "\n")
+      assert.is_truthy(joined:find("vibing:req", 1, true), "the refusal must say how to fix it: " .. joined)
+      assert.is_truthy(joined:find("2 approval", 1, true), joined)
+    end)
+
     it("refuses an ambiguous answer without spending anything", function()
       -- Pressing <CR> with the whole block still there used to take the first line, which is
       -- always `allow_once` — a grant produced by doing nothing. Refusing is cheap now: the hook
