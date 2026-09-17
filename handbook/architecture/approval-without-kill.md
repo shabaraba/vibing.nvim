@@ -92,15 +92,23 @@ claude 2.1.236, copilot 1.0.83, macOS. Reproduce with
 
 Configured timeout set to 1800s; the hook blocks and heartbeats every 10s.
 
-| backend | blocked for | outcome                                                            |
-| ------- | ----------- | ------------------------------------------------------------------ |
-| claude  | **1080s**   | still alive when the run was stopped; true ceiling not established |
-| copilot | **670s**    | still alive when the run was stopped; true ceiling not established |
-| codex   | —           | **not measured** (usage limit)                                     |
-| grok    | —           | **not measured** (not signed in on the measuring machine)          |
+| backend | blocked for | outcome                                                             |
+| ------- | ----------- | ------------------------------------------------------------------- |
+| claude  | **1080s**   | still alive when the run was stopped; true ceiling not established  |
+| copilot | **950s**    | the hook reached its own budget uncut; true ceiling not established |
+| codex   | —           | **not measured** (usage limit)                                      |
+| grok    | —           | **not measured** (not signed in on the measuring machine)           |
 
-Both numbers are floors, not ceilings, and both were stopped deliberately: establishing a real
-ceiling costs the ceiling in wall-clock, and no decision here needs one.
+Both numbers are floors, not ceilings. claude's run was stopped deliberately — establishing a real
+ceiling costs the ceiling in wall-clock, and no decision here needs one. copilot's was not stopped:
+the hook ran its full 950s budget and exited on its own (`HOOK REACHED ITS OWN BUDGET after 950s
+without being cut`), with the tool then refused by copilot's gate, which is the `default` /
+not-pre-allowed row of the next table and not a statement about the hook.
+
+An earlier copilot run reported **670s** and was read as a shorter ceiling. It was not: that run was
+stopped by hand at 670s. The two numbers differ by how long each run was watched and by nothing
+else, which is why a per-backend limit derived from them would be recording the measurement rather
+than the CLI. 950 was chosen because it is the first number that settles the precondition below.
 
 The 120s vibing configures today is **not** a CLI limit. It is a value we chose, and a larger one
 is honoured.
@@ -167,15 +175,52 @@ argument for it.
 
 **One value, for every backend.** A per-backend limit derived from the floors above would be
 recording how long each run happened to be watched, not a difference between the CLIs: claude's
-1080 and copilot's 670 differ because the runs were stopped at different times, and nothing in
-either log says the CLI was the one that stopped. Clamping to a floor bakes a measurement artifact
-into the product and leaves "why is copilot shorter?" with no answer.
+1080 and copilot's 950 are both numbers a run was configured to stop at, and nothing in either log
+says the CLI was the one that stopped. Clamping to a floor bakes a measurement artifact into the
+product and leaves "why is copilot shorter?" with no answer.
 
 What the floors _are_ good for is checking the invariant's precondition, and that check is not
-optional: if `MAX_WAIT` exceeds what a CLI will actually wait, that CLI's timeout fires and the
-table above says the tool then runs ungated. So every backend the feature is enabled for needs a
-measured floor above `approval_wait_sec` plus `MAX_WAIT`'s margin — not a guess that it is probably
-fine.
+optional: if the script's deadline exceeds what a CLI will actually wait, that CLI's timeout fires
+and the table above says the tool then runs ungated. So every backend the feature is enabled for
+needs a measured floor above the script's deadline — not a guess that it is probably fine.
+
+### The derivation, and where it currently stands
+
+`wait_budget.lua` turns the one configured number into the three:
+
+```text
+approval_wait_sec            900   what the user configures (floored at 30)
+  + SCRIPT_MARGIN_SEC  30 =  930   pre-tool-use.sh's own deadline
+  + CLI_MARGIN_SEC     60 =  990   what every backend registers as its hook timeout
+```
+
+The margins are sized by what each one covers, not by taste. The script's 30s is slack for the
+fallback timer's deny to be written and land — it is a backstop for "Neovim answered the RPC and
+then wrote nothing", which is our own bug, since a dead RPC server already fails closed on `nc -w 1`
+and a dead Neovim takes its CLI children with it. The CLI's 60s covers everything before the poll
+loop starts counting (process spawn, `cat` of stdin, the `nc` round trip) and is the larger of the
+two because being wrong there fails _open_ where being wrong in the script fails closed.
+
+The script's deadline travels in the child's environment (`VIBING_HOOK_MAX_WAIT_SEC`), since
+`pre-tool-use.sh` is one fixed file shared by every chat. Its env-absent fallback is **60s, not
+930** — deliberately below the smallest timeout the derivation can produce (30 + 30 + 60 = 120), so
+that a user who _lowers_ `approval_wait_sec` does not end up with a script outlasting the timeouts
+it lowered. A resident duplex process is handed its environment once at spawn, so a changed setting
+reaches it on the next process rather than the next turn.
+
+Against the measured floors, with the default 900:
+
+| backend | measured floor | script deadline 930 inside it? |
+| ------- | -------------- | ------------------------------ |
+| claude  | 1080s          | yes                            |
+| copilot | 950s           | yes                            |
+| codex   | not measured   | **no — feature stays off**     |
+| grok    | not measured   | **no — feature stays off**     |
+
+"Not measured" is not "probably fine": those two keep today's `cancel_and_deny` behaviour until
+somebody runs `tests/perf/hook_wait_ceiling.sh` against them. The ordering itself is asserted for
+all four in `tests/lua/infrastructure/hooks/hook_timeout_ordering_spec.lua`, because a backend that
+does not wait still registers a timeout and still must not be the one to give up first.
 
 ## How this was measured wrong twice
 
