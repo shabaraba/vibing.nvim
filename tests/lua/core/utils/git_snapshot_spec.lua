@@ -634,6 +634,23 @@ describe("git_snapshot", function()
       assert.is_false(GitSnapshot.has_baseline(abandoned))
     end)
 
+    it("reaps an old session even while some other chat's turn is open", function()
+      -- `turn_still_open` must ask about **this** turn and take no fallback. If it inherited a
+      -- sole-open guess, one turn running anywhere would report every stale baseline as live, the
+      -- sweep would stop entirely, and `refs/worktree/vibing/` would grow without bound.
+      local abandoned = next_turn()
+      GitSnapshot.ensure_baseline(abandoned, repo, "Bash")
+      age(abandoned)
+
+      local elsewhere = next_turn()
+      registry.open({ turn_id = elsewhere })
+
+      GitSnapshot.ensure_baseline(next_turn(), repo, "Bash")
+
+      assert.is_false(GitSnapshot.has_baseline(abandoned))
+      registry.close(elsewhere)
+    end)
+
     it("does not touch a session that is merely recent", function()
       local recent = next_turn()
       GitSnapshot.ensure_baseline(recent, repo, "Bash")

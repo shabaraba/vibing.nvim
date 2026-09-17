@@ -19,6 +19,13 @@ local M = {}
 --- @field process Vibing.ProcessEntry The process serving it. Held as a reference rather than
 ---   copied field by field, so `adapter`, `chat_bufnr` and `session_id` have one home and cannot
 ---   drift: killing is done to a process, so it is named by one.
+---
+---   **This being non-nil is not "the process is alive."** A Lua reference outlives
+---   `process_registry.unregister`, so a caller holding this table across the end of a turn keeps a
+---   stale `ProcessEntry` whose `active_turn_id` has already been cleared. That is deliberate and
+---   relied on — `permission.lua`'s `cancel_and_deny` cancels synchronously, which runs
+---   `wrapped_on_done` and unregisters, and it still has to talk to the entry afterwards. Liveness
+---   is a question for `process_registry.get(process_id)`, never for this field's nil-ness.
 --- @field worktree_root? string Git worktree root this turn runs in, when it runs in one. The tree
 ---   is shared state, so a snapshot diff taken while another turn is mutating the same worktree
 ---   would attribute that turn's changes to this one — this is what lets the turn fall back to the

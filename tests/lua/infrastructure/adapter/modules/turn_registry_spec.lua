@@ -55,14 +55,25 @@ describe("turn_registry", function()
       assert.is_nil(TurnRegistry.get("a-turn"))
     end)
 
-    it("does not clear another turn's link when a stale close arrives", function()
+    it("does not clear the link when a turn that is no longer the open one closes", function()
+      -- The resident-transport shape: turn N's `on_done` can land after turn N+1 has already
+      -- started on the same process. Clearing unconditionally would null the *live* turn's link,
+      -- and every hook naming that process would resolve to nil from then on.
       local process = start("a")
-      TurnRegistry.close("a-turn")
       TurnRegistry.open({ turn_id = "a-turn-2", process = process })
 
       TurnRegistry.close("a-turn")
 
       assert.equals("a-turn-2", process.active_turn_id)
+      assert.is_not_nil(TurnRegistry.get("a-turn-2"))
+    end)
+
+    it("is a no-op when that turn has already closed", function()
+      local process = start("a")
+      TurnRegistry.close("a-turn")
+      TurnRegistry.close("a-turn")
+
+      assert.is_nil(process.active_turn_id)
     end)
 
     it("does not cross-wire two concurrently open turns (regression)", function()
