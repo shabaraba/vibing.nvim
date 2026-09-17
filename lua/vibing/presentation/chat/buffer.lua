@@ -131,6 +131,45 @@ function ChatBuffer:_release_blocked_approvals(reason)
   return released
 end
 
+---最後のブロックが解けたので、入力欄を閉じてアシスタントの続きに戻す
+---
+---**答えられた場合と期限切れの両方がここに合流する。** どちらも「このチャットはもうフックを
+---止めていない」であって、そこから先に要ることは同じ:
+---
+---1. プロンプトを描いた未送信セクションを閉じる。開いたままだと `extract_user_message` が
+---   そこを読む — **未送信かどうかは見ていない**（`extract_role` は `Assistant` 以外の Kind
+---   すべてに `user` を返す）ので、閉じずに下へ出力を積むと、アシスタントの文章が
+---   ユーザーの次のメッセージとして送り返される
+---2. `## Assistant` を開く。ここで未送信の `## User` を開くと 1 と同じ壊れ方に戻る
+---3. **溜めていた出力を流す。** 未送信セクションが末尾にあるあいだ `_flush_chunks` は積めない
+---   ので、閉じたこの瞬間が唯一の出口になる
+---
+---`_approvals_rendered_unsent` を条件にしているのは、描いていないのにセクションを閉じたり
+---`## Assistant` を開いたりしないため（テストや kill 経路から呼ばれても何もしない）
+---@return boolean resumed
+function ChatBuffer:_resume_after_approvals()
+  if not self._approvals_rendered_unsent then
+    return false
+  end
+  if self:_blocked_approval_count() > 0 then
+    return false
+  end
+
+  ConversationExtractor.commit_user_message(self.buf)
+  self._approvals_rendered_unsent = false
+
+  -- 停止理由もここで捨てる。普段これを捨てるのは**次のターンが走り出す場所**だが、その場で
+  -- 答える経路も期限切れも新しいターンを始めない。残すと、ターンが終わったあとも次の送信まで
+  -- `waiting_approval` を名乗り続ける — 答えるものが1つも無いのに、である
+  if self._stop_reason == "waiting_approval" then
+    self._stop_reason = nil
+  end
+
+  self:start_response()
+  self:_flush_chunks()
+  return true
+end
+
 ---1ターンの締めくくり
 ---
 ---`_handle_response` の完了経路は4つある（セッション破損 / mote finalize / ファイル変更なし /
@@ -721,27 +760,16 @@ function ChatBuffer:_answer_pending_approval()
 
   -- 答えた行はそのまま transcript に残す。あとは走り続けているターンの続きを受け取れる状態に
   -- 戻すことだが、**それが何かは保留が残っているかで変わる**
-  ConversationExtractor.commit_user_message(self.buf)
-  -- 未送信ではなくなった。以降の描画は「描き直し」ではなく新しいセクションへの描画になる
-  self._approvals_rendered_unsent = false
-
   -- 訊くのは「まだフックを止めているか」で、プロンプトの行が残っているかではない。残っていても
   -- 誰も待っていないなら入力欄を開いたままにする理由は無く、そこに出力を積むと壊れる
   if self:_blocked_approval_count() > 0 then
     -- まだ答えを待っているものがある。新しい未送信セクションに描き直して入力欄を保つ。
     -- 溜めていた出力は `add_user_section` の中で先に流れるので、順序は時系列のまま
+    ConversationExtractor.commit_user_message(self.buf)
+    self._approvals_rendered_unsent = false
     self:add_user_section()
   else
-    -- 最後の1件だった。ここで**未送信の `## User` を開いてはいけない** — 続きの出力がその下に
-    -- 積まれ、アシスタントの文章がユーザーの次のメッセージとして抽出される。開くのは
-    -- `## Assistant` のほうで、`append_chunk` が溜めていたものはそこに流す
-    --
-    -- 停止理由もここで捨てる。普段これを捨てるのは**次のターンが走り出す場所**だが、その場で
-    -- 答える経路は新しいターンを始めない。残すと、ターンが終わったあとも次の送信まで
-    -- `waiting_approval` を名乗り続ける — 答えるものが1つも無いのに、である
-    self._stop_reason = nil
-    self:start_response()
-    self:_flush_chunks()
+    self:_resume_after_approvals()
   end
   return { outcome = "answered_in_place" }
 end
@@ -856,8 +884,8 @@ function ChatBuffer:send_message()
     set_pending_user_text = function(text)
       return self:set_pending_user_text(text)
     end,
-    insert_approval_request = function(tool, input, options, hook_request_id)
-      return self:insert_approval_request(tool, input, options, hook_request_id)
+    insert_approval_request = function(tool, input, options, hook_request_id, waiting)
+      return self:insert_approval_request(tool, input, options, hook_request_id, waiting)
     end,
     get_session_allow = function()
       return self:get_session_allow()
@@ -962,9 +990,14 @@ function ChatBuffer:append_chunk(chunk, turn_id)
   -- 流すと**続きの出力がユーザーの入力欄の下に積まれる** — つまりアシスタントの文章が
   -- `extract_user_message` にユーザーの次のメッセージとして拾われる。
   --
-  -- 溜めておけるのは実測が支えている: claude はフックがブロックしている間アシスタントの文章を
-  -- 出さない（`tool_use` を出し切ってからフックに入り、`tool_result` を回収してから喋る）ので、
-  -- ここで溜まるのは並列に走った別のツールのレンダリングだけ。
+  -- 溜まる量の見積もりの出所は `.vibing/probe/concurrency-claude/claude-stream.jsonl`。**1ターン
+  -- 分の実測**で、3本の `tool_use` と 3本の `tool_result` のあいだに出たのは `rate_limit_event`
+  -- 1行だけ、アシスタントの `text` ブロックはターン通して1つ（全 `tool_result` の後）だった。
+  -- その20秒、3本のフックが同時にブロックしている（`hook-concurrency-claude.log`）。
+  --
+  -- 「claude はブロック中に決して喋らない」への一般化は**未検証**（測ったのは Read 3本の1ターン
+  -- だけで、文章とツール呼び出しを交互に出すターンは測っていない）。一般化が外れたときに増える
+  -- のは溜まる量だけで、壊れ方は変わらない
   --
   -- 溜めたものは必ず出る。出口は `_flush_chunks` を呼ぶ側全部 — 最後の承認が答えられたとき
   -- （`_answer_pending_approval`）と、ターンが終わったとき（`add_user_section`）。前者が
@@ -1054,13 +1087,17 @@ end
 ---@param input table ツール入力
 ---@param options table 承認オプション
 ---@param hook_request_id string? hook-based approval の場合のリクエストID
-function ChatBuffer:insert_approval_request(tool, input, options, hook_request_id)
+---@param waiting boolean? このプロンプトが走り続けているターンを止めているか（#778）。
+---  レンダラーはこれを見て「このターンの残りの出力は止まっている」と書く。kill する経路では
+---  止まっているものが無いので書かない
+function ChatBuffer:insert_approval_request(tool, input, options, hook_request_id, waiting)
   self._pending_approvals = self._pending_approvals or {}
 
   local entry = {
     tool = tool,
     input = input,
     options = options,
+    waiting = waiting or nil,
     -- 同じ値を2つの名前で持つ。`hook_request_id` は既存の呼び出し側が読んでいる名前で、
     -- `request_id` は #778 で行に載るようになった identity。片方だけにすると、
     -- どちらを読むかを知っている場所が増える
@@ -1136,6 +1173,12 @@ function ChatBuffer:expire_approval(entry)
   if not (self.buf and vim.api.nvim_buf_is_valid(self.buf)) then
     return marked
   end
+
+  -- 説明を書く**前**に、これが最後のブロックだったなら入力欄を閉じてアシスタントの続きに戻す。
+  -- そうすると説明はアシスタントのセクションに入る — 期限切れはユーザーの発言ではないし、
+  -- 未送信セクションに書いたままにすると次の `<CR>` でモデルに送り返される。ここを通らないと
+  -- **溜めていた出力の出口も無くなる**（`_resume_after_approvals` がその唯一の出口）
+  self:_resume_after_approvals()
 
   local line_count = vim.api.nvim_buf_line_count(self.buf)
   vim.api.nvim_buf_set_lines(self.buf, line_count, line_count, false, {

@@ -168,9 +168,18 @@ keeps running never reaches that point, so two things moved:
 **While a hook is actually blocked the chunk buffer stops draining** (`ChatBuffer:append_chunk`).
 An append-only buffer cannot hold an input field and a stream of output at the same time: the
 prompt is an unsent `## User` section at the end and `flush_chunks` appends at the end too, so
-anything flushed under it is read back by `extract_user_message` as the user's next message. What
-that costs is bounded by measurement — claude emits no assistant prose while a hook blocks, so what
-accumulates is the rendering of tools that ran in parallel.
+anything flushed under it is read back by `extract_user_message` as the user's next message.
+
+**How much accumulates is measured for exactly one turn, and the generalisation from it is not.**
+`.vibing/probe/concurrency-claude/claude-stream.jsonl` is that turn: three `tool_use` blocks, then
+a single `rate_limit_event`, then three `tool_result`s — and the turn's only assistant `text` block
+after all three. The hooks blocked 20s across that gap
+(`hook-concurrency-claude.log`: three `START`s 1.1s apart, three `END`s 20s later). So in that turn
+nothing but a rate-limit line arrived while hooks were blocked.
+
+"claude never emits prose while a hook blocks" is the **unverified** step: one turn of three
+`Read`s was measured, and a turn that interleaves prose with tool calls was not. What a wrong
+generalisation costs here is only how much piles up — the failure mode does not change.
 
 **The condition is `pending_approvals.list_for_chat`, not `#_pending_approvals`**, and the
 difference is not pedantry. The render list keeps its entries after the **kill** path's turn dies —

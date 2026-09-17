@@ -287,7 +287,14 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
           end
         end
 
-        table.insert(approvalLines, "")
+        -- 止まっていることが読めるようにする。承認プロンプトの下で何も動かない状態は、
+        -- ユーザーからは「固まった」と区別がつかない — 待たせる設計ではそれが最大
+        -- `permissions.approval_wait_sec` 続く。kill する経路には止めている出力が無いので
+        -- 書かない（`waiting` がそれを言う）
+        if pendingApproval.waiting then
+          table.insert(approvalLines, "   (the rest of this turn's output is paused until this is answered)")
+          table.insert(approvalLines, "")
+        end
       end
     end
 

@@ -763,6 +763,69 @@ describe("several approval prompts at once", function()
       assert.is_not_nil(line_index(chat_buf, "half-written question"), text(chat_buf))
     end)
 
+    it("says in the buffer that the output is paused, so waiting is not mistaken for hanging", function()
+      -- A prompt with nothing moving under it looks exactly like a frozen editor, and on the
+      -- waiting path that lasts up to `approval_wait_sec`.
+      local chat_buf = chat_with({})
+      chat_buf:insert_approval_request("Bash", {}, {
+        { value = "allow_once", label = "allow_once - Allow this execution only" },
+      }, "req-1", true)
+      blocked_on(chat_buf, { "req-1" })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+
+      assert.is_not_nil(line_index(chat_buf, "output is paused"), text(chat_buf))
+    end)
+
+    it("does not claim anything is paused on the kill path", function()
+      -- There the process is already dead and nothing is being held, so the line would be a lie.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      chat_buf:add_user_section()
+
+      assert.is_nil(line_index(chat_buf, "output is paused"), text(chat_buf))
+    end)
+
+    it("flushes what it held when the prompt expires instead of being answered", function()
+      -- The exit that is easiest to forget: nobody answered, so none of the answering code runs,
+      -- and a buffering layer whose exit is missing loses the output in silence.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      Pending.open({
+        request_id = "req-1",
+        chat_bufnr = chat_buf.buf,
+        tool = "Bash",
+        on_timeout = require("vibing.infrastructure.rpc.handlers.permission")._on_approval_expired,
+      })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+      chat_buf:append_chunk("held until the limit\n")
+
+      assert.is_true(Pending.expire("req-1"))
+
+      assert.is_not_nil(line_index(chat_buf, "held until the limit"), text(chat_buf))
+      assert.is_not_nil(line_index(chat_buf, "Tool approval expired"), text(chat_buf))
+    end)
+
+    it("puts the flushed output where the next send will not read it back", function()
+      -- "It appeared in the buffer" is not enough: appearing under the input section is the whole
+      -- bug. `extract_user_message` finds the last user-role header and reads to the next one —
+      -- and it does **not** check whether that header is unsent (`extract_role` answers "user" for
+      -- every Kind except Assistant), so a committed section is just as readable.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+      chat_buf:append_chunk("model output, not a user message\n")
+
+      assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
+
+      assert.is_not_nil(line_index(chat_buf, "model output, not a user message"), text(chat_buf))
+      local extracted = chat_buf:extract_user_message() or ""
+      assert.is_nil(
+        extracted:find("model output, not a user message", 1, true),
+        "the flushed output must not be readable as the user's next message: " .. extracted
+      )
+    end)
+
     it("leaves a transcript that reads in the order it happened", function()
       -- The shape everything in this describe adds up to, asserted once end to end. Each piece has
       -- its own case above; what this pins is that they compose — a turn interrupted by an approval
