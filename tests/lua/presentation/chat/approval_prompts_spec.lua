@@ -724,6 +724,25 @@ describe("several approval prompts at once", function()
       assert.is_nil(line_index(chat_buf, "the cancelled turn's tail"), text(chat_buf))
     end)
 
+    it("releases them when the turn ends with hooks still blocked", function()
+      -- A waiting hook keeps its turn open, so reaching the end with one still blocked means the
+      -- CLI died first — a crash, a usage limit, an external kill. Those hooks have lost the only
+      -- process that could read their answer. The wait limit would collect them 15 minutes later
+      -- and tell the user they went unanswered for 900 seconds, which is not what happened.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+      chat_buf:append_chunk("what the turn managed to say\n")
+
+      chat_buf:_finish_turn()
+
+      assert.is_nil(Pending.get("req-1"), "a finished turn's hooks have nobody left to answer them")
+      -- Unlike a cancel, the held tail belongs to *this* turn and the section closing right here is
+      -- where it goes.
+      assert.is_not_nil(line_index(chat_buf, "what the turn managed to say"), text(chat_buf))
+    end)
+
     it("keeps holding while another prompt is still open", function()
       local chat_buf = chat_with({
         { tool = "Bash", request_id = "req-1" },

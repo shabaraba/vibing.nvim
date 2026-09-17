@@ -111,26 +111,55 @@ function ChatBuffer:_blocked_approval_count()
   return #require("vibing.infrastructure.rpc.pending_approvals").list_for_chat(self.buf)
 end
 
----打ち切られたターンが止めていたフックを解放する
+---このチャットが止めているフックを、答えないまま全部解放する
 ---
----答えではなくターンの打ち切りなので deny が書かれる。**プロンプトの行は消さない** — kill する
----経路では答えたあとも残るのが従来の挙動で、ユーザーは後から答えて新しいターンとして再試行
----できる。ここで消すと、その経路の挙動まで黙って変わる。
+---答えではないので deny が書かれる。呼ぶのは「このターンはもう答えを届けられない」と分かった
+---側 — 打ち切り（`cancel_request`）と、ターンの終わり（`_finish_turn`、CLIが先に死んだ場合）。
 ---
----溜まっていたチャンクだけは捨てる。打ち切られたターンの続きで、書き戻す場所が無い — 次の
----送信から来たなら未送信セクションにユーザーの本文が入っていて、その下に積むのは
----`extract_user_message` が拾う壊れ方そのものになる。捨てるのは実際に解放したときだけなので、
----kill する経路（レジストリに何も無い）は一切触られない
+---**プロンプトの行は消さない。** kill する経路では答えたあとも残るのが従来の挙動で、ユーザーは
+---後から答えて新しいターンとして再試行できる。ここで消すと、その経路の挙動まで黙って変わる
 ---@param reason string フックに渡す拒否理由
+---@return number released 実際に解放した件数。kill する経路では常に0
 function ChatBuffer:_release_blocked_approvals(reason)
   local released = 0
   pcall(function()
     released = require("vibing.infrastructure.rpc.pending_approvals").resolve_for_chat(self.buf, reason)
   end)
+  return released
+end
 
-  if released > 0 then
-    self._chunk_buffer = ""
-  end
+---1ターンの締めくくり
+---
+---`_handle_response` の完了経路は4つある（セッション破損 / mote finalize / ファイル変更なし /
+---git patch finalize、うち2つは `vim.schedule` の中）が、すべてここに合流する。しかも turn_id
+---不一致による早期returnより後なので、キャンセル済みの古いターンが遅れて完了しても飛ばない。
+---
+---`ChatBuffer:add_user_section()` 本体と分けてあるのは、そちらがスラッシュコマンド経路からも
+---呼ばれるから。混ぜるとAIターンが1回も走っていないのに完了が飛ぶ
+function ChatBuffer:_finish_turn()
+  -- ターンが終わったのにまだ止まっているフックがあるなら、CLIのほうが先に死んだということ
+  -- （承認待ちのフックはターンを終わらせないので、正常系ではここは0件）。親を失ったフックは
+  -- もう誰にも答えられないので、ここで deny を書いて解放する。放っておいても上限が拾うが、
+  -- それは15分後に「900秒答えられなかった」という、実際とは違う説明が出るということ。
+  --
+  -- 溜めているチャンクは**捨てない**。このターンの出力で、行き先は直後の `add_user_section`
+  self:_release_blocked_approvals("The turn this approval belonged to ended before it was answered.")
+
+  -- アシスタントヘッダーへの終了時刻はここで入れる。AIターンが走ったことが確かなのは
+  -- この合流点だけ
+  StreamingHandler.stamp_response_end(self.buf, self._assistant_header_line)
+  self._assistant_header_line = nil
+  self:add_user_section()
+  -- ターンの締めくくり（終了時刻と `### Tokens`）が入ったあとに保存する。
+  -- `update_session_id` の自動保存はこれより前に走るので、それだけに任せると
+  -- ディスク上のチャットは常に1ターン遅れ、期限切れ判定が読むのは前のターンの数字になる
+  self:save_after_turn()
+  -- autocmd を挟むのは、ユーザーが自分の設定からも拾えるようにするため。
+  -- `CompletionNotifier` 自身もこの経路で購読している
+  vim.api.nvim_exec_autocmds("User", {
+    pattern = "VibingResponseDone",
+    data = { bufnr = self.buf },
+  })
 end
 
 ---実行中のリクエストを止める
@@ -147,7 +176,12 @@ function ChatBuffer:cancel_request()
   --
   -- 早期returnより前に置くのは、止めるプロセスが見つからない場合でも保留が残るのは同じだから。
   -- 止まっていないのに答えを待たせ続けるほうが、返り値が変わらないことより重い
-  self:_release_blocked_approvals("The turn this approval belonged to was cancelled.")
+  if self:_release_blocked_approvals("The turn this approval belonged to was cancelled.") > 0 then
+    -- 溜めていたチャンクは打ち切られたターンの続きで、書き戻す場所が無い。次の送信から来たなら
+    -- 未送信セクションにユーザーの本文が入っていて、その下に積むのは `extract_user_message` が
+    -- 拾う壊れ方そのもの。実際に解放したときだけ触るので、kill する経路は素通りする
+    self._chunk_buffer = ""
+  end
 
   if not self._current_process_id then
     return false
@@ -797,29 +831,7 @@ function ChatBuffer:send_message()
       return self:update_session_id(session_id)
     end,
     add_user_section = function()
-      -- アシスタントヘッダーへの終了時刻はここで入れる。AIターンが走ったことが確かなのは
-      -- この合流点だけで、`ChatBuffer:add_user_section()` 本体はスラッシュコマンド経路も通る
-      StreamingHandler.stamp_response_end(self.buf, self._assistant_header_line)
-      self._assistant_header_line = nil
-      self:add_user_section()
-      -- ターンの締めくくり（終了時刻と `### Tokens`）が入ったあとに保存する。
-      -- `update_session_id` の自動保存はこれより前に走るので、それだけに任せると
-      -- ディスク上のチャットは常に1ターン遅れ、期限切れ判定が読むのは前のターンの数字になる
-      self:save_after_turn()
-      -- 応答が完全に終わった唯一の合流点。`_handle_response` の完了経路は4つある
-      -- （セッション破損 / mote finalize / ファイル変更なし / git patch finalize、うち2つは
-      -- `vim.schedule` の中）が、すべてこのコールバックに合流する。しかも turn_id 不一致
-      -- による早期returnより後なので、キャンセル済みの古いターンが遅れて完了しても飛ばない。
-      --
-      -- `ChatBuffer:add_user_section()` 本体に置いてはいけない: そちらはスラッシュコマンド
-      -- 経路からも呼ばれるので、AIターンが1回も走っていないのに完了が飛ぶ。
-      --
-      -- autocmd を挟むのは、ユーザーが自分の設定からも拾えるようにするため。
-      -- `CompletionNotifier` 自身もこの経路で購読している
-      vim.api.nvim_exec_autocmds("User", {
-        pattern = "VibingResponseDone",
-        data = { bufnr = self.buf },
-      })
+      return self:_finish_turn()
     end,
     get_bufnr = function()
       return self.buf
