@@ -10,6 +10,20 @@ local helper = require("tests.helpers.adapter_stream")
 
 local MODES = { "default", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions" }
 
+--- How many argv tokens contain the prompt.
+--- @param cmd string[]
+--- @param prompt string
+--- @return number
+local function count_prompt(cmd, prompt)
+  local hits = 0
+  for _, arg in ipairs(cmd) do
+    if arg:find(prompt, 1, true) then
+      hits = hits + 1
+    end
+  end
+  return hits
+end
+
 --- Flags that carry the hook or the plugins into an ordinary turn on some backend. None may
 --- appear on a lightweight one.
 local GATE_FLAGS = { "--settings", "--plugin-dir", "--dangerously-bypass-hook-trust", "--allowedTools", "--disallowedTools", "--deny-tool" }
@@ -82,13 +96,24 @@ describe("conformance: request", function()
       it("puts the prompt in the argv exactly once", function()
         local prompt = "conformance-prompt-" .. def.id
         local cmd = descriptor.build(prompt, {}, "sess-1", config, nil)
-        local hits = 0
-        for _, arg in ipairs(cmd) do
-          if arg:find(prompt, 1, true) then
-            hits = hits + 1
-          end
+        assert.equals(1, count_prompt(cmd, prompt))
+      end)
+
+      it("keeps the prompt out of the argv on the transport that sends it on stdin", function()
+        -- Branching on `descriptor.process` the same way the hook assertions branch on
+        -- `descriptor.hook.transport`: what a backend can run is a fact about the backend, and a
+        -- conformance rule written for one transport must not forbid the other.
+        if descriptor.process ~= "duplex" then
+          return
         end
-        assert.equals(1, hits)
+        local prompt = "conformance-prompt-" .. def.id
+        local cmd = descriptor.build(prompt, { _process_model = "duplex" }, "sess-1", config, nil)
+
+        assert.equals(0, count_prompt(cmd, prompt), def.id .. " duplex still carries its prompt in the argv")
+        assert.is_true(vim.tbl_contains(cmd, "--input-format"), def.id .. " duplex does not read stdin as stream-json")
+        -- The session is still named in the argv: a resident process is started resuming its
+        -- conversation and then kept, so this is the one place `--resume` can appear.
+        assert.is_true(vim.tbl_contains(cmd, "sess-1") or vim.tbl_contains(cmd, "--resume=sess-1"))
       end)
 
       it("keeps the hook wanted-rules and the request in agreement in bypassPermissions", function()

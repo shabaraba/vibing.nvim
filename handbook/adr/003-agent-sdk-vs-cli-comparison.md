@@ -132,7 +132,13 @@ vibing.nvimは現在のAgent SDK実装を維持し、`claude -p` CLIへの移行
 - **症状**: `--input-format stream-json` でマルチターンメッセージ時にハング
 - **影響**: 複雑な会話フローが不可能
 - **対策**: なし
-- **状態**: 未解決
+- **状態**: **実測で覆った（#777）**。claude 2.1.236 で stdin に `{"type":"user",...}` を投げる形で
+  3ターン連続成功し、同一 `session_id` を保ち、stdin を閉じると exit 0。2ターン目以降は最初の
+  イベントまで 158ms / 154ms（1ターン1プロセスだと 850ms / 872ms）。
+  `control_request {subtype:"interrupt"}` も 16ms でターンだけを止め、プロセスは生存して次の
+  ターンを 154ms で始めた。この記述が書かれた時点の CLI では起きていたのかもしれないが、
+  **現行版では再現しない**。計測手順は `tests/perf/duplex_latency.lua`、詳細は
+  `handbook/architecture/duplex-transport.md`
 
 **Resume Bug (Issue #3188)**
 

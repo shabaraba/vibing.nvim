@@ -123,10 +123,23 @@ git repository — see [Backends](#backends).
 Options that belong to one backend live under `backends.<id>`. The fields, their defaults and
 their validation are declared next to the backend itself (`config_fields` in
 `lua/vibing/core/constants/agents.lua`), so adding a backend adds its options here without a
-change to `config.lua`. Claude and Copilot declare none.
+change to `config.lua`. Copilot declares none.
 
 ```lua
 backends = {
+  claude = {
+    process = "oneshot",    -- "oneshot" (default): one CLI process per turn, which exits when the
+                            --   turn ends.
+                            -- "duplex": one resident process per chat, fed each turn's prompt on
+                            --   its stdin. The CLI's startup -- plugin scan, MCP servers,
+                            --   CLAUDE.md, system prompt, git status block -- is paid once per
+                            --   chat instead of once per message.
+                            -- Opt-in because a resident process holds ~200MB while idle. It is
+                            --   reclaimed after five idle minutes, when the chat buffer is
+                            --   unloaded, or when Neovim exits.
+                            -- A chat's own `process:` frontmatter overrides this.
+                            -- See handbook/architecture/duplex-transport.md.
+  },
   codex = {
     profile_file = ".vibing/codex-permissions.toml",
                             -- Project-local OS sandbox profile; false disables loading it.

@@ -31,6 +31,7 @@
     "test:node": "find tests -name '*.test.mjs' -exec node --test {} +",
     "test:lua": "nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }\"",
     "test:e2e": "VIBING_E2E=1 nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/e2e/ { minimal_init = 'tests/minimal_init.lua', timeout = 240000 }\"",
+    "test:perf": "VIBING_PERF=1 nvim --headless -u tests/minimal_init.lua -l tests/perf/duplex_latency.lua",
     "test:eval": "nvim --headless -u tests/minimal_init.lua -l tests/evals/run.lua",
     "audit:deps": "node scripts/audit-dependencies.mjs",
     "check": "find lua -name '*.lua' -exec luac -p {} +",

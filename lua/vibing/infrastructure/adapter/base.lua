@@ -115,6 +115,22 @@ function Adapter:cancel()
   return false
 end
 
+---ターンだけを止める。プロセスを次のターンに再利用できないアダプターでは kill と同じ
+---
+---Stop the turn a process is running, keeping the process itself when it can serve the next turn.
+---Only the resident transport (#777) can honour the distinction; everywhere else this is `cancel`.
+---@param process_id string?
+function Adapter:stop_turn(process_id)
+  return self:cancel(process_id)
+end
+
+---チャットが閉じられたので、そのチャット専用に抱えていたプロセスを手放す
+---
+---Release whatever this adapter was holding on a chat's behalf. Only the resident transport (#777)
+---holds anything; everywhere else there is nothing to release.
+---@param chat_bufnr number?
+function Adapter:release_chat(chat_bufnr) end
+
 ---アダプターが特定の機能をサポートしているかチェック
 ---サブクラスでオーバーライドして機能サポートを宣言（基底クラスは常にfalse）
 ---"streaming", "session", "tools"等の機能名でサポート状況を問い合わせ

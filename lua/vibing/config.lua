@@ -625,8 +625,11 @@ local function validate_backend_options(options)
           values[name] = default
         end
       elseif field.kind == "string" then
-        if type(value) ~= "string" then
-          notify.warn(string.format("Invalid %s: expected a string. Resetting to default.", label))
+        -- A field that declares `values` is an enum. Checked here rather than where it is read,
+        -- so a typo is reported once at setup() instead of once per turn.
+        local expected = field.values and ("one of " .. table.concat(field.values, ", ")) or "a string"
+        if type(value) ~= "string" or (field.values and not vim.tbl_contains(field.values, value)) then
+          notify.warn(string.format("Invalid %s: expected %s. Resetting to default.", label, expected))
           values[name] = default
         end
       elseif field.kind == "boolean" then

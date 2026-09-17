@@ -179,6 +179,9 @@ function M.execute(adapter, callbacks, message, config)
     mode = M._validate_frontmatter_mode(frontmatter.mode),
     model = frontmatter.model,
     effort = frontmatter.effort,
+    -- What the chat asked for, untouched. `process_model.resolve` decides what this turn actually
+    -- runs under, because a lightweight call and a subagent chat cannot honour `duplex` at all.
+    process = frontmatter.process,
     permissions_allow = frontmatter.permissions_allow,
     permissions_deny = frontmatter.permissions_deny,
     permissions_ask = frontmatter.permissions_ask,

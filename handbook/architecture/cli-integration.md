@@ -135,6 +135,16 @@ These are the seams that stop backend identity leaking into shared code. The rul
 ADR 009 each backend is a descriptor (`adapter/backends/<id>.lua`) that names its hook transport
 and dialect from `hooks/transports.lua`; the four generators described below are those transports.
 
+- **Process model.** `descriptor.process` names the most capable way a backend can be run, not the
+  way it will be: `oneshot` (a process per turn, the default and the only model for codex, copilot
+  and grok) or `duplex` (one resident process per chat, serving many turns over an open stdin —
+  claude only, and still reached only through `backends.claude.process` or a chat's own `process:`
+  frontmatter). The field is `process` and not `transport` because `Vibing.HookSpec.transport`
+  already owns that word in the same descriptor. `duplex-transport.md` is the whole story;
+  what matters here is that the hook protocol below is unchanged by it — `VIBING_PROCESS_ID` is
+  still fixed at spawn, and `rpc/hook_scope.lua` still resolves the turn in-editor, which is
+  precisely why a process outliving its turn needed no change to the wire format.
+
 - **Tool vocabulary.** Backends name their tools differently (codex calls an edit `apply_patch`,
   copilot uses `bash`/`view`/`create`/`edit`/`web_search`, grok `search_replace`/
   `run_terminal_command`). Each adapter owns a `<backend>_tool_vocabulary.lua` and passes it to

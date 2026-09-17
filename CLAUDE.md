@@ -16,8 +16,8 @@ npm run check               # Lua syntax; see also check:doc for doc/*.txt
 npm run lint                # eslint only; lint:md, format and format:check are separate
 ```
 
-`test:e2e` and `test:eval` spend real tokens and are deliberately outside `npm test`. Every script
-is in `package.json`; for manual testing, load the plugin and run `:VibingChat`.
+`test:e2e`, `test:eval` and `test:perf` spend real tokens and are deliberately outside `npm test`.
+Every script is in `package.json`; for manual testing, load the plugin and run `:VibingChat`.
 
 ## Where Documentation Lives
 
@@ -48,6 +48,7 @@ If you add a paragraph to `.claude/rules/` explaining _why_, it is in the wrong 
 | `architecture/plugin-and-commands.md` | `--plugin-dir`, slash command discovery, startup cost    |
 | `architecture/per-request-diffs.md`   | git tree snapshot, overlap guard, fallback routing       |
 | `architecture/processes-and-turns.md` | `process_id` vs `turn_id`, the id alphabet, hook scope   |
+| `architecture/duplex-transport.md`    | The resident CLI process: opt-in, reuse key, reclaim     |
 | `architecture/chat-lineage.md`        | Concurrency, fork, handoff, subagent chat                |
 | `architecture/orchestration.md`       | Notification state machine, queue, tree operations       |
 | `architecture/session-persistence.md` | The `working_dir` git-root boundary                      |

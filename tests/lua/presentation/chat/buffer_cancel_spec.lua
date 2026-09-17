@@ -19,8 +19,11 @@ describe("ChatBuffer:cancel_request", function()
     local chat_buffer = setmetatable({
       _current_turn_id = ids.turn_id,
       _current_process_id = ids.process_id,
+      -- `stop_turn`, not `cancel`: a user pressing cancel wants this request stopped, not the
+      -- chat's resident CLI process thrown away (#777). The base adapter's `stop_turn` delegates
+      -- to `cancel`, so on the oneshot transport the two are still the same kill.
       _current_adapter = {
-        cancel = function(_, id)
+        stop_turn = function(_, id)
           table.insert(cancelled, id)
         end,
       },

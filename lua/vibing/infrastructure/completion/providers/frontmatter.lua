@@ -24,6 +24,10 @@ local ENUMS = {
     { value = "xhigh", description = "Recommended for coding and agentic work" },
     { value = "max", description = "Most reasoning, slowest and most expensive" },
   },
+  process = {
+    { value = "oneshot", description = "One CLI process per turn (default)" },
+    { value = "duplex", description = "One resident CLI process for the chat; faster turns, ~200MB while idle" },
+  },
   permission_mode = {
     { value = "default", description = "Ask for confirmation before each tool use" },
     { value = "acceptEdits", description = "Auto-approve Edit/Write, ask for others" },

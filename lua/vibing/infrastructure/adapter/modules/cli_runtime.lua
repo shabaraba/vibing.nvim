@@ -266,6 +266,35 @@ function M.install(Class, features)
     end
   end
 
+  --- Stop the turn without stopping the process, where the process can serve the next one.
+  ---
+  --- Kept apart from `cancel` rather than folded into it, because two callers want opposite things
+  --- from the same word. `permission.lua`'s `cancel_and_deny` relies on `cancel` running
+  --- `wrapped_on_done` synchronously and on the process being gone afterwards (that is what makes
+  --- the approval's retry message a *new* turn); the user pressing cancel wants the conversation's
+  --- process still there for the next message. Only the second one is routed here.
+  ---
+  --- Stopping is still guaranteed either way: the resident path sends an interrupt and falls back
+  --- to this same `cancel` if the CLI has not stopped within `INTERRUPT_GRACE_MS`.
+  --- @param process_id string?
+  function Class:stop_turn(process_id)
+    local DuplexStream = require("vibing.infrastructure.adapter.modules.duplex_stream")
+    if process_id and DuplexStream.stop_turn(self, process_id) then
+      return
+    end
+    self:cancel(process_id)
+  end
+
+  --- Release the resident process a chat was holding, because the chat is gone.
+  ---
+  --- The symmetric half of `stop_turn`: that one says "stop this turn, keep the process", this one
+  --- says "the chat is gone, so is its process". Both exist so `presentation/` can say what it
+  --- means through the adapter interface instead of reaching into one transport's own pool.
+  --- @param chat_bufnr number?
+  function Class:release_chat(chat_bufnr)
+    require("vibing.infrastructure.adapter.modules.duplex_pool").stop(chat_bufnr)
+  end
+
   --- @param feature string
   --- @return boolean
   function Class:supports(feature)

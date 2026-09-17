@@ -34,6 +34,8 @@
 ---@field mode string?
 ---@field model string?
 ---@field effort ("default"|"low"|"medium"|"high"|"xhigh"|"max")?
+---@field process ("oneshot"|"duplex")? チャットの`process:` frontmatter。**要求**であって結果ではない。実際に走るモデルは`adapter/modules/process_model.lua`が決め、`_process_model`に入る
+---@field _process_model ("oneshot"|"duplex")? このターンが実際に走るプロセスモデル。`cli_adapter.stream()`が解決して書き込み、`request_builder`の`duplex`条件が読む
 ---@field tools string[]?
 ---@field permissions_allow string[]?
 ---@field permissions_deny string[]?

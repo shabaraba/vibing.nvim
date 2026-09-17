@@ -117,6 +117,7 @@ local KEY_ORDER = {
   "agent",
   "model",
   "effort",
+  "process",
   "env",
   "permission_mode",
   "permissions_allow",
