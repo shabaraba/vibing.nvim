@@ -445,3 +445,27 @@ And one wrong inference from a source that looked authoritative: the claude bina
 read as proof of fail-closed. It continues `(host client may be unreachable)` — it belongs to the
 remote hook-forwarding path, not to a local command hook. **A string in the binary is a hypothesis;
 only the measurement is evidence.**
+
+### Keep the instrument, not just the number
+
+Three numbers on this page were produced by tooling that was not kept, and each went unnoticed until
+somebody tried to use it:
+
+- the **verbatim `control_request`** above — the probe's script was not kept, so the argv that
+  elicited it is unrecorded, and re-establishing it is now a whole harness
+  (`tests/perf/permission_prompt_tool.sh`) rather than a re-run.
+- the **1090s / 1700s** rows — produced by an ad-hoc `.vibing/probe/hook.sh`, not by the
+  `hook_wait_ceiling.sh` this page names as the reproducer, and logging the same events under
+  different strings. Quoting one and naming the other makes a re-run look like it failed.
+- the PR's **46 mutations** — the appliers lived in `/tmp`; five were rescued into
+  `.vibing/probe/mutations/` before a reboot would have taken them, and the other nine series were
+  heredocs that never existed as files.
+
+The pattern is not carelessness about logs — **the logs were all kept.** It is that a measurement's
+evidence is treated as its output, when the thing that decays is the _instrument_. A number whose
+instrument is gone cannot be re-run, only re-measured, and a re-measurement is a new result that
+happens to be compared against an old one.
+
+This compounds with the corollary above: a reproducer is the cheapest claim on a page to check —
+run it — so it is the one nobody checks, and it rots silently. **If a number is worth recording,
+commit the thing that produced it**, or say in the same breath that it is unreproducible.
