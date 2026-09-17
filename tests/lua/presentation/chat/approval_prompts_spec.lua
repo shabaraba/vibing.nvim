@@ -763,6 +763,54 @@ describe("several approval prompts at once", function()
       assert.is_not_nil(line_index(chat_buf, "half-written question"), text(chat_buf))
     end)
 
+    it("leaves a transcript that reads in the order it happened", function()
+      -- The shape everything in this describe adds up to, asserted once end to end. Each piece has
+      -- its own case above; what this pins is that they compose — a turn interrupted by an approval
+      -- and then resumed must not read as two turns, as a turn that answered itself, or as output
+      -- filed under the user.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
+      chat_buf:start_response()
+      chat_buf:append_chunk("before asking\n")
+      chat_buf:show_approval_prompts()
+      chat_buf:append_chunk("while waiting\n")
+      assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
+      chat_buf:append_chunk("after answering\n")
+      chat_buf:_finish_turn()
+
+      local shape = {}
+      for _, line in ipairs(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)) do
+        if line:match("^## Assistant") then
+          table.insert(shape, "assistant")
+        elseif line:match("^## User") then
+          table.insert(shape, line:find("unsent", 1, true) and "input" or "user")
+        elseif
+          line:find("before asking", 1, true)
+          or line:find("while waiting", 1, true)
+          or line:find("after answering", 1, true)
+        then
+          table.insert(shape, line)
+        elseif line:find("vibing:req=req-1", 1, true) then
+          table.insert(shape, "answer")
+        end
+      end
+
+      assert.same({
+        -- The empty input section `view.render` leaves behind; this test never sends through it.
+        "input",
+        "assistant",
+        "before asking",
+        -- The prompt's own lines are gone because answering is `dd` plus `<CR>`: what stays in the
+        -- transcript is the option line the user kept, in a section stamped as sent.
+        "user",
+        "answer",
+        "assistant",
+        "while waiting",
+        "after answering",
+        "input",
+      }, shape, text(chat_buf))
+    end)
+
     it("keeps holding while another prompt is still open", function()
       local chat_buf = chat_with({
         { tool = "Bash", request_id = "req-1" },
