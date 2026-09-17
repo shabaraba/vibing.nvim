@@ -530,6 +530,163 @@ describe("CompletionNotifier", function()
     assert.equals(a, sends[1].bufnr)
   end)
 
+  describe("telling the orchestrator a worker is waiting for an approval (#778)", function()
+    -- `VibingResponseDone` is what drives every other delivery here, and answering an approval
+    -- without killing the CLI means that event does not fire: the turn is still open. So the
+    -- worker sits on a prompt nobody is told about, which is worse than the behaviour it replaced
+    -- — the kill used to end the turn and deliver through the normal path.
+    --
+    -- This entry point is deliberately a *sibling* of on_response_done rather than a caller of it.
+
+    it("delivers to the subscriber even though the turn never ended", function()
+      local a, b = make_chat(), make_chat()
+      Notifier.subscribe(a, b)
+      responding[b] = true
+
+      Notifier.on_approval_waiting(b, "req-1")
+      assert.equals(0, #sends, "the window has not closed yet")
+      Notifier._flush_approval_notice(b)
+
+      assert.equals(1, #sends)
+      assert.equals(a, sends[1].bufnr)
+      assert.is_truthy(sends[1].message:find("waiting_approval", 1, true), sends[1].message)
+    end)
+
+    it("keeps the edge, so the real completion is still delivered later", function()
+      -- The trap. Consuming the subscription here would mean the orchestrator learns the worker
+      -- needs an approval and then **never** learns it finished — worse than today, where it
+      -- learns both.
+      local a, b = make_chat(), make_chat()
+      Notifier.subscribe(a, b)
+
+      Notifier.on_approval_waiting(b, "req-1")
+      Notifier._flush_approval_notice(b)
+      assert.equals(1, #sends)
+
+      -- The stub marks A busy when it is sent to, exactly as a real orchestrator would be while
+      -- it reads the notice. Its own turn has to finish before the next delivery can land.
+      responding[a] = false
+      responding[b] = false
+      Notifier.on_response_done(b)
+
+      assert.equals(2, #sends, "the completion must still reach the subscriber")
+    end)
+
+    it("does not drain the waiting chat's own queue", function()
+      -- Draining calls send_message(), whose first act is cancel_request() — it would kill the
+      -- very turn that is waiting for the answer.
+      local a, b = make_chat(), make_chat()
+      Notifier.subscribe(a, b)
+      MessageQueue.enqueue_message(b, a, "something queued for the worker")
+
+      Notifier.on_approval_waiting(b, "req-1")
+      Notifier._flush_approval_notice(b)
+
+      for _, send in ipairs(sends) do
+        assert.is_not.equals(b, send.bufnr, "the waiting chat must not be sent to")
+      end
+    end)
+
+    it("coalesces the hooks that arrive together into one wake", function()
+      -- Measured: claude starts three PreToolUse hooks 0.54s apart in one turn. One notice per
+      -- hook is three turns on the orchestrator for a single fact.
+      local a, b = make_chat(), make_chat()
+      Notifier.subscribe(a, b)
+
+      -- A is cleared between arrivals so it is idle for each one. Without that the stub marks A
+      -- busy on the first send and the queue absorbs the rest, which hides a missing window
+      -- behind machinery that is not under test here.
+      Notifier.on_approval_waiting(b, "req-1")
+      responding[a] = false
+      Notifier.on_approval_waiting(b, "req-2")
+      responding[a] = false
+      Notifier.on_approval_waiting(b, "req-3")
+      responding[a] = false
+
+      assert.equals(0, #sends, "nothing may be delivered before the window closes")
+      Notifier._flush_approval_notice(b)
+
+      assert.equals(1, #sends, "three hooks arriving together are one wake")
+    end)
+
+    it("is idempotent for one hook", function()
+      local a, b = make_chat(), make_chat()
+      Notifier.subscribe(a, b)
+
+      Notifier.on_approval_waiting(b, "req-1")
+      assert.is_true(Notifier._flush_approval_notice(b))
+      Notifier.on_approval_waiting(b, "req-1")
+      assert.is_false(Notifier._flush_approval_notice(b), "the same hook must not wake anyone twice")
+
+      assert.equals(1, #sends)
+    end)
+
+    it("sends again when a further approval opens after the last one was announced", function()
+      -- An approval expiring and the next one opening is a new fact, not a repeat of the old one.
+      local a, b = make_chat(), make_chat()
+      Notifier.subscribe(a, b)
+
+      Notifier.on_approval_waiting(b, "req-1")
+      Notifier._flush_approval_notice(b)
+      assert.equals(1, #sends)
+
+      responding[a] = false
+      Notifier.on_approval_waiting(b, "req-2")
+      assert.is_true(Notifier._flush_approval_notice(b))
+      assert.equals(2, #sends)
+    end)
+
+    it("starts a fresh count once the chat's approvals are forgotten", function()
+      -- Without this the second round of approvals on the same chat is compared against the first
+      -- round's total, reads as "no increase", and is never delivered.
+      local a, b = make_chat(), make_chat()
+      Notifier.subscribe(a, b)
+
+      Notifier.on_approval_waiting(b, "req-1")
+      Notifier._flush_approval_notice(b)
+      Notifier.forget_approval_notices(b)
+
+      Notifier.subscribe(a, b)
+      responding[a] = false
+      Notifier.on_approval_waiting(b, "req-2")
+      assert.is_true(Notifier._flush_approval_notice(b))
+      assert.equals(2, #sends)
+    end)
+
+    it("delivers with chat_notifications disabled, like every stop a chat cannot leave", function()
+      configure({ enabled = false })
+      local a, b = make_chat(), make_chat()
+      Notifier.subscribe(a, b)
+
+      Notifier.on_approval_waiting(b, "req-1")
+      Notifier._flush_approval_notice(b)
+
+      assert.equals(1, #sends)
+    end)
+
+    it("does nothing for a chat nobody subscribed to", function()
+      local b = make_chat()
+
+      Notifier.on_approval_waiting(b, "req-1")
+      Notifier._flush_approval_notice(b)
+
+      assert.equals(0, #sends)
+    end)
+
+    it("drops a pending window when the chat is deleted", function()
+      -- The window holds a live timer. Firing it after the buffer is gone would deliver about a
+      -- chat nobody can read.
+      local a, b = make_chat(), make_chat()
+      Notifier.subscribe(a, b)
+      Notifier.on_approval_waiting(b, "req-1")
+
+      Notifier.forget(b)
+
+      assert.is_false(Notifier._flush_approval_notice(b))
+      assert.equals(0, #sends)
+    end)
+  end)
+
   describe("holding the edge while a chat waits on the chats it messaged", function()
     it("holds the parent's notification for the whole dispatch-and-wait window", function()
       -- #638 が拾えなかった側の順序。末端 C が中間 B のディスパッチターンより**後**に
