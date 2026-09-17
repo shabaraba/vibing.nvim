@@ -109,6 +109,23 @@ function M.send_message(params)
       bufnr,
       params.sender
     )
+
+    -- 宛先が本文より先に `/compact` を走らせた。本文はまだ届いていないので、応答中の宛先に
+    -- 積むのと同じ形でキューへ回す — 圧縮ターンの完了で `message_queue.flush` が配達する。
+    -- 呼び出し元には `queued` で伝える: 「送った」と読まれると、動いていないトランスクリプトを
+    -- ポーリングされる（`queue_if_busy` の返り値と同じ規約）
+    if result and result.compacting then
+      local ok, err = require("vibing.application.chat.message_queue").enqueue_message(
+        bufnr,
+        params.from_bufnr,
+        params.message,
+        params.task
+      )
+      if not ok then
+        error(err)
+      end
+      result = { success = true, queued = true, compacting = true, bufnr = bufnr }
+    end
   else
     -- ProgrammaticSender.send already validates parameters
     result = ProgrammaticSender.send(bufnr, params.message, params.sender)

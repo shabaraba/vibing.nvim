@@ -274,6 +274,30 @@ describe('chat tools (worktree redesign)', () => {
     expect(result.content[0].text).not.toContain('AI request initiated');
   });
 
+  it('nvim_chat_send_message says the message waits behind a compaction, and still calls it queued', async () => {
+    // A target over its auto_compact threshold runs `/compact` first and queues the message behind
+    // it. The reply must still read as "queued" — no turn carrying the message has started — and
+    // must not send the caller looking for a turn that was busy with something else.
+    vi.mocked(rpc.callNeovim).mockResolvedValue({
+      success: true,
+      queued: true,
+      compacting: true,
+      bufnr: 14,
+    });
+
+    const result = await handlers.nvim_chat_send_message({
+      rpc_port: 9878,
+      bufnr: 14,
+      message: 'my report',
+      from_bufnr: 3,
+    });
+
+    expect(result._meta.queued).toBe(true);
+    expect(result.content[0].text).toContain('queued');
+    expect(result.content[0].text).toContain('compact');
+    expect(result.content[0].text).not.toContain('AI request initiated');
+  });
+
   it('nvim_chat_send_message reports an ordinary send when nothing was queued', async () => {
     vi.mocked(rpc.callNeovim).mockResolvedValue({ success: true, bufnr: 14 });
 

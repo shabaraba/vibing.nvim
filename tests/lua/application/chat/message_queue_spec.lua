@@ -6,6 +6,7 @@
 local view = require("vibing.presentation.chat.view")
 local ProgrammaticSender = require("vibing.presentation.chat.modules.programmatic_sender")
 local OrchestrationLink = require("vibing.application.chat.orchestration_link")
+local AutoCompact = require("vibing.application.chat.auto_compact")
 local notify = require("vibing.core.utils.notify")
 
 describe("MessageQueue", function()
@@ -30,6 +31,7 @@ describe("MessageQueue", function()
     originals.append_notice = ProgrammaticSender.append_notice
     originals.link = OrchestrationLink.link
     originals.warn = notify.warn
+    originals.before_delivery = AutoCompact.before_delivery
 
     buffers, responding, sends, links, warnings = {}, {}, {}, {}, {}
 
@@ -74,6 +76,7 @@ describe("MessageQueue", function()
     ProgrammaticSender.append_notice = originals.append_notice
     OrchestrationLink.link = originals.link
     notify.warn = originals.warn
+    AutoCompact.before_delivery = originals.before_delivery
 
     for _, bufnr in ipairs(buffers) do
       if vim.api.nvim_buf_is_valid(bufnr) then
@@ -184,6 +187,36 @@ describe("MessageQueue", function()
     responding[a] = false
     assert.is_true(Queue.flush(a))
     assert.equals(1, #sends)
+  end)
+
+  -- `auto_compact.before_delivery` runs `/compact` instead of the delivery when the recipient
+  -- is over its threshold. The queue must then stay exactly as it was: the compaction turn's
+  -- completion calls flush again, and that call is the delivery.
+  it("keeps the queue while the recipient compacts first, and delivers it on the next flush", function()
+    local a, b = make_chat(), make_chat()
+    local compactions = 0
+    AutoCompact.before_delivery = function(bufnr)
+      compactions = compactions + 1
+      responding[bufnr] = true
+      return compactions == 1
+    end
+
+    Queue.enqueue_message(a, b, "my report")
+    local restarted, delivered = Queue.flush(a)
+
+    assert.is_true(restarted, "the chat is running its /compact turn, so its stop is not final")
+    assert.is_nil(delivered, "nothing was delivered yet, so no round trip may be counted")
+    assert.equals(0, #sends)
+    assert.is_true(Queue.has_pending(a))
+
+    responding[a] = false
+    restarted, delivered = Queue.flush(a)
+
+    assert.is_true(restarted)
+    assert.same({}, delivered)
+    assert.equals(1, #sends)
+    assert.is_truthy(sends[1].message:find("my report", 1, true))
+    assert.is_false(Queue.has_pending(a))
   end)
 
   it("wakes an idle chat with a Notice when a background job finishes", function()

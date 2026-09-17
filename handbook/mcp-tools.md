@@ -206,7 +206,10 @@ bufnr while these do not: `handbook/architecture/orchestration.md` → "Addressi
 normally refuses the send; with the flag the message is queued instead and delivered as a new turn
 the moment that chat stops, with several queued items coalesced into one turn. The reply says which
 happened, and "queued" means no request has started yet — an orchestrator that read it as "sent"
-would poll a transcript that has not moved. `task` is queued along with the body and applied at
+would poll a transcript that has not moved. The same "queued" reply, with a different sentence,
+comes back when the target is over its `agent.token_usage.auto_compact` threshold: it spends a
+turn on `/compact` first and takes the message on the turn after, whether or not the caller passed
+`queue_if_busy`. `task` is queued along with the body and applied at
 flush time, same as the immediate path; if several queued messages from the same sender carry a
 `task`, the last one wins. Why it is not gated on `chat_notifications`, why the frontmatter link is
 written at delivery rather than when the message is queued, and why the queue is capped:

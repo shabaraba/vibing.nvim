@@ -10,6 +10,7 @@ local Config = require("vibing.config")
 local view = require("vibing.presentation.chat.view")
 local OrchestrationLink = require("vibing.application.chat.orchestration_link")
 local ChatLocator = require("vibing.application.chat.chat_locator")
+local AutoCompact = require("vibing.application.chat.auto_compact")
 
 describe("rpc handlers.message.send_message", function()
   local Notifier
@@ -44,6 +45,7 @@ describe("rpc handlers.message.send_message", function()
     originals.list_chat_buffers = view.list_chat_buffers
     originals.link = OrchestrationLink.link
     originals.open = ChatLocator.open
+    originals.before_delivery = AutoCompact.before_delivery
 
     buffers, chats = {}, {}
 
@@ -92,6 +94,7 @@ describe("rpc handlers.message.send_message", function()
     view.list_chat_buffers = originals.list_chat_buffers
     OrchestrationLink.link = originals.link
     ChatLocator.open = originals.open
+    AutoCompact.before_delivery = originals.before_delivery
 
     for _, bufnr in ipairs(buffers) do
       if vim.api.nvim_buf_is_valid(bufnr) then
@@ -132,6 +135,38 @@ describe("rpc handlers.message.send_message", function()
     Notifier.on_response_done(to)
 
     assert.equals(0, chats[from].sends)
+  end)
+
+  -- The immediate path has no queue of its own, so when the target compacts first the message
+  -- has to go back to `message_queue`, and the reply has to say "queued" — the target is running
+  -- a turn, but not one that carries this message.
+  it("queues the message behind the target's compaction and reports it as queued", function()
+    local from, to = make_chat(), make_chat()
+    -- Per chat: the completion notice that later wakes `from` is a delivery too, and is measured.
+    local compactions = {}
+    AutoCompact.before_delivery = function(bufnr)
+      compactions[bufnr] = (compactions[bufnr] or 0) + 1
+      if bufnr == to and compactions[to] == 1 then
+        chats[bufnr].responding = true
+        return true
+      end
+      return false
+    end
+
+    local result = Message.send_message({ bufnr = to, message = "my report", from_bufnr = from })
+
+    assert.is_true(result.success)
+    assert.is_true(result.queued)
+    assert.is_true(result.compacting)
+    assert.equals(0, chats[to].sends, "the message must wait for the compaction to finish")
+
+    -- The compaction turn ends: the queue delivers the report on that same event.
+    chats[to].responding = false
+    Notifier.on_response_done(to)
+
+    assert.equals(1, chats[to].sends)
+    assert.equals(2, compactions[to], "the delivery is measured again, and rides on the cooldown")
+    assert.equals(1, chats[from].sends, "the sender was subscribed when the message was taken")
   end)
 
   it("sends without recording anything when from_bufnr is omitted", function()

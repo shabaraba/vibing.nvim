@@ -760,6 +760,19 @@ happened to be mid-turn when it arrived. `section_for` names the sender in the s
 when the delivery is exactly one body from one chat; a coalesced delivery keeps the per-item
 `### From` headings and leaves the header unnamed.
 
+**A delivery is measured for `auto_compact` at that same seam, and a compaction is not a
+delivery.** `deliver` asks `auto_compact.before_delivery` first; over the threshold it sends a
+plain `## User` turn of `/compact` and returns `compacting = true` **without** the message. The
+callers keep the message where a busy target would have kept it — `flush` leaves the queue in
+place, the immediate path enqueues — and the compaction turn's own `VibingResponseDone` brings
+`flush` round again, where the cooldown lets it through. The rejected alternative was to park the
+built text inside `auto_compact` and re-send it from its own `VibingResponseDone` handler, the way
+the `<CR>` path parks the user's message: two subscribers to the same event, one of them `flush`
+delivering whatever queued up during the compaction, and whichever ran second found the chat
+responding and dropped its message with nothing saying so. `flush` returns `restarted` but no
+`delivered` for the compaction — the chat is running, so its stop must not reach subscribers, but
+the round-trip and wake budgets count the turn that actually carries the message.
+
 **The body names the sender even when the section header already does.** `build` used to drop the
 `### From` heading that would repeat the header two lines later, and that dedup is exactly what
 made a delivered brief indistinguishable from a user-typed message to the receiving model: the
