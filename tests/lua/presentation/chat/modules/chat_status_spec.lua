@@ -122,6 +122,57 @@ describe("chat status", function()
 
       assert.equals("responding", ChatStatus.get(chat_buf.buf))
     end)
+
+    describe("an approval answered without killing the turn (#778)", function()
+      local Pending
+
+      before_each(function()
+        Pending = require("vibing.infrastructure.rpc.pending_approvals")
+        Pending._reset()
+      end)
+
+      after_each(function()
+        Pending._reset()
+      end)
+
+      it("reports waiting_approval even though the turn is still open", function()
+        -- The whole point of #778 is that the turn does *not* end when the prompt goes up, so
+        -- `is_responding()` keeps answering true. Read in the old order this chat claims to be
+        -- `responding` for up to `approval_wait_sec`, and an orchestrator polling it sees a worker
+        -- that is still working right up until the fallback denies on its behalf.
+        local chat_buf = view.render({ session_id = "waiting-in-place" }, "back")
+        chat_buf._current_turn_id = "turn-1"
+        Registry.open({ turn_id = "turn-1" })
+        chat_buf:insert_approval_request("Bash", { command = "ls" }, { "allow_once" }, "req-1")
+        Pending.open({ request_id = "req-1", chat_bufnr = chat_buf.buf, tool = "Bash" })
+
+        assert.is_true(chat_buf:is_responding(), "the turn must still be open for this to mean anything")
+        assert.equals("waiting_approval", ChatStatus.get(chat_buf.buf))
+      end)
+
+      it("goes back to responding the moment the approval is answered", function()
+        -- The registry empties on the answer, so the chat resumes reporting what it is doing
+        -- rather than staying stuck on a stale reason.
+        local chat_buf = view.render({ session_id = "answered-in-place" }, "back")
+        chat_buf._current_turn_id = "turn-1"
+        Registry.open({ turn_id = "turn-1" })
+        Pending.open({ request_id = "req-1", chat_bufnr = chat_buf.buf, tool = "Bash" })
+        Pending.resolve("req-1", "defer")
+
+        assert.equals("responding", ChatStatus.get(chat_buf.buf))
+      end)
+
+      it("does not answer for another chat's blocked hook", function()
+        -- #667 in this vocabulary: two workers streaming at once, one of them asked. The other
+        -- must not report its neighbour's prompt.
+        local mine = view.render({ session_id = "unasked" }, "back")
+        mine._current_turn_id = "turn-1"
+        Registry.open({ turn_id = "turn-1" })
+        Pending.open({ request_id = "req-1", chat_bufnr = mine.buf + 1000, tool = "Bash" })
+
+        assert.equals("responding", ChatStatus.get(mine.buf))
+      end)
+    end)
   end)
 
   describe("buf_get_lines", function()

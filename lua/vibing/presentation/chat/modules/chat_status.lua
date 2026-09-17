@@ -29,6 +29,18 @@ function M.get(bufnr)
     return nil
   end
 
+  -- `is_responding()` より**先**に見る。承認を kill せずに答えられるようになった時点で
+  -- （#778）、承認待ちのターンは開いたままになった — つまり `is_responding()` は true を
+  -- 返し続ける。順序が逆だと、承認待ちのチャットは最大 `approval_wait_sec` のあいだ
+  -- `responding` を装い、オーケストレーターからは「まだ走っている」に見える。
+  --
+  -- 読むのは `_stop_reason` ではなく「実際にフックが1つ以上ブロックされているか」。
+  -- `_stop_reason` は次の送信まで前のターンの値が残るので、先に読むと本当に走っている
+  -- ターンを承認待ちと誤報する。保留レジストリは答えが出た瞬間に空になるので古くならない
+  if #require("vibing.infrastructure.rpc.pending_approvals").list_for_chat(bufnr) > 0 then
+    return "waiting_approval"
+  end
+
   if chat_buf:is_responding() then
     return "responding"
   end
