@@ -107,6 +107,22 @@ function M.min_cli_timeout_sec()
   return M.MIN_APPROVAL_WAIT_SEC + M.SCRIPT_MARGIN_SEC + M.CLI_MARGIN_SEC
 end
 
+--- A **fourth** deadline, belonging to a different path, and the one thing that bounds this whole
+--- derivation from above.
+---
+--- `nvim_ask_user_question` is an MCP tool call, not a PreToolUse hook, so none of the three
+--- numbers above apply to it — the CLI's own patience for a silent MCP tool does. Measured against
+--- claude by holding a stub server open until it gave up: *"MCP server "probe" tool "wait_forever"
+--- sent no response or progress for 1800s; aborting."* codex and grok are not measured.
+---
+--- It is recorded rather than configured because raising it is not actually available to us: the
+--- same message suggests a per-server `timeout`, but that is **the CLI describing itself, not a
+--- measurement**, and `cli_mcp_config.spec()` carries no such field and emits nothing at all on the
+--- default path. So this is a ceiling to stay under, which the default comfortably does (990 of
+--- 1800). What it buys is that raising `approval_wait_sec` past it fails the suite instead of
+--- turning into a silent 30-minute hang. `handbook/architecture/approval-without-kill.md`.
+M.MCP_TOOL_IDLE_TIMEOUT_SEC = 1800
+
 --- The environment entry the hook script reads. Merged into the CLI child's environment.
 --- @param env table<string, string>
 function M.bind(env)

@@ -101,27 +101,37 @@ claude 2.1.236, copilot 1.0.83 (the 950s re-run: 1.0.85), macOS. Reproduce with
 
 Configured timeout set to 1800s; the hook blocks and heartbeats every 10s.
 
-| backend | blocked for | outcome                                                             |
-| ------- | ----------- | ------------------------------------------------------------------- |
-| claude  | **1080s**   | still alive when the run was stopped; true ceiling not established  |
-| copilot | **950s**    | the hook reached its own budget uncut; true ceiling not established |
-| codex   | —           | **not measured** (usage limit)                                      |
-| grok    | —           | **not measured** (not signed in on the measuring machine)           |
+**Every number here is a floor, and the column that says why is not decoration.** Two runs ending
+at different numbers usually means two runs watched for different lengths of time, so the table
+records _who stopped it_ next to each one. Read without that column, "claude 1090 / copilot 1700"
+says copilot is the more patient CLI, which is not something either run measured.
 
-Both numbers are floors, not ceilings. claude's run was stopped deliberately — establishing a real
-ceiling costs the ceiling in wall-clock, and no decision here needs one. copilot's was not stopped:
-the hook ran its full 950s budget and exited on its own (`HOOK REACHED ITS OWN BUDGET after 950s
-without being cut`), with the tool then refused by copilot's gate, which is the `default` /
-not-pre-allowed row of the next table and not a statement about the hook.
+| backend | blocked for | who stopped it                                            | ceiling      |
+| ------- | ----------- | --------------------------------------------------------- | ------------ |
+| claude  | **1090s**   | **we did** — SIGTERM from our own job stop, at 1090s      | not establd. |
+| copilot | **1700s**   | **nobody** — the hook completed its own 1700s budget      | not establd. |
+| codex   | —           | **not measured** (usage limit)                            | —            |
+| grok    | —           | **not measured** (not signed in on the measuring machine) | —            |
 
-An earlier copilot run reported **670s** and was read as a shorter ceiling. It was not: that run was
-stopped by hand at 670s. The two numbers differ by how long each run was watched and by nothing
-else, which is why a per-backend limit derived from them would be recording the measurement rather
-than the CLI. 950 was chosen because it is the first number that settles the precondition below.
+Both runs were configured with a 1700s budget against an 1800s timeout. copilot's reached the end
+of it (`HOOK FINISHED NORMALLY after 1700s`); claude's was killed at 1090s when the harness was
+stopped, so nothing was learned about claude past 1090 — and in particular **not** that claude is
+less patient than copilot.
+
+A separate 950s copilot run confirms the same thing independently
+(`HOOK REACHED ITS OWN BUDGET after 950s without being cut`, copilot 1.0.85). That run also logs
+`VERDICT: the tool did not run`, which is **copilot's gate refusing a tool it had no rule for**, not
+the hook's verdict — `mode=default` with the gate not pre-allowed is exactly the confound described
+in "How this was measured wrong twice". The only thing that cell says about the hook is that it
+blocked for 950s, was not cut, and exited 0.
+
+An earlier copilot run was reported as **670s** and read as a shorter ceiling. It was neither: the
+log was read while the run was still going. That reading was enough to motivate a whole design —
+clamping the wait per backend — which is the failure this column exists to prevent.
 
 The 120s vibing configured before this work was **not** a CLI limit. It was a value we chose, and
-both CLIs honour a larger one — which is what makes the 930s the default now derives possible at
-all.
+both CLIs honour a much larger one — which is what makes the 930s the default now derives possible
+at all.
 
 ### What expiry does
 
@@ -153,14 +163,37 @@ A hook that exits non-zero for its own reasons is refused — `Denied by preTool
 errored)` — where a hook that times out is allowed through. Two different code paths. Do not
 generalise either one into "copilot is safe" or "copilot is unsafe".
 
-### How long the CLI waits for an MCP tool
+### How long the CLI waits for an MCP tool — a fourth deadline, measured at 1800s
 
 A different ceiling, and `nvim_ask_user_question` sits on it: that tool never goes through
-PreToolUse, so the hook timeout does not apply to it. Against a stub MCP server that never answers,
-claude waited **480s and counting**, emitting a `tool_progress` heartbeat every 30s with
-`elapsed_time_seconds` counting up. A long MCP response is a case the CLI has explicit machinery
-for, not an anomaly it tolerates — which is what makes waiting there a supported shape rather than
-a gamble.
+PreToolUse, so none of the three numbers above apply to it. Against a stub MCP server that never
+answers, claude ran to the end and said so:
+
+```text
+MCP server "probe" tool "wait_forever" sent no response or progress for 1800s; aborting.
+```
+
+**1800 seconds, on claude. Measured.** codex and grok are not measured here either.
+
+Everything else in that message — a per-server `timeout` in milliseconds, a global
+`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`, `0` to disable — is **the CLI describing itself, which is a
+hypothesis and not evidence** (the same shape as the binary string in "How this was measured wrong
+twice"). None of it was tried, and two of the three could not be reached from here anyway:
+`cli_mcp_config.spec()` carries `command` / `args` / `env` only, it emits nothing at all unless
+`agent.mcp.user_servers = false`, and on the normal path vibing's server arrives through
+`--plugin-dir` reading `claude-plugin/.claude-plugin/plugin.json`. Raising the ceiling would mean
+writing a `timeout` into two places and trusting a claim.
+
+It does not need raising. `approval_wait_sec` plus its margins is **990s against a measured 1800**,
+so the ticket-and-poll design for `nvim_ask_user_question` fits inside the deadline as it ships.
+What that costs instead is one more thing to keep ordered, so
+`hook_timeout_ordering_spec.lua` asserts the whole derived budget stays under 1800 — a user raising
+`approval_wait_sec` past it would otherwise get a silent 30-minute hang.
+
+**Two different things are called "progress" here, and they point opposite ways.** The message means
+MCP `notifications/progress`, sent **by an MCP server to the CLI**; `tool_progress` is a stream
+event the **CLI sends us**. Our MCP server implements neither, so "just send progress to reset the
+timer" describes machinery that does not exist on our side.
 
 `tool_progress` has no `by_type` handler in `decoders/claude_stream_json.lua`, so it is decoded and
 dropped, which is the documented behaviour for an unknown type. Worth remembering as material: it
@@ -185,9 +218,10 @@ argument for it.
 
 **One value, for every backend.** A per-backend limit derived from the floors above would be
 recording how long each run happened to be watched, not a difference between the CLIs: claude's
-1080 and copilot's 950 are both numbers a run was configured to stop at, and nothing in either log
-says the CLI was the one that stopped. Clamping to a floor bakes a measurement artifact into the
-product and leaves "why is copilot shorter?" with no answer.
+1090 is where the harness was stopped and copilot's 1700 is where the hook's own budget ran out,
+and **neither log contains a CLI deciding anything**. Clamping to a floor bakes a measurement
+artifact into the product and leaves "why is claude shorter?" with no answer — a question that had
+already been asked the other way round, about copilot, from a number read off a running log.
 
 What the floors _are_ good for is checking the invariant's precondition, and that check is not
 optional: if the script's deadline exceeds what a CLI will actually wait, that CLI's timeout fires
@@ -222,8 +256,8 @@ Against the measured floors, with the default 900:
 
 | backend | measured floor | script deadline 930 inside it? |
 | ------- | -------------- | ------------------------------ |
-| claude  | 1080s          | yes                            |
-| copilot | 950s           | yes                            |
+| claude  | 1090s          | yes                            |
+| copilot | 1700s          | yes                            |
 | codex   | not measured   | **no — feature stays off**     |
 | grok    | not measured   | **no — feature stays off**     |
 
