@@ -482,7 +482,12 @@ what it claims to.
 And the snapshots decay in a second way that nothing warns about: they are the source **as of the
 run**, so a stale one silently reverts the file it is written over. Four of the nine surviving
 inputs still match HEAD; the rest differ by up to 238 lines. That asymmetry is the whole reason to
-record staleness next to a preserved instrument rather than just its existence.
+record staleness next to a preserved instrument rather than just its existence — and to report it
+per input, because **a set of inputs is only as fresh as its oldest member.** One series here writes
+four files at once and three of its four snapshots match HEAD exactly, which buys nothing: the
+fourth went stale when later work touched that file, so running it reverts 35 lines whatever the
+other three say. Summarising those four numbers as "current" is the same collapse as reading a cell
+with two possible authors as one answer.
 
 **Preserving an instrument can remove the accident that was protecting you.** While the snapshots
 sat in `/tmp`, a stale run was going to become a `FileNotFoundError` the next time the OS cleared
