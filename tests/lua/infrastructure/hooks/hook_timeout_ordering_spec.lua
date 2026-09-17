@@ -1,6 +1,6 @@
 --- The three deadlines an approval sits inside, asserted for **every** registered backend (#778).
 ---
----   permissions.approval_wait_sec  <  pre-tool-use.sh MAX_WAIT  <  <backend>'s hook timeout
+---   permissions.approval_wait_sec  <  pre-tool-use.sh's own wait  <  <backend>'s hook timeout
 ---
 --- Why this is a correctness test and not a tidiness one: measured against claude 2.1.236 and
 --- copilot 1.0.85, a PreToolUse hook that outlives the **CLI's own** configured timeout is ignored
@@ -12,42 +12,132 @@
 --- It was checked for copilot alone. Claude therefore shipped `timeout = 120` against the script's
 --- own 120 seconds — equal, no margin — for as long as that spec was the only one.
 local Agents = require("vibing.core.constants.agents")
+local Config = require("vibing.config")
 local SettingsGenerator = require("vibing.infrastructure.hooks.settings_generator")
 local Transports = require("vibing.infrastructure.hooks.transports")
+local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
 
---- The script's own deadline, read out of the shell rather than restated here. The invariant spans
---- two languages; a copy of the number in Lua is a copy that can stop matching.
---- @return number ticks
---- @return number seconds_per_tick
+--- What the shell actually does, read out of the shell. The invariant spans two languages; a copy
+--- of the arithmetic in Lua is a copy that can stop matching.
+--- @return {fallback_sec: number, ticks_per_sec: number, sleep: number, env_var: string}
 local function read_script_deadline()
   local path = vim.fn.fnamemodify(SettingsGenerator.get_hook_script_path(), ":p")
   local f = assert(io.open(path, "r"), "could not open pre-tool-use.sh at " .. path)
   local source = f:read("*a")
   f:close()
 
-  local ticks = tonumber(source:match("\nMAX_WAIT=%${?[%u_]*:%-?(%d+)}?") or source:match("\nMAX_WAIT=(%d+)"))
-  assert(ticks, "could not read MAX_WAIT out of pre-tool-use.sh")
+  local env_var, fallback = source:match('\nMAX_WAIT_SEC="%${([%u_]+):%-(%d+)}"')
+  assert(env_var, "could not read MAX_WAIT_SEC's environment variable and fallback out of pre-tool-use.sh")
+
+  local ticks_per_sec = tonumber(source:match("\nMAX_WAIT=%$%(%(MAX_WAIT_SEC %* (%d+)%)%)"))
+  assert(ticks_per_sec, "could not read the seconds-to-ticks multiplier out of pre-tool-use.sh")
 
   local sleep = tonumber(source:match("\n%s*sleep%s+([%d%.]+)"))
   assert(sleep, "could not read the poll loop's sleep out of pre-tool-use.sh")
 
-  return ticks, sleep
+  return { fallback_sec = tonumber(fallback), ticks_per_sec = ticks_per_sec, sleep = sleep, env_var = env_var }
 end
 
 describe("hook timeout ordering", function()
-  it("reads MAX_WAIT as ticks, not seconds", function()
-    -- The unit is the trap. `MAX_WAIT=1200` is 120 seconds, because the loop sleeps 0.1s and adds
-    -- 1 per pass. Reading it as seconds makes every comparison below off by a factor of ten, in
-    -- the direction that silently declares an unsafe configuration safe.
-    local ticks, sleep = read_script_deadline()
-    assert.equals(0.1, sleep, "the poll loop's tick is what converts MAX_WAIT to seconds")
+  local script = read_script_deadline()
 
-    local source_line = string.format("MAX_WAIT=%d at %.1fs per tick", ticks, sleep)
-    assert.is_true(ticks % 10 == 0, source_line .. " is not a whole number of seconds")
+  describe("the script's own deadline", function()
+    it("counts ticks, and the multiplier matches the tick", function()
+      -- The unit is the trap. The loop counts 0.1s ticks, so the budget in seconds has to be
+      -- multiplied by ten to become a loop bound. Getting this wrong is off by a factor of ten in
+      -- whichever direction, and one of those directions silently declares an unsafe configuration
+      -- safe while every comparison below still passes.
+      assert.equals(
+        1 / script.sleep,
+        script.ticks_per_sec,
+        string.format("the loop sleeps %ss per tick but converts seconds with *%d", tostring(script.sleep), script.ticks_per_sec)
+      )
+    end)
+
+    it("falls back to less than the smallest timeout any backend can register", function()
+      -- The literal in the script is for a hook that runs without our environment — a stale
+      -- generated settings file, a CLI that dropped the variable. It cannot be the *default*
+      -- derivation: a user who lowers `approval_wait_sec` lowers every registered timeout with it,
+      -- and a fallback sized for the default would then outlast them and fail open. So it is
+      -- pinned against the floor instead, which holds for every configured value.
+      assert.is_true(
+        script.fallback_sec < WaitBudget.min_cli_timeout_sec(),
+        string.format(
+          "the script waits %ss without our environment, but a backend may register a timeout as low as %ss",
+          tostring(script.fallback_sec),
+          tostring(WaitBudget.min_cli_timeout_sec())
+        )
+      )
+    end)
+
+    it("stays below the smallest timeout even at the configured floor", function()
+      -- The end-to-end form of the same thing: set the shortest wait a user can ask for and check
+      -- the fallback is still inside what that produces.
+      local original = Config.get().permissions.approval_wait_sec
+      Config.get().permissions.approval_wait_sec = 1
+      local ok, err = pcall(function()
+        assert.equals(WaitBudget.MIN_APPROVAL_WAIT_SEC, WaitBudget.approval_wait_sec())
+        assert.is_true(script.fallback_sec < WaitBudget.cli_timeout_sec())
+        assert.is_true(WaitBudget.script_wait_sec() < WaitBudget.cli_timeout_sec())
+      end)
+      Config.get().permissions.approval_wait_sec = original
+      assert.is_true(ok, tostring(err))
+    end)
+
+    it("reads the deadline from the variable the environment binding writes", function()
+      assert.equals(WaitBudget.MAX_WAIT_VAR, script.env_var)
+
+      local env = {}
+      WaitBudget.bind(env)
+      assert.equals(tostring(WaitBudget.script_wait_sec()), env[WaitBudget.MAX_WAIT_VAR])
+    end)
   end)
 
-  local script_ticks, seconds_per_tick = read_script_deadline()
-  local script_wait_sec = script_ticks * seconds_per_tick
+  describe("the derivation", function()
+    it("restates config.lua's default rather than owning a second one", function()
+      assert.equals(WaitBudget.DEFAULT_APPROVAL_WAIT_SEC, Config.get().permissions.approval_wait_sec)
+    end)
+
+    it("keeps all three in order", function()
+      assert.is_true(WaitBudget.approval_wait_sec() < WaitBudget.script_wait_sec())
+      assert.is_true(WaitBudget.script_wait_sec() < WaitBudget.cli_timeout_sec())
+    end)
+
+    it("moves every deadline when the configured wait changes", function()
+      -- The point of one source. A user who raises the wait must not end up with a script that
+      -- gives up first, nor a CLI timeout that fires before either.
+      local original = Config.get().permissions.approval_wait_sec
+      Config.get().permissions.approval_wait_sec = 2400
+      local ok, err = pcall(function()
+        assert.equals(2400, WaitBudget.approval_wait_sec())
+        assert.equals(2400 + WaitBudget.SCRIPT_MARGIN_SEC, WaitBudget.script_wait_sec())
+        assert.equals(2400 + WaitBudget.SCRIPT_MARGIN_SEC + WaitBudget.CLI_MARGIN_SEC, WaitBudget.cli_timeout_sec())
+        for _, def in ipairs(Agents.list()) do
+          local descriptor = require(def.descriptor_module)
+          if descriptor.hook then
+            assert.is_true(
+              (Transports.hook_timeout_sec(descriptor.hook) or 0) > WaitBudget.script_wait_sec(),
+              def.id .. " did not follow the configured wait upwards"
+            )
+          end
+        end
+      end)
+      Config.get().permissions.approval_wait_sec = original
+      assert.is_true(ok, tostring(err))
+    end)
+
+    it("ignores a nonsense configured wait instead of deriving nonsense from it", function()
+      local original = Config.get().permissions.approval_wait_sec
+      for _, bad in ipairs({ 0, -1, "900" }) do
+        Config.get().permissions.approval_wait_sec = bad
+        local ok, err = pcall(function()
+          assert.equals(WaitBudget.DEFAULT_APPROVAL_WAIT_SEC, WaitBudget.approval_wait_sec())
+        end)
+        Config.get().permissions.approval_wait_sec = original
+        assert.is_true(ok, string.format("approval_wait_sec = %s: %s", tostring(bad), tostring(err)))
+      end
+    end)
+  end)
 
   for _, def in ipairs(Agents.list()) do
     local descriptor = require(def.descriptor_module)
@@ -71,16 +161,20 @@ describe("hook timeout ordering", function()
 
         it("gives the hook script time to fail closed before the CLI fails open", function()
           local timeout = Transports.hook_timeout_sec(descriptor.hook)
-          assert.is_true(
-            timeout > script_wait_sec,
-            string.format(
-              "%s registers timeout=%ss against pre-tool-use.sh's own %ss deadline; the CLI must "
-                .. "give up strictly later, or a slow approval becomes an ungated tool call",
-              def.id,
-              tostring(timeout),
-              tostring(script_wait_sec)
+          -- Against both the derived deadline and the script's env-absent fallback, because a hook
+          -- that runs without our environment waits for the latter.
+          for _, deadline in ipairs({ WaitBudget.script_wait_sec(), script.fallback_sec }) do
+            assert.is_true(
+              timeout > deadline,
+              string.format(
+                "%s registers timeout=%ss against a script deadline of %ss; the CLI must give up "
+                  .. "strictly later, or a slow approval becomes an ungated tool call",
+                def.id,
+                tostring(timeout),
+                tostring(deadline)
+              )
             )
-          )
+          end
         end)
       end)
     end

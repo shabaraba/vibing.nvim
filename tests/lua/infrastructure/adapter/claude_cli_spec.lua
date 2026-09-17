@@ -112,6 +112,15 @@ describe("claude_cli environment", function()
       assert.same(next_env(), next_env({ env = {} }))
     end)
 
+    it("tells the hook script how long it may block", function()
+      -- `pre-tool-use.sh` is one fixed file shared by every chat, so its deadline cannot be
+      -- generated per turn the way the settings file is — it arrives here or not at all. Without
+      -- it the script silently falls back to its own literal, and `permissions.approval_wait_sec`
+      -- stops meaning anything.
+      local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
+      assert.equals(tostring(WaitBudget.script_wait_sec()), env_for()[WaitBudget.MAX_WAIT_VAR])
+    end)
+
     it("cannot take over the variables that bind the child to this Neovim", function()
       local env = env_for({
         env = { VIBING_NVIM_RPC_PORT = "1234", VIBING_PROCESS_ID = "spoofed", CLAUDECODE = "1" },

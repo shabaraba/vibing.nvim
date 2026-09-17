@@ -113,21 +113,19 @@ describe("codex_settings_generator", function()
       )
     end)
 
-    it("gives codex a hook timeout that outlasts the script's own wait", function()
-      -- Same invariant as copilot's generator, restated here rather than shared: whichever side
-      -- gives up first decides the outcome, and only the script's deny carries a reason. Raising
-      -- MAX_WAIT in pre-tool-use.sh for Claude's sake must not silently cross this number.
-      local script = io.open(vim.fn.fnamemodify(SettingsGenerator.get_hook_script_path(), ":p"), "r")
-      local source = script:read("*a")
-      script:close()
+    it("puts the derived timeout into the -c fragment, not a number of its own", function()
+      -- The ordering against pre-tool-use.sh's own deadline is asserted for every backend in
+      -- `hook_timeout_ordering_spec.lua`; it used to be restated here and in copilot's spec, which
+      -- is how claude — covered by neither — shipped with no margin at all. What is codex-specific
+      -- is that the number reaches the CLI through a `-c` TOML fragment rather than a JSON field,
+      -- so that is what this checks.
+      local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
+      assert.equals(WaitBudget.cli_timeout_sec(), CodexSettingsGenerator.hook_timeout_sec())
 
-      local max_wait_ticks = tonumber(source:match("\nMAX_WAIT=(%d+)"))
-      assert.is_not_nil(max_wait_ticks, "could not read MAX_WAIT out of pre-tool-use.sh")
-
-      local script_wait_sec = max_wait_ticks / 10 -- the poll loop sleeps 0.1s per tick
-      assert.is_true(
-        CodexSettingsGenerator._HOOK_TIMEOUT_SEC > script_wait_sec,
-        "codex's hook timeout must outlast the script's own wait"
+      local args = CodexSettingsGenerator.get_hook_args(tmp_dir)
+      assert.is_truthy(
+        args[3]:find(string.format("timeout=%d}", WaitBudget.cli_timeout_sec()), 1, true),
+        "the -c fragment must carry the derived timeout: " .. args[3]
       )
     end)
 

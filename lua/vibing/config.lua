@@ -75,6 +75,12 @@
 ---@field ask string[] 確認が必要なツールリスト（例: {"Bash"}、使用前に承認を要求）
 ---@field rules Vibing.PermissionRule[]? 粒度の細かい権限制御ルール（オプション）
 ---@field default_deny_rules boolean? 破壊的Bashコマンド（`rm -rf /`、`sudo`、`dd`、`chmod -R 777`、main/masterへのforce push等）の同梱denyルールを有効にするか（デフォルト: true）。`core/constants/destructive_commands.lua`を参照
+---@field approval_wait_sec number? ツール承認プロンプトを開いたまま待つ上限（秒、デフォルト: 900）。
+---  この1つの値から`bin/hooks/pre-tool-use.sh`の待ち時間と各backendのhook timeoutが導出される
+---  （`infrastructure/hooks/wait_budget.lua`）。上限に達したら vibing.nvim 自身がdenyを書いて
+---  hookを正常終了させる——CLI側のtimeoutは実測でfail open（判定なしにツールが走る）なので、
+---  そこへ到達させてはいけない。backendごとに違う値にはしない
+---  （handbook/architecture/approval-without-kill.md）
 
 ---@class Vibing.AutoResumeOnLimitConfig
 ---使用量リミット自動継続設定
@@ -519,6 +525,7 @@ M.defaults = {
     ask = {},
     rules = {},
     default_deny_rules = true,
+    approval_wait_sec = 900,
   },
   -- Per-backend options, one table per registered agent id. The fields and their defaults are
   -- declared next to the backend in `core/constants/agents.lua` (`config_fields`), so this file

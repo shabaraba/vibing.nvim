@@ -1562,6 +1562,38 @@ The point is that the boundary is drawn in the environment rather than in an app
 prompts are approved reflexively most of the time, so they are a last line of defence, not the
 primary one.
 
+## How Long an Approval Prompt Stays Open
+
+```lua
+permissions = {
+  approval_wait_sec = 900,  -- 15 minutes; values below 30 are raised to 30
+}
+```
+
+One number, and **the same one for every backend**. Three deadlines are derived from it
+(`lua/vibing/infrastructure/hooks/wait_budget.lua`) and must stay in this order:
+
+| Derived                      | Default | What gives up there                                          |
+| ---------------------------- | ------- | ------------------------------------------------------------ |
+| `approval_wait_sec`          | 900s    | vibing.nvim writes a deny and the turn falls back to a retry |
+| `pre-tool-use.sh`'s own wait | 930s    | the script exits 2 — fail closed — if Neovim never answered  |
+| each backend's `timeout`     | 990s    | **never reached; the CLI fails _open_ here**                 |
+
+The last row is why the ordering matters rather than being tidiness. Measured against claude
+2.1.236 and copilot 1.0.85: a PreToolUse hook that outlives the CLI's _own_ configured timeout is
+ignored and **the tool runs with no verdict at all**. Everything above exists so that the CLI is
+never the one to give up. `handbook/architecture/approval-without-kill.md` has the measurements.
+
+Raising this is not free: a wait that crosses the 55/60-minute prompt-cache TTL re-pays the whole
+prefix on resume, and a resident process (`backends.claude.process = "duplex"`) holds ~200MB of RSS
+for the duration. 15 minutes covers "the user stepped away and is coming back"; longer absences are
+what the fallback is for.
+
+The script's deadline reaches it in the CLI child's environment, alongside the RPC port. A
+**resident duplex process is handed its environment once, at spawn**, so changing this setting
+takes effect on the next process rather than the next turn — reopen the chat, or let the five
+minute idle timer reclaim it. Oneshot chats (the default) pick it up on the next message.
+
 ## MCP
 
 Enables the RPC server that the bundled `vibing-nvim` MCP server connects to (see the README's

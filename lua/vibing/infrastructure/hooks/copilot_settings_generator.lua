@@ -18,16 +18,16 @@ local M = {}
 local PLUGIN_NAME = "vibing-nvim-permissions"
 
 --- Copilot's own hook timeout **fails open** — a hook that runs longer than this is ignored and
---- the tool proceeds, where every non-zero exit fails closed. pre-tool-use.sh gives up and denies
---- after ~120s, so this has to stay comfortably above that number or a slow approval would turn
---- into a silent allow.
-local HOOK_TIMEOUT_SEC = 300
-
+--- the tool proceeds, where every non-zero exit fails closed. So this has to stay above the
+--- deadline pre-tool-use.sh gives itself, or a slow approval turns into a silent allow. Both come
+--- from `permissions.approval_wait_sec` through `wait_budget.lua`, which is what keeps them in
+--- order; this was the one generator that said so, and the only one whose spec checked it.
+---
 --- What this transport registers as its PreToolUse timeout. See
 --- `settings_generator.hook_timeout_sec` for why every transport answers this.
 --- @return number|nil seconds
 function M.hook_timeout_sec()
-  return HOOK_TIMEOUT_SEC
+  return require("vibing.infrastructure.hooks.wait_budget").cli_timeout_sec()
 end
 
 --- Absolute path to the generated plugin directory for a given cwd
@@ -63,7 +63,7 @@ local function build_manifest(hook_command)
         {
           type = "command",
           bash = hook_command,
-          timeoutSec = HOOK_TIMEOUT_SEC,
+          timeoutSec = M.hook_timeout_sec(),
         },
       },
     },
