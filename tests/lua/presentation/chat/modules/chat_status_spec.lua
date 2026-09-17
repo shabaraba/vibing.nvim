@@ -162,6 +162,38 @@ describe("chat status", function()
         assert.equals("responding", ChatStatus.get(chat_buf.buf))
       end)
 
+      it("reports which prompts are waiting, as state rather than as text to scrape", function()
+        -- Where `nvim_chat_answer_approval`'s request_id comes from. It is deliberately not on
+        -- the watchdog notification: that is a snapshot, and by the time an orchestrator acts on
+        -- it one prompt may be answered and another expired. Asking is always current.
+        local chat_buf = view.render({ session_id = "listing" }, "back")
+        chat_buf:insert_approval_request("Bash", { command = "ls" }, {}, "req-1")
+        chat_buf:insert_approval_request("Write", { file_path = "/tmp/x" }, {}, "req-2")
+
+        local waiting = ChatStatus.pending_approvals(chat_buf.buf)
+        assert.equals(2, #waiting)
+        assert.same({ request_id = "req-1", tool = "Bash" }, waiting[1])
+        assert.same({ request_id = "req-2", tool = "Write" }, waiting[2])
+      end)
+
+      it("keeps an expired prompt in the list and says so", function()
+        -- It is still drawn in the buffer, so omitting it here would leave the reader unable to
+        -- explain why answering it fails.
+        local chat_buf = view.render({ session_id = "expired-listing" }, "back")
+        chat_buf:insert_approval_request("Bash", {}, {}, "req-1")
+        chat_buf:mark_approval_expired("req-1")
+
+        local waiting = ChatStatus.pending_approvals(chat_buf.buf)
+        assert.equals(1, #waiting)
+        assert.is_true(waiting[1].expired)
+      end)
+
+      it("reports nothing for a chat with no prompts, or no chat at all", function()
+        local chat_buf = view.render({ session_id = "quiet" }, "back")
+        assert.same({}, ChatStatus.pending_approvals(chat_buf.buf))
+        assert.same({}, ChatStatus.pending_approvals(vim.api.nvim_create_buf(false, true)))
+      end)
+
       it("does not answer for another chat's blocked hook", function()
         -- #667 in this vocabulary: two workers streaming at once, one of them asked. The other
         -- must not report its neighbour's prompt.

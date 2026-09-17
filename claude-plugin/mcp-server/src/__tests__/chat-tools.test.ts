@@ -447,8 +447,16 @@ describe('chat tools (worktree redesign)', () => {
 
   it('advertises request_id on nvim_chat_answer_approval, optional so a lone prompt still works', () => {
     const tool = allTools.find((t) => t.name === 'nvim_chat_answer_approval');
-    expect(tool?.inputSchema.properties).toHaveProperty('request_id');
-    expect(tool?.inputSchema.required).not.toContain('request_id');
+    const inputSchema = tool?.inputSchema as {
+      required?: string[];
+      properties: Record<string, any>;
+    };
+
+    expect(inputSchema.properties).toHaveProperty('request_id');
+    expect(inputSchema.required).not.toContain('request_id');
+    // The ids come from the live status query, never from scraping the transcript: a chat can
+    // hold several prompts and the set changes while the orchestrator is deciding.
+    expect(inputSchema.properties.request_id.description).toContain('waiting_approvals');
   });
 
   it('nvim_chat_answer_approval refuses an action outside the four the prompt offers', async () => {

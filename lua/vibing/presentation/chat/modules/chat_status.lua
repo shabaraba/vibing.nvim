@@ -49,4 +49,44 @@ function M.get(bufnr)
   return chat_buf:get_stop_reason() or "idle"
 end
 
+---いまこのチャットで答えを待っている承認の一覧
+---
+---**通知ではなくクエリで渡す。** 承認は1ターンに複数、並列に立つ（実測: フック3本が0.54秒差で
+---重なる）ので、オーケストレーターは `nvim_chat_answer_approval` にどれへの答えかを渡す必要が
+---あり、その id をどこかで得なければならない。
+---
+---通知に載せないのは、**通知がスナップショットだから**。3件の id を載せて配っても、相手が
+---動く頃には1件が期限切れ、1件がユーザーに答えられている、が普通に起きる。「完了検出はテキスト
+---推測ではなくステータスフィールド」と同じ理由で、状態はその瞬間に問い合わせる。
+---
+---**バッファの `<!-- vibing:req=... -->` を読ませるのも同じ理由で採らない。** あのマーカーは
+---`<CR>` の帰属解決のためのもので、機械の入力源ではない（それはテキスト推測になる）。
+---@param bufnr number
+---@return {request_id: string, tool: string, expired: boolean?}[] 承認待ちでなければ空
+function M.pending_approvals(bufnr)
+  if not bufnr or bufnr == 0 then
+    bufnr = vim.api.nvim_get_current_buf()
+  end
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return {}
+  end
+
+  local chat_buf = require("vibing.presentation.chat.view").get_chat_buffer(bufnr)
+  if not chat_buf or type(chat_buf.get_pending_approvals) ~= "function" then
+    return {}
+  end
+
+  local summary = {}
+  for _, entry in ipairs(chat_buf:get_pending_approvals()) do
+    table.insert(summary, {
+      request_id = entry.request_id,
+      tool = entry.tool,
+      -- 期限切れも載せる。消さずに印を付けて残す方針なので、バッファには見えている。
+      -- 隠すと「見えているのに status に無い」になり、答えられない理由が分からなくなる
+      expired = entry.expired or nil,
+    })
+  end
+  return summary
+end
+
 return M
