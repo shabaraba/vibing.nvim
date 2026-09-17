@@ -18,6 +18,28 @@ deny immediately.
 So "answer in place" is not a new transport. It is: **stop writing the `.res` until the human
 answers.** The CLI sits inside its own hook; nothing is killed; the turn continues afterwards.
 
+### Every withheld response is owed, and by whom
+
+`rpc/pending_approvals.lua` holds one entry per withheld `.res` and guarantees each is written
+exactly once. The four exits are the whole contract; a fifth would be a CLI hanging inside its own
+hook until the script's deadline.
+
+| exit                  | written by                             | reached from                                                  |
+| --------------------- | -------------------------------------- | ------------------------------------------------------------- |
+| the human answers     | `permission.release_answered_approval` | `ChatBuffer:_answer_pending_approval`, on `<CR>`              |
+| the wait limit passes | the entry's own timer → `expire`       | armed by `open`; `on_timeout` tells the chat                  |
+| the chat goes away    | `resolve_for_chat`                     | the chat's `BufUnload` cleanup, **before** it cancels the CLI |
+| Neovim exits          | `resolve_all`                          | `VimLeavePre`, **before** the CLI is cancelled                |
+
+The two "before" are the same fact stated twice: a killed CLI can no longer be the thing that stops
+waiting, so the release has to happen while the process is still alive. `tests/lua/shutdown_spec.lua`
+and `tests/lua/presentation/chat/view_approval_release_spec.lua` pin each ordering.
+
+**Reaching the limit denies one tool call and kills nothing.** Hooks run concurrently, so the user
+is quite likely answering a different prompt of the same turn when this one expires; killing would
+take the turn they are in the middle of. The hook exits 2, the model sees that one refusal, and the
+turn carries on.
+
 ## Why not `--permission-prompt-tool stdio`
 
 The issue's original design was to answer the CLI's `control_request {subtype: "can_use_tool"}`

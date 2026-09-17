@@ -151,20 +151,56 @@ An approval that reaches its wait limit is **marked expired in place, not delete
 lines from a buffer the user may be editing moves everything under their cursor. The mark is what
 explains why an answer to it is refused.
 
+### Where the prompt is drawn, and why the stream stops while it is open
+
+Under the kill-based design nothing had to decide this. The process died, the turn ended, and
+`_handle_response` → `add_user_section` was the single place a prompt was ever drawn. A turn that
+keeps running never reaches that point, so two things moved:
+
+- **`on_approval_required` takes a fifth argument, `waiting`.** True on the waiting path, and the
+  chat draws the prompt itself (`ChatBuffer:show_approval_prompts`). Drawing unconditionally would
+  double-render on the kill path, where `_handle_response` still draws; not drawing at all is the
+  silent failure this argument exists to prevent — the prompt is stored, nothing appears, and the
+  hook waits out the whole limit against an empty screen.
+- **Drawing the prompt closes the assistant section it interrupts**, writing the end timestamp
+  `cache_expiry` reads. The turn ending used to be that moment.
+
+**While any prompt is open the chunk buffer stops draining** (`ChatBuffer:append_chunk`). An
+append-only buffer cannot hold an input field and a stream of output at the same time: the prompt
+is an unsent `## User` section at the end and `flush_chunks` appends at the end too, so anything
+flushed under it is read back by `extract_user_message` as the user's next message. What that costs
+is bounded by measurement — claude emits no assistant prose while a hook blocks, so what
+accumulates is the rendering of tools that ran in parallel.
+
+Answering the **last** prompt opens a `## Assistant` and flushes there; answering one of several
+redraws the rest into a new input section and keeps holding. Opening an input section in the first
+case would put the held output right back under the input. The same answer clears `_stop_reason`,
+which is otherwise only cleared where a new turn starts — and answering in place starts none, so
+the chat would call itself `waiting_approval` until its next send.
+
 ### Implementation notes
 
 - The PreToolUse hook (`bin/hooks/pre-tool-use.sh`) posts to the RPC server, which dispatches to
-  `infrastructure/rpc/handlers/permission.lua`. When the requested tool is in the `ask` list,
-  `cancel_and_deny()` immediately cancels the Claude process and sends a deny response to the
-  hook.
+  `infrastructure/rpc/handlers/permission.lua`. An `ask` verdict takes one of two shapes, and which
+  one is a property of the backend rather than of the call: `_can_wait_for_approval` (the
+  descriptor's `measured_wait_floor_sec` against the currently configured wait) travels per turn
+  next to `_tool_vocabulary`, so the handler still names no backend. True → `_ask_without_killing`
+  withholds the `.res`; false → `cancel_and_deny` kills the process and denies, exactly as before.
+- **`_ask_without_killing` registers the withheld response before anything that can throw.** The
+  registry is what arms the wait limit, so a failure past that point still ends in a written `.res`
+  rather than a hook spinning to the script's own deadline. Drawing is additionally guarded, so a
+  failure there does not also cost the watchdog its notification.
+- **No chat to ask means deny.** A `.res` nobody can ever answer is a CLI hung inside its own hook.
+- **The watchdog is told explicitly** (`completion_notifier.on_approval_waiting`). `VibingResponseDone`
+  never fires for a turn that is still running, so an orchestrator would otherwise see `responding`
+  until the limit expired.
 - `on_approval_required` must be called from the vim main thread (inside `vim.schedule`) — the
   caller ensures this; do not add an inner `vim.schedule` wrapper inside the implementation.
-- `_pending_approval` is set before `add_user_section()` runs, so the approval UI renders at the
+- `_pending_approvals` is set before `add_user_section()` runs, so the approval UI renders at the
   correct position in the chat buffer.
-- After the user responds, the buffer parser detects the approval response and updates session
-  permissions; `hook_request_id` is cleared to prevent double-processing, and the user message is
-  replaced with a retry instruction so the new Claude session picks up the updated session-level
-  permissions and retries successfully.
+- On the **kill** path the user's answer still becomes a retry instruction sent as a new turn. On
+  the waiting path it becomes a verdict for the hook that is still blocked, and no message is sent
+  at all (`ChatBuffer:_answer_pending_approval`'s three outcomes).
 
 ## An Answer Belongs to the Chat That Was Asked (#667)
 
