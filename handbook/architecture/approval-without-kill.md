@@ -184,6 +184,21 @@ call** — and answering one leaves the other spinning to the script's own deadl
 copilot never times out in normal operation, but the fallback path can still reach this, so it is
 handled rather than assumed away.
 
+**Both prompts are shown, and that is deliberate.** Collapsing them by matching `(tool, input)` is
+the obvious move and it is wrong: a model calling the same tool twice with the same input is
+legitimate, and since hooks run concurrently the two can be **in flight at the same time** — so the
+rule would silently refuse a second call that nobody asked about. Detecting the orphan properly is
+not available either: nothing tells us a hook died, so any such rule is a guess, and a wrong guess
+here denies a call the user never saw.
+
+**What the decision costs, measured as a test rather than assumed** (`approval_prompts_spec.lua`,
+"keeps holding while another prompt is still open"): the orphan's registry entry outlives every
+answer the user gives, so the output hold stays on after the real prompt is answered. The user
+still sees output at each answer — `add_user_section` flushes on the way — but the turn's **tail**
+arrives only when the turn ends, where `_finish_turn` releases the orphan and flushes. Late, not
+lost. Making output arrive late is the safe side of this trade; denying a tool call on a guess is
+not.
+
 ### copilot: an _errored_ hook is not a _timed-out_ hook
 
 A hook that exits non-zero for its own reasons is refused — `Denied by preToolUse hook … (hook

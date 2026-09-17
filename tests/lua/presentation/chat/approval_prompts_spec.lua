@@ -889,6 +889,13 @@ describe("several approval prompts at once", function()
       vim.wait(200)
       assert.is_nil(line_index(chat_buf, "still nowhere to put this"), text(chat_buf))
       assert.is_not_nil(line_index(chat_buf, "vibing:req=req-2"), "the unanswered prompt is redrawn")
+
+      -- What the orphaned-prompt case costs, stated as a test rather than as a hope. copilot
+      -- re-runs a hook it cut under a **new** request id, so one tool call can leave a prompt
+      -- nothing will ever answer; its registry entry outlives every answer the user gives. The
+      -- turn's remaining output is then held until the turn itself ends — late, but not lost.
+      chat_buf:_finish_turn()
+      assert.is_not_nil(line_index(chat_buf, "still nowhere to put this"), text(chat_buf))
     end)
   end)
 end)
