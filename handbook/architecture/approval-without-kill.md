@@ -217,6 +217,14 @@ the spec, because "no timeout reported" and "an unsafe timeout" are indistinguis
 claude 2.1.236, copilot 1.0.83 (the 950s re-run: 1.0.85), macOS. Reproduce with
 `VIBING_PERF=1 tests/perf/hook_wait_ceiling.sh <backend> <block_sec> <configured_timeout_sec> [mode] [gate_preallowed]`.
 
+**Two of the rows below predate that script and were produced by an ad-hoc `.vibing/probe/hook.sh`,
+which logged the same events under different names** — `HOOK FINISHED NORMALLY` where the committed
+reproducer says `HOOK REACHED ITS OWN BUDGET`, and `SIGTERM after Ns` where it says
+`CUT BY SIGTERM after Ns`. The two hooks are otherwise behaviourally identical (same 10s heartbeat,
+same three traps, same budget, same `exit 0`), so the numbers are comparable. Grepping a fresh run
+for a string quoted here is not: **the quotes below are verbatim from the logs that produced the
+numbers, not from what a re-run emits.**
+
 ### How long a hook may block
 
 Configured timeout set to 1800s; the hook blocks and heartbeats every 10s.
