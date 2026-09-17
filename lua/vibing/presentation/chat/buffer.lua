@@ -632,10 +632,21 @@ function ChatBuffer:_answer_pending_approval()
     return { outcome = "retry_as_new_turn", message = consumed.retry_message }
   end
 
-  -- 答えた行はそのまま transcript に残す。新しい未送信セクションを足して、走り続けている
-  -- ターンの続きを受け取れる状態に戻す
+  -- 答えた行はそのまま transcript に残す。あとは走り続けているターンの続きを受け取れる状態に
+  -- 戻すことだが、**それが何かは保留が残っているかで変わる**
   ConversationExtractor.commit_user_message(self.buf)
-  self:add_user_section()
+
+  if #(self._pending_approvals or {}) > 0 then
+    -- まだ答えを待っているものがある。新しい未送信セクションに描き直して入力欄を保つ。
+    -- 溜めていた出力は `add_user_section` の中で先に流れるので、順序は時系列のまま
+    self:add_user_section()
+  else
+    -- 最後の1件だった。ここで**未送信の `## User` を開いてはいけない** — 続きの出力がその下に
+    -- 積まれ、アシスタントの文章がユーザーの次のメッセージとして抽出される。開くのは
+    -- `## Assistant` のほうで、`append_chunk` が溜めていたものはそこに流す
+    self:start_response()
+    self:_flush_chunks()
+  end
   return { outcome = "answered_in_place" }
 end
 
@@ -864,6 +875,25 @@ function ChatBuffer:append_chunk(chunk, turn_id)
 
   if self._chunk_timer then
     vim.fn.timer_stop(self._chunk_timer)
+    self._chunk_timer = nil
+  end
+
+  -- **承認プロンプトが1件でも立っている間は流さない（#778）。**
+  --
+  -- append-only のバッファは「入力欄」と「ストリーミング出力」を同時には持てない。プロンプトは
+  -- 未送信の `## User` セクションとして末尾にあり、`flush_chunks` も末尾に追記するので、ここで
+  -- 流すと**続きの出力がユーザーの入力欄の下に積まれる** — つまりアシスタントの文章が
+  -- `extract_user_message` にユーザーの次のメッセージとして拾われる。
+  --
+  -- 溜めておけるのは実測が支えている: claude はフックがブロックしている間アシスタントの文章を
+  -- 出さない（`tool_use` を出し切ってからフックに入り、`tool_result` を回収してから喋る）ので、
+  -- ここで溜まるのは並列に走った別のツールのレンダリングだけ。
+  --
+  -- 溜めたものは必ず出る。出口は `_flush_chunks` を呼ぶ側全部 — 最後の承認が答えられたとき
+  -- （`_answer_pending_approval`）と、ターンが終わったとき（`add_user_section`）。前者が
+  -- 抜けても後者が拾うので、期限切れで承認が消えた場合も置き去りにはならない
+  if #(self._pending_approvals or {}) > 0 then
+    return
   end
 
   self._chunk_timer = vim.fn.timer_start(50, function()
@@ -886,6 +916,23 @@ function ChatBuffer:add_user_section()
   -- NOTE: Don't clear _pending_approvals here!
   -- They need to persist until the user answers, and each one is dropped individually by
   -- `approval_decision.consume` when its own answer is spent.
+end
+
+---走っているターンの途中で、溜まっている承認プロンプトを描く
+---
+---**プロセスを殺さない設計で必要になった入口（#778）。** 殺す設計ではプロンプトを描くのは
+---ターンの終わり（`_handle_response` → `add_user_section` コールバック）で、そこがアシスタント
+---セクションに終了時刻を入れる場所でもあった。待たせる設計ではターンが終わらないので、
+---その2つをここで行う:
+---
+---1. いま開いているアシスタントセクションを閉じる（終了時刻を入れる）。プロンプトは未送信の
+---   `## User` セクションとして下に来るので、閉じずに挟むとヘッダの時刻が次のターンまで入らない
+---2. `add_user_section` でプロンプトを描く。中で `_flush_chunks` が走るので、**プロンプトより
+---   前に届いていた出力はプロンプトの上に出る**。以降の出力は `append_chunk` が溜める
+function ChatBuffer:show_approval_prompts()
+  StreamingHandler.stamp_response_end(self.buf, self._assistant_header_line)
+  self._assistant_header_line = nil
+  self:add_user_section()
 end
 
 ---@return number?

@@ -466,4 +466,163 @@ describe("several approval prompts at once", function()
       assert.same({}, chat_buf:get_session_allow())
     end)
   end)
+
+  describe("output while a prompt is open", function()
+    --- An append-only buffer cannot hold an input field and a stream of output at the same time.
+    --- The prompt is an unsent `## User` section at the end, and `flush_chunks` appends at the end
+    --- too — so anything flushed while a prompt is open lands *under* the input, where
+    --- `extract_user_message` reads it as the user's next message.
+    local Pending = require("vibing.infrastructure.rpc.pending_approvals")
+    local comm_dir
+
+    --- Without a registry entry the answer is not answered *in place* at all: it falls through to
+    --- `retry_as_new_turn`, which starts a real send. That path also opens a `## Assistant` and
+    --- returns true, so a case that only checked the return value would be green while testing
+    --- something else entirely.
+    local function blocked_on(request_ids)
+      for _, request_id in ipairs(request_ids) do
+        Pending.open({ request_id = request_id, tool = "Bash" })
+      end
+    end
+
+    before_each(function()
+      comm_dir = vim.fn.tempname()
+      vim.fn.mkdir(comm_dir, "p")
+      vim.env.VIBING_HOOK_COMM_DIR = comm_dir
+      Pending._reset()
+    end)
+
+    after_each(function()
+      Pending._reset()
+      vim.env.VIBING_HOOK_COMM_DIR = nil
+      vim.fn.delete(comm_dir, "rf")
+    end)
+
+    local function text(chat_buf)
+      return table.concat(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false), "\n")
+    end
+
+    local function line_index(chat_buf, needle)
+      for index, line in ipairs(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)) do
+        if line:find(needle, 1, true) then
+          return index
+        end
+      end
+      return nil
+    end
+
+    --- The user's `<CR>` on a prompt already drawn mid-turn: keep the lines given, drop the rest of
+    --- the section. Unlike `type_and_send` above it does not draw the section first — that has
+    --- already happened, which is the whole point of these cases.
+    local function answer(chat_buf, answer_lines)
+      local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
+      local header
+      for index = #lines, 1, -1 do
+        if lines[index]:match("^## User") then
+          header = index
+          break
+        end
+      end
+      assert.is_not_nil(header, "the prompt should already be drawn:\n" .. text(chat_buf))
+
+      local kept = { "" }
+      vim.list_extend(kept, answer_lines)
+      vim.api.nvim_buf_set_lines(chat_buf.buf, header, -1, false, kept)
+      return chat_buf:send_message()
+    end
+
+    it("streams normally when nothing is waiting for an answer", function()
+      -- The control for every case below: without it, "the text never appeared" would be green
+      -- whether the hold worked or the harness simply never flushes anything.
+      local chat_buf = chat_with({})
+      chat_buf:start_response()
+      chat_buf:append_chunk("ordinary output\n")
+
+      vim.wait(200, function()
+        return line_index(chat_buf, "ordinary output") ~= nil
+      end)
+      assert.is_not_nil(line_index(chat_buf, "ordinary output"), text(chat_buf))
+    end)
+
+    it("holds it while a prompt is open", function()
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+      chat_buf:append_chunk("a parallel tool's result\n")
+
+      vim.wait(200)
+      assert.is_nil(line_index(chat_buf, "a parallel tool's result"), text(chat_buf))
+    end)
+
+    it("puts what arrived before the prompt above it", function()
+      -- Held means "not yet", not "dropped": everything up to the moment the prompt is drawn
+      -- belongs above it, in the assistant section the prompt interrupts.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      chat_buf:start_response()
+      chat_buf:append_chunk("said before asking\n")
+      chat_buf:show_approval_prompts()
+
+      local said = line_index(chat_buf, "said before asking")
+      local prompt = line_index(chat_buf, "Tool approval required")
+      assert.is_not_nil(said, text(chat_buf))
+      assert.is_true(said < prompt, "output from before the prompt must stay above it:\n" .. text(chat_buf))
+    end)
+
+    it("closes the assistant section the prompt interrupts", function()
+      -- The end timestamp is what `cache_expiry` reads. Under the kill design it was written when
+      -- the turn ended; a waiting turn does not end, so drawing the prompt is the moment.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+
+      for _, line in ipairs(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)) do
+        if line:match("^## Assistant") then
+          assert.is_truthy(line:find("<!--", 1, true), "an interrupted section left unstamped: " .. line)
+        end
+      end
+    end)
+
+    it("flushes what it held into a new assistant section once the last prompt is answered", function()
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on({ "req-1" })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+      chat_buf:append_chunk("arrived while waiting\n")
+
+      assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
+
+      local held = line_index(chat_buf, "arrived while waiting")
+      assert.is_not_nil(held, "the held output must reappear:\n" .. text(chat_buf))
+
+      local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
+      local assistant
+      for index = held, 1, -1 do
+        if lines[index]:match("^## Assistant") then
+          assistant = index
+          break
+        end
+      end
+      assert.is_not_nil(assistant, "it must land under an assistant header:\n" .. text(chat_buf))
+      for index = assistant, #lines do
+        assert.is_nil(lines[index]:match("^## User"), "no input section may sit above the output:\n" .. text(chat_buf))
+      end
+    end)
+
+    it("keeps holding while another prompt is still open", function()
+      local chat_buf = chat_with({
+        { tool = "Bash", request_id = "req-1" },
+        { tool = "Write", request_id = "req-2" },
+      })
+      blocked_on({ "req-1", "req-2" })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+
+      assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
+      chat_buf:append_chunk("still nowhere to put this\n")
+
+      vim.wait(200)
+      assert.is_nil(line_index(chat_buf, "still nowhere to put this"), text(chat_buf))
+      assert.is_not_nil(line_index(chat_buf, "vibing:req=req-2"), "the unanswered prompt is redrawn")
+    end)
+  end)
 end)
