@@ -55,6 +55,32 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 OUT="$ROOT/.vibing/probe/permission-prompt-tool"
 mkdir -p "$OUT"
 
+# --- Pre-flight: is the flag value even accepted? ---------------------------------------------
+#
+# **This costs nothing.** With `--input-format stream-json` and stdin at EOF there is no user
+# message, so no request is ever sent; what runs is the CLI's own argv validation. A rejected value
+# fails here, loudly, instead of after a turn's worth of tokens — and the rejection is informative
+# on its own, because the errors name what the argument is expected to be
+# (`must be an MCP tool`, `not found. Available MCP tools: none`).
+#
+# It also settles a question `--help` cannot: the flag is undocumented in 2.1.236 and `--help`
+# short-circuits before option validation, so "not in --help" says nothing about whether the flag
+# exists. The reason `stdio` is tried at all is that the binary's string table puts it immediately
+# after `--permission-prompt-tool` — a hypothesis, which this turns into an answer for free.
+preflight() {
+  local value="$1" err
+  err=$(claude -p --input-format stream-json --output-format stream-json \
+    --strict-mcp-config --setting-sources project \
+    --permission-prompt-tool "$value" </dev/null 2>&1 >/dev/null)
+  if printf '%s' "$err" | grep -qi "permission-prompt-tool"; then
+    echo "PREFLIGHT: the CLI refused --permission-prompt-tool $value"
+    printf '%s\n' "$err" | grep -i "permission-prompt-tool" | head -3 | sed 's/^/   /'
+    return 1
+  fi
+  echo "PREFLIGHT: --permission-prompt-tool $value was accepted at startup"
+  return 0
+}
+
 # Exit 0 in silence is `defer` in vibing's own vocabulary and "no opinion" in the CLI's: the hook
 # permits the call and leaves the gate in charge, which is exactly the state an in-place approval
 # would be in under C.
@@ -320,11 +346,20 @@ EOF
 #   consulted, tool ran    -> our allow overrode the user's own deny. The third shape is B with
 #                             extra steps, and decision 1 is B.
 if [ "$ARM" = "stdio" ] || [ "$ARM" = "both" ]; then
-  run_stdio_cell allow "[]"
-  run_stdio_cell deny '["Write"]'
+  if preflight stdio; then
+    run_stdio_cell allow "[]"
+    run_stdio_cell deny '["Write"]'
+  else
+    echo '   READING: stdio is not a value this CLI takes, so the control-channel shape is not'
+    echo '            reachable through this flag. Arm B is the only candidate left.'
+  fi
 fi
 
 if [ "$ARM" = "mcp" ] || [ "$ARM" = "both" ]; then
+  # The MCP tool cannot resolve without its server, so this pre-flight is only meaningful as "the
+  # flag itself is accepted"; a "not found. Available MCP tools: none" here is expected and is not a
+  # refusal of the arm.
+  preflight "mcp__probe__approve" || echo "   (expected without --mcp-config; the cells pass one)"
   run_mcp_cell allow "[]"
   run_mcp_cell deny '["Write"]'
 fi
