@@ -33,7 +33,9 @@ local M = {}
 ---   would attribute that turn's changes to this one — this is what lets the turn fall back to the
 ---   per-tool `request_diff` path instead (see core/utils/git_snapshot.lua).
 --- @field on_insert_choices? fun(questions: table)
---- @field on_approval_required? fun(tool: string, input: table, options: table, hook_request_id?: string)
+--- @field on_approval_required? fun(tool: string, input: table, options: table, hook_request_id?: string, waiting?: boolean)
+---   `waiting` says this prompt is holding a turn that is still running (#778), so the chat has to
+---   draw it now — the kill path's drawing point, `_handle_response`, never comes.
 --- @field subagent_count? number Task/Agent tool calls this turn has launched and not yet gotten a
 ---   tool_result for. Set to 0 by `M.open`; mutated only through `M.increment_subagent_count` /
 ---   `M.decrement_subagent_count`.

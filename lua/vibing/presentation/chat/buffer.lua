@@ -739,6 +739,9 @@ function ChatBuffer:send_message()
     append_chunk = function(chunk, turn_id)
       return self:append_chunk(chunk, turn_id)
     end,
+    show_approval_prompts = function()
+      return self:show_approval_prompts()
+    end,
     get_session_id = function()
       return self:get_session_id()
     end,

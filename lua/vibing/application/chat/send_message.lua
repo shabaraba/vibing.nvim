@@ -21,6 +21,7 @@ local Fs = require("vibing.core.utils.fs")
 ---@field insert_choices fun(questions: table) AskUserQuestion選択肢を挿入
 ---@field set_pending_user_text fun(text: string) 次のユーザーセクションに差し込む本文を保存
 ---@field insert_approval_request fun(tool: string, input: table, options: table) ツール承認要求UIを挿入
+---@field show_approval_prompts fun() 走っているターンの途中で溜まっている承認プロンプトを描く
 ---@field get_session_allow fun(): table セッションレベルの許可リストを取得
 ---@field get_session_deny fun(): table セッションレベルの拒否リストを取得
 ---@field clear_turn_id fun() turn_id（と process_id）をクリア
@@ -231,12 +232,19 @@ function M.execute(adapter, callbacks, message, config)
         )
       end)
     end,
-    on_approval_required = function(tool, input, options, hook_request_id)
+    on_approval_required = function(tool, input, options, hook_request_id, waiting)
       -- permission.lua の vim.schedule 内から呼ばれるためすでにメインスレッド上
       -- 二重 vim.schedule を避けることで _pending_approval が add_user_section より確実に先に設定される
       callbacks.insert_approval_request(tool, input, options, hook_request_id)
-      -- cancel は permission.lua 側で実行済み（hook-based / agent-wrapper 共通）
-      -- add_user_section は on_done 経由で呼ばれる
+
+      -- `waiting` は「このプロンプトは走り続けているターンを止めている」（#778）。
+      -- kill する経路ではプロセスが死に、`_handle_response` → `add_user_section` が描画の
+      -- 合流点になるが、待たせる経路ではターンが終わらないのでその合流点が来ない。
+      -- ここで描かないとプロンプトは保存されるだけで画面に出ず、フックは上限まで待つ。
+      -- 逆に kill 経路でも描くと、`_handle_response` の描画と二重になる
+      if waiting then
+        callbacks.show_approval_prompts()
+      end
     end,
   }
 

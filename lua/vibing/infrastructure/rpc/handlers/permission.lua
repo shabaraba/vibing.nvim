@@ -325,6 +325,73 @@ function M.release_answered_approval(entry, chat_buf)
   return M._answer_blocked_hook(entry, tool_name, result)
 end
 
+--- Ask the human without killing the CLI: withhold the `.res` and leave the hook blocked (#778).
+---
+--- Nothing new is transported. `bin/hooks/pre-tool-use.sh` already polls for the response file, so
+--- **not writing it** is the whole mechanism; the CLI sits inside its own hook and the turn
+--- continues afterwards. What this function owes is the other half — that the withheld response is
+--- eventually written, whatever happens next (`rpc/pending_approvals.lua`'s four exits).
+---
+--- Order is deliberate:
+---
+---   1. **register first.** The registry is what arms the wait limit, so anything that throws after
+---      this point still ends in a written `.res` rather than a hook spinning to its own deadline.
+---   2. draw the prompt. The turn does not end, so there is no `_handle_response` to do it later —
+---      `on_approval_required`'s fifth argument says so, and the chat opens the input section
+---      itself (`ChatBuffer:show_approval_prompts`).
+---   3. tell the watchdog. `VibingResponseDone` never fires for a turn that is still running, so an
+---      orchestrator waiting on this worker would otherwise see `responding` until the limit
+---      expired.
+---
+--- Scheduled for the same reason `cancel_and_deny` is: it draws into a buffer, and the turn is
+--- re-resolved inside rather than reused from the synchronous decision, because it can have ended
+--- in between. With no turn there is no chat to ask, so it fails closed.
+--- @param params table the RPC params, for re-resolving the turn
+--- @param request_id string
+--- @param tool_name string canonical
+--- @param tool_input table
+function M._ask_without_killing(params, request_id, tool_name, tool_input)
+  vim.schedule(function()
+    local turn = HookScope.of(params).entry
+    local chat_bufnr = turn and turn.process and turn.process.chat_bufnr or nil
+    if not turn or not chat_bufnr then
+      vim.notify("[vibing] approval: no active stream to hold; denying", vim.log.levels.WARN)
+      write_hook_response(
+        request_id,
+        "deny",
+        "vibing.nvim could not find the chat buffer to show the approval prompt in (internal error). "
+          .. "Do not retry this tool immediately."
+      )
+      return
+    end
+
+    require("vibing.infrastructure.rpc.pending_approvals").open({
+      request_id = request_id,
+      chat_bufnr = chat_bufnr,
+      turn_id = turn.turn_id,
+      tool = tool_name,
+      input = tool_input,
+      on_timeout = M._on_approval_expired,
+    })
+
+    -- Guarded for the same reason `expire` guards `on_timeout` and `_shutdown` guards each of its
+    -- steps: this one draws into a buffer, and a failure there must not also cost the watchdog its
+    -- notification. The wait limit is already armed either way, so the worst case is a prompt the
+    -- user cannot see being denied when it expires — not a hook owed nothing.
+    if turn.on_approval_required then
+      local ok, err = pcall(turn.on_approval_required, tool_name, tool_input, APPROVAL_OPTIONS, request_id, true)
+      if not ok then
+        vim.notify(
+          string.format("[vibing] could not draw the approval prompt for %s: %s", tool_name, tostring(err)),
+          vim.log.levels.ERROR
+        )
+      end
+    end
+
+    require("vibing.application.chat.completion_notifier").on_approval_waiting(chat_bufnr, request_id)
+  end)
+end
+
 --- What the wait limit does besides denying: tell the chat that asked.
 ---
 --- Passed to `pending_approvals.open` as `on_timeout`, so it runs *after* the `.res` deny has been
@@ -448,8 +515,17 @@ function M.check_tool_permission(params)
     write_hook_response(request_id, "deny", result.message)
     return { status = "denied", reason = result.message }
   else
-    -- "ask" → kill process first, show approval UI, then write deny
-    -- User's approval choice updates session state; Claude retries on next message
+    -- "ask" → ask the human. Two shapes, and which one is used is a property of the backend, not
+    -- of this call: `_can_wait_for_approval` is the descriptor's measured floor compared against
+    -- the currently configured wait (`hooks/transports.lua`), handed over with the vocabulary so
+    -- that this handler still names no backend.
+    if active_opts and active_opts._can_wait_for_approval then
+      M._ask_without_killing(params, request_id, tool_name, tool_input)
+      return { status = "pending" }
+    end
+
+    -- The fallback, and byte-for-byte what every backend did before #778: kill the process first,
+    -- show the approval UI, then write the deny. The user's answer arrives as a new turn.
     cancel_and_deny(function(turn)
       if turn.on_approval_required then
         turn.on_approval_required(tool_name, tool_input, APPROVAL_OPTIONS, request_id)

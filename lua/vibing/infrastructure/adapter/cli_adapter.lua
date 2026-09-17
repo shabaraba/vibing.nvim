@@ -261,12 +261,20 @@ function M.define(descriptor)
     -- Called at the top of *every* turn, which is what
     -- `processes-and-turns.md` → "What is still owed" asks a resident transport for: turn N+1 must
     -- not run under turn N's `permission_mode` and ignore the allow entry an approval just made.
+    --
+    -- `_can_wait_for_approval` travels the same way and for the same reason: whether an `ask` may
+    -- block the hook instead of killing the process is a property of *this* backend's measured
+    -- floor against the currently configured wait, and the handler must not be the place that
+    -- knows which backend it is (`.claude/rules/architecture.md`). Resolved per turn, so raising
+    -- `permissions.approval_wait_sec` past a floor turns waiting off on the next send.
     local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
-    if descriptor.vocabulary then
-      perm_handler.set_active_opts(ids.turn_id, vim.tbl_extend("force", opts, { _tool_vocabulary = descriptor.vocabulary }))
-    else
-      perm_handler.set_active_opts(ids.turn_id, opts)
-    end
+    perm_handler.set_active_opts(
+      ids.turn_id,
+      vim.tbl_extend("force", opts, {
+        _tool_vocabulary = descriptor.vocabulary,
+        _can_wait_for_approval = HookTransports.can_wait_for_approval(descriptor.hook),
+      })
+    )
 
     --- Whatever the transport has to do to the *process* once its turn is over. Runs between the
     --- turn's own teardown and `on_done`, so the ordering the oneshot path has always had —
