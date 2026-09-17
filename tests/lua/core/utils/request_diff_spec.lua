@@ -342,4 +342,118 @@ describe("request_diff", function()
       assert.is_false(RequestDiff.has_capture(turn_id, file))
     end)
   end)
+
+  describe("the TTL sweep of abandoned sessions", function()
+    -- スイープは `capture()` のたびに走る＝同じNeovim内の別チャットがツールを呼ぶたびに走る。
+    -- 年齢だけで刈ると、1時間を超えて開いているターン（承認待ちで人間を待っている間がまさに
+    -- それ）の退避が実行中のまま消え、そのターンの差分が警告もなく空になる。
+    -- `git_snapshot` の同名 describe と対になっている。
+    local registry = require("vibing.infrastructure.adapter.modules.turn_registry")
+    local extra_turns
+
+    ---@param turn string
+    local function age(turn)
+      local session = RequestDiff._session(turn)
+      assert.is_not_nil(session)
+      session.created = os.time() - 7 * 24 * 3600
+    end
+
+    ---スイープを起こす側のターン。後片付けのために覚えておく
+    ---@return string
+    local function sweeping_capture()
+      local other = "sweeper-" .. tostring(math.random(100000))
+      table.insert(extra_turns, other)
+      local file = tmp_dir .. "/sweeper.txt"
+      write_file(file, "x\n")
+      RequestDiff.capture(other, "Edit", { file_path = file })
+      return other
+    end
+
+    before_each(function()
+      extra_turns = {}
+    end)
+
+    after_each(function()
+      for _, turn in ipairs(extra_turns) do
+        RequestDiff.clear(turn)
+        pcall(registry.close, turn)
+      end
+    end)
+
+    it("keeps an old session whose turn is still open", function()
+      local file = tmp_dir .. "/long.txt"
+      write_file(file, "a\n")
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
+      registry.open({ turn_id = turn_id })
+      table.insert(extra_turns, turn_id)
+      age(turn_id)
+
+      sweeping_capture()
+
+      assert.is_true(RequestDiff.has_capture(turn_id, file))
+    end)
+
+    it("reaps an old session whose turn is over", function()
+      -- TTL はテーブルが際限なく育たないための外枠として残っている。レジストリに居ない
+      -- ＝そのストリームは終わっている（clear されなかった残骸）
+      local abandoned = "abandoned-" .. tostring(math.random(100000))
+      local file = tmp_dir .. "/abandoned.txt"
+      write_file(file, "a\n")
+      RequestDiff.capture(abandoned, "Edit", { file_path = file })
+      age(abandoned)
+
+      sweeping_capture()
+
+      assert.is_false(RequestDiff.has_capture(abandoned, file))
+    end)
+
+    it("reaps an old session even while some other turn is open", function()
+      -- `turn_still_open` は **そのターン** について訊き、フォールバックを取ってはいけない。
+      -- sole-open の推測を継いでいると、どこかで1つ動いているだけで全残骸が「実行中」になり、
+      -- スイープが止まって tmp が際限なく育つ
+      local abandoned = "abandoned-" .. tostring(math.random(100000))
+      local file = tmp_dir .. "/abandoned.txt"
+      write_file(file, "a\n")
+      RequestDiff.capture(abandoned, "Edit", { file_path = file })
+      age(abandoned)
+
+      local elsewhere = "elsewhere-" .. tostring(math.random(100000))
+      registry.open({ turn_id = elsewhere })
+      table.insert(extra_turns, elsewhere)
+
+      sweeping_capture()
+
+      assert.is_false(RequestDiff.has_capture(abandoned, file))
+    end)
+
+    it("does not touch a session that is merely recent", function()
+      local file = tmp_dir .. "/recent.txt"
+      write_file(file, "a\n")
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
+
+      sweeping_capture()
+
+      assert.is_true(RequestDiff.has_capture(turn_id, file))
+    end)
+
+    it("keeps the pre-edit content of a long turn readable after another turn sweeps", function()
+      -- 消えると `generate` は退避を見つけられず、そのターンの差分が空になる。「バックアップが
+      -- 生きている」だけでなく「中身が退避時点のまま読める」ことまで見る
+      local file = tmp_dir .. "/long.txt"
+      write_file(file, "before the long wait\n")
+      RequestDiff.capture(turn_id, "Edit", { file_path = file })
+      registry.open({ turn_id = turn_id })
+      table.insert(extra_turns, turn_id)
+      age(turn_id)
+
+      sweeping_capture()
+      write_file(file, "after the long wait\n")
+
+      local files, _, patch = RequestDiff.generate(turn_id, tmp_dir)
+      assert.same({ "long.txt" }, files)
+      assert.is_truthy(patch, "the long turn must still produce a patch")
+      assert.is_truthy(patch:match("before the long wait"), patch)
+      assert.is_truthy(patch:match("after the long wait"), patch)
+    end)
+  end)
 end)

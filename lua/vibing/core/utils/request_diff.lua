@@ -81,11 +81,39 @@ local function is_vibing_state_path(rel)
   return rel == ".vibing" or rel:sub(1, 8) == ".vibing/"
 end
 
+---そのターンがまだ開いているか
+---
+---`git_snapshot.lua` の同名ヘルパーと同じ根拠: 全アダプタが stream 開始で `TurnRegistry.open` し、
+---`wrapped_on_done` で `close` するので、レジストリが「このターンがもう終わったか」を知っている
+---唯一の場所になる。**プロセス単位で聞いてはいけない** — 常駐プロセスはターンの合間も生きている
+---ので、「プロセスが居るか」で判定するとスイープが永久に走らなくなる
+---@param turn_id string
+---@return boolean
+local function turn_still_open(turn_id)
+  local ok, registry = pcall(require, "vibing.infrastructure.adapter.modules.turn_registry")
+  if not ok then
+    return false
+  end
+  local found_ok, entry = pcall(registry.get, turn_id)
+  return found_ok and entry ~= nil
+end
+
 ---TTL超過した放置セッション（キャンセルされたリクエスト等）を破棄
+---
+---**年齢だけで刈ってはいけない。** これは `capture()` のたびに走る＝同じNeovim内の別チャットが
+---ツールを呼ぶたびに走るので、1時間を超えて開いているターン（承認待ちで人間を待っている間が
+---まさにそれ）のバックアップが、まだ実行中のまま消される。消えると `finalize` は退避内容を
+---見つけられず、そのターンの差分が警告もなく空になる。
+---
+---`git_snapshot.lua:375` の `sweep_stale` には同じ理由で `turn_still_open` が入っていた。主経路に
+---だけ入れてフォールバックに入れ忘れると、git が使えない場合（非gitの `working_dir`、同一
+---worktreeでの並行チャット）にだけ差分が消えるという、いちばん再現しにくい形になる。
+---TTL はテーブルが際限なく育たないための外枠として残す（registerされなかったターンはこちらで
+---回収される）。
 local function sweep_stale()
   local now = os.time()
   for turn_id, s in pairs(sessions) do
-    if now - s.created > SESSION_TTL_SEC then
+    if now - s.created > SESSION_TTL_SEC and not turn_still_open(turn_id) then
       if s.dir then
         vim.fn.delete(s.dir, "rf")
       end
@@ -345,6 +373,14 @@ function M.has_capture(turn_id, path)
     return false
   end
   return s.files[vim.fn.fnamemodify(path, ":p")] ~= nil
+end
+
+---テスト用: セッションの内部状態を参照する（`created` を古くしてTTLを試すため）
+---`git_snapshot._session` と同じ役目・同じ名前にしてある
+---@param turn_id string
+---@return Vibing.RequestDiff.Session|nil
+function M._session(turn_id)
+  return sessions[turn_id]
 end
 
 return M
