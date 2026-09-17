@@ -23,6 +23,13 @@ local PLUGIN_NAME = "vibing-nvim-permissions"
 --- into a silent allow.
 local HOOK_TIMEOUT_SEC = 300
 
+--- What this transport registers as its PreToolUse timeout. See
+--- `settings_generator.hook_timeout_sec` for why every transport answers this.
+--- @return number|nil seconds
+function M.hook_timeout_sec()
+  return HOOK_TIMEOUT_SEC
+end
+
 --- Absolute path to the generated plugin directory for a given cwd
 --- Resolved, so this reports the same path `ensure()` writes: that one resolves the cwd, and a
 --- symlinked working directory would otherwise make the two disagree.

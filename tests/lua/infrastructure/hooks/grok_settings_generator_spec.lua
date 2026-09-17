@@ -61,7 +61,13 @@ describe("grok_settings_generator", function()
     local expected = vim.fn.fnamemodify(SettingsGenerator.get_hook_script_path(), ":p")
     assert.equals(expected, entry.hooks[1].command)
     assert.is_true(entry.hooks[1].command:sub(1, 1) == "/", "hook command must be absolute for Grok")
-    assert.equals(120, entry.hooks[1].timeout)
+    -- Read back rather than restated: grok's file *is* `SettingsGenerator.generate()`'s output, so
+    -- a literal here is a second opinion about a number this generator does not own. It pinned 120
+    -- — the same value as `pre-tool-use.sh`'s own deadline, which is the fail-open bug
+    -- `hook_timeout_ordering_spec.lua` now catches for every backend. What is grok-specific is only
+    -- that the value arrives by delegation at all.
+    assert.equals(SettingsGenerator.hook_timeout_sec(), entry.hooks[1].timeout)
+    assert.equals(GrokSettingsGenerator.hook_timeout_sec(), entry.hooks[1].timeout)
   end)
 
   it("rewrites the hook file on subsequent ensure calls (path may change on plugin update)", function()

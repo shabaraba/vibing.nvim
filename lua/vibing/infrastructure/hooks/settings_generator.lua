@@ -6,6 +6,36 @@ local Fs = require("vibing.core.utils.fs")
 
 local M = {}
 
+--- The PreToolUse timeout this generator registers, in seconds.
+---
+--- Read by claude and, through `generate()`, by grok. It shipped as **120, the same number as
+--- `pre-tool-use.sh`'s own MAX_WAIT** — equal, with no margin at all, where copilot's and codex's
+--- generators had both already given themselves 300 for the stated reason that whichever side
+--- gives up first decides.
+---
+--- That equality is a live bug, not a #778 one. Measured against claude 2.1.236 and copilot 1.0.85
+--- (`handbook/architecture/approval-without-kill.md` → "What expiry does"): when the **CLI's** hook
+--- timeout expires the tool runs with **no verdict at all** — fail open — where the script's own
+--- expiry exits 2 and fails closed. So the two deadlines racing at the same number means a slow
+--- permission check lands on whichever side the scheduler picks, and half the time that is an
+--- ungated tool call. The script's deny has to be the one that arrives.
+---
+--- Held as a literal here only until `permissions.approval_wait_sec` derives all three numbers
+--- (`wait_budget.lua`); what this constant is *for* is the ordering, which
+--- `hook_timeout_ordering_spec.lua` now asserts for every registered backend rather than for
+--- copilot alone.
+local HOOK_TIMEOUT_SEC = 300
+
+--- What this transport registers as its PreToolUse timeout, or nil if it registers none.
+---
+--- Every transport answers this so the ordering invariant can be checked per backend from one
+--- place instead of re-deriving each generator's own schema (claude's `timeout`, copilot's
+--- `timeoutSec`, codex's `-c` fragment). `hooks/transports.lua` dispatches to it.
+--- @return number|nil seconds
+function M.hook_timeout_sec()
+  return HOOK_TIMEOUT_SEC
+end
+
 --- Resolve a bundled hook script by file name
 --- @param name string File name under bin/hooks/
 --- @return string
@@ -59,7 +89,7 @@ function M.generate(hook_script_path, dialect)
             {
               type = "command",
               command = pre_tool_use_script,
-              timeout = 120,
+              timeout = M.hook_timeout_sec(),
             },
           },
         },

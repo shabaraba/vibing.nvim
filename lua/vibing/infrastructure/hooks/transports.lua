@@ -55,6 +55,35 @@ local installers = {
   end,
 }
 
+--- The PreToolUse timeout a transport registers, in seconds, or nil if it registers none.
+---
+--- The hook blocking until a human answers an approval (#778) only stays safe while
+--- `permissions.approval_wait_sec < pre-tool-use.sh MAX_WAIT < this`, and the last inequality is
+--- load-bearing: **both CLIs measured fail open past their own hook timeout**, running the tool
+--- with no verdict at all. That was checked for copilot alone, which is how claude came to ship a
+--- timeout exactly equal to the script's own deadline. Asking the transport keeps the check
+--- schema-agnostic — each generator knows its own key, and a new one that answers nil is reported
+--- rather than skipped.
+--- @param hook Vibing.HookSpec
+--- @return number|nil seconds
+function M.hook_timeout_sec(hook)
+  local modules = {
+    settings_file = "vibing.infrastructure.hooks.settings_generator",
+    config_override = "vibing.infrastructure.hooks.codex_settings_generator",
+    plugin_dir = "vibing.infrastructure.hooks.copilot_settings_generator",
+    project_dir = "vibing.infrastructure.hooks.grok_settings_generator",
+  }
+  local module_name = modules[hook and hook.transport]
+  if not module_name then
+    return nil
+  end
+  local generator = require(module_name)
+  if type(generator.hook_timeout_sec) ~= "function" then
+    return nil
+  end
+  return generator.hook_timeout_sec()
+end
+
 --- Register the hook for one run.
 --- @param hook Vibing.HookSpec
 --- @param cwd string

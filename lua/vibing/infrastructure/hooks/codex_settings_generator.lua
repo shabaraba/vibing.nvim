@@ -16,6 +16,13 @@ local M = {}
 --- one that carries a reason.
 local HOOK_TIMEOUT_SEC = 300
 
+--- What this transport registers as its PreToolUse timeout. See
+--- `settings_generator.hook_timeout_sec` for why every transport answers this.
+--- @return number|nil seconds
+function M.hook_timeout_sec()
+  return HOOK_TIMEOUT_SEC
+end
+
 --- The `-c` config key. **PascalCase, and that is load-bearing.**
 ---
 --- Codex 0.153 reads `hooks.<PascalCaseEvent>` and silently ignores anything else -- no warning, no

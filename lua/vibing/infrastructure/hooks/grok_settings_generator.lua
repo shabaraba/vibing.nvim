@@ -10,6 +10,14 @@ local M = {}
 
 local HOOK_FILENAME = "vibing-nvim-pre-tool-use.json"
 
+--- Grok reads claude's hook schema, so `ensure()` writes whatever `SettingsGenerator.generate()`
+--- produces — the timeout included. Answering by delegation rather than by a literal of its own is
+--- what keeps this true: a second number here would be the one the file does *not* contain.
+--- @return number|nil seconds
+function M.hook_timeout_sec()
+  return SettingsGenerator.hook_timeout_sec()
+end
+
 --- cwds already confirmed trusted this session — folder trust is idempotent, so once a cwd is
 --- known-trusted there's no need to re-read/re-scan ~/.grok/trusted_folders.toml on every message.
 --- @type table<string, boolean>
