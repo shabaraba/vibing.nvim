@@ -1,13 +1,13 @@
 #!/bin/bash
-# Can a PreToolUse hook that says `defer` hand the final decision to `--permission-prompt-tool`,
-# and does the user's own settings.json deny still apply on the way? (#778, decision 1)
+# Can a PreToolUse hook that says `defer` hand the final decision back to us, and does the user's
+# own settings.json deny still apply on the way? (#778, decision 1)
 #
 # Run with:
-#   VIBING_PERF=1 tests/perf/permission_prompt_tool.sh            # both cells
-#   VIBING_PERF=1 tests/perf/permission_prompt_tool.sh allow      # cell 1 only
-#   VIBING_PERF=1 tests/perf/permission_prompt_tool.sh deny       # cell 2 only
+#   VIBING_PERF=1 tests/perf/permission_prompt_tool.sh            # arm A, both cells
+#   VIBING_PERF=1 tests/perf/permission_prompt_tool.sh stdio      # arm A only
+#   VIBING_PERF=1 tests/perf/permission_prompt_tool.sh mcp        # arm B only
 #
-# **This spends real tokens.** Two short turns on haiku.
+# **This spends real tokens.** Two short turns on haiku per arm.
 #
 # What is being decided. An approval answered in place has to end as a verdict the CLI acts on, and
 # the `.res` file carries three of them:
@@ -19,30 +19,29 @@
 #       in headless mode the gate has nobody to ask and the call the human just approved is refused.
 #
 # A third shape would have both properties — defer, let the gate run, and answer the gate's own
-# question — if the CLI will ask us. That is what this measures. It is not the mechanism the
-# handbook's "Why not `--permission-prompt-tool stdio`" section rejected: that one was the
-# stream-json `control_request{can_use_tool}`, rejected because pre-allowed tools never reach it.
-# Here we *want* only the non-pre-allowed ones, so the rejection does not carry over. What does
-# carry over is that none of this is measured yet.
+# question. **The mechanism for that is not hypothetical**: `handbook/architecture/approval-without-kill.md`
+# records a verbatim `control_request{subtype: "can_use_tool"}` from claude 2.1.236, with `allow`
+# running the tool and the process staying alive. What that record does *not* contain is the argv
+# that switched it on or the envelope the answer travelled in, because the probe's script was not
+# kept. So this harness re-establishes both, and then asks the question that was never asked.
 #
-# Three things have to be true at once, and each cell fails differently:
+# **Two arms, because they are two different mechanisms with one name**, and which one works decides
+# whether the third shape is available at all:
 #
-#   1. hooks and `--permission-prompt-tool` coexist. If the CLI refuses the combination, or drops
-#      one of them, cell 1 shows the prompt tool never called.
-#   2. a tool the hook deferred, and `--allowedTools` does not cover, actually reaches the prompt
-#      tool. Cell 1 shows the call in the MCP server's log.
-#   3. the user's own deny still wins. Cell 2 sets `permissions.deny: ["Write"]` in the settings
-#      the CLI loads and expects the prompt tool to be **not called** and the file **not written**.
-#      If the prompt tool is called there, the gate asks before it denies, and answering `allow`
-#      would override the user's rule — which is B's cost, reappearing inside C.
+#   A. `--permission-prompt-tool stdio` — ask over the stream-json control channel. This is the
+#      shape whose round trip is already recorded. It needs `--input-format stream-json`, which
+#      `backends/claude.lua` passes **only on the duplex transport** while oneshot is the default —
+#      so if only this arm works, the third shape is duplex-only.
+#   B. `--permission-prompt-tool mcp__<server>__<tool>` — ask an MCP tool. The binary's own errors
+#      say the argument must be an MCP tool, and it carries a server name
+#      (`permissionPromptToolServerName`), so this is the ordinary form. It needs no control
+#      channel, so it would work on both transports. **Hypothesis: that this form coexists with a
+#      hook at all.**
+#
+# Arm A is first because its mechanism is the measured one. Arm B is the one we would rather have.
 #
 # The verdict is the probe file on disk, never what the CLI says about itself: `probe-out.txt`
 # exists iff the Write ran.
-#
-# The flag's argument is an **MCP tool name**, not a transport. That is read off the binary's own
-# error strings ("tool ... (passed via --permission-prompt-tool) must be an MCP tool"), which is a
-# hypothesis and not evidence — if cell 1 reports the flag rejected, that reading was wrong and the
-# argument shape is the first thing to re-check.
 set -u
 
 if [ "${VIBING_PERF:-}" != "1" ]; then
@@ -50,15 +49,108 @@ if [ "${VIBING_PERF:-}" != "1" ]; then
   exit 0
 fi
 
-CELL="${1:-both}"
+ARM="${1:-stdio}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 OUT="$ROOT/.vibing/probe/permission-prompt-tool"
 mkdir -p "$OUT"
 
-# An MCP server with one tool, which logs every call and always allows. Always-allow is right for
-# the measurement: what is being asked is *whether we are consulted*, and a deny would confuse
-# "the CLI never asked" with "the CLI asked and we said no".
+# Exit 0 in silence is `defer` in vibing's own vocabulary and "no opinion" in the CLI's: the hook
+# permits the call and leaves the gate in charge, which is exactly the state an in-place approval
+# would be in under C.
+cat > "$OUT/defer-hook.sh" <<'EOF'
+#!/bin/bash
+cat > /dev/null
+echo "$(date +%s) HOOK DEFER" >> "$HOOK_LOG"
+exit 0
+EOF
+chmod +x "$OUT/defer-hook.sh"
+
+# ---------------------------------------------------------------------------------------------
+# Arm A driver: speak the stream-json control protocol.
+#
+# **The envelope is the unknown here, so the driver reports what happened to its answer rather than
+# assuming it landed.** The binary has a distinct path for a rejected one
+# (`Ignoring can_use_tool control_response for request_id=`, `permission_response_malformed`), so
+# "we answered and it was ignored" is observable — and it is a completely different result from
+# "the CLI never asked". Conflating those two is the confound that made the 950s copilot cell wrong.
+#
+# It tries the envelope shapes in order and records which one, if any, the CLI acted on.
+# ---------------------------------------------------------------------------------------------
+cat > "$OUT/stdio_driver.mjs" <<'EOF'
+import { spawn } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
+import { createInterface } from 'node:readline';
+
+const LOG = process.env.DRIVER_LOG;
+const log = (m) => appendFileSync(LOG, `${Math.floor(Date.now() / 1000)} ${m}\n`);
+
+const args = JSON.parse(process.env.CLAUDE_ARGS);
+const child = spawn('claude', args, { cwd: process.env.PROBE_CWD, stdio: ['pipe', 'pipe', 'pipe'] });
+
+child.stderr.on('data', (d) => log(`STDERR ${d.toString().trim()}`));
+
+// One user message, then nothing: the turn is what we are measuring.
+child.stdin.write(
+  JSON.stringify({
+    type: 'user',
+    message: {
+      role: 'user',
+      content: 'Use the Write tool to create probe-out.txt containing exactly: ok. Then stop.',
+    },
+  }) + '\n'
+);
+
+// Candidate envelopes, most likely first. Each `can_use_tool` request gets the next untried one, so
+// a run with several requests walks the list; a run with one request tries one. Which one was
+// accepted is the thing to read off the log.
+const envelopes = [
+  (id, payload) => ({ type: 'control_response', response: { subtype: 'success', request_id: id, response: payload } }),
+  (id, payload) => ({ type: 'control_response', request_id: id, response: payload }),
+  (id, payload) => ({ type: 'control_response', response: { request_id: id, ...payload } }),
+];
+let nextEnvelope = 0;
+
+createInterface({ input: child.stdout }).on('line', (line) => {
+  if (!line.trim()) return;
+  let msg;
+  try {
+    msg = JSON.parse(line);
+  } catch {
+    log(`UNPARSEABLE ${line.slice(0, 200)}`);
+    return;
+  }
+
+  if (msg.type === 'control_request' && msg.request?.subtype === 'can_use_tool') {
+    // Verbatim, because the shape is the record this run exists to re-establish.
+    log(`ASKED ${JSON.stringify(msg)}`);
+    const shape = envelopes[Math.min(nextEnvelope, envelopes.length - 1)];
+    const used = nextEnvelope;
+    nextEnvelope += 1;
+    const answer = shape(msg.request_id, { behavior: 'allow', updatedInput: msg.request.input ?? {} });
+    log(`ANSWERED envelope=${used} ${JSON.stringify(answer)}`);
+    child.stdin.write(JSON.stringify(answer) + '\n');
+    return;
+  }
+
+  if (msg.type === 'result') {
+    log(`RESULT ${JSON.stringify(msg).slice(0, 400)}`);
+    child.stdin.end();
+  }
+});
+
+child.on('close', (code) => {
+  log(`CLI EXIT ${code}`);
+  process.exit(0);
+});
+EOF
+
+# ---------------------------------------------------------------------------------------------
+# Arm B server: one MCP tool that logs every call and always allows.
+#
+# Always-allow is right for the measurement: what is being asked is *whether we are consulted*, and
+# a deny would confuse "the CLI never asked" with "the CLI asked and we said no".
+# ---------------------------------------------------------------------------------------------
 cat > "$OUT/prompt_server.mjs" <<'EOF'
 import { createInterface } from 'node:readline';
 import { appendFileSync } from 'node:fs';
@@ -101,13 +193,17 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     return;
   }
   if (req.method === 'tools/call') {
-    // The whole point of the run: was this reached, and with what.
     log(`CALLED ${JSON.stringify(req.params ?? {})}`);
     send({
       jsonrpc: '2.0',
       id: req.id,
       result: {
-        content: [{ type: 'text', text: JSON.stringify({ behavior: 'allow', updatedInput: req.params?.arguments?.input ?? {} }) }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ behavior: 'allow', updatedInput: req.params?.arguments?.input ?? {} }),
+          },
+        ],
       },
     });
     return;
@@ -116,41 +212,86 @@ createInterface({ input: process.stdin }).on('line', (line) => {
 });
 EOF
 
-# Exit 0 in silence is `defer` in vibing's own vocabulary and "no opinion" in the CLI's: the hook
-# permits the call and leaves the gate in charge, which is exactly the state an in-place approval
-# would be in under C.
-cat > "$OUT/defer-hook.sh" <<'EOF'
-#!/bin/bash
-cat > /dev/null
-echo "$(date +%s) HOOK DEFER" >> "$HOOK_LOG"
-exit 0
-EOF
-chmod +x "$OUT/defer-hook.sh"
-
-run_cell() {
-  local name="$1" deny="$2"
-  local dir="$OUT/$name"
-  rm -rf "$dir"
-  mkdir -p "$dir"
-
-  export PROMPT_TOOL_LOG="$dir/prompt-tool.log"
-  export HOOK_LOG="$dir/hook.log"
-  : > "$PROMPT_TOOL_LOG"
-  : > "$HOOK_LOG"
-
-  local settings
-  settings=$(cat <<EOF
-{"permissions":{"deny":$deny},
+settings_for() {
+  cat <<EOF
+{"permissions":{"deny":$1},
  "hooks":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":"HOOK_LOG=$HOOK_LOG bash $OUT/defer-hook.sh","timeout":60}]}]}}
 EOF
+}
+
+# **Three signals, reported separately and never collapsed into one verdict.** "Nobody asked us AND
+# the tool did not run" and "we were asked, and the call was refused afterwards" are different facts
+# with the same-looking outcome, and reading one as the other is the confound that produced a wrong
+# reading of the 950s copilot cell. Signal 1 is the control: without it the other two say nothing,
+# because the hook never ran. Signal 2 splits further on arm A, where being asked and having the
+# answer accepted are also two different things.
+report() {
+  local dir="$1" asked="$2"
+  local hook_fired tool_ran
+  hook_fired=$(grep -c 'HOOK DEFER' "$HOOK_LOG" || true)
+  if [ -f "$dir/probe-out.txt" ]; then tool_ran=yes; else tool_ran=no; fi
+
+  echo "1. hook wrote defer:      $hook_fired"
+  echo "2. we were consulted:     $asked"
+  echo "3. tool ran:              $tool_ran"
+
+  # Nothing below is a measurement; it is the mapping decided before the run, printed next to what
+  # was measured, so a surprising result cannot be re-read into the reading one would have chosen.
+  if [ "$hook_fired" -eq 0 ]; then
+    echo "   READING: measurement failed -- the hook never ran, so 2 and 3 are about something else."
+  elif [ "$asked" -eq 0 ]; then
+    echo "   READING: the gate settled it before consulting us. Whatever decided it ran FIRST."
+  elif [ "$tool_ran" = "no" ]; then
+    echo "   READING: we WERE consulted and the call was still refused afterwards. On arm A this may"
+    echo "            also mean the envelope was wrong -- check the log for ASKED/ANSWERED and for"
+    echo "            'Ignoring can_use_tool control_response'."
+  else
+    echo "   READING: we were consulted and our allow decided the outcome."
+  fi
+  echo "logs: $dir"
+}
+
+run_stdio_cell() {
+  local name="$1" deny="$2"
+  local dir="$OUT/stdio-$name"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  export HOOK_LOG="$dir/hook.log" DRIVER_LOG="$dir/driver.log" PROBE_CWD="$dir"
+  : > "$HOOK_LOG"
+  : > "$DRIVER_LOG"
+
+  local settings
+  settings=$(settings_for "$deny")
+  export CLAUDE_ARGS
+  CLAUDE_ARGS=$(cat <<EOF
+["-p","--input-format","stream-json","--output-format","stream-json","--verbose",
+ "--model","claude-haiku-4-5-20251001","--permission-mode","default",
+ "--strict-mcp-config","--setting-sources","project",
+ "--permission-prompt-tool","stdio","--allowedTools","Read",
+ "--settings",$(printf '%s' "$settings" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')]
+EOF
 )
-  local mcp
+  echo "=== arm A (stdio), cell $name (settings deny: $deny) ==="
+  node "$OUT/stdio_driver.mjs"
+  report "$dir" "$(grep -c 'ASKED' "$DRIVER_LOG" || true)"
+}
+
+run_mcp_cell() {
+  local name="$1" deny="$2"
+  local dir="$OUT/mcp-$name"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  export HOOK_LOG="$dir/hook.log" PROMPT_TOOL_LOG="$dir/prompt-tool.log"
+  : > "$HOOK_LOG"
+  : > "$PROMPT_TOOL_LOG"
+
+  local settings mcp
+  settings=$(settings_for "$deny")
   mcp=$(cat <<EOF
 {"mcpServers":{"probe":{"command":"node","args":["$OUT/prompt_server.mjs"],"env":{"PROMPT_TOOL_LOG":"$PROMPT_TOOL_LOG"}}}}
 EOF
 )
-
-  echo "=== cell $name (settings deny: $deny) ==="
+  echo "=== arm B (MCP tool), cell $name (settings deny: $deny) ==="
   ( cd "$dir" && claude -p \
       --output-format stream-json --verbose \
       --model claude-haiku-4-5-20251001 \
@@ -163,55 +304,29 @@ EOF
       "Use the Write tool to create probe-out.txt containing exactly: ok. Then stop." \
       > "$dir/stream.jsonl" 2>"$dir/stderr.log" )
   echo "CLI exit=$?"
-
-  # **Three signals, reported separately and never collapsed into one verdict.** "The prompt tool
-  # was not called AND the tool did not run" and "the prompt tool was called, and the gate denied
-  # afterwards" are different facts with the same-looking outcome, and reading one as the other is
-  # the confound that produced a wrong reading of the 950s copilot cell (the gate's refusal read as
-  # the hook's). Signal 1 is the control: without it the other two say nothing, because the hook
-  # never ran.
-  local hook_fired prompt_calls tool_ran
-  hook_fired=$(grep -c 'HOOK DEFER' "$HOOK_LOG" || true)
-  prompt_calls=$(grep -c 'CALLED' "$PROMPT_TOOL_LOG" || true)
-  if [ -f "$dir/probe-out.txt" ]; then tool_ran=yes; else tool_ran=no; fi
-
-  echo "1. hook wrote defer:      $hook_fired"
-  echo "2. prompt tool called:    $prompt_calls"
-  echo "3. tool ran:              $tool_ran"
-
-  # Say what each combination means here rather than in the reader's head. Nothing below is a
-  # measurement; it is the mapping decided before the run, printed next to what was measured.
-  if [ "$hook_fired" -eq 0 ]; then
-    echo "   READING: measurement failed -- the hook never ran, so 2 and 3 are about something else."
-  elif [ "$prompt_calls" -eq 0 ]; then
-    echo "   READING: the gate settled it before the prompt tool. Whatever denied it ran FIRST."
-  elif [ "$tool_ran" = "no" ]; then
-    echo "   READING: the prompt tool WAS consulted and the call was still refused afterwards."
-  else
-    echo "   READING: the prompt tool was consulted and its allow decided the outcome."
-  fi
-  echo "logs: $dir"
+  report "$dir" "$(grep -c 'CALLED' "$PROMPT_TOOL_LOG" || true)"
 }
 
-# Cell 1: nothing in the user's deny list. Expect hook=1, prompt tool called, the tool ran.
-# Anything else means the combination does not work and decision 1 is B.
-if [ "$CELL" = "both" ] || [ "$CELL" = "allow" ]; then
-  run_cell allow "[]"
+# Cell "allow": nothing in the user's deny list. Expect hook=1, consulted, the tool ran. Anything
+# else means the combination does not work on that arm.
+#
+# Cell "deny": the user denies Write. What the readings mean for decision 1:
+#
+#   consulted=0            -> the deny ran first. **The third shape is safe**: deferring keeps the
+#                             user's settings.json rules, and only what survives them reaches us.
+#   consulted, no run      -> we are asked before the deny is applied. Safe here only because
+#                             something else refused it; what an allow does in general needs its own
+#                             run. On arm A, also check the envelope first.
+#   consulted, tool ran    -> our allow overrode the user's own deny. The third shape is B with
+#                             extra steps, and decision 1 is B.
+if [ "$ARM" = "stdio" ] || [ "$ARM" = "both" ]; then
+  run_stdio_cell allow "[]"
+  run_stdio_cell deny '["Write"]'
 fi
 
-# Cell 2: the user denies Write. What the four readings mean for decision 1:
-#
-#   hook=0                      -> measurement failed, re-run.
-#   prompt tool not called      -> the deny ran first. **The third shape is safe**: deferring keeps
-#                                  the user's settings.json rules, and only what survives them is
-#                                  ever put to us.
-#   called, tool did not run    -> we are consulted before the deny is applied. Safe here only
-#                                  because we would have answered allow and something else refused
-#                                  it; what an allow does in general still needs its own run.
-#   called, tool ran            -> our allow overrode the user's own deny. The third shape is B
-#                                  with extra steps, and decision 1 is B.
-if [ "$CELL" = "both" ] || [ "$CELL" = "deny" ]; then
-  run_cell deny '["Write"]'
+if [ "$ARM" = "mcp" ] || [ "$ARM" = "both" ]; then
+  run_mcp_cell allow "[]"
+  run_mcp_cell deny '["Write"]'
 fi
 
 exit 0

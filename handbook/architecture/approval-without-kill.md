@@ -77,7 +77,26 @@ operation" can ask for work that is already done. `retry_message` takes `expired
 grant instead of instructing. **Neither wording's effect on a model is measured** — what is known
 without measuring is only that the original one says something false on this path.
 
-## Why not `--permission-prompt-tool stdio`
+## Why not answering `can_use_tool`
+
+**What was measured is the round trip, not the argv that switched it on.** This section used to be
+titled "Why not `--permission-prompt-tool stdio`", and that title was read later as evidence that
+the flag had been passed with that value — it is not; the body below only ever claimed the
+mechanism. The probe's script was not kept, so **which argv produced these events is not recorded**.
+What the claude 2.1.236 binary's own strings say about it, as a hypothesis and not as evidence:
+
+- `--permission-prompt-tool <tool>` normally names an **MCP tool** — `permissionPromptToolServerName`,
+  and three errors of the form `tool … (passed via --permission-prompt-tool) must be an MCP tool`.
+- `stdio` sits immediately next to `--permission-prompt-tool` in the string table, which is
+  consistent with it being a recognised special value meaning "ask over the stream-json control
+  channel" rather than through a server.
+- The two are alternatives, and the CLI says so: `canUseTool callback cannot be used with
+permissionPromptToolName. Please use one or the other.`
+
+So there are two shapes with the same name attached to them, and they differ in what they need:
+answering over the control channel needs `--input-format stream-json` — which
+`backends/claude.lua` passes **only on the duplex transport**, and oneshot is the default
+(`process_model.lua`) — while an MCP tool needs no control channel at all.
 
 The issue's original design was to answer the CLI's `control_request {subtype: "can_use_tool"}`
 with a `control_response`. It works — measured, verbatim, against claude 2.1.236:
@@ -104,6 +123,13 @@ Answering `{"behavior":"allow","updatedInput":{…}}` ran the tool and the turn 
 process alive; answering `{"behavior":"deny","message":"…"}` reached the model as a `tool_result`
 with `is_error: true`, recorded one entry in `result.permission_denials`, and the turn carried on
 and answered normally. The synthesized retry message is genuinely unnecessary on that path.
+
+That inner object is recorded; **the envelope it travelled in is not**, and neither is the argv. A
+re-run therefore has to discover the envelope again, and has to be able to tell "the CLI never
+asked" apart from "the CLI asked and rejected our answer" — the binary has a distinct path for the
+second (`Ignoring can_use_tool control_response for request_id=…`, and a
+`permission_response_malformed` marker), so the difference is observable if the harness looks for
+it rather than only for whether the tool ran.
 
 **It was rejected anyway, because the prompt tool sits at the _end_ of the CLI's own gate.**
 Measured: with `--allowedTools Write`, `can_use_tool` is **never called** — and it is not called for
