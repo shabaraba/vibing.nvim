@@ -58,7 +58,7 @@ local M = {
   build = CLICommandBuilder.build,
   event_processor = CLIEventProcessor,
 
-  -- `.vibing/hook-settings.json` handed over with `--settings`, in the script's own (claude)
+  -- `.vibing/hook-settings-<instance>.json` handed over with `--settings`, in the script's own (claude)
   -- dialect. Registered in bypassPermissions too: that mode bypasses the decision, not the
   -- git-snapshot baseline the same PreToolUse round trip takes.
   -- 1090s, and **that is where we stopped watching, not where claude stopped waiting**: the hook

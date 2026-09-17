@@ -35,7 +35,7 @@ local M = {
   build = CopilotCommandBuilder.build,
   event_processor = CopilotEventProcessor,
 
-  -- A throwaway plugin under `.vibing/copilot-plugin/`, loaded with `--plugin-dir`, in copilot's
+  -- A throwaway plugin under `.vibing/copilot-plugin-<instance>/`, loaded with `--plugin-dir`, in copilot's
   -- flat decision dialect. This is what gives copilot `permission_mode`, the `ask` list and the
   -- Tool Approval UI (#512); a failed install degrades to the static --deny-tool flags.
   -- bypassPermissions asked for no gate at all, so it gets none.

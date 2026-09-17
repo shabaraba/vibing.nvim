@@ -115,7 +115,7 @@ Backends are not feature-equivalent. `AskUserQuestion`'s choice-list UI is avail
 Codex 0.153 or later. Every
 backend honours `permissions.mode`, the `ask` list and the Tool Approval UI, but each one reaches
 them differently: `copilot` through a generated plugin loaded per run with `--plugin-dir` (written
-to `.vibing/copilot-plugin/`; your own `~/.copilot/` is never modified), and `grok` only inside a
+to `.vibing/copilot-plugin-<instance>/`; your own `~/.copilot/` is never modified), and `grok` only inside a
 git repository — see [Backends](#backends).
 
 ## Backends

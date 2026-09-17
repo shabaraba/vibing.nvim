@@ -38,7 +38,11 @@ describe("copilot_settings_generator", function()
   it("writes the plugin under <cwd>/.vibing/, never the user's ~/.copilot", function()
     local dir = CopilotSettingsGenerator.ensure(tmp_dir)
 
-    assert.equals(vim.fn.resolve(tmp_dir) .. "/.vibing/copilot-plugin", dir)
+    -- Keyed by instance: the manifest carries a timeoutSec derived from *this* Neovim's
+    -- permissions.approval_wait_sec, so a second Neovim must not be able to rewrite it under a
+    -- copilot of ours that is already running.
+    local key = require("vibing.infrastructure.rpc.instance_key").get()
+    assert.equals(vim.fn.resolve(tmp_dir) .. "/.vibing/copilot-plugin-" .. key, dir)
     assert.equals(1, vim.fn.filereadable(dir .. "/plugin.json"))
   end)
 
@@ -117,7 +121,8 @@ describe("copilot_settings_generator", function()
   end)
 
   it("reports plugin_dir for a cwd without writing anything", function()
-    local expected = vim.fn.resolve(tmp_dir) .. "/.vibing/copilot-plugin"
+    local key = require("vibing.infrastructure.rpc.instance_key").get()
+    local expected = vim.fn.resolve(tmp_dir) .. "/.vibing/copilot-plugin-" .. key
     assert.equals(expected, CopilotSettingsGenerator.plugin_dir(tmp_dir))
     assert.equals(0, vim.fn.isdirectory(expected))
     assert.equals(CopilotSettingsGenerator.ensure(tmp_dir), expected)

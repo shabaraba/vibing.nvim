@@ -48,7 +48,13 @@ describe("settings_generator", function()
 
     local path = SettingsGenerator.ensure(tmp)
 
-    assert.equals(tmp .. "/.vibing/hook-settings.json", path)
+    -- Keyed by instance, not shared per project: this file's timeout is derived from *this*
+    -- Neovim's `permissions.approval_wait_sec`, and a second Neovim rewriting it under a CLI of
+    -- ours that is already running would put the CLI's deadline ahead of the script's — the
+    -- ordering under which every CLI measured fails open.
+    local key = require("vibing.infrastructure.rpc.instance_key").get()
+    assert.equals(tmp .. "/.vibing/hook-settings-" .. key .. ".json", path)
+    assert.equals(path, SettingsGenerator.settings_path(tmp))
     assert.equals(1, vim.fn.filereadable(path))
 
     local decoded = vim.json.decode(table.concat(vim.fn.readfile(path), "\n"))

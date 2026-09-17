@@ -1,5 +1,5 @@
 --- Hook settings generator
---- Writes hook settings to .vibing/hook-settings.json for --settings flag
+--- Writes hook settings to .vibing/hook-settings-<instance>.json for --settings flag
 --- @module vibing.infrastructure.hooks.settings_generator
 
 local Fs = require("vibing.core.utils.fs")
@@ -110,6 +110,34 @@ function M.generate(hook_script_path, dialect)
   }
 end
 
+--- Where this Neovim's hook settings for a given cwd live.
+---
+--- **Keyed by instance, and that is a correctness property.** The timeout in this file is derived
+--- from `permissions.approval_wait_sec`, while the script's own deadline reaches the CLI child in
+--- its environment and is fixed at spawn. One shared path means a second Neovim with a lower
+--- `approval_wait_sec` rewrites a file our already-running CLI may re-read, putting the CLI's
+--- deadline *ahead* of the script's — the one ordering under which every CLI measured fails open
+--- and runs the tool ungated.
+---
+--- Whether a CLI re-reads its settings per turn is unmeasured, and four backends' worth of
+--- unmeasured. A per-instance name means the question never arises. `rpc/instance_key.lua`.
+--- @param cwd string
+--- @return string
+function M.settings_path(cwd)
+  return string.format(
+    "%s/.vibing/hook-settings-%s.json",
+    cwd,
+    require("vibing.infrastructure.rpc.instance_key").get()
+  )
+end
+
+--- Delete hook settings left behind by Neovims that are no longer running.
+--- @param vibing_dir string
+local function sweep_dead_instances(vibing_dir)
+  local InstanceKey = require("vibing.infrastructure.rpc.instance_key")
+  InstanceKey.sweep(vibing_dir, "^hook%-settings%-(" .. InstanceKey.PATTERN .. ")%.json$", os.remove)
+end
+
 --- Ensure hook settings file exists in .vibing/ of the given cwd
 --- @param cwd? string Working directory (defaults to vim.fn.getcwd())
 --- @param dialect? string see `generate`
@@ -117,9 +145,10 @@ end
 function M.ensure(cwd, dialect)
   cwd = cwd or vim.fn.getcwd()
   local vibing_dir = cwd .. "/.vibing"
-  local settings_path = vibing_dir .. "/hook-settings.json"
+  local settings_path = M.settings_path(cwd)
 
   Fs.ensure_dir(vibing_dir)
+  sweep_dead_instances(vibing_dir)
 
   -- Always regenerate (hook script path may change after plugin update)
   local settings = M.generate(nil, dialect)

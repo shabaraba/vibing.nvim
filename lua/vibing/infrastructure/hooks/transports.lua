@@ -39,7 +39,7 @@ M.DIALECTS = { claude = true, copilot = true }
 --- Required at call time rather than captured: specs stub a generator's `ensure` on the module
 --- table, and a reference taken here would bypass the stub.
 local installers = {
-  --- `.vibing/hook-settings.json`, handed over with `--settings`. Returns the settings path.
+  --- `.vibing/hook-settings-<instance>.json`, handed over with `--settings`. Returns the settings path.
   settings_file = function(cwd, dialect)
     return require("vibing.infrastructure.hooks.settings_generator").ensure(cwd, dialect)
   end,

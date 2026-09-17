@@ -686,8 +686,10 @@ Nothing comes back when you send a message:~
 Every tool call is denied:~
     The PreToolUse hook fails closed on purpose: if it cannot reach Neovim's
     RPC server, the tool is denied rather than silently allowed. Check that
-    `mcp.enabled` is true and that `.vibing/hook-settings.json` exists in the
-    directory the CLI runs in.
+    `mcp.enabled` is true and that a `.vibing/hook-settings-<port>.json`
+    exists in the directory the CLI runs in, where <port> is this Neovim's
+    RPC port (`:VibingStatus`). The file is per Neovim instance, so a second
+    editor open on the same project has one of its own.
 
 MCP tools cannot find the right Neovim:~
     Several Neovim instances each get their own RPC port. Pass the port shown

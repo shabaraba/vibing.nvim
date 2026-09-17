@@ -1,5 +1,5 @@
 --- Copilot CLI hook settings generator
---- Writes a throwaway Copilot *plugin* to <cwd>/.vibing/copilot-plugin/ whose manifest registers
+--- Writes a throwaway Copilot *plugin* to <cwd>/.vibing/copilot-plugin-<instance>/ whose manifest registers
 --- vibing's pre-tool-use.sh as a `preToolUse` hook. `copilot --plugin-dir <dir>` loads it for that
 --- run only, which is what gives the Copilot backend the Tool Approval UI (#512).
 ---
@@ -31,12 +31,24 @@ function M.hook_timeout_sec()
 end
 
 --- Absolute path to the generated plugin directory for a given cwd
+---
 --- Resolved, so this reports the same path `ensure()` writes: that one resolves the cwd, and a
 --- symlinked working directory would otherwise make the two disagree.
+---
+--- **Keyed by instance**, for the reason spelled out on `settings_generator.settings_path`: the
+--- manifest carries a `timeoutSec` derived from this Neovim's `permissions.approval_wait_sec`,
+--- and a second Neovim with a lower one must not be able to rewrite it under a copilot of ours
+--- that is already running. The comment below about one shared path being safe "because the
+--- contents are the same for every chat" held only while nothing in here depended on
+--- configuration; the timeout does.
 --- @param cwd string
 --- @return string
 function M.plugin_dir(cwd)
-  return vim.fn.resolve(cwd) .. "/.vibing/copilot-plugin"
+  return string.format(
+    "%s/.vibing/copilot-plugin-%s",
+    vim.fn.resolve(cwd),
+    require("vibing.infrastructure.rpc.instance_key").get()
+  )
 end
 
 --- Build the plugin manifest
@@ -70,14 +82,25 @@ local function build_manifest(hook_command)
   }
 end
 
+--- Delete plugin directories left behind by Neovims that are no longer running.
+--- @param vibing_dir string
+local function sweep_dead_instances(vibing_dir)
+  local InstanceKey = require("vibing.infrastructure.rpc.instance_key")
+  InstanceKey.sweep(vibing_dir, "^copilot%-plugin%-(" .. InstanceKey.PATTERN .. ")$", function(path)
+    vim.fn.delete(path, "rf")
+  end)
+end
+
 --- Ensure the Copilot plugin directory exists for the given cwd
 --- @param cwd? string Working directory (defaults to vim.fn.getcwd())
 --- @param dialect? string how the script should phrase its decision (`hooks/transports.lua`).
 ---   Defaults to `copilot`, the only dialect copilot itself reads.
 --- @return string path Absolute path to the plugin directory, for `--plugin-dir`
 function M.ensure(cwd, dialect)
-  local dir = M.plugin_dir(cwd or vim.fn.getcwd())
+  local resolved = vim.fn.resolve(cwd or vim.fn.getcwd())
+  local dir = M.plugin_dir(resolved)
   Fs.ensure_dir(dir)
+  sweep_dead_instances(resolved .. "/.vibing")
 
   -- The `copilot` argument switches the script to Copilot's decision format; see the script.
   -- Shell-escaped because Copilot runs this string through a shell, and a plugin path under a
@@ -93,11 +116,13 @@ function M.ensure(cwd, dialect)
   -- and an unreadable manifest means no hook, which is the one failure mode that fails *open*.
   -- rename(2) is atomic within a directory, so a concurrent reader sees either version whole.
   --
-  -- What makes one shared path safe at all is that the contents are the same for every chat: the
-  -- per-process identity (`VIBING_PROCESS_ID`, the RPC port) travels in copilot's environment, not
-  -- in this file. Anything that has to differ per chat therefore belongs in the environment too —
-  -- putting it here would make concurrent chats overwrite each other's manifest, and this
-  -- directory would have to become per-process instead.
+  -- What makes one path safe to share between *chats* is that the contents are the same for every
+  -- chat in this Neovim: the per-process identity (`VIBING_PROCESS_ID`, the RPC port) travels in
+  -- copilot's environment, not in this file. Anything that has to differ per chat therefore belongs
+  -- in the environment too.
+  --
+  -- It is not shared between *Neovims* any more, because `timeoutSec` does depend on configuration
+  -- — see `plugin_dir`.
   local path = dir .. "/plugin.json"
   local tmp_path = string.format("%s.%d.tmp", path, vim.loop.getpid())
   local f, err = io.open(tmp_path, "w")

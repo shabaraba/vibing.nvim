@@ -116,7 +116,7 @@ happens after a chat. **What closes it is `--cwd`** (below): the run happens som
 `.grok/hooks/` to discover.
 
 **Copilot does not have grok's problem**, despite also writing its hook into the project tree. The
-generated plugin under `<cwd>/.vibing/copilot-plugin/` is reachable only through `--plugin-dir`,
+generated plugin under `<cwd>/.vibing/copilot-plugin-<instance>/` is reachable only through `--plugin-dir`,
 which the lightweight branch never emits — copilot auto-discovers hooks from `~/.copilot/hooks/`,
 `.github/hooks/`, its policy dirs and `settings.json`, and vibing.nvim writes none of those. So a
 leftover plugin from an earlier chat is inert, and skipping generation really does leave the run
