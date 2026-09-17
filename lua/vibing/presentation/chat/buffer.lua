@@ -542,12 +542,22 @@ function ChatBuffer:send_message()
   if self._pending_approval and ApprovalParser.is_approval_response(message) then
     local approval = ApprovalParser.parse_approval_response(message)
     if approval then
-      -- Update session permissions and check for errors
-      local success, err = pcall(function()
-        self:update_session_permissions(approval)
-      end)
+      -- What the answer *means* — the permission update, the `:once` bookkeeping and the retry
+      -- text — is `approval_decision.consume`, and this is one of its two callers. Spelling any of
+      -- it out again here is the drift `.claude/rules/permissions.md` forbids.
+      --
+      -- Hook-based approval needs nothing more: the process was already cancelled and the hook
+      -- already denied in permission.lua, and the prompt (hook_request_id included) is dropped
+      -- inside `consume`, which is what marks it spent.
+      --
+      -- `update_session_permissions` が唯一の記録先であることも、そちらが引き受けている。以前は
+      -- ここで `permission.lua` のモジュールレベルの共有テーブルにも同じ判断を書いており、
+      -- そちらはチャットでも turn_id でもキーされていなかったので、あるチャットで出した承認が
+      -- エディタ上の全チャットに効いていた（#667）。
+      local ApprovalDecision = require("vibing.application.chat.approval_decision")
+      local consumed, err = ApprovalDecision.consume(self, approval)
 
-      if not success then
+      if not consumed then
         vim.notify(
           string.format("[vibing] Failed to update permissions: %s", tostring(err)),
           vim.log.levels.ERROR
@@ -556,35 +566,8 @@ function ChatBuffer:send_message()
         return false
       end
 
-      -- Hook-based approval needs nothing more here: the process was already cancelled and the
-      -- hook already denied in permission.lua, and `_pending_approval` (hook_request_id included)
-      -- is dropped a few lines below, which is what marks it consumed.
-      --
-      -- `update_session_permissions` の上の呼び出しが唯一の記録先。以前はここで
-      -- `permission.lua` のモジュールレベルの共有テーブルにも同じ判断を書いており、
-      -- そちらはチャットでも turn_id でもキーされていなかったので、あるチャットで出した
-      -- 承認がエディタ上の全チャットに効いていた（#667）。チャット単位のリストは
-      -- `send_message` が `permissions_session_allow` / `permissions_session_deny` として
-      -- リクエストの opts に載せ、`set_active_opts` が turn_id 単位で持つので、二重に
-      -- 書く必要はそもそも無かった。
-
-      -- Get tool name and input for message (before clearing _pending_approval)
-      local tool = self._pending_approval.tool
-      local approval_input = self._pending_approval.input or {}
-
-      -- Clear pending approval after processing
-      self._pending_approval = nil
-
-      -- Replace user's approval message with a clear instruction to retry
-      -- Include the tool name and original input so Claude can retry exactly
-
-      local is_allow = approval.action == "allow_once" or approval.action == "allow_for_session"
-      if is_allow then
-        local input_summary = self:_build_approval_input_summary(tool, approval_input)
-        message = string.format("I approved the %s tool%s. Please proceed with the same operation.", tool, input_summary)
-      else
-        message = string.format("I denied the %s tool. Please use a different approach.", tool)
-      end
+      -- The answer can only reach a killed process as a new turn, so it travels as prose.
+      message = consumed.retry_message
 
       -- Continue to normal message flow with the replaced message
     else
@@ -808,29 +791,6 @@ function ChatBuffer:set_pending_user_text(text)
   self._pending_user_text = text
 end
 
----承認入力のサマリーを生成
----@param tool string ツール名
----@param input table ツール入力
----@return string 空文字列または " (key: value)" 形式のサマリー
-function ChatBuffer:_build_approval_input_summary(tool, input)
-  local tool_input_keys = {
-    Bash = "command",
-    Read = "file_path",
-    Write = "file_path",
-    Edit = "file_path",
-    WebSearch = "query",
-    WebFetch = "query",
-  }
-
-  local key = tool_input_keys[tool]
-  if key and input[key] then
-    local label = key == "file_path" and "file" or key
-    return string.format(" (%s: %s)", label, input[key])
-  end
-
-  return ""
-end
-
 ---ツール承認要求UIを保存
 ---@param tool string ツール名
 ---@param input table ツール入力
@@ -944,6 +904,16 @@ function ChatBuffer:get_pending_approval()
     return nil
   end
   return vim.deepcopy(self._pending_approval)
+end
+
+---承認要求を消費済みにする
+---
+---`_pending_approval` が消えていることが「その承認は答えられた」の唯一の印なので、これを呼んで
+---よいのは `approval_decision.consume` だけ。セッションリストの更新と対で起きなければならず、
+---片方だけ起きた状態（許可は記録されたのにプロンプトが残る／プロンプトは消えたのに許可が無い）
+---はどちらもエラーを出さずに壊れる
+function ChatBuffer:clear_pending_approval()
+  self._pending_approval = nil
 end
 
 ---セッションレベルの許可リストを取得

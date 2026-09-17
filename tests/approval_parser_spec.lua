@@ -128,43 +128,7 @@ More text
     end)
   end)
 
-  describe("generate_response_message", function()
-    it("should generate message for allow_once", function()
-      local message = ApprovalParser.generate_response_message("allow_once", "WebSearch")
-      assert.is_not_nil(message:match("approved"))
-      assert.is_not_nil(message:match("WebSearch"))
-      assert.is_not_nil(message:match("try again"))
-    end)
-
-    it("should generate message for deny_once", function()
-      local message = ApprovalParser.generate_response_message("deny_once", "Bash")
-      assert.is_not_nil(message:match("denied"))
-      assert.is_not_nil(message:match("Bash"))
-      assert.is_not_nil(message:match("alternative"))
-    end)
-
-    it("should generate message for allow_for_session", function()
-      local message = ApprovalParser.generate_response_message("allow_for_session", "Edit")
-      assert.is_not_nil(message:match("approved"))
-      assert.is_not_nil(message:match("Edit"))
-      assert.is_not_nil(message:match("session"))
-    end)
-
-    it("should generate message for deny_for_session", function()
-      local message = ApprovalParser.generate_response_message("deny_for_session", "Write")
-      assert.is_not_nil(message:match("denied"))
-      assert.is_not_nil(message:match("Write"))
-      assert.is_not_nil(message:match("session"))
-    end)
-
-    it("should handle nil tool name", function()
-      local message = ApprovalParser.generate_response_message("allow_once", nil)
-      assert.is_not_nil(message:match("tool"))
-    end)
-
-    it("should return unknown for invalid action", function()
-      local message = ApprovalParser.generate_response_message("invalid", "Tool")
-      assert.is_not_nil(message:match("Unknown"))
-    end)
-  end)
+  -- `generate_response_message` の describe はここにあった。本番コードからの参照が無い関数を、
+  -- この spec だけが緑に保っていた — しかも中身は `approval_decision.retry_message` とは別の
+  -- 文面の、承認の意味の2つ目の実装。#778 で関数ごと消した。
 end)

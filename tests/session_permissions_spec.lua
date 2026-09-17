@@ -251,35 +251,8 @@ describe("ChatBuffer session permissions", function()
     end)
   end)
 
-  describe("_build_approval_input_summary", function()
-    it("should build summary for Bash command", function()
-      local buffer = ChatBuffer:new(mock_config)
-      local summary = buffer:_build_approval_input_summary("Bash", { command = "npm install" })
-      assert.equals(" (command: npm install)", summary)
-    end)
-
-    it("should build summary for Read file_path", function()
-      local buffer = ChatBuffer:new(mock_config)
-      local summary = buffer:_build_approval_input_summary("Read", { file_path = "test.lua" })
-      assert.equals(" (file: test.lua)", summary)
-    end)
-
-    it("should build summary for WebSearch query", function()
-      local buffer = ChatBuffer:new(mock_config)
-      local summary = buffer:_build_approval_input_summary("WebSearch", { query = "Grok AI 2026" })
-      assert.equals(" (query: Grok AI 2026)", summary)
-    end)
-
-    it("should return empty string for unknown tool", function()
-      local buffer = ChatBuffer:new(mock_config)
-      local summary = buffer:_build_approval_input_summary("Unknown", { something = "value" })
-      assert.equals("", summary)
-    end)
-
-    it("should return empty string for missing input key", function()
-      local buffer = ChatBuffer:new(mock_config)
-      local summary = buffer:_build_approval_input_summary("Bash", { other_key = "value" })
-      assert.equals("", summary)
-    end)
-  end)
+  -- `_build_approval_input_summary` の describe はここにあった。関数は
+  -- `approval_decision.input_summary` に移り（承認の意味を1箇所に集めるため、#778）、同じ5ケースは
+  -- `tests/lua/application/chat/approval_decision_spec.lua` が持っている。
+  -- `update_session_permissions` はバッファの frontmatter を触るのでここに残る。
 end)

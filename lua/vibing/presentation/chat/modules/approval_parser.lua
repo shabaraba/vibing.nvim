@@ -58,24 +58,10 @@ function M.parse_approval_response(message)
   return nil
 end
 
----承認アクションに基づいてメッセージを生成
----@param action string 承認アクション
----@param tool string? ツール名
----@return string
-function M.generate_response_message(action, tool)
-  local tool_display = tool or "the tool"
-
-  if action == "allow_once" then
-    return string.format("User approved %s for this execution. Please try again.", tool_display)
-  elseif action == "deny_once" then
-    return string.format("User denied %s for this execution. Please use an alternative approach.", tool_display)
-  elseif action == "allow_for_session" then
-    return string.format("User approved %s for this session. Please try again.", tool_display)
-  elseif action == "deny_for_session" then
-    return string.format("User denied %s for this session. Please use an alternative approach.", tool_display)
-  end
-
-  return "Unknown approval action."
-end
+-- `generate_response_message` はここにあった。承認から模型に渡す文を組み立てる関数が、実際に
+-- 使われている `approval_decision.retry_message` とは別の文面で2つ目として存在していた
+-- （本番コードからの参照はゼロで、自分のspecだけが呼んでいた）。まさに
+-- `.claude/rules/permissions.md` が禁じている「承認が意味することの2つ目の実装」なので、
+-- #778 の抽出と一緒に消した。このパーサはバッファの行を4択のどれかに読むことだけを持つ。
 
 return M

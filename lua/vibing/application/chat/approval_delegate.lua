@@ -30,15 +30,15 @@
 ---名指ししているチャットを指す。
 local M = {}
 
----代理で答えられる4択。`rpc/handlers/permission.lua` の `APPROVAL_OPTIONS` と同じ語彙で、
----`presentation/chat/modules/approval_parser.lua` がバッファから読み戻す側
+---代理で答えられる4択。語彙は `approval_decision` が持つ — ここに写しを置くと、選択肢が増えた
+---ときに代理応答だけが古い4択で検証し続ける
 ---@type string[]
-M.ACTIONS = { "allow_once", "deny_once", "allow_for_session", "deny_for_session" }
+M.ACTIONS = require("vibing.application.chat.approval_decision").ACTIONS
 
 ---@param action any
 ---@return boolean
 local function is_valid_action(action)
-  return type(action) == "string" and vim.tbl_contains(M.ACTIONS, action)
+  return require("vibing.application.chat.approval_decision").is_valid_action(action)
 end
 
 ---`agent.orchestration.delegated_approval` の実効値
