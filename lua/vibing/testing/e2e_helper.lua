@@ -333,6 +333,10 @@ local TURN_ERROR_PATTERN = "%*%*Error:%*%* [^\n]*"
 ---Assistantセクションの見出し（タイムスタンプ付き・レガシーの両方）
 local ASSISTANT_HEADER_PATTERN = "\n## [^\n]*Assistant[^\n]*"
 
+---次のメッセージを打ち込める未送信セクション。`_handle_response` が**ターンを終えてから**書く
+---ので、これがターン完了の唯一の目印になる（見出しはターン開始時に出てしまう）
+local UNSENT_USER_PATTERN = "## User <!%-%- unsent %-%->"
+
 ---チャット本文を条件が満たされるまでポーリングする。**ターンがエラーで書いた行を見つけたら
 ---そこで打ち切る。**
 ---
@@ -342,7 +346,7 @@ local ASSISTANT_HEADER_PATTERN = "\n## [^\n]*Assistant[^\n]*"
 ---60秒かけて報告していた）。
 ---@param instance table インスタンスハンドル
 ---@param timeout number タイムアウト（ミリ秒）
----@param done fun(text: string): boolean 本文を見て満たされたか
+---@param done fun(text: string): boolean, string? 満たされたか／満たされた範囲が失敗していた理由
 ---@param what string タイムアウトメッセージでの呼び名
 ---@return boolean ok
 ---@return string? reason 失敗した理由（成功時は nil）
@@ -367,8 +371,16 @@ local function poll_chat(instance, timeout, done, what)
 
     last_seen = text or ""
     -- 条件の判定はエラー判定の**前**。エラー行と期待した出力が同じ本文に並ぶことは原理的に
-    -- ありうるので、逆にすると成功を失敗として報告しうる
-    if done(last_seen) then
+    -- ありうるので、逆にすると成功を失敗として報告しうる。
+    --
+    -- ただしこの順序は、下の全体走査が**待っている当のターンの失敗を見られない**ことも意味する
+    -- （見出しが先に書かれ、`**Error:**` はその下に追記されるので、条件は必ず先に満たされる）。
+    -- 自分が満たした範囲の中を見て失敗を言えるのは `done` だけなので、第2戻り値で打ち切れる
+    local satisfied, satisfied_failure = done(last_seen)
+    if satisfied_failure then
+      return false, satisfied_failure
+    end
+    if satisfied then
       return true
     end
 
@@ -417,6 +429,56 @@ local function count_assistant_headers(text)
   end
 end
 
+---`index` 本目のAssistant見出しより後ろ、次の見出しの手前まで。無ければ nil
+---@param text string
+---@param index number 1始まり
+---@return string?
+local function assistant_section(text, index)
+  local from, body_start = 1, nil
+  for _ = 1, index do
+    local s, e = text:find(ASSISTANT_HEADER_PATTERN, from)
+    if not s then
+      return nil
+    end
+    body_start, from = e + 1, e + 1
+  end
+  local next_s = text:find(ASSISTANT_HEADER_PATTERN, from)
+  return text:sub(body_start, next_s and next_s - 1 or nil)
+end
+
+---`count` 本目のターンが失敗していたなら、その `**Error:**` 行。していなければ nil
+---
+---**自分のセクションの中だけを見る**のが要点。`poll_chat` の全体走査は見出しが書かれた時点で
+---条件を満たしてしまい、その下に追記される `**Error:**` に到達しない
+---（`send_message.lua` は失敗したターンにも見出しを書き、本文として `**Error:**` を足す）。
+---かといって全体を見ると、**前の**ターンの失敗行が残っている本文で後続のターンを巻き添えに落とす
+---@param text string
+---@param count number
+---@return string?
+function M._turn_failure(text, count)
+  local section = assistant_section(text, count)
+  return section and section:match(TURN_ERROR_PATTERN) or nil
+end
+
+---`count` 本目のターンが**終わっている**か。終わっていないなら false
+---
+---見出しの本数では言えない。`send_message` は応答が流れ始めた時点で見出しを書くので、本数は
+---ターンの**開始**で満たされる。終了を名乗るものは未送信セクションだけ
+---@param text string
+---@param count number
+---@return boolean
+function M._turn_completed(text, count)
+  local from, seen = 1, 0
+  while seen < count do
+    local s, e = text:find(ASSISTANT_HEADER_PATTERN, from)
+    if not s then
+      return false
+    end
+    seen, from = seen + 1, e + 1
+  end
+  return text:find(UNSENT_USER_PATTERN, from) ~= nil
+end
+
 ---**モデルが実際に出した文字列**を待つ。ターンがエラーで死んだら理由ごと打ち切る。
 ---
 ---照合するのは最後の `## ... Assistant` 見出しより後ろだけで、バッファ全体ではない。
@@ -438,7 +500,10 @@ function M.wait_for_assistant_text(instance, pattern, timeout)
   end, string.format("assistant output matching '%s'", pattern))
 end
 
----ターンが走った結果としてバッファに現れるものを待つ。ターンがエラーで死んだら打ち切る。
+---ターンが走った結果としてバッファに現れるものを待つ。**前の**ターンがエラーで死んでいたら
+---打ち切る。待っている当のターンが死んだ場合は `wait_for_assistant_turns` と違って見られない
+---（何本目のセクションを待っているのかがパターンからは分からないため）。
+---
 ---
 ---`wait_for_buffer_content` との違いは打ち切りだけ。CLIが失敗したターンでも
 ---`## ... Assistant` の見出しは書かれるので、ターンに依存する待ちは全部こちらを通す
@@ -457,7 +522,8 @@ end
 ---
 ---「ターンが1本走って、しかも失敗しなかった」を言うのに、モデルが特定の語を返してくれることに
 ---賭けずに済む形。`## .* Assistant` を `wait_for_buffer_content` で待つのとは違い、
----エラーで死んだターンはここで打ち切られる
+---エラーで死んだターンはここで打ち切られる。**`count` 本目自身の失敗も含む**——見出しが
+---書かれた時点で本数は満たされるので、そこは `poll_chat` の全体走査では見えない（#781 レビュー）
 ---@param instance table インスタンスハンドル
 ---@param count number 期待する応答の本数
 ---@param timeout number タイムアウト（ミリ秒）
@@ -465,8 +531,48 @@ end
 ---@return string? reason
 function M.wait_for_assistant_turns(instance, count, timeout)
   return poll_chat(instance, timeout, function(text)
-    return count_assistant_headers(text) >= count
+    if count_assistant_headers(text) < count then
+      return false
+    end
+    local failure = M._turn_failure(text, count)
+    if failure then
+      return false, string.format("assistant turn %d failed: %s", count, failure)
+    end
+    return true
   end, string.format("%d assistant turn(s)", count))
+end
+
+---打ち込める未送信セクションが現れるまで待つ。**ターンを1本も送っていない新規チャット**用。
+---
+---ターンの完了を待ちたいなら `wait_for_completed_turn`。こちらはどのターンの後かを見ないので、
+---前のターンの未送信セクションが残っていれば即座に満たされる
+---@param instance table インスタンスハンドル
+---@param timeout number タイムアウト（ミリ秒）
+---@return boolean ok
+---@return string? reason
+function M.wait_for_input_ready(instance, timeout)
+  return M.wait_for_response(instance, UNSENT_USER_PATTERN, timeout)
+end
+
+---`count` 本目のターンが**完了し、しかも失敗しなかった**まで待つ。
+---
+---`wait_for_assistant_turns` との違いは待つ対象で、あちらは見出し＝ターンの**開始**で返る。
+---開始で返るということは、そこから先の assert がすべて**進行中のターンの生きた状態**に対して
+---行われるということで、そのターンが後から落ちても spec は緑になる（#781 レビュー）。
+---「ターンが動き出した」ではなく「ターンが答えた」を言いたい assert の前にはこちらを使う
+---@param instance table インスタンスハンドル
+---@param count number 何本目のターンか
+---@param timeout number タイムアウト（ミリ秒）
+---@return boolean ok
+---@return string? reason
+function M.wait_for_completed_turn(instance, count, timeout)
+  return poll_chat(instance, timeout, function(text)
+    local failure = M._turn_failure(text, count)
+    if failure then
+      return false, string.format("assistant turn %d failed: %s", count, failure)
+    end
+    return M._turn_completed(text, count)
+  end, string.format("assistant turn %d to complete", count))
 end
 
 ---バッファ「名」が条件に一致するまで待機

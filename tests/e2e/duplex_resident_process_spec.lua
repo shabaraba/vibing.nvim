@@ -20,30 +20,15 @@ local TIMEOUTS = {
   BUFFER_READY = 5000,
   -- What every other real-turn spec in this directory budgets. A green run returns as soon as the
   -- pattern matches, so this only decides how long a turn that hangs rather than erroring costs.
-  -- Two of them, which is the whole point of the spec, so the file's worst case is ~155s against
-  -- the 240s `test:e2e` allows per file (`tests/e2e-timeout-gate.test.mjs`).
+  -- Two of them, which is the whole point of the spec. Each now waits for the turn to *complete*
+  -- rather than to start, so the budget covers the response and the render that follows it; the
+  -- file's worst case is ~140s against the 240s `test:e2e` allows per file
+  -- (`tests/e2e-timeout-gate.test.mjs`).
   ASSISTANT_RESPONSE = 60000,
-  -- The gap between "the turn answered" and "the buffer is ready for the next message". Short,
-  -- because it is a render on the main loop rather than anything the CLI does.
+  -- Only for the brand-new chat, before any turn. A render on the main loop rather than anything
+  -- the CLI does, so it is short.
   INPUT_READY = 15000,
 }
-
---- Wait until there is an empty `## User` section to type into.
----
---- Every other spec in this directory sends exactly one turn, so none of them needed this and the
---- shared helper does not have it. A second turn does: `wait_for_assistant_turns` is satisfied by
---- the *header*, which `send_message` writes as soon as the response starts, while the new unsent
---- section is added later by `_handle_response`. Typing in that gap put the second prompt inside
---- the first turn's assistant section — the chat still looked plausible, and the run failed one
---- assertion later for a reason that had nothing to do with the transport.
----
---- `wait_for_response` rather than `wait_for_buffer_content` so a turn that died still aborts here
---- with its own error instead of timing out (`.claude/rules/self-testing.md`).
---- @param instance table
---- @return boolean ok, string? reason
-local function wait_for_input_ready(instance, timeout)
-  return helper.wait_for_response(instance, "## User <!%-%- unsent %-%->", timeout)
-end
 
 --- What the chat buffer currently records as the process running its turns.
 --- @param instance table
@@ -122,22 +107,23 @@ describe("E2E: a chat on the duplex transport keeps one CLI process", function()
     assert.is_true(written, "process: duplex should be written to the chat's frontmatter")
 
     local reason
-    ok, reason = wait_for_input_ready(nvim_instance, TIMEOUTS.INPUT_READY)
+    ok, reason = helper.wait_for_input_ready(nvim_instance, TIMEOUTS.INPUT_READY)
     assert.is_true(ok, reason or "the new chat should have an unsent section to type into")
 
+    -- `wait_for_completed_turn` rather than `wait_for_assistant_turns`: the latter is satisfied by
+    -- the *header*, which `send_message` writes as soon as the response starts. Every assertion
+    -- below would then be reading the live state of a turn still in flight, and a turn that failed
+    -- afterwards would leave this spec green (#781 review).
     send_turn(nvim_instance, 'Reply with exactly the word "one" and nothing else.')
-    ok, reason = helper.wait_for_assistant_turns(nvim_instance, 1, TIMEOUTS.ASSISTANT_RESPONSE)
+    ok, reason = helper.wait_for_completed_turn(nvim_instance, 1, TIMEOUTS.ASSISTANT_RESPONSE)
     assert.is_true(ok, reason or "the first turn should answer without failing")
 
     local first_process = current_process_id(nvim_instance)
     assert.is_not_nil(first_process, "the chat should have recorded the process that ran turn 1")
     assert.equals(first_process, pooled_process_id(nvim_instance), "turn 1 did not leave a resident process")
 
-    ok, reason = wait_for_input_ready(nvim_instance, TIMEOUTS.INPUT_READY)
-    assert.is_true(ok, reason or "the chat should offer a new unsent section after the first turn")
-
     send_turn(nvim_instance, 'Reply with exactly the word "two" and nothing else.')
-    ok, reason = helper.wait_for_assistant_turns(nvim_instance, 2, TIMEOUTS.ASSISTANT_RESPONSE)
+    ok, reason = helper.wait_for_completed_turn(nvim_instance, 2, TIMEOUTS.ASSISTANT_RESPONSE)
     assert.is_true(ok, reason or "the second turn should answer without failing")
 
     local second_process = current_process_id(nvim_instance)
