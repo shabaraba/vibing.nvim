@@ -178,12 +178,15 @@ export const chatTools: Tool[] = [
       'Ask the user one or more multiple-choice questions directly in the vibing.nvim chat buffer. ' +
       'Use this instead of asking questions in free text, and instead of the native AskUserQuestion ' +
       'tool (which is unavailable in headless CLI mode). ' +
-      'IMPORTANT: calling this tool renders the questions as an editable choice list in the chat ' +
-      'buffer and then immediately cancels/kills your current turn — you will NOT get a normal ' +
-      'tool_result back, and you cannot do anything else after calling it. The user edits the list ' +
-      "(deleting unwanted options) and sends it. Your NEXT invocation's prompt IS the user's answer " +
-      'to this question, delivered as a fresh turn — treat it as such rather than waiting for a ' +
-      'tool response. ' +
+      'The questions render as an editable choice list in the chat buffer; the user deletes the ' +
+      'options they do not want and sends what is left. ' +
+      'IMPORTANT: this call blocks until a human answers, so it may take many minutes — that is ' +
+      'normal, not a hang. How their answer reaches you depends on the backend (#788). Usually it ' +
+      "comes back as this call's ordinary tool_result, and THAT RESULT IS THE ANSWER: act on it " +
+      'immediately, and never reply that you are still waiting for one. On a backend that cannot ' +
+      'hold the call open, your turn is cancelled instead and you get no result at all; there the ' +
+      "user's next message IS the answer, delivered as a fresh turn. Either way, do not call this " +
+      'tool again to re-ask the same question. ' +
       'You MUST pass chat_bufnr using the exact "Current vibing.nvim chat buffer number" value ' +
       'given to you in your system prompt — it identifies which chat buffer to render the ' +
       'question in.',
