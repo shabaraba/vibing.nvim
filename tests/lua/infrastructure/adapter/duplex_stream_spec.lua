@@ -41,12 +41,16 @@ describe("duplex transport", function()
   local jobs, adapter, config
   local DuplexStream = require("vibing.infrastructure.adapter.modules.duplex_stream")
   local original_grace
+  -- `stub_jobstart` does not own `exepath` — only `stub_system` saves and restores it. Left
+  -- assigned, every later spec in the run resolves any executable to this one.
+  local original_exepath
 
   before_each(function()
     original_grace = DuplexStream.INTERRUPT_GRACE_MS
     DuplexStream.INTERRUPT_GRACE_MS = GRACE_MS
     jobs = helper.stub_jobstart()
     helper.reset_path_caches()
+    original_exepath = vim.fn.exepath
     vim.fn.exepath = function()
       return helper.fake_binary("duplex-claude")
     end
@@ -61,6 +65,7 @@ describe("duplex transport", function()
     DuplexStream.INTERRUPT_GRACE_MS = original_grace
     Pool._reset()
     jobs.restore()
+    vim.fn.exepath = original_exepath
     helper.reset_path_caches()
   end)
 
