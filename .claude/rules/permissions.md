@@ -140,3 +140,15 @@ the three deadlines above reach it and `hook.measured_wait_floor_sec` says nothi
   trains the real warnings away.
 - **A chat waiting for a question reports `asked_question`, not `responding`** — `chat_status`
   reads `pending_questions`, the same hole #778 closed for approvals.
+- **Reporting the state and being able to act on it are two holes, and #778 closed only the
+  first.** `programmatic_sender.validate`'s "do not deliver into a responding chat" guard has one
+  exemption per channel, and the question one is not decoration: without it an orchestrator sees
+  `asked_question` and is refused by the very call the worker-stopped notice tells it to make. The
+  question exemption **takes no `request_id`** — the id is what separates a merely-drawn prompt
+  from a blocked hook, and for questions `_pending_choices` vs `pending_questions` already draws
+  that line — but it **does** require the caller's flag, or `auto_compact` / `auto_resume` /
+  `append_notice` reach the same `validate` and have their bodies eaten as the answer.
+- **An answer resumes a turn; it does not start one.** So it is exempt from `max_concurrent`, it
+  skips `auto_compact.before_delivery`, and `queue_if_busy` must **not** queue it — a queued answer
+  is delivered only after `question_wait_sec` has denied the question it answers, and the caller
+  was told `queued`, which reads as sent.
