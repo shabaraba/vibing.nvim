@@ -80,15 +80,30 @@ function M.send_message(params)
   local Concurrency = require("vibing.application.chat.concurrency")
   local at_capacity = Concurrency.at_capacity()
 
-  if params.queue_if_busy and (ProgrammaticSender.is_responding(bufnr) or at_capacity) then
-    return queue_for_later(bufnr, params, at_capacity)
+  -- 宛先がいま止めている質問への答えは、待ちにも上限にも当たらない（#788）。答えは**新しいターンを
+  -- 始めない** — 開いたままのターンを再開させるだけなので、並列度を1つも増やさない。
+  --
+  -- ここを通さないと、この経路は2通りに壊れる。`queue_if_busy` なしなら下流の `validate` が
+  -- 「応答中」で弾く（大声で失敗するので気づける）。`queue_if_busy` 付きだと呼び出し元に
+  -- `queued` が返り、答えは `question_wait_sec`（既定900秒）キューに座ったまま質問が期限切れに
+  -- なってから**新しいターン**として配達される。後者は、答えたのに答えにならない
+  local answers_question = ProgrammaticSender.has_blocked_question(bufnr)
+
+  if not answers_question then
+    if params.queue_if_busy and (ProgrammaticSender.is_responding(bufnr) or at_capacity) then
+      return queue_for_later(bufnr, params, at_capacity)
+    end
+
+    -- 上限に当たったのに待つ気がない呼び出しは、黙って通さない。人間の<CR>はこの経路を通らない
+    -- ので、止まるのは機械が始める送信だけ
+    if at_capacity then
+      error(Concurrency.at_capacity_message())
+    end
   end
 
-  -- 上限に当たったのに待つ気がない呼び出しは、黙って通さない。人間の<CR>はこの経路を通らない
-  -- ので、止まるのは機械が始める送信だけ
-  if at_capacity then
-    error(Concurrency.at_capacity_message())
-  end
+  -- レジストリは `validate` でもう一度読まれる。この間に人間が答えてしまえば例外は外れ、
+  -- 通常どおり「応答中」で弾かれる — 送れなくなったことが正しい
+  local send_opts = answers_question and { answers_blocked_question = true } or nil
 
   -- `from_bufnr` は任意。必須にすると渡し忘れで送信そのものが失敗し、既存の
   -- オーケストレーション経路が壊れる。渡されなければリンクを張らないだけ（＝従来の動作）
@@ -99,7 +114,7 @@ function M.send_message(params)
     -- リンクは送信より前に書く必要がある（`update_frontmatter_list` はバッファを直接触るので、
     -- 宛先の応答が始まってから書くとストリーミングと競合する）。ただし送信が弾かれると
     -- 行われなかったやり取りの関係だけが永久に残るので、先に送信可能かを確かめる
-    ProgrammaticSender.validate(bufnr, params.message)
+    ProgrammaticSender.validate(bufnr, params.message, send_opts)
     require("vibing.application.chat.orchestration_link").link_or_warn(params.from_bufnr, bufnr, params.task)
 
     -- 向きの判定は `link_or_warn` の**後**でよい: 配布ならリンクは今書かれたばかりで
@@ -107,7 +122,8 @@ function M.send_message(params)
     result = require("vibing.application.chat.delivery_message").deliver(
       { { bufnr = params.from_bufnr, body = params.message } },
       bufnr,
-      params.sender
+      params.sender,
+      send_opts
     )
 
     -- 宛先が本文より先に `/compact` を走らせた。本文はまだ届いていないので、応答中の宛先に
@@ -128,7 +144,7 @@ function M.send_message(params)
     end
   else
     -- ProgrammaticSender.send already validates parameters
-    result = ProgrammaticSender.send(bufnr, params.message, params.sender)
+    result = ProgrammaticSender.send(bufnr, params.message, params.sender, nil, send_opts)
   end
 
   -- 送ったという事実そのものを購読の登録として扱う。宛先が応答を終えたら送信元に

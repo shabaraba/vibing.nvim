@@ -860,6 +860,50 @@ explicit way out (`:VibingCancel`). It is also not a regression anybody can have
 fix the guard swallowed the empty press too, so this is the documented behaviour changing to match
 the real one, not the real one changing.
 
+### Opening one exception closed the other one
+
+`programmatic_sender.validate` refuses to deliver into a chat that is responding, and #778 opened
+exactly one hole in it: a delivery that answers a hook the target is actually blocked on. That
+exemption asks `pending_approvals` by `request_id`, and nothing else.
+
+Answering a question in place put questions on the wrong side of it. A chat waiting on
+`nvim_ask_user_question` is responding by the same definition an approval-blocked one is, so every
+`nvim_chat_send_message` aimed at one hit the guard — **an orchestrator could see
+`asked_question` and could not answer it.** The worker-stopped notice was already telling it to
+answer with `nvim_chat_send_message`; the instruction did not become wrong, the code underneath it
+did. This is the sixth type's shape read backwards: the feature that made questions answerable by a
+human is the same feature that made them unanswerable by anyone else, and the half that broke was
+the half nobody was looking at.
+
+The two halves fail differently, and the quiet one is the one that matters:
+
+| call                           | before the fix                             | who notices             |
+| ------------------------------ | ------------------------------------------ | ----------------------- |
+| plain `nvim_chat_send_message` | `error: Chat buffer is already responding` | the caller, immediately |
+| with `queue_if_busy`           | `queued`                                   | **nobody**              |
+
+The queued answer sits for `question_wait_sec` — 900s by default — and is delivered as a _new
+turn_ only once the question it was the answer to has expired and been denied. The orchestrator
+polls a chat that has moved on, holding a receipt that says the message was accepted. "Queued means
+no request has started yet" was already an invariant; this is the case where queueing means the
+request can never start.
+
+The fix is the symmetric exemption, with one deliberate asymmetry: **it takes no `request_id`.**
+The id is what makes the approval exemption strong — it separates a prompt still drawn from a dead
+turn from a hook that is genuinely blocked. For questions that separation already lives somewhere
+else: a prompt that is only drawn sits in `_pending_choices`, and `pending_questions` holds nothing
+but replies actually being withheld. Asking the registry is the strong condition there, so an id
+would buy nothing. The opts flag is still required, and not as ceremony — `auto_compact`'s
+`/compact`, `auto_resume`'s re-send and `append_notice` all reach the same `validate`, and any of
+them slipping through would be eaten by `_answer_pending_question` as the answer.
+
+Two consequences follow from "an answer resumes a turn rather than starting one", and both are
+tested. It is not subject to `max_concurrent`, because it adds nothing to the count that limit is
+about. And it skips `auto_compact.before_delivery`: `/compact` is itself a send that starts a new
+turn, so on a chat whose turn is still open it cannot run — routing the answer behind it is the
+queueing failure above wearing a different hat. The compaction is deferred, not lost; the next
+delivery asks again, once the answered turn has finished.
+
 ### What to measure before enabling another backend
 
 codex is the one where this is a real gap rather than a formality — its choice-list UI is already

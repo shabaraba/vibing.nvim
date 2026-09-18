@@ -146,7 +146,10 @@ export const chatTools: Tool[] = [
             'turn the moment that chat stops, and several queued messages arrive coalesced ' +
             'into one turn. Use it for anything the other chat must receive whether or not it ' +
             'happens to be busy right now — a completion report to your orchestrator, an ' +
-            'answer to a question it asked you.',
+            'answer to a question it asked you. One target is never queued however you set this: ' +
+            'a chat reporting chat_status "asked_question" is waiting on your answer inside a ' +
+            'turn it cannot leave, so the message is delivered straight into that turn. Queueing ' +
+            'it would hold the answer until the question had already timed out and been denied.',
         },
         task: {
           type: 'string',

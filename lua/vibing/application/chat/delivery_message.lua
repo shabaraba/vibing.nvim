@@ -275,16 +275,23 @@ end
 ---@param queue Vibing.Application.MessageQueue.Item[]
 ---@param to_bufnr number
 ---@param sender string?
+---@param opts {answers_blocked_question: boolean?}? この配達が、宛先がいま止めている質問への
+---  答えなら真。圧縮を挟まず、`programmatic_sender` の「応答中」ガードも通り抜ける
 ---@return {success: boolean, bufnr: number, compacting: boolean?} `compacting` は本文の
 ---  代わりに `/compact` ターンを始めたとき true。本文はまだ届いていない
-function M.deliver(queue, to_bufnr, sender)
+function M.deliver(queue, to_bufnr, sender, opts)
   local cache = {}
   local section = M.section_for(queue, to_bufnr, cache)
-  if require("vibing.application.chat.auto_compact").before_delivery(to_bufnr, section) then
-    return { success = true, bufnr = to_bufnr, compacting = true }
+  -- 質問への答えは圧縮を挟まない。宛先のターンは開いたままで、`/compact` は**新しいターンを
+  -- 始める送信**なので、ここに入ると答えは配達されないまま質問だけが期限切れ（= deny）になる。
+  -- 圧縮は答えのあと、そのターンが終わってからでよい
+  if not (opts and opts.answers_blocked_question) then
+    if require("vibing.application.chat.auto_compact").before_delivery(to_bufnr, section) then
+      return { success = true, bufnr = to_bufnr, compacting = true }
+    end
   end
   local text = M.build(queue, cache)
-  return require("vibing.presentation.chat.modules.programmatic_sender").send(to_bufnr, text, sender, section)
+  return require("vibing.presentation.chat.modules.programmatic_sender").send(to_bufnr, text, sender, section, opts)
 end
 
 return M
