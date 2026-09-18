@@ -163,7 +163,9 @@ child.stdin.write(
     type: 'user',
     message: {
       role: 'user',
-      content: 'Use the Write tool to create probe-out.txt containing exactly: ok. Then stop.',
+      content:
+        process.env.PROBE_PROMPT ||
+        'Use the Write tool to create probe-out.txt containing exactly: ok. Then stop.',
     },
   }) + '\n'
 );
@@ -580,6 +582,94 @@ with open(dst, "w") as f:
 PY
   report "$dir" Write
 }
+
+# --- The granular arm: does our `allow` skip the user's per-call deny rules? -------------------
+#
+# Arm A settled tool-NAME-level deny: the tool is gone before anyone is asked, so an `allow` cannot
+# reach it. That says nothing about **granular** rules (`Bash(echo:*)`, `Bash(rm -rf:*)`), which
+# depend on one call's arguments and therefore cannot be resolved when the toolset is built. This
+# is where `permissions.default_deny_rules` and destructive_commands.lua live, so it is the whole
+# of B's remaining risk.
+#
+# Proposition, fixed before the run:
+#
+#   When we write `allow` for one call a human approved in place, is the user's own granular deny
+#   rule skipped, or does it still apply?
+#
+# **The command is not free to choose, and this is the trap in the obvious design.** This file's own
+# handbook section records that `can_use_tool` is *not* called for a `Bash(echo …)`, because the
+# CLI's safe-command classifier allows it first. A cell using a bare `echo` would come back "never
+# consulted" for a reason that has nothing to do with the deny rule, and that reads exactly like
+# "the granular deny ran first" -- the wrong answer, arrived at confidently.
+#
+# So the command is `echo "ok" > probe-out.txt`, and the control for that confound is already
+# bought: arm A's deny cell logged this exact command being consulted with no granular rule in
+# place (stdio-deny/driver.log). The redirect takes it out of the safe-command path.
+#
+# **G0 is not "the same cell without the prompt tool".** That was the starting proposal and its
+# control proves nothing: with Bash outside `--allowedTools` and no prompt tool, the call is refused
+# because nobody can approve it, which is indistinguishable from being refused by the rule. So G0
+# puts Bash **in** `--allowedTools`. Then a refusal is attributable to the rule alone, and it also
+# shows the rule outranking an explicit allow.
+#
+#   G0 (control): --allowedTools Bash, deny ["Bash(echo:*)"], NO prompt tool
+#       refused  -> the rule matches and beats the allow list. G1 is readable.
+#       ran      -> the rule does not match at all. **G1 is unreadable**; fix the rule, re-run.
+#
+#   G1 (the question): --allowedTools Read, deny ["Bash(echo:*)"], --permission-prompt-tool stdio
+#       consulted + succeeded  -> our allow OVERRODE the user's granular deny. Decision 1 is B,
+#                                 and its cost is real and now measured.
+#       not consulted + refused -> the granular deny runs FIRST. The third shape is safe.
+#       consulted + refused     -> we were asked and the deny still won afterwards. Also safe, but
+#                                 by a different mechanism than "deny first" -- record it as its
+#                                 own outcome, do not merge it into the line above.
+#       not consulted + succeeded -> contradiction: nothing permitted it. Invalid; investigate.
+#
+# Assumption stated rather than measured: that the ordering does not depend on **which** command the
+# rule names. `echo` is used because it is harmless; the rule under real concern is
+# `Bash(rm -rf:*)`. Nothing here rules out a classifier that treats a destructive command
+# differently -- though it would have to do so by refusing *more* readily, which is the safe
+# direction for the third shape and the unsafe one for B.
+run_granular_cell() {
+  local name="$1" allowed="$2" deny="$3" use_prompt_tool="$4"
+  local dir="$OUT/granular-$name"
+  [ -d "$dir" ] && mv "$dir" "$dir-prev-$(date +%s)"
+  mkdir -p "$dir"
+  export HOOK_LOG="$dir/hook.log" DRIVER_LOG="$dir/driver.log" PROBE_CWD="$dir"
+  export DRIVER_TIMEOUT_SEC="${DRIVER_TIMEOUT_SEC:-180}"
+  export PROBE_PROMPT='Use the Bash tool to run exactly this command: echo "ok" > probe-out.txt. Then stop.'
+  : > "$HOOK_LOG"
+  : > "$DRIVER_LOG"
+
+  local settings prompt_tool_args=""
+  settings=$(settings_for "$deny")
+  [ "$use_prompt_tool" = "yes" ] && prompt_tool_args='"--permission-prompt-tool","stdio",'
+
+  export CLAUDE_ARGS
+  CLAUDE_ARGS=$(cat <<EOF
+["-p","--input-format","stream-json","--output-format","stream-json","--verbose",
+ "--model","claude-haiku-4-5-20251001","--permission-mode","default",
+ "--strict-mcp-config","--setting-sources","project",
+ ${prompt_tool_args}"--allowedTools","$allowed",
+ "--settings",$(printf '%s' "$settings" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')]
+EOF
+)
+  echo "=== granular cell $name (allowedTools: $allowed, deny: $deny, prompt tool: $use_prompt_tool) ==="
+  node "$OUT/stdio_driver.mjs"
+  report "$dir" Bash
+  # Printed per cell so the budget is observable while it is being spent, not reconstructed after.
+  echo "cost: $(grep -o '"total_cost_usd":[0-9.]*' "$dir/driver.log" | tail -1)"
+}
+
+if [ "$ARM" = "granular" ]; then
+  run_granular_cell control Bash '["Bash(echo:*)"]' no
+  echo
+  echo "STOP AND READ THE CONTROL BEFORE THE NEXT CELL: if the echo ran above, the rule never"
+  echo "matched and the G1 cell below measures nothing about ordering."
+  echo
+  run_granular_cell ask Read '["Bash(echo:*)"]' yes
+  exit 0
+fi
 
 # The negative control, and **when it is worth a turn**.
 #
