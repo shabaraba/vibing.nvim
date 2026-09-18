@@ -104,22 +104,9 @@ end
 ---
 --- Absent floor → false. A new backend therefore keeps today's kill-and-retry behaviour until
 --- somebody runs `tests/perf/hook_wait_ceiling.sh` against it, which is the safe default to forget.
---- Waiting also needs somewhere to put the answer, and that is a property of the **transport**.
---- An approved call is released with `defer`, not `allow`, so the CLI's own gate still runs and the
---- user's granular deny rules are still evaluated; the gate then asks its permission question back
---- over the control channel, which only the duplex transport has. On oneshot there is nobody to
---- answer, so a `defer` would have the gate refuse what the human just approved — hence today's
---- kill-and-retry there, unchanged.
----
---- Passed in rather than read off the descriptor: `process` on a descriptor is the most capable
---- model the backend *can* run, not the one this turn *is* running (`process_model.lua`).
 --- @param hook Vibing.HookSpec|nil
---- @param is_duplex boolean|nil whether this turn runs on the resident transport
 --- @return boolean
-function M.can_wait_for_approval(hook, is_duplex)
-  if not is_duplex then
-    return false
-  end
+function M.can_wait_for_approval(hook)
   local floor = hook and hook.measured_wait_floor_sec
   if type(floor) ~= "number" then
     return false

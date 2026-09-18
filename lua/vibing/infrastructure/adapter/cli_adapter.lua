@@ -272,7 +272,7 @@ function M.define(descriptor)
       ids.turn_id,
       vim.tbl_extend("force", opts, {
         _tool_vocabulary = descriptor.vocabulary,
-        _can_wait_for_approval = HookTransports.can_wait_for_approval(descriptor.hook, is_duplex),
+        _can_wait_for_approval = HookTransports.can_wait_for_approval(descriptor.hook),
       })
     )
 

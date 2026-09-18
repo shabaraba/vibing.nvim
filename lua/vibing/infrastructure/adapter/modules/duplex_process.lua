@@ -166,17 +166,6 @@ function M.send_prompt(record, prompt)
   return write(record, { type = "user", message = { role = "user", content = prompt } })
 end
 
---- Write one control-protocol line back to the CLI.
----
---- Separate from `send_prompt` because it is not a turn boundary: the process may be mid-turn, and
---- the reply is owed to a question the CLI is blocked on rather than to a turn that is starting.
---- @param record Vibing.DuplexProcess
---- @param payload table
---- @return boolean sent
-function M.send_control(record, payload)
-  return write(record, payload)
-end
-
 --- Stop the turn without stopping the process.
 ---
 --- The CLI answers with `control_response { still_queued = [] }` and then a `result` of subtype

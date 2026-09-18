@@ -32,16 +32,6 @@ local M = {
       -- The resident transport's whole premise: with the prompt arriving on stdin the process has
       -- no reason to exit, so it serves the next turn too (`duplex_stream.lua`).
       { kind = "args", "--input-format", "stream-json", when = "duplex" },
-      -- The gate's own permission question, routed to us over that same control channel (#778).
-      -- It is what lets an approved call be answered with `defer` instead of `allow`: the CLI then
-      -- runs its own gate, the user's granular deny rules are evaluated, and only what survives
-      -- them is put to us here. Measured: a tool-name deny never reaches the hook at all, and a
-      -- granular deny is evaluated *after* the hook and *before* this question
-      -- (`handbook/architecture/approval-without-kill.md`).
-      --
-      -- Duplex-only, and not by choice: the value `stdio` means "ask over the control channel",
-      -- which needs `--input-format stream-json` above. Oneshot keeps today's kill-and-retry.
-      { kind = "args", "--permission-prompt-tool", "stdio", when = "duplex", unless = "lightweight" },
       { kind = "model", flag = "--model", names = "claude" },
       { kind = "effort", flag = "--effort" },
       { kind = "resume", flag = "--resume", fork = "--fork-session" },
@@ -122,10 +112,6 @@ local M = {
   register_chat_bufnr = true,
   -- Reads its prompt from argv; stdin stays open.
   stdin = nil,
-  -- How this backend answers the gate's own permission question on the duplex transport. Data on
-  -- the descriptor rather than a branch in `duplex_routing`, which serves every backend: the
-  -- control-protocol envelope is claude's dialect, and a backend without one simply omits this.
-  duplex_control = require("vibing.infrastructure.adapter.modules.duplex_control"),
   -- The most capable process model this CLI can run, not the one it will: the default stays
   -- `oneshot` for every chat, and a resident process is reached only through
   -- `backends.claude.process` or a chat's `process:` frontmatter (`process_model.lua`).
