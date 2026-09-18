@@ -21,8 +21,23 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          # Both lockfiles, or the cache key ignores the second tree and a change to the MCP
+          # server's dependencies restores a cache that predates it.
+          cache-dependency-path: |
+            package-lock.json
+            claude-plugin/mcp-server/package-lock.json
 
       - name: Install dependencies
+        run: npm ci
+
+      # claude-plugin/mcp-server is a second, independent dependency tree with its own
+      # package.json and lockfile, and its 193 vitest tests were in no gate at all until #790.
+      # This install belongs in *this* job rather than a separate one: the suite resolves `zod`
+      # from the root tree installed above, and tests/mcp-server-test-gate.test.mjs -- which runs
+      # inside `npm run test:node`, here -- drives the real suite. A separate job would still
+      # leave this one needing the install.
+      - name: Install MCP server dependencies
+        working-directory: claude-plugin/mcp-server
         run: npm ci
 
       - name: Install Lua
@@ -64,6 +79,12 @@ jobs:
 
       - name: Run Node.js tests
         run: npm run test:node
+
+      # The exit code is the gate, as above. scripts/run-mcp-server-tests.mjs refuses to report
+      # success when the dependencies installed two steps up are missing, so a broken install
+      # fails here instead of quietly running nothing.
+      - name: Run MCP server tests
+        run: npm run test:mcp
 
       - name: Run validation suite
         run: npm run validate
