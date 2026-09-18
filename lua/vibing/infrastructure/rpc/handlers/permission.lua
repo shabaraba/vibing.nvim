@@ -236,43 +236,44 @@ end
 
 --- Finish the blocked hook's request, for a tool the user has just approved in place.
 ---
---- **Stub, pending a decision the user owns (#778, "B or C").** The two candidates differ in what
---- an in-place grant is allowed to skip:
+--- **An approved call is released with `allow`** (#778). It is the only verdict that releases it:
+--- the tool being asked about is normally one this turn's `--allowedTools` does not cover — that
+--- is *why* `can_use_tool` returned `ask` — and the argv cannot change mid-turn, so a `defer` would
+--- hand the call to a CLI gate that has never heard of it and have it refuse exactly what the
+--- human just approved.
 ---
----   B — write `allow`. The hook prints it and the CLI skips its own gate. Needed because the tool
----       being asked about is usually one this turn's `--allowedTools` does not cover (that is
----       *why* `can_use_tool` returned `ask`), and the argv cannot change mid-turn — so `defer`
----       would have the CLI refuse what the human just approved. The cost is that this one call
----       also skips the user's own `settings.json` deny rules.
----   C — write `defer`, and where that would not actually let the call through, **decline** and let
----       the caller fall back to today's kill-and-retry. Keeps every existing invariant, at the
----       price of being inert for the common granular-`ask` configuration.
+--- That is not the licence it reads as, and the difference is measured rather than reasoned.
+--- **A hook `allow` overrides the CLI's allowlist, not its denylist**:
 ---
---- **It answers by side effect and reports only whether it handled the hook**, rather than
---- returning a decision string. C is two-stage by nature — write something, then decide whether
---- that was enough — and a signature shaped around B's single verdict would have to change when
---- the answer lands. Declining here is not a failure: `_answer_pending_approval` turns it into the
---- retry-as-a-new-turn path, which is the fallback either way.
+---   control  deny: []            HOOK ALLOW Bash → is_error=false   (ran)
+---   test     deny: Bash(echo:*)  HOOK ALLOW Bash → is_error=true    (refused)
+---
+--- `Bash` is in neither cell's `--allowedTools`, so the first cell proves our `allow` is what ran
+--- it, and the second — one variable changed — that the same `allow` loses to a granular deny. A
+--- tool-name deny is further out of reach still: it removes the tool during toolset construction,
+--- before any hook runs. So the user's own deny rules keep their say over a call approved here;
+--- what is skipped is an allowlist that could not have named this tool.
+--- `handbook/architecture/approval-without-kill.md` has the cells and the two limits of the claim.
+---
+--- The ordinary path's `is_vibing_nvim_mcp_tool` split does not apply here. There it separates
+--- "ours, grant it" from "not ours, let the CLI decide", because nothing has looked at the call.
+--- Here a human has looked at this one call and said yes, and that is the whole answer.
 ---
 --- Everything around it — spending the approval, refreshing the session lists, re-running
---- `can_use_tool`, taking the diff baseline — is the same under both.
+--- `can_use_tool`, taking the diff baseline — happens in `release_answered_approval`.
 --- @param entry Vibing.PendingApproval the hook still waiting on its `.res`
---- @param tool_name string canonical
 --- @param result CanUseToolResult the re-evaluation after the answer was recorded
---- @return boolean handled false to decline, leaving the hook untouched for the caller's fallback
-function M._answer_blocked_hook(entry, tool_name, result)
+--- @return boolean released false only when the entry is already gone
+function M._answer_blocked_hook(entry, result)
   local PendingApprovals = require("vibing.infrastructure.rpc.pending_approvals")
 
   if result.behavior ~= "allow" then
-    -- A denial needs no decision: it is the same verdict on every candidate design, and the
-    -- reason is the only way a deny rule's `message` reaches the model.
+    -- The reason travels with a denial because it is the only way a deny rule's `message` reaches
+    -- the model.
     return PendingApprovals.resolve(entry.request_id, "deny", result.message)
   end
 
-  -- Today's answer for an allowed call, which is also C's first stage: only vibing-nvim's own MCP
-  -- tools are granted outright; everything else defers to the CLI's own gate.
-  local decision = can_use_tool_mod.is_vibing_nvim_mcp_tool(tool_name) and "allow" or "defer"
-  return PendingApprovals.resolve(entry.request_id, decision)
+  return PendingApprovals.resolve(entry.request_id, "allow")
 end
 
 --- Release a hook that was blocked on an approval the user has now answered.
@@ -322,7 +323,7 @@ function M.release_answered_approval(entry, chat_buf)
     M._capture_baselines(entry.turn_id, opts and opts.cwd or nil, tool_name, tool_input)
   end
 
-  return M._answer_blocked_hook(entry, tool_name, result)
+  return M._answer_blocked_hook(entry, result)
 end
 
 --- Ask the human without killing the CLI: withhold the `.res` and leave the hook blocked (#778).
@@ -500,11 +501,17 @@ function M.check_tool_permission(params)
     -- 詳細と、pcallを2つに分けている理由は M._capture_baselines を参照
     M._capture_baselines(scope.turn_id, active_opts and active_opts.cwd or nil, tool_name, tool_input)
     -- Only vibing-nvim's own MCP tools are granted outright; everything else defers to the CLI's
-    -- gate, which is still where the user's own settings.json rules are enforced. The distinction
-    -- is not cosmetic: --allowedTools needs a literal prefix, and the plugin's is
-    -- mcp__plugin_<marketplace>_vibing-nvim__ — a name decided at install time that this process
-    -- cannot know. is_vibing_nvim_mcp_tool matches on the suffix instead, so granting here is the
-    -- only form of the answer that survives the marketplace being renamed (#564).
+    -- own gate. The distinction is not cosmetic: --allowedTools needs a literal prefix, and the
+    -- plugin's is mcp__plugin_<marketplace>_vibing-nvim__ — a name decided at install time that
+    -- this process cannot know. is_vibing_nvim_mcp_tool matches on the suffix instead, so granting
+    -- here is the only form of the answer that survives the marketplace being renamed (#564).
+    --
+    -- What `allow` overrides is the CLI's **allowlist** — not its deny rules, which outrank it at
+    -- every level (measured; `handbook/architecture/approval-without-kill.md`). So the reason to
+    -- withhold it here is not safety from a deny rule, it is that nothing has *looked* at this
+    -- call: vibing's own lists answered "permitted", which is not the same as "approved", and the
+    -- user's allowlist should still get its say. An approval a human gave by eye is the case where
+    -- overriding that allowlist is the whole point, and that path is `_answer_blocked_hook`.
     local decision = can_use_tool_mod.is_vibing_nvim_mcp_tool(tool_name) and "allow" or "defer"
     write_hook_response(request_id, decision)
     return { status = "allowed" }

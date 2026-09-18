@@ -141,6 +141,39 @@ available from inside that path: we are simply not asked.
 The PreToolUse hook runs _before_ the gate, so the waiting design has no such hole. It is also
 backend-neutral — nothing about it is claude-specific — where `--permission-prompt-tool` is.
 
+#### The third shape, built and then removed
+
+A narrower use of the same channel survived that rejection for a while and was implemented:
+**release the approved call with `defer`, then answer the gate's own question** when it comes back.
+The gate's veto is not a hole there, because a `defer` invites exactly that veto — steps 1 and 3
+have both had their say before step 4 is reached, and re-running `can_use_tool` at step 4 would
+only find the `:once` grant the human just spent already consumed. So step 4 could answer `allow`
+with no second opinion, and the wait stayed where it was measured: in the hook, against claude's
+1090s floor, rather than on a control-channel timeout nobody has timed.
+
+It was removed once the control cell above showed a hook `allow` is equally safe, because **reach**
+is what was left to decide on:
+
+|                  | option B | third shape |
+| ---------------- | -------- | ----------- |
+| claude / duplex  | yes      | yes         |
+| claude / oneshot | yes      | **no**      |
+| copilot          | yes      | **no**      |
+
+`stdio` means "ask over the control channel", which needs `--input-format stream-json`, which is
+duplex-only — and oneshot is the default every chat gets. The third shape therefore left #778
+switched off unless a user opted into a resident process, and withdrew it from copilot altogether
+despite its 1700s floor being ample. An approval-without-kill that does not apply by default does
+not answer the issue.
+
+Worth restoring if the channel is wanted for its own sake: answering at step 4 puts the human's
+approval **after** the user's granular rules rather than before them, which is a better ordering
+than `allow` can offer. It would need to be acceptable as a duplex-only feature, and it would need
+a measurement of how long the **control channel** tolerates a wait — `measured_wait_floor_sec`
+times the hook, not the channel, and substituting one for the other is the mistake this page
+records twice already. The reverted implementation is commit `e84ecf9e`, and the revert's own
+message lists the three things in it that are expensive to rediscover.
+
 ### There is no free way to find out whether the flag value is accepted
 
 The flag is still a live question for decision 1, so `permission_prompt_tool.sh` has to establish
@@ -212,10 +245,10 @@ Two limits on that sentence, neither measured away:
    means writing to the real `~/.claude/settings.json`, which the probe refuses to do.
 2. **Granular rules (`Bash(rm -rf:*)`) are untouched by this.** They cannot be resolved at
    toolset-construction time, since they depend on one call's arguments. `default_deny_rules` and
-   `destructive_commands.lua` live exactly there. So B's risk is **narrowed** to granular rules and
-   **unmeasured within them**.
+   `destructive_commands.lua` live exactly there. So B's risk is **narrowed** to granular rules —
+   and the next section measures it there too, and finds none.
 
-### Granular deny runs before the consultation, so the third shape is safe
+### Granular deny runs before the consultation — and outranks a hook `allow`
 
 The sentence above leaves B's risk narrowed to granular rules and unmeasured within them. Two more
 cells settled it (claude 2.1.236, 2026-09-18, logs in `granular-control/` and `granular-ask/`).
@@ -252,15 +285,16 @@ first; the third shape is safe", and that is the outcome. Combining both arms gi
 
 **So the third shape preserves every layer of the user's own settings**: it answers at step 4, and
 step 4 is only reached by calls that already survived steps 1 and 3. Nothing it can say reaches a
-deny rule, because a denied call never gets that far.
+deny rule, because a denied call never gets that far. That was the argument for building it, and it
+is sound; what it turned out not to be is _exclusive_.
 
-**This says nothing about option B, and the two must not be run together.** There are two different
+**That does not settle option B, and the two must not be run together.** There are two different
 `allow`s here and they sit on opposite sides of step 3:
 
-|                        | written at                       | is it consulted?         | vs. granular deny              |
-| ---------------------- | -------------------------------- | ------------------------ | ------------------------------ |
-| third shape's `allow`  | step 4, answering `can_use_tool` | only for surviving calls | **cannot reach it — measured** |
-| **option B's `allow`** | **step 2, in the hook's `.res`** | **every call**           | **unmeasured**                 |
+|                        | written at                       | is it consulted?         | vs. granular deny |
+| ---------------------- | -------------------------------- | ------------------------ | ----------------- |
+| third shape's `allow`  | step 4, answering `can_use_tool` | only for surviving calls | cannot reach it   |
+| **option B's `allow`** | **step 2, in the hook's `.res`** | **every call**           | **see below**     |
 
 `HOOK DEFER Bash` fired in both granular cells, and that is the proof that the hook _is_ asked, and
 asked **before** step 3. Option B writes its `allow` exactly there. So "an `allow` cannot be offered
@@ -268,35 +302,42 @@ where nothing asks" is true of step 4 and false of step 2 — an earlier version
 used the first to license the second, which is the same collapse-two-things-sharing-a-name mistake
 as reading Bash's hook line as Write's.
 
-**No cell measured it**, because `defer-hook.sh` always defers: both granular cells took the defer
-path. The unmeasured question is:
+Neither granular cell measured it, because `defer-hook.sh` always defers: both took the defer path.
+The open question was:
 
 > When the hook writes `allow`, is the step-3 granular deny skipped?
 
-The order table **suggests it is skipped**, since the decision is rendered upstream of step 3. That
-is a suggestion, not a result. What can be said today is: **the third shape has no cost and is
-duplex-only; option B's cost is unknown, and the ordering points the wrong way.** The tool-name
-half is different and is measured — the hook never fires at all for a tool-name-denied call (arm
-A's deny cell logged `ATTEMPTED Write` with no corresponding `HOOK DEFER`), so no hook verdict of
-any kind can reach it.
+The order table **suggested it is skipped**, since the decision is rendered upstream of step 3, and
+that suggestion was wrong. Two more cells settled it. Each differs from `granular-control` in
+exactly one variable, and the probe's hook emits claude's own shape,
+`{"hookSpecificOutput":{"permissionDecision":"allow"}}` — the same thing `bin/hooks/pre-tool-use.sh`
+writes — so it exercises the mechanism production uses rather than a look-alike.
 
-The cell that would settle it differs from the already-paid `granular-control` cell in exactly one
-variable — the hook's verdict — so that cell is its control:
+| cell                          | hook writes | `--allowedTools` | deny           | result                     |
+| ----------------------------- | ----------- | ---------------- | -------------- | -------------------------- |
+| `granular-control`            | `defer`     | `Bash`           | `Bash(echo:*)` | refused                    |
+| `granular-hook-allow`         | `allow`     | `Bash`           | `Bash(echo:*)` | refused                    |
+| `granular-hook-allow-control` | `allow`     | **`Read`**       | **`[]`**       | **ran** (`is_error=false`) |
 
-|                                 | hook writes | `--allowedTools` | deny           | expected if B is safe |
-| ------------------------------- | ----------- | ---------------- | -------------- | --------------------- |
-| `granular-control` (run)        | `defer`     | `Bash`           | `Bash(echo:*)` | refused — **it was**  |
-| `granular-hook-allow` (not run) | `allow`     | `Bash`           | `Bash(echo:*)` | refused               |
+The third row is the one that makes the second mean anything. `Bash` is not in its `--allowedTools`
+and nothing else permits it, so the only thing that could have run it is our `allow` — **the hook's
+`allow` is parsed and honoured.** The same `allow`, with one variable changed, then loses to
+`Bash(echo:*)`. So:
 
-It ran → the hook's `allow` skips the granular deny → **B carries a real cost**. It was refused →
-the deny survives a hook `allow` → B is safe too. The probe's hook must emit claude's own shape,
-`{"hookSpecificOutput":{"permissionDecision":"allow"}}` — the same thing
-`bin/hooks/pre-tool-use.sh` writes — or it measures a mechanism production does not use.
+> **A hook `allow` overrides the CLI's allowlist. It does not override its denylist.**
 
-**That cell has since been run, accidentally, and its result is not yet conclusive.** A command
-meant to test the arm's refusal path ran the arm instead (`OUT=… bash …` does not reach a script
-that recomputes `OUT` from its own location). The logs are kept and are in
-`granular-hook-allow/`; how a number was obtained is part of the number.
+That is the answer to decision 1. B's cost is not the user's deny rules — a tool-name deny is out of
+reach at step 1, a granular deny outranks the verdict at step 3 — it is only the allowlist, which by
+construction could not have named the tool being approved. With the safety difference gone, reach
+decides, and B reaches the default transport and a second backend where the third shape reaches
+neither (see "Why not answering `can_use_tool`").
+
+**`granular-hook-allow` was run accidentally, before its control existed.** A command meant to test
+the arm's refusal path ran the arm instead (`OUT=… bash …` does not reach a script that recomputes
+`OUT` from its own location). How a number was obtained is part of the number, and for a while this
+one could not be read at all: refused, with no control, is the same single observation with two
+possible authors as the 950s copilot cell — the `allow` was honoured and the deny beat it, or the
+`allow` was never honoured. Its logs are in `granular-hook-allow/`.
 
 ```
 hook.log     HOOK ALLOW Bash
@@ -305,28 +346,24 @@ driver.log   ATTEMPTED Bash {"command":"echo \"ok\" > probe-out.txt"}
                Permission to use Bash with command echo "ok" > probe-out.txt has been denied.
 ```
 
-Read naively that says the granular deny outranks a hook `allow`, and **option B is safe**. But the
-cell has **no positive control**, and it is refused in exactly the same way `granular-control` was.
-Two causes produce that single observation: the `allow` was honoured and the deny beat it, or the
-`allow` was never honoured at all. `HOOK ALLOW Bash` proves our script ran and printed; it says
-nothing about whether the CLI parsed it. Same shape as the 950s copilot cell — one observation,
-two possible authors.
+`HOOK ALLOW Bash` proves our script ran and printed; it says nothing about whether the CLI parsed
+it. The prior was good — the envelope is copied from `bin/hooks/pre-tool-use.sh`, which emits
+exactly this for claude and demonstrably allows tools in production — but that is a different
+configuration (vibing's generated settings, not `--settings` inline), which raises a prior without
+closing it. The control is what closed it, and **the accidental cell is not retroactively made
+sound by its control arriving later**: it was unreadable when it was run, and the reason to say so
+is that the next person deciding whether a cell is worth paying for needs the order of operations,
+not just the pair.
 
-The envelope is copied from `bin/hooks/pre-tool-use.sh`, which emits exactly this for claude and
-demonstrably allows tools in production, so the prior is good — but that is a different
-configuration (vibing's generated settings, not `--settings` inline), which raises the prior
-without closing it.
+Two unmeasured assumptions remain, stated rather than closed:
 
-The missing cell, `granular-hook-allow-control`, differs from `granular-hook-allow` in one
-variable — the deny list is empty, and `Bash` is left out of `--allowedTools` so nothing else
-permits it. If Bash runs, the hook's `allow` is honoured here and B is safe; if Bash is refused,
-the `allow` was never honoured and `granular-hook-allow` measured nothing. **Not run.**
-
-One unmeasured assumption, stated rather than closed: that the ordering does not depend on _which_
-command the rule names. `echo` was used because it is harmless while `Bash(rm -rf:*)` is the rule
-under real concern. Nothing here rules out a classifier treating a destructive command differently
-— though it would have to do so by refusing more readily, which is the safe direction for the third
-shape and the unsafe one for B.
+1. **The deny arrived through `--settings`, with `--setting-sources project`.** A `user`-scope deny
+   was not loaded in either granular cell — the same limit as the tool-name result above, and for
+   the same reason: closing it means writing to the real `~/.claude/settings.json`.
+2. **The ordering may depend on _which_ command the rule names.** `echo` was used because it is
+   harmless while `Bash(rm -rf:*)` is the rule under real concern. Nothing here rules out a
+   classifier treating a destructive command differently — though it would have to do so by
+   refusing more readily, which is the safe direction for B.
 
 What this does not settle: the third shape needs `--permission-prompt-tool stdio`, hence
 `--input-format stream-json`, which `backends/claude.lua` passes **only on the duplex transport**
@@ -358,11 +395,41 @@ Two further readings were wrong on the way to fixing it, both the same shape one
 - **Being consulted proves the call was made**, so consultation has to be tested before the attempt
   count. Ordering it the other way produced the reading above.
 
+The first of those has now appeared **three times**, which is what makes it a type rather than an
+incident. The third was caught before it could mislead anybody: `report()` counted `HOOK DEFER`
+only, so the hook-`allow` cells — the ones that settled decision 1 — would have printed "the hook
+never saw it" for a hook that saw it and allowed it. Its instrument, `grep -c 'HOOK DEFER'`, was
+not installed for the thing being measured. It now counts both verdicts and prints which. Each of
+the three has the same tell: a count that _cannot go up_ in the configuration it is being read in.
+Worth asking of any zero before believing it.
+
 The harness now carries `self-test` (four crafted logs, no tokens) and `report-only <dir>`, which
 re-reads a saved cell. `report-only` is what makes a corrected _reading_ distinguishable from a
 corrected _measurement_: it holds the log fixed. All three defects are mutation-tested — each
 mutant restores the wrong reading and is caught by a different self-test case, which is the check
 that the cases are not passing vacuously.
+
+### A test that passes for a reason you have not written down
+
+Third of the same family, and the one that is hardest to notice because nothing is red.
+
+The reverted third shape prefiltered stdout with a substring test (`line:find('"can_use_tool"')`)
+before paying for a JSON decode, and a test asserted that ordinary prose mentioning the subtype
+passes through to the decoder untouched. It passed. It passed because **JSON escapes quotes**: the
+same characters inside a string value arrive as `\"can_use_tool\"` and do not contain the unescaped
+needle. That sentence was nowhere in the test, so what the test actually pinned was the outcome,
+not the mechanism — and an encoder change, or a prefilter rewritten without quotes in the needle,
+would have broken the safety property while the test went on passing.
+
+The general form: **a prefilter is a stand-in for a structural test, and it is only sound while the
+property that makes it equivalent holds.** If that property is not named in the test, the test does
+not defend it. The fix is not a stronger assertion on the same observation — it is to assert the
+_property_ (here, that encoding produces the escaped form) so that losing it fails something.
+
+Related but distinct from the equivalent mutant in the same commit, which is the honest opposite
+case: a line of code no test can distinguish, recorded as such rather than defended with a
+contrived test. One is a test claiming more than it checks; the other is a test that cannot exist.
+Both are worth writing down; only the first is a defect.
 
 ## The ordering invariant, and why every backend needs it
 
