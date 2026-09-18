@@ -14,6 +14,7 @@
 
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
 local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
+local ProcessModel = require("vibing.infrastructure.adapter.modules.process_model")
 local ReasoningEffort = require("vibing.infrastructure.adapter.modules.reasoning_effort")
 
 ---@class Vibing.RequestContext
@@ -93,7 +94,7 @@ local function holds(condition, ctx)
     -- The *resolved* model, not the chat's request: `process_model.resolve` clamps a `duplex`
     -- request back to `oneshot` for a lightweight call, a subagent chat, or a backend that cannot
     -- run one. Reading `opts.process` here would put the prompt on a stdin nobody is writing to.
-    return ctx.opts._process_model == "duplex"
+    return ctx.opts._process_model == ProcessModel.DUPLEX
   elseif type(condition) == "table" and condition.config then
     return vim.tbl_get(ctx.config or {}, unpack(vim.split(condition.config, ".", { plain = true }))) and true or false
   end

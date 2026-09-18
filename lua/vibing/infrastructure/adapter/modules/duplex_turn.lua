@@ -10,6 +10,7 @@
 --- @module vibing.infrastructure.adapter.modules.duplex_turn
 
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
+local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
 local ProcessRegistry = require("vibing.infrastructure.adapter.modules.process_registry")
 local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
@@ -32,6 +33,8 @@ local function hand_back(params, record, chat_key, response)
   if record._turn and record._turn.turn_id == params.ids.turn_id then
     record._turn = nil
   end
+  -- Once per turn, which is this transport's answer to the oneshot path's once per process.
+  Routing.report_stderr(record, params.event_context.errorOutput)
   -- What the process holds on `--resume` is only knowable once the CLI has named it, so the
   -- registry entry `find_other_holding_session` reads is brought up to date here rather than at
   -- registration, where turn 1 has nothing to record.

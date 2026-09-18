@@ -51,7 +51,7 @@ Sent mid-turn against a live generation: **the turn ended 16ms later**, the proc
 the next turn on that same process was back to 154ms. That is the completion condition "an interrupt
 stops the turn and not the process", end to end against the real CLI.
 
-`duplex_stream.INTERRUPT_GRACE_MS` is 5000ms against that 16ms — ~300x, deliberately. The measured
+`duplex_routing.INTERRUPT_GRACE_MS` is 5000ms against that 16ms — ~300x, deliberately. The measured
 number is the _responsive_ case, and the case the fallback exists for is the opposite one: a CLI
 wedged inside a tool call may not read its stdin at all. The grace period is therefore sized by how
 long a user will wait after pressing cancel, not by the round trip, and the round trip only says the

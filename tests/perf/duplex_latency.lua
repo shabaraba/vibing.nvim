@@ -18,7 +18,7 @@
 ---    total and anything accumulated it, every turn after the first would over-report its cost.
 ---    The per-turn numbers under each transport answer this by comparison.
 --- 3. **How long an interrupt takes to actually stop a turn**, which is where
----    `duplex_stream.INTERRUPT_GRACE_MS` comes from.
+---    `duplex_routing.INTERRUPT_GRACE_MS` comes from.
 
 -- The same shape as `helper.should_run()` guarding the E2E specs, and for the same reason. Today
 -- this file is out of `test:lua`'s reach only because plenary collects `*_spec.lua` and this is not

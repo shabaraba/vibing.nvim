@@ -203,7 +203,6 @@ function M.define(descriptor)
       return ids.turn_id, ids.process_id
     end
 
-
     local output = {}
     local error_output = {}
 

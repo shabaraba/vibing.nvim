@@ -50,6 +50,20 @@ function M.create_stdout_handler(eventProcessor, context, is_cancelled_fn)
   end
 end
 
+--- Show the user what the CLI wrote to stderr, once per collection.
+---
+--- Both transports report stderr in one notification rather than per chunk, and both truncate at the
+--- same point; the difference is only what "a collection" is. Oneshot has no boundary but the
+--- process, so it reports at exit; a resident process outlives every turn, so `duplex_routing`
+--- reports at turn teardown. The truncation is one decision and lives here.
+--- @param text string the whole collected stderr; nothing is notified when it is empty
+function M.notify_stderr(text)
+  if not text or text == "" then
+    return
+  end
+  vim.notify(string.format("[vibing] Process stderr:\n%s", text:sub(1, 500)), vim.log.levels.WARN)
+end
+
 ---stderrコールバックを作成
 ---エラー出力をバッファに追加
 ---@param errorOutput string[] エラー出力バッファ
@@ -106,9 +120,7 @@ function M.create_exit_handler(ids, processes, output, errorOutput, onDone, get_
       -- （例: codex の "failed to load models cache" 警告）、それで生成済みの
       -- stdout を握り潰すとタイトル生成などが不必要に失敗する。失敗判定は
       -- 終了コードで行い、stderr は可視化のため通知だけ残す。
-      if #errorOutput > 0 then
-        vim.notify(string.format("[vibing] Process stderr:\n%s", stderr_text:sub(1, 500)), vim.log.levels.WARN)
-      end
+      M.notify_stderr(stderr_text)
 
       if obj.code ~= 0 then
         local error_msg = stderr_text

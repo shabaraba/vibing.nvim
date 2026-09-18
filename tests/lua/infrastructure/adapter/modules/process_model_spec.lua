@@ -3,6 +3,7 @@
 ---
 --- The default matters more than the feature: `duplex` is opt-in, so every assertion here that ends
 --- in `oneshot` is guarding against a resident process appearing where nobody asked for one.
+--- Reassigned per test; see the reload in `before_each`.
 local ProcessModel = require("vibing.infrastructure.adapter.modules.process_model")
 
 local CAPABLE = { id = "claude", process = "duplex" }
@@ -26,7 +27,12 @@ describe("process_model.resolve", function()
 
   before_each(function()
     notified = {}
-    ProcessModel._reset_announcements()
+    -- `notify.warn_once` memoises by key for the life of the module, so the module *and* its caller
+    -- are dropped together: reloading only the notify module would leave `process_model` holding a
+    -- reference to the old one, with the old memo still in it.
+    package.loaded["vibing.core.utils.notify"] = nil
+    package.loaded["vibing.infrastructure.adapter.modules.process_model"] = nil
+    ProcessModel = require("vibing.infrastructure.adapter.modules.process_model")
     original_notify = vim.notify
     vim.notify = function(message, level)
       table.insert(notified, { message = message, level = level })

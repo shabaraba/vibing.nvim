@@ -80,8 +80,8 @@ end
 --- @field cwd string
 --- @field env table<string, string>
 --- @field process_entry Vibing.ProcessEntry registered when the spawn succeeds
---- @field on_line fun(line: string)
---- @field on_stderr fun(text: string)
+--- @field on_line fun(line: string, record: Vibing.DuplexProcess)
+--- @field on_stderr fun(text: string, record: Vibing.DuplexProcess)
 --- @field on_exit fun(record: Vibing.DuplexProcess, code: number)
 
 --- The process that will serve this turn: the live one when its argv still matches, a new one

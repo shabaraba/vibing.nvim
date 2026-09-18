@@ -23,8 +23,11 @@ local M = {}
 --- @field decoder_state table Parse state that belongs to the *process*, not to any one turn: the
 ---   session id the decoder has already reported. A fresh table per turn would re-announce the
 ---   session on the first line of every turn.
---- @field on_line fun(line: string) Where a complete stdout line goes. Swapped per turn by the pool.
---- @field on_stderr fun(text: string)
+--- @field on_line fun(line: string, record: Vibing.DuplexProcess) Where a complete stdout line goes.
+---   The record is passed back rather than captured, because a process that has already been
+---   replaced goes on flushing what Neovim buffered for it: the router compares identity to decide
+---   whether those bytes belong to the chat's current process (`duplex_routing.lua`).
+--- @field on_stderr fun(text: string, record: Vibing.DuplexProcess) Same, for stderr.
 --- @field on_exit fun(code: number)
 --- @field stopping boolean Set before a deliberate kill so `on_exit` can tell it from a crash.
 
@@ -38,23 +41,33 @@ local INTERRUPT_REQUEST_PREFIX = "vibing-interrupt-"
 local function absorb(record, data)
   -- data[1] continues the partial line left by the previous callback; a `result` line carrying a
   -- long tool transcript always arrives split across several batches.
-  local pending = record._pending
-  pending[#pending] = pending[#pending] .. (data[1] or "")
-  for i = 2, #data do
-    table.insert(pending, data[i])
+  --
+  -- The fragments of that partial line are held as a list and joined only when its newline finally
+  -- arrives. Appending each batch onto one growing string instead would re-copy everything received
+  -- so far on every callback -- quadratic in the length of exactly the longest line there is.
+  local fragments = record._pending
+  if #data == 1 then
+    table.insert(fragments, data[1])
+    return
   end
 
-  -- Everything but the last element is a complete line; the last is the partial carried forward.
-  for i = 1, #pending - 1 do
-    local line = pending[i]
-    if line ~= "" then
-      -- The record goes with the line: a process that has already been replaced can still be
-      -- flushing output, and the router has to be able to tell that this is not the process its
-      -- chat is currently using (`duplex_routing.lua`).
-      record.on_line(line, record)
+  table.insert(fragments, data[1] or "")
+  local line = table.concat(fragments)
+  if line ~= "" then
+    -- The record goes with the line: a process that has already been replaced can still be
+    -- flushing output, and the router has to be able to tell that this is not the process its
+    -- chat is currently using (`duplex_routing.lua`).
+    record.on_line(line, record)
+  end
+
+  -- Everything between the first and last element is a complete line of its own; the last is the
+  -- partial carried forward.
+  for i = 2, #data - 1 do
+    if data[i] ~= "" then
+      record.on_line(data[i], record)
     end
   end
-  record._pending = { pending[#pending] }
+  record._pending = { data[#data] }
 end
 
 --- @class Vibing.DuplexSpawnOpts

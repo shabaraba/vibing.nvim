@@ -429,21 +429,36 @@ local function count_assistant_headers(text)
   end
 end
 
----`index` 本目のAssistant見出しより後ろ、次の見出しの手前まで。無ければ nil
+---`index` 本目のAssistant見出しの終端オフセット。そこまで届かなければ nil
+---
+---「n本目の見出しまで歩く」のはこのファイルに3回出てくる形で、そのうち2つは本文の切り出しと
+---ターン完了判定という**別々の問い**に使われる。歩き方が1箇所なら、片方だけ1本ずれることがない
 ---@param text string
 ---@param index number 1始まり
----@return string?
-local function assistant_section(text, index)
-  local from, body_start = 1, nil
+---@return number?
+local function nth_header_end(text, index)
+  local from = 1
   for _ = 1, index do
     local s, e = text:find(ASSISTANT_HEADER_PATTERN, from)
     if not s then
       return nil
     end
-    body_start, from = e + 1, e + 1
+    from = e + 1
   end
-  local next_s = text:find(ASSISTANT_HEADER_PATTERN, from)
-  return text:sub(body_start, next_s and next_s - 1 or nil)
+  return from - 1
+end
+
+---`index` 本目のAssistant見出しより後ろ、次の見出しの手前まで。無ければ nil
+---@param text string
+---@param index number 1始まり
+---@return string?
+local function assistant_section(text, index)
+  local header_end = nth_header_end(text, index)
+  if not header_end then
+    return nil
+  end
+  local next_s = text:find(ASSISTANT_HEADER_PATTERN, header_end + 1)
+  return text:sub(header_end + 1, next_s and next_s - 1 or nil)
 end
 
 ---`count` 本目のターンが失敗していたなら、その `**Error:**` 行。していなければ nil
@@ -460,6 +475,19 @@ function M._turn_failure(text, count)
   return section and section:match(TURN_ERROR_PATTERN) or nil
 end
 
+---`count` 本目のターンが失敗していたなら `poll_chat` に返す `false, 理由` の組。
+---していなければ何も返さない（＝呼び出し側が自分の条件を続けて評価する）
+---@param text string
+---@param count number
+---@return boolean? ok
+---@return string? reason
+local function turn_failure_result(text, count)
+  local failure = M._turn_failure(text, count)
+  if failure then
+    return false, string.format("assistant turn %d failed: %s", count, failure)
+  end
+end
+
 ---`count` 本目のターンが**終わっている**か。終わっていないなら false
 ---
 ---見出しの本数では言えない。`send_message` は応答が流れ始めた時点で見出しを書くので、本数は
@@ -468,15 +496,8 @@ end
 ---@param count number
 ---@return boolean
 function M._turn_completed(text, count)
-  local from, seen = 1, 0
-  while seen < count do
-    local s, e = text:find(ASSISTANT_HEADER_PATTERN, from)
-    if not s then
-      return false
-    end
-    seen, from = seen + 1, e + 1
-  end
-  return text:find(UNSENT_USER_PATTERN, from) ~= nil
+  local header_end = nth_header_end(text, count)
+  return header_end ~= nil and text:find(UNSENT_USER_PATTERN, header_end + 1) ~= nil
 end
 
 ---**モデルが実際に出した文字列**を待つ。ターンがエラーで死んだら理由ごと打ち切る。
@@ -534,9 +555,9 @@ function M.wait_for_assistant_turns(instance, count, timeout)
     if count_assistant_headers(text) < count then
       return false
     end
-    local failure = M._turn_failure(text, count)
-    if failure then
-      return false, string.format("assistant turn %d failed: %s", count, failure)
+    local failed, reason = turn_failure_result(text, count)
+    if failed ~= nil then
+      return failed, reason
     end
     return true
   end, string.format("%d assistant turn(s)", count))
@@ -567,9 +588,9 @@ end
 ---@return string? reason
 function M.wait_for_completed_turn(instance, count, timeout)
   return poll_chat(instance, timeout, function(text)
-    local failure = M._turn_failure(text, count)
-    if failure then
-      return false, string.format("assistant turn %d failed: %s", count, failure)
+    local failed, reason = turn_failure_result(text, count)
+    if failed ~= nil then
+      return failed, reason
     end
     return M._turn_completed(text, count)
   end, string.format("assistant turn %d to complete", count))

@@ -284,8 +284,8 @@ function M.install(Class, features)
   --- to this same `cancel` if the CLI has not stopped within `INTERRUPT_GRACE_MS`.
   --- @param process_id string?
   function Class:stop_turn(process_id)
-    local DuplexStream = require("vibing.infrastructure.adapter.modules.duplex_stream")
-    if process_id and DuplexStream.stop_turn(self, process_id) then
+    local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
+    if process_id and Routing.stop_turn(self, process_id) then
       return
     end
     self:cancel(process_id)

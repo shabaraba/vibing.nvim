@@ -11,6 +11,8 @@
 --- conformance branch ends up testing the wrong one.
 --- @module vibing.infrastructure.adapter.modules.process_model
 
+local Notify = require("vibing.core.utils.notify")
+
 local M = {}
 
 M.ONESHOT = "oneshot"
@@ -26,10 +28,6 @@ local function is_valid(value)
   return VALID[value] == true
 end
 
---- Downgrades already announced, so a chat is told once rather than every turn.
---- @type table<string, boolean>
-local announced = {}
-
 --- Say once that a chat asked for `duplex` and is not getting it.
 ---
 --- A refusal that shows in the argv is a refusal the reader can find; these show nowhere at all.
@@ -39,14 +37,13 @@ local announced = {}
 --- They would then measure the thing they think they turned on. Same shape as an unrecognised
 --- `effort` level, dropped with a warning for the same reason: some CLIs accept it silently and
 --- ignore it.
+---
+--- Keyed rather than plain, because a downgrade is decided on every turn: `warn_once` is the same
+--- memo `config.lua` uses for a bad `backends.<id>.<field>`, so a test resets it the same way.
 --- @param key string what to announce at most once
 --- @param message string
 local function announce_downgrade(key, message)
-  if announced[key] then
-    return
-  end
-  announced[key] = true
-  vim.notify("[vibing] " .. message .. " Running one CLI process per turn instead.", vim.log.levels.WARN)
+  Notify.warn_once(key, message .. " Running one CLI process per turn instead.")
 end
 
 --- What a chat asked for, before the backend's own ceiling is applied.
@@ -134,11 +131,6 @@ function M.resolve(descriptor, opts, config)
     return M.ONESHOT
   end
   return M.DUPLEX
-end
-
---- Test seam: forget which downgrades have been announced.
-function M._reset_announcements()
-  announced = {}
 end
 
 return M

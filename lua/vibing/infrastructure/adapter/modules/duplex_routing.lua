@@ -9,7 +9,9 @@
 --- Split from `duplex_stream.lua`, which is about what one turn does.
 --- @module vibing.infrastructure.adapter.modules.duplex_routing
 
+local DuplexProcess = require("vibing.infrastructure.adapter.modules.duplex_process")
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
+local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 
 local M = {}
 
@@ -29,12 +31,6 @@ local function take_turn(record)
   return turn
 end
 
---- Feed one stdout line to whichever context should see it.
----
---- Between turns the CLI still talks — `active_goal` and `autocompact_state` arrive before the
---- first turn even starts, and the decoder ignores types it does not know. The idle context exists
---- so the one thing that does matter there, the `session` event, still reaches the SessionManager
---- instead of being dropped on the floor with the rest.
 --- Whether `record` is still the process this chat is using.
 ---
 --- A replaced process goes on flushing whatever Neovim had buffered for it, and those bytes must
@@ -48,6 +44,12 @@ local function is_current(chat_key, record)
   return record ~= nil and Pool.get(chat_key) == record
 end
 
+--- Feed one stdout line to whichever context should see it.
+---
+--- Between turns the CLI still talks — `active_goal` and `autocompact_state` arrive before the
+--- first turn even starts, and the decoder ignores types it does not know. The idle context exists
+--- so the one thing that does matter there, the `session` event, still reaches the SessionManager
+--- instead of being dropped on the floor with the rest.
 --- @param chat_key number|string
 --- @param descriptor Vibing.BackendDescriptor
 --- @return fun(line: string, record: Vibing.DuplexProcess)
@@ -65,6 +67,12 @@ function M.line_router(chat_key, descriptor)
 end
 
 --- stderr belongs to the turn that was running when it was written, and to the user either way.
+---
+--- Collected, never announced here: a resident process writes stderr for as long as it lives, so
+--- notifying per batch would put one notification on the main loop for every write of an hour-long
+--- chat. The oneshot path reports once per process (`stream_handler.create_exit_handler`); the
+--- matching boundary for a process that outlives its turns is the turn, so `report_stderr` below is
+--- called from `duplex_turn`'s teardown.
 --- @param chat_key number|string
 --- @return fun(text: string, record: Vibing.DuplexProcess)
 function M.stderr_router(chat_key)
@@ -72,9 +80,24 @@ function M.stderr_router(chat_key)
     local turn = is_current(chat_key, record) and M.turn_of(record) or nil
     if turn then
       table.insert(turn.context.errorOutput, text)
+      return
     end
-    vim.notify(string.format("[vibing] Process stderr:\n%s", text:sub(1, 500)), vim.log.levels.WARN)
+    -- Between turns there is no context to collect into, and dropping it would lose exactly the
+    -- output that explains why the next turn behaves oddly. Carried on the record until one ends.
+    record._idle_stderr = record._idle_stderr or {}
+    table.insert(record._idle_stderr, text)
   end
+end
+
+--- Report the stderr a finishing turn is responsible for: its own, plus anything the process wrote
+--- while it was idle and nobody was collecting.
+--- @param record Vibing.DuplexProcess
+--- @param error_output string[]|nil the finishing turn's collected stderr
+function M.report_stderr(record, error_output)
+  local parts = record._idle_stderr or {}
+  record._idle_stderr = nil
+  vim.list_extend(parts, error_output or {})
+  StreamHandler.notify_stderr(table.concat(parts, ""))
 end
 
 --- What a turn's response looks like when the process, not the turn, ended it.
@@ -138,9 +161,12 @@ function M.cancellable_handle(record, chat_key)
   }
 end
 
---- The context lines are fed to between turns, created once per process.
----  record Vibing.DuplexProcess
----  session_manager table
+--- Ensure the context lines are fed to between turns, created once per process.
+---
+--- A mutator despite the name: it fills `record._idle_context` on first call and leaves it alone
+--- afterwards, so the decoder's view of the process survives the turns that come and go over it.
+--- @param record Vibing.DuplexProcess
+--- @param session_manager table
 function M.idle_context(record, session_manager)
   record._idle_context = record._idle_context
     or {
@@ -150,6 +176,73 @@ function M.idle_context(record, session_manager)
       errorOutput = {},
       _decoder_state = record.decoder_state,
     }
+end
+
+--- How long an interrupt has to actually stop the turn before the process is killed instead.
+---
+--- The contract the user sees is "if I say stop, it stops". Keeping the process alive is an
+--- optimisation underneath that contract, not a replacement for it: `chansend` succeeding means the
+--- bytes were written, never that the CLI acted on them, and a CLI wedged inside a tool call will
+--- not act on them at all. Without this, `<C-c>` — which has always killed — would silently become
+--- a request the process is free to ignore.
+---
+--- Measured against claude 2.1.236 mid-generation, the turn ended **16ms** after the interrupt was
+--- written. This is ~300x that, on purpose: 16ms is the responsive case, and the case this exists
+--- for is the opposite one. So the size comes from how long someone will wait after pressing cancel,
+--- and the measurement only says the normal path never reaches it.
+--- `handbook/architecture/duplex-transport.md`.
+M.INTERRUPT_GRACE_MS = 5000
+
+--- Stop the turn a process has open without stopping the process.
+---
+--- **"Handled" means the process is resident, not that anything was interrupted.** A chat sends
+--- `cancel_request()` before *every* message as a zombie reap (`ChatBuffer:send_message`), so on
+--- this transport the common case is being asked to stop a process that is sitting idle between
+--- turns — and the caller's fallback for "not handled" is a kill. Returning false there would kill
+--- the resident process before every single message, which is the exact opposite of the feature.
+---
+--- **"Handled" is two different facts, and they must not be conflated.** "This is a resident
+--- process, so do not reflexively kill it" is one; "the interrupt was actually delivered" is
+--- another. Returning true for the second when only the first is known makes a failed write look
+--- like a successful cancel, and the user's stop becomes a no-op until the grace timer notices.
+--- So a write that does not land falls straight through to the caller's kill.
+---
+--- @param adapter table the adapter that owns the process, for the fallback kill
+--- @param process_id string|nil
+--- @return boolean handled false when there is no resident process, or when it could not be asked
+function M.stop_turn(adapter, process_id)
+  local _, record = Pool.find_by_process_id(process_id)
+  if not record then
+    return false
+  end
+
+  local turn = M.turn_of(record)
+  if not turn then
+    -- Idle between turns: there is nothing to stop, and killing would throw the process away on
+    -- the zombie reap that precedes every single message.
+    return true
+  end
+
+  record._interrupts = (record._interrupts or 0) + 1
+  if not DuplexProcess.interrupt(record, record._interrupts) then
+    -- The request could not even be written -- a dying process, a closed stdin. Waiting out the
+    -- grace period would be waiting for an answer to a question nobody was asked.
+    return false
+  end
+
+  -- Armed through the turn, which stops every timer it owns the moment it ends. A watchdog that
+  -- outlived its turn would fire during the *next* one, on the same process, and kill that instead.
+  turn.watch(M.INTERRUPT_GRACE_MS, function()
+    vim.notify(
+      string.format(
+        "[vibing] The CLI did not stop within %dms of being interrupted; stopping the process instead.",
+        M.INTERRUPT_GRACE_MS
+      ),
+      vim.log.levels.WARN
+    )
+    adapter:cancel(record.process_id)
+  end)
+  return true
 end
 
 return M

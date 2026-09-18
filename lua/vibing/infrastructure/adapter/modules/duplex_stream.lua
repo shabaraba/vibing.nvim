@@ -17,6 +17,9 @@
 --- switch are wired is `duplex_routing.lua`.
 --- @module vibing.infrastructure.adapter.modules.duplex_stream
 
+-- Safe at load time: `cli_runtime` reaches back into the duplex modules only from inside its
+-- methods, so this direction is the only one resolved while either module is still loading.
+local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
 local DuplexProcess = require("vibing.infrastructure.adapter.modules.duplex_process")
 local DuplexTurn = require("vibing.infrastructure.adapter.modules.duplex_turn")
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
@@ -47,11 +50,11 @@ local M = {}
 --- as-written argv differs by construction on every chat's second turn — every chat would restart
 --- its process every time, and the feature would buy nothing while looking correct.
 --- @param params Vibing.DuplexRunParams
---- @return string|nil key, string|nil error
+--- @return string|nil key, any err whatever pcall returned, for `report_build_failure` to strip
 local function reuse_key(params)
   local ok, cmd = pcall(params.descriptor.build, params.prompt, params.opts, nil, params.config, params.hook_arg)
   if not ok then
-    return nil, tostring(cmd)
+    return nil, cmd
   end
   return table.concat(cmd, "\30"), nil
 end
@@ -74,7 +77,10 @@ function M.run(params)
 
   local argv_key, key_err = reuse_key(params)
   if not argv_key then
-    return fail(key_err)
+    -- The same helper the oneshot path calls twenty lines up, so a missing binary reads as a
+    -- message in both transports rather than as a `cli_command_builder.lua:214:` stack location.
+    CliRuntime.report_build_failure(ids, key_err, params.finish)
+    return ids.turn_id, ids.process_id
   end
 
   local record, err = Pool.acquire(chat_key, {
@@ -123,73 +129,6 @@ function M.run(params)
   end
 
   return ids.turn_id, record.process_id
-end
-
---- How long an interrupt has to actually stop the turn before the process is killed instead.
----
---- The contract the user sees is "if I say stop, it stops". Keeping the process alive is an
---- optimisation underneath that contract, not a replacement for it: `chansend` succeeding means the
---- bytes were written, never that the CLI acted on them, and a CLI wedged inside a tool call will
---- not act on them at all. Without this, `<C-c>` — which has always killed — would silently become
---- a request the process is free to ignore.
----
---- Measured against claude 2.1.236 mid-generation, the turn ended **16ms** after the interrupt was
---- written. This is ~300x that, on purpose: 16ms is the responsive case, and the case this exists
---- for is the opposite one. So the size comes from how long someone will wait after pressing cancel,
---- and the measurement only says the normal path never reaches it.
---- `handbook/architecture/duplex-transport.md`.
-M.INTERRUPT_GRACE_MS = 5000
-
---- Stop the turn a process has open without stopping the process.
----
---- **"Handled" means the process is resident, not that anything was interrupted.** A chat sends
---- `cancel_request()` before *every* message as a zombie reap (`ChatBuffer:send_message`), so on
---- this transport the common case is being asked to stop a process that is sitting idle between
---- turns — and the caller's fallback for "not handled" is a kill. Returning false there would kill
---- the resident process before every single message, which is the exact opposite of the feature.
----
---- **"Handled" is two different facts, and they must not be conflated.** "This is a resident
---- process, so do not reflexively kill it" is one; "the interrupt was actually delivered" is
---- another. Returning true for the second when only the first is known makes a failed write look
---- like a successful cancel, and the user's stop becomes a no-op until the grace timer notices.
---- So a write that does not land falls straight through to the caller's kill.
----
---- @param adapter table the adapter that owns the process, for the fallback kill
---- @param process_id string|nil
---- @return boolean handled false when there is no resident process, or when it could not be asked
-function M.stop_turn(adapter, process_id)
-  local _, record = Pool.find_by_process_id(process_id)
-  if not record then
-    return false
-  end
-
-  local turn = Routing.turn_of(record)
-  if not turn then
-    -- Idle between turns: there is nothing to stop, and killing would throw the process away on
-    -- the zombie reap that precedes every single message.
-    return true
-  end
-
-  record._interrupts = (record._interrupts or 0) + 1
-  if not DuplexProcess.interrupt(record, record._interrupts) then
-    -- The request could not even be written -- a dying process, a closed stdin. Waiting out the
-    -- grace period would be waiting for an answer to a question nobody was asked.
-    return false
-  end
-
-  -- Armed through the turn, which stops every timer it owns the moment it ends. A watchdog that
-  -- outlived its turn would fire during the *next* one, on the same process, and kill that instead.
-  turn.watch(M.INTERRUPT_GRACE_MS, function()
-    vim.notify(
-      string.format(
-        "[vibing] The CLI did not stop within %dms of being interrupted; stopping the process instead.",
-        M.INTERRUPT_GRACE_MS
-      ),
-      vim.log.levels.WARN
-    )
-    adapter:cancel(record.process_id)
-  end)
-  return true
 end
 
 return M
