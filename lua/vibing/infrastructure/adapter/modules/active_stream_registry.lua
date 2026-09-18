@@ -34,6 +34,19 @@ local M = {}
 --- @type table<string, ActiveStreamEntry>
 local streams = {}
 
+--- The first entry the predicate accepts, or nil. Every lookup below a key lookup is a scan of this
+--- table, and they are written once here so the four of them cannot drift apart.
+--- @param predicate fun(entry: ActiveStreamEntry, turn_id: string): boolean
+--- @return ActiveStreamEntry|nil
+local function find(predicate)
+  for turn_id, entry in pairs(streams) do
+    if predicate(entry, turn_id) then
+      return entry
+    end
+  end
+  return nil
+end
+
 --- Register an active stream's callbacks
 --- @param entry ActiveStreamEntry
 function M.register(entry)
@@ -100,18 +113,13 @@ end
 
 --- Get an active stream entry by the turn it is about.
 ---
---- No hook path reaches this any more — an inbound hook names a process and goes through
---- `rpc/hook_scope.lua`. What is left is `ChatBuffer:is_responding()`, which passes a turn id that
---- may be nil for a chat that has never sent, and would then be answered with *another* chat's
---- stream. That predates this split and is why the nil case is spelled out rather than removed.
---- @param handle_id string|nil When nil, falls back to `sole_active()`. With several concurrent
----   streams and no id, returns nil rather than guessing.
+--- Strict, like `find_by_process_id` and for the same reason: a fallback baked into an accessor is
+--- what let `get_active_opts` answer a late hook with another chat's decisions. A caller that wants
+--- the guess asks `sole_active()` by name — `get_by_chat_bufnr` is the one that does.
+--- @param handle_id string|nil
 --- @return ActiveStreamEntry|nil
 function M.get(handle_id)
-  if handle_id then
-    return streams[handle_id]
-  end
-  return M.sole_active()
+  return handle_id and streams[handle_id] or nil
 end
 
 --- Get an active stream entry by the process serving it.
@@ -128,12 +136,9 @@ function M.find_by_process_id(process_id)
   if not process_id then
     return nil
   end
-  for _, entry in pairs(streams) do
-    if entry.process_id == process_id then
-      return entry
-    end
-  end
-  return nil
+  return find(function(entry)
+    return entry.process_id == process_id
+  end)
 end
 
 --- Get an active stream entry by chat buffer number — the stable value embedded in the provider
@@ -147,14 +152,11 @@ end
 --- @param chat_bufnr number|nil
 --- @return ActiveStreamEntry|nil
 function M.get_by_chat_bufnr(chat_bufnr)
-  if chat_bufnr then
-    for _, entry in pairs(streams) do
-      if entry.chat_bufnr == chat_bufnr then
-        return entry
-      end
-    end
-  end
-  return M.sole_active()
+  local entry = chat_bufnr
+    and find(function(candidate)
+      return candidate.chat_bufnr == chat_bufnr
+    end)
+  return entry or M.sole_active()
 end
 
 --- Find another buffer's in-flight stream that is resuming the same session.
@@ -165,12 +167,9 @@ function M.find_other_active_for_session(session_id, exclude_chat_bufnr)
   if not session_id or session_id == "" then
     return nil
   end
-  for _, entry in pairs(streams) do
-    if entry.session_id == session_id and entry.chat_bufnr ~= exclude_chat_bufnr then
-      return entry
-    end
-  end
-  return nil
+  return find(function(entry)
+    return entry.session_id == session_id and entry.chat_bufnr ~= exclude_chat_bufnr
+  end)
 end
 
 --- Find another buffer's in-flight stream running in the same git worktree.
@@ -189,12 +188,9 @@ function M.find_other_active_for_worktree(worktree_root, exclude_handle_id)
   if not worktree_root or worktree_root == "" then
     return nil
   end
-  for handle_id, entry in pairs(streams) do
-    if entry.worktree_root == worktree_root and handle_id ~= exclude_handle_id then
-      return entry
-    end
-  end
-  return nil
+  return find(function(entry, turn_id)
+    return entry.worktree_root == worktree_root and turn_id ~= exclude_handle_id
+  end)
 end
 
 return M

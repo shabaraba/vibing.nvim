@@ -138,9 +138,6 @@ function M.define(descriptor)
       turn_id = Identity.new_turn_id(),
       process_id = Identity.new_process_id(),
     }
-    -- The turn, under the name the rest of the codebase still calls it by until the
-    -- `handle_id` → `turn_id` rename lands. Same value as `ids.turn_id`, never the process.
-    local handle_id = ids.turn_id
     local session_id = opts._session_id
     local tag = "[vibing:" .. descriptor.id .. "]"
 
@@ -188,7 +185,7 @@ function M.define(descriptor)
     local build_ok, cmd = pcall(descriptor.build, prompt, opts, session_id, self.config, hook_arg)
     if not build_ok then
       CliRuntime.report_build_failure(ids, cmd, on_done)
-      return handle_id, ids.process_id
+      return ids.turn_id, ids.process_id
     end
 
     local output = {}
@@ -208,7 +205,7 @@ function M.define(descriptor)
 
     local event_context = {
       sessionManager = self._session_manager,
-      handleId = handle_id,
+      handleId = ids.turn_id,
       -- The session a `{kind = "session"}` event names belongs to the process that reported it, so
       -- the renderer stores it under this and not under the turn.
       processId = ids.process_id,
@@ -218,7 +215,7 @@ function M.define(descriptor)
       onFirstResponse = cancel_timeout,
       onChunk = function(chunk)
         cancel_timeout()
-        on_chunk(chunk, handle_id)
+        on_chunk(chunk, ids.turn_id)
       end,
     }
     if descriptor.event_context_fields then
@@ -243,7 +240,7 @@ function M.define(descriptor)
     env.VIBING_PROCESS_ID = ids.process_id
 
     ActiveStreamRegistry.register({
-      handle_id = handle_id,
+      handle_id = ids.turn_id,
       process_id = ids.process_id,
       -- Only where the nvim_ask_user_question route is wired: registering a value nothing
       -- consumes would only look like a working route (see features.md → AskUserQuestion).
@@ -260,9 +257,9 @@ function M.define(descriptor)
     -- exit path resolve the handle through these entries, not only the hook.
     local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
     if descriptor.vocabulary then
-      perm_handler.set_active_opts(handle_id, vim.tbl_extend("force", opts, { _tool_vocabulary = descriptor.vocabulary }))
+      perm_handler.set_active_opts(ids.turn_id, vim.tbl_extend("force", opts, { _tool_vocabulary = descriptor.vocabulary }))
     else
-      perm_handler.set_active_opts(handle_id, opts)
+      perm_handler.set_active_opts(ids.turn_id, opts)
     end
 
     local wrapped_on_done = function(response)
@@ -270,14 +267,14 @@ function M.define(descriptor)
         return
       end
       completed = true
-      ActiveStreamRegistry.unregister(handle_id)
-      perm_handler.clear_active_opts(handle_id)
+      ActiveStreamRegistry.unregister(ids.turn_id)
+      perm_handler.clear_active_opts(ids.turn_id)
       if timeout_timer then
         vim.fn.timer_stop(timeout_timer)
         timeout_timer = nil
       end
 
-      RateLimitDetector.attach(response, handle_id, event_context)
+      RateLimitDetector.attach(response, ids.turn_id, event_context)
 
       -- Attached even on a failed turn: the requests it made were still paid for, and a turn that
       -- died at 600k is exactly the one worth reporting. A backend whose stream reports no usage
@@ -302,7 +299,7 @@ function M.define(descriptor)
     end), wrapped_on_done)
 
     if not started then
-      return handle_id, ids.process_id
+      return ids.turn_id, ids.process_id
     end
 
     if descriptor.after_spawn then
@@ -334,7 +331,7 @@ function M.define(descriptor)
                 -- Without this, send_message's staleness check is skipped entirely: a timeout that
                 -- fires after the user cancelled and sent something new would be treated as the
                 -- new request's result and reset its session id.
-                _handle_id = handle_id,
+                _handle_id = ids.turn_id,
                 _process_id = ids.process_id,
               })
             end
@@ -343,7 +340,7 @@ function M.define(descriptor)
       end)
     end
 
-    return handle_id, ids.process_id
+    return ids.turn_id, ids.process_id
   end
 
   classes[descriptor.id] = Class

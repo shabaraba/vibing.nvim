@@ -20,6 +20,8 @@
 ---
 --- @module vibing.infrastructure.rpc.hook_scope
 
+local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+
 local M = {}
 
 --- @class Vibing.HookScope
@@ -27,11 +29,9 @@ local M = {}
 --- @field turn_id string|nil The turn that process has open. nil when the process is unknown.
 --- @field entry ActiveStreamEntry|nil The stream serving that turn, when one is registered.
 --- @field guessed boolean Whether `turn_id` came from the sole-active fallback rather than from the
----   id the hook supplied. The two callers want different answers here, which is why the fallback is
----   reported rather than hidden: a permission decision made for the wrong chat is recoverable and
----   the alternative is a turn that stalls until the hook fails closed, so `permission.lua` accepts
----   it — but `rate_limit.lua` refuses, because mislabelling a healthy chat as rate-limited resumes
----   it unattended.
+---   id the hook supplied. Reported rather than hidden because the two callers want different
+---   answers: `permission.lua` accepts the guess, `rate_limit.lua` refuses it. Each states its own
+---   reason at the point it decides.
 
 --- Resolve one hook call's scope.
 ---
@@ -40,20 +40,18 @@ local M = {}
 --- @param params table|nil the RPC params as the shell hook sent them
 --- @return Vibing.HookScope
 function M.of(params)
-  local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
-
   local process_id = params and params.process_id or nil
   if process_id == "" then
     process_id = nil
   end
 
-  local entry = registry.find_by_process_id(process_id)
+  local entry = ActiveStreamRegistry.find_by_process_id(process_id)
   local guessed = false
   if not entry and not process_id then
     -- The hook named no process: either it predates the variable, or the environment lost it. With
     -- exactly one stream in flight there is no other candidate, so this is a resolution rather than
     -- a coin flip; with several, `sole_active` returns nil.
-    entry = registry.sole_active()
+    entry = ActiveStreamRegistry.sole_active()
     guessed = entry ~= nil
   end
 

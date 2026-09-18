@@ -27,6 +27,26 @@ local M = {}
 --- @type table<string, table>
 local active_opts_by_turn = {}
 
+--- Kill the CLI process serving a registered stream.
+---
+--- Named by the process, not the turn: killing is something you do to a process, and the turn stops
+--- as a consequence. Both places that stop a turn to show UI in its place go through here, so there
+--- is one definition of what cancelling a stream means.
+--- @param stream ActiveStreamEntry
+--- @return boolean ok false when cancelling raised
+local function cancel_stream(stream)
+  if not (stream.adapter and stream.process_id) then
+    return true
+  end
+  local ok, err = pcall(function()
+    stream.adapter:cancel(stream.process_id)
+  end)
+  if not ok then
+    vim.notify("[vibing] Failed to cancel stream: " .. tostring(err), vim.log.levels.WARN)
+  end
+  return ok
+end
+
 local APPROVAL_OPTIONS = {
   { value = "allow_once", label = "allow_once - Allow this execution only" },
   { value = "deny_once", label = "deny_once - Deny this execution only" },
@@ -259,11 +279,6 @@ function M.check_tool_permission(params)
   end
 
   local request_id = params.request_id
-  -- Resolved once for the whole synchronous decision, so the opts, the permission config and the
-  -- baseline key cannot disagree about which turn this is. Deriving it separately at each of those
-  -- three points is what let them drift onto two different policies (see rpc/hook_scope.lua).
-  local scope = HookScope.of(params)
-
   local comm_dir = get_comm_dir()
   local req_file = comm_dir .. "/" .. request_id .. ".req"
 
@@ -282,6 +297,10 @@ function M.check_tool_permission(params)
     return { status = "allowed", reason = "invalid request JSON" }
   end
 
+  -- Resolved once for the whole synchronous decision, so the opts, the permission config and the
+  -- baseline key cannot disagree about which turn this is. Deriving it separately at each of those
+  -- three points is what let them drift onto two different policies (see rpc/hook_scope.lua).
+  local scope = HookScope.of(params)
   local active_opts = get_active_opts(scope.turn_id)
 
   -- Backends name their tools differently (codex calls an edit "apply_patch"). The adapter
@@ -302,11 +321,7 @@ function M.check_tool_permission(params)
       local stream = HookScope.of(params).entry
       local reason = nil
       if stream then
-        -- Killing is done to a process, so it is named by one. The turn stops as a consequence,
-        -- which is the whole mechanism today and the thing #774 replaces with an interrupt.
-        if stream.adapter and stream.process_id then
-          stream.adapter:cancel(stream.process_id)
-        end
+        cancel_stream(stream)
         on_stream_fn(stream)
       else
         vim.notify("[vibing] cancel_and_deny: no active stream found", vim.log.levels.WARN)
@@ -393,14 +408,7 @@ function M.ask_user_question(params)
     }
   end
 
-  if stream.adapter and stream.process_id then
-    local cancel_ok, cancel_err = pcall(function()
-      stream.adapter:cancel(stream.process_id)
-    end)
-    if not cancel_ok then
-      vim.notify("[vibing] Failed to cancel stream for ask_user_question: " .. tostring(cancel_err), vim.log.levels.WARN)
-    end
-  end
+  cancel_stream(stream)
   if stream.on_insert_choices then
     stream.on_insert_choices(params.questions)
   end

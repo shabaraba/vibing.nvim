@@ -45,7 +45,7 @@ mv "${REQ_FILE}.tmp" "$REQ_FILE"
 # resolved in Neovim by rpc/hook_scope.lua, and that is what keeps concurrent chats from
 # cross-wiring each other's approval UI.
 # Restricted to [A-Za-z0-9_] since it's interpolated directly into the JSON request below. The same
-# character class is asserted against lua/vibing/domain/agent/identity.lua by its spec, so a rename
+# character class is asserted against lua/vibing/core/utils/identity.lua by its spec, so a rename
 # on either side fails the build instead of silently losing attribution.
 PROCESS_ID="${VIBING_PROCESS_ID//[^A-Za-z0-9_]/}"
 

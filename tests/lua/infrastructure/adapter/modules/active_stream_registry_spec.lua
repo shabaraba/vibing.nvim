@@ -67,27 +67,16 @@ describe("active_stream_registry", function()
     assert.is_not_nil(registry.get("b"))
   end)
 
-  describe("nil handle_id fallback (back-compat)", function()
-    it("returns the sole stream when exactly one is registered", function()
+  -- The guess belongs to the caller that asks for it by name, never to the accessor: an accessor
+  -- that falls back is how `get_active_opts` used to answer a late hook with another chat's
+  -- decisions. `get_by_chat_bufnr` is the one lookup that still wants it.
+  describe("no guess is baked into get()", function()
+    it("returns nil for a nil turn id even when exactly one stream is registered", function()
       local registry = fresh_registry()
       registry.register({ handle_id = "only", adapter = {} })
 
-      local stream = registry.get(nil)
-      assert.is_not_nil(stream)
-      assert.equals("only", stream.handle_id)
-    end)
-
-    it("returns nil when multiple streams are registered (avoids guessing)", function()
-      local registry = fresh_registry()
-      registry.register({ handle_id = "a", adapter = {} })
-      registry.register({ handle_id = "b", adapter = {} })
-
       assert.is_nil(registry.get(nil))
-    end)
-
-    it("returns nil when no streams are registered", function()
-      local registry = fresh_registry()
-      assert.is_nil(registry.get(nil))
+      assert.is_not_nil(registry.sole_active())
     end)
   end)
 

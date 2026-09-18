@@ -1,6 +1,7 @@
 # Processes and Turns
 
-Detail behind `.claude/rules/architecture.md` → "Processes and Turns". A CLI process and a
+Detail behind `.claude/rules/architecture.md` → "Concurrent Execution, Fork and Subagent Chat",
+whose session-keying sentence is the invariant this page is the reasoning for. A CLI process and a
 request/response exchange are two things, and until #774 they shared one identifier called
 `handle_id`, because one process served exactly one turn and the two coincided.
 
@@ -45,7 +46,7 @@ The two minters live in `lua/vibing/core/utils/identity.lua` and emit the same s
 nothing may parse an id to learn its kind, because that would be a convention with no invariant
 behind it.
 
-## Why the id alphabet moved into `domain/`
+## Why the id alphabet moved into `core/utils/identity.lua`
 
 Both ids have to survive `[^A-Za-z0-9_]` deletion unchanged, for two unrelated reasons: the process
 id is interpolated into a JSON request by `bin/hooks/*.sh` after exactly that substitution, and the
@@ -97,8 +98,24 @@ has already been killed.
 
 ## What is still owed
 
-Three things are documented here rather than fixed, because their shape depends on how a resident
-transport delimits a turn:
+Two of these are deferred because they are wide mechanical changes that every branch stacked on this
+one would have to absorb, and three because their shape depends on how a resident transport
+delimits a turn:
+
+- **`handle_id` still spells "turn id" at every seam outside the adapter.** `ActiveStreamEntry`'s
+  key and field, `Vibing.AdapterResponse._handle_id`, `ChatBuffer._current_handle_id`, the
+  `set_handle_id` / `get_handle_id` callbacks and `event_context.handleId` all mean the turn, and
+  only a docstring says so. The rename is mechanical and belongs in one commit of its own, not
+  half-done here — there is no `turn_id` spelling in the codebase to be inconsistent with.
+- **`stream()` returns the two ids positionally**, so `local id = adapter:stream(...)` compiles,
+  yields the turn, and `cancel(id)` is then a silent no-op. The typed `Vibing.RequestIds` table the
+  adapter already builds internally is what should cross the seam; that changes the adapter contract
+  in `base.lua` and every conformance spec, so it travels with the rename above.
+- **`cancel(nil)` means "kill every process this adapter owns."** The hazard is real — one adapter
+  instance is shared between a chat's stream and the lightweight `execute()` calls — and is
+  currently paid for with a guard at the one call site that can reach it. Splitting `cancel_all()`
+  out and making `cancel(process_id)` require its argument removes the special case; it is deferred
+  for the same reason, since `init.lua`, `base.lua` and five specs name the nil form.
 
 - **`subagent_count` lives on the registry entry and is cleared by `unregister`.** With one turn per
   entry that is exactly right. A resident process must reset the count when a new turn starts, or a

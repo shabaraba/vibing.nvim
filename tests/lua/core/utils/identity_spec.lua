@@ -5,7 +5,9 @@ local Identity = require("vibing.core.utils.identity")
 --- is the failure mode these assertions exist to remove.
 local function repo_root()
   local this = debug.getinfo(1, "S").source:sub(2)
-  return vim.fn.fnamemodify(this, ":h:h:h:h:h")
+  -- Anchored on a marker file rather than by counting `:h`s: a spec that moves one directory would
+  -- otherwise point at the wrong root and lose the very gate below.
+  return vim.fs.root(this, "package.json")
 end
 
 local function read(relative)
@@ -64,16 +66,16 @@ describe("core.utils.identity", function()
     end)
   end
 
-  it("mints a process id and a turn id that are different values", function()
-    -- The whole point of the split: a consumer handed one where it wanted the other must miss,
-    -- rather than work by coincidence on the oneshot transport and break under #774.
-    assert.is_not.equals(Identity.new_process_id(), Identity.new_turn_id())
-  end)
-
   -- Nothing may parse an id to learn its kind, and the `^%x+_%x+$` assertion each minter is held to
   -- above is what makes the two indistinguishable. There is deliberately no test here asserting
   -- that in a third way: a shape comparison between two live ids is not stable, because the random
   -- suffix has a variable width.
+  --
+  -- Nor is there one asserting that the two minters return different values. It could not fail:
+  -- both mint fresh, so it stays green even if one is aliased to the other — which is the mutation
+  -- it would exist to catch. What the split actually promises is asserted where it is observable,
+  -- in `stream_options_spec.lua`: the turn id `stream()` returns is not the `VIBING_PROCESS_ID` the
+  -- child was handed.
 
   describe("the contract with bin/hooks", function()
     -- This gate did not exist before: cli_runtime.lua only *described* the shell's behaviour in a

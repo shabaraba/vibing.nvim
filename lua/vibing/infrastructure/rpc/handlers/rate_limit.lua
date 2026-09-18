@@ -17,10 +17,8 @@ local M = {}
 ---
 --- The hook names a process (`VIBING_PROCESS_ID`); the turn is resolved on arrival through
 --- `rpc/hook_scope.lua`, because `wrapped_on_done` is what collects this and it knows the turn it is
---- completing. **A failure whose turn is not named outright is dropped — including the case where
---- exactly one stream is live and `hook_scope` would happily guess.** Mislabelling a healthy chat as
---- rate-limited writes a project-wide limit state and hands its message to auto-resume, so the guess
---- spends tokens rather than merely answering one question wrongly. The adapter always exports
+--- completing. A failure whose turn is not named outright is dropped — see `M.stop_failure` for why
+--- this handler refuses the guess its sibling accepts. The adapter always exports
 --- `VIBING_PROCESS_ID`, so an unresolvable one is a real defect if it ever happens — and the
 --- stream-json `rate_limit_event`, not this hook, is the primary detection channel anyway.
 --- @type table<string, Vibing.RateLimitInfo>
