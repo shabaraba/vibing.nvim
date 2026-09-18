@@ -49,6 +49,20 @@ describe("approval_decision", function()
       assert.equals(" (query: neovim)", ApprovalDecision.input_summary("WebSearch", { query = "neovim" }))
     end)
 
+    it("reads the field, so a tool nobody listed still says which call was approved", function()
+      -- 「ツール名→フィールド名」の表は、足し忘れても何も落ちない。Grep も MCP ツールも
+      -- 引数無しの再試行文になり、その真上のプロンプトには `Pattern:` が出ている、という
+      -- 食い違いが実際に起きていた
+      assert.equals(" (pattern: TODO)", ApprovalDecision.input_summary("Grep", { pattern = "TODO" }))
+      assert.equals(
+        " (file: /tmp/n.ipynb)",
+        ApprovalDecision.input_summary("NotebookEdit", { notebook_path = "/tmp/n.ipynb" })
+      )
+      -- 逆向きにも外れていた: `WebFetch` は `query` を持たないので、2本の fetch を
+      -- 区別できる唯一のものが落ちていた
+      assert.equals(" (url: https://example.com)", ApprovalDecision.input_summary("WebFetch", { url = "https://example.com" }))
+    end)
+
     it("summarises nothing for a tool it has no identifying field for", function()
       -- 知らないツールの input を丸ごと吐くと、再試行文がツールの中身で膨らむ
       assert.equals("", ApprovalDecision.input_summary("Task", { prompt = "x" }))

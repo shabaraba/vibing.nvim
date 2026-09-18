@@ -41,6 +41,27 @@ end
 --- A Lua pattern, not a regex: `-` is a quantifier, so the portless form's literal one is escaped.
 M.PATTERN = "[%d]+%-?[%d]*"
 
+--- The name this instance's copy of one generated file or directory takes.
+---
+--- **One grammar, and `sweep` derives its pattern from the same two halves.** Writing the name
+--- with `string.format` and the matching pattern by `%-`-escaped concatenation is one grammar in
+--- two notations, in two files; renaming one side leaves a sweep that matches nothing, and nothing
+--- fails, because "found no leftovers" is a valid result of a sweep. What accumulates instead is
+--- every dead Neovim's file under `.vibing/`, forever.
+--- @param prefix string everything before the key
+--- @param suffix string everything after it; `""` for a directory
+--- @return string
+function M.name(prefix, suffix)
+  return prefix .. M.get() .. (suffix or "")
+end
+
+--- @param prefix string
+--- @param suffix string
+--- @return string a Lua pattern over one entry's name, capturing the key
+local function name_pattern(prefix, suffix)
+  return "^" .. vim.pesc(prefix) .. "(" .. M.PATTERN .. ")" .. vim.pesc(suffix or "") .. "$"
+end
+
 --- Every key that currently belongs to a running Neovim, this one included — or **nil when that
 --- cannot be established**.
 ---
@@ -75,7 +96,7 @@ function M.live()
   return live
 end
 
---- Directories already swept this session, keyed by directory *and* pattern.
+--- Directories already swept this session, keyed by directory *and* the name grammar.
 ---
 --- Once per directory is enough: the sweep exists only to stop dead instances' leftovers piling up,
 --- and the generators that call it run on every spawn, where a scandir per turn would be
@@ -88,11 +109,15 @@ local swept = {}
 --- **Skips rather than guesses.** A name whose key does not match, or a key belonging to a live
 --- instance, is left alone — deleting a live instance's hook settings takes its permission gate
 --- with it on that instance's next spawn, which fails open.
+--- Takes the same `prefix`/`suffix` as `name`, so what is swept is by construction what is
+--- written.
 --- @param dir string the directory to scan
---- @param name_pattern string a Lua pattern over one entry's name with exactly one capture, the key
+--- @param prefix string everything before the key
+--- @param suffix string everything after it; `""` for a directory
 --- @param remove fun(path: string) how to delete one entry (a file and a directory differ)
-function M.sweep(dir, name_pattern, remove)
-  local memo = dir .. "\0" .. name_pattern
+function M.sweep(dir, prefix, suffix, remove)
+  local pattern = name_pattern(prefix, suffix)
+  local memo = dir .. "\0" .. pattern
   if swept[memo] then
     return
   end
@@ -113,7 +138,7 @@ function M.sweep(dir, name_pattern, remove)
   end
 
   for _, name in ipairs(entries) do
-    local key = name:match(name_pattern)
+    local key = name:match(pattern)
     if key and not live[key] then
       pcall(remove, dir .. "/" .. name)
     end

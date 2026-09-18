@@ -61,6 +61,15 @@ describe("settings_generator", function()
     assert.is_not_nil(decoded.hooks.PreToolUse)
     assert.is_not_nil(decoded.hooks.StopFailure)
 
+    -- **Read back out of the file claude is actually handed.** Codex's `-c` fragment and copilot's
+    -- `timeoutSec` are each asserted against their own artefact; claude's `timeout` was the one
+    -- that was not, and `hook_timeout_ordering_spec.lua` does not close the gap — it asks
+    -- `Transports.hook_timeout_sec`, an accessor, so a literal put back into `generate()` leaves
+    -- it green. The only thing failing today would be grok's spec, which reads this generator's
+    -- output for an unrelated reason.
+    local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
+    assert.equals(WaitBudget.cli_timeout_sec(), decoded.hooks.PreToolUse[1].hooks[1].timeout)
+
     vim.fn.delete(tmp, "rf")
   end)
 

@@ -36,26 +36,45 @@ M.NAMES = { "settings_file", "config_override", "plugin_dir", "project_dir" }
 --- @type table<string, boolean>
 M.DIALECTS = { claude = true, copilot = true }
 
+--- Which generator implements each transport. **One map, not one per question asked of it.**
+--- `hook_timeout_sec` dispatches over the same set, and a transport missing from a second copy of
+--- this table answers `nil` — which the ordering check reads as "registers no timeout" and skips,
+--- rather than reporting.
+--- @type table<string, string>
+local generators = {
+  --- `.vibing/hook-settings-<instance>.json`, handed over with `--settings`.
+  settings_file = "vibing.infrastructure.hooks.settings_generator",
+  --- A `-c hooks.PreToolUse=[…]` override plus the trust bypass, with the script staged inside the
+  --- cwd.
+  config_override = "vibing.infrastructure.hooks.codex_settings_generator",
+  --- A throwaway plugin under `.vibing/`, loaded with `--plugin-dir`.
+  plugin_dir = "vibing.infrastructure.hooks.copilot_settings_generator",
+  --- A hook file the CLI discovers from the project tree.
+  project_dir = "vibing.infrastructure.hooks.grok_settings_generator",
+}
+
 --- Required at call time rather than captured: specs stub a generator's `ensure` on the module
 --- table, and a reference taken here would bypass the stub.
+---
+--- Only the entry point differs per transport, which is why this table holds functions and not
+--- just a method name: codex's returns an argv fragment from `get_hook_args`, the other three a
+--- path from `ensure`.
 local installers = {
-  --- `.vibing/hook-settings-<instance>.json`, handed over with `--settings`. Returns the settings path.
+  --- Returns the settings path.
   settings_file = function(cwd, dialect)
-    return require("vibing.infrastructure.hooks.settings_generator").ensure(cwd, dialect)
+    return require(generators.settings_file).ensure(cwd, dialect)
   end,
-  --- A `-c hooks.PreToolUse=[…]` override plus the trust bypass, with the script staged inside the
-  --- cwd. Returns the argv fragment.
+  --- Returns the argv fragment.
   config_override = function(cwd, dialect)
-    return require("vibing.infrastructure.hooks.codex_settings_generator").get_hook_args(cwd, dialect)
+    return require(generators.config_override).get_hook_args(cwd, dialect)
   end,
-  --- A throwaway plugin under `.vibing/`, loaded with `--plugin-dir`. Returns the plugin directory.
+  --- Returns the plugin directory.
   plugin_dir = function(cwd, dialect)
-    return require("vibing.infrastructure.hooks.copilot_settings_generator").ensure(cwd, dialect)
+    return require(generators.plugin_dir).ensure(cwd, dialect)
   end,
-  --- A hook file the CLI discovers from the project tree. Returns the file it wrote; the argv
-  --- does not reference it.
+  --- Returns the file it wrote; the argv does not reference it.
   project_dir = function(cwd, dialect)
-    return require("vibing.infrastructure.hooks.grok_settings_generator").ensure(cwd, dialect)
+    return require(generators.project_dir).ensure(cwd, dialect)
   end,
 }
 
@@ -71,13 +90,7 @@ local installers = {
 --- @param hook Vibing.HookSpec
 --- @return number|nil seconds
 function M.hook_timeout_sec(hook)
-  local modules = {
-    settings_file = "vibing.infrastructure.hooks.settings_generator",
-    config_override = "vibing.infrastructure.hooks.codex_settings_generator",
-    plugin_dir = "vibing.infrastructure.hooks.copilot_settings_generator",
-    project_dir = "vibing.infrastructure.hooks.grok_settings_generator",
-  }
-  local module_name = modules[hook and hook.transport]
+  local module_name = generators[hook and hook.transport]
   if not module_name then
     return nil
   end

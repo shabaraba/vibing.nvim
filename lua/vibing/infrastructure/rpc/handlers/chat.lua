@@ -233,25 +233,10 @@ end
 ---RPCポーラーで迂回した）。列挙元は `view.list_chat_buffers()` 一択 — 「いま何本開いているか」
 ---を知る手段はそれしかない（`application/chat/concurrency.lua` も同じものを読む）ので、
 ---閉じたまま残っているチャットファイルはここには載らない
----承認待ちの一覧、無ければ nil
----
----空リストではなく nil を返すのは、JSONに載ったときの見え方のため: `[]` は「承認待ちだが
----中身が無い」と読めてしまう。載っていなければ「承認待ちではない」で曖昧さがない
----@param bufnr number
----@return table[]?
-function M._pending_approvals_or_nil(bufnr)
-  local pending = require("vibing.presentation.chat.modules.chat_status").pending_approvals(bufnr)
-  if #pending == 0 then
-    return nil
-  end
-  return pending
-end
-
 ---@return {chats: {bufnr: number, file_path: string?, chat_status: string?, waiting_approvals: table[]?, context_size: number?, updated_at: string?, orchestrated_by: string[], task: string?}[]}
 function M.list_chats(_)
   local view = require("vibing.presentation.chat.view")
   local ChatStatus = require("vibing.presentation.chat.modules.chat_status")
-  local pending_approvals_or_nil = M._pending_approvals_or_nil
 
   local buffers = view.list_chat_buffers()
   local bufnrs = sorted_bufnrs(buffers)
@@ -268,7 +253,7 @@ function M.list_chats(_)
       chat_status = ChatStatus.get(bufnr),
       -- 承認待ちのときだけ載る。`nvim_chat_answer_approval` に渡す id の入手先はここで、
       -- 通知にもバッファのマーカーにも載せない（前者は古くなる、後者はテキスト推測）
-      waiting_approvals = pending_approvals_or_nil(bufnr),
+      waiting_approvals = ChatStatus.pending_approvals_or_nil(bufnr),
       context_size = read_context_size(bufnr),
       updated_at = frontmatter.updated_at,
       orchestrated_by = chat_buf:get_frontmatter_list("orchestrated_by"),

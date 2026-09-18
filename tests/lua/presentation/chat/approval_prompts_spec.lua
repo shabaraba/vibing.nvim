@@ -459,12 +459,19 @@ describe("several approval prompts at once", function()
       type_and_send(chat_buf, ambiguous)
 
       local count = 0
+      local detail_lines = 0
       for _, line in ipairs(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)) do
         if line:find("not applied", 1, true) then
           count = count + 1
         end
+        -- 見出しの下に続く `   理由` の行。見出しだけを消す実装だと、ここが押すたびに増える
+        -- — 見出しは1本のままなので、上のカウントでは見えない積み上がりになる
+        if line:find("^   %S") and line:find("req%-1") then
+          detail_lines = detail_lines + 1
+        end
       end
       assert.equals(1, count, "pressing <CR> twice must not leave two explanations")
+      assert.equals(1, detail_lines, "and the explanation's continuation lines must not stack either")
     end)
 
     it("tells the user to keep a marker when several prompts are open", function()

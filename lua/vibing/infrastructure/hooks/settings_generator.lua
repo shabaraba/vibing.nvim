@@ -6,6 +6,12 @@ local Fs = require("vibing.core.utils.fs")
 
 local M = {}
 
+--- The two halves of the generated file's name, around the instance key. Both `settings_path` and
+--- the sweep take them from here, so the name that is written and the name that is recognised are
+--- one grammar (`rpc/instance_key.lua`).
+local NAME_PREFIX = "hook-settings-"
+local NAME_SUFFIX = ".json"
+
 --- The PreToolUse timeout this generator registers, in seconds.
 ---
 --- Read by claude and, through `generate()`, by grok. It shipped as **120, the same number as
@@ -124,18 +130,17 @@ end
 --- @param cwd string
 --- @return string
 function M.settings_path(cwd)
-  return string.format(
-    "%s/.vibing/hook-settings-%s.json",
-    cwd,
-    require("vibing.infrastructure.rpc.instance_key").get()
-  )
+  local InstanceKey = require("vibing.infrastructure.rpc.instance_key")
+  return cwd .. "/.vibing/" .. InstanceKey.name(NAME_PREFIX, NAME_SUFFIX)
 end
 
 --- Delete hook settings left behind by Neovims that are no longer running.
+---
+--- The same two halves `settings_path` builds the name from, so the sweep cannot stop recognising
+--- what this generator writes.
 --- @param vibing_dir string
 local function sweep_dead_instances(vibing_dir)
-  local InstanceKey = require("vibing.infrastructure.rpc.instance_key")
-  InstanceKey.sweep(vibing_dir, "^hook%-settings%-(" .. InstanceKey.PATTERN .. ")%.json$", os.remove)
+  require("vibing.infrastructure.rpc.instance_key").sweep(vibing_dir, NAME_PREFIX, NAME_SUFFIX, os.remove)
 end
 
 --- Ensure hook settings file exists in .vibing/ of the given cwd

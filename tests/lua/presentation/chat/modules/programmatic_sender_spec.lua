@@ -232,7 +232,7 @@ describe("ChatBuffer:add_user_section", function()
     -- 完了イベントは send_message() のコールバックラッパー側にある。このメソッド本体に
     -- 置くと、スラッシュコマンド経路（AIターンが1回も走っていない）からも完了が飛ぶ
     local bufnr = vim.api.nvim_create_buf(false, true)
-    local chat = setmetatable({ buf = bufnr, win = nil, _chunk_buffer = "" }, ChatBuffer)
+    local chat = setmetatable({ buf = bufnr, win = nil, _chunk_parts = {} }, ChatBuffer)
 
     local fired = 0
     local group = vim.api.nvim_create_augroup("VibingCompletionNotifierSpec", { clear = true })

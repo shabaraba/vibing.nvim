@@ -181,6 +181,23 @@ function M.list_for_chat(chat_bufnr)
   return list
 end
 
+--- Whether this chat is holding any hook at all.
+---
+--- Separate from `list_for_chat` because every caller that only wants the yes/no is on a path that
+--- runs often: `append_chunk` asks once per streamed chunk, and `chat_status.get` once per chat per
+--- `nvim_chat_list`. Building and sorting a table to compare its length against zero put an
+--- allocation and a `table.sort` on the streaming path for an answer that is almost always "no".
+--- @param chat_bufnr number
+--- @return boolean
+function M.has_for_chat(chat_bufnr)
+  for _, entry in pairs(pending) do
+    if entry.chat_bufnr == chat_bufnr then
+      return true
+    end
+  end
+  return false
+end
+
 --- @return number
 function M.count()
   return vim.tbl_count(pending)
@@ -210,7 +227,9 @@ end
 --- @return number answered
 function M.resolve_all(reason)
   local answered = 0
-  for request_id in pairs(vim.deepcopy(pending)) do
+  -- `vim.tbl_keys`, not `vim.deepcopy`: only the key set is needed, and `resolve` mutates
+  -- `pending` as it goes. Copying the entries would clone every held tool input on the exit path
+  for _, request_id in ipairs(vim.tbl_keys(pending)) do
     if M.resolve(request_id, "deny", reason) then
       answered = answered + 1
     end

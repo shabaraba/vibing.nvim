@@ -83,19 +83,14 @@ end
 
 ---そのターンがまだ開いているか
 ---
----`git_snapshot.lua` の同名ヘルパーと同じ根拠: 全アダプタが stream 開始で `TurnRegistry.open` し、
----`wrapped_on_done` で `close` するので、レジストリが「このターンがもう終わったか」を知っている
----唯一の場所になる。**プロセス単位で聞いてはいけない** — 常駐プロセスはターンの合間も生きている
----ので、「プロセスが居るか」で判定するとスイープが永久に走らなくなる
+---判定そのものは `TurnRegistry.is_open` が持つ。ここと `git_snapshot.lua` で同じ述語を書き写す
+---と、片方にだけ足した結果**フォールバック側が壊れたまま**になる — それが一度起きている。
+---遅延requireを残すのは、`core/utils` から infrastructure を掴む向きを起動時に固定しないため
 ---@param turn_id string
 ---@return boolean
 local function turn_still_open(turn_id)
   local ok, registry = pcall(require, "vibing.infrastructure.adapter.modules.turn_registry")
-  if not ok then
-    return false
-  end
-  local found_ok, entry = pcall(registry.get, turn_id)
-  return found_ok and entry ~= nil
+  return ok and registry.is_open(turn_id)
 end
 
 ---TTL超過した放置セッション（キャンセルされたリクエスト等）を破棄

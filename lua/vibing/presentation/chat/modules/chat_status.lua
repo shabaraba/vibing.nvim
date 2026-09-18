@@ -37,7 +37,7 @@ function M.get(bufnr)
   -- 読むのは `_stop_reason` ではなく「実際にフックが1つ以上ブロックされているか」。
   -- `_stop_reason` は次の送信まで前のターンの値が残るので、先に読むと本当に走っている
   -- ターンを承認待ちと誤報する。保留レジストリは答えが出た瞬間に空になるので古くならない
-  if #require("vibing.infrastructure.rpc.pending_approvals").list_for_chat(bufnr) > 0 then
+  if require("vibing.infrastructure.rpc.pending_approvals").has_for_chat(bufnr) then
     return "waiting_approval"
   end
 
@@ -87,6 +87,24 @@ function M.pending_approvals(bufnr)
     })
   end
   return summary
+end
+
+---`pending_approvals` の、JSONに載せる形
+---
+---空リストではなく nil を返すのは、載ったときの見え方のため: `[]` は「承認待ちだが中身が無い」
+---と読めてしまう。載っていなければ「承認待ちではない」で曖昧さがない。
+---
+---両方のRPCハンドラ（`nvim_chat_list` と `nvim_get_buffer`）が欲しいのはこちらの形だけなので、
+---変換は語彙を持つこのモジュールに置く。片方のハンドラに置くと、もう片方がそれを呼ぶために
+---ハンドラ同士の依存ができる
+---@param bufnr number
+---@return table[]?
+function M.pending_approvals_or_nil(bufnr)
+  local pending = M.pending_approvals(bufnr)
+  if #pending == 0 then
+    return nil
+  end
+  return pending
 end
 
 return M

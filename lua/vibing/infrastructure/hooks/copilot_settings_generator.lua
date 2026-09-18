@@ -17,6 +17,12 @@ local M = {}
 --- Copilot requires a kebab-case plugin name (max 64 chars).
 local PLUGIN_NAME = "vibing-nvim-permissions"
 
+--- The two halves of the generated directory's name, around the instance key. Both `plugin_dir`
+--- and the sweep take them from here, so what is written and what is recognised are one grammar
+--- (`rpc/instance_key.lua`). The suffix is empty because this one is a directory.
+local NAME_PREFIX = "copilot-plugin-"
+local NAME_SUFFIX = ""
+
 --- Copilot's own hook timeout **fails open** — a hook that runs longer than this is ignored and
 --- the tool proceeds, where every non-zero exit fails closed. So this has to stay above the
 --- deadline pre-tool-use.sh gives itself, or a slow approval turns into a silent allow. Both come
@@ -44,11 +50,8 @@ end
 --- @param cwd string
 --- @return string
 function M.plugin_dir(cwd)
-  return string.format(
-    "%s/.vibing/copilot-plugin-%s",
-    vim.fn.resolve(cwd),
-    require("vibing.infrastructure.rpc.instance_key").get()
-  )
+  local InstanceKey = require("vibing.infrastructure.rpc.instance_key")
+  return vim.fn.resolve(cwd) .. "/.vibing/" .. InstanceKey.name(NAME_PREFIX, NAME_SUFFIX)
 end
 
 --- Build the plugin manifest
@@ -83,10 +86,12 @@ local function build_manifest(hook_command)
 end
 
 --- Delete plugin directories left behind by Neovims that are no longer running.
+---
+--- The same two halves `plugin_dir` builds the name from, so the sweep cannot stop recognising
+--- what this generator writes.
 --- @param vibing_dir string
 local function sweep_dead_instances(vibing_dir)
-  local InstanceKey = require("vibing.infrastructure.rpc.instance_key")
-  InstanceKey.sweep(vibing_dir, "^copilot%-plugin%-(" .. InstanceKey.PATTERN .. ")$", function(path)
+  require("vibing.infrastructure.rpc.instance_key").sweep(vibing_dir, NAME_PREFIX, NAME_SUFFIX, function(path)
     vim.fn.delete(path, "rf")
   end)
 end

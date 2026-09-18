@@ -16,7 +16,7 @@ local Fs = require("vibing.core.utils.fs")
 ---@field session_id string?
 ---@field file_path string?
 ---@field session Vibing.ChatSession? セッションオブジェクト（非推奨、後方互換性のため）
----@field _chunk_buffer string 未フラッシュのチャンクを蓄積するバッファ
+---@field _chunk_parts string[] 未フラッシュのチャンク片。連結は流すときに1回だけ行う
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
 ---@field _pending_choices table[]? add_user_section()後に挿入する選択肢
 ---@field _pending_approvals table[]? add_user_section()後に挿入する承認要求UI。**複数**
@@ -50,7 +50,7 @@ function ChatBuffer:new(config)
   instance.session_id = nil
   instance.file_path = nil
   instance.session = nil
-  instance._chunk_buffer = ""
+  instance._chunk_parts = {}
   instance._chunk_timer = nil
   instance._pending_choices = nil
   instance._pending_approvals = {}
@@ -103,15 +103,15 @@ function ChatBuffer:open()
   end
 end
 
----いまこのチャットで、フックが実際にブロックされたまま答えを待っている数
+---いまこのチャットが、答えを待たせているフックを1本でも持っているか
 ---
----**`_pending_approvals` の件数ではない。** あちらは描画リストで、kill する経路では
+---**`_pending_approvals` が空かどうかではない。** あちらは描画リストで、kill する経路では
 ---答えたあとも残る（プロセスはとうに死んでいるので、残っていても誰も待っていない）。
 ---「待たせているか」を訊く場所はレジストリのほうで、答えが出た瞬間に空になるので古くならない
 ---— `chat_status` が `_stop_reason` ではなくこちらを読むのと同じ理由
----@return number
-function ChatBuffer:_blocked_approval_count()
-  return #require("vibing.infrastructure.rpc.pending_approvals").list_for_chat(self.buf)
+---@return boolean
+function ChatBuffer:_has_blocked_approvals()
+  return require("vibing.infrastructure.rpc.pending_approvals").has_for_chat(self.buf)
 end
 
 ---このチャットが止めているフックを、答えないまま全部解放する
@@ -151,7 +151,7 @@ function ChatBuffer:_resume_after_approvals()
   if not self._approvals_rendered_unsent then
     return false
   end
-  if self:_blocked_approval_count() > 0 then
+  if self:_has_blocked_approvals() then
     return false
   end
 
@@ -231,7 +231,7 @@ function ChatBuffer:cancel_request()
     -- 溜めていたチャンクは打ち切られたターンの続きで、書き戻す場所が無い。次の送信から来たなら
     -- 未送信セクションにユーザーの本文が入っていて、その下に積むのは `extract_user_message` が
     -- 拾う壊れ方そのもの。実際に解放したときだけ触るので、kill する経路は素通りする
-    self._chunk_buffer = ""
+    self._chunk_parts = {}
   end
 
   if not self._current_process_id then
@@ -640,8 +640,9 @@ local APPROVAL_REFUSAL_PREFIX = "⚠️  That answer was not applied."
 ---`(expired — ...)` と同じ場所で、承認プロンプトの選択肢行そのものと同じ性質を持つ
 ---（どれも `extract_user_message` に載る。実測で確認済み）ので、新しい漏れは生まれない。
 ---
----**前回の説明は消してから書く。** 残すと `<CR>` を押すたびに積み上がる。消すのは末尾の行
----だけなので、ユーザーが編集している行が足元でずれることはない
+---**前回の説明は、見出しも継続行も消してから書く。** どちらか片方を残すと `<CR>` を押すたびに
+---積み上がる。消す範囲は前回のブロックだけで、そこより下の行は番号がずれるが、ずれるのは
+---**答えられなかった直後だけ**で、ずらさない代わりに説明が増え続けるほうが読めなくなる
 ---@param errors string[]
 function ChatBuffer:_show_approval_refusal(errors)
   local text = APPROVAL_REFUSAL_PREFIX .. " " .. table.concat(errors, " ")
@@ -652,18 +653,30 @@ function ChatBuffer:_show_approval_refusal(errors)
     return
   end
 
+  local block = { APPROVAL_REFUSAL_PREFIX }
+  for _, reason in ipairs(errors) do
+    table.insert(block, "   " .. reason)
+  end
+
+  -- **見出し行だけでなく `   理由` の継続行も落とす。** 前の実装は見出しだけを外していたので、
+  -- 積み上がりを防ぐために書いたはずの処理が継続行だけを残し、`<CR>` のたびに行が増えていた。
+  --
+  -- 位置は探す。ユーザーが説明の下に行を打ってから再度 `<CR>` を押すので、前回のブロックが
+  -- 末尾にあるとは限らない。書くのは見つけた範囲と末尾の2回だけで、バッファ全体の置き換えは
+  -- しない — 編集中の行の extmark と undo を巻き込まないため
   local lines = vim.api.nvim_buf_get_lines(self.buf, 0, -1, false)
-  local kept = {}
-  for _, line in ipairs(lines) do
-    if not vim.startswith(line, APPROVAL_REFUSAL_PREFIX) then
-      table.insert(kept, line)
+  for index, line in ipairs(lines) do
+    if vim.startswith(line, APPROVAL_REFUSAL_PREFIX) then
+      local last = index
+      while lines[last + 1] and vim.startswith(lines[last + 1], "   ") do
+        last = last + 1
+      end
+      vim.api.nvim_buf_set_lines(self.buf, index - 1, last, false, {})
+      break
     end
   end
-  table.insert(kept, APPROVAL_REFUSAL_PREFIX)
-  for _, reason in ipairs(errors) do
-    table.insert(kept, "   " .. reason)
-  end
-  vim.api.nvim_buf_set_lines(self.buf, 0, -1, false, kept)
+
+  vim.api.nvim_buf_set_lines(self.buf, -1, -1, false, block)
 end
 
 ---@class Vibing.AnsweredApproval
@@ -763,7 +776,7 @@ function ChatBuffer:_answer_pending_approval()
   -- 戻すことだが、**それが何かは保留が残っているかで変わる**
   -- 訊くのは「まだフックを止めているか」で、プロンプトの行が残っているかではない。残っていても
   -- 誰も待っていないなら入力欄を開いたままにする理由は無く、そこに出力を積むと壊れる
-  if self:_blocked_approval_count() > 0 then
+  if self:_has_blocked_approvals() then
     -- まだ答えを待っているものがある。新しい未送信セクションに描き直して入力欄を保つ。
     -- 溜めていた出力は `add_user_section` の中で先に流れるので、順序は時系列のまま
     ConversationExtractor.commit_user_message(self.buf)
@@ -964,7 +977,15 @@ end
 
 ---バッファリングされたチャンクをフラッシュ
 function ChatBuffer:_flush_chunks()
-  self._chunk_buffer = StreamingHandler.flush_chunks(self.buf, self.win, self._chunk_buffer)
+  if #self._chunk_parts == 0 then
+    return
+  end
+  local pending = table.concat(self._chunk_parts)
+  self._chunk_parts = {}
+  local leftover = StreamingHandler.flush_chunks(self.buf, self.win, pending)
+  if leftover ~= "" then
+    self._chunk_parts[1] = leftover
+  end
 end
 
 ---ストリーミングチャンクを追加（バッファリング有効）
@@ -977,7 +998,11 @@ function ChatBuffer:append_chunk(chunk, turn_id)
     return
   end
 
-  self._chunk_buffer = self._chunk_buffer .. chunk
+  -- 片で積んで、流すときに `table.concat` する。承認が立っている間は下の早期returnで
+  -- フラッシュが止まるので、`a = a .. chunk` だと最大 `approval_wait_sec`（既定900秒）ぶんの
+  -- あいだ、到着するたびに蓄積全体をコピーし直すことになる。kill する設計ではプロセスが
+  -- プロンプトの時点で死んでいたので、この形は起こり得なかった
+  self._chunk_parts[#self._chunk_parts + 1] = chunk
 
   if self._chunk_timer then
     vim.fn.timer_stop(self._chunk_timer)
@@ -1003,7 +1028,7 @@ function ChatBuffer:append_chunk(chunk, turn_id)
   -- 溜めたものは必ず出る。出口は `_flush_chunks` を呼ぶ側全部 — 最後の承認が答えられたとき
   -- （`_answer_pending_approval`）と、ターンが終わったとき（`add_user_section`）。前者が
   -- 抜けても後者が拾うので、期限切れで承認が消えた場合も置き去りにはならない
-  if self:_blocked_approval_count() > 0 then
+  if self:_has_blocked_approvals() then
     return
   end
 
@@ -1099,10 +1124,8 @@ function ChatBuffer:insert_approval_request(tool, input, options, hook_request_i
     input = input,
     options = options,
     waiting = waiting or nil,
-    -- 同じ値を2つの名前で持つ。`hook_request_id` は既存の呼び出し側が読んでいる名前で、
-    -- `request_id` は #778 で行に載るようになった identity。片方だけにすると、
-    -- どちらを読むかを知っている場所が増える
-    hook_request_id = hook_request_id,
+    -- 名前は1つだけ。同じ値を2フィールドに持つと、片方だけ書き換える writer が現れたときに
+    -- 帰属が黙って割れる — `request_id` という identity が入ったのは、まさにそれを閉じるため
     request_id = hook_request_id,
   }
 
@@ -1245,14 +1268,7 @@ end
 ---知っているのは `approval_decision.consume` だけなので、そこが名指しする
 ---@param approval {action: string, tool: string} パースされた承認データと、その対象ツール
 function ChatBuffer:update_session_permissions(approval)
-  local valid_actions = {
-    allow_once = true,
-    deny_once = true,
-    allow_for_session = true,
-    deny_for_session = true,
-  }
-
-  if not approval.action or not valid_actions[approval.action] then
+  if not require("vibing.application.chat.approval_decision").is_valid_action(approval.action) then
     vim.notify(
       string.format(
         "[vibing] Invalid approval action: '%s' for tool '%s'",

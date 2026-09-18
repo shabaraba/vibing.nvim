@@ -91,7 +91,7 @@ function M.buf_get_lines(params)
     chat_status = ChatStatus.get(bufnr),
     -- 承認待ちのときだけ。`nvim_chat_answer_approval` の `request_id` の入手先で、
     -- バッファ本文の `<!-- vibing:req=... -->` を読ませない（あれは `<CR>` の帰属解決用）
-    waiting_approvals = require("vibing.infrastructure.rpc.handlers.chat")._pending_approvals_or_nil(bufnr),
+    waiting_approvals = ChatStatus.pending_approvals_or_nil(bufnr),
   }
 end
 

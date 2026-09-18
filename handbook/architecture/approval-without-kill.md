@@ -141,7 +141,7 @@ available from inside that path: we are simply not asked.
 The PreToolUse hook runs _before_ the gate, so the waiting design has no such hole. It is also
 backend-neutral — nothing about it is claude-specific — where `--permission-prompt-tool` is.
 
-#### The third shape, built and then removed
+### The third shape, built and then removed
 
 A narrower use of the same channel survived that rejection for a while and was implemented:
 **release the approved call with `defer`, then answer the gate's own question** when it comes back.
@@ -276,7 +276,7 @@ Both returned the same `tool_result`:
 The pre-registered mapping for that row was "not consulted + refused → the granular deny runs
 first; the third shape is safe", and that is the outcome. Combining both arms gives the order:
 
-```
+```text
 1. toolset construction  — a tool-NAME deny removes the tool entirely
 2. PreToolUse hook       — runs, and may defer          (HOOK DEFER fired in both cells)
 3. granular deny rules   — evaluated here
@@ -339,7 +339,7 @@ one could not be read at all: refused, with no control, is the same single obser
 possible authors as the 950s copilot cell — the `allow` was honoured and the deny beat it, or the
 `allow` was never honoured. Its logs are in `granular-hook-allow/`.
 
-```
+```text
 hook.log     HOOK ALLOW Bash
 driver.log   ATTEMPTED Bash {"command":"echo \"ok\" > probe-out.txt"}
              TOOL_RESULT is_error=true
@@ -435,7 +435,7 @@ Both are worth writing down; only the first is a defect.
 
 Three numbers, in three different files and two languages, that must stay in this order:
 
-```
+```text
 permissions.approval_wait_sec  <  pre-tool-use.sh's own wait  <  <backend>'s configured hook timeout
 ```
 

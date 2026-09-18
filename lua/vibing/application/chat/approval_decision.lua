@@ -48,29 +48,36 @@ end
 --- The argument worth repeating back to the model, per tool.
 ---
 --- Not a generic dump of `input`: the retry message is read by the model as an instruction, and a
---- `Write` whose whole `content` is quoted back at it is both useless and expensive. One field per
---- tool is the field that identifies *which* call was approved.
+--- `Write` whose whole `content` is quoted back at it is both useless and expensive. So the
+--- *fields* are named, and everything else is left out.
+---
+--- **Keyed on the field, not on the tool name.** A tool→field table has to be extended for every
+--- tool, and nothing fails when it is not — a `Grep` or an MCP tool simply produced
+--- `"I approved the Grep tool."` with no argument, next to a prompt that had just printed
+--- `Pattern: …`. It also went wrong in the other direction: `WebFetch` was listed as `query`,
+--- which is not a field `WebFetch` has, so the one thing telling two fetches apart was dropped.
+--- This is the order `event_renderer.input_summary` already reads a call's identity in.
+--- @type {key: string, label: string}[]
+local IDENTIFYING_FIELDS = {
+  { key = "command", label = "command" },
+  { key = "file_path", label = "file" },
+  { key = "notebook_path", label = "file" },
+  { key = "pattern", label = "pattern" },
+  { key = "query", label = "query" },
+  { key = "url", label = "url" },
+}
+
 --- @param tool string
 --- @param input table
---- @return string "" or " (key: value)"
+--- @return string "" or " (label: value)"
 function M.input_summary(tool, input)
-  local tool_input_keys = {
-    Bash = "command",
-    Read = "file_path",
-    Write = "file_path",
-    Edit = "file_path",
-    WebSearch = "query",
-    WebFetch = "query",
-  }
-
-  local key = tool_input_keys[tool]
-  local value = key and (input or {})[key]
-  if not value then
-    return ""
+  for _, field in ipairs(IDENTIFYING_FIELDS) do
+    local value = (input or {})[field.key]
+    if value ~= nil and value ~= "" then
+      return string.format(" (%s: %s)", field.label, value)
+    end
   end
-
-  local label = key == "file_path" and "file" or key
-  return string.format(" (%s: %s)", label, value)
+  return ""
 end
 
 --- What the answered approval is turned into for the model, when the answer can only be delivered

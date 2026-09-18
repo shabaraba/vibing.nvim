@@ -354,11 +354,7 @@ end
 ---@return boolean
 local function turn_still_open(turn_id)
   local ok, registry = pcall(require, "vibing.infrastructure.adapter.modules.turn_registry")
-  if not ok then
-    return false
-  end
-  local found_ok, entry = pcall(registry.get, turn_id)
-  return found_ok and entry ~= nil
+  return ok and registry.is_open(turn_id)
 end
 
 ---clearされずに放置されたセッション（キャンセル・クラッシュ）を破棄する

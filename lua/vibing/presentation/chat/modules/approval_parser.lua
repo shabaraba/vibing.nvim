@@ -15,9 +15,10 @@
 ---人間が見出し以外の手がかりを要らないようにしている。だから delegate も `option_line` を通す。
 local M = {}
 
----4つのアクション。`approval_decision.ACTIONS` と同じ語彙で、こちらは行の読み書きだけを持つ
+---4つのアクション。語彙の定義は `approval_decision.ACTIONS` ただ1つで、こちらは行の読み書き
+---だけを持つ。書き写すと、5つ目を足したときにこのモジュールだけが静かに読めなくなる
 ---@type string[]
-local ACTIONS = { "allow_once", "deny_once", "allow_for_session", "deny_for_session" }
+local ACTIONS = require("vibing.application.chat.approval_decision").ACTIONS
 
 ---行に載る identity。`## User <!-- unsent -->` と同じ見た目の規約を同じバッファで使っている。
 ---ユーザーには見えるが、既に毎回見ているものと同じ形なので新しい語彙ではない
