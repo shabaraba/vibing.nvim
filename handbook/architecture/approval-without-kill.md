@@ -12,8 +12,8 @@ Identifier background is `processes-and-turns.md`; the resident transport is `du
 `bin/hooks/pre-tool-use.sh` writes a `<request_id>.req`, pokes the RPC server with `nc -w 1`
 (fire-and-forget — the RPC reply is _not_ the decision), and then **polls for `<request_id>.res`**.
 The decision travels as a file, not as the RPC response, which means the hook can already block for
-as long as the `.res` is withheld. Today it never blocks, only because `cancel_and_deny` writes the
-deny immediately.
+as long as the `.res` is withheld. Before #778 it never blocked, only because `cancel_and_deny`
+wrote the deny immediately — which is still what a backend with no `measured_wait_floor_sec` does.
 
 So "answer in place" is not a new transport. It is: **stop writing the `.res` until the human
 answers.** The CLI sits inside its own hook; nothing is killed; the turn continues afterwards.

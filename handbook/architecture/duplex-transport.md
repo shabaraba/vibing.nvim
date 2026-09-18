@@ -179,13 +179,17 @@ session for spawning, once without it for the key.
 
 ## What is deliberately not here
 
-- **Approval and `AskUserQuestion` still kill the process.** `permission.lua`'s `cancel_and_deny`
-  relies on `cancel` running `wrapped_on_done` synchronously and on the process being gone
-  afterwards, which is what makes the approval's retry message a _new_ turn. Turning that into a
-  `control_response` on the open stdin is #778. The user-facing cancel is the only path routed
-  through the new `stop_turn`, which sends `control_request {subtype: "interrupt"}` and keeps the
-  process; the CLI answers with a `result` of subtype `error_during_execution` and serves the next
-  turn normally.
+- **Neither an approval nor `AskUserQuestion` is answered over the open stdin.** Doing it as a
+  `control_response` was built and then reverted (`51a242b5`, which records the shape and the
+  conditions for reviving it). #778 removed the approval kill in a way that needs no control
+  channel at all, and so applies to both transports: the hook simply **does not write its `.res`**
+  until the human answers. A backend with a `measured_wait_floor_sec` therefore waits in place, and
+  only a backend without one keeps `cancel_and_deny` — which relies on `cancel` running
+  `wrapped_on_done` synchronously and on the process being gone afterwards, which is what makes
+  that backend's retry message a _new_ turn. **`AskUserQuestion` does still kill the process**, and
+  is its own issue. The user-facing cancel is the only path routed through the new `stop_turn`,
+  which sends `control_request {subtype: "interrupt"}` and keeps the process; the CLI answers with
+  a `result` of subtype `error_during_execution` and serves the next turn normally.
 - **Lightweight calls stay oneshot.** The bargain in `core/types.lua` — no tools, no project config,
   no user MCP servers, no hooks, `utility_model` — is not something a process serving a chat is also
   keeping, and one process cannot hold both sets of flags.
