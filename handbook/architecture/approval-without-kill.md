@@ -250,9 +250,77 @@ first; the third shape is safe", and that is the outcome. Combining both arms gi
 4. can_use_tool          — reached only if 3 permits    (arm A's allow cell proves it is reached)
 ```
 
-**So the third shape preserves every layer of the user's own settings**: we are only ever consulted
-about calls that already survived them, and the cost option B was believed to carry is real at
-step 3 and unreachable by an `allow` — an `allow` cannot be offered where nothing asks.
+**So the third shape preserves every layer of the user's own settings**: it answers at step 4, and
+step 4 is only reached by calls that already survived steps 1 and 3. Nothing it can say reaches a
+deny rule, because a denied call never gets that far.
+
+**This says nothing about option B, and the two must not be run together.** There are two different
+`allow`s here and they sit on opposite sides of step 3:
+
+|                        | written at                       | is it consulted?         | vs. granular deny              |
+| ---------------------- | -------------------------------- | ------------------------ | ------------------------------ |
+| third shape's `allow`  | step 4, answering `can_use_tool` | only for surviving calls | **cannot reach it — measured** |
+| **option B's `allow`** | **step 2, in the hook's `.res`** | **every call**           | **unmeasured**                 |
+
+`HOOK DEFER Bash` fired in both granular cells, and that is the proof that the hook _is_ asked, and
+asked **before** step 3. Option B writes its `allow` exactly there. So "an `allow` cannot be offered
+where nothing asks" is true of step 4 and false of step 2 — an earlier version of this paragraph
+used the first to license the second, which is the same collapse-two-things-sharing-a-name mistake
+as reading Bash's hook line as Write's.
+
+**No cell measured it**, because `defer-hook.sh` always defers: both granular cells took the defer
+path. The unmeasured question is:
+
+> When the hook writes `allow`, is the step-3 granular deny skipped?
+
+The order table **suggests it is skipped**, since the decision is rendered upstream of step 3. That
+is a suggestion, not a result. What can be said today is: **the third shape has no cost and is
+duplex-only; option B's cost is unknown, and the ordering points the wrong way.** The tool-name
+half is different and is measured — the hook never fires at all for a tool-name-denied call (arm
+A's deny cell logged `ATTEMPTED Write` with no corresponding `HOOK DEFER`), so no hook verdict of
+any kind can reach it.
+
+The cell that would settle it differs from the already-paid `granular-control` cell in exactly one
+variable — the hook's verdict — so that cell is its control:
+
+|                                 | hook writes | `--allowedTools` | deny           | expected if B is safe |
+| ------------------------------- | ----------- | ---------------- | -------------- | --------------------- |
+| `granular-control` (run)        | `defer`     | `Bash`           | `Bash(echo:*)` | refused — **it was**  |
+| `granular-hook-allow` (not run) | `allow`     | `Bash`           | `Bash(echo:*)` | refused               |
+
+It ran → the hook's `allow` skips the granular deny → **B carries a real cost**. It was refused →
+the deny survives a hook `allow` → B is safe too. The probe's hook must emit claude's own shape,
+`{"hookSpecificOutput":{"permissionDecision":"allow"}}` — the same thing
+`bin/hooks/pre-tool-use.sh` writes — or it measures a mechanism production does not use.
+
+**That cell has since been run, accidentally, and its result is not yet conclusive.** A command
+meant to test the arm's refusal path ran the arm instead (`OUT=… bash …` does not reach a script
+that recomputes `OUT` from its own location). The logs are kept and are in
+`granular-hook-allow/`; how a number was obtained is part of the number.
+
+```
+hook.log     HOOK ALLOW Bash
+driver.log   ATTEMPTED Bash {"command":"echo \"ok\" > probe-out.txt"}
+             TOOL_RESULT is_error=true
+               Permission to use Bash with command echo "ok" > probe-out.txt has been denied.
+```
+
+Read naively that says the granular deny outranks a hook `allow`, and **option B is safe**. But the
+cell has **no positive control**, and it is refused in exactly the same way `granular-control` was.
+Two causes produce that single observation: the `allow` was honoured and the deny beat it, or the
+`allow` was never honoured at all. `HOOK ALLOW Bash` proves our script ran and printed; it says
+nothing about whether the CLI parsed it. Same shape as the 950s copilot cell — one observation,
+two possible authors.
+
+The envelope is copied from `bin/hooks/pre-tool-use.sh`, which emits exactly this for claude and
+demonstrably allows tools in production, so the prior is good — but that is a different
+configuration (vibing's generated settings, not `--settings` inline), which raises the prior
+without closing it.
+
+The missing cell, `granular-hook-allow-control`, differs from `granular-hook-allow` in one
+variable — the deny list is empty, and `Bash` is left out of `--allowedTools` so nothing else
+permits it. If Bash runs, the hook's `allow` is honoured here and B is safe; if Bash is refused,
+the `allow` was never honoured and `granular-hook-allow` measured nothing. **Not run.**
 
 One unmeasured assumption, stated rather than closed: that the ordering does not depend on _which_
 command the rule names. `echo` was used because it is harmless while `Bash(rm -rf:*)` is the rule

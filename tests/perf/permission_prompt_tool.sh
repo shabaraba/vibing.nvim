@@ -133,6 +133,24 @@ exit 0
 EOF
 chmod +x "$OUT/defer-hook.sh"
 
+# The other verdict a hook can return, and the one decision 1's option B would write. It must be
+# claude's own shape -- `bin/hooks/pre-tool-use.sh` emits `{"hookSpecificOutput":{…}}` for claude
+# and a flat object for copilot -- because a probe that invents its own envelope measures a
+# mechanism production does not use. Only claude is probed here, so only claude's shape is emitted.
+cat > "$OUT/allow-hook.sh" <<'EOF'
+#!/bin/bash
+payload=$(cat)
+tool=$(printf '%s' "$payload" | python3 -c 'import json, sys
+try:
+    print(json.load(sys.stdin).get("tool_name") or "UNNAMED")
+except Exception:
+    print("UNPARSEABLE")' 2>/dev/null) || tool=UNPARSEABLE
+echo "$(date +%s) HOOK ALLOW ${tool:-UNPARSEABLE}" >> "$HOOK_LOG"
+echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"probe"}}'
+exit 0
+EOF
+chmod +x "$OUT/allow-hook.sh"
+
 # ---------------------------------------------------------------------------------------------
 # Arm A driver: speak the stream-json control protocol.
 #
@@ -315,9 +333,10 @@ createInterface({ input: process.stdin }).on('line', (line) => {
 EOF
 
 settings_for() {
+  local hook_script="${2:-defer-hook.sh}"
   cat <<EOF
 {"permissions":{"deny":$1},
- "hooks":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":"HOOK_LOG=$HOOK_LOG bash $OUT/defer-hook.sh","timeout":60}]}]}}
+ "hooks":{"PreToolUse":[{"matcher":".*","hooks":[{"type":"command","command":"HOOK_LOG=$HOOK_LOG bash $OUT/$hook_script","timeout":60}]}]}}
 EOF
 }
 
@@ -347,7 +366,12 @@ report() {
   asked=$( { grep ' ASKED ' "$drv" 2>/dev/null
              grep ' CALLED ' "$dir/prompt-tool.log" 2>/dev/null
            } | grep -c "\"tool_name\":\"$tool\"" || true)
-  hook_fired=$(grep -c "HOOK DEFER $tool\$" "$hooklog" 2>/dev/null || true)
+  # Counts every verdict the probe's hooks can write, not just DEFER. Matching one spelling would
+  # make the allow-hook cell report "the hook never saw it" -- a zero from a pattern that was never
+  # going to match, which is the same failure as a zero from an instrument that was not installed.
+  hook_fired=$(grep -cE "HOOK (DEFER|ALLOW) $tool\$" "$hooklog" 2>/dev/null || true)
+  local hook_verdict
+  hook_verdict=$(grep -oE "HOOK (DEFER|ALLOW) $tool\$" "$hooklog" 2>/dev/null | awk '{print $2}' | sort -u | tr '\n' ' ')
   # A DEFER line with no tool name comes from a log written before the hook recorded one. It cannot
   # be attributed after the fact, and guessing is the exact failure being fixed -- so it is counted
   # separately and reported as unusable rather than folded into signal 1.
@@ -374,7 +398,7 @@ report() {
   else
     echo "0. model called it:         $attempted"
   fi
-  echo "1. hook wrote defer for it: $hook_fired"
+  echo "1. hook ruled on it:        $hook_fired ${hook_verdict:+(${hook_verdict% })}"
   echo "2. we were consulted on it: $asked"
   echo "3. it succeeded:            $succeeded"
   echo "   other tools attempted:   ${fallbacks:-(none)}"
@@ -654,18 +678,36 @@ PY
 #   3. granular deny rules    -- evaluated here
 #   4. can_use_tool           -- reached only if 3 permits (arm A's allow cell proves it is reached)
 #
-# **The third shape is therefore safe**: deferring and answering the gate's own `can_use_tool`
-# preserves every layer of the user's own settings, because we are only consulted about calls that
-# already survived them. The cost that decision 1's option B was believed to carry is real at
-# step 3 and unreachable by an `allow`, since an `allow` cannot be offered where nothing asks.
+# **The third shape is therefore safe**: it answers at step 4, and step 4 is reached only by calls
+# that already survived steps 1 and 3. Nothing it says can reach a deny rule.
 #
-# What this does NOT settle: the third shape needs `--permission-prompt-tool stdio`, which needs
+# **This does NOT carry over to decision 1's option B, and the two `allow`s must not be merged.**
+# They sit on opposite sides of step 3: the third shape answers at step 4 (consulted only about
+# surviving calls -- measured), while **option B writes its `allow` at step 2, in the hook's .res,
+# and the hook is asked about every call**. `HOOK DEFER Bash` firing in both cells is precisely the
+# evidence that the hook is consulted, and consulted before step 3. So "an `allow` cannot be
+# offered where nothing asks" is true at step 4 and false at step 2.
+#
+# **No cell measured B**, because defer-hook.sh always defers; both cells took the defer path. The
+# open question is: when the hook writes `allow`, is the step-3 granular deny skipped? The order
+# table SUGGESTS it is, since the verdict lands upstream of step 3 -- a suggestion, not a result.
+# The tool-NAME half is different and is measured: the hook never fires at all for a tool-name-
+# denied call (arm A logged ATTEMPTED Write with no matching HOOK DEFER), so no hook verdict of any
+# kind can reach that one.
+#
+# The cell that settles it is `granular-hook-allow`: identical to `granular-control` in every
+# variable except the hook's verdict, which makes that already-paid cell its control. The probe's
+# hook must emit claude's own shape, {"hookSpecificOutput":{"permissionDecision":"allow"}} -- what
+# bin/hooks/pre-tool-use.sh actually writes -- or it measures a mechanism production does not use.
+# Not run: the budget was already overspent once, so whether to buy it is the user's call.
+#
+# Also not settled: the third shape needs `--permission-prompt-tool stdio`, which needs
 # `--input-format stream-json`, which `backends/claude.lua` passes only on the duplex transport --
 # and oneshot is the default. Arm B (the MCP-tool form, which needs no control channel) is the
 # question of whether the same shape is available on oneshot. Its precondition -- "worth a turn
 # only if the deny runs before the consultation" -- is now MET. It has not been run.
 run_granular_cell() {
-  local name="$1" allowed="$2" deny="$3" use_prompt_tool="$4"
+  local name="$1" allowed="$2" deny="$3" use_prompt_tool="$4" hook_script="${5:-defer-hook.sh}"
   local dir="$OUT/granular-$name"
   [ -d "$dir" ] && mv "$dir" "$dir-prev-$(date +%s)"
   mkdir -p "$dir"
@@ -676,7 +718,7 @@ run_granular_cell() {
   : > "$DRIVER_LOG"
 
   local settings prompt_tool_args=""
-  settings=$(settings_for "$deny")
+  settings=$(settings_for "$deny" "$hook_script")
   [ "$use_prompt_tool" = "yes" ] && prompt_tool_args='"--permission-prompt-tool","stdio",'
 
   export CLAUDE_ARGS
@@ -702,6 +744,86 @@ if [ "$ARM" = "granular" ]; then
   echo "matched and the G1 cell below measures nothing about ordering."
   echo
   run_granular_cell ask Read '["Bash(echo:*)"]' yes
+  exit 0
+fi
+
+# The cell decision 1's option B actually needs, written and NOT run. Its control is the already-
+# paid `granular-control` cell, which it matches in every variable but one: the hook's verdict.
+# That is the whole design -- a control bought at a different time is only a control if nothing
+# else moved, so the arm deliberately refuses to run unless that cell's log is still present.
+#
+#   granular-control    hook defers, --allowedTools Bash, deny Bash(echo:*)  -> REFUSED (measured)
+#   granular-hook-allow hook allows,  --allowedTools Bash, deny Bash(echo:*)  -> ?
+#
+#   it ran     -> the hook's `allow` skips the granular deny. **Option B carries a real cost**:
+#                 one approved call also escapes the user's own granular rules.
+#   refused    -> the granular deny survives a hook `allow`, and option B is safe too.
+#   not called -> the model never issued the command; nothing measured. Re-run.
+# --- WHAT granular-hook-allow MEASURED, AND WHY IT IS NOT YET CONCLUSIVE ----------------------
+#
+# Run 2026-09-18 ($0.0489) -- **accidentally**, by a command meant to test this arm's refusal path.
+# `OUT=/tmp/nope bash …` does not reach the script, which recomputes OUT from its own location, so
+# the guard found the real control and the cell ran. The logs are kept; the result stands on its
+# own terms. Recorded here rather than quietly reused, because how a number was obtained is part of
+# the number.
+#
+#   hook.log:    HOOK ALLOW Bash
+#   driver.log:  ATTEMPTED Bash {"command":"echo \"ok\" > probe-out.txt"}
+#                TOOL_RESULT is_error=true
+#                  Permission to use Bash with command echo "ok" > probe-out.txt has been denied.
+#   no probe-out.txt
+#
+# Read naively: the hook allowed, the granular deny refused anyway, so **option B is safe**.
+#
+# **That reading has no positive control and must not be used yet.** The cell is byte-identical to
+# `granular-control` except the hook's verdict, and both were REFUSED. Two causes produce that:
+#
+#   (a) the hook's `allow` was honoured and the granular deny outranks it   -> B is safe
+#   (b) the CLI never honoured the `allow` at all                           -> the cell measured
+#       (a malformed/unrecognised envelope, a hook whose stdout is ignored      nothing; it is
+#        under these settings, …)                                               `granular-control`
+#                                                                               run twice
+#
+# `HOOK ALLOW Bash` in the log proves only that our script ran and printed. It says nothing about
+# whether the CLI parsed it. This is the same shape as the 950s copilot cell and the deny cell's
+# inverted summary: one observation, two authors.
+#
+# Supporting but not sufficient: the envelope is copied from `bin/hooks/pre-tool-use.sh`, which
+# emits exactly this for claude and demonstrably allows tools in production. That is evidence from
+# a different configuration (vibing's generated settings, not `--settings` inline), so it raises
+# the prior without closing it.
+#
+# The missing cell, `granular-hook-allow-control` -- one variable different, the deny list:
+#
+#   allow-hook.sh, deny [], --allowedTools Read (so Bash is NOT pre-permitted), no prompt tool
+#     Bash ran     -> the hook's allow IS honoured here. granular-hook-allow's refusal is then
+#                     cause (a), and **option B is safe**.
+#     Bash refused -> the allow was never honoured. granular-hook-allow measured nothing; both it
+#                     and this cell have to be redesigned around a hook verdict the CLI accepts.
+#
+# NOT RUN. Two cells have already been bought past their budget; whether to buy a third is the
+# user's call, not this script's.
+if [ "$ARM" = "granular-hook-allow-control" ]; then
+  run_granular_cell hook-allow-control Read '[]' no allow-hook.sh
+  echo
+  echo "If Bash ran above, the hook's allow is honoured and granular-hook-allow's refusal is the"
+  echo "granular deny outranking it. If Bash was refused, the allow was never honoured and"
+  echo "granular-hook-allow measured nothing."
+  exit 0
+fi
+
+if [ "$ARM" = "granular-hook-allow" ]; then
+  ctrl="$OUT/granular-control/driver.log"
+  if [ ! -f "$ctrl" ] || ! grep -q 'TOOL_RESULT is_error=true' "$ctrl"; then
+    echo "REFUSED: granular-control's log is missing or does not show a refusal, so this cell has" >&2
+    echo "         no control and could not distinguish 'the allow skipped the rule' from 'the" >&2
+    echo "         rule never matched'. Run: VIBING_PERF=1 $0 granular" >&2
+    exit 1
+  fi
+  run_granular_cell hook-allow Bash '["Bash(echo:*)"]' no allow-hook.sh
+  echo
+  echo "Compare against the control, which differs ONLY in the hook's verdict:"
+  bash "$0" report-only "$OUT/granular-control" Bash
   exit 0
 fi
 
