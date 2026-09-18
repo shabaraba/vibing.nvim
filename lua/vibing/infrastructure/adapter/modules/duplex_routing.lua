@@ -54,10 +54,35 @@ end
 --- @param descriptor Vibing.BackendDescriptor
 --- @return fun(line: string, record: Vibing.DuplexProcess)
 function M.line_router(chat_key, descriptor)
+  local control = descriptor.duplex_control
   return function(line, record)
     if not is_current(chat_key, record) then
       return
     end
+
+    -- Answered before the decoder sees it, and **not** gated on there being an open turn: the CLI
+    -- is blocked on this reply, so dropping it because the router cannot find a turn would hang
+    -- the very turn that asked. The substring test keeps the decode off every ordinary line; it is
+    -- a prefilter, and `try_answer` re-checks the shape properly.
+    --
+    -- The prefilter is safe because of JSON escaping, not because the string is unusual: the same
+    -- characters inside a string value arrive as `\"can_use_tool\"` and do not match. Prose about
+    -- this feature therefore never reaches the branch (`duplex_stream_spec.lua` asserts it).
+    --
+    -- `ok and ... try_answer(...)` is an **equivalent mutant** as far as any test goes: dropping
+    -- either conjunct only changes what happens to a line that reaches this branch and is not a
+    -- permission request, and every such line is one the decoder ignores anyway. Kept as written
+    -- because it says what it means, not because a test defends it. Recorded so the next person
+    -- does not spend a round trip discovering that, as this one did.
+    if control and line:find('"can_use_tool"', 1, true) then
+      local ok, msg = pcall(vim.json.decode, line)
+      if ok and control.try_answer(msg, function(payload)
+        return DuplexProcess.send_control(record, payload)
+      end) then
+        return
+      end
+    end
+
     local turn = M.turn_of(record)
     local context = turn and turn.context or record._idle_context
     if context then

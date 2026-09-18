@@ -515,4 +515,150 @@ describe("duplex transport", function()
       assert.is_true(vim.tbl_contains(jobs.calls[2].argv, "sess-1"))
     end)
   end)
+
+  --- The gate's own permission question, end to end (#778, decision 1).
+  ---
+  --- `duplex_control_spec.lua` pins the envelope; these pin the wiring, which is the half that can
+  --- be right in isolation and still never run.
+  describe("the gate's permission question", function()
+    local function permission_line(request_id, tool_name)
+      return vim.json.encode({
+        type = "control_request",
+        request_id = request_id,
+        request = {
+          subtype = "can_use_tool",
+          tool_name = tool_name or "Write",
+          input = { file_path = "/tmp/probe.txt", content = "ok" },
+        },
+      })
+    end
+
+    it("asks the CLI to route its permission question over the control channel", function()
+      local call = (send("hi") and jobs.only_call())
+      local index = vim.fn.index(call.argv, "--permission-prompt-tool")
+      assert.is_true(index >= 0, "no --permission-prompt-tool in " .. table.concat(call.argv, " "))
+      assert.equals("stdio", call.argv[index + 2])
+    end)
+
+    it("does not ask for it on the oneshot transport, which could not answer", function()
+      -- `stdio` means "ask over the control channel", and oneshot has none. Passing it there would
+      -- have the gate refuse every call the hook deferred -- which is every approved call.
+      config.backends.claude.process = "oneshot"
+      local system = helper.stub_system()
+      send("hi")
+      assert.is_false(vim.tbl_contains(system.cli_call().cmd, "--permission-prompt-tool"))
+      system.restore()
+    end)
+
+    it("answers it on the process's own stdin, in the measured envelope", function()
+      local turn = send("hi")
+      local call = jobs.only_call()
+      jobs.emit(call, { init_line("sess-1"), permission_line("req-42") })
+
+      local sent = jobs.sent(call)
+      local answer = sent[#sent]
+      assert.equals("control_response", answer.type)
+      assert.equals("req-42", answer.response.request_id)
+      assert.equals("allow", answer.response.response.behavior)
+      assert.equals(0, #turn.responses, "answering a permission question must not end the turn")
+    end)
+
+    it("keeps the question away from the decoder, and everything else on its way to it", function()
+      -- A `control_request` is not a turn event. The risk runs both ways: swallowing an ordinary
+      -- line loses a turn's output, and handing this one on leaves a CLI blocked on a reply.
+      local turn = send("hi")
+      local call = jobs.only_call()
+      jobs.emit(call, {
+        init_line("sess-1"),
+        permission_line("req-43"),
+        text_line("sess-1", "still talking"),
+        result_line("sess-1"),
+      })
+
+      assert.equals(1, #turn.responses)
+      assert.is_true(
+        turn.responses[1].content:find("still talking", 1, true) ~= nil,
+        "output after the permission question was lost: " .. tostring(turn.responses[1].content)
+      )
+    end)
+
+    it("passes on a line that merely mentions the subtype in its text", function()
+      -- The router prefilters on a substring before paying for a decode, and **JSON escaping is
+      -- what makes that safe**: the same characters inside a string value arrive as
+      -- `\"can_use_tool\"`, which does not contain the unescaped `"can_use_tool"` the prefilter
+      -- looks for. So prose about this very feature never reaches the branch at all.
+      --
+      -- Asserted rather than assumed, because the prefilter is a string test standing in for a
+      -- structural one, and that only holds while the escaping does. A turn discussing permissions
+      -- or quoting a probe log is an ordinary thing to want; losing its output would not look like
+      -- a routing bug.
+      local prose = 'the gate asks with subtype "can_use_tool" over stdio'
+      local encoded = text_line("sess-1", prose)
+      assert.is_nil(
+        encoded:find('"can_use_tool"', 1, true),
+        "the prefilter's safety rests on escaping, and this line is not escaped: " .. encoded
+      )
+
+      local turn = send("hi")
+      local call = jobs.only_call()
+      local before = #jobs.sent(call)
+      jobs.emit(call, { init_line("sess-1"), encoded, result_line("sess-1") })
+
+      assert.equals(before, #jobs.sent(call), "prose mentioning the subtype was answered as a request")
+      assert.equals(1, #turn.responses)
+      assert.is_true(
+        turn.responses[1].content:find("the gate asks", 1, true) ~= nil,
+        "a line mentioning the subtype was swallowed: " .. tostring(turn.responses[1].content)
+      )
+    end)
+
+    it("does not answer a permission request it cannot address", function()
+      -- Reaches the branch for real -- the key is unescaped -- but has no `request_id`, so there is
+      -- nothing to correlate a reply to. The router must not swallow what it did not answer: that
+      -- is the difference between "consumed" and "prefiltered", and only a line like this one can
+      -- tell the two apart.
+      local turn = send("hi")
+      local call = jobs.only_call()
+      local before = #jobs.sent(call)
+      local no_id = vim.json.encode({
+        type = "control_request",
+        request = { subtype = "can_use_tool", tool_name = "Write" },
+      })
+      assert.is_not_nil(no_id:find('"can_use_tool"', 1, true), "this case must reach the branch to mean anything")
+
+      jobs.emit(call, { init_line("sess-1"), no_id, result_line("sess-1") })
+      assert.equals(before, #jobs.sent(call), "a request with no id was answered anyway")
+      assert.equals(1, #turn.responses)
+    end)
+
+    it("answers one that arrives between turns, when no turn is open to own it", function()
+      -- The reply is owed to the *process*, not to a turn, and the CLI is blocked until it comes.
+      -- Routing it through "whichever turn is open" would hang whenever the timing put it outside
+      -- one -- and the hook it followed has already returned, so there is nothing else waiting.
+      send("hi")
+      local call = jobs.only_call()
+      jobs.emit(call, { init_line("sess-1"), result_line("sess-1") })
+      local before = #jobs.sent(call)
+
+      jobs.emit(call, { permission_line("req-44") })
+      local sent = jobs.sent(call)
+      assert.equals(before + 1, #sent, "a question arriving between turns went unanswered")
+      assert.equals("req-44", sent[#sent].response.request_id)
+    end)
+
+    it("leaves an interrupt's control response alone", function()
+      -- `interrupt` travels the same `control_request` envelope on a different subtype, and
+      -- `duplex_process.interrupt` sends one on every cancel. Answering it as a permission question
+      -- would put an `allow` on the wire for a request that never asked one.
+      local turn = send("hi")
+      local call = jobs.only_call()
+      local before = #jobs.sent(call)
+      jobs.emit(call, {
+        vim.json.encode({ type = "control_request", request_id = "int-1", request = { subtype = "interrupt" } }),
+      })
+
+      assert.equals(before, #jobs.sent(call), "an interrupt request was answered as a permission question")
+      assert.equals(0, #turn.responses)
+    end)
+  end)
 end)

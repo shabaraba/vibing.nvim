@@ -169,17 +169,29 @@ describe("hook timeout ordering", function()
       -- The default a new backend inherits by writing nothing. Unmeasured must not read as fine:
       -- past its own timeout every CLI measured fails open, so waiting on a CLI nobody has timed is
       -- a permission gate that stops applying without saying so.
-      assert.is_false(Transports.can_wait_for_approval({ transport = "settings_file" }))
-      assert.is_false(Transports.can_wait_for_approval(nil))
+      assert.is_false(Transports.can_wait_for_approval({ transport = "settings_file" }, true))
+      assert.is_false(Transports.can_wait_for_approval(nil, true))
     end)
 
     it("refuses a floor that does not cover the script's deadline", function()
       assert.is_false(
-        Transports.can_wait_for_approval({ measured_wait_floor_sec = WaitBudget.script_wait_sec() })
+        Transports.can_wait_for_approval({ measured_wait_floor_sec = WaitBudget.script_wait_sec() }, true)
       )
       assert.is_true(
-        Transports.can_wait_for_approval({ measured_wait_floor_sec = WaitBudget.script_wait_sec() + 1 })
+        Transports.can_wait_for_approval({ measured_wait_floor_sec = WaitBudget.script_wait_sec() + 1 }, true)
       )
+    end)
+
+    it("refuses every backend on a transport with no way to answer the gate", function()
+      -- The floor is only half the question (#778, decision 1). An approved call is released with
+      -- `defer` so the CLI's own gate still runs and the user's granular deny rules are still
+      -- evaluated -- and the gate then asks its permission question back over the control channel,
+      -- which only the duplex transport has. On oneshot nobody can answer it, so `defer` would have
+      -- the gate refuse exactly what the human just approved. A patient CLI is not enough.
+      local claude = require("vibing.infrastructure.adapter.backends.claude")
+      assert.is_true(Transports.can_wait_for_approval(claude.hook, true))
+      assert.is_false(Transports.can_wait_for_approval(claude.hook, false))
+      assert.is_false(Transports.can_wait_for_approval(claude.hook, nil))
     end)
 
     it("withdraws a backend whose floor the configured wait has outgrown", function()
@@ -187,12 +199,12 @@ describe("hook timeout ordering", function()
       -- off for that CLI rather than wait longer than the evidence covers. This is the whole reason
       -- the descriptor records a measurement instead of a boolean.
       local claude = require("vibing.infrastructure.adapter.backends.claude")
-      assert.is_true(Transports.can_wait_for_approval(claude.hook))
+      assert.is_true(Transports.can_wait_for_approval(claude.hook, true))
 
       local original = Config.get().permissions.approval_wait_sec
       Config.get().permissions.approval_wait_sec = claude.hook.measured_wait_floor_sec
       local ok, err = pcall(function()
-        assert.is_false(Transports.can_wait_for_approval(claude.hook))
+        assert.is_false(Transports.can_wait_for_approval(claude.hook, true))
       end)
       Config.get().permissions.approval_wait_sec = original
       assert.is_true(ok, tostring(err))
@@ -207,7 +219,25 @@ describe("hook timeout ordering", function()
         local descriptor = require(def.descriptor_module)
         assert.equals(
           expected[def.id],
-          Transports.can_wait_for_approval(descriptor.hook),
+          Transports.can_wait_for_approval(descriptor.hook, true),
+          def.id .. " changed whether its measured floor covers the wait"
+        )
+      end
+    end)
+
+    it("records which backends can actually reach the feature, floor and transport together", function()
+      -- **copilot's floor is long enough and it still cannot have this**, because it has no duplex
+      -- transport to carry the gate's question back. Pinned separately from the floor table so that
+      -- the two halves cannot be confused for each other: copilot reading `true` above and `false`
+      -- here is the honest state, not a contradiction, and a backend gaining a duplex transport
+      -- should have to update this line deliberately.
+      local expected = { claude = true, copilot = false, codex = false, grok = false }
+      for _, def in ipairs(Agents.list()) do
+        local descriptor = require(def.descriptor_module)
+        local is_duplex = descriptor.process == "duplex"
+        assert.equals(
+          expected[def.id],
+          Transports.can_wait_for_approval(descriptor.hook, is_duplex),
           def.id .. " changed whether it may answer an approval in place"
         )
       end
