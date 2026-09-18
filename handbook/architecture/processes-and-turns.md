@@ -9,9 +9,17 @@ separate values; #776 gave them separate names and separate registries.
 ## Why they were split before anything needed them apart
 
 Issue #774 wants one resident `claude` process per chat, serving many turns over an open stdin.
-The measured win is per-turn latency (967–1065ms to the first event with a process per turn,
-332–349ms from the second turn of a resident one) and an approval that answers in place instead of
-killing the process and restarting it with a synthesized "I approved the X tool" message.
+The measured win is per-turn latency — **850/872ms to the first event with a process per turn,
+158/154ms from the second turn of a resident one** — and an approval that answers in place instead
+of killing the process and restarting it with a synthesized "I approved the X tool" message.
+
+Those figures are `duplex-transport.md` → "The measurement", and the numbers stated anywhere else
+have to be that one: `tests/perf/duplex_latency.lua`, claude 2.1.236, this repository as the working
+directory, timed from `stream()` returning to the first stdout line reaching the decoder. The body
+of issue #774 carries an earlier pair (967–1065ms against 332–349ms) taken before any of this
+existed — a different CLI build, in a container, on haiku with `--tools ""` and no plugins. It
+agrees on the shape and on nothing else, so it is not interchangeable with the benchmark and is not
+repeated here.
 
 None of that was in #775/#776. What those brought was only the split, on the oneshot transport,
 because **21 distinct consumers had been written against an identifier that meant two things**, and every
