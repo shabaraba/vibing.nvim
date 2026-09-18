@@ -431,6 +431,36 @@ case: a line of code no test can distinguish, recorded as such rather than defen
 contrived test. One is a test claiming more than it checks; the other is a test that cannot exist.
 Both are worth writing down; only the first is a defect.
 
+### A procedure that grows by appending keeps its old step at full strength
+
+Fourth of the family, and the one that survives longest, because it lives outside the code and
+outside the tests where nothing looks at it at all.
+
+The edits this issue owed `.claude/rules/` could not be made where they were found — writes under
+`.claude/` are denied in that environment — so they were staged as a document,
+`.vibing/notes/779-claude-rules-edits.md`, to be applied later by someone else. Its item on what a
+hook `allow` skips was written in two passes, one per measurement: the first when only the
+tool-name cells had run and a granular deny still looked skippable, the second when the control
+cell settled that it is not. The second pass **appended** its replacement block. Both blocks then
+named the same three lines of the same file, both were well-formed, and neither said which was
+later. A reader applying the document top-down would have written the disproved invariant into
+`.claude/rules/` — the one directory that is loaded into every request, where a wrong invariant is
+not a stale note but the premise of all subsequent work.
+
+The general form: **code retracts by deletion and prose does not.** Superseding a line of code
+removes it; superseding a paragraph leaves two paragraphs, equally current-looking, and recency in
+the file is not recency in time — the appended block is later, but an appended block is also just
+as often an elaboration of the one above it. A superseded instruction is worse than a missing one,
+because a missing one gets noticed.
+
+The tell it shares with the other three: nothing is red, and the defect is invisible in either
+block alone. It is only visible by reading the whole document before applying any of it, and only
+detectable at all by noticing that two blocks address one target. The fix is the same shape as
+`report-only` holding a log fixed — make the corrected state distinguishable from the accumulated
+one: **when a new measurement changes an instruction, rewrite the block rather than adding
+another**, and say in the item how many replacement blocks it contains, so a second one is a
+contradiction the reader can see rather than a step they can follow.
+
 ## The ordering invariant, and why every backend needs it
 
 Three numbers, in three different files and two languages, that must stay in this order:
