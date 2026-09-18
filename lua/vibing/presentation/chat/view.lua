@@ -280,6 +280,15 @@ function M._apply_chat_buffer_settings(bufnr)
         )
       end)
 
+      -- 質問も同じ出口、同じ順序（#788）。待っているのはフックではなくMCPツール呼び出しだが、
+      -- 「殺したあとのCLIはもう待つのをやめる主体になれない」は同じ
+      pcall(function()
+        require("vibing.infrastructure.rpc.pending_questions").resolve_for_chat(
+          bufnr,
+          "The chat this question was asked in went away before it was answered."
+        )
+      end)
+
       local chat_buffer = M._attached_buffers[bufnr] or (M._current_buffer and M._current_buffer.buf == bufnr and M._current_buffer)
       if chat_buffer then
         local adapter = chat_buffer:_get_active_adapter()

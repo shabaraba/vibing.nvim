@@ -626,10 +626,13 @@ twice"). None of it was tried, and two of the three could not be reached from he
 writing a `timeout` into two places and trusting a claim.
 
 It does not need raising. `approval_wait_sec` plus its margins is **990s against a measured 1800**,
-so the ticket-and-poll design for `nvim_ask_user_question` fits inside the deadline as it ships.
-What that costs instead is one more thing to keep ordered, so
+so the in-place answer route for `nvim_ask_user_question` fits inside the deadline as it ships
+("The other channel", below). What that costs instead is one more thing to keep ordered, so
 `hook_timeout_ordering_spec.lua` asserts the whole derived budget stays under 1800 — a user raising
 `approval_wait_sec` past it would otherwise get a silent 30-minute hang.
+
+**This number licenses nothing on that route by itself**, and the section below says why: it
+measures a server that answers nothing, not one that answers late.
 
 **Two different things are called "progress" here, and they point opposite ways.** The message means
 MCP `notifications/progress`, sent **by an MCP server to the CLI**; `tool_progress` is a stream
@@ -706,6 +709,132 @@ Against the measured floors, with the default 900:
 somebody runs `tests/perf/hook_wait_ceiling.sh` against them. The ordering itself is asserted for
 all four in `tests/lua/infrastructure/hooks/hook_timeout_ordering_spec.lua`, because a backend that
 does not wait still registers a timeout and still must not be the one to give up first.
+
+## The other channel: answering a question in place (#788)
+
+`nvim_ask_user_question` is the second thing a human is waited for on, and until #788 it was the
+last kill path left after #778: the handler called `adapter:cancel`, the turn died, and the user's
+answer came back as the next message on a `--resume`.
+
+**It is a different route, and none of the three deadlines above reach it.** An approval travels
+through a shell hook; a question _is_ an MCP tool call. So `measured_wait_floor_sec` says nothing
+about it — that number measured a hook — and the mechanism had to be built rather than uncovered.
+The hook could already block before #778, because not writing the `.res` was the whole trick.
+Nothing on this route could: `rpc/server.lua` replied from its handler's return value, so
+`Server.DEFERRED` and `pending_questions.lua` are what "reply later" had to become.
+
+### Its own measurement, and what that number is
+
+`mcp.measured_answer_wait_sec = 960` on the claude descriptor, measured 2026-09-18 against claude
+2.1.236. Instrument: `tests/perf/mcp_answer_after_delay.sh`; logs in
+`.vibing/probe/mcp-answer-after-delay/`.
+
+```text
+question_wait_sec  900   shares permissions.approval_wait_sec — one number for one wait
+  + MCP_MARGIN_SEC  60 = 960   what the CLI must still be willing to consume
+```
+
+The gate is `question_budget_sec() <= mcp.measured_answer_wait_sec`, so **the default sits exactly
+on the measured value — deliberately, not by luck.** 960 is the production budget itself, which is
+what the cell was built to exercise: a shorter, more convenient delay would only have licensed a
+shorter wait, since the number is a floor. Raising `approval_wait_sec` therefore turns the feature
+off for that backend rather than waiting past the evidence, which is the same "enabled by a
+measurement, not a flag" rule the hook path follows.
+
+**It is not the 1800s in `wait_budget.MCP_TOOL_IDLE_TIMEOUT_SEC`, and the distinction is the point.**
+That one measured how long claude tolerates a server that answers **nothing**. This one measures
+whether an answer that arrives **late** is still consumed. Two experiments, two phenomena; using the
+silence ceiling to license a late answer is the same substitution this page records twice already.
+Both numbers stay, each with a comment saying what it measured.
+
+The cell is built the way "Register the reading before the run" asks. Five signals per cell, four
+pre-registered readings, a **control cell that answers immediately** — without it a failing arm is
+unreadable, because "no tool_result" and "the model never called the tool" look identical — and a
+per-cell marker string that appears nowhere in the prompt, so the marker showing up in the model's
+own text separates _the result was delivered_ from _the model consumed it_. `self-test` exercises
+the instrument against crafted logs and costs no tokens.
+
+### A question has no deny
+
+An expiring approval writes `deny` and the turn carries on: a refusal is a thing a model can act on
+correctly. An expiring question has no equivalent. "The user did not say which approach they
+wanted" leaves the choice it asked about still open, and the honest reading of that — pick one and
+continue — is exactly what asking existed to prevent. **So expiry ends the turn**, the reply is
+written first, and the user's answer arrives later as a new turn: byte-for-byte today's route.
+
+**Except when something else in that turn is still blocked.** claude dispatches several `tool_use`
+blocks from one assistant message at once, so `[nvim_ask_user_question, Bash]` blocks a question on
+the MCP channel and an approval in its hook **at the same time**. Killing unconditionally would
+take the turn the user is in the middle of answering the approval for — the door beside the
+one #778 closed, and the reason the approval path may not kill on expiry either. The condition
+therefore asks about prompts rather than about registries: if any approval _or_ question is still
+holding the turn, the expiring question ends alone and the turn keeps running, which is the
+approval path's behaviour exactly. `ChatBuffer:expire_question` is where it is decided, because it
+is the one place that can ask both.
+
+This is the same observation that merged the rendering state (`_prompts_rendered_unsent`, formerly
+`_approvals_rendered_unsent`): an approval and a question are one thing — _a prompt holding this
+turn open_. Merging the drawing and leaving the lifetimes split is how the two silently drift.
+
+### The duplicate-send guard swallowed every answer, on both routes
+
+`ChatBuffer:send_message()` opens with `if self._is_sending then return false end`, and both
+`_answer_pending_approval` and `_answer_pending_question` sit **below** it. Its docstring said the
+flag covers "the gap from `<CR>` to the CLI starting"; it does not. `send_message` sets it and only
+`_handle_response` — the end of the turn — clears it, which was **measured on a live editor while a
+turn was streaming**, not read off the code. A prompt that holds a running turn open is therefore
+always answered in exactly the state the guard rejects.
+
+The rejection is silent. `send_message` returns `false` and nothing else happens: no deny, no
+retry, no message. The hook spins to its own limit and the question waits for the CLI's 1800s MCP
+idle timeout. Seven real E2E runs of #788 ended with no `tool_result` at all, and this was why.
+
+**It was not new in #788.** The same line is what an in-place _approval_ answer hits, and claude
+enables that path by default (`approval_wait_sec` 900 < `measured_wait_floor_sec` 1090), so #778
+shipped with it. It survived because **no spec ever set `_is_sending`** — every case in
+`approval_prompts_spec.lua` and `question_prompts_spec.lua` called `send_message()` on a chat left
+at the default `false`, so the one gate a real answer must pass was never once exercised. Both specs now
+have a case that sets it, and both go red if the guard is restored unconditionally.
+
+The exemption is scoped to the answer and closed again straight after:
+
+```lua
+local blocking = self:_blocked_approval_count() + self:_blocked_question_count()
+if self._is_sending and blocking == 0 then return false end
+-- ... the two answer attempts ...
+if self._is_sending then return false end
+```
+
+The condition asks _is anything still holding this turn_, the same question and the same pair of
+counts as `_resume_after_prompts`, rather than whether prompt lines are still on screen.
+
+### An empty `<CR>` is not an answer, and while the turn runs it is nothing at all
+
+Pressing `<CR>` on an empty input never becomes the answer — handing a model a blank where a
+decision belongs is the one outcome that must not happen, and a test pins it.
+
+What happens instead depends on whether the turn is still running, and the live case is the second
+one. With the turn over (the kill route, or a prompt left drawn after it died) the press falls
+through to the ordinary send path, whose `cancel_request()` ends the turn and releases the question
+as `unanswered`. With the turn **still running** — which is every in-place prompt — it hits the
+re-closed guard above and does nothing: the prompt stays answerable and the wait limit is what
+eventually ends it.
+
+That is deliberate rather than incidental. Letting a stray `<CR>` through would cancel the turn the
+prompt is holding, which is the duplicate send the guard exists to stop, and there is already an
+explicit way out (`:VibingCancel`). It is also not a regression anybody can have felt: before the
+fix the guard swallowed the empty press too, so this is the documented behaviour changing to match
+the real one, not the real one changing.
+
+### What to measure before enabling another backend
+
+codex is the one where this is a real gap rather than a formality — its choice-list UI is already
+wired (`register_chat_bufnr`), so the only thing missing is the number. Run
+`tests/perf/mcp_answer_after_delay.sh` with its `claude -p` invocation replaced by the equivalent
+`codex exec` one, then add `mcp.measured_answer_wait_sec` to the descriptor. Two cells, both
+required: the control makes the arm readable, and the arm must use `question_budget_sec()` rather
+than a shorter delay, for the floor reason above. Grok cannot reach the MCP tool at all, so there
+is nothing to measure there yet.
 
 ## How this was measured wrong twice
 

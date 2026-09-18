@@ -119,10 +119,15 @@ and sends the remainder with `<CR>`.
 prompts instruct the model to use instead of the native tool. The backend-specific qualified tool
 names differ, but both prompts use the shared text in
 `adapter/modules/ask_user_question_instructions.lua`. Its handler calls
-`M.ask_user_question()` in `infrastructure/rpc/handlers/permission.lua`, which cancels the
-in-flight turn and renders the choice list via `on_insert_choices`. Because the turn is killed,
-the tool's return value never reaches the model — the user's answer arrives as the next `--resume`d
-turn's user message, so no Promise/state handling is required.
+`M.ask_user_question()` in `infrastructure/rpc/handlers/permission.lua`, which renders the choice
+list via `on_insert_choices`.
+
+**What happens to the turn depends on the backend** (#788). Where a measurement covers it — claude
+only, `mcp.measured_answer_wait_sec` — the reply to the MCP call is withheld, the turn stays open,
+and the user's `<CR>` becomes the tool's return value. Everywhere else the turn is cancelled as
+before and the answer arrives as the next `--resume`d turn's user message. The withheld reply, its
+four exits and what expiry means are
+`handbook/architecture/approval-without-kill.md` → "The other channel".
 
 **The choice list is only staged, so the staging has to be synchronous.** `on_insert_choices`
 writes `_pending_choices` and nothing else; the one thing that renders it is `add_user_section()`

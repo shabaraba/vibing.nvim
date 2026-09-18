@@ -32,7 +32,13 @@ local M = {}
 ---   is shared state, so a snapshot diff taken while another turn is mutating the same worktree
 ---   would attribute that turn's changes to this one — this is what lets the turn fall back to the
 ---   per-tool `request_diff` path instead (see core/utils/git_snapshot.lua).
---- @field on_insert_choices? fun(questions: table)
+--- @field on_insert_choices? fun(questions: table, waiting?: boolean)
+---   `waiting` says the same thing it says on `on_approval_required`, for the same reason (#788):
+---   this prompt is holding a turn that is still running, so the chat has to draw it now.
+--- @field can_answer_question_in_place? boolean Whether `nvim_ask_user_question` may hold its MCP
+---   reply open on this backend instead of killing the turn (#788). Resolved per turn from the
+---   descriptor's measured floor against the configured budget, so the RPC handler never names a
+---   backend.
 --- @field on_approval_required? fun(tool: string, input: table, options: table, hook_request_id?: string, waiting?: boolean)
 ---   `waiting` says this prompt is holding a turn that is still running (#778), so the chat has to
 ---   draw it now — the kill path's drawing point, `_handle_response`, never comes.

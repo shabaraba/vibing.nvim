@@ -21,7 +21,7 @@ local Fs = require("vibing.core.utils.fs")
 ---@field insert_choices fun(questions: table) AskUserQuestion選択肢を挿入
 ---@field set_pending_user_text fun(text: string) 次のユーザーセクションに差し込む本文を保存
 ---@field insert_approval_request fun(tool: string, input: table, options: table) ツール承認要求UIを挿入
----@field show_approval_prompts fun() 走っているターンの途中で溜まっている承認プロンプトを描く
+---@field show_pending_prompts fun() 走っているターンの途中で溜まっている承認プロンプトを描く
 ---@field get_session_allow fun(): table セッションレベルの許可リストを取得
 ---@field get_session_deny fun(): table セッションレベルの拒否リストを取得
 ---@field clear_turn_id fun() turn_id（と process_id）をクリア
@@ -209,14 +209,24 @@ function M.execute(adapter, callbacks, message, config)
         modified_file_paths[file_path] = true
       end
     end,
-    on_insert_choices = function(questions)
+    on_insert_choices = function(questions, waiting)
       -- `on_approval_required` と同じ理由で vim.schedule を挟まない。呼び出し元
-      -- （permission.lua の `cancel_and_deny` / `M.ask_user_question`）はすでにメインスレッド上で、
-      -- **その直前に cancel を済ませている**。cancel は `wrapped_on_done` を同期で呼ぶので、
-      -- ここで一段スケジュールすると `_handle_response` が `vim.schedule` した
+      -- （permission.lua の `cancel_and_deny` / `M.ask_user_question`）はすでにメインスレッド上。
+      --
+      -- kill する経路では**その直前に cancel が済んでいる**。cancel は `wrapped_on_done` を同期で
+      -- 呼ぶので、ここで一段スケジュールすると `_handle_response` が `vim.schedule` した
       -- `add_user_section` の後ろに並ぶ。そうなると選択肢はそのターンのユーザーセクションに
-      -- 描画されず、`_stop_reason` も `VibingResponseDone` に間に合わない
+      -- 描画されず、`_stop_reason` も `VibingResponseDone` に間に合わない（#649）。
+      --
+      -- **待たせる経路（#788）ではその前提が消える** — cancel していないので合流点が来ない。
+      -- 制約は同じままだが、理由は「合流点より先に置く」ではなく「合流点が存在しない」になる
       callbacks.insert_choices(questions)
+
+      -- `on_approval_required` の `waiting` と同じ。ターンが終わらない以上、ここで描かないと
+      -- 選択肢は保存されるだけで画面に出ず、モデルは上限まで答えを待つ
+      if waiting then
+        callbacks.show_pending_prompts()
+      end
     end,
     on_session_corrupted = function(old_session_id)
       vim.schedule(function()
@@ -243,7 +253,7 @@ function M.execute(adapter, callbacks, message, config)
       -- ここで描かないとプロンプトは保存されるだけで画面に出ず、フックは上限まで待つ。
       -- 逆に kill 経路でも描くと、`_handle_response` の描画と二重になる
       if waiting then
-        callbacks.show_approval_prompts()
+        callbacks.show_pending_prompts()
       end
     end,
   }

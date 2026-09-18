@@ -39,6 +39,13 @@ function M._shutdown()
         "Neovim exited while this approval was waiting for an answer."
       )
     end,
+    -- 質問も、アダプタを落とす段より**前**（#788）。承認と同じ理由で、同じ位置に置くこと自体が
+    -- 不変条件になっている
+    function()
+      require("vibing.infrastructure.rpc.pending_questions").resolve_all(
+        "Neovim exited while this question was waiting for an answer."
+      )
+    end,
     function()
       if M.adapter then
         M.adapter:cancel()

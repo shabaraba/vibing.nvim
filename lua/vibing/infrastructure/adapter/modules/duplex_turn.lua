@@ -67,6 +67,12 @@ function M.open(params, record, chat_key)
     worktree_root = params.opts._worktree_root,
     on_insert_choices = params.opts.on_insert_choices,
     on_approval_required = params.opts.on_approval_required,
+    -- Same value as the oneshot path registers, and it has to be here too: the field is read off
+    -- the *turn*, so a duplex chat that omitted it would silently keep killing itself to ask a
+    -- question while the oneshot chat next to it did not (#788).
+    can_answer_question_in_place = require("vibing.infrastructure.hooks.wait_budget").can_answer_question_in_place(
+      params.descriptor and params.descriptor.mcp
+    ),
   })
 
   local completed = false

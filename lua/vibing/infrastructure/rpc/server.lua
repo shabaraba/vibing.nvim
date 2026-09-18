@@ -25,6 +25,30 @@ local current_port = nil
 -- and writes either a `{ id = req.id, result = ... }` or `{ id = req.id, error = ... }` response (followed by a newline) to the client.
 -- @param client uv_tcp_t|nil TCP client handle; if `nil` or closing, no response will be written.
 -- @param request string JSON-RPC request as a single-line JSON string.
+---A handler that returns this has taken responsibility for replying later, through the `respond`
+---function it was handed. Nothing is written now.
+---
+---**The only deferred method today is `ask_user_question` (#788).** A question is an MCP tool call
+---the CLI is blocked awaiting, so the wait has to happen *inside* the call — unlike an approval,
+---where the shell hook polls for a file and withholding the file was already enough. Without this,
+---the only way to ask a human was to kill the turn.
+---
+---A deferred handler owes exactly what `rpc/pending_questions.lua` guarantees: the reply is written
+---exactly once, and it is always eventually written. A handler that defers and then forgets leaves
+---the CLI inside a tool call until its own MCP idle timeout — 1800s on claude.
+M.DEFERRED = { _vibing_deferred = true }
+
+---Is this what a handler returns to say "I will reply later"?
+---
+---Compared by identity, not by shape: a handler returning data that happens to carry the same key
+---would otherwise silently never be answered. `M.DEFERRED` is a single table and handlers return
+---that exact value.
+---@param res any
+---@return boolean
+local function is_deferred(res)
+  return res == M.DEFERRED
+end
+
 local function handle_request(client, request)
   local ok, req = pcall(vim.json.decode, request)
   if not ok then
@@ -35,6 +59,20 @@ local function handle_request(client, request)
     return
   end
 
+  -- 1リクエストにつき1回だけ書く。遅れて答える経路では、待っているあいだに他の出口
+  -- （期限切れ / チャット消滅 / Neovim終了）が同じリクエストに答えうるので、二重書き込みを
+  -- ここで止める。id で多重化されているので、1本を保留しても他のRPCは詰まらない
+  local answered = false
+  local function write_response(payload)
+    if answered then
+      return
+    end
+    answered = true
+    if client and not client:is_closing() then
+      client:write(vim.json.encode(payload) .. "\n")
+    end
+  end
+
   -- vim.schedule でメインループに戻してから実行
   vim.schedule(function()
     local success, res = pcall(function()
@@ -42,28 +80,23 @@ local function handle_request(client, request)
       local handler = handlers[method]
 
       if handler then
-        return handler(req.params)
+        -- 第2引数は「後で答えるための口」。受け取らないハンドラは今までどおり戻り値で答える
+        return handler(req.params, function(result)
+          write_response({ id = req.id, result = result })
+        end)
       else
         error("Unknown method: " .. tostring(method))
       end
     end)
 
-    local response
-    if success then
-      response = vim.json.encode({
-        id = req.id,
-        result = res,
-      })
-    else
-      response = vim.json.encode({
-        id = req.id,
-        error = tostring(res),
-      })
+    if success and is_deferred(res) then
+      return
     end
 
-    -- 非同期でレスポンス送信
-    if client and not client:is_closing() then
-      client:write(response .. "\n")
+    if success then
+      write_response({ id = req.id, result = res })
+    else
+      write_response({ id = req.id, error = tostring(res) })
     end
   end)
 end

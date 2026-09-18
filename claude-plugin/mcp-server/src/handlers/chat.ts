@@ -160,14 +160,30 @@ const askUserQuestionArgsSchema = z.object({
 });
 
 /**
+ * How long this one call may wait, as a backstop only.
+ *
+ * Deliberately under claude's measured 1800s ceiling for a silent MCP tool, and deliberately well
+ * over the wait Lua actually applies (900s + margin by default). Lua is what decides to stop
+ * waiting and says so in its reply; this number only covers the case where no reply arrives at all
+ * — a Neovim that died mid-question. Overridable for tests and for a user who has measured a
+ * longer wait on their own CLI.
+ */
+const QUESTION_TIMEOUT_MS = parseInt(process.env.VIBING_RPC_QUESTION_TIMEOUT || '1740000', 10);
+
+/**
  * Handler for nvim_ask_user_question
  *
- * Unlike a normal MCP tool, this does not return a real answer as its tool_result. It calls
- * `ask_user_question` on the Neovim RPC server (see
+ * This calls `ask_user_question` on the Neovim RPC server (see
  * `lua/vibing/infrastructure/rpc/handlers/permission.lua`), which renders the questions as an
- * editable choice list in the chat buffer and then immediately cancels/kills the current turn —
- * so this handler's return value is never actually seen by the model. The user's next message in
- * that buffer (a fresh `--resume`d turn) IS the answer to this call.
+ * editable choice list in the chat buffer. What happens next depends on the backend (#788):
+ *
+ *  - **answered in place** — the RPC reply is held open until a human answers, and their text
+ *    comes back as this call's result. The turn never stops, so the model reads the answer as an
+ *    ordinary tool result. This is why the call may take many minutes: it is waiting for a person.
+ *  - **the fallback**, on a backend whose patience for a late MCP answer has not been measured:
+ *    Neovim cancels/kills the current turn, so this handler's return value is never actually seen
+ *    by the model, and the user's next message in that buffer (a fresh `--resume`d turn) IS the
+ *    answer to this call.
  *
  * `chat_bufnr` correlates the call to the right chat buffer when several are active concurrently;
  * `rpc.ts` binds the MCP process to the right Neovim through its environment. The buffer number
@@ -179,7 +195,28 @@ const askUserQuestionArgsSchema = z.object({
 export async function handleAskUserQuestion(args: any): Promise<any> {
   const { chat_bufnr, questions, rpc_port } = askUserQuestionArgsSchema.parse(args);
 
-  const result = await callNeovim('ask_user_question', { chat_bufnr, questions }, rpc_port);
+  const result = await callNeovim(
+    'ask_user_question',
+    { chat_bufnr, questions },
+    rpc_port,
+    QUESTION_TIMEOUT_MS
+  );
+
+  if (result?.status === 'answered') {
+    return { content: [{ type: 'text', text: String(result.answer ?? '') }] };
+  }
+
+  // The user did not answer in time, or the chat/editor went away while they were being asked.
+  //
+  // **Not an error result**, deliberately: an error is what a model retries, and retrying this one
+  // re-asks the question, so the user comes back to two copies of a prompt they were already
+  // looking at. It reports the fact and leaves the model to decide — and on the expiry path
+  // Neovim has ended the turn anyway, so usually nobody reads this at all.
+  if (result?.status === 'unanswered') {
+    return {
+      content: [{ type: 'text', text: String(result.reason ?? 'The user did not answer.') }],
+    };
+  }
 
   if (result?.status !== 'ok') {
     return {

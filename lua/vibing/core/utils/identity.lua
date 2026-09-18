@@ -58,4 +58,17 @@ function M.new_turn_id()
   return mint()
 end
 
+--- A third id, and **not a third kind of thing**: it names one in-editor request that is waiting
+--- for a human, so that the registry holding it can guarantee one reply.
+---
+--- A blocked approval gets its id from `bin/hooks/pre-tool-use.sh`, which mints its own because the
+--- shell is where that request begins. A question (#788) begins here, so it is minted here. Same
+--- shape as the other two on purpose — nothing may parse an id to learn what it names — and it is
+--- not required to survive `HOOK_SAFE_CLASS`, since it never reaches a shell; it is held to the
+--- same shape anyway rather than inventing a second alphabet nobody would remember to check.
+--- @return string
+function M.new_request_id()
+  return mint()
+end
+
 return M

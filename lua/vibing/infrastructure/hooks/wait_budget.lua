@@ -115,6 +115,13 @@ end
 --- claude by holding a stub server open until it gave up: *"MCP server "probe" tool "wait_forever"
 --- sent no response or progress for 1800s; aborting."* codex and grok are not measured.
 ---
+--- **This measures silence, and only silence.** It is the ceiling on a server that never answers.
+--- It is *not* evidence that an answer arriving late is still consumed — that is a different
+--- phenomenon and has its own number, `mcp.measured_answer_wait_sec` on the descriptor (#788).
+--- Borrowing this one for that question is the same error as borrowing
+--- `hook.measured_wait_floor_sec` for the MCP route: a measurement of one thing standing in for
+--- another because they are adjacent.
+---
 --- It is recorded rather than configured because raising it is not actually available to us: the
 --- same message suggests a per-server `timeout`, but that is **the CLI describing itself, not a
 --- measurement**, and `cli_mcp_config.spec()` carries no such field and emits nothing at all on the
@@ -122,6 +129,74 @@ end
 --- 1800). What it buys is that raising `approval_wait_sec` past it fails the suite instead of
 --- turning into a silent 30-minute hang. `handbook/architecture/approval-without-kill.md`.
 M.MCP_TOOL_IDLE_TIMEOUT_SEC = 1800
+
+--- What the MCP route adds to vibing's own limit, the counterpart of `CLI_MARGIN_SEC`.
+---
+--- Covers everything between our timer deciding the question is unanswered and the CLI having the
+--- result in hand: the RPC write, the Node MCP server's own round trip, and the tool result being
+--- encoded back over stdio. Sized like `CLI_MARGIN_SEC` and for the same reason — being wrong here
+--- means the CLI gave up while an answer was in flight, which loses a human's answer rather than
+--- merely delaying it.
+M.MCP_MARGIN_SEC = 60
+
+--- How long vibing.nvim will hold an `nvim_ask_user_question` call open before giving up.
+---
+--- **The same configured number as an approval, deliberately.** A second knob would have to answer
+--- "why is a question worth a different wait than an approval?", and there is no answer: it is the
+--- same human, away for the same reason, and the costs that size the value (a 55/60 minute prompt
+--- cache TTL, ~200MB of RSS held by a resident process) do not care which prompt is on screen.
+--- `handbook/architecture/approval-without-kill.md` → "Where 900 seconds comes from" is therefore
+--- the reasoning for this one too.
+---
+--- `permissions.approval_wait_sec` naming a question's wait reads oddly. Renaming it would be a
+--- breaking configuration change for a cosmetic gain, so the name stays and this function is where
+--- the sharing is stated.
+--- @return number seconds
+function M.question_wait_sec()
+  return M.approval_wait_sec()
+end
+
+--- What a backend must tolerate for a question to be answered in place: our own wait plus the
+--- margin that carries the answer home.
+--- @return number seconds
+function M.question_budget_sec()
+  return M.question_wait_sec() + M.MCP_MARGIN_SEC
+end
+
+--- @class Vibing.McpSpec
+--- @field measured_answer_wait_sec? number The longest a **delayed MCP answer** was observed being
+---   delivered to the model on this CLI, with the turn carrying on. A floor, exactly like
+---   `hook.measured_wait_floor_sec`: it says an answer survived at least this long, not that the
+---   CLI would have stopped after. Absent means unmeasured.
+
+--- Whether `nvim_ask_user_question` may be answered **without killing the CLI** (#788).
+---
+--- The parallel of `hooks/transports.can_wait_for_approval`, and parallel on purpose — the rule
+--- that decides it is the same one: a backend gets the behaviour when a measurement covers the
+--- budget the current configuration derives, and keeps today's kill-and-retry otherwise.
+---
+--- What differs is which measurement, and that difference is the whole of #788. The hook's floor
+--- times a **hook blocking**; this one times a **late MCP answer being consumed**. Neither
+--- substitutes for the other, and neither substitutes for `MCP_TOOL_IDLE_TIMEOUT_SEC`, which times
+--- a server that answers nothing at all.
+---
+--- Comparing against the derived budget rather than a flag also means raising
+--- `permissions.approval_wait_sec` past what was measured turns the feature **off** for that
+--- backend rather than waiting past the evidence. That is tight by construction — the default is
+--- measured at exactly the default budget — and the way to wait longer is to re-run
+--- `tests/perf/mcp_answer_after_delay.sh` at the longer value, not to raise the number and hope.
+---
+--- Absent measurement → false. A new backend therefore keeps today's behaviour until somebody
+--- measures it, which is the safe default to forget.
+--- @param mcp Vibing.McpSpec|nil the backend descriptor's `mcp` table
+--- @return boolean
+function M.can_answer_question_in_place(mcp)
+  local floor = mcp and mcp.measured_answer_wait_sec
+  if type(floor) ~= "number" then
+    return false
+  end
+  return M.question_budget_sec() <= floor
+end
 
 --- The environment entry the hook script reads. Merged into the CLI child's environment.
 --- @param env table<string, string>

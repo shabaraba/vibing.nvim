@@ -41,6 +41,17 @@ function M.get(bufnr)
     return "waiting_approval"
   end
 
+  -- 質問も同じ位置に、同じ理由で入る（#788）。その場で答えられるようになった時点で、質問待ちの
+  -- ターンも開いたままになった — `is_responding()` の後ろに置くと、質問待ちのチャットは最大
+  -- `question_wait_sec` のあいだ `responding` を装い、オーケストレーターからは「まだ走っている」
+  -- に見える。これは #778 が承認に対して塞いだ穴とまったく同じもの。
+  --
+  -- ここでもレジストリを読む。`_stop_reason` は次の送信まで前のターンの値が残るので、先に読むと
+  -- 本当に走っているターンを質問待ちと誤報する
+  if #require("vibing.infrastructure.rpc.pending_questions").list_for_chat(bufnr) > 0 then
+    return "asked_question"
+  end
+
   if chat_buf:is_responding() then
     return "responding"
   end

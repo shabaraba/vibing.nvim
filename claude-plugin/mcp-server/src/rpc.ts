@@ -182,7 +182,12 @@ async function resolveRpcPort(method: string, requestedPort?: number): Promise<n
  * @param port - Legacy RPC port override used only when the process is not already bound.
  * @returns The `result` value from the RPC response. The promise is rejected with the RPC `error` if the response contains one, and is also rejected if the socket closes or the request times out.
  */
-export async function callNeovim(method: string, params: any = {}, port?: number): Promise<any> {
+export async function callNeovim(
+  method: string,
+  params: any = {},
+  port?: number,
+  timeoutMs?: number
+): Promise<any> {
   const resolvedPort = await resolveRpcPort(method, port);
   const sock = await getSocket(resolvedPort);
   const id = ++requestId;
@@ -196,13 +201,23 @@ export async function callNeovim(method: string, params: any = {}, port?: number
     const request = JSON.stringify({ id, method, params }) + '\n';
     sock.write(request);
 
-    // Timeout after configured duration (default 30 seconds)
+    // Timeout after configured duration (default 30 seconds), or whatever this call asked for.
+    //
+    // The override exists for exactly one method: `ask_user_question` waits for a human, and 30
+    // seconds is not a human (#788). It is per call rather than a raised default because every
+    // other method talks to Neovim and nothing else, so a long default would turn a hung editor
+    // into a hung tool call for all of them.
+    //
+    // It is a backstop, not the policy. The deadline that decides when to stop waiting lives in
+    // Lua (`wait_budget.question_wait_sec`), which replies with an explicit "unanswered" result;
+    // this only fires if that reply never comes at all. Requests are id-multiplexed over one
+    // socket, so holding this one open blocks no other call.
     setTimeout(() => {
       if (portPending.has(id)) {
         portPending.delete(id);
         reject(new Error('Request timeout'));
       }
-    }, NVIM_RPC_TIMEOUT);
+    }, timeoutMs ?? NVIM_RPC_TIMEOUT);
   });
 }
 

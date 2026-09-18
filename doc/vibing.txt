@@ -489,6 +489,31 @@ back after an hour, or a day, and answering grants the permission and asks the
 agent to retry, exactly as it did before this waiting behaviour existed. What
 expiry takes away is only the ability to answer *the call that was in flight*.
 
+Answering a question~
+
+When the agent asks you to choose between approaches, the question and its
+options are written into the chat the same way, and you answer by editing the
+lines and pressing `<CR>`. Your text is what the agent receives, so you can
+write something other than one of the options.
+
+On backends where the CLI has been measured to wait long enough, your answer
+goes back to the turn that asked, and the rest of that turn's output appears
+after it. Elsewhere the turn was stopped when the question appeared, and your
+answer starts a new one.
+
+A question also stops waiting after `permissions.approval_wait_sec`, but what
+happens then is different from an approval: the turn ends. An approval that
+expires is a refusal, which the agent can act on; an unanswered question would
+leave it to guess at the choice it asked you about. The options are written
+back into a fresh input section, so answering later sends a new message — the
+same thing that happens on a backend without the measurement. If the same turn
+is also waiting on a tool approval, it keeps running so that your answer to
+that prompt is not thrown away.
+
+While a prompt is holding a turn open, `<CR>` on an empty input does nothing
+and neither does text that answers no prompt: the turn keeps running and what
+is on screen stays answerable. Ending the turn is `<C-c>` or `:VibingCancel`.
+
 `gd` opens a float with three panes: the turn's files on the left, with each
 one's icon and `+N -M`, and that file's before/after side by side in Neovim's
 own diff mode. Both sides are syntax highlighted, `]c` / `[c` move between

@@ -67,6 +67,17 @@ local M = {
   -- killing the turn. Run `tests/perf/hook_wait_ceiling.sh` before adding a number.
   hook = { transport = "config_override", dialect = "claude", keep_in_bypass = true },
 
+  -- No `mcp.measured_answer_wait_sec` either, so `nvim_ask_user_question` keeps killing the turn
+  -- here (#788). Codex is the backend where this is a real gap rather than a formality: its
+  -- choice-list UI **is** wired (`register_chat_bufnr`), so the only thing standing between it and
+  -- answering in place is a measurement nobody has taken.
+  --
+  -- What to run before adding a number: `tests/perf/mcp_answer_after_delay.sh` with its `claude -p`
+  -- invocation replaced by the equivalent `codex exec` one. Two cells, both required — the control
+  -- (immediate answer) is what makes a failing arm readable, and the arm must use the production
+  -- budget (`wait_budget.question_budget_sec()`, 960s by default) rather than a shorter convenient
+  -- delay, because the number is a floor and a short cell would only license a short wait.
+
   -- The project-local sandbox profile (`.vibing/codex-permissions.toml`) is created with the
   -- project's `.vibing/` and backfilled on setup for projects created before it existed. Existing
   -- files, including empty ones, are never overwritten.
