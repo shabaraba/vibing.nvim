@@ -215,6 +215,57 @@ Two limits on that sentence, neither measured away:
    `destructive_commands.lua` live exactly there. So B's risk is **narrowed** to granular rules and
    **unmeasured within them**.
 
+### Granular deny runs before the consultation, so the third shape is safe
+
+The sentence above leaves B's risk narrowed to granular rules and unmeasured within them. Two more
+cells settled it (claude 2.1.236, 2026-09-18, logs in `granular-control/` and `granular-ask/`).
+
+**The command is not free to choose, and the obvious design walks into a trap this file already
+records.** `can_use_tool` is not called for a `Bash(echo …)` — the CLI's safe-command classifier
+allows it first — so a cell using a bare `echo` returns "never consulted" for a reason unrelated to
+the deny rule, which reads exactly like "the granular deny ran first". The cells use
+`echo "ok" > probe-out.txt`, whose consultation with no granular rule present was already logged by
+arm A's deny cell. The redirect takes it out of the safe-command path.
+
+**And the control cannot be "the same cell without the prompt tool".** With `Bash` outside
+`--allowedTools` and nobody able to approve it, the refusal is unattributable. So G0 puts `Bash`
+**in** `--allowedTools`, which makes a refusal the rule's doing and also shows the rule outranking
+an explicit allow.
+
+| cell                                            | called | hook | consulted | succeeded |
+| ----------------------------------------------- | ------ | ---- | --------- | --------- |
+| G0 — `--allowedTools Bash`, no prompt tool      | 1      | 1    | **0**     | 0         |
+| G1 — `--allowedTools Read`, prompt tool `stdio` | 1      | 1    | **0**     | 0         |
+
+Both returned the same `tool_result`:
+`Permission to use Bash with command echo "ok" > probe-out.txt has been denied.`
+
+The pre-registered mapping for that row was "not consulted + refused → the granular deny runs
+first; the third shape is safe", and that is the outcome. Combining both arms gives the order:
+
+```
+1. toolset construction  — a tool-NAME deny removes the tool entirely
+2. PreToolUse hook       — runs, and may defer          (HOOK DEFER fired in both cells)
+3. granular deny rules   — evaluated here
+4. can_use_tool          — reached only if 3 permits    (arm A's allow cell proves it is reached)
+```
+
+**So the third shape preserves every layer of the user's own settings**: we are only ever consulted
+about calls that already survived them, and the cost option B was believed to carry is real at
+step 3 and unreachable by an `allow` — an `allow` cannot be offered where nothing asks.
+
+One unmeasured assumption, stated rather than closed: that the ordering does not depend on _which_
+command the rule names. `echo` was used because it is harmless while `Bash(rm -rf:*)` is the rule
+under real concern. Nothing here rules out a classifier treating a destructive command differently
+— though it would have to do so by refusing more readily, which is the safe direction for the third
+shape and the unsafe one for B.
+
+What this does not settle: the third shape needs `--permission-prompt-tool stdio`, hence
+`--input-format stream-json`, which `backends/claude.lua` passes **only on the duplex transport**
+while oneshot is the default. Arm B — the MCP-tool form, which needs no control channel — is the
+question of whether the same shape reaches oneshot. Its precondition, "worth a turn only if the
+deny runs before the consultation", is now **met**. It has not been run.
+
 ### A cell is not an observation of a tool
 
 The deny cell's summary said the opposite of its log, and the design principle the harness was

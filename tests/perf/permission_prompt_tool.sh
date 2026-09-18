@@ -630,6 +630,40 @@ PY
 # `Bash(rm -rf:*)`. Nothing here rules out a classifier that treats a destructive command
 # differently -- though it would have to do so by refusing *more* readily, which is the safe
 # direction for the third shape and the unsafe one for B.
+# --- WHAT THE GRANULAR CELLS MEASURED (claude 2.1.236, 2026-09-18) ----------------------------
+#
+# Recorded beneath the pre-registration, not over it. Both cells produced the SAME four signals,
+# and the control is what makes that identity mean something rather than nothing:
+#
+#   G0 (control, --allowedTools Bash, no prompt tool):
+#     called=1  hook=1  consulted=0  succeeded=0
+#     tool_result: `Permission to use Bash with command echo "ok" > probe-out.txt has been denied.`
+#     -> the rule matches, and it beats an explicit --allowedTools entry. G1 is readable.
+#
+#   G1 (--allowedTools Read, --permission-prompt-tool stdio):
+#     called=1  hook=1  consulted=0  succeeded=0   -- byte-identical outcome, same message
+#     -> **the granular deny runs FIRST. We are never asked.**
+#
+# Pre-registered mapping for that row: "not consulted + refused -> the granular deny runs FIRST.
+# The third shape is safe." That is the outcome.
+#
+# So the order, with both arms combined, is:
+#
+#   1. toolset construction   -- a tool-NAME deny removes the tool (arm A: "No such tool available")
+#   2. PreToolUse hook        -- runs, and may defer (HOOK DEFER Bash fired in both cells)
+#   3. granular deny rules    -- evaluated here
+#   4. can_use_tool           -- reached only if 3 permits (arm A's allow cell proves it is reached)
+#
+# **The third shape is therefore safe**: deferring and answering the gate's own `can_use_tool`
+# preserves every layer of the user's own settings, because we are only consulted about calls that
+# already survived them. The cost that decision 1's option B was believed to carry is real at
+# step 3 and unreachable by an `allow`, since an `allow` cannot be offered where nothing asks.
+#
+# What this does NOT settle: the third shape needs `--permission-prompt-tool stdio`, which needs
+# `--input-format stream-json`, which `backends/claude.lua` passes only on the duplex transport --
+# and oneshot is the default. Arm B (the MCP-tool form, which needs no control channel) is the
+# question of whether the same shape is available on oneshot. Its precondition -- "worth a turn
+# only if the deny runs before the consultation" -- is now MET. It has not been run.
 run_granular_cell() {
   local name="$1" allowed="$2" deny="$3" use_prompt_tool="$4"
   local dir="$OUT/granular-$name"
