@@ -461,6 +461,40 @@ one: **when a new measurement changes an instruction, rewrite the block rather t
 another**, and say in the item how many replacement blocks it contains, so a second one is a
 contradiction the reader can see rather than a step they can follow.
 
+### A control that stops short of the boundary is not a control
+
+Another of the family, and the only one where the thing that failed was **the control itself**.
+
+The E2E for #788 kept dying with no plenary summary, no `VimLeavePre`, an empty stderr and exit 1,
+while the child Neovim carried on and finished its turn half a minute later. Read as a crash, that sent
+the search into the feature's own code. Three token-free probes were run to clear the pieces, and
+one of them — a 45-second poll against a live child — "passed", which was taken as evidence that
+polling a child was fine.
+
+It was not evidence of anything. plenary's `test_harness.lua` defaults to `timeout = 50000`, and
+`PlenaryBustedFile` has no argument that could carry another value, so a spec run by hand outside
+`package.json`'s `test:e2e` (which passes `timeout = 240000`) is killed at 50 seconds. **The 45s
+control had simply ended before the wall it was supposed to be testing for.** Its green said "this
+finishes in under 45 seconds", which was never in question.
+
+Two general forms, and the first is the cheaper one:
+
+- **A deadline fires at the same number every time; a crash does not.** Two runs dying at exactly
+  50s is the tell, and a stopwatch is cheaper than any amount of reading. What made it look
+  organic was the signature: the parallel branch of `test_paths` — `sequential = false` is the
+  default — joins with the timeout, counts a still-running child (`code == nil`) as failed, and
+  calls `1cq` **without killing it**. Parent gone in silence, child alive and working: exactly what
+  a crash in the parent would look like, produced by a deadline.
+- **A control has to cross the boundary it is controlling for.** A probe shorter than the deadline
+  under suspicion cannot distinguish "the mechanism works" from "we did not reach the mechanism",
+  which is the same indistinguishability as the vacuous replacement test above — met here from the
+  opposite direction, by a probe that ran rather than one that did not.
+
+Recorded with its ending because that is the part that generalises: this was written up as a
+harness defect, with an issue half-drafted, before anyone re-read `package.json` — where the
+`timeout = 240000` had been sitting, free to read, from the start. The audit that found it cost
+nothing; the seven paid E2E runs that preceded it did not.
+
 ## The ordering invariant, and why every backend needs it
 
 Three numbers, in three different files and two languages, that must stay in this order:
