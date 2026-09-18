@@ -18,13 +18,6 @@ local clients = {}
 ---@type number?
 local current_port = nil
 
----Handle incoming JSON-RPC request
----@param client uv_tcp_t クライアントソケット
--- Process a newline-delimited JSON-RPC request string and send a JSON-RPC response to the client.
--- Schedules handler execution on the Neovim main loop, dispatches the request to the corresponding entry in `handlers`,
--- and writes either a `{ id = req.id, result = ... }` or `{ id = req.id, error = ... }` response (followed by a newline) to the client.
--- @param client uv_tcp_t|nil TCP client handle; if `nil` or closing, no response will be written.
--- @param request string JSON-RPC request as a single-line JSON string.
 ---A handler that returns this has taken responsibility for replying later, through the `respond`
 ---function it was handed. Nothing is written now.
 ---
@@ -49,6 +42,15 @@ local function is_deferred(res)
   return res == M.DEFERRED
 end
 
+---Handle incoming JSON-RPC request
+---
+---Process a newline-delimited JSON-RPC request string and send a JSON-RPC response to the client.
+---Schedules handler execution on the Neovim main loop, dispatches the request to the corresponding
+---entry in `handlers`, and writes either a `{ id = req.id, result = ... }` or
+---`{ id = req.id, error = ... }` response (followed by a newline) to the client — unless the
+---handler returned `M.DEFERRED`, in which case it writes the reply itself, later.
+---@param client uv_tcp_t|nil TCP client handle; if `nil` or closing, no response will be written.
+---@param request string JSON-RPC request as a single-line JSON string.
 local function handle_request(client, request)
   local ok, req = pcall(vim.json.decode, request)
   if not ok then

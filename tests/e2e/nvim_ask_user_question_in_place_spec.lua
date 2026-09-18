@@ -161,7 +161,7 @@ describe("E2E: nvim_ask_user_question answered in place (claude)", function()
     --
     -- There is deliberately **no `pending_questions` check here**, and its absence is not an
     -- oversight: `VibingResponseDone` fires from `_finish_turn`, which runs *after*
-    -- `_release_blocked_questions`, so the registry is empty by then whether the answer was spent
+    -- `_release_blocked_prompts`, so the registry is empty by then whether the answer was spent
     -- or released unanswered. The assertion would pass either way.
     assert.is_number(
       occurrences,

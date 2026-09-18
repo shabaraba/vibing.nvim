@@ -115,23 +115,6 @@ function ChatBuffer:_has_blocked_approvals()
   return require("vibing.infrastructure.rpc.pending_approvals").has_for_chat(self.buf)
 end
 
----このチャットが止めているフックを、答えないまま全部解放する
----
----答えではないので deny が書かれる。呼ぶのは「このターンはもう答えを届けられない」と分かった
----側 — 打ち切り（`cancel_request`）と、ターンの終わり（`_finish_turn`、CLIが先に死んだ場合）。
----
----**プロンプトの行は消さない。** kill する経路では答えたあとも残るのが従来の挙動で、ユーザーは
----後から答えて新しいターンとして再試行できる。ここで消すと、その経路の挙動まで黙って変わる
----@param reason string フックに渡す拒否理由
----@return number released 実際に解放した件数。kill する経路では常に0
-function ChatBuffer:_release_blocked_approvals(reason)
-  local released = 0
-  pcall(function()
-    released = require("vibing.infrastructure.rpc.pending_approvals").resolve_for_chat(self.buf, reason)
-  end)
-  return released
-end
-
 ---いまこのチャットが、答えを待たせているMCPツール呼び出しを1本でも持っているか（#788）
 ---
 ---`_has_blocked_approvals` と同じ理由でレジストリに訊く。`_pending_choices` は描画用の値で、
@@ -148,23 +131,21 @@ end
 ---を見る分岐が生まれて2つの寿命が黙って乖離する
 ---@return boolean
 function ChatBuffer:_has_blocked_prompts()
-  return self:_has_blocked_approvals() or self:_has_blocked_questions()
+  return require("vibing.infrastructure.rpc.pending_prompts").has_for_chat(self.buf)
 end
 
----このチャットが止めている質問を、答えないまま全部解放する（#788）
+---このチャットが止めているプロンプトを、答えないまま全部解放する（#778、#788）
 ---
----承認側と**同じ位置から呼ばれる**（`cancel_request` と `_finish_turn`）。止めたあとのCLIは
----もう待つのをやめる主体になれないので、解放はプロセスが生きているうちに終わっていなければ
----ならない。放置すれば待っているのはCLI自身のMCPアイドル上限（claudeで1800秒）までで、
----その間チャットは生きているように見える
----@param reason string モデルに返す説明
----@return number released
-function ChatBuffer:_release_blocked_questions(reason)
-  local released = 0
-  pcall(function()
-    released = require("vibing.infrastructure.rpc.pending_questions").resolve_for_chat(self.buf, reason)
-  end)
-  return released
+---答えではないので、承認には deny が、質問には未回答の報告が書かれる。呼ぶのは「このターンは
+---もう答えを届けられない」と分かった側 — 打ち切り（`cancel_request`）と、ターンの終わり
+---（`_finish_turn`、CLIが先に死んだ場合）。
+---
+---**プロンプトの行は消さない。** kill する経路では答えたあとも残るのが従来の挙動で、ユーザーは
+---後から答えて新しいターンとして再試行できる。ここで消すと、その経路の挙動まで黙って変わる
+---@param template string `%s` に `approval` / `question` が入る文面
+---@return number released 実際に解放した件数。kill する経路では常に0
+function ChatBuffer:_release_blocked_prompts(template)
+  return require("vibing.infrastructure.rpc.pending_prompts").resolve_for_chat(self.buf, template)
 end
 
 ---最後のブロックが解けたので、入力欄を閉じてアシスタントの続きに戻す
@@ -254,16 +235,13 @@ end
 ---`ChatBuffer:add_user_section()` 本体と分けてあるのは、そちらがスラッシュコマンド経路からも
 ---呼ばれるから。混ぜるとAIターンが1回も走っていないのに完了が飛ぶ
 function ChatBuffer:_finish_turn()
-  -- ターンが終わったのにまだ止まっているフックがあるなら、CLIのほうが先に死んだということ
-  -- （承認待ちのフックはターンを終わらせないので、正常系ではここは0件）。親を失ったフックは
-  -- もう誰にも答えられないので、ここで deny を書いて解放する。放っておいても上限が拾うが、
+  -- ターンが終わったのにまだ止まっているプロンプトがあるなら、CLIのほうが先に死んだということ
+  -- （答えを待っているプロンプトはターンを終わらせないので、正常系ではここは0件）。親を失った
+  -- プロンプトはもう誰にも答えられないので、ここで解放する。放っておいても上限が拾うが、
   -- それは15分後に「900秒答えられなかった」という、実際とは違う説明が出るということ。
   --
   -- 溜めているチャンクは**捨てない**。このターンの出力で、行き先は直後の `add_user_section`
-  self:_release_blocked_approvals("The turn this approval belonged to ended before it was answered.")
-  -- 質問も同じ（#788）。こちらは待っているのがフックではなくMCPツール呼び出しなので、取り残すと
-  -- CLI自身のアイドル上限まで止まったままになる
-  self:_release_blocked_questions("The turn this question belonged to ended before it was answered.")
+  self:_release_blocked_prompts("The turn this %s belonged to ended before it was answered.")
 
   -- プロンプトがターン途中で既に描かれているなら、その未送信セクションを畳む。下の
   -- `add_user_section` が同じ保留を描き直すので、残すと同じ承認が2つ並び、答えられるのは
@@ -296,15 +274,14 @@ end
 ---捨てたい呼び出し元（`close` / `send_message`）が、戻ってきてから自分で消す
 ---@return boolean cancelled 止めるものがあったか
 function ChatBuffer:cancel_request()
-  -- **保留中の承認を先に手放す（#778）。** 止めようとしているターンは、フックの中で `.res` を
-  -- 待って止まっているかもしれない。止めたあとのCLIはもう待つのをやめる主体になれないので、
+  -- **保留中のプロンプトを先に手放す（#778、#788）。** 止めようとしているターンは、フックの中で
+  -- `.res` を、あるいはMCPツール呼び出しの返事を待って止まっているかもしれない。
+  -- 止めたあとのCLIはもう待つのをやめる主体になれないので、
   -- 順序は `VimLeavePre` / `BufUnload` と同じ。
   --
   -- 早期returnより前に置くのは、止めるプロセスが見つからない場合でも保留が残るのは同じだから。
   -- 止まっていないのに答えを待たせ続けるほうが、返り値が変わらないことより重い
-  local released = self:_release_blocked_approvals("The turn this approval belonged to was cancelled.")
-  -- 質問も同じ順序で、同じ理由（#788）
-  released = released + self:_release_blocked_questions("The turn this question belonged to was cancelled.")
+  local released = self:_release_blocked_prompts("The turn this %s belonged to was cancelled.")
   if released > 0 then
     -- 溜めていたチャンクは打ち切られたターンの続きで、書き戻す場所が無い。次の送信から来たなら
     -- 未送信セクションにユーザーの本文が入っていて、その下に積むのは `extract_user_message` が
@@ -899,15 +876,18 @@ function ChatBuffer:_answer_pending_approval()
     -- 答えた行はそのまま transcript に残す。あとは走り続けているターンの続きを受け取れる状態に
     -- 戻すことだが、**それが何かは保留が残っているかで変わる**
     -- 訊くのは「まだフックを止めているか」で、プロンプトの行が残っているかではない。残っていても
-    -- 誰も待っていないなら入力欄を開いたままにする理由は無く、そこに出力を積むと壊れる
-    if self:_has_blocked_approvals() then
+    -- 誰も待っていないなら入力欄を開いたままにする理由は無く、そこに出力を積むと壊れる。
+    -- **承認だけを訊いてはいけない（#788）。** 質問が同じターンを止めていても入力欄は要る —
+    -- 承認だけ見ると `_resume_after_prompts` が質問を見て false を返し、入力欄を描き直す側も
+    -- 開き直す側も走らないまま、溜めた出力の出口だけが無くなる。質問側の同じ分岐と同じ条件
+    if self:_has_blocked_prompts() then
       -- まだ答えを待っているものがある。新しい未送信セクションに描き直して入力欄を保つ。
       -- 溜めていた出力は `add_user_section` の中で先に流れるので、順序は時系列のまま
       ConversationExtractor.commit_user_message(self.buf)
       self._prompts_rendered_unsent = false
       self:add_user_section()
     else
-      self:_resume_after_approvals()
+      self:_resume_after_prompts()
     end
     return { outcome = "answered_in_place" }
   end
@@ -1159,10 +1139,11 @@ function ChatBuffer:append_chunk(chunk, turn_id)
     return
   end
 
-  -- 片で積んで、流すときに `table.concat` する。承認が立っている間は下の早期returnで
-  -- フラッシュが止まるので、`a = a .. chunk` だと最大 `approval_wait_sec`（既定900秒）ぶんの
-  -- あいだ、到着するたびに蓄積全体をコピーし直すことになる。kill する設計ではプロセスが
-  -- プロンプトの時点で死んでいたので、この形は起こり得なかった
+  -- 片で積んで、流すときに `table.concat` する。プロンプトが立っている間は下の早期returnで
+  -- フラッシュが止まるので、`a = a .. chunk` だと最大 `approval_wait_sec` /
+  -- `question_wait_sec`（どちらも既定900秒）ぶんのあいだ、到着するたびに蓄積全体をコピーし直す
+  -- ことになる。kill する設計ではプロセスがプロンプトの時点で死んでいたので、この形は
+  -- 起こり得なかった
   self._chunk_parts[#self._chunk_parts + 1] = chunk
 
   if self._chunk_timer then
@@ -1170,7 +1151,7 @@ function ChatBuffer:append_chunk(chunk, turn_id)
     self._chunk_timer = nil
   end
 
-  -- **承認プロンプトが1件でも立っている間は流さない（#778）。**
+  -- **プロンプト（承認・質問）が1件でも立っている間は流さない（#778、#788）。**
   --
   -- append-only のバッファは「入力欄」と「ストリーミング出力」を同時には持てない。プロンプトは
   -- 未送信の `## User` セクションとして末尾にあり、`flush_chunks` も末尾に追記するので、ここで
@@ -1186,10 +1167,15 @@ function ChatBuffer:append_chunk(chunk, turn_id)
   -- だけで、文章とツール呼び出しを交互に出すターンは測っていない）。一般化が外れたときに増える
   -- のは溜まる量だけで、壊れ方は変わらない
   --
-  -- 溜めたものは必ず出る。出口は `_flush_chunks` を呼ぶ側全部 — 最後の承認が答えられたとき
-  -- （`_answer_pending_approval`）と、ターンが終わったとき（`add_user_section`）。前者が
-  -- 抜けても後者が拾うので、期限切れで承認が消えた場合も置き去りにはならない
-  if self:_has_blocked_approvals() then
+  -- **質問も同じ理由でここに入る（#788）。** 待たせている質問の選択肢も未送信の `## User`
+  -- セクションとして末尾に描かれる（`show_pending_prompts` は承認と共通）ので、承認だけを
+  -- 訊くと質問待ちの `question_wait_sec` のあいだだけ、続きの出力が入力欄の下に積まれる
+  --
+  -- 溜めたものは必ず出る。出口は `_flush_chunks` を呼ぶ側全部 — 最後のプロンプトが答えられた
+  -- とき（`_answer_pending_approval` / `_answer_pending_question` / `_resume_after_prompts`）と、
+  -- ターンが終わったとき（`add_user_section`）。前者が抜けても後者が拾うので、期限切れで
+  -- プロンプトが消えた場合も置き去りにはならない
+  if self:_has_blocked_prompts() then
     return
   end
 

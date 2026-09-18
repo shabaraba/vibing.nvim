@@ -295,6 +295,97 @@ describe("a question holding the turn open", function()
     end)
   end)
 
+  describe("output that arrives while a question is waiting", function()
+    --- The same append-only problem #778 solved for approvals, on the channel that arrived after
+    --- it. A waiting question's choices are drawn by `show_pending_prompts` — the *shared* entry
+    --- point — as an unsent `## User` section at the end of the buffer, and `_flush_chunks` appends
+    --- at the end too. So anything flushed while a question waits lands under the input field,
+    --- where `extract_user_message` reads it back as the user's next message.
+    ---
+    --- The hold was keyed on `pending_approvals` alone, which is exactly the drift
+    --- `.claude/rules/permissions.md` names: the drawing was merged and the condition was not.
+    local function text(chat_buf)
+      return table.concat(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false), "\n")
+    end
+
+    local function line_index(chat_buf, needle)
+      for index, line in ipairs(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)) do
+        if line:find(needle, 1, true) then
+          return index
+        end
+      end
+      return nil
+    end
+
+    --- The state a question is actually asked in: a running turn that has drawn its choices.
+    local function chat_streaming_under_a_question()
+      local chat_buf, replies = chat_awaiting_question()
+      chat_buf:insert_choices({ { question = "Which approach?", options = { { label = "A" } } } })
+      chat_buf:start_response()
+      chat_buf:show_pending_prompts()
+      return chat_buf, replies
+    end
+
+    it("streams normally when no question is waiting", function()
+      -- The control. Without it "the text never appeared" is green whether the hold worked or the
+      -- harness simply never flushes anything.
+      local chat_buf = view.render({ session_id = "questions" }, "back")
+      chat_buf:start_response()
+      chat_buf:append_chunk("ordinary output\n")
+
+      vim.wait(300, function()
+        return line_index(chat_buf, "ordinary output") ~= nil
+      end)
+      assert.is_not_nil(line_index(chat_buf, "ordinary output"), text(chat_buf))
+    end)
+
+    it("holds it while the question waits", function()
+      local chat_buf = chat_streaming_under_a_question()
+      chat_buf:append_chunk("a parallel tool's result\n")
+
+      vim.wait(300)
+      assert.is_nil(line_index(chat_buf, "a parallel tool's result"), text(chat_buf))
+    end)
+
+    it("does not hold for choices drawn after the question stopped waiting", function()
+      -- The hold is keyed on the registry, not on the lines. The kill path leaves its choices drawn
+      -- after the turn dies and nothing is blocked on them, so keying on `_pending_choices` would
+      -- mean every later turn rendered nothing at all.
+      local chat_buf = chat_streaming_under_a_question()
+      PendingQuestions._reset()
+      chat_buf:append_chunk("the next turn's output\n")
+
+      vim.wait(300, function()
+        return line_index(chat_buf, "the next turn's output") ~= nil
+      end)
+      assert.is_not_nil(line_index(chat_buf, "the next turn's output"), text(chat_buf))
+    end)
+
+    it("flushes what it held once the question is answered", function()
+      -- The hold is only safe because every exit drains it. The question side's exit is
+      -- `_answer_pending_question`, which reaches `_flush_chunks` through `_resume_after_prompts`.
+      local chat_buf, replies = chat_streaming_under_a_question()
+      chat_buf:append_chunk("arrived while waiting\n")
+      chat_buf.extract_user_message = function()
+        return "A"
+      end
+
+      assert.is_true(chat_buf:send_message())
+      assert.equals("answered", replies[1].status)
+
+      local held = line_index(chat_buf, "arrived while waiting")
+      assert.is_not_nil(held, "the held output must reappear:\n" .. text(chat_buf))
+
+      local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
+      for index = held, #lines do
+        assert.is_nil(
+          lines[index]:match("^## User"),
+          "no input section may sit above the flushed output:\n" .. text(chat_buf)
+        )
+      end
+    end)
+  end)
+
   describe("a question and an approval waiting at once", function()
     it("does not let an approval answer be swallowed as a question answer", function()
       -- Both prompts are answered through `send_message`, and only the approval side can tell

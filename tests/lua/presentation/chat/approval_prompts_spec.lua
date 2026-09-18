@@ -726,6 +726,35 @@ describe("several approval prompts at once", function()
       end
     end)
 
+    it("redraws the input and flushes when a question is still holding the turn", function()
+      -- Answering the last *approval* is not the same as nothing holding the turn any more (#788).
+      -- A question can be blocked in the same turn — claude dispatches several tool calls from one
+      -- assistant message — and asking only `pending_approvals` here sends the chat down
+      -- `_resume_after_prompts`, which sees the question and returns false. Neither branch runs:
+      -- the answered option line stays inside the open unsent section, and the output held behind
+      -- the prompt loses its only exit until the question is answered too.
+      local PendingQuestions = require("vibing.infrastructure.rpc.pending_questions")
+      PendingQuestions._reset()
+
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
+      PendingQuestions.open({
+        request_id = "q-1",
+        chat_bufnr = chat_buf.buf,
+        questions = { { question = "Which approach?" } },
+        respond = function() end,
+      })
+      chat_buf:start_response()
+      chat_buf:show_pending_prompts()
+      chat_buf:append_chunk("arrived while both waited\n")
+
+      assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
+
+      local held = line_index(chat_buf, "arrived while both waited")
+      PendingQuestions._reset()
+      assert.is_not_nil(held, "the held output must reappear even though the question still waits:\n" .. text(chat_buf))
+    end)
+
     it("stops calling itself waiting once the last prompt is answered", function()
       -- `_stop_reason` is cleared only where a new turn starts, and answering in place starts
       -- none. Left set, the chat reports `waiting_approval` from here until its next send —

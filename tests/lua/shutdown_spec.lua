@@ -123,4 +123,35 @@ describe("shutdown", function()
     vim.fn.delete(comm_dir, "rf")
     assert.is_true(ok, tostring(err))
   end)
+
+  it("replies to every question that was still waiting, in the same step", function()
+    -- The other channel a human is waited for on (#788), and the one whose absence is invisible:
+    -- a withheld hook response times out inside `pre-tool-use.sh`, but a withheld MCP reply leaves
+    -- the CLI inside the tool call until its own idle limit — 1800s on claude, with nothing on
+    -- screen to say so. Both are released by one step for exactly that reason, so this pins that
+    -- the question half actually runs and runs before the CLI is cancelled.
+    local Questions = require("vibing.infrastructure.rpc.pending_questions")
+    Questions._reset()
+
+    local replies = {}
+    Questions.open({
+      request_id = "exit-q-1",
+      chat_bufnr = 7,
+      questions = { { question = "Which approach?" } },
+      respond = function(result)
+        table.insert(replies, result)
+        table.insert(order, "questions")
+      end,
+    })
+
+    Vibing._shutdown()
+    Questions._reset()
+
+    assert.equals(1, #replies, "the waiting MCP call was never answered: " .. vim.inspect(order))
+    assert.equals("unanswered", replies[1].status)
+    assert.is_true(
+      vim.fn.index(order, "questions") < vim.fn.index(order, "cli"),
+      "a killed CLI can no longer stop waiting, so the reply must be written first: " .. vim.inspect(order)
+    )
+  end)
 end)

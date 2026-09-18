@@ -48,7 +48,7 @@ function M.get(bufnr)
   --
   -- ここでもレジストリを読む。`_stop_reason` は次の送信まで前のターンの値が残るので、先に読むと
   -- 本当に走っているターンを質問待ちと誤報する
-  if #require("vibing.infrastructure.rpc.pending_questions").list_for_chat(bufnr) > 0 then
+  if require("vibing.infrastructure.rpc.pending_questions").has_for_chat(bufnr) then
     return "asked_question"
   end
 

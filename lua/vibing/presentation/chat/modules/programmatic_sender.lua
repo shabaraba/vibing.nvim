@@ -74,7 +74,7 @@ function M.has_blocked_question(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return false
   end
-  return #require("vibing.infrastructure.rpc.pending_questions").list_for_chat(bufnr) > 0
+  return require("vibing.infrastructure.rpc.pending_questions").has_for_chat(bufnr)
 end
 
 ---承認と対称の例外。ただし `request_id` を取らない

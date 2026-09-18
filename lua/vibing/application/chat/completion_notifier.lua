@@ -437,10 +437,9 @@ end
 ---  残らず、オーケストレーターは「承認が要る」だけ受け取って**完了報告を永久に受け取らない**。
 ---  これは中間通知であって停止の報告ではない
 ---
----`chat_notifications.enabled` は見ない。承認待ちは「自力では抜けられない止まり方」で、
+---`chat_notifications.enabled` は見ない。承認待ちも質問待ちも「自力では抜けられない止まり方」で、
 ---そちらは設定に依らず配るのがこのモジュールの規約
----@param bufnr number 承認待ちで止まっているチャット
----@param bufnr number
+---@param bufnr number 答えを待って止まっているチャット
 ---@param status "waiting_approval"|"asked_question" `chat_status` と同じ語彙
 local function deliver_stop_notice(bufnr, status)
   local subscribers = edges[bufnr]
@@ -459,10 +458,6 @@ local function deliver_stop_notice(bufnr, status)
   for from_bufnr in pairs(subscribers) do
     drain(from_bufnr)
   end
-end
-
-local function deliver_approval_notice(bufnr)
-  deliver_stop_notice(bufnr, "waiting_approval")
 end
 
 ---このチャットのフックが1本、承認待ちでブロックに入った
@@ -514,7 +509,7 @@ function M._flush_approval_notice(bufnr)
   end
   notice.announced = count
 
-  deliver_approval_notice(bufnr)
+  deliver_stop_notice(bufnr, "waiting_approval")
   return true
 end
 

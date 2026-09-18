@@ -22,9 +22,10 @@ M.adapter = nil
 ---
 ---1. Neovimが所有する長時間ジョブを止める。終了通知はshutdown中には新しいLLMターンを起こさない
 ---   （job.managerが抑止する）
----2. **承認待ちで止めているフックを解放する（#778）。** `.res` を書かないまま消えると、フックは
----   自分の締め切りまで空回りしてから一般的な文言で deny する。3より前でなければならない:
----   殺したあとのCLIは、もう待つのをやめる主体になれない
+---2. **答えを待たせているプロンプトを解放する（#778、#788）。** `.res` を書かないまま消えると
+---   フックは自分の締め切りまで空回りしてから一般的な文言で deny し、MCPツール呼び出しの返事を
+---   書かないまま消えるとCLIは自分のアイドル上限（claudeで1800秒）まで待つ。3より前でなければ
+---   ならない: 殺したあとのCLIは、もう待つのをやめる主体になれない
 ---3. CLIプロセスを全てキャンセルする
 ---4. RPCサーバーを止める。2がこれより後だと `.res` のパスを決める `comm_dir` がポートを失う
 ---
@@ -34,16 +35,10 @@ function M._shutdown()
     function()
       require("vibing.application.job.manager").shutdown()
     end,
+    -- 承認と質問の両方。1段なのは、片方だけ解放する出口を作れないようにするため（#788）
     function()
-      require("vibing.infrastructure.rpc.pending_approvals").resolve_all(
-        "Neovim exited while this approval was waiting for an answer."
-      )
-    end,
-    -- 質問も、アダプタを落とす段より**前**（#788）。承認と同じ理由で、同じ位置に置くこと自体が
-    -- 不変条件になっている
-    function()
-      require("vibing.infrastructure.rpc.pending_questions").resolve_all(
-        "Neovim exited while this question was waiting for an answer."
+      require("vibing.infrastructure.rpc.pending_prompts").resolve_all(
+        "Neovim exited while this %s was waiting for an answer."
       )
     end,
     function()
