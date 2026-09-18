@@ -42,8 +42,8 @@ Read the linked file before changing that path.
   are already on the main thread when `permission.lua` calls them, and a deferred staging lands
   after the completion has consumed it — the turn ends with nothing in the buffer to answer (#649).
 - **Claude and Codex route this UI by `chat_bufnr`.** The same stable buffer number must appear in
-  the model-visible prompt and the adapter's `ActiveStreamRegistry` entry; a per-turn `handle_id`
-  would churn the prompt cache. Grok still cannot reach the MCP tool.
+  the model-visible prompt and the adapter's `process_registry` / `turn_registry` entry; a per-turn
+  `turn_id` would churn the prompt cache. Grok still cannot reach the MCP tool.
 
 ## Message Timestamps and Delivered Sections
 
@@ -52,6 +52,11 @@ Read the linked file before changing that path.
 - **The header grammar `## <Kind> <!-- <unsent|timestamp>[ from <path>] -->` is defined only in
   `timestamp.lua`**, and every reader goes through `parse_header`. `Request` / `Report` / `Notice`
   are chosen by `orchestration_link.direction`, never guessed from the text.
+- **`extract_user_message` does not check whether the section is unsent.** It scans back for the
+  last **user-role** header and reads to the next header, and `extract_role` answers `user` for
+  every Kind except `Assistant` — so a **timestamped, already-sent** `## User` / `## Request` /
+  `## Report` / `## Notice` matches exactly like an unsent one. Anything written below such a
+  header is readable as the user's next message, whatever its timestamp says.
 - Legacy headers with no timestamp (`## User`, `## Assistant`) stay supported.
 
 ## Code Tour and Debugger Analysis
