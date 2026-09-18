@@ -21,6 +21,20 @@ local function chat(bodies, trailing)
 end
 
 describe("e2e_helper turn predicates", function()
+  -- The slice boundary neither predicate below can see: both stay green when it starts or ends one
+  -- byte off. Comparing the whole slice is the only assertion that moves when the walk does.
+  describe("_assistant_section", function()
+    it("starts immediately after its header and stops at the next one", function()
+      local text = chat({ "one\n", "two\n" }, UNSENT)
+      assert.equals("\none\n", helper._assistant_section(text, 1))
+      assert.equals("\ntwo\n" .. UNSENT, helper._assistant_section(text, 2))
+    end)
+
+    it("has nothing to slice for a turn that has not started", function()
+      assert.is_nil(helper._assistant_section(chat({ "one\n" }, UNSENT), 2))
+    end)
+  end)
+
   describe("_turn_failure", function()
     it("says nothing about a turn that answered", function()
       assert.is_nil(helper._turn_failure(chat({ "one\n" }, UNSENT), 1))

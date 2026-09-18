@@ -461,6 +461,11 @@ local function assistant_section(text, index)
   return text:sub(header_end + 1, next_s and next_s - 1 or nil)
 end
 
+---テスト用の口。見出しパターンは末尾の改行を含まず `TURN_ERROR_PATTERN` にもアンカーが無いので、
+---`_turn_failure` / `_turn_completed` は切り出しが前後どちらに1バイトずれても緑のまま通る。境界を
+---名指しできるのは、切り出した文字列を丸ごと突き合わせるこの口だけ（#781 レビュー）
+M._assistant_section = assistant_section
+
 ---`count` 本目のターンが失敗していたなら、その `**Error:**` 行。していなければ nil
 ---
 ---**自分のセクションの中だけを見る**のが要点。`poll_chat` の全体走査は見出しが書かれた時点で
