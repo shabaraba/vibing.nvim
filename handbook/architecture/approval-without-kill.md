@@ -176,6 +176,75 @@ harness now carries the control as a cell on the same code path, run when — an
 reports it was never consulted, which is the one outcome a rejected value and a gate that decided
 first both produce.
 
+### What the run measured, and the invariant it disproved
+
+Run on claude 2.1.236, arm A, 2026-09-18, $0.18. Two cells.
+
+**The allow cell re-established both missing records.** `--permission-prompt-tool stdio` is a real
+value and is accepted; `control_request{subtype:"can_use_tool"}` arrived for `Write`; the **first**
+candidate envelope was the one acted on:
+
+```json
+{ "type": "control_response",
+  "response": { "subtype": "success", "request_id": "…", "response": { "behavior": "allow", "updatedInput": {…} } } }
+```
+
+So the argv and the envelope that the earlier probe failed to keep are recorded again — this time
+in a committed script, with the raw logs under `.vibing/probe/permission-prompt-tool/`.
+
+**The deny cell disproved the invariant it was written to test.** With
+`permissions.deny: ["Write"]`, `Write` never reached the hook or the consultation. The model's own
+`tool_result` reads:
+
+> `Error: No such tool available: Write. Write is disabled for this session, in subagents as well as here.`
+
+**A tool-name-level deny is applied when the toolset is built — upstream of the PreToolUse hook and
+of any consultation.** An `allow` written into the `.res` therefore _cannot_ override it: the
+question is never put to us. The sentence in `.claude/rules/architecture.md` and in this file — "an
+`allow` skips the CLI's own gate, and with it the user's `settings.json` deny rules" — is wrong for
+tool-level deny. (`.claude/` is not writable from here; the correction is an item on #779.)
+
+Two limits on that sentence, neither measured away:
+
+1. **The deny arrived through `--settings`, with `--setting-sources project`.** A `user`-scope deny
+   was not loaded in this run. The conclusion is about _where in the pipeline_ a deny is applied,
+   and sources merge before that point — but that merge is inferred here, not observed. Closing it
+   means writing to the real `~/.claude/settings.json`, which the probe refuses to do.
+2. **Granular rules (`Bash(rm -rf:*)`) are untouched by this.** They cannot be resolved at
+   toolset-construction time, since they depend on one call's arguments. `default_deny_rules` and
+   `destructive_commands.lua` live exactly there. So B's risk is **narrowed** to granular rules and
+   **unmeasured within them**.
+
+### A cell is not an observation of a tool
+
+The deny cell's summary said the opposite of its log, and the design principle the harness was
+built on is what hid it. "Three signals, never collapsed into one verdict" was implemented, and it
+was not enough: each signal was counted **per cell** while the reading table meant **per tool**.
+Write was denied, the model fell back to `Bash`, and every count then described `Bash` — the hook
+had fired, we had been consulted, `probe-out.txt` existed. Printed verdict: _"we were consulted and
+our allow decided the outcome"_, which the pre-registered table maps to **decision 1 is B**. The
+correct reading survived only because someone read the raw log instead of the summary.
+
+The axis that mattered was not signal-into-signal but **tool-into-cell**. Separating signals is
+worthless while each one aggregates over whichever tools the model happened to try, and a
+filesystem effect — the probe file whose existence this document once called "the verdict" — names
+no author at all.
+
+Two further readings were wrong on the way to fixing it, both the same shape one level down:
+
+- **A zero from an instrument that was not installed is not a zero.** Scoping the signals made the
+  _allow_ cell report "measurement failed — the model never called Write", because its log predates
+  the `ATTEMPTED` lines. Absence of the instrument now prints `?` and is tracked separately from
+  absence of the event.
+- **Being consulted proves the call was made**, so consultation has to be tested before the attempt
+  count. Ordering it the other way produced the reading above.
+
+The harness now carries `self-test` (four crafted logs, no tokens) and `report-only <dir>`, which
+re-reads a saved cell. `report-only` is what makes a corrected _reading_ distinguishable from a
+corrected _measurement_: it holds the log fixed. All three defects are mutation-tested — each
+mutant restores the wrong reading and is caught by a different self-test case, which is the check
+that the cases are not passing vacuously.
+
 ## The ordering invariant, and why every backend needs it
 
 Three numbers, in three different files and two languages, that must stay in this order:
