@@ -181,7 +181,7 @@ export const chatTools: Tool[] = [
       'The questions render as an editable choice list in the chat buffer; the user deletes the ' +
       'options they do not want and sends what is left. ' +
       'IMPORTANT: this call blocks until a human answers, so it may take many minutes — that is ' +
-      'normal, not a hang. How their answer reaches you depends on the backend (#788). Usually it ' +
+      'normal, not a hang. How their answer reaches you depends on the backend. Usually it ' +
       "comes back as this call's ordinary tool_result, and THAT RESULT IS THE ANSWER: act on it " +
       'immediately, and never reply that you are still waiting for one. On a backend that cannot ' +
       'hold the call open, your turn is cancelled instead and you get no result at all; there the ' +
