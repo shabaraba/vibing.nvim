@@ -327,13 +327,10 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   if response._session_corrupted then
     -- このターンの差分は出さずに抜けるので、両経路のベースラインもここで捨てる
     -- （どちらも「レスポンス処理の最後に必ずclearする」契約になっている）
-    RequestDiff.clear(incoming_turn_id or (callbacks.get_turn_id and callbacks.get_turn_id()))
-    require("vibing.core.utils.git_snapshot").clear(
-      incoming_turn_id or (callbacks.get_turn_id and callbacks.get_turn_id())
-    )
-    require("vibing.application.chat.worktree_binding").clear(
-      incoming_turn_id or (callbacks.get_turn_id and callbacks.get_turn_id())
-    )
+    local corrupted_turn_id = incoming_turn_id or (callbacks.get_turn_id and callbacks.get_turn_id())
+    RequestDiff.clear(corrupted_turn_id)
+    require("vibing.core.utils.git_snapshot").clear(corrupted_turn_id)
+    require("vibing.application.chat.worktree_binding").clear(corrupted_turn_id)
     if callbacks.mark_turn_error then
       callbacks.mark_turn_error()
     end

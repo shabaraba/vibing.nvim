@@ -14,7 +14,7 @@ describe("permission handler ask_user_question routing", function()
 
   --- Turn and process are deliberately different values, so the assertion below can tell which one
   --- reached `adapter:cancel` rather than accepting either.
-  local function stream(name, chat_bufnr)
+  local function turn(name, chat_bufnr)
     local process = {
       process_id = name .. "-process",
       chat_bufnr = chat_bufnr,
@@ -42,9 +42,9 @@ describe("permission handler ask_user_question routing", function()
     cancelled, rendered = {}, {}
   end)
 
-  it("cancels and renders only the stream matching chat_bufnr", function()
-    turns.open(stream("chat-a", 11))
-    turns.open(stream("chat-b", 12))
+  it("cancels and renders only the turn matching chat_bufnr", function()
+    turns.open(turn("chat-a", 11))
+    turns.open(turn("chat-b", 12))
 
     local result = permission.ask_user_question({ chat_bufnr = 12, questions = QUESTIONS })
 
@@ -56,19 +56,19 @@ describe("permission handler ask_user_question routing", function()
     assert.same(QUESTIONS, rendered["chat-b"])
   end)
 
-  it("falls back to the sole stream for a bufnr that no longer exists", function()
+  it("falls back to the sole open turn for a bufnr that no longer exists", function()
     -- `--resume` replays earlier turns, so the model can quote a buffer number from a previous
-    -- Neovim session. With one stream there is no other candidate to confuse it with.
-    turns.open(stream("chat-a", 11))
+    -- Neovim session. With one turn open there is no other candidate to confuse it with.
+    turns.open(turn("chat-a", 11))
 
     assert.same({ status = "ok" }, permission.ask_user_question({ chat_bufnr = 999, questions = QUESTIONS }))
     assert.same({ "chat-a-process" }, cancelled)
     assert.same(QUESTIONS, rendered["chat-a"])
   end)
 
-  it("refuses to guess between two streams when the bufnr matches neither", function()
-    turns.open(stream("chat-a", 11))
-    turns.open(stream("chat-b", 12))
+  it("refuses to guess between two turns when the bufnr matches neither", function()
+    turns.open(turn("chat-a", 11))
+    turns.open(turn("chat-b", 12))
 
     assert.equals("error", permission.ask_user_question({ chat_bufnr = 999, questions = QUESTIONS }).status)
     assert.same({}, cancelled)

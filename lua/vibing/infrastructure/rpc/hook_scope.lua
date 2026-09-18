@@ -13,7 +13,7 @@
 ---
 --- **An id that is present but matches nothing resolves to nil, and does not fall back.** The old
 --- `get_active_opts` fell back to the sole entry there, which is a #667-class defect: a hook
---- arriving late, from a turn that had already unregistered, had another chat's `allow` / `deny` /
+--- arriving late, from a turn that had already closed, had another chat's `allow` / `deny` /
 --- `:once` lists applied to its decision. Returning nil sends the caller to the global config
 --- instead, which is the fail-safer of the two answers. The fallback survives only for a hook that
 --- named no process at all.

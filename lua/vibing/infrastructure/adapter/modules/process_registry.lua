@@ -31,6 +31,19 @@ local M = {}
 --- @type table<string, Vibing.ProcessEntry>
 local processes = {}
 
+--- The first entry the predicate accepts, or nil. Both lookups below a key lookup are a scan of
+--- this table, and they are written once here so the two of them cannot drift apart.
+--- @param predicate fun(entry: Vibing.ProcessEntry): boolean
+--- @return Vibing.ProcessEntry|nil
+local function find(predicate)
+  for _, entry in pairs(processes) do
+    if predicate(entry) then
+      return entry
+    end
+  end
+  return nil
+end
+
 --- Record a CLI process as alive.
 --- @param entry Vibing.ProcessEntry
 function M.register(entry)
@@ -68,18 +81,15 @@ function M.find_by_chat_bufnr(chat_bufnr)
   if not chat_bufnr then
     return nil
   end
-  for _, entry in pairs(processes) do
-    if entry.chat_bufnr == chat_bufnr then
-      return entry
-    end
-  end
-  return nil
+  return find(function(entry)
+    return entry.chat_bufnr == chat_bufnr
+  end)
 end
 
 --- Another buffer's process that is holding the same CLI session open.
 ---
 --- **Holding, not running.** A resident process keeps its `--resume <id>` between turns, so asking
---- "is another stream in flight on this session" would let a second process attach to the same
+--- "is another turn in flight on this session" would let a second process attach to the same
 --- transcript the moment the first one went idle — exactly the corruption #756 refuses. Asking who
 --- *holds* the session stays correct under both transports.
 --- @param session_id string|nil
@@ -89,12 +99,9 @@ function M.find_other_holding_session(session_id, exclude_chat_bufnr)
   if not session_id or session_id == "" then
     return nil
   end
-  for _, entry in pairs(processes) do
-    if entry.session_id == session_id and entry.chat_bufnr ~= exclude_chat_bufnr then
-      return entry
-    end
-  end
-  return nil
+  return find(function(entry)
+    return entry.session_id == session_id and entry.chat_bufnr ~= exclude_chat_bufnr
+  end)
 end
 
 return M

@@ -274,8 +274,6 @@ function M.define(descriptor)
         return
       end
       completed = true
-      -- Turn first: `close` clears the process entry's `active_turn_id`, and unregistering the
-      -- process first would leave nothing for it to clear it on.
       TurnRegistry.close(ids.turn_id)
       ProcessRegistry.unregister(ids.process_id)
       perm_handler.clear_active_opts(ids.turn_id)

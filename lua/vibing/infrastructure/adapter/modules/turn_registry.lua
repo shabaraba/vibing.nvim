@@ -16,9 +16,11 @@ local M = {}
 
 --- @class Vibing.TurnEntry
 --- @field turn_id string The turn this entry is about, and the key of the table below.
---- @field process Vibing.ProcessEntry The process serving it. Held as a reference rather than
+--- @field process? Vibing.ProcessEntry The process serving it. Held as a reference rather than
 ---   copied field by field, so `adapter`, `chat_bufnr` and `session_id` have one home and cannot
----   drift: killing is done to a process, so it is named by one.
+---   drift: killing is done to a process, so it is named by one. Always set in production — the
+---   adapter is the only caller of `open` — and optional only so that a spec exercising the turn
+---   side alone need not invent one.
 ---
 ---   **This being non-nil is not "the process is alive."** A Lua reference outlives
 ---   `process_registry.unregister`, so a caller holding this table across the end of a turn keeps a
@@ -44,7 +46,7 @@ local turns = {}
 --- Open a turn on an already-registered process.
 --- @param entry Vibing.TurnEntry
 function M.open(entry)
-  entry.subagent_count = entry.subagent_count or 0
+  entry.subagent_count = 0
   turns[entry.turn_id] = entry
   if entry.process then
     entry.process.active_turn_id = entry.turn_id
@@ -81,9 +83,11 @@ end
 
 --- The sole turn currently open, or nil when there is none or more than one.
 ---
---- This is the only guess in the codebase about whose request an inbound hook belongs to, and it is
---- named rather than open-coded so that there is one place to reason about — and one place to
---- delete once a resident process can name its own turn on its own stdio (#774).
+--- This is the only guess in the codebase about whose request an inbound call belongs to. Both
+--- guessing callers — `rpc/hook_scope.lua` for a hook that named no process, and `get_by_chat_bufnr`
+--- below for a bufnr that names none — reach it through here rather than open-coding it, so there is
+--- one place to reason about and one place to delete once a resident process can name its own turn
+--- on its own stdio (#774).
 --- @return Vibing.TurnEntry|nil
 function M.sole_open()
   local only_turn_id, only_entry = next(turns)
@@ -98,7 +102,10 @@ end
 --- @return Vibing.TurnEntry|nil
 function M.of_process(process_id)
   local process = ProcessRegistry.get(process_id)
-  return process and M.get(process.active_turn_id) or nil
+  if process then
+    return M.get(process.active_turn_id)
+  end
+  return nil
 end
 
 --- The turn open in a given chat buffer — the stable value embedded in the provider prompt (see the

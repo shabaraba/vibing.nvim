@@ -112,7 +112,7 @@ for _, backend in ipairs(helper.adapters()) do
       end)
     end)
 
-    describe("stream registry", function()
+    describe("turn registry", function()
       it("registers the turn while the process runs", function()
         local result = helper.run_stream(adapter)
         assert.is_not_nil(TurnRegistry.get(result.turn_id))

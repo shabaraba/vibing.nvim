@@ -143,8 +143,8 @@ so the PreToolUse hook intercepts and denies it, rendering the same UI as a fall
 
 Codex 0.153 and later use the same choice-list path. `codex_plugin_config.lua` names the normalized
 `mcp__vibing_nvim__nvim_ask_user_question` tool and embeds the stable chat buffer number in
-`developer_instructions`; `codex_cli.lua` puts that same number in `the process registry`, so the
-shared RPC handler resolves the correct stream even when several chats are active.
+`developer_instructions`; `codex_cli.lua` puts that same number in the process registry, so the
+shared RPC handler resolves the correct turn even when several chats are active.
 
 The two things that originally made this impossible (#532) were added in Codex 0.153:
 
