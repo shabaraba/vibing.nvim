@@ -59,16 +59,26 @@
 # Arm A is first because of what is behind it, not because its flag is any better established. Arm
 # B is the one we would rather have, since oneshot is the default transport.
 #
-# The verdict is the probe file on disk, never what the CLI says about itself: `probe-out.txt`
-# exists iff the Write ran.
+# **The verdict is attributed to a named tool, never to an effect on disk.** This file used to say
+# "the verdict is the probe file on disk … `probe-out.txt` exists iff the Write ran", and the deny
+# cell disproved it on the first real run: Write was refused, the model fell back to Bash, Bash
+# created `probe-out.txt`, and the file-existence check reported the tool under test as having run.
+# A filesystem effect names no author. Every signal below is scoped to the tool being measured.
 set -u
 
-if [ "${VIBING_PERF:-}" != "1" ]; then
+ARM="${1:-stdio}"
+
+# `report-only` re-reads logs that already exist and spawns no CLI, so it is deliberately outside
+# the token guard. It is how a past run gets re-read after the reading logic is corrected — which
+# is not hypothetical: the deny cell's saved log was read three different ways by three versions of
+# `report`, and only re-running them against the *same* log showed which reading changed.
+if [ "$ARM" != "report-only" ] && [ "$ARM" != "self-test" ] && [ "${VIBING_PERF:-}" != "1" ]; then
   echo "tests/perf/permission_prompt_tool.sh spends real tokens; set VIBING_PERF=1 to run it." >&2
+  echo "To re-read logs from an earlier run without spending anything:" >&2
+  echo "  $0 report-only <cell-dir> [tool]   # tool defaults to Write" >&2
   exit 0
 fi
 
-ARM="${1:-stdio}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 OUT="$ROOT/.vibing/probe/permission-prompt-tool"
@@ -108,8 +118,17 @@ BOGUS_VALUE="bogus_value_negative_control"
 # would be in under C.
 cat > "$OUT/defer-hook.sh" <<'EOF'
 #!/bin/bash
-cat > /dev/null
-echo "$(date +%s) HOOK DEFER" >> "$HOOK_LOG"
+# The PreToolUse payload names the tool, and `cat > /dev/null` threw that away. An unattributed
+# DEFER line is unreadable in any cell where the model reaches for more than one tool: the count
+# says "the hook fired", the reading table means "the hook fired *for Write*", and in the deny cell
+# those were different tools. Keep the name.
+payload=$(cat)
+tool=$(printf '%s' "$payload" | python3 -c 'import json, sys
+try:
+    print(json.load(sys.stdin).get("tool_name") or "UNNAMED")
+except Exception:
+    print("UNPARSEABLE")' 2>/dev/null) || tool=UNPARSEABLE
+echo "$(date +%s) HOOK DEFER ${tool:-UNPARSEABLE}" >> "$HOOK_LOG"
 exit 0
 EOF
 chmod +x "$OUT/defer-hook.sh"
@@ -179,6 +198,27 @@ createInterface({ input: child.stdout }).on('line', (line) => {
     log(`ANSWERED envelope=${used} ${JSON.stringify(answer)}`);
     child.stdin.write(JSON.stringify(answer) + '\n');
     return;
+  }
+
+  // The deny cell's whole question is *where* the call died, and "nobody was consulted" has two
+  // causes that look identical from the ASKED count alone: the deny ran first, or the model never
+  // reached for the tool. Only the model's own tool_use and the tool_result it got back separate
+  // them, so both are recorded. The first run of this probe logged neither and could not be read.
+  if (msg.type === 'assistant') {
+    for (const block of msg.message?.content ?? []) {
+      if (block.type === 'tool_use') {
+        log(`ATTEMPTED ${block.name} ${JSON.stringify(block.input).slice(0, 200)}`);
+      }
+    }
+  }
+
+  if (msg.type === 'user') {
+    for (const block of msg.message?.content ?? []) {
+      if (block.type === 'tool_result') {
+        const body = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
+        log(`TOOL_RESULT is_error=${block.is_error === true} ${String(body).slice(0, 300)}`);
+      }
+    }
   }
 
   if (msg.type === 'result') {
@@ -279,44 +319,173 @@ settings_for() {
 EOF
 }
 
-# **Three signals, reported separately and never collapsed into one verdict.** "Nobody asked us AND
-# the tool did not run" and "we were asked, and the call was refused afterwards" are different facts
-# with the same-looking outcome, and reading one as the other is the confound that produced a wrong
-# reading of the 950s copilot cell. Signal 1 is the control: without it the other two say nothing,
-# because the hook never ran. Signal 2 splits further on arm A, where being asked and having the
-# answer accepted are also two different things.
+# **Four signals, reported separately, and every one of them scoped to a named tool.**
+#
+# The original version kept the signals separate but counted each of them *per cell*, and the first
+# real deny cell showed why that is not enough. Write was denied, the model fell back to Bash, and
+# every cell-wide count then described Bash: the hook had fired (for Bash), we had been consulted
+# (about Bash), and the probe file existed (written by Bash). The summary printed "we were consulted
+# and our allow decided the outcome" -- which the reading table maps to "our allow overrode the
+# user's deny, decision 1 is B" -- when the truth was that Write was never offered to anyone. The
+# right answer survived only because the raw log was read instead of the summary.
+#
+# So the axis that mattered was not signal-into-signal but **tool-into-cell**: separating the
+# signals is worthless while each one silently aggregates over whichever tools the model happened
+# to try. A cell is not an observation of a tool.
 report() {
-  local dir="$1" asked="$2"
-  local hook_fired tool_ran
-  hook_fired=$(grep -c 'HOOK DEFER' "$HOOK_LOG" || true)
-  if [ -f "$dir/probe-out.txt" ]; then tool_ran=yes; else tool_ran=no; fi
+  local dir="$1" tool="${2:-Write}"
+  local drv="$dir/driver.log" hooklog="${HOOK_LOG:-$dir/hook.log}"
+  local attempted asked hook_fired succeeded unattributed fallbacks
 
-  echo "1. hook wrote defer:      $hook_fired"
-  echo "2. we were consulted:     $asked"
-  echo "3. tool ran:              $tool_ran"
+  attempted=$(awk -v t="$tool" '$2=="ATTEMPTED" && $3==t' "$drv" 2>/dev/null | wc -l | tr -d ' ')
+  # Arm A records the consultation as ASKED in the driver log, arm B as CALLED in the prompt-tool
+  # log. Both carry the tool name in the same key, so one scoped expression covers both arms --
+  # deliberately, because a per-arm reading is how the two would drift into disagreeing about what
+  # "we were consulted" means.
+  asked=$( { grep ' ASKED ' "$drv" 2>/dev/null
+             grep ' CALLED ' "$dir/prompt-tool.log" 2>/dev/null
+           } | grep -c "\"tool_name\":\"$tool\"" || true)
+  hook_fired=$(grep -c "HOOK DEFER $tool\$" "$hooklog" 2>/dev/null || true)
+  # A DEFER line with no tool name comes from a log written before the hook recorded one. It cannot
+  # be attributed after the fact, and guessing is the exact failure being fixed -- so it is counted
+  # separately and reported as unusable rather than folded into signal 1.
+  unattributed=$(grep -c 'HOOK DEFER$' "$hooklog" 2>/dev/null || true)
+  # Pair each TOOL_RESULT with the ATTEMPTED immediately above it: the result line does not name
+  # its tool, but it always follows its own call.
+  succeeded=$(awk -v t="$tool" '
+    $2=="ATTEMPTED"   { last=$3 }
+    $2=="TOOL_RESULT" && last==t && $3=="is_error=false" { n++ }
+    END { print n+0 }' "$drv" 2>/dev/null)
+  fallbacks=$(awk -v t="$tool" '$2=="ATTEMPTED" && $3!=t {print $3}' "$drv" 2>/dev/null | sort -u | tr '\n' ' ')
+
+  # **A zero from an instrument that was not installed is not a zero.** Cells recorded before
+  # ATTEMPTED logging existed have no tool_use lines at all, and reading that as "the model never
+  # called the tool" turns a cell that measured fine into a reported failure -- which is the same
+  # mistake as reading Bash's DEFER as Write's, one level up. So absence of the instrument is
+  # tracked separately from absence of the event.
+  local has_attempt_log
+  has_attempt_log=$(grep -c ' ATTEMPTED ' "$drv" 2>/dev/null || true)
+
+  echo "tool under test:            $tool"
+  if [ "$has_attempt_log" -eq 0 ]; then
+    echo "0. model called it:         ? (log predates ATTEMPTED logging)"
+  else
+    echo "0. model called it:         $attempted"
+  fi
+  echo "1. hook wrote defer for it: $hook_fired"
+  echo "2. we were consulted on it: $asked"
+  echo "3. it succeeded:            $succeeded"
+  echo "   other tools attempted:   ${fallbacks:-(none)}"
+
+  if [ "$unattributed" -gt 0 ]; then
+    echo "   WARNING: $unattributed 'HOOK DEFER' line(s) carry no tool name (log predates the fix)."
+    echo "            Signal 1 above is therefore a floor, not a count. If it reads 0 while the"
+    echo "            hook did fire, that 0 is 'unknown', and no ordering claim rests on it."
+  fi
+  if [ -n "$fallbacks" ]; then
+    echo "   NOTE: the model reached for another tool in this cell. Any cell-wide count -- including"
+    echo "         the existence of probe-out.txt -- describes that tool, not $tool."
+  fi
 
   # Nothing below is a measurement; it is the mapping decided before the run, printed next to what
   # was measured, so a surprising result cannot be re-read into the reading one would have chosen.
-  if [ "$hook_fired" -eq 0 ]; then
-    echo "   READING: measurement failed -- the hook never ran, so 2 and 3 are about something else."
-  elif [ "$asked" -eq 0 ]; then
-    echo "   READING: the gate settled it before consulting us. Whatever decided it ran FIRST."
-  elif [ "$tool_ran" = "no" ]; then
-    echo "   READING: we WERE consulted and the call was still refused afterwards. On arm A this may"
-    echo "            also mean the envelope was wrong -- check the log for ASKED/ANSWERED and for"
-    echo "            'Ignoring can_use_tool control_response'."
+  # Consultation is itself proof the model called the tool -- nobody is asked about a call that was
+  # never made -- so it is tested before signal 0. Ordering these the other way is what made the
+  # allow cell, whose log has no ATTEMPTED lines, report as a failed measurement.
+  if [ "$asked" -gt 0 ] && [ "$succeeded" -gt 0 ]; then
+    echo "   READING: we were consulted about $tool and our allow decided the outcome."
+  elif [ "$asked" -gt 0 ] && [ "$has_attempt_log" -eq 0 ]; then
+    echo "   READING: we were consulted about $tool, so it WAS called. Whether it then succeeded is"
+    echo "            unknown from this log -- it predates tool_result logging. Check the cell for"
+    echo "            the effect itself, and attribute it to a tool before believing it."
+  elif [ "$asked" -gt 0 ]; then
+    echo "   READING: we WERE consulted about $tool and the call was still refused afterwards. On"
+    echo "            arm A this may also mean the envelope was wrong -- check the log for"
+    echo "            ASKED/ANSWERED and for 'Ignoring can_use_tool control_response'."
+  elif [ "$has_attempt_log" -eq 0 ]; then
+    echo "   READING: unreadable -- we were not consulted, and this log predates ATTEMPTED logging,"
+    echo "            so 'refused upstream of the hook' and 'the model never called $tool' cannot"
+    echo "            be told apart. This is the ambiguity the ATTEMPTED lines were added for."
+  elif [ "$attempted" -eq 0 ]; then
+    echo "   READING: measurement failed -- the model never called $tool, so nothing here is about"
+    echo "            ordering. Re-run; do not read this as a deny arriving first."
+  elif [ "$hook_fired" -eq 0 ]; then
+    echo "   READING: the model DID call $tool and neither the hook nor we ever saw it, so it was"
+    echo "            refused UPSTREAM of both. Read its TOOL_RESULT for what refused it."
   else
-    echo "   READING: we were consulted and our allow decided the outcome."
+    # asked=0, the model called it, and the hook did see it: the refusal sits between the two.
+    echo "   READING: the hook saw $tool but the gate settled it without consulting us. Whatever"
+    echo "            decided it ran after the hook and before the consultation."
   fi
   echo "logs: $dir"
 }
+
+# The reader has its own failure modes, and all three it has had so far were caught by feeding it a
+# log rather than by running the CLI. Its input *is* a log file, so it can be tested for free.
+#
+# Case 2 is the one no archived cell reaches: the deny cell short-circuits at "never consulted" and
+# the allow cell's log predates tool_result logging, so "consulted, then refused" existed only as a
+# branch nobody had ever executed. Each case below is one that previously read wrong.
+if [ "$ARM" = "self-test" ]; then
+  t=$(mktemp -d); fails=0
+  check() { # name, expected substring, dir
+    local got; got=$(HOOK_LOG="$3/hook.log" report "$3" Write | grep -A3 READING)
+    if printf '%s' "$got" | grep -q "$2"; then
+      echo "ok   $1"
+    else
+      echo "FAIL $1 -- expected /$2/, got:"; printf '%s\n' "$got" | sed 's/^/       /'; fails=1
+    fi
+  }
+
+  mkdir -p "$t/upstream"
+  printf '1 ATTEMPTED Write {}\n1 TOOL_RESULT is_error=true No such tool available: Write.\n2 ATTEMPTED Bash {}\n2 ASKED {"request":{"tool_name":"Bash"}}\n2 TOOL_RESULT is_error=false\n' > "$t/upstream/driver.log"
+  printf '2 HOOK DEFER Bash\n' > "$t/upstream/hook.log"
+  echo ok > "$t/upstream/probe-out.txt"   # decoy: the effect exists, Bash made it
+  check "denied upstream, model fell back to another tool" "refused UPSTREAM" "$t/upstream"
+
+  mkdir -p "$t/refused"
+  printf '1 ATTEMPTED Write {}\n1 ASKED {"request":{"tool_name":"Write"}}\n1 TOOL_RESULT is_error=true refused after consultation\n2 ATTEMPTED Bash {}\n2 TOOL_RESULT is_error=false\n' > "$t/refused/driver.log"
+  printf '1 HOOK DEFER Write\n' > "$t/refused/hook.log"
+  echo ok > "$t/refused/probe-out.txt"    # decoy again
+  check "consulted, then refused anyway" "still refused afterwards" "$t/refused"
+
+  mkdir -p "$t/allowed"
+  printf '1 ATTEMPTED Write {}\n1 ASKED {"request":{"tool_name":"Write"}}\n1 TOOL_RESULT is_error=false\n' > "$t/allowed/driver.log"
+  printf '1 HOOK DEFER Write\n' > "$t/allowed/hook.log"
+  check "consulted and allowed" "our allow decided" "$t/allowed"
+
+  mkdir -p "$t/legacy"
+  printf '1 ASKED {"request":{"tool_name":"Write"}}\n' > "$t/legacy/driver.log"
+  printf '1 HOOK DEFER\n' > "$t/legacy/hook.log"
+  check "old log, consulted but no tool_use lines" "it WAS called" "$t/legacy"
+
+  rm -rf "$t"
+  [ "$fails" -eq 0 ] && echo "self-test passed" || echo "self-test FAILED"
+  exit "$fails"
+fi
+
+# Re-read a saved cell. Spends nothing, so it sits outside the token guard -- and it is the only
+# way to tell a corrected reading from a corrected measurement, since it holds the log fixed.
+if [ "$ARM" = "report-only" ]; then
+  target="${2:-}"
+  if [ -z "$target" ] || [ ! -f "$target/driver.log" ]; then
+    echo "usage: $0 report-only <cell-dir> [tool]" >&2
+    echo "cells under $OUT:" >&2
+    ls -1d "$OUT"/*/ 2>/dev/null >&2
+    exit 1
+  fi
+  HOOK_LOG="$target/hook.log" report "$target" "${3:-Write}"
+  exit 0
+fi
 
 # The flag value is a parameter rather than a literal, so the negative control travels the *same*
 # code path as the real arm. A control that differs in any other way answers a different question.
 run_stdio_cell() {
   local name="$1" deny="$2" value="${3:-stdio}"
   local dir="$OUT/stdio-$name"
-  rm -rf "$dir"
+  # Kept, not deleted. A re-run usually happens *because* the previous one read ambiguously, which
+  # makes that log the reason the re-run exists; deleting it leaves only the answer one preferred.
+  [ -d "$dir" ] && mv "$dir" "$dir-prev-$(date +%s)"
   mkdir -p "$dir"
   export HOOK_LOG="$dir/hook.log" DRIVER_LOG="$dir/driver.log" PROBE_CWD="$dir"
   export DRIVER_TIMEOUT_SEC="${DRIVER_TIMEOUT_SEC:-180}"
@@ -336,13 +505,17 @@ EOF
 )
   echo "=== arm A (control channel), cell $name (--permission-prompt-tool $value, settings deny: $deny) ==="
   node "$OUT/stdio_driver.mjs"
-  report "$dir" "$(grep -c 'ASKED' "$DRIVER_LOG" || true)"
+  # The consultation count is derived inside report(), scoped to the tool. Passing a cell-wide
+  # count in from here is what let the deny cell's Bash consultation stand in for Write's.
+  report "$dir" Write
 }
 
 run_mcp_cell() {
   local name="$1" deny="$2" value="${3:-mcp__probe__approve}"
   local dir="$OUT/mcp-$name"
-  rm -rf "$dir"
+  # Kept rather than deleted, for the same reason arm A keeps its cells: a re-run usually happens
+  # because the previous one read ambiguously, which makes that log the reason the re-run exists.
+  [ -d "$dir" ] && mv "$dir" "$dir-prev-$(date +%s)"
   mkdir -p "$dir"
   export HOOK_LOG="$dir/hook.log" PROMPT_TOOL_LOG="$dir/prompt-tool.log"
   : > "$HOOK_LOG"
@@ -367,7 +540,45 @@ EOF
       "Use the Write tool to create probe-out.txt containing exactly: ok. Then stop." \
       > "$dir/stream.jsonl" 2>"$dir/stderr.log" )
   echo "CLI exit=$?"
-  report "$dir" "$(grep -c 'CALLED' "$PROMPT_TOOL_LOG" || true)"
+  # Arm B has no driver process, so the tool_use / tool_result blocks exist only in the raw stream.
+  # Normalise them into the exact line format arm A's driver writes, so ONE report() reads both
+  # arms. Without this, arm B has no way to attribute a signal to a tool at all -- which is the
+  # defect that made arm A's deny cell unreadable, reintroduced on the other arm.
+  python3 - "$dir/stream.jsonl" "$dir/driver.log" <<'PY'
+import json, sys
+
+src, dst = sys.argv[1], sys.argv[2]
+lines = []
+try:
+    handle = open(src)
+except OSError:
+    handle = None
+if handle:
+    with handle as f:
+        for raw in f:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                msg = json.loads(raw)
+            except ValueError:
+                continue
+            blocks = (msg.get("message") or {}).get("content") or []
+            if msg.get("type") == "assistant":
+                for b in blocks:
+                    if b.get("type") == "tool_use":
+                        lines.append("- ATTEMPTED %s %s" % (b.get("name"), json.dumps(b.get("input"))[:200]))
+            elif msg.get("type") == "user":
+                for b in blocks:
+                    if b.get("type") == "tool_result":
+                        body = b.get("content")
+                        body = body if isinstance(body, str) else json.dumps(body)
+                        flag = "true" if b.get("is_error") is True else "false"
+                        lines.append("- TOOL_RESULT is_error=%s %s" % (flag, str(body)[:300]))
+with open(dst, "w") as f:
+    f.write("".join(l + "\n" for l in lines))
+PY
+  report "$dir" Write
 }
 
 # The negative control, and **when it is worth a turn**.
@@ -401,13 +612,66 @@ maybe_negative_control() {
 #
 # Cell "deny": the user denies Write. What the readings mean for decision 1:
 #
-#   consulted=0            -> the deny ran first. **The third shape is safe**: deferring keeps the
-#                             user's settings.json rules, and only what survives them reaches us.
+#   consulted=0            -> **two causes, and the ASKED count cannot tell them apart.** Read
+#                             ATTEMPTED in the driver log before reading anything else:
+#                               ATTEMPTED Write present -> the model reached for the tool and
+#                                 something refused it upstream of both the hook and the
+#                                 consultation. That is the deny running first, and **the third
+#                                 shape is safe**: deferring keeps the user's settings.json rules,
+#                                 and only what survives them reaches us.
+#                               ATTEMPTED Write absent -> the model never called the tool, so this
+#                                 cell measured nothing about ordering. Re-run; do not read it as
+#                                 the line above. (The probe's first run had no ATTEMPTED logging
+#                                 at all and produced exactly this ambiguity.)
 #   consulted, no run      -> we are asked before the deny is applied. Safe here only because
 #                             something else refused it; what an allow does in general needs its own
 #                             run. On arm A, also check the envelope first.
 #   consulted, tool ran    -> our allow overrode the user's own deny. The third shape is B with
 #                             extra steps, and decision 1 is B.
+#
+# --- WHAT THE RUN ACTUALLY MEASURED (claude 2.1.236, arm A, 2026-09-18) -----------------------
+#
+# Left above verbatim as the pre-registration. The result, recorded beneath it rather than written
+# over it, so the prediction and the outcome stay separately readable:
+#
+#   allow cell: `--permission-prompt-tool stdio` is real and accepted. `control_request`
+#     {subtype:"can_use_tool"} arrived for Write, envelope 0 (the first candidate) was acted on,
+#     the Write ran. The argv and the envelope shape are re-established.
+#
+#   deny cell: with `permissions.deny: ["Write"]`, Write never reached the hook or the
+#     consultation. The model's own tool_result reads "No such tool available: Write. Write is
+#     disabled for this session, in subagents as well as here." The model then fell back to Bash,
+#     which *was* consulted and allowed.
+#
+# **Tool-name-level deny is applied when the toolset is built, upstream of the hook and of any
+# consultation.** So an `allow` written into the `.res` cannot override it -- the question is never
+# put to us. The invariant this probe set out to test ("an `allow` skips the CLI's own gate, and
+# with it the user's settings.json deny rules") is therefore wrong *for tool-level deny*.
+#
+# Two limits on that sentence, neither of them measured away:
+#
+#   1. The deny reached the CLI through `--settings`, with `--setting-sources project`. A `user`
+#      scope deny was NOT loaded in this run. The conclusion is about where in the pipeline a deny
+#      rule is applied, and sources are merged before that point -- but that merge is inferred
+#      here, not observed. Closing it means writing to the real ~/.claude/settings.json, which this
+#      probe refuses to do.
+#   2. **Granular rules (`Bash(rm -rf:*)`) are not covered at all.** They cannot be resolved at
+#      toolset-construction time, because they depend on the arguments of a specific call, so
+#      nothing above predicts their ordering. `permissions.default_deny_rules` and
+#      destructive_commands.lua live exactly there. B's risk is narrowed to granular rules and
+#      unmeasured within them.
+# Re-running the deny cell alone, once the allow cell has already been consulted in an earlier run.
+# The allow cell's precondition is carried by its surviving log rather than re-bought for a turn.
+if [ "$ARM" = "stdio-deny" ]; then
+  if [ ! -f "$OUT/stdio-allow/driver.log" ] || ! grep -q 'ASKED' "$OUT/stdio-allow/driver.log"; then
+    echo "REFUSED: no earlier arm A allow cell was consulted, so a deny cell would measure nothing."
+    echo "         Run the full arm first: VIBING_PERF=1 $0"
+    exit 1
+  fi
+  run_stdio_cell deny '["Write"]'
+  exit 0
+fi
+
 if [ "$ARM" = "stdio" ] || [ "$ARM" = "both" ]; then
   run_stdio_cell allow "[]"
   consulted_a=$(grep -c 'ASKED' "$OUT/stdio-allow/driver.log" || true)
