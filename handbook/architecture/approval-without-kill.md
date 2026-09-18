@@ -629,21 +629,32 @@ where it came from is awkward, that is the signal — and the check is usually f
 observation that would settle it is normally already on disk.
 
 **The fourth instance is the one that shows what the type actually costs, and it is the
-orchestrator's own.** The other three stayed inside the chat that made them; this one was
-_distributed_, and became the stated baseline for three separate pieces of work. Of the three
-recipients, **one** reported that the number did not match what they measured. The other two — this
-issue's author among them — worked around the discrepancy without raising it: the count here was
-plainly 684 rather than 5566, and the response was to quietly switch to comparing a single file
-against its base version instead of asking why the baseline was off by a factor of eight.
+orchestrator's own.** The other three were _self-contained_ — the person who produced the figure
+was the person who used it, and the damage stopped there. This one was **distributed**, and became
+the stated baseline for three separate pieces of work. That difference is the whole reason it is
+worth a paragraph rather than a bullet: **the other three could only mislead their author, and this
+one could only mislead everybody else.**
 
-That asymmetry is the finding. **The danger of this type is not that a number is wrong; it is that
-a wrong number propagates and nobody re-derives it.** A figure that arrives from someone with more
-context reads as already-checked, and "my measurement disagrees with the brief" is easy to treat as
-a local quirk to route around rather than as a report worth making. Working around a number you
-cannot reproduce is the same act as publishing one you did not verify, one seat further down — and
-it is what turns one unchecked figure into three people's premise. The recipient's obligation is
-therefore the same as the author's: say where the number came from, and **say so out loud when it
-does not reproduce**, rather than silently substituting a method that works.
+What the three recipients did is the finding. **One** reported that the number did not reproduce.
+**One — this issue's author — noticed and said nothing**: the count here was plainly 684 rather than
+5566, and the response was to quietly switch to comparing a single file against its base version
+rather than ask why the baseline was off by a factor of eight. **One did not notice at all.** So the
+error was detected by two of three and reported by one of three, and the gap between those two
+numbers is where the cost lives.
+
+**The danger of this type is not that a number is wrong; it is that a wrong number arrives with
+authority and nobody re-derives it.** A figure handed down by someone with more context reads as
+already-checked, so the default is to trust it; and when trust fails, the second failure has its own
+cause. **Being able to route around a bad number removes the motive to report it** — the local
+problem is solved, the work proceeds, and nothing feels unfinished. That is precisely when the
+report is owed, because the figure is still upstream and still wrong for everyone who did not
+happen to notice.
+
+So the norm is two-sided, and the receiving half is the half that was missing here. Publishing a
+number obliges you to say where it came from. **Receiving one obliges you to say out loud when it
+does not reproduce** — not merely to find a method that works. Working around a number you cannot
+reproduce is the same act as publishing one you did not verify, one seat further down, and it is
+what turns a single unchecked figure into three people's premise.
 
 ### A control that stops short of the boundary is not a control
 
