@@ -174,6 +174,90 @@ times the hook, not the channel, and substituting one for the other is the mista
 records twice already. The reverted implementation is commit `e84ecf9e`, and the revert's own
 message lists the three things in it that are expensive to rediscover.
 
+#### Arm B, measured: the flag does take an MCP tool, and it does not change the answer
+
+The row that decided the table above — `claude / oneshot: no` — rested on `stdio` being the only
+way to reach the gate's question. It is not. Measured against claude 2.1.236 (#789), the same
+version arm A was measured on:
+
+**`--permission-prompt-tool mcp__<server>__<tool>` is accepted, needs no `--input-format
+stream-json`, and works on oneshot.** The question arrives as an ordinary MCP `tools/call`:
+
+```json
+{
+  "name": "approve",
+  "arguments": {
+    "tool_name": "Write",
+    "input": { "file_path": "…/probe-out.txt", "content": "ok" },
+    "tool_use_id": "toolu_01JdMB3SEXDiEeFu1ZuqgkT6"
+  },
+  "_meta": { "claudecode/toolUseId": "toolu_01JdMB3SEXDiEeFu1ZuqgkT6", "progressToken": 2 }
+}
+```
+
+Replying with `content[0].text` holding the JSON string `{"behavior":"allow","updatedInput":{…}}`
+ran the tool. The `tool_use_id` arrives **twice**, in `arguments` and in `_meta`, and a
+`progressToken` comes with it; that is transcribed from the probe's log for the same reason the
+`control_response` envelope above is — it is expensive to rediscover and impossible to guess.
+
+**The consultation sits at step 4, and arm B reaches the same step arm A does.** Two observations
+from the deny cell, neither of them arranged for:
+
+- With `permissions.deny: ["Write"]`, Write reached neither the hook nor the consultation —
+  `No such tool available: Write. Write is disabled for this session`. Tool-name deny is applied
+  when the toolset is built, upstream of both, exactly as arm A found.
+- The model then called `Read`, which **is** in that cell's `--allowedTools`. The hook logged
+  `DEFER Read`; the prompt tool was **never consulted about it**. Only `Bash`, which the allowlist
+  did not cover, produced a consultation.
+
+So the prompt tool is asked only about calls the allowlist does not already satisfy, after the
+hook has ruled — which is what "step 4" means. The third shape's one advantage is therefore
+available through arm B as well, on the default transport.
+
+**It still should not be adopted, and arm B is why that is now clear rather than merely likely.**
+codex and copilot have no equivalent of this flag, so the best case is not a replacement for
+option B but a _coexistence_: claude on the third shape, every other backend on the hook `allow`.
+That is a second implementation of what an approval means, which `.claude/rules/permissions.md`
+names as the specific failure the delegated-approval shape exists to prevent. Worse than a missed
+opportunity, adopting it would **take copilot's working behaviour away** — copilot's 1700s floor is
+ample and option B already serves it. The reach table's final row never moves:
+
+|                  | option B | third shape (`stdio`) | third shape (arm B) |
+| ---------------- | -------- | --------------------- | ------------------- |
+| claude / duplex  | yes      | yes                   | yes                 |
+| claude / oneshot | yes      | **no**                | **yes**             |
+| copilot          | yes      | **no**                | **no**              |
+
+Measuring "can it" answered a different question from "should it". Arm B passing is a proof of
+possibility, not a reason for adoption.
+
+**How the codex/copilot conclusion was reached**, so the next person does not re-derive it: both
+CLIs' own `--help` were read for a flag that names a caller-supplied tool as the permission gate,
+and neither has one. What they have instead delegates to something built in — codex 0.153's
+`--approve-for-me` ("Route approval requests through automatic review using the workspace-write
+sandbox") and copilot's `--assisted-approval` ("Review tool permission requests with the
+assisted-approval safety judge"). Neither takes a tool name, so neither can be pointed at vibing.
+This cost nothing to establish and does not expire with a probe run.
+
+**What #789 did not determine:**
+
+- **Granular ordering on arm B is inferred, not observed.** The deny cell used a tool-**name** deny.
+  Arm A measured granular rules in its own cells; arm B did not. The step-4 evidence above implies
+  granular rules keep their say on arm B too, but nothing here observed a `Bash(echo:*)` rule
+  against an arm-B consultation.
+- **How long the MCP path tolerates a wait is still unmeasured.** The probe answered immediately, on
+  purpose: a deliberate delay would have confounded the primary question. `measured_wait_floor_sec`
+  times the **hook** and cannot be carried over to this path either — the same substitution this
+  page warns about for the control channel. The 1800s ceiling in "How long the CLI waits for an MCP
+  tool" is the relevant bound, and it bounds `nvim_ask_user_question` for the same reason.
+
+**Cells, cost and logs.** Two cells on `claude-haiku-4-5-20251001`: `mcp-allow` ($0.0907) and
+`mcp-deny` ($0.0999), **$0.1906 total**, over a $0.15 ceiling set from #778's seven-cell average of
+$0.059/cell — that average was not a unit price, and using it as one is how the estimate was wrong.
+The negative control was not run and did not need to be: the allow cell was consulted, so the flag
+value demonstrably reached the mechanism and there was nothing left for a control to separate. Raw
+logs are under `.vibing/probe/permission-prompt-tool/mcp-{allow,deny}/`.
+
 ### There is no free way to find out whether the flag value is accepted
 
 The flag is still a live question for decision 1, so `permission_prompt_tool.sh` has to establish

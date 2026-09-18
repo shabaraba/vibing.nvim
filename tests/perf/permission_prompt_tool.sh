@@ -59,6 +59,11 @@
 # Arm A is first because of what is behind it, not because its flag is any better established. Arm
 # B is the one we would rather have, since oneshot is the default transport.
 #
+# **Both paragraphs above are the pre-registration and are now out of date; the result is recorded
+# beneath them rather than written over them.** Arm B ran on 2026-09-18 against claude 2.1.236
+# (#789) and its argv IS verified: `--permission-prompt-tool mcp__probe__approve` is accepted, needs
+# no `--input-format stream-json`, and is consulted on oneshot. See "WHAT ARM B MEASURED" below.
+#
 # **The verdict is attributed to a named tool, never to an effect on disk.** This file used to say
 # "the verdict is the probe file on disk … `probe-out.txt` exists iff the Write ran", and the deny
 # cell disproved it on the first real run: Write was refused, the model fell back to Bash, Bash
@@ -270,14 +275,43 @@ EOF
 #
 # Always-allow is right for the measurement: what is being asked is *whether we are consulted*, and
 # a deny would confuse "the CLI never asked" with "the CLI asked and we said no".
+#
+# **Arm B has a failure mode arm A does not, and it is silent.** Arm A's driver spawns the CLI
+# itself, so a driver that did not run is obvious. Arm B's consultation travels through a whole
+# extra process -- this server has to be spawned by the CLI, complete a handshake, and have its tool
+# discovered -- and every one of those steps failing writes exactly what "the gate decided first"
+# writes: an empty prompt-tool.log. A zero from a server that never started is not a zero.
+#
+# So the server records its own liveness, in three lines no consultation is needed to produce:
+# STARTED (the CLI spawned it), INITIALIZED (the handshake completed), LISTED (the CLI discovered
+# `approve`). None of them carries a `tool_name` key, so none can inflate the consultation count
+# that report() greps for -- they are an instrument check, not a signal.
+#
+# The log path travels in **argv**, not only in the environment. Whether the CLI merges an
+# `mcpServers.*.env` map into the inherited environment or replaces it is unmeasured, and being
+# wrong about it would blank the log of a cell that otherwise worked. argv is passed through either
+# way. The env var is kept as a fallback, and a server that can resolve neither says so on stderr
+# rather than dying inside appendFileSync and taking the whole cell down in silence.
 # ---------------------------------------------------------------------------------------------
 cat > "$OUT/prompt_server.mjs" <<'EOF'
 import { createInterface } from 'node:readline';
 import { appendFileSync } from 'node:fs';
 
-const LOG = process.env.PROMPT_TOOL_LOG;
-const log = (m) => appendFileSync(LOG, `${Math.floor(Date.now() / 1000)} ${m}\n`);
+const LOG = process.argv[2] || process.env.PROMPT_TOOL_LOG;
+const log = (m) => {
+  if (!LOG) {
+    process.stderr.write(`probe prompt server: no log path in argv[2] or PROMPT_TOOL_LOG: ${m}\n`);
+    return;
+  }
+  try {
+    appendFileSync(LOG, `${Math.floor(Date.now() / 1000)} ${m}\n`);
+  } catch (e) {
+    process.stderr.write(`probe prompt server: cannot write ${LOG}: ${e.message}\n`);
+  }
+};
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + '\n');
+
+log('STARTED');
 
 const TOOL = {
   name: 'approve',
@@ -297,6 +331,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     return;
   }
   if (req.method === 'initialize') {
+    log('INITIALIZED');
     send({
       jsonrpc: '2.0',
       id: req.id,
@@ -309,6 +344,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     return;
   }
   if (req.method === 'tools/list') {
+    log('LISTED');
     send({ jsonrpc: '2.0', id: req.id, result: { tools: [TOOL] } });
     return;
   }
@@ -550,7 +586,7 @@ run_mcp_cell() {
   local settings mcp
   settings=$(settings_for "$deny")
   mcp=$(cat <<EOF
-{"mcpServers":{"probe":{"command":"node","args":["$OUT/prompt_server.mjs"],"env":{"PROMPT_TOOL_LOG":"$PROMPT_TOOL_LOG"}}}}
+{"mcpServers":{"probe":{"command":"node","args":["$OUT/prompt_server.mjs","$PROMPT_TOOL_LOG"],"env":{"PROMPT_TOOL_LOG":"$PROMPT_TOOL_LOG"}}}}
 EOF
 )
   echo "=== arm B (MCP tool), cell $name (--permission-prompt-tool $value, settings deny: $deny) ==="
@@ -566,6 +602,30 @@ EOF
       "Use the Write tool to create probe-out.txt containing exactly: ok. Then stop." \
       > "$dir/stream.jsonl" 2>"$dir/stderr.log" )
   echo "CLI exit=$?"
+  # **The instrument check, printed before the signals it would otherwise silently corrupt.** Each
+  # line below is absent for a different reason, and only the last one is a measurement:
+  #
+  #   no STARTED     -> the CLI never spawned the server. The cell measured nothing about ordering;
+  #                     read stderr.log for the spawn error. Do NOT read this as "not consulted".
+  #   no INITIALIZED -> spawned but the handshake never completed. Same: nothing measured.
+  #   no LISTED      -> handshake fine, but the CLI never asked what tools this server has. The
+  #                     prompt tool is resolved from that list, so a value naming a tool in a server
+  #                     that was never listed cannot have routed anywhere.
+  #   all three, no CALLED -> **this is the real negative result.** The server was up, the tool was
+  #                     discoverable, and the CLI still did not consult it.
+  local started listed
+  started=$(grep -c ' STARTED$' "$PROMPT_TOOL_LOG" 2>/dev/null || true)
+  listed=$(grep -c ' LISTED$' "$PROMPT_TOOL_LOG" 2>/dev/null || true)
+  echo "   instrument: server started=$started listed=$listed"
+  if [ "$started" -eq 0 ]; then
+    echo "   INSTRUMENT FAILURE: the prompt-tool server never started, so a zero consultation count"
+    echo "                       below is unreadable. See $dir/stderr.log. Re-run; do not record"
+    echo "                       this cell as arm B failing."
+  elif [ "$listed" -eq 0 ]; then
+    echo "   INSTRUMENT WARNING: the server started but the CLI never listed its tools, so the value"
+    echo "                       naming its tool had nothing to resolve against. A zero below is"
+    echo "                       about discovery, not about the gate's ordering."
+  fi
   # Arm B has no driver process, so the tool_use / tool_result blocks exist only in the raw stream.
   # Normalise them into the exact line format arm A's driver writes, so ONE report() reads both
   # arms. Without this, arm B has no way to attribute a signal to a tool at all -- which is the
@@ -932,6 +992,57 @@ if [ "$ARM" = "stdio" ] || [ "$ARM" = "both" ]; then
   maybe_negative_control A "$consulted_a"
 fi
 
+# --- WHAT ARM B MEASURED (claude 2.1.236, 2026-09-18, #789) -----------------------------------
+#
+# Two cells, $0.1906 total (`mcp-allow` $0.0907, `mcp-deny` $0.0999). The negative control did not
+# run and did not need to: the allow cell was consulted, so the value reached the mechanism.
+#
+#   allow cell: consulted=1, hook DEFER Write, Write ran. **`--permission-prompt-tool
+#     mcp__probe__approve` is accepted with NO `--input-format stream-json`, and the consultation
+#     arrives on oneshot.** The question is an ordinary MCP tools/call; the params are in
+#     mcp-allow/prompt-tool.log verbatim, including the `tool_use_id` that arrives twice (in
+#     `arguments` and in `_meta."claudecode/toolUseId"`) and the `progressToken`.
+#
+#   deny cell: with deny ["Write"], Write reached neither the hook nor the consultation --
+#     "No such tool available: Write" -- identical to arm A. Tool-name deny is applied at toolset
+#     construction on this arm too.
+#
+# **An observation that looks like an ordering result and is not -- read this before reusing it.**
+# In the deny cell the model also called `Read`, which IS in that cell's --allowedTools. The hook
+# logged DEFER Read; the prompt tool was never consulted about it, while Bash was. That was first
+# written up here as "the prompt tool is asked only about calls the allowlist does not satisfy,
+# hence it sits after the allowlist check, hence arm B reaches step 4". **It does not follow. Two
+# variables differ between those tools:**
+#
+#     tool   consulted?   in --allowedTools   read-only
+#     Bash   yes          no                  no
+#     Read   no           YES                 YES
+#
+# Both MCP cells run `--allowedTools Read` and nothing else, so allowlist membership and
+# safe-by-classifier move together. The rival explanation is already on record: #774 measured that
+# `echo` "was treated as a CLI built-in safe command and ran without emitting can_use_tool", which
+# is why that issue says to verify approval paths with Write rather than something the classifier
+# waves through. Read's silence fits either cause and this log separates neither -- the ABSENCE of a
+# log line names its author no better than a file on disk does.
+#
+# THE CELL THAT SEPARATES THEM, so the next person does not redesign it:
+#   --allowedTools "Read,Write", no deny, prompt tool as in mcp-allow, ask for the Write.
+#     Write NOT consulted -> the allowlist suppresses the consultation for a tool no classifier
+#                            would call safe; the allowlist explanation stands.
+#     Write consulted     -> the allowlist does not suppress it, and Read's silence was the
+#                            classifier.
+#   One cell, one variable. It was not bought because the conclusion (do not adopt the third shape)
+#   does not depend on it -- not because it is settled.
+#
+# NOT measured here, and none of it should be inferred from the above:
+#   - where the consultation sits relative to the ALLOWLIST. See the two rows in the table above.
+#   - granular rules (`Bash(echo:*)`) against an arm-B consultation. The deny cell used a tool-NAME
+#     deny. This line first said "the step-4 evidence implies granular rules keep their say" -- there
+#     is no step-4 evidence, so there is no implication. This is the gap that matters most: answering
+#     after the user's granular rules is the third shape's ENTIRE advantage over a hook `allow`.
+#   - how long this path tolerates a wait. The server answered immediately on purpose; a delay would
+#     have confounded the primary question. `measured_wait_floor_sec` times the HOOK and does not
+#     carry over here any more than it carries over to the control channel.
 if [ "$ARM" = "mcp" ] || [ "$ARM" = "both" ]; then
   run_mcp_cell allow "[]"
   consulted_b=$(grep -c 'CALLED' "$OUT/mcp-allow/prompt-tool.log" || true)
