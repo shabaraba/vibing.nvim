@@ -386,6 +386,15 @@ function M.flush(to_bufnr)
     ok, result = pcall(ProgrammaticSender.append_notice, to_bufnr, DeliveryMessage.build(queue))
   end
 
+  -- 宛先が先に `/compact` を走らせた（`auto_compact.before_delivery`）。本文はまだ届いて
+  -- いないのでキューはそのまま残す。圧縮ターンの完了イベントでここが呼び直され、そのときは
+  -- cooldown が効いて本文が通る。`delivered` を返さないのは、往復カウンタと起床予算を
+  -- 進めるのは本文が実際に届いた配達のほうだから。`restarted` は返す: 宛先はいま走っていて、
+  -- その停止は「用件を終えた」ではないので、購読者に見せてはいけない
+  if ok and result and result.success and result.compacting then
+    return chat_buf:is_responding(), nil
+  end
+
   -- 配達できて初めてキューを空ける。通知側はエッジを既に消費しているので、先に捨てると
   -- 失敗した配達は二度と再現しない。残しておけば次の完了イベントで作り直しなしに再試行できる
   if ok and result and result.success then

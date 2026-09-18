@@ -778,11 +778,24 @@ token_usage = {
 }
 ```
 
-On **Claude**, the compaction is inserted before your next manual send, not right after the turn
-that crossed the threshold. The turn following a compaction re-writes the whole prefix, so
-crossing 200k and then moving to a fresh chat would have paid ~80k for nothing. Waiting until you
-actually type again is what ties the spend to the intent to keep going. What you see is two turns:
-`/compact`, then your message, whose `### Tokens` reports the smaller context.
+On **Claude**, the compaction is inserted before the next send, not right after the turn that
+crossed the threshold. The turn following a compaction re-writes the whole prefix, so crossing
+200k and then moving to a fresh chat would have paid ~80k for nothing. Waiting until the chat is
+actually asked to continue is what ties the spend to the intent to keep going. What you see is two
+turns: `/compact`, then the message, whose `### Tokens` reports the smaller context.
+
+"The next send" is either of two things: your own `<CR>`, or a delivery from another chat — a
+`## Request`, `## Report` or `## Notice` turn. The second matters for an orchestrator, which is
+woken almost only by its workers' reports and would otherwise never be compacted while the user
+is not typing into it. A delivery's compaction goes out as a plain `## User` turn of `/compact`;
+the delivery itself stays in that chat's message queue and arrives, under its own header, on the
+turn after. `nvim_chat_send_message` reports this as `queued`, the same way it reports a busy
+target. Scheduled requests and auto-resumes never compact, since nobody is there to want the
+conversation to continue.
+
+The cooldown is one per chat and shared by both paths — at most every other send compacts,
+whether the sends are yours or deliveries — so a compaction that fails to shrink the chat cannot
+cost every subsequent turn twice.
 
 On **Codex**, every ordinary `codex exec` invocation, both new and resumed, gets
 `-c model_auto_compact_token_limit=<at>`. Codex tracks its own context and compacts inside the

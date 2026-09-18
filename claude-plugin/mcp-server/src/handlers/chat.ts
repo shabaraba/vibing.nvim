@@ -125,17 +125,28 @@ export async function handleChatSendMessage(args: any): Promise<any> {
   );
 
   const queued = result?.queued === true;
+  // A chat over its `auto_compact` threshold spends a turn on `/compact` before taking the
+  // message. It is queued the same way, and the compaction's own completion delivers it; the
+  // wording differs only so the caller does not go looking for a turn that was busy with
+  // something else.
+  const compacting = result?.compacting === true;
+
+  let text: string;
+  if (compacting) {
+    text =
+      'That chat is compacting its conversation first, so the message was queued. It will be ' +
+      'delivered as a new turn as soon as the compaction finishes — no request carrying your ' +
+      'message has started yet.';
+  } else if (queued) {
+    text =
+      'That chat is responding right now, so the message was queued. It will be delivered ' +
+      'as a new turn as soon as that chat stops — no request has started yet.';
+  } else {
+    text = 'Message sent and AI request initiated in chat buffer';
+  }
 
   return {
-    content: [
-      {
-        type: 'text',
-        text: queued
-          ? 'That chat is responding right now, so the message was queued. It will be delivered ' +
-            'as a new turn as soon as that chat stops — no request has started yet.'
-          : 'Message sent and AI request initiated in chat buffer',
-      },
-    ],
+    content: [{ type: 'text', text }],
     // The Lua side resolved file_path to a buffer, so report what it actually reached rather than
     // echoing an argument that may have been a path.
     _meta: { bufnr: result?.bufnr ?? bufnr, sender: sender || 'User', queued },

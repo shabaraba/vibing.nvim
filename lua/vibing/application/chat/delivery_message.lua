@@ -266,13 +266,23 @@ end
 ---`section_for` → `build` → 送信の順序をここが所有する。呼び出し側に並べさせていたころ、
 ---即配達経路が `section` を渡さずに送っていたせいで、同じ報告が相手の状態によって別の形に
 ---見えていた。3手のうち1つを渡し忘れても文法上は成立してしまうので、手順ごと1箇所に置く
+---
+---自動 `/compact` の判定もここに置く。`flush` と即配達の両方がここで合流するので、宛先が
+---たまたま応答中だったかどうかで「閾値を超えていても圧縮されない」経路が残らない。
+---圧縮が挟まったときは**配達しない**: `/compact` だけを送り、`compacting = true` を返す。
+---本文の行き先は呼び出し側が決める（`flush` はキューに残し、即配達経路は積み直す）。
+---圧縮ターンの完了が `flush` を呼び直し、cooldown が効いて今度は本文が通る
 ---@param queue Vibing.Application.MessageQueue.Item[]
 ---@param to_bufnr number
 ---@param sender string?
----@return {success: boolean, bufnr: number}
+---@return {success: boolean, bufnr: number, compacting: boolean?} `compacting` は本文の
+---  代わりに `/compact` ターンを始めたとき true。本文はまだ届いていない
 function M.deliver(queue, to_bufnr, sender)
   local cache = {}
   local section = M.section_for(queue, to_bufnr, cache)
+  if require("vibing.application.chat.auto_compact").before_delivery(to_bufnr, section) then
+    return { success = true, bufnr = to_bufnr, compacting = true }
+  end
   local text = M.build(queue, cache)
   return require("vibing.presentation.chat.modules.programmatic_sender").send(to_bufnr, text, sender, section)
 end

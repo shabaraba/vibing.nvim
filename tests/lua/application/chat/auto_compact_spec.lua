@@ -139,6 +139,183 @@ describe("auto_compact", function()
     end)
   end)
 
+  -- A delivery from another chat is the turn that wakes an orchestrator, and the one turn the
+  -- `<CR>` hook never saw. Over the threshold it sends `/compact` *instead of* the delivery and
+  -- says so; the caller keeps the message for the turn after.
+  describe("before_delivery", function()
+    local Config = require("vibing.config")
+    local view = require("vibing.presentation.chat.view")
+    local ProgrammaticSender = require("vibing.presentation.chat.modules.programmatic_sender")
+    local ChatBuffer = require("vibing.presentation.chat.buffer")
+    local TokenUsage = require("vibing.core.utils.token_usage")
+
+    local originals, sends, buf, chat
+
+    --- @param context number
+    --- @return string[]
+    local function tokens_section(context)
+      local acc = TokenUsage.new()
+      TokenUsage.record(acc, { input_tokens = context })
+      return vim.split(TokenUsage.section(acc, 150000), "\n", { plain = true })
+    end
+
+    --- A chat whose last turn reported `context`, ending in an empty unsent section.
+    --- @param context number?
+    --- @param unsent string?
+    local function make_chat(context, unsent)
+      local lines = {
+        "---",
+        "vibing.nvim: true",
+        "---",
+        "",
+        Timestamp.create_header("User", "2026-09-04 10:00:00"),
+        "",
+        "earlier question",
+        "",
+        Timestamp.create_header("Assistant", "2026-09-04 10:00:30"),
+        "",
+        "an answer",
+        "",
+      }
+      if context then
+        vim.list_extend(lines, tokens_section(context))
+      end
+      vim.list_extend(lines, { Timestamp.create_unsent_user_header(), "", unsent or "", "" })
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    end
+
+    --- @param opts table? overrides for agent.token_usage.auto_compact
+    local function configure(opts)
+      Config.get = function()
+        return {
+          adapter = "claude",
+          agent = { token_usage = { auto_compact = vim.tbl_extend("force", { enabled = true, at = 200000 }, opts or {}) } },
+        }
+      end
+    end
+
+    before_each(function()
+      originals = {
+        get = Config.get,
+        get_chat_buffer = view.get_chat_buffer,
+        send = ProgrammaticSender.send,
+        notify = vim.notify,
+      }
+      sends = {}
+      buf = vim.api.nvim_create_buf(false, true)
+      chat = setmetatable({ buf = buf }, ChatBuffer)
+      AutoCompact.forget(buf)
+
+      configure()
+      view.get_chat_buffer = function(bufnr)
+        return bufnr == buf and chat or nil
+      end
+      ProgrammaticSender.send = function(bufnr, message, sender, section)
+        table.insert(sends, { bufnr = bufnr, message = message, sender = sender, section = section })
+        return { success = true, bufnr = bufnr }
+      end
+      vim.notify = function() end
+    end)
+
+    after_each(function()
+      Config.get = originals.get
+      view.get_chat_buffer = originals.get_chat_buffer
+      ProgrammaticSender.send = originals.send
+      vim.notify = originals.notify
+      AutoCompact.forget(buf)
+      if vim.api.nvim_buf_is_valid(buf) then
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end
+    end)
+
+    it("runs /compact instead of the delivery once the chat is over the threshold", function()
+      make_chat(205000)
+
+      assert.is_true(AutoCompact.before_delivery(buf, { kind = "Report" }))
+
+      assert.equals(1, #sends)
+      assert.equals("/compact", sends[1].message)
+      -- A plain `## User` turn: the delivery's own header names who the turn is from, and the
+      -- compaction is from nobody.
+      assert.is_nil(sends[1].section)
+    end)
+
+    it("passes the configured focus through, as the manual path does", function()
+      configure({ focus = "the open tasks" })
+      make_chat(205000)
+
+      assert.is_true(AutoCompact.before_delivery(buf))
+      assert.equals("/compact the open tasks", sends[1].message)
+    end)
+
+    it("lets the delivery through below the threshold, and when the feature is off", function()
+      make_chat(199999)
+      assert.is_false(AutoCompact.before_delivery(buf))
+
+      configure({ enabled = false })
+      make_chat(900000)
+      assert.is_false(AutoCompact.before_delivery(buf))
+
+      assert.equals(0, #sends)
+    end)
+
+    it("does not spend a turn on a chat that has never reported a size", function()
+      make_chat(nil)
+      assert.is_false(AutoCompact.before_delivery(buf))
+      assert.equals(0, #sends)
+    end)
+
+    -- The compaction turn's own `### Tokens` still reports the pre-compaction size, so without
+    -- the cooldown the re-entry from `flush` would compact again instead of delivering.
+    it("lets the very next delivery through on the cooldown", function()
+      make_chat(205000)
+      assert.is_true(AutoCompact.before_delivery(buf))
+
+      make_chat(205000)
+      assert.is_false(AutoCompact.before_delivery(buf))
+      assert.equals(1, #sends, "the second call must be the delivery, not another /compact")
+
+      -- And the cooldown is spent by that one delivery, not held forever.
+      make_chat(205000)
+      assert.is_true(AutoCompact.before_delivery(buf))
+    end)
+
+    it("leaves the delivery alone when the compaction could not be sent", function()
+      ProgrammaticSender.send = function(bufnr)
+        return { success = false, bufnr = bufnr }
+      end
+      make_chat(205000)
+
+      assert.is_false(AutoCompact.before_delivery(buf))
+      -- No cooldown was taken for a compaction that did not run.
+      ProgrammaticSender.send = function(bufnr, message)
+        table.insert(sends, { message = message })
+        return { success = true, bufnr = bufnr }
+      end
+      assert.is_true(AutoCompact.before_delivery(buf))
+    end)
+
+    -- One cooldown per chat, whichever path spends it: a delivery's compaction must stop the
+    -- user's next `<CR>` from compacting again, and vice versa.
+    it("shares the cooldown with the manual path", function()
+      make_chat(205000)
+      assert.is_true(AutoCompact.before_delivery(buf))
+
+      make_chat(205000, "keep going")
+      assert.is_false(AutoCompact.before_manual_send(chat))
+      assert.equals("keep going", vim.trim(chat:extract_user_message()))
+
+      make_chat(205000, "and again")
+      assert.is_true(AutoCompact.before_manual_send(chat), "the delivery spent the cooldown, so this one compacts")
+      AutoCompact.forget(buf)
+
+      make_chat(205000, "once more")
+      assert.is_true(AutoCompact.before_manual_send(chat))
+      make_chat(205000)
+      assert.is_false(AutoCompact.before_delivery(buf), "the manual compaction is what this delivery rides on")
+    end)
+  end)
+
   describe("_rewrite_unsent_body", function()
     local buf
 
