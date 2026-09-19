@@ -56,7 +56,7 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       local finder = find_command:new()
       if skip_if_unsupported(finder) then return end
 
-      local test_dir = vim.fn.getcwd() .. "/test-find-command"
+      local test_dir = vim.fn.tempname() .. "/test-find-command"
       vim.fn.mkdir(test_dir, "p")
 
       -- Create test files
@@ -86,7 +86,7 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       local finder = find_command:new()
       if skip_if_unsupported(finder) then return end
 
-      local test_dir = vim.fn.getcwd() .. "/test-find-recursive"
+      local test_dir = vim.fn.tempname() .. "/test-find-recursive"
       local sub_dir = test_dir .. "/subdir"
       vim.fn.mkdir(sub_dir, "p")
 
@@ -110,7 +110,7 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       local finder = find_command:new()
       if skip_if_unsupported(finder) then return end
 
-      local test_dir = vim.fn.getcwd() .. "/test-find-empty"
+      local test_dir = vim.fn.tempname() .. "/test-find-empty"
       vim.fn.mkdir(test_dir, "p")
 
       -- Create non-matching file
@@ -130,7 +130,7 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       local finder = find_command:new()
       if skip_if_unsupported(finder) then return end
 
-      local test_dir = vim.fn.getcwd() .. "/test-find-symlink"
+      local test_dir = vim.fn.tempname() .. "/test-find-symlink"
       local sub_dir = test_dir .. "/subdir"
       vim.fn.mkdir(sub_dir, "p")
 
@@ -156,7 +156,7 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       local finder = find_command:new({ mtime_days = 1 })
       if skip_if_unsupported(finder) then return end
 
-      local test_dir = vim.fn.getcwd() .. "/test-find-mtime"
+      local test_dir = vim.fn.tempname() .. "/test-find-mtime"
       vim.fn.mkdir(test_dir, "p")
 
       -- Create test file (will be recently modified)
@@ -179,7 +179,7 @@ describe("vibing.infrastructure.file_finder.find_command", function()
       local finder = find_command:new({ prune_dirs = { "custom_ignore" } })
       if skip_if_unsupported(finder) then return end
 
-      local test_dir = vim.fn.getcwd() .. "/test-find-prune"
+      local test_dir = vim.fn.tempname() .. "/test-find-prune"
       local ignored_dir = test_dir .. "/custom_ignore"
       vim.fn.mkdir(ignored_dir, "p")
 

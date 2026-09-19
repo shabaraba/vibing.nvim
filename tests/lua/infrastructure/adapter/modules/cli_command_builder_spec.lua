@@ -1,5 +1,6 @@
 local cli_command_builder = require("vibing.infrastructure.adapter.modules.cli_command_builder")
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
+local Fs = require("vibing.core.utils.fs")
 
 describe("cli_command_builder", function()
   local original_exepath
@@ -221,7 +222,7 @@ describe("cli_command_builder", function()
     local original_getcwd
 
     local function write_project_prompt(lines)
-      vim.fn.mkdir(project_root .. "/.vibing", "p")
+      Fs.ensure_dir(project_root .. "/.vibing")
       vim.fn.writefile(lines, project_root .. "/.vibing/system-prompt.md")
     end
 
@@ -307,7 +308,7 @@ describe("cli_command_builder", function()
       local worktree_root
 
       local function write_worktree_prompt(lines)
-        vim.fn.mkdir(worktree_root .. "/.vibing", "p")
+        Fs.ensure_dir(worktree_root .. "/.vibing")
         vim.fn.writefile(lines, worktree_root .. "/.vibing/system-prompt.md")
       end
 

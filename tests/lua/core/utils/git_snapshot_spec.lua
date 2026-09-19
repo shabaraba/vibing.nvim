@@ -5,6 +5,7 @@
 --   3. 生成したpatchが `git apply --reverse` で本当に戻せること
 -- そのため各ケースは実物のgitリポジトリを一時ディレクトリに作り、実際にgitを呼ぶ。
 local GitSnapshot = require("vibing.core.utils.git_snapshot")
+local Fs = require("vibing.core.utils.fs")
 
 describe("git_snapshot", function()
   local repo
@@ -25,7 +26,7 @@ describe("git_snapshot", function()
 
   local function write(path, content)
     local dir = vim.fn.fnamemodify(path, ":h")
-    vim.fn.mkdir(dir, "p")
+    Fs.ensure_dir(dir)
     local f = assert(io.open(path, "w"))
     f:write(content)
     f:close()

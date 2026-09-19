@@ -5,6 +5,7 @@
 -- 後者は表示だけできて逆適用はできない、という中途半端な状態を意図的に選んだ分岐なので、
 -- 断り方が黙って通る側に倒れないことを固定しておく。
 local Revert = require("vibing.ui.patch_viewer.revert")
+local Fs = require("vibing.core.utils.fs")
 
 describe("patch_viewer.revert", function()
   local repo
@@ -19,7 +20,7 @@ describe("patch_viewer.revert", function()
   end
 
   local function write(path, content)
-    vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+    Fs.ensure_dir(vim.fn.fnamemodify(path, ":h"))
     local f = assert(io.open(path, "w"))
     f:write(content)
     f:close()

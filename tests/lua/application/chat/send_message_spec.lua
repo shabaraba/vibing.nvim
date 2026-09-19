@@ -1,4 +1,5 @@
 local SendMessage = require("vibing.application.chat.send_message")
+local Fs = require("vibing.core.utils.fs")
 
 describe("send_message", function()
   describe("execute", function()
@@ -433,7 +434,7 @@ describe("send_message", function()
     local original_notify
 
     local function write(path, content)
-      vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+      Fs.ensure_dir(vim.fn.fnamemodify(path, ":h"))
       local f = assert(io.open(path, "w"))
       f:write(content)
       f:close()

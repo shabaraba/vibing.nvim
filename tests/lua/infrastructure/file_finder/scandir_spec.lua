@@ -35,7 +35,7 @@ describe("vibing.infrastructure.file_finder.scandir", function()
 
     it("should find files matching pattern", function()
       local finder = scandir:new()
-      local test_dir = vim.fn.getcwd() .. "/test-scandir"
+      local test_dir = vim.fn.tempname() .. "/test-scandir"
       vim.fn.mkdir(test_dir, "p")
 
       -- Create test files
@@ -63,7 +63,7 @@ describe("vibing.infrastructure.file_finder.scandir", function()
 
     it("should find files recursively in subdirectories", function()
       local finder = scandir:new()
-      local test_dir = vim.fn.getcwd() .. "/test-scandir-recursive"
+      local test_dir = vim.fn.tempname() .. "/test-scandir-recursive"
       local sub_dir = test_dir .. "/subdir"
       vim.fn.mkdir(sub_dir, "p")
 
@@ -85,7 +85,7 @@ describe("vibing.infrastructure.file_finder.scandir", function()
 
     it("should handle symlink circular references without infinite loop", function()
       local finder = scandir:new()
-      local test_dir = vim.fn.getcwd() .. "/test-scandir-symlink"
+      local test_dir = vim.fn.tempname() .. "/test-scandir-symlink"
       local dir_a = test_dir .. "/dir_a"
       local dir_b = test_dir .. "/dir_b"
       vim.fn.mkdir(dir_a, "p")
@@ -112,7 +112,7 @@ describe("vibing.infrastructure.file_finder.scandir", function()
 
     it("should handle various glob patterns", function()
       local finder = scandir:new()
-      local test_dir = vim.fn.getcwd() .. "/test-scandir-patterns"
+      local test_dir = vim.fn.tempname() .. "/test-scandir-patterns"
       vim.fn.mkdir(test_dir, "p")
 
       -- Create test files
