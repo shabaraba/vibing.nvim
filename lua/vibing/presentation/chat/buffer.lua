@@ -957,8 +957,18 @@ function ChatBuffer:send_message()
   -- ここへ通すと、`1. allow_once - Allow this execution only <!-- vibing:req=... -->` が
   -- 「どちらの方式にしますか」への人間の答えとしてモデルに渡り、しかも `true` を返すので
   -- 下の `answered.message`（再試行文）はどこにも行かない。消費したのに届かない、の変種
-  if not answered and self:_answer_pending_question() then
-    return true
+  --
+  -- 戻りが `false` は「答えになり得たが帰属を決められなかった」で、理由は向こうが既に声に
+  -- 出している。下の一般的な警告（「上のプロンプトが～」）まで出すと1回の `<CR>` に2通出て、
+  -- しかも後の1通は「プロンプトに答えてください」— いま答えようとした人への案内としては嘘になる
+  if not answered then
+    local handled = self:_answer_pending_question()
+    if handled then
+      return true
+    end
+    if handled == false then
+      return false
+    end
   end
 
   -- 答えにならなかった `<CR>` は、ここから先はただの新しい送信。門を一段開けたのは**答えを
@@ -1435,19 +1445,55 @@ function ChatBuffer:expire_question(entry)
   return true
 end
 
+---この答えはどの質問のものか（#788）
+---
+---**画面に描いてある選択肢の質問に渡す。** ユーザーは目の前のブロックを読んで書いたので、
+---答えが向かう先はそれ以外にない。`_pending_choices_request_id` がその「描いてあるもの」で、
+---`insert_choices` が選択肢と対で受け取っている。
+---
+---**最も古いものに渡してはいけない。** `list_for_chat` の先頭を取るのは、質問が1件のときだけ
+---正しく、2件立っているときは**静かに別の質問の答えになる**。#795 以前は答えが kill 経路の
+---新ターンの散文として届いたのでモデルが自由文として復帰できたが、待たせる経路では Q1 の
+---**ツール呼び出しの結果**として構造的に配達される。`.claude/rules/permissions.md` の
+---「答えは訊かれたチャットのものであって他のどれのものでもない」（#667）の一段下、同じ不変条件。
+---
+---**決められないときは消費しない。** 承認側の「曖昧なら拒否する、消費しない」と同じ形で、
+---黙って最古に渡す道はここに残さない。1件しか待っていないなら曖昧さは無いのでそれに渡す
+---（kill 経路など、選択肢に id が付いていない場合がこれ）
+---@param waiting Vibing.PendingQuestion[] 答えを待っている質問、古い順
+---@return string? request_id 決められないときは nil
+function ChatBuffer:_question_the_answer_belongs_to(waiting)
+  local drawn = self._pending_choices_request_id
+  if drawn then
+    for _, entry in ipairs(waiting) do
+      if entry.request_id == drawn then
+        return drawn
+      end
+    end
+  end
+
+  if #waiting == 1 then
+    return waiting[1].request_id
+  end
+
+  return nil
+end
+
 ---ブロック中の質問への答えを処理する（#788）
 ---
 ---**`send_message` の冒頭、`cancel_request()` より前に呼ばれる。** 答えは「新しいターンの本文」
 ---ではなく「いま走っているターンの続き」なので、cancel すると答えた瞬間にそのターンが死ぬ。
 ---
----**承認と違ってパーサを持たない。** 承認の答えは4つの選択肢のどれかで、どの `request_id` に
----対するものかを解決する必要があるが、質問の答えは**自由文**で、ユーザーが書いたものがそのまま
----答えになる。これは今日の意味論と同一 — kill する経路でも「次のメッセージが答え」だった。
----帰属先が要るとしたら質問が複数ブロックしている場合だけで、そのときは最も古いものに答える
----（`list_for_chat` が古い順）。
+---**承認と違ってパーサを持たない。** 承認の答えは4つの選択肢のどれかで本文から帰属先を解決
+---できるが、質問の答えは**自由文**で、ユーザーが書いたものがそのまま答えになる。だから帰属は
+---本文ではなく「いま描いてあるのはどの質問か」で決める（`_question_the_answer_belongs_to`）。
 ---
----nil は「答えるべき質問が無い」で、通常の送信がそのまま続く
----@return boolean? answered 答えた場合のみ true
+---戻り値は3値:
+---  - `true`  答えた
+---  - `false` 答えになり得たが帰属を決められなかった。**理由は声に出した**ので、呼び出し側は
+---            もう一度警告を出さずにそのまま止まる
+---  - `nil`   答えるべき質問が無い。通常の送信がそのまま続く
+---@return boolean? answered
 function ChatBuffer:_answer_pending_question()
   local PendingQuestions = require("vibing.infrastructure.rpc.pending_questions")
   local waiting = PendingQuestions.list_for_chat(self.buf)
@@ -1460,7 +1506,20 @@ function ChatBuffer:_answer_pending_question()
     return nil
   end
 
-  if not PendingQuestions.resolve(waiting[1].request_id, { status = "answered", answer = message }) then
+  local target = self:_question_the_answer_belongs_to(waiting)
+  if not target then
+    -- 空の `<CR>` は黙って落とすが、これは本文を書いた人の `<CR>` なので黙って落とさない。
+    -- 無言で消すのは「静かに成功した失敗」で、このPRが直しているバグと同じ形
+    vim.notify(
+      "[vibing] More than one question is waiting and vibing.nvim cannot tell which one the "
+        .. "options on screen belong to, so your answer was not sent. Answer again once one of "
+        .. "them is resolved, or end the turn with :VibingCancel.",
+      vim.log.levels.WARN
+    )
+    return false
+  end
+
+  if not PendingQuestions.resolve(target, { status = "answered", answer = message }) then
     return nil
   end
 

@@ -597,4 +597,82 @@ describe("a question holding the turn open", function()
       assert.is_nil(chat_buf._pending_choices)
     end)
   end)
+
+  describe("which question an answer belongs to", function()
+    --- The failure #795 introduces rather than inherits. The **overwrite** — a second question
+    --- replacing the first's block, so only the second is ever on screen — is in `origin/main` too,
+    --- and there the answer arrives as the prose of a **new turn**, which a model can read and
+    --- recover from. Here it is delivered as the **result of a tool call**, so taking the oldest
+    --- waiting question silently makes the user's answer to Q2 into Q1's answer, and Q2 then waits
+    --- out its whole limit. One level below "an answer belongs to the chat that was asked" (#667).
+    ---
+    --- @return Vibing.ChatBuffer, table q1_replies, table q2_replies
+    local function two_questions_waiting()
+      local chat_buf, first = chat_awaiting_question("q-1")
+      local second = {}
+      PendingQuestions.open({
+        request_id = "q-2",
+        chat_bufnr = chat_buf.buf,
+        questions = { { question = "Which file?", options = { { label = "X" } } } },
+        respond = function(result)
+          table.insert(second, result)
+        end,
+      })
+      -- What the user is actually looking at: the second question's block, because staging it
+      -- replaced the first's.
+      chat_buf:insert_choices({ { question = "Which file?", options = { { label = "X" } } } }, "q-2")
+      chat_buf._is_sending = true
+      chat_buf.extract_user_message = function()
+        return "X"
+      end
+      return chat_buf, first, second
+    end
+
+    it("answers the one whose options are on screen, not the oldest", function()
+      local chat_buf, first, second = two_questions_waiting()
+
+      assert.is_true(chat_buf:send_message())
+
+      assert.equals(0, #first, "the answer went to a question the user never saw")
+      assert.equals("answered", second[1].status)
+      assert.equals("X", second[1].answer)
+    end)
+
+    it("refuses to guess when nothing says which block is on screen", function()
+      -- The approval side's shape: ambiguous means refuse and spend nothing, never fall back to a
+      -- default that is wrong half the time. Both questions stay answerable.
+      local chat_buf, first, second = two_questions_waiting()
+      chat_buf:_clear_pending_choices()
+
+      local warned = {}
+      local original_notify = vim.notify
+      vim.notify = function(msg)
+        table.insert(warned, msg)
+      end
+      local ok = chat_buf:send_message()
+      vim.notify = original_notify
+
+      assert.is_false(ok)
+      assert.equals(0, #first)
+      assert.equals(0, #second)
+      assert.equals(2, PendingQuestions.count(), "an answer was spent on a guess")
+      assert.equals(1, #warned, "the refusal was silent, which is the failure it replaces")
+    end)
+
+    it("still answers the sole waiting question when nothing marks the options", function()
+      -- The control, and the kill path's shape: choices staged with no id because no question was
+      -- registered to own them. With one waiting there is nothing to confuse it with, so refusing
+      -- here would turn the fix into "questions can no longer be answered at all".
+      local chat_buf, replies = chat_awaiting_question("q-1")
+      chat_buf:insert_choices({ { question = "Which approach?", options = { { label = "A" } } } })
+      chat_buf._is_sending = true
+      chat_buf.extract_user_message = function()
+        return "A"
+      end
+
+      assert.is_true(chat_buf:send_message())
+      assert.equals("answered", replies[1].status)
+      assert.equals("A", replies[1].answer)
+    end)
+  end)
 end)
