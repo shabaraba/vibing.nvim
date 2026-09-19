@@ -848,24 +848,36 @@ describe("a question holding the turn open", function()
       )
     end)
 
-    it("leaves an input box behind when a cancel releases the questions", function()
-      -- Folding is only half of the discipline. A fold with no redraw after it takes the input
-      -- field off screen and leaves the chat with nowhere to type.
+    it("leaves exactly one input box behind when a cancel releases the questions", function()
+      -- Folding is only half of the discipline, and it can go wrong in both directions. A fold
+      -- with no redraw after it takes the input field off screen and leaves the chat with nowhere
+      -- to type; a redraw inside the release as well as in `_finish_turn` leaves two unsent
+      -- sections, and only one of them is the one `extract_user_message` reads.
       local chat_buf = both_waiting()
 
       chat_buf:cancel_request()
       chat_buf:_finish_turn()
 
+      -- Counted below the last assistant header, not over the whole buffer: a chat opens with an
+      -- unsent `## User` of its own, and that one is not what this turn drew.
       local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
       local Timestamp = require("vibing.core.utils.timestamp")
-      local has_input = false
-      for _, line in ipairs(lines) do
+      local last_assistant = 0
+      for index, line in ipairs(lines) do
         local header = Timestamp.parse_header(line)
-        if header and header.unsent then
-          has_input = true
+        if header and header.kind == "Assistant" then
+          last_assistant = index
         end
       end
-      assert.is_true(has_input, "the cancelled chat has nowhere to type:\n" .. table.concat(lines, "\n"))
+
+      local boxes = 0
+      for index = last_assistant + 1, #lines do
+        local header = Timestamp.parse_header(lines[index])
+        if header and header.unsent then
+          boxes = boxes + 1
+        end
+      end
+      assert.equals(1, boxes, "wrong number of places to type:\n" .. table.concat(lines, "\n"))
     end)
 
     it("replaces a block rather than queueing a duplicate when the same id is staged again", function()
