@@ -10,6 +10,7 @@ long-form reasoning here rather than in `.claude/rules/`, which is loaded into e
 | `test-design`                   | Designing scenarios before writing tests                                        |
 | `ci-gates`                      | Touching `package.json` scripts, CI, `scripts/check-help.lua`, or a gate's test |
 | `github-flow-for-claude-on-web` | Any GitHub operation from the web container (REST API, never `gh`)              |
+| `stacked-pr-merge`              | Merging PRs that were cut from each other rather than from `main`               |
 | `remote-screenshot`             | Showing what a UI change looks like from the web container                      |
 
 ## Structure

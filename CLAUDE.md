@@ -65,6 +65,7 @@ If you add a paragraph to `.claude/rules/` explaining _why_, it is in the wrong 
 | `self-testing`                  | Writing or debugging an E2E spec                    |
 | `test-design`                   | Designing scenarios before writing tests            |
 | `ci-gates`                      | Touching package.json scripts, CI, or a gate's test |
+| `stacked-pr-merge`              | Merging PRs that were cut from each other           |
 | `github-flow-for-claude-on-web` | Any GitHub operation from the web container         |
 | `remote-screenshot`             | Showing a UI change from the web container          |
 
