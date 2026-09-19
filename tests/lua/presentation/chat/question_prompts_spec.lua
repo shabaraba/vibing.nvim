@@ -336,6 +336,11 @@ describe("a question holding the turn open", function()
         chat_bufnr = chat_buf.buf,
         tool = "Bash",
       })
+      -- Drawn as well as registered, which is what production does — `on_approval_required` calls
+      -- `insert_approval_request` before `show_pending_prompts`. The expiry folds the section and
+      -- draws it again, so a registry-only approval would leave nothing to redraw and the
+      -- assertion below would be pinning the absence of a prompt the user really does have.
+      chat_buf:insert_approval_request("Bash", { command = "ls" }, {}, "a-1", true)
 
       PendingQuestions.expire("q-1")
 
@@ -343,6 +348,7 @@ describe("a question holding the turn open", function()
       assert.equals(0, #stopped, "the turn the approval belongs to is not taken with it")
       assert.equals(1, PendingApprovals.count(), "the approval is still waiting for its human")
       assert.is_true(chat_buf._prompts_rendered_unsent, "the approval's own prompt stays on screen")
+      assert.is_truthy(body(chat_buf):match("Tool: Bash"), "the approval was not redrawn:\n" .. body(chat_buf))
     end)
 
     it("does not empty the held output into the prompt still on screen", function()
@@ -384,24 +390,28 @@ describe("a question holding the turn open", function()
       assert.equals(1, PendingQuestions.count())
     end)
 
-    it("does not put the dead question's options back in the next input box", function()
-      -- The branch writes *"the options for it above no longer need an answer"* on screen and then
-      -- leaves `_pending_choices` set, so the next `add_user_section` — which is what answering the
-      -- approval runs — draws them again in a brand new input box. `add_user_section` does drop them
-      -- afterwards, but it drops them **after** drawing, so the dead prompt reappears exactly once:
+    it("takes the dead question's options off screen and does not put them back", function()
+      -- Expiry folds the section and redraws it from the queue, and the expired question is no
+      -- longer in the queue — so its options go, and the note that replaces them says nothing is
+      -- waiting on it. What must not happen is the redraw putting them back: `add_user_section`
+      -- draws the queue *before* it clears it, so an entry left behind reappears exactly once —
       -- long enough for the user to answer a question nobody is waiting on.
       local chat_buf = chat_whose_turn_can_be_watched()
       PendingApprovals.open({ request_id = "a-1", chat_bufnr = chat_buf.buf, tool = "Bash" })
+      chat_buf:insert_approval_request("Bash", { command = "ls" }, {}, "a-1", true)
 
       PendingQuestions.expire("q-1")
-      local drawn_before = select(2, body(chat_buf):gsub("Which approach%?", ""))
-      assert.equals(1, drawn_before, "precondition: on screen once, with the expiry note under it")
+      assert.equals(
+        0,
+        select(2, body(chat_buf):gsub("Which approach%?", "")),
+        "the dead question's options are still on screen:\n" .. body(chat_buf)
+      )
 
       -- What answering the approval that is still blocked does.
       chat_buf:add_user_section()
 
       assert.equals(
-        drawn_before,
+        0,
         select(2, body(chat_buf):gsub("Which approach%?", "")),
         "the expired question's options came back:\n" .. body(chat_buf)
       )
@@ -673,6 +683,160 @@ describe("a question holding the turn open", function()
       assert.is_true(chat_buf:send_message())
       assert.equals("answered", replies[1].status)
       assert.equals("A", replies[1].answer)
+    end)
+  end)
+
+  describe("a second question arriving while the first is on screen", function()
+    --- `_pending_choices` held one question, so the second `nvim_ask_user_question` of a single
+    --- assistant message replaced the first's block. What that costs is not only that the first
+    --- goes unseen: `_recycle_prompt_section` strips the drawn block by **rebuilding it** from
+    --- `_pending_choices`, so once the field holds the second question the first's drawn lines
+    --- match nothing, survive the fold, and come back as the user's own unsent text.
+    ---
+    --- Both are held now, oldest first, and only the head is drawn — a free-text answer carries
+    --- nothing that says which of two drawn blocks it belongs to, which is why the queue is not
+    --- also a second block on screen.
+    local Q1 = { { question = "Which approach?", options = { { label = "A" } } } }
+    local Q2 = { { question = "Which file?", options = { { label = "X" } } } }
+
+    local function body(chat_buf)
+      return table.concat(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false), "\n")
+    end
+
+    --- One question registered, drawn, and holding the turn open.
+    --- @return Vibing.ChatBuffer, table replies, table stopped
+    local function first_question_on_screen()
+      local chat_buf, replies = chat_awaiting_question("q-1")
+      local stopped = {}
+      chat_buf._current_process_id = "proc-1"
+      chat_buf._get_active_adapter = function()
+        return {
+          stop_turn = function()
+            table.insert(stopped, true)
+          end,
+        }
+      end
+      chat_buf:start_response()
+      chat_buf:insert_choices(Q1, "q-1")
+      chat_buf:show_pending_prompts()
+      return chat_buf, replies, stopped
+    end
+
+    --- ...and a second one arriving the way the CLI delivers it: staged, then drawn.
+    --- @return Vibing.ChatBuffer, table q1_replies, table q2_replies, table stopped
+    local function both_waiting()
+      local chat_buf, first, stopped = first_question_on_screen()
+      local second = {}
+      PendingQuestions.open({
+        request_id = "q-2",
+        chat_bufnr = chat_buf.buf,
+        questions = Q2,
+        respond = function(result)
+          table.insert(second, result)
+        end,
+      })
+      PendingQuestions.get("q-2").on_timeout = function(entry)
+        chat_buf:expire_question(entry)
+      end
+      chat_buf:insert_choices(Q2, "q-2")
+      chat_buf:show_pending_prompts()
+      return chat_buf, first, second, stopped
+    end
+
+    it("does not turn the first question's block into the user's own message", function()
+      -- The failure the queue exists to close. Everything below it is only reachable once this
+      -- holds: while the first question's lines are sitting in the input field, the next `<CR>`
+      -- hands the model its own question back as the human's answer.
+      local chat_buf = both_waiting()
+
+      local unsent = chat_buf:extract_user_message() or ""
+      assert.equals(
+        1,
+        select(2, unsent:gsub("Which approach%?", "")),
+        "the first question's block was carried into the user's text:\n" .. unsent
+      )
+    end)
+
+    it("draws only the oldest, and says how many more are waiting", function()
+      -- FIFO, and one block at a time. Two blocks on screen would leave a free-text answer with
+      -- two possible owners and no way to tell them apart — the line the count replaces.
+      local chat_buf = both_waiting()
+      local text = body(chat_buf)
+
+      assert.equals(1, select(2, text:gsub("Which approach%?", "")), "the oldest question is not the one on screen")
+      assert.equals(0, select(2, text:gsub("Which file%?", "")), "the queued question was drawn as a second block")
+      assert.is_truthy(text:match("1 more question is waiting"), "the queued one is invisible with nothing said:\n" .. text)
+    end)
+
+    it("answers the one on screen and then draws the next", function()
+      local chat_buf, first, second = both_waiting()
+      chat_buf._is_sending = true
+      chat_buf.extract_user_message = function()
+        return "A"
+      end
+
+      assert.is_true(chat_buf:send_message())
+
+      assert.equals("answered", first[1].status)
+      assert.equals("A", first[1].answer)
+      assert.equals(0, #second, "the answer was spent on the question the user could not see")
+      assert.equals("q-2", chat_buf._pending_choices_request_id, "the next question was not promoted")
+      assert.is_truthy(body(chat_buf):match("Which file%?"), "the next question was never drawn:\n" .. body(chat_buf))
+    end)
+
+    it("does not leak the drawn block when the queue count changes under it", function()
+      -- The count line makes the drawn block a function of the **whole** queue, so a question
+      -- leaving the queue changes what `strip_choice_lines` rebuilds. Dropping it before folding
+      -- leaves the drawn block matching nothing, and it is carried into the user's own text —
+      -- the same failure as the one above, re-entered through the line that mitigates it.
+      local chat_buf = both_waiting()
+
+      PendingQuestions.expire("q-2")
+
+      local unsent = chat_buf:extract_user_message() or ""
+      assert.equals(
+        1,
+        select(2, unsent:gsub("Which approach%?", "")),
+        "the drawn block was duplicated or carried as user text:\n" .. unsent
+      )
+      assert.is_nil(unsent:match("more question"), "the count line still claims a question is waiting:\n" .. unsent)
+      assert.is_nil(unsent:match("Question expired"), "the explanation is readable as the user's message:\n" .. unsent)
+    end)
+
+    it("explains a question that expired without ever being drawn", function()
+      -- The queued one is invisible for its whole wait, so its expiry note is the only thing that
+      -- ever tells the user it existed. Dropping it from the queue in silence explains nothing.
+      local chat_buf, _, second, stopped = both_waiting()
+
+      PendingQuestions.expire("q-2")
+
+      assert.equals("unanswered", second[1].status)
+      assert.is_truthy(body(chat_buf):match("Question expired"), body(chat_buf))
+      assert.equals(0, #stopped, "the turn the drawn question still holds was ended with it")
+      assert.equals(1, PendingQuestions.count(), "the drawn question was taken with it")
+    end)
+
+    it("holds nothing once the turn that asked is cancelled", function()
+      -- Releasing every blocked prompt means nothing is waiting on this chat any more, so a queue
+      -- left behind makes the next redraw print a count line for questions that were answered as
+      -- unanswered several seconds ago.
+      local chat_buf = both_waiting()
+
+      chat_buf:cancel_request()
+
+      assert.is_nil(chat_buf._pending_choices, "the cancelled turn's questions are still queued")
+    end)
+
+    it("replaces a block rather than queueing a duplicate when the same id is staged again", function()
+      -- The approval list's shape: a hook cut and re-run arrives carrying the id it already had.
+      -- Appending would draw one question twice over and count a phantom second one as waiting.
+      local chat_buf = first_question_on_screen()
+
+      chat_buf:insert_choices({ { question = "Which approach, really?", options = { { label = "A" } } } }, "q-1")
+      chat_buf:show_pending_prompts()
+
+      assert.equals(1, #chat_buf._pending_choices)
+      assert.is_nil(body(chat_buf):match("1 more question is waiting"), body(chat_buf))
     end)
   end)
 end)

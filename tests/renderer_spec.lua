@@ -42,7 +42,7 @@ describe("vibing.presentation.chat.modules.renderer", function()
         }
 
         -- Execute
-        Renderer.addUserSection(mock_buf, mock_win, pendingChoices)
+        Renderer.addUserSection(mock_buf, mock_win, { { questions = pendingChoices } })
 
         -- Verify
         local lines = vim.api.nvim_buf_get_lines(mock_buf, 0, -1, false)
@@ -88,7 +88,7 @@ describe("vibing.presentation.chat.modules.renderer", function()
         }
 
         -- Execute
-        Renderer.addUserSection(mock_buf, mock_win, pendingChoices)
+        Renderer.addUserSection(mock_buf, mock_win, { { questions = pendingChoices } })
 
         -- Verify
         local lines = vim.api.nvim_buf_get_lines(mock_buf, 0, -1, false)
@@ -132,7 +132,7 @@ describe("vibing.presentation.chat.modules.renderer", function()
         }
 
         -- Execute
-        Renderer.addUserSection(mock_buf, mock_win, pendingChoices)
+        Renderer.addUserSection(mock_buf, mock_win, { { questions = pendingChoices } })
 
         -- Verify
         local lines = vim.api.nvim_buf_get_lines(mock_buf, 0, -1, false)
@@ -171,7 +171,7 @@ describe("vibing.presentation.chat.modules.renderer", function()
         }
 
         -- Execute
-        Renderer.addUserSection(mock_buf, mock_win, pendingChoices)
+        Renderer.addUserSection(mock_buf, mock_win, { { questions = pendingChoices } })
 
         -- Verify
         local lines = vim.api.nvim_buf_get_lines(mock_buf, 0, -1, false)
@@ -205,7 +205,7 @@ describe("vibing.presentation.chat.modules.renderer", function()
         }
 
         -- Execute
-        Renderer.addUserSection(mock_buf, mock_win, pendingChoices)
+        Renderer.addUserSection(mock_buf, mock_win, { { questions = pendingChoices } })
 
         -- Verify: should default to numbered list (not q.multiSelect = true)
         local lines = vim.api.nvim_buf_get_lines(mock_buf, 0, -1, false)
