@@ -1,6 +1,6 @@
 ---
 name: ci-gates
-description: The CI gates of vibing.nvim (test:lua exit code, E2E timeout budget, check:doc, check) and the ways each one has silently stopped failing. Use when editing package.json scripts, .github/workflows/ci.yml, scripts/check-help.lua, doc/*.txt, or any tests/*.test.mjs that guards a gate — and whenever a gate passes but you are not sure it actually ran anything.
+description: The CI gates of vibing.nvim (test:lua exit code, E2E timeout budget, check:doc, check) and the ways each one has silently stopped failing. Use when editing package.json scripts, .github/workflows/ci.yml, scripts/check-help.lua, doc/*.txt, or any tests/*.test.mjs that guards a gate; when writing a new guard, meta-test, repository-wide scan or positive control; and whenever a gate passes but you are not sure it actually ran anything.
 ---
 
 # CI Gates for vibing.nvim
@@ -110,3 +110,46 @@ command the project no longer runs.
 `VIBING_E2E=1` — which only `test:e2e` sets (`helper.should_run()`). Do not remove that guard to
 "make E2E part of the normal suite": those specs drive full turns against the CLI, so that is a
 per-run API bill on `npm test`. Writing or debugging them is the `self-testing` skill.
+
+## A Guard You Have Not Watched Fail Is Not a Guard
+
+Every section above was written after a gate failed to fail. A new guard — a meta-test, a
+repository-wide scan, a positive control — starts life in exactly that state, and nothing in the
+suite tells you, because it prints `Success` either way. One 15-PR run turned up four of these
+independently, and three had been passing all along.
+
+**Break what it guards and watch it fail.** A guard is not written until you have deleted or
+corrupted the thing it protects, run it, and read a red line naming that thing — then put it back.
+That is the only evidence there is. A guard passing against a clean tree is evidence of nothing: a
+guard that recognises nothing passes against a clean tree too.
+
+**A positive control has to reject a different tree, not an empty one.** The `fs` guard proved its
+grep had looked at something with `assert.is_true(#hits > 0)`, and **every checkout of this
+repository satisfies that** — including the wrong one. Its own comment asked "did it run against
+the right `lua/`?" and then never checked `right`. The test to apply: name a tree that is
+plausible and wrong, and ask whether this control fails for it. "Found something" versus "found
+nothing" is not that.
+
+**A repository-wide scan roots at its own file, never at `vim.fn.getcwd()`.**
+
+```lua
+local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h")
+```
+
+`test:lua` invokes Neovim with a relative `-u tests/minimal_init.lua`, so the cwd the command was
+typed in decides which checkout gets scanned — and a cwd-rooted scan then reports, green, on code
+you did not write. Assert in a `before_each` that the resolved root contains one known file, so a
+spec that moves fails by name instead of quietly scanning a parent directory.
+
+**A stub can delete the question the test was asking.** Six specs around the answer-extraction
+path stubbed `extract_user_message` — the function that decides _what the answer is read from_,
+which was the invariant under test. All six passed for as long as the defect lasted. Stub the
+boundary (the CLI, the clock, the filesystem, the network); never the subject. If the stub's return
+value is the thing the invariant is about, the spec is testing the stub.
+
+`tests/lua/mkdir_call_sites_spec.lua` is the worked example: rooted at its own path with the reason
+in a comment, asserting that root resolved, and — the part worth copying — carrying a
+`describe("the analysis behind the guard")` block that feeds the analysis known-good and known-bad
+sources. Its comment says why: scans of the form "no file does X" are satisfied for free by an
+analysis that recognises nothing, so something has to state what it does recognise. Read that file
+before writing a new guard.
