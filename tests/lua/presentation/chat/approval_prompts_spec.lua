@@ -649,7 +649,7 @@ describe("several approval prompts at once", function()
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
       chat_buf:append_chunk("a parallel tool's result\n")
 
       vim.wait(200)
@@ -662,7 +662,7 @@ describe("several approval prompts at once", function()
       -- nothing at all — the hold is keyed on hooks, not on lines.
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
       chat_buf:append_chunk("the next turn's output\n")
 
       vim.wait(300, function()
@@ -678,7 +678,7 @@ describe("several approval prompts at once", function()
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
       chat_buf:append_chunk("said before asking\n")
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       local said = line_index(chat_buf, "said before asking")
       local prompt = line_index(chat_buf, "Tool approval required")
@@ -691,7 +691,7 @@ describe("several approval prompts at once", function()
       -- the turn ended; a waiting turn does not end, so drawing the prompt is the moment.
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       for _, line in ipairs(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)) do
         if line:match("^## Assistant") then
@@ -704,7 +704,7 @@ describe("several approval prompts at once", function()
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
       chat_buf:append_chunk("arrived while waiting\n")
 
       assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
@@ -726,6 +726,35 @@ describe("several approval prompts at once", function()
       end
     end)
 
+    it("redraws the input and flushes when a question is still holding the turn", function()
+      -- Answering the last *approval* is not the same as nothing holding the turn any more (#788).
+      -- A question can be blocked in the same turn — claude dispatches several tool calls from one
+      -- assistant message — and asking only `pending_approvals` here sends the chat down
+      -- `_resume_after_prompts`, which sees the question and returns false. Neither branch runs:
+      -- the answered option line stays inside the open unsent section, and the output held behind
+      -- the prompt loses its only exit until the question is answered too.
+      local PendingQuestions = require("vibing.infrastructure.rpc.pending_questions")
+      PendingQuestions._reset()
+
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
+      PendingQuestions.open({
+        request_id = "q-1",
+        chat_bufnr = chat_buf.buf,
+        questions = { { question = "Which approach?" } },
+        respond = function() end,
+      })
+      chat_buf:start_response()
+      chat_buf:show_pending_prompts()
+      chat_buf:append_chunk("arrived while both waited\n")
+
+      assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
+
+      local held = line_index(chat_buf, "arrived while both waited")
+      PendingQuestions._reset()
+      assert.is_not_nil(held, "the held output must reappear even though the question still waits:\n" .. text(chat_buf))
+    end)
+
     it("stops calling itself waiting once the last prompt is answered", function()
       -- `_stop_reason` is cleared only where a new turn starts, and answering in place starts
       -- none. Left set, the chat reports `waiting_approval` from here until its next send —
@@ -734,12 +763,82 @@ describe("several approval prompts at once", function()
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
       assert.equals("waiting_approval", chat_buf:get_stop_reason())
 
       assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
 
       assert.is_nil(chat_buf:get_stop_reason(), "the turn is running again; nothing is waiting")
+    end)
+
+    it("answers while the turn is still streaming, which is the only state it is ever asked in", function()
+      -- **`_is_sending` is true for the whole of a running turn**, not just for the gap between
+      -- `<CR>` and the CLI starting: `send_message` sets it and only `_handle_response` clears it.
+      -- A prompt that holds a running turn open is therefore always answered in this state, and
+      -- every other case here left the flag at its default — so the duplicate-send guard at the top
+      -- of `send_message` was never exercised by a spec, and in the editor it swallowed the answer
+      -- whole. Nothing is denied, nothing is retried: the hook simply spins to its own limit.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
+      chat_buf:start_response()
+      chat_buf:show_pending_prompts()
+      chat_buf._is_sending = true
+
+      assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
+      assert.equals(0, #Pending.list_for_chat(chat_buf.buf), "the hook must have been released")
+    end)
+
+    it("does not start a new turn when a streaming chat's <CR> answered nothing", function()
+      -- The other half of the exemption. Opening the guard for an answer must not leave it open for
+      -- everything else, or a stray `<CR>` cancels the turn the prompt is holding — which is the
+      -- duplicate send the guard exists to stop.
+      --
+      -- **And it says so.** Typing a message instead of answering used to be one of the five ways a
+      -- blocked hook was released; it is now four (`.claude/rules/permissions.md`), because this is
+      -- the only one of them where the chat carries on afterwards. Dropping the message in silence
+      -- would leave the user believing they had sent it — the same "quietly successful failure" the
+      -- swallowed answer above was.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
+      chat_buf:start_response()
+      chat_buf:show_pending_prompts()
+      chat_buf._is_sending = true
+
+      local warned = {}
+      local real_notify = vim.notify
+      vim.notify = function(msg, level)
+        table.insert(warned, { msg = msg, level = level })
+      end
+      local ok, sent = pcall(answer, chat_buf, { "never mind, do something else instead" })
+      vim.notify = real_notify
+      assert.is_true(ok, tostring(sent))
+
+      assert.is_false(sent)
+      assert.equals(1, #Pending.list_for_chat(chat_buf.buf), "the prompt is still answerable")
+      assert.equals(1, #warned, "the user must be told the message was not sent")
+      assert.is_truthy(warned[1].msg:find("VibingCancel", 1, true), warned[1].msg)
+    end)
+
+    it("says nothing about an empty <CR>, which was not a message", function()
+      -- The other side of the same decision: a stray keypress needs no explanation, and warning on
+      -- every one of them would train the user to ignore the warning that matters.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
+      chat_buf:start_response()
+      chat_buf:show_pending_prompts()
+      chat_buf._is_sending = true
+
+      local warned = {}
+      local real_notify = vim.notify
+      vim.notify = function(msg, level)
+        table.insert(warned, { msg = msg, level = level })
+      end
+      local ok = pcall(answer, chat_buf, {})
+      vim.notify = real_notify
+
+      assert.is_true(ok)
+      assert.equals(0, #warned)
+      assert.equals(1, #Pending.list_for_chat(chat_buf.buf))
     end)
 
     it("still calls itself waiting while another prompt is open", function()
@@ -749,7 +848,7 @@ describe("several approval prompts at once", function()
       })
       blocked_on(chat_buf, { "req-1", "req-2" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
 
@@ -800,7 +899,7 @@ describe("several approval prompts at once", function()
       blocked_on(chat_buf, { "req-1" })
       cancellable(chat_buf, {})
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
       chat_buf:append_chunk("the cancelled turn's tail\n")
 
       chat_buf:cancel_request()
@@ -829,7 +928,7 @@ describe("several approval prompts at once", function()
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
       chat_buf:append_chunk("what the turn managed to say\n")
 
       chat_buf:_finish_turn()
@@ -850,13 +949,13 @@ describe("several approval prompts at once", function()
       -- section is where the user types, and a turn ending is not a reason to delete their message.
       --
       -- **A prompt has to be drawn for this to test anything.** Written first with `chat_with({})`,
-      -- it never set `_approvals_rendered_unsent`, so `_finish_turn` skipped the branch the case is
+      -- it never set `_prompts_rendered_unsent`, so `_finish_turn` skipped the branch the case is
       -- named after and passed while the branch deleted the line.
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
-      assert.is_true(chat_buf._approvals_rendered_unsent, "the branch under test was not reached")
+      chat_buf:show_pending_prompts()
+      assert.is_true(chat_buf._prompts_rendered_unsent, "the branch under test was not reached")
 
       local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
       vim.api.nvim_buf_set_lines(chat_buf.buf, #lines, #lines, false, { "half-written question" })
@@ -875,7 +974,7 @@ describe("several approval prompts at once", function()
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
       vim.api.nvim_buf_set_lines(chat_buf.buf, #lines, #lines, false, { "half-written question" })
@@ -884,7 +983,7 @@ describe("several approval prompts at once", function()
         { value = "allow_once", label = "allow_once - Allow this execution only" },
       }, "req-2", true)
       blocked_on(chat_buf, { "req-2" })
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       assert.is_not_nil(line_index(chat_buf, "half-written question"), text(chat_buf))
     end)
@@ -898,14 +997,14 @@ describe("several approval prompts at once", function()
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       chat_buf:insert_approval_request("Write", { file_path = "/tmp/x" }, {
         { value = "allow_once", label = "allow_once - Allow this execution only" },
         { value = "deny_once", label = "deny_once - Deny this execution only" },
       }, "req-2", true)
       blocked_on(chat_buf, { "req-2" })
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       local body = text(chat_buf)
       local _, blocks = body:gsub("Tool approval required", "")
@@ -933,7 +1032,7 @@ describe("several approval prompts at once", function()
       }, "req-1", true)
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       assert.is_not_nil(line_index(chat_buf, "output is paused"), text(chat_buf))
     end)
@@ -957,7 +1056,7 @@ describe("several approval prompts at once", function()
         on_timeout = require("vibing.infrastructure.rpc.handlers.permission")._on_approval_expired,
       })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
       chat_buf:append_chunk("held until the limit\n")
 
       assert.is_true(Pending.expire("req-1"))
@@ -974,7 +1073,7 @@ describe("several approval prompts at once", function()
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
       chat_buf:append_chunk("model output, not a user message\n")
 
       assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
@@ -996,7 +1095,7 @@ describe("several approval prompts at once", function()
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
       chat_buf:append_chunk("before asking\n")
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
       chat_buf:append_chunk("while waiting\n")
       assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
       chat_buf:append_chunk("after answering\n")
@@ -1042,7 +1141,7 @@ describe("several approval prompts at once", function()
       })
       blocked_on(chat_buf, { "req-1", "req-2" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       assert.is_true(answer(chat_buf, { "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->" }))
       chat_buf:append_chunk("still nowhere to put this\n")
@@ -1071,7 +1170,7 @@ describe("several approval prompts at once", function()
       })
       blocked_on(chat_buf, { "req-1", "req-2" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       assert.is_true(answer(chat_buf, {
         "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->",
@@ -1095,7 +1194,7 @@ describe("several approval prompts at once", function()
       })
       blocked_on(chat_buf, { "req-1", "req-2" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       local ApprovalDecision = require("vibing.application.chat.approval_decision")
       local original = ApprovalDecision.consume

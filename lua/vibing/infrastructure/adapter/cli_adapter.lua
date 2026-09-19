@@ -23,6 +23,7 @@ local RateLimitDetector = require("vibing.infrastructure.adapter.modules.rate_li
 local ProcessModel = require("vibing.infrastructure.adapter.modules.process_model")
 local DuplexStream = require("vibing.infrastructure.adapter.modules.duplex_stream")
 local HookTransports = require("vibing.infrastructure.hooks.transports")
+local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
 local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 
 ---@class Vibing.BackendDescriptor
@@ -49,6 +50,11 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---@field vocabulary? table Tool-name/payload normalisation handed to the permission handler.
 ---@field register_chat_bufnr? boolean Whether `nvim_ask_user_question` can route back to this
 ---  stream's chat buffer. Only the backends whose MCP route is wired say yes.
+---@field mcp? Vibing.McpSpec What has been **measured** about this CLI's patience on the MCP route,
+---  which is where `nvim_ask_user_question` lives. Separate from `hook` because it is a separate
+---  channel with separate evidence: the hook's floor times a blocking hook, and borrowing it here
+---  would be the substitution #788 exists to stop. Absent means unmeasured, and an unmeasured
+---  backend keeps killing the turn to ask.
 ---@field stdin? string What to hand the child on stdin; `""` closes it so a CLI that reads stdin
 ---  when no prompt argument is present does not wait on a terminal that isn't there.
 ---@field stderr_filter? fun(data: string): string? Drops or rewrites a stderr chunk before it is
@@ -349,6 +355,13 @@ function M.define(descriptor)
       worktree_root = opts._worktree_root,
       on_insert_choices = opts.on_insert_choices,
       on_approval_required = opts.on_approval_required,
+      -- Whether `nvim_ask_user_question` may hold its MCP reply open instead of killing the turn
+      -- (#788). Travels on the turn for the same reason `_can_wait_for_approval` travels on the
+      -- opts: it is a property of *this* backend's measured floor against the currently configured
+      -- budget, and the RPC handler must not be the place that knows which backend it is.
+      -- Resolved per turn, so raising `permissions.approval_wait_sec` past what was measured turns
+      -- the behaviour off on the next send rather than waiting past the evidence.
+      can_answer_question_in_place = WaitBudget.can_answer_question_in_place(descriptor.mcp),
     })
     close_process = function()
       ProcessRegistry.unregister(ids.process_id)

@@ -36,11 +36,17 @@ end
 ---（バッファを直接触るので、応答が始まってから書くとストリーミングと競合する）ので、
 ---「書いたあとに送信が弾かれ、行われなかったやり取りの関係だけが残る」のを避けるには
 ---先にここを通す必要がある
----応答中のチャットに1つだけ許される配達: **そのチャットがいま止めているフックへの答え**
+---応答中のチャットに許される配達は1種類だけ: **そのチャットがいま止めている問い合わせへの答え**。
+---それが承認（#778）か質問（#788）かで、下の2つの述語に分かれる
 ---
 ---承認をプロセスを殺さずに答えられるようになった以上（#778）、フックがブロックしているワーカーは
 ---`is_responding()` が true を返し続ける。下のガードをそのまま効かせると、そのワーカーへの
 ---代理承認（`nvim_chat_answer_approval`）は**この機能が存在する経路でだけ**必ず弾かれる。
+---
+---**質問も同じ穴に落ちる（#788）。** その場で答えられるようにした時点で質問待ちのターンも開いた
+---ままになり、`asked_question` を検知したオーケストレーターの `nvim_chat_send_message` は
+---ここで必ず弾かれるようになった — 検知はできるのに答えられない。ワーカー停止通知が案内している
+---手順そのものが通らないので、**片方だけ例外を開けたことが、もう片方を塞いだ**
 ---
 ---例外の条件は「プロンプトが描いてある」ではなく「**フックが実際に止まっている**」。描いてある
 ---だけのプロンプト（kill されたターンの残りで、答えれば新しいターンになる）に応答中のチャットで
@@ -56,9 +62,46 @@ local function answers_blocked_approval(opts)
   return require("vibing.infrastructure.rpc.pending_approvals").get(request_id) ~= nil
 end
 
+---このチャットがいま答えを待っている質問で止まっているか
+---
+---`is_responding` の隣にあるが、**別の問い**である点はあちらと同じ。`is_responding` が答えるのは
+---「待てば送れるようになるか」で、こちらが答えるのは「**待つと悪化するか**」。質問待ちのチャットは
+---`question_wait_sec`（既定900秒）待ったあと `deny` で期限切れになるので、答えをキューに積むのは
+---答えないのとほぼ同じことになる
+---@param bufnr number
+---@return boolean
+function M.has_blocked_question(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return false
+  end
+  return require("vibing.infrastructure.rpc.pending_questions").has_for_chat(bufnr)
+end
+
+---承認と対称の例外。ただし `request_id` を取らない
+---
+---承認側が id を要求しているのは「描いてあるだけのプロンプト」と「実際に止まっているフック」を
+---区別するためで、**質問ではその区別が別の場所に付いている** — 描いてあるだけのものは
+---`_pending_choices` に残り、実際に答えを withhold しているものだけが `pending_questions` に
+---載る。レジストリに1件でもあれば必ず誰かが答えを待っているので、id は弱い条件を強い条件に
+---変えるためには要らない。
+---
+---それでも opts のフラグを要求するのは、**呼び出し元を絞るため**。auto_compact の `/compact`、
+---auto_resume の再送、`append_notice` はどれも `validate` を通るが、そのどれかが質問待ちの
+---チャットに通ってしまうと、その本文が `_answer_pending_question` に答えとして食われる
+---@param bufnr number
+---@param opts table?
+---@return boolean
+local function answers_blocked_question(bufnr, opts)
+  if not (opts and opts.answers_blocked_question) then
+    return false
+  end
+  return M.has_blocked_question(bufnr)
+end
+
 ---@param bufnr number
 ---@param message string
----@param opts? {answers_blocked_approval?: string} このメッセージが答えである保留の request_id
+---@param opts? {answers_blocked_approval?: string, answers_blocked_question?: boolean}
+---  このメッセージが答えである保留を名指しする。承認は `request_id`、質問は真偽値（上記参照）
 ---@return table chat_buf
 function M.validate(bufnr, message, opts)
   if not vim.api.nvim_buf_is_valid(bufnr) then
@@ -81,7 +124,11 @@ function M.validate(bufnr, message, opts)
   -- 追加してから巻き戻すのではなく、追加する前に断る。
   --
   -- `send` 本体ではなくここに置くことで、リンク書き込みの前に呼ぶ事前検証でも同じ判定が効く
-  if chat_buf:is_responding() and not answers_blocked_approval(opts) then
+  if
+    chat_buf:is_responding()
+    and not answers_blocked_approval(opts)
+    and not answers_blocked_question(bufnr, opts)
+  then
     error("Chat buffer is already responding")
   end
 

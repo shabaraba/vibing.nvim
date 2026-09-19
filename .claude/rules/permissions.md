@@ -45,9 +45,11 @@ as a new turn (#778). The mechanism, the measurements and the two limits they we
 - **Three deadlines, one source.** `permissions.approval_wait_sec` <
   `bin/hooks/pre-tool-use.sh`'s own wait < each backend's registered hook timeout, all derived in
   `hooks/wait_budget.lua`. The last inequality is not tidiness: **every CLI measured fails open
-  past its own hook timeout**, running the tool with no verdict at all. A fourth deadline bounds
-  the whole thing from above — claude aborts a silent MCP tool call at 1800s, and
-  `nvim_ask_user_question` rides that path rather than the hook's.
+  past its own hook timeout**, running the tool with no verdict at all.
+  A fourth deadline bounds the whole thing from above — claude aborts a **silent** MCP tool call at
+  1800s. `nvim_ask_user_question` rides that path rather than the hook's, but **that number
+  licenses nothing on it**: a server that answers nothing and a server that answers late are
+  different phenomena, and the second has its own measurement (below).
 - **Waiting is enabled per backend by a _measurement_, not a flag.** `hook.measured_wait_floor_sec`
   is the longest a hook was observed blocking on that CLI without being cut, and a backend with
   none keeps today's kill-and-retry. Raising `approval_wait_sec` past a backend's floor turns the
@@ -84,8 +86,69 @@ as a new turn (#778). The mechanism, the measurements and the two limits they we
   render list deliberately keeps its entries after a killed turn, so keying on it holds every later
   turn's output forever, and using it to exempt a delegated answer kills a running turn.
 - **Every blocked hook is released before the CLI serving it is stopped, at every exit**:
-  `:VibingCancel`, the chat's `BufUnload`, sending a new message instead of answering, the turn
-  ending, `VimLeavePre`. A missed exit leaves the hook spinning to the script's own deadline and
-  then explaining itself as a timeout that did not happen.
+  `:VibingCancel`, the chat's `BufUnload`, the turn ending, `VimLeavePre`. A missed exit leaves the
+  hook spinning to the script's own deadline and then explaining itself as a timeout that did not
+  happen. **There were five; "sending a new message instead of answering" was removed in #788** —
+  it is the only one of them where the chat carries on afterwards, and it was never reachable
+  anyway (`send_message` returned on `_is_sending` first). While a prompt holds a turn open the
+  ways out are answering it and `:VibingCancel`, and a message that answers nothing is refused
+  **out loud** (`vim.notify`), never dropped.
 - **A delegated answer is exempt from the "chat is responding" guard only while its hook is
   actually blocked**, never because a prompt is still drawn.
+- **The duplicate-send guard is opened for an answer and closed again immediately.**
+  `ChatBuffer:send_message` returns early on `_is_sending` **unless** an approval or a question is
+  still blocking this turn; both answer attempts run inside that exemption, and the guard is
+  re-applied the moment neither of them claimed the message. The condition is the pair of counts
+  `_resume_after_prompts` uses — _is anything still holding this turn_ — never whether prompt lines
+  are still on screen. `_is_sending` is true for **the whole of a running turn**, not for the gap
+  before the CLI starts, so every in-place answer arrives in exactly the state the guard rejects:
+  left unconditional it swallowed all of them, on both routes, returning `false` in silence
+  (#788). No spec caught it because no spec set the flag; both prompt specs now do.
+  `handbook/architecture/approval-without-kill.md` → "The duplicate-send guard swallowed every
+  answer, on both routes".
+
+## Answering a Question in Place
+
+`nvim_ask_user_question` is the second channel a human is waited for on, and the last kill path
+that #778 left behind (#788). It is **not** the hook: a question _is_ an MCP tool call, so none of
+the three deadlines above reach it and `hook.measured_wait_floor_sec` says nothing about it.
+`handbook/architecture/approval-without-kill.md` → "The other channel".
+
+- **Its own measurement, and the default sits exactly on it — deliberately.**
+  `mcp.measured_answer_wait_sec` is how long a _late_ answer was observed still being consumed
+  (claude: 960s, `tests/perf/mcp_answer_after_delay.sh`). The gate is
+  `question_wait_sec() + MCP_MARGIN_SEC <= measured_answer_wait_sec`, and 960 **is** that budget:
+  the arm cell had to use the production wait, because the number is a floor and a shorter cell
+  would license only a shorter wait. Raising `approval_wait_sec` therefore turns the feature off
+  for that backend rather than waiting past the evidence. It is **not**
+  `MCP_TOOL_IDLE_TIMEOUT_SEC` (1800), which measured a server that answers _nothing_.
+- **A withheld reply is owed exactly as a withheld `.res` is.** `rpc/pending_questions.lua` has the
+  same four exits and no fifth. `Server.DEFERRED` is the only way a handler may answer later, and
+  it is compared by identity — a handler returning a lookalike table still writes its reply.
+- **An expiring question ends the turn; an expiring approval never does — unless another prompt is
+  still blocked, when neither does.** A refusal is something a model can act on; an unanswered
+  question leaves the choice it asked about open, and the obvious reading of that is to pick one.
+  But one assistant message dispatches several tool calls at once, so an unconditional kill takes
+  the turn the user is mid-answer on for a concurrent approval. The condition asks about
+  **prompts**, not about which registry they live in, and lives in `ChatBuffer:expire_question`.
+- **An approval and a question are one state — "a prompt holding this turn open".**
+  `_prompts_rendered_unsent`, `_resume_after_prompts` and `show_pending_prompts` are shared.
+  Merging the drawing and leaving the lifetimes split is how the two silently drift.
+- **An empty `<CR>` is never spent as the answer, and neither is a message that answers nothing.**
+  Both fall through without ending the turn; the second is refused with a `vim.notify`, the first
+  in silence, because a mistyped `<CR>` needs no explanation and a warning on every one of them
+  trains the real warnings away.
+- **A chat waiting for a question reports `asked_question`, not `responding`** — `chat_status`
+  reads `pending_questions`, the same hole #778 closed for approvals.
+- **Reporting the state and being able to act on it are two holes, and #778 closed only the
+  first.** `programmatic_sender.validate`'s "do not deliver into a responding chat" guard has one
+  exemption per channel, and the question one is not decoration: without it an orchestrator sees
+  `asked_question` and is refused by the very call the worker-stopped notice tells it to make. The
+  question exemption **takes no `request_id`** — the id is what separates a merely-drawn prompt
+  from a blocked hook, and for questions `_pending_choices` vs `pending_questions` already draws
+  that line — but it **does** require the caller's flag, or `auto_compact` / `auto_resume` /
+  `append_notice` reach the same `validate` and have their bodies eaten as the answer.
+- **An answer resumes a turn; it does not start one.** So it is exempt from `max_concurrent`, it
+  skips `auto_compact.before_delivery`, and `queue_if_busy` must **not** queue it — a queued answer
+  is delivered only after `question_wait_sec` has denied the question it answers, and the caller
+  was told `queued`, which reads as sent.

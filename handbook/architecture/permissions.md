@@ -158,7 +158,8 @@ Under the kill-based design nothing had to decide this. The process died, the tu
 keeps running never reaches that point, so two things moved:
 
 - **`on_approval_required` takes a fifth argument, `waiting`.** True on the waiting path, and the
-  chat draws the prompt itself (`ChatBuffer:show_approval_prompts`). Drawing unconditionally would
+  chat draws the prompt itself (`ChatBuffer:show_pending_prompts`, shared with the question
+  channel since #788). Drawing unconditionally would
   double-render on the kill path, where `_handle_response` still draws; not drawing at all is the
   silent failure this argument exists to prevent — the prompt is stored, nothing appears, and the
   hook waits out the whole limit against an empty screen.
@@ -203,11 +204,14 @@ for the different reason that answering from a committed section re-extracts and
 that already carries a send timestamp, with `commit_user_message` finding no unsent header to
 stamp.
 
-**A turn stopped rather than answered releases its hooks first** (`ChatBuffer:cancel_request` →
-`_release_blocked_approvals`, before `stop_turn`): `:VibingCancel`, closing the chat, and simply
-typing a new message instead of answering all arrive here. The drawn lines are left alone, since on
-the kill path they have always survived; only the cancelled turn's held tail is dropped, because
-the next send has the user's own text in the unsent section and nothing may be appended under it.
+**A turn stopped rather than answered releases what it is holding first** (`ChatBuffer:cancel_request`
+→ `_release_blocked_prompts`, before `stop_turn`): `:VibingCancel` and closing the chat arrive here.
+**Typing a new message instead of answering used to be a third way in, and is not one any more**
+(#788) — it is the only one of them where the chat carries on afterwards, so `send_message` now
+refuses such a message out loud rather than releasing a prompt nobody answered. The drawn lines are
+left alone, since on the kill path they have always survived; only the cancelled turn's held tail is
+dropped, because the next send has the user's own text in the unsent section and nothing may be
+appended under it.
 
 ### Implementation notes
 

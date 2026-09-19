@@ -461,6 +461,40 @@ one: **when a new measurement changes an instruction, rewrite the block rather t
 another**, and say in the item how many replacement blocks it contains, so a second one is a
 contradiction the reader can see rather than a step they can follow.
 
+### A control that stops short of the boundary is not a control
+
+Another of the family, and the only one where the thing that failed was **the control itself**.
+
+The E2E for #788 kept dying with no plenary summary, no `VimLeavePre`, an empty stderr and exit 1,
+while the child Neovim carried on and finished its turn half a minute later. Read as a crash, that sent
+the search into the feature's own code. Three token-free probes were run to clear the pieces, and
+one of them — a 45-second poll against a live child — "passed", which was taken as evidence that
+polling a child was fine.
+
+It was not evidence of anything. plenary's `test_harness.lua` defaults to `timeout = 50000`, and
+`PlenaryBustedFile` has no argument that could carry another value, so a spec run by hand outside
+`package.json`'s `test:e2e` (which passes `timeout = 240000`) is killed at 50 seconds. **The 45s
+control had simply ended before the wall it was supposed to be testing for.** Its green said "this
+finishes in under 45 seconds", which was never in question.
+
+Two general forms, and the first is the cheaper one:
+
+- **A deadline fires at the same number every time; a crash does not.** Two runs dying at exactly
+  50s is the tell, and a stopwatch is cheaper than any amount of reading. What made it look
+  organic was the signature: the parallel branch of `test_paths` — `sequential = false` is the
+  default — joins with the timeout, counts a still-running child (`code == nil`) as failed, and
+  calls `1cq` **without killing it**. Parent gone in silence, child alive and working: exactly what
+  a crash in the parent would look like, produced by a deadline.
+- **A control has to cross the boundary it is controlling for.** A probe shorter than the deadline
+  under suspicion cannot distinguish "the mechanism works" from "we did not reach the mechanism",
+  which is the same indistinguishability as the vacuous replacement test above — met here from the
+  opposite direction, by a probe that ran rather than one that did not.
+
+Recorded with its ending because that is the part that generalises: this was written up as a
+harness defect, with an issue half-drafted, before anyone re-read `package.json` — where the
+`timeout = 240000` had been sitting, free to read, from the start. The audit that found it cost
+nothing; the seven paid E2E runs that preceded it did not.
+
 ## The ordering invariant, and why every backend needs it
 
 Three numbers, in three different files and two languages, that must stay in this order:
@@ -626,10 +660,13 @@ twice"). None of it was tried, and two of the three could not be reached from he
 writing a `timeout` into two places and trusting a claim.
 
 It does not need raising. `approval_wait_sec` plus its margins is **990s against a measured 1800**,
-so the ticket-and-poll design for `nvim_ask_user_question` fits inside the deadline as it ships.
-What that costs instead is one more thing to keep ordered, so
+so the in-place answer route for `nvim_ask_user_question` fits inside the deadline as it ships
+("The other channel", below). What that costs instead is one more thing to keep ordered, so
 `hook_timeout_ordering_spec.lua` asserts the whole derived budget stays under 1800 — a user raising
 `approval_wait_sec` past it would otherwise get a silent 30-minute hang.
+
+**This number licenses nothing on that route by itself**, and the section below says why: it
+measures a server that answers nothing, not one that answers late.
 
 **Two different things are called "progress" here, and they point opposite ways.** The message means
 MCP `notifications/progress`, sent **by an MCP server to the CLI**; `tool_progress` is a stream
@@ -706,6 +743,176 @@ Against the measured floors, with the default 900:
 somebody runs `tests/perf/hook_wait_ceiling.sh` against them. The ordering itself is asserted for
 all four in `tests/lua/infrastructure/hooks/hook_timeout_ordering_spec.lua`, because a backend that
 does not wait still registers a timeout and still must not be the one to give up first.
+
+## The other channel: answering a question in place (#788)
+
+`nvim_ask_user_question` is the second thing a human is waited for on, and until #788 it was the
+last kill path left after #778: the handler called `adapter:cancel`, the turn died, and the user's
+answer came back as the next message on a `--resume`.
+
+**It is a different route, and none of the three deadlines above reach it.** An approval travels
+through a shell hook; a question _is_ an MCP tool call. So `measured_wait_floor_sec` says nothing
+about it — that number measured a hook — and the mechanism had to be built rather than uncovered.
+The hook could already block before #778, because not writing the `.res` was the whole trick.
+Nothing on this route could: `rpc/server.lua` replied from its handler's return value, so
+`Server.DEFERRED` and `pending_questions.lua` are what "reply later" had to become.
+
+### Its own measurement, and what that number is
+
+`mcp.measured_answer_wait_sec = 960` on the claude descriptor, measured 2026-09-18 against claude
+2.1.236. Instrument: `tests/perf/mcp_answer_after_delay.sh`; logs in
+`.vibing/probe/mcp-answer-after-delay/`.
+
+```text
+question_wait_sec  900   shares permissions.approval_wait_sec — one number for one wait
+  + MCP_MARGIN_SEC  60 = 960   what the CLI must still be willing to consume
+```
+
+The gate is `question_budget_sec() <= mcp.measured_answer_wait_sec`, so **the default sits exactly
+on the measured value — deliberately, not by luck.** 960 is the production budget itself, which is
+what the cell was built to exercise: a shorter, more convenient delay would only have licensed a
+shorter wait, since the number is a floor. Raising `approval_wait_sec` therefore turns the feature
+off for that backend rather than waiting past the evidence, which is the same "enabled by a
+measurement, not a flag" rule the hook path follows.
+
+**It is not the 1800s in `wait_budget.MCP_TOOL_IDLE_TIMEOUT_SEC`, and the distinction is the point.**
+That one measured how long claude tolerates a server that answers **nothing**. This one measures
+whether an answer that arrives **late** is still consumed. Two experiments, two phenomena; using the
+silence ceiling to license a late answer is the same substitution this page records twice already.
+Both numbers stay, each with a comment saying what it measured.
+
+The cell is built the way "Register the reading before the run" asks. Five signals per cell, four
+pre-registered readings, a **control cell that answers immediately** — without it a failing arm is
+unreadable, because "no tool_result" and "the model never called the tool" look identical — and a
+per-cell marker string that appears nowhere in the prompt, so the marker showing up in the model's
+own text separates _the result was delivered_ from _the model consumed it_. `self-test` exercises
+the instrument against crafted logs and costs no tokens.
+
+### A question has no deny
+
+An expiring approval writes `deny` and the turn carries on: a refusal is a thing a model can act on
+correctly. An expiring question has no equivalent. "The user did not say which approach they
+wanted" leaves the choice it asked about still open, and the honest reading of that — pick one and
+continue — is exactly what asking existed to prevent. **So expiry ends the turn**, the reply is
+written first, and the user's answer arrives later as a new turn: byte-for-byte today's route.
+
+**Except when something else in that turn is still blocked.** claude dispatches several `tool_use`
+blocks from one assistant message at once, so `[nvim_ask_user_question, Bash]` blocks a question on
+the MCP channel and an approval in its hook **at the same time**. Killing unconditionally would
+take the turn the user is in the middle of answering the approval for — the door beside the
+one #778 closed, and the reason the approval path may not kill on expiry either. The condition
+therefore asks about prompts rather than about registries: if any approval _or_ question is still
+holding the turn, the expiring question ends alone and the turn keeps running, which is the
+approval path's behaviour exactly. `ChatBuffer:expire_question` is where it is decided, because it
+is the one place that can ask both.
+
+This is the same observation that merged the rendering state (`_prompts_rendered_unsent`, formerly
+`_approvals_rendered_unsent`): an approval and a question are one thing — _a prompt holding this
+turn open_. Merging the drawing and leaving the lifetimes split is how the two silently drift.
+
+### The duplicate-send guard swallowed every answer, on both routes
+
+`ChatBuffer:send_message()` opens with `if self._is_sending then return false end`, and both
+`_answer_pending_approval` and `_answer_pending_question` sit **below** it. Its docstring said the
+flag covers "the gap from `<CR>` to the CLI starting"; it does not. `send_message` sets it and only
+`_handle_response` — the end of the turn — clears it, which was **measured on a live editor while a
+turn was streaming**, not read off the code. A prompt that holds a running turn open is therefore
+always answered in exactly the state the guard rejects.
+
+The rejection is silent. `send_message` returns `false` and nothing else happens: no deny, no
+retry, no message. The hook spins to its own limit and the question waits for the CLI's 1800s MCP
+idle timeout. Seven real E2E runs of #788 ended with no `tool_result` at all, and this was why.
+
+**It was not new in #788.** The same line is what an in-place _approval_ answer hits, and claude
+enables that path by default (`approval_wait_sec` 900 < `measured_wait_floor_sec` 1090), so #778
+shipped with it. It survived because **no spec ever set `_is_sending`** — every case in
+`approval_prompts_spec.lua` and `question_prompts_spec.lua` called `send_message()` on a chat left
+at the default `false`, so the one gate a real answer must pass was never once exercised. Both specs now
+have a case that sets it, and both go red if the guard is restored unconditionally.
+
+The exemption is scoped to the answer and closed again straight after:
+
+```lua
+local blocking = self:_blocked_approval_count() + self:_blocked_question_count()
+if self._is_sending and blocking == 0 then return false end
+-- ... the two answer attempts ...
+if self._is_sending then return false end
+```
+
+The condition asks _is anything still holding this turn_, the same question and the same pair of
+counts as `_resume_after_prompts`, rather than whether prompt lines are still on screen.
+
+### An empty `<CR>` is not an answer, and while the turn runs it is nothing at all
+
+Pressing `<CR>` on an empty input never becomes the answer — handing a model a blank where a
+decision belongs is the one outcome that must not happen, and a test pins it.
+
+What happens instead depends on whether the turn is still running, and the live case is the second
+one. With the turn over (the kill route, or a prompt left drawn after it died) the press falls
+through to the ordinary send path, whose `cancel_request()` ends the turn and releases the question
+as `unanswered`. With the turn **still running** — which is every in-place prompt — it hits the
+re-closed guard above and does nothing: the prompt stays answerable and the wait limit is what
+eventually ends it.
+
+That is deliberate rather than incidental. Letting a stray `<CR>` through would cancel the turn the
+prompt is holding, which is the duplicate send the guard exists to stop, and there is already an
+explicit way out (`:VibingCancel`). It is also not a regression anybody can have felt: before the
+fix the guard swallowed the empty press too, so this is the documented behaviour changing to match
+the real one, not the real one changing.
+
+### Opening one exception closed the other one
+
+`programmatic_sender.validate` refuses to deliver into a chat that is responding, and #778 opened
+exactly one hole in it: a delivery that answers a hook the target is actually blocked on. That
+exemption asks `pending_approvals` by `request_id`, and nothing else.
+
+Answering a question in place put questions on the wrong side of it. A chat waiting on
+`nvim_ask_user_question` is responding by the same definition an approval-blocked one is, so every
+`nvim_chat_send_message` aimed at one hit the guard — **an orchestrator could see
+`asked_question` and could not answer it.** The worker-stopped notice was already telling it to
+answer with `nvim_chat_send_message`; the instruction did not become wrong, the code underneath it
+did. This is the sixth type's shape read backwards: the feature that made questions answerable by a
+human is the same feature that made them unanswerable by anyone else, and the half that broke was
+the half nobody was looking at.
+
+The two halves fail differently, and the quiet one is the one that matters:
+
+| call                           | before the fix                             | who notices             |
+| ------------------------------ | ------------------------------------------ | ----------------------- |
+| plain `nvim_chat_send_message` | `error: Chat buffer is already responding` | the caller, immediately |
+| with `queue_if_busy`           | `queued`                                   | **nobody**              |
+
+The queued answer sits for `question_wait_sec` — 900s by default — and is delivered as a _new
+turn_ only once the question it was the answer to has expired and been denied. The orchestrator
+polls a chat that has moved on, holding a receipt that says the message was accepted. "Queued means
+no request has started yet" was already an invariant; this is the case where queueing means the
+request can never start.
+
+The fix is the symmetric exemption, with one deliberate asymmetry: **it takes no `request_id`.**
+The id is what makes the approval exemption strong — it separates a prompt still drawn from a dead
+turn from a hook that is genuinely blocked. For questions that separation already lives somewhere
+else: a prompt that is only drawn sits in `_pending_choices`, and `pending_questions` holds nothing
+but replies actually being withheld. Asking the registry is the strong condition there, so an id
+would buy nothing. The opts flag is still required, and not as ceremony — `auto_compact`'s
+`/compact`, `auto_resume`'s re-send and `append_notice` all reach the same `validate`, and any of
+them slipping through would be eaten by `_answer_pending_question` as the answer.
+
+Two consequences follow from "an answer resumes a turn rather than starting one", and both are
+tested. It is not subject to `max_concurrent`, because it adds nothing to the count that limit is
+about. And it skips `auto_compact.before_delivery`: `/compact` is itself a send that starts a new
+turn, so on a chat whose turn is still open it cannot run — routing the answer behind it is the
+queueing failure above wearing a different hat. The compaction is deferred, not lost; the next
+delivery asks again, once the answered turn has finished.
+
+### What to measure before enabling another backend
+
+codex is the one where this is a real gap rather than a formality — its choice-list UI is already
+wired (`register_chat_bufnr`), so the only thing missing is the number. Run
+`tests/perf/mcp_answer_after_delay.sh` with its `claude -p` invocation replaced by the equivalent
+`codex exec` one, then add `mcp.measured_answer_wait_sec` to the descriptor. Two cells, both
+required: the control makes the arm readable, and the arm must use `question_budget_sec()` rather
+than a shorter delay, for the floor reason above. Grok cannot reach the MCP tool at all, so there
+is nothing to measure there yet.
 
 ## How this was measured wrong twice
 

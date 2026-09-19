@@ -37,9 +37,10 @@ npm run test:e2e   # all E2E tests (sets VIBING_E2E=1; spends real tokens)
 npm test           # unit only (test:lua + test:node) — E2E is deliberately not included
 
 # Specific file. VIBING_E2E=1 is required: without it every spec self-skips, and the run reports
-# "0 tests" as a pass rather than telling you nothing ran.
+# "0 tests" as a pass rather than telling you nothing ran. Use PlenaryBustedDirectory with an
+# explicit timeout even for one file — see "Running one spec by hand" for why not BustedFile.
 VIBING_E2E=1 nvim --headless -u tests/minimal_init.lua \
-  -c "PlenaryBustedFile tests/e2e/chat_jump_user_spec.lua"
+  -c "PlenaryBustedDirectory tests/e2e/chat_jump_user_spec.lua { minimal_init = 'tests/minimal_init.lua', timeout = 240000 }"
 ```
 
 ## Three Things the Child Neovim Needs
@@ -175,6 +176,57 @@ A spec still inside a `vim.wait` when that expires is killed mid-wait and prints
 summary, no failure, no test count. So the sum of every wait a file can perform has to fit inside
 that budget, and `tests/e2e-timeout-gate.test.mjs` fails the build when it does not. Raise the
 script's `timeout` rather than trimming a wait that a real turn needs.
+
+## Running one spec by hand
+
+Use `PlenaryBustedDirectory` with an explicit timeout, even for a single file:
+
+    VIBING_E2E=1 nvim --headless -u tests/minimal_init.lua \
+      -c "PlenaryBustedDirectory tests/e2e/<one>_spec.lua { minimal_init = 'tests/minimal_init.lua', timeout = 240000 }"
+
+**Not `PlenaryBustedFile`.** It is defined as `test_file(<path>)` and calls `test_paths{path}` with
+**no options at all** — there is no argument that could carry a timeout — so it always runs under
+plenary's default `timeout = 50000` (`plenary/test_harness.lua`). Only `PlenaryBustedDirectory`
+parses an options table, which is why `package.json`'s `test:e2e` passes `timeout = 240000`: **an
+E2E spec that drives a real CLI turn routinely runs longer than 50 seconds, and that number is
+plenary's, not ours.** Do not "tidy it away" when reworking the scripts.
+
+What the default does when it fires is worth knowing, because it does not look like a timeout.
+`test_paths` defaults to `sequential = false`, so the parent waits with `Job.join(unpack(jobs))`
+and, on expiry, counts any job whose `code ~= 0` as failed — a child still running has
+`code == nil`, so it counts — and calls `1cq`. The parallel branch, unlike the sequential one,
+**never kills the child**. The result:
+
+- the parent exits **1** with **no plenary summary**, an empty stderr and no `VimLeavePre`
+- the child Neovim **keeps running** and finishes its turn half a minute later, writing patches
+
+Read as a crash, that signature sends you looking for the bug in your own code. It is a deadline.
+**A deadline fires at the same number every time; a crash does not** — two runs dying at exactly
+50s is the tell, and a stopwatch on the parent is cheaper than any amount of reading.
+
+A control probe here must **cross the boundary**, not stop short of it. A 45-second probe that
+"passes" proves nothing about a 60-second wait; it only proves it ended before the wall. If you are
+controlling for a suspected deadline, the control has to run longer than the deadline you suspect.
+
+## Estimating what a run costs
+
+**The child is a fresh CLI process and a fresh session on every run, so the prompt prefix is
+`cache_creation`, not `cache_read`.** The system prompt, the plugin dirs and the MCP tool schemas
+are rewritten each turn: 85–140k of `cache_creation` ($3.75/Mtok), not read ($0.30/Mtok).
+**That is a factor of 12.**
+
+On sonnet, roughly **$0.43 per turn**. Count **real model responses**, not spec files — one `it`
+can spend two (a question, then the continuation that consumes the answer).
+
+Actuals come from `~/.claude/projects/<cwd-slug>/*.jsonl`. The `result` event's `total_cost_usd` is
+the most accurate, but **a turn that is cut short never emits `result`**. Then sum the assistant
+messages' `usage` and **say that the figure is not `result`-derived**:
+
+    cost = (input*3 + output*15 + cache_creation*3.75 + cache_read*0.30) / 1e6
+
+**This section was written after an estimate came in 6x low** (#788). The core of the miss was
+writing "most of it will be cache reads" without checking the ratio — and the numbers were in the
+same file's `usage` records the whole time.
 
 ## 3-Try Auto-Fix Rule
 

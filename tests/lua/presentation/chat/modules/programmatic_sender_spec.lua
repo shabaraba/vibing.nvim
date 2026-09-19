@@ -225,6 +225,77 @@ describe("ProgrammaticSender.send", function()
       assert.equals(0, fake.sends)
     end)
   end)
+
+  describe("answering a blocked question from another chat", function()
+    --- #788 reopened, for questions, the hole #778 closed for approvals. A chat waiting on a
+    --- question is `is_responding()` by the same definition, so the orchestrator the worker-stopped
+    --- notification tells to use `nvim_chat_send_message` was refused by the guard above — it could
+    --- see `asked_question` and could not answer it.
+    local PendingQuestions = require("vibing.infrastructure.rpc.pending_questions")
+
+    ---@param request_id string
+    local function open_question(request_id)
+      PendingQuestions.open({
+        request_id = request_id,
+        chat_bufnr = bufnr,
+        respond = function() end,
+      })
+    end
+
+    before_each(function()
+      fake.responding = true
+      PendingQuestions._reset()
+    end)
+
+    after_each(function()
+      PendingQuestions._reset()
+    end)
+
+    it("accepts the answer while a question is actually blocked", function()
+      open_question("q-1")
+
+      local result = ProgrammaticSender.send(bufnr, "the second one", nil, nil, {
+        answers_blocked_question = true,
+      })
+
+      assert.is_true(result.success)
+      assert.equals(1, fake.sends)
+    end)
+
+    it("refuses the same send once nothing is waiting for it", function()
+      -- The human answered in the buffer between the caller reading `asked_question` and the send
+      -- arriving. The flag is the caller's claim; the registry is the fact, and the fact wins.
+      local ok, err = pcall(ProgrammaticSender.send, bufnr, "the second one", nil, nil, {
+        answers_blocked_question = true,
+      })
+
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):find("already responding", 1, true), tostring(err))
+      assert.equals(0, fake.sends)
+    end)
+
+    it("refuses a delivery that does not claim to be the answer", function()
+      -- A blocked question must not open the chat to every sender. auto_compact's `/compact`,
+      -- auto_resume's re-send and `append_notice` all reach `validate`, and any of them getting
+      -- through would be eaten by `_answer_pending_question` as the answer.
+      open_question("q-1")
+
+      local ok, err = pcall(ProgrammaticSender.send, bufnr, "unrelated report")
+
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):find("already responding", 1, true), tostring(err))
+      assert.equals(0, fake.sends)
+    end)
+
+    it("reports a blocked question without being asked to send anything", function()
+      -- `nvim_chat_send_message`'s `queue_if_busy` branch reads this *before* validate, because
+      -- queueing an answer is worse than refusing it: it sits for `question_wait_sec` and is
+      -- delivered as a new turn only after the question it answers has expired.
+      assert.is_false(ProgrammaticSender.has_blocked_question(bufnr))
+      open_question("q-1")
+      assert.is_true(ProgrammaticSender.has_blocked_question(bufnr))
+    end)
+  end)
 end)
 
 describe("ChatBuffer:add_user_section", function()

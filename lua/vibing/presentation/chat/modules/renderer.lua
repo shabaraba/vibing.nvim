@@ -159,6 +159,88 @@ end
 -- Backward compatibility alias
 M.move_cursor_to_end = M.moveCursorToEnd
 
+---`nvim_ask_user_question` の選択肢ブロックを組み立てる（**唯一の組み立て口**）
+---
+---関数として切り出してあるのは、**剥がす側が同じものを読むため**（#788）。承認プロンプトは
+---`approval_parser.strip_prompt_lines` が固定の接頭辞と `<!-- vibing:req=... -->` から
+---「これはプロンプトの行だ」と読み取れるが、質問の選択肢にはその手掛かりが1つも無い —
+---出てくるのは質問文と `1. ラベル` で、ユーザーが自分で書いてもおかしくない形である。
+---テキストから見分ける規則を足すのは、ユーザーの本文を消す規則を足すのと同じことになる。
+---
+---代わりに `strip_choice_lines` は「**この選択肢から書いたはずの行**」をそのまま組み立てて
+---突き合わせる。書いた側の出力と1文字も違わないものだけが落ちるので、ユーザーが1行でも
+---編集していれば残る — そしてそれは答えそのものなので、残るのが正しい
+---@param pendingChoices table[]? CLIから受け取った質問構造
+---@return string[] lines 末尾の空行まで含めたブロック
+function M.choice_lines(pendingChoices)
+  local choiceLines = {}
+  for _, q in ipairs(pendingChoices or {}) do
+    -- Add question text if available
+    if q.question and q.question ~= "" then
+      table.insert(choiceLines, q.question)
+      table.insert(choiceLines, "")
+    end
+
+    -- Use numbered list for single-select, bullet list for multi-select
+    -- Default to single-select (numbered list) when multiSelect is not explicitly true
+    local useNumberedList = q.multiSelect ~= true
+    local optionIndex = 1
+    for _, opt in ipairs(q.options or {}) do
+      -- Safe label extraction
+      local label = (opt.label and opt.label ~= "") and opt.label or ""
+      if label ~= "" then
+        if useNumberedList then
+          table.insert(choiceLines, optionIndex .. ". " .. label)
+          optionIndex = optionIndex + 1
+        else
+          table.insert(choiceLines, "- " .. label)
+        end
+        if opt.description and opt.description ~= "" then
+          table.insert(choiceLines, "  " .. tostring(opt.description))
+        end
+      end
+    end
+    table.insert(choiceLines, "")
+  end
+  return flatten_lines(choiceLines)
+end
+
+---描かれた選択肢ブロックだけを落とし、ユーザーが打った本文は残す（#788）
+---
+---`choice_lines` が書いたはずの並びを**連続した1本**として探し、最初に見つかったものだけを
+---落とす。見つからなければ何も落とさない。承認側の `strip_prompt_lines` と対になる、質問側の
+---「何がプロンプトの行か」の唯一の答え。
+---@param lines string[] 畳んだセクションの行
+---@param pendingChoices table[]? いま描いてある選択肢。nil なら何もしない
+---@return string[] kept
+function M.strip_choice_lines(lines, pendingChoices)
+  local block = M.choice_lines(pendingChoices)
+  if #block == 0 or #block > #lines then
+    return lines
+  end
+
+  for start = 1, #lines - #block + 1 do
+    local matched = true
+    for offset = 1, #block do
+      if lines[start + offset - 1] ~= block[offset] then
+        matched = false
+        break
+      end
+    end
+    if matched then
+      local kept = {}
+      for index, line in ipairs(lines) do
+        if index < start or index >= start + #block then
+          table.insert(kept, line)
+        end
+      end
+      return kept
+    end
+  end
+
+  return lines
+end
+
 ---Add new user section
 ---@param buf number Buffer number
 ---@param win number? Window number
@@ -198,39 +280,9 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
   vim.api.nvim_buf_set_lines(buf, #lines, #lines, false, flatten_lines(newLines))
 
   if pendingChoices then
-    local choiceLines = {}
-    for _, q in ipairs(pendingChoices) do
-      -- Add question text if available
-      if q.question and q.question ~= "" then
-        table.insert(choiceLines, q.question)
-        table.insert(choiceLines, "")
-      end
-
-      -- Use numbered list for single-select, bullet list for multi-select
-      -- Default to single-select (numbered list) when multiSelect is not explicitly true
-      local useNumberedList = q.multiSelect ~= true
-      local optionIndex = 1
-      for _, opt in ipairs(q.options or {}) do
-        -- Safe label extraction
-        local label = (opt.label and opt.label ~= "") and opt.label or ""
-        if label ~= "" then
-          if useNumberedList then
-            table.insert(choiceLines, optionIndex .. ". " .. label)
-            optionIndex = optionIndex + 1
-          else
-            table.insert(choiceLines, "- " .. label)
-          end
-          if opt.description and opt.description ~= "" then
-            table.insert(choiceLines, "  " .. tostring(opt.description))
-          end
-        end
-      end
-      table.insert(choiceLines, "")
-    end
-
     local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local insertPos = #currentLines
-    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, flatten_lines(choiceLines))
+    vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, M.choice_lines(pendingChoices))
   end
 
   if pendingApprovals and #pendingApprovals > 0 then
