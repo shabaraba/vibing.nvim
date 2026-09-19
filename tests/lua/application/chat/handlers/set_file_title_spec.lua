@@ -99,8 +99,9 @@ describe("set_file_title handler - streaming guard", function()
   end)
 
   it("falls back to a message-based name when title generation fails", function()
-    require("vibing").setup({ chat = { save_location_type = "custom", save_dir = "/tmp/vibing_title_fb" } })
-    vim.fn.mkdir("/tmp/vibing_title_fb", "p")
+    local save_dir = vim.fn.tempname() .. "/vibing_title_fb"
+    require("vibing").setup({ chat = { save_location_type = "custom", save_dir = save_dir } })
+    vim.fn.mkdir(save_dir, "p")
 
     -- Simulate the real failure (e.g. "Prompt is too long"): the callback is
     -- invoked with an error. The handler must still name the file, not bail out.

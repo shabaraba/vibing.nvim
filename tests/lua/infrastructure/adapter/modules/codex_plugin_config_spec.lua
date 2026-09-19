@@ -1,5 +1,6 @@
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
 local CodexPluginConfig = require("vibing.infrastructure.adapter.modules.codex_plugin_config")
+local Fs = require("vibing.core.utils.fs")
 
 describe("codex_plugin_config", function()
   local project_root
@@ -15,10 +16,10 @@ describe("codex_plugin_config", function()
   ---@param skills? table<string, string> skill dir -> SKILL.md contents
   local function write_plugin(dir, manifest, skills)
     local root = project_root .. "/.vibing/plugins/" .. dir
-    vim.fn.mkdir(root .. "/.claude-plugin", "p")
+    Fs.ensure_dir(root .. "/.claude-plugin")
     vim.fn.writefile({ vim.json.encode(manifest) }, root .. "/.claude-plugin/plugin.json")
     for skill, contents in pairs(skills or {}) do
-      vim.fn.mkdir(root .. "/skills/" .. skill, "p")
+      Fs.ensure_dir(root .. "/skills/" .. skill)
       vim.fn.writefile(vim.split(contents, "\n", { plain = true }), root .. "/skills/" .. skill .. "/SKILL.md")
     end
     return root

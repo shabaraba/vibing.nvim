@@ -1,4 +1,5 @@
 local PluginContents = require("vibing.infrastructure.plugins.plugin_contents")
+local Fs = require("vibing.core.utils.fs")
 
 describe("plugin_contents", function()
   local plugin_dir
@@ -7,7 +8,7 @@ describe("plugin_contents", function()
   local function write_plugin(files)
     for rel, contents in pairs(files) do
       local path = plugin_dir .. "/" .. rel
-      vim.fn.mkdir(vim.fs.dirname(path), "p")
+      Fs.ensure_dir(vim.fs.dirname(path))
       vim.fn.writefile(vim.split(contents, "\n", { plain = true }), path)
     end
   end

@@ -5,6 +5,7 @@
 --   3. 復元できない場合に、黙って嘘の内容を返すのではなくエラーを返すこと
 -- patchは実物のgitで作り、逆適用も実物のgitにやらせる。
 local PatchText = require("vibing.core.utils.patch_text")
+local Fs = require("vibing.core.utils.fs")
 
 describe("patch_text", function()
   local repo
@@ -15,7 +16,7 @@ describe("patch_text", function()
 
   local function write(rel, lines)
     local path = repo .. "/" .. rel
-    vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+    Fs.ensure_dir(vim.fn.fnamemodify(path, ":h"))
     vim.fn.writefile(lines, path)
   end
 

@@ -1,4 +1,5 @@
 local profile = require("vibing.infrastructure.adapter.modules.codex_permission_profile")
+local Fs = require("vibing.core.utils.fs")
 
 describe("codex_permission_profile", function()
   local root
@@ -7,7 +8,7 @@ describe("codex_permission_profile", function()
   local original_system
 
   local function write_at(base, content)
-    vim.fn.mkdir(base .. "/.vibing", "p")
+    Fs.ensure_dir(base .. "/.vibing")
     vim.fn.writefile(
       vim.split(content, "\n", { plain = true }),
       base .. "/.vibing/codex-permissions.toml"

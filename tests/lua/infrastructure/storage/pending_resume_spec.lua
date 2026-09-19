@@ -1,3 +1,4 @@
+local Fs = require("vibing.core.utils.fs")
 describe("pending_resume", function()
   local PendingResume = require("vibing.infrastructure.storage.pending_resume")
 
@@ -57,7 +58,7 @@ describe("pending_resume", function()
 
   it("ignores a corrupt store instead of erroring", function()
     local path = PendingResume.get_path(tmp_root)
-    vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+    Fs.ensure_dir(vim.fn.fnamemodify(path, ":h"))
     vim.fn.writefile({ "{ this is not json" }, path)
 
     assert.same({}, PendingResume.load(tmp_root))

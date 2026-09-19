@@ -2,6 +2,7 @@ local OrchestrationChatScanner = require("vibing.infrastructure.link.orchestrati
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 local ChatFiles = require("tests.helpers.chat_files")
 local Git = require("vibing.core.utils.git")
+local Fs = require("vibing.core.utils.fs")
 
 describe("OrchestrationChatScanner", function()
   local dir
@@ -48,7 +49,7 @@ describe("OrchestrationChatScanner", function()
       end
 
       local home_dir = vim.fn.expand("~") .. "/.vibing-orchestration-spec-" .. vim.fn.getpid()
-      vim.fn.mkdir(home_dir, "p")
+      Fs.ensure_dir(home_dir)
       local worker = home_dir .. "/worker.md"
       local orchestrator = ChatFiles.write(home_dir, "orchestrator.md", {
         orchestrated = { vim.fn.fnamemodify(worker, ":~") },

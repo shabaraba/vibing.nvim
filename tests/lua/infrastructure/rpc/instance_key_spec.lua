@@ -15,6 +15,7 @@
 local CopilotSettingsGenerator = require("vibing.infrastructure.hooks.copilot_settings_generator")
 local InstanceKey = require("vibing.infrastructure.rpc.instance_key")
 local SettingsGenerator = require("vibing.infrastructure.hooks.settings_generator")
+local Fs = require("vibing.core.utils.fs")
 
 describe("instance_key", function()
   local tmp_dir
@@ -206,7 +207,7 @@ describe("instance_key", function()
 
     it("removes a dead instance's copilot plugin directory, contents and all", function()
       local dead = vibing_dir() .. "/copilot-plugin-65535"
-      vim.fn.mkdir(dead, "p")
+      Fs.ensure_dir(dead)
       vim.fn.writefile({ "{}" }, dead .. "/plugin.json")
 
       CopilotSettingsGenerator.ensure(tmp_dir)

@@ -20,24 +20,25 @@ describe("vibing.application.daily_summary.collector", function()
   describe("get_search_directories", function()
     describe("when include_all is false", function()
       it("should return save_dir from config", function()
+        local save_dir = vim.fn.tempname() .. "/test-save"
         local config = {
           chat = {
             save_location_type = "custom",
-            save_dir = vim.fn.getcwd() .. "/test-save",
+            save_dir = save_dir,
           },
         }
 
         -- Create test directory
-        vim.fn.mkdir(config.chat.save_dir, "p")
+        vim.fn.mkdir(save_dir, "p")
 
         local result = collector.get_search_directories(false, config)
 
         assert.is_table(result)
         assert.equals(1, #result)
-        assert.equals(config.chat.save_dir, result[1])
+        assert.equals(save_dir, result[1])
 
         -- Cleanup
-        vim.fn.delete(config.chat.save_dir, "rf")
+        vim.fn.delete(save_dir, "rf")
       end)
     end)
 
@@ -83,7 +84,7 @@ describe("vibing.application.daily_summary.collector", function()
 
     describe("when include_all is true and search_dirs is configured", function()
       it("should return configured search_dirs", function()
-        local test_dir = vim.fn.getcwd() .. "/test-search-dir"
+        local test_dir = vim.fn.tempname() .. "/test-search-dir"
         vim.fn.mkdir(test_dir, "p")
 
         local config = {
@@ -103,13 +104,17 @@ describe("vibing.application.daily_summary.collector", function()
       end)
 
       it("should expand tilde in paths", function()
-        local home = vim.fn.expand("~")
-        local test_dir = home .. "/test-tilde-expansion"
+        -- The one directory in this file that cannot live under tempname(): what is under test
+        -- is `~` expansion, so the path has to start at the real home directory. The leaf is
+        -- made unique instead, since specs run in concurrent child Neovims.
+        local leaf = "/test-tilde-expansion-" .. vim.fn.fnamemodify(vim.fn.tempname(), ":t")
+        local test_dir = vim.fn.expand("~") .. leaf
+        -- mkdir-ok: under $HOME on purpose; the leaf is unique per process
         vim.fn.mkdir(test_dir, "p")
 
         local config = {
           daily_summary = {
-            search_dirs = { "~/test-tilde-expansion" },
+            search_dirs = { "~" .. leaf },
           },
         }
 
@@ -131,7 +136,7 @@ describe("vibing.application.daily_summary.collector", function()
           end
         end
 
-        local test_dir = vim.fn.getcwd() .. "/test-valid-dir"
+        local test_dir = vim.fn.tempname() .. "/test-valid-dir"
         vim.fn.mkdir(test_dir, "p")
 
         local config = {
@@ -161,7 +166,7 @@ describe("vibing.application.daily_summary.collector", function()
           end
         end
 
-        local test_dir = vim.fn.getcwd() .. "/test-empty-string"
+        local test_dir = vim.fn.tempname() .. "/test-empty-string"
         vim.fn.mkdir(test_dir, "p")
 
         local config = {
@@ -208,8 +213,8 @@ describe("vibing.application.daily_summary.collector", function()
       end)
 
       it("should handle multiple valid directories", function()
-        local test_dir1 = vim.fn.getcwd() .. "/test-multi-dir-1"
-        local test_dir2 = vim.fn.getcwd() .. "/test-multi-dir-2"
+        local test_dir1 = vim.fn.tempname() .. "/test-multi-dir-1"
+        local test_dir2 = vim.fn.tempname() .. "/test-multi-dir-2"
         vim.fn.mkdir(test_dir1, "p")
         vim.fn.mkdir(test_dir2, "p")
 
@@ -232,7 +237,7 @@ describe("vibing.application.daily_summary.collector", function()
       end)
 
       it("should handle trailing slashes", function()
-        local test_dir = vim.fn.getcwd() .. "/test-trailing-slash"
+        local test_dir = vim.fn.tempname() .. "/test-trailing-slash"
         vim.fn.mkdir(test_dir, "p")
 
         local config = {
@@ -297,7 +302,7 @@ describe("vibing.application.daily_summary.collector", function()
     end
 
     it("should find .md files in directory", function()
-      local test_dir = vim.fn.getcwd() .. "/test-vibing-files"
+      local test_dir = vim.fn.tempname() .. "/test-vibing-files"
       vim.fn.mkdir(test_dir, "p")
 
       -- Create test .md files with vibing.nvim frontmatter
@@ -316,7 +321,7 @@ describe("vibing.application.daily_summary.collector", function()
     end)
 
     it("should recursively find .md files in subdirectories", function()
-      local test_dir = vim.fn.getcwd() .. "/test-recursive"
+      local test_dir = vim.fn.tempname() .. "/test-recursive"
       local sub_dir = test_dir .. "/subdir"
       vim.fn.mkdir(sub_dir, "p")
 
@@ -336,7 +341,7 @@ describe("vibing.application.daily_summary.collector", function()
     end)
 
     it("should ignore non-.md files", function()
-      local test_dir = vim.fn.getcwd() .. "/test-ignore-non-vibing"
+      local test_dir = vim.fn.tempname() .. "/test-ignore-non-vibing"
       -- Clean up if directory exists from previous run
       vim.fn.delete(test_dir, "rf")
       vim.fn.mkdir(test_dir, "p")
@@ -372,7 +377,7 @@ describe("vibing.application.daily_summary.collector", function()
     end)
 
     it("should handle symlink circular references without infinite loop", function()
-      local test_dir = vim.fn.getcwd() .. "/test-symlink-circular"
+      local test_dir = vim.fn.tempname() .. "/test-symlink-circular"
       local dir_a = test_dir .. "/dir_a"
       local dir_b = test_dir .. "/dir_b"
       vim.fn.mkdir(dir_a, "p")
@@ -400,7 +405,7 @@ describe("vibing.application.daily_summary.collector", function()
     end)
 
     it("should handle symlink to parent directory without infinite loop", function()
-      local test_dir = vim.fn.getcwd() .. "/test-symlink-parent"
+      local test_dir = vim.fn.tempname() .. "/test-symlink-parent"
       local sub_dir = test_dir .. "/subdir"
       vim.fn.mkdir(sub_dir, "p")
 

@@ -1,4 +1,5 @@
 local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
+local Fs = require("vibing.core.utils.fs")
 
 describe("plugin_dirs", function()
   local project_root
@@ -10,7 +11,7 @@ describe("plugin_dirs", function()
   ---@param dir string
   ---@param name string
   local function write_plugin(dir, name)
-    vim.fn.mkdir(dir .. "/.claude-plugin", "p")
+    Fs.ensure_dir(dir .. "/.claude-plugin")
     vim.fn.writefile({ vim.json.encode({ name = name }) }, dir .. "/.claude-plugin/plugin.json")
   end
 

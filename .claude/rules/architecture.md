@@ -271,10 +271,14 @@ every backend other than claude can never use it, whatever the configuration say
 Each chat buffer maintains its own session ID; processes and turns are keyed by the two ids above
 (`hrtime + random`, hex — see "Processes and Turns").
 
-- **Directory creation is a shared-state operation.** `vim.fn.mkdir(path, "p")` is not atomic and
-  raises `E739` when another process wins the race — 9 failures in 200 concurrent calls. Every
-  directory creation goes through `core/utils/fs.lua`'s `ensure_dir`, and `fs_spec.lua` **fails
-  the build if a direct `vim.fn.mkdir` reappears anywhere in `lua/`**.
+- **Creating a directory two processes could both create is a shared-state operation.**
+  `vim.fn.mkdir(path, "p")` is not atomic and raises `E739` when another process wins the race —
+  9 failures in 200 concurrent calls. Every such creation goes through `core/utils/fs.lua`'s
+  `ensure_dir`. `tests/lua/mkdir_call_sites_spec.lua` **fails the build** on a direct
+  `vim.fn.mkdir` anywhere in `lua/`, and on one in `tests/` whose path is not provably rooted at
+  `vim.fn.tempname()` — plenary runs one child Neovim per spec file, so a fixed path under the
+  cwd or `$HOME` is shared between them, and it was a spec that flaked (#576). Anything the
+  analysis cannot prove is reported; `-- mkdir-ok: <reason>` waives the line that has no choice.
 - **A fork inherits the source's `session_id`** and marks itself with `forked_from`;
   `opts._is_fork` makes the command builder emit `--fork-session`.
 - **A subagent chat shares the parent's `session_id` permanently and must never fork** —

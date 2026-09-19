@@ -44,7 +44,7 @@ describe("vibing.infrastructure.file_finder.ripgrep_command", function()
       local finder = ripgrep_command:new()
       if skip_if_unsupported(finder) then return end
 
-      local test_dir = vim.fn.getcwd() .. "/test-rg-find"
+      local test_dir = vim.fn.tempname() .. "/test-rg-find"
       vim.fn.mkdir(test_dir, "p")
       vim.fn.writefile({ "test" }, test_dir .. "/test.md")
       vim.fn.writefile({ "test" }, test_dir .. "/test.txt")
@@ -63,7 +63,7 @@ describe("vibing.infrastructure.file_finder.ripgrep_command", function()
       local finder = ripgrep_command:new()
       if skip_if_unsupported(finder) then return end
 
-      local test_dir = vim.fn.getcwd() .. "/test-rg-recursive"
+      local test_dir = vim.fn.tempname() .. "/test-rg-recursive"
       local sub_dir = test_dir .. "/subdir/nested"
       vim.fn.mkdir(sub_dir, "p")
       vim.fn.writefile({ "test" }, test_dir .. "/root.md")
@@ -82,7 +82,7 @@ describe("vibing.infrastructure.file_finder.ripgrep_command", function()
       local finder = ripgrep_command:new({ mtime_days = 1 })
       if skip_if_unsupported(finder) then return end
 
-      local test_dir = vim.fn.getcwd() .. "/test-rg-mtime"
+      local test_dir = vim.fn.tempname() .. "/test-rg-mtime"
       vim.fn.mkdir(test_dir, "p")
       vim.fn.writefile({ "test" }, test_dir .. "/recent.md")
 
