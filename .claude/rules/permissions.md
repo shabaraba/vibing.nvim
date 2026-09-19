@@ -134,10 +134,28 @@ the three deadlines above reach it and `hook.measured_wait_floor_sec` says nothi
 - **An approval and a question are one state — "a prompt holding this turn open".**
   `_prompts_rendered_unsent`, `_resume_after_prompts` and `show_pending_prompts` are shared.
   Merging the drawing and leaving the lifetimes split is how the two silently drift.
+- **A question's own lines are recognised by rebuilding them, never by a text rule.**
+  `renderer.choice_lines` is the one place the block is assembled and `strip_choice_lines` matches
+  that exact output back out. The lines carry no prefix and no `<!-- vibing:req=... -->`, unlike an
+  approval's, so any rule that read them would read the user's prose too. A block the user edited
+  no longer matches and stays — it is the answer.
 - **An empty `<CR>` is never spent as the answer, and neither is a message that answers nothing.**
   Both fall through without ending the turn; the second is refused with a `vim.notify`, the first
   in silence, because a mistyped `<CR>` needs no explanation and a warning on every one of them
   trains the real warnings away.
+- **An answer belongs to the question drawn on screen, and to no other** —
+  `_question_the_answer_belongs_to` matches `_pending_choices_request_id` against the waiting list.
+  This is #667's "an answer belongs to the chat that was asked" one level down: taking
+  `list_for_chat`'s first entry is right only while one question is pending, and with two it
+  silently answers the other one. **An answer that cannot be attributed is not consumed, and the
+  refusal is spoken** (`vim.notify`), the same shape as the approval side. A single waiting
+  question is not ambiguous and takes the answer even with no id on the choices.
+- **`retry_as_new_turn` stops at the approval and never falls through into the question.** The
+  retry body _is_ the approval's own choice line, so passing it on hands it to the model as the
+  human's free-text answer and drops the retry. `approval_decision.consume` has also emptied
+  `_pending_approvals` by then, so `can_defer_send` no longer recognises it as an approval answer
+  and is told through `is_approval_retry` instead — what a deferral sends later is the buffer, not
+  the substituted message.
 - **A chat waiting for a question reports `asked_question`, not `responding`** — `chat_status`
   reads `pending_questions`, the same hole #778 closed for approvals.
 - **Reporting the state and being able to act on it are two holes, and #778 closed only the
@@ -148,6 +166,11 @@ the three deadlines above reach it and `hook.measured_wait_floor_sec` says nothi
   from a blocked hook, and for questions `_pending_choices` vs `pending_questions` already draws
   that line — but it **does** require the caller's flag, or `auto_compact` / `auto_resume` /
   `append_notice` reach the same `validate` and have their bodies eaten as the answer.
+- **A delivery is an answer only if it is one.** `message.lua`'s `is_report` asks
+  `orchestration_link.direction`, the same function `delivery_message.section_for` uses to choose
+  the heading, so what renders as `## Report` is never spent as the answer and `## Request` still
+  is. Deriving the exemption from the target's state alone let a worker's completion report be
+  read as the human's choice.
 - **An answer resumes a turn; it does not start one.** So it is exempt from `max_concurrent`, it
   skips `auto_compact.before_delivery`, and `queue_if_busy` must **not** queue it — a queued answer
   is delivered only after `question_wait_sec` has denied the question it answers, and the caller
