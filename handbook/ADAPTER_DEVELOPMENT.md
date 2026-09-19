@@ -87,7 +87,11 @@ return {
   hook = { transport = "settings_file", dialect = "claude", keep_in_bypass = true },
 
   vocabulary = Vocabulary,
-  register_chat_bufnr = false, -- true only once nvim_ask_user_question is wired for this CLI
+  -- true only once nvim_ask_user_question is wired for this CLI. It also gates answering an
+  -- approval without killing the CLI: that path names the chat through `turn.process.chat_bufnr`,
+  -- which is filled in only when this is true, so `hook.measured_wait_floor_sec` does nothing on
+  -- its own. Both or neither — `transports.can_wait_for_approval` requires the pair.
+  register_chat_bufnr = false,
 }
 ```
 

@@ -203,10 +203,21 @@ the next send has the user's own text in the unsent section and nothing may be a
 
 - The PreToolUse hook (`bin/hooks/pre-tool-use.sh`) posts to the RPC server, which dispatches to
   `infrastructure/rpc/handlers/permission.lua`. An `ask` verdict takes one of two shapes, and which
-  one is a property of the backend rather than of the call: `_can_wait_for_approval` (the
-  descriptor's `measured_wait_floor_sec` against the currently configured wait) travels per turn
-  next to `_tool_vocabulary`, so the handler still names no backend. True → `_ask_without_killing`
-  withholds the `.res`; false → `cancel_and_deny` kills the process and denies, exactly as before.
+  one is a property of the backend rather than of the call: `_can_wait_for_approval` travels per
+  turn next to `_tool_vocabulary`, so the handler still names no backend. True →
+  `_ask_without_killing` withholds the `.res`; false → `cancel_and_deny` kills the process and
+  denies, exactly as before.
+- **Waiting takes two descriptor fields, and `transports.can_wait_for_approval` requires both.**
+  `hook.measured_wait_floor_sec` against the currently configured wait says the CLI tolerates a
+  blocked hook; `register_chat_bufnr` says the turn carries the chat back. They read as unrelated —
+  one times the hook, the other is about `nvim_ask_user_question` — but `_ask_without_killing`
+  names the chat that draws the prompt through `turn.process.chat_bufnr`, and `cli_adapter` fills
+  that in **only** for a backend with the flag. Enabled on the floor alone the waiting branch is
+  still taken, finds nil, and denies every `ask` with an internal-error reason: not a prompt in the
+  wrong place, **no prompt at all**. copilot shipped that pair (floor 1700,
+  `register_chat_bufnr = false`) with the suite green, which is why the gate takes the whole
+  descriptor and `conformance/descriptor_shape_spec.lua` recomputes the expected answer from both
+  raw fields for every registered backend.
 - **`_ask_without_killing` registers the withheld response before anything that can throw.** The
   registry is what arms the wait limit, so a failure past that point still ends in a written `.res`
   rather than a hook spinning to the script's own deadline. Drawing is additionally guarded, so a

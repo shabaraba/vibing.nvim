@@ -501,6 +501,19 @@ of it (`HOOK FINISHED NORMALLY after 1700s`); claude's was killed at 1090s when 
 stopped, so nothing was learned about claude past 1090 — and in particular **not** that claude is
 less patient than copilot.
 
+**A measured floor is necessary and not sufficient, so copilot does not wait today.** The waiting
+path names the chat that draws the prompt through `turn.process.chat_bufnr`, which `cli_adapter`
+records only for a descriptor with `register_chat_bufnr` — and copilot's is `false`, because
+`nvim_ask_user_question` was never wired for it. Switched on by the floor alone, every `ask` took
+the waiting branch, found no bufnr, and wrote a deny with an internal-error reason, which is not a
+degraded prompt but **no prompt at all**: it removed the Tool Approval UI copilot already had
+(#512). `transports.can_wait_for_approval` therefore takes the whole descriptor and requires both
+fields, copilot keeps kill-and-retry, and the 1700s stays recorded here because the measurement is
+real and will be what enables copilot once its waiting path is wired and verified on that CLI. The
+implication is asserted over every registered descriptor in
+`tests/lua/infrastructure/adapter/conformance/descriptor_shape_spec.lua`, so a floor added to an
+unwired backend fails the suite rather than disabling that backend's approvals.
+
 A separate 950s copilot run confirms the same thing independently
 (`HOOK REACHED ITS OWN BUDGET after 950s without being cut`, copilot 1.0.85). That run also logs
 `VERDICT: the tool did not run`, which is **copilot's gate refusing a tool it had no rule for**, not

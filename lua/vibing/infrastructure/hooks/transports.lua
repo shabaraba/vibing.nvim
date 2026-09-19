@@ -117,9 +117,35 @@ end
 ---
 --- Absent floor → false. A new backend therefore keeps today's kill-and-retry behaviour until
 --- somebody runs `tests/perf/hook_wait_ceiling.sh` against it, which is the safe default to forget.
---- @param hook Vibing.HookSpec|nil
+---
+--- **Two descriptor fields have to agree, and that is why this takes the descriptor rather than the
+--- `hook`.** `hook.measured_wait_floor_sec` says the CLI tolerates a blocked hook that long;
+--- `register_chat_bufnr` says the turn carries a chat buffer back. They read as independent — one
+--- is about the hook, the other about `nvim_ask_user_question` — but the waiting path needs both,
+--- because `_ask_without_killing` has to name the chat that will draw the prompt and own the
+--- answer, and the only place that number comes from is `turn.process.chat_bufnr`, which
+--- `cli_adapter` fills in **only** when `register_chat_bufnr` is true.
+---
+--- Requiring just the floor is not a prompt drawn in the wrong place; it is **no prompt at all**.
+--- The waiting branch is taken, finds no bufnr, and writes a deny with an internal-error reason —
+--- so every `ask` on that backend is refused without anyone being asked. copilot shipped exactly
+--- that combination (floor 1700, `register_chat_bufnr = false`), which silently killed the Tool
+--- Approval UI it already had. The kill path needs no bufnr, so a backend that fails this test
+--- keeps working; it simply keeps the old kill-and-retry shape.
+---
+--- Read the conjunction as "measured **and** wired". Lifting the second half is not a matter of
+--- flipping the flag: the waiting path has only ever been exercised on claude, so wiring a second
+--- backend means measuring that backend's own approval UI, not trusting this function to cover it.
+--- `conformance/descriptor_shape_spec.lua` recomputes this answer from both raw fields for every
+--- registered descriptor, so adding a floor to a backend that is not wired fails the suite instead
+--- of disabling its approvals.
+--- @param descriptor table|nil the backend descriptor (`adapter/backends/<id>.lua`)
 --- @return boolean
-function M.can_wait_for_approval(hook)
+function M.can_wait_for_approval(descriptor)
+  if not (descriptor and descriptor.register_chat_bufnr) then
+    return false
+  end
+  local hook = descriptor.hook
   local floor = hook and hook.measured_wait_floor_sec
   if type(floor) ~= "number" then
     return false

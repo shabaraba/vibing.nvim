@@ -263,16 +263,19 @@ function M.define(descriptor)
     -- not run under turn N's `permission_mode` and ignore the allow entry an approval just made.
     --
     -- `_can_wait_for_approval` travels the same way and for the same reason: whether an `ask` may
-    -- block the hook instead of killing the process is a property of *this* backend's measured
-    -- floor against the currently configured wait, and the handler must not be the place that
-    -- knows which backend it is (`.claude/rules/architecture.md`). Resolved per turn, so raising
+    -- block the hook instead of killing the process is a property of *this* backend — its measured
+    -- floor against the currently configured wait, **and** whether it registers `chat_bufnr` just
+    -- below, since the waiting path has no other way to name the chat that answers. The whole
+    -- descriptor goes in rather than `descriptor.hook`, because that second half does not live on
+    -- the hook. The handler must not be the place that knows which backend it is
+    -- (`.claude/rules/architecture.md`). Resolved per turn, so raising
     -- `permissions.approval_wait_sec` past a floor turns waiting off on the next send.
     local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
     perm_handler.set_active_opts(
       ids.turn_id,
       vim.tbl_extend("force", opts, {
         _tool_vocabulary = descriptor.vocabulary,
-        _can_wait_for_approval = HookTransports.can_wait_for_approval(descriptor.hook),
+        _can_wait_for_approval = HookTransports.can_wait_for_approval(descriptor),
       })
     )
 

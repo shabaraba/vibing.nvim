@@ -61,6 +61,54 @@ describe("conformance: descriptor shape", function()
         end
       end)
 
+      it("says out loud whether it registers chat_bufnr, rather than leaving it absent", function()
+        -- Required explicitly, because an absent field and `false` mean the same thing to the code
+        -- and very different things to a reader. This flag now decides two features — the
+        -- `nvim_ask_user_question` route and whether an approval may be answered without killing
+        -- the CLI — so a descriptor that simply omits it looks like nobody considered either.
+        -- Same reason codex and grok write their missing floor as a comment instead of silence.
+        assert.is_true(
+          type(descriptor.register_chat_bufnr) == "boolean",
+          def.id .. " must declare register_chat_bufnr as a boolean, not leave it to default"
+        )
+      end)
+
+      it("may wait for an approval only when it is both measured and wired", function()
+        -- The two fields read as independent — `measured_wait_floor_sec` times the hook,
+        -- `register_chat_bufnr` is about `nvim_ask_user_question` — and nothing but this assertion
+        -- connects them. Waiting needs both: `_ask_without_killing` names the chat through
+        -- `turn.process.chat_bufnr`, and `cli_adapter` fills that in only when
+        -- `register_chat_bufnr` is true. With the floor alone the waiting branch is still taken,
+        -- finds nil, and denies every `ask` with an internal-error reason — **no prompt is drawn at
+        -- all**. copilot shipped exactly that pair (floor 1700, `register_chat_bufnr = false`) and
+        -- lost the Tool Approval UI it already had, with the whole suite green.
+        --
+        -- Asserted as an equality against the two raw fields, not as
+        -- "can_wait_for_approval implies register_chat_bufnr": the gate now requires the flag, so
+        -- that implication can no longer be made false and would pass no matter what the gate did.
+        -- Recomputing the expected value from the descriptor is what keeps this able to fail.
+        --
+        -- A floor on an unwired backend is a legal descriptor — copilot's 1700s is a real
+        -- measurement worth keeping recorded — so what is pinned is that the gate answers false for
+        -- it, not that the pair cannot exist.
+        local floor = descriptor.hook and descriptor.hook.measured_wait_floor_sec
+        local measured = type(floor) == "number"
+          and floor > require("vibing.infrastructure.hooks.wait_budget").script_wait_sec()
+        local wired = descriptor.register_chat_bufnr == true
+
+        assert.equals(
+          measured and wired,
+          Transports.can_wait_for_approval(descriptor),
+          string.format(
+            "%s: measured=%s wired=%s — waiting must be enabled by both, or its approvals turn"
+              .. " into denials nobody was asked about",
+            def.id,
+            tostring(measured),
+            tostring(wired)
+          )
+        )
+      end)
+
       it("closes stdin or leaves it alone, nothing else", function()
         assert.is_true(descriptor.stdin == nil or descriptor.stdin == "")
       end)

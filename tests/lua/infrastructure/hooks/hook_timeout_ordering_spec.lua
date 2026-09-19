@@ -165,21 +165,45 @@ describe("hook timeout ordering", function()
   end)
 
   describe("which backends may wait for an approval", function()
+    --- A descriptor carrying only the two fields the gate reads. `register_chat_bufnr` defaults to
+    --- true here so each case below varies one thing; the flag has its own cases underneath.
+    local function backend(hook, register_chat_bufnr)
+      return {
+        hook = hook,
+        register_chat_bufnr = register_chat_bufnr == nil and true or register_chat_bufnr,
+      }
+    end
+
     it("refuses a backend with no measured floor", function()
       -- The default a new backend inherits by writing nothing. Unmeasured must not read as fine:
       -- past its own timeout every CLI measured fails open, so waiting on a CLI nobody has timed is
       -- a permission gate that stops applying without saying so.
-      assert.is_false(Transports.can_wait_for_approval({ transport = "settings_file" }))
+      assert.is_false(Transports.can_wait_for_approval(backend({ transport = "settings_file" })))
+      assert.is_false(Transports.can_wait_for_approval(backend(nil)))
       assert.is_false(Transports.can_wait_for_approval(nil))
     end)
 
     it("refuses a floor that does not cover the script's deadline", function()
       assert.is_false(
-        Transports.can_wait_for_approval({ measured_wait_floor_sec = WaitBudget.script_wait_sec() })
+        Transports.can_wait_for_approval(backend({ measured_wait_floor_sec = WaitBudget.script_wait_sec() }))
       )
       assert.is_true(
-        Transports.can_wait_for_approval({ measured_wait_floor_sec = WaitBudget.script_wait_sec() + 1 })
+        Transports.can_wait_for_approval(backend({ measured_wait_floor_sec = WaitBudget.script_wait_sec() + 1 }))
       )
+    end)
+
+    it("refuses an ample floor on a backend that does not register chat_bufnr", function()
+      -- The half that had no test at all, and the one copilot shipped: a floor says the CLI will
+      -- wait, but `_ask_without_killing` still has to name the chat that draws the prompt, and it
+      -- reads `turn.process.chat_bufnr` — which `cli_adapter` fills in only for a backend with
+      -- `register_chat_bufnr`. Enabled on the floor alone, every `ask` finds nil and is denied with
+      -- an internal-error reason, so the backend loses its approval UI entirely rather than
+      -- degrading to kill-and-retry.
+      local ample = { measured_wait_floor_sec = WaitBudget.script_wait_sec() + 1 }
+      assert.is_true(Transports.can_wait_for_approval(backend(ample, true)))
+      assert.is_false(Transports.can_wait_for_approval(backend(ample, false)))
+      -- Absent, not just false: a new descriptor writes nothing, and "unwired" is the safe reading.
+      assert.is_false(Transports.can_wait_for_approval({ hook = ample }))
     end)
 
     it("withdraws a backend whose floor the configured wait has outgrown", function()
@@ -187,30 +211,44 @@ describe("hook timeout ordering", function()
       -- off for that CLI rather than wait longer than the evidence covers. This is the whole reason
       -- the descriptor records a measurement instead of a boolean.
       local claude = require("vibing.infrastructure.adapter.backends.claude")
-      assert.is_true(Transports.can_wait_for_approval(claude.hook))
+      assert.is_true(Transports.can_wait_for_approval(claude))
 
       local original = Config.get().permissions.approval_wait_sec
       Config.get().permissions.approval_wait_sec = claude.hook.measured_wait_floor_sec
       local ok, err = pcall(function()
-        assert.is_false(Transports.can_wait_for_approval(claude.hook))
+        assert.is_false(Transports.can_wait_for_approval(claude))
       end)
       Config.get().permissions.approval_wait_sec = original
       assert.is_true(ok, tostring(err))
     end)
 
-    it("matches the floors the handbook records, per backend", function()
-      -- Pinned so that adding a number is a deliberate act with a measurement behind it. codex and
-      -- grok are unmeasured, and staying unmeasured has to be visible rather than inferred from an
-      -- absent field nobody looks at.
-      local expected = { claude = true, copilot = true, codex = false, grok = false }
+    it("answers in place on claude only, and says why for each of the other three", function()
+      -- Pinned per backend so that enabling one is a deliberate act. The three that are off are off
+      -- for two different reasons, and collapsing them to `false` hid the second one once already:
+      --
+      --   codex, grok — no `measured_wait_floor_sec`. Nobody has timed how long those CLIs let a
+      --     hook block, and past its own timeout every CLI measured fails open.
+      --   copilot     — measured (1700s, ample) but **not wired**: `register_chat_bufnr = false`,
+      --     so `_ask_without_killing` would have no chat to draw the prompt in and would deny every
+      --     `ask` instead. It keeps kill-and-retry until its waiting path is actually verified.
+      --
+      -- The floor stays in copilot's descriptor because it is a real measurement; what is asserted
+      -- here is that the floor alone does not switch waiting on.
+      local expected = { claude = true, copilot = false, codex = false, grok = false }
       for _, def in ipairs(Agents.list()) do
         local descriptor = require(def.descriptor_module)
         assert.equals(
           expected[def.id],
-          Transports.can_wait_for_approval(descriptor.hook),
+          Transports.can_wait_for_approval(descriptor),
           def.id .. " changed whether it may answer an approval in place"
         )
       end
+
+      -- Stated separately so the copilot row above cannot quietly become "unmeasured" and keep
+      -- passing: the floor is still there and still ample, and the flag is what holds it back.
+      local copilot = require("vibing.infrastructure.adapter.backends.copilot")
+      assert.is_true(copilot.hook.measured_wait_floor_sec > WaitBudget.script_wait_sec())
+      assert.is_not_true(copilot.register_chat_bufnr)
     end)
   end)
 
