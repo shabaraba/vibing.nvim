@@ -56,6 +56,7 @@ If you add a paragraph to `.claude/rules/` explaining _why_, it is in the wrong 
 | `features/usage-limits.md`              | Auto-resume, scheduled requests, retry budget            |
 | `features/chat-ui.md`                   | Subagent output, timestamps, AskUserQuestion             |
 | `features/editor-integration.md`        | Code Tour, nvim-dap analysis                             |
+| `mutation-verification.md`              | Breaking what a new assertion guards; when to run it     |
 | `mcp-tools.md`                          | The MCP tool catalogue and its non-obvious behaviour     |
 | `web-container-setup.md`                | The `SessionStart` hook for Claude Code on the web       |
 

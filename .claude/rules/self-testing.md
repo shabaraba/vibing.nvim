@@ -13,6 +13,12 @@
   non-determinism is absorbed with pass@k (`VIBING_EVAL_ATTEMPTS`), not by loosening checks. Run it
   after changing the system prompt, a tool description, permission flags, or the model.
   `tests/evals/README.md`.
+- **Mutation verification is its own step, after `/code-review` and after the gates are green.**
+  For every assertion the change adds, break the code it guards and confirm that assertion fails.
+  Neither pass substitutes for the other: all gates green still leaves vacuous tests (three in one
+  run, one of them a positive control a worker wrote to prove a test was not vacuous), and every
+  mutation killed still leaves uncovered paths (two real defects survived a full mutation pass).
+  `handbook/mutation-verification.md`.
 - **3-try auto-fix rule.** After implementing a feature, run `npm run test:e2e`. On failure:
   analyze, apply one targeted fix, re-run — up to 3 attempts, each from fresh analysis. After 3,
   stop and report the error, the fixes tried, the suspected cause and a next step. **Do not proceed
