@@ -59,7 +59,7 @@ describe("send_message", function()
       local buf = vim.api.nvim_create_buf(false, true)
       vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. ".md")
 
-      local staged
+      local staged, staged_request_id
       local callbacks = {
         get_bufnr = function()
           return buf
@@ -82,8 +82,9 @@ describe("send_message", function()
           return {}
         end,
         add_user_section = function() end,
-        insert_choices = function(questions)
+        insert_choices = function(questions, request_id)
           staged = questions
+          staged_request_id = request_id
         end,
       }
 
@@ -101,9 +102,12 @@ describe("send_message", function()
       SendMessage.execute(adapter, callbacks, "hello", {})
 
       local questions = { { question = "Which one?", options = { { label = "a" } } } }
-      captured.opts.on_insert_choices(questions)
+      captured.opts.on_insert_choices(questions, nil, "q-77")
       -- Asserted without running the event loop: a vim.schedule here would leave this nil.
       assert.same(questions, staged)
+      -- The id of the question the chat is being asked to draw for. Dropped here, the chat cannot
+      -- tell whose options it holds, and retiring an expired question's block takes a live one's.
+      assert.equals("q-77", staged_request_id)
 
       vim.api.nvim_buf_delete(buf, { force = true })
     end)

@@ -120,4 +120,24 @@ describe("announcing a question that is waiting", function()
     assert.equals(0, #replies, "a reply was written while a human is still expected to answer")
     assert.equals(1, PendingQuestions.count(), "the question must stay answerable")
   end)
+
+  it("tells the chat which question the options it is drawing belong to", function()
+    -- The id is what lets the chat retire one question's options without taking a second, still
+    -- waiting question's with them. It is minted in here, so nothing downstream can recover it if
+    -- this call drops it — and every spec below this point sets it by hand, so only this one covers
+    -- the wiring itself.
+    local drawn = {}
+    local turn = {
+      turn_id = "t-1",
+      on_insert_choices = function(questions, waiting, request_id)
+        drawn = { questions = questions, waiting = waiting, request_id = request_id }
+      end,
+    }
+
+    permission._ask_question_without_killing(turn, 77, WAITING_QUESTIONS, function() end)
+
+    local waiting_id = PendingQuestions.list_for_chat(77)[1].request_id
+    assert.is_true(drawn.waiting)
+    assert.equals(waiting_id, drawn.request_id, "the choices were staged with no owner")
+  end)
 end)
