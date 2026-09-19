@@ -139,6 +139,15 @@ the three deadlines above reach it and `hook.measured_wait_floor_sec` says nothi
   that exact output back out. The lines carry no prefix and no `<!-- vibing:req=... -->`, unlike an
   approval's, so any rule that read them would read the user's prose too. A block the user edited
   no longer matches and stays — it is the answer.
+- **The answer is what the human added; the drawn prompts are not part of it.**
+  `ChatBuffer:_answer_text` removes them the way folding does and in the same order —
+  `strip_prompt_lines`, then `strip_choice_lines` — and what is left over is the answer. Reading
+  the unsent section whole handed the model its own question, its options and the count of the
+  questions behind it back as the human's choice. **Nothing left over means there was no answer**:
+  an untouched block is the state an empty `<CR>` is in, so it is not spent. It reads the section
+  **untrimmed** (`conversation_extractor.user_message_lines`), because the block's own trailing
+  blank line is part of what the renderer wrote — trim it and the match fails in exactly the case
+  that must strip, the one where the user typed nothing.
 - **The block on screen is a pure function of the whole queue, so anything that changes the queue
   folds first and redraws after.** `strip_choice_lines` rebuilds from the queue _as it is when it
   strips_, and the block carries a count of the questions behind it, so mutating first leaves the
