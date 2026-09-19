@@ -613,17 +613,30 @@ EOF
   #                     that was never listed cannot have routed anywhere.
   #   all three, no CALLED -> **this is the real negative result.** The server was up, the tool was
   #                     discoverable, and the CLI still did not consult it.
-  local started listed
+  #
+  # **All three are read, because each branch below claims the one above it succeeded.** The
+  # handshake line was logged and then not counted, which left `initialized` implied by the
+  # `listed` branch rather than observed: a cell that spawned the server and failed `initialize`
+  # has STARTED and nothing else, and the two-level version reported it as "started but the CLI
+  # never listed its tools -- about discovery", the one reading the comment above says must be
+  # kept separate. An instrument check that infers a step it could have measured is the defect
+  # this whole block exists to catch, one level in.
+  local started initialized listed
   started=$(grep -c ' STARTED$' "$PROMPT_TOOL_LOG" 2>/dev/null || true)
+  initialized=$(grep -c ' INITIALIZED$' "$PROMPT_TOOL_LOG" 2>/dev/null || true)
   listed=$(grep -c ' LISTED$' "$PROMPT_TOOL_LOG" 2>/dev/null || true)
-  echo "   instrument: server started=$started listed=$listed"
+  echo "   instrument: server started=$started initialized=$initialized listed=$listed"
   if [ "$started" -eq 0 ]; then
     echo "   INSTRUMENT FAILURE: the prompt-tool server never started, so a zero consultation count"
     echo "                       below is unreadable. See $dir/stderr.log. Re-run; do not record"
     echo "                       this cell as arm B failing."
+  elif [ "$initialized" -eq 0 ]; then
+    echo "   INSTRUMENT FAILURE: the server started but the MCP handshake never completed, so it was"
+    echo "                       never in a position to be consulted. See $dir/stderr.log. Nothing"
+    echo "                       about ordering was measured; re-run."
   elif [ "$listed" -eq 0 ]; then
-    echo "   INSTRUMENT WARNING: the server started but the CLI never listed its tools, so the value"
-    echo "                       naming its tool had nothing to resolve against. A zero below is"
+    echo "   INSTRUMENT WARNING: handshake fine, but the CLI never listed this server's tools, so the"
+    echo "                       value naming its tool had nothing to resolve against. A zero below is"
     echo "                       about discovery, not about the gate's ordering."
   fi
   # Arm B has no driver process, so the tool_use / tool_result blocks exist only in the raw stream.
