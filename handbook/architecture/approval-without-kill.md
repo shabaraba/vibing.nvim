@@ -174,6 +174,131 @@ times the hook, not the channel, and substituting one for the other is the mista
 records twice already. The reverted implementation is commit `e84ecf9e`, and the revert's own
 message lists the three things in it that are expensive to rediscover.
 
+#### Arm B, measured: the flag does take an MCP tool, and it does not change the answer
+
+The row that decided the table above — `claude / oneshot: no` — rested on `stdio` being the only
+way to reach the gate's question. It is not. Measured against claude 2.1.236 (#789), the same
+version arm A was measured on:
+
+**`--permission-prompt-tool mcp__<server>__<tool>` is accepted, needs no `--input-format
+stream-json`, and works on oneshot.** The question arrives as an ordinary MCP `tools/call`:
+
+```json
+{
+  "name": "approve",
+  "arguments": {
+    "tool_name": "Write",
+    "input": { "file_path": "…/probe-out.txt", "content": "ok" },
+    "tool_use_id": "toolu_01JdMB3SEXDiEeFu1ZuqgkT6"
+  },
+  "_meta": { "claudecode/toolUseId": "toolu_01JdMB3SEXDiEeFu1ZuqgkT6", "progressToken": 2 }
+}
+```
+
+Replying with `content[0].text` holding the JSON string `{"behavior":"allow","updatedInput":{…}}`
+ran the tool. The `tool_use_id` arrives **twice**, in `arguments` and in `_meta`, and a
+`progressToken` comes with it; that is transcribed from the probe's log for the same reason the
+`control_response` envelope above is — it is expensive to rediscover and impossible to guess.
+
+**Tool-name deny is applied at step 1 on arm B too.** With `permissions.deny: ["Write"]`, Write
+reached neither the hook nor the consultation — `No such tool available: Write. Write is disabled
+for this session` — which is arm A's `stdio-deny` result verbatim. The model fell back to `Bash`,
+which was consulted and allowed.
+
+**Where the consultation sits relative to the _allowlist_ is NOT established by this run**, and the
+first version of this section claimed it was. The claim, and why it does not hold:
+
+In the same deny cell the model also called `Read`. The hook logged `DEFER Read`; the prompt tool
+was never consulted about it, while `Bash` was. That was written up as "the prompt tool is asked
+only about calls the allowlist does not already satisfy, therefore it sits after the allowlist
+check, therefore the third shape's one advantage survives on arm B". **Two variables differ between
+those tools, not one:**
+
+| tool   | consulted? | in `--allowedTools` | read-only |
+| ------ | ---------- | ------------------- | --------- |
+| `Bash` | **yes**    | no                  | no        |
+| `Read` | **no**     | **yes**             | **yes**   |
+
+Both MCP cells run `--allowedTools Read` and nothing else, so allowlist membership and
+safe-by-classifier move together. The competing explanation is not hypothetical — #774 recorded it
+already: `echo` "was treated as a CLI built-in safe command and ran without emitting
+`can_use_tool`", which is why that issue says to verify approval paths with `Write` rather than
+something the classifier waves through. `Read`'s silence is consistent with either cause and this
+log distinguishes neither.
+
+This is the same defect as "a cell is not an observation of a tool", one level out: the _absence_ of
+a log line names its cause no better than a file on disk names its author.
+
+**The cell that would separate them, so the next person does not have to design it:**
+`--allowedTools "Read,Write"`, no deny, prompt tool as in `mcp-allow`, and ask for the Write. If
+Write is **not** consulted, allowlist membership suppresses the consultation for a tool no
+classifier would call safe, and the allowlist explanation stands. If Write **is** consulted, the
+allowlist does not suppress it and `Read`'s silence was the classifier. One cell, one variable, and
+it settles the ordering claim this section had to withdraw.
+
+One relevant prior, which is evidence but not a substitute for that cell: arm A measured that with
+`--allowedTools Write`, `can_use_tool` is never called — and `Write` is not read-only, so on _that_
+arm the allowlist does suppress the consultation on its own. Carrying it to arm B is cross-arm
+inference about a mechanism the two arms reach by different routes, which is exactly the kind of
+step this page exists to stop being taken silently.
+
+**So what B1 establishes about ordering is only: the hook ran and the consultation still happened
+for the same call.** Step 1 is settled, on both arms. The consultation's position relative to the
+allowlist and to granular rules is not — and granular rules are where the third shape's entire
+claimed advantage lives.
+
+**It still should not be adopted, and the reason is not anything arm B's cells measured.**
+codex and copilot have no equivalent of this flag, so the best case is not a replacement for
+option B but a _coexistence_: claude on the third shape, every other backend on the hook `allow`.
+That is a second implementation of what an approval means, which `.claude/rules/permissions.md`
+names as the specific failure the delegated-approval shape exists to prevent. Worse than a missed
+opportunity, adopting it would **take copilot's working behaviour away** — copilot's 1700s floor is
+ample and option B already serves it. The reach table's final row never moves:
+
+|                  | option B | third shape (`stdio`) | third shape (arm B) |
+| ---------------- | -------- | --------------------- | ------------------- |
+| claude / duplex  | yes      | yes                   | yes                 |
+| claude / oneshot | yes      | **no**                | **yes**             |
+| copilot          | yes      | **no**                | **no**              |
+
+Measuring "can it" answered a different question from "should it". Arm B passing is a proof of
+possibility, not a reason for adoption.
+
+**How the codex/copilot conclusion was reached**, so the next person does not re-derive it: both
+CLIs' own `--help` were read for a flag that names a caller-supplied tool as the permission gate,
+and neither has one. What they have instead delegates to something built in — codex 0.153's
+`--approve-for-me` ("Route approval requests through automatic review using the workspace-write
+sandbox") and copilot's `--assisted-approval` ("Review tool permission requests with the
+assisted-approval safety judge"). Neither takes a tool name, so neither can be pointed at vibing.
+This cost nothing to establish and does not expire with a probe run.
+
+**What #789 did not determine:**
+
+- **Where the consultation sits relative to the allowlist.** Two variables moved together in the
+  only cell that bore on it; the separating cell is designed above and unrun.
+- **Granular ordering on arm B — not observed, and not inferable either.** The deny cell used a
+  tool-**name** deny. Arm A measured granular rules in its own cells; arm B did not. This bullet
+  first said the step-4 evidence "implies" granular rules keep their say on arm B; there is no
+  step-4 evidence, so there is no implication. **This is the gap that matters most**, because
+  answering after the user's granular rules is the third shape's entire advantage over a hook
+  `allow` — the one property the whole question was about is the one still unmeasured on this arm.
+- **How long the MCP path tolerates a wait is still unmeasured.** The probe answered immediately, on
+  purpose: a deliberate delay would have confounded the primary question. `measured_wait_floor_sec`
+  times the **hook** and cannot be carried over to this path either — the same substitution this
+  page warns about for the control channel. The 1800s ceiling in "How long the CLI waits for an MCP
+  tool" is the relevant bound, and it bounds `nvim_ask_user_question` for the same reason.
+
+**Cells, cost and logs.** Two cells on `claude-haiku-4-5-20251001`: `mcp-allow` ($0.0907) and
+`mcp-deny` ($0.0999), **$0.1906 total, against a $0.15 ceiling — an overrun of $0.0406.** The
+estimate came from dividing #778's $0.4100 by its seven cells. That $0.059 is a figure no cell ever
+cost, and the real per-cell numbers were **free to read**: every cell's `stream.jsonl` carries
+`total_cost_usd` on its `result` event, and the archived arm A logs were being re-read with
+`report-only` in the same session. A derived number was used where an observed one was already in
+hand — see "A number whose provenance you have not checked" below.
+The negative control was not run and did not need to be: the allow cell was consulted, so the flag
+value demonstrably reached the mechanism and there was nothing left for a control to separate. Raw
+logs are under `.vibing/probe/permission-prompt-tool/mcp-{allow,deny}/`.
+
 ### There is no free way to find out whether the flag value is accepted
 
 The flag is still a live question for decision 1, so `permission_prompt_tool.sh` has to establish
@@ -460,6 +585,76 @@ detectable at all by noticing that two blocks address one target. The fix is the
 one: **when a new measurement changes an instruction, rewrite the block rather than adding
 another**, and say in the item how many replacement blocks it contains, so a second one is a
 contradiction the reader can see rather than a step they can follow.
+
+### A number whose provenance you have not checked
+
+Fifth of the family, and the only one with four independent instances from a single day — which is
+what promoted it from a run of coincidences to a type. In each, a number that was **free to
+observe** was replaced by one that was derived, borrowed, assumed, or measured in a tree it could
+not be compared out of, and in each the substitute looked entirely reasonable.
+
+- **A derived value where an observed one was free.** #789's probe budget was estimated by dividing
+  #778's $0.4100 by its seven cells. No cell ever cost that $0.059; the actual per-cell figures sit
+  on each run's `result` event as `total_cost_usd`, and that session was already re-reading the
+  archived arm A logs for other reasons. The estimate was 38% low and the ceiling was overrun.
+- **A hedge where `git log -p` was available.** A markdownlint count moving 192 → 193 was reported
+  as "one was **apparently** added in #786". The commit that changed it is a query, not an
+  inference; the word "apparently" was doing the work a two-second command would have done.
+- **A measurement of a different thing.** The 1800s MCP ceiling was nearly adopted as the bound for
+  how long an MCP tool may take to answer. 1800s was measured against a server that **never
+  answers**; a server that answers slowly is a different experiment, and the two coincide only if
+  the CLI's timer cannot be reset — which is the very thing being assumed.
+- **A number that could not be compared out of the tree it was measured in — and was then
+  distributed.** A `lint:md` baseline of "5566" was handed to three chats at once as the
+  repository's figure. It was a **raw** count from a worktree with a large `node_modules`:
+  `markdownlint --ignore node_modules` excludes only the top-level path, so every `.md` under
+  `node_modules/**/node_modules/…` is counted, and the total then varies with which dependencies
+  happen to be installed. The repository's own figure is **684**, and the same three trees measured
+  5566 / 804 / 684 raw against 680 / 684 / 684 excluded. The comparable form is
+  `pnpm run lint:md 2>&1 | grep -E '^\S+\.md:' | grep -vc 'node_modules'`; **a raw count is not
+  comparable across trees at all.**
+
+The shared tell is not that the numbers were wrong. It is that **each was cheaper to check than to
+justify**, and none was checked. A derived figure, a hedged figure, a borrowed figure and an
+environment-dependent figure all read as ordinary prose; nothing is red, which is this family's
+whole signature.
+
+The four differ in what the substitute was — an aggregate standing in for a member, a guess standing
+in for a lookup, a neighbouring measurement standing in for the one required, a tree-local count
+standing in for a repository property — so the rule cannot be about any one of those. It is about
+provenance: **before a number is used, say where it came from.** An average is not a unit price.
+"Apparently" is not a citation. A ceiling measured under one condition does not transfer to another
+by sharing a unit. A count taken inside one checkout is not a property of the repository. If saying
+where it came from is awkward, that is the signal — and the check is usually free, because the
+observation that would settle it is normally already on disk.
+
+**The fourth instance is the one that shows what the type actually costs, and it is the
+orchestrator's own.** The other three were _self-contained_ — the person who produced the figure
+was the person who used it, and the damage stopped there. This one was **distributed**, and became
+the stated baseline for three separate pieces of work. That difference is the whole reason it is
+worth a paragraph rather than a bullet: **the other three could only mislead their author, and this
+one could only mislead everybody else.**
+
+What the three recipients did is the finding. **One** reported that the number did not reproduce.
+**One — this issue's author — noticed and said nothing**: the count here was plainly 684 rather than
+5566, and the response was to quietly switch to comparing a single file against its base version
+rather than ask why the baseline was off by a factor of eight. **One did not notice at all.** So the
+error was detected by two of three and reported by one of three, and the gap between those two
+numbers is where the cost lives.
+
+**The danger of this type is not that a number is wrong; it is that a wrong number arrives with
+authority and nobody re-derives it.** A figure handed down by someone with more context reads as
+already-checked, so the default is to trust it; and when trust fails, the second failure has its own
+cause. **Being able to route around a bad number removes the motive to report it** — the local
+problem is solved, the work proceeds, and nothing feels unfinished. That is precisely when the
+report is owed, because the figure is still upstream and still wrong for everyone who did not
+happen to notice.
+
+So the norm is two-sided, and the receiving half is the half that was missing here. Publishing a
+number obliges you to say where it came from. **Receiving one obliges you to say out loud when it
+does not reproduce** — not merely to find a method that works. Working around a number you cannot
+reproduce is the same act as publishing one you did not verify, one seat further down, and it is
+what turns a single unchecked figure into three people's premise.
 
 ### A control that stops short of the boundary is not a control
 
