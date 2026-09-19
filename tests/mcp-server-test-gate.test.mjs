@@ -5,11 +5,13 @@
  * (#790). This file pins the gate that now runs them -- `npm run test:mcp` -- the way
  * lua-syntax-gate.test.mjs pins `npm run check`.
  *
- * Five things, and the fifth is the one that matters. A gate can be wired up (a), exclude the
+ * Six things, and the last two are the ones that matter. A gate can be wired up (a), exclude the
  * build output (b), propagate a failure (c) and refuse to run without dependencies (d) while
  * collecting zero test files -- which is indistinguishable from a green run and is exactly the
  * state #790 records. A single mistyped character in vitest.config.mjs's `include`, or that
- * config not being read at all, passes every other check here and is caught only by (e).
+ * config not being read at all, passes every other check here and is caught only by (e). And an
+ * `include` that collects *most* of the suite hides under (e)'s lower bound, so (f) pins the one
+ * narrowing that is easy to write by accident: the filename half of the glob.
  *
  * The commands are read out of package.json rather than restated, so these tests cannot pass
  * against a command the project no longer runs.
@@ -43,6 +45,35 @@ function runGate({ dir, args = [] } = {}) {
 /** The test files vitest actually collected, from its JSON report. */
 function collectedFiles(report) {
   return (report.testResults ?? []).map((r) => r.name);
+}
+
+/** Just the basenames, for assertions that are about which files rather than where they are. */
+function collectedNames(report) {
+  return collectedFiles(report)
+    .map((f) => f.split(sep).pop())
+    .sort();
+}
+
+/**
+ * The JSON report, or a failure that explains itself.
+ *
+ * `--reporter=json` writes no file at all when vitest never started, and by far the commonest
+ * reason for that is the one (d) is about: the MCP server's dependencies are not installed.
+ * `test:node` runs **before** `test:mcp` in the `test` chain, so in a fresh worktree -- which is
+ * this repository's normal state, one per issue -- these tests are the first thing to fail, and
+ * what greeted the developer was `ENOENT ... report.json` on a temp path. The command that fixes
+ * it was already written, in `scripts/run-mcp-server-tests.mjs`, and was two steps further down
+ * the chain than anyone got. So carry the gate's own words up here rather than reporting a
+ * missing temp file as if that were the problem.
+ */
+async function readReport(out, result) {
+  if (!existsSync(out)) {
+    assert.fail(
+      `the gate wrote no JSON report (exit ${result.status}), so nothing below could be ` +
+        `checked. What it said instead:\n${result.stderr || result.stdout || '(no output)'}`
+    );
+  }
+  return JSON.parse(await readFile(out, 'utf8'));
 }
 
 /**
@@ -97,7 +128,7 @@ test('(b) the compiled copies under dist/ are not collected', async () => {
 
   try {
     const result = runGate({ args: ['--reporter=json', `--outputFile=${out}`] });
-    const collected = collectedFiles(JSON.parse(await readFile(out, 'utf8')));
+    const collected = collectedFiles(await readReport(out, result));
     const fromDist = collected.filter((f) => f.includes(`${sep}dist${sep}`));
     assert.deepEqual(fromDist, [], `vitest collected build output:\n${result.stdout}`);
     assert.ok(collected.length > 0, 'nothing was collected, so this proves nothing -- see (e)');
@@ -108,17 +139,33 @@ test('(b) the compiled copies under dist/ are not collected', async () => {
   }
 });
 
-test('(c) a failing test fails the gate', async () => {
+test('(c) a failing test fails the gate, and the failure came from vitest', async () => {
   const dir = await scratchServer({
     'ok.test.ts': "import { test, expect } from 'vitest';\ntest('ok', () => expect(1).toBe(1));\n",
     'broken.test.ts':
       "import { test, expect } from 'vitest';\ntest('broken', () => expect(1).toBe(2));\n",
   });
+  const out = join(await mkdtemp(join(tmpdir(), 'vibing-mcp-report-')), 'report.json');
   try {
-    const result = runGate({ dir });
+    const result = runGate({ dir, args: ['--reporter=json', `--outputFile=${out}`] });
     assert.notEqual(result.status, 0, 'a failing vitest test did not fail the gate');
+
+    // **A non-zero exit is not on its own evidence that vitest ran.** The "dependencies are not
+    // installed" branch that (d) covers exits non-zero too, and a scratch tree gets a *dangling*
+    // node_modules symlink whenever the real one has not been installed -- so in a fresh worktree
+    // this test used to pass green without vitest ever starting, which is the same shape of
+    // vacuous gate the whole file is about. Read what ran, not only the code it exited with.
+    const report = await readReport(out, result);
+    assert.deepEqual(
+      collectedNames(report),
+      ['broken.test.ts', 'ok.test.ts'],
+      'vitest did not run the two scratch files, so the non-zero exit above came from somewhere else'
+    );
+    assert.equal(report.numFailedTests, 1, 'the failing scratch test is not what failed the gate');
+    assert.equal(report.numPassedTests, 1, 'the passing scratch test did not run');
   } finally {
     await rm(dir, { recursive: true, force: true });
+    await rm(dirname(out), { recursive: true, force: true });
   }
 });
 
@@ -141,10 +188,11 @@ test('(e) the gate collects test files, and enough of them to be the suite', asy
   const out = join(await mkdtemp(join(tmpdir(), 'vibing-mcp-report-')), 'report.json');
   try {
     // Deliberately not asserting on the exit code: whether the suite passes is the gate's job,
-    // and a red suite must not also be reported here as "the gate collects nothing".
-    runGate({ args: ['--reporter=json', `--outputFile=${out}`] });
+    // and a red suite must not also be reported here as "the gate collects nothing". The result
+    // is still kept, because `readReport` needs something to quote when there is no report.
+    const result = runGate({ args: ['--reporter=json', `--outputFile=${out}`] });
 
-    const report = JSON.parse(await readFile(out, 'utf8'));
+    const report = await readReport(out, result);
     assert.ok(
       collectedFiles(report).length > 0,
       'the gate ran and collected no test files at all -- a green run that asserts nothing, ' +
@@ -157,6 +205,32 @@ test('(e) the gate collects test files, and enough of them to be the suite', asy
       `expected the MCP server suite, got ${report.numTotalTests} tests`
     );
   } finally {
+    await rm(dirname(out), { recursive: true, force: true });
+  }
+});
+
+test('(f) the include glob narrows the directory, not the filename', async () => {
+  // (e)'s lower bound catches an `include` that collapses to nothing. It cannot catch one that
+  // collects most of the suite: every file this repository has today happens to be named
+  // `*.test.ts`, so pinning `include` to that spelling looks correct and silently drops the first
+  // `*.spec.ts` anyone writes -- collected by nothing, reported by nothing, counted in no total.
+  // Both names are vitest's own default for TypeScript; only the directory is ours to narrow.
+  const dir = await scratchServer({
+    'alpha.test.ts':
+      "import { test, expect } from 'vitest';\ntest('a', () => expect(1).toBe(1));\n",
+    'beta.spec.ts': "import { test, expect } from 'vitest';\ntest('b', () => expect(1).toBe(1));\n",
+  });
+  const out = join(await mkdtemp(join(tmpdir(), 'vibing-mcp-report-')), 'report.json');
+  try {
+    const result = runGate({ dir, args: ['--reporter=json', `--outputFile=${out}`] });
+    assert.deepEqual(
+      collectedNames(await readReport(out, result)),
+      ['alpha.test.ts', 'beta.spec.ts'],
+      'a source test file was not collected -- widen vitest.config.mjs `include` rather than ' +
+        'renaming the file, or the next one is dropped in silence too'
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
     await rm(dirname(out), { recursive: true, force: true });
   }
 });
