@@ -96,11 +96,28 @@ describe("fs.ensure_dir", function()
   end)
 end)
 
+-- A test that scans the repository takes its root from its own file path, never from
+-- `vim.fn.getcwd()`. `test:lua` invokes Neovim with a relative `-u tests/minimal_init.lua`, so the
+-- cwd the command was typed in decides which checkout runs; a cwd-rooted scan then reports on
+-- whichever tree that was rather than on the one this file lives in. No positive control catches
+-- it either: every checkout of this repository satisfies "the grep found something".
+local function repo_root()
+  local this_file = debug.getinfo(1, "S").source:sub(2)
+  -- tests/lua/core/utils/fs_spec.lua -> five levels up.
+  local root = vim.fn.fnamemodify(this_file, ":p:h:h:h:h:h")
+  assert.equals(
+    1,
+    vim.fn.filereadable(root .. "/lua/vibing/core/utils/fs.lua"),
+    "repo root resolved to " .. root .. " -- has this spec moved? the ':h' count follows its path"
+  )
+  return root
+end
+
 describe("mkdir call sites", function()
   it("all go through fs.ensure_dir", function()
     -- `vim.fn.mkdir` is not atomic, so a direct call anywhere in lua/ is a latent flake. Keeping
     -- this as a test rather than a comment is what stops the next one being added silently.
-    local root = vim.fn.getcwd() .. "/lua"
+    local root = repo_root() .. "/lua"
     local hits = vim.fn.systemlist({ "grep", "-rn", "vim.fn.mkdir(", root })
 
     local offenders = {}
