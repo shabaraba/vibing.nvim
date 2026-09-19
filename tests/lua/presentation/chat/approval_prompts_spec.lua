@@ -949,13 +949,13 @@ describe("several approval prompts at once", function()
       -- section is where the user types, and a turn ending is not a reason to delete their message.
       --
       -- **A prompt has to be drawn for this to test anything.** Written first with `chat_with({})`,
-      -- it never set `_approvals_rendered_unsent`, so `_finish_turn` skipped the branch the case is
+      -- it never set `_prompts_rendered_unsent`, so `_finish_turn` skipped the branch the case is
       -- named after and passed while the branch deleted the line.
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
-      assert.is_true(chat_buf._approvals_rendered_unsent, "the branch under test was not reached")
+      chat_buf:show_pending_prompts()
+      assert.is_true(chat_buf._prompts_rendered_unsent, "the branch under test was not reached")
 
       local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
       vim.api.nvim_buf_set_lines(chat_buf.buf, #lines, #lines, false, { "half-written question" })
@@ -974,7 +974,7 @@ describe("several approval prompts at once", function()
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
       vim.api.nvim_buf_set_lines(chat_buf.buf, #lines, #lines, false, { "half-written question" })
@@ -983,7 +983,7 @@ describe("several approval prompts at once", function()
         { value = "allow_once", label = "allow_once - Allow this execution only" },
       }, "req-2", true)
       blocked_on(chat_buf, { "req-2" })
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       assert.is_not_nil(line_index(chat_buf, "half-written question"), text(chat_buf))
     end)
@@ -997,14 +997,14 @@ describe("several approval prompts at once", function()
       local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
       blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       chat_buf:insert_approval_request("Write", { file_path = "/tmp/x" }, {
         { value = "allow_once", label = "allow_once - Allow this execution only" },
         { value = "deny_once", label = "deny_once - Deny this execution only" },
       }, "req-2", true)
       blocked_on(chat_buf, { "req-2" })
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       local body = text(chat_buf)
       local _, blocks = body:gsub("Tool approval required", "")
@@ -1170,7 +1170,7 @@ describe("several approval prompts at once", function()
       })
       blocked_on(chat_buf, { "req-1", "req-2" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       assert.is_true(answer(chat_buf, {
         "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->",
@@ -1194,7 +1194,7 @@ describe("several approval prompts at once", function()
       })
       blocked_on(chat_buf, { "req-1", "req-2" })
       chat_buf:start_response()
-      chat_buf:show_approval_prompts()
+      chat_buf:show_pending_prompts()
 
       local ApprovalDecision = require("vibing.application.chat.approval_decision")
       local original = ApprovalDecision.consume
