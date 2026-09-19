@@ -873,8 +873,10 @@ equivalent: it errors outright when it can find no target.
 ## Answering a worker's tool approval
 
 A worker that reaches a tool in its `ask` list is the one stop in this machine that nothing in it
-can clear. `cancel_and_deny` kills the turn before drawing the prompt (`rpc/handlers/permission.lua`),
-so the worker cannot continue and cannot report; the watchdog delivers `status: waiting_approval`
+can clear, on either shape an `ask` takes (`rpc/handlers/permission.lua`): the turn is killed before
+the prompt is drawn (`cancel_and_deny`), or — on a backend with a `measured_wait_floor_sec` — the
+worker sits blocked inside its own PreToolUse hook waiting for the `.res` (#778). Either way it
+cannot continue and cannot report; the watchdog delivers `status: waiting_approval`
 to whoever messaged it, and — by default — the only thing that orchestrator can do with that is
 name the worker and the tool and hand it to the user. With a fan of five workers all hitting the
 same `Bash` prompt, that is five buffers the user has to find by hand.

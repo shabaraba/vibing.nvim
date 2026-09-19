@@ -26,16 +26,16 @@ invariants you would otherwise break, and this map. Reasons, measurements and re
 alternatives belong in `handbook/`; procedures belong in a skill. Both are read on demand.
 If you add a paragraph to `.claude/rules/` explaining _why_, it is in the wrong file.
 
-| `.claude/rules/`      | Invariants for                                                      |
-| --------------------- | ------------------------------------------------------------------- |
-| `architecture.md`     | CLI/hook protocol, backend seams, plugin dirs, diffs, orchestration |
-| `permissions.md`      | Evaluation order, per-chat approval state, delegated approval       |
-| `mcp-integration.md`  | Tool prefixes, `rpc_port`, window/chat addressing                   |
-| `features.md`         | Usage limits, subagent output, AskUserQuestion, timestamps, dap     |
-| `configuration.md`    | Pointer to the option reference                                     |
-| `self-development.md` | Three mistakes made repeatedly when developing this repo            |
-| `self-testing.md`     | What only `test:e2e` may run; the 3-try rule                        |
-| `web-workflow.md`     | Branch naming and push retry on Claude Code for the web             |
+| `.claude/rules/`      | Invariants for                                                     |
+| --------------------- | ------------------------------------------------------------------ |
+| `architecture.md`     | CLI/hook protocol, seams, plugin dirs, process/turn, duplex, diffs |
+| `permissions.md`      | Evaluation order, approval state, waiting approvals, delegation    |
+| `mcp-integration.md`  | Tool prefixes, `rpc_port`, window/chat addressing                  |
+| `features.md`         | Usage limits, subagent output, AskUserQuestion, timestamps, dap    |
+| `configuration.md`    | Pointer to the option reference                                    |
+| `self-development.md` | Three mistakes made repeatedly when developing this repo           |
+| `self-testing.md`     | What only `test:e2e` may run; the 3-try rule                       |
+| `web-workflow.md`     | Branch naming and push retry on Claude Code for the web            |
 
 | `handbook/` (on demand)                 | Contents                                                 |
 | --------------------------------------- | -------------------------------------------------------- |

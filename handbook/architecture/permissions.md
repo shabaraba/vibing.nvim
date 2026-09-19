@@ -193,6 +193,16 @@ the first case would put the held output right back under the input. The same an
 `_stop_reason`, which is otherwise only cleared where a new turn starts — and answering in place
 starts none, so the chat would call itself `waiting_approval` until its next send.
 
+**Why design "A" was rejected, and the reason that is not it.** An earlier brief rejected the
+variant that opens a `## Assistant` while prompts are still outstanding, on the grounds that the
+remaining prompts would become unanswerable. **That reasoning is wrong and should not be
+repeated**: `extract_user_message` scans back for the last _user-role_ header without checking
+whether it is unsent, so the remaining prompts _are_ found under a committed header exactly as
+under an unsent one (`.claude/rules/features.md` states this as an invariant). A is still rejected,
+for the different reason that answering from a committed section re-extracts and re-sends a section
+that already carries a send timestamp, with `commit_user_message` finding no unsent header to
+stamp.
+
 **A turn stopped rather than answered releases its hooks first** (`ChatBuffer:cancel_request` →
 `_release_blocked_approvals`, before `stop_turn`): `:VibingCancel`, closing the chat, and simply
 typing a new message instead of answering all arrive here. The drawn lines are left alone, since on
