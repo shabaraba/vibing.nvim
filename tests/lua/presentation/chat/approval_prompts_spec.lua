@@ -574,11 +574,16 @@ describe("several approval prompts at once", function()
     --- `chat_bufnr` is not decoration: "is this chat still holding a hook" is asked of the registry
     --- by buffer, so an entry filed under no chat holds nothing and this whole describe would pass
     --- by testing the unheld case.
+    --- Asserted per id rather than as a total, so a case can block a second hook *after* the first
+    --- prompt is already drawn — which is what parallel hooks actually do, and what the
+    --- mid-turn redraw cases need. A total would have forced every registration into one call.
     local function blocked_on(chat_buf, request_ids)
       for _, request_id in ipairs(request_ids) do
         Pending.open({ request_id = request_id, chat_bufnr = chat_buf.buf, tool = "Bash" })
+        local entry = Pending.get(request_id)
+        assert.is_not_nil(entry, request_id .. " was not registered as blocked")
+        assert.equals(chat_buf.buf, entry.chat_bufnr, request_id .. " is not filed under this chat")
       end
-      assert.equals(#request_ids, #Pending.list_for_chat(chat_buf.buf))
     end
 
     before_each(function()
@@ -841,18 +846,82 @@ describe("several approval prompts at once", function()
     end)
 
     it("keeps what the user typed while the turn was running", function()
-      -- The de-duplication above drops the trailing unsent section before redrawing. It must do so
-      -- only for a section the prompts were drawn into: the same section is where the user types,
-      -- and a turn ending is not a reason to delete their message.
-      local chat_buf = chat_with({})
+      -- The de-duplication above recycles the trailing unsent section before redrawing. The same
+      -- section is where the user types, and a turn ending is not a reason to delete their message.
+      --
+      -- **A prompt has to be drawn for this to test anything.** Written first with `chat_with({})`,
+      -- it never set `_approvals_rendered_unsent`, so `_finish_turn` skipped the branch the case is
+      -- named after and passed while the branch deleted the line.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
       chat_buf:start_response()
-      chat_buf:add_user_section()
+      chat_buf:show_approval_prompts()
+      assert.is_true(chat_buf._approvals_rendered_unsent, "the branch under test was not reached")
+
       local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
       vim.api.nvim_buf_set_lines(chat_buf.buf, #lines, #lines, false, { "half-written question" })
 
       chat_buf:_finish_turn()
 
       assert.is_not_nil(line_index(chat_buf, "half-written question"), text(chat_buf))
+      -- And the prompt still comes back exactly once, which is what the section was recycled for.
+      local _, drawn = text(chat_buf):gsub("Tool approval required", "")
+      assert.equals(1, drawn, text(chat_buf))
+    end)
+
+    it("keeps what the user typed when a second prompt arrives mid-turn", function()
+      -- The other caller of the same recycling. Hooks run in parallel, so a prompt can land while
+      -- the user is part-way through typing under the first one.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+
+      local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
+      vim.api.nvim_buf_set_lines(chat_buf.buf, #lines, #lines, false, { "half-written question" })
+
+      chat_buf:insert_approval_request("Write", { file_path = "/tmp/x" }, {
+        { value = "allow_once", label = "allow_once - Allow this execution only" },
+      }, "req-2", true)
+      blocked_on(chat_buf, { "req-2" })
+      chat_buf:show_approval_prompts()
+
+      assert.is_not_nil(line_index(chat_buf, "half-written question"), text(chat_buf))
+    end)
+
+    it("draws a second prompt into the section that is already open, not a new one", function()
+      -- `add_user_section` renders **every** pending prompt, so calling it once per arriving hook
+      -- stacks unsent `## User` sections *and* redraws the earlier prompts inside each new one:
+      -- with three hooks, req-1's option lines appear three times, carrying the same marker, and
+      -- only the last copy is the one `extract_user_message` will read. Measured on claude as three
+      -- hooks 0.54s apart, so this is the ordinary case rather than a corner.
+      local chat_buf = chat_with({ { tool = "Bash", request_id = "req-1" } })
+      blocked_on(chat_buf, { "req-1" })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+
+      chat_buf:insert_approval_request("Write", { file_path = "/tmp/x" }, {
+        { value = "allow_once", label = "allow_once - Allow this execution only" },
+        { value = "deny_once", label = "deny_once - Deny this execution only" },
+      }, "req-2", true)
+      blocked_on(chat_buf, { "req-2" })
+      chat_buf:show_approval_prompts()
+
+      local body = text(chat_buf)
+      local _, blocks = body:gsub("Tool approval required", "")
+      assert.equals(2, blocks, "one block per pending prompt, drawn once each:\n" .. body)
+
+      -- Counted per prompt, not in total: the duplicate is what makes an answer unattributable, and
+      -- a total would also be satisfied by two prompts sharing one block.
+      for _, request_id in ipairs({ "req%-1", "req%-2" }) do
+        local _, marked = body:gsub("vibing:req=" .. request_id, "")
+        assert.equals(2, marked, request_id .. " is not drawn exactly once (2 option lines):\n" .. body)
+      end
+
+      -- One input section. `view.render` leaves an empty one behind that these cases never send
+      -- through, so the prompts add exactly one more.
+      local _, headers = body:gsub("## User", "")
+      assert.equals(2, headers, "the prompts opened more than one input section:\n" .. body)
     end)
 
     it("says in the buffer that the output is paused, so waiting is not mistaken for hanging", function()
@@ -988,6 +1057,73 @@ describe("several approval prompts at once", function()
       -- turn's remaining output is then held until the turn itself ends — late, but not lost.
       chat_buf:_finish_turn()
       assert.is_not_nil(line_index(chat_buf, "still nowhere to put this"), text(chat_buf))
+    end)
+
+    it("answers every prompt the user left a line for, not just the first", function()
+      -- `ApprovalParser.resolve` returns one answer per prompt and reports no error when the user
+      -- kept exactly one line from each — which is the natural way to clear two prompts at once.
+      -- Consuming only `resolved[1]` dropped the rest **silently**: the second hook stayed blocked
+      -- with its answer already typed into the transcript, and the wait limit denied it 900s later.
+      -- An `allow_once` answered that way ends in the opposite of what the user chose.
+      local chat_buf = chat_with({
+        { tool = "Bash", request_id = "req-1" },
+        { tool = "Write", request_id = "req-2" },
+      })
+      blocked_on(chat_buf, { "req-1", "req-2" })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+
+      assert.is_true(answer(chat_buf, {
+        "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->",
+        "2. deny_once - Deny this execution only <!-- vibing:req=req-2 -->",
+      }))
+
+      -- The registry is the fact: an entry still there is a CLI still sitting inside its hook.
+      assert.is_nil(Pending.get("req-1"), "req-1 was left blocked:\n" .. text(chat_buf))
+      assert.is_nil(Pending.get("req-2"), "req-2's answer was dropped:\n" .. text(chat_buf))
+      assert.equals(0, #chat_buf:get_pending_approvals(), "a prompt outlived its answer")
+    end)
+
+    it("leaves only the answer it could not apply, and says which", function()
+      -- Neither extreme is right. Rolling every answer back reads as "I answered and it vanished";
+      -- carrying on in silence hides the one that did not land. So the failed prompt stays
+      -- answerable and the rest are spent — and the reason is said out loud, because on screen the
+      -- only symptom is a prompt that did not go away.
+      local chat_buf = chat_with({
+        { tool = "Bash", request_id = "req-1" },
+        { tool = "Write", request_id = "req-2" },
+      })
+      blocked_on(chat_buf, { "req-1", "req-2" })
+      chat_buf:start_response()
+      chat_buf:show_approval_prompts()
+
+      local ApprovalDecision = require("vibing.application.chat.approval_decision")
+      local original = ApprovalDecision.consume
+      ---@diagnostic disable-next-line: duplicate-set-field
+      ApprovalDecision.consume = function(buf, approval)
+        if approval.request_id == "req-1" then
+          return nil, "permissions were not writable"
+        end
+        return original(buf, approval)
+      end
+      local ok, err = pcall(function()
+        answer(chat_buf, {
+          "1. allow_once - Allow this execution only <!-- vibing:req=req-1 -->",
+          "2. deny_once - Deny this execution only <!-- vibing:req=req-2 -->",
+        })
+      end)
+      ApprovalDecision.consume = original
+      assert.is_true(ok, tostring(err))
+
+      assert.is_not_nil(Pending.get("req-1"), "the failed answer must leave its hook answerable")
+      assert.is_nil(Pending.get("req-2"), "the answer that succeeded must still be spent")
+
+      local body = text(chat_buf)
+      assert.is_truthy(body:find("req-1", 1, true), "the failure does not name the request:\n" .. body)
+      assert.is_truthy(
+        body:find("permissions were not writable", 1, true),
+        "the failure does not say why:\n" .. body
+      )
     end)
   end)
 end)

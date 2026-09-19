@@ -5,6 +5,7 @@ local FrontmatterHandler = require("vibing.presentation.chat.modules.frontmatter
 local Renderer = require("vibing.presentation.chat.modules.renderer")
 local StreamingHandler = require("vibing.presentation.chat.modules.streaming_handler")
 local ConversationExtractor = require("vibing.presentation.chat.modules.conversation_extractor")
+local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
 local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 local KeymapHandler = require("vibing.presentation.chat.modules.keymap_handler")
 local Fs = require("vibing.core.utils.fs")
@@ -170,6 +171,41 @@ function ChatBuffer:_resume_after_approvals()
   return true
 end
 
+---プロンプトを描いた未送信セクションを畳み、ユーザーが打った本文だけを次の描画へ持ち越す
+---
+---**プロンプトは描き直せるが、ユーザーが打った行は描き直せない。** 以前はセクションごと捨てて
+---いたので、ターンの途中でプロンプトの下に書きかけた本文が、ターンが終わった瞬間に消えていた
+---（それを守っているはずのテストは、プロンプトを1つも立てずにこの分岐を通っていなかった）。
+---
+---残す行と落とす行の判定は `approval_parser.strip_prompt_lines` ただ1つが持つ。ここで
+---「`⚠️` で始まる行」などと書き下すと、レンダラー・期限切れ・拒否の3つの文面それぞれに
+---対して写しができる。
+---
+---畳んでから描き直すのであって、その場で行を消して回るのではない。`add_user_section` が
+---**保留の全件**を1回で描くので、描き直しが唯一の「重複しない」形になる。持ち越しは
+---`_pending_user_text` に載せる — 「次の `add_user_section` で本文として差し込む」という
+---この欄の意味がそのまま当てはまる。
+---@return boolean recycled 畳むセクションがあったか
+function ChatBuffer:_recycle_prompt_section()
+  if not self._approvals_rendered_unsent then
+    return false
+  end
+  self._approvals_rendered_unsent = false
+
+  local dropped = ConversationExtractor.drop_trailing_unsent_section(self.buf, true) or {}
+  local kept = ApprovalParser.strip_prompt_lines(dropped)
+  local carried = vim.trim(table.concat(kept, "\n"))
+  if carried == "" then
+    return true
+  end
+
+  -- リミットで差し戻された本文が既に載っていることがある。上書きするとそちらが消えるので継ぐ
+  self._pending_user_text = (self._pending_user_text and self._pending_user_text ~= "")
+      and (self._pending_user_text .. "\n" .. carried)
+    or carried
+  return true
+end
+
 ---1ターンの締めくくり
 ---
 ---`_handle_response` の完了経路は4つある（セッション破損 / mote finalize / ファイル変更なし /
@@ -187,14 +223,11 @@ function ChatBuffer:_finish_turn()
   -- 溜めているチャンクは**捨てない**。このターンの出力で、行き先は直後の `add_user_section`
   self:_release_blocked_approvals("The turn this approval belonged to ended before it was answered.")
 
-  -- プロンプトがターン途中で既に描かれているなら、その未送信セクションごと落とす。下の
+  -- プロンプトがターン途中で既に描かれているなら、その未送信セクションを畳む。下の
   -- `add_user_section` が同じ保留を描き直すので、残すと同じ承認が2つ並び、答えられるのは
   -- 片方だけという状態になる。落として描き直すのは、溜まっている出力の行き先を作るためでも
   -- ある（`_flush_chunks` は末尾に追記するので、入力欄が末尾にあるうちは積めない）
-  if self._approvals_rendered_unsent then
-    ConversationExtractor.drop_trailing_unsent_section(self.buf, true)
-    self._approvals_rendered_unsent = false
-  end
+  self:_recycle_prompt_section()
 
   -- アシスタントヘッダーへの終了時刻はここで入れる。AIターンが走ったことが確かなのは
   -- この合流点だけ
@@ -627,8 +660,10 @@ function ChatBuffer:_sweep_spent_once_tools()
 end
 
 ---拒否の説明行の目印。**文法ではなくリテラルの接頭辞**で、レンダラーが書く
----`⚠️  Tool approval required` と同じ性質のもの。前回の説明を消して書き直すために要る
-local APPROVAL_REFUSAL_PREFIX = "⚠️  That answer was not applied."
+---`⚠️  Tool approval required` と同じ性質のもの。前回の説明を消して書き直すために要る。
+---語彙は `approval_parser` が持つ — 描き直しのときに剥がす側も同じ文字列を要るので、
+---写しを置くと片方だけ直した日に剥がし損ねる
+local APPROVAL_REFUSAL_PREFIX = ApprovalParser.REFUSAL_PREFIX
 
 ---答えが適用されなかった理由を、ユーザーが読める場所に置く
 ---
@@ -727,8 +762,7 @@ function ChatBuffer:_answer_pending_approval()
     return { outcome = "refused" }
   end
 
-  local approval = resolved[1]
-  if not approval then
+  if #resolved == 0 then
     self:_show_approval_refusal({
       "No pending approval matched that answer. Keep the option line you want, with its "
         .. "`<!-- vibing:req=... -->` marker, and press <CR> again.",
@@ -736,56 +770,104 @@ function ChatBuffer:_answer_pending_approval()
     return { outcome = "refused" }
   end
 
-  -- 判定を届ける前に、フックがまだ待っているかを見ておく。`consume` はプロンプトを消すので、
-  -- 後から聞いても「待っていない」と区別がつかない
+  -- **`resolve` が返した分を全部処理する。** 返り値が複数なのは偶然ではない: フックは並列に
+  -- 立つので、ユーザーが2つのプロンプトから1行ずつ残して `<CR>` を押すのは普通の操作で、
+  -- `resolve` はそれをエラーなしの2件として返す。1件目だけ見ていたときは、2件目の答えが
+  -- **通知もなく捨てられ**、そのフックは答えられないまま上限の deny を待っていた。ユーザーが
+  -- `allow_once` を選んでいた場合、最終的に起きるのは選んだのと逆のことになる。
+  --
+  -- 途中で失敗したものは**そこだけ残す**。全部巻き戻すと「答えたのに消えた」になり、
+  -- 黙って続けると失敗が見えない
   local PendingApprovals = require("vibing.infrastructure.rpc.pending_approvals")
-  local blocked = PendingApprovals.get(approval.request_id)
-
-  -- 答えが**意味すること**（セッションリストの更新、`:once` の記帳、再試行文）は
-  -- `approval_decision.consume` が1箇所で持つ。ここで書き下すのは
-  -- `.claude/rules/permissions.md` が禁じるドリフトそのもの
   local ApprovalDecision = require("vibing.application.chat.approval_decision")
-  local consumed, err = ApprovalDecision.consume(self, approval)
-  if not consumed then
-    self:_show_approval_refusal({ string.format("Failed to update permissions: %s", tostring(err)) })
+  local Permission = require("vibing.infrastructure.rpc.handlers.permission")
+
+  local answered_in_place, retry_messages, failures = 0, {}, {}
+
+  for _, approval in ipairs(resolved) do
+    -- 判定を届ける前に、フックがまだ待っているかを見ておく。`consume` はプロンプトを消すので、
+    -- 後から聞いても「待っていない」と区別がつかない。1件ずつ見るのは、直前の `consume` が
+    -- 消すのはその1件のプロンプトだけで、他の保留のレジストリ登録には触らないため
+    local blocked = PendingApprovals.get(approval.request_id)
+
+    -- 答えが**意味すること**（セッションリストの更新、`:once` の記帳、再試行文）は
+    -- `approval_decision.consume` が1箇所で持つ。ここで書き下すのは
+    -- `.claude/rules/permissions.md` が禁じるドリフトそのもの
+    local consumed, err = ApprovalDecision.consume(self, approval)
+    if not consumed then
+      table.insert(
+        failures,
+        string.format("%s (%s) was left pending: %s", tostring(approval.request_id), approval.action, tostring(err))
+      )
+    elseif not blocked then
+      -- 今日の経路。プロセスは既に死んでいるので、答えは散文として新しいターンで届く
+      table.insert(retry_messages, consumed.retry_message)
+    else
+      local ok, released = pcall(Permission.release_answered_approval, blocked, self)
+      if ok and released then
+        answered_in_place = answered_in_place + 1
+      else
+        -- フックを解放できないまま黙って戻ると、そのフックは上限まで空回りする。答えは既に
+        -- 消費済みなので、再試行文として新しいターンに載せるのが唯一の通る道
+        vim.notify(
+          string.format(
+            "[vibing] Could not answer the waiting %s hook in place (%s); retrying as a new turn.",
+            tostring(consumed.tool),
+            ok and "it was no longer waiting" or tostring(released)
+          ),
+          vim.log.levels.WARN
+        )
+        table.insert(retry_messages, consumed.retry_message)
+      end
+    end
+  end
+
+  -- 失敗した分は消費されていないので、プロンプトはそのまま残っている。声に出すのはそのため —
+  -- 画面上は「答えたはずのものがまだ出ている」だけで、理由がどこにも無い
+  if #failures > 0 then
+    self:_show_approval_refusal(failures)
+  end
+
+  if answered_in_place == 0 and #retry_messages == 0 then
     return { outcome = "refused" }
   end
 
-  if not blocked then
-    -- 今日の経路。プロセスは既に死んでいるので、答えは散文として新しいターンで届く
-    return { outcome = "retry_as_new_turn", message = consumed.retry_message }
+  if answered_in_place > 0 then
+    -- **その場で届いた答えが1件でもあるなら、新しいターンは始めない。** 始めれば
+    -- `send_message` が `cancel_request()` に進み、いま解放したばかりのフックが属するターンを
+    -- 殺す。期限切れなどで届かなかった分の許可はセッションリストに入っていて、
+    -- `release_answered_approval` が走っているターンの `active_opts` ごと入れ直しているので、
+    -- 同じツールの次の呼び出しには効く。失われるのは再試行を促す文だけ
+    if #retry_messages > 0 then
+      vim.notify(
+        string.format(
+          "[vibing] %d answer(s) were recorded but not sent as a retry: this chat's turn is still "
+            .. "running and a retry would cancel it. The permission applies to the rest of the turn.",
+          #retry_messages
+        ),
+        vim.log.levels.WARN
+      )
+    end
+
+    -- 答えた行はそのまま transcript に残す。あとは走り続けているターンの続きを受け取れる状態に
+    -- 戻すことだが、**それが何かは保留が残っているかで変わる**
+    -- 訊くのは「まだフックを止めているか」で、プロンプトの行が残っているかではない。残っていても
+    -- 誰も待っていないなら入力欄を開いたままにする理由は無く、そこに出力を積むと壊れる
+    if self:_has_blocked_approvals() then
+      -- まだ答えを待っているものがある。新しい未送信セクションに描き直して入力欄を保つ。
+      -- 溜めていた出力は `add_user_section` の中で先に流れるので、順序は時系列のまま
+      ConversationExtractor.commit_user_message(self.buf)
+      self._approvals_rendered_unsent = false
+      self:add_user_section()
+    else
+      self:_resume_after_approvals()
+    end
+    return { outcome = "answered_in_place" }
   end
 
-  local Permission = require("vibing.infrastructure.rpc.handlers.permission")
-  local ok, released = pcall(Permission.release_answered_approval, blocked, self)
-  if not (ok and released) then
-    -- フックを解放できないまま黙って戻ると、そのフックは上限まで空回りする。答えは既に
-    -- 消費済みなので、再試行文として新しいターンに載せるのが唯一の通る道
-    vim.notify(
-      string.format(
-        "[vibing] Could not answer the waiting %s hook in place (%s); retrying as a new turn.",
-        tostring(consumed.tool),
-        ok and "it was no longer waiting" or tostring(released)
-      ),
-      vim.log.levels.WARN
-    )
-    return { outcome = "retry_as_new_turn", message = consumed.retry_message }
-  end
-
-  -- 答えた行はそのまま transcript に残す。あとは走り続けているターンの続きを受け取れる状態に
-  -- 戻すことだが、**それが何かは保留が残っているかで変わる**
-  -- 訊くのは「まだフックを止めているか」で、プロンプトの行が残っているかではない。残っていても
-  -- 誰も待っていないなら入力欄を開いたままにする理由は無く、そこに出力を積むと壊れる
-  if self:_has_blocked_approvals() then
-    -- まだ答えを待っているものがある。新しい未送信セクションに描き直して入力欄を保つ。
-    -- 溜めていた出力は `add_user_section` の中で先に流れるので、順序は時系列のまま
-    ConversationExtractor.commit_user_message(self.buf)
-    self._approvals_rendered_unsent = false
-    self:add_user_section()
-  else
-    self:_resume_after_approvals()
-  end
-  return { outcome = "answered_in_place" }
+  -- その場で届いたものが1件も無い。全部を1つの新しいターンに載せる — 1件につき1ターンを
+  -- 起こすと、2件目の送信が1件目のターンを `cancel_request` で殺す
+  return { outcome = "retry_as_new_turn", message = table.concat(retry_messages, "\n\n") }
 end
 
 ---`ProgrammaticSender` はこれを見て呼び出し元に成否を返す
@@ -1069,7 +1151,22 @@ end
 ---   `## User` セクションとして下に来るので、閉じずに挟むとヘッダの時刻が次のターンまで入らない
 ---2. `add_user_section` でプロンプトを描く。中で `_flush_chunks` が走るので、**プロンプトより
 ---   前に届いていた出力はプロンプトの上に出る**。以降の出力は `append_chunk` が溜める
+---
+---**2件目以降はセクションを増やさない。** CLIは1ターンに複数のフックを並列に立てるので
+---（実測: 3本が0.54秒差で重なる）ここは1ターンに何度も呼ばれる。毎回 `add_user_section` を
+---足すと未送信の `## User` が保留の件数だけ積み上がり、しかも `add_user_section` は
+---**保留の全件**を描くので、1件目のプロンプトが同じ `request_id` のまま2回・3回と現れる。
+---どれに答えられるのかは見た目では区別がつかず、答えられるのは最後の1つだけになる。
+---既にあるセクションを畳んでから描き直すことで、保留が何件になっても入力欄は1つ・
+---プロンプトは各1回になる
 function ChatBuffer:show_approval_prompts()
+  if self:_recycle_prompt_section() then
+    -- 既に入力欄がある＝アシスタントセクションはそのとき閉じてある。もう一度打つと、
+    -- 2件目のプロンプトが立った時刻がこのターンの終了時刻として残る
+    self:add_user_section()
+    return
+  end
+
   StreamingHandler.stamp_response_end(self.buf, self._assistant_header_line)
   self._assistant_header_line = nil
   self:add_user_section()
@@ -1160,7 +1257,7 @@ end
 
 ---期限切れの説明行の目印。`APPROVAL_REFUSAL_PREFIX` と別なのは、**別の出来事だから**で、
 ---互いを消してはいけない。拒否は押すたびに書き直される1件だが、期限切れは承認ごとに1回起きる
-local APPROVAL_EXPIRED_PREFIX = "⏱️  Tool approval expired."
+local APPROVAL_EXPIRED_PREFIX = ApprovalParser.EXPIRED_NOTICE_PREFIX
 
 ---承認が待ち時間の上限に達した、という事実をチャットに落とす
 ---

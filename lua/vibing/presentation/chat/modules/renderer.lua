@@ -239,7 +239,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
 
     for _, pendingApproval in ipairs(pendingApprovals) do
       -- Warning header
-      table.insert(approvalLines, "⚠️  Tool approval required")
+      table.insert(approvalLines, ApprovalParser.PROMPT_HEADER)
       if pendingApproval.expired then
         -- Marked in place rather than deleted. The user may be editing this buffer right now, and
         -- removing lines under their cursor moves everything below it.
@@ -302,7 +302,7 @@ function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_me
       end
     end
 
-    table.insert(approvalLines, "Delete every option line except the one you want, then press <CR>.")
+    table.insert(approvalLines, ApprovalParser.INSTRUCTION_LINE)
     table.insert(approvalLines, "")
 
     local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)

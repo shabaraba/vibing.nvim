@@ -51,6 +51,106 @@ function M.option_line(index, label, request_id)
   return line
 end
 
+---プロンプトブロックの固定行。**書く側と、剥がす側の両方がここから読む。**
+---
+---レンダラーが `⚠️` を、`buffer.lua` が `⏱️` と拒否の接頭辞を、それぞれ自分のファイルに literal で
+---持っていた。剥がす側（`strip_prompt_lines`）が4つ目の写しを持つと、文面をひとつ直した日に
+---「剥がれずに残る行」か「ユーザーの本文を巻き込む条件」のどちらかが黙って生まれる
+M.PROMPT_HEADER = "⚠️  Tool approval required"
+
+---ブロックの終端。レンダラーは保留が何件あっても**最後に1回だけ**これを書く
+M.INSTRUCTION_LINE = "Delete every option line except the one you want, then press <CR>."
+
+---期限切れの記録行の接頭辞（`ChatBuffer:expire_approval` が書く）
+M.EXPIRED_NOTICE_PREFIX = "⏱️  Tool approval expired."
+
+---帰属できなかった答えの説明行の接頭辞（`ChatBuffer:_show_approval_refusal` が書く）
+M.REFUSAL_PREFIX = "⚠️  That answer was not applied."
+
+---`Tool:` 以下の詳細行。**ブロックの中でしか参照しない**ので、ユーザーが偶然
+---`Command: ...` と書いても巻き込まない
+local FIELD_PREFIXES = { "Tool: ", "Command: ", "File: ", "Pattern: ", "URL: " }
+
+---ここから下がプロンプトの一部でありうる、という行
+---@param line string
+---@return boolean
+local function opens_block(line)
+  return line == M.PROMPT_HEADER
+    or vim.startswith(line, M.EXPIRED_NOTICE_PREFIX)
+    or vim.startswith(line, M.REFUSAL_PREFIX)
+    or line:match(MARKER_PATTERN) ~= nil
+end
+
+---開いているブロックを続ける行。`   ` の字下げは期限切れ注記・一時停止注記・拒否理由の継続行で、
+---**開始行を見つけたあとでしか継続と見なさない** — 単独で判定すると、ユーザーが字下げして
+---打った本文を消す
+---@param line string
+---@return boolean
+local function continues_block(line)
+  if opens_block(line) or line == M.INSTRUCTION_LINE then
+    return true
+  end
+  if vim.startswith(line, "   ") then
+    return true
+  end
+  for _, prefix in ipairs(FIELD_PREFIXES) do
+    if vim.startswith(line, prefix) then
+      return true
+    end
+  end
+  return false
+end
+
+---描かれた承認プロンプトの行だけを落とし、ユーザーが打った本文は残す。
+---
+---**識別条件はこの関数ひとつ。** 呼び出し側は3つある（ターン途中の描き直し、ターンの終わり、
+---そのテストの検証）が、どれも「何がプロンプトの行か」を自分で決めてはいけない。以前はセクション
+---ごと捨てていたので判定が要らず、代わりに打ちかけの本文が消えていた。
+---
+---走査はブロック単位で、開始行（`opens_block`）から継続行が続くあいだ。**案内行に当たったら
+---そこで閉じる** — レンダラーがブロックの最後に1回だけ書く行なので、これが一番確かな終端で、
+---「その下にユーザーが字下げして書いた本文」を巻き込まずに済む。案内行が消されていれば継続行が
+---途切れたところで閉じる。ブロックのあいだの空行は、その先にまだ継続行があるときだけ飲む。
+---@param lines string[]
+---@return string[] kept プロンプト行を除いた行
+---@return number removed 落とした行数
+function M.strip_prompt_lines(lines)
+  local kept, removed = {}, 0
+  local index = 1
+
+  while index <= #lines do
+    if not opens_block(lines[index]) then
+      table.insert(kept, lines[index])
+      index = index + 1
+    else
+      local last, cursor = index, index
+      while cursor <= #lines do
+        local line = lines[cursor]
+        if line == M.INSTRUCTION_LINE then
+          last = cursor
+          break
+        elseif continues_block(line) then
+          last = cursor
+          cursor = cursor + 1
+        elseif line == "" then
+          cursor = cursor + 1
+        else
+          break
+        end
+      end
+      removed = removed + (last - index + 1)
+      index = last + 1
+      -- ブロック直後の空行も一緒に。残すと描き直すたびに空行が1行ずつ増える
+      while index <= #lines and lines[index] == "" do
+        index = index + 1
+        removed = removed + 1
+      end
+    end
+  end
+
+  return kept, removed
+end
+
 ---承認レスポンスかどうかを判定
 ---@param message string ユーザーメッセージ
 ---@return boolean

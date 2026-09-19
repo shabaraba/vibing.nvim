@@ -195,4 +195,103 @@ describe("vibing.presentation.chat.modules.approval_parser", function()
   -- `generate_response_message` の describe はここにあった。本番コードからの参照が無い関数を、
   -- この spec だけが緑に保っていた — しかも中身は `approval_decision.retry_message` とは別の
   -- 文面の、承認の意味の2つ目の実装。#778 で関数ごと消した。
+
+  describe("strip_prompt_lines", function()
+    --- Exactly what the renderer writes, so a change to the block's shape breaks this rather than
+    --- quietly leaving lines behind in the buffer it is used to clean.
+    local function rendered(request_id)
+      return {
+        ApprovalParser.PROMPT_HEADER,
+        "",
+        "Tool: Bash",
+        "Command: npm install",
+        "",
+        ApprovalParser.option_line(1, "allow_once - Allow this execution only", request_id),
+        ApprovalParser.option_line(2, "deny_once - Deny this execution only", request_id),
+        "   (the rest of this turn's output is paused until this is answered)",
+        "",
+      }
+    end
+
+    it("removes a whole rendered block, instruction line included", function()
+      local lines = rendered("req-1")
+      table.insert(lines, ApprovalParser.INSTRUCTION_LINE)
+      table.insert(lines, "")
+
+      local kept, removed = ApprovalParser.strip_prompt_lines(lines)
+
+      assert.same({}, kept, "left behind: " .. table.concat(kept, " | "))
+      assert.equals(#lines, removed)
+    end)
+
+    it("keeps what the user typed under the prompt", function()
+      -- The whole reason this exists. The user types into the same unsent section the prompt was
+      -- drawn into, and the section used to be dropped entire.
+      local lines = rendered("req-1")
+      table.insert(lines, ApprovalParser.INSTRUCTION_LINE)
+      table.insert(lines, "")
+      table.insert(lines, "half-written question")
+      table.insert(lines, "and a second line")
+
+      local kept = ApprovalParser.strip_prompt_lines(lines)
+
+      assert.same({ "half-written question", "and a second line" }, kept)
+    end)
+
+    it("keeps user text written above the prompt too", function()
+      local lines = { "typed before the hook landed", "" }
+      vim.list_extend(lines, rendered("req-1"))
+      table.insert(lines, ApprovalParser.INSTRUCTION_LINE)
+
+      local kept = ApprovalParser.strip_prompt_lines(lines)
+
+      -- The separating blank is the user's line too; `_recycle_prompt_section` trims the edges
+      -- before carrying the text over, so it is not this function's job to guess.
+      assert.same({ "typed before the hook landed", "" }, kept)
+    end)
+
+    it("does not treat an indented line of the user's own as part of a block", function()
+      -- `   ` continues a block, because the paused/expired/refusal notes are indented. It must not
+      -- *open* one: a user pasting indented code would lose it.
+      local kept = ApprovalParser.strip_prompt_lines({ "   indented note", "plain note" })
+
+      assert.same({ "   indented note", "plain note" }, kept)
+    end)
+
+    it("removes the expiry and refusal notes the block accumulates", function()
+      -- Written by `expire_approval` and `_show_approval_refusal` rather than by the renderer, and
+      -- appended after the block. Left behind, they are redrawn under the next copy of the prompt
+      -- and read back as the user's next message.
+      local kept = ApprovalParser.strip_prompt_lines({
+        ApprovalParser.EXPIRED_NOTICE_PREFIX .. " Bash went unanswered for 900 seconds.",
+        "   The options for it above no longer need an answer.",
+        ApprovalParser.REFUSAL_PREFIX,
+        "   Request req-9 is no longer waiting for an answer.",
+        "still mine",
+      })
+
+      assert.same({ "still mine" }, kept)
+    end)
+
+    it("stops at the end of the block when the instruction line was deleted", function()
+      -- Answering is `dd` plus `<CR>`, so any line of the block can be gone by the time this runs.
+      -- Without the instruction line the block has to end where its furniture ends, not run on
+      -- into whatever the user wrote next.
+      local lines = rendered("req-1")
+      table.insert(lines, "my own words")
+
+      local kept = ApprovalParser.strip_prompt_lines(lines)
+
+      assert.same({ "my own words" }, kept)
+    end)
+
+    it("leaves a section with no prompt in it completely alone", function()
+      local lines = { "just a message", "", "over two paragraphs" }
+
+      local kept, removed = ApprovalParser.strip_prompt_lines(lines)
+
+      assert.same(lines, kept)
+      assert.equals(0, removed)
+    end)
+  end)
 end)
