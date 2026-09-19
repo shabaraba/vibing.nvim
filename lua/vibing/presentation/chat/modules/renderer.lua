@@ -170,11 +170,26 @@ M.move_cursor_to_end = M.moveCursorToEnd
 ---代わりに `strip_choice_lines` は「**この選択肢から書いたはずの行**」をそのまま組み立てて
 ---突き合わせる。書いた側の出力と1文字も違わないものだけが落ちるので、ユーザーが1行でも
 ---編集していれば残る — そしてそれは答えそのものなので、残るのが正しい
----@param pendingChoices table[]? CLIから受け取った質問構造
+---
+---**描くのはキューの先頭1件だけで、残りは件数の1行になる。** 答えは自由文で、承認の選択肢行の
+---ような帰属の手掛かりを持たない（上のとおり、足してもいけない）。2件ぶんのブロックを並べると
+---「どちらへの答えか」を決める根拠が画面から消えるので、ブロックは常に1つしか出さない。
+---
+---**この関数の出力はキュー全体の純関数である。** 件数の1行が入るということは、待っている質問が
+---1件増減しただけで**組み立て直したものが変わる**ということで、描いた後にキューを触ると
+---`strip_choice_lines` が一致しなくなり、描いてあるブロックがユーザーの本文として残る。
+---キューを変える出来事は、変える前に畳んで、変えた後に描き直すこと（`ChatBuffer:expire_question`）
+---@param pendingChoices Vibing.PendingChoiceEntry[]? 保持している質問、古い順
 ---@return string[] lines 末尾の空行まで含めたブロック
 function M.choice_lines(pendingChoices)
+  local entries = pendingChoices or {}
+  local drawn = entries[1]
+  if not drawn then
+    return {}
+  end
+
   local choiceLines = {}
-  for _, q in ipairs(pendingChoices or {}) do
+  for _, q in ipairs(drawn.questions or {}) do
     -- Add question text if available
     if q.question and q.question ~= "" then
       table.insert(choiceLines, q.question)
@@ -202,6 +217,20 @@ function M.choice_lines(pendingChoices)
     end
     table.insert(choiceLines, "")
   end
+
+  local queued = #entries - 1
+  if queued > 0 then
+    table.insert(
+      choiceLines,
+      string.format(
+        "(%d more question%s waiting — the next one is shown once this is answered.)",
+        queued,
+        queued == 1 and " is" or "s are"
+      )
+    )
+    table.insert(choiceLines, "")
+  end
+
   return flatten_lines(choiceLines)
 end
 
@@ -211,7 +240,7 @@ end
 ---落とす。見つからなければ何も落とさない。承認側の `strip_prompt_lines` と対になる、質問側の
 ---「何がプロンプトの行か」の唯一の答え。
 ---@param lines string[] 畳んだセクションの行
----@param pendingChoices table[]? いま描いてある選択肢。nil なら何もしない
+---@param pendingChoices Vibing.PendingChoiceEntry[]? **描いたときのまま**のキュー。nil なら何もしない
 ---@return string[] kept
 function M.strip_choice_lines(lines, pendingChoices)
   local block = M.choice_lines(pendingChoices)
@@ -244,7 +273,9 @@ end
 ---Add new user section
 ---@param buf number Buffer number
 ---@param win number? Window number
----@param pendingChoices table? Pending choices
+---@param pendingChoices Vibing.PendingChoiceEntry[]? Questions being held, oldest first. Only the
+---  head is drawn — `choice_lines` turns the rest into a count line, because a free-text answer
+---  carries nothing that says which of two drawn blocks it belongs to.
 ---@param pendingApprovals table[]? Tool approval requests still waiting, in display order. A list
 ---  rather than one, because a CLI runs several PreToolUse hooks at once — measured on claude as
 ---  three hooks starting 0.54s apart and overlapping for their whole duration. Each entry carries

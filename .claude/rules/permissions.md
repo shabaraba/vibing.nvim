@@ -139,6 +139,15 @@ the three deadlines above reach it and `hook.measured_wait_floor_sec` says nothi
   that exact output back out. The lines carry no prefix and no `<!-- vibing:req=... -->`, unlike an
   approval's, so any rule that read them would read the user's prose too. A block the user edited
   no longer matches and stays — it is the answer.
+- **The block on screen is a pure function of the whole queue, so anything that changes the queue
+  folds first and redraws after.** `strip_choice_lines` rebuilds from the queue _as it is when it
+  strips_, and the block carries a count of the questions behind it, so mutating first leaves the
+  drawn lines matching nothing: they survive the fold and come back as the user's own unsent text.
+  There are exactly three mouths onto the queue — `insert_choices`, `expire_question` and
+  `_release_blocked_prompts` — and the discipline is each one's own, not the caller's.
+- **Only the head of the queue is drawn; the rest is a count line.** A free-text answer carries
+  nothing that says which block it belongs to, so a second block on screen destroys the ground
+  "an answer belongs to the question drawn on screen" stands on.
 - **An empty `<CR>` is never spent as the answer, and neither is a message that answers nothing.**
   Both fall through without ending the turn; the second is refused with a `vim.notify`, the first
   in silence, because a mistyped `<CR>` needs no explanation and a warning on every one of them
