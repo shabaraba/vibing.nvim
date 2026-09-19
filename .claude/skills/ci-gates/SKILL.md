@@ -37,6 +37,25 @@ over-estimate; over-counting only ever asks for a larger budget, and an exact mo
 let the silent case back in. The bound is **per file**, not per test, because the timeout is on
 the job.
 
+### Diagnosing `exit 1` with no failing spec
+
+Locally, the same shape arrives from the environment rather than from a budget, and it is not a
+bug in the tree you are working on. Stray headless Neovims from an earlier run — often another
+worktree's — hold the RPC port range open; a spec that needs a port hangs, plenary's join timeout
+kills the child, and only the exit code moves. Work in this order:
+
+1. Compare `Testing:` lines with `Success: ` lines. `test:lua` prints one of each per spec file.
+2. A file that was `Scheduling:`d and never reached `Testing:` is the one that hung. It is the
+   only name you get; the child printed nothing else.
+3. Search the log for `Failed to start RPC server: all ports (…) are in use`.
+4. `ps -eo pid,etime,command | grep 'nvim --headless'`. Read the **paths** in the command lines:
+   the strays are often from a different worktree, and those are not yours to kill — say so and
+   let whoever owns them clear them.
+
+**A summary count below the file count is normal**, not a symptom: `tests/e2e/*` self-skips
+through `should_run()` and a skipped file prints no summary. The current difference is 14. Only a
+file that never started `Testing:` is evidence of the hang above.
+
 ## Vim Help Verification
 
 `npm run check:doc` (`scripts/check-help.lua`, run by the "Verify Vim help files" CI step) is the
