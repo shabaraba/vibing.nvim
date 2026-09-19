@@ -150,4 +150,51 @@ describe("the text a question's answer is read from", function()
     assert.equals(1, #replies)
     assert.is_truthy(replies[1].answer:find("2. B  <- this one", 1, true), replies[1].answer)
   end)
+
+  it("says nothing when the user pressed <CR> with nothing typed", function()
+    -- The `<CR>` falls through to the "a prompt is holding this turn open" gate, which asks
+    -- whether the human wrote anything -- and a drawn block is not something the human wrote.
+    -- Asking `extract_user_message` there makes every mistyped `<CR>` under a question print
+    -- "your message was not sent" about a message that does not exist, and
+    -- `.claude/rules/permissions.md` says an empty `<CR>` falls through **in silence** precisely
+    -- so that the warning keeps meaning something when it does appear.
+    --
+    -- The positive side of the gate -- prose the human typed under a prompt still gets the
+    -- warning -- is pinned in `approval_prompts_spec.lua`, "does not start a new turn when a
+    -- streaming chat's `<CR>` answered nothing". That is the only shape that reaches this gate
+    -- with text in it: a question claims anything left over, so the text has to arrive under an
+    -- approval that did not recognise it.
+    local chat_buf = question_drawn()
+
+    local warned = {}
+    local original_notify = vim.notify
+    vim.notify = function(msg)
+      table.insert(warned, msg)
+    end
+    local ok = chat_buf:send_message()
+    vim.notify = original_notify
+
+    assert.is_false(ok)
+    assert.equals(0, #warned, "an empty <CR> was explained to the user: " .. table.concat(warned, " | "))
+  end)
+
+  it("reads an approval drawn on its own, with no question behind it", function()
+    -- The gate is reached under an approval too, and `_answer_text` consults `_pending_choices`
+    -- -- empty here. `choice_lines` returns `{}` for an empty queue and `strip_choice_lines`
+    -- passes the lines straight through on `#block == 0`, so the approval's own block is removed
+    -- by `strip_prompt_lines` alone and an untouched one leaves nothing behind.
+    local chat_buf = view.render({ session_id = "answer-text-approval" }, "back")
+    chat_buf:start_response()
+    chat_buf:insert_approval_request(
+      "Bash",
+      { command = "rm -rf build" },
+      { { label = "allow_once", description = "Allow this execution only" } },
+      "a-1",
+      true
+    )
+    chat_buf:show_pending_prompts()
+
+    assert.is_nil(chat_buf._pending_choices)
+    assert.is_nil(chat_buf:_answer_text(), "an untouched approval block read as something the user wrote")
+  end)
 end)

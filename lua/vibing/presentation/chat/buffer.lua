@@ -1000,8 +1000,13 @@ function ChatBuffer:send_message()
     -- **黙って飲まない。** 本文を書いて `<CR>` を押した人は「送った」と思っている。空の
     -- `<CR>` は無反応でよい（押し間違いに理由を言う必要はない）が、書いたものが消えるのは
     -- このPRが直しているバグと同じ形 — 無言で `false` を返す「静かに成功した失敗」そのもの
-    local unsent = self:extract_user_message()
-    if unsent and unsent ~= "" then
+    --
+    -- 訊いているのは「**人間が何か書いたか**」なので `_answer_text()`。`extract_user_message()`
+    -- はセクション丸ごとで、描いてあるプロンプトのブロックだけで非空になる — つまり
+    -- プロンプトが出ているあいだ**空の `<CR>` が毎回**「your message was not sent」を出し、
+    -- 押し間違えた人は送っていないものが送られなかったと言われる。黙って落とすべきものに
+    -- 毎回警告を出すことは、本物の警告を訓練で消すことでもある
+    if self:_answer_text() then
       vim.notify(
         "[vibing] A prompt above is holding this turn open, so your message was not sent. "
           .. "Answer the prompt, or end the turn with :VibingCancel and send it then.",
