@@ -27,8 +27,9 @@
   },
   "homepage": "https://github.com/shabaraba/vibing.nvim#readme",
   "scripts": {
-    "test": "npm run test:lua && npm run test:node",
+    "test": "npm run test:lua && npm run test:node && npm run test:mcp",
     "test:node": "find tests -name '*.test.mjs' -exec node --test {} +",
+    "test:mcp": "node scripts/run-mcp-server-tests.mjs",
     "test:lua": "nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/ { minimal_init = 'tests/minimal_init.lua' }\"",
     "test:e2e": "VIBING_E2E=1 nvim --headless -u tests/minimal_init.lua -c \"PlenaryBustedDirectory tests/e2e/ { minimal_init = 'tests/minimal_init.lua', timeout = 240000 }\"",
     "test:perf": "VIBING_PERF=1 nvim --headless -u tests/minimal_init.lua -l tests/perf/duplex_latency.lua",
