@@ -69,6 +69,17 @@ describe("renderer.strip_choice_lines", function()
     assert.same(lines, Renderer.strip_choice_lines(lines, CHOICES))
   end)
 
+  it("does not settle for a block that only starts the same way", function()
+    -- **Every line has to match, and only a full-length near-miss proves it.** A run the user has
+    -- edited in the middle opens exactly like the one the renderer wrote, so a matcher that stops
+    -- comparing after the first line deletes their answer and reports success. The shorter edited
+    -- block above cannot catch that: it is shorter than the block, so the length guard returns
+    -- before any comparison happens at all.
+    local lines = { "Which approach?", "", "1. A", "2. C — the one I actually want", "", "and keep the old names" }
+
+    assert.same(lines, Renderer.strip_choice_lines(lines, CHOICES))
+  end)
+
   it("does nothing when no choices are drawn", function()
     local lines = { "1. A", "" }
 
