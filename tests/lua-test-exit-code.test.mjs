@@ -39,7 +39,7 @@ const UNLOADABLE_SPEC = `describe("unloadable", function(`;
 
 /**
  * Run the suite over a throwaway directory the same way `npm run test:lua` runs it over
- * `tests/`, and return the exit code.
+ * `tests/`, and return the finished child.
  */
 async function runSuite(specs) {
   const dir = await mkdtemp(join(tmpdir(), 'vibing-lua-exit-'));
@@ -63,22 +63,65 @@ async function runSuite(specs) {
     );
 
     assert.notEqual(result.status, null, `nvim did not exit: ${result.error ?? 'unknown'}`);
-    return result.status;
+    return result;
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 }
 
 test('passing specs exit 0', async () => {
-  assert.equal(await runSuite({ 'a_spec.lua': PASSING_SPEC, 'b_spec.lua': PASSING_SPEC }), 0);
+  const { status } = await runSuite({ 'a_spec.lua': PASSING_SPEC, 'b_spec.lua': PASSING_SPEC });
+  assert.equal(status, 0);
 });
 
 test('one failing spec among passing ones fails the run', async () => {
-  const code = await runSuite({ 'a_spec.lua': PASSING_SPEC, 'b_spec.lua': FAILING_SPEC });
-  assert.notEqual(code, 0, 'a failing spec must not be masked by its passing neighbours');
+  const { status } = await runSuite({ 'a_spec.lua': PASSING_SPEC, 'b_spec.lua': FAILING_SPEC });
+  assert.notEqual(status, 0, 'a failing spec must not be masked by its passing neighbours');
 });
 
 test('a spec that cannot be loaded fails the run', async () => {
-  const code = await runSuite({ 'a_spec.lua': PASSING_SPEC, 'b_spec.lua': UNLOADABLE_SPEC });
-  assert.notEqual(code, 0, 'a spec that vanishes at load time must not pass silently');
+  const { status } = await runSuite({ 'a_spec.lua': PASSING_SPEC, 'b_spec.lua': UNLOADABLE_SPEC });
+  assert.notEqual(status, 0, 'a spec that vanishes at load time must not pass silently');
+});
+
+/** Match "Test environment initialized: <root>" for a literal root. */
+function initializedWith(root) {
+  return new RegExp(
+    `Test environment initialized: ${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`
+  );
+}
+
+test('the run says which checkout it loaded', async () => {
+  // `-u tests/minimal_init.lua` is relative, so the cwd the command was typed in decides which
+  // checkout is tested. Running from the wrong one is green and reports on code the developer
+  // never touched; no script can tell that the caller meant a different tree, so the only
+  // defence is that the run names the tree out loud. Keep this line printed.
+  const { stdout, stderr } = await runSuite({ 'a_spec.lua': PASSING_SPEC });
+
+  assert.match(
+    stdout + stderr,
+    initializedWith(repoRoot),
+    'tests/minimal_init.lua no longer prints the plugin root it resolved'
+  );
+});
+
+test('the printed root is the tree that was loaded, not the cwd', async () => {
+  // The whole point is to distinguish those two, so an attribution taken from `getcwd()` would
+  // be no attribution at all -- and it reads as correct every time the two agree, which is
+  // every ordinary run. Drive them apart: absolute `-u`, cwd somewhere else entirely.
+  const elsewhere = await mkdtemp(join(tmpdir(), 'vibing-init-cwd-'));
+  try {
+    const result = spawnSync(
+      'nvim',
+      ['--headless', '-u', join(repoRoot, 'tests/minimal_init.lua'), '-c', 'quitall!'],
+      { cwd: elsewhere, encoding: 'utf8', timeout: 120_000 }
+    );
+    assert.notEqual(result.status, null, `nvim did not exit: ${result.error ?? 'unknown'}`);
+
+    const output = result.stdout + result.stderr;
+    assert.match(output, initializedWith(repoRoot), 'the root named was not the loaded tree');
+    assert.doesNotMatch(output, initializedWith(elsewhere), 'the root named was the cwd');
+  } finally {
+    await rm(elsewhere, { recursive: true, force: true });
+  }
 });
