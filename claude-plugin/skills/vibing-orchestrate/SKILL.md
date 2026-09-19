@@ -135,6 +135,41 @@ request, not the files already discussed, not the decisions already made. Write 
 someone who just walked in — goal, the files or directories involved, the constraints, and what
 "done" looks like. A brief that says "do the refactor we discussed" produces nothing useful.
 
+### Say what must hold, not how to do it
+
+You are writing from what you remember reading; the worker is reading the code as it is now. The
+gap between those two is **freshness**, not abstraction level, so it does not close by being more
+specific — a more specific brief written from memory is a wronger one. Measured over one 15-PR
+run: three briefs carried a design instruction, all three were wrong, and the worker was right all
+three times. The fix was in a different function than the brief named; an assertion the brief
+dictated turned out to be unfalsifiable under the gate it was written for; a change the brief
+specified could not detect the failure it was aimed at. A fourth brief named a symbol that existed
+only on another branch.
+
+**Belongs in the brief:**
+
+- The invariant that has to hold when the task is done, and why the obvious approach is not enough
+  if you know that it isn't.
+- The observation point — where someone looks to see this broken, and what they see there.
+- **Facts you checked yourself, labelled as checked**, with where: "`.vibing/patches/` is written
+  from `git_snapshot.lua`; I read it on this branch". A worker can re-verify a stated fact; it
+  cannot re-verify a memory you did not mark as one.
+- **The call sites you know of, plus the fact that you do not know they are all of them.**
+  Coverage is the one thing you see better than the worker does (step 6).
+- Constraints from outside the code: which branch and worktree, what not to touch, what "done"
+  means, what the user already decided.
+
+**Does not belong in the brief:**
+
+- How to implement it — which function to change, what the new code should say.
+- Symbol names, line numbers and file positions quoted from memory. Name the file, or better the
+  behaviour, and let the worker find the current name.
+- The exact assertion a test should make. Say what the test has to be able to catch; an assertion
+  dictated from outside gets written even when it cannot fail.
+
+If you are about to write an implementation because you are afraid the worker will pick the wrong
+one, that fear is really an invariant you have not stated yet. State it instead.
+
 ### The brief does not need to teach the worker to report back
 
 That used to be your job to write into every brief; it is not anymore (#706). Creating the worker
@@ -244,6 +279,30 @@ at all. `waiting_approval` has a limit — once it passes, vibing.nvim **denies 
 and the worker carries on without it — so ignoring one does not merely stall the worker, it
 silently decides the question the wrong way. Either way: report it as blocked and say what it
 needs, or answer it, now.
+
+### Check coverage, not design
+
+You are worse than the worker at deciding how something should be written (step 3) and better than
+it at noticing what it did not look at. On the same run that produced three wrong design
+instructions, this position caught two real defects that had already passed the worker's own
+review, a `/code-review` with no findings, a full mutation pass and green CI. **Both had one
+shape: the worker kept the discipline at the call sites it had in mind, and missed a third one.**
+
+So, before you call a result done or recommend merging it:
+
+- **Enumerate the call sites yourself**, from the tree as merged, not from the worker's list. One
+  of the two defects was a function mutating shared state before folding — correct in two of the
+  three places that reach it, wrong in the third.
+- **Ask what became newly reachable.** A function that now returns `nil`, a guard that now lets a
+  case through, a branch nothing used to take: the other defect was an existing invariant breaking
+  on a path the change did not touch but did open.
+- **Verify the claims you are about to act on.** Read the lines a report or a review says
+  something about. A claim that reaches a merge decision is yours to check; relaying it unchecked
+  makes you a transport, and a transport cannot catch either of the two above.
+
+Do not review **how** it was done. That is the judgment you were wrong about three times, and the
+worker is the one with the code in front of it. If something looks wrong, report the observation
+and the invariant you think it breaks, and let the worker choose the fix.
 
 ### Answering a worker's tool approval
 

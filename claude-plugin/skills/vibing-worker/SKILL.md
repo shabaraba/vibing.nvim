@@ -46,6 +46,35 @@ grinding on it silently. A worker that stops normally after writing only "couldn
 own buffer produces no notification at all: `idle` looks identical whether the task succeeded or
 was abandoned halfway.
 
+## When the brief does not match the code
+
+Your orchestrator wrote the brief from what it remembered reading; you are reading the code now.
+So a brief can be wrong in a way its author could not have seen, and the wrongness is concentrated
+in the parts that say **how**: over one 15-PR run, three briefs named a fix that did not address
+the actual cause, and a fourth named a symbol that existed only on another branch. The workers
+were right in all four.
+
+**Follow the brief's goal; treat its implementation steps as a guess, and say so when they
+diverge.**
+
+- **A symbol, file or line the brief names that is not here**: do not quietly substitute the
+  nearest match, and do not create it. Find the current name, use it, and say in your report that
+  the brief named something else — that is how the orchestrator learns its picture is stale before
+  it briefs the next worker from the same memory.
+- **An implementation the brief dictates that would not achieve the invariant the brief also
+  states**: the invariant wins. Do what satisfies it, and report both what was asked for and why
+  you did something else.
+- **A test assertion the brief dictates that cannot fail**: write one that can, and report the
+  substitution. An assertion handed down from outside gets written whether or not it tests
+  anything.
+- **A brief whose goal itself does not survive the code** — the bug is elsewhere, the constraint
+  is impossible, two requirements contradict: that is "cannot proceed as briefed". Report it now
+  (above) rather than redesigning the task alone.
+
+Deviating is safe only when it is visible. An unreported deviation leaves the orchestrator
+aggregating against a plan that no longer describes what you built, and it will brief the next
+worker from that same plan.
+
 ## When the user speaks to you directly
 
 Not every turn here comes from the orchestrator. A turn delivered from another chat opens by
