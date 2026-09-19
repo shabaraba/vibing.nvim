@@ -199,7 +199,9 @@ function M.answer(params)
     error(
       string.format(
         "That chat is not waiting on a tool approval (status: %s). "
-          .. "A tool-approval prompt can only be answered once, and only while it is pending.",
+          .. "A tool-approval prompt is answered exactly once, so this one was already answered "
+          .. "or never existed. Expiry is not what removed it — an expired prompt stays "
+          .. "answerable, as a new turn.",
         status
       )
     )

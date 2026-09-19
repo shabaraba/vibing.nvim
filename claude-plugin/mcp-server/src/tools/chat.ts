@@ -178,12 +178,15 @@ export const chatTools: Tool[] = [
       'Ask the user one or more multiple-choice questions directly in the vibing.nvim chat buffer. ' +
       'Use this instead of asking questions in free text, and instead of the native AskUserQuestion ' +
       'tool (which is unavailable in headless CLI mode). ' +
-      'IMPORTANT: calling this tool renders the questions as an editable choice list in the chat ' +
-      'buffer and then immediately cancels/kills your current turn — you will NOT get a normal ' +
-      'tool_result back, and you cannot do anything else after calling it. The user edits the list ' +
-      "(deleting unwanted options) and sends it. Your NEXT invocation's prompt IS the user's answer " +
-      'to this question, delivered as a fresh turn — treat it as such rather than waiting for a ' +
-      'tool response. ' +
+      'The questions render as an editable choice list in the chat buffer; the user deletes the ' +
+      'options they do not want and sends what is left. ' +
+      'IMPORTANT: this call blocks until a human answers, so it may take many minutes — that is ' +
+      'normal, not a hang. How their answer reaches you depends on the backend. Usually it ' +
+      "comes back as this call's ordinary tool_result, and THAT RESULT IS THE ANSWER: act on it " +
+      'immediately, and never reply that you are still waiting for one. On a backend that cannot ' +
+      'hold the call open, your turn is cancelled instead and you get no result at all; there the ' +
+      "user's next message IS the answer, delivered as a fresh turn. Either way, do not call this " +
+      'tool again to re-ask the same question. ' +
       'You MUST pass chat_bufnr using the exact "Current vibing.nvim chat buffer number" value ' +
       'given to you in your system prompt — it identifies which chat buffer to render the ' +
       'question in.',
@@ -251,7 +254,9 @@ export const chatTools: Tool[] = [
       "or allow_for_session answer only succeeds if the tool matches that chat's declared " +
       'delegated_scope (see nvim_chat_create), so it is fine to just try it — a denial ' +
       '(deny_once/deny_for_session) always succeeds either way. Your answer is recorded in ' +
-      'that chat as coming from you. It can only be answered once, and only while it is pending.',
+      'that chat as coming from you. It is answered exactly once. An expired prompt is still ' +
+      'answerable — the wait limit denied that one tool call, not the decision — but the answer ' +
+      'reaches the chat as a new turn instead of releasing the call that was blocked on it.',
     inputSchema: {
       type: 'object',
       properties: withRpcPort({
@@ -284,7 +289,8 @@ export const chatTools: Tool[] = [
             'in parallel. Omit it only when exactly one is waiting; with more than one the call ' +
             'is refused rather than guessing. Get the ids from waiting_approvals, reported by ' +
             'nvim_chat_list and by nvim_get_buffer with include_chat_status — it is the live set, ' +
-            'so one read tells you which are still answerable and which already expired.',
+            'so one read tells you which are still blocking a call and which already expired. ' +
+            'Both are answerable; only an unexpired one releases the call in place.',
         },
         from_bufnr: {
           type: 'number',
