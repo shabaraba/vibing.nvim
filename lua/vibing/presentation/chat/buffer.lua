@@ -21,7 +21,11 @@ local Fs = require("vibing.core.utils.fs")
 ---@field _pending_choices table[]? add_user_section()後に挿入する選択肢
 ---@field _pending_approval table? add_user_section()後に挿入する承認要求UI
 ---@field _pending_user_text string? 次のadd_user_section()で本文として差し込むテキスト
----@field _current_handle_id string? 実行中のリクエストのハンドルID
+---@field _current_handle_id string? 待っているターンのID（chunk / response の staleness 判定）
+---@field _current_process_id string? そのターンを走らせているCLIプロセスのID（kill対象）。
+---  ターンIDとは別に持つ必要がある: `cancel_request` はターンが終わった後にもゾンビ回収として
+---  呼ばれる（`send_message` 冒頭）ので、その時点ではレジストリにターンのエントリが無く、
+---  ターンIDからプロセスを引き直すことはできない
 ---@field _current_adapter table? per-chatアダプター（フロントマターagent指定時）
 ---@field _is_sending boolean 送信処理中かどうか（Enter連打による重複送信防止）
 ---@field _stop_reason "waiting_approval"|"asked_question"|"error"|nil 直前のターンが止まった理由
@@ -46,6 +50,7 @@ function ChatBuffer:new(config)
   instance._pending_choices = nil
   instance._pending_approval = nil
   instance._current_handle_id = nil
+  instance._current_process_id = nil
   instance._current_adapter = nil
   instance._is_sending = false
   instance._stop_reason = nil
@@ -101,7 +106,7 @@ end
 ---捨てたい呼び出し元（`close` / `send_message`）が、戻ってきてから自分で消す
 ---@return boolean cancelled 止めるものがあったか
 function ChatBuffer:cancel_request()
-  if not self._current_handle_id then
+  if not self._current_process_id then
     return false
   end
 
@@ -110,7 +115,7 @@ function ChatBuffer:cancel_request()
     return false
   end
 
-  adapter:cancel(self._current_handle_id)
+  adapter:cancel(self._current_process_id)
   return true
 end
 
@@ -119,6 +124,7 @@ function ChatBuffer:close()
   -- 実行中のリクエストをキャンセル
   self:cancel_request()
   self._current_handle_id = nil
+  self._current_process_id = nil
   self._current_adapter = nil
 
   if self._chunk_timer then
@@ -474,6 +480,7 @@ function ChatBuffer:send_message()
   -- 前のリクエストが実行中ならキャンセル（ゾンビプロセス対策）
   self:cancel_request()
   self._current_handle_id = nil
+  self._current_process_id = nil
   self._current_adapter = nil
 
   self._is_sending = true
@@ -662,10 +669,14 @@ function ChatBuffer:send_message()
     end,
     clear_handle_id = function()
       self._current_handle_id = nil
+      self._current_process_id = nil
       self._current_adapter = nil
     end,
     set_handle_id = function(handle_id)
       self._current_handle_id = handle_id
+    end,
+    set_process_id = function(process_id)
+      self._current_process_id = process_id
     end,
     set_adapter = function(adapter_instance)
       self._current_adapter = adapter_instance

@@ -4,8 +4,11 @@
 --- pins the contract the handler relies on — and that it works for a backend it knows nothing
 --- about.
 local permission = require("vibing.infrastructure.rpc.handlers.permission")
+local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
 
-local HANDLE_ID = "vocabulary-spec-handle"
+--- A process and the turn open on it, as two different values: the hook names the process and
+--- `rpc/hook_scope.lua` resolves the turn, so the registry entry below is what joins them.
+local CHAT = { process_id = "vocabulary-spec-process", turn_id = "vocabulary-spec-turn" }
 
 local comm_dir
 
@@ -42,17 +45,19 @@ describe("permission handler tool vocabulary", function()
     comm_dir = vim.fn.tempname()
     vim.fn.mkdir(comm_dir, "p")
     vim.env.VIBING_HOOK_COMM_DIR = comm_dir
+    registry.register({ handle_id = CHAT.turn_id, process_id = CHAT.process_id })
   end)
 
   after_each(function()
-    permission.clear_active_opts(HANDLE_ID)
+    permission.clear_active_opts(CHAT.turn_id)
+    registry.unregister(CHAT.turn_id)
     vim.env.VIBING_HOOK_COMM_DIR = original_comm_dir
     vim.fn.delete(comm_dir, "rf")
   end)
 
   it("denies a native tool name once its vocabulary maps it onto a denied canonical name", function()
     -- The codex case, expressed generically: apply_patch has to be judged as Edit.
-    permission.set_active_opts(HANDLE_ID, {
+    permission.set_active_opts(CHAT.turn_id, {
       permissions_deny = { "Edit" },
       _tool_vocabulary = {
         to_canonical = function(name)
@@ -62,13 +67,13 @@ describe("permission handler tool vocabulary", function()
     })
 
     write_request("req-mapped", "apply_patch", { file_path = "/tmp/x.lua" })
-    local result = permission.check_tool_permission({ request_id = "req-mapped", handle_id = HANDLE_ID })
+    local result = permission.check_tool_permission({ request_id = "req-mapped", process_id = CHAT.process_id })
 
     assert.equals("denied", result.status)
   end)
 
   it("leaves a name the vocabulary does not know alone", function()
-    permission.set_active_opts(HANDLE_ID, {
+    permission.set_active_opts(CHAT.turn_id, {
       permissions_deny = { "Edit" },
       _tool_vocabulary = {
         to_canonical = function()
@@ -78,7 +83,7 @@ describe("permission handler tool vocabulary", function()
     })
 
     write_request("req-unmapped", "Read", {})
-    local result = permission.check_tool_permission({ request_id = "req-unmapped", handle_id = HANDLE_ID })
+    local result = permission.check_tool_permission({ request_id = "req-unmapped", process_id = CHAT.process_id })
 
     assert.equals("allowed", result.status)
   end)
@@ -86,23 +91,23 @@ describe("permission handler tool vocabulary", function()
   it("works with no vocabulary at all, the way claude_cli registers", function()
     -- Guards the nil path: a backend that names its tools canonically must not need to supply an
     -- identity table just to be understood.
-    permission.set_active_opts(HANDLE_ID, { permissions_deny = { "Edit" } })
+    permission.set_active_opts(CHAT.turn_id, { permissions_deny = { "Edit" } })
 
     write_request("req-none", "Edit", { file_path = "/tmp/x.lua" })
-    local result = permission.check_tool_permission({ request_id = "req-none", handle_id = HANDLE_ID })
+    local result = permission.check_tool_permission({ request_id = "req-none", process_id = CHAT.process_id })
 
     assert.equals("denied", result.status)
     assert.is_not_nil(read_response("req-none"))
   end)
 
   it("ignores a vocabulary that does not implement to_canonical", function()
-    permission.set_active_opts(HANDLE_ID, {
+    permission.set_active_opts(CHAT.turn_id, {
       permissions_deny = { "Edit" },
       _tool_vocabulary = {},
     })
 
     write_request("req-partial", "Edit", { file_path = "/tmp/x.lua" })
-    local result = permission.check_tool_permission({ request_id = "req-partial", handle_id = HANDLE_ID })
+    local result = permission.check_tool_permission({ request_id = "req-partial", process_id = CHAT.process_id })
 
     assert.equals("denied", result.status)
   end)
@@ -146,20 +151,20 @@ describe("permission handler tool vocabulary", function()
     -- is in ALWAYS_ALLOWED_TOOLS, so only the path-scoped deny can stop it -- and that deny reads
     -- `file_path`, which nothing but normalize_input puts there.
     local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
-    permission.set_active_opts(HANDLE_ID, {
+    permission.set_active_opts(CHAT.turn_id, {
       permissions_deny = { "Read(**/secret.png)" },
       _tool_vocabulary = vocabulary,
     })
 
     write_request("req-view-image", "view_image", { path = "/tmp/project/secret.png" })
-    local result = permission.check_tool_permission({ request_id = "req-view-image", handle_id = HANDLE_ID })
+    local result = permission.check_tool_permission({ request_id = "req-view-image", process_id = CHAT.process_id })
 
     assert.equals("denied", result.status)
   end)
 
   it("pre-approves Codex's normalized name for the bundled vibing-nvim MCP server", function()
     local vocabulary = require("vibing.infrastructure.adapter.modules.codex_tool_vocabulary")
-    permission.set_active_opts(HANDLE_ID, {
+    permission.set_active_opts(CHAT.turn_id, {
       cwd = comm_dir,
       permissions_allow = {},
       permissions_deny = {},
@@ -170,7 +175,7 @@ describe("permission handler tool vocabulary", function()
     })
 
     write_request("req-codex-mcp", "mcp__vibing_nvim__nvim_list_windows", {})
-    local result = permission.check_tool_permission({ request_id = "req-codex-mcp", handle_id = HANDLE_ID })
+    local result = permission.check_tool_permission({ request_id = "req-codex-mcp", process_id = CHAT.process_id })
     local response = read_response("req-codex-mcp")
 
     assert.equals("allowed", result.status)
@@ -181,7 +186,7 @@ describe("permission handler tool vocabulary", function()
     -- Grok's PreToolUse hook sends camelCase. Read straight through, tool_name is nil, every rule
     -- misses, and the turn stalls until the hook fails closed. Payload captured from grok 0.2.101.
     local vocabulary = require("vibing.infrastructure.adapter.modules.grok_tool_vocabulary")
-    permission.set_active_opts(HANDLE_ID, {
+    permission.set_active_opts(CHAT.turn_id, {
       permissions_deny = { "Read" },
       _tool_vocabulary = vocabulary,
     })
@@ -191,7 +196,7 @@ describe("permission handler tool vocabulary", function()
       toolName = "read_file",
       toolInput = { target_file = "/tmp/vault/secret.txt" },
     })
-    local result = permission.check_tool_permission({ request_id = "req-grok", handle_id = HANDLE_ID })
+    local result = permission.check_tool_permission({ request_id = "req-grok", process_id = CHAT.process_id })
 
     assert.equals("denied", result.status)
     assert.is_not_nil(read_response("req-grok"), "the hook must get a response, not a 120s stall")
@@ -202,7 +207,7 @@ describe("permission handler tool vocabulary", function()
     -- but `toolArgs` is a *string* holding JSON rather than an object. Handed through unparsed,
     -- every granular rule sees an empty input and the approval UI has nothing to render.
     local vocabulary = require("vibing.infrastructure.adapter.modules.copilot_tool_vocabulary")
-    permission.set_active_opts(HANDLE_ID, {
+    permission.set_active_opts(CHAT.turn_id, {
       permissions_deny = { "Bash" },
       _tool_vocabulary = vocabulary,
     })
@@ -213,7 +218,7 @@ describe("permission handler tool vocabulary", function()
       toolName = "bash",
       toolArgs = '{"command":"echo hello","description":"Print hello"}',
     })
-    local result = permission.check_tool_permission({ request_id = "req-copilot", handle_id = HANDLE_ID })
+    local result = permission.check_tool_permission({ request_id = "req-copilot", process_id = CHAT.process_id })
 
     assert.equals("denied", result.status)
     assert.is_not_nil(read_response("req-copilot"), "the hook must get a response, not a 120s stall")
@@ -232,10 +237,10 @@ describe("permission handler tool vocabulary", function()
   it("sends a deny rule's message to the hook, not just back to its own caller", function()
     -- pre-tool-use.sh echoes permissionDecisionReason on stderr; that is the only route by which
     -- a rule's `message` reaches the model. Omitting it renders every denial as "denied by hook".
-    permission.set_active_opts(HANDLE_ID, { permissions_deny = { "Edit" } })
+    permission.set_active_opts(CHAT.turn_id, { permissions_deny = { "Edit" } })
 
     write_request("req-reason", "Edit", { file_path = "/tmp/x.lua" })
-    local result = permission.check_tool_permission({ request_id = "req-reason", handle_id = HANDLE_ID })
+    local result = permission.check_tool_permission({ request_id = "req-reason", process_id = CHAT.process_id })
 
     assert.equals("denied", result.status)
     assert.is_string(result.reason)

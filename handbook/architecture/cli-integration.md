@@ -10,9 +10,11 @@ taken against the real CLIs and the alternatives that were rejected.
 The PreToolUse hook is synchronous and blocks the tool call: it writes the hook payload to
 `/tmp/vibing-hook-<port>/<request_id>.req`, sends a one-line JSON-RPC notification to the RPC port
 with `nc`, then polls for `<request_id>.res` (up to 120s). It **fails closed** — if `nc` cannot
-connect, or the response never arrives, the hook exits 2 and the tool is denied. `VIBING_HANDLE_ID`
-is passed through so concurrent chats don't cross-wire each other's approval UI (see
-`active_stream_registry.lua`). The comm directory path comes from
+connect, or the response never arrives, the hook exits 2 and the tool is denied. `VIBING_PROCESS_ID`
+is passed through so concurrent chats don't cross-wire each other's approval UI; it names the CLI
+**process**, since an environment variable is fixed at spawn, and `rpc/hook_scope.lua` resolves
+which turn that process has open (`handbook/architecture/processes-and-turns.md`). The comm
+directory path comes from
 `infrastructure/rpc/comm_dir.lua` (the single source of truth shared by the handlers, the cleanup
 routine and `bin/hooks/*.sh`). It is machine-wide shared state keyed by port, so it has two
 escape hatches: `$VIBING_HOOK_COMM_DIR` overrides it outright (tests use this), and without a
@@ -118,7 +120,9 @@ that shape:
   prefix rather than re-derived.
 
 The invariant generalises past this one block: **a per-turn process makes every startup-time
-computation a prefix variable.** The CLI version string, the date and the cache-breaker phrase are
+computation a prefix variable.** That is also the argument for #774 — a resident process pays each
+of them once per session, and this whole section stops applying to it. The CLI version string, the
+date and the cache-breaker phrase are
 the other candidates; none has been measured moving, and #674's re-write detection is what is meant
 to catch the next one rather than a hand-maintained list here. vibing.nvim's own
 `--append-system-prompt` was byte-stabilised for the same reason in #469.

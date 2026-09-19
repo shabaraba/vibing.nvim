@@ -67,27 +67,76 @@ describe("active_stream_registry", function()
     assert.is_not_nil(registry.get("b"))
   end)
 
-  describe("nil handle_id fallback (back-compat)", function()
-    it("returns the sole stream when exactly one is registered", function()
+  -- The guess belongs to the caller that asks for it by name, never to the accessor: an accessor
+  -- that falls back is how `get_active_opts` used to answer a late hook with another chat's
+  -- decisions. `get_by_chat_bufnr` is the one lookup that still wants it.
+  describe("no guess is baked into get()", function()
+    it("returns nil for a nil turn id even when exactly one stream is registered", function()
       local registry = fresh_registry()
       registry.register({ handle_id = "only", adapter = {} })
 
-      local stream = registry.get(nil)
-      assert.is_not_nil(stream)
-      assert.equals("only", stream.handle_id)
+      assert.is_nil(registry.get(nil))
+      assert.is_not_nil(registry.sole_active())
+    end)
+  end)
+
+  -- The inbound path for both shell hooks. `VIBING_PROCESS_ID` is fixed when the child is spawned,
+  -- so a process is the only thing a hook can name; `rpc/hook_scope.lua` turns that into a turn
+  -- through here. Every entry below carries a turn id and a process id that are **different
+  -- values**, because with one value the lookup works whichever field it reads.
+  describe("find_by_process_id", function()
+    local function register_chat(registry, name)
+      registry.register({ handle_id = name .. "-turn", process_id = name .. "-process", adapter = {} })
+    end
+
+    it("resolves the process to the turn it has open", function()
+      local registry = fresh_registry()
+      register_chat(registry, "a")
+      register_chat(registry, "b")
+
+      assert.equals("b-turn", registry.find_by_process_id("b-process").handle_id)
+      assert.equals("a-turn", registry.find_by_process_id("a-process").handle_id)
     end)
 
-    it("returns nil when multiple streams are registered (avoids guessing)", function()
+    it("does not answer to a turn id", function()
+      -- The two key spaces are separate. Answering here would make every consumer's choice of id
+      -- arbitrary, which is the state this split exists to leave.
       local registry = fresh_registry()
-      registry.register({ handle_id = "a", adapter = {} })
-      registry.register({ handle_id = "b", adapter = {} })
+      register_chat(registry, "a")
 
-      assert.is_nil(registry.get(nil))
+      assert.is_nil(registry.find_by_process_id("a-turn"))
     end)
 
-    it("returns nil when no streams are registered", function()
+    it("refuses to guess for a process it does not know, even with one stream live", function()
+      -- Deliberately stricter than `get(nil)`. An id that is present but matches nothing is a
+      -- straggler from a turn that already ended; lending it the live chat's answer is the #667
+      -- class of defect. Whether to fall back is the caller's decision, in hook_scope.
       local registry = fresh_registry()
-      assert.is_nil(registry.get(nil))
+      register_chat(registry, "a")
+
+      assert.is_nil(registry.find_by_process_id("a-process-that-died"))
+      assert.is_nil(registry.find_by_process_id(nil))
+    end)
+
+    it("stops answering once the stream unregisters", function()
+      local registry = fresh_registry()
+      register_chat(registry, "a")
+      registry.unregister("a-turn")
+
+      assert.is_nil(registry.find_by_process_id("a-process"))
+    end)
+  end)
+
+  describe("sole_active", function()
+    it("is the one stream in flight, or nil when that is ambiguous", function()
+      local registry = fresh_registry()
+      assert.is_nil(registry.sole_active())
+
+      registry.register({ handle_id = "only-turn", process_id = "only-process", adapter = {} })
+      assert.equals("only-turn", registry.sole_active().handle_id)
+
+      registry.register({ handle_id = "second-turn", process_id = "second-process", adapter = {} })
+      assert.is_nil(registry.sole_active())
     end)
   end)
 

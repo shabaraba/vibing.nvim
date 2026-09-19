@@ -266,10 +266,10 @@ function M._apply_chat_buffer_settings(bufnr)
     buffer = bufnr,
     callback = function()
       local chat_buffer = M._attached_buffers[bufnr] or (M._current_buffer and M._current_buffer.buf == bufnr and M._current_buffer)
-      if chat_buffer and chat_buffer._current_handle_id then
+      if chat_buffer and chat_buffer._current_process_id then
         local adapter = chat_buffer:_get_active_adapter()
         if adapter then
-          adapter:cancel(chat_buffer._current_handle_id)
+          adapter:cancel(chat_buffer._current_process_id)
         end
       end
       -- アタッチ済みバッファからクリーンアップ

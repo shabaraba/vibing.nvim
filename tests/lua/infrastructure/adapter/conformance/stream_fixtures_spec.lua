@@ -27,7 +27,10 @@ describe("conformance: stream fixtures", function()
           local processor = require(def.descriptor_module).event_processor
           local context = {
             sessionManager = SessionManagerModule.new(),
-            handleId = "fixture",
+            handleId = "fixture-turn",
+            -- A session is the process's, not the turn's, so the two are distinct here as well: a
+            -- decoder that stored it under the turn would pass with one value and break under #774.
+            processId = "fixture-process",
             output = {},
             errorOutput = {},
             opts = {},
@@ -49,7 +52,10 @@ describe("conformance: stream fixtures", function()
           end)
 
           assert.is_true(processed > 0, "no line of the capture was understood")
-          assert.is_not_nil(SessionManagerModule.get(context.sessionManager, "fixture"), "no session id learned")
+          assert.is_not_nil(
+            SessionManagerModule.get(context.sessionManager, "fixture-process"),
+            "no session id learned"
+          )
           assert.is_true(#table.concat(context.output, "") > 0, "nothing reached the chat")
           -- Every tool that started has ended: a leftover entry is a header that never rendered.
           assert.same({}, context._tools or {}, "a tool call started and never ended")

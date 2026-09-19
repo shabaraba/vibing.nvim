@@ -3,10 +3,11 @@
 
 local can_use_tool_mod = require("vibing.infrastructure.permissions.can_use_tool")
 local Config = require("vibing.config")
+local HookScope = require("vibing.infrastructure.rpc.hook_scope")
 
 local M = {}
 
---- Active chat frontmatter overrides, keyed by handle_id (set by stream start). A single shared
+--- Active chat frontmatter overrides, keyed by **turn id** (set by stream start). A single shared
 --- slot would let one chat buffer's opts silently apply to another's permission checks whenever
 --- two chats stream concurrently (see ActiveStreamRegistry for the same class of bug).
 ---
@@ -17,8 +18,34 @@ local M = {}
 --- — bypassing each one's own `permissions_ask`. The per-chat lists were already plumbed this far
 --- as `permissions_session_allow` / `permissions_session_deny` (`send_message.lua`); only
 --- `build_permission_config` was still reading the shared table.
+---
+--- **Per turn, not per process,** even though the values belong to the chat: every one of them is
+--- re-read from frontmatter on each send, and the lists grow by one entry each time an approval is
+--- answered. Keyed by the process, a resident process (#774) would run turn N+1 under turn N's
+--- `permission_mode` and ignore the very allow entry the user's approval had just produced — #667
+--- re-opened from the other end.
 --- @type table<string, table>
-local active_opts_by_handle = {}
+local active_opts_by_turn = {}
+
+--- Kill the CLI process serving a registered stream.
+---
+--- Named by the process, not the turn: killing is something you do to a process, and the turn stops
+--- as a consequence. Both places that stop a turn to show UI in its place go through here, so there
+--- is one definition of what cancelling a stream means.
+--- @param stream ActiveStreamEntry
+--- @return boolean ok false when cancelling raised
+local function cancel_stream(stream)
+  if not (stream.adapter and stream.process_id) then
+    return true
+  end
+  local ok, err = pcall(function()
+    stream.adapter:cancel(stream.process_id)
+  end)
+  if not ok then
+    vim.notify("[vibing] Failed to cancel stream: " .. tostring(err), vim.log.levels.WARN)
+  end
+  return ok
+end
 
 local APPROVAL_OPTIONS = {
   { value = "allow_once", label = "allow_once - Allow this execution only" },
@@ -28,33 +55,28 @@ local APPROVAL_OPTIONS = {
 }
 
 --- Set active permission opts from chat frontmatter
---- @param handle_id string
+--- @param turn_id string
 --- @param opts table
-function M.set_active_opts(handle_id, opts)
-  active_opts_by_handle[handle_id] = opts
+function M.set_active_opts(turn_id, opts)
+  active_opts_by_turn[turn_id] = opts
 end
 
 --- Clear active opts
---- @param handle_id string
-function M.clear_active_opts(handle_id)
-  active_opts_by_handle[handle_id] = nil
+--- @param turn_id string
+function M.clear_active_opts(turn_id)
+  active_opts_by_turn[turn_id] = nil
 end
 
---- Resolve the frontmatter opts for a given handle_id. Falls back to the sole registered entry
---- when handle_id is nil/unmatched and exactly one chat is active (back-compat for hook
---- processes that don't yet pass VIBING_HANDLE_ID); returns nil rather than guessing when
---- multiple chats are active. Mirrors ActiveStreamRegistry.get()'s fallback.
---- @param handle_id string|nil
+--- Resolve the frontmatter opts for one turn.
+---
+--- No fallback of its own: `rpc/hook_scope.lua` has already decided which turn this is, including
+--- whether guessing was allowed. This used to hold a second, *different* guess — it fell back to the
+--- sole entry even for an id that was present but unmatched, so a hook arriving from a turn that had
+--- already unregistered had another chat's decisions applied to it.
+--- @param turn_id string|nil
 --- @return table|nil
-local function get_active_opts(handle_id)
-  if handle_id and active_opts_by_handle[handle_id] then
-    return active_opts_by_handle[handle_id]
-  end
-  local only_handle_id, only_opts = next(active_opts_by_handle)
-  if only_handle_id ~= nil and next(active_opts_by_handle, only_handle_id) == nil then
-    return only_opts
-  end
-  return nil
+local function get_active_opts(turn_id)
+  return turn_id and active_opts_by_turn[turn_id] or nil
 end
 
 --- Combine the bundled destructive-command deny rules with the user's own rules.
@@ -76,22 +98,23 @@ function M._resolve_permission_rules(perms)
 end
 
 --- Build permission config from frontmatter opts (priority) or global config
---- @param handle_id string|nil
+--- @param turn_id string|nil
 --- @return PermissionConfig
-local function build_permission_config(handle_id)
+local function build_permission_config(turn_id)
   local config = Config.get()
   local perms = config.permissions or {}
-  local o = get_active_opts(handle_id) or {}
+  local o = get_active_opts(turn_id) or {}
 
   return {
     allowed_tools = o.permissions_allow or perms.allow or {},
     denied_tools = o.permissions_deny or perms.deny or {},
     asked_tools = o.permissions_ask or perms.ask or {},
     -- 承認の答えはそのチャットのセッションに属する。`o` から読むことで、あるチャットで出した
-    -- 判断が別のチャットの判定に混ざらない（#667）。`o` が引けないとき（handle_id が不明で、かつ
-    -- 複数チャットが走っている）は空になるが、`for_session` の許可/拒否は frontmatter にも
-    -- 書かれていて `permissions_allow` / `permissions_deny` として上の行から入るので、
-    -- ここで落ちるのはメモリ上にしか無い `:once` だけになる
+    -- 判断が別のチャットの判定に混ざらない（#667）。`o` が引けないとき（hook_scope がターンを
+    -- 特定できなかった＝プロセスが未登録、または無名のフックが複数ストリーム中に来た）は空に
+    -- なるが、`for_session` の許可/拒否は frontmatter にも書かれていて `permissions_allow` /
+    -- `permissions_deny` として上の行から入るので、ここで落ちるのはメモリ上にしか無い
+    -- `:once` だけになる
     session_allowed_tools = o.permissions_session_allow or {},
     session_denied_tools = o.permissions_session_deny or {},
     permission_rules = M._resolve_permission_rules(perms),
@@ -184,24 +207,32 @@ end
 --- diff at all — the silent omission this whole mechanism exists to remove.
 ---
 --- Neither failure may break the permission decision, which is why both are guarded at all.
---- @param effective_handle string|nil
+---
+--- All three mechanisms are keyed by the **turn**, which is what `_handle_response` looks them up
+--- by when it renders `### Modified Files`. A nil turn takes no baseline at all: that is the case
+--- where the hook named a process nothing has registered, and a baseline filed under an unknown key
+--- is never cleared, because `clear()` is only reached through a response.
+--- @param turn_id string|nil
 --- @param cwd string|nil
 --- @param tool_name string
 --- @param tool_input table
-function M._capture_baselines(effective_handle, cwd, tool_name, tool_input)
+function M._capture_baselines(turn_id, cwd, tool_name, tool_input)
+  if not turn_id then
+    return
+  end
   pcall(function()
     -- 経路の選択は _handle_response が行う。ここは無条件にベースラインを取っておき、
     -- 使われなければ clear() で捨てられるだけ
-    require("vibing.core.utils.git_snapshot").ensure_baseline(effective_handle, cwd, tool_name)
+    require("vibing.core.utils.git_snapshot").ensure_baseline(turn_id, cwd, tool_name)
   end)
   pcall(function()
-    require("vibing.core.utils.request_diff").capture(effective_handle, tool_name, tool_input)
+    require("vibing.core.utils.request_diff").capture(turn_id, tool_name, tool_input)
   end)
   pcall(function()
     -- ここも「ツールが走る前」であることが要る。worktreeを作るコマンドの前後を比べるので、
     -- 押さえるのは実行前の一覧でなければならない
     require("vibing.application.chat.worktree_binding").observe(
-      effective_handle,
+      turn_id,
       cwd,
       tool_name,
       tool_input
@@ -210,7 +241,7 @@ function M._capture_baselines(effective_handle, cwd, tool_name, tool_input)
 end
 
 --- Handle check_tool_permission RPC request
---- @param params {request_id: string, handle_id: string?}
+--- @param params {request_id: string, process_id: string?}
 --- @return table RPC response
 --- The canonical tool name and input for a hook payload, through a backend's vocabulary.
 ---
@@ -248,11 +279,6 @@ function M.check_tool_permission(params)
   end
 
   local request_id = params.request_id
-  local handle_id = params.handle_id
-  if handle_id == "" then
-    handle_id = nil
-  end
-
   local comm_dir = get_comm_dir()
   local req_file = comm_dir .. "/" .. request_id .. ".req"
 
@@ -271,7 +297,11 @@ function M.check_tool_permission(params)
     return { status = "allowed", reason = "invalid request JSON" }
   end
 
-  local active_opts = get_active_opts(handle_id)
+  -- Resolved once for the whole synchronous decision, so the opts, the permission config and the
+  -- baseline key cannot disagree about which turn this is. Deriving it separately at each of those
+  -- three points is what let them drift onto two different policies (see rpc/hook_scope.lua).
+  local scope = HookScope.of(params)
+  local active_opts = get_active_opts(scope.turn_id)
 
   -- Backends name their tools differently (codex calls an edit "apply_patch"). The adapter
   -- supplies its own translation table as a generic `_tool_vocabulary`, so this handler stays
@@ -284,13 +314,14 @@ function M.check_tool_permission(params)
   -- successfully killed, it dies before it could ever process that response.
   local function cancel_and_deny(on_stream_fn, fallback_reason)
     vim.schedule(function()
-      local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
-      local stream = registry.get(handle_id)
+      -- Re-resolved here rather than reused from `scope` above: the turn can finish between the
+      -- synchronous decision and this callback, and firing the approval UI at a stream that has
+      -- already unregistered would leave a prompt in the buffer with nothing left to answer it.
+      -- Same policy, because it is the same function -- what differs is only when it is asked.
+      local stream = HookScope.of(params).entry
       local reason = nil
       if stream then
-        if stream.adapter and stream.handle_id then
-          stream.adapter:cancel(stream.handle_id)
-        end
+        cancel_stream(stream)
         on_stream_fn(stream)
       else
         vim.notify("[vibing] cancel_and_deny: no active stream found", vim.log.levels.WARN)
@@ -300,7 +331,7 @@ function M.check_tool_permission(params)
     end)
   end
 
-  local perm_config = build_permission_config(handle_id)
+  local perm_config = build_permission_config(scope.turn_id)
 
   -- Native AskUserQuestion is unavailable in headless `claude -p` mode and is fully opaque to us
   -- (the SDK executes it internally), so the only way to handle it is to intercept + deny it here
@@ -324,16 +355,7 @@ function M.check_tool_permission(params)
   if result.behavior == "allow" then
     -- ツールが実行される前（=レスポンスを書いてフックのブロックを解く前）にベースラインを取る。
     -- 詳細と、pcallを2つに分けている理由は M._capture_baselines を参照
-    local effective_handle = handle_id
-    if not effective_handle then
-      local ok_registry, registry =
-        pcall(require, "vibing.infrastructure.adapter.modules.active_stream_registry")
-      if ok_registry then
-        local stream = registry.get(nil)
-        effective_handle = stream and stream.handle_id
-      end
-    end
-    M._capture_baselines(effective_handle, active_opts and active_opts.cwd or nil, tool_name, tool_input)
+    M._capture_baselines(scope.turn_id, active_opts and active_opts.cwd or nil, tool_name, tool_input)
     -- Only vibing-nvim's own MCP tools are granted outright; everything else defers to the CLI's
     -- gate, which is still where the user's own settings.json rules are enforced. The distinction
     -- is not cosmetic: --allowedTools needs a literal prefix, and the plugin's is
@@ -386,14 +408,7 @@ function M.ask_user_question(params)
     }
   end
 
-  if stream.adapter and stream.handle_id then
-    local cancel_ok, cancel_err = pcall(function()
-      stream.adapter:cancel(stream.handle_id)
-    end)
-    if not cancel_ok then
-      vim.notify("[vibing] Failed to cancel stream for ask_user_question: " .. tostring(cancel_err), vim.log.levels.WARN)
-    end
-  end
+  cancel_stream(stream)
   if stream.on_insert_choices then
     stream.on_insert_choices(params.questions)
   end

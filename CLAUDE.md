@@ -47,6 +47,7 @@ If you add a paragraph to `.claude/rules/` explaining _why_, it is in the wrong 
 | `architecture/lightweight-calls.md`   | How each backend restricts utility calls                 |
 | `architecture/plugin-and-commands.md` | `--plugin-dir`, slash command discovery, startup cost    |
 | `architecture/per-request-diffs.md`   | git tree snapshot, overlap guard, fallback routing       |
+| `architecture/processes-and-turns.md` | `process_id` vs `turn_id`, the id alphabet, hook scope   |
 | `architecture/chat-lineage.md`        | Concurrency, fork, handoff, subagent chat                |
 | `architecture/orchestration.md`       | Notification state machine, queue, tree operations       |
 | `architecture/session-persistence.md` | The `working_dir` git-root boundary                      |

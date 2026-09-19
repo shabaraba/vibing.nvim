@@ -43,10 +43,11 @@ describe("claude_cli token usage wiring", function()
       return original_exepath(name)
     end
 
-    CliRuntime.spawn = function(handles, handle_id, _cmd, sys_opts, on_exit, _on_done)
-      -- The real spawn registers the handle, and the stdout handler reads its absence as "this
-      -- turn was cancelled" and drops every chunk. Without this the stream is silently discarded.
-      handles[handle_id] = { pid = -1 }
+    CliRuntime.spawn = function(processes, ids, _cmd, sys_opts, on_exit, _on_done)
+      -- The real spawn registers the process, and the stdout handler reads its absence as "this
+      -- turn was cancelled" and drops every chunk. Keyed by `ids.process_id`, since that is what
+      -- the adapter's cancel predicate looks up -- the turn id addresses nothing here.
+      processes[ids.process_id] = { pid = -1 }
       for _, line in ipairs(lines) do
         sys_opts.stdout(nil, line)
       end

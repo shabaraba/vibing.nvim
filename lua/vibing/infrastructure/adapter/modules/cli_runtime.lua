@@ -19,16 +19,12 @@ local M = {}
 --- How long `execute()` waits for a blocking call to finish.
 M.INITIAL_RESPONSE_TIMEOUT_MS = 120000
 
---- A handle id unique across concurrent requests.
----
---- Hex, not decimal: LuaJIT's tostring() renders large hrtime doubles in scientific notation
---- ("2.64e+15"), and pre-tool-use.sh's char-sanitized VIBING_HANDLE_ID would then fail to match
---- this exact registry key.
----
---- @return string
-function M.new_handle_id()
-  return string.format("%016x_%x", vim.loop.hrtime(), math.random(100000))
-end
+--- @class Vibing.RequestIds The two identities one `stream()` call mints.
+--- @field process_id string The OS process. Keys `adapter._processes`, the SessionManager, and the
+---   `VIBING_PROCESS_ID` the shell hooks are handed. The only thing `cancel()` accepts.
+--- @field turn_id string The request/response exchange. Keys both diff baselines, the response
+---   staleness check and the registry entry. `stream()` returns it first, because it is what the
+---   chat buffer means by "the request I am waiting for".
 
 --- Kill a spawned CLI along with the descendants holding its stdout pipe open.
 ---
@@ -111,12 +107,16 @@ end
 
 --- Hand a failure that happened before the process existed back to the caller.
 ---
---- @param handle_id string
+--- Both ids are attached even though no process was ever started: `_handle_id` is what the chat
+--- buffer's staleness check compares, and `_process_id` is what the session read-back uses, so a
+--- response missing either one is indistinguishable from a response belonging to someone else.
+---
+--- @param ids Vibing.RequestIds
 --- @param message string
 --- @param on_done fun(response: Vibing.Response)
-local function report(handle_id, message, on_done)
+local function report(ids, message, on_done)
   vim.schedule(function()
-    on_done({ content = "", error = message, _handle_id = handle_id })
+    on_done({ content = "", error = message, _handle_id = ids.turn_id, _process_id = ids.process_id })
   end)
 end
 
@@ -125,11 +125,11 @@ end
 --- The command builders raise when their binary is missing, and `send_message.lua` does not wrap
 --- `stream()` in pcall, so without this the chat buffer would show a raw Lua stack trace.
 ---
---- @param handle_id string
+--- @param ids Vibing.RequestIds
 --- @param err any whatever pcall returned
 --- @param on_done fun(response: Vibing.Response)
-function M.report_build_failure(handle_id, err, on_done)
-  report(handle_id, strip_source_location(err), on_done)
+function M.report_build_failure(ids, err, on_done)
+  report(ids, strip_source_location(err), on_done)
 end
 
 --- What to tell the user when `vim.system` itself raised instead of starting the CLI.
@@ -163,28 +163,35 @@ end
 --- `vim.system` raises synchronously when the spawn itself fails -- a binary that went missing
 --- between the builder resolving it and now, an invalid cwd -- before any process exists. Left
 --- unguarded that reaches the chat as a Lua stack trace, and the exit handler that would normally
---- unregister the handle and clear the permission opts never runs. A permission entry left behind
---- is not inert: with a single entry in the table, the handler falls back to it for hook calls
---- carrying no matching handle_id.
+--- unregister the stream and clear the permission opts never runs. A leaked permission entry is no
+--- longer reachable by a hook naming an unmatched process — `rpc/hook_scope.lua` returns nil there
+--- rather than falling back — but it still grows the table and still answers for a hook that names
+--- no process at all while it is the only entry.
 ---
 --- Pass the adapter's own `wrapped_on_done`, which is what performs that cleanup.
 ---
---- @param handles table<string, table> the adapter's handle table
---- @param handle_id string
+--- @param processes table<string, table> the adapter's process table, keyed by process id
+--- @param ids Vibing.RequestIds
 --- @param cmd string[] argv
 --- @param sys_opts table vim.system options
 --- @param on_exit function vim.system's exit callback
 --- @param on_done fun(response: Vibing.Response) the adapter's wrapped_on_done
 --- @return boolean started false when the failure has already been reported through on_done
-function M.spawn(handles, handle_id, cmd, sys_opts, on_exit, on_done)
+function M.spawn(processes, ids, cmd, sys_opts, on_exit, on_done)
   local ok, handle_or_err = pcall(vim.system, cmd, sys_opts, on_exit)
   if not ok then
-    report(handle_id, spawn_error_message(cmd, handle_or_err), on_done)
+    report(ids, spawn_error_message(cmd, handle_or_err), on_done)
     return false
   end
 
-  handles[handle_id] = stream_handle(handle_or_err, function()
-    on_done({ content = "", error = "Cancelled", _handle_id = handle_id, _cancelled = true })
+  processes[ids.process_id] = stream_handle(handle_or_err, function()
+    on_done({
+      content = "",
+      error = "Cancelled",
+      _handle_id = ids.turn_id,
+      _process_id = ids.process_id,
+      _cancelled = true,
+    })
   end)
   return true
 end
@@ -206,7 +213,7 @@ function M.install(Class, features)
     local result = { content = "" }
     local done = false
 
-    local handle_id = self:stream(prompt, opts, function(chunk)
+    local _, process_id = self:stream(prompt, opts, function(chunk)
       result.content = result.content .. chunk
     end, function(response)
       if response.error then
@@ -221,28 +228,39 @@ function M.install(Class, features)
 
     -- Cancelling on timeout is what keeps a hung CLI from outliving the call that started it.
     -- Three of the four adapters used to return here and leave the process running.
+    --
+    -- The `process_id` guard is not defensive noise: `cancel(nil)` means "every process this
+    -- adapter owns", and one adapter instance is shared between a chat's stream and the
+    -- lightweight `execute()` calls — so a `stream()` that returned only its turn id would turn
+    -- one utility call's timeout into a kill of every live chat on that backend.
     if not done then
-      self:cancel(handle_id)
+      if process_id then
+        self:cancel(process_id)
+      end
       result.error = "Execution timeout"
     end
     return result
   end
 
-  --- Cancel one in-flight request, or every one when `handle_id` is omitted.
-  --- @param handle_id string?
-  function Class:cancel(handle_id)
-    if handle_id then
-      local handle = self._handles[handle_id]
+  --- Cancel one CLI process, or every one this adapter owns when `process_id` is omitted.
+  ---
+  --- Named by the process, not the turn: killing is something you do to a process, and under a
+  --- resident process (#774) the two are no longer the same choice — a turn will be stopped with an
+  --- interrupt while the process stays alive.
+  --- @param process_id string?
+  function Class:cancel(process_id)
+    if process_id then
+      local handle = self._processes[process_id]
       if handle then
-        self._handles[handle_id] = nil
+        self._processes[process_id] = nil
         M.kill_tree(handle)
         complete_cancel(handle)
       end
       return
     end
 
-    for id, handle in pairs(self._handles) do
-      self._handles[id] = nil
+    for id, handle in pairs(self._processes) do
+      self._processes[id] = nil
       M.kill_tree(handle)
       complete_cancel(handle)
     end
@@ -255,24 +273,24 @@ function M.install(Class, features)
   end
 
   --- @param session_id string?
-  --- @param handle_id string?
-  function Class:set_session_id(session_id, handle_id)
-    SessionManagerModule.set(self._session_manager, session_id, handle_id)
+  --- @param process_id string?
+  function Class:set_session_id(session_id, process_id)
+    SessionManagerModule.set(self._session_manager, session_id, process_id)
   end
 
-  --- @param handle_id string?
+  --- @param process_id string?
   --- @return string?
-  function Class:get_session_id(handle_id)
-    return SessionManagerModule.get(self._session_manager, handle_id)
+  function Class:get_session_id(process_id)
+    return SessionManagerModule.get(self._session_manager, process_id)
   end
 
-  --- @param handle_id string
-  function Class:cleanup_session(handle_id)
-    SessionManagerModule.cleanup(self._session_manager, handle_id)
+  --- @param process_id string
+  function Class:cleanup_session(process_id)
+    SessionManagerModule.cleanup(self._session_manager, process_id)
   end
 
   function Class:cleanup_stale_sessions()
-    SessionManagerModule.cleanup_stale(self._session_manager, self._handles)
+    SessionManagerModule.cleanup_stale(self._session_manager, self._processes)
   end
 end
 

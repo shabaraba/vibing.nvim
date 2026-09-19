@@ -86,9 +86,9 @@ describe("claude_cli environment", function()
       local config = { agent = vim.tbl_extend("force", CONFIG.agent, agent or {}) }
       helper.run_stream(claude:new(config), opts)
       local env = system.calls[#system.calls].opts.env
-      -- Regenerated per stream by design (it keys the hook back to this turn), so it is the one
-      -- key two spawns are expected to differ on.
-      env.VIBING_HANDLE_ID = nil
+      -- Regenerated per stream by design (it keys the hook back to this CLI process), so it is the
+      -- one key two spawns are expected to differ on.
+      env.VIBING_PROCESS_ID = nil
       return env
     end
 
@@ -114,11 +114,13 @@ describe("claude_cli environment", function()
 
     it("cannot take over the variables that bind the child to this Neovim", function()
       local env = env_for({
-        env = { VIBING_NVIM_RPC_PORT = "1234", VIBING_HANDLE_ID = "spoofed", CLAUDECODE = "1" },
+        env = { VIBING_NVIM_RPC_PORT = "1234", VIBING_PROCESS_ID = "spoofed", CLAUDECODE = "1" },
       })
       -- 9999 is what the helper stubs the RPC server to report.
       assert.equals("9999", env.VIBING_NVIM_RPC_PORT)
-      assert.is_not.equals("spoofed", env.VIBING_HANDLE_ID)
+      -- A declared process id would let a chat claim another chat's permission decisions.
+      assert.is_string(env.VIBING_PROCESS_ID)
+      assert.is_not.equals("spoofed", env.VIBING_PROCESS_ID)
       assert.is_nil(env.CLAUDECODE)
     end)
 

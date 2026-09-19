@@ -4,8 +4,13 @@
 --- to the CLI's own gate. Before #564 every allowed call took the second path, which in headless
 --- `-p` mode simply refuses vibing-nvim's own MCP tools.
 local permission = require("vibing.infrastructure.rpc.handlers.permission")
+local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
 
-local HANDLE_ID = "decision-spec-handle"
+--- One "chat" is a process and the turn it currently has open, and the two are **different values**.
+--- The hook can only name the process (`VIBING_PROCESS_ID` is fixed at spawn); `rpc/hook_scope.lua`
+--- resolves the turn from the registry. So a spec that registered nothing would resolve to no turn
+--- and silently exercise the global config instead of the opts it just set.
+local CHAT = { process_id = "decision-spec-process", turn_id = "decision-spec-turn" }
 
 local comm_dir
 
@@ -26,12 +31,22 @@ local sandbox_cwd
 ---テストが `cwd` を書き忘れると、そのテストだけが実リポジトリをスナップショットしてしまう。
 ---before_each で1度渡すだけでは足りず、実際に1件見落としていた（#665 のレビュー指摘）。
 ---入口を1つにしておけば、テストを足すときに `cwd` を意識する必要がなくなる。
+---レジストリへの登録も同時に行う。`set_active_opts` はターン単位、フックが名乗れるのはプロセス
+---だけなので、両方を繋ぐエントリが無いと `hook_scope` がターンを解決できず、テストは自分が
+---設定した opts ではなくグローバル設定を見てしまう（＝何も確かめていないテストになる）
 ---@param opts table
----@param handle_id string? 既定は `HANDLE_ID`。承認がチャットを越えないことを見るテストだけが
----  2つ目を登録する（1つしか登録しないと `get_active_opts` の「唯一のエントリを返す」
----  フォールバックが働き、共有状態に戻しても落ちないテストになる）
-local function activate(opts, handle_id)
-  permission.set_active_opts(handle_id or HANDLE_ID, vim.tbl_extend("force", { cwd = sandbox_cwd }, opts))
+---@param chat table? 既定は `CHAT`。承認がチャットを越えないことを見るテストだけが2つ目を登録する
+local function activate(opts, chat)
+  chat = chat or CHAT
+  registry.register({ handle_id = chat.turn_id, process_id = chat.process_id, adapter = nil })
+  permission.set_active_opts(chat.turn_id, vim.tbl_extend("force", { cwd = sandbox_cwd }, opts))
+end
+
+---@param chat table?
+local function deactivate(chat)
+  chat = chat or CHAT
+  permission.clear_active_opts(chat.turn_id)
+  registry.unregister(chat.turn_id)
 end
 
 local function write_request(request_id, tool_name, tool_input)
@@ -45,9 +60,12 @@ end
 --- RPC の戻り値のほうなので、2つ目の返り値として渡す。
 --- @return table? hookSpecificOutput `.res` が書かれなかった場合は nil
 --- @return string status RPCハンドラの返した status
-local function decide(request_id, tool_name, tool_input, handle_id)
+local function decide(request_id, tool_name, tool_input, chat)
   write_request(request_id, tool_name, tool_input)
-  local rpc = permission.check_tool_permission({ request_id = request_id, handle_id = handle_id or HANDLE_ID })
+  local rpc = permission.check_tool_permission({
+    request_id = request_id,
+    process_id = (chat or CHAT).process_id,
+  })
 
   local f = io.open(comm_dir .. "/" .. request_id .. ".res", "r")
   if not f then
@@ -76,7 +94,7 @@ describe("permission handler hook decision", function()
   end)
 
   after_each(function()
-    permission.clear_active_opts(HANDLE_ID)
+    deactivate()
     -- 「このspecはスナップショットを取らない」を全テストに効く不変条件として毎回見る。
     -- `activate` を入口に1つ用意しても、それを通さない `set_active_opts` を直に呼ぶテストが
     -- 足されれば `cwd` は落ちる（#665 のレビューで実在した見落とし）。ここで見ておけば、
@@ -88,8 +106,8 @@ describe("permission handler hook decision", function()
     -- こちらが先に走ることがある。差し替え中は見ない
     local GitSnapshot = require("vibing.core.utils.git_snapshot")
     if GitSnapshot.has_baseline and GitSnapshot.clear then
-      local snapshotted = GitSnapshot.has_baseline(HANDLE_ID)
-      GitSnapshot.clear(HANDLE_ID)
+      local snapshotted = GitSnapshot.has_baseline(CHAT.turn_id)
+      GitSnapshot.clear(CHAT.turn_id)
       assert.is_false(snapshotted)
     end
     vim.env.VIBING_HOOK_COMM_DIR = original_comm_dir
@@ -103,13 +121,13 @@ describe("permission handler hook decision", function()
     local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
     decide("req-no-snapshot", "Edit", { file_path = sandbox_cwd .. "/x.txt" })
-    assert.is_false(GitSnapshot.has_baseline(HANDLE_ID))
+    assert.is_false(GitSnapshot.has_baseline(CHAT.turn_id))
 
     -- 権限を差し替えたあとも同じであること。`set_active_opts` を直に呼ぶと `cwd` が落ちるので、
     -- `activate` を経由しない再設定が入ったらここが落ちる
     activate({ permissions_allow = { "Edit" }, permission_mode = "acceptEdits" })
     decide("req-no-snapshot-2", "Edit", { file_path = sandbox_cwd .. "/y.txt" })
-    assert.is_false(GitSnapshot.has_baseline(HANDLE_ID))
+    assert.is_false(GitSnapshot.has_baseline(CHAT.turn_id))
   end)
 
   it("grants vibing-nvim's own MCP tools outright", function()
@@ -164,13 +182,16 @@ describe("permission handler hook decision", function()
     -- キーされていなかったので、使い捨てワーカーで一度 `allow_for_session` を出すと
     -- エディタ上の全チャットに効き、各チャット自身の `permissions_ask` を迂回していた（#667）。
     --
-    -- 2つのハンドルを同時に登録するのが要点。1つしか登録していないと
-    -- `get_active_opts` のフォールバック（唯一のエントリを返す）が働いてしまい、
-    -- 共有テーブルに戻しても落ちないテストになる
-    local OTHER_HANDLE_ID = "decision-spec-other-handle"
+    -- 2つのチャットを同時に登録するのが要点。1つしか登録していないと `hook_scope` の
+    -- 「唯一のストリームを返す」フォールバックが働いてしまい、共有テーブルに戻しても落ちない
+    -- テストになる（そのフォールバックは、フックがプロセスを名乗らなかった場合にだけ働く）
+    local OTHER_CHAT = {
+      process_id = "decision-spec-other-process",
+      turn_id = "decision-spec-other-turn",
+    }
 
     after_each(function()
-      permission.clear_active_opts(OTHER_HANDLE_ID)
+      deactivate(OTHER_CHAT)
     end)
 
     -- `permissions_deny` は必ず明示する。省くと `build_permission_config` が
@@ -191,7 +212,7 @@ describe("permission handler hook decision", function()
     it("does not let one chat's session allow reach another chat", function()
       -- A だけが Bash を承認済み。B は自分の設定どおり Bash を聞く側のまま
       activate(chat_opts({ permissions_session_allow = { "Bash" } }))
-      activate(chat_opts({}), OTHER_HANDLE_ID)
+      activate(chat_opts({}), OTHER_CHAT)
 
       -- 許可された非MCPツールは "allow" ではなく "defer"（CLI自身のゲートに委ねる）
       local granted, status = decide("req-a-allow", "Bash", ECHO)
@@ -199,27 +220,48 @@ describe("permission handler hook decision", function()
       assert.equals("defer", granted.permissionDecision)
 
       -- B は承認を出していないので、自分の `permissions_ask` どおり承認待ちになる
-      assert.equals("pending", select(2, decide("req-b-allow", "Bash", ECHO, OTHER_HANDLE_ID)))
+      assert.equals("pending", select(2, decide("req-b-allow", "Bash", ECHO, OTHER_CHAT)))
     end)
 
     it("does not let one chat's session deny reach another chat", function()
       local both_allow = { permissions_allow = { "Read", "Bash" }, permissions_ask = {} }
       activate(chat_opts(vim.tbl_extend("force", both_allow, { permissions_session_deny = { "Bash" } })))
-      activate(chat_opts(both_allow), OTHER_HANDLE_ID)
+      activate(chat_opts(both_allow), OTHER_CHAT)
 
       assert.equals("deny", decide("req-a-deny", "Bash", ECHO).permissionDecision)
 
-      assert.equals("defer", decide("req-b-deny", "Bash", ECHO, OTHER_HANDLE_ID).permissionDecision)
+      assert.equals("defer", decide("req-b-deny", "Bash", ECHO, OTHER_CHAT).permissionDecision)
+    end)
+
+    it("does not lend a live chat's approvals to a hook from a process it does not know", function()
+      -- #667 through a door #667 did not close. `get_active_opts` used to fall back to the sole
+      -- registered entry even when the id was *present but unmatched* — where the registry itself
+      -- returned nil for the same input — so a hook arriving late, from a turn that had already
+      -- unregistered, was judged with whichever chat happened to still be running.
+      --
+      -- One chat only, deliberately: with two, the refusal could come from "cannot guess between
+      -- them" rather than from "will not guess for a named process". This pins the second.
+      activate(chat_opts({ permissions_session_allow = { "Bash" } }))
+
+      assert.equals("defer", decide("req-known", "Bash", ECHO).permissionDecision)
+
+      write_request("req-stranger", "Bash", ECHO)
+      local rpc = permission.check_tool_permission({
+        request_id = "req-stranger",
+        process_id = "a-process-that-died",
+      })
+
+      assert.is_not.equals("allowed", rpc.status)
     end)
 
     it("spends a :once grant on the chat that was given it, not on whoever calls first", function()
       -- `:once` は最初にマッチしたところで消費される。共有テーブルだと、承認を出していない
       -- 別のチャットがそれを食べてしまう — PR #666 の実機確認で踏んだのがこの形
       activate(chat_opts({ permissions_session_allow = { "Bash:once" } }))
-      activate(chat_opts({}), OTHER_HANDLE_ID)
+      activate(chat_opts({}), OTHER_CHAT)
 
       -- B が先に呼んでも A の1回分は減らない
-      assert.equals("pending", select(2, decide("req-b-once", "Bash", ECHO, OTHER_HANDLE_ID)))
+      assert.equals("pending", select(2, decide("req-b-once", "Bash", ECHO, OTHER_CHAT)))
 
       assert.equals("defer", decide("req-a-once-1", "Bash", ECHO).permissionDecision)
       -- 使い切ったので2回目は承認待ちに戻る
@@ -301,6 +343,55 @@ describe("permission handler hook decision", function()
       assert.has_no.errors(function()
         permission._capture_baselines("h3", "/repo", "Bash", {})
       end)
+    end)
+
+    -- The three baselines are keyed by the **turn**, which is what `_handle_response` looks them up
+    -- by. The hook can only name a process, so the turn is resolved through `rpc/hook_scope.lua` —
+    -- and the two assertions below are the whole join, in both directions. Without them the
+    -- resolution could return the process id, or nothing at all, and per-request diffs would stop
+    -- working with every other test in this file still green: they only assert baselines are *not*
+    -- taken.
+    it("keys the baselines by the turn the hook's process has open", function()
+      local keyed_with = {}
+      stub("vibing.core.utils.git_snapshot", {
+        ensure_baseline = function(id)
+          keyed_with.snapshot = id
+        end,
+      })
+      stub("vibing.core.utils.request_diff", {
+        capture = function(id)
+          keyed_with.capture = id
+        end,
+      })
+
+      -- `activate` in before_each registered CHAT, so the process resolves to its turn.
+      decide("req-baseline-key", "Edit", { file_path = sandbox_cwd .. "/x.txt" })
+
+      assert.equals(CHAT.turn_id, keyed_with.snapshot)
+      assert.equals(CHAT.turn_id, keyed_with.capture)
+      assert.is_not.equals(CHAT.process_id, keyed_with.snapshot)
+    end)
+
+    it("takes no baseline for a process nothing has registered", function()
+      -- A straggler tool call from an already-killed process. Filing a baseline under an
+      -- unresolvable key leaks a `refs/worktree/vibing/<id>` that nothing ever clears, because
+      -- `clear()` is only reached through a response that will never come.
+      local called = false
+      stub("vibing.core.utils.git_snapshot", {
+        ensure_baseline = function()
+          called = true
+        end,
+      })
+      stub("vibing.core.utils.request_diff", {
+        capture = function()
+          called = true
+        end,
+      })
+
+      write_request("req-orphan", "Edit", { file_path = sandbox_cwd .. "/x.txt" })
+      permission.check_tool_permission({ request_id = "req-orphan", process_id = "a-process-that-died" })
+
+      assert.is_false(called)
     end)
   end)
 

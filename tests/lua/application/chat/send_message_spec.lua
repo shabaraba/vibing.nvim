@@ -772,4 +772,114 @@ describe("send_message", function()
       assert.equals(0, #messages)
     end)
   end)
+
+  -- A turn and the CLI process serving it are two identities (#774). Under the oneshot transport
+  -- they always exist in pairs, so every assertion here passes two **different** values: with one
+  -- value the wiring below works by coincidence, and the coincidence is exactly what stops holding.
+  describe("process and turn identity", function()
+    local function chat_buffer()
+      local buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_name(buf, vim.fn.tempname() .. ".md")
+      return buf
+    end
+
+    it("records the turn for staleness and the process for cancelling, from one stream() call", function()
+      -- `stream()` returns `(turn_id, process_id)`. Dropping the second value leaves
+      -- `_current_process_id` nil, and `ChatBuffer:cancel_request()` then returns false without
+      -- killing anything — a zombie CLI that no test would notice, because the guard is silent.
+      local buf = chat_buffer()
+      local recorded = {}
+      local callbacks = {
+        get_bufnr = function()
+          return buf
+        end,
+        get_session_id = function()
+          return "sess"
+        end,
+        parse_frontmatter = function()
+          return {}
+        end,
+        extract_conversation = function()
+          return {}
+        end,
+        update_filename_from_message = function(_) end,
+        start_response = function() end,
+        get_session_allow = function()
+          return {}
+        end,
+        get_session_deny = function()
+          return {}
+        end,
+        add_user_section = function() end,
+        set_handle_id = function(id)
+          recorded.handle_id = id
+        end,
+        set_process_id = function(id)
+          recorded.process_id = id
+        end,
+      }
+      local adapter = {
+        supports = function(_, feature)
+          return feature == "streaming"
+        end,
+        stream = function()
+          return "turn-1", "process-1"
+        end,
+      }
+
+      SendMessage.execute(adapter, callbacks, "hello", {})
+
+      assert.equals("turn-1", recorded.handle_id)
+      assert.equals("process-1", recorded.process_id)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+
+    it("reads the session back off the process that ran, not off the turn", function()
+      -- A CLI session is something the process holds open; the next turn `--resume`s it. Asking the
+      -- SessionManager for the *turn* answers nil on a resident process's second turn, and the chat
+      -- silently starts a new conversation instead of continuing one.
+      local buf = chat_buffer()
+      local asked_for, stored
+      local callbacks = {
+        get_bufnr = function()
+          return buf
+        end,
+        get_session_id = function()
+          return "old-session"
+        end,
+        get_cwd = function()
+          return nil
+        end,
+        update_session_id = function(id)
+          stored = id
+        end,
+        append_chunk = function(_) end,
+        add_user_section = function() end,
+      }
+      local adapter = {
+        supports = function(_, feature)
+          return feature == "session"
+        end,
+        get_session_id = function(_, id)
+          asked_for = id
+          return id == "process-1" and "new-session" or nil
+        end,
+      }
+
+      SendMessage._handle_response(
+        { content = "done", _handle_id = "turn-1", _process_id = "process-1" },
+        callbacks,
+        adapter,
+        {},
+        {},
+        "msg"
+      )
+
+      assert.equals("process-1", asked_for)
+      assert.equals("new-session", stored)
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end)
+  end)
 end)

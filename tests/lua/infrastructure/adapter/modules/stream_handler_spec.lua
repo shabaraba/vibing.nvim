@@ -1,18 +1,22 @@
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 
+-- The two ids are deliberately different values, so a site that reaches the process table with the
+-- turn id (or vice versa) misses instead of working by coincidence (#774).
+local IDS = { turn_id = "t1", process_id = "p1" }
+
 -- Runs the exit handler for a fake process result and returns the response
 -- passed to onDone. The handler defers via vim.schedule, so we flush it.
 local function run_exit(obj, output, error_output)
-  local handles = { h1 = true }
+  local processes = { p1 = true, t1 = true }
   local captured
-  local handler = StreamHandler.create_exit_handler("h1", handles, output or {}, error_output or {}, function(response)
+  local handler = StreamHandler.create_exit_handler(IDS, processes, output or {}, error_output or {}, function(response)
     captured = response
   end)
   handler(obj)
   vim.wait(200, function()
     return captured ~= nil
   end)
-  return captured, handles
+  return captured, processes
 end
 
 describe("stream_handler.create_exit_handler", function()
@@ -45,9 +49,20 @@ describe("stream_handler.create_exit_handler", function()
     assert.equals("ok", res.content)
   end)
 
-  it("clears the handle from the handles map", function()
-    local _, handles = run_exit({ code = 0 }, { "ok" }, {})
+  it("clears the process from the process map by process id, not turn id", function()
+    local _, processes = run_exit({ code = 0 }, { "ok" }, {})
 
-    assert.is_nil(handles.h1)
+    assert.is_nil(processes.p1)
+    assert.is_true(processes.t1, "the turn id was used to address the process table")
+  end)
+
+  it("names both the turn and the process on every response it produces", function()
+    -- `_handle_id` is what `_handle_response`'s staleness check compares; `_process_id` is what the
+    -- session read-back reads. A response carrying only one is unattributable on the other axis.
+    for _, obj in ipairs({ { code = 0 }, { code = 1 } }) do
+      local res = run_exit(obj, { "ok" }, {})
+      assert.equals("t1", res._handle_id)
+      assert.equals("p1", res._process_id)
+    end
   end)
 end)

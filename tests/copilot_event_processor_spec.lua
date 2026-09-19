@@ -7,7 +7,10 @@ describe("copilot_event_processor", function()
   before_each(function()
     context = {
       sessionManager = SessionManager.new(),
-      handleId = "handle-1",
+      handleId = "turn-1",
+      -- A session belongs to the process that reported it, so the renderer stores it under this.
+      -- Deliberately a different value from handleId, so reading the wrong one misses.
+      processId = "process-1",
       opts = {},
       output = {},
       errorOutput = {},
@@ -66,7 +69,7 @@ describe("copilot_event_processor", function()
 
   it("stores the session id from the result event", function()
     process({ type = "result", sessionId = "sess-abc", exitCode = 0 })
-    assert.are.equal("sess-abc", SessionManager.get(context.sessionManager, "handle-1"))
+    assert.are.equal("sess-abc", SessionManager.get(context.sessionManager, "process-1"))
   end)
 
   it("renders tool execution start and complete", function()

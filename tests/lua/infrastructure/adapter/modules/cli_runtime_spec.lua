@@ -2,28 +2,11 @@ local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
 local helper = require("tests.helpers.adapter_stream")
 local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
 
+-- Deliberately distinct, so a site that uses one where it means the other misses instead of
+-- working by coincidence. The id alphabet itself is tests/lua/core/utils/identity_spec.lua.
+local IDS = { turn_id = "t1", process_id = "p1" }
+
 describe("cli_runtime", function()
-  describe("new_handle_id", function()
-    it("is hex, never scientific notation", function()
-      -- LuaJIT renders large hrtime doubles as "2.64e+15", which pre-tool-use.sh's sanitized
-      -- VIBING_HANDLE_ID then fails to match against the registry key.
-      for _ = 1, 20 do
-        local id = CliRuntime.new_handle_id()
-        assert.is_truthy(id:match("^%x+_%x+$"), "not hex: " .. id)
-        assert.is_nil(id:find("e+", 1, true))
-      end
-    end)
-
-    it("does not repeat", function()
-      local seen = {}
-      for _ = 1, 200 do
-        local id = CliRuntime.new_handle_id()
-        assert.is_nil(seen[id], "duplicate handle id")
-        seen[id] = true
-      end
-    end)
-  end)
-
   describe("kill_tree", function()
     local original_system, spawned, exit_callbacks
 
@@ -102,7 +85,7 @@ describe("cli_runtime", function()
   describe("report_build_failure", function()
     it("strips the Lua file:line prefix so the chat shows a message", function()
       local response
-      CliRuntime.report_build_failure("h1", "/path/to/builder.lua:42: codex not found", function(r)
+      CliRuntime.report_build_failure(IDS, "/path/to/builder.lua:42: codex not found", function(r)
         response = r
       end)
 
@@ -110,13 +93,17 @@ describe("cli_runtime", function()
         return response ~= nil
       end)
       assert.equals("codex not found", response.error)
-      assert.equals("h1", response._handle_id)
       assert.equals("", response.content)
+      -- Both ids, even though no process was ever started: the chat buffer's staleness check reads
+      -- the turn and the session read-back reads the process, so a response missing either one is
+      -- indistinguishable from someone else's.
+      assert.equals("t1", response._handle_id)
+      assert.equals("p1", response._process_id)
     end)
 
     it("handles a non-string error object", function()
       local response
-      CliRuntime.report_build_failure("h1", { code = 1 }, function(r)
+      CliRuntime.report_build_failure(IDS, { code = 1 }, function(r)
         response = r
       end)
 
@@ -138,37 +125,38 @@ describe("cli_runtime", function()
       vim.system = original_system
     end)
 
-    --- @return boolean started, table response, table handles
+    --- @return boolean started, table response, table processes
     local function spawn_raising(cmd, err)
       vim.system = function()
         error(err)
       end
 
-      local handles, response = {}, nil
-      local started = CliRuntime.spawn(handles, "h1", cmd, {}, function() end, function(r)
+      local processes, response = {}, nil
+      local started = CliRuntime.spawn(processes, IDS, cmd, {}, function() end, function(r)
         response = r
       end)
       vim.wait(200, function()
         return response ~= nil
       end)
-      return started, response, handles
+      return started, response, processes
     end
 
-    it("keeps the handle when the CLI starts", function()
+    it("keys the process table by the process id, not the turn", function()
       local handle = { pid = 4242 }
       vim.system = function()
         return handle
       end
 
-      local handles = {}
+      local processes = {}
       local reported = false
-      local started = CliRuntime.spawn(handles, "h1", { "/bin/claude" }, {}, function() end, function()
+      local started = CliRuntime.spawn(processes, IDS, { "/bin/claude" }, {}, function() end, function()
         reported = true
       end)
 
       assert.is_true(started)
-      assert.equals(handle, handles.h1.process)
-      assert.equals(handle.pid, handles.h1.pid)
+      assert.equals(handle, processes.p1.process)
+      assert.equals(handle.pid, processes.p1.pid)
+      assert.is_nil(processes.t1, "the process was filed under the turn id")
       assert.is_false(reported)
     end)
 
@@ -176,14 +164,15 @@ describe("cli_runtime", function()
       -- What the user gets when a CLI moves between the builder resolving it and the spawn (#593).
       -- "ENOENT ... (cmd)" is an error code, not something to act on.
       local raised = "vim/_system.lua:340: ENOENT: no such file or directory (cmd): '/old/bin/claude'"
-      local started, response, handles = spawn_raising({ "/old/bin/claude", "-p" }, raised)
+      local started, response, processes = spawn_raising({ "/old/bin/claude", "-p" }, raised)
 
       assert.is_false(started)
-      assert.is_nil(handles.h1, "a handle was recorded for a process that never started")
+      assert.is_nil(processes.p1, "a handle was recorded for a process that never started")
       assert.is_truthy(response.error:find("/old/bin/claude", 1, true))
       assert.is_truthy(response.error:find("could not be started", 1, true))
       assert.is_nil(response.error:find("ENOENT", 1, true))
-      assert.equals("h1", response._handle_id)
+      assert.equals("t1", response._handle_id)
+      assert.equals("p1", response._process_id)
     end)
 
     it("does not blame the CLI for a working directory that is gone", function()
@@ -257,7 +246,7 @@ for _, backend in ipairs(helper.adapters()) do
     it("cancel completes the stream even if the process never reports exit", function()
       local result = helper.run_stream(adapter)
 
-      adapter:cancel(result.handle_id)
+      adapter:cancel(result.process_id)
       vim.wait(200, function()
         return #result.done_responses > 0
       end)
@@ -265,7 +254,32 @@ for _, backend in ipairs(helper.adapters()) do
       assert.equals(1, #result.done_responses)
       assert.is_true(result.done_responses[1]._cancelled)
       assert.equals("Cancelled", result.done_responses[1].error)
+      -- The synthesized response still names its turn, which is what `_handle_response`'s staleness
+      -- check compares, and the process, which is what the session read-back reads.
+      assert.equals(result.handle_id, result.done_responses[1]._handle_id)
+      assert.equals(result.process_id, result.done_responses[1]._process_id)
       assert.is_nil(ActiveStreamRegistry.get(result.handle_id))
+    end)
+
+    it("cancel takes a process id and not a turn id", function()
+      -- The turn id addresses nothing in the process table, so passing one is a no-op rather than a
+      -- kill. Under oneshot the two used to be one value, which is what hid every mis-assignment.
+      local result = helper.run_stream(adapter)
+
+      adapter:cancel(result.handle_id)
+      vim.wait(100, function()
+        return #result.done_responses > 0
+      end)
+
+      assert.equals(0, #result.done_responses, "the turn id cancelled a process")
+      assert.is_not.equals(result.handle_id, result.process_id)
+      assert.is_truthy(ActiveStreamRegistry.get(result.handle_id), "the stream was unregistered")
+
+      adapter:cancel(result.process_id)
+      vim.wait(200, function()
+        return #result.done_responses > 0
+      end)
+      assert.equals(1, #result.done_responses)
     end)
 
     it("cancel forgets the handle so a later cancel is a no-op", function()
@@ -278,7 +292,7 @@ for _, backend in ipairs(helper.adapters()) do
 
     it("cancel all keeps cancelling when one completion callback throws", function()
       local completed = {}
-      adapter._handles = {
+      adapter._processes = {
         h1 = {
           pid = 9001,
           kill = function() end,
@@ -307,8 +321,8 @@ for _, backend in ipairs(helper.adapters()) do
 
       assert.is_true(completed.h1)
       assert.is_true(completed.h2)
-      assert.is_nil(adapter._handles.h1)
-      assert.is_nil(adapter._handles.h2)
+      assert.is_nil(adapter._processes.h1)
+      assert.is_nil(adapter._processes.h2)
     end)
 
     it("execute cancels a run that never finishes rather than leaving it alive", function()
@@ -318,9 +332,9 @@ for _, backend in ipairs(helper.adapters()) do
       local original_cancel = adapter.cancel
 
       local cancelled_with = false
-      adapter.cancel = function(self, handle_id)
-        cancelled_with = handle_id
-        return original_cancel(self, handle_id)
+      adapter.cancel = function(self, process_id)
+        cancelled_with = process_id
+        return original_cancel(self, process_id)
       end
 
       CliRuntime.INITIAL_RESPONSE_TIMEOUT_MS = 50

@@ -33,7 +33,7 @@ describe("copilot_cli adapter", function()
     assert.is_false(adapter:supports("nonexistent_feature"))
   end)
 
-  it("round-trips a session id per handle", function()
+  it("round-trips a session id per process", function()
     local adapter = CopilotCLI:new({})
     adapter:set_session_id("sess-1", "handle-a")
     adapter:set_session_id("sess-2", "handle-b")

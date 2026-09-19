@@ -378,7 +378,7 @@ function M._register_commands()
     if chat_buffer then
       local adapter = chat_buffer:_get_active_adapter()
       if adapter then
-        adapter:cancel(chat_buffer._current_handle_id)
+        adapter:cancel(chat_buffer._current_process_id)
       end
     elseif M.adapter then
       M.adapter:cancel()

@@ -43,13 +43,17 @@ One adapter, driven by a descriptor per backend (ADR 009). Adding a backend is
 - `modules/<id>_event_processor.lua` - Shims: `stream_decoder.processor(decoder, vocabulary)`
 - `modules/<id>_tool_vocabulary.lua` - Native tool name / payload key / path key → canonical
 - `modules/cli_runtime.lua` - `execute`/`cancel`/`supports` + session delegations, installed onto
-  the class; plus `new_handle_id`, `kill_tree`, `spawn` (the guarded `vim.system` call — a spawn
-  that raises leaves no process, so the exit handler never cleans up), and `report_build_failure`
+  the class; plus `kill_tree`, `spawn` (the guarded `vim.system` call — a spawn that raises leaves
+  no process, so the exit handler never cleans up), and `report_build_failure`. The two ids it is
+  handed are minted by `core/utils/identity.lua`
+  (`handbook/architecture/processes-and-turns.md`)
 - `modules/non_claude_model.lua`, `modules/reasoning_effort.lua` - The shared value rules the
   request builder applies
 - `modules/ask_user_question_instructions.lua` - Shared Claude/Codex choice-list tool instruction
   and stable chat-buffer identity line
-- `modules/session_manager.lua`, `modules/active_stream_registry.lua` - Session/handle tracking
+- `modules/session_manager.lua` - CLI sessions, keyed by the **process** that holds one open
+- `modules/active_stream_registry.lua` - In-flight streams, keyed by **turn**, each carrying the
+  process serving it (`processes-and-turns.md`)
 - `../hooks/transports.lua` - The four hook transports a descriptor can name, over the four
   settings generators beside it
 
@@ -82,6 +86,8 @@ not depend on the process exit callback ever arriving.
 - `infrastructure/rpc/handlers/permission.lua` - PreToolUse decisions, approval UI,
   `ask_user_question`
 - `infrastructure/rpc/handlers/rate_limit.lua` - StopFailure receiver
+- `infrastructure/rpc/hook_scope.lua` - The single definition of "which process, and which turn,
+  is this inbound hook in", and of the one fallback (`processes-and-turns.md`)
 - `infrastructure/hooks/settings_generator.lua` - Writes `.vibing/hook-settings.json`
 
 ## Context System
