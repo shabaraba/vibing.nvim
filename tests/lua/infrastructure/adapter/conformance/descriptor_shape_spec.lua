@@ -8,6 +8,7 @@ local Agents = require("vibing.core.constants.agents")
 local Transports = require("vibing.infrastructure.hooks.transports")
 
 local PART_KINDS = { args = true, model = true, effort = true, resume = true, hook_arg = true, permission_mode = true, prompt = true, extra = true }
+local PROCESS_MODELS = { "oneshot", "duplex" }
 
 describe("conformance: descriptor shape", function()
   for _, def in ipairs(Agents.list()) do
@@ -62,6 +63,26 @@ describe("conformance: descriptor shape", function()
 
       it("closes stdin or leaves it alone, nothing else", function()
         assert.is_true(descriptor.stdin == nil or descriptor.stdin == "")
+      end)
+
+      it("declares a process model it can actually run", function()
+        -- `process` is a ceiling, not a default: absent means oneshot only. The two things a
+        -- duplex-capable backend must not do are close the stdin its prompts arrive on, and keep
+        -- the prompt in the argv (which would make the process answer once and exit) -- and both
+        -- fail *quietly*, as a turn that never produces a second event.
+        assert.is_true(descriptor.process == nil or vim.tbl_contains(PROCESS_MODELS, descriptor.process))
+        if descriptor.process ~= "duplex" then
+          return
+        end
+        assert.is_nil(descriptor.stdin, def.id .. " runs duplex but closes stdin")
+
+        local prompt_part
+        for _, part in ipairs(descriptor.request.parts) do
+          if part.kind == "prompt" then
+            prompt_part = part
+          end
+        end
+        assert.equals("duplex", prompt_part.unless, def.id .. " keeps its prompt in the argv on duplex")
       end)
     end)
   end

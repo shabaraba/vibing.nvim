@@ -101,6 +101,132 @@ function M.stub_system(exe_path, rpc_port)
   return state
 end
 
+--- @class Vibing.Test.JobCall
+--- @field argv string[] argv as passed to jobstart
+--- @field opts table the options table (cwd/env/clear_env/on_stdout/on_stderr/on_exit)
+--- @field job_id number the channel the adapter was handed
+--- @field stdin string[] every chunk `chansend` wrote to it
+--- @field stopped boolean whether `jobstop` was called
+
+--- Replace the `jobstart` family for the duration of a test.
+---
+--- The duplex transport spawns with `jobstart` rather than `vim.system`, because only a job hands
+--- back a writable channel (`duplex_process.lua`). `vim.system` is stubbed to a no-op alongside it:
+--- stopping a resident process goes through `cli_runtime.kill_tree`, which shells out to a real
+--- `kill -9` against whatever pid it was handed, and a fake pid in a test is a real pid on the
+--- machine running it.
+---
+--- @return table state `{ calls, restore, only_call, emit, exit }`
+function M.stub_jobstart()
+  local originals = {
+    jobstart = vim.fn.jobstart,
+    jobpid = vim.fn.jobpid,
+    jobstop = vim.fn.jobstop,
+    chansend = vim.fn.chansend,
+    system = vim.system,
+  }
+
+  local state = { calls = {}, pending_exits = {} }
+  local next_job_id = 0
+
+  vim.fn.jobstart = function(argv, opts)
+    next_job_id = next_job_id + 1
+    local call = { argv = argv, opts = opts, job_id = next_job_id, stdin = {}, stopped = false }
+    table.insert(state.calls, call)
+    return call.job_id
+  end
+  vim.fn.jobpid = function(job_id)
+    return 900000 + job_id
+  end
+  -- Stopping a job does **not** fire `on_exit` here, and that is the point rather than a
+  -- simplification. Neovim flushes the job's streams first, so the real callback always lands a
+  -- tick or more later — by which time the pool may already have installed a replacement process
+  -- under the same chat. A stub that fired `on_exit` inline would make that ordering untestable,
+  -- and a stub that never fires it at all hides the whole class. `state.flush_exits()` is the
+  -- explicit "later" a spec asks for.
+  vim.fn.jobstop = function(job_id)
+    for _, call in ipairs(state.calls) do
+      if call.job_id == job_id and not call.stopped then
+        call.stopped = true
+        table.insert(state.pending_exits, call)
+      end
+    end
+    return 1
+  end
+  vim.fn.chansend = function(job_id, data)
+    for _, call in ipairs(state.calls) do
+      if call.job_id == job_id then
+        table.insert(call.stdin, data)
+      end
+    end
+    return #data
+  end
+  -- `kill_tree` shells out to walk descendants and only touches its own handle from that call's
+  -- completion callback, so a stub that never calls back makes every kill a silent no-op.
+  vim.system = function(_, _, on_exit)
+    if on_exit then
+      on_exit({ code = 0, stdout = "", stderr = "" })
+    end
+    return { pid = 0, kill = function() end, wait = function() return { code = 0 } end }
+  end
+
+  function state.restore()
+    for name, fn in pairs(originals) do
+      if name == "system" then
+        vim.system = fn
+      else
+        vim.fn[name] = fn
+      end
+    end
+  end
+
+  --- @return Vibing.Test.JobCall
+  function state.only_call()
+    assert(#state.calls == 1, "expected exactly one jobstart call, got " .. #state.calls)
+    return state.calls[1]
+  end
+
+  --- Hand complete stdout lines to a job, the way Neovim does: the last element of a batch is the
+  --- partial line carried forward, so a batch of whole lines ends with an empty string.
+  --- @param call Vibing.Test.JobCall
+  --- @param lines string[]
+  function state.emit(call, lines)
+    local batch = vim.list_extend(vim.deepcopy(lines), { "" })
+    call.opts.on_stdout(call.job_id, batch, "stdout")
+  end
+
+  --- @param call Vibing.Test.JobCall
+  --- @param code number?
+  function state.exit(call, code)
+    call.opts.on_exit(call.job_id, code or 0, "exit")
+  end
+
+  --- Deliver the `on_exit` of every job that has been stopped but not yet reaped.
+  ---
+  --- This is the tick Neovim takes between `jobstop` and the callback. A spec that stops a process
+  --- and then carries on without calling this is testing a world where killing something is
+  --- instantaneous, which is the world the pool's identity bug survived in.
+  --- @param code number?
+  function state.flush_exits(code)
+    local pending = state.pending_exits
+    state.pending_exits = {}
+    for _, call in ipairs(pending) do
+      call.opts.on_exit(call.job_id, code or 0, "exit")
+    end
+  end
+
+  --- What the adapter wrote to a job's stdin, decoded.
+  --- @param call Vibing.Test.JobCall
+  --- @return table[]
+  function state.sent(call)
+    return vim.tbl_map(function(chunk)
+      return vim.json.decode(chunk)
+    end, call.stdin)
+  end
+
+  return state
+end
+
 --- Drive an adapter's `stream()` and collect what it produced.
 ---
 --- @param adapter table an instantiated adapter

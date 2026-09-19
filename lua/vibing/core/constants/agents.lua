@@ -13,6 +13,8 @@ local M = {}
 ---`setup().backends.<id>.<field>` の1項目。`config.lua` が既定値の組み立てと検証をここから導く
 ---ので、バックエンド固有の設定キーが共有コードに名前で現れない（ADR 009）
 ---@field kind "string"|"boolean"|"path_or_false"|"executable_or_auto" 検証の種類
+---@field values string[]? `kind = "string"` のとき、許される値の全体。設定されていれば
+---  `config.lua` が enum として検証し、範囲外は警告して既定値に戻す
 ---@field default any 既定値。`default_module` があればそちらが優先
 ---@field default_module string? 既定値を持つモジュールの require パス（このファイルは何も
 ---  require しないので、文字列の既定値を別モジュールから借りるときはこう書く）
@@ -43,6 +45,17 @@ M.AGENTS = {
     command_builder_module = "vibing.infrastructure.adapter.modules.cli_command_builder",
     export_name = "ClaudeCLIAdapter",
     description = "Claude CLI (Anthropic)",
+    config_fields = {
+      -- 1ターン1プロセス（`oneshot`）か、チャットに常駐する1プロセスが複数ターンを捌くか
+      -- （`duplex`、#777）。値の定義は `adapter/modules/process_model.lua`（このファイルは
+      -- 何も require しないので文字列を直接書く）。チャット単位の上書きは frontmatter の
+      -- `process:`。既定が `oneshot` なのは、常駐プロセスがアイドル時も約200MBを占めるため
+      process = {
+        kind = "string",
+        values = { "oneshot", "duplex" },
+        default = "oneshot",
+      },
+    },
     models = {
       { value = "haiku", description = "Claude Haiku (fastest)" },
       { value = "sonnet", description = "Claude Sonnet (balanced)" },

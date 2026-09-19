@@ -135,10 +135,17 @@ by_type.user = function(msg, events)
   tool_blocks(events, msg.message)
 end
 
+--- The end of a turn, whether or not it succeeded.
+---
+--- Under the oneshot transport this is redundant — the process exits, and that exit is what
+--- completes the turn. A resident process exits at the end of the *session*, so `result` is the
+--- only thing that says a turn is over, and it is also the boundary the per-turn half of the event
+--- context (`tokenUsage` / `cliInfo` / `resultErrors` / `output`) is cut on.
 by_type.result = function(msg, events)
   if msg.subtype == "error" or msg.is_error then
     table.insert(events, { kind = "error", message = msg.result or "Unknown error", fatal = true })
   end
+  table.insert(events, { kind = "turn_end", subtype = msg.subtype })
 end
 
 --- Error/unknown-command responses that bypass streaming.

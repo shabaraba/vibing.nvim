@@ -20,6 +20,8 @@ local SessionManagerModule = require("vibing.infrastructure.adapter.modules.sess
 local ProcessRegistry = require("vibing.infrastructure.adapter.modules.process_registry")
 local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 local RateLimitDetector = require("vibing.infrastructure.adapter.modules.rate_limit_detector")
+local ProcessModel = require("vibing.infrastructure.adapter.modules.process_model")
+local DuplexStream = require("vibing.infrastructure.adapter.modules.duplex_stream")
 local HookTransports = require("vibing.infrastructure.hooks.transports")
 local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 
@@ -58,6 +60,10 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---@field on_setup? fun(cwd: string, config: Vibing.Config) Backfill for projects whose `.vibing/`
 ---  predates those files; runs from `setup()` and must not create `.vibing/` where there is none.
 ---@field clear_caches? fun() Memoised state to drop on `:VibingReloadCommands`.
+---@field process? "oneshot"|"duplex" The most capable process model this backend can run; absent
+---  means `oneshot` only. Not the default — that is `oneshot` for everyone, and a chat opts in
+---  through `backends.<id>.process` or its own frontmatter (`process_model.lua`). Named `process`
+---  rather than `transport` because `Vibing.HookSpec.transport` already owns that word.
 
 local M = {}
 
@@ -131,6 +137,14 @@ function M.define(descriptor)
   --- @return string process_id the CLI process serving it
   function Class:stream(prompt, opts, on_chunk, on_done)
     opts = opts or {}
+
+    -- Resolved once, here, and written back onto this turn's opts under a private name: the request
+    -- spec branches on it (`--input-format`, and whether the prompt goes into the argv at all), and
+    -- re-deriving it there would let the argv and the transport disagree. `opts.process` stays as
+    -- the chat wrote it.
+    local process_model = ProcessModel.resolve(descriptor, opts, self.config)
+    opts._process_model = process_model
+    local is_duplex = process_model == ProcessModel.DUPLEX
 
     local debug_mode = vim.g.vibing_debug_stream
     -- Two identities, minted together because one process serves one turn here
@@ -240,28 +254,13 @@ function M.define(descriptor)
     -- concurrent chats from cross-wiring each other's approval UI.
     env.VIBING_PROCESS_ID = ids.process_id
 
-    -- Two registrations, because a process and a turn are two lifetimes. Under this transport they
-    -- begin and end together, so both are torn down in `wrapped_on_done`.
-    local process = {
-      process_id = ids.process_id,
-      -- Only where the nvim_ask_user_question route is wired: registering a value nothing
-      -- consumes would only look like a working route (see features.md → AskUserQuestion).
-      chat_bufnr = descriptor.register_chat_bufnr and opts.chat_bufnr or nil,
-      session_id = opts._session_id,
-      adapter = self,
-    }
-    ProcessRegistry.register(process)
-    TurnRegistry.open({
-      turn_id = ids.turn_id,
-      process = process,
-      worktree_root = opts._worktree_root,
-      on_insert_choices = opts.on_insert_choices,
-      on_approval_required = opts.on_approval_required,
-    })
-
     -- The permission handler stays ignorant of which backend it is serving; it just calls whatever
     -- vocabulary it was handed (#516). Registered for a lightweight call too: `cancel()` and the
     -- exit path resolve the turn through these entries, not only the hook.
+    --
+    -- Called at the top of *every* turn, which is what
+    -- `processes-and-turns.md` → "What is still owed" asks a resident transport for: turn N+1 must
+    -- not run under turn N's `permission_mode` and ignore the allow entry an approval just made.
     local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
     if descriptor.vocabulary then
       perm_handler.set_active_opts(ids.turn_id, vim.tbl_extend("force", opts, { _tool_vocabulary = descriptor.vocabulary }))
@@ -269,13 +268,24 @@ function M.define(descriptor)
       perm_handler.set_active_opts(ids.turn_id, opts)
     end
 
-    local wrapped_on_done = function(response)
+    --- Whatever the transport has to do to the *process* once its turn is over. Runs between the
+    --- turn's own teardown and `on_done`, so the ordering the oneshot path has always had —
+    --- registries emptied before anyone is told the turn ended — is the same on both.
+    --- @type fun()|nil
+    local close_process = nil
+
+    --- Everything a turn owes on its way out, whether or not the process serving it also ends.
+    local function finish(response)
       if completed then
         return
       end
       completed = true
+      -- Turn first: `close` clears the process entry's `active_turn_id`, and unregistering the
+      -- process first would leave nothing for it to clear it on.
       TurnRegistry.close(ids.turn_id)
-      ProcessRegistry.unregister(ids.process_id)
+      if close_process then
+        close_process()
+      end
       perm_handler.clear_active_opts(ids.turn_id)
       if timeout_timer then
         vim.fn.timer_stop(timeout_timer)
@@ -293,6 +303,46 @@ function M.define(descriptor)
       on_done(response)
     end
 
+    if is_duplex then
+      return DuplexStream.run({
+        adapter = self,
+        descriptor = descriptor,
+        config = self.config,
+        ids = ids,
+        prompt = prompt,
+        opts = opts,
+        hook_arg = hook_arg,
+        cwd = cwd,
+        env = env,
+        argv = cmd,
+        event_context = event_context,
+        finish = finish,
+        tag = tag,
+      })
+    end
+
+    -- Two registrations, because a process and a turn are two lifetimes. Under this transport they
+    -- begin and end together, so both are torn down together below.
+    local process = {
+      process_id = ids.process_id,
+      -- Only where the nvim_ask_user_question route is wired: registering a value nothing
+      -- consumes would only look like a working route (see features.md → AskUserQuestion).
+      chat_bufnr = descriptor.register_chat_bufnr and opts.chat_bufnr or nil,
+      session_id = opts._session_id,
+      adapter = self,
+    }
+    ProcessRegistry.register(process)
+    TurnRegistry.open({
+      turn_id = ids.turn_id,
+      process = process,
+      worktree_root = opts._worktree_root,
+      on_insert_choices = opts.on_insert_choices,
+      on_approval_required = opts.on_approval_required,
+    })
+    close_process = function()
+      ProcessRegistry.unregister(ids.process_id)
+    end
+
     local started = CliRuntime.spawn(self._processes, ids, cmd, {
       text = true,
       stdin = descriptor.stdin,
@@ -302,9 +352,9 @@ function M.define(descriptor)
         return self._processes[ids.process_id] == nil
       end),
       stderr = stderr_handler(descriptor, error_output),
-    }, StreamHandler.create_exit_handler(ids, self._processes, output, error_output, wrapped_on_done, function()
+    }, StreamHandler.create_exit_handler(ids, self._processes, output, error_output, finish, function()
       return event_context.resultErrors
-    end), wrapped_on_done)
+    end), finish)
 
     if not started then
       return ids.turn_id, ids.process_id
@@ -332,7 +382,7 @@ function M.define(descriptor)
                 vim.log.levels.WARN
               )
               self:cancel(ids.process_id)
-              wrapped_on_done({
+              finish({
                 error = "Session resume timeout",
                 _session_corrupted = true,
                 _old_session_id = session_id,

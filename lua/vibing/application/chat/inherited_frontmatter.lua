@@ -32,6 +32,11 @@ function M.from_source(source, config)
     -- envもmodel/effortと同じ「このチャットのCLIをどう起動するか」なので引き継ぐ。
     -- config.agent.envは全チャットに効くのでfallbackは不要
     env = source.env,
+    -- processも同じ理由で引き継ぐ。fallbackが無いのはenvと同じで、`backends.<id>.process` が
+    -- 全チャットに効くため。subagent chatでは `process_model.resolve` がどのみち oneshot に
+    -- 落とすので無害だが、**handoff で効く** —— 長く走っていた duplex のチャットを引き継いだ
+    -- 先が黙って oneshot に戻り、以降ずっと遅いまま理由が分からない、というのを塞ぐ
+    process = source.process,
     permission_mode = source.permission_mode or (config.permissions and config.permissions.mode or "acceptEdits"),
     permissions_allow = source.permissions_allow or (config.permissions and config.permissions.allow or {}),
     permissions_deny = source.permissions_deny or (config.permissions and config.permissions.deny or {}),

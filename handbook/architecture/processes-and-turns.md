@@ -9,12 +9,20 @@ separate values; #776 gave them separate names and separate registries.
 ## Why they were split before anything needed them apart
 
 Issue #774 wants one resident `claude` process per chat, serving many turns over an open stdin.
-The measured win is per-turn latency (967–1065ms to the first event with a process per turn,
-332–349ms from the second turn of a resident one) and an approval that answers in place instead of
-killing the process and restarting it with a synthesized "I approved the X tool" message.
+The measured win is per-turn latency — **850/872ms to the first event with a process per turn,
+158/154ms from the second turn of a resident one** — and an approval that answers in place instead
+of killing the process and restarting it with a synthesized "I approved the X tool" message.
 
-None of that is in this change. What is here is only the split, on the oneshot transport, because
-**21 distinct consumers had been written against an identifier that meant two things**, and every
+Those figures are `duplex-transport.md` → "The measurement", and the numbers stated anywhere else
+have to be that one: `tests/perf/duplex_latency.lua`, claude 2.1.236, this repository as the working
+directory, timed from `stream()` returning to the first stdout line reaching the decoder. The body
+of issue #774 carries an earlier pair (967–1065ms against 332–349ms) taken before any of this
+existed — a different CLI build, in a container, on haiku with `--tools ""` and no plugins. It
+agrees on the shape and on nothing else, so it is not interchangeable with the benchmark and is not
+repeated here.
+
+None of that was in #775/#776. What those brought was only the split, on the oneshot transport,
+because **21 distinct consumers had been written against an identifier that meant two things**, and every
 one of them had to be asked which it meant before the answer could start to differ. Doing that in
 the same change as the transport would have made every regression ambiguous: a wrong diff could
 have come from the new process model or from a key that had silently changed meaning.
@@ -84,10 +92,11 @@ the #667 failure through a door #667 did not close. `hook_scope.of` now returns 
 answers. A test pins it.
 
 The one guess that survives is for a hook that named **no** process at all, and only when exactly
-one turn is open. It is honest today because a registered process _is_ a running turn — both
-entries exist from `stream()` to `wrapped_on_done` — so "exactly one entry" really does mean "there
-is no other candidate". It is named `sole_open()` rather than open-coded so there is one place to
-delete once a resident transport can name its own turn on its own stdio.
+one turn is open. "A registered process is a running turn" stopped being true with #777 — a resident
+process stays registered between turns — but the guess reads the _turn_ table, which still holds
+only open turns, so "exactly one entry" still means "there is no other candidate". It is named
+`sole_open()` rather than open-coded so there is one place to delete if a hook ever gains a way to
+name its own turn; an environment variable never will.
 
 ## Two registries, because the split line is the id split
 
@@ -129,36 +138,49 @@ all. This is a deliberate behaviour change and the only one in the split; it is 
 reduction in leaked state, and the case it fires on is a straggler tool call from a process that
 has already been killed.
 
+## What the resident transport did with the three things #775 left owed
+
+All three are settled by #777, and none of them needed the separate fix it looked like they would.
+They were owed because the answer depended on how a turn is delimited, and once that is a `result`
+event the shape falls out:
+
+- **`subagent_count`** is per turn entry, and a duplex turn opens a fresh entry — so it starts at 0
+  by construction, and the previous turn's count is dropped by the `close` in `finish`. The failure
+  it was guarding against (a `Task` whose `tool_result` never lands becoming a permanent
+  contribution to `total_subagent_count()`, throttling every chat through
+  `concurrency.at_capacity()`) needs only that the turn is always closed — including when the
+  process dies mid-turn, which `duplex_routing.exit_handler` does.
+- **`active_opts_by_turn`** is set by `cli_adapter.stream()`, before the transport branch, and a
+  duplex turn is a `stream()` call like any other. Turn N+1 therefore cannot run under turn N's
+  `permission_mode`.
+- **`event_context` is per turn; the decoder's parse state is per process.** The split is one line:
+  `duplex_stream` hands each turn's context the _process's_ `decoder_state` table. Everything else
+  on the context — `tokenUsage`, `cliInfo`, `resultErrors`, `output` — is created fresh per turn and
+  cut on the `result` event, which is exactly the boundary #775 said it could not guess.
+
+Between turns the process is still talking (`active_goal` and `autocompact_state` arrive before the
+first turn even starts), so there is an idle context per process whose only job is to let a
+`session` event reach the SessionManager. The decoder ignores types it does not know, so everything
+else there costs nothing.
+
+`sole_open()` is still here. A resident process can now name its own turn, but the hook still
+cannot: `VIBING_PROCESS_ID` is fixed at spawn, so a hook that names no process at all has no other
+candidate to offer. What changed is that "a registered process is a running turn" is no longer true
+— `process_registry.get(id)` can return an entry whose `active_turn_id` is nil — and `sole_open()`
+reads the _turn_ table, which still holds only open turns. The one call that would have broken,
+`_capture_baselines`, already declines an unresolvable turn.
+
 ## What is still owed
 
-Two of these are deferred because they are wide mechanical changes that every branch stacked on this
-one would have to absorb, and three because their shape depends on how a resident transport
-delimits a turn:
+Both are deferred because they are wide mechanical changes that every branch stacked on this one
+would have to absorb, and neither depends on the transport:
 
-- **`handle_id` still spells "turn id" at every seam outside the adapter.** `ActiveStreamEntry`'s
-  key and field, `Vibing.AdapterResponse._handle_id`, `ChatBuffer._current_handle_id`, the
-  `set_handle_id` / `get_handle_id` callbacks and `event_context.handleId` all mean the turn, and
-  only a docstring says so. The rename is mechanical and belongs in one commit of its own, not
-  half-done here — there is no `turn_id` spelling in the codebase to be inconsistent with.
 - **`stream()` returns the two ids positionally**, so `local id = adapter:stream(...)` compiles,
   yields the turn, and `cancel(id)` is then a silent no-op. The typed `Vibing.RequestIds` table the
   adapter already builds internally is what should cross the seam; that changes the adapter contract
-  in `base.lua` and every conformance spec, so it travels with the rename above.
+  in `base.lua` and every conformance spec.
 - **`cancel(nil)` means "kill every process this adapter owns."** The hazard is real — one adapter
   instance is shared between a chat's stream and the lightweight `execute()` calls — and is
   currently paid for with a guard at the one call site that can reach it. Splitting `cancel_all()`
   out and making `cancel(process_id)` require its argument removes the special case; it is deferred
-  for the same reason, since `init.lua`, `base.lua` and five specs name the nil form.
-
-- **`subagent_count` lives on the turn entry and is dropped by `close`.** With one turn per entry
-  that is exactly right, and it is now on the correct side of the split. A resident process must
-  still reset the count when a new turn starts, or a `Task` whose `tool_result` never lands becomes
-  a permanent contribution to `total_subagent_count()` and throttles every chat through
-  `concurrency.at_capacity()`.
-- **`active_opts_by_turn` is set once per `stream()`.** A resident transport must call
-  `set_active_opts` at the top of every turn, or turn N+1 runs under turn N's `permission_mode` and
-  ignores the allow entry an approval just produced.
-- **`event_context` still carries the turn's `tokenUsage` / `cliInfo` / `resultErrors` / `output`
-  next to the decoder's own parse state.** Under a resident process the first four are per-turn and
-  the last is per-process. The boundary between them is the `result` event, which is knowledge the
-  oneshot transport does not have, so splitting the table now would mean guessing it and redoing it.
+  because `init.lua`, `base.lua` and five specs name the nil form.

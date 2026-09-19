@@ -494,6 +494,29 @@ item_display 2 本・event processor の描画部（約 400 行）が消える�
   限る方針が、実際にこの 2 つを見つけたということでもある。
 - **P6**: `handbook/ADAPTER_DEVELOPMENT.md` を記述子の書き方と「先に測る項目」に書き換えた。
 
+### その後の追加: `process`（#777）
+
+記述子に 1 フィールド `process = "oneshot" | "duplex"` が増えた。ADR 009 当時は「1 ターン =
+1 プロセス」が全バックエンド共通の前提だったので、`response.stdin` はプロセスの終わり方を語る
+フィールドで済んでいた。常駐プロセス（`architecture/duplex-transport.md`）はその前提を
+バックエンドごとの選択に変える。
+
+意味論は**既定ではなく上限**にした。「このバックエンドが走らせられる最も高機能なプロセスモデル」
+であって、実際に走るモデルではない。1 フィールドで「既定は oneshot のまま」と「claude だけが
+duplex を選べる」の両方を表せるのはこの解釈だけで、既定として読むと `duplex` を宣言した瞬間に
+全チャットの挙動が変わってしまう。チャット単位の選択は `backends.<id>.process` と frontmatter の
+`process:` で、descriptor が宣言していなければどちらも無視される。
+
+名前が `transport` でないのは、同じ記述子の `hook.transport` が既にその語を取っているため
+（`settings_file` / `config_override` / `plugin_dir` / `project_dir`、conformance 2 本が分岐に
+使っている）。
+
+`stream()` が 1 本であるという P0 の結論は変わっていない。分岐は 1 箇所、ターンの後始末
+（`finish`）とプロセスの後始末（`close_process`）を分けた上で、duplex が後者を設定しないという
+形に落ちている。canonical イベントは 11 種から 12 種になった（`turn_end`）。増えた理由は
+「ターンが終わった」を語る腕が 1 つも無く、成功した `result` 行がイベントを 1 つも生んで
+いなかったため — oneshot ではプロセス終了がそれを代弁していた。
+
 ## Consequences
 
 **得るもの**

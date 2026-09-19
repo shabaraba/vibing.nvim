@@ -43,7 +43,7 @@ describe("vibing.config", function()
       assert.is_false(config.defaults.backends.codex.allow_tracked_profile)
       assert.is_true(config.defaults.backends.codex.provider_notice)
       assert.equals("auto", config.defaults.backends.grok.executable)
-      assert.same({}, config.defaults.backends.claude)
+      assert.same({ process = "oneshot" }, config.defaults.backends.claude)
     end)
 
     it("should have language configuration", function()

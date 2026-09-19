@@ -87,9 +87,20 @@ describe("decoders.claude_stream_json", function()
     }))
   end)
 
-  it("reports a failed result as a fatal error", function()
-    assert.same({ { kind = "error", message = "boom", fatal = true } }, decode({}, { type = "result", is_error = true, result = "boom" }))
-    assert.same({}, decode({}, { type = "result", subtype = "success" }))
+  it("reports a failed result as a fatal error, ahead of the turn_end it also ends", function()
+    -- Order matters: the resident transport completes the turn on `turn_end`, so a `result` that
+    -- declared the turn failed has to have reached `resultErrors` before that happens.
+    assert.same(
+      { { kind = "error", message = "boom", fatal = true }, { kind = "turn_end", subtype = nil } },
+      decode({}, { type = "result", is_error = true, result = "boom" })
+    )
+  end)
+
+  it("ends the turn on a successful result too", function()
+    -- The only event that says a turn is over. Under the oneshot transport the process exit says
+    -- it instead, so a success used to produce no event at all -- which a resident process, which
+    -- does not exit, would have read as a turn that never ended.
+    assert.same({ { kind = "turn_end", subtype = "success" } }, decode({}, { type = "result", subtype = "success" }))
   end)
 
   it("normalises a rate_limit_event", function()

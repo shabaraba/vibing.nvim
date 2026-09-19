@@ -14,6 +14,7 @@
 
 local CommonBuilder = require("vibing.infrastructure.adapter.modules.command_builder_common")
 local NonClaudeModel = require("vibing.infrastructure.adapter.modules.non_claude_model")
+local ProcessModel = require("vibing.infrastructure.adapter.modules.process_model")
 local ReasoningEffort = require("vibing.infrastructure.adapter.modules.reasoning_effort")
 
 ---@class Vibing.RequestContext
@@ -28,6 +29,7 @@ local ReasoningEffort = require("vibing.infrastructure.adapter.modules.reasoning
 ---| "lightweight"            # `opts.lightweight`
 ---| "session"                # resuming a session
 ---| "hook_arg"               # a hook was installed for this turn
+---| "duplex"                 # this turn runs on a resident process (`process_model.lua`)
 ---| { config: string }       # a truthy value at that dotted path in the config
 
 ---@class Vibing.RequestPart
@@ -88,6 +90,11 @@ local function holds(condition, ctx)
     return ctx.session_id ~= nil
   elseif condition == "hook_arg" then
     return ctx.hook_arg ~= nil
+  elseif condition == "duplex" then
+    -- The *resolved* model, not the chat's request: `process_model.resolve` clamps a `duplex`
+    -- request back to `oneshot` for a lightweight call, a subagent chat, or a backend that cannot
+    -- run one. Reading `opts.process` here would put the prompt on a stdin nobody is writing to.
+    return ctx.opts._process_model == ProcessModel.DUPLEX
   elseif type(condition) == "table" and condition.config then
     return vim.tbl_get(ctx.config or {}, unpack(vim.split(condition.config, ".", { plain = true }))) and true or false
   end
@@ -276,6 +283,27 @@ function M.build(spec, prompt, opts, session_id, config, hook_arg)
     end
   end
   return cmd
+end
+
+--- The prompt as it would have gone into the argv, for a transport that sends it on stdin instead.
+---
+--- The `@file:` context prefix and the response-language sentence are composed by the same function
+--- either way, so a duplex turn cannot quietly lose the context a oneshot turn would have carried.
+--- Returns nil for a spec with no prompt part, which `descriptor_shape_spec` already refuses.
+--- @param spec Vibing.RequestSpec
+--- @param prompt string
+--- @param opts Vibing.AdapterOpts
+--- @param session_id string|nil
+--- @param config Vibing.Config
+--- @return string|nil
+function M.prompt_text(spec, prompt, opts, session_id, config)
+  local ctx = { prompt = prompt, opts = opts or {}, session_id = session_id, config = config or {}, cmd = {} }
+  for _, part in ipairs(spec.parts) do
+    if part.kind == "prompt" then
+      return full_prompt(part, ctx)
+    end
+  end
+  return nil
 end
 
 --- The `build(prompt, opts, session_id, config, hook_arg)` a descriptor exposes, bound to its spec.

@@ -16,7 +16,13 @@ local SessionManagerModule = require("vibing.infrastructure.adapter.modules.sess
 
 local M = {}
 
---- How long `execute()` waits for a blocking call to finish.
+--- How long `execute()` waits for a blocking call to finish, and how long the oneshot transport
+--- gives a resumed session to produce its first event.
+---
+--- **Keep this equal to `duplex_turn.FIRST_RESPONSE_TIMEOUT_MS`.** The two answer the same
+--- question — how long to wait for the CLI's first byte — and changing one alone would leave the
+--- two transports silently waiting different amounts of time for the same thing. Merging them
+--- (and fixing this name, which is narrower than what it does) is #782.
 M.INITIAL_RESPONSE_TIMEOUT_MS = 120000
 
 --- @class Vibing.RequestIds The two identities one `stream()` call mints.
@@ -264,6 +270,35 @@ function M.install(Class, features)
       M.kill_tree(handle)
       complete_cancel(handle)
     end
+  end
+
+  --- Stop the turn without stopping the process, where the process can serve the next one.
+  ---
+  --- Kept apart from `cancel` rather than folded into it, because two callers want opposite things
+  --- from the same word. `permission.lua`'s `cancel_and_deny` relies on `cancel` running
+  --- `wrapped_on_done` synchronously and on the process being gone afterwards (that is what makes
+  --- the approval's retry message a *new* turn); the user pressing cancel wants the conversation's
+  --- process still there for the next message. Only the second one is routed here.
+  ---
+  --- Stopping is still guaranteed either way: the resident path sends an interrupt and falls back
+  --- to this same `cancel` if the CLI has not stopped within `INTERRUPT_GRACE_MS`.
+  --- @param process_id string?
+  function Class:stop_turn(process_id)
+    local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
+    if process_id and Routing.stop_turn(self, process_id) then
+      return
+    end
+    self:cancel(process_id)
+  end
+
+  --- Release the resident process a chat was holding, because the chat is gone.
+  ---
+  --- The symmetric half of `stop_turn`: that one says "stop this turn, keep the process", this one
+  --- says "the chat is gone, so is its process". Both exist so `presentation/` can say what it
+  --- means through the adapter interface instead of reaching into one transport's own pool.
+  --- @param chat_bufnr number?
+  function Class:release_chat(chat_bufnr)
+    require("vibing.infrastructure.adapter.modules.duplex_pool").stop(chat_bufnr)
   end
 
   --- @param feature string

@@ -115,7 +115,9 @@ function ChatBuffer:cancel_request()
     return false
   end
 
-  adapter:cancel(self._current_process_id)
+  -- `stop_turn`, not `cancel`: the user asked for this request to stop, not for the conversation's
+  -- CLI process to be thrown away. On the oneshot transport the two are the same thing anyway.
+  adapter:stop_turn(self._current_process_id)
   return true
 end
 

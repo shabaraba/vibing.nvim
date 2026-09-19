@@ -81,6 +81,15 @@ local function get_active_opts(turn_id)
   return turn_id and active_opts_by_turn[turn_id] or nil
 end
 
+--- Test seam. "A turn's opts are set when it starts and gone when it ends" has no other observable
+--- effect, so a spec asserting it has nothing to read — and the one that tried asserted
+--- `perm_handler.get_active_opts_for_test == nil`, a name that never existed, so it passed whatever
+--- the code did. Under a resident process the invariant stops being incidental: turn N+1 inheriting
+--- turn N's entry means it runs under the wrong `permission_mode`.
+--- @param turn_id string|nil
+--- @return table|nil
+M._get_active_opts = get_active_opts
+
 --- Combine the bundled destructive-command deny rules with the user's own rules.
 --- The defaults go first so they read as the baseline, though order does not decide the outcome:
 --- can_use_tool checks every deny rule before any allow rule.

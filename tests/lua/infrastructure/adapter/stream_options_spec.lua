@@ -129,13 +129,15 @@ for _, backend in ipairs(helper.adapters()) do
 
       it("clears the permission opts once the process exits", function()
         local result = helper.run_stream(adapter, { permissions_deny = { "Bash" } })
+        assert.same({ "Bash" }, perm_handler._get_active_opts(result.turn_id).permissions_deny)
+
         system.only_call().on_exit({ code = 0, stdout = "", stderr = "" })
         vim.wait(200, function()
-          return perm_handler.get_active_opts_for_test == nil
+          return perm_handler._get_active_opts(result.turn_id) == nil
         end)
         -- clear_active_opts is what stream() promises to call; opening a fresh turn must
         -- not see the old one's deny list.
-        assert.is_not_nil(result.turn_id)
+        assert.is_nil(perm_handler._get_active_opts(result.turn_id))
       end)
     end)
 

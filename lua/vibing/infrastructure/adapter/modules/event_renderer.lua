@@ -31,6 +31,7 @@ local TokenUsage = require("vibing.core.utils.token_usage")
 ---| { kind: "cli_info", version: string?, model: string?, tools: number?, mcp_servers: number?, compacted: boolean? }
 ---| { kind: "rate_limit", info: Vibing.RateLimitInfo }
 ---| { kind: "error", message: string, fatal: boolean? }              # fatal: the CLI declared the turn failed
+---| { kind: "turn_end", subtype: string? }                           # this turn is over; the process may not be
 
 local M = {}
 
@@ -300,6 +301,16 @@ handlers.error = function(event, context)
     -- the CLI declaring the turn failed, which can happen with the process still exiting 0.
     context.resultErrors = context.resultErrors or {}
     table.insert(context.resultErrors, message)
+  end
+end
+
+-- Only a resident transport listens: under oneshot the process exit is the completion signal and
+-- `onTurnEnd` is never set, so the event is decoded and dropped. Delivered after the `error` arm
+-- above (the decoder emits them in that order), so a fatal result has already landed in
+-- `resultErrors` by the time the turn is completed on it.
+handlers.turn_end = function(event, context)
+  if context.onTurnEnd then
+    context.onTurnEnd(event)
   end
 end
 

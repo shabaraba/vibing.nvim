@@ -29,6 +29,9 @@ local M = {
     binary = CLICommandBuilder.BINARY,
     parts = {
       { kind = "args", "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages" },
+      -- The resident transport's whole premise: with the prompt arriving on stdin the process has
+      -- no reason to exit, so it serves the next turn too (`duplex_stream.lua`).
+      { kind = "args", "--input-format", "stream-json", when = "duplex" },
       { kind = "model", flag = "--model", names = "claude" },
       { kind = "effort", flag = "--effort" },
       { kind = "resume", flag = "--resume", fork = "--fork-session" },
@@ -46,8 +49,10 @@ local M = {
       { kind = "extra", fn = CLICommandBuilder.mcp_config_args, unless = "lightweight" },
       { kind = "extra", fn = CLICommandBuilder.system_prompt_args },
       { kind = "extra", fn = CLICommandBuilder.setting_source_args },
-      -- End of options marker, so a prompt starting with `---` is not parsed as flags.
-      { kind = "prompt", terminator = "--" },
+      -- End of options marker, so a prompt starting with `---` is not parsed as flags. Dropped on
+      -- the duplex transport, where the same text is composed by `request_builder.prompt_text` and
+      -- written to stdin instead: an argv prompt would make the process answer once and exit.
+      { kind = "prompt", terminator = "--", unless = "duplex" },
     },
   },
   build = CLICommandBuilder.build,
@@ -98,6 +103,10 @@ local M = {
   register_chat_bufnr = true,
   -- Reads its prompt from argv; stdin stays open.
   stdin = nil,
+  -- The most capable process model this CLI can run, not the one it will: the default stays
+  -- `oneshot` for every chat, and a resident process is reached only through
+  -- `backends.claude.process` or a chat's `process:` frontmatter (`process_model.lua`).
+  process = "duplex",
 }
 
 return M

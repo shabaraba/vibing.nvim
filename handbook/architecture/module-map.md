@@ -115,6 +115,7 @@ Lua Plugin:
 - lua/vibing/infrastructure/adapter/cli_adapter.lua                - The one CLI adapter
 - lua/vibing/infrastructure/adapter/backends/claude.lua            - The reference descriptor
 - lua/vibing/infrastructure/adapter/modules/cli_command_builder.lua - Claude's system prompt / permission argv
+- lua/vibing/infrastructure/adapter/modules/duplex_*.lua            - The resident-process transport (opt-in, #777)
 - lua/vibing/presentation/chat/buffer.lua                          - Chat buffer implementation
 - lua/vibing/application/chat/send_message.lua                     - Request orchestration
 
