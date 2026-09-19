@@ -47,6 +47,21 @@ local function queue_for_later(bufnr, params, at_capacity)
   return { success = true, queued = true, bufnr = bufnr }
 end
 
+---この配達が「報告」か（#788）
+---
+---答えとして消費してよいかを決める唯一の問いで、`delivery_message.section_for` が見出しを
+---決めるのと同じ `orchestration_link.direction` に訊く。送信元が分からない配達（`from_bufnr`
+---無し）は関係が無いので報告ではない — 今日どおり答えになりうる
+---@param from_bufnr number?
+---@param to_bufnr number
+---@return boolean
+local function is_report(from_bufnr, to_bufnr)
+  if not from_bufnr then
+    return false
+  end
+  return require("vibing.application.chat.orchestration_link").direction(from_bufnr, to_bufnr) == "Report"
+end
+
 ---Send message to chat buffer
 ---
 ---宛先は `bufnr` か `file_path` のどちらか一方で指す。パスで指せることが要点で、bufnr は
@@ -86,8 +101,18 @@ function M.send_message(params)
   -- ここを通さないと、この経路は2通りに壊れる。`queue_if_busy` なしなら下流の `validate` が
   -- 「応答中」で弾く（大声で失敗するので気づける）。`queue_if_busy` 付きだと呼び出し元に
   -- `queued` が返り、答えは `question_wait_sec`（既定900秒）キューに座ったまま質問が期限切れに
-  -- なってから**新しいターン**として配達される。後者は、答えたのに答えにならない
-  local answers_question = ProgrammaticSender.has_blocked_question(bufnr)
+  -- なってから**新しいターン**として配達される。後者は、答えたのに答えにならない。
+  --
+  -- **ただし報告は答えではない。** 宛先の状態だけで決めると、質問待ちのチャットに届いたものは
+  -- 何であれ答えとして食われる — このリポジトリ自身のワークフローがその形で、オーケストレーターが
+  -- `nvim_ask_user_question` で人間に訊いている900秒のあいだにワーカーの完了報告が届けば、
+  -- 「どちらの方式にしますか」への人間の答えとしてその報告本文がモデルに渡る。
+  --
+  -- 向きは `orchestration_link.direction` が答える。**配達の見出しを決めるのと同じ関数**なので、
+  -- `## Report` と表示されるものだけが除かれ、`## Request`（オーケストレーターがワーカーの質問に
+  -- 答える経路）はそのまま通る。見出しと挙動が2つの規則になると、どちらが起きたのかを
+  -- transcript から読めなくなる
+  local answers_question = ProgrammaticSender.has_blocked_question(bufnr) and not is_report(params.from_bufnr, bufnr)
 
   if not answers_question then
     if params.queue_if_busy and (ProgrammaticSender.is_responding(bufnr) or at_capacity) then

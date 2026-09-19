@@ -214,6 +214,11 @@ function ChatBuffer:_recycle_prompt_section()
 
   local dropped = ConversationExtractor.drop_trailing_unsent_section(self.buf, true) or {}
   local kept = ApprovalParser.strip_prompt_lines(dropped)
+  -- 質問の選択肢も同じ扱いを受ける（#788）。承認と違ってテキストからは見分けられないので、
+  -- 「書いたはずの並び」との突き合わせで落とす（`renderer.strip_choice_lines`）。ここを飛ばすと
+  -- `add_user_section` が `_pending_choices` から描き直すのと合わせて**同じ選択肢が2回**出て、
+  -- しかも1組は `_pending_user_text` なので次の `<CR>` でモデルへ送り返される
+  kept = Renderer.strip_choice_lines(kept, self._pending_choices)
   local carried = vim.trim(table.concat(kept, "\n"))
   if carried == "" then
     return true
@@ -567,11 +572,23 @@ end
 ---`<CR>` の手前には割り込みが2つあり（リミット中の予約への切り替えと、期限切れキャッシュの
 ---確認）、両方が同じ判断をする。同じ条件を2箇所に書くと、3つ目の除外を足したときに片方だけ
 ---直してスラッシュコマンドや承認応答が黙って飲み込まれる
+---**`is_approval_retry` が要るのは、承認応答の判定が自分の足跡を消したあとだから（#788）。**
+---下の行は「保留がまだ載っていて、本文が承認応答の形をしている」で承認応答を見分けるが、
+---`approval_decision.consume` は答えを消費した時点でその保留を `_pending_approvals` から
+---落とす。1件だけ立っていた承認を答えて `retry_as_new_turn` になった `<CR>` は、ここに来た
+---時点でリストが空なので**承認応答に見えない**。そのまま予約に回ると、発火時に送られるのは
+---バッファの未送信セクション（＝選択肢行そのもの）であって、消費済みの答えを届けるはずの
+---再試行文ではない。承認応答は遅らせない、というこの関数の意図がそこだけ破れる
 ---@param message string
+---@param is_approval_retry boolean? 消費済みの承認の再試行文としてこの送信が起きたか
 ---@return boolean
-function ChatBuffer:can_defer_send(message)
+function ChatBuffer:can_defer_send(message, is_approval_retry)
   local commands = require("vibing.application.chat.commands")
   if commands.is_command(message) then
+    return false
+  end
+
+  if is_approval_retry then
     return false
   end
 
@@ -585,15 +602,16 @@ end
 
 ---リミット中の送信を予約に切り替える
 ---@param message string
+---@param is_approval_retry boolean? `can_defer_send` に渡す（同名の引数を参照）
 ---@return boolean scheduled 予約に切り替えたか
-function ChatBuffer:_try_schedule_instead_of_send(message)
+function ChatBuffer:_try_schedule_instead_of_send(message, is_approval_retry)
   local config = require("vibing.config").get()
   local opts = (config.agent and config.agent.scheduled_requests) or {}
   if not opts.enabled then
     return false
   end
 
-  if not self:can_defer_send(message) then
+  if not self:can_defer_send(message, is_approval_retry) then
     return false
   end
 
@@ -927,8 +945,14 @@ function ChatBuffer:send_message()
   -- 質問への答えも同じ位置（#788）。承認より**後**なのは、承認プロンプトが出ているときの
   -- `<CR>` は承認への答えであって質問への答えではないから — 承認側は自分に宛てられた答えか
   -- どうかを判定できる（選択肢と `request_id`）が、質問側は自由文なので何でも受け取ってしまう。
-  -- 先に置くと、承認の答えが質問の答えとして消費される
-  if self:_answer_pending_question() then
+  -- 先に置くと、承認の答えが質問の答えとして消費される。
+  --
+  -- **`answered` が非nilなら、そこで打ち止め。** 上の `if` を抜けて来たということは
+  -- `retry_as_new_turn` — 承認は既に消費済みで、本文は承認の選択肢行そのものである。それを
+  -- ここへ通すと、`1. allow_once - Allow this execution only <!-- vibing:req=... -->` が
+  -- 「どちらの方式にしますか」への人間の答えとしてモデルに渡り、しかも `true` を返すので
+  -- 下の `answered.message`（再試行文）はどこにも行かない。消費したのに届かない、の変種
+  if not answered and self:_answer_pending_question() then
     return true
   end
 
@@ -966,9 +990,24 @@ function ChatBuffer:send_message()
     return false
   end
 
+  -- 承認への答えは `_answer_pending_approval` が `cancel_request()` の手前で処理済み。
+  -- ここに来るのは「新しいターンとして再試行する」経路だけなので、本文を再試行文に差し替える。
+  --
+  -- **予約（`_try_schedule_instead_of_send`）より前に置く。** 下の2つは同じ本文を見なければ
+  -- ならない — 遅らせてよいかの判定（`can_defer_send`）と、実際に送る本文である
+  local is_approval_retry = false
+  if answered and answered.message then
+    message = answered.message
+    is_approval_retry = true
+  end
+
   -- リミット中と分かっているならコミットせずに予約へ回す。commit_user_message を通さないので
   -- `## User <!-- unsent -->` がそのまま残り、それが発火時に送られる本文になる。
-  if self:_try_schedule_instead_of_send(message) then
+  --
+  -- **その「バッファがそのまま本文になる」が、再試行文を予約できない理由でもある。** ここに
+  -- 載っているのは承認の選択肢行で、`message` の差し替えはバッファに触らない。`can_defer_send`
+  -- が再試行を断るので予約には入らず、この経路は通常送信のまま上限のハンドリングに落ちる
+  if self:_try_schedule_instead_of_send(message, is_approval_retry) then
     self._is_sending = false
     return true
   end
@@ -987,14 +1026,6 @@ function ChatBuffer:send_message()
         return false
       end
     end
-  end
-
-  -- Check if message is an approval response
-  -- Only process if there's a pending approval request
-  -- 承認への答えは `_answer_pending_approval` が `cancel_request()` の手前で処理済み。
-  -- ここに来るのは「新しいターンとして再試行する」経路だけで、本文は差し替え済みの再試行文
-  if answered and answered.message then
-    message = answered.message
   end
 
   local vibing = require("vibing")
@@ -1332,8 +1363,18 @@ function ChatBuffer:expire_question(entry)
     return true
   end
 
-  self:_flush_chunks()
-
+  -- **ここで `_flush_chunks` は呼ばない。** 溜めた出力を流すのは末尾への追記で、末尾にあるのは
+  -- プロンプトを描いた未送信セクションである。どちらの分岐に入っても壊れる:
+  --
+  -- - 他のプロンプトが残っているなら、アシスタントの文章が開いたままの `## User` の中に入り、
+  --   `extract_user_message` がそれをユーザーの次のメッセージとして読む
+  -- - 最後の1件だったなら、下の `_recycle_prompt_section` が未送信ヘッダから末尾までを畳むので、
+  --   いま流したばかりのテキストごと消える。`_chunk_parts` は空になった後なので**復元できない**
+  --
+  -- 溜めたものの出口は `append_chunk` が約束したとおり残っている — 他が残っているなら最後の
+  -- プロンプトが解けたとき、最後の1件だったなら `cancel_request` → `_finish_turn` の
+  -- `add_user_section`。後者では説明行より**後ろ**に出るので時系列は入れ替わるが、
+  -- 無音で消えるよりはよい
   if others then
     -- 承認の期限切れと同じ形。未送信セクションは他のプロンプトのものなので落とさず、ターンも
     -- 止めない。行は末尾に積む（`expire_approval` と同じで、そこが開いている未送信セクションの
@@ -1346,10 +1387,9 @@ function ChatBuffer:expire_question(entry)
     return true
   end
 
-  if self._prompts_rendered_unsent then
-    ConversationExtractor.drop_trailing_unsent_section(self.buf, true)
-    self._prompts_rendered_unsent = false
-  end
+  -- 畳むのであって捨てるのではない（#786）。選択肢の下にユーザーが答えを打ちかけていたら、
+  -- それは `_pending_user_text` に載って下の `_finish_turn` の描き直しに現れる
+  self:_recycle_prompt_section()
 
   local line_count = vim.api.nvim_buf_line_count(self.buf)
   vim.api.nvim_buf_set_lines(self.buf, line_count, line_count, false, {

@@ -44,6 +44,7 @@ describe("rpc handlers.message.send_message", function()
     originals.get_chat_buffer = view.get_chat_buffer
     originals.list_chat_buffers = view.list_chat_buffers
     originals.link = OrchestrationLink.link
+    originals.direction = OrchestrationLink.direction
     originals.open = ChatLocator.open
     originals.before_delivery = AutoCompact.before_delivery
 
@@ -93,6 +94,7 @@ describe("rpc handlers.message.send_message", function()
     view.get_chat_buffer = originals.get_chat_buffer
     view.list_chat_buffers = originals.list_chat_buffers
     OrchestrationLink.link = originals.link
+    OrchestrationLink.direction = originals.direction
     ChatLocator.open = originals.open
     AutoCompact.before_delivery = originals.before_delivery
 
@@ -371,6 +373,57 @@ describe("rpc handlers.message.send_message", function()
 
       assert.is_true(result.queued)
       assert.equals(0, chats[to].sends)
+    end)
+
+    it("does not consume a worker's report as the answer", function()
+      -- **The state was read off the target alone, so anything arriving at a question-waiting chat
+      -- became the answer.** This repo's own workflow produces it: an orchestrator asks its human
+      -- through `nvim_ask_user_question`, and inside that 900-second wait a worker finishes and
+      -- reports. The report body is then what the model reads as "which approach did you want?".
+      --
+      -- The direction is asked of `orchestration_link.direction` — the same function that chooses
+      -- the delivered section's heading — so what is shown as `## Report` is exactly what is not
+      -- treated as an answer. `direction` is stubbed here because these scratch buffers have no
+      -- file name for it to read a relationship from; `orchestration_link_spec` owns the real one.
+      local from, to = make_chat(), make_chat()
+      chats[to].responding = true
+      block_on_question(to)
+      OrchestrationLink.direction = function()
+        return "Report"
+      end
+
+      local result = Message.send_message({
+        bufnr = to,
+        message = "Task finished. Branch pushed, 3 tests added.",
+        from_bufnr = from,
+        queue_if_busy = true,
+      })
+
+      assert.is_true(result.queued, "a report belongs in the queue, behind the turn it interrupted")
+      assert.equals(0, chats[to].sends)
+      assert.equals(1, PendingQuestions.count(), "the question is still waiting for its human")
+    end)
+
+    it("still delivers a brief sent down the link as the answer", function()
+      -- The other direction, and the reason the exemption cannot simply be removed: an orchestrator
+      -- answering a worker's question sends `## Request`, and the worker-stopped notice tells it to
+      -- make exactly this call. Refusing it leaves the worker blocked until its own deadline.
+      local from, to = make_chat(), make_chat()
+      chats[to].responding = true
+      block_on_question(to)
+      OrchestrationLink.direction = function()
+        return "Request"
+      end
+
+      local result = Message.send_message({
+        bufnr = to,
+        message = "Go with A.",
+        from_bufnr = from,
+        queue_if_busy = true,
+      })
+
+      assert.is_nil(result.queued)
+      assert.equals(1, chats[to].sends)
     end)
 
     it("does not let a compaction take the answer's place", function()

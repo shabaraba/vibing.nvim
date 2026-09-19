@@ -221,6 +221,13 @@ describe("a question holding the turn open", function()
   end)
 
   describe("what expiry does to the turn", function()
+    --- The state expiry actually happens in: a running turn whose choices are drawn.
+    ---
+    --- **Drawing them for real is what makes these tests tests.** Written first as
+    --- `chat_buf._prompts_rendered_unsent = true`, they set the flag the branch reads without ever
+    --- creating the section the branch acts on — so `assert.is_false(..._rendered_unsent)` only
+    --- read back a value the code assigns unconditionally, and the output the branch deletes was
+    --- never there to be deleted. Same shape as the approval case #786 had to rewrite.
     --- @return Vibing.ChatBuffer, table replies, table stopped
     local function chat_whose_turn_can_be_watched(request_id)
       local chat_buf, replies = chat_awaiting_question(request_id)
@@ -233,10 +240,17 @@ describe("a question holding the turn open", function()
           end,
         }
       end
+      chat_buf:insert_choices({ { question = "Which approach?", options = { { label = "A" } } } })
+      chat_buf:start_response()
+      chat_buf:show_pending_prompts()
       PendingQuestions.get(request_id or "q-1").on_timeout = function(entry)
         chat_buf:expire_question(entry)
       end
       return chat_buf, replies, stopped
+    end
+
+    local function body(chat_buf)
+      return table.concat(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false), "\n")
     end
 
     it("ends the turn when the question was the last prompt holding it", function()
@@ -244,15 +258,66 @@ describe("a question holding the turn open", function()
       -- model has the choice it asked about still open and the obvious reading of the non-answer is
       -- to pick one — which is what asking existed to prevent.
       local chat_buf, replies, stopped = chat_whose_turn_can_be_watched()
-      -- The options were drawn mid-turn, so there is an unsent section to drop. Left in place it
-      -- would sit below the explanation and `extract_user_message` would read it.
-      chat_buf._prompts_rendered_unsent = true
+      assert.is_true(chat_buf._prompts_rendered_unsent, "the branch under test was not reached")
 
       PendingQuestions.expire("q-1")
 
       assert.equals("unanswered", replies[1].status)
       assert.equals(1, #stopped, "the turn is stopped")
       assert.is_false(chat_buf._prompts_rendered_unsent, "the mid-turn unsent section is dropped")
+      -- The explanation lands in the assistant's section, not in an open input field where the
+      -- next `<CR>` would send it back to the model as the user's own words.
+      local unsent = chat_buf:extract_user_message() or ""
+      assert.is_nil(unsent:match("Question expired"), "the explanation is readable as a message:\n" .. unsent)
+    end)
+
+    it("keeps the output it was holding when it ends the turn", function()
+      -- The hold has one promise: everything it swallows comes back out. Expiry used to flush while
+      -- the unsent prompt section was still at the tail, so the flushed text landed *inside* that
+      -- section and the drop that follows deleted it along with the options — and `_chunk_parts`
+      -- was already empty, so it could not come back. Silent output loss, which is the one failure
+      -- a user cannot even report.
+      local chat_buf = chat_whose_turn_can_be_watched()
+      chat_buf._get_active_adapter = function()
+        return {
+          stop_turn = function()
+            chat_buf:_finish_turn()
+          end,
+        }
+      end
+      chat_buf:append_chunk("a parallel tool's result\n")
+      vim.wait(100)
+      assert.is_nil(body(chat_buf):match("a parallel tool's result"), "precondition: still held")
+
+      PendingQuestions.expire("q-1")
+      vim.wait(100)
+
+      assert.is_truthy(body(chat_buf):match("a parallel tool's result"), "held output was lost:\n" .. body(chat_buf))
+    end)
+
+    it("keeps what the user had started typing as their answer", function()
+      -- The options are redrawn below the explanation, which is exactly the invitation to answer
+      -- again — but only if the half-written answer survives to be finished. Dropping the section
+      -- wholesale is the #786 failure, reached here through the question channel.
+      local chat_buf = chat_whose_turn_can_be_watched()
+      chat_buf._get_active_adapter = function()
+        return {
+          stop_turn = function()
+            chat_buf:_finish_turn()
+          end,
+        }
+      end
+      local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
+      vim.api.nvim_buf_set_lines(chat_buf.buf, #lines, #lines, false, { "A, but keep the old names" })
+
+      PendingQuestions.expire("q-1")
+      vim.wait(100)
+
+      assert.is_truthy(body(chat_buf):match("A, but keep the old names"), body(chat_buf))
+      -- And the options come back exactly once, not twice — the recycled copy and the redrawn one
+      -- are the same prompt.
+      local _, drawn = body(chat_buf):gsub("Which approach%?", "")
+      assert.equals(1, drawn, "the options were drawn twice:\n" .. body(chat_buf))
     end)
 
     it("leaves the turn running while an approval is still blocked", function()
@@ -261,7 +326,6 @@ describe("a question holding the turn open", function()
       -- the answer the user is in the middle of typing for the approval — the door next to the one
       -- #778 closed. The expiring question is the only thing that ends.
       local chat_buf, replies, stopped = chat_whose_turn_can_be_watched()
-      chat_buf._prompts_rendered_unsent = true
       PendingApprovals.open({
         request_id = "a-1",
         chat_bufnr = chat_buf.buf,
@@ -274,6 +338,27 @@ describe("a question holding the turn open", function()
       assert.equals(0, #stopped, "the turn the approval belongs to is not taken with it")
       assert.equals(1, PendingApprovals.count(), "the approval is still waiting for its human")
       assert.is_true(chat_buf._prompts_rendered_unsent, "the approval's own prompt stays on screen")
+    end)
+
+    it("does not empty the held output into the prompt still on screen", function()
+      -- The other half of the same flush. With a prompt still blocked there is no drop to delete
+      -- the text — it simply stays inside the open `## User`, where `extract_user_message` reads it
+      -- as the user's own words. The remaining prompt is then answered with the assistant's prose.
+      local chat_buf = chat_whose_turn_can_be_watched()
+      PendingQuestions.open({
+        request_id = "q-2",
+        chat_bufnr = chat_buf.buf,
+        questions = {},
+        respond = function() end,
+      })
+      chat_buf:append_chunk("a parallel tool's result\n")
+      vim.wait(100)
+
+      PendingQuestions.expire("q-1")
+      vim.wait(100)
+
+      local unsent = chat_buf:extract_user_message() or ""
+      assert.is_nil(unsent:match("a parallel tool's result"), "assistant prose became the answer:\n" .. unsent)
     end)
 
     it("leaves the turn running while a second question is still blocked", function()
@@ -405,6 +490,61 @@ describe("a question holding the turn open", function()
       assert.is_true(answered_approval)
       assert.equals(0, #replies)
       assert.equals(1, PendingQuestions.count())
+    end)
+
+    it("does not hand an expired approval's option line to the waiting question", function()
+      -- **The outcome the case above does not reach.** `answered_in_place` returns at the guard
+      -- above the question call; `retry_as_new_turn` falls through it, and that is the one the user
+      -- actually produces — answering an approval whose hook already expired. The approval is spent
+      -- by then, so what arrives at the question side is
+      -- `1. allow_once - Allow this execution only <!-- vibing:req=... -->` and the model reads it
+      -- as the human's answer to "which approach?". Worse, `send_message` returns true, so the
+      -- retry message the spent approval built is never sent either.
+      local chat_buf, replies = chat_awaiting_question()
+      chat_buf._is_sending = true
+      chat_buf._answer_pending_approval = function()
+        return { outcome = "retry_as_new_turn", message = "Retry the Bash call; it is allowed now." }
+      end
+      chat_buf.extract_user_message = function()
+        return "1. allow_once - Allow this execution only <!-- vibing:req=a-expired -->"
+      end
+
+      chat_buf:send_message()
+
+      assert.equals(0, #replies, "the option line was delivered as the question's answer")
+      assert.equals(1, PendingQuestions.count(), "the question is still waiting for a real answer")
+    end)
+  end)
+
+  describe("the options of a question that is still waiting", function()
+    it("survive the redraw that answering an approval triggers", function()
+      -- `add_user_section` drops `_pending_choices` once it has drawn them, which is right on the
+      -- kill path where the drawing happens once. On the waiting path it is drawn again every time
+      -- a prompt is answered or another arrives, and the first redraw would leave the still-blocked
+      -- question with an empty input box: "answer this" with nothing to answer.
+      local chat_buf = chat_awaiting_question()
+      chat_buf:insert_choices({ { question = "Which approach?", options = { { label = "A" } } } })
+      chat_buf:start_response()
+      chat_buf:show_pending_prompts()
+
+      -- What answering the last approval does while a question is still blocked.
+      chat_buf:add_user_section()
+
+      local body = table.concat(vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false), "\n")
+      assert.is_truthy(body:match("Which approach%?"), "the waiting question lost its options:\n" .. body)
+      assert.is_not_nil(chat_buf._pending_choices, "they must still be redrawable while it waits")
+    end)
+
+    it("are dropped once nothing is waiting on them", function()
+      -- The other side of the same condition: keep them past the wait and every later turn's input
+      -- box carries a question that was answered long ago.
+      local chat_buf = chat_awaiting_question()
+      chat_buf:insert_choices({ { question = "Which approach?", options = { { label = "A" } } } })
+      PendingQuestions._reset()
+
+      chat_buf:add_user_section()
+
+      assert.is_nil(chat_buf._pending_choices)
     end)
   end)
 end)
