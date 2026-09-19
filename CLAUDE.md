@@ -37,26 +37,27 @@ If you add a paragraph to `.claude/rules/` explaining _why_, it is in the wrong 
 | `self-testing.md`     | What only `test:e2e` may run; the 3-try rule                        |
 | `web-workflow.md`     | Branch naming and push retry on Claude Code for the web             |
 
-| `handbook/` (on demand)               | Contents                                                 |
-| ------------------------------------- | -------------------------------------------------------- |
-| `configuration.md`                    | Every `setup()` field, defaults, granular rule examples  |
-| `ADAPTER_DEVELOPMENT.md`              | Adding a CLI backend: the descriptor, measure-first list |
-| `architecture/module-map.md`          | Per-directory listing, key entry points, adapter split   |
-| `architecture/cli-integration.md`     | Hook protocol, backend seams, per-CLI measurements       |
-| `architecture/permissions.md`         | Evaluation order, Permission Builder, approval UI, #667  |
-| `architecture/lightweight-calls.md`   | How each backend restricts utility calls                 |
-| `architecture/plugin-and-commands.md` | `--plugin-dir`, slash command discovery, startup cost    |
-| `architecture/per-request-diffs.md`   | git tree snapshot, overlap guard, fallback routing       |
-| `architecture/processes-and-turns.md` | `process_id` vs `turn_id`, the id alphabet, hook scope   |
-| `architecture/duplex-transport.md`    | The resident CLI process: opt-in, reuse key, reclaim     |
-| `architecture/chat-lineage.md`        | Concurrency, fork, handoff, subagent chat                |
-| `architecture/orchestration.md`       | Notification state machine, queue, tree operations       |
-| `architecture/session-persistence.md` | The `working_dir` git-root boundary                      |
-| `features/usage-limits.md`            | Auto-resume, scheduled requests, retry budget            |
-| `features/chat-ui.md`                 | Subagent output, timestamps, AskUserQuestion             |
-| `features/editor-integration.md`      | Code Tour, nvim-dap analysis                             |
-| `mcp-tools.md`                        | The MCP tool catalogue and its non-obvious behaviour     |
-| `web-container-setup.md`              | The `SessionStart` hook for Claude Code on the web       |
+| `handbook/` (on demand)                 | Contents                                                 |
+| --------------------------------------- | -------------------------------------------------------- |
+| `configuration.md`                      | Every `setup()` field, defaults, granular rule examples  |
+| `ADAPTER_DEVELOPMENT.md`                | Adding a CLI backend: the descriptor, measure-first list |
+| `architecture/module-map.md`            | Per-directory listing, key entry points, adapter split   |
+| `architecture/cli-integration.md`       | Hook protocol, backend seams, per-CLI measurements       |
+| `architecture/permissions.md`           | Evaluation order, Permission Builder, approval UI, #667  |
+| `architecture/lightweight-calls.md`     | How each backend restricts utility calls                 |
+| `architecture/plugin-and-commands.md`   | `--plugin-dir`, slash command discovery, startup cost    |
+| `architecture/per-request-diffs.md`     | git tree snapshot, overlap guard, fallback routing       |
+| `architecture/processes-and-turns.md`   | `process_id` vs `turn_id`, the id alphabet, hook scope   |
+| `architecture/duplex-transport.md`      | The resident CLI process: opt-in, reuse key, reclaim     |
+| `architecture/approval-without-kill.md` | Waiting hook, the three-timeout ordering, measurements   |
+| `architecture/chat-lineage.md`          | Concurrency, fork, handoff, subagent chat                |
+| `architecture/orchestration.md`         | Notification state machine, queue, tree operations       |
+| `architecture/session-persistence.md`   | The `working_dir` git-root boundary                      |
+| `features/usage-limits.md`              | Auto-resume, scheduled requests, retry budget            |
+| `features/chat-ui.md`                   | Subagent output, timestamps, AskUserQuestion             |
+| `features/editor-integration.md`        | Code Tour, nvim-dap analysis                             |
+| `mcp-tools.md`                          | The MCP tool catalogue and its non-obvious behaviour     |
+| `web-container-setup.md`                | The `SessionStart` hook for Claude Code on the web       |
 
 | `.claude/skills/` (on demand)   | Invoke when                                         |
 | ------------------------------- | --------------------------------------------------- |

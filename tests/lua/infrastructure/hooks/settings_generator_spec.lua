@@ -48,12 +48,27 @@ describe("settings_generator", function()
 
     local path = SettingsGenerator.ensure(tmp)
 
-    assert.equals(tmp .. "/.vibing/hook-settings.json", path)
+    -- Keyed by instance, not shared per project: this file's timeout is derived from *this*
+    -- Neovim's `permissions.approval_wait_sec`, and a second Neovim rewriting it under a CLI of
+    -- ours that is already running would put the CLI's deadline ahead of the script's — the
+    -- ordering under which every CLI measured fails open.
+    local key = require("vibing.infrastructure.rpc.instance_key").get()
+    assert.equals(tmp .. "/.vibing/hook-settings-" .. key .. ".json", path)
+    assert.equals(path, SettingsGenerator.settings_path(tmp))
     assert.equals(1, vim.fn.filereadable(path))
 
     local decoded = vim.json.decode(table.concat(vim.fn.readfile(path), "\n"))
     assert.is_not_nil(decoded.hooks.PreToolUse)
     assert.is_not_nil(decoded.hooks.StopFailure)
+
+    -- **Read back out of the file claude is actually handed.** Codex's `-c` fragment and copilot's
+    -- `timeoutSec` are each asserted against their own artefact; claude's `timeout` was the one
+    -- that was not, and `hook_timeout_ordering_spec.lua` does not close the gap — it asks
+    -- `Transports.hook_timeout_sec`, an accessor, so a literal put back into `generate()` leaves
+    -- it green. The only thing failing today would be grok's spec, which reads this generator's
+    -- output for an unrelated reason.
+    local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
+    assert.equals(WaitBudget.cli_timeout_sec(), decoded.hooks.PreToolUse[1].hooks[1].timeout)
 
     vim.fn.delete(tmp, "rf")
   end)

@@ -116,6 +116,27 @@ export async function handleGetBuffer(args: any) {
           `status; read the tail of the transcript before treating the chat's task as done.`,
     });
   }
+
+  // The ids `nvim_chat_answer_approval` needs, reported as state rather than left to be scraped
+  // out of the transcript above. A chat can hold several prompts at once — a CLI runs its tool
+  // calls, and their permission hooks, in parallel — and this is the set as of *this* read, so it
+  // already reflects anything answered or expired since the notification that sent you here.
+  const waiting: Array<{ request_id?: string; tool?: string; expired?: boolean }> | undefined =
+    Array.isArray(result) ? undefined : result.waiting_approvals;
+  if (waiting && waiting.length > 0) {
+    content.push({
+      type: 'text',
+      text:
+        'Tool-approval prompts waiting in this chat:\n' +
+        waiting
+          .map(
+            (w) =>
+              `- request_id: ${w.request_id} (tool: ${w.tool})` +
+              (w.expired ? ' — already expired, it can no longer be answered' : '')
+          )
+          .join('\n'),
+    });
+  }
   return { content };
 }
 

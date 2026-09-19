@@ -62,6 +62,9 @@ local M = {
   -- but the same PreToolUse round trip is also where git_snapshot takes the turn's baseline.
   -- Removing the hook would bypass observation as well as approval, leaving this mode with no
   -- patch and therefore no `gd` preview.
+  -- No `measured_wait_floor_sec`: how long codex lets a hook block has never been measured (the
+  -- account was at its usage limit when the rest of the table was taken), so approvals here keep
+  -- killing the turn. Run `tests/perf/hook_wait_ceiling.sh` before adding a number.
   hook = { transport = "config_override", dialect = "claude", keep_in_bypass = true },
 
   -- The project-local sandbox profile (`.vibing/codex-permissions.toml`) is created with the

@@ -183,7 +183,7 @@ and dialect from `hooks/transports.lua`; the four generators described below are
   it reads hooks from are both off limits: `~/.copilot/` is the user's own config and
   `.github/hooks/` is their repository. But `copilot --plugin-dir <dir>` loads a plugin for that
   run only, and a plugin may contribute hooks — so `copilot_settings_generator.lua` writes a
-  throwaway plugin to `<cwd>/.vibing/copilot-plugin/` and points `--plugin-dir` at it. The hooks
+  throwaway plugin to `<cwd>/.vibing/copilot-plugin-<instance>/` and points `--plugin-dir` at it. The hooks
   are inlined in `plugin.json` (one file, no sibling `hooks.json`), which works only as a bare
   event map: the `{"version": 1, "hooks": …}` envelope a standalone hooks file requires is
   silently ignored when inlined — both forms were run against the CLI.
@@ -237,7 +237,6 @@ and dialect from `hooks/transports.lua`; the four generators described below are
 - **Codex's hook needs a PascalCase key and an explicit trust bypass.** Codex has no per-run hook
   file, so `codex_settings_generator.lua` passes the hook as a `-c` override. Two things about
   that, both captured from codex 0.153.4, and both of which fail **silently**:
-
   1. **The key is `hooks.PreToolUse`, not `hooks.pre_tool_use`**, and the handler must sit inside a
      matcher group: `[{hooks=[{type="command",command=…,timeout=…}]}]`. A flat
      `[{command=…}]` parses as a group with no handlers. Anything codex does not recognise here is

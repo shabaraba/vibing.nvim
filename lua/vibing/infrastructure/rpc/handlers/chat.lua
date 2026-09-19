@@ -109,7 +109,7 @@ end
 ---違うのは `from_bufnr` が**必須**なこと: 承認ゲートを外す呼び出しなので、誰が外したのかを
 ---記録できない形は通さない。互換のために任意にしておく理由も無い — このRPCメソッドを持たない
 ---古いNeovimは、呼び出しそのものが届かない
----@param params {bufnr?: number, file_path?: string, action: string, from_bufnr: number}
+---@param params {bufnr?: number, file_path?: string, action: string, request_id?: string, from_bufnr: number}
 ---@return {success: boolean, bufnr: number, tool: string, action: string}
 function M.answer_approval(params)
   params = params or {}
@@ -128,6 +128,8 @@ function M.answer_approval(params)
   return require("vibing.application.chat.approval_delegate").answer({
     bufnr = bufnr,
     action = params.action,
+    -- どのプロンプトへの答えか。保留が2件以上あるときは必須で、無ければ delegate が断る
+    request_id = params.request_id,
     from_bufnr = from_bufnr,
   })
 end
@@ -231,7 +233,7 @@ end
 ---RPCポーラーで迂回した）。列挙元は `view.list_chat_buffers()` 一択 — 「いま何本開いているか」
 ---を知る手段はそれしかない（`application/chat/concurrency.lua` も同じものを読む）ので、
 ---閉じたまま残っているチャットファイルはここには載らない
----@return {chats: {bufnr: number, file_path: string?, chat_status: string?, context_size: number?, updated_at: string?, orchestrated_by: string[], task: string?}[]}
+---@return {chats: {bufnr: number, file_path: string?, chat_status: string?, waiting_approvals: table[]?, context_size: number?, updated_at: string?, orchestrated_by: string[], task: string?}[]}
 function M.list_chats(_)
   local view = require("vibing.presentation.chat.view")
   local ChatStatus = require("vibing.presentation.chat.modules.chat_status")
@@ -249,6 +251,9 @@ function M.list_chats(_)
       bufnr = bufnr,
       file_path = chat_buf.file_path,
       chat_status = ChatStatus.get(bufnr),
+      -- 承認待ちのときだけ載る。`nvim_chat_answer_approval` に渡す id の入手先はここで、
+      -- 通知にもバッファのマーカーにも載せない（前者は古くなる、後者はテキスト推測）
+      waiting_approvals = ChatStatus.pending_approvals_or_nil(bufnr),
       context_size = read_context_size(bufnr),
       updated_at = frontmatter.updated_at,
       orchestrated_by = chat_buf:get_frontmatter_list("orchestrated_by"),

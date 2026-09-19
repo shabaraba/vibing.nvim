@@ -33,7 +33,9 @@ local M = {}
 ---   would attribute that turn's changes to this one — this is what lets the turn fall back to the
 ---   per-tool `request_diff` path instead (see core/utils/git_snapshot.lua).
 --- @field on_insert_choices? fun(questions: table)
---- @field on_approval_required? fun(tool: string, input: table, options: table, hook_request_id?: string)
+--- @field on_approval_required? fun(tool: string, input: table, options: table, hook_request_id?: string, waiting?: boolean)
+---   `waiting` says this prompt is holding a turn that is still running (#778), so the chat has to
+---   draw it now — the kill path's drawing point, `_handle_response`, never comes.
 --- @field subagent_count? number Task/Agent tool calls this turn has launched and not yet gotten a
 ---   tool_result for. Set to 0 by `M.open`; mutated only through `M.increment_subagent_count` /
 ---   `M.decrement_subagent_count`.
@@ -79,6 +81,24 @@ function M.get(turn_id)
     return nil
   end
   return turns[turn_id]
+end
+
+--- Whether a turn is still running, for the TTL sweeps that must not reap a live turn's state.
+---
+--- Lives here because the registry is the only place that knows: every adapter opens a turn when
+--- its stream starts and closes it in `wrapped_on_done`. **Do not ask this of a process** — a
+--- resident process (#774) is alive between turns too, so keying on "is the process there" stops
+--- both sweeps forever. Both `git_snapshot.lua` and `request_diff.lua` need it, and having written
+--- it twice is how the fallback path once shipped without it.
+---
+--- Defensive about `require` and about `get` raising, because a sweep that throws takes the tool
+--- call it is running inside down with it; failing to "still open" would reap live state, so the
+--- answer on failure is the conservative one.
+--- @param turn_id string|nil
+--- @return boolean
+function M.is_open(turn_id)
+  local ok, entry = pcall(M.get, turn_id)
+  return ok and entry ~= nil
 end
 
 --- The sole turn currently open, or nil when there is none or more than one.

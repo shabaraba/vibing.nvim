@@ -11,10 +11,17 @@ local M = {}
 
 --- Codex's hook timeout, in seconds.
 ---
---- pre-tool-use.sh gives up and denies after ~120s, so this stays above that number for the same
---- reason copilot's does: whichever side gives up first decides, and the script's deny is the only
---- one that carries a reason.
-local HOOK_TIMEOUT_SEC = 300
+--- Stays above the deadline pre-tool-use.sh gives itself for the same reason copilot's does:
+--- whichever side gives up first decides, and the script's deny is the only one that carries a
+--- reason. Both are derived from `permissions.approval_wait_sec` (`wait_budget.lua`), which is what
+--- makes that ordering a property rather than a coincidence.
+---
+--- What this transport registers as its PreToolUse timeout. See
+--- `settings_generator.hook_timeout_sec` for why every transport answers this.
+--- @return number|nil seconds
+function M.hook_timeout_sec()
+  return require("vibing.infrastructure.hooks.wait_budget").cli_timeout_sec()
+end
 
 --- The `-c` config key. **PascalCase, and that is load-bearing.**
 ---
@@ -148,12 +155,11 @@ function M.get_hook_args(cwd, dialect)
       '%s=[{hooks=[{type="command",command="%s",timeout=%d}]}]',
       HOOK_EVENT_KEY,
       escaped,
-      HOOK_TIMEOUT_SEC
+      M.hook_timeout_sec()
     ),
   }
 end
 
 M._HOOK_EVENT_KEY = HOOK_EVENT_KEY
-M._HOOK_TIMEOUT_SEC = HOOK_TIMEOUT_SEC
 
 return M

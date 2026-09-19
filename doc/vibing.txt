@@ -460,6 +460,35 @@ In a chat buffer:~
     gx          Open the URL on the current line in a browser
     q           Close the chat window
 
+Answering a tool approval~
+
+When a tool needs your approval the prompt is written into the chat as an
+ordinary unsent `## User` section: a header, what is being asked for, and four
+numbered option lines. Answer it by deleting every option line except the one
+you want (`dd`) and pressing `<CR>`.
+
+Each option line ends with an HTML comment naming the request it belongs to.
+One turn can raise several prompts at once — a CLI runs its tool calls in
+parallel — and every prompt draws the same four options, so the marker is what
+says which one you answered. Keep it on the line you leave behind. If what is
+left is ambiguous, the send is refused and nothing is spent: fix the lines and
+press `<CR>` again.
+
+On backends where the CLI has been measured to wait long enough, answering
+continues the turn that asked instead of starting a new one, and the rest of
+that turn's output is held until you answer — the prompt says so. Elsewhere
+the turn was stopped when the prompt appeared, and your answer starts a new
+one.
+
+An unanswered prompt does not wait forever. After
+`permissions.approval_wait_sec` (default 900) vibing.nvim denies that one tool
+call and says so in the chat. Only that call is refused; the turn carries on.
+
+The prompt itself stays, with its options, and you can still answer it — come
+back after an hour, or a day, and answering grants the permission and asks the
+agent to retry, exactly as it did before this waiting behaviour existed. What
+expiry takes away is only the ability to answer *the call that was in flight*.
+
 `gd` opens a float with three panes: the turn's files on the left, with each
 one's icon and `+N -M`, and that file's before/after side by side in Neovim's
 own diff mode. Both sides are syntax highlighted, `]c` / `[c` move between
@@ -686,8 +715,10 @@ Nothing comes back when you send a message:~
 Every tool call is denied:~
     The PreToolUse hook fails closed on purpose: if it cannot reach Neovim's
     RPC server, the tool is denied rather than silently allowed. Check that
-    `mcp.enabled` is true and that `.vibing/hook-settings.json` exists in the
-    directory the CLI runs in.
+    `mcp.enabled` is true and that a `.vibing/hook-settings-<port>.json`
+    exists in the directory the CLI runs in, where <port> is this Neovim's
+    RPC port (`:VibingStatus`). The file is per Neovim instance, so a second
+    editor open on the same project has one of its own.
 
 MCP tools cannot find the right Neovim:~
     Several Neovim instances each get their own RPC port. Pass the port shown

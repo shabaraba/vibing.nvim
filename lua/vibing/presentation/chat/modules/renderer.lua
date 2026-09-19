@@ -163,12 +163,15 @@ M.move_cursor_to_end = M.moveCursorToEnd
 ---@param buf number Buffer number
 ---@param win number? Window number
 ---@param pendingChoices table? Pending choices
----@param pendingApproval table? Pending tool approval request
+---@param pendingApprovals table[]? Tool approval requests still waiting, in display order. A list
+---  rather than one, because a CLI runs several PreToolUse hooks at once — measured on claude as
+---  three hooks starting 0.54s apart and overlapping for their whole duration. Each entry carries
+---  its `request_id`, which is what makes an answer attributable when the numbered lists repeat.
 ---@param initial_message string? Initial message content (for programmatic send)
 ---@param header string? Section header to use instead of the plain unsent `## User` one.
 ---  Delivered chat-to-chat messages pass their own (`## Request` / `## Report` / `## Notice`);
 ---  it must still be an unsent header, since `commit_user_message` is what stamps it at send
-function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_message, header)
+function M.addUserSection(buf, win, pendingChoices, pendingApprovals, initial_message, header)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
   while #lines > 0 and lines[#lines] == "" do
@@ -230,47 +233,76 @@ function M.addUserSection(buf, win, pendingChoices, pendingApproval, initial_mes
     vim.api.nvim_buf_set_lines(buf, insertPos, insertPos, false, flatten_lines(choiceLines))
   end
 
-  if pendingApproval then
+  if pendingApprovals and #pendingApprovals > 0 then
     local approvalLines = {}
+    local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
 
-    -- Warning header
-    table.insert(approvalLines, "⚠️  Tool approval required")
-    table.insert(approvalLines, "")
+    for _, pendingApproval in ipairs(pendingApprovals) do
+      -- Warning header
+      table.insert(approvalLines, ApprovalParser.PROMPT_HEADER)
+      if pendingApproval.expired then
+        -- Marked in place rather than deleted. The user may be editing this buffer right now, and
+        -- removing lines under their cursor moves everything below it.
+        --
+        -- **The options stay too.** Expiry denied the one call that was in flight; it did not
+        -- withdraw the user's chance to grant the permission — somebody back from a long absence
+        -- answers this exactly as before, and the answer travels as a retry instead of reaching a
+        -- hook that is no longer there.
+        table.insert(approvalLines, "   (expired — that call was denied; answering now retries it)")
+      end
+      table.insert(approvalLines, "")
 
-    -- Tool information
-    local toolName = (pendingApproval.tool and pendingApproval.tool ~= "") and pendingApproval.tool or "[unknown]"
-    table.insert(approvalLines, "Tool: " .. toolName)
+      -- Tool information
+      local toolName = (pendingApproval.tool and pendingApproval.tool ~= "") and pendingApproval.tool or "[unknown]"
+      table.insert(approvalLines, "Tool: " .. toolName)
 
-    -- Show input details based on tool type (nil-safe)
-    if pendingApproval.input then
-      if pendingApproval.input.command then
-        table.insert(approvalLines, "Command: " .. tostring(pendingApproval.input.command))
+      -- Show input details based on tool type (nil-safe)
+      if pendingApproval.input then
+        if pendingApproval.input.command then
+          table.insert(approvalLines, "Command: " .. tostring(pendingApproval.input.command))
+        end
+        if pendingApproval.input.file_path then
+          table.insert(approvalLines, "File: " .. tostring(pendingApproval.input.file_path))
+        end
+        if pendingApproval.input.pattern then
+          table.insert(approvalLines, "Pattern: " .. tostring(pendingApproval.input.pattern))
+        end
+        if pendingApproval.input.url then
+          table.insert(approvalLines, "URL: " .. tostring(pendingApproval.input.url))
+        end
       end
-      if pendingApproval.input.file_path then
-        table.insert(approvalLines, "File: " .. tostring(pendingApproval.input.file_path))
-      end
-      if pendingApproval.input.pattern then
-        table.insert(approvalLines, "Pattern: " .. tostring(pendingApproval.input.pattern))
-      end
-      if pendingApproval.input.url then
-        table.insert(approvalLines, "URL: " .. tostring(pendingApproval.input.url))
+
+      table.insert(approvalLines, "")
+
+      -- One numbered list per prompt, so the numbers repeat across prompts — which is exactly why
+      -- the line carries its request id. `approval_parser.option_line` is the only place that
+      -- composes it, shared with `approval_delegate` so a delegated answer is byte-identical to
+      -- the line a human would have left behind.
+      do
+        local optionIndex = 1
+        for _, opt in ipairs(pendingApproval.options or {}) do
+          local label = (opt.label and opt.label ~= "") and opt.label or ""
+          if label ~= "" then
+            table.insert(
+              approvalLines,
+              ApprovalParser.option_line(optionIndex, label, pendingApproval.request_id)
+            )
+            optionIndex = optionIndex + 1
+          end
+        end
+
+        -- 止まっていることが読めるようにする。承認プロンプトの下で何も動かない状態は、
+        -- ユーザーからは「固まった」と区別がつかない — 待たせる設計ではそれが最大
+        -- `permissions.approval_wait_sec` 続く。kill する経路には止めている出力が無いので
+        -- 書かない（`waiting` がそれを言う）。期限切れならもう何も止めていないので、これも書かない
+        if pendingApproval.waiting and not pendingApproval.expired then
+          table.insert(approvalLines, "   (the rest of this turn's output is paused until this is answered)")
+          table.insert(approvalLines, "")
+        end
       end
     end
 
-    table.insert(approvalLines, "")
-
-    -- Use numbered list for single-select approval options (nil-safe iteration)
-    local optionIndex = 1
-    for _, opt in ipairs(pendingApproval.options or {}) do
-      local label = (opt.label and opt.label ~= "") and opt.label or ""
-      if label ~= "" then
-        table.insert(approvalLines, optionIndex .. ". " .. label)
-        optionIndex = optionIndex + 1
-      end
-    end
-
-    table.insert(approvalLines, "")
-    table.insert(approvalLines, "Please select and press <CR> to send.")
+    table.insert(approvalLines, ApprovalParser.INSTRUCTION_LINE)
     table.insert(approvalLines, "")
 
     local currentLines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)

@@ -46,12 +46,19 @@ describe("vibing.application.daily_summary.collector", function()
         -- A default directory is only returned if it exists on disk. A fresh checkout has
         -- neither of them, so create the project one for the duration of the test instead of
         -- relying on the developer's own repository happening to have chats in it.
+        --
+        -- Through `Fs.ensure_dir`, not `vim.fn.mkdir`, for the reason `architecture.md` states:
+        -- mkdir is not atomic, and the check above makes this a check-then-act. Plenary runs spec
+        -- files concurrently, several of them create this same directory, and the loser raises
+        -- E739 "file already exists" -- which is why a developer's machine, where the directory is
+        -- already there and this branch never runs, sees none of it.
+        local Fs = require("vibing.core.utils.fs")
         local Git = require("vibing.core.utils.git")
         local project_root = Git.get_root() or vim.fn.getcwd()
         local project_chat_dir = project_root .. "/.vibing/chat"
         local created = vim.fn.isdirectory(project_chat_dir) == 0
         if created then
-          vim.fn.mkdir(project_chat_dir, "p")
+          Fs.ensure_dir(project_chat_dir)
         end
 
         local config = {

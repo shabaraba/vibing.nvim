@@ -270,6 +270,16 @@ export const chatTools: Tool[] = [
             'every later call in it, so prefer allow_once unless the chat will clearly need the ' +
             'tool repeatedly.',
         },
+        request_id: {
+          type: 'string',
+          description:
+            'Which prompt you are answering. A chat can be sitting on several tool-approval ' +
+            'prompts at once, because a CLI runs its tool calls — and their permission hooks — ' +
+            'in parallel. Omit it only when exactly one is waiting; with more than one the call ' +
+            'is refused rather than guessing. Get the ids from waiting_approvals, reported by ' +
+            'nvim_chat_list and by nvim_get_buffer with include_chat_status — it is the live set, ' +
+            'so one read tells you which are still answerable and which already expired.',
+        },
         from_bufnr: {
           type: 'number',
           description:
@@ -291,7 +301,10 @@ export const chatTools: Tool[] = [
     description:
       'List every open vibing.nvim chat buffer with its status in one call, instead of polling ' +
       'each with nvim_get_buffer one at a time. For each chat, reports bufnr, file_path, ' +
-      'chat_status (responding/idle/waiting_approval/asked_question/error), context_size (the ' +
+      'chat_status (responding/idle/waiting_approval/asked_question/error), waiting_approvals ' +
+      '(present only while the chat is sitting on tool-approval prompts: one entry per prompt ' +
+      'with its request_id, tool and whether it already expired — this is where the request_id ' +
+      'for nvim_chat_answer_approval comes from), context_size (the ' +
       "chat's last measured context size in tokens, or omitted if it has not completed a turn " +
       'yet), updated_at (frontmatter timestamp of the last write), orchestrated_by (the ' +
       "chat file paths of this chat's orchestrator(s), if any), and task (the one-line " +

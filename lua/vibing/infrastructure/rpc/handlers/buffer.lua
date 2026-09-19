@@ -89,6 +89,9 @@ function M.buf_get_lines(params)
     total_lines = total_lines,
     bufnr = bufnr == 0 and vim.api.nvim_get_current_buf() or bufnr,
     chat_status = ChatStatus.get(bufnr),
+    -- 承認待ちのときだけ。`nvim_chat_answer_approval` の `request_id` の入手先で、
+    -- バッファ本文の `<!-- vibing:req=... -->` を読ませない（あれは `<CR>` の帰属解決用）
+    waiting_approvals = ChatStatus.pending_approvals_or_nil(bufnr),
   }
 end
 

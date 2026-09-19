@@ -177,6 +177,54 @@ describe("ProgrammaticSender.send", function()
     assert.equals(1, #notices, table.concat(lines, "\n"))
     vim.fn.delete(path)
   end)
+
+  describe("delivering into a responding chat", function()
+    --- "Do not push into a chat that is responding" is right for every ordinary delivery: the send
+    --- would leave an unsent section behind and cancel the turn on its way. #778 creates the one
+    --- exception — a chat holding a blocked hook is responding by that definition, and the answer
+    --- to that hook is precisely what it is waiting for.
+    local Pending = require("vibing.infrastructure.rpc.pending_approvals")
+
+    before_each(function()
+      fake.responding = true
+      Pending._reset()
+    end)
+
+    after_each(function()
+      Pending._reset()
+    end)
+
+    it("refuses an ordinary delivery", function()
+      local ok, err = pcall(ProgrammaticSender.send, bufnr, "anything")
+
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):find("already responding", 1, true), tostring(err))
+      assert.equals(0, fake.sends)
+    end)
+
+    it("accepts an answer to a hook that is actually blocked", function()
+      Pending.open({ request_id = "req-1", chat_bufnr = bufnr, tool = "Bash" })
+
+      local result = ProgrammaticSender.send(bufnr, "1. allow_once", nil, nil, {
+        answers_blocked_approval = "req-1",
+      })
+
+      assert.is_true(result.success)
+      assert.equals(1, fake.sends)
+    end)
+
+    it("refuses an answer naming a request nothing is blocked on", function()
+      -- The exemption asks the registry, not the caller. A prompt still drawn from a killed turn
+      -- is answered as a *new* turn, so letting it through here would cancel the live one.
+      local ok, err = pcall(ProgrammaticSender.send, bufnr, "1. allow_once", nil, nil, {
+        answers_blocked_approval = "req-gone",
+      })
+
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):find("already responding", 1, true), tostring(err))
+      assert.equals(0, fake.sends)
+    end)
+  end)
 end)
 
 describe("ChatBuffer:add_user_section", function()
@@ -184,7 +232,7 @@ describe("ChatBuffer:add_user_section", function()
     -- 完了イベントは send_message() のコールバックラッパー側にある。このメソッド本体に
     -- 置くと、スラッシュコマンド経路（AIターンが1回も走っていない）からも完了が飛ぶ
     local bufnr = vim.api.nvim_create_buf(false, true)
-    local chat = setmetatable({ buf = bufnr, win = nil, _chunk_buffer = "" }, ChatBuffer)
+    local chat = setmetatable({ buf = bufnr, win = nil, _chunk_parts = {} }, ChatBuffer)
 
     local fired = 0
     local group = vim.api.nvim_create_augroup("VibingCompletionNotifierSpec", { clear = true })
@@ -203,4 +251,5 @@ describe("ChatBuffer:add_user_section", function()
 
     assert.equals(0, fired)
   end)
+
 end)

@@ -34,6 +34,7 @@ describe("ApprovalDelegate", function()
   local pending
   local stop_reason
   local worker_scope
+  local responding
 
   ---@param mode boolean|"scoped"
   local function configure(mode)
@@ -59,9 +60,12 @@ describe("ApprovalDelegate", function()
     vim.api.nvim_buf_set_name(orchestrator, vim.fn.tempname() .. "-orchestrator.md")
 
     sends = {}
-    pending = { tool = "Bash", input = { command = "npm install" }, options = OPTIONS }
+    pending = { tool = "Bash", input = { command = "npm install" }, options = OPTIONS, request_id = "req-1" }
     stop_reason = "waiting_approval"
     worker_scope = {}
+    -- Under #778 a worker holding a blocked hook **is** responding: its turn never ended. The
+    -- default here is the kill-design world, which every case written before that was.
+    responding = false
 
     configure(true)
 
@@ -71,10 +75,18 @@ describe("ApprovalDelegate", function()
       end
       return {
         is_responding = function()
-          return false
+          return responding
         end,
-        get_pending_approval = function()
+        get_pending_approval = function(_, request_id)
+          if request_id and pending and pending.request_id ~= request_id then
+            return nil
+          end
           return pending
+        end,
+        -- 複数保留のときに `request_id` を要求する分岐がここを読む。スタブが1件しか持たない
+        -- ので、既存のテストはその分岐に入らない
+        get_pending_approvals = function()
+          return pending and { pending } or {}
         end,
         get_stop_reason = function()
           return stop_reason
@@ -144,14 +156,22 @@ describe("ApprovalDelegate", function()
 
       local line = sends[1].message
       assert.is_true(ApprovalParser.is_approval_response(line), line)
-      assert.equals(opt.value, ApprovalParser.parse_approval_response(line).action)
+      assert.same({ { action = opt.value, request_id = "req-1" } }, ApprovalParser.parse_answers(line))
     end
   end)
 
-  it("reproduces the numbering the renderer drew, so the transcript reads like a human answer", function()
+  it("reproduces the line the renderer drew, so the transcript reads like a human answer", function()
+    -- Both sides go through `approval_parser.option_line`, marker included: a delegated answer has
+    -- to be byte-identical to the line the human would have left, or reading the transcript needs
+    -- more than the section header to tell them apart.
+    local ApprovalParser2 = require("vibing.presentation.chat.modules.approval_parser")
     answer("allow_for_session")
 
-    assert.equals("3. allow_for_session - Allow for this session", sends[1].message)
+    assert.equals(
+      ApprovalParser2.option_line(3, "allow_for_session - Allow for this session", "req-1"),
+      sends[1].message
+    )
+    assert.is_truthy(sends[1].message:find("vibing:req=req-1", 1, true), sends[1].message)
   end)
 
   it("still produces a parseable line when the options are missing", function()
@@ -159,7 +179,7 @@ describe("ApprovalDelegate", function()
     local line = ApprovalDelegate.option_line(nil, "deny_once")
 
     assert.is_true(ApprovalParser.is_approval_response(line), line)
-    assert.equals("deny_once", ApprovalParser.parse_approval_response(line).action)
+    assert.same({ { action = "deny_once" } }, ApprovalParser.parse_answers(line))
   end)
 
   it("replaces the prompt section and names the answering chat in the header", function()
@@ -265,6 +285,74 @@ describe("ApprovalDelegate", function()
       local ok = pcall(answer, "allow_once")
 
       assert.is_false(ok)
+      assert.equals(0, #sends)
+    end)
+  end)
+
+  it("answers an expired prompt on a chat that has stopped", function()
+    -- The same fact from the other side: expiry denied one call, it did not take away the grant.
+    -- With the worker idle there is no turn to cancel, so the answer goes through and travels as
+    -- a retry — exactly what it does on a backend that never waited at all.
+    pending.expired = true
+
+    answer("allow_once")
+
+    assert.equals(1, #sends)
+    assert.is_truthy(sends[1].message:find("allow_once", 1, true), sends[1].message)
+  end)
+
+  describe("a worker whose turn is still open", function()
+    --- The real validator, not the no-op the rest of this file installs. Its "do not push into a
+    --- responding chat" guard is generic and correct for ordinary deliveries — and a worker holding
+    --- a blocked hook is responding by that definition, which is every delegated approval on the
+    --- path the feature exists for (#778).
+    local Pending = require("vibing.infrastructure.rpc.pending_approvals")
+
+    before_each(function()
+      ProgrammaticSender.validate = originals.validate
+      responding = true
+      Pending._reset()
+    end)
+
+    after_each(function()
+      Pending._reset()
+    end)
+
+    it("is answered rather than refused for being busy", function()
+      Pending.open({ request_id = "req-1", chat_bufnr = worker, tool = "Bash" })
+
+      local ok, err = pcall(answer, "allow_once")
+
+      assert.is_true(ok, tostring(err))
+      assert.equals(1, #sends)
+      assert.is_truthy(sends[1].message:find("allow_once", 1, true), sends[1].message)
+      assert.equals("req-1", sends[1].opts.answers_blocked_approval, "the send must claim the same exemption")
+    end)
+
+    it("says why an expired prompt cannot be answered right now, in terms of what changed", function()
+      -- An expired prompt stays visible and is reported by `waiting_approvals` with
+      -- `expired = true`, so an orchestrator can and will answer it. Answering one starts a new
+      -- turn, which would cancel the one still running — and "Chat buffer is already responding"
+      -- sends the reader off to wait for a busy chat without saying that the wait is the point.
+      -- The reader is a model, so the message has to name the next move.
+      pending.expired = true
+
+      local ok, err = pcall(answer, "allow_once")
+
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):find("expired", 1, true), tostring(err))
+      assert.is_truthy(tostring(err):find("NEW turn", 1, true), tostring(err))
+      assert.equals(0, #sends)
+    end)
+
+    it("is still refused when the prompt is drawn but nothing is blocked on it", function()
+      -- The guard that must survive, and the reason the exemption asks the registry rather than
+      -- the drawn lines: a prompt left over from a killed turn is answered as a *new* turn, so
+      -- `send_message` would reach `cancel_request` and kill the turn running right now.
+      local ok, err = pcall(answer, "allow_once")
+
+      assert.is_false(ok)
+      assert.is_truthy(tostring(err):find("already responding", 1, true), tostring(err))
       assert.equals(0, #sends)
     end)
   end)

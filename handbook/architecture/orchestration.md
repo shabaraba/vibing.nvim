@@ -127,11 +127,20 @@ reference and `config.window` stays the same table.
 
 **Completion detection is a status field, not a text heuristic.** `nvim_get_buffer` passes
 `include_chat_status` to `buf_get_lines`, which attaches `presentation/chat/modules/chat_status`'s
-verdict: `"responding"` when `ChatBuffer:is_responding()`, one of `"waiting_approval"` /
-`"asked_question"` / `"error"` when the last turn stopped for a reason worth naming, `"idle"`
-otherwise, and nothing at all for a buffer that is not a chat. Reading the transcript's shape
-instead would call a turn that died on an error, or one part-way through silent tool calls,
-complete.
+verdict: `"waiting_approval"` when a hook of this chat is actually blocked, then `"responding"`
+when `ChatBuffer:is_responding()`, then one of `"waiting_approval"` / `"asked_question"` /
+`"error"` when the last turn stopped for a reason worth naming, `"idle"` otherwise, and nothing at
+all for a buffer that is not a chat. Reading the transcript's shape instead would call a turn that
+died on an error, or one part-way through silent tool calls, complete.
+
+**The approval check comes first, and from the registry rather than from `_stop_reason`** (#778).
+Once an approval can be answered without killing the CLI, a chat waiting on one has a turn that is
+still open — `is_responding()` stays true — so asking that first would report `responding` for up
+to `permissions.approval_wait_sec`, and an orchestrator would read it as healthy progress. The
+source has to be `pending_approvals.list_for_chat` and not `_stop_reason` for the opposite reason:
+`_stop_reason` keeps the previous turn's value until the next send, so reading it first would
+report a genuinely running turn as waiting. The registry empties the moment an answer lands, so it
+is the only one of the two that is never stale in either direction.
 
 `is_responding()` needs two signals, and the second one is **not** `_current_turn_id`'s
 existence. `_is_sending` covers `<CR>` until the adapter spawns the CLI; after that the turn id

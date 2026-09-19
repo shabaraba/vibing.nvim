@@ -38,7 +38,11 @@ describe("copilot_settings_generator", function()
   it("writes the plugin under <cwd>/.vibing/, never the user's ~/.copilot", function()
     local dir = CopilotSettingsGenerator.ensure(tmp_dir)
 
-    assert.equals(vim.fn.resolve(tmp_dir) .. "/.vibing/copilot-plugin", dir)
+    -- Keyed by instance: the manifest carries a timeoutSec derived from *this* Neovim's
+    -- permissions.approval_wait_sec, so a second Neovim must not be able to rewrite it under a
+    -- copilot of ours that is already running.
+    local key = require("vibing.infrastructure.rpc.instance_key").get()
+    assert.equals(vim.fn.resolve(tmp_dir) .. "/.vibing/copilot-plugin-" .. key, dir)
     assert.equals(1, vim.fn.filereadable(dir .. "/plugin.json"))
   end)
 
@@ -80,23 +84,15 @@ describe("copilot_settings_generator", function()
     assert.is_nil(hook_entry(read_manifest(tmp_dir)).matcher)
   end)
 
-  it("allows more time than the hook script waits, because copilot fails open on timeout", function()
-    -- Every non-zero exit denies, but a hook that outlives timeoutSec is ignored and the tool
-    -- proceeds. This invariant spans two languages, so read the script's own budget rather than
-    -- restating it: raising MAX_WAIT for Claude's sake would otherwise silently turn a slow
-    -- copilot approval into an allow, with the suite still green.
-    local script = io.open(vim.fn.fnamemodify(SettingsGenerator.get_hook_script_path(), ":p"), "r")
-    local source = script:read("*a")
-    script:close()
-
-    local max_wait_ticks = tonumber(source:match("\nMAX_WAIT=(%d+)"))
-    assert.is_not_nil(max_wait_ticks, "could not read MAX_WAIT out of pre-tool-use.sh")
-
-    local script_wait_sec = max_wait_ticks / 10 -- the poll loop sleeps 0.1s per tick
-    assert.is_true(
-      hook_entry(read_manifest(tmp_dir)).timeoutSec > script_wait_sec,
-      "copilot's hook timeout must outlast the script's own wait"
-    )
+  it("writes the derived timeout into copilot's own timeoutSec field", function()
+    -- Copilot ignores a hook that outlives timeoutSec and runs the tool anyway, so this number
+    -- must outlast the script's own deadline. That ordering is asserted for every backend in
+    -- `hook_timeout_ordering_spec.lua` — this spec used to be the only place it was checked, which
+    -- is how claude came to ship with no margin. What is copilot-specific is the field name: the
+    -- value lands in `timeoutSec`, not claude's `timeout`, and a manifest naming the wrong key
+    -- registers no timeout at all.
+    local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
+    assert.equals(WaitBudget.cli_timeout_sec(), hook_entry(read_manifest(tmp_dir)).timeoutSec)
   end)
 
   it("quotes the script path so a directory with a space stays one argument", function()
@@ -125,7 +121,8 @@ describe("copilot_settings_generator", function()
   end)
 
   it("reports plugin_dir for a cwd without writing anything", function()
-    local expected = vim.fn.resolve(tmp_dir) .. "/.vibing/copilot-plugin"
+    local key = require("vibing.infrastructure.rpc.instance_key").get()
+    local expected = vim.fn.resolve(tmp_dir) .. "/.vibing/copilot-plugin-" .. key
     assert.equals(expected, CopilotSettingsGenerator.plugin_dir(tmp_dir))
     assert.equals(0, vim.fn.isdirectory(expected))
     assert.equals(CopilotSettingsGenerator.ensure(tmp_dir), expected)

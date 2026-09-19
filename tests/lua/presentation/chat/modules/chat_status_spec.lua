@@ -122,6 +122,89 @@ describe("chat status", function()
 
       assert.equals("responding", ChatStatus.get(chat_buf.buf))
     end)
+
+    describe("an approval answered without killing the turn (#778)", function()
+      local Pending
+
+      before_each(function()
+        Pending = require("vibing.infrastructure.rpc.pending_approvals")
+        Pending._reset()
+      end)
+
+      after_each(function()
+        Pending._reset()
+      end)
+
+      it("reports waiting_approval even though the turn is still open", function()
+        -- The whole point of #778 is that the turn does *not* end when the prompt goes up, so
+        -- `is_responding()` keeps answering true. Read in the old order this chat claims to be
+        -- `responding` for up to `approval_wait_sec`, and an orchestrator polling it sees a worker
+        -- that is still working right up until the fallback denies on its behalf.
+        local chat_buf = view.render({ session_id = "waiting-in-place" }, "back")
+        chat_buf._current_turn_id = "turn-1"
+        Registry.open({ turn_id = "turn-1" })
+        chat_buf:insert_approval_request("Bash", { command = "ls" }, { "allow_once" }, "req-1")
+        Pending.open({ request_id = "req-1", chat_bufnr = chat_buf.buf, tool = "Bash" })
+
+        assert.is_true(chat_buf:is_responding(), "the turn must still be open for this to mean anything")
+        assert.equals("waiting_approval", ChatStatus.get(chat_buf.buf))
+      end)
+
+      it("goes back to responding the moment the approval is answered", function()
+        -- The registry empties on the answer, so the chat resumes reporting what it is doing
+        -- rather than staying stuck on a stale reason.
+        local chat_buf = view.render({ session_id = "answered-in-place" }, "back")
+        chat_buf._current_turn_id = "turn-1"
+        Registry.open({ turn_id = "turn-1" })
+        Pending.open({ request_id = "req-1", chat_bufnr = chat_buf.buf, tool = "Bash" })
+        Pending.resolve("req-1", "defer")
+
+        assert.equals("responding", ChatStatus.get(chat_buf.buf))
+      end)
+
+      it("reports which prompts are waiting, as state rather than as text to scrape", function()
+        -- Where `nvim_chat_answer_approval`'s request_id comes from. It is deliberately not on
+        -- the watchdog notification: that is a snapshot, and by the time an orchestrator acts on
+        -- it one prompt may be answered and another expired. Asking is always current.
+        local chat_buf = view.render({ session_id = "listing" }, "back")
+        chat_buf:insert_approval_request("Bash", { command = "ls" }, {}, "req-1")
+        chat_buf:insert_approval_request("Write", { file_path = "/tmp/x" }, {}, "req-2")
+
+        local waiting = ChatStatus.pending_approvals(chat_buf.buf)
+        assert.equals(2, #waiting)
+        assert.same({ request_id = "req-1", tool = "Bash" }, waiting[1])
+        assert.same({ request_id = "req-2", tool = "Write" }, waiting[2])
+      end)
+
+      it("keeps an expired prompt in the list and says so", function()
+        -- It is still drawn in the buffer, so omitting it here would leave the reader unable to
+        -- explain why answering it fails.
+        local chat_buf = view.render({ session_id = "expired-listing" }, "back")
+        chat_buf:insert_approval_request("Bash", {}, {}, "req-1")
+        chat_buf:mark_approval_expired("req-1")
+
+        local waiting = ChatStatus.pending_approvals(chat_buf.buf)
+        assert.equals(1, #waiting)
+        assert.is_true(waiting[1].expired)
+      end)
+
+      it("reports nothing for a chat with no prompts, or no chat at all", function()
+        local chat_buf = view.render({ session_id = "quiet" }, "back")
+        assert.same({}, ChatStatus.pending_approvals(chat_buf.buf))
+        assert.same({}, ChatStatus.pending_approvals(vim.api.nvim_create_buf(false, true)))
+      end)
+
+      it("does not answer for another chat's blocked hook", function()
+        -- #667 in this vocabulary: two workers streaming at once, one of them asked. The other
+        -- must not report its neighbour's prompt.
+        local mine = view.render({ session_id = "unasked" }, "back")
+        mine._current_turn_id = "turn-1"
+        Registry.open({ turn_id = "turn-1" })
+        Pending.open({ request_id = "req-1", chat_bufnr = mine.buf + 1000, tool = "Bash" })
+
+        assert.equals("responding", ChatStatus.get(mine.buf))
+      end)
+    end)
   end)
 
   describe("buf_get_lines", function()

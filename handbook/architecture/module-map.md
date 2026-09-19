@@ -92,7 +92,7 @@ not depend on the process exit callback ever arriving.
 - `infrastructure/rpc/handlers/rate_limit.lua` - StopFailure receiver
 - `infrastructure/rpc/hook_scope.lua` - The single definition of "which process, and which turn,
   is this inbound hook in", and of the one fallback (`processes-and-turns.md`)
-- `infrastructure/hooks/settings_generator.lua` - Writes `.vibing/hook-settings.json`
+- `infrastructure/hooks/settings_generator.lua` - Writes `.vibing/hook-settings-<instance>.json`
 
 ## Context System
 

@@ -401,6 +401,129 @@ local function process_done(bufnr)
   end
 end
 
+---承認待ちの通知をまとめる窓、ミリ秒。
+---
+---実測: claude は1ターンで3本の PreToolUse フックを**0.54秒差で並列に**立ち上げる
+---（`tests/perf/hook_concurrency.sh`）。1件ごとに配ると、オーケストレーターは同じ事実で
+---3回起こされ、3ターンぶんのトークンを使う。窓はその束を1回の起床に畳むためだけにある。
+---
+---最初の1件が来た時点から固定で測る（到着ごとに延長しない）。延長式にすると、承認が切れ目なく
+---続くあいだ通知が永遠に遅れる — まさに知らせたい状態で黙ることになる
+local APPROVAL_NOTICE_WINDOW_MS = 1500
+
+---承認待ち通知の合流状態。`[bufnr] = { seen = {request_id=true}, announced = n, timer = id }`
+---@type table<number, {seen: table<string, boolean>, announced: number, timer: number?}>
+local approval_notices = {}
+
+---@param notice table
+---@return number
+local function seen_count(notice)
+  return vim.tbl_count(notice.seen)
+end
+
+---購読者に「このチャットは承認待ちで止まっている」を配る。**それ以外は何もしない**
+---
+---`process_done` の兄弟であって一部ではない。あちらの3分岐はどれも「ターンが終わった」に
+---属していて、承認待ちは**ターンが終わっていない**:
+---
+---- **自分宛キューの drain をしない。** 排出は `send_message()` を呼び、その冒頭は
+---  `cancel_request()` — つまり待たせている当のターンを殺す
+---- **並列度の枠を空けない。** プロセスは生きていて枠を占有し続けている
+---- **エッジを消費しない。** ここで使い切ると、そのあとターンが本当に終わったときに配達先が
+---  残らず、オーケストレーターは「承認が要る」だけ受け取って**完了報告を永久に受け取らない**。
+---  これは中間通知であって停止の報告ではない
+---
+---`chat_notifications.enabled` は見ない。承認待ちは「自力では抜けられない止まり方」で、
+---そちらは設定に依らず配るのがこのモジュールの規約
+---@param bufnr number 承認待ちで止まっているチャット
+local function deliver_approval_notice(bufnr)
+  local subscribers = edges[bufnr]
+  if not subscribers then
+    return
+  end
+
+  for from_bufnr in pairs(subscribers) do
+    if vim.api.nvim_buf_is_valid(from_bufnr) then
+      -- 語彙は `chat_status` と同じ文字列そのもの。`delivery_message` は
+      -- `waiting_approval` を突き合わせて「代理で答えられるか」の案内を出し分けるので、
+      -- 件数を接尾辞に付けるような変形はそこを黙って外す
+      MessageQueue.enqueue_notification(from_bufnr, bufnr, "waiting_approval")
+    end
+  end
+  for from_bufnr in pairs(subscribers) do
+    drain(from_bufnr)
+  end
+end
+
+---このチャットのフックが1本、承認待ちでブロックに入った
+---
+---ターン終了イベント（`VibingResponseDone`）は飛ばない — 承認を kill せずに答えられるように
+---なった以上、プロンプトが出てもターンは続いているからで、それが通知経路をそのまま塞いでいた。
+---`chat_status` を直しても届くのはポーリングにだけで、push は別に口が要る。
+---
+---`request_id` で冪等。同じフックについて二度呼んでも配達は増えない。**期限切れのあとに次の
+---承認が開いたら別のイベント**なので、そちらは新しい id として改めて配る
+---@param bufnr number
+---@param request_id string
+function M.on_approval_waiting(bufnr, request_id)
+  if type(bufnr) ~= "number" or type(request_id) ~= "string" or request_id == "" then
+    return
+  end
+
+  local notice = approval_notices[bufnr] or { seen = {}, announced = 0 }
+  approval_notices[bufnr] = notice
+  if notice.seen[request_id] then
+    return
+  end
+  notice.seen[request_id] = true
+
+  -- 窓が開いていれば合流させるだけ。閉じるときに「前回知らせた数より増えているか」で
+  -- 送るかどうかを決めるので、2件目以降のためにタイマーを張り直す必要がない
+  if notice.timer then
+    return
+  end
+
+  notice.timer = vim.fn.timer_start(APPROVAL_NOTICE_WINDOW_MS, function()
+    M._flush_approval_notice(bufnr)
+  end)
+end
+
+---合流窓を閉じる。テストが時間を待たずに呼べるよう、タイマーの中身を関数にしてある
+---@param bufnr number
+---@return boolean delivered
+function M._flush_approval_notice(bufnr)
+  local notice = approval_notices[bufnr]
+  if not notice then
+    return false
+  end
+  notice.timer = nil
+
+  local count = seen_count(notice)
+  if count <= notice.announced then
+    return false
+  end
+  notice.announced = count
+
+  deliver_approval_notice(bufnr)
+  return true
+end
+
+---このチャットについての合流状態を捨てる
+---
+---承認が全部片付いた時点で呼ぶ。捨てないと、次に同じチャットが承認待ちになったとき
+---`announced` が残っていて「増えていない」と判定され、**通知が飛ばない**
+---@param bufnr number
+function M.forget_approval_notices(bufnr)
+  local notice = approval_notices[bufnr]
+  if not notice then
+    return
+  end
+  if notice.timer then
+    pcall(vim.fn.timer_stop, notice.timer)
+  end
+  approval_notices[bufnr] = nil
+end
+
 ---応答完了。自分宛キューの drain と、購読者への配達を行う
 ---
 ---発火判定は3分岐（#639 / #640）:
@@ -442,6 +565,10 @@ end
 ---@param bufnr number
 function M.forget(bufnr)
   MessageQueue.forget(bufnr)
+
+  -- 早期returnより前。合流窓には**タイマーが張ってある**ことがあり、そこだけは空振りではない:
+  -- 消えたバッファについて後から発火すると、誰も読まないバッファへの配達を起こす
+  M.forget_approval_notices(bufnr)
 
   -- autocmdはパターン無しで登録しているので、エディタ内のどのバッファを閉じても走る。
   -- 既定（無効）では状態が空のまま、全テーブルの走査だけが通常の編集操作ごとに起きる。

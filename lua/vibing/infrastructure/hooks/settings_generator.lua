@@ -1,10 +1,42 @@
 --- Hook settings generator
---- Writes hook settings to .vibing/hook-settings.json for --settings flag
+--- Writes hook settings to .vibing/hook-settings-<instance>.json for --settings flag
 --- @module vibing.infrastructure.hooks.settings_generator
 
 local Fs = require("vibing.core.utils.fs")
 
 local M = {}
+
+--- The two halves of the generated file's name, around the instance key. Both `settings_path` and
+--- the sweep take them from here, so the name that is written and the name that is recognised are
+--- one grammar (`rpc/instance_key.lua`).
+local NAME_PREFIX = "hook-settings-"
+local NAME_SUFFIX = ".json"
+
+--- The PreToolUse timeout this generator registers, in seconds.
+---
+--- Read by claude and, through `generate()`, by grok. It shipped as **120, the same number as
+--- `pre-tool-use.sh`'s own MAX_WAIT** — equal, with no margin at all, where copilot's and codex's
+--- generators had both already given themselves 300 for the stated reason that whichever side
+--- gives up first decides.
+---
+--- That equality is a live bug, not a #778 one. Measured against claude 2.1.236 and copilot 1.0.85
+--- (`handbook/architecture/approval-without-kill.md` → "What expiry does"): when the **CLI's** hook
+--- timeout expires the tool runs with **no verdict at all** — fail open — where the script's own
+--- expiry exits 2 and fails closed. So the two deadlines racing at the same number means a slow
+--- permission check lands on whichever side the scheduler picks, and half the time that is an
+--- ungated tool call. The script's deny has to be the one that arrives.
+---
+--- Derived from `permissions.approval_wait_sec`, so the ordering is a property of the derivation
+--- rather than of three literals that happen to be in order today.
+---
+--- What this transport registers as its PreToolUse timeout, or nil if it registers none. Every
+--- transport answers this so the ordering invariant can be checked per backend from one place
+--- instead of re-deriving each generator's own schema (claude's `timeout`, copilot's `timeoutSec`,
+--- codex's `-c` fragment). `hooks/transports.lua` dispatches to it.
+--- @return number|nil seconds
+function M.hook_timeout_sec()
+  return require("vibing.infrastructure.hooks.wait_budget").cli_timeout_sec()
+end
 
 --- Resolve a bundled hook script by file name
 --- @param name string File name under bin/hooks/
@@ -59,7 +91,7 @@ function M.generate(hook_script_path, dialect)
             {
               type = "command",
               command = pre_tool_use_script,
-              timeout = 120,
+              timeout = M.hook_timeout_sec(),
             },
           },
         },
@@ -84,6 +116,33 @@ function M.generate(hook_script_path, dialect)
   }
 end
 
+--- Where this Neovim's hook settings for a given cwd live.
+---
+--- **Keyed by instance, and that is a correctness property.** The timeout in this file is derived
+--- from `permissions.approval_wait_sec`, while the script's own deadline reaches the CLI child in
+--- its environment and is fixed at spawn. One shared path means a second Neovim with a lower
+--- `approval_wait_sec` rewrites a file our already-running CLI may re-read, putting the CLI's
+--- deadline *ahead* of the script's — the one ordering under which every CLI measured fails open
+--- and runs the tool ungated.
+---
+--- Whether a CLI re-reads its settings per turn is unmeasured, and four backends' worth of
+--- unmeasured. A per-instance name means the question never arises. `rpc/instance_key.lua`.
+--- @param cwd string
+--- @return string
+function M.settings_path(cwd)
+  local InstanceKey = require("vibing.infrastructure.rpc.instance_key")
+  return cwd .. "/.vibing/" .. InstanceKey.name(NAME_PREFIX, NAME_SUFFIX)
+end
+
+--- Delete hook settings left behind by Neovims that are no longer running.
+---
+--- The same two halves `settings_path` builds the name from, so the sweep cannot stop recognising
+--- what this generator writes.
+--- @param vibing_dir string
+local function sweep_dead_instances(vibing_dir)
+  require("vibing.infrastructure.rpc.instance_key").sweep(vibing_dir, NAME_PREFIX, NAME_SUFFIX, os.remove)
+end
+
 --- Ensure hook settings file exists in .vibing/ of the given cwd
 --- @param cwd? string Working directory (defaults to vim.fn.getcwd())
 --- @param dialect? string see `generate`
@@ -91,9 +150,10 @@ end
 function M.ensure(cwd, dialect)
   cwd = cwd or vim.fn.getcwd()
   local vibing_dir = cwd .. "/.vibing"
-  local settings_path = vibing_dir .. "/hook-settings.json"
+  local settings_path = M.settings_path(cwd)
 
   Fs.ensure_dir(vibing_dir)
+  sweep_dead_instances(vibing_dir)
 
   -- Always regenerate (hook script path may change after plugin update)
   local settings = M.generate(nil, dialect)

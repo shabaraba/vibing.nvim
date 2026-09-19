@@ -62,7 +62,7 @@ end
     local bufnr = vim.api.nvim_create_buf(false, true)
     table.insert(created_bufs, bufnr)
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-    return setmetatable({ buf = bufnr, _pending_approval = nil }, ChatBuffer)
+    return setmetatable({ buf = bufnr, _pending_approvals = {} }, ChatBuffer)
   end
 
   --- A completed turn followed by an unsent message, which is the shape every case here needs.
@@ -272,7 +272,7 @@ end
         context = 205000,
         unsent = "1. allow_once - Allow this execution only",
       })
-      chat._pending_approval = { tool = "Bash" }
+      chat._pending_approvals = { { tool = "Bash", request_id = "req-1" } }
 
       assert.is_nil(CacheExpiry.evaluate(chat))
     end)

@@ -51,6 +51,10 @@ local M = {
   -- Skipping the write for a lightweight call is not the whole of it: that call also runs from
   -- a directory that has no `.grok/hooks/` to discover, so the hook a previous ordinary chat left
   -- in the project can no longer be picked up (#588).
+  -- No `measured_wait_floor_sec`: unmeasured (grok was not signed in on the measuring machine), so
+  -- approvals here keep killing the turn. That grok's hook file carries claude's timeout is not
+  -- evidence about grok — the file is written by claude's generator, and what a CLI *honours* is a
+  -- separate question from what it is handed.
   hook = { transport = "project_dir", dialect = "claude", keep_in_bypass = false },
 
   -- The half of the lightweight restriction that is not expressible as a flag: grok's

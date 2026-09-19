@@ -19,9 +19,13 @@
 ---
 ---答えは人間の `<CR>` とまったく同じ経路を通る。選んだ選択肢の行をワーカーのバッファに
 ---書いてから `ChatBuffer:send_message()` を呼ぶだけで、承認の消費
----（`update_session_permissions` → `_pending_approval` の破棄 → 再試行文への差し替え）は
----既存の承認ブロックが行う。判断ロジックを2本持たないための形で、代理応答だけが
----`:once` の扱いやセッションリストの更新で人間の経路と食い違う、という壊れ方をしない。
+---（`update_session_permissions` → プロンプトの破棄 → フックへの判定 or 再試行文への差し替え）は
+---`ChatBuffer:_answer_pending_approval` が行う。判断ロジックを2本持たないための形で、代理応答
+---だけが `:once` の扱いやセッションリストの更新で人間の経路と食い違う、という壊れ方をしない。
+---
+---合流点が `send_message` の**冒頭**（`cancel_request()` より前）なのはそのため。承認を kill
+---せずに答えられるようになった以上、答えは新しいターンではなく走っているターンの続きで、
+---人間側だけを直すと代理承認だけが「答えた瞬間にターンが死ぬ」形で壊れる
 ---
 ---人間の経路と違うのは書かれるセクション見出しだけ: 代理応答は
 ---`## Request <!-- <時刻> from .vibing/chat/orchestrator.md -->` として残るので、
@@ -30,15 +34,15 @@
 ---名指ししているチャットを指す。
 local M = {}
 
----代理で答えられる4択。`rpc/handlers/permission.lua` の `APPROVAL_OPTIONS` と同じ語彙で、
----`presentation/chat/modules/approval_parser.lua` がバッファから読み戻す側
+---代理で答えられる4択。語彙は `approval_decision` が持つ — ここに写しを置くと、選択肢が増えた
+---ときに代理応答だけが古い4択で検証し続ける
 ---@type string[]
-M.ACTIONS = { "allow_once", "deny_once", "allow_for_session", "deny_for_session" }
+M.ACTIONS = require("vibing.application.chat.approval_decision").ACTIONS
 
 ---@param action any
 ---@return boolean
 local function is_valid_action(action)
-  return type(action) == "string" and vim.tbl_contains(M.ACTIONS, action)
+  return require("vibing.application.chat.approval_decision").is_valid_action(action)
 end
 
 ---`agent.orchestration.delegated_approval` の実効値
@@ -100,28 +104,37 @@ end
 ---`renderer.lua` と揃えてあるのは、バッファに残る行が「ユーザーが選んだ場合に残るはずの行」と
 ---一字一句同じであってほしいため — transcript を読む人間が、代理応答かどうかを見分けるのに
 ---見出し以外の手がかりを要らなくする
----@param options table? `_pending_approval.options`
+---@param options table? 承認プロンプトの `options`
 ---@param action string
+---@param request_id string? 行に載せる identity。複数の承認が同時に出ているとき、番号だけでは
+---  どれへの答えか決まらない
 ---@return string
-function M.option_line(options, action)
+function M.option_line(options, action, request_id)
+  -- 行を組み立てるのは `approval_parser.option_line` **だけ**。ここで自分で `string.format`
+  -- すると、人間が残す行と代理応答の行が別々に進化して、この関数の意図（一字一句同じ）が
+  -- 黙って壊れる
+  local ApprovalParser = require("vibing.presentation.chat.modules.approval_parser")
+
   local index = 1
   for _, opt in ipairs(options or {}) do
     local label = (opt.label and opt.label ~= "") and opt.label or ""
     if label ~= "" then
       if opt.value == action then
-        return string.format("%d. %s", index, label)
+        return ApprovalParser.option_line(index, label, request_id)
       end
       index = index + 1
     end
   end
 
   -- 選択肢を読み取れなかったときの逃げ道。`- ` の後ろまで含めて書くのは、パターンが
-  -- ハイフンまでを要求するため（`approval_parser.APPROVAL_PATTERNS`）
-  return string.format("1. %s - answered by another chat", action)
+  -- ハイフンまでを要求するため
+  return ApprovalParser.option_line(1, action .. " - answered by another chat", request_id)
 end
 
 ---ワーカーの承認プロンプトに代理で答える
----@param params {bufnr: number, action: string, from_bufnr: number}
+---@param params {bufnr: number, action: string, from_bufnr: number, request_id: string?}
+---  `request_id` は保留が2件以上あるとき必須。CLIは1ターンに複数のフックを並列に起動するので
+---  「そのチャットの承認」は1つに決まらず、省略されたら**どれに答えたつもりか分からない**
 ---@return {success: boolean, bufnr: number, tool: string, action: string}
 function M.answer(params)
   local mode = M.mode()
@@ -159,7 +172,26 @@ function M.answer(params)
     error("Buffer is not a vibing chat buffer")
   end
 
-  local pending = chat_buf:get_pending_approval()
+  -- 2件以上あるのに名指しが無ければ、どれに答えたのか誰にも分からない。推測して1つ選ぶと、
+  -- オーケストレータが意図していない承認が通る
+  local waiting = chat_buf:get_pending_approvals()
+  if #waiting > 1 and not params.request_id then
+    local ids = {}
+    for _, entry in ipairs(waiting) do
+      table.insert(ids, string.format("%s (%s)", tostring(entry.request_id), tostring(entry.tool)))
+    end
+    error(
+      string.format(
+        "That chat has %d tool-approval prompts waiting at once, so `request_id` is required: %s. "
+          .. "Read the chat with nvim_get_buffer — each option line carries its own "
+          .. "`<!-- vibing:req=... -->` marker.",
+        #waiting,
+        table.concat(ids, ", ")
+      )
+    )
+  end
+
+  local pending = chat_buf:get_pending_approval(params.request_id)
   if not pending then
     -- 状態を名乗る。「承認待ちではない」だけだと、呼び出し元は `nvim_get_buffer` を1往復して
     -- 同じことを知りに行くしかない。語彙は watchdog の通知や `nvim_get_buffer` と同じ
@@ -169,6 +201,25 @@ function M.answer(params)
         "That chat is not waiting on a tool approval (status: %s). "
           .. "A tool-approval prompt can only be answered once, and only while it is pending.",
         status
+      )
+    )
+  end
+
+  -- 期限切れのプロンプトも答えられる。フックはもういないので**その場では届かず、新しいターン
+  -- としての再試行**に落ちる（kill する経路とまったく同じ）。断るのは、その再試行が
+  -- **いま走っているターンを殺す**場合だけ。
+  --
+  -- 黙って下流に流すと `ProgrammaticSender.validate` の「応答中なので送れない」が先に答える。
+  -- 事実ではあるが、読み手（モデル）を「空くのを待つ」に誘導する — 実際に必要なのは
+  -- 「このチャットが止まってから、もう一度答える」で、理由が違えば次の一手も違う
+  if pending.expired and chat_buf:is_responding() then
+    error(
+      string.format(
+        "That tool-approval prompt (%s) expired, so answering it now starts a NEW turn on that "
+          .. "chat rather than releasing the call it was raised for — and that chat is still "
+          .. "running, so the new turn would cancel what it is doing. Answer it once that chat "
+          .. "stops, or answer one of its prompts that has not expired.",
+        tostring(pending.request_id)
       )
     )
   end
@@ -188,20 +239,27 @@ function M.answer(params)
     )
   end
 
-  local line = M.option_line(pending.options, params.action)
+  local line = M.option_line(pending.options, params.action, pending.request_id)
 
   -- 送れる状態かを先に確かめる。この後の `link_or_warn` は宛先のバッファを直接編集し、
   -- `replace_unsent` は承認プロンプトそのものを消すので、送信が弾かれるならその前に止まって
   -- ほしい（`rpc/handlers/message.lua` が同じ順序を取っている理由と同じ）
-  ProgrammaticSender.validate(bufnr, line)
+  -- `answers_blocked_approval` を渡すのは、フックがブロックしているワーカーが
+  -- `is_responding()` のままだから（#778）。渡さないと「応答中なので送れない」で弾かれ、
+  -- 代理承認はその場で答えられる経路でだけ必ず失敗する。例外が効くのは実際に止まっている
+  -- フックへの答えだけで、判定は `programmatic_sender` 側がレジストリに訊く
+  ProgrammaticSender.validate(bufnr, line, { answers_blocked_approval = pending.request_id })
 
-  -- 承認に答えると、そのワーカーは新しいターンを始める。並列度の上限は「機械が始める送信」に
-  -- かかるものなので、ここも見る。ただし `at_capacity_message` は使わない — あれは
-  -- `queue_if_busy` を勧める文面で、このツールにその引数は無い。承認は溜めて後で配るような
-  -- ものでもない（プロンプトは1回しか消費できず、待つ側は止まったままでいる）ので、
-  -- 断って呼び直させる
+  -- 承認に答えると、そのワーカーは新しいターンを始める**ことがある**。並列度の上限は「機械が
+  -- 始める送信」にかかるものなので、そのときだけ見る。
+  --
+  -- **その場で答えられる承認では見てはいけない。** フックがブロックしているということは、
+  -- そのワーカーは既に走っていて枠を1つ占有している。ここで断ると、既に数えられている枠を
+  -- 理由に承認を拒否することになり、しかも断られたワーカーは承認待ちのまま — 枠が上限なら、
+  -- 答えることで枠を空けることもできない。ほぼデッドロックになる
+  local starts_new_turn = not require("vibing.infrastructure.rpc.pending_approvals").get(pending.request_id)
   local Concurrency = require("vibing.application.chat.concurrency")
-  if Concurrency.at_capacity() then
+  if starts_new_turn and Concurrency.at_capacity() then
     error(
       string.format(
         "%d chats and %d of their subagents are already in flight, at or above the configured "
@@ -226,7 +284,10 @@ function M.answer(params)
     from = from_name ~= "" and require("vibing.core.utils.git").to_display_path(from_name) or nil,
   }
 
-  local result = ProgrammaticSender.send(bufnr, line, nil, section, { replace_unsent = true })
+  local result = ProgrammaticSender.send(bufnr, line, nil, section, {
+    replace_unsent = true,
+    answers_blocked_approval = pending.request_id,
+  })
 
   -- 送信と同じく、答えたという事実を購読の登録として扱う。代理で答えたなら、その結果として
   -- ワーカーが動き出し、また止まる。止まったことを知りたいのは答えた側

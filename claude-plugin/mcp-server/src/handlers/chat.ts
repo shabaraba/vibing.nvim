@@ -202,6 +202,7 @@ const chatAnswerApprovalArgsSchema = z.object({
   bufnr: z.number().nullish(),
   file_path: z.string().nullish(),
   action: z.enum(APPROVAL_ACTIONS),
+  request_id: z.string().nullish(),
   from_bufnr: z.number(),
   rpc_port: z.number().optional(),
 });
@@ -209,10 +210,19 @@ const chatAnswerApprovalArgsSchema = z.object({
 /**
  * Handler for nvim_chat_answer_approval
  *
- * A chat that hit a tool in its `ask` list has had its turn killed and the approval prompt drawn
- * into its buffer (`rpc/handlers/permission.lua`). It cannot continue, and it cannot report that
- * it is stuck — so until someone answers, it simply never moves again. By default that someone is
- * the user; `agent.orchestration.delegated_approval` lets an orchestrator stand in — fully when
+ * A chat that hit a tool in its `ask` list has the approval prompt drawn into its buffer
+ * (`rpc/handlers/permission.lua`) and stops there. It cannot continue, and it cannot report that
+ * it is stuck — so until someone answers, it simply never moves again.
+ *
+ * **What it is stopped on differs by backend, and the caller does not have to care.** Where the
+ * CLI has a measured wait floor the turn is still running with its PreToolUse hook blocked (#778),
+ * so the answer reaches that hook and the turn carries on; elsewhere the turn was killed and the
+ * answer arrives as a new one. Both go through the same `ChatBuffer:send_message()`, which is why
+ * there is one call here rather than two. The one visible difference is that a chat of the first
+ * kind reports `waiting_approval` while its turn is technically still in flight — so do not read
+ * `responding` as "it is fine, it is working".
+ *
+ * By default the someone who answers is the user; `agent.orchestration.delegated_approval` lets an orchestrator stand in — fully when
  * it is `true`, or only for tools within the target chat's own declared `delegated_scope` when
  * it is `"scoped"` (a denial always goes through either way).
  *
@@ -222,6 +232,11 @@ const chatAnswerApprovalArgsSchema = z.object({
  * wording the model should act on ("tell the user which chat is blocked") instead of a bare
  * refusal.
  *
+ * `request_id` names which prompt is being answered, and is required as soon as the target chat
+ * has more than one waiting. A CLI runs several PreToolUse hooks at once — measured on claude as
+ * three starting 0.54s apart and overlapping — so "the chat's pending approval" stops being a
+ * single thing, and the Lua side refuses to guess rather than spending the wrong grant.
+ *
  * `from_bufnr` is required here although the other chat tools keep it optional: this call removes
  * a permission gate, and one that cannot record whose decision it was should not be made at all.
  * Version skew is not an argument for softening it — a Neovim without the `answer_approval` RPC
@@ -230,6 +245,7 @@ const chatAnswerApprovalArgsSchema = z.object({
 export async function handleChatAnswerApproval(args: any): Promise<any> {
   const parsed = chatAnswerApprovalArgsSchema.parse(args);
   const { action, from_bufnr, rpc_port } = parsed;
+  const request_id = parsed.request_id ?? undefined;
   const bufnr = parsed.bufnr ?? undefined;
   const file_path = parsed.file_path ?? undefined;
 
@@ -237,7 +253,7 @@ export async function handleChatAnswerApproval(args: any): Promise<any> {
 
   const result = await callNeovim(
     'answer_approval',
-    { bufnr, file_path, action, from_bufnr },
+    { bufnr, file_path, action, request_id, from_bufnr },
     rpc_port
   );
 

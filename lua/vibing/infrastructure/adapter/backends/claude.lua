@@ -58,10 +58,19 @@ local M = {
   build = CLICommandBuilder.build,
   event_processor = CLIEventProcessor,
 
-  -- `.vibing/hook-settings.json` handed over with `--settings`, in the script's own (claude)
+  -- `.vibing/hook-settings-<instance>.json` handed over with `--settings`, in the script's own (claude)
   -- dialect. Registered in bypassPermissions too: that mode bypasses the decision, not the
   -- git-snapshot baseline the same PreToolUse round trip takes.
-  hook = { transport = "settings_file", dialect = "claude", keep_in_bypass = true },
+  -- 1090s, and **that is where we stopped watching, not where claude stopped waiting**: the hook
+  -- was given a 1700s budget and took a SIGTERM from our own job stop at 1090s. A floor. Reading a
+  -- number like this as a ceiling is the mistake that produced a whole rejected design once
+  -- already (`handbook/architecture/approval-without-kill.md`).
+  hook = {
+    transport = "settings_file",
+    dialect = "claude",
+    keep_in_bypass = true,
+    measured_wait_floor_sec = 1090,
+  },
   seeds_project_plugins = true,
 
   apply_env = function(env, opts, config)

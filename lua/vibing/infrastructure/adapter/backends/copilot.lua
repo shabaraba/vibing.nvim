@@ -35,11 +35,20 @@ local M = {
   build = CopilotCommandBuilder.build,
   event_processor = CopilotEventProcessor,
 
-  -- A throwaway plugin under `.vibing/copilot-plugin/`, loaded with `--plugin-dir`, in copilot's
+  -- A throwaway plugin under `.vibing/copilot-plugin-<instance>/`, loaded with `--plugin-dir`, in copilot's
   -- flat decision dialect. This is what gives copilot `permission_mode`, the `ask` list and the
   -- Tool Approval UI (#512); a failed install degrades to the static --deny-tool flags.
   -- bypassPermissions asked for no gate at all, so it gets none.
-  hook = { transport = "plugin_dir", dialect = "copilot", keep_in_bypass = false },
+  -- 1700s: the hook ran its full 1700s budget and exited on its own, never cut
+  -- (`HOOK FINISHED NORMALLY after 1700s`), independently confirmed by a 950s run. Still a floor,
+  -- for the opposite reason to claude's: nothing here says copilot would have stopped afterwards.
+  -- An earlier 670s reading was a log read while the run was still going.
+  hook = {
+    transport = "plugin_dir",
+    dialect = "copilot",
+    keep_in_bypass = false,
+    measured_wait_floor_sec = 1700,
+  },
 
   vocabulary = ToolVocabulary,
   register_chat_bufnr = false,
