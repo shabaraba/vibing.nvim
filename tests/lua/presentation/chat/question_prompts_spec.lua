@@ -40,6 +40,18 @@ describe("a question holding the turn open", function()
     return chat_buf, replies
   end
 
+  --- Type `text` into the unsent section at the end of the buffer, the way a user does.
+  ---
+  --- Stubbing `extract_user_message` steps over the question of *what the answer is read from*:
+  --- the drawn block lives in that same section, so a stub hands back only the part the spec
+  --- meant to be there and every one of these passed while the block was going back to the model
+  --- along with it (`question_answer_text_spec.lua`).
+  local function types(chat_buf, text)
+    local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
+    table.insert(lines, text)
+    vim.api.nvim_buf_set_lines(chat_buf.buf, 0, -1, false, lines)
+  end
+
   describe("what the chat reports while it waits", function()
     it("says asked_question even though its turn is still running", function()
       -- The hole #778 closed for approvals, re-opened from the other end. Without this, a chat
@@ -128,9 +140,7 @@ describe("a question holding the turn open", function()
   describe("what <CR> means while a question waits", function()
     it("hands the user's text back to the waiting call instead of sending a new turn", function()
       local chat_buf, replies = chat_awaiting_question()
-      chat_buf.extract_user_message = function()
-        return "B, and keep the existing names"
-      end
+      types(chat_buf, "B, and keep the existing names")
 
       assert.is_true(chat_buf:send_message())
 
@@ -168,9 +178,7 @@ describe("a question holding the turn open", function()
       -- and the CLI sits inside the tool call until its own MCP idle timeout.
       local chat_buf, replies = chat_awaiting_question()
       chat_buf._is_sending = true
-      chat_buf.extract_user_message = function()
-        return "A"
-      end
+      types(chat_buf, "A")
 
       assert.is_true(chat_buf:send_message())
       assert.equals(1, #replies)
@@ -511,9 +519,7 @@ describe("a question holding the turn open", function()
       -- `_answer_pending_question`, which reaches `_flush_chunks` through `_resume_after_prompts`.
       local chat_buf, replies = chat_streaming_under_a_question()
       chat_buf:append_chunk("arrived while waiting\n")
-      chat_buf.extract_user_message = function()
-        return "A"
-      end
+      types(chat_buf, "A")
 
       assert.is_true(chat_buf:send_message())
       assert.equals("answered", replies[1].status)
@@ -542,9 +548,7 @@ describe("a question holding the turn open", function()
         answered_approval = true
         return { outcome = "answered_in_place" }
       end
-      chat_buf.extract_user_message = function()
-        return "allow_once"
-      end
+      types(chat_buf, "allow_once")
 
       assert.is_true(chat_buf:send_message())
       assert.is_true(answered_approval)
@@ -565,9 +569,7 @@ describe("a question holding the turn open", function()
       chat_buf._answer_pending_approval = function()
         return { outcome = "retry_as_new_turn", message = "Retry the Bash call; it is allowed now." }
       end
-      chat_buf.extract_user_message = function()
-        return "1. allow_once - Allow this execution only <!-- vibing:req=a-expired -->"
-      end
+      types(chat_buf, "1. allow_once - Allow this execution only <!-- vibing:req=a-expired -->")
 
       chat_buf:send_message()
 
@@ -632,9 +634,7 @@ describe("a question holding the turn open", function()
       -- replaced the first's.
       chat_buf:insert_choices({ { question = "Which file?", options = { { label = "X" } } } }, "q-2")
       chat_buf._is_sending = true
-      chat_buf.extract_user_message = function()
-        return "X"
-      end
+      types(chat_buf, "X")
       return chat_buf, first, second
     end
 
@@ -676,9 +676,7 @@ describe("a question holding the turn open", function()
       local chat_buf, replies = chat_awaiting_question("q-1")
       chat_buf:insert_choices({ { question = "Which approach?", options = { { label = "A" } } } })
       chat_buf._is_sending = true
-      chat_buf.extract_user_message = function()
-        return "A"
-      end
+      types(chat_buf, "A")
 
       assert.is_true(chat_buf:send_message())
       assert.equals("answered", replies[1].status)
@@ -771,9 +769,7 @@ describe("a question holding the turn open", function()
     it("answers the one on screen and then draws the next", function()
       local chat_buf, first, second = both_waiting()
       chat_buf._is_sending = true
-      chat_buf.extract_user_message = function()
-        return "A"
-      end
+      types(chat_buf, "A")
 
       assert.is_true(chat_buf:send_message())
 

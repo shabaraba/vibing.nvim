@@ -1000,8 +1000,13 @@ function ChatBuffer:send_message()
     -- **黙って飲まない。** 本文を書いて `<CR>` を押した人は「送った」と思っている。空の
     -- `<CR>` は無反応でよい（押し間違いに理由を言う必要はない）が、書いたものが消えるのは
     -- このPRが直しているバグと同じ形 — 無言で `false` を返す「静かに成功した失敗」そのもの
-    local unsent = self:extract_user_message()
-    if unsent and unsent ~= "" then
+    --
+    -- 訊いているのは「**人間が何か書いたか**」なので `_answer_text()`。`extract_user_message()`
+    -- はセクション丸ごとで、描いてあるプロンプトのブロックだけで非空になる — つまり
+    -- プロンプトが出ているあいだ**空の `<CR>` が毎回**「your message was not sent」を出し、
+    -- 押し間違えた人は送っていないものが送られなかったと言われる。黙って落とすべきものに
+    -- 毎回警告を出すことは、本物の警告を訓練で消すことでもある
+    if self:_answer_text() then
       vim.notify(
         "[vibing] A prompt above is holding this turn open, so your message was not sent. "
           .. "Answer the prompt, or end the turn with :VibingCancel and send it then.",
@@ -1609,6 +1614,32 @@ end
 ---            もう一度警告を出さずにそのまま止まる
 ---  - `nil`   答えるべき質問が無い。通常の送信がそのまま続く
 ---@return boolean? answered
+---質問の答えとして読む本文 — 描いてあるプロンプトの行を落とした残り
+---
+---未送信セクションにはユーザーが打った行と**描いてあるプロンプト**が同居している。丸ごと
+---答えにしていたので、質問文・選択肢・「他に N 件」の行までモデルへ戻っていた。誤配では
+---ないが、モデルは自分の質問を答えとして受け取る。
+---
+---落とし方は畳むとき（`_recycle_prompt_section`）と同じ2つで、順序も同じ。承認の行は接頭辞で
+---見分けられ、質問の行は見分けられないので「書いたはずの並び」との突き合わせで落とす。
+---
+---**剥がして何も残らなければ、それは答えではない。** ブロックが1文字も編集されておらず、
+---下にも何も打たれていないということで、空の `<CR>` と同じ状態 — 消費せず落とす。編集されて
+---いれば突き合わせは外れてブロックはそのまま残り、それが答えになる（`renderer.lua` が
+---「編集されたブロックは答えそのもの」と書いているとおり）。
+---@return string? answer nil なら答えになる本文が無い
+function ChatBuffer:_answer_text()
+  local lines = ConversationExtractor.user_message_lines(self.buf)
+  if not lines then
+    return nil
+  end
+
+  local kept = ApprovalParser.strip_prompt_lines(lines)
+  kept = Renderer.strip_choice_lines(kept, self._pending_choices)
+  local answer = vim.trim(table.concat(kept, "\n"))
+  return answer ~= "" and answer or nil
+end
+
 function ChatBuffer:_answer_pending_question()
   local PendingQuestions = require("vibing.infrastructure.rpc.pending_questions")
   local waiting = PendingQuestions.list_for_chat(self.buf)
@@ -1616,8 +1647,8 @@ function ChatBuffer:_answer_pending_question()
     return nil
   end
 
-  local message = self:extract_user_message()
-  if not message or message == "" then
+  local message = self:_answer_text()
+  if not message then
     return nil
   end
 

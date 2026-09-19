@@ -49,10 +49,16 @@ function M.extract_conversation(buf)
   return conversation
 end
 
----ユーザーメッセージを抽出（最後の## Userセクション）
+---最後のユーザーセクションの本文行を、**書かれたまま**返す
+---
+---前後の空行を落とさないのが `extract_user_message` との違いで、それが要る理由は1つ:
+---描いてあるプロンプトのブロックは末尾の空行まで含めて「書いたはずの並び」であり
+---（`renderer.choice_lines`）、突き合わせは完全一致でしか成立しない。空行を落としたものに
+---対して剥がそうとすると、**ユーザーが何も打たなかったときだけ**ブロックの末尾の空行が
+---消えて一致せず、ブロック全体が本文として残る — 剥がしたい唯一のケースで剥がれない
 ---@param buf number バッファ番号
----@return string?
-function M.extract_user_message(buf)
+---@return string[]? lines ユーザーセクションが1つも無ければ nil
+function M.user_message_lines(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
   local last_user_line = nil
@@ -75,6 +81,18 @@ function M.extract_user_message(buf)
       break
     end
     table.insert(message_lines, line)
+  end
+
+  return message_lines
+end
+
+---ユーザーメッセージを抽出（最後の## Userセクション）
+---@param buf number バッファ番号
+---@return string?
+function M.extract_user_message(buf)
+  local message_lines = M.user_message_lines(buf)
+  if not message_lines then
+    return nil
   end
 
   while #message_lines > 0 and message_lines[1] == "" do
