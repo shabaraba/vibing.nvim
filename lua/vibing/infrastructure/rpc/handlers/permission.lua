@@ -574,8 +574,11 @@ function M._ask_question_without_killing(turn, chat_bufnr, questions, respond)
 
   -- Guarded for the same reason the approval prompt is: the wait limit is armed either way, so a
   -- failure to draw costs the user a visible prompt, not a reply that is never written.
+  -- The `request_id` travels with the choices so the chat can tell whose block it is holding. It is
+  -- passed only on this path: the kill route registers no pending question, so there is no id for
+  -- its block to belong to, and `nil` is the honest value there.
   if turn.on_insert_choices then
-    local ok, err = pcall(turn.on_insert_choices, questions, true)
+    local ok, err = pcall(turn.on_insert_choices, questions, true, request_id)
     if not ok then
       vim.notify(
         string.format("[vibing] could not draw the question prompt: %s", tostring(err)),
@@ -584,7 +587,22 @@ function M._ask_question_without_killing(turn, chat_bufnr, questions, respond)
     end
   end
 
-  require("vibing.application.chat.completion_notifier").on_question_waiting(chat_bufnr, request_id)
+  -- Guarded, and **not only for symmetry with the approval side — the failure is a different
+  -- shape.** `on_approval_waiting` runs as the last statement inside a `vim.schedule`, so an error
+  -- there reaches the scheduler and costs a notification. This one runs synchronously, and what
+  -- comes after it is `return DEFERRED`. An error escaping here never reaches that return, so
+  -- `handle_request` falls back to writing the handler's own failure as the reply — or, if it does
+  -- not, the question stays registered with nobody left to answer it. Both break the "four ways out
+  -- and no fifth" this registry is built on, and neither is worth a notification that failed.
+  local ok, err = pcall(function()
+    require("vibing.application.chat.completion_notifier").on_question_waiting(chat_bufnr, request_id)
+  end)
+  if not ok then
+    vim.notify(
+      string.format("[vibing] could not announce the waiting question: %s", tostring(err)),
+      vim.log.levels.ERROR
+    )
+  end
 
   return require("vibing.infrastructure.rpc.server").DEFERRED
 end

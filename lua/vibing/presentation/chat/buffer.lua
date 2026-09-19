@@ -20,6 +20,10 @@ local Fs = require("vibing.core.utils.fs")
 ---@field _chunk_parts string[] 未フラッシュのチャンク片。連結は流すときに1回だけ行う
 ---@field _chunk_timer any チャンクフラッシュ用のタイマー
 ---@field _pending_choices table[]? add_user_section()後に挿入する選択肢
+---@field _pending_choices_request_id string? その選択肢がどの待っている質問のものか（#788）。
+---  **`_pending_choices` と必ず同時に読み書きする** — 別々に更新するとずれ、ずれた時点で
+---  「この選択肢はもう答えを要しない」の判定が別の質問に当たる。設定は `insert_choices`、
+---  破棄は `_clear_pending_choices` の2箇所だけ。kill する経路では質問が登録されないので nil
 ---@field _pending_approvals table[]? add_user_section()後に挿入する承認要求UI。**複数**
 ---  なのは、CLIが1ターンに複数のPreToolUseフックを並列に起動するから（実測: claudeで3本が
 ---  0.54秒差で立ち上がり、全体が重なる）。表示順に並べる
@@ -54,6 +58,7 @@ function ChatBuffer:new(config)
   instance._chunk_parts = {}
   instance._chunk_timer = nil
   instance._pending_choices = nil
+  instance._pending_choices_request_id = nil
   instance._pending_approvals = {}
   instance._current_turn_id = nil
   instance._current_process_id = nil
@@ -1064,8 +1069,8 @@ function ChatBuffer:send_message()
     get_bufnr = function()
       return self.buf
     end,
-    insert_choices = function(questions)
-      return self:insert_choices(questions)
+    insert_choices = function(questions, request_id)
+      return self:insert_choices(questions, request_id)
     end,
     set_pending_user_text = function(text)
       return self:set_pending_user_text(text)
@@ -1232,7 +1237,7 @@ function ChatBuffer:add_user_section()
   -- 消えて「答えろと言われているのに選択肢が無い」になる。承認リストが同じ理由で残るのと対。
   -- 待っている質問が無くなった時点（答えた・期限切れ）の描画で捨てられる
   if not self:_has_blocked_questions() then
-    self._pending_choices = nil
+    self:_clear_pending_choices()
   end
   self._pending_user_text = nil
   -- 「いま末尾の未送信セクションにプロンプトが描いてある」。ターンの途中で描けるように
@@ -1297,10 +1302,25 @@ function ChatBuffer:update_filename_from_message(message)
 end
 
 ---AskUserQuestion の選択肢を保存
+---
+---**`request_id` と対で持つ（#788）。** 選択肢は描画用の値だが、「その質問はもう答えを
+---要しない」と判定する側は request_id で訊く。id 無しで捨てると、待たせる経路で2件目の質問が
+---開いているときに生きているほうを消す
 ---@param questions table CLIから受け取った質問構造
-function ChatBuffer:insert_choices(questions)
+---@param request_id string? 答えを待っている質問のID。kill する経路では nil
+function ChatBuffer:insert_choices(questions, request_id)
   self._pending_choices = questions
+  self._pending_choices_request_id = request_id
   self._stop_reason = "asked_question"
+end
+
+---保存してある選択肢を捨てる
+---
+---`_pending_choices` と `_pending_choices_request_id` を**同時に**捨てる唯一の場所。片方だけ
+---残すと、次の `insert_choices` までのあいだ id が別の質問の選択肢を指す
+function ChatBuffer:_clear_pending_choices()
+  self._pending_choices = nil
+  self._pending_choices_request_id = nil
 end
 
 ---期限切れの説明行の目印（質問用）。承認の `APPROVAL_EXPIRED_PREFIX` と分けてあるのは
@@ -1384,6 +1404,20 @@ function ChatBuffer:expire_question(entry)
       text,
       "   The options for it above no longer need an answer; the turn is still running.",
     })
+
+    -- **書いたとおりにする。** 上の行は「その選択肢はもう答えを要しない」と言うが、
+    -- `_pending_choices` を残すと、他のプロンプトが解けたときの `add_user_section` の描き直しで
+    -- 死んだ質問の選択肢が新しい入力欄に戻ってくる。そこに至る経路は
+    -- `_has_blocked_questions()` が偽なので `add_user_section` の末尾で捨てられるが、捨てるのは
+    -- **描いた後**なので、1回だけ確実に出る。
+    --
+    -- 一致を見るのは、`_pending_choices` が単一フィールドで、`others` が別の**質問**でありうる
+    -- から。無条件に捨てると、そのとき生きているほうの選択肢を消して
+    -- 「答えろと言われているのに選択肢が無い」になる。`others` が承認のとき（こちらが普通）は
+    -- 一致するので捨てられる
+    if self._pending_choices_request_id == entry.request_id then
+      self:_clear_pending_choices()
+    end
     return true
   end
 
@@ -1433,7 +1467,7 @@ function ChatBuffer:_answer_pending_question()
   -- **答えた選択肢は捨てる。** `add_user_section` の「待っているあいだは捨てない」条件は、
   -- 下の分岐が `_resume_after_prompts`（= `add_user_section` を通らない）に入ると一度も走らない。
   -- 残すと次のターンの終わりに、もう答えた質問の選択肢が新しい入力欄に描き直される
-  self._pending_choices = nil
+  self:_clear_pending_choices()
 
   -- 答えた行はそのまま transcript に残す。あとは走り続けているターンの続きを受け取れる状態に
   -- 戻すことだが、**それが何かは他の保留が残っているかで変わる** — 承認と同じ分岐で、同じ理由

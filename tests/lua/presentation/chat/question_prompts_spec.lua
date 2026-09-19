@@ -240,7 +240,12 @@ describe("a question holding the turn open", function()
           end,
         }
       end
-      chat_buf:insert_choices({ { question = "Which approach?", options = { { label = "A" } } } })
+      -- The id travels with the choices exactly as the production path passes it, so "whose options
+      -- are these" is answerable here rather than only in the module that sets it.
+      chat_buf:insert_choices(
+        { { question = "Which approach?", options = { { label = "A" } } } },
+        request_id or "q-1"
+      )
       chat_buf:start_response()
       chat_buf:show_pending_prompts()
       PendingQuestions.get(request_id or "q-1").on_timeout = function(entry)
@@ -377,6 +382,51 @@ describe("a question holding the turn open", function()
       assert.equals("unanswered", replies[1].status)
       assert.equals(0, #stopped)
       assert.equals(1, PendingQuestions.count())
+    end)
+
+    it("does not put the dead question's options back in the next input box", function()
+      -- The branch writes *"the options for it above no longer need an answer"* on screen and then
+      -- leaves `_pending_choices` set, so the next `add_user_section` — which is what answering the
+      -- approval runs — draws them again in a brand new input box. `add_user_section` does drop them
+      -- afterwards, but it drops them **after** drawing, so the dead prompt reappears exactly once:
+      -- long enough for the user to answer a question nobody is waiting on.
+      local chat_buf = chat_whose_turn_can_be_watched()
+      PendingApprovals.open({ request_id = "a-1", chat_bufnr = chat_buf.buf, tool = "Bash" })
+
+      PendingQuestions.expire("q-1")
+      local drawn_before = select(2, body(chat_buf):gsub("Which approach%?", ""))
+      assert.equals(1, drawn_before, "precondition: on screen once, with the expiry note under it")
+
+      -- What answering the approval that is still blocked does.
+      chat_buf:add_user_section()
+
+      assert.equals(
+        drawn_before,
+        select(2, body(chat_buf):gsub("Which approach%?", "")),
+        "the expired question's options came back:\n" .. body(chat_buf)
+      )
+    end)
+
+    it("keeps the options of the question that is still waiting", function()
+      -- Why the drop is keyed on the id rather than done unconditionally. `_pending_choices` is a
+      -- single field, so the second of two questions overwrites the first's block — and an
+      -- unconditional drop on the first one's expiry would take the **live** one's options with it,
+      -- leaving "answer this" with nothing to answer. The usual case (`others` is an approval) has
+      -- the ids agreeing, so it still drops.
+      local chat_buf = chat_whose_turn_can_be_watched()
+      PendingQuestions.open({
+        request_id = "q-2",
+        chat_bufnr = chat_buf.buf,
+        questions = { { question = "Which file?", options = { { label = "X" } } } },
+        respond = function() end,
+      })
+      chat_buf:insert_choices({ { question = "Which file?", options = { { label = "X" } } } }, "q-2")
+
+      PendingQuestions.expire("q-1")
+      chat_buf:add_user_section()
+
+      assert.equals("q-2", chat_buf._pending_choices_request_id, "the live question lost its block")
+      assert.is_truthy(body(chat_buf):match("Which file%?"), "the live question lost its options:\n" .. body(chat_buf))
     end)
   end)
 

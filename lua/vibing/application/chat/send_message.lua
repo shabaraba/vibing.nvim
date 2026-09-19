@@ -18,7 +18,7 @@ local Fs = require("vibing.core.utils.fs")
 ---@field update_session_id fun(session_id: string) セッションIDを更新
 ---@field add_user_section fun() ユーザーセクションを追加
 ---@field get_bufnr fun(): number バッファ番号を取得
----@field insert_choices fun(questions: table) AskUserQuestion選択肢を挿入
+---@field insert_choices fun(questions: table, request_id?: string) AskUserQuestion選択肢を挿入
 ---@field set_pending_user_text fun(text: string) 次のユーザーセクションに差し込む本文を保存
 ---@field insert_approval_request fun(tool: string, input: table, options: table) ツール承認要求UIを挿入
 ---@field show_pending_prompts fun() 走っているターンの途中で溜まっている承認プロンプトを描く
@@ -209,7 +209,7 @@ function M.execute(adapter, callbacks, message, config)
         modified_file_paths[file_path] = true
       end
     end,
-    on_insert_choices = function(questions, waiting)
+    on_insert_choices = function(questions, waiting, request_id)
       -- `on_approval_required` と同じ理由で vim.schedule を挟まない。呼び出し元
       -- （permission.lua の `cancel_and_deny` / `M.ask_user_question`）はすでにメインスレッド上。
       --
@@ -220,7 +220,7 @@ function M.execute(adapter, callbacks, message, config)
       --
       -- **待たせる経路（#788）ではその前提が消える** — cancel していないので合流点が来ない。
       -- 制約は同じままだが、理由は「合流点より先に置く」ではなく「合流点が存在しない」になる
-      callbacks.insert_choices(questions)
+      callbacks.insert_choices(questions, request_id)
 
       -- `on_approval_required` の `waiting` と同じ。ターンが終わらない以上、ここで描かないと
       -- 選択肢は保存されるだけで画面に出ず、モデルは上限まで答えを待つ

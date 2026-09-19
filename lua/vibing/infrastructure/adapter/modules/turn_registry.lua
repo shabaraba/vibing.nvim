@@ -32,7 +32,7 @@ local M = {}
 ---   is shared state, so a snapshot diff taken while another turn is mutating the same worktree
 ---   would attribute that turn's changes to this one — this is what lets the turn fall back to the
 ---   per-tool `request_diff` path instead (see core/utils/git_snapshot.lua).
---- @field on_insert_choices? fun(questions: table, waiting?: boolean)
+--- @field on_insert_choices? fun(questions: table, waiting?: boolean, request_id?: string)
 ---   `waiting` says the same thing it says on `on_approval_required`, for the same reason (#788):
 ---   this prompt is holding a turn that is still running, so the chat has to draw it now.
 --- @field can_answer_question_in_place? boolean Whether `nvim_ask_user_question` may hold its MCP
