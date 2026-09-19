@@ -153,12 +153,23 @@ end
 ---
 ---**バッファの行とは別に、質問のキューは空にする。** 何か解放したということは、もう1件も
 ---待たせていないということで、`renderer.choice_lines` が描く「他に N 件」はその時点で嘘になる。
----kill する経路（`released == 0`）は素通りするので、上の「行は消さない」挙動はそのまま
+---kill する経路（`released == 0`）は素通りするので、上の「行は消さない」挙動はそのまま。
+---
+---**ここもキューの3つ目の口で、同じ順序を守る — 空にする前に、描いたときのキューで畳む。**
+---逆順にすると `strip_choice_lines` は空のキューから組み立てて `#block == 0` で即 return し、
+---**1行も剥がさない**。描いてあった質問文と選択肢はそのまま `_pending_user_text` に載り、
+---次の `add_user_section` がユーザー自身の未送信本文として描き直す。`_finish_turn` は
+---この関数の6行あとで畳むので、ここで空にすると「変えてから畳む」になる。
+---
+---畳んだあとの描き直しは呼び出し側が持つ: `_finish_turn` は直後に `add_user_section` を呼び、
+---`cancel_request` は `stop_turn` → 完了経路 → `_finish_turn` で同じ場所に合流する。ここで
+---描き直すと `_finish_turn` のぶんと合わせて未送信セクションが2つ並ぶ
 ---@param template string `%s` に `approval` / `question` が入る文面
 ---@return number released 実際に解放した件数。kill する経路では常に0
 function ChatBuffer:_release_blocked_prompts(template)
   local released = require("vibing.infrastructure.rpc.pending_prompts").resolve_for_chat(self.buf, template)
   if released > 0 then
+    self:_recycle_prompt_section()
     self:_clear_pending_choices()
   end
   return released

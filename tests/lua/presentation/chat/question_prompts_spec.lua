@@ -827,6 +827,47 @@ describe("a question holding the turn open", function()
       assert.is_nil(chat_buf._pending_choices, "the cancelled turn's questions are still queued")
     end)
 
+    it("does not leak the drawn block when the CLI dies before the questions are answered", function()
+      -- The third mouth onto the queue, and the one the first version of this change got wrong.
+      -- `_release_blocked_prompts` emptied the queue and `_finish_turn` folded six lines later,
+      -- so `strip_choice_lines` rebuilt from an empty queue, returned early without removing a
+      -- single line, and the drawn block became the user's own unsent text — the failure this
+      -- whole change exists to close, arriving through the path where the CLI died first.
+      --
+      -- The observation point is the drawn block, not the count line: emptying the queue makes
+      -- the count line correct and the fold wrong, so a spec watching the count passes.
+      local chat_buf = both_waiting()
+
+      chat_buf:_finish_turn()
+
+      local unsent = chat_buf:extract_user_message() or ""
+      assert.is_nil(unsent:match("Which approach%?"), "the drawn block became the user's message:\n" .. unsent)
+      assert.is_nil(
+        (chat_buf._pending_user_text or ""):match("Which approach%?"),
+        "it is still queued to be redrawn as user text: " .. tostring(chat_buf._pending_user_text)
+      )
+    end)
+
+    it("leaves an input box behind when a cancel releases the questions", function()
+      -- Folding is only half of the discipline. A fold with no redraw after it takes the input
+      -- field off screen and leaves the chat with nowhere to type.
+      local chat_buf = both_waiting()
+
+      chat_buf:cancel_request()
+      chat_buf:_finish_turn()
+
+      local lines = vim.api.nvim_buf_get_lines(chat_buf.buf, 0, -1, false)
+      local Timestamp = require("vibing.core.utils.timestamp")
+      local has_input = false
+      for _, line in ipairs(lines) do
+        local header = Timestamp.parse_header(line)
+        if header and header.unsent then
+          has_input = true
+        end
+      end
+      assert.is_true(has_input, "the cancelled chat has nowhere to type:\n" .. table.concat(lines, "\n"))
+    end)
+
     it("replaces a block rather than queueing a duplicate when the same id is staged again", function()
       -- The approval list's shape: a hook cut and re-run arrives carrying the id it already had.
       -- Appending would draw one question twice over and count a phantom second one as waiting.
