@@ -132,7 +132,9 @@ export async function handleGetBuffer(args: any) {
           .map(
             (w) =>
               `- request_id: ${w.request_id} (tool: ${w.tool})` +
-              (w.expired ? ' — already expired, it can no longer be answered' : '')
+              (w.expired
+                ? ' — expired, so that one call was denied; answering it still works, but as a new turn'
+                : '')
           )
           .join('\n'),
     });

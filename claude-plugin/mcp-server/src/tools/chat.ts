@@ -254,7 +254,9 @@ export const chatTools: Tool[] = [
       "or allow_for_session answer only succeeds if the tool matches that chat's declared " +
       'delegated_scope (see nvim_chat_create), so it is fine to just try it — a denial ' +
       '(deny_once/deny_for_session) always succeeds either way. Your answer is recorded in ' +
-      'that chat as coming from you. It can only be answered once, and only while it is pending.',
+      'that chat as coming from you. It is answered exactly once. An expired prompt is still ' +
+      'answerable — the wait limit denied that one tool call, not the decision — but the answer ' +
+      'reaches the chat as a new turn instead of releasing the call that was blocked on it.',
     inputSchema: {
       type: 'object',
       properties: withRpcPort({
@@ -287,7 +289,8 @@ export const chatTools: Tool[] = [
             'in parallel. Omit it only when exactly one is waiting; with more than one the call ' +
             'is refused rather than guessing. Get the ids from waiting_approvals, reported by ' +
             'nvim_chat_list and by nvim_get_buffer with include_chat_status — it is the live set, ' +
-            'so one read tells you which are still answerable and which already expired.',
+            'so one read tells you which are still blocking a call and which already expired. ' +
+            'Both are answerable; only an unexpired one releases the call in place.',
         },
         from_bufnr: {
           type: 'number',
