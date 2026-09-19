@@ -17,7 +17,8 @@ local Identity = require("vibing.core.utils.identity")
 local RpcEnvironment = require("vibing.infrastructure.adapter.modules.rpc_environment")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
 local SessionManagerModule = require("vibing.infrastructure.adapter.modules.session_manager")
-local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local ProcessRegistry = require("vibing.infrastructure.adapter.modules.process_registry")
+local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 local RateLimitDetector = require("vibing.infrastructure.adapter.modules.rate_limit_detector")
 local HookTransports = require("vibing.infrastructure.hooks.transports")
 local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
@@ -124,9 +125,9 @@ function M.define(descriptor)
 
   --- @param prompt string
   --- @param opts Vibing.AdapterOpts
-  --- @param on_chunk fun(chunk: string, handle_id: string)
+  --- @param on_chunk fun(chunk: string, turn_id: string)
   --- @param on_done fun(response: Vibing.Response)
-  --- @return string handle_id the turn
+  --- @return string turn_id the turn
   --- @return string process_id the CLI process serving it
   function Class:stream(prompt, opts, on_chunk, on_done)
     opts = opts or {}
@@ -205,7 +206,7 @@ function M.define(descriptor)
 
     local event_context = {
       sessionManager = self._session_manager,
-      handleId = ids.turn_id,
+      turnId = ids.turn_id,
       -- The session a `{kind = "session"}` event names belongs to the process that reported it, so
       -- the renderer stores it under this and not under the turn.
       processId = ids.process_id,
@@ -239,22 +240,28 @@ function M.define(descriptor)
     -- concurrent chats from cross-wiring each other's approval UI.
     env.VIBING_PROCESS_ID = ids.process_id
 
-    ActiveStreamRegistry.register({
-      handle_id = ids.turn_id,
+    -- Two registrations, because a process and a turn are two lifetimes. Under this transport they
+    -- begin and end together, so both are torn down in `wrapped_on_done`.
+    local process = {
       process_id = ids.process_id,
       -- Only where the nvim_ask_user_question route is wired: registering a value nothing
       -- consumes would only look like a working route (see features.md → AskUserQuestion).
       chat_bufnr = descriptor.register_chat_bufnr and opts.chat_bufnr or nil,
       session_id = opts._session_id,
-      worktree_root = opts._worktree_root,
       adapter = self,
+    }
+    ProcessRegistry.register(process)
+    TurnRegistry.open({
+      turn_id = ids.turn_id,
+      process = process,
+      worktree_root = opts._worktree_root,
       on_insert_choices = opts.on_insert_choices,
       on_approval_required = opts.on_approval_required,
     })
 
     -- The permission handler stays ignorant of which backend it is serving; it just calls whatever
     -- vocabulary it was handed (#516). Registered for a lightweight call too: `cancel()` and the
-    -- exit path resolve the handle through these entries, not only the hook.
+    -- exit path resolve the turn through these entries, not only the hook.
     local perm_handler = require("vibing.infrastructure.rpc.handlers.permission")
     if descriptor.vocabulary then
       perm_handler.set_active_opts(ids.turn_id, vim.tbl_extend("force", opts, { _tool_vocabulary = descriptor.vocabulary }))
@@ -267,7 +274,8 @@ function M.define(descriptor)
         return
       end
       completed = true
-      ActiveStreamRegistry.unregister(ids.turn_id)
+      TurnRegistry.close(ids.turn_id)
+      ProcessRegistry.unregister(ids.process_id)
       perm_handler.clear_active_opts(ids.turn_id)
       if timeout_timer then
         vim.fn.timer_stop(timeout_timer)
@@ -331,7 +339,7 @@ function M.define(descriptor)
                 -- Without this, send_message's staleness check is skipped entirely: a timeout that
                 -- fires after the user cancelled and sent something new would be treated as the
                 -- new request's result and reset its session id.
-                _handle_id = ids.turn_id,
+                _turn_id = ids.turn_id,
                 _process_id = ids.process_id,
               })
             end

@@ -105,14 +105,14 @@ end
 ---
 --- @param adapter table an instantiated adapter
 --- @param opts table? adapter opts, merged over a minimal working set
---- @return table result `{ handle_id, process_id, done_responses = table[] }`
+--- @return table result `{ turn_id, process_id, done_responses = table[] }`
 function M.run_stream(adapter, opts)
   local done_responses = {}
 
-  -- Both ids, because they are not the same value: `handle_id` is the turn a response belongs to
+  -- Both ids, because they are not the same value: `turn_id` is the turn a response belongs to
   -- and `process_id` is what `cancel()` accepts. A spec that uses one where it means the other now
   -- fails rather than passing by coincidence (#774).
-  local handle_id, process_id = adapter:stream(
+  local turn_id, process_id = adapter:stream(
     "hello",
     vim.tbl_extend("force", { permissions_allow = {} }, opts or {}),
     function() end,
@@ -121,7 +121,7 @@ function M.run_stream(adapter, opts)
     end
   )
 
-  return { handle_id = handle_id, process_id = process_id, done_responses = done_responses }
+  return { turn_id = turn_id, process_id = process_id, done_responses = done_responses }
 end
 
 --- Forget every builder's resolved binary path.

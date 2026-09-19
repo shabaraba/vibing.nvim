@@ -4,7 +4,8 @@
 --- pins the contract the handler relies on — and that it works for a backend it knows nothing
 --- about.
 local permission = require("vibing.infrastructure.rpc.handlers.permission")
-local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local processes = require("vibing.infrastructure.adapter.modules.process_registry")
+local registry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
 --- A process and the turn open on it, as two different values: the hook names the process and
 --- `rpc/hook_scope.lua` resolves the turn, so the registry entry below is what joins them.
@@ -45,12 +46,15 @@ describe("permission handler tool vocabulary", function()
     comm_dir = vim.fn.tempname()
     vim.fn.mkdir(comm_dir, "p")
     vim.env.VIBING_HOOK_COMM_DIR = comm_dir
-    registry.register({ handle_id = CHAT.turn_id, process_id = CHAT.process_id })
+    local process = { process_id = CHAT.process_id }
+    processes.register(process)
+    registry.open({ turn_id = CHAT.turn_id, process = process })
   end)
 
   after_each(function()
     permission.clear_active_opts(CHAT.turn_id)
-    registry.unregister(CHAT.turn_id)
+    registry.close(CHAT.turn_id)
+    processes.unregister(CHAT.process_id)
     vim.env.VIBING_HOOK_COMM_DIR = original_comm_dir
     vim.fn.delete(comm_dir, "rf")
   end)

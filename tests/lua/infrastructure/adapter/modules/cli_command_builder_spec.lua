@@ -180,14 +180,14 @@ describe("cli_command_builder", function()
       assert.is_true(prompt_text:find("chat_bufnr argument", 1, true) ~= nil)
     end)
 
-    it("never embeds a handle_id, so the same conversation's system prompt is byte-identical across turns", function()
+    it("never embeds a turn_id, so the same conversation's system prompt is byte-identical across turns", function()
       local opts = { chat_bufnr = 12 }
       local cmd1 = cli_command_builder.build("hello", opts, nil, {}, nil)
       local cmd2 = cli_command_builder.build("hello again", opts, "session-1", {}, nil)
       local idx1 = find_flag(cmd1, "--append-system-prompt")
       local idx2 = find_flag(cmd2, "--append-system-prompt")
       assert.equals(cmd1[idx1 + 1], cmd2[idx2 + 1])
-      assert.is_nil(cmd1[idx1 + 1]:find("handle_id", 1, true))
+      assert.is_nil(cmd1[idx1 + 1]:find("turn_id", 1, true))
     end)
 
     it("names both MCP registration styles, so the model does not cite a tool that is not there", function()

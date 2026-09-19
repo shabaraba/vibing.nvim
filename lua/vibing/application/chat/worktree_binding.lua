@@ -26,12 +26,12 @@ local Scan = require("vibing.application.chat.worktree_scan")
 local pending = {}
 
 ---PreToolUseから呼ぶ。ツールが走る **前** のworktree一覧を押さえる
----@param handle_id string|nil
+---@param turn_id string|nil
 ---@param cwd string|nil そのチャットのcwd
 ---@param tool_name string
 ---@param tool_input table
-function M.observe(handle_id, cwd, tool_name, tool_input)
-  if not handle_id or handle_id == "" then
+function M.observe(turn_id, cwd, tool_name, tool_input)
+  if not turn_id or turn_id == "" then
     return
   end
   local kind, path = Scan.classify(tool_name, tool_input)
@@ -39,12 +39,12 @@ function M.observe(handle_id, cwd, tool_name, tool_input)
     return
   end
 
-  local entry = pending[handle_id]
+  local entry = pending[turn_id]
   if not entry then
     -- 一覧を押さえるのは最初の1回だけ。2回目以降に取り直すと、1つ目の操作で増えた分が
     -- 「元からあった」側に回ってしまう
     entry = { before = Scan.list(cwd), cwd = cwd, exiting = false }
-    pending[handle_id] = entry
+    pending[turn_id] = entry
   end
 
   if kind == "enter" then
@@ -59,10 +59,10 @@ function M.observe(handle_id, cwd, tool_name, tool_input)
   end
 end
 
----@param handle_id string|nil
-function M.clear(handle_id)
-  if handle_id then
-    pending[handle_id] = nil
+---@param turn_id string|nil
+function M.clear(turn_id)
+  if turn_id then
+    pending[turn_id] = nil
   end
 end
 
@@ -115,12 +115,12 @@ end
 ---ターンの終わりに呼ぶ。**差分を出し終えてから** でなければならない。
 ---フォールバック経路の `base_dir` はfrontmatterを今読むので、先に書き換えると、このターンの
 ---退避（旧cwd基準）と基準ディレクトリ（新cwd）が食い違う
----@param handle_id string|nil
+---@param turn_id string|nil
 ---@param bufnr number|nil
 ---@return string|nil written 書き込んだ `working_dir`
-function M.resolve(handle_id, bufnr)
-  local entry = handle_id and pending[handle_id] or nil
-  M.clear(handle_id)
+function M.resolve(turn_id, bufnr)
+  local entry = turn_id and pending[turn_id] or nil
+  M.clear(turn_id)
   if not entry or not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
     return nil
   end

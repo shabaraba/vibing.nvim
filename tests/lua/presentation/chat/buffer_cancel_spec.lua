@@ -17,7 +17,7 @@ describe("ChatBuffer:cancel_request", function()
   local function make_buffer(ids)
     local cancelled = {}
     local chat_buffer = setmetatable({
-      _current_handle_id = ids.turn_id,
+      _current_turn_id = ids.turn_id,
       _current_process_id = ids.process_id,
       _current_adapter = {
         cancel = function(_, id)

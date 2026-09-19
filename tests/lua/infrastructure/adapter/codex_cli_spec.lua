@@ -8,7 +8,7 @@
 local helper = require("tests.helpers.adapter_stream")
 local codex = require("vibing.infrastructure.adapter.codex_cli")
 local notice = require("vibing.infrastructure.adapter.modules.codex_provider_notice")
-local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
 local CONFIG = { agent = { default_model = "sonnet" } }
 
@@ -52,11 +52,11 @@ describe("codex_cli hook registration", function()
 
   it("registers chat_bufnr for nvim_ask_user_question routing", function()
     local run = helper.run_stream(adapter, { permission_mode = "default", chat_bufnr = 42 })
-    local entry = ActiveStreamRegistry.get(run.handle_id)
+    local entry = TurnRegistry.get(run.turn_id)
 
     assert.is_not_nil(entry)
-    assert.equals(42, entry.chat_bufnr)
-    ActiveStreamRegistry.unregister(run.handle_id)
+    assert.equals(42, entry.process.chat_bufnr)
+    TurnRegistry.close(run.turn_id)
   end)
 
   it("skips it for a lightweight call, matching claude_cli", function()

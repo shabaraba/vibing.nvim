@@ -8,7 +8,7 @@ local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
 describe("git_snapshot", function()
   local repo
-  local handle_seq = 0
+  local turn_seq = 0
 
   local function git(args, cwd)
     local cmd = { "git" }
@@ -41,22 +41,22 @@ describe("git_snapshot", function()
     return content
   end
 
-  ---毎回新しいhandle_idを配る（refもセッション状態もこれで分かれる）
-  local function next_handle()
-    handle_seq = handle_seq + 1
-    return "handle" .. tostring(handle_seq)
+  ---毎回新しいturn_idを配る（refもセッション状態もこれで分かれる）
+  local function next_turn()
+    turn_seq = turn_seq + 1
+    return "turn" .. tostring(turn_seq)
   end
 
   ---ベースライン取得 → mutate() → 差分生成、をまとめて回す
   ---@param mutate fun()
   ---@param extra_paths table<string, boolean>|nil
   local function run_turn(mutate, extra_paths)
-    local handle = next_handle()
-    GitSnapshot.ensure_baseline(handle, repo, "Bash")
+    local turn = next_turn()
+    GitSnapshot.ensure_baseline(turn, repo, "Bash")
     mutate()
-    local files, abs_files, patch, _, extra_only = GitSnapshot.generate(handle, extra_paths)
+    local files, abs_files, patch, _, extra_only = GitSnapshot.generate(turn, extra_paths)
     return {
-      handle = handle,
+      turn_id = turn,
       files = files,
       abs_files = abs_files,
       patch = patch,
@@ -113,29 +113,29 @@ describe("git_snapshot", function()
 
   describe("ensure_baseline", function()
     it("skips tools that cannot change a file", function()
-      local handle = next_handle()
-      GitSnapshot.ensure_baseline(handle, repo, "Read")
+      local turn = next_turn()
+      GitSnapshot.ensure_baseline(turn, repo, "Read")
 
-      assert.is_false(GitSnapshot.has_baseline(handle))
+      assert.is_false(GitSnapshot.has_baseline(turn))
     end)
 
     it("treats an unknown tool name as one that could write", function()
       -- MCPツールのように性質が名前から分からないものは変更しうる側に倒す
-      local handle = next_handle()
-      GitSnapshot.ensure_baseline(handle, repo, "mcp__something__unknown_tool")
+      local turn = next_turn()
+      GitSnapshot.ensure_baseline(turn, repo, "mcp__something__unknown_tool")
 
-      assert.is_true(GitSnapshot.has_baseline(handle))
+      assert.is_true(GitSnapshot.has_baseline(turn))
     end)
 
     it("is a no-op on the second call in the same request", function()
-      local handle = next_handle()
-      GitSnapshot.ensure_baseline(handle, repo, "Bash")
-      local first = git_ok({ "rev-parse", GitSnapshot._REF_PREFIX .. handle })
+      local turn = next_turn()
+      GitSnapshot.ensure_baseline(turn, repo, "Bash")
+      local first = git_ok({ "rev-parse", GitSnapshot._REF_PREFIX .. turn })
 
       write(repo .. "/tracked.txt", "changed in between\n")
-      GitSnapshot.ensure_baseline(handle, repo, "Write")
+      GitSnapshot.ensure_baseline(turn, repo, "Write")
 
-      assert.equals(first, git_ok({ "rev-parse", GitSnapshot._REF_PREFIX .. handle }))
+      assert.equals(first, git_ok({ "rev-parse", GitSnapshot._REF_PREFIX .. turn }))
     end)
 
     it("names the ref after the turn id verbatim, so two requests cannot collide", function()
@@ -143,26 +143,26 @@ describe("git_snapshot", function()
       -- 同じref名に潰れて先行セッションのbaselineを上書きしうる。実際の生成元が出すのは
       -- 16進数と `_` だけなので潰れない、という前提をここで固定する（形式が変わったら落ちる）。
       -- 文字集合そのものは tests/lua/core/utils/identity_spec.lua が両方の採番について見る
-      local handle = require("vibing.core.utils.identity").new_turn_id()
-      GitSnapshot.ensure_baseline(handle, repo, "Bash")
+      local turn = require("vibing.core.utils.identity").new_turn_id()
+      GitSnapshot.ensure_baseline(turn, repo, "Bash")
 
       assert.equals(
         0,
-        git({ "rev-parse", "--verify", GitSnapshot._REF_PREFIX .. handle }).code,
+        git({ "rev-parse", "--verify", GitSnapshot._REF_PREFIX .. turn }).code,
         "ref name should be the turn id unchanged"
       )
 
-      GitSnapshot.clear(handle)
+      GitSnapshot.clear(turn)
     end)
 
     it("takes no baseline outside a git repository", function()
       local outside = vim.fn.tempname()
       vim.fn.mkdir(outside, "p")
-      local handle = next_handle()
+      local turn = next_turn()
 
-      GitSnapshot.ensure_baseline(handle, outside, "Bash")
+      GitSnapshot.ensure_baseline(turn, outside, "Bash")
 
-      assert.is_false(GitSnapshot.has_baseline(handle))
+      assert.is_false(GitSnapshot.has_baseline(turn))
       vim.fn.delete(outside, "rf")
     end)
   end)
@@ -265,12 +265,12 @@ describe("git_snapshot", function()
       write(repo .. "/.vibing/chat/2026-01-01.md", "## User\nhello\n")
       GitSnapshot._reset()
 
-      local handle = next_handle()
-      GitSnapshot.ensure_baseline(handle, repo, "Bash")
-      assert.is_true(GitSnapshot.has_baseline(handle))
+      local turn = next_turn()
+      GitSnapshot.ensure_baseline(turn, repo, "Bash")
+      assert.is_true(GitSnapshot.has_baseline(turn))
 
       write(repo .. "/tracked.txt", "after\n")
-      local files, _, patch, ok = GitSnapshot.generate(handle, nil)
+      local files, _, patch, ok = GitSnapshot.generate(turn, nil)
 
       assert.is_true(ok)
       assert.same({ "tracked.txt" }, files)
@@ -335,21 +335,21 @@ describe("git_snapshot", function()
     it("reports success separately from emptiness", function()
       -- 「変更なし」と「取れなかった」は呼び出し側が区別できないといけない。前者はそのまま
       -- 出力、後者は request_diff のバックアップに退避する必要がある
-      local handle = next_handle()
-      GitSnapshot.ensure_baseline(handle, repo, "Bash")
-      local _, _, _, ok = GitSnapshot.generate(handle, nil)
+      local turn = next_turn()
+      GitSnapshot.ensure_baseline(turn, repo, "Bash")
+      local _, _, _, ok = GitSnapshot.generate(turn, nil)
 
       assert.is_true(ok)
     end)
 
     it("reports failure when the second snapshot cannot be taken", function()
-      local handle = next_handle()
-      GitSnapshot.ensure_baseline(handle, repo, "Bash")
+      local turn = next_turn()
+      GitSnapshot.ensure_baseline(turn, repo, "Bash")
       write(repo .. "/tracked.txt", "after\n")
       -- worktreeがターンの途中で消えた（権限やディスクでも同じ経路）
       vim.fn.delete(repo, "rf")
 
-      local files, _, patch, ok = GitSnapshot.generate(handle, nil)
+      local files, _, patch, ok = GitSnapshot.generate(turn, nil)
 
       assert.is_false(ok)
       assert.same({}, files)
@@ -517,18 +517,18 @@ describe("git_snapshot", function()
       local wt = repo .. "-wt"
       git_ok({ "worktree", "add", "-q", "-b", "side", wt })
 
-      local handle = next_handle()
-      GitSnapshot.ensure_baseline(handle, wt, "Bash")
+      local turn = next_turn()
+      GitSnapshot.ensure_baseline(turn, wt, "Bash")
       -- 親worktree側でだけ変更する。差分はリンクworktreeのスコープで取るので出てはいけない
       write(repo .. "/tracked.txt", "changed in the parent\n")
       write(wt .. "/in-worktree.txt", "mine\n")
 
-      local files = GitSnapshot.generate(handle, nil)
+      local files = GitSnapshot.generate(turn, nil)
 
       assert.same({ "in-worktree.txt" }, files)
-      assert.equals(vim.fn.resolve(wt), GitSnapshot.get_root(handle))
+      assert.equals(vim.fn.resolve(wt), GitSnapshot.get_root(turn))
 
-      GitSnapshot.clear(handle)
+      GitSnapshot.clear(turn)
       git_ok({ "worktree", "remove", "--force", wt })
     end)
   end)
@@ -540,8 +540,8 @@ describe("git_snapshot", function()
     -- 相手の変更を実際に取り込んでしまう「後に終わった側」が素通りしてしまう。
 
     it("marks both requests when their windows overlap", function()
-      local a = next_handle()
-      local b = next_handle()
+      local a = next_turn()
+      local b = next_turn()
 
       GitSnapshot.ensure_baseline(a, repo, "Bash")
       GitSnapshot.ensure_baseline(b, repo, "Bash")
@@ -553,8 +553,8 @@ describe("git_snapshot", function()
     it("still reports the overlap to the request that finishes second", function()
       -- これが一時点チェックだけでは落ちるケース。Aが先に差分を取り終えて片付いたあとでも、
       -- Bのウィンドウ（Bのベースライン〜今）にはAの変更が入っているので、Bも倒れないといけない
-      local a = next_handle()
-      local b = next_handle()
+      local a = next_turn()
+      local b = next_turn()
 
       GitSnapshot.ensure_baseline(a, repo, "Bash")
       GitSnapshot.ensure_baseline(b, repo, "Bash")
@@ -564,11 +564,11 @@ describe("git_snapshot", function()
     end)
 
     it("does not mark requests that ran one after the other", function()
-      local a = next_handle()
+      local a = next_turn()
       GitSnapshot.ensure_baseline(a, repo, "Bash")
       GitSnapshot.clear(a)
 
-      local b = next_handle()
+      local b = next_turn()
       GitSnapshot.ensure_baseline(b, repo, "Bash")
 
       assert.is_false(GitSnapshot.had_overlap(b))
@@ -578,8 +578,8 @@ describe("git_snapshot", function()
       local wt = repo .. "-wt"
       git_ok({ "worktree", "add", "-q", "-b", "side", wt })
 
-      local a = next_handle()
-      local b = next_handle()
+      local a = next_turn()
+      local b = next_turn()
       GitSnapshot.ensure_baseline(a, repo, "Bash")
       GitSnapshot.ensure_baseline(b, wt, "Bash")
 
@@ -592,53 +592,70 @@ describe("git_snapshot", function()
     end)
 
     it("reports no overlap for a request that never took a baseline", function()
-      assert.is_false(GitSnapshot.had_overlap(next_handle()))
+      assert.is_false(GitSnapshot.had_overlap(next_turn()))
       assert.is_false(GitSnapshot.had_overlap(nil))
     end)
   end)
 
   describe("the TTL sweep of abandoned sessions", function()
-    -- スイープは新しい handle_id で ensure_baseline が呼ばれるたびに走る＝同じNeovim内の
+    -- スイープは新しい turn_id で ensure_baseline が呼ばれるたびに走る＝同じNeovim内の
     -- 別チャットが新しいターンを始めるたびに走る。年齢だけで刈ると、1時間を超える長い
     -- ターンのセッションが実行中のまま消え、次のツールでベースラインを取り直してしまう。
-    local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+    local registry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
     ---セッションを「TTLを超えて古い」状態にする
-    local function age(handle)
-      local session = GitSnapshot._session(handle)
+    local function age(turn)
+      local session = GitSnapshot._session(turn)
       assert.is_not_nil(session)
       session.created = os.time() - 7 * 24 * 3600
     end
 
     it("keeps an old session whose request is still running", function()
-      local live = next_handle()
+      local live = next_turn()
       GitSnapshot.ensure_baseline(live, repo, "Bash")
-      registry.register({ handle_id = live, adapter = {} })
+      registry.open({ turn_id = live })
       age(live)
 
       -- 別チャットが新しいターンを始める（これがスイープを起こす）
-      GitSnapshot.ensure_baseline(next_handle(), repo, "Bash")
+      GitSnapshot.ensure_baseline(next_turn(), repo, "Bash")
 
       assert.is_true(GitSnapshot.has_baseline(live))
-      registry.unregister(live)
+      registry.close(live)
     end)
 
     it("reaps an old session whose request is over", function()
-      local abandoned = next_handle()
+      local abandoned = next_turn()
       GitSnapshot.ensure_baseline(abandoned, repo, "Bash")
       age(abandoned)
       -- レジストリに居ない = そのストリームは終わっている（clear されなかった残骸）
 
-      GitSnapshot.ensure_baseline(next_handle(), repo, "Bash")
+      GitSnapshot.ensure_baseline(next_turn(), repo, "Bash")
 
       assert.is_false(GitSnapshot.has_baseline(abandoned))
     end)
 
+    it("reaps an old session even while some other chat's turn is open", function()
+      -- `turn_still_open` must ask about **this** turn and take no fallback. If it inherited a
+      -- sole-open guess, one turn running anywhere would report every stale baseline as live, the
+      -- sweep would stop entirely, and `refs/worktree/vibing/` would grow without bound.
+      local abandoned = next_turn()
+      GitSnapshot.ensure_baseline(abandoned, repo, "Bash")
+      age(abandoned)
+
+      local elsewhere = next_turn()
+      registry.open({ turn_id = elsewhere })
+
+      GitSnapshot.ensure_baseline(next_turn(), repo, "Bash")
+
+      assert.is_false(GitSnapshot.has_baseline(abandoned))
+      registry.close(elsewhere)
+    end)
+
     it("does not touch a session that is merely recent", function()
-      local recent = next_handle()
+      local recent = next_turn()
       GitSnapshot.ensure_baseline(recent, repo, "Bash")
 
-      GitSnapshot.ensure_baseline(next_handle(), repo, "Bash")
+      GitSnapshot.ensure_baseline(next_turn(), repo, "Bash")
 
       assert.is_true(GitSnapshot.has_baseline(recent))
     end)
@@ -646,14 +663,14 @@ describe("git_snapshot", function()
     it("keeps the baseline of a long turn stable across another chat's turn", function()
       -- 刈られると次のツールでベースラインを取り直し、それ以前の変更がdiffから落ちる。
       -- 実際に「ベースラインが動かない」ことを見る
-      local live = next_handle()
+      local live = next_turn()
       GitSnapshot.ensure_baseline(live, repo, "Bash")
-      registry.register({ handle_id = live, adapter = {} })
+      registry.open({ turn_id = live })
       age(live)
       local base_before = GitSnapshot._session(live).base
 
       write(repo .. "/tracked.txt", "changed early in the long turn\n")
-      GitSnapshot.ensure_baseline(next_handle(), repo, "Bash")
+      GitSnapshot.ensure_baseline(next_turn(), repo, "Bash")
       -- 長いターンの次のツール呼び出し
       GitSnapshot.ensure_baseline(live, repo, "Write")
 
@@ -661,7 +678,7 @@ describe("git_snapshot", function()
 
       local files = GitSnapshot.generate(live, nil)
       assert.same({ "tracked.txt" }, files)
-      registry.unregister(live)
+      registry.close(live)
     end)
   end)
 
@@ -736,30 +753,30 @@ describe("git_snapshot", function()
       -- 除外リスト方式の本体。名前から性質が分からないMCPツールは書き込む側に倒れる
       assert.is_nil(GitSnapshot._NON_MUTATING_TOOLS["mcp__something__unknown_tool"])
 
-      local handle = next_handle()
-      GitSnapshot.ensure_baseline(handle, repo, "mcp__something__unknown_tool")
+      local turn = next_turn()
+      GitSnapshot.ensure_baseline(turn, repo, "mcp__something__unknown_tool")
 
-      assert.is_true(GitSnapshot.has_baseline(handle))
+      assert.is_true(GitSnapshot.has_baseline(turn))
     end)
 
     it("takes no baseline for a read-only tool", function()
-      local handle = next_handle()
-      GitSnapshot.ensure_baseline(handle, repo, "Read")
+      local turn = next_turn()
+      GitSnapshot.ensure_baseline(turn, repo, "Read")
 
-      assert.is_false(GitSnapshot.has_baseline(handle))
+      assert.is_false(GitSnapshot.has_baseline(turn))
     end)
   end)
 
   describe("clear and sweep", function()
     it("removes the ref it created", function()
-      local handle = next_handle()
-      GitSnapshot.ensure_baseline(handle, repo, "Bash")
-      assert.equals(0, git({ "rev-parse", "--verify", GitSnapshot._REF_PREFIX .. handle }).code)
+      local turn = next_turn()
+      GitSnapshot.ensure_baseline(turn, repo, "Bash")
+      assert.equals(0, git({ "rev-parse", "--verify", GitSnapshot._REF_PREFIX .. turn }).code)
 
-      GitSnapshot.clear(handle)
+      GitSnapshot.clear(turn)
 
-      assert.is_not.equals(0, git({ "rev-parse", "--verify", GitSnapshot._REF_PREFIX .. handle }).code)
-      assert.is_false(GitSnapshot.has_baseline(handle))
+      assert.is_not.equals(0, git({ "rev-parse", "--verify", GitSnapshot._REF_PREFIX .. turn }).code)
+      assert.is_false(GitSnapshot.has_baseline(turn))
     end)
 
     ---前のセッションが残していった想定の、十分に古いrefを作る
@@ -839,7 +856,7 @@ describe("git_snapshot", function()
     it("leaves a fresh ref alone, which may belong to another Neovim process", function()
       -- この名前空間はプロセス間で共有されている。`sessions` はプロセスローカルなので、
       -- 別プロセスの実行中のrefは「見覚えのないref」としか見えない。年齢で守る
-      GitSnapshot.ensure_baseline(next_handle(), repo, "Bash")
+      GitSnapshot.ensure_baseline(next_turn(), repo, "Bash")
       git_ok({ "update-ref", GitSnapshot._REF_PREFIX .. "otherprocess", "HEAD" })
 
       GitSnapshot.sweep(repo)
@@ -863,23 +880,23 @@ describe("git_snapshot", function()
         git_ok({ "for-each-ref", "--format=%(refname)", GitSnapshot._REF_PREFIX }, wt)
       )
 
-      local handle = next_handle()
-      GitSnapshot.ensure_baseline(handle, wt, "Bash")
+      local turn = next_turn()
+      GitSnapshot.ensure_baseline(turn, wt, "Bash")
 
       local remaining = git_ok({ "for-each-ref", "--format=%(refname)", GitSnapshot._REF_PREFIX }, wt)
       assert.is_nil(remaining:find("crashed", 1, true))
 
-      GitSnapshot.clear(handle)
+      GitSnapshot.clear(turn)
       git_ok({ "worktree", "remove", "--force", wt })
     end)
 
     it("does not re-sweep a worktree it has already swept", function()
       -- 掃除はrootごとに1回。2つ目以降のリクエストがここを通ると、先行リクエストの生きたrefを
       -- 消してしまう（この順序が、消してよいrefの選別を不要にしている）
-      local live = next_handle()
+      local live = next_turn()
       GitSnapshot.ensure_baseline(live, repo, "Bash")
 
-      local other = next_handle()
+      local other = next_turn()
       GitSnapshot.ensure_baseline(other, repo, "Bash")
 
       assert.equals(0, git({ "rev-parse", "--verify", GitSnapshot._REF_PREFIX .. live }).code)

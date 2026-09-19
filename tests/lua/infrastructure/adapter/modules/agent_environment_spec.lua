@@ -65,7 +65,7 @@ describe("agent_environment", function()
   end)
 
   it("refuses the variables vibing.nvim owns", function()
-    -- These carry the RPC port, the handle ID and the nested-invocation escape. A config value
+    -- These carry the RPC port, the process id and the nested-invocation escape. A config value
     -- writing one would break the hook round trip that the permission gate and the diff baseline
     -- both ride on.
     local env = apply({ CLAUDECODE = "1", VIBING_NVIM_RPC_PORT = "1234", VIBING_PROCESS_ID = "x" })

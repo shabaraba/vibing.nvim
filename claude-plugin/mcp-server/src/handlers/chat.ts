@@ -171,7 +171,7 @@ const askUserQuestionArgsSchema = z.object({
  *
  * `chat_bufnr` correlates the call to the right chat buffer when several are active concurrently;
  * `rpc.ts` binds the MCP process to the right Neovim through its environment. The buffer number
- * (unlike a per-turn handle_id) is stable across turns of the same conversation,
+ * (unlike a per-turn turn_id) is stable across turns of the same conversation,
  * so it doesn't defeat Anthropic's prompt cache — see issue #469. It is the buffer number rather
  * than the chat file path because `:VibingSetFileTitle` renames the file mid-conversation, which
  * would change the system prompt and invalidate that cache — see issue #489.

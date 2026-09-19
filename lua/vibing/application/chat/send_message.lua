@@ -4,7 +4,8 @@ local M = {}
 
 local BufferReload = require("vibing.core.utils.buffer_reload")
 local GradientAnimation = require("vibing.ui.gradient_animation")
-local ActiveStreamRegistry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local ProcessRegistry = require("vibing.infrastructure.adapter.modules.process_registry")
+local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 local Fs = require("vibing.core.utils.fs")
 
 ---@class Vibing.ChatCallbacks
@@ -22,9 +23,9 @@ local Fs = require("vibing.core.utils.fs")
 ---@field insert_approval_request fun(tool: string, input: table, options: table) ツール承認要求UIを挿入
 ---@field get_session_allow fun(): table セッションレベルの許可リストを取得
 ---@field get_session_deny fun(): table セッションレベルの拒否リストを取得
----@field clear_handle_id fun() handle_id（と process_id）をクリア
----@field set_handle_id fun(handle_id: string) 待っているターンのIDを設定
----@field get_handle_id fun(): string|nil 待っているターンのIDを取得
+---@field clear_turn_id fun() turn_id（と process_id）をクリア
+---@field set_turn_id fun(turn_id: string) 待っているターンのIDを設定
+---@field get_turn_id fun(): string|nil 待っているターンのIDを取得
 ---@field set_process_id fun(process_id: string)? kill対象のCLIプロセスのIDを設定
 ---@field clear_sending fun() 送信中フラグを解除
 ---@field mark_turn_error fun()? このターンがエラーで終わったことを記録（chat_statusのerror判定用）
@@ -93,8 +94,9 @@ function M.execute(adapter, callbacks, message, config)
   -- one session. Two `claude --resume <same id>` processes append to the same transcript file, so
   -- refuse rather than corrupt it. Bail before start_response(), leaving the user's unsent
   -- `## User` message untouched so they can just resend.
+  -- Asked of the process registry, not the turn one: a process holds its `--resume` between turns.
   local session_id = callbacks.get_session_id and callbacks.get_session_id() or nil
-  local conflict = ActiveStreamRegistry.find_other_active_for_session(session_id, bufnr)
+  local conflict = ProcessRegistry.find_other_holding_session(session_id, bufnr)
   if conflict then
     require("vibing.core.utils.notify").error(
       string.format(
@@ -187,7 +189,7 @@ function M.execute(adapter, callbacks, message, config)
     language = lang_code,
     cwd = session_cwd,
     -- ツリースナップショット差分の帰属判定に使う。アダプタはこれをそのまま
-    -- ActiveStreamRegistry に載せるだけで、git を呼ばない（`stream()` は同期I/Oを
+    -- TurnRegistry のエントリに載せるだけで、git を呼ばない（`stream()` は同期I/Oを
     -- 増やさない）。
     --
     -- ここは `rev-parse --show-toplevel` 1回ぶんメインループを止める。
@@ -251,20 +253,20 @@ function M.execute(adapter, callbacks, message, config)
   end
 
   if adapter:supports("streaming") then
-    local handle_id, process_id = adapter:stream(formatted_prompt, opts, function(chunk, chunk_handle_id)
+    local turn_id, process_id = adapter:stream(formatted_prompt, opts, function(chunk, chunk_turn_id)
       vim.schedule(function()
-        callbacks.append_chunk(chunk, chunk_handle_id)
+        callbacks.append_chunk(chunk, chunk_turn_id)
       end)
     end, function(response)
       vim.schedule(function()
         M._handle_response(response, callbacks, adapter, config, modified_file_paths, message)
       end)
     end)
-    -- 2つ別々に記録する。handle_id は「どのターンの結果を待っているか」（chunk と response の
+    -- 2つ別々に記録する。turn_id は「どのターンの結果を待っているか」（chunk と response の
     -- staleness 判定）、process_id は「何を kill するか」。同じ値だった頃は片方で足りていたが、
     -- 常駐プロセス（#774）では後者だけがプロセスを指し続ける
-    if handle_id and callbacks.set_handle_id then
-      callbacks.set_handle_id(handle_id)
+    if turn_id and callbacks.set_turn_id then
+      callbacks.set_turn_id(turn_id)
     end
     if process_id and callbacks.set_process_id then
       callbacks.set_process_id(process_id)
@@ -291,18 +293,18 @@ end
 ---@param modified_file_paths table<string, boolean> ツールイベントで検知した変更ファイル
 ---@param message string|nil 送信したユーザーメッセージ（リミットで弾かれた場合の再予約に使う）
 function M._handle_response(response, callbacks, adapter, config, modified_file_paths, message)
-  -- キャンセル済みの古いリクエストが遅れて完了した場合、現在アクティブなハンドルIDと
+  -- キャンセル済みの古いリクエストが遅れて完了した場合、現在アクティブなターンIDと
   -- 一致しないレスポンスは無視する（新しいリクエストの結果を上書きさせない）
-  local incoming_handle_id = response._handle_id
+  local incoming_turn_id = response._turn_id
   local RequestDiff = require("vibing.core.utils.request_diff")
-  if incoming_handle_id and callbacks.get_handle_id then
-    local current_handle_id = callbacks.get_handle_id()
-    if current_handle_id and incoming_handle_id ~= current_handle_id then
+  if incoming_turn_id and callbacks.get_turn_id then
+    local current_turn_id = callbacks.get_turn_id()
+    if current_turn_id and incoming_turn_id ~= current_turn_id then
       -- このリクエストは破棄されるので、両経路のベースラインも破棄する
       -- （どちらが使われるかはここまで来ないと決まらない）
-      RequestDiff.clear(incoming_handle_id)
-      require("vibing.core.utils.git_snapshot").clear(incoming_handle_id)
-      require("vibing.application.chat.worktree_binding").clear(incoming_handle_id)
+      RequestDiff.clear(incoming_turn_id)
+      require("vibing.core.utils.git_snapshot").clear(incoming_turn_id)
+      require("vibing.application.chat.worktree_binding").clear(incoming_turn_id)
       return
     end
   end
@@ -325,13 +327,10 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   if response._session_corrupted then
     -- このターンの差分は出さずに抜けるので、両経路のベースラインもここで捨てる
     -- （どちらも「レスポンス処理の最後に必ずclearする」契約になっている）
-    RequestDiff.clear(incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id()))
-    require("vibing.core.utils.git_snapshot").clear(
-      incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
-    )
-    require("vibing.application.chat.worktree_binding").clear(
-      incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
-    )
+    local corrupted_turn_id = incoming_turn_id or (callbacks.get_turn_id and callbacks.get_turn_id())
+    RequestDiff.clear(corrupted_turn_id)
+    require("vibing.core.utils.git_snapshot").clear(corrupted_turn_id)
+    require("vibing.application.chat.worktree_binding").clear(corrupted_turn_id)
     if callbacks.mark_turn_error then
       callbacks.mark_turn_error()
     end
@@ -339,7 +338,7 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     callbacks.append_chunk("\n\n**Session Timeout:** The previous session could not be resumed.")
     callbacks.append_chunk("\n*Session has been reset. Your next message will start a new session.*")
     callbacks.add_user_section()
-    -- NOTE: clear_handle_id() は呼ばない（次のsend_message()でkillする）
+    -- NOTE: clear_turn_id() は呼ばない（次のsend_message()でkillする）
     return
   end
 
@@ -436,7 +435,7 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
 
   local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
-  local handle_id_for_diff = incoming_handle_id or (callbacks.get_handle_id and callbacks.get_handle_id())
+  local turn_id_for_diff = incoming_turn_id or (callbacks.get_turn_id and callbacks.get_turn_id())
 
   -- 経路の選択:
   --   1. PreToolUseでツリースナップショットのベースラインが取れていて、
@@ -452,11 +451,11 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   --     後に終わった側（相手の変更を実際に取り込んでしまう側）が素通りする
   --   - レジストリ照会は、ベースラインを取れなかった（スナップショット失敗など）ために
   --     git_snapshot からは見えないストリームを拾う保険
-  local snapshot_root = GitSnapshot.get_root(handle_id_for_diff)
+  local snapshot_root = GitSnapshot.get_root(turn_id_for_diff)
   local overlapping = snapshot_root
     and (
-      GitSnapshot.had_overlap(handle_id_for_diff)
-      or ActiveStreamRegistry.find_other_active_for_worktree(snapshot_root, handle_id_for_diff) ~= nil
+      GitSnapshot.had_overlap(turn_id_for_diff)
+      or TurnRegistry.find_other_writing_in(snapshot_root, turn_id_for_diff) ~= nil
     )
   local use_snapshot = snapshot_root ~= nil and not overlapping
 
@@ -471,21 +470,21 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   -- それはこの置き換えが無くそうとしている失敗そのものなので、順序を逆にはできない。
   local handled = false
   if use_snapshot then
-    handled = M._finalize_snapshot_diff(callbacks, handle_id_for_diff, modified_file_paths)
+    handled = M._finalize_snapshot_diff(callbacks, turn_id_for_diff, modified_file_paths)
     if handled then
-      RequestDiff.clear(handle_id_for_diff)
+      RequestDiff.clear(turn_id_for_diff)
     end
   end
 
   if not handled then
     -- ここのclearは、スナップショット経路を通らなかった場合（git管理外・重なり検出）のための
     -- もの。上のfinalizeがfalseを返して落ちてきた場合は既にclear済みだが、clearは冪等
-    GitSnapshot.clear(handle_id_for_diff)
+    GitSnapshot.clear(turn_id_for_diff)
 
     if has_file_changes then
       -- フォールバック: PreToolUseフックで退避した変更前内容からpatchを生成。
       -- 外部プロセスを使わず、触ったファイル数分のvim.diff()だけで完結する。
-      M._finalize_request_diff(callbacks, handle_id_for_diff, modified_file_paths)
+      M._finalize_request_diff(callbacks, turn_id_for_diff, modified_file_paths)
     else
       -- スナップショットを試したのに取れず、しかもツールイベントも1つも無かった場合は、
       -- 退避先が両方とも空になる。Bashだけで完結したターンではこれが起こりうる。そのときは
@@ -498,7 +497,7 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
           vim.log.levels.WARN
         )
       end
-      RequestDiff.clear(handle_id_for_diff)
+      RequestDiff.clear(turn_id_for_diff)
       callbacks.add_user_section()
     end
   end
@@ -507,10 +506,10 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
   -- ならない: フォールバック経路の `base_dir` はfrontmatterを今読むので、先に書き換えると
   -- このターンの退避（旧cwd基準）と基準ディレクトリ（新cwd）が食い違う
   pcall(function()
-    require("vibing.application.chat.worktree_binding").resolve(handle_id_for_diff, bufnr)
+    require("vibing.application.chat.worktree_binding").resolve(turn_id_for_diff, bufnr)
   end)
 
-  -- NOTE: clear_handle_id() は呼ばない
+  -- NOTE: clear_turn_id() は呼ばない
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
 end
 
@@ -809,8 +808,8 @@ end
 ---@param files string[] 表示用の相対パス一覧
 ---@param abs_files string[] バッファリロード用の絶対パス一覧
 ---@param patch_content string|nil patch本文
----@param handle_id string|nil patchファイル名に使うハンドルID
-function M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, handle_id)
+---@param turn_id string|nil patchファイル名に使うターンID
+function M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, turn_id)
   if #files > 0 then
     BufferReload.reload_files(abs_files)
     callbacks.append_chunk("\n\n### Modified Files\n\n" .. M._summary_line(files) .. "\n")
@@ -819,7 +818,7 @@ function M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_conten
   if patch_content then
     local patch_dir = base_dir .. "/.vibing/patches"
     Fs.ensure_dir(patch_dir)
-    local suffix = tostring(handle_id or ""):gsub("%W", ""):sub(-6)
+    local suffix = tostring(turn_id or ""):gsub("%W", ""):sub(-6)
     local patch_path = string.format("%s/%s_%s.patch", patch_dir, os.date("%Y%m%d_%H%M%S"), suffix)
     local f = io.open(patch_path, "w")
     if f then
@@ -844,25 +843,25 @@ end
 ---「リクエスト前のツリー」と「今のツリー」の2つのgitオブジェクトの比較なので、
 ---どのツールが変更したかを一切知らなくてよい。
 ---@param callbacks Vibing.ChatCallbacks
----@param handle_id string|nil リクエストのハンドルID
+---@param turn_id string|nil リクエストのターンID
 ---@param modified_file_paths table<string, boolean> ツールイベントで検知した変更ファイル
 ---@return boolean handled 差分を出力できたか。falseなら何も書いていないので、呼び出し側が
 ---  request_diff にフォールバックする（「変更が無かった」ではなく「取れなかった」の意味）
-function M._finalize_snapshot_diff(callbacks, handle_id, modified_file_paths)
+function M._finalize_snapshot_diff(callbacks, turn_id, modified_file_paths)
   local GitSnapshot = require("vibing.core.utils.git_snapshot")
 
-  local base_dir = GitSnapshot.get_root(handle_id) or vim.fn.getcwd()
+  local base_dir = GitSnapshot.get_root(turn_id) or vim.fn.getcwd()
   local files, abs_files, patch_content, ok, extra_only =
-    GitSnapshot.generate(handle_id, modified_file_paths)
-  GitSnapshot.clear(handle_id)
+    GitSnapshot.generate(turn_id, modified_file_paths)
+  GitSnapshot.clear(turn_id)
 
   if not ok then
     return false
   end
 
-  patch_content = M._supplement_ignored_files(handle_id, base_dir, patch_content, extra_only or {})
+  patch_content = M._supplement_ignored_files(turn_id, base_dir, patch_content, extra_only or {})
 
-  M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, handle_id)
+  M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, turn_id)
   return true
 end
 
@@ -876,18 +875,18 @@ end
 ---
 ---退避が無く合成できなかったファイル（Bash由来・codexのapply_patchなど）は、一覧に載るのに
 ---patchが無い＝「静かに消える」形になるので、黙らず通知する。
----@param handle_id string|nil リクエストのハンドルID
+---@param turn_id string|nil リクエストのターンID
 ---@param base_dir string patch内パスの基準ディレクトリ（絶対パス）
 ---@param patch_content string|nil スナップショット経路のpatch本文
 ---@param extra_only string[] ツリー差分に現れなかった変更ファイルの絶対パス
 ---@return string|nil patch_content 合成分を継ぎ足したpatch本文
-function M._supplement_ignored_files(handle_id, base_dir, patch_content, extra_only)
+function M._supplement_ignored_files(turn_id, base_dir, patch_content, extra_only)
   if #extra_only == 0 then
     return patch_content
   end
 
   local RequestDiff = require("vibing.core.utils.request_diff")
-  local sections, resolved = RequestDiff.sections_for(handle_id, base_dir, extra_only)
+  local sections, resolved = RequestDiff.sections_for(turn_id, base_dir, extra_only)
 
   if #sections > 0 then
     local body = table.concat(sections, "\n") .. "\n"
@@ -924,9 +923,9 @@ end
 ---リクエスト単位diff（フォールバック経路）のModified Files出力とpatch生成
 ---git管理外のworking_dirと、同じworktreeで並行実行中のターンで使う。
 ---@param callbacks Vibing.ChatCallbacks
----@param handle_id string|nil リクエストのハンドルID
+---@param turn_id string|nil リクエストのターンID
 ---@param modified_file_paths table<string, boolean> ツールイベントで検知した変更ファイル
-function M._finalize_request_diff(callbacks, handle_id, modified_file_paths)
+function M._finalize_request_diff(callbacks, turn_id, modified_file_paths)
   local RequestDiff = require("vibing.core.utils.request_diff")
   local Git = require("vibing.core.utils.git")
 
@@ -934,10 +933,10 @@ function M._finalize_request_diff(callbacks, handle_id, modified_file_paths)
   local base_dir = session_cwd or Git.get_root(nil) or vim.fn.getcwd()
   base_dir = vim.fn.fnamemodify(base_dir, ":p"):gsub("/$", "")
 
-  local files, abs_files, patch_content = RequestDiff.generate(handle_id, base_dir, modified_file_paths)
-  RequestDiff.clear(handle_id)
+  local files, abs_files, patch_content = RequestDiff.generate(turn_id, base_dir, modified_file_paths)
+  RequestDiff.clear(turn_id)
 
-  M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, handle_id)
+  M._emit_diff_output(callbacks, base_dir, files, abs_files, patch_content, turn_id)
 end
 
 ---廃止されたfrontmatterキーを一度だけ警告する

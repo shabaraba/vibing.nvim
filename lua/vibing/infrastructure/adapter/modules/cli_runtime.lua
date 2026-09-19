@@ -107,7 +107,7 @@ end
 
 --- Hand a failure that happened before the process existed back to the caller.
 ---
---- Both ids are attached even though no process was ever started: `_handle_id` is what the chat
+--- Both ids are attached even though no process was ever started: `_turn_id` is what the chat
 --- buffer's staleness check compares, and `_process_id` is what the session read-back uses, so a
 --- response missing either one is indistinguishable from a response belonging to someone else.
 ---
@@ -116,7 +116,7 @@ end
 --- @param on_done fun(response: Vibing.Response)
 local function report(ids, message, on_done)
   vim.schedule(function()
-    on_done({ content = "", error = message, _handle_id = ids.turn_id, _process_id = ids.process_id })
+    on_done({ content = "", error = message, _turn_id = ids.turn_id, _process_id = ids.process_id })
   end)
 end
 
@@ -188,7 +188,7 @@ function M.spawn(processes, ids, cmd, sys_opts, on_exit, on_done)
     on_done({
       content = "",
       error = "Cancelled",
-      _handle_id = ids.turn_id,
+      _turn_id = ids.turn_id,
       _process_id = ids.process_id,
       _cancelled = true,
     })

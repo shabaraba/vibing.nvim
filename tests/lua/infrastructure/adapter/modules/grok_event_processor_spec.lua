@@ -5,9 +5,9 @@ describe("grok_event_processor", function()
   local function make_context()
     return {
       sessionManager = SessionManagerModule.new(),
-      handleId = "turn-1",
+      turnId = "turn-1",
       -- A session belongs to the process that reported it, so the renderer stores it under this.
-      -- Deliberately a different value from handleId, so reading the wrong one misses.
+      -- Deliberately a different value from turnId, so reading the wrong one misses.
       processId = "process-1",
       output = {},
       errorOutput = {},

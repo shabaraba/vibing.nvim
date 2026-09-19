@@ -57,11 +57,11 @@ describe("stream_handler.create_exit_handler", function()
   end)
 
   it("names both the turn and the process on every response it produces", function()
-    -- `_handle_id` is what `_handle_response`'s staleness check compares; `_process_id` is what the
+    -- `_turn_id` is what `_handle_response`'s staleness check compares; `_process_id` is what the
     -- session read-back reads. A response carrying only one is unattributable on the other axis.
     for _, obj in ipairs({ { code = 0 }, { code = 1 } }) do
       local res = run_exit(obj, { "ok" }, {})
-      assert.equals("t1", res._handle_id)
+      assert.equals("t1", res._turn_id)
       assert.equals("p1", res._process_id)
     end
   end)

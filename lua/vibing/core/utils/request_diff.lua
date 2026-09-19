@@ -12,7 +12,7 @@
 ---
 ---ツールの引数に現れたファイルしか見ないので、**Bash由来の変更は捕捉できない**。それが
 ---git_snapshotを主経路にした理由でもある。コストは「そのリクエストで実際に触ったファイル数」
----にのみ比例し、バックアップはhandle_id（リクエスト）単位なので、並行するチャットバッファ間で
+---にのみ比例し、バックアップはturn_id（リクエスト）単位なので、並行するチャットバッファ間で
 ---差分が混ざることはない。
 local Fs = require("vibing.core.utils.fs")
 
@@ -31,7 +31,7 @@ local uv = vim.uv or vim.loop
 ---@field files table<string, Vibing.RequestDiff.Entry> 絶対パス→退避情報
 ---@field order string[] 退避順の絶対パスリスト
 
----handle_idごとの退避状態
+---turn_idごとの退避状態
 ---@type table<string, Vibing.RequestDiff.Session>
 local sessions = {}
 
@@ -84,12 +84,12 @@ end
 ---TTL超過した放置セッション（キャンセルされたリクエスト等）を破棄
 local function sweep_stale()
   local now = os.time()
-  for handle_id, s in pairs(sessions) do
+  for turn_id, s in pairs(sessions) do
     if now - s.created > SESSION_TTL_SEC then
       if s.dir then
         vim.fn.delete(s.dir, "rf")
       end
-      sessions[handle_id] = nil
+      sessions[turn_id] = nil
     end
   end
 end
@@ -97,11 +97,11 @@ end
 ---ツール実行前にファイル内容を退避する（PreToolUseフックの許可パスから呼ぶ）
 ---同一リクエスト内で同じファイルが複数回編集されても、最初の退避
 ---（=リクエスト開始時点の状態）を保持する。
----@param handle_id string|nil リクエストのハンドルID
+---@param turn_id string|nil リクエストのターンID
 ---@param tool_name string ツール名
 ---@param tool_input table ツール入力
-function M.capture(handle_id, tool_name, tool_input)
-  if not handle_id or handle_id == "" then
+function M.capture(turn_id, tool_name, tool_input)
+  if not turn_id or turn_id == "" then
     return
   end
   local path_key = TOOL_PATH_KEYS[tool_name]
@@ -116,10 +116,10 @@ function M.capture(handle_id, tool_name, tool_input)
   sweep_stale()
 
   local abs = vim.fn.fnamemodify(path, ":p")
-  local s = sessions[handle_id]
+  local s = sessions[turn_id]
   if not s then
     s = { dir = nil, count = 0, created = os.time(), files = {}, order = {} }
-    sessions[handle_id] = s
+    sessions[turn_id] = s
   end
   if s.files[abs] then
     return
@@ -212,20 +212,20 @@ local function build_file_section(rel, entry, abs, before, after)
 end
 
 ---リクエストの差分を生成する
----@param handle_id string|nil リクエストのハンドルID
+---@param turn_id string|nil リクエストのターンID
 ---@param base_dir string patch内パスの基準ディレクトリ（絶対パス）
 ---@param extra_paths table<string, boolean>|nil ツールイベント由来の変更ファイル（絶対/相対パス→true）。
 ---  フックで退避できなかったファイルもModified Files一覧には必ず含めるための補完。
 ---@return string[] files 変更ファイルの相対パス一覧（表示用）
 ---@return string[] abs_files 変更ファイルの絶対パス一覧（バッファリロード用）
 ---@return string|nil patch_content patch内容（diffを1つも生成できなければnil）
-function M.generate(handle_id, base_dir, extra_paths)
+function M.generate(turn_id, base_dir, extra_paths)
   local files = {}
   local abs_files = {}
   local sections = {}
   local seen = {}
 
-  local s = handle_id and sessions[handle_id] or nil
+  local s = turn_id and sessions[turn_id] or nil
   if s then
     for _, abs in ipairs(s.order) do
       local entry = s.files[abs]
@@ -283,17 +283,17 @@ end
 ---
 ---`resolved` に載らなかったパスは退避そのものが無い（Bash由来・退避失敗など）。その変更内容は
 ---どこにも残っていないので、呼び出し側は黙って流さず通知する。
----@param handle_id string|nil リクエストのハンドルID
+---@param turn_id string|nil リクエストのターンID
 ---@param base_dir string patch内パスの基準ディレクトリ（絶対パス）
 ---@param abs_paths string[] ツリー差分に現れなかった変更ファイルの絶対パス
 ---@return string[] sections 合成できたdiffセクション
 ---@return table<string, boolean> resolved 退避があったパス（キーは abs_paths の要素そのまま）。
 ---  セクションを作らなかったものも、generate() が意図的に一覧のみにする種類（変更なし・
 ---  バイナリ・base_dir外）なら resolved に入る
-function M.sections_for(handle_id, base_dir, abs_paths)
+function M.sections_for(turn_id, base_dir, abs_paths)
   local sections = {}
   local resolved = {}
-  local s = handle_id and sessions[handle_id] or nil
+  local s = turn_id and sessions[turn_id] or nil
   if not s then
     return sections, resolved
   end
@@ -320,27 +320,27 @@ function M.sections_for(handle_id, base_dir, abs_paths)
 end
 
 ---リクエストのバックアップを破棄する（レスポンス処理の最後に必ず呼ぶ）
----@param handle_id string|nil
-function M.clear(handle_id)
-  if not handle_id then
+---@param turn_id string|nil
+function M.clear(turn_id)
+  if not turn_id then
     return
   end
-  local s = sessions[handle_id]
+  local s = sessions[turn_id]
   if not s then
     return
   end
   if s.dir then
     vim.fn.delete(s.dir, "rf")
   end
-  sessions[handle_id] = nil
+  sessions[turn_id] = nil
 end
 
 ---テスト用: 退避済みかどうか
----@param handle_id string
+---@param turn_id string
 ---@param path string
 ---@return boolean
-function M.has_capture(handle_id, path)
-  local s = sessions[handle_id]
+function M.has_capture(turn_id, path)
+  local s = sessions[turn_id]
   if not s then
     return false
   end

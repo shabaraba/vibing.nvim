@@ -74,7 +74,7 @@ end
 ---
 ---oneshot では「プロセス終了 = ターン完了」なので、ここが唯一の正常完了経路になる。プロセスを
 ---落とすのは `ids.process_id` 単位、レスポンスに載せる素性は両方 —— 後者は呼び先が別々のことに
----使うため（`_handle_id` は staleness 判定、`_process_id` はセッションの読み戻し）。
+---使うため（`_turn_id` は staleness 判定、`_process_id` はセッションの読み戻し）。
 ---@param ids Vibing.RequestIds
 ---@param processes table<string, table> プロセスマップ（process_id キー）
 ---@param output string[] 出力バッファ
@@ -118,7 +118,7 @@ function M.create_exit_handler(ids, processes, output, errorOutput, onDone, get_
         onDone({
           content = table.concat(output, ""),
           error = error_msg,
-          _handle_id = ids.turn_id,
+          _turn_id = ids.turn_id,
           _process_id = ids.process_id,
         })
       else
@@ -128,7 +128,7 @@ function M.create_exit_handler(ids, processes, output, errorOutput, onDone, get_
         onDone({
           content = table.concat(output, ""),
           error = result_errors and #result_errors > 0 and table.concat(result_errors, "\n") or nil,
-          _handle_id = ids.turn_id,
+          _turn_id = ids.turn_id,
           _process_id = ids.process_id,
         })
       end

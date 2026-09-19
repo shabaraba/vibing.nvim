@@ -133,7 +133,7 @@ otherwise, and nothing at all for a buffer that is not a chat. Reading the trans
 instead would call a turn that died on an error, or one part-way through silent tool calls,
 complete.
 
-`is_responding()` needs two signals, and the second one is **not** `_current_handle_id`'s
+`is_responding()` needs two signals, and the second one is **not** `_current_turn_id`'s
 existence. `_is_sending` covers `<CR>` until the adapter spawns the CLI; after that the turn id
 is what marks the run — but `send_message.lua` deliberately never clears it on completion, so the
 next `send_message()` can kill a process that outlived its own `result` event. (That is also why
@@ -141,8 +141,8 @@ next `send_message()` can kill a process that outlived its own `result` event. (
 ended, when the registry can no longer resolve the turn back to a process.) Read as a boolean
 that field therefore reports every chat as `responding` forever after its first turn, which is the
 one answer an orchestrator's polling loop can never recover from. So the second signal is
-`ActiveStreamRegistry.get(turn_id)`: all four adapters `register` when the stream starts and
-`unregister` in `wrapped_on_done`, which makes the registry the only place that knows a run is
+`TurnRegistry.get(turn_id)`: all four adapters `open` a turn when the stream starts and
+`close` it in `wrapped_on_done`, which makes the registry the only place that knows a run is
 over without also being the place that has to remember how to kill it.
 
 One window stays uncovered: `_handle_response` clears `_is_sending` before the `vim.schedule` that
@@ -711,7 +711,7 @@ the design:
   always goes through). The count includes every responding chat, the user's own manual turns
   included, so one long hand-driven turn occupies a slot. It also includes every chat's in-flight
   subagents (Task/Agent tool calls with no `tool_result` yet, tallied on
-  `active_stream_registry.lua`'s per-stream entry as `cli_event_processor.lua` sees the tool_use
+  `turn_registry.lua`'s per-turn entry as `cli_event_processor.lua` sees the tool_use
   and its result go by) — otherwise five chats safely under `max_concurrent` can still fan out to
   twenty real CLI-equivalent processes, which is exactly the shape that hit a session limit in
   #692. `max_concurrent_subagents` is a second, independent cap on that subagent count alone, for

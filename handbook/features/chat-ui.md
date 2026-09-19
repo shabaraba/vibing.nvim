@@ -143,8 +143,8 @@ so the PreToolUse hook intercepts and denies it, rendering the same UI as a fall
 
 Codex 0.153 and later use the same choice-list path. `codex_plugin_config.lua` names the normalized
 `mcp__vibing_nvim__nvim_ask_user_question` tool and embeds the stable chat buffer number in
-`developer_instructions`; `codex_cli.lua` puts that same number in `ActiveStreamRegistry`, so the
-shared RPC handler resolves the correct stream even when several chats are active.
+`developer_instructions`; `codex_cli.lua` puts that same number in the process registry, so the
+shared RPC handler resolves the correct turn even when several chats are active.
 
 The two things that originally made this impossible (#532) were added in Codex 0.153:
 
@@ -157,7 +157,7 @@ The two things that originally made this impossible (#532) were added in Codex 0
   "Codex").
 
 The UI path is covered by the same E2E spec as Claude. Ordinary tool approval remains a different
-route: the `ask` permission list resolves on `handle_id`, while the model-called question tool
+route: the `ask` permission list resolves on the turn id, while the model-called question tool
 resolves on the stable `chat_bufnr` to avoid putting a per-turn identifier in the prompt.
 
 [codex-24135]: https://github.com/openai/codex/issues/24135

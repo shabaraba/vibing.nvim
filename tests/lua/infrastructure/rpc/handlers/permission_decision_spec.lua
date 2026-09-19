@@ -4,7 +4,8 @@
 --- to the CLI's own gate. Before #564 every allowed call took the second path, which in headless
 --- `-p` mode simply refuses vibing-nvim's own MCP tools.
 local permission = require("vibing.infrastructure.rpc.handlers.permission")
-local registry = require("vibing.infrastructure.adapter.modules.active_stream_registry")
+local processes = require("vibing.infrastructure.adapter.modules.process_registry")
+local registry = require("vibing.infrastructure.adapter.modules.turn_registry")
 
 --- One "chat" is a process and the turn it currently has open, and the two are **different values**.
 --- The hook can only name the process (`VIBING_PROCESS_ID` is fixed at spawn); `rpc/hook_scope.lua`
@@ -38,7 +39,9 @@ local sandbox_cwd
 ---@param chat table? 既定は `CHAT`。承認がチャットを越えないことを見るテストだけが2つ目を登録する
 local function activate(opts, chat)
   chat = chat or CHAT
-  registry.register({ handle_id = chat.turn_id, process_id = chat.process_id, adapter = nil })
+  local process = { process_id = chat.process_id, adapter = nil }
+  processes.register(process)
+  registry.open({ turn_id = chat.turn_id, process = process })
   permission.set_active_opts(chat.turn_id, vim.tbl_extend("force", { cwd = sandbox_cwd }, opts))
 end
 
@@ -46,7 +49,8 @@ end
 local function deactivate(chat)
   chat = chat or CHAT
   permission.clear_active_opts(chat.turn_id)
-  registry.unregister(chat.turn_id)
+  registry.close(chat.turn_id)
+  processes.unregister(chat.process_id)
 end
 
 local function write_request(request_id, tool_name, tool_input)
@@ -178,7 +182,7 @@ describe("permission handler hook decision", function()
 
   describe("session permissions belong to one chat", function()
     -- 承認UIで出した答えは、答えたチャットのセッションに属する。以前はこれが
-    -- `permission.lua` のモジュールレベルのテーブルに入っていて、チャットでも handle_id でも
+    -- `permission.lua` のモジュールレベルのテーブルに入っていて、チャットでも turn_id でも
     -- キーされていなかったので、使い捨てワーカーで一度 `allow_for_session` を出すと
     -- エディタ上の全チャットに効き、各チャット自身の `permissions_ask` を迂回していた（#667）。
     --
