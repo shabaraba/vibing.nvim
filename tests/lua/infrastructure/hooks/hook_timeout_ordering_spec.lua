@@ -234,7 +234,11 @@ describe("hook timeout ordering", function()
       --
       -- The floor stays in copilot's descriptor because it is a real measurement; what is asserted
       -- here is that the floor alone does not switch waiting on.
-      local expected = { claude = true, copilot = false, codex = false, grok = false }
+      --   pi          — no `measured_wait_floor_sec`, and not wired either. Its gate is an
+      --     in-process extension rather than a hook the CLI times out, so nobody has measured how
+      --     long Pi lets a `tool_call` handler block; and it registers no chat_bufnr, having no
+      --     MCP client to draw a prompt through.
+      local expected = { claude = true, copilot = false, codex = false, grok = false, pi = false }
       for _, def in ipairs(Agents.list()) do
         local descriptor = require(def.descriptor_module)
         assert.equals(

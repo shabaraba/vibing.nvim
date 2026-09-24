@@ -154,11 +154,56 @@ M.AGENTS = {
       { value = "grok-composer-2.5-fast", description = "Grok Composer 2.5 Fast" },
     },
   },
+  pi = {
+    id = "pi",
+    adapter_module = "vibing.infrastructure.adapter.pi_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.pi",
+    command_builder_module = "vibing.infrastructure.adapter.modules.pi_command_builder",
+    export_name = "PiCLIAdapter",
+    description = "Pi coding agent (local / any OpenAI-compatible provider)",
+    config_fields = {
+      -- "auto" looks `pi` up on PATH; a path is used as given and never silently reset.
+      executable = {
+        kind = "executable_or_auto",
+        default = "auto",
+      },
+      -- `--provider <name>`, naming a provider in the user's `models.json`.
+      --
+      -- Empty means Pi chooses, and for a local endpoint that is usually wrong: `--model` is a
+      -- fuzzy pattern matched over Pi's whole built-in cloud catalogue as well, so `model: qwen`
+      -- with no provider resolves to a cloudflare-ai-gateway model and the turn fails with "No
+      -- API key found" (measured, Pi 0.87.1). With the provider named, matching is confined to it
+      -- and an unmatched id is passed through verbatim as a custom model id -- which is what lets
+      -- any model the endpoint can serve be selected from `model:` alone.
+      provider = {
+        kind = "string",
+        default = "",
+      },
+      -- Which backend `web_search` uses. Pi has no web tool at all, so vibing.nvim registers one
+      -- through `pi-extension/`, and unlike claude and codex — whose search happens server-side
+      -- inside the inference API — it has to call a real search API itself. `auto` takes whichever
+      -- credential is present (BRAVE_SEARCH_API_KEY, TAVILY_API_KEY, SEARXNG_URL, in that order)
+      -- and leaves the tool unregistered when there is none. The key never passes through here.
+      web_search = {
+        kind = "string",
+        default = "auto",
+        values = { "auto", "off", "brave", "tavily", "searxng" },
+      },
+    },
+    -- Pi has no model catalogue of its own to enumerate: what is available comes from the user's
+    -- `~/.pi/agent/models.json` and whichever providers they are logged into. These are the two
+    -- local-endpoint ids the feature was built and measured against, offered as a starting point —
+    -- this list is a suggestion, never validation, and any id Pi can resolve works.
+    models = {
+      { value = "mlx-community/Qwen3.6-27B-4bit", description = "Qwen3.6 27B 4bit (local, via mlx_lm.server)" },
+      { value = "mlx-community/gpt-oss-20b-MXFP4-Q8", description = "gpt-oss 20B (local, via mlx_lm.server)" },
+    },
+  },
 }
 
 ---列挙順。`pairs()` の順序は不定なので、ユーザーに見える一覧はすべてこれを経由する。
 ---@type string[]
-M.ORDER = { "claude", "codex", "copilot", "grok" }
+M.ORDER = { "claude", "codex", "copilot", "grok", "pi" }
 
 ---未知・未指定のエージェントのフォールバック先
 ---@type string

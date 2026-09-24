@@ -47,6 +47,15 @@ local PAYLOADS = {
     path = { toolName = "read_file", toolInput = { target_file = "lua/a.lua" }, canonical = "Read" },
     shell = { toolName = "run_terminal_command", toolInput = { command = "ls" } },
   },
+  -- Pi 0.87.1. The one payload vibing.nvim writes itself: Pi has no external-process hook, so
+  -- `pi-extension/src/index.ts` forwards Pi's own `tool_call` event, whose fields are `toolName`
+  -- and -- unlike grok's `toolInput` -- plain `input`. Captured from a real `tool_call` against a
+  -- local `mlx_lm.server`; the key names of each tool's input come from Pi's own TypeBox schemas
+  -- in `dist/core/tools/*.js`, where every file tool spells the path `path`.
+  pi = {
+    path = { toolName = "edit", input = { path = "lua/a.lua", edits = { { oldText = "a", newText = "b" } } } },
+    shell = { toolName = "bash", input = { command = "ls" } },
+  },
 }
 
 --- @param payload table one of the `path` entries above; its own `canonical` names the expectation

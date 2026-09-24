@@ -10,6 +10,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # *marketplace* root; the plugin root is one level down.
 PLUGIN_SRC_DIR="${SCRIPT_DIR}/claude-plugin"
 MCP_DIR="${PLUGIN_SRC_DIR}/mcp-server"
+# Not under claude-plugin/: that tree is what Claude Code loads as a plugin, and this is loaded by
+# a different CLI entirely (`pi --extension`). It carries the permission gate for the Pi backend,
+# which has none of its own, and the two web tools Pi does not ship — see pi-extension/src/index.ts.
+PI_EXTENSION_DIR="${SCRIPT_DIR}/pi-extension"
 VIBING_PARSER_DIR="${SCRIPT_DIR}/tree-sitter-vibing"
 VIBING_PARSER_OUTPUT_DIR="${SCRIPT_DIR}/parser"
 
@@ -232,6 +236,28 @@ npm run build --silent
 # fresh on first launch instead of spending a `npm ci` + `npm run build` on the
 # very tree that was just built.
 "$NODE_EXECUTABLE" bin/write-fingerprint.mjs
+
+# Build the Pi extension: the permission bridge, and the web tools Pi has no equivalent of.
+#
+# No install step: pi-extension/ declares no dependencies and is compiled by the typescript already
+# installed at the root, so there is no second node_modules and no second lockfile for audit:deps
+# and Dependabot to have to cover.
+#
+# Non-fatal on purpose, unlike the MCP server check below: a user who does not use the Pi backend
+# should not have their install fail over it. The cost of skipping is paid at the right moment
+# instead — lua/vibing/infrastructure/hooks/pi_settings_generator.lua raises when the bundle is
+# missing, and pi_command_builder.permission_args then restricts the turn to read-only tools rather
+# than letting Pi run its bash with no gate. web_fetch/web_search are simply absent, which is the
+# same failure a missing search credential produces and the model handles the same way.
+if [ -d "$PI_EXTENSION_DIR" ]; then
+    echo "[vibing.nvim] Building Pi extension..."
+    if (cd "$SCRIPT_DIR" && ./node_modules/.bin/tsc -p pi-extension); then
+        echo "[vibing.nvim] ✓ Pi extension built"
+    else
+        echo "[vibing.nvim] ⚠ Pi extension build failed; the pi backend will run read-only, with no web tools"
+    fi
+fi
+cd "$MCP_DIR"
 
 # Verify build succeeded
 if [ -f "dist/index.js" ]; then

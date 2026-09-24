@@ -4,8 +4,10 @@
 
 vibing.nvim is a Neovim plugin that provides a Claude chat inside Neovim by spawning the `claude`
 CLI directly (`claude -p --output-format stream-json`) and parsing its stream. There is no Node.js
-agent wrapper process; the Node side is only the MCP server and two hook scripts. Codex, Copilot
-and Grok CLI backends are also supported. See `.claude/rules/architecture.md`.
+agent wrapper process; the Node side is the MCP server, two hook scripts and the Pi permission
+bridge. Codex, Copilot, Grok and Pi backends are also supported — Pi (`pi --mode json`) is a
+harness rather than a vendor CLI and is how local models are run. See
+`.claude/rules/architecture.md`.
 
 ## Commands
 
@@ -79,14 +81,15 @@ marketplace root; the plugin root is one level below it. The normal path is no l
 marketplace, though: `cli_command_builder` passes `claude-plugin/` to the CLI per session with
 `--plugin-dir` (#618). `marketplace.json` remains only for a manual `claude plugin install`.
 
-| Path                                       | Contents                                          |
-| ------------------------------------------ | ------------------------------------------------- |
-| `.claude-plugin/marketplace.json`          | marketplace definition, `source: ./claude-plugin` |
-| `claude-plugin/.claude-plugin/plugin.json` | plugin definition; `${CLAUDE_PLUGIN_ROOT}` parent |
-| `claude-plugin/{agents,skills}/`           | **distributed** subagents and skills              |
-| `claude-plugin/mcp-server/`                | the distributed MCP server                        |
-| `.claude/{skills,commands,rules}/`         | **for developing this repo**; not distributed     |
-| `AGENTS.md`, `.agents/skills`              | symlinks; see below                               |
+| Path                                       | Contents                                           |
+| ------------------------------------------ | -------------------------------------------------- |
+| `.claude-plugin/marketplace.json`          | marketplace definition, `source: ./claude-plugin`  |
+| `claude-plugin/.claude-plugin/plugin.json` | plugin definition; `${CLAUDE_PLUGIN_ROOT}` parent  |
+| `claude-plugin/{agents,skills}/`           | **distributed** subagents and skills               |
+| `claude-plugin/mcp-server/`                | the distributed MCP server                         |
+| `pi-extension/`                            | Pi's permission bridge and web tools; not a plugin |
+| `.claude/{skills,commands,rules}/`         | **for developing this repo**; not distributed      |
+| `AGENTS.md`, `.agents/skills`              | symlinks; see below                                |
 
 `AGENTS.md` is a symlink to this file and `.agents/skills` one to `.claude/skills`, because codex
 and grok look for those names and claude looks for these. There is one copy of each; do not edit

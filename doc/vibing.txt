@@ -145,6 +145,20 @@ actually tend to change: >lua
           allow_tracked_profile = false,
         },
         grok = { executable = "auto" },
+        pi = {
+          executable = "auto",
+          -- A provider from ~/.pi/agent/models.json. Not optional for
+          -- a local endpoint: unset, Pi fuzzy-matches the model name
+          -- against its built-in cloud catalogue too, so "qwen" picks
+          -- a cloud model and the turn fails on a missing API key.
+          provider = "",
+          -- Backend for the web_search tool vibing.nvim adds to Pi:
+          -- "auto" | "brave" | "tavily" | "searxng" | "off". The key
+          -- stays in your environment (BRAVE_SEARCH_API_KEY,
+          -- TAVILY_API_KEY, SEARXNG_URL); "auto" uses whichever is
+          -- set and offers no tool when none is.
+          web_search = "auto",
+        },
       },
       -- "ja", or { default = "ja", chat = "ja" }
       language = nil,
@@ -591,7 +605,7 @@ with YAML frontmatter: >
       - .vibing/chat/orchestrator.md
     continued_from: .vibing/chat/long.md     # optional: handed off from
     working_dir: .vibing/worktrees/fix-auth   # optional, relative to git root
-    agent: claude
+    agent: claude                             # claude|codex|copilot|grok|pi
     mode: code                                # code | plan | explore
     model: sonnet
     effort: default                           # CLI/model default; or low..max

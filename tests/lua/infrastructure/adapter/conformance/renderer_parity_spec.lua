@@ -23,6 +23,11 @@ local STREAMS = {
     { type = "tool.execution_start", data = { toolCallId = "t1", toolName = "bash", arguments = { command = "ls" } } },
     { type = "tool.execution_complete", data = { toolCallId = "t1", success = true, result = { content = "a.txt" } } },
   },
+  -- Pi reports the result as MCP-style content blocks rather than a bare string.
+  pi = {
+    { type = "tool_execution_start", toolCallId = "t1", toolName = "bash", args = { command = "ls" } },
+    { type = "tool_execution_end", toolCallId = "t1", toolName = "bash", isError = false, result = { content = { { type = "text", text = "a.txt" } } } },
+  },
 }
 
 describe("conformance: tool rendering parity", function()

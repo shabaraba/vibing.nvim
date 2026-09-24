@@ -44,9 +44,10 @@ access to your Neovim instance** through CLI backends and MCP integration.
 - **🤖 Neovim as an agent tool** — via MCP, the AI reads and writes buffers, executes commands,
   and queries LSP (diagnostics, definitions, references, symbols) in your _running_ editor
 - **🔀 Multi-backend** — Claude CLI (`claude -p --output-format stream-json`), Codex CLI
-  (`codex exec --json`), GitHub Copilot CLI (`copilot -p --output-format json`), or Grok Build CLI
-  (`grok --single --output-format streaming-json`); switch globally via `adapter` or per-chat via
-  the `agent` frontmatter field
+  (`codex exec --json`), GitHub Copilot CLI (`copilot -p --output-format json`), Grok Build CLI
+  (`grok --single --output-format streaming-json`), or the Pi coding agent (`pi --mode json`, which
+  runs **local models** through any OpenAI-compatible endpoint); switch globally via `adapter` or
+  per-chat via the `agent` frontmatter field
 - **💾 File-based session persistence** — chats are plain Markdown files with YAML frontmatter
   saved under `.vibing/chat/`: portable, resumable (full CLI session state), auditable, and
   version-controllable
@@ -84,6 +85,7 @@ they compose well.
   - **GitHub Copilot CLI** (`copilot`) — `npm install -g @github/copilot` (needs Node.js 22+,
     higher than the 18+ the MCP server itself requires)
   - **Grok Build CLI** (`grok`) — see [xAI's install docs](https://github.com/xai-org/grok-cli)
+  - **Pi coding agent** (`pi`) — `curl -fsSL https://pi.dev/install.sh | sh` (needs Node.js 22.19+)
 
 > **Codex version note.** vibing.nvim runs the Codex backend's lightweight calls (chat title
 > generation, `/summarize`, daily summary) with `--ignore-user-config --strict-config`, which keeps
@@ -272,7 +274,7 @@ In chat buffers (all except `q` are configurable via `keymaps` — see
 
 ```lua
 require("vibing").setup({
-  adapter = "claude",              -- "claude" | "codex" | "copilot" | "grok"
+  adapter = "claude",              -- "claude" | "codex" | "copilot" | "grok" | "pi"
   chat = {
     window = {
       position = "current",        -- "current" | "right" | "left" | "top" | "bottom" | "back" | "float"
@@ -299,6 +301,7 @@ require("vibing").setup({
       allow_tracked_profile = false, -- true explicitly trusts a Git-tracked profile
     },
     grok = { executable = "auto" }, -- or a path to the official Grok Build CLI
+    pi = { executable = "auto", provider = "" }, -- name the provider for a local endpoint
   },
   language = nil,                  -- e.g. "ja", or { default = "ja", chat = "ja" }
 })
@@ -329,7 +332,7 @@ vibing.nvim: true
 session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
 working_dir: .vibing/worktrees/feature-x  # Optional: working directory (relative to git root)
-agent: claude  # claude | codex | copilot | grok (overrides global adapter setting for this chat)
+agent: claude  # claude | codex | copilot | grok | pi (overrides global adapter for this chat)
 mode: code  # code | plan | explore
 model: sonnet  # Backend model id, e.g. sonnet or gpt-5.6-terra
 effort: default  # CLI/model default | low | medium | high | xhigh | max
@@ -409,9 +412,13 @@ graph TB
 - **Codex CLI** (`codex exec --json`) — OpenAI Codex backend
 - **GitHub Copilot CLI** (`copilot -p --output-format json`) — GitHub Copilot backend
 - **Grok Build CLI** (`grok --single --output-format streaming-json`) — xAI Grok backend
+- **Pi coding agent** (`pi --mode json`) — a harness rather than a vendor CLI: the tools are Pi's
+  and the model is whichever provider its own `models.json` names, so this is the backend for
+  **local models** served by `mlx_lm.server`, `llama-server` or any OpenAI-compatible endpoint
 
-Switch globally with `adapter = "claude"|"codex"|"copilot"|"grok"` in setup, or per-chat by adding
-`agent: claude`, `agent: codex`, `agent: copilot`, or `agent: grok` to a chat file's YAML
+Switch globally with `adapter = "claude"|"codex"|"copilot"|"grok"|"pi"` in setup, or per-chat by
+adding `agent: claude`, `agent: codex`, `agent: copilot`, `agent: grok` or `agent: pi` to a chat
+file's YAML
 frontmatter. `effort: low|medium|high|xhigh|max` controls reasoning for Claude, Codex, and Grok when
 the selected model supports that level. New chats use `effort: default`, which passes no override
 and therefore preserves the same CLI/model default used before effort was configurable. Omitting
@@ -423,6 +430,44 @@ the field has the same runtime behaviour for existing chats.
 > login are never touched. Copilot's static `--deny-tool` flags are still passed as a backstop;
 > they cover `Bash` (including `Bash(cmd:*)` patterns), `Write`, `Edit`, `WebFetch` and
 > `WebSearch`, and vibing.nvim warns once when it drops a tool name Copilot cannot express.
+
+> **Note:** the Pi backend is the one backend with **no tool approval of its own** — Pi does not ask
+> before running `bash`, and its JSON/RPC modes cannot prompt at all. vibing.nvim's permission
+> layer is therefore the only one, and it is delivered as a Pi extension (`pi-extension/`) that
+> `./build.sh` compiles and `pi --extension` loads. If that bundle is missing, a Pi turn is
+> restricted to read-only tools rather than run ungated, and says so once. Pi also ships no MCP
+> client, so the `nvim_*` tools and the in-chat question UI are unavailable there (as on Grok).
+>
+> Model selection is Pi's, not vibing.nvim's: `model:` has to name something Pi can resolve through
+> its own `~/.pi/agent/models.json` or a provider you are logged into. For a local endpoint:
+>
+> ```json
+> {
+>   "providers": {
+>     "mlx-local": {
+>       "baseUrl": "http://127.0.0.1:8081/v1",
+>       "api": "openai-completions",
+>       "apiKey": "not-needed",
+>       "models": [{ "id": "mlx-community/Qwen3.6-27B-4bit" }]
+>     }
+>   }
+> }
+> ```
+>
+> then `backends.pi.provider = "mlx-local"` and `model: mlx-community/Qwen3.6-27B-4bit`. Naming
+> the provider is not optional for a local endpoint: `--model` is a fuzzy pattern Pi matches over
+> its built-in cloud catalogue as well, so an unqualified `model: qwen` picks a cloud model and the
+> turn fails on a missing API key. With it named, any id your endpoint can serve works from
+> `model:` alone — no models.json edit — which is what lets one `mlx_lm.server` serve every model.
+>
+> The same extension also adds the two tools Pi does not have. Pi's built-in set is `bash`, `read`,
+> `write`, `edit`, `ls`, `grep`, `find` and nothing else, so `web_fetch` and `web_search` are
+> registered beside the gate — shaped like claude's `WebFetch` / `WebSearch`, so your existing rules
+> for those apply unchanged. `web_fetch` works with no configuration; `web_search` has to call a
+> real search API (claude's and codex's happen server-side inside the inference API, which a local
+> endpoint has no equivalent of), so set `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY` or `SEARXNG_URL`.
+> With none of them set the tool is simply not offered. See
+> [handbook/configuration.md](handbook/configuration.md) → "Pi: web tools".
 
 ### Why does it require Node.js?
 
