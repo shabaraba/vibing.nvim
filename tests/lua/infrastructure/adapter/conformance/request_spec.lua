@@ -116,6 +116,21 @@ describe("conformance: request", function()
         assert.is_true(vim.tbl_contains(cmd, "sess-1") or vim.tbl_contains(cmd, "--resume=sess-1"))
       end)
 
+      it("carries the chat's language instruction somewhere in the argv", function()
+        -- Where it goes differs -- system prompt on claude and grok, prompt prefix on codex,
+        -- copilot and pi -- so this asks only that it is *there*. Pi shipped with no
+        -- `language_prefix` on its prompt part and silently ignored the frontmatter; the per-backend
+        -- specs could not catch that, since none of them knew the field was meant to be universal.
+        local cmd = descriptor.build("hi", { language = "ja" }, "sess-1", config, nil)
+        local found = false
+        for _, arg in ipairs(cmd) do
+          if arg:find("Always respond in Japanese (ja).", 1, true) then
+            found = true
+          end
+        end
+        assert.is_true(found, def.id .. " drops the language instruction")
+      end)
+
       it("keeps the hook wanted-rules and the request in agreement in bypassPermissions", function()
         -- A backend that drops the hook in bypass must not then reference a hook_arg either.
         if not Transports.wanted(descriptor.hook, { permission_mode = "bypassPermissions" }) then

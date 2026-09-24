@@ -57,7 +57,12 @@ local M = {
       vim.tbl_extend("force", { kind = "args", when = "lightweight" }, PiCommandBuilder.LIGHTWEIGHT_ARGS),
       -- `--` first, because Pi treats leading positional arguments beginning with `-` as flags and
       -- `@`-prefixed ones as file attachments.
-      { kind = "prompt", terminator = "--" },
+      --
+      -- `language_prefix`, because Pi has no system-prompt flag: `cli_command_builder` appends
+      -- claude's language instruction to `--append-system-prompt`, and there is nowhere here to
+      -- put it but the prompt itself. A local model is where it matters most — the harness is how
+      -- one gets asked for a language it was not trained to volunteer.
+      { kind = "prompt", terminator = "--", language_prefix = true },
     },
   },
   build = PiCommandBuilder.build,
