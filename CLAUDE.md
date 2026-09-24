@@ -4,8 +4,10 @@
 
 vibing.nvim is a Neovim plugin that provides a Claude chat inside Neovim by spawning the `claude`
 CLI directly (`claude -p --output-format stream-json`) and parsing its stream. There is no Node.js
-agent wrapper process; the Node side is only the MCP server and two hook scripts. Codex, Copilot
-and Grok CLI backends are also supported. See `.claude/rules/architecture.md`.
+agent wrapper process; the Node side is the MCP server, two hook scripts and the Pi permission
+bridge. Codex, Copilot, Grok and Pi backends are also supported — Pi (`pi --mode json`) is a
+harness rather than a vendor CLI and is how local models are run. See
+`.claude/rules/architecture.md`.
 
 ## Commands
 
@@ -85,6 +87,7 @@ marketplace, though: `cli_command_builder` passes `claude-plugin/` to the CLI pe
 | `claude-plugin/.claude-plugin/plugin.json` | plugin definition; `${CLAUDE_PLUGIN_ROOT}` parent |
 | `claude-plugin/{agents,skills}/`           | **distributed** subagents and skills              |
 | `claude-plugin/mcp-server/`                | the distributed MCP server                        |
+| `pi-extension/`                            | the Pi permission bridge; **not** a Claude plugin |
 | `.claude/{skills,commands,rules}/`         | **for developing this repo**; not distributed     |
 | `AGENTS.md`, `.agents/skills`              | symlinks; see below                               |
 

@@ -154,11 +154,40 @@ M.AGENTS = {
       { value = "grok-composer-2.5-fast", description = "Grok Composer 2.5 Fast" },
     },
   },
+  pi = {
+    id = "pi",
+    adapter_module = "vibing.infrastructure.adapter.pi_cli",
+    descriptor_module = "vibing.infrastructure.adapter.backends.pi",
+    command_builder_module = "vibing.infrastructure.adapter.modules.pi_command_builder",
+    export_name = "PiCLIAdapter",
+    description = "Pi coding agent (local / any OpenAI-compatible provider)",
+    config_fields = {
+      -- "auto" looks `pi` up on PATH; a path is used as given and never silently reset.
+      executable = {
+        kind = "executable_or_auto",
+        default = "auto",
+      },
+      -- `--provider <name>`. Pi resolves a bare `--model` across every provider it knows, so this
+      -- is only needed to pin a model id that also exists upstream. Empty means Pi chooses.
+      provider = {
+        kind = "string",
+        default = "",
+      },
+    },
+    -- Pi has no model catalogue of its own to enumerate: what is available comes from the user's
+    -- `~/.pi/agent/models.json` and whichever providers they are logged into. These are the two
+    -- local-endpoint ids the feature was built and measured against, offered as a starting point —
+    -- this list is a suggestion, never validation, and any id Pi can resolve works.
+    models = {
+      { value = "mlx-community/Qwen3.6-27B-4bit", description = "Qwen3.6 27B 4bit (local, via mlx_lm.server)" },
+      { value = "mlx-community/gpt-oss-20b-MXFP4-Q8", description = "gpt-oss 20B (local, via mlx_lm.server)" },
+    },
+  },
 }
 
 ---列挙順。`pairs()` の順序は不定なので、ユーザーに見える一覧はすべてこれを経由する。
 ---@type string[]
-M.ORDER = { "claude", "codex", "copilot", "grok" }
+M.ORDER = { "claude", "codex", "copilot", "grok", "pi" }
 
 ---未知・未指定のエージェントのフォールバック先
 ---@type string

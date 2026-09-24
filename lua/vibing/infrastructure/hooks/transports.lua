@@ -16,7 +16,7 @@
 local M = {}
 
 ---@class Vibing.HookSpec
----@field transport "settings_file"|"config_override"|"plugin_dir"|"project_dir"
+---@field transport "settings_file"|"config_override"|"plugin_dir"|"project_dir"|"extension_file"
 ---@field dialect? "claude"|"copilot" How the script phrases a decision; `pre-tool-use.sh`'s first
 ---  argument. Defaults to `claude`, which the other CLIs sharing its hook schema also read.
 ---@field keep_in_bypass? boolean Register the hook in bypassPermissions too. The permission handler
@@ -29,7 +29,7 @@ local M = {}
 
 --- Every transport, in the order the ADR lists them.
 --- @type string[]
-M.NAMES = { "settings_file", "config_override", "plugin_dir", "project_dir" }
+M.NAMES = { "settings_file", "config_override", "plugin_dir", "project_dir", "extension_file" }
 
 --- Every dialect `bin/hooks/pre-tool-use.sh` knows how to speak. Adding one means adding a
 --- `case` branch to that script; the conformance spec checks the two agree.
@@ -51,6 +51,9 @@ local generators = {
   plugin_dir = "vibing.infrastructure.hooks.copilot_settings_generator",
   --- A hook file the CLI discovers from the project tree.
   project_dir = "vibing.infrastructure.hooks.grok_settings_generator",
+  --- An in-process extension the CLI loads with `--extension`, which spawns the shared script
+  --- itself. The only transport whose CLI offers no external-process hook at all.
+  extension_file = "vibing.infrastructure.hooks.pi_settings_generator",
 }
 
 --- Required at call time rather than captured: specs stub a generator's `ensure` on the module
@@ -75,6 +78,12 @@ local installers = {
   --- Returns the file it wrote; the argv does not reference it.
   project_dir = function(cwd, dialect)
     return require(generators.project_dir).ensure(cwd, dialect)
+  end,
+  --- Returns the extension bundle's path, for `--extension`. Raises when it is not built, which
+  --- `pi_command_builder.build` then turns into a refusal to run rather than a warning: Pi has no
+  --- gate of its own to fall back on.
+  extension_file = function(cwd, dialect)
+    return require(generators.extension_file).ensure(cwd, dialect)
   end,
 }
 

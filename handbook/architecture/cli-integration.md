@@ -133,11 +133,37 @@ These are the seams that stop backend identity leaking into shared code. The rul
 **a backend name belongs in that backend's own module, and shared code takes what it is handed.**
 `bin/hooks/pre-tool-use.sh` is the one deliberate exception, and the last bullet says why. Since
 ADR 009 each backend is a descriptor (`adapter/backends/<id>.lua`) that names its hook transport
-and dialect from `hooks/transports.lua`; the four generators described below are those transports.
+and dialect from `hooks/transports.lua`; the five generators described below are those transports.
 
+- **Pi has no external-process hook, and no gate of its own.** Measured against Pi 0.87.1: its only
+  interception point is an in-process TypeScript `tool_call` handler, and its own documentation
+  states it "does not ask for approval before every tool call" while print/JSON/RPC modes cannot
+  show even the trust prompt. Both halves matter separately. The first is why the `extension_file`
+  transport resolves a shipped bundle (`pi-extension/`) instead of writing a settings file, passed
+  with `--extension`; the bundle spawns `bin/hooks/pre-tool-use.sh` and reads its exit code, so the
+  dialect is `claude` and there is still exactly one implementation of what a decision means. The
+  second is why a failed installation cannot be the usual warn-and-continue:
+  `pi_command_builder.permission_args` drops the run to `--tools read,grep,find,ls` instead, except
+  under `bypassPermissions` where no configured rule is being skipped. Verified end to end against
+  the real CLI: `deny` reaches the model as the tool result verbatim, `allow` runs the tool, and an
+  unreachable RPC server blocks every call.
+- **Pi's extension enforces its own deadline, and fails closed doing it.** Every other transport
+  reports a timeout its CLI was configured with, and the ordering
+  `approval_wait_sec < script wait < CLI timeout` exists because past its own timeout every CLI
+  measured **fails open**. Pi applies no timeout to a handler at all, so the number
+  `pi_settings_generator.hook_timeout_sec` reports is the one the extension itself applies, handed
+  over in `VIBING_PI_HOOK_TIMEOUT_SEC`. Both come from `wait_budget`, so they cannot drift — and
+  because expiry here denies rather than proceeds, this is the one backend where the last
+  inequality is a convenience rather than the thing keeping a gate applied.
+- **Pi's stream ends on `agent_settled`, not on its own `turn_end`.** A request that calls a tool
+  emits `turn_start`/`turn_end` twice, once per model turn (captured in
+  `tests/fixtures/streams/pi/tool_turn.jsonl`). Usage is likewise per assistant message and rides
+  on every `message_update` as a growing figure, so only the `message_end` of an assistant message
+  carries something recordable; reading the update would multiply the turn's tokens by its delta
+  count.
 - **Process model.** `descriptor.process` names the most capable way a backend can be run, not the
-  way it will be: `oneshot` (a process per turn, the default and the only model for codex, copilot
-  and grok) or `duplex` (one resident process per chat, serving many turns over an open stdin —
+  way it will be: `oneshot` (a process per turn, the default and the only model for codex, copilot,
+  grok and pi) or `duplex` (one resident process per chat, serving many turns over an open stdin —
   claude only, and still reached only through `backends.claude.process` or a chat's own `process:`
   frontmatter). The field is `process` and not `transport` because `Vibing.HookSpec.transport`
   already owns that word in the same descriptor. `duplex-transport.md` is the whole story;

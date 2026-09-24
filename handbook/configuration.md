@@ -108,6 +108,9 @@ adapter = "claude",  -- Global backend adapter
                      -- "codex":   Codex CLI       (codex exec --json)
                      -- "copilot": Copilot CLI     (copilot -p --output-format json)
                      -- "grok":    Grok Build CLI  (grok --single=... --output-format streaming-json)
+                     -- "pi":      Pi coding agent (pi --mode json), a harness whose model comes
+                     --            from its own models.json -- including a local OpenAI-compatible
+                     --            server such as mlx_lm.server or llama-server
                      -- Overridable per-chat via the "agent" frontmatter field
 ```
 
@@ -158,6 +161,14 @@ backends = {
     executable = "auto",    -- "auto": detect `grok` on PATH (default)
                             -- or an explicit path, e.g. "~/.grok/bin/grok"
   },
+  pi = {
+    executable = "auto",    -- "auto": detect `pi` on PATH (default)
+                            -- or an explicit path, e.g. "~/.local/share/pi/bin/pi"
+    provider = "",          -- `--provider <name>`. Pi resolves a bare --model across every
+                            --   provider it knows, so this is only needed to pin a model id that
+                            --   also exists upstream -- which is the usual case for a local
+                            --   endpoint you named in models.json. "" lets Pi choose.
+  },
 }
 ```
 
@@ -176,6 +187,39 @@ shared with unrelated tools.
 (`<cwd>/.grok/hooks/`) only inside a git repo. Outside one the hook is written and never read, so
 `permissions.rules`, the `ask` list and the Tool Approval UI silently do nothing — vibing.nvim
 warns once per working directory when it detects this.
+
+### Pi: the one backend with no gate of its own
+
+Every other backend has its own approval mechanism and vibing.nvim's rules are an extra layer over
+it. Pi has none — its own documentation says it "does not ask for approval before every tool call",
+and print/JSON/RPC modes cannot show even its trust prompt. So on Pi the vibing.nvim layer is the
+only one, and it is delivered differently: Pi exposes no external-process hook, only in-process
+TypeScript handlers, so the gate is an extension (`pi-extension/`) that `./build.sh` compiles and
+`cli_command_builder` loads with `--extension`.
+
+The extension does not decide anything itself. It spawns the same `bin/hooks/pre-tool-use.sh` every
+other backend uses and reads its exit code under the `claude` dialect, so there is one
+implementation of what a permission decision means. Verified against Pi 0.87.1: a `deny` reaches
+the model as the tool result verbatim, an `allow` runs the tool, and an unreachable RPC server
+blocks every call.
+
+**A missing bundle degrades rather than running ungated.** `cli_adapter` warns and carries on when
+a transport fails to install, which is the right trade where the CLI still has its own gate. Here
+it would mean `bash` with the user's `permissions.deny` silently inert, so
+`pi_command_builder.permission_args` restricts the run to `--tools read,grep,find,ls` and says so
+once. `bypassPermissions` is exempt — there the user has said "do not gate me", so no configured
+rule is being skipped; what the warning mentions instead is the lost git-snapshot baseline.
+
+**`plan` is expressed by taking the tools away**, for the same reason: Pi has no plan mode, and a
+mode whose label promises no changes has to actually prevent them.
+
+**Model selection belongs to Pi.** `model:` must name something Pi can resolve through
+`~/.pi/agent/models.json` or a logged-in provider. An id it cannot match does not fail — Pi answers
+with its default model — so a typo is visible only in the model reported in the chat footer, which
+the decoder emits from the stream for exactly that reason.
+
+**No MCP client.** Pi ships none, so the `nvim_*` tools and `nvim_ask_user_question` are
+unreachable, as on Grok. `register_chat_bufnr` is `false` and approvals use kill-and-retry.
 
 ## Agent
 

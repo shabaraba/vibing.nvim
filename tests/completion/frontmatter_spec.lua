@@ -59,11 +59,12 @@ describe("Frontmatter completion", function()
     it("should offer every registered backend in agent enum values", function()
       -- Derived from agents.lua, so a new backend appears here without touching the provider.
       local items = frontmatter_provider.get_enum_values("agent")
-      assert.are.equal(4, #items)
+      assert.are.equal(5, #items)
       assert.are.equal("claude", items[1].word)
       assert.are.equal("codex", items[2].word)
       assert.are.equal("copilot", items[3].word)
       assert.are.equal("grok", items[4].word)
+      assert.are.equal("pi", items[5].word)
     end)
 
     it("should get copilot model values via get_model_values", function()
