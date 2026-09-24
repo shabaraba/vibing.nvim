@@ -39,6 +39,14 @@ local Fs = require("vibing.core.utils.fs")
 ---  ターンIDとは別に持つ必要がある: `cancel_request` はターンが終わった後にもゾンビ回収として
 ---  呼ばれる（`send_message` 冒頭）ので、その時点ではレジストリにターンのエントリが無く、
 ---  ターンIDからプロセスを引き直すことはできない
+---@field _abandoned_turn_id string? `abandon_turn`がこのチャット側だけで畳んだターンのID。
+---  常駐プロセスでは `hand_back` がレスポンスを`vim.schedule`するより前に同期でプロセス側の
+---  ターンを手放すので、その1ティックの間は「アイドル中」に見える — `stop_turn`は
+---  `(handled=true, stopped=false)`を返し、`cancel_request`は打ち切れなかったことにして
+---  `abandon_turn`に落ちる。畳むと`_current_turn_id`はnilに戻るので、遅れて届く本物の
+---  `_handle_response`のstaleness判定は「まだ何も送っていない」と区別できず、同じターンを
+---  二重に完了させてしまう。畳んだターンIDをここに残し、`_handle_response`側で
+---  `current_turn_id`がnilでもこの値と一致すれば古い応答として捨てる
 ---@field _current_adapter table? per-chatアダプター（フロントマターagent指定時）
 ---@field _is_sending boolean 送信処理中かどうか（Enter連打による重複送信防止）
 ---@field _stop_reason "waiting_approval"|"asked_question"|"error"|nil 直前のターンが止まった理由
@@ -66,6 +74,7 @@ function ChatBuffer:new(config)
   instance._current_turn_id = nil
   instance._current_process_id = nil
   instance._current_adapter = nil
+  instance._abandoned_turn_id = nil
   instance._is_sending = false
   instance._stop_reason = nil
   instance._session_allow = {}
@@ -360,6 +369,10 @@ function ChatBuffer:abandon_turn()
   if self._current_turn_id then
     TurnRegistry.close(self._current_turn_id)
   end
+  -- `_current_turn_id` をnilに戻す前に退避する。常駐プロセスの本物の応答は`vim.schedule`越しに
+  -- 遅れて届くので、そのstaleness判定がここで畳んだターンを「まだ送っていない」と読み違えない
+  -- ようにする（`_handle_response`参照）
+  self._abandoned_turn_id = self._current_turn_id
   self._current_turn_id = nil
   self._current_process_id = nil
   self._current_adapter = nil
@@ -1184,6 +1197,9 @@ function ChatBuffer:send_message()
     end,
     get_turn_id = function()
       return self._current_turn_id
+    end,
+    get_abandoned_turn_id = function()
+      return self._abandoned_turn_id
     end,
     clear_sending = function()
       self._is_sending = false

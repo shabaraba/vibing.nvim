@@ -107,6 +107,11 @@ describe("ChatBuffer:cancel_turn", function()
     -- Folded through the one merge point every turn ends at, so the unsent section, the save and
     -- `VibingResponseDone` are not written a second time here.
     assert.equals(1, state.finished)
+    -- The turn id survives here, off to the side, even though `_current_turn_id` is gone: a
+    -- resident process can still hand back the real completion for it later (queued behind the
+    -- transport's own `vim.schedule`), and `_handle_response`'s staleness check needs this to
+    -- recognise that late arrival as the same turn rather than as a fresh, unstarted one.
+    assert.equals("turn-1", chat_buffer._abandoned_turn_id)
   end)
 
   it("leaves the turn to the CLI when the adapter did stop it", function()
