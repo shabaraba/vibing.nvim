@@ -147,8 +147,10 @@ actually tend to change: >lua
         grok = { executable = "auto" },
         pi = {
           executable = "auto",
-          -- Pi resolves a bare model across every provider it knows;
-          -- name one to pin a local endpoint. "" lets Pi choose.
+          -- A provider from ~/.pi/agent/models.json. Not optional for
+          -- a local endpoint: unset, Pi fuzzy-matches the model name
+          -- against its built-in cloud catalogue too, so "qwen" picks
+          -- a cloud model and the turn fails on a missing API key.
           provider = "",
           -- Backend for the web_search tool vibing.nvim adds to Pi:
           -- "auto" | "brave" | "tavily" | "searxng" | "off". The key
