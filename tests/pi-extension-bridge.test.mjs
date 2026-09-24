@@ -86,7 +86,10 @@ before(async () => {
 
   const registered = {};
   const factory = (await import(BUNDLE)).default;
-  factory({ on: (event, fn) => (registered[event] = fn) });
+  // Through the real entry point rather than the bridge module, so the gate is exercised on the
+  // path Pi actually loads. `registerTool` is Pi's; the tools it collects are
+  // tests/pi-extension-web-tools.test.mjs's subject, not this file's.
+  factory({ on: (event, fn) => (registered[event] = fn), registerTool: () => {} });
   handler = registered.tool_call;
 
   process.env.VIBING_NVIM_RPC_PORT = String(port);

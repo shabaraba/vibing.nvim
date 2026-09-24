@@ -23,6 +23,23 @@ describe("pi_tool_vocabulary", function()
       assert.equals(Vocabulary.to_canonical("bash"), Vocabulary.to_canonical("powershell"))
     end)
 
+    it("maps the two web tools vibing.nvim adds to pi", function()
+      -- Pi ships no web tool at all; `pi-extension/src/index.ts` registers these. Unmapped, a
+      -- `WebFetch` deny rule -- and the fact that neither tool is in `DEFAULT_ALLOWED_TOOLS`
+      -- because both are external communication -- would apply to every backend except the one
+      -- where vibing.nvim wrote the tool itself.
+      assert.equals("WebFetch", Vocabulary.to_canonical("web_fetch"))
+      assert.equals("WebSearch", Vocabulary.to_canonical("web_search"))
+    end)
+
+    it("spells them the way the other backends' vocabularies do", function()
+      -- The name is vibing.nvim's own choice here, so nothing but this forces it to agree. Picking
+      -- a different one would work and would quietly make Pi the exception in every rule example.
+      local Copilot = require("vibing.infrastructure.adapter.modules.copilot_tool_vocabulary")
+      assert.equals(Copilot.to_canonical("web_fetch"), Vocabulary.to_canonical("web_fetch"))
+      assert.equals(Copilot.to_canonical("web_search"), Vocabulary.to_canonical("web_search"))
+    end)
+
     it("returns nil for a tool it does not know, rather than guessing", function()
       assert.is_nil(Vocabulary.to_canonical("some_extension_tool"))
     end)

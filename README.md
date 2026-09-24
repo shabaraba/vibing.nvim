@@ -455,6 +455,15 @@ the field has the same runtime behaviour for existing chats.
 > ```
 >
 > then `backends.pi.provider = "mlx-local"` and `model: mlx-community/Qwen3.6-27B-4bit`.
+>
+> The same extension also adds the two tools Pi does not have. Pi's built-in set is `bash`, `read`,
+> `write`, `edit`, `ls`, `grep`, `find` and nothing else, so `web_fetch` and `web_search` are
+> registered beside the gate — shaped like claude's `WebFetch` / `WebSearch`, so your existing rules
+> for those apply unchanged. `web_fetch` works with no configuration; `web_search` has to call a
+> real search API (claude's and codex's happen server-side inside the inference API, which a local
+> endpoint has no equivalent of), so set `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY` or `SEARXNG_URL`.
+> With none of them set the tool is simply not offered. See
+> [handbook/configuration.md](handbook/configuration.md) → "Pi: web tools".
 
 ### Why does it require Node.js?
 

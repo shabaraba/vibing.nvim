@@ -81,15 +81,15 @@ marketplace root; the plugin root is one level below it. The normal path is no l
 marketplace, though: `cli_command_builder` passes `claude-plugin/` to the CLI per session with
 `--plugin-dir` (#618). `marketplace.json` remains only for a manual `claude plugin install`.
 
-| Path                                       | Contents                                          |
-| ------------------------------------------ | ------------------------------------------------- |
-| `.claude-plugin/marketplace.json`          | marketplace definition, `source: ./claude-plugin` |
-| `claude-plugin/.claude-plugin/plugin.json` | plugin definition; `${CLAUDE_PLUGIN_ROOT}` parent |
-| `claude-plugin/{agents,skills}/`           | **distributed** subagents and skills              |
-| `claude-plugin/mcp-server/`                | the distributed MCP server                        |
-| `pi-extension/`                            | the Pi permission bridge; **not** a Claude plugin |
-| `.claude/{skills,commands,rules}/`         | **for developing this repo**; not distributed     |
-| `AGENTS.md`, `.agents/skills`              | symlinks; see below                               |
+| Path                                       | Contents                                           |
+| ------------------------------------------ | -------------------------------------------------- |
+| `.claude-plugin/marketplace.json`          | marketplace definition, `source: ./claude-plugin`  |
+| `claude-plugin/.claude-plugin/plugin.json` | plugin definition; `${CLAUDE_PLUGIN_ROOT}` parent  |
+| `claude-plugin/{agents,skills}/`           | **distributed** subagents and skills               |
+| `claude-plugin/mcp-server/`                | the distributed MCP server                         |
+| `pi-extension/`                            | Pi's permission bridge and web tools; not a plugin |
+| `.claude/{skills,commands,rules}/`         | **for developing this repo**; not distributed      |
+| `AGENTS.md`, `.agents/skills`              | symlinks; see below                                |
 
 `AGENTS.md` is a symlink to this file and `.agents/skills` one to `.claude/skills`, because codex
 and grok look for those names and claude looks for these. There is one copy of each; do not edit

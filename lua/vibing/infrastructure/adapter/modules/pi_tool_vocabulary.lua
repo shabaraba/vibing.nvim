@@ -11,8 +11,8 @@
 local M = {}
 
 --- Read off Pi 0.87.1's own tool schemas (`dist/core/tools/*.js`) and confirmed against a captured
---- `tool_call` event, not inferred from its documentation. `pi --help` lists exactly these eight as
---- the built-in set.
+--- `tool_call` event, not inferred from its documentation. `pi --help` lists exactly the first
+--- eight as the built-in set; the last two are vibing.nvim's own (see below).
 ---
 --- `ls` and `find` both become `Glob`: vibing's canonical vocabulary has no directory-listing tool,
 --- and `Glob` is the read-only file-enumeration entry `ALWAYS_ALLOWED_TOOLS` already covers, which
@@ -22,6 +22,12 @@ local M = {}
 --- same rules. Left unmapped it would arrive at `can_use_tool` as the literal `powershell`, match
 --- nothing in `permissions.allow`, and resolve to `ask` while every `Bash(...)` deny rule the user
 --- wrote missed it entirely.
+---
+--- `web_fetch` and `web_search` are **not** Pi's: Pi has no web tool at all, and these two are
+--- registered by `pi-extension/src/index.ts`. They are spelled the way copilot and grok spell
+--- theirs precisely so this table is the only place that has to know, and so the rules a user
+--- already wrote — `WebFetch`, `WebSearch`, and the fact that neither is in
+--- `DEFAULT_ALLOWED_TOOLS` because both are external communication — apply to Pi unchanged.
 --- @type table<string, string>
 local NATIVE_TO_CANONICAL = {
   bash = "Bash",
@@ -32,6 +38,8 @@ local NATIVE_TO_CANONICAL = {
   grep = "Grep",
   find = "Glob",
   ls = "Glob",
+  web_fetch = "WebFetch",
+  web_search = "WebSearch",
 }
 
 --- Where Pi puts the path a tool is about. One key across every file tool (`read`, `edit`, `write`,

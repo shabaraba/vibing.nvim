@@ -8,13 +8,20 @@ local M = {}
 
 --- The read-only subset of Pi's built-in tools, by Pi's own names (`pi --help`).
 ---
---- Used for `plan`, which Pi has no concept of. Every other backend maps the mode onto something
---- the CLI already understands; here the only way to make "do not change anything" true is to take
---- the tools away, so that is what this does. Left unmapped, `plan` on Pi would be an ordinary
---- editing session with a different label — which is worse than not offering the mode, because the
---- label is what the user is relying on.
+--- `--tools` is an allowlist over built-in, extension and custom tools alike, so naming these is
+--- how a Pi run is made unable to change anything.
 --- @type string
 local READ_ONLY_TOOLS = "read,grep,find,ls"
+
+--- The same, plus the two web tools `pi-extension/src/index.ts` registers.
+---
+--- `plan` is "do not change anything", not "do not look anything up" — claude's plan mode allows
+--- `WebFetch` and `WebSearch` for the same reason, and a plan written without being able to read
+--- the linked issue is the worse failure. The list above deliberately does **not** grow to match:
+--- that one is for a turn whose permission gate failed to load, where `read` plus an outbound URL
+--- is an exfiltration channel with nothing looking at it, and `read` alone is not.
+--- @type string
+local PLAN_TOOLS = READ_ONLY_TOOLS .. ",web_fetch,web_search"
 
 --- What a lightweight call is fenced with (`core/types.lua`: no tools, no project config, no user
 --- MCP servers, no hooks, `utility_model`).
@@ -148,7 +155,7 @@ function M.permission_args(ctx)
   end
 
   if mode == "plan" then
-    return { "--tools", READ_ONLY_TOOLS }
+    return { "--tools", PLAN_TOOLS }
   end
   return {}
 end
@@ -172,14 +179,21 @@ function M.build(prompt, opts, session_id, config, extension_path)
   )
 end
 
---- Environment for the permission bridge running inside Pi.
+--- Environment for the extension running inside Pi.
 ---
---- The extension needs two things vibing.nvim knows and Pi does not: where the shared hook script
---- is, and how long it may wait before failing closed. Both travel in the environment rather than
---- in a generated file, which is what lets `pi_settings_generator` write nothing per instance.
+--- The bridge needs two things vibing.nvim knows and Pi does not: where the shared hook script is,
+--- and how long it may wait before failing closed. Both travel in the environment rather than in a
+--- generated file, which is what lets `pi_settings_generator` write nothing per instance.
+---
+--- `VIBING_PI_WEB_SEARCH` chooses the `web_search` backend. Only the provider *name* travels: the
+--- API keys stay in the user's own environment (`BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY`,
+--- `SEARXNG_URL`), because a credential in `setup()` is a credential in a dotfiles repository.
+---
+--- Nothing is set on the lightweight path, which passes `--no-extensions` and so loads none of it.
 --- @param env table<string, string>
 --- @param opts Vibing.AdapterOpts
-function M.apply_env(env, opts)
+--- @param config Vibing.Config
+function M.apply_env(env, opts, config)
   if (opts or {}).lightweight then
     return
   end
@@ -187,6 +201,9 @@ function M.apply_env(env, opts)
   local WaitBudget = require("vibing.infrastructure.hooks.wait_budget")
   env.VIBING_PI_HOOK_SCRIPT = SettingsGenerator.get_hook_script_path()
   env.VIBING_PI_HOOK_TIMEOUT_SEC = tostring(WaitBudget.cli_timeout_sec())
+
+  local web_search = (((config or {}).backends or {}).pi or {}).web_search
+  env.VIBING_PI_WEB_SEARCH = type(web_search) == "string" and web_search ~= "" and web_search or "auto"
 end
 
 return M

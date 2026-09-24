@@ -173,6 +173,16 @@ M.AGENTS = {
         kind = "string",
         default = "",
       },
+      -- Which backend `web_search` uses. Pi has no web tool at all, so vibing.nvim registers one
+      -- through `pi-extension/`, and unlike claude and codex — whose search happens server-side
+      -- inside the inference API — it has to call a real search API itself. `auto` takes whichever
+      -- credential is present (BRAVE_SEARCH_API_KEY, TAVILY_API_KEY, SEARXNG_URL, in that order)
+      -- and leaves the tool unregistered when there is none. The key never passes through here.
+      web_search = {
+        kind = "string",
+        default = "auto",
+        values = { "auto", "off", "brave", "tavily", "searxng" },
+      },
     },
     -- Pi has no model catalogue of its own to enumerate: what is available comes from the user's
     -- `~/.pi/agent/models.json` and whichever providers they are logged into. These are the two

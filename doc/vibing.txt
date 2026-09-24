@@ -150,6 +150,12 @@ actually tend to change: >lua
           -- Pi resolves a bare model across every provider it knows;
           -- name one to pin a local endpoint. "" lets Pi choose.
           provider = "",
+          -- Backend for the web_search tool vibing.nvim adds to Pi:
+          -- "auto" | "brave" | "tavily" | "searxng" | "off". The key
+          -- stays in your environment (BRAVE_SEARCH_API_KEY,
+          -- TAVILY_API_KEY, SEARXNG_URL); "auto" uses whichever is
+          -- set and offers no tool when none is.
+          web_search = "auto",
         },
       },
       -- "ja", or { default = "ja", chat = "ja" }

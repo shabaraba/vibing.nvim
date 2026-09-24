@@ -54,7 +54,17 @@ describe("pi_command_builder", function()
     it("takes the writing tools away in plan mode, which pi has no concept of", function()
       -- Pi cannot be told "plan"; the only way to make the label true is to remove the tools.
       local args = Builder.permission_args({ opts = { permission_mode = "plan" }, hook_arg = "/x.js" })
-      assert.same({ "--tools", "read,grep,find,ls" }, args)
+      assert.same({ "--tools", "read,grep,find,ls,web_fetch,web_search" }, args)
+    end)
+
+    it("still lets plan mode look things up on the web", function()
+      -- `--tools` is an allowlist over extension tools too, so omitting these takes away the two
+      -- tools `pi-extension` registers. Plan is "change nothing", not "read nothing"; a plan
+      -- written without being able to open the linked issue is the worse failure, and claude's own
+      -- plan mode allows WebFetch/WebSearch for the same reason.
+      local args = Builder.permission_args({ opts = { permission_mode = "plan" }, hook_arg = "/x.js" })
+      assert.is_truthy(args[2]:find("web_fetch", 1, true))
+      assert.is_truthy(args[2]:find("web_search", 1, true))
     end)
 
     it("degrades to read-only when the permission bridge could not be installed", function()
@@ -63,6 +73,15 @@ describe("pi_command_builder", function()
       -- ungated turn here runs bash with the user's deny rules silently inert.
       local args = Builder.permission_args({ opts = {}, hook_arg = nil })
       assert.same({ "--tools", "read,grep,find,ls" }, args)
+    end)
+
+    it("withholds the web tools from an ungated turn, unlike plan mode", function()
+      -- The two lists differ on purpose and this is the difference. With no gate installed nothing
+      -- is looking at the calls, and `read` plus an outbound URL is an exfiltration channel that
+      -- `read` alone is not. (It is also moot in practice — the tools live in the extension that
+      -- failed to load — but the argv must not be the thing that would have allowed them.)
+      local args = Builder.permission_args({ opts = {}, hook_arg = nil })
+      assert.is_nil(args[2]:find("web_", 1, true))
     end)
 
     it("says so, rather than degrading in silence", function()
@@ -189,6 +208,32 @@ describe("pi_command_builder", function()
       local env = {}
       Builder.apply_env(env, { lightweight = true })
       assert.same({}, env)
+    end)
+
+    it("names the configured web_search backend", function()
+      local env = {}
+      Builder.apply_env(env, {}, { backends = { pi = { web_search = "brave" } } })
+      assert.equals("brave", env.VIBING_PI_WEB_SEARCH)
+    end)
+
+    it("falls back to auto rather than leaving the extension to guess", function()
+      -- Unset reads as "auto" inside the extension too, but the two defaults would then be in two
+      -- files and could drift apart silently: `off` is a real value here, so an absent variable
+      -- must not be the way it is spelled.
+      local env = {}
+      Builder.apply_env(env, {}, {})
+      assert.equals("auto", env.VIBING_PI_WEB_SEARCH)
+    end)
+
+    it("carries the provider name and never a credential", function()
+      -- The keys stay in the user's own environment. A search API key routed through setup() is a
+      -- key in a dotfiles repository, and this is the only place it could have been put.
+      local env = {}
+      Builder.apply_env(env, {}, { backends = { pi = { web_search = "tavily" } } })
+      for name, value in pairs(env) do
+        assert.is_nil(name:upper():find("KEY"), name .. " looks like a credential")
+        assert.is_nil(tostring(value):find("sk-", 1, true))
+      end
     end)
   end)
 end)

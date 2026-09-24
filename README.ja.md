@@ -420,6 +420,15 @@ frontmatter に `agent: claude` / `agent: codex` / `agent: copilot` / `agent: gr
 > ```
 >
 > そのうえで `backends.pi.provider = "mlx-local"`、`model: mlx-community/Qwen3.6-27B-4bit` とします。
+>
+> 同じ拡張が、Pi に無い 2 つのツールも追加します。Pi の組み込みツールは `bash` / `read` / `write` /
+> `edit` / `ls` / `grep` / `find` だけなので、`web_fetch` と `web_search` をゲートと同じ拡張に同梱して
+> います。claude の `WebFetch` / `WebSearch` と同じ形にしてあるため、既存の権限ルールがそのまま効きます。
+> `web_fetch` は設定不要です。`web_search` は実際の検索 API を呼ぶ必要があり（claude と codex のそれは
+> 推論 API の内部で実行されるサーバーサイド機能で、ローカルエンドポイントには相当物がありません）、
+> `BRAVE_SEARCH_API_KEY` / `TAVILY_API_KEY` / `SEARXNG_URL` のいずれかを設定します。どれも無い場合、
+> このツールは登録されません。詳細は
+> [handbook/configuration.md](handbook/configuration.md) の "Pi: web tools" を参照してください。
 
 ### なぜ Node.js が必要なのですか?
 
