@@ -462,10 +462,40 @@ frontmatter に `agent: claude` / `agent: codex` / `agent: copilot` / `agent: gr
 > `Write`・`Edit`・`WebFetch`・`WebSearch` で、Copilot 側に権限パターンが無いツール名を落とす
 > 際は一度だけ警告を出します。
 
-> **注意:** Pi にはツール承認機構も MCP クライアントもありません。`pi-extension/` が vibing.nvim
-> の権限ルールを適用し、拡張バンドルが無い場合は読み取り専用ツールに制限します。`nvim_*` ツールと
-> チャット内の質問 UI も使えません。モデル ID とローカルプロバイダは Pi 側で設定し、必要なら
-> `backends.pi.provider` でプロバイダを固定してください。
+> **注意:** Pi バックエンドは**ツール承認機構を自前で持たない**唯一のバックエンドです。Pi は
+> `bash` の実行前に確認せず、JSON/RPC モードではプロンプト自体を出せません。したがって
+> vibing.nvim の権限レイヤーが唯一の関門であり、それは Pi 拡張(`pi-extension/`)として提供され、
+> `./build.sh` がビルドし `pi --extension` が読み込みます。このバンドルが無い場合、Pi のターンは
+> 無防備に走るのではなく読み取り専用ツールへ縮退し、その旨を一度警告します。Pi は MCP クライアント
+> も持たないため、`nvim_*` ツールとチャット内の質問 UI は(Grok と同様に)使えません。
+>
+> モデル選択は vibing.nvim ではなく Pi の担当です。`model:` には Pi が自身の
+> `~/.pi/agent/models.json` かログイン済みプロバイダで解決できる id を書きます。ローカル
+> エンドポイントの例:
+>
+> ```json
+> {
+>   "providers": {
+>     "mlx-local": {
+>       "baseUrl": "http://127.0.0.1:8081/v1",
+>       "api": "openai-completions",
+>       "apiKey": "not-needed",
+>       "models": [{ "id": "mlx-community/Qwen3.6-27B-4bit" }]
+>     }
+>   }
+> }
+> ```
+>
+> そのうえで `backends.pi.provider = "mlx-local"`、`model: mlx-community/Qwen3.6-27B-4bit` とします。
+>
+> 同じ拡張が、Pi に無い 2 つのツールも追加します。Pi の組み込みツールは `bash` / `read` / `write` /
+> `edit` / `ls` / `grep` / `find` だけなので、`web_fetch` と `web_search` をゲートと同じ拡張に同梱して
+> います。claude の `WebFetch` / `WebSearch` と同じ形にしてあるため、既存の権限ルールがそのまま効きます。
+> `web_fetch` は設定不要です。`web_search` は実際の検索 API を呼ぶ必要があり（claude と codex のそれは
+> 推論 API の内部で実行されるサーバーサイド機能で、ローカルエンドポイントには相当物がありません）、
+> `BRAVE_SEARCH_API_KEY` / `TAVILY_API_KEY` / `SEARXNG_URL` のいずれかを設定します。どれも無い場合、
+> このツールは登録されません。詳細は
+> [handbook/configuration.md](handbook/configuration.md) の "Pi: web tools" を参照してください。
 
 </details>
 

@@ -490,10 +490,39 @@ the field has the same runtime behaviour for existing chats.
 > they cover `Bash` (including `Bash(cmd:*)` patterns), `Write`, `Edit`, `WebFetch` and
 > `WebSearch`, and vibing.nvim warns once when it drops a tool name Copilot cannot express.
 
-> **Note:** Pi has no tool approval mechanism or MCP client. The `pi-extension/` bundle applies
-> vibing.nvim's permission rules; without it, Pi is restricted to read-only tools. Pi also cannot
-> use the `nvim_*` tools or the in-chat question UI. Model IDs and local providers are configured
-> in Pi itself; set `backends.pi.provider` to pin the provider.
+> **Note:** the Pi backend is the one backend with **no tool approval of its own** — Pi does not ask
+> before running `bash`, and its JSON/RPC modes cannot prompt at all. vibing.nvim's permission
+> layer is therefore the only one, and it is delivered as a Pi extension (`pi-extension/`) that
+> `./build.sh` compiles and `pi --extension` loads. If that bundle is missing, a Pi turn is
+> restricted to read-only tools rather than run ungated, and says so once. Pi also ships no MCP
+> client, so the `nvim_*` tools and the in-chat question UI are unavailable there (as on Grok).
+>
+> Model selection is Pi's, not vibing.nvim's: `model:` has to name something Pi can resolve through
+> its own `~/.pi/agent/models.json` or a provider you are logged into. For a local endpoint:
+>
+> ```json
+> {
+>   "providers": {
+>     "mlx-local": {
+>       "baseUrl": "http://127.0.0.1:8081/v1",
+>       "api": "openai-completions",
+>       "apiKey": "not-needed",
+>       "models": [{ "id": "mlx-community/Qwen3.6-27B-4bit" }]
+>     }
+>   }
+> }
+> ```
+>
+> then `backends.pi.provider = "mlx-local"` and `model: mlx-community/Qwen3.6-27B-4bit`.
+>
+> The same extension also adds the two tools Pi does not have. Pi's built-in set is `bash`, `read`,
+> `write`, `edit`, `ls`, `grep`, `find` and nothing else, so `web_fetch` and `web_search` are
+> registered beside the gate — shaped like claude's `WebFetch` / `WebSearch`, so your existing rules
+> for those apply unchanged. `web_fetch` works with no configuration; `web_search` has to call a
+> real search API (claude's and codex's happen server-side inside the inference API, which a local
+> endpoint has no equivalent of), so set `BRAVE_SEARCH_API_KEY`, `TAVILY_API_KEY` or `SEARXNG_URL`.
+> With none of them set the tool is simply not offered. See
+> [handbook/configuration.md](handbook/configuration.md) → "Pi: web tools".
 
 </details>
 
