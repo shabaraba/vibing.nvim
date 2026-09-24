@@ -408,10 +408,10 @@ function M._register_commands()
       chat_buffer = view._current_buffer
     end
     if chat_buffer then
-      local adapter = chat_buffer:_get_active_adapter()
-      if adapter then
-        adapter:stop_turn(chat_buffer._current_process_id)
-      end
+      -- アダプターを直接叩かない。`cancel_turn` → `cancel_request` には、止めているフックの解放
+      -- （permissions.md「すべての出口でブロック中のフックを解放する」）と、止める相手が既に
+      -- 回収済みだったときにチャット側のターンを畳む後始末がぶら下がっている
+      chat_buffer:cancel_turn()
     elseif M.adapter then
       M.adapter:cancel()
     end

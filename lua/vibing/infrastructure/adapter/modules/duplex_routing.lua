@@ -207,27 +207,33 @@ M.INTERRUPT_GRACE_MS = 5000
 --- like a successful cancel, and the user's stop becomes a no-op until the grace timer notices.
 --- So a write that does not land falls straight through to the caller's kill.
 ---
+--- **`stopped` is the third fact, and the caller needs it separately.** "Handled" deliberately says
+--- yes for an idle resident process, which leaves the human who pressed cancel with nothing stopped
+--- and no way to tell — the chat's own `_is_sending` is cleared only by a turn ending, so it stays
+--- `responding` for good. So the idle case answers `true, false`: do not kill, and nothing stopped.
+---
 --- @param adapter table the adapter that owns the process, for the fallback kill
 --- @param process_id string|nil
 --- @return boolean handled false when there is no resident process, or when it could not be asked
+--- @return boolean stopped whether a running turn was actually asked to stop
 function M.stop_turn(adapter, process_id)
   local _, record = Pool.find_by_process_id(process_id)
   if not record then
-    return false
+    return false, false
   end
 
   local turn = M.turn_of(record)
   if not turn then
     -- Idle between turns: there is nothing to stop, and killing would throw the process away on
     -- the zombie reap that precedes every single message.
-    return true
+    return true, false
   end
 
   record._interrupts = (record._interrupts or 0) + 1
   if not DuplexProcess.interrupt(record, record._interrupts) then
     -- The request could not even be written -- a dying process, a closed stdin. Waiting out the
     -- grace period would be waiting for an answer to a question nobody was asked.
-    return false
+    return false, false
   end
 
   -- Armed through the turn, which stops every timer it owns the moment it ends. A watchdog that
@@ -242,7 +248,7 @@ function M.stop_turn(adapter, process_id)
     )
     adapter:cancel(record.process_id)
   end)
-  return true
+  return true, true
 end
 
 return M

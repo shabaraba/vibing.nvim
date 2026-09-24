@@ -40,7 +40,9 @@ describe("CancelTree", function()
         return nil
       end
       return {
-        cancel_request = function()
+        -- `cancel_request` ではなく `cancel_turn`。止める相手が既に回収済みだったチャットを
+        -- 畳む後始末まで含めた入口がこちらで、人間が打ち切る2つの経路はどちらもここを通る
+        cancel_turn = function()
           -- 順序の観測点。配達待ちを残したまま止めると、`wrapped_on_done` が同期で走って
           -- キューが配られ、止めたそばから同じチャットが再稼働する
           pending_at_cancel[bufnr] = MessageQueue.has_pending(bufnr)

@@ -332,8 +332,55 @@ function ChatBuffer:cancel_request()
 
   -- `stop_turn`, not `cancel`: the user asked for this request to stop, not for the conversation's
   -- CLI process to be thrown away. On the oneshot transport the two are the same thing anyway.
-  adapter:stop_turn(self._current_process_id)
+  --
+  -- 戻り値は「実際に止めるものがあったか」であって「アダプターが居たか」ではない。両者を混ぜて
+  -- いたころは、回収済みのプロセスを指したまま `true` を返し、呼び出し側は止まったつもりで居た
+  return adapter:stop_turn(self._current_process_id) == true
+end
+
+---止めるものが何ひとつ見つからなかったターンを、このチャットの側だけで畳む
+---
+---resident プロセスはターンとは独立に回収される（アイドルタイマー、argv の変化、CLI の死、
+---`VimLeavePre`）ので、`_current_process_id` の指すプロセスがプールにも `_processes` にも
+---居ない状態は普通に起こる。そのとき止められるものは何も無いが、`_is_sending` を落とすのは
+---`_handle_response` だけなので、放っておくとチャットは永久に `responding` のままになる。
+---`:VibingCancel` を押しても何も起きない、という形で見えるのがこれ。
+---
+---**`cancel_request` の中ではなく、人間が明示的に打ち切ったときだけ呼ぶ。** 同じ関数は
+---`send_message` の冒頭でゾンビ回収としても走り、そこでは `_is_sending` が「その場で答える
+---プロンプト」のために立っていることがある（#788）。無条件に畳むと、その答えがターンごと消える
+---@return boolean abandoned 畳むターンがあったか
+function ChatBuffer:abandon_turn()
+  if not self:is_responding() then
+    return false
+  end
+
+  -- ターンの登録も落とす。`_current_turn_id` を捨てるだけだと TurnRegistry に開いたままの
+  -- エントリが残り、`git_snapshot` の TTL 掃除が「まだ走っているターンがある」と読んで止まる
+  if self._current_turn_id then
+    TurnRegistry.close(self._current_turn_id)
+  end
+  self._current_turn_id = nil
+  self._current_process_id = nil
+  self._current_adapter = nil
+  self._is_sending = false
+
+  -- 通常のターン終了と同じ合流点を通す。未送信セクションの描き直しも保存も
+  -- `VibingResponseDone` も、ここ以外に書くと写しができる
+  self:_finish_turn()
   return true
+end
+
+---人間が明示的に打ち切ったときの入口（`:VibingCancel` / `:VibingCancelTree`）
+---
+---`cancel_request` との違いは後始末だけ: 止める相手が見つからなかったときに、チャット側の
+---ターンをここで畳む。`send_message` / `close` のゾンビ回収は `cancel_request` のまま
+---@return boolean cancelled 止めたか、畳んだか
+function ChatBuffer:cancel_turn()
+  if self:cancel_request() then
+    return true
+  end
+  return self:abandon_turn()
 end
 
 ---チャットウィンドウを閉じる

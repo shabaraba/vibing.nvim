@@ -42,12 +42,26 @@ local function count_of(value)
   return type(value) == "table" and #value or nil
 end
 
+--- A message's content blocks, or none when the CLI put prose there instead of a block list.
+---
+--- `/compact` is where this stops being hypothetical. After `compact_boundary` the CLI replays two
+--- `user` events -- the summary it has just written, and `<local-command-stdout>Compacted </…>` --
+--- whose `content` is a plain **string**. `ipairs` on a string raises, and on the resident transport
+--- that raise escapes the stdout callback: the `result` line sharing the batch is dropped, so the
+--- turn never ends and the chat sits at `responding` forever. Captured from claude 2.1.x.
+--- @param message table
+--- @return table[]
+local function content_blocks(message)
+  local content = message.content
+  return type(content) == "table" and content or {}
+end
+
 --- Only `text` blocks: thinking blocks are not what the reader asked to see.
 --- @param message table
 --- @return string
 local function text_blocks(message)
   local parts = {}
-  for _, block in ipairs(message.content or {}) do
+  for _, block in ipairs(content_blocks(message)) do
     if block.type == "text" and block.text then
       table.insert(parts, block.text)
     end
@@ -58,7 +72,7 @@ end
 --- @param events Vibing.CanonicalEvent[]
 --- @param message table
 local function tool_blocks(events, message)
-  for _, block in ipairs(message.content or {}) do
+  for _, block in ipairs(content_blocks(message)) do
     if block.type == "tool_use" and block.id then
       table.insert(events, { kind = "tool_start", id = block.id, name = block.name, input = block.input or {} })
     elseif block.type == "tool_result" and block.tool_use_id then

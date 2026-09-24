@@ -177,6 +177,48 @@ chat's second turn, every chat restarts its process every time, and the measured
 zero while the code looks correct. `duplex_stream` therefore builds the argv twice — once with the
 session for spawning, once without it for the key.
 
+## One bad line used to cost the process, not the line
+
+A turn ends on `result` and on nothing else here, so anything that stops `result` from being
+decoded stops the chat forever. `/compact` was that thing.
+
+Measured against claude 2.1.x by driving `--input-format stream-json` from a script
+(`printf` a `user` message, sleep, repeat), a real compaction emits:
+
+```text
+system  compact_boundary  {"trigger":"manual","pre_tokens":23707,"post_tokens":1114,"duration_ms":8905}
+user    content = "This session is being continued from a previous conversation…"   ← a string
+user    content = "<local-command-stdout>Compacted </local-command-stdout>"          ← a string
+result  subtype=success                                                              ← ends the turn
+```
+
+Those two `user` events are the only ones observed whose `message.content` is a plain string rather
+than a block list, and `claude_stream_json.tool_blocks` ran `ipairs` on it. Three things followed,
+in order, and only the third was visible:
+
+1. the raise escaped `duplex_process.absorb`, which is a `jobstart` `on_stdout` callback, so the
+   rest of that batch was dropped — and the `result` line is routinely in it;
+2. `record._pending` was reset **after** the dispatch loop, so it kept the failed line's fragments;
+   every later line was concatenated onto them and stopped parsing as JSON;
+3. the process went on living and answering, and the chat sat at `responding` — measured at 12
+   hours, ended only by the CLI eventually dying.
+
+The oneshot transport hid all of this: the process exits at the end of a turn, and that exit
+completes the turn whatever the stream did. So the cost of a decoder bug is a transport property,
+which is why the containment lives in two places now — `absorb` carries the framing state forward
+before it dispatches anything, and `stream_decoder.processLine` `pcall`s the decode so one line
+degrades to an unprocessed line and a single notification.
+
+**A cancel that finds nothing is not a cancel.** The same incident exposed the other half:
+`:VibingCancel` reached `adapter:stop_turn` directly and ignored what came back, and `stop_turn`
+answered the same silence for "interrupt sent" and for "that process was reclaimed an hour ago".
+Since `_is_sending` is cleared only by a turn ending, a chat whose process is already gone could
+never be recovered — pressing cancel did nothing, repeatedly. `stop_turn` now returns whether
+anything was actually asked to stop, and `ChatBuffer:cancel_turn` folds the chat's own turn through
+`_finish_turn` when the answer is no. `cancel_request` keeps the old meaning, because
+`send_message`'s zombie reap calls it while `_is_sending` may legitimately be set for a prompt being
+answered in place (#788).
+
 ## What is deliberately not here
 
 - **Neither an approval nor `AskUserQuestion` is answered over the open stdin.** Doing it as a
