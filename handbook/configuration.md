@@ -163,7 +163,9 @@ backends = {
   },
   pi = {
     executable = "auto",    -- "auto": detect `pi` on PATH (default)
-                            -- or an explicit path, e.g. "~/.local/share/pi/bin/pi"
+                            -- or an absolute path. `~` is NOT expanded -- the value is
+                            --   handed to vim.system() as argv[0] and reaches execvp
+                            --   literally, so write it out or vim.fn.expand() it.
     provider = "",          -- `--provider <name>`. Pi resolves a bare --model across every
                             --   provider it knows, so this is only needed to pin a model id that
                             --   also exists upstream -- which is the usual case for a local
