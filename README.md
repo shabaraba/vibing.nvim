@@ -4,7 +4,7 @@
 
 # vibing.nvim
 
-**Claude, Codex, Copilot and Grok as a Neovim buffer — with the editor handed back to them**
+**Claude, Codex, Copilot, Grok and Pi as a Neovim buffer — with the editor handed back to them**
 
 [![CI](https://github.com/shabaraba/vibing.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/shabaraba/vibing.nvim/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -35,7 +35,7 @@ your running Neovim** through CLI backends and MCP.
   your live LSP (diagnostics, definitions, references, symbols)
 - 💬 **The chat is a Markdown buffer** — your keymaps, your motions, your search; saved under
   `.vibing/chat/`, resumable, greppable, version-controllable
-- 🔀 **Multi-backend** — Claude, Codex, GitHub Copilot or Grok, switched globally or per chat
+- 🔀 **Multi-backend** — Claude, Codex, GitHub Copilot, Grok or Pi, switched globally or per chat
 - 🧵 **Concurrent chats** — open as many as you like; start one while another is still streaming
 - 🪟 **Multi-agent orchestration** — one chat creates and drives worker chats, then aggregates
   what they report back
@@ -126,6 +126,7 @@ https://github.com/user-attachments/assets/8182307e-83f6-428a-af11-1122b69f4483
 | Codex CLI          | `npm install -g @openai/codex` (**0.140+**)               |
 | GitHub Copilot CLI | `npm install -g @github/copilot` (needs Node.js 22+)      |
 | Grok Build CLI     | [xAI's install docs](https://github.com/xai-org/grok-cli) |
+| Pi coding agent    | `curl -fsSL https://pi.dev/install.sh | sh` (Node.js 22.19+) |
 
 <details>
 <summary><b>Codex version note</b></summary>
@@ -150,6 +151,8 @@ probe off.
 ## 📦 Installation
 
 With [lazy.nvim](https://github.com/folke/lazy.nvim):
+
+> Pi requires Node.js 22.19+; the bundled MCP server itself requires Node.js 18+.
 
 ```lua
 {
@@ -383,7 +386,7 @@ vibing.nvim: true
 session_id: <cli-session-id>
 created_at: 2024-01-01T12:00:00
 working_dir: .vibing/worktrees/feature-x # Optional: working directory (relative to git root)
-agent: claude # claude | codex | copilot | grok (overrides global adapter setting for this chat)
+agent: claude # claude | codex | copilot | grok | pi (overrides global adapter setting for this chat)
 mode: code # code | plan | explore
 model: sonnet # Backend model id, e.g. sonnet or gpt-5.6-terra
 effort: default # CLI/model default | low | medium | high | xhigh | max
@@ -469,9 +472,12 @@ graph TB
 - **Codex CLI** (`codex exec --json`) — OpenAI Codex backend
 - **GitHub Copilot CLI** (`copilot -p --output-format json`) — GitHub Copilot backend
 - **Grok Build CLI** (`grok --single --output-format streaming-json`) — xAI Grok backend
+- **Pi coding agent** (`pi --mode json`) — a harness rather than a vendor CLI; it uses the provider
+  selected in Pi's own configuration, including local models served through OpenAI-compatible
+  endpoints
 
-Switch globally with `adapter = "claude"|"codex"|"copilot"|"grok"` in setup, or per-chat by adding
-`agent: claude`, `agent: codex`, `agent: copilot`, or `agent: grok` to a chat file's YAML
+Switch globally with `adapter = "claude"|"codex"|"copilot"|"grok"|"pi"` in setup, or per-chat by adding
+`agent: claude`, `agent: codex`, `agent: copilot`, `agent: grok` or `agent: pi` to a chat file's YAML
 frontmatter. `effort: low|medium|high|xhigh|max` controls reasoning for Claude, Codex and Grok when
 the selected model supports that level. New chats use `effort: default`, which passes no override
 and therefore preserves the same CLI/model default used before effort was configurable. Omitting
@@ -483,6 +489,11 @@ the field has the same runtime behaviour for existing chats.
 > login are never touched. Copilot's static `--deny-tool` flags are still passed as a backstop;
 > they cover `Bash` (including `Bash(cmd:*)` patterns), `Write`, `Edit`, `WebFetch` and
 > `WebSearch`, and vibing.nvim warns once when it drops a tool name Copilot cannot express.
+
+> **Note:** Pi has no tool approval mechanism or MCP client. The `pi-extension/` bundle applies
+> vibing.nvim's permission rules; without it, Pi is restricted to read-only tools. Pi also cannot
+> use the `nvim_*` tools or the in-chat question UI. Model IDs and local providers are configured
+> in Pi itself; set `backends.pi.provider` to pin the provider.
 
 </details>
 

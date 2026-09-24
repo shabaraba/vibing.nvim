@@ -1,0 +1,14 @@
+{
+  "name": "@vibing/pi-extension",
+  "version": "0.1.0",
+  "description": "vibing.nvim permission bridge, loaded into the Pi coding agent with --extension. Deliberately dependency-free: it is compiled by the repository root's typescript, so this directory needs no node_modules and no second lockfile for audit:deps and Dependabot to have to cover.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "../node_modules/.bin/tsc -p .",
+    "dev": "../node_modules/.bin/tsc -p . --watch"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
