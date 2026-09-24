@@ -420,6 +420,10 @@ frontmatter に `agent: claude` / `agent: codex` / `agent: copilot` / `agent: gr
 > ```
 >
 > そのうえで `backends.pi.provider = "mlx-local"`、`model: mlx-community/Qwen3.6-27B-4bit` とします。
+> ローカルエンドポイントでは provider の指定は省略できません。`--model` は Pi の組み込みクラウド
+> カタログも含めたあいまい一致なので、provider 無しの `model: qwen` はクラウドのモデルに解決され、
+> API キーが無いとしてターンが失敗します。指定しておけば、エンドポイントが扱える ID なら models.json
+> を編集せず `model:` だけで選べます。1 つの `mlx_lm.server` で全モデルを賄えるのはこのためです。
 >
 > 同じ拡張が、Pi に無い 2 つのツールも追加します。Pi の組み込みツールは `bash` / `read` / `write` /
 > `edit` / `ls` / `grep` / `find` だけなので、`web_fetch` と `web_search` をゲートと同じ拡張に同梱して

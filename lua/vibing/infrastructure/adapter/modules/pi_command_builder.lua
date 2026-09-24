@@ -77,9 +77,13 @@ M.BINARY = { resolve = resolve_pi_path, reset = M._reset_path_cache }
 
 --- `--provider <name>`, when one is configured.
 ---
---- Pi resolves a bare `--model` across every configured provider, which for a local endpoint is
---- usually what you want; naming the provider is how a user pins a model id that also exists
---- upstream. Empty means "let Pi choose", which is Pi's own default.
+--- Empty means "let Pi choose", which is Pi's own default — and for a local endpoint it is usually
+--- the wrong one. `--model` is a fuzzy pattern matched over Pi's built-in cloud catalogue as well
+--- as the user's `models.json`, so an unqualified `model: qwen` resolves to a cloud model and the
+--- turn dies on a missing API key. Naming the provider confines the match to it, and makes an
+--- unmatched id a passthrough custom id rather than an error — which is what lets any model the
+--- endpoint can serve be chosen from `model:` alone. Measured on Pi 0.87.1; the table is in
+--- `handbook/configuration.md` → "Model selection belongs to Pi".
 --- @param ctx Vibing.RequestContext
 --- @return string[]
 function M.provider_args(ctx)

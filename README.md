@@ -301,7 +301,7 @@ require("vibing").setup({
       allow_tracked_profile = false, -- true explicitly trusts a Git-tracked profile
     },
     grok = { executable = "auto" }, -- or a path to the official Grok Build CLI
-    pi = { executable = "auto", provider = "" }, -- provider pins a local endpoint
+    pi = { executable = "auto", provider = "" }, -- name the provider for a local endpoint
   },
   language = nil,                  -- e.g. "ja", or { default = "ja", chat = "ja" }
 })
@@ -454,7 +454,11 @@ the field has the same runtime behaviour for existing chats.
 > }
 > ```
 >
-> then `backends.pi.provider = "mlx-local"` and `model: mlx-community/Qwen3.6-27B-4bit`.
+> then `backends.pi.provider = "mlx-local"` and `model: mlx-community/Qwen3.6-27B-4bit`. Naming
+> the provider is not optional for a local endpoint: `--model` is a fuzzy pattern Pi matches over
+> its built-in cloud catalogue as well, so an unqualified `model: qwen` picks a cloud model and the
+> turn fails on a missing API key. With it named, any id your endpoint can serve works from
+> `model:` alone — no models.json edit — which is what lets one `mlx_lm.server` serve every model.
 >
 > The same extension also adds the two tools Pi does not have. Pi's built-in set is `bash`, `read`,
 > `write`, `edit`, `ls`, `grep`, `find` and nothing else, so `web_fetch` and `web_search` are

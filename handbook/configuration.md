@@ -166,10 +166,9 @@ backends = {
                             -- or an absolute path. `~` is NOT expanded -- the value is
                             --   handed to vim.system() as argv[0] and reaches execvp
                             --   literally, so write it out or vim.fn.expand() it.
-    provider = "",          -- `--provider <name>`. Pi resolves a bare --model across every
-                            --   provider it knows, so this is only needed to pin a model id that
-                            --   also exists upstream -- which is the usual case for a local
-                            --   endpoint you named in models.json. "" lets Pi choose.
+    provider = "",          -- `--provider <name>`, a models.json provider. NOT optional for a
+                            --   local endpoint: unset, Pi fuzzy-matches --model against its
+                            --   whole built-in cloud catalogue. See "Model selection" below.
     web_search = "auto",    -- Which backend the `web_search` tool uses:
                             --   "auto"    take whichever credential is set, in the order below
                             --   "brave"   BRAVE_SEARCH_API_KEY
@@ -226,10 +225,27 @@ mode whose label promises no changes has to actually prevent them. The plan allo
 issue is the worse failure. The degraded list stays narrow because there nothing is checking the
 calls at all, and `read` plus an outbound URL is an exfiltration channel that `read` alone is not.
 
-**Model selection belongs to Pi.** `model:` must name something Pi can resolve through
-`~/.pi/agent/models.json` or a logged-in provider. An id it cannot match does not fail — Pi answers
-with its default model — so a typo is visible only in the model reported in the chat footer, which
-the decoder emits from the stream for exactly that reason.
+**Model selection belongs to Pi, and `backends.pi.provider` is what makes it predictable.** Pi
+resolves `--model` as a _fuzzy pattern_ over every model it knows, and it knows a large built-in
+cloud catalogue on top of your `~/.pi/agent/models.json`. Measured on Pi 0.87.1, with both local
+models in models.json:
+
+| `provider`  | `model:`                 | What Pi does                                                                          |
+| ----------- | ------------------------ | ------------------------------------------------------------------------------------- |
+| unset       | `qwen`                   | resolves to a **cloudflare-ai-gateway** model; the turn fails with "No API key found" |
+| unset       | an id matching nothing   | hard error, `Model "..." not found`                                                   |
+| `mlx-local` | `qwen`                   | the local `mlx-community/Qwen3.6-27B-4bit`                                            |
+| `mlx-local` | an id not in models.json | warns, then **passes the id through verbatim** as a custom model id                   |
+
+So naming the provider is not about pinning an id that also exists upstream — it is what stops a
+short `model:` selecting a cloud model you are not logged into. The last row is the useful one: with
+the provider pinned, any id your endpoint can serve works from `model:` alone, with no models.json
+edit. That is what makes `mlx_lm.server` practical, since it loads the model named in each request
+and swaps when the name changes (one resident at a time), so one server serves every model and
+needs no `--model` at startup.
+
+A typo is therefore visible in two places: the warning Pi prints, and the model reported in the chat
+footer, which the decoder emits from the stream for exactly that reason.
 
 **No MCP client.** Pi ships none, so the `nvim_*` tools and `nvim_ask_user_question` are
 unreachable, as on Grok. `register_chat_bufnr` is `false` and approvals use kill-and-retry.

@@ -167,8 +167,14 @@ M.AGENTS = {
         kind = "executable_or_auto",
         default = "auto",
       },
-      -- `--provider <name>`. Pi resolves a bare `--model` across every provider it knows, so this
-      -- is only needed to pin a model id that also exists upstream. Empty means Pi chooses.
+      -- `--provider <name>`, naming a provider in the user's `models.json`.
+      --
+      -- Empty means Pi chooses, and for a local endpoint that is usually wrong: `--model` is a
+      -- fuzzy pattern matched over Pi's whole built-in cloud catalogue as well, so `model: qwen`
+      -- with no provider resolves to a cloudflare-ai-gateway model and the turn fails with "No
+      -- API key found" (measured, Pi 0.87.1). With the provider named, matching is confined to it
+      -- and an unmatched id is passed through verbatim as a custom model id -- which is what lets
+      -- any model the endpoint can serve be selected from `model:` alone.
       provider = {
         kind = "string",
         default = "",
