@@ -50,29 +50,37 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Run the `/code-review` skill against PR #${{ github.event.pull_request.number }} at
-            effort "high", passing `--fix` so every CONFIRMED finding is applied to the working
-            tree (already checked out on the PR's own branch).
+            First run the built-in `/simplify` skill against the changes introduced by
+            PR #${{ github.event.pull_request.number }}. Let its three parallel reviewers inspect
+            code reuse, code quality, and efficiency; aggregate their findings and apply the
+            behavior-preserving fixes to the working tree (already checked out on the PR's own
+            branch).
+
+            After `/simplify` and its fixes have fully completed, run the `/code-review` skill
+            against the resulting PR diff at effort "high", passing `--fix` so every CONFIRMED
+            finding is applied too. The code review must consider both the original PR changes and
+            any simplifications just made.
 
             This is a single unattended batch run, not an interactive session: when it ends, the
-            process exits and nothing wakes it again. Any subagent the skill dispatches (the
-            per-dimension review fan-out, the verify pass) MUST be awaited synchronously within
-            this same turn before you act on its result. Do not end a turn saying you'll "wait" or
-            "be notified" for a background agent to finish — there is no later turn here to
-            receive that notification, so the run would exit with nothing posted and no comment
-            explaining why, exactly like a run that hit `permission_denials`.
+            process exits and nothing wakes it again. Any subagent either skill dispatches (the
+            simplify passes, per-dimension review fan-out, and verify pass) MUST be awaited
+            synchronously within this same turn before you act on its result. Do not end a turn
+            saying you'll "wait" or "be notified" for a background agent to finish — there is no
+            later turn here to receive that notification, so the run would exit with nothing
+            posted and no comment explaining why, exactly like a run that hit
+            `permission_denials`.
 
             Do not run `npm run test:e2e` or `npm run test:eval` — they spend real tokens and are
             never run unattended. `npm test`, `npm run check` and `npm run lint` are fine to
             validate a fix before pushing it.
 
-            After the skill finishes:
+            After both skills finish:
             1. If it changed any files, stage and commit them (English summary, one commit) and
                `git push` to this same branch. Do not create a new branch, rebase, or
                force-push.
             2. Post the review as a SINGLE PR comment (`gh pr comment`, called exactly once) in
                Japanese, covering:
-               - which CONFIRMED findings were auto-fixed and pushed (file:line)
+               - which simplifications and CONFIRMED findings were auto-fixed and pushed (file:line)
                - which findings are PLAUSIBLE or were left alone, with file:line, so a human can
                  judge them
                - if nothing was found, say so briefly instead of posting empty sections
@@ -93,9 +101,9 @@ jobs:
           # pushed despite a real ~2.5 minute, $2 run) points to. Allow the whole set rather than
           # whack-a-mole one at a time.
           #
-          # Agent lets /code-review fan out subagents per review dimension and adversarially
-          # verify each finding, which is the whole point of asking for effort "high" -- without
-          # it the skill silently degrades to a single-pass, unverified review.
+          # Agent lets /simplify inspect reuse, quality and efficiency in parallel, then lets
+          # /code-review fan out per review dimension and adversarially verify each finding.
+          # Without it both skills silently degrade to single-pass reviews.
           claude_args: >-
             --allowed-tools
             "Read,Edit,Write,Glob,Grep,Agent,ToolSearch,TodoWrite,ReportFindings,ScheduleWakeup,Bash(git:*),Bash(npm test:*),Bash(npm run check:*),Bash(npm run lint:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
