@@ -53,6 +53,15 @@ local function absorb(record, data)
 
   table.insert(fragments, data[1] or "")
   local line = table.concat(fragments)
+
+  -- **The framing state is carried forward before a single line is dispatched.** `on_line` runs the
+  -- whole decoder and renderer, and a raise in there takes this callback with it. Resetting
+  -- afterwards meant one bad line left the *previous* line's fragments in place, so every later line
+  -- was concatenated onto them, stopped parsing as JSON, and the process could never report the end
+  -- of another turn. Everything between the first and last element is a complete line of its own;
+  -- the last is the partial carried forward.
+  record._pending = { data[#data] }
+
   if line ~= "" then
     -- The record goes with the line: a process that has already been replaced can still be
     -- flushing output, and the router has to be able to tell that this is not the process its
@@ -60,15 +69,16 @@ local function absorb(record, data)
     record.on_line(line, record)
   end
 
-  -- Everything between the first and last element is a complete line of its own; the last is the
-  -- partial carried forward.
   for i = 2, #data - 1 do
     if data[i] ~= "" then
       record.on_line(data[i], record)
     end
   end
-  record._pending = { data[#data] }
 end
+
+--- Test seam: framing is only reachable through a live job otherwise, and what it has to survive
+--- is a dispatch that raises.
+M._absorb = absorb
 
 --- @class Vibing.DuplexSpawnOpts
 --- @field process_id string

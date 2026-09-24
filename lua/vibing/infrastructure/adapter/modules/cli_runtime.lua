@@ -254,22 +254,27 @@ function M.install(Class, features)
   --- resident process (#774) the two are no longer the same choice — a turn will be stopped with an
   --- interrupt while the process stays alive.
   --- @param process_id string?
+  --- @return boolean cancelled whether there was anything left to kill
   function Class:cancel(process_id)
     if process_id then
       local handle = self._processes[process_id]
-      if handle then
-        self._processes[process_id] = nil
-        M.kill_tree(handle)
-        complete_cancel(handle)
+      if not handle then
+        return false
       end
-      return
+      self._processes[process_id] = nil
+      M.kill_tree(handle)
+      complete_cancel(handle)
+      return true
     end
 
+    local cancelled = false
     for id, handle in pairs(self._processes) do
       self._processes[id] = nil
       M.kill_tree(handle)
       complete_cancel(handle)
+      cancelled = true
     end
+    return cancelled
   end
 
   --- Stop the turn without stopping the process, where the process can serve the next one.
@@ -282,13 +287,22 @@ function M.install(Class, features)
   ---
   --- Stopping is still guaranteed either way: the resident path sends an interrupt and falls back
   --- to this same `cancel` if the CLI has not stopped within `INTERRUPT_GRACE_MS`.
+  --- **The return value is "something was actually asked to stop", not "the call was understood".**
+  --- A resident process is reclaimed independently of its turns (idle timer, argv change, the CLI
+  --- dying), so a chat routinely names a process that no longer exists here — and answering that
+  --- with silence is what makes `:VibingCancel` look broken, since nothing else ever clears the
+  --- chat's `_is_sending`. The caller that has a chat to repair is `ChatBuffer:cancel_turn`.
   --- @param process_id string?
+  --- @return boolean stopped
   function Class:stop_turn(process_id)
     local Routing = require("vibing.infrastructure.adapter.modules.duplex_routing")
-    if process_id and Routing.stop_turn(self, process_id) then
-      return
+    if process_id then
+      local handled, stopped = Routing.stop_turn(self, process_id)
+      if handled then
+        return stopped
+      end
     end
-    self:cancel(process_id)
+    return self:cancel(process_id)
   end
 
   --- Release the resident process a chat was holding, because the chat is gone.

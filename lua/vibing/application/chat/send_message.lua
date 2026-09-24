@@ -27,6 +27,7 @@ local Fs = require("vibing.core.utils.fs")
 ---@field clear_turn_id fun() turn_id（と process_id）をクリア
 ---@field set_turn_id fun(turn_id: string) 待っているターンのIDを設定
 ---@field get_turn_id fun(): string|nil 待っているターンのIDを取得
+---@field get_abandoned_turn_id fun(): string|nil チャット側だけで畳んだ（`abandon_turn`）ターンのID
 ---@field set_process_id fun(process_id: string)? kill対象のCLIプロセスのIDを設定
 ---@field clear_sending fun() 送信中フラグを解除
 ---@field mark_turn_error fun()? このターンがエラーで終わったことを記録（chat_statusのerror判定用）
@@ -315,12 +316,21 @@ end
 ---@param message string|nil 送信したユーザーメッセージ（リミットで弾かれた場合の再予約に使う）
 function M._handle_response(response, callbacks, adapter, config, modified_file_paths, message)
   -- キャンセル済みの古いリクエストが遅れて完了した場合、現在アクティブなターンIDと
-  -- 一致しないレスポンスは無視する（新しいリクエストの結果を上書きさせない）
+  -- 一致しないレスポンスは無視する（新しいリクエストの結果を上書きさせない）。
+  --
+  -- `current_turn_id`がnilなのは「まだ何も送っていない」だけでなく、「常駐プロセス側は
+  -- 先に手放されたが、このレスポンスは`vim.schedule`越しにまだ届いていない」でもありうる
+  -- （`ChatBuffer:abandon_turn`）。後者を「まだ送っていない」と区別せず通すと、
+  -- 一度畳んだターンをここでもう一度完了させてしまうので、`current_turn_id`が空でも
+  -- 畳んだターンIDと一致するレスポンスは同じく古いものとして捨てる
   local incoming_turn_id = response._turn_id
   local RequestDiff = require("vibing.core.utils.request_diff")
   if incoming_turn_id and callbacks.get_turn_id then
     local current_turn_id = callbacks.get_turn_id()
-    if current_turn_id and incoming_turn_id ~= current_turn_id then
+    local abandoned_turn_id = callbacks.get_abandoned_turn_id and callbacks.get_abandoned_turn_id()
+    local is_stale = (current_turn_id and incoming_turn_id ~= current_turn_id)
+      or (not current_turn_id and incoming_turn_id == abandoned_turn_id)
+    if is_stale then
       -- このリクエストは破棄されるので、両経路のベースラインも破棄する
       -- （どちらが使われるかはここまで来ないと決まらない）
       RequestDiff.clear(incoming_turn_id)

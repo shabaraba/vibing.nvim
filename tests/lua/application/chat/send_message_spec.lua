@@ -303,6 +303,64 @@ describe("send_message", function()
 
       assert.is_nil(table.concat(appended, ""):find("**Error:** Cancelled", 1, true))
     end)
+
+    describe("staleness against a turn abandoned by this chat alone", function()
+      -- `ChatBuffer:abandon_turn` folds a turn locally when nothing could actually be stopped
+      -- (the resident process was merely idle between turns). It clears `_current_turn_id` back
+      -- to nil, but the real completion for that same turn is still queued behind the transport's
+      -- own `vim.schedule` and arrives later. `get_turn_id() == nil` at that point must not read
+      -- the same as "no turn has ever been sent" -- that reading let the late completion redraw
+      -- the already-folded turn a second time.
+      local function handle_with_turn_state(response, current_turn_id, abandoned_turn_id)
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_name(buf, tmp_root .. "/staleness-" .. tostring(math.random(1e9)) .. ".md")
+
+        local add_user_section_calls = 0
+        local callbacks = {
+          mark_turn_error = function() end,
+          clear_sending = function() end,
+          get_bufnr = function()
+            return buf
+          end,
+          get_session_id = function()
+            return nil
+          end,
+          update_session_id = function(_) end,
+          append_chunk = function(_) end,
+          add_user_section = function()
+            add_user_section_calls = add_user_section_calls + 1
+          end,
+          get_turn_id = function()
+            return current_turn_id
+          end,
+          get_abandoned_turn_id = function()
+            return abandoned_turn_id
+          end,
+        }
+        local adapter = {
+          supports = function(_, _feature)
+            return false
+          end,
+        }
+
+        SendMessage._handle_response(response, callbacks, adapter, {}, {}, "hi")
+
+        vim.api.nvim_buf_delete(buf, { force = true })
+        return add_user_section_calls
+      end
+
+      it("discards a late completion for the turn this chat already abandoned", function()
+        local calls = handle_with_turn_state({ content = "late", _turn_id = "abandoned-turn" }, nil, "abandoned-turn")
+
+        assert.equals(0, calls)
+      end)
+
+      it("still processes a response with no current turn id when it is not the abandoned one", function()
+        local calls = handle_with_turn_state({ content = "ok", _turn_id = "turn-1" }, nil, "some-other-turn")
+
+        assert.equals(1, calls)
+      end)
+    end)
   end)
 
   describe("_finalize_snapshot_diff", function()

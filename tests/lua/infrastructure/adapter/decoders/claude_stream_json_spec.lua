@@ -103,6 +103,23 @@ describe("decoders.claude_stream_json", function()
     assert.same({ { kind = "turn_end", subtype = "success" } }, decode({}, { type = "result", subtype = "success" }))
   end)
 
+  it("survives the string-content user events /compact replays", function()
+    -- Captured from claude 2.1.x: after `compact_boundary` the CLI replays the summary it has just
+    -- written and a `<local-command-stdout>` line, both as `user` events whose `content` is a plain
+    -- string rather than a block list. `ipairs` on that raised, and on the resident transport the
+    -- raise escaped the stdout callback -- taking the `result` line sharing that batch with it, so
+    -- the turn never ended and the chat sat at `responding` for good.
+    assert.same({}, decode({}, { type = "user", message = { role = "user", content = "This session is being continued…" } }))
+    assert.same(
+      {},
+      decode({}, {
+        type = "user",
+        message = { role = "user", content = "<local-command-stdout>Compacted </local-command-stdout>" },
+      })
+    )
+    assert.same({}, decode({}, { type = "assistant", message = { role = "assistant", content = "plain prose" } }))
+  end)
+
   it("normalises a rate_limit_event", function()
     local events = decode({}, { type = "rate_limit_event", rate_limit_info = { status = "rejected", resetsAt = 1700000000 } })
     assert.equals("rate_limit", events[1].kind)
