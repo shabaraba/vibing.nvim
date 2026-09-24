@@ -1173,7 +1173,7 @@ keymaps = {
   add_context = "<C-a>", -- Add file to context
   open_diff = "gd",      -- Open diff viewer on file paths
   open_file = "gf",      -- Open file on file paths
-  open_url = "gx",       -- Open URL on current line in browser
+  open_url = "gx",       -- Open URL in browser, or image/video path in the default app
 }
 ```
 

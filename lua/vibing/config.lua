@@ -247,7 +247,7 @@
 ---@field add_context string コンテキスト追加キー（デフォルト: "<C-a>"）
 ---@field open_diff string ファイルパス上でdiff表示キー（デフォルト: "gd"）
 ---@field open_file string ファイルパス上でファイルを開くキー（デフォルト: "gf"）
----@field open_url string カーソル行のURLをブラウザで開くキー（デフォルト: "gx"）
+---@field open_url string カーソル行のURLをブラウザで、カーソル下の画像・動画パスを既定のアプリケーションで開くキー（デフォルト: "gx"）
 
 ---@class Vibing.LanguageConfig
 ---言語設定（詳細）

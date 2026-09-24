@@ -457,7 +457,8 @@ In a chat buffer:~
     <C-a>       Add a file to the context
     gd          Show the diff for the file path under the cursor
     gf          Open the file path under the cursor
-    gx          Open the URL on the current line in a browser
+    gx          Open the URL on the current line in a browser, or the image
+                or video path under the cursor in the default application
     q           Close the chat window
 
 Answering a tool approval~

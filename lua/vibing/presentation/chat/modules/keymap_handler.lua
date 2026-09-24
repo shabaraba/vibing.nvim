@@ -141,6 +141,16 @@ function M.find_url_on_line(line, col)
   return found_url
 end
 
+---カーソル下の画像・動画パスを、チャットの working_dir 基準でも解決して返す。
+---@param buf number チャットバッファ番号
+---@return string? 絶対パス
+function M.find_media_path_under_cursor(buf)
+  local MediaPath = require("vibing.core.utils.media_path")
+  local ChatView = require("vibing.presentation.chat.view")
+  local chat_buf = ChatView.get_chat_buffer(buf)
+  return MediaPath.find_under_cursor(chat_buf and chat_buf:get_cwd() or nil)
+end
+
 ---キーマップを設定
 ---@param buf number バッファ番号
 ---@param callbacks table コールバック関数テーブル
@@ -206,17 +216,17 @@ function M.setup(buf, callbacks, keymaps)
       local line = vim.fn.getline(".")
       local col = vim.api.nvim_win_get_cursor(0)[2] + 1 -- 1-indexed
 
-      local found_url = M.find_url_on_line(line, col)
+      local target = M.find_url_on_line(line, col) or M.find_media_path_under_cursor(buf)
 
-      if found_url then
-        local err = vim.ui.open(found_url)
+      if target then
+        local _, err = vim.ui.open(target)
         if err then
-          vim.notify("Failed to open URL: " .. tostring(err), vim.log.levels.ERROR)
+          vim.notify("Failed to open: " .. tostring(err), vim.log.levels.ERROR)
         end
       else
-        vim.notify("No URL found on current line", vim.log.levels.INFO)
+        vim.notify("No URL or media file found on current line", vim.log.levels.INFO)
       end
-    end, { buffer = buf, desc = "Open URL on current line" })
+    end, { buffer = buf, desc = "Open URL or media file under cursor" })
 
     -- NOTE: gp (preview all) was removed - use gd on individual files in Modified Files section
     -- Diff display now uses patch files in .vibing/patches/<session_id>/
