@@ -245,7 +245,7 @@
 ---@field send string メッセージ送信キー（デフォルト: "<CR>"）
 ---@field cancel string 実行キャンセルキー（デフォルト: "<C-c>"）
 ---@field add_context string コンテキスト追加キー（デフォルト: "<C-a>"）
----@field open_diff string ファイルパス上でdiff表示キー（デフォルト: "gd"）
+---@field open_diff string `/name` 上でその定義ファイル、それ以外ではdiff表示キー（デフォルト: "gd"）
 ---@field open_file string ファイルパス上でファイルを開くキー（デフォルト: "gf"）
 ---@field open_url string カーソル行のURLをブラウザで、カーソル下の画像・動画パスを既定のアプリケーションで開くキー（デフォルト: "gx"）
 

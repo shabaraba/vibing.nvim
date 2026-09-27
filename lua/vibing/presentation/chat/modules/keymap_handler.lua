@@ -187,8 +187,11 @@ function M.setup(buf, callbacks, keymaps)
     end, { buffer = buf, desc = "Add context" })
 
     vim.keymap.set("n", keymaps.open_diff, function()
+      if require("vibing.presentation.chat.modules.command_definition_opener").open(buf) then
+        return
+      end
       require("vibing.presentation.chat.modules.diff_opener").open(buf)
-    end, { buffer = buf, desc = "Open diff for file under cursor" })
+    end, { buffer = buf, desc = "Open the definition of /name, or the diff for the file under cursor" })
 
     vim.keymap.set("n", keymaps.open_file, function()
       local FilePath = require("vibing.core.utils.file_path")

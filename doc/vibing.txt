@@ -455,7 +455,8 @@ In a chat buffer:~
     <CR>        Send the message (normal mode)
     <C-c>       Cancel the current request
     <C-a>       Add a file to the context
-    gd          Show the diff for the file path under the cursor
+    gd          Open the definition of the `/name` under the cursor, or show
+                the diff for the file path under the cursor
     gf          Open the file path under the cursor
     gx          Open the URL on the current line in a browser, or the image
                 or video path under the cursor in the default application
@@ -514,6 +515,19 @@ that prompt is not thrown away.
 While a prompt is holding a turn open, `<CR>` on an empty input does nothing
 and neither does text that answers no prompt: the turn keeps running and what
 is on screen stays answerable. Ending the turn is `<C-c>` or `:VibingCancel`.
+
+Jumping to a slash command's definition~
+
+With the cursor on a `/name` you typed — a skill, or a command from
+`.claude/commands/` — `gd` opens the file it is defined in: that skill's
+`SKILL.md` or that command's `.md`. Project, user and plugin locations are all
+searched, in that order, and a plugin's skill is written the way it is typed,
+`<plugin>:<skill>`. Commands built into the CLI (`/code-review`) and
+vibing.nvim's own (`/model`, see |vibing-slash-commands|) are not files, so
+`gd` says there is nothing to open instead of jumping.
+
+Anything else under the cursor falls through to the diff below, so a file path
+in `### Modified Files` keeps its old meaning.
 
 `gd` opens a float with three panes: the turn's files on the left, with each
 one's icon and `+N -M`, and that file's before/after side by side in Neovim's
