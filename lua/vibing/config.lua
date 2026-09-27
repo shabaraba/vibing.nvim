@@ -248,6 +248,8 @@
 ---@field open_diff string ファイルパス上でdiff表示キー（デフォルト: "gd"）
 ---@field open_file string ファイルパス上でファイルを開くキー（デフォルト: "gf"）
 ---@field open_url string カーソル行のURLをブラウザで、カーソル下の画像・動画パスを既定のアプリケーションで開くキー（デフォルト: "gx"）
+---@field cycle_enum_next string frontmatterのenum値を次の候補にするキー（デフォルト: "]v"）
+---@field cycle_enum_prev string frontmatterのenum値を前の候補にするキー（デフォルト: "[v"）
 
 ---@class Vibing.LanguageConfig
 ---言語設定（詳細）
@@ -511,6 +513,8 @@ M.defaults = {
     open_diff = "gd",
     open_file = "gf",
     open_url = "gx",
+    cycle_enum_next = "]v",
+    cycle_enum_prev = "[v",
   },
   diff = {
     tool = "auto",

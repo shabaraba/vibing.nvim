@@ -190,6 +190,14 @@ function M.setup(buf, callbacks, keymaps)
       require("vibing.presentation.chat.modules.diff_opener").open(buf)
     end, { buffer = buf, desc = "Open diff for file under cursor" })
 
+    vim.keymap.set("n", keymaps.cycle_enum_next, function()
+      require("vibing.presentation.chat.modules.frontmatter_cycler").cycle(buf, 1)
+    end, { buffer = buf, desc = "Next frontmatter enum value" })
+
+    vim.keymap.set("n", keymaps.cycle_enum_prev, function()
+      require("vibing.presentation.chat.modules.frontmatter_cycler").cycle(buf, -1)
+    end, { buffer = buf, desc = "Previous frontmatter enum value" })
+
     vim.keymap.set("n", keymaps.open_file, function()
       local FilePath = require("vibing.core.utils.file_path")
       local file_path = FilePath.is_cursor_on_file_path(buf)

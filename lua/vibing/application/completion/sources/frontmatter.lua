@@ -8,12 +8,13 @@ M.name = "frontmatter"
 local frontmatter_provider = require("vibing.infrastructure.completion.providers.frontmatter")
 local Frontmatter = require("vibing.infrastructure.storage.frontmatter")
 
----Read the "agent:" value from the current buffer's frontmatter
+---Read the "agent:" value from a buffer's frontmatter
+---@param bufnr number? 省略時は現在のバッファ
 ---@return string? "claude" | "codex" | "copilot" | nil
-function M._read_frontmatter_agent()
+function M._read_frontmatter_agent(bufnr)
   -- 固定行数ではなく閉じ`---`まで読む。`agent:`はserializerのキー順で上の方に来るが、
   -- 上に並ぶpermission/orchestrationのリストが伸びれば窓の外に出て補完が黙って壊れる
-  local region = Frontmatter.buffer_region(vim.api.nvim_get_current_buf())
+  local region = Frontmatter.buffer_region(bufnr or vim.api.nvim_get_current_buf())
   if not region then
     return nil
   end
@@ -29,9 +30,10 @@ end
 
 ---Resolve the agent whose model candidates should be shown for `model:`.
 ---Runtime uses `agent` frontmatter first and then config.adapter; completion should mirror that.
+---@param bufnr number? 省略時は現在のバッファ
 ---@return string "claude" | "codex" | "copilot" | "grok"
-function M._resolve_model_completion_agent()
-  local explicit = M._read_frontmatter_agent()
+function M._resolve_model_completion_agent(bufnr)
+  local explicit = M._read_frontmatter_agent(bufnr)
   local ok_config, config_module = pcall(require, "vibing.config")
   local config = ok_config and config_module.get and config_module.get() or nil
   return require("vibing.core.constants.modes").resolve_agent({ agent = explicit }, config)
@@ -40,8 +42,11 @@ end
 ---Detect trigger context for frontmatter fields
 ---@param line string Current line content
 ---@param col number Cursor column (0-indexed)
+---@param bufnr number? 行が属するバッファ。補完の共通インターフェースは `(line, col)` なので
+---省略可能で、省略時は現在のバッファを読む。カーソルの居ないバッファを問い合わせる側
+---（`frontmatter_cycler`）だけが渡す
 ---@return Vibing.TriggerContext?
-function M.get_trigger_context(line, col)
+function M.get_trigger_context(line, col, bufnr)
   local before_cursor = line:sub(1, col)
   local before_cursor_plus = line:sub(1, col + 1) -- Include next char for pattern matching
 
@@ -58,7 +63,7 @@ function M.get_trigger_context(line, col)
       }
       -- For model field, read the agent value from the buffer frontmatter
       if field_name == "model" then
-        ctx.agent = M._resolve_model_completion_agent()
+        ctx.agent = M._resolve_model_completion_agent(bufnr)
       end
       return ctx
     end
@@ -116,9 +121,8 @@ function M.get_trigger_context(line, col)
   local tool_query = before_cursor:match("^%s*%-%s*(.*)$")
   if tool_query then
     -- Look backwards to find which permissions field we're under
-    local bufnr = vim.api.nvim_get_current_buf()
     local row = vim.api.nvim_win_get_cursor(0)[1] - 1 -- 0-indexed
-    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, row, false)
+    local lines = vim.api.nvim_buf_get_lines(bufnr or vim.api.nvim_get_current_buf(), 0, row, false)
 
     for i = #lines, 1, -1 do
       for _, perm_type in ipairs({ "allow", "deny", "ask" }) do

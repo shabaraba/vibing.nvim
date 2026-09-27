@@ -459,7 +459,20 @@ In a chat buffer:~
     gf          Open the file path under the cursor
     gx          Open the URL on the current line in a browser, or the image
                 or video path under the cursor in the default application
+    ]v          Next value for the frontmatter field under the cursor
+    [v          Previous value for the frontmatter field under the cursor
     q           Close the chat window
+
+Cycling a frontmatter value~
+
+`]v` and `[v` replace the value on the frontmatter line the cursor is on with
+the next or previous one the completion offers, wrapping at both ends. They
+apply to the fields completion offers a candidate list for — `agent`, `model`,
+`effort`, `process` and `permission_mode` — and do nothing anywhere else,
+including on a line outside the frontmatter that happens to look like one.
+The `model` candidates are the ones for this chat's `agent`, the same as in
+completion. A value that is not in the list (or a field with no value yet)
+goes to the first candidate with `]v` and the last with `[v`.
 
 Answering a tool approval~
 
@@ -572,6 +585,8 @@ Everything except `q` is configurable: >lua
         open_diff = "gd",
         open_file = "gf",
         open_url = "gx",
+        cycle_enum_next = "]v",
+        cycle_enum_prev = "[v",
       },
     })
 <

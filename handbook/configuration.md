@@ -76,6 +76,8 @@ require("vibing").setup({
     open_diff = "gd",
     open_file = "gf",
     open_url = "gx",
+    cycle_enum_next = "]v",
+    cycle_enum_prev = "[v",
   },
   diff = {
     tool = "auto",
@@ -1164,18 +1166,27 @@ flattened to the `default` string with a warning — but should be replaced with
 
 ## Keymaps
 
-Chat-buffer key bindings (all six are configurable; `q` to close the window is fixed):
+Chat-buffer key bindings (all eight are configurable; `q` to close the window is fixed):
 
 ```lua
 keymaps = {
-  send = "<CR>",         -- Send message
-  cancel = "<C-c>",      -- Cancel current request
-  add_context = "<C-a>", -- Add file to context
-  open_diff = "gd",      -- Open diff viewer on file paths
-  open_file = "gf",      -- Open file on file paths
-  open_url = "gx",       -- Open URL in browser, or image/video path in the default app
+  send = "<CR>",             -- Send message
+  cancel = "<C-c>",          -- Cancel current request
+  add_context = "<C-a>",     -- Add file to context
+  open_diff = "gd",          -- Open diff viewer on file paths
+  open_file = "gf",          -- Open file on file paths
+  open_url = "gx",           -- Open URL in browser, or image/video path in the default app
+  cycle_enum_next = "]v",    -- Next value for the frontmatter field under the cursor
+  cycle_enum_prev = "[v",    -- Previous value for that field
 }
 ```
+
+`]v` / `[v` walk the candidate list completion would offer for `agent`, `model`, `effort`,
+`process` and `permission_mode`, wrapping at both ends. The candidates have one definition — the
+cycler asks the completion source, so a new backend or effort level is reachable from both without
+a second edit. Outside a frontmatter enum line the keys do nothing; `mode` is one of the fields the
+completion source recognises but `providers/frontmatter.lua` defines no values for it, so neither
+completion nor the cycler offers anything there.
 
 ## Diff
 
