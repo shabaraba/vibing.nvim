@@ -16,7 +16,15 @@ module.exports = grammar({
 
   rules: {
     document: ($) =>
-      repeat(choice($.message_header, $.fenced_markdown_block, $.tool_block, $.markdown_chunk)),
+      repeat(
+        choice(
+          $.message_header,
+          $.fenced_markdown_block,
+          $.tool_block,
+          $.thinking_block,
+          $.markdown_chunk
+        )
+      ),
 
     message_header: (_) =>
       token(
@@ -49,6 +57,13 @@ module.exports = grammar({
 
     tool_result: (_) => token(prec(3, /  ⎿[^\r\n]*\r?\n/)),
     tool_result_continuation: (_) => token(prec(3, /     [^\r\n]*\r?\n/)),
+
+    // Reasoning has no terminator, so `event_renderer.lua` marks every line of it rather than
+    // only the first. Outranks `tool_header`, whose shape a marked line can otherwise match
+    // ("💭 Foo(bar)").
+    thinking_block: ($) => prec.right(repeat1($.thinking_line)),
+
+    thinking_line: (_) => token(prec(5, /💭[^\r\n]*\r?\n/)),
 
     markdown_chunk: ($) => prec.right(repeat1($.markdown_line)),
 

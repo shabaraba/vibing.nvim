@@ -21,6 +21,10 @@
           },
           {
             "type": "SYMBOL",
+            "name": "thinking_block"
+          },
+          {
+            "type": "SYMBOL",
             "name": "markdown_chunk"
           }
         ]
@@ -158,6 +162,28 @@
         "content": {
           "type": "PATTERN",
           "value": "     [^\\r\\n]*\\r?\\n"
+        }
+      }
+    },
+    "thinking_block": {
+      "type": "PREC_RIGHT",
+      "value": 0,
+      "content": {
+        "type": "REPEAT1",
+        "content": {
+          "type": "SYMBOL",
+          "name": "thinking_line"
+        }
+      }
+    },
+    "thinking_line": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 5,
+        "content": {
+          "type": "PATTERN",
+          "value": "💭[^\\r\\n]*\\r?\\n"
         }
       }
     },

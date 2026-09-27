@@ -21,6 +21,10 @@
           "named": true
         },
         {
+          "type": "thinking_block",
+          "named": true
+        },
+        {
           "type": "tool_block",
           "named": true
         }
@@ -46,6 +50,21 @@
     "type": "markdown_line",
     "named": true,
     "fields": {}
+  },
+  {
+    "type": "thinking_block",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "thinking_line",
+          "named": true
+        }
+      ]
+    }
   },
   {
     "type": "tool_block",
@@ -88,6 +107,10 @@
   },
   {
     "type": "message_header",
+    "named": true
+  },
+  {
+    "type": "thinking_line",
     "named": true
   },
   {

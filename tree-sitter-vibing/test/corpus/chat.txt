@@ -90,3 +90,43 @@ after
   (fenced_markdown_block)
   (markdown_chunk
     (markdown_line)))
+
+==================
+Marked reasoning is one block that ends where the answer starts
+==================
+
+## Assistant
+💭 first
+💭
+💭 second
+answer
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line))
+  (message_header)
+  (thinking_block
+    (thinking_line)
+    (thinking_line)
+    (thinking_line))
+  (markdown_chunk
+    (markdown_line)))
+
+==================
+A marked line is reasoning even when it is tool-shaped
+==================
+
+💭 Foo(bar)
+after
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line))
+  (thinking_block
+    (thinking_line))
+  (markdown_chunk
+    (markdown_line)))

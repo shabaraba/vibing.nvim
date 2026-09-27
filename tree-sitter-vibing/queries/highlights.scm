@@ -5,3 +5,4 @@
 (tool_argument_end) @comment
 (tool_result) @comment
 (tool_result_continuation) @comment
+(thinking_line) @comment
