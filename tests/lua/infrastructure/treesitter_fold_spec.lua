@@ -180,6 +180,54 @@ describe("treesitter_fold.foldexpr", function()
     vim.api.nvim_buf_delete(bufnr, { force = true })
   end)
 
+  --- Regions are carried over from the previous derivation, which is the whole reason a flush does
+  --- not cost the length of the chat. It is also the one way this module can be quietly wrong: a
+  --- carried-over region that should have moved is invisible until someone looks at that part of
+  --- the buffer. So every edit shape is compared against a module that has never seen the buffer
+  --- before and therefore derives it whole.
+  it("derives incrementally exactly what it would derive from scratch", function()
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, LINES)
+    vim.api.nvim_set_current_buf(bufnr)
+
+    ---@return string[]
+    local function levels_from(module)
+      local result = {}
+      for lnum = 1, vim.api.nvim_buf_line_count(bufnr) do
+        result[lnum] = module.foldexpr(lnum)
+      end
+      return result
+    end
+
+    --- @return string[] what a module seeing this buffer for the first time answers
+    local function from_scratch()
+      package.loaded["vibing.infrastructure.treesitter_fold"] = nil
+      local fresh = require("vibing.infrastructure.treesitter_fold")
+      local result = levels_from(fresh)
+      package.loaded["vibing.infrastructure.treesitter_fold"] = Fold
+      return result
+    end
+
+    local edits = {
+      { "append a tool call", 12, 12, { "💻 Bash(ls)" } },
+      { "append its result", 13, 13, { "  ⎿  a.txt" } },
+      { "append a second call, one blank apart", 14, 14, { "", "💻 Bash(pwd)" } },
+      { "insert prose into the middle of a run", 13, 13, { "途中に散文。" } },
+      { "delete that prose again", 13, 14, {} },
+      { "turn a tool call back into prose", 12, 13, { "ただの文章。" } },
+      { "insert reasoning above everything", 0, 0, { "💭 先に考える。", "" } },
+      { "replace the whole buffer", 0, -1, { "💻 Bash(a)", "💻 Bash(b)", "答え。" } },
+    }
+
+    for _, edit in ipairs(edits) do
+      local what, first, last, lines = edit[1], edit[2], edit[3], edit[4]
+      vim.api.nvim_buf_set_lines(bufnr, first, last, false, lines)
+      assert.same(from_scratch(), levels_from(Fold), what)
+    end
+
+    vim.api.nvim_buf_delete(bufnr, { force = true })
+  end)
+
   --- The refresh is pinned as the call, not as the symptom it repairs.
   ---
   --- Neovim keeps a fold whose *extent* grew -- a run of tool calls gaining another member -- at
@@ -228,8 +276,41 @@ describe("treesitter_fold.foldexpr", function()
 
       assert.is_true(#calls > 0, "no fold refresh was requested")
       assert.equals(win, calls[1].win)
-      assert.equals(0, calls[1].srow)
-      assert.equals(vim.api.nvim_buf_line_count(bufnr), calls[1].erow)
+
+      vim.cmd("close")
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end)
+
+    -- Re-deriving the whole buffer costs 24.9 ms on a 14784-line chat and this runs on every chunk
+    -- flush, 20 a second. The range is the changed rows, widened to whole folds.
+    it("re-derives the changed rows, not the whole chat", function()
+      local _, bufnr = folded_window()
+
+      -- Row 9 is the lone tool call the run merges with; rows 10..11 are what is being added.
+      vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { "", "💻 Bash(ls)" })
+      vim.wait(200, function()
+        return #calls > 0
+      end)
+
+      assert.same({ srow = 9, erow = 12 }, { srow = calls[1].srow, erow = calls[1].erow })
+
+      vim.cmd("close")
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end)
+
+    -- The changed row alone is not enough: a run gaining another call moves the *end* of a fold
+    -- that opened earlier, and the opening row has to be re-derived or it keeps its old extent.
+    it("widens the range back over the fold the change extends", function()
+      local _, bufnr = folded_window()
+
+      -- Rows 3..5 are the existing run. Appending to the buffer end is not what this is about;
+      -- change a row in the middle of it instead.
+      vim.api.nvim_buf_set_lines(bufnr, 5, 6, false, { "💻 Bash(uname -a)" })
+      vim.wait(200, function()
+        return #calls > 0
+      end)
+
+      assert.equals(3, calls[1].srow)
 
       vim.cmd("close")
       vim.api.nvim_buf_delete(bufnr, { force = true })
@@ -248,6 +329,25 @@ describe("treesitter_fold.foldexpr", function()
       -- Streaming writes a delta at a time; one refresh per delta would re-derive the folds of the
       -- whole chat dozens of times a second.
       assert.equals(1, #calls)
+
+      vim.cmd("close")
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end)
+
+    -- One turn rewrites the `## Assistant` header to stamp it while it appends to the end, so the
+    -- two ends of a single batch are far apart. Keeping only one of them leaves the other stale.
+    it("covers every change in the batch, not just the first", function()
+      local _, bufnr = folded_window()
+
+      vim.api.nvim_buf_set_lines(bufnr, 1, 2, false, { "書き換えられた散文。" })
+      vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { "💻 Bash(ls)" })
+      vim.wait(200, function()
+        return #calls > 0
+      end)
+
+      assert.equals(1, #calls)
+      assert.is_true(calls[1].srow <= 1, "the first change was left out: srow=" .. calls[1].srow)
+      assert.equals(vim.api.nvim_buf_line_count(bufnr), calls[1].erow)
 
       vim.cmd("close")
       vim.api.nvim_buf_delete(bufnr, { force = true })

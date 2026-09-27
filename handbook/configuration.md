@@ -1191,8 +1191,30 @@ merging means a run growing by one call changes the _extent_ of a fold that open
 window kept the old end and read the rest of the run as ordinary content (observed mid-turn on a
 live chat, rows 133..140 at level 0 against a tree that said 1; repaired by nothing more than
 `setlocal foldmethod=expr`). `vim.treesitter`'s own fold module carries the same refresh for the
-same reason. It costs 3.6 ms on a 1232-line chat and is coalesced to one per event-loop tick, so a
-turn writing twenty deltas a second pays it twenty times, not once per delta.
+same reason.
+
+#### What folding costs
+
+A turn flushes its buffered output every 50 ms, so everything below is paid up to 20 times a
+second. Measured against three real chat files from this repository, with the Tree-sitter parse and
+the redraw that drawing the buffer forces anyway counted on both sides:
+
+| Chat length | Flush, folding off | Flush, folding on | Folding's share at 20 Hz |
+| ----------- | ------------------ | ----------------- | ------------------------ |
+| 1262 lines  | 1.26 ms            | 2.64 ms           | 2.7 %                    |
+| 4868 lines  | 2.13 ms            | 3.91 ms           | 3.6 %                    |
+| 21501 lines | 6.97 ms            | 9.80 ms           | 5.7 %                    |
+
+Two things keep that flat. The refresh is coalesced to one per event-loop tick and covers only the
+changed rows, widened to whole folds. And the regions themselves are derived incrementally: nothing
+above the first changed row can move, so the query starts at the splice point and everything before
+it is carried over. Deriving the whole buffer instead cost 13.4 ms per flush on the 21501-line chat
+— a quarter of the main loop — against 2.8 ms now.
+
+The cost that remains is dominated by the outer grammar's own re-parse, which is 5.2 ms on that
+chat for a one-line append against 16.9 ms from scratch. That is not folding's to pay: the
+highlighter forces the same parse to draw the buffer. Folding only stops being free by asking for
+it slightly sooner.
 
 The `foldexpr` is vibing.nvim's rather than `vim.treesitter.foldexpr()` because that one applies
 every injected language's own `folds.scm` as well. A chat injects Markdown, and Markdown injects
