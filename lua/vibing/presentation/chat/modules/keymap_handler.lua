@@ -187,6 +187,8 @@ function M.setup(buf, callbacks, keymaps)
     end, { buffer = buf, desc = "Add context" })
 
     vim.keymap.set("n", keymaps.open_diff, function()
+      -- この順序は入れ替えられない。`diff_opener` は節の中ならカーソル位置に関係なく直近の
+      -- patchを開くので、後段に置かないと `/name` の上で押しても差分フロートが出る
       if require("vibing.presentation.chat.modules.command_definition_opener").open(buf) then
         return
       end

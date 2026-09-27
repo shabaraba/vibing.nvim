@@ -66,10 +66,7 @@ describe("command_definition_opener.open", function()
       end,
     })
     stub("vibing.infrastructure.completion.providers.skills", {
-      is_preloading = function()
-        return false
-      end,
-      get_all = function()
+      peek_cli_commands = function()
         return {}
       end,
     })

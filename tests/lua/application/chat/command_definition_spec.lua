@@ -104,6 +104,46 @@ describe("command_definition.resolve", function()
     assert.equals(path, CommandDefinition.resolve("temp-skill", root))
   end)
 
+  describe("a command the chat would expand itself", function()
+    local Commands = require("vibing.application.chat.commands")
+
+    after_each(function()
+      Commands.custom_commands["reg-cmd"] = nil
+    end)
+
+    -- `/reg-cmd` を展開するのは `commands.lua` のレジストリなので、`gd` はそこが持っている
+    -- ファイルを開かないといけない。自前でパスを探すと優先順位が二重になり、実行される
+    -- ファイルと開かれるファイルが食い違う
+    it("comes from the registry, not from a second path search", function()
+      local registered = root .. "/elsewhere/reg-cmd.md"
+      write(registered, { "# Registered" })
+      Commands.register_custom({
+        name = "reg-cmd",
+        description = "x",
+        source = "project",
+        file_path = registered,
+        content = "body",
+      })
+
+      assert.equals(registered, CommandDefinition.resolve("reg-cmd", root))
+    end)
+
+    it("outranks a same-named skill, which vibing.nvim never reaches", function()
+      write(root .. "/.claude/skills/reg-cmd/SKILL.md", { "---", "description: x", "---" })
+      local registered = root .. "/.claude/commands/reg-cmd.md"
+      write(registered, { "# Registered" })
+      Commands.register_custom({
+        name = "reg-cmd",
+        description = "x",
+        source = "project",
+        file_path = registered,
+        content = "body",
+      })
+
+      assert.equals(registered, CommandDefinition.resolve("reg-cmd", root))
+    end)
+  end)
+
   it("finds a project command", function()
     local path = root .. "/.claude/commands/temp-cmd.md"
     write(path, { "# Temp" })
@@ -186,11 +226,19 @@ describe("command_definition.resolve", function()
     end)
 
     it("finds a skill by the name its frontmatter declares", function()
+      -- ディレクトリ名の決め打ちでは当たらないので、SKILL.mdを読む側の経路が要る
       assert.equals(
         plugin_dir .. "/skills/dir-name/SKILL.md",
         CommandDefinition.resolve("declared-name", root)
       )
-      assert.is_nil(CommandDefinition.resolve("dir-name", root))
+      -- ディレクトリ名でも同じファイルに着く。CLIが名乗るのは `declared-name` だけなので
+      -- `/dir-name` はコマンドとしては存在しないが、決め打ちの1statを先に試す（実測で
+      -- 同梱スキルは12/12が一致し、外すと毎打鍵0.4msのSKILL.md全読みになる）以上、
+      -- 実在するファイルに着くこの結果は許容する
+      assert.equals(
+        plugin_dir .. "/skills/dir-name/SKILL.md",
+        CommandDefinition.resolve("dir-name", root)
+      )
     end)
 
     it("finds a skill by its namespaced name", function()
@@ -246,10 +294,7 @@ describe("command_definition.is_known", function()
       end,
     })
     stub("vibing.infrastructure.completion.providers.skills", {
-      is_preloading = function()
-        return false
-      end,
-      get_all = function()
+      peek_cli_commands = function()
         return { { word = "code-review" } }
       end,
     })
@@ -258,25 +303,29 @@ describe("command_definition.is_known", function()
     assert.is_false(CommandDefinition.is_known("nope-xyz"))
   end)
 
-  it("does not wait for the CLI's list while it is still unknown", function()
-    -- `get_all()` は未取得なら `claude` を起こす。キーを1回押しただけで起こしてはいけない
-    local asked = false
+  it("never asks for the CLI's list in a way that could fetch it", function()
+    -- `get_all()` はキャッシュが陳腐化していれば `claude` を起こす（cwdが動いた直後がそれ）。
+    -- キーを1回押しただけで起こしてはいけないので、経路そのものを使わない
+    local fetched = false
     stub("vibing.application.chat.commands", {
       list_all = function()
         return {}
       end,
     })
     stub("vibing.infrastructure.completion.providers.skills", {
-      is_preloading = function()
-        return true
+      peek_cli_commands = function()
+        return {}
       end,
       get_all = function()
-        asked = true
+        fetched = true
         return {}
+      end,
+      is_preloading = function()
+        return false
       end,
     })
 
     assert.is_false(CommandDefinition.is_known("code-review"))
-    assert.is_false(asked)
+    assert.is_false(fetched)
   end)
 end)

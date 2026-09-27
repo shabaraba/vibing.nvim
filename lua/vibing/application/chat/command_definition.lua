@@ -1,29 +1,27 @@
 --- Where a `/name` written in a chat is defined on disk, so `gd` can open it.
 ---
---- A slash command reaches a chat from four places and only some of them are files: a skill
---- directory (`skills/<name>/SKILL.md`), a command file (`commands/<name>.md`), one of
---- vibing.nvim's own Lua handlers (`/model`, `/permission`) and the claude binary itself
---- (`/code-review`, `/dataviz`). The last two have nothing to open, which is why `resolve`
---- answering `nil` is not the same question as `is_known` answering `false` -- the first is "no
---- file", the second is "not a command at all", and the caller owes the user a different answer
---- to each.
+--- Four things answer to a `/name` and only two are files: a command file, a skill directory,
+--- one of vibing.nvim's own Lua handlers (`/model`) and the claude binary itself
+--- (`/code-review`). So `resolve` returning nil and `is_known` returning false are different
+--- answers -- "no file" and "not a command" -- and the caller owes a different reply to each.
 ---
---- Names are resolved by asking whether a specific path exists, never by listing what exists: the
---- completion providers already own "which commands are there" and one of them spawns the CLI to
---- find out. So this costs a handful of `filereadable` calls per keypress, and it answers for the
---- cwd it is handed rather than for whichever directory a provider's cache was warmed in -- a
---- chat attached to a worktree asks about that worktree's `.claude/`.
+--- **A command is asked of the registry that would expand it.** `commands.lua` writes every
+--- scanned command into one map, so its precedence is last-write-wins (plugin over user over
+--- project) and that is the file a chat's `/foo` takes. Searching paths here would be a second
+--- opinion, and `gd` would open a file the chat does not run.
+---
+--- **A skill is probed by path, against the chat's own cwd**, because the CLI resolves those and
+--- it runs in the chat's `working_dir` -- a worktree included. Nothing here lists what exists;
+--- the completion providers own that, and one of them spawns the CLI to find out.
 --- @module vibing.application.chat.command_definition
 
 local M = {}
 
---- The characters a slash command name is written with. `:` is in the set because both of Claude
---- Code's namespaced forms use it -- a plugin's skill (`<plugin>:<skill>`) and a command in a
---- subdirectory (`<dir>:<command>`). That also means the token cannot be read with `<cfile>`:
---- Neovim's default `isfname` has no `:` on unix, so it hands back a name cut in half.
+--- `:` is in the set because both of Claude Code's namespaced forms use it -- `<plugin>:<skill>`
+--- and `<dir>:<command>`. That also rules `<cfile>` out: unix's default `isfname` has no `:`, so
+--- it hands back a name cut in half.
 local NAME_PATTERN = "/[%w_%-%.:]+"
 
---- @param path string
 --- @return string|nil
 local function readable(path)
   if vim.fn.filereadable(path) ~= 1 then
@@ -32,175 +30,145 @@ local function readable(path)
   return vim.fn.fnamemodify(path, ":p")
 end
 
---- First match of a glob, so a name present in two installed plugins resolves to a stable one.
---- @param pattern string
---- @return string|nil
-local function first_match(pattern)
-  local found = vim.fn.glob(pattern, false, true)
-  table.sort(found)
-  return found[1]
-end
-
---- The `/name` the cursor is inside, or nil.
+--- The `/name` the cursor is inside, or nil. Taken from the line, not the buffer, so the rule is
+--- testable without a window.
 ---
---- Read from the line rather than from the buffer so the rule is testable without a window, and
---- deliberately strict about both edges: a path (`/Users/x/y.lua`) and a URL
---- (`https://host/page`) are made of the same characters as a command, and `gd` in a chat has an
---- older meaning on the first of those. A token whose next character is `/` is therefore a path
---- segment, and one whose previous character could belong to a name is the middle of something
---- longer. Trailing `.`/`:`/`-` is prose, not part of the name.
+--- Both edges are checked because a path (`/Users/x/y.lua`) and a URL (`https://host/page`) are
+--- made of the same characters as a command, and `gd` already means something on the first of
+--- those: a token followed by `/` is a path segment, one preceded by a name character is the
+--- middle of something longer, and a trailing `.`/`:`/`-` is prose.
 --- @param line string
 --- @param col integer 1-indexed cursor column
 --- @return string|nil
 function M.name_on_line(line, col)
-  if type(line) ~= "string" or line == "" then
-    return nil
-  end
-
   local from = 1
   while true do
     local start_idx, end_idx = line:find(NAME_PATTERN, from)
-    if not start_idx then
+    -- Matches are disjoint and in order, so the one holding the cursor is the only candidate:
+    -- past it there is nothing left to find, and a rejected match is a rejected answer.
+    if not start_idx or start_idx > col then
       return nil
     end
     from = end_idx + 1
 
-    -- Matches are disjoint and in order, so the one holding the cursor is the only candidate:
-    -- a rejected match is a rejected answer, not a reason to keep looking.
-    if col >= start_idx and col <= end_idx then
-      local before = start_idx > 1 and line:sub(start_idx - 1, start_idx - 1) or ""
-      if before:match("[%w_%-%.:/~]") or line:sub(end_idx + 1, end_idx + 1) == "/" then
+    if col <= end_idx then
+      if
+        line:sub(start_idx - 1, start_idx - 1):match("[%w_%-%.:/~]")
+        or line:sub(end_idx + 1, end_idx + 1) == "/"
+      then
         return nil
       end
       local name = line:sub(start_idx + 1, end_idx):gsub("[%.:%-]+$", "")
-      if name == "" or not name:match("%w") then
-        return nil
-      end
-      return name
+      return name:match("%w") and name or nil
     end
   end
 end
 
---- Skill then command, under one `.claude/` directory.
---- @param claude_dir string
---- @param name string
+--- The file a chat's `/name` would actually be expanded from, or nil for a built-in.
 --- @return string|nil
-local function under_claude_dir(claude_dir, name)
-  return readable(claude_dir .. "/skills/" .. name .. "/SKILL.md")
-    or readable(claude_dir .. "/commands/" .. name .. ".md")
+local function registered_command(name)
+  local entry = require("vibing.application.chat.commands").list_all()[name]
+  return entry and entry.file_path or nil
 end
 
---- Skills and commands of the plugins this cwd hands to the CLI with `--plugin-dir`, which is how
---- vibing.nvim's own bundled skills are reached: they are never installed, so no scan of
---- `~/.claude/plugins/` can find them.
----
---- Skills go through `plugin_contents` rather than a path guess because a plugin's SKILL.md may
---- declare a `name` that is not its directory's, and the name the CLI offers -- the one the user
---- typed -- is that one.
+--- Skill then command under one `.claude/` directory. A namespaced name is only ever the
+--- `commands/<prefix>/<name>.md` subdirectory form here, since a skill cannot be nested.
+--- @return string|nil
+local function under_claude_dir(dir, prefix, name)
+  if prefix then
+    return readable(dir .. "/commands/" .. prefix .. "/" .. name .. ".md")
+  end
+  return readable(dir .. "/skills/" .. name .. "/SKILL.md")
+    or readable(dir .. "/commands/" .. name .. ".md")
+end
+
+--- @param root {name: string, path: string}
+--- @return string|nil
+local function in_plugin_root(root, name)
+  return readable(root.path .. "/skills/" .. name .. "/SKILL.md")
+    or readable(root.path .. "/commands/" .. name .. ".md")
+end
+
+--- Plugins this cwd hands to the CLI with `--plugin-dir`, which is how vibing.nvim's own bundled
+--- skills are reached: they are never installed, so no scan of `~/.claude/plugins` finds them.
 --- @param plugin string|nil restrict to this plugin name
---- @param name string
---- @param cwd string
 --- @return string|nil
 local function in_plugin_dirs(plugin, name, cwd)
-  local dirs_ok, PluginDirs = pcall(require, "vibing.infrastructure.plugins.plugin_dirs")
-  local config_ok, Config = pcall(require, "vibing.config")
-  local contents_ok, PluginContents = pcall(require, "vibing.infrastructure.plugins.plugin_contents")
-  if not (dirs_ok and config_ok and contents_ok) then
-    return nil
-  end
+  local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
+  local Config = require("vibing.config")
 
   for _, entry in ipairs(PluginDirs.resolve_entries(cwd, Config.get())) do
     if plugin == nil or entry.name == plugin then
-      for _, skill in ipairs(PluginContents.skills(entry.path)) do
+      local found = in_plugin_root(entry, name)
+      if found then
+        return found
+      end
+      -- A SKILL.md may declare a `name` that is not its directory's, and the name the CLI offers
+      -- -- the one the user typed -- is that one. Finding it means reading every SKILL.md of the
+      -- plugin (0.4ms for the 12 bundled here), so it runs only once the directory guess missed.
+      for _, skill in ipairs(require("vibing.infrastructure.plugins.plugin_contents").skills(entry.path)) do
         if skill.name == name then
           return skill.path
         end
       end
-      local command = readable(entry.path .. "/commands/" .. name .. ".md")
-      if command then
-        return command
+    end
+  end
+  return nil
+end
+
+--- @param plugin string|nil
+--- @return string|nil
+local function in_installed_plugins(plugin, name)
+  for _, root in ipairs(require("vibing.infrastructure.plugins.installed_plugins").roots()) do
+    if plugin == nil or root.name == plugin then
+      local found = in_plugin_root(root, name)
+      if found then
+        return found
       end
     end
   end
   return nil
 end
 
---- A skill or command of an installed plugin. Two layouts, both of them Claude Code's own:
---- `marketplaces/<market>/plugins/<plugin>/` and `cache/<market>/<plugin>/<revision>/`.
---- @param plugin string|nil
---- @param name string
---- @return string|nil
-local function in_installed_plugins(plugin, name)
-  local root = vim.fn.expand("~/.claude/plugins")
-  local plugin_roots = {
-    string.format("%s/marketplaces/*/plugins/%s", root, plugin or "*"),
-    string.format("%s/cache/*/%s/*", root, plugin or "*"),
-  }
-  for _, plugin_root in ipairs(plugin_roots) do
-    local found = first_match(plugin_root .. "/skills/" .. name .. "/SKILL.md")
-      or first_match(plugin_root .. "/commands/" .. name .. ".md")
-    if found then
-      return found
-    end
-  end
-  return nil
-end
-
---- A `<prefix>:<name>` is either a plugin's skill or a command in a `commands/<prefix>/`
---- subdirectory -- Claude Code's two namespaced forms, written identically.
---- @param prefix string
---- @param name string
---- @param cwd string
---- @return string|nil
-local function namespaced_definition(prefix, name, cwd)
-  return in_plugin_dirs(prefix, name, cwd)
-    or in_installed_plugins(prefix, name)
-    or readable(cwd .. "/.claude/commands/" .. prefix .. "/" .. name .. ".md")
-    or readable(vim.fn.expand("~/.claude/commands/") .. prefix .. "/" .. name .. ".md")
-end
-
---- The definition file of `/name`, in the order Claude Code itself resolves one: project, then
---- user, then plugin.
+--- The definition file of `/name`, or nil when what answers to it is not a file.
 --- @param name string as typed, without the leading slash
 --- @param cwd string|nil the chat's `working_dir`; nil means Neovim's own cwd
 --- @return string|nil absolute path
 function M.resolve(name, cwd)
-  if type(name) ~= "string" or name == "" then
+  if name == "" then
     return nil
   end
   local root = (cwd and cwd ~= "") and cwd or vim.fn.getcwd(-1, -1)
-  root = (vim.fn.fnamemodify(root, ":p"):gsub("/$", ""))
-
   local prefix, bare = name:match("^([^:]+):(.+)$")
-  if prefix then
-    return namespaced_definition(prefix, bare, root)
+  local key = bare or name
+
+  -- A registered command is what the chat would expand, so it outranks every path below --
+  -- including a same-named skill, which vibing.nvim never reaches: it answers `/name` itself.
+  -- Namespaced names are not registered (the scan is one directory deep), so they skip this.
+  if not prefix then
+    local registered = registered_command(key)
+    if registered then
+      return registered
+    end
   end
 
-  return under_claude_dir(root .. "/.claude", name)
-    or under_claude_dir(vim.fn.expand("~/.claude"), name)
-    or in_plugin_dirs(nil, name, root)
-    or in_installed_plugins(nil, name)
+  return under_claude_dir(root .. "/.claude", prefix, key)
+    or under_claude_dir(vim.fn.expand("~/.claude"), prefix, key)
+    or in_plugin_dirs(prefix, key, root)
+    or in_installed_plugins(prefix, key)
 end
 
---- Whether `/name` is a command this chat would actually run.
+--- Whether `/name` is a command this chat would actually run. Asked only once `resolve` came up
+--- empty, to tell a built-in apart from a word that merely looks like a command.
 ---
---- Asked only after `resolve` came up empty, to tell a built-in apart from a word that merely
---- looks like a command. The CLI's list is consulted **only while it is already cached**: the
---- provider fetches it by spawning `claude`, and a keypress on a path fragment must not pay for
---- that.
---- @param name string
+--- The CLI's own list is read through `peek_cli_commands`, which never starts a probe: fetching
+--- it spawns `claude`, and a keypress on a path fragment must not.
 --- @return boolean
 function M.is_known(name)
-  local commands_ok, Commands = pcall(require, "vibing.application.chat.commands")
-  if commands_ok and Commands.list_all()[name] then
+  if require("vibing.application.chat.commands").list_all()[name] then
     return true
   end
-
-  local skills_ok, Skills = pcall(require, "vibing.infrastructure.completion.providers.skills")
-  if not skills_ok or Skills.is_preloading() then
-    return false
-  end
-  for _, item in ipairs(Skills.get_all()) do
+  for _, item in ipairs(require("vibing.infrastructure.completion.providers.skills").peek_cli_commands()) do
     if item.word == name then
       return true
     end

@@ -4,6 +4,8 @@ local notify = require("vibing.core.utils.notify")
 ---@field name string
 ---@field handler fun(args: string[], chat_buffer: Vibing.ChatBuffer): boolean
 ---@field description string
+---@field file_path string? カスタムコマンドの定義ファイル（ビルトインには無い）
+---@field plugin_name string? プラグイン由来のときその名前
 
 ---@class Vibing.CommandRegistry
 local M = {}
@@ -38,6 +40,8 @@ end
 ---カスタムコマンドを再スキャンして登録し直す（:VibingReloadCommands）
 function M.reload_custom()
   require("vibing.application.chat.custom_commands").clear_cache()
+  -- `gd` の定義ジャンプが見るインストール済みプラグインの一覧も同じ事象で古くなる
+  require("vibing.infrastructure.plugins.installed_plugins").clear_cache()
   M.custom_commands = {}
   custom_loaded = false
   ensure_custom_loaded()
@@ -205,6 +209,11 @@ function M.register_custom(custom_cmd)
     description = custom_cmd.description,
     source = custom_cmd.source,
     requires_args = requires_args,
+    -- スキャン結果が持っている出所をここで落とさない。`file_path` は `gd` が定義ファイルを
+    -- 開くために、`plugin_name` は補完の2列目のために読まれる（後者は落ちていたので
+    -- completion/providers/commands.lua の該当分岐が常にnilだった）
+    file_path = custom_cmd.file_path,
+    plugin_name = custom_cmd.plugin_name,
   }
 end
 
