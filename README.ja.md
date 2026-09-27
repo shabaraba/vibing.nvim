@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src=".github/assets/logo-square.png" alt="vibing.nvim logo" width="120"/>
+<img src=".github/assets/logo-square.png" alt="vibing.nvim logo" width="120" height="120"/>
 
 # vibing.nvim
 
