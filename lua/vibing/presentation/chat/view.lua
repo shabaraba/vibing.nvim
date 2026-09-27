@@ -215,21 +215,21 @@ function M._apply_chat_buffer_settings(bufnr)
     end)
   end
 
-  -- wrap設定の適用
+  -- ウィンドウローカル設定（wrap・fold）の適用
   local ok_ui, ui_utils = pcall(require, "vibing.core.utils.ui")
   if ok_ui then
     -- win=0（カレントウィンドウ）をそのまま渡すと、非同期アタッチ時にbufnrと
-    -- 無関係なウィンドウのwrap設定を書き換えてしまうため、bufnrを表示している
+    -- 無関係なウィンドウの設定を書き換えてしまうため、bufnrを表示している
     -- 実際のウィンドウを解決してから適用する（表示中のウィンドウがなければ何もしない）
-    local function apply_wrap_for_bufnr()
+    local function apply_window_config_for_bufnr()
       local winnr = vim.fn.bufwinnr(bufnr)
       if winnr > 0 then
-        pcall(ui_utils.apply_wrap_config, vim.fn.win_getid(winnr), bufnr, true)
+        pcall(ui_utils.apply_window_config, vim.fn.win_getid(winnr), bufnr, true)
       end
     end
 
     -- 初回適用（force=trueで強制適用、新規作成直後のバッファはまだフロントマターがないため）
-    apply_wrap_for_bufnr()
+    apply_window_config_for_bufnr()
 
     -- FileTypeでwrap設定を再適用（ftplugin（markdown.vim等）による上書きを防ぐ）
     -- WinEnterはグローバルイベント（init.lua）で処理するため、ここでは不要
@@ -238,7 +238,7 @@ function M._apply_chat_buffer_settings(bufnr)
       group = group,
       buffer = bufnr,
       callback = function()
-        apply_wrap_for_bufnr()
+        apply_window_config_for_bufnr()
         -- Re-apply completion settings to prevent markdown ftplugin from overwriting omnifunc
         local ok_c, completion = pcall(require, "vibing.application.completion")
         if ok_c and completion.setup_buffer then

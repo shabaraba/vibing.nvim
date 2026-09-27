@@ -99,7 +99,7 @@ function M.setup(opts)
       if ok_ui then
         -- 現在のウィンドウとバッファでwrap設定を適用
         -- force=falseでis_chat_buffer()チェックを行う
-        pcall(ui_utils.apply_wrap_config, 0, nil, false)
+        pcall(ui_utils.apply_window_config, 0, nil, false)
       end
     end,
     desc = "Apply correct wrap settings when entering any window",

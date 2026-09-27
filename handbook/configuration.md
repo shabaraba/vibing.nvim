@@ -68,6 +68,9 @@ require("vibing").setup({
       Task = "▶",
       default = "⏺",
     },
+    fold = {
+      enabled = true,
+    },
   },
   keymaps = {
     send = "<CR>",
@@ -1154,8 +1157,30 @@ ui = {
     -- Edit = "✏️",
     -- Bash = "💻",
   },
+
+  fold = {
+    enabled = true,  -- Chat windows open with rendered tool calls and reasoning folded,
+                     -- so what is on screen is the answer. `zo` opens one, `zR` opens all.
+  },
 }
 ```
+
+### Folding
+
+A chat window is put on `foldmethod=expr` with Neovim's Tree-sitter `foldexpr`, and which nodes
+collapse is `queries/vibing/folds.scm` — `tool_block` and `thinking_block`. To fold only one of
+them, or to add your own, override that query the ordinary Neovim way:
+
+```query
+; ~/.config/nvim/after/queries/vibing/folds.scm
+(tool_block) @fold
+```
+
+Two things turn folding off on their own, whatever `enabled` says. It is skipped when the bundled
+Tree-sitter parser was not built (no C compiler at install time), because the Markdown fallback has
+none of those nodes and the same foldexpr would fold every `##` heading instead — one fold per
+message. And it is only ever written to a window showing a chat: Neovim keeps window-local options
+per window+buffer pair, so your other buffers in that window keep their own fold settings.
 
 Every `tool_markers` entry is a plain string. Markers are resolved from the tool name alone, so
 they cannot vary with a tool's arguments (there is no way to give `Bash` one marker for `npm` and

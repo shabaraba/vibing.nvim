@@ -1,5 +1,11 @@
 describe("vibing Tree-sitter parser", function()
-  it("isolates chat sections and rendered tool blocks from Markdown injections", function()
+  --- Build the grammar from its committed source and register it, once for the whole file.
+  --- Registration is global, so a second compile would only cost a second or two of test time.
+  local compiled = false
+  local function ensure_language()
+    if compiled then
+      return
+    end
     local parser_source = assert(
       vim.api.nvim_get_runtime_file("tree-sitter-vibing/src/parser.c", false)[1],
       "generated parser source is missing"
@@ -20,6 +26,11 @@ describe("vibing Tree-sitter parser", function()
     }, { text = true }):wait()
     assert.equals(0, compile.code, compile.stderr)
     assert.is_true(vim.treesitter.language.add("vibing", { path = parser_library }))
+    compiled = true
+  end
+
+  it("isolates chat sections and rendered tool blocks from Markdown injections", function()
+    ensure_language()
     local outer_highlights = vim.treesitter.query.get("vibing", "highlights")
     assert.is_not_nil(
       outer_highlights,
@@ -150,6 +161,44 @@ describe("vibing Tree-sitter parser", function()
     for _, range in ipairs(ranges) do
       assert.is_false(range[1] < 13 and range[2] > 8)
     end
+
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
+
+  -- A node name this query gets wrong does not degrade quietly: `query.get` raises, and the chat
+  -- window is left on a `foldmethod=expr` that errors once per line.
+  it("folds rendered tool blocks and reasoning, and leaves the answer alone", function()
+    ensure_language()
+    local folds = vim.treesitter.query.get("vibing", "folds")
+    assert.is_not_nil(folds, "queries/vibing/folds.scm must load against the grammar")
+    assert.same({ "fold" }, folds.captures)
+
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+      "## Assistant", -- 0
+      "💭 first thought", -- 1
+      "💭", -- 2
+      "💭 second thought", -- 3
+      "Here is the answer.", -- 4
+      "", -- 5
+      "⏺ Bash(ls)", -- 6
+      "  ⎿  a.txt", -- 7
+      "     b.txt", -- 8
+      "", -- 9
+      "Done.", -- 10
+    })
+    local root = vim.treesitter.get_parser(buf, "vibing"):parse(true)[1]:root()
+    assert.is_false(root:has_error())
+
+    local folded = {}
+    for _, node in folds:iter_captures(root, buf) do
+      local start_row, _, end_row, end_col = node:range()
+      folded[#folded + 1] = { start_row, end_col == 0 and end_row - 1 or end_row }
+    end
+
+    -- Reasoning is rows 1..3 and the tool block rows 6..8. Row 4 is the answer and row 10 the
+    -- prose after the tool, and neither may be inside a fold.
+    assert.same({ { 1, 3 }, { 6, 8 } }, folded)
 
     vim.api.nvim_buf_delete(buf, { force = true })
   end)

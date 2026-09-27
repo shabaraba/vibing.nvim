@@ -73,4 +73,74 @@ function M.apply_wrap_config(win, bufnr, force)
   end
 end
 
+---In order, because switching the method first would evaluate the window's previous `foldexpr`
+---over the whole buffer, and `foldlevel` decides the state of folds that must already exist.
+---@type { [1]: string, [2]: string|boolean|number }[]
+local FOLD_OPTIONS = {
+  { "foldexpr", "v:lua.vim.treesitter.foldexpr()" },
+  { "foldmethod", "expr" },
+  { "foldenable", true },
+  { "foldlevel", 0 },
+}
+
+---Start a chat window's rendered tool calls and reasoning folded, so it opens on the answer.
+---
+---Only ever writes to a window showing a chat. Neovim keeps window-local options per
+---window+buffer pair (measured: a window set to `foldmethod=expr` on a chat is back to `manual`
+---on the next buffer and `expr` again on return), so nothing has to be reset afterwards and the
+---user's own fold settings on their code windows are never touched.
+---
+---@param win number Window handle (use 0 for current window)
+---@param bufnr? number Buffer number (detected from the window when omitted)
+---@param force? boolean Treat the buffer as a chat even before it has frontmatter
+---@return nil
+function M.apply_fold_config(win, bufnr, force)
+  if type(win) ~= "number" then
+    return
+  end
+  if win ~= 0 and not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+
+  if not bufnr then
+    bufnr = win == 0 and vim.api.nvim_get_current_buf() or vim.api.nvim_win_get_buf(win)
+  end
+
+  local opts = config.get()
+  local fold = opts.ui and opts.ui.fold
+  if not fold or fold.enabled ~= true then
+    return
+  end
+
+  if not (force or is_chat_buffer(bufnr)) then
+    return
+  end
+
+  -- `queries/vibing/folds.scm` names nodes only the outer parser produces. Under the Markdown
+  -- fallback the same foldexpr folds every `##` heading instead, collapsing each message of the
+  -- conversation -- worse than not folding, and silent.
+  local ok_ts, treesitter = pcall(require, "vibing.infrastructure.treesitter")
+  if not ok_ts or not treesitter.is_outer_parser_available() then
+    return
+  end
+
+  for _, option in ipairs(FOLD_OPTIONS) do
+    vim.api.nvim_set_option_value(option[1], option[2], { win = win, scope = "local" })
+  end
+end
+
+---Apply every window-local setting a vibing chat window gets.
+---
+---The one entry point, so a new setting reaches all four places a chat window is resolved
+---(creation, attach, `FileType`, `WinEnter`) instead of three of them.
+---
+---@param win number Window handle (use 0 for current window)
+---@param bufnr? number Buffer number (detected from the window when omitted)
+---@param force? boolean Treat the buffer as a chat even before it has frontmatter
+---@return nil
+function M.apply_window_config(win, bufnr, force)
+  M.apply_wrap_config(win, bufnr, force)
+  M.apply_fold_config(win, bufnr, force)
+end
+
 return M

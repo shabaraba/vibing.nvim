@@ -461,6 +461,19 @@ In a chat buffer:~
                 or video path under the cursor in the default application
     q           Close the chat window
 
+Folded output~
+
+A chat window opens on the answer: rendered tool calls and reasoning start
+folded, each collapsed to its own first line, so `⏺ Bash(...)` and the first
+line of a `💭` block stay visible while their bodies do not. These are
+ordinary Neovim folds, so `zo` opens one, `zc` closes it again and `zR` opens
+every fold in the window. See |fold-commands|.
+
+Set `ui.fold.enabled = false` to turn this off. Which parts collapse is a
+Tree-sitter query, `queries/vibing/folds.scm`, overridable per user in
+`after/queries/vibing/folds.scm`. Folding is skipped entirely when the bundled
+parser was not built — see |vibing-troubleshooting|.
+
 Answering a tool approval~
 
 When a tool needs your approval the prompt is written into the chat as an

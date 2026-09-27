@@ -503,6 +503,12 @@ M.defaults = {
       Task = "▶",
       default = "⏺",
     },
+    -- Rendered tool calls and reasoning start folded, so a chat window opens on the answer.
+    -- Which nodes fold is `queries/vibing/folds.scm`, overridable per user the ordinary Neovim
+    -- way with `after/queries/vibing/folds.scm`.
+    fold = {
+      enabled = true,
+    },
   },
   keymaps = {
     send = "<CR>",
