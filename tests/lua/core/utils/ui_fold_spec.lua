@@ -66,20 +66,21 @@ describe("ui.apply_fold_config", function()
 
   local untouched = { foldmethod = "manual", foldexpr = "0", foldlevel = 99, foldenable = false }
 
-  it("puts a chat window on the treesitter foldexpr with every fold closed", function()
+  -- Not `vim.treesitter.foldexpr()`: that one applies every injected language's own folds.scm,
+  -- which on a chat is markdown's and yaml's. `treesitter_fold_spec.lua` is where that is pinned.
+  it("puts a chat window on vibing's own foldexpr with every fold closed", function()
     local win, buf = fresh_window()
     Ui.apply_fold_config(win, buf)
     assert.same({
       foldmethod = "expr",
-      foldexpr = "v:lua.vim.treesitter.foldexpr()",
+      foldexpr = "v:lua.require'vibing.infrastructure.treesitter_fold'.foldexpr(v:lnum)",
       foldlevel = 0,
       foldenable = true,
     }, fold_state(win))
     vim.cmd("close")
   end)
 
-  -- The Markdown fallback has none of the nodes folds.scm names, and the same foldexpr folds every
-  -- `##` heading there instead -- one fold per message of the conversation.
+  -- The Markdown fallback has none of the nodes folds.scm names, so there would be nothing to fold.
   it("writes nothing when the outer parser is unavailable", function()
     outer_parser = false
     local win, buf = fresh_window()

@@ -1167,7 +1167,7 @@ ui = {
 
 ### Folding
 
-A chat window is put on `foldmethod=expr` with Neovim's Tree-sitter `foldexpr`, and which nodes
+A chat window is put on `foldmethod=expr` with a `foldexpr` of vibing.nvim's own, and which nodes
 collapse is `queries/vibing/folds.scm` — `tool_block` and `thinking_block`. To fold only one of
 them, or to add your own, override that query the ordinary Neovim way:
 
@@ -1176,11 +1176,26 @@ them, or to add your own, override that query the ordinary Neovim way:
 (tool_block) @fold
 ```
 
+Consecutive blocks of the same kind collapse as one fold rather than one each. The renderer puts a
+blank line between tool calls, so a turn that ran ten of them in a row produced ten folds, each one
+line long and each carrying its own fold text — noisier than the calls themselves. A run is one
+thing the reader is skipping past, so it collapses as one. Only like merges with like: reasoning
+sitting against a tool call keeps its own fold instead of disappearing under the tool's first line.
+
+Whether a fold is drawn closed at all is `foldminlines`, counted in _screen_ lines. With `ui.wrap`
+on, a single long tool call wraps and therefore closes; a short one does not.
+
+The `foldexpr` is vibing.nvim's rather than `vim.treesitter.foldexpr()` because that one applies
+every injected language's own `folds.scm` as well. A chat injects Markdown, and Markdown injects
+YAML into the frontmatter, so the stock expression also folded the frontmatter keys, the `##`
+sections and the prose paragraphs. This one asks the outer tree only, so nothing folds that
+`queries/vibing/folds.scm` did not name.
+
 Two things turn folding off on their own, whatever `enabled` says. It is skipped when the bundled
 Tree-sitter parser was not built (no C compiler at install time), because the Markdown fallback has
-none of those nodes and the same foldexpr would fold every `##` heading instead — one fold per
-message. And it is only ever written to a window showing a chat: Neovim keeps window-local options
-per window+buffer pair, so your other buffers in that window keep their own fold settings.
+none of those nodes and there would be nothing to fold. And it is only ever written to a window
+showing a chat: Neovim keeps window-local options per window+buffer pair, so your other buffers in
+that window keep their own fold settings.
 
 Every `tool_markers` entry is a plain string. Markers are resolved from the tool name alone, so
 they cannot vary with a tool's arguments (there is no way to give `Bash` one marker for `npm` and

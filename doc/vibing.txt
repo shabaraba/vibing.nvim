@@ -464,10 +464,18 @@ In a chat buffer:~
 Folded output~
 
 A chat window opens on the answer: rendered tool calls and reasoning start
-folded, each collapsed to its own first line, so `⏺ Bash(...)` and the first
-line of a `💭` block stay visible while their bodies do not. These are
-ordinary Neovim folds, so `zo` opens one, `zc` closes it again and `zR` opens
-every fold in the window. See |fold-commands|.
+folded, collapsed to their first line, so `⏺ Bash(...)` and the first line of
+a `💭` block stay visible while their bodies do not. Tool calls that run one
+after another collapse together, as the one thing you are skipping past
+rather than as one fold each. Nothing else folds — not the frontmatter, not
+the `##` sections, not your own prose. These are ordinary Neovim folds, so
+`zo` opens one, `zc` closes it again and `zR` opens every fold in the window.
+See |fold-commands|.
+
+A tool call that rendered no result is one line long. Whether Neovim draws
+such a fold closed is 'foldminlines', counted in *screen* lines — so with
+`ui.wrap` on it closes as soon as the command is long enough to wrap, and
+stays open when it is short.
 
 Set `ui.fold.enabled = false` to turn this off. Which parts collapse is a
 Tree-sitter query, `queries/vibing/folds.scm`, overridable per user in

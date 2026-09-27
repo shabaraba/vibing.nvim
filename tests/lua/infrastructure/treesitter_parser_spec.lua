@@ -1,33 +1,7 @@
+local VibingLanguage = require("tests.helpers.vibing_language")
+
 describe("vibing Tree-sitter parser", function()
-  --- Build the grammar from its committed source and register it, once for the whole file.
-  --- Registration is global, so a second compile would only cost a second or two of test time.
-  local compiled = false
-  local function ensure_language()
-    if compiled then
-      return
-    end
-    local parser_source = assert(
-      vim.api.nvim_get_runtime_file("tree-sitter-vibing/src/parser.c", false)[1],
-      "generated parser source is missing"
-    )
-    local include_dir = vim.fn.fnamemodify(parser_source, ":h")
-    local scanner_source = include_dir .. "/scanner.c"
-    local parser_library = vim.fn.tempname() .. ".so"
-    local compile = vim.system({
-      "cc",
-      "-O2",
-      "-shared",
-      "-fPIC",
-      "-I" .. include_dir,
-      parser_source,
-      scanner_source,
-      "-o",
-      parser_library,
-    }, { text = true }):wait()
-    assert.equals(0, compile.code, compile.stderr)
-    assert.is_true(vim.treesitter.language.add("vibing", { path = parser_library }))
-    compiled = true
-  end
+  local ensure_language = VibingLanguage.ensure
 
   it("isolates chat sections and rendered tool blocks from Markdown injections", function()
     ensure_language()

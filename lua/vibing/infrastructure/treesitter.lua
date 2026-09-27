@@ -34,9 +34,8 @@ function M.setup()
 end
 
 ---Whether the outer parser is active, so the chat is parsed into vibing.nvim's own nodes rather
----than as one Markdown document. Folding asks first: `queries/vibing/folds.scm` names nodes the
----Markdown fallback does not have, and `vim.treesitter.foldexpr()` on that fallback silently folds
----Markdown headings instead — every `##` section of the conversation.
+---than as one Markdown document. Folding asks first, because `queries/vibing/folds.scm` names
+---nodes the Markdown fallback does not have and there would be nothing to fold.
 ---@return boolean
 function M.is_outer_parser_available()
   return outer_parser_available

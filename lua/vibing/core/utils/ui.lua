@@ -77,7 +77,7 @@ end
 ---over the whole buffer, and `foldlevel` decides the state of folds that must already exist.
 ---@type { [1]: string, [2]: string|boolean|number }[]
 local FOLD_OPTIONS = {
-  { "foldexpr", "v:lua.vim.treesitter.foldexpr()" },
+  { "foldexpr", "v:lua.require'vibing.infrastructure.treesitter_fold'.foldexpr(v:lnum)" },
   { "foldmethod", "expr" },
   { "foldenable", true },
   { "foldlevel", 0 },
@@ -116,9 +116,8 @@ function M.apply_fold_config(win, bufnr, force)
     return
   end
 
-  -- `queries/vibing/folds.scm` names nodes only the outer parser produces. Under the Markdown
-  -- fallback the same foldexpr folds every `##` heading instead, collapsing each message of the
-  -- conversation -- worse than not folding, and silent.
+  -- `queries/vibing/folds.scm` names nodes only the outer parser produces, so under the Markdown
+  -- fallback there is nothing to fold and the window would get `foldmethod=expr` for nothing.
   local ok_ts, treesitter = pcall(require, "vibing.infrastructure.treesitter")
   if not ok_ts or not treesitter.is_outer_parser_available() then
     return
