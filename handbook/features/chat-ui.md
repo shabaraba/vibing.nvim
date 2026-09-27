@@ -57,6 +57,34 @@ three: `handbook/architecture/orchestration.md` → "Delivered sections".
 Implemented in `lua/vibing/core/utils/timestamp.lua`: `create_header(role, timestamp)`,
 `extract_role(line)`, `has_timestamp(line)`, `extract_timestamp(line)`, `is_header(line)`.
 
+## Where a Rendered Tool Call Ends
+
+`event_renderer` writes `<marker> <Name>(<input summary>)`, and for `Bash` the summary is
+`tool_input.command` verbatim — so one call can be a whole script, blank lines and all. Where it
+ends decides what highlights as a tool call, what folds as one, and what `chat_excerpt` drops
+before a chat reaches title generation or `/summarize`.
+
+It is decided by matching parentheses, and the rule has three parts, all of them arrived at from
+real chats: quoted spans and escaped characters do not count (`Bash(echo ')' && git rebase ...)`
+closed on the quoted one and left the rebase behind as prose), a heredoc body is data rather than
+shell code (a Python triple-quoted string inside one lost the end of the block and left tens of
+thousands of characters of script in the excerpt), and past 500 lines the whole thing is given up
+on. The floor when it is given up on is the older rule, "the first line whose last character is
+`)`" — which on its own cut a script at its first `foo(x)` and left everything after it unfolded
+and unhighlighted, and, when nothing closed at all, read on through the next `## Assistant` and
+took the chat boundary with it. A chat boundary now stops the search, the same way it stops an
+unfinished code fence.
+
+There are two implementations because the grammar's is in C, inside
+`tree-sitter-vibing/src/scanner.c`'s external scanner, and cannot call the Lua one in
+`core/utils/chat_excerpt.lua`. `tests/lua/infrastructure/treesitter_tool_span_spec.lua` holds them
+to the same answers on the cases that shaped the rule. They part company only past the point where
+the count fails: the grammar stops at a chat boundary and `chat_excerpt` stops at the first blank
+line, each conservative for what it is protecting.
+
+Changing any of this means rebuilding the parser (`./build.sh`); the compiled grammar is what a
+running Neovim loads.
+
 ## Code Fences Written into the Buffer
 
 A model sometimes ends a code block and keeps writing on the same line:

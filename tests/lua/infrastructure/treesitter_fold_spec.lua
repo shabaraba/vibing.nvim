@@ -143,6 +143,35 @@ describe("treesitter_fold.foldexpr", function()
     vim.api.nvim_buf_delete(bufnr, { force = true })
   end)
 
+  -- Reported from a turn that ran a script through `Bash`: everything from the script's own first
+  -- `foo(x)` onwards stayed open, because the rule that found the end of a multi-line call was
+  -- written as "the first line ending in `)`". Where the call ends is where its parentheses close.
+  it("folds a tool call whose argument is a whole script", function()
+    local lines = {
+      '💻 Bash(cd /tmp && nvim --headless -u NONE -c "', -- 1
+      "set foldmethod=manual", -- 2
+      "call setline(1, ['---'] + map(range(2,19), 'k'))", -- 3
+      "1,17fold",
+      "echo 'after first fold: end=' . foldclosedend(1)",
+      "qa!",
+      '" 2>&1)', -- 7
+      "", -- 8
+      "答え。", -- 9
+    }
+    local bufnr = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+    vim.api.nvim_set_current_buf(bufnr)
+
+    local result = {}
+    for lnum = 1, #lines do
+      result[lnum] = Fold.foldexpr(lnum)
+    end
+
+    assert.same({ ">1", "1", "1", "1", "1", "1", "1", "0", "0" }, result)
+
+    vim.api.nvim_buf_delete(bufnr, { force = true })
+  end)
+
   it("keeps reasoning out of the tool call it sits against", function()
     local lines = {
       "💭 a thought", -- 1

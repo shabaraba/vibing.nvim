@@ -1176,6 +1176,10 @@ them, or to add your own, override that query the ordinary Neovim way:
 (tool_block) @fold
 ```
 
+A call whose argument runs to many lines — a `Bash` call carrying a whole script — folds whole.
+Where it ends is the grammar's answer, not the fold module's: `handbook/features/chat-ui.md` →
+"Where a Rendered Tool Call Ends".
+
 Consecutive blocks of the same kind collapse as one fold rather than one each. The renderer puts a
 blank line between tool calls, so a turn that ran ten of them in a row produced ten folds, each one
 line long and each carrying its own fold text — noisier than the calls themselves. A run is one
