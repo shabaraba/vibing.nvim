@@ -1185,36 +1185,38 @@ sitting against a tool call keeps its own fold instead of disappearing under the
 Whether a fold is drawn closed at all is `foldminlines`, counted in _screen_ lines. With `ui.wrap`
 on, a single long tool call wraps and therefore closes; a short one does not.
 
-After every batch of buffer changes the folds of each window showing the chat are re-derived
-explicitly. Neovim does not reliably re-evaluate `foldexpr` for lines it did not itself change, and
-merging means a run growing by one call changes the _extent_ of a fold that opened earlier — the
-window kept the old end and read the rest of the run as ordinary content (observed mid-turn on a
-live chat, rows 133..140 at level 0 against a tree that said 1; repaired by nothing more than
-`setlocal foldmethod=expr`). `vim.treesitter`'s own fold module carries the same refresh for the
-same reason.
+**Folds are derived when a turn ends, not while it streams.** A turn's tool calls arrive one 50 ms
+chunk at a time and the run a chunk lands in is not finished until the turn is, so a fold drawn per
+chunk is a fold that is about to change again. The `VibingResponseDone` autocmd derives the chat
+once and asks every window showing it to re-read the result — explicitly, because Neovim does not
+reliably re-evaluate `foldexpr` for lines it did not itself change, and merging means a finished run
+moves the _extent_ of a fold whose opening row never changed (observed mid-turn on a live chat, rows
+133..140 at level 0 against a tree that said 1; repaired by nothing more than `setlocal
+foldmethod=expr`). `vim.treesitter`'s own fold module carries the same refresh for the same reason.
+
+Between those points the regions last derived are served as they are. The one edit that must not be
+served from them is one reaching into what is already folded — you rewriting an older message, which
+moves every region below it — so the buffer is watched and that case re-derives on the next
+`foldexpr`. A streaming turn only ever appends _below_ the last region, which is what makes it free.
 
 #### What folding costs
 
-A turn flushes its buffered output every 50 ms, so everything below is paid up to 20 times a
-second. Measured against three real chat files from this repository, with the Tree-sitter parse and
-the redraw that drawing the buffer forces anyway counted on both sides:
+Measured against three real chat files from this repository, with the buffer's Tree-sitter parse
+already warm as it is in a drawn window:
 
-| Chat length | Flush, folding off | Flush, folding on | Folding's share at 20 Hz |
-| ----------- | ------------------ | ----------------- | ------------------------ |
-| 1262 lines  | 1.26 ms            | 2.64 ms           | 2.7 %                    |
-| 4868 lines  | 2.13 ms            | 3.91 ms           | 3.6 %                    |
-| 21501 lines | 6.97 ms            | 9.80 ms           | 5.7 %                    |
+| Chat length | Per chunk flush | Per turn end |
+| ----------- | --------------- | ------------ |
+| 4838 lines  | 0.0005 ms       | 9 ms         |
+| 9042 lines  | 0.0004 ms       | 17 ms        |
+| 21471 lines | 0.0007 ms       | 40 ms        |
 
-Two things keep that flat. The refresh is coalesced to one per event-loop tick and covers only the
-changed rows, widened to whole folds. And the regions themselves are derived incrementally: nothing
-above the first changed row can move, so the query starts at the splice point and everything before
-it is carried over. Deriving the whole buffer instead cost 13.4 ms per flush on the 21501-line chat
-— a quarter of the main loop — against 2.8 ms now.
+A flush costs a binary search over the regions and nothing else. The turn-end figure is a
+whole-buffer query pass plus the `foldexpr` Neovim then evaluates for every line, and it is paid
+once, on a buffer that has stopped moving.
 
-The cost that remains is dominated by the outer grammar's own re-parse, which is 5.2 ms on that
-chat for a one-line append against 16.9 ms from scratch. That is not folding's to pay: the
-highlighter forces the same parse to draw the buffer. Folding only stops being free by asking for
-it slightly sooner.
+Deriving per flush instead — the first shape this took — cost 13.4 ms on the 21471-line chat, 20
+times a second, a quarter of the main loop and growing with the conversation. Deriving incrementally
+from a splice point brought that to 2.8 ms, and deriving at the end of a turn removes it.
 
 The `foldexpr` is vibing.nvim's rather than `vim.treesitter.foldexpr()` because that one applies
 every injected language's own `folds.scm` as well. A chat injects Markdown, and Markdown injects

@@ -472,6 +472,10 @@ the `##` sections, not your own prose. These are ordinary Neovim folds, so
 `zo` opens one, `zc` closes it again and `zR` opens every fold in the window.
 See |fold-commands|.
 
+A turn's own output folds when the turn finishes, not while it streams. What
+you are skipping past is the finished run of calls, and folding each line as
+it arrives would collapse a run that is still growing.
+
 A tool call that rendered no result is one line long. Whether Neovim draws
 such a fold closed is 'foldminlines', counted in *screen* lines — so with
 `ui.wrap` on it closes as soon as the command is long enough to wrap, and

@@ -5,6 +5,13 @@
 ---yaml into the frontmatter, so the stock queries fold every section heading, every list and every
 ---frontmatter key -- most of the file. This asks the outer tree only, so what folds is exactly what
 ---`queries/vibing/folds.scm` names.
+---
+---**Folds are derived when a turn ends, not while it streams.** A turn's tool calls arrive one
+---50ms chunk at a time and the run they belong to is not finished until the turn is, so folding
+---each delta as it lands means re-deriving the chat dozens of times a second to draw a fold that
+---is about to change again. What a reader wants to skip past is the finished run. So a streaming
+---turn costs no derivation at all -- its output is simply not folded yet -- and
+---`VibingResponseDone` folds the whole thing in one pass.
 local M = {}
 
 ---@class Vibing.FoldRegion
@@ -12,28 +19,23 @@ local M = {}
 ---@field erow integer Last row of the region, 0-indexed and inclusive
 ---@field kind string The node type, so only like merges with like
 
----@class Vibing.FoldState
----@field tick integer The `changedtick` the regions were derived at
----@field raw Vibing.FoldRegion[] One per `@fold` capture, in document order
----@field merged Vibing.FoldRegion[] Runs of the same kind joined, in document order
-
----@type table<integer, Vibing.FoldState>
-local state = {}
+---The regions last derived for a buffer, in document order and non-overlapping.
+---@type table<integer, Vibing.FoldRegion[]>
+local regions = {}
+---Buffers whose text was edited in a way that could have moved one of their regions.
+---@type table<integer, true>
+local stale = {}
 ---@type table<integer, true>
 local watched = {}
----Changed rows accumulated since the last refresh, as `{ srow, erow }`.
----@type table<integer, integer[]>
-local pending = {}
----The lowest row whose regions may have changed since the last derivation.
----@type table<integer, integer>
-local dirty_from = {}
 
 local function forget(bufnr)
-  state[bufnr], watched[bufnr], pending[bufnr], dirty_from[bufnr] = nil, nil, nil, nil
+  regions[bufnr], stale[bufnr], watched[bufnr] = nil, nil, nil
 end
 
+local group = vim.api.nvim_create_augroup("VibingTreesitterFold", { clear = true })
+
 vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
-  group = vim.api.nvim_create_augroup("VibingTreesitterFold", { clear = true }),
+  group = group,
   callback = function(args)
     forget(args.buf)
   end,
@@ -65,13 +67,9 @@ end
 ---tool's first line.
 ---@param bufnr integer
 ---@param found Vibing.FoldRegion[] In document order
----@param seed Vibing.FoldRegion? A merged region the first of `found` may extend
 ---@return Vibing.FoldRegion[]
-local function merge_runs(bufnr, found, seed)
+local function merge_runs(bufnr, found)
   local merged = {}
-  if seed then
-    merged[1] = { srow = seed.srow, erow = seed.erow, kind = seed.kind }
-  end
 
   for _, region in ipairs(found) do
     local previous = merged[#merged]
@@ -90,11 +88,10 @@ local function merge_runs(bufnr, found, seed)
   return merged
 end
 
----Read the `@fold` captures of the outer tree from `srow` to the end of the buffer.
+---Read every `@fold` capture of the outer tree.
 ---@param bufnr integer
----@param srow integer
 ---@return Vibing.FoldRegion[]? regions nil when the buffer has no usable outer tree
-local function capture_regions(bufnr, srow)
+local function capture_regions(bufnr)
   local ok_parser, parser = pcall(vim.treesitter.get_parser, bufnr, "vibing")
   if not ok_parser or not parser then
     return nil
@@ -105,21 +102,21 @@ local function capture_regions(bufnr, srow)
     return nil
   end
 
-  -- `false` parses the outer tree and stops. That is both the tree this needs and the reason a
-  -- foldexpr can run on every change without paying for the injection parse again.
+  -- `false` parses the outer tree and stops. That is both the tree this needs and the reason the
+  -- derivation does not pay for the injection parse.
   local ok_parse, trees = pcall(parser.parse, parser, false)
   if not ok_parse or type(trees) ~= "table" or not trees[1] then
     return nil
   end
 
   local found = {}
-  for _, node in query:iter_captures(trees[1]:root(), bufnr, srow, -1) do
+  for _, node in query:iter_captures(trees[1]:root(), bufnr) do
     local start_row, _, end_row, end_col = node:range()
     -- A node ending at column 0 stops before that row rather than on it.
     if end_col == 0 then
       end_row = end_row - 1
     end
-    if end_row >= start_row and start_row >= srow then
+    if end_row >= start_row then
       found[#found + 1] = { srow = start_row, erow = end_row, kind = node:type() }
     end
   end
@@ -127,75 +124,17 @@ local function capture_regions(bufnr, srow)
   return found
 end
 
----How many entries of `list` end strictly before `row`.
----@param list Vibing.FoldRegion[]
----@param row integer
----@return integer
-local function count_below(list, row)
-  local kept = 0
-  for _, region in ipairs(list) do
-    if region.erow >= row then
-      break
-    end
-    kept = kept + 1
-  end
-  return kept
-end
-
----Derive the buffer's fold regions, reusing everything the last change could not have moved.
----
----The whole-buffer form cost 12 ms per chunk flush on a 21471-line chat -- the largest in this
----repository -- and a flush happens every 50 ms while a turn streams, so it spent a quarter of the
----main loop. Nothing above the first changed row can move, though: the chat is appended to, and
----even a mid-buffer edit leaves every earlier node where it was. So the query starts at the splice
----point and the regions before it are carried over. Measured on that same chat, the cost of a
----flush stops depending on its length.
 ---@param bufnr integer
----@return Vibing.FoldRegion[] merged
+---@return Vibing.FoldRegion[]
 local function derive(bufnr)
-  local previous = state[bufnr]
-  local from = dirty_from[bufnr]
-  dirty_from[bufnr] = nil
-
-  -- A change on a row can extend the block that began on the one above it -- a tool call gaining
-  -- its first result line -- so the row above is re-read too.
-  local splice = (previous and from) and math.max(from - 1, 0) or 0
-  local raw, merged = {}, {}
-
-  if previous and from then
-    local kept_raw = count_below(previous.raw, splice)
-    if kept_raw > 0 then
-      splice = previous.raw[kept_raw].erow + 1
-      vim.list_extend(raw, previous.raw, 1, kept_raw)
-    else
-      splice = 0
-    end
-    vim.list_extend(merged, previous.merged, 1, count_below(previous.merged, splice))
-  end
-
-  local found = capture_regions(bufnr, splice)
+  local found = capture_regions(bufnr)
   if not found then
     return {}
   end
 
-  vim.list_extend(raw, found)
-  -- The last carried-over merged region may absorb the first newly read one, so it re-merges
-  -- rather than being trusted as final.
-  local seed = table.remove(merged)
-  vim.list_extend(merged, merge_runs(bufnr, found, seed))
-
-  state[bufnr] = { tick = vim.b[bufnr].changedtick, raw = raw, merged = merged }
-  return merged
-end
-
----@param bufnr integer
----@return Vibing.FoldRegion[]
-local function regions(bufnr)
-  local entry = state[bufnr]
-  if entry and entry.tick == vim.b[bufnr].changedtick then
-    return entry.merged
-  end
-  return derive(bufnr)
+  stale[bufnr] = nil
+  regions[bufnr] = merge_runs(bufnr, found)
+  return regions[bufnr]
 end
 
 ---The region covering `row`, if any.
@@ -218,95 +157,91 @@ local function region_at(merged, row)
   return nil
 end
 
----Grow a changed range to cover whole folds at both ends.
+---Derive the buffer's folds and ask every window drawing them to re-read the result.
 ---
----A run gaining another call moves the *end* of a region that opened earlier, so re-deriving only
----the rows that changed leaves the opening row saying what it said before.
+---Neovim does not re-evaluate `foldexpr` for lines it did not itself change, and a finished turn
+---moves the *extent* of folds whose opening row never changed. `vim.treesitter`'s own fold module
+---carries this same explicit refresh, under the same stated reason: "Nvim usually automatically
+---updates folds when text changes, but it doesn't work here".
 ---@param bufnr integer
----@param srow integer
----@param erow integer
----@return integer srow, integer erow
-local function widen_to_folds(bufnr, srow, erow)
-  local entry = state[bufnr]
-  if not entry then
-    return srow, erow
-  end
-
-  local first = region_at(entry.merged, srow)
-  if first then
-    srow = first.srow
-  end
-  local last = region_at(entry.merged, erow)
-  if last then
-    erow = last.erow + 1
-  end
-
-  return srow, erow
-end
-
----Ask Neovim to re-derive the folds of every window showing this buffer.
----
----Neovim does not reliably re-evaluate `foldexpr` for lines it did not itself change, and a run of
----tool calls grows the *extent* of a fold that opened earlier: the window kept a fold ending where
----the run's first call ended, and read the rest of the run as ordinary content. Observed mid-turn
----on a live chat -- rows 133..140 at level 0 against a tree that said 1 -- and repaired by nothing
----more than `setlocal foldmethod=expr`. `vim.treesitter`'s own fold module carries this same
----explicit refresh, under the same stated reason: "Nvim usually automatically updates folds when
----text changes, but it doesn't work here".
----@param bufnr integer
-local function refresh_folds(bufnr)
-  local range = pending[bufnr]
-  pending[bufnr] = nil
-
-  if not range or type(vim._foldupdate) ~= "function" or not vim.api.nvim_buf_is_loaded(bufnr) then
+local function refresh(bufnr)
+  if not vim.api.nvim_buf_is_loaded(bufnr) then
     return
   end
 
-  local last = vim.api.nvim_buf_line_count(bufnr)
-  local srow, erow = widen_to_folds(bufnr, math.max(range[1], 0), math.min(range[2], last))
-  erow = math.min(erow, last)
-  if srow >= erow then
-    return
-  end
-
+  local windows = {}
   for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
     if vim.api.nvim_get_option_value("foldmethod", { win = win }) == "expr" then
-      vim._foldupdate(win, srow, erow)
+      windows[#windows + 1] = win
     end
+  end
+
+  if #windows == 0 then
+    -- Nothing is drawing folds for it, so derive when something is.
+    regions[bufnr], stale[bufnr] = nil, nil
+    return
+  end
+
+  derive(bufnr)
+
+  if type(vim._foldupdate) ~= "function" then
+    return
+  end
+  local last = vim.api.nvim_buf_line_count(bufnr)
+  for _, win in ipairs(windows) do
+    vim._foldupdate(win, 0, last)
   end
 end
 
----Refresh once per batch of changes, and not while the user is typing.
+---Fold what a finished turn wrote.
 ---
----Neovim guards its own fold update in insert mode, so one made there is silently dropped -- and
----the chat's next message is written in insert mode, right under the turn that is still streaming.
+---Deferred out of insert mode, because Neovim drops a fold update made there -- and the chat's
+---next message is typed in insert mode, right under the turn that just ended.
 ---@param bufnr integer
----@param srow integer First changed row, 0-indexed
----@param erow integer Row after the last changed one
-local function schedule_refresh(bufnr, srow, erow)
-  local range = pending[bufnr]
-  if range then
-    range[1], range[2] = math.min(range[1], srow), math.max(range[2], erow)
+function M.refresh(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
     return
   end
-  pending[bufnr] = { srow, erow }
 
   if vim.api.nvim_get_mode().mode:match("^i") then
     vim.api.nvim_create_autocmd("InsertLeave", {
       buffer = bufnr,
       once = true,
       callback = function()
-        refresh_folds(bufnr)
+        refresh(bufnr)
       end,
     })
     return
   end
 
-  vim.schedule(function()
-    refresh_folds(bufnr)
-  end)
+  refresh(bufnr)
 end
 
+vim.api.nvim_create_autocmd("User", {
+  group = group,
+  pattern = "VibingResponseDone",
+  callback = function(args)
+    local bufnr = args.data and args.data.bufnr
+    if type(bufnr) == "number" then
+      M.refresh(bufnr)
+    end
+  end,
+})
+
+vim.api.nvim_create_autocmd("InsertLeave", {
+  group = group,
+  callback = function(args)
+    if stale[args.buf] then
+      refresh(args.buf)
+    end
+  end,
+})
+
+---Notice an edit that could have moved a region that is already folded.
+---
+---Everything a streaming turn writes lands below the last region, so a turn marks nothing stale
+---and costs nothing. A user rewriting an older message does move them, and that is re-derived on
+---the next `foldexpr` Neovim asks for.
 ---@param bufnr integer
 local function watch(bufnr)
   if watched[bufnr] then
@@ -315,12 +250,15 @@ local function watch(bufnr)
   watched[bufnr] = true
 
   vim.api.nvim_buf_attach(bufnr, false, {
-    on_lines = function(_, buf, _, firstline, _, new_lastline)
+    on_lines = function(_, buf, _, firstline)
       if not watched[buf] then
         return true
       end
-      dirty_from[buf] = math.min(dirty_from[buf] or firstline, firstline)
-      schedule_refresh(buf, firstline, new_lastline)
+      local known = regions[buf]
+      local last = known and known[#known]
+      if last and firstline <= last.erow then
+        stale[buf] = true
+      end
     end,
     on_detach = function(_, buf)
       forget(buf)
@@ -334,8 +272,13 @@ function M.foldexpr(lnum)
   local bufnr = vim.api.nvim_get_current_buf()
   watch(bufnr)
 
+  local merged = regions[bufnr]
+  if not merged or stale[bufnr] then
+    merged = derive(bufnr)
+  end
+
   local row = lnum - 1
-  local region = region_at(regions(bufnr), row)
+  local region = region_at(merged, row)
   if not region then
     return "0"
   end
