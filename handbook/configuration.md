@@ -1185,6 +1185,15 @@ sitting against a tool call keeps its own fold instead of disappearing under the
 Whether a fold is drawn closed at all is `foldminlines`, counted in _screen_ lines. With `ui.wrap`
 on, a single long tool call wraps and therefore closes; a short one does not.
 
+After every batch of buffer changes the folds of each window showing the chat are re-derived
+explicitly. Neovim does not reliably re-evaluate `foldexpr` for lines it did not itself change, and
+merging means a run growing by one call changes the _extent_ of a fold that opened earlier — the
+window kept the old end and read the rest of the run as ordinary content (observed mid-turn on a
+live chat, rows 133..140 at level 0 against a tree that said 1; repaired by nothing more than
+`setlocal foldmethod=expr`). `vim.treesitter`'s own fold module carries the same refresh for the
+same reason. It costs 3.6 ms on a 1232-line chat and is coalesced to one per event-loop tick, so a
+turn writing twenty deltas a second pays it twenty times, not once per delta.
+
 The `foldexpr` is vibing.nvim's rather than `vim.treesitter.foldexpr()` because that one applies
 every injected language's own `folds.scm` as well. A chat injects Markdown, and Markdown injects
 YAML into the frontmatter, so the stock expression also folded the frontmatter keys, the `##`

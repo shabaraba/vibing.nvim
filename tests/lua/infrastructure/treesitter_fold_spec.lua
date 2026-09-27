@@ -180,6 +180,80 @@ describe("treesitter_fold.foldexpr", function()
     vim.api.nvim_buf_delete(bufnr, { force = true })
   end)
 
+  --- The refresh is pinned as the call, not as the symptom it repairs.
+  ---
+  --- Neovim keeps a fold whose *extent* grew -- a run of tool calls gaining another member -- at
+  --- its old end, and reads the rest of the run as ordinary content. That was observed mid-turn on
+  --- a live chat (rows 133..140 at level 0 against a tree that said 1, repaired by `setlocal
+  --- foldmethod=expr`) and has not been reproduced from a script writing the same bytes, so a spec
+  --- asserting the levels would pass with the refresh deleted. `vim.treesitter`'s own fold module
+  --- carries the same explicit refresh for the same reason.
+  describe("after the buffer changes", function()
+    local calls
+    local real_foldupdate
+
+    before_each(function()
+      calls = {}
+      real_foldupdate = vim._foldupdate
+      vim._foldupdate = function(win, srow, erow)
+        calls[#calls + 1] = { win = win, srow = srow, erow = erow }
+        return real_foldupdate and real_foldupdate(win, srow, erow)
+      end
+    end)
+
+    after_each(function()
+      vim._foldupdate = real_foldupdate
+    end)
+
+    --- @return integer win, integer bufnr
+    local function folded_window()
+      vim.cmd("new")
+      local bufnr = vim.api.nvim_get_current_buf()
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, RUN_LINES)
+      vim.wo.foldexpr = "v:lua.require'vibing.infrastructure.treesitter_fold'.foldexpr(v:lnum)"
+      vim.wo.foldmethod = "expr"
+      -- The buffer is watched from the first foldexpr Neovim asks for, which the line above has
+      -- already triggered; only what happens afterwards is under test.
+      calls = {}
+      return vim.api.nvim_get_current_win(), bufnr
+    end
+
+    it("asks every expr-folded window showing it to re-derive its folds", function()
+      local win, bufnr = folded_window()
+
+      vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { "", "💻 Bash(ls)" })
+      vim.wait(200, function()
+        return #calls > 0
+      end)
+
+      assert.is_true(#calls > 0, "no fold refresh was requested")
+      assert.equals(win, calls[1].win)
+      assert.equals(0, calls[1].srow)
+      assert.equals(vim.api.nvim_buf_line_count(bufnr), calls[1].erow)
+
+      vim.cmd("close")
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end)
+
+    it("coalesces a burst of changes into one refresh", function()
+      local _, bufnr = folded_window()
+
+      for index = 1, 8 do
+        vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { "💻 Bash(echo " .. index .. ")" })
+      end
+      vim.wait(200, function()
+        return #calls > 0
+      end)
+
+      -- Streaming writes a delta at a time; one refresh per delta would re-derive the folds of the
+      -- whole chat dozens of times a second.
+      assert.equals(1, #calls)
+
+      vim.cmd("close")
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end)
+  end)
+
   -- What the reader actually sees, which the levels alone do not say: `foldminlines` counts
   -- *screen* lines, so whether a one-line fold is drawn closed depends on `wrap` and the window
   -- width. Both are pinned here, or this would pass or fail by terminal size.

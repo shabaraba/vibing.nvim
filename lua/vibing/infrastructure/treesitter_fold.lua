@@ -13,11 +13,15 @@ local M = {}
 
 ---@type table<integer, Vibing.FoldLevels>
 local cache = {}
+---@type table<integer, true>
+local watched = {}
+---@type table<integer, true>
+local pending = {}
 
 vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
   group = vim.api.nvim_create_augroup("VibingTreesitterFold", { clear = true }),
   callback = function(args)
-    cache[args.buf] = nil
+    cache[args.buf], watched[args.buf], pending[args.buf] = nil, nil, nil
   end,
 })
 
@@ -113,10 +117,83 @@ local function compute(bufnr)
   return levels
 end
 
+---Ask Neovim to re-derive the folds of every window showing this buffer.
+---
+---Neovim does not reliably re-evaluate `foldexpr` for lines it did not itself change, and a run of
+---tool calls grows the *extent* of a fold that opened earlier: the window kept a fold ending where
+---the run's first call ended, and read the rest of the run as ordinary content. Observed mid-turn
+---on a live chat -- rows 133..140 at level 0 against a tree that said 1 -- and repaired by nothing
+---more than `setlocal foldmethod=expr`. `vim.treesitter`'s own fold module carries this same
+---explicit refresh, under the same stated reason: "Nvim usually automatically updates folds when
+---text changes, but it doesn't work here".
+---@param bufnr integer
+local function refresh_folds(bufnr)
+  pending[bufnr] = nil
+
+  if type(vim._foldupdate) ~= "function" or not vim.api.nvim_buf_is_loaded(bufnr) then
+    return
+  end
+
+  local last = vim.api.nvim_buf_line_count(bufnr)
+  for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+    if vim.api.nvim_get_option_value("foldmethod", { win = win }) == "expr" then
+      vim._foldupdate(win, 0, last)
+    end
+  end
+end
+
+---Refresh once per batch of changes, and not while the user is typing.
+---
+---Neovim guards its own fold update in insert mode, so one made there is silently dropped -- and
+---the chat's next message is written in insert mode, right under the turn that is still streaming.
+---@param bufnr integer
+local function schedule_refresh(bufnr)
+  if pending[bufnr] then
+    return
+  end
+  pending[bufnr] = true
+
+  if vim.api.nvim_get_mode().mode:match("^i") then
+    vim.api.nvim_create_autocmd("InsertLeave", {
+      buffer = bufnr,
+      once = true,
+      callback = function()
+        refresh_folds(bufnr)
+      end,
+    })
+    return
+  end
+
+  vim.schedule(function()
+    refresh_folds(bufnr)
+  end)
+end
+
+---@param bufnr integer
+local function watch(bufnr)
+  if watched[bufnr] then
+    return
+  end
+  watched[bufnr] = true
+
+  vim.api.nvim_buf_attach(bufnr, false, {
+    on_lines = function(_, buf)
+      if not watched[buf] then
+        return true
+      end
+      schedule_refresh(buf)
+    end,
+    on_detach = function(_, buf)
+      watched[buf], pending[buf], cache[buf] = nil, nil, nil
+    end,
+  })
+end
+
 ---@param lnum integer 1-indexed line, as `foldexpr` is handed it
 ---@return string
 function M.foldexpr(lnum)
   local bufnr = vim.api.nvim_get_current_buf()
+  watch(bufnr)
 
   local tick = vim.b[bufnr].changedtick
   local entry = cache[bufnr]
