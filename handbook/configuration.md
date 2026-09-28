@@ -1200,6 +1200,13 @@ moves the _extent_ of a fold whose opening row never changed (observed mid-turn 
 133..140 at level 0 against a tree that said 1; repaired by nothing more than `setlocal
 foldmethod=expr`). `vim.treesitter`'s own fold module carries the same refresh for the same reason.
 
+**A turn that ends in insert mode is deferred, and what releases it is rarely the chat's own
+`InsertLeave`.** Neovim drops a fold update made in insert mode, and `nvim_get_mode` reports the
+_global_ mode — so the ordinary case is a turn finishing while the user has gone off to type in a
+code buffer. The buffer is marked instead, and the next `InsertLeave` anywhere pays what every
+marked buffer is owed. Keying the release on the buffer insert mode was left in is the shape this
+had first, and it left such a chat unfolded until the user happened to type in the chat itself.
+
 Between those points the regions last derived are served as they are. The one edit that must not be
 served from them is one reaching into what is already folded — you rewriting an older message, which
 moves every region below it — so the buffer is watched and that case re-derives on the next

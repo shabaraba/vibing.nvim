@@ -180,9 +180,8 @@ local function refresh(bufnr)
   end
 
   if #windows == 0 then
-    -- Nothing is drawing folds for it, so derive when something is. Dropping the regions is what
-    -- makes `foldexpr` re-derive; `stale` says nothing once there is nothing to be stale about.
-    regions[bufnr] = nil
+    -- Nothing is drawing folds for it, so derive when something is.
+    regions[bufnr], stale[bufnr] = nil, nil
     return
   end
 
@@ -201,10 +200,8 @@ end
 ---
 ---Deferred out of insert mode, because Neovim drops a fold update made there -- and the chat's
 ---next message is typed in insert mode, right under the turn that just ended. Deferred by marking
----the buffer rather than by registering a handler, because the mode is global: a chat finishing a
----turn in the background while the user types anywhere at all takes this path, and one handler per
----turn means N whole-buffer derivations on the next `InsertLeave`. `watch` already has the one
----handler, and `stale` is already the word for "derive this again".
+---the buffer rather than by registering a handler per turn, since `stale` is already the word for
+---"this buffer owes a derivation" and N background turns would otherwise mean N handlers.
 ---@param bufnr integer
 function M.refresh(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then
@@ -226,6 +223,26 @@ vim.api.nvim_create_autocmd("User", {
     local bufnr = args.data and args.data.bufnr
     if type(bufnr) == "number" then
       M.refresh(bufnr)
+    end
+  end,
+})
+
+---Pay what insert mode deferred, for every buffer that is owed it.
+---
+---Not filtered to a buffer, and it sweeps rather than looking at `args.buf`, because **the
+---`InsertLeave` that releases a chat's folds is usually not the chat's own**. `nvim_get_mode`
+---reports the global mode, so a turn finishing while the user types in a code buffer is deferred
+---here too -- and keying on the buffer the user left insert in leaves that chat unfolded until
+---they happen to type in it. `stale` is empty almost always, which is the real guard.
+vim.api.nvim_create_autocmd("InsertLeave", {
+  group = group,
+  callback = function()
+    local owed = {}
+    for bufnr in pairs(stale) do
+      owed[#owed + 1] = bufnr
+    end
+    for _, bufnr in ipairs(owed) do
+      refresh(bufnr)
     end
   end,
 })
@@ -255,18 +272,6 @@ local function watch(bufnr)
     end,
   })
 
-  -- Neovim drops a fold update made in insert mode, and the user rewriting an older message is in
-  -- it. Buffer-local, because only a buffer that is drawing these folds is ever watched -- a global
-  -- handler would run on every `InsertLeave` anywhere in the editor to read one nil.
-  vim.api.nvim_create_autocmd("InsertLeave", {
-    group = group,
-    buffer = bufnr,
-    callback = function(args)
-      if stale[args.buf] then
-        refresh(args.buf)
-      end
-    end,
-  })
 end
 
 ---@param lnum integer 1-indexed line, as `foldexpr` is handed it

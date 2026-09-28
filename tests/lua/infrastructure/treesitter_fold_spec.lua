@@ -315,6 +315,45 @@ describe("treesitter_fold.foldexpr", function()
       close(bufnr)
     end)
 
+    -- Neovim drops a fold update made in insert mode, so a turn that ends there is deferred. What
+    -- releases it is the *next* `InsertLeave`, and that one is usually not the chat's own:
+    -- `nvim_get_mode` reports the global mode, so the ordinary case is a turn finishing while the
+    -- user has gone off to type in a code buffer. Keying the release on the buffer insert mode was
+    -- left in leaves the chat unfolded until they happen to type in the chat itself.
+    describe("when the turn ends while the user is in insert mode elsewhere", function()
+      local real_get_mode
+
+      before_each(function()
+        real_get_mode = vim.api.nvim_get_mode
+        vim.api.nvim_get_mode = function()
+          return { mode = "i", blocking = false }
+        end
+      end)
+
+      after_each(function()
+        vim.api.nvim_get_mode = real_get_mode
+      end)
+
+      it("defers the fold, then draws it on an InsertLeave in another buffer", function()
+        local win, bufnr = folded_window()
+        vim.api.nvim_buf_set_lines(bufnr, -1, -1, false, { "", "💻 Bash(ls)" })
+
+        finish_turn(bufnr)
+        assert.equals(0, #calls, "a fold update made in insert mode is dropped by Neovim")
+
+        -- Somewhere else entirely, which is where the user was typing.
+        local other = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_get_mode = real_get_mode
+        vim.api.nvim_exec_autocmds("InsertLeave", { buffer = other })
+
+        assert.equals(1, #calls, "the chat was never asked to redraw its folds")
+        assert.equals(win, calls[1].win)
+
+        vim.api.nvim_buf_delete(other, { force = true })
+        close(bufnr)
+      end)
+    end)
+
     -- The other half of that bargain: an edit the user makes inside the folded part *does* move
     -- the regions, and serving the cache there would leave the folds pointing at the wrong rows
     -- with no way to recover short of starting a turn.
