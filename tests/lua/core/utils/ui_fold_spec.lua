@@ -73,10 +73,25 @@ describe("ui.apply_fold_config", function()
     Ui.apply_fold_config(win, buf)
     assert.same({
       foldmethod = "expr",
-      foldexpr = "v:lua.require'vibing.infrastructure.treesitter_fold'.foldexpr(v:lnum)",
+      foldexpr = require("vibing.infrastructure.treesitter_fold").EXPR,
       foldlevel = 0,
       foldenable = true,
     }, fold_state(win))
+    vim.cmd("close")
+  end)
+
+  -- `WinEnter` returns to a window that is already configured, so this runs on every switch into a
+  -- chat. Re-applying would put `foldlevel` back to 0 -- closing folds the user opened with `zo` --
+  -- and setting it sweeps the whole buffer (measured: 19.9ms, one `foldexpr` call per line, on a
+  -- 16,805-line chat).
+  it("leaves a window it has already configured alone", function()
+    local win, buf = fresh_window()
+    Ui.apply_fold_config(win, buf)
+
+    vim.api.nvim_set_option_value("foldlevel", 1, { win = win, scope = "local" })
+    Ui.apply_fold_config(win, buf)
+
+    assert.equals(1, vim.api.nvim_get_option_value("foldlevel", { win = win }))
     vim.cmd("close")
   end)
 

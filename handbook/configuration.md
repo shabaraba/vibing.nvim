@@ -1222,6 +1222,20 @@ Deriving per flush instead — the first shape this took — cost 13.4 ms on the
 times a second, a quarter of the main loop and growing with the conversation. Deriving incrementally
 from a splice point brought that to 2.8 ms, and deriving at the end of a turn removes it.
 
+**A window that is already configured is left alone**, and that matters because the sweep is per
+line. `apply_fold_config` runs from `WinEnter`, so it reaches every window in the editor and returns
+to the same chat windows over and over; writing `foldlevel` again forces a full sweep — 19.9 ms and
+one `foldexpr` call per line on a 16805-line chat — and it also closes every fold the reader had
+opened with `zo`. Finding vibing.nvim's own `foldexpr` already on the window is conclusive, because
+Neovim keeps these per window+buffer pair.
+
+The `foldexpr` re-resolves its `require` on each of those per-line evaluations, which is 5.5 ms of
+that 20 ms sweep and could be avoided by binding the function into `_G` once. It is deliberately
+not: `foldexpr` is window-local, so `:mksession` saves it, and a restored session whose
+vibing.nvim has not loaded yet — the normal case under lazy.nvim's `cmd =` — would evaluate a name
+bound to nothing and raise `E5108` once per line, where this form loads the module instead. What it
+buys is one sweep per turn; what it would cost is a chat that only misbehaves after a restore.
+
 The `foldexpr` is vibing.nvim's rather than `vim.treesitter.foldexpr()` because that one applies
 every injected language's own `folds.scm` as well. A chat injects Markdown, and Markdown injects
 YAML into the frontmatter, so the stock expression also folded the frontmatter keys, the `##`
