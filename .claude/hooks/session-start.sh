@@ -161,8 +161,15 @@ install_luac() {
   log "installed $(luac -v 2>&1 | head -1)"
 }
 
+# The root and claude-plugin/mcp-server are two separate npm trees, and CI runs `npm ci` in
+# each. Installing only the root leaves test:node's MCP server gate
+# (tests/mcp-server-test-gate.test.mjs) failing on a missing vitest — an error that belongs to
+# this setup, not to the repository.
+NODE_DEP_DIRS=("${PROJECT_DIR}" "${PROJECT_DIR}/claude-plugin/mcp-server")
+
 install_node_deps() {
-  [ -f "${PROJECT_DIR}/package.json" ] || return 0
+  local dir="$1"
+  [ -f "${dir}/package.json" ] || return 0
 
   # `npm ci`, matching CI, because `npm install` **rewrites package-lock.json** when it
   # disagrees with package.json. Two things go wrong when it does: the drift that CI's
@@ -170,9 +177,9 @@ install_node_deps() {
   # dependency tree CI will refuse; and the rewritten lockfile is a working-tree change, which
   # this repository's per-turn git tree snapshot picks up and lists under `### Modified Files`
   # for whatever turn happens to be running.
-  local lock="${PROJECT_DIR}/package-lock.json"
+  local lock="${dir}/package-lock.json"
   if [ ! -f "$lock" ]; then
-    log "ERROR: no package-lock.json; npm ci needs one (CI uses it too)"
+    log "ERROR: no package-lock.json in ${dir}; npm ci needs one (CI uses it too)"
     return 1
   fi
 
@@ -180,16 +187,16 @@ install_node_deps() {
   # image's cache on every resume. So keep the cache benefit a different way: stamp the
   # lockfile's digest inside node_modules and skip the install entirely while it still
   # matches. The stamp lives in node_modules precisely so `ci` wiping the tree invalidates it.
-  local stamp="${PROJECT_DIR}/node_modules/.vibing-session-start-lock"
+  local stamp="${dir}/node_modules/.vibing-session-start-lock"
   local digest
   digest="$(sha256sum "$lock" | cut -d' ' -f1)"
-  if [ -d "${PROJECT_DIR}/node_modules" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$digest" ]; then
-    log "node_modules already matches package-lock.json"
+  if [ -d "${dir}/node_modules" ] && [ "$(cat "$stamp" 2>/dev/null)" = "$digest" ]; then
+    log "${dir#"${PROJECT_DIR}"}/node_modules already matches package-lock.json"
     return
   fi
 
-  log "npm ci"
-  if ! (cd "${PROJECT_DIR}" && npm ci --no-audit --no-fund --loglevel=error >&2); then
+  log "npm ci in ${dir}"
+  if ! (cd "${dir}" && npm ci --no-audit --no-fund --loglevel=error >&2); then
     log "ERROR: npm ci failed. If it reports a lockfile mismatch, package.json and"
     log "       package-lock.json disagree — run 'npm install' locally and commit the"
     log "       updated lockfile. CI would reject this too."
@@ -201,7 +208,9 @@ install_node_deps() {
 install_neovim
 install_plenary
 install_luac
-install_node_deps
+for node_dir in "${NODE_DEP_DIRS[@]}"; do
+  install_node_deps "$node_dir"
+done
 
 # Verify rather than assume. A hook that reports success over a half-installed environment is
 # the exact failure this one exists to prevent — the session would then blame the repository
@@ -221,7 +230,10 @@ elif ! luac_is_required_version; then
   missing+=("luac Lua ${LUA_VERSION} (PATH resolves to $(luac -v 2>&1 | head -1))")
 fi
 [ -d "${PLENARY_DIR}" ] || missing+=("plenary.nvim")
-[ -d "${PROJECT_DIR}/node_modules" ] || missing+=("node_modules")
+for node_dir in "${NODE_DEP_DIRS[@]}"; do
+  [ ! -f "${node_dir}/package.json" ] || [ -d "${node_dir}/node_modules" ] \
+    || missing+=("${node_dir}/node_modules")
+done
 
 if [ "${#missing[@]}" -gt 0 ]; then
   log "ERROR: setup incomplete, still missing: ${missing[*]}"
