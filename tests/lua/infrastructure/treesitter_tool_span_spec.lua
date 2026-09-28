@@ -45,6 +45,20 @@ describe("where a rendered tool call ends", function()
         "echo done)",
       },
     },
+    -- Reported from a call that posted Markdown to an API. Its argument is full of `##` headings,
+    -- and a chat boundary is what stops the search for a closing parenthesis -- so a heading that
+    -- is not one must not be mistaken for one, or the call never ends and nothing folds.
+    {
+      what = "Markdown headings inside the argument",
+      lines = {
+        "💻 Bash(gh api -X POST /markdown -f mode=gfm -f text='## ✳ Configuration",
+        "",
+        "## 📋 Requirements",
+        "",
+        "- Neovim 0.10",
+        "')",
+      },
+    },
     {
       what = "a heredoc the command ends on",
       lines = {

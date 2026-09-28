@@ -125,6 +125,30 @@ after
     (markdown_line)))
 
 ==================
+A Markdown heading in the argument is not a chat boundary
+==================
+
+intro
+💻 Bash(gh api -X POST /markdown -f mode=gfm -f text='## Configuration
+
+## Requirements
+
+- Neovim 0.10
+')
+after
+
+---
+
+(document
+  (markdown_chunk
+    (markdown_line)
+    (markdown_line))
+  (tool_block
+    (tool_header_multiline))
+  (markdown_chunk
+    (markdown_line)))
+
+==================
 A chat boundary stops the scanner looking for a closing parenthesis
 ==================
 

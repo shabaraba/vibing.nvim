@@ -370,7 +370,13 @@ static bool scan_tool_header_multiline(TSLexer *lexer) {
     // A chat boundary ends every construct. Without it an argument that never closes reads the
     // rest of the conversation looking for one, and the `## Assistant` it passes stops being a
     // message header at all.
-    if (lexer->lookahead == '#') {
+    //
+    // It has to be the real thing and not any `##`: a call can be posting Markdown
+    // (`gh api /markdown -f text='## Requirements`), and treating its headings as boundaries
+    // leaves that call unterminated and so unfolded. `consume_message_header` eats part of the
+    // line when it says no, which costs nothing -- what it ate is `## ` and letters, and the rest
+    // of the line is read below.
+    if (lexer->lookahead == '#' && consume_message_header(lexer)) {
       break;
     }
 
