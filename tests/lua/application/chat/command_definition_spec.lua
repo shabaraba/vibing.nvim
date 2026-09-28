@@ -259,6 +259,43 @@ describe("command_definition.resolve", function()
       )
     end)
   end)
+
+  describe("plugins installed by Claude Code", function()
+    local plugin_dir
+    local saved_installed_plugins
+
+    before_each(function()
+      plugin_dir = root .. "/installed-plug"
+      -- 同じフォールバックがこちらにも要る: ディレクトリ名とfrontmatterの `name` が
+      -- 食い違うのは `--plugin-dir` のプラグインに限らない
+      write(plugin_dir .. "/skills/dir-name/SKILL.md", { "---", "name: declared-name", "---" })
+
+      saved_installed_plugins = package.loaded["vibing.infrastructure.plugins.installed_plugins"]
+      package.loaded["vibing.infrastructure.plugins.installed_plugins"] = {
+        roots = function()
+          return { { name = "tmp-installed-plug", path = plugin_dir } }
+        end,
+      }
+    end)
+
+    after_each(function()
+      package.loaded["vibing.infrastructure.plugins.installed_plugins"] = saved_installed_plugins
+    end)
+
+    it("finds a skill by the name its frontmatter declares", function()
+      assert.equals(
+        plugin_dir .. "/skills/dir-name/SKILL.md",
+        CommandDefinition.resolve("declared-name", root)
+      )
+    end)
+
+    it("finds a skill by its namespaced name", function()
+      assert.equals(
+        plugin_dir .. "/skills/dir-name/SKILL.md",
+        CommandDefinition.resolve("tmp-installed-plug:declared-name", root)
+      )
+    end)
+  end)
 end)
 
 describe("command_definition.is_known", function()

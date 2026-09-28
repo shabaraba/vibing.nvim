@@ -89,6 +89,39 @@ local function in_plugin_root(root, name)
     or readable(root.path .. "/commands/" .. name .. ".md")
 end
 
+--- A SKILL.md may declare a `name` that is not its directory's, and the name the CLI offers --
+--- the one the user typed -- is that one. Finding it means reading every SKILL.md of the plugin
+--- (0.4ms for the 12 bundled here), so it runs only once the directory guess missed.
+--- @param root {name: string, path: string}
+--- @return string|nil
+local function in_plugin_skill_name(root, name)
+  for _, skill in ipairs(require("vibing.infrastructure.plugins.plugin_contents").skills(root.path)) do
+    if skill.name == name then
+      return skill.path
+    end
+  end
+  return nil
+end
+
+--- Shared by every plugin root list: the directory-name guess, then the frontmatter fallback,
+--- for whichever root matches `plugin`. Both callers need the fallback -- an installed plugin's
+--- SKILL.md can declare a name that differs from its directory just as a `--plugin-dir` one can.
+--- @param roots {name: string, path: string}[]
+--- @param plugin string|nil restrict to this plugin name
+--- @param name string
+--- @return string|nil
+local function search_plugin_roots(roots, plugin, name)
+  for _, root in ipairs(roots) do
+    if plugin == nil or root.name == plugin then
+      local found = in_plugin_root(root, name) or in_plugin_skill_name(root, name)
+      if found then
+        return found
+      end
+    end
+  end
+  return nil
+end
+
 --- Plugins this cwd hands to the CLI with `--plugin-dir`, which is how vibing.nvim's own bundled
 --- skills are reached: they are never installed, so no scan of `~/.claude/plugins` finds them.
 --- @param plugin string|nil restrict to this plugin name
@@ -97,37 +130,13 @@ local function in_plugin_dirs(plugin, name, cwd)
   local PluginDirs = require("vibing.infrastructure.plugins.plugin_dirs")
   local Config = require("vibing.config")
 
-  for _, entry in ipairs(PluginDirs.resolve_entries(cwd, Config.get())) do
-    if plugin == nil or entry.name == plugin then
-      local found = in_plugin_root(entry, name)
-      if found then
-        return found
-      end
-      -- A SKILL.md may declare a `name` that is not its directory's, and the name the CLI offers
-      -- -- the one the user typed -- is that one. Finding it means reading every SKILL.md of the
-      -- plugin (0.4ms for the 12 bundled here), so it runs only once the directory guess missed.
-      for _, skill in ipairs(require("vibing.infrastructure.plugins.plugin_contents").skills(entry.path)) do
-        if skill.name == name then
-          return skill.path
-        end
-      end
-    end
-  end
-  return nil
+  return search_plugin_roots(PluginDirs.resolve_entries(cwd, Config.get()), plugin, name)
 end
 
 --- @param plugin string|nil
 --- @return string|nil
 local function in_installed_plugins(plugin, name)
-  for _, root in ipairs(require("vibing.infrastructure.plugins.installed_plugins").roots()) do
-    if plugin == nil or root.name == plugin then
-      local found = in_plugin_root(root, name)
-      if found then
-        return found
-      end
-    end
-  end
-  return nil
+  return search_plugin_roots(require("vibing.infrastructure.plugins.installed_plugins").roots(), plugin, name)
 end
 
 --- The definition file of `/name`, or nil when what answers to it is not a file.
