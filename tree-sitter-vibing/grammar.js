@@ -12,11 +12,19 @@ module.exports = grammar({
 
   extras: (_) => [],
 
-  externals: ($) => [$.fenced_markdown_block],
+  externals: ($) => [$.fenced_markdown_block, $.tool_header_multiline],
 
   rules: {
     document: ($) =>
-      repeat(choice($.message_header, $.fenced_markdown_block, $.tool_block, $.markdown_chunk)),
+      repeat(
+        choice(
+          $.message_header,
+          $.fenced_markdown_block,
+          $.tool_block,
+          $.thinking_block,
+          $.markdown_chunk
+        )
+      ),
 
     message_header: (_) =>
       token(
@@ -26,12 +34,13 @@ module.exports = grammar({
         )
       ),
 
+    // A call whose argument spans lines belongs to the external scanner. Where it ends is a
+    // question of matching parentheses, which no regular expression answers, and the rule that
+    // was written as one ended a shell script at its first `foo(x)` -- and, when nothing closed,
+    // ran on through the next `## Assistant` and took the chat boundary with it.
     tool_block: ($) =>
       seq(
-        choice(
-          $.tool_header,
-          seq($.tool_header_open, repeat($.tool_argument_line), $.tool_argument_end)
-        ),
+        choice($.tool_header, $.tool_header_multiline),
         optional(seq($.tool_result, repeat($.tool_result_continuation)))
       ),
 
@@ -41,14 +50,15 @@ module.exports = grammar({
     tool_header: (_) =>
       token(prec(4, /[^\x00-\x7f\s][^ \t\r\n]* [A-Za-z_][A-Za-z0-9_.:-]*\([^\r\n]*\)\r?\n/)),
 
-    tool_header_open: (_) =>
-      token(prec(3, /[^\x00-\x7f\s][^ \t\r\n]* [A-Za-z_][A-Za-z0-9_.:-]*\([^\r\n]*\r?\n/)),
-
-    tool_argument_line: (_) => token(prec(0, /[^\r\n]*\r?\n/)),
-    tool_argument_end: (_) => token(prec(3, /[^\r\n]*\)\r?\n/)),
-
     tool_result: (_) => token(prec(3, /  ⎿[^\r\n]*\r?\n/)),
     tool_result_continuation: (_) => token(prec(3, /     [^\r\n]*\r?\n/)),
+
+    // Reasoning has no terminator, so `event_renderer.lua` marks every line of it rather than
+    // only the first. Outranks `tool_header`, whose shape a marked line can otherwise match
+    // ("💭 Foo(bar)").
+    thinking_block: ($) => prec.right(repeat1($.thinking_line)),
+
+    thinking_line: (_) => token(prec(5, /💭[^\r\n]*\r?\n/)),
 
     markdown_chunk: ($) => prec.right(repeat1($.markdown_line)),
 

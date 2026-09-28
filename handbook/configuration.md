@@ -68,6 +68,9 @@ require("vibing").setup({
       Task = "▶",
       default = "⏺",
     },
+    fold = {
+      enabled = true,
+    },
   },
   keymaps = {
     send = "<CR>",
@@ -1156,8 +1159,103 @@ ui = {
     -- Edit = "✏️",
     -- Bash = "💻",
   },
+
+  fold = {
+    enabled = true,  -- Chat windows open with rendered tool calls and reasoning folded,
+                     -- so what is on screen is the answer. `zo` opens one, `zR` opens all.
+  },
 }
 ```
+
+### Folding
+
+A chat window is put on `foldmethod=expr` with a `foldexpr` of vibing.nvim's own, and which nodes
+collapse is `queries/vibing/folds.scm` — `tool_block` and `thinking_block`. To fold only one of
+them, or to add your own, override that query the ordinary Neovim way:
+
+```query
+; ~/.config/nvim/after/queries/vibing/folds.scm
+(tool_block) @fold
+```
+
+A call whose argument runs to many lines — a `Bash` call carrying a whole script — folds whole.
+Where it ends is the grammar's answer, not the fold module's: `handbook/features/chat-ui.md` →
+"Where a Rendered Tool Call Ends".
+
+Consecutive blocks of the same kind collapse as one fold rather than one each. The renderer puts a
+blank line between tool calls, so a turn that ran ten of them in a row produced ten folds, each one
+line long and each carrying its own fold text — noisier than the calls themselves. A run is one
+thing the reader is skipping past, so it collapses as one. Only like merges with like: reasoning
+sitting against a tool call keeps its own fold instead of disappearing under the tool's first line.
+
+Whether a fold is drawn closed at all is `foldminlines`, counted in _screen_ lines. With `ui.wrap`
+on, a single long tool call wraps and therefore closes; a short one does not.
+
+**Folds are derived when a turn ends, not while it streams.** A turn's tool calls arrive one 50 ms
+chunk at a time and the run a chunk lands in is not finished until the turn is, so a fold drawn per
+chunk is a fold that is about to change again. The `VibingResponseDone` autocmd derives the chat
+once and asks every window showing it to re-read the result — explicitly, because Neovim does not
+reliably re-evaluate `foldexpr` for lines it did not itself change, and merging means a finished run
+moves the _extent_ of a fold whose opening row never changed (observed mid-turn on a live chat, rows
+133..140 at level 0 against a tree that said 1; repaired by nothing more than `setlocal
+foldmethod=expr`). `vim.treesitter`'s own fold module carries the same refresh for the same reason.
+
+**A turn that ends in insert mode is deferred, and what releases it is rarely the chat's own
+`InsertLeave`.** Neovim drops a fold update made in insert mode, and `nvim_get_mode` reports the
+_global_ mode — so the ordinary case is a turn finishing while the user has gone off to type in a
+code buffer. The buffer is marked instead, and the next `InsertLeave` anywhere pays what every
+marked buffer is owed. Keying the release on the buffer insert mode was left in is the shape this
+had first, and it left such a chat unfolded until the user happened to type in the chat itself.
+
+Between those points the regions last derived are served as they are. The one edit that must not be
+served from them is one reaching into what is already folded — you rewriting an older message, which
+moves every region below it — so the buffer is watched and that case re-derives on the next
+`foldexpr`. A streaming turn only ever appends _below_ the last region, which is what makes it free.
+
+#### What folding costs
+
+Measured against three real chat files from this repository, with the buffer's Tree-sitter parse
+already warm as it is in a drawn window:
+
+| Chat length | Per chunk flush | Per turn end |
+| ----------- | --------------- | ------------ |
+| 4838 lines  | 0.0005 ms       | 9 ms         |
+| 9042 lines  | 0.0004 ms       | 17 ms        |
+| 21471 lines | 0.0007 ms       | 40 ms        |
+
+A flush costs a binary search over the regions and nothing else. The turn-end figure is a
+whole-buffer query pass plus the `foldexpr` Neovim then evaluates for every line, and it is paid
+once, on a buffer that has stopped moving.
+
+Deriving per flush instead — the first shape this took — cost 13.4 ms on the 21471-line chat, 20
+times a second, a quarter of the main loop and growing with the conversation. Deriving incrementally
+from a splice point brought that to 2.8 ms, and deriving at the end of a turn removes it.
+
+**A window that is already configured is left alone**, and that matters because the sweep is per
+line. `apply_fold_config` runs from `WinEnter`, so it reaches every window in the editor and returns
+to the same chat windows over and over; writing `foldlevel` again forces a full sweep — 19.9 ms and
+one `foldexpr` call per line on a 16805-line chat — and it also closes every fold the reader had
+opened with `zo`. Finding vibing.nvim's own `foldexpr` already on the window is conclusive, because
+Neovim keeps these per window+buffer pair.
+
+The `foldexpr` re-resolves its `require` on each of those per-line evaluations, which is 5.5 ms of
+that 20 ms sweep and could be avoided by binding the function into `_G` once. It is deliberately
+not: `foldexpr` is window-local, so `:mksession` saves it, and a restored session whose
+vibing.nvim has not loaded yet — the normal case under lazy.nvim's `cmd =` — would evaluate a name
+bound to nothing and raise `E5108` once per line, where this form loads the module instead. What it
+buys is one sweep per turn; what it would cost is a chat that only misbehaves after a restore.
+
+The `foldexpr` is vibing.nvim's rather than `vim.treesitter.foldexpr()` because that one applies
+every injected language's own `folds.scm` as well. A chat injects Markdown, and Markdown injects
+YAML into the frontmatter, so the stock expression also folded the frontmatter keys, the `##`
+sections and the prose paragraphs. This one asks the outer tree only, so nothing folds that
+`queries/vibing/folds.scm` did not name.
+
+Two things turn folding off on their own, whatever `enabled` says. It is skipped when the bundled
+Tree-sitter parser was not built (no C compiler at install time), because the Markdown fallback has
+none of those nodes and there would be nothing to fold. And it is only ever written to a window
+showing a chat: Neovim keeps window-local options per window+buffer pair, so your other buffers in
+that window keep their own fold settings.
 
 Every `tool_markers` entry is a plain string. Markers are resolved from the tool name alone, so
 they cannot vary with a tool's arguments (there is no way to give `Bash` one marker for `npm` and

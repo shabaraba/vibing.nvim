@@ -3,10 +3,26 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 enum TokenType {
   FENCED_MARKDOWN_BLOCK,
+  TOOL_HEADER_MULTILINE,
 };
+
+// A rendered tool call is `<marker> Name(<argument>)`, and the argument is the tool's own input
+// verbatim -- for Bash, a shell command, which may run to dozens of lines. Where it ends is
+// decided by matching parentheses, and the policy below is the one already measured against real
+// chats in `lua/vibing/core/utils/chat_excerpt.lua`: quoted spans and escapes do not count, a
+// heredoc body is data rather than code, and past a line limit the whole thing is given up on.
+// `tests/lua/infrastructure/treesitter_tool_span_spec.lua` holds the two to the same answers.
+#define MAX_LINE_BYTES 2048
+#define MAX_TOOL_HEADER_LINES 500
+#define MAX_HEREDOCS 8
+#define MAX_DELIMITER 64
+// Stands in for any codepoint outside ASCII. Nothing below looks at one except to recognise the
+// marker glyph, which is only ever asked whether it is ASCII.
+#define NON_ASCII '\x01'
 
 void *tree_sitter_vibing_external_scanner_create(void) { return NULL; }
 
@@ -142,11 +158,342 @@ static bool consume_message_header(TSLexer *lexer) {
   return matched && at_header_suffix(lexer);
 }
 
+typedef struct {
+  char text[MAX_LINE_BYTES];
+  unsigned length;
+  bool terminated;
+} Line;
+
+// Read to the end of the line, keeping its ASCII. A line longer than the buffer is truncated
+// rather than refused: a truncated tail can only make the parentheses look unbalanced, which ends
+// the scan in the direction that changes nothing.
+static void read_line(TSLexer *lexer, Line *line) {
+  line->length = 0;
+  line->terminated = false;
+
+  while (!lexer->eof(lexer) && lexer->lookahead != '\r' && lexer->lookahead != '\n') {
+    if (line->length < MAX_LINE_BYTES - 1) {
+      line->text[line->length++] = lexer->lookahead < 0x80 ? (char)lexer->lookahead : NON_ASCII;
+    }
+    advance(lexer);
+  }
+  line->text[line->length] = '\0';
+
+  if (lexer->lookahead == '\r' || lexer->lookahead == '\n') {
+    consume_line_ending(lexer);
+    line->terminated = true;
+  }
+}
+
+// Drop what must not be counted, in the order the Lua does it: an escaped character first, so an
+// escaped quote does not open one, then single-quoted spans, then double-quoted ones. A quote
+// with no partner on its own line is left alone -- following one across lines would need a shell
+// parser, and the parentheses inside it counting is the conservative answer.
+static void strip_uncounted(char *text) {
+  char *write = text;
+  for (const char *read = text; *read != '\0'; read++) {
+    if (*read == '\\' && read[1] != '\0') {
+      read++;
+      continue;
+    }
+    *write++ = *read;
+  }
+  *write = '\0';
+
+  const char quotes[2] = { '\'', '"' };
+  for (unsigned index = 0; index < 2; index++) {
+    const char quote = quotes[index];
+    write = text;
+    for (const char *read = text; *read != '\0'; read++) {
+      if (*read == quote) {
+        const char *closing = strchr(read + 1, quote);
+        if (closing != NULL) {
+          read = closing;
+          continue;
+        }
+      }
+      *write++ = *read;
+    }
+    *write = '\0';
+  }
+}
+
+static int paren_balance(const char *text) {
+  char scratch[MAX_LINE_BYTES];
+  size_t length = strlen(text);
+  if (length >= MAX_LINE_BYTES) {
+    length = MAX_LINE_BYTES - 1;
+  }
+  memcpy(scratch, text, length);
+  scratch[length] = '\0';
+  strip_uncounted(scratch);
+
+  int balance = 0;
+  for (const char *character = scratch; *character != '\0'; character++) {
+    if (*character == '(') {
+      balance++;
+    } else if (*character == ')') {
+      balance--;
+    }
+  }
+  return balance;
+}
+
+static bool is_name_start(char character) {
+  return (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') ||
+         character == '_';
+}
+
+static bool is_name_character(char character) {
+  return is_name_start(character) || (character >= '0' && character <= '9') || character == '.' ||
+         character == ':' || character == '-';
+}
+
+// `<marker> Name(`, where the marker is configurable and only required to start outside ASCII --
+// the same shape `tool_header` recognises, which is what keeps ordinary Markdown bullets out.
+static bool opens_tool_call(const char *text) {
+  if (text[0] != NON_ASCII) {
+    return false;
+  }
+
+  const char *cursor = text;
+  while (*cursor != '\0' && *cursor != ' ') {
+    cursor++;
+  }
+  if (*cursor != ' ') {
+    return false;
+  }
+  cursor++;
+
+  if (!is_name_start(*cursor)) {
+    return false;
+  }
+  while (is_name_character(*cursor)) {
+    cursor++;
+  }
+  return *cursor == '(';
+}
+
+// A heredoc body is data, so the parentheses in it are not the command's. Collect what would end
+// one; `<<<` is a herestring and opens nothing.
+static void collect_heredocs(const char *text, char delimiters[][MAX_DELIMITER], unsigned *count) {
+  for (const char *cursor = text; cursor[0] != '\0' && cursor[1] != '\0'; cursor++) {
+    if (cursor[0] != '<' || cursor[1] != '<') {
+      continue;
+    }
+    if (cursor[2] == '<') {
+      cursor += 2;
+      continue;
+    }
+
+    const char *name = cursor + 2;
+    if (*name == '-') {
+      name++;
+    }
+    while (*name == ' ' || *name == '\t') {
+      name++;
+    }
+
+    char quote = 0;
+    if (*name == '\'' || *name == '"') {
+      quote = *name;
+      name++;
+    }
+    if (!is_name_start(*name)) {
+      continue;
+    }
+
+    const char *end = name;
+    while (is_name_start(*end) || (*end >= '0' && *end <= '9')) {
+      end++;
+    }
+    if (quote != 0 && *end != quote) {
+      continue;
+    }
+
+    size_t length = (size_t)(end - name);
+    if (*count < MAX_HEREDOCS && length < MAX_DELIMITER) {
+      memcpy(delimiters[*count], name, length);
+      delimiters[*count][length] = '\0';
+      (*count)++;
+    }
+    cursor = end - 1;
+  }
+}
+
+// `event_renderer`'s `mark_continuations` writes this in front of every line of an argument it
+// wrote that spans more than one. A marked line cannot be mistaken for a chat header either, since
+// it starts with a space.
+static bool is_marked_continuation(const char *text) {
+  return strncmp(text, "     ", 5) == 0;
+}
+
+// A heredoc ends on a line holding nothing but its delimiter -- except that the renderer's own
+// closing parenthesis lands on that line too when the command ends with the heredoc, so `PY)` both
+// ends one and closes the call. A delimiter cannot itself contain a parenthesis, so counting that
+// line like any other is what accounts for them.
+static bool is_heredoc_terminator(const char *text, const char *delimiter) {
+  while (*text == ' ' || *text == '\t') {
+    text++;
+  }
+
+  size_t length = strlen(delimiter);
+  if (strncmp(text, delimiter, length) != 0) {
+    return false;
+  }
+  text += length;
+
+  while (*text == ')' || *text == ' ' || *text == '\t') {
+    text++;
+  }
+  return *text == '\0';
+}
+
+// Advance the parenthesis count by one line, treating a heredoc body as data rather than as shell
+// code. Returns false while the line is inside one, where nothing about the command's own
+// parentheses can be learned from it.
+//
+// Both paths through the loop below go through this. A marked run has to be counted the same way
+// the unmarked path counts it, because the marking is only believed when the renderer's own `)`
+// ends the run -- and when it does not, this count is all that is left.
+static bool count_line(const Line *line, int *balance, char delimiters[][MAX_DELIMITER],
+                       unsigned *pending) {
+  if (*pending > 0) {
+    if (!is_heredoc_terminator(line->text, delimiters[0])) {
+      return false;
+    }
+    memmove(delimiters[0], delimiters[1], (MAX_HEREDOCS - 1) * MAX_DELIMITER);
+    (*pending)--;
+    if (*pending > 0) {
+      return false;
+    }
+  }
+
+  // Reaching here means `pending` is 0 -- it either started that way or this line was the last
+  // terminator -- so a heredoc the line opens is always collected.
+  *balance += paren_balance(line->text);
+  collect_heredocs(line->text, delimiters, pending);
+  return true;
+}
+
+// The whole of a rendered call whose argument spans lines. The single-line shape is left to
+// `tool_header`, so every call that fits on a line keeps one node type in the tree.
+//
+// Two answers are looked for at once, because the better one is not always available. The
+// parentheses closing is the call really ending. The first line whose last character is `)` is
+// the guess this rule used to be written as, kept as a floor for arguments the paren count cannot
+// follow -- a quote left open, a heredoc nested past the limit. It is marked as it goes past so
+// that reaching the end of what may be scanned still yields a block rather than nothing.
+static bool scan_tool_header_multiline(TSLexer *lexer) {
+  Line line;
+  read_line(lexer, &line);
+  if (!line.terminated || !opens_tool_call(line.text)) {
+    return false;
+  }
+
+  char delimiters[MAX_HEREDOCS][MAX_DELIMITER];
+  unsigned pending = 0;
+  int balance = paren_balance(line.text);
+  collect_heredocs(line.text, delimiters, &pending);
+  // The first line closing its own parentheses is what a call that fits on one line looks like,
+  // and `tool_header` owns that shape -- unless the line below it is marked, which says the
+  // renderer was still writing this call. `case x in a) ...` is both at once.
+  bool could_be_single_line = balance <= 0 && pending == 0;
+
+  bool marked = false;
+  // The run of marked continuation lines, which starts on the line after the header if it starts
+  // at all. Inside it nothing is guessed: the renderer wrote those lines and stopped writing them
+  // where the call ends. Outside it -- a chat written before the renderer marked anything -- the
+  // parentheses are counted as before.
+  bool in_marked_run = true;
+  bool run_closed = false;
+
+  for (unsigned index = 0; index < MAX_TOOL_HEADER_LINES; index++) {
+    // A chat boundary ends every construct. Without it an argument that never closes reads the
+    // rest of the conversation looking for one, and the `## Assistant` it passes stops being a
+    // message header at all.
+    //
+    // It has to be the real thing and not any `##`: a call can be posting Markdown
+    // (`gh api /markdown -f text='## Requirements`), and treating its headings as boundaries
+    // leaves that call unterminated and so unfolded. `consume_message_header` eats part of the
+    // line when it says no, which costs nothing -- what it ate is `## ` and letters, and the rest
+    // of the line is read below.
+    if (lexer->lookahead == '#' && consume_message_header(lexer)) {
+      break;
+    }
+
+    read_line(lexer, &line);
+    if (!line.terminated) {
+      break;
+    }
+
+    if (in_marked_run) {
+      if (is_marked_continuation(line.text)) {
+        // Counted, but not acted on: a script line closing a parenthesis is not the call closing.
+        // A line inside a heredoc body cannot be the renderer's closing line either -- the `)` it
+        // ends with belongs to the data. An unmarked chat whose body happens to be indented five
+        // spaces is what reaches here, and believing such a line ends the call cuts it at the
+        // body's first `print(1)`.
+        if (count_line(&line, &balance, delimiters, &pending)
+            && line.text[line.length - 1] == ')') {
+          lexer->mark_end(lexer);
+          run_closed = true;
+        }
+        continue;
+      }
+      in_marked_run = false;
+      // The run ended, and the renderer's own `)` was the last thing in it. That is the call.
+      if (run_closed) {
+        lexer->result_symbol = TOOL_HEADER_MULTILINE;
+        return true;
+      }
+      // Nothing was marked, so the marking says nothing about this call. An indented line in an
+      // unmarked chat looks exactly like a marked one, which is why the run is only believed when
+      // the renderer's own `)` ends it.
+      if (could_be_single_line) {
+        return false;
+      }
+    }
+
+    if (!count_line(&line, &balance, delimiters, &pending)) {
+      continue;
+    }
+
+    if (balance <= 0) {
+      lexer->mark_end(lexer);
+      lexer->result_symbol = TOOL_HEADER_MULTILINE;
+      return true;
+    }
+
+    if (!marked && line.length > 0 && line.text[line.length - 1] == ')') {
+      lexer->mark_end(lexer);
+      marked = true;
+    }
+  }
+
+  if (!run_closed && !marked) {
+    return false;
+  }
+  lexer->result_symbol = TOOL_HEADER_MULTILINE;
+  return true;
+}
+
 bool tree_sitter_vibing_external_scanner_scan(void *payload, TSLexer *lexer,
                                               const bool *valid_symbols) {
   (void)payload;
 
-  if (!valid_symbols[FENCED_MARKDOWN_BLOCK] || lexer->get_column(lexer) != 0) {
+  if (lexer->get_column(lexer) != 0) {
+    return false;
+  }
+
+  // The two tokens are told apart by their first codepoint -- a fence opens with a backtick, a
+  // tilde or a space, a tool call with the marker glyph, which must be outside ASCII. So neither
+  // scan ever has to be unwound before the other is tried.
+  if (lexer->lookahead >= 0x80) {
+    return valid_symbols[TOOL_HEADER_MULTILINE] && scan_tool_header_multiline(lexer);
+  }
+
+  if (!valid_symbols[FENCED_MARKDOWN_BLOCK]) {
     return false;
   }
 

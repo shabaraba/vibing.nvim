@@ -475,6 +475,31 @@ The `model` candidates are the ones for this chat's `agent`, the same as in
 completion. A value that is not in the list (or a field with no value yet)
 goes to the first candidate with `]v` and the last with `[v`.
 
+Folded output~
+
+A chat window opens on the answer: rendered tool calls and reasoning start
+folded, collapsed to their first line, so `⏺ Bash(...)` and the first line of
+a `💭` block stay visible while their bodies do not. Tool calls that run one
+after another collapse together, as the one thing you are skipping past
+rather than as one fold each. Nothing else folds — not the frontmatter, not
+the `##` sections, not your own prose. These are ordinary Neovim folds, so
+`zo` opens one, `zc` closes it again and `zR` opens every fold in the window.
+See |fold-commands|.
+
+A turn's own output folds when the turn finishes, not while it streams. What
+you are skipping past is the finished run of calls, and folding each line as
+it arrives would collapse a run that is still growing.
+
+A tool call that rendered no result is one line long. Whether Neovim draws
+such a fold closed is 'foldminlines', counted in *screen* lines — so with
+`ui.wrap` on it closes as soon as the command is long enough to wrap, and
+stays open when it is short.
+
+Set `ui.fold.enabled = false` to turn this off. Which parts collapse is a
+Tree-sitter query, `queries/vibing/folds.scm`, overridable per user in
+`after/queries/vibing/folds.scm`. Folding is skipped entirely when the bundled
+parser was not built — see |vibing-troubleshooting|.
+
 Answering a tool approval~
 
 When a tool needs your approval the prompt is written into the chat as an

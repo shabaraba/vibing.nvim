@@ -129,6 +129,36 @@ describe("event_renderer", function()
       Renderer.handle({ kind = "text", delta = "c" }, context)
       assert.equals("\n💭 a\n⏺ Bash(x)\nc", output(context))
     end)
+
+    -- Without a mark on every line the block has no end at all: its last line runs straight into
+    -- the answer, and the blank line that sometimes separates them also occurs inside reasoning.
+    it("marks every line, so the block ends where the answer starts", function()
+      local context = new_context()
+      Renderer.handle({ kind = "thinking", delta = "a\nb" }, context)
+      Renderer.handle({ kind = "text", delta = "answer" }, context)
+      assert.equals("\n💭 a\n💭 b\n\nanswer", output(context))
+    end)
+
+    it("marks a blank line in the reasoning without leaving a trailing space", function()
+      local context = new_context()
+      Renderer.handle({ kind = "thinking", delta = "a\n\nb" }, context)
+      assert.equals("\n💭 a\n💭\n💭 b", output(context))
+    end)
+
+    -- A delta boundary is not a fact about the reasoning, so it must not show up in the output.
+    it("marks a line the stream split across two deltas exactly once", function()
+      local context = new_context()
+      Renderer.handle({ kind = "thinking", delta = "a\n" }, context)
+      Renderer.handle({ kind = "thinking", delta = "b" }, context)
+      assert.equals("\n💭 a\n💭 b", output(context))
+    end)
+
+    it("leaves no bare marker behind when the block ends on a newline", function()
+      local context = new_context()
+      Renderer.handle({ kind = "thinking", delta = "a\n" }, context)
+      Renderer.handle({ kind = "text", delta = "answer" }, context)
+      assert.equals("\n💭 a\n\nanswer", output(context))
+    end)
   end)
 
   describe("errors", function()

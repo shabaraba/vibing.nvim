@@ -18,7 +18,7 @@ describe("ChatBuffer session permissions", function()
     -- Mock dependencies
     package.loaded["vibing.presentation.chat.modules.window_manager"] = {
       create_window = function() return 1 end,
-      apply_wrap_config = function() end,
+      apply_window_config = function() end,
     }
     package.loaded["vibing.presentation.chat.modules.file_manager"] = {
       get_save_directory = function() return "/tmp/" end,

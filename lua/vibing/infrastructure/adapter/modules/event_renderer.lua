@@ -35,6 +35,14 @@ local TokenUsage = require("vibing.core.utils.token_usage")
 
 local M = {}
 
+--- Marks every reasoning line, rather than only the block's first one. Reasoning has no
+--- terminator of its own: its last line runs straight into the first line of the answer, and the
+--- blank line that sometimes separates them is also what reasoning itself is full of. So a
+--- transcript written with one opening marker cannot be taken apart again afterwards, which is
+--- what `queries/vibing/folds.scm` has to do. `tree-sitter-vibing/grammar.js` matches this shape;
+--- the two are one definition in two languages and must be changed together.
+local THINKING_MARKER = "💭"
+
 --- @param text string
 --- @param context table
 local function emit(text, context)
@@ -100,6 +108,24 @@ local function input_summary(tool_name, tool_input)
     or ""
 end
 
+--- Mark the lines of an argument that spans several of them.
+---
+--- `input_summary` returns `tool_input.command` verbatim, so a `Bash` call can be a whole script.
+--- Written as it arrives, where the call ends is something the reader of the file has to guess:
+--- a line of the script that closes a parenthesis looks exactly like the line that closes the
+--- call, and `tree-sitter-vibing/src/scanner.c` has to count parentheses through quoting and
+--- heredocs to tell them apart -- which it cannot always do, and which nothing can do for a
+--- script that contains a line reading `## Assistant`.
+---
+--- This side does not have to guess: it is the one writing the closing `)`. So it marks the lines
+--- it wrote, with the indent a result's continuation lines already use, and the grammar reads the
+--- mark. Chats written before this still need the counting, and keep it.
+--- @param summary string
+--- @return string
+local function mark_continuations(summary)
+  return ToolDisplay.indent_continuations(summary)
+end
+
 --- Leave thinking mode, if in it. Called by everything that is not a thinking delta so the
 --- `💭` block is closed before the next thing is drawn.
 --- @param context table
@@ -143,12 +169,44 @@ handlers.text = function(event, context)
   emit(event.delta, context)
 end
 
+--- Write one delta of reasoning, marking each line it starts.
+---
+--- Deltas split anywhere, including exactly on a line boundary, so a newline is held until the
+--- next delta says what follows it. Held newlines are dropped when the block ends rather than
+--- flushed, which is what keeps a bare marker off a line of its own at the end of every block.
+--- @param delta string
+--- @param context table
+local function emit_thinking(delta, context)
+  local parts = {}
+  for index, line in ipairs(vim.split(delta, "\n", { plain = true })) do
+    if index > 1 then
+      context._thinking_held_newlines = context._thinking_held_newlines + 1
+    end
+    if line ~= "" then
+      -- Every held newline but the last one opened a line no content arrived on. It carries the
+      -- marker with no trailing space, so a blank line in the reasoning stays blank.
+      for _ = 2, context._thinking_held_newlines do
+        table.insert(parts, "\n" .. THINKING_MARKER)
+      end
+      if context._thinking_held_newlines > 0 then
+        table.insert(parts, "\n" .. THINKING_MARKER .. " " .. line)
+      else
+        table.insert(parts, line)
+      end
+      context._thinking_held_newlines = 0
+    end
+  end
+  emit(table.concat(parts), context)
+end
+
 handlers.thinking = function(event, context)
   if context._render_mode ~= "thinking" then
     context._render_mode = "thinking"
-    emit("\n💭 ", context)
+    -- The first line's marker is written by the first content that arrives, not here, so a delta
+    -- that is empty or starts with a newline cannot strand one on a line by itself.
+    context._thinking_held_newlines = 1
   end
-  emit(event.delta, context)
+  emit_thinking(event.delta or "", context)
 end
 
 handlers.tool_start = function(event, context)
@@ -205,7 +263,8 @@ handlers.tool_end = function(event, context)
 
   local name, input = tool.name, tool.input
   local marker = ToolDisplay.resolve_marker(name, ToolDisplay.get_cached_markers(context))
-  local header = string.format("\n%s %s(%s)\n", marker, name, input_summary(name, input))
+  local header =
+    string.format("\n%s %s(%s)\n", marker, name, mark_continuations(input_summary(name, input)))
 
   if SubagentMarker.is_subagent_tool(name) then
     require("vibing.infrastructure.adapter.modules.turn_registry").decrement_subagent_count(context.turnId)

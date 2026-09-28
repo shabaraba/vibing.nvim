@@ -40,6 +40,8 @@ describe("vibing.infrastructure.treesitter", function()
 
     assert.is_true(treesitter.setup())
     assert.same({ { "vibing", "vibing" } }, registrations)
+    -- What folding asks before writing a foldexpr that names this grammar's nodes.
+    assert.is_true(treesitter.is_outer_parser_available())
 
     local buf = vim.api.nvim_create_buf(false, true)
     vim.bo[buf].filetype = "markdown"
@@ -62,6 +64,7 @@ describe("vibing.infrastructure.treesitter", function()
 
     assert.is_false(treesitter.setup())
     assert.same({ { "markdown", "vibing" } }, registrations)
+    assert.is_false(treesitter.is_outer_parser_available())
 
     local buf = vim.api.nvim_create_buf(false, true)
     vim.bo[buf].filetype = "markdown"
