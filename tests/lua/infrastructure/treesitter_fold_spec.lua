@@ -394,4 +394,50 @@ describe("treesitter_fold.foldexpr", function()
     vim.cmd("close")
     vim.api.nvim_buf_delete(bufnr, { force = true })
   end)
+
+  -- `folds.scm` is compiled against the parser that is **loaded**, and `parser/vibing.so` stays in
+  -- memory for the life of the process. So every rebuild of the grammar opens a window in which
+  -- the query names a node the running parser has never heard of, and `query.get` throws rather
+  -- than returning nil. Reported as an error on every turn for as long as Neovim stayed up, from
+  -- inside the `VibingResponseDone` subscriber -- whose neighbours on that chain are the completion
+  -- notifier and auto-compact. Not folding is the whole of what a query that will not compile may
+  -- cost.
+  describe("a fold query that does not compile against the loaded parser", function()
+    local original_get
+
+    before_each(function()
+      original_get = vim.treesitter.query.get
+      vim.treesitter.query.get = function(lang, name)
+        if lang == "vibing" and name == "folds" then
+          error('Query error at 4:2. Invalid node type "thinking_block"')
+        end
+        return original_get(lang, name)
+      end
+    end)
+
+    after_each(function()
+      vim.treesitter.query.get = original_get
+    end)
+
+    it("leaves the buffer unfolded instead of throwing", function()
+      local bufnr = open()
+
+      assert.has_no.errors(function()
+        assert.equals("0", Fold.foldexpr(2))
+      end)
+
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end)
+
+    it("does not cache the failure, so a rebuilt parser folds without a reload", function()
+      local bufnr = open()
+      assert.equals("0", Fold.foldexpr(2))
+
+      vim.treesitter.query.get = original_get
+
+      assert.equals(">1", Fold.foldexpr(2))
+
+      vim.api.nvim_buf_delete(bufnr, { force = true })
+    end)
+  end)
 end)

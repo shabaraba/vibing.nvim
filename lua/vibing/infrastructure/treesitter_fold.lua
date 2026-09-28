@@ -95,8 +95,13 @@ local function capture_regions(bufnr)
     return nil
   end
 
-  local query = vim.treesitter.query.get("vibing", "folds")
-  if not query then
+  -- `query.get` compiles `folds.scm` against the **loaded** parser, so it throws -- it does not
+  -- return nil -- whenever the two disagree: a `parser/vibing.so` that predates a node the query
+  -- names is still in memory until Neovim restarts, and every rebuild of the grammar produces
+  -- exactly that window ("Invalid node type"). The other two calls here are already guarded for
+  -- the same reason; this one was not, and it is the one that fires.
+  local ok_query, query = pcall(vim.treesitter.query.get, "vibing", "folds")
+  if not ok_query or not query then
     return nil
   end
 
@@ -216,16 +221,7 @@ function M.refresh(bufnr)
   refresh(bufnr)
 end
 
-vim.api.nvim_create_autocmd("User", {
-  group = group,
-  pattern = "VibingResponseDone",
-  callback = function(args)
-    local bufnr = args.data and args.data.bufnr
-    if type(bufnr) == "number" then
-      M.refresh(bufnr)
-    end
-  end,
-})
+require("vibing.core.events").on_response_done(group, "chat folding", M.refresh)
 
 ---Pay what insert mode deferred, for every buffer that is owed it.
 ---
