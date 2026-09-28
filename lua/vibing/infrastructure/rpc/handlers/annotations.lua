@@ -1,6 +1,7 @@
 --- Inline review notes, shown next to the code they are about instead of only in the chat.
 ---
 --- Annotations are extmark virt_lines: the file is never touched and `modified` never gets set.
+--- A note wider than the window is wrapped here, because virt_lines clip rather than wrap.
 --- They are deliberately not persisted — a review is read once and then dismissed, so unloading
 --- the buffer taking them with it is the intended lifetime, not a gap.
 --- @module vibing.infrastructure.rpc.handlers.annotations
@@ -8,11 +9,40 @@
 local M = {}
 
 local resolve_bufnr = require("vibing.infrastructure.rpc.handlers.bufnr").resolve
+local Text = require("vibing.core.utils.text")
 
 local NAMESPACE = vim.api.nvim_create_namespace("vibing_annotations")
 
 --- Marker down the left of every annotation line, so a note can't be mistaken for real code.
 local MARKER = "┃ "
+
+--- A wrapped continuation is indented past the marker, so one long note still reads as one note.
+local CONTINUATION_MARKER = "┃   "
+
+--- Used when the buffer is in no window: the note is still placed, just wrapped at a guess.
+local FALLBACK_WIDTH = 80
+
+--- Below this, wrapping mangles the text more than the clipping it avoids.
+local MIN_WIDTH = 20
+
+--- `virt_lines` are not subject to `wrap`, so anything past the window edge is simply cut off.
+--- The width is taken from the narrowest window showing the buffer, minus `textoff` (the
+--- number / sign / fold columns), so the note fits in every one of them.
+--- @param bufnr number
+--- @return number display width available to the note body
+local function body_width(bufnr)
+  local narrowest
+  for _, winid in ipairs(vim.fn.win_findbuf(bufnr)) do
+    local info = vim.fn.getwininfo(winid)[1]
+    if info then
+      local usable = info.width - info.textoff
+      if not narrowest or usable < narrowest then
+        narrowest = usable
+      end
+    end
+  end
+  return math.max(MIN_WIDTH, (narrowest or FALLBACK_WIDTH) - vim.fn.strwidth(CONTINUATION_MARKER))
+end
 
 --- @type table<string, string>
 local SEVERITY_GROUPS = {
@@ -68,9 +98,12 @@ function M.annotate(params)
 
   ensure_highlight_groups()
 
+  local width = body_width(bufnr)
   local virt_lines = {}
-  for _, chunk in ipairs(vim.split(text, "\n", { plain = true })) do
-    table.insert(virt_lines, { { MARKER .. chunk, hl_group } })
+  for _, paragraph in ipairs(vim.split(text, "\n", { plain = true })) do
+    for i, chunk in ipairs(Text.wrap(paragraph, width)) do
+      table.insert(virt_lines, { { (i == 1 and MARKER or CONTINUATION_MARKER) .. chunk, hl_group } })
+    end
   end
 
   local id = vim.api.nvim_buf_set_extmark(bufnr, NAMESPACE, line - 1, 0, {
