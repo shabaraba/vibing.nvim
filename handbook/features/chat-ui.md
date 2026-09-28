@@ -64,18 +64,32 @@ Implemented in `lua/vibing/core/utils/timestamp.lua`: `create_header(role, times
 ends decides what highlights as a tool call, what folds as one, and what `chat_excerpt` drops
 before a chat reaches title generation or `/summarize`.
 
-It is decided by matching parentheses, and the rule has three parts, all of them arrived at from
-real chats: quoted spans and escaped characters do not count (`Bash(echo ')' && git rebase ...)`
-closed on the quoted one and left the rebase behind as prose), a heredoc body is data rather than
-shell code (a Python triple-quoted string inside one lost the end of the block and left tens of
-thousands of characters of script in the excerpt), and past 500 lines the whole thing is given up
-on. The floor when it is given up on is the older rule, "the first line whose last character is
-`)`" — which on its own cut a script at its first `foo(x)` and left everything after it unfolded
-and unhighlighted, and, when nothing closed at all, read on through the next `## Assistant` and
-took the chat boundary with it. A chat boundary now stops the search, the same way it stops an
-unfinished code fence.
+**The renderer marks the lines it writes, and that is the answer wherever it is present.**
+`event_renderer`'s `mark_continuations` puts the indent a result's continuation lines already use
+(five spaces) in front of every line of an argument that spans more than one. The side writing the
+closing `)` is the side that knows where the call ends, so it says so instead of leaving it to be
+worked out. Two things that cannot be worked out become free: a script line reading exactly
+`## Assistant` (a marked line starts with a space, so it can never look like a chat boundary), and
+a header line that closes its own parenthesis (`Bash(case x in a) …`, which is indistinguishable
+from a call that fits on one line).
 
-There are two implementations because the grammar's is in C, inside
+**Chats written before that still have to be read, and there the parentheses are counted.** The
+rule has three parts, all of them arrived at from real chats: quoted spans and escaped characters
+do not count (`Bash(echo ')' && git rebase ...)` closed on the quoted one and left the rebase
+behind as prose), a heredoc body is data rather than shell code (a Python triple-quoted string
+inside one lost the end of the block and left tens of thousands of characters of script in the
+excerpt), and past 500 lines the whole thing is given up on. The floor when it is given up on is
+the oldest rule, "the first line whose last character is `)`" — which on its own cut a script at
+its first `foo(x)` and left everything after it unfolded and unhighlighted, and, when nothing
+closed at all, read on through the next `## Assistant` and took the chat boundary with it. A chat
+boundary now stops the search, the same way it stops an unfinished code fence.
+
+The marking is only believed when the renderer's own `)` ends the run. An indented line in an
+unmarked chat is indistinguishable from a marked one, and without that condition a call like
+`Bash(if true; then` / `␣␣␣␣␣echo hi` / `fi)` would stop one line early on every chat written
+before this.
+
+There are two implementations of the counting because the grammar's is in C, inside
 `tree-sitter-vibing/src/scanner.c`'s external scanner, and cannot call the Lua one in
 `core/utils/chat_excerpt.lua`. `tests/lua/infrastructure/treesitter_tool_span_spec.lua` holds them
 to the same answers on the cases that shaped the rule. They part company only past the point where

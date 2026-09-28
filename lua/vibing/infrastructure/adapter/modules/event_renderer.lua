@@ -108,6 +108,30 @@ local function input_summary(tool_name, tool_input)
     or ""
 end
 
+--- The indent a rendered tool result's own continuation lines already carry.
+local CONTINUATION_INDENT = "     "
+
+--- Mark the lines of an argument that spans several of them.
+---
+--- `input_summary` returns `tool_input.command` verbatim, so a `Bash` call can be a whole script.
+--- Written as it arrives, where the call ends is something the reader of the file has to guess:
+--- a line of the script that closes a parenthesis looks exactly like the line that closes the
+--- call, and `tree-sitter-vibing/src/scanner.c` has to count parentheses through quoting and
+--- heredocs to tell them apart -- which it cannot always do, and which nothing can do for a
+--- script that contains a line reading `## Assistant`.
+---
+--- This side does not have to guess: it is the one writing the closing `)`. So it marks the lines
+--- it wrote, with the indent a result's continuation lines already use, and the grammar reads the
+--- mark. Chats written before this still need the counting, and keep it.
+--- @param summary string
+--- @return string
+local function mark_continuations(summary)
+  if not summary:find("\n", 1, true) then
+    return summary
+  end
+  return (summary:gsub("\n", "\n" .. CONTINUATION_INDENT))
+end
+
 --- Leave thinking mode, if in it. Called by everything that is not a thinking delta so the
 --- `💭` block is closed before the next thing is drawn.
 --- @param context table
@@ -245,7 +269,8 @@ handlers.tool_end = function(event, context)
 
   local name, input = tool.name, tool.input
   local marker = ToolDisplay.resolve_marker(name, ToolDisplay.get_cached_markers(context))
-  local header = string.format("\n%s %s(%s)\n", marker, name, input_summary(name, input))
+  local header =
+    string.format("\n%s %s(%s)\n", marker, name, mark_continuations(input_summary(name, input)))
 
   if SubagentMarker.is_subagent_tool(name) then
     require("vibing.infrastructure.adapter.modules.turn_registry").decrement_subagent_count(context.turnId)

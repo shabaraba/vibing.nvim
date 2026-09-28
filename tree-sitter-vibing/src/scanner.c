@@ -321,6 +321,13 @@ static void collect_heredocs(const char *text, char delimiters[][MAX_DELIMITER],
   }
 }
 
+// `event_renderer`'s `mark_continuations` writes this in front of every line of an argument it
+// wrote that spans more than one. A marked line cannot be mistaken for a chat header either, since
+// it starts with a space.
+static bool is_marked_continuation(const char *text) {
+  return strncmp(text, "     ", 5) == 0;
+}
+
 // A heredoc ends on a line holding nothing but its delimiter -- except that the renderer's own
 // closing parenthesis lands on that line too when the command ends with the heredoc, so `PY)` both
 // ends one and closes the call. A delimiter cannot itself contain a parenthesis, so counting that
@@ -361,11 +368,19 @@ static bool scan_tool_header_multiline(TSLexer *lexer) {
   unsigned pending = 0;
   int balance = paren_balance(line.text);
   collect_heredocs(line.text, delimiters, &pending);
-  if (balance <= 0 && pending == 0) {
-    return false;
-  }
+  // The first line closing its own parentheses is what a call that fits on one line looks like,
+  // and `tool_header` owns that shape -- unless the line below it is marked, which says the
+  // renderer was still writing this call. `case x in a) ...` is both at once.
+  bool could_be_single_line = balance <= 0 && pending == 0;
 
   bool marked = false;
+  // The run of marked continuation lines, which starts on the line after the header if it starts
+  // at all. Inside it nothing is guessed: the renderer wrote those lines and stopped writing them
+  // where the call ends. Outside it -- a chat written before the renderer marked anything -- the
+  // parentheses are counted as before.
+  bool in_marked_run = true;
+  bool run_closed = false;
+
   for (unsigned index = 0; index < MAX_TOOL_HEADER_LINES; index++) {
     // A chat boundary ends every construct. Without it an argument that never closes reads the
     // rest of the conversation looking for one, and the `## Assistant` it passes stops being a
@@ -383,6 +398,30 @@ static bool scan_tool_header_multiline(TSLexer *lexer) {
     read_line(lexer, &line);
     if (!line.terminated) {
       break;
+    }
+
+    if (in_marked_run) {
+      if (is_marked_continuation(line.text)) {
+        // Counted, but not acted on: a script line closing a parenthesis is not the call closing.
+        balance += paren_balance(line.text);
+        if (line.text[line.length - 1] == ')') {
+          lexer->mark_end(lexer);
+          run_closed = true;
+        }
+        continue;
+      }
+      in_marked_run = false;
+      // The run ended, and the renderer's own `)` was the last thing in it. That is the call.
+      if (run_closed) {
+        lexer->result_symbol = TOOL_HEADER_MULTILINE;
+        return true;
+      }
+      // Nothing was marked, so the marking says nothing about this call. An indented line in an
+      // unmarked chat looks exactly like a marked one, which is why the run is only believed when
+      // the renderer's own `)` ends it.
+      if (could_be_single_line) {
+        return false;
+      }
     }
 
     if (pending > 0) {
@@ -412,7 +451,7 @@ static bool scan_tool_header_multiline(TSLexer *lexer) {
     }
   }
 
-  if (!marked) {
+  if (!run_closed && !marked) {
     return false;
   }
   lexer->result_symbol = TOOL_HEADER_MULTILINE;
