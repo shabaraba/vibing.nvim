@@ -645,16 +645,7 @@ end
 function M.setup()
   local group = vim.api.nvim_create_augroup(AUGROUP, { clear = true })
 
-  vim.api.nvim_create_autocmd("User", {
-    group = group,
-    pattern = "VibingResponseDone",
-    callback = function(event)
-      local bufnr = event.data and event.data.bufnr
-      if type(bufnr) == "number" then
-        M.on_response_done(bufnr)
-      end
-    end,
-  })
+  require("vibing.core.events").on_response_done(group, "completion notifier", M.on_response_done)
 
   vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
     group = group,

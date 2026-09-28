@@ -300,11 +300,10 @@ function ChatBuffer:_finish_turn()
   -- ディスク上のチャットは常に1ターン遅れ、期限切れ判定が読むのは前のターンの数字になる
   self:save_after_turn()
   -- autocmd を挟むのは、ユーザーが自分の設定からも拾えるようにするため。
-  -- `CompletionNotifier` 自身もこの経路で購読している
-  vim.api.nvim_exec_autocmds("User", {
-    pattern = "VibingResponseDone",
-    data = { bufnr = self.buf },
-  })
+  -- `CompletionNotifier` 自身もこの経路で購読している。発火も購読も `core/events.lua` を通す。
+  -- 購読者が互いを巻き添えにしないのはあちらのラッパーが担保していることで、autocmd連鎖が
+  -- 保証してくれるものではない（打ち切るかどうかは発火元の文脈で変わる）
+  require("vibing.core.events").emit_response_done(self.buf)
 end
 
 ---実行中のリクエストを止める
