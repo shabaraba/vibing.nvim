@@ -6,6 +6,18 @@ local M = {}
 
 local DEFAULT_MARKER = "⏺"
 
+--- The indent every continuation line of a rendered tool call carries: a result's own, and an
+--- argument's once `event_renderer` marks them. Three readers have to agree on the width and none
+--- of them can see this -- `chat_excerpt.lua`, `grammar.js`'s `tool_result_continuation` and
+--- `scanner.c`'s `is_marked_continuation`. The two writers can, and do.
+M.CONTINUATION_INDENT = "     "
+
+--- @param text string
+--- @return string
+function M.indent_continuations(text)
+  return (text:gsub("\n", "\n" .. M.CONTINUATION_INDENT))
+end
+
 --- Get tool markers config from vibing.config
 --- @return table|nil
 function M.get_markers_config()
@@ -51,7 +63,7 @@ function M.format_result_text(result_text, display_mode)
   if display_mode == "compact" and #result_text > 100 then
     display_text = result_text:sub(1, 100) .. "..."
   end
-  return "  ⎿  " .. display_text:gsub("\n", "\n     ") .. "\n"
+  return "  ⎿  " .. M.indent_continuations(display_text) .. "\n"
 end
 
 --- Get tool markers config, cached on the per-stream processing context

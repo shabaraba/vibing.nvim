@@ -108,9 +108,6 @@ local function input_summary(tool_name, tool_input)
     or ""
 end
 
---- The indent a rendered tool result's own continuation lines already carry.
-local CONTINUATION_INDENT = "     "
-
 --- Mark the lines of an argument that spans several of them.
 ---
 --- `input_summary` returns `tool_input.command` verbatim, so a `Bash` call can be a whole script.
@@ -126,10 +123,7 @@ local CONTINUATION_INDENT = "     "
 --- @param summary string
 --- @return string
 local function mark_continuations(summary)
-  if not summary:find("\n", 1, true) then
-    return summary
-  end
-  return (summary:gsub("\n", "\n" .. CONTINUATION_INDENT))
+  return ToolDisplay.indent_continuations(summary)
 end
 
 --- Leave thinking mode, if in it. Called by everything that is not a thinking delta so the
