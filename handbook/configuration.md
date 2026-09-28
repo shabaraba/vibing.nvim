@@ -62,6 +62,7 @@ require("vibing").setup({
       enabled = true,
       colors = { "#cc3300", "#fffe00" },
       interval = 100,
+      waiting_color = "#3fa9f5",
     },
     tool_result_display = "compact",
     tool_markers = {
@@ -1148,6 +1149,9 @@ ui = {
     enabled = true,   -- Animate line numbers while the AI is responding
     colors = { "#cc3300", "#fffe00" },  -- Exactly 2 hex colors: { start, end }
     interval = 100,   -- Animation update interval (ms)
+    waiting_color = "#3fa9f5",  -- While a turn is held open waiting for you (a tool approval
+                                -- or AskUserQuestion), the animation stops and every line
+                                -- number turns this color instead
   },
 
   tool_markers = {

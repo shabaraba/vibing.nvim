@@ -20,6 +20,7 @@
 ---@field enabled boolean グラデーションアニメーション有効化（trueで応答中に行番号がアニメーション）
 ---@field colors string[] グラデーション色の配列（2色指定: {開始色, 終了色}、例: {"#cc3300", "#fffe00"}）
 ---@field interval number アニメーション更新間隔（ミリ秒、デフォルト: 100）
+---@field waiting_color? string 承認・質問で人間の答えを待っている間の行番号の色（hex、デフォルト: "#3fa9f5"）
 
 ---@class Vibing.ToolMarkersConfig
 ---ツールマーカー設定
@@ -499,6 +500,7 @@ M.defaults = {
       enabled = true,
       colors = { "#cc3300", "#fffe00" },
       interval = 100,
+      waiting_color = "#3fa9f5",
     },
     tool_result_display = "compact",
     tool_markers = {
@@ -910,6 +912,16 @@ function M.setup(opts)
     if gradient.interval and (type(gradient.interval) ~= "number" or gradient.interval <= 0) then
       notify.warn("Invalid ui.gradient.interval: must be a positive number.")
       M.options.ui.gradient.interval = 100
+    end
+
+    if gradient.waiting_color ~= nil
+      and (type(gradient.waiting_color) ~= "string" or not gradient.waiting_color:match("^#%x%x%x%x%x%x$"))
+    then
+      notify.warn(string.format(
+        "Invalid ui.gradient.waiting_color: '%s'. Expected hex format like '#3fa9f5'.",
+        tostring(gradient.waiting_color)
+      ))
+      M.options.ui.gradient.waiting_color = "#3fa9f5"
     end
   end
 

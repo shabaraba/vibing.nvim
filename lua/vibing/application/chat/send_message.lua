@@ -133,7 +133,13 @@ function M.execute(adapter, callbacks, message, config)
   -- Start gradient animation
   local buf = callbacks.get_bufnr()
   if buf and vim.api.nvim_buf_is_valid(buf) then
-    GradientAnimation.start(buf)
+    -- 承認・質問はターンを開いたまま答えを待つので、その間は「こちらの番」の表示に切り替える
+    local PendingPrompts = require("vibing.infrastructure.rpc.pending_prompts")
+    GradientAnimation.start(buf, {
+      is_waiting = function()
+        return PendingPrompts.has_for_chat(buf)
+      end,
+    })
   end
 
   -- start_response() がバッファに書いた後の状態で読み直す
