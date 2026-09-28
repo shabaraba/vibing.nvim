@@ -51,9 +51,13 @@ function M.tail(text, width)
 end
 
 ---@param ch string
----@return boolean 折り返し位置として単語の途中とみなす文字か（ASCIIの非空白だけ）
+---@return boolean 折り返し位置として単語の途中とみなす文字か（空白でない幅1の文字）
+---幅（バイト長ではなく）で見るのは、直前がアクセント付き欧文やタイポグラフィ記号
+---（em dash、カーブアポストロフィ等、UTF-8で複数バイト・表示幅1）だと、かつてのバイト長
+---判定では「単語の途中」と認識できず、まだ幅に収まる単語ごと次行に送れるのに
+---直前まで文字単位で割ってしまっていたため。幅2のCJKは従来どおり対象外のまま。
 local function in_word(ch)
-  return ch ~= nil and #ch == 1 and ch:match("%s") == nil
+  return ch ~= nil and ch:match("%s") == nil and vim.fn.strwidth(ch) == 1
 end
 
 ---表示幅で折り返す。英文は直前の空白まで戻して単語を割らず、空白のないCJKや
@@ -105,7 +109,12 @@ function M.wrap(text, width)
     end
   end
 
-  table.insert(lines, table.concat(current))
+  -- 最後の文字が折り返しを起こす空白で、かつそれ自身は行頭空白として捨てられる場合、
+  -- current は空のまま終わる。ここで無条件に insert すると、直前で確定した行のあとに
+  -- 中身のない行がもう1つ増えてしまう。空文字列を返すのは入力が空文字列のときだけでよい。
+  if #current > 0 or #lines == 0 then
+    table.insert(lines, table.concat(current))
+  end
   return lines
 end
 

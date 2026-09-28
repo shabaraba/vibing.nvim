@@ -79,4 +79,19 @@ describe("text.wrap", function()
 
     assert.equals(text:gsub("%s", ""), table.concat(Truncate.wrap(text, 13)):gsub("%s", ""))
   end)
+
+  it("does not append an empty trailing line when a wrap lands on the final space", function()
+    -- 最後の1文字が折り返しを起こす空白だと、その空白は行頭空白として捨てられ、current が
+    -- 空のまま終わる。無条件に最終行を insert すると中身のない行がもう1つ増えていた。
+    assert.same({ "alpha" }, Truncate.wrap("alpha ", 5))
+  end)
+
+  it("still backs up to the previous space when the word contains a non-ASCII letter", function()
+    -- in_word がバイト長1（ASCII）だけを対象にしていたころは、直前の文字がアクセント付き
+    -- 欧文やタイポグラフィ記号（表示幅1・複数バイト）だと「単語の途中」と認識できず、
+    -- "naïve" のようなまだ幅に収まる単語ごと次行に送れず文字単位で割ってしまっていた。
+    local lines = Truncate.wrap("hi naïve", 6)
+
+    assert.same({ "hi", "naïve" }, lines)
+  end)
 end)
