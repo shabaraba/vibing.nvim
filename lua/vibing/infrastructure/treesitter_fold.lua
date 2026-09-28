@@ -41,15 +41,13 @@ vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
   end,
 })
 
----Whether the rows strictly between two regions are all blank.
+---Whether the rows strictly between two regions are all blank. Adjacent regions have no rows
+---between them and answer true on the empty range.
 ---@param bufnr integer
 ---@param after integer Last row of the earlier region
 ---@param before integer First row of the later region
 ---@return boolean
 local function only_blank_between(bufnr, after, before)
-  if before <= after + 1 then
-    return true
-  end
   for _, line in ipairs(vim.api.nvim_buf_get_lines(bufnr, after + 1, before, false)) do
     if line:match("%S") then
       return false
@@ -112,13 +110,12 @@ local function capture_regions(bufnr)
   local found = {}
   for _, node in query:iter_captures(trees[1]:root(), bufnr) do
     local start_row, _, end_row, end_col = node:range()
-    -- A node ending at column 0 stops before that row rather than on it.
+    -- A node ending at column 0 stops before that row rather than on it, and must have started on
+    -- an earlier one -- so the adjusted end is never above the start.
     if end_col == 0 then
       end_row = end_row - 1
     end
-    if end_row >= start_row then
-      found[#found + 1] = { srow = start_row, erow = end_row, kind = node:type() }
-    end
+    found[#found + 1] = { srow = start_row, erow = end_row, kind = node:type() }
   end
 
   return found
@@ -127,12 +124,18 @@ end
 ---@param bufnr integer
 ---@return Vibing.FoldRegion[]
 local function derive(bufnr)
+  stale[bufnr] = nil
+
   local found = capture_regions(bufnr)
   if not found then
+    -- Deliberately not cached. `apply_fold_config` refuses the window unless the outer parser is
+    -- available, so failing here is a per-buffer anomaly rather than a standing fact -- a `:e!`
+    -- re-attaches the parser, and an empty result cached against it can never be invalidated
+    -- (`on_lines` marks stale off the last region, of which there would be none). Retrying costs
+    -- a `get_parser` per line of a redraw; caching costs the buffer its folds for good.
     return {}
   end
 
-  stale[bufnr] = nil
   regions[bufnr] = merge_runs(bufnr, found)
   return regions[bufnr]
 end
@@ -177,8 +180,9 @@ local function refresh(bufnr)
   end
 
   if #windows == 0 then
-    -- Nothing is drawing folds for it, so derive when something is.
-    regions[bufnr], stale[bufnr] = nil, nil
+    -- Nothing is drawing folds for it, so derive when something is. Dropping the regions is what
+    -- makes `foldexpr` re-derive; `stale` says nothing once there is nothing to be stale about.
+    regions[bufnr] = nil
     return
   end
 
@@ -196,7 +200,11 @@ end
 ---Fold what a finished turn wrote.
 ---
 ---Deferred out of insert mode, because Neovim drops a fold update made there -- and the chat's
----next message is typed in insert mode, right under the turn that just ended.
+---next message is typed in insert mode, right under the turn that just ended. Deferred by marking
+---the buffer rather than by registering a handler, because the mode is global: a chat finishing a
+---turn in the background while the user types anywhere at all takes this path, and one handler per
+---turn means N whole-buffer derivations on the next `InsertLeave`. `watch` already has the one
+---handler, and `stale` is already the word for "derive this again".
 ---@param bufnr integer
 function M.refresh(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then
@@ -204,13 +212,7 @@ function M.refresh(bufnr)
   end
 
   if vim.api.nvim_get_mode().mode:match("^i") then
-    vim.api.nvim_create_autocmd("InsertLeave", {
-      buffer = bufnr,
-      once = true,
-      callback = function()
-        refresh(bufnr)
-      end,
-    })
+    stale[bufnr] = true
     return
   end
 
@@ -224,15 +226,6 @@ vim.api.nvim_create_autocmd("User", {
     local bufnr = args.data and args.data.bufnr
     if type(bufnr) == "number" then
       M.refresh(bufnr)
-    end
-  end,
-})
-
-vim.api.nvim_create_autocmd("InsertLeave", {
-  group = group,
-  callback = function(args)
-    if stale[args.buf] then
-      refresh(args.buf)
     end
   end,
 })
@@ -251,9 +244,6 @@ local function watch(bufnr)
 
   vim.api.nvim_buf_attach(bufnr, false, {
     on_lines = function(_, buf, _, firstline)
-      if not watched[buf] then
-        return true
-      end
       local known = regions[buf]
       local last = known and known[#known]
       if last and firstline <= last.erow then
@@ -262,6 +252,19 @@ local function watch(bufnr)
     end,
     on_detach = function(_, buf)
       forget(buf)
+    end,
+  })
+
+  -- Neovim drops a fold update made in insert mode, and the user rewriting an older message is in
+  -- it. Buffer-local, because only a buffer that is drawing these folds is ever watched -- a global
+  -- handler would run on every `InsertLeave` anywhere in the editor to read one nil.
+  vim.api.nvim_create_autocmd("InsertLeave", {
+    group = group,
+    buffer = bufnr,
+    callback = function(args)
+      if stale[args.buf] then
+        refresh(args.buf)
+      end
     end,
   })
 end
@@ -284,5 +287,15 @@ function M.foldexpr(lnum)
   end
   return row == region.srow and ">1" or "1"
 end
+
+---What a chat window's `foldexpr` is set to, defined here because this is what evaluates it.
+---
+---The `require` is re-resolved for every line of every sweep, which is not free (5.5ms of a 20ms
+---sweep on a 16805-line chat), and a function bound into `_G` once avoids it. It is still written
+---this way: `foldexpr` is a window-local option, so `:mksession` saves it, and a session restored
+---before this module is loaded -- vibing.nvim loaded on a command, as lazy.nvim does -- evaluates
+---whatever is here with nothing bound yet. This form loads the module; a bare global raises E5108
+---once per line instead. The sweep it would save is paid once per turn.
+M.EXPR = "v:lua.require'vibing.infrastructure.treesitter_fold'.foldexpr(v:lnum)"
 
 return M

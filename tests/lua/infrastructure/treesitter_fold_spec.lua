@@ -225,7 +225,7 @@ describe("treesitter_fold.foldexpr", function()
       vim.cmd("new")
       local bufnr = vim.api.nvim_get_current_buf()
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, RUN_LINES)
-      vim.wo.foldexpr = "v:lua.require'vibing.infrastructure.treesitter_fold'.foldexpr(v:lnum)"
+      vim.wo.foldexpr = Fold.EXPR
       vim.wo.foldmethod = "expr"
       -- Neovim evaluates the new foldexpr on its next redraw, which headless never does. A chat
       -- has been derived once before a turn starts, so put the buffer in that state; only what
@@ -339,7 +339,7 @@ describe("treesitter_fold.foldexpr", function()
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, RUN_LINES)
     vim.wo.wrap = false
     vim.wo.foldminlines = 1
-    vim.wo.foldexpr = "v:lua.require'vibing.infrastructure.treesitter_fold'.foldexpr(v:lnum)"
+    vim.wo.foldexpr = Fold.EXPR
     vim.wo.foldmethod = "expr"
     vim.wo.foldlevel = 0
     vim.wo.foldenable = true
