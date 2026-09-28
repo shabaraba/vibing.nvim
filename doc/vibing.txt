@@ -455,11 +455,25 @@ In a chat buffer:~
     <CR>        Send the message (normal mode)
     <C-c>       Cancel the current request
     <C-a>       Add a file to the context
-    gd          Show the diff for the file path under the cursor
+    gd          Open the definition of the `/name` under the cursor, or show
+                the diff for the file path under the cursor
     gf          Open the file path under the cursor
     gx          Open the URL on the current line in a browser, or the image
                 or video path under the cursor in the default application
+    ]v          Next value for the frontmatter field under the cursor
+    [v          Previous value for the frontmatter field under the cursor
     q           Close the chat window
+
+Cycling a frontmatter value~
+
+`]v` and `[v` replace the value on the frontmatter line the cursor is on with
+the next or previous one the completion offers, wrapping at both ends. They
+apply to the fields completion offers a candidate list for — `agent`, `model`,
+`effort`, `process` and `permission_mode` — and do nothing anywhere else,
+including on a line outside the frontmatter that happens to look like one.
+The `model` candidates are the ones for this chat's `agent`, the same as in
+completion. A value that is not in the list (or a field with no value yet)
+goes to the first candidate with `]v` and the last with `[v`.
 
 Folded output~
 
@@ -540,6 +554,19 @@ While a prompt is holding a turn open, `<CR>` on an empty input does nothing
 and neither does text that answers no prompt: the turn keeps running and what
 is on screen stays answerable. Ending the turn is `<C-c>` or `:VibingCancel`.
 
+Jumping to a slash command's definition~
+
+With the cursor on a `/name` you typed — a skill, or a command from
+`.claude/commands/` — `gd` opens the file it is defined in: that skill's
+`SKILL.md` or that command's `.md`. Project, user and plugin locations are all
+searched, in that order, and a plugin's skill is written the way it is typed,
+`<plugin>:<skill>`. Commands built into the CLI (`/code-review`) and
+vibing.nvim's own (`/model`, see |vibing-slash-commands|) are not files, so
+`gd` says there is nothing to open instead of jumping.
+
+Anything else under the cursor falls through to the diff below, so a file path
+in `### Modified Files` keeps its old meaning.
+
 `gd` opens a float with three panes: the turn's files on the left, with each
 one's icon and `+N -M`, and that file's before/after side by side in Neovim's
 own diff mode. Both sides are syntax highlighted, `]c` / `[c` move between
@@ -597,6 +624,8 @@ Everything except `q` is configurable: >lua
         open_diff = "gd",
         open_file = "gf",
         open_url = "gx",
+        cycle_enum_next = "]v",
+        cycle_enum_prev = "[v",
       },
     })
 <

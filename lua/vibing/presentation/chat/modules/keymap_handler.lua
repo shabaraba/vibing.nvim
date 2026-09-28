@@ -187,8 +187,21 @@ function M.setup(buf, callbacks, keymaps)
     end, { buffer = buf, desc = "Add context" })
 
     vim.keymap.set("n", keymaps.open_diff, function()
+      -- この順序は入れ替えられない。`diff_opener` は節の中ならカーソル位置に関係なく直近の
+      -- patchを開くので、後段に置かないと `/name` の上で押しても差分フロートが出る
+      if require("vibing.presentation.chat.modules.command_definition_opener").open(buf) then
+        return
+      end
       require("vibing.presentation.chat.modules.diff_opener").open(buf)
-    end, { buffer = buf, desc = "Open diff for file under cursor" })
+    end, { buffer = buf, desc = "Open the definition of /name, or the diff for the file under cursor" })
+
+    vim.keymap.set("n", keymaps.cycle_enum_next, function()
+      require("vibing.presentation.chat.modules.frontmatter_cycler").cycle(buf, 1)
+    end, { buffer = buf, desc = "Next frontmatter enum value" })
+
+    vim.keymap.set("n", keymaps.cycle_enum_prev, function()
+      require("vibing.presentation.chat.modules.frontmatter_cycler").cycle(buf, -1)
+    end, { buffer = buf, desc = "Previous frontmatter enum value" })
 
     vim.keymap.set("n", keymaps.open_file, function()
       local FilePath = require("vibing.core.utils.file_path")

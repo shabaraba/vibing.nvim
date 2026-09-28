@@ -36,3 +36,62 @@ describe("text.truncate", function()
     assert.equals("あい…", result)
   end)
 end)
+
+describe("text.wrap", function()
+  it("leaves a line that already fits as one line", function()
+    assert.same({ "short note" }, Truncate.wrap("short note", 20))
+  end)
+
+  it("returns one empty line for an empty string", function()
+    assert.same({ "" }, Truncate.wrap("", 20))
+  end)
+
+  it("breaks an English sentence at spaces, not mid-word", function()
+    local lines = Truncate.wrap("this handle leaks on every error path", 16)
+
+    assert.same({ "this handle", "leaks on every", "error path" }, lines)
+  end)
+
+  it("never leaves a line wider than the width, including CJK", function()
+    local text = "この関数はエラー経路でハンドルを解放していないため、リークします"
+
+    for width = 4, 40 do
+      for _, line in ipairs(Truncate.wrap(text, width)) do
+        assert.is_true(vim.fn.strwidth(line) <= width)
+      end
+    end
+  end)
+
+  it("splits a word that cannot fit at all rather than overflowing", function()
+    local lines = Truncate.wrap("supercalifragilistic", 6)
+
+    assert.same({ "superc", "alifra", "gilist", "ic" }, lines)
+  end)
+
+  it("drops the space a wrap happened at instead of indenting the next line", function()
+    local lines = Truncate.wrap("alpha beta", 6)
+
+    assert.same({ "alpha", "beta" }, lines)
+  end)
+
+  it("keeps every character of the input", function()
+    local text = "a longer note about the retry budget, 日本語混じり, and more"
+
+    assert.equals(text:gsub("%s", ""), table.concat(Truncate.wrap(text, 13)):gsub("%s", ""))
+  end)
+
+  it("does not append an empty trailing line when a wrap lands on the final space", function()
+    -- 最後の1文字が折り返しを起こす空白だと、その空白は行頭空白として捨てられ、current が
+    -- 空のまま終わる。無条件に最終行を insert すると中身のない行がもう1つ増えていた。
+    assert.same({ "alpha" }, Truncate.wrap("alpha ", 5))
+  end)
+
+  it("still backs up to the previous space when the word contains a non-ASCII letter", function()
+    -- in_word がバイト長1（ASCII）だけを対象にしていたころは、直前の文字がアクセント付き
+    -- 欧文やタイポグラフィ記号（表示幅1・複数バイト）だと「単語の途中」と認識できず、
+    -- "naïve" のようなまだ幅に収まる単語ごと次行に送れず文字単位で割ってしまっていた。
+    local lines = Truncate.wrap("hi naïve", 6)
+
+    assert.same({ "hi", "naïve" }, lines)
+  end)
+end)
