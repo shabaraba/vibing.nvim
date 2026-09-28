@@ -1,10 +1,21 @@
 ---@class Vibing.GradientAnimation
 ---グラデーションアニメーション管理
 ---AI応答中に行番号を虹色グラデーションでアニメーションさせ、実行状態を視覚的にフィードバック
+---
+---ターンが開いたまま人間の答えを待っている間（承認・AskUserQuestion）は、流れるグラデーションを
+---止めて単色（`ui.gradient.waiting_color`）に塗り替える。承認も質問もターンを kill せずに待つ
+---ようになった（#778, #788）ので、ターン開始〜終了だけを見て回し続けると「こちらの番」が
+---「まだ動いている」と区別できなくなる。
 local M = {}
 
----@type table<number, { timer: table, ns_id: number, original_hl: table, original_number: boolean, hl_groups: string[] }>
+---待機中に行番号を塗るハイライトグループ
+M.WAITING_HL = "VibingLineNrWaiting"
+
+---@type table<number, { timer: table, ns_id: number, original_hl: table, original_number: boolean, hl_groups: string[], waiting: boolean? }>
 local active_animations = {}
+
+---`ui.gradient.waiting_color` の既定値。既定グラデーション（赤〜黄）と色相が重ならない青
+M.DEFAULT_WAITING_COLOR = "#3fa9f5"
 
 ---Generate gradient colors from start to end and back
 ---@param start_color string Start color in hex format (e.g. "#cc3300")
@@ -89,12 +100,17 @@ local function restore_original_highlight(bufnr, ns_id, original_hl, original_nu
   end
 end
 
+---@class Vibing.GradientAnimationOpts
+---@field is_waiting? fun(): boolean ターンが人間の答えを待っているか。tick ごとに問い合わせる
+
 ---Start gradient animation for a buffer
+---
+---待機状態はイベントで受け取らず tick ごとに `is_waiting` へ問い合わせる。承認・質問の出口は
+---それぞれ4つずつあり、全部から通知を配線すると1つ漏れた時点で表示が戻らなくなる。
 ---@param bufnr number Buffer number to animate
----@param start_color? string Start color (default: from config)
----@param end_color? string End color (default: from config)
----@param interval? number Animation interval in ms (default: from config)
-function M.start(bufnr, start_color, end_color, interval)
+---@param opts? Vibing.GradientAnimationOpts
+function M.start(bufnr, opts)
+  opts = opts or {}
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return
   end
@@ -109,10 +125,10 @@ function M.start(bufnr, start_color, end_color, interval)
     return
   end
 
-  -- Use config colors if not specified
-  start_color = start_color or config.ui.gradient.colors[1]
-  end_color = end_color or config.ui.gradient.colors[2]
-  interval = interval or config.ui.gradient.interval
+  local start_color = config.ui.gradient.colors[1]
+  local end_color = config.ui.gradient.colors[2]
+  local interval = config.ui.gradient.interval
+  local is_waiting = opts.is_waiting
 
   -- Generate gradient colors
   local gradient_colors = generate_gradient(start_color, end_color, 30)
@@ -135,6 +151,12 @@ function M.start(bufnr, start_color, end_color, interval)
     vim.api.nvim_set_hl(0, hl_group, { fg = color, bg = "NONE" })
     table.insert(hl_groups, hl_group)
   end
+  -- 共有グループなので hl_groups には入れない（停止時にクリアすると他チャットの待機表示が消える）
+  vim.api.nvim_set_hl(0, M.WAITING_HL, {
+    fg = config.ui.gradient.waiting_color or M.DEFAULT_WAITING_COLOR,
+    bg = "NONE",
+    bold = true,
+  })
 
   -- Show line numbers (only if not already enabled)
   if win ~= -1 and not original_number then
@@ -156,19 +178,37 @@ function M.start(bufnr, start_color, end_color, interval)
         return
       end
 
+      local waiting = false
+      if is_waiting then
+        local ok, result = pcall(is_waiting)
+        waiting = ok and result == true
+      end
+
       local line_count = vim.api.nvim_buf_line_count(bufnr)
       vim.api.nvim_buf_clear_namespace(bufnr, ns_id, 0, -1)
 
       for line = 1, line_count do
-        local color_idx = ((line - 1 + offset) % #gradient_colors) + 1
-        local hl_group = "VibingGradient" .. bufnr .. "_" .. color_idx
+        local hl_group
+        if waiting then
+          hl_group = M.WAITING_HL
+        else
+          local color_idx = ((line - 1 + offset) % #gradient_colors) + 1
+          hl_group = "VibingGradient" .. bufnr .. "_" .. color_idx
+        end
 
         vim.api.nvim_buf_set_extmark(bufnr, ns_id, line - 1, 0, {
           number_hl_group = hl_group,
         })
       end
 
-      offset = offset + 1
+      -- 待機中は流れを止める。再開したとき止まった位置から続く
+      if not waiting then
+        offset = offset + 1
+      end
+      local animation = active_animations[bufnr]
+      if animation then
+        animation.waiting = waiting
+      end
     end)
   )
 
@@ -207,6 +247,14 @@ function M.stop(bufnr)
 
   -- Remove from active animations
   active_animations[bufnr] = nil
+end
+
+---Whether the animation is currently showing the waiting-for-human state
+---@param bufnr number Buffer number
+---@return boolean
+function M.is_waiting(bufnr)
+  local animation = active_animations[bufnr]
+  return animation ~= nil and animation.waiting == true
 end
 
 ---Check if animation is active for a buffer

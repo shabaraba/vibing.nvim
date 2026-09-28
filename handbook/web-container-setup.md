@@ -33,7 +33,9 @@ Five things about it are decisions rather than details:
   reject and leaves a working-tree change the per-turn git tree snapshot reports under
   `### Modified Files`. The container-cache benefit that argued for `npm install` is kept
   another way: the hook stamps the lockfile's digest inside `node_modules` and skips the
-  install entirely while it still matches.
+  install entirely while it still matches. It does this in **both** npm trees CI installs —
+  the root and `claude-plugin/mcp-server` — since with only the root, `test:node`'s MCP server
+  gate fails on a missing `vitest` in every fresh container.
 
 `plenary.nvim` goes under `vim.fn.stdpath("data")` (honouring `XDG_DATA_HOME`), because that is
 where `tests/minimal_init.lua` looks for it.
