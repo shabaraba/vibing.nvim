@@ -71,10 +71,14 @@ describe("where a rendered tool call ends", function()
     },
     -- The second line of each of these ends in `)`, so the call ending where its parentheses
     -- close and the call ending at the first line that looks closed are different answers.
+    -- Both quote kinds, because both are stripped and each needs a balanced pair to be held to:
+    -- the `"))"` is what makes the double-quote pass load-bearing. The `"` opening the `-c`
+    -- argument has no partner on its line and is deliberately left counting, which is the
+    -- conservative half of the rule.
     {
       what = "a quoted parenthesis that closes nothing",
       lines = {
-        "💻 Bash(echo ')' && nvim --headless -c \"",
+        "💻 Bash(echo ')' && echo \"))\" && nvim --headless -c \"",
         "call setline(1)",
         "quit",
         '" && true)',
@@ -98,6 +102,33 @@ describe("where a rendered tool call ends", function()
         "💻 Bash(if true; then",
         "     echo hi",
         "fi)",
+      },
+    },
+    -- An old chat whose heredoc body happens to be indented five spaces: every line of it looks
+    -- marked. The run is not believed (nothing in it ends the call), so the count has to take over
+    -- -- and it can only do that if the lines that looked marked were counted as heredoc body
+    -- rather than as shell code. Counting them as code closes the balance on `close ) paren` and
+    -- ends the call at `PY`, leaving `echo done)` behind as prose.
+    {
+      what = "a heredoc body indented like a marked run",
+      lines = {
+        "💻 Bash(python3 - <<'PY'",
+        '     text = """',
+        "     close ) paren",
+        '     """',
+        "PY",
+        "echo done)",
+      },
+    },
+    -- The same shape, one step further: the body's line *ends* in `)`, which is what the marked run
+    -- reads as the renderer closing the call. It is data, so it closes nothing.
+    {
+      what = "a heredoc body whose line ends the way the renderer's own does",
+      lines = {
+        "💻 Bash(python3 - <<'PY'",
+        "     print(1)",
+        "PY",
+        "echo done)",
       },
     },
     {

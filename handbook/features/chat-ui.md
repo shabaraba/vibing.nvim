@@ -65,8 +65,10 @@ ends decides what highlights as a tool call, what folds as one, and what `chat_e
 before a chat reaches title generation or `/summarize`.
 
 **The renderer marks the lines it writes, and that is the answer wherever it is present.**
-`event_renderer`'s `mark_continuations` puts the indent a result's continuation lines already use
-(five spaces) in front of every line of an argument that spans more than one. The side writing the
+`event_renderer`'s `mark_continuations` puts the indent a result's continuation lines already use in
+front of every line of an argument that spans more than one. It is five spaces, and the two Lua
+sides take it from `tool_display.CONTINUATION_INDENT` — the module that was already writing it for a
+result — rather than each declaring it. The side writing the
 closing `)` is the side that knows where the call ends, so it says so instead of leaving it to be
 worked out. Two things that cannot be worked out become free: a script line reading exactly
 `## Assistant` (a marked line starts with a space, so it can never look like a chat boundary), and
@@ -87,7 +89,10 @@ boundary now stops the search, the same way it stops an unfinished code fence.
 The marking is only believed when the renderer's own `)` ends the run. An indented line in an
 unmarked chat is indistinguishable from a marked one, and without that condition a call like
 `Bash(if true; then` / `␣␣␣␣␣echo hi` / `fi)` would stop one line early on every chat written
-before this.
+before this. Which means a run that is _not_ believed has to have been counted the whole way as if
+it were ordinary lines — including its heredoc bodies. A chat whose heredoc body happens to be
+indented five spaces looks entirely marked and closes nothing, and counting those lines as shell
+code instead of as data ends the call inside the heredoc.
 
 There are two implementations of the counting because the grammar's is in C, inside
 `tree-sitter-vibing/src/scanner.c`'s external scanner, and cannot call the Lua one in

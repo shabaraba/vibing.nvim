@@ -257,7 +257,7 @@ static bool opens_tool_call(const char *text) {
   }
 
   const char *cursor = text;
-  while (*cursor != '\0' && *cursor != ' ' && *cursor != '\t') {
+  while (*cursor != '\0' && *cursor != ' ') {
     cursor++;
   }
   if (*cursor != ' ') {
@@ -349,6 +349,33 @@ static bool is_heredoc_terminator(const char *text, const char *delimiter) {
   return *text == '\0';
 }
 
+// Advance the parenthesis count by one line, treating a heredoc body as data rather than as shell
+// code. Returns false while the line is inside one, where nothing about the command's own
+// parentheses can be learned from it.
+//
+// Both paths through the loop below go through this. A marked run has to be counted the same way
+// the unmarked path counts it, because the marking is only believed when the renderer's own `)`
+// ends the run -- and when it does not, this count is all that is left.
+static bool count_line(const Line *line, int *balance, char delimiters[][MAX_DELIMITER],
+                       unsigned *pending) {
+  if (*pending > 0) {
+    if (!is_heredoc_terminator(line->text, delimiters[0])) {
+      return false;
+    }
+    memmove(delimiters[0], delimiters[1], (MAX_HEREDOCS - 1) * MAX_DELIMITER);
+    (*pending)--;
+    if (*pending > 0) {
+      return false;
+    }
+  }
+
+  // Reaching here means `pending` is 0 -- it either started that way or this line was the last
+  // terminator -- so a heredoc the line opens is always collected.
+  *balance += paren_balance(line->text);
+  collect_heredocs(line->text, delimiters, pending);
+  return true;
+}
+
 // The whole of a rendered call whose argument spans lines. The single-line shape is left to
 // `tool_header`, so every call that fits on a line keeps one node type in the tree.
 //
@@ -403,8 +430,12 @@ static bool scan_tool_header_multiline(TSLexer *lexer) {
     if (in_marked_run) {
       if (is_marked_continuation(line.text)) {
         // Counted, but not acted on: a script line closing a parenthesis is not the call closing.
-        balance += paren_balance(line.text);
-        if (line.text[line.length - 1] == ')') {
+        // A line inside a heredoc body cannot be the renderer's closing line either -- the `)` it
+        // ends with belongs to the data. An unmarked chat whose body happens to be indented five
+        // spaces is what reaches here, and believing such a line ends the call cuts it at the
+        // body's first `print(1)`.
+        if (count_line(&line, &balance, delimiters, &pending)
+            && line.text[line.length - 1] == ')') {
           lexer->mark_end(lexer);
           run_closed = true;
         }
@@ -424,17 +455,9 @@ static bool scan_tool_header_multiline(TSLexer *lexer) {
       }
     }
 
-    if (pending > 0) {
-      if (!is_heredoc_terminator(line.text, delimiters[0])) {
-        continue;
-      }
-      memmove(delimiters[0], delimiters[1], (MAX_HEREDOCS - 1) * MAX_DELIMITER);
-      pending--;
-      if (pending > 0) {
-        continue;
-      }
+    if (!count_line(&line, &balance, delimiters, &pending)) {
+      continue;
     }
-    balance += paren_balance(line.text);
 
     if (balance <= 0) {
       lexer->mark_end(lexer);
@@ -445,9 +468,6 @@ static bool scan_tool_header_multiline(TSLexer *lexer) {
     if (!marked && line.length > 0 && line.text[line.length - 1] == ')') {
       lexer->mark_end(lexer);
       marked = true;
-    }
-    if (pending == 0) {
-      collect_heredocs(line.text, delimiters, &pending);
     }
   }
 
