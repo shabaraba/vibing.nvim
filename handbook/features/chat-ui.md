@@ -66,21 +66,27 @@ so `backends.claude.background_wait_sec` (default 3600, `0` for no limit) is pas
 
 `system/task_started` announces a launch and is tracked only when `is_backgrounded` is set — a
 foreground subagent closes inside its own turn as a `tool_result`, so recording it would leave it
-unreported forever. It also carries `subagent_type` and `description`.
+unreported forever. The payload also carries `tool_use_id`, `subagent_type` and `description`; only
+`description` is decoded, because it is the brief the completion line names the task with.
 
 `system/task_notification` is the completion:
 
 ```json
-{ "subtype": "task_notification", "task_id": "a800809d218e08d3b",
-  "tool_use_id": "toolu_01K3di…", "status": "completed",
-  "output_file": "…/tasks/a800809d218e08d3b.output", "summary": "PONG",
-  "usage": { "total_tokens": 19469, "tool_uses": 0, "duration_ms": 1610 } }
+{
+  "subtype": "task_notification",
+  "task_id": "a800809d218e08d3b",
+  "tool_use_id": "toolu_01K3di…",
+  "status": "completed",
+  "output_file": "…/tasks/a800809d218e08d3b.output",
+  "summary": "PONG",
+  "usage": { "total_tokens": 19469, "tool_uses": 0, "duration_ms": 1610 }
+}
 ```
 
 `task_id` is the same identifier `subagent_marker.lua` scrapes out of the tool result as `agentId`,
 and the same one naming `subagents/agent-<id>.jsonl`. One id, three places.
 
-Only the completion is drawn (`background_tasks.format_done`), and only its metadata. The launch is
+Only the completion is drawn (`subagent_display.format_completion`), and only its metadata. The launch is
 already on screen as the `Agent(...)` tool line, and the subagent's answer reaches the model through
 the notification — printing the summary here would show every report twice.
 
