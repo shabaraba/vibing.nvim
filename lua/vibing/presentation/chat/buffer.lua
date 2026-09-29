@@ -49,6 +49,7 @@ local Fs = require("vibing.core.utils.fs")
 ---  `current_turn_id`がnilでもこの値と一致すれば古い応答として捨てる
 ---@field _current_adapter table? per-chatアダプター（フロントマターagent指定時）
 ---@field _is_sending boolean 送信処理中かどうか（Enter連打による重複送信防止）
+---@field _cancelled boolean 直前のターンを人間が打ち切ったか（予約を送らずに戻す判定）
 ---@field _stop_reason "waiting_approval"|"asked_question"|"error"|nil 直前のターンが止まった理由
 ---@field _session_allow table セッションレベルの許可リスト
 ---@field _session_deny table セッションレベルの拒否リスト
@@ -77,6 +78,7 @@ function ChatBuffer:new(config)
   instance._abandoned_turn_id = nil
   instance._is_sending = false
   instance._stop_reason = nil
+  instance._cancelled = false
   instance._session_allow = {}
   instance._session_deny = {}
   instance._once_tools = nil
@@ -346,6 +348,47 @@ function ChatBuffer:cancel_request()
   return adapter:stop_turn(self._current_process_id) == true
 end
 
+---人間が走っているターンを打ち切ったことを記録する
+---
+---`cancel_request` の中には置かない。あちらは `send_message` 冒頭のゾンビ回収と `close` からも
+---走り、そこでの停止は人間の「止めろ」ではない。予約（`reservations.lua`）はこれを見て、
+---打ち切られたターンのあとに予約を勝手に送らず未送信セクションに戻す
+function ChatBuffer:_mark_cancelled()
+  if self:is_responding() then
+    self._cancelled = true
+  end
+end
+
+---直前のターンを人間が打ち切ったか。次のターンが走り出すところで落ちる
+---@return boolean
+function ChatBuffer:was_cancelled()
+  return self._cancelled == true
+end
+
+---末尾の未送信セクションに、人間が答えるべきプロンプトが描いてあるか、または答えを待たせて
+---いるプロンプトがあるか
+---
+---予約はこれが真のあいだ送らない。未送信セクションに本文を足すと、承認の選択肢行や質問への
+---答えと混ざる
+---@return boolean
+function ChatBuffer:has_unanswered_prompts()
+  return self._prompts_rendered_unsent == true or self:_has_blocked_prompts()
+end
+
+---予約する本文を入力させ、`reservations.lua` に積む（応答中の `<CR>`）
+function ChatBuffer:prompt_reservation()
+  local buf = self.buf
+  vim.ui.input({ prompt = "Reserve message: " }, function(text)
+    if not text or vim.trim(text) == "" then
+      return
+    end
+    local ok, err = require("vibing.application.chat.reservations").add(buf, text)
+    if not ok then
+      vim.notify("[vibing] " .. tostring(err), vim.log.levels.WARN)
+    end
+  end)
+end
+
 ---止めるものが何ひとつ見つからなかったターンを、このチャットの側だけで畳む
 ---
 ---resident プロセスはターンとは独立に回収される（アイドルタイマー、argv の変化、CLI の死、
@@ -389,6 +432,7 @@ end
 ---ターンをここで畳む。`send_message` / `close` のゾンビ回収は `cancel_request` のまま
 ---@return boolean cancelled 止めたか、畳んだか
 function ChatBuffer:cancel_turn()
+  self:_mark_cancelled()
   if self:cancel_request() then
     return true
   end
@@ -530,6 +574,13 @@ function ChatBuffer:_setup_keymaps()
 
   local callbacks = {
     send_message = function()
+      -- 応答中の `<CR>` は予約入力を開く。止めているプロンプトがあるなら答えの経路なので
+      -- 素通しする（`send_message` の重複送信ガードと同じ条件）。ここで分けないと
+      -- `send_message` はこの `<CR>` を黙って捨てる
+      if self:is_responding() and not self:_has_blocked_prompts() then
+        self:prompt_reservation()
+        return
+      end
       -- 手動送信は通知チェーンの起点なので、ここで往復カウンタをリセットする。
       -- `ChatBuffer:send_message()` 本体ではなくこのキーマップ側に置くのは、通知の配達自身が
       -- `ProgrammaticSender` 経由で同じ関数を通るため。本体でリセットすると配達のたびに 0 に
@@ -551,6 +602,7 @@ function ChatBuffer:_setup_keymaps()
       end)
     end,
     cancel = function()
+      self:_mark_cancelled()
       self:cancel_request()
     end,
     update_context_line = function()
@@ -1219,6 +1271,7 @@ function ChatBuffer:send_message()
   -- 途中 return する経路がいくつもあり、そこで消すと「まだ承認を待っている」チャットの理由が
   -- 消えて idle に化ける
   self._stop_reason = nil
+  self._cancelled = false
 
   -- リクエストを送信（turn_idはコールバックで設定される）
   SendMessage.execute(adapter, callbacks, message, config)
