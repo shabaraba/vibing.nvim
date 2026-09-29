@@ -12,9 +12,10 @@ local M = {}
 ---@class Vibing.AgentConfigField
 ---`setup().backends.<id>.<field>` の1項目。`config.lua` が既定値の組み立てと検証をここから導く
 ---ので、バックエンド固有の設定キーが共有コードに名前で現れない（ADR 009）
----@field kind "string"|"boolean"|"path_or_false"|"executable_or_auto" 検証の種類
+---@field kind "string"|"number"|"boolean"|"path_or_false"|"executable_or_auto" 検証の種類
 ---@field values string[]? `kind = "string"` のとき、許される値の全体。設定されていれば
 ---  `config.lua` が enum として検証し、範囲外は警告して既定値に戻す
+---@field min number? `kind = "number"` のとき許される最小値。下回れば警告して既定値に戻す
 ---@field default any 既定値。`default_module` があればそちらが優先
 ---@field default_module string? 既定値を持つモジュールの require パス（このファイルは何も
 ---  require しないので、文字列の既定値を別モジュールから借りるときはこう書く）
@@ -54,6 +55,16 @@ M.AGENTS = {
         kind = "string",
         values = { "oneshot", "duplex" },
         default = "oneshot",
+      },
+      -- `claude -p` はバックグラウンド subagent が終わるまでプロセスを開いたまま待つが、
+      -- 「連続アイドル」がこの秒数を超えると**まだ動いているものを止め、部分結果を捨てる**。
+      -- CLI の既定は600秒で、それは CI 向けの一発起動に合わせた値。対話チャットでログを精読
+      -- させるような subagent は普通に超えるので、既定を1時間に広げる。0 は無制限。
+      -- 渡し先は `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`（記述子の `apply_env`）
+      background_wait_sec = {
+        kind = "number",
+        min = 0,
+        default = 3600,
       },
     },
     models = {

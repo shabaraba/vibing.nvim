@@ -118,6 +118,17 @@ local M = {
       local git_instructions = config.agent and config.agent.git_instructions
       env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS = git_instructions and "0" or "1"
     end
+
+    -- `claude -p` はバックグラウンド subagent が終わるまで開いたまま待つが、連続アイドルが
+    -- この上限を超えると走っているものを止めて**部分結果を捨てる**。CLI 既定の600秒は
+    -- 一発起動向けで、対話チャットの subagent は普通に超える。失われるのが黙って起きる以上、
+    -- 既定を広げるのは安全側。環境に既にあればそちらが勝つ（ユーザーの export が最終決定）
+    if env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS == nil then
+      local sec = config.backends and config.backends.claude and config.backends.claude.background_wait_sec
+      if type(sec) == "number" then
+        env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS = tostring(math.floor(sec * 1000))
+      end
+    end
   end,
 
   -- Created empty rather than on the `init` event: `compact_boundary` arrives mid-stream and must

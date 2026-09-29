@@ -26,6 +26,76 @@ Only the subagent's assistant text is surfaced; the prompt echo, thinking blocks
 tool results stay hidden. `tests/fixtures/streams/claude/subagent_forwarding.jsonl` is a real captured stream used to
 replay the whole path in `cli_event_processor_subagent_spec.lua`.
 
+## Background Subagents
+
+A subagent launched with `run_in_background` outlives the turn that launched it, and for a long
+time a vibing chat looked like it had simply stopped when one was running.
+
+**It had not, and neither had the CLI.** Measured against claude 2.1.273, `claude -p` holds its
+process open for a background subagent, emits `system/task_notification` when it finishes, and
+**opens a new turn by itself** — no input, no prompting, nothing for vibing to schedule. Captured
+sequence from one run:
+
+```text
+assistant  text "launched"          <- the launching turn ends here
+system/task_notification            <- the subagent finished
+system/init                         <- the CLI opens a second turn on its own
+assistant  text "…完了しました。応答は `PONG` です。"
+result  num_turns=2                 <- turn 1
+result  num_turns=1                 <- turn 2
+```
+
+Two things in that trace are easy to get wrong.
+
+**One process emits one `result` per turn.** Measured at 2 and 5 in single `claude -p` runs. The
+oneshot transport therefore cannot treat the first `result` as the end of anything: doing so
+truncates every notification-driven turn after it, together with the tool calls in them. A real
+session lost three turns and a `Read`/`Write`/`Edit` sequence this way — the edits happened, the
+user never saw them, and no `### Modified Files` was written.
+
+**Background Bash and background subagents have opposite exit behaviour.** The docs
+(`code.claude.com/docs/en/headless`) kill a backgrounded shell about five seconds after the final
+result, but hold the process open for a subagent. Do not generalise from one to the other.
+
+The wait is bounded by a **ten-minute idle ceiling**, past which Claude Code "stops whatever is
+still running and drops its partial result". That suits a one-shot CI invocation and not a chat,
+so `backends.claude.background_wait_sec` (default 3600, `0` for no limit) is passed as
+`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`.
+
+### What the stream carries
+
+`system/task_started` announces a launch and is tracked only when `is_backgrounded` is set — a
+foreground subagent closes inside its own turn as a `tool_result`, so recording it would leave it
+unreported forever. It also carries `subagent_type` and `description`.
+
+`system/task_notification` is the completion:
+
+```json
+{ "subtype": "task_notification", "task_id": "a800809d218e08d3b",
+  "tool_use_id": "toolu_01K3di…", "status": "completed",
+  "output_file": "…/tasks/a800809d218e08d3b.output", "summary": "PONG",
+  "usage": { "total_tokens": 19469, "tool_uses": 0, "duration_ms": 1610 } }
+```
+
+`task_id` is the same identifier `subagent_marker.lua` scrapes out of the tool result as `agentId`,
+and the same one naming `subagents/agent-<id>.jsonl`. One id, three places.
+
+Only the completion is drawn (`background_tasks.format_done`), and only its metadata. The launch is
+already on screen as the `Agent(...)` tool line, and the subagent's answer reaches the model through
+the notification — printing the summary here would show every report twice.
+
+### Recovering a dropped notification
+
+Upstream drops a notification that arrives while the parent is mid-turn
+(anthropics/claude-code#87675: 19 subagents launched, 15 notified, the parent idle for hours). That
+one is not vibing's to fix, so at the end of the turn the started-minus-notified set is read back
+out of each subagent's own transcript and delivered as a `## Notice`.
+
+This path must do nothing on the ordinary route, and it reports only what it actually found: a
+notice saying a subagent finished with no content attached is worse than staying quiet. The
+transcript location is derived rather than remembered, because a task that was never notified never
+told us its `output_file`.
+
 ## Message Timestamps
 
 Chat messages include timestamps in their headers (`## User <!-- 2025-12-28 14:30:00 -->`) for

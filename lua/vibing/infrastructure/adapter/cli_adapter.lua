@@ -20,6 +20,7 @@ local SessionManagerModule = require("vibing.infrastructure.adapter.modules.sess
 local ProcessRegistry = require("vibing.infrastructure.adapter.modules.process_registry")
 local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
 local RateLimitDetector = require("vibing.infrastructure.adapter.modules.rate_limit_detector")
+local BackgroundTasks = require("vibing.infrastructure.adapter.modules.background_tasks")
 local ProcessModel = require("vibing.infrastructure.adapter.modules.process_model")
 local DuplexStream = require("vibing.infrastructure.adapter.modules.duplex_stream")
 local HookTransports = require("vibing.infrastructure.hooks.transports")
@@ -316,6 +317,19 @@ function M.define(descriptor)
       -- leaves both nil.
       response._token_usage = event_context.tokenUsage
       response._cli_info = event_context.cliInfo
+
+      -- Background subagents the CLI never delivered a completion notification for
+      -- (anthropics/claude-code#87675). Read here rather than in the chat layer: which backend
+      -- wrote the transcript and where it put it is an adapter fact. What the chat layer gets is
+      -- the recovered text, and the empty list on every backend that never started one.
+      local unreported = BackgroundTasks.unreported(event_context)
+      if #unreported > 0 then
+        response._recovered_subagents = require("vibing.infrastructure.adapter.modules.claude_subagent_transcript").recover(
+          unreported,
+          cwd,
+          SessionManagerModule.get(self._session_manager, ids.process_id)
+        )
+      end
 
       on_done(response)
     end

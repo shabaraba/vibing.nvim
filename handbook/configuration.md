@@ -145,6 +145,16 @@ backends = {
                             --   unloaded, or when Neovim exits.
                             -- A chat's own `process:` frontmatter overrides this.
                             -- See handbook/architecture/duplex-transport.md.
+    background_wait_sec = 3600,
+                            -- How long `claude -p` may sit idle waiting for a background subagent
+                            --   before it gives up. Passed as CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS;
+                            --   0 waits without a limit.
+                            -- The CLI's own default is 600, and past it Claude Code "stops
+                            --   whatever is still running and drops its partial result" -- silent
+                            --   loss of work that was already paid for. 600 suits a one-shot CI
+                            --   invocation; a chat that hands several subagents a reading task
+                            --   exceeds it routinely, so vibing.nvim widens it to an hour.
+                            -- A value already exported in the environment wins over this.
   },
   codex = {
     profile_file = ".vibing/codex-permissions.toml",

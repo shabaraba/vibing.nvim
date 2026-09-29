@@ -651,6 +651,16 @@ local function validate_backend_options(options)
           notify.warn(string.format("Invalid %s: expected %s. Resetting to default.", label, expected))
           values[name] = default
         end
+      elseif field.kind == "number" then
+        -- 宣言できるのは下限だけ。上限は今のところどのフィールドも要求していない
+        local floor = field.min
+        if type(value) ~= "number" or (floor and value < floor) then
+          local expected = floor and string.format("a number >= %d", floor) or "a number"
+          notify.warn(
+            string.format("Invalid %s: expected %s. Resetting to %s.", label, expected, tostring(default))
+          )
+          values[name] = default
+        end
       elseif field.kind == "boolean" then
         if type(value) ~= "boolean" then
           notify.warn(string.format("Invalid %s: expected a boolean. Resetting to %s.", label, tostring(default)))

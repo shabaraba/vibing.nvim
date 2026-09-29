@@ -16,6 +16,7 @@ local SessionManagerModule = require("vibing.infrastructure.adapter.modules.sess
 local ToolDisplay = require("vibing.infrastructure.adapter.modules.tool_display")
 local SubagentDisplay = require("vibing.infrastructure.adapter.modules.subagent_display")
 local SubagentMarker = require("vibing.infrastructure.adapter.modules.subagent_marker")
+local BackgroundTasks = require("vibing.infrastructure.adapter.modules.background_tasks")
 local TokenUsage = require("vibing.core.utils.token_usage")
 
 ---@alias Vibing.CanonicalEvent
@@ -32,6 +33,8 @@ local TokenUsage = require("vibing.core.utils.token_usage")
 ---| { kind: "rate_limit", info: Vibing.RateLimitInfo }
 ---| { kind: "error", message: string, fatal: boolean? }              # fatal: the CLI declared the turn failed
 ---| { kind: "turn_end", subtype: string? }                           # this turn is over; the process may not be
+---| { kind: "background_task_started", task_id: string, description: string? }
+---| { kind: "background_task_done", task_id: string, status: string?, usage: table? }
 
 local M = {}
 
@@ -371,6 +374,21 @@ handlers.turn_end = function(event, context)
   if context.onTurnEnd then
     context.onTurnEnd(event)
   end
+end
+
+-- Recorded, not drawn. The launch is already on screen as the `Agent(...)` tool line, and a second
+-- line saying the same thing would push the one that matters -- the completion, minutes later --
+-- further from it.
+handlers.background_task_started = function(event, context)
+  BackgroundTasks.started(context, event)
+end
+
+-- The completion the chat never used to show. Without it a turn that launched three subagents and
+-- was resumed 90 seconds later by the CLI's own notification reads as two unrelated turns.
+handlers.background_task_done = function(event, context)
+  local entry = BackgroundTasks.done(context, event)
+  close_thinking(context)
+  emit(SubagentDisplay.format_completion(event, entry, context), context)
 end
 
 --- Apply one canonical event to the stream's context.

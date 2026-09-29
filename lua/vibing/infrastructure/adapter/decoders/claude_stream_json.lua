@@ -97,6 +97,21 @@ by_type.system = function(msg, events)
     })
   elseif msg.subtype == "compact_boundary" then
     table.insert(events, { kind = "cli_info", compacted = true })
+  elseif msg.subtype == "task_started" then
+    -- `is_backgrounded` が真のものだけが「ターンが終わったあとに戻ってくる」subagent。
+    -- 前景のものは tool_result としてそのターン内で閉じるので、追跡する意味がない
+    if msg.is_backgrounded then
+      table.insert(events, { kind = "background_task_started", task_id = msg.task_id, description = msg.description })
+    end
+  elseif msg.subtype == "task_notification" then
+    -- バックグラウンド subagent の完了。CLI はこれを受けて**自分で次のターンを開始する**ので、
+    -- これは「何かを起こす合図」ではなく「起きたことの記録」
+    table.insert(events, {
+      kind = "background_task_done",
+      task_id = msg.task_id,
+      status = msg.status,
+      usage = msg.usage,
+    })
   end
   -- The first system event proves the CLI is alive.
   table.insert(events, { kind = "first_response" })
