@@ -99,15 +99,25 @@ not what started the turn.
 
 ## Report shape
 
-Conclusion → what changed → what's unresolved → what you need next. Briefly — the orchestrator can
-read your transcript for detail it actually wants; a report that replays the working log is paid
-for twice (once when you write it, once when it's read) for content that already sits in your
-transcript for free.
+**A few lines, not a document.** The orchestrator reads your transcript when it wants detail; the
+report only has to tell it what to do next. Every line it does not need is paid for twice — once
+when you write it, once when it is read — and pushes the line it does need further down.
 
-- **Conclusion**: done, partially done, or blocked — one line.
-- **What changed**: the files or state you touched, not how you got there.
-- **What's unresolved**: anything left undone or uncertain.
-- **What's needed next**: a decision, a missing input, or nothing (task fully closed).
+```text
+Done. <one-line conclusion>
+Unresolved: <only if any>
+Need: <decision or input — only if any>
+```
+
+- **Conclusion**: done, partially done, or blocked — one line. Name a PR or branch if there is
+  one; do not list every file touched.
+- **Unresolved / Need**: write them only when they exist. An empty section is not written as
+  "none". A deviation from the brief (above) or a handoff item is one line each: what, and why in
+  a clause.
+- **A question is the question.** When you need a decision, state it with the options and your
+  recommendation — no background the orchestrator already gave you in the brief.
+- **Leave out**: how you got there, test counts and command output, what you checked and found
+  fine, restating the brief, and any closing summary of the summary.
 
 ## Do not
 
