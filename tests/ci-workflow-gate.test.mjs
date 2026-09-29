@@ -5,7 +5,8 @@
  * stops shouting:
  *
  *   - `continue-on-error: true` lands on a step. That step still runs, still prints its failure,
- *     and the job still goes green -- a gate that quietly resigned.
+ *     and the job still goes green: a gate that quietly resigned. `lint:md` carried it while the
+ *     Markdown backlog was tracked as a count; that backlog is cleared and no step carries it now.
  *   - A step restates a command instead of calling `npm run <script>`. Then editing the script
  *     changes what a developer runs and not what CI runs, which is the same dead-gate shape as
  *     #561: the command in CI keeps passing because it is no longer the command being maintained.
@@ -81,7 +82,11 @@ test('no step is allowed to fail without failing the job', () => {
     .filter((s) => s.keys['continue-on-error'] === 'true')
     .map((s) => s.keys.name ?? s.keys.uses ?? s.keys.run);
 
-  assert.deepEqual(exempt, [], 'a step carries continue-on-error, so it can fail without failing the job');
+  assert.deepEqual(
+    exempt,
+    [],
+    'a step carries continue-on-error, so its failure no longer fails the job'
+  );
 });
 
 test('every script npm test runs is also a CI step', () => {
