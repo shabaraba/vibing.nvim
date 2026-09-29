@@ -1,6 +1,7 @@
 # Contributing to vibing.nvim
 
-Thank you for considering contributing to vibing.nvim! This document provides guidelines and instructions for contributing.
+Thank you for considering contributing to vibing.nvim! This document provides guidelines and
+instructions for contributing.
 
 ## 🚀 Getting Started
 

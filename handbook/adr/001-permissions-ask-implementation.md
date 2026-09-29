@@ -24,7 +24,8 @@ However, the Claude Agent SDK has several undocumented behaviors and constraints
    - Documented in code comment at bin/agent-wrapper.mjs:229-231
 
 2. **Issue #29: Resume Session Bypass**
-   - In resumed sessions (with `sessionId`), the Agent SDK bypasses both `allowedTools` whitelist and `canUseTool` callback
+   - In resumed sessions (with `sessionId`), the Agent SDK bypasses both `allowedTools` whitelist and
+     `canUseTool` callback
    - This is a confirmed SDK bug tracked at: <https://github.com/anthropics/claude-agent-sdk-typescript/issues/29>
    - No fix available as of SDK version 0.1.76
 

@@ -192,7 +192,8 @@ The MCP server exposes the following tools to Claude:
 ### Window Operations
 
 - **nvim_list_windows** - List all windows with their properties
-  - Returns: Array of window info (winnr, bufnr, buffer_name, filetype, width, height, position, is_current, is_floating)
+  - Returns: Array of window info (winnr, bufnr, buffer_name, filetype, width, height, position,
+    is_current, is_floating)
 
 - **nvim_get_window_info** - Get detailed information for a specific window
   - `winnr` (optional): Window number (0 for current)
