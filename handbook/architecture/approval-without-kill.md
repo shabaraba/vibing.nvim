@@ -613,6 +613,8 @@ not be compared out of, and in each the substitute looked entirely reasonable.
   5566 / 804 / 684 raw against 680 / 684 / 684 excluded. The comparable form is
   `pnpm run lint:md 2>&1 | grep -E '^\S+\.md:' | grep -vc 'node_modules'`; **a raw count is not
   comparable across trees at all.**
+  Since `.markdownlintignore` excludes `**/node_modules/**`, the count no longer depends on the
+  tree, and it is zero — `lint:md` now fails CI instead of reporting a number.
 
 The shared tell is not that the numbers were wrong. It is that **each was cheaper to check than to
 justify**, and none was checked. A derived figure, a hedged figure, a borrowed figure and an

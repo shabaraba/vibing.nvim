@@ -1,6 +1,7 @@
 # Worktree Native Redesign Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
+> superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace vibing.nvim's custom `.vibing/workspace/<id>/` worktree lifecycle
 (`scripts/vibing-workspace.mjs` + 5 `vibing-workspace-*` skills + `meta.yaml`/`plan.md`
@@ -811,8 +812,7 @@ If the removed path was this chat's own `working_dir`, clear that frontmatter fi
 succeeds (reverting to the main repo root) — leaving it pointed at a now-deleted directory would
 break the next turn.
 
-````
-
+````markdown
 - [ ] **Step 2: Verify frontmatter and markdown lint pass**
 
 Run: `npm run lint:md`
@@ -823,6 +823,7 @@ Expected: no errors reported for `skills/vibing-worktree/SKILL.md`.
 ```bash
 git add skills/vibing-worktree/SKILL.md
 git commit -m "feat: add vibing-worktree skill for natural-language worktree management"
+```
 ````
 
 ---
@@ -1190,7 +1191,8 @@ Expected: no errors, confirming Tasks 6-8's new/edited docs are clean alongside 
 
 - [ ] **Step 6: Grep for leftover references to the removed system**
 
-Run: `grep -rn "vibing-workspace\|\.vibing/workspace\|nvim_chat_worktree\|handleChatWorktree" --include="*.lua" --include="*.ts" --include="*.md" --include="*.mjs" .`
+Run: `grep -rn "vibing-workspace\|\.vibing/workspace\|nvim_chat_worktree\|handleChatWorktree" --include="*.lua"
+--include="*.ts" --include="*.md" --include="*.mjs" .`
 Expected: no output. (The predecessor investigation doc
 `docs/superpowers/specs/2026-07-10-worktree-native-redesign.md` and this plan/the design doc
 itself are historical records and may still mention the old system by name — exclude

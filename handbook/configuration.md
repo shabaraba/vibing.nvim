@@ -1450,7 +1450,7 @@ be wrong), and the pre-`base:` header patches the removed mote integration wrote
 > `style = "number"` and a sign column already taken by gitsigns, a large change was hard to read),
 > and mini.diff is no longer a dependency, optional or otherwise. A leftover `diff.viewer` in
 > `setup()` warns once and is ignored.
-
+>
 > **The opt-in `mote` backend has been removed**, along with `diff.mote`, `diff.tool = "mote"`,
 > the `mote_dirs` / `mote_cwd` frontmatter keys, `:VibingMoteDir` and `:VibingCleanMote`. The
 > snapshot path above covers what mote was there for (Bash-driven changes) without an external

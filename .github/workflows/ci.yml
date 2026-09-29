@@ -168,7 +168,6 @@ jobs:
 
       - name: Lint Markdown files
         run: npm run lint:md
-        continue-on-error: true
 
   # Nothing surveyed npm dependencies for vulnerabilities until #691: there is no scheduled scan,
   # `npm audit` runs on request only, and both build paths (build.sh, mcp-server/bin/run.mjs) pass

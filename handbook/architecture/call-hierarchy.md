@@ -1,6 +1,7 @@
 # Call Hierarchy - vibing.nvim
 
-This document provides comprehensive call hierarchy diagrams showing how code flows through vibing.nvim's Clean Architecture layers.
+This document provides comprehensive call hierarchy diagrams showing how code flows through vibing.nvim's Clean
+Architecture layers.
 
 **Last Updated**: 2025-12-30
 **Architecture Version**: Post-2025 Refactoring (Clean Architecture)
@@ -21,7 +22,7 @@ This document provides comprehensive call hierarchy diagrams showing how code fl
 
 vibing.nvim follows Clean Architecture principles with clear layer separation:
 
-```
+```text
 Entry Point (init.lua)
     ↓
 Presentation Layer (Controllers + Views)
@@ -37,7 +38,7 @@ Infrastructure Layer (Adapters, RPC, Storage)
 
 ## Layer Dependencies
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │ Entry Point (init.lua)                                          │
 │   - Command registration                                         │
@@ -83,7 +84,7 @@ Infrastructure Layer (Adapters, RPC, Storage)
 
 All Neovim commands are registered here and delegate to Presentation Controllers:
 
-```
+```text
 init.lua
 ├─ M.setup(opts)
 │   ├─ Config.setup(opts)
@@ -105,7 +106,7 @@ init.lua
 
 **Purpose**: Create new chat or open existing chat file
 
-```
+```text
 :VibingChat args → init.lua (L165-170)
     ↓
 presentation/chat/controller.lua::handle_open(args)
@@ -133,7 +134,7 @@ presentation/chat/view.lua::render(session)
 
 **Purpose**: Toggle chat window visibility
 
-```
+```text
 :VibingToggleChat → init.lua (L172-174)
     ↓
 presentation/chat/controller.lua::handle_toggle()
@@ -155,7 +156,7 @@ presentation/chat/view.lua::render(session)
 
 **Purpose**: Show slash command picker in chat
 
-```
+```text
 :VibingSlashCommands → init.lua (L176-178)
     ↓
 presentation/chat/controller.lua::show_slash_commands()
@@ -168,7 +169,7 @@ ui/command_picker.lua::show()
 
 **Purpose**: Generate AI title for current chat file
 
-```
+```text
 :VibingSetFileTitle → init.lua (L180-182)
     ↓
 presentation/chat/controller.lua::handle_set_file_title()
@@ -192,7 +193,7 @@ presentation/chat/controller.lua::handle_set_file_title()
 
 **Purpose**: Add file or selection to context
 
-```
+```text
 :VibingContext opts → init.lua (L184-192)
     ↓
 presentation/context/controller.lua::handle_add(opts)
@@ -223,7 +224,7 @@ presentation/context/controller.lua::_update_chat_context_if_open()
 
 **Purpose**: Clear all context
 
-```
+```text
 :VibingClearContext → init.lua (L194-196)
     ↓
 presentation/context/controller.lua::handle_clear()
@@ -241,7 +242,7 @@ presentation/context/controller.lua::handle_clear()
 
 **Trigger**: Press `<CR>` in chat buffer
 
-```
+```text
 ChatBuffer keymap <CR> → presentation/chat/buffer.lua::_send_message()
     ↓
     ├─ Parse message content
@@ -275,25 +276,25 @@ ChatBuffer keymap <CR> → presentation/chat/buffer.lua::_send_message()
 
 ### 1. Chat Creation Flow
 
-```
+```text
 init.lua → chat/controller → chat/use_case → ChatSession → chat/view → ChatBuffer
 ```
 
 ### 2. Message Streaming Flow
 
-```
+```text
 ChatBuffer → actions/chat → agent_sdk adapter → Node.js wrapper → Claude SDK → JSON Lines
 ```
 
 ### 3. Context Management Flow
 
-```
+```text
 init.lua → context/controller → context/manager → chat/view → ChatBuffer
 ```
 
 ### 4. File Operations (Tool Use)
 
-```
+```text
 Agent SDK → JSON Lines → actions/chat::on_tool_use → infrastructure/file_operations
 ```
 
@@ -301,7 +302,7 @@ Agent SDK → JSON Lines → actions/chat::on_tool_use → infrastructure/file_o
 
 ### Before Refactoring (Anti-Pattern)
 
-```
+```text
 init.lua::VibingChat
     ↓
 application/chat/use_case.lua::open()  ❌ Directly creates UI
@@ -318,7 +319,7 @@ presentation/chat/buffer.lua::new()    ❌ Application depends on Presentation
 
 ### After Refactoring (Clean Architecture)
 
-```
+```text
 init.lua::VibingChat
     ↓
 presentation/chat/controller.lua::handle_open()  ✅ Controller handles input

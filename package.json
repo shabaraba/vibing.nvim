@@ -43,7 +43,7 @@
     "format:check": "prettier --check '**/*.{js,mjs,ts,json,md,yml,yaml}'",
     "lint": "eslint '**/*.{js,mjs,ts}'",
     "lint:fix": "eslint --fix '**/*.{js,mjs,ts}'",
-    "lint:md": "markdownlint '**/*.md' --ignore node_modules"
+    "lint:md": "markdownlint '**/*.md'"
   },
   "dependencies": {
     "neovim": "^5.5.0",

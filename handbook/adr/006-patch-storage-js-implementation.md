@@ -18,7 +18,7 @@ Issue #281 comment #3731122580で指摘された通り、現在のpatch storage�
 
 2. **タイミングの問題**
 
-   ```
+   ```text
    tool_use出力 → vim.schedule()×2 ⏱️⏱️
         ↓
    [Node.jsが独立して動作]
@@ -47,7 +47,7 @@ Issue #281 comment #3731122580で指摘された通り、現在のpatch storage�
 
 ### アーキテクチャ
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │ Node.js Process (agent-wrapper.mjs)                      │
 │                                                           │
