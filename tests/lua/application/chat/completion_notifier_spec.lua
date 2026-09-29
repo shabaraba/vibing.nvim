@@ -901,11 +901,20 @@ describe("CompletionNotifier", function()
     assert.equals(1, #sends)
   end)
 
-  it("does not subscribe a worker to its orchestrator when it reports upward", function()
-    -- watchdog の文面は「送った相手が報告せずに止まった、タスクが終わったものとして扱うな」で、
-    -- 木を下る向きにしか意味がない。ワーカー B が親 A に報告しただけで `edges[a][b]` を張ると、
-    -- A のターンが終わるたびに B がそれで起こされる。ユーザーが B に直接送った直後は A の購読が
-    -- one-shot で使い切られていて `is_waiting_on_others` の除外にも掛からないので、毎回そうなる
+  it("refuses an edge that would point up the tree", function()
+    -- `edges` を書くのは `subscribe` だけなので、向きのガードもここに効く。`on_sent` 経由の
+    -- 呼び出しも、`rpc/handlers/chat.lua` の直接呼び出しも同じ保証の下に入る
+    local a, b = make_chat(), make_chat()
+
+    assert.is_false(Notifier.subscribe(b, a, "Report"))
+    assert.is_true(Notifier.subscribe(b, a, "Request"))
+    assert.is_true(Notifier.subscribe(a, b), "向き不明は従来どおり張る")
+  end)
+
+  it("does not wake a worker every time its orchestrator finishes a turn", function()
+    -- B が A に報告しただけで `edges[a][b]` を張ると、A のターンが終わるたびに B が
+    -- 「A が報告せずに止まった」で起こされる。A の購読は one-shot で既に使い切られているので、
+    -- `is_waiting_on_others` の除外はこの形には掛からない
     local a, b = make_chat(), make_chat()
     directions[b .. ":" .. a] = "Report"
 
@@ -919,45 +928,29 @@ describe("CompletionNotifier", function()
     assert.equals(0, #sends, "A stopping is the end of the tree, not something B must be woken for")
   end)
 
-  it("still suppresses the reverse watchdog for a report, and still delivers its body", function()
-    -- 購読を張らないのは `subscribe` だけ。`reported` マークと `drop_notification` は報告でも
-    -- 働かなければならない（張らないことと、自分の停止を二度報告しないことは別の話）
-    local a, b = make_chat(), make_chat()
-    directions[b .. ":" .. a] = "Report"
-    responding[a] = true
+  -- 購読を張らないのは `subscribe` だけ。`reported` マークと `drop_notification` は向きに依らず
+  -- 働かなければならない（上向きに張らないことと、自分の停止を二度報告しないことは別の話）
+  for _, kind in ipairs({ "Request", "Report" }) do
+    it("drops a completion notice already queued about the chat that then sent a " .. kind, function()
+      local a, b = make_chat(), make_chat()
+      directions[b .. ":" .. a] = kind
+      responding[a] = true
 
-    Notifier.subscribe(a, b)
-    Notifier.on_response_done(b) -- A は応答中なので「B が止まった」が A のキューに積まれる
+      Notifier.subscribe(a, b)
+      Notifier.on_response_done(b) -- A は応答中なので「B が止まった」が A のキューに積まれる
 
-    MessageQueue.enqueue_message(a, b, "here is what I found")
-    Notifier.on_sent(b, a)
+      MessageQueue.enqueue_message(a, b, "here is what I found")
+      Notifier.on_sent(b, a)
 
-    responding[a] = false
-    Notifier.on_response_done(a)
+      responding[a] = false
+      Notifier.on_response_done(a)
 
-    assert.equals(1, #sends)
-    assert.equals(a, sends[1].bufnr)
-    assert.is_truthy(sends[1].message:find("here is what I found", 1, true))
-    assert.is_falsy(sends[1].message:find("stopped without reporting back", 1, true))
-  end)
-
-  it("drops a completion notice already queued about the chat that then reported", function()
-    local a, b = make_chat(), make_chat()
-    responding[a] = true
-
-    Notifier.subscribe(a, b)
-    Notifier.on_response_done(b)
-
-    MessageQueue.enqueue_message(a, b, "here is what I found")
-    Notifier.on_sent(b, a)
-
-    responding[a] = false
-    Notifier.on_response_done(a)
-
-    assert.equals(1, #sends)
-    assert.is_truthy(sends[1].message:find("here is what I found", 1, true))
-    assert.is_falsy(sends[1].message:find("stopped without reporting back", 1, true))
-  end)
+      assert.equals(1, #sends)
+      assert.equals(a, sends[1].bufnr)
+      assert.is_truthy(sends[1].message:find("here is what I found", 1, true))
+      assert.is_falsy(sends[1].message:find("stopped without reporting back", 1, true))
+    end)
+  end
 
   it("keeps the subscription alive when the report turns out to be an intermediate one", function()
     -- A → B → C。B が「C に投げた、待つ」を A に伝えてから、C の報告で再稼働する。

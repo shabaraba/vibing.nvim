@@ -403,22 +403,39 @@ and A does not need waking twice for it. The reversed indices are the reason it 
 written out at a call site, `subscribe(a, b)` next to a suppression of `edges[a][b]` reads like a
 typo.
 
-**Only the dispatch half of that is conditional: a report subscribes nobody.** The notice's own
-wording — "the chats you sent a message to have stopped without reporting back … do not treat its
-task as done" — is a statement about the tree going _down_. An orchestrator stopping is the tree's
-terminal state, not a failure a worker has to go and read. So `on_sent` asks
-`orchestration_link.direction` — the same function that chooses the `## Request` / `## Report`
-heading, so what renders as a report is exactly what does not subscribe — and skips `subscribe`
-for a `Report`. The suppression mark and `drop_notification` stay unconditional: not subscribing
-upward and not reporting your own stop twice are separate obligations.
+**Only the dispatch half of that is conditional: an edge never points up the tree.** The notice's
+own wording — "the chats you sent a message to have stopped without reporting back … do not treat
+its task as done" — is a statement about the tree going _down_. An orchestrator stopping is the
+tree's terminal state, not a failure a worker has to go and read. And the cost of getting it wrong
+is not an inapt sentence: a wake is a whole CLI turn, which is why `wakes` is budgeted at all. So
+`subscribe` takes the send's direction and **refuses a `Report` outright**. The suppression mark
+and `drop_notification` stay unconditional: not subscribing upward and not reporting your own stop
+twice are separate obligations.
 
-The symptom without it is not the fan-out case, where the worker's edge is masked by
+**The refusal lives in `subscribe`, not in `on_sent`, because `subscribe` is the only function
+that writes `edges`.** `rpc/handlers/chat.lua`'s direct call is then covered by the same guarantee
+rather than by the accident that a chat created one line earlier cannot have a reverse link yet.
+
+**The direction is passed in, never re-derived.** `orchestration_link.direction` costs a blocking
+`git rev-parse` plus a frontmatter parse, and both callers already hold the answer when they call:
+`delivery_message.deliver` returns the `kind` its heading was chosen from, and `approval_delegate`
+has it as `section.kind`. Threading it is not only cheaper — it is what makes "what renders as
+`## Report` is exactly what does not subscribe" true by construction instead of by two independent
+evaluations agreeing across an intervening `link_or_warn`. The one site with nothing to pass is
+`queue_for_later`, which deliberately defers the link write, so it asks once.
+
+The symptom without any of this is not the fan-out case, where the worker's edge is masked by
 `is_waiting_on_others`'s "exclude my own subscribers" clause. It is the case where the
 orchestrator's subscription has already been spent: a user types into a worker directly, the
 worker reports up, and from then on **every** turn the orchestrator finishes wakes that worker
 with a watchdog notice about its own parent. Edges are one-shot, so `edges[worker][orchestrator]`
-is gone by then and the exclusion does not fire. That clause now only covers a report between
-chats with no recorded link, and a genuine A⇄B pair of dispatches.
+is gone by then and the exclusion does not fire.
+
+**That exclusion clause stays, and is now the backstop for this guard's own failure mode.** A send
+whose direction cannot be determined — no recorded link, or a buffer with no file name, which is
+the window an unsaved `:VibingChat` orchestrator sits in — still subscribes, so an upward edge can
+still be created. The clause is what keeps that from becoming a mutual wait in which neither chat
+ever reports, and a permanent hang is worse than the spurious wake fixed here.
 
 The price is one wake-up: a worker that asks its orchestrator a question through
 `nvim_chat_send_message` no longer hears about an orchestrator that stops without answering. The

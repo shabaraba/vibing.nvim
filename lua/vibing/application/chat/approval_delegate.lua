@@ -292,9 +292,13 @@ function M.answer(params)
   })
 
   -- 送信と同じく、答えたという事実を購読の登録として扱う。代理で答えたなら、その結果として
-  -- ワーカーが動き出し、また止まる。止まったことを知りたいのは答えた側
+  -- ワーカーが動き出し、また止まる。止まったことを知りたいのは答えた側。
+  --
+  -- 向きは上で決めた `section.kind` をそのまま渡す。`direction` は `git rev-parse` を伴うので
+  -- 聞き直さないというだけでなく、見出しと購読が同じ1回の判定から出ることが要点 — 別々に
+  -- 聞くと、`link_or_warn` を挟んだ2回が食い違いうる
   if result and result.success then
-    require("vibing.application.chat.completion_notifier").on_sent(from_bufnr, bufnr)
+    require("vibing.application.chat.completion_notifier").on_sent(from_bufnr, bufnr, section.kind)
   end
 
   return {
