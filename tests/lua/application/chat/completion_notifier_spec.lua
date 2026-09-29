@@ -2,6 +2,7 @@ local Config = require("vibing.config")
 local view = require("vibing.presentation.chat.view")
 local ProgrammaticSender = require("vibing.presentation.chat.modules.programmatic_sender")
 local notify = require("vibing.core.utils.notify")
+local OrchestrationLink = require("vibing.application.chat.orchestration_link")
 
 describe("CompletionNotifier", function()
   ---モジュールレベルの購読テーブルはspec間で共有されるので、毎回requireし直して捨てる。
@@ -16,6 +17,10 @@ describe("CompletionNotifier", function()
   local sends = {}
   local warnings = {}
   local send_result = { success = true }
+  ---`directions["<from>:<to>"] = "Report"` で、その送信を報告として扱わせる。
+  ---既定は `Request`（＝関係が未記録の2チャット。実物の `direction` も名前のないバッファには
+  ---これを返すので、この spec の既存ケースは全部そこに乗っている）
+  local directions = {}
 
   ---チャットバッファに見える実バッファを1つ作る
   ---@return number bufnr
@@ -48,10 +53,16 @@ describe("CompletionNotifier", function()
     originals.send = ProgrammaticSender.send
     originals.warn = notify.warn
     originals.list_chat_buffers = view.list_chat_buffers
+    originals.direction = OrchestrationLink.direction
 
     buffers, responding, drafts, sends, warnings = {}, {}, {}, {}, {}
     stop_reasons = {}
+    directions = {}
     send_result = { success = true }
+
+    OrchestrationLink.direction = function(from_bufnr, to_bufnr)
+      return directions[from_bufnr .. ":" .. to_bufnr] or "Request"
+    end
 
     view.get_chat_buffer = function(bufnr)
       if not vim.api.nvim_buf_is_valid(bufnr) then
@@ -115,6 +126,7 @@ describe("CompletionNotifier", function()
     ProgrammaticSender.send = originals.send
     notify.warn = originals.warn
     view.list_chat_buffers = originals.list_chat_buffers
+    OrchestrationLink.direction = originals.direction
 
     for _, bufnr in ipairs(buffers) do
       if vim.api.nvim_buf_is_valid(bufnr) then
@@ -887,6 +899,46 @@ describe("CompletionNotifier", function()
     assert.is_true(Notifier.subscribe(a, b))
     Notifier.on_response_done(b)
     assert.equals(1, #sends)
+  end)
+
+  it("does not subscribe a worker to its orchestrator when it reports upward", function()
+    -- watchdog の文面は「送った相手が報告せずに止まった、タスクが終わったものとして扱うな」で、
+    -- 木を下る向きにしか意味がない。ワーカー B が親 A に報告しただけで `edges[a][b]` を張ると、
+    -- A のターンが終わるたびに B がそれで起こされる。ユーザーが B に直接送った直後は A の購読が
+    -- one-shot で使い切られていて `is_waiting_on_others` の除外にも掛からないので、毎回そうなる
+    local a, b = make_chat(), make_chat()
+    directions[b .. ":" .. a] = "Report"
+
+    Notifier.subscribe(a, b) -- A → B のブリーフ
+    Notifier.on_sent(b, a) -- B が A に報告
+
+    Notifier.on_response_done(b)
+    assert.equals(0, #sends, "B's own report already reached A")
+
+    Notifier.on_response_done(a)
+    assert.equals(0, #sends, "A stopping is the end of the tree, not something B must be woken for")
+  end)
+
+  it("still suppresses the reverse watchdog for a report, and still delivers its body", function()
+    -- 購読を張らないのは `subscribe` だけ。`reported` マークと `drop_notification` は報告でも
+    -- 働かなければならない（張らないことと、自分の停止を二度報告しないことは別の話）
+    local a, b = make_chat(), make_chat()
+    directions[b .. ":" .. a] = "Report"
+    responding[a] = true
+
+    Notifier.subscribe(a, b)
+    Notifier.on_response_done(b) -- A は応答中なので「B が止まった」が A のキューに積まれる
+
+    MessageQueue.enqueue_message(a, b, "here is what I found")
+    Notifier.on_sent(b, a)
+
+    responding[a] = false
+    Notifier.on_response_done(a)
+
+    assert.equals(1, #sends)
+    assert.equals(a, sends[1].bufnr)
+    assert.is_truthy(sends[1].message:find("here is what I found", 1, true))
+    assert.is_falsy(sends[1].message:find("stopped without reporting back", 1, true))
   end)
 
   it("drops a completion notice already queued about the chat that then reported", function()

@@ -403,6 +403,28 @@ and A does not need waking twice for it. The reversed indices are the reason it 
 written out at a call site, `subscribe(a, b)` next to a suppression of `edges[a][b]` reads like a
 typo.
 
+**Only the dispatch half of that is conditional: a report subscribes nobody.** The notice's own
+wording — "the chats you sent a message to have stopped without reporting back … do not treat its
+task as done" — is a statement about the tree going _down_. An orchestrator stopping is the tree's
+terminal state, not a failure a worker has to go and read. So `on_sent` asks
+`orchestration_link.direction` — the same function that chooses the `## Request` / `## Report`
+heading, so what renders as a report is exactly what does not subscribe — and skips `subscribe`
+for a `Report`. The suppression mark and `drop_notification` stay unconditional: not subscribing
+upward and not reporting your own stop twice are separate obligations.
+
+The symptom without it is not the fan-out case, where the worker's edge is masked by
+`is_waiting_on_others`'s "exclude my own subscribers" clause. It is the case where the
+orchestrator's subscription has already been spent: a user types into a worker directly, the
+worker reports up, and from then on **every** turn the orchestrator finishes wakes that worker
+with a watchdog notice about its own parent. Edges are one-shot, so `edges[worker][orchestrator]`
+is gone by then and the exclusion does not fire. That clause now only covers a report between
+chats with no recorded link, and a genuine A⇄B pair of dispatches.
+
+The price is one wake-up: a worker that asks its orchestrator a question through
+`nvim_chat_send_message` no longer hears about an orchestrator that stops without answering. The
+question itself still arrives — delivery is `message_queue`'s job and never went through this
+edge — so what is lost is a notice about silence, not the channel.
+
 **It is a mark and not a deletion, and that distinction is the whole of #638 again.** Nothing at
 send time can tell a final report from a progress note — and in a tree the middle node's first
 message is _always_ a progress note, because it stops once to wait for its own worker and only
