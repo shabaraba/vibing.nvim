@@ -101,6 +101,17 @@ function M.flush(bufnr)
     return "waiting"
   end
 
+  -- `auto_compact` is registered after us (`init.lua`), so on the tick a compaction turn finishes,
+  -- its own `on_response_done` runs after ours and still has to write its parked message back and
+  -- send it. Flushing here first would find the chat briefly idle, start sending, and auto_compact's
+  -- own scheduled send would then find `is_responding()` true and silently drop the message it was
+  -- holding — the exact "whichever ran second found the chat responding" loss its module comment
+  -- describes. Waiting for the next `VibingResponseDone` (fired when that send itself finishes)
+  -- avoids the race instead of depending on subscriber order.
+  if require("vibing.application.chat.auto_compact").has_pending(bufnr) then
+    return "waiting"
+  end
+
   if chat_buf:has_unanswered_prompts() then
     notify.info(
       string.format("%d reserved message(s) will be sent after the prompt above is answered", #items),
@@ -149,7 +160,8 @@ function M.flush(bufnr)
   -- 送れなかった本文を消さない。`send` が未送信セクションを書いたあとで弾かれたなら、本文は
   -- もうそこにある。書く前に弾かれたなら、ここで書く
   local after = chat_buf:extract_user_message()
-  if not (after and vim.trim(after) ~= "") then
+  local has_draft = after and vim.trim(after) ~= ""
+  if not has_draft then
     park_in_unsent_section(bufnr, message)
   end
   notify.warn(

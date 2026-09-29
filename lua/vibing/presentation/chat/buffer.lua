@@ -602,8 +602,7 @@ function ChatBuffer:_setup_keymaps()
       end)
     end,
     cancel = function()
-      self:_mark_cancelled()
-      self:cancel_request()
+      self:cancel_turn()
     end,
     update_context_line = function()
       Renderer.updateContextLine(self.buf)
