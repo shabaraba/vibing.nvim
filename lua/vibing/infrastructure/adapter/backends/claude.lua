@@ -8,6 +8,7 @@ local CLICommandBuilder = require("vibing.infrastructure.adapter.modules.cli_com
 local CLIEventProcessor = require("vibing.infrastructure.adapter.modules.cli_event_processor")
 local AgentEnvironment = require("vibing.infrastructure.adapter.modules.agent_environment")
 local TokenUsage = require("vibing.core.utils.token_usage")
+local ClaudeSubagentTranscript = require("vibing.infrastructure.adapter.modules.claude_subagent_transcript")
 
 ---@type Vibing.BackendDescriptor
 local M = {
@@ -92,6 +93,10 @@ local M = {
     measured_answer_wait_sec = 960,
   },
   seeds_project_plugins = true,
+
+  -- Reads a subagent's own transcript back off disk; the shared adapter calls this rather than
+  -- naming the module itself (`architecture.md` → "nothing in this file names a backend").
+  recover_unreported_tasks = ClaudeSubagentTranscript.recover,
 
   apply_env = function(env, opts, config)
     -- Remove CLAUDECODE to allow nested invocation

@@ -67,6 +67,10 @@ local PluginScaffold = require("vibing.infrastructure.plugins.scaffold")
 ---@field on_setup? fun(cwd: string, config: Vibing.Config) Backfill for projects whose `.vibing/`
 ---  predates those files; runs from `setup()` and must not create `.vibing/` where there is none.
 ---@field clear_caches? fun() Memoised state to drop on `:VibingReloadCommands`.
+---@field recover_unreported_tasks? fun(unreported: Vibing.BackgroundTask[], cwd: string, session_id: string?): Vibing.RecoveredSubagent[]
+---  Read back what a background subagent said when the CLI dropped its completion notification
+---  (anthropics/claude-code#87675). Absent means this backend never backgrounds a subagent, so
+---  `BackgroundTasks.unreported()` is always empty for it and this is never called.
 ---@field process? "oneshot"|"duplex" The most capable process model this backend can run; absent
 ---  means `oneshot` only. Not the default — that is `oneshot` for everyone, and a chat opts in
 ---  through `backends.<id>.process` or its own frontmatter (`process_model.lua`). Named `process`
@@ -323,8 +327,8 @@ function M.define(descriptor)
       -- wrote the transcript and where it put it is an adapter fact. What the chat layer gets is
       -- the recovered text, and the empty list on every backend that never started one.
       local unreported = BackgroundTasks.unreported(event_context)
-      if #unreported > 0 then
-        response._recovered_subagents = require("vibing.infrastructure.adapter.modules.claude_subagent_transcript").recover(
+      if #unreported > 0 and descriptor.recover_unreported_tasks then
+        response._recovered_subagents = descriptor.recover_unreported_tasks(
           unreported,
           cwd,
           SessionManagerModule.get(self._session_manager, ids.process_id)
