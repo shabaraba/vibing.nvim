@@ -125,6 +125,33 @@ local function resolve_bufnr(file_path)
   return vim.api.nvim_buf_is_valid(bufnr) and bufnr or nil
 end
 
+---相手が書きかけの `## User` を残しているか
+---
+---`flush` と `draft_hold.can_deliver_now` の両方がこの判定を必要とする。前者は見送るときに
+---`draft_hold.watch` も呼ぶが、後者は判定だけで足りる — その違いは呼び出し元の役目にして、
+---判定そのものは1箇所にまとめておく。2つの独立した実装のまま置くと、どちらかだけを直したときに
+---「配達可能」の意味がその場で食い違う
+---@param chat_buf table ChatBuffer 相当。`extract_user_message` を持たない実装もある
+---@return boolean
+function M.has_unsent_draft(chat_buf)
+  if not chat_buf.extract_user_message then
+    return false
+  end
+  local draft = chat_buf:extract_user_message()
+  return draft ~= nil and vim.trim(draft) ~= ""
+end
+
+---`to_bufnr` 宛の待ち合わせを終わらせる
+---
+---配達できた場合と、配る先を失って捨てる場合の両方がここに来る。下書き待ちの監視も一緒に
+---落とすのが要点で、片方だけ残すと `draft_hold` は配る物の無いキューを見張り続ける
+---@param to_bufnr number
+local function clear_queue(to_bufnr)
+  pending[to_bufnr] = nil
+  persist(to_bufnr)
+  require("vibing.application.chat.draft_hold").forget(to_bufnr)
+end
+
 ---@param to_bufnr number
 ---@param predicate fun(item: Vibing.Application.MessageQueue.Item): boolean
 local function remove_where(to_bufnr, predicate)
@@ -320,8 +347,7 @@ function M.flush(to_bufnr)
       string.format("Chat %d vanished without a BufDelete event; dropping %d queued item(s) for it", to_bufnr, #queue),
       WARN_TITLE
     )
-    pending[to_bufnr] = nil
-    persist(to_bufnr)
+    clear_queue(to_bufnr)
     return false
   end
 
@@ -335,8 +361,7 @@ function M.flush(to_bufnr)
       ),
       WARN_TITLE
     )
-    pending[to_bufnr] = nil
-    persist(to_bufnr)
+    clear_queue(to_bufnr)
     return false
   end
 
@@ -347,12 +372,14 @@ function M.flush(to_bufnr)
   -- ユーザーが書きかけの `## User` を残しているなら触らない。配達は新しいセクションを足すので、
   -- 下書きは送られないまま宙に浮き、次の<CR>は空のヘッダを読んで「No message to send」になる。
   -- auto_resume が未送信セクションを上書きしないのと同じ扱い。
-  -- ユーザーがその下書きを送れば、そのターンの完了でここが呼び直されるので取りこぼさない
-  if chat_buf.extract_user_message then
-    local draft = chat_buf:extract_user_message()
-    if draft and vim.trim(draft) ~= "" then
-      return false
-    end
+  --
+  -- **上の応答中と違って、この見送りを解くイベントは無い。** ユーザーがその下書きを送れば
+  -- そのターンの完了でここが呼び直されるが、消しただけ・書いたまま離席した場合は誰も
+  -- 呼び直さず、配達は無期限に宙に浮く（#831）。だから下書きが空くのを `draft_hold` に
+  -- 待たせる — 見送る条件のうち、これだけが人間を待つもの
+  if M.has_unsent_draft(chat_buf) then
+    require("vibing.application.chat.draft_hold").watch(to_bufnr, #queue)
+    return false
   end
 
   local delivered = {}
@@ -398,8 +425,7 @@ function M.flush(to_bufnr)
   -- 配達できて初めてキューを空ける。通知側はエッジを既に消費しているので、先に捨てると
   -- 失敗した配達は二度と再現しない。残しておけば次の完了イベントで作り直しなしに再試行できる
   if ok and result and result.success then
-    pending[to_bufnr] = nil
-    persist(to_bufnr)
+    clear_queue(to_bufnr)
 
     -- 送信が受理されたことと、ターンが始まったことは別。`ChatBuffer:send_message()` が返すのは
     -- 「リクエストとして扱ったか」で、リミット中の予約（`_try_schedule_instead_of_send`）でも、
@@ -432,6 +458,11 @@ end
 ---既定（この機能は未使用）では空振りなので、自分の状態が空なら何もしない
 ---@param bufnr number
 function M.forget(bufnr)
+  -- 早期returnより前。監視には**autocmdが張ってある**ことがあり、そこだけは空振りではない:
+  -- `BufDelete` はバッファを消さないのでバッファローカルの autocmd はそのまま残り、あとから
+  -- 発火すると誰も読まないバッファへの配達を起こす
+  require("vibing.application.chat.draft_hold").forget(bufnr)
+
   if next(pending) == nil then
     return
   end

@@ -780,6 +780,61 @@ the design:
   with a reason notifies its subscribers like any other blocked one. Reachable only with
   `max_concurrent` set, since the default `0` never holds anything.
 
+### A delivery refused because of a draft (#831)
+
+`flush` refuses for two reasons that leave the queue intact, and they are not symmetrical.
+
+**The recipient is responding.** Transient, and its own turn end calls `flush` again through
+`process_done`. Nothing has to remember it.
+
+**The recipient has an unsent draft.** There is no event for "the draft went away". So the next
+`flush` came only from the next turn ending, and the thing that ends a turn is normally the user
+sending — which is the same act that clears the draft. A delivery therefore waited on the very
+wake it was supposed to produce. Measured on a real worker chat: a background job finished at
+00:43:13 and its `notify: always` notice reached the chat at 00:48:00, when the user happened to
+ask an unrelated question. Nothing was lost — the item stayed in `pending` and `has_pending` stayed
+true — but the chat reported `idle`, the agent believed no notice had arrived, and had the user
+written half a message and walked away it would never have arrived at all.
+
+`application/chat/draft_hold.lua` closes it by watching for the one signal that does exist: the
+buffer changing. Four things about its shape:
+
+- **It watches only the draft refusal.** Arming it on the responding refusal too would give that
+  case a second, redundant trigger, and every redundant trigger is one more way to deliver twice.
+- **`TextChanged` and `InsertLeave`, not `TextChangedI`.** The gate reads
+  `extract_user_message`, which scans the whole buffer back to the last user header; per keystroke
+  that is an O(buffer) walk on the editor's hot path. The same cost is why the callback asks
+  `is_responding()` **before** it reads the draft — a streaming turn rewrites the buffer
+  continuously, so the cheap check has to come first or the scan runs on every rendered chunk.
+- **The retry goes through `completion_notifier.retry_delivery`, never straight to `flush`.**
+  `wakes` and `round_trips` — the loop budgets that stop A⇄B from waking each other forever — are
+  advanced by `drain` alone. A retry that bypassed it would let a delivery woken through a draft
+  spend no budget, which is the one hole the budgets cannot be audited for from the outside.
+  `retry_held` was folded onto the same function: the two refusals clear on different signals, but
+  what to do when one clears is identical.
+- **The user is told once, at INFO.** Same level as `auto_resume`'s "an unsent message is waiting
+  in the chat", and once per episode rather than once per refused `flush` — a notice on every
+  refusal is how the notices that matter get trained away. It is the honest half of the fix: the
+  retry alone cannot deliver past a draft that never clears, so something has to say _why_ nothing
+  is arriving. Deferring the notice by a few seconds (so a draft the user is about to send never
+  earns one) was rejected for reintroducing a timer, which is what the event-driven design exists
+  to avoid.
+
+  **The notice names the state and prescribes no single action**, because what is in the way is
+  "a non-empty unsent section", not necessarily prose a human typed. A killed turn leaves its
+  rendered approval or question block there (the same state branch 2's exception above is about),
+  and that one is answered rather than deleted; a send that failed after
+  `ProgrammaticSender.send` already wrote the body leaves vibing's own delivery text there. "Clear
+  the unsent message" would be wrong advice in both.
+
+Watching stops when the wait ends, whichever way it ends — `message_queue.lua`'s `clear_queue` is
+the one place a queue goes away, so delivery and both warn-and-drop paths release the watch
+together. Splitting them left `is_watching` reporting a watch over a queue that no longer existed,
+and on the vanished-buffer path nothing could ever self-heal it, since the buffer-local autocmd
+Neovim already deleted can no longer fire. `MessageQueue.forget` releases it too, **before** its own
+empty-queue early return: `BufDelete` leaves the buffer alive, so its autocmds survive and would
+otherwise fire a delivery into a buffer nobody reads.
+
 ## Delivered sections
 
 A message that arrived from another chat is written as its own section kind — `## Request`,

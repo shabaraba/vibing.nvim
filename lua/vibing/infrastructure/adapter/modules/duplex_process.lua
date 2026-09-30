@@ -169,11 +169,18 @@ end
 --- plain `user` message rather than as an argv argument. The content is a string rather than a
 --- one-element block list: both are accepted, and the string form is what the CLI's own replay
 --- emits back.
+---
+--- **The envelope's `uuid` is the only thing that says which turn is ours.** The CLI echoes it
+--- back on that prompt's `result` as `user_message_uuid`, and on the `command_lifecycle` lines it
+--- only emits when one was supplied. A turn the CLI started by itself carries neither field, which
+--- is what `duplex_turn.ends_this_turn` reads. Any string is accepted -- it is not validated as a
+--- UUID. `handbook/architecture/duplex-transport.md` -> "Whose `result` is this?".
 --- @param record Vibing.DuplexProcess
 --- @param prompt string
+--- @param prompt_uuid string|nil correlation id echoed back on this prompt's own `result`
 --- @return boolean sent
-function M.send_prompt(record, prompt)
-  return write(record, { type = "user", message = { role = "user", content = prompt } })
+function M.send_prompt(record, prompt, prompt_uuid)
+  return write(record, { type = "user", uuid = prompt_uuid, message = { role = "user", content = prompt } })
 end
 
 --- Stop the turn without stopping the process.
