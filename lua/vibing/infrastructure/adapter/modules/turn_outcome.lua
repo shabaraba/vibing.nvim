@@ -81,12 +81,10 @@ end
 --- #782 (duplex fixed it in #781 and left the oneshot path as it was).
 ---
 --- @param ids Vibing.RequestIds
---- @param old_session_id string|nil the session that could not be resumed, for the chat's notice
 --- @return Vibing.Response
-function M.first_response_timeout(ids, old_session_id)
+function M.first_response_timeout(ids)
   local out = response(ids, "", "Session resume timeout")
   out._session_corrupted = true
-  out._old_session_id = old_session_id
   return out
 end
 

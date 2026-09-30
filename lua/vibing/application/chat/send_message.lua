@@ -235,20 +235,6 @@ function M.execute(adapter, callbacks, message, config)
         callbacks.show_pending_prompts()
       end
     end,
-    on_session_corrupted = function(old_session_id)
-      vim.schedule(function()
-        callbacks.update_session_id(nil)
-        -- Safely handle nil old_session_id
-        local session_display = old_session_id and tostring(old_session_id):sub(1, 8) or "unknown"
-        vim.notify(
-          string.format(
-            "[vibing.nvim] Previous session (%s) was corrupted. Starting fresh session.",
-            session_display
-          ),
-          vim.log.levels.INFO
-        )
-      end)
-    end,
     on_approval_required = function(tool, input, options, hook_request_id, waiting)
       -- permission.lua の vim.schedule 内から呼ばれるためすでにメインスレッド上
       -- 二重 vim.schedule を避けることで _pending_approval が add_user_section より確実に先に設定される

@@ -116,17 +116,14 @@ describe("the first-response watchdog", function()
       local duplex = duplex_timeout_response()
 
       for _, response in ipairs({ oneshot, duplex }) do
-        -- The three fields the chat layer acts on: `_session_corrupted` routes `_handle_response`
-        -- into the session reset, `_old_session_id` names what could not be resumed, and `content`
-        -- is empty because by definition nothing arrived.
+        -- The two fields the chat layer acts on: `_session_corrupted` routes `_handle_response`
+        -- into the session reset, and `content` is empty because by definition nothing arrived.
         assert.is_true(response._session_corrupted)
         assert.equals("Session resume timeout", response.error)
         assert.equals("", response.content)
         assert.is_string(response._turn_id)
         assert.is_string(response._process_id)
       end
-      assert.equals("sess-oneshot", oneshot._old_session_id)
-      assert.equals("sess-duplex", duplex._old_session_id)
     end)
 
     it("survives the kill that follows it, on the oneshot transport too", function()
@@ -152,7 +149,7 @@ describe("the first-response watchdog", function()
       for _, response in ipairs({
         TurnOutcome.ended(IDS, "", "boom"),
         TurnOutcome.cancelled(IDS, ""),
-        TurnOutcome.first_response_timeout(IDS, "sess"),
+        TurnOutcome.first_response_timeout(IDS),
       }) do
         assert.equals("turn-1", response._turn_id)
         assert.equals("proc-1", response._process_id)
@@ -163,7 +160,7 @@ describe("the first-response watchdog", function()
       assert.is_true(TurnOutcome.cancelled(IDS, "partial")._cancelled)
       assert.equals("partial", TurnOutcome.cancelled(IDS, "partial").content)
       assert.is_nil(TurnOutcome.ended(IDS, "out", "boom")._cancelled)
-      assert.is_nil(TurnOutcome.first_response_timeout(IDS, "sess")._cancelled)
+      assert.is_nil(TurnOutcome.first_response_timeout(IDS)._cancelled)
     end)
 
     it("leaves error nil for a turn that simply finished", function()

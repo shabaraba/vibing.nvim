@@ -194,7 +194,7 @@ function M.open(params, record, chat_key)
       end
       vim.notify(string.format("%s The resident CLI process did not answer; restarting it.", params.tag), vim.log.levels.WARN)
       -- Reported before the kill, for the reason `turn_outcome.first_response_timeout` states.
-      complete(TurnOutcome.first_response_timeout(turn_ids, params.opts._session_id))
+      complete(TurnOutcome.first_response_timeout(turn_ids))
       Pool.stop(chat_key)
     end)
   end)
