@@ -735,6 +735,7 @@ describe("git_snapshot", function()
       assert.same({
         "EnterPlanMode",
         "ExitPlanMode",
+        "ListAgents",
         "Monitor",
         "ReportFindings",
         "ScheduleWakeup",

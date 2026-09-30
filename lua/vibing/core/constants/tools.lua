@@ -58,7 +58,7 @@ M.ALWAYS_ALLOWED_TOOLS = {
 ---@type table<string, boolean>
 M.ALWAYS_ALLOWED_TOOLS_MAP = to_map(M.ALWAYS_ALLOWED_TOOLS)
 
----Claude Codeハーネス内部の副作用なし制御ツール。`ask`/`deny`すら通さず常に許可される
+---Claude Codeハーネス自身の制御ツール。`ask`/`deny`すら通さず常に許可される
 ---（can_use_tool.luaの評価順で`ALWAYS_ALLOWED_TOOLS`より前）。
 ---
 ---`ALWAYS_ALLOWED_TOOLS`との違いは「ユーザーがask/denyで上書きできるか」。あちらは上書き可・
@@ -80,6 +80,7 @@ M.INTERNAL_TOOLS = {
   "TaskStop",
   "TaskUpdate",
   "SendMessage",
+  "ListAgents",
   "Monitor",
   "ScheduleWakeup",
   "EnterPlanMode",
