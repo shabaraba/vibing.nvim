@@ -60,6 +60,16 @@ local function reuse_key(params)
   return table.concat(cmd, "\30"), nil
 end
 
+--- The id this turn's prompt travels under, so the CLI can name it back.
+---
+--- Prefixed rather than bare so a `user_message_uuid` in a capture says where it came from; the
+--- CLI does not validate the shape (measured: arbitrary strings are echoed unchanged).
+--- @param turn_id string
+--- @return string
+function M.prompt_uuid(turn_id)
+  return "vibing-" .. turn_id
+end
+
 --- Start a turn on a resident process.
 --- @param params Vibing.DuplexRunParams
 --- @return string turn_id
@@ -112,11 +122,16 @@ function M.run(params)
   Routing.idle_context(record, params.event_context.sessionManager)
   params.adapter._processes[record.process_id] = Routing.cancellable_handle(record, chat_key)
 
+  -- Set before the turn opens, because `duplex_turn` reads it off the context to decide which
+  -- `result` is this turn's. Derived from the turn id rather than minted: the two name the same
+  -- thing, and one of them travelling under a second identity is a third id to keep in step.
+  params.event_context.promptUuid = M.prompt_uuid(ids.turn_id)
+
   local complete = DuplexTurn.open(params, record, chat_key)
 
   local prompt =
     RequestBuilder.prompt_text(descriptor.request, params.prompt, params.opts, params.opts._session_id, params.config)
-  if not DuplexProcess.send_prompt(record, prompt or params.prompt) then
+  if not DuplexProcess.send_prompt(record, prompt or params.prompt, params.event_context.promptUuid) then
     -- Reported before the kill, for the reason `turn_outcome.first_response_timeout` states:
     -- `Pool.stop` completes this turn as "Cancelled" on its way out, and `complete` is idempotent,
     -- so killing first would replace this message with one that says nothing about what went wrong.

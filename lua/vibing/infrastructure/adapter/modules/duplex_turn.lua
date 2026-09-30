@@ -17,6 +17,35 @@ local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registr
 
 local M = {}
 
+--- Whether a `result` is the end of *this* turn, or of one the CLI started for itself.
+---
+--- The CLI runs turns nobody asked for: a background subagent finishing delivers a
+--- `task_notification` and the CLI answers it on its own, `init` through `result`, on the same
+--- resident process. Measured against claude 2.1.273, one of those lands **between** a prompt being
+--- written and the answer to it (`tests/perf/duplex_foreign_turn_end.sh`), so the first `result`
+--- after a prompt is routinely not that prompt's. Consuming it ends the turn with nothing in it and
+--- sends the real answer to `_idle_context`, where it is dropped — an empty `## Assistant`, and
+--- then every later turn off by one.
+---
+--- The correlation is the CLI's own: the prompt carries a `uuid` and its `result` carries that back
+--- as `user_message_uuid`. A self-started turn's carries no such field.
+---
+--- **A missing field is not evidence of a foreign turn on its own** — a CLI that does not echo at
+--- all produces exactly the same `nil`, and rejecting on it would leave the turn open forever. So
+--- the gate is armed by proof rather than by assumption: only a turn that has seen its own
+--- `prompt_ack` may reject anything, and one that has not keeps the pre-#829 behaviour of ending on
+--- the first `result`. The ack arrives on the `queued` state, milliseconds after the write and long
+--- before any turn could finish.
+--- @param context table the turn's event context
+--- @param event table|nil the `turn_end` canonical event
+--- @return boolean
+function M.ends_this_turn(context, event)
+  if not context._prompt_acked then
+    return true
+  end
+  return event ~= nil and event.prompt_uuid == context.promptUuid
+end
+
 --- @param params Vibing.DuplexRunParams
 --- @param record Vibing.DuplexProcess
 --- @param chat_key number|string
@@ -141,7 +170,10 @@ function M.open(params, record, chat_key)
   -- onto `ids`; naming `record` here says so without depending on that order.
   local turn_ids = Routing.ids_of(record, record._turn)
 
-  context.onTurnEnd = function()
+  context.onTurnEnd = function(event)
+    if not M.ends_this_turn(context, event) then
+      return
+    end
     local errors = context.resultErrors
     complete(
       TurnOutcome.ended(
