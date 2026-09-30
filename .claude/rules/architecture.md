@@ -265,6 +265,16 @@ every backend other than claude can never use it, whatever the configuration say
   _after_ the `error` arm it may also emit, so a turn the CLI declared failed has reached
   `resultErrors` first. The oneshot path sets no `onTurnEnd` and drops the event. The event context
   is per turn; the decoder's parse state is per process.
+- **A `result` ends the turn whose prompt it names, and the CLI runs turns vibing never asked for.**
+  A background subagent finishing arrives as `system/task_notification`, which the CLI answers by
+  itself with a whole `system/init` … `result` pair. Consuming the first `result` seen therefore
+  ends the user's turn empty, routes the real answer to `_idle_context` where it is discarded, and
+  leaves every later turn off by one. The correlation is the input envelope's `uuid`, echoed back as
+  `result.user_message_uuid` and on the `command_lifecycle` lines the CLI emits **only** when one was
+  supplied — so the gate arms on that positive proof (`context._prompt_acked`) and a CLI that does
+  not echo keeps today's behaviour rather than hanging forever. `duplex_turn.ends_this_turn` is the
+  one place this is decided, asked by both `onTurnEnd` and `handlers.error`.
+  `handbook/architecture/duplex-transport.md` → "Whose `result` is this?".
 
 ## Concurrent Execution, Fork and Subagent Chat
 

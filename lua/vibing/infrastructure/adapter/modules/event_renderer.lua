@@ -18,6 +18,7 @@ local SubagentDisplay = require("vibing.infrastructure.adapter.modules.subagent_
 local SubagentMarker = require("vibing.infrastructure.adapter.modules.subagent_marker")
 local BackgroundTasks = require("vibing.infrastructure.adapter.modules.background_tasks")
 local TokenUsage = require("vibing.core.utils.token_usage")
+local DuplexTurn = require("vibing.infrastructure.adapter.modules.duplex_turn")
 
 ---@alias Vibing.CanonicalEvent
 ---| { kind: "session", session_id: string }                          # the CLI named its session
@@ -31,8 +32,9 @@ local TokenUsage = require("vibing.core.utils.token_usage")
 ---| { kind: "usage", accumulator: table }                            # a whole-turn accumulator, replacing
 ---| { kind: "cli_info", version: string?, model: string?, tools: number?, mcp_servers: number?, compacted: boolean? }
 ---| { kind: "rate_limit", info: Vibing.RateLimitInfo }
----| { kind: "error", message: string, fatal: boolean? }              # fatal: the CLI declared the turn failed
----| { kind: "turn_end", subtype: string? }                           # this turn is over; the process may not be
+---| { kind: "error", message: string, fatal: boolean?, prompt_uuid: string? } # fatal: the CLI declared the turn failed
+---| { kind: "turn_end", subtype: string?, prompt_uuid: string? }     # a turn is over; whose, and the process may not be
+---| { kind: "prompt_ack", prompt_uuid: string, state: string? }      # the CLI named back a prompt written to its stdin
 ---| { kind: "background_task_started", task_id: string, description: string? }
 ---| { kind: "background_task_done", task_id: string, status: string?, usage: table? }
 
@@ -358,7 +360,14 @@ handlers.error = function(event, context)
     context._last_error_message = message
     table.insert(context.errorOutput, message)
   end
-  if event.fatal then
+  -- `fatal` is claude's own `result.subtype == "error"`, carried on the same message as
+  -- `turn_end` and therefore the same `prompt_uuid`. On a resident process that message can be a
+  -- turn the CLI ran for itself (`duplex_turn.lua` -> "Whose result is this?"); without this check
+  -- its failure lands in `resultErrors` and a turn that actually succeeded completes reporting an
+  -- error nobody saw, purely because an unrelated background turn failed while this one was open.
+  -- `ends_this_turn` is the same proof-gated check `onTurnEnd` uses, so an unacknowledged or
+  -- non-duplex context (where `event.prompt_uuid` is always nil) keeps today's behaviour.
+  if event.fatal and DuplexTurn.ends_this_turn(context, event) then
     -- Kept apart from stderr: stderr is only a failure when the exit code says so, but this is
     -- the CLI declaring the turn failed, which can happen with the process still exiting 0.
     context.resultErrors = context.resultErrors or {}
@@ -373,6 +382,15 @@ end
 handlers.turn_end = function(event, context)
   if context.onTurnEnd then
     context.onTurnEnd(event)
+  end
+end
+
+-- Recorded, never drawn: the CLI repeating an id back is plumbing, and the prompt it names is
+-- already on screen as the user's own section. What it establishes is that this CLI echoes the
+-- correlation at all, which `duplex_turn.ends_this_turn` refuses to assume without proof.
+handlers.prompt_ack = function(event, context)
+  if context.promptUuid and event.prompt_uuid == context.promptUuid then
+    context._prompt_acked = true
   end
 end
 
