@@ -8,6 +8,7 @@ local CLICommandBuilder = require("vibing.infrastructure.adapter.modules.cli_com
 local CLIEventProcessor = require("vibing.infrastructure.adapter.modules.cli_event_processor")
 local AgentEnvironment = require("vibing.infrastructure.adapter.modules.agent_environment")
 local TokenUsage = require("vibing.core.utils.token_usage")
+local ClaudeSubagentTranscript = require("vibing.infrastructure.adapter.modules.claude_subagent_transcript")
 
 ---@type Vibing.BackendDescriptor
 local M = {
@@ -93,6 +94,10 @@ local M = {
   },
   seeds_project_plugins = true,
 
+  -- Reads a subagent's own transcript back off disk; the shared adapter calls this rather than
+  -- naming the module itself (`architecture.md` → "nothing in this file names a backend").
+  recover_unreported_tasks = ClaudeSubagentTranscript.recover,
+
   apply_env = function(env, opts, config)
     -- Remove CLAUDECODE to allow nested invocation
     env.CLAUDECODE = nil
@@ -117,6 +122,17 @@ local M = {
     if env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS == nil then
       local git_instructions = config.agent and config.agent.git_instructions
       env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS = git_instructions and "0" or "1"
+    end
+
+    -- `claude -p` はバックグラウンド subagent が終わるまで開いたまま待つが、連続アイドルが
+    -- この上限を超えると走っているものを止めて**部分結果を捨てる**。CLI 既定の600秒は
+    -- 一発起動向けで、対話チャットの subagent は普通に超える。失われるのが黙って起きる以上、
+    -- 既定を広げるのは安全側。環境に既にあればそちらが勝つ（ユーザーの export が最終決定）
+    if env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS == nil then
+      local sec = config.backends and config.backends.claude and config.backends.claude.background_wait_sec
+      if type(sec) == "number" then
+        env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS = tostring(math.floor(sec * 1000))
+      end
     end
   end,
 

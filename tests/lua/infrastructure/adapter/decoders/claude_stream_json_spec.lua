@@ -125,4 +125,52 @@ describe("decoders.claude_stream_json", function()
     assert.equals("rate_limit", events[1].kind)
     assert.is_true(events[1].info.rejected)
   end)
+
+  describe("background subagents", function()
+    it("tracks a backgrounded task_started", function()
+      local events = decode({}, {
+        type = "system",
+        subtype = "task_started",
+        task_id = "a5a51adc038e56bf6",
+        tool_use_id = "toolu_01HQ",
+        description = "Reply PONG",
+        subagent_type = "general-purpose",
+        is_backgrounded = true,
+      })
+      -- Only what something downstream reads: the id the ledger and the transcript path are keyed
+      -- by, and the brief the completion line names the task with.
+      assert.same({ kind = "background_task_started", task_id = "a5a51adc038e56bf6", description = "Reply PONG" }, events[1])
+    end)
+
+    -- A foreground subagent closes inside the turn that launched it, as a tool_result. Tracking it
+    -- would put it in the unreported set forever, since no task_notification ever names it.
+    it("ignores a foreground task_started", function()
+      local events = decode({}, {
+        type = "system",
+        subtype = "task_started",
+        task_id = "a1",
+        is_backgrounded = false,
+      })
+      assert.is_false(vim.tbl_contains(kinds(events), "background_task_started"))
+    end)
+
+    it("carries a task_notification out as a completion with its usage", function()
+      local events = decode({}, {
+        type = "system",
+        subtype = "task_notification",
+        task_id = "a5a51adc038e56bf6",
+        tool_use_id = "toolu_01HQ",
+        status = "completed",
+        summary = "PONG",
+        output_file = "/tmp/x/tasks/a5a51adc038e56bf6.output",
+        usage = { total_tokens = 19469, duration_ms = 1610 },
+      })
+      assert.same({
+        kind = "background_task_done",
+        task_id = "a5a51adc038e56bf6",
+        status = "completed",
+        usage = { total_tokens = 19469, duration_ms = 1610 },
+      }, events[1])
+    end)
+  end)
 end)

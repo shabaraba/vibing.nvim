@@ -54,6 +54,7 @@
 ---@field error string?
 ---@field _turn_id string? このレスポンスが属するターンのID。staleness判定（そのターンをまだ待っているか）はこれで行う
 ---@field _process_id string? そのターンを走らせたCLIプロセスのID。セッションIDの読み戻しはこれで引く（セッションはプロセスが握っているもの）
+---@field _recovered_subagents Vibing.RecoveredSubagent[]? 完了通知が届かなかったバックグラウンドsubagentの出力。アダプタがトランスクリプトから読み出したもので、空なら取りこぼしは無い
 
 -- Vibing.WindowConfig and Vibing.ChatConfig are defined in config.lua
 
