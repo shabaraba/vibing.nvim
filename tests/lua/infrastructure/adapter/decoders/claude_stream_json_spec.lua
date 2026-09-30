@@ -103,6 +103,35 @@ describe("decoders.claude_stream_json", function()
     assert.same({ { kind = "turn_end", subtype = "success" } }, decode({}, { type = "result", subtype = "success" }))
   end)
 
+  it("carries out which prompt a result answers", function()
+    -- The CLI echoes the input envelope's `uuid` back here, and that is the only thing separating
+    -- this turn's result from one the CLI ran for itself.
+    assert.same(
+      { { kind = "turn_end", subtype = "success", prompt_uuid = "vibing-abc" } },
+      decode({}, { type = "result", subtype = "success", user_message_uuid = "vibing-abc" })
+    )
+  end)
+
+  it("carries no prompt out of a result the CLI produced for itself", function()
+    -- Measured: a turn started by a `task_notification` omits the field entirely, and a JSON null
+    -- would arrive as `vim.NIL` -- truthy in Lua, and a uuid nothing could ever match.
+    assert.same(
+      { { kind = "turn_end", subtype = "success" } },
+      decode({}, { type = "result", subtype = "success", user_message_uuid = vim.NIL })
+    )
+  end)
+
+  it("reports the CLI naming a prompt back", function()
+    assert.same(
+      { { kind = "prompt_ack", prompt_uuid = "vibing-abc", state = "queued" } },
+      decode({}, { type = "command_lifecycle", command_uuid = "vibing-abc", state = "queued" })
+    )
+  end)
+
+  it("ignores a lifecycle line that names no prompt", function()
+    assert.same({}, decode({}, { type = "command_lifecycle", state = "queued" }))
+  end)
+
   it("survives the string-content user events /compact replays", function()
     -- Captured from claude 2.1.x: after `compact_boundary` the CLI replays the summary it has just
     -- written and a `<local-command-stdout>` line, both as `user` events whose `content` is a plain

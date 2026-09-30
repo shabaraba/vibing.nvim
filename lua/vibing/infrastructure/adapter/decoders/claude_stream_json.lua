@@ -6,16 +6,25 @@
 
 local M = {}
 
+--- A JSON field as a string, or nil when it was absent, null or empty.
+---
+--- `vim.json.decode` turns JSON `null` into `vim.NIL`, which is **truthy in Lua**, so every field
+--- the CLI may omit is read through here rather than tested directly.
+--- @param value any
+--- @return string|nil
+local function str_or_nil(value)
+  return type(value) == "string" and value ~= "" and value or nil
+end
+
 --- The id of the tool call a message belongs to, or nil for the parent's own messages.
 ---
---- Top-level messages carry `"parent_tool_use_id": null`, which vim.json.decode turns into
---- `vim.NIL` -- truthy in Lua. Testing the field directly would classify every ordinary assistant
---- message as subagent output and stop tool results from rendering at all.
+--- Top-level messages carry `"parent_tool_use_id": null`. Testing the field directly would
+--- classify every ordinary assistant message as subagent output and stop tool results from
+--- rendering at all.
 --- @param msg table
 --- @return string|nil
 local function parent_tool_use_id(msg)
-  local id = msg.parent_tool_use_id
-  return type(id) == "string" and id ~= "" and id or nil
+  return str_or_nil(msg.parent_tool_use_id)
 end
 
 --- @param content any a tool_result block's content
@@ -170,11 +179,28 @@ end
 --- completes the turn. A resident process exits at the end of the *session*, so `result` is the
 --- only thing that says a turn is over, and it is also the boundary the per-turn half of the event
 --- context (`tokenUsage` / `cliInfo` / `resultErrors` / `output`) is cut on.
+---
+--- `user_message_uuid` is which prompt this `result` answers, echoed back from the input envelope.
+--- A turn the CLI started for itself omits the field entirely, so `nil` means "not ours, or this
+--- CLI does not echo" and only `prompt_ack` can tell those two apart.
 by_type.result = function(msg, events)
   if msg.subtype == "error" or msg.is_error then
     table.insert(events, { kind = "error", message = msg.result or "Unknown error", fatal = true })
   end
-  table.insert(events, { kind = "turn_end", subtype = msg.subtype })
+  table.insert(events, { kind = "turn_end", subtype = msg.subtype, prompt_uuid = str_or_nil(msg.user_message_uuid) })
+end
+
+--- The CLI acknowledging a prompt it was handed on stdin, by the id that prompt carried.
+---
+--- Emitted only when the input envelope supplied a `uuid`, which makes it the one available proof
+--- that this CLI echoes the correlation at all. It arrives on the *queued* state, before the turn
+--- it opens — so a turn that has seen its own ack may reject a foreign `result`, and one that has
+--- not must not.
+by_type.command_lifecycle = function(msg, events)
+  local uuid = str_or_nil(msg.command_uuid)
+  if uuid then
+    table.insert(events, { kind = "prompt_ack", prompt_uuid = uuid, state = str_or_nil(msg.state) })
+  end
 end
 
 --- Error/unknown-command responses that bypass streaming.

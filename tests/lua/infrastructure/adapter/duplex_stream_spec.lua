@@ -5,6 +5,7 @@
 --- while the process that produced it stays registered, alive, and holding its session.
 local helper = require("tests.helpers.adapter_stream")
 local ClaudeAdapter = require("vibing.infrastructure.adapter.claude_cli")
+local DuplexStream = require("vibing.infrastructure.adapter.modules.duplex_stream")
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
 local ProcessRegistry = require("vibing.infrastructure.adapter.modules.process_registry")
 local TurnRegistry = require("vibing.infrastructure.adapter.modules.turn_registry")
@@ -21,8 +22,21 @@ local CHAT_BUFNR = 4242
 local GRACE_MS = 100
 
 --- A `result` line ends a turn; everything else here is what a real stream carries around it.
-local function result_line(session_id, subtype)
-  return vim.json.encode({ type = "result", subtype = subtype or "success", session_id = session_id })
+---
+--- `prompt_uuid` is which prompt the CLI says this answers. Omitted on a turn the CLI started for
+--- itself, which is exactly the shape measured in `tests/perf/duplex_foreign_turn_end.sh`.
+local function result_line(session_id, subtype, prompt_uuid)
+  return vim.json.encode({
+    type = "result",
+    subtype = subtype or "success",
+    session_id = session_id,
+    user_message_uuid = prompt_uuid,
+  })
+end
+
+--- The CLI naming a prompt back, which is the only proof it echoes the correlation at all.
+local function ack_line(prompt_uuid, state)
+  return vim.json.encode({ type = "command_lifecycle", command_uuid = prompt_uuid, state = state or "queued" })
 end
 
 local function init_line(session_id)
@@ -92,10 +106,11 @@ describe("duplex transport", function()
       local call = jobs.only_call()
 
       assert.is_false(vim.tbl_contains(call.argv, "what is the airspeed velocity"))
-      assert.same(
-        { type = "user", message = { role = "user", content = "what is the airspeed velocity" } },
-        jobs.sent(call)[1]
-      )
+      assert.same({
+        type = "user",
+        uuid = DuplexStream.prompt_uuid(turn.turn_id),
+        message = { role = "user", content = "what is the airspeed velocity" },
+      }, jobs.sent(call)[1])
       assert.is_not_nil(turn.turn_id)
     end)
 
@@ -145,6 +160,44 @@ describe("duplex transport", function()
       assert.equals("boom", turn.responses[1].error)
     end)
 
+    -- The CLI runs turns nobody asked for: a background subagent finishing wakes it, and it
+    -- answers on the same resident process, `init` through `result`. One of those lands between a
+    -- prompt and its answer, so the first `result` after a prompt is routinely not that prompt's.
+    describe("the CLI answered something of its own first", function()
+      it("is not ended by that result, and keeps waiting for its own", function()
+        local turn = send("how is it going")
+        local call = jobs.only_call()
+        local uuid = DuplexStream.prompt_uuid(turn.turn_id)
+
+        jobs.emit(call, { ack_line(uuid) })
+        jobs.emit(call, {
+          init_line("sess-1"),
+          text_line("sess-1", "a subagent finished"),
+          result_line("sess-1", "success"),
+        })
+        assert.equals(0, #turn.responses, "a turn the CLI started for itself ended the user's turn")
+
+        jobs.emit(call, {
+          init_line("sess-1"),
+          text_line("sess-1", " and here is the answer"),
+          result_line("sess-1", "success", uuid),
+        })
+        assert.equals(1, #turn.responses)
+        -- Both halves, in order: what the CLI said on its own belongs in the section the user is
+        -- reading, not in an idle context nobody renders.
+        assert.equals("a subagent finished and here is the answer", turn.responses[1].content)
+      end)
+
+      it("still ends a turn whose prompt the CLI never named back", function()
+        -- No ack, so nothing has shown that this CLI echoes anything. Rejecting a `result` with no
+        -- uuid on that evidence would leave the turn open until the watchdog killed the process.
+        local turn = send("hi")
+        jobs.emit(jobs.only_call(), { init_line("sess-1"), result_line("sess-1") })
+
+        assert.equals(1, #turn.responses)
+      end)
+    end)
+
     it("clears its permission opts so the next turn cannot inherit them", function()
       local turn = send("hi", { permission_mode = "plan" })
       assert.is_not_nil(Permission._get_active_opts(turn.turn_id))
@@ -170,7 +223,13 @@ describe("duplex transport", function()
       assert.equals(1, #jobs.calls, "the second turn spawned a process of its own")
       assert.equals(first.process_id, second.process_id)
       assert.are_not.equals(first.turn_id, second.turn_id)
-      assert.same({ type = "user", message = { role = "user", content = "second" } }, jobs.sent(jobs.calls[1])[2])
+      -- The prompt uuid follows the turn, not the process: two turns sharing one resident CLI are
+      -- exactly the case where a `result` has to say which of them it answers.
+      assert.same({
+        type = "user",
+        uuid = DuplexStream.prompt_uuid(second.turn_id),
+        message = { role = "user", content = "second" },
+      }, jobs.sent(jobs.calls[1])[2])
     end)
 
     it("starts with its own subagent count, not the one the last turn abandoned", function()

@@ -100,6 +100,57 @@ So `result` now always emits `{ kind = "turn_end" }`, after the `error` arm it m
 path never sets one, so the event is decoded and dropped there. That ordering is load-bearing: a
 turn the CLI declared failed has to have reached `resultErrors` before anything completes on it.
 
+### 1b. Whose `result` is this?
+
+`turn_end` says a turn ended. It does not say **which** turn, and on a resident process that is not
+the same question. The CLI runs turns nobody asked for: a background subagent finishing delivers a
+`system/task_notification`, and the CLI answers it **by itself** — a full `system/init` … `result`
+pair on the same process, with no prompt from vibing anywhere in it. `duplex_turn` consumed the
+first `result` it saw, so one of those landing between a prompt and its answer ended the user's turn
+with nothing in it. The real answer then arrived on a process with `_turn = nil`, went to
+`_idle_context`, and was dropped. Once that happens the chat is off by one: the next turn is closed
+by the previous turn's `result`, forever.
+
+Seen in production before it was understood (`#842`): three empty `## Assistant` sections in one
+session, one of them swallowing four and a half minutes of work and a whole subagent run.
+
+#### The correlation is the CLI's own, and it has to be asked for
+
+Measured against claude 2.1.273 (`tests/perf/duplex_foreign_turn_end.sh`). The input envelope takes
+a `uuid`; supply one and the CLI echoes it back:
+
+| the turn                               | `result.user_message_uuid` |
+| -------------------------------------- | -------------------------- |
+| an ordinary prompt                     | the id we wrote            |
+| a slash command (`/compact`)           | the id we wrote            |
+| a turn stopped by `interrupt`          | the id we wrote            |
+| one the CLI started for a notification | **the key is absent**      |
+
+All four cells matter. Cell 4 is the one being rejected, but on its own it licenses nothing — a CLI
+that does not echo at all produces exactly the same absence. Cells 2 and 3 are not decoration
+either: had either lost the id, this design would hang `/compact` and `<C-c>` rather than repair
+anything, and the fix would have had to be a different one.
+
+#### A missing field is not evidence, so the gate arms on proof
+
+`duplex_turn.ends_this_turn` refuses nothing until it has seen the CLI name **this turn's own**
+prompt back. That proof is `command_lifecycle`, which the CLI emits only when the envelope carried a
+`uuid`, and which arrives on the `queued` state milliseconds after the write — long before any turn
+could finish. A CLI that never emits it keeps the pre-#842 behaviour of ending on the first
+`result`, which is wrong in the rare case and not a hang; rejecting on absence alone would leave the
+turn open until the first-response watchdog killed the process.
+
+The id is `"vibing-" .. turn_id` rather than a fresh one: the two name the same thing, and a second
+identity for it is a third id to keep in step. The CLI does not validate the shape — arbitrary
+strings are echoed unchanged.
+
+#### What the foreign turn's output does instead
+
+Nothing is discarded. While a vibing turn is open, `line_router` feeds every line to that turn's
+context, so the CLI's own answer to a notification renders **inside the section the user is
+reading** — which is what #829 wanted in the first place. Only the `result` is refused. A foreign
+turn that runs while no vibing turn is open is a different hole, and still `#840`'s.
+
 ### 2. The spawn primitive is different
 
 Every adapter path used `vim.system`, which returns no writable channel. The only primitive that

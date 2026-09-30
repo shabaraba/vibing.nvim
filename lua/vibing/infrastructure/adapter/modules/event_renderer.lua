@@ -32,7 +32,8 @@ local TokenUsage = require("vibing.core.utils.token_usage")
 ---| { kind: "cli_info", version: string?, model: string?, tools: number?, mcp_servers: number?, compacted: boolean? }
 ---| { kind: "rate_limit", info: Vibing.RateLimitInfo }
 ---| { kind: "error", message: string, fatal: boolean? }              # fatal: the CLI declared the turn failed
----| { kind: "turn_end", subtype: string? }                           # this turn is over; the process may not be
+---| { kind: "turn_end", subtype: string?, prompt_uuid: string? }     # a turn is over; whose, and the process may not be
+---| { kind: "prompt_ack", prompt_uuid: string, state: string? }      # the CLI named back a prompt written to its stdin
 ---| { kind: "background_task_started", task_id: string, description: string? }
 ---| { kind: "background_task_done", task_id: string, status: string?, usage: table? }
 
@@ -373,6 +374,15 @@ end
 handlers.turn_end = function(event, context)
   if context.onTurnEnd then
     context.onTurnEnd(event)
+  end
+end
+
+-- Recorded, never drawn: the CLI repeating an id back is plumbing, and the prompt it names is
+-- already on screen as the user's own section. What it establishes is that this CLI echoes the
+-- correlation at all, which `duplex_turn.ends_this_turn` refuses to assume without proof.
+handlers.prompt_ack = function(event, context)
+  if context.promptUuid and event.prompt_uuid == context.promptUuid then
+    context._prompt_acked = true
   end
 end
 
