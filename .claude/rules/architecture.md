@@ -234,6 +234,15 @@ come back. `handbook/architecture/processes-and-turns.md`.
   which stops `git_snapshot`'s TTL sweep and lets `refs/worktree/vibing/` grow without bound.
 - **A hook whose turn cannot be resolved takes no baseline at all.** One filed under the raw id is
   never cleared, because `clear()` is only reached through a response.
+- **A turn's response and the first-byte budget are each built in one place**,
+  `adapter/modules/turn_outcome.lua`. Both transports ask the same question, and the budget is read
+  when each watchdog arms — a copy taken at module load made the value a transport actually used
+  unobservable, so no test could hold the two halves equal.
+- **The timeout response is handed back before anything is killed.** A kill completes the same turn
+  as a plain `Cancelled` and completion is idempotent, so killing first discarded the timeout: the
+  user got the warning, the session was never reset, and the chat showed an empty assistant section.
+  `first_response_watchdog_spec.lua` fails the build on a response literal written anywhere else in
+  `adapter/`.
 
 ## The Duplex Transport
 
