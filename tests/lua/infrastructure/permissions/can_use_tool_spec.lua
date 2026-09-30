@@ -99,8 +99,10 @@ describe("can_use_tool", function()
   end)
 
   describe("INTERNAL_TOOLS are allowed even over deny (UT-PERM-012)", function()
-    -- ハーネス内部の副作用なし制御ツール。ALWAYS_ALLOWED_TOOLSと違い、deny/askすら通さず常に許可。
-    local internal = { "ToolSearch", "TodoWrite", "ReportFindings", "ScheduleWakeup" }
+    -- ハーネスの制御に必須なツール。ALWAYS_ALLOWED_TOOLSと違い、deny/askすら通さず常に許可。
+    -- 名前は `Tools.INTERNAL_TOOLS` から引かずに直接書く。あちらを回すとこのテストは
+    -- 「あちらに載っているものは許可される」しか言わなくなり、載せ忘れを検出できない。
+    local internal = { "ToolSearch", "TodoWrite", "ReportFindings", "ScheduleWakeup", "SendMessage", "ListAgents" }
 
     for _, tool in ipairs(internal) do
       it(string.format("should allow %s even when in the deny list", tool), function()

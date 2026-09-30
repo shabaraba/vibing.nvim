@@ -117,9 +117,13 @@ time Neovim starts.
   puts the tool in `ask` / `deny`. The criterion is "read-only built-in that creates, updates or
   deletes no file" (`Read` / `Glob` / `Grep`). Removing one from `DEFAULT_ALLOWED_TOOLS` does not
   disallow it while it is still here.
-- **`INTERNAL_TOOLS`** — harness-internal, side-effect-free control tools (`ToolSearch`,
-  `TodoWrite`, `ReportFindings`, `ScheduleWakeup`). Always allowed, ahead of `ALWAYS_ALLOWED_TOOLS`
-  in `can_use_tool.lua`, so not even `ask` / `deny` applies. No `VALID_TOOLS` entry needed; the
-  check reads `INTERNAL_TOOLS_MAP`.
+- **`INTERNAL_TOOLS`** — the harness's own control tools. Always allowed, ahead of
+  `ALWAYS_ALLOWED_TOOLS` in `can_use_tool.lua`, so not even `ask` / `deny` applies. No
+  `VALID_TOOLS` entry needed; the check reads `INTERNAL_TOOLS_MAP`. The criterion is **"is the
+  harness unusable without it"**, not "is it read-only" — which is why `NotebookEdit`, `Agent` and
+  `EnterWorktree` are in it. Read the membership from `tools.lua`; the four names listed here went
+  stale while the list grew to nineteen. A tool whose absence merely costs a prompt still belongs:
+  `ListAgents` was missing while `SendMessage` was present, so an orchestrated worker stalled on an
+  approval for reading the list of chats it was about to message.
 - Adding a tool: allowed by default → both `VALID_TOOLS` and `DEFAULT_ALLOWED_TOOLS`; not allowed
   by default (like `Bash`) → `VALID_TOOLS` only.
