@@ -165,7 +165,9 @@ function M.send_message(params)
       if not ok then
         error(err)
       end
-      result = { success = true, queued = true, compacting = true, bufnr = bufnr }
+      -- `kind` は持ち越す。下の `on_sent` が向きを聞き直さずに済む唯一の手がかりで、
+      -- 捨てると圧縮が挟まった送信だけ `git rev-parse` が1回増える
+      result = { success = true, queued = true, compacting = true, bufnr = bufnr, kind = result.kind }
     end
   else
     -- ProgrammaticSender.send already validates parameters
@@ -183,8 +185,12 @@ function M.send_message(params)
   --
   -- 遅すぎることはない: CLIの起動は非同期で、宛先の完了は `vim.schedule` 経由なので
   -- この関数が返るより先には走らない
+  --
+  -- 購読を張るかどうかは向きで決まる（報告では張らない）。その向きは `deliver` が見出しを
+  -- 決めるときに既に出しているので `result.kind` をそのまま渡す — 聞き直しは
+  -- `git rev-parse` 1回ぶんの無駄であるだけでなく、見出しと購読が別々の判定から出ることになる
   if params.from_bufnr and result and result.success then
-    require("vibing.application.chat.completion_notifier").on_sent(params.from_bufnr, bufnr)
+    require("vibing.application.chat.completion_notifier").on_sent(params.from_bufnr, bufnr, result.kind)
   end
 
   return result

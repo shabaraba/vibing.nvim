@@ -160,11 +160,14 @@ end
 ---`edges[*][bufnr]` は「bufnr が送信した相手が、まだ完了を返していない」を意味する。
 ---残っているあいだ bufnr は待ち合わせ中で、そのターン終了は完了ではなく中間停止。
 ---
----**自分の購読者を除くのが要点。** `on_sent` は送信のたびに送信者を受信者の購読者にするので、
----B が親 A に報告しただけでも `edges[a][b]` ができ、素直に数えると B は「A 待ち」になる。
----A は B の完了を待っているのだから、そこで B の完了を保留すると互いに待ち合って永久に
----止まる。機構は送信が報告か依頼かを区別できない（#651）が、「相手が自分の完了を待っている」
----なら少なくとも自分の停止を伝えるべき相手ではある、という向きだけは分かる。
+---**自分の購読者を除くのが要点。** `on_sent` は送信者を受信者の購読者にするので、素直に数えると
+---「自分が送った相手」が全部「待っている相手」になる。相手が自分の完了を待っているなら、そこで
+---自分の完了を保留すると互いに待ち合って永久に止まる（#651）。
+---
+---**`subscribe` が報告のエッジを張らなくなってもこれは消さない。** 向きが判らない送信
+---（frontmatter にリンクが無い、バッファに名前が無い）は今も `Request` として張られるので、
+---その報告が作る逆向きエッジを受け止めるのはここだけ。取りこぼしの代償は相互待ち＝永久停止で、
+---この除外が防いでいる不具合のほうが重い
 ---
 ---逆引きの索引は持たずに走査する。エッジ数はチャット数と同じオーダーで、`forget()` も
 ---同じ走査をしている。二重管理を増やすほうが、ここでは高くつく
@@ -221,13 +224,24 @@ end
 ---vibing.nvim が自発的に通知を出すか」だけ。自力では抜けられない止まり方（質問・承認待ち・
 ---エラー）の通知は `queue_if_busy` の本文と同じく設定に依らず配られるので、無効な環境でも
 ---エッジは張っておく必要がある。配るかどうかの判断は `process_done` が持つ
+---
+---**エッジは木を下る向きにしか張らない。** 報告（`## Report`）で張ると、オーケストレーターが
+---ターンを終えるたびにワーカーが「送った相手が報告せずに止まった」で起こされる。判定を
+---`on_sent` ではなくここに置くのは、`edges` を書くのがこの関数だけだから — 直接の呼び出し元
+---（`rpc/handlers/chat.lua`）も同じ保証の下に入る。理由と代償は
+---handbook/architecture/orchestration.md
 ---@param from_bufnr number 送信元（通知を受け取る側）
 ---@param to_bufnr number 送信先（完了を監視される側）
+---@param kind "Request"|"Report"|nil この送信の向き（`orchestration_link.direction` の値）。
+---  渡さなければ向き不明として張る = 従来どおり
 ---@return boolean subscribed ペアの往復上限・全体予算などで張らなかった場合 false
-function M.subscribe(from_bufnr, to_bufnr)
+function M.subscribe(from_bufnr, to_bufnr, kind)
   local cfg = settings()
 
   if type(from_bufnr) ~= "number" or type(to_bufnr) ~= "number" or from_bufnr == to_bufnr then
+    return false
+  end
+  if kind == "Report" then
     return false
   end
   if not (vim.api.nvim_buf_is_valid(from_bufnr) and vim.api.nvim_buf_is_valid(to_bufnr)) then
@@ -301,14 +315,24 @@ end
 ---  あればそこで張り直される
 ---
 ---向きが逆なことに注意: 張るのは `edges[to][from]`、抑止するのは `edges[from][to]`
+---
+---**抑止マークは向きに依らない（報告でも途中経過でも「自分から口を開いた」は同じ）が、購読は
+---向きに依る。** 報告で張らないのは `subscribe` の役目で、判定に使う向きは呼び出し元が
+---既に持っていれば渡す — `direction` は `git rev-parse` と frontmatter パースを伴うので、
+---同じ送信について2度3度聞かない。渡されなければここで1度だけ聞く
 ---@param from_bufnr number
 ---@param to_bufnr number
-function M.on_sent(from_bufnr, to_bufnr)
+---@param kind "Request"|"Report"|nil `orchestration_link.direction` の値（判っていれば）
+function M.on_sent(from_bufnr, to_bufnr, kind)
   if type(from_bufnr) ~= "number" or type(to_bufnr) ~= "number" then
     return
   end
 
-  M.subscribe(from_bufnr, to_bufnr)
+  M.subscribe(
+    from_bufnr,
+    to_bufnr,
+    kind or require("vibing.application.chat.orchestration_link").direction(from_bufnr, to_bufnr)
+  )
 
   -- **エッジそのものは消さない。** 消すと、from が「作業中の途中経過」を送っただけの場合にも
   -- 購読が永久に失われる。ツリー状のチャット網ではそれが常態で、中間ノードは子を待つ間に

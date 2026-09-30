@@ -277,8 +277,10 @@ end
 ---@param sender string?
 ---@param opts {answers_blocked_question: boolean?}? この配達が、宛先がいま止めている質問への
 ---  答えなら真。圧縮を挟まず、`programmatic_sender` の「応答中」ガードも通り抜ける
----@return {success: boolean, bufnr: number, compacting: boolean?} `compacting` は本文の
----  代わりに `/compact` ターンを始めたとき true。本文はまだ届いていない
+---@return {success: boolean, bufnr: number, compacting: boolean?, kind: string} `compacting` は
+---  本文の代わりに `/compact` ターンを始めたとき true。本文はまだ届いていない。
+---  `kind` は `section_for` が決めた向き（`Request` / `Report` / `Notice`）で、呼び出し元が
+---  購読の向き判定に使い回せるように返す — `direction` は `git rev-parse` を伴う
 function M.deliver(queue, to_bufnr, sender, opts)
   local cache = {}
   local section = M.section_for(queue, to_bufnr, cache)
@@ -287,11 +289,16 @@ function M.deliver(queue, to_bufnr, sender, opts)
   -- 圧縮は答えのあと、そのターンが終わってからでよい
   if not (opts and opts.answers_blocked_question) then
     if require("vibing.application.chat.auto_compact").before_delivery(to_bufnr, section) then
-      return { success = true, bufnr = to_bufnr, compacting = true }
+      return { success = true, bufnr = to_bufnr, compacting = true, kind = section.kind }
     end
   end
   local text = M.build(queue, cache)
-  return require("vibing.presentation.chat.modules.programmatic_sender").send(to_bufnr, text, sender, section, opts)
+  local result =
+    require("vibing.presentation.chat.modules.programmatic_sender").send(to_bufnr, text, sender, section, opts)
+  -- `kind` は両方の出口に載せる。圧縮側で落とすと、呼び出し元は積み直したあとの `on_sent` で
+  -- 向きを聞き直すことになり、この戻り値が存在する理由が半分だけ消える
+  result.kind = section.kind
+  return result
 end
 
 return M
