@@ -146,8 +146,7 @@ test('a `require(...)`-like string inside a comment is not mistaken for an impor
   // comment merely mentioning `require('left-pad')` is not read as importing it.
   const result = await runAudit({
     files: {
-      'index.ts':
-        "// avoid require('left-pad') here, it is unmaintained\nexport const ok = 1;\n",
+      'index.ts': "// avoid require('left-pad') here, it is unmaintained\nexport const ok = 1;\n",
     },
   });
   assert.equal(result.status, 0, result.stderr);
