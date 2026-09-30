@@ -321,16 +321,31 @@ function M.define(descriptor)
       response._cli_info = event_context.cliInfo
 
       -- Background subagents the CLI never delivered a completion notification for
-      -- (anthropics/claude-code#87675). Read here rather than in the chat layer: which backend
-      -- wrote the transcript and where it put it is an adapter fact. What the chat layer gets is
-      -- the recovered text, and the empty list on every backend that never started one.
-      local unreported = BackgroundTasks.unreported(event_context)
-      if #unreported > 0 and descriptor.recover_unreported_tasks then
-        response._recovered_subagents = descriptor.recover_unreported_tasks(
-          unreported,
-          cwd,
-          SessionManagerModule.get(self._session_manager, ids.process_id)
-        )
+      -- (anthropics/claude-code#87675), and what could be read back off disk about them. Resolved
+      -- here rather than in the chat layer: which backend wrote a transcript and where it put it is
+      -- an adapter fact. Why both halves travel, and why the second one being empty means nothing,
+      -- is `BackgroundTasks.report`.
+      local unreported, recovered = BackgroundTasks.report(
+        event_context,
+        descriptor.recover_unreported_tasks,
+        cwd,
+        SessionManagerModule.get(self._session_manager, ids.process_id)
+      )
+      -- **Only a turn whose process is gone may conclude "nothing will report these now."** On this
+      -- transport `finish` *is* the exit handler (see `create_exit_handler` below), so every
+      -- notification the CLI managed to emit has already been decoded and taken off the ledger, and
+      -- what is left really was dropped. Under duplex `finish` runs on `result` with the process
+      -- still resident and the CLI still holding the subagents on the same open stdout — a task on
+      -- the ledger there is overwhelmingly one that is simply still running, seconds after launch.
+      -- Waking on it would interrupt every background fan-out the instant it started.
+      --
+      -- Duplex therefore keeps today's behaviour rather than gaining #820's wake. Almost nothing is
+      -- given up: recovery reads an answer that is not written yet at that point, so the pre-#820
+      -- notice it gates could hardly ever fire there either. Closing it properly means waking when
+      -- `duplex_pool` reclaims the process, which is that transport's own seam and not this one.
+      if #unreported > 0 and not is_duplex then
+        response._unreported_subagents = unreported
+        response._recovered_subagents = recovered
       end
 
       on_done(response)

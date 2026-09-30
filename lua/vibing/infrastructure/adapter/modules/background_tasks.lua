@@ -66,4 +66,24 @@ function M.unreported(context)
   return out
 end
 
+--- What a closing turn owes its chat about the subagents it backgrounded.
+---
+--- **The ledger travels whether or not anything could be recovered from it**, and whether or not
+--- this backend can recover at all: `application/chat/outstanding_subagents.lua` states why, and it
+--- is the whole of #820. Recovery is skipped entirely when nothing is outstanding, so the ordinary
+--- turn — every turn — touches no disk.
+--- @param context table
+--- @param recover Vibing.AdapterDescriptor.recover_unreported_tasks|nil
+--- @param cwd string
+--- @param session_id string?
+--- @return Vibing.BackgroundTask[] unreported everything still owed a completion notification
+--- @return Vibing.RecoveredSubagent[] recovered the subset whose transcript already had an answer
+function M.report(context, recover, cwd, session_id)
+  local unreported = M.unreported(context)
+  if #unreported == 0 or not recover then
+    return unreported, {}
+  end
+  return unreported, recover(unreported, cwd, session_id) or {}
+end
+
 return M

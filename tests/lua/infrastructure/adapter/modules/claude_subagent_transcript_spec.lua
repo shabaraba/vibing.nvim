@@ -87,5 +87,29 @@ describe("adapter.claude_subagent_transcript", function()
     it("recovers nothing from an empty list", function()
       assert.same({}, Transcript.recover({}, "/tmp", "sess-1"))
     end)
+
+    -- The recovered entry names the task it answers, so the wake notice can subtract these from the
+    -- outstanding set and ask only about the ones still running (#820). Nothing else identifies it:
+    -- the answer text is the subagent's own prose and the list order is not a key.
+    it("names the task each answer belongs to", function()
+      local original = Transcript.last_text
+      Transcript.last_text = function(path)
+        return path:find("agent-a1", 1, true) and "what a1 concluded" or nil
+      end
+      local ok, recovered = pcall(
+        Transcript.recover,
+        { { task_id = "a1", description = "review reuse" }, { task_id = "a2" } },
+        "/tmp/repo",
+        "sess-1"
+      )
+      Transcript.last_text = original
+
+      assert.is_true(ok)
+      assert.equals(1, #recovered)
+      assert.equals("a1", recovered[1].task_id)
+      assert.equals("what a1 concluded", recovered[1].text)
+      -- Naming the block is the chat layer's job, from the launch's own description.
+      assert.is_nil(recovered[1].label)
+    end)
   end)
 end)

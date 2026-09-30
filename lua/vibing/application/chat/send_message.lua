@@ -532,52 +532,13 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
     require("vibing.application.chat.worktree_binding").resolve(turn_id_for_diff, bufnr)
   end)
 
-  -- 通知の取りこぼし（upstream #87675）の回収。**差分の確定より後**に置くのは、これが
-  -- `## Notice` として新しいターンを始める送信であり、このターンの成果を書き終える前に
+  -- バックグラウンド subagent を残して閉じたターンの起床（#820）。**差分の確定より後**に置くのは、
+  -- これが `## Notice` として新しいターンを始める送信であり、このターンの成果を書き終える前に
   -- 次を始めると両者が同じバッファ末尾を取り合うため
-  pcall(M._recover_unreported_tasks, response, bufnr)
+  pcall(require("vibing.application.chat.outstanding_subagents").wake, response, bufnr)
 
   -- NOTE: clear_turn_id() は呼ばない
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
-end
-
----完了通知が届かなかったバックグラウンド subagent の出力を `## Notice` として配達する。
----
----回収そのものはアダプタ側の仕事で、ここに届くのは既に読み出されたテキストだけ。CLI が通知を
----配れていれば **ここは何もしない** — 通常経路は CLI 自身が次のターンを開始するので、こちらが
----動くのは upstream のレースを踏んだときだけ
----@param response table
----@param bufnr number|nil
-function M._recover_unreported_tasks(response, bufnr)
-  local recovered = response and response._recovered_subagents
-  if not recovered or #recovered == 0 or not bufnr then
-    return
-  end
-
-  local blocks = {}
-  for _, item in ipairs(recovered) do
-    table.insert(blocks, string.format("### %s\n\n%s", item.label, item.text))
-  end
-  local body = table.concat({
-    string.format(
-      "%d background subagent(s) finished without the CLI delivering a completion notification "
-        .. "(anthropics/claude-code#87675). Their output was recovered from their own transcripts:",
-      #blocks
-    ),
-    "",
-    table.concat(blocks, "\n\n"),
-  }, "\n")
-
-  local Queue = require("vibing.application.chat.message_queue")
-  local ok, err = Queue.enqueue_notice(bufnr, body, false)
-  if not ok then
-    require("vibing.core.utils.notify").warn(
-      string.format("Could not deliver recovered subagent output: %s", err or "unknown"),
-      "Subagent"
-    )
-    return
-  end
-  Queue.flush(bufnr)
 end
 
 ---バッファ末尾から直近のCodex累計マーカーを読む

@@ -71,8 +71,13 @@ function M.last_text(path)
 end
 
 --- @class Vibing.RecoveredSubagent
---- @field label string what to head the block with
+--- @field task_id string which unreported task this is the answer to. The notice subtracts these
+---   from the outstanding set by id, so it can ask about only the ones still owed an answer.
 --- @field text string what the subagent said
+---
+--- Deliberately no display label: the launch's own `description` is already on the
+--- `Vibing.BackgroundTask` this answers, and naming the block is the chat layer's job
+--- (`.claude/rules/architecture.md` — a decoder holds no rendering).
 
 --- Recover what each unreported subagent said, dropping the ones with nothing to show.
 --- @param unreported Vibing.BackgroundTask[]
@@ -88,7 +93,7 @@ function M.recover(unreported, cwd, session_id)
   for _, entry in ipairs(unreported) do
     local text = M.last_text(M.path(cwd, session_id, entry.task_id))
     if text then
-      table.insert(out, { label = entry.description or entry.task_id, text = text })
+      table.insert(out, { task_id = entry.task_id, text = text })
     end
   end
   return out
