@@ -19,17 +19,27 @@
  *   node scripts/audit-mcp-server-imports.mjs [mcp-server-dir]
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { extname, join, relative } from 'node:path';
 
 const serverDir = process.argv[2] ?? join(process.cwd(), 'claude-plugin', 'mcp-server');
 
-// Anchored to the start of a (trimmed) line so prose that happens to contain the word "from" --
-// a code comment, a string literal -- is never mistaken for an import statement. The body between
-// "import"/"export" and "from" excludes `;` and quotes (not `\n`): a multi-line named import
-// (`import {\n  z,\n} from 'zod'`) has to match across lines, and stopping at the statement's own
-// terminator keeps an unrelated later quote from ever closing the match instead.
+// Comments are stripped before any pattern below runs. The body between "import"/"export" and
+// "from" excludes `;` and quotes but not `\n`, so a multi-line named import
+// (`import {\n  z,\n} from 'zod'`) matches across lines -- but without this, a `;` inside a
+// comment on one of those lines (`foo, // v2; see docs`) would block the lazy match from ever
+// reaching `from`, silently dropping the whole statement (the exact "value import resolved only
+// by luck" failure mode this script exists to catch, per #792).
+function stripComments(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+}
+
+// Anchored to the start of a (trimmed) line so a string literal that happens to contain the word
+// "from" is never mistaken for an import statement. The body between "import"/"export" and
+// "from" excludes `;` and quotes (not `\n`): a multi-line named import has to match across lines,
+// and stopping at the statement's own terminator keeps an unrelated later quote from ever closing
+// the match instead.
 const IMPORT_SPECIFIER_PATTERNS = [
   /^\s*import\s+[^;'"]*?\bfrom\s+['"]([^'"\n]+)['"]/gm,
   /^\s*export\s+[^;'"]*?\bfrom\s+['"]([^'"\n]+)['"]/gm,
@@ -41,21 +51,23 @@ const IMPORT_SPECIFIER_PATTERNS = [
 /** Every `.ts`/`.mjs` file under `dir`, skipping `node_modules` and compiled `dist` output. */
 function sourceFiles(dir) {
   const out = [];
-  for (const entry of readdirSync(dir)) {
-    if (entry === 'node_modules' || entry === 'dist') continue;
-    const full = join(dir, entry);
-    const stat = statSync(full);
-    if (stat.isDirectory()) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
       out.push(...sourceFiles(full));
-    } else if (['.ts', '.tsx', '.mjs', '.js'].includes(extname(entry))) {
+    } else if (['.ts', '.tsx', '.mjs', '.js'].includes(extname(entry.name))) {
       out.push(full);
     }
   }
   return out;
 }
 
+// `.spec.` alongside `.test.` because vitest.config.mjs's own `include` treats them the same
+// (`src/**/*.{test,spec}.ts`, pinned by tests/mcp-server-test-gate.test.mjs) -- narrowing this to
+// `.test.` only would flag a `.spec.ts` file's devDependency-only imports as violations.
 function isTestFile(file) {
-  return file.includes(`${'__tests__'}`) || /\.test\.[jt]sx?$/.test(file);
+  return file.includes('__tests__') || /\.(test|spec)\.[jt]sx?$/.test(file);
 }
 
 function isBuiltin(specifier) {
@@ -71,8 +83,9 @@ function packageName(specifier) {
 
 function importedPackages(text) {
   const found = new Set();
+  const stripped = stripComments(text);
   for (const pattern of IMPORT_SPECIFIER_PATTERNS) {
-    for (const match of text.matchAll(pattern)) {
+    for (const match of stripped.matchAll(pattern)) {
       const specifier = match[1];
       if (specifier.startsWith('.') || specifier.startsWith('/') || isBuiltin(specifier)) continue;
       found.add(packageName(specifier));

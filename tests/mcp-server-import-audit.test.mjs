@@ -124,3 +124,45 @@ test('prose that contains the word "from" is not mistaken for an import', async 
   });
   assert.equal(result.status, 0, result.stderr);
 });
+
+test('a `;` inside a trailing comment on a multi-line import does not hide it', async () => {
+  // The body between "import" and "from" excludes `;` (so an unrelated later quote can't close
+  // the match early), but that exclusion used to reach into a `//` comment on one of the wrapped
+  // lines too: a `;` inside the comment's own prose blocked the match from ever reaching `from`,
+  // so the whole statement -- and an undeclared package in it -- went undetected.
+  const result = await runAudit({
+    dependencies: {},
+    files: {
+      'index.ts': "import {\n  z, // v2; see docs\n} from 'zod';\n\nz.object({});\n",
+    },
+  });
+  assert.notEqual(result.status, 0, 'an import commented with a `;` was not flagged');
+  assert.match(result.stderr, /zod/);
+});
+
+test('a `require(...)`-like string inside a comment is not mistaken for an import', async () => {
+  // Unlike the `import .. from` / `export .. from` patterns, the dynamic `import()`/`require()`
+  // patterns carry no line anchor of their own; comments are stripped before either runs so a
+  // comment merely mentioning `require('left-pad')` is not read as importing it.
+  const result = await runAudit({
+    files: {
+      'index.ts':
+        "// avoid require('left-pad') here, it is unmaintained\nexport const ok = 1;\n",
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('a devDependency does satisfy a `.spec.ts` test file', async () => {
+  // vitest.config.mjs's own `include` treats `*.spec.ts` the same as `*.test.ts`
+  // (tests/mcp-server-test-gate.test.mjs pins that vitest picks up both), so the audit's own
+  // test-file detection has to agree or a `.spec.ts` file's devDependency-only import is flagged
+  // as if it were production code.
+  const result = await runAudit({
+    devDependencies: { vitest: '^5.0.1' },
+    files: {
+      'index.spec.ts': "import { test } from 'vitest';\ntest('ok', () => {});\n",
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+});

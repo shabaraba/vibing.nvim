@@ -208,7 +208,8 @@ echo "$(command -v "$NODE_EXECUTABLE")" > "${MCP_DIR}/bin/.node-path"
 readonly NPM_QUIET_FLAGS=(--no-audit --no-fund --silent)
 
 # Install root dependencies. Nothing at the root is bundled any more -- the only build left is
-# the MCP server's, below -- but the MCP server imports `zod` from here.
+# the MCP server's, below, and claude-plugin/mcp-server/package.json declares its own runtime
+# dependencies (#792) rather than relying on this install to hoist them.
 echo "[vibing.nvim] Installing root dependencies..."
 cd "$SCRIPT_DIR"
 npm install "${NPM_QUIET_FLAGS[@]}"
