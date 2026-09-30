@@ -6,7 +6,7 @@ Model Context Protocol (MCP) server for Neovim integration via vibing.nvim.
 
 This MCP server enables Claude Code to interact with a running Neovim instance through a non-blocking RPC architecture:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │ Neovim Process                                           │
 │  ├─ RPC Server (lua/vibing/rpc_server.lua)              │
@@ -192,7 +192,8 @@ The MCP server exposes the following tools to Claude:
 ### Window Operations
 
 - **nvim_list_windows** - List all windows with their properties
-  - Returns: Array of window info (winnr, bufnr, buffer_name, filetype, width, height, position, is_current, is_floating)
+  - Returns: Array of window info (winnr, bufnr, buffer_name, filetype, width, height, position,
+    is_current, is_floating)
 
 - **nvim_get_window_info** - Get detailed information for a specific window
   - `winnr` (optional): Window number (0 for current)
@@ -523,12 +524,14 @@ The server uses a simple JSON-RPC protocol over TCP:
 
 - Default timeout is 30 seconds (configurable via `VIBING_RPC_TIMEOUT` env var)
 - For heavy LSP operations (e.g., call hierarchy in large projects), consider increasing timeout:
+
   ```json
   "env": {
     "VIBING_NVIM_RPC_PORT": "9876",
     "VIBING_RPC_TIMEOUT": "60000"
   }
   ```
+
 - Check Neovim logs for errors in RPC server
 - Ensure `vim.schedule()` is not blocked
 

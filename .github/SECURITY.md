@@ -103,7 +103,8 @@ When a security vulnerability is confirmed:
 
 ## Security Hall of Fame
 
-We appreciate security researchers who help keep vibing.nvim secure. Responsible disclosures will be acknowledged here (with permission).
+We appreciate security researchers who help keep vibing.nvim secure. Responsible disclosures will be
+acknowledged here (with permission).
 
 ---
 

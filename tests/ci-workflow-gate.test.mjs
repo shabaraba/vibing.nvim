@@ -5,8 +5,8 @@
  * stops shouting:
  *
  *   - `continue-on-error: true` lands on a step. That step still runs, still prints its failure,
- *     and the job still goes green. `lint:md` carries it deliberately (the Markdown backlog is
- *     tracked as a count, not as a gate); anywhere else it is a gate that quietly resigned.
+ *     and the job still goes green: a gate that quietly resigned. `lint:md` carried it while the
+ *     Markdown backlog was tracked as a count; that backlog is cleared and no step carries it now.
  *   - A step restates a command instead of calling `npm run <script>`. Then editing the script
  *     changes what a developer runs and not what CI runs, which is the same dead-gate shape as
  *     #561: the command in CI keeps passing because it is no longer the command being maintained.
@@ -77,15 +77,15 @@ test('the step scanner found the workflow it was pointed at', () => {
   assert.ok(runLines.length >= 15, `parsed ${runLines.length} run lines`);
 });
 
-test('only the Markdown lint step is allowed to fail without failing the job', () => {
+test('no step is allowed to fail without failing the job', () => {
   const exempt = steps
     .filter((s) => s.keys['continue-on-error'] === 'true')
     .map((s) => s.keys.name ?? s.keys.uses ?? s.keys.run);
 
   assert.deepEqual(
     exempt,
-    ['Lint Markdown files'],
-    'a step other than the Markdown lint carries continue-on-error, or that one lost it'
+    [],
+    'a step carries continue-on-error, so its failure no longer fails the job'
   );
 });
 

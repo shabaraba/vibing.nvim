@@ -88,7 +88,7 @@ nvim
 
 You should see a notification:
 
-```
+```text
 [vibing] MCP RPC server started on port 9876
 ```
 
@@ -102,7 +102,7 @@ claude
 
 Ask Claude to interact with your Neovim instance:
 
-```
+```text
 > Can you list the buffers in my Neovim instance?
 ```
 
@@ -112,7 +112,7 @@ Claude will use the `nvim_list_buffers` MCP tool to retrieve buffer information.
 
 ### Read Buffer Content
 
-```
+```text
 > Show me the content of the current buffer
 ```
 
@@ -120,7 +120,7 @@ Claude uses `nvim_get_buffer` to read the buffer content.
 
 ### Modify Buffer
 
-```
+```text
 > Add a comment "// TODO: refactor" at the top of the current buffer
 ```
 
@@ -131,7 +131,7 @@ Claude uses:
 
 ### Execute Commands
 
-```
+```text
 > Save the current buffer
 ```
 
@@ -139,7 +139,7 @@ Claude uses `nvim_execute` with command "write".
 
 ### Get File Information
 
-```
+```text
 > What file am I currently editing?
 ```
 
@@ -189,7 +189,7 @@ Claude uses `nvim_get_info` to get filename, filetype, etc.
 
 ## Architecture Diagram
 
-```
+```text
 ┌──────────────────────────────────────────────────────────┐
 │ Terminal 1: Neovim                                        │
 │  ┌────────────────────────────────────────────────────┐  │

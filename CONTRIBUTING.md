@@ -1,6 +1,7 @@
 # Contributing to vibing.nvim
 
-Thank you for considering contributing to vibing.nvim! This document provides guidelines and instructions for contributing.
+Thank you for considering contributing to vibing.nvim! This document provides guidelines and
+instructions for contributing.
 
 ## 🚀 Getting Started
 
@@ -16,35 +17,35 @@ Thank you for considering contributing to vibing.nvim! This document provides gu
 
 1. **Fork and clone the repository**
 
-```bash
-git clone https://github.com/YOUR_USERNAME/vibing.nvim.git
-cd vibing.nvim
-```
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/vibing.nvim.git
+   cd vibing.nvim
+   ```
 
 2. **Install dependencies**
 
-```bash
-npm install
-```
+   ```bash
+   npm install
+   ```
 
 3. **Verify installation**
 
-```bash
-npm run validate
-```
+   ```bash
+   npm run validate
+   ```
 
 4. **Test the plugin in Neovim**
 
-Add to your Neovim config:
+   Add to your Neovim config:
 
-```lua
-{
-  dir = "~/path/to/vibing.nvim",
-  config = function()
-    require("vibing").setup()
-  end,
-}
-```
+   ```lua
+   {
+     dir = "~/path/to/vibing.nvim",
+     config = function()
+       require("vibing").setup()
+     end,
+   }
+   ```
 
 ## 📝 Development Workflow
 
@@ -52,59 +53,59 @@ Add to your Neovim config:
 
 1. **Create a feature branch**
 
-```bash
-git checkout -b feature/your-feature-name
-# or
-git checkout -b fix/your-bug-fix
-```
+   ```bash
+   git checkout -b feature/your-feature-name
+   # or
+   git checkout -b fix/your-bug-fix
+   ```
 
 2. **Make your changes**
 
-- Write clean, readable code
-- Follow existing code style
-- Add comments for complex logic
-- Update documentation if needed
+   - Write clean, readable code
+   - Follow existing code style
+   - Add comments for complex logic
+   - Update documentation if needed
 
 3. **Test your changes**
 
-```bash
-# Validate Lua syntax
-npm run check
+   ```bash
+   # Validate Lua syntax
+   npm run check
 
-# Run the test suites (Lua + Node.js)
-npm test
+   # Run the test suites (Lua + Node.js)
+   npm test
 
-# Run all checks
-npm run validate
-```
+   # Run all checks
+   npm run validate
+   ```
 
 4. **Commit your changes**
 
-Use [Conventional Commits](https://www.conventionalcommits.org/) format:
+   Use [Conventional Commits](https://www.conventionalcommits.org/) format:
 
-```bash
-git commit -m "feat: add new feature"
-git commit -m "fix: resolve bug in chat buffer"
-git commit -m "docs: update README examples"
-```
+   ```bash
+   git commit -m "feat: add new feature"
+   git commit -m "fix: resolve bug in chat buffer"
+   git commit -m "docs: update README examples"
+   ```
 
-**Commit types:**
+   **Commit types:**
 
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code formatting (no logic change)
-- `refactor`: Code refactoring
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks
+   - `feat`: New feature
+   - `fix`: Bug fix
+   - `docs`: Documentation changes
+   - `style`: Code formatting (no logic change)
+   - `refactor`: Code refactoring
+   - `test`: Adding or updating tests
+   - `chore`: Maintenance tasks
 
 5. **Push and create Pull Request**
 
-```bash
-git push -u origin feature/your-feature-name
-```
+   ```bash
+   git push -u origin feature/your-feature-name
+   ```
 
-Then create a PR on GitHub.
+   Then create a PR on GitHub.
 
 ## 🎨 Code Style
 

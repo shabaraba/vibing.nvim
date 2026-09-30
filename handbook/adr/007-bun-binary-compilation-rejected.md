@@ -30,7 +30,7 @@ vibing.nvimでは、Agent SDKラッパー（`bin/agent-wrapper.ts`）をNode.js 
 
 bunの`--compile`でバイナリ化を試みた結果、以下のエラーが発生しました：
 
-```
+```text
 {"type":"error","message":"Claude Code executable not found at /$bunfs/root/cli.js. Is options.pathToClaudeCodeExecutable set?"}
 ```
 

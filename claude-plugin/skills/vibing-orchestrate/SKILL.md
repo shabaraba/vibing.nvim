@@ -176,7 +176,7 @@ That used to be your job to write into every brief; it is not anymore (#706). Cr
 with `from_bufnr` records `orchestrated_by` on it, and vibing.nvim reads that frontmatter on every
 turn to inject the report protocol into the worker's own system prompt — this chat's `file_path`
 already resolved in, the call shape (`nvim_chat_send_message`, `from_bufnr`, `queue_if_busy: true`),
-the report shape (conclusion → what changed → what's unresolved → what's needed next), and what not
+the report shape (a few lines: the conclusion, then only what is unresolved or needs deciding), and what not
 to do. The full version is the `vibing-worker` skill, bundled for exactly this purpose. Your brief
 only needs to be the task itself, as below — writing the reporting instructions into it too is
 redundant, not more reliable, since the injected line does not depend on the worker having read the

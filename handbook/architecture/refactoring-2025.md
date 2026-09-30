@@ -68,7 +68,7 @@ end, {})
 
 ### 新しいレイヤー構造
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │ Entry Point (init.lua)                                   │
 │   └─→ Vim Commands                                       │
@@ -98,7 +98,7 @@ end, {})
 
 ### 依存関係の方向
 
-```
+```text
 Entry Point
     ↓
 Presentation (Controller & View)

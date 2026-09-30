@@ -10,27 +10,32 @@ Accepted
 
 ## Context
 
-Issue #174 required implementing a three-tier permission system (deny → ask → allow) for vibing.nvim. The `permissions_ask` feature allows users to mark specific tools for manual approval before use.
+Issue #174 required implementing a three-tier permission system (deny → ask → allow) for vibing.nvim. The
+`permissions_ask` feature allows users to mark specific tools for manual approval before use.
 
 However, the Claude Agent SDK has several undocumented behaviors and constraints that significantly impacted the design:
 
 ### Agent SDK Constraints Discovered
 
 1. **`permissionMode` bypasses `canUseTool`**
-   - Setting ANY `permissionMode` value (including `'default'` or `'acceptEdits'`) causes the SDK to bypass the `canUseTool` callback entirely
+   - Setting ANY `permissionMode` value (including `'default'` or `'acceptEdits'`) causes the SDK to bypass the
+     `canUseTool` callback entirely
    - This was the root cause of permission logic failures during development
    - Documented in code comment at bin/agent-wrapper.mjs:229-231
 
 2. **Issue #29: Resume Session Bypass**
-   - In resumed sessions (with `sessionId`), the Agent SDK bypasses both `allowedTools` whitelist and `canUseTool` callback
-   - This is a confirmed SDK bug tracked at: https://github.com/anthropics/claude-agent-sdk-typescript/issues/29
+   - In resumed sessions (with `sessionId`), the Agent SDK bypasses both `allowedTools` whitelist and
+     `canUseTool` callback
+   - This is a confirmed SDK bug tracked at: <https://github.com/anthropics/claude-agent-sdk-typescript/issues/29>
    - No fix available as of SDK version 0.1.76
 
 3. **Permission System Layers**
    - The SDK has multiple permission layers with specific precedence:
-     ```
+
+     ```text
      PreToolUse Hook → Deny Rules → Allow Rules → Ask Rules → permissionMode → canUseTool
      ```
+
    - `canUseTool` is the LOWEST priority layer
    - Any higher layer can completely override `canUseTool` behavior
 
@@ -43,7 +48,8 @@ However, the Claude Agent SDK has several undocumented behaviors and constraints
 
 ### Architecture: Custom Permission Logic in `canUseTool`
 
-We implemented the three-tier permission system entirely within the `canUseTool` callback, with specific workarounds for SDK constraints:
+We implemented the three-tier permission system entirely within the `canUseTool` callback, with specific workarounds for
+SDK constraints:
 
 #### 1. Never Set `permissionMode` (Except `bypassPermissions`)
 
@@ -180,14 +186,15 @@ WebFetch(github.com)    // domain pattern
 
 - Issue #174: Add "ask" permission tier alongside allow/deny
 - Issue #29 (Agent SDK): Resume session bypasses allowedTools and canUseTool
-  - https://github.com/anthropics/claude-agent-sdk-typescript/issues/29
+  - <https://github.com/anthropics/claude-agent-sdk-typescript/issues/29>
 - Chat history: .vibing/chat/permissions-ask-sdk-constraints-investigation.vibing
 - Implementation: bin/agent-wrapper.mjs (lines 559-700)
 - Tests: tests/permission-logic.test.mjs
 
 ## Notes
 
-This ADR documents one of the most challenging implementation decisions in vibing.nvim due to the gap between ideal design and SDK constraints. Future maintainers should:
+This ADR documents one of the most challenging implementation decisions in vibing.nvim due to the gap between ideal
+design and SDK constraints. Future maintainers should:
 
 1. Check if Issue #29 has been resolved in newer SDK versions
 2. Test if `permissionMode` behavior has changed
