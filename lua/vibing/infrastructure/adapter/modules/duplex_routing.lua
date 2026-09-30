@@ -9,6 +9,7 @@
 --- Split from `duplex_stream.lua`, which is about what one turn does.
 --- @module vibing.infrastructure.adapter.modules.duplex_routing
 
+local BackgroundTasks = require("vibing.infrastructure.adapter.modules.background_tasks")
 local DuplexProcess = require("vibing.infrastructure.adapter.modules.duplex_process")
 local Pool = require("vibing.infrastructure.adapter.modules.duplex_pool")
 local StreamHandler = require("vibing.infrastructure.adapter.modules.stream_handler")
@@ -124,15 +125,36 @@ local function ended_by_process(record, turn, code)
   return TurnOutcome.ended(M.ids_of(record, turn), content, "The CLI exited with code " .. tostring(code))
 end
 
---- The process is gone, by any of the four routes `duplex_pool` reclaims one through.
+--- The process is gone, by any of the routes `duplex_pool` reclaims one through.
+---
+--- The verdict is the pool's reading of the route it took (`Vibing.DuplexReclaimVerdict`): whether
+--- anybody still needs telling, and whether the CLI's own children went down with it.
 --- @param adapter table
---- @return fun(record: Vibing.DuplexProcess, code: number)
+--- @return fun(record: Vibing.DuplexProcess, code: number, verdict: Vibing.DuplexReclaimVerdict)
 function M.exit_handler(adapter)
-  return function(record, code)
+  return function(record, code, verdict)
     adapter._processes[record.process_id] = nil
     local turn = take_turn(record)
     if turn then
       turn.complete(ended_by_process(record, turn, code))
+    end
+    if verdict.reports then
+      -- **Scheduled, and it has to be, for two separate reasons.** Reporting orphaned work ends in a
+      -- `## Notice` that starts a new turn, which calls straight back into `Pool.acquire` — and this
+      -- runs inside `forget`, before `Pool.stop` has killed the process it is reclaiming, so answering
+      -- re-entrantly would spawn the replacement while its predecessor is still mid-teardown. And a new
+      -- turn must not begin before the one above has finished writing itself out: `_finish_turn`
+      -- (the assistant header's end timestamp, and this turn's own unsent `## User` section) is itself
+      -- reached through a `vim.schedule`, and a wake that overtook it would have `start_response`
+      -- overwrite `_assistant_header_line` with the new turn's line number — the turn-end route's own
+      -- version of this, in `send_message`.
+      --
+      -- **So the order here is load-bearing, not tidiness.** `turn.complete` above is what schedules
+      -- that teardown, and `vim.schedule` is FIFO, so completing the turn first is what puts the wake
+      -- behind it. Moving this call above `take_turn` would reintroduce exactly that race.
+      vim.schedule(function()
+        BackgroundTasks.report_orphaned(record, verdict.subagents_lost)
+      end)
     end
   end
 end
@@ -149,7 +171,7 @@ function M.cancellable_handle(record, chat_key)
   return {
     pid = record.pid,
     kill = function()
-      Pool.stop(chat_key)
+      Pool.stop(chat_key, "cancelled")
     end,
     -- Normally a no-op: `Pool.stop` has already announced the death through `exit_handler`, which
     -- took the turn. This is the path for a handle that outlived its pool entry.
@@ -166,17 +188,25 @@ end
 ---
 --- A mutator despite the name: it fills `record._idle_context` on first call and leaves it alone
 --- afterwards, so the decoder's view of the process survives the turns that come and go over it.
+---
+--- It shares the process's background-subagent ledger, because between turns is *where a background
+--- completion normally arrives* — the CLI answers one while nobody is talking to it. A context with a
+--- ledger of its own would take the entry off that private copy and leave every other reader still
+--- owed a report for a subagent that reported (`background_tasks.share`).
 --- @param record Vibing.DuplexProcess
 --- @param session_manager table
 function M.idle_context(record, session_manager)
-  record._idle_context = record._idle_context
-    or {
-      sessionManager = session_manager,
-      processId = record.process_id,
-      output = {},
-      errorOutput = {},
-      _decoder_state = record.decoder_state,
-    }
+  if record._idle_context then
+    return
+  end
+  record._idle_context = {
+    sessionManager = session_manager,
+    processId = record.process_id,
+    output = {},
+    errorOutput = {},
+    _decoder_state = record.decoder_state,
+  }
+  BackgroundTasks.share(record._idle_context, record)
 end
 
 --- How long an interrupt has to actually stop the turn before the process is killed instead.

@@ -43,6 +43,30 @@ local function init_line(session_id)
   return vim.json.encode({ type = "system", subtype = "init", session_id = session_id, claude_code_version = "2.1.273" })
 end
 
+--- A background `Agent` launch. Only `is_backgrounded` ones outlive the turn, so only they are tracked.
+local function task_started_line(session_id, task_id, description)
+  return vim.json.encode({
+    type = "system",
+    subtype = "task_started",
+    session_id = session_id,
+    task_id = task_id,
+    description = description,
+    is_backgrounded = true,
+  })
+end
+
+--- The completion the CLI is supposed to deliver. Normally it arrives *between* turns, because the
+--- subagent finishes while nobody is talking to the process.
+local function task_notification_line(session_id, task_id)
+  return vim.json.encode({
+    type = "system",
+    subtype = "task_notification",
+    session_id = session_id,
+    task_id = task_id,
+    status = "completed",
+  })
+end
+
 local function text_line(session_id, text)
   return vim.json.encode({
     type = "stream_event",
@@ -569,7 +593,7 @@ describe("duplex transport", function()
       jobs.emit(jobs.only_call(), { init_line("sess-1"), result_line("sess-1") })
       assert.is_not_nil(adapter._processes[turn.process_id])
 
-      Pool.stop(CHAT_BUFNR)
+      Pool.stop(CHAT_BUFNR, "idle")
 
       assert.is_nil(adapter._processes[turn.process_id])
       assert.is_nil(ProcessRegistry.get(turn.process_id))
@@ -578,7 +602,7 @@ describe("duplex transport", function()
 
     it("reports a turn killed mid-flight as cancelled, not as an exit code", function()
       local turn = send("hi")
-      Pool.stop(CHAT_BUFNR)
+      Pool.stop(CHAT_BUFNR, "cancelled")
 
       assert.equals(1, #turn.responses)
       assert.equals("Cancelled", turn.responses[1].error)
@@ -594,6 +618,188 @@ describe("duplex transport", function()
       assert.equals(2, #jobs.calls)
       assert.are_not.equals(first.process_id, second.process_id)
       assert.is_true(vim.tbl_contains(jobs.calls[2].argv, "sess-1"))
+    end)
+  end)
+
+  --- #840. A background subagent is the one piece of work that outlives a *turn*, so on this
+  --- transport it also outlives nothing at all: the process holds it, and the process holds it across
+  --- turns. Two consequences, and both are tested here rather than in the pool, because neither is
+  --- visible until a real stream runs over a real record.
+  ---
+  --- The ledger has to be the process's, or a notification arriving after the turn that launched the
+  --- subagent goes onto a ledger nobody reads; and the question "will anything report these?" can only
+  --- be asked when the process stops serving turns, which is the reclaim (#838 put it at the end of
+  --- the turn and had to gate it off, because there the answer is always "yes, they are still running").
+  describe("background subagents outliving the turn that launched them", function()
+    local reports
+    local original_idle
+
+    local function send_reporting(prompt, extra)
+      return send(
+        prompt,
+        vim.tbl_extend("force", {
+          on_subagents_orphaned = function(unreported, recovered, subagents_lost)
+            table.insert(reports, { unreported = unreported, recovered = recovered, lost = subagents_lost })
+          end,
+        }, extra or {})
+      )
+    end
+
+    --- The report is scheduled, so that waking the chat cannot re-enter `duplex_pool` from inside its
+    --- own reclaim. Every assertion about it therefore has to let the loop run first.
+    ---
+    --- A sentinel rather than a sleep: `vim.schedule` callbacks run FIFO, so one queued *after* the
+    --- code under test having run proves any report it scheduled has already run. Waiting a fixed
+    --- 100ms instead would cost the full 100ms on every assertion that expects *no* report — six of
+    --- them here, half this file's wall clock — and would still only ever mean "probably long enough".
+    local function settle()
+      local drained = false
+      vim.schedule(function()
+        drained = true
+      end)
+      vim.wait(1000, function()
+        return drained
+      end)
+    end
+
+    --- Launch background subagents and close the turn on the current process.
+    local function fan_out(...)
+      local call = jobs.calls[#jobs.calls]
+      local lines = { init_line("sess-1") }
+      for _, task_id in ipairs({ ... }) do
+        table.insert(lines, task_started_line("sess-1", task_id, "review " .. task_id))
+      end
+      table.insert(lines, result_line("sess-1"))
+      jobs.emit(call, lines)
+      return call
+    end
+
+    --- Wait for the one report the code under test owes, and hand it over.
+    ---
+    --- Condition-based rather than the sentinel above, because the idle-timer example has a real timer
+    --- to get through before anything is scheduled at all.
+    local function wait_for_report()
+      vim.wait(1000, function()
+        return #reports > 0
+      end)
+      assert.equals(1, #reports, "expected exactly one report")
+      return reports[1]
+    end
+
+    --- @return string[] the task ids the single report named, in the ledger's own order
+    local function reported_ids()
+      return vim.tbl_map(function(entry)
+        return entry.task_id
+      end, wait_for_report().unreported)
+    end
+
+    before_each(function()
+      reports = {}
+      original_idle = Pool.IDLE_TIMEOUT_MS
+    end)
+
+    after_each(function()
+      Pool.IDLE_TIMEOUT_MS = original_idle
+    end)
+
+    it("reports nothing at the end of the turn, and reports when the idle timer reclaims", function()
+      Pool.IDLE_TIMEOUT_MS = 10
+      local turn = send_reporting("fan out")
+      local call = fan_out("task-a")
+
+      assert.equals(1, #turn.responses, "the turn did not end on its result line")
+      assert.equals(0, #reports, "reported at the end of the turn, where the subagent is still running")
+
+      local report = wait_for_report()
+      assert.same({ { task_id = "task-a", description = "review task-a" } }, report.unreported)
+      assert.is_true(call.stopped, "the idle process was not reclaimed")
+      assert.is_true(report.lost, "the idle reclaim killed the CLI, so its subagents went with it")
+    end)
+
+    it("reports when the CLI dies on its own under an idle chat", function()
+      send_reporting("fan out")
+      local call = fan_out("task-a")
+      jobs.exit(call, 1)
+
+      -- **And says the subagents may still be out there.** This is the one reclaim route that killed
+      -- nothing: the CLI ended by itself, leaving exactly the state an ordinary oneshot turn leaves, so
+      -- a transcript may still hold the answer. Reporting it as lost would tell the model to stop
+      -- looking (`Vibing.DuplexReclaimVerdict`).
+      assert.same({ "task-a" }, reported_ids())
+      assert.is_false(reports[1].lost, "a CLI that exited on its own was reported as having been killed")
+    end)
+
+    it("reports when the CLI could not be talked to", function()
+      send_reporting("fan out")
+      fan_out("task-a")
+      Pool.stop(CHAT_BUFNR, "unresponsive")
+
+      assert.same({ "task-a" }, reported_ids())
+    end)
+
+    -- The four routes where saying anything would be wrong: a turn is starting on the replacement, or
+    -- there is nowhere to say it, or the human stopped this chat on purpose.
+    it("stays quiet on the reclaim routes that are not an abandoned chat", function()
+      for _, reason in ipairs({ "restart", "shutdown", "cancelled", "chat_closed" }) do
+        send_reporting("fan out")
+        fan_out("task-" .. reason)
+        Pool.stop(CHAT_BUFNR, reason)
+        settle()
+
+        assert.equals(0, #reports, reason .. " woke a chat that had somewhere else to be")
+      end
+    end)
+
+    -- Every deliberate reclaim kills the process, and Neovim fires that job's `on_exit` a tick later
+    -- as `exited` -- the reason that always reports. `forget`'s `_gone` guard is what keeps the
+    -- decision the route already made, and without it `:VibingCancel` wakes the chat it just stopped.
+    it("does not let a quiet reclaim's own exit callback report behind its back", function()
+      send_reporting("fan out")
+      fan_out("task-a")
+      Pool.stop(CHAT_BUFNR, "cancelled")
+      jobs.flush_exits(0)
+      settle()
+
+      assert.equals(0, #reports)
+    end)
+
+    -- Where a background completion normally lands: no turn is open, so the line reaches the idle
+    -- context. A per-turn ledger takes the entry off a private copy and leaves every other reader
+    -- still owed a report for a subagent that reported.
+    --
+    -- Two tasks with only one notified, rather than one notified task and an empty report, because
+    -- "nothing was reported" is also what a ledger that never saw the *launch* produces — so the
+    -- assertion has to be which of the two survived, not how many did.
+    it("takes a task off the ledger when its notification arrives between turns", function()
+      send_reporting("fan out")
+      local call = fan_out("task-a", "task-b")
+
+      jobs.emit(call, { task_notification_line("sess-1", "task-a") })
+      Pool.stop(CHAT_BUFNR, "idle")
+
+      assert.same({ "task-b" }, reported_ids())
+    end)
+
+    it("takes a task off the ledger when its notification arrives in a later turn", function()
+      send_reporting("fan out")
+      local call = fan_out("task-a", "task-b")
+
+      send_reporting("anything else", { _session_id = "sess-1" })
+      assert.equals(1, #jobs.calls, "the resident process was not reused, so this tests nothing")
+      jobs.emit(call, { task_notification_line("sess-1", "task-a"), result_line("sess-1") })
+
+      Pool.stop(CHAT_BUFNR, "idle")
+
+      assert.same({ "task-b" }, reported_ids())
+    end)
+
+    it("says nothing about a process that backgrounded nothing", function()
+      send_reporting("hi")
+      jobs.emit(jobs.only_call(), { init_line("sess-1"), result_line("sess-1") })
+      Pool.stop(CHAT_BUFNR, "idle")
+      settle()
+
+      assert.equals(0, #reports)
     end)
   end)
 end)

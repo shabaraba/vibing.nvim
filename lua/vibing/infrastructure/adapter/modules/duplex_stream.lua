@@ -19,6 +19,7 @@
 
 -- Safe at load time: `cli_runtime` reaches back into the duplex modules only from inside its
 -- methods, so this direction is the only one resolved while either module is still loading.
+local BackgroundTasks = require("vibing.infrastructure.adapter.modules.background_tasks")
 local CliRuntime = require("vibing.infrastructure.adapter.modules.cli_runtime")
 local DuplexProcess = require("vibing.infrastructure.adapter.modules.duplex_process")
 local DuplexTurn = require("vibing.infrastructure.adapter.modules.duplex_turn")
@@ -58,6 +59,36 @@ local function reuse_key(params)
     return nil, cmd
   end
   return table.concat(cmd, "\30"), nil
+end
+
+--- What the process will need in order to report the background subagents it takes down with it, once
+--- nobody is left to report them itself (#840 — `BackgroundTasks.report_orphaned` says when that is).
+---
+--- Stored on the **record**, so a late reclaim of a process that has already been replaced reports
+--- that process's own ledger rather than its successor's. Written on every turn rather than only the
+--- one that spawned, because `run` is the only place these values are in scope and re-stating them
+--- costs one table; nothing in the plan actually varies between the turns of one process.
+---
+--- The chat is not woken from here: `adapter/` requires nothing from `application/`, and whether a
+--- chat needs a turn is not an adapter question — only *what this backend wrote and where* is. So the
+--- finding leaves through the callback the chat layer handed in, the same shape as `on_insert_choices`
+--- and `on_approval_required`. Nothing is stored at all when there is no callback, which is every
+--- lightweight call.
+--- @param params Vibing.DuplexRunParams
+--- @param record Vibing.DuplexProcess
+local function plan_orphan_report(params, record)
+  local on_orphaned = params.opts.on_subagents_orphaned
+  if not on_orphaned then
+    -- Cleared rather than left, so a chat that stops supplying the callback cannot be reported
+    -- through the plan its previous turn installed.
+    record._orphan_report = nil
+    return
+  end
+  record._orphan_report = {
+    on_orphaned = on_orphaned,
+    recover = params.descriptor.recover_unreported_tasks,
+    adapter = params.adapter,
+  }
 end
 
 --- The id this turn's prompt travels under, so the CLI can name it back.
@@ -119,8 +150,13 @@ function M.run(params)
   ids.process_id = record.process_id
   params.event_context.processId = record.process_id
   params.event_context._decoder_state = record.decoder_state
+  -- Per process, for the same reason the decoder state is: a background subagent outlives the turn
+  -- that launched it, so the notification that takes it off the ledger lands in some later turn's
+  -- context or in the idle one. `background_tasks.share` states what a per-turn copy gets wrong.
+  BackgroundTasks.share(params.event_context, record)
   Routing.idle_context(record, params.event_context.sessionManager)
   params.adapter._processes[record.process_id] = Routing.cancellable_handle(record, chat_key)
+  plan_orphan_report(params, record)
 
   -- Set before the turn opens, because `duplex_turn` reads it off the context to decide which
   -- `result` is this turn's. Derived from the turn id rather than minted: the two name the same
@@ -137,7 +173,7 @@ function M.run(params)
     -- so killing first would replace this message with one that says nothing about what went wrong.
     -- `ids` already names the process that was acquired, per the assignment above.
     complete(TurnOutcome.ended(ids, "", "Could not write the prompt to the resident CLI process."))
-    Pool.stop(chat_key)
+    Pool.stop(chat_key, "unresponsive")
   end
 
   return ids.turn_id, record.process_id

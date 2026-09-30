@@ -131,14 +131,74 @@ turn**: that flag covers both `:VibingCancel` and the kill that draws a question
 neither is an abandoned chat — the first was stopped on purpose, the second has a prompt on screen
 whose answer starts the next turn.
 
-The loop this could have been is closed structurally rather than with a budget: the ledger lives on
-`event_context._background_tasks`, which `cli_adapter.stream()` builds fresh per turn. A
-`task_notification` arriving in turn N+1 finds no entry from turn N, so turn N+1's outstanding set is
-empty and the wake happens at most once per turn that actually left work behind. No counterpart to
-`completion_notifier`'s `max_wakes` is needed, and adding one would be state with nothing to protect.
+The loop this could have been is closed structurally rather than with a budget. On oneshot the ledger
+lives on `event_context._background_tasks`, which `cli_adapter.stream()` builds fresh per turn, so a
+`task_notification` arriving in turn N+1 finds no entry from turn N and the wake happens at most once
+per turn that actually left work behind. On duplex the ledger is the process's and the wake is the
+reclaim, which happens once per process (`forget`'s `_gone` guard). Either way one outstanding set
+cannot wake twice, so no counterpart to `completion_notifier`'s `max_wakes` is needed, and adding one
+would be state with nothing to protect.
 
 The transcript location is derived rather than remembered, because a task that was never notified
 never told us its `output_file`.
+
+### The same question under the duplex transport
+
+"Will anything report these?" is answerable only where the process is finished with turns, and on the
+resident transport that is not the end of a turn. #838 put the read in `cli_adapter`'s `finish` — true
+of oneshot, where `finish` _is_ the exit handler — and had to gate duplex off, because there `finish`
+runs on the CLI's `result` line with the process alive and the subagents still going: reading the
+ledger at that point interrupts every fan-out the instant it starts. #840 moves the duplex read to the
+moment the statement becomes true again, which is `duplex_pool`'s reclaim.
+
+**A reclaim route declares what it meant; nothing infers it.** All of them are "the process is gone",
+and they differ on two things: whether anybody still needs telling, and whether the CLI's children went
+down with it. `duplex_pool` resolves both from the route into a `Vibing.DuplexReclaimVerdict` before
+announcing it, so `Vibing.DuplexReclaimReason` reaches no signature outside that module and no consumer
+re-decides what a route means. `QUIET_RECLAIM` names the four routes nobody needs telling about —
+`restart` (a turn is being started on the replacement in that same call), `shutdown` and `chat_closed`
+(no loop left, or no buffer), and `cancelled` (a human stopped this chat, the judgement `_cancelled`
+makes one layer up). The default is therefore to report, so a route added later wakes rather than
+silently dropping the wake, which is the shape of the hole being closed. The verdict is acted on in
+`duplex_routing.exit_handler`, the one place that already knows a process is gone by every route.
+
+**The idle timer is the route that matters, and the conflict it looks like it has is not one.** "Idle"
+is about turns, so the timer fires on a process that still has a background subagent in flight — and
+because a background subagent runs _inside_ the CLI, the reclaim is what makes its answer unreachable.
+Holding the process back instead was rejected: nothing else would ever release it (a notification
+arriving between turns does not reset the timer, and a CLI-initiated turn is not something this
+transport picks up yet), so it trades a woken chat for a resident 200MB process that never leaves. The
+five minutes are not wasted either — they are the window in which the CLI's own notification can still
+arrive and take the entry off the ledger, and then there is nothing to report.
+
+So the notice has two forms, and the difference is the instruction — but **it is not keyed on which
+producer called.** A background subagent runs inside the CLI, so a reclaim that killed that process
+took it with it: nothing is coming, and "go and collect them" would tell the model to wait for
+something that cannot arrive. A CLI that merely _exited_, though, leaves the same state on both
+transports — the work may have finished with its notification dropped, and its transcript is on disk.
+That is oneshot's ordinary end of turn and it is also duplex's `exited` route, so the flag is
+`subagents_lost`, answered by `Vibing.DuplexReclaimVerdict` rather than by the entry point. Keying it
+on
+the producer instead would have told the model to stop looking for output a `TaskOutput` could still
+return. Recovery is in any case worth more on the reclaim route: minutes passed while the process sat
+idle, so a subagent that finished in them has written its transcript by the time it is read.
+
+**The ledger has to follow the process, not the turn** (`background_tasks.share`). A
+`task_notification` for a subagent launched in turn N arrives after turn N — most often between turns,
+where `duplex_routing.line_router` sends it to `_idle_context`. A per-turn ledger takes the entry off a
+copy nobody reads, and every later reader is still owed a report for a subagent that reported. Both
+turn contexts and the idle context therefore alias the record's one table. That is also why the duplex
+arm of `cli_adapter`'s `finish` skips `BackgroundTasks.report` entirely rather than discarding its
+result: the call reads a transcript off disk as soon as the set is non-empty, which under a shared
+ledger would be once per turn for nothing.
+
+`adapter/` requires nothing from `application/`, and "does this chat need a turn" is not an adapter
+question, so the finding leaves through `opts.on_subagents_orphaned` — the same shape as
+`on_insert_choices` and `on_approval_required`, and the only callback on the opts whose caller outlives
+the turn that supplied it. It is reinstalled every turn, because `cwd`, the descriptor and the session
+id are the newest turn's and are the only ones that can still be right. And the report is
+`vim.schedule`d: waking the chat starts a turn that calls back into `duplex_pool.acquire`, and the
+reclaim it would re-enter has not killed its process yet.
 
 ## Message Timestamps
 

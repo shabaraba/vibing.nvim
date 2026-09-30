@@ -334,26 +334,28 @@ function M.define(descriptor)
       -- the ledger there is overwhelmingly one that is simply still running, seconds after launch.
       -- Waking on it would interrupt every background fan-out the instant it started.
       --
-      -- Duplex therefore keeps today's behaviour rather than gaining #820's wake. Almost nothing is
-      -- given up: recovery reads an answer that is not written yet at that point, so the pre-#820
-      -- notice it gates could hardly ever fire there either. Closing it properly means waking when
-      -- `duplex_pool` reclaims the process, which is that transport's own seam and not this one.
+      -- So duplex answers the same question at the moment it becomes answerable there — when
+      -- `duplex_pool` stops serving turns on the process — and `BackgroundTasks.report_orphaned`
+      -- is that transport's half. The ledger it reads is the *process's*, shared across its turns, so
+      -- asking here would also be asking about subagents that already reported in an earlier one.
       --
-      -- The recovery function itself is withheld on duplex, not just its result: `BackgroundTasks
-      -- .report` treats a nil recover as "cannot recover" and skips the transcript read entirely
-      -- (`M.report`'s own doc: "the ordinary turn ... touches no disk"). Passing it unconditionally
-      -- and discarding the answer below would still do the blocking `vim.fn.readfile` on every
-      -- duplex turn that ends with something outstanding -- which, on a resident process serving
-      -- many turns, is not a rare turn at all.
-      local unreported, recovered = BackgroundTasks.report(
-        event_context,
-        not is_duplex and descriptor.recover_unreported_tasks or nil,
-        cwd,
-        SessionManagerModule.get(self._session_manager, ids.process_id)
-      )
-      if #unreported > 0 and not is_duplex then
-        response._unreported_subagents = unreported
-        response._recovered_subagents = recovered
+      -- **Skipped entirely on duplex rather than gated afterwards.** `report` does a blocking
+      -- `vim.fn.readfile` the moment the set is non-empty, and under a shared per-process ledger that
+      -- set stays non-empty for as long as one fan-out is outstanding — so computing and discarding it
+      -- would be a transcript read on every turn of a resident process, not a rare one. Withholding
+      -- only the `recover` argument fixes that read but still builds and sorts the ledger and looks the
+      -- session up; there is nothing here duplex wants, so nothing here runs for it.
+      if not is_duplex then
+        local unreported, recovered = BackgroundTasks.report(
+          event_context,
+          descriptor.recover_unreported_tasks,
+          cwd,
+          SessionManagerModule.get(self._session_manager, ids.process_id)
+        )
+        if #unreported > 0 then
+          response._unreported_subagents = unreported
+          response._recovered_subagents = recovered
+        end
       end
 
       on_done(response)

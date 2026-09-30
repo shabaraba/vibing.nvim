@@ -297,7 +297,9 @@ function M.install(Class, features)
   --- means through the adapter interface instead of reaching into one transport's own pool.
   --- @param chat_bufnr number?
   function Class:release_chat(chat_bufnr)
-    require("vibing.infrastructure.adapter.modules.duplex_pool").stop(chat_bufnr)
+    -- `chat_closed`, so the reclaim stays quiet: there is no buffer left to wake about whatever the
+    -- process was still holding (`duplex_pool`'s `QUIET_RECLAIM`).
+    require("vibing.infrastructure.adapter.modules.duplex_pool").stop(chat_bufnr, "chat_closed")
   end
 
   --- @param feature string

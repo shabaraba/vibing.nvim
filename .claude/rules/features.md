@@ -42,9 +42,19 @@ Read the linked file before changing that path.
   ledger is the wake signal — not what transcript recovery found. Recovery is empty for a subagent
   that is still running, which is exactly the case that needs the turn. Not gated on
   `agent.chat_notifications.enabled`; never for a `_cancelled` turn.
-- **Only a turn whose process ended may conclude "nothing will report these."** On oneshot `finish`
-  is the exit handler, so the ledger is evidence; under duplex it runs on `result` with the process
-  resident, where a ledger entry is usually one still running — **so duplex is not covered yet.**
+- **Only a process that will serve no more turns may conclude "nothing will report these."** On
+  oneshot that is the end of the turn — `finish` _is_ the exit handler. Under duplex `finish` runs on
+  `result` with the process resident, where a ledger entry is usually one still running, so duplex
+  asks at `duplex_pool`'s reclaim instead (`BackgroundTasks.report_orphaned`, #840).
+- **Under duplex the ledger belongs to the process, not the turn.** A `task_notification` arrives
+  after the turn that launched the subagent — usually between turns, into `_idle_context` — so a
+  per-turn ledger never sees the entry come off and reports a subagent that already reported.
+- **A reclaim route declares what it meant; nothing downstream infers it.** `duplex_pool` resolves
+  the route into a `Vibing.DuplexReclaimVerdict` before announcing it, so no reason name appears in a
+  signature outside that module. Two separate bits: `reports` (false only for `QUIET_RECLAIM`'s four
+  — a turn is coming, or there is nobody to tell) and `subagents_lost` (false for `exited`, the one
+  route that killed nothing and so leaves the state an ordinary oneshot exit leaves). **Reporting is
+  the default**, so a route added later wakes rather than silently dropping the wake.
 
 ## AskUserQuestion
 
