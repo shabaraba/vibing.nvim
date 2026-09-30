@@ -44,15 +44,14 @@ Four things it does differently from `:VibingChat`, each for a reason:
 ## Worker cost: reuse vs. new chat, and brief completeness (#810, #811)
 
 Two decisions that look independent — reuse a worker chat across tasks or start a new one,
-and how much verified fact to put in a brief — turn out to be the same lever, measured
-across three chats: two reusing one chat across several tasks, one running a single task in
-a fresh chat.
+and how much verified fact to put in a brief — are linked by the same failure mode: an
+incomplete brief costs a re-investigation round-trip whichever one you picked. What is
+actually measured below is the brief-completeness axis, isolated by holding "reused" fixed:
 
 | Chat | PRs produced | requests | read tokens | notes                                                                                 |
 | ---- | ------------ | -------- | ----------- | ------------------------------------------------------------------------------------- |
 | 882  | 4            | 209+     | 34.2M+      | reused across tasks; 3 mid-task design round-trips, each re-reading code already read |
 | 954  | 5            | 107      | 12.1M       | reused across tasks; brief carried verified facts, no re-reads                        |
-| 884  | 1            | 120      | 13.2M       | single task; brief complete, ran to completion with no round-trip                     |
 
 Read:new token ratios of 16:1 to 85:1 were measured separately (#807), so **the bill is
 dominated by re-reading context, not by generation.**
@@ -63,6 +62,14 @@ facts unverified, so three design round-trips each triggered a fresh read of cod
 read earlier in the same chat. 954's brief stated facts as already checked, and the chat
 never re-read anything.
 
+A third chat, 884, ran a single task in a fresh chat with a complete brief and no
+round-trip (1 PR, 120 requests, 13.2M read) and is deliberately left out of the table above.
+Dividing its total by "PRs produced" would compare it to 882 and 954 as if all three chats
+were doing the same size of unit work, but 884's one task is not known to be the same
+granularity as one of 882's or 954's four-to-five tasks — nothing in the source measurement
+(#810, #811) breaks its 120 requests down further, so a per-PR ratio built from it would be
+read as evidence about reuse-vs-new cost that this data does not actually support.
+
 ### Generalization
 
 - **Reusing a worker saves exactly one brief.** Everything accumulated in that chat's
@@ -71,7 +78,9 @@ never re-read anything.
 - **A new chat's added cost is the floor (currently ~51k–61k tokens, the number #807
   narrows) plus the brief.** Continuing an existing chat instead costs
   `accumulated context × remaining requests`. Once the remaining work exceeds a few
-  requests, a new chat is very likely cheaper — but only if the brief is complete.
+  requests, that arithmetic favors a new chat — but only if the brief is complete. This is
+  the cost model, not a chat-for-chat measurement: 882 and 954 are both reused chats, so
+  nothing in the table above is a matched pair of "same work, reused vs. fresh."
 - **An incomplete brief buys a round-trip, and a round-trip costs a re-read** — the same
   failure mode whether it happens inside a reused chat (882) or a freshly created one. A
   thicker, fact-checked brief is not only more correct
@@ -86,7 +95,7 @@ These are not two independent policies: a complete brief is what makes "start a 
 default" cheap, and reuse is only worth it when a task's remaining requests are too few for
 the floor to matter — one without the other does not hold.
 `claude-plugin/skills/vibing-orchestrate/SKILL.md` → "Reuse a worker chat or start a new
-one?" carries the operating rule; this is the measurement behind it.
+one?" carries the operating rule; this section is the reasoning and the measurement behind it.
 
 ## Task assignment (`orchestrated`'s `task`, #696)
 

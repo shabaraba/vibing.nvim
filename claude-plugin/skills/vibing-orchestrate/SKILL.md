@@ -61,9 +61,9 @@ work left, a new chat is very likely the cheaper one.
   does not cut it — the detail it drops gets read back in later, at the same cost it would
   have taken to just start over.
 - This only holds if the brief is complete — an incomplete brief costs a re-investigation
-  round-trip, which is worse than reusing would have been. The measurement behind both of
-  these is `handbook/architecture/orchestration.md` → "Worker cost: reuse vs. new chat, and
-  brief completeness".
+  round-trip, which is worse than reusing would have been. The reasoning and the measurement
+  behind both of these is `handbook/architecture/orchestration.md` → "Worker cost: reuse vs.
+  new chat, and brief completeness".
 
 ## Operator rules
 
