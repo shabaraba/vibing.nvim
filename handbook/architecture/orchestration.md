@@ -41,6 +41,53 @@ Four things it does differently from `:VibingChat`, each for a reason:
   and never-called `use_case.create_new_in_directory` does the opposite; `create_new` takes an
   optional `working_dir` instead.)
 
+## Worker cost: reuse vs. new chat, and brief completeness (#810, #811)
+
+Two decisions that look independent — reuse a worker chat across tasks or start a new one,
+and how much verified fact to put in a brief — turn out to be the same lever, measured
+across three chats: two reusing one chat across several tasks, one running a single task in
+a fresh chat.
+
+| Chat | PRs produced | requests | read tokens | notes                                                                                 |
+| ---- | ------------ | -------- | ----------- | ------------------------------------------------------------------------------------- |
+| 882  | 4            | 209+     | 34.2M+      | reused across tasks; 3 mid-task design round-trips, each re-reading code already read |
+| 954  | 5            | 107      | 12.1M       | reused across tasks; brief carried verified facts, no re-reads                        |
+| 884  | 1            | 120      | 13.2M       | single task; brief complete, ran to completion with no round-trip                     |
+
+Read:new token ratios of 16:1 to 85:1 were measured separately (#807), so **the bill is
+dominated by re-reading context, not by generation.**
+
+The difference between 882 and 954 was not "reused vs. not" — both reused the same worker
+chat across tasks. It was **whether the worker had to re-investigate**. 882's brief left
+facts unverified, so three design round-trips each triggered a fresh read of code already
+read earlier in the same chat. 954's brief stated facts as already checked, and the chat
+never re-read anything.
+
+### Generalization
+
+- **Reusing a worker saves exactly one brief.** Everything accumulated in that chat's
+  context is billed again on every later request, so what a chat saves once, it spends back
+  every turn it stays open.
+- **A new chat's added cost is the floor (currently ~51k–61k tokens, the number #807
+  narrows) plus the brief.** Continuing an existing chat instead costs
+  `accumulated context × remaining requests`. Once the remaining work exceeds a few
+  requests, a new chat is very likely cheaper — but only if the brief is complete.
+- **An incomplete brief buys a round-trip, and a round-trip costs a re-read** — the same
+  failure mode whether it happens inside a reused chat (882) or a freshly created one. A
+  thicker, fact-checked brief is not only more correct
+  (`vibing-orchestrate/SKILL.md` → "Say what must hold, not how to do it", #803); the same
+  facts that make it correct are what keep the worker from re-reading, which is where the
+  cost actually sits.
+- **Compaction is not a saving, it is deferred billing.** A chat that needed compaction was
+  already carrying more context than the task needed, and the detail it loses forces
+  exactly the re-reads a complete brief exists to avoid.
+
+These are not two independent policies: a complete brief is what makes "start a new chat by
+default" cheap, and reuse is only worth it when a task's remaining requests are too few for
+the floor to matter — one without the other does not hold.
+`claude-plugin/skills/vibing-orchestrate/SKILL.md` → "Reuse a worker chat or start a new
+one?" carries the operating rule; this is the measurement behind it.
+
 ## Task assignment (`orchestrated`'s `task`, #696)
 
 `nvim_chat_create` and `nvim_chat_send_message` both take an optional `task`: one free-text line

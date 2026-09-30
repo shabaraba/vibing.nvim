@@ -47,6 +47,24 @@ record you'll want later.
 **General rule: parallelism inside work that already has a chat belongs to subagents. Don't add
 chats to get parallelism** — a chat's floor is ownership, not concurrency.
 
+## Reuse a worker chat or start a new one?
+
+Default: **one new chat per task** (per PR, per independent unit of work). Reusing a chat
+saves exactly one brief, while everything that chat has already read stays in its context
+and is billed again on every later request — once there is more than a request or two of
+work left, a new chat is very likely the cheaper one.
+
+- **Reuse only when the next task genuinely needs the prior task's own context, and the
+  remaining work is short.** Otherwise create a new chat with a fresh, self-contained brief
+  (see "Say what must hold, not how to do it" below).
+- **If a chat needs compaction, it was already too long.** Compaction defers the bill, it
+  does not cut it — the detail it drops gets read back in later, at the same cost it would
+  have taken to just start over.
+- This only holds if the brief is complete — an incomplete brief costs a re-investigation
+  round-trip, which is worse than reusing would have been. The measurement behind both of
+  these is `handbook/architecture/orchestration.md` → "Worker cost: reuse vs. new chat, and
+  brief completeness".
+
 ## Operator rules
 
 - **Don't write the report protocol into a brief.** Creating a worker with `from_bufnr` is enough —
