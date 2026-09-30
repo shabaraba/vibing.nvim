@@ -3,6 +3,8 @@
 local view = require("vibing.presentation.chat.view")
 local ProgrammaticSender = require("vibing.presentation.chat.modules.programmatic_sender")
 local notify = require("vibing.core.utils.notify")
+local AutoCompact = require("vibing.application.chat.auto_compact")
+local ConversationExtractor = require("vibing.presentation.chat.modules.conversation_extractor")
 
 describe("Reservations", function()
   local Reservations
@@ -10,6 +12,8 @@ describe("Reservations", function()
   local buffers = {}
   local chats = {}
   local sends = {}
+  local compacted = {}
+  local compact_pending = {}
 
   ---@return number bufnr
   ---@return table chat 偽の ChatBuffer。フィールドを書き換えて状態を作る
@@ -38,6 +42,18 @@ describe("Reservations", function()
     function chat:extract_user_message()
       return self.draft
     end
+    function chat:get_buffer()
+      return bufnr
+    end
+    -- 本物と同じく、未送信セクションに書かれているものを送る
+    function chat:send_message()
+      if self.send_fails then
+        return false
+      end
+      table.insert(sends, { bufnr = bufnr, message = ConversationExtractor.extract_user_message(bufnr) })
+      self.responding = true
+      return true
+    end
     chats[bufnr] = chat
     return bufnr, chat
   end
@@ -53,16 +69,23 @@ describe("Reservations", function()
     originals.send = ProgrammaticSender.send
     originals.warn = notify.warn
     originals.info = notify.info
+    originals.before_manual_send = AutoCompact.before_manual_send
+    originals.has_pending = AutoCompact.has_pending
 
-    buffers, chats, sends = {}, {}, {}
+    buffers, chats, sends, compacted, compact_pending = {}, {}, {}, {}, {}
 
     view.get_chat_buffer = function(bufnr)
       return chats[bufnr]
     end
-    ProgrammaticSender.send = function(bufnr, message)
-      table.insert(sends, { bufnr = bufnr, message = message })
-      chats[bufnr].responding = true
-      return { success = true, bufnr = bufnr }
+    ProgrammaticSender.send = function()
+      error("reservations must go through send_message, like <CR>")
+    end
+    AutoCompact.before_manual_send = function(chat)
+      table.insert(compacted, ConversationExtractor.extract_user_message(chat:get_buffer()))
+      return false
+    end
+    AutoCompact.has_pending = function(bufnr)
+      return compact_pending[bufnr] == true
     end
     notify.warn = function() end
     notify.info = function() end
@@ -76,6 +99,8 @@ describe("Reservations", function()
     ProgrammaticSender.send = originals.send
     notify.warn = originals.warn
     notify.info = originals.info
+    AutoCompact.before_manual_send = originals.before_manual_send
+    AutoCompact.has_pending = originals.has_pending
 
     for _, bufnr in ipairs(buffers) do
       if vim.api.nvim_buf_is_valid(bufnr) then
@@ -214,13 +239,50 @@ describe("Reservations", function()
     local bufnr, chat = make_chat()
     chat.responding = true
     Reservations.add(bufnr, "important")
-    ProgrammaticSender.send = function()
-      error("boom")
-    end
+    chat.send_fails = true
 
     chat.responding = false
     assert.equals("parked", Reservations.flush(bufnr))
     assert.is_truthy(buffer_text(bufnr):find("important", 1, true))
+  end)
+
+  it("does not send after a turn that stopped for any reason, not only an error", function()
+    local bufnr, chat = make_chat()
+    chat.responding = true
+    Reservations.add(bufnr, "held")
+
+    chat.responding = false
+    chat.stop_reason = "some_future_reason"
+    assert.equals("parked", Reservations.flush(bufnr))
+    assert.equals(0, #sends)
+  end)
+
+  it("offers the joined text to auto /compact before sending, as <CR> does", function()
+    local bufnr, chat = make_chat()
+    chat.responding = true
+    Reservations.add(bufnr, "one")
+    Reservations.add(bufnr, "two")
+
+    chat.responding = false
+    Reservations.flush(bufnr)
+
+    assert.same({ "one\ntwo" }, compacted)
+  end)
+
+  it("yields to auto_compact's parked resend on the finished turn, whatever the subscriber order", function()
+    local bufnr, chat = make_chat()
+    chat.responding = true
+    Reservations.add(bufnr, "mine")
+
+    chat.responding = false
+    compact_pending[bufnr] = true
+    Reservations.on_response_done(bufnr)
+    -- auto_compact が自分の購読の中で同期に `pending` を消した状態を再現する
+    compact_pending[bufnr] = nil
+
+    vim.wait(50)
+    assert.equals(0, #sends, "the parked /compact resend goes first")
+    assert.equals(1, Reservations.count(bufnr), "and the reservation is kept for the turn after it")
   end)
 
   it("clear drops the reservations and reports how many", function()
@@ -265,6 +327,50 @@ describe("ChatBuffer reservation state", function()
 
     chat._prompts_rendered_unsent = true
     assert.is_true(chat:has_unanswered_prompts())
+    vim.api.nvim_buf_delete(chat.buf, { force = true })
+  end)
+end)
+
+describe("ChatBuffer:prompt_reservation", function()
+  local ChatBuffer = require("vibing.presentation.chat.buffer")
+  local view = require("vibing.presentation.chat.view")
+  local Reservations = require("vibing.application.chat.reservations")
+  local original_input, original_add, original_notify
+
+  before_each(function()
+    original_input, original_add, original_notify = vim.ui.input, Reservations.add, vim.notify
+    vim.notify = function() end
+  end)
+
+  after_each(function()
+    vim.ui.input, Reservations.add, vim.notify = original_input, original_add, original_notify
+  end)
+
+  it("drops the answer when the buffer number now belongs to another chat", function()
+    local chat = ChatBuffer:new({})
+    chat.buf = vim.api.nvim_create_buf(false, true)
+    local added = {}
+    Reservations.add = function(bufnr, text)
+      table.insert(added, { bufnr = bufnr, text = text })
+      return true
+    end
+    local pending_callback
+    vim.ui.input = function(_, callback)
+      pending_callback = callback
+    end
+
+    chat:prompt_reservation()
+    -- 入力中にチャットが閉じられ、同じ番号に別のチャットが載った
+    view._attached_buffers[chat.buf] = ChatBuffer:new({})
+    pending_callback("typed while it changed")
+    assert.equals(0, #added)
+
+    view._attached_buffers[chat.buf] = chat
+    chat:prompt_reservation()
+    pending_callback("typed for this chat")
+    assert.equals(1, #added)
+
+    view._attached_buffers[chat.buf] = nil
     vim.api.nvim_buf_delete(chat.buf, { force = true })
   end)
 end)

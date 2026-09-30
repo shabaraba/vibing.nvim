@@ -382,6 +382,13 @@ function ChatBuffer:prompt_reservation()
     if not text or vim.trim(text) == "" then
       return
     end
+    -- 入力中にこのチャットが閉じられ、同じバッファ番号が別のチャットに再利用されていたら、
+    -- 予約をそちらに積んではいけない。番号ではなくこの ChatBuffer がまだそこに居るかで訊く
+    local view = require("vibing.presentation.chat.view")
+    if not vim.api.nvim_buf_is_valid(buf) or view.get_chat_buffer(buf) ~= self then
+      vim.notify("[vibing] The chat was closed; the reservation was not kept", vim.log.levels.WARN)
+      return
+    end
     local ok, err = require("vibing.application.chat.reservations").add(buf, text)
     if not ok then
       vim.notify("[vibing] " .. tostring(err), vim.log.levels.WARN)

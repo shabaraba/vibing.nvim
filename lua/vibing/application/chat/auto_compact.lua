@@ -417,10 +417,10 @@ function M.compact_now(focus)
 end
 
 --- Whether a message is parked here, waiting for this bufnr's compaction turn to finish before
---- it is written back and sent. `reservations.lua`'s own `on_response_done` subscriber checks
---- this before flushing, so the two "resend on the next finished turn" mechanisms cannot race
---- each other into dropping this parked message the way two independent `pending`/`on_response_done`
---- pairs did before (see the module comment above).
+--- it is written back and sent. `reservations.lua` asks this **synchronously** in its own
+--- `on_response_done`: `M.on_response_done` clears `pending` before it schedules the resend, so a
+--- check made inside a later `vim.schedule` would already read false, and a reservation sent first
+--- would make that resend find the chat responding and drop this parked message.
 --- @param bufnr number
 --- @return boolean
 function M.has_pending(bufnr)

@@ -81,8 +81,9 @@ end
 ---2. 未送信セクションに既に何かある（プロンプトが描いてある・人間の下書きがある）→ 待つ。
 ---   そこに足すと承認の選択肢行や質問への答えと混ざり、送るとそれらが本文として届く。
 ---   その下書きが送られれば、そのターンの終わりでここがもう一度呼ばれる
----3. 打ち切り・エラーで終わった → 送らずに未送信セクションへ戻す（`park_in_unsent_section`）
----4. それ以外 → `ProgrammaticSender.send` で `## User` として送る
+---3. 打ち切り、または何らかの停止理由つきで終わった → 送らずに未送信セクションへ戻す
+---   （`park_in_unsent_section`）
+---4. それ以外 → 未送信セクションに書いて、`<CR>` と同じ `send_message` で送る
 ---@param bufnr number
 ---@return "sent"|"parked"|"waiting"|"none" outcome
 function M.flush(bufnr)
@@ -101,13 +102,10 @@ function M.flush(bufnr)
     return "waiting"
   end
 
-  -- `auto_compact` is registered after us (`init.lua`), so on the tick a compaction turn finishes,
-  -- its own `on_response_done` runs after ours and still has to write its parked message back and
-  -- send it. Flushing here first would find the chat briefly idle, start sending, and auto_compact's
-  -- own scheduled send would then find `is_responding()` true and silently drop the message it was
-  -- holding — the exact "whichever ran second found the chat responding" loss its module comment
-  -- describes. Waiting for the next `VibingResponseDone` (fired when that send itself finishes)
-  -- avoids the race instead of depending on subscriber order.
+  -- `auto_compact` が `/compact` の後に送り直す本文を抱えているあいだは譲る。あちらの再送は
+  -- 「送る瞬間に応答中なら黙って諦める」ので、こちらが先に送るとその本文が消える。
+  -- ターン終了時の順序の問題は `on_response_done` 側で扱う（あちらは `pending` を同期で
+  -- 消すので、ここに来た時点ではもう見えない）。ここで効くのは `add` から直接来た経路
   if require("vibing.application.chat.auto_compact").has_pending(bufnr) then
     return "waiting"
   end
@@ -132,7 +130,9 @@ function M.flush(bufnr)
   local message = table.concat(items, "\n")
   pending[bufnr] = nil
 
-  if chat_buf:was_cancelled() or chat_buf:get_stop_reason() == "error" then
+  -- 停止理由は**許可リストで**見る: 理由が無い＝普通に終わった、のときだけ送る。`"error"` を
+  -- 名指しする形にすると、将来増えた停止理由が黙って「送る」側に倒れる
+  if chat_buf:was_cancelled() or chat_buf:get_stop_reason() ~= nil then
     park_in_unsent_section(bufnr, message)
     notify.warn(
       string.format(
@@ -151,23 +151,28 @@ function M.flush(bufnr)
     require("vibing.application.chat.completion_notifier").on_manual_send(bufnr)
   end)
 
-  local ProgrammaticSender = require("vibing.presentation.chat.modules.programmatic_sender")
-  local ok, result = pcall(ProgrammaticSender.send, bufnr, message)
-  if ok and result and result.success then
+  -- `<CR>` と同じ形で送る: 未送信セクションに書き、自動 `/compact` の判定を通してから
+  -- `send_message`。`ProgrammaticSender.send` はチャット間配達の入口で `before_manual_send` を
+  -- 通らないので、それを使うと予約だけが閾値を越えた会話に `/compact` 無しで積まれる。
+  -- キャッシュ期限切れの確認（`cache_expiry_prompt.guard`）は通さない: 直前のターンがいま
+  -- 終わったところなので期限は切れておらず、通すと無人の送信が `vim.ui.select` で止まりうる
+  --
+  -- 書いてから送るので、送れなかったときも本文は未送信セクションに残る。消えない
+  park_in_unsent_section(bufnr, message)
+  pcall(function()
+    require("vibing.application.chat.auto_compact").before_manual_send(chat_buf)
+  end)
+  local ok, sent = pcall(function()
+    return chat_buf:send_message()
+  end)
+  if ok and sent then
     return "sent"
   end
 
-  -- 送れなかった本文を消さない。`send` が未送信セクションを書いたあとで弾かれたなら、本文は
-  -- もうそこにある。書く前に弾かれたなら、ここで書く
-  local after = chat_buf:extract_user_message()
-  local has_draft = after and vim.trim(after) ~= ""
-  if not has_draft then
-    park_in_unsent_section(bufnr, message)
-  end
   notify.warn(
     string.format(
       "Could not send the reserved message(s)%s. They are in the unsent section.",
-      ok and "" or (": " .. tostring(result))
+      ok and "" or (": " .. tostring(sent))
     ),
     TITLE
   )
@@ -211,6 +216,14 @@ end
 ---@param bufnr number
 function M.on_response_done(bufnr)
   if not pending[bufnr] then
+    return
+  end
+  -- **同期で見る。** `auto_compact.on_response_done` は `pending` を同期で消してから再送を
+  -- schedule するので、下の schedule の中で `has_pending` を訊いても、購読順によっては既に
+  -- false になっている — 先に走ったこちらの送信があちらの再送を「応答中」で黙って潰す。
+  -- 購読順に依らないよう、この時点で抱えているなら今回は見送る。再送したターンが終われば
+  -- もう一度ここに来る
+  if require("vibing.application.chat.auto_compact").has_pending(bufnr) then
     return
   end
   -- `_finish_turn` の中から同期で呼ばれる。そこから新しいターンを始めると、まだ戻っていない
