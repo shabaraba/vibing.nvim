@@ -11,12 +11,15 @@ local notify = require("vibing.core.utils.notify")
 
 describe("MessageQueue", function()
   local Queue
+  local DraftHold
   local originals = {}
   local buffers = {}
   local responding = {}
+  local drafts = {}
   local sends = {}
   local links = {}
   local warnings = {}
+  local infos = {}
 
   ---@return number bufnr
   local function make_chat()
@@ -31,9 +34,10 @@ describe("MessageQueue", function()
     originals.append_notice = ProgrammaticSender.append_notice
     originals.link = OrchestrationLink.link
     originals.warn = notify.warn
+    originals.info = notify.info
     originals.before_delivery = AutoCompact.before_delivery
 
-    buffers, responding, sends, links, warnings = {}, {}, {}, {}, {}
+    buffers, responding, drafts, sends, links, warnings, infos = {}, {}, {}, {}, {}, {}, {}
 
     view.get_chat_buffer = function(bufnr)
       if not vim.api.nvim_buf_is_valid(bufnr) then
@@ -44,7 +48,7 @@ describe("MessageQueue", function()
           return responding[bufnr] == true
         end,
         extract_user_message = function()
-          return nil
+          return drafts[bufnr]
         end,
       }
     end
@@ -65,17 +69,27 @@ describe("MessageQueue", function()
     notify.warn = function(message, title)
       table.insert(warnings, { message = message, title = title })
     end
+    notify.info = function(message, title)
+      table.insert(infos, { message = message, title = title })
+    end
 
     package.loaded["vibing.application.chat.message_queue"] = nil
+    package.loaded["vibing.application.chat.draft_hold"] = nil
     Queue = require("vibing.application.chat.message_queue")
+    DraftHold = require("vibing.application.chat.draft_hold")
   end)
 
   after_each(function()
+    for _, bufnr in ipairs(buffers) do
+      DraftHold.forget(bufnr)
+    end
+
     view.get_chat_buffer = originals.get_chat_buffer
     ProgrammaticSender.send = originals.send
     ProgrammaticSender.append_notice = originals.append_notice
     OrchestrationLink.link = originals.link
     notify.warn = originals.warn
+    notify.info = originals.info
     AutoCompact.before_delivery = originals.before_delivery
 
     for _, bufnr in ipairs(buffers) do
@@ -243,6 +257,124 @@ describe("MessageQueue", function()
     assert.is_true(Queue.flush(a))
     assert.equals(1, #sends)
     assert.is_truthy(sends[1].message:find("JOB-DONE", 1, true))
+  end)
+
+  it("holds a job notice behind an unsent draft rather than orphaning it", function()
+    local a = make_chat()
+    drafts[a] = "half a thought"
+
+    assert.is_true(Queue.enqueue_notice(a, "JOB-DONE"))
+
+    assert.is_false(Queue.flush(a))
+    assert.equals(0, #sends, "delivery adds a section, which would leave the draft unsendable")
+    assert.is_true(Queue.has_pending(a), "the notice is held, never dropped")
+  end)
+
+  it("waits for the draft to clear, since nothing else will call flush again (#831)", function()
+    -- 応答中で断るのと違って、この見送りを解くイベントは無い。下書きを書きかけて離席すれば
+    -- 次に flush が呼ばれる機会は永久に来ない
+    local a = make_chat()
+    drafts[a] = "half a thought"
+
+    Queue.enqueue_notice(a, "JOB-DONE")
+    Queue.flush(a)
+
+    assert.is_true(DraftHold.is_watching(a))
+  end)
+
+  it("does not watch a chat it refused only because that chat was responding", function()
+    -- そちらは宛先自身のターン終了が flush を呼び直すので、見張る相手が要らない
+    local a = make_chat()
+    responding[a] = true
+
+    Queue.enqueue_notice(a, "JOB-DONE")
+    Queue.flush(a)
+
+    assert.is_false(DraftHold.is_watching(a))
+    assert.equals(0, #infos, "nothing is stuck, so there is nothing to tell the user about")
+  end)
+
+  it("stops watching once the delivery went through", function()
+    local a = make_chat()
+    drafts[a] = "half a thought"
+
+    Queue.enqueue_notice(a, "JOB-DONE")
+    Queue.flush(a)
+    assert.is_true(DraftHold.is_watching(a))
+
+    drafts[a] = nil
+    assert.is_true(Queue.flush(a))
+
+    assert.is_false(DraftHold.is_watching(a))
+  end)
+
+  it("stops watching a chat that went away", function()
+    -- `BufDelete` はバッファを消さないので、バッファローカルの autocmd は残る。誰も読まない
+    -- バッファへの配達を後から起こさないよう、キューを捨てるのと同じ場所で監視も外す
+    local a = make_chat()
+    drafts[a] = "half a thought"
+
+    Queue.enqueue_notice(a, "JOB-DONE")
+    Queue.flush(a)
+    assert.is_true(DraftHold.is_watching(a))
+
+    Queue.forget(a)
+
+    assert.is_false(DraftHold.is_watching(a))
+  end)
+
+  it("stops watching even after the held queue was emptied by another path", function()
+    -- `forget` の早期returnは「自分の状態が空なら空振り」を狙ったものだが、監視には autocmd が
+    -- 張ってある。キューだけが別経路で空になった状態でバッファが消えると、早期returnの手前に
+    -- 置いていなければ autocmd が残る
+    local a, b = make_chat(), make_chat()
+    drafts[a] = "half a thought"
+
+    Queue.enqueue_notification(a, b)
+    Queue.flush(a)
+    assert.is_true(DraftHold.is_watching(a))
+
+    -- b が自分から送ったので「止まった、読みに行け」は冗長になり、キューだけが空になる
+    Queue.drop_notification(a, b)
+    assert.is_false(Queue.has_pending(a))
+
+    Queue.forget(a)
+
+    assert.is_false(DraftHold.is_watching(a), "the early return must not skip the autocmd cleanup")
+  end)
+
+  it("stops watching a chat whose queue it dropped", function()
+    -- 配る先を失って捨てた場合も、待ち合わせは終わっている。監視だけ残すと `is_watching` が
+    -- 存在しない autocmd を報告し続ける（バッファは消えているので自己修復も走らない）
+    local a = make_chat()
+    drafts[a] = "half a thought"
+
+    Queue.enqueue_notice(a, "JOB-DONE")
+    Queue.flush(a)
+    assert.is_true(DraftHold.is_watching(a))
+
+    vim.api.nvim_buf_delete(a, { force = true })
+    assert.is_false(Queue.flush(a))
+    assert.equals(1, #warnings)
+
+    assert.is_false(DraftHold.is_watching(a))
+  end)
+
+  it("stops watching a chat that stopped being a tracked chat buffer", function()
+    local a = make_chat()
+    drafts[a] = "half a thought"
+
+    Queue.enqueue_notice(a, "JOB-DONE")
+    Queue.flush(a)
+    assert.is_true(DraftHold.is_watching(a))
+
+    view.get_chat_buffer = function()
+      return nil
+    end
+    assert.is_false(Queue.flush(a))
+    assert.equals(1, #warnings)
+
+    assert.is_false(DraftHold.is_watching(a))
   end)
 
   it("appends a passive job notice without starting an LLM turn", function()

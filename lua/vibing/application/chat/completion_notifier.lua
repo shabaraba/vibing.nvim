@@ -135,6 +135,26 @@ local function drain(bufnr)
   return restarted, false
 end
 
+---見送られた配達を1件ぶん配り直す
+---
+---見送りの理由は2つあり、解ける合図もそれぞれ違う（並列度上限ならターンの終了、下書きなら
+---`draft_hold` が見張るバッファの変更）が、**配り直しそのものは同じ**なので1つにまとめてある。
+---
+---`draft_hold` が生の `MessageQueue.flush` を呼ばずここを通るのは暴走抑止のカウンタのため。
+---`wakes` と `round_trips` を進めるのは `drain` だけなので、素通りさせると下書き越しに起こされた
+---配達だけがペアの往復予算を使わずに済むことになる
+---@param bufnr number
+---@return boolean restarted
+function M.retry_delivery(bufnr)
+  -- 配達できた相手は再稼働したので、直前に自分から送ったものは最終報告ではなかった。
+  -- `on_response_done` の分岐1と同じ後始末
+  local restarted = drain(bufnr)
+  if restarted then
+    reported[bufnr] = nil
+  end
+  return restarted
+end
+
 ---並列度上限で見送られたキューを配り直す
 ---
 ---上限を解くのはターンの終了だけなので、完了イベントがそのまま「枠が空いた」の合図になる。
@@ -146,11 +166,7 @@ end
 local function retry_held(except_bufnr)
   for to_bufnr in pairs(held_by_limit) do
     if to_bufnr ~= except_bufnr then
-      -- 配達できた相手は再稼働したので、直前に自分から送ったものは最終報告ではなかった。
-      -- `on_response_done` の分岐1と同じ後始末
-      if drain(to_bufnr) then
-        reported[to_bufnr] = nil
-      end
+      M.retry_delivery(to_bufnr)
     end
   end
 end

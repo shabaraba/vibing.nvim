@@ -96,11 +96,51 @@ describe("decoders.claude_stream_json", function()
     )
   end)
 
+  it("carries the same prompt_uuid on a fatal error as on the turn_end it precedes", function()
+    -- Both are cut from the same `result`, so `event_renderer.handlers.error` can tell a foreign
+    -- turn's failure apart from this one's the same way `duplex_turn.ends_this_turn` does for the
+    -- `turn_end` -- otherwise an unrelated background turn's failure would land in `resultErrors`
+    -- and a turn that actually succeeded would complete reporting an error nobody saw.
+    assert.same({
+      { kind = "error", message = "boom", fatal = true, prompt_uuid = "vibing-abc" },
+      { kind = "turn_end", subtype = nil, prompt_uuid = "vibing-abc" },
+    }, decode({}, { type = "result", is_error = true, result = "boom", user_message_uuid = "vibing-abc" }))
+  end)
+
   it("ends the turn on a successful result too", function()
     -- The only event that says a turn is over. Under the oneshot transport the process exit says
     -- it instead, so a success used to produce no event at all -- which a resident process, which
     -- does not exit, would have read as a turn that never ended.
     assert.same({ { kind = "turn_end", subtype = "success" } }, decode({}, { type = "result", subtype = "success" }))
+  end)
+
+  it("carries out which prompt a result answers", function()
+    -- The CLI echoes the input envelope's `uuid` back here, and that is the only thing separating
+    -- this turn's result from one the CLI ran for itself.
+    assert.same(
+      { { kind = "turn_end", subtype = "success", prompt_uuid = "vibing-abc" } },
+      decode({}, { type = "result", subtype = "success", user_message_uuid = "vibing-abc" })
+    )
+  end)
+
+  it("carries no prompt out of a result the CLI produced for itself", function()
+    -- Measured: a turn started by a `task_notification` omits the field entirely, and a JSON null
+    -- would arrive as `vim.NIL` -- truthy in Lua, and a uuid nothing could ever match.
+    assert.same(
+      { { kind = "turn_end", subtype = "success" } },
+      decode({}, { type = "result", subtype = "success", user_message_uuid = vim.NIL })
+    )
+  end)
+
+  it("reports the CLI naming a prompt back", function()
+    assert.same(
+      { { kind = "prompt_ack", prompt_uuid = "vibing-abc", state = "queued" } },
+      decode({}, { type = "command_lifecycle", command_uuid = "vibing-abc", state = "queued" })
+    )
+  end)
+
+  it("ignores a lifecycle line that names no prompt", function()
+    assert.same({}, decode({}, { type = "command_lifecycle", state = "queued" }))
   end)
 
   it("survives the string-content user events /compact replays", function()
