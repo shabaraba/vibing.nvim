@@ -27,7 +27,7 @@ was one of two runs that hit the session limit. Decide this before creating anyt
 | Approval prompts       | Can't clear one (turn just fails)                | Can handle questions and approvals                  |
 | Owns a branch/worktree | No                                               | Yes, via `working_dir` frontmatter                  |
 | Survives a rate limit  | No                                               | Yes (auto_resume / scheduled resend)                |
-| Spin-up cost           | Low, no protocol                                 | Floor ~61k tokens + report contract + notifications |
+| Spin-up cost           | Low, no protocol                                 | Floor ~51k–61k tokens (#807) + report contract + notifications |
 | Coordination can fail  | No — the return value is structurally guaranteed | Yes — this run failed 9 of 18 dispatches            |
 
 **A subagent is enough only if all five hold** — one exception and it's a chat:
