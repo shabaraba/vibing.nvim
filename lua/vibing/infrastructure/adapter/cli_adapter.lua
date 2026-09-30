@@ -325,12 +325,7 @@ function M.define(descriptor)
       -- here rather than in the chat layer: which backend wrote a transcript and where it put it is
       -- an adapter fact. Why both halves travel, and why the second one being empty means nothing,
       -- is `BackgroundTasks.report`.
-      local unreported, recovered = BackgroundTasks.report(
-        event_context,
-        descriptor.recover_unreported_tasks,
-        cwd,
-        SessionManagerModule.get(self._session_manager, ids.process_id)
-      )
+      --
       -- **Only a turn whose process is gone may conclude "nothing will report these now."** On this
       -- transport `finish` *is* the exit handler (see `create_exit_handler` below), so every
       -- notification the CLI managed to emit has already been decoded and taken off the ledger, and
@@ -343,6 +338,19 @@ function M.define(descriptor)
       -- given up: recovery reads an answer that is not written yet at that point, so the pre-#820
       -- notice it gates could hardly ever fire there either. Closing it properly means waking when
       -- `duplex_pool` reclaims the process, which is that transport's own seam and not this one.
+      --
+      -- The recovery function itself is withheld on duplex, not just its result: `BackgroundTasks
+      -- .report` treats a nil recover as "cannot recover" and skips the transcript read entirely
+      -- (`M.report`'s own doc: "the ordinary turn ... touches no disk"). Passing it unconditionally
+      -- and discarding the answer below would still do the blocking `vim.fn.readfile` on every
+      -- duplex turn that ends with something outstanding -- which, on a resident process serving
+      -- many turns, is not a rare turn at all.
+      local unreported, recovered = BackgroundTasks.report(
+        event_context,
+        not is_duplex and descriptor.recover_unreported_tasks or nil,
+        cwd,
+        SessionManagerModule.get(self._session_manager, ids.process_id)
+      )
       if #unreported > 0 and not is_duplex then
         response._unreported_subagents = unreported
         response._recovered_subagents = recovered

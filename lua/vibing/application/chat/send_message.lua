@@ -534,8 +534,21 @@ function M._handle_response(response, callbacks, adapter, config, modified_file_
 
   -- バックグラウンド subagent を残して閉じたターンの起床（#820）。**差分の確定より後**に置くのは、
   -- これが `## Notice` として新しいターンを始める送信であり、このターンの成果を書き終える前に
-  -- 次を始めると両者が同じバッファ末尾を取り合うため
-  pcall(require("vibing.application.chat.outstanding_subagents").wake, response, bufnr)
+  -- 次を始めると両者が同じバッファ末尾を取り合うため。
+  --
+  -- **`vim.schedule` に包むのも同じ理由から。** スナップショット/リクエスト差分経路の
+  -- `add_user_section`（＝`_finish_turn`。`self._assistant_header_line` の終了時刻スタンプと、
+  -- このターン自身の未送信 `## User` セクションを書く）は `vim.schedule` 越しに走る
+  -- （`_emit_diff_output`）。ここを同期のまま呼ぶと、起床が同じtick内に新しいターンを送信し、
+  -- `send_message()` → `start_response()` が `_assistant_header_line` を新しいターンの行番号で
+  -- 上書きしてしまう — その後で走る現ターンの `_finish_turn` は自分の終了時刻を新しいターンの
+  -- ヘッダーに書き込み、しかも `_assistant_header_line` を nil に戻すので、新しいターン自身の
+  -- 完了時にはもう何も書けない。`vim.schedule` で後ろに並べれば、既にスケジュール済みの
+  -- `_finish_turn` が先に走ってから起床するので、この取り合いにならない
+  -- （変更なしの分岐は既に同期で閉じているので、ここを遅らせても害はない）
+  vim.schedule(function()
+    pcall(require("vibing.application.chat.outstanding_subagents").wake, response, bufnr)
+  end)
 
   -- NOTE: clear_turn_id() は呼ばない
   -- 次のsend_message()時にkillすることで、ゾンビプロセス対策になる
