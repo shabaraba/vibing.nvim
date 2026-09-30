@@ -45,7 +45,10 @@ end
 ---
 ---**判定の順序が要点。** ストリーミング中はレンダラがバッファを書き換えるので `TextChanged` が
 ---連続して発火する。`extract_user_message` はバッファ全行を読んで最後のユーザーセクションまで
----遡るので、応答中の判定をその手前に置かないと、長いチャットでは変更1回ごとに全行走査が走る
+---遡るので、応答中の判定をその手前に置かないと、長いチャットでは変更1回ごとに全行走査が走る。
+---
+---下書きの判定そのものは `message_queue.has_unsent_draft` に一本化してある。ここで独自に
+---再実装すると、片方だけ直したときに「配達可能」の意味が両者で食い違う
 ---@param to_bufnr number
 ---@return boolean
 local function can_deliver_now(to_bufnr)
@@ -62,11 +65,7 @@ local function can_deliver_now(to_bufnr)
     return false
   end
 
-  if not chat_buf.extract_user_message then
-    return true
-  end
-  local draft = chat_buf:extract_user_message()
-  return not (draft and vim.trim(draft) ~= "")
+  return not require("vibing.application.chat.message_queue").has_unsent_draft(chat_buf)
 end
 
 ---@param to_bufnr number

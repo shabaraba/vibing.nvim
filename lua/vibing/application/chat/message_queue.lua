@@ -125,6 +125,22 @@ local function resolve_bufnr(file_path)
   return vim.api.nvim_buf_is_valid(bufnr) and bufnr or nil
 end
 
+---相手が書きかけの `## User` を残しているか
+---
+---`flush` と `draft_hold.can_deliver_now` の両方がこの判定を必要とする。前者は見送るときに
+---`draft_hold.watch` も呼ぶが、後者は判定だけで足りる — その違いは呼び出し元の役目にして、
+---判定そのものは1箇所にまとめておく。2つの独立した実装のまま置くと、どちらかだけを直したときに
+---「配達可能」の意味がその場で食い違う
+---@param chat_buf table ChatBuffer 相当。`extract_user_message` を持たない実装もある
+---@return boolean
+function M.has_unsent_draft(chat_buf)
+  if not chat_buf.extract_user_message then
+    return false
+  end
+  local draft = chat_buf:extract_user_message()
+  return draft ~= nil and vim.trim(draft) ~= ""
+end
+
 ---`to_bufnr` 宛の待ち合わせを終わらせる
 ---
 ---配達できた場合と、配る先を失って捨てる場合の両方がここに来る。下書き待ちの監視も一緒に
@@ -361,12 +377,9 @@ function M.flush(to_bufnr)
   -- そのターンの完了でここが呼び直されるが、消しただけ・書いたまま離席した場合は誰も
   -- 呼び直さず、配達は無期限に宙に浮く（#831）。だから下書きが空くのを `draft_hold` に
   -- 待たせる — 見送る条件のうち、これだけが人間を待つもの
-  if chat_buf.extract_user_message then
-    local draft = chat_buf:extract_user_message()
-    if draft and vim.trim(draft) ~= "" then
-      require("vibing.application.chat.draft_hold").watch(to_bufnr, #queue)
-      return false
-    end
+  if M.has_unsent_draft(chat_buf) then
+    require("vibing.application.chat.draft_hold").watch(to_bufnr, #queue)
+    return false
   end
 
   local delivered = {}
